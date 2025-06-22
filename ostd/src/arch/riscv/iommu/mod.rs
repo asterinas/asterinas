@@ -6,7 +6,7 @@ use crate::mm::{dma::Daddr, Paddr};
 
 /// An enumeration representing possible errors related to IOMMU.
 #[derive(Debug)]
-pub enum IommuError {
+pub(crate) enum IommuError {
     /// No IOMMU is available.
     NoIommu,
 }
@@ -29,5 +29,9 @@ pub(crate) fn init() -> Result<(), IommuError> {
 }
 
 pub(crate) fn has_dma_remapping() -> bool {
+    false
+}
+
+pub(crate) fn has_interrupt_remapping() -> bool {
     false
 }

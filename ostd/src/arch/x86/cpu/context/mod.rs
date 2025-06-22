@@ -23,7 +23,7 @@ use x86_64::registers::{
 };
 
 use crate::{
-    arch::x86::CPU_FEATURES,
+    arch::CPU_FEATURES,
     task::scheduler,
     trap::call_irq_callback_functions,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
@@ -587,7 +587,7 @@ static XSAVE_AREA_SIZE: Once<usize> = Once::new();
 /// The max size in bytes of the XSAVE area.
 const MAX_XSAVE_AREA_SIZE: usize = 4096;
 
-pub(in crate::arch::x86) fn enable_essential_features() {
+pub(in crate::arch) fn enable_essential_features() {
     XSTATE_MAX_FEATURES.call_once(|| {
         const XSTATE_CPUID: u32 = 0x0000000d;
 

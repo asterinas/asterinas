@@ -32,12 +32,14 @@ impl FaultEventRegisters {
         FaultStatus::from_bits_truncate(self.status.as_ptr().read())
     }
 
-    /// Creates an instance from base address.
+    /// Creates an instance from the IOMMU base address.
     ///
     /// # Safety
     ///
-    /// User must ensure the base_register_vaddr is read from DRHD
+    /// The caller must ensure that the base address is a valid IOMMU base address and that it has
+    /// exclusive ownership of the IOMMU fault event registers.
     unsafe fn new(base_register_vaddr: NonNull<u8>) -> Self {
+        // SAFETY: The safety is upheld by the caller.
         let (capability, status, mut control, mut data, mut address, upper_address) = unsafe {
             let base = base_register_vaddr;
             (
@@ -231,9 +233,12 @@ pub(super) static FAULT_EVENT_REGS: Once<SpinLock<FaultEventRegisters, LocalIrqD
 ///
 /// # Safety
 ///
-/// User must ensure the base_register_vaddr is read from DRHD
+/// The caller must ensure that the base address is a valid IOMMU base address and that it has
+/// exclusive ownership of the IOMMU fault event registers.
 pub(super) unsafe fn init(base_register_vaddr: NonNull<u8>) {
-    FAULT_EVENT_REGS.call_once(|| SpinLock::new(FaultEventRegisters::new(base_register_vaddr)));
+    FAULT_EVENT_REGS
+        // SAFETY: The safety is upheld by the caller.
+        .call_once(|| SpinLock::new(unsafe { FaultEventRegisters::new(base_register_vaddr) }));
 }
 
 fn iommu_fault_handler(_frame: &TrapFrame) {

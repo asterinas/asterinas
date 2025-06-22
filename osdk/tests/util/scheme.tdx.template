@@ -9,13 +9,11 @@ qemu.args = """
     -vga none \
     -nographic \
     -monitor pty \
-    -no-hpet \
     -nodefaults \
-    -bios /usr/share/qemu/OVMF.fd \
-    -object tdx-guest,sept-ve-disable=on,id=tdx,quote-generation-service=vsock:2:4050 \
+    -bios /root/ovmf/release/OVMF.fd \
+    -object tdx-guest,sept-ve-disable=on,id=tdx0 \
     -cpu host,-kvm-steal-time,pmu=off \
-    -machine q35,kernel_irqchip=split,confidential-guest-support=tdx,memory-backend=ram1 \
-    -object memory-backend-memfd-private,id=ram1,size=8G \
+    -machine q35,kernel-irqchip=split,confidential-guest-support=tdx0 \
     -device virtio-keyboard-pci,disable-legacy=on,disable-modern=off \
     -chardev stdio,id=mux,mux=on,logfile=qemu.log \
     -device virtio-serial,romfile= \

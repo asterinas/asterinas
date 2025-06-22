@@ -16,6 +16,13 @@ pub struct SlabSlotList<const SLOT_SIZE: usize> {
     head: Option<NonNull<u8>>,
 }
 
+// SAFETY: Any access or modification (i.e., push and pop operations) to the
+// data pointed to by `head` requires a `&mut SlabSlotList`. Therefore, at any
+// given time, only one task can access the inner `head`. Additionally, a
+// `HeapSlot` will not be allocated again as long as it remains in the list.
+unsafe impl<const SLOT_SIZE: usize> Sync for SlabSlotList<SLOT_SIZE> {}
+unsafe impl<const SLOT_SIZE: usize> Send for SlabSlotList<SLOT_SIZE> {}
+
 impl<const SLOT_SIZE: usize> Default for SlabSlotList<SLOT_SIZE> {
     fn default() -> Self {
         Self::new()

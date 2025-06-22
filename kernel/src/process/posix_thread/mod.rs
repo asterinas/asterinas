@@ -8,7 +8,7 @@ use ostd::sync::{RoArc, Waker};
 use super::{
     kill::SignalSenderIds,
     signal::{
-        sig_action::SigAction,
+        sig_disposition::SigDispositions,
         sig_mask::{AtomicSigMask, SigMask, SigSet},
         sig_num::SigNum,
         sig_queues::SigQueues,
@@ -38,9 +38,9 @@ pub mod thread_table;
 pub use builder::PosixThreadBuilder;
 pub use exit::{do_exit, do_exit_group};
 pub use name::{ThreadName, MAX_THREAD_NAME_LEN};
-pub use posix_thread_ext::{create_posix_task_from_executable, AsPosixThread};
+pub use posix_thread_ext::AsPosixThread;
 pub use robust_list::RobustListHead;
-pub use thread_local::{AsThreadLocal, ThreadLocal};
+pub use thread_local::{AsThreadLocal, FileTableRefMut, ThreadLocal};
 
 pub struct PosixThread {
     // Immutable part
@@ -55,7 +55,7 @@ pub struct PosixThread {
 
     // Files
     /// File table
-    file_table: RoArc<FileTable>,
+    file_table: Mutex<Option<RoArc<FileTable>>>,
     /// File system
     fs: Arc<ThreadFsInfo>,
 
@@ -96,7 +96,7 @@ impl PosixThread {
         &self.name
     }
 
-    pub fn file_table(&self) -> &RoArc<FileTable> {
+    pub fn file_table(&self) -> &Mutex<Option<RoArc<FileTable>>> {
         &self.file_table
     }
 
@@ -126,7 +126,7 @@ impl PosixThread {
 
     /// Returns whether the signal is blocked by the thread.
     pub(in crate::process) fn has_signal_blocked(&self, signum: SigNum) -> bool {
-        // FIMXE: Some signals cannot be blocked, even set in sig_mask.
+        // FIXME: Some signals cannot be blocked, even set in sig_mask.
         self.sig_mask.contains(signum, Ordering::Relaxed)
     }
 
@@ -149,7 +149,7 @@ impl PosixThread {
         if let Some(signum) = signum
             && *signum == SIGCONT
         {
-            let receiver_sid = self.process().session().unwrap().sid();
+            let receiver_sid = self.process().sid();
             if receiver_sid == sender.sid().unwrap() {
                 return Ok(());
             }
@@ -199,16 +199,48 @@ impl PosixThread {
         *self.signalled_waker.lock() = None;
     }
 
-    /// Enqueues a thread-directed signal. This method should only be used for enqueue kernel
-    /// signal and fault signal.
-    pub fn enqueue_signal(&self, signal: Box<dyn Signal>) {
-        let signal_number = signal.num();
-        self.sig_queues.enqueue(signal);
-        if self.process().sig_dispositions().lock().get(signal_number) != SigAction::Ign
-            && let Some(waker) = &*self.signalled_waker.lock()
-        {
+    /// Wakes up the signalled waker.
+    pub fn wake_signalled_waker(&self) {
+        if let Some(waker) = &*self.signalled_waker.lock() {
             waker.wake_up();
         }
+    }
+
+    /// Enqueues a thread-directed signal.
+    ///
+    /// This method does not perform permission checks on user signals. Therefore, unless the
+    /// caller can ensure that there are no permission issues, this method should be used for
+    /// enqueue kernel signals or fault signals.
+    pub fn enqueue_signal(&self, signal: Box<dyn Signal>) {
+        let process = self.process();
+        let sig_dispositions = process.sig_dispositions().lock();
+
+        let signum = signal.num();
+        if sig_dispositions.get(signum).will_ignore(signum) {
+            return;
+        }
+
+        self.enqueue_signal_locked(signal, sig_dispositions);
+    }
+
+    /// Enqueues a thread-directed signal with locked dispositions.
+    ///
+    /// By locking dispositions, the caller should have already checked the signal is not to be
+    /// ignored.
+    //
+    // FIXME: According to Linux behavior, we should enqueue ignored signals blocked by all
+    // threads, as a thread may change the signal handler and unblock them in the future. However,
+    // achieving this behavior properly without maintaining a process-wide signal queue is
+    // difficult. For instance, if we randomly select a thread-wide signal queue, the thread that
+    // modifies the signal handler and unblocks the signal may not be the same one. Consequently,
+    // the current implementation uses a simpler mechanism that never enqueues any ignored signals.
+    pub(in crate::process) fn enqueue_signal_locked(
+        &self,
+        signal: Box<dyn Signal>,
+        _sig_dispositions: MutexGuard<SigDispositions>,
+    ) {
+        self.sig_queues.enqueue(signal);
+        self.wake_signalled_waker();
     }
 
     /// Returns a reference to the profiling clock of the current thread.

@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{boxed::Box, sync::Arc};
-use core::mem::size_of;
+use core::mem::{offset_of, size_of};
 
 use aster_rights::{ReadOp, WriteOp};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use log::warn;
 use ostd::{
-    bus::{
-        mmio::{
-            bus::MmioDevice,
-            common_device::{MmioCommonDevice, VirtioMmioVersion},
-        },
-        pci::cfg_space::Bar,
-    },
+    bus::pci::cfg_space::Bar,
     io::IoMem,
     mm::{DmaCoherent, PAGE_SIZE},
-    offset_of,
     sync::RwLock,
     trap::IrqCallbackFunction,
 };
 
-use super::{layout::VirtioMmioLayout, multiplex::MultiplexIrq};
+use super::{
+    bus::{
+        bus::MmioDevice,
+        common_device::{MmioCommonDevice, VirtioMmioVersion},
+    },
+    layout::VirtioMmioLayout,
+    multiplex::MultiplexIrq,
+};
 use crate::{
     queue::{AvailRing, Descriptor, UsedRing},
     transport::{ConfigManager, DeviceStatus, VirtioTransport, VirtioTransportError},
@@ -37,7 +37,7 @@ pub struct VirtioMmioDevice {
 pub struct VirtioMmioTransport {
     layout: SafePtr<VirtioMmioLayout, IoMem>,
     device: Arc<VirtioMmioDevice>,
-    common_device: ostd::bus::mmio::common_device::MmioCommonDevice,
+    common_device: MmioCommonDevice,
     multiplex: Arc<RwLock<MultiplexIrq>>,
 }
 
@@ -66,9 +66,9 @@ impl VirtioMmioTransport {
             let interrupt_ack_offset = offset_of!(VirtioMmioLayout, interrupt_ack);
             let interrupt_status_offset = offset_of!(VirtioMmioLayout, interrupt_status);
             let mut interrupt_ack = layout.clone();
-            interrupt_ack.byte_add(interrupt_ack_offset as usize);
+            interrupt_ack.byte_add(interrupt_ack_offset);
             let mut interrupt_status = layout.clone();
-            interrupt_status.byte_add(interrupt_status_offset as usize);
+            interrupt_status.byte_add(interrupt_status_offset);
             (
                 interrupt_ack.cast::<u32>().restrict::<WriteOp>(),
                 interrupt_status.cast::<u32>().restrict::<ReadOp>(),
@@ -174,7 +174,7 @@ impl VirtioTransport for VirtioMmioTransport {
     }
 
     fn notify_config(&self, _idx: usize) -> ConfigManager<u32> {
-        let offset = offset_of!(VirtioMmioLayout, queue_notify) as usize;
+        let offset = offset_of!(VirtioMmioLayout, queue_notify);
         let safe_ptr = Some(SafePtr::new(self.common_device.io_mem().clone(), offset));
 
         ConfigManager::new(safe_ptr, None)

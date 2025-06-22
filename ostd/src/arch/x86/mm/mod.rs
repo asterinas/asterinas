@@ -15,7 +15,7 @@ use crate::{
         page_table::PageTableEntryTrait,
         Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr, PAGE_SIZE,
     },
-    util::SameSizeAs,
+    util::marker::SameSizeAs,
     Pod,
 };
 
@@ -30,6 +30,7 @@ impl PagingConstsTrait for PagingConsts {
     const BASE_PAGE_SIZE: usize = 4096;
     const NR_LEVELS: PagingLevel = 4;
     const ADDRESS_WIDTH: usize = 48;
+    const VA_SIGN_EXT: bool = true;
     const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 2;
     const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
 }
@@ -124,19 +125,16 @@ pub struct PageTableEntry(usize);
 /// Changing the level 4 page table is unsafe, because it's possible to violate memory safety by
 /// changing the page mapping.
 pub unsafe fn activate_page_table(root_paddr: Paddr, root_pt_cache: CachePolicy) {
-    x86_64::registers::control::Cr3::write(
-        PhysFrame::from_start_address(x86_64::PhysAddr::new(root_paddr as u64)).unwrap(),
-        match root_pt_cache {
-            CachePolicy::Writeback => x86_64::registers::control::Cr3Flags::empty(),
-            CachePolicy::Writethrough => {
-                x86_64::registers::control::Cr3Flags::PAGE_LEVEL_WRITETHROUGH
-            }
-            CachePolicy::Uncacheable => {
-                x86_64::registers::control::Cr3Flags::PAGE_LEVEL_CACHE_DISABLE
-            }
-            _ => panic!("unsupported cache policy for the root page table"),
-        },
-    );
+    let addr = PhysFrame::from_start_address(x86_64::PhysAddr::new(root_paddr as u64)).unwrap();
+    let flags = match root_pt_cache {
+        CachePolicy::Writeback => x86_64::registers::control::Cr3Flags::empty(),
+        CachePolicy::Writethrough => x86_64::registers::control::Cr3Flags::PAGE_LEVEL_WRITETHROUGH,
+        CachePolicy::Uncacheable => x86_64::registers::control::Cr3Flags::PAGE_LEVEL_CACHE_DISABLE,
+        _ => panic!("unsupported cache policy for the root page table"),
+    };
+
+    // SAFETY: The safety is upheld by the caller.
+    unsafe { x86_64::registers::control::Cr3::write(addr, flags) };
 }
 
 pub fn current_page_table_paddr() -> Paddr {

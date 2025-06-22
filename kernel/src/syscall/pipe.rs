@@ -21,8 +21,8 @@ pub fn sys_pipe2(fds: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn>
         FdFlags::empty()
     };
 
-    let file_table = ctx.thread_local.file_table().borrow();
-    let mut file_table_locked = file_table.write();
+    let file_table = ctx.thread_local.borrow_file_table();
+    let mut file_table_locked = file_table.unwrap().write();
 
     let pipe_fds = PipeFds {
         reader_fd: file_table_locked.insert(pipe_reader, fd_flags),

@@ -9,6 +9,7 @@ use crate::{
     },
     prelude::*,
     process::posix_thread::AsPosixThread,
+    vm::vmar::RssType,
     Process,
 };
 
@@ -81,13 +82,36 @@ impl FileOps for StatusFileOps {
         writeln!(status_output, "Pid:\t{}", process.pid()).unwrap();
         writeln!(status_output, "PPid:\t{}", process.parent().pid()).unwrap();
         writeln!(status_output, "TracerPid:\t{}", process.parent().pid()).unwrap(); // Assuming TracerPid is the same as PPid
-        writeln!(status_output, "FDSize:\t{}", file_table.read().len()).unwrap();
+        writeln!(
+            status_output,
+            "FDSize:\t{}",
+            file_table
+                .lock()
+                .as_ref()
+                .map(|file_table| file_table.read().len())
+                .unwrap_or(0)
+        )
+        .unwrap();
         writeln!(
             status_output,
             "Threads:\t{}",
             process.tasks().lock().as_slice().len()
         )
         .unwrap();
+
+        {
+            let vmar = process.lock_root_vmar();
+            let anon = vmar.unwrap().get_rss_counter(RssType::RSS_ANONPAGES) * (PAGE_SIZE / 1024);
+            let file = vmar.unwrap().get_rss_counter(RssType::RSS_FILEPAGES) * (PAGE_SIZE / 1024);
+            let rss = anon + file;
+            writeln!(
+                status_output,
+                "VmRSS:\t{} kB\nRssAnon:\t{} kB\nRssFile:\t{} kB",
+                rss, anon, file
+            )
+            .unwrap();
+        }
+
         Ok(status_output.into_bytes())
     }
 }

@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{wait_child_exit, ProcessFilter, WaitOptions},
+    process::{do_wait, ProcessFilter, WaitOptions},
 };
 
 pub fn sys_waitid(
@@ -15,14 +15,16 @@ pub fn sys_waitid(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     // FIXME: what does infoq and rusage use for?
-    let process_filter = ProcessFilter::from_which_and_id(which, upid)?;
+    let process_filter = ProcessFilter::from_which_and_id(which, upid as _)?;
     let wait_options = WaitOptions::from_bits(options as u32)
         .ok_or(Error::with_message(Errno::EINVAL, "invalid options"))?;
-    let waited_process =
-        wait_child_exit(process_filter, wait_options, ctx).map_err(|err| match err.error() {
+
+    let wait_status =
+        do_wait(process_filter, wait_options, ctx).map_err(|err| match err.error() {
             Errno::EINTR => Error::new(Errno::ERESTARTSYS),
             _ => err,
         })?;
-    let pid = waited_process.map_or(0, |process| process.pid());
+
+    let pid = wait_status.map_or(0, |wait_status| wait_status.pid());
     Ok(SyscallReturn::Return(pid as _))
 }

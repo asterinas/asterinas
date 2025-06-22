@@ -3,15 +3,16 @@
 use alloc::{collections::linked_list::LinkedList, sync::Arc};
 
 use aster_network::dma_pool::DmaPool;
+use aster_softirq::BottomHalfDisabled;
 use ostd::{
     mm::{DmaDirection, DmaStream},
-    sync::{LocalIrqDisabled, SpinLock},
+    sync::SpinLock,
 };
 use spin::Once;
 
 const RX_BUFFER_LEN: usize = 4096;
 pub static RX_BUFFER_POOL: Once<Arc<DmaPool>> = Once::new();
-pub static TX_BUFFER_POOL: Once<SpinLock<LinkedList<DmaStream>, LocalIrqDisabled>> = Once::new();
+pub static TX_BUFFER_POOL: Once<SpinLock<LinkedList<DmaStream>, BottomHalfDisabled>> = Once::new();
 
 pub fn init() {
     const POOL_INIT_SIZE: usize = 32;

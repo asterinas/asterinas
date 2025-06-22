@@ -107,33 +107,17 @@ jobs:
       max-parallel: 1
     timeout-minutes: 60
     container: 
-      image: asterinas/asterinas:0.14.1-20250326
+      image: asterinas/asterinas:0.15.1-20250603
       options: --device=/dev/kvm --privileged
 
     steps:
       - uses: actions/checkout@v4
-      - name: Set up the environment
-        run: |
-          chmod +x test/benchmark/bench_linux_and_aster.sh
-          # Set up git due to the network issue on the self-hosted runner
-          git config --global --add safe.directory /__w/asterinas/asterinas
-          git config --global http.sslVerify false
-          git config --global http.version HTTP/1.1
-
       - name: Run benchmarks
-        run: |
-          make install_osdk
-          bash test/benchmark/bench_linux_and_aster.sh "${{ matrix.benchmarks }}"
-          BENCHMARK_ARTIFACT=results_$(echo "${{ matrix.benchmarks }}" | tr '/' '-')
-          echo "BENCHMARK_ARTIFACT=$BENCHMARK_ARTIFACT" >> $GITHUB_ENV
-
-      - name: Store benchmark results
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/benchmark
         with:
-          name: ${{ env.BENCHMARK_ARTIFACT }}
-          if-no-files-found: error # Fail the benchmark job if no file is found.
-          path: |
-            result_*.json
+          task: benchmark
+          platform: x86-64
+          benchmark: ${{ matrix.benchmarks }}
 
   Results:
     runs-on: ubuntu-latest
@@ -142,95 +126,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - name: Download Benchmark Results
-        uses: actions/download-artifact@v4
-        with:
-          pattern: results_*
-          path: ./results
-          merge-multiple: true
-
-      - name: Set up the environment
-        run: |
-          sudo apt-get update && sudo apt-get install -y yq jq
-
-      - name: Generate all benchmark config files
-        run: |
-          mkdir -p configs
-          BENCHMARK_LIST=$(ls results/result_*.json | sed 's/.*result_//' | sed 's/\.json//' | jq -R -s -c 'split("\n")[:-1]')
-          echo "Processing benchmarks: $BENCHMARK_LIST"
-
-          # Loop through the benchmark identifiers provided by the Matrix job
-          for benchmark_id in $(echo "$BENCHMARK_LIST" | jq -r '.[]'); do
-            echo "--- Processing $benchmark_id ---"
-            BENCHMARK_DIR=$(echo "$benchmark_id" | sed 's/-/\//g')
-            BENCHMARK_SUITE=$(echo "$BENCHMARK_DIR" | awk -F'/' '{print $1}')
-            BENCHMARK_NAME=$(echo "$BENCHMARK_DIR" | sed -E 's|^[^/]+/||; s|/bench_results||g; s|/|_|g')
-            BENCH_RESULT_YAML="test/benchmark/${BENCHMARK_DIR}/bench_result.yaml"
-            [ -f "$BENCH_RESULT_YAML" ] || BENCH_RESULT_YAML="test/benchmark/${BENCHMARK_DIR}.yaml"
-
-            if [ ! -f "$BENCH_RESULT_YAML" ]; then
-              echo "Warning: YAML file not found for $benchmark_id at $BENCH_RESULT_YAML. Skipping config generation."
-              continue
-            fi
-
-            # Extract data using yq
-            ALERT_THRESHOLD=$(yq -r '.alert.threshold // "130%"' "$BENCH_RESULT_YAML")
-            ALERT_TOOL=$(yq -r 'if (.alert.bigger_is_better == true) then "customBiggerIsBetter" else "customSmallerIsBetter" end' "$BENCH_RESULT_YAML")
-            TITLE=$(yq -r '.chart.title // "Undefined"' "$BENCH_RESULT_YAML")
-            DESCRIPTION=$(yq -r '.chart.description // "No description provided"' "$BENCH_RESULT_YAML")
-
-            # Generate summary JSON if needed (only once per suite)
-            SUMMARY_JSON="test/benchmark/$BENCHMARK_SUITE/summary.json"
-            if [ ! -f "$SUMMARY_JSON" ]; then
-               SUMMARY_YAML="test/benchmark/$BENCHMARK_SUITE/summary.yaml"
-               if [ -f "$SUMMARY_YAML" ]; then
-                 yq . "$SUMMARY_YAML" > "$SUMMARY_JSON"
-                 echo "Generated $SUMMARY_JSON"
-               else
-                 echo "Warning: summary.yaml not found for suite $BENCHMARK_SUITE"
-               fi
-            fi
-
-            # Define file paths
-            CONFIG_FILE="configs/config_${benchmark_id}.json"
-            RESULT_FILE="results/result_${benchmark_id}.json"
-          
-            # Create JSON structure using jq
-            jq -n \
-              --arg title "$TITLE" \
-              --arg description "$DESCRIPTION" \
-              --arg suite "$BENCHMARK_SUITE" \
-              --arg name "$BENCHMARK_NAME" \
-              --arg threshold "$ALERT_THRESHOLD" \
-              --arg tool "$ALERT_TOOL" \
-              --arg result_path "$RESULT_FILE" \
-              --arg summary_path "$SUMMARY_JSON" \
-              '{
-                metadata: {
-                  title: $title,
-                  description: $description,
-                  suite: $suite,
-                  name: $name,
-                  threshold: $threshold,
-                  tool: $tool,
-                  summary: $summary_path
-                },
-                result: $result_path
-              }' > "$CONFIG_FILE"
-
-            echo "Generated config file $CONFIG_FILE"
-          done
-
       - name: Store benchmark results
-        uses: asterinas/github-action-benchmark@v5
+        uses: ./.github/actions/benchmark
         with:
-          # Use glob pattern to find all generated config files
-          output-file-path: "configs/config_*.json"
-          github-token: ${{ secrets.BENCHMARK_SECRET }}
-          gh-repository: 'github.com/asterinas/benchmark'
-          auto-push: true
-          comment-on-alert: true
-          fail-on-alert: false
-          max-items-in-chart: 60
-          ref: ${{ github.sha }}
+          task: result
+          platform: x86-64
+          benchmark-secret: ${{ secrets.BENCHMARK_SECRET }}
          

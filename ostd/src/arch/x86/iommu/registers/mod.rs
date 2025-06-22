@@ -11,7 +11,7 @@ mod status;
 use core::ptr::NonNull;
 
 use bit_field::BitField;
-pub use capability::Capability;
+pub use capability::{Capability, CapabilitySagaw};
 use command::GlobalCommand;
 use extended_cap::ExtendedCapability;
 pub use extended_cap::ExtendedCapabilityFlags;
@@ -37,7 +37,7 @@ use crate::{
                 QUEUE,
             },
         },
-        x86::kernel::acpi::dmar::{Dmar, Remapping},
+        kernel::acpi::dmar::{Dmar, Remapping},
     },
     io::IoMemAllocatorBuilder,
     mm::{paddr_to_vaddr, PAGE_SIZE},
@@ -258,6 +258,15 @@ impl IommuRegisters {
 
         let base_address = dmar
             .remapping_iter()
+            // TODO: Add support for multiple DMA remapping hardware unit definitions (DRHDs). Note
+            // that we use `rev()` here to select the last one, since DRHDs that control specific
+            // devices tend to be reported first.
+            //
+            // For example, Intel(R) Virtualization Technology for Directed I/O (Revision 5.0), 8.4
+            // DMA Remapping Hardware Unit Definition Structure says "If a DRHD structure with
+            // INCLUDE_PCI_ALL flag Set is reported for a Segment, it must be enumerated by BIOS
+            // after all other DRHD structures for the same Segment".
+            .rev()
             .find_map(|remapping| match remapping {
                 Remapping::Drhd(drhd) => Some(drhd.register_base_addr()),
                 _ => None,
@@ -269,8 +278,11 @@ impl IommuRegisters {
         io_mem_builder.remove(base_address as usize..(base_address as usize + PAGE_SIZE));
         let base = NonNull::new(paddr_to_vaddr(base_address as usize) as *mut u8).unwrap();
 
-        // SAFETY: All offsets and sizes are strictly adhered to in the manual, and the base
-        // address is obtained from DRHD.
+        // SAFETY:
+        // - We trust the ACPI tables (as well as the DRHD in them), from which the base address is
+        //   obtained, so it is a valid IOMMU base address.
+        // - `io_mem_builder.remove()` guarantees that we have exclusive ownership of all the IOMMU
+        //   registers.
         let iommu_regs = unsafe {
             fault::init(base);
 

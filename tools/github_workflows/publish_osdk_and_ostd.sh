@@ -50,17 +50,6 @@ do_publish_for() {
     RF="$RUSTFLAGS --check-cfg cfg(ktest)"
 
     if [ -n "$DRY_RUN" ]; then
-        # Temporarily change the crate version to the next patched version.
-        #
-        # `cargo publish --dry-run` requires that 
-        # the crate version is not already published on crates.io,
-        # otherwise, the check will fail.
-        # Therefore, we modify the crate version to ensure it is not published.
-        current_version=$(cat $ASTER_SRC_DIR/VERSION)
-        next_patched_version=$(echo "$current_version" | awk -F. '{printf "%d.%d.%d\n", $1, $2, $3 + 1}')
-        pattern="^version = \"[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\"$"
-        sed -i "0,/${pattern}/s/${pattern}/version = \"${next_patched_version}\"/1" Cargo.toml
-        
         # Perform checks
         RUSTFLAGS=$RF cargo publish --dry-run --allow-dirty $ADDITIONAL_ARGS
         RUSTFLAGS=$RF cargo doc $ADDITIONAL_ARGS
@@ -86,6 +75,7 @@ for TARGET in $TARGETS; do
     do_publish_for ostd/libs/ostd-test --target $TARGET
     do_publish_for ostd --target $TARGET
     do_publish_for osdk/deps/frame-allocator --target $TARGET
+    do_publish_for osdk/deps/heap-allocator --target $TARGET
     do_publish_for osdk/deps/test-kernel --target $TARGET
 
     # For actual publishing, we should only publish once. Using any target that

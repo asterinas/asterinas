@@ -30,19 +30,22 @@
 use acpi::madt::MadtEntry;
 
 use crate::{
-    arch::x86::kernel::{
-        acpi::get_acpi_tables,
-        apic::{
-            self, ApicId, DeliveryMode, DeliveryStatus, DestinationMode, DestinationShorthand, Icr,
-            Level, TriggerMode,
+    arch::{
+        if_tdx_enabled,
+        kernel::{
+            acpi::get_acpi_tables,
+            apic::{
+                self, Apic, ApicId, DeliveryMode, DeliveryStatus, DestinationMode,
+                DestinationShorthand, Icr, Level, TriggerMode,
+            },
         },
     },
     boot::{
         memory_region::{MemoryRegion, MemoryRegionType},
         smp::PerApRawInfo,
     },
-    if_tdx_enabled,
     mm::{Paddr, PAGE_SIZE},
+    task::disable_preempt,
 };
 
 /// Counts the number of processors.
@@ -111,7 +114,7 @@ pub(crate) fn count_processors() -> Option<u32> {
 /// 1. we're in the boot context of the BSP,
 /// 2. all APs have not yet been booted, and
 /// 3. the arguments are valid to boot APs.
-pub(crate) unsafe fn bringup_all_aps(info_ptr: *mut PerApRawInfo, pt_ptr: Paddr, num_cpus: u32) {
+pub(crate) unsafe fn bringup_all_aps(info_ptr: *const PerApRawInfo, pt_ptr: Paddr, num_cpus: u32) {
     // SAFETY: The code and data to boot AP is valid to write because
     // there are no readers and we are the only writer at this point.
     unsafe {
@@ -170,9 +173,9 @@ unsafe fn copy_ap_boot_code() {
 /// # Safety
 ///
 /// The caller must ensure the pointer to be filled is valid to write.
-unsafe fn fill_boot_info_ptr(info_ptr: *mut PerApRawInfo) {
+unsafe fn fill_boot_info_ptr(info_ptr: *const PerApRawInfo) {
     extern "C" {
-        static mut __ap_boot_info_array_pointer: *mut PerApRawInfo;
+        static mut __ap_boot_info_array_pointer: *const PerApRawInfo;
     }
 
     // SAFETY: The safety is upheld by the caller.
@@ -212,7 +215,7 @@ extern "C" {
 unsafe fn wake_up_aps_via_mailbox(num_cpus: u32) {
     use acpi::platform::wakeup_aps;
 
-    use crate::arch::x86::kernel::acpi::AcpiMemoryHandler;
+    use crate::arch::kernel::acpi::AcpiMemoryHandler;
 
     // The symbols are defined in `ap_boot.S`.
     extern "C" {
@@ -253,19 +256,22 @@ unsafe fn wake_up_aps_via_mailbox(num_cpus: u32) {
 ///    processors to boot successfully (e.g., each AP's page table
 ///    and stack).
 unsafe fn send_boot_ipis() {
+    let preempt_guard = disable_preempt();
+    let apic = apic::get_or_init(&preempt_guard as _);
+
     // SAFETY: We're sending IPIs to boot all application processors.
     // The safety is upheld by the caller.
     unsafe {
-        send_init_to_all_aps();
+        send_init_to_all_aps(apic);
         spin_wait_cycles(100_000_000);
 
-        send_init_deassert();
+        send_init_deassert(apic);
         spin_wait_cycles(20_000_000);
 
-        send_startup_to_all_aps();
+        send_startup_to_all_aps(apic);
         spin_wait_cycles(20_000_000);
 
-        send_startup_to_all_aps();
+        send_startup_to_all_aps(apic);
         spin_wait_cycles(20_000_000);
     }
 }
@@ -273,7 +279,7 @@ unsafe fn send_boot_ipis() {
 /// # Safety
 ///
 /// The caller should ensure it's valid to send STARTUP IPIs to all CPUs excluding self.
-unsafe fn send_startup_to_all_aps() {
+unsafe fn send_startup_to_all_aps(apic: &dyn Apic) {
     let icr = Icr::new(
         ApicId::from(0),
         DestinationShorthand::AllExcludingSelf,
@@ -285,13 +291,13 @@ unsafe fn send_startup_to_all_aps() {
         (AP_BOOT_START_PA / PAGE_SIZE) as u8,
     );
     // SAFETY: The safety is upheld by the caller.
-    apic::with_borrow(|apic| unsafe { apic.send_ipi(icr) });
+    unsafe { apic.send_ipi(icr) }
 }
 
 /// # Safety
 ///
 /// The caller should ensure it's valid to send INIT IPIs to all CPUs excluding self.
-unsafe fn send_init_to_all_aps() {
+unsafe fn send_init_to_all_aps(apic: &dyn Apic) {
     let icr = Icr::new(
         ApicId::from(0),
         DestinationShorthand::AllExcludingSelf,
@@ -303,13 +309,13 @@ unsafe fn send_init_to_all_aps() {
         0,
     );
     // SAFETY: The safety is upheld by the caller.
-    apic::with_borrow(|apic| unsafe { apic.send_ipi(icr) });
+    unsafe { apic.send_ipi(icr) };
 }
 
 /// # Safety
 ///
 /// The caller should ensure it's valid to deassert INIT IPIs for all CPUs excluding self.
-unsafe fn send_init_deassert() {
+unsafe fn send_init_deassert(apic: &dyn Apic) {
     let icr = Icr::new(
         ApicId::from(0),
         DestinationShorthand::AllIncludingSelf,
@@ -321,7 +327,7 @@ unsafe fn send_init_deassert() {
         0,
     );
     // SAFETY: The safety is upheld by the caller.
-    apic::with_borrow(|apic| unsafe { apic.send_ipi(icr) });
+    unsafe { apic.send_ipi(icr) };
 }
 
 /// Spin wait approximately `c` cycles.
@@ -337,13 +343,8 @@ fn spin_wait_cycles(c: u64) {
         }
     }
 
-    use core::arch::x86_64::_rdtsc;
-
-    // SAFETY: Reading CPU cycles is always safe.
-    let start = unsafe { _rdtsc() };
-
-    // SAFETY: Reading CPU cycles is always safe.
-    while duration(start, unsafe { _rdtsc() }) < c {
+    let start = crate::arch::read_tsc();
+    while duration(start, crate::arch::read_tsc()) < c {
         core::hint::spin_loop();
     }
 }

@@ -91,7 +91,7 @@ impl Heap {
                 let new_size = new_heap_end - self.base;
 
                 // Expand the heap.
-                root_vmar.resize_mapping(self.base, old_size, new_size)?;
+                root_vmar.resize_mapping(self.base, old_size, new_size, false)?;
 
                 self.current_heap_end.store(new_heap_end, Ordering::Release);
                 Ok(new_heap_end)

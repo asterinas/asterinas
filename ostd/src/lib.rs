@@ -9,6 +9,7 @@
 #![feature(core_intrinsics)]
 #![feature(coroutines)]
 #![feature(fn_traits)]
+#![feature(iter_advance_by)]
 #![feature(iter_from_coroutine)]
 #![feature(let_chains)]
 #![feature(linkage)]
@@ -18,17 +19,21 @@
 #![feature(ptr_sub_ptr)]
 #![feature(sync_unsafe_cell)]
 #![feature(trait_upcasting)]
-#![feature(iter_advance_by)]
+#![feature(unbounded_shifts)]
 #![expect(internal_features)]
 #![no_std]
 #![warn(missing_docs)]
 
 extern crate alloc;
 
+#[cfg(target_arch = "x86_64")]
+#[path = "arch/x86/mod.rs"]
+pub mod arch;
+#[cfg(target_arch = "riscv64")]
+#[path = "arch/riscv/mod.rs"]
 pub mod arch;
 pub mod boot;
 pub mod bus;
-pub mod collections;
 pub mod console;
 pub mod cpu;
 mod error;
@@ -43,7 +48,7 @@ pub mod task;
 pub mod timer;
 pub mod trap;
 pub mod user;
-pub(crate) mod util;
+pub mod util;
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -73,14 +78,15 @@ unsafe fn init() {
 
     // SAFETY: This function is called only once, before `allocator::init`
     // and after memory regions are initialized.
-    unsafe {
-        mm::frame::allocator::init_early_allocator();
-    }
+    unsafe { mm::frame::allocator::init_early_allocator() };
 
-    if_tdx_enabled!({
+    #[cfg(target_arch = "x86_64")]
+    arch::if_tdx_enabled!({
     } else {
         arch::serial::init();
     });
+    #[cfg(not(target_arch = "x86_64"))]
+    arch::serial::init();
 
     logger::init();
 
@@ -99,7 +105,7 @@ unsafe fn init() {
 
     mm::kspace::init_kernel_page_table(meta_pages);
 
-    crate::sync::init();
+    sync::init();
 
     boot::init_after_heap();
 
@@ -107,10 +113,10 @@ unsafe fn init() {
 
     unsafe { arch::late_init_on_bsp() };
 
-    if_tdx_enabled!({
+    #[cfg(target_arch = "x86_64")]
+    arch::if_tdx_enabled!({
         arch::serial::init();
     });
-    arch::serial::callback_init();
 
     smp::init();
 

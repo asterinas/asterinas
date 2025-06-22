@@ -5,8 +5,8 @@ use core::{num::NonZeroU8, time::Duration};
 use crate::{
     current_userspace,
     net::socket::{
-        ip::{options::IpTtl, stream::CongestionControl},
-        LingerOption,
+        ip::{options::IpTtl, stream_options::CongestionControl},
+        util::LingerOption,
     },
     prelude::*,
 };

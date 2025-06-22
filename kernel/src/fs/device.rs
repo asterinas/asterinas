@@ -50,9 +50,9 @@ impl DeviceId {
         let major = major as u64;
         let minor = minor as u64;
         Self(
-            (major & 0xffff_f000) << 32
-                | (major & 0x0000_0fff) << 8
-                | (minor & 0xffff_ff00) << 12
+            ((major & 0xffff_f000) << 32)
+                | ((major & 0x0000_0fff) << 8)
+                | ((minor & 0xffff_ff00) << 12)
                 | (minor & 0x0000_00ff),
         )
     }

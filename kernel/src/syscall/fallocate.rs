@@ -24,7 +24,7 @@ pub fn sys_fallocate(
 
     check_offset_and_len(offset, len, ctx)?;
 
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
 
     let falloc_mode = FallocMode::try_from(

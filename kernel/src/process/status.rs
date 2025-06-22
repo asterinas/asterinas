@@ -4,7 +4,10 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
+use ostd::sync::SpinLock;
+
 use super::ExitCode;
+use crate::process::{signal::sig_num::SigNum, WaitOptions};
 
 /// The status of a process.
 ///
@@ -12,12 +15,14 @@ use super::ExitCode;
 /// 1. Whether the process is a zombie (i.e., all its threads have exited);
 /// 2. Whether the process is the vfork child, which shares the user-space virtual memory
 ///    with its parent process;
-/// 3. The exit code of the process.
+/// 3. The exit code of the process;
+/// 4. Whether the process is stopped (by a signal or ptrace).
 #[derive(Debug)]
 pub struct ProcessStatus {
     is_zombie: AtomicBool,
     is_vfork_child: AtomicBool,
     exit_code: AtomicU32,
+    stop_status: StopStatus,
 }
 
 impl Default for ProcessStatus {
@@ -26,6 +31,7 @@ impl Default for ProcessStatus {
             is_zombie: AtomicBool::new(false),
             is_vfork_child: AtomicBool::new(false),
             exit_code: AtomicU32::new(0),
+            stop_status: StopStatus::new(),
         }
     }
 }
@@ -70,4 +76,97 @@ impl ProcessStatus {
     pub(super) fn set_exit_code(&self, exit_code: ExitCode) {
         self.exit_code.store(exit_code, Ordering::Relaxed);
     }
+}
+
+impl ProcessStatus {
+    pub(super) fn stop_status(&self) -> &StopStatus {
+        &self.stop_status
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct StopStatus {
+    /// Indicates whether the process is stopped.
+    is_stopped: AtomicBool,
+
+    /// Indicates whether the process's status has changed and has not yet been waited on.
+    ///
+    /// User programs may use the wait* syscalls to check for changes in
+    /// the process's status. This field will be set to `Some(_)` once the
+    /// process's status changes and will be set to `None` if the process
+    /// has already been waited on.
+    wait_status: SpinLock<Option<StopWaitStatus>>,
+}
+
+impl StopStatus {
+    pub(self) const fn new() -> Self {
+        Self {
+            is_stopped: AtomicBool::new(false),
+            wait_status: SpinLock::new(None),
+        }
+    }
+
+    /// Stops the process by some signal.
+    ///
+    /// The return value indicates whether the stop status has changed.
+    pub(super) fn stop(&self, signum: SigNum) -> bool {
+        // Hold the lock first to avoid race conditions
+        let mut wait_status = self.wait_status.lock();
+
+        if self.is_stopped.load(Ordering::Relaxed) {
+            false
+        } else {
+            self.is_stopped.store(true, Ordering::Relaxed);
+            *wait_status = Some(StopWaitStatus::Stopped(signum));
+            true
+        }
+    }
+
+    /// Resumes the process.
+    ///
+    /// The return value indicates whether the stop status has changed.
+    pub(super) fn resume(&self) -> bool {
+        // Hold the lock first to avoid race conditions
+        let mut wait_status = self.wait_status.lock();
+
+        if self.is_stopped.load(Ordering::Relaxed) {
+            self.is_stopped.store(false, Ordering::Relaxed);
+            *wait_status = Some(StopWaitStatus::Continue);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Returns whether the process is stopped.
+    pub(super) fn is_stopped(&self) -> bool {
+        self.is_stopped.load(Ordering::Relaxed)
+    }
+
+    /// Gets and clears the stop status changes for the `wait` syscall.
+    pub(super) fn wait(&self, options: WaitOptions) -> Option<StopWaitStatus> {
+        let mut wait_status = self.wait_status.lock();
+
+        if options.contains(WaitOptions::WSTOPPED) {
+            if let Some(StopWaitStatus::Stopped(_)) = wait_status.as_ref() {
+                return wait_status.take();
+            }
+        }
+
+        if options.contains(WaitOptions::WCONTINUED) {
+            if let Some(StopWaitStatus::Continue) = wait_status.as_ref() {
+                return wait_status.take();
+            }
+        }
+
+        None
+    }
+}
+
+#[derive(Debug)]
+pub(super) enum StopWaitStatus {
+    // FIXME: A process can also be stopped by ptrace.
+    // Extend this enum to support ptrace.
+    Stopped(SigNum),
+    Continue,
 }

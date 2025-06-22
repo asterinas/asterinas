@@ -27,6 +27,7 @@ pub fn kill(pid: Pid, signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
         };
 
         if !ctx.posix_thread.has_signal_blocked(signal.num()) {
+            // Killing the current thread does not raise any permission issues.
             ctx.posix_thread.enqueue_signal(Box::new(signal));
             return Ok(());
         }
@@ -54,8 +55,8 @@ pub fn kill_group(pgid: Pgid, signal: Option<UserSignal>, ctx: &Context) -> Resu
     let process_group = process_table::get_process_group(&pgid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "target group does not exist"))?;
 
-    let inner = process_group.inner.lock();
-    for process in inner.processes.values() {
+    let inner = process_group.lock();
+    for process in inner.iter() {
         kill_process(process, signal, ctx)?;
     }
 
@@ -92,6 +93,8 @@ pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<UserSignal>, ctx: &Context) ->
     posix_thread.check_signal_perm(signum.as_ref(), &sender)?;
 
     if let Some(signal) = signal {
+        // We've checked the permission issues above.
+        // FIXME: We should take some lock while checking the permission to avoid race conditions.
         posix_thread.enqueue_signal(Box::new(signal));
     }
 
@@ -117,6 +120,7 @@ pub fn kill_all(signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
 }
 
 fn kill_process(process: &Process, signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
+    let sig_dispositions = process.sig_dispositions().lock();
     let tasks = process.tasks().lock();
 
     let signum = signal.map(|signal| signal.num());
@@ -132,16 +136,16 @@ fn kill_process(process: &Process, signal: Option<UserSignal>, ctx: &Context) ->
             .is_ok()
         {
             let Some(ref signum) = signum else {
-                // If signal is None, only permission check is required
+                // If `signal` is `None`, only permission check is required.
                 return Ok(());
             };
 
             if !posix_thread.has_signal_blocked(*signum) {
-                // Send signal to any thread that does not blocks the signal.
-                let signal = signal.unwrap();
-                posix_thread.enqueue_signal(Box::new(signal));
-                return Ok(());
+                // Send the signal to any thread that does not block the signal.
+                permitted_thread = Some(posix_thread);
+                break;
             } else if permitted_thread.is_none() {
+                // If all threads block the signal, send the signal to the first permitted thread.
                 permitted_thread = Some(posix_thread);
             }
         }
@@ -151,11 +155,16 @@ fn kill_process(process: &Process, signal: Option<UserSignal>, ctx: &Context) ->
         return_errno_with_message!(Errno::EPERM, "cannot send signal to the target process");
     };
 
-    // If signal is None, only permission check is required
-    let Some(signal) = signal else { return Ok(()) };
+    // Since `permitted_thread` has been set, `signal` cannot be `None`.
+    let signal = signal.unwrap();
 
-    // If all threads block the signal, send signal to the first thread.
-    permitted_thread.enqueue_signal(Box::new(signal));
+    // Drop the signal if it's ignored. See explanation at `enqueue_signal_locked`.
+    let signum = signal.num();
+    if sig_dispositions.get(signum).will_ignore(signum) {
+        return Ok(());
+    }
+
+    permitted_thread.enqueue_signal_locked(Box::new(signal), sig_dispositions);
 
     Ok(())
 }
@@ -166,7 +175,7 @@ fn current_thread_sender_ids(signum: Option<&SigNum>, ctx: &Context) -> SignalSe
     let euid = credentials.euid();
     let sid = signum.and_then(|signum| {
         if *signum == SIGCONT {
-            Some(ctx.process.session().unwrap().sid())
+            Some(ctx.process.sid())
         } else {
             None
         }

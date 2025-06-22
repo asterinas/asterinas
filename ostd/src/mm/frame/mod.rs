@@ -38,6 +38,9 @@ pub mod segment;
 pub mod unique;
 pub mod untyped;
 
+mod frame_ref;
+pub use frame_ref::FrameRef;
+
 #[cfg(ktest)]
 mod test;
 
@@ -56,6 +59,13 @@ use super::{PagingLevel, PAGE_SIZE};
 use crate::mm::{Paddr, PagingConsts, Vaddr};
 
 static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
+
+/// Returns the maximum physical address that is tracked by frame metadata.
+pub(in crate::mm) fn max_paddr() -> Paddr {
+    let max_paddr = MAX_PADDR.load(Ordering::Relaxed) as Paddr;
+    debug_assert_ne!(max_paddr, 0);
+    max_paddr
+}
 
 /// A smart pointer to a frame.
 ///
@@ -80,6 +90,13 @@ impl<M: AnyFrameMeta + ?Sized> core::fmt::Debug for Frame<M> {
         write!(f, "Frame({:#x})", self.start_paddr())
     }
 }
+
+impl<M: AnyFrameMeta + ?Sized> PartialEq for Frame<M> {
+    fn eq(&self, other: &Self) -> bool {
+        self.start_paddr() == other.start_paddr()
+    }
+}
+impl<M: AnyFrameMeta + ?Sized> Eq for Frame<M> {}
 
 impl<M: AnyFrameMeta> Frame<M> {
     /// Gets a [`Frame`] with a specific usage from a raw, unused page.
@@ -123,14 +140,14 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
         self.slot().frame_paddr()
     }
 
-    /// Gets the paging level of this page.
+    /// Gets the map level of this page.
     ///
     /// This is the level of the page table entry that maps the frame,
     /// which determines the size of the frame.
     ///
     /// Currently, the level is always 1, which means the frame is a regular
     /// page frame.
-    pub const fn level(&self) -> PagingLevel {
+    pub const fn map_level(&self) -> PagingLevel {
         1
     }
 
@@ -164,6 +181,12 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
         refcnt
     }
 
+    /// Borrows a reference from the given frame.
+    pub fn borrow(&self) -> FrameRef<'_, M> {
+        // SAFETY: Both the lifetime and the type matches `self`.
+        unsafe { FrameRef::borrow_paddr(self.start_paddr()) }
+    }
+
     /// Forgets the handle to the frame.
     ///
     /// This will result in the frame being leaked without calling the custom dropper.
@@ -189,6 +212,8 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     /// Also, the caller ensures that the usage of the frame is correct. There's
     /// no checking of the usage in this function.
     pub(in crate::mm) unsafe fn from_raw(paddr: Paddr) -> Self {
+        debug_assert!(paddr < max_paddr());
+
         let vaddr = mapping::frame_to_meta::<PagingConsts>(paddr);
         let ptr = vaddr as *const MetaSlot;
 
@@ -299,7 +324,7 @@ impl TryFrom<Frame<dyn AnyFrameMeta>> for UFrame {
 ///  2. The caller must have already held a reference to the frame.
 pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) {
     debug_assert!(paddr % PAGE_SIZE == 0);
-    debug_assert!(paddr < MAX_PADDR.load(Ordering::Relaxed) as Paddr);
+    debug_assert!(paddr < max_paddr());
 
     let vaddr: Vaddr = mapping::frame_to_meta::<PagingConsts>(paddr);
     // SAFETY: `vaddr` points to a valid `MetaSlot` that will never be mutably borrowed, so taking

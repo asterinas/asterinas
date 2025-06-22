@@ -1,19 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{
-    arch::x86_64::_rdtsc,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use log::info;
 
 use super::TIMER_FREQ;
 use crate::{
     arch::{
-        kernel::apic::{self, DivideConfig},
+        kernel::apic::{self, Apic, DivideConfig},
         timer::pit::OperatingMode,
         tsc_freq,
     },
+    task::disable_preempt,
     trap::{IrqLine, TrapFrame},
 };
 
@@ -45,7 +43,7 @@ pub(super) fn timer_callback() {
 
     match CONFIG.get().expect("ACPI timer config is not initialized") {
         Config::DeadlineMode { tsc_interval } => {
-            let tsc_value = unsafe { _rdtsc() };
+            let tsc_value = crate::arch::read_tsc();
             let next_tsc_value = tsc_interval + tsc_value;
             unsafe { wrmsr(IA32_TSC_DEADLINE, next_tsc_value) };
         }
@@ -63,31 +61,31 @@ fn is_tsc_deadline_mode_supported() -> bool {
 }
 
 fn init_timer(timer_irq: &IrqLine) {
+    let preempt_guard = disable_preempt();
+    let apic = apic::get_or_init(&preempt_guard as _);
+
     match CONFIG.get().expect("ACPI timer config is not initialized") {
         Config::DeadlineMode { .. } => {
-            init_deadline_mode(timer_irq);
+            init_deadline_mode(apic, timer_irq);
         }
         Config::PeriodicMode { init_count } => {
-            init_periodic_mode(timer_irq, *init_count);
+            init_periodic_mode(apic, timer_irq, *init_count);
         }
     }
 }
 
-fn init_deadline_mode(timer_irq: &IrqLine) {
-    // Enable tsc deadline mode
-    apic::with_borrow(|apic| {
-        apic.set_lvt_timer(timer_irq.num() as u64 | (1 << 18));
-    });
+fn init_deadline_mode(apic: &dyn Apic, timer_irq: &IrqLine) {
+    // Enable TSC deadline mode
+    apic.set_lvt_timer(timer_irq.num() as u64 | (1 << 18));
 
     timer_callback();
 }
 
-fn init_periodic_mode(timer_irq: &IrqLine, init_count: u64) {
-    apic::with_borrow(|apic| {
-        apic.set_timer_init_count(init_count);
-        apic.set_lvt_timer(timer_irq.num() as u64 | (1 << 17));
-        apic.set_timer_div_config(DivideConfig::Divide64);
-    });
+fn init_periodic_mode(apic: &dyn Apic, timer_irq: &IrqLine, init_count: u64) {
+    // Enable periodic mode
+    apic.set_timer_init_count(init_count);
+    apic.set_lvt_timer(timer_irq.num() as u64 | (1 << 17));
+    apic.set_timer_div_config(DivideConfig::Divide64);
 }
 
 static CONFIG: spin::Once<Config> = spin::Once::new();
@@ -113,19 +111,22 @@ fn init_periodic_mode_config() {
 
     // Enable PIT
     super::pit::init(OperatingMode::RateGenerator);
-    super::pit::enable_ioapic_line(irq.clone());
+    let irq = super::pit::enable_interrupt(irq);
 
     // Set APIC timer count
-    apic::with_borrow(|apic| {
-        apic.set_timer_div_config(DivideConfig::Divide64);
-        apic.set_timer_init_count(0xFFFF_FFFF);
-    });
+    let preempt_guard = disable_preempt();
+    let apic = apic::get_or_init(&preempt_guard as _);
+    apic.set_timer_div_config(DivideConfig::Divide64);
+    apic.set_timer_init_count(0xFFFF_FFFF);
 
+    // Wait until `CONFIG` is ready
     x86_64::instructions::interrupts::enable();
     while !CONFIG.is_completed() {
         x86_64::instructions::hlt();
     }
     x86_64::instructions::interrupts::disable();
+
+    // Disable PIT
     drop(irq);
 
     fn pit_callback(_trap_frame: &TrapFrame) {
@@ -136,28 +137,30 @@ fn init_periodic_mode_config() {
         // This is set to 1/10th of the TIMER_FREQ to ensure enough samples for accurate calculation.
         const CALLBACK_TIMES: u64 = TIMER_FREQ / 10;
 
+        let preempt_guard = disable_preempt();
+        let apic = apic::get_or_init(&preempt_guard as _);
+
+        let apic_current_count = 0xFFFF_FFFF - apic.timer_current_count();
+
         if IN_TIME.load(Ordering::Relaxed) < CALLBACK_TIMES || CONFIG.is_completed() {
             if IN_TIME.load(Ordering::Relaxed) == 0 {
-                let remain_ticks = apic::with_borrow(|apic| apic.timer_current_count());
-                APIC_FIRST_COUNT.store(0xFFFF_FFFF - remain_ticks, Ordering::Relaxed);
+                APIC_FIRST_COUNT.store(apic_current_count, Ordering::Relaxed);
             }
             IN_TIME.fetch_add(1, Ordering::Relaxed);
             return;
         }
 
-        // Stop PIT and APIC Timer
-        super::pit::disable_ioapic_line();
-        let remain_ticks = apic::with_borrow(|apic| {
-            let remain_ticks = apic.timer_current_count();
-            apic.set_timer_init_count(0);
-            remain_ticks
-        });
-        let ticks = (0xFFFF_FFFF - remain_ticks - APIC_FIRST_COUNT.load(Ordering::Relaxed))
-            / CALLBACK_TIMES;
+        // Stop APIC Timer
+        apic.set_timer_init_count(0);
+
+        let apic_first_count = APIC_FIRST_COUNT.load(Ordering::Relaxed);
+        let apic_init_count = (apic_current_count - apic_first_count) / CALLBACK_TIMES;
         info!(
-            "APIC Timer ticks count:{:x}, remain ticks: {:x},Timer Freq:{} Hz",
-            ticks, remain_ticks, TIMER_FREQ
+            "APIC timer: first {:#x}, current {:#x}, init {:#x}",
+            apic_first_count, apic_current_count, apic_init_count,
         );
-        CONFIG.call_once(|| Config::PeriodicMode { init_count: ticks });
+        CONFIG.call_once(|| Config::PeriodicMode {
+            init_count: apic_init_count,
+        });
     }
 }

@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use self::options::SocketOption;
-pub use self::util::{
-    options::LingerOption, send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd,
-    socket_addr::SocketAddr, MessageHeader,
-};
+use options::SocketOption;
+use util::{MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr};
+
 use crate::{
     fs::{
         file_handle::FileLike,
@@ -15,9 +13,10 @@ use crate::{
 };
 
 pub mod ip;
+pub mod netlink;
 pub mod options;
 pub mod unix;
-mod util;
+pub mod util;
 pub mod vsock;
 
 mod private {
@@ -126,6 +125,11 @@ pub trait Socket: private::SocketPrivate + Send + Sync {
 
 impl<T: Socket + 'static> FileLike for T {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+        if !writer.has_avail() {
+            // Linux always returns `Ok(0)` in this case, so we follow it.
+            return Ok(0);
+        }
+
         // TODO: Set correct flags
         self.recvmsg(writer, SendRecvFlags::empty())
             .map(|(len, _)| len)

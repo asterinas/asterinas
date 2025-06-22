@@ -8,8 +8,9 @@ use crate::{
     fs::file_handle::FileLike,
     net::socket::{
         private::SocketPrivate,
+        util::{MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr},
         vsock::{addr::VsockSocketAddr, VSOCK_GLOBAL},
-        MessageHeader, SendRecvFlags, SockShutdownCmd, Socket, SocketAddr,
+        Socket,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Poller},
@@ -28,12 +29,19 @@ pub enum Status {
 }
 
 impl VsockStreamSocket {
-    pub fn new(nonblocking: bool) -> Self {
+    pub fn new(nonblocking: bool) -> Result<Self> {
+        if VSOCK_GLOBAL.get().is_none() {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "cannot create vsock socket since no vsock device is found"
+            );
+        }
+
         let init = Arc::new(Init::new());
-        Self {
+        Ok(Self {
             status: RwLock::new(Status::Init(init)),
             is_nonblocking: AtomicBool::new(nonblocking),
-        }
+        })
     }
 
     pub(super) fn new_from_connected(connected: Arc<Connected>) -> Self {

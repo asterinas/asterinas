@@ -1,24 +1,29 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#define _GNU_SOURCE
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
+#include "../network/test.h"
+
 #include <sys/syscall.h>
+#include <unistd.h>
 
-int main()
+FN_TEST(getcpu)
 {
-	unsigned int cpu, node;
+	struct int_pair {
+		unsigned int first;
+		unsigned int second;
+	};
 
-	// Directly test the getcpu syscall because glibc's getcpu() may not
-	// use the getcpu syscall to retrieve CPU info
-	long ret = syscall(SYS_getcpu, &cpu, &node, NULL);
-	if (ret != 0) {
-		perror("syscall getcpu");
-		exit(EXIT_FAILURE);
-	}
+	struct int_pair cpu = { .first = 0xdeadbeef, .second = 0xbeefdead };
+	struct int_pair node = { .first = 0xbeefdead, .second = 0xdeadbeef };
 
-	printf("getcpu syscall: cpu = %u, node = %u\n", cpu, node);
+	// Use `syscall()` here because `getcpu()` from glibc may not use
+	// the system call to retrieve CPU information.
+	TEST_SUCC(syscall(SYS_getcpu, NULL, NULL));
 
-	return 0;
+	// Our CI has a maximum of 4 CPUs, and NUMA support is not yet
+	// available. Update these conditions if we have more than 4 CPUs
+	// or if NUMA support is added.
+	TEST_RES(syscall(SYS_getcpu, &cpu, &node),
+		 cpu.first < 4 && cpu.second == 0xbeefdead && node.first == 0 &&
+			 node.second == 0xdeadbeef);
 }
+END_TEST()

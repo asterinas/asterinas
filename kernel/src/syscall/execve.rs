@@ -62,7 +62,7 @@ fn lookup_executable_file(
     ctx: &Context,
 ) -> Result<Dentry> {
     let dentry = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {
-        let mut file_table = ctx.thread_local.file_table().borrow_mut();
+        let mut file_table = ctx.thread_local.borrow_file_table_mut();
         let file = get_file_fast!(&mut file_table, dfd);
         file.as_inode_or_err()?.dentry().clone()
     } else {
@@ -111,8 +111,8 @@ fn do_execve(
     // Ensure that the file descriptors with the close-on-exec flag are closed.
     // FIXME: This is just wrong if the file table is shared with other processes.
     let closed_files = thread_local
-        .file_table()
-        .borrow()
+        .borrow_file_table()
+        .unwrap()
         .write()
         .close_files_on_exec();
     drop(closed_files);
@@ -122,23 +122,17 @@ fn do_execve(
     let program_to_load =
         ProgramToLoad::build_from_file(elf_file.clone(), fs_resolver, argv, envp, 1)?;
 
-    let process_vm = process.vm();
-    if process.status().is_vfork_child() {
-        renew_vm_and_map(ctx);
+    renew_vm_and_map(ctx);
 
+    if process.status().is_vfork_child() {
         // Resumes the parent process.
         process.status().set_vfork_child(false);
         let parent = process.parent().lock().process().upgrade().unwrap();
         parent.children_wait_queue().wake_all();
-    } else {
-        // FIXME: Currently, the efficiency of replacing the VMAR is lower than that
-        // of directly clearing the VMAR. Therefore, if not in vfork case we will only
-        // clear the VMAR.
-        process_vm.clear_and_map();
     }
 
     let (new_executable_path, elf_load_info) =
-        program_to_load.load_to_vm(process_vm, fs_resolver)?;
+        program_to_load.load_to_vm(process.vm(), fs_resolver)?;
 
     // After the program has been successfully loaded, the virtual memory of the current process
     // is initialized. Hence, it is necessary to clear the previously recorded robust list.

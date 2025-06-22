@@ -2,7 +2,7 @@
 
 use crate::syscall::{
     accept::{sys_accept, sys_accept4},
-    access::sys_faccessat,
+    access::{sys_faccessat, sys_faccessat2},
     bind::sys_bind,
     brk::sys_brk,
     capget::sys_capget,
@@ -13,10 +13,10 @@ use crate::syscall::{
     chroot::sys_chroot,
     clock_gettime::sys_clock_gettime,
     clone::{sys_clone, sys_clone3},
-    close::sys_close,
+    close::{sys_close, sys_close_range},
     connect::sys_connect,
     dup::{sys_dup, sys_dup3},
-    epoll::{sys_epoll_create1, sys_epoll_ctl, sys_epoll_pwait},
+    epoll::{sys_epoll_create1, sys_epoll_ctl, sys_epoll_pwait, sys_epoll_pwait2},
     eventfd::sys_eventfd2,
     execve::{sys_execve, sys_execveat},
     exit::sys_exit,
@@ -60,6 +60,7 @@ use crate::syscall::{
     mmap::sys_mmap,
     mount::sys_mount,
     mprotect::sys_mprotect,
+    mremap::sys_mremap,
     msync::sys_msync,
     munmap::sys_munmap,
     nanosleep::{sys_clock_nanosleep, sys_nanosleep},
@@ -120,11 +121,15 @@ use crate::syscall::{
     socketpair::sys_socketpair,
     stat::{sys_fstat, sys_fstatat},
     statfs::{sys_fstatfs, sys_statfs},
+    statx::sys_statx,
     symlink::sys_symlinkat,
     sync::sys_sync,
     tgkill::sys_tgkill,
     timer_create::{sys_timer_create, sys_timer_delete},
     timer_settime::{sys_timer_gettime, sys_timer_settime},
+    timerfd_create::sys_timerfd_create,
+    timerfd_gettime::sys_timerfd_gettime,
+    timerfd_settime::sys_timerfd_settime,
     truncate::{sys_ftruncate, sys_truncate},
     umask::sys_umask,
     umount::sys_umount,
@@ -190,6 +195,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SYNC = 81                => sys_sync(args[..0]);
     SYS_FSYNC = 82               => sys_fsync(args[..1]);
     SYS_FDATASYNC = 83           => sys_fdatasync(args[..1]);
+    SYS_TIMERFD_CREATE = 85        => sys_timerfd_create(args[..2]);
     SYS_CAPGET = 90              => sys_capget(args[..2]);
     SYS_CAPSET = 91              => sys_capset(args[..2]);
     SYS_EXIT = 93                => sys_exit(args[..1]);
@@ -272,6 +278,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_RECVMSG = 212            => sys_recvmsg(args[..3]);
     SYS_BRK = 214                => sys_brk(args[..1]);
     SYS_MUNMAP = 215             => sys_munmap(args[..2]);
+    SYS_MREMAP = 216           => sys_mremap(args[..5]);
     SYS_CLONE = 220              => sys_clone(args[..5], &user_ctx);
     SYS_EXECVE = 221             => sys_execve(args[..3], &mut user_ctx);
     SYS_MMAP = 222               => sys_mmap(args[..6]);
@@ -287,12 +294,17 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_EXECVEAT = 281           => sys_execveat(args[..5], &mut user_ctx);
     SYS_PREADV2 = 286            => sys_preadv2(args[..5]);
     SYS_PWRITEV2 = 287           => sys_pwritev2(args[..5]);
-    SYS_PRLIMIT64 = 302          => sys_prlimit64(args[..4]);
+    SYS_STATX = 291              => sys_statx(args[..5]);
     SYS_CLOCK_GETTIME = 403      => sys_clock_gettime(args[..2]);
     SYS_CLOCK_NANOSLEEP = 407    => sys_clock_nanosleep(args[..4]);
     SYS_TIMER_GETTIME = 408      => sys_timer_gettime(args[..2]);
     SYS_TIMER_SETTIME = 409      => sys_timer_settime(args[..4]);
+    SYS_TIMERFD_GETTIME = 410    => sys_timerfd_gettime(args[..2]);
+    SYS_TIMERFD_SETTIME = 411    => sys_timerfd_settime(args[..4]);
     SYS_UTIMENSAT = 412          => sys_utimensat(args[..4]);
     SYS_SEMTIMEDOP = 420         => sys_semtimedop(args[..4]);
     SYS_CLONE3 = 435             => sys_clone3(args[..2], &user_ctx);
+    SYS_CLOSE_RANGE = 436      => sys_close_range(args[..3]);
+    SYS_FACCESSAT2 = 439         => sys_faccessat2(args[..4]);
+    SYS_EPOLL_PWAIT2 = 441       => sys_epoll_pwait2(args[..5]);
 }

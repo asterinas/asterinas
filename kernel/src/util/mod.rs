@@ -2,6 +2,7 @@
 
 mod iovec;
 pub mod net;
+pub mod per_cpu_counter;
 pub mod random;
 pub mod ring_buffer;
 

@@ -7,16 +7,23 @@ use core::{
 };
 
 use align_ext::AlignExt;
-use ostd::mm::{
-    tlb::TlbFlushOp, vm_space::VmItem, CachePolicy, FrameAllocOptions, PageFlags, PageProperty,
-    UFrame, VmSpace,
+use ostd::{
+    mm::{
+        tlb::TlbFlushOp, CachePolicy, FrameAllocOptions, PageFlags, PageProperty, UFrame, VmSpace,
+    },
+    task::disable_preempt,
 };
 
-use super::interval_set::Interval;
+use super::{interval_set::Interval, RssDelta, RssType};
 use crate::{
+    fs::utils::Inode,
     prelude::*,
     thread::exception::PageFaultInfo,
-    vm::{perms::VmPerms, util::duplicate_frame, vmo::Vmo},
+    vm::{
+        perms::VmPerms,
+        util::duplicate_frame,
+        vmo::{CommitFlags, Vmo, VmoCommitError},
+    },
 };
 
 /// Mapping a range of physical pages into a `Vmar`.
@@ -36,7 +43,7 @@ use crate::{
 /// This type controls the actual mapping in the [`VmSpace`]. It is a linear
 /// type and cannot be [`Drop`]. To remove a mapping, use [`Self::unmap`].
 #[derive(Debug)]
-pub(super) struct VmMapping {
+pub struct VmMapping {
     /// The size of mapping, in bytes. The map size can even be larger than the
     /// size of VMO. Those pages outside VMO range cannot be read or write.
     ///
@@ -50,6 +57,11 @@ pub(super) struct VmMapping {
     /// The start of the virtual address maps to the start of the range
     /// specified in [`MappedVmo`].
     vmo: Option<MappedVmo>,
+    /// The inode of the file that backs the mapping.
+    ///
+    /// If the inode is `Some`, it means that the mapping is file-backed.
+    /// And the `vmo` field must be the page cache of the inode.
+    inode: Option<Arc<dyn Inode>>,
     /// Whether the mapping is shared.
     ///
     /// The updates to a shared mapping are visible among processes, or carried
@@ -77,6 +89,7 @@ impl VmMapping {
         map_size: NonZeroUsize,
         map_to_addr: Vaddr,
         vmo: Option<MappedVmo>,
+        inode: Option<Arc<dyn Inode>>,
         is_shared: bool,
         handle_page_faults_around: bool,
         perms: VmPerms,
@@ -85,6 +98,7 @@ impl VmMapping {
             map_size,
             map_to_addr,
             vmo,
+            inode,
             is_shared,
             handle_page_faults_around,
             perms,
@@ -94,8 +108,15 @@ impl VmMapping {
     pub(super) fn new_fork(&self) -> Result<VmMapping> {
         Ok(VmMapping {
             vmo: self.vmo.as_ref().map(|vmo| vmo.dup()).transpose()?,
+            inode: self.inode.clone(),
             ..*self
         })
+    }
+
+    pub(super) fn clone_for_remap_at(&self, va: Vaddr) -> Result<VmMapping> {
+        let mut vm_mapping = self.new_fork()?;
+        vm_mapping.map_to_addr = va;
+        Ok(vm_mapping)
     }
 
     /// Returns the mapping's start address.
@@ -113,19 +134,35 @@ impl VmMapping {
         self.map_size.get()
     }
 
-    // Returns the permissions of pages in the mapping.
+    /// Returns the permissions of pages in the mapping.
     pub fn perms(&self) -> VmPerms {
         self.perms
+    }
+
+    /// Returns the inode of the file that backs the mapping.
+    pub fn inode(&self) -> Option<&Arc<dyn Inode>> {
+        self.inode.as_ref()
+    }
+
+    /// Returns the mapping's RSS type.
+    pub fn rss_type(&self) -> RssType {
+        if self.vmo.is_none() {
+            RssType::RSS_ANONPAGES
+        } else {
+            RssType::RSS_FILEPAGES
+        }
     }
 }
 
 /****************************** Page faults **********************************/
 
 impl VmMapping {
-    pub fn handle_page_fault(
+    /// Handles a page fault.
+    pub(super) fn handle_page_fault(
         &self,
         vm_space: &VmSpace,
         page_fault_info: &PageFaultInfo,
+        rss_delta: &mut RssDelta,
     ) -> Result<()> {
         if !self.perms.contains(page_fault_info.required_perms) {
             trace!(
@@ -143,99 +180,128 @@ impl VmMapping {
         let is_write = page_fault_info.required_perms.contains(VmPerms::WRITE);
 
         if !is_write && self.vmo.is_some() && self.handle_page_faults_around {
-            self.handle_page_faults_around(vm_space, address)?;
-            return Ok(());
+            let res = self.handle_page_faults_around(vm_space, address, rss_delta);
+
+            // Errors caused by the "around" pages should be ignored, so here we
+            // only return the error if the faulting page is still not mapped.
+            if res.is_err() {
+                let preempt_guard = disable_preempt();
+                let mut cursor = vm_space.cursor(
+                    &preempt_guard,
+                    &(page_aligned_addr..page_aligned_addr + PAGE_SIZE),
+                )?;
+                if let (_, Some((_, _))) = cursor.query().unwrap() {
+                    return Ok(());
+                }
+            }
+
+            return res;
         }
 
-        let mut cursor =
-            vm_space.cursor_mut(&(page_aligned_addr..page_aligned_addr + PAGE_SIZE))?;
+        'retry: loop {
+            let preempt_guard = disable_preempt();
+            let mut cursor = vm_space.cursor_mut(
+                &preempt_guard,
+                &(page_aligned_addr..page_aligned_addr + PAGE_SIZE),
+            )?;
 
-        match cursor.query().unwrap() {
-            VmItem::Mapped {
-                va,
-                frame,
-                mut prop,
-            } => {
-                if VmPerms::from(prop.flags).contains(page_fault_info.required_perms) {
-                    // The page fault is already handled maybe by other threads.
-                    // Just flush the TLB and return.
-                    TlbFlushOp::Address(va).perform_on_current();
-                    return Ok(());
-                }
-                assert!(is_write);
-                // Perform COW if it is a write access to a shared mapping.
-
-                // Skip if the page fault is already handled.
-                if prop.flags.contains(PageFlags::W) {
-                    return Ok(());
-                }
-
-                // If the forked child or parent immediately unmaps the page after
-                // the fork without accessing it, we are the only reference to the
-                // frame. We can directly map the frame as writable without
-                // copying. In this case, the reference count of the frame is 2 (
-                // one for the mapping and one for the frame handle itself).
-                let only_reference = frame.reference_count() == 2;
-
-                let new_flags = PageFlags::W | PageFlags::ACCESSED | PageFlags::DIRTY;
-
-                if self.is_shared || only_reference {
-                    cursor.protect_next(PAGE_SIZE, |p| p.flags |= new_flags);
-                    cursor.flusher().issue_tlb_flush(TlbFlushOp::Address(va));
-                    cursor.flusher().dispatch_tlb_flush();
-                } else {
-                    let new_frame = duplicate_frame(&frame)?;
-                    prop.flags |= new_flags;
-                    cursor.map(new_frame.into(), prop);
-                }
-                cursor.flusher().sync_tlb_flush();
-            }
-            VmItem::NotMapped { .. } => {
-                // Map a new frame to the page fault address.
-
-                let (frame, is_readonly) = self.prepare_page(address, is_write)?;
-
-                let vm_perms = {
-                    let mut perms = self.perms;
-                    if is_readonly {
-                        // COW pages are forced to be read-only.
-                        perms -= VmPerms::WRITE;
+            let (va, item) = cursor.query().unwrap();
+            match item {
+                Some((frame, mut prop)) => {
+                    if VmPerms::from(prop.flags).contains(page_fault_info.required_perms) {
+                        // The page fault is already handled maybe by other threads.
+                        // Just flush the TLB and return.
+                        TlbFlushOp::Range(va).perform_on_current();
+                        return Ok(());
                     }
-                    perms
-                };
+                    assert!(is_write);
+                    // Perform COW if it is a write access to a shared mapping.
 
-                let mut page_flags = vm_perms.into();
-                page_flags |= PageFlags::ACCESSED;
-                if is_write {
-                    page_flags |= PageFlags::DIRTY;
+                    // Skip if the page fault is already handled.
+                    if prop.flags.contains(PageFlags::W) {
+                        return Ok(());
+                    }
+
+                    // If the forked child or parent immediately unmaps the page after
+                    // the fork without accessing it, we are the only reference to the
+                    // frame. We can directly map the frame as writable without
+                    // copying. In this case, the reference count of the frame is 2 (
+                    // one for the mapping and one for the frame handle itself).
+                    let only_reference = frame.reference_count() == 2;
+
+                    let new_flags = PageFlags::W | PageFlags::ACCESSED | PageFlags::DIRTY;
+
+                    if self.is_shared || only_reference {
+                        cursor.protect_next(PAGE_SIZE, |p| p.flags |= new_flags);
+                        cursor.flusher().issue_tlb_flush(TlbFlushOp::Range(va));
+                        cursor.flusher().dispatch_tlb_flush();
+                    } else {
+                        let new_frame = duplicate_frame(&frame)?;
+                        prop.flags |= new_flags;
+                        cursor.map(new_frame.into(), prop);
+                        rss_delta.add(self.rss_type(), 1);
+                    }
+                    cursor.flusher().sync_tlb_flush();
                 }
-                let map_prop = PageProperty::new(page_flags, CachePolicy::Writeback);
+                None => {
+                    // Map a new frame to the page fault address.
+                    let (frame, is_readonly) = match self.prepare_page(address, is_write) {
+                        Ok((frame, is_readonly)) => (frame, is_readonly),
+                        Err(VmoCommitError::Err(e)) => return Err(e),
+                        Err(VmoCommitError::NeedIo(index)) => {
+                            drop(cursor);
+                            drop(preempt_guard);
+                            self.vmo
+                                .as_ref()
+                                .unwrap()
+                                .commit_on(index, CommitFlags::empty())?;
+                            continue 'retry;
+                        }
+                    };
 
-                cursor.map(frame, map_prop);
+                    let vm_perms = {
+                        let mut perms = self.perms;
+                        if is_readonly {
+                            // COW pages are forced to be read-only.
+                            perms -= VmPerms::WRITE;
+                        }
+                        perms
+                    };
+
+                    let mut page_flags = vm_perms.into();
+                    page_flags |= PageFlags::ACCESSED;
+                    if is_write {
+                        page_flags |= PageFlags::DIRTY;
+                    }
+                    let map_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
+
+                    cursor.map(frame, map_prop);
+                    rss_delta.add(self.rss_type(), 1);
+                }
             }
+            break 'retry;
         }
+
         Ok(())
     }
 
-    fn prepare_page(&self, page_fault_addr: Vaddr, write: bool) -> Result<(UFrame, bool)> {
+    fn prepare_page(
+        &self,
+        page_fault_addr: Vaddr,
+        write: bool,
+    ) -> core::result::Result<(UFrame, bool), VmoCommitError> {
         let mut is_readonly = false;
         let Some(vmo) = &self.vmo else {
             return Ok((FrameAllocOptions::new().alloc_frame()?.into(), is_readonly));
         };
 
         let page_offset = page_fault_addr.align_down(PAGE_SIZE) - self.map_to_addr;
-        let Ok(page) = vmo.get_committed_frame(page_offset) else {
-            if !self.is_shared {
-                // The page index is outside the VMO. This is only allowed in private mapping.
-                return Ok((FrameAllocOptions::new().alloc_frame()?.into(), is_readonly));
-            } else {
-                return_errno_with_message!(
-                    Errno::EFAULT,
-                    "could not find a corresponding physical page"
-                );
-            }
-        };
+        if !self.is_shared && page_offset >= vmo.size() {
+            // The page index is outside the VMO. This is only allowed in private mapping.
+            return Ok((FrameAllocOptions::new().alloc_frame()?.into(), is_readonly));
+        }
 
+        let page = vmo.get_committed_frame(page_offset)?;
         if !self.is_shared && write {
             // Write access to private VMO-backed mapping. Performs COW directly.
             Ok((duplicate_frame(&page)?.into(), is_readonly))
@@ -249,7 +315,13 @@ impl VmMapping {
         }
     }
 
-    fn handle_page_faults_around(&self, vm_space: &VmSpace, page_fault_addr: Vaddr) -> Result<()> {
+    /// Handles a page fault and maps additional surrounding pages.
+    fn handle_page_faults_around(
+        &self,
+        vm_space: &VmSpace,
+        page_fault_addr: Vaddr,
+        mut rss_delta: &mut RssDelta,
+    ) -> Result<()> {
         const SURROUNDING_PAGE_NUM: usize = 16;
         const SURROUNDING_PAGE_ADDR_MASK: usize = !(SURROUNDING_PAGE_NUM * PAGE_SIZE - 1);
 
@@ -257,37 +329,53 @@ impl VmMapping {
         let around_page_addr = page_fault_addr & SURROUNDING_PAGE_ADDR_MASK;
         let size = min(vmo.size(), self.map_size.get());
 
-        let start_addr = max(around_page_addr, self.map_to_addr);
+        let mut start_addr = max(around_page_addr, self.map_to_addr);
         let end_addr = min(
             start_addr + SURROUNDING_PAGE_NUM * PAGE_SIZE,
             self.map_to_addr + size,
         );
 
         let vm_perms = self.perms - VmPerms::WRITE;
-        let mut cursor = vm_space.cursor_mut(&(start_addr..end_addr))?;
-        let operate = move |commit_fn: &mut dyn FnMut() -> Result<UFrame>| {
-            if let VmItem::NotMapped { .. } = cursor.query().unwrap() {
-                // We regard all the surrounding pages as accessed, no matter
-                // if it is really so. Then the hardware won't bother to update
-                // the accessed bit of the page table on following accesses.
-                let page_flags = PageFlags::from(vm_perms) | PageFlags::ACCESSED;
-                let page_prop = PageProperty::new(page_flags, CachePolicy::Writeback);
-                let frame = commit_fn()?;
-                cursor.map(frame, page_prop);
-            } else {
-                let next_addr = cursor.virt_addr() + PAGE_SIZE;
-                if next_addr < end_addr {
-                    let _ = cursor.jump(next_addr);
+
+        'retry: loop {
+            let preempt_guard = disable_preempt();
+            let mut cursor = vm_space.cursor_mut(&preempt_guard, &(start_addr..end_addr))?;
+
+            let rss_delta_ref = &mut rss_delta;
+            let operate =
+                move |commit_fn: &mut dyn FnMut()
+                    -> core::result::Result<UFrame, VmoCommitError>| {
+                    if let (_, None) = cursor.query().unwrap() {
+                        // We regard all the surrounding pages as accessed, no matter
+                        // if it is really so. Then the hardware won't bother to update
+                        // the accessed bit of the page table on following accesses.
+                        let page_flags = PageFlags::from(vm_perms) | PageFlags::ACCESSED;
+                        let page_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
+                        let frame = commit_fn()?;
+                        cursor.map(frame, page_prop);
+                        rss_delta_ref.add(self.rss_type(), 1);
+                    } else {
+                        let next_addr = cursor.virt_addr() + PAGE_SIZE;
+                        if next_addr < end_addr {
+                            let _ = cursor.jump(next_addr);
+                        }
+                    }
+                    Ok(())
+                };
+
+            let start_offset = start_addr - self.map_to_addr;
+            let end_offset = end_addr - self.map_to_addr;
+            match vmo.try_operate_on_range(&(start_offset..end_offset), operate) {
+                Ok(_) => return Ok(()),
+                Err(VmoCommitError::NeedIo(index)) => {
+                    drop(preempt_guard);
+                    vmo.commit_on(index, CommitFlags::empty())?;
+                    start_addr = index * PAGE_SIZE + self.map_to_addr;
+                    continue 'retry;
                 }
+                Err(VmoCommitError::Err(e)) => return Err(e),
             }
-            Ok(())
-        };
-
-        let start_offset = start_addr - self.map_to_addr;
-        let end_offset = end_addr - self.map_to_addr;
-        vmo.operate_on_range(&(start_offset..end_offset), operate)?;
-
-        Ok(())
+        }
     }
 }
 
@@ -306,7 +394,7 @@ impl VmMapping {
     ///
     /// The address must be within the mapping and page-aligned. The address
     /// must not be either the start or the end of the mapping.
-    fn split(self, at: Vaddr) -> Result<(Self, Self)> {
+    pub fn split(self, at: Vaddr) -> Result<(Self, Self)> {
         debug_assert!(self.map_to_addr < at && at < self.map_end());
         debug_assert!(at % PAGE_SIZE == 0);
 
@@ -328,12 +416,14 @@ impl VmMapping {
             map_to_addr: self.map_to_addr,
             map_size: NonZeroUsize::new(left_size).unwrap(),
             vmo: l_vmo,
+            inode: self.inode.clone(),
             ..self
         };
         let right = Self {
             map_to_addr: at,
             map_size: NonZeroUsize::new(right_size).unwrap(),
             vmo: r_vmo,
+            inode: self.inode,
             ..self
         };
 
@@ -381,22 +471,25 @@ impl VmMapping {
 /************************** VM Space operations ******************************/
 
 impl VmMapping {
-    /// Unmaps the mapping from the VM space.
-    pub(super) fn unmap(self, vm_space: &VmSpace) -> Result<()> {
+    /// Unmaps the mapping from the VM space,
+    /// and returns the number of unmapped pages.
+    pub(super) fn unmap(self, vm_space: &VmSpace) -> Result<usize> {
+        let preempt_guard = disable_preempt();
         let range = self.range();
-        let mut cursor = vm_space.cursor_mut(&range)?;
-        cursor.unmap(range.len());
+        let mut cursor = vm_space.cursor_mut(&preempt_guard, &range)?;
+
+        let num_unmapped = cursor.unmap(range.len());
         cursor.flusher().dispatch_tlb_flush();
         cursor.flusher().sync_tlb_flush();
 
-        Ok(())
+        Ok(num_unmapped)
     }
 
     /// Change the perms of the mapping.
     pub(super) fn protect(self, vm_space: &VmSpace, perms: VmPerms) -> Self {
+        let preempt_guard = disable_preempt();
         let range = self.range();
-
-        let mut cursor = vm_space.cursor_mut(&range).unwrap();
+        let mut cursor = vm_space.cursor_mut(&preempt_guard, &range).unwrap();
 
         let op = |p: &mut PageProperty| p.flags = perms.into();
         while cursor.virt_addr() < range.end {
@@ -435,27 +528,48 @@ impl MappedVmo {
     /// Gets the committed frame at the input offset in the mapped VMO.
     ///
     /// If the VMO has not committed a frame at this index, it will commit
-    /// one first and return it.
-    fn get_committed_frame(&self, page_offset: usize) -> Result<UFrame> {
+    /// one first and return it. If the commit operation needs to perform I/O,
+    /// it will return a [`VmoCommitError::NeedIo`].
+    fn get_committed_frame(
+        &self,
+        page_offset: usize,
+    ) -> core::result::Result<UFrame, VmoCommitError> {
         debug_assert!(page_offset < self.range.len());
         debug_assert!(page_offset % PAGE_SIZE == 0);
-        self.vmo.commit_page(self.range.start + page_offset)
+        self.vmo.try_commit_page(self.range.start + page_offset)
+    }
+
+    /// Commits a page at a specific page index.
+    ///
+    /// This method may involve I/O operations if the VMO needs to fecth
+    /// a page from the underlying page cache.
+    pub fn commit_on(&self, page_idx: usize, commit_flags: CommitFlags) -> Result<UFrame> {
+        debug_assert!(page_idx * PAGE_SIZE < self.range.len());
+        self.vmo.commit_on(page_idx, commit_flags)
     }
 
     /// Traverses the indices within a specified range of a VMO sequentially.
     ///
     /// For each index position, you have the option to commit the page as well as
     /// perform other operations.
-    fn operate_on_range<F>(&self, range: &Range<usize>, operate: F) -> Result<()>
+    ///
+    /// Once a commit operation needs to perform I/O, it will return a [`VmoCommitError::NeedIo`].
+    fn try_operate_on_range<F>(
+        &self,
+        range: &Range<usize>,
+        operate: F,
+    ) -> core::result::Result<(), VmoCommitError>
     where
-        F: FnMut(&mut dyn FnMut() -> Result<UFrame>) -> Result<()>,
+        F: FnMut(
+            &mut dyn FnMut() -> core::result::Result<UFrame, VmoCommitError>,
+        ) -> core::result::Result<(), VmoCommitError>,
     {
         debug_assert!(range.start < self.range.len());
         debug_assert!(range.end <= self.range.len());
 
         let range = self.range.start + range.start..self.range.start + range.end;
 
-        self.vmo.operate_on_range(&range, operate)
+        self.vmo.try_operate_on_range(&range, operate)
     }
 
     /// Duplicates the capability.

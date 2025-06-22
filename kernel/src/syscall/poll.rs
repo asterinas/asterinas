@@ -10,10 +10,38 @@ use crate::{
         file_table::{FileDesc, FileTable},
     },
     prelude::*,
-    process::signal::Poller,
+    process::{signal::Poller, ResourceType},
 };
 
-pub fn sys_poll(fds: Vaddr, nfds: u64, timeout: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_poll(fds: Vaddr, nfds: u32, timeout: i32, ctx: &Context) -> Result<SyscallReturn> {
+    let timeout = if timeout >= 0 {
+        Some(Duration::from_millis(timeout as _))
+    } else {
+        None
+    };
+
+    do_sys_poll(fds, nfds, timeout, ctx)
+}
+
+pub fn do_sys_poll(
+    fds: Vaddr,
+    nfds: u32,
+    timeout: Option<Duration>,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
+    if nfds as u64
+        > ctx
+            .process
+            .resource_limits()
+            .get_rlimit(ResourceType::RLIMIT_NOFILE)
+            .get_cur()
+    {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "the `nfds` value exceeds the `RLIMIT_NOFILE` value"
+        )
+    }
+
     let user_space = ctx.user_space();
 
     let poll_fds = {
@@ -31,12 +59,6 @@ pub fn sys_poll(fds: Vaddr, nfds: u64, timeout: i32, ctx: &Context) -> Result<Sy
         }
 
         poll_fds
-    };
-
-    let timeout = if timeout >= 0 {
-        Some(Duration::from_millis(timeout as _))
-    } else {
-        None
     };
 
     debug!(
@@ -59,7 +81,8 @@ pub fn sys_poll(fds: Vaddr, nfds: u64, timeout: i32, ctx: &Context) -> Result<Sy
 }
 
 pub fn do_poll(poll_fds: &[PollFd], timeout: Option<&Duration>, ctx: &Context) -> Result<usize> {
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
+    let file_table = file_table.unwrap();
 
     let poll_files = if let Some(file_table_inner) = file_table.get() {
         PollFiles::new_borrowed(poll_fds, file_table_inner)

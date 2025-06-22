@@ -8,25 +8,24 @@ use crate::{
 
 pub fn sys_getpgid(pid: Pid, ctx: &Context) -> Result<SyscallReturn> {
     debug!("pid = {}", pid);
-    // type Pid = u32, pid would never less than 0.
-    // if pid < 0 {
-    //     return_errno_with_message!(Errno::EINVAL, "pid cannot be negative");
-    // }
 
-    // if pid is 0, should return the pgid of current process
+    // The documentation quoted below is from
+    // <https://www.man7.org/linux/man-pages/man2/getpgid.2.html>.
+
+    // "If `pid` is equal to 0, getpgid() shall return the process group ID of the calling
+    // process."
     if pid == 0 {
         return Ok(SyscallReturn::Return(ctx.process.pgid() as _));
     }
 
-    let process = process_table::get_process(pid)
-        .ok_or(Error::with_message(Errno::ESRCH, "process does not exist"))?;
+    let process = process_table::get_process(pid).ok_or(Error::with_message(
+        Errno::ESRCH,
+        "the process to get the PGID does not exist",
+    ))?;
 
-    if !Arc::ptr_eq(&ctx.process.session().unwrap(), &process.session().unwrap()) {
-        return_errno_with_message!(
-            Errno::EPERM,
-            "the process and current process does not belong to the same session"
-        );
-    }
+    // The man pages allow the implementation to return `EPERM` if `process` is in a different
+    // session than the current process. Linux does not perform this check by default, but some
+    // strict security policies (e.g. SELinux) may do so.
 
     Ok(SyscallReturn::Return(process.pgid() as _))
 }

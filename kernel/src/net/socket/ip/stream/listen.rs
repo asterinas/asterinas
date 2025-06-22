@@ -6,19 +6,19 @@ use aster_bigtcp::{
     wire::IpEndpoint,
 };
 
-use super::{connected::ConnectedStream, StreamObserver};
+use super::{connected::ConnectedStream, observer::StreamObserver};
 use crate::{
     events::IoEvents,
     net::iface::{BoundPort, Iface, TcpListener},
     prelude::*,
 };
 
-pub struct ListenStream {
+pub(super) struct ListenStream {
     tcp_listener: TcpListener,
 }
 
 impl ListenStream {
-    pub fn new(
+    pub(super) fn new(
         bound_port: BoundPort,
         backlog: usize,
         option: &RawTcpOption,
@@ -39,7 +39,7 @@ impl ListenStream {
         }
     }
 
-    pub fn try_accept(&self) -> Result<ConnectedStream> {
+    pub(super) fn try_accept(&self) -> Result<ConnectedStream> {
         let (new_conn, remote_endpoint) = self.tcp_listener.accept().ok_or_else(|| {
             Error::with_message(Errno::EAGAIN, "no pending connection is available")
         })?;
@@ -47,11 +47,11 @@ impl ListenStream {
         Ok(ConnectedStream::new(new_conn, remote_endpoint, false))
     }
 
-    pub fn local_endpoint(&self) -> IpEndpoint {
+    pub(super) fn local_endpoint(&self) -> IpEndpoint {
         self.tcp_listener.local_endpoint().unwrap()
     }
 
-    pub fn iface(&self) -> &Arc<Iface> {
+    pub(super) fn iface(&self) -> &Arc<Iface> {
         self.tcp_listener.iface()
     }
 

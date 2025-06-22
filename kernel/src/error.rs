@@ -330,6 +330,20 @@ impl From<int_to_c_enum::TryFromIntError> for Error {
     }
 }
 
+impl From<aster_systree::Error> for Error {
+    fn from(err: aster_systree::Error) -> Self {
+        use aster_systree::Error::*;
+        match err {
+            NodeNotFound(_) => Error::new(Errno::ENOENT),
+            InvalidNodeOperation(_) => Error::new(Errno::EINVAL),
+            AttributeError => Error::new(Errno::EIO),
+            PermissionDenied => Error::new(Errno::EACCES),
+            InternalError(msg) => Error::with_message(Errno::EIO, msg),
+            Overflow => Error::new(Errno::EOVERFLOW),
+        }
+    }
+}
+
 #[macro_export]
 macro_rules! return_errno {
     ($errno: expr) => {

@@ -2,10 +2,10 @@
 
 use core::ops::Range;
 
-use aster_rights::{Dup, Rights, TRightSet, TRights, Write};
+use aster_rights::{Dup, Read, Rights, TRightSet, TRights, Write};
 use aster_rights_proc::require;
 
-use super::{VmPerms, Vmar, VmarMapOptions, VmarRightsOp, Vmar_};
+use super::{VmPerms, Vmar, VmarMapOptions, VmarQueryGuard, VmarRightsOp, Vmar_};
 use crate::{
     prelude::*, thread::exception::PageFaultInfo, vm::page_fault_handler::PageFaultHandler,
 };
@@ -85,6 +85,11 @@ impl<R: TRights> Vmar<TRightSet<R>> {
         self.0.protect(perms, range)
     }
 
+    /// Finds all the mapped regions that intersect with the specified range.
+    pub fn query(&self, range: Range<usize>) -> VmarQueryGuard<'_> {
+        self.0.query(range)
+    }
+
     /// Clears all mappings.
     ///
     /// After being cleared, this vmar will become an empty vmar
@@ -120,8 +125,8 @@ impl<R: TRights> Vmar<TRightSet<R>> {
     /// # Access rights
     ///
     /// The method requires the Read right.
-    pub fn fork_from<R1>(vmar: &Vmar<R1>) -> Result<Self> {
-        vmar.check_rights(Rights::READ)?;
+    #[require(R > Read)]
+    pub fn fork_from(vmar: &Self) -> Result<Self> {
         let vmar_ = vmar.0.new_fork_root()?;
         Ok(Vmar(vmar_, TRightSet(R::new())))
     }

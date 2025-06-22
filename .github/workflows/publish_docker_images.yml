@@ -9,86 +9,89 @@ on:
       - main
 
 jobs:
-  docker:
+  publish_osdk_image:
     runs-on: ubuntu-latest
     steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - uses: actions/checkout@v4
-
-      - name: Fetch versions in the repo
-        id: fetch-versions
+      - name: Prepare for Docker build and push
+        id: prepare-for-docker-build-and-push
         run: |
-          ASTER_VERSION=$(cat DOCKER_IMAGE_VERSION)
-          RUST_VERSION=$(grep -m1 -o 'nightly-[0-9]\+-[0-9]\+-[0-9]\+' rust-toolchain.toml)
-          echo "aster_version=$ASTER_VERSION" >> "$GITHUB_OUTPUT"
-          echo "rust_version=$RUST_VERSION" >> "$GITHUB_OUTPUT"
+          ./tools/github_workflows/prepare_for_docker_build_and_push.sh ${{ secrets.DOCKERHUB_USERNAME }} ${{ secrets.DOCKERHUB_TOKEN }} osdk
 
-      - name: Generate Dockerfile
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-jinja2
-          python3 ./tools/docker/gen_dockerfile.py
-
-      - name: Build and push development image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: ./tools/docker/Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: asterinas/asterinas:${{ steps.fetch-versions.outputs.aster_version }}
-          build-args: |
-            "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
-
-      - name: Generate Dockerfile for Intel TDX
-        run: |
-          python3 ./tools/docker/gen_dockerfile.py --intel-tdx
-
-      - name: Build and push development image for Intel TDX
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: ./tools/docker/Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: asterinas/asterinas:${{ steps.fetch-versions.outputs.aster_version }}-tdx
-          build-args: |
-            "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
-
-      - name: Generate OSDK Dockerfile
-        run: |
-          python3 ./osdk/tools/docker/gen_dockerfile.py
-
-      - name: Build and push OSDK test image
+      - name: Build and push the OSDK development image
+        if: ${{ steps.prepare-for-docker-build-and-push.outputs.is_existed == 'false' }}
         uses: docker/build-push-action@v4
         with:
           context: .
           file: ./osdk/tools/docker/Dockerfile
           platforms: linux/amd64
           push: true
-          tags: asterinas/osdk:${{ steps.fetch-versions.outputs.aster_version }}
+          tags: asterinas/osdk:${{ steps.prepare-for-docker-build-and-push.outputs.image_version }}
           build-args: |
-            "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
+            ASTER_RUST_VERSION=${{ steps.prepare-for-docker-build-and-push.outputs.rust_version }}
 
-      - name: Generate OSDK Dockerfile for Intel TDX
+  publish_osdk_tdx_image:
+    needs: publish_osdk_image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare for Docker build and push
+        id: prepare-for-docker-build-and-push
         run: |
-          python3 ./osdk/tools/docker/gen_dockerfile.py --intel-tdx
+          ./tools/github_workflows/prepare_for_docker_build_and_push.sh ${{ secrets.DOCKERHUB_USERNAME }} ${{ secrets.DOCKERHUB_TOKEN }} osdk-tdx
 
-      - name: Build and push OSDK test image for Intel TDX
+      - name: Build and push the OSDK development image for Intel TDX
+        if: ${{ steps.prepare-for-docker-build-and-push.outputs.is_existed == 'false' }}
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: ./osdk/tools/docker/Dockerfile
+          file: ./osdk/tools/docker/tdx/Dockerfile
           platforms: linux/amd64
           push: true
-          tags: asterinas/osdk:${{ steps.fetch-versions.outputs.aster_version }}-tdx
+          tags: asterinas/osdk:${{ steps.prepare-for-docker-build-and-push.outputs.image_version }}-tdx
           build-args: |
-            "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
+            BASE_VERSION=${{ steps.prepare-for-docker-build-and-push.outputs.image_version }}
+
+  publish_asterinas_image:
+    needs: publish_osdk_image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare for Docker build and push
+        id: prepare-for-docker-build-and-push
+        run: |
+          ./tools/github_workflows/prepare_for_docker_build_and_push.sh ${{ secrets.DOCKERHUB_USERNAME }} ${{ secrets.DOCKERHUB_TOKEN }} asterinas
+
+      - name: Build and push the Asterinas development image
+        if: ${{ steps.prepare-for-docker-build-and-push.outputs.is_existed == 'false' }}
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./tools/docker/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: asterinas/asterinas:${{ steps.prepare-for-docker-build-and-push.outputs.image_version }}
+          build-args: |
+            BASE_VERSION=${{ steps.prepare-for-docker-build-and-push.outputs.image_version }}
+
+  publish_asterinas_tdx_image:
+    needs: publish_asterinas_image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare for Docker build and push
+        id: prepare-for-docker-build-and-push
+        run: |
+          ./tools/github_workflows/prepare_for_docker_build_and_push.sh ${{ secrets.DOCKERHUB_USERNAME }} ${{ secrets.DOCKERHUB_TOKEN }} asterinas-tdx
+
+      - name: Build and push the Asterinas development image for Intel TDX
+        if: ${{ steps.prepare-for-docker-build-and-push.outputs.is_existed == 'false' }}
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./tools/docker/tdx/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: asterinas/asterinas:${{ steps.prepare-for-docker-build-and-push.outputs.image_version }}-tdx
+          build-args: |
+            BASE_VERSION=${{ steps.prepare-for-docker-build-and-push.outputs.image_version }}

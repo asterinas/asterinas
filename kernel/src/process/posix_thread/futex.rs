@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(dead_code)]
-
-use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListAtomicLink};
+use int_to_c_enum::TryFromInt;
 use ostd::{
     cpu::num_cpus,
     sync::{Waiter, Waker},
@@ -12,7 +10,6 @@ use spin::Once;
 use crate::{prelude::*, process::Pid, time::wait::ManagedTimeout};
 
 type FutexBitSet = u32;
-type FutexBucketRef = Arc<Mutex<FutexBucket>>;
 
 const FUTEX_OP_MASK: u32 = 0x0000_000F;
 const FUTEX_FLAGS_MASK: u32 = 0xFFFF_FFF0;
@@ -117,7 +114,160 @@ pub fn futex_wake_bitset(
     let (_, futex_bucket_ref) = get_futex_bucket(futex_key);
     let mut futex_bucket = futex_bucket_ref.lock();
     let res = futex_bucket.remove_and_wake_items(futex_key, max_count);
-    drop(futex_bucket);
+
+    Ok(res)
+}
+
+/// This struct encodes the operation and comparison that are to be performed during
+/// the futex operation with `FUTEX_WAKE_OP`.
+///
+/// The encoding is as follows:
+///
+/// +---+---+-----------+-----------+
+/// |op |cmp|   oparg   |  cmparg   |
+/// +---+---+-----------+-----------+
+///   4   4       12          12    <== # of bits
+///
+/// Reference: https://man7.org/linux/man-pages/man2/futex.2.html.
+struct FutexWakeOpEncode {
+    op: FutexWakeOp,
+    /// A flag indicating that the operation will use `1 << oparg`
+    /// as the operand instead of `oparg` when it is set `true`.
+    ///
+    /// e.g. With this flag, [`FutexWakeOp::FUTEX_OP_ADD`] will be interpreted
+    /// as `res = (1 << oparg) + oldval`.
+    is_oparg_shift: bool,
+    cmp: FutexWakeCmp,
+    oparg: u32,
+    cmparg: u32,
+}
+
+#[derive(Debug, Copy, Clone, TryFromInt, PartialEq)]
+#[repr(u32)]
+#[expect(non_camel_case_types)]
+enum FutexWakeOp {
+    /// Calculate `res = oparg`.
+    FUTEX_OP_SET = 0,
+    /// Calculate `res = oparg + oldval`.
+    FUTEX_OP_ADD = 1,
+    /// Calculate `res = oparg | oldval`.
+    FUTEX_OP_OR = 2,
+    /// Calculate `res = oparg & !oldval`.
+    FUTEX_OP_ANDN = 3,
+    /// Calculate `res = oparg ^ oldval`.
+    FUTEX_OP_XOR = 4,
+}
+
+#[derive(Debug, Copy, Clone, TryFromInt, PartialEq)]
+#[repr(u32)]
+#[expect(non_camel_case_types)]
+enum FutexWakeCmp {
+    /// If (oldval == cmparg) do wake.
+    FUTEX_OP_CMP_EQ = 0,
+    /// If (oldval != cmparg) do wake.
+    FUTEX_OP_CMP_NE = 1,
+    /// If (oldval < cmparg) do wake.
+    FUTEX_OP_CMP_LT = 2,
+    /// If (oldval <= cmparg) do wake.
+    FUTEX_OP_CMP_LE = 3,
+    /// If (oldval > cmparg) do wake.
+    FUTEX_OP_CMP_GT = 4,
+    /// If (oldval >= cmparg) do wake.
+    FUTEX_OP_CMP_GE = 5,
+}
+
+impl FutexWakeOpEncode {
+    fn from_u32(bits: u32) -> Result<Self> {
+        let is_oparg_shift = (bits >> 31) & 1 == 1;
+        let op = FutexWakeOp::try_from((bits >> 28) & 0x7)?;
+        let cmp = FutexWakeCmp::try_from((bits >> 24) & 0xf)?;
+        let oparg = (bits >> 12) & 0xfff;
+        let cmparg = bits & 0xfff;
+
+        Ok(FutexWakeOpEncode {
+            op,
+            is_oparg_shift,
+            cmp,
+            oparg,
+            cmparg,
+        })
+    }
+
+    fn calculate_new_val(&self, old_val: u32) -> u32 {
+        let oparg = if self.is_oparg_shift {
+            if self.oparg > 31 {
+                // Linux might return EINVAL in the future
+                // Reference: https://elixir.bootlin.com/linux/v6.15.2/source/kernel/futex/waitwake.c#L211-L222
+                warn!("futex_wake_op: program tries to shift op by {}", self.oparg);
+            }
+
+            1 << (self.oparg & 31)
+        } else {
+            self.oparg
+        };
+
+        match self.op {
+            FutexWakeOp::FUTEX_OP_SET => oparg,
+            FutexWakeOp::FUTEX_OP_ADD => oparg.wrapping_add(old_val),
+            FutexWakeOp::FUTEX_OP_OR => oparg | old_val,
+            FutexWakeOp::FUTEX_OP_ANDN => oparg & !old_val,
+            FutexWakeOp::FUTEX_OP_XOR => oparg ^ old_val,
+        }
+    }
+
+    fn should_wake(&self, old_val: u32) -> bool {
+        match self.cmp {
+            FutexWakeCmp::FUTEX_OP_CMP_EQ => old_val == self.cmparg,
+            FutexWakeCmp::FUTEX_OP_CMP_NE => old_val != self.cmparg,
+            FutexWakeCmp::FUTEX_OP_CMP_LT => old_val < self.cmparg,
+            FutexWakeCmp::FUTEX_OP_CMP_LE => old_val <= self.cmparg,
+            FutexWakeCmp::FUTEX_OP_CMP_GT => old_val > self.cmparg,
+            FutexWakeCmp::FUTEX_OP_CMP_GE => old_val >= self.cmparg,
+        }
+    }
+}
+
+pub fn futex_wake_op(
+    futex_addr_1: Vaddr,
+    futex_addr_2: Vaddr,
+    max_count_1: usize,
+    max_count_2: usize,
+    wake_op_bits: u32,
+    ctx: &Context,
+    pid: Option<Pid>,
+) -> Result<usize> {
+    let wake_op = FutexWakeOpEncode::from_u32(wake_op_bits)?;
+
+    let futex_key_1 = FutexKey::new(futex_addr_1, FUTEX_BITSET_MATCH_ANY, pid);
+    let futex_key_2 = FutexKey::new(futex_addr_2, FUTEX_BITSET_MATCH_ANY, pid);
+    let (index_1, futex_bucket_ref_1) = get_futex_bucket(futex_key_1);
+    let (index_2, futex_bucket_ref_2) = get_futex_bucket(futex_key_2);
+
+    let (mut futex_bucket_1, mut futex_bucket_2) = if index_1 == index_2 {
+        (futex_bucket_ref_1.lock(), None)
+    } else {
+        // Ensure that we always lock the buckets in a consistent order to avoid deadlocks.
+        if index_1 < index_2 {
+            let bucket_1 = futex_bucket_ref_1.lock();
+            let bucket_2 = futex_bucket_ref_2.lock();
+            (bucket_1, Some(bucket_2))
+        } else {
+            let bucket_2 = futex_bucket_ref_2.lock();
+            let bucket_1 = futex_bucket_ref_1.lock();
+            (bucket_1, Some(bucket_2))
+        }
+    };
+
+    // FIXME: This should be an atomic read-modify-write memory access here.
+    let old_val = ctx.user_space().read_val(futex_addr_2)?;
+    let new_val = wake_op.calculate_new_val(old_val);
+    ctx.user_space().write_val(futex_addr_2, &new_val)?;
+
+    let mut res = futex_bucket_1.remove_and_wake_items(futex_key_1, max_count_1);
+    if wake_op.should_wake(old_val) {
+        let bucket = futex_bucket_2.as_mut().unwrap_or(&mut futex_bucket_1);
+        res += bucket.remove_and_wake_items(futex_key_2, max_count_2);
+    }
 
     Ok(res)
 }
@@ -183,7 +333,7 @@ fn get_bucket_count() -> usize {
     ((1 << 8) * num_cpus()).next_power_of_two()
 }
 
-fn get_futex_bucket(key: FutexKey) -> (usize, FutexBucketRef) {
+fn get_futex_bucket(key: FutexKey) -> (usize, &'static SpinLock<FutexBucket>) {
     FUTEX_BUCKETS.get().unwrap().get_bucket(key)
 }
 
@@ -193,7 +343,7 @@ pub fn init() {
 }
 
 struct FutexBucketVec {
-    vec: Vec<FutexBucketRef>,
+    vec: Vec<SpinLock<FutexBucket>>,
 }
 
 impl FutexBucketVec {
@@ -202,20 +352,20 @@ impl FutexBucketVec {
             vec: Vec::with_capacity(size),
         };
         for _ in 0..size {
-            let bucket = Arc::new(Mutex::new(FutexBucket::new()));
+            let bucket = SpinLock::new(FutexBucket::new());
             buckets.vec.push(bucket);
         }
         buckets
     }
 
-    pub fn get_bucket(&self, key: FutexKey) -> (usize, FutexBucketRef) {
-        let index = (self.vec.len() - 1) & {
+    pub fn get_bucket(&self, key: FutexKey) -> (usize, &SpinLock<FutexBucket>) {
+        let index = (self.size() - 1) & {
             // The addr is the multiples of 4, so we ignore the last 2 bits
             let addr = key.addr() >> 2;
             // simple hash
             addr / self.size()
         };
-        (index, self.vec[index].clone())
+        (index, &self.vec[index])
     }
 
     fn size(&self) -> usize {
@@ -224,76 +374,47 @@ impl FutexBucketVec {
 }
 
 struct FutexBucket {
-    items: LinkedList<FutexItemAdapter>,
+    items: Vec<FutexItem>,
 }
-
-intrusive_adapter!(FutexItemAdapter = Box<FutexItem>: FutexItem { link: LinkedListAtomicLink });
 
 impl FutexBucket {
     pub fn new() -> FutexBucket {
         FutexBucket {
-            items: LinkedList::new(FutexItemAdapter::new()),
+            items: Vec::with_capacity(1),
         }
     }
 
-    pub fn add_item(&mut self, item: Box<FutexItem>) {
-        self.items.push_back(item);
-    }
-
-    pub fn remove_item(&mut self, item: &FutexItem) {
-        let mut item_cursor = self.items.front_mut();
-        while !item_cursor.is_null() {
-            // The item_cursor has been checked not null.
-            let futex_item = item_cursor.get().unwrap();
-
-            if !futex_item.match_up(item) {
-                item_cursor.move_next();
-                continue;
-            } else {
-                let _ = item_cursor.remove();
-                break;
-            }
-        }
+    pub fn add_item(&mut self, item: FutexItem) {
+        self.items.push(item);
     }
 
     pub fn remove_and_wake_items(&mut self, key: FutexKey, max_count: usize) -> usize {
         let mut count = 0;
-        let mut item_cursor = self.items.front_mut();
-        while !item_cursor.is_null() && count < max_count {
-            // The item_cursor has been checked not null.
-            let item = item_cursor.get().unwrap();
 
-            if !item.key.match_up(&key) {
-                item_cursor.move_next();
-                continue;
+        self.items.retain(|item| {
+            if item.key.match_up(&key) && count < max_count {
+                if item.wake() {
+                    count += 1;
+                }
+                false
+            } else {
+                true
             }
-
-            let item = item_cursor.remove().unwrap();
-            if !item.wake() {
-                continue;
-            }
-            count += 1;
-        }
+        });
 
         count
     }
 
     pub fn update_item_keys(&mut self, key: FutexKey, new_key: FutexKey, max_count: usize) {
         let mut count = 0;
-        let mut item_cursor = self.items.front_mut();
-        while !item_cursor.is_null() && count < max_count {
-            // The item_cursor has been checked not null.
-            let item = item_cursor.get().unwrap();
-
-            if !item.key.match_up(&key) {
-                item_cursor.move_next();
-                continue;
+        for item in self.items.iter_mut() {
+            if item.key.match_up(&key) {
+                item.key = new_key;
+                count += 1;
             }
-
-            let mut item = item_cursor.remove().unwrap();
-            item.key = new_key;
-            item_cursor.insert_before(item);
-            count += 1;
+            if count >= max_count {
+                break;
+            }
         }
     }
 
@@ -305,38 +426,31 @@ impl FutexBucket {
         max_nrequeues: usize,
     ) {
         let mut count = 0;
-        let mut item_cursor = self.items.front_mut();
-        while !item_cursor.is_null() && count < max_nrequeues {
-            // The item_cursor has been checked not null.
-            let item = item_cursor.get().unwrap();
-
-            if !item.key.match_up(&key) {
-                item_cursor.move_next();
-                continue;
-            }
-
-            let mut item = item_cursor.remove().unwrap();
-            item.key = new_key;
-            another.add_item(item);
-            count += 1;
-        }
+        self.items
+            .extract_if(.., |item| {
+                if item.key.match_up(&key) && count < max_nrequeues {
+                    count += 1;
+                    true
+                } else {
+                    false
+                }
+            })
+            .for_each(|mut extracted| {
+                extracted.key = new_key;
+                another.add_item(extracted);
+            });
     }
 }
 
 struct FutexItem {
     key: FutexKey,
     waker: Arc<Waker>,
-    link: LinkedListAtomicLink,
 }
 
 impl FutexItem {
-    pub fn create(key: FutexKey) -> (Box<Self>, Waiter) {
+    pub fn create(key: FutexKey) -> (Self, Waiter) {
         let (waiter, waker) = Waiter::new_pair();
-        let futex_item = Box::new(FutexItem {
-            key,
-            waker,
-            link: LinkedListAtomicLink::new(),
-        });
+        let futex_item = FutexItem { key, waker };
 
         (futex_item, waiter)
     }
@@ -344,10 +458,6 @@ impl FutexItem {
     #[must_use]
     pub fn wake(&self) -> bool {
         self.waker.wake_up()
-    }
-
-    pub fn match_up(&self, another: &Self) -> bool {
-        self.key.match_up(&another.key)
     }
 }
 
@@ -374,10 +484,6 @@ impl FutexKey {
 
     pub fn addr(&self) -> Vaddr {
         self.addr
-    }
-
-    pub fn bitset(&self) -> FutexBitSet {
-        self.bitset
     }
 
     pub fn match_up(&self, another: &Self) -> bool {

@@ -113,6 +113,14 @@ SECTIONS
         __einit_array = .;
     } : rodata
 
+    # A list of the sensitive IoPort ranges in OSTD which will be used during
+    # the initialization of IoPortAllocator.
+    .sensitive_io_ports     : AT(ADDR(.sensitive_io_ports) - KERNEL_VMA) {
+        __sensitive_io_ports_start = .;
+        KEEP(*(.sensitive_io_ports))
+        __sensitive_io_ports_end = .;
+    } : rodata
+
     .rodata                 : AT(ADDR(.rodata) - KERNEL_VMA) {
         *(.rodata .rodata.*)
     } : rodata

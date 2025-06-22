@@ -1,36 +1,54 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{borrow::ToOwned, sync::Arc};
+use core::slice::Iter;
 
-use aster_bigtcp::device::WithDevice;
-use ostd::sync::LocalIrqDisabled;
+use aster_bigtcp::{
+    device::WithDevice,
+    iface::{InterfaceFlags, InterfaceType},
+};
+use aster_softirq::BottomHalfDisabled;
 use spin::Once;
 
 use super::{poll::poll_ifaces, Iface};
 use crate::{net::iface::sched::PollScheduler, prelude::*};
 
-pub static IFACES: Once<Vec<Arc<Iface>>> = Once::new();
+static IFACES: Once<Vec<Arc<Iface>>> = Once::new();
+
+pub fn loopback_iface() -> &'static Arc<Iface> {
+    &IFACES.get().unwrap()[0]
+}
+
+pub fn virtio_iface() -> Option<&'static Arc<Iface>> {
+    IFACES.get().unwrap().get(1)
+}
+
+pub fn iter_all_ifaces() -> Iter<'static, Arc<Iface>> {
+    IFACES.get().unwrap().iter()
+}
 
 pub fn init() {
     IFACES.call_once(|| {
         let mut ifaces = Vec::with_capacity(2);
 
+        // Initialize loopback before virtio
+        // to ensure the loopback interface index is ahead of virtio.
+        ifaces.push(new_loopback());
+
         if let Some(iface_virtio) = new_virtio() {
             ifaces.push(iface_virtio);
         }
-        ifaces.push(new_loopback());
 
         ifaces
     });
 
-    for (name, _) in aster_network::all_devices() {
-        let callback = || {
+    if let Some(iface_virtio) = virtio_iface() {
+        for (name, _) in aster_network::all_devices() {
             // TODO: further check that the irq num is the same as iface's irq num
-            let iface_virtio = &IFACES.get().unwrap()[0];
-            iface_virtio.poll();
-        };
-        aster_network::register_recv_callback(&name, callback);
-        aster_network::register_send_callback(&name, callback);
+            let callback = || iface_virtio.poll();
+            aster_network::register_recv_callback(&name, callback);
+            aster_network::register_send_callback(&name, callback);
+        }
     }
 
     poll_ifaces();
@@ -52,7 +70,7 @@ fn new_virtio() -> Option<Arc<Iface>> {
 
     let ether_addr = virtio_net.lock().mac_addr().0;
 
-    struct Wrapper(Arc<SpinLock<dyn AnyNetworkDevice, LocalIrqDisabled>>);
+    struct Wrapper(Arc<SpinLock<dyn AnyNetworkDevice, BottomHalfDisabled>>);
 
     impl WithDevice for Wrapper {
         type Device = dyn AnyNetworkDevice;
@@ -66,13 +84,22 @@ fn new_virtio() -> Option<Arc<Iface>> {
         }
     }
 
+    // FIXME: These flags are currently hardcoded.
+    // In the future, we should set appropriate values.
+    let flags = InterfaceFlags::UP
+        | InterfaceFlags::BROADCAST
+        | InterfaceFlags::RUNNING
+        | InterfaceFlags::MULTICAST
+        | InterfaceFlags::LOWER_UP;
+
     Some(EtherIface::new(
         Wrapper(virtio_net),
         EthernetAddress(ether_addr),
         Ipv4Cidr::new(VIRTIO_ADDRESS, VIRTIO_ADDRESS_PREFIX_LEN),
         VIRTIO_GATEWAY,
-        "virtio".to_owned(),
+        "eth0".to_owned(),
         PollScheduler::new(),
+        flags,
     ))
 }
 
@@ -100,10 +127,19 @@ fn new_loopback() -> Arc<Iface> {
         }
     }
 
+    // FIXME: These flags are currently hardcoded.
+    // In the future, we should set appropriate values.
+    let flags = InterfaceFlags::UP
+        | InterfaceFlags::LOOPBACK
+        | InterfaceFlags::RUNNING
+        | InterfaceFlags::LOWER_UP;
+
     IpIface::new(
         Wrapper(Mutex::new(Loopback::new(Medium::Ip))),
         Ipv4Cidr::new(LOOPBACK_ADDRESS, LOOPBACK_ADDRESS_PREFIX_LEN),
         "lo".to_owned(),
         PollScheduler::new(),
-    ) as _
+        InterfaceType::LOOPBACK,
+        flags,
+    ) as Arc<Iface>
 }

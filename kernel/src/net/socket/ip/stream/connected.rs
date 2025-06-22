@@ -6,22 +6,19 @@ use aster_bigtcp::{
     wire::IpEndpoint,
 };
 
-use super::StreamObserver;
+use super::observer::StreamObserver;
 use crate::{
     events::IoEvents,
     net::{
         iface::{Iface, RawTcpSocketExt, TcpConnection},
-        socket::{
-            util::{send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd},
-            LingerOption,
-        },
+        socket::util::{LingerOption, SendRecvFlags, SockShutdownCmd},
     },
     prelude::*,
     process::signal::{Pollee, Poller},
     util::{MultiRead, MultiWrite},
 };
 
-pub struct ConnectedStream {
+pub(super) struct ConnectedStream {
     tcp_conn: TcpConnection,
     remote_endpoint: IpEndpoint,
     /// Indicates whether this connection is "new" in a `connect()` system call.
@@ -38,7 +35,7 @@ pub struct ConnectedStream {
 }
 
 impl ConnectedStream {
-    pub fn new(
+    pub(super) fn new(
         tcp_conn: TcpConnection,
         remote_endpoint: IpEndpoint,
         is_new_connection: bool,
@@ -50,7 +47,7 @@ impl ConnectedStream {
         }
     }
 
-    pub fn shutdown(&self, cmd: SockShutdownCmd, pollee: &Pollee) -> Result<()> {
+    pub(super) fn shutdown(&self, cmd: SockShutdownCmd, pollee: &Pollee) -> Result<()> {
         let mut events = IoEvents::empty();
 
         if cmd.shut_read() {
@@ -72,7 +69,7 @@ impl ConnectedStream {
         Ok(())
     }
 
-    pub fn try_recv(
+    pub(super) fn try_recv(
         &self,
         writer: &mut dyn MultiWrite,
         _flags: SendRecvFlags,
@@ -105,7 +102,7 @@ impl ConnectedStream {
         }
     }
 
-    pub fn try_send(
+    pub(super) fn try_send(
         &self,
         reader: &mut dyn MultiRead,
         _flags: SendRecvFlags,
@@ -136,19 +133,19 @@ impl ConnectedStream {
         }
     }
 
-    pub fn local_endpoint(&self) -> IpEndpoint {
+    pub(super) fn local_endpoint(&self) -> IpEndpoint {
         self.tcp_conn.local_endpoint().unwrap()
     }
 
-    pub fn remote_endpoint(&self) -> IpEndpoint {
+    pub(super) fn remote_endpoint(&self) -> IpEndpoint {
         self.remote_endpoint
     }
 
-    pub fn iface(&self) -> &Arc<Iface> {
+    pub(super) fn iface(&self) -> &Arc<Iface> {
         self.tcp_conn.iface()
     }
 
-    pub fn finish_last_connect(&mut self) -> Result<()> {
+    pub(super) fn finish_last_connect(&mut self) -> Result<()> {
         if !self.is_new_connection {
             return_errno_with_message!(Errno::EISCONN, "the socket is already connected");
         }

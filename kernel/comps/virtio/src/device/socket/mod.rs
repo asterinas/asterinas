@@ -14,7 +14,8 @@ pub mod device;
 pub mod error;
 pub mod header;
 
-pub static DEVICE_NAME: &str = "Virtio-Vsock";
+pub const DEVICE_NAME: &str = "Virtio-Vsock";
+
 pub trait VsockDeviceIrqHandler = Fn() + Send + Sync + 'static;
 
 pub fn register_device(name: String, device: Arc<SpinLock<SocketDevice>>) {

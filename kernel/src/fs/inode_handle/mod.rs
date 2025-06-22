@@ -113,19 +113,6 @@ impl InodeHandle_ {
         }
     }
 
-    pub fn read_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
-        if self.file_io.is_some() {
-            return_errno_with_message!(Errno::EINVAL, "file io does not support read to end");
-        }
-
-        let len = if self.status_flags().contains(StatusFlags::O_DIRECT) {
-            self.dentry.inode().read_direct_to_end(buf)?
-        } else {
-            self.dentry.inode().read_to_end(buf)?
-        };
-        Ok(len)
-    }
-
     pub fn seek(&self, pos: SeekFrom) -> Result<usize> {
         let mut offset = self.offset.lock();
         let new_offset: isize = match pos {
@@ -387,6 +374,7 @@ impl<R> InodeHandle<R> {
 
 impl<R> Drop for InodeHandle<R> {
     fn drop(&mut self) {
+        self.release_range_locks();
         self.unlock_flock();
     }
 }

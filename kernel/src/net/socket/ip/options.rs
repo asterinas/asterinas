@@ -54,7 +54,7 @@ impl IpOptionSet {
     pub(super) fn set_option(
         &mut self,
         option: &dyn SocketOption,
-        socket: &mut dyn SetIpLevelOption,
+        socket: &dyn SetIpLevelOption,
     ) -> Result<NeedIfacePoll> {
         match_sock_option_ref!(option, {
             ip_tos: Tos => {
@@ -103,6 +103,6 @@ impl IpTtl {
     }
 }
 
-pub trait SetIpLevelOption {
+pub(super) trait SetIpLevelOption {
     fn set_hdrincl(&self, _hdrincl: bool) -> Result<()>;
 }

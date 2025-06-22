@@ -2,7 +2,7 @@
 
 use crate::syscall::{
     accept::{sys_accept, sys_accept4},
-    access::{sys_access, sys_faccessat},
+    access::{sys_access, sys_faccessat, sys_faccessat2},
     alarm::sys_alarm,
     arch_prctl::sys_arch_prctl,
     bind::sys_bind,
@@ -15,10 +15,13 @@ use crate::syscall::{
     chroot::sys_chroot,
     clock_gettime::sys_clock_gettime,
     clone::{sys_clone, sys_clone3},
-    close::sys_close,
+    close::{sys_close, sys_close_range},
     connect::sys_connect,
     dup::{sys_dup, sys_dup2, sys_dup3},
-    epoll::{sys_epoll_create, sys_epoll_create1, sys_epoll_ctl, sys_epoll_pwait, sys_epoll_wait},
+    epoll::{
+        sys_epoll_create, sys_epoll_create1, sys_epoll_ctl, sys_epoll_pwait, sys_epoll_pwait2,
+        sys_epoll_wait,
+    },
     eventfd::{sys_eventfd, sys_eventfd2},
     execve::{sys_execve, sys_execveat},
     exit::sys_exit,
@@ -66,6 +69,7 @@ use crate::syscall::{
     mmap::sys_mmap,
     mount::sys_mount,
     mprotect::sys_mprotect,
+    mremap::sys_mremap,
     msync::sys_msync,
     munmap::sys_munmap,
     nanosleep::{sys_clock_nanosleep, sys_nanosleep},
@@ -73,6 +77,7 @@ use crate::syscall::{
     pause::sys_pause,
     pipe::{sys_pipe, sys_pipe2},
     poll::sys_poll,
+    ppoll::sys_ppoll,
     prctl::sys_prctl,
     pread64::sys_pread64,
     preadv::{sys_preadv, sys_preadv2, sys_readv},
@@ -133,6 +138,7 @@ use crate::syscall::{
     socketpair::sys_socketpair,
     stat::{sys_fstat, sys_fstatat, sys_lstat, sys_stat},
     statfs::{sys_fstatfs, sys_statfs},
+    statx::sys_statx,
     symlink::{sys_symlink, sys_symlinkat},
     sync::sys_sync,
     sysinfo::sys_sysinfo,
@@ -140,6 +146,9 @@ use crate::syscall::{
     time::sys_time,
     timer_create::{sys_timer_create, sys_timer_delete},
     timer_settime::{sys_timer_gettime, sys_timer_settime},
+    timerfd_create::sys_timerfd_create,
+    timerfd_gettime::sys_timerfd_gettime,
+    timerfd_settime::sys_timerfd_settime,
     truncate::{sys_ftruncate, sys_truncate},
     umask::sys_umask,
     umount::sys_umount,
@@ -176,6 +185,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_ACCESS = 21            => sys_access(args[..2]);
     SYS_PIPE = 22              => sys_pipe(args[..1]);
     SYS_SELECT = 23            => sys_select(args[..5]);
+    SYS_MREMAP = 25            => sys_mremap(args[..5]);
     SYS_MSYNC = 26             => sys_msync(args[..3]);
     SYS_SCHED_YIELD = 24       => sys_sched_yield(args[..0]);
     SYS_MADVISE = 28           => sys_madvise(args[..3]);
@@ -335,12 +345,16 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_FCHMODAT = 268         => sys_fchmodat(args[..3]);
     SYS_FACCESSAT = 269        => sys_faccessat(args[..3]);
     SYS_PSELECT6 = 270         => sys_pselect6(args[..6]);
+    SYS_PPOLL = 271            => sys_ppoll(args[..5]);
     SYS_SET_ROBUST_LIST = 273  => sys_set_robust_list(args[..2]);
     SYS_UTIMENSAT = 280        => sys_utimensat(args[..4]);
     SYS_EPOLL_PWAIT = 281      => sys_epoll_pwait(args[..6]);
     SYS_SIGNALFD = 282         => sys_signalfd(args[..3]);
+    SYS_TIMERFD_CREATE = 283   => sys_timerfd_create(args[..2]);
     SYS_EVENTFD = 284          => sys_eventfd(args[..1]);
     SYS_FALLOCATE = 285        => sys_fallocate(args[..4]);
+    SYS_TIMERFD_SETTIME = 286 => sys_timerfd_settime(args[..4]);
+    SYS_TIMERFD_GETTIME = 287 => sys_timerfd_gettime(args[..2]);
     SYS_ACCEPT4 = 288          => sys_accept4(args[..4]);
     SYS_SIGNALFD4 = 289        => sys_signalfd4(args[..4]);
     SYS_EVENTFD2 = 290         => sys_eventfd2(args[..2]);
@@ -357,5 +371,9 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_EXECVEAT = 322         => sys_execveat(args[..5], &mut user_ctx);
     SYS_PREADV2 = 327          => sys_preadv2(args[..5]);
     SYS_PWRITEV2 = 328         => sys_pwritev2(args[..5]);
+    SYS_STATX = 332            => sys_statx(args[..5]);
     SYS_CLONE3 = 435           => sys_clone3(args[..2], &user_ctx);
+    SYS_CLOSE_RANGE = 436      => sys_close_range(args[..3]);
+    SYS_FACCESSAT2 = 439       => sys_faccessat2(args[..4]);
+    SYS_EPOLL_PWAIT2 = 441     => sys_epoll_pwait2(args[..5]);
 }

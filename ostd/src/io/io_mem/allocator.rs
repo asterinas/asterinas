@@ -114,7 +114,8 @@ pub static IO_MEM_ALLOCATOR: Once<IoMemAllocator> = Once::new();
 /// User must ensure all the memory I/O regions that belong to the system device have been removed by calling the
 /// `remove` function.
 pub(crate) unsafe fn init(io_mem_builder: IoMemAllocatorBuilder) {
-    IO_MEM_ALLOCATOR.call_once(|| IoMemAllocator::new(io_mem_builder.allocators));
+    // SAFETY: The safety is upheld by the caller.
+    IO_MEM_ALLOCATOR.call_once(|| unsafe { IoMemAllocator::new(io_mem_builder.allocators) });
 }
 
 fn find_allocator<'a>(
@@ -154,7 +155,9 @@ mod test {
 
     #[ktest]
     fn conflict_region() {
-        let io_mem_region_a = 0x4000_0000..0x4200_0000;
+        let max_paddr = 0x100_000_000_000; // 16 TB
+
+        let io_mem_region_a = max_paddr..max_paddr + 0x200_0000;
         let io_mem_region_b =
             (io_mem_region_a.end + PAGE_SIZE)..(io_mem_region_a.end + 10 * PAGE_SIZE);
         let range = vec![io_mem_region_a.clone(), io_mem_region_b.clone()];

@@ -2,12 +2,13 @@
 
 use aster_bigtcp::time::Duration;
 
+use super::options::CongestionControl;
 use crate::prelude::*;
 
 #[derive(Debug, Clone, Copy, CopyGetters, Setters)]
 #[get_copy = "pub"]
 #[set = "pub"]
-pub struct TcpOptionSet {
+pub(super) struct TcpOptionSet {
     no_delay: bool,
     maxseg: u32,
     keep_idle: u32,
@@ -19,13 +20,13 @@ pub struct TcpOptionSet {
     receive_inq: bool,
 }
 
-pub const DEFAULT_MAXSEG: u32 = 536;
-pub const DEFAULT_KEEP_IDLE: u32 = 7200;
-pub const DEFAULT_SYN_CNT: u8 = 6;
-pub const DEFAULT_WINDOW_CLAMP: u32 = 0x8000_0000;
+pub(super) const DEFAULT_MAXSEG: u32 = 536;
+pub(super) const DEFAULT_KEEP_IDLE: u32 = 7200;
+pub(super) const DEFAULT_SYN_CNT: u8 = 6;
+pub(super) const DEFAULT_WINDOW_CLAMP: u32 = 0x8000_0000;
 
 impl TcpOptionSet {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             no_delay: false,
             maxseg: DEFAULT_MAXSEG,
@@ -52,11 +53,11 @@ const TCP_RTO_MAX: Duration = Duration::from_secs(120);
 
 /// The number of retransmits.
 #[derive(Debug, Clone, Copy)]
-pub struct Retrans(u8);
+pub(super) struct Retrans(u8);
 
 impl Retrans {
     /// Converts seconds to retransmits.
-    pub const fn from_secs(seconds: u32) -> Self {
+    pub(super) const fn from_secs(seconds: u32) -> Self {
         if seconds == 0 {
             return Self(0);
         }
@@ -79,7 +80,7 @@ impl Retrans {
     }
 
     /// Converts retransmits to seconds.
-    pub const fn to_secs(self) -> u32 {
+    pub(super) const fn to_secs(self) -> u32 {
         let mut retrans = self.0;
 
         if retrans == 0 {
@@ -100,33 +101,5 @@ impl Retrans {
         }
 
         period
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum CongestionControl {
-    Reno,
-    Cubic,
-}
-
-impl CongestionControl {
-    const RENO: &'static str = "reno";
-    const CUBIC: &'static str = "cubic";
-
-    pub fn new(name: &str) -> Result<Self> {
-        let congestion = match name {
-            Self::RENO => Self::Reno,
-            Self::CUBIC => Self::Cubic,
-            _ => return_errno_with_message!(Errno::ENOENT, "unsupported congestion name"),
-        };
-
-        Ok(congestion)
-    }
-
-    pub fn name(&self) -> &'static str {
-        match self {
-            Self::Reno => Self::RENO,
-            Self::Cubic => Self::CUBIC,
-        }
     }
 }

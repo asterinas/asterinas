@@ -65,7 +65,7 @@ fn do_sys_preadv(
         return_errno_with_message!(Errno::EINVAL, "offset cannot be negative");
     }
 
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
 
     if io_vec_count == 0 {
@@ -126,7 +126,7 @@ fn do_sys_readv(
         fd, io_vec_ptr, io_vec_count
     );
 
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
 
     if io_vec_count == 0 {

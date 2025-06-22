@@ -2,48 +2,36 @@
 
 //! Platform-specific code for the x86 platform.
 
-mod allocator;
 pub mod boot;
 pub(crate) mod cpu;
 pub mod device;
 pub(crate) mod ex_table;
-pub mod iommu;
+pub(crate) mod io;
+pub(crate) mod iommu;
 pub(crate) mod irq;
-pub(crate) mod kernel;
+pub mod kernel;
 pub(crate) mod mm;
 pub(crate) mod pci;
 pub mod qemu;
-pub mod serial;
-pub mod task;
+pub(crate) mod serial;
+pub(crate) mod task;
 pub mod timer;
 pub mod trap;
 
-use allocator::construct_io_mem_allocator_builder;
-use cfg_if::cfg_if;
+use io::construct_io_mem_allocator_builder;
 use spin::Once;
 use x86::cpuid::{CpuId, FeatureInfo};
 
-use crate::if_tdx_enabled;
+#[cfg(feature = "cvm_guest")]
+pub(crate) mod tdx_guest;
 
-cfg_if! {
-    if #[cfg(feature = "cvm_guest")] {
-        pub(crate) mod tdx_guest;
+use core::sync::atomic::Ordering;
 
-        use ::tdx_guest::{init_tdx, tdcall::InitError};
-    }
-}
-
-use core::{
-    arch::x86_64::{_rdrand64_step, _rdtsc},
-    sync::atomic::Ordering,
-};
-
-use kernel::apic::ioapic;
-use log::{info, warn};
+use log::warn;
 
 #[cfg(feature = "cvm_guest")]
 pub(crate) fn init_cvm_guest() {
-    match init_tdx() {
+    match ::tdx_guest::init_tdx() {
         Ok(td_info) => {
             crate::early_println!(
                 "[kernel] Intel TDX initialized\n[kernel] td gpaw: {}, td attributes: {:?}",
@@ -51,7 +39,7 @@ pub(crate) fn init_cvm_guest() {
                 td_info.attributes
             );
         }
-        Err(InitError::TdxGetVpInfoError(td_call_error)) => {
+        Err(::tdx_guest::tdcall::InitError::TdxGetVpInfoError(td_call_error)) => {
             panic!(
                 "[kernel] Intel TDX not initialized, Failed to get TD info: {:?}",
                 td_call_error
@@ -70,32 +58,21 @@ static CPU_FEATURES: Once<FeatureInfo> = Once::new();
 ///
 /// # Safety
 ///
-/// This function must be called only once on the bootstrapping processor.
+/// This function must be called only once in the boot context of the
+/// bootstrapping processor.
 pub(crate) unsafe fn late_init_on_bsp() {
-    // SAFETY: this function is only called once on BSP.
-    unsafe {
-        crate::arch::trap::init(true);
-    }
-    irq::init();
-
-    kernel::acpi::init();
+    // SAFETY: This function is only called once on BSP.
+    unsafe { trap::init() };
 
     let io_mem_builder = construct_io_mem_allocator_builder();
 
-    match kernel::apic::init(&io_mem_builder) {
-        Ok(_) => {
-            ioapic::init(&io_mem_builder);
-        }
-        Err(err) => {
-            info!("APIC init error:{:?}", err);
-            kernel::pic::enable();
-        }
-    }
+    kernel::apic::init(&io_mem_builder).expect("APIC doesn't exist");
+    kernel::irq::init(&io_mem_builder);
 
     kernel::tsc::init_tsc_freq();
     timer::init_bsp();
 
-    // SAFETY: we're on the BSP and we're ready to boot all APs.
+    // SAFETY: We're on the BSP and we're ready to boot all APs.
     unsafe { crate::boot::smp::boot_all_aps() };
 
     if_tdx_enabled!({
@@ -106,13 +83,11 @@ pub(crate) unsafe fn late_init_on_bsp() {
         }
     });
 
-    // Some driver like serial may use PIC
-    kernel::pic::init();
-
-    // SAFETY: All the system device memory I/Os have been removed from the builder.
-    unsafe {
-        crate::io::init(io_mem_builder);
-    }
+    // SAFETY:
+    // 1. All the system device memory have been removed from the builder.
+    // 2. All the port I/O regions belonging to the system device are defined using the macros.
+    // 3. `MAX_IO_PORT` defined in `crate::arch::io` is the maximum value specified by x86-64.
+    unsafe { crate::io::init(io_mem_builder) };
 }
 
 /// Architecture-specific initialization on the application processor.
@@ -127,9 +102,9 @@ pub(crate) unsafe fn init_on_ap() {
 
 pub(crate) fn interrupts_ack(irq_number: usize) {
     if !cpu::context::CpuException::is_cpu_exception(irq_number as u16) {
-        kernel::apic::with_borrow(|apic| {
-            apic.eoi();
-        });
+        // TODO: We're in the interrupt context, so `disable_preempt()` is not
+        // really necessary here.
+        kernel::apic::get_or_init(&crate::task::disable_preempt() as _).eoi();
     }
 }
 
@@ -140,6 +115,8 @@ pub fn tsc_freq() -> u64 {
 
 /// Reads the current value of the processor’s time-stamp counter (TSC).
 pub fn read_tsc() -> u64 {
+    use core::arch::x86_64::_rdtsc;
+
     // SAFETY: It is safe to read a time-related counter.
     unsafe { _rdtsc() }
 }
@@ -148,6 +125,8 @@ pub fn read_tsc() -> u64 {
 ///
 /// Returns None if no random value was generated.
 pub fn read_random() -> Option<u64> {
+    use core::arch::x86_64::_rdrand64_step;
+
     // Recommendation from "Intel® Digital Random Number Generator (DRNG) Software
     // Implementation Guide" - Section 5.2.1 and "Intel® 64 and IA-32 Architectures
     // Software Developer’s Manual" - Volume 1 - Section 7.3.17.1.
@@ -161,6 +140,20 @@ pub fn read_random() -> Option<u64> {
         }
     }
     None
+}
+
+fn has_avx() -> bool {
+    use core::arch::x86_64::{__cpuid, __cpuid_count};
+
+    let cpuid_result = unsafe { __cpuid(0) };
+    if cpuid_result.eax < 1 {
+        // CPUID function 1 is not supported
+        return false;
+    }
+
+    let cpuid_result = unsafe { __cpuid_count(1, 0) };
+    // Check for AVX (bit 28 of ecx)
+    cpuid_result.ecx & (1 << 28) != 0
 }
 
 fn has_avx512() -> bool {
@@ -198,7 +191,12 @@ pub(crate) fn enable_cpu_features() {
     }
 
     let mut xcr0 = x86_64::registers::xcontrol::XCr0::read();
-    xcr0 |= XCr0Flags::AVX | XCr0Flags::SSE;
+
+    xcr0 |= XCr0Flags::SSE;
+
+    if has_avx() {
+        xcr0 |= XCr0Flags::AVX;
+    }
 
     if has_avx512() {
         xcr0 |= XCr0Flags::OPMASK | XCr0Flags::ZMM_HI256 | XCr0Flags::HI16_ZMM;
@@ -251,3 +249,5 @@ macro_rules! if_tdx_enabled {
         }
     }};
 }
+
+pub use if_tdx_enabled;

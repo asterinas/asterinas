@@ -7,15 +7,13 @@ use aster_bigtcp::{
 };
 
 use crate::{
-    net::iface::{BoundPort, Iface, IFACES},
+    net::iface::{iter_all_ifaces, loopback_iface, virtio_iface, BoundPort, Iface},
     prelude::*,
 };
 
 pub(super) fn get_iface_to_bind(ip_addr: &IpAddress) -> Option<Arc<Iface>> {
-    let ifaces = IFACES.get().unwrap();
     let IpAddress::Ipv4(ipv4_addr) = ip_addr;
-    ifaces
-        .iter()
+    iter_all_ifaces()
         .find(|iface| {
             if let Some(iface_ipv4_addr) = iface.ipv4_addr() {
                 iface_ipv4_addr == *ipv4_addr
@@ -30,9 +28,8 @@ pub(super) fn get_iface_to_bind(ip_addr: &IpAddress) -> Option<Arc<Iface>> {
 /// If the remote address is the same as that of some iface, we will use the iface.
 /// Otherwise, we will use a default interface.
 fn get_ephemeral_iface(remote_ip_addr: &IpAddress) -> Arc<Iface> {
-    let ifaces = IFACES.get().unwrap();
     let IpAddress::Ipv4(remote_ipv4_addr) = remote_ip_addr;
-    if let Some(iface) = ifaces.iter().find(|iface| {
+    if let Some(iface) = iter_all_ifaces().find(|iface| {
         if let Some(iface_ipv4_addr) = iface.ipv4_addr() {
             iface_ipv4_addr == *remote_ipv4_addr
         } else {
@@ -41,8 +38,14 @@ fn get_ephemeral_iface(remote_ip_addr: &IpAddress) -> Arc<Iface> {
     }) {
         return iface.clone();
     }
-    // FIXME: use the virtio-net as the default interface
-    ifaces[0].clone()
+
+    // FIXME: Instead of hardcoding the rules here, we should choose the
+    // default interface according to the routing table.
+    if let Some(virtio_iface) = virtio_iface() {
+        virtio_iface.clone()
+    } else {
+        loopback_iface().clone()
+    }
 }
 
 pub(super) fn bind_port(endpoint: &IpEndpoint, can_reuse: bool) -> Result<BoundPort> {

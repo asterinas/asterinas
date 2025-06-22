@@ -2,48 +2,52 @@
 
 //! Interrupts.
 
-#![expect(dead_code)]
-
-use alloc::{boxed::Box, fmt::Debug, sync::Arc, vec::Vec};
-
-use id_alloc::IdAlloc;
 use spin::Once;
 use x86_64::registers::rflags::{self, RFlags};
 
 use super::iommu::{alloc_irt_entry, has_interrupt_remapping, IrtEntryHandle};
-use crate::{
-    cpu::CpuId,
-    sync::{LocalIrqDisabled, Mutex, PreemptDisabled, RwLock, RwLockReadGuard, SpinLock},
-    trap::TrapFrame,
-};
+use crate::cpu::PinCurrentCpu;
 
-/// The global allocator for software defined IRQ lines.
-pub(crate) static IRQ_ALLOCATOR: Once<SpinLock<IdAlloc>> = Once::new();
+// Intel(R) 64 and IA-32 rchitectures Software Developer's Manual,
+// Volume 3A, Section 6.2 says "Vector numbers in the range 32 to 255
+// are designated as user-defined interrupts and are not reserved by
+// the Intel 64 and IA-32 architecture."
+pub(crate) const IRQ_NUM_MIN: u8 = 32;
+pub(crate) const IRQ_NUM_MAX: u8 = 255;
 
-pub(crate) static IRQ_LIST: Once<Vec<IrqLine>> = Once::new();
+pub(crate) struct IrqRemapping {
+    entry: Once<IrtEntryHandle>,
+}
 
-pub(crate) fn init() {
-    let mut list: Vec<IrqLine> = Vec::new();
-    for i in 0..256 {
-        list.push(IrqLine {
-            irq_num: i as u8,
-            callback_list: RwLock::new(Vec::new()),
-            bind_remapping_entry: Once::new(),
+impl IrqRemapping {
+    pub(crate) const fn new() -> Self {
+        Self { entry: Once::new() }
+    }
+
+    /// Initializes the remapping entry for the specific IRQ number.
+    ///
+    /// This will do nothing if the entry is already initialized or interrupt
+    /// remapping is disabled or not supported by the architecture.
+    pub(crate) fn init(&self, irq_num: u8) {
+        if !has_interrupt_remapping() {
+            return;
+        }
+
+        self.entry.call_once(|| {
+            // Allocate and enable the IRT entry.
+            let handle = alloc_irt_entry().unwrap();
+            handle.enable(irq_num as u32);
+            handle
         });
     }
-    IRQ_LIST.call_once(|| list);
-    CALLBACK_ID_ALLOCATOR.call_once(|| Mutex::new(IdAlloc::with_capacity(256)));
-    IRQ_ALLOCATOR.call_once(|| {
-        // As noted in the Intel 64 and IA-32 rchitectures Software Developer’s Manual,
-        // Volume 3A, Section 6.2, the first 32 interrupts are reserved for specific
-        // usages. And the rest from 32 to 255 are available for external user-defined
-        // interrupts.
-        let mut id_alloc = IdAlloc::with_capacity(256);
-        for i in 0..32 {
-            id_alloc.alloc_specific(i).unwrap();
-        }
-        SpinLock::new(id_alloc)
-    });
+
+    /// Gets the remapping index of the IRQ line.
+    ///
+    /// This method will return `None` if interrupt remapping is disabled or
+    /// not supported by the architecture.
+    pub(crate) fn remapping_index(&self) -> Option<u16> {
+        Some(self.entry.get()?.index())
+    }
 }
 
 pub(crate) fn enable_local() {
@@ -62,112 +66,20 @@ pub(crate) fn is_local_enabled() -> bool {
     (rflags::read_raw() & RFlags::INTERRUPT_FLAG.bits()) != 0
 }
 
-static CALLBACK_ID_ALLOCATOR: Once<Mutex<IdAlloc>> = Once::new();
+// ####### Inter-Processor Interrupts (IPIs) #######
 
-pub struct CallbackElement {
-    function: Box<dyn Fn(&TrapFrame) + Send + Sync + 'static>,
-    id: usize,
-}
-
-impl CallbackElement {
-    pub fn call(&self, element: &TrapFrame) {
-        (self.function)(element);
-    }
-}
-
-impl Debug for CallbackElement {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("CallbackElement")
-            .field("id", &self.id)
-            .finish()
-    }
-}
-
-/// An interrupt request (IRQ) line.
-#[derive(Debug)]
-pub(crate) struct IrqLine {
-    pub(crate) irq_num: u8,
-    pub(crate) callback_list: RwLock<Vec<CallbackElement>>,
-    bind_remapping_entry: Once<Arc<SpinLock<IrtEntryHandle, LocalIrqDisabled>>>,
-}
-
-impl IrqLine {
-    /// Acquires an interrupt request line.
-    ///
-    /// # Safety
-    ///
-    /// This function is marked unsafe as manipulating interrupt lines is
-    /// considered a dangerous operation.
-    #[expect(clippy::redundant_allocation)]
-    pub unsafe fn acquire(irq_num: u8) -> Arc<&'static Self> {
-        let irq = Arc::new(IRQ_LIST.get().unwrap().get(irq_num as usize).unwrap());
-        if has_interrupt_remapping() {
-            let handle = alloc_irt_entry();
-            if let Some(handle) = handle {
-                irq.bind_remapping_entry.call_once(|| handle);
-            }
-        }
-        irq
-    }
-
-    pub fn bind_remapping_entry(&self) -> Option<&Arc<SpinLock<IrtEntryHandle, LocalIrqDisabled>>> {
-        self.bind_remapping_entry.get()
-    }
-
-    /// Gets the IRQ number.
-    pub fn num(&self) -> u8 {
-        self.irq_num
-    }
-
-    pub fn callback_list(
-        &self,
-    ) -> RwLockReadGuard<alloc::vec::Vec<CallbackElement>, PreemptDisabled> {
-        self.callback_list.read()
-    }
-
-    /// Registers a callback that will be invoked when the IRQ is active.
-    ///
-    /// A handle to the callback is returned. Dropping the handle
-    /// automatically unregisters the callback.
-    ///
-    /// For each IRQ line, multiple callbacks may be registered.
-    pub fn on_active<F>(&self, callback: F) -> IrqCallbackHandle
-    where
-        F: Fn(&TrapFrame) + Sync + Send + 'static,
-    {
-        let allocated_id = CALLBACK_ID_ALLOCATOR.get().unwrap().lock().alloc().unwrap();
-        self.callback_list.write().push(CallbackElement {
-            function: Box::new(callback),
-            id: allocated_id,
-        });
-        IrqCallbackHandle {
-            irq_num: self.irq_num,
-            id: allocated_id,
-        }
-    }
-}
-
-/// The handle to a registered callback for a IRQ line.
+/// Hardware-specific, architecture-dependent CPU ID.
 ///
-/// When the handle is dropped, the callback will be unregistered automatically.
-#[must_use]
-#[derive(Debug)]
-pub struct IrqCallbackHandle {
-    irq_num: u8,
-    id: usize,
-}
+/// This is the Local APIC ID in the x86_64 architecture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HwCpuId(u32);
 
-impl Drop for IrqCallbackHandle {
-    fn drop(&mut self) {
-        let mut a = IRQ_LIST
-            .get()
-            .unwrap()
-            .get(self.irq_num as usize)
-            .unwrap()
-            .callback_list
-            .write();
-        a.retain(|item| item.id != self.id);
-        CALLBACK_ID_ALLOCATOR.get().unwrap().lock().free(self.id);
+impl HwCpuId {
+    pub(crate) fn read_current(guard: &dyn PinCurrentCpu) -> Self {
+        use crate::arch::kernel::apic;
+
+        let apic = apic::get_or_init(guard);
+        Self(apic.id())
     }
 }
 
@@ -175,13 +87,14 @@ impl Drop for IrqCallbackHandle {
 ///
 /// # Safety
 ///
-/// The caller must ensure that the CPU ID and the interrupt number corresponds
-/// to a safe function to call.
-pub(crate) unsafe fn send_ipi(cpu_id: CpuId, irq_num: u8) {
+/// The caller must ensure that the interrupt number is valid and that
+/// the corresponding handler is configured correctly on the remote CPU.
+/// Furthermore, invoking the interrupt handler must also be safe.
+pub(crate) unsafe fn send_ipi(hw_cpu_id: HwCpuId, irq_num: u8, guard: &dyn PinCurrentCpu) {
     use crate::arch::kernel::apic::{self, Icr};
 
     let icr = Icr::new(
-        apic::ApicId::from(cpu_id.as_usize() as u32),
+        apic::ApicId::from(hw_cpu_id.0),
         apic::DestinationShorthand::NoShorthand,
         apic::TriggerMode::Edge,
         apic::Level::Assert,
@@ -190,7 +103,9 @@ pub(crate) unsafe fn send_ipi(cpu_id: CpuId, irq_num: u8) {
         apic::DeliveryMode::Fixed,
         irq_num,
     );
-    apic::with_borrow(|apic| {
-        apic.send_ipi(icr);
-    });
+
+    let apic = apic::get_or_init(guard);
+    // SAFETY: The ICR is valid to generate the request IPI. Generating the request IPI is safe
+    // as guaranteed by the caller.
+    unsafe { apic.send_ipi(icr) };
 }

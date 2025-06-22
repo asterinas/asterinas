@@ -3,24 +3,15 @@
 use alloc::sync::Arc;
 use core::ops::Range;
 
-use cfg_if::cfg_if;
-
 use super::{check_and_insert_dma_mapping, remove_dma_mapping, DmaError, HasDaddr};
 use crate::{
     arch::iommu,
     error::Error,
-    if_tdx_enabled,
     mm::{
         dma::{dma_type, Daddr, DmaType},
         HasPaddr, Infallible, Paddr, USegment, UntypedMem, VmIo, VmReader, VmWriter, PAGE_SIZE,
     },
 };
-
-cfg_if! {
-    if #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))] {
-        use crate::arch::tdx_guest;
-    }
-}
 
 /// A streaming DMA mapping. Users must synchronize data
 /// before reading or after writing to ensure consistency.
@@ -63,24 +54,27 @@ impl DmaStream {
         direction: DmaDirection,
         is_cache_coherent: bool,
     ) -> Result<Self, DmaError> {
-        let frame_count = segment.size() / PAGE_SIZE;
         let start_paddr = segment.start_paddr();
+        let frame_count = segment.size() / PAGE_SIZE;
+
         if !check_and_insert_dma_mapping(start_paddr, frame_count) {
             return Err(DmaError::AlreadyMapped);
         }
-        // Ensure that the addresses used later will not overflow
-        start_paddr.checked_add(frame_count * PAGE_SIZE).unwrap();
+
         let start_daddr = match dma_type() {
             DmaType::Direct => {
-                if_tdx_enabled!({
-                    #[cfg(target_arch = "x86_64")]
+                #[cfg(target_arch = "x86_64")]
+                crate::arch::if_tdx_enabled!({
                     // SAFETY:
-                    // This is safe because we are ensuring that the physical address range specified by `start_paddr` and `frame_count` is valid before these operations.
-                    // The `check_and_insert_dma_mapping` function checks if the physical address range is already mapped.
-                    // We are also ensuring that we are only modifying the page table entries corresponding to the physical address range specified by `start_paddr` and `frame_count`.
-                    // Therefore, we are not causing any undefined behavior or violating any of the requirements of the 'unprotect_gpa_range' function.
+                    //  - The address of a `USegment` is always page aligned.
+                    //  - A `USegment` always points to normal physical memory, so the address
+                    //    range falls in the GPA limit.
+                    //  - A `USegment` always points to normal physical memory, so all the pages
+                    //    are contained in the linear mapping.
+                    //  - The pages belong to a `USegment`, so they're all untyped memory.
                     unsafe {
-                        tdx_guest::unprotect_gpa_range(start_paddr, frame_count).unwrap();
+                        crate::arch::tdx_guest::unprotect_gpa_range(start_paddr, frame_count)
+                            .unwrap();
                     }
                 });
                 start_paddr as Daddr
@@ -156,7 +150,7 @@ impl DmaStream {
                 if self.inner.is_cache_coherent {
                     return Ok(());
                 }
-                let start_va = crate::mm::paddr_to_vaddr(self.inner.segment.paddr()) as *const u8;
+                let start_va = crate::mm::paddr_to_vaddr(self.inner.segment.start_paddr()) as *const u8;
                 // TODO: Query the CPU for the cache line size via CPUID, we use 64 bytes as the cache line size here.
                 for i in _byte_range.step_by(64) {
                     // TODO: Call the cache line flush command in the corresponding architecture.
@@ -176,31 +170,35 @@ impl HasDaddr for DmaStream {
 
 impl Drop for DmaStreamInner {
     fn drop(&mut self) {
-        let frame_count = self.segment.size() / PAGE_SIZE;
         let start_paddr = self.segment.start_paddr();
-        // Ensure that the addresses used later will not overflow
-        start_paddr.checked_add(frame_count * PAGE_SIZE).unwrap();
+        let frame_count = self.segment.size() / PAGE_SIZE;
+
         match dma_type() {
             DmaType::Direct => {
-                if_tdx_enabled!({
-                    #[cfg(target_arch = "x86_64")]
+                #[cfg(target_arch = "x86_64")]
+                crate::arch::if_tdx_enabled!({
                     // SAFETY:
-                    // This is safe because we are ensuring that the physical address range specified by `start_paddr` and `frame_count` is valid before these operations.
-                    // The `start_paddr()` ensures the `start_paddr` is page-aligned.
-                    // We are also ensuring that we are only modifying the page table entries corresponding to the physical address range specified by `start_paddr` and `frame_count`.
-                    // Therefore, we are not causing any undefined behavior or violating any of the requirements of the `protect_gpa_range` function.
+                    //  - The address of a `USegment` is always page aligned.
+                    //  - A `USegment` always points to normal physical memory, so the address
+                    //    range falls in the GPA limit.
+                    //  - A `USegment` always points to normal physical memory, so all the pages
+                    //    are contained in the linear mapping.
+                    //  - The pages belong to a `USegment`, so they're all untyped memory.
                     unsafe {
-                        tdx_guest::protect_gpa_range(start_paddr, frame_count).unwrap();
+                        crate::arch::tdx_guest::protect_gpa_range(start_paddr, frame_count)
+                            .unwrap();
                     }
                 });
             }
             DmaType::Iommu => {
                 for i in 0..frame_count {
                     let paddr = start_paddr + (i * PAGE_SIZE);
-                    iommu::unmap(paddr).unwrap();
+                    iommu::unmap(paddr as Daddr).unwrap();
+                    // FIXME: After dropping it could be reused. IOTLB needs to be flushed.
                 }
             }
         }
+
         remove_dma_mapping(start_paddr, frame_count);
     }
 }

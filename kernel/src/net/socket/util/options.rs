@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::time::Duration;
-
 use aster_bigtcp::socket::{
     NeedIfacePoll, TCP_RECV_BUF_LEN, TCP_SEND_BUF_LEN, UDP_RECV_PAYLOAD_LEN, UDP_SEND_PAYLOAD_LEN,
 };
 
+use super::LingerOption;
 use crate::{
     match_sock_option_mut, match_sock_option_ref,
     net::socket::options::{
@@ -91,7 +90,7 @@ impl SocketOptionSet {
     pub fn set_option(
         &mut self,
         option: &dyn SocketOption,
-        socket: &mut dyn SetSocketLevelOption,
+        socket: &dyn SetSocketLevelOption,
     ) -> Result<NeedIfacePoll> {
         match_sock_option_ref!(option, {
             socket_recv_buf: RecvBuf => {
@@ -136,26 +135,6 @@ impl SocketOptionSet {
 
 pub const MIN_SENDBUF: u32 = 2304;
 pub const MIN_RECVBUF: u32 = 2304;
-
-#[derive(Debug, Default, Clone, Copy)]
-pub struct LingerOption {
-    is_on: bool,
-    timeout: Duration,
-}
-
-impl LingerOption {
-    pub fn new(is_on: bool, timeout: Duration) -> Self {
-        Self { is_on, timeout }
-    }
-
-    pub fn is_on(&self) -> bool {
-        self.is_on
-    }
-
-    pub fn timeout(&self) -> Duration {
-        self.timeout
-    }
-}
 
 /// A trait used for setting socket level options on actual sockets.
 pub(in crate::net) trait SetSocketLevelOption {

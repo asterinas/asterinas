@@ -5,7 +5,7 @@ mod init;
 mod poll;
 mod sched;
 
-pub use init::{init, IFACES};
+pub use init::{init, iter_all_ifaces, loopback_iface, virtio_iface};
 pub use poll::lazy_init;
 
 pub type Iface = dyn aster_bigtcp::iface::Iface<ext::BigtcpExt>;

@@ -21,6 +21,7 @@ use crate::{
     time::{
         clockid_t,
         clocks::{BootTimeClock, MonotonicClock, RealTimeClock},
+        Timer,
     },
 };
 
@@ -103,7 +104,31 @@ pub fn sys_timer_create(
         );
     };
 
-    let process_timer_manager = current_process.timer_manager();
+    let timer = create_timer(clockid, func, ctx)?;
+
+    let timer_id = current_process.timer_manager().add_posix_timer(timer);
+    ctx.user_space().write_val(timer_id_addr, &timer_id)?;
+    Ok(SyscallReturn::Return(0))
+}
+
+pub fn sys_timer_delete(timer_id: usize, _ctx: &Context) -> Result<SyscallReturn> {
+    let current_process = current!();
+    let Some(timer) = current_process.timer_manager().remove_posix_timer(timer_id) else {
+        return_errno_with_message!(Errno::EINVAL, "invalid timer ID");
+    };
+
+    timer.cancel();
+    Ok(SyscallReturn::Return(0))
+}
+
+/// Creates a timer associated with the specified clock ID.
+///
+/// This timer will invoke the given callback function (`func`) when it expires.
+pub fn create_timer<F>(clockid: clockid_t, func: F, ctx: &Context) -> Result<Arc<Timer>>
+where
+    F: Fn() + Send + Sync + 'static,
+{
+    let process_timer_manager = ctx.process.timer_manager();
     let timer = if clockid >= 0 {
         let clock_id = ClockId::try_from(clockid)?;
         match clock_id {
@@ -141,18 +166,5 @@ pub fn sys_timer_create(
             DynamicClockIdInfo::Fd(_) => unimplemented!(),
         }
     };
-
-    let timer_id = process_timer_manager.add_posix_timer(timer);
-    ctx.user_space().write_val(timer_id_addr, &timer_id)?;
-    Ok(SyscallReturn::Return(0))
-}
-
-pub fn sys_timer_delete(timer_id: usize, _ctx: &Context) -> Result<SyscallReturn> {
-    let current_process = current!();
-    let Some(timer) = current_process.timer_manager().remove_posix_timer(timer_id) else {
-        return_errno_with_message!(Errno::EINVAL, "invalid timer ID");
-    };
-
-    timer.cancel();
-    Ok(SyscallReturn::Return(0))
+    Ok(timer)
 }

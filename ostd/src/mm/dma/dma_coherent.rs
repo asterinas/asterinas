@@ -8,7 +8,6 @@ use cfg_if::cfg_if;
 use super::{check_and_insert_dma_mapping, remove_dma_mapping, DmaError, HasDaddr};
 use crate::{
     arch::iommu,
-    if_tdx_enabled,
     mm::{
         dma::{dma_type, Daddr, DmaType},
         io::VmIoOnce,
@@ -55,13 +54,13 @@ impl DmaCoherent {
     /// The method fails if any part of the given `segment`
     /// already belongs to a DMA mapping.
     pub fn map(segment: USegment, is_cache_coherent: bool) -> core::result::Result<Self, DmaError> {
-        let frame_count = segment.size() / PAGE_SIZE;
         let start_paddr = segment.start_paddr();
+        let frame_count = segment.size() / PAGE_SIZE;
+
         if !check_and_insert_dma_mapping(start_paddr, frame_count) {
             return Err(DmaError::AlreadyMapped);
         }
-        // Ensure that the addresses used later will not overflow
-        start_paddr.checked_add(frame_count * PAGE_SIZE).unwrap();
+
         if !is_cache_coherent {
             let page_table = KERNEL_PAGE_TABLE.get().unwrap();
             let vaddr = paddr_to_vaddr(start_paddr);
@@ -73,15 +72,18 @@ impl DmaCoherent {
                     .unwrap();
             }
         }
+
         let start_daddr = match dma_type() {
             DmaType::Direct => {
-                if_tdx_enabled!({
-                    #[cfg(target_arch = "x86_64")]
+                #[cfg(target_arch = "x86_64")]
+                crate::arch::if_tdx_enabled!({
                     // SAFETY:
-                    // This is safe because we are ensuring that the physical address range specified by `start_paddr` and `frame_count` is valid before these operations.
-                    // The `check_and_insert_dma_mapping` function checks if the physical address range is already mapped.
-                    // We are also ensuring that we are only modifying the page table entries corresponding to the physical address range specified by `start_paddr` and `frame_count`.
-                    // Therefore, we are not causing any undefined behavior or violating any of the requirements of the 'unprotect_gpa_range' function.
+                    //  - The address of a `USegment` is always page aligned.
+                    //  - A `USegment` always points to normal physical memory, so the address
+                    //    range falls in the GPA limit.
+                    //  - A `USegment` always points to normal physical memory, so all the pages
+                    //    are contained in the linear mapping.
+                    //  - The pages belong to a `USegment`, so they're all untyped memory.
                     unsafe {
                         tdx_guest::unprotect_gpa_range(start_paddr, frame_count).unwrap();
                     }
@@ -99,6 +101,7 @@ impl DmaCoherent {
                 start_paddr as Daddr
             }
         };
+
         Ok(Self {
             inner: Arc::new(DmaCoherentInner {
                 segment,
@@ -129,19 +132,20 @@ impl Deref for DmaCoherent {
 
 impl Drop for DmaCoherentInner {
     fn drop(&mut self) {
-        let frame_count = self.segment.size() / PAGE_SIZE;
         let start_paddr = self.segment.start_paddr();
-        // Ensure that the addresses used later will not overflow
-        start_paddr.checked_add(frame_count * PAGE_SIZE).unwrap();
+        let frame_count = self.segment.size() / PAGE_SIZE;
+
         match dma_type() {
             DmaType::Direct => {
-                if_tdx_enabled!({
-                    #[cfg(target_arch = "x86_64")]
+                #[cfg(target_arch = "x86_64")]
+                crate::arch::if_tdx_enabled!({
                     // SAFETY:
-                    // This is safe because we are ensuring that the physical address range specified by `start_paddr` and `frame_count` is valid before these operations.
-                    // The `start_paddr()` ensures the `start_paddr` is page-aligned.
-                    // We are also ensuring that we are only modifying the page table entries corresponding to the physical address range specified by `start_paddr` and `frame_count`.
-                    // Therefore, we are not causing any undefined behavior or violating any of the requirements of the `protect_gpa_range` function.
+                    //  - The address of a `USegment` is always page aligned.
+                    //  - A `USegment` always points to normal physical memory, so the address
+                    //    range falls in the GPA limit.
+                    //  - A `USegment` always points to normal physical memory, so all the pages
+                    //    are contained in the linear mapping.
+                    //  - The pages belong to a `USegment`, so they're all untyped memory.
                     unsafe {
                         tdx_guest::protect_gpa_range(start_paddr, frame_count).unwrap();
                     }
@@ -150,10 +154,12 @@ impl Drop for DmaCoherentInner {
             DmaType::Iommu => {
                 for i in 0..frame_count {
                     let paddr = start_paddr + (i * PAGE_SIZE);
-                    iommu::unmap(paddr).unwrap();
+                    iommu::unmap(paddr as Daddr).unwrap();
+                    // FIXME: After dropping it could be reused. IOTLB needs to be flushed.
                 }
             }
         }
+
         if !self.is_cache_coherent {
             let page_table = KERNEL_PAGE_TABLE.get().unwrap();
             let vaddr = paddr_to_vaddr(start_paddr);
@@ -165,6 +171,7 @@ impl Drop for DmaCoherentInner {
                     .unwrap();
             }
         }
+
         remove_dma_mapping(start_paddr, frame_count);
     }
 }

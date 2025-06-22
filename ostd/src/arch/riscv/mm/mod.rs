@@ -7,9 +7,9 @@ use crate::{
     mm::{
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
         page_table::PageTableEntryTrait,
-        Paddr, PagingConstsTrait, PagingLevel, Vaddr, PAGE_SIZE,
+        Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr, PAGE_SIZE,
     },
-    util::SameSizeAs,
+    util::marker::SameSizeAs,
     Pod,
 };
 
@@ -22,6 +22,7 @@ impl PagingConstsTrait for PagingConsts {
     const BASE_PAGE_SIZE: usize = 4096;
     const NR_LEVELS: PagingLevel = 4;
     const ADDRESS_WIDTH: usize = 48;
+    const VA_SIGN_EXT: bool = true;
     const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 4;
     const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
 }
@@ -126,6 +127,8 @@ macro_rules! parse_flags {
 // SAFETY: `PageTableEntry` has the same size as `usize`
 unsafe impl SameSizeAs<usize> for PageTableEntry {}
 
+impl PodOnce for PageTableEntry {}
+
 impl PageTableEntryTrait for PageTableEntry {
     fn is_present(&self) -> bool {
         self.0 & PageTableFlags::VALID.bits() != 0
@@ -188,16 +191,8 @@ impl PageTableEntryTrait for PageTableEntry {
                 PrivFlags::GLOBAL,
                 PageTableFlags::GLOBAL
             )
-            | parse_flags!(
-                prop.flags.AVAIL1.bits(),
-                PageFlags::AVAIL1,
-                PageTableFlags::RSV1
-            )
-            | parse_flags!(
-                prop.flags.AVAIL2.bits(),
-                PageFlags::AVAIL2,
-                PageTableFlags::RSV2
-            );
+            | parse_flags!(prop.flags.bits(), PageFlags::AVAIL1, PageTableFlags::RSV1)
+            | parse_flags!(prop.flags.bits(), PageFlags::AVAIL2, PageTableFlags::RSV2);
 
         match prop.cache {
             CachePolicy::Writeback => (),

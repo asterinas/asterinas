@@ -6,7 +6,7 @@ use core::time::Duration;
 use log::trace;
 use ostd::timer::Jiffies;
 
-use super::{Iface, IFACES};
+use super::{iter_all_ifaces, Iface};
 use crate::{
     sched::{Nice, SchedPolicy},
     thread::kernel_thread::ThreadOptions,
@@ -14,15 +14,13 @@ use crate::{
 };
 
 pub fn lazy_init() {
-    for iface in IFACES.get().unwrap() {
+    for iface in iter_all_ifaces() {
         spawn_background_poll_thread(iface.clone());
     }
 }
 
 pub(super) fn poll_ifaces() {
-    let ifaces = IFACES.get().unwrap();
-
-    for iface in ifaces.iter() {
+    for iface in iter_all_ifaces() {
         iface.poll();
     }
 }

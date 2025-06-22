@@ -85,7 +85,7 @@ mod test {
                     BioType::Read => seg
                         .inner_segment()
                         .writer()
-                        .write(&mut self.queue.0.reader().skip(cur_device_ofs)),
+                        .write(self.queue.0.reader().skip(cur_device_ofs)),
                     BioType::Write => self
                         .queue
                         .0

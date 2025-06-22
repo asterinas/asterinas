@@ -42,8 +42,8 @@ pub fn sys_openat(
     };
 
     let fd = {
-        let file_table = ctx.thread_local.file_table().borrow();
-        let mut file_table_locked = file_table.write();
+        let file_table = ctx.thread_local.borrow_file_table();
+        let mut file_table_locked = file_table.unwrap().write();
         let fd_flags =
             if CreationFlags::from_bits_truncate(flags).contains(CreationFlags::O_CLOEXEC) {
                 FdFlags::CLOEXEC

@@ -4,6 +4,7 @@
 
 use core::{
     marker::PhantomData,
+    mem::ManuallyDrop,
     ops::Deref,
     ptr::NonNull,
     sync::atomic::{
@@ -12,20 +13,22 @@ use core::{
     },
 };
 
+use non_null::NonNullPtr;
 use spin::once::Once;
 
 use self::monitor::RcuMonitor;
-use crate::task::{atomic_mode::AsAtomicModeGuard, disable_preempt, DisabledPreemptGuard};
+use crate::task::{
+    atomic_mode::{AsAtomicModeGuard, InAtomicMode},
+    disable_preempt, DisabledPreemptGuard,
+};
 
 mod monitor;
-mod owner_ptr;
-
-pub use owner_ptr::OwnerPtr;
+pub mod non_null;
 
 /// A Read-Copy Update (RCU) cell for sharing a pointer between threads.
 ///
-/// The pointer should be a owning pointer with type `P`, which implements
-/// [`OwnerPtr`]. For example, `P` can be `Box<T>` or `Arc<T>`.
+/// The pointer should be a non-null pointer with type `P`, which implements
+/// [`NonNullPtr`]. For example, `P` can be `Box<T>` or `Arc<T>`.
 ///
 /// # Overview
 ///
@@ -58,12 +61,12 @@ pub use owner_ptr::OwnerPtr;
 ///
 /// assert_eq!(*rcu_guard, Some(&43));
 /// ```
-pub struct Rcu<P: OwnerPtr>(RcuInner<P>);
+pub struct Rcu<P: NonNullPtr>(RcuInner<P>);
 
 /// A guard that allows access to the pointed data protected by a [`Rcu`].
 #[clippy::has_significant_drop]
 #[must_use]
-pub struct RcuReadGuard<'a, P: OwnerPtr>(RcuReadGuardInner<'a, P>);
+pub struct RcuReadGuard<'a, P: NonNullPtr>(RcuReadGuardInner<'a, P>);
 
 /// A Read-Copy Update (RCU) cell for sharing a _nullable_ pointer.  
 ///
@@ -98,37 +101,32 @@ pub struct RcuReadGuard<'a, P: OwnerPtr>(RcuReadGuardInner<'a, P>);
 ///     assert_eq!(*rcu_guard, 43);
 /// }
 /// ```
-pub struct RcuOption<P: OwnerPtr>(RcuInner<P>);
+pub struct RcuOption<P: NonNullPtr>(RcuInner<P>);
 
 /// A guard that allows access to the pointed data protected by a [`RcuOption`].
 #[clippy::has_significant_drop]
 #[must_use]
-pub struct RcuOptionReadGuard<'a, P: OwnerPtr>(RcuReadGuardInner<'a, P>);
+pub struct RcuOptionReadGuard<'a, P: NonNullPtr>(RcuReadGuardInner<'a, P>);
 
 /// The inner implementation of both [`Rcu`] and [`RcuOption`].
-struct RcuInner<P: OwnerPtr> {
-    ptr: AtomicPtr<<P as OwnerPtr>::Target>,
+struct RcuInner<P: NonNullPtr> {
+    ptr: AtomicPtr<<P as NonNullPtr>::Target>,
     // We want to implement Send and Sync explicitly.
     // Having a pointer field prevents them from being implemented
     // automatically by the compiler.
     _marker: PhantomData<*const P::Target>,
 }
 
-// SAFETY: It is apparent that if `P::Target` is `Send`, then `Rcu<P>` is `Send`.
-unsafe impl<P: OwnerPtr> Send for RcuInner<P> where <P as OwnerPtr>::Target: Send {}
+// SAFETY: It is apparent that if `P` is `Send`, then `Rcu<P>` is `Send`.
+unsafe impl<P: NonNullPtr> Send for RcuInner<P> where P: Send {}
 
 // SAFETY: To implement `Sync` for `Rcu<P>`, we need to meet two conditions:
-//  1. `P::Target` must be `Sync` because `Rcu::get` allows concurrent access.
-//  2. `P::Target` must be `Send` because `Rcu::update` may obtain an object
+//  1. `P` must be `Sync` because `Rcu::get` allows concurrent access.
+//  2. `P` must be `Send` because `Rcu::update` may obtain an object
 //     of `P` created on another thread.
-unsafe impl<P: OwnerPtr> Sync for RcuInner<P>
-where
-    <P as OwnerPtr>::Target: Send + Sync,
-    P: Send,
-{
-}
+unsafe impl<P: NonNullPtr> Sync for RcuInner<P> where P: Send + Sync {}
 
-impl<P: OwnerPtr> RcuInner<P> {
+impl<P: NonNullPtr + Send> RcuInner<P> {
     const fn new_none() -> Self {
         Self {
             ptr: AtomicPtr::new(core::ptr::null_mut()),
@@ -137,7 +135,7 @@ impl<P: OwnerPtr> RcuInner<P> {
     }
 
     fn new(pointer: P) -> Self {
-        let ptr = <P as OwnerPtr>::into_raw(pointer).as_ptr();
+        let ptr = <P as NonNullPtr>::into_raw(pointer).as_ptr();
         let ptr = AtomicPtr::new(ptr);
         Self {
             ptr,
@@ -147,7 +145,7 @@ impl<P: OwnerPtr> RcuInner<P> {
 
     fn update(&self, new_ptr: Option<P>) {
         let new_ptr = if let Some(new_ptr) = new_ptr {
-            <P as OwnerPtr>::into_raw(new_ptr).as_ptr()
+            <P as NonNullPtr>::into_raw(new_ptr).as_ptr()
         } else {
             core::ptr::null_mut()
         };
@@ -155,7 +153,11 @@ impl<P: OwnerPtr> RcuInner<P> {
         let old_raw_ptr = self.ptr.swap(new_ptr, AcqRel);
 
         if let Some(p) = NonNull::new(old_raw_ptr) {
-            // SAFETY: It was previously returned by `into_raw`.
+            // SAFETY:
+            // 1. The pointer was previously returned by `into_raw`.
+            // 2. The pointer is removed from the RCU slot so that no one will
+            //    use it after the end of the current grace period. The removal
+            //    is done atomically, so it will only be dropped once.
             unsafe { delay_drop::<P>(p) };
         }
     }
@@ -169,33 +171,27 @@ impl<P: OwnerPtr> RcuInner<P> {
         }
     }
 
-    fn read_with<'a>(
-        &'a self,
-        guard: &'a dyn AsAtomicModeGuard,
-    ) -> Option<&'a <P as OwnerPtr>::Target> {
-        // Ensure that a real atomic-mode guard is obtained.
-        let _atomic_mode_guard = guard.as_atomic_mode_guard();
-
+    fn read_with<'a>(&'a self, _guard: &'a dyn InAtomicMode) -> Option<P::Ref<'a>> {
         let obj_ptr = self.ptr.load(Acquire);
         if obj_ptr.is_null() {
             return None;
         }
         // SAFETY:
         // 1. This pointer is not NULL.
-        // 2. The `_atomic_mode_guard` guarantees atomic mode for the duration of
-        //    lifetime `'a`, the pointer is valid because other writers won't release
-        //    the allocation until this task passes the quiescent state.
-        Some(unsafe { &*obj_ptr })
+        // 2. The `_guard` guarantees atomic mode for the duration of lifetime
+        //    `'a`, the pointer is valid because other writers won't release the
+        //    allocation until this task passes the quiescent state.
+        NonNull::new(obj_ptr).map(|ptr| unsafe { P::raw_as_ref(ptr) })
     }
 }
 
-impl<P: OwnerPtr> Drop for RcuInner<P> {
+impl<P: NonNullPtr> Drop for RcuInner<P> {
     fn drop(&mut self) {
         let ptr = self.ptr.load(Acquire);
         if let Some(p) = NonNull::new(ptr) {
             // SAFETY: It was previously returned by `into_raw` when creating
             // the RCU primitive.
-            let pointer = unsafe { <P as OwnerPtr>::from_raw(p) };
+            let pointer = unsafe { <P as NonNullPtr>::from_raw(p) };
             // It is OK not to delay the drop because the RCU primitive is
             // owned by nobody else.
             drop(pointer);
@@ -204,16 +200,23 @@ impl<P: OwnerPtr> Drop for RcuInner<P> {
 }
 
 /// The inner implementation of both [`RcuReadGuard`] and [`RcuOptionReadGuard`].
-struct RcuReadGuardInner<'a, P: OwnerPtr> {
-    obj_ptr: *mut <P as OwnerPtr>::Target,
+struct RcuReadGuardInner<'a, P: NonNullPtr> {
+    obj_ptr: *mut <P as NonNullPtr>::Target,
     rcu: &'a RcuInner<P>,
     _inner_guard: DisabledPreemptGuard,
 }
 
-impl<P: OwnerPtr> RcuReadGuardInner<'_, P> {
+impl<P: NonNullPtr + Send> RcuReadGuardInner<'_, P> {
+    fn get(&self) -> Option<P::Ref<'_>> {
+        // SAFETY: The guard ensures that `P` will not be dropped. Thus, `P`
+        // outlives the lifetime of `&self`. Additionally, during this period,
+        // it is impossible to create a mutable reference to `P`.
+        NonNull::new(self.obj_ptr).map(|ptr| unsafe { P::raw_as_ref(ptr) })
+    }
+
     fn compare_exchange(self, new_ptr: Option<P>) -> Result<(), Option<P>> {
         let new_ptr = if let Some(new_ptr) = new_ptr {
-            <P as OwnerPtr>::into_raw(new_ptr).as_ptr()
+            <P as NonNullPtr>::into_raw(new_ptr).as_ptr()
         } else {
             core::ptr::null_mut()
         };
@@ -231,11 +234,15 @@ impl<P: OwnerPtr> RcuReadGuardInner<'_, P> {
             // 1. It was previously returned by `into_raw`.
             // 2. The `compare_exchange` fails so the pointer will not
             //    be used by other threads via reading the RCU primitive.
-            return Err(Some(unsafe { <P as OwnerPtr>::from_raw(new_ptr) }));
+            return Err(Some(unsafe { <P as NonNullPtr>::from_raw(new_ptr) }));
         }
 
         if let Some(p) = NonNull::new(self.obj_ptr) {
-            // SAFETY: It was previously returned by `into_raw`.
+            // SAFETY:
+            // 1. The pointer was previously returned by `into_raw`.
+            // 2. The pointer is removed from the RCU slot so that no one will
+            //    use it after the end of the current grace period. The removal
+            //    is done atomically, so it will only be dropped once.
             unsafe { delay_drop::<P>(p) };
         }
 
@@ -243,7 +250,7 @@ impl<P: OwnerPtr> RcuReadGuardInner<'_, P> {
     }
 }
 
-impl<P: OwnerPtr> Rcu<P> {
+impl<P: NonNullPtr + Send> Rcu<P> {
     /// Creates a new RCU primitive with the given pointer.
     pub fn new(pointer: P) -> Self {
         Self(RcuInner::new(pointer))
@@ -279,15 +286,12 @@ impl<P: OwnerPtr> Rcu<P> {
     /// Unlike [`Self::read`], this function does not return a read guard, so
     /// you cannot use [`RcuReadGuard::compare_exchange`] to synchronize the
     /// writers. You may do it via a [`super::SpinLock`].
-    pub fn read_with<'a>(
-        &'a self,
-        guard: &'a dyn AsAtomicModeGuard,
-    ) -> &'a <P as OwnerPtr>::Target {
-        self.0.read_with(guard).unwrap()
+    pub fn read_with<'a, G: AsAtomicModeGuard + ?Sized>(&'a self, guard: &'a G) -> P::Ref<'a> {
+        self.0.read_with(guard.as_atomic_mode_guard()).unwrap()
     }
 }
 
-impl<P: OwnerPtr> RcuOption<P> {
+impl<P: NonNullPtr + Send> RcuOption<P> {
     /// Creates a new RCU primitive with the given pointer.
     pub fn new(pointer: Option<P>) -> Self {
         if let Some(pointer) = pointer {
@@ -337,29 +341,20 @@ impl<P: OwnerPtr> RcuOption<P> {
     /// Unlike [`Self::read`], this function does not return a read guard, so
     /// you cannot use [`RcuOptionReadGuard::compare_exchange`] to synchronize the
     /// writers. You may do it via a [`super::SpinLock`].
-    pub fn read_with<'a>(
+    pub fn read_with<'a, G: AsAtomicModeGuard + ?Sized>(
         &'a self,
-        guard: &'a dyn AsAtomicModeGuard,
-    ) -> Option<&'a <P as OwnerPtr>::Target> {
-        self.0.read_with(guard)
+        guard: &'a G,
+    ) -> Option<P::Ref<'a>> {
+        self.0.read_with(guard.as_atomic_mode_guard())
     }
 }
 
-// RCU guards that have a non-null pointer can be directly dereferenced.
-impl<P: OwnerPtr> Deref for RcuReadGuard<'_, P> {
-    type Target = <P as OwnerPtr>::Target;
-
-    fn deref(&self) -> &Self::Target {
-        // SAFETY:
-        // 1. This pointer is not NULL because the type is `RcuReadGuard`.
-        // 2. Since the preemption is disabled, the pointer is valid because
-        //    other writers won't release the allocation until this task passes
-        //    the quiescent state.
-        unsafe { &*self.0.obj_ptr }
+impl<P: NonNullPtr + Send> RcuReadGuard<'_, P> {
+    /// Gets the reference of the protected data.
+    pub fn get(&self) -> P::Ref<'_> {
+        self.0.get().unwrap()
     }
-}
 
-impl<P: OwnerPtr> RcuReadGuard<'_, P> {
     /// Tries to replace the already read pointer with a new pointer.
     ///
     /// If another thread has updated the pointer after the read, this
@@ -380,21 +375,12 @@ impl<P: OwnerPtr> RcuReadGuard<'_, P> {
     }
 }
 
-// RCU guards that may have a null pointer can be dereferenced after checking.
-impl<P: OwnerPtr> RcuOptionReadGuard<'_, P> {
+impl<P: NonNullPtr + Send> RcuOptionReadGuard<'_, P> {
     /// Gets the reference of the protected data.
     ///
     /// If the RCU primitive protects nothing, this function returns `None`.
-    pub fn get(&self) -> Option<&<P as OwnerPtr>::Target> {
-        if self.0.obj_ptr.is_null() {
-            return None;
-        }
-        // SAFETY:
-        // 1. This pointer is not NULL.
-        // 2. Since the preemption is disabled, the pointer is valid because
-        //    other writers won't release the allocation until this task passes
-        //    the quiescent state.
-        Some(unsafe { &*self.0.obj_ptr })
+    pub fn get(&self) -> Option<P::Ref<'_>> {
+        self.0.get()
     }
 
     /// Returns if the RCU primitive protects nothing when [`Rcu::read`] happens.
@@ -421,16 +407,25 @@ impl<P: OwnerPtr> RcuOptionReadGuard<'_, P> {
     }
 }
 
+/// Delays the dropping of a [`NonNullPtr`] after the RCU grace period.
+///
+/// This is internally needed for implementing [`Rcu`] and [`RcuOption`]
+/// because we cannot alias a [`Box`]. Restoring `P` and use [`RcuDrop`] for it
+/// can lead to multiple [`Box`]es simultaneously pointing to the same
+/// content.
+///
 /// # Safety
 ///
-/// The pointer must be previously returned by `into_raw` and the pointer
-/// must be only be dropped once.
-unsafe fn delay_drop<P: OwnerPtr>(pointer: NonNull<<P as OwnerPtr>::Target>) {
-    struct ForceSend<P: OwnerPtr>(NonNull<<P as OwnerPtr>::Target>);
+/// The pointer must be previously returned by `into_raw`, will not be used
+/// after the end of the current grace period, and will only be dropped once.
+///
+/// [`Box`]: alloc::boxed::Box
+unsafe fn delay_drop<P: NonNullPtr + Send>(pointer: NonNull<<P as NonNullPtr>::Target>) {
+    struct ForceSend<P: NonNullPtr + Send>(NonNull<<P as NonNullPtr>::Target>);
     // SAFETY: Sending a raw pointer to another task is safe as long as
     // the pointer access in another task is safe (guaranteed by the trait
     // bound `P: Send`).
-    unsafe impl<P: OwnerPtr> Send for ForceSend<P> {}
+    unsafe impl<P: NonNullPtr + Send> Send for ForceSend<P> {}
 
     let pointer: ForceSend<P> = ForceSend(pointer);
 
@@ -444,9 +439,50 @@ unsafe fn delay_drop<P: OwnerPtr>(pointer: NonNull<<P as OwnerPtr>::Target>) {
         // 1. The pointer was previously returned by `into_raw`.
         // 2. The pointer won't be used anymore since the grace period has
         //    finished and this is the only time the pointer gets dropped.
-        let p = unsafe { <P as OwnerPtr>::from_raw(pointer.0) };
+        let p = unsafe { <P as NonNullPtr>::from_raw(pointer.0) };
         drop(p);
     });
+}
+
+/// A wrapper to delay calling destructor of `T` after the RCU grace period.
+///
+/// Upon dropping this structure, a callback will be registered to the global
+/// RCU monitor and the destructor of `T` will be delayed until the callback.
+///
+/// [`RcuDrop<T>`] is guaranteed to have the same layout as `T`. You can also
+/// access the inner value safely via [`RcuDrop<T>`].
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct RcuDrop<T: Send + 'static> {
+    value: ManuallyDrop<T>,
+}
+
+impl<T: Send + 'static> RcuDrop<T> {
+    /// Creates a new [`RcuDrop`] instance that delays the dropping of `value`.
+    pub fn new(value: T) -> Self {
+        Self {
+            value: ManuallyDrop::new(value),
+        }
+    }
+}
+
+impl<T: Send + 'static> Deref for RcuDrop<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl<T: Send + 'static> Drop for RcuDrop<T> {
+    fn drop(&mut self) {
+        // SAFETY: The `ManuallyDrop` will not be used after this point.
+        let taken = unsafe { ManuallyDrop::take(&mut self.value) };
+        let rcu_monitor = RCU_MONITOR.get().unwrap();
+        rcu_monitor.after_grace_period(|| {
+            drop(taken);
+        });
+    }
 }
 
 /// Finishes the current grace period.

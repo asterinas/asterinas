@@ -7,20 +7,20 @@ use core::{
 
 use aster_bigtcp::{socket::RawTcpOption, wire::IpEndpoint};
 
-use super::{connecting::ConnectingStream, listen::ListenStream, StreamObserver};
+use super::{connecting::ConnectingStream, listen::ListenStream, observer::StreamObserver};
 use crate::{
     events::IoEvents,
     net::{
         iface::BoundPort,
         socket::{
             ip::common::{bind_port, get_ephemeral_endpoint},
-            SocketAddr,
+            util::SocketAddr,
         },
     },
     prelude::*,
 };
 
-pub struct InitStream {
+pub(super) struct InitStream {
     bound_port: Option<BoundPort>,
     /// Indicates if the last `connect()` is considered to be done.
     ///
@@ -45,7 +45,7 @@ pub struct InitStream {
 }
 
 impl InitStream {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             bound_port: None,
             is_connect_done: true,
@@ -53,7 +53,7 @@ impl InitStream {
         }
     }
 
-    pub fn new_bound(bound_port: BoundPort) -> Self {
+    pub(super) fn new_bound(bound_port: BoundPort) -> Self {
         Self {
             bound_port: Some(bound_port),
             is_connect_done: true,
@@ -61,7 +61,7 @@ impl InitStream {
         }
     }
 
-    pub fn new_refused(bound_port: BoundPort) -> Self {
+    pub(super) fn new_refused(bound_port: BoundPort) -> Self {
         Self {
             bound_port: Some(bound_port),
             is_connect_done: false,
@@ -69,7 +69,7 @@ impl InitStream {
         }
     }
 
-    pub fn bind(&mut self, endpoint: &IpEndpoint, can_reuse: bool) -> Result<()> {
+    pub(super) fn bind(&mut self, endpoint: &IpEndpoint, can_reuse: bool) -> Result<()> {
         if self.bound_port.is_some() {
             return_errno_with_message!(Errno::EINVAL, "the socket is already bound to an address");
         }
@@ -79,7 +79,7 @@ impl InitStream {
         Ok(())
     }
 
-    pub fn connect(
+    pub(super) fn connect(
         self,
         remote_endpoint: &IpEndpoint,
         option: &RawTcpOption,
@@ -111,7 +111,7 @@ impl InitStream {
         )
     }
 
-    pub fn finish_last_connect(&mut self) -> Result<()> {
+    pub(super) fn finish_last_connect(&mut self) -> Result<()> {
         if self.is_connect_done {
             return Ok(());
         }
@@ -130,7 +130,7 @@ impl InitStream {
         }
     }
 
-    pub fn listen(
+    pub(super) fn listen(
         self,
         backlog: usize,
         option: &RawTcpOption,
@@ -164,7 +164,7 @@ impl InitStream {
         }
     }
 
-    pub fn try_recv(&self) -> Result<(usize, SocketAddr)> {
+    pub(super) fn try_recv(&self) -> Result<(usize, SocketAddr)> {
         // FIXME: Linux does not return addresses for `recvfrom` on connection-oriented sockets.
         // This is a placeholder that has no Linux equivalent. (Note also that in this case
         // `getpeeraddr` will simply fail with `ENOTCONN`).
@@ -183,7 +183,7 @@ impl InitStream {
         Ok((0, UNSPECIFIED_SOCKET_ADDR))
     }
 
-    pub fn try_send(&self) -> Result<usize> {
+    pub(super) fn try_send(&self) -> Result<usize> {
         if let Some(err) = self.test_and_clear_error() {
             return Err(err);
         }
@@ -191,7 +191,7 @@ impl InitStream {
         return_errno_with_message!(Errno::EPIPE, "the socket is not connected");
     }
 
-    pub fn local_endpoint(&self) -> Option<IpEndpoint> {
+    pub(super) fn local_endpoint(&self) -> Option<IpEndpoint> {
         self.bound_port
             .as_ref()
             .map(|bound_port| bound_port.endpoint().unwrap())

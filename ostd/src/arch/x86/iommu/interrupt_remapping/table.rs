@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{sync::Arc, vec::Vec};
 use core::{fmt::Debug, mem::size_of};
 
 use bitflags::bitflags;
@@ -9,7 +8,7 @@ use int_to_c_enum::TryFromInt;
 
 use super::IrtEntryHandle;
 use crate::{
-    mm::{paddr_to_vaddr, FrameAllocOptions, Segment, PAGE_SIZE},
+    mm::{FrameAllocOptions, Segment, UntypedMem, PAGE_SIZE},
     sync::{LocalIrqDisabled, SpinLock},
 };
 
@@ -20,77 +19,94 @@ enum ExtendedInterruptMode {
     X2Apic,
 }
 
+struct IntRemappingMeta;
+crate::impl_untyped_frame_meta_for!(IntRemappingMeta);
+
 pub struct IntRemappingTable {
-    size: u16,
+    num_entries: u16,
     extended_interrupt_mode: ExtendedInterruptMode,
-    frames: Segment<()>,
-    /// The global allocator for Interrupt remapping entry.
+    segment: Segment<IntRemappingMeta>,
+    /// A lock that prevents concurrent modification of entries.
+    modification_lock: SpinLock<(), LocalIrqDisabled>,
+    /// An allocator that allocates indexes to unused entries.
     allocator: SpinLock<IdAlloc, LocalIrqDisabled>,
-    handles: Vec<Arc<SpinLock<IrtEntryHandle, LocalIrqDisabled>>>,
 }
 
 impl IntRemappingTable {
-    pub fn alloc(&self) -> Option<Arc<SpinLock<IrtEntryHandle, LocalIrqDisabled>>> {
-        let id = self.allocator.lock().alloc()?;
-        Some(self.handles.get(id).unwrap().clone())
+    pub fn alloc(&'static self) -> Option<IrtEntryHandle> {
+        let index = self.allocator.lock().alloc()?;
+        Some(IrtEntryHandle {
+            index: index as u16,
+            table: self,
+        })
     }
 
-    /// Creates an Interrupt Remapping Table with one `Segment` (default).
+    /// Creates an Interrupt Remapping Table with one page.
     pub(super) fn new() -> Self {
-        const DEFAULT_PAGES: usize = 1;
-        let segment = FrameAllocOptions::new()
-            .alloc_segment(DEFAULT_PAGES)
-            .unwrap();
-        let entry_number = (DEFAULT_PAGES * PAGE_SIZE / size_of::<u128>()) as u16;
+        const NUM_PAGES: usize = 1;
 
-        let mut handles = Vec::new();
-        let base_vaddr = paddr_to_vaddr(segment.start_paddr());
-        for index in 0..entry_number {
-            // SAFETY: The IrtEntry reference will always valid and will disabled when IntRemappingTable is dropped.
-            let handle = unsafe { IrtEntryHandle::new(base_vaddr, index) };
-            handles.push(Arc::new(SpinLock::new(handle)));
-        }
+        let segment = FrameAllocOptions::new()
+            .alloc_segment_with(NUM_PAGES, |_| IntRemappingMeta)
+            .unwrap();
+        let num_entries = (NUM_PAGES * PAGE_SIZE / size_of::<u128>())
+            .try_into()
+            .unwrap();
 
         Self {
-            size: entry_number,
+            num_entries,
             extended_interrupt_mode: ExtendedInterruptMode::X2Apic,
-            frames: segment,
-            allocator: SpinLock::new(IdAlloc::with_capacity(entry_number as usize)),
-            handles,
+            segment,
+            modification_lock: SpinLock::new(()),
+            allocator: SpinLock::new(IdAlloc::with_capacity(num_entries as usize)),
         }
+    }
+
+    /// Sets the entry in the Interrupt Remapping Table.
+    pub(super) fn set_entry(&self, index: u16, entry: IrtEntry) {
+        let _guard = self.modification_lock.lock();
+
+        let [lower, upper] = entry.as_raw_u64();
+
+        let offset = (index as usize) * size_of::<u128>();
+        // Write a zero as the lower bits first to clear the present bit.
+        self.segment
+            .writer()
+            .skip(offset)
+            .write_once(&0u64)
+            .unwrap();
+        // Write the upper bits first (which keeps the present bit unset)
+        self.segment
+            .writer()
+            .skip(offset + size_of::<u64>())
+            .write_once(&upper)
+            .unwrap();
+        self.segment
+            .writer()
+            .skip(offset)
+            .write_once(&lower)
+            .unwrap();
     }
 
     /// Encodes the value written into the Interrupt Remapping Table Register.
     pub(crate) fn encode(&self) -> u64 {
-        let mut encoded = self.frames.start_paddr() as u64;
+        let mut encoded = self.segment.start_paddr() as u64;
 
-        match self.extended_interrupt_mode {
-            ExtendedInterruptMode::XApic => {}
-            ExtendedInterruptMode::X2Apic => encoded |= 1 << 11,
-        }
+        // Bit Range 11 - Extended Interrupt Mode Enable (EIME)
+        encoded |= match self.extended_interrupt_mode {
+            ExtendedInterruptMode::XApic => 0,
+            ExtendedInterruptMode::X2Apic => 1 << 11,
+        };
 
-        // entry_number = 2^(size+1)
-        if self.size == 1 {
-            panic!("Wrong entry number");
-        }
-        let mut size = 0;
-        let mut tmp = self.size >> 1;
-        while (tmp & 0b1) == 0 {
-            tmp >>= 1;
-            size += 1;
-        }
-        encoded += size;
+        // Bit Range 3:0 - Size (S)
+        encoded |= {
+            assert!(self.num_entries.is_power_of_two());
+            // num_entries = 2^(size+1)
+            let size = self.num_entries.trailing_zeros().checked_sub(1).unwrap();
+            assert!(size <= 15);
+            size as u64
+        };
 
         encoded
-    }
-}
-
-impl Drop for IntRemappingTable {
-    fn drop(&mut self) {
-        for handle in self.handles.iter_mut() {
-            let mut handle = handle.lock();
-            handle.set_none();
-        }
     }
 }
 
@@ -146,20 +162,15 @@ enum DeliveryMode {
 pub struct IrtEntry(u128);
 
 impl IrtEntry {
-    #[expect(unused)]
-    pub const fn new(value: u128) -> Self {
-        Self(value)
-    }
-
-    #[expect(unused)]
-    pub fn clear(&mut self) {
-        self.0 = 0
-    }
-
-    /// Enables this entry with no validation,
+    /// Creates an enabled entry with no validation,
+    ///
     /// DST = 0, IM = 0, DLM = 0, TM = 0, RH = 0, DM = 0, FPD = 1, P = 1
-    pub fn enable_default(&mut self, vector: u32) {
-        self.0 = 0b11 | ((vector as u128) << 16);
+    pub(super) fn new_enabled(vector: u32) -> Self {
+        Self(0b11 | ((vector as u128) << 16))
+    }
+
+    fn as_raw_u64(&self) -> [u64; 2] {
+        [self.0 as u64, (self.0 >> 64) as u64]
     }
 
     pub fn source_validation_type(&self) -> SourceValidationType {

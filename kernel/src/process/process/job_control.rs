@@ -1,167 +1,154 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(unused_variables)]
+use ostd::sync::{LocalIrqDisabled, WaitQueue};
 
-use ostd::sync::WaitQueue;
+use super::{ProcessGroup, Session};
+use crate::prelude::*;
 
-use crate::{
-    prelude::*,
-    process::{
-        signal::{
-            constants::{SIGCONT, SIGHUP},
-            signals::kernel::KernelSignal,
-        },
-        ProcessGroup, Session,
-    },
-};
-
-/// The job control for terminals like tty and pty.
+/// The job control for terminals like TTY and PTY.
 ///
-/// This struct is used to support shell job control, which allows users to
-/// run commands in the foreground or in the background. This struct manages
-/// the session and foreground process group for a terminal.
+/// This structure is used to support the shell job control, allowing users to
+/// run commands in the foreground or in the background. To achieve this, this
+/// structure internally manages the session and the foreground process group
+/// for a terminal.
 pub struct JobControl {
-    foreground: SpinLock<Weak<ProcessGroup>>,
-    session: SpinLock<Weak<Session>>,
+    inner: SpinLock<Inner, LocalIrqDisabled>,
     wait_queue: WaitQueue,
 }
 
+#[derive(Default)]
+struct Inner {
+    session: Weak<Session>,
+    foreground: Weak<ProcessGroup>,
+}
+
 impl JobControl {
-    /// Creates a new `TtyJobControl`
+    /// Creates a new `JobControl`.
     pub fn new() -> Self {
         Self {
-            foreground: SpinLock::new(Weak::new()),
-            session: SpinLock::new(Weak::new()),
+            inner: SpinLock::new(Inner::default()),
             wait_queue: WaitQueue::new(),
         }
     }
 
     // *************** Session ***************
 
-    /// Returns the session whose controlling terminal is the terminal.
-    fn session(&self) -> Option<Arc<Session>> {
-        self.session.lock().upgrade()
+    /// Returns the session whose controlling terminal is this terminal.
+    pub(super) fn session(&self) -> Option<Arc<Session>> {
+        self.inner.lock().session.upgrade()
     }
 
-    /// Sets the terminal as the controlling terminal of the `session`.
+    /// Sets the session whose controlling terminal is this terminal.
+    ///
+    /// # Errors
+    ///
+    /// This method will fail with `EPERM` if the terminal is already a controlling terminal of
+    /// another session.
     ///
     /// # Panics
     ///
-    /// This terminal should not belong to any session.
-    pub fn set_session(&self, session: &Arc<Session>) {
-        debug_assert!(self.session().is_none());
-        *self.session.lock() = Arc::downgrade(session);
-    }
+    /// The caller needs to ensure that the foreground process group actually belongs to the
+    /// session. Otherwise, this method may panic.
+    pub(super) fn set_session(
+        &self,
+        session: &Arc<Session>,
+        foreground: &Arc<ProcessGroup>,
+    ) -> Result<()> {
+        let mut inner = self.inner.lock();
 
-    /// Sets the terminal as the controlling terminal of the session of current process.
-    ///
-    /// # Panics
-    ///
-    /// This function should only be called in process context.
-    pub fn set_current_session(&self) -> Result<()> {
-        if self.session().is_some() {
+        if inner.session.upgrade().is_some() {
             return_errno_with_message!(
                 Errno::EPERM,
-                "the terminal is already controlling terminal of another session"
+                "the terminal is already a controlling terminal of another session"
             );
         }
 
-        let current = current!();
+        *inner = Inner {
+            session: Arc::downgrade(session),
+            foreground: Arc::downgrade(foreground),
+        };
 
-        let process_group = current.process_group().unwrap();
-        *self.foreground.lock() = Arc::downgrade(&process_group);
-
-        let session = current.session().unwrap();
-        *self.session.lock() = Arc::downgrade(&session);
-
-        self.wait_queue.wake_all();
         Ok(())
     }
 
-    /// Releases the current session from this terminal.
-    pub fn release_current_session(&self) -> Result<()> {
-        let Some(session) = self.session() else {
-            return_errno_with_message!(
-                Errno::ENOTTY,
-                "the terminal is not controlling terminal now"
-            );
-        };
+    /// Unsets the session because its controlling terminal is no longer this terminal.
+    ///
+    /// This method will return the foreground process group before the session is cleared.
+    ///
+    /// # Panics
+    ///
+    /// The caller needs to ensure that the session was previously set. Otherwise this method may
+    /// panic.
+    pub(super) fn unset_session(&self) -> Option<Arc<ProcessGroup>> {
+        let mut inner = self.inner.lock();
 
-        if let Some(foreground) = self.foreground() {
-            foreground.broadcast_signal(KernelSignal::new(SIGHUP));
-            foreground.broadcast_signal(KernelSignal::new(SIGCONT));
-        }
+        debug_assert!(inner.session.upgrade().is_some());
 
-        Ok(())
+        let foreground = inner.foreground.upgrade();
+        *inner = Inner::default();
+
+        foreground
     }
 
     // *************** Foreground process group ***************
 
-    /// Returns the foreground process group
+    /// Returns the foreground process group.
     pub fn foreground(&self) -> Option<Arc<ProcessGroup>> {
-        self.foreground.lock().upgrade()
+        self.inner.lock().foreground.upgrade()
     }
 
     /// Sets the foreground process group.
     ///
     /// # Panics
     ///
-    /// The process group should belong to one session.
-    pub fn set_foreground(&self, process_group: Option<&Arc<ProcessGroup>>) -> Result<()> {
-        let Some(process_group) = process_group else {
-            // FIXME: should we allow this branch?
-            *self.foreground.lock() = Weak::new();
-            return Ok(());
-        };
+    /// The caller needs to ensure that foreground process group actually belongs to the session
+    /// whose controlling terminal is this terminal. Otherwise this method may panic.
+    pub(super) fn set_foreground(&self, process_group: &Arc<ProcessGroup>) {
+        let mut inner = self.inner.lock();
 
-        let session = process_group.session().unwrap();
-        let Some(terminal_session) = self.session() else {
-            return_errno_with_message!(
-                Errno::EPERM,
-                "the terminal does not become controlling terminal of one session."
-            );
-        };
+        debug_assert!(Arc::ptr_eq(
+            &process_group.session().unwrap(),
+            &inner.session.upgrade().unwrap()
+        ));
+        inner.foreground = Arc::downgrade(process_group);
 
-        if !Arc::ptr_eq(&terminal_session, &session) {
-            return_errno_with_message!(
-                Errno::EPERM,
-                "the process proup belongs to different session"
-            );
-        }
-
-        *self.foreground.lock() = Arc::downgrade(process_group);
         self.wait_queue.wake_all();
-        Ok(())
     }
 
-    /// Wait until the current process is the foreground process group. If
-    /// the foreground process group is None, returns true.
+    /// Waits until the current process is in the foreground process group.
+    ///
+    /// Note that we only wait if the terminal is the our controlling terminal. If it isn't, the
+    /// method returns immediately without an error. This should match the Linux behavior where the
+    /// SIGTTIN won't be sent if we're reading the terminal that is the controlling terminal of
+    /// another session.
     ///
     /// # Panics
     ///
-    /// This function should only be called in process context.
+    /// This method will panic if it is not called in the process context.
     pub fn wait_until_in_foreground(&self) -> Result<()> {
-        // Fast path
-        if self.current_belongs_to_foreground() {
-            return Ok(());
-        }
+        let current = current!();
 
-        // Slow path
         self.wait_queue.pause_until(|| {
-            if self.current_belongs_to_foreground() {
-                Some(())
-            } else {
-                None
+            let process_group_mut = current.process_group.lock();
+            let process_group = process_group_mut.upgrade().unwrap();
+            let session = process_group.session().unwrap();
+
+            let inner = self.inner.lock();
+            if !inner
+                .session
+                .upgrade()
+                .is_some_and(|terminal_session| Arc::ptr_eq(&terminal_session, &session))
+            {
+                // The terminal is not our controlling terminal. Don't wait.
+                return Some(());
             }
+
+            inner
+                .foreground
+                .upgrade()
+                .is_some_and(|terminal_foregroup| Arc::ptr_eq(&terminal_foregroup, &process_group))
+                .then_some(())
         })
-    }
-
-    fn current_belongs_to_foreground(&self) -> bool {
-        let Some(foreground) = self.foreground() else {
-            return true;
-        };
-
-        foreground.contains_process(current!().pid())
     }
 }
 

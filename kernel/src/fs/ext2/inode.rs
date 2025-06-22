@@ -651,7 +651,7 @@ impl Inode {
 
     pub fn read_link(&self) -> Result<String> {
         if self.type_ != InodeType::SymLink {
-            return_errno!(Errno::EISDIR);
+            return_errno_with_message!(Errno::EINVAL, "self is not symlink");
         }
 
         let inner = self.inner.read();
@@ -2133,10 +2133,10 @@ impl TryFrom<RawInode> for InodeDesc {
         Ok(Self {
             type_: inode_type,
             perm: FilePerm::from_raw_mode(inode.mode)?,
-            uid: (inode.os_dependent_2.uid_high as u32) << 16 | inode.uid as u32,
-            gid: (inode.os_dependent_2.gid_high as u32) << 16 | inode.gid as u32,
+            uid: ((inode.os_dependent_2.uid_high as u32) << 16) | inode.uid as u32,
+            gid: ((inode.os_dependent_2.gid_high as u32) << 16) | inode.gid as u32,
             size: if inode_type == InodeType::File {
-                (inode.size_high as usize) << 32 | inode.size_low as usize
+                ((inode.size_high as usize) << 32) | inode.size_low as usize
             } else {
                 inode.size_low as usize
             },
@@ -2196,7 +2196,6 @@ impl InodeDesc {
         blocks
     }
 
-    #[inline]
     fn size_to_blocks(&self, size: usize) -> Ext2Bid {
         if self.type_ == InodeType::SymLink && size <= MAX_FAST_SYMLINK_LEN {
             return 0;

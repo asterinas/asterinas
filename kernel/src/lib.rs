@@ -6,14 +6,15 @@
 #![no_std]
 #![no_main]
 #![deny(unsafe_code)]
-#![expect(incomplete_features)]
 #![feature(btree_cursors)]
 #![feature(btree_extract_if)]
 #![feature(debug_closure_helpers)]
 #![feature(extend_one)]
+#![feature(extract_if)]
 #![feature(fn_traits)]
 #![feature(format_args_nl)]
 #![feature(int_roundings)]
+#![feature(integer_sign_cast)]
 #![feature(let_chains)]
 #![feature(linked_list_cursors)]
 #![feature(linked_list_remove)]
@@ -21,22 +22,20 @@
 #![feature(negative_impls)]
 #![feature(panic_can_unwind)]
 #![feature(register_tool)]
-// FIXME: This feature is used to support vm capbility now as a work around.
-// Since this is an incomplete feature, use this feature is unsafe.
-// We should find a proper method to replace this feature with min_specialization, which is a sound feature.
-#![feature(specialization)]
 #![feature(step_trait)]
 #![feature(trait_alias)]
 #![feature(trait_upcasting)]
+#![feature(associated_type_defaults)]
 #![register_tool(component_access_control)]
 
+use aster_framebuffer::FRAMEBUFFER_CONSOLE;
 use kcmdline::KCmdlineArg;
 use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
     boot::boot_info,
-    cpu::{CpuId, CpuSet, PinCurrentCpu},
+    cpu::{CpuId, CpuSet},
 };
-use process::Process;
+use process::{spawn_init_process, Process};
 use sched::SchedPolicy;
 
 use crate::{prelude::*, thread::kernel_thread::ThreadOptions};
@@ -105,22 +104,21 @@ pub fn init() {
 
 fn ap_init() {
     fn ap_idle_thread() {
-        let preempt_guard = ostd::task::disable_preempt();
-        let cpu_id = preempt_guard.current_cpu();
-        drop(preempt_guard);
-        log::info!("Kernel idle thread for CPU #{} started.", cpu_id.as_usize());
+        log::info!(
+            "Kernel idle thread for CPU #{} started.",
+            // No races because `ap_idle_thread` runs on a certain AP.
+            CpuId::current_racy().as_usize(),
+        );
 
         loop {
             crate::thread::Thread::yield_now();
             ostd::cpu::sleep_for_interrupt();
         }
     }
-    let preempt_guard = ostd::task::disable_preempt();
-    let cpu_id = preempt_guard.current_cpu();
-    drop(preempt_guard);
 
     ThreadOptions::new(ap_idle_thread)
-        .cpu_affinity(cpu_id.into())
+        // No races because `ap_init` runs on a certain AP.
+        .cpu_affinity(CpuId::current_racy().into())
         .sched_policy(SchedPolicy::Idle)
         .spawn();
 }
@@ -143,9 +141,16 @@ fn init_thread() {
 
     print_banner();
 
+    // FIXME: CI fails due to suspected performance issues with the framebuffer console.
+    // Additionally, userspace program may render GUIs using the framebuffer,
+    // so we disable the framebuffer console here.
+    if let Some(console) = FRAMEBUFFER_CONSOLE.get() {
+        console.disable();
+    };
+
     let karg: KCmdlineArg = boot_info().kernel_cmdline.as_str().into();
 
-    let initproc = Process::spawn_user_process(
+    let initproc = spawn_init_process(
         karg.get_initproc_path().unwrap(),
         karg.get_initproc_argv().to_vec(),
         karg.get_initproc_envp().to_vec(),

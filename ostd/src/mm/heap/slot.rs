@@ -116,8 +116,7 @@ impl HeapSlot {
 
         debug_assert_eq!(size % PAGE_SIZE, 0);
         debug_assert_eq!(self.paddr() % PAGE_SIZE, 0);
-        let nframes = size / PAGE_SIZE;
-        let range = self.paddr()..self.paddr() + nframes;
+        let range = self.paddr()..self.paddr() + size;
 
         // SAFETY: The segment was once forgotten when allocated.
         drop(unsafe { Segment::<LargeAllocFrameMeta>::from_raw(range) });

@@ -11,9 +11,8 @@ use align_ext::AlignExt;
 pub(super) use self::allocator::init;
 pub(crate) use self::allocator::IoMemAllocatorBuilder;
 use crate::{
-    if_tdx_enabled,
     mm::{
-        kspace::kvirt_area::{KVirtArea, Untracked},
+        kspace::kvirt_area::KVirtArea,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
         FallibleVmRead, FallibleVmWrite, HasPaddr, Infallible, Paddr, PodOnce, VmIo, VmIoOnce,
         VmReader, VmWriter, PAGE_SIZE,
@@ -25,7 +24,7 @@ use crate::{
 /// I/O memory.
 #[derive(Debug, Clone)]
 pub struct IoMem {
-    kvirt_area: Arc<KVirtArea<Untracked>>,
+    kvirt_area: Arc<KVirtArea>,
     // The actually used range for MMIO is `kvirt_area.start + offset..kvirt_area.start + offset + limit`
     offset: usize,
     limit: usize,
@@ -87,11 +86,36 @@ impl IoMem {
         let first_page_start = range.start.align_down(PAGE_SIZE);
         let last_page_end = range.end.align_up(PAGE_SIZE);
 
-        let priv_flags = if_tdx_enabled!({
+        let frames_range = first_page_start..last_page_end;
+        let area_size = frames_range.len();
+
+        #[cfg(target_arch = "x86_64")]
+        let priv_flags = crate::arch::if_tdx_enabled!({
+            assert!(
+                first_page_start == range.start && last_page_end == range.end,
+                "I/O memory is not page aligned, which cannot be unprotected in TDX: {:#x?}..{:#x?}",
+                range.start,
+                range.end,
+            );
+
+            let num_pages = area_size / PAGE_SIZE;
+            // SAFETY:
+            //  - The range `first_page_start..last_page_end` is always page aligned.
+            //  - FIXME: We currently do not limit the I/O memory allocator with the maximum GPA,
+            //    so the address range may not fall in the GPA limit.
+            //  - FIXME: The I/O memory can be at a high address, so it may not be contained in the
+            //    linear mapping.
+            //  - The caller guarantees that operations on the I/O memory do not have any side
+            //    effects that may cause soundness problems, so the pages can safely be viewed as
+            //    untyped memory.
+            unsafe { crate::arch::tdx_guest::unprotect_gpa_range(first_page_start, num_pages).unwrap() };
+
             PrivilegedPageFlags::SHARED
         } else {
             PrivilegedPageFlags::empty()
         });
+        #[cfg(not(target_arch = "x86_64"))]
+        let priv_flags = PrivilegedPageFlags::empty();
 
         let prop = PageProperty {
             flags,
@@ -99,19 +123,12 @@ impl IoMem {
             priv_flags,
         };
 
-        // SAFETY: The caller of `IoMem::new()` and the constructor of `new_kvirt_area` has ensured the
-        // safety of this mapping.
-        let new_kvirt_area = unsafe {
-            KVirtArea::<Untracked>::map_untracked_pages(
-                last_page_end - first_page_start,
-                0,
-                first_page_start..last_page_end,
-                prop,
-            )
-        };
+        // SAFETY: The caller of `IoMem::new()` ensures that the given
+        // physical address range is I/O memory, so it is safe to map.
+        let kva = unsafe { KVirtArea::map_untracked_frames(area_size, 0, frames_range, prop) };
 
         Self {
-            kvirt_area: Arc::new(new_kvirt_area),
+            kvirt_area: Arc::new(kva),
             offset: range.start - first_page_start,
             limit: range.len(),
             pa: range.start,

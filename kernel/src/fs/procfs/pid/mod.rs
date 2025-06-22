@@ -27,16 +27,22 @@ pub struct PidDirOps(Arc<Process>);
 
 impl PidDirOps {
     pub fn new_inode(process_ref: Arc<Process>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        let main_thread = process_ref.main_thread();
+        let file_table = main_thread.as_posix_thread().unwrap().file_table();
+
         let pid_inode = ProcDirBuilder::new(Self(process_ref.clone()))
             .parent(parent)
             // The pid directories must be volatile, because it is just associated with one process.
             .volatile()
             .build()
             .unwrap();
-        let main_thread = process_ref.main_thread();
-        let file_table = main_thread.as_posix_thread().unwrap().file_table().read();
-        let weak_ptr = Arc::downgrade(&pid_inode);
-        file_table.register_observer(weak_ptr);
+        file_table
+            .lock()
+            .as_ref()
+            .unwrap()
+            .read()
+            .register_observer(Arc::downgrade(&pid_inode) as _);
+
         pid_inode
     }
 }

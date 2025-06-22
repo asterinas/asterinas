@@ -7,7 +7,7 @@ use crate::{
     cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu},
     impl_frame_meta_for,
     mm::{
-        kspace::kvirt_area::{KVirtArea, Tracked},
+        kspace::kvirt_area::KVirtArea,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
         FrameAllocOptions, PAGE_SIZE,
     },
@@ -34,7 +34,7 @@ pub static KERNEL_STACK_SIZE: usize = STACK_SIZE_IN_PAGES as usize * PAGE_SIZE;
 #[derive(Debug)]
 #[expect(dead_code)]
 pub struct KernelStack {
-    kvirt_area: KVirtArea<Tracked>,
+    kvirt_area: KVirtArea,
     tlb_coherent: AtomicCpuSet,
     end_vaddr: Vaddr,
     has_guard_page: bool,
@@ -63,7 +63,7 @@ impl KernelStack {
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::empty(),
         };
-        let new_kvirt_area = KVirtArea::<Tracked>::map_pages(
+        let new_kvirt_area = KVirtArea::map_frames(
             KERNEL_STACK_SIZE + 4 * PAGE_SIZE,
             2 * PAGE_SIZE,
             pages.into_iter(),

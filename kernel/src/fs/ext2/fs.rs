@@ -410,7 +410,6 @@ impl Ext2 {
         Ok(())
     }
 
-    #[inline]
     fn block_group_of_bid(&self, bid: Ext2Bid) -> Result<(usize, &BlockGroup)> {
         let block_group_idx = (bid / self.blocks_per_group) as usize;
         if block_group_idx >= self.block_groups.len() {
@@ -419,7 +418,6 @@ impl Ext2 {
         Ok((block_group_idx, &self.block_groups[block_group_idx]))
     }
 
-    #[inline]
     fn block_group_of_ino(&self, ino: u32) -> Result<(usize, &BlockGroup)> {
         let block_group_idx = ((ino - 1) / self.inodes_per_group) as usize;
         if block_group_idx >= self.block_groups.len() {
@@ -428,12 +426,10 @@ impl Ext2 {
         Ok((block_group_idx, &self.block_groups[block_group_idx]))
     }
 
-    #[inline]
     fn inode_idx(&self, ino: u32) -> u32 {
         (ino - 1) % self.inodes_per_group
     }
 
-    #[inline]
     fn block_idx(&self, bid: Ext2Bid) -> Ext2Bid {
         bid % self.blocks_per_group
     }

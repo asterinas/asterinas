@@ -94,8 +94,8 @@ fn create_new_signalfd(
 
     register_observer(ctx, &signal_file, mask)?;
 
-    let file_table = ctx.thread_local.file_table().borrow();
-    let fd = file_table.write().insert(signal_file, fd_flags);
+    let file_table = ctx.thread_local.borrow_file_table();
+    let fd = file_table.unwrap().write().insert(signal_file, fd_flags);
     Ok(fd)
 }
 
@@ -105,7 +105,7 @@ fn update_existing_signalfd(
     new_mask: SigMask,
     non_blocking: bool,
 ) -> Result<FileDesc> {
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
     let signal_file = file
         .downcast_ref::<SignalFile>()

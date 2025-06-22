@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::boxed::Box;
-use core::{
-    cell::UnsafeCell,
-    sync::atomic::{AtomicBool, Ordering},
-};
 
 use bit_field::BitField;
 use spin::Once;
@@ -12,96 +8,100 @@ use xapic::get_xapic_base_address;
 
 use crate::{cpu::PinCurrentCpu, cpu_local, io::IoMemAllocatorBuilder};
 
-pub mod ioapic;
-pub mod x2apic;
-pub mod xapic;
+mod x2apic;
+mod xapic;
 
 static APIC_TYPE: Once<ApicType> = Once::new();
 
-/// Do something over the APIC instance for the current CPU.
+/// Returns a reference to the local APIC instance of the current CPU.
 ///
-/// You should provide a closure operating on the given mutable borrow of the
-/// local APIC instance. During the execution of the closure, the interrupts
-/// are guaranteed to be disabled.
+/// The reference to the APIC instance will not outlive the given
+/// [`PinCurrentCpu`] guard and the APIC instance does not implement
+/// [`Sync`], so it is safe to assume that the APIC instance belongs
+/// to the current CPU. Note that interrupts are not disabled, so the
+/// APIC instance may be accessed concurrently by interrupt handlers.
 ///
-/// This function also lazily initializes the Local APIC instance. It does
-/// enable the Local APIC if it is not enabled.
+/// At the first time the function is called, the local APIC instance
+/// is initialized and enabled if it was not enabled beforehand.
 ///
-/// Example:
+/// # Examples
+///
 /// ```rust
-/// use ostd::arch::x86::kernel::apic;
+/// use ostd::{
+///     arch::x86::kernel::apic,
+///     task::disable_preempt,
+/// };
 ///
-/// let ticks = apic::with_borrow(|apic| {
-///     let ticks = apic.timer_current_count();
-///     apic.set_timer_init_count(0);
-///     ticks
-/// });
+/// let preempt_guard = disable_preempt();
+/// let apic = apic::get_or_init(&preempt_guard as _);
+///
+/// let ticks = apic.timer_current_count();
+/// apic.set_timer_init_count(0);
 /// ```
-pub fn with_borrow<R>(f: impl FnOnce(&(dyn Apic + 'static)) -> R) -> R {
-    cpu_local! {
-        static APIC_INSTANCE: UnsafeCell<Option<Box<dyn Apic + 'static>>> = UnsafeCell::new(None);
-        static IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
-    }
+pub fn get_or_init(_guard: &dyn PinCurrentCpu) -> &(dyn Apic + 'static) {
+    struct ForceSyncSend<T>(T);
 
-    let preempt_guard = crate::task::disable_preempt();
+    // SAFETY: `ForceSyncSend` is `Sync + Send`, but accessing its contained value is unsafe.
+    unsafe impl<T> Sync for ForceSyncSend<T> {}
+    unsafe impl<T> Send for ForceSyncSend<T> {}
 
-    // SAFETY: Preemption is disabled, so we can safely access the CPU-local variable.
-    let apic_ptr = unsafe {
-        let ptr = APIC_INSTANCE.as_ptr();
-        (*ptr).get()
-    };
-
-    // If it is not initialized, lazily initialize it.
-    if IS_INITIALIZED
-        .get_on_cpu(preempt_guard.current_cpu())
-        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
-        .is_ok()
-    {
-        let apic: Option<Box<dyn Apic>> = Some(match APIC_TYPE.get().unwrap() {
-            ApicType::XApic => {
-                let mut xapic = xapic::XApic::new().unwrap();
-                xapic.enable();
-                let version = xapic.version();
-                log::info!(
-                    "xAPIC ID:{:x}, Version:{:x}, Max LVT:{:x}",
-                    xapic.id(),
-                    version & 0xff,
-                    (version >> 16) & 0xff
-                );
-                Box::new(xapic)
-            }
-            ApicType::X2Apic => {
-                let mut x2apic = x2apic::X2Apic::new().unwrap();
-                x2apic.enable();
-                let version = x2apic.version();
-                log::info!(
-                    "x2APIC ID:{:x}, Version:{:x}, Max LVT:{:x}",
-                    x2apic.id(),
-                    version & 0xff,
-                    (version >> 16) & 0xff
-                );
-                Box::new(x2apic)
-            }
-        });
-        // SAFETY: It will be only written once and no other read or write can
-        // happen concurrently for the synchronization with `IS_INITIALIZED`.
-        //
-        // If interrupts happen during the initialization, it can be written
-        // twice. But it should not happen since we must call this function
-        // when interrupts are disabled during the initialization of OSTD.
-        unsafe {
-            debug_assert!(apic_ptr.read().is_none());
-            apic_ptr.write(apic);
+    impl<T> ForceSyncSend<T> {
+        /// # Safety
+        ///
+        /// The caller must ensure that its context allows for safe access to `&T`.
+        unsafe fn get(&self) -> &T {
+            &self.0
         }
     }
 
-    // SAFETY: The APIC pointer is not accessed by other CPUs. It should point
-    // to initialized data and there will not be any write-during-read problem
-    // since there would be no write after `IS_INITIALIZED` is set to true.
-    let apic_ref = unsafe { &*apic_ptr };
-    let apic_ref = apic_ref.as_ref().unwrap().as_ref();
+    cpu_local! {
+        static APIC_INSTANCE: Once<ForceSyncSend<Box<dyn Apic + 'static>>> = Once::new();
+    }
 
-    f.call_once((apic_ref,))
+    // No races due to `_guard`, but use `current_racy` to avoid calling via the vtable.
+    // TODO: Find a better way to make `dyn PinCurrentCpu` easy to use?
+    let apic_instance = APIC_INSTANCE.get_on_cpu(crate::cpu::CpuId::current_racy());
+
+    // The APIC instance has already been initialized.
+    if let Some(apic) = apic_instance.get() {
+        // SAFETY: Accessing `&dyn Apic` is safe as long as we're running on the same CPU on which
+        // the APIC instance was created. The `get_on_cpu` method above ensures this.
+        return &**unsafe { apic.get() };
+    }
+
+    // Initialize the APIC instance now.
+    apic_instance.call_once(|| match APIC_TYPE.get().unwrap() {
+        ApicType::XApic => {
+            let mut xapic = xapic::XApic::new().unwrap();
+            xapic.enable();
+            let version = xapic.version();
+            log::info!(
+                "xAPIC ID:{:x}, Version:{:x}, Max LVT:{:x}",
+                xapic.id(),
+                version & 0xff,
+                (version >> 16) & 0xff
+            );
+            ForceSyncSend(Box::new(xapic))
+        }
+        ApicType::X2Apic => {
+            let mut x2apic = x2apic::X2Apic::new().unwrap();
+            x2apic.enable();
+            let version = x2apic.version();
+            log::info!(
+                "x2APIC ID:{:x}, Version:{:x}, Max LVT:{:x}",
+                x2apic.id(),
+                version & 0xff,
+                (version >> 16) & 0xff
+            );
+            ForceSyncSend(Box::new(x2apic))
+        }
+    });
+
+    // We've initialized the APIC instance, so this `unwrap` cannot fail.
+    let apic = apic_instance.get().unwrap();
+    // SAFETY: Accessing `&dyn Apic` is safe as long as we're running on the same CPU on which the
+    // APIC instance was created. The initialization above ensures this.
+    &**unsafe { apic.get() }
 }
 
 pub trait Apic: ApicTimer {
@@ -348,7 +348,6 @@ pub enum DivideConfig {
 }
 
 pub fn init(io_mem_builder: &IoMemAllocatorBuilder) -> Result<(), ApicInitError> {
-    crate::arch::x86::kernel::pic::disable_temp();
     if x2apic::X2Apic::has_x2apic() {
         log::info!("x2APIC found!");
         APIC_TYPE.call_once(|| ApicType::X2Apic);

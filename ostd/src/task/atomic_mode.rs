@@ -50,17 +50,17 @@ pub fn might_sleep() {
 ///
 /// Key kernel primitives such as `SpinLock` and `Rcu` rely on
 /// [the atomic mode](crate::task::atomic_mode) for correctness or soundness.
-/// The existence of such a guard guarantees that
-/// the current task is executing in the atomic mode.
+/// The existence of such a guard guarantees that the current task is executing
+/// in the atomic mode.
+///
+/// It requires [`core::fmt::Debug`] by default to make it easier to derive
+/// [`Debug`] for types with `&dyn InAtomicMode`.
 ///
 /// # Safety
 ///
 /// The implementer must ensure that the atomic mode is maintained while
 /// the guard type is alive.
-///
-/// [`DisabledLocalIrqGuard`]: crate::task::DisabledPreemptGuard
-/// [`DisabledPreemptGuard`]: crate::trap::DisabledLocalIrqGuard
-pub unsafe trait InAtomicMode {}
+pub unsafe trait InAtomicMode: core::fmt::Debug {}
 
 /// Abstracts any type from which one can obtain a reference to an atomic-mode guard.
 pub trait AsAtomicModeGuard {
@@ -69,6 +69,12 @@ pub trait AsAtomicModeGuard {
 }
 
 impl<G: InAtomicMode> AsAtomicModeGuard for G {
+    fn as_atomic_mode_guard(&self) -> &dyn InAtomicMode {
+        self
+    }
+}
+
+impl AsAtomicModeGuard for dyn InAtomicMode + '_ {
     fn as_atomic_mode_guard(&self) -> &dyn InAtomicMode {
         self
     }

@@ -2,7 +2,7 @@
 
 use core::sync::atomic::Ordering;
 
-use super::{posix_thread::ThreadLocal, process_table, Pid, Process};
+use super::{process_table, Pid, Process};
 use crate::{prelude::*, process::signal::signals::kernel::KernelSignal};
 
 /// Exits the current POSIX process.
@@ -12,21 +12,18 @@ use crate::{prelude::*, process::signal::signals::kernel::KernelSignal};
 ///
 /// [`do_exit`]: crate::process::posix_thread::do_exit
 /// [`do_exit_group`]: crate::process::posix_thread::do_exit_group
-pub(super) fn exit_process(thread_local: &ThreadLocal, current_process: &Process) {
+pub(super) fn exit_process(current_process: &Process) {
     current_process.status().set_zombie();
     current_process.status().set_vfork_child(false);
 
-    // FIXME: This is obviously wrong in a number of ways, since different threads can have
-    // different file tables, and different processes can share the same file table.
-    thread_local.file_table().borrow().write().close_all();
+    // Drop fields in `Process`.
+    current_process.lock_root_vmar().set_vmar(None);
 
     send_parent_death_signal(current_process);
 
     move_children_to_reaper_process(current_process);
 
     send_child_death_signal(current_process);
-
-    current_process.lock_root_vmar().set_vmar(None);
 }
 
 /// Sends parent-death signals to the children.
@@ -82,8 +79,10 @@ fn move_process_children(
 ) -> core::result::Result<(), ()> {
     // Take the lock first to avoid the race when the `reaper_process` is exiting concurrently.
     let mut reaper_process_children = reaper_process.children().lock();
+
+    let is_init = is_init_process(reaper_process);
     let is_zombie = reaper_process.status().is_zombie();
-    if is_zombie {
+    if !is_init && is_zombie {
         return Err(());
     }
 

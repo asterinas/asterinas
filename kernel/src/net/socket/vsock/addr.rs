@@ -2,7 +2,7 @@
 
 use aster_virtio::device::socket::header::VsockDeviceAddr;
 
-use crate::{net::socket::SocketAddr, prelude::*};
+use crate::{net::socket::util::SocketAddr, prelude::*};
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct VsockSocketAddr {

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use cfg_if::cfg_if;
-
 mod null;
 mod pty;
 mod random;
@@ -10,20 +8,15 @@ pub mod tty;
 mod urandom;
 mod zero;
 
-cfg_if! {
-    if #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))] {
-        mod tdxguest;
+#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+mod tdxguest;
 
-        pub use tdxguest::TdxGuest;
-    }
-}
+use alloc::format;
 
-use ostd::if_tdx_enabled;
 pub use pty::{new_pty_pair, PtyMaster, PtySlave};
 pub use random::Random;
 pub use urandom::Urandom;
 
-use self::tty::get_n_tty;
 use crate::{
     fs::device::{add_node, Device, DeviceId, DeviceType},
     prelude::*,
@@ -33,23 +26,37 @@ use crate::{
 pub fn init() -> Result<()> {
     let null = Arc::new(null::Null);
     add_node(null, "null")?;
+
     let zero = Arc::new(zero::Zero);
     add_node(zero, "zero")?;
+
     tty::init();
-    let console = get_n_tty().clone();
-    add_node(console, "console")?;
+
     let tty = Arc::new(tty::TtyDevice);
     add_node(tty, "tty")?;
-    if_tdx_enabled!({
-        #[cfg(target_arch = "x86_64")]
+
+    let console = tty::system_console().clone();
+    add_node(console, "console")?;
+
+    for (index, tty) in tty::iter_n_tty().enumerate() {
+        add_node(tty.clone(), &format!("tty{}", index))?;
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    ostd::if_tdx_enabled!({
         add_node(Arc::new(tdxguest::TdxGuest), "tdx_guest")?;
     });
+
     let random = Arc::new(random::Random);
     add_node(random, "random")?;
+
     let urandom = Arc::new(urandom::Urandom);
     add_node(urandom, "urandom")?;
+
     pty::init()?;
+
     shm::init()?;
+
     Ok(())
 }
 

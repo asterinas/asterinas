@@ -6,45 +6,58 @@ use aster_rights::{Dup, Rights, TRightSet, TRights, Write};
 use aster_rights_proc::require;
 use ostd::mm::{UFrame, VmIo};
 
-use super::{CommitFlags, Vmo, VmoRightsOp};
+use super::{CommitFlags, Vmo, VmoCommitError, VmoRightsOp};
 use crate::prelude::*;
 
 impl<R: TRights> Vmo<TRightSet<R>> {
     /// Commits a page at specific offset.
-    pub fn commit_page(&self, offset: usize) -> Result<UFrame> {
-        self.check_rights(Rights::WRITE)?;
-        self.0.commit_page(offset)
-    }
-
-    /// Commits the pages specified in the range (in bytes).
     ///
-    /// The range must be within the size of the VMO.
-    ///
-    /// The start and end addresses will be rounded down and up to page boundaries.
+    /// If the commit operation needs to perform I/O, it will return a [`VmoCommitError::NeedIo`].
     ///
     /// # Access rights
     ///
     /// The method requires the Write right.
     #[require(R > Write)]
-    pub fn commit(&self, range: Range<usize>) -> Result<()> {
-        self.0.operate_on_range(
-            &range,
-            |commit_fn| commit_fn().map(|_| ()),
-            CommitFlags::empty(),
-        )?;
-        Ok(())
+    pub fn try_commit_page(&self, offset: usize) -> core::result::Result<UFrame, VmoCommitError> {
+        self.check_rights(Rights::WRITE)?;
+        self.0.try_commit_page(offset)
+    }
+
+    /// Commits a page at a specific page index.
+    ///
+    /// This method may involve I/O operations if the VMO needs to fetch
+    /// a page from the underlying page cache.
+    ///
+    /// # Access rights
+    ///
+    /// The method requires the Write right.
+    #[require(R > Write)]
+    pub fn commit_on(&self, page_idx: usize, commit_flags: CommitFlags) -> Result<UFrame> {
+        self.0.commit_on(page_idx, commit_flags)
     }
 
     /// Traverses the indices within a specified range of a VMO sequentially.
+    ///
     /// For each index position, you have the option to commit the page as well as
     /// perform other operations.
+    ///
+    /// Once a commit operation needs to perform I/O, it will return a [`VmoCommitError::NeedIo`].
+    ///
+    /// # Access rights
+    ///
+    /// The method requires the Write right.
     #[require(R > Write)]
-    pub(in crate::vm) fn operate_on_range<F>(&self, range: &Range<usize>, operate: F) -> Result<()>
+    pub(in crate::vm) fn try_operate_on_range<F>(
+        &self,
+        range: &Range<usize>,
+        operate: F,
+    ) -> core::result::Result<(), VmoCommitError>
     where
-        F: FnMut(&mut dyn FnMut() -> Result<UFrame>) -> Result<()>,
+        F: FnMut(
+            &mut dyn FnMut() -> core::result::Result<UFrame, VmoCommitError>,
+        ) -> core::result::Result<(), VmoCommitError>,
     {
-        self.0
-            .operate_on_range(range, operate, CommitFlags::empty())
+        self.0.try_operate_on_range(range, operate)
     }
 
     /// Decommits the pages specified in the range (in bytes).
@@ -93,19 +106,6 @@ impl<R: TRights> Vmo<TRightSet<R>> {
     #[require(R > Dup)]
     pub fn dup(&self) -> Self {
         Vmo(self.0.clone(), self.1)
-    }
-
-    /// Creates a new VMO that replicates the original capability, initially representing
-    /// the same physical pages.
-    /// Changes to the permissions and commits/replacements of internal pages in the original VMO
-    /// and the new VMO will not affect each other.
-    ///
-    /// # Access rights
-    ///
-    /// The method requires the Dup right.
-    #[require(R > Dup | Write)]
-    pub fn dup_independent(&self) -> Self {
-        Vmo(Arc::new(super::Vmo_::clone(&self.0)), self.1)
     }
 
     /// Replaces the page at the `page_idx` in the VMO with the input `page`.

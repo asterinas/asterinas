@@ -112,7 +112,7 @@ impl FsResolver {
             );
         }
 
-        if creation_flags.contains(CreationFlags::O_TRUNC) {
+        if inode_type.is_regular_file() && creation_flags.contains(CreationFlags::O_TRUNC) {
             target_dentry.resize(0)?;
         }
         InodeHandle::new(target_dentry, open_args.access_mode, open_args.status_flags)
@@ -169,13 +169,13 @@ impl FsResolver {
             FsPathInner::Cwd => self.cwd.clone(),
             FsPathInner::FdRelative(fd, path) => {
                 let task = Task::current().unwrap();
-                let mut file_table = task.as_thread_local().unwrap().file_table().borrow_mut();
+                let mut file_table = task.as_thread_local().unwrap().borrow_file_table_mut();
                 let file = get_file_fast!(&mut file_table, fd);
                 self.lookup_from_parent(file.as_inode_or_err()?.dentry(), path, lookup_ctx)?
             }
             FsPathInner::Fd(fd) => {
                 let task = Task::current().unwrap();
-                let mut file_table = task.as_thread_local().unwrap().file_table().borrow_mut();
+                let mut file_table = task.as_thread_local().unwrap().borrow_file_table_mut();
                 let file = get_file_fast!(&mut file_table, fd);
                 file.as_inode_or_err()?.dentry().clone()
             }
@@ -510,7 +510,7 @@ pub fn split_path(path: &str) -> (&str, &str) {
     let file_name = path
         .split_inclusive('/')
         .filter(|&x| x != "/")
-        .last()
+        .next_back()
         .unwrap_or(".");
 
     let mut split = path.trim_end_matches('/').rsplitn(2, '/');

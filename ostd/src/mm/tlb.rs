@@ -14,7 +14,7 @@ use super::{
 };
 use crate::{
     arch::irq,
-    cpu::{CpuSet, PinCurrentCpu},
+    cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu},
     cpu_local,
     sync::{LocalIrqDisabled, SpinLock},
 };
@@ -22,39 +22,26 @@ use crate::{
 /// A TLB flusher that is aware of which CPUs are needed to be flushed.
 ///
 /// The flusher needs to stick to the current CPU.
-pub struct TlbFlusher<G: PinCurrentCpu> {
-    target_cpus: CpuSet,
-    // Better to store them here since loading and counting them from the CPUs
-    // list brings non-trivial overhead.
-    need_remote_flush: bool,
-    need_self_flush: bool,
-    have_unsynced_flush: bool,
+pub struct TlbFlusher<'a, G: PinCurrentCpu> {
+    target_cpus: &'a AtomicCpuSet,
+    have_unsynced_flush: CpuSet,
+    ops_stack: OpsStack,
     _pin_current: G,
 }
 
-impl<G: PinCurrentCpu> TlbFlusher<G> {
+impl<'a, G: PinCurrentCpu> TlbFlusher<'a, G> {
     /// Creates a new TLB flusher with the specified CPUs to be flushed.
+    ///
+    /// The target CPUs should be a reference to an [`AtomicCpuSet`] that will
+    /// be loaded upon [`Self::dispatch_tlb_flush`].
     ///
     /// The flusher needs to stick to the current CPU. So please provide a
     /// guard that implements [`PinCurrentCpu`].
-    pub fn new(target_cpus: CpuSet, pin_current_guard: G) -> Self {
-        let current_cpu = pin_current_guard.current_cpu();
-
-        let mut need_self_flush = false;
-        let mut need_remote_flush = false;
-
-        for cpu in target_cpus.iter() {
-            if cpu == current_cpu {
-                need_self_flush = true;
-            } else {
-                need_remote_flush = true;
-            }
-        }
+    pub fn new(target_cpus: &'a AtomicCpuSet, pin_current_guard: G) -> Self {
         Self {
             target_cpus,
-            need_remote_flush,
-            need_self_flush,
-            have_unsynced_flush: false,
+            have_unsynced_flush: CpuSet::new_empty(),
+            ops_stack: OpsStack::new(),
             _pin_current: pin_current_guard,
         }
     }
@@ -64,30 +51,71 @@ impl<G: PinCurrentCpu> TlbFlusher<G> {
     /// This function does not guarantee to flush the TLB entries on either
     /// this CPU or remote CPUs. The flush requests are only performed when
     /// [`Self::dispatch_tlb_flush`] is called.
-    pub fn issue_tlb_flush(&self, op: TlbFlushOp) {
-        self.issue_tlb_flush_(op, None);
+    pub fn issue_tlb_flush(&mut self, op: TlbFlushOp) {
+        self.ops_stack.push(op, None);
+    }
+
+    /// Issues a TLB flush request that must happen before dropping the page.
+    ///
+    /// If we need to remove a mapped page from the page table, we can only
+    /// recycle the page after all the relevant TLB entries in all CPUs are
+    /// flushed. Otherwise if the page is recycled for other purposes, the user
+    /// space program can still access the page through the TLB entries. This
+    /// method is designed to be used in such cases.
+    pub fn issue_tlb_flush_with(
+        &mut self,
+        op: TlbFlushOp,
+        drop_after_flush: Frame<dyn AnyFrameMeta>,
+    ) {
+        self.ops_stack.push(op, Some(drop_after_flush));
     }
 
     /// Dispatches all the pending TLB flush requests.
     ///
-    /// All previous pending requests issued by [`Self::issue_tlb_flush`]
-    /// starts to be processed after this function. But it may not be
-    /// synchronous. Upon the return of this function, the TLB entries may not
-    /// be coherent.
+    /// All previous pending requests issued by [`Self::issue_tlb_flush`] or
+    /// [`Self::issue_tlb_flush_with`] starts to be processed after this
+    /// function. But it may not be synchronous. Upon the return of this
+    /// function, the TLB entries may not be coherent.
     pub fn dispatch_tlb_flush(&mut self) {
-        if !self.need_remote_flush {
+        let irq_guard = crate::trap::disable_local();
+
+        if self.ops_stack.is_empty() {
             return;
         }
 
-        for cpu in self.target_cpus.iter() {
-            ACK_REMOTE_FLUSH
-                .get_on_cpu(cpu)
-                .store(false, Ordering::Relaxed);
+        // `Release` to make sure our modification on the PT is visible to CPUs
+        // that are going to activate the PT.
+        let mut target_cpus = self.target_cpus.load(Ordering::Release);
+
+        let cur_cpu = irq_guard.current_cpu();
+        let mut need_flush_on_self = false;
+
+        if target_cpus.contains(cur_cpu) {
+            target_cpus.remove(cur_cpu);
+            need_flush_on_self = true;
         }
 
-        crate::smp::inter_processor_call(&self.target_cpus, do_remote_flush);
+        for cpu in target_cpus.iter() {
+            {
+                let mut flush_ops = FLUSH_OPS.get_on_cpu(cpu).lock();
+                flush_ops.push_from(&self.ops_stack);
 
-        self.have_unsynced_flush = true;
+                // Clear ACK before dropping the lock to avoid false ACKs.
+                ACK_REMOTE_FLUSH
+                    .get_on_cpu(cpu)
+                    .store(false, Ordering::Relaxed);
+            }
+            self.have_unsynced_flush.add(cpu);
+        }
+
+        crate::smp::inter_processor_call(&target_cpus, do_remote_flush);
+
+        // Flush ourselves after sending all IPIs to save some time.
+        if need_flush_on_self {
+            self.ops_stack.flush_all();
+        } else {
+            self.ops_stack.clear_without_flush();
+        }
     }
 
     /// Waits for all the previous TLB flush requests to be completed.
@@ -106,66 +134,23 @@ impl<G: PinCurrentCpu> TlbFlusher<G> {
     /// processed in IRQs, two CPUs may deadlock if they are waiting for each
     /// other's TLB coherence.
     pub fn sync_tlb_flush(&mut self) {
-        if !self.have_unsynced_flush {
-            return;
-        }
-
         assert!(
             irq::is_local_enabled(),
             "Waiting for remote flush with IRQs disabled"
         );
 
-        for cpu in self.target_cpus.iter() {
-            while !ACK_REMOTE_FLUSH.get_on_cpu(cpu).load(Ordering::Acquire) {
+        for cpu in self.have_unsynced_flush.iter() {
+            while !ACK_REMOTE_FLUSH.get_on_cpu(cpu).load(Ordering::Relaxed) {
                 core::hint::spin_loop();
             }
         }
 
-        self.have_unsynced_flush = false;
-    }
-
-    /// Issues a TLB flush request that must happen before dropping the page.
-    ///
-    /// If we need to remove a mapped page from the page table, we can only
-    /// recycle the page after all the relevant TLB entries in all CPUs are
-    /// flushed. Otherwise if the page is recycled for other purposes, the user
-    /// space program can still access the page through the TLB entries. This
-    /// method is designed to be used in such cases.
-    pub fn issue_tlb_flush_with(&self, op: TlbFlushOp, drop_after_flush: Frame<dyn AnyFrameMeta>) {
-        self.issue_tlb_flush_(op, Some(drop_after_flush));
-    }
-
-    /// Whether the TLB flusher needs to flush the TLB entries on other CPUs.
-    pub fn need_remote_flush(&self) -> bool {
-        self.need_remote_flush
-    }
-
-    /// Whether the TLB flusher needs to flush the TLB entries on the current CPU.
-    pub fn need_self_flush(&self) -> bool {
-        self.need_self_flush
-    }
-
-    fn issue_tlb_flush_(&self, op: TlbFlushOp, drop_after_flush: Option<Frame<dyn AnyFrameMeta>>) {
-        let op = op.optimize_for_large_range();
-
-        // Fast path for single CPU cases.
-        if !self.need_remote_flush {
-            if self.need_self_flush {
-                op.perform_on_current();
-            }
-            return;
-        }
-
-        // Slow path for multi-CPU cases.
-        for cpu in self.target_cpus.iter() {
-            let mut op_queue = FLUSH_OPS.get_on_cpu(cpu).lock();
-            op_queue.push(op.clone(), drop_after_flush.clone());
-        }
+        self.have_unsynced_flush = CpuSet::new_empty();
     }
 }
 
 /// The operation to flush TLB entries.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TlbFlushOp {
     /// Flush all TLB entries except for the global entries.
     All,
@@ -210,18 +195,27 @@ cpu_local! {
 }
 
 fn do_remote_flush() {
-    let current_cpu = crate::cpu::current_cpu_racy(); // Safe because we are in IRQs.
+    // No races because we are in IRQs or have disabled preemption.
+    let current_cpu = crate::cpu::CpuId::current_racy();
 
-    let mut op_queue = FLUSH_OPS.get_on_cpu(current_cpu).lock();
-    op_queue.flush_all();
+    let mut new_op_queue = OpsStack::new();
+    {
+        let mut op_queue = FLUSH_OPS.get_on_cpu(current_cpu).lock();
 
-    ACK_REMOTE_FLUSH
-        .get_on_cpu(current_cpu)
-        .store(true, Ordering::Release);
+        core::mem::swap(&mut *op_queue, &mut new_op_queue);
+
+        // ACK before dropping the lock so that we won't miss flush requests.
+        ACK_REMOTE_FLUSH
+            .get_on_cpu(current_cpu)
+            .store(true, Ordering::Relaxed);
+    }
+    // Unlock the locks quickly to avoid contention. ACK before flushing is
+    // fine since we cannot switch back to userspace now.
+    new_op_queue.flush_all();
 }
 
 /// If a TLB flushing request exceeds this threshold, we flush all.
-pub(crate) const FLUSH_ALL_RANGE_THRESHOLD: usize = 32 * PAGE_SIZE;
+const FLUSH_ALL_RANGE_THRESHOLD: usize = 32 * PAGE_SIZE;
 
 /// If the number of pending requests exceeds this threshold, we flush all the
 /// TLB entries instead of flushing them one by one.
@@ -244,6 +238,10 @@ impl OpsStack {
         }
     }
 
+    fn is_empty(&self) -> bool {
+        !self.need_flush_all && self.size == 0
+    }
+
     fn push(&mut self, op: TlbFlushOp, drop_after_flush: Option<Frame<dyn AnyFrameMeta>>) {
         if let Some(frame) = drop_after_flush {
             self.page_keeper.push(frame);
@@ -252,13 +250,32 @@ impl OpsStack {
         if self.need_flush_all {
             return;
         }
-
-        if self.size < FLUSH_ALL_OPS_THRESHOLD {
-            self.ops[self.size] = Some(op);
-            self.size += 1;
-        } else {
+        let op = op.optimize_for_large_range();
+        if op == TlbFlushOp::All || self.size >= FLUSH_ALL_OPS_THRESHOLD {
             self.need_flush_all = true;
             self.size = 0;
+            return;
+        }
+
+        self.ops[self.size] = Some(op);
+        self.size += 1;
+    }
+
+    fn push_from(&mut self, other: &OpsStack) {
+        self.page_keeper.extend(other.page_keeper.iter().cloned());
+
+        if self.need_flush_all {
+            return;
+        }
+        if other.need_flush_all || self.size + other.size >= FLUSH_ALL_OPS_THRESHOLD {
+            self.need_flush_all = true;
+            self.size = 0;
+            return;
+        }
+
+        for i in 0..other.size {
+            self.ops[self.size] = other.ops[i].clone();
+            self.size += 1;
         }
     }
 
@@ -273,9 +290,12 @@ impl OpsStack {
             }
         }
 
+        self.clear_without_flush();
+    }
+
+    fn clear_without_flush(&mut self) {
         self.need_flush_all = false;
         self.size = 0;
-
         self.page_keeper.clear();
     }
 }

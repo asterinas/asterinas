@@ -12,21 +12,19 @@
 use core::{ops::Range, sync::atomic::Ordering};
 
 use crate::{
-    arch::mm::{
-        current_page_table_paddr, tlb_flush_all_excluding_global, PageTableEntry, PagingConsts,
-    },
+    arch::mm::{current_page_table_paddr, PageTableEntry, PagingConsts},
     cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu},
     cpu_local_cell,
     mm::{
         io::Fallible,
         kspace::KERNEL_PAGE_TABLE,
-        page_table::{self, PageTable, PageTableItem, UserMode},
-        tlb::{TlbFlushOp, TlbFlusher, FLUSH_ALL_RANGE_THRESHOLD},
-        PageProperty, UFrame, VmReader, VmWriter, MAX_USERSPACE_VADDR,
+        page_table::{self, PageTable, PageTableConfig, PageTableFrag},
+        tlb::{TlbFlushOp, TlbFlusher},
+        AnyUFrameMeta, Frame, PageProperty, PagingLevel, UFrame, VmReader, VmWriter,
+        MAX_USERSPACE_VADDR,
     },
     prelude::*,
-    sync::{PreemptDisabled, RwLock, RwLockReadGuard},
-    task::{disable_preempt, DisabledPreemptGuard},
+    task::{atomic_mode::AsAtomicModeGuard, disable_preempt, DisabledPreemptGuard},
     Error,
 };
 
@@ -67,10 +65,7 @@ use crate::{
 /// [`UserMode::execute`]: crate::user::UserMode::execute
 #[derive(Debug)]
 pub struct VmSpace {
-    pt: PageTable<UserMode>,
-    /// A CPU can only activate a `VmSpace` when no mutable cursors are alive.
-    /// Cursors hold read locks and activation require a write lock.
-    activation_lock: RwLock<()>,
+    pt: PageTable<UserPtConfig>,
     cpus: AtomicCpuSet,
 }
 
@@ -79,37 +74,7 @@ impl VmSpace {
     pub fn new() -> Self {
         Self {
             pt: KERNEL_PAGE_TABLE.get().unwrap().create_user_page_table(),
-            activation_lock: RwLock::new(()),
             cpus: AtomicCpuSet::new(CpuSet::new_empty()),
-        }
-    }
-
-    /// Clears the user space mappings in the page table.
-    ///
-    /// This method returns error if the page table is activated on any other
-    /// CPUs or there are any cursors alive.
-    pub fn clear(&self) -> core::result::Result<(), VmSpaceClearError> {
-        let preempt_guard = disable_preempt();
-        let _guard = self
-            .activation_lock
-            .try_write()
-            .ok_or(VmSpaceClearError::CursorsAlive)?;
-
-        let cpus = self.cpus.load();
-        let cpu = preempt_guard.current_cpu();
-        let cpus_set_is_empty = cpus.is_empty();
-        let cpus_set_is_single_self = cpus.count() == 1 && cpus.contains(cpu);
-
-        if cpus_set_is_empty || cpus_set_is_single_self {
-            // SAFETY: We have ensured that the page table is not activated on
-            // other CPUs and no cursors are alive.
-            unsafe { self.pt.clear() };
-            if cpus_set_is_single_self {
-                tlb_flush_all_excluding_global();
-            }
-            Ok(())
-        } else {
-            Err(VmSpaceClearError::PageTableActivated(cpus))
         }
     }
 
@@ -121,8 +86,12 @@ impl VmSpace {
     ///
     /// The creation of the cursor may block if another cursor having an
     /// overlapping range is alive.
-    pub fn cursor(&self, va: &Range<Vaddr>) -> Result<Cursor<'_>> {
-        Ok(self.pt.cursor(va).map(Cursor)?)
+    pub fn cursor<'a, G: AsAtomicModeGuard>(
+        &'a self,
+        guard: &'a G,
+        va: &Range<Vaddr>,
+    ) -> Result<Cursor<'a>> {
+        Ok(self.pt.cursor(guard, va).map(Cursor)?)
     }
 
     /// Gets an mutable cursor in the virtual address range.
@@ -135,15 +104,14 @@ impl VmSpace {
     /// The creation of the cursor may block if another cursor having an
     /// overlapping range is alive. The modification to the mapping by the
     /// cursor may also block or be overridden the mapping of another cursor.
-    pub fn cursor_mut(&self, va: &Range<Vaddr>) -> Result<CursorMut<'_, '_>> {
-        Ok(self.pt.cursor_mut(va).map(|pt_cursor| {
-            let activation_lock = self.activation_lock.read();
-
-            CursorMut {
-                pt_cursor,
-                activation_lock,
-                flusher: TlbFlusher::new(self.cpus.load(), disable_preempt()),
-            }
+    pub fn cursor_mut<'a, G: AsAtomicModeGuard>(
+        &'a self,
+        guard: &'a G,
+        va: &Range<Vaddr>,
+    ) -> Result<CursorMut<'a>> {
+        Ok(self.pt.cursor_mut(guard, va).map(|pt_cursor| CursorMut {
+            pt_cursor,
+            flusher: TlbFlusher::new(&self.cpus, disable_preempt()),
         })?)
     }
 
@@ -158,12 +126,10 @@ impl VmSpace {
             return;
         }
 
-        // Ensure no mutable cursors (which holds read locks) are alive before
-        // we add the CPU to the CPU set.
-        let _activation_lock = self.activation_lock.write();
-
         // Record ourselves in the CPU set and the activated VM space pointer.
-        self.cpus.add(cpu, Ordering::Relaxed);
+        // `Acquire` to ensure the modification to the PT is visible by this CPU.
+        self.cpus.add(cpu, Ordering::Acquire);
+
         let self_ptr = Arc::into_raw(Arc::clone(self)) as *mut VmSpace;
         ACTIVATED_VM_SPACE.store(self_ptr);
 
@@ -185,7 +151,7 @@ impl VmSpace {
     /// Users must ensure that no other page table is activated in the current task during the
     /// lifetime of the created `VmReader`. This guarantees that the `VmReader` can operate correctly.
     pub fn reader(&self, vaddr: Vaddr, len: usize) -> Result<VmReader<'_, Fallible>> {
-        if current_page_table_paddr() != unsafe { self.pt.root_paddr() } {
+        if current_page_table_paddr() != self.pt.root_paddr() {
             return Err(Error::AccessDenied);
         }
 
@@ -205,7 +171,7 @@ impl VmSpace {
     /// Users must ensure that no other page table is activated in the current task during the
     /// lifetime of the created `VmWriter`. This guarantees that the `VmWriter` can operate correctly.
     pub fn writer(&self, vaddr: Vaddr, len: usize) -> Result<VmWriter<'_, Fallible>> {
-        if current_page_table_paddr() != unsafe { self.pt.root_paddr() } {
+        if current_page_table_paddr() != self.pt.root_paddr() {
             return Err(Error::AccessDenied);
         }
 
@@ -228,42 +194,44 @@ impl Default for VmSpace {
     }
 }
 
-/// An error that may occur when doing [`VmSpace::clear`].
-#[derive(Debug)]
-pub enum VmSpaceClearError {
-    /// The page table is activated on other CPUs.
-    ///
-    /// The activated CPUs detected are contained in the error.
-    PageTableActivated(CpuSet),
-    /// There are still cursors alive.
-    CursorsAlive,
-}
-
 /// The cursor for querying over the VM space without modifying it.
 ///
 /// It exclusively owns a sub-tree of the page table, preventing others from
 /// reading or modifying the same sub-tree. Two read-only cursors can not be
 /// created from the same virtual address range either.
-pub struct Cursor<'a>(page_table::Cursor<'a, UserMode, PageTableEntry, PagingConsts>);
+pub struct Cursor<'a>(page_table::Cursor<'a, UserPtConfig>);
 
 impl Iterator for Cursor<'_> {
-    type Item = VmItem;
+    type Item = (Range<Vaddr>, Option<MappedItem>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let result = self.query();
-        if result.is_ok() {
-            self.0.move_forward();
-        }
-        result.ok()
+        self.0.next()
     }
 }
 
 impl Cursor<'_> {
-    /// Query about the current slot.
+    /// Queries the mapping at the current virtual address.
     ///
-    /// This function won't bring the cursor to the next slot.
-    pub fn query(&mut self) -> Result<VmItem> {
-        Ok(self.0.query().map(|item| item.try_into().unwrap())?)
+    /// If the cursor is pointing to a valid virtual address that is locked,
+    /// it will return the virtual address range and the mapped item.
+    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<MappedItem>)> {
+        Ok(self.0.query()?)
+    }
+
+    /// Moves the cursor forward to the next mapped virtual address.
+    ///
+    /// If there is mapped virtual address following the current address within
+    /// next `len` bytes, it will return that mapped address. In this case,
+    /// the cursor will stop at the mapped address.
+    ///
+    /// Otherwise, it will return `None`. And the cursor may stop at any
+    /// address after `len` bytes.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the length is longer than the remaining range of the cursor.
+    pub fn find_next(&mut self, len: usize) -> Option<Vaddr> {
+        self.0.find_next(len)
     }
 
     /// Jump to the virtual address.
@@ -282,26 +250,29 @@ impl Cursor<'_> {
 ///
 /// It exclusively owns a sub-tree of the page table, preventing others from
 /// reading or modifying the same sub-tree.
-pub struct CursorMut<'a, 'b> {
-    pt_cursor: page_table::CursorMut<'a, UserMode, PageTableEntry, PagingConsts>,
-    #[expect(dead_code)]
-    activation_lock: RwLockReadGuard<'b, (), PreemptDisabled>,
+pub struct CursorMut<'a> {
+    pt_cursor: page_table::CursorMut<'a, UserPtConfig>,
     // We have a read lock so the CPU set in the flusher is always a superset
     // of actual activated CPUs.
-    flusher: TlbFlusher<DisabledPreemptGuard>,
+    flusher: TlbFlusher<'a, DisabledPreemptGuard>,
 }
 
-impl CursorMut<'_, '_> {
-    /// Query about the current slot.
+impl<'a> CursorMut<'a> {
+    /// Queries the mapping at the current virtual address.
     ///
     /// This is the same as [`Cursor::query`].
     ///
-    /// This function won't bring the cursor to the next slot.
-    pub fn query(&mut self) -> Result<VmItem> {
-        Ok(self
-            .pt_cursor
-            .query()
-            .map(|item| item.try_into().unwrap())?)
+    /// If the cursor is pointing to a valid virtual address that is locked,
+    /// it will return the virtual address range and the mapped item.
+    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<MappedItem>)> {
+        Ok(self.pt_cursor.query()?)
+    }
+
+    /// Moves the cursor forward to the next mapped virtual address.
+    ///
+    /// This is the same as [`Cursor::find_next`].
+    pub fn find_next(&mut self, len: usize) -> Option<Vaddr> {
+        self.pt_cursor.find_next(len)
     }
 
     /// Jump to the virtual address.
@@ -318,7 +289,7 @@ impl CursorMut<'_, '_> {
     }
 
     /// Get the dedicated TLB flusher for this cursor.
-    pub fn flusher(&mut self) -> &mut TlbFlusher<DisabledPreemptGuard> {
+    pub fn flusher(&mut self) -> &mut TlbFlusher<'a, DisabledPreemptGuard> {
         &mut self.flusher
     }
 
@@ -327,17 +298,29 @@ impl CursorMut<'_, '_> {
     /// This method will bring the cursor to the next slot after the modification.
     pub fn map(&mut self, frame: UFrame, prop: PageProperty) {
         let start_va = self.virt_addr();
-        // SAFETY: It is safe to map untyped memory into the userspace.
-        let old = unsafe { self.pt_cursor.map(frame.into(), prop) };
+        let item = (frame, prop);
 
-        if let Some(old) = old {
-            self.flusher
-                .issue_tlb_flush_with(TlbFlushOp::Address(start_va), old);
-            self.flusher.dispatch_tlb_flush();
+        // SAFETY: It is safe to map untyped memory into the userspace.
+        let Err(frag) = (unsafe { self.pt_cursor.map(item) }) else {
+            return; // No mapping exists at the current address.
+        };
+
+        match frag {
+            PageTableFrag::Mapped { va, item } => {
+                debug_assert_eq!(va, start_va);
+                let (old_frame, _) = item;
+                self.flusher
+                    .issue_tlb_flush_with(TlbFlushOp::Address(start_va), old_frame.into());
+                self.flusher.dispatch_tlb_flush();
+            }
+            PageTableFrag::StrayPageTable { .. } => {
+                panic!("`UFrame` is base page sized but re-mapping out a child PT");
+            }
         }
     }
 
-    /// Clear the mapping starting from the current slot.
+    /// Clears the mapping starting from the current slot,
+    /// and returns the number of unmapped pages.
     ///
     /// This method will bring the cursor forward by `len` bytes in the virtual
     /// address space after the modification.
@@ -351,40 +334,42 @@ impl CursorMut<'_, '_> {
     /// splitting the operation into multiple small ones.
     ///
     /// # Panics
-    ///
-    /// This method will panic if `len` is not page-aligned.
-    pub fn unmap(&mut self, len: usize) {
-        assert!(len % super::PAGE_SIZE == 0);
+    /// Panics if:
+    ///  - the length is longer than the remaining range of the cursor;
+    ///  - the length is not page-aligned.
+    pub fn unmap(&mut self, len: usize) -> usize {
         let end_va = self.virt_addr() + len;
-        let tlb_prefer_flush_all = len > FLUSH_ALL_RANGE_THRESHOLD;
-
+        let mut num_unmapped: usize = 0;
         loop {
             // SAFETY: It is safe to un-map memory in the userspace.
-            let result = unsafe { self.pt_cursor.take_next(end_va - self.virt_addr()) };
-            match result {
-                PageTableItem::Mapped { va, page, .. } => {
-                    if !self.flusher.need_remote_flush() && tlb_prefer_flush_all {
-                        // Only on single-CPU cases we can drop the page immediately before flushing.
-                        drop(page);
-                        continue;
-                    }
+            let Some(frag) = (unsafe { self.pt_cursor.take_next(end_va - self.virt_addr()) })
+            else {
+                break; // No more mappings in the range.
+            };
+
+            match frag {
+                PageTableFrag::Mapped { va, item, .. } => {
+                    let (frame, _) = item;
+                    num_unmapped += 1;
                     self.flusher
-                        .issue_tlb_flush_with(TlbFlushOp::Address(va), page);
+                        .issue_tlb_flush_with(TlbFlushOp::Address(va), frame.into());
                 }
-                PageTableItem::NotMapped { .. } => {
-                    break;
-                }
-                PageTableItem::MappedUntracked { .. } => {
-                    panic!("found untracked memory mapped into `VmSpace`");
+                PageTableFrag::StrayPageTable {
+                    pt,
+                    va,
+                    len,
+                    num_frames,
+                } => {
+                    num_unmapped += num_frames;
+                    self.flusher
+                        .issue_tlb_flush_with(TlbFlushOp::Range(va..va + len), pt);
                 }
             }
         }
 
-        if !self.flusher.need_remote_flush() && tlb_prefer_flush_all {
-            self.flusher.issue_tlb_flush(TlbFlushOp::All);
-        }
-
         self.flusher.dispatch_tlb_flush();
+
+        num_unmapped
     }
 
     /// Applies the operation to the next slot of mapping within the range.
@@ -406,10 +391,7 @@ impl CursorMut<'_, '_> {
     ///
     /// # Panics
     ///
-    /// This function will panic if:
-    ///  - the range to be protected is out of the range where the cursor
-    ///    is required to operate;
-    ///  - the specified virtual address range only covers a part of a page.
+    /// Panics if the length is longer than the remaining range of the cursor.
     pub fn protect_next(
         &mut self,
         len: usize,
@@ -417,38 +399,6 @@ impl CursorMut<'_, '_> {
     ) -> Option<Range<Vaddr>> {
         // SAFETY: It is safe to protect memory in the userspace.
         unsafe { self.pt_cursor.protect_next(len, &mut op) }
-    }
-
-    /// Copies the mapping from the given cursor to the current cursor.
-    ///
-    /// All the mappings in the current cursor's range must be empty. The
-    /// function allows the source cursor to operate on the mapping before
-    /// the copy happens. So it is equivalent to protect then duplicate.
-    /// Only the mapping is copied, the mapped pages are not copied.
-    ///
-    /// After the operation, both cursors will advance by the specified length.
-    ///
-    /// Note that it will **NOT** flush the TLB after the operation. Please
-    /// make the decision yourself on when and how to flush the TLB using
-    /// the source's [`CursorMut::flusher`].
-    ///
-    /// # Panics
-    ///
-    /// This function will panic if:
-    ///  - either one of the range to be copied is out of the range where any
-    ///    of the cursor is required to operate;
-    ///  - either one of the specified virtual address ranges only covers a
-    ///    part of a page.
-    ///  - the current cursor's range contains mapped pages.
-    pub fn copy_from(
-        &mut self,
-        src: &mut Self,
-        len: usize,
-        op: &mut impl FnMut(&mut PageProperty),
-    ) {
-        // SAFETY: Operations on user memory spaces are safe if it doesn't
-        // involve dropping any pages.
-        unsafe { self.pt_cursor.copy_from(&mut src.pt_cursor, len, op) }
     }
 }
 
@@ -462,43 +412,37 @@ cpu_local_cell! {
     static ACTIVATED_VM_SPACE: *const VmSpace = core::ptr::null();
 }
 
-/// The result of a query over the VM space.
-#[derive(Debug)]
-pub enum VmItem {
-    /// The current slot is not mapped.
-    NotMapped {
-        /// The virtual address of the slot.
-        va: Vaddr,
-        /// The length of the slot.
-        len: usize,
-    },
-    /// The current slot is mapped.
-    Mapped {
-        /// The virtual address of the slot.
-        va: Vaddr,
-        /// The mapped frame.
-        frame: UFrame,
-        /// The property of the slot.
-        prop: PageProperty,
-    },
+#[cfg(ktest)]
+pub(super) fn get_activated_vm_space() -> *const VmSpace {
+    ACTIVATED_VM_SPACE.load()
 }
 
-impl TryFrom<PageTableItem> for VmItem {
-    type Error = &'static str;
+/// The item that can be mapped into the [`VmSpace`].
+pub type MappedItem = (UFrame, PageProperty);
 
-    fn try_from(item: PageTableItem) -> core::result::Result<Self, Self::Error> {
-        match item {
-            PageTableItem::NotMapped { va, len } => Ok(VmItem::NotMapped { va, len }),
-            PageTableItem::Mapped { va, page, prop } => Ok(VmItem::Mapped {
-                va,
-                frame: page
-                    .try_into()
-                    .map_err(|_| "found typed memory mapped into `VmSpace`")?,
-                prop,
-            }),
-            PageTableItem::MappedUntracked { .. } => {
-                Err("found untracked memory mapped into `VmSpace`")
-            }
-        }
+#[derive(Clone, Debug)]
+pub(crate) struct UserPtConfig {}
+
+// SAFETY: `item_into_raw` and `item_from_raw` are implemented correctly,
+unsafe impl PageTableConfig for UserPtConfig {
+    const TOP_LEVEL_INDEX_RANGE: Range<usize> = 0..256;
+
+    type E = PageTableEntry;
+    type C = PagingConsts;
+
+    type Item = MappedItem;
+
+    fn item_into_raw(item: Self::Item) -> (Paddr, PagingLevel, PageProperty) {
+        let (frame, prop) = item;
+        let level = frame.map_level();
+        let paddr = frame.into_raw();
+        (paddr, level, prop)
+    }
+
+    unsafe fn item_from_raw(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self::Item {
+        debug_assert_eq!(level, 1);
+        // SAFETY: The caller ensures safety.
+        let frame = unsafe { Frame::<dyn AnyUFrameMeta>::from_raw(paddr) };
+        (frame, prop)
     }
 }

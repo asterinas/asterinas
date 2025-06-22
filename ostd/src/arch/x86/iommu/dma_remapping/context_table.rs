@@ -8,15 +8,16 @@ use core::mem::size_of;
 use log::trace;
 use ostd_pod::Pod;
 
-use super::second_stage::{DeviceMode, PageTableEntry, PagingConsts};
+use super::second_stage::IommuPtConfig;
 use crate::{
     bus::pci::PciDeviceLocation,
     mm::{
         dma::Daddr,
         page_prop::{CachePolicy, PageProperty, PrivilegedPageFlags as PrivFlags},
-        page_table::{PageTableError, PageTableItem},
+        page_table::PageTableError,
         Frame, FrameAllocOptions, Paddr, PageFlags, PageTable, VmIo, PAGE_SIZE,
     },
+    task::disable_preempt,
 };
 
 /// Bit 0 is `Present` bit, indicating whether this entry is present.
@@ -77,8 +78,9 @@ impl RootTable {
             return Err(ContextTableError::InvalidDeviceId);
         }
 
-        self.get_or_create_context_table(device)
-            .map(device, daddr, paddr)?;
+        let context_table = self.get_or_create_context_table(device);
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { context_table.map(device, daddr, paddr)? };
 
         Ok(())
     }
@@ -92,8 +94,8 @@ impl RootTable {
             return Err(ContextTableError::InvalidDeviceId);
         }
 
-        self.get_or_create_context_table(device)
-            .unmap(device, daddr)?;
+        let context_table = self.get_or_create_context_table(device);
+        context_table.unmap(device, daddr)?;
 
         Ok(())
     }
@@ -105,7 +107,7 @@ impl RootTable {
     pub(super) fn specify_device_page_table(
         &mut self,
         device_id: PciDeviceLocation,
-        page_table: PageTable<DeviceMode, PageTableEntry, PagingConsts>,
+        page_table: PageTable<IommuPtConfig>,
     ) {
         let context_table = self.get_or_create_context_table(device_id);
 
@@ -122,7 +124,7 @@ impl RootTable {
         }
 
         // Activate page table.
-        let address = unsafe { page_table.root_paddr() };
+        let address = page_table.root_paddr();
         context_table.page_tables.insert(address, page_table);
         let entry = ContextEntry(address as u128 | 1 | 0x1_0000_0000_0000_0000);
         context_table
@@ -239,7 +241,7 @@ pub enum AddressWidth {
 pub struct ContextTable {
     /// Total 32 devices, each device has 8 functions.
     entries_frame: Frame<()>,
-    page_tables: BTreeMap<Paddr, PageTable<DeviceMode, PageTableEntry, PagingConsts>>,
+    page_tables: BTreeMap<Paddr, PageTable<IommuPtConfig>>,
 }
 
 impl ContextTable {
@@ -257,7 +259,7 @@ impl ContextTable {
     fn get_or_create_page_table(
         &mut self,
         device: PciDeviceLocation,
-    ) -> &mut PageTable<DeviceMode, PageTableEntry, PagingConsts> {
+    ) -> &mut PageTable<IommuPtConfig> {
         let bus_entry = self
             .entries_frame
             .read_val::<ContextEntry>(
@@ -266,8 +268,8 @@ impl ContextTable {
             .unwrap();
 
         if !bus_entry.is_present() {
-            let table = PageTable::<DeviceMode, PageTableEntry, PagingConsts>::empty();
-            let address = unsafe { table.root_paddr() };
+            let table = PageTable::<IommuPtConfig>::empty();
+            let address = table.root_paddr();
             self.page_tables.insert(address, table);
             let entry = ContextEntry(address as u128 | 3 | 0x1_0000_0000_0000_0000);
             self.entries_frame
@@ -297,23 +299,28 @@ impl ContextTable {
         if device.device >= 32 || device.function >= 8 {
             return Err(ContextTableError::InvalidDeviceId);
         }
+
         trace!(
             "Mapping Daddr: {:x?} to Paddr: {:x?} for device: {:x?}",
             daddr,
             paddr,
             device
         );
-        self.get_or_create_page_table(device)
-            .map(
-                &(daddr..daddr + PAGE_SIZE),
-                &(paddr..paddr + PAGE_SIZE),
-                PageProperty {
-                    flags: PageFlags::RW,
-                    cache: CachePolicy::Uncacheable,
-                    priv_flags: PrivFlags::empty(),
-                },
-            )
-            .unwrap();
+
+        let from = daddr..daddr + PAGE_SIZE;
+        let prop = PageProperty {
+            flags: PageFlags::RW,
+            cache: CachePolicy::Uncacheable,
+            priv_flags: PrivFlags::empty(),
+        };
+
+        let pt = self.get_or_create_page_table(device);
+        let preempt_guard = disable_preempt();
+        let mut cursor = pt.cursor_mut(&preempt_guard, &from).unwrap();
+
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { cursor.map((paddr, 1, prop)).unwrap() };
+
         Ok(())
     }
 
@@ -321,13 +328,19 @@ impl ContextTable {
         if device.device >= 32 || device.function >= 8 {
             return Err(ContextTableError::InvalidDeviceId);
         }
+
         trace!("Unmapping Daddr: {:x?} for device: {:x?}", daddr, device);
+
         let pt = self.get_or_create_page_table(device);
-        let mut cursor = pt.cursor_mut(&(daddr..daddr + PAGE_SIZE)).unwrap();
-        unsafe {
-            let result = cursor.take_next(PAGE_SIZE);
-            debug_assert!(matches!(result, PageTableItem::MappedUntracked { .. }));
-        }
+        let preempt_guard = disable_preempt();
+        let mut cursor = pt
+            .cursor_mut(&preempt_guard, &(daddr..daddr + PAGE_SIZE))
+            .unwrap();
+
+        // SAFETY: This unmaps a page from the context table, which is always safe.
+        let frag = unsafe { cursor.take_next(PAGE_SIZE) };
+        debug_assert!(frag.is_some());
+
         Ok(())
     }
 }

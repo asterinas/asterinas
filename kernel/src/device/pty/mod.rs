@@ -10,10 +10,11 @@ use crate::{
     prelude::*,
 };
 
-#[expect(clippy::module_inception)]
-mod pty;
+mod driver;
+mod master;
 
-pub use pty::{PtyMaster, PtySlave};
+pub use driver::PtySlave;
+pub use master::PtyMaster;
 use spin::Once;
 
 static DEV_PTS: Once<Dentry> = Once::new();
@@ -43,6 +44,6 @@ pub fn init() -> Result<()> {
 pub fn new_pty_pair(index: u32, ptmx: Arc<dyn Inode>) -> Result<(Arc<PtyMaster>, Arc<PtySlave>)> {
     debug!("pty index = {}", index);
     let master = PtyMaster::new(ptmx, index);
-    let slave = PtySlave::new(&master);
+    let slave = master.slave().clone();
     Ok((master, slave))
 }

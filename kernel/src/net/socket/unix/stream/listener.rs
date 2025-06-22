@@ -14,7 +14,7 @@ use crate::{
     fs::file_handle::FileLike,
     net::socket::{
         unix::addr::{UnixSocketAddrBound, UnixSocketAddrKey},
-        SockShutdownCmd, SocketAddr,
+        util::{SockShutdownCmd, SocketAddr},
     },
     prelude::*,
     process::signal::{PollHandle, Pollee},
@@ -188,6 +188,7 @@ impl Backlog {
         drop(locked_incoming_conns);
 
         if conn.is_some() {
+            self.pollee.invalidate();
             self.wait_queue.wake_one();
         }
 
@@ -203,13 +204,9 @@ impl Backlog {
     }
 
     fn shutdown(&self) {
-        let mut incoming_conns = self.incoming_conns.lock();
+        *self.incoming_conns.lock() = None;
 
-        *incoming_conns = None;
         self.pollee.notify(IoEvents::HUP);
-
-        drop(incoming_conns);
-
         self.wait_queue.wake_all();
     }
 

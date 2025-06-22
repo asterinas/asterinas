@@ -2,10 +2,7 @@
 
 #![expect(unused_variables)]
 
-use core::{
-    arch::x86_64::_rdtsc,
-    sync::atomic::{AtomicBool, AtomicU64, Ordering},
-};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use log::info;
 use x86::cpuid::cpuid;
@@ -19,7 +16,7 @@ use crate::{
 };
 
 /// The frequency of TSC(Hz)
-pub(in crate::arch::x86) static TSC_FREQ: AtomicU64 = AtomicU64::new(0);
+pub(in crate::arch) static TSC_FREQ: AtomicU64 = AtomicU64::new(0);
 
 pub fn init_tsc_freq() {
     let tsc_freq =
@@ -77,16 +74,21 @@ pub fn determine_tsc_freq_via_pit() -> u64 {
 
     // Enable PIT
     pit::init(OperatingMode::RateGenerator);
-    pit::enable_ioapic_line(irq.clone());
+    let irq = pit::enable_interrupt(irq);
 
     static IS_FINISH: AtomicBool = AtomicBool::new(false);
     static FREQUENCY: AtomicU64 = AtomicU64::new(0);
+
+    // Wait until `FREQUENCY` is ready
     x86_64::instructions::interrupts::enable();
     while !IS_FINISH.load(Ordering::Acquire) {
         x86_64::instructions::hlt();
     }
     x86_64::instructions::interrupts::disable();
+
+    // Disable PIT
     drop(irq);
+
     return FREQUENCY.load(Ordering::Acquire);
 
     fn pit_callback(trap_frame: &TrapFrame) {
@@ -95,20 +97,18 @@ pub fn determine_tsc_freq_via_pit() -> u64 {
         // Set a certain times of callbacks to calculate the frequency
         const CALLBACK_TIMES: u64 = TIMER_FREQ / 10;
 
+        let tsc_current_count = crate::arch::read_tsc();
+
         if IN_TIME.load(Ordering::Relaxed) < CALLBACK_TIMES || IS_FINISH.load(Ordering::Acquire) {
             if IN_TIME.load(Ordering::Relaxed) == 0 {
-                unsafe {
-                    TSC_FIRST_COUNT.store(_rdtsc(), Ordering::Relaxed);
-                }
+                TSC_FIRST_COUNT.store(tsc_current_count, Ordering::Relaxed);
             }
             IN_TIME.fetch_add(1, Ordering::Relaxed);
             return;
         }
 
-        pit::disable_ioapic_line();
-        let tsc_count = unsafe { _rdtsc() };
-        let freq =
-            (tsc_count - TSC_FIRST_COUNT.load(Ordering::Relaxed)) * (TIMER_FREQ / CALLBACK_TIMES);
+        let tsc_first_count = TSC_FIRST_COUNT.load(Ordering::Relaxed);
+        let freq = (tsc_current_count - tsc_first_count) * (TIMER_FREQ / CALLBACK_TIMES);
         FREQUENCY.store(freq, Ordering::Release);
         IS_FINISH.store(true, Ordering::Release);
     }

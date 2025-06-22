@@ -13,7 +13,7 @@ use inferno::flamegraph;
 use crate::{
     cli::{ProfileArgs, ProfileFormat},
     commands::util::bin_file_name,
-    util::{get_kernel_crate, get_target_directory},
+    util::{get_kernel_crate, get_target_directory, new_command_checked_exists},
 };
 use regex::Regex;
 use std::{
@@ -21,7 +21,7 @@ use std::{
     fs::File,
     io::{BufRead, Write},
     path::PathBuf,
-    process::{Command, Stdio},
+    process::Stdio,
     thread, time,
 };
 
@@ -92,7 +92,7 @@ fn do_collect_stack_traces(args: &ProfileArgs) {
         ];
         gdb_args.append(&mut vec![backtrace_cmd_seq; *samples].concat());
 
-        Command::new("gdb")
+        new_command_checked_exists("gdb")
             .args(gdb_args)
             .stdout(Stdio::piped())
             .spawn()
@@ -119,7 +119,7 @@ fn do_collect_stack_traces(args: &ProfileArgs) {
         }
         gdb_output.clear();
         thread::sleep(time::Duration::from_secs_f64(*interval));
-        let _ = Command::new("kill")
+        let _ = new_command_checked_exists("kill")
             .args(["-INT", &format!("{}", gdb_process.id())])
             .output();
     }

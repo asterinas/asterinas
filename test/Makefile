@@ -23,6 +23,7 @@ INITRAMFS_EMPTY_DIRS := \
 	$(INITRAMFS)/opt \
 	$(INITRAMFS)/proc \
 	$(INITRAMFS)/dev \
+	$(INITRAMFS)/sys \
 	$(INITRAMFS)/ext2 \
 	$(INITRAMFS)/exfat
 INITRAMFS_ALL_DIRS := \
@@ -33,9 +34,14 @@ INITRAMFS_ALL_DIRS := \
 	$(INITRAMFS)/sbin \
 	$(INITRAMFS)/usr/bin \
 	$(INITRAMFS)/usr/local \
-	$(INITRAMFS)/test \
 	$(INITRAMFS)/benchmark \
 	$(INITRAMFS_EMPTY_DIRS)
+
+# Include test as target if BENCHMARK is not set.
+ifeq ($(BENCHMARK), none)
+INITRAMFS_ALL_DIRS += $(INITRAMFS)/test
+endif
+
 SYSCALL_TEST_DIR := $(INITRAMFS)/opt/syscall_test
 
 .PHONY: all
@@ -70,6 +76,9 @@ $(INITRAMFS)/lib/x86_64-linux-gnu: | $(VDSO_LIB)
 	@cp -L /lib/x86_64-linux-gnu/libevent-2.1.so.7 $@
 	@# required for VDSO
 	@cp -L $(VDSO_LIB) $@
+	@# required for netlink test
+	@cp -L /lib/x86_64-linux-gnu/libnl-3.so.200 $@
+	@cp -L /lib/x86_64-linux-gnu/libnl-route-3.so.200 $@
 
 $(VDSO_LIB): | $(VDSO_DIR) $(BINARY_CACHE_DIR)/vdso64.so
 	@# TODO: use a custom compiled vdso.so file in the future.

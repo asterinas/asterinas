@@ -8,7 +8,7 @@ use crate::{
         signal::{
             c_types::sigaction_t,
             constants::{SIGKILL, SIGSTOP},
-            sig_action::{SigAction, SigDefaultAction},
+            sig_action::SigAction,
             sig_mask::SigSet,
             sig_num::SigNum,
         },
@@ -77,15 +77,8 @@ pub fn sys_rt_sigaction(
 // (for example, SIGCHLD), shall cause the pending signal to
 // be discarded, whether or not it is blocked
 fn discard_signals_if_ignored(ctx: &Context, signum: SigNum, sig_action: &SigAction) {
-    match sig_action {
-        SigAction::Dfl => {
-            let default_action = SigDefaultAction::from_signum(signum);
-            if default_action != SigDefaultAction::Ign {
-                return;
-            }
-        }
-        SigAction::Ign => {}
-        SigAction::User { .. } => return,
+    if !sig_action.will_ignore(signum) {
+        return;
     }
 
     let mask = SigSet::new_full() - signum;

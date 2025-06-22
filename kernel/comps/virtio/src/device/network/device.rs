@@ -9,13 +9,10 @@ use aster_bigtcp::device::{Checksum, DeviceCapabilities, Medium};
 use aster_network::{
     AnyNetworkDevice, EthernetAddr, RxBuffer, TxBuffer, VirtioNetError, RX_BUFFER_POOL,
 };
+use aster_softirq::BottomHalfDisabled;
 use aster_util::slot_vec::SlotVec;
 use log::{debug, warn};
-use ostd::{
-    mm::DmaStream,
-    sync::{LocalIrqDisabled, SpinLock},
-    trap::TrapFrame,
-};
+use ostd::{mm::DmaStream, sync::SpinLock, trap::TrapFrame};
 
 use super::{config::VirtioNetConfig, header::VirtioNetHdr};
 use crate::{
@@ -127,10 +124,10 @@ impl NetworkDevice {
 
         /// Interrupt handlers if network device receives/sends some packet
         fn handle_send_event(_: &TrapFrame) {
-            aster_network::handle_send_irq(super::DEVICE_NAME);
+            aster_network::raise_send_softirq();
         }
         fn handle_recv_event(_: &TrapFrame) {
-            aster_network::handle_recv_irq(super::DEVICE_NAME);
+            aster_network::raise_receive_softirq();
         }
 
         device
@@ -363,7 +360,7 @@ impl Debug for NetworkDevice {
     }
 }
 
-static TX_BUFFER_POOL: SpinLock<LinkedList<DmaStream>, LocalIrqDisabled> =
+static TX_BUFFER_POOL: SpinLock<LinkedList<DmaStream>, BottomHalfDisabled> =
     SpinLock::new(LinkedList::new());
 
 const QUEUE_RECV: u16 = 0;

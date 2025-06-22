@@ -18,6 +18,7 @@ DELET = "DELET"
 wrk = "wrk"
 rto = "rto"
 typ = "typ"
+sigfault = "sigfault"
 
 # Files with svg suffix are ignored to check. 
 [type.svg]
@@ -27,8 +28,8 @@ check-file = false
 # Files listed below are ignored to check.
 [files]
 extend-exclude = [
-    "test/syscall_test/blocklists/pty_test",
-    "test/build/initramfs/opt/syscall_test/blocklists/pty_test",
-    "test/syscall_test/blocklists/sync_test",
-    "test/build/initramfs/opt/syscall_test/blocklists/sync_test",
+    "test/syscall_test/gvisor/blocklists/pty_test",
+    "test/build/initramfs/opt/gvisor/blocklists/pty_test",
+    "test/syscall_test/gvisor/blocklists/sync_test",
+    "test/build/initramfs/opt/gvisor/blocklists/sync_test",
 ]

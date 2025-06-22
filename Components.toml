@@ -11,6 +11,7 @@ time = { name = "aster-time" }
 framebuffer = { name = "aster-framebuffer" }
 network = { name = "aster-network" }
 mlsdisk = { name = "aster-mlsdisk" }
+systree = { name = "aster-systree" }
 
 [whitelist]
 [whitelist.nix.main]

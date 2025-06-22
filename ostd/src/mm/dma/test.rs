@@ -35,7 +35,7 @@ mod dma_coherent {
         assert_eq!(dma_coherent.nbytes(), PAGE_SIZE);
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let vaddr = paddr_to_vaddr(segment.start_paddr());
-        assert!(page_table.query(vaddr).unwrap().1.cache == CachePolicy::Uncacheable);
+        assert!(page_table.page_walk(vaddr).unwrap().1.cache == CachePolicy::Uncacheable);
     }
 
     #[ktest]

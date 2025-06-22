@@ -16,7 +16,7 @@
 
 //! Handles trap.
 
-mod gdt;
+pub(super) mod gdt;
 mod idt;
 mod syscall;
 
@@ -27,14 +27,18 @@ use spin::Once;
 
 use super::ex_table::ExTable;
 use crate::{
-    arch::irq::{disable_local, enable_local},
+    arch::{
+        if_tdx_enabled,
+        irq::{disable_local, enable_local},
+    },
     cpu::context::{CpuException, CpuExceptionInfo, PageFaultErrorCode},
-    cpu_local_cell, if_tdx_enabled,
+    cpu_local_cell,
     mm::{
         kspace::{KERNEL_PAGE_TABLE, LINEAR_MAPPING_BASE_VADDR, LINEAR_MAPPING_VADDR_RANGE},
         page_prop::{CachePolicy, PageProperty},
         PageFlags, PrivilegedPageFlags as PrivFlags, MAX_USERSPACE_VADDR, PAGE_SIZE,
     },
+    task::disable_preempt,
     trap::call_irq_callback_functions,
 };
 
@@ -101,28 +105,28 @@ pub struct TrapFrame {
 
 /// Initialize interrupt handling on x86_64.
 ///
-/// # Safety
-///
 /// This function will:
-///
-/// - Disable interrupt.
-/// - Switch to a new [GDT], extend 7 more entries from the current one.
-/// - Switch to a new [TSS], `GSBASE` pointer to its base address.
-/// - Switch to a new [IDT], override the current one.
-/// - Enable [`syscall`] instruction.
-///     - set `EFER::SYSTEM_CALL_EXTENSIONS`
+/// - Switch to a new, CPU-local [GDT].
+/// - Switch to a new, CPU-local [TSS].
+/// - Switch to a new, global [IDT].
+/// - Enable the [`syscall`] instruction.
 ///
 /// [GDT]: https://wiki.osdev.org/GDT
 /// [IDT]: https://wiki.osdev.org/IDT
 /// [TSS]: https://wiki.osdev.org/Task_State_Segment
 /// [`syscall`]: https://www.felixcloutier.com/x86/syscall
 ///
-#[cfg(any(target_os = "none", target_os = "uefi"))]
-pub unsafe fn init(on_bsp: bool) {
-    x86_64::instructions::interrupts::disable();
-    gdt::init(on_bsp);
+/// # Safety
+///
+/// This method must be called only in the boot context of each available processor.
+pub unsafe fn init() {
+    // SAFETY: We're in the boot context, so no preemption can occur.
+    unsafe { gdt::init() };
+
     idt::init();
-    syscall::init();
+
+    // SAFETY: `gdt::init` has been called before.
+    unsafe { syscall::init() };
 }
 
 /// User space context.
@@ -319,6 +323,8 @@ fn handle_user_page_fault(f: &mut TrapFrame, page_fault_addr: u64) {
 /// FIXME: this is a hack because we don't allocate kernel space for IO memory. We are currently
 /// using the linear mapping for IO memory. This is not a good practice.
 fn handle_kernel_page_fault(f: &TrapFrame, page_fault_vaddr: u64) {
+    let preempt_guard = disable_preempt();
+
     let error_code = PageFaultErrorCode::from_bits_truncate(f.error_code);
     debug!(
         "kernel page fault: address {:?}, error code {:?}",
@@ -359,23 +365,20 @@ fn handle_kernel_page_fault(f: &TrapFrame, page_fault_vaddr: u64) {
     } else {
         PrivFlags::GLOBAL
     });
+    let prop = PageProperty {
+        flags: PageFlags::RW,
+        cache: CachePolicy::Uncacheable,
+        priv_flags,
+    };
+
+    let mut cursor = page_table
+        .cursor_mut(&preempt_guard, &(vaddr..vaddr + PAGE_SIZE))
+        .unwrap();
 
     // SAFETY:
     // 1. We have checked that the page fault address falls within the address range of the direct
     //    mapping of physical memory.
     // 2. We map the address to the correct physical page with the correct flags, where the
     //    correctness follows the semantics of the direct mapping of physical memory.
-    unsafe {
-        page_table
-            .map(
-                &(vaddr..vaddr + PAGE_SIZE),
-                &(paddr..paddr + PAGE_SIZE),
-                PageProperty {
-                    flags: PageFlags::RW,
-                    cache: CachePolicy::Uncacheable,
-                    priv_flags,
-                },
-            )
-            .unwrap();
-    }
+    unsafe { cursor.map(crate::mm::kspace::MappedItem::Untracked(paddr, 1, prop)) }.unwrap();
 }

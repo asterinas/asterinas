@@ -9,7 +9,7 @@ use crate::{
     fs::utils::{Channel, Consumer, Producer},
     net::socket::{
         unix::{addr::UnixSocketAddrBound, UnixSocketAddr},
-        SockShutdownCmd,
+        util::SockShutdownCmd,
     },
     prelude::*,
     process::signal::{PollHandle, Pollee},
@@ -72,10 +72,24 @@ impl Connected {
     }
 
     pub(super) fn try_read(&self, writer: &mut dyn MultiWrite) -> Result<usize> {
+        if writer.is_empty() {
+            if self.reader.is_empty() {
+                return_errno_with_message!(Errno::EAGAIN, "the channel is empty");
+            }
+            return Ok(0);
+        }
+
         self.reader.try_read(writer)
     }
 
     pub(super) fn try_write(&self, reader: &mut dyn MultiRead) -> Result<usize> {
+        if reader.is_empty() {
+            if self.writer.is_shutdown() {
+                return_errno_with_message!(Errno::EPIPE, "the channel is shut down");
+            }
+            return Ok(0);
+        }
+
         self.writer.try_write(reader)
     }
 

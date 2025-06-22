@@ -8,14 +8,22 @@ use x86::msr::{
 
 use super::ApicTimer;
 
-pub struct X2Apic {}
+#[derive(Debug)]
+pub struct X2Apic {
+    _private: (),
+}
+
+// The APIC instance can be shared among threads running on the same CPU, but not among those
+// running on different CPUs. Therefore, it is not `Send`/`Sync`.
+impl !Send for X2Apic {}
+impl !Sync for X2Apic {}
 
 impl X2Apic {
     pub(crate) fn new() -> Option<Self> {
         if !Self::has_x2apic() {
             return None;
         }
-        Some(Self {})
+        Some(Self { _private: () })
     }
 
     pub(super) fn has_x2apic() -> bool {
@@ -69,15 +77,19 @@ impl super::Apic for X2Apic {
 
     unsafe fn send_ipi(&self, icr: super::Icr) {
         let _guard = crate::trap::disable_local();
-        wrmsr(IA32_X2APIC_ESR, 0);
-        wrmsr(IA32_X2APIC_ICR, icr.0);
-        loop {
-            let icr = rdmsr(IA32_X2APIC_ICR);
-            if ((icr >> 12) & 0x1) == 0 {
-                break;
-            }
-            if rdmsr(IA32_X2APIC_ESR) > 0 {
-                break;
+        // SAFETY: These `rdmsr` and `wrmsr` instructions write the interrupt command to APIC and
+        // wait for results. The caller guarantees it's safe to execute this interrupt command.
+        unsafe {
+            wrmsr(IA32_X2APIC_ESR, 0);
+            wrmsr(IA32_X2APIC_ICR, icr.0);
+            loop {
+                let icr = rdmsr(IA32_X2APIC_ICR);
+                if ((icr >> 12) & 0x1) == 0 {
+                    break;
+                }
+                if rdmsr(IA32_X2APIC_ESR) > 0 {
+                    break;
+                }
             }
         }
     }

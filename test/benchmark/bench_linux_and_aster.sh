@@ -6,7 +6,14 @@ set -e
 set -o pipefail
 
 # Ensure all dependencies are installed
-command -v yq >/dev/null 2>&1 || command -v yq >/dev/null 2>&1 || { echo >&2 "tools are not installed. Aborting."; exit 1; }
+if ! command -v yq >/dev/null 2>&1; then
+    echo >&2 "Error: missing required tool: yq"
+    exit 1
+fi
+if ! command -v jq >/dev/null 2>&1; then
+    echo >&2 "Error: missing required tool: jq"
+    exit 1
+fi
 
 # Set up paths
 BENCHMARK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
@@ -110,44 +117,76 @@ run_benchmark() {
          esac
      done <<< "$runtime_configs_str"
 
-    # Prepare commands for Asterinas and Linux
-    local asterinas_cmd="make run BENCHMARK=${benchmark} ${aster_scheme_cmd_part} SMP=${smp_val} MEM=${mem_val} ENABLE_KVM=1 RELEASE_LTO=1 NETDEV=tap VHOST=on 2>&1"
-    local linux_cmd="/usr/local/qemu/bin/qemu-system-x86_64 \
-        --no-reboot \
-        -smp ${smp_val} \
-        -m ${mem_val} \
-        -machine q35,kernel-irqchip=split \
-        -cpu Icelake-Server,-pcid,+x2apic \
-        --enable-kvm \
-        -kernel ${LINUX_KERNEL} \
-        -initrd ${BENCHMARK_ROOT}/../build/initramfs.cpio.gz \
-        -drive if=none,format=raw,id=x0,file=${BENCHMARK_ROOT}/../build/ext2.img \
-        -device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,serial=vext2,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off \
-        -append 'console=ttyS0 rdinit=/benchmark/common/bench_runner.sh ${benchmark} linux mitigations=off hugepages=0 transparent_hugepage=never quiet' \
-        -netdev tap,id=net01,script=${BENCHMARK_ROOT}/../../tools/net/qemu-ifup.sh,downscript=${BENCHMARK_ROOT}/../../tools/net/qemu-ifdown.sh,vhost=on \
-        -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off,csum=off,guest_csum=off,ctrl_guest_offloads=off,guest_tso4=off,guest_tso6=off,guest_ecn=off,guest_ufo=off,host_tso4=off,host_tso6=off,host_ecn=off,host_ufo=off,mrg_rxbuf=off,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,ctrl_rx_extra=off,guest_announce=off,ctrl_mac_addr=off,host_ufo=off,guest_uso4=off,guest_uso6=off,host_uso=off \
-        -nographic \
-        2>&1"
+    # Prepare commands for Asterinas and Linux using arrays
+    local asterinas_cmd_arr=(make run "BENCHMARK=${benchmark}")
+    # Add scheme part only if it's not empty and the platform is not TDX (OSDK doesn't support multiple SCHEME)
+    [[ -n "$aster_scheme_cmd_part" && "$platform" != "tdx" ]] && asterinas_cmd_arr+=("$aster_scheme_cmd_part")
+    asterinas_cmd_arr+=(
+        "SMP=${smp_val}"
+        "MEM=${mem_val}"
+        ENABLE_KVM=1
+        RELEASE_LTO=1
+        NETDEV=tap
+        VHOST=on
+    )
+    if [[ "$platform" == "tdx" ]]; then
+        asterinas_cmd_arr+=(INTEL_TDX=1)
+    fi
 
-    # Trim leading/trailing whitespace from commands before eval
-    asterinas_cmd=$(echo "$asterinas_cmd" | sed 's/^ *//;s/ *$//;s/  */ /g')
-    linux_cmd=$(echo "$linux_cmd" | sed 's/^ *//;s/ *$//;s/  */ /g')
+    # TODO: 
+    #   1. Current linux kernel is not TDX compatible. Replace with TDX compatible version later.
+    #   2. `guest_uso4=off,guest_uso6=off,host_uso=off` is not supported by the QEMU of TDX development image.
+    local linux_cmd_arr=(
+        qemu-system-x86_64
+        --no-reboot
+        -smp "${smp_val}"
+        -m "${mem_val}"
+        -machine q35,kernel-irqchip=split
+        -cpu Icelake-Server,-pcid,+x2apic
+        --enable-kvm
+        -kernel "${LINUX_KERNEL}"
+        -initrd "${BENCHMARK_ROOT}/../build/initramfs.cpio.gz"
+        -drive "if=none,format=raw,id=x0,file=${BENCHMARK_ROOT}/../build/ext2.img"
+        -device "virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,serial=vext2,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off"
+        -append "console=ttyS0 rdinit=/benchmark/common/bench_runner.sh ${benchmark} linux mitigations=off hugepages=0 transparent_hugepage=never quiet"
+        -netdev "tap,id=net01,script=${BENCHMARK_ROOT}/../../tools/net/qemu-ifup.sh,downscript=${BENCHMARK_ROOT}/../../tools/net/qemu-ifdown.sh,vhost=on"
+        -nographic
+    )
+    if [[ "$platform" != "tdx" ]]; then
+        linux_cmd_arr+=(
+            -device "virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off,csum=off,guest_csum=off,ctrl_guest_offloads=off,guest_tso4=off,guest_tso6=off,guest_ecn=off,guest_ufo=off,host_tso4=off,host_tso6=off,host_ecn=off,host_ufo=off,mrg_rxbuf=off,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,ctrl_rx_extra=off,guest_announce=off,ctrl_mac_addr=off,host_ufo=off,guest_uso4=off,guest_uso6=off,host_uso=off"
+        )
+    else
+        linux_cmd_arr+=(
+            -device "virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off,csum=off,guest_csum=off,ctrl_guest_offloads=off,guest_tso4=off,guest_tso6=off,guest_ecn=off,guest_ufo=off,host_tso4=off,host_tso6=off,host_ecn=off,host_ufo=off,mrg_rxbuf=off,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,ctrl_rx_extra=off,guest_announce=off,ctrl_mac_addr=off,host_ufo=off"
+        )
+    fi
 
     # Run the benchmark depending on the mode
     case "${run_mode}" in
         "guest_only")
             echo "Running benchmark ${benchmark} on Asterinas..."
-            eval "$asterinas_cmd" | tee ${ASTER_OUTPUT}
+            # Execute directly from array, redirect stderr to stdout, then tee
+            "${asterinas_cmd_arr[@]}" 2>&1 | tee "${ASTER_OUTPUT}"
             prepare_fs
             echo "Running benchmark ${benchmark} on Linux..."
-            eval "$linux_cmd" | tee ${LINUX_OUTPUT}
+            # Execute directly from array, redirect stderr to stdout, then tee
+            "${linux_cmd_arr[@]}" 2>&1 | tee "${LINUX_OUTPUT}"
             ;;
         "host_guest")
+            # Note: host_guest_bench_runner.sh expects commands as single strings.
+            # We need to reconstruct the string representation for compatibility.
+            # Use printf %q to quote arguments safely.
+            local asterinas_cmd_str
+            printf -v asterinas_cmd_str '%q ' "${asterinas_cmd_arr[@]}"
+            local linux_cmd_str
+            printf -v linux_cmd_str '%q ' "${linux_cmd_arr[@]}"
+
             echo "Running benchmark ${benchmark} on host and guest..."
             bash "${BENCHMARK_ROOT}/common/host_guest_bench_runner.sh" \
                 "${BENCHMARK_ROOT}/${benchmark}" \
-                "${asterinas_cmd}" \
-                "${linux_cmd}" \
+                "${asterinas_cmd_str}" \
+                "${linux_cmd_str}" \
                 "${ASTER_OUTPUT}" \
                 "${LINUX_OUTPUT}"
             ;;
@@ -181,6 +220,8 @@ cleanup() {
 # Main function to coordinate the benchmark run
 main() {
     local benchmark="$1"
+    local platform="$2"
+
     if [[ -z "${BENCHMARK_ROOT}/${benchmark}" ]]; then
         echo "Error: No benchmark specified" >&2
         exit 1

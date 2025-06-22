@@ -2,7 +2,7 @@
 
 //! A contiguous range of frames.
 
-use core::{fmt::Debug, mem::ManuallyDrop, ops::Range, sync::atomic::Ordering};
+use core::{fmt::Debug, mem::ManuallyDrop, ops::Range};
 
 use super::{
     inc_frame_ref_count,
@@ -90,7 +90,7 @@ impl<M: AnyFrameMeta> Segment<M> {
         if range.start % PAGE_SIZE != 0 || range.end % PAGE_SIZE != 0 {
             return Err(GetFrameError::NotAligned);
         }
-        if range.end > super::MAX_PADDR.load(Ordering::Relaxed) {
+        if range.end > super::max_paddr() {
             return Err(GetFrameError::OutOfBound);
         }
         assert!(range.start < range.end);
@@ -116,6 +116,8 @@ impl<M: AnyFrameMeta> Segment<M> {
     /// It could be manually forgotten by [`core::mem::forget`],
     /// [`ManuallyDrop`], or [`Self::into_raw`].
     pub(crate) unsafe fn from_raw(range: Range<Paddr>) -> Self {
+        debug_assert_eq!(range.start % PAGE_SIZE, 0);
+        debug_assert_eq!(range.end % PAGE_SIZE, 0);
         Self {
             range,
             _marker: core::marker::PhantomData,

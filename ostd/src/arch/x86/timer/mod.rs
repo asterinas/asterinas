@@ -11,7 +11,7 @@ use core::sync::atomic::Ordering;
 use spin::Once;
 
 use crate::{
-    arch::x86::kernel,
+    arch::kernel,
     cpu::{CpuId, PinCurrentCpu},
     timer::INTERRUPT_CALLBACKS,
     trap::{self, IrqLine, TrapFrame},

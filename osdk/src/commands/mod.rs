@@ -10,8 +10,6 @@ mod run;
 mod test;
 mod util;
 
-use util::DEFAULT_TARGET_RELPATH;
-
 pub use self::{
     build::execute_build_command, debug::execute_debug_command, new::execute_new_command,
     profile::execute_profile_command, run::execute_run_command, test::execute_test_command,
@@ -19,9 +17,8 @@ pub use self::{
 
 use crate::{
     arch::get_default_arch,
-    base_crate::{new_base_crate, BaseCrateType},
     error_msg,
-    util::{get_current_crates, get_target_directory, DirGuard},
+    util::{get_current_crates, DirGuard},
 };
 
 /// Execute the forwarded cargo command with arguments.
@@ -65,24 +62,9 @@ pub fn execute_forwarded_command_on_each_crate(
     args: &Vec<String>,
     cfg_ktest: bool,
 ) {
-    let cargo_target_directory = get_target_directory();
-    let osdk_output_directory = cargo_target_directory.join(DEFAULT_TARGET_RELPATH);
-
     let target_crates = get_current_crates();
     for target in target_crates {
-        if !target.is_kernel_crate {
-            let _dir_guard = DirGuard::change_dir(target.path);
-            execute_forwarded_command(subcommand, args, cfg_ktest);
-        } else {
-            let base_crate_path = new_base_crate(
-                BaseCrateType::Other,
-                osdk_output_directory.join(&target.name),
-                &target.name,
-                target.path,
-                false,
-            );
-            let _dir_guard = DirGuard::change_dir(&base_crate_path);
-            execute_forwarded_command(subcommand, args, cfg_ktest);
-        }
+        let _dir_guard = DirGuard::change_dir(target.path);
+        execute_forwarded_command(subcommand, args, cfg_ktest);
     }
 }

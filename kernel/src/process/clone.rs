@@ -8,8 +8,9 @@ use super::{
     posix_thread::{AsPosixThread, PosixThreadBuilder, ThreadName},
     process_table,
     process_vm::ProcessVm,
+    rlimit::ResourceLimits,
     signal::{constants::SIGCHLD, sig_disposition::SigDispositions, sig_num::SigNum},
-    Credentials, Process, ProcessBuilder,
+    Credentials, Pid, Process,
 };
 use crate::{
     cpu::LinuxAbi,
@@ -17,6 +18,7 @@ use crate::{
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
     process::posix_thread::allocate_posix_tid,
+    sched::Nice,
     thread::{AsThread, Tid},
 };
 
@@ -239,7 +241,7 @@ fn clone_child_task(
     clone_sysvsem(clone_flags)?;
 
     // clone file table
-    let child_file_table = clone_files(&thread_local.file_table().borrow(), clone_flags);
+    let child_file_table = clone_files(thread_local.borrow_file_table().unwrap(), clone_flags);
 
     // clone fs
     let child_fs = clone_fs(posix_thread.fs(), clone_flags);
@@ -299,13 +301,13 @@ fn clone_child_process(
 
     let clone_flags = clone_args.flags;
 
-    // clone vm
+    // Clone the virtual memory space
     let child_process_vm = {
         let parent_process_vm = process.vm();
         clone_vm(parent_process_vm, clone_flags)?
     };
 
-    // clone user space
+    // Clone the user context
     let child_user_ctx = Arc::new(clone_user_ctx(
         parent_context,
         clone_args.stack,
@@ -314,22 +316,25 @@ fn clone_child_process(
         clone_flags,
     ));
 
-    // clone file table
-    let child_file_table = clone_files(&thread_local.file_table().borrow(), clone_flags);
+    // Clone the file table
+    let child_file_table = clone_files(thread_local.borrow_file_table().unwrap(), clone_flags);
 
-    // clone fs
+    // Clone the filesystem information
     let child_fs = clone_fs(posix_thread.fs(), clone_flags);
 
-    // clone sig dispositions
+    // Clone signal dispositions
     let child_sig_dispositions = clone_sighand(process.sig_dispositions(), clone_flags);
 
-    // clone system V semaphore
+    // Clone System V semaphore
     clone_sysvsem(clone_flags)?;
 
-    // inherit parent's sig mask
+    // Inherit the parent's signal mask
     let child_sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed).into();
 
-    // inherit parent's nice value
+    // Inherit the parent's resource limits
+    let child_resource_limits = process.resource_limits().clone();
+
+    // Inherit the parent's nice value
     let child_nice = process.nice().load(Ordering::Relaxed);
 
     let child_tid = allocate_posix_tid();
@@ -358,16 +363,16 @@ fn clone_child_process(
         child_thread_builder =
             clone_child_settid(child_thread_builder, clone_args.child_tid, clone_flags);
 
-        let mut process_builder =
-            ProcessBuilder::new(child_tid, &child_elf_path, posix_thread.weak_process());
-
-        process_builder
-            .main_thread_builder(child_thread_builder)
-            .process_vm(child_process_vm)
-            .sig_dispositions(child_sig_dispositions)
-            .nice(child_nice);
-
-        process_builder.build()?
+        create_child_process(
+            child_tid,
+            posix_thread.weak_process(),
+            &child_elf_path,
+            child_process_vm,
+            child_resource_limits,
+            child_nice,
+            child_sig_dispositions,
+            child_thread_builder,
+        )
     };
 
     if let Some(sig) = clone_args.exit_signal {
@@ -510,18 +515,52 @@ fn clone_sysvsem(clone_flags: CloneFlags) -> Result<()> {
     Ok(())
 }
 
-fn set_parent_and_group(parent: &Process, child: &Arc<Process>) {
-    let process_group = parent.process_group().unwrap();
+#[expect(clippy::too_many_arguments)]
+fn create_child_process(
+    pid: Pid,
+    parent: Weak<Process>,
+    executable_path: &str,
+    process_vm: ProcessVm,
+    resource_limits: ResourceLimits,
+    nice: Nice,
+    sig_dispositions: Arc<Mutex<SigDispositions>>,
+    thread_builder: PosixThreadBuilder,
+) -> Arc<Process> {
+    let child_proc = Process::new(
+        pid,
+        parent,
+        executable_path.to_string(),
+        process_vm,
+        resource_limits,
+        nice,
+        sig_dispositions,
+    );
 
-    let mut process_table_mut = process_table::process_table_mut();
-    let mut group_inner = process_group.inner.lock();
-    let mut child_group_mut = child.process_group.lock();
+    let child_task = thread_builder.process(Arc::downgrade(&child_proc)).build();
+    child_proc.tasks().lock().insert(child_task).unwrap();
+
+    child_proc
+}
+
+fn set_parent_and_group(parent: &Process, child: &Arc<Process>) {
+    // Lock order: children of process -> process table -> group of process
+    // -> group inner -> session inner
     let mut children_mut = parent.children().lock();
 
+    let mut process_table_mut = process_table::process_table_mut();
+
+    let process_group_mut = parent.process_group.lock();
+
+    let process_group = process_group_mut.upgrade().unwrap();
+    let mut process_group_inner = process_group.lock();
+
+    // Put the child process in the parent's process group
+    process_group_inner.insert_process(child.clone());
+    *child.process_group.lock() = Arc::downgrade(&process_group);
+
+    // Put the child process in the parent's `children` field
     children_mut.insert(child.pid(), child.clone());
 
-    group_inner.processes.insert(child.pid(), child.clone());
-    *child_group_mut = Arc::downgrade(&process_group);
-
+    // Put the child process in the global table
     process_table_mut.insert(child.pid(), child.clone());
 }

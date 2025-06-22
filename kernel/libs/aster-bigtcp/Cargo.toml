@@ -6,7 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+aster-softirq = { path = "../../comps/softirq" }
 bitflags = "1.3"
+int-to-c-enum = { path = "../int-to-c-enum" }
 jhash = { path = "../jhash" }
 ostd = { path = "../../../ostd" }
 smoltcp = { git = "https://github.com/asterinas/smoltcp", tag = "r_2024-11-08_f07e5b5", default-features = false, features = [

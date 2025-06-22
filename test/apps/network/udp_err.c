@@ -93,8 +93,14 @@ FN_TEST(send)
 	char buf[1] = { 'z' };
 
 	TEST_ERRNO(send(sk_unbound, buf, 1, 0), EDESTADDRREQ);
+	TEST_ERRNO(send(sk_unbound, buf, 0, 0), EDESTADDRREQ);
+	TEST_ERRNO(write(sk_unbound, buf, 1), EDESTADDRREQ);
+	TEST_ERRNO(write(sk_unbound, buf, 0), EDESTADDRREQ);
 
 	TEST_ERRNO(send(sk_bound, buf, 1, 0), EDESTADDRREQ);
+	TEST_ERRNO(send(sk_bound, buf, 0, 0), EDESTADDRREQ);
+	TEST_ERRNO(write(sk_bound, buf, 1), EDESTADDRREQ);
+	TEST_ERRNO(write(sk_bound, buf, 0), EDESTADDRREQ);
 }
 END_TEST()
 
@@ -103,10 +109,19 @@ FN_TEST(recv)
 	char buf[1] = { 'z' };
 
 	TEST_ERRNO(recv(sk_unbound, buf, 1, 0), EAGAIN);
+	TEST_ERRNO(recv(sk_unbound, buf, 0, 0), EAGAIN);
+	TEST_ERRNO(read(sk_unbound, buf, 1), EAGAIN);
+	TEST_SUCC(read(sk_unbound, buf, 0));
 
 	TEST_ERRNO(recv(sk_bound, buf, 1, 0), EAGAIN);
+	TEST_ERRNO(recv(sk_bound, buf, 0, 0), EAGAIN);
+	TEST_ERRNO(read(sk_bound, buf, 1), EAGAIN);
+	TEST_SUCC(read(sk_bound, buf, 0));
 
 	TEST_ERRNO(recv(sk_connected, buf, 1, 0), EAGAIN);
+	TEST_ERRNO(recv(sk_connected, buf, 0, 0), EAGAIN);
+	TEST_ERRNO(read(sk_connected, buf, 1), EAGAIN);
+	TEST_SUCC(read(sk_connected, buf, 0));
 }
 END_TEST()
 

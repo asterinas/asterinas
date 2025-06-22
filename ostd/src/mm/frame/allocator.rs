@@ -13,7 +13,7 @@ use crate::{
     impl_frame_meta_for,
     mm::{paddr_to_vaddr, Paddr, PAGE_SIZE},
     prelude::*,
-    util::range_difference,
+    util::ops::range_difference,
 };
 
 /// Options for allocating physical memory frames.

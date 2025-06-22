@@ -28,7 +28,7 @@ impl ThreadName {
         let mut thread_name = ThreadName::new();
         let executable_file_name = executable_path
             .split('/')
-            .last()
+            .next_back()
             .ok_or(Error::with_message(Errno::EINVAL, "invalid elf path"))?;
         let name = CString::new(executable_file_name)?;
         thread_name.set_name(&name)?;

@@ -1,0 +1,16 @@
+[package]
+name = "aster-systree"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bitflags = "2.5"
+ostd = { path = "../../../ostd" }
+component = { path = "../../libs/comp-sys/component" }
+inherit-methods-macro = { git = "https://github.com/asterinas/inherit-methods-macro", rev = "98f7e3e"}
+spin = "0.9"
+
+[lints]
+workspace = true

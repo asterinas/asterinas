@@ -5,18 +5,19 @@
 //! This module provides a way to execute code on other processors via inter-
 //! processor interrupts.
 
-use alloc::collections::VecDeque;
+use alloc::{boxed::Box, collections::VecDeque};
 
 use spin::Once;
 
 use crate::{
+    arch::irq::{send_ipi, HwCpuId},
     cpu::{CpuSet, PinCurrentCpu},
     cpu_local,
     sync::SpinLock,
     trap::{self, IrqLine, TrapFrame},
 };
 
-/// Execute a function on other processors.
+/// Executes a function on other processors.
 ///
 /// The provided function `f` will be executed on all target processors
 /// specified by `targets`. It can also be executed on the current processor.
@@ -33,7 +34,9 @@ use crate::{
 pub fn inter_processor_call(targets: &CpuSet, f: fn()) {
     let irq_guard = trap::disable_local();
     let this_cpu_id = irq_guard.current_cpu();
-    let irq_num = INTER_PROCESSOR_CALL_IRQ.get().unwrap().num();
+
+    let ipi_data = IPI_GLOBAL_DATA.get().unwrap();
+    let irq_num = ipi_data.irq.num();
 
     let mut call_on_self = false;
     for cpu_id in targets.iter() {
@@ -47,10 +50,15 @@ pub fn inter_processor_call(targets: &CpuSet, f: fn()) {
         if cpu_id == this_cpu_id {
             continue;
         }
-        // SAFETY: It is safe to send inter processor call IPI to other CPUs.
+        // SAFETY: The value of `irq_num` corresponds to a valid IRQ line and
+        // triggering it will not cause any safety issues.
         unsafe {
-            crate::arch::irq::send_ipi(cpu_id, irq_num);
-        }
+            send_ipi(
+                ipi_data.hw_cpu_ids[cpu_id.as_usize()],
+                irq_num,
+                &irq_guard as _,
+            )
+        };
     }
     if call_on_self {
         // Execute the function synchronously.
@@ -58,30 +66,39 @@ pub fn inter_processor_call(targets: &CpuSet, f: fn()) {
     }
 }
 
-static INTER_PROCESSOR_CALL_IRQ: Once<IrqLine> = Once::new();
+struct IpiGlobalData {
+    irq: IrqLine,
+    hw_cpu_ids: Box<[HwCpuId]>,
+}
+
+static IPI_GLOBAL_DATA: Once<IpiGlobalData> = Once::new();
 
 cpu_local! {
     static CALL_QUEUES: SpinLock<VecDeque<fn()>> = SpinLock::new(VecDeque::new());
 }
 
 fn do_inter_processor_call(_trapframe: &TrapFrame) {
-    // TODO: in interrupt context, disabling interrupts is not necessary.
-    let preempt_guard = trap::disable_local();
-    let cur_cpu = preempt_guard.current_cpu();
+    // No races because we are in IRQs.
+    let this_cpu_id = crate::cpu::CpuId::current_racy();
 
-    let mut queue = CALL_QUEUES.get_on_cpu(cur_cpu).lock();
+    let mut queue = CALL_QUEUES.get_on_cpu(this_cpu_id).lock();
     while let Some(f) = queue.pop_front() {
         log::trace!(
             "Performing inter-processor call to {:#?} on CPU {:#?}",
             f,
-            cur_cpu
+            this_cpu_id,
         );
         f();
     }
 }
 
 pub(super) fn init() {
-    let mut irq = IrqLine::alloc().unwrap();
-    irq.on_active(do_inter_processor_call);
-    INTER_PROCESSOR_CALL_IRQ.call_once(|| irq);
+    IPI_GLOBAL_DATA.call_once(|| {
+        let mut irq = IrqLine::alloc().unwrap();
+        irq.on_active(do_inter_processor_call);
+
+        let hw_cpu_ids = crate::boot::smp::construct_hw_cpu_id_mapping();
+
+        IpiGlobalData { irq, hw_cpu_ids }
+    });
 }

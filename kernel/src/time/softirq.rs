@@ -5,8 +5,7 @@ use alloc::{boxed::Box, vec, vec::Vec};
 use aster_softirq::{softirq_id::TIMER_SOFTIRQ_ID, SoftIrqLine};
 use ostd::{sync::RcuOption, timer};
 
-#[allow(clippy::type_complexity)]
-#[allow(clippy::box_collection)]
+#[expect(clippy::type_complexity)]
 static TIMER_SOFTIRQ_CALLBACKS: RcuOption<Box<Vec<fn()>>> = RcuOption::new_none();
 
 pub(super) fn init() {
@@ -26,10 +25,7 @@ pub(super) fn register_callback(func: fn()) {
             Some(callbacks_vec) => {
                 let mut callbacks_cloned = callbacks_vec.clone();
                 callbacks_cloned.push(func);
-                if callbacks
-                    .compare_exchange(Some(Box::new(callbacks_cloned)))
-                    .is_ok()
-                {
+                if callbacks.compare_exchange(Some(callbacks_cloned)).is_ok() {
                     break;
                 }
             }

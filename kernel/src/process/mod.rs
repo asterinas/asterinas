@@ -23,7 +23,8 @@ pub use clone::{clone_child, CloneArgs, CloneFlags};
 pub use credentials::{Credentials, Gid, Uid};
 pub use kill::{kill, kill_all, kill_group, tgkill};
 pub use process::{
-    ExitCode, JobControl, Pgid, Pid, Process, ProcessBuilder, ProcessGroup, Session, Sid, Terminal,
+    broadcast_signal_async, enqueue_signal_async, spawn_init_process, ExitCode, JobControl, Pgid,
+    Pid, Process, ProcessGroup, Session, Sid, Terminal,
 };
 pub use process_filter::ProcessFilter;
 pub use process_vm::{
@@ -32,7 +33,7 @@ pub use process_vm::{
 pub use program_loader::{check_executable_file, ProgramToLoad};
 pub use rlimit::ResourceType;
 pub use term_status::TermStatus;
-pub use wait::{wait_child_exit, WaitOptions};
+pub use wait::{do_wait, WaitOptions};
 
 pub(super) fn init() {
     process::init();

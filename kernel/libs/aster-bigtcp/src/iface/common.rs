@@ -6,8 +6,12 @@ use alloc::{
     sync::Arc,
     vec::Vec,
 };
+use core::sync::atomic::{AtomicU32, Ordering};
 
-use ostd::sync::{LocalIrqDisabled, SpinLock, SpinLockGuard};
+use aster_softirq::BottomHalfDisabled;
+use bitflags::bitflags;
+use int_to_c_enum::TryFromInt;
+use ostd::sync::{SpinLock, SpinLockGuard};
 use smoltcp::{
     iface::{packet::Packet, Context},
     phy::Device,
@@ -29,21 +33,32 @@ use crate::{
 };
 
 pub struct IfaceCommon<E: Ext> {
+    index: u32,
     name: String,
-    interface: SpinLock<PollableIface<E>, LocalIrqDisabled>,
-    used_ports: SpinLock<BTreeMap<u16, usize>, LocalIrqDisabled>,
-    sockets: SpinLock<SocketTable<E>, LocalIrqDisabled>,
+    type_: InterfaceType,
+    flags: InterfaceFlags,
+
+    interface: SpinLock<PollableIface<E>, BottomHalfDisabled>,
+    used_ports: SpinLock<BTreeMap<u16, usize>, BottomHalfDisabled>,
+    sockets: SpinLock<SocketTable<E>, BottomHalfDisabled>,
     sched_poll: E::ScheduleNextPoll,
 }
 
 impl<E: Ext> IfaceCommon<E> {
     pub(super) fn new(
         name: String,
+        type_: InterfaceType,
+        flags: InterfaceFlags,
         interface: smoltcp::iface::Interface,
         sched_poll: E::ScheduleNextPoll,
     ) -> Self {
+        let index = INTERFACE_INDEX_ALLOCATOR.fetch_add(1, Ordering::Relaxed);
+
         Self {
+            index,
             name,
+            type_,
+            flags,
             interface: SpinLock::new(PollableIface::new(interface)),
             used_ports: SpinLock::new(BTreeMap::new()),
             sockets: SpinLock::new(SocketTable::new()),
@@ -51,12 +66,28 @@ impl<E: Ext> IfaceCommon<E> {
         }
     }
 
+    pub(super) fn index(&self) -> u32 {
+        self.index
+    }
+
     pub(super) fn name(&self) -> &str {
         &self.name
     }
 
+    pub(super) fn type_(&self) -> InterfaceType {
+        self.type_
+    }
+
+    pub(super) fn flags(&self) -> InterfaceFlags {
+        self.flags
+    }
+
     pub(super) fn ipv4_addr(&self) -> Option<Ipv4Address> {
         self.interface.lock().ipv4_addr()
+    }
+
+    pub(super) fn prefix_len(&self) -> Option<u8> {
+        self.interface.lock().prefix_len()
     }
 
     pub(super) fn sched_poll(&self) -> &E::ScheduleNextPoll {
@@ -64,15 +95,20 @@ impl<E: Ext> IfaceCommon<E> {
     }
 }
 
+/// An allocator that allocates a unique index for each interface.
+//
+// FIXME: This allocator is specific to each network namespace.
+pub static INTERFACE_INDEX_ALLOCATOR: AtomicU32 = AtomicU32::new(1);
+
 // Lock order: `interface` -> `sockets`
 impl<E: Ext> IfaceCommon<E> {
     /// Acquires the lock to the interface.
-    pub(crate) fn interface(&self) -> SpinLockGuard<'_, PollableIface<E>, LocalIrqDisabled> {
+    pub(crate) fn interface(&self) -> SpinLockGuard<'_, PollableIface<E>, BottomHalfDisabled> {
         self.interface.lock()
     }
 
     /// Acquires the lock to the socket table.
-    pub(crate) fn sockets(&self) -> SpinLockGuard<'_, SocketTable<E>, LocalIrqDisabled> {
+    pub(crate) fn sockets(&self) -> SpinLockGuard<'_, SocketTable<E>, BottomHalfDisabled> {
         self.sockets.lock()
     }
 }
@@ -242,5 +278,81 @@ impl<E: Ext> BoundPort<E> {
 impl<E: Ext> Drop for BoundPort<E> {
     fn drop(&mut self) {
         self.iface.common().release_port(self.port);
+    }
+}
+
+/// Interface type.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.0.18/source/include/uapi/linux/if_arp.h#L30>
+#[repr(u16)]
+#[derive(Debug, Clone, Copy, TryFromInt, PartialEq, Eq)]
+pub enum InterfaceType {
+    // Arp protocol hardware identifiers
+    /// from KA9Q: NET/ROM pseudo
+    NETROM = 0,
+    /// Ethernet 10Mbps
+    ETHER = 1,
+    /// Experimental Ethernet
+    EETHER = 2,
+
+    // Dummy types for non ARP hardware
+    /// IPIP tunnel
+    TUNNEL = 768,
+    /// IP6IP6 tunnel
+    TUNNEL6 = 769,
+    /// Frame Relay Access Device
+    FRAD = 770,
+    /// SKIP vif
+    SKIP = 771,
+    /// Loopback device
+    LOOPBACK = 772,
+    /// Localtalk device
+    LOCALTALK = 773,
+    // TODO: This enum is not exhaustive
+}
+
+bitflags! {
+    /// Interface flags.
+    ///
+    /// Reference: <https://elixir.bootlin.com/linux/v6.0.18/source/include/uapi/linux/if.h#L82>
+    pub struct InterfaceFlags: u32 {
+        /// Interface is up
+        const UP				= 1<<0;
+        /// Broadcast address valid
+        const BROADCAST			= 1<<1;
+        /// Turn on debugging
+        const DEBUG			    = 1<<2;
+        /// Loopback net
+        const LOOPBACK			= 1<<3;
+        /// Interface is has p-p link
+        const POINTOPOINT		= 1<<4;
+        /// Avoid use of trailers
+        const NOTRAILERS		= 1<<5;
+        /// Interface RFC2863 OPER_UP
+        const RUNNING			= 1<<6;
+        /// No ARP protocol
+        const NOARP			    = 1<<7;
+        /// Receive all packets
+        const PROMISC			= 1<<8;
+        /// Receive all multicast packets
+        const ALLMULTI			= 1<<9;
+        /// Master of a load balancer
+        const MASTER			= 1<<10;
+        /// Slave of a load balancer
+        const SLAVE			    = 1<<11;
+        /// Supports multicast
+        const MULTICAST			= 1<<12;
+        /// Can set media type
+        const PORTSEL			= 1<<13;
+        /// Auto media select active
+        const AUTOMEDIA			= 1<<14;
+        /// Dialup device with changing addresses
+        const DYNAMIC			= 1<<15;
+        /// Driver signals L1 up
+        const LOWER_UP			= 1<<16;
+        /// Driver signals dormant
+        const DORMANT			= 1<<17;
+        /// Echo sent packets
+        const ECHO			    = 1<<18;
     }
 }

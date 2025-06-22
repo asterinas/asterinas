@@ -4,6 +4,7 @@
 //! The each sub module contains functions that handle real syscall logic.
 pub use clock_gettime::ClockId;
 use ostd::cpu::context::UserContext;
+pub use timer_create::create_timer;
 
 use crate::{context::Context, cpu::LinuxAbi, prelude::*};
 
@@ -73,6 +74,7 @@ mod mknod;
 mod mmap;
 mod mount;
 mod mprotect;
+mod mremap;
 mod msync;
 mod munmap;
 mod nanosleep;
@@ -80,6 +82,7 @@ mod open;
 mod pause;
 mod pipe;
 mod poll;
+mod ppoll;
 mod prctl;
 mod pread64;
 mod preadv;
@@ -140,6 +143,7 @@ mod socket;
 mod socketpair;
 mod stat;
 mod statfs;
+mod statx;
 mod symlink;
 mod sync;
 mod sysinfo;
@@ -147,6 +151,9 @@ mod tgkill;
 mod time;
 mod timer_create;
 mod timer_settime;
+mod timerfd_create;
+mod timerfd_gettime;
+mod timerfd_settime;
 mod truncate;
 mod umask;
 mod umount;

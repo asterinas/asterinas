@@ -4,7 +4,7 @@
 
 use alloc::vec::Vec;
 use core::{
-    mem::size_of,
+    mem::{offset_of, size_of},
     sync::atomic::{fence, Ordering},
 };
 
@@ -14,7 +14,7 @@ use bitflags::bitflags;
 use log::debug;
 use ostd::{
     mm::{DmaCoherent, FrameAllocOptions, PodOnce},
-    offset_of, Pod,
+    Pod,
 };
 
 use crate::{
@@ -309,7 +309,7 @@ impl VirtQueue {
         let last_used_slot = self.last_used_idx & (self.queue_size - 1);
         let element_ptr = {
             let mut ptr = self.used.borrow_vm();
-            ptr.byte_add(offset_of!(UsedRing, ring) as usize + last_used_slot as usize * 8);
+            ptr.byte_add(offset_of!(UsedRing, ring) + last_used_slot as usize * 8);
             ptr.cast::<UsedElem>()
         };
         let index = field_ptr!(&element_ptr, UsedElem, id).read_once().unwrap();
@@ -333,7 +333,7 @@ impl VirtQueue {
         let last_used_slot = self.last_used_idx & (self.queue_size - 1);
         let element_ptr = {
             let mut ptr = self.used.borrow_vm();
-            ptr.byte_add(offset_of!(UsedRing, ring) as usize + last_used_slot as usize * 8);
+            ptr.byte_add(offset_of!(UsedRing, ring) + last_used_slot as usize * 8);
             ptr.cast::<UsedElem>()
         };
         let index = field_ptr!(&element_ptr, UsedElem, id).read_once().unwrap();
@@ -421,7 +421,6 @@ pub struct Descriptor {
 
 type DescriptorPtr<'a> = SafePtr<Descriptor, &'a DmaCoherent, TRightSet<TRights![Dup, Write]>>;
 
-#[inline]
 fn set_dma_buf<T: DmaBuf>(desc_ptr: &DescriptorPtr, buf: &T) {
     // TODO: skip the empty dma buffer or just return error?
     debug_assert_ne!(buf.len(), 0);

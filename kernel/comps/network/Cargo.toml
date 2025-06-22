@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 aster-bigtcp = { path = "../../libs/aster-bigtcp" }
+aster-softirq = { path = "../softirq" }
 bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
 component = { path = "../../libs/comp-sys/component" }
 ostd = { path = "../../../ostd" }

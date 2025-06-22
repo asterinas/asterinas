@@ -89,6 +89,8 @@ impl TryFrom<RawExfatDentry> for ExfatDentry {
     type Error = crate::error::Error;
     fn try_from(dentry: RawExfatDentry) -> Result<Self> {
         let dentry_bytes = dentry.as_bytes();
+        #[expect(clippy::match_overlapping_arm)]
+        // FIXME: `EXFAT_STREAM` and `0xC0..=0xFF` overlap. Is the overlapping case expected?
         match dentry.dentry_type {
             EXFAT_FILE => Ok(ExfatDentry::File(ExfatFileDentry::from_bytes(dentry_bytes))),
             EXFAT_STREAM => Ok(ExfatDentry::Stream(ExfatStreamDentry::from_bytes(

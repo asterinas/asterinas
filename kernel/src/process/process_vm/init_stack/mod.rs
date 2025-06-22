@@ -20,7 +20,10 @@ use core::{
 
 use align_ext::AlignExt;
 use aster_rights::Full;
-use ostd::mm::{vm_space::VmItem, UntypedMem, VmIo, MAX_USERSPACE_VADDR};
+use ostd::{
+    mm::{UntypedMem, VmIo, MAX_USERSPACE_VADDR},
+    task::disable_preempt,
+};
 
 use self::aux_vec::{AuxKey, AuxVec};
 use super::ProcessVmarGuard;
@@ -385,9 +388,13 @@ impl InitStackReader<'_> {
         let stack_base = self.init_stack_bottom();
         let page_base_addr = stack_base.align_down(PAGE_SIZE);
 
-        let vm_space = self.vmar.get().vm_space();
-        let mut cursor = vm_space.cursor(&(page_base_addr..page_base_addr + PAGE_SIZE))?;
-        let VmItem::Mapped { frame, .. } = cursor.query()? else {
+        let vm_space = self.vmar.unwrap().vm_space();
+        let preempt_guard = disable_preempt();
+        let mut cursor = vm_space.cursor(
+            &preempt_guard,
+            &(page_base_addr..page_base_addr + PAGE_SIZE),
+        )?;
+        let (_, Some((frame, _))) = cursor.query()? else {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
         };
 
@@ -409,9 +416,13 @@ impl InitStackReader<'_> {
         let mut argv = Vec::with_capacity(argc);
         let page_base_addr = read_offset.align_down(PAGE_SIZE);
 
-        let vm_space = self.vmar.get().vm_space();
-        let mut cursor = vm_space.cursor(&(page_base_addr..page_base_addr + PAGE_SIZE))?;
-        let VmItem::Mapped { frame, .. } = cursor.query()? else {
+        let vm_space = self.vmar.unwrap().vm_space();
+        let preempt_guard = disable_preempt();
+        let mut cursor = vm_space.cursor(
+            &preempt_guard,
+            &(page_base_addr..page_base_addr + PAGE_SIZE),
+        )?;
+        let (_, Some((frame, _))) = cursor.query()? else {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
         };
 
@@ -449,9 +460,13 @@ impl InitStackReader<'_> {
         let mut envp = Vec::new();
         let page_base_addr = read_offset.align_down(PAGE_SIZE);
 
-        let vm_space = self.vmar.get().vm_space();
-        let mut cursor = vm_space.cursor(&(page_base_addr..page_base_addr + PAGE_SIZE))?;
-        let VmItem::Mapped { frame, .. } = cursor.query()? else {
+        let vm_space = self.vmar.unwrap().vm_space();
+        let preempt_guard = disable_preempt();
+        let mut cursor = vm_space.cursor(
+            &preempt_guard,
+            &(page_base_addr..page_base_addr + PAGE_SIZE),
+        )?;
+        let (_, Some((frame, _))) = cursor.query()? else {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
         };
 

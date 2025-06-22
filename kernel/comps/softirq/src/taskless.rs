@@ -8,7 +8,7 @@ use core::{
 };
 
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListAtomicLink};
-use ostd::{cpu::local::CpuLocal, cpu_local, trap};
+use ostd::{cpu::local::StaticCpuLocal, cpu_local, sync::SpinLock, trap};
 
 use super::{
     softirq_id::{TASKLESS_SOFTIRQ_ID, TASKLESS_URGENT_SOFTIRQ_ID},
@@ -58,7 +58,7 @@ pub struct Taskless {
     /// Whether the taskless job is running.
     is_running: AtomicBool,
     /// The function that will be called when executing this taskless job.
-    callback: Box<RefCell<dyn FnMut() + Send + Sync + 'static>>,
+    callback: Box<SpinLock<dyn FnMut() + Send + Sync + 'static>>,
     /// Whether this `Taskless` is disabled.
     is_disabled: AtomicBool,
     link: LinkedListAtomicLink,
@@ -77,14 +77,10 @@ impl Taskless {
     where
         F: FnMut() + Send + Sync + 'static,
     {
-        // Since the same taskless will not be executed concurrently,
-        // it is safe to use a `RefCell` here though the `Taskless` will
-        // be put into an `Arc`.
-        #[expect(clippy::arc_with_non_send_sync)]
         Arc::new(Self {
             is_scheduled: AtomicBool::new(false),
             is_running: AtomicBool::new(false),
-            callback: Box::new(RefCell::new(callback)),
+            callback: Box::new(SpinLock::new(callback)),
             is_disabled: AtomicBool::new(false),
             link: LinkedListAtomicLink::new(),
         })
@@ -123,7 +119,7 @@ impl Taskless {
 
 fn do_schedule(
     taskless: &Arc<Taskless>,
-    taskless_list: &'static CpuLocal<RefCell<LinkedList<TasklessAdapter>>>,
+    taskless_list: &'static StaticCpuLocal<RefCell<LinkedList<TasklessAdapter>>>,
 ) {
     if taskless.is_disabled.load(Ordering::Acquire) {
         return;
@@ -158,7 +154,7 @@ pub(super) fn init() {
 /// If the `Taskless` is ready to be executed, it will be set to not scheduled
 /// and can be scheduled again.
 fn taskless_softirq_handler(
-    taskless_list: &'static CpuLocal<RefCell<LinkedList<TasklessAdapter>>>,
+    taskless_list: &'static StaticCpuLocal<RefCell<LinkedList<TasklessAdapter>>>,
     softirq_id: u8,
 ) {
     let mut processing_list = {
@@ -185,9 +181,7 @@ fn taskless_softirq_handler(
 
         taskless.is_scheduled.store(false, Ordering::Release);
 
-        // The same taskless will not be executing concurrently, so it is safe to
-        // do `borrow_mut` here.
-        (taskless.callback.borrow_mut())();
+        (taskless.callback.lock())();
         taskless.is_running.store(false, Ordering::Release);
     }
 }

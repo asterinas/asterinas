@@ -55,12 +55,9 @@ impl AnyConsoleDevice for ConsoleDevice {
     fn register_callback(&self, callback: &'static ConsoleCallback) {
         loop {
             let callbacks = self.callbacks.read();
-            let mut callbacks_cloned = callbacks.clone();
+            let mut callbacks_cloned = callbacks.get().clone();
             callbacks_cloned.push(callback);
-            if callbacks
-                .compare_exchange(Box::new(callbacks_cloned))
-                .is_ok()
-            {
+            if callbacks.compare_exchange(callbacks_cloned).is_ok() {
                 break;
             }
             // Contention on pushing, retry.
@@ -150,7 +147,7 @@ impl ConsoleDevice {
         self.receive_buffer.sync(0..len as usize).unwrap();
 
         let callbacks = self.callbacks.read();
-        for callback in callbacks.iter() {
+        for callback in callbacks.get().iter() {
             let mut reader = self.receive_buffer.reader().unwrap();
             reader.limit(len as usize);
             callback(reader);
