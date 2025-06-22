@@ -611,14 +611,18 @@ impl Vmar_ {
         let new_mapping = old_mapping.clone_for_remap_at(new_range.start).unwrap();
         inner.insert(new_mapping.enlarge(new_size - old_size));
 
-        // Move the mapping.
         let preempt_guard = disable_preempt();
         let total_range = old_range.start.min(new_range.start)..old_range.end.max(new_range.end);
         let vmspace = self.vm_space();
         let mut cursor = vmspace.cursor_mut(&preempt_guard, &total_range).unwrap();
+
+        // Move the mapping.
         let mut current_offset = 0;
-        cursor.jump(old_range.start).unwrap();
-        while let Some(mapped_va) = cursor.find_next(old_size - current_offset) {
+        while current_offset < old_size {
+            cursor.jump(old_range.start + current_offset).unwrap();
+            let Some(mapped_va) = cursor.find_next(old_size - current_offset) else {
+                break;
+            };
             let (va, Some((frame, prop))) = cursor.query().unwrap() else {
                 panic!("Found mapped page but query failed");
             };
@@ -630,8 +634,8 @@ impl Vmar_ {
             cursor.map(frame, prop);
 
             current_offset = offset + PAGE_SIZE;
-            cursor.jump(old_range.start + current_offset).unwrap();
         }
+
         cursor.flusher().dispatch_tlb_flush();
         cursor.flusher().sync_tlb_flush();
 
