@@ -316,6 +316,7 @@ dependencies = [
  "log",
  "ostd",
  "spin",
+ "tdx-guest",
  "typeflags-util",
 ]
 

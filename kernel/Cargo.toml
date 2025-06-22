@@ -72,7 +72,7 @@ riscv = { version = "0.11.1", features = ["s-mode"] }
 
 [features]
 all = ["cvm_guest"]
-cvm_guest = ["dep:tdx-guest", "ostd/cvm_guest"]
+cvm_guest = ["dep:tdx-guest", "ostd/cvm_guest", "aster-virtio/cvm_guest"]
 
 [lints]
 workspace = true
