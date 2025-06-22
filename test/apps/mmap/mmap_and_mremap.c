@@ -58,23 +58,30 @@ END_TEST()
 
 FN_TEST(mmap_and_mremap_fixed)
 {
-	char *addr = x_mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE,
-			    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	strcpy(addr, content);
+	char *addr1 = x_mmap(NULL, PAGE_SIZE * 2, PROT_READ | PROT_WRITE,
+			     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	strcpy(addr1, content);
 
-	// Map and unmap a target region to ensure we know it's free
-	char *fixed_addr = x_mmap(NULL, PAGE_SIZE, PROT_NONE,
-				  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	TEST_SUCC(munmap(fixed_addr, PAGE_SIZE)); // free it for mremap
+	// Unmap a target region to ensure we know it's free
+	char *addr2 = addr1 + PAGE_SIZE;
+	TEST_SUCC(munmap(addr2, PAGE_SIZE)); // free it for mremap
 
-	char *new_addr = mremap(addr, PAGE_SIZE, PAGE_SIZE,
-				MREMAP_MAYMOVE | MREMAP_FIXED, fixed_addr);
-	if (new_addr != fixed_addr) {
+	// Remap from the first address to the second address
+	if (mremap(addr1, PAGE_SIZE, PAGE_SIZE, MREMAP_MAYMOVE | MREMAP_FIXED,
+		   addr2) != addr2) {
 		perror("mremap");
 		exit(EXIT_FAILURE);
 	}
+	TEST_RES(strcmp(addr2, content), _ret == 0);
 
-	TEST_RES(strcmp(new_addr, content), _ret == 0);
-	TEST_SUCC(munmap(new_addr, PAGE_SIZE));
+	// Remap from the second address to the first address
+	if (mremap(addr2, PAGE_SIZE, PAGE_SIZE, MREMAP_MAYMOVE | MREMAP_FIXED,
+		   addr1) != addr1) {
+		perror("mremap");
+		exit(EXIT_FAILURE);
+	}
+	TEST_RES(strcmp(addr1, content), _ret == 0);
+
+	TEST_SUCC(munmap(addr1, PAGE_SIZE));
 }
 END_TEST()
