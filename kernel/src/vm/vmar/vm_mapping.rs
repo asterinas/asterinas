@@ -444,27 +444,28 @@ impl VmMapping {
     ///
     /// Panics if the mapping does not contain the range, or if the start or
     /// end of the range is not page-aligned.
-    pub fn split_range(self, range: &Range<Vaddr>) -> Result<(Option<Self>, Self, Option<Self>)> {
+    pub fn split_range(self, range: &Range<Vaddr>) -> (Option<Self>, Self, Option<Self>) {
         let mapping_range = self.range();
         if range.start <= mapping_range.start && mapping_range.end <= range.end {
             // Condition 4.
-            return Ok((None, self, None));
+            (None, self, None)
         } else if mapping_range.start < range.start {
             let (left, within) = self.split(range.start).unwrap();
             if range.end < mapping_range.end {
                 // Condition 3.
                 let (within, right) = within.split(range.end).unwrap();
-                return Ok((Some(left), within, Some(right)));
+                (Some(left), within, Some(right))
             } else {
                 // Condition 1.
-                return Ok((Some(left), within, None));
+                (Some(left), within, None)
             }
         } else if mapping_range.contains(&range.end) {
             // Condition 2.
             let (within, right) = self.split(range.end).unwrap();
-            return Ok((None, within, Some(right)));
+            (None, within, Some(right))
+        } else {
+            panic!("The mapping does not contain the splitting range");
         }
-        panic!("The mapping does not contain the splitting range.");
     }
 }
 
@@ -473,16 +474,16 @@ impl VmMapping {
 impl VmMapping {
     /// Unmaps the mapping from the VM space,
     /// and returns the number of unmapped pages.
-    pub(super) fn unmap(self, vm_space: &VmSpace) -> Result<usize> {
+    pub(super) fn unmap(self, vm_space: &VmSpace) -> usize {
         let preempt_guard = disable_preempt();
         let range = self.range();
-        let mut cursor = vm_space.cursor_mut(&preempt_guard, &range)?;
+        let mut cursor = vm_space.cursor_mut(&preempt_guard, &range).unwrap();
 
         let num_unmapped = cursor.unmap(range.len());
         cursor.flusher().dispatch_tlb_flush();
         cursor.flusher().sync_tlb_flush();
 
-        Ok(num_unmapped)
+        num_unmapped
     }
 
     /// Change the perms of the mapping.
