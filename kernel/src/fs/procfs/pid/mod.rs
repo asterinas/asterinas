@@ -36,12 +36,13 @@ impl PidDirOps {
             .volatile()
             .build()
             .unwrap();
-        file_table
-            .lock()
-            .as_ref()
-            .unwrap()
-            .read()
-            .register_observer(Arc::downgrade(&pid_inode) as _);
+        // This is for an exiting process that has not yet been reaped by its parent,
+        // whose file table may have already been released.
+        if let Some(file_table_ref) = file_table.lock().as_ref() {
+            file_table_ref
+                .read()
+                .register_observer(Arc::downgrade(&pid_inode) as _);
+        }
 
         pid_inode
     }
