@@ -51,11 +51,9 @@ fn do_sys_mremap(
     let root_vmar = user_space.root_vmar();
 
     if !flags.contains(MremapFlags::MREMAP_FIXED) && new_size <= old_size {
-        if new_size < old_size {
-            // We can shrink a old range which spans multiple mappings. See
-            // <https://github.com/google/gvisor/blob/95d875276806484f974ce9e95556a561331f8e22/test/syscalls/linux/mremap.cc#L100-L117>.
-            root_vmar.resize_mapping(old_addr, old_size, new_size, false)?;
-        }
+        // We can shrink a old range which spans multiple mappings. See
+        // <https://github.com/google/gvisor/blob/95d875276806484f974ce9e95556a561331f8e22/test/syscalls/linux/mremap.cc#L100-L117>.
+        root_vmar.resize_mapping(old_addr, old_size, new_size, false)?;
         return Ok(old_addr);
     }
 

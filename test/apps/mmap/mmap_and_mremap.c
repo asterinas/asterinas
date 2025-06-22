@@ -2,18 +2,18 @@
 
 #define _GNU_SOURCE
 
+#include <sys/fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
 #include <string.h>
-#include <errno.h>
-#include <fcntl.h>
+
 #include "../test.h"
 
 #define PAGE_SIZE 4096
 
 FN_TEST(mremap)
 {
-	char *addr = TEST_SUCC(mmap(NULL, 3 * PAGE_SIZE, PROT_READ | PROT_WRITE,
+	char *addr = TEST_SUCC(mmap(NULL, 5 * PAGE_SIZE, PROT_READ | PROT_WRITE,
 				    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
 	TEST_SUCC(munmap(addr + 2 * PAGE_SIZE, PAGE_SIZE));
 
@@ -45,7 +45,17 @@ FN_TEST(mremap)
 	// FIXME: Asterinas returns EACCESS here, which is not a correct error code.
 	// TEST_ERRNO(mremap(addr, PAGE_SIZE, 2 * PAGE_SIZE, 0), ENOMEM);
 
-	TEST_SUCC(munmap(addr, 2 * PAGE_SIZE));
+	char *hole = addr + 2 * PAGE_SIZE;
+
+	// There is no mapping at the old address.
+	TEST_ERRNO(mremap(hole, 2 * PAGE_SIZE, PAGE_SIZE, 0), EFAULT);
+	TEST_ERRNO(mremap(hole, 2 * PAGE_SIZE, PAGE_SIZE, MREMAP_MAYMOVE),
+		   EFAULT);
+	TEST_ERRNO(mremap(hole, 2 * PAGE_SIZE, PAGE_SIZE,
+			  MREMAP_MAYMOVE | MREMAP_FIXED, addr),
+		   EFAULT);
+
+	TEST_SUCC(munmap(addr, 5 * PAGE_SIZE));
 }
 END_TEST()
 
@@ -70,6 +80,8 @@ FN_TEST(mmap_and_mremap)
 	char *new_addr = CHECK_MM(
 		mremap(addr, PAGE_SIZE, 3 * PAGE_SIZE, MREMAP_MAYMOVE));
 
+	// Ensure that the mapping at the old address does not exist any more.
+	TEST_ERRNO(mremap(addr, PAGE_SIZE, PAGE_SIZE, 0), EFAULT);
 	// The following operation (if uncommented) would cause a segmentation fault.
 	// strcpy(addr, "Writing to old address");
 
@@ -154,7 +166,44 @@ FN_TEST(mmap_and_mremap_auto_merge_file)
 	TEST_RES(strcmp(new_addr, content), _ret == 0);
 	TEST_SUCC(munmap(new_addr, 3 * PAGE_SIZE));
 
-	close(fd);
-	unlink(filename);
+	TEST_SUCC(close(fd));
+	TEST_SUCC(unlink(filename));
+}
+END_TEST()
+
+FN_TEST(mremap_may_fail_after_unmap)
+{
+	int fd = TEST_SUCC(open("/bin/sh", O_RDONLY));
+	char *addr = TEST_SUCC(
+		mmap(NULL, 5 * PAGE_SIZE, PROT_READ, MAP_SHARED, fd, 0));
+	TEST_SUCC(munmap(addr + PAGE_SIZE, 4 * PAGE_SIZE));
+	TEST_RES(mmap(addr + PAGE_SIZE, 4 * PAGE_SIZE, PROT_READ | PROT_WRITE,
+		      MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0),
+		 _ret == addr + PAGE_SIZE);
+	TEST_SUCC(close(fd));
+
+	// Shared, Anonymous, Anonymous, Anonymous, Anonymous
+	// [ Page 1-3: source         ] [ Page 4-5: target  ]
+	//
+	// This `mremap()` will fail because Page 1 and Page 2 are of different
+	// types. However, it still shrinks the source mapping and clears the
+	// target mapping, so Page 3, 4, and 5 will be unmapped.
+
+	TEST_ERRNO(mremap(addr, 3 * PAGE_SIZE, 2 * PAGE_SIZE,
+			  MREMAP_MAYMOVE | MREMAP_FIXED, addr + 3 * PAGE_SIZE),
+		   EFAULT);
+	// Page 1 and 2 still exists.
+	TEST_RES(mremap(addr, PAGE_SIZE, PAGE_SIZE, 0), _ret == addr);
+	TEST_RES(mremap(addr + PAGE_SIZE, PAGE_SIZE, PAGE_SIZE, 0),
+		 _ret == addr + PAGE_SIZE);
+	// Page 3, 4, and 5 do not exist anymore.
+	TEST_ERRNO(mremap(addr + 2 * PAGE_SIZE, PAGE_SIZE, PAGE_SIZE, 0),
+		   EFAULT);
+	TEST_ERRNO(mremap(addr + 3 * PAGE_SIZE, PAGE_SIZE, PAGE_SIZE, 0),
+		   EFAULT);
+	TEST_ERRNO(mremap(addr + 4 * PAGE_SIZE, PAGE_SIZE, PAGE_SIZE, 0),
+		   EFAULT);
+
+	TEST_SUCC(munmap(addr, 5 * PAGE_SIZE));
 }
 END_TEST()
