@@ -27,7 +27,7 @@ impl FdDirOps {
             .parent(parent)
             .build()
             .unwrap();
-        // Guard against the race condition when procfs is being accessed for an exiting process,
+        // This is for an exiting process that has not yet been reaped by its parent,
         // whose file table may have already been released.
         if let Some(file_table_ref) = file_table.lock().as_ref() {
             file_table_ref
