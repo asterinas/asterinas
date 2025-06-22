@@ -270,7 +270,7 @@ impl VmarInner {
             let vm_mapping_range = vm_mapping.range();
             let intersected_range = get_intersected_range(&range, &vm_mapping_range);
 
-            let (left, taken, right) = vm_mapping.split_range(&intersected_range)?;
+            let (left, taken, right) = vm_mapping.split_range(&intersected_range);
             if let Some(left) = left {
                 self.insert(left);
             }
@@ -278,7 +278,7 @@ impl VmarInner {
                 self.insert(right);
             }
 
-            rss_delta.add(taken.rss_type(), -(taken.unmap(vm_space)? as isize));
+            rss_delta.add(taken.rss_type(), -(taken.unmap(vm_space) as isize));
         }
 
         Ok(offset..(offset + size))
@@ -460,7 +460,7 @@ impl Vmar_ {
             let intersected_range = get_intersected_range(&range, &vm_mapping_range);
 
             // Protects part of the taken `VmMapping`.
-            let (left, taken, right) = vm_mapping.split_range(&intersected_range)?;
+            let (left, taken, right) = vm_mapping.split_range(&intersected_range);
 
             let taken = taken.protect(vm_space.as_ref(), perms);
             inner.insert(taken);
@@ -551,6 +551,10 @@ impl Vmar_ {
         new_addr: Option<Vaddr>,
         new_size: usize,
     ) -> Result<Vaddr> {
+        debug_assert_eq!(old_addr % PAGE_SIZE, 0);
+        debug_assert_eq!(old_size % PAGE_SIZE, 0);
+        debug_assert_eq!(new_size % PAGE_SIZE, 0);
+
         let mut inner = self.inner.write();
         let old_mapping_addr = inner.check_lies_in_single_mapping(old_addr, old_size)?;
 
@@ -586,7 +590,7 @@ impl Vmar_ {
         // Create a new `VmMapping`.
         let old_mapping = {
             let vm_mapping = inner.remove(&old_mapping_addr).unwrap();
-            let (left, old_mapping, right) = vm_mapping.split_range(&old_range)?;
+            let (left, old_mapping, right) = vm_mapping.split_range(&old_range);
             if let Some(left) = left {
                 inner.insert(left);
             }
@@ -594,8 +598,8 @@ impl Vmar_ {
                 inner.insert(right);
             }
             if new_size < old_size {
-                let (old_mapping, taken) = old_mapping.split(old_range.start + new_size)?;
-                rss_delta.add(taken.rss_type(), -(taken.unmap(&self.vm_space)? as isize));
+                let (old_mapping, taken) = old_mapping.split(old_range.start + new_size).unwrap();
+                rss_delta.add(taken.rss_type(), -(taken.unmap(&self.vm_space) as isize));
                 old_size = new_size;
                 old_range = old_range.start..(old_range.start + old_size);
                 old_mapping
@@ -604,7 +608,7 @@ impl Vmar_ {
             }
         };
         // Now we can ensure that `new_size >= old_size`.
-        let new_mapping = old_mapping.clone_for_remap_at(new_range.start)?;
+        let new_mapping = old_mapping.clone_for_remap_at(new_range.start).unwrap();
         inner.insert(new_mapping.enlarge(new_size - old_size));
 
         // Move the mapping.
