@@ -4,7 +4,8 @@
 
 set -e
 
-cp /benchmark/nginx/nginx.conf /usr/local/nginx/conf/
+cp /benchmark/nginx/nginx.conf /benchmark/nginx/conf/
+mkdir -p /var/log/nginx
 
 echo "Running nginx server"
-/usr/local/nginx/sbin/nginx
+/benchmark/bin/nginx -c /benchmark/nginx/conf/nginx.conf
