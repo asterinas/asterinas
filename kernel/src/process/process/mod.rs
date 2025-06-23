@@ -114,6 +114,9 @@ pub struct Process {
 
     /// A manager that manages timer resources and utilities of the process.
     timer_manager: PosixTimerManager,
+
+    /// I/O Scheduling priority value
+    io_prio: AtomicU32,
 }
 
 /// Representing a parent process by holding a weak reference to it and its PID.
@@ -218,6 +221,7 @@ impl Process {
             nice: AtomicNice::new(nice),
             timer_manager: PosixTimerManager::new(&prof_clock, process_ref),
             prof_clock,
+            io_prio: AtomicU32::new(0),
         })
     }
 
@@ -268,6 +272,10 @@ impl Process {
 
     pub fn nice(&self) -> &AtomicNice {
         &self.nice
+    }
+
+    pub fn io_priority(&self) -> &AtomicU32 {
+        &self.io_prio
     }
 
     pub fn main_thread(&self) -> Arc<Thread> {
