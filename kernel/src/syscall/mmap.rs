@@ -56,7 +56,7 @@ fn do_sys_mmap(
         option.flags.insert(MMapFlags::MAP_FIXED);
     }
 
-    check_option(addr, &option)?;
+    check_option(addr, len, &option)?;
 
     if len == 0 {
         return_errno_with_message!(Errno::EINVAL, "mmap len cannot be zero");
@@ -153,12 +153,15 @@ fn do_sys_mmap(
     Ok(map_addr)
 }
 
-fn check_option(addr: Vaddr, option: &MMapOptions) -> Result<()> {
+fn check_option(addr: Vaddr, size: usize, option: &MMapOptions) -> Result<()> {
     if option.typ() == MMapType::File {
         return_errno_with_message!(Errno::EINVAL, "Invalid mmap type");
     }
 
-    if option.flags().contains(MMapFlags::MAP_FIXED) && !is_userspace_vaddr(addr) {
+    let map_end = addr.checked_add(size).ok_or(Errno::EINVAL)?;
+    if option.flags().contains(MMapFlags::MAP_FIXED)
+        && !(is_userspace_vaddr(addr) && is_userspace_vaddr(map_end - 1))
+    {
         return_errno_with_message!(Errno::EINVAL, "Invalid mmap fixed addr");
     }
 

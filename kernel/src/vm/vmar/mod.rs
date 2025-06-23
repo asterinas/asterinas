@@ -391,7 +391,7 @@ impl VmarInner {
 
         let old_map_end = map_addr + old_size;
         let new_map_end = map_addr.checked_add(new_size).ok_or(Errno::EINVAL)?;
-        if !is_userspace_vaddr(new_map_end) {
+        if !is_userspace_vaddr(new_map_end - 1) {
             return_errno_with_message!(Errno::EINVAL, "resize to a invalid new size");
         }
 
@@ -604,7 +604,7 @@ impl Vmar_ {
             let new_range = new_addr..new_addr.checked_add(new_size).ok_or(Errno::EINVAL)?;
             if new_addr % PAGE_SIZE != 0
                 || !is_userspace_vaddr(new_addr)
-                || !is_userspace_vaddr(new_range.end)
+                || !is_userspace_vaddr(new_range.end - 1)
             {
                 return_errno_with_message!(Errno::EINVAL, "remap: invalid fixed new addr");
             }
