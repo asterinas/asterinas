@@ -452,7 +452,10 @@ fn do_unix_getsockopt(option: &mut dyn SocketOption, state: &State) -> Result<()
             let groups = state.peer_groups()?;
             socket_peer_groups.set(groups);
         },
-        _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to get is not unix socket specific")
+        _ => return_errno_with_message!(
+            Errno::ENOPROTOOPT,
+            "the socket option to get is not UNIX-socket-specific"
+        )
     });
 
     Ok(())

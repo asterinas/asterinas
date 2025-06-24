@@ -15,7 +15,7 @@ use crate::{
 /// users to access the local and remote `T`s from both endpoints.
 pub struct Endpoint<T> {
     inner: Arc<Inner<T>>,
-    endpoint: Location,
+    location: Location,
 }
 
 enum Location {
@@ -42,11 +42,11 @@ impl<T> Endpoint<T> {
 
         let client = Endpoint {
             inner: inner.clone(),
-            endpoint: Location::Client,
+            location: Location::Client,
         };
         let server = Endpoint {
             inner,
-            endpoint: Location::Server,
+            location: Location::Server,
         };
 
         (client, server)
@@ -54,7 +54,7 @@ impl<T> Endpoint<T> {
 
     /// Returns a reference to the `T` on the local endpoint.
     pub fn this_end(&self) -> &T {
-        match self.endpoint {
+        match self.location {
             Location::Client => &self.inner.client,
             Location::Server => &self.inner.server,
         }
@@ -62,14 +62,14 @@ impl<T> Endpoint<T> {
 
     /// Returns a reference to the `T` on the remote endpoint.
     pub fn peer_end(&self) -> &T {
-        match self.endpoint {
+        match self.location {
             Location::Client => &self.inner.server,
             Location::Server => &self.inner.client,
         }
     }
 }
 
-/// A [`Endpoint`] state that helps end-to-end data communication.
+/// An [`Endpoint`] state that helps end-to-end data communication.
 ///
 /// The state contains a [`Pollee`] that will be notified when new data or the buffer becomes
 /// available. Additionally, this state tracks whether communication has been shut down, i.e.,

@@ -55,11 +55,12 @@ impl Listener {
 
     pub(super) fn try_accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
         let connected = self.backlog.pop_incoming()?;
-        let peer_addr = connected.peer_addr().into();
 
+        let peer_addr = connected.peer_addr().into();
         // TODO: Update options for a newly-accepted socket
         let options = OptionSet::new();
         let socket = UnixStreamSocket::new_connected(connected, options, false);
+
         Ok((socket, peer_addr))
     }
 

@@ -89,6 +89,7 @@ impl Init {
         };
 
         pollee.invalidate();
+
         Ok(Listener::new(
             addr,
             backlog,
