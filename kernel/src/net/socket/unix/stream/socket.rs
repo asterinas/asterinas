@@ -39,15 +39,18 @@ pub struct UnixStreamSocket {
 
     pollee: Pollee,
     is_nonblocking: AtomicBool,
+
+    is_seqpacket: bool,
 }
 
 impl UnixStreamSocket {
-    pub(super) fn new_init(init: Init, is_nonblocking: bool) -> Arc<Self> {
+    pub(super) fn new_init(init: Init, is_nonblocking: bool, is_seqpacket: bool) -> Arc<Self> {
         Arc::new(Self {
             state: RwMutex::new(Takeable::new(State::Init(init))),
             options: RwMutex::new(OptionSet::new()),
             pollee: Pollee::new(),
             is_nonblocking: AtomicBool::new(is_nonblocking),
+            is_seqpacket,
         })
     }
 
@@ -55,6 +58,7 @@ impl UnixStreamSocket {
         connected: Connected,
         options: OptionSet,
         is_nonblocking: bool,
+        is_seqpacket: bool,
     ) -> Arc<Self> {
         let cloned_pollee = connected.cloned_pollee();
         Arc::new(Self {
@@ -62,6 +66,7 @@ impl UnixStreamSocket {
             options: RwMutex::new(options),
             pollee: cloned_pollee,
             is_nonblocking: AtomicBool::new(is_nonblocking),
+            is_seqpacket,
         })
     }
 }
@@ -155,11 +160,11 @@ impl OptionSet {
 }
 
 impl UnixStreamSocket {
-    pub fn new(is_nonblocking: bool) -> Arc<Self> {
-        Self::new_init(Init::new(), is_nonblocking)
+    pub fn new(is_nonblocking: bool, is_seqpacket: bool) -> Arc<Self> {
+        Self::new_init(Init::new(), is_nonblocking, is_seqpacket)
     }
 
-    pub fn new_pair(is_nonblocking: bool) -> (Arc<Self>, Arc<Self>) {
+    pub fn new_pair(is_nonblocking: bool, is_seqpacket: bool) -> (Arc<Self>, Arc<Self>) {
         let cred = SocketCred::<ReadDupOp>::new_current();
         let options = OptionSet::new();
 
@@ -173,8 +178,8 @@ impl UnixStreamSocket {
             &options.socket,
         );
         (
-            Self::new_connected(conn_a, options, is_nonblocking),
-            Self::new_connected(conn_b, OptionSet::new(), is_nonblocking),
+            Self::new_connected(conn_a, options, is_nonblocking, is_seqpacket),
+            Self::new_connected(conn_b, OptionSet::new(), is_nonblocking, is_seqpacket),
         )
     }
 
@@ -185,7 +190,7 @@ impl UnixStreamSocket {
         _flags: SendRecvFlags,
     ) -> Result<usize> {
         match self.state.read().as_ref() {
-            State::Connected(connected) => connected.try_write(buf, aux_data),
+            State::Connected(connected) => connected.try_write(buf, aux_data, self.is_seqpacket),
             State::Init(_) | State::Listen(_) => {
                 return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected")
             }
@@ -198,7 +203,7 @@ impl UnixStreamSocket {
         _flags: SendRecvFlags,
     ) -> Result<(usize, Vec<ControlMessage>)> {
         match self.state.read().as_ref() {
-            State::Connected(connected) => connected.try_read(buf),
+            State::Connected(connected) => connected.try_read(buf, self.is_seqpacket),
             State::Init(_) | State::Listen(_) => {
                 return_errno_with_message!(Errno::EINVAL, "the socket is not connected")
             }
@@ -232,8 +237,12 @@ impl UnixStreamSocket {
                 }
             };
 
-            let connected = match backlog.push_incoming(init, self.pollee.clone(), &options.socket)
-            {
+            let connected = match backlog.push_incoming(
+                init,
+                self.pollee.clone(),
+                &options.socket,
+                self.is_seqpacket,
+            ) {
                 Ok(connected) => connected,
                 Err((err, init)) => return (State::Init(init), Err(err)),
             };
@@ -244,7 +253,7 @@ impl UnixStreamSocket {
 
     fn try_accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
         match self.state.read().as_ref() {
-            State::Listen(listen) => listen.try_accept() as _,
+            State::Listen(listen) => listen.try_accept(self.is_seqpacket) as _,
             State::Init(_) | State::Connected(_) => {
                 return_errno_with_message!(Errno::EINVAL, "the socket is not listening")
             }
@@ -326,7 +335,7 @@ impl Socket for UnixStreamSocket {
                 }
             };
 
-            let listener = match init.listen(backlog, self.pollee.clone()) {
+            let listener = match init.listen(backlog, self.pollee.clone(), self.is_seqpacket) {
                 Ok(listener) => listener,
                 Err((err, init)) => {
                     return (State::Init(init), Err(err));
@@ -391,7 +400,7 @@ impl Socket for UnixStreamSocket {
         // According to the Linux man pages, `EISCONN` _may_ be returned when the destination
         // address is specified for a connection-mode socket. In practice, `sendmsg` on UNIX stream
         // sockets will fail due to that. We follow the same behavior as the Linux implementation.
-        if addr.is_some() {
+        if !self.is_seqpacket && addr.is_some() {
             match self.state.read().as_ref() {
                 State::Init(_) | State::Listen(_) => return_errno_with_message!(
                     Errno::EOPNOTSUPP,

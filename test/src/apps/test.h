@@ -37,10 +37,11 @@
 #include <string.h>
 
 /** Starts the definition of a setup function. */
-#define FN_SETUP(name)                                                        \
-	void setup_##name(void) __attribute__((constructor(__LINE__ + 200))); \
-                                                                              \
-	void setup_##name(void)                                               \
+#define FN_SETUP(name)                                           \
+	void setup_##name(void)                                  \
+		__attribute__((constructor(__COUNTER__ + 200))); \
+                                                                 \
+	void setup_##name(void)                                  \
 	{
 /** Ends the definition of a setup function. */
 #define END_SETUP() }
@@ -84,11 +85,12 @@
 static int __total_failures;
 
 /** Starts the definition of a test function. */
-#define FN_TEST(name)                                                        \
-	void test_##name(void) __attribute__((constructor(__LINE__ + 200))); \
-                                                                             \
-	void test_##name(void)                                               \
-	{                                                                    \
+#define FN_TEST(name)                                            \
+	void test_##name(void)                                   \
+		__attribute__((constructor(__COUNTER__ + 200))); \
+                                                                 \
+	void test_##name(void)                                   \
+	{                                                        \
 		int __tests_passed = 0, __tests_failed = 0;
 
 /** Ends the definition of a test function. */

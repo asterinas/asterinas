@@ -33,7 +33,8 @@ sleep 0.2
 ./tcp_err
 ./tcp_poll
 ./udp_err
-./unix_err
+./unix_stream_err
+./unix_seqpacket_err
 
 ./netlink_route
 ./rtnl_err
