@@ -340,6 +340,16 @@ FN_TEST(send)
 	TEST_ERRNO(send(sk_listen, buf, 0, 0), ENOTCONN);
 	TEST_ERRNO(write(sk_listen, buf, 1), ENOTCONN);
 	TEST_ERRNO(write(sk_listen, buf, 0), ENOTCONN);
+
+	TEST_ERRNO(sendto(sk_unbound, buf, 1, 0, &LISTEN_ADDR, LISTEN_ADDRLEN),
+		   EOPNOTSUPP);
+	TEST_ERRNO(sendto(sk_bound, buf, 1, 0, &LISTEN_ADDR2, LISTEN_ADDRLEN2),
+		   EOPNOTSUPP);
+	TEST_ERRNO(sendto(sk_listen, buf, 1, 0, &BOUND_ADDR, BOUND_ADDRLEN),
+		   EOPNOTSUPP);
+	TEST_ERRNO(sendto(sk_accepted, buf, 1, 0, &UNNAMED_ADDR,
+			  UNNAMED_ADDRLEN),
+		   EISCONN);
 }
 END_TEST()
 

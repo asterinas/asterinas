@@ -1,0 +1,27 @@
+# TODO: Support `SOCK_SEQPACKET` sockets
+AllUnixDomainSockets/UnixSocketPairTest.BindToBadName/*
+AllUnixDomainSockets/UnixSocketPairTest.BindToBadFamily/*
+AllUnixDomainSockets/*/4
+AllUnixDomainSockets/*/5
+AllUnixDomainSockets/*/10
+AllUnixDomainSockets/*/11
+
+# TODO: Support `SOCK_DGRAM` sockets
+AllUnixDomainSockets/*/2
+AllUnixDomainSockets/*/3
+AllUnixDomainSockets/*/8
+AllUnixDomainSockets/*/9
+
+# TODO: Support the `recvmmsg` system call
+AllUnixDomainSockets/UnixSocketPairTest.RecvmmsgTimeoutAfterRecv/*
+
+# TODO: Support `ioctl` operations on sockets
+AllUnixDomainSockets/UnixSocketPairTest.TIOCINQSucceeds/*
+AllUnixDomainSockets/UnixSocketPairTest.TIOCOUTQSucceeds/*
+AllUnixDomainSockets/UnixSocketPairTest.NetdeviceIoctlsSucceed/*
+
+# TODO: Fix operations on `/proc/*/fd/*`
+AllUnixDomainSockets/UnixSocketPairTest.SocketReopenFromProcfs/*
+
+# TODO: Support control messages
+AllUnixDomainSockets/UnixSocketPairCmsgTest.*

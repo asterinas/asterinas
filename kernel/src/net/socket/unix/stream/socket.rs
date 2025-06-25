@@ -371,8 +371,25 @@ impl Socket for UnixStreamSocket {
         }
 
         let MessageHeader {
-            control_message, ..
+            control_message,
+            addr,
         } = message_header;
+
+        // According to the Linux man pages, `EISCONN` _may_ be returned when the destination
+        // address is specified for a connection-mode socket. In practice, `sendmsg` on UNIX stream
+        // sockets will fail due to that. We follow the same behavior as the Linux implementation.
+        if addr.is_some() {
+            match self.state.read().as_ref() {
+                State::Init(_) | State::Listen(_) => return_errno_with_message!(
+                    Errno::EOPNOTSUPP,
+                    "sending to a specific address is not allowed on UNIX stream sockets"
+                ),
+                State::Connected(_) => return_errno_with_message!(
+                    Errno::EISCONN,
+                    "sending to a specific address is not allowed on UNIX stream sockets"
+                ),
+            }
+        }
 
         if control_message.is_some() {
             // TODO: Support sending control message
