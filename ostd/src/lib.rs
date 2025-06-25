@@ -50,6 +50,9 @@ pub mod trap;
 pub mod user;
 pub mod util;
 
+#[cfg(feature = "coverage")]
+mod coverage;
+
 use core::sync::atomic::{AtomicBool, Ordering};
 
 pub use ostd_macros::{

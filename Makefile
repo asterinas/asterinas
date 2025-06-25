@@ -20,6 +20,7 @@ SMP ?= 1
 OSTD_TASK_STACK_SIZE_IN_PAGES ?= 64
 FEATURES ?=
 NO_DEFAULT_FEATURES ?= 0
+COVERAGE ?= 0
 # End of global build options.
 
 # GDB debugging and profiling options.
@@ -108,6 +109,10 @@ ifneq ($(SCHEME), "")
 CARGO_OSDK_COMMON_ARGS += --scheme $(SCHEME)
 else
 CARGO_OSDK_COMMON_ARGS += --boot-method="$(BOOT_METHOD)"
+endif
+
+ifeq ($(COVERAGE), 1)
+CARGO_OSDK_COMMON_ARGS += --coverage
 endif
 
 ifdef FEATURES

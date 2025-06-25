@@ -135,6 +135,8 @@ pub fn do_cached_build(
         ActionChoice::Test => (&config.test.build, &config.test.boot),
     };
 
+    let mut rustflags = rustflags.to_vec();
+    rustflags.push(&build.rustflags);
     let aster_elf = build_kernel_elf(
         config.target_arch,
         &build.profile,
@@ -142,7 +144,7 @@ pub fn do_cached_build(
         build.no_default_features,
         &build.override_configs[..],
         &cargo_target_directory,
-        rustflags,
+        &rustflags,
     );
 
     // Check the existing bundle's reusability
@@ -199,11 +201,9 @@ fn build_kernel_elf(
     let target_os_string = OsString::from(&arch.triple());
     let rustc_linker_script_arg = format!("-C link-arg=-T{}.ld", arch);
 
-    let env_rustflags = std::env::var("RUSTFLAGS").unwrap_or_default();
     let mut rustflags = Vec::from(rustflags);
     // Asterinas does not support PIC yet.
     rustflags.extend(vec![
-        &env_rustflags,
         &rustc_linker_script_arg,
         "-C relocation-model=static",
         "-C relro-level=off",
@@ -243,6 +243,10 @@ fn build_kernel_elf(
     for override_config in override_configs {
         command.arg("--config").arg(override_config);
     }
+
+    const CFLAGS: &str = "CFLAGS_x86_64-unknown-none";
+    let env_cflags = std::env::var(CFLAGS).unwrap_or_default();
+    command.env(CFLAGS, env_cflags + " -fPIC");
 
     info!("Building kernel ELF using command: {:#?}", command);
     info!("Building directory: {:?}", std::env::current_dir().unwrap());
