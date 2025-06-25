@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+/* SPDX-License-Identifier: MPL-2.0 */
 
 #define _GNU_SOURCE
 
@@ -31,7 +31,7 @@ FN_TEST(socket_addresses)
 
 #define MAKE_TEST(path, path_copy_len, path_len_to_kernel, path_buf_len,       \
 		  path_len_from_kernel, path_from_kernel)                      \
-	sk = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));                       \
+	sk = TEST_SUCC(socket(PF_UNIX, SOCK_TYPE, 0));                         \
                                                                                \
 	memset(&addr, 0, sizeof(addr));                                        \
 	addr.sun_family = AF_UNIX;                                             \
@@ -86,7 +86,7 @@ FN_TEST(socket_addresses)
 #undef LONG_PATH
 #undef MAKE_TEST
 
-	sk = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));
+	sk = TEST_SUCC(socket(PF_UNIX, SOCK_TYPE, 0));
 
 	TEST_ERRNO(bind(sk, (struct sockaddr *)&addr, -1), EINVAL);
 	TEST_ERRNO(bind(sk, (struct sockaddr *)&addr, PATH_OFFSET - 1), EINVAL);
@@ -120,13 +120,13 @@ static int sk_accepted;
 
 FN_SETUP(unbound)
 {
-	sk_unbound = CHECK(socket(PF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0));
+	sk_unbound = CHECK(socket(PF_UNIX, SOCK_TYPE | SOCK_NONBLOCK, 0));
 }
 END_SETUP()
 
 FN_SETUP(bound)
 {
-	sk_bound = CHECK(socket(PF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0));
+	sk_bound = CHECK(socket(PF_UNIX, SOCK_TYPE | SOCK_NONBLOCK, 0));
 
 	CHECK(bind(sk_bound, (struct sockaddr *)&BOUND_ADDR, BOUND_ADDRLEN));
 }
@@ -134,7 +134,7 @@ END_SETUP()
 
 FN_SETUP(listen)
 {
-	sk_listen = CHECK(socket(PF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0));
+	sk_listen = CHECK(socket(PF_UNIX, SOCK_TYPE | SOCK_NONBLOCK, 0));
 
 	CHECK(bind(sk_listen, (struct sockaddr *)&LISTEN_ADDR, LISTEN_ADDRLEN));
 
@@ -144,7 +144,7 @@ END_SETUP()
 
 FN_SETUP(connected)
 {
-	sk_connected = CHECK(socket(PF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0));
+	sk_connected = CHECK(socket(PF_UNIX, SOCK_TYPE | SOCK_NONBLOCK, 0));
 
 	CHECK(connect(sk_connected, (struct sockaddr *)&LISTEN_ADDR2,
 		      LISTEN_ADDRLEN2));
@@ -242,7 +242,7 @@ FN_TEST(bind_connected)
 	struct sockaddr_un addr;
 	socklen_t addrlen;
 
-	TEST_SUCC(socketpair(PF_UNIX, SOCK_STREAM, 0, fildes));
+	TEST_SUCC(socketpair(PF_UNIX, SOCK_TYPE, 0, fildes));
 
 	TEST_SUCC(bind(fildes[0], (struct sockaddr *)&UNIX_ADDR("\0X"),
 		       PATH_OFFSET + 2));
@@ -340,16 +340,6 @@ FN_TEST(send)
 	TEST_ERRNO(send(sk_listen, buf, 0, 0), ENOTCONN);
 	TEST_ERRNO(write(sk_listen, buf, 1), ENOTCONN);
 	TEST_ERRNO(write(sk_listen, buf, 0), ENOTCONN);
-
-	TEST_ERRNO(sendto(sk_unbound, buf, 1, 0, &LISTEN_ADDR, LISTEN_ADDRLEN),
-		   EOPNOTSUPP);
-	TEST_ERRNO(sendto(sk_bound, buf, 1, 0, &LISTEN_ADDR2, LISTEN_ADDRLEN2),
-		   EOPNOTSUPP);
-	TEST_ERRNO(sendto(sk_listen, buf, 1, 0, &BOUND_ADDR, BOUND_ADDRLEN),
-		   EOPNOTSUPP);
-	TEST_ERRNO(sendto(sk_accepted, buf, 1, 0, &UNNAMED_ADDR,
-			  UNNAMED_ADDRLEN),
-		   EISCONN);
 }
 END_TEST()
 
@@ -387,39 +377,39 @@ FN_TEST(blocking_connect)
 
 	// Setup
 
-	sk = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));
+	sk = TEST_SUCC(socket(PF_UNIX, SOCK_TYPE, 0));
 	TEST_SUCC(
 		bind(sk, (struct sockaddr *)&UNIX_ADDR("\0"), PATH_OFFSET + 1));
 	TEST_SUCC(listen(sk, 2));
 
 	for (i = 0; i < 3; ++i) {
 		sks[i] = TEST_SUCC(
-			socket(PF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0));
+			socket(PF_UNIX, SOCK_TYPE | SOCK_NONBLOCK, 0));
 		TEST_SUCC(connect(sks[i], (struct sockaddr *)&UNIX_ADDR("\0"),
 				  PATH_OFFSET + 1));
 	}
 
-#define MAKE_TEST(child, parent, errno)                                      \
-	sks[i] = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0)); \
-	TEST_ERRNO(connect(sks[i], (struct sockaddr *)&UNIX_ADDR("\0"),      \
-			   PATH_OFFSET + 1),                                 \
-		   EAGAIN);                                                  \
-	TEST_SUCC(close(sks[i]));                                            \
-                                                                             \
-	pid = TEST_SUCC(fork());                                             \
-	if (pid == 0) {                                                      \
-		usleep(300 * 1000);                                          \
-		CHECK(child);                                                \
-		exit(0);                                                     \
-	}                                                                    \
-	TEST_SUCC(parent);                                                   \
-                                                                             \
-	sks[i] = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));                 \
-	TEST_ERRNO(connect(sks[i], (struct sockaddr *)&UNIX_ADDR("\0"),      \
-			   PATH_OFFSET + 1),                                 \
-		   errno);                                                   \
-                                                                             \
-	TEST_SUCC(close(sks[i]));                                            \
+#define MAKE_TEST(child, parent, errno)                                    \
+	sks[i] = TEST_SUCC(socket(PF_UNIX, SOCK_TYPE | SOCK_NONBLOCK, 0)); \
+	TEST_ERRNO(connect(sks[i], (struct sockaddr *)&UNIX_ADDR("\0"),    \
+			   PATH_OFFSET + 1),                               \
+		   EAGAIN);                                                \
+	TEST_SUCC(close(sks[i]));                                          \
+                                                                           \
+	pid = TEST_SUCC(fork());                                           \
+	if (pid == 0) {                                                    \
+		usleep(300 * 1000);                                        \
+		CHECK(child);                                              \
+		exit(0);                                                   \
+	}                                                                  \
+	TEST_SUCC(parent);                                                 \
+                                                                           \
+	sks[i] = TEST_SUCC(socket(PF_UNIX, SOCK_TYPE, 0));                 \
+	TEST_ERRNO(connect(sks[i], (struct sockaddr *)&UNIX_ADDR("\0"),    \
+			   PATH_OFFSET + 1),                               \
+		   errno);                                                 \
+                                                                           \
+	TEST_SUCC(close(sks[i]));                                          \
 	TEST_SUCC(wait(NULL));
 
 	// Test 1: Accepting a connection resumes the blocked connection request
@@ -474,14 +464,14 @@ FN_TEST(ns_abs)
 	struct sockaddr_un addr;
 	socklen_t addrlen;
 
-	sk = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));
+	sk = TEST_SUCC(socket(PF_UNIX, SOCK_TYPE, 0));
 
 	TEST_SUCC(bind(sk, (struct sockaddr *)&UNIX_ADDR(""), PATH_OFFSET));
 	addrlen = sizeof(addr);
 	TEST_RES(getsockname(sk, (struct sockaddr *)&addr, &addrlen),
 		 addrlen == PATH_OFFSET + 6 && addr.sun_path[0] == '\0');
 
-	sk2 = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));
+	sk2 = TEST_SUCC(socket(PF_UNIX, SOCK_TYPE, 0));
 
 	TEST_ERRNO(bind(sk2, (struct sockaddr *)&addr, addrlen), EADDRINUSE);
 	TEST_ERRNO(connect(sk2, (struct sockaddr *)&addr, addrlen),
@@ -492,7 +482,7 @@ FN_TEST(ns_abs)
 	TEST_SUCC(close(sk));
 	TEST_SUCC(close(sk2));
 
-	sk = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));
+	sk = TEST_SUCC(socket(PF_UNIX, SOCK_TYPE, 0));
 	TEST_ERRNO(connect(sk, (struct sockaddr *)&addr, addrlen),
 		   ECONNREFUSED);
 	TEST_SUCC(bind(sk, (struct sockaddr *)&addr, addrlen));
@@ -504,7 +494,7 @@ FN_TEST(shutdown_connected)
 {
 	int fildes[2];
 
-	TEST_SUCC(socketpair(PF_UNIX, SOCK_STREAM, 0, fildes));
+	TEST_SUCC(socketpair(PF_UNIX, SOCK_TYPE, 0, fildes));
 
 	TEST_SUCC(shutdown(fildes[0], SHUT_RD));
 	TEST_SUCC(shutdown(fildes[0], SHUT_WR));
@@ -524,7 +514,7 @@ FN_TEST(poll_unbound)
 	int sk;
 	struct pollfd pfd = { .events = POLLIN | POLLOUT | POLLRDHUP };
 
-	sk = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));
+	sk = TEST_SUCC(socket(PF_UNIX, SOCK_TYPE, 0));
 	pfd.fd = sk;
 
 	TEST_RES(poll(&pfd, 1, 0), pfd.revents == (POLLOUT | POLLHUP));
@@ -552,7 +542,7 @@ FN_TEST(poll_listen)
 	int sk;
 	struct pollfd pfd = { .events = POLLIN | POLLOUT | POLLRDHUP };
 
-	sk = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));
+	sk = TEST_SUCC(socket(PF_UNIX, SOCK_TYPE, 0));
 	pfd.fd = sk;
 
 	TEST_SUCC(
@@ -577,7 +567,7 @@ FN_TEST(poll_connected_close)
 	int fildes[2];
 	struct pollfd pfd = { .events = POLLIN | POLLOUT | POLLRDHUP };
 
-	TEST_SUCC(socketpair(PF_UNIX, SOCK_STREAM, 0, fildes));
+	TEST_SUCC(socketpair(PF_UNIX, SOCK_TYPE, 0, fildes));
 
 	pfd.fd = fildes[1];
 	TEST_RES(poll(&pfd, 1, 0), pfd.revents == POLLOUT);
@@ -597,18 +587,18 @@ FN_TEST(poll_connected_shutdown)
 	int fildes[2];
 	struct pollfd pfd = { .events = POLLIN | POLLOUT | POLLRDHUP };
 
-#define MAKE_TEST(shut, ev1, ev2)                               \
-	TEST_SUCC(socketpair(PF_UNIX, SOCK_STREAM, 0, fildes)); \
-                                                                \
-	TEST_SUCC(shutdown(fildes[0], shut));                   \
-                                                                \
-	pfd.fd = fildes[0];                                     \
-	TEST_RES(poll(&pfd, 1, 0), pfd.revents == (ev1));       \
-                                                                \
-	pfd.fd = fildes[1];                                     \
-	TEST_RES(poll(&pfd, 1, 0), pfd.revents == (ev2));       \
-                                                                \
-	TEST_SUCC(close(fildes[0]));                            \
+#define MAKE_TEST(shut, ev1, ev2)                             \
+	TEST_SUCC(socketpair(PF_UNIX, SOCK_TYPE, 0, fildes)); \
+                                                              \
+	TEST_SUCC(shutdown(fildes[0], shut));                 \
+                                                              \
+	pfd.fd = fildes[0];                                   \
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == (ev1));     \
+                                                              \
+	pfd.fd = fildes[1];                                   \
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == (ev2));     \
+                                                              \
+	TEST_SUCC(close(fildes[0]));                          \
 	TEST_SUCC(close(fildes[1]));
 
 	MAKE_TEST(SHUT_RD, POLLIN | POLLOUT | POLLRDHUP, POLLOUT);
@@ -630,8 +620,8 @@ FN_TEST(epoll)
 
 	// Setup
 
-	sk2_listen = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));
-	sk2_connected = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));
+	sk2_listen = TEST_SUCC(socket(PF_UNIX, SOCK_TYPE, 0));
+	sk2_connected = TEST_SUCC(socket(PF_UNIX, SOCK_TYPE, 0));
 
 	epfd_listen = TEST_SUCC(epoll_create1(0));
 	ev.events = EPOLLIN;
@@ -677,31 +667,13 @@ FN_TEST(epoll)
 }
 END_TEST()
 
-FN_SETUP(cleanup)
-{
-	CHECK(close(sk_unbound));
-
-	CHECK(close(sk_bound));
-
-	CHECK(close(sk_listen));
-
-	CHECK(close(sk_connected));
-
-	CHECK(close(sk_accepted));
-
-	CHECK(unlink(BOUND_ADDR.sun_path));
-
-	CHECK(unlink(LISTEN_ADDR.sun_path));
-}
-END_SETUP()
-
 // See also `zero_reads_always_succeed` in `pipe_err.c`
 FN_TEST(zero_recvs_may_fail)
 {
 	int fildes[2];
 	char buf[1] = { 'z' };
 
-	TEST_SUCC(socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, fildes));
+	TEST_SUCC(socketpair(AF_UNIX, SOCK_TYPE | SOCK_NONBLOCK, 0, fildes));
 
 	TEST_ERRNO(recv(fildes[0], buf, 0, 0), EAGAIN);
 
@@ -719,108 +691,13 @@ FN_TEST(zero_sends_may_fail)
 	int fildes[2];
 	char buf[1] = { 'z' };
 
-	TEST_SUCC(socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, fildes));
+	TEST_SUCC(socketpair(AF_UNIX, SOCK_TYPE | SOCK_NONBLOCK, 0, fildes));
 
 	TEST_SUCC(send(fildes[1], buf, 0, 0));
 
 	TEST_SUCC(close(fildes[0]));
 	TEST_ERRNO(send(fildes[1], buf, 0, 0), EPIPE);
 
-	TEST_SUCC(close(fildes[1]));
-}
-END_TEST()
-
-FN_TEST(scm_rights)
-{
-	int fildes[2];
-	char buf[20] = "abcdefg";
-	char cbuf[CMSG_SPACE(sizeof(int) * 3)];
-	struct iovec iov;
-	struct msghdr mhdr;
-	struct cmsghdr *chdr;
-	int *cdata;
-	int cfds[2];
-
-	TEST_SUCC(socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, fildes));
-
-	memset(&mhdr, 0, sizeof(mhdr));
-	mhdr.msg_iov = &iov;
-	mhdr.msg_iovlen = 1;
-	mhdr.msg_control = cbuf;
-	mhdr.msg_controllen = CMSG_SPACE(sizeof(int) * 3);
-
-	iov.iov_base = buf;
-	iov.iov_len = 1;
-
-	chdr = CMSG_FIRSTHDR(&mhdr);
-	chdr->cmsg_level = SOL_SOCKET;
-	chdr->cmsg_type = SCM_RIGHTS;
-	chdr->cmsg_len = CMSG_SPACE(sizeof(int) * 3);
-
-	cdata = (int *)CMSG_DATA(chdr);
-	TEST_SUCC(pipe(cfds));
-	cdata[0] = cfds[0];
-	cdata[1] = cfds[0];
-	cdata[2] = cfds[1];
-
-	// Sending control messages with zero bytes to a stream socket
-	// seems to "succeed". However, no data or control messages can
-	// be transmitted.
-	mhdr.msg_iovlen = 0;
-	TEST_SUCC(sendmsg(fildes[0], &mhdr, 0));
-	mhdr.msg_iovlen = 1;
-
-	// > (1)  sendmsg(2) of four bytes, with no ancillary data.
-	// > (2)  sendmsg(2) of one byte, with ancillary data.
-	// > (3)  sendmsg(2) of four bytes, with no ancillary data.
-	//  -- https://man7.org/linux/man-pages/man7/unix.7.html
-	TEST_RES(send(fildes[0], buf, 4, 0), _ret == 4);
-	TEST_RES(sendmsg(fildes[0], &mhdr, 0), _ret == 1);
-	TEST_RES(send(fildes[0], buf, 4, 0), _ret == 4);
-
-	memset(&mhdr, 0, sizeof(mhdr));
-	mhdr.msg_iov = &iov;
-	mhdr.msg_iovlen = 1;
-	mhdr.msg_control = cbuf;
-	mhdr.msg_controllen = CMSG_SPACE(sizeof(int));
-
-	iov.iov_base = buf;
-	iov.iov_len = sizeof(buf);
-
-	memset(cbuf, 0, sizeof(cbuf));
-
-	// > Suppose that the receiver now performs recvmsg(2) calls each with
-	// > a buffer size of 20 bytes.  The first call will receive five bytes
-	// > of data, along with the ancillary data sent by the second
-	// > sendmsg(2) call.
-	TEST_RES(recvmsg(fildes[1], &mhdr, 0),
-		 _ret == 5 &&
-			 mhdr.msg_controllen == CMSG_SPACE(sizeof(int) * 2) &&
-			 (chdr = CMSG_FIRSTHDR(&mhdr)) &&
-			 chdr->cmsg_level == SOL_SOCKET &&
-			 chdr->cmsg_type == SCM_RIGHTS &&
-			 chdr->cmsg_len == CMSG_SPACE(sizeof(int) * 2) &&
-			 (cdata = (int *)CMSG_DATA(chdr)) &&
-			 cdata[0] == cfds[1] + 1 && cdata[1] == cfds[1] + 2);
-	// > The next call will receive the remaining four
-	// > bytes of data.
-	TEST_RES(recv(fildes[1], buf, sizeof(buf), 0), _ret == 4);
-
-	// The purpose of the tests below is to verify that the received file
-	// descriptors are functional.
-	TEST_RES(write(cfds[1], "x", 1), _ret == 1);
-	TEST_RES(read(cdata[0], buf, 1), _ret == 1 && buf[0] == 'x');
-	TEST_RES(write(cfds[1], "y", 1), _ret == 1);
-	TEST_RES(read(cdata[1], buf, 1), _ret == 1 && buf[0] == 'y');
-
-	TEST_SUCC(close(cdata[0]));
-	TEST_SUCC(close(cdata[1]));
-	TEST_SUCC(close(cfds[0]));
-
-	TEST_ERRNO(write(cfds[1], "y", 1), EPIPE);
-	TEST_SUCC(close(cfds[1]));
-
-	TEST_SUCC(close(fildes[0]));
 	TEST_SUCC(close(fildes[1]));
 }
 END_TEST()

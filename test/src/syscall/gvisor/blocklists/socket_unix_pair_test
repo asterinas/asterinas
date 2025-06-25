@@ -1,11 +1,3 @@
-# TODO: Support `SOCK_SEQPACKET` sockets
-AllUnixDomainSockets/UnixSocketPairTest.BindToBadName/*
-AllUnixDomainSockets/UnixSocketPairTest.BindToBadFamily/*
-AllUnixDomainSockets/*/4
-AllUnixDomainSockets/*/5
-AllUnixDomainSockets/*/10
-AllUnixDomainSockets/*/11
-
 # TODO: Support `SOCK_DGRAM` sockets
 AllUnixDomainSockets/*/2
 AllUnixDomainSockets/*/3
@@ -23,5 +15,17 @@ AllUnixDomainSockets/UnixSocketPairTest.NetdeviceIoctlsSucceed/*
 # TODO: Fix operations on `/proc/*/fd/*`
 AllUnixDomainSockets/UnixSocketPairTest.SocketReopenFromProcfs/*
 
-# TODO: Support control messages
-AllUnixDomainSockets/UnixSocketPairCmsgTest.*
+# TODO: Report `MSG_(C)TRUNC` after truncating the (control) message
+AllUnixDomainSockets/UnixSocketPairCmsgTest.BasicFDPassNoSpaceMsgCtrunc/*
+AllUnixDomainSockets/UnixSocketPairCmsgTest.BasicFDPassNullControlMsgCtrunc/*
+AllUnixDomainSockets/UnixSocketPairCmsgTest.BasicFDPassNotEnoughSpaceMsgCtrunc/*
+AllUnixDomainSockets/UnixSocketPairCmsgTest.BasicThreeFDPassTruncationMsgCtrunc/*
+AllUnixDomainSockets/UnixSocketPairCmsgTest.BasicTwoFDPassUnalignedRecvTruncationMsgTrunc/*
+AllUnixDomainSockets/UnixSocketPairCmsgTest.CredPassNoSpaceMsgCtrunc/*
+AllUnixDomainSockets/UnixSocketPairCmsgTest.CredPassTruncatedMsgCtrunc/*
+
+# TODO: Support `MSG_CMSG_CLOEXEC`
+AllUnixDomainSockets/UnixSocketPairCmsgTest.CloexecRecvFDPass/*
+
+# TODO: Support `MSG_PEEK`
+AllUnixDomainSockets/UnixSocketPairCmsgTest.FDPassPeek/*
