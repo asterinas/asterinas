@@ -144,6 +144,13 @@ impl CControlHeader {
         }
     }
 
+    /// Computes the payload length from the total length.
+    pub fn payload_len_from_total(total_len: usize) -> Result<usize> {
+        total_len.checked_sub(size_of::<Self>()).ok_or_else(|| {
+            Error::with_message(Errno::EINVAL, "the control message buffer is too small")
+        })
+    }
+
     /// Returns the level of the control message.
     pub fn level(&self) -> Option<CSocketOptionLevel> {
         CSocketOptionLevel::try_from(self.level).ok()

@@ -11,8 +11,8 @@ use crate::{
     match_sock_option_mut, match_sock_option_ref,
     net::socket::{
         options::{
-            AcceptConn, KeepAlive, Linger, PeerCred, PeerGroups, Priority, RecvBuf, RecvBufForce,
-            ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
+            AcceptConn, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority, RecvBuf,
+            RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
         },
         unix::{CUserCred, UNIX_STREAM_DEFAULT_BUF_SIZE},
     },
@@ -30,6 +30,7 @@ pub struct SocketOptionSet {
     recv_buf: u32,
     linger: LingerOption,
     keep_alive: bool,
+    pass_cred: bool,
     priority: i32,
 }
 
@@ -42,14 +43,15 @@ impl Default for SocketOptionSet {
             recv_buf: MIN_RECVBUF,
             linger: LingerOption::default(),
             keep_alive: false,
+            pass_cred: false,
             priority: 0,
         }
     }
 }
 
 impl SocketOptionSet {
-    /// Return the default socket level options for tcp socket.
-    pub fn new_tcp() -> Self {
+    /// Returns the default socket level options for tcp socket.
+    pub(in crate::net) fn new_tcp() -> Self {
         Self {
             send_buf: TCP_SEND_BUF_LEN as u32,
             recv_buf: TCP_RECV_BUF_LEN as u32,
@@ -57,8 +59,8 @@ impl SocketOptionSet {
         }
     }
 
-    /// Return the default socket level options for udp socket.
-    pub fn new_udp() -> Self {
+    /// Returns the default socket level options for udp socket.
+    pub(in crate::net) fn new_udp() -> Self {
         Self {
             send_buf: UDP_SEND_PAYLOAD_LEN as u32,
             recv_buf: UDP_RECV_PAYLOAD_LEN as u32,
@@ -113,6 +115,12 @@ impl SocketOptionSet {
             socket_keepalive: KeepAlive => {
                 let keep_alive = self.keep_alive();
                 socket_keepalive.set(keep_alive);
+            },
+            socket_pass_cred: PassCred => {
+                // This option only affects UNIX sockets. However, it also works well with other
+                // sockets for setting and getting.
+                let pass_cred = self.pass_cred();
+                socket_pass_cred.set(pass_cred);
             },
             socket_peer_cred: PeerCred => {
                 let peer_cred = CUserCred::new_unknown();
@@ -184,6 +192,12 @@ impl SocketOptionSet {
                 let keep_alive = socket_keepalive.get().unwrap();
                 self.set_keep_alive(*keep_alive);
                 return Ok(socket.set_keep_alive(*keep_alive));
+            },
+            socket_pass_cred: PassCred => {
+                // This option only affects UNIX sockets. However, it also works well with other
+                // sockets for setting and getting.
+                let pass_cred = socket_pass_cred.get().unwrap();
+                self.set_pass_cred(*pass_cred);
             },
             socket_sendbuf_force: SendBufForce => {
                 check_current_privileged()?;

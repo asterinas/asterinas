@@ -16,7 +16,7 @@ use crate::{
         file_table::{get_file_fast, FdFlags},
     },
     net::socket::util::{CControlHeader, ControlMessage},
-    prelude::{return_errno_with_message, AsThreadLocal, Errno, Error, Result},
+    prelude::{return_errno_with_message, AsThreadLocal, Errno, Result},
     util::net::CSocketOptionLevel,
 };
 
@@ -92,15 +92,13 @@ impl FileMessage {
     }
 
     fn write_to(&self, writer: &mut VmWriter) -> Result<CControlHeader> {
-        let nfiles = self.files.len().min(
-            writer
-                .avail()
-                .checked_sub(size_of::<CControlHeader>())
-                .ok_or_else(|| {
-                    Error::with_message(Errno::EINVAL, "the control message buffer is too small")
-                })?
-                / size_of::<i32>(),
-        );
+        let nfiles = self
+            .files
+            .len()
+            .min(CControlHeader::payload_len_from_total(writer.avail())? / size_of::<i32>());
+        if nfiles < self.files.len() {
+            warn!("setting MSG_CTRUNC is not supported");
+        }
         if nfiles == 0 {
             return_errno_with_message!(Errno::EINVAL, "the control message buffer is too small");
         }
