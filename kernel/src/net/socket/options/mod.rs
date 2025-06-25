@@ -21,6 +21,7 @@ impl_socket_options!(
     pub struct Priority(i32);
     pub struct Linger(LingerOption);
     pub struct KeepAlive(bool);
+    pub struct PassCred(bool);
     pub struct PeerCred(CUserCred);
     pub struct AcceptConn(bool);
     pub struct SendBufForce(u32);
