@@ -51,7 +51,10 @@ TESTS ?= \
 	signalfd_test \
 	socket_netlink_route_test \
 	socket_unix_pair_test \
+	socket_unix_seqpacket_local_test \
 	socket_unix_stream_test \
+	socket_unix_unbound_seqpacket_test \
+	socket_unix_unbound_stream_test \
 	stat_test \
 	stat_times_test \
 	statfs_test \

@@ -99,6 +99,7 @@ impl Connected {
     pub(super) fn try_read(
         &self,
         writer: &mut dyn MultiWrite,
+        is_seqpacket: bool,
     ) -> Result<(usize, Vec<ControlMessage>)> {
         if writer.is_empty() {
             if self.reader.lock().is_empty() {
@@ -168,8 +169,16 @@ impl Connected {
             };
             read_tot_len += read_len;
 
-            // Record the current auxiliary data. Break if the read is incomplete.
-            if let Some(front) = aux_front {
+            // Record the current auxiliary data. Break if the read is incomplete or this is a
+            // `SOCK_SEQPACKET` socket.
+            if is_seqpacket {
+                aux_prev_data = Some(all_aux.pop_front().unwrap().data);
+                if read_len < aux_len {
+                    warn!("setting MSG_TRUNC is not supported");
+                    reader.skip(aux_len - read_len);
+                }
+                break aux_prev_data.as_mut().unwrap();
+            } else if let Some(front) = aux_front {
                 if read_len < aux_len {
                     front.start += read_len;
                     break &mut front.data;
@@ -198,6 +207,7 @@ impl Connected {
         &self,
         reader: &mut dyn MultiRead,
         aux_data: &mut AuxiliaryData,
+        is_seqpacket: bool,
     ) -> Result<usize> {
         if reader.is_empty() {
             if self.inner.is_shutdown() {
@@ -206,14 +216,23 @@ impl Connected {
             return Ok(0);
         }
 
+        if is_seqpacket && reader.sum_lens() >= UNIX_STREAM_DEFAULT_BUF_SIZE {
+            return_errno_with_message!(Errno::EMSGSIZE, "the message is too large");
+        }
+
         let this_end = self.inner.this_end();
         let need_pass_cred = this_end.is_pass_cred.load(Ordering::Relaxed)
             || self.inner.peer_end().is_pass_cred.load(Ordering::Relaxed);
 
         // Fast path: There are no auxiliary data to transmit.
-        if aux_data.is_empty() && !need_pass_cred {
+        if aux_data.is_empty() && !is_seqpacket && !need_pass_cred {
             let mut writer = self.writer.lock();
-            return self.inner.write_with(move || writer.write_fallible(reader));
+            return self.inner.write_with(move || {
+                if is_seqpacket && writer.free_len() < reader.sum_lens() {
+                    return Ok(0);
+                }
+                writer.write_fallible(reader)
+            });
         }
 
         let mut all_aux = this_end.all_aux.lock();
@@ -226,7 +245,12 @@ impl Connected {
         let (write_start, write_res) = {
             let mut writer = self.writer.lock();
             let write_start = writer.tail();
-            let write_res = self.inner.write_with(move || writer.write_fallible(reader));
+            let write_res = self.inner.write_with(move || {
+                if is_seqpacket && writer.free_len() < reader.sum_lens() {
+                    return Ok(0);
+                }
+                writer.write_fallible(reader)
+            });
             (write_start, write_res)
         };
         let Ok(write_len) = write_res else {
