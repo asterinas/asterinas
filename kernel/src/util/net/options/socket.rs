@@ -4,7 +4,7 @@ use super::RawSocketOption;
 use crate::{
     current_userspace, impl_raw_sock_option_get_only, impl_raw_socket_option,
     net::socket::options::{
-        AcceptConn, Error, KeepAlive, Linger, PeerCred, PeerGroups, Priority, RecvBuf,
+        AcceptConn, Error, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority, RecvBuf,
         RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
     },
     prelude::*,
@@ -57,6 +57,7 @@ pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
         CSocketOptionName::REUSEPORT => Ok(Box::new(ReusePort::new())),
         CSocketOptionName::PRIORITY => Ok(Box::new(Priority::new())),
         CSocketOptionName::LINGER => Ok(Box::new(Linger::new())),
+        CSocketOptionName::PASSCRED => Ok(Box::new(PassCred::new())),
         CSocketOptionName::KEEPALIVE => Ok(Box::new(KeepAlive::new())),
         CSocketOptionName::PEERCRED => Ok(Box::new(PeerCred::new())),
         CSocketOptionName::ACCPETCONN => Ok(Box::new(AcceptConn::new())),
@@ -75,6 +76,7 @@ impl_raw_socket_option!(ReusePort);
 impl_raw_socket_option!(Priority);
 impl_raw_socket_option!(Linger);
 impl_raw_socket_option!(KeepAlive);
+impl_raw_socket_option!(PassCred);
 impl_raw_sock_option_get_only!(PeerCred);
 impl_raw_sock_option_get_only!(AcceptConn);
 impl_raw_socket_option!(SendBufForce);

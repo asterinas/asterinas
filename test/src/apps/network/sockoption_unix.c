@@ -4,7 +4,6 @@
  * UNIX stream socket-related socket options.
  */
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -83,6 +82,37 @@ FN_TEST(acceptconn)
 }
 END_TEST()
 
+FN_TEST(pass_cred)
+{
+	int val = 0;
+	socklen_t len = sizeof(val);
+
+	TEST_RES(getsockopt(sk_tcp, SOL_SOCKET, SO_PASSCRED, &val, &len),
+		 len == 4 && val == 0);
+	TEST_RES(getsockopt(sk_unbound, SOL_SOCKET, SO_PASSCRED, &val, &len),
+		 len == 4 && val == 0);
+	TEST_RES(getsockopt(sk_listen, SOL_SOCKET, SO_PASSCRED, &val, &len),
+		 len == 4 && val == 0);
+	TEST_RES(getsockopt(sk_connected, SOL_SOCKET, SO_PASSCRED, &val, &len),
+		 len == 4 && val == 0);
+
+	val = 100;
+	TEST_SUCC(setsockopt(sk_tcp, SOL_SOCKET, SO_PASSCRED, &val, len));
+	TEST_SUCC(setsockopt(sk_unbound, SOL_SOCKET, SO_PASSCRED, &val, len));
+	TEST_SUCC(setsockopt(sk_listen, SOL_SOCKET, SO_PASSCRED, &val, len));
+	TEST_SUCC(setsockopt(sk_connected, SOL_SOCKET, SO_PASSCRED, &val, len));
+
+	TEST_RES(getsockopt(sk_tcp, SOL_SOCKET, SO_PASSCRED, &val, &len),
+		 len == 4 && val == 1);
+	TEST_RES(getsockopt(sk_unbound, SOL_SOCKET, SO_PASSCRED, &val, &len),
+		 len == 4 && val == 1);
+	TEST_RES(getsockopt(sk_listen, SOL_SOCKET, SO_PASSCRED, &val, &len),
+		 len == 4 && val == 1);
+	TEST_RES(getsockopt(sk_connected, SOL_SOCKET, SO_PASSCRED, &val, &len),
+		 len == 4 && val == 1);
+}
+END_TEST()
+
 FN_TEST(peer_cred)
 {
 	struct cred {
@@ -94,7 +124,7 @@ FN_TEST(peer_cred)
 	struct cred ucred = {};
 	socklen_t len = sizeof(ucred);
 
-	TEST_ERRNO(setsockopt(sk_unbound, SOL_SOCKET, SO_PEERCRED, &ucred, len),
+	TEST_ERRNO(setsockopt(sk_tcp, SOL_SOCKET, SO_PEERCRED, &ucred, len),
 		   ENOPROTOOPT);
 	TEST_RES(getsockopt(sk_tcp, SOL_SOCKET, SO_PEERCRED, &ucred, &len),
 		 ucred.pid == 0 && ucred.uid == -1 && ucred.gid == -1);
