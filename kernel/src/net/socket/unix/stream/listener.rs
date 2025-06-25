@@ -20,7 +20,7 @@ use crate::{
             cred::SocketCred,
             stream::socket::OptionSet,
         },
-        util::{SockShutdownCmd, SocketAddr},
+        util::{options::SocketOptionSet, SockShutdownCmd, SocketAddr},
     },
     prelude::*,
     process::signal::Pollee,
@@ -234,6 +234,7 @@ impl Backlog {
         &self,
         init: Init,
         pollee: Pollee,
+        options: &SocketOptionSet,
     ) -> core::result::Result<Connected, (Error, Init)> {
         let mut locked_incoming_conns = self.incoming_conns.lock();
 
@@ -261,6 +262,7 @@ impl Backlog {
             self.addr.clone(),
             pollee,
             self.listener_cred.dup().restrict(),
+            options,
         );
 
         incoming_conns.push_back(server_conn);
