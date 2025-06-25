@@ -43,6 +43,7 @@ sched/sched_attr
 sched/sched_attr_idle
 shm/posix_shm
 signal_c/parent_death_signal
+signal_c/signal_fpu
 signal_c/signal_test
 signal_c/signal_test2
 "
