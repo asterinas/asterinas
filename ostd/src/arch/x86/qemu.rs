@@ -24,6 +24,9 @@ pub enum QemuExitCode {
 /// QEMU command line arguments that specifies the ISA debug exit device:
 /// `-device isa-debug-exit,iobase=0xf4,iosize=0x04`.
 pub fn exit_qemu(exit_code: QemuExitCode) -> ! {
+    #[cfg(feature = "coverage")]
+    crate::coverage::dump_profraw();
+
     use x86_64::instructions::port::Port;
     let mut port = Port::new(0xf4);
 

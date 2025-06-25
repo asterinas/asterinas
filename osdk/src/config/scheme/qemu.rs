@@ -32,6 +32,8 @@ pub struct QemuScheme {
     pub bootdev_append_options: Option<String>,
     /// The path of qemu
     pub path: Option<PathBuf>,
+    /// Whether to run QEMU as daemon and connect to it in monitor mode.
+    pub with_monitor: Option<bool>,
 }
 
 #[derive(Debug, Clone, Eq, Serialize, Deserialize)]
@@ -43,6 +45,8 @@ pub struct Qemu {
     /// [`crate::bundle::Bundle::run`].
     pub bootdev_append_options: Option<String>,
     pub path: PathBuf,
+    /// Whether to run QEMU as daemon and connect to it in monitor mode.
+    pub with_monitor: bool,
 }
 
 impl Default for Qemu {
@@ -51,6 +55,7 @@ impl Default for Qemu {
             args: String::new(),
             bootdev_append_options: None,
             path: PathBuf::from(get_default_arch().system_qemu()),
+            with_monitor: false,
         }
     }
 }
@@ -66,6 +71,7 @@ impl PartialEq for Qemu {
         strip_numbers(&self.args) == strip_numbers(&other.args)
             && self.bootdev_append_options == other.bootdev_append_options
             && self.path == other.path
+            && self.with_monitor == other.with_monitor
     }
 }
 
@@ -92,6 +98,9 @@ impl QemuScheme {
         if self.path.is_none() {
             self.path.clone_from(&from.path);
         }
+        if self.with_monitor.is_none() {
+            self.with_monitor.clone_from(&from.with_monitor);
+        }
     }
 
     pub fn finalize(self, arch: Arch) -> Qemu {
@@ -99,6 +108,7 @@ impl QemuScheme {
             args: self.args.unwrap_or_default(),
             bootdev_append_options: self.bootdev_append_options,
             path: self.path.unwrap_or(PathBuf::from(arch.system_qemu())),
+            with_monitor: self.with_monitor.unwrap_or(false),
         }
     }
 }
