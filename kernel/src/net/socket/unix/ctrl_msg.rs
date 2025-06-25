@@ -3,13 +3,16 @@
 use alloc::{sync::Arc, vec::Vec};
 use core::fmt;
 
+use aster_rights::ReadOp;
 use int_to_c_enum::TryFromInt;
 use log::warn;
 use ostd::{
-    mm::{VmReader, VmWriter},
+    mm::{FallibleVmWrite, VmReader, VmWriter},
     task::Task,
+    Pod,
 };
 
+use super::{cred::SocketCred, CUserCred};
 use crate::{
     fs::{
         file_handle::FileLike,
@@ -26,6 +29,7 @@ pub struct UnixControlMessage(Message);
 #[derive(Debug)]
 enum Message {
     Files(FileMessage),
+    Cred(CredMessage),
 }
 
 impl UnixControlMessage {
@@ -43,6 +47,10 @@ impl UnixControlMessage {
                 let msg = FileMessage::read_from(header, reader)?;
                 Ok(Some(Self(Message::Files(msg))))
             }
+            CControlType::SCM_CREDENTIALS => {
+                let msg = CredMessage::read_from(header, reader)?;
+                Ok(Some(Self(Message::Cred(msg))))
+            }
             _ => {
                 warn!("unsupported control message type in {:?}", header);
                 reader.skip(header.payload_len());
@@ -54,6 +62,7 @@ impl UnixControlMessage {
     pub fn write_to(&self, writer: &mut VmWriter) -> Result<CControlHeader> {
         match &self.0 {
             Message::Files(msg) => msg.write_to(writer),
+            Message::Cred(msg) => msg.write_to(writer),
         }
     }
 }
@@ -128,6 +137,41 @@ impl FileMessage {
     }
 }
 
+#[derive(Debug)]
+struct CredMessage {
+    cred: CUserCred,
+}
+
+impl CredMessage {
+    fn read_from(header: &CControlHeader, reader: &mut VmReader) -> Result<Self> {
+        if header.payload_len() != size_of::<CUserCred>() {
+            return_errno_with_message!(Errno::EINVAL, "the SCM_CREDENTIALS message is invalid");
+        }
+
+        let cred = reader.read_val()?;
+
+        Ok(Self { cred })
+    }
+
+    fn write_to(&self, writer: &mut VmWriter) -> Result<CControlHeader> {
+        let payload_len =
+            size_of::<CUserCred>().min(CControlHeader::payload_len_from_total(writer.avail())?);
+        if payload_len != size_of::<CUserCred>() {
+            warn!("setting MSG_CTRUNC is not supported");
+        }
+
+        let header = CControlHeader::from_payload_len(
+            CSocketOptionLevel::SOL_SOCKET,
+            CControlType::SCM_CREDENTIALS as i32,
+            payload_len,
+        );
+        writer.write_val(&header)?;
+        writer.write_fallible(&mut VmReader::from(self.cred.as_bytes()))?;
+
+        Ok(header)
+    }
+}
+
 /// Control message types.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/linux/socket.h#L178>.
@@ -153,12 +197,13 @@ enum CControlType {
 #[derive(Default)]
 pub(super) struct AuxiliaryData {
     files: Vec<Arc<dyn FileLike>>,
+    cred: Option<SocketCred>,
 }
 
 impl AuxiliaryData {
     /// Builds the auxiliary data from the control messages.
-    pub(super) fn from_control(ctrl_msgs: Vec<ControlMessage>) -> Self {
-        let mut result = Self { files: Vec::new() };
+    pub(super) fn from_control(ctrl_msgs: Vec<ControlMessage>) -> Result<Self> {
+        let mut result = Self::default();
 
         for ctrl_msg in ctrl_msgs.into_iter() {
             let ControlMessage::Unix(unix_ctrl_msg) = ctrl_msg;
@@ -166,21 +211,50 @@ impl AuxiliaryData {
 
             match unix_ctrl_msg.0 {
                 Message::Files(FileMessage { mut files }) => result.files.append(&mut files),
-                // TODO: Deal with other kinds of UNIX control messages.
+                Message::Cred(CredMessage { cred: ucred }) => {
+                    let cred = SocketCred::<ReadOp>::new_current();
+                    if cred.to_c_user_cred() != ucred {
+                        // FIXME: Allow this if we're root or have the CAP_SYS_ADMIN capability.
+                        return_errno_with_message!(
+                            Errno::EPERM,
+                            "setting others' credentials is not allowed"
+                        );
+                    }
+                    result.cred = Some(cred);
+                }
             }
         }
 
-        result
+        Ok(result)
     }
 
-    /// Converts the auxiliary data back to the control messages.
-    pub(super) fn into_control(self) -> Vec<ControlMessage> {
+    /// Fill the current credentials if there are no credentials.
+    pub(super) fn fill_cred(&mut self) {
+        if self.cred.is_none() {
+            self.cred = Some(SocketCred::<ReadOp>::new_current());
+        }
+    }
+
+    /// Generates the control messages from the auxiliary data.
+    pub(super) fn generate_control(&mut self, is_pass_cred: bool) -> Vec<ControlMessage> {
         let mut ctrl_msgs = Vec::new();
 
-        let Self { files } = self;
+        let Self { files, cred } = self;
+
+        if is_pass_cred {
+            let unix_ctrl_msg = UnixControlMessage(Message::Cred(CredMessage {
+                cred: cred
+                    .as_ref()
+                    .map(SocketCred::to_c_user_cred)
+                    .unwrap_or_else(CUserCred::new_overflow),
+            }));
+            ctrl_msgs.push(ControlMessage::Unix(unix_ctrl_msg));
+        }
 
         if !files.is_empty() {
-            let unix_ctrl_msg = UnixControlMessage(Message::Files(FileMessage { files }));
+            let unix_ctrl_msg = UnixControlMessage(Message::Files(FileMessage {
+                files: core::mem::take(files),
+            }));
             ctrl_msgs.push(ControlMessage::Unix(unix_ctrl_msg));
         }
 
@@ -189,6 +263,25 @@ impl AuxiliaryData {
 
     /// Returns whether the auxiliary data contains nothing.
     pub(super) fn is_empty(&self) -> bool {
-        self.files.is_empty()
+        self.files.is_empty() && self.cred.is_none()
+    }
+
+    /// Returns whether the auxiliary data can be treated as a subset of the other one.
+    ///
+    /// In stream sockets, we can receive more bytes at once if the current auxiliary data is a
+    /// subset of the subsequent auxiliary data.
+    pub(super) fn is_subset_of(&self, other: &Self, is_pass_cred: bool) -> bool {
+        if !self.files.is_empty() {
+            return false;
+        }
+
+        if is_pass_cred
+            && self.cred.as_ref().map(SocketCred::to_c_user_cred)
+                != other.cred.as_ref().map(SocketCred::to_c_user_cred)
+        {
+            return false;
+        }
+
+        true
     }
 }

@@ -12,7 +12,7 @@ use crate::{
         unix::{
             addr::UnixSocketAddrBound, cred::SocketCred, ctrl_msg::AuxiliaryData, UnixSocketAddr,
         },
-        util::{ControlMessage, SockShutdownCmd},
+        util::{options::SocketOptionSet, ControlMessage, SockShutdownCmd},
     },
     prelude::*,
     process::signal::Pollee,
@@ -37,6 +37,7 @@ impl Connected {
         peer_state: EndpointState,
         cred: SocketCred,
         peer_cred: SocketCred,
+        options: &SocketOptionSet,
     ) -> (Connected, Connected) {
         let (this_writer, peer_reader) = RingBuffer::new(UNIX_STREAM_DEFAULT_BUF_SIZE).split();
         let (peer_writer, this_reader) = RingBuffer::new(UNIX_STREAM_DEFAULT_BUF_SIZE).split();
@@ -44,12 +45,14 @@ impl Connected {
         let this_inner = Inner {
             addr: SpinLock::new(addr),
             state,
+            is_pass_cred: AtomicBool::new(options.pass_cred()),
             all_aux: Mutex::new(VecDeque::new()),
             has_aux: AtomicBool::new(false),
         };
         let peer_inner = Inner {
             addr: SpinLock::new(peer_addr),
             state: peer_state,
+            is_pass_cred: AtomicBool::new(false),
             all_aux: Mutex::new(VecDeque::new()),
             has_aux: AtomicBool::new(false),
         };
@@ -110,40 +113,85 @@ impl Connected {
         let no_aux_len = reader.len();
 
         let peer_end = self.inner.peer_end();
+        let is_pass_cred = self.inner.this_end().is_pass_cred.load(Ordering::Relaxed);
 
         // Fast path: There are no auxiliary data to receive.
         if !peer_end.has_aux.load(Ordering::Relaxed) {
             let read_len = self
                 .inner
                 .read_with(move || reader.read_fallible_with_max_len(writer, no_aux_len))?;
-            return Ok((read_len, Vec::new()));
+            let ctrl_msgs = if is_pass_cred {
+                AuxiliaryData::default().generate_control(is_pass_cred)
+            } else {
+                Vec::new()
+            };
+            return Ok((read_len, ctrl_msgs));
         }
 
         let mut all_aux = peer_end.all_aux.lock();
+        let mut aux_prev_data: Option<AuxiliaryData> = None;
+        let mut read_tot_len = 0;
 
-        let read_start = reader.head();
-        let (len_to_aux, len_to_aux_end) = if let Some(front) = all_aux.front() {
-            ((front.start - read_start).0, (front.end - read_start).0)
-        } else {
-            (usize::MAX, usize::MAX)
+        let aux_data = loop {
+            let read_start = reader.head();
+            let (aux_len, aux_front) = if let Some(front) = all_aux.front_mut() {
+                if front.start == read_start {
+                    ((front.end - read_start).0, Some(front))
+                } else {
+                    ((front.start - read_start).0, None)
+                }
+            } else {
+                (usize::MAX, None)
+            };
+
+            // Unless the auxiliary data we have already received is a subset of the current
+            // auxiliary data, we cannot receive additional bytes.
+            if let Some(prev) = aux_prev_data.as_mut() {
+                let is_subset = if let Some(front) = aux_front.as_ref() {
+                    prev.is_subset_of(&front.data, is_pass_cred)
+                } else {
+                    prev.is_subset_of(&AuxiliaryData::default(), is_pass_cred)
+                };
+                if !is_subset {
+                    break prev;
+                }
+            }
+
+            // Read the payload bytes of the current auxiliary data.
+            let read_res = self
+                .inner
+                .read_with(|| reader.read_fallible_with_max_len(writer, aux_len));
+            let read_len = match read_res {
+                Ok(read_len) => read_len,
+                Err(_) if read_tot_len > 0 => break aux_prev_data.as_mut().unwrap(),
+                Err(err) => return Err(err),
+            };
+            read_tot_len += read_len;
+
+            // Record the current auxiliary data. Break if the read is incomplete.
+            if let Some(front) = aux_front {
+                if read_len < aux_len {
+                    front.start += read_len;
+                    break &mut front.data;
+                }
+                aux_prev_data = Some(all_aux.pop_front().unwrap().data);
+            } else {
+                aux_prev_data = Some(AuxiliaryData::default());
+                if read_len < aux_len {
+                    break aux_prev_data.as_mut().unwrap();
+                }
+            }
         };
 
-        // It is not allowed to receive two sets of auxiliary data in one `recvmsg`. So we cannot
-        // read more than `len_to_aux_end` bytes.
-        let read_len = self
-            .inner
-            .read_with(move || reader.read_fallible_with_max_len(writer, len_to_aux_end))?;
-        if read_len <= len_to_aux {
-            return Ok((read_len, Vec::new()));
-        }
+        drop(reader);
 
-        // We have received the first set of auxiliary data.
-        let ctrl_msgs = all_aux.pop_front().unwrap().data.into_control();
+        let ctrl_msgs = aux_data.generate_control(is_pass_cred);
+        debug_assert_ne!(read_tot_len, 0);
         peer_end
             .has_aux
             .store(!all_aux.is_empty(), Ordering::Relaxed);
 
-        Ok((read_len, ctrl_msgs))
+        Ok((read_tot_len, ctrl_msgs))
     }
 
     pub(super) fn try_write(
@@ -158,19 +206,23 @@ impl Connected {
             return Ok(0);
         }
 
+        let this_end = self.inner.this_end();
+        let need_pass_cred = this_end.is_pass_cred.load(Ordering::Relaxed)
+            || self.inner.peer_end().is_pass_cred.load(Ordering::Relaxed);
+
         // Fast path: There are no auxiliary data to transmit.
-        if aux_data.is_empty() {
+        if aux_data.is_empty() && !need_pass_cred {
             let mut writer = self.writer.lock();
             return self.inner.write_with(move || writer.write_fallible(reader));
         }
 
-        let this_end = self.inner.this_end();
         let mut all_aux = this_end.all_aux.lock();
 
         // No matter we succeed later or not, set the flag first to ensure that the auxiliary
         // data are always visible to `try_recv`.
         this_end.has_aux.store(true, Ordering::Relaxed);
 
+        // Write the payload bytes.
         let (write_start, write_res) = {
             let mut writer = self.writer.lock();
             let write_start = writer.tail();
@@ -184,6 +236,11 @@ impl Connected {
             return write_res;
         };
 
+        if need_pass_cred {
+            aux_data.fill_cred();
+        }
+
+        // Store the auxiliary data.
         let aux_range = RangedAuxiliaryData {
             data: core::mem::take(aux_data),
             start: write_start,
@@ -210,6 +267,13 @@ impl Connected {
 
     pub(super) fn is_write_shutdown(&self) -> bool {
         self.inner.is_shutdown()
+    }
+
+    pub(super) fn set_pass_cred(&self, is_pass_cred: bool) {
+        self.inner
+            .this_end()
+            .is_pass_cred
+            .store(is_pass_cred, Ordering::Relaxed);
     }
 
     pub(super) fn check_io_events(&self) -> IoEvents {
@@ -245,6 +309,7 @@ impl Drop for Connected {
 struct Inner {
     addr: SpinLock<Option<UnixSocketAddrBound>>,
     state: EndpointState,
+    is_pass_cred: AtomicBool,
     // Lock order: `reader` -> `all_aux` & `all_aux` -> `writer`
     all_aux: Mutex<VecDeque<RangedAuxiliaryData>>,
     has_aux: AtomicBool,

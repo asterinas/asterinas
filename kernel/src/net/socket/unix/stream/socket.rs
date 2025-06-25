@@ -33,6 +33,7 @@ use crate::{
 };
 
 pub struct UnixStreamSocket {
+    // Lock order: `state` first, `options` second
     state: RwMutex<Takeable<State>>,
     options: RwMutex<OptionSet>,
 
@@ -160,6 +161,7 @@ impl UnixStreamSocket {
 
     pub fn new_pair(is_nonblocking: bool) -> (Arc<Self>, Arc<Self>) {
         let cred = SocketCred::<ReadDupOp>::new_current();
+        let options = OptionSet::new();
 
         let (conn_a, conn_b) = Connected::new_pair(
             None,
@@ -168,11 +170,11 @@ impl UnixStreamSocket {
             EndpointState::default(),
             cred.dup().restrict(),
             cred.restrict(),
+            &options.socket,
         );
-        let options = OptionSet::new();
         (
-            Self::new_connected(conn_a, options.clone(), is_nonblocking),
-            Self::new_connected(conn_b, options, is_nonblocking),
+            Self::new_connected(conn_a, options, is_nonblocking),
+            Self::new_connected(conn_b, OptionSet::new(), is_nonblocking),
         )
     }
 
@@ -205,6 +207,7 @@ impl UnixStreamSocket {
 
     fn try_connect(&self, backlog: &Arc<Backlog>) -> Result<()> {
         let mut state = self.state.write();
+        let options = self.options.read();
 
         state.borrow_result(|owned_state| {
             let init = match owned_state {
@@ -229,7 +232,8 @@ impl UnixStreamSocket {
                 }
             };
 
-            let connected = match backlog.push_incoming(init, self.pollee.clone()) {
+            let connected = match backlog.push_incoming(init, self.pollee.clone(), &options.socket)
+            {
                 Ok(connected) => connected,
                 Err((err, init)) => return (State::Init(init), Err(err)),
             };
@@ -399,7 +403,7 @@ impl Socket for UnixStreamSocket {
                 ),
             }
         }
-        let mut auxiliary_data = AuxiliaryData::from_control(control_messages);
+        let mut auxiliary_data = AuxiliaryData::from_control(control_messages)?;
 
         self.block_on(IoEvents::OUT, || {
             self.try_send(reader, &mut auxiliary_data, flags)
@@ -468,7 +472,7 @@ impl Socket for UnixStreamSocket {
 fn do_unix_getsockopt(option: &mut dyn SocketOption, state: &State) -> Result<()> {
     match_sock_option_mut!(option, {
         socket_peer_cred: PeerCred => {
-            let peer_cred = state.peer_cred().unwrap_or_else(CUserCred::new_unknown);
+            let peer_cred = state.peer_cred().unwrap_or_else(CUserCred::new_invalid);
             socket_peer_cred.set(peer_cred);
         },
         socket_peer_groups: PeerGroups => {
@@ -490,4 +494,11 @@ impl GetSocketLevelOption for State {
     }
 }
 
-impl SetSocketLevelOption for State {}
+impl SetSocketLevelOption for State {
+    fn set_pass_cred(&self, pass_cred: bool) {
+        match self {
+            Self::Connected(connected) => connected.set_pass_cred(pass_cred),
+            Self::Init(_) | Self::Listen(_) => {}
+        }
+    }
+}

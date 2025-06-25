@@ -123,7 +123,7 @@ impl SocketOptionSet {
                 socket_pass_cred.set(pass_cred);
             },
             socket_peer_cred: PeerCred => {
-                let peer_cred = CUserCred::new_unknown();
+                let peer_cred = CUserCred::new_invalid();
                 socket_peer_cred.set(peer_cred);
             },
             socket_accept_conn: AcceptConn => {
@@ -198,6 +198,7 @@ impl SocketOptionSet {
                 // sockets for setting and getting.
                 let pass_cred = socket_pass_cred.get().unwrap();
                 self.set_pass_cred(*pass_cred);
+                socket.set_pass_cred(*pass_cred);
             },
             socket_sendbuf_force: SendBufForce => {
                 check_current_privileged()?;
@@ -263,4 +264,6 @@ pub(in crate::net) trait SetSocketLevelOption {
     fn set_keep_alive(&self, _keep_alive: bool) -> NeedIfacePoll {
         NeedIfacePoll::FALSE
     }
+    /// Sets whether receipt of the credentials of the sending process is enabled.
+    fn set_pass_cred(&self, _pass_cred: bool) {}
 }
