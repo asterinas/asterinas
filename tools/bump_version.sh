@@ -169,7 +169,7 @@ update_project_dependencies() {
 
     # Automatically bump Cargo.lock files
     cargo update -p aster-nix --precise $new_version # For Cargo.lock
-    cd ../osdk && cargo update -p cargo-osdk --precise $new_version # For osdk/Cargo.lock
+    cd ${OSDK_DIR} && cargo update -p cargo-osdk --precise $new_version # For osdk/Cargo.lock
 }
 
 # Synchronize project version to Docker version (update VERSION)
@@ -220,7 +220,8 @@ OSTD_MACROS_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/libs/ostd-macros/Cargo.toml
 LINUX_BOOT_PARAMS_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/libs/linux-bzimage/boot-params/Cargo.toml
 LINUX_BZIMAGE_BUILDER_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/libs/linux-bzimage/builder/Cargo.toml
 LINUX_BZIMAGE_SETUP_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/libs/linux-bzimage/setup/Cargo.toml
-OSDK_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/Cargo.toml
+OSDK_DIR=${ASTER_SRC_DIR}/osdk
+OSDK_CARGO_TOML_PATH=${OSDK_DIR}/Cargo.toml
 OSDK_TEST_RUNNER_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/deps/test-kernel/Cargo.toml
 OSDK_FRAME_ALLOCATOR_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/deps/frame-allocator/Cargo.toml
 OSDK_HEAP_ALLOCATOR_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/deps/heap-allocator/Cargo.toml
