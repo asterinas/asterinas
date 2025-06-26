@@ -637,7 +637,8 @@ fn try_merge(left: &VmMapping, right: &VmMapping) -> Option<VmMapping> {
     let vmo = match (&left.vmo, &right.vmo) {
         (None, None) => None,
         (Some(l_vmo), Some(r_vmo)) if Arc::ptr_eq(&l_vmo.vmo.0, &r_vmo.vmo.0) => {
-            let is_offset_contiguous = r_vmo.range.start - l_vmo.range.start == left.map_size()
+            let is_offset_contiguous = l_vmo.range.start.checked_add(left.map_size())
+                == Some(r_vmo.range.start)
                 && l_vmo.range.end - l_vmo.range.start >= left.map_size();
             if !is_offset_contiguous {
                 return None;
