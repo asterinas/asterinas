@@ -17,6 +17,7 @@ use super::{
     task_set::TaskSet,
 };
 use crate::{
+    fs::device::DeviceId,
     prelude::*,
     process::{status::StopWaitStatus, WaitOptions},
     sched::{AtomicNice, Nice},
@@ -95,7 +96,7 @@ pub struct Process {
 
     /// Whether the process has a subreaper that will reap it when the
     /// process becomes orphaned.
-    ///  
+    ///
     /// If `has_child_subreaper` is true in a `Process`, this attribute should
     /// also be true for all of its descendants.
     pub(super) has_child_subreaper: AtomicBool,
@@ -575,6 +576,16 @@ impl Process {
         session_inner.insert_process_group(new_process_group);
 
         Ok(())
+    }
+
+    /// Returns the device id of the controlling terminal, if present.
+    pub fn tty_id(&self) -> Option<DeviceId> {
+        let main_thread = self.main_thread();
+        let file_table = main_thread.as_posix_thread()?.file_table().lock();
+        let file_table_guard = file_table.as_ref()?.read();
+        let stdin = file_table_guard.get_file(0).ok()?;
+        let inode = stdin.as_inode_or_err().ok()?.dentry().inode();
+        inode.as_device().map(|dev| dev.id())
     }
 
     // ************** Virtual Memory *************

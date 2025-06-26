@@ -64,6 +64,12 @@ impl DeviceId {
     pub fn minor(&self) -> u32 {
         ((self.0 >> 12) & 0xffff_ff00 | self.0 & 0x0000_00ff) as u32
     }
+
+    pub fn to_dev_t(&self) -> u32 {
+        let major = self.major();
+        let minor = self.minor();
+        ((major & 0xff) << 8) | (minor & 0xff)
+    }
 }
 
 impl Debug for DeviceId {

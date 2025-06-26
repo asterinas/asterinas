@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::borrow::ToOwned;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use aster_rights::{ReadDupOp, ReadOp, WriteOp};
@@ -94,6 +95,13 @@ impl PosixThread {
 
     pub fn thread_name(&self) -> &Mutex<Option<ThreadName>> {
         &self.name
+    }
+
+    pub fn thread_name_as_string(&self) -> Option<String> {
+        let thread_name = self.name.lock();
+        let name = thread_name.as_ref()?.name().ok()??;
+        let name = name.to_str().ok()?.to_owned();
+        Some(name)
     }
 
     pub fn file_table(&self) -> &Mutex<Option<RoArc<FileTable>>> {
