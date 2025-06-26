@@ -1,0 +1,48 @@
+name: Publish API Docs
+
+on:
+  # Manally run
+  workflow_dispatch:
+  # Pull request events for checking API docs
+  pull_request:
+  # Scheduled events for nightly API docs
+  schedule:
+    # UTC 00:00 everyday
+    - cron: "0 0 * * *"
+  # Events for API docs of new release
+  push:
+    branches:
+      - main
+    paths:
+      - VERSION
+  
+jobs: 
+  check_api_docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: asterinas/asterinas:0.15.2-20250613
+
+    steps: 
+      - uses: actions/checkout@v4
+
+      - name: Check API docs
+        if: github.event_name == 'pull_request'
+        run: ./tools/github_workflows/publish_api_docs.sh --dry-run
+
+      - name: Build & Upload Nightly API Docs
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          API_DOCS_NIGHTLY_PUBLISH_KEY: ${{ secrets.API_DOCS_NIGHTLY_PUBLISH_KEY }}
+        run: |
+          KEY_FILE=./api_docs_nightly_publish_key
+          echo "$API_DOCS_NIGHTLY_PUBLISH_KEY\n" > ${KEY_FILE}
+          ./tools/github_workflows/publish_api_docs.sh nightly ${KEY_FILE} 
+
+      - name: Build & Upload Release API Docs
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        env:
+          API_DOCS_PUBLISH_KEY: ${{ secrets.API_DOCS_PUBLISH_KEY }}
+        run: |
+          KEY_FILE=./api_docs_publish_key
+          echo "$API_DOCS_PUBLISH_KEY\n" > ${KEY_FILE}
+          ./tools/github_workflows/publish_api_docs.sh release ${KEY_FILE} 

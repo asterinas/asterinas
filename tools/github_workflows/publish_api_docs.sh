@@ -9,24 +9,34 @@ set -e
 
 # Print help message
 print_help() {
-    echo "Usage: $0 [nightly | release] <key_file>"
+    echo "Usage: $0 [--dry-run | --nightly <key_file> | --release <key_file>]"
     echo ""
     echo "Options:"
-    echo "    nightly:  Update nightly API documentations"
-    echo "    release:  Update API documentations of a new version"
-    echo "key_file: The path to the file that stores the SSH key"
+    echo "    --dry-run    Build documentation without uploading."
+    echo "    nightly      Build and upload nightly API documentation."
+    echo "    release      Build and upload API documentation for a new version."
+    echo "    key_file     Path to the file that stores the SSH key. Required if documentation needs to be uploaded."
 }
 
 # Validate the command line parameters
 validate_parameter() {
-    if [ "$#" -ne 2 ]; then
-        echo "Error: Please provide both the option and file parameters."
-        print_help
-        exit 1
+    if [ "$1" = "--dry-run" ]; then
+        if [ "$#" -ne 1 ]; then
+            echo "Error: '--dry-run' mode does not accept additional arguments."
+            print_help
+            exit 1
+        fi
+        return
     fi
 
     if [ "$1" != "nightly" ] && [ "$1" != "release" ]; then
         echo "Error: Invalid option. Please provide either 'nightly' or 'release' as the first parameter."
+        print_help
+        exit 1
+    fi
+
+    if [ "$#" -ne 2 ]; then
+        echo "Error: Please provide both the option and file parameters."
         print_help
         exit 1
     fi
@@ -38,12 +48,17 @@ validate_parameter() {
     fi
 }
 
-# Build documentation of ostd
+# Build documentation of all crates to publish
 build_api_docs() {
     cd "${ASTER_SRC_DIR}"
     make install_osdk
-    cd "${ASTER_SRC_DIR}/ostd"
-    cargo osdk doc
+    # Crates depend on OSTD, including OSTD itself
+    CRATES="ostd osdk/deps/frame-allocator osdk/deps/heap-allocator osdk/deps/test-kernel"
+    for CRATE in $CRATES; do
+        pushd $CRATE
+        RUSTDOCFLAGS="-Dwarnings" cargo osdk doc
+        popd
+    done
 }
 
 # Git clone the API documentation repo
@@ -118,12 +133,16 @@ validate_parameter "$@"
 SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 ASTER_SRC_DIR=${SCRIPT_DIR}/../..
 WORK_DIR=${ASTER_SRC_DIR}/..
-SSH_KEY_FILE=$(realpath "$2")
 CLONED_REPO_DIR=temp_api_docs
 KNOWN_HOSTS_FILE="${WORK_DIR}/known_hosts"
 
 build_api_docs
 
+if [ "$1" = "--dry-run" ]; then
+    exit 0
+fi
+
+SSH_KEY_FILE=$(realpath "$2")
 if [ "$1" = "nightly" ]; then
     REPO_URL=git@github.com:asterinas/api-docs-nightly.git
     clone_repo
