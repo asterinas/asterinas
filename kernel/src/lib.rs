@@ -47,6 +47,11 @@ extern crate controlled;
 #[macro_use]
 extern crate getset;
 
+#[cfg(target_arch = "x86_64")]
+#[path = "arch/x86/mod.rs"]
+pub mod arch;
+#[cfg(target_arch = "riscv64")]
+#[path = "arch/riscv/mod.rs"]
 pub mod arch;
 pub mod context;
 pub mod cpu;

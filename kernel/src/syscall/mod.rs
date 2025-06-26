@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Read the Cpu ctx content then dispatch syscall to corresponding handler
-//! The each sub module contains functions that handle real syscall logic.
+//! System call handlers.
+
 pub use clock_gettime::ClockId;
 use ostd::cpu::context::UserContext;
 pub use timer_create::create_timer;
@@ -11,6 +11,11 @@ use crate::{context::Context, cpu::LinuxAbi, prelude::*};
 mod accept;
 mod access;
 mod alarm;
+#[cfg(target_arch = "x86_64")]
+#[path = "arch/x86.rs"]
+mod arch;
+#[cfg(target_arch = "riscv64")]
+#[path = "arch/riscv.rs"]
 mod arch;
 mod arch_prctl;
 mod bind;
