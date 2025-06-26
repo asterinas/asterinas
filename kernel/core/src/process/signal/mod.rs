@@ -151,6 +151,8 @@ pub(crate) fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) {
                 const SYSCALL_INSTR_LEN: usize = 4; // ecall
                 #[cfg(target_arch = "loongarch64")]
                 const SYSCALL_INSTR_LEN: usize = 4; // syscall
+                #[cfg(target_arch = "aarch64")]
+                const SYSCALL_INSTR_LEN: usize = 4; // svc
 
                 user_ctx.set_syscall_ret(orig_syscall_ret);
                 user_ctx
@@ -398,16 +400,16 @@ pub(crate) fn handle_user_signal(
             );
             let fpu_context_addr = (ucontext_addr as usize) + size_of::<ucontext_t>();
         }
-        target_arch = "loongarch64" => {
-            // FIXME: It seems that we need to allocate an `sctx_info` structure.
-            // Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/loongarch/kernel/signal.c#L848>
+        any(target_arch = "loongarch64", target_arch = "aarch64") => {
+            // FIXME: Allocate the FPU context.
+            // Example: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/loongarch/kernel/signal.c#L848>
             let ucontext_addr = alloc_aligned_in_user_stack(
                 stack_pointer,
                 size_of::<ucontext_t>() + fpu_context_bytes.len(),
                 align_of::<ucontext_t>(),
             );
-            // TODO: Set the flags in the context structure.
-            // Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/loongarch/kernel/signal.c#L805>
+            // FIXME: Set the FPU flags
+            // Example: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/loongarch/kernel/signal.c#L805>
             let fpu_context_addr = (ucontext_addr as usize) + size_of::<ucontext_t>();
         }
         _ => {
@@ -446,6 +448,9 @@ pub(crate) fn handle_user_signal(
         }
         any(target_arch = "riscv64", target_arch = "loongarch64") => {
             user_ctx.set_ra(retaddr);
+        }
+        target_arch = "aarch64" => {
+            user_ctx.set_x30(retaddr);
         }
         _ => {
             compile_error!("unsupported target");
