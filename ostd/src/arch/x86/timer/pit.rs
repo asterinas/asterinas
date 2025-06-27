@@ -131,7 +131,7 @@ enum Channel {
     /// If bit 4 is clear, then for any/all PIT channels selected with bits 1 to 3,
     /// the next read of the corresponding data port will return a status byte.
     ///
-    /// Ref: https://wiki.osdev.org/Programmable_Interval_Timer#Read_Back_Command
+    /// Ref: <https://wiki.osdev.org/Programmable_Interval_Timer#Read_Back_Command>.
     ReadBackCommand = 0b11,
 }
 
@@ -150,7 +150,7 @@ sensitive_io_port! {
 
         /// The output from PIT channel 2 is connected to the PC speaker, so the frequency of the
         /// output determines the frequency of the sound produced by the speaker. For more information,
-        /// check https://wiki.osdev.org/PC_Speaker.
+        /// check <https://wiki.osdev.org/PC_Speaker>.
         static CHANNEL2_PORT: IoPort<u8, WriteOnlyAccess> = IoPort::new(0x42);
 
         /// PIT command port.

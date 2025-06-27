@@ -19,7 +19,7 @@
 //! allocator based on the buddy system. It is by default shipped with OSDK
 //! for users that don't have special requirements on the frame allocator.
 //!
-//! [`GlobalFrameAllocator`]: ostd::mm::GlobalFrameAllocator
+//! [`GlobalFrameAllocator`]: ostd::mm::frame::GlobalFrameAllocator
 //! [`global_frame_allocator`]: ostd::global_frame_allocator
 
 // The heap allocator usually depends on frame allocation. If we depend on heap

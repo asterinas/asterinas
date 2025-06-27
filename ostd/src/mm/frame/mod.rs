@@ -23,7 +23,7 @@
 //!    "alias XOR mutability" rule.
 //!
 //! The kind of a frame is determined by the type of its metadata. Untyped
-//! frames have its metadata type that implements the [`UntypedFrameMeta`]
+//! frames have its metadata type that implements the [`AnyUFrameMeta`]
 //! trait, while typed frames don't.
 //!
 //! Frames can have dedicated metadata, which is implemented in the [`meta`]

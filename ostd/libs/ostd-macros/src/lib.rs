@@ -111,8 +111,8 @@ pub fn global_frame_allocator(_attr: TokenStream, item: TokenStream) -> TokenStr
 /// This attribute is not to be confused with Rust's built-in
 /// [`global_allocator`] attribute, which applies to a static variable
 /// implementing the unsafe `GlobalAlloc` trait. In contrast, the
-/// [`global_heap_allocator`] attribute does not require the heap allocator to
-/// implement an unsafe trait. [`global_heap_allocator`] eventually relies on
+/// [`macro@global_heap_allocator`] attribute does not require the heap allocator to
+/// implement an unsafe trait. [`macro@global_heap_allocator`] eventually relies on
 /// [`global_allocator`] to customize Rust's heap allocator.
 ///
 /// # Example

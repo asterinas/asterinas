@@ -68,7 +68,7 @@ use crate::{
 /// assert_eq!(cursor.current_meta().unwrap().mark, 1);
 /// ```
 ///
-/// [`from_in_use`]: Frame::from_in_use
+/// [`from_in_use`]: super::Frame::from_in_use
 pub struct LinkedList<M>
 where
     Link<M>: AnyFrameMeta,

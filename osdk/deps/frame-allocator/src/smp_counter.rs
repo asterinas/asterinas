@@ -7,8 +7,8 @@ use ostd::cpu::{all_cpus, local::StaticCpuLocal, CpuId};
 use core::sync::atomic::{AtomicIsize, Ordering};
 
 /// Defines a static fast SMP counter.
-///
-/// See [`FastSmpCounter`] for more details.
+//
+// See `FastSmpCounter` for more details.
 #[macro_export]
 macro_rules! fast_smp_counter {
     ($(#[$attr:meta])* $vis:vis static $name:ident : usize;) => { paste::paste!{

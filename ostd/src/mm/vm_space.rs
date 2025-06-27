@@ -5,9 +5,8 @@
 //! The [`VmSpace`] struct is provided to manage the virtual memory space of a
 //! user. Cursors are used to traverse and modify over the virtual memory space
 //! concurrently. The VM space cursor [`self::Cursor`] is just a wrapper over
-//! the page table cursor [`super::page_table::Cursor`], providing efficient,
-//! powerful concurrent accesses to the page table, and suffers from the same
-//! validity concerns as described in [`super::page_table::cursor`].
+//! the page table cursor, providing efficient, powerful concurrent accesses
+//! to the page table.
 
 use core::{ops::Range, sync::atomic::Ordering};
 
