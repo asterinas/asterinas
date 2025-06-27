@@ -19,7 +19,10 @@ use align_ext::AlignExt;
 use c_types::{siginfo_t, ucontext_t};
 use constants::SIGSEGV;
 pub use events::{SigEvents, SigEventsFilter};
-use ostd::{cpu::context::UserContext, user::UserContextApi};
+use ostd::{
+    cpu::context::{FpuState, UserContext},
+    user::UserContextApi,
+};
 pub use pause::{with_sigmask_changed, Pause};
 pub use poll::{PollAdaptor, PollHandle, Pollable, Pollee, Poller};
 use sig_action::{SigAction, SigActionFlags, SigDefaultAction};
@@ -197,23 +200,35 @@ pub fn handle_user_signal(
     let siginfo_addr = stack_pointer;
 
     // 2. Write ucontext_t.
-    stack_pointer = alloc_aligned_in_user_stack(stack_pointer, mem::size_of::<ucontext_t>(), 16)?;
+
+    // Store FPU state on stack
+    let mut fpu_state = ctx.thread_local.fpu_state().borrow_mut();
+    if ctx.task.fpu_activated() {
+        fpu_state.save();
+    }
+    let fpu_state_addr =
+        alloc_aligned_in_user_stack(stack_pointer, fpu_state.as_bytes().len(), 64)?;
+    let mut fpu_state_reader = VmReader::from(fpu_state.as_bytes());
+    user_space.write_bytes(fpu_state_addr as _, &mut fpu_state_reader)?;
+    // Reset CPU's current FPU state
+    *fpu_state = FpuState::init();
+    fpu_state.load();
+
+    stack_pointer = alloc_aligned_in_user_stack(fpu_state_addr, mem::size_of::<ucontext_t>(), 16)?;
     let mut ucontext = ucontext_t {
         uc_sigmask: mask.into(),
         ..Default::default()
     };
-    ucontext
-        .uc_mcontext
-        .inner
-        .gp_regs
-        .copy_from_raw(user_ctx.general_regs());
+    ucontext.uc_mcontext.copy_user_regs_from(user_ctx);
     let sig_context = ctx.thread_local.sig_context().get();
     if let Some(sig_context_addr) = sig_context {
         ucontext.uc_link = sig_context_addr;
     } else {
         ucontext.uc_link = 0;
     }
-    // TODO: store fp regs in ucontext
+    ucontext.uc_mcontext.set_fpu_state_addr(fpu_state_addr as _);
+    // Indicates the presence of FPU state.
+    ucontext.uc_flags = 0x1;
     user_space.write_val(stack_pointer as _, &ucontext)?;
     let ucontext_addr = stack_pointer;
     // Store the ucontext addr in sig context of current thread.

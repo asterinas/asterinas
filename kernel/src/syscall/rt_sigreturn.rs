@@ -41,11 +41,15 @@ pub fn sys_rt_sigreturn(ctx: &Context, user_ctx: &mut UserContext) -> Result<Sys
     } else {
         thread_local.sig_context().set(Some(ucontext.uc_link));
     };
-    ucontext
-        .uc_mcontext
-        .inner
-        .gp_regs
-        .copy_to_raw(user_ctx.general_regs_mut());
+    ucontext.uc_mcontext.copy_user_regs_to(user_ctx);
+
+    // Restore FPU state from stack
+    let fpu_state_addr = ucontext.uc_mcontext.fpu_state_addr();
+    let mut fpu_state = ctx.thread_local.fpu_state().borrow_mut();
+    let mut fpu_state_writer = VmWriter::from(fpu_state.as_bytes_mut());
+    ctx.user_space()
+        .read_bytes(fpu_state_addr, &mut fpu_state_writer)?;
+    fpu_state.load();
 
     // unblock sig mask
     let sig_mask = ucontext.uc_sigmask;

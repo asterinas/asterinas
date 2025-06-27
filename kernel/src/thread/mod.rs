@@ -22,6 +22,19 @@ pub mod work_queue;
 
 pub type Tid = u32;
 
+fn pre_schedule_handler() {
+    let Some(task) = Task::current() else {
+        return;
+    };
+    let Some(thread_local) = task.as_thread_local() else {
+        return;
+    };
+
+    if task.fpu_activated() {
+        thread_local.fpu_state().borrow_mut().save();
+    }
+}
+
 fn post_schedule_handler() {
     let task = Task::current().unwrap();
     let Some(thread_local) = task.as_thread_local() else {
@@ -32,9 +45,17 @@ fn post_schedule_handler() {
     if let Some(vmar) = root_vmar.as_ref() {
         vmar.vm_space().activate()
     }
+
+    #[cfg(target_arch = "x86_64")]
+    task.set_fpu_activated(false);
+
+    if task.fpu_activated() {
+        thread_local.fpu_state().borrow_mut().load();
+    }
 }
 
 pub(super) fn init() {
+    ostd::task::inject_pre_schedule_handler(pre_schedule_handler);
     ostd::task::inject_post_schedule_handler(post_schedule_handler);
     ostd::arch::trap::inject_user_page_fault_handler(exception::page_fault_handler);
 }

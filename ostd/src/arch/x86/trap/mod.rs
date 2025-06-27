@@ -38,7 +38,7 @@ use crate::{
         page_prop::{CachePolicy, PageProperty},
         PageFlags, PrivilegedPageFlags as PrivFlags, MAX_USERSPACE_VADDR, PAGE_SIZE,
     },
-    task::disable_preempt,
+    task::{disable_preempt, Task},
     trap::call_irq_callback_functions,
 };
 
@@ -265,6 +265,12 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
                 handle_kernel_page_fault(f, page_fault_addr);
             }
             disable_local_if(was_irq_enabled);
+        }
+        Some(CpuException::DEVICE_NOT_AVAILABLE) => {
+            if let Some(task) = Task::current() {
+                task.set_fpu_activated(true);
+                // FIXME: Why #NM triggered in kernel?
+            }
         }
         Some(exception) => {
             enable_local_if(was_irq_enabled);

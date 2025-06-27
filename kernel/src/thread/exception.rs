@@ -3,7 +3,7 @@
 #![expect(unused_variables)]
 
 use aster_rights::Full;
-use ostd::cpu::context::{CpuExceptionInfo, UserContext};
+use ostd::cpu::context::{CpuException, CpuExceptionInfo, UserContext};
 
 use crate::{
     current_userspace,
@@ -37,6 +37,13 @@ pub fn handle_exception(ctx: &Context, context: &UserContext) {
         if handle_page_fault_from_vmar(root_vmar, &page_fault_info).is_ok() {
             return;
         }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    if trap_info.cpu_exception() == CpuException::DEVICE_NOT_AVAILABLE {
+        ctx.task.set_fpu_activated(true);
+        ctx.thread_local.fpu_state().borrow_mut().load();
+        return;
     }
 
     generate_fault_signal(trap_info, ctx);

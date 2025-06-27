@@ -7,7 +7,8 @@ use alloc::{
 };
 
 use ostd::{
-    cpu::context::{cpuid, CpuException, CpuExceptionInfo, RawGeneralRegs, UserContext},
+    cpu::context::{cpuid, CpuException, CpuExceptionInfo, UserContext},
+    mm::Vaddr,
     Pod,
 };
 
@@ -50,30 +51,41 @@ impl LinuxAbi for UserContext {
     }
 }
 
-/// General-purpose registers.
-#[derive(Debug, Clone, Copy, Pod, Default)]
+/// Represents the context of a signal handler.
+///
+/// This contains the context saved before a signal handler is invoked and restored by sys_rt_sigreturn.
+#[derive(Clone, Copy, Debug, Default, Pod)]
 #[repr(C)]
-pub struct GpRegs {
-    pub rax: usize,
-    pub rbx: usize,
-    pub rcx: usize,
-    pub rdx: usize,
-    pub rsi: usize,
-    pub rdi: usize,
-    pub rbp: usize,
-    pub rsp: usize,
-    pub r8: usize,
-    pub r9: usize,
-    pub r10: usize,
-    pub r11: usize,
-    pub r12: usize,
-    pub r13: usize,
-    pub r14: usize,
-    pub r15: usize,
-    pub rip: usize,
-    pub rflags: usize,
-    pub fsbase: usize,
-    pub gsbase: usize,
+pub struct SigContext {
+    r8: usize,
+    r9: usize,
+    r10: usize,
+    r11: usize,
+    r12: usize,
+    r13: usize,
+    r14: usize,
+    r15: usize,
+    rdi: usize,
+    rsi: usize,
+    rbp: usize,
+    rbx: usize,
+    rdx: usize,
+    rax: usize,
+    rcx: usize,
+    rsp: usize,
+    rip: usize,
+    rflags: usize,
+    cs: u16,
+    gs: u16,
+    fs: u16,
+    ss: u16,
+    error_code: usize,
+    trap_num: usize,
+    old_mask: u64,
+    page_fault_addr: usize,
+    // A stack pointer to FPU context.
+    fpu_state: Vaddr,
+    reserved: [u64; 8],
 }
 
 macro_rules! copy_gp_regs {
@@ -96,18 +108,31 @@ macro_rules! copy_gp_regs {
         $dst.r15 = $src.r15;
         $dst.rip = $src.rip;
         $dst.rflags = $src.rflags;
-        $dst.fsbase = $src.fsbase;
-        $dst.gsbase = $src.gsbase;
     };
 }
 
-impl GpRegs {
-    pub fn copy_to_raw(&self, dst: &mut RawGeneralRegs) {
-        copy_gp_regs!(self, dst);
+impl SigContext {
+    pub fn copy_user_regs_to(&self, dst: &mut UserContext) {
+        let gp_regs = dst.general_regs_mut();
+        copy_gp_regs!(self, gp_regs);
     }
 
-    pub fn copy_from_raw(&mut self, src: &RawGeneralRegs) {
-        copy_gp_regs!(src, self);
+    pub fn copy_user_regs_from(&mut self, src: &UserContext) {
+        let gp_regs = src.general_regs();
+        copy_gp_regs!(gp_regs, self);
+
+        let trap_info = src.trap_information();
+        self.trap_num = trap_info.id;
+        self.error_code = trap_info.error_code;
+        self.page_fault_addr = trap_info.page_fault_addr;
+    }
+
+    pub fn fpu_state_addr(&self) -> Vaddr {
+        self.fpu_state
+    }
+
+    pub fn set_fpu_state_addr(&mut self, addr: Vaddr) {
+        self.fpu_state = addr;
     }
 }
 
