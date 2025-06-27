@@ -42,6 +42,14 @@ pub fn execute_forwarded_command(subcommand: &str, args: &Vec<String>, cfg_ktest
 
     cargo.env("RUSTFLAGS", rustflags);
 
+    // When generating documentation via `cargo doc`, the `--check-cfg cfg(ktest)` flag
+    // must be specified in both `RUSTFLAGS` and `RUSTDOCFLAGS`.
+    if subcommand == "doc" {
+        let env_rustdocflags = std::env::var("RUSTDOCFLAGS").unwrap_or_default();
+        let rustdocflags = env_rustdocflags + " --check-cfg cfg(ktest)";
+        cargo.env("RUSTDOCFLAGS", rustdocflags);
+    }
+
     let status = cargo.status().expect("Failed to execute cargo");
     if !status.success() {
         error_msg!("Command {:?} failed with status: {:?}", cargo, status);
