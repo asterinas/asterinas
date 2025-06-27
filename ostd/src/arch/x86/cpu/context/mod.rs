@@ -11,9 +11,8 @@ use core::{
 
 use bitflags::bitflags;
 use cfg_if::cfg_if;
+use int_to_c_enum::TryFromInt;
 use log::debug;
-use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
 use spin::Once;
 use x86::bits64::segmentation::wrfsbase;
 use x86_64::registers::{
@@ -250,7 +249,8 @@ macro_rules! define_cpu_exception {
     ( $([ $name: ident = $exception_id:tt, $exception_type:tt]),* ) => {
         /// CPU exception.
         #[expect(non_camel_case_types)]
-        #[derive(Debug, Copy, Clone, Eq, PartialEq, FromPrimitive)]
+        #[derive(Debug, Copy, Clone, Eq, PartialEq, TryFromInt)]
+        #[repr(u16)]
         pub enum CpuException {
             $(
                 #[doc = concat!("The ", stringify!($name), " exception")]
@@ -340,7 +340,7 @@ impl CpuException {
 
     /// Maps a `trap_num` to its corresponding CPU exception.
     pub fn to_cpu_exception(trap_num: u16) -> Option<CpuException> {
-        FromPrimitive::from_u16(trap_num)
+        CpuException::try_from(trap_num).ok()
     }
 }
 

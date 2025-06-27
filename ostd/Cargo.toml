@@ -27,8 +27,6 @@ int-to-c-enum = { path = "../kernel/libs/int-to-c-enum", version = "0.1.0" }
 intrusive-collections = { version = "0.9.6", features = ["nightly"] }
 linux-boot-params = { version = "0.15.2", path = "libs/linux-bzimage/boot-params" }
 log = "0.4"
-num = { version = "0.4", default-features = false }
-num-derive = { version = "0.4", default-features = false }
 num-traits = { version = "0.2", default-features = false }
 ostd-macros = { version = "0.15.2", path = "libs/ostd-macros" }
 ostd-test = { version = "0.15.2", path = "libs/ostd-test" }
