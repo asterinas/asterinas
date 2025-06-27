@@ -96,6 +96,8 @@ pub(crate) unsafe fn late_init_on_bsp() {
 ///
 /// This function must be called only once on each application processor.
 /// And it should be called after the BSP's call to [`init_on_bsp`].
+///
+/// [`init_on_bsp`]: crate::cpu::init_on_bsp
 pub(crate) unsafe fn init_on_ap() {
     timer::init_ap();
 }

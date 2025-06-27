@@ -138,6 +138,9 @@ unsafe fn set_this_cpu_id(id: u32) {
 ///
 /// The implementor must ensure that the current task is pinned to the current
 /// CPU while any one of the instances of the implemented structure exists.
+///
+/// [`DisabledLocalIrqGuard`]: crate::trap::irq::DisabledLocalIrqGuard
+/// [`DisabledPreemptGuard`]: crate::task::DisabledPreemptGuard
 pub unsafe trait PinCurrentCpu {
     /// Returns the ID of the current CPU.
     fn current_cpu(&self) -> CpuId {

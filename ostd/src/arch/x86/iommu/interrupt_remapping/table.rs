@@ -194,10 +194,10 @@ impl IrtEntry {
     /// The format of this field in various Interrupt Remapping modes is as follows:
     /// - Intel xAPIC Mode (IRTA_REG.EIME=0):
     ///     - 63:48 - Reserved (0)
-    ///     - 47:40 - APIC DestinationID[7:0]
+    ///     - 47:40 - APIC DestinationID\[7:0\]
     ///     - 39:32 - Reserved (0)
     /// - Intel x2APIC Mode (IRTA_REG.EIME=1):
-    ///     - 63:32 - APIC DestinationID[31:0]
+    ///     - 63:32 - APIC DestinationID\[31:0\]
     pub const fn destination_id(&self) -> u32 {
         const DST_MASK: u128 = 0xFFFF_FFFF << 32;
         ((self.0 & DST_MASK) >> 32) as u32
