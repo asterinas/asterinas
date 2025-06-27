@@ -175,13 +175,16 @@ impl VmMapping {
             return_errno_with_message!(Errno::EACCES, "perm check fails");
         }
 
-        let address = page_fault_info.address;
-
-        let page_aligned_addr = address.align_down(PAGE_SIZE);
+        let page_aligned_addr = page_fault_info.address.align_down(PAGE_SIZE);
         let is_write = page_fault_info.required_perms.contains(VmPerms::WRITE);
 
         if !is_write && self.vmo.is_some() && self.handle_page_faults_around {
-            let res = self.handle_page_faults_around(vm_space, address, rss_delta);
+            let res = self.handle_page_faults_around(
+                vm_space,
+                page_aligned_addr,
+                page_fault_info.required_perms,
+                rss_delta,
+            );
 
             // Errors caused by the "around" pages should be ignored, so here we
             // only return the error if the faulting page is still not mapped.
@@ -199,6 +202,21 @@ impl VmMapping {
             return res;
         }
 
+        self.handle_single_page_fault(
+            vm_space,
+            page_aligned_addr,
+            page_fault_info.required_perms,
+            rss_delta,
+        )
+    }
+
+    fn handle_single_page_fault(
+        &self,
+        vm_space: &VmSpace,
+        page_aligned_addr: Vaddr,
+        required_perms: VmPerms,
+        rss_delta: &mut RssDelta,
+    ) -> Result<()> {
         'retry: loop {
             let preempt_guard = disable_preempt();
             let mut cursor = vm_space.cursor_mut(
@@ -207,9 +225,10 @@ impl VmMapping {
             )?;
 
             let (va, item) = cursor.query().unwrap();
+            let is_write = required_perms.contains(VmPerms::WRITE);
             match item {
                 Some((frame, mut prop)) => {
-                    if VmPerms::from(prop.flags).contains(page_fault_info.required_perms) {
+                    if VmPerms::from(prop.flags).contains(required_perms) {
                         // The page fault is already handled maybe by other threads.
                         // Just flush the TLB and return.
                         TlbFlushOp::Range(va).perform_on_current();
@@ -246,7 +265,8 @@ impl VmMapping {
                 }
                 None => {
                     // Map a new frame to the page fault address.
-                    let (frame, is_readonly) = match self.prepare_page(address, is_write) {
+                    let (frame, is_readonly) = match self.prepare_page(page_aligned_addr, is_write)
+                    {
                         Ok((frame, is_readonly)) => (frame, is_readonly),
                         Err(VmoCommitError::Err(e)) => return Err(e),
                         Err(VmoCommitError::NeedIo(index)) => {
@@ -288,7 +308,7 @@ impl VmMapping {
 
     fn prepare_page(
         &self,
-        page_fault_addr: Vaddr,
+        page_aligned_addr: Vaddr,
         write: bool,
     ) -> core::result::Result<(UFrame, bool), VmoCommitError> {
         let mut is_readonly = false;
@@ -296,8 +316,8 @@ impl VmMapping {
             return Ok((FrameAllocOptions::new().alloc_frame()?.into(), is_readonly));
         };
 
-        let page_offset = page_fault_addr.align_down(PAGE_SIZE) - self.map_to_addr;
-        if !self.is_shared && page_offset >= vmo.size() {
+        let page_offset = page_aligned_addr - self.map_to_addr;
+        if !self.is_shared && page_offset >= vmo.valid_size() {
             // The page index is outside the VMO. This is only allowed in private mapping.
             return Ok((FrameAllocOptions::new().alloc_frame()?.into(), is_readonly));
         }
@@ -320,21 +340,32 @@ impl VmMapping {
     fn handle_page_faults_around(
         &self,
         vm_space: &VmSpace,
-        page_fault_addr: Vaddr,
+        page_aligned_addr: Vaddr,
+        required_perms: VmPerms,
         mut rss_delta: &mut RssDelta,
     ) -> Result<()> {
         const SURROUNDING_PAGE_NUM: usize = 16;
         const SURROUNDING_PAGE_ADDR_MASK: usize = !(SURROUNDING_PAGE_NUM * PAGE_SIZE - 1);
 
         let vmo = self.vmo.as_ref().unwrap();
-        let around_page_addr = page_fault_addr & SURROUNDING_PAGE_ADDR_MASK;
-        let size = min(vmo.size(), self.map_size.get());
-
+        let around_page_addr = page_aligned_addr & SURROUNDING_PAGE_ADDR_MASK;
+        let size = min(vmo.valid_size(), self.map_size.get());
         let mut start_addr = max(around_page_addr, self.map_to_addr);
         let end_addr = min(
             start_addr + SURROUNDING_PAGE_NUM * PAGE_SIZE,
             self.map_to_addr + size,
         );
+
+        // The page fault address falls outside the VMO bounds.
+        // Only a single page fault is handled in this situation.
+        if end_addr <= page_aligned_addr {
+            return self.handle_single_page_fault(
+                vm_space,
+                page_aligned_addr,
+                required_perms,
+                rss_delta,
+            );
+        }
 
         let vm_perms = self.perms - VmPerms::WRITE;
 
@@ -557,8 +588,13 @@ impl MappedVmo {
         Self { vmo, range }
     }
 
-    fn size(&self) -> usize {
-        self.range.len()
+    /// Returns the **valid** size of the `MappedVmo`.
+    ///
+    /// The **valid** size of a `MappedVmo` is the size of its accessible range
+    /// that actually falls within the bounds of the underlying VMO.
+    fn valid_size(&self) -> usize {
+        let vmo_size = self.vmo.size();
+        (self.range.start..vmo_size).len()
     }
 
     /// Gets the committed frame at the input offset in the mapped VMO.
