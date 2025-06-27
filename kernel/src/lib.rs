@@ -172,6 +172,11 @@ fn init_thread() {
     } else {
         QemuExitCode::Failed
     };
+    #[cfg(feature = "coverage")]
+    {
+        let coverage = ostd::coverage::dump_profraw();
+        ostd::early_println!("#### Coverage: {:p} {}", coverage.as_ptr(), coverage.len());
+    }
     exit_qemu(exit_code);
 }
 
