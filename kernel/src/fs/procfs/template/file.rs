@@ -6,7 +6,10 @@ use inherit_methods_macro::inherit_methods;
 
 use super::{Common, ProcFS};
 use crate::{
-    fs::utils::{FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata},
+    fs::{
+        notify::FsnotifyCommon,
+        utils::{FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata},
+    },
     prelude::*,
     process::{Gid, Uid},
 };
@@ -39,6 +42,7 @@ impl<F: FileOps> ProcFile<F> {
 impl<F: FileOps + 'static> Inode for ProcFile<F> {
     fn size(&self) -> usize;
     fn metadata(&self) -> Metadata;
+    fn fsnotify(&self) -> &FsnotifyCommon;
     fn ino(&self) -> u64;
     fn mode(&self) -> Result<InodeMode>;
     fn set_mode(&self, mode: InodeMode) -> Result<()>;
