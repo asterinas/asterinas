@@ -15,7 +15,7 @@ use core::{
     cell::{Cell, SyncUnsafeCell},
     ops::Deref,
     ptr::NonNull,
-    sync::atomic::AtomicBool,
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use kernel_stack::KernelStack;
@@ -69,6 +69,9 @@ pub struct Task {
     switched_to_cpu: AtomicBool,
 
     schedule_info: TaskScheduleInfo,
+
+    /// Indicates whether the task's FPU state is activated.
+    fpu_activated: AtomicBool,
 }
 
 impl Task {
@@ -135,6 +138,27 @@ impl Task {
             Some(self.user_ctx.as_ref().unwrap())
         } else {
             None
+        }
+    }
+
+    /// Returns true if the task's FpuState is activated.
+    pub fn fpu_activated(&self) -> bool {
+        self.fpu_activated.load(Ordering::Relaxed)
+    }
+
+    /// Sets if the task's FpuState is activated.
+    pub fn set_fpu_activated(&self, activated: bool) {
+        self.fpu_activated.store(activated, Ordering::Relaxed);
+        // SAFETY: Insert/Remove `Cr0Flags::TASK_SWITCHED` will not violate memory safety.
+        #[cfg(target_arch = "x86_64")]
+        unsafe {
+            use x86_64::registers::control::{Cr0, Cr0Flags};
+
+            if activated {
+                Cr0::update(|cr0| cr0.remove(Cr0Flags::TASK_SWITCHED));
+            } else {
+                Cr0::update(|cr0| cr0.insert(Cr0Flags::TASK_SWITCHED));
+            }
         }
     }
 }
@@ -252,6 +276,7 @@ impl TaskOptions {
                 cpu: AtomicCpuId::default(),
             },
             switched_to_cpu: AtomicBool::new(false),
+            fpu_activated: AtomicBool::new(true),
         };
 
         Ok(new_task)

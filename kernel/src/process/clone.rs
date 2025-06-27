@@ -248,7 +248,9 @@ fn clone_child_task(
 
     // Clone FPU state
     let mut fpu_state = thread_local.fpu_state().borrow_mut();
-    fpu_state.save();
+    if ctx.task.fpu_activated() {
+        fpu_state.save();
+    }
     let child_fpu_state = fpu_state.clone();
 
     let child_user_ctx = Arc::new(clone_user_ctx(
@@ -336,7 +338,9 @@ fn clone_child_process(
 
     // Clone FPU state
     let mut fpu_state = thread_local.fpu_state().borrow_mut();
-    fpu_state.save();
+    if ctx.task.fpu_activated() {
+        fpu_state.save();
+    }
     let child_fpu_state = fpu_state.clone();
 
     // Inherit the parent's signal mask

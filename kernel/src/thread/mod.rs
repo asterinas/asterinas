@@ -30,7 +30,9 @@ fn pre_schedule_handler() {
         return;
     };
 
-    thread_local.fpu_state().borrow_mut().save();
+    if task.fpu_activated() {
+        thread_local.fpu_state().borrow_mut().save();
+    }
 }
 
 fn post_schedule_handler() {
@@ -44,7 +46,12 @@ fn post_schedule_handler() {
         vmar.vm_space().activate()
     }
 
-    thread_local.fpu_state().borrow_mut().load();
+    #[cfg(target_arch = "x86_64")]
+    task.set_fpu_activated(false);
+
+    if task.fpu_activated() {
+        thread_local.fpu_state().borrow_mut().load();
+    }
 }
 
 pub(super) fn init() {
