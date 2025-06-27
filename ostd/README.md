@@ -18,4 +18,4 @@ Asterinas OSTD offers the following key values.
 
 ## OSTD APIs
 
-See [API docs](https://docs.rs/ostd/latest/ostd).
+See [API docs](https://asterinas.github.io/api-docs).
