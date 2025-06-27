@@ -13,7 +13,8 @@ if ! [ "$LEN" -eq "$LEN" ] || [ "$LEN" -lt 120 ]; then
     exit 1
 fi
 
-DIRNAME=/usr/local/nginx/html
+DIRNAME=/benchmark/nginx/html
+mkdir -p $DIRNAME
 FILENAME=${DIRNAME}/${LEN}bytes.html
 
 rm -f ${FILENAME}
