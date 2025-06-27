@@ -24,6 +24,9 @@ jobs:
     steps: 
       - uses: actions/checkout@v4
 
+      - name: Check API docs
+        run: ./tools/github_workflows/publish_osdk_and_ostd.sh --build-doc
+
       - name: Build & Upload Nightly API Docs
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         env:

@@ -13,16 +13,18 @@ ASTER_SRC_DIR=${SCRIPT_DIR}/../..
 
 # Print help message
 print_help() {
-    echo "Usage: $0 [--dry-run | --token REGISTRY_TOKEN]"
+    echo "Usage: $0 [--dry-run | --token REGISTRY_TOKEN | --build-doc]"
     echo ""
     echo "Options:"
     echo "  --dry-run:               Execute the publish check without actually publishing it."
     echo "  --token REGISTRY_TOKEN:  The token to authenticate with crates.io."
+    echo "  --build-doc:             Build documentation for all crates to publish"
 }
 
 # Parse the parameters
 DRY_RUN=""
 TOKEN=""
+BUILD_DOC=""
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --dry-run)
@@ -32,6 +34,10 @@ while [ "$#" -gt 0 ]; do
         --token)
             TOKEN="$2"
             shift 2
+            ;;
+        --build-doc)
+            BUILD_DOC="true"
+            shift
             ;;
         *)
             echo "Error: Invalid parameter: $1"
@@ -49,10 +55,12 @@ do_publish_for() {
     ADDITIONAL_ARGS="${@:2}"
     RF="$RUSTFLAGS --check-cfg cfg(ktest)"
 
-    if [ -n "$DRY_RUN" ]; then
+    if [ -n "$BUILD_DOC" ]; then
+        # Check documentation build
+        RUSTFLAGS=$RF RUSTDOCFLAGS="$RUSTDOCFLAGS --check-cfg cfg(ktest) -Dwarnings" cargo doc $ADDITIONAL_ARGS
+    elif [ -n "$DRY_RUN" ]; then
         # Perform checks
         RUSTFLAGS=$RF cargo publish --dry-run --allow-dirty $ADDITIONAL_ARGS
-        RUSTFLAGS=$RF cargo doc $ADDITIONAL_ARGS
     else
         RUSTFLAGS=$RF cargo publish --token $TOKEN $ADDITIONAL_ARGS
     fi
@@ -66,12 +74,12 @@ do_publish_for ostd/libs/linux-bzimage/setup \
     --target ../builder/src/x86_64-i386_pm-none.json \
     -Zbuild-std=core,alloc,compiler_builtins
 do_publish_for osdk
+do_publish_for ostd/libs/ostd-macros
 
 # All supported targets of OSTD, this array should keep consistent with
 # `package.metadata.docs.rs.targets` in `ostd/Cargo.toml`.
 TARGETS="x86_64-unknown-none"
 for TARGET in $TARGETS; do
-    do_publish_for ostd/libs/ostd-macros --target $TARGET
     do_publish_for ostd/libs/ostd-test --target $TARGET
     do_publish_for ostd --target $TARGET
     do_publish_for osdk/deps/frame-allocator --target $TARGET
