@@ -337,6 +337,7 @@ provided by Linux on x86-64 architecture.
 | 314	  | sched_setattr    | ✅              |
 | 315	  | sched_getattr    | ✅              |
 | 318	  | getrandom        | ✅              |
+| 319	  | memfd_create     | ✅              |
 | 322	  | execveat         | ✅              |
 | 327	  | preadv2          | ✅              |
 | 328	  | pwritev2         | ✅              |
