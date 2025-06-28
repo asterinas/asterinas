@@ -7,7 +7,7 @@ use spin::Once;
 
 use crate::arch::boot::DEVICE_TREE;
 
-/// Detect available RISC-V ISA extensions.
+/// Detects available RISC-V ISA extensions.
 pub fn init() {
     let mut global_isa_extensions = IsaExtensions::all();
 
@@ -36,7 +36,7 @@ pub fn init() {
     GLOBAL_ISA_EXTENSIONS.call_once(|| global_isa_extensions);
 }
 
-/// Check if the specified set of ISA extensions are available.
+/// Checks if the specified set of ISA extensions are available.
 pub fn has_extensions(required: IsaExtensions) -> bool {
     GLOBAL_ISA_EXTENSIONS.get().unwrap().contains(required)
 }
@@ -99,7 +99,7 @@ fn parse_isa_extensions_list(isa_extensions: &fdt::node::NodeProperty) -> IsaExt
 
 static GLOBAL_ISA_EXTENSIONS: Once<IsaExtensions> = Once::new();
 
-/// Macro for RISC-V ISA extension definition and lookup table generation
+/// A macro for RISC-V ISA extension definition and lookup table generation.
 macro_rules! define_isa_extensions {
     (
         $(
@@ -270,7 +270,7 @@ mod tests {
     }
 
     #[ktest]
-    fn test_isa_string_with_basic() {
+    fn isa_string_with_basic() {
         let result = parse_isa_string_wrapper("rv64imafdc_zicsr_zifencei");
         assert!(result.contains(IsaExtensions::I));
         assert!(result.contains(IsaExtensions::M));
@@ -285,7 +285,7 @@ mod tests {
     }
 
     #[ktest]
-    fn test_isa_string_edge_cases() {
+    fn isa_string_edge_cases() {
         // Empty string
         let result = parse_isa_string_wrapper("");
         assert!(result.is_empty());
@@ -308,7 +308,7 @@ mod tests {
     }
 
     #[ktest]
-    fn test_isa_string_unknown_extensions() {
+    fn isa_string_unknown_extensions() {
         // Should ignore unknown extensions without crashing
         let result = parse_isa_string_wrapper("rv64imafdc_zunknown_zicsr_zifencei");
         assert!(result.contains(IsaExtensions::I));
@@ -322,7 +322,7 @@ mod tests {
     }
 
     #[ktest]
-    fn test_isa_extensions_list_basic() {
+    fn isa_extensions_list_basic() {
         let result =
             parse_isa_extensions_list_wrapper(&["i", "m", "a", "f", "d", "c", "zicsr", "zifencei"]);
         assert!(result.contains(IsaExtensions::I));
@@ -338,7 +338,7 @@ mod tests {
     }
 
     #[ktest]
-    fn test_isa_extensions_list_edge_cases() {
+    fn isa_extensions_list_edge_cases() {
         // Empty list
         let result = parse_isa_extensions_list_wrapper(&[]);
         assert!(result.is_empty());
@@ -354,7 +354,7 @@ mod tests {
     }
 
     #[ktest]
-    fn test_isa_extensions_list_unknown_extensions() {
+    fn isa_extensions_list_unknown_extensions() {
         // Should ignore unknown extensions without crashing
         let result = parse_isa_extensions_list_wrapper(&[
             "i", "m", "a", "f", "d", "c", "zunknown", "zicsr", "zifencei",

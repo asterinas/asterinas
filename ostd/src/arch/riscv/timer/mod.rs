@@ -9,7 +9,7 @@ use core::{
 
 use crate::{
     arch::{self, boot::DEVICE_TREE},
-    cpu::{CpuId, IsaExtensions, PinCurrentCpu},
+    cpu::{extension::IsaExtensions, CpuId, PinCurrentCpu},
     timer::INTERRUPT_CALLBACKS,
     trap,
 };
@@ -107,7 +107,7 @@ fn set_next_timer_sstc() {
 }
 
 fn is_sstc_enabled() -> bool {
-    arch::cpu::has_extensions(IsaExtensions::SSTC)
+    arch::cpu::extension::has_extensions(IsaExtensions::SSTC)
 }
 
 fn get_next_when() -> u64 {
