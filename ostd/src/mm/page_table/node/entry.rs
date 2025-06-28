@@ -203,6 +203,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             let status = unsafe { Status::from_raw_inner(pa) };
             RcuDrop::new(PageTableNode::<C>::alloc_marked(level - 1, status))
         } else {
+            debug_assert!(is_huge_page);
             RcuDrop::new(PageTableNode::<C>::alloc(level - 1))
         };
 
@@ -215,6 +216,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         let mut pt_lock_guard = pt_ref.lock(guard);
 
         if is_huge_page {
+            debug_assert!(!is_huge_status);
             for i in 0..nr_subpage_per_huge::<C>() {
                 let small_pa = pa + i * page_size::<C>(level - 1);
                 let mut entry = pt_lock_guard.entry(i);

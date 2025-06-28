@@ -145,7 +145,9 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig>(
             cur_pt_addr = pt.start_paddr();
             cur_node_guard = None;
         } else {
-            break;
+            let guard = cur_entry.split_if_mapped_huge(guard).unwrap();
+            cur_pt_addr = guard.start_paddr();
+            cur_node_guard = None;
         }
     }
 
