@@ -22,6 +22,7 @@
 #![feature(negative_impls)]
 #![feature(panic_can_unwind)]
 #![feature(register_tool)]
+#![feature(min_specialization)]
 #![feature(step_trait)]
 #![feature(trait_alias)]
 #![feature(trait_upcasting)]
