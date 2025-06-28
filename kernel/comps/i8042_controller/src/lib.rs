@@ -10,7 +10,7 @@ use alloc::{boxed::Box, vec::Vec};
 use core::ops::Deref;
 use spin::Once;
 use ostd::{
-    arch::{device::io_port::ReadWriteAccess, IO_APIC},
+    arch::{device::io_port::ReadWriteAccess, kernel::{IRQ_CHIP, MappedIrqLine}},
     io::IoPort,
     sync::SpinLock,
     trap::{IrqLine, TrapFrame},
@@ -35,10 +35,10 @@ static DATA_PORT: Once<IoPort<u8, ReadWriteAccess>> = Once::new();
 static STATUS_PORT: Once<IoPort<u8, ReadWriteAccess>> = Once::new();
 
 /// IrqLine for i8042 keyboard.
-static KEYBOARD_IRQ_LINE: Once<SpinLock<IrqLine>> = Once::new();
+static KEYBOARD_IRQ_LINE: Once<MappedIrqLine> = Once::new();
 
 /// IrqLine for i8042 mouse.
-static MOUSE_IRQ_LINE: Once<SpinLock<IrqLine>> = Once::new();
+static MOUSE_IRQ_LINE: Once<MappedIrqLine> = Once::new();
 
 // Controller commands
 const DISABLE_MOUSE: u8 = 0xA7;
@@ -69,18 +69,17 @@ fn init() -> Result<(), ComponentInitError> {
     init_i8042_controller();
     init_mouse_device();
 
-
     let mut k_irq_line = IrqLine::alloc().unwrap();
     let mut m_irq_line = IrqLine::alloc().unwrap();
-    k_irq_line.on_active(handle_keyboard_input);
-    m_irq_line.on_active(handle_mouse_input);
 
-    let mut io_apic = IO_APIC.get().unwrap()[0].lock();
-    io_apic.enable(1, k_irq_line.clone()).unwrap();
-    io_apic.enable(12, m_irq_line.clone()).unwrap();
+    let mut k_mapped_irq_line = IRQ_CHIP.get().unwrap().map_isa_pin_to(k_irq_line, 1).unwrap();
+    let mut m_mapped_irq_line = IRQ_CHIP.get().unwrap().map_isa_pin_to(m_irq_line, 12).unwrap();
 
-    KEYBOARD_IRQ_LINE.call_once(|| {SpinLock::new(k_irq_line)});
-    MOUSE_IRQ_LINE.call_once(|| {SpinLock::new(m_irq_line)});
+    k_mapped_irq_line.on_active(handle_keyboard_input);
+    m_mapped_irq_line.on_active(handle_mouse_input);
+
+    KEYBOARD_IRQ_LINE.call_once(|| k_mapped_irq_line);
+    MOUSE_IRQ_LINE.call_once(|| m_mapped_irq_line);
     
     // init_mouse_device();
 

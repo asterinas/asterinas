@@ -25,7 +25,6 @@ use crate::{
     fs::device::{add_node, Device, DeviceId, DeviceType},
     prelude::*,
 };
-use alloc::format;
 
 /// Init the device node in fs, must be called after mounting rootfs.
 pub fn init_in_first_process(ctx: &Context) -> Result<()> {

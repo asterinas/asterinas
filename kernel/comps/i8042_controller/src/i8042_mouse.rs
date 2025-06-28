@@ -4,7 +4,7 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 use ostd::{
-    arch::{device::io_port::ReadWriteAccess, IO_APIC},
+    arch::{device::io_port::ReadWriteAccess},
     io::IoPort,
     sync::SpinLock,
     trap::{IrqLine, TrapFrame},
