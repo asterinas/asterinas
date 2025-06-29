@@ -55,14 +55,14 @@ use crate::{
 /// A cursor is able to move to the next slot, to read page properties,
 /// and even to jump to a virtual address directly.
 #[derive(Debug)]
-pub(crate) struct Cursor<'rcu, C: PageTableConfig> {
+pub(crate) struct Cursor<'a, C: PageTableConfig> {
     /// The current path of the cursor.
     ///
     /// The level 1 page table lock guard is at index 0, and the level N page
     /// table lock guard is at index N - 1.
-    path: [Option<PageTableGuard<'rcu, C>>; MAX_NR_LEVELS],
+    path: [GuardInPath<'a, C>; MAX_NR_LEVELS],
     /// The cursor should be used in a RCU read side critical section.
-    rcu_guard: &'rcu dyn InAtomicMode,
+    rcu_guard: &'a dyn InAtomicMode,
     /// The level of the page table that the cursor currently points to.
     level: PagingLevel,
     /// The top-most level that the cursor is allowed to access.
@@ -73,7 +73,21 @@ pub(crate) struct Cursor<'rcu, C: PageTableConfig> {
     va: Vaddr,
     /// The virtual address range that is locked.
     barrier_va: Range<Vaddr>,
-    _phantom: PhantomData<&'rcu PageTable<C>>,
+    _phantom: PhantomData<&'a PageTable<C>>,
+}
+
+#[derive(Debug)]
+enum GuardInPath<'a, C: PageTableConfig> {
+    Read(PageTableGuard<'a, C, false>),
+    Write(PageTableGuard<'a, C, true>),
+    ImplicitWrite(PageTableGuard<'a, C, true>),
+    Unlocked,
+}
+
+impl<C: PageTableConfig> GuardInPath<'_, C> {
+    fn take(&mut self) -> Self {
+        core::mem::replace(self, GuardInPath::Unlocked)
+    }
 }
 
 /// The maximum value of `PagingConstsTrait::NR_LEVELS`.
@@ -112,15 +126,15 @@ impl<C: PageTableConfig> PageTableFrag<C> {
     }
 }
 
-impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
+impl<'a, C: PageTableConfig> Cursor<'a, C> {
     /// Creates a cursor claiming exclusive access over the given range.
     ///
     /// The cursor created will only be able to query or jump within the given
     /// range. Out-of-bound accesses will result in panics or errors as return values,
     /// depending on the access method.
     pub fn new(
-        pt: &'rcu PageTable<C>,
-        guard: &'rcu dyn InAtomicMode,
+        pt: &'a PageTable<C>,
+        guard: &'a dyn InAtomicMode,
         va: &Range<Vaddr>,
     ) -> Result<Self, PageTableError> {
         if !is_valid_range::<C>(va) || va.is_empty() {
@@ -160,7 +174,7 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
             let item = match cur_entry.to_ref() {
                 ChildRef::PageTable(pt) => {
                     // SAFETY: The `pt` must be locked and no other guards exist.
-                    let guard = unsafe { pt.make_guard_unchecked(rcu_guard) };
+                    let guard = unsafe { pt.make_write_guard_unchecked(rcu_guard) };
                     self.push_level(guard);
                     continue;
                 }
@@ -246,7 +260,7 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
                     }
 
                     // SAFETY: The `pt` must be locked and no other guards exist.
-                    let pt_guard = unsafe { pt.make_guard_unchecked(rcu_guard) };
+                    let pt_guard = unsafe { pt.make_write_guard_unchecked(rcu_guard) };
                     // If there's no mapped PTEs in the next level, we can
                     // skip to save time.
                     if pt_guard.nr_children() != 0 {
@@ -317,9 +331,8 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
 
     /// Goes up a level.
     fn pop_level(&mut self) {
-        let taken = self.path[self.level as usize - 1]
-            .take()
-            .expect("Popping a level without a lock");
+        let taken = self.path[self.level as usize - 1].take();
+        debug_assert!(matches!(taken, GuardInPath::ImplicitWrite(_)));
         let _ = ManuallyDrop::new(taken);
 
         debug_assert!(self.level < self.guard_level);
@@ -327,16 +340,23 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
     }
 
     /// Goes down a level to a child page table.
-    fn push_level(&mut self, child_pt: PageTableGuard<'rcu, C>) {
+    fn push_level(&mut self, child_pt: PageTableGuard<'a, C, true>) {
         self.level -= 1;
         debug_assert_eq!(self.level, child_pt.level());
 
-        let old = self.path[self.level as usize - 1].replace(child_pt);
-        debug_assert!(old.is_none());
+        let old = core::mem::replace(
+            &mut self.path[self.level as usize - 1],
+            GuardInPath::ImplicitWrite(child_pt),
+        );
+        debug_assert!(matches!(old, GuardInPath::Unlocked));
     }
 
-    fn cur_entry(&mut self) -> Entry<'_, 'rcu, C> {
-        let node = self.path[self.level as usize - 1].as_mut().unwrap();
+    fn cur_entry(&mut self) -> Entry<'_, 'a, C, true> {
+        let (GuardInPath::Write(ref mut node) | GuardInPath::ImplicitWrite(ref mut node)) =
+            self.path[self.level as usize - 1]
+        else {
+            panic!("The current level must be locked or implicitly locked for reading or writing");
+        };
         node.entry(pte_index::<C>(self.va, self.level))
     }
 
@@ -378,17 +398,17 @@ impl<C: PageTableConfig> Iterator for Cursor<'_, C> {
 /// in a page table can only be accessed by one cursor, regardless of the
 /// mutability of the cursor.
 #[derive(Debug)]
-pub(crate) struct CursorMut<'rcu, C: PageTableConfig>(Cursor<'rcu, C>);
+pub(crate) struct CursorMut<'a, C: PageTableConfig>(Cursor<'a, C>);
 
-impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
+impl<'a, C: PageTableConfig> CursorMut<'a, C> {
     /// Creates a cursor claiming exclusive access over the given range.
     ///
     /// The cursor created will only be able to map, query or jump within the given
     /// range. Out-of-bound accesses will result in panics or errors as return values,
     /// depending on the access method.
     pub(super) fn new(
-        pt: &'rcu PageTable<C>,
-        guard: &'rcu dyn InAtomicMode,
+        pt: &'a PageTable<C>,
+        guard: &'a dyn InAtomicMode,
         va: &Range<Vaddr>,
     ) -> Result<Self, PageTableError> {
         Cursor::new(pt, guard, va).map(|inner| Self(inner))
@@ -472,7 +492,7 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
             match cur_entry.to_ref() {
                 ChildRef::PageTable(pt) => {
                     // SAFETY: The `pt` must be locked and no other guards exist.
-                    let pt_guard = unsafe { pt.make_guard_unchecked(rcu_guard) };
+                    let pt_guard = unsafe { pt.make_write_guard_unchecked(rcu_guard) };
                     self.0.push_level(pt_guard);
                 }
                 ChildRef::None => {
@@ -579,8 +599,6 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     }
 
     fn replace_cur_entry(&mut self, new_child: Child<C>) -> Option<PageTableFrag<C>> {
-        let rcu_guard = self.0.rcu_guard;
-
         let va = self.0.va;
         let level = self.0.level;
 
@@ -610,19 +628,11 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
                     panic!("Unmapping shared kernel page table nodes");
                 }
 
-                // SAFETY: We must have locked this node.
-                let locked_pt = unsafe { pt.borrow().make_guard_unchecked(rcu_guard) };
-                // SAFETY:
-                //  - We checked that we are not unmapping shared kernel page table nodes.
-                //  - We must have locked the entire sub-tree since the range is locked.
-                let num_frames =
-                    unsafe { locking::dfs_mark_stray_and_unlock(rcu_guard, locked_pt) };
-
                 Some(PageTableFrag::StrayPageTable {
-                    pt: (*pt).clone().into(),
+                    pt: pt.clone().into(),
                     va,
                     len: page_size::<C>(self.0.level),
-                    num_frames,
+                    num_frames: 666,
                 })
             }
         }

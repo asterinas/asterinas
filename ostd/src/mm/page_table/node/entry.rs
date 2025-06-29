@@ -13,7 +13,6 @@ use crate::{
         page_table::{PageTableConfig, PageTableNodeRef},
         vm_space::Status,
     },
-    sync::RcuDrop,
     task::atomic_mode::InAtomicMode,
 };
 
@@ -24,8 +23,7 @@ use crate::{
 /// This is a static reference to an entry in a node that does not account for
 /// a dynamic reference count to the child. It can be used to create a owned
 /// handle, which is a [`Child`].
-#[derive(Debug)]
-pub(in crate::mm) struct Entry<'a, 'rcu, C: PageTableConfig> {
+pub(in crate::mm) struct Entry<'r, 'g, C: PageTableConfig, const EXCLUSIVE: bool> {
     /// The page table entry.
     ///
     /// We store the page table entry here to optimize the number of reads from
@@ -37,10 +35,28 @@ pub(in crate::mm) struct Entry<'a, 'rcu, C: PageTableConfig> {
     /// The index of the entry in the node.
     idx: usize,
     /// The node that contains the entry.
-    node: &'a mut PageTableGuard<'rcu, C>,
+    node: &'r mut PageTableGuard<'g, C, EXCLUSIVE>,
 }
 
-impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
+impl<'r, 'g, C: PageTableConfig, const EXCLUSIVE: bool> Entry<'r, 'g, C, EXCLUSIVE> {
+    /// Create a new entry at the node with guard.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the index is within the bounds of the node.
+    pub(super) unsafe fn new_at(
+        guard: &'r mut PageTableGuard<'g, C, EXCLUSIVE>,
+        idx: usize,
+    ) -> Self {
+        // SAFETY: The index is within the bound.
+        let pte = unsafe { guard.read_pte(idx) };
+        Self {
+            pte,
+            idx,
+            node: guard,
+        }
+    }
+
     /// Returns if the entry does not map to anything.
     pub(in crate::mm) fn is_none(&self) -> bool {
         !self.pte.is_present() && self.pte.paddr() == 0
@@ -52,13 +68,15 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     }
 
     /// Gets a reference to the child.
-    pub(in crate::mm) fn to_ref(&self) -> ChildRef<'rcu, C> {
+    pub(in crate::mm) fn to_ref(&self) -> ChildRef<'g, C> {
         // SAFETY:
         //  - The PTE outlives the reference (since we have `&self`).
         //  - The level matches the current node.
         unsafe { ChildRef::from_pte(&self.pte, self.node.level()) }
     }
+}
 
+impl<'g, C: PageTableConfig> Entry<'_, 'g, C, true> {
     /// Operates on the mapping properties of the entry.
     ///
     /// It only modifies the properties if the entry is present.
@@ -146,24 +164,24 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     ///
     /// If the old entry is not none, the operation will fail and return `None`.
     /// Otherwise, the lock guard of the new child page table node is returned.
-    pub(in crate::mm::page_table) fn alloc_if_none(
-        &mut self,
-        guard: &'rcu dyn InAtomicMode,
-    ) -> Option<PageTableGuard<'rcu, C>> {
+    pub(in crate::mm::page_table) fn alloc_if_none<'s>(
+        &'s mut self,
+        guard: &'g dyn InAtomicMode,
+    ) -> Option<PageTableGuard<'g, C, true>> {
         if !(self.is_none() && self.node.level() > 1) {
             return None;
         }
 
         let level = self.node.level();
-        let new_page = RcuDrop::new(PageTableNode::<C>::alloc(level - 1));
+        let new_page = PageTableNode::<C>::alloc(level - 1);
 
         let paddr = new_page.start_paddr();
-        // SAFETY: The page table won't be dropped before the RCU grace period
-        // ends, so it outlives `'rcu`.
+        // SAFETY: The page table won't be dropped for `'g` because we added it
+        // to `self` with lifetime `'g`.
         let pt_ref = unsafe { PageTableNodeRef::borrow_paddr(paddr) };
 
-        // Lock before writing the PTE, so no one else can operate on it.
-        let pt_lock_guard = pt_ref.lock(guard);
+        // We the child is implicitly write locked because the parent is write locked.
+        let pt_lock_guard = unsafe { pt_ref.make_write_guard_unchecked(guard) };
 
         self.pte = Child::PageTable(new_page).into_pte();
 
@@ -187,10 +205,10 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     ///
     /// If the entry does not map to a untracked huge page, the method returns
     /// `None`.
-    pub(in crate::mm::page_table) fn split_if_mapped_huge(
-        &mut self,
-        guard: &'rcu dyn InAtomicMode,
-    ) -> Option<PageTableGuard<'rcu, C>> {
+    pub(in crate::mm::page_table) fn split_if_mapped_huge<'s>(
+        &'s mut self,
+        guard: &'g dyn InAtomicMode,
+    ) -> Option<PageTableGuard<'g, C, true>> {
         let level = self.node.level();
 
         let is_huge_page = self.pte.is_present() && self.pte.is_last(level) && level > 1;
@@ -205,19 +223,19 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
         let new_page = if is_huge_status {
             let status = unsafe { Status::from_raw_inner(pa) };
-            RcuDrop::new(PageTableNode::<C>::alloc_marked(level - 1, status))
+            PageTableNode::<C>::alloc_marked(level - 1, status)
         } else {
             debug_assert!(is_huge_page);
-            RcuDrop::new(PageTableNode::<C>::alloc(level - 1))
+            PageTableNode::<C>::alloc(level - 1)
         };
 
         let paddr = new_page.start_paddr();
-        // SAFETY: The page table won't be dropped before the RCU grace period
-        // ends, so it outlives `'rcu`.
+        // SAFETY: The page table won't be dropped for `'g` because we added it
+        // to `self` with lifetime `'g`.
         let pt_ref = unsafe { PageTableNodeRef::borrow_paddr(paddr) };
 
-        // Lock before writing the PTE, so no one else can operate on it.
-        let mut pt_lock_guard = pt_ref.lock(guard);
+        // We the child is implicitly write locked because the parent is write locked.
+        let mut pt_lock_guard = unsafe { pt_ref.make_write_guard_unchecked(guard) };
 
         if is_huge_page {
             debug_assert!(!is_huge_status);
@@ -239,20 +257,5 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         unsafe { self.node.write_pte(self.idx, self.pte) };
 
         Some(pt_lock_guard)
-    }
-
-    /// Create a new entry at the node with guard.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that the index is within the bounds of the node.
-    pub(super) unsafe fn new_at(guard: &'a mut PageTableGuard<'rcu, C>, idx: usize) -> Self {
-        // SAFETY: The index is within the bound.
-        let pte = unsafe { guard.read_pte(idx) };
-        Self {
-            pte,
-            idx,
-            node: guard,
-        }
     }
 }

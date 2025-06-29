@@ -30,8 +30,7 @@ mod entry;
 mod mcs;
 mod rwlock;
 
-use alloc::boxed::Box;
-use core::{cell::SyncUnsafeCell, marker::PhantomData, ops::Deref, pin::Pin};
+use core::{cell::SyncUnsafeCell, marker::PhantomData, ops::Deref};
 
 pub(in crate::mm) use self::{
     child::{Child, ChildRef},
@@ -42,7 +41,7 @@ use crate::{
     mm::{
         frame::{meta::AnyFrameMeta, Frame, FrameRef},
         paddr_to_vaddr,
-        page_table::zeroed_pt_pool,
+        page_table::{node::rwlock::bravo::BravoReadGuard, zeroed_pt_pool},
         vm_space::Status,
         FrameAllocOptions, Infallible, PageProperty, PagingConstsTrait, PagingLevel, VmReader,
     },
@@ -148,27 +147,27 @@ pub(super) type PageTableNodeRef<'a, C> = FrameRef<'a, PageTablePageMeta<C>>;
 
 impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
     /// Locks the page table node.
-    ///
-    /// An atomic mode guard is required to
-    ///  1. prevent deadlocks;
-    ///  2. provide a lifetime (`'rcu`) that the nodes are guaranteed to outlive.
-    pub(super) fn lock<'rcu>(self, guard: &'rcu dyn InAtomicMode) -> PageTableGuard<'rcu, C>
-    where
-        'a: 'rcu,
-    {
+    pub(super) fn lock_write(self, guard: &'a dyn InAtomicMode) -> PageTableGuard<'a, C, true> {
         let _ = guard;
 
-        let node = Box::pin(mcs::Node::new());
+        self.meta().lock.lock_write();
 
-        // SAFETY: The node is new.
-        unsafe { node.as_ref().lock(&self.meta().lock) };
-
-        // SAFETY: Lock is held. So it is exclusive.
-        unsafe {
-            self.meta().node.get().write(Some(node));
+        PageTableGuard::<'a, C, true> {
+            inner: self,
+            read_guard: None,
         }
+    }
 
-        PageTableGuard::<'rcu, C> { inner: self }
+    /// Locks the page table node for reading.
+    pub(super) fn lock_read(self, guard: &'a dyn InAtomicMode) -> PageTableGuard<'a, C, false> {
+        let _ = guard;
+
+        let guard = self.meta().lock.lock_read();
+
+        PageTableGuard::<'a, C, false> {
+            inner: self,
+            read_guard: Some(guard),
+        }
     }
 
     /// Creates a new [`PageTableGuard`] without checking if the page table lock is held.
@@ -179,31 +178,35 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
     ///
     /// Calling this function when a guard is already created is undefined behavior
     /// unless that guard was already forgotten.
-    pub(super) unsafe fn make_guard_unchecked<'rcu>(
+    pub(super) unsafe fn make_write_guard_unchecked(
         self,
-        _guard: &'rcu dyn InAtomicMode,
-    ) -> PageTableGuard<'rcu, C>
+        _guard: &'a dyn InAtomicMode,
+    ) -> PageTableGuard<'a, C, true>
     where
-        'a: 'rcu,
+        'a: 'a,
     {
-        PageTableGuard { inner: self }
+        PageTableGuard {
+            inner: self,
+            read_guard: None,
+        }
     }
 }
 
 /// A guard that holds the lock of a page table node.
 #[derive(Debug)]
-pub(super) struct PageTableGuard<'rcu, C: PageTableConfig> {
-    inner: PageTableNodeRef<'rcu, C>,
+pub(super) struct PageTableGuard<'a, C: PageTableConfig, const EXCLUSIVE: bool> {
+    inner: PageTableNodeRef<'a, C>,
+    read_guard: Option<BravoReadGuard>,
 }
 
-impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
+impl<'a, C: PageTableConfig, const EXCLUSIVE: bool> PageTableGuard<'a, C, EXCLUSIVE> {
     /// Borrows an entry in the node at a given index.
     ///
     /// # Panics
     ///
     /// Panics if the index is not within the bound of
     /// [`nr_subpage_per_huge<C>`].
-    pub(super) fn entry(&mut self, idx: usize) -> Entry<'_, 'rcu, C> {
+    pub(super) fn entry<'s>(&'s mut self, idx: usize) -> Entry<'s, 'a, C, EXCLUSIVE> {
         assert!(idx < nr_subpage_per_huge::<C>());
         // SAFETY: The index is within the bound.
         unsafe { Entry::new_at(self, idx) }
@@ -215,10 +218,9 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         unsafe { *self.meta().nr_children.get() }
     }
 
-    /// Returns if the page table node is detached from its parent.
-    pub(super) fn stray_mut(&mut self) -> &mut bool {
-        // SAFETY: The lock is held so we have an exclusive access.
-        unsafe { &mut *self.meta().stray.get() }
+    /// Gets the reference to the page table node.
+    pub(super) fn as_ref(&self) -> PageTableNodeRef<'a, C> {
+        self.inner.clone_ref()
     }
 
     /// Reads a non-owning PTE at the given index.
@@ -238,7 +240,9 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         // - All page table entries are aligned and accessed with atomic operations only.
         unsafe { ptr.add(idx).read_volatile() }
     }
+}
 
+impl<C: PageTableConfig> PageTableGuard<'_, C, true> {
     /// Writes a page table entry at a given index.
     ///
     /// This operation will leak the old child if the old PTE is present.
@@ -267,24 +271,22 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     }
 }
 
-impl<'rcu, C: PageTableConfig> Deref for PageTableGuard<'rcu, C> {
-    type Target = PageTableNodeRef<'rcu, C>;
+impl<'a, C: PageTableConfig, const EXCLUSIVE: bool> Deref for PageTableGuard<'a, C, EXCLUSIVE> {
+    type Target = PageTableNodeRef<'a, C>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-impl<C: PageTableConfig> Drop for PageTableGuard<'_, C> {
+impl<C: PageTableConfig, const EXCLUSIVE: bool> Drop for PageTableGuard<'_, C, EXCLUSIVE> {
     fn drop(&mut self) {
-        // SAFETY: Lock is held. So it is exclusive.
-        let node = unsafe { self.meta().node.get().replace(None) }.unwrap();
-
-        // Release the lock.
-        // SAFETY:
-        //  - The lock stays at the metadata slot so it's pinned.
-        //  - The acquire method ensures that the node matches the lock.
-        unsafe { node.as_ref().unlock(&self.meta().lock) };
+        if EXCLUSIVE {
+            self.inner.meta().lock.unlock_write();
+        } else {
+            let guard = self.read_guard.take().unwrap();
+            self.inner.meta().lock.unlock_read(guard);
+        }
     }
 }
 
@@ -294,18 +296,11 @@ impl<C: PageTableConfig> Drop for PageTableGuard<'_, C> {
 pub(in crate::mm) struct PageTablePageMeta<C: PageTableConfig> {
     /// The number of valid PTEs. It is mutable if the lock is held.
     pub nr_children: SyncUnsafeCell<u16>,
-    /// If the page table is detached from its parent.
-    ///
-    /// A page table can be detached from its parent while still being accessed,
-    /// since we use a RCU scheme to recycle page tables. If this flag is set,
-    /// it means that the parent is recycling the page table.
-    pub stray: SyncUnsafeCell<bool>,
     /// The level of the page table page. A page table page cannot be
     /// referenced by page tables of different levels.
     pub level: PagingLevel,
     /// The lock for the page table page.
-    lock: mcs::LockBody,
-    node: SyncUnsafeCell<Option<Pin<Box<mcs::Node>>>>,
+    lock: rwlock::bravo::BravoPfqRwLock,
     _phantom: core::marker::PhantomData<C>,
 }
 
@@ -313,10 +308,8 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
     pub fn new(level: PagingLevel) -> Self {
         Self {
             nr_children: SyncUnsafeCell::new(0),
-            stray: SyncUnsafeCell::new(false),
             level,
-            lock: mcs::LockBody::new(),
-            node: SyncUnsafeCell::new(None),
+            lock: rwlock::bravo::BravoPfqRwLock::new(),
             _phantom: PhantomData,
         }
     }

@@ -16,6 +16,12 @@ pub struct FrameRef<'a, M: AnyFrameMeta + ?Sized> {
 }
 
 impl<M: AnyFrameMeta + ?Sized> FrameRef<'_, M> {
+    /// Clones the reference to the [`Frame`].
+    pub fn clone_ref(&self) -> Self {
+        // SAFETY: This produces another reference with the same lifetime.
+        unsafe { Self::borrow_paddr(self.start_paddr()) }
+    }
+
     /// Borrows the [`Frame`] at the physical address as a [`FrameRef`].
     ///
     /// # Safety

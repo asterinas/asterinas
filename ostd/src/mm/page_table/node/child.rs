@@ -5,16 +5,13 @@
 use core::mem::ManuallyDrop;
 
 use super::{PageTableEntryTrait, PageTableNode, PageTableNodeRef};
-use crate::{
-    mm::{page_prop::PageProperty, page_table::PageTableConfig, Paddr, PagingLevel},
-    sync::RcuDrop,
-};
+use crate::mm::{page_prop::PageProperty, page_table::PageTableConfig, Paddr, PagingLevel};
 
 /// A page table entry that owns the child of a page table node if present.
 #[derive(Debug)]
 pub(in crate::mm) enum Child<C: PageTableConfig> {
     /// A child page table node.
-    PageTable(RcuDrop<PageTableNode<C>>),
+    PageTable(PageTableNode<C>),
     /// Physical address of a mapped physical frame.
     ///
     /// It is associated with the virtual page property and the level of the
@@ -59,7 +56,7 @@ impl<C: PageTableConfig> Child<C> {
             // `into_pte`, so that restoring the forgotten reference is safe.
             let node = unsafe { PageTableNode::from_raw(paddr) };
             debug_assert_eq!(node.level(), level - 1);
-            return Child::PageTable(RcuDrop::new(node));
+            return Child::PageTable(node);
         }
 
         Child::Frame(paddr, level, pte.prop())

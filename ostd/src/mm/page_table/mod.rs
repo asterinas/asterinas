@@ -3,6 +3,7 @@
 use core::{
     fmt::Debug,
     intrinsics::transmute_unchecked,
+    mem::ManuallyDrop,
     ops::{Range, RangeInclusive},
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -302,11 +303,12 @@ impl PageTable<KernelPtConfig> {
         // Make shared the page tables mapped by the root table in the kernel space.
         {
             let preempt_guard = disable_preempt();
-            let mut root_node = kpt.root.borrow().lock(&preempt_guard);
+            let mut root_node = kpt.root.borrow().lock_write(&preempt_guard);
 
             for i in KernelPtConfig::TOP_LEVEL_INDEX_RANGE {
                 let mut root_entry = root_node.entry(i);
-                let _ = root_entry.alloc_if_none(&preempt_guard).unwrap();
+                let wguard = root_entry.alloc_if_none(&preempt_guard).unwrap();
+                let _ = ManuallyDrop::new(wguard);
             }
         }
 
@@ -321,8 +323,8 @@ impl PageTable<KernelPtConfig> {
         let new_root = PageTableNode::alloc(PagingConsts::NR_LEVELS);
 
         let preempt_guard = disable_preempt();
-        let mut root_node = self.root.borrow().lock(&preempt_guard);
-        let mut new_node = new_root.borrow().lock(&preempt_guard);
+        let mut root_node = self.root.borrow().lock_write(&preempt_guard);
+        let mut new_node = new_root.borrow().lock_write(&preempt_guard);
 
         const {
             assert!(!KernelPtConfig::TOP_LEVEL_CAN_UNMAP);
