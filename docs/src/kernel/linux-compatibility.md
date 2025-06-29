@@ -241,7 +241,7 @@ provided by Linux on x86-64 architecture.
 | 218     | set_tid_address  | ✅              |
 | 219     | restart_syscall  | ❌              |
 | 220     | semtimedop       | ✅              |
-| 221     | fadvise64        | ❌              |
+| 221     | fadvise64        | ✅              |
 | 222     | timer_create     | ✅              |
 | 223     | timer_settime    | ✅              |
 | 224     | timer_gettime    | ✅              |

@@ -249,10 +249,10 @@ fallocate03
 #posix_fadvise test cases
 # posix_fadvise01
 # posix_fadvise01_64
-# posix_fadvise02
-# posix_fadvise02_64
-# posix_fadvise03
-# posix_fadvise03_64
+posix_fadvise02
+posix_fadvise02_64
+posix_fadvise03
+posix_fadvise03_64
 # posix_fadvise04
 # posix_fadvise04_64
 
