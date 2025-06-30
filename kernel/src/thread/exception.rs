@@ -26,6 +26,24 @@ pub struct PageFaultInfo {
     pub required_perms: VmPerms,
 }
 
+#[cfg(target_arch = "riscv64")]
+pub struct IllegalInstructionFaultInfo {
+    /// The virtual address where the illegal instruction occurred.
+    pub address: Vaddr,
+    /// The instruction that caused the fault.
+    /// TODO: consider compressed instruction.
+    pub instruction: usize,
+}
+
+#[cfg(target_arch = "riscv64")]
+impl IllegalInstructionFaultInfo {
+    /// Judege if the instruction is a floating point exception.
+    pub fn is_floating_point_exception(&self) -> bool {
+        let opcode = self.instruction & 0x7f;
+        opcode == 0x07 || opcode == 0x27 || opcode == 0x53
+    }
+}
+
 /// We can't handle most exceptions, just send self a fault signal before return to user space.
 pub fn handle_exception(ctx: &Context, context: &UserContext) {
     let trap_info = context.trap_information();
@@ -35,6 +53,18 @@ pub fn handle_exception(ctx: &Context, context: &UserContext) {
         let user_space = ctx.user_space();
         let root_vmar = user_space.root_vmar();
         if handle_page_fault_from_vmar(root_vmar, &page_fault_info).is_ok() {
+            return;
+        }
+    }
+
+    #[cfg(target_arch = "riscv64")]
+    if let Ok(illegal_instruction_info) = IllegalInstructionFaultInfo::try_from(trap_info) {
+        if illegal_instruction_info.is_floating_point_exception() {
+            warn!(
+                "Floating point exception occurred at address 0x{:x}",
+                illegal_instruction_info.address
+            );
+            context.init_fpu_state();
             return;
         }
     }
