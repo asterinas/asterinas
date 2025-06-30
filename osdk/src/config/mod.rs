@@ -178,6 +178,22 @@ fn apply_args_after_finalize(action: &mut Action, args: &CommonArgs) {
     if args.display_grub_menu {
         action.grub.display_grub_menu = true;
     }
+    if args.coverage {
+        action.qemu.args += " --no-shutdown";
+        action.qemu.args += " -device loader,file=coverage.mem,addr=0x10000000,force-raw=on";
+        action.qemu.with_monitor = true;
+
+        // Insert coverage parameters at the beginning of kcmdline
+        action
+            .boot
+            .kcmdline
+            .insert(0, "coverage_paddr=0x10000000".to_string());
+        action
+            .boot
+            .kcmdline
+            .insert(1, "coverage_size=0x1000000".to_string());
+        println!("{:?}", action.boot.kcmdline);
+    }
 }
 
 impl Config {
