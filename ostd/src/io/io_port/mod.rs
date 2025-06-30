@@ -125,7 +125,7 @@ macro_rules! reserve_io_port_range {
 /// - The I/O port is used by the target system device driver.
 ///
 /// # Example
-/// ``` norun
+/// ```no_run
 /// sensitive_io_port! {
 ///     unsafe {
 ///         /// Master PIC command port

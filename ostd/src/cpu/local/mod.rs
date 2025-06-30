@@ -5,7 +5,7 @@
 //! This module provides a mechanism to define CPU-local objects. Users can
 //! define a statically-allocated CPU-local object by the macro
 //! [`crate::cpu_local!`], or allocate a dynamically-allocated CPU-local
-//! object with the function [`osdk_heap_allocator::alloc_cpu_local`].
+//! object with the function `osdk_heap_allocator::alloc_cpu_local`.
 //!
 //! The mechanism for statically-allocated CPU-local objects exploits the fact
 //! that constant values of non-[`Copy`] types can be bitwise copied. For

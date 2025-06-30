@@ -43,7 +43,7 @@ build_api_docs() {
     cd "${ASTER_SRC_DIR}"
     make install_osdk
     cd "${ASTER_SRC_DIR}/ostd"
-    cargo osdk doc
+    RUSTDOCFLAGS="-Dwarnings" cargo osdk doc
 }
 
 # Git clone the API documentation repo

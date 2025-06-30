@@ -178,6 +178,8 @@ fn wait_for_all_aps_started(num_cpus: usize) {
 /// # Panics
 ///
 /// This method will panic if it is called either before all APs have booted or more than once.
+///
+/// [`CpuId`]: crate::cpu::CpuId
 pub(crate) fn construct_hw_cpu_id_mapping() -> Box<[HwCpuId]> {
     let mut hw_cpu_id_map = HW_CPU_ID_MAP.lock();
     assert_eq!(hw_cpu_id_map.len(), crate::cpu::num_cpus());
