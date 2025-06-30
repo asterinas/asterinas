@@ -3,7 +3,7 @@
 use alloc::sync::Arc;
 use core::time::Duration;
 
-use ostd::sync::SpinLock;
+use ostd::{sync::SpinLock, timer::Jiffies};
 
 use crate::time::Clock;
 
@@ -32,6 +32,12 @@ impl CpuClock {
     /// Adds `interval` to the original recorded time to update the `CpuClock`.
     pub fn add_time(&self, interval: Duration) {
         *self.time.disable_irq().lock() += interval;
+    }
+
+    /// Returns the current time of this clock in jiffies, or `Jiffies::MAX`
+    /// on overflow.
+    pub fn read_time_in_jiffies(&self) -> Jiffies {
+        self.read_time().into()
     }
 }
 
