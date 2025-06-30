@@ -6,12 +6,15 @@
 
 extern crate alloc;
 
+mod ansi_escape;
 mod console;
+mod font;
 mod framebuffer;
 mod pixel;
 
 use component::{init_component, ComponentInitError};
 pub use console::{FramebufferConsole, CONSOLE_NAME, FRAMEBUFFER_CONSOLE};
+pub use font::{BitmapChar, BitmapCharRow, BitmapFont};
 pub use framebuffer::{FrameBuffer, FRAMEBUFFER};
 pub use pixel::{Pixel, PixelFormat, RenderedPixel};
 
