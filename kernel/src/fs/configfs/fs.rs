@@ -2,30 +2,29 @@
 
 use alloc::sync::Arc;
 
-use aster_systree::singleton as systree_singleton;
+use aster_systree::SysBranchNode;
 
+use super::inode::ConfigInode;
 use crate::fs::{
-    sysfs::inode::SysFsInode,
     utils::{FileSystem, FsFlags, Inode, KernelFsInode, SuperBlock},
     Result,
 };
 
-/// A file system for exposing kernel information to the user space.
-#[derive(Debug)]
-pub struct SysFs {
+/// A file system that can act as a manager of kernel objects
+pub struct ConfigFs {
     sb: SuperBlock,
     root: Arc<dyn Inode>,
 }
 
-const MAGIC_NUMBER: u64 = 0x62656572; // SYSFS_MAGIC
+// Magic number for configfs (taken from Linux)
+const MAGIC_NUMBER: u64 = 0x62656570;
 const BLOCK_SIZE: usize = 4096;
 const NAME_MAX: usize = 255;
 
-impl SysFs {
-    pub(crate) fn new() -> Arc<Self> {
+impl ConfigFs {
+    pub(super) fn new(root_node: Arc<dyn SysBranchNode>) -> Arc<Self> {
         let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX);
-        let systree_ref = systree_singleton();
-        let root_inode = SysFsInode::new_root(systree_ref.root().clone());
+        let root_inode = ConfigInode::new_root(root_node);
 
         Arc::new(Self {
             sb,
@@ -34,9 +33,9 @@ impl SysFs {
     }
 }
 
-impl FileSystem for SysFs {
+impl FileSystem for ConfigFs {
     fn sync(&self) -> Result<()> {
-        // Sysfs is volatile, sync is a no-op
+        // ConfigFs is volatile, sync is a no-op
         Ok(())
     }
 
