@@ -179,7 +179,17 @@ impl SchedAttr {
     }
 
     pub fn update_policy<T>(&self, f: impl FnOnce(&mut SchedPolicy) -> T) -> T {
-        self.policy.update(f)
+        self.policy.update(|policy| {
+            let ret = f(policy);
+            match *policy {
+                SchedPolicy::RealTime { rt_prio, rt_policy } => {
+                    self.real_time.update(rt_prio.get(), rt_policy);
+                }
+                SchedPolicy::Fair(nice) => self.fair.update(nice),
+                _ => {}
+            }
+            ret
+        })
     }
 
     fn last_cpu(&self) -> Option<CpuId> {
