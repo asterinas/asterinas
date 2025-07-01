@@ -6,7 +6,8 @@ mod trap;
 
 use riscv::register::scause::Interrupt;
 use spin::Once;
-pub use trap::{GeneralRegs, TrapFrame, UserContext};
+pub(super) use trap::RawUserContext;
+pub use trap::TrapFrame;
 
 use super::cpu::context::CpuExceptionInfo;
 use crate::cpu_local_cell;
@@ -15,8 +16,8 @@ cpu_local_cell! {
     static IS_KERNEL_INTERRUPTED: bool = false;
 }
 
-/// Initialize interrupt handling on RISC-V.
-pub unsafe fn init() {
+/// Initializes interrupt handling on RISC-V.
+pub(crate) unsafe fn init() {
     self::trap::init();
 }
 

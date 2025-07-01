@@ -2,7 +2,7 @@
 
 use aster_rights::WriteOp;
 use ostd::{
-    cpu::context::{FpuState, RawGeneralRegs, UserContext},
+    cpu::context::{FpuState, GeneralRegs, UserContext},
     user::UserContextApi,
 };
 
@@ -149,7 +149,7 @@ fn do_execve(
     // set signal disposition to default
     process.sig_dispositions().lock().inherit();
     // set cpu context to default
-    *user_context.general_regs_mut() = RawGeneralRegs::default();
+    *user_context.general_regs_mut() = GeneralRegs::default();
     user_context.set_tls_pointer(0);
     *user_context.fpu_state_mut() = FpuState::default();
     // FIXME: how to reset the FPU state correctly? Before returning to the user space,

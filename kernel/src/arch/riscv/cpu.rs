@@ -3,7 +3,7 @@
 use alloc::{format, string::String};
 
 use ostd::{
-    cpu::context::{CpuExceptionInfo, RawGeneralRegs, UserContext},
+    cpu::context::{CpuExceptionInfo, GeneralRegs, UserContext},
     Pod,
 };
 
@@ -122,11 +122,11 @@ macro_rules! copy_gp_regs {
 }
 
 impl GpRegs {
-    pub fn copy_to_raw(&self, dst: &mut RawGeneralRegs) {
+    pub fn copy_to_raw(&self, dst: &mut GeneralRegs) {
         copy_gp_regs!(self, dst);
     }
 
-    pub fn copy_from_raw(&mut self, src: &RawGeneralRegs) {
+    pub fn copy_from_raw(&mut self, src: &GeneralRegs) {
         copy_gp_regs!(src, self);
     }
 }
