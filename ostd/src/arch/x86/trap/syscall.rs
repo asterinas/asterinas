@@ -28,7 +28,7 @@ use x86_64::{
     VirtAddr,
 };
 
-use super::UserContext;
+use super::RawUserContext;
 
 global_asm!(
     include_str!("syscall.S"),
@@ -80,11 +80,11 @@ pub(super) unsafe fn init() {
 
 extern "sysv64" {
     fn syscall_entry();
-    fn syscall_return(regs: &mut UserContext);
+    fn syscall_return(regs: &mut RawUserContext);
 }
 
-impl UserContext {
-    /// Go to user space with the context, and come back when a trap occurs.
+impl RawUserContext {
+    /// Goes to user space with the context, and comes back when a trap occurs.
     ///
     /// On return, the context will be reset to the status before the trap.
     /// Trap reason and error code will be placed at `trap_num` and `error_code`.
@@ -93,26 +93,7 @@ impl UserContext {
     ///
     /// If `trap_num` is `0x100`, it will go user by `sysret` (`rcx` and `r11` are dropped),
     /// otherwise it will use `iret`.
-    ///
-    /// # Example
-    /// ```no_run
-    /// use trapframe::{UserContext, GeneralRegs};
-    ///
-    /// // init user space context
-    /// let mut context = UserContext {
-    ///     general: GeneralRegs {
-    ///         rip: 0x1000,
-    ///         rsp: 0x10000,
-    ///         ..Default::default()
-    ///     },
-    ///     ..Default::default()
-    /// };
-    /// // go to user
-    /// context.run();
-    /// // back from user
-    /// println!("back from user: {:#x?}", context);
-    /// ```
-    pub fn run(&mut self) {
+    pub(in crate::arch) fn run(&mut self) {
         unsafe {
             syscall_return(self);
         }
