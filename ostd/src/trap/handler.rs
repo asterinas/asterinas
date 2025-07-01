@@ -3,7 +3,7 @@
 use spin::Once;
 
 use super::irq::{disable_local, process_top_half, DisabledLocalIrqGuard};
-use crate::{cpu_local_cell, task::disable_preempt, trap::TrapFrame};
+use crate::{arch::trap::TrapFrame, cpu_local_cell, task::disable_preempt};
 
 static BOTTOM_HALF_HANDLER: Once<fn(DisabledLocalIrqGuard) -> DisabledLocalIrqGuard> = Once::new();
 

@@ -12,7 +12,7 @@ use aster_network::{
 use aster_softirq::BottomHalfDisabled;
 use aster_util::slot_vec::SlotVec;
 use log::{debug, warn};
-use ostd::{mm::DmaStream, sync::SpinLock, trap::TrapFrame};
+use ostd::{arch::trap::TrapFrame, mm::DmaStream, sync::SpinLock};
 
 use super::{config::VirtioNetConfig, header::VirtioNetHdr};
 use crate::{

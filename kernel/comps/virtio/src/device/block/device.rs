@@ -18,9 +18,9 @@ use aster_block::{
 use id_alloc::IdAlloc;
 use log::{debug, info};
 use ostd::{
+    arch::trap::TrapFrame,
     mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmIo},
     sync::SpinLock,
-    trap::TrapFrame,
     Pod,
 };
 

@@ -7,5 +7,3 @@ pub mod irq;
 
 pub(crate) use handler::call_irq_callback_functions;
 pub use handler::{in_interrupt_context, register_bottom_half_handler};
-
-pub use crate::arch::trap::TrapFrame;

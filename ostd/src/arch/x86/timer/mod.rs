@@ -10,11 +10,12 @@ use core::sync::atomic::Ordering;
 
 use spin::Once;
 
+use super::trap::TrapFrame;
 use crate::{
     arch::kernel,
     cpu::{CpuId, PinCurrentCpu},
     timer::INTERRUPT_CALLBACKS,
-    trap::{self, irq::IrqLine, TrapFrame},
+    trap::{self, irq::IrqLine},
 };
 
 /// The timer frequency (Hz).

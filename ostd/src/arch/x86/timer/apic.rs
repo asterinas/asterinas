@@ -9,10 +9,11 @@ use crate::{
     arch::{
         kernel::apic::{self, Apic, DivideConfig},
         timer::pit::OperatingMode,
+        trap::TrapFrame,
         tsc_freq,
     },
     task::disable_preempt,
-    trap::{irq::IrqLine, TrapFrame},
+    trap::irq::IrqLine,
 };
 
 /// Initializes APIC with TSC-deadline mode or periodic mode.

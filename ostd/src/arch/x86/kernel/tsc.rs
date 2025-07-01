@@ -8,11 +8,14 @@ use log::info;
 use x86::cpuid::cpuid;
 
 use crate::{
-    arch::timer::{
-        pit::{self, OperatingMode},
-        TIMER_FREQ,
+    arch::{
+        timer::{
+            pit::{self, OperatingMode},
+            TIMER_FREQ,
+        },
+        trap::TrapFrame,
     },
-    trap::{irq::IrqLine, TrapFrame},
+    trap::irq::IrqLine,
 };
 
 /// The frequency of TSC(Hz)
