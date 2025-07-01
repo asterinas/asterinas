@@ -6,9 +6,9 @@ use core::hint::spin_loop;
 use aster_console::{AnyConsoleDevice, ConsoleCallback};
 use log::debug;
 use ostd::{
+    arch::trap::TrapFrame,
     mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmReader},
     sync::{Rcu, SpinLock},
-    trap::TrapFrame,
 };
 
 use super::{config::VirtioConsoleConfig, DEVICE_NAME};

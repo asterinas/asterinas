@@ -16,10 +16,10 @@ use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
 use log::{debug, info};
 use ostd::{
+    arch::trap::TrapFrame,
     io::IoMem,
     mm::{DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, VmIo, PAGE_SIZE},
     sync::{LocalIrqDisabled, RwLock, SpinLock},
-    trap::TrapFrame,
 };
 
 use super::{InputConfigSelect, VirtioInputConfig, VirtioInputEvent, QUEUE_EVENT, QUEUE_STATUS};

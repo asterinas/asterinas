@@ -5,8 +5,11 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use ostd::{
-    arch::kernel::{MappedIrqLine, IRQ_CHIP},
-    trap::{irq::IrqLine, TrapFrame},
+    arch::{
+        kernel::{MappedIrqLine, IRQ_CHIP},
+        trap::TrapFrame,
+    },
+    trap::irq::IrqLine,
 };
 use spin::Once;
 

@@ -8,11 +8,13 @@ use id_alloc::IdAlloc;
 use spin::Once;
 
 use crate::{
-    arch::irq::{self, IrqRemapping, IRQ_NUM_MAX, IRQ_NUM_MIN},
+    arch::{
+        irq::{self, IrqRemapping, IRQ_NUM_MAX, IRQ_NUM_MIN},
+        trap::TrapFrame,
+    },
     prelude::*,
     sync::{GuardTransfer, RwLock, SpinLock, WriteIrqDisabled},
     task::atomic_mode::InAtomicMode,
-    trap::TrapFrame,
     Error,
 };
 

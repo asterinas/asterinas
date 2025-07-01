@@ -3,6 +3,7 @@
 use log::warn;
 use tdx_guest::{tdcall::accept_page, tdvmcall::map_gpa, TdxTrapFrame};
 
+use super::trap::TrapFrame;
 use crate::{
     mm::{
         kspace::KERNEL_PAGE_TABLE,
@@ -12,7 +13,6 @@ use crate::{
         PAGE_SIZE,
     },
     prelude::Paddr,
-    trap::TrapFrame,
 };
 
 const SHARED_BIT: u8 = 51;

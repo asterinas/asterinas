@@ -6,12 +6,10 @@ use core::fmt::Debug;
 use aster_rights::{ReadOp, TRightSet, WriteOp};
 use aster_util::safe_ptr::SafePtr;
 use ostd::{
+    arch::trap::TrapFrame,
     io::IoMem,
     sync::RwLock,
-    trap::{
-        irq::{IrqCallbackFunction, IrqLine},
-        TrapFrame,
-    },
+    trap::irq::{IrqCallbackFunction, IrqLine},
 };
 
 /// Multiplexing Irqs. The two interrupt types (configuration space change and queue interrupt)
