@@ -125,7 +125,6 @@ FROM build-base AS rust
 # Install all OSDK dependent packages
 RUN apt update \
     && apt install -y \
-    build-essential \
     curl \
     gdb \
     grub-efi-amd64 \
@@ -141,7 +140,6 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 ARG ASTER_RUST_VERSION
 RUN curl https://sh.rustup.rs -sSf | \
         sh -s -- --default-toolchain ${ASTER_RUST_VERSION} -y \
-    && rustup toolchain install stable \
     && rm -rf /root/.cargo/registry && rm -rf /root/.cargo/git \
     && cargo -V \
     && rustup component add rust-src rustc-dev llvm-tools-preview
