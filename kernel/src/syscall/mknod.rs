@@ -4,6 +4,7 @@ use super::SyscallReturn;
 use crate::{
     device::get_device,
     fs::{
+        device::DeviceId,
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         utils::{InodeMode, InodeType, MknodType},
@@ -49,7 +50,7 @@ pub fn sys_mknodat(
             let _ = dir_dentry.new_fs_child(&name, InodeType::File, inode_mode)?;
         }
         InodeType::CharDevice | InodeType::BlockDevice => {
-            let device_inode = get_device(dev)?;
+            let device_inode = get_device(DeviceId::from_encoded_u64(dev as u64))?;
             let _ = dir_dentry.mknod(&name, inode_mode, device_inode.into())?;
         }
         InodeType::NamedPipe => {

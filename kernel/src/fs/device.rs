@@ -63,42 +63,38 @@ impl DeviceId {
     pub fn minor(&self) -> u32 {
         self.minor
     }
+}
 
-    /// Encodes the device ID as a `u32` value.
+impl DeviceId {
+    /// Creates a device ID from the encoded `u64` value.
     ///
-    /// The encoding strategy here is the same as in Linux. See the Linux implementation at:
-    /// <https://github.com/torvalds/linux/blob/0ff41df1cb268fc69e703a08a57ee14ae967d0ca/include/linux/kdev_t.h#L39-L44>
-    pub fn as_encoded_u32(&self) -> u32 {
-        self.as_encoded_u64() as u32
+    /// See [`as_encoded_u64`] for details about how to encode a device ID to a `u64` value.
+    ///
+    /// [`as_encoded_u64`]: Self::as_encoded_u64
+    pub fn from_encoded_u64(raw: u64) -> Self {
+        let major = ((raw >> 32) & 0xffff_f000 | (raw >> 8) & 0x0000_0fff) as u32;
+        let minor = ((raw >> 12) & 0xffff_ff00 | raw & 0x0000_00ff) as u32;
+        Self::new(major, minor)
     }
 
     /// Encodes the device ID as a `u64` value.
-    fn as_encoded_u64(&self) -> u64 {
+    ///
+    /// The lower 32 bits use the same encoding strategy as Linux. See the Linux implementation at:
+    /// <https://github.com/torvalds/linux/blob/0ff41df1cb268fc69e703a08a57ee14ae967d0ca/include/linux/kdev_t.h#L39-L44>.
+    ///
+    /// If the major or minor device number is too large, the additional bits will be recorded
+    /// using the higher 32 bits. Note that as of 2025, the Linux kernel still has no support for
+    /// 64-bit device IDs:
+    /// <https://github.com/torvalds/linux/blob/0ff41df1cb268fc69e703a08a57ee14ae967d0ca/include/linux/types.h#L18>.
+    /// So this encoding follows the implementation in glibc:
+    /// <https://github.com/bminor/glibc/blob/632d895f3e5d98162f77b9c3c1da4ec19968b671/bits/sysmacros.h#L26-L34>.
+    pub fn as_encoded_u64(&self) -> u64 {
         let major = self.major() as u64;
         let minor = self.minor() as u64;
         ((major & 0xffff_f000) << 32)
             | ((major & 0x0000_0fff) << 8)
             | ((minor & 0xffff_ff00) << 12)
             | (minor & 0x0000_00ff)
-    }
-
-    /// Decodes the device ID from a `u64` value.
-    fn decode_from_u64(raw: u64) -> Self {
-        let major = ((raw >> 32) & 0xffff_f000 | (raw >> 8) & 0x0000_0fff) as u32;
-        let minor = ((raw >> 12) & 0xffff_ff00 | raw & 0x0000_00ff) as u32;
-        Self::new(major, minor)
-    }
-}
-
-impl From<DeviceId> for u64 {
-    fn from(value: DeviceId) -> Self {
-        value.as_encoded_u64()
-    }
-}
-
-impl From<u64> for DeviceId {
-    fn from(raw: u64) -> Self {
-        Self::decode_from_u64(raw)
     }
 }
 

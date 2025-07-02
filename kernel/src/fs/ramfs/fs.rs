@@ -1109,7 +1109,7 @@ impl Inode for RamInode {
         let rdev = self
             .inner
             .as_device()
-            .map(|device| device.id().into())
+            .map(|device| device.id().as_encoded_u64())
             .unwrap_or(0);
         let inode_metadata = self.metadata.lock();
         Metadata {

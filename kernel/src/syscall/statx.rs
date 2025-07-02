@@ -118,8 +118,8 @@ pub struct Statx {
 
 impl From<Metadata> for Statx {
     fn from(info: Metadata) -> Self {
-        let devid = DeviceId::from(info.dev);
-        let rdevid = DeviceId::from(info.rdev);
+        let devid = DeviceId::from_encoded_u64(info.dev);
+        let rdevid = DeviceId::from_encoded_u64(info.rdev);
 
         // FIXME: We assume it is always not mount_root.
         let stx_attributes = 0;

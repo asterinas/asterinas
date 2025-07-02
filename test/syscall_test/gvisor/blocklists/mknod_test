@@ -1,6 +1,13 @@
-MknodTest.MknodAtFIFO
-MknodTest.MknodOnExistingPathFails
+# Broken support or no support at all.
 MknodTest.Socket
 MknodTest.Fifo
 MknodTest.FifoOtrunc
 MknodTest.FifoTruncNoOp
+
+# Buggy or unimplemented in exfat and ext2.
+MknodTest.MknodAtFIFO
+MknodTest.MknodOnExistingPathFails
+
+# This test cannot pass in Linux when run as root, and
+# it has been removed from the latest version of gVisor.
+MknodTest.UnimplementedTypesReturnError
