@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::borrow::ToOwned;
+
 use crate::prelude::*;
 
 pub const MAX_THREAD_NAME_LEN: usize = 16;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ThreadName {
     inner: [u8; MAX_THREAD_NAME_LEN],
     count: usize,
@@ -50,7 +52,12 @@ impl ThreadName {
         Ok(())
     }
 
-    pub fn name(&self) -> Result<Option<&CStr>> {
-        Ok(Some(CStr::from_bytes_until_nul(&self.inner)?))
+    pub fn name(&self) -> Option<&CStr> {
+        CStr::from_bytes_until_nul(&self.inner).ok()
+    }
+
+    pub fn as_string(&self) -> Option<String> {
+        let name = self.name()?;
+        name.to_str().ok().map(|name| name.to_owned())
     }
 }

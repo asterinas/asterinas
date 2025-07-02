@@ -95,7 +95,7 @@ pub struct Process {
 
     /// Whether the process has a subreaper that will reap it when the
     /// process becomes orphaned.
-    ///  
+    ///
     /// If `has_child_subreaper` is true in a `Process`, this attribute should
     /// also be true for all of its descendants.
     pub(super) has_child_subreaper: AtomicBool,

@@ -9,6 +9,7 @@ use crate::{
         utils::{DirEntryVecExt, Inode},
     },
     process::posix_thread::AsPosixThread,
+    thread::{AsThread, Thread},
     Process,
 };
 
@@ -25,22 +26,43 @@ impl TaskDirOps {
 }
 
 /// Represents the inode at `/proc/[pid]/task/[tid]`.
-struct ThreadDirOps(Arc<Process>);
+struct TidDirOps {
+    process_ref: Arc<Process>,
+    thread_ref: Arc<Thread>,
+}
 
-impl ThreadDirOps {
-    pub fn new_inode(process_ref: Arc<Process>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        ProcDirBuilder::new(Self(process_ref))
-            .parent(parent)
-            .build()
-            .unwrap()
+impl TidDirOps {
+    pub fn new_inode(
+        process_ref: Arc<Process>,
+        thread_ref: Arc<Thread>,
+        parent: Weak<dyn Inode>,
+    ) -> Arc<dyn Inode> {
+        ProcDirBuilder::new(Self {
+            process_ref,
+            thread_ref,
+        })
+        .parent(parent)
+        .build()
+        .unwrap()
     }
 }
 
-impl DirOps for ThreadDirOps {
+impl DirOps for TidDirOps {
     fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
         let inode = match name {
-            "fd" => FdDirOps::new_inode(self.0.clone(), this_ptr.clone()),
-            "exe" => ExeSymOps::new_inode(self.0.clone(), this_ptr.clone()),
+            "fd" => FdDirOps::new_inode(self.process_ref.clone(), this_ptr.clone()),
+            "exe" => ExeSymOps::new_inode(self.process_ref.clone(), this_ptr.clone()),
+            "stat" => StatFileOps::new_inode(
+                self.process_ref.clone(),
+                self.thread_ref.clone(),
+                false,
+                this_ptr.clone(),
+            ),
+            "status" => StatusFileOps::new_inode(
+                self.process_ref.clone(),
+                self.thread_ref.clone(),
+                this_ptr.clone(),
+            ),
             _ => return_errno!(Errno::ENOENT),
         };
         Ok(inode)
@@ -49,14 +71,29 @@ impl DirOps for ThreadDirOps {
     fn populate_children(&self, this_ptr: Weak<dyn Inode>) {
         let this = {
             let this = this_ptr.upgrade().unwrap();
-            this.downcast_ref::<ProcDir<ThreadDirOps>>().unwrap().this()
+            this.downcast_ref::<ProcDir<TidDirOps>>().unwrap().this()
         };
         let mut cached_children = this.cached_children().write();
         cached_children.put_entry_if_not_found("fd", || {
-            FdDirOps::new_inode(self.0.clone(), this_ptr.clone())
+            FdDirOps::new_inode(self.process_ref.clone(), this_ptr.clone())
         });
         cached_children.put_entry_if_not_found("exe", || {
-            ExeSymOps::new_inode(self.0.clone(), this_ptr.clone())
+            ExeSymOps::new_inode(self.process_ref.clone(), this_ptr.clone())
+        });
+        cached_children.put_entry_if_not_found("stat", || {
+            StatFileOps::new_inode(
+                self.process_ref.clone(),
+                self.thread_ref.clone(),
+                false,
+                this_ptr.clone(),
+            )
+        });
+        cached_children.put_entry_if_not_found("status", || {
+            StatusFileOps::new_inode(
+                self.process_ref.clone(),
+                self.thread_ref.clone(),
+                this_ptr.clone(),
+            )
         });
     }
 }
@@ -68,10 +105,15 @@ impl DirOps for TaskDirOps {
         };
 
         for task in self.0.tasks().lock().as_slice() {
-            if task.as_posix_thread().unwrap().tid() != tid {
+            let thread = task.as_thread().unwrap();
+            if thread.as_posix_thread().unwrap().tid() != tid {
                 continue;
             }
-            return Ok(ThreadDirOps::new_inode(self.0.clone(), this_ptr));
+            return Ok(TidDirOps::new_inode(
+                self.0.clone(),
+                thread.clone(),
+                this_ptr,
+            ));
         }
         return_errno_with_message!(Errno::ENOENT, "No such thread")
     }
@@ -83,9 +125,10 @@ impl DirOps for TaskDirOps {
         };
         let mut cached_children = this.cached_children().write();
         for task in self.0.tasks().lock().as_slice() {
+            let thread = task.as_thread().unwrap();
             cached_children.put_entry_if_not_found(
                 &format!("{}", task.as_posix_thread().unwrap().tid()),
-                || ThreadDirOps::new_inode(self.0.clone(), this_ptr.clone()),
+                || TidDirOps::new_inode(self.0.clone(), thread.clone(), this_ptr.clone()),
             );
         }
     }

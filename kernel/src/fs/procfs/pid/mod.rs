@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use self::{
-    cmdline::CmdlineFileOps, comm::CommFileOps, exe::ExeSymOps, fd::FdDirOps, task::TaskDirOps,
+    cmdline::CmdlineFileOps, comm::CommFileOps, exe::ExeSymOps, fd::FdDirOps, stat::StatFileOps,
+    status::StatusFileOps, task::TaskDirOps,
 };
 use super::template::{DirOps, ProcDir, ProcDirBuilder};
 use crate::{
@@ -64,8 +65,12 @@ impl DirOps for PidDirOps {
             "comm" => CommFileOps::new_inode(self.0.clone(), this_ptr.clone()),
             "fd" => FdDirOps::new_inode(self.0.clone(), this_ptr.clone()),
             "cmdline" => CmdlineFileOps::new_inode(self.0.clone(), this_ptr.clone()),
-            "status" => status::StatusFileOps::new_inode(self.0.clone(), this_ptr.clone()),
-            "stat" => stat::StatFileOps::new_inode(self.0.clone(), this_ptr.clone()),
+            "status" => {
+                StatusFileOps::new_inode(self.0.clone(), self.0.main_thread(), this_ptr.clone())
+            }
+            "stat" => {
+                StatFileOps::new_inode(self.0.clone(), self.0.main_thread(), true, this_ptr.clone())
+            }
             "task" => TaskDirOps::new_inode(self.0.clone(), this_ptr.clone()),
             _ => return_errno!(Errno::ENOENT),
         };
@@ -91,10 +96,10 @@ impl DirOps for PidDirOps {
             CmdlineFileOps::new_inode(self.0.clone(), this_ptr.clone())
         });
         cached_children.put_entry_if_not_found("status", || {
-            status::StatusFileOps::new_inode(self.0.clone(), this_ptr.clone())
+            StatusFileOps::new_inode(self.0.clone(), self.0.main_thread(), this_ptr.clone())
         });
         cached_children.put_entry_if_not_found("stat", || {
-            stat::StatFileOps::new_inode(self.0.clone(), this_ptr.clone())
+            StatFileOps::new_inode(self.0.clone(), self.0.main_thread(), true, this_ptr.clone())
         });
         cached_children.put_entry_if_not_found("task", || {
             TaskDirOps::new_inode(self.0.clone(), this_ptr.clone())

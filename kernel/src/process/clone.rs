@@ -257,6 +257,9 @@ fn clone_child_task(
     // Inherit sigmask from current thread
     let sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed).into();
 
+    // Inherit the thread name.
+    let thread_name = posix_thread.thread_name().lock().as_ref().cloned();
+
     let child_tid = allocate_posix_tid();
     let child_task = {
         let credentials = {
@@ -266,6 +269,7 @@ fn clone_child_task(
 
         let mut thread_builder = PosixThreadBuilder::new(child_tid, child_user_ctx, credentials)
             .process(posix_thread.weak_process())
+            .thread_name(thread_name)
             .sig_mask(sig_mask)
             .file_table(child_file_table)
             .fs(child_fs);

@@ -17,6 +17,9 @@ pub struct Jiffies(u64);
 pub(crate) static ELAPSED: AtomicU64 = AtomicU64::new(0);
 
 impl Jiffies {
+    /// The maximum value of [`Jiffies`].
+    pub const MAX: Self = Self(u64::MAX);
+
     /// Creates a new instance.
     pub fn new(value: u64) -> Self {
         Self(value)
@@ -32,9 +35,16 @@ impl Jiffies {
         self.0
     }
 
+    /// Adds the given number of jiffies, saturating at [`Jiffies::MAX`] on overflow.
+    pub fn add(&mut self, jiffies: u64) {
+        self.0 = self.0.saturating_add(jiffies);
+    }
+
     /// Gets the [`Duration`] calculated from the jiffies counts.
     pub fn as_duration(self) -> Duration {
-        Duration::from_millis(self.0 * 1000 / TIMER_FREQ)
+        let secs = self.0 / TIMER_FREQ;
+        let nanos = ((self.0 % TIMER_FREQ) * 1_000_000_000) / TIMER_FREQ;
+        Duration::new(secs, nanos as u32)
     }
 }
 

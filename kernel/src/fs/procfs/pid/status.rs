@@ -9,11 +9,12 @@ use crate::{
     },
     prelude::*,
     process::posix_thread::AsPosixThread,
+    thread::Thread,
     vm::vmar::RssType,
     Process,
 };
 
-/// Represents the inode at `/proc/[pid]/status`.
+/// Represents the inode at either `/proc/[pid]/status` or `/proc/[pid]/task/[tid]/status`.
 /// See https://github.com/torvalds/linux/blob/ce1c54fdff7c4556b08f5b875a331d8952e8b6b7/fs/proc/array.c#L148
 /// FIXME: Some fields are not implemented yet.
 ///
@@ -59,54 +60,95 @@ use crate::{
 /// - Mems_allowed_list: List of memory nodes allowed for this process.
 /// - voluntary_ctxt_switches: Number of voluntary context switches.
 /// - nonvoluntary_ctxt_switches: Number of nonvoluntary context switches.
-pub struct StatusFileOps(Arc<Process>);
+pub struct StatusFileOps {
+    process_ref: Arc<Process>,
+    thread_ref: Arc<Thread>,
+}
 
 impl StatusFileOps {
-    pub fn new_inode(process_ref: Arc<Process>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        ProcFileBuilder::new(Self(process_ref))
-            .parent(parent)
-            .build()
-            .unwrap()
+    pub fn new_inode(
+        process_ref: Arc<Process>,
+        thread_ref: Arc<Thread>,
+        parent: Weak<dyn Inode>,
+    ) -> Arc<dyn Inode> {
+        ProcFileBuilder::new(Self {
+            process_ref,
+            thread_ref,
+        })
+        .parent(parent)
+        .build()
+        .unwrap()
     }
 }
 
 impl FileOps for StatusFileOps {
     fn data(&self) -> Result<Vec<u8>> {
-        let process = &self.0;
-        let main_thread = process.main_thread();
-        let file_table = main_thread.as_posix_thread().unwrap().file_table();
+        let process = &self.process_ref;
+        let thread = &self.thread_ref;
+        let posix_thread = thread.as_posix_thread().unwrap();
+
+        // According to the Linux implementation, a process's `/proc/<pid>/status`
+        // is exactly the same as its main thread's `/proc/<pid>/task/<pid>/status`.
+        //
+        // Reference:
+        // <https://github.com/torvalds/linux/blob/0ff41df1cb268fc69e703a08a57ee14ae967d0ca/fs/proc/base.c#L3320>
+        // <https://github.com/torvalds/linux/blob/0ff41df1cb268fc69e703a08a57ee14ae967d0ca/fs/proc/base.c#L3669>
 
         let mut status_output = String::new();
-        writeln!(status_output, "Name:\t{}", process.executable_path()).unwrap();
+
+        writeln!(
+            status_output,
+            "Name:\t{}",
+            posix_thread
+                .thread_name()
+                .lock()
+                .as_ref()
+                .and_then(|name| name.as_string())
+                .unwrap_or_else(|| process.executable_path())
+        )
+        .unwrap();
+
+        let state = if thread.is_exited() {
+            "Z (zombie)"
+        } else {
+            "R (running)"
+        };
+        writeln!(status_output, "State:\t{}", state).unwrap();
+
         writeln!(status_output, "Tgid:\t{}", process.pid()).unwrap();
-        writeln!(status_output, "Pid:\t{}", process.pid()).unwrap();
+        writeln!(status_output, "Pid:\t{}", posix_thread.tid()).unwrap();
         writeln!(status_output, "PPid:\t{}", process.parent().pid()).unwrap();
-        writeln!(status_output, "TracerPid:\t{}", process.parent().pid()).unwrap(); // Assuming TracerPid is the same as PPid
+        writeln!(status_output, "TracerPid:\t{}", 0).unwrap();
         writeln!(
             status_output,
             "FDSize:\t{}",
-            file_table
+            posix_thread
+                .file_table()
                 .lock()
                 .as_ref()
                 .map(|file_table| file_table.read().len())
                 .unwrap_or(0)
         )
         .unwrap();
-        writeln!(
-            status_output,
-            "Threads:\t{}",
-            process.tasks().lock().as_slice().len()
-        )
-        .unwrap();
 
         if let Some(vmar_ref) = process.lock_root_vmar().as_ref() {
+            let vsize = vmar_ref.get_mappings_total_size();
             let anon = vmar_ref.get_rss_counter(RssType::RSS_ANONPAGES) * (PAGE_SIZE / 1024);
             let file = vmar_ref.get_rss_counter(RssType::RSS_FILEPAGES) * (PAGE_SIZE / 1024);
             let rss = anon + file;
             writeln!(
                 status_output,
-                "VmRSS:\t{} kB\nRssAnon:\t{} kB\nRssFile:\t{} kB",
-                rss, anon, file
+                "VmSize:\t{} kB\nVmRSS:\t{} kB\nRssAnon:\t{} kB\nRssFile:\t{} kB",
+                vsize, rss, anon, file
+            )
+            .unwrap();
+        }
+
+        if Arc::ptr_eq(thread, &process.main_thread()) {
+            writeln!(
+                status_output,
+                "Threads:\t{}",
+                process.tasks().lock().as_slice().len()
             )
             .unwrap();
         }
