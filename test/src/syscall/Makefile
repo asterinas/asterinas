@@ -2,7 +2,7 @@
 
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
-INITRAMFS ?= $(CUR_DIR)/../build/initramfs
+INITRAMFS ?= $(CUR_DIR)/../../build/initramfs
 RUN_BASH := $(CUR_DIR)/run_syscall_test.sh
 TARGET_DIR := $(INITRAMFS)/opt/syscall_test
 SYSCALL_TEST_SUITE ?= ltp

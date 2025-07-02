@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MPL-2.0
 
 CUR_DIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
-BUILD_DIR := $(CUR_DIR)/../../build/initramfs/test/network
-ATOMIC_WGET := $(CUR_DIR)/../../../tools/atomic_wget.sh
+BUILD_DIR := $(CUR_DIR)/../../../build/initramfs/test/network
+ATOMIC_WGET := $(CUR_DIR)/../../../../tools/atomic_wget.sh
 MONGOOSE_DIR := $(CUR_DIR)
 MONGOOSE_C := $(MONGOOSE_DIR)/mongoose.c
 MONGOOSE_H := $(MONGOOSE_DIR)/mongoose.h
