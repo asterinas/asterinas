@@ -37,6 +37,7 @@ mod eventfd;
 mod execve;
 mod exit;
 mod exit_group;
+mod fadvise64;
 mod fallocate;
 mod fcntl;
 mod flock;
