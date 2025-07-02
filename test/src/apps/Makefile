@@ -6,7 +6,7 @@ MAKEFLAGS += --no-builtin-rules
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 
-INITRAMFS ?= $(CUR_DIR)/../build/initramfs
+INITRAMFS ?= $(CUR_DIR)/../../build/initramfs
 TEST_BUILD_DIR ?= $(INITRAMFS)/test
 
 # These test apps are sorted by name

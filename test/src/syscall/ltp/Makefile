@@ -3,7 +3,7 @@
 LTP_DIR ?= /opt/ltp
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
-INITRAMFS ?= $(CUR_DIR)/../../build/initramfs
+INITRAMFS ?= $(CUR_DIR)/../../../build/initramfs
 TARGET_DIR := $(INITRAMFS)/opt/ltp
 RUN_BASH := $(CUR_DIR)/run_ltp_test.sh
 ALL_TESTS := $(CUR_DIR)/testcases/all.txt

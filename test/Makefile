@@ -97,7 +97,7 @@ $(INITRAMFS)/lib64:
 
 $(INITRAMFS)/etc:
 	@mkdir -p $@
-	@cp $(CUR_DIR)/etc/* $@
+	@cp $(CUR_DIR)/src/etc/* $@
 
 # Install busybox into /bin and /usr/bin.
 $(INITRAMFS)/bin:
@@ -121,10 +121,10 @@ $(INITRAMFS)/usr/local:
 
 .PHONY: $(INITRAMFS)/test
 $(INITRAMFS)/test:
-	@$(MAKE) --no-print-directory -C apps
+	@$(MAKE) --no-print-directory -C src/apps
 
 $(INITRAMFS)/benchmark: | $(INITRAMFS)/benchmark/bin
-	@cp -rf $(CUR_DIR)/benchmark/* $@
+	@cp -rf $(CUR_DIR)/src/benchmark/* $@
 
 $(INITRAMFS)/benchmark/bin:
 	@mkdir -p $@
@@ -148,7 +148,7 @@ $(INITRAMFS_EMPTY_DIRS):
 
 .PHONY: $(SYSCALL_TEST_DIR)
 $(SYSCALL_TEST_DIR):
-	@$(MAKE) --no-print-directory -C syscall_test
+	@$(MAKE) --no-print-directory -C src/syscall
 
 .PHONY: $(INITRAMFS_IMAGE)
 $(INITRAMFS_IMAGE): $(INITRAMFS_FILELIST)
@@ -194,11 +194,11 @@ build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE)
 
 .PHONY: format
 format:
-	@$(MAKE) --no-print-directory -C apps format
+	@$(MAKE) --no-print-directory -C src/apps format
 
 .PHONY: check
 check:
-	@$(MAKE) --no-print-directory -C apps check
+	@$(MAKE) --no-print-directory -C src/apps check
 
 .PHONY: clean
 clean:

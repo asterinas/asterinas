@@ -73,14 +73,14 @@ TESTS ?= \
 
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
-BUILD_DIR ?= $(CUR_DIR)/../../build
+BUILD_DIR ?= $(CUR_DIR)/../../../build
 ifdef ASTER_PREBUILT_SYSCALL_TEST
 	BIN_DIR := $(ASTER_PREBUILT_SYSCALL_TEST)
 else
 	BIN_DIR := $(BUILD_DIR)/syscall_test_bins
 	SRC_DIR := $(BUILD_DIR)/gvisor_src
 endif
-INITRAMFS ?= $(CUR_DIR)/../../build/initramfs
+INITRAMFS ?= $(CUR_DIR)/../../../build/initramfs
 TARGET_DIR := $(INITRAMFS)/opt/gvisor
 RUN_BASH := $(CUR_DIR)/run_gvisor_test.sh
 BLOCK_LIST := $(CUR_DIR)/blocklists
