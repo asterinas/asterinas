@@ -294,7 +294,7 @@ impl Metadata {
             nlinks: 1,
             uid: Uid::new_root(),
             gid: Gid::new_root(),
-            rdev: device.id().into(),
+            rdev: device.id().as_encoded_u64(),
         }
     }
 

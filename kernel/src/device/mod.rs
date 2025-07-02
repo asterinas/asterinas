@@ -64,12 +64,7 @@ pub fn init() -> Result<()> {
 // Instead of hardcoding every device numbers in this function,
 // a registration mechanism should be used to allow each driver to
 // allocate device IDs either statically or dynamically.
-pub fn get_device(dev: usize) -> Result<Arc<dyn Device>> {
-    if dev == 0 {
-        return_errno_with_message!(Errno::EPERM, "whiteout device")
-    }
-
-    let devid = DeviceId::from(dev as u64);
+pub fn get_device(devid: DeviceId) -> Result<Arc<dyn Device>> {
     let major = devid.major();
     let minor = devid.minor();
 
@@ -79,6 +74,6 @@ pub fn get_device(dev: usize) -> Result<Arc<dyn Device>> {
         (5, 0) => Ok(Arc::new(tty::TtyDevice)),
         (1, 8) => Ok(Arc::new(random::Random)),
         (1, 9) => Ok(Arc::new(urandom::Urandom)),
-        _ => return_errno_with_message!(Errno::EINVAL, "unsupported device"),
+        _ => return_errno_with_message!(Errno::EINVAL, "the device ID is invalid or unsupported"),
     }
 }
