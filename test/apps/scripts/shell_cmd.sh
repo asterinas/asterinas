@@ -28,12 +28,14 @@ unlink tesk_cmd_hard_link
 
 sed 3q shell_cmd.sh
 
-find . -name "*shell_cmd*" 
+find . -name "*shell_cmd*"
 
 mkdir foo
-rmdir foo 
+rmdir foo
 
 echo "Hello world from asterinas" > hello.txt
 rm hello.txt
 
 cd ..
+
+ps -T | grep ps

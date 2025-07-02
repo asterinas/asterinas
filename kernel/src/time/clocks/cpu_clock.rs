@@ -3,13 +3,16 @@
 use alloc::sync::Arc;
 use core::time::Duration;
 
-use ostd::sync::SpinLock;
+use ostd::{
+    sync::{LocalIrqDisabled, SpinLock},
+    timer::Jiffies,
+};
 
 use crate::time::Clock;
 
 /// A clock used to record the CPU time for processes and threads.
 pub struct CpuClock {
-    time: SpinLock<Duration>,
+    time: SpinLock<Jiffies, LocalIrqDisabled>,
 }
 
 /// A profiling clock that contains a user CPU clock and a kernel CPU clock.
@@ -25,19 +28,24 @@ impl CpuClock {
     /// Creates a new `CpuClock`. The recorded time is initialized to 0.
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
-            time: SpinLock::new(Duration::ZERO),
+            time: SpinLock::new(Jiffies::new(0)),
         })
     }
 
-    /// Adds `interval` to the original recorded time to update the `CpuClock`.
-    pub fn add_time(&self, interval: Duration) {
-        *self.time.disable_irq().lock() += interval;
+    /// Adds `jiffies` to the original recorded time to update the `CpuClock`.
+    pub fn add_jiffies(&self, jiffies: u64) {
+        self.time.lock().add(jiffies);
+    }
+
+    /// Reads the current time of this clock in [`Jiffies`].
+    pub fn read_jiffies(&self) -> Jiffies {
+        *self.time.lock()
     }
 }
 
 impl Clock for CpuClock {
     fn read_time(&self) -> Duration {
-        *self.time.disable_irq().lock()
+        self.read_jiffies().as_duration()
     }
 }
 

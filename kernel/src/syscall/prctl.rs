@@ -63,7 +63,7 @@ pub fn sys_prctl(
         PrctlCmd::PR_GET_NAME(write_to_addr) => {
             let thread_name = ctx.posix_thread.thread_name().lock();
             if let Some(thread_name) = &*thread_name {
-                if let Some(thread_name) = thread_name.name()? {
+                if let Some(thread_name) = thread_name.name() {
                     ctx.user_space().write_bytes(
                         write_to_addr,
                         &mut VmReader::from(thread_name.to_bytes_with_nul()),

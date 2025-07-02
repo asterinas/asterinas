@@ -813,6 +813,11 @@ impl<R> Vmar<R> {
     pub fn get_rss_counter(&self, rss_type: RssType) -> usize {
         self.0.get_rss_counter(rss_type)
     }
+
+    /// Returns the total size of the mappings in bytes.
+    pub fn get_mappings_total_size(&self) -> usize {
+        self.0.inner.read().total_vm
+    }
 }
 
 /// Options for creating a new mapping. The mapping is not allowed to overlap

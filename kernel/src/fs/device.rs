@@ -41,49 +41,64 @@ pub enum DeviceType {
     MiscDevice,
 }
 
-/// Device Id
-#[derive(Clone, Copy)]
-pub struct DeviceId(u64);
-
-impl DeviceId {
-    pub fn new(major: u32, minor: u32) -> Self {
-        let major = major as u64;
-        let minor = minor as u64;
-        Self(
-            ((major & 0xffff_f000) << 32)
-                | ((major & 0x0000_0fff) << 8)
-                | ((minor & 0xffff_ff00) << 12)
-                | (minor & 0x0000_00ff),
-        )
-    }
-
-    pub fn major(&self) -> u32 {
-        ((self.0 >> 32) & 0xffff_f000 | (self.0 >> 8) & 0x0000_0fff) as u32
-    }
-
-    pub fn minor(&self) -> u32 {
-        ((self.0 >> 12) & 0xffff_ff00 | self.0 & 0x0000_00ff) as u32
-    }
+/// A device ID, containing a major device number and a minor device number.
+#[derive(Clone, Copy, Debug)]
+pub struct DeviceId {
+    major: u32,
+    minor: u32,
 }
 
-impl Debug for DeviceId {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("DeviceId")
-            .field("major", &self.major())
-            .field("minor", &self.minor())
-            .finish()
+impl DeviceId {
+    /// Creates a device ID from the major device number and the minor device number.
+    pub fn new(major: u32, minor: u32) -> Self {
+        Self { major, minor }
+    }
+
+    /// Returns the major device number.
+    pub fn major(&self) -> u32 {
+        self.major
+    }
+
+    /// Returns the minor device number.
+    pub fn minor(&self) -> u32 {
+        self.minor
+    }
+
+    /// Encodes the device ID as a `u32` value.
+    ///
+    /// The encoding strategy here is the same as in Linux. See the Linux implementation at:
+    /// <https://github.com/torvalds/linux/blob/0ff41df1cb268fc69e703a08a57ee14ae967d0ca/include/linux/kdev_t.h#L39-L44>
+    pub fn as_encoded_u32(&self) -> u32 {
+        self.as_encoded_u64() as u32
+    }
+
+    /// Encodes the device ID as a `u64` value.
+    fn as_encoded_u64(&self) -> u64 {
+        let major = self.major() as u64;
+        let minor = self.minor() as u64;
+        ((major & 0xffff_f000) << 32)
+            | ((major & 0x0000_0fff) << 8)
+            | ((minor & 0xffff_ff00) << 12)
+            | (minor & 0x0000_00ff)
+    }
+
+    /// Decodes the device ID from a `u64` value.
+    fn decode_from_u64(raw: u64) -> Self {
+        let major = ((raw >> 32) & 0xffff_f000 | (raw >> 8) & 0x0000_0fff) as u32;
+        let minor = ((raw >> 12) & 0xffff_ff00 | raw & 0x0000_00ff) as u32;
+        Self::new(major, minor)
     }
 }
 
 impl From<DeviceId> for u64 {
     fn from(value: DeviceId) -> Self {
-        value.0
+        value.as_encoded_u64()
     }
 }
 
 impl From<u64> for DeviceId {
     fn from(raw: u64) -> Self {
-        Self(raw)
+        Self::decode_from_u64(raw)
     }
 }
 

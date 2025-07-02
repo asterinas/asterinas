@@ -5,14 +5,9 @@ use alloc::{
     sync::{Arc, Weak},
     vec::Vec,
 };
-use core::time::Duration;
 
 use id_alloc::IdAlloc;
-use ostd::{
-    arch::{timer::TIMER_FREQ, trap::is_kernel_interrupted},
-    sync::Mutex,
-    timer,
-};
+use ostd::{arch::trap::is_kernel_interrupted, sync::Mutex, timer};
 
 use super::Process;
 use crate::{
@@ -48,25 +43,15 @@ fn update_cpu_time() {
         return;
     };
     let timer_manager = process.timer_manager();
-    let jiffies_interval = Duration::from_millis(1000 / TIMER_FREQ);
     // Based on whether the timer interrupt occurs in kernel mode or user mode,
     // the function will add the duration of one timer interrupt interval to the
     // corresponding CPU clocks.
     if is_kernel_interrupted() {
-        posix_thread
-            .prof_clock()
-            .kernel_clock()
-            .add_time(jiffies_interval);
-        process
-            .prof_clock()
-            .kernel_clock()
-            .add_time(jiffies_interval);
+        posix_thread.prof_clock().kernel_clock().add_jiffies(1);
+        process.prof_clock().kernel_clock().add_jiffies(1);
     } else {
-        posix_thread
-            .prof_clock()
-            .user_clock()
-            .add_time(jiffies_interval);
-        process.prof_clock().user_clock().add_time(jiffies_interval);
+        posix_thread.prof_clock().user_clock().add_jiffies(1);
+        process.prof_clock().user_clock().add_jiffies(1);
         timer_manager
             .virtual_timer()
             .timer_manager()
