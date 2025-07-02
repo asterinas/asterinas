@@ -240,6 +240,10 @@ fn reschedule<F>(mut f: F)
 where
     F: FnMut(&mut dyn LocalRunQueue) -> ReschedAction,
 {
+    // Even if the decision below is `DoNothing`, we should clear this flag. Meanwhile, to avoid
+    // race conditions, we should do this before making the decision.
+    cpu_local::clear_need_preempt();
+
     let next_task = loop {
         let mut action = ReschedAction::DoNothing;
         SCHEDULER.get().unwrap().local_mut_rq_with(&mut |rq| {
@@ -265,7 +269,6 @@ where
     // FIXME: The scheduler decision and context switching are not atomic, which can lead to some
     // strange behavior even if the scheduler is implemented correctly. See "Problem 2" at
     // <https://github.com/asterinas/asterinas/issues/1633> for details.
-    cpu_local::clear_need_preempt();
     processor::switch_to_task(next_task);
 }
 
