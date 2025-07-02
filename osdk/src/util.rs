@@ -4,7 +4,7 @@ use std::{
     collections::HashMap,
     ffi::OsStr,
     fs::{self, File},
-    io::{BufRead, BufReader, Result, Write},
+    io::{BufRead, BufReader, Read, Result, Write},
     os::unix::net::UnixStream,
     path::{Path, PathBuf},
     process::Command,
@@ -311,28 +311,65 @@ pub fn trace_panic_from_log(qemu_log: File, bin_path: PathBuf) {
     addr2line_proc.wait().unwrap();
 }
 
-/// Dump the coverage data from QEMU if the coverage information is found in the log.
-pub fn dump_coverage_from_qemu(qemu_log: File, monitor_socket: &mut UnixStream) {
-    const COVERAGE_SIGNATRUE: &str = "#### Coverage: ";
-    let reader = rev_buf_reader::RevBufReader::new(qemu_log);
+/// Dump the coverage data from QEMU.
+pub fn dump_coverage_from_qemu(
+    cov_file: &PathBuf,
+    monitor_socket: &mut UnixStream,
+    coverage_paddr: u64,
+    coverage_size: u64,
+) {
+    let filename = cov_file
+        .file_name()
+        .unwrap_or_else(|| OsStr::new("coverage.profraw"))
+        .to_string_lossy();
+    let cmd = format!("pmemsave 0x{coverage_paddr:x} 0x{coverage_size:x} {filename}\n");
 
-    let Some(line) = reader
-        .lines()
-        .find(|l| l.as_ref().unwrap().starts_with(COVERAGE_SIGNATRUE))
-        .map(|l| l.unwrap())
-    else {
+    if monitor_socket.write_all(cmd.as_bytes()).is_err() {
+        warn!("Failed to send pmemsave command to QEMU monitor");
         return;
-    };
-
-    let line = line.strip_prefix(COVERAGE_SIGNATRUE).unwrap();
-    let (addr, size) = line.split_once(' ').unwrap();
-    let addr = usize::from_str_radix(addr.strip_prefix("0x").unwrap(), 16).unwrap();
-    let size: usize = size.parse().unwrap();
-
-    let cmd = format!("memsave 0x{addr:x} {size} coverage.profraw\n");
-    if monitor_socket.write_all(cmd.as_bytes()).is_ok() {
-        info!("Coverage data saved to coverage.profraw");
     }
+
+    // Wait for the command to complete
+    println!("Waiting for QEMU to complete memory dump...");
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
+    // Read the coverage.mem file and extract the coverage data
+    match read_coverage_data_from_file(cov_file) {
+        Ok(coverage_data) => {
+            info!(
+                "Successfully extracted {} bytes of coverage data",
+                coverage_data.len()
+            );
+            // Write the coverage data to a separate file
+            if let Err(e) = fs::write(cov_file, &coverage_data) {
+                warn!("Failed to write coverage data to file: {}", e);
+            } else {
+                info!("Coverage data written to {}", cov_file.display());
+            }
+        }
+        Err(e) => {
+            warn!("Failed to read coverage data: {}", e);
+        }
+    }
+}
+
+/// Read coverage data from the memory dump file.
+/// The first 8 bytes (u64) represent the length of the actual coverage data.
+fn read_coverage_data_from_file(file_path: &PathBuf) -> Result<Vec<u8>> {
+    let mut file = std::fs::File::open(file_path)?;
+    // Read the first 8 bytes as u64 (length)
+    let mut length_bytes = [0u8; 8];
+    file.read_exact(&mut length_bytes)?;
+    let data_length = u64::from_le_bytes(length_bytes) as usize;
+
+    info!("Coverage data length from header: {} bytes", data_length);
+
+    // Read the actual coverage data
+    let mut coverage_data = vec![0u8; data_length];
+    // Read the coverage data from the file
+    file.read_exact(&mut coverage_data)?;
+
+    Ok(coverage_data)
 }
 
 /// A guard that ensures the current working directory is restored

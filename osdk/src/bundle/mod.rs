@@ -348,11 +348,51 @@ impl Bundle {
             }
         }
 
-        // Find the coverage data information in "qemu.log", and dump it if found.
+        // Dump coverage data information into coverage.profraw.
         if let Some(qemu_monitor_stream) = qemu_monitor_stream {
-            if let Ok(file) = std::fs::File::open(&qemu_log_path) {
-                crate::util::dump_coverage_from_qemu(file, qemu_monitor_stream);
-            }
+            let cov_path = config.work_dir.join("coverage.profraw");
+
+            // Parse hex (0x prefix) or decimal number
+            let parse_hex_or_dec = |s: &str| -> Result<u64, std::num::ParseIntError> {
+                if let Some(hex_str) = s.strip_prefix("0x") {
+                    u64::from_str_radix(hex_str, 16)
+                } else {
+                    s.parse::<u64>()
+                }
+            };
+
+            let coverage_paddr = config
+                .run
+                .boot
+                .kcmdline
+                .iter()
+                .find_map(|arg| {
+                    if arg.starts_with("coverage_paddr=") {
+                        arg.split('=').nth(1).and_then(|s| parse_hex_or_dec(s).ok())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(0x10000000); // Default address if not specified
+            let coverage_size = config
+                .run
+                .boot
+                .kcmdline
+                .iter()
+                .find_map(|arg| {
+                    if arg.starts_with("coverage_size=") {
+                        arg.split('=').nth(1).and_then(|s| parse_hex_or_dec(s).ok())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(0x1000000); // Default size if not specified
+            crate::util::dump_coverage_from_qemu(
+                &cov_path,
+                qemu_monitor_stream,
+                coverage_paddr,
+                coverage_size,
+            );
         }
     }
 }

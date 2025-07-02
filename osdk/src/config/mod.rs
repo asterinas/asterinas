@@ -181,6 +181,35 @@ fn apply_args_after_finalize(action: &mut Action, args: &CommonArgs) {
     if args.coverage {
         action.qemu.args += " --no-shutdown";
         action.qemu.with_monitor = true;
+
+        // Check if coverage_paddr is already provided by user
+        let has_coverage_paddr = action
+            .boot
+            .kcmdline
+            .iter()
+            .any(|arg| arg.starts_with("coverage_paddr="));
+
+        // Check if coverage_size is already provided by user
+        let has_coverage_size = action
+            .boot
+            .kcmdline
+            .iter()
+            .any(|arg| arg.starts_with("coverage_size="));
+
+        // Insert coverage parameters at the beginning of kcmdline only if not provided
+        if !has_coverage_paddr {
+            action
+                .boot
+                .kcmdline
+                .insert(0, "coverage_paddr=0x10000000".to_string());
+        }
+        if !has_coverage_size {
+            action
+                .boot
+                .kcmdline
+                .insert(0, "coverage_size=0x1000000".to_string());
+        }
+        println!("{:?}", action.boot.kcmdline);
     }
 }
 
