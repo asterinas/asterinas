@@ -103,10 +103,15 @@ fn do_sys_preadv(
         // but the current implementation does not ensure atomicity.
         // A suitable fix would be to add a `readv` method for the `FileLike` trait,
         // allowing each subsystem to implement atomicity.
-        let read_len = file.read_at(cur_offset, writer)?;
-        total_len += read_len;
-        cur_offset += read_len;
-        if read_len == 0 || writer.has_avail() {
+        match file.read_at(cur_offset, writer) {
+            Ok(read_len) => {
+                total_len += read_len;
+                cur_offset += read_len;
+            }
+            Err(_) if total_len > 0 => break,
+            Err(err) => return Err(err),
+        }
+        if writer.has_avail() {
             // End of file reached or no more data to read
             break;
         }
@@ -148,9 +153,12 @@ fn do_sys_readv(
         // but the current implementation does not ensure atomicity.
         // A suitable fix would be to add a `readv` method for the `FileLike` trait,
         // allowing each subsystem to implement atomicity.
-        let read_len = file.read(writer)?;
-        total_len += read_len;
-        if read_len == 0 || writer.has_avail() {
+        match file.read(writer) {
+            Ok(read_len) => total_len += read_len,
+            Err(_) if total_len > 0 => break,
+            Err(err) => return Err(err),
+        }
+        if writer.has_avail() {
             // End of file reached or no more data to read
             break;
         }
