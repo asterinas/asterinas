@@ -178,9 +178,8 @@ impl FairAttr {
         }
         let old_weight = weight & !HAS_PENDING;
 
-        let vruntime = self.vruntime.load(Ordering::Relaxed);
-        self.vruntime
-            .store(vruntime * old_weight / new_weight, Ordering::Relaxed);
+        // The `vruntime` field is an accumulated value, and we don't update
+        // it here.
 
         (old_weight, new_weight)
     }
@@ -335,10 +334,7 @@ impl SchedClassRq for FairClassRq {
         match flags {
             UpdateFlags::Yield => true,
             UpdateFlags::Tick | UpdateFlags::Wait => {
-                let (old_weight, weight) = attr.fair.fetch_weight();
-                if old_weight != weight {
-                    self.total_weight = self.total_weight + weight - old_weight;
-                }
+                let (_old_weight, weight) = attr.fair.fetch_weight();
                 let vruntime = attr.fair.update_vruntime(rt.delta, weight);
                 self.min_vruntime = match self.entities.peek() {
                     Some(Reverse(leftmost)) => vruntime.min(leftmost.key()),
