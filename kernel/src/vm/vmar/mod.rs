@@ -829,7 +829,6 @@ pub struct VmarMapOptions<'a, R1, R2> {
     inode: Option<Arc<dyn Inode>>,
     perms: VmPerms,
     vmo_offset: usize,
-    vmo_limit: usize,
     size: usize,
     offset: Option<usize>,
     align: usize,
@@ -854,7 +853,6 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
             inode: None,
             perms,
             vmo_offset: 0,
-            vmo_limit: usize::MAX,
             size,
             offset: None,
             align: PAGE_SIZE,
@@ -901,12 +899,6 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
     /// The default value is zero.
     pub fn vmo_offset(mut self, offset: usize) -> Self {
         self.vmo_offset = offset;
-        self
-    }
-
-    /// Sets the access limit offset for the binding VMO.
-    pub fn vmo_limit(mut self, limit: usize) -> Self {
-        self.vmo_limit = limit;
         self
     }
 
@@ -1009,7 +1001,6 @@ where
             inode,
             perms,
             vmo_offset,
-            vmo_limit,
             size: map_size,
             offset,
             align,
@@ -1059,7 +1050,7 @@ where
         };
 
         // Build the mapping.
-        let vmo = vmo.map(|vmo| MappedVmo::new(vmo.to_dyn(), vmo_offset..vmo_limit));
+        let vmo = vmo.map(|vmo| MappedVmo::new(vmo.to_dyn(), vmo_offset));
         let vm_mapping = VmMapping::new(
             NonZeroUsize::new(map_size).unwrap(),
             map_to_addr,

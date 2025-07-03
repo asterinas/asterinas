@@ -362,7 +362,6 @@ fn map_segment_vmo(
             .new_map(segment_size, perms)?
             .vmo(segment_vmo.dup()?)
             .vmo_offset(segment_offset)
-            .vmo_limit(segment_offset + segment_size)
             .can_overwrite(true);
         vm_map_options = vm_map_options.offset(offset).handle_page_faults_around();
         let map_addr = vm_map_options.build()?;

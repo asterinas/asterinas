@@ -433,13 +433,10 @@ impl VmMapping {
         let (mut l_vmo, mut r_vmo) = (None, None);
 
         if let Some(vmo) = self.vmo {
-            let at_offset = vmo.range.start + at - self.map_to_addr;
+            let at_offset = vmo.offset + (at - self.map_to_addr);
 
-            let l_range = vmo.range.start..at_offset;
-            let r_range = at_offset..vmo.range.end;
-
-            l_vmo = Some(MappedVmo::new(vmo.vmo.dup()?, l_range));
-            r_vmo = Some(MappedVmo::new(vmo.vmo.dup()?, r_range));
+            l_vmo = Some(vmo.dup()?);
+            r_vmo = Some(MappedVmo::new(vmo.vmo.dup()?, at_offset));
         }
 
         let left_size = at - self.map_to_addr;
@@ -578,14 +575,14 @@ impl VmMapping {
 #[derive(Debug)]
 pub(super) struct MappedVmo {
     vmo: Vmo,
-    /// Represents the accessible range in the VMO for mappings.
-    range: Range<usize>,
+    /// Represents the mapped offset in the VMO for the mapping.
+    offset: usize,
 }
 
 impl MappedVmo {
-    /// Creates a `MappedVmo` used for mapping.
-    pub(super) fn new(vmo: Vmo, range: Range<usize>) -> Self {
-        Self { vmo, range }
+    /// Creates a `MappedVmo` used for the mapping.
+    pub(super) fn new(vmo: Vmo, offset: usize) -> Self {
+        Self { vmo, offset }
     }
 
     /// Returns the **valid** size of the `MappedVmo`.
@@ -594,7 +591,7 @@ impl MappedVmo {
     /// that actually falls within the bounds of the underlying VMO.
     fn valid_size(&self) -> usize {
         let vmo_size = self.vmo.size();
-        (self.range.start..vmo_size).len()
+        (self.offset..vmo_size).len()
     }
 
     /// Gets the committed frame at the input offset in the mapped VMO.
@@ -606,9 +603,8 @@ impl MappedVmo {
         &self,
         page_offset: usize,
     ) -> core::result::Result<UFrame, VmoCommitError> {
-        debug_assert!(page_offset < self.range.len());
         debug_assert!(page_offset % PAGE_SIZE == 0);
-        self.vmo.try_commit_page(self.range.start + page_offset)
+        self.vmo.try_commit_page(self.offset + page_offset)
     }
 
     /// Commits a page at a specific page index.
@@ -616,7 +612,6 @@ impl MappedVmo {
     /// This method may involve I/O operations if the VMO needs to fecth
     /// a page from the underlying page cache.
     pub fn commit_on(&self, page_idx: usize, commit_flags: CommitFlags) -> Result<UFrame> {
-        debug_assert!(page_idx * PAGE_SIZE < self.range.len());
         self.vmo.commit_on(page_idx, commit_flags)
     }
 
@@ -636,11 +631,7 @@ impl MappedVmo {
             &mut dyn FnMut() -> core::result::Result<UFrame, VmoCommitError>,
         ) -> core::result::Result<(), VmoCommitError>,
     {
-        debug_assert!(range.start < self.range.len());
-        debug_assert!(range.end <= self.range.len());
-
-        let range = self.range.start + range.start..self.range.start + range.end;
-
+        let range = self.offset + range.start..self.offset + range.end;
         self.vmo.try_operate_on_range(&range, operate)
     }
 
@@ -648,7 +639,7 @@ impl MappedVmo {
     pub fn dup(&self) -> Result<Self> {
         Ok(Self {
             vmo: self.vmo.dup()?,
-            range: self.range.clone(),
+            offset: self.offset,
         })
     }
 }
@@ -673,14 +664,11 @@ fn try_merge(left: &VmMapping, right: &VmMapping) -> Option<VmMapping> {
     let vmo = match (&left.vmo, &right.vmo) {
         (None, None) => None,
         (Some(l_vmo), Some(r_vmo)) if Arc::ptr_eq(&l_vmo.vmo.0, &r_vmo.vmo.0) => {
-            let is_offset_contiguous = l_vmo.range.start.checked_add(left.map_size())
-                == Some(r_vmo.range.start)
-                && l_vmo.range.end - l_vmo.range.start >= left.map_size();
+            let is_offset_contiguous = l_vmo.offset + left.map_size() == r_vmo.offset;
             if !is_offset_contiguous {
                 return None;
             }
-            let range = l_vmo.range.start..l_vmo.range.end.max(r_vmo.range.end);
-            Some(MappedVmo::new(l_vmo.vmo.dup().ok()?, range))
+            Some(l_vmo.dup().ok()?)
         }
         _ => return None,
     };
