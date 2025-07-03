@@ -5,6 +5,7 @@ use crate::{
     fs::{
         file_table::{get_file_fast, FileDesc},
         fs_resolver::{FsPath, AT_FDCWD},
+        notify::fsnotify_modify,
         utils::PATH_MAX,
     },
     prelude::*,
@@ -19,6 +20,11 @@ pub fn sys_ftruncate(fd: FileDesc, len: isize, ctx: &Context) -> Result<SyscallR
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
     file.resize(len as usize)?;
+    // Some file is not supported dentry, such as epoll file,
+    // TODO: Add anonymous inode support.
+    if let Some(dentry) = file.dentry() {
+        fsnotify_modify(dentry)?;
+    }
     Ok(SyscallReturn::Return(0))
 }
 
@@ -37,6 +43,7 @@ pub fn sys_truncate(path_ptr: Vaddr, len: isize, ctx: &Context) -> Result<Syscal
         ctx.posix_thread.fs().resolver().read().lookup(&fs_path)?
     };
     dir_dentry.resize(len as usize)?;
+    fsnotify_modify(&dir_dentry)?;
     Ok(SyscallReturn::Return(0))
 }
 

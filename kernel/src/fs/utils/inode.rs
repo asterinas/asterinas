@@ -14,7 +14,10 @@ use super::{
 };
 use crate::{
     events::IoEvents,
-    fs::device::{Device, DeviceType},
+    fs::{
+        device::{Device, DeviceType},
+        notify::{FsnotifyCommon, FsnotifyGroup, FsnotifyMark},
+    },
     prelude::*,
     process::{posix_thread::AsPosixThread, signal::PollHandle, Gid, Uid},
     time::clocks::RealTimeCoarseClock,
@@ -385,6 +388,10 @@ pub trait Inode: Any + Sync + Send {
         None
     }
 
+    fn hard_links(&self) -> u16 {
+        0
+    }
+
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         Err(Error::new(Errno::EISDIR))
     }
@@ -498,6 +505,33 @@ pub trait Inode: Any + Sync + Send {
     /// Get the extension of this inode
     fn extension(&self) -> Option<&Extension> {
         None
+    }
+
+    fn fsnotify(&self) -> &FsnotifyCommon;
+
+    fn add_fsnotify_mark(&self, mark: Arc<dyn FsnotifyMark>, add_flags: u32) {
+        self.fsnotify().add_fsnotify_mark(mark, add_flags);
+    }
+
+    fn remove_fsnotify_mark(&self, mark: &Arc<dyn FsnotifyMark>) {
+        self.fsnotify().remove_fsnotify_mark(mark);
+    }
+
+    fn remove_fsnotify_marks(&self) {
+        self.fsnotify().remove_fsnotify_marks();
+    }
+
+    fn find_fsnotify_mark(
+        &self,
+        fsnotify_group: &Arc<dyn FsnotifyGroup>,
+    ) -> Option<Arc<dyn FsnotifyMark>> {
+        self.fsnotify().find_fsnotify_mark(fsnotify_group)
+    }
+
+    /// Traverse all the fsnotify marks of this inode and send the fsnotify event to the group.
+    /// We should check the mask if group is interested in the event.
+    fn send_fsnotify(&self, mask: u32, name: String) {
+        self.fsnotify().send_fsnotify(mask, name);
     }
 
     fn set_xattr(

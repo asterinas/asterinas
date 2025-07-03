@@ -2,7 +2,10 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::{get_file_fast, FileDesc},
+    fs::{
+        file_table::{get_file_fast, FileDesc},
+        notify::fsnotify_modify,
+    },
     prelude::*,
 };
 
@@ -37,5 +40,12 @@ pub fn sys_write(
         _ => err,
     })?;
 
+    // Some file is not supported dentry, such as epoll file,
+    // TODO: Add anonymous inode support.
+    if let Some(dentry) = file.dentry()
+        && write_len > 0
+    {
+        fsnotify_modify(dentry)?;
+    }
     Ok(SyscallReturn::Return(write_len as _))
 }

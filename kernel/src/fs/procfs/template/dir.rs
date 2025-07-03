@@ -10,6 +10,7 @@ use inherit_methods_macro::inherit_methods;
 use super::{Common, ProcFS};
 use crate::{
     fs::{
+        notify::FsnotifyCommon,
         path::{is_dot, is_dotdot},
         utils::{DirentVisitor, FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType},
     },
@@ -70,6 +71,7 @@ impl<D: DirOps> ProcDir<D> {
 impl<D: DirOps + 'static> Inode for ProcDir<D> {
     fn size(&self) -> usize;
     fn metadata(&self) -> Metadata;
+    fn fsnotify(&self) -> &FsnotifyCommon;
     fn ino(&self) -> u64;
     fn mode(&self) -> Result<InodeMode>;
     fn set_mode(&self, mode: InodeMode) -> Result<()>;
@@ -182,7 +184,6 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
         !self.common.is_volatile()
     }
 }
-
 pub trait DirOps: Sync + Send {
     fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::ENOENT))

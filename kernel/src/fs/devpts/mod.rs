@@ -8,7 +8,7 @@ use aster_util::slot_vec::SlotVec;
 use id_alloc::IdAlloc;
 
 use self::{ptmx::Ptmx, slave::PtySlaveInode};
-use super::utils::MknodType;
+use super::{notify::FsnotifyCommon, utils::MknodType};
 use crate::{
     device::PtyMaster,
     fs::{
@@ -109,6 +109,7 @@ struct RootInode {
     slaves: RwLock<SlotVec<(String, Arc<PtySlaveInode>)>>,
     metadata: RwLock<Metadata>,
     fs: Weak<DevPts>,
+    fsnotify: FsnotifyCommon,
 }
 
 impl RootInode {
@@ -122,6 +123,7 @@ impl RootInode {
                 BLOCK_SIZE,
             )),
             fs,
+            fsnotify: FsnotifyCommon::new(),
         })
     }
 
@@ -302,5 +304,14 @@ impl Inode for RootInode {
 
     fn is_dentry_cacheable(&self) -> bool {
         false
+    }
+
+    fn fsnotify(&self) -> &FsnotifyCommon {
+        &self.fsnotify
+    }
+
+    // devpts is not supported link and unlink, so the hard link count is dummy
+    fn hard_links(&self) -> u16 {
+        0
     }
 }

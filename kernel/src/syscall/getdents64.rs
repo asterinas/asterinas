@@ -6,6 +6,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::{get_file_fast, FileDesc},
+        notify::fsnotify_access,
         utils::{DirentVisitor, InodeType},
     },
     prelude::*,
@@ -34,6 +35,7 @@ pub fn sys_getdents(
     let read_len = reader.read_len();
     ctx.user_space()
         .write_bytes(buf_addr, &mut VmReader::from(&buffer[..read_len]))?;
+    fsnotify_access(inode_handle.dentry())?;
     Ok(SyscallReturn::Return(read_len as _))
 }
 
@@ -60,6 +62,7 @@ pub fn sys_getdents64(
     let read_len = reader.read_len();
     ctx.user_space()
         .write_bytes(buf_addr, &mut VmReader::from(&buffer[..read_len]))?;
+    fsnotify_access(inode_handle.dentry())?;
     Ok(SyscallReturn::Return(read_len as _))
 }
 

@@ -4,6 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::{get_file_fast, FileDesc},
+        notify::fsnotify_modify,
         utils::FallocMode,
     },
     prelude::*,
@@ -33,6 +34,11 @@ pub fn sys_fallocate(
     )?;
     file.fallocate(falloc_mode, offset as usize, len as usize)?;
 
+    // Some file is not supported dentry, such as epoll file,
+    // TODO: Add anonymous inode support.
+    if let Some(dentry) = file.dentry() {
+        fsnotify_modify(dentry)?;
+    }
     Ok(SyscallReturn::Return(0))
 }
 

@@ -5,6 +5,7 @@ use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
+        notify::fsnotify_create,
         utils::{InodeMode, InodeType},
     },
     prelude::*,
@@ -48,6 +49,7 @@ pub fn sys_symlinkat(
         InodeMode::from_bits_truncate(0o777),
     )?;
     new_dentry.inode().write_link(&target)?;
+    fsnotify_create(&dir_dentry, link_name)?;
     Ok(SyscallReturn::Return(0))
 }
 
