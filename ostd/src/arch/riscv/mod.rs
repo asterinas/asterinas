@@ -5,8 +5,10 @@
 pub mod boot;
 pub(crate) mod cpu;
 pub mod device;
+mod io;
 pub(crate) mod iommu;
 pub(crate) mod irq;
+pub mod kernel;
 pub(crate) mod mm;
 pub(crate) mod pci;
 pub mod qemu;
@@ -14,6 +16,8 @@ pub(crate) mod serial;
 pub(crate) mod task;
 pub mod timer;
 pub mod trap;
+
+use crate::cpu::current_cpu_racy;
 
 #[cfg(feature = "cvm_guest")]
 pub(crate) fn init_cvm_guest() {
@@ -24,8 +28,17 @@ pub(crate) unsafe fn late_init_on_bsp() {
     // SAFETY: This function is called in the boot context of the BSP.
     unsafe { trap::init() };
 
+    let io_mem_builder = io::construct_io_mem_allocator_builder();
+
     // SAFETY: We're on the BSP and we're ready to boot all APs.
     unsafe { crate::boot::smp::boot_all_aps() };
+
+    kernel::plic::init(&io_mem_builder);
+
+    // SAFETY:
+    // 1. All the system device memory have been removed from the builder.
+    // 2. RISC-V platforms does not have port I/O.
+    unsafe { crate::io::init(io_mem_builder) };
 
     // SAFETY: This function is called once and at most once at a proper timing
     // in the boot context of the BSP, with no timer-related operations having
@@ -39,7 +52,7 @@ pub(crate) unsafe fn init_on_ap() {
 }
 
 pub(crate) fn interrupts_ack(irq_number: usize) {
-    unimplemented!()
+    kernel::plic::complete_interrupt(current_cpu_racy().as_usize(), irq_number);
 }
 
 /// Return the frequency of TSC. The unit is Hz.

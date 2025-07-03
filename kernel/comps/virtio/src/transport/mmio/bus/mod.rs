@@ -22,6 +22,8 @@ pub(super) fn init() {
     } else {
         x86_probe();
     });
+    #[cfg(target_arch = "riscv64")]
+    riscv_probe();
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -106,4 +108,44 @@ fn x86_probe() {
         let device = MmioCommonDevice::new(io_mem, irq_line);
         mmio_bus.register_mmio_device(device);
     }
+}
+
+#[cfg(target_arch = "riscv64")]
+fn riscv_probe() {
+    use ostd::{
+        arch::{boot::DEVICE_TREE, kernel::PLIC},
+        io::IoMem,
+        trap::irq::IrqLine,
+    };
+
+    let mut mmio_bus = MMIO_BUS.lock();
+
+    let fdt = DEVICE_TREE.get().unwrap();
+    for node in fdt.all_nodes() {
+        if let Some(compatible) = node.compatible() {
+            if compatible.all().any(|s| s == "virtio,mmio") {
+                use crate::transport::mmio::bus::common_device::MmioCommonDevice;
+
+                let region = node.reg().unwrap().next().unwrap();
+                let irq_num = node.interrupts().unwrap().next().unwrap();
+
+                let io_mem = IoMem::acquire(
+                    region.starting_address as usize
+                        ..region.starting_address as usize + region.size.unwrap(),
+                )
+                .unwrap();
+
+                let irq = IrqLine::alloc_specific(irq_num as _).unwrap();
+
+                PLIC.get().unwrap().set_priority(irq_num as _, 6);
+                PLIC.get().unwrap().enable(0, true, irq_num as _);
+
+                let device = MmioCommonDevice::new(io_mem, irq);
+
+                mmio_bus.register_mmio_device(device);
+            }
+        }
+    }
+
+    PLIC.get().unwrap().set_threshold(0, true, 0);
 }
