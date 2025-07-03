@@ -2,6 +2,8 @@
 
 //! This module provides accessors to the page table entries in a node.
 
+use core::sync::atomic::Ordering;
+
 use super::{Child, ChildRef, PageTableEntryTrait, PageTableGuard, PageTableNode};
 use crate::{
     mm::{
@@ -22,6 +24,7 @@ use crate::{
 /// This is a static reference to an entry in a node that does not account for
 /// a dynamic reference count to the child. It can be used to create a owned
 /// handle, which is a [`Child`].
+#[derive(Debug)]
 pub(in crate::mm) struct Entry<'a, 'rcu, C: PageTableConfig> {
     /// The page table entry.
     ///
@@ -168,6 +171,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         //  1. The index is within the bounds.
         //  2. The new PTE is a child in `C` and at the correct paging level.
         //  3. The ownership of the child is passed to the page table node.
+        core::sync::atomic::fence(Ordering::Release);
         unsafe { self.node.write_pte(self.idx, self.pte) };
 
         *self.node.nr_children_mut() += 1;
@@ -231,6 +235,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         //  1. The index is within the bounds.
         //  2. The new PTE is a child in `C` and at the correct paging level.
         //  3. The ownership of the child is passed to the page table node.
+        core::sync::atomic::fence(Ordering::Release);
         unsafe { self.node.write_pte(self.idx, self.pte) };
 
         Some(pt_lock_guard)

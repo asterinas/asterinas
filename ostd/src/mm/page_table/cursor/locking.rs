@@ -11,8 +11,8 @@ use crate::{
     mm::{
         nr_subpage_per_huge, paddr_to_vaddr,
         page_table::{
-            load_pte, page_size, pte_index, ChildRef, PageTable, PageTableConfig,
-            PageTableEntryTrait, PageTableGuard, PageTableNodeRef, PagingConstsTrait, PagingLevel,
+            page_size, pte_index, ChildRef, PageTable, PageTableConfig, PageTableEntryTrait,
+            PageTableGuard, PageTableNodeRef, PagingConstsTrait, PagingLevel,
         },
         Vaddr,
     },
@@ -111,7 +111,8 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig>(
         //    (2) all child nodes cannot be recycled because we're in the RCU critical section.
         //  - The index is inside the bound, so the page table entry is valid.
         //  - All page table entries are aligned and accessed with atomic operations only.
-        let cur_pte = unsafe { load_pte(cur_pt_ptr.add(start_idx), Ordering::Acquire) };
+        core::sync::atomic::fence(Ordering::Acquire);
+        let cur_pte = unsafe { cur_pt_ptr.add(start_idx).read_volatile() };
 
         if cur_pte.is_present() {
             if cur_pte.is_last(cur_level) {

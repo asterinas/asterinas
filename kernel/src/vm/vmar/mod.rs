@@ -34,7 +34,7 @@ use vm_allocator::VmAllocator;
 
 use self::vm_mapping::{MappedVmo, VmMarker, VmoBackedVMA};
 use crate::{
-    fs::utils::{CachePageMeta, Inode},
+    fs::utils::Inode,
     prelude::*,
     thread::exception::PageFaultInfo,
     util::per_cpu_counter::PerCpuCounter,
@@ -760,6 +760,8 @@ fn cow_copy_pt(
     status_op: &mut impl FnMut(&mut Status),
     rss_delta: &mut [isize; NUM_RSS_COUNTERS],
 ) {
+    let _ = rss_delta;
+
     let start_va = src.virt_addr();
     let end_va = start_va + size;
     let mut remain_size = size;
@@ -784,16 +786,16 @@ fn cow_copy_pt(
         dst.jump(mapped_va).unwrap();
 
         match item {
-            VmItem::Frame(ref frame, ref mut prop) => {
-                let rss_type = if (frame.dyn_meta() as &dyn Any)
-                    .downcast_ref::<CachePageMeta>()
-                    .is_some()
-                {
-                    RssType::RSS_FILEPAGES
-                } else {
-                    RssType::RSS_ANONPAGES
-                };
-                rss_delta[rss_type as usize] += 1;
+            VmItem::Frame(_, ref mut prop) => {
+                // let rss_type = if (frame.dyn_meta() as &dyn Any)
+                //     .downcast_ref::<CachePageMeta>()
+                //     .is_some()
+                // {
+                //     RssType::RSS_FILEPAGES
+                // } else {
+                //     RssType::RSS_ANONPAGES
+                // };
+                // rss_delta[rss_type as usize] += 1;
 
                 prot_op(prop);
             }

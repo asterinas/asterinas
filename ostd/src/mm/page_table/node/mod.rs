@@ -28,7 +28,7 @@
 mod child;
 mod entry;
 
-use core::{cell::SyncUnsafeCell, marker::PhantomData, ops::Deref, sync::atomic::Ordering};
+use core::{cell::SyncUnsafeCell, marker::PhantomData, ops::Deref};
 
 pub(in crate::mm) use self::{
     child::{Child, ChildRef},
@@ -39,7 +39,7 @@ use crate::{
     mm::{
         frame::{meta::AnyFrameMeta, Frame, FrameRef},
         paddr_to_vaddr,
-        page_table::{load_pte, store_pte, zeroed_pt_pool},
+        page_table::zeroed_pt_pool,
         vm_space::Status,
         FrameAllocOptions, Infallible, PageProperty, PagingConstsTrait, PagingLevel, VmReader,
     },
@@ -224,7 +224,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         // SAFETY:
         // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
         // - All page table entries are aligned and accessed with atomic operations only.
-        unsafe { load_pte(ptr.add(idx), Ordering::Relaxed) }
+        unsafe { ptr.add(idx).read_volatile() }
     }
 
     /// Writes a page table entry at a given index.
@@ -245,7 +245,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         // SAFETY:
         // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
         // - All page table entries are aligned and accessed with atomic operations only.
-        unsafe { store_pte(ptr.add(idx), pte, Ordering::Release) }
+        unsafe { ptr.add(idx).write_volatile(pte) };
     }
 
     /// Gets the mutable reference to the number of valid PTEs in the node.

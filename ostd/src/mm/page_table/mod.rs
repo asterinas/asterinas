@@ -595,15 +595,3 @@ pub unsafe fn load_pte<E: PageTableEntryTrait>(ptr: *mut E, ordering: Ordering) 
     let pte_raw = atomic.load(ordering);
     E::from_usize(pte_raw)
 }
-
-/// Stores a page table entry with an atomic instruction.
-///
-/// # Safety
-///
-/// The safety preconditions are same as those of [`AtomicUsize::from_ptr`].
-pub unsafe fn store_pte<E: PageTableEntryTrait>(ptr: *mut E, new_val: E, ordering: Ordering) {
-    let new_raw = new_val.as_usize();
-    // SAFETY: The safety is upheld by the caller.
-    let atomic = unsafe { AtomicUsize::from_ptr(ptr.cast()) };
-    atomic.store(new_raw, ordering)
-}
