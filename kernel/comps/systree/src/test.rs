@@ -68,7 +68,7 @@ impl SysNode for DeviceNode {
     fn read_attr(&self, name: &str, writer: &mut VmWriter) -> Result<usize> {
         // Check if attribute exists
         if !self.fields.attr_set().contains(name) {
-            return Err(Error::AttributeError);
+            return Err(Error::NotFound);
         }
 
         let attr = self.fields.attr_set().get(name).unwrap();
@@ -91,11 +91,7 @@ impl SysNode for DeviceNode {
 
     fn write_attr(&self, name: &str, reader: &mut VmReader) -> Result<usize> {
         // Get attribute and check if it exists
-        let attr = self
-            .fields
-            .attr_set()
-            .get(name)
-            .ok_or(Error::AttributeError)?;
+        let attr = self.fields.attr_set().get(name).ok_or(Error::NotFound)?;
 
         // Check if attribute is writable
         if !attr.perms().can_write() {
@@ -273,7 +269,7 @@ fn error_handling() {
     // Attempt to access non-existent attribute
     let result = device.show_attr("nonexistent");
     match result {
-        Err(Error::AttributeError) => (),
+        Err(Error::NotFound) => (),
         _ => panic!("Failed to handle non-existent attribute error"),
     }
 
