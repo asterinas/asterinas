@@ -16,8 +16,8 @@ use ostd::{
 
 use super::{
     impl_cast_methods_for_branch, impl_cast_methods_for_symlink, Error, Result, SymlinkNodeFields,
-    SysAttrFlags, SysAttrSet, SysAttrSetBuilder, SysBranchNode, SysBranchNodeFields, SysNode,
-    SysNodeId, SysNodeType, SysObj, SysStr, SysSymlink, SysTree,
+    SysAttrSet, SysAttrSetBuilder, SysBranchNode, SysBranchNodeFields, SysNode, SysNodeId,
+    SysNodeType, SysObj, SysPerms, SysStr, SysSymlink, SysTree,
 };
 
 #[derive(Debug)]
@@ -30,12 +30,9 @@ impl DeviceNode {
     fn new(name: SysStr) -> Arc<Self> {
         let mut builder = SysAttrSetBuilder::new();
         builder
-            .add(Cow::Borrowed("model"), SysAttrFlags::CAN_READ)
-            .add(Cow::Borrowed("vendor"), SysAttrFlags::CAN_READ)
-            .add(
-                Cow::Borrowed("status"),
-                SysAttrFlags::CAN_READ | SysAttrFlags::CAN_WRITE,
-            );
+            .add(Cow::Borrowed("model"), SysPerms::DEFAULT_RO_ATTR_PERMS)
+            .add(Cow::Borrowed("vendor"), SysPerms::DEFAULT_RO_ATTR_PERMS)
+            .add(Cow::Borrowed("status"), SysPerms::DEFAULT_RW_ATTR_PERMS);
 
         let attrs = builder.build().expect("Failed to build attribute set");
         let fields = SysBranchNodeFields::new(name, attrs);
@@ -78,7 +75,7 @@ impl SysNode for DeviceNode {
 
         let attr = self.fields.attr_set().get(name).unwrap();
         // Check if attribute is readable
-        if !attr.flags().contains(SysAttrFlags::CAN_READ) {
+        if !attr.perms().can_read() {
             return Err(Error::PermissionDenied);
         }
         let value = match name {
@@ -103,7 +100,7 @@ impl SysNode for DeviceNode {
             .ok_or(Error::AttributeError)?;
 
         // Check if attribute is writable
-        if !attr.flags().contains(SysAttrFlags::CAN_WRITE) {
+        if !attr.perms().can_write() {
             return Err(Error::PermissionDenied);
         }
 
@@ -115,6 +112,10 @@ impl SysNode for DeviceNode {
             .map_err(|_| Error::AttributeError)?;
 
         Ok(read_len)
+    }
+
+    fn perms(&self) -> SysPerms {
+        SysPerms::DEFAULT_RW_PERMS
     }
 }
 

@@ -5,6 +5,7 @@
 use core::{any::TypeId, time::Duration};
 
 use aster_rights::Full;
+use aster_systree::SysPerms;
 use core2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
 use ostd::task::Task;
 
@@ -197,6 +198,12 @@ impl InodeMode {
 
     pub fn has_set_gid(&self) -> bool {
         self.contains(Self::S_ISGID)
+    }
+}
+
+impl From<SysPerms> for InodeMode {
+    fn from(value: SysPerms) -> Self {
+        InodeMode::from_bits_truncate(value.bits())
     }
 }
 
