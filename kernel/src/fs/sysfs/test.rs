@@ -98,7 +98,7 @@ impl SysNode for MockLeafNode {
             .fields
             .attr_set()
             .get(name)
-            .ok_or(SysTreeError::AttributeError)?;
+            .ok_or(SysTreeError::NotFound)?;
         if !attr.perms().can_read() {
             return Err(SysTreeError::PermissionDenied);
         }
@@ -115,7 +115,7 @@ impl SysNode for MockLeafNode {
             .fields
             .attr_set()
             .get(name)
-            .ok_or(SysTreeError::AttributeError)?;
+            .ok_or(SysTreeError::NotFound)?;
         if !attr.perms().can_write() {
             return Err(SysTreeError::PermissionDenied);
         }
@@ -195,7 +195,7 @@ impl SysNode for MockBranchNode {
             .fields
             .attr_set()
             .get(name)
-            .ok_or(SysTreeError::AttributeError)?;
+            .ok_or(SysTreeError::NotFound)?;
         if !attr.perms().can_read() {
             return Err(SysTreeError::PermissionDenied);
         }
@@ -214,7 +214,7 @@ impl SysNode for MockBranchNode {
             .fields
             .attr_set()
             .get(name)
-            .ok_or(SysTreeError::AttributeError)?;
+            .ok_or(SysTreeError::NotFound)?;
         if !attr.perms().can_write() {
             return Err(SysTreeError::PermissionDenied);
         }
