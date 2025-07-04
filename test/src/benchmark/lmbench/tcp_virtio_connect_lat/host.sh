@@ -16,6 +16,6 @@ trap stop_guest EXIT
 
 # Run lmbench tcp client
 echo "Running lmbench tcp client connected to $GUEST_SERVER_IP_ADDRESS"
-/usr/local/benchmark/lmbench/lat_connect $GUEST_SERVER_IP_ADDRESS
+lat_connect $GUEST_SERVER_IP_ADDRESS
 
 # The trap will automatically stop the guest VM when the script exits

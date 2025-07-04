@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
+HOST_PLATFORM ?= x86_64-linux
+
 # Prevent the implicit rules from compiling ".c" or ".s" files automatically.
 MAKEFLAGS += --no-builtin-rules
 
@@ -21,13 +23,10 @@ TEST_APPS := \
 	exit \
 	fdatasync \
 	file_io \
-	fork \
 	fork_c \
 	getcpu \
 	getpid \
-	hello_c \
 	hello_pie \
-	hello_world \
 	itimer \
 	mmap \
 	mongoose \
@@ -39,8 +38,16 @@ TEST_APPS := \
 	pty \
 	sched \
 	shm \
-	signal_c \
 	vsock \
+
+# TODO: Refactor those tests for target CPU arch using C macro-based conditional compilation.
+ifeq ($(HOST_PLATFORM), x86_64-linux)
+TEST_APPS += \
+	fork \
+	hello_c \
+	hello_world \
+	signal_c
+endif
 
 # The C head and source files of all the apps, excluding the downloaded mongoose files
 C_SOURCES := \

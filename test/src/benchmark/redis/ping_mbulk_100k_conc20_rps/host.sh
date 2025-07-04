@@ -16,6 +16,6 @@ trap stop_guest EXIT
 
 # Run redis bench
 echo "Running redis bench connected to $GUEST_SERVER_IP_ADDRESS"
-/usr/local/redis/bin/redis-benchmark -h $GUEST_SERVER_IP_ADDRESS -n 100000 -c 20 -t ping_mbulk
+redis-benchmark -h $GUEST_SERVER_IP_ADDRESS -n 100000 -c 20 -t ping_mbulk
 
 # The trap will automatically stop the guest VM when the script exits

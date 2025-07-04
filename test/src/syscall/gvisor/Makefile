@@ -74,8 +74,8 @@ TESTS ?= \
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 BUILD_DIR ?= $(CUR_DIR)/../../../build
-ifdef ASTER_PREBUILT_SYSCALL_TEST
-	BIN_DIR := $(ASTER_PREBUILT_SYSCALL_TEST)
+ifdef GVISOR_PREBUILT_DIR
+	BIN_DIR := $(GVISOR_PREBUILT_DIR)
 else
 	BIN_DIR := $(BUILD_DIR)/syscall_test_bins
 	SRC_DIR := $(BUILD_DIR)/gvisor_src
@@ -92,7 +92,7 @@ all: $(TESTS)
 $(TESTS): $(BIN_DIR) $(TARGET_DIR)
 	@cp -f $</$@ $(TARGET_DIR)/tests
 
-ifndef ASTER_PREBUILT_SYSCALL_TEST
+ifndef GVISOR_PREBUILT_DIR
 $(BIN_DIR): $(SRC_DIR)
 	@if ! type bazel > /dev/null; then \
 		echo "bazel is not installed, please run tools/install_bazel.sh with sudo permission to install it."; \

@@ -5,4 +5,4 @@
 set -e
 
 echo "Running redis server"
-/usr/local/redis/bin/redis-server /etc/redis.conf
+/benchmark/bin/redis-server /etc/redis.conf

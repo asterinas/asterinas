@@ -17,9 +17,9 @@ trap stop_guest EXIT
 # Warm up: We intentionally run another test for warmup here. 
 # Note that we can't use -W option for warmup here because it will fail due to receiving timeout.
 echo "Warm up......"
-/usr/local/benchmark/lmbench/lat_udp -P 1 -N 10 $GUEST_SERVER_IP_ADDRESS >/dev/null 2>&1
+lat_udp -P 1 -N 10 $GUEST_SERVER_IP_ADDRESS >/dev/null 2>&1
 # Run lmbench udp client
 echo "Running lmbench udp client connected to $GUEST_SERVER_IP_ADDRESS"
-/usr/local/benchmark/lmbench/lat_udp -P 1 -N 10 $GUEST_SERVER_IP_ADDRESS
+lat_udp -P 1 -N 10 $GUEST_SERVER_IP_ADDRESS
 
 # The trap will automatically stop the guest VM when the script exits
