@@ -145,7 +145,7 @@ impl<C: SysObj + ?Sized, T: SysBranchNode> SysBranchNodeFields<C, T> {
         let mut children = self.children.write();
         let name = new_child.name();
         if children.contains_key(name) {
-            return Err(Error::PermissionDenied);
+            return Err(Error::AlreadyExists);
         }
 
         new_child.init_parent(self.weak_self().clone());
@@ -154,9 +154,9 @@ impl<C: SysObj + ?Sized, T: SysBranchNode> SysBranchNodeFields<C, T> {
         Ok(())
     }
 
-    pub fn remove_child(&self, child_name: &str) -> Option<Arc<C>> {
+    pub fn remove_child(&self, child_name: &str) -> Result<Arc<C>> {
         let mut children = self.children.write();
-        children.remove(child_name)
+        children.remove(child_name).ok_or(Error::NotFound)
     }
 
     pub fn visit_child_with(&self, name: &str, f: &mut dyn FnMut(Option<&Arc<C>>)) {

@@ -66,8 +66,8 @@ pub type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
-    /// Attempted to access a non-existent node
-    NodeNotFound(SysNodeId),
+    /// Attempted to access a non-existent systree item
+    NotFound,
     /// Invalid operation for node type
     InvalidNodeOperation(SysNodeType),
     /// Attribute operation failed
@@ -76,6 +76,8 @@ pub enum Error {
     PermissionDenied,
     /// Other internal error
     InternalError(&'static str),
+    /// The systree item already exists
+    AlreadyExists,
     /// Arithmetic overflow occurred
     Overflow,
 }
@@ -83,13 +85,14 @@ pub enum Error {
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         match self {
-            Error::NodeNotFound(id) => write!(f, "Node not found: {:?}", id),
+            Error::NotFound => write!(f, "Attempted to access a non-existent systree item"),
             Error::InvalidNodeOperation(ty) => {
                 write!(f, "Invalid operation for node type: {:?}", ty)
             }
             Error::AttributeError => write!(f, "Attribute error"),
             Error::PermissionDenied => write!(f, "Permission denied for operation"),
             Error::InternalError(msg) => write!(f, "Internal error: {}", msg),
+            Error::AlreadyExists => write!(f, "The systree item already exists"),
             Error::Overflow => write!(f, "Numerical overflow occurred"),
         }
     }
