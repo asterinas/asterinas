@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{string::String, sync::Arc, vec, vec::Vec};
+use alloc::{borrow::ToOwned, string::String, sync::Arc, vec, vec::Vec};
 use core::{
     any::Any,
     fmt::Debug,
@@ -218,16 +218,31 @@ pub trait SysObj: Any + Send + Sync + Debug + 'static {
         false
     }
 
+    /// Inits the parent path of a node.
+    ///
+    /// This function should only be called once, typically when a node
+    /// is added to the `SysTree`.
+    fn init_parent_path(&self, parent_path: SysStr);
+
+    /// Returns the path of the current node's parent.
+    ///
+    /// Returns `None` if the current node is a root node.
+    fn parent_path(&self) -> Option<&SysStr>;
+
     /// Returns the path from the root to this node.
     ///
     /// The path of a node is the names of all the ancestors concatenated
     /// with `/` as the separator.
     ///
-    /// If the node has been attached to a `SysTree`,
-    /// then the returned path begins with `/`.
-    /// Otherwise, the returned path does _not_ begin with `/`.
+    /// The path of a node will be "/" if either:
+    /// - It hasn't been attached to the `SysTree`.
+    /// - It's a root node.
     fn path(&self) -> SysStr {
-        todo!("implement with the parent and name methods")
+        if let Some(parent_path) = self.parent_path() {
+            return SysStr::from(parent_path.as_ref().to_owned() + "/" + self.name());
+        }
+
+        SysStr::from("/")
     }
 }
 
