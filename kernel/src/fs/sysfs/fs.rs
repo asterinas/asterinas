@@ -6,7 +6,7 @@ use aster_systree::singleton as systree_singleton;
 
 use crate::fs::{
     sysfs::inode::SysFsInode,
-    utils::{FileSystem, FsFlags, Inode, SuperBlock},
+    utils::{systree_inode::SysTreeInodeTy, FileSystem, FsFlags, Inode, SuperBlock},
     Result,
 };
 
@@ -25,7 +25,7 @@ impl SysFs {
     pub(crate) fn new() -> Arc<Self> {
         let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX);
         let systree_ref = systree_singleton();
-        let root_inode = SysFsInode::new_root(systree_ref);
+        let root_inode = SysFsInode::new_root(systree_ref.root().clone());
 
         Arc::new(Self {
             sb,
