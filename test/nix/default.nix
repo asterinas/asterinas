@@ -1,4 +1,6 @@
-{ target ? "x86_64", enableBenchmark ? false, enableSyscallTest ? false, }:
+{ target ? "x86_64", enableBenchmark ? false, enableSyscallTest ? false
+, syscallTestSuite ? "ltp", syscallTestWorkDir ? "/tmp", smp ? 1
+, initramfsCompressed ? true, }:
 let
   crossSystem.config = if target == "x86_64" then
     "x86_64-unknown-linux-gnu"
@@ -15,14 +17,28 @@ let
   };
 in rec {
   # Packages needed by initramfs
+  apps = pkgs.callPackage ./apps.nix { };
   busybox = pkgs.busybox;
   benchmark = pkgs.callPackage ./benchmark { };
-  syscall = pkgs.callPackage ./syscall { };
+  syscall = pkgs.callPackage ./syscall {
+    inherit smp;
+    testSuite = syscallTestSuite;
+    workDir = syscallTestWorkDir;
+  };
   linux_vdso = pkgs.fetchFromGitHub {
     owner = "asterinas";
     repo = "linux_vdso";
     rev = "be255018febf8b9e2d36f356f6aeb15896521618";
     hash = "sha256-F5RPtu/Hh2hDnjm6/0mc0wGqhQtfMNvPP+6/Id9Hcpk";
+  };
+  initramfs = pkgs.callPackage ./initramfs.nix {
+    inherit apps busybox linux_vdso;
+    benchmark = if enableBenchmark then benchmark else null;
+    syscall = if enableSyscallTest then syscall else null;
+  };
+  initramfs-image = pkgs.callPackage ./initramfs-image.nix {
+    inherit initramfs;
+    compressed = initramfsCompressed;
   };
 
   # Packages needed by host

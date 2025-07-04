@@ -41,6 +41,7 @@ RUN nix-build \
     -A benchmark.memcached \
     -A benchmark.nginx \
     -A benchmark.redis \
+    -A benchmark.schbench \
     -A benchmark.sqlite-speedtest1 \
     -A syscall.ltp \
     && nix-collect-garbage -d \
@@ -62,6 +63,7 @@ RUN nix-build \
     -A benchmark.memcached \
     -A benchmark.nginx \
     -A benchmark.redis \
+    -A benchmark.schbench \
     -A benchmark.sqlite-speedtest1 \
     -A benchmark.sysbench \
     -A syscall.ltp \

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
-LTP_DIR ?= /opt/ltp
+LTP_PREBUILT_DIR ?= /opt/ltp
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 INITRAMFS ?= $(CUR_DIR)/../../../build/initramfs
@@ -34,22 +34,22 @@ $(TARGET_DIR): $(RUN_BASH) $(ALL_TESTS) $(EXT2_BLOCKLIST) $(EXFAT_BLOCKLIST) $(S
 	@# Process syscall testcases and copy binaries
 	@while read -r syscall binary params; do \
 		if grep -q "^$$syscall$$" $@/filtered.txt; then \
-			if [ -f $(LTP_DIR)/testcases/bin/$$binary ]; then \
-				cp -f $(LTP_DIR)/testcases/bin/$$binary $@/testcases/bin; \
+			if [ -f $(LTP_PREBUILT_DIR)/testcases/bin/$$binary ]; then \
+				cp -f $(LTP_PREBUILT_DIR)/testcases/bin/$$binary $@/testcases/bin; \
 				echo "$$syscall $$binary $$params" >> $@/runtest/syscalls; \
 			else \
 				echo "Warning: $$binary not found (skipping)"; \
 			fi; \
 		fi; \
-	done < $(LTP_DIR)/runtest/syscalls
+	done < $(LTP_PREBUILT_DIR)/runtest/syscalls
 	@# Remove intermediate files
 	@rm -f $@/all.txt $@/filtered.txt
 	@# Copy bash scripts
-	@cp -r $(LTP_DIR)/bin $@
-	@cp -f $(LTP_DIR)/runltp $@
-	@cp -f $(LTP_DIR)/Version $@
-	@cp -f $(LTP_DIR)/ver_linux $@
-	@cp -f $(LTP_DIR)/IDcheck.sh $@
+	@cp -r $(LTP_PREBUILT_DIR)/bin $@
+	@cp -f $(LTP_PREBUILT_DIR)/runltp $@
+	@cp -f $(LTP_PREBUILT_DIR)/Version $@
+	@cp -f $(LTP_PREBUILT_DIR)/ver_linux $@
+	@cp -f $(LTP_PREBUILT_DIR)/IDcheck.sh $@
 	@cp -f $(RUN_BASH) $@
 
 .PHONY: clean
