@@ -2,9 +2,10 @@
 
 //! Utility definitions and helper structs for implementing `SysTree` nodes.
 
-use alloc::{collections::BTreeMap, string::String, sync::Arc};
+use alloc::{borrow::ToOwned, collections::BTreeMap, string::String, sync::Arc};
 
 use ostd::sync::RwLock;
+use spin::Once;
 
 use super::{
     attr::SysAttrSet,
@@ -16,6 +17,7 @@ use super::{
 pub struct SysObjFields {
     id: SysNodeId,
     name: SysStr,
+    parent_path: Once<SysStr>,
 }
 
 impl SysObjFields {
@@ -23,6 +25,7 @@ impl SysObjFields {
         Self {
             id: SysNodeId::new(),
             name,
+            parent_path: Once::new(),
         }
     }
 
@@ -32,6 +35,14 @@ impl SysObjFields {
 
     pub fn name(&self) -> &SysStr {
         &self.name
+    }
+
+    pub fn init_parent_path(&self, path: SysStr) {
+        self.parent_path.call_once(|| path);
+    }
+
+    pub fn parent_path(&self) -> Option<&SysStr> {
+        self.parent_path.get()
     }
 }
 
@@ -59,6 +70,14 @@ impl SysNormalNodeFields {
 
     pub fn attr_set(&self) -> &SysAttrSet {
         &self.attr_set
+    }
+
+    pub fn init_parent_path(&self, path: SysStr) {
+        self.base.init_parent_path(path);
+    }
+
+    pub fn parent_path(&self) -> Option<&SysStr> {
+        self.base.parent_path()
     }
 }
 
@@ -88,6 +107,14 @@ impl<C: SysObj + ?Sized> SysBranchNodeFields<C> {
         self.base.attr_set()
     }
 
+    pub fn init_parent_path(&self, path: SysStr) {
+        self.base.init_parent_path(path);
+    }
+
+    pub fn parent_path(&self) -> Option<&SysStr> {
+        self.base.parent_path()
+    }
+
     pub fn contains(&self, child_name: &str) -> bool {
         let children = self.children.read();
         children.contains_key(child_name)
@@ -97,15 +124,24 @@ impl<C: SysObj + ?Sized> SysBranchNodeFields<C> {
         let mut children = self.children.write();
         let name = new_child.name();
         if children.contains_key(name) {
-            return Err(Error::PermissionDenied);
+            return Err(Error::AlreadyExists);
         }
+
+        let parent_path_for_child = if let Some(parent_path) = self.parent_path() {
+            SysStr::from(parent_path.as_ref().to_owned() + "/" + self.name())
+        } else {
+            // The current node is a root node.
+            SysStr::from("")
+        };
+
+        new_child.init_parent_path(parent_path_for_child);
         children.insert(name.clone(), new_child);
         Ok(())
     }
 
-    pub fn remove_child(&self, child_name: &str) -> Option<Arc<C>> {
+    pub fn remove_child(&self, child_name: &str) -> Result<Arc<C>> {
         let mut children = self.children.write();
-        children.remove(child_name)
+        children.remove(child_name).ok_or(Error::NotFound)
     }
 
     pub fn visit_child_with(&self, name: &str, f: &mut dyn FnMut(Option<&Arc<C>>)) {
@@ -152,6 +188,14 @@ impl SymlinkNodeFields {
 
     pub fn name(&self) -> &SysStr {
         self.base.name()
+    }
+
+    pub fn init_parent_path(&self, path: SysStr) {
+        self.base.init_parent_path(path);
+    }
+
+    pub fn parent_path(&self) -> Option<&SysStr> {
+        self.base.parent_path()
     }
 
     pub fn target_path(&self) -> &str {

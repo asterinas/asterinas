@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{string::String, sync::Arc, vec, vec::Vec};
+use alloc::{borrow::ToOwned, string::String, sync::Arc, vec, vec::Vec};
 use core::{
     any::Any,
     fmt::Debug,
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use bitflags::bitflags;
 use ostd::mm::{FallibleVmWrite, VmReader, VmWriter};
 
 use super::{Error, Result, SysAttrSet, SysStr};
@@ -101,6 +102,18 @@ pub trait SysBranchNode: SysNode {
         });
         count
     }
+
+    /// Creates a new child node with the given name.
+    ///
+    /// This new child will be added to this branch node.
+    fn create_child(&self, _name: &str) -> Result<Arc<dyn SysObj>> {
+        Err(Error::PermissionDenied)
+    }
+
+    /// Removes a child node with the given name.
+    fn remove_child(&self, _name: &str) -> Result<Arc<dyn SysObj>> {
+        Err(Error::PermissionDenied)
+    }
 }
 
 /// The trait that abstracts a "normal" node in a `SysTree`.
@@ -148,7 +161,7 @@ pub trait SysNode: SysObj {
 
     /// Shows the string value of an attribute.
     ///
-    /// Most attributes are textual, rather binary (see `SysAttrFlags::IS_BINARY`).
+    /// Most attributes are textual, rather binary.
     /// So using this `show_attr` method is more convenient than
     /// the `read_attr` method.
     fn show_attr(&self, name: &str) -> Result<String> {
@@ -163,13 +176,19 @@ pub trait SysNode: SysObj {
 
     /// Stores the string value of an attribute.
     ///
-    /// Most attributes are textual, rather binary (see `SysAttrFlags::IS_BINARY`).
+    /// Most attributes are textual, rather binary.
     /// So using this `store_attr` method is more convenient than
     /// the `write_attr` method.
     fn store_attr(&self, name: &str, new_val: &str) -> Result<usize> {
         let mut reader = VmReader::from(new_val.as_bytes()).to_fallible();
         self.write_attr(name, &mut reader)
     }
+
+    /// Returns the initial permissions of a node.
+    ///
+    /// The FS layer should take the value returned from this method
+    /// as this initial permissions for the corresponding inode.
+    fn perms(&self) -> SysPerms;
 }
 
 /// A trait that abstracts any symlink node in a `SysTree`.
@@ -218,16 +237,31 @@ pub trait SysObj: Any + Send + Sync + Debug + 'static {
         false
     }
 
+    /// Inits the parent path of a node.
+    ///
+    /// This function should only be called once, typically when a node
+    /// is added to the `SysTree`.
+    fn init_parent_path(&self, parent_path: SysStr);
+
+    /// Returns the path of the current node's parent.
+    ///
+    /// Returns `None` if the current node is a root node.
+    fn parent_path(&self) -> Option<&SysStr>;
+
     /// Returns the path from the root to this node.
     ///
     /// The path of a node is the names of all the ancestors concatenated
     /// with `/` as the separator.
     ///
-    /// If the node has been attached to a `SysTree`,
-    /// then the returned path begins with `/`.
-    /// Otherwise, the returned path does _not_ begin with `/`.
+    /// The path of a node will be "/" if either:
+    /// - It hasn't been attached to the `SysTree`.
+    /// - It's a root node.
     fn path(&self) -> SysStr {
-        todo!("implement with the parent and name methods")
+        if let Some(parent_path) = self.parent_path() {
+            return SysStr::from(parent_path.as_ref().to_owned() + "/" + self.name());
+        }
+
+        SysStr::from("/")
     }
 }
 
@@ -256,5 +290,65 @@ impl SysNodeId {
 impl Default for SysNodeId {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+bitflags! {
+    /// Permissions for a node or an attribute in the `SysTree`.
+    ///
+    /// This struct is mainly used to provide the initial permissions for nodes and attributes.
+    ///
+    /// The concepts of "owner"/"group"/"others" mentioned here are not explicitly represented in
+    /// systree. They exist primarily to enable finer-grained permission management at
+    /// the "view" and "control" parts for users. The definitions of these permissions match that
+    /// of VFS file permissions bit-wise.
+    ///
+    /// Users can provide permission modification functionality through additional abstractions at
+    /// the upper layers. Correspondingly, it is the users' responsibility to do the permission
+    /// verification at the "view" and "control" parts.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct SysPerms: u16 {
+        /// Read permission for owner
+        const S_IRUSR = 0o0400;
+        /// Write permission for owner
+        const S_IWUSR = 0o0200;
+        /// Execute/search permission for owner
+        const S_IXUSR = 0o0100;
+        /// Read permission for group
+        const S_IRGRP = 0o0040;
+        /// Write permission for group
+        const S_IWGRP = 0o0020;
+        /// Execute/search permission for group
+        const S_IXGRP = 0o0010;
+        /// Read permission for others
+        const S_IROTH = 0o0004;
+        /// Write permission for others
+        const S_IWOTH = 0o0002;
+        /// Execute/search permission for others
+        const S_IXOTH = 0o0001;
+    }
+}
+
+impl SysPerms {
+    /// Default read-only permissions for nodes (owner/group/others can read+execute)
+    pub const DEFAULT_RO_PERMS: Self = Self::from_bits_truncate(0o555);
+
+    /// Default read-write permissions for nodes (owner has full, group/others read+execute)
+    pub const DEFAULT_RW_PERMS: Self = Self::from_bits_truncate(0o755);
+
+    /// Default read-only permissions for attributes (owner/group/others can read)
+    pub const DEFAULT_RO_ATTR_PERMS: Self = Self::from_bits_truncate(0o444);
+
+    /// Default read-write permissions for attributes (owner read+write, group/others read)
+    pub const DEFAULT_RW_ATTR_PERMS: Self = Self::from_bits_truncate(0o644);
+
+    /// Returns whether read operations are allowed.
+    pub fn can_read(&self) -> bool {
+        self.intersects(Self::S_IRUSR | Self::S_IRGRP | Self::S_IROTH)
+    }
+
+    /// Returns whether write operations are allowed.
+    pub fn can_write(&self) -> bool {
+        self.intersects(Self::S_IWUSR | Self::S_IWGRP | Self::S_IWOTH)
     }
 }

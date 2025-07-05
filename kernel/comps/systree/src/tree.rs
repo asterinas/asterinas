@@ -2,10 +2,7 @@
 
 //! Defines the main `SysTree` structure and its root node implementation.
 
-use alloc::{
-    borrow::Cow,
-    sync::{Arc, Weak},
-};
+use alloc::sync::{Arc, Weak};
 
 use inherit_methods_macro::inherit_methods;
 use ostd::mm::{VmReader, VmWriter};
@@ -15,7 +12,7 @@ use super::{
     node::{SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj},
     Error, Result, SysStr,
 };
-use crate::{impl_cast_methods_for_branch, SysBranchNodeFields};
+use crate::{impl_cast_methods_for_branch, SysBranchNodeFields, SysPerms};
 
 #[derive(Debug)]
 pub struct SysTree {
@@ -56,17 +53,10 @@ pub struct RootNode {
     weak_self: Weak<Self>,
 }
 
+#[inherit_methods(from = "self.fields")]
 impl RootNode {
     /// Adds a child node to this `RootNode`.
-    pub fn add_child(&self, new_child: Arc<dyn SysObj>) -> Result<()> {
-        let name = new_child.name();
-        let mut children_guard = self.fields.children.write();
-        if children_guard.contains_key(name) {
-            return Err(Error::PermissionDenied);
-        }
-        children_guard.insert(name.clone(), new_child);
-        Ok(())
-    }
+    pub fn add_child(&self, new_child: Arc<dyn SysObj>) -> Result<()>;
 }
 
 #[inherit_methods(from = "self.fields")]
@@ -81,9 +71,11 @@ impl SysObj for RootNode {
         true
     }
 
-    fn path(&self) -> SysStr {
-        Cow::from("/")
+    fn init_parent_path(&self, path: SysStr) {
+        // This method should be a no-op for `RootNode`.
     }
+
+    fn parent_path(&self) -> Option<&SysStr>;
 }
 
 impl SysNode for RootNode {
@@ -97,6 +89,10 @@ impl SysNode for RootNode {
 
     fn write_attr(&self, _name: &str, _reader: &mut VmReader) -> Result<usize> {
         Err(Error::AttributeError)
+    }
+
+    fn perms(&self) -> SysPerms {
+        SysPerms::DEFAULT_RO_PERMS
     }
 }
 
