@@ -24,7 +24,10 @@ pub(super) fn sys_rmdirat(
 
     let (dir_dentry, name) = {
         let path_addr = path_addr.to_string_lossy();
-        if path_addr == "/" {
+        if path_addr.is_empty() {
+            return_errno_with_message!(Errno::ENOENT, "path is empty");
+        }
+        if path_addr.trim_end_matches('/').is_empty() {
             return_errno_with_message!(Errno::EBUSY, "is root directory");
         }
         let fs_path = FsPath::new(dirfd, path_addr.as_ref())?;
