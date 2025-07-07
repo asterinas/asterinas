@@ -13,6 +13,7 @@ use core::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use bitflags::bitflags;
 use ostd::mm::{FallibleVmWrite, VmReader, VmWriter};
 
 use super::{Error, Result, SysAttrSet, SysStr};
@@ -154,7 +155,7 @@ pub trait SysNode: SysObj {
 
     /// Shows the string value of an attribute.
     ///
-    /// Most attributes are textual, rather binary (see `SysAttrFlags::IS_BINARY`).
+    /// Most attributes are textual, rather binary.
     /// So using this `show_attr` method is more convenient than
     /// the `read_attr` method.
     fn show_attr(&self, name: &str) -> Result<String> {
@@ -169,13 +170,19 @@ pub trait SysNode: SysObj {
 
     /// Stores the string value of an attribute.
     ///
-    /// Most attributes are textual, rather binary (see `SysAttrFlags::IS_BINARY`).
+    /// Most attributes are textual, rather binary.
     /// So using this `store_attr` method is more convenient than
     /// the `write_attr` method.
     fn store_attr(&self, name: &str, new_val: &str) -> Result<usize> {
         let mut reader = VmReader::from(new_val.as_bytes()).to_fallible();
         self.write_attr(name, &mut reader)
     }
+
+    /// Returns the initial permissions of a node.
+    ///
+    /// The FS layer should take the value returned from this method
+    /// as this initial permissions for the corresponding inode.
+    fn perms(&self) -> SysPerms;
 }
 
 /// A trait that abstracts any symlink node in a `SysTree`.
@@ -294,5 +301,74 @@ impl SysNodeId {
 impl Default for SysNodeId {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+bitflags! {
+    /// Permissions for a node or an attribute in the `SysTree`.
+    ///
+    /// This struct is mainly used to provide the initial permissions for nodes and attributes.
+    ///
+    /// The concepts of "owner"/"group"/"others" mentioned here are not explicitly represented in
+    /// systree. They exist primarily to enable finer-grained permission management at
+    /// the "view" and "control" parts for users. The definitions of these permissions match that
+    /// of VFS file permissions bit-wise.
+    ///
+    /// Users can provide permission modification functionality through additional abstractions at
+    /// the upper layers. Correspondingly, it is the users' responsibility to do the permission
+    /// verification at the "view" and "control" parts.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct SysPerms: u16 {
+        // One-bit flags:
+        /// The read permission for owner.
+        const OWNER_R = 0o0400;
+        /// The write permission for owner.
+        const OWNER_W = 0o0200;
+        /// The execute/search permission for owner.
+        const OWNER_X = 0o0100;
+        /// The read permission for group.
+        const GROUP_R = 0o0040;
+        /// The write permission for group.
+        const GROUP_W = 0o0020;
+        /// The execute/search permission for group.
+        const GROUP_X = 0o0010;
+        /// The read permission for others.
+        const OTHER_R = 0o0004;
+        /// The write permission for others.
+        const OTHER_W = 0o0002;
+        /// The execute/search permission for others.
+        const OTHER_X = 0o0001;
+
+        // Common multi-bit flags:
+        const ALL_R = 0o0444;
+        const ALL_W = 0o0222;
+        const ALL_X = 0o0111;
+        const ALL_RW = 0o0666;
+        const ALL_RX = 0o0555;
+        const ALL_RWX = 0o0777;
+    }
+}
+
+impl SysPerms {
+    /// Default read-only permissions for nodes (owner/group/others can read+execute)
+    pub const DEFAULT_RO_PERMS: Self = Self::ALL_RX;
+
+    /// Default read-write permissions for nodes (owner has full, group/others read+execute)
+    pub const DEFAULT_RW_PERMS: Self = Self::ALL_RX.union(Self::OWNER_W);
+
+    /// Default read-only permissions for attributes (owner/group/others can read)
+    pub const DEFAULT_RO_ATTR_PERMS: Self = Self::ALL_R;
+
+    /// Default read-write permissions for attributes (owner read+write, group/others read)
+    pub const DEFAULT_RW_ATTR_PERMS: Self = Self::ALL_R.union(Self::OWNER_W);
+
+    /// Returns whether read operations are allowed.
+    pub fn can_read(&self) -> bool {
+        self.intersects(Self::ALL_R)
+    }
+
+    /// Returns whether write operations are allowed.
+    pub fn can_write(&self) -> bool {
+        self.intersects(Self::ALL_W)
     }
 }

@@ -35,8 +35,8 @@ use component::{init_component, ComponentInitError};
 use spin::Once;
 
 pub use self::{
-    attr::{SysAttr, SysAttrFlags, SysAttrSet, SysAttrSetBuilder},
-    node::{SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj, SysSymlink},
+    attr::{SysAttr, SysAttrSet, SysAttrSetBuilder},
+    node::{SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj, SysPerms, SysSymlink},
     tree::SysTree,
     utils::{SymlinkNodeFields, SysBranchNodeFields, SysNormalNodeFields, SysObjFields},
 };
