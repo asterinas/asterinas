@@ -14,17 +14,25 @@ ASTER_OUTPUT="${BENCHMARK_ROOT}/aster_output.txt"
 LINUX_DEPENDENCIES_DIR="/opt/linux_binary_cache"
 LINUX_KERNEL="${LINUX_DEPENDENCIES_DIR}/vmlinuz"
 LINUX_KERNEL_VERSION="5.15.0-105"
+LINUX_KERNEL_TDX_VERSION="6.16.0"
 LINUX_MODULES_DIR="${BENCHMARK_ROOT}/../build/initramfs/lib/modules/${LINUX_KERNEL_VERSION}/kernel"
 WGET_SCRIPT="${BENCHMARK_ROOT}/../../../tools/atomic_wget.sh"
 
 # Prepare Linux kernel and modules
 prepare_libs() {
-    # Download the Linux kernel and modules
+    local platform=$1
     mkdir -p "${LINUX_DEPENDENCIES_DIR}"
+
+    local kernel_version
+    case "$platform" in
+        tdx) kernel_version="${LINUX_KERNEL_TDX_VERSION}" ;;
+        x86-64) kernel_version="${LINUX_KERNEL_VERSION}" ;;
+        *) echo "Unsupported platform: $platform"; exit 1 ;;
+    esac
 
     # Array of files to download and their URLs
     declare -A files=(
-        ["${LINUX_KERNEL}"]="https://raw.githubusercontent.com/asterinas/linux_binary_cache/14598b6/vmlinuz-${LINUX_KERNEL_VERSION}"
+        ["${LINUX_KERNEL}"]="https://raw.githubusercontent.com/asterinas/linux_binary_cache/14598b6/vmlinuz-${kernel_version}"
     )
 
     # Download files if they don't exist
