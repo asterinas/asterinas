@@ -145,11 +145,11 @@ run_benchmark() {
         -cpu Icelake-Server,-pcid,+x2apic
         --enable-kvm
         -kernel "${LINUX_KERNEL}"
-        -initrd "${BENCHMARK_ROOT}/../build/initramfs.cpio.gz"
-        -drive "if=none,format=raw,id=x0,file=${BENCHMARK_ROOT}/../build/ext2.img"
+        -initrd "${BENCHMARK_ROOT}/../../build/initramfs.cpio.gz"
+        -drive "if=none,format=raw,id=x0,file=${BENCHMARK_ROOT}/../../build/ext2.img"
         -device "virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,serial=vext2,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off"
         -append "console=ttyS0 rdinit=/benchmark/common/bench_runner.sh ${benchmark} linux mitigations=off hugepages=0 transparent_hugepage=never quiet"
-        -netdev "tap,id=net01,script=${BENCHMARK_ROOT}/../../tools/net/qemu-ifup.sh,downscript=${BENCHMARK_ROOT}/../../tools/net/qemu-ifdown.sh,vhost=on"
+        -netdev "tap,id=net01,script=${BENCHMARK_ROOT}/../../../tools/net/qemu-ifup.sh,downscript=${BENCHMARK_ROOT}/../../../tools/net/qemu-ifdown.sh,vhost=on"
         -nographic
     )
     if [[ "$platform" != "tdx" ]]; then

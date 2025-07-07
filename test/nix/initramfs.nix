@@ -57,13 +57,13 @@ in stdenv.mkDerivation {
     # This will generate a text file containing the complete closure of the packages,
     # including the packages themselves.
     # The output of `writeClosure` is equivalent to `nix-store -q --requisites`.
+    mkdir -p $out/nix/store
     pkg_path=${lib.strings.concatStringsSep ":" all_pkgs}
     while IFS= read -r dep_path; do
       if [[ "$pkg_path" == *"$dep_path"* ]]; then
         continue
       fi
-      mkdir -p $out/$dep_path
-      cp -r $dep_path/* $out/$dep_path/
+      cp -r $dep_path $out/nix/store/
     done < ${writeClosure all_pkgs}
   '';
 }
