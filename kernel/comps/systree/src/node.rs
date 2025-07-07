@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{string::String, sync::Arc, vec, vec::Vec};
+use alloc::{
+    borrow::ToOwned,
+    string::String,
+    sync::{Arc, Weak},
+    vec,
+    vec::Vec,
+};
 use core::{
     any::Any,
     fmt::Debug,
@@ -218,16 +224,48 @@ pub trait SysObj: Any + Send + Sync + Debug + 'static {
         false
     }
 
-    /// Returns the path from the root to this node.
+    /// Initializes the parent in the `SysTree`.
     ///
-    /// The path of a node is the names of all the ancestors concatenated
-    /// with `/` as the separator.
+    /// An appropriate timing to call this method is when a `SysTree` node is added to
+    /// another node as a child.
     ///
-    /// If the node has been attached to a `SysTree`,
-    /// then the returned path begins with `/`.
-    /// Otherwise, the returned path does _not_ begin with `/`.
+    /// # Panics
+    ///
+    /// This method should be called at most once; otherwise, it may trigger panicking.
+    fn init_parent(&self, parent: Weak<dyn SysBranchNode>);
+
+    /// Returns the parent in the `SysTree`.
+    ///
+    /// Returns `None` if the parent of the node has not been initialized yet.
+    fn parent(&self) -> Option<Arc<dyn SysBranchNode>>;
+
+    /// Returns the path.
+    ///
+    /// The path of a `SysTree` node is defined as below:
+    /// - If a node is the root, then the path is `/`.
+    /// - If a node is a non-root, we will need to see if it has a parent:
+    ///      - If the node has a parent, then the path is defined as
+    ///        the parent path and the node's name joined with a `/` in between;
+    ///      - Otherwise, the node's name is taken as its path.
     fn path(&self) -> SysStr {
-        todo!("implement with the parent and name methods")
+        if self.is_root() {
+            return SysStr::from("/");
+        }
+
+        let Some(parent) = self.parent() else {
+            return self.name().clone();
+        };
+
+        let parent_path_with_slash = {
+            let mut parent_path = parent.path().as_ref().to_owned();
+            if !parent.is_root() {
+                parent_path.push('/');
+            }
+
+            parent_path
+        };
+
+        SysStr::from(parent_path_with_slash + self.name())
     }
 }
 

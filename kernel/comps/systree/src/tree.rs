@@ -2,10 +2,7 @@
 
 //! Defines the main `SysTree` structure and its root node implementation.
 
-use alloc::{
-    borrow::Cow,
-    sync::{Arc, Weak},
-};
+use alloc::sync::{Arc, Weak};
 
 use inherit_methods_macro::inherit_methods;
 use ostd::mm::{VmReader, VmWriter};
@@ -30,11 +27,10 @@ impl SysTree {
     pub(crate) fn new() -> Self {
         let name = ""; // Only the root has an empty name
         let attr_set = SysAttrSet::new_empty(); // The root has no attributes
-        let fields = SysBranchNodeFields::new(SysStr::from(name), attr_set);
 
-        let root_node = Arc::new_cyclic(|weak_self| RootNode {
-            fields,
-            weak_self: weak_self.clone(),
+        let root_node = Arc::new_cyclic(|weak_self| {
+            let fields = SysBranchNodeFields::new(SysStr::from(name), attr_set, weak_self.clone());
+            RootNode { fields }
         });
 
         Self { root: root_node }
@@ -52,21 +48,13 @@ impl SysTree {
 /// as its children.
 #[derive(Debug)]
 pub struct RootNode {
-    fields: SysBranchNodeFields<dyn SysObj>,
-    weak_self: Weak<Self>,
+    fields: SysBranchNodeFields<dyn SysObj, Self>,
 }
 
+#[inherit_methods(from = "self.fields")]
 impl RootNode {
     /// Adds a child node to this `RootNode`.
-    pub fn add_child(&self, new_child: Arc<dyn SysObj>) -> Result<()> {
-        let name = new_child.name();
-        let mut children_guard = self.fields.children.write();
-        if children_guard.contains_key(name) {
-            return Err(Error::PermissionDenied);
-        }
-        children_guard.insert(name.clone(), new_child);
-        Ok(())
-    }
+    pub fn add_child(&self, new_child: Arc<dyn SysObj>) -> Result<()>;
 }
 
 #[inherit_methods(from = "self.fields")]
@@ -81,9 +69,11 @@ impl SysObj for RootNode {
         true
     }
 
-    fn path(&self) -> SysStr {
-        Cow::from("/")
+    fn init_parent(&self, _parent: Weak<dyn SysBranchNode>) {
+        // This method should be a no-op for `RootNode`.
     }
+
+    fn parent(&self) -> Option<Arc<dyn SysBranchNode>>;
 }
 
 impl SysNode for RootNode {
