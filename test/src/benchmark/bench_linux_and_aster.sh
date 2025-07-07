@@ -133,16 +133,13 @@ run_benchmark() {
         asterinas_cmd_arr+=(INTEL_TDX=1)
     fi
 
-    # TODO: 
-    #   1. Current linux kernel is not TDX compatible. Replace with TDX compatible version later.
-    #   2. `guest_uso4=off,guest_uso6=off,host_uso=off` is not supported by the QEMU of TDX development image.
+    # TODO: `guest_uso4=off,guest_uso6=off,host_uso=off` is not supported by the QEMU of TDX development image.
     local linux_cmd_arr=(
         qemu-system-x86_64
         --no-reboot
         -smp "${smp_val}"
         -m "${mem_val}"
         -machine q35,kernel-irqchip=split
-        -cpu Icelake-Server,-pcid,+x2apic
         --enable-kvm
         -kernel "${LINUX_KERNEL}"
         -initrd "${BENCHMARK_ROOT}/../../build/initramfs.cpio.gz"
@@ -154,10 +151,14 @@ run_benchmark() {
     )
     if [[ "$platform" != "tdx" ]]; then
         linux_cmd_arr+=(
+            -cpu Icelake-Server,-pcid,+x2apic
             -device "virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off,csum=off,guest_csum=off,ctrl_guest_offloads=off,guest_tso4=off,guest_tso6=off,guest_ecn=off,guest_ufo=off,host_tso4=off,host_tso6=off,host_ecn=off,host_ufo=off,mrg_rxbuf=off,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,ctrl_rx_extra=off,guest_announce=off,ctrl_mac_addr=off,host_ufo=off,guest_uso4=off,guest_uso6=off,host_uso=off"
         )
     else
         linux_cmd_arr+=(
+            -machine confidential-guest-support=tdx0 \
+            -cpu host,-kvm-steal-time,pmu=off \
+            -object '{ "qom-type": "tdx-guest", "id": "tdx0", "sept-ve-disable": true, "quote-generation-socket": { "type": "vsock", "cid": "2", "port": "4050" } }' \
             -device "virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off,csum=off,guest_csum=off,ctrl_guest_offloads=off,guest_tso4=off,guest_tso6=off,guest_ecn=off,guest_ufo=off,host_tso4=off,host_tso6=off,host_ecn=off,host_ufo=off,mrg_rxbuf=off,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,ctrl_rx_extra=off,guest_announce=off,ctrl_mac_addr=off,host_ufo=off"
         )
     fi
