@@ -2,27 +2,37 @@
 
 //! Utility definitions and helper structs for implementing `SysTree` nodes.
 
-use alloc::{collections::BTreeMap, string::String, sync::Arc};
+use alloc::{
+    collections::BTreeMap,
+    string::String,
+    sync::{Arc, Weak},
+};
 
 use ostd::sync::RwLock;
+use spin::Once;
 
 use super::{
     attr::SysAttrSet,
     node::{SysNodeId, SysObj},
     Error, Result, SysStr,
 };
+use crate::{SysBranchNode, SysNode, SysSymlink};
 
 #[derive(Debug)]
-pub struct SysObjFields {
+pub struct SysObjFields<T: SysObj> {
     id: SysNodeId,
     name: SysStr,
+    parent: Once<Weak<dyn SysBranchNode>>,
+    weak_self: Weak<T>,
 }
 
-impl SysObjFields {
-    pub fn new(name: SysStr) -> Self {
+impl<T: SysObj> SysObjFields<T> {
+    pub fn new(name: SysStr, weak_self: Weak<T>) -> Self {
         Self {
             id: SysNodeId::new(),
             name,
+            parent: Once::new(),
+            weak_self,
         }
     }
 
@@ -33,18 +43,32 @@ impl SysObjFields {
     pub fn name(&self) -> &SysStr {
         &self.name
     }
+
+    pub fn init_parent(&self, parent: Weak<dyn SysBranchNode>) {
+        self.parent.call_once(|| parent);
+    }
+
+    pub fn parent(&self) -> Option<Arc<dyn SysBranchNode>> {
+        self.parent
+            .get()
+            .and_then(|weak_parent| weak_parent.upgrade())
+    }
+
+    pub fn weak_self(&self) -> &Weak<T> {
+        &self.weak_self
+    }
 }
 
 #[derive(Debug)]
-pub struct SysNormalNodeFields {
-    base: SysObjFields,
+pub struct SysNormalNodeFields<T: SysNode> {
+    base: SysObjFields<T>,
     attr_set: SysAttrSet,
 }
 
-impl SysNormalNodeFields {
-    pub fn new(name: SysStr, attr_set: SysAttrSet) -> Self {
+impl<T: SysNode> SysNormalNodeFields<T> {
+    pub fn new(name: SysStr, attr_set: SysAttrSet, weak_self: Weak<T>) -> Self {
         Self {
-            base: SysObjFields::new(name),
+            base: SysObjFields::new(name, weak_self),
             attr_set,
         }
     }
@@ -60,18 +84,30 @@ impl SysNormalNodeFields {
     pub fn attr_set(&self) -> &SysAttrSet {
         &self.attr_set
     }
+
+    pub fn init_parent(&self, parent: Weak<dyn SysBranchNode>) {
+        self.base.init_parent(parent);
+    }
+
+    pub fn parent(&self) -> Option<Arc<dyn SysBranchNode>> {
+        self.base.parent()
+    }
+
+    pub fn weak_self(&self) -> &Weak<T> {
+        self.base.weak_self()
+    }
 }
 
 #[derive(Debug)]
-pub struct SysBranchNodeFields<C: SysObj + ?Sized> {
-    base: SysNormalNodeFields,
+pub struct SysBranchNodeFields<C: SysObj + ?Sized, T: SysBranchNode> {
+    base: SysNormalNodeFields<T>,
     pub children: RwLock<BTreeMap<SysStr, Arc<C>>>,
 }
 
-impl<C: SysObj + ?Sized> SysBranchNodeFields<C> {
-    pub fn new(name: SysStr, attr_set: SysAttrSet) -> Self {
+impl<C: SysObj + ?Sized, T: SysBranchNode> SysBranchNodeFields<C, T> {
+    pub fn new(name: SysStr, attr_set: SysAttrSet, weak_self: Weak<T>) -> Self {
         Self {
-            base: SysNormalNodeFields::new(name, attr_set),
+            base: SysNormalNodeFields::new(name, attr_set, weak_self),
             children: RwLock::new(BTreeMap::new()),
         }
     }
@@ -88,9 +124,21 @@ impl<C: SysObj + ?Sized> SysBranchNodeFields<C> {
         self.base.attr_set()
     }
 
+    pub fn init_parent(&self, parent: Weak<dyn SysBranchNode>) {
+        self.base.init_parent(parent);
+    }
+
+    pub fn parent(&self) -> Option<Arc<dyn SysBranchNode>> {
+        self.base.parent()
+    }
+
     pub fn contains(&self, child_name: &str) -> bool {
         let children = self.children.read();
         children.contains_key(child_name)
+    }
+
+    pub fn weak_self(&self) -> &Weak<T> {
+        self.base.weak_self()
     }
 
     pub fn add_child(&self, new_child: Arc<C>) -> Result<()> {
@@ -99,7 +147,10 @@ impl<C: SysObj + ?Sized> SysBranchNodeFields<C> {
         if children.contains_key(name) {
             return Err(Error::PermissionDenied);
         }
+
+        new_child.init_parent(self.weak_self().clone());
         children.insert(name.clone(), new_child);
+
         Ok(())
     }
 
@@ -133,15 +184,15 @@ impl<C: SysObj + ?Sized> SysBranchNodeFields<C> {
 }
 
 #[derive(Debug)]
-pub struct SymlinkNodeFields {
-    base: SysObjFields,
+pub struct SymlinkNodeFields<T: SysSymlink> {
+    base: SysObjFields<T>,
     target_path: String,
 }
 
-impl SymlinkNodeFields {
-    pub fn new(name: SysStr, target_path: String) -> Self {
+impl<T: SysSymlink> SymlinkNodeFields<T> {
+    pub fn new(name: SysStr, target_path: String, weak_self: Weak<T>) -> Self {
         Self {
-            base: SysObjFields::new(name),
+            base: SysObjFields::new(name, weak_self),
             target_path,
         }
     }
@@ -154,6 +205,18 @@ impl SymlinkNodeFields {
         self.base.name()
     }
 
+    pub fn init_parent(&self, parent: Weak<dyn SysBranchNode>) {
+        self.base.init_parent(parent);
+    }
+
+    pub fn parent(&self) -> Option<Arc<dyn SysBranchNode>> {
+        self.base.parent()
+    }
+
+    pub fn weak_self(&self) -> &Weak<T> {
+        self.base.weak_self()
+    }
+
     pub fn target_path(&self) -> &str {
         &self.target_path
     }
@@ -162,7 +225,7 @@ impl SymlinkNodeFields {
 /// A macro to automatically generate cast-related methods and `type_` method for `SysObj`
 /// trait implementation of `SysBranchNode` struct.
 ///
-/// Users should make sure that the struct has a `weak_self: Weak<Self>` field.
+/// Users should make sure that the struct has a `fields: SysBranchNodeFields<_, Self>` field.
 #[macro_export]
 macro_rules! impl_cast_methods_for_branch {
     () => {
@@ -171,11 +234,15 @@ macro_rules! impl_cast_methods_for_branch {
         }
 
         fn cast_to_node(&self) -> Option<Arc<dyn SysNode>> {
-            self.weak_self.upgrade().map(|arc| arc as Arc<dyn SysNode>)
+            self.fields
+                .weak_self()
+                .upgrade()
+                .map(|arc| arc as Arc<dyn SysNode>)
         }
 
         fn cast_to_branch(&self) -> Option<Arc<dyn SysBranchNode>> {
-            self.weak_self
+            self.fields
+                .weak_self()
                 .upgrade()
                 .map(|arc| arc as Arc<dyn SysBranchNode>)
         }
@@ -191,7 +258,7 @@ macro_rules! impl_cast_methods_for_branch {
 ///
 /// If the struct is also a branch node, use `impl_cast_methods_for_branch!()` instead.
 ///
-/// Users should make sure that the struct has a `weak_self: Weak<Self>` field.
+/// Users should make sure that the struct has a `fields: SysNormalNodeFields<Self>` field.
 #[macro_export]
 macro_rules! impl_cast_methods_for_node {
     () => {
@@ -200,7 +267,10 @@ macro_rules! impl_cast_methods_for_node {
         }
 
         fn cast_to_node(&self) -> Option<Arc<dyn SysNode>> {
-            self.weak_self.upgrade().map(|arc| arc as Arc<dyn SysNode>)
+            self.fields
+                .weak_self()
+                .upgrade()
+                .map(|arc| arc as Arc<dyn SysNode>)
         }
 
         fn type_(&self) -> SysNodeType {
@@ -212,7 +282,7 @@ macro_rules! impl_cast_methods_for_node {
 /// A macro to automatically generate cast-related methods and `type_` method for `SysObj`
 /// trait implementation of `SysSymlink` struct.
 ///
-/// Users should make sure that the struct has a `weak_self: Weak<Self>` field.
+/// Users should make sure that the struct has a `fields: SymlinkNodeFields` field.
 #[macro_export]
 macro_rules! impl_cast_methods_for_symlink {
     () => {
@@ -221,7 +291,8 @@ macro_rules! impl_cast_methods_for_symlink {
         }
 
         fn cast_to_symlink(&self) -> Option<Arc<dyn SysSymlink>> {
-            self.weak_self
+            self.fields
+                .weak_self()
                 .upgrade()
                 .map(|arc| arc as Arc<dyn SysSymlink>)
         }

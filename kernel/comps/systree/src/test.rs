@@ -2,7 +2,7 @@
 
 use alloc::{
     borrow::Cow,
-    string::{String, ToString},
+    string::ToString,
     sync::{Arc, Weak},
     vec::Vec,
 };
@@ -15,19 +15,18 @@ use ostd::{
 };
 
 use super::{
-    impl_cast_methods_for_branch, impl_cast_methods_for_symlink, Error, Result, SysAttrFlags,
-    SysAttrSet, SysAttrSetBuilder, SysBranchNode, SysBranchNodeFields, SysNode, SysNodeId,
-    SysNodeType, SysObj, SysStr, SysSymlink, SysTree,
+    impl_cast_methods_for_branch, impl_cast_methods_for_symlink, Error, Result, SymlinkNodeFields,
+    SysAttrFlags, SysAttrSet, SysAttrSetBuilder, SysBranchNode, SysBranchNodeFields, SysNode,
+    SysNodeId, SysNodeType, SysObj, SysStr, SysSymlink, SysTree,
 };
 
 #[derive(Debug)]
 struct DeviceNode {
-    fields: SysBranchNodeFields<dyn SysObj>,
-    weak_self: Weak<Self>,
+    fields: SysBranchNodeFields<dyn SysObj, Self>,
 }
 
 impl DeviceNode {
-    fn new(name: &str) -> Arc<Self> {
+    fn new(name: SysStr) -> Arc<Self> {
         let mut builder = SysAttrSetBuilder::new();
         builder
             .add(Cow::Borrowed("model"), SysAttrFlags::CAN_READ)
@@ -38,26 +37,30 @@ impl DeviceNode {
             );
 
         let attrs = builder.build().expect("Failed to build attribute set");
-        let name_owned: SysStr = name.to_string().into();
-        let fields = SysBranchNodeFields::new(name_owned, attrs);
 
-        Arc::new_cyclic(|weak_self| DeviceNode {
-            fields,
-            weak_self: weak_self.clone(),
+        Arc::new_cyclic(|weak_self| {
+            let fields = SysBranchNodeFields::new(name, attrs, weak_self.clone());
+            DeviceNode { fields }
         })
     }
 }
 
+#[inherit_methods(from = "self.fields")]
+impl DeviceNode {
+    pub fn add_child(&self, new_child: Arc<dyn SysObj>) -> Result<()>;
+}
+
+#[inherit_methods(from = "self.fields")]
 impl SysObj for DeviceNode {
     impl_cast_methods_for_branch!();
 
-    fn id(&self) -> &SysNodeId {
-        self.fields.id()
-    }
+    fn id(&self) -> &SysNodeId;
 
-    fn name(&self) -> &SysStr {
-        self.fields.name()
-    }
+    fn name(&self) -> &SysStr;
+
+    fn init_parent(&self, parent: Weak<dyn SysBranchNode>);
+
+    fn parent(&self) -> Option<Arc<dyn SysBranchNode>>;
 }
 
 impl SysNode for DeviceNode {
@@ -124,39 +127,34 @@ impl SysBranchNode for DeviceNode {
 
 #[derive(Debug)]
 struct SymlinkNode {
-    id: SysNodeId,
-    name: SysStr,
-    target: String,
-    weak_self: Weak<Self>,
+    fields: SymlinkNodeFields<Self>,
 }
 
 impl SymlinkNode {
-    fn new(name: &str, target: &str) -> Arc<Self> {
-        Arc::new_cyclic(|weak_self| SymlinkNode {
-            id: SysNodeId::new(),
-            name: name.to_string().into(),
-            target: target.to_string(),
-            weak_self: weak_self.clone(),
+    fn new(name: SysStr, target: &str) -> Arc<Self> {
+        Arc::new_cyclic(|weak_self| {
+            let fields = SymlinkNodeFields::new(name, target.to_string(), weak_self.clone());
+            SymlinkNode { fields }
         })
     }
 }
 
+#[inherit_methods(from = "self.fields")]
 impl SysObj for SymlinkNode {
     impl_cast_methods_for_symlink!();
 
-    fn id(&self) -> &SysNodeId {
-        &self.id
-    }
+    fn id(&self) -> &SysNodeId;
 
-    fn name(&self) -> &SysStr {
-        &self.name
-    }
+    fn name(&self) -> &SysStr;
+
+    fn init_parent(&self, parent: Weak<dyn SysBranchNode>);
+
+    fn parent(&self) -> Option<Arc<dyn SysBranchNode>>;
 }
 
+#[inherit_methods(from = "self.fields")]
 impl SysSymlink for SymlinkNode {
-    fn target_path(&self) -> &str {
-        &self.target
-    }
+    fn target_path(&self) -> &str;
 }
 
 #[ktest]
@@ -174,28 +172,42 @@ fn systree_singleton() {
 }
 
 #[ktest]
+fn node_path() {
+    let sys_tree = SysTree::new();
+    let root = sys_tree.root();
+
+    assert_eq!(root.path(), "/");
+
+    let device = DeviceNode::new("device".into());
+    let sub_device_1 = DeviceNode::new("sub_device_1".into());
+    // Add the child node to `device` before attaching it to the `SysTree`.
+    device.add_child(sub_device_1.clone()).unwrap();
+    root.add_child(device.clone()).unwrap();
+
+    assert_eq!(device.path(), "/device");
+    assert_eq!(sub_device_1.path(), "/device/sub_device_1");
+
+    let sub_device_2 = DeviceNode::new("sub_device_2".into());
+    // Add the child node to `device` after attaching it to the `SysTree`.
+    device.add_child(sub_device_2.clone()).unwrap();
+    assert_eq!(sub_device_2.path(), "/device/sub_device_2");
+}
+
+#[ktest]
 fn node_hierarchy() {
     // Create device node hierarchy
-    let root_device = DeviceNode::new("root_device");
+    let root_device = DeviceNode::new("root_device".into());
 
     // Add child nodes
     {
-        let child1 = DeviceNode::new("child1");
-        let child2 = DeviceNode::new("child2");
-        root_device
-            .fields
-            .children
-            .write()
-            .insert(Cow::Borrowed("child1"), child1);
-        root_device
-            .fields
-            .children
-            .write()
-            .insert(Cow::Borrowed("child2"), child2);
+        let child1 = DeviceNode::new("child1".into());
+        let child2 = DeviceNode::new("child2".into());
+        root_device.add_child(child1).unwrap();
+        root_device.add_child(child2).unwrap();
     }
 
     // Verify number of child nodes
-    assert_eq!(root_device.fields.children.read().len(), 2);
+    assert_eq!(root_device.count_children(), 2);
 
     // Get specific child node
     let child = root_device.child("child1").unwrap();
@@ -208,7 +220,7 @@ fn node_hierarchy() {
 
 #[ktest]
 fn attributes() {
-    let device = DeviceNode::new("test_device");
+    let device = DeviceNode::new("test_device".into());
 
     // Read read-only attribute
     let model = device.show_attr("model").unwrap();
@@ -229,10 +241,10 @@ fn attributes() {
 
 #[ktest]
 fn symlinks() {
-    let device = DeviceNode::new("device");
+    let device = DeviceNode::new("device".into());
 
     // Create symlink pointing to device
-    let symlink = SymlinkNode::new("device_link", "/sys/devices/device");
+    let symlink = SymlinkNode::new("device_link".into(), "/sys/devices/device");
 
     // Verify symlink attributes
     assert_eq!(symlink.type_(), SysNodeType::Symlink);
@@ -255,7 +267,7 @@ fn symlinks() {
 
 #[ktest]
 fn error_handling() {
-    let device = DeviceNode::new("error_test");
+    let device = DeviceNode::new("error_test".into());
 
     // Attempt to access non-existent attribute
     let result = device.show_attr("nonexistent");
