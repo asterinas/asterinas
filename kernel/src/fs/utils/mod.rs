@@ -39,6 +39,7 @@ mod page_cache;
 mod random_test;
 mod range_lock;
 mod status_flags;
+pub mod systree_inode;
 mod xattr;
 
 use core::{
