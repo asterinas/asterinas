@@ -42,14 +42,17 @@ pub mod aux_vec;
 /// Set the initial stack size to 8 megabytes, following the default Linux stack size limit.
 pub const INIT_STACK_SIZE: usize = 8 * 1024 * 1024; // 8 MB
 
-/// The max number of arguments that can be used to creating a new process.
-pub const MAX_ARGV_NUMBER: usize = 128;
-/// The max number of environmental variables that can be used to creating a new process.
-pub const MAX_ENVP_NUMBER: usize = 128;
-/// The max length of each argument to create a new process.
-pub const MAX_ARG_LEN: usize = 2048;
-/// The max length of each environmental variable (the total length of key-value pair) to create a new process.
-pub const MAX_ENV_LEN: usize = 128;
+/// The maximum number of argument or environment strings that can be supplied to
+/// the `execve` system call.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.15/source/include/uapi/linux/binfmts.h#L15>.
+pub const MAX_NR_STRING_ARGS: usize = i32::MAX as usize;
+
+/// The maximum size, in bytes, of a single argument or environment string
+/// (`argv` / `envp`) accepted by `execve`.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.15/source/include/uapi/linux/binfmts.h#L16>.
+pub const MAX_LEN_STRING_ARG: usize = PAGE_SIZE * 32;
 
 /*
  * Illustration of the virtual memory space containing the processes' init stack:
@@ -399,7 +402,7 @@ impl InitStackReader<'_> {
         };
 
         let argc = frame.read_val::<u64>(stack_base - page_base_addr)?;
-        if argc > MAX_ARGV_NUMBER as u64 {
+        if argc > MAX_NR_STRING_ARGS as u64 {
             return_errno_with_message!(Errno::EINVAL, "argc is corrupted");
         }
 
@@ -435,7 +438,7 @@ impl InitStackReader<'_> {
                     .checked_sub(page_base_addr)
                     .ok_or_else(|| Error::with_message(Errno::EINVAL, "arg_ptr is corrupted"))?;
                 let mut arg_reader = frame.reader().to_fallible();
-                arg_reader.skip(arg_offset).limit(MAX_ARG_LEN);
+                arg_reader.skip(arg_offset).limit(MAX_LEN_STRING_ARG);
                 arg_reader.read_cstring()?
             };
             argv.push(arg);
@@ -472,7 +475,7 @@ impl InitStackReader<'_> {
 
         let mut envp_ptr_reader = frame.reader();
         envp_ptr_reader.skip(read_offset - page_base_addr);
-        for _ in 0..MAX_ENVP_NUMBER {
+        for _ in 0..MAX_NR_STRING_ARGS {
             let env = {
                 let envp_ptr = envp_ptr_reader.read_val::<Vaddr>()?;
 
@@ -484,7 +487,7 @@ impl InitStackReader<'_> {
                     .checked_sub(page_base_addr)
                     .ok_or_else(|| Error::with_message(Errno::EINVAL, "envp is corrupted"))?;
                 let mut envp_reader = frame.reader().to_fallible();
-                envp_reader.skip(envp_offset).limit(MAX_ENV_LEN);
+                envp_reader.skip(envp_offset).limit(MAX_LEN_STRING_ARG);
                 envp_reader.read_cstring()?
             };
             envp.push(env);
