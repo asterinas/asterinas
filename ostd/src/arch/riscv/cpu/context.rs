@@ -21,7 +21,7 @@ pub struct UserContext {
     user_context: RawUserContext,
     trap: Trap,
     fpu_state: FpuState,
-    cpu_exception_info: CpuExceptionInfo,
+    cpu_exception_info: Option<CpuExceptionInfo>,
 }
 
 /// General registers.
@@ -64,6 +64,8 @@ pub struct GeneralRegs {
 }
 
 /// CPU exception information.
+//
+// TODO: Refactor the struct into an enum (similar to x86's `CpuException`).
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CpuExceptionInfo {
@@ -80,7 +82,7 @@ impl Default for UserContext {
             user_context: RawUserContext::default(),
             trap: Trap::Exception(Exception::Unknown),
             fpu_state: FpuState,
-            cpu_exception_info: CpuExceptionInfo::default(),
+            cpu_exception_info: None,
         }
     }
 }
@@ -114,8 +116,8 @@ impl UserContext {
     }
 
     /// Returns the trap information.
-    pub fn trap_information(&self) -> &CpuExceptionInfo {
-        &self.cpu_exception_info
+    pub fn take_exception(&mut self) -> Option<CpuExceptionInfo> {
+        self.cpu_exception_info.take()
     }
 
     /// Returns a reference to the FPU state.
@@ -163,11 +165,11 @@ impl UserContextApiInternal for UserContext {
                 Trap::Exception(e) => {
                     let stval = riscv::register::stval::read();
                     log::trace!("Exception, scause: {e:?}, stval: {stval:#x?}");
-                    self.cpu_exception_info = CpuExceptionInfo {
+                    self.cpu_exception_info = Some(CpuExceptionInfo {
                         code: e,
                         page_fault_addr: stval,
                         error_code: 0,
-                    };
+                    });
                     break ReturnReason::UserException;
                 }
             }

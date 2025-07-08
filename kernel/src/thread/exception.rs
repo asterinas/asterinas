@@ -3,7 +3,11 @@
 #![expect(unused_variables)]
 
 use aster_rights::Full;
-use ostd::cpu::context::{CpuException, UserContext};
+#[cfg(target_arch = "x86_64")]
+use ostd::cpu::context::CpuException;
+#[cfg(target_arch = "riscv64")]
+use ostd::cpu::context::CpuExceptionInfo as CpuException;
+use ostd::cpu::context::UserContext;
 
 use crate::{
     current_userspace,
