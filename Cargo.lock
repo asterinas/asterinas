@@ -230,6 +230,7 @@ dependencies = [
  "lending-iterator",
  "libflate",
  "log",
+ "loongArch64",
  "lru",
  "osdk-frame-allocator",
  "osdk-heap-allocator",
@@ -1101,6 +1102,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
 
 [[package]]
+name = "loongArch64"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c9f0d275c70310e2a9d2fc23250c5ac826a73fa828a5f256401f85c5c554283"
+dependencies = [
+ "bit_field",
+ "bitflags 2.9.1",
+]
+
+[[package]]
 name = "lru"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1279,6 +1290,7 @@ dependencies = [
  "intrusive-collections",
  "linux-boot-params",
  "log",
+ "loongArch64",
  "minicov",
  "multiboot2",
  "num-traits",
