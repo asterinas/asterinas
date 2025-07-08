@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::time::Duration;
+
 use log::{Metadata, Record};
 use ostd::timer::Jiffies;
 
@@ -14,16 +16,19 @@ impl log::Log for AsterLogger {
     }
 
     fn log(&self, record: &Record) {
-        let timestamp = Jiffies::elapsed().as_duration().as_secs_f64();
-        print_logs(record, timestamp);
+        let timestamp = Jiffies::elapsed().as_duration();
+        print_logs(record, &timestamp);
     }
 
     fn flush(&self) {}
 }
 
 #[cfg(feature = "log_color")]
-fn print_logs(record: &Record, timestamp: f64) {
+fn print_logs(record: &Record, timestamp: &Duration) {
     use owo_colors::Style;
+
+    let secs = timestamp.as_secs();
+    let millis = timestamp.subsec_millis();
 
     let timestamp_style = Style::new().green();
     let record_style = Style::new().default_color();
@@ -37,17 +42,20 @@ fn print_logs(record: &Record, timestamp: f64) {
 
     super::_print(format_args!(
         "{} {:<5}: {}\n",
-        timestamp_style.style(format_args!("[{:>10.3}]", timestamp)),
+        timestamp_style.style(format_args!("[{:>6}.{:03}]", secs, millis)),
         level_style.style(record.level()),
         record_style.style(record.args())
     ));
 }
 
 #[cfg(not(feature = "log_color"))]
-fn print_logs(record: &Record, timestamp: f64) {
+fn print_logs(record: &Record, timestamp: &Duration) {
+    let secs = timestamp.as_secs();
+    let millis = timestamp.subsec_millis();
+
     super::_print(format_args!(
         "{} {:<5}: {}\n",
-        format_args!("[{:>10.3}]", timestamp),
+        format_args!("[{:>6}.{:03}]", secs, millis),
         record.level(),
         record.args()
     ));
