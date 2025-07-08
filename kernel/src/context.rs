@@ -191,8 +191,9 @@ impl ReadCString for VmReader<'_, Fallible> {
         // This implementation is inspired by
         // the `do_strncpy_from_user` function in Linux kernel.
         // The original Linux implementation can be found at:
-        // <https://elixir.bootlin.com/linux/v6.0.9/source/lib/strncpy_from_user.c#L28>
-        let mut buffer: Vec<u8> = Vec::with_capacity(max_len);
+        // <https://elixir.bootlin.com/linux/v6.0.9/source/lib/strncpy_from_user.c#L28>.
+
+        let mut buffer = new_cstring_buffer();
 
         if read_until_nul_byte(self, &mut buffer, max_len)? {
             return Ok(CString::from_vec_with_nul(buffer).unwrap());
@@ -211,7 +212,7 @@ impl ReadCString for VmReaderArray<'_> {
     }
 
     fn read_cstring_with_max_len(&mut self, max_len: usize) -> Result<CString> {
-        let mut buffer: Vec<u8> = Vec::with_capacity(max_len);
+        let mut buffer = new_cstring_buffer();
 
         for reader in self.readers_mut() {
             if read_until_nul_byte(reader, &mut buffer, max_len)? {
@@ -224,6 +225,13 @@ impl ReadCString for VmReaderArray<'_> {
             "no nul terminator is present before reaching the buffer limit"
         );
     }
+}
+
+fn new_cstring_buffer() -> Vec<u8> {
+    // On Linux the kernel walks the user buffer until it encounters the first NUL
+    // byte to determine the true string length. For simplicity we allocate a
+    // modest, fixed-size buffer instead.
+    Vec::with_capacity(256)
 }
 
 /// Reads bytes from `reader` into `buffer` until a nul byte is found.
