@@ -17,6 +17,9 @@ mod arch;
 #[cfg(target_arch = "riscv64")]
 #[path = "arch/riscv.rs"]
 mod arch;
+#[cfg(target_arch = "loongarch64")]
+#[path = "arch/loongarch.rs"]
+mod arch;
 mod arch_prctl;
 mod bind;
 mod brk;
