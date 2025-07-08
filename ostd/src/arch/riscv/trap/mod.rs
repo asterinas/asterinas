@@ -4,13 +4,16 @@
 
 mod trap;
 
-use riscv::register::scause::Interrupt;
+use riscv::register::scause::{Exception, Interrupt};
 use spin::Once;
 pub(super) use trap::RawUserContext;
 pub use trap::TrapFrame;
 
 use super::cpu::context::CpuExceptionInfo;
-use crate::cpu_local_cell;
+use crate::{
+    arch::kernel::plic::claim_interrupt, cpu::current_cpu_racy, cpu_local_cell,
+    mm::MAX_USERSPACE_VADDR, trap::call_irq_callback_functions,
+};
 
 cpu_local_cell! {
     static IS_KERNEL_INTERRUPTED: bool = false;
@@ -40,7 +43,13 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
                 Interrupt::SupervisorTimer => {
                     crate::arch::timer::handle_timer_interrupt();
                 }
-                Interrupt::SupervisorExternal => todo!(),
+                Interrupt::SupervisorExternal => {
+                    while let irq_num = claim_interrupt(current_cpu_racy().as_usize())
+                        && irq_num != 0
+                    {
+                        call_irq_callback_functions(f, irq_num);
+                    }
+                }
                 Interrupt::SupervisorSoft => todo!(),
                 _ => {
                     panic!(
@@ -52,9 +61,36 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
         }
         Trap::Exception(e) => {
             let stval = riscv::register::stval::read();
-            panic!(
-                "Cannot handle kernel cpu exception: {e:?}. stval: {stval:#x}, trapframe: {f:#x?}.",
-            );
+            let sepc = riscv::register::sepc::read();
+            match e {
+                // Handle page fault
+                Exception::StorePageFault
+                | Exception::LoadPageFault
+                | Exception::InstructionPageFault => {
+                    // Check if the page fault is caused by user-space address
+                    if let Some(handler) = USER_PAGE_FAULT_HANDLER.get() {
+                        let page_fault_addr = stval;
+                        if (0..MAX_USERSPACE_VADDR).contains(&(page_fault_addr as usize)) {
+                            handler(&CpuExceptionInfo { code: e, page_fault_addr: page_fault_addr, error_code: 0, illegal_instruction: 0 })
+                                .unwrap_or_else(|_| {
+                                    panic!(
+                                        "User page fault handler failed: addr: {page_fault_addr:#x}, err: {e:?}"
+                                    );
+                                });
+                            return;
+                        }
+                    }
+                }
+                Exception::IllegalInstruction => {
+                    // Handle kernel illegal instruction, this is because logger uses float instructions
+                    let old_sstatus = f.sstatus;
+                    f.sstatus = (old_sstatus & !(0b11 << 13)) | (0b01 << 13);
+                    return;
+                }
+                _ => panic!(
+                "Cannot handle kernel cpu exception: {e:?}. stval: {stval:#x}, sepc: {sepc:#x}, trapframe: {f:#x?}.",
+                ),
+            }
         }
     }
 }

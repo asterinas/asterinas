@@ -2,15 +2,18 @@
 
 //! CPU execution context control.
 
-use core::fmt::Debug;
+use core::{arch::asm, default, fmt::Debug};
 
 use riscv::register::scause::{Exception, Interrupt, Trap};
 
 use crate::{
     arch::{
+        kernel::plic::claim_interrupt,
         timer::handle_timer_interrupt,
         trap::{RawUserContext, TrapFrame},
     },
+    cpu::current_cpu_racy,
+    trap::call_irq_callback_functions,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
 
@@ -69,9 +72,12 @@ pub struct GeneralRegs {
 pub struct CpuExceptionInfo {
     /// The type of the exception.
     pub code: Exception,
-    /// The error code associated with the exception.
+    /// The virtual address where a page fault occurred.
     pub page_fault_addr: usize,
+    /// The error code associated with the exception.
     pub error_code: usize, // TODO
+    /// The illegal instruction.
+    pub illegal_instruction: usize,
 }
 
 impl Default for UserContext {
@@ -79,7 +85,7 @@ impl Default for UserContext {
         UserContext {
             user_context: RawUserContext::default(),
             trap: Trap::Exception(Exception::Unknown),
-            fpu_state: FpuState,
+            fpu_state: FpuState::default(),
             cpu_exception_info: CpuExceptionInfo::default(),
         }
     }
@@ -91,6 +97,7 @@ impl Default for CpuExceptionInfo {
             code: Exception::Unknown,
             page_fault_addr: 0,
             error_code: 0,
+            illegal_instruction: 0,
         }
     }
 }
@@ -142,6 +149,18 @@ impl UserContext {
     pub fn activate_tls_pointer(&self) {
         // No-op
     }
+
+    /// Initializes FPU state.
+    pub fn init_fpu_state(&self) {
+        // We need to set sstatus.FS to Init, but self is not mutable.
+        // So we use unsafe block to modify sstatus.
+        unsafe {
+            let sstatus_ptr = core::ptr::addr_of!(self.user_context.sstatus) as *mut usize;
+            let current = sstatus_ptr.read();
+            let modified = (current & !(0b11 << 13)) | (0b01 << 13);
+            sstatus_ptr.write(modified);
+        }
+    }
 }
 
 impl UserContextApiInternal for UserContext {
@@ -155,6 +174,13 @@ impl UserContextApiInternal for UserContext {
                 Trap::Interrupt(Interrupt::SupervisorTimer) => {
                     handle_timer_interrupt();
                 }
+                Trap::Interrupt(Interrupt::SupervisorExternal) => {
+                    while let irq_num = claim_interrupt(current_cpu_racy().as_usize())
+                        && irq_num != 0
+                    {
+                        call_irq_callback_functions(&self.as_trap_frame(), irq_num);
+                    }
+                }
                 Trap::Interrupt(_) => todo!(),
                 Trap::Exception(Exception::UserEnvCall) => {
                     self.user_context.sepc += 4;
@@ -162,12 +188,40 @@ impl UserContextApiInternal for UserContext {
                 }
                 Trap::Exception(e) => {
                     let stval = riscv::register::stval::read();
-                    log::trace!("Exception, scause: {e:?}, stval: {stval:#x?}");
-                    self.cpu_exception_info = CpuExceptionInfo {
-                        code: e,
-                        page_fault_addr: stval,
-                        error_code: 0,
-                    };
+                    let sepc = riscv::register::sepc::read();
+                    log::trace!("Exception, scause: {e:?}, stval: {stval:#x?}, sepc: {sepc:#x?}");
+                    match e {
+                        // Check if the exception is a page fault
+                        // If so, the address is stored in stval
+                        Exception::StorePageFault
+                        | Exception::LoadPageFault
+                        | Exception::InstructionPageFault => {
+                            self.cpu_exception_info = CpuExceptionInfo {
+                                code: e,
+                                page_fault_addr: stval,
+                                error_code: 0,
+                                illegal_instruction: 0,
+                            };
+                        }
+                        // Check if the exception is a illegal instruction fault
+                        // If so, the instruction is stored in stval
+                        Exception::IllegalInstruction => {
+                            self.cpu_exception_info = CpuExceptionInfo {
+                                code: e,
+                                page_fault_addr: sepc,
+                                error_code: 0,
+                                illegal_instruction: stval,
+                            };
+                        }
+                        _ => {
+                            self.cpu_exception_info = CpuExceptionInfo {
+                                code: e,
+                                page_fault_addr: 0,
+                                error_code: 0,
+                                illegal_instruction: 0,
+                            }
+                        }
+                    }
                     break ReturnReason::UserException;
                 }
             }
@@ -274,26 +328,189 @@ cpu_context_impl_getter_setter!(
 pub type CpuException = Exception;
 
 /// The FPU state of user task.
-///
-/// This could be used for saving both legacy and modern state format.
-// FIXME: Implement FPU state on RISC-V platforms.
-#[derive(Clone, Copy, Debug)]
-pub struct FpuState;
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FpuState {
+    pub f0: u64,
+    pub f1: u64,
+    pub f2: u64,
+    pub f3: u64,
+    pub f4: u64,
+    pub f5: u64,
+    pub f6: u64,
+    pub f7: u64,
+    pub f8: u64,
+    pub f9: u64,
+    pub f10: u64,
+    pub f11: u64,
+    pub f12: u64,
+    pub f13: u64,
+    pub f14: u64,
+    pub f15: u64,
+    pub f16: u64,
+    pub f17: u64,
+    pub f18: u64,
+    pub f19: u64,
+    pub f20: u64,
+    pub f21: u64,
+    pub f22: u64,
+    pub f23: u64,
+    pub f24: u64,
+    pub f25: u64,
+    pub f26: u64,
+    pub f27: u64,
+    pub f28: u64,
+    pub f29: u64,
+    pub f30: u64,
+    pub f31: u64,
+    pub fscr: u32,
+}
 
 impl FpuState {
     /// Saves CPU's current FPU state into this instance.
     pub fn save(&self) {
-        todo!()
+        let fs = riscv::register::sstatus::read().fs();
+
+        if fs == riscv::register::sstatus::FS::Dirty {
+            let fpu_state = self as *const FpuState as *mut FpuState;
+
+            // SAFETY: Kernel code don't use FPU state.
+            unsafe {
+                asm!(
+                    "fsd f0,  0*8({0})",
+                    "fsd f1,  1*8({0})",
+                    "fsd f2,  2*8({0})",
+                    "fsd f3,  3*8({0})",
+                    "fsd f4,  4*8({0})",
+                    "fsd f5,  5*8({0})",
+                    "fsd f6,  6*8({0})",
+                    "fsd f7,  7*8({0})",
+                    "fsd f8,  8*8({0})",
+                    "fsd f9,  9*8({0})",
+                    "fsd f10, 10*8({0})",
+                    "fsd f11, 11*8({0})",
+                    "fsd f12, 12*8({0})",
+                    "fsd f13, 13*8({0})",
+                    "fsd f14, 14*8({0})",
+                    "fsd f15, 15*8({0})",
+                    "fsd f16, 16*8({0})",
+                    "fsd f17, 17*8({0})",
+                    "fsd f18, 18*8({0})",
+                    "fsd f19, 19*8({0})",
+                    "fsd f20, 20*8({0})",
+                    "fsd f21, 21*8({0})",
+                    "fsd f22, 22*8({0})",
+                    "fsd f23, 23*8({0})",
+                    "fsd f24, 24*8({0})",
+                    "fsd f25, 25*8({0})",
+                    "fsd f26, 26*8({0})",
+                    "fsd f27, 27*8({0})",
+                    "fsd f28, 28*8({0})",
+                    "fsd f29, 29*8({0})",
+                    "fsd f30, 30*8({0})",
+                    "fsd f31, 31*8({0})",
+                    "frcsr t0",
+                    "sw t0, 32*8({0})",
+                    in(reg) fpu_state,
+                );
+
+                riscv::register::sstatus::set_fs(riscv::register::sstatus::FS::Clean);
+            }
+        }
     }
 
     /// Restores CPU's FPU state from this instance.
     pub fn restore(&self) {
-        todo!()
-    }
-}
+        let fs = riscv::register::sstatus::read().fs();
 
-impl Default for FpuState {
-    fn default() -> Self {
-        FpuState
+        match fs {
+            // Fixme: Normal state should be clean, because the kernel code don't use FPU state.
+            // But the logger use the float instructions.
+            riscv::register::sstatus::FS::Dirty | riscv::register::sstatus::FS::Clean => {
+                let fpu_state = self;
+
+                // SAFETY: Kernel code don't use FPU state.
+                unsafe {
+                    asm!(
+                        "fld f0,  0*8({0})",
+                        "fld f1,  1*8({0})",
+                        "fld f2,  2*8({0})",
+                        "fld f3,  3*8({0})",
+                        "fld f4,  4*8({0})",
+                        "fld f5,  5*8({0})",
+                        "fld f6,  6*8({0})",
+                        "fld f7,  7*8({0})",
+                        "fld f8,  8*8({0})",
+                        "fld f9,  9*8({0})",
+                        "fld f10, 10*8({0})",
+                        "fld f11, 11*8({0})",
+                        "fld f12, 12*8({0})",
+                        "fld f13, 13*8({0})",
+                        "fld f14, 14*8({0})",
+                        "fld f15, 15*8({0})",
+                        "fld f16, 16*8({0})",
+                        "fld f17, 17*8({0})",
+                        "fld f18, 18*8({0})",
+                        "fld f19, 19*8({0})",
+                        "fld f20, 20*8({0})",
+                        "fld f21, 21*8({0})",
+                        "fld f22, 22*8({0})",
+                        "fld f23, 23*8({0})",
+                        "fld f24, 24*8({0})",
+                        "fld f25, 25*8({0})",
+                        "fld f26, 26*8({0})",
+                        "fld f27, 27*8({0})",
+                        "fld f28, 28*8({0})",
+                        "fld f29, 29*8({0})",
+                        "fld f30, 30*8({0})",
+                        "fld f31, 31*8({0})",
+                        "lw t0, 32*8({0})",
+                        "fscsr t0",
+                        in(reg) fpu_state,
+                    );
+                }
+            }
+            riscv::register::sstatus::FS::Initial => {
+                // SAFETY: Kernel code don't use FPU state.
+                unsafe {
+                    asm!(
+                        "fmv.d.x f0, zero",
+                        "fmv.d.x f1, zero",
+                        "fmv.d.x f2, zero",
+                        "fmv.d.x f3, zero",
+                        "fmv.d.x f4, zero",
+                        "fmv.d.x f5, zero",
+                        "fmv.d.x f6, zero",
+                        "fmv.d.x f7, zero",
+                        "fmv.d.x f8, zero",
+                        "fmv.d.x f9, zero",
+                        "fmv.d.x f10, zero",
+                        "fmv.d.x f11, zero",
+                        "fmv.d.x f12, zero",
+                        "fmv.d.x f13, zero",
+                        "fmv.d.x f14, zero",
+                        "fmv.d.x f15, zero",
+                        "fmv.d.x f16, zero",
+                        "fmv.d.x f17, zero",
+                        "fmv.d.x f18, zero",
+                        "fmv.d.x f19, zero",
+                        "fmv.d.x f20, zero",
+                        "fmv.d.x f21, zero",
+                        "fmv.d.x f22, zero",
+                        "fmv.d.x f23, zero",
+                        "fmv.d.x f24, zero",
+                        "fmv.d.x f25, zero",
+                        "fmv.d.x f26, zero",
+                        "fmv.d.x f27, zero",
+                        "fmv.d.x f28, zero",
+                        "fmv.d.x f29, zero",
+                        "fmv.d.x f30, zero",
+                        "fmv.d.x f31, zero",
+                        "fscsr zero",
+                    );
+                    riscv::register::sstatus::set_fs(riscv::register::sstatus::FS::Initial);
+                }
+            }
+            riscv::register::sstatus::FS::Off => {}
+        }
     }
 }

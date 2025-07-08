@@ -3,7 +3,8 @@
 use alloc::{
     boxed::Box,
     collections::BTreeMap,
-    string::{String, ToString},
+    format,
+    string::String,
     sync::Arc,
     vec,
     vec::Vec,
@@ -23,6 +24,7 @@ use ostd::{
     sync::SpinLock,
     Pod,
 };
+use spin::Once;
 
 use super::{BlockFeatures, VirtioBlockConfig, VirtioBlockFeature};
 use crate::{
@@ -33,6 +35,17 @@ use crate::{
     queue::VirtQueue,
     transport::{ConfigManager, VirtioTransport},
 };
+
+const MAX_LEGACY_BLK_ID: usize = 256;
+
+/// Legacy block device id allocator.
+///
+/// Legacy block device id is used to identify the block device in the legacy version of VirtIO.
+///
+/// # Note
+///
+/// This allocator is only used in the legacy version of VirtIO.
+static LEGACY_BLK_ID_ALLOC: Once<SpinLock<IdAlloc>> = Once::new();
 
 #[derive(Debug)]
 pub struct BlockDevice {
@@ -47,8 +60,10 @@ impl BlockDevice {
         let is_legacy = transport.is_legacy_version();
         let device = DeviceInner::init(transport)?;
         let device_id = if is_legacy {
-            // FIXME: legacy device do not support `GetId` request.
-            "legacy_blk".to_string()
+            LEGACY_BLK_ID_ALLOC
+                .call_once(|| SpinLock::new(IdAlloc::with_capacity(MAX_LEGACY_BLK_ID)));
+            let id = LEGACY_BLK_ID_ALLOC.get().unwrap().lock().alloc().unwrap();
+            format!("legacy_blk_{}", id)
         } else {
             device.request_device_id()
         };

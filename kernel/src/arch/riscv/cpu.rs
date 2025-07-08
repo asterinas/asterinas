@@ -7,7 +7,11 @@ use ostd::{
     Pod,
 };
 
-use crate::{cpu::LinuxAbi, thread::exception::PageFaultInfo, vm::perms::VmPerms};
+use crate::{
+    cpu::LinuxAbi,
+    thread::exception::{IllegalInstructionFaultInfo, PageFaultInfo},
+    vm::perms::VmPerms,
+};
 
 impl LinuxAbi for UserContext {
     fn syscall_num(&self) -> usize {
@@ -150,6 +154,25 @@ impl TryFrom<&CpuExceptionInfo> for PageFaultInfo {
             address: value.page_fault_addr,
             required_perms,
         })
+    }
+}
+
+impl TryFrom<&CpuExceptionInfo> for IllegalInstructionFaultInfo {
+    // [`Err`] indicates that the [`CpuExceptionInfo`] is not a illegal instruction fault,
+    // with no additional error information.
+    type Error = ();
+
+    fn try_from(value: &CpuExceptionInfo) -> Result<Self, ()> {
+        use riscv::register::scause::Exception;
+
+        if let Exception::IllegalInstruction = value.cpu_exception() {
+            Ok(IllegalInstructionFaultInfo {
+                address: value.page_fault_addr,
+                instruction: value.illegal_instruction,
+            })
+        } else {
+            Err(())
+        }
     }
 }
 
