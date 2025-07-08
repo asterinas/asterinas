@@ -16,7 +16,7 @@ use crate::{
     prelude::*,
     process::{
         check_executable_file, posix_thread::ThreadName, renew_vm_and_map, Credentials, Process,
-        ProgramToLoad, MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER, MAX_ENV_LEN,
+        ProgramToLoad, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS,
     },
 };
 
@@ -95,8 +95,13 @@ fn do_execve(
     } = ctx;
 
     let executable_path = elf_file.abs_path();
-    let argv = read_cstring_vec(argv_ptr_ptr, MAX_ARGV_NUMBER, MAX_ARG_LEN, ctx)?;
-    let envp = read_cstring_vec(envp_ptr_ptr, MAX_ENVP_NUMBER, MAX_ENV_LEN, ctx)?;
+    // FIXME: A malicious user could cause a kernel panic by exhausting available memory.
+    // Currently, the implementation reads up to `MAX_NR_STRING_ARGS` arguments, each up to
+    // `MAX_LEN_STRING_ARG` in length, without first verifying the total combined size.
+    // To prevent excessive memory allocation, a preliminary check should sum the lengths
+    // of all strings to enforce a sensible overall limit.
+    let argv = read_cstring_vec(argv_ptr_ptr, MAX_NR_STRING_ARGS, MAX_LEN_STRING_ARG, ctx)?;
+    let envp = read_cstring_vec(envp_ptr_ptr, MAX_NR_STRING_ARGS, MAX_LEN_STRING_ARG, ctx)?;
     debug!(
         "filename: {:?}, argv = {:?}, envp = {:?}",
         executable_path, argv, envp
