@@ -53,6 +53,9 @@ pub mod arch;
 #[cfg(target_arch = "riscv64")]
 #[path = "arch/riscv/mod.rs"]
 pub mod arch;
+#[cfg(target_arch = "loongarch64")]
+#[path = "arch/loongarch/mod.rs"]
+pub mod arch;
 pub mod context;
 pub mod cpu;
 pub mod device;
