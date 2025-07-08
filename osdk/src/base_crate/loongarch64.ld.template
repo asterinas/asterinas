@@ -1,0 +1,93 @@
+ENTRY(_start)
+OUTPUT_ARCH(loongarch)
+
+# The physical address where the kernel will start to be loaded.
+KERNEL_LMA = 0x80000000;
+
+# The virtual memory of the kernel mapping.
+KERNEL_VMA = 0x9000000080000000;
+
+KERNEL_VMA_OFFSET = KERNEL_VMA - KERNEL_LMA;
+
+SECTIONS
+{
+    # First, we use physical addresses for the boot sections.
+    . = KERNEL_LMA;
+
+    __kernel_start = . + KERNEL_VMA_OFFSET;
+
+    .boot                   : AT(ADDR(.boot)) {
+        KEEP(*(.boot))
+        # FIXME: We want to create a separate .boot.stack section so that the
+        # executable doesn't contain the boot stack (which is just hundreds of
+        # kilobytes of zeros). But it is currently in the .boot section because
+        # the linker will otherwise complain unexpected relocation failures.
+        KEEP(*(.boot.stack))
+        . = ALIGN(4096);
+    }
+
+    # Then, we switch to virtual addresses for all the other sections.
+    . += KERNEL_VMA_OFFSET;
+
+    .text                   : AT(ADDR(.text) - KERNEL_VMA_OFFSET) {
+        *(.text .text.*)
+        PROVIDE(__etext = .);
+    }
+
+    .rodata                 : AT(ADDR(.rodata) - KERNEL_VMA_OFFSET) {
+        *(.rodata .rodata.*)
+    }
+
+    .eh_frame_hdr           : AT(ADDR(.eh_frame_hdr) - KERNEL_VMA_OFFSET) {
+        PROVIDE(__GNU_EH_FRAME_HDR = .);
+        KEEP(*(.eh_frame_hdr .eh_frame_hdr.*))
+    }
+    . = ALIGN(8);
+    .eh_frame               : AT(ADDR(.eh_frame) - KERNEL_VMA_OFFSET) {
+        PROVIDE(__eh_frame = .);
+        KEEP(*(.eh_frame .eh_frame.*))
+    }
+
+    # The list of unit test function symbols that should be executed while
+    # doing `cargo osdk test`.
+    .ktest_array            : AT(ADDR(.ktest_array) - KERNEL_VMA_OFFSET) {
+        __ktest_array = .;
+        KEEP(*(SORT(.ktest_array)))
+        __ktest_array_end = .;
+    }
+
+    .init_array             : AT(ADDR(.init_array) - KERNEL_VMA_OFFSET) {
+        __sinit_array = .;
+        KEEP(*(SORT(.init_array .init_array.*)))
+        __einit_array = .;
+    }
+    
+    # A list of the sensitive IoPort ranges in OSTD which will be used during
+    # the initialization of IoPortAllocator.
+    .sensitive_io_ports     : AT(ADDR(.sensitive_io_ports) - KERNEL_VMA_OFFSET) {
+        __sensitive_io_ports_start = .;
+        KEEP(*(.sensitive_io_ports))
+        __sensitive_io_ports_end = .;
+    }
+
+    .data                   : AT(ADDR(.data) - KERNEL_VMA_OFFSET) {
+        *(.data .data.*)
+    }
+
+    # The CPU local data storage. It is readable and writable for the bootstrap
+    # processor, while it would be copied to other dynamically allocated memory
+    # areas for the application processors.
+    .cpu_local              : AT(ADDR(.cpu_local) - KERNEL_VMA_OFFSET) {
+        __cpu_local_start = .;
+        KEEP(*(SORT(.cpu_local)))
+        __cpu_local_end = .;
+    }
+
+    .bss                    : AT(ADDR(.bss) - KERNEL_VMA_OFFSET) {
+        __bss = .;
+        *(.bss .bss.*)
+        __bss_end = .;
+    }
+
+    __kernel_end = .;
+}
