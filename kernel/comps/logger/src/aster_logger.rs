@@ -14,15 +14,17 @@ impl log::Log for AsterLogger {
     }
 
     fn log(&self, record: &Record) {
-        let timestamp = Jiffies::elapsed().as_duration().as_secs_f64();
-        print_logs(record, timestamp);
+        let millis = Jiffies::elapsed().as_duration().as_millis();
+        let secs = (millis / 1000) as u64;
+        let millis = (millis % 1000) as u64;
+        print_logs(record, secs, millis);
     }
 
     fn flush(&self) {}
 }
 
 #[cfg(feature = "log_color")]
-fn print_logs(record: &Record, timestamp: f64) {
+fn print_logs(record: &Record, secs: u64, millis: u64) {
     use owo_colors::Style;
 
     let timestamp_style = Style::new().green();
@@ -37,17 +39,17 @@ fn print_logs(record: &Record, timestamp: f64) {
 
     super::_print(format_args!(
         "{} {:<5}: {}\n",
-        timestamp_style.style(format_args!("[{:>10.3}]", timestamp)),
+        timestamp_style.style(format_args!("[{:>6}.{:03}]", secs, millis)),
         level_style.style(record.level()),
         record_style.style(record.args())
     ));
 }
 
 #[cfg(not(feature = "log_color"))]
-fn print_logs(record: &Record, timestamp: f64) {
+fn print_logs(record: &Record, secs: u64, millis: u64) {
     super::_print(format_args!(
         "{} {:<5}: {}\n",
-        format_args!("[{:>10.3}]", timestamp),
+        format_args!("[{:>6}.{:03}]", secs, millis),
         record.level(),
         record.args()
     ));
