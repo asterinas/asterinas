@@ -20,8 +20,7 @@ pub use self::{
     heap::USER_HEAP_SIZE_LIMIT,
     init_stack::{
         aux_vec::{AuxKey, AuxVec},
-        InitStack, InitStackReader, INIT_STACK_SIZE, MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER,
-        MAX_ENV_LEN,
+        InitStack, InitStackReader, INIT_STACK_SIZE, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS,
     },
 };
 use crate::{prelude::*, vm::vmar::Vmar};
