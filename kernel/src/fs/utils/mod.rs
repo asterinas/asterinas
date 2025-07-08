@@ -4,7 +4,7 @@
 
 pub use access_mode::AccessMode;
 pub use creation_flags::CreationFlags;
-pub use dirent_visitor::DirentVisitor;
+pub use dirent_visitor::{DirentCounter, DirentVisitor};
 pub use direntry_vec::DirEntryVecExt;
 pub use endpoint::{Endpoint, EndpointState};
 pub use falloc_mode::FallocMode;

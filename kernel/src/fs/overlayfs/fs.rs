@@ -20,9 +20,9 @@ use crate::{
         device::Device,
         path::Dentry,
         utils::{
-            DirentVisitor, FallocMode, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd,
-            Metadata, MknodType, SuperBlock, XattrName, XattrNamespace, XattrSetFlags, NAME_MAX,
-            XATTR_VALUE_MAX_LEN,
+            DirentCounter, DirentVisitor, FallocMode, FileSystem, FsFlags, Inode, InodeMode,
+            InodeType, IoctlCmd, Metadata, MknodType, SuperBlock, XattrName, XattrNamespace,
+            XattrSetFlags, NAME_MAX, XATTR_VALUE_MAX_LEN,
         },
     },
     prelude::*,
@@ -98,7 +98,23 @@ struct OverlayInode {
 }
 
 impl OverlayFS {
+    /// Creates a new OverlayFS instance.
+    ///
+    /// # Arguments
+    /// * `upper` - The upper directory (writable layer)
+    /// * `lower` - Vector of lower directories (read-only layers, in priority order)
+    /// * `work` - The work directory (must be empty and on same filesystem as upper)
+    ///
+    /// # Returns
+    /// An `Arc<OverlayFS>` on success, or an error if validation fails.
+    ///
+    /// # Errors
+    /// * `EINVAL` - If work and upper are on different filesystems
+    /// * `EINVAL` - If work is not empty
     pub fn new(upper: Dentry, lower: Vec<Dentry>, work: Dentry) -> Result<Arc<Self>> {
+        Self::validate_work_and_upper(&work, &upper)?;
+        Self::validate_work_empty(&work)?;
+
         Ok(Arc::new_cyclic(|weak| Self {
             upper: OverlayUpper { dentry: upper },
             lower: OverlayLower { dentries: lower },
@@ -108,6 +124,27 @@ impl OverlayFS {
             next_ino: AtomicU64::new(0),
             self_: weak.clone(),
         }))
+    }
+
+    /// Validates that work is on the same filesystem as upper.
+    fn validate_work_and_upper(work: &Dentry, upper: &Dentry) -> Result<()> {
+        if !Arc::ptr_eq(upper.mount_node(), work.mount_node()) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "workdir and upperdir must reside under the same mount"
+            );
+        }
+        Ok(())
+    }
+
+    /// Validates that work is empty.
+    fn validate_work_empty(work: &Dentry) -> Result<()> {
+        let mut counter = DirentCounter::new();
+        let _ = work.inode().readdir_at(0, &mut counter);
+        if counter.count() > 0 {
+            return_errno_with_message!(Errno::EINVAL, "workdir must be empty");
+        }
+        Ok(())
     }
 }
 
@@ -1120,18 +1157,52 @@ mod tests {
     }
 
     #[ktest]
-    fn obscured_multi_layers() {
+    fn work_and_upper_should_be_in_same_mount() {
+        crate::time::clocks::init_for_ktest();
+
+        let upper = Dentry::new_fs_root(MountNode::new_root(RamFS::new()));
+        let lower = vec![Dentry::new_fs_root(MountNode::new_root(RamFS::new()))];
+        let work = Dentry::new_fs_root(MountNode::new_root(RamFS::new()));
+
+        let Err(e) = OverlayFS::new(upper, lower, work) else {
+            panic!("OverlayFS::new should fail when work and upper are not in the same mount");
+        };
+        assert_eq!(e.error(), Errno::EINVAL);
+    }
+
+    #[ktest]
+    fn work_should_be_empty() {
         crate::time::clocks::init_for_ktest();
 
         let mode = InodeMode::all();
         let upper = {
             let root = Dentry::new_fs_root(MountNode::new_root(RamFS::new()));
-            root.new_fs_child("f1", InodeType::File, mode).unwrap();
-            root.new_fs_child(".wh.f2", InodeType::File, mode).unwrap();
-            root.new_fs_child("d1", InodeType::Dir, mode).unwrap();
-            root.new_fs_child("d2", InodeType::Dir, mode).unwrap();
-            root.new_fs_child(".wh.d3", InodeType::Dir, mode).unwrap();
+            root.new_fs_child("file", InodeType::File, mode).unwrap();
             root
+        };
+        let lower = vec![Dentry::new_fs_root(MountNode::new_root(RamFS::new()))];
+        let work = upper.clone();
+
+        let Err(e) = OverlayFS::new(upper, lower, work) else {
+            panic!("OverlayFS::new should fail when work is not empty");
+        };
+        assert_eq!(e.error(), Errno::EINVAL);
+    }
+
+    #[ktest]
+    fn obscured_multi_layers() {
+        crate::time::clocks::init_for_ktest();
+
+        let mode = InodeMode::all();
+        let root = Dentry::new_fs_root(MountNode::new_root(RamFS::new()));
+        let upper = {
+            let dir = root.new_fs_child("upper", InodeType::Dir, mode).unwrap();
+            dir.new_fs_child("f1", InodeType::File, mode).unwrap();
+            dir.new_fs_child(".wh.f2", InodeType::File, mode).unwrap();
+            dir.new_fs_child("d1", InodeType::Dir, mode).unwrap();
+            dir.new_fs_child("d2", InodeType::Dir, mode).unwrap();
+            dir.new_fs_child(".wh.d3", InodeType::Dir, mode).unwrap();
+            dir
         };
         let lower = {
             let l1 = {
@@ -1159,7 +1230,7 @@ mod tests {
             };
             vec![l1, l2]
         };
-        let work = upper.clone();
+        let work = root.new_fs_child("work", InodeType::Dir, mode).unwrap();
 
         let fs = OverlayFS::new(upper, lower, work).unwrap();
         let root = fs.root_inode();
