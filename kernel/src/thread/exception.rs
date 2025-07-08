@@ -3,7 +3,7 @@
 #![expect(unused_variables)]
 
 use aster_rights::Full;
-use ostd::cpu::context::{CpuExceptionInfo, UserContext};
+use ostd::cpu::context::{CpuException, UserContext};
 
 use crate::{
     current_userspace,
@@ -27,11 +27,10 @@ pub struct PageFaultInfo {
 }
 
 /// We can't handle most exceptions, just send self a fault signal before return to user space.
-pub fn handle_exception(ctx: &Context, context: &UserContext) {
-    let trap_info = context.trap_information();
-    log_trap_info(trap_info);
+pub fn handle_exception(ctx: &Context, context: &UserContext, exception: CpuException) {
+    debug!("[Trap]handle exception: {:?}", exception);
 
-    if let Ok(page_fault_info) = PageFaultInfo::try_from(trap_info) {
+    if let Ok(page_fault_info) = PageFaultInfo::try_from(&exception) {
         let user_space = ctx.user_space();
         let root_vmar = user_space.root_vmar();
         if handle_page_fault_from_vmar(root_vmar, &page_fault_info).is_ok() {
@@ -39,7 +38,7 @@ pub fn handle_exception(ctx: &Context, context: &UserContext) {
         }
     }
 
-    generate_fault_signal(trap_info, ctx);
+    generate_fault_signal(exception, ctx);
 }
 
 /// Handles the page fault occurs in the input `Vmar`.
@@ -58,24 +57,11 @@ fn handle_page_fault_from_vmar(
 }
 
 /// generate a fault signal for current process.
-fn generate_fault_signal(trap_info: &CpuExceptionInfo, ctx: &Context) {
-    let signal = FaultSignal::from(trap_info);
+fn generate_fault_signal(exception: CpuException, ctx: &Context) {
+    let signal = FaultSignal::from(&exception);
     ctx.posix_thread.enqueue_signal(Box::new(signal));
 }
 
-fn log_trap_info(trap_info: &CpuExceptionInfo) {
-    if let Ok(page_fault_info) = PageFaultInfo::try_from(trap_info) {
-        trace!(
-            "[Trap][PAGE_FAULT][page fault addr = 0x{:x}, err = {}]",
-            trap_info.page_fault_addr,
-            trap_info.error_code
-        );
-    } else {
-        let exception = trap_info.cpu_exception();
-        trace!("[Trap][{exception:?}][err = {}]", trap_info.error_code)
-    }
-}
-
-pub(super) fn page_fault_handler(info: &CpuExceptionInfo) -> core::result::Result<(), ()> {
+pub(super) fn page_fault_handler(info: &CpuException) -> core::result::Result<(), ()> {
     handle_page_fault_from_vmar(current_userspace!().root_vmar(), &info.try_into().unwrap())
 }

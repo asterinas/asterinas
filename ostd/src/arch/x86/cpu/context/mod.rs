@@ -11,7 +11,6 @@ use core::{
 
 use bitflags::bitflags;
 use cfg_if::cfg_if;
-use int_to_c_enum::TryFromInt;
 use log::debug;
 use spin::Once;
 use x86::bits64::segmentation::wrfsbase;
@@ -26,6 +25,7 @@ use crate::{
         trap::{RawUserContext, TrapFrame},
         CPU_FEATURES,
     },
+    mm::Vaddr,
     task::scheduler,
     trap::call_irq_callback_functions,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
@@ -47,7 +47,7 @@ pub use x86::cpuid;
 pub struct UserContext {
     user_context: RawUserContext,
     fpu_state: FpuState,
-    cpu_exception_info: CpuExceptionInfo,
+    exception: Option<CpuException>,
 }
 
 /// General registers.
@@ -77,17 +77,154 @@ pub struct GeneralRegs {
     pub gsbase: usize,
 }
 
-/// CPU exception information.
-#[derive(Clone, Default, Copy, Debug)]
-#[repr(C)]
-pub struct CpuExceptionInfo {
-    /// The ID of the exception.
-    pub id: usize,
-    /// The error code associated with the exception.
-    pub error_code: usize,
-    /// The virtual address where a page fault occurred.
-    pub page_fault_addr: usize,
+/// Architectural CPU exceptions (x86-64 vectors 0-31).
+///
+/// For the authoritative specification of each vector, see the  
+/// Intel® 64 and IA-32 Architectures Software Developer’s Manual,  
+/// Volume 3 “System Programming Guide”, Chapter 6 “Interrupt and Exception
+/// Handling”, in particular Section 6.15 “Exception and Interrupt
+/// Reference”.
+///
+/// Every enum variant corresponds to one exception defined by the
+/// Intel/AMD architecture.
+/// Variants that naturally carry an error code (or other error information)
+/// expose it through their associated data fields.
+//
+// TODO: Some exceptions (like `AlignmentCheck`) also push an
+//       error code onto the stack, but that detail is not yet represented
+//       in this type definition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CpuException {
+    ///  0 – #DE  Divide-by-zero error.
+    DivisionError,
+    ///  1 – #DB  Debug.
+    Debug,
+    ///  2 – NMI  Non-maskable interrupt.
+    NonMaskableInterrupt,
+    ///  3 – #BP  Breakpoint (INT3).
+    BreakPoint,
+    ///  4 – #OF  Overflow.
+    Overflow,
+    ///  5 – #BR  Bound-range exceeded.
+    BoundRangeExceeded,
+    ///  6 – #UD  Invalid or undefined opcode.
+    InvalidOpcode,
+    ///  7 – #NM  Device not available (FPU/MMX/SSE disabled).
+    DeviceNotAvailable,
+    ///  8 – #DF  Double fault (always pushes an error code of 0).
+    DoubleFault,
+    ///  9 – Coprocessor segment overrun (reserved on modern CPUs).
+    CoprocessorSegmentOverrun,
+    /// 10 – #TS  Invalid TSS.
+    InvalidTss(SelectorErrorCode),
+    /// 11 – #NP  Segment not present.
+    SegmentNotPresent(SelectorErrorCode),
+    /// 12 – #SS  Stack-segment fault.
+    StackSegmentFault(SelectorErrorCode),
+    /// 13 – #GP  General protection fault  
+    GeneralProtectionFault(Option<SelectorErrorCode>),
+    /// 14 – #PF  Page fault.
+    PageFault(RawPageFaultInfo),
+    // 15: Reserved
+    /// 16 – #MF  x87 floating-point exception.
+    X87FloatingPointException,
+    /// 17 – #AC  Alignment check.  
+    AlignmentCheck,
+    /// 18 – #MC  Machine check.
+    MachineCheck,
+    /// 19 – #XM / #XF  SIMD/FPU floating-point exception.
+    SIMDFloatingPointException,
+    /// 20 – #VE  Virtualization exception.
+    VirtualizationException,
+    /// 21 – #CP  Control protection exception (CET).
+    ControlProtectionException,
+    // 22-27: Reserved
+    /// 28 – #HV  Hypervisor injection exception.
+    HypervisorInjectionException,
+    /// 29 – #VC  VMM communication exception (SEV-ES GHCB).
+    VMMCommunicationException,
+    /// 30 – #SX  Security exception.
+    SecurityException,
+    // 31: Reserved
+    /// Catch-all for reserved or undefined vector numbers.
+    Reserved,
 }
+
+impl CpuException {
+    pub(crate) fn new(trap_num: usize, error_code: usize) -> Option<Self> {
+        let exception = match trap_num {
+            0 => Self::DivisionError,
+            1 => Self::Debug,
+            2 => Self::NonMaskableInterrupt,
+            3 => Self::BreakPoint,
+            4 => Self::Overflow,
+            5 => Self::BoundRangeExceeded,
+            6 => Self::InvalidOpcode,
+            7 => Self::DeviceNotAvailable,
+            8 => {
+                // A double fault will always generate an error code with a value of zero.
+                debug_assert_eq!(error_code, 0);
+                Self::DoubleFault
+            }
+            9 => Self::CoprocessorSegmentOverrun,
+            10 => Self::InvalidTss(SelectorErrorCode(error_code)),
+            11 => Self::SegmentNotPresent(SelectorErrorCode(error_code)),
+            12 => Self::StackSegmentFault(SelectorErrorCode(error_code)),
+            13 => {
+                let error_code = if error_code == 0 {
+                    None
+                } else {
+                    Some(SelectorErrorCode(error_code))
+                };
+                Self::GeneralProtectionFault(error_code)
+            }
+            14 => {
+                let page_fault_addr = x86_64::registers::control::Cr2::read_raw() as usize;
+                Self::PageFault(RawPageFaultInfo {
+                    error_code: PageFaultErrorCode::from_bits(error_code).unwrap(),
+                    addr: page_fault_addr,
+                })
+            }
+            // Reserved 15
+            16 => Self::X87FloatingPointException,
+            17 => Self::AlignmentCheck,
+            18 => Self::MachineCheck,
+            19 => Self::SIMDFloatingPointException,
+            20 => Self::VirtualizationException,
+            21 => Self::ControlProtectionException,
+            // Reserved 22-27
+            28 => Self::HypervisorInjectionException,
+            29 => Self::VMMCommunicationException,
+            30 => Self::SecurityException,
+            // Reserved 31
+            15 | 22..=27 | 31 => Self::Reserved,
+            _ => return None,
+        };
+
+        Some(exception)
+    }
+
+    const fn type_(&self) -> CpuExceptionType {
+        match self {
+            Self::Debug => CpuExceptionType::FaultOrTrap,
+            Self::NonMaskableInterrupt => CpuExceptionType::Interrupt,
+            Self::BreakPoint | Self::Overflow => CpuExceptionType::Trap,
+            Self::DoubleFault | Self::MachineCheck => CpuExceptionType::Abort,
+            Self::Reserved => CpuExceptionType::Reserved,
+            _ => CpuExceptionType::Fault,
+        }
+    }
+
+    pub(crate) const fn is_cpu_exception(trap_num: usize) -> bool {
+        trap_num <= 31
+    }
+}
+
+/// Selector error code.
+///
+/// Reference: <https://wiki.osdev.org/Exceptions#Selector_Error_Code>.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SelectorErrorCode(usize);
 
 impl UserContext {
     /// Returns a reference to the general registers.
@@ -100,9 +237,9 @@ impl UserContext {
         &mut self.user_context.general
     }
 
-    /// Returns the trap information.
-    pub fn trap_information(&self) -> &CpuExceptionInfo {
-        &self.cpu_exception_info
+    /// Takes the CPU exception out.
+    pub fn take_exception(&mut self) -> Option<CpuException> {
+        self.exception.take()
     }
 
     /// Returns a reference to the FPU state.
@@ -148,23 +285,26 @@ impl UserContextApiInternal for UserContext {
 
         const SYSCALL_TRAPNUM: usize = 0x100;
 
-        // return when it is syscall or cpu exception type is Fault or Trap.
-        let return_reason = loop {
+        // Return when it is syscall or cpu exception type is Fault or Trap.
+        loop {
             scheduler::might_preempt();
             self.user_context.run();
 
-            match CpuException::to_cpu_exception(self.user_context.trap_num as u16) {
+            let exception =
+                CpuException::new(self.user_context.trap_num, self.user_context.error_code);
+            match exception {
                 #[cfg(feature = "cvm_guest")]
-                Some(CpuException::VIRTUALIZATION_EXCEPTION) => {
+                Some(CpuException::VirtualizationException) => {
                     let ve_handler = VirtualizationExceptionHandler::new();
                     // Check out the doc of `VirtualizationExceptionHandler::new` to
                     // see why IRQs must enabled _after_ instantiating a `VirtualizationExceptionHandler`.
                     crate::arch::irq::enable_local();
                     ve_handler.handle(self);
                 }
-                Some(exception) if exception.typ().is_fatal_or_trap() => {
+                Some(exception) if exception.type_().is_fault_or_trap() => {
                     crate::arch::irq::enable_local();
-                    break ReturnReason::UserException;
+                    self.exception = Some(exception);
+                    return ReturnReason::UserException;
                 }
                 Some(exception) => {
                     panic!(
@@ -175,7 +315,7 @@ impl UserContextApiInternal for UserContext {
                 }
                 None if self.user_context.trap_num == SYSCALL_TRAPNUM => {
                     crate::arch::irq::enable_local();
-                    break ReturnReason::UserSyscall;
+                    return ReturnReason::UserSyscall;
                 }
                 None => {
                     call_irq_callback_functions(
@@ -189,17 +329,7 @@ impl UserContextApiInternal for UserContext {
             if has_kernel_event() {
                 break ReturnReason::KernelEvent;
             }
-        };
-
-        if return_reason == ReturnReason::UserException {
-            self.cpu_exception_info = CpuExceptionInfo {
-                page_fault_addr: unsafe { x86::controlregs::cr2() },
-                id: self.user_context.trap_num,
-                error_code: self.user_context.error_code,
-            };
         }
-
-        return_reason
     }
 
     fn as_trap_frame(&self) -> TrapFrame {
@@ -259,7 +389,7 @@ pub enum CpuExceptionType {
 
 impl CpuExceptionType {
     /// Returns whether this exception type is a fault or a trap.
-    pub fn is_fatal_or_trap(self) -> bool {
+    pub fn is_fault_or_trap(self) -> bool {
         match self {
             CpuExceptionType::Trap | CpuExceptionType::Fault | CpuExceptionType::FaultOrTrap => {
                 true
@@ -271,65 +401,14 @@ impl CpuExceptionType {
     }
 }
 
-macro_rules! define_cpu_exception {
-    ( $([ $name: ident = $exception_id:tt, $exception_type:tt]),* ) => {
-        /// CPU exception.
-        #[expect(non_camel_case_types)]
-        #[derive(Debug, Copy, Clone, Eq, PartialEq, TryFromInt)]
-        #[repr(u16)]
-        pub enum CpuException {
-            $(
-                #[doc = concat!("The ", stringify!($name), " exception")]
-                $name = $exception_id,
-            )*
-        }
-
-        impl CpuException {
-            /// The type of the CPU exception.
-            pub fn typ(&self) -> CpuExceptionType {
-                match self {
-                    $( CpuException::$name => CpuExceptionType::$exception_type, )*
-                }
-            }
-        }
-    }
+/// Architecture-specific data reported with a page-fault exception.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RawPageFaultInfo {
+    /// The error code pushed by the CPU for this page fault.
+    pub error_code: PageFaultErrorCode,
+    /// The linear (virtual) address that triggered the fault (contents of CR2).
+    pub addr: Vaddr,
 }
-
-// We also defined the RESERVED Exception so that we can easily use the index of EXCEPTION_LIST to get the Exception
-define_cpu_exception!(
-    [DIVIDE_BY_ZERO = 0, Fault],
-    [DEBUG = 1, FaultOrTrap],
-    [NON_MASKABLE_INTERRUPT = 2, Interrupt],
-    [BREAKPOINT = 3, Trap],
-    [OVERFLOW = 4, Trap],
-    [BOUND_RANGE_EXCEEDED = 5, Fault],
-    [INVALID_OPCODE = 6, Fault],
-    [DEVICE_NOT_AVAILABLE = 7, Fault],
-    [DOUBLE_FAULT = 8, Abort],
-    [COPROCESSOR_SEGMENT_OVERRUN = 9, Fault],
-    [INVALID_TSS = 10, Fault],
-    [SEGMENT_NOT_PRESENT = 11, Fault],
-    [STACK_SEGMENT_FAULT = 12, Fault],
-    [GENERAL_PROTECTION_FAULT = 13, Fault],
-    [PAGE_FAULT = 14, Fault],
-    [RESERVED_15 = 15, Reserved],
-    [X87_FLOATING_POINT_EXCEPTION = 16, Fault],
-    [ALIGNMENT_CHECK = 17, Fault],
-    [MACHINE_CHECK = 18, Abort],
-    [SIMD_FLOATING_POINT_EXCEPTION = 19, Fault],
-    [VIRTUALIZATION_EXCEPTION = 20, Fault],
-    [CONTROL_PROTECTION_EXCEPTION = 21, Fault],
-    [RESERVED_22 = 22, Reserved],
-    [RESERVED_23 = 23, Reserved],
-    [RESERVED_24 = 24, Reserved],
-    [RESERVED_25 = 25, Reserved],
-    [RESERVED_26 = 26, Reserved],
-    [RESERVED_27 = 27, Reserved],
-    [HYPERVISOR_INJECTION_EXCEPTION = 28, Fault],
-    [VMM_COMMUNICATION_EXCEPTION = 29, Fault],
-    [SECURITY_EXCEPTION = 30, Fault],
-    [RESERVED_31 = 31, Reserved]
-);
 
 bitflags! {
     /// Page Fault error code. Following the Intel Architectures Software Developer's Manual Volume 3
@@ -355,25 +434,6 @@ bitflags! {
         /// 1 if the exception is unrelated to paging and resulted from violation of SGX-specific
         /// access-control requirements.
         const SGX           = 1 << 15;
-    }
-}
-
-impl CpuException {
-    /// Checks if the given `trap_num` is a valid CPU exception.
-    pub fn is_cpu_exception(trap_num: u16) -> bool {
-        Self::to_cpu_exception(trap_num).is_some()
-    }
-
-    /// Maps a `trap_num` to its corresponding CPU exception.
-    pub fn to_cpu_exception(trap_num: u16) -> Option<CpuException> {
-        CpuException::try_from(trap_num).ok()
-    }
-}
-
-impl CpuExceptionInfo {
-    /// Get corresponding CPU exception
-    pub fn cpu_exception(&self) -> CpuException {
-        CpuException::to_cpu_exception(self.id as u16).unwrap()
     }
 }
 

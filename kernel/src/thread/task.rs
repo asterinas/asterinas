@@ -81,7 +81,10 @@ pub fn create_new_user_task(
             let user_ctx = user_mode.context_mut();
             let mut syscall_number = None;
             match return_reason {
-                ReturnReason::UserException => handle_exception(&ctx, user_ctx),
+                ReturnReason::UserException => {
+                    let exception = user_ctx.take_exception().unwrap();
+                    handle_exception(&ctx, user_ctx, exception)
+                }
                 ReturnReason::UserSyscall => {
                     syscall_number = Some(user_ctx.syscall_num());
                     handle_syscall(&ctx, user_ctx);

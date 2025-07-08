@@ -31,7 +31,7 @@ use crate::{
         if_tdx_enabled,
         irq::{disable_local, enable_local},
     },
-    cpu::context::{CpuException, CpuExceptionInfo, PageFaultErrorCode},
+    cpu::context::{CpuException, PageFaultErrorCode, RawPageFaultInfo},
     cpu_local_cell,
     mm::{
         kspace::{KERNEL_PAGE_TABLE, LINEAR_MAPPING_BASE_VADDR, LINEAR_MAPPING_VADDR_RANGE},
@@ -165,9 +165,10 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
     let was_irq_enabled =
         f.rflags as u64 & x86_64::registers::rflags::RFlags::INTERRUPT_FLAG.bits() > 0;
 
-    match CpuException::to_cpu_exception(f.trap_num as u16) {
+    let cpu_exception = CpuException::new(f.trap_num, f.error_code);
+    match cpu_exception {
         #[cfg(feature = "cvm_guest")]
-        Some(CpuException::VIRTUALIZATION_EXCEPTION) => {
+        Some(CpuException::VirtualizationException) => {
             let ve_info = tdcall::get_veinfo().expect("#VE handler: fail to get VE info\n");
             // We need to enable interrupts only after `tdcall::get_veinfo` is called
             // to avoid nested `#VE`s.
@@ -177,15 +178,14 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
             *f = *trapframe_wrapper.0;
             disable_local_if(was_irq_enabled);
         }
-        Some(CpuException::PAGE_FAULT) => {
-            let page_fault_addr = x86_64::registers::control::Cr2::read_raw();
+        Some(CpuException::PageFault(raw_page_fault_info)) => {
             enable_local_if(was_irq_enabled);
             // The actual user space implementation should be responsible
             // for providing mechanism to treat the 0 virtual address.
-            if (0..MAX_USERSPACE_VADDR).contains(&(page_fault_addr as usize)) {
-                handle_user_page_fault(f, page_fault_addr);
+            if (0..MAX_USERSPACE_VADDR).contains(&raw_page_fault_info.addr) {
+                handle_user_page_fault(f, cpu_exception.as_ref().unwrap());
             } else {
-                handle_kernel_page_fault(f, page_fault_addr);
+                handle_kernel_page_fault(raw_page_fault_info);
             }
             disable_local_if(was_irq_enabled);
         }
@@ -205,30 +205,24 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
 }
 
 #[expect(clippy::type_complexity)]
-static USER_PAGE_FAULT_HANDLER: Once<fn(&CpuExceptionInfo) -> core::result::Result<(), ()>> =
+static USER_PAGE_FAULT_HANDLER: Once<fn(&CpuException) -> core::result::Result<(), ()>> =
     Once::new();
 
 /// Injects a custom handler for page faults that occur in the kernel and
 /// are caused by user-space address.
 pub fn inject_user_page_fault_handler(
-    handler: fn(info: &CpuExceptionInfo) -> core::result::Result<(), ()>,
+    handler: fn(info: &CpuException) -> core::result::Result<(), ()>,
 ) {
     USER_PAGE_FAULT_HANDLER.call_once(|| handler);
 }
 
 /// Handles page fault from user space.
-fn handle_user_page_fault(f: &mut TrapFrame, page_fault_addr: u64) {
-    let info = CpuExceptionInfo {
-        page_fault_addr: page_fault_addr as usize,
-        id: f.trap_num,
-        error_code: f.error_code,
-    };
-
+fn handle_user_page_fault(f: &mut TrapFrame, exception: &CpuException) {
     let handler = USER_PAGE_FAULT_HANDLER
         .get()
         .expect("a page fault handler is missing");
 
-    let res = handler(&info);
+    let res = handler(exception);
     // Copying bytes by bytes can recover directly
     // if handling the page fault successfully.
     if res.is_ok() {
@@ -245,17 +239,20 @@ fn handle_user_page_fault(f: &mut TrapFrame, page_fault_addr: u64) {
 
 /// FIXME: this is a hack because we don't allocate kernel space for IO memory. We are currently
 /// using the linear mapping for IO memory. This is not a good practice.
-fn handle_kernel_page_fault(f: &TrapFrame, page_fault_vaddr: u64) {
+fn handle_kernel_page_fault(info: RawPageFaultInfo) {
     let preempt_guard = disable_preempt();
 
-    let error_code = PageFaultErrorCode::from_bits_truncate(f.error_code);
+    let RawPageFaultInfo {
+        error_code,
+        addr: page_fault_vaddr,
+    } = info;
     debug!(
         "kernel page fault: address {:?}, error code {:?}",
         page_fault_vaddr as *const (), error_code
     );
 
     assert!(
-        LINEAR_MAPPING_VADDR_RANGE.contains(&(page_fault_vaddr as usize)),
+        LINEAR_MAPPING_VADDR_RANGE.contains(&page_fault_vaddr),
         "kernel page fault: the address is outside the range of the linear mapping",
     );
 
@@ -280,7 +277,7 @@ fn handle_kernel_page_fault(f: &TrapFrame, page_fault_vaddr: u64) {
     let page_table = KERNEL_PAGE_TABLE
         .get()
         .expect("kernel page fault: the kernel page table is not initialized");
-    let vaddr = (page_fault_vaddr as usize).align_down(PAGE_SIZE);
+    let vaddr = page_fault_vaddr.align_down(PAGE_SIZE);
     let paddr = vaddr - LINEAR_MAPPING_BASE_VADDR;
 
     let priv_flags = if_tdx_enabled!({
