@@ -54,8 +54,25 @@ impl Clone for CapabilityMsixData {
 impl CapabilityMsixData {
     pub(super) fn new(dev: &mut PciCommonDevice, cap_ptr: u16) -> Self {
         // Get Table and PBA offset, provide functions to modify them
+        #[cfg(not(target_arch = "loongarch64"))]
         let table_info = dev.location().read32(cap_ptr + 4);
+        #[cfg(not(target_arch = "loongarch64"))]
         let pba_info = dev.location().read32(cap_ptr + 8);
+
+        // In the LoongArch, the table_info and pba_info seem not right,
+        // so we directly designate it as Memory Bar index.
+        #[cfg(target_arch = "loongarch64")]
+        let mut table_info = 0u32;
+        #[cfg(target_arch = "loongarch64")]
+        let mut pba_info = 0u32;
+        #[cfg(target_arch = "loongarch64")]
+        for i in 0..6 {
+            if let Some(Bar::Memory(_)) = dev.bar_manager().bar(i) {
+                table_info = i as _;
+                pba_info = i as _;
+                break;
+            }
+        }
 
         let table_bar;
         let pba_bar;
