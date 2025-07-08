@@ -34,7 +34,6 @@ ostd-test = { version = "0.15.2", path = "libs/ostd-test" }
 ostd-pod = { git = "https://github.com/asterinas/ostd-pod", rev = "c4644be", version = "0.1.1" }
 spin = "0.9.4"
 smallvec = "1.13.2"
-unwinding = { version = "=0.2.5", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
 volatile = "0.6.1"
 bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
 
@@ -51,10 +50,16 @@ iced-x86 = { version = "1.21.0", default-features = false, features = [
     "gas",
 ], optional = true }
 tdx-guest = { version = "0.2.1", optional = true }
+unwinding = { version = "=0.2.5", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
 
 [target.riscv64gc-unknown-none-elf.dependencies]
 riscv = { version = "0.11.1", features = ["s-mode"] }
 sbi-rt = "0.0.3"
+fdt = { version = "0.1.5", features = ["pretty-printing"] }
+unwinding = { version = "=0.2.5", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
+
+[target.loongarch64-unknown-none.dependencies]
+loongArch64 = "0.2.5"
 fdt = { version = "0.1.5", features = ["pretty-printing"] }
 
 [features]
