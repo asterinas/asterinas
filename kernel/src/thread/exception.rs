@@ -7,6 +7,8 @@ use aster_rights::Full;
 use ostd::cpu::context::CpuException;
 #[cfg(target_arch = "riscv64")]
 use ostd::cpu::context::CpuExceptionInfo as CpuException;
+#[cfg(target_arch = "loongarch64")]
+use ostd::cpu::context::CpuExceptionInfo as CpuException;
 use ostd::cpu::context::UserContext;
 
 use crate::{
