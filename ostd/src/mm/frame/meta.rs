@@ -467,6 +467,11 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
         max_paddr
     );
 
+    // In RISC-V, the boot page table has mapped the 512GB memory,
+    // so we don't need to add temporary linear mapping.
+    // In LoongArch, the DWM0 has mapped the whole memory,
+    // so we don't need to add temporary linear mapping.
+    #[cfg(target_arch = "x86_64")]
     add_temp_linear_mapping(max_paddr);
 
     let tot_nr_frames = max_paddr / page_size::<PagingConsts>(1);
@@ -604,6 +609,7 @@ fn mark_unusable_ranges() {
 /// We only assume boot page table to contain 4G linear mapping. Thus if the
 /// physical memory is huge we end up depleted of linear virtual memory for
 /// initializing metadata.
+#[cfg(target_arch = "x86_64")]
 fn add_temp_linear_mapping(max_paddr: Paddr) {
     const PADDR4G: Paddr = 0x1_0000_0000;
 

@@ -66,7 +66,10 @@ const ADDR_WIDTH_SHIFT: isize = PagingConsts::ADDRESS_WIDTH as isize - 48;
 
 /// Start of the kernel address space.
 /// This is the _lowest_ address of the x86-64's _high_ canonical addresses.
+#[cfg(not(target_arch = "loongarch64"))]
 pub const KERNEL_BASE_VADDR: Vaddr = 0xffff_8000_0000_0000 << ADDR_WIDTH_SHIFT;
+#[cfg(target_arch = "loongarch64")]
+pub const KERNEL_BASE_VADDR: Vaddr = 0x9000_0000_0000_0000 << ADDR_WIDTH_SHIFT;
 /// End of the kernel address space (non inclusive).
 pub const KERNEL_END_VADDR: Vaddr = 0xffff_ffff_ffff_0000 << ADDR_WIDTH_SHIFT;
 
@@ -83,6 +86,8 @@ pub fn kernel_loaded_offset() -> usize {
 const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_8000_0000 << ADDR_WIDTH_SHIFT;
 #[cfg(target_arch = "riscv64")]
 const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_0000_0000 << ADDR_WIDTH_SHIFT;
+#[cfg(target_arch = "loongarch64")]
+const KERNEL_CODE_BASE_VADDR: usize = 0x9000_0000_0000_0000 << ADDR_WIDTH_SHIFT;
 
 const FRAME_METADATA_CAP_VADDR: Vaddr = 0xffff_e100_0000_0000 << ADDR_WIDTH_SHIFT;
 const FRAME_METADATA_BASE_VADDR: Vaddr = 0xffff_e000_0000_0000 << ADDR_WIDTH_SHIFT;
@@ -94,7 +99,10 @@ pub const VMALLOC_VADDR_RANGE: Range<Vaddr> = VMALLOC_BASE_VADDR..FRAME_METADATA
 
 /// The base address of the linear mapping of all physical
 /// memory in the kernel address space.
+#[cfg(not(target_arch = "loongarch64"))]
 pub const LINEAR_MAPPING_BASE_VADDR: Vaddr = 0xffff_8000_0000_0000 << ADDR_WIDTH_SHIFT;
+#[cfg(target_arch = "loongarch64")]
+pub const LINEAR_MAPPING_BASE_VADDR: Vaddr = 0x9000_0000_0000_0000 << ADDR_WIDTH_SHIFT;
 pub const LINEAR_MAPPING_VADDR_RANGE: Range<Vaddr> = LINEAR_MAPPING_BASE_VADDR..VMALLOC_BASE_VADDR;
 
 /// Convert physical address to virtual address using offset, only available inside `ostd`
@@ -173,6 +181,8 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
     let kpt = PageTable::<KernelPtConfig>::new_kernel_page_table();
     let preempt_guard = disable_preempt();
 
+    // In LoongArch64, we don't need to do linear mappings for the kernel because of DMW0.
+    #[cfg(not(target_arch = "loongarch64"))]
     // Do linear mappings for the kernel.
     {
         let max_paddr = crate::mm::frame::max_paddr();
@@ -213,6 +223,8 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
         }
     }
 
+    // In LoongArch64, we don't need to do linear mappings for the kernel code because of DMW0.
+    #[cfg(not(target_arch = "loongarch64"))]
     // Map for the kernel code itself.
     // TODO: set separated permissions for each segments in the kernel.
     {
