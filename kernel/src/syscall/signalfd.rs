@@ -119,7 +119,9 @@ fn update_existing_signalfd(
 }
 
 fn register_observer(ctx: &Context, signal_file: &Arc<SignalFile>, mask: SigMask) -> Result<()> {
-    let filter = SigEventsFilter::new(mask);
+    // The `mask` specifies the set of signals that are accepted by the signalfd,
+    // so we need to filter out the signals that are not in the mask.
+    let filter = SigEventsFilter::new(!mask);
 
     ctx.posix_thread
         .register_sigqueue_observer(signal_file.observer_ref(), filter);
@@ -175,7 +177,7 @@ impl SignalFile {
     fn update_signal_mask(&self, new_mask: SigMask) -> Result<()> {
         if let Some(thread) = current_thread!().as_posix_thread() {
             thread.unregister_sigqueue_observer(&self.weak_self);
-            let filter = SigEventsFilter::new(new_mask);
+            let filter = SigEventsFilter::new(!new_mask);
             thread.register_sigqueue_observer(self.weak_self.clone(), filter);
         }
         self.signals_mask.store(new_mask, Ordering::Relaxed);
