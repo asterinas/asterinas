@@ -38,7 +38,7 @@ pub fn init() {
             }
 
             RNG.call_once(|| SpinLock::new(StdRng::from_seed(seed)));
-        } else if #[cfg(target_arch = "riscv64")] {
+        } else if #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))] {
             use rand::SeedableRng;
             use ostd::arch::boot::DEVICE_TREE;
 
