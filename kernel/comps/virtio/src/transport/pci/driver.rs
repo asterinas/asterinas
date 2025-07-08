@@ -6,6 +6,7 @@ use ostd::{
     bus::{
         pci::{
             bus::{PciDevice, PciDriver},
+            capability::CapabilityData,
             common_device::PciCommonDevice,
         },
         BusProbeError,
@@ -46,14 +47,25 @@ impl PciDriver for VirtioPciDriver {
             return Err((BusProbeError::DeviceNotMatch, device));
         }
 
+        let has_vendor_cap = device
+            .capabilities()
+            .iter()
+            .any(|cap| matches!(cap.capability_data(), CapabilityData::Vndr(_)));
         let device_id = *device.device_id();
         let transport: Box<dyn VirtioTransport> = match device_id.device_id {
             0x1000..0x1040 if (device.device_id().revision_id == 0) => {
-                // Transitional PCI Device ID in the range 0x1000 to 0x103f.
-                let legacy = VirtioPciLegacyTransport::new(device)?;
-                Box::new(legacy)
+                if has_vendor_cap {
+                    let modern = VirtioPciModernTransport::new(device)?;
+                    Box::new(modern)
+                } else {
+                    let legacy = VirtioPciLegacyTransport::new(device)?;
+                    Box::new(legacy)
+                }
             }
             0x1040..0x107f => {
+                if !has_vendor_cap {
+                    return Err((BusProbeError::DeviceNotMatch, device));
+                }
                 let modern = VirtioPciModernTransport::new(device)?;
                 Box::new(modern)
             }
