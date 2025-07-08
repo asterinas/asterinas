@@ -46,6 +46,14 @@ pub fn init() {
             let seed = chosen.property("rng-seed").unwrap().value.try_into().unwrap();
 
             RNG.call_once(|| SpinLock::new(StdRng::from_seed(seed)));
+        } else if #[cfg(target_arch = "loongarch64")] {
+            use rand::SeedableRng;
+            use ostd::arch::boot::DEVICE_TREE;
+
+            let chosen = DEVICE_TREE.get().unwrap().find_node("/chosen").unwrap();
+            let seed = chosen.property("rng-seed").unwrap().value.try_into().unwrap();
+
+            RNG.call_once(|| SpinLock::new(StdRng::from_seed(seed)));
         } else {
             compile_error!("unsupported target");
         }
