@@ -97,6 +97,8 @@ pub fn handle_pending_signal(
                 const SYSCALL_INSTR_LEN: usize = 2; // syscall
                 #[cfg(target_arch = "riscv64")]
                 const SYSCALL_INSTR_LEN: usize = 4; // ecall
+                #[cfg(target_arch = "loongarch64")]
+                const SYSCALL_INSTR_LEN: usize = 4; // syscall
 
                 user_ctx.set_syscall_num(syscall_number);
                 user_ctx
