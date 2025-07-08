@@ -103,7 +103,7 @@ pub(crate) unsafe fn init_on_ap() {
 }
 
 pub(crate) fn interrupts_ack(irq_number: usize) {
-    if !cpu::context::CpuException::is_cpu_exception(irq_number as u16) {
+    if !cpu::context::CpuException::is_cpu_exception(irq_number) {
         // TODO: We're in the interrupt context, so `disable_preempt()` is not
         // really necessary here.
         kernel::apic::get_or_init(&crate::task::disable_preempt() as _).eoi();

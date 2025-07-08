@@ -7,7 +7,9 @@ use alloc::{
 };
 
 use ostd::{
-    cpu::context::{cpuid, CpuException, CpuExceptionInfo, GeneralRegs, UserContext},
+    cpu::context::{
+        cpuid, CpuException, GeneralRegs, PageFaultErrorCode, RawPageFaultInfo, UserContext,
+    },
     Pod,
 };
 
@@ -111,31 +113,37 @@ impl GpRegs {
     }
 }
 
-impl TryFrom<&CpuExceptionInfo> for PageFaultInfo {
-    // [`Err`] indicates that the [`CpuExceptionInfo`] is not a page fault,
-    // with no additional error information.
-    type Error = ();
-
-    fn try_from(value: &CpuExceptionInfo) -> Result<Self, ()> {
-        if value.cpu_exception() != CpuException::PAGE_FAULT {
-            return Err(());
-        }
-
-        const WRITE_ACCESS_MASK: usize = 0x1 << 1;
-        const INSTRUCTION_FETCH_MASK: usize = 0x1 << 4;
-
-        let required_perms = if value.error_code & INSTRUCTION_FETCH_MASK != 0 {
+impl From<&RawPageFaultInfo> for PageFaultInfo {
+    fn from(raw_info: &RawPageFaultInfo) -> Self {
+        let required_perms = if raw_info
+            .error_code
+            .contains(PageFaultErrorCode::INSTRUCTION)
+        {
             VmPerms::EXEC
-        } else if value.error_code & WRITE_ACCESS_MASK != 0 {
+        } else if raw_info.error_code.contains(PageFaultErrorCode::WRITE) {
             VmPerms::WRITE
         } else {
             VmPerms::READ
         };
 
-        Ok(PageFaultInfo {
-            address: value.page_fault_addr,
+        PageFaultInfo {
+            address: raw_info.addr,
             required_perms,
-        })
+        }
+    }
+}
+
+impl TryFrom<&CpuException> for PageFaultInfo {
+    // [`Err`] indicates that the [`CpuExceptionInfo`] is not a page fault,
+    // with no additional error information.
+    type Error = ();
+
+    fn try_from(value: &CpuException) -> Result<Self, ()> {
+        let CpuException::PageFault(raw_info) = value else {
+            return Err(());
+        };
+
+        Ok(raw_info.into())
     }
 }
 
