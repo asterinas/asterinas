@@ -6,7 +6,7 @@ use core::{cell::Ref, mem};
 
 use aster_rights::Full;
 use ostd::{
-    mm::{Fallible, Infallible, VmReader, VmWriter},
+    mm::{Fallible, Infallible, VmReader, VmWriter, MAX_USERSPACE_VADDR},
     task::{CurrentTask, Task},
 };
 
@@ -160,6 +160,12 @@ impl<'a> CurrentUserSpace<'a> {
         if max_len > 0 {
             check_vaddr(vaddr)?;
         }
+
+        // If `vaddr` is within user address space, adjust `max_len`
+        // to ensure `vaddr + max_len` does not exceed `MAX_USERSPACE_VADDR`.
+        // If `vaddr` is outside user address space, `max_len` will be set to zero
+        // and further call to `self.reader` will return `EFAULT` in this case.
+        let max_len = MAX_USERSPACE_VADDR.saturating_sub(vaddr).min(max_len);
 
         let mut user_reader = self.reader(vaddr, max_len)?;
         user_reader.read_cstring()
