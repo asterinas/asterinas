@@ -11,7 +11,7 @@ use ostd::{
     io::IoMem,
     mm::{
         tlb::TlbFlushOp, vm_space::VmQueriedItem, CachePolicy, FrameAllocOptions, PageFlags,
-        PageProperty, UFrame, VmSpace,
+        PageProperty, UFrame, VmSpace, PAGE_SIZE,
     },
     task::disable_preempt,
 };
@@ -74,6 +74,8 @@ pub struct VmMapping {
     /// Whether the mapping needs to handle surrounding pages when handling
     /// page fault.
     handle_page_faults_around: bool,
+    /// Whether the mapping should be populated immediately.
+    map_populate: bool,
     /// The permissions of pages in the mapping.
     ///
     /// All pages within the same `VmMapping` have the same permissions.
@@ -105,6 +107,7 @@ impl VmMapping {
             inode,
             is_shared,
             handle_page_faults_around,
+            map_populate: false,
             perms,
         }
     }
@@ -155,6 +158,85 @@ impl VmMapping {
         } else {
             RssType::RSS_FILEPAGES
         }
+    }
+
+    /// Populates all pages in the mapping.
+    ///
+    /// This method maps all pages in the mapping range, ensuring they are
+    /// immediately available for access without triggering page faults.
+    pub(super) fn map_populate(
+        mut self,
+        vm_space: &VmSpace,
+        rss_delta: &mut RssDelta,
+    ) -> Result<Self> {
+        // TODO: According to the mmap() manual of MAP_POPULATE, the mmap() call
+        // doesn't fail if the mapping cannot be populated (for example, due to
+        // limitations on the number of mapped huge pages when using MAP_HUGETLB).
+        let preempt_guard = disable_preempt();
+        let range = self.range();
+        let mut cursor = vm_space.cursor_mut(&preempt_guard, &range).unwrap();
+
+        if let Some(io_mem) = self.vmo.iomem() {
+            // I/O Mem
+            let page_prop =
+                PageProperty::new_user(PageFlags::from(self.perms), CachePolicy::Uncacheable);
+            cursor.map_iomem(
+                io_mem.io_mem().clone(),
+                page_prop,
+                self.map_size.get(),
+                io_mem.range.start,
+            );
+        } else {
+            // Normal Mem: Populate all pages in the range
+            for page_offset in (0..range.len()).step_by(PAGE_SIZE) {
+                let page_addr = range.start + page_offset;
+
+                // Skip if already mapped
+                cursor.jump(page_addr)?;
+                if let Ok((_, Some(_))) = cursor.query() {
+                    continue;
+                }
+
+                // Prepare the page using the same logic as page fault handler
+                let (frame, is_readonly) = match self.prepare_page(page_addr, false) {
+                    Ok((frame, is_readonly)) => (frame, is_readonly),
+                    Err(VmoCommitError::Err(e)) => return Err(e),
+                    Err(VmoCommitError::NeedIo(index)) => {
+                        drop(cursor);
+                        drop(preempt_guard);
+                        self.vmo
+                            .vmo()
+                            .unwrap()
+                            .commit_on(index, CommitFlags::empty())?;
+                        // Retry the current page
+                        // FIXME: Might need to check the behavior of retry.
+                        todo!();
+                        // return self.map_populate(vm_space, rss_delta);
+                    }
+                };
+
+                // Set up page properties like in page fault handler
+                let vm_perms = {
+                    let mut perms = self.perms;
+                    if is_readonly {
+                        // COW pages are forced to be read-only.
+                        perms -= VmPerms::WRITE;
+                    }
+                    perms
+                };
+
+                let mut page_flags = vm_perms.into();
+                page_flags |= PageFlags::ACCESSED;
+                let map_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
+
+                cursor.map(frame, map_prop);
+                rss_delta.add(self.rss_type(), 1);
+            }
+        }
+
+        self.map_populate = true;
+
+        Ok(self)
     }
 }
 
@@ -502,6 +584,7 @@ impl VmMapping {
     /// - Their file offsets are contiguous if file-backed.
     /// - Other attributes (e.g., shared/private flags, whether need to handle
     ///   page faults around, etc.) must also match.
+    /// - Neither mapping has the `map_populate` flag set.
     ///
     /// This method returns:
     /// - the merged mapping along with the address of the mapping
@@ -650,6 +733,11 @@ fn try_merge(left: &VmMapping, right: &VmMapping) -> Option<VmMapping> {
         && left.handle_page_faults_around == right.handle_page_faults_around
         && left.perms == right.perms;
 
+    // If either side has set the `map_populate` flag, do not merge.
+    if left.map_populate != right.map_populate {
+        return None;
+    }
+
     if !is_adjacent || !is_type_equal {
         return None;
     }
@@ -666,6 +754,16 @@ fn try_merge(left: &VmMapping, right: &VmMapping) -> Option<VmMapping> {
             }
             let range = l_vmo.range.start..l_vmo.range.end.max(r_vmo.range.end);
             MappedVmObj::Vmo(MappedVmo::new(l_vmo.vmo.dup().ok()?, range))
+        }
+        (MappedVmObj::IoMem(l_iomem), MappedVmObj::IoMem(r_iomem)) => {
+            let is_offset_contiguous = r_iomem.range.start - l_iomem.range.start == left.map_size()
+                && l_iomem.range.end - l_iomem.range.start >= left.map_size();
+            if !is_offset_contiguous {
+                return None;
+            }
+            let range = l_iomem.range.start..l_iomem.range.end.max(r_iomem.range.end);
+            // FIXME: Invite @vvvsv to check this.
+            MappedVmObj::IoMem(MappedIOMem::new(l_iomem.io_mem.clone(), range))
         }
         _ => return None,
     };
