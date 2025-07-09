@@ -843,6 +843,8 @@ pub struct VmarMapOptions<'a, R1, R2> {
     is_shared: bool,
     // Whether the mapping needs to handle surrounding pages when handling page fault.
     handle_page_faults_around: bool,
+    // Whether the mapping should be populated immediately.
+    map_populate: bool,
 }
 
 impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
@@ -866,6 +868,7 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
             can_overwrite: false,
             is_shared: false,
             handle_page_faults_around: false,
+            map_populate: false,
         }
     }
 
@@ -966,6 +969,12 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
         self.handle_page_faults_around = true;
         self
     }
+
+    /// Sets whether the mapping should be populated immediately.
+    pub fn map_populate(mut self, populate: bool) -> Self {
+        self.map_populate = populate;
+        self
+    }
 }
 
 impl<R1> VmarMapOptions<'_, R1, Rights> {
@@ -1017,6 +1026,7 @@ impl<R1> VmarMapOptions<'_, R1, Rights> {
             }
             MemoryToMap::IoMem(io_mem) => {
                 self.iomem = Some(io_mem);
+                self.map_populate = true;
             }
         }
 
@@ -1048,6 +1058,7 @@ where
             can_overwrite,
             is_shared,
             handle_page_faults_around,
+            map_populate,
         } = self;
 
         let mut inner = parent.0.inner.write();
@@ -1091,16 +1102,14 @@ where
         };
 
         // Build the mapping.
-        let mut io_mem_ostd = None;
         let mapped_mem = if let Some(vmo) = vmo {
             MappedMemory::Vmo(MappedVmo::new(vmo.to_dyn(), vmo_offset))
-        } else if let Some(iomem) = iomem {
-            io_mem_ostd = Some(iomem.clone());
+        } else if iomem.is_some() {
             MappedMemory::Device
         } else {
             MappedMemory::Anonymous
         };
-        let vm_mapping = VmMapping::new(
+        let mut vm_mapping = VmMapping::new(
             NonZeroUsize::new(map_size).unwrap(),
             map_to_addr,
             mapped_mem,
@@ -1110,21 +1119,23 @@ where
             perms,
         );
 
+        // Populate the mapping if requested.
+        //
+        // We have to map before inserting the VmMapping into the tree, otherwise
+        // another traversal is needed for locating the VmMapping. Exchange the
+        // operation is ok since we hold the write lock on the VMAR.
+        if map_populate {
+            let mut rss_delta = RssDelta::new(&parent.0);
+            // If populate fails, we still proceed with the unpopulated mapping.
+            // This matches the behavior described in the mmap() manual where
+            // MAP_POPULATE doesn't cause mmap() to fail even if the mapping
+            // cannot be populated.
+            // If populate fails, we silently continue with the original unpopulated mapping
+            let _ = vm_mapping.map_populate(parent.vm_space(), iomem, vmo_offset, &mut rss_delta);
+        }
+
         // Add the mapping to the VMAR.
         inner.insert_try_merge(vm_mapping);
-
-        // FIXME: Add a function to populate the memory in vm_mapping.
-        if let Some(io_mem) = io_mem_ostd {
-            // FIXME: Check the parent
-            let vm_space = parent.vm_space();
-
-            let preempt_guard = disable_preempt();
-            let mut cursor =
-                vm_space.cursor_mut(&preempt_guard, &(map_to_addr..map_to_addr + map_size))?;
-            let io_page_prop =
-                PageProperty::new_user(PageFlags::from(perms), CachePolicy::Uncacheable);
-            cursor.map_iomem(io_mem, io_page_prop, map_size, vmo_offset);
-        }
 
         Ok(map_to_addr)
     }
