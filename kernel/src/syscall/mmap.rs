@@ -141,6 +141,7 @@ fn do_sys_mmap(
                 MemoryToMap::IoMem(io_mem) => {
                     assert!(len <= io_mem.length().align_up(PAGE_SIZE));
                     options = options.iomem(io_mem);
+                    options = options.map_populate(true);
                 }
             }
 
