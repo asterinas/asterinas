@@ -44,7 +44,10 @@ fn post_schedule_handler() {
         vmar.vm_space().activate()
     }
 
-    thread_local.fpu_state().borrow_mut().load();
+    let mut fpu_state = thread_local.fpu_state().borrow_mut();
+    #[cfg(target_arch = "x86_64")]
+    fpu_state.deactivate();
+    fpu_state.load();
 }
 
 pub(super) fn init() {

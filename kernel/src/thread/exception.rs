@@ -42,6 +42,15 @@ pub fn handle_exception(ctx: &Context, context: &UserContext, exception: CpuExce
         }
     }
 
+    #[cfg(target_arch = "x86_64")]
+    if exception == CpuException::DeviceNotAvailable {
+        let _preempt_guard = ostd::task::disable_preempt();
+        let mut fpu_state = ctx.thread_local.fpu_state().borrow_mut();
+        fpu_state.activate();
+        fpu_state.load();
+        return;
+    }
+
     generate_fault_signal(exception, ctx);
 }
 

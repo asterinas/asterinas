@@ -499,6 +499,7 @@ cpu_context_impl_getter_setter!(
 pub struct FpuState {
     state_area: Box<XSaveArea>,
     area_size: usize,
+    is_activated: bool,
 }
 
 impl FpuState {
@@ -512,11 +513,16 @@ impl FpuState {
         Self {
             state_area: Box::new(XSaveArea::init()),
             area_size,
+            is_activated: true,
         }
     }
 
     /// Saves CPU's current FPU state to this instance.
     pub fn save(&mut self) {
+        if !self.is_activated {
+            return;
+        }
+
         let mem_addr = self.as_bytes_mut().as_mut_ptr();
 
         if CPU_FEATURES.get().unwrap().has_xsave() {
@@ -530,6 +536,10 @@ impl FpuState {
 
     /// Loads CPU's FPU state from this instance.
     pub fn load(&mut self) {
+        if !self.is_activated {
+            return;
+        }
+
         let mem_addr = self.as_bytes().as_ptr();
 
         if CPU_FEATURES.get().unwrap().has_xsave() {
@@ -552,6 +562,20 @@ impl FpuState {
     pub fn as_bytes_mut(&mut self) -> &mut [u8] {
         self.state_area.as_bytes_mut()
     }
+
+    /// Activates and loads the FPU state.
+    pub fn activate(&mut self) {
+        // SAFETY: Remove `Cr0Flags::TASK_SWITCHED` will not violate memory safety.
+        unsafe { Cr0::update(|cr0| cr0.remove(Cr0Flags::TASK_SWITCHED)) };
+        self.is_activated = true;
+    }
+
+    /// Deactivates the FPU state.
+    pub fn deactivate(&mut self) {
+        // SAFETY: Insert `Cr0Flags::TASK_SWITCHED` will not violate memory safety.
+        unsafe { Cr0::update(|cr0| cr0.insert(Cr0Flags::TASK_SWITCHED)) };
+        self.is_activated = false;
+    }
 }
 
 impl Clone for FpuState {
@@ -569,6 +593,7 @@ impl Clone for FpuState {
         Self {
             state_area,
             area_size: self.area_size,
+            is_activated: self.is_activated,
         }
     }
 }
