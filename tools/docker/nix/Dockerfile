@@ -90,6 +90,10 @@ RUN nix-build \
     && nix-collect-garbage -d \
     && nix-store --optimise
 
+# Avoid github runner to create nixpkgs cache
+RUN mkdir -p /github/home/.cache \
+    && ln -s /root/.cache/nix /github/home/.cache/nix
+
 # Clean source files
 RUN rm -rf /root/src \
     && rm -rf /root/nix
