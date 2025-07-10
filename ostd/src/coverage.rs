@@ -2,12 +2,11 @@
 
 use alloc::vec::Vec;
 
-pub fn dump_profraw() {
+pub fn dump_profraw() -> Vec<u8> {
     let mut coverage = Vec::new();
     unsafe {
         minicov::capture_coverage(&mut coverage).unwrap();
     }
 
-    let coverage = coverage.leak();
-    crate::early_println!("#### Coverage: {:p} {}", coverage.as_ptr(), coverage.len());
+    coverage
 }

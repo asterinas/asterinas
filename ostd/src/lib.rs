@@ -51,7 +51,7 @@ pub mod user;
 pub mod util;
 
 #[cfg(feature = "coverage")]
-mod coverage;
+pub mod coverage;
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
