@@ -33,7 +33,9 @@ pub struct siginfo_t {
     pub si_signo: i32,
     pub si_errno: i32,
     pub si_code: i32,
-    _padding: i32,
+    // In x86_64, there will be a 4-bytes padding here automatically, the offset of `siginfo_fields` is `0x10`.
+    // Yet in other architectures like arm64, there is no padding here and the offset of `siginfo_fields` is `0x0c`.
+    //_padding: i32,
     /// siginfo_fields should be a union type ( See occlum definition ). But union type have unsafe interfaces.
     /// Here we use a simple byte array.
     siginfo_fields: siginfo_fields_t,
@@ -45,7 +47,6 @@ impl siginfo_t {
             si_signo: num.as_u8() as i32,
             si_errno: 0,
             si_code: code,
-            _padding: 0,
             siginfo_fields: siginfo_fields_t::zero_fields(),
         }
     }
@@ -77,7 +78,7 @@ impl siginfo_fields_t {
 
 #[derive(Clone, Copy, Pod)]
 #[repr(C)]
-union siginfo_common_t {
+struct siginfo_common_t {
     first: siginfo_common_first_t,
     second: siginfo_common_second_t,
 }
