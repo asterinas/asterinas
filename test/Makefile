@@ -5,6 +5,8 @@ SMP ?= 1
 SYSCALL_TEST_SUITE ?= ltp
 SYSCALL_TEST_WORKDIR ?= /tmp
 ENABLE_BASIC_TEST ?= false
+# Time-to-live (TTL) for nixpkgs cache, default is 30 days (in seconds)
+NIXPKGS_CACHE_TTL ?= 2592000
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 BUILD_DIR := $(CUR_DIR)/build
@@ -43,6 +45,7 @@ build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE)
 .PHONY: $(INITRAMFS_IMAGE)
 $(INITRAMFS_IMAGE): $(INITRAMFS)
 	@nix-build \
+		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
 		--argstr target $(ARCH) \
 		--arg enableBasicTest $(ENABLE_BASIC_TEST) \
 		--arg enableBenchmark $(ENABLE_BENCHMARK) \
@@ -57,6 +60,7 @@ $(INITRAMFS_IMAGE): $(INITRAMFS)
 .PHONY: $(INITRAMFS)
 $(INITRAMFS):
 	@nix-build \
+		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
 		--argstr target $(ARCH) \
 		--arg enableBasicTest $(ENABLE_BASIC_TEST) \
 		--arg enableBenchmark $(ENABLE_BENCHMARK) \
