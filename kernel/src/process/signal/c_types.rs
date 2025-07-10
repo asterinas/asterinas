@@ -55,6 +55,18 @@ impl siginfo_t {
         self.siginfo_fields.sigfault.addr = si_addr;
     }
 
+    pub fn set_pid_uid(&mut self, pid: Pid, uid: Uid) {
+        let pid_uid = siginfo_common_first_t {
+            piduid: siginfo_piduid_t { pid, uid },
+        };
+
+        self.siginfo_fields.common.first = pid_uid;
+    }
+
+    pub fn set_status(&mut self, status: i32) {
+        self.siginfo_fields.common.second.sigchild.status = status;
+    }
+
     pub fn si_addr(&self) -> Vaddr {
         read_union_field!(self, Self, siginfo_fields.sigfault.addr)
     }

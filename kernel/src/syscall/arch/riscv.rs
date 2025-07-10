@@ -202,7 +202,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_CAPSET = 91              => sys_capset(args[..2]);
     SYS_EXIT = 93                => sys_exit(args[..1]);
     SYS_EXIT_GROUP = 94          => sys_exit_group(args[..1]);
-    SYS_WAITID = 95              => sys_waitid(args[..5]);
+    SYS_WAITID = 95              => sys_waitid(args[..4]);
     SYS_SET_TID_ADDRESS = 96     => sys_set_tid_address(args[..1]);
     SYS_FUTEX = 98               => sys_futex(args[..6]);
     SYS_SET_ROBUST_LIST = 99     => sys_set_robust_list(args[..2]);

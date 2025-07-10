@@ -10,8 +10,12 @@ use crate::{
     process::{
         posix_thread::{thread_table, AsPosixThread},
         process_table,
-        signal::sig_num::SigNum,
+        signal::{
+            constants::{CLD_CONTINUED, CLD_EXITED, CLD_KILLED, CLD_STOPPED},
+            sig_num::SigNum,
+        },
         status::StopWaitStatus,
+        Uid,
     },
     time::clocks::ProfClock,
 };
@@ -120,8 +124,35 @@ pub enum WaitStatus {
 }
 
 impl WaitStatus {
-    pub fn pid(&self) -> u32 {
+    pub fn pid(&self) -> Pid {
         self.process().pid()
+    }
+
+    pub fn uid(&self) -> Uid {
+        self.process()
+            .main_thread()
+            .as_posix_thread()
+            .unwrap()
+            .credentials()
+            .ruid()
+    }
+
+    pub fn si_code(&self) -> i32 {
+        const KILL_STATUS_MASK: u32 = 0xff;
+
+        // TODO: Add supports for `CLD_DUMPED` and `CLD_TRAPPED`.
+        match self {
+            WaitStatus::Zombie(process) => {
+                let exit_code = process.status().exit_code();
+                if (exit_code & KILL_STATUS_MASK) == 0 {
+                    CLD_EXITED
+                } else {
+                    CLD_KILLED
+                }
+            }
+            WaitStatus::Stop(..) => CLD_STOPPED,
+            WaitStatus::Continue(_) => CLD_CONTINUED,
+        }
     }
 
     pub fn status_code(&self) -> u32 {

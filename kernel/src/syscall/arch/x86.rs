@@ -332,7 +332,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_EPOLL_CTL = 233        => sys_epoll_ctl(args[..4]);
     SYS_TGKILL = 234           => sys_tgkill(args[..3]);
     SYS_UTIMES = 235           => sys_utimes(args[..2]);
-    SYS_WAITID = 247           => sys_waitid(args[..5]);
+    SYS_WAITID = 247           => sys_waitid(args[..4]);
     SYS_OPENAT = 257           => sys_openat(args[..4]);
     SYS_MKDIRAT = 258          => sys_mkdirat(args[..3]);
     SYS_MKNODAT = 259          => sys_mknodat(args[..4]);
