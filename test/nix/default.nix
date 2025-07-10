@@ -1,6 +1,6 @@
-{ target ? "x86_64", enableBenchmark ? false, enableSyscallTest ? false
-, syscallTestSuite ? "ltp", syscallTestWorkDir ? "/tmp", smp ? 1
-, initramfsCompressed ? true, }:
+{ target ? "x86_64", enableBasicTest ? false, enableBenchmark ? false
+, enableSyscallTest ? false, syscallTestSuite ? "ltp"
+, syscallTestWorkDir ? "/tmp", smp ? 1, initramfsCompressed ? true, }:
 let
   crossSystem.config = if target == "x86_64" then
     "x86_64-unknown-linux-gnu"
@@ -34,7 +34,8 @@ in rec {
     hash = "sha256-F5RPtu/Hh2hDnjm6/0mc0wGqhQtfMNvPP+6/Id9Hcpk";
   };
   initramfs = pkgs.callPackage ./initramfs.nix {
-    inherit apps busybox linux_vdso;
+    inherit busybox linux_vdso;
+    apps = if enableBasicTest then apps else null;
     benchmark = if enableBenchmark then benchmark else null;
     syscall = if enableSyscallTest then syscall else null;
   };
