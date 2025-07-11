@@ -49,19 +49,37 @@ pub(super) unsafe fn init() {
         .has_syscall_sysret());
     assert!(cpuid.get_extended_feature_info().unwrap().has_fsgsbase());
 
-    // Flags to clear on syscall.
+    LStar::write(VirtAddr::new(syscall_entry as usize as u64));
+    
+    // Sets IA32_FMASK MSR to clear as many bits of the RFLAGS register as possible
+    // during a syscall to minimize user space–kernel interference.
+    // Reference: <https://elixir.bootlin.com/linux/v6.15/source/arch/x86/kernel/cpu/common.c#L2174>.
     //
-    // Linux 5.0 uses TF|DF|IF|IOPL|AC|NT. Reference:
-    // <https://github.com/torvalds/linux/blob/v5.0/arch/x86/kernel/cpu/common.c#L1559-L1562>
-    const RFLAGS_MASK: u64 = 0x47700;
+    // The definition of the IA32_FMASK MSR can be found in
+    // the Intel(R) 64 and IA-32 Architectures Software Developer’s Manual,
+    // Volume 3A, Section 5.8.8: "Fast System Calls in 64-Bit Mode".
+    SFMask::write(
+        RFlags::CARRY_FLAG
+            | RFlags::PARITY_FLAG
+            | RFlags::AUXILIARY_CARRY_FLAG
+            | RFlags::ZERO_FLAG
+            | RFlags::SIGN_FLAG
+            | RFlags::TRAP_FLAG
+            | RFlags::INTERRUPT_FLAG
+            | RFlags::DIRECTION_FLAG
+            | RFlags::OVERFLOW_FLAG
+            | RFlags::IOPL_LOW
+            | RFlags::IOPL_HIGH
+            | RFlags::NESTED_TASK
+            | RFlags::RESUME_FLAG
+            | RFlags::ALIGNMENT_CHECK
+            | RFlags::ID,
+    );
 
     // SAFETY: The segment selectors are correctly initialized (as upheld by the caller), and the
     // entry point and flags to clear are also correctly set, so enabling the `syscall` and
     // `sysret` instructions is safe.
     unsafe {
-        LStar::write(VirtAddr::new(syscall_entry as usize as u64));
-        SFMask::write(RFlags::from_bits(RFLAGS_MASK).unwrap());
-
         // Enable the `syscall` and `sysret` instructions.
         Efer::update(|efer| {
             efer.insert(EferFlags::SYSTEM_CALL_EXTENSIONS);
