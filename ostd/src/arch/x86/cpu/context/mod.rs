@@ -523,6 +523,9 @@ impl FpuState {
             return;
         }
 
+        // SAFETY: Remove `Cr0Flags::TASK_SWITCHED` will not violate memory safety.
+        unsafe { Cr0::update(|cr0| cr0.remove(Cr0Flags::TASK_SWITCHED)) };
+
         let mem_addr = self.as_bytes_mut().as_mut_ptr();
 
         if CPU_FEATURES.get().unwrap().has_xsave() {
@@ -540,6 +543,9 @@ impl FpuState {
             return;
         }
 
+        // SAFETY: Remove `Cr0Flags::TASK_SWITCHED` will not violate memory safety.
+        unsafe { Cr0::update(|cr0| cr0.remove(Cr0Flags::TASK_SWITCHED)) };
+
         let mem_addr = self.as_bytes().as_ptr();
 
         if CPU_FEATURES.get().unwrap().has_xsave() {
@@ -555,18 +561,16 @@ impl FpuState {
 
     /// Returns the FPU state as a byte slice.
     pub fn as_bytes(&self) -> &[u8] {
-        self.state_area.as_bytes()
+        &self.state_area.as_bytes()[..self.area_size]
     }
 
     /// Returns the FPU state as a mutable byte slice.
     pub fn as_bytes_mut(&mut self) -> &mut [u8] {
-        self.state_area.as_bytes_mut()
+        &mut self.state_area.as_bytes_mut()[..self.area_size]
     }
 
     /// Activates and loads the FPU state.
     pub fn activate(&mut self) {
-        // SAFETY: Remove `Cr0Flags::TASK_SWITCHED` will not violate memory safety.
-        unsafe { Cr0::update(|cr0| cr0.remove(Cr0Flags::TASK_SWITCHED)) };
         self.is_activated = true;
     }
 
