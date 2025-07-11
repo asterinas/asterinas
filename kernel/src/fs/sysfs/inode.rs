@@ -18,6 +18,7 @@ use crate::{
     events::IoEvents,
     fs::{
         device::Device,
+        notify::FsnotifyCommon,
         utils::{
             DirentVisitor, FallocMode, FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
             MknodType,
@@ -51,6 +52,8 @@ pub struct SysFsInode {
     parent: Weak<SysFsInode>,
     /// Weak self-reference for cyclic data structures.
     this: Weak<SysFsInode>,
+    /// Fsnotify common.
+    fsnotify_common: FsnotifyCommon,
 }
 
 #[derive(Debug)]
@@ -86,6 +89,7 @@ impl SysFsInode {
             mode,
             parent,
             this: this.clone(),
+            fsnotify_common: FsnotifyCommon::new(),
         })
     }
 
@@ -105,6 +109,7 @@ impl SysFsInode {
             mode,
             parent,
             this: this.clone(),
+            fsnotify_common: FsnotifyCommon::new(),
         })
     }
 
@@ -155,6 +160,7 @@ impl SysFsInode {
             mode,
             parent,
             this: this.clone(),
+            fsnotify_common: FsnotifyCommon::new(),
         })
     }
 
@@ -173,6 +179,7 @@ impl SysFsInode {
             mode,
             parent,
             this: this.clone(),
+            fsnotify_common: FsnotifyCommon::new(),
         })
     }
 
@@ -567,6 +574,10 @@ impl Inode for SysFsInode {
 
     fn is_dentry_cacheable(&self) -> bool {
         true
+    }
+
+    fn fsnotify(&self) -> &FsnotifyCommon {
+        &self.fsnotify_common
     }
 }
 
