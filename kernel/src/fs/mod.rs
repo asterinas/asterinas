@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+pub mod cgroupfs;
+pub mod configfs;
 pub mod device;
 pub mod devpts;
 pub mod epoll;

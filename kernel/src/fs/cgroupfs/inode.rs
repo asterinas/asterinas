@@ -9,27 +9,21 @@ use crate::{
     Result,
 };
 
-/// An inode abstraction used in the sysfs filesystem.
-pub struct SysFsInode {
+/// An inode abstraction used in the cgroup filesystem.
+pub struct CgroupInode {
     /// The corresponding node in the SysTree.
     inner_node: InnerNode,
     /// The metadata of this inode.
-    ///
-    /// Most of the metadata (e.g., file size, timestamps)
-    /// can be determined upon the creation of an inode,
-    /// and are thus kept intact inside the immutable `metadata` field.
-    /// Currently, the only mutable metadata is `mode`,
-    /// which allows user space to `chmod` an inode on sysfs.
     metadata: Metadata,
     /// The file mode (permissions) of this inode, protected by a lock.
     mode: RwLock<InodeMode>,
     /// Weak reference to the parent inode.
-    parent: Weak<SysFsInode>,
+    parent: Weak<CgroupInode>,
     /// Weak self-reference for cyclic data structures.
-    this: Weak<SysFsInode>,
+    this: Weak<CgroupInode>,
 }
 
-impl KernelFsInode for SysFsInode {
+impl KernelFsInode for CgroupInode {
     fn new_arc(
         inner_node: InnerNode,
         metadata: Metadata,
@@ -74,7 +68,7 @@ impl KernelFsInode for SysFsInode {
     }
 }
 
-impl Inode for SysFsInode {
+impl Inode for CgroupInode {
     fn fs(&self) -> Arc<dyn FileSystem> {
         super::singleton().clone()
     }

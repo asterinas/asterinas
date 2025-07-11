@@ -35,10 +35,10 @@ use component::{init_component, ComponentInitError};
 use spin::Once;
 
 pub use self::{
-    attr::{SysAttr, SysAttrFlags, SysAttrSet, SysAttrSetBuilder},
+    attr::{SysAttr, SysAttrSet, SysAttrSetBuilder},
     node::{SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj, SysSymlink},
     tree::SysTree,
-    utils::{SymlinkNodeFields, SysBranchNodeFields, SysNormalNodeFields, SysObjFields},
+    utils::{SymlinkNodeFields, SysBranchNodeFields, SysMode, SysNormalNodeFields, SysObjFields},
 };
 
 static SINGLETON: Once<Arc<SysTree>> = Once::new();
@@ -76,6 +76,10 @@ pub enum Error {
     PermissionDenied,
     /// Other internal error
     InternalError(&'static str),
+    /// Child node already exists
+    ChildExisted,
+    /// Cannot find the child node
+    ChildNotFound,
     /// Arithmetic overflow occurred
     Overflow,
 }
@@ -90,6 +94,8 @@ impl core::fmt::Display for Error {
             Error::AttributeError => write!(f, "Attribute error"),
             Error::PermissionDenied => write!(f, "Permission denied for operation"),
             Error::InternalError(msg) => write!(f, "Internal error: {}", msg),
+            Error::ChildExisted => write!(f, "Child node already exists"),
+            Error::ChildNotFound => write!(f, "Cannot find the child node"),
             Error::Overflow => write!(f, "Numerical overflow occurred"),
         }
     }
