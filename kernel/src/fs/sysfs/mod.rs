@@ -13,7 +13,7 @@ pub use self::{fs::SysFs, inode::SysFsInode};
 
 static SYSFS_SINGLETON: Once<Arc<SysFs>> = Once::new();
 
-/// Returns a reference to the global SysFs instance. Panics if not initialized.
+/// Returns a reference to the global [`SysFs`] instance. Panics if not initialized.
 pub fn singleton() -> &'static Arc<SysFs> {
     SYSFS_SINGLETON.get().expect("SysFs not initialized")
 }
@@ -23,5 +23,7 @@ pub fn singleton() -> &'static Arc<SysFs> {
 /// Should be called during kernel file system initialization, *after* aster_systree::init().
 pub fn init() {
     // Ensure systree is initialized first. This should be handled by the kernel's init order.
+    super::manager::init();
+
     SYSFS_SINGLETON.call_once(SysFs::new);
 }
