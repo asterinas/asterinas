@@ -57,8 +57,10 @@ impl SysAttrSet {
     /// Creates a new, empty attribute set.
     ///
     /// To create a non-empty attribute set, use `SysAttrSetBuilder`.
-    pub fn new_empty() -> Self {
-        Default::default()
+    pub const fn new_empty() -> Self {
+        Self {
+            attrs: BTreeMap::new(),
+        }
     }
 
     /// Retrieves an attribute by its name.

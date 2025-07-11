@@ -14,7 +14,7 @@ use core::{
 };
 
 use bitflags::bitflags;
-use ostd::mm::{FallibleVmWrite, VmReader, VmWriter};
+use ostd::mm::{VmReader, VmWriter};
 
 use super::{Error, Result, SysAttrSet, SysStr};
 
@@ -108,6 +108,18 @@ pub trait SysBranchNode: SysNode {
         });
         count
     }
+
+    /// Creates a new child node with the given name.
+    ///
+    /// This new child will be added to this branch node.
+    fn create_child(&self, _name: &str) -> Result<Arc<dyn SysObj>> {
+        Err(Error::PermissionDenied)
+    }
+
+    /// Removes a child node with the given name.
+    fn remove_child(&self, _name: &str) -> Result<Arc<dyn SysObj>> {
+        Err(Error::PermissionDenied)
+    }
 }
 
 /// The trait that abstracts a "normal" node in a `SysTree`.
@@ -127,31 +139,10 @@ pub trait SysNode: SysObj {
     fn write_attr(&self, name: &str, reader: &mut VmReader) -> Result<usize>;
 
     /// Reads the value of an attribute from the specified `offset`.
-    fn read_attr_at(&self, name: &str, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let (attr_buffer, attr_len) = {
-            let attr_buffer_len = writer.avail().checked_add(offset).ok_or(Error::Overflow)?;
-            let mut buffer = vec![0; attr_buffer_len];
-            let len = self.read_attr(
-                name,
-                &mut VmWriter::from(buffer.as_mut_slice()).to_fallible(),
-            )?;
-            (buffer, len)
-        };
-
-        if attr_len <= offset {
-            return Ok(0);
-        }
-
-        writer
-            .write_fallible(VmReader::from(attr_buffer.as_slice()).skip(offset))
-            .map_err(|_| Error::AttributeError)
-    }
+    fn read_attr_at(&self, name: &str, offset: usize, writer: &mut VmWriter) -> Result<usize>;
 
     /// Writes the value of an attribute at the specified `offset`.
-    fn write_attr_at(&self, name: &str, _offset: usize, reader: &mut VmReader) -> Result<usize> {
-        // In general, the `offset` for attribute write operations is ignored directly.
-        self.write_attr(name, reader)
-    }
+    fn write_attr_at(&self, name: &str, _offset: usize, reader: &mut VmReader) -> Result<usize>;
 
     /// Shows the string value of an attribute.
     ///

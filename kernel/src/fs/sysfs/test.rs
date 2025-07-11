@@ -5,19 +5,18 @@ use alloc::{
     collections::BTreeMap,
     format,
     string::{String, ToString},
-    sync::{Arc, Weak},
+    sync::Arc,
     vec,
     vec::Vec,
 };
 use core::fmt::Debug;
 
 use aster_systree::{
-    impl_cast_methods_for_branch, impl_cast_methods_for_node, impl_cast_methods_for_symlink,
-    init_for_ktest, singleton as systree_singleton, Error as SysTreeError, Result as SysTreeResult,
-    SymlinkNodeFields, SysAttrSet, SysAttrSetBuilder, SysBranchNode, SysBranchNodeFields, SysNode,
-    SysNodeId, SysNodeType, SysNormalNodeFields, SysObj, SysPerms, SysStr, SysSymlink, SysTree,
+    inherit_sys_branch_node, inherit_sys_leaf_node, inherit_sys_symlink_node, init_for_ktest,
+    singleton as systree_singleton, BranchNodeFields, Error as SysTreeError, NormalNodeFields,
+    Result as SysTreeResult, SymlinkNodeFields, SysAttrSetBuilder, SysObj, SysPerms, SysStr,
+    SysTree,
 };
-use inherit_methods_macro::inherit_methods;
 use ostd::{
     mm::{FallibleVmRead, FallibleVmWrite, VmReader, VmWriter},
     prelude::ktest,
@@ -37,10 +36,10 @@ use crate::{
 // Sysfs acts as a view layer over the systree component.
 // These mocks simulate the systree interface (SysNode, SysBranchNode, etc.)
 
-// Refactor MockLeafNode to use SysNormalNodeFields
+// Refactor MockLeafNode to use NormalNodeFields
 #[derive(Debug)]
 struct MockLeafNode {
-    fields: SysNormalNodeFields<Self>,
+    fields: NormalNodeFields<Self>,
     data: RwLock<BTreeMap<String, String>>, // Store attribute data
 }
 
@@ -66,7 +65,7 @@ impl MockLeafNode {
         let attrs = builder.build().expect("Failed to build attribute set");
 
         Arc::new_cyclic(|weak_self| {
-            let fields = SysNormalNodeFields::new(name, attrs, weak_self.clone());
+            let fields = NormalNodeFields::new(name, attrs, weak_self.clone());
             MockLeafNode {
                 fields,
                 data: RwLock::new(data),
@@ -75,24 +74,7 @@ impl MockLeafNode {
     }
 }
 
-#[inherit_methods(from = "self.fields")]
-impl SysObj for MockLeafNode {
-    impl_cast_methods_for_node!();
-
-    fn id(&self) -> &SysNodeId;
-
-    fn name(&self) -> &SysStr;
-
-    fn init_parent(&self, parent: Weak<dyn SysBranchNode>);
-
-    fn parent(&self) -> Option<Arc<dyn SysBranchNode>>;
-}
-
-impl SysNode for MockLeafNode {
-    fn node_attrs(&self) -> &SysAttrSet {
-        self.fields.attr_set()
-    }
-
+inherit_sys_leaf_node!(MockLeafNode, fields, {
     fn read_attr(&self, name: &str, writer: &mut VmWriter) -> SysTreeResult<usize> {
         let attr = self
             .fields
@@ -137,12 +119,12 @@ impl SysNode for MockLeafNode {
     fn perms(&self) -> SysPerms {
         SysPerms::DEFAULT_RW_PERMS
     }
-}
+});
 
-// Refactor MockBranchNode to use SysBranchNodeFields
+// Refactor MockBranchNode to use BranchNodeFields
 #[derive(Debug)]
 struct MockBranchNode {
-    fields: SysBranchNodeFields<dyn SysObj, Self>,
+    fields: BranchNodeFields<dyn SysObj, Self>,
 }
 
 impl MockBranchNode {
@@ -159,7 +141,7 @@ impl MockBranchNode {
             .expect("Failed to build branch attribute set");
 
         Arc::new_cyclic(|weak_self| {
-            let fields = SysBranchNodeFields::new(name_owned, attrs, weak_self.clone());
+            let fields = BranchNodeFields::new(name_owned, attrs, weak_self.clone());
             MockBranchNode { fields }
         })
     }
@@ -169,24 +151,7 @@ impl MockBranchNode {
     }
 }
 
-#[inherit_methods(from = "self.fields")]
-impl SysObj for MockBranchNode {
-    impl_cast_methods_for_branch!();
-
-    fn id(&self) -> &SysNodeId;
-
-    fn name(&self) -> &SysStr;
-
-    fn init_parent(&self, parent: Weak<dyn SysBranchNode>);
-
-    fn parent(&self) -> Option<Arc<dyn SysBranchNode>>;
-}
-
-impl SysNode for MockBranchNode {
-    fn node_attrs(&self) -> &SysAttrSet {
-        self.fields.attr_set()
-    }
-
+inherit_sys_branch_node!(MockBranchNode, fields, {
     fn read_attr(&self, name: &str, writer: &mut VmWriter) -> SysTreeResult<usize> {
         let attr = self
             .fields
@@ -222,16 +187,7 @@ impl SysNode for MockBranchNode {
     fn perms(&self) -> SysPerms {
         SysPerms::DEFAULT_RW_PERMS
     }
-}
-
-#[inherit_methods(from = "self.fields")]
-impl SysBranchNode for MockBranchNode {
-    fn visit_child_with(&self, name: &str, f: &mut dyn FnMut(Option<&Arc<dyn SysObj>>));
-
-    fn visit_children_with(&self, min_id: u64, f: &mut dyn FnMut(&Arc<dyn SysObj>) -> Option<()>);
-
-    fn child(&self, name: &str) -> Option<Arc<dyn SysObj>>;
-}
+});
 
 // Mock Symlink
 #[derive(Debug)]
@@ -248,23 +204,7 @@ impl MockSymlinkNode {
     }
 }
 
-#[inherit_methods(from = "self.fields")]
-impl SysObj for MockSymlinkNode {
-    impl_cast_methods_for_symlink!();
-
-    fn id(&self) -> &SysNodeId;
-
-    fn name(&self) -> &SysStr;
-
-    fn init_parent(&self, parent: Weak<dyn SysBranchNode>);
-
-    fn parent(&self) -> Option<Arc<dyn SysBranchNode>>;
-}
-
-#[inherit_methods(from = "self.fields")]
-impl SysSymlink for MockSymlinkNode {
-    fn target_path(&self) -> &str;
-}
+inherit_sys_symlink_node!(MockSymlinkNode, fields);
 
 // --- Test Setup ---
 

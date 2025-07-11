@@ -1,11 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{
-    borrow::Cow,
-    string::ToString,
-    sync::{Arc, Weak},
-    vec::Vec,
-};
+use alloc::{borrow::Cow, string::ToString, sync::Arc, vec::Vec};
 use core::fmt::Debug;
 
 use inherit_methods_macro::inherit_methods;
@@ -15,14 +10,14 @@ use ostd::{
 };
 
 use super::{
-    impl_cast_methods_for_branch, impl_cast_methods_for_symlink, Error, Result, SymlinkNodeFields,
-    SysAttrSet, SysAttrSetBuilder, SysBranchNode, SysBranchNodeFields, SysNode, SysNodeId,
-    SysNodeType, SysObj, SysPerms, SysStr, SysSymlink, SysTree,
+    inherit_sys_branch_node, inherit_sys_symlink_node, BranchNodeFields, Error, Result,
+    SymlinkNodeFields, SysAttrSetBuilder, SysBranchNode, SysNode, SysNodeType, SysObj, SysPerms,
+    SysStr, SysSymlink, SysTree,
 };
 
 #[derive(Debug)]
 struct DeviceNode {
-    fields: SysBranchNodeFields<dyn SysObj, Self>,
+    fields: BranchNodeFields<dyn SysObj, Self>,
 }
 
 impl DeviceNode {
@@ -36,7 +31,7 @@ impl DeviceNode {
         let attrs = builder.build().expect("Failed to build attribute set");
 
         Arc::new_cyclic(|weak_self| {
-            let fields = SysBranchNodeFields::new(name, attrs, weak_self.clone());
+            let fields = BranchNodeFields::new(name, attrs, weak_self.clone());
             DeviceNode { fields }
         })
     }
@@ -47,24 +42,7 @@ impl DeviceNode {
     pub fn add_child(&self, new_child: Arc<dyn SysObj>) -> Result<()>;
 }
 
-#[inherit_methods(from = "self.fields")]
-impl SysObj for DeviceNode {
-    impl_cast_methods_for_branch!();
-
-    fn id(&self) -> &SysNodeId;
-
-    fn name(&self) -> &SysStr;
-
-    fn init_parent(&self, parent: Weak<dyn SysBranchNode>);
-
-    fn parent(&self) -> Option<Arc<dyn SysBranchNode>>;
-}
-
-impl SysNode for DeviceNode {
-    fn node_attrs(&self) -> &SysAttrSet {
-        self.fields.attr_set()
-    }
-
+inherit_sys_branch_node!(DeviceNode, fields, {
     fn read_attr(&self, name: &str, writer: &mut VmWriter) -> Result<usize> {
         // Check if attribute exists
         if !self.fields.attr_set().contains(name) {
@@ -111,16 +89,7 @@ impl SysNode for DeviceNode {
     fn perms(&self) -> SysPerms {
         SysPerms::DEFAULT_RW_PERMS
     }
-}
-
-#[inherit_methods(from = "self.fields")]
-impl SysBranchNode for DeviceNode {
-    fn visit_child_with(&self, name: &str, f: &mut dyn FnMut(Option<&Arc<dyn SysObj>>));
-
-    fn visit_children_with(&self, min_id: u64, f: &mut dyn FnMut(&Arc<dyn SysObj>) -> Option<()>);
-
-    fn child(&self, name: &str) -> Option<Arc<dyn SysObj>>;
-}
+});
 
 #[derive(Debug)]
 struct SymlinkNode {
@@ -136,23 +105,7 @@ impl SymlinkNode {
     }
 }
 
-#[inherit_methods(from = "self.fields")]
-impl SysObj for SymlinkNode {
-    impl_cast_methods_for_symlink!();
-
-    fn id(&self) -> &SysNodeId;
-
-    fn name(&self) -> &SysStr;
-
-    fn init_parent(&self, parent: Weak<dyn SysBranchNode>);
-
-    fn parent(&self) -> Option<Arc<dyn SysBranchNode>>;
-}
-
-#[inherit_methods(from = "self.fields")]
-impl SysSymlink for SymlinkNode {
-    fn target_path(&self) -> &str;
-}
+inherit_sys_symlink_node!(SymlinkNode, fields);
 
 #[ktest]
 fn systree_singleton() {
@@ -249,11 +202,7 @@ fn symlinks() {
 
     // Add symlink to device tree
     {
-        device
-            .fields
-            .children
-            .write()
-            .insert(Cow::Borrowed("device_link"), symlink.clone());
+        device.add_child(symlink.clone()).unwrap();
     }
 
     // Verify symlink was added correctly
