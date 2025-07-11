@@ -118,6 +118,13 @@ impl Thread {
         Task::yield_now()
     }
 
+    /// Yields the execution to another thread with higher priority.
+    /// If no such thread exists, the current thread continues running.
+    #[track_caller]
+    pub fn yield_to_higher_priority() {
+        Task::yield_to_higher_priority()
+    }
+
     /// Joins the execution of the thread.
     ///
     /// This method will return after the thread exits.

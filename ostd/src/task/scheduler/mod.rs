@@ -77,6 +77,12 @@ pub trait LocalRunQueue<T = Task> {
     /// candidate for next current runnable task, this method returns `None`.
     fn pick_next_current(&mut self) -> Option<&Arc<T>>;
 
+    /// Picks the next runnable task after enqueueing the current task.
+    ///
+    /// If the next runnable task is the same as the current runnable task,
+    /// this method returns `None`.
+    fn pick_next_after_enqueue_current(&mut self) -> Option<&Arc<T>>;
+
     /// Removes the current runnable task from runqueue.
     ///
     /// This method returns the current runnable task. If there is no current runnable
@@ -224,6 +230,20 @@ pub(super) fn yield_now() {
     reschedule(|local_rq| {
         local_rq.update_current(UpdateFlags::Yield);
         if let Some(next_task) = local_rq.pick_next_current() {
+            ReschedAction::SwitchTo(next_task.clone())
+        } else {
+            ReschedAction::DoNothing
+        }
+    })
+}
+
+/// Yields execution to another task with higher priority.
+/// If no such task exists, the current task continues running.
+#[track_caller]
+pub(super) fn yield_to_higher_priority() {
+    reschedule(|local_rq| {
+        local_rq.update_current(UpdateFlags::Yield);
+        if let Some(next_task) = local_rq.pick_next_after_enqueue_current() {
             ReschedAction::SwitchTo(next_task.clone())
         } else {
             ReschedAction::DoNothing

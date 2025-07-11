@@ -4,6 +4,6 @@ use super::SyscallReturn;
 use crate::{prelude::*, thread::Thread};
 
 pub fn sys_sched_yield(_ctx: &Context) -> Result<SyscallReturn> {
-    Thread::yield_now();
+    Thread::yield_to_higher_priority();
     Ok(SyscallReturn::Return(0))
 }

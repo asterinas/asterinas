@@ -350,6 +350,22 @@ impl LocalRunQueue for PerCpuClassRqSet {
         })
     }
 
+    fn pick_next_after_enqueue_current(&mut self) -> Option<&Arc<Task>> {
+        let next = if let Some((old, old_run_time)) = self.current.take() {
+            self.enqueue_entity(old.clone(), None);
+            let next = self.pick_next_entity().unwrap();
+            if Arc::ptr_eq(&old.0, &next.0) {
+                self.current = Some((old, old_run_time));
+                return None;
+            }
+            next
+        } else {
+            self.pick_next_entity()?
+        };
+        self.current = Some((next, CurrentRuntime::new()));
+        self.current.as_ref().map(|((task, _), _)| task)
+    }
+
     fn update_current(&mut self, flags: UpdateFlags) -> bool {
         if let Some(((_, cur), rt)) = &mut self.current {
             rt.update();

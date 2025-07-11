@@ -101,7 +101,14 @@ impl Task {
     /// a Rust keyword.
     #[track_caller]
     pub fn yield_now() {
-        scheduler::yield_now()
+        scheduler::yield_now();
+    }
+
+    /// Yields execution so that another task with higher priority may be scheduled.
+    /// If no such task exists, the current task continues running.
+    #[track_caller]
+    pub fn yield_to_higher_priority() {
+        scheduler::yield_to_higher_priority();
     }
 
     /// Kicks the task scheduler to run the task.
