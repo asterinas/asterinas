@@ -38,7 +38,10 @@ pub use self::{
     attr::{SysAttr, SysAttrSet, SysAttrSetBuilder},
     node::{SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj, SysPerms, SysSymlink},
     tree::SysTree,
-    utils::{SymlinkNodeFields, SysBranchNodeFields, SysNormalNodeFields, SysObjFields},
+    utils::{
+        AttrLessBranchNodeFields, BranchNodeFields, NormalNodeFields, ObjFields, SymlinkNodeFields,
+        _InheritSysBranchNode, _InheritSysLeafNode, _InheritSysSymlinkNode,
+    },
 };
 
 static SINGLETON: Once<Arc<SysTree>> = Once::new();

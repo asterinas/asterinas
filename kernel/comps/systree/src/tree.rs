@@ -5,14 +5,13 @@
 use alloc::sync::{Arc, Weak};
 
 use inherit_methods_macro::inherit_methods;
-use ostd::mm::{VmReader, VmWriter};
 
 use super::{
     attr::SysAttrSet,
-    node::{SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj},
-    Error, Result, SysStr,
+    node::{SysBranchNode, SysObj},
+    Result, SysStr,
 };
-use crate::{impl_cast_methods_for_branch, SysBranchNodeFields, SysPerms};
+use crate::{inherit_sys_branch_node, BranchNodeFields, SysPerms};
 
 #[derive(Debug)]
 pub struct SysTree {
@@ -29,7 +28,7 @@ impl SysTree {
         let attr_set = SysAttrSet::new_empty(); // The root has no attributes
 
         let root_node = Arc::new_cyclic(|weak_self| {
-            let fields = SysBranchNodeFields::new(SysStr::from(name), attr_set, weak_self.clone());
+            let fields = BranchNodeFields::new(SysStr::from(name), attr_set, weak_self.clone());
             RootNode { fields }
         });
 
@@ -48,7 +47,7 @@ impl SysTree {
 /// as its children.
 #[derive(Debug)]
 pub struct RootNode {
-    fields: SysBranchNodeFields<dyn SysObj, Self>,
+    fields: BranchNodeFields<dyn SysObj, Self>,
 }
 
 #[inherit_methods(from = "self.fields")]
@@ -57,14 +56,7 @@ impl RootNode {
     pub fn add_child(&self, new_child: Arc<dyn SysObj>) -> Result<()>;
 }
 
-#[inherit_methods(from = "self.fields")]
-impl SysObj for RootNode {
-    impl_cast_methods_for_branch!();
-
-    fn id(&self) -> &SysNodeId;
-
-    fn name(&self) -> &SysStr;
-
+inherit_sys_branch_node!(RootNode, fields, {
     fn is_root(&self) -> bool {
         true
     }
@@ -73,32 +65,7 @@ impl SysObj for RootNode {
         // This method should be a no-op for `RootNode`.
     }
 
-    fn parent(&self) -> Option<Arc<dyn SysBranchNode>>;
-}
-
-impl SysNode for RootNode {
-    fn node_attrs(&self) -> &SysAttrSet {
-        self.fields.attr_set()
-    }
-
-    fn read_attr(&self, _name: &str, _writer: &mut VmWriter) -> Result<usize> {
-        Err(Error::AttributeError)
-    }
-
-    fn write_attr(&self, _name: &str, _reader: &mut VmReader) -> Result<usize> {
-        Err(Error::AttributeError)
-    }
-
     fn perms(&self) -> SysPerms {
         SysPerms::DEFAULT_RO_PERMS
     }
-}
-
-#[inherit_methods(from = "self.fields")]
-impl SysBranchNode for RootNode {
-    fn visit_child_with(&self, name: &str, f: &mut dyn FnMut(Option<&Arc<dyn SysObj>>));
-
-    fn visit_children_with(&self, _min_id: u64, f: &mut dyn FnMut(&Arc<dyn SysObj>) -> Option<()>);
-
-    fn child(&self, name: &str) -> Option<Arc<dyn SysObj>>;
-}
+});
