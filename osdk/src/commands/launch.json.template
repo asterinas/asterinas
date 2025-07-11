@@ -7,6 +7,18 @@
             "request": "custom",
             "targetCreateCommands": ["target create ${workspaceFolder}/target/osdk/#CRATE_NAME#/#BIN_NAME#"],
             "processCreateCommands": ["gdb-remote #ADDR_PORT#"]
+        },
+        {
+            "type": "gdb",
+            "request": "attach",
+            "name": "Debug Asterinas(#PROFILE#) for LoongArch",
+            "executable": "${workspaceFolder}/target/osdk/#CRATE_NAME#/#BIN_NAME#",
+            "target": ":#ADDR_PORT#",
+            "remote": true,
+            "cwd": "${workspaceRoot}",
+            "gdbpath": "loongarch64-linux-gnu-gdb",
+            "valuesFormatting": "parseText",
+            "stopAtConnect": true
         }
     ]
 }
