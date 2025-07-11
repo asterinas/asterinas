@@ -74,24 +74,29 @@ impl<T> CpuLocal<T, DynamicStorage<T>> {
     /// The given `ptr` points to the variable located on the BSP.
     ///
     /// Please do not call this function directly. Instead, use
-    /// `DynCpuLocalChunk::alloc`.
+    /// [`DynCpuLocalChunk::alloc`].
     ///
     /// # Safety
     ///
-    /// The caller must ensure that the new per-CPU object belongs to an
-    /// existing [`DynCpuLocalChunk`], and does not overlap with any existing
-    /// CPU-local object.
+    /// The caller must ensure that
+    ///  - the new per-CPU object belongs to an existing
+    ///    [`DynCpuLocalChunk`], and does not overlap with any
+    ///    existing CPU-local object;
+    ///  - the `ITEM_SIZE` of the [`DynCpuLocalChunk`] satisfies
+    ///    the layout requirement of `T`.
     unsafe fn __new_dynamic(ptr: *mut T, init_values: &mut impl FnMut(CpuId) -> T) -> Self {
         let mut storage = DynamicStorage(NonNull::new(ptr).unwrap());
         for cpu in all_cpus() {
             let ptr = storage.get_mut_ptr_on_target(cpu);
-            // SAFETY: `ptr` points to valid, uninitialized per-CPU memory
-            // reserved for CPU-local storage. This initialization occurs
-            // before any other code can access the memory. References to
-            // the data may only be created after `Self` is created, ensuring
-            // exclusive access by the current task. Each per-CPU memory
-            // region is written exactly once using `ptr::write`, which is
-            // safe for uninitialized memory.
+            // SAFETY:
+            //  - `ptr` is valid for writes, because:
+            //    - The `DynCpuLocalChunk` slot is non-null and dereferenceable.
+            //    - This initialization occurs before any other code can access
+            //      the memory. References to the data may only be created
+            //      after `Self` is created, ensuring exclusive access by the
+            //      current task.
+            //  - `ptr` is properly aligned, as the caller guarantees that the
+            //    layout requirement is satisfied.
             unsafe {
                 core::ptr::write(ptr, init_values(cpu));
             }
@@ -159,8 +164,11 @@ impl<const ITEM_SIZE: usize> DynCpuLocalChunk<ITEM_SIZE> {
 
         let index = self.bitmap.first_zero()?;
         self.bitmap.set(index, true);
-        // SAFETY: `index` refers to an available position in the chunk
-        // for allocating a new CPU-local object.
+        // SAFETY:
+        //  - `index` refers to an available position in the chunk
+        //    for allocating a new CPU-local object.
+        //  - We have checked the size and alignment requirement
+        //    for `T` above.
         unsafe {
             let vaddr = self.start_vaddr() + index * ITEM_SIZE;
             Some(CpuLocal::__new_dynamic(vaddr as *mut T, init_values))
@@ -195,15 +203,22 @@ impl<const ITEM_SIZE: usize> DynCpuLocalChunk<ITEM_SIZE> {
         let Some(index) = self.get_item_index(&cpu_local) else {
             return Err(cpu_local);
         };
+
         self.bitmap.set(index, false);
         for cpu in all_cpus() {
             let ptr = cpu_local.storage.get_mut_ptr_on_target(cpu);
-            // SAFETY: `ptr` points to the valid CPU-local object. We can
-            // mutably borrow the CPU-local object on `cpu` because we have
-            // the exclusive access to `cpu_local`. Each CPU-local object
-            // is dropped exactly once. After the deallocation, no one will
-            // access the dropped CPU-local object, since we explicitly
-            // forget the `cpu_local`.
+            // SAFETY:
+            //  - `ptr` is valid for both reads and writes, because:
+            //    - The pointer of the CPU-local object on `cpu` is
+            //      non-null and dereferenceable.
+            //    - We can mutably borrow the CPU-local object on `cpu`
+            //      because we have the exclusive access to `cpu_local`.
+            //  - The pointer of the CPU-local object is properly aligned.
+            //  - The pointer of the CPU-local object points to a valid
+            //    instance of `T`.
+            //  - After the deallocation, no one will access the
+            //    dropped CPU-local object, since we explicitly forget
+            //    the `cpu_local`.
             unsafe {
                 core::ptr::drop_in_place(ptr);
             }
