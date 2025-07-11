@@ -196,10 +196,9 @@ int test_handle_sigfpe()
 	(void)c;
 	fxsave(y);
 
-	// Asterinas does not save and restore fpregs now, so we emit this check.
-	// if (memcmp(x, y, 512) != 0) {
-	//     THROW_ERROR("floating point registers are modified");
-	// }
+	if (memcmp(x, y, 512) != 0) {
+		THROW_ERROR("floating point registers are modified");
+	}
 
 	printf("Signal handler successfully jumped over the divide-by-zero instruction\n");
 	fflush(stdout);
@@ -318,7 +317,7 @@ static void handle_sigpipe(int num, siginfo_t *info, void *context)
 	recursion_level--;
 }
 
-#define SIGSTACKSIZE (4 * 4096)
+#define SIGSTACKSIZE (8 * 4096)
 
 int test_sigaltstack()
 {

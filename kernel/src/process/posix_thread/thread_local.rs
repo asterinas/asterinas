@@ -3,7 +3,7 @@
 use core::cell::{Cell, Ref, RefCell, RefMut};
 
 use aster_rights::Full;
-use ostd::{mm::Vaddr, sync::RwArc, task::CurrentTask};
+use ostd::{cpu::context::FpuState, mm::Vaddr, sync::RwArc, task::CurrentTask};
 
 use super::RobustListHead;
 use crate::{fs::file_table::FileTable, process::signal::SigStack, vm::vmar::Vmar};
@@ -25,6 +25,9 @@ pub struct ThreadLocal {
     // Files.
     file_table: RefCell<Option<RwArc<FileTable>>>,
 
+    // FPU state.
+    fpu_state: RefCell<FpuState>,
+
     // Signal.
     /// `ucontext` address for the signal handler.
     // FIXME: This field may be removed. For glibc applications with RESTORER flag set, the
@@ -40,6 +43,7 @@ impl ThreadLocal {
         clear_child_tid: Vaddr,
         root_vmar: Vmar<Full>,
         file_table: RwArc<FileTable>,
+        fpu_state: FpuState,
     ) -> Self {
         Self {
             set_child_tid: Cell::new(set_child_tid),
@@ -49,6 +53,7 @@ impl ThreadLocal {
             file_table: RefCell::new(Some(file_table)),
             sig_context: Cell::new(None),
             sig_stack: RefCell::new(None),
+            fpu_state: RefCell::new(fpu_state),
         }
     }
 
@@ -82,6 +87,10 @@ impl ThreadLocal {
 
     pub fn sig_stack(&self) -> &RefCell<Option<SigStack>> {
         &self.sig_stack
+    }
+
+    pub fn fpu_state(&self) -> &RefCell<FpuState> {
+        &self.fpu_state
     }
 }
 

@@ -4,6 +4,7 @@ use alloc::{format, string::String};
 
 use ostd::{
     cpu::context::{CpuExceptionInfo, GeneralRegs, UserContext},
+    mm::Vaddr,
     Pod,
 };
 
@@ -128,6 +129,44 @@ impl GpRegs {
 
     pub fn copy_from_raw(&mut self, src: &GeneralRegs) {
         copy_gp_regs!(src, self);
+    }
+}
+
+/// Represents the context of a signal handler.
+///
+/// This contains the context saved before a signal handler is invoked and restored by sys_rt_sigreturn.
+#[derive(Clone, Copy, Debug, Pod)]
+#[repr(C)]
+pub struct SigContext {
+    gp_regs: GpRegs,
+    // Reserved for FPU state
+    fpu_state: [u64; 64],
+}
+
+impl Default for SigContext {
+    fn default() -> Self {
+        Self {
+            gp_regs: GpRegs::default(),
+            fpu_state: [0; 64],
+        }
+    }
+}
+
+impl SigContext {
+    pub fn copy_user_regs_to(&self, dst: &mut UserContext) {
+        self.gp_regs.copy_to_raw(dst.general_regs_mut());
+    }
+
+    pub fn copy_user_regs_from(&mut self, src: &UserContext) {
+        self.gp_regs.copy_from_raw(src.general_regs());
+    }
+
+    pub fn fpu_state_addr(&self) -> Vaddr {
+        &self.fpu_state as *const _ as Vaddr
+    }
+
+    pub fn set_fpu_state_addr(&mut self, addr: Vaddr) {
+        // Do nothing
     }
 }
 

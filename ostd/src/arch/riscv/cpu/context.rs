@@ -283,19 +283,28 @@ pub type CpuException = Exception;
 pub struct FpuState;
 
 impl FpuState {
+    /// Initializes a new instance.
+    pub fn init() -> Self {
+        todo!()
+    }
+
     /// Saves CPU's current FPU state into this instance.
-    pub fn save(&self) {
+    pub fn save(&mut self) {
         todo!()
     }
 
-    /// Restores CPU's FPU state from this instance.
-    pub fn restore(&self) {
+    /// Loads CPU's FPU state from this instance.
+    pub fn load(&mut self) {
         todo!()
     }
-}
 
-impl Default for FpuState {
-    fn default() -> Self {
-        FpuState
+    /// Returns the FPU state as a byte slice.
+    pub fn as_bytes(&self) -> &[u8] {
+        todo!()
+    }
+
+    /// Returns the FPU state as a mutable byte slice.
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+        todo!()
     }
 }
