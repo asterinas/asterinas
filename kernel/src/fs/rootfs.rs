@@ -7,6 +7,7 @@ use libflate::gzip::Decoder as GZipDecoder;
 use spin::Once;
 
 use super::{
+    cgroupfs::{init as cgroupfs_init, singleton as cgroupfs_singleton},
     fs_resolver::{FsPath, FsResolver},
     path::MountNode,
     procfs::{self, ProcFS},
@@ -119,8 +120,13 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
     sysfs_init();
     let sysfs: Arc<dyn FileSystem> = sysfs_singleton().clone();
     sys_dentry.mount(sysfs)?;
-    println!("[kernel] rootfs is ready");
+    // Mount CgroupFs
+    cgroupfs_init();
+    let cgroup_dentry = fs.lookup(&FsPath::try_from("/sys/fs/cgroup")?)?;
+    let cgroupfs: Arc<dyn FileSystem> = cgroupfs_singleton().clone();
+    cgroup_dentry.mount(cgroupfs)?;
 
+    println!("[kernel] rootfs is ready");
     Ok(())
 }
 
