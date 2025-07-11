@@ -19,6 +19,7 @@ RUN sh <(curl -L https://nixos.org/nix/install) --daemon --yes \
 
 #= Build Nix packages ======================================================
 
+COPY test/src /root/src
 COPY test/nix /root/nix
 WORKDIR /root
 ENV PATH="/nix/var/nix/profiles/default/bin:${PATH}"
@@ -34,6 +35,7 @@ RUN nix-build \
     --arg enableSyscallTest true \
     --out-link /nix/var/nix/gcroots/auto/riscv64-pkgs \
     -A busybox \
+    -A apps.package \
     -A benchmark.fio \
     -A benchmark.hackbench \
     -A benchmark.iperf3 \
@@ -56,6 +58,7 @@ RUN nix-build \
     --arg enableSyscallTest true \
     --out-link /nix/var/nix/gcroots/auto/x86_64-pkgs \
     -A busybox \
+    -A apps.package \
     -A benchmark.fio \
     -A benchmark.hackbench \
     -A benchmark.iperf3 \
@@ -74,8 +77,9 @@ RUN nix-build \
 RUN nix-build \
     ./nix/default.nix \
     --quiet -Q \
-    --out-link /nix/var/nix/gcroots/auto/linux_vdso \
+    --out-link /nix/var/nix/gcroots/auto/general \
     -A linux_vdso \
+    -A apps.mongoose_src \
     && nix-env --install \
     --file ./nix/default.nix \
     -A apacheHttpd \
@@ -86,8 +90,13 @@ RUN nix-build \
     && nix-collect-garbage -d \
     && nix-store --optimise
 
+# Avoid github runner to create nixpkgs cache
+RUN mkdir -p /github/home/.cache \
+    && ln -s /root/.cache/nix /github/home/.cache/nix
+
 # Clean source files
-RUN rm -rf /root/nix
+RUN rm -rf /root/src \
+    && rm -rf /root/nix
 
 VOLUME [ "/root/asterinas" ]
 
