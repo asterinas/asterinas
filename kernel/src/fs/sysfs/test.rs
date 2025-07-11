@@ -5,19 +5,18 @@ use alloc::{
     collections::BTreeMap,
     format,
     string::{String, ToString},
-    sync::{Arc, Weak},
+    sync::Arc,
     vec,
     vec::Vec,
 };
 use core::fmt::Debug;
 
 use aster_systree::{
-    impl_cast_methods_for_branch, impl_cast_methods_for_node, impl_cast_methods_for_symlink,
-    init_for_ktest, singleton as systree_singleton, Error as SysTreeError, Result as SysTreeResult,
-    SysAttrFlags, SysAttrSet, SysAttrSetBuilder, SysBranchNode, SysBranchNodeFields, SysNode,
-    SysNodeId, SysNodeType, SysNormalNodeFields, SysObj, SysStr, SysSymlink, SysTree,
+    inherit_sys_branch_node, inherit_sys_leaf_node, inherit_sys_symlink_node, init_for_ktest,
+    singleton as systree_singleton, BranchNodeFields, Error as SysTreeError, NormalNodeFields,
+    Result as SysTreeResult, SymlinkNodeFields, SysAttrSetBuilder, SysObj, SysPerms, SysStr,
+    SysTree,
 };
-use inherit_methods_macro::inherit_methods;
 use ostd::{
     mm::{FallibleVmRead, FallibleVmWrite, VmReader, VmWriter},
     prelude::ktest,
@@ -37,67 +36,52 @@ use crate::{
 // Sysfs acts as a view layer over the systree component.
 // These mocks simulate the systree interface (SysNode, SysBranchNode, etc.)
 
-// Refactor MockLeafNode to use SysNormalNodeFields
+// Refactor MockLeafNode to use NormalNodeFields
 #[derive(Debug)]
 struct MockLeafNode {
-    fields: SysNormalNodeFields,
+    fields: NormalNodeFields<Self>,
     data: RwLock<BTreeMap<String, String>>, // Store attribute data
-    weak_self: Weak<Self>,
 }
 
 impl MockLeafNode {
-    fn new(name: &str, read_attrs: &[&str], write_attrs: &[&str]) -> Arc<Self> {
-        let name_owned: SysStr = name.to_string().into(); // Convert to owned SysStr
-
+    fn new(name: SysStr, read_attrs: &[&str], write_attrs: &[&str]) -> Arc<Self> {
         let mut builder = SysAttrSetBuilder::new();
         let mut data = BTreeMap::new();
         for &attr_name in read_attrs {
-            builder.add(Cow::Owned(attr_name.to_string()), SysAttrFlags::CAN_READ);
+            builder.add(
+                Cow::Owned(attr_name.to_string()),
+                SysPerms::DEFAULT_RO_ATTR_PERMS,
+            );
             data.insert(attr_name.to_string(), format!("val_{}", attr_name)); // Initial value
         }
         for &attr_name in write_attrs {
             builder.add(
                 Cow::Owned(attr_name.to_string()),
-                SysAttrFlags::CAN_READ | SysAttrFlags::CAN_WRITE,
+                SysPerms::DEFAULT_RW_ATTR_PERMS,
             );
             data.insert(attr_name.to_string(), format!("val_{}", attr_name)); // Initial value
         }
 
         let attrs = builder.build().expect("Failed to build attribute set");
-        let fields = SysNormalNodeFields::new(name_owned, attrs);
 
-        Arc::new_cyclic(|weak_self| MockLeafNode {
-            fields,
-            data: RwLock::new(data),
-            weak_self: weak_self.clone(),
+        Arc::new_cyclic(|weak_self| {
+            let fields = NormalNodeFields::new(name, attrs, weak_self.clone());
+            MockLeafNode {
+                fields,
+                data: RwLock::new(data),
+            }
         })
     }
 }
 
-impl SysObj for MockLeafNode {
-    impl_cast_methods_for_node!();
-
-    fn id(&self) -> &SysNodeId {
-        self.fields.id()
-    }
-
-    fn name(&self) -> &SysStr {
-        self.fields.name()
-    }
-}
-
-impl SysNode for MockLeafNode {
-    fn node_attrs(&self) -> &SysAttrSet {
-        self.fields.attr_set()
-    }
-
+inherit_sys_leaf_node!(MockLeafNode, fields, {
     fn read_attr(&self, name: &str, writer: &mut VmWriter) -> SysTreeResult<usize> {
         let attr = self
             .fields
             .attr_set()
             .get(name)
-            .ok_or(SysTreeError::AttributeError)?;
-        if !attr.flags().contains(SysAttrFlags::CAN_READ) {
+            .ok_or(SysTreeError::NotFound)?;
+        if !attr.perms().can_read() {
             return Err(SysTreeError::PermissionDenied);
         }
         let data = self.data.read();
@@ -113,8 +97,8 @@ impl SysNode for MockLeafNode {
             .fields
             .attr_set()
             .get(name)
-            .ok_or(SysTreeError::AttributeError)?;
-        if !attr.flags().contains(SysAttrFlags::CAN_WRITE) {
+            .ok_or(SysTreeError::NotFound)?;
+        if !attr.perms().can_write() {
             return Err(SysTreeError::PermissionDenied);
         }
 
@@ -131,13 +115,16 @@ impl SysNode for MockLeafNode {
 
         Ok(read_len)
     }
-}
 
-// Refactor MockBranchNode to use SysBranchNodeFields
+    fn perms(&self) -> SysPerms {
+        SysPerms::DEFAULT_RW_PERMS
+    }
+});
+
+// Refactor MockBranchNode to use BranchNodeFields
 #[derive(Debug)]
 struct MockBranchNode {
-    fields: SysBranchNodeFields<dyn SysObj>,
-    weak_self: Weak<Self>,
+    fields: BranchNodeFields<dyn SysObj, Self>,
 }
 
 impl MockBranchNode {
@@ -145,16 +132,17 @@ impl MockBranchNode {
         let name_owned: SysStr = name.to_string().into(); // Convert to owned SysStr
 
         let mut builder = SysAttrSetBuilder::new();
-        builder.add(Cow::Borrowed("branch_attr"), SysAttrFlags::CAN_READ);
+        builder.add(
+            Cow::Borrowed("branch_attr"),
+            SysPerms::DEFAULT_RO_ATTR_PERMS,
+        );
         let attrs = builder
             .build()
             .expect("Failed to build branch attribute set");
 
-        let fields = SysBranchNodeFields::new(name_owned, attrs);
-
-        Arc::new_cyclic(|weak_self| MockBranchNode {
-            fields,
-            weak_self: weak_self.clone(),
+        Arc::new_cyclic(|weak_self| {
+            let fields = BranchNodeFields::new(name_owned, attrs, weak_self.clone());
+            MockBranchNode { fields }
         })
     }
 
@@ -163,30 +151,14 @@ impl MockBranchNode {
     }
 }
 
-impl SysObj for MockBranchNode {
-    impl_cast_methods_for_branch!();
-
-    fn id(&self) -> &SysNodeId {
-        self.fields.id()
-    }
-
-    fn name(&self) -> &SysStr {
-        self.fields.name()
-    }
-}
-
-impl SysNode for MockBranchNode {
-    fn node_attrs(&self) -> &SysAttrSet {
-        self.fields.attr_set()
-    }
-
+inherit_sys_branch_node!(MockBranchNode, fields, {
     fn read_attr(&self, name: &str, writer: &mut VmWriter) -> SysTreeResult<usize> {
         let attr = self
             .fields
             .attr_set()
             .get(name)
-            .ok_or(SysTreeError::AttributeError)?;
-        if !attr.flags().contains(SysAttrFlags::CAN_READ) {
+            .ok_or(SysTreeError::NotFound)?;
+        if !attr.perms().can_read() {
             return Err(SysTreeError::PermissionDenied);
         }
         let value = match name {
@@ -204,61 +176,35 @@ impl SysNode for MockBranchNode {
             .fields
             .attr_set()
             .get(name)
-            .ok_or(SysTreeError::AttributeError)?;
-        if !attr.flags().contains(SysAttrFlags::CAN_WRITE) {
+            .ok_or(SysTreeError::NotFound)?;
+        if !attr.perms().can_write() {
             return Err(SysTreeError::PermissionDenied);
         }
         // No writable attrs in this mock for now
         Err(SysTreeError::AttributeError)
     }
-}
 
-#[inherit_methods(from = "self.fields")]
-impl SysBranchNode for MockBranchNode {
-    fn visit_child_with(&self, name: &str, f: &mut dyn FnMut(Option<&Arc<dyn SysObj>>));
-
-    fn visit_children_with(&self, min_id: u64, f: &mut dyn FnMut(&Arc<dyn SysObj>) -> Option<()>);
-
-    fn child(&self, name: &str) -> Option<Arc<dyn SysObj>>;
-}
+    fn perms(&self) -> SysPerms {
+        SysPerms::DEFAULT_RW_PERMS
+    }
+});
 
 // Mock Symlink
 #[derive(Debug)]
 struct MockSymlinkNode {
-    id: SysNodeId,
-    name: SysStr,
-    target: String,
-    weak_self: Weak<Self>,
+    fields: SymlinkNodeFields<Self>,
 }
 
 impl MockSymlinkNode {
-    fn new(name: &str, target: &str) -> Arc<Self> {
-        Arc::new_cyclic(|weak_self| MockSymlinkNode {
-            id: SysNodeId::new(),
-            name: name.to_string().into(),
-            target: target.to_string(),
-            weak_self: weak_self.clone(),
+    fn new(name: SysStr, target: &str) -> Arc<Self> {
+        Arc::new_cyclic(|weak_self| {
+            let fields = SymlinkNodeFields::new(name, target.to_string(), weak_self.clone());
+            MockSymlinkNode { fields }
         })
     }
 }
 
-impl SysObj for MockSymlinkNode {
-    impl_cast_methods_for_symlink!();
-
-    fn id(&self) -> &SysNodeId {
-        &self.id
-    }
-
-    fn name(&self) -> &SysStr {
-        &self.name
-    }
-}
-
-impl SysSymlink for MockSymlinkNode {
-    fn target_path(&self) -> &str {
-        &self.target
-    }
-}
+inherit_sys_symlink_node!(MockSymlinkNode, fields);
 
 // --- Test Setup ---
 
@@ -269,9 +215,9 @@ fn create_mock_systree_instance() -> &'static Arc<SysTree> {
     // Create nodes
     let root = systree_singleton().root();
     let branch1 = MockBranchNode::new("branch1");
-    let leaf1 = MockLeafNode::new("leaf1", &["r_attr1"], &["rw_attr1"]);
-    let leaf2 = MockLeafNode::new("leaf2", &["r_attr2"], &[]);
-    let symlink1 = MockSymlinkNode::new("link1", "../branch1/leaf1");
+    let leaf1 = MockLeafNode::new("leaf1".into(), &["r_attr1"], &["rw_attr1"]);
+    let leaf2 = MockLeafNode::new("leaf2".into(), &["r_attr2"], &[]);
+    let symlink1 = MockSymlinkNode::new("link1".into(), "../branch1/leaf1");
 
     // Build hierarchy - ignore Result since this is test setup
     branch1.add_child(leaf1.clone() as Arc<dyn SysObj>);
@@ -439,7 +385,7 @@ fn test_sysfs_write_attr() {
 
     // Verification: Write to the sysfs files and check if the operation
     // is correctly delegated to the underlying mock systree node's write_attr method,
-    // respecting read/write permissions derived from SysAttrFlags.
+    // respecting read/write permissions derived from SysPerms.
 
     // Write to rw_attr1
     let new_val = "new_value";
@@ -561,17 +507,17 @@ fn test_sysfs_mode_permissions() {
     let rw_attr_inode = leaf1_dir_inode.lookup("rw_attr1").unwrap(); // Sysfs file for read-write attr
 
     // Verification: Check that the default mode (permissions) of the sysfs files/dirs
-    // correctly reflects the SysAttrFlags of the underlying systree attributes/nodes.
+    // correctly reflects the SysPerms of the underlying systree attributes/nodes.
     // Also test that set_mode works on the sysfs inode.
 
-    // Check default modes based on SysAttrFlags
+    // Check default modes based on SysPerms
     let r_mode = r_attr_inode.mode().unwrap();
     assert!(r_mode.contains(InodeMode::S_IRUSR | InodeMode::S_IRGRP | InodeMode::S_IROTH)); // 0o444
-    assert!(!r_mode.contains(InodeMode::S_IWUSR | InodeMode::S_IWGRP | InodeMode::S_IWOTH)); // Not 0o222
+    assert!(!r_mode.contains(InodeMode::S_IWUSR)); // Not 0o200
 
     let rw_mode = rw_attr_inode.mode().unwrap();
     assert!(rw_mode.contains(InodeMode::S_IRUSR | InodeMode::S_IRGRP | InodeMode::S_IROTH)); // 0o444
-    assert!(rw_mode.contains(InodeMode::S_IWUSR | InodeMode::S_IWGRP | InodeMode::S_IWOTH)); // 0o222
+    assert!(rw_mode.contains(InodeMode::S_IWUSR)); // 0o200
 
     // Test set_mode
     let new_mode = InodeMode::from_bits_truncate(0o600); // rw-------

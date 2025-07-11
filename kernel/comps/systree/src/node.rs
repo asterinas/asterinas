@@ -1,13 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{string::String, sync::Arc, vec, vec::Vec};
+use alloc::{
+    borrow::ToOwned,
+    string::String,
+    sync::{Arc, Weak},
+    vec,
+    vec::Vec,
+};
 use core::{
     any::Any,
     fmt::Debug,
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use ostd::mm::{FallibleVmWrite, VmReader, VmWriter};
+use bitflags::bitflags;
+use ostd::mm::{VmReader, VmWriter};
 
 use super::{Error, Result, SysAttrSet, SysStr};
 
@@ -101,6 +108,18 @@ pub trait SysBranchNode: SysNode {
         });
         count
     }
+
+    /// Creates a new child node with the given name.
+    ///
+    /// This new child will be added to this branch node.
+    fn create_child(&self, _name: &str) -> Result<Arc<dyn SysObj>> {
+        Err(Error::PermissionDenied)
+    }
+
+    /// Removes a child node with the given name.
+    fn remove_child(&self, _name: &str) -> Result<Arc<dyn SysObj>> {
+        Err(Error::PermissionDenied)
+    }
 }
 
 /// The trait that abstracts a "normal" node in a `SysTree`.
@@ -120,35 +139,14 @@ pub trait SysNode: SysObj {
     fn write_attr(&self, name: &str, reader: &mut VmReader) -> Result<usize>;
 
     /// Reads the value of an attribute from the specified `offset`.
-    fn read_attr_at(&self, name: &str, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let (attr_buffer, attr_len) = {
-            let attr_buffer_len = writer.avail().checked_add(offset).ok_or(Error::Overflow)?;
-            let mut buffer = vec![0; attr_buffer_len];
-            let len = self.read_attr(
-                name,
-                &mut VmWriter::from(buffer.as_mut_slice()).to_fallible(),
-            )?;
-            (buffer, len)
-        };
-
-        if attr_len <= offset {
-            return Ok(0);
-        }
-
-        writer
-            .write_fallible(VmReader::from(attr_buffer.as_slice()).skip(offset))
-            .map_err(|_| Error::AttributeError)
-    }
+    fn read_attr_at(&self, name: &str, offset: usize, writer: &mut VmWriter) -> Result<usize>;
 
     /// Writes the value of an attribute at the specified `offset`.
-    fn write_attr_at(&self, name: &str, _offset: usize, reader: &mut VmReader) -> Result<usize> {
-        // In general, the `offset` for attribute write operations is ignored directly.
-        self.write_attr(name, reader)
-    }
+    fn write_attr_at(&self, name: &str, _offset: usize, reader: &mut VmReader) -> Result<usize>;
 
     /// Shows the string value of an attribute.
     ///
-    /// Most attributes are textual, rather binary (see `SysAttrFlags::IS_BINARY`).
+    /// Most attributes are textual, rather binary.
     /// So using this `show_attr` method is more convenient than
     /// the `read_attr` method.
     fn show_attr(&self, name: &str) -> Result<String> {
@@ -163,13 +161,19 @@ pub trait SysNode: SysObj {
 
     /// Stores the string value of an attribute.
     ///
-    /// Most attributes are textual, rather binary (see `SysAttrFlags::IS_BINARY`).
+    /// Most attributes are textual, rather binary.
     /// So using this `store_attr` method is more convenient than
     /// the `write_attr` method.
     fn store_attr(&self, name: &str, new_val: &str) -> Result<usize> {
         let mut reader = VmReader::from(new_val.as_bytes()).to_fallible();
         self.write_attr(name, &mut reader)
     }
+
+    /// Returns the initial permissions of a node.
+    ///
+    /// The FS layer should take the value returned from this method
+    /// as this initial permissions for the corresponding inode.
+    fn perms(&self) -> SysPerms;
 }
 
 /// A trait that abstracts any symlink node in a `SysTree`.
@@ -218,16 +222,48 @@ pub trait SysObj: Any + Send + Sync + Debug + 'static {
         false
     }
 
-    /// Returns the path from the root to this node.
+    /// Initializes the parent in the `SysTree`.
     ///
-    /// The path of a node is the names of all the ancestors concatenated
-    /// with `/` as the separator.
+    /// An appropriate timing to call this method is when a `SysTree` node is added to
+    /// another node as a child.
     ///
-    /// If the node has been attached to a `SysTree`,
-    /// then the returned path begins with `/`.
-    /// Otherwise, the returned path does _not_ begin with `/`.
+    /// # Panics
+    ///
+    /// This method should be called at most once; otherwise, it may trigger panicking.
+    fn init_parent(&self, parent: Weak<dyn SysBranchNode>);
+
+    /// Returns the parent in the `SysTree`.
+    ///
+    /// Returns `None` if the parent of the node has not been initialized yet.
+    fn parent(&self) -> Option<Arc<dyn SysBranchNode>>;
+
+    /// Returns the path.
+    ///
+    /// The path of a `SysTree` node is defined as below:
+    /// - If a node is the root, then the path is `/`.
+    /// - If a node is a non-root, we will need to see if it has a parent:
+    ///      - If the node has a parent, then the path is defined as
+    ///        the parent path and the node's name joined with a `/` in between;
+    ///      - Otherwise, the node's name is taken as its path.
     fn path(&self) -> SysStr {
-        todo!("implement with the parent and name methods")
+        if self.is_root() {
+            return SysStr::from("/");
+        }
+
+        let Some(parent) = self.parent() else {
+            return self.name().clone();
+        };
+
+        let parent_path_with_slash = {
+            let mut parent_path = parent.path().as_ref().to_owned();
+            if !parent.is_root() {
+                parent_path.push('/');
+            }
+
+            parent_path
+        };
+
+        SysStr::from(parent_path_with_slash + self.name())
     }
 }
 
@@ -256,5 +292,74 @@ impl SysNodeId {
 impl Default for SysNodeId {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+bitflags! {
+    /// Permissions for a node or an attribute in the `SysTree`.
+    ///
+    /// This struct is mainly used to provide the initial permissions for nodes and attributes.
+    ///
+    /// The concepts of "owner"/"group"/"others" mentioned here are not explicitly represented in
+    /// systree. They exist primarily to enable finer-grained permission management at
+    /// the "view" and "control" parts for users. The definitions of these permissions match that
+    /// of VFS file permissions bit-wise.
+    ///
+    /// Users can provide permission modification functionality through additional abstractions at
+    /// the upper layers. Correspondingly, it is the users' responsibility to do the permission
+    /// verification at the "view" and "control" parts.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct SysPerms: u16 {
+        // One-bit flags:
+        /// The read permission for owner.
+        const OWNER_R = 0o0400;
+        /// The write permission for owner.
+        const OWNER_W = 0o0200;
+        /// The execute/search permission for owner.
+        const OWNER_X = 0o0100;
+        /// The read permission for group.
+        const GROUP_R = 0o0040;
+        /// The write permission for group.
+        const GROUP_W = 0o0020;
+        /// The execute/search permission for group.
+        const GROUP_X = 0o0010;
+        /// The read permission for others.
+        const OTHER_R = 0o0004;
+        /// The write permission for others.
+        const OTHER_W = 0o0002;
+        /// The execute/search permission for others.
+        const OTHER_X = 0o0001;
+
+        // Common multi-bit flags:
+        const ALL_R = 0o0444;
+        const ALL_W = 0o0222;
+        const ALL_X = 0o0111;
+        const ALL_RW = 0o0666;
+        const ALL_RX = 0o0555;
+        const ALL_RWX = 0o0777;
+    }
+}
+
+impl SysPerms {
+    /// Default read-only permissions for nodes (owner/group/others can read+execute)
+    pub const DEFAULT_RO_PERMS: Self = Self::ALL_RX;
+
+    /// Default read-write permissions for nodes (owner has full, group/others read+execute)
+    pub const DEFAULT_RW_PERMS: Self = Self::ALL_RX.union(Self::OWNER_W);
+
+    /// Default read-only permissions for attributes (owner/group/others can read)
+    pub const DEFAULT_RO_ATTR_PERMS: Self = Self::ALL_R;
+
+    /// Default read-write permissions for attributes (owner read+write, group/others read)
+    pub const DEFAULT_RW_ATTR_PERMS: Self = Self::ALL_R.union(Self::OWNER_W);
+
+    /// Returns whether read operations are allowed.
+    pub fn can_read(&self) -> bool {
+        self.intersects(Self::ALL_R)
+    }
+
+    /// Returns whether write operations are allowed.
+    pub fn can_write(&self) -> bool {
+        self.intersects(Self::ALL_W)
     }
 }
