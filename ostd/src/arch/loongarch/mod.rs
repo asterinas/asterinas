@@ -8,6 +8,7 @@ pub mod device;
 mod io;
 pub(crate) mod iommu;
 pub(crate) mod irq;
+pub mod kernel;
 pub(crate) mod mm;
 pub(crate) mod pci;
 pub mod qemu;
@@ -27,6 +28,8 @@ pub(crate) unsafe fn late_init_on_bsp() {
 
     let io_mem_builder = io::construct_io_mem_allocator_builder();
 
+    kernel::irq::init();
+
     // SAFETY: We're on the BSP and we're ready to boot all APs.
     unsafe { crate::boot::smp::boot_all_aps() };
 
@@ -43,7 +46,7 @@ pub(crate) unsafe fn init_on_ap() {
 }
 
 pub(crate) fn interrupts_ack(irq_number: usize) {
-    unimplemented!()
+    kernel::irq::complete(irq_number as _);
 }
 
 /// Returns the frequency of TSC. The unit is Hz.
