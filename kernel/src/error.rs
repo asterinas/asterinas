@@ -200,8 +200,6 @@ impl From<ostd::Error> for Error {
             ostd::Error::NotEnoughResources => Error::new(Errno::EBUSY),
             ostd::Error::PageFault => Error::new(Errno::EFAULT),
             ostd::Error::Overflow => Error::new(Errno::EOVERFLOW),
-            ostd::Error::MapAlreadyMappedVaddr => Error::new(Errno::EINVAL),
-            ostd::Error::KVirtAreaAllocError => Error::new(Errno::ENOMEM),
         }
     }
 }
