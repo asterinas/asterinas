@@ -166,8 +166,12 @@ impl Bar {
             return Err(Error::InvalidArgs);
         }
         // Get the original value first, then write all 1 to the register to get the length
-        let raw = location.read32(index as u16 * 4 + PciDeviceCommonCfgOffset::Bar0 as u16);
-        if raw == 0 {
+        let offset = index as u16 * 4 + PciDeviceCommonCfgOffset::Bar0 as u16;
+        let raw = location.read32(offset);
+        location.write32(offset, !0);
+        let len_encoded = location.read32(offset);
+        location.write32(offset, raw);
+        if len_encoded == 0 {
             // no BAR
             return Err(Error::InvalidArgs);
         }
@@ -243,7 +247,7 @@ impl MemoryBar {
         location.write32(offset, raw);
         let mut address_length = AddrLen::Bits32;
         // base address, it may be bit64 or bit32
-        let base: u64 = match (raw & 0b110) >> 1 {
+        let raw_base: u64 = match (raw & 0b110) >> 1 {
             // bits32
             0 => (raw & !0xF) as u64,
             // bits64
@@ -257,6 +261,34 @@ impl MemoryBar {
         };
         // length
         let size = (!(len_encoded & !0xF)).wrapping_add(1);
+
+        // Some architectures may not initialize PCI devices at all. Even in x86-64 systems, the
+        // BIOS may leave some devices uninitialized. If support is available, we can allocate the
+        // region ourselves. Otherwise, if the BAR is not properly initialized, we will ignore it
+        // and return an error.
+        #[cfg(not(target_arch = "loongarch64"))]
+        let base = if raw_base == 0 {
+            return Err(Error::InvalidArgs);
+        } else {
+            raw_base
+        };
+        // In LoongArch, the BAR base address needs to be allocated manually.
+        #[cfg(target_arch = "loongarch64")]
+        let base = {
+            use core::alloc::Layout;
+            crate::arch::pci::alloc_mmio(
+                Layout::from_size_align(size as usize, size as usize).unwrap(),
+            )
+            .unwrap() as u64
+        };
+
+        if address_length == AddrLen::Bits64 {
+            location.write32(offset, base as u32);
+            location.write32(offset + 4, (base >> 32) as u32);
+        } else {
+            location.write32(offset, base as u32);
+        }
+
         let prefetchable = raw & 0b1000 != 0;
         // The BAR is located in I/O memory region
         Ok(MemoryBar {
