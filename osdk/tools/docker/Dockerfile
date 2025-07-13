@@ -40,7 +40,7 @@ RUN wget -O qemu.tar.xz https://download.qemu.org/qemu-10.0.2.tar.xz \
     && tar xf qemu.tar.xz --strip-components=1 -C /root/qemu \
     && rm qemu.tar.xz
 WORKDIR /root/qemu
-RUN ./configure --target-list=x86_64-softmmu,riscv64-softmmu --prefix=/usr/local/qemu --enable-slirp \
+RUN ./configure --target-list=x86_64-softmmu,riscv64-softmmu,loongarch64-softmmu --prefix=/usr/local/qemu --enable-slirp \
     && make -j \
     && make install
 WORKDIR /root
