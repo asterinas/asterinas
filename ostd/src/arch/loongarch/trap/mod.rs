@@ -2,6 +2,7 @@
 
 //! Handles trap.
 
+pub mod irq;
 mod trap;
 
 use core::arch::asm;
@@ -26,6 +27,7 @@ cpu_local_cell! {
 /// Initialize trap handling on LoongArch.
 pub unsafe fn init() {
     self::trap::init();
+    self::irq::init();
 }
 
 /// Returns true if this function is called within the context of an IRQ handler
@@ -99,7 +101,11 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
                 | Interrupt::HWI5
                 | Interrupt::HWI6
                 | Interrupt::HWI7 => {
-                    unimplemented!("Interrupt: {:?}", interrupt);
+                    log::info!("Handling hardware interrupt: {:?}", interrupt);
+                    while let Some(irq) = self::irq::claim() {
+                        // Call the IRQ callback functions for the claimed interrupt
+                        call_irq_callback_functions(f, irq as _);
+                    }
                 }
                 Interrupt::PMI => todo!(),
                 Interrupt::Timer => todo!(),
