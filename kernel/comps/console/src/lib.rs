@@ -3,7 +3,6 @@
 //! The console device of Asterinas.
 #![no_std]
 #![deny(unsafe_code)]
-#![feature(fn_traits)]
 
 extern crate alloc;
 
@@ -20,12 +19,12 @@ use spin::Once;
 pub type ConsoleCallback = dyn Fn(VmReader<Infallible>) + Send + Sync;
 
 pub trait AnyConsoleDevice: Send + Sync + Any + Debug {
+    /// Sends data to the console device.
     fn send(&self, buf: &[u8]);
-    /// Registers callback to the console device.
-    /// The callback will be called once the console device receive data.
+
+    /// Registers a callback that will be invoked when the console device receives data.
     ///
-    /// Since the callback will be called in interrupt context,
-    /// the callback should NEVER sleep.
+    /// The callback may be called in the interrupt context. Therefore, it should _never_ sleep.
     fn register_callback(&self, callback: &'static ConsoleCallback);
 }
 
@@ -34,19 +33,13 @@ pub fn register_device(name: String, device: Arc<dyn AnyConsoleDevice>) {
         .get()
         .unwrap()
         .console_device_table
-        .disable_irq()
         .lock()
         .insert(name, device);
 }
 
 pub fn all_devices() -> Vec<(String, Arc<dyn AnyConsoleDevice>)> {
-    let console_devs = COMPONENT
-        .get()
-        .unwrap()
-        .console_device_table
-        .disable_irq()
-        .lock();
-    console_devs
+    let console_devices = COMPONENT.get().unwrap().console_device_table.lock();
+    console_devices
         .iter()
         .map(|(name, device)| (name.clone(), device.clone()))
         .collect()
@@ -54,26 +47,21 @@ pub fn all_devices() -> Vec<(String, Arc<dyn AnyConsoleDevice>)> {
 
 pub fn all_devices_lock<'a>(
 ) -> SpinLockGuard<'a, BTreeMap<String, Arc<dyn AnyConsoleDevice>>, LocalIrqDisabled> {
-    COMPONENT
-        .get()
-        .unwrap()
-        .console_device_table
-        .disable_irq()
-        .lock()
+    COMPONENT.get().unwrap().console_device_table.lock()
 }
 
 static COMPONENT: Once<Component> = Once::new();
 
 #[init_component]
 fn component_init() -> Result<(), ComponentInitError> {
-    let a = Component::init()?;
-    COMPONENT.call_once(|| a);
+    let component = Component::init()?;
+    COMPONENT.call_once(|| component);
     Ok(())
 }
 
 #[derive(Debug)]
 struct Component {
-    console_device_table: SpinLock<BTreeMap<String, Arc<dyn AnyConsoleDevice>>>,
+    console_device_table: SpinLock<BTreeMap<String, Arc<dyn AnyConsoleDevice>>, LocalIrqDisabled>,
 }
 
 impl Component {
