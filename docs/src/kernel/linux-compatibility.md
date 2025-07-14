@@ -15,7 +15,7 @@ support the loading of Linux kernel modules.
 ## System Calls
 
 At the time of writing,
-Asterinas implements 214 out of the 336 system calls
+Asterinas implements 215 out of the 336 system calls
 provided by Linux on x86-64 architecture.
 
 | Numbers | Names            | Is Implemented  |

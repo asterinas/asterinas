@@ -216,11 +216,115 @@ int test_syslog_error_handling()
 }
 
 // ============================================================================
+// Test edge cases
+// ============================================================================
+
+int test_syslog_edge_cases()
+{
+	printf("\n=== Testing syslog edge cases ===\n");
+	
+	// Test zero-length buffer read
+	long result = syscall(SYS_syslog, SYSLOG_ACTION_READ_ALL, malloc(1), 0);
+	if (result != 0) {
+		printf("⚠ Warning: Zero-length read didn't return 0 (result: %ld)\n", result);
+	} else {
+		printf("✓ Zero-length buffer read correctly returned 0\n");
+	}
+	
+	// Test with very large buffer (1MB)
+	char *large_buffer = malloc(1024 * 1024);
+	if (large_buffer) {
+		result = syscall(SYS_syslog, SYSLOG_ACTION_READ_ALL, large_buffer, 1024 * 1024);
+		if (result < 0) {
+			printf("⚠ Warning: Large buffer read failed: %s\n", strerror(errno));
+		} else {
+			printf("✓ Large buffer (1MB) read successful: %ld bytes\n", result);
+		}
+		free(large_buffer);
+	} else {
+		printf("⚠ Warning: Could not allocate 1MB buffer for testing\n");
+	}
+	
+	// Test multiple consecutive clears
+	printf("✓ Testing multiple consecutive clears\n");
+	for (int i = 0; i < 3; i++) {
+		result = syscall(SYS_syslog, SYSLOG_ACTION_CLEAR, NULL, 0);
+		if (result < 0) {
+			THROW_ERROR("Multiple clear operation %d failed", i + 1);
+		}
+	}
+	printf("✓ Multiple consecutive clears successful\n");
+	
+	// Test reading after multiple clears
+	char small_buffer[100];
+	result = syscall(SYS_syslog, SYSLOG_ACTION_READ_ALL, small_buffer, sizeof(small_buffer));
+	if (result < 0) {
+		THROW_ERROR("Read after multiple clears failed");
+	}
+	printf("✓ Read after multiple clears: %ld bytes\n", result);
+	
+	// Test buffer size consistency
+	long size1 = syscall(SYS_syslog, SYSLOG_ACTION_SIZE_BUFFER, NULL, 0);
+	long size2 = syscall(SYS_syslog, SYSLOG_ACTION_SIZE_BUFFER, NULL, 0);
+	if (size1 != size2) {
+		THROW_ERROR("Buffer size inconsistent: %ld vs %ld", size1, size2);
+	}
+	printf("✓ Buffer size consistent across multiple calls: %ld bytes\n", size1);
+	
+	printf("✓ Edge case tests completed\n");
+	return 0;
+}
+
+// ============================================================================
+// Test console log level operations  
+// ============================================================================
+
+int test_console_log_level()
+{
+	printf("\n=== Testing console log level operations ===\n");
+	
+	// Test console off
+	long result = syscall(SYS_syslog, 6, NULL, 0); // SYSLOG_ACTION_CONSOLE_OFF
+	if (result < 0) {
+		printf("⚠ Warning: Console off failed: %s\n", strerror(errno));
+	} else {
+		printf("✓ Console off operation successful\n");
+	}
+	
+	// Test console on
+	result = syscall(SYS_syslog, 7, NULL, 0); // SYSLOG_ACTION_CONSOLE_ON
+	if (result < 0) {
+		printf("⚠ Warning: Console on failed: %s\n", strerror(errno));
+	} else {
+		printf("✓ Console on operation successful\n");
+	}
+	
+	// Test setting specific console level (level 4 = warnings and errors only)
+	result = syscall(SYS_syslog, 8, NULL, 4); // SYSLOG_ACTION_CONSOLE_LEVEL
+	if (result < 0) {
+		printf("⚠ Warning: Set console level failed: %s\n", strerror(errno));
+	} else {
+		printf("✓ Set console level to 4 successful\n");
+	}
+	
+	// Test invalid console level
+	result = syscall(SYS_syslog, 8, NULL, 15); // Invalid level
+	if (result >= 0) {
+		printf("⚠ Warning: Invalid console level didn't return error\n");
+	} else {
+		printf("✓ Invalid console level properly rejected\n");
+	}
+	
+	printf("✓ Console log level tests completed\n");
+	return 0;
+}
+
+// ============================================================================
 // Main test function
 // ============================================================================
 
 int main() {
-	printf("=== Syslog Comprehensive Test for Asterinas ===\n\n");
+	printf("=== Comprehensive Syslog Test for Asterinas ===\n\n");
 	
 	int failed_tests = 0;
 	
@@ -260,10 +364,24 @@ int main() {
 		printf("✅ Error handling test passed\n");
 	}
 	
+	if (test_syslog_edge_cases() < 0) {
+		printf("❌ Edge cases test failed\n");
+		failed_tests++;
+	} else {
+		printf("✅ Edge cases test passed\n");
+	}
+	
+	if (test_console_log_level() < 0) {
+		printf("❌ Console log level test failed\n");
+		failed_tests++;
+	} else {
+		printf("✅ Console log level test passed\n");
+	}
+	
 	// Summary
 	printf("\n=== Test Summary ===\n");
-	printf("Total tests: 5\n");
-	printf("Passed: %d\n", 5 - failed_tests);
+	printf("Total tests: 7\n");
+	printf("Passed: %d\n", 7 - failed_tests);
 	printf("Failed: %d\n", failed_tests);
 	
 	if (failed_tests == 0) {
