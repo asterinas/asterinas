@@ -25,7 +25,10 @@ pub enum QemuExitCode {
 /// `-device isa-debug-exit,iobase=0xf4,iosize=0x04`.
 pub fn exit_qemu(exit_code: QemuExitCode) -> ! {
     #[cfg(feature = "coverage")]
-    crate::coverage::dump_profraw();
+    {
+        let coverage = crate::coverage::dump_profraw();
+        crate::early_println!("#### Coverage: {:p} {}", coverage.as_ptr(), coverage.len());
+    }
 
     use x86_64::instructions::port::Port;
     let mut port = Port::new(0xf4);

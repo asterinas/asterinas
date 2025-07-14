@@ -245,8 +245,16 @@ fn build_kernel_elf(
     }
 
     const CFLAGS: &str = "CFLAGS_x86_64-unknown-none";
-    let env_cflags = std::env::var(CFLAGS).unwrap_or_default();
-    command.env(CFLAGS, env_cflags + " -fPIC");
+    let mut env_cflags = std::env::var(CFLAGS).unwrap_or_default();
+    env_cflags += " -fPIC";
+
+    if features.contains(&"coverage".to_string()) {
+        // This is a workaround for minicov <https://github.com/Amanieu/minicov/issues/29>,
+        // makes coverage work on x86_64-unknown-none.
+        env_cflags += " -D__linux__";
+    }
+
+    command.env(CFLAGS, env_cflags);
 
     info!("Building kernel ELF using command: {:#?}", command);
     info!("Building directory: {:?}", std::env::current_dir().unwrap());

@@ -38,16 +38,6 @@ It actually does several things:
    connection to QEMU to monitor its status. Once exit, it dumps the coverage data
    from guest's memory to `coverage.profraw`.
 
-**Note.** The code coverage feature of OSDK requires a non-default OSTD feature called
-`coverage`, which relies on dependencies that are not published on crates.io.
-To utilize this feature, projects must specify OSTD as a dependency using a Git
-repository or a local filesystem path in their `Cargo.toml`. For example:
-
-```toml
-[dependencies]
-ostd = { git = "https://github.com/asterinas/asterinas", rev = "v0.11.0", features = ["coverage"] }
-```
-
 See [Debug Command](debug.md) to interact with the GDB server in terminal.
 
 ## Examples

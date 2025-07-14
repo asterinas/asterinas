@@ -38,7 +38,7 @@ unwinding = { version = "=0.2.5", default-features = false, features = ["fde-gnu
 volatile = "0.6.1"
 bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
 
-minicov = { git = "https://github.com/asterinas/minicov", rev = "bd5454a", version = "0.3", optional = true }
+minicov = { version = "0.3", optional = true }
 
 [target.x86_64-unknown-none.dependencies]
 x86_64 = "0.14.13"
