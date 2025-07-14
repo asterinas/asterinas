@@ -152,6 +152,7 @@ mod statx;
 mod symlink;
 mod sync;
 mod sysinfo;
+mod syslog;
 mod tgkill;
 mod time;
 mod timer_create;
@@ -389,6 +390,12 @@ macro_rules! log_syscall_entry {
     };
 }
 
+// Export the syslog function for external use
+pub use syslog::add_to_kernel_log;
+
 pub(super) fn init() {
     uname::init();
+    // Register syslog callback for kernel log buffer integration
+    // This is done after thread system initialization to ensure sync primitives work properly
+    aster_logger::register_syslog_callback(add_to_kernel_log);
 }

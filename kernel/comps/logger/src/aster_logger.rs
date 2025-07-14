@@ -1,7 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::string::ToString;
 use log::{Metadata, Record};
-use ostd::timer::Jiffies;
+use ostd::{sync::SpinLock, timer::Jiffies};
+
+/// Callback function type for syslog integration
+pub type SyslogCallback = fn(level: log::Level, message: &str);
+
+/// Global syslog callback protected by spinlock
+static SYSLOG_CALLBACK: SpinLock<Option<SyslogCallback>> = SpinLock::new(None);
+
+/// Register a callback for syslog integration
+pub fn register_syslog_callback(callback: SyslogCallback) {
+    *SYSLOG_CALLBACK.lock() = Some(callback);
+}
 
 /// The logger used for Asterinas.
 struct AsterLogger;
@@ -15,6 +27,12 @@ impl log::Log for AsterLogger {
 
     fn log(&self, record: &Record) {
         let timestamp = Jiffies::elapsed().as_duration().as_secs_f64();
+        
+        // Add to syslog buffer if callback is registered
+        if let Some(callback) = *SYSLOG_CALLBACK.lock() {
+            callback(record.level(), &record.args().to_string());
+        }
+        
         print_logs(record, timestamp);
     }
 

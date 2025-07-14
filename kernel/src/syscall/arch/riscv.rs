@@ -141,6 +141,7 @@ use super::{
     wait4::sys_wait4,
     waitid::sys_waitid,
     write::sys_write,
+    syslog::sys_syslog,
 };
 
 impl_syscall_nums_and_dispatch_fn! {
@@ -309,4 +310,5 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_CLOSE_RANGE = 436      => sys_close_range(args[..3]);
     SYS_FACCESSAT2 = 439         => sys_faccessat2(args[..4]);
     SYS_EPOLL_PWAIT2 = 441       => sys_epoll_pwait2(args[..5]);
+    SYS_SYSLOG = 116             => sys_syslog(args[..3]);
 }

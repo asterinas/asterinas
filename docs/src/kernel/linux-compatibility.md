@@ -123,7 +123,7 @@ provided by Linux on x86-64 architecture.
 | 100     | times            | ❌              |
 | 101     | ptrace           | ❌              |
 | 102     | getuid           | ✅              |
-| 103     | syslog           | ❌              |
+| 103     | syslog           | ✅              |
 | 104     | getgid           | ✅              |
 | 105     | setuid           | ✅              |
 | 106     | setgid           | ✅              |

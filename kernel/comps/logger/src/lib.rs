@@ -22,6 +22,7 @@ mod aster_logger;
 mod console;
 
 pub use console::_print;
+pub use aster_logger::{register_syslog_callback, SyslogCallback};
 
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {
