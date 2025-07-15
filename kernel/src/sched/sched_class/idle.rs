@@ -50,7 +50,7 @@ impl SchedClassRq for IdleClassRq {
         self.entity.is_none()
     }
 
-    fn pick_next(&mut self) -> Option<Arc<Task>> {
+    fn pick_next(&mut self, _current: Option<&SchedAttr>) -> Option<Arc<Task>> {
         self.entity.take()
     }
 

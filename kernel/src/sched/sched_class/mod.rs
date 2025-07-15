@@ -115,8 +115,9 @@ trait SchedClassRq: Send + fmt::Debug {
         self.len() == 0
     }
 
-    /// Picks the next task for running.
-    fn pick_next(&mut self) -> Option<Arc<Task>>;
+    /// Picks the next runnable task with priority equal to or higher than the
+    /// priority of the current task, if any.
+    fn pick_next(&mut self, current: Option<&SchedAttr>) -> Option<Arc<Task>>;
 
     /// Update the information of the current task.
     fn update_current(&mut self, rt: &CurrentRuntime, attr: &SchedAttr, flags: UpdateFlags)
@@ -307,15 +308,35 @@ impl ClassScheduler {
 }
 
 impl PerCpuClassRqSet {
+    fn pick_next_task(&mut self) -> Option<Arc<Task>> {
+        let attr = self
+            .current
+            .as_ref()
+            .map(|((_, thread), _)| thread.sched_attr());
+        let policy_kind = attr.map(|attr| attr.policy_kind());
+
+        macro_rules! try_queue {
+            ($queue:ident, $policy:ident) => {{
+                let policy_kind_matched = policy_kind == Some(SchedPolicyKind::$policy);
+                let next = self.$queue.pick_next(attr.filter(|_| policy_kind_matched));
+                if policy_kind_matched || next.is_some() {
+                    return next;
+                }
+            }};
+        }
+
+        try_queue!(stop, Stop);
+        try_queue!(real_time, RealTime);
+        try_queue!(fair, Fair);
+        try_queue!(idle, Idle);
+        None
+    }
+
     fn pick_next_entity(&mut self) -> Option<SchedEntity> {
-        (self.stop.pick_next())
-            .or_else(|| self.real_time.pick_next())
-            .or_else(|| self.fair.pick_next())
-            .or_else(|| self.idle.pick_next())
-            .and_then(|task| {
-                let thread = task.as_thread()?.clone();
-                Some((task, thread))
-            })
+        self.pick_next_task().and_then(|task| {
+            let thread = task.as_thread()?.clone();
+            Some((task, thread))
+        })
     }
 
     fn enqueue_entity(&mut self, (task, thread): SchedEntity, flags: Option<EnqueueFlags>) {
