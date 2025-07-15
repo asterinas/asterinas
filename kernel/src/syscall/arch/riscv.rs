@@ -126,6 +126,7 @@ use super::{
     statx::sys_statx,
     symlink::sys_symlinkat,
     sync::sys_sync,
+    syslog::sys_syslog,
     tgkill::sys_tgkill,
     timer_create::{sys_timer_create, sys_timer_delete},
     timer_settime::{sys_timer_gettime, sys_timer_settime},
@@ -141,7 +142,6 @@ use super::{
     wait4::sys_wait4,
     waitid::sys_waitid,
     write::sys_write,
-    syslog::sys_syslog,
 };
 
 impl_syscall_nums_and_dispatch_fn! {
@@ -212,6 +212,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SETITIMER = 103          => sys_setitimer(args[..3]);
     SYS_TIMER_CREATE = 107       => sys_timer_create(args[..3]);
     SYS_TIMER_DELETE = 111       => sys_timer_delete(args[..1]);
+    SYS_SYSLOG = 116             => sys_syslog(args[..3]);
     SYS_SCHED_SETPARAM = 118     => sys_sched_setparam(args[..2]);
     SYS_SCHED_SETSCHEDULER = 119 => sys_sched_setscheduler(args[..3]);
     SYS_SCHED_GETSCHEDULER = 120 => sys_sched_getscheduler(args[..1]);
@@ -310,5 +311,4 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_CLOSE_RANGE = 436      => sys_close_range(args[..3]);
     SYS_FACCESSAT2 = 439         => sys_faccessat2(args[..4]);
     SYS_EPOLL_PWAIT2 = 441       => sys_epoll_pwait2(args[..5]);
-    SYS_SYSLOG = 116             => sys_syslog(args[..3]);
 }

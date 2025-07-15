@@ -6,15 +6,12 @@
 //! that supports kernel log buffer operations compatible with Linux's klogctl/syslog interface.
 
 use alloc::{format, vec::Vec};
-use spin::Once;
 
 use ostd::sync::SpinLock;
+use spin::Once;
 
 use super::SyscallReturn;
-use crate::{
-    prelude::*,
-    process::credentials::capabilities::CapSet,
-};
+use crate::{prelude::*, process::credentials::capabilities::CapSet};
 
 /// Syslog action constants (compatible with Linux)
 const SYSLOG_ACTION_CLOSE: i32 = 0;
@@ -38,14 +35,10 @@ const CONSOLE_LOGLEVEL_MAX: i32 = 8;
 const KERNEL_LOG_BUFFER_SIZE: usize = 65536; // 64KB buffer
 
 /// Kernel log priority levels (compatible with Linux)
-const KERN_EMERG: i32 = 0;    // Emergency messages
-const KERN_ALERT: i32 = 1;    // Alert messages  
-const KERN_CRIT: i32 = 2;     // Critical messages
-const KERN_ERR: i32 = 3;      // Error messages
-const KERN_WARNING: i32 = 4;  // Warning messages
-const KERN_NOTICE: i32 = 5;   // Notice messages
-const KERN_INFO: i32 = 6;     // Informational messages
-const KERN_DEBUG: i32 = 7;    // Debug messages
+const KERN_ERR: i32 = 3; // Error messages
+const KERN_WARNING: i32 = 4; // Warning messages
+const KERN_INFO: i32 = 6; // Informational messages
+const KERN_DEBUG: i32 = 7; // Debug messages
 
 /// Efficient circular kernel log buffer with corrected logic
 struct KernelLogBuffer {
@@ -64,8 +57,7 @@ struct KernelLogBuffer {
 impl KernelLogBuffer {
     /// Create a new kernel log buffer
     fn new() -> Self {
-        let mut buffer = Vec::with_capacity(KERNEL_LOG_BUFFER_SIZE);
-        buffer.resize(KERNEL_LOG_BUFFER_SIZE, 0);
+        let buffer = vec![0u8; KERNEL_LOG_BUFFER_SIZE];
         Self {
             buffer,
             start_pos: 0,
@@ -84,20 +76,20 @@ impl KernelLogBuffer {
         } else {
             data
         };
-        
+
         self.total_written += data.len();
-        
+
         for &byte in data {
             let write_pos = (self.start_pos + self.count) % self.buffer.len();
             self.buffer[write_pos] = byte;
-            
+
             if self.count < self.buffer.len() {
                 // Buffer not full, just increase count
                 self.count += 1;
             } else {
                 // Buffer is full, advance start_pos to overwrite oldest data
                 self.start_pos = (self.start_pos + 1) % self.buffer.len();
-                
+
                 // If read_pos was pointing to the data we just overwrote, advance it too
                 if self.read_pos == self.start_pos {
                     self.read_pos = (self.read_pos + 1) % self.buffer.len();
@@ -110,28 +102,28 @@ impl KernelLogBuffer {
     fn read_destructive(&mut self, buf: &mut [u8]) -> usize {
         let unread_count = self.unread_count();
         let to_read = core::cmp::min(buf.len(), unread_count);
-        
-        for i in 0..to_read {
+
+        for (i, item) in buf.iter_mut().enumerate().take(to_read) {
             // Calculate actual position in circular buffer
             let pos = (self.read_pos + i) % self.buffer.len();
-            buf[i] = self.buffer[pos];
+            *item = self.buffer[pos];
         }
-        
+
         // Update read position
         self.read_pos = (self.read_pos + to_read) % self.buffer.len();
-        
+
         to_read
     }
 
     /// Read all data from buffer (non-destructive)
     fn read_all(&self, buf: &mut [u8]) -> usize {
         let to_read = core::cmp::min(buf.len(), self.count);
-        
-        for i in 0..to_read {
+
+        for (i, item) in buf.iter_mut().enumerate().take(to_read) {
             let pos = (self.start_pos + i) % self.buffer.len();
-            buf[i] = self.buffer[pos];
+            *item = self.buffer[pos];
         }
-        
+
         to_read
     }
 
@@ -147,16 +139,16 @@ impl KernelLogBuffer {
     fn unread_size(&self) -> usize {
         self.unread_count()
     }
-    
+
     /// Helper: calculate unread count for destructive reads
     fn unread_count(&self) -> usize {
         if self.count == 0 {
             return 0;
         }
-        
+
         // Calculate how much data is available from read_pos to end of valid data
         let end_pos = (self.start_pos + self.count - 1) % self.buffer.len();
-        
+
         if end_pos >= self.read_pos {
             end_pos - self.read_pos + 1
         } else {
@@ -168,16 +160,6 @@ impl KernelLogBuffer {
     /// Get buffer capacity
     fn buffer_size(&self) -> usize {
         self.buffer.len()
-    }
-
-    /// Get buffer statistics (used_bytes, total_written, buffer_size)
-    pub fn get_stats(&self) -> (usize, usize, usize) {
-        (self.count, self.total_written, self.buffer.len())
-    }
-    
-    /// Check if buffer is full
-    pub fn is_full(&self) -> bool {
-        self.count == self.buffer.len()
     }
 }
 
@@ -192,26 +174,10 @@ fn get_kernel_log_buffer() -> &'static SpinLock<KernelLogBuffer> {
     KERNEL_LOG_BUFFER.call_once(|| SpinLock::new(KernelLogBuffer::new()))
 }
 
-/// Convert log level to console priority level
-fn log_level_to_console_level(level: log::Level) -> i32 {
-    match level {
-        log::Level::Error => KERN_ERR,
-        log::Level::Warn => KERN_WARNING,
-        log::Level::Info => KERN_INFO,
-        log::Level::Debug => KERN_DEBUG,
-        log::Level::Trace => KERN_DEBUG, // highest verbosity
-    }
-}
-
-/// Get current console log level (for use by logger)
-pub fn get_console_log_level() -> i32 {
-    aster_logger::get_console_log_level()
-}
-
 /// Add a message to the kernel log buffer
 pub fn add_to_kernel_log(level: log::Level, message: &str) {
     let mut buffer = get_kernel_log_buffer().lock();
-    
+
     // Add Linux kernel-style log level prefix
     let level_prefix = match level {
         log::Level::Error => format!("<{}>", KERN_ERR),
@@ -220,19 +186,22 @@ pub fn add_to_kernel_log(level: log::Level, message: &str) {
         log::Level::Debug => format!("<{}>", KERN_DEBUG),
         log::Level::Trace => format!("<{}>", KERN_DEBUG),
     };
-    
+
     // Use seconds.microseconds format
     let timestamp = ostd::timer::Jiffies::elapsed().as_duration();
     let secs = timestamp.as_secs();
     let micros = timestamp.subsec_micros();
-    
+
     let formatted = format!("{level_prefix}[{:>5}.{:06}] {}\n", secs, micros, message);
     buffer.append(formatted.as_bytes());
 }
 
 /// Main syslog syscall implementation
 pub fn sys_syslog(action: i32, buf_ptr: Vaddr, len: i32, ctx: &Context) -> Result<SyscallReturn> {
-    debug!("syslog: action={}, buf_ptr=0x{:x}, len={}", action, buf_ptr, len);
+    debug!(
+        "syslog: action={}, buf_ptr=0x{:x}, len={}",
+        action, buf_ptr, len
+    );
 
     // Check basic parameter validity
     if len < 0 {
@@ -244,7 +213,7 @@ pub fn sys_syslog(action: i32, buf_ptr: Vaddr, len: i32, ctx: &Context) -> Resul
             // These are no-ops in our implementation
             Ok(SyscallReturn::Return(0))
         }
-        
+
         SYSLOG_ACTION_READ => {
             check_syslog_permission_detailed(ctx, action)?;
             if len == 0 {
@@ -252,7 +221,7 @@ pub fn sys_syslog(action: i32, buf_ptr: Vaddr, len: i32, ctx: &Context) -> Resul
             }
             read_kernel_log(buf_ptr, len as usize, ctx, true)
         }
-        
+
         SYSLOG_ACTION_READ_ALL => {
             check_syslog_permission_detailed(ctx, action)?;
             if len == 0 {
@@ -260,7 +229,7 @@ pub fn sys_syslog(action: i32, buf_ptr: Vaddr, len: i32, ctx: &Context) -> Resul
             }
             read_kernel_log(buf_ptr, len as usize, ctx, false)
         }
-        
+
         SYSLOG_ACTION_READ_CLEAR => {
             check_syslog_permission_detailed(ctx, action)?;
             if len == 0 {
@@ -271,43 +240,43 @@ pub fn sys_syslog(action: i32, buf_ptr: Vaddr, len: i32, ctx: &Context) -> Resul
             clear_kernel_log();
             Ok(bytes_read)
         }
-        
+
         SYSLOG_ACTION_CLEAR => {
             check_syslog_permission_detailed(ctx, action)?;
             clear_kernel_log();
             Ok(SyscallReturn::Return(0))
         }
-        
+
         SYSLOG_ACTION_CONSOLE_OFF => {
             check_syslog_permission_detailed(ctx, action)?;
             set_console_log_level(CONSOLE_LOGLEVEL_MIN)
         }
-        
+
         SYSLOG_ACTION_CONSOLE_ON => {
             check_syslog_permission_detailed(ctx, action)?;
             set_console_log_level(CONSOLE_LOGLEVEL_DEFAULT)
         }
-        
+
         SYSLOG_ACTION_CONSOLE_LEVEL => {
             check_syslog_permission_detailed(ctx, action)?;
-            if len < CONSOLE_LOGLEVEL_MIN || len > CONSOLE_LOGLEVEL_MAX {
+            if !(CONSOLE_LOGLEVEL_MIN..=CONSOLE_LOGLEVEL_MAX).contains(&len) {
                 return_errno_with_message!(Errno::EINVAL, "invalid console log level");
             }
             set_console_log_level(len)
         }
-        
+
         SYSLOG_ACTION_SIZE_UNREAD => {
             check_syslog_permission_detailed(ctx, action)?;
             let size = get_unread_size();
             Ok(SyscallReturn::Return(size as isize))
         }
-        
+
         SYSLOG_ACTION_SIZE_BUFFER => {
             check_syslog_permission_detailed(ctx, action)?;
             let size = get_buffer_size();
             Ok(SyscallReturn::Return(size as isize))
         }
-        
+
         _ => return_errno_with_message!(Errno::EINVAL, "invalid syslog action"),
     }
 }
@@ -317,17 +286,17 @@ pub fn sys_syslog(action: i32, buf_ptr: Vaddr, len: i32, ctx: &Context) -> Resul
 fn check_syslog_permission_detailed(ctx: &Context, action: i32) -> Result<()> {
     let credentials = ctx.posix_thread.credentials();
     let effective_caps = credentials.effective_capset();
-    
+
     // Actions 3 (READ_ALL), 9 (SIZE_UNREAD) and 10 (SIZE_BUFFER) may allow non-privileged access
     // when dmesg_restrict is disabled
-    if action == SYSLOG_ACTION_READ_ALL 
-        || action == SYSLOG_ACTION_SIZE_UNREAD 
-        || action == SYSLOG_ACTION_SIZE_BUFFER {
-        if !*DMESG_RESTRICT.lock() {
-            return Ok(());
-        }
+    if (action == SYSLOG_ACTION_READ_ALL
+        || action == SYSLOG_ACTION_SIZE_UNREAD
+        || action == SYSLOG_ACTION_SIZE_BUFFER)
+        && !*DMESG_RESTRICT.lock()
+    {
+        return Ok(());
     }
-    
+
     // For other operations or when dmesg_restrict is enabled, require privileges
     if effective_caps.contains(CapSet::SYSLOG) || effective_caps.contains(CapSet::SYS_ADMIN) {
         Ok(())
@@ -337,7 +306,12 @@ fn check_syslog_permission_detailed(ctx: &Context, action: i32) -> Result<()> {
 }
 
 /// Read data from kernel log buffer
-fn read_kernel_log(buf_ptr: Vaddr, len: usize, ctx: &Context, destructive: bool) -> Result<SyscallReturn> {
+fn read_kernel_log(
+    buf_ptr: Vaddr,
+    len: usize,
+    ctx: &Context,
+    destructive: bool,
+) -> Result<SyscallReturn> {
     if buf_ptr == 0 {
         return_errno_with_message!(Errno::EFAULT, "null buffer pointer");
     }
@@ -385,4 +359,4 @@ fn get_unread_size() -> usize {
 fn get_buffer_size() -> usize {
     let buffer = get_kernel_log_buffer().lock();
     buffer.buffer_size()
-} 
+}

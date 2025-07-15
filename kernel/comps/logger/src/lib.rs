@@ -21,8 +21,10 @@ use component::{init_component, ComponentInitError};
 mod aster_logger;
 mod console;
 
+pub use aster_logger::{
+    get_console_log_level, register_syslog_callback, set_console_log_level, SyslogCallback,
+};
 pub use console::_print;
-pub use aster_logger::{register_syslog_callback, set_console_log_level, get_console_log_level, SyslogCallback};
 
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {

@@ -99,7 +99,8 @@ pub fn init() {
     time::init();
     // Initialize rootfs before device::init() since device nodes need the filesystem
     fs::rootfs::init(boot_info().initramfs.expect("No initramfs found!")).unwrap();
-    device::init();
+    device::init().unwrap();
+    #[cfg(target_arch = "x86_64")]
     net::init();
     sched::init();
     syscall::init();

@@ -398,7 +398,7 @@ pub(super) fn init() {
     // Register syslog callback for kernel log buffer integration
     // This is done after thread system initialization to ensure sync primitives work properly
     aster_logger::register_syslog_callback(add_to_kernel_log);
-    
+
     // Initialize console log level to default value
     aster_logger::set_console_log_level(7); // CONSOLE_LOGLEVEL_DEFAULT
 }
