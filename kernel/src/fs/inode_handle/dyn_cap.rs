@@ -4,7 +4,7 @@ use aster_rights::TRights;
 use inherit_methods_macro::inherit_methods;
 
 use super::*;
-use crate::{prelude::*, process::signal::Pollable};
+use crate::{fs::utils::Inode, prelude::*, process::signal::Pollable};
 
 impl InodeHandle<Rights> {
     pub fn new(dentry: Dentry, access_mode: AccessMode, status_flags: StatusFlags) -> Result<Self> {
@@ -37,6 +37,16 @@ impl InodeHandle<Rights> {
             status_flags: AtomicU32::new(status_flags.bits()),
         });
         Ok(Self(inner, Rights::from(access_mode)))
+    }
+
+    pub fn new_unchecked_access_with_inode(
+        inode: Arc<dyn Inode + 'static>,
+        name: &str,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Result<Self> {
+        let new_dentry = Dentry::new_with_inode(inode, name);
+        Self::new_unchecked_access(new_dentry, access_mode, status_flags)
     }
 
     pub fn to_static<R1: TRights>(self) -> Result<InodeHandle<R1>> {
