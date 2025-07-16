@@ -125,6 +125,7 @@ FROM build-base AS rust
 # Install all OSDK dependent packages
 RUN apt update \
     && apt install -y \
+    clang \
     curl \
     gdb \
     grub-efi-amd64 \
