@@ -2,7 +2,7 @@
 
 use aster_rights::WriteOp;
 use ostd::{
-    cpu::context::{FpuState, GeneralRegs, UserContext},
+    cpu::context::{FpuContext, GeneralRegs, UserContext},
     user::UserContextApi,
 };
 
@@ -144,6 +144,9 @@ fn do_execve(
     *thread_local.robust_list().borrow_mut() = None;
     debug!("load elf in execve succeeds");
 
+    // Reset FPU context
+    thread_local.fpu().set_context(FpuContext::new());
+
     let credentials = posix_thread.credentials_mut();
     set_uid_from_elf(process, &credentials, &elf_file)?;
     set_gid_from_elf(process, &credentials, &elf_file)?;
@@ -156,12 +159,6 @@ fn do_execve(
     // set cpu context to default
     *user_context.general_regs_mut() = GeneralRegs::default();
     user_context.set_tls_pointer(0);
-    *user_context.fpu_state_mut() = FpuState::default();
-    // FIXME: how to reset the FPU state correctly? Before returning to the user space,
-    // the kernel will call `handle_pending_signal`, which may update the CPU states so that
-    // when the kernel switches to the user mode, the control of the CPU will be handed over
-    // to the user-registered signal handlers.
-    user_context.fpu_state().restore();
     // set new entry point
     user_context.set_instruction_pointer(elf_load_info.entry_point as _);
     debug!("entry_point: 0x{:x}", elf_load_info.entry_point);

@@ -3,7 +3,7 @@
 use core::cell::{Cell, Ref, RefCell, RefMut};
 
 use aster_rights::Full;
-use ostd::{mm::Vaddr, sync::RwArc, task::CurrentTask};
+use ostd::{cpu::context::FpuContext, mm::Vaddr, sync::RwArc, task::CurrentTask};
 
 use super::RobustListHead;
 use crate::{fs::file_table::FileTable, process::signal::SigStack, vm::vmar::Vmar};
@@ -25,6 +25,10 @@ pub struct ThreadLocal {
     // Files.
     file_table: RefCell<Option<RwArc<FileTable>>>,
 
+    // User FPU context.
+    fpu_context: RefCell<FpuContext>,
+    fpu_state: Cell<FpuState>,
+
     // Signal.
     /// `ucontext` address for the signal handler.
     // FIXME: This field may be removed. For glibc applications with RESTORER flag set, the
@@ -40,6 +44,7 @@ impl ThreadLocal {
         clear_child_tid: Vaddr,
         root_vmar: Vmar<Full>,
         file_table: RwArc<FileTable>,
+        fpu_context: FpuContext,
     ) -> Self {
         Self {
             set_child_tid: Cell::new(set_child_tid),
@@ -49,6 +54,8 @@ impl ThreadLocal {
             file_table: RefCell::new(Some(file_table)),
             sig_context: Cell::new(None),
             sig_stack: RefCell::new(None),
+            fpu_context: RefCell::new(fpu_context),
+            fpu_state: Cell::new(FpuState::Unloaded),
         }
     }
 
@@ -82,6 +89,96 @@ impl ThreadLocal {
 
     pub fn sig_stack(&self) -> &RefCell<Option<SigStack>> {
         &self.sig_stack
+    }
+
+    pub fn fpu(&self) -> ThreadFpu<'_> {
+        ThreadFpu(self)
+    }
+}
+
+/// The current state of `ThreadFpu`.
+///
+/// - `Activated`: The FPU context is currently loaded onto the CPU and it must be loaded
+///   while the associated task is running. If preemption occurs in between, the context switch
+///   must load FPU context again.
+/// - `Loaded`: The FPU context is currently loaded onto the CPU. It may or may not still
+///   be loaded in CPU after a context switch.
+/// - `Unloaded`: The FPU context is not currently loaded onto the CPU.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FpuState {
+    Activated,
+    Loaded,
+    Unloaded,
+}
+
+/// The FPU information for the _current_ thread.
+///
+/// # Notes about kernel preemption
+///
+/// All the methods of `ThreadFpu` assume that preemption will not occur.
+/// This means that the FPU state will not change unexpectedly
+/// (e.g., changing from `Loaded` to `Unloaded`).
+///
+/// In the current architecture, this is always true because kernel
+/// preemption was never implemented. More importantly, we cannot implement
+/// kernel preemption without refactoring the `ThreadLocal` mechanism
+/// because `ThreadLocal` cannot be accessed in interrupt handlers for
+/// soundness reasons. But such access is necessary for the preempted
+/// schedule.
+///
+/// Therefore, we omit the preemption guards for better performance and
+/// defer preemption considerations to future work.
+pub struct ThreadFpu<'a>(&'a ThreadLocal);
+
+impl ThreadFpu<'_> {
+    pub fn activate(&self) {
+        match self.0.fpu_state.get() {
+            FpuState::Activated => return,
+            FpuState::Loaded => (),
+            FpuState::Unloaded => self.0.fpu_context.borrow_mut().load(),
+        }
+        self.0.fpu_state.set(FpuState::Activated);
+    }
+
+    pub fn deactivate(&self) {
+        if self.0.fpu_state.get() == FpuState::Activated {
+            self.0.fpu_state.set(FpuState::Loaded);
+        }
+    }
+
+    pub fn clone_context(&self) -> FpuContext {
+        match self.0.fpu_state.get() {
+            FpuState::Activated | FpuState::Loaded => {
+                let mut fpu_context = self.0.fpu_context.borrow_mut();
+                fpu_context.save();
+                fpu_context.clone()
+            }
+            FpuState::Unloaded => self.0.fpu_context.borrow().clone(),
+        }
+    }
+
+    pub fn set_context(&self, context: FpuContext) {
+        let _ = self.0.fpu_context.replace(context);
+        self.0.fpu_state.set(FpuState::Unloaded);
+    }
+
+    pub fn before_schedule(&self) {
+        match self.0.fpu_state.get() {
+            FpuState::Activated => {
+                self.0.fpu_context.borrow_mut().save();
+            }
+            FpuState::Loaded => {
+                self.0.fpu_context.borrow_mut().save();
+                self.0.fpu_state.set(FpuState::Unloaded);
+            }
+            FpuState::Unloaded => (),
+        }
+    }
+
+    pub fn after_schedule(&self) {
+        if self.0.fpu_state.get() == FpuState::Activated {
+            self.0.fpu_context.borrow_mut().load();
+        }
     }
 }
 
