@@ -113,6 +113,25 @@ impl ScanCode {
         self.0 == 0xE0
     }
 
+    fn extended_map(&self) -> Option<InputKey> {
+        let key = match self.0 & 0x7F {
+            0x1D => return None, // Right Ctrl
+            0x38 => return None, // Right Alt
+            0x47 => InputKey::Home,
+            0x48 => InputKey::UpArrow,
+            0x49 => InputKey::PageUp,
+            0x4B => InputKey::LeftArrow,
+            0x4D => InputKey::RightArrow,
+            0x4F => InputKey::End,
+            0x50 => InputKey::DownArrow,
+            0x51 => InputKey::PageDown,
+            0x52 => InputKey::Insert,
+            0x53 => InputKey::Delete,
+            _ => return None,
+        };
+        Some(key)
+    }
+
     fn plain_map(&self) -> Option<InputKey> {
         let key = match self.0 & 0x7F {
             0x01 => InputKey::Esc,
@@ -325,6 +344,7 @@ fn parse_inputkey() -> Option<(InputKey, KeyStatus)> {
     static CAPS_LOCK: AtomicBool = AtomicBool::new(false); // CapsLock key state
     static SHIFT_KEY: AtomicBool = AtomicBool::new(false); // Shift key pressed
     static CTRL_KEY: AtomicBool = AtomicBool::new(false); // Ctrl key pressed
+    static EXTENDED_KEY: AtomicBool = AtomicBool::new(false); // Extended key flag
 
     let Some(data) = I8042_CONTROLLER.get().unwrap().lock().receive_data() else {
         log::warn!("i8042 keyboard has no input data");
@@ -337,11 +357,16 @@ fn parse_inputkey() -> Option<(InputKey, KeyStatus)> {
         return None;
     }
 
-    // TODO: Handle the scancodes with extended byte (0xE0). It generates two
-    // different interrupts: the first containing 0xE0, the second containing
-    // the scancode.
+    // Handle the extension code.
     if code.is_extension() {
-        return InputKey::Ign;
+        EXTENDED_KEY.store(true, Ordering::Relaxed);
+        return None;
+    }
+
+    let is_extended = EXTENDED_KEY.load(Ordering::Relaxed);
+    if is_extended {
+        EXTENDED_KEY.store(false, Ordering::Relaxed);
+        return code.extended_map().map(|k| (k, code.key_status()));
     }
 
     let key_status = code.key_status();
