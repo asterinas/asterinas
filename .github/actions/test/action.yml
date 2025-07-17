@@ -31,7 +31,7 @@ inputs:
   
   # Test Parameters
   arch:
-    description: 'Architecture (x86_64/riscv64)'
+    description: 'Architecture (x86_64/riscv64/loongarch64)'
     required: false
   extra_blocklists:
     description: 'Extra blocklists directories'

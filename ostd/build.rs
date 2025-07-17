@@ -6,12 +6,12 @@ fn main() {
     // Only run this script for loongarch64 target architecture
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     if target_arch != "loongarch64" {
-        println!(
-            "cargo:warning=Skipping DTB generation for target architecture: {}",
-            target_arch
-        );
+        // Silently skip DTB generation for non-LoongArch targets
         return;
     }
+
+    println!("cargo:rerun-if-changed=build.rs"); // Ensure rerun when build.rs changes
+    println!("cargo:info=Generating DTB for LoongArch target");
 
     // The output directory: target/**/build/<crate-name>/out
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
@@ -43,4 +43,9 @@ fn main() {
     if !status.success() {
         panic!("QEMU failed to generate DTB: {:?}", status);
     }
+
+    println!(
+        "cargo:info=DTB successfully generated at {}",
+        dtb_path.display()
+    );
 }
