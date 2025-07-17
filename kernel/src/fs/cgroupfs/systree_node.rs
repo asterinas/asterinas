@@ -13,8 +13,6 @@ use aster_systree::{
 use inherit_methods_macro::inherit_methods;
 use ostd::mm::{VmReader, VmWriter};
 
-use crate::fs::manager::FsControl;
-
 /// The root of a cgroup hierarchy, serving as the entry point to
 /// the entire cgroup control system.
 ///
@@ -161,5 +159,3 @@ inherit_sys_branch_node!(CgroupNode, fields, {
         Ok(new_child)
     }
 });
-
-impl FsControl for CgroupSystem {}
