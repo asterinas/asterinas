@@ -47,7 +47,13 @@ endif
 all: build
 
 .PHONY: build
+ifeq ($(ARCH), loongarch64)
+build: $(EXT2_IMAGE) $(EXFAT_IMAGE)
+	@echo "For loongarch, we generate a fake initramfs to successfully test or build."
+	@touch $(INITRAMFS_IMAGE)
+else
 build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE)
+endif
 
 .PHONY: $(INITRAMFS_IMAGE)
 $(INITRAMFS_IMAGE): $(INITRAMFS)
@@ -152,10 +158,12 @@ nix_gc:
 	@nix-store --optimise
 
 $(EXT2_IMAGE):
+	@mkdir -p $(BUILD_DIR)
 	@dd if=/dev/zero of=$(EXT2_IMAGE) bs=2G count=1
 	@mke2fs $(EXT2_IMAGE)
 
 $(EXFAT_IMAGE):
+	@mkdir -p $(BUILD_DIR)
 	@fallocate -l 64M $(EXFAT_IMAGE)
 	@mkfs.exfat $(EXFAT_IMAGE)
 
