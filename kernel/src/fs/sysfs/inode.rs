@@ -7,8 +7,9 @@ use ostd::sync::RwLock;
 use crate::{
     fs::utils::{
         systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
-        FileSystem, Inode, InodeMode, Metadata,
+        FileSystem, Inode, InodeMode, InodeType, Metadata,
     },
+    prelude::*,
     Result,
 };
 
@@ -80,5 +81,9 @@ impl SysTreeInodeTy for SysFsInode {
 impl Inode for SysFsInode {
     fn fs(&self) -> Arc<dyn FileSystem> {
         super::singleton().clone()
+    }
+
+    fn create(&self, _name: &str, _type_: InodeType, _mode: InodeMode) -> Result<Arc<dyn Inode>> {
+        Err(Error::new(Errno::EPERM))
     }
 }
