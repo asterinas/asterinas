@@ -11,6 +11,7 @@ ostd = { path = "../../../ostd" }
 bitflags = "2.5"
 log = "0.4"
 spin = "0.9.4"
+aster-input = { path = "../input" }
 
 [lints]
 workspace = true

@@ -4,6 +4,7 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use aster_input::key::KeyStatus;
 use ostd::{
     arch::{
         kernel::{MappedIrqLine, IRQ_CHIP},
@@ -63,7 +64,10 @@ fn handle_keyboard_input(_trap_frame: &TrapFrame) {
         return;
     }
 
-    let key = parse_inputkey();
+    let Some((key, KeyStatus::Pressed)) = parse_inputkey() else {
+        // Only trigger callbacks for key press events.
+        return;
+    };
     for callback in KEYBOARD_CALLBACKS.lock().iter() {
         callback(key);
     }
@@ -81,12 +85,12 @@ impl ScanCode {
         self.0 == 0xFF
     }
 
-    fn is_pressed(&self) -> bool {
-        self.0 & 0x80 == 0
-    }
-
-    fn is_released(&self) -> bool {
-        self.0 & 0x80 != 0
+    fn key_status(&self) -> KeyStatus {
+        if self.0 & 0x80 == 0 {
+            KeyStatus::Pressed
+        } else {
+            KeyStatus::Released
+        }
     }
 
     fn is_shift(&self) -> bool {
@@ -109,8 +113,8 @@ impl ScanCode {
         self.0 == 0xE0
     }
 
-    fn plain_map(&self) -> InputKey {
-        match self.0 & 0x7F {
+    fn plain_map(&self) -> Option<InputKey> {
+        let key = match self.0 & 0x7F {
             0x01 => InputKey::Esc,
             0x02 => InputKey::One,
             0x03 => InputKey::Two,
@@ -138,8 +142,8 @@ impl ScanCode {
             0x19 => InputKey::LowercaseP,
             0x1A => InputKey::LeftBracket,
             0x1B => InputKey::RightBracket,
-            0x1C => InputKey::Cr,  // Enter
-            0x1D => InputKey::Ign, // Left Ctrl
+            0x1C => InputKey::Cr, // Enter
+            0x1D => return None,  // Left Ctrl
             0x1E => InputKey::LowercaseA,
             0x1F => InputKey::LowercaseS,
             0x20 => InputKey::LowercaseD,
@@ -152,7 +156,7 @@ impl ScanCode {
             0x27 => InputKey::SemiColon,
             0x28 => InputKey::SingleQuote,
             0x29 => InputKey::Backtick,
-            0x2A => InputKey::Ign, // Left Shift
+            0x2A => return None, // Left Shift
             0x2B => InputKey::BackSlash,
             0x2C => InputKey::LowercaseZ,
             0x2D => InputKey::LowercaseX,
@@ -164,11 +168,11 @@ impl ScanCode {
             0x33 => InputKey::Comma,
             0x34 => InputKey::Period,
             0x35 => InputKey::ForwardSlash,
-            0x36 => InputKey::Ign,      // Right Shift
+            0x36 => return None,        // Right Shift
             0x37 => InputKey::Asterisk, // Keypad-* or (*/PrtScn) on a 83/84-key keyboard
-            0x38 => InputKey::Ign,      // Left Alt
+            0x38 => return None,        // Left Alt
             0x39 => InputKey::Space,
-            0x3A => InputKey::Ign, // CapsLock
+            0x3A => return None, // CapsLock
             0x3B => InputKey::F1,
             0x3C => InputKey::F2,
             0x3D => InputKey::F3,
@@ -179,8 +183,8 @@ impl ScanCode {
             0x42 => InputKey::F8,
             0x43 => InputKey::F9,
             0x44 => InputKey::F10,
-            0x45 => InputKey::Ign,        // NumLock
-            0x46 => InputKey::Ign,        // ScrollLock
+            0x45 => return None,          // NumLock
+            0x46 => return None,          // ScrollLock
             0x47 => InputKey::Home,       // Keypad-7 or Home
             0x48 => InputKey::UpArrow,    // Keypad-8 or Up
             0x49 => InputKey::PageUp,     // Keypad-9 or PageUp
@@ -196,12 +200,13 @@ impl ScanCode {
             0x53 => InputKey::Delete,     // Keypad-. or Del
             0x57 => InputKey::F11,
             0x58 => InputKey::F12,
-            _ => InputKey::Ign,
-        }
+            _ => return None,
+        };
+        Some(key)
     }
 
-    fn shift_map(&self) -> InputKey {
-        match self.0 & 0x7F {
+    fn shift_map(&self) -> Option<InputKey> {
+        let key = match self.0 & 0x7F {
             0x01 => InputKey::Esc,
             0x02 => InputKey::Exclamation,
             0x03 => InputKey::At,
@@ -254,12 +259,13 @@ impl ScanCode {
             0x34 => InputKey::GreaterThan,
             0x35 => InputKey::Question,
             0x39 => InputKey::Space,
-            _ => InputKey::Ign,
-        }
+            _ => return None,
+        };
+        Some(key)
     }
 
-    fn ctrl_map(&self) -> InputKey {
-        match self.0 & 0x7F {
+    fn ctrl_map(&self) -> Option<InputKey> {
+        let key = match self.0 & 0x7F {
             0x02 => InputKey::One,
             0x03 => InputKey::Nul,
             0x04 => InputKey::Esc,
@@ -309,25 +315,26 @@ impl ScanCode {
             0x33 => InputKey::Comma,
             0x34 => InputKey::Period,
             0x35 => InputKey::Us,
-            _ => InputKey::Ign,
-        }
+            _ => return None,
+        };
+        Some(key)
     }
 }
 
-fn parse_inputkey() -> InputKey {
+fn parse_inputkey() -> Option<(InputKey, KeyStatus)> {
     static CAPS_LOCK: AtomicBool = AtomicBool::new(false); // CapsLock key state
     static SHIFT_KEY: AtomicBool = AtomicBool::new(false); // Shift key pressed
     static CTRL_KEY: AtomicBool = AtomicBool::new(false); // Ctrl key pressed
 
     let Some(data) = I8042_CONTROLLER.get().unwrap().lock().receive_data() else {
         log::warn!("i8042 keyboard has no input data");
-        return InputKey::Ign;
+        return None;
     };
 
     let code = ScanCode(data);
     if code.has_error() {
         log::warn!("i8042 keyboard key detection error or internal buffer overrun");
-        return InputKey::Ign;
+        return None;
     }
 
     // TODO: Handle the scancodes with extended byte (0xE0). It generates two
@@ -337,44 +344,46 @@ fn parse_inputkey() -> InputKey {
         return InputKey::Ign;
     }
 
+    let key_status = code.key_status();
+
     // Handle the Ctrl key, holds the state.
     if code.is_ctrl() {
-        if code.is_pressed() {
+        if key_status == KeyStatus::Pressed {
             CTRL_KEY.store(true, Ordering::Relaxed);
         } else {
             CTRL_KEY.store(false, Ordering::Relaxed);
         }
-        return InputKey::Ign;
+        return None;
     }
 
     // Handle the Shift key, holds the state.
     if code.is_shift() {
-        if code.is_pressed() {
+        if key_status == KeyStatus::Pressed {
             SHIFT_KEY.store(true, Ordering::Relaxed);
         } else {
             SHIFT_KEY.store(false, Ordering::Relaxed);
         }
-        return InputKey::Ign;
+        return None;
     }
 
-    // Ignore other release events.
-    if code.is_released() {
-        return InputKey::Ign;
-    }
-
+    // Handle the CapsLock key, flips the state.
     if code.is_caps_lock() {
-        CAPS_LOCK.fetch_xor(true, Ordering::Relaxed);
-        return InputKey::Ign;
+        if key_status == KeyStatus::Pressed {
+            CAPS_LOCK.fetch_xor(true, Ordering::Relaxed);
+        }
+        return None;
     }
 
     let ctrl_key = CTRL_KEY.load(Ordering::Relaxed);
     let shift_key = SHIFT_KEY.load(Ordering::Relaxed);
     let caps_lock = CAPS_LOCK.load(Ordering::Relaxed);
-    if ctrl_key {
+    let key = if ctrl_key {
         code.ctrl_map()
     } else if shift_key ^ caps_lock {
         code.shift_map()
     } else {
         code.plain_map()
-    }
+    };
+
+    key.map(|k| (k, key_status))
 }
