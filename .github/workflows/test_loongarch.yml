@@ -1,0 +1,27 @@
+name: "Test loongarch64  "
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  basic-test:
+    runs-on: ubuntu-latest
+    container:
+      image: asterinas/asterinas:0.15.2-20250722
+      options: --device=/dev/kvm --privileged
+    strategy:
+      matrix:
+        id: ['lint', 'compile']
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run basic tests
+        uses: ./.github/actions/test
+        with:
+          auto_test: 'general'
+          runs_on: 'ubuntu-latest'
+          arch: 'loongarch64'
