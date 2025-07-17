@@ -13,6 +13,7 @@ use crate::{
     device::PtyMaster,
     fs::{
         device::{Device, DeviceId, DeviceType},
+        registry::{FsProperties, FsType},
         utils::{
             DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
             SuperBlock, NAME_MAX,
@@ -102,6 +103,36 @@ impl FileSystem for DevPts {
     fn flags(&self) -> FsFlags {
         FsFlags::empty()
     }
+}
+
+struct DevPtsType;
+
+impl FsType for DevPtsType {
+    fn name(&self) -> &'static str {
+        "devpts"
+    }
+
+    fn create(
+        &self,
+        _args: Option<CString>,
+        _disk: Option<Arc<dyn aster_block::BlockDevice>>,
+        _ctx: &Context,
+    ) -> Result<Arc<dyn FileSystem>> {
+        Ok(DevPts::new())
+    }
+
+    fn properties(&self) -> FsProperties {
+        FsProperties::empty()
+    }
+
+    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysBranchNode>> {
+        None
+    }
+}
+
+pub(super) fn init() {
+    let devpts_type = Arc::new(DevPtsType);
+    super::registry::register(devpts_type).unwrap();
 }
 
 struct RootInode {

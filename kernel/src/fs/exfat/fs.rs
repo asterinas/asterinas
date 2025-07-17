@@ -25,6 +25,7 @@ use super::{
 use crate::{
     fs::{
         exfat::{constants::*, inode::Ino},
+        registry::{FsProperties, FsType},
         utils::{CachePage, FileSystem, FsFlags, Inode, PageCache, PageCacheBackend, SuperBlock},
     },
     prelude::*,
@@ -448,4 +449,29 @@ pub struct ExfatMountOptions {
     pub(super) keep_last_dots: bool,
     pub(super) time_offset: i32,
     pub(super) zero_size_dir: bool,
+}
+
+pub(super) struct ExfatType;
+
+impl FsType for ExfatType {
+    fn name(&self) -> &'static str {
+        "exfat"
+    }
+
+    fn create(
+        &self,
+        _args: Option<CString>,
+        disk: Option<Arc<dyn BlockDevice>>,
+        ctx: &Context,
+    ) -> Result<Arc<dyn FileSystem>> {
+        ExfatFS::open(disk.unwrap(), ExfatMountOptions::default()).map(|fs| fs as _)
+    }
+
+    fn properties(&self) -> FsProperties {
+        FsProperties::NEED_DISK
+    }
+
+    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysBranchNode>> {
+        None
+    }
 }

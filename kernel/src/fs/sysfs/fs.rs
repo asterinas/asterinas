@@ -4,10 +4,14 @@ use alloc::sync::Arc;
 
 use aster_systree::singleton as systree_singleton;
 
-use crate::fs::{
-    sysfs::inode::SysFsInode,
-    utils::{systree_inode::SysTreeInodeTy, FileSystem, FsFlags, Inode, SuperBlock},
-    Result,
+use crate::{
+    fs::{
+        registry::{FsProperties, FsType},
+        sysfs::inode::SysFsInode,
+        utils::{systree_inode::SysTreeInodeTy, FileSystem, FsFlags, Inode, SuperBlock},
+        Result,
+    },
+    prelude::*,
 };
 
 /// A file system for exposing kernel information to the user space.
@@ -50,5 +54,35 @@ impl FileSystem for SysFs {
 
     fn flags(&self) -> FsFlags {
         FsFlags::empty()
+    }
+}
+
+pub(super) struct SysFsType;
+
+impl FsType for SysFsType {
+    fn name(&self) -> &'static str {
+        "sysfs"
+    }
+
+    fn properties(&self) -> FsProperties {
+        FsProperties::empty()
+    }
+
+    fn create(
+        &self,
+        _args: Option<CString>,
+        _disk: Option<Arc<dyn aster_block::BlockDevice>>,
+        _ctx: &Context,
+    ) -> Result<Arc<dyn FileSystem>> {
+        if super::SYSFS_SINGLETON.is_completed() {
+            return_errno_with_message!(Errno::EBUSY, "the sysfs has been created");
+        }
+
+        super::SYSFS_SINGLETON.call_once(SysFs::new);
+        Ok(super::singleton().clone())
+    }
+
+    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysBranchNode>> {
+        None
     }
 }

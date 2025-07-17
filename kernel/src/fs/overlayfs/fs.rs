@@ -18,7 +18,9 @@ use ostd::mm::{FrameAllocOptions, UntypedMem};
 use crate::{
     fs::{
         device::Device,
+        fs_resolver::{FsPath, AT_FDCWD},
         path::Dentry,
+        registry::{FsProperties, FsType},
         utils::{
             DirentCounter, DirentVisitor, FallocMode, FileSystem, FsFlags, Inode, InodeMode,
             InodeType, IoctlCmd, Metadata, MknodType, SuperBlock, XattrName, XattrNamespace,
@@ -1103,6 +1105,76 @@ pub struct OverlayConfig {
 
 // TODO: Complete the super block struct.
 struct OverlaySB;
+
+pub(super) struct OverlayFsType;
+
+impl FsType for OverlayFsType {
+    fn name(&self) -> &'static str {
+        "overlay"
+    }
+
+    fn create(
+        &self,
+        args: Option<CString>,
+        _disk: Option<Arc<dyn aster_block::BlockDevice>>,
+        ctx: &Context,
+    ) -> Result<Arc<dyn FileSystem>> {
+        let mut lower = Vec::new();
+        let mut upper = "";
+        let mut work = "";
+
+        let args = args.ok_or(Error::new(Errno::EINVAL))?;
+        let args = args.to_string_lossy();
+        let entries = args.split(',');
+
+        for entry in entries {
+            let mut parts = entry.split('=');
+            match (parts.next(), parts.next()) {
+                // Handle lowerdir, split by ':'
+                (Some("upperdir"), Some(path)) => {
+                    if path.is_empty() {
+                        return_errno_with_message!(Errno::ENOENT, "upperdir is empty");
+                    }
+                    upper = path;
+                }
+                (Some("lowerdir"), Some(paths)) => {
+                    for path in paths.split(':') {
+                        if path.is_empty() {
+                            return_errno_with_message!(Errno::ENOENT, "lowerdir is empty");
+                        }
+                        lower.push(path);
+                    }
+                }
+                (Some("workdir"), Some(path)) => {
+                    if path.is_empty() {
+                        return_errno_with_message!(Errno::ENOENT, "workdir is empty");
+                    }
+                    work = path;
+                }
+                _ => (),
+            }
+        }
+
+        let fs = ctx.posix_thread.fs().resolver().read();
+
+        let upper = fs.lookup(&FsPath::new(AT_FDCWD, upper)?)?;
+        let lower = lower
+            .iter()
+            .map(|lower| fs.lookup(&FsPath::new(AT_FDCWD, lower).unwrap()).unwrap())
+            .collect();
+        let work = fs.lookup(&FsPath::new(AT_FDCWD, work)?)?;
+
+        OverlayFS::new(upper, lower, work).map(|fs| fs as _)
+    }
+
+    fn properties(&self) -> FsProperties {
+        FsProperties::empty()
+    }
+
+    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysBranchNode>> {
+        None
+    }
+}
 
 // TODO: Enrich the tests to cover more cases.
 #[cfg(ktest)]

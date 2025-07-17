@@ -2,8 +2,6 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use filesystems::{FileSystemType, FILESYSTEM_TYPES};
-
 use self::{
     cpuinfo::CpuInfoFileOps,
     loadavg::LoadAvgFileOps,
@@ -18,6 +16,7 @@ use crate::{
     events::Observer,
     fs::{
         procfs::filesystems::FileSystemsFileOps,
+        registry::{FsProperties, FsType},
         utils::{DirEntryVecExt, FileSystem, FsFlags, Inode, SuperBlock, NAME_MAX},
     },
     prelude::*,
@@ -38,15 +37,8 @@ mod template;
 mod thread_self;
 
 pub(super) fn init() {
-    FILESYSTEM_TYPES.call_once(|| {
-        vec![
-            FileSystemType::new("proc", true),
-            FileSystemType::new("ramfs", true),
-            FileSystemType::new("devpts", true),
-            FileSystemType::new("ext2", false),
-            FileSystemType::new("exfat", false),
-        ]
-    });
+    let procfs_type = Arc::new(ProcFsType);
+    super::registry::register(procfs_type).unwrap();
 }
 
 /// Magic number.
@@ -91,6 +83,31 @@ impl FileSystem for ProcFS {
 
     fn flags(&self) -> FsFlags {
         FsFlags::empty()
+    }
+}
+
+struct ProcFsType;
+
+impl FsType for ProcFsType {
+    fn name(&self) -> &'static str {
+        "proc"
+    }
+
+    fn create(
+        &self,
+        _args: Option<CString>,
+        _disk: Option<Arc<dyn aster_block::BlockDevice>>,
+        _ctx: &Context,
+    ) -> Result<Arc<dyn FileSystem>> {
+        Ok(ProcFS::new())
+    }
+
+    fn properties(&self) -> FsProperties {
+        FsProperties::empty()
+    }
+
+    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysBranchNode>> {
+        None
     }
 }
 

@@ -34,7 +34,6 @@ impl Read for BoxedReader<'_> {
 /// Unpack and prepare the rootfs from the initramfs CPIO buffer.
 pub fn init(initramfs_buf: &[u8]) -> Result<()> {
     init_root_mount();
-    procfs::init();
 
     let reader = {
         let mut initramfs_suffix = "";
