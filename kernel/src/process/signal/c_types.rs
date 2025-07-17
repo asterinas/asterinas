@@ -6,10 +6,12 @@
 use core::mem::{self, size_of};
 
 use aster_util::read_union_field;
+use inherit_methods_macro::inherit_methods;
+use ostd::cpu::context::UserContext;
 
 use super::sig_num::SigNum;
 use crate::{
-    arch::cpu::GpRegs,
+    arch::cpu::SigContext,
     prelude::*,
     process::{Pid, Uid},
 };
@@ -157,7 +159,8 @@ union siginfo_addr_bnd_t {
     upper: Vaddr, // *const c_void,
 }
 
-#[derive(Clone, Copy, Debug, Pod)]
+#[cfg(target_arch = "x86_64")]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 #[repr(C)]
 pub struct ucontext_t {
     pub uc_flags: u64,
@@ -165,18 +168,26 @@ pub struct ucontext_t {
     pub uc_stack: stack_t,
     pub uc_mcontext: mcontext_t,
     pub uc_sigmask: sigset_t,
-    pub fpregs: [u8; 64 * 8], //fxsave structure
 }
 
+#[cfg(target_arch = "riscv64")]
+#[derive(Clone, Copy, Debug, Pod)]
+#[repr(C)]
+pub struct ucontext_t {
+    pub uc_flags: u64,
+    pub uc_link: Vaddr, // *mut ucontext_t
+    pub uc_stack: stack_t,
+    pub uc_sigmask: sigset_t,
+    pub __unused: [u8; 120],
+    pub uc_mcontext: mcontext_t,
+}
+
+#[cfg(target_arch = "riscv64")]
 impl Default for ucontext_t {
     fn default() -> Self {
         Self {
-            uc_flags: Default::default(),
-            uc_link: Default::default(),
-            uc_stack: Default::default(),
-            uc_mcontext: Default::default(),
-            uc_sigmask: Default::default(),
-            fpregs: [0u8; 64 * 8],
+            __unused: [0; 120],
+            ..Default::default()
         }
     }
 }
@@ -194,20 +205,17 @@ pub struct sigaltstack_t {
 #[derive(Debug, Clone, Copy, Pod, Default)]
 #[repr(C)]
 pub struct mcontext_t {
-    pub inner: SignalCpuContext,
-    // TODO: the fields should be csgsfs, err, trapno, oldmask, and cr2
-    _unused0: [u64; 5],
-    // TODO: this field should be `fpregs: fpregset_t,`
-    _unused1: usize,
-    _reserved: [u64; 8],
+    inner: SigContext,
 }
 
-#[derive(Debug, Clone, Copy, Pod, Default)]
-#[repr(C)]
-pub struct SignalCpuContext {
-    pub gp_regs: GpRegs,
-    pub fpregs_on_heap: u64,
-    pub fpregs: Vaddr, // *mut FpRegs,
+#[inherit_methods(from = "self.inner")]
+impl mcontext_t {
+    pub fn copy_user_regs_to(&self, context: &mut UserContext);
+    pub fn copy_user_regs_from(&mut self, context: &UserContext);
+    #[cfg(target_arch = "x86_64")]
+    pub fn fpu_context_addr(&self) -> Vaddr;
+    #[cfg(target_arch = "x86_64")]
+    pub fn set_fpu_context_addr(&mut self, addr: Vaddr);
 }
 
 #[derive(Clone, Copy, Pod)]

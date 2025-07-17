@@ -4,6 +4,8 @@ use alloc::{format, string::String};
 
 use ostd::{
     cpu::context::{CpuExceptionInfo, GeneralRegs, UserContext},
+    mm::Vaddr,
+    user::UserContextApi,
     Pod,
 };
 
@@ -46,47 +48,8 @@ impl LinuxAbi for UserContext {
     }
 }
 
-/// General-purpose registers.
-#[derive(Debug, Clone, Copy, Pod, Default)]
-#[repr(C)]
-pub struct GpRegs {
-    pub zero: usize,
-    pub ra: usize,
-    pub sp: usize,
-    pub gp: usize,
-    pub tp: usize,
-    pub t0: usize,
-    pub t1: usize,
-    pub t2: usize,
-    pub s0: usize,
-    pub s1: usize,
-    pub a0: usize,
-    pub a1: usize,
-    pub a2: usize,
-    pub a3: usize,
-    pub a4: usize,
-    pub a5: usize,
-    pub a6: usize,
-    pub a7: usize,
-    pub s2: usize,
-    pub s3: usize,
-    pub s4: usize,
-    pub s5: usize,
-    pub s6: usize,
-    pub s7: usize,
-    pub s8: usize,
-    pub s9: usize,
-    pub s10: usize,
-    pub s11: usize,
-    pub t3: usize,
-    pub t4: usize,
-    pub t5: usize,
-    pub t6: usize,
-}
-
 macro_rules! copy_gp_regs {
     ($src: ident, $dst: ident) => {
-        $dst.zero = $src.zero;
         $dst.ra = $src.ra;
         $dst.sp = $src.sp;
         $dst.gp = $src.gp;
@@ -121,13 +84,60 @@ macro_rules! copy_gp_regs {
     };
 }
 
-impl GpRegs {
-    pub fn copy_to_raw(&self, dst: &mut GeneralRegs) {
-        copy_gp_regs!(self, dst);
+/// Represents the context of a signal handler.
+///
+/// This contains the context saved before a signal handler is invoked and restored by `sys_rt_sigreturn`.
+#[repr(C)]
+#[repr(align(16))]
+#[derive(Clone, Copy, Debug, Default, Pod)]
+pub struct SigContext {
+    pc: usize,
+    ra: usize,
+    sp: usize,
+    gp: usize,
+    tp: usize,
+    t0: usize,
+    t1: usize,
+    t2: usize,
+    s0: usize,
+    s1: usize,
+    a0: usize,
+    a1: usize,
+    a2: usize,
+    a3: usize,
+    a4: usize,
+    a5: usize,
+    a6: usize,
+    a7: usize,
+    s2: usize,
+    s3: usize,
+    s4: usize,
+    s5: usize,
+    s6: usize,
+    s7: usize,
+    s8: usize,
+    s9: usize,
+    s10: usize,
+    s11: usize,
+    t3: usize,
+    t4: usize,
+    t5: usize,
+    t6: usize,
+    // In RISC-V, the signal stack layout places the FPU context directly
+    // after the general-purpose registers.
+}
+
+impl SigContext {
+    pub fn copy_user_regs_to(&self, dst: &mut UserContext) {
+        let gp_regs = dst.general_regs_mut();
+        copy_gp_regs!(self, gp_regs);
+        dst.set_instruction_pointer(self.pc);
     }
 
-    pub fn copy_from_raw(&mut self, src: &GeneralRegs) {
-        copy_gp_regs!(src, self);
+    pub fn copy_user_regs_from(&mut self, src: &UserContext) {
+        let gp_regs = src.general_regs();
+        copy_gp_regs!(gp_regs, self);
+        self.pc = src.instruction_pointer();
     }
 }
 

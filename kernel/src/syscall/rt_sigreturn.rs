@@ -2,7 +2,10 @@
 
 use core::sync::atomic::Ordering;
 
-use ostd::{cpu::context::UserContext, user::UserContextApi};
+use ostd::{
+    cpu::context::{FpuContext, UserContext},
+    user::UserContextApi,
+};
 
 use super::SyscallReturn;
 use crate::{prelude::*, process::signal::c_types::ucontext_t};
@@ -41,11 +44,24 @@ pub fn sys_rt_sigreturn(ctx: &Context, user_ctx: &mut UserContext) -> Result<Sys
     } else {
         thread_local.sig_context().set(Some(ucontext.uc_link));
     };
-    ucontext
-        .uc_mcontext
-        .inner
-        .gp_regs
-        .copy_to_raw(user_ctx.general_regs_mut());
+    ucontext.uc_mcontext.copy_user_regs_to(user_ctx);
+
+    // Restore FPU context on stack
+    cfg_if::cfg_if! {
+        if #[cfg(target_arch = "x86_64")] {
+            let fpu_context_addr = ucontext.uc_mcontext.fpu_context_addr();
+        } else if #[cfg(target_arch = "riscv64")] {
+            // In RISC-V, FPU context is placed directly after `ucontext_t` on signal stack.
+            let fpu_context_addr = sig_context_addr + size_of::<ucontext_t>();
+        } else {
+            compile_error!("unsupported target");
+        }
+    }
+    let mut fpu_context = FpuContext::new();
+    let mut fpu_context_writer = VmWriter::from(fpu_context.as_bytes_mut());
+    ctx.user_space()
+        .read_bytes(fpu_context_addr, &mut fpu_context_writer)?;
+    ctx.thread_local.fpu().set_context(fpu_context);
 
     // unblock sig mask
     let sig_mask = ucontext.uc_sigmask;

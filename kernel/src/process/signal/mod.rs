@@ -19,7 +19,10 @@ use align_ext::AlignExt;
 use c_types::{siginfo_t, ucontext_t};
 use constants::SIGSEGV;
 pub use events::{SigEvents, SigEventsFilter};
-use ostd::{cpu::context::UserContext, user::UserContextApi};
+use ostd::{
+    cpu::context::{FpuContext, UserContext},
+    user::UserContextApi,
+};
 pub use pause::{with_sigmask_changed, Pause};
 pub use poll::{PollAdaptor, PollHandle, Pollable, Pollee, Poller};
 use sig_action::{SigAction, SigActionFlags, SigDefaultAction};
@@ -197,31 +200,65 @@ pub fn handle_user_signal(
     let siginfo_addr = stack_pointer;
 
     // 2. Write ucontext_t.
-    stack_pointer = alloc_aligned_in_user_stack(stack_pointer, mem::size_of::<ucontext_t>(), 16)?;
+
     let mut ucontext = ucontext_t {
         uc_sigmask: mask.into(),
         ..Default::default()
     };
-    ucontext
-        .uc_mcontext
-        .inner
-        .gp_regs
-        .copy_from_raw(user_ctx.general_regs());
+    ucontext.uc_mcontext.copy_user_regs_from(user_ctx);
     let sig_context = ctx.thread_local.sig_context().get();
     if let Some(sig_context_addr) = sig_context {
         ucontext.uc_link = sig_context_addr;
     } else {
         ucontext.uc_link = 0;
     }
-    // TODO: store fp regs in ucontext
-    user_space.write_val(stack_pointer as _, &ucontext)?;
-    let ucontext_addr = stack_pointer;
+
+    // Clone and reset the FPU context.
+    let fpu_context = ctx.thread_local.fpu().clone_context();
+    let fpu_context_bytes = fpu_context.as_bytes();
+    ctx.thread_local.fpu().set_context(FpuContext::new());
+
+    cfg_if::cfg_if! {
+        if #[cfg(target_arch = "x86_64")] {
+            // Align the FPU context address to the 64-byte boundary so that the
+            // user program can use the XSAVE/XRSTOR instructions at that address,
+            // if necessary.
+            let fpu_context_addr =
+                alloc_aligned_in_user_stack(stack_pointer, fpu_context_bytes.len(), 64)?;
+            let ucontext_addr = alloc_aligned_in_user_stack(
+                fpu_context_addr,
+                size_of::<ucontext_t>(),
+                align_of::<ucontext_t>(),
+            )?;
+            ucontext
+                .uc_mcontext
+                .set_fpu_context_addr(fpu_context_addr as _);
+
+            const UC_FP_XSTATE: u64 = 1 << 0;
+            ucontext.uc_flags = UC_FP_XSTATE;
+        } else if #[cfg(target_arch = "riscv64")] {
+            let ucontext_addr = alloc_aligned_in_user_stack(
+                stack_pointer,
+                size_of::<ucontext_t>() + fpu_context_bytes.len(),
+                align_of::<ucontext_t>(),
+            )?;
+            let fpu_context_addr = (ucontext_addr as usize) + size_of::<ucontext_t>();
+        } else {
+            compile_error!("unsupported target");
+        }
+    }
+
+    let mut fpu_context_reader = VmReader::from(fpu_context.as_bytes());
+    user_space.write_bytes(fpu_context_addr as _, &mut fpu_context_reader)?;
+
+    user_space.write_val(ucontext_addr as _, &ucontext)?;
     // Store the ucontext addr in sig context of current thread.
     ctx.thread_local
         .sig_context()
         .set(Some(ucontext_addr as Vaddr));
 
     // 3. Write the address of the restorer code.
+    stack_pointer = ucontext_addr;
     if flags.contains(SigActionFlags::SA_RESTORER) {
         // If the SA_RESTORER flag is present, the restorer code address is provided by the user.
         stack_pointer = write_u64_to_user_stack(stack_pointer, restorer_addr as u64)?;
