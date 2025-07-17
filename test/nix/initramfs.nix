@@ -9,7 +9,8 @@ let
     name = "gvisor-libs";
     path = "/lib/x86_64-linux-gnu";
   };
-  all_pkgs = [ apps busybox etc linux_vdso ]
+  all_pkgs = [ busybox etc linux_vdso ]
+    ++ lib.optionals (apps != null) [ apps.package ]
     ++ lib.optionals (benchmark != null) [ benchmark.package ]
     ++ lib.optionals (syscall != null) [ syscall.package ];
 in stdenv.mkDerivation {
@@ -32,9 +33,11 @@ in stdenv.mkDerivation {
       cp -r ${linux_vdso}/riscv64-vdso.so $out/usr/lib/x86_64-linux-gnu/vdso64.so
     ''}
 
-    cp -r ${apps}/* $out/test/
-
     cp -r ${etc}/* $out/etc/
+
+    ${lib.optionalString (apps != null) ''
+      cp -r ${apps.package}/* $out/test/
+    ''}
 
     ${lib.optionalString (benchmark != null) ''
       cp -r "${benchmark.package}"/* $out/benchmark/
