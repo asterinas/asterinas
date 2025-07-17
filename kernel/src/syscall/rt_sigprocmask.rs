@@ -57,7 +57,11 @@ fn do_rt_sigprocmask(
             MaskOp::Unblock => {
                 sig_mask_ref.store(old_sig_mask_value - read_mask, Ordering::Relaxed)
             }
-            MaskOp::SetMask => sig_mask_ref.store(read_mask, Ordering::Relaxed),
+            MaskOp::SetMask => {
+                read_mask -= SIGKILL; // Cannot block SIGKILL
+                read_mask -= SIGSTOP; // Cannot block SIGSTOP
+                sig_mask_ref.store(read_mask, Ordering::Relaxed);
+            }
         }
     }
     debug!("new set = {:x?}", sig_mask_ref.load(Ordering::Relaxed));
