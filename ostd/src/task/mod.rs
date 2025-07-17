@@ -30,7 +30,14 @@ pub use self::{
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
 use crate::{cpu::context::UserContext, prelude::*, trap::in_interrupt_context};
 
+static PRE_SCHEDULE_HANDLER: Once<fn()> = Once::new();
+
 static POST_SCHEDULE_HANDLER: Once<fn()> = Once::new();
+
+/// Injects a handler to be executed before scheduling.
+pub fn inject_pre_schedule_handler(handler: fn()) {
+    PRE_SCHEDULE_HANDLER.call_once(|| handler);
+}
 
 /// Injects a handler to be executed after scheduling.
 pub fn inject_post_schedule_handler(handler: fn()) {
@@ -130,22 +137,6 @@ impl Task {
             None
         }
     }
-
-    /// Saves the FPU state for user task.
-    pub fn save_fpu_state(&self) {
-        let Some(user_ctx) = self.user_ctx.as_ref() else {
-            return;
-        };
-        user_ctx.fpu_state().save();
-    }
-
-    /// Restores the FPU state for user task.
-    pub fn restore_fpu_state(&self) {
-        let Some(user_ctx) = self.user_ctx.as_ref() else {
-            return;
-        };
-        user_ctx.fpu_state().restore();
-    }
 }
 
 /// Options to create or spawn a new task.
@@ -214,8 +205,6 @@ impl TaskOptions {
 
             let current_task = Task::current()
                 .expect("no current task, it should have current task in kernel task entry");
-
-            current_task.restore_fpu_state();
 
             // SAFETY: The `func` field will only be accessed by the current task in the task
             // context, so the data won't be accessed concurrently.

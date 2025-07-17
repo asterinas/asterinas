@@ -237,14 +237,17 @@ fn clone_child_task(
         ..
     } = ctx;
 
-    // clone system V semaphore
+    // Clone system V semaphore
     clone_sysvsem(clone_flags)?;
 
-    // clone file table
+    // Clone file table
     let child_file_table = clone_files(thread_local.borrow_file_table().unwrap(), clone_flags);
 
-    // clone fs
+    // Clone fs
     let child_fs = clone_fs(posix_thread.fs(), clone_flags);
+
+    // Clone FPU context
+    let child_fpu_context = thread_local.fpu().clone_context();
 
     let child_user_ctx = Arc::new(clone_user_ctx(
         parent_context,
@@ -272,7 +275,8 @@ fn clone_child_task(
             .thread_name(thread_name)
             .sig_mask(sig_mask)
             .file_table(child_file_table)
-            .fs(child_fs);
+            .fs(child_fs)
+            .fpu_context(child_fpu_context);
 
         // Deal with SETTID/CLEARTID flags
         clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
@@ -332,6 +336,9 @@ fn clone_child_process(
     // Clone System V semaphore
     clone_sysvsem(clone_flags)?;
 
+    // Clone FPU context
+    let child_fpu_context = thread_local.fpu().clone_context();
+
     // Inherit the parent's signal mask
     let child_sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed).into();
 
@@ -358,6 +365,7 @@ fn clone_child_process(
                 .sig_mask(child_sig_mask)
                 .file_table(child_file_table)
                 .fs(child_fs)
+                .fpu_context(child_fpu_context)
         };
 
         // Deal with SETTID/CLEARTID flags
@@ -473,10 +481,6 @@ fn clone_user_ctx(
     if clone_flags.contains(CloneFlags::CLONE_SETTLS) {
         child_context.set_tls_pointer(tls as usize);
     }
-
-    // New threads inherit the FPU state of the parent thread and
-    // the state is private to the thread thereafter.
-    child_context.fpu_state().save();
 
     child_context
 }

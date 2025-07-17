@@ -14,13 +14,12 @@ use crate::{
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
 
-/// Userspace CPU context, including both general-purpose registers and FPU state.
+/// Userspace CPU context, including general-purpose registers and exception information.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct UserContext {
     user_context: RawUserContext,
     trap: Trap,
-    fpu_state: FpuState,
     cpu_exception_info: Option<CpuExceptionInfo>,
 }
 
@@ -81,7 +80,6 @@ impl Default for UserContext {
         UserContext {
             user_context: RawUserContext::default(),
             trap: Trap::Exception(Exception::Unknown),
-            fpu_state: FpuState,
             cpu_exception_info: None,
         }
     }
@@ -118,16 +116,6 @@ impl UserContext {
     /// Returns the trap information.
     pub fn take_exception(&mut self) -> Option<CpuExceptionInfo> {
         self.cpu_exception_info.take()
-    }
-
-    /// Returns a reference to the FPU state.
-    pub fn fpu_state(&self) -> &FpuState {
-        &self.fpu_state
-    }
-
-    /// Returns a mutable reference to the FPU state.
-    pub fn fpu_state_mut(&mut self) -> &mut FpuState {
-        &mut self.fpu_state
     }
 
     /// Sets thread-local storage pointer.
@@ -275,27 +263,32 @@ cpu_context_impl_getter_setter!(
 /// CPU exception.
 pub type CpuException = Exception;
 
-/// The FPU state of user task.
+/// The FPU context of user task.
 ///
 /// This could be used for saving both legacy and modern state format.
-// FIXME: Implement FPU state on RISC-V platforms.
-#[derive(Clone, Copy, Debug)]
-pub struct FpuState;
+// FIXME: Implement FPU context on RISC-V platforms.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FpuContext;
 
-impl FpuState {
-    /// Saves CPU's current FPU state into this instance.
-    pub fn save(&self) {
-        todo!()
+impl FpuContext {
+    /// Creates a new FPU context.
+    pub fn new() -> Self {
+        Self
     }
 
-    /// Restores CPU's FPU state from this instance.
-    pub fn restore(&self) {
-        todo!()
-    }
-}
+    /// Saves CPU's current FPU context to this instance, if needed.
+    pub fn save(&mut self) {}
 
-impl Default for FpuState {
-    fn default() -> Self {
-        FpuState
+    /// Loads CPU's FPU context from this instance, if needed.
+    pub fn load(&mut self) {}
+
+    /// Returns the FPU context as a byte slice.
+    pub fn as_bytes(&self) -> &[u8] {
+        &[]
+    }
+
+    /// Returns the FPU context as a mutable byte slice.
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+        &mut []
     }
 }
