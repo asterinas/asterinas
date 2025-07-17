@@ -6,7 +6,7 @@ use fs::CgroupFs;
 pub use inode::CgroupInode;
 use spin::Once;
 
-use crate::fs::cgroupfs::systree_node::CgroupSystem;
+use crate::fs::cgroupfs::{fs::CgroupFsType, systree_node::CgroupSystem};
 
 mod fs;
 mod inode;
@@ -24,11 +24,6 @@ pub fn singleton() -> &'static Arc<CgroupFs> {
 /// Should be called during kernel file system initialization, *after* aster_systree::init().
 pub fn init() {
     let cgroup_root = CgroupSystem::new();
-
-    super::manager::singleton()
-        .register(cgroup_root.clone())
-        .expect("cannot register cgroup factory to fs manager");
-
-    // Ensure systree is initialized first. This should be handled by the kernel's init order.
-    CGROUP_SINGLETON.call_once(|| CgroupFs::new(cgroup_root));
+    let cgroup_fs_type = CgroupFsType::new(cgroup_root);
+    super::registry::register(cgroup_fs_type).unwrap();
 }

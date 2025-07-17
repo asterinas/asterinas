@@ -52,6 +52,18 @@ fn start_block_device(device_name: &str) -> Result<Arc<dyn BlockDevice>> {
 }
 
 pub fn lazy_init() {
+    registry::init();
+
+    sysfs::init();
+    procfs::init();
+    cgroupfs::init();
+    ramfs::init();
+    devpts::init();
+
+    ext2::init();
+    exfat::init();
+    overlayfs::init();
+
     //The device name is specified in qemu args as --serial={device_name}
     let ext2_device_name = "vext2";
     let exfat_device_name = "vexfat";

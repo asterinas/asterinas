@@ -9,6 +9,10 @@ use super::{
     prelude::*,
     super_block::{RawSuperBlock, SuperBlock, SUPER_BLOCK_OFFSET},
 };
+use crate::fs::{
+    registry::{FsProperties, FsType},
+    utils::FileSystem,
+};
 
 /// The root inode number.
 const ROOT_INO: u32 = 2;
@@ -432,5 +436,30 @@ impl Ext2 {
 
     fn block_idx(&self, bid: Ext2Bid) -> Ext2Bid {
         bid % self.blocks_per_group
+    }
+}
+
+pub(super) struct Ext2Type;
+
+impl FsType for Ext2Type {
+    fn name(&self) -> &'static str {
+        "ext2"
+    }
+
+    fn create(
+        &self,
+        _args: Option<CString>,
+        disk: Option<Arc<dyn BlockDevice>>,
+        _ctx: &Context,
+    ) -> Result<Arc<dyn FileSystem>> {
+        Ext2::open(disk.unwrap()).map(|fs| fs as _)
+    }
+
+    fn properties(&self) -> FsProperties {
+        FsProperties::NEED_DISK
+    }
+
+    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysBranchNode>> {
+        None
     }
 }

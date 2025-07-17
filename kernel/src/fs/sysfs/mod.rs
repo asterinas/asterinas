@@ -10,6 +10,7 @@ use alloc::sync::Arc;
 use spin::Once;
 
 pub use self::{fs::SysFs, inode::SysFsInode};
+use crate::fs::sysfs::fs::SysFsType;
 
 static SYSFS_SINGLETON: Once<Arc<SysFs>> = Once::new();
 
@@ -22,8 +23,6 @@ pub fn singleton() -> &'static Arc<SysFs> {
 /// Ensures that the singleton is created by calling it.
 /// Should be called during kernel file system initialization, *after* aster_systree::init().
 pub fn init() {
-    // Ensure systree is initialized first. This should be handled by the kernel's init order.
-    super::manager::init();
-
-    SYSFS_SINGLETON.call_once(SysFs::new);
+    let sysfs_type = Arc::new(SysFsType);
+    super::registry::register(sysfs_type).unwrap();
 }

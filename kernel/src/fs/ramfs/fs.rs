@@ -23,6 +23,7 @@ use crate::{
         file_handle::FileLike,
         named_pipe::NamedPipe,
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
+        registry::{FsProperties, FsType},
         utils::{
             CStr256, CachePage, DirentVisitor, Extension, FallocMode, FileSystem, FsFlags, Inode,
             InodeMode, InodeType, IoctlCmd, Metadata, MknodType, PageCache, PageCacheBackend,
@@ -1255,4 +1256,29 @@ fn write_lock_two_direntries_by_ino<'a>(
 
 fn now() -> Duration {
     RealTimeCoarseClock::get().read_time()
+}
+
+pub(super) struct RamFsType;
+
+impl FsType for RamFsType {
+    fn name(&self) -> &'static str {
+        "ramfs"
+    }
+
+    fn create(
+        &self,
+        _args: Option<CString>,
+        _disk: Option<Arc<dyn aster_block::BlockDevice>>,
+        _ctx: &Context,
+    ) -> Result<Arc<dyn FileSystem>> {
+        Ok(RamFS::new())
+    }
+
+    fn properties(&self) -> FsProperties {
+        FsProperties::empty()
+    }
+
+    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysBranchNode>> {
+        None
+    }
 }

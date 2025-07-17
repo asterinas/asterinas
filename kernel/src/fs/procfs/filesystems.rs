@@ -2,11 +2,10 @@
 
 use alloc::format;
 
-use spin::Once;
-
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
+        registry::FsProperties,
         utils::Inode,
     },
     prelude::*,
@@ -23,30 +22,19 @@ impl FileSystemsFileOps {
 
 impl FileOps for FileSystemsFileOps {
     fn data(&self) -> Result<Vec<u8>> {
-        let mut result = String::new();
-        for fs in FILESYSTEM_TYPES.get().unwrap().iter() {
-            if fs.is_nodev {
-                result.push_str(&format!("nodev\t{}\n", fs.name));
-            } else {
-                result.push_str(&format!("\t{}\n", fs.name));
+        let data = crate::fs::registry::with_iter(|iter| {
+            let mut result = String::new();
+            for (fs_name, fs_type) in iter {
+                if fs_type.properties().contains(FsProperties::NEED_DISK) {
+                    result.push_str(&format!("\t{}\n", fs_name));
+                } else {
+                    result.push_str(&format!("nodev\t{}\n", fs_name));
+                }
             }
-        }
-        Ok(result.into_bytes())
-    }
-}
 
-pub(super) static FILESYSTEM_TYPES: Once<Vec<FileSystemType>> = Once::new();
+            result.into_bytes()
+        });
 
-pub(super) struct FileSystemType {
-    name: String,
-    is_nodev: bool,
-}
-
-impl FileSystemType {
-    pub(super) fn new(name: &str, is_nodev: bool) -> Self {
-        FileSystemType {
-            name: name.to_string(),
-            is_nodev,
-        }
+        Ok(data)
     }
 }
