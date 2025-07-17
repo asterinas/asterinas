@@ -5,6 +5,9 @@ SMP ?= 1
 SYSCALL_TEST_SUITE ?= ltp
 SYSCALL_TEST_WORKDIR ?= /tmp
 ENABLE_BASIC_TEST ?= false
+# Set Nix's cached tarballs to be live for a longer period of time (30 days) to avoid network traffics.
+# Nix's default value is rather small (1 hour or 3600 seconds).
+NIXPKGS_CACHE_TTL := 2592000 # In seconds
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 BUILD_DIR := $(CUR_DIR)/build
@@ -43,6 +46,7 @@ build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE)
 .PHONY: $(INITRAMFS_IMAGE)
 $(INITRAMFS_IMAGE): $(INITRAMFS)
 	@nix-build \
+		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
 		--argstr target $(ARCH) \
 		--arg enableBasicTest $(ENABLE_BASIC_TEST) \
 		--arg enableBenchmark $(ENABLE_BENCHMARK) \
@@ -57,6 +61,7 @@ $(INITRAMFS_IMAGE): $(INITRAMFS)
 .PHONY: $(INITRAMFS)
 $(INITRAMFS):
 	@nix-build \
+		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
 		--argstr target $(ARCH) \
 		--arg enableBasicTest $(ENABLE_BASIC_TEST) \
 		--arg enableBenchmark $(ENABLE_BENCHMARK) \
