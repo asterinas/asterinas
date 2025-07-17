@@ -19,75 +19,25 @@ RUN sh <(curl -L https://nixos.org/nix/install) --daemon --yes \
 
 #= Build Nix packages ======================================================
 
-COPY test/nix /root/nix
-WORKDIR /root
+COPY test /root/test
+WORKDIR /root/test
 ENV PATH="/nix/var/nix/profiles/default/bin:${PATH}"
 
 # Build riscv64 packages
-# Note: This may cause GitHub Runner ResourceExhausted errors. If such errors occur,
-# try building each package individually and clear the build cache.
-RUN nix-build \
-    ./nix/default.nix \
-    --quiet -Q \
-    --argstr target riscv64 \
-    --arg enableBenchmark true \
-    --arg enableSyscallTest true \
-    --out-link /nix/var/nix/gcroots/auto/riscv64-pkgs \
-    -A busybox \
-    -A benchmark.fio \
-    -A benchmark.hackbench \
-    -A benchmark.iperf3 \
-    -A benchmark.lmbench \
-    -A benchmark.memcached \
-    -A benchmark.nginx \
-    -A benchmark.redis \
-    -A benchmark.schbench \
-    -A benchmark.sqlite-speedtest1 \
-    -A syscall.ltp \
-    && nix-collect-garbage -d \
-    && nix-store --optimise
+RUN make riscv64_pkgs VERBOSE=0 \
+    && make nix_gc
 
 # Build x86_64 packages
-RUN nix-build \
-    ./nix/default.nix \
-    --quiet -Q \
-    --argstr target x86_64 \
-    --arg enableBenchmark true \
-    --arg enableSyscallTest true \
-    --out-link /nix/var/nix/gcroots/auto/x86_64-pkgs \
-    -A busybox \
-    -A benchmark.fio \
-    -A benchmark.hackbench \
-    -A benchmark.iperf3 \
-    -A benchmark.lmbench \
-    -A benchmark.memcached \
-    -A benchmark.nginx \
-    -A benchmark.redis \
-    -A benchmark.schbench \
-    -A benchmark.sqlite-speedtest1 \
-    -A benchmark.sysbench \
-    -A syscall.ltp \
-    && nix-collect-garbage -d \
-    && nix-store --optimise
+RUN make x86_64_pkgs VERBOSE=0 \
+    && make nix_gc
 
 # Build general packages and install host required packages
-RUN nix-build \
-    ./nix/default.nix \
-    --quiet -Q \
-    --out-link /nix/var/nix/gcroots/auto/linux_vdso \
-    -A linux_vdso \
-    && nix-env --install \
-    --file ./nix/default.nix \
-    -A apacheHttpd \
-    -A iperf3 \
-    -A libmemcached \
-    -A lmbench \
-    -A redis \
-    && nix-collect-garbage -d \
-    && nix-store --optimise
+RUN make general_pkgs VERBOSE=0 \
+    && make install_host_pkgs \
+    && make nix_gc
 
 # Clean source files
-RUN rm -rf /root/nix
+RUN rm -rf /root/test
 
 VOLUME [ "/root/asterinas" ]
 
