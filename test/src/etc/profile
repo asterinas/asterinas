@@ -1,0 +1,6 @@
+# FIXME: Mounting FSes via /etc/profile is fragile (risk of multiple mounts from 
+# login shells). Throw away this operation when we have a proper initial process.
+
+if [ -f /test/init.sh ]; then
+    . /test/init.sh
+fi
