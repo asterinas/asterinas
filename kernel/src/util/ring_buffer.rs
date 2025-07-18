@@ -307,8 +307,19 @@ impl<R: Deref<Target = RingBuffer<u8>>> Producer<u8, R> {
     ///
     /// Returns the number of bytes written.
     pub fn write_fallible(&mut self, reader: &mut dyn MultiRead) -> Result<usize> {
+        self.write_fallible_with_max_len(reader, usize::MAX)
+    }
+
+    /// Writes data from the `VmReader` to the `RingBuffer` with the maximum length.
+    ///
+    /// Returns the number of bytes written.
+    pub fn write_fallible_with_max_len(
+        &mut self,
+        reader: &mut dyn MultiRead,
+        max_len: usize,
+    ) -> Result<usize> {
         let rb = &self.rb;
-        let free_len = rb.free_len();
+        let free_len = rb.free_len().min(max_len);
 
         let tail = rb.tail();
         let offset = tail.0 & (rb.capacity - 1);
@@ -410,8 +421,19 @@ impl<R: Deref<Target = RingBuffer<u8>>> Consumer<u8, R> {
     ///
     /// Returns the number of bytes read.
     pub fn read_fallible(&mut self, writer: &mut dyn MultiWrite) -> Result<usize> {
+        self.read_fallible_with_max_len(writer, usize::MAX)
+    }
+
+    /// Reads data from the `VmWriter` to the `RingBuffer` with the maximum length.
+    ///
+    /// Returns the number of bytes read.
+    pub fn read_fallible_with_max_len(
+        &mut self,
+        writer: &mut dyn MultiWrite,
+        max_len: usize,
+    ) -> Result<usize> {
         let rb = &self.rb;
-        let len = rb.len();
+        let len = rb.len().min(max_len);
 
         let head = rb.head();
         let offset = head.0 & (rb.capacity - 1);
