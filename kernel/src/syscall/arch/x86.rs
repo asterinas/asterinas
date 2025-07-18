@@ -144,6 +144,7 @@ use super::{
     symlink::{sys_symlink, sys_symlinkat},
     sync::sys_sync,
     sysinfo::sys_sysinfo,
+    syslog::sys_syslog,
     tgkill::sys_tgkill,
     time::sys_time,
     timer_create::{sys_timer_create, sys_timer_delete},
@@ -255,6 +256,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_GETRUSAGE = 98         => sys_getrusage(args[..2]);
     SYS_SYSINFO = 99           => sys_sysinfo(args[..1]);
     SYS_GETUID = 102           => sys_getuid(args[..0]);
+    SYS_SYSLOG = 103           => sys_syslog(args[..3]);
     SYS_GETGID = 104           => sys_getgid(args[..0]);
     SYS_SETUID = 105           => sys_setuid(args[..1]);
     SYS_SETGID = 106           => sys_setgid(args[..1]);
