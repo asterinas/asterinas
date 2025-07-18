@@ -1,23 +1,38 @@
-OUTPUT_ARCH(riscv)
 ENTRY(_start)
+OUTPUT_ARCH(riscv)
+
 KERNEL_LMA = 0x80200000;
 KERNEL_VMA = 0xffffffff80200000;
 KERNEL_VMA_OFFSET = KERNEL_VMA - KERNEL_LMA;
 
 SECTIONS
 {
-    . = KERNEL_VMA;
+    # First, we use physical addresses for the boot sections.
+    . = KERNEL_LMA;
 
-    PROVIDE(__executable_start = .);
-    __kernel_start = .;
+    __kernel_start = . + KERNEL_VMA_OFFSET;
 
-    .text : AT(ADDR(.text) - KERNEL_VMA_OFFSET) {
-        *(.text.entry)
+    .boot                   : AT(ADDR(.boot)) {
+        KEEP(*(.boot))
+        # FIXME: We want to create a separate .boot.stack section so that the
+        # executable doesn't contain the boot stack (which is just hundreds of
+        # kilobytes of zeros). But it is currently in the .boot section because
+        # the linker will otherwise complain unexpected relocation failures.
+        KEEP(*(.boot.stack))
+        . = ALIGN(4096);
+    }
+
+    # Then, we switch to virtual addresses for all the other sections.
+    . += KERNEL_VMA_OFFSET;
+
+    .text                   : AT(ADDR(.text) - KERNEL_VMA_OFFSET) {
         *(.text .text.*)
         PROVIDE(__etext = .);
     }
 
-    .rodata : AT(ADDR(.rodata) - KERNEL_VMA_OFFSET) { *(.rodata .rodata.*) }
+    .rodata                 : AT(ADDR(.rodata) - KERNEL_VMA_OFFSET) {
+        *(.rodata .rodata.*)
+    }
 
     .eh_frame_hdr           : AT(ADDR(.eh_frame_hdr) - KERNEL_VMA_OFFSET) {
         PROVIDE(__GNU_EH_FRAME_HDR = .);
@@ -51,9 +66,9 @@ SECTIONS
         __sensitive_io_ports_end = .;
     }
 
-    . = DATA_SEGMENT_RELRO_END(0, .);
-
-    .data : AT(ADDR(.data) - KERNEL_VMA_OFFSET) { *(.data .data.*) }
+    .data                   : AT(ADDR(.data) - KERNEL_VMA_OFFSET) {
+        *(.data .data.*)
+    }
 
     # The CPU local data storage. It is readable and writable for the bootstrap
     # processor, while it would be copied to other dynamically allocated memory
@@ -64,17 +79,11 @@ SECTIONS
         __cpu_local_end = .;
     }
 
-    /* boot stack (in entry.S) */
-    .stack : AT(ADDR(.stack) - KERNEL_VMA_OFFSET) {
-        *(.bss.stack)
-    }
-
-    .bss : AT(ADDR(.bss) - KERNEL_VMA_OFFSET) {
+    .bss                    : AT(ADDR(.bss) - KERNEL_VMA_OFFSET) {
         __bss = .;
         *(.bss .bss.*)
         __bss_end = .;
     }
 
-    . = DATA_SEGMENT_END(.);
     __kernel_end = .;
 }
