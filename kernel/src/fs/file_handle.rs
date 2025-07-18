@@ -4,9 +4,13 @@
 
 //! Opened File Handle
 
+use ostd::io::IoMem;
+
 use super::inode_handle::InodeHandle;
 use crate::{
-    fs::utils::{AccessMode, FallocMode, InodeMode, IoctlCmd, Metadata, SeekFrom, StatusFlags},
+    fs::utils::{
+        AccessMode, FallocMode, Inode, InodeMode, IoctlCmd, Metadata, SeekFrom, StatusFlags,
+    },
     net::socket::Socket,
     prelude::*,
     process::{signal::Pollable, Gid, Uid},
@@ -45,6 +49,18 @@ pub trait FileLike: Pollable + Send + Sync + Any {
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");
+    }
+
+    /// File specific mmap.
+    ///
+    /// This is the public interface for file specific mmap. It will **NOT**
+    /// take all the responsibility of syscall mmap, like building the mapping.
+    /// Instead, it will **expose necessary information** for the syscall
+    /// handler to finish the mmap.
+    ///
+    /// The returned [`FileMmapResult`] will be used to build the mapping.
+    fn mmap(&self, len: usize, offset: usize) -> Result<FileMmapResult> {
+        return_errno_with_message!(Errno::EINVAL, "mmap is not supported");
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
@@ -138,4 +154,16 @@ impl dyn FileLike {
             Error::with_message(Errno::EINVAL, "the file is not related to an inode")
         })
     }
+}
+
+/// The result of file specific mmap.
+///
+/// This is used to store the result of file specific mmap, which can help to
+/// determine the correct the mapping options.
+#[derive(Debug, Clone)]
+pub enum FileMmapResult {
+    /// The mapping is a page cache.
+    PageCache(Arc<dyn Inode>),
+    /// The mapping is a io memory.
+    IoMem(IoMem),
 }
