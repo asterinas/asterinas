@@ -17,10 +17,10 @@ use crate::{
     net::socket::{
         options::{PeerCred, PeerGroups, SocketOption},
         private::SocketPrivate,
-        unix::{cred::SocketCred, CUserCred, UnixSocketAddr},
+        unix::{cred::SocketCred, ctrl_msg::AuxiliaryData, CUserCred, UnixSocketAddr},
         util::{
             options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
-            MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr,
+            ControlMessage, MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr,
         },
         Socket,
     },
@@ -33,20 +33,24 @@ use crate::{
 };
 
 pub struct UnixStreamSocket {
+    // Lock order: `state` first, `options` second
     state: RwMutex<Takeable<State>>,
     options: RwMutex<OptionSet>,
 
     pollee: Pollee,
     is_nonblocking: AtomicBool,
+
+    is_seqpacket: bool,
 }
 
 impl UnixStreamSocket {
-    pub(super) fn new_init(init: Init, is_nonblocking: bool) -> Arc<Self> {
+    pub(super) fn new_init(init: Init, is_nonblocking: bool, is_seqpacket: bool) -> Arc<Self> {
         Arc::new(Self {
             state: RwMutex::new(Takeable::new(State::Init(init))),
             options: RwMutex::new(OptionSet::new()),
             pollee: Pollee::new(),
             is_nonblocking: AtomicBool::new(is_nonblocking),
+            is_seqpacket,
         })
     }
 
@@ -54,6 +58,7 @@ impl UnixStreamSocket {
         connected: Connected,
         options: OptionSet,
         is_nonblocking: bool,
+        is_seqpacket: bool,
     ) -> Arc<Self> {
         let cloned_pollee = connected.cloned_pollee();
         Arc::new(Self {
@@ -61,6 +66,7 @@ impl UnixStreamSocket {
             options: RwMutex::new(options),
             pollee: cloned_pollee,
             is_nonblocking: AtomicBool::new(is_nonblocking),
+            is_seqpacket,
         })
     }
 }
@@ -154,12 +160,13 @@ impl OptionSet {
 }
 
 impl UnixStreamSocket {
-    pub fn new(is_nonblocking: bool) -> Arc<Self> {
-        Self::new_init(Init::new(), is_nonblocking)
+    pub fn new(is_nonblocking: bool, is_seqpacket: bool) -> Arc<Self> {
+        Self::new_init(Init::new(), is_nonblocking, is_seqpacket)
     }
 
-    pub fn new_pair(is_nonblocking: bool) -> (Arc<Self>, Arc<Self>) {
+    pub fn new_pair(is_nonblocking: bool, is_seqpacket: bool) -> (Arc<Self>, Arc<Self>) {
         let cred = SocketCred::<ReadDupOp>::new_current();
+        let options = OptionSet::new();
 
         let (conn_a, conn_b) = Connected::new_pair(
             None,
@@ -168,26 +175,35 @@ impl UnixStreamSocket {
             EndpointState::default(),
             cred.dup().restrict(),
             cred.restrict(),
+            &options.socket,
         );
-        let options = OptionSet::new();
         (
-            Self::new_connected(conn_a, options.clone(), is_nonblocking),
-            Self::new_connected(conn_b, options, is_nonblocking),
+            Self::new_connected(conn_a, options, is_nonblocking, is_seqpacket),
+            Self::new_connected(conn_b, OptionSet::new(), is_nonblocking, is_seqpacket),
         )
     }
 
-    fn try_send(&self, buf: &mut dyn MultiRead, _flags: SendRecvFlags) -> Result<usize> {
+    fn try_send(
+        &self,
+        buf: &mut dyn MultiRead,
+        aux_data: &mut AuxiliaryData,
+        _flags: SendRecvFlags,
+    ) -> Result<usize> {
         match self.state.read().as_ref() {
-            State::Connected(connected) => connected.try_write(buf),
+            State::Connected(connected) => connected.try_write(buf, aux_data, self.is_seqpacket),
             State::Init(_) | State::Listen(_) => {
                 return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected")
             }
         }
     }
 
-    fn try_recv(&self, buf: &mut dyn MultiWrite, _flags: SendRecvFlags) -> Result<usize> {
+    fn try_recv(
+        &self,
+        buf: &mut dyn MultiWrite,
+        _flags: SendRecvFlags,
+    ) -> Result<(usize, Vec<ControlMessage>)> {
         match self.state.read().as_ref() {
-            State::Connected(connected) => connected.try_read(buf),
+            State::Connected(connected) => connected.try_read(buf, self.is_seqpacket),
             State::Init(_) | State::Listen(_) => {
                 return_errno_with_message!(Errno::EINVAL, "the socket is not connected")
             }
@@ -196,6 +212,7 @@ impl UnixStreamSocket {
 
     fn try_connect(&self, backlog: &Arc<Backlog>) -> Result<()> {
         let mut state = self.state.write();
+        let options = self.options.read();
 
         state.borrow_result(|owned_state| {
             let init = match owned_state {
@@ -220,7 +237,12 @@ impl UnixStreamSocket {
                 }
             };
 
-            let connected = match backlog.push_incoming(init, self.pollee.clone()) {
+            let connected = match backlog.push_incoming(
+                init,
+                self.pollee.clone(),
+                &options.socket,
+                self.is_seqpacket,
+            ) {
                 Ok(connected) => connected,
                 Err((err, init)) => return (State::Init(init), Err(err)),
             };
@@ -231,7 +253,7 @@ impl UnixStreamSocket {
 
     fn try_accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
         match self.state.read().as_ref() {
-            State::Listen(listen) => listen.try_accept() as _,
+            State::Listen(listen) => listen.try_accept(self.is_seqpacket) as _,
             State::Init(_) | State::Connected(_) => {
                 return_errno_with_message!(Errno::EINVAL, "the socket is not listening")
             }
@@ -313,7 +335,7 @@ impl Socket for UnixStreamSocket {
                 }
             };
 
-            let listener = match init.listen(backlog, self.pollee.clone()) {
+            let listener = match init.listen(backlog, self.pollee.clone(), self.is_seqpacket) {
                 Ok(listener) => listener,
                 Err((err, init)) => {
                     return (State::Init(init), Err(err));
@@ -371,14 +393,14 @@ impl Socket for UnixStreamSocket {
         }
 
         let MessageHeader {
-            control_message,
+            control_messages,
             addr,
         } = message_header;
 
         // According to the Linux man pages, `EISCONN` _may_ be returned when the destination
         // address is specified for a connection-mode socket. In practice, `sendmsg` on UNIX stream
         // sockets will fail due to that. We follow the same behavior as the Linux implementation.
-        if addr.is_some() {
+        if !self.is_seqpacket && addr.is_some() {
             match self.state.read().as_ref() {
                 State::Init(_) | State::Listen(_) => return_errno_with_message!(
                     Errno::EOPNOTSUPP,
@@ -390,13 +412,11 @@ impl Socket for UnixStreamSocket {
                 ),
             }
         }
+        let mut auxiliary_data = AuxiliaryData::from_control(control_messages)?;
 
-        if control_message.is_some() {
-            // TODO: Support sending control message
-            warn!("sending control message is not supported");
-        }
-
-        self.block_on(IoEvents::OUT, || self.try_send(reader, flags))
+        self.block_on(IoEvents::OUT, || {
+            self.try_send(reader, &mut auxiliary_data, flags)
+        })
     }
 
     fn recvmsg(
@@ -409,11 +429,10 @@ impl Socket for UnixStreamSocket {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        let received_bytes = self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
+        let (received_bytes, control_messages) =
+            self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
 
-        // TODO: Receive control message
-
-        let message_header = MessageHeader::new(None, None);
+        let message_header = MessageHeader::new(None, control_messages);
 
         Ok((received_bytes, message_header))
     }
@@ -462,7 +481,7 @@ impl Socket for UnixStreamSocket {
 fn do_unix_getsockopt(option: &mut dyn SocketOption, state: &State) -> Result<()> {
     match_sock_option_mut!(option, {
         socket_peer_cred: PeerCred => {
-            let peer_cred = state.peer_cred().unwrap_or_else(CUserCred::new_unknown);
+            let peer_cred = state.peer_cred().unwrap_or_else(CUserCred::new_invalid);
             socket_peer_cred.set(peer_cred);
         },
         socket_peer_groups: PeerGroups => {
@@ -484,4 +503,11 @@ impl GetSocketLevelOption for State {
     }
 }
 
-impl SetSocketLevelOption for State {}
+impl SetSocketLevelOption for State {
+    fn set_pass_cred(&self, pass_cred: bool) {
+        match self {
+            Self::Connected(connected) => connected.set_pass_cred(pass_cred),
+            Self::Init(_) | Self::Listen(_) => {}
+        }
+    }
+}

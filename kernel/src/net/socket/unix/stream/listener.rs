@@ -20,7 +20,7 @@ use crate::{
             cred::SocketCred,
             stream::socket::OptionSet,
         },
-        util::{SockShutdownCmd, SocketAddr},
+        util::{options::SocketOptionSet, SockShutdownCmd, SocketAddr},
     },
     prelude::*,
     process::signal::Pollee,
@@ -38,9 +38,10 @@ impl Listener {
         is_read_shutdown: bool,
         is_write_shutdown: bool,
         pollee: Pollee,
+        is_seqpacket: bool,
     ) -> Self {
         let backlog = BACKLOG_TABLE
-            .add_backlog(addr, pollee, backlog, is_read_shutdown)
+            .add_backlog(addr, pollee, backlog, is_read_shutdown, is_seqpacket)
             .unwrap();
 
         Self {
@@ -53,13 +54,13 @@ impl Listener {
         self.backlog.addr()
     }
 
-    pub(super) fn try_accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
+    pub(super) fn try_accept(&self, is_seqpacket: bool) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
         let connected = self.backlog.pop_incoming()?;
 
         let peer_addr = connected.peer_addr().into();
         // TODO: Update options for a newly-accepted socket
         let options = OptionSet::new();
-        let socket = UnixStreamSocket::new_connected(connected, options, false);
+        let socket = UnixStreamSocket::new_connected(connected, options, false, is_seqpacket);
 
         Ok((socket, peer_addr))
     }
@@ -123,6 +124,7 @@ impl BacklogTable {
         pollee: Pollee,
         backlog: usize,
         is_shutdown: bool,
+        is_seqpacket: bool,
     ) -> Option<Arc<Backlog>> {
         let addr_key = addr.to_key();
 
@@ -132,7 +134,13 @@ impl BacklogTable {
             return None;
         }
 
-        let new_backlog = Arc::new(Backlog::new(addr, pollee, backlog, is_shutdown));
+        let new_backlog = Arc::new(Backlog::new(
+            addr,
+            pollee,
+            backlog,
+            is_shutdown,
+            is_seqpacket,
+        ));
         backlog_sockets.insert(addr_key, new_backlog.clone());
 
         Some(new_backlog)
@@ -154,10 +162,17 @@ pub(super) struct Backlog {
     incoming_conns: SpinLock<Option<VecDeque<Connected>>>,
     wait_queue: WaitQueue,
     listener_cred: SocketCred<ReadDupOp>,
+    is_seqpacket: bool,
 }
 
 impl Backlog {
-    fn new(addr: UnixSocketAddrBound, pollee: Pollee, backlog: usize, is_shutdown: bool) -> Self {
+    fn new(
+        addr: UnixSocketAddrBound,
+        pollee: Pollee,
+        backlog: usize,
+        is_shutdown: bool,
+        is_seqpacket: bool,
+    ) -> Self {
         let incoming_sockets = if is_shutdown {
             None
         } else {
@@ -171,6 +186,7 @@ impl Backlog {
             incoming_conns: SpinLock::new(incoming_sockets),
             wait_queue: WaitQueue::new(),
             listener_cred: SocketCred::<ReadDupOp>::new_current(),
+            is_seqpacket,
         }
     }
 
@@ -234,7 +250,22 @@ impl Backlog {
         &self,
         init: Init,
         pollee: Pollee,
+        options: &SocketOptionSet,
+        is_seqpacket: bool,
     ) -> core::result::Result<Connected, (Error, Init)> {
+        if is_seqpacket != self.is_seqpacket {
+            // FIXME: According to the Linux implementation, we should avoid this error by
+            // maintaining two socket tables for SOCK_STREAM sockets and SOCK_SEQPACKET sockets
+            // separately.
+            return Err((
+                Error::with_message(
+                    Errno::ECONNREFUSED,
+                    "the listening socket has a different socket type",
+                ),
+                init,
+            ));
+        }
+
         let mut locked_incoming_conns = self.incoming_conns.lock();
 
         let Some(incoming_conns) = &mut *locked_incoming_conns else {
@@ -261,6 +292,7 @@ impl Backlog {
             self.addr.clone(),
             pollee,
             self.listener_cred.dup().restrict(),
+            options,
         );
 
         incoming_conns.push_back(server_conn);

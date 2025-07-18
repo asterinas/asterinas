@@ -176,7 +176,7 @@ impl Socket for DatagramSocket {
 
         let MessageHeader {
             addr,
-            control_message,
+            control_messages,
         } = message_header;
 
         let endpoint = match addr {
@@ -184,7 +184,7 @@ impl Socket for DatagramSocket {
             None => None,
         };
 
-        if control_message.is_some() {
+        if !control_messages.is_empty() {
             // TODO: Support sending control message
             warn!("sending control message is not supported");
         }
@@ -208,7 +208,7 @@ impl Socket for DatagramSocket {
 
         // TODO: Receive control message
 
-        let message_header = MessageHeader::new(Some(peer_addr), None);
+        let message_header = MessageHeader::new(Some(peer_addr), Vec::new());
 
         Ok((received_bytes, message_header))
     }

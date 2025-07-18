@@ -1,0 +1,13 @@
+# TODO: Support `MSG_DONTWAIT` and `MSG_PEEK`
+SeqpacketUnixSockets/NonStreamSocketPairTest.SplitRecv/*
+SeqpacketUnixSockets/NonStreamSocketPairTest.SinglePeek/*
+SeqpacketUnixSockets/NonStreamSocketPairTest.RecvmsgTruncPeekDontwaitZeroLen/*
+
+# TODO: Support `SO_SNDTIMEO`
+SeqpacketUnixSockets/UnixNonStreamSocketPairTest.SendTimeout/*
+
+# TODO: Support `MSG_TRUNC`
+SeqpacketUnixSockets/NonStreamSocketPairTest.MsgTruncTruncation/*
+SeqpacketUnixSockets/NonStreamSocketPairTest.MsgTruncTruncationRecvmsgMsghdrFlagMsgTrunc/*
+SeqpacketUnixSockets/NonStreamSocketPairTest.RecvmsgMsgTruncZeroLen/*
+SeqpacketUnixSockets/NonStreamSocketPairTest.RecvmsgMsgTruncMsgPeekZeroLen/*

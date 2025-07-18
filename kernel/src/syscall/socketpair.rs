@@ -19,16 +19,19 @@ pub fn sys_socketpair(
     let sock_type = SockType::try_from(type_ & SOCK_TYPE_MASK)?;
     let sock_flags = SockFlags::from_bits_truncate(type_ & !SOCK_TYPE_MASK);
     let protocol = Protocol::try_from(protocol)?;
-
     debug!(
         "domain = {:?}, sock_type = {:?}, sock_flags = {:?}, protocol = {:?}",
         domain, sock_type, sock_flags, protocol
     );
+
     // TODO: deal with all sock_flags and protocol
     let nonblocking = sock_flags.contains(SockFlags::SOCK_NONBLOCK);
     let (socket_a, socket_b) = match (domain, sock_type) {
         (CSocketAddrFamily::AF_UNIX, SockType::SOCK_STREAM) => {
-            UnixStreamSocket::new_pair(nonblocking)
+            UnixStreamSocket::new_pair(nonblocking, false)
+        }
+        (CSocketAddrFamily::AF_UNIX, SockType::SOCK_SEQPACKET) => {
+            UnixStreamSocket::new_pair(nonblocking, true)
         }
         _ => return_errno_with_message!(
             Errno::EAFNOSUPPORT,
@@ -48,8 +51,8 @@ pub fn sys_socketpair(
         let fd_b = file_table_locked.insert(socket_b, fd_flags);
         SocketFds(fd_a, fd_b)
     };
-
     ctx.user_space().write_val(sv, &socket_fds)?;
+
     Ok(SyscallReturn::Return(0))
 }
 

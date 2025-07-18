@@ -254,10 +254,10 @@ impl Socket for VsockStreamSocket {
         }
 
         let MessageHeader {
-            control_message, ..
+            control_messages, ..
         } = message_header;
 
-        if control_message.is_some() {
+        if !control_messages.is_empty() {
             // TODO: Support sending control message
             warn!("sending control message is not supported");
         }
@@ -279,7 +279,7 @@ impl Socket for VsockStreamSocket {
 
         // TODO: Receive control message
 
-        let messsge_header = MessageHeader::new(None, None);
+        let messsge_header = MessageHeader::new(None, Vec::new());
 
         Ok((received_bytes, messsge_header))
     }

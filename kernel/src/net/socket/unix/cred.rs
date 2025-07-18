@@ -67,8 +67,10 @@ impl<R: TRights> SocketCred<R> {
     }
 }
 
+/// `struct ucred` in Linux.
+///
 /// Reference: <https://elixir.bootlin.com/linux/v6.15/source/include/linux/socket.h#L183>.
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Pod)]
 #[repr(C)]
 pub struct CUserCred {
     pid: Pid,
@@ -77,11 +79,19 @@ pub struct CUserCred {
 }
 
 impl CUserCred {
-    pub(in crate::net) const fn new_unknown() -> Self {
+    pub(in crate::net) const fn new_invalid() -> Self {
         Self {
             pid: 0,
             uid: Uid::INVALID,
             gid: Gid::INVALID,
+        }
+    }
+
+    pub(in crate::net) const fn new_overflow() -> Self {
+        Self {
+            pid: 0,
+            uid: Uid::OVERFLOW,
+            gid: Gid::OVERFLOW,
         }
     }
 }

@@ -17,7 +17,7 @@ use crate::{
             addr::{UnixSocketAddr, UnixSocketAddrBound},
             cred::SocketCred,
         },
-        util::SockShutdownCmd,
+        util::{options::SocketOptionSet, SockShutdownCmd},
     },
     prelude::*,
     process::signal::Pollee,
@@ -54,6 +54,7 @@ impl Init {
         peer_addr: UnixSocketAddrBound,
         pollee: Pollee,
         peer_cred: SocketCred,
+        options: &SocketOptionSet,
     ) -> (Connected, Connected) {
         let Init {
             addr,
@@ -71,6 +72,7 @@ impl Init {
             EndpointState::new(Pollee::new(), is_write_shutdown.into_inner()),
             cred,
             peer_cred,
+            options,
         );
 
         (this_conn, peer_conn)
@@ -80,6 +82,7 @@ impl Init {
         self,
         backlog: usize,
         pollee: Pollee,
+        is_seqpacket: bool,
     ) -> core::result::Result<Listener, (Error, Self)> {
         let Some(addr) = self.addr else {
             return Err((
@@ -96,6 +99,7 @@ impl Init {
             self.is_read_shutdown.into_inner(),
             self.is_write_shutdown.into_inner(),
             pollee,
+            is_seqpacket,
         ))
     }
 
