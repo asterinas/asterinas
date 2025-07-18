@@ -1,66 +1,83 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 
-.section .text.entry
+SATP_MODE_SV48         = 9 << 60
+SATP_PPN_SHIFT         = 0
+
+PTE_V                  = 0x01
+PTE_R                  = 0x02
+PTE_W                  = 0x04
+PTE_X                  = 0x08
+PTE_PPN_SHIFT          = 10
+PTE_SIZE               = 8
+
+PAGE_SHIFT             = 12
+
+KERNEL_VMA             = 0xffffffff00000000
+
+.section ".boot", "awx", @progbits
 .globl _start
 _start:
     # Arguments passed from SBI:
     #   a0 = hart id
     #   a1 = device tree paddr (not touched)
 
-    # 1. enable paging
-    # setting up 1st pagetable
-    #   entry = (PPN(boot_pagetable_2nd) << 10) | 0x01 # V
-    la     t1, boot_pagetable
-    li     t0, 8 * 511
+    # Set up the page table.
+    #   boot_l4pt[511] = (PPN(boot_l3pt) << PTE_PPN_SHIFT) | PTE_V
+    la     t1, boot_l4pt
+    li     t0, 511 * PTE_SIZE
     add    t1, t1, t0
-    la     t0, boot_pagetable_2nd
-    srli   t0, t0, 2
-    ori    t0, t0, 0x01
+    la     t0, boot_l3pt
+    srli   t0, t0, PAGE_SHIFT - PTE_PPN_SHIFT
+    ori    t0, t0, PTE_V
     sd     t0, 0(t1)
 
-    la     t0, boot_pagetable
-    li     t1, 9 << 60
-    srli   t0, t0, 12
+    # Load the page table.
+    la     t0, boot_l4pt
+    li     t1, SATP_MODE_SV48
+    srli   t0, t0, PAGE_SHIFT - SATP_PPN_SHIFT
     or     t0, t0, t1
     csrw   satp, t0
     sfence.vma
 
-    # 2. set sp (BSP only)
-    lga    sp, boot_stack_top
-
-    # 3. set gp (CPU-local address)
-.extern __cpu_local_start
-    lga    gp, __cpu_local_start
-
-    # 4. jump to rust riscv_boot
-    lga    t0, riscv_boot
+    # Update SP/PC to use the virtual address.
+    li     t1, KERNEL_VMA
+    la     sp, boot_stack_top
+    or     sp, sp, t1
+    la     t0, _start_virt - KERNEL_VMA
+    or     t0, t0, t1
     jr     t0
 
+PTE_VRWX = PTE_V | PTE_R | PTE_W | PTE_X
 
-.section .bss.stack
+.balign 4096
+boot_l4pt:
+    .quad (0x00000 << PTE_PPN_SHIFT) | PTE_VRWX  # identity 0~512 GiB
+    .zero 255 * PTE_SIZE
+    .quad (0x00000 << PTE_PPN_SHIFT) | PTE_VRWX  # linear 0~512 GiB
+    .zero 254 * PTE_SIZE
+    .quad 0                                      # TBA (-> boot_l3pt)
+boot_l3pt:  # 0xffff_ffff_0000_0000 -> 0x0000_0000_0000_0000
+    .zero 508 * PTE_SIZE
+    .quad (0x00000 << PTE_PPN_SHIFT) | PTE_VRWX  # code 0~1 GiB
+    .quad (0x40000 << PTE_PPN_SHIFT) | PTE_VRWX  # code 1~2 GiB
+    .quad (0x80000 << PTE_PPN_SHIFT) | PTE_VRWX  # code 2~3 GiB
+    .quad 0
 
-.globl boot_stack_bottom
-boot_stack_bottom:
-    .space 0x40000 # 64 KiB
-
+.section ".boot.stack", "aw", @nobits
 .globl boot_stack_top
+boot_stack_bottom:
+    .balign 4096
+    .skip 0x40000  # 256 KiB
 boot_stack_top:
 
+# From here, we're in the .text section: we no longer use physical address.
+.text
+.globl _start_virt
+_start_virt:
+    # Initialize GP to the CPU-local start address.
+.extern __cpu_local_start
+    la     gp, __cpu_local_start
 
-.section .data
-
-.align 12
-boot_pagetable:
-    .quad (0x00000 << 10) | 0xcf # VRWXAD
-    .zero 8 * 255
-    .quad (0x00000 << 10) | 0xcf # VRWXAD
-    .zero 8 * 254
-    .quad 0  # To-Be-Assign
-
-boot_pagetable_2nd:
-    # 0x0000_00ff_8000_0000 -> 0x0000_0000_8000_0000
-    .zero 8 * 508
-    .quad (0x00000 << 10) | 0xcf # VRWXAD
-    .quad (0x40000 << 10) | 0xcf # VRWXAD
-    .quad (0x80000 << 10) | 0xcf # VRWXAD
-    .quad 0
+    # Jump into Rust code.
+    la     t0, riscv_boot
+    jr     t0
