@@ -34,7 +34,6 @@ pub fn register_callback(callback: &'static KeyboardCallback) {
 /// Define unified keycodes for different types of keyboards.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InputKey {
-    Ign, // Ignore this key
     // Control characters
     Nul,          // Ctrl + @, null
     Soh,          // Ctrl + A, start of heading
@@ -194,7 +193,6 @@ impl InputKey {
     /// Reference: <https://invisible-island.net/xterm/ctlseqs/ctlseqs.pdf>
     pub fn as_xterm_control_sequence(&self) -> &[u8] {
         match self {
-            InputKey::Ign => &[],
             // ASCII control characters (character code 0-31)
             InputKey::Nul => &[0x00],
             InputKey::Soh => &[0x01],
