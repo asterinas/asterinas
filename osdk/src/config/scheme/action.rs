@@ -26,6 +26,8 @@ pub struct BuildScheme {
     #[serde(default)]
     pub strip_elf: bool,
     pub encoding: Option<PayloadEncoding>,
+    #[serde(default)]
+    pub rustflags: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,6 +44,8 @@ pub struct Build {
     #[serde(default)]
     pub strip_elf: bool,
     pub encoding: PayloadEncoding,
+    #[serde(default)]
+    pub rustflags: String,
 }
 
 impl Default for Build {
@@ -54,6 +58,7 @@ impl Default for Build {
             linux_x86_legacy_boot: false,
             strip_elf: false,
             encoding: PayloadEncoding::default(),
+            rustflags: String::new(),
         }
     }
 }
@@ -79,6 +84,16 @@ impl Build {
         if let Some(encoding) = common_args.encoding.clone() {
             self.encoding.clone_from(&encoding);
         }
+
+        if common_args.coverage {
+            self.append_rustflags("-Cinstrument-coverage -Zno-profiler-runtime");
+            self.features.push("coverage".to_string());
+        }
+    }
+
+    pub fn append_rustflags(&mut self, rustflags: &str) {
+        self.rustflags += " ";
+        self.rustflags += rustflags;
     }
 }
 
@@ -102,6 +117,7 @@ impl BuildScheme {
         if self.encoding.is_none() {
             self.encoding.clone_from(&parent.encoding);
         }
+        self.rustflags = parent.rustflags.clone() + " " + &self.rustflags;
     }
 
     pub fn finalize(self) -> Build {
@@ -113,6 +129,7 @@ impl BuildScheme {
             linux_x86_legacy_boot: self.linux_x86_legacy_boot,
             strip_elf: self.strip_elf,
             encoding: self.encoding.unwrap_or_default(),
+            rustflags: self.rustflags,
         }
     }
 }
