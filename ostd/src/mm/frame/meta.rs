@@ -466,7 +466,7 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
         max_paddr
     );
 
-    // In RISC-V, the boot page table has mapped the 512GB memory,
+    // In RISC-V and AArch64, the boot page table has mapped the 512GB memory,
     // so we don't need to add temporary linear mapping.
     // In LoongArch, the DWM0 has mapped the whole memory,
     // so we don't need to add temporary linear mapping.
