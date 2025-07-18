@@ -5,7 +5,7 @@
 // The boot header, initial boot setup code, temporary GDT and page tables are
 // in the boot section. The boot section is mapped writable since kernel may
 // modify the initial page table.
-.section ".bsp_boot", "awx"
+.section ".bsp_boot", "awx", @progbits
 .code32
 
 // With every entry types we could go through common paging or machine
@@ -285,11 +285,6 @@ boot_l2pt_3g_4g:
     .skip 4096
 boot_page_table_end:
 
-.global boot_stack_top
-boot_stack_bottom:
-    .skip 0x40000
-boot_stack_top:
-
 .code64
 long_mode_in_low_address:
     mov ax, 0
@@ -304,6 +299,13 @@ long_mode_in_low_address:
     or  rsp, rbx
     mov rax, offset long_mode
     jmp rax
+
+.section ".bsp_boot.stack", "aw", @nobits
+.global boot_stack_top
+boot_stack_bottom:
+    .align 4096
+    .skip 0x40000  # 256 KiB
+boot_stack_top:
 
 // From here, we're in the .text section: we no longer use physical address.
 .text

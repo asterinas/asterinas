@@ -5,7 +5,7 @@
 .global ap_boot_from_real_mode
 .global ap_boot_from_long_mode
 
-.section ".ap_boot", "awx"
+.section ".ap_boot", "awx", @progbits
 .align 4096
 
 IA32_EFER_MSR     = 0xC0000080

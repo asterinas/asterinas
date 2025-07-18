@@ -61,16 +61,21 @@ SECTIONS
 # --------------------------------------------------------------------------- #
     . = BSP_BOOT_LMA;
 
-    .bsp_boot               : AT(BSP_BOOT_LMA) {
-        KEEP(*(.bsp_boot .bsp_boot.*))
+    .bsp_boot               : AT(ADDR(.bsp_boot)) {
+        KEEP(*(.bsp_boot))
+    } : bsp_boot
+    # Create a separate .bsp_boot.stack section so that the executable doesn't
+    # contain the boot stack (which is just hundreds of kilobytes of zeros).
+    .bsp_boot.stack         : AT(ADDR(.bsp_boot.stack)) {
+        KEEP(*(.bsp_boot.stack))
         . = ALIGN(4096);
     } : bsp_boot
 
     . = AP_EXEC_MA;
 
-    .ap_boot                : AT(BSP_BOOT_LMA + SIZEOF(.bsp_boot)) {
-        __ap_boot_start = BSP_BOOT_LMA + SIZEOF(.bsp_boot) + KERNEL_VMA;
-        KEEP(*(.ap_boot .ap_boot.*))
+    .ap_boot                : AT(LOADADDR(.bsp_boot.stack) + SIZEOF(.bsp_boot.stack)) {
+        __ap_boot_start = LOADADDR(.ap_boot) + KERNEL_VMA;
+        KEEP(*(.ap_boot))
         __ap_boot_end = __ap_boot_start + (. - AP_EXEC_MA);
         . = ALIGN(4096);
     } : ap_boot
@@ -78,7 +83,7 @@ SECTIONS
 # --------------------------------------------------------------------------- #
 # Here are the rest of the virtual memory sections which can be relocated.    #
 # --------------------------------------------------------------------------- #
-    . = BSP_BOOT_LMA + KERNEL_VMA + SIZEOF(.bsp_boot) + SIZEOF(.ap_boot);
+    . = LOADADDR(.ap_boot) + SIZEOF(.ap_boot) + KERNEL_VMA;
 
     .text                   : AT(ADDR(.text) - KERNEL_VMA) {
         *(.text .text.*)
