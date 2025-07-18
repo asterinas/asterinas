@@ -16,7 +16,7 @@ use ostd::{
 
 use super::{
     time::{base_slice_clocks, min_period_clocks},
-    CurrentRuntime, SchedAttr, SchedClassRq,
+    CurrentRuntime, SchedAttr, SchedClassRq, SchedPolicyKind,
 };
 use crate::{
     sched::nice::{Nice, NiceValue},
@@ -311,7 +311,21 @@ impl SchedClassRq for FairClassRq {
         self.entities.is_empty()
     }
 
-    fn pick_next(&mut self) -> Option<Arc<Task>> {
+    fn pick_next(&mut self, current: Option<&SchedAttr>) -> Option<Arc<Task>> {
+        if let Some(current) = current
+            && let Some(Reverse(next)) = self.entities.peek()
+        {
+            debug_assert!(current.policy_kind() == SchedPolicyKind::Fair);
+            let current_vruntime = current
+                .fair
+                .vruntime
+                .fetch_max(self.min_vruntime, Ordering::Relaxed)
+                .max(self.min_vruntime);
+            if current_vruntime < next.key() {
+                return None;
+            }
+        }
+
         let Reverse(FairQueueItem(entity, _)) = self.entities.pop()?;
 
         let sched_attr = entity.as_thread().unwrap().sched_attr();

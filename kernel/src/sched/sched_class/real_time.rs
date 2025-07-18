@@ -16,7 +16,7 @@ use ostd::{
     },
 };
 
-use super::{time::base_slice_clocks, CurrentRuntime, SchedAttr, SchedClassRq};
+use super::{time::base_slice_clocks, CurrentRuntime, SchedAttr, SchedClassRq, SchedPolicyKind};
 use crate::{sched::nice::RangedU8, thread::AsThread};
 
 pub type RealTimePriority = RangedU8<1, 99>;
@@ -121,12 +121,17 @@ impl PrioArray {
         let prio = iter.next()? as u8;
 
         let queue = &mut self.queue[usize::from(prio)];
-        let thread = queue.pop_front()?;
+        let thread = queue.pop_front().unwrap();
 
         if queue.is_empty() {
             self.map.set(usize::from(prio), false);
         }
         Some(thread)
+    }
+
+    fn peek_next_prio(&self) -> Option<u8> {
+        let mut iter = self.map.iter_ones();
+        Some(iter.next()? as u8)
     }
 }
 
@@ -163,11 +168,19 @@ impl RealTimeClassRq {
         }
     }
 
-    fn active_array(&mut self) -> &mut PrioArray {
+    fn active_array(&self) -> &PrioArray {
+        &self.array[usize::from(self.index)]
+    }
+
+    fn active_array_mut(&mut self) -> &mut PrioArray {
         &mut self.array[usize::from(self.index)]
     }
 
-    fn inactive_array(&mut self) -> &mut PrioArray {
+    fn inactive_array(&self) -> &PrioArray {
+        &self.array[usize::from(!self.index)]
+    }
+
+    fn inactive_array_mut(&mut self) -> &mut PrioArray {
         &mut self.array[usize::from(!self.index)]
     }
 
@@ -180,7 +193,7 @@ impl SchedClassRq for RealTimeClassRq {
     fn enqueue(&mut self, entity: Arc<Task>, _: Option<EnqueueFlags>) {
         let sched_attr = entity.as_thread().unwrap().sched_attr();
         let prio = sched_attr.real_time.prio.load(Relaxed);
-        self.inactive_array().enqueue(entity, prio);
+        self.inactive_array_mut().enqueue(entity, prio);
         self.nr_running += 1;
     }
 
@@ -192,15 +205,28 @@ impl SchedClassRq for RealTimeClassRq {
         self.nr_running == 0
     }
 
-    fn pick_next(&mut self) -> Option<Arc<Task>> {
+    fn pick_next(&mut self, current: Option<&SchedAttr>) -> Option<Arc<Task>> {
         if self.nr_running == 0 {
             return None;
         }
+        if let Some(current) = current
+            && self.active_array().peek_next_prio().is_none()
+        {
+            debug_assert!(current.policy_kind() == SchedPolicyKind::RealTime);
+            let current_prio = current.real_time.prio.load(Relaxed);
+            if self
+                .inactive_array()
+                .peek_next_prio()
+                .is_none_or(|next_prio| current_prio < next_prio)
+            {
+                return None;
+            }
+        }
 
-        (self.active_array().pop())
+        (self.active_array_mut().pop())
             .or_else(|| {
                 self.swap_arrays();
-                self.active_array().pop()
+                self.active_array_mut().pop()
             })
             .inspect(|_| self.nr_running -= 1)
     }
@@ -215,7 +241,7 @@ impl SchedClassRq for RealTimeClassRq {
 
         match flags {
             UpdateFlags::Tick | UpdateFlags::Wait => match attr.time_slice.load(Relaxed) {
-                0 => (self.inactive_array().map.iter_ones().next())
+                0 => (self.inactive_array_mut().map.iter_ones().next())
                     .is_some_and(|prio| prio > usize::from(attr.prio.load(Relaxed))),
                 ts => ts <= rt.period_delta,
             },

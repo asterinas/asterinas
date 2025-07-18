@@ -71,7 +71,8 @@ pub trait LocalRunQueue<T = Task> {
     /// If the current runnable task needs to be preempted, the method returns `true`.
     fn update_current(&mut self, flags: UpdateFlags) -> bool;
 
-    /// Picks the next current runnable task.
+    /// Picks the next current runnable task with priority equals to or higher than
+    /// the priority of the current task.
     ///
     /// This method returns the chosen next current runnable task. If there is no
     /// candidate for next current runnable task, this method returns `None`.
