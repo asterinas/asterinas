@@ -29,11 +29,13 @@ use x86_64::{
 };
 
 use super::RawUserContext;
+use crate::mm::PagingConstsTrait;
 
 global_asm!(
     include_str!("syscall.S"),
     USER_CS = const super::gdt::USER_CS.0,
     USER_SS = const super::gdt::USER_SS.0,
+    ADDRESS_WIDTH = const crate::mm::kspace::KernelPtConfig::ADDRESS_WIDTH,
 );
 
 /// # Safety
