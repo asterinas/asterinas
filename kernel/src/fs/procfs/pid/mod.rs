@@ -9,12 +9,14 @@ use crate::{
     events::Observer,
     fs::{
         file_table::FdEvents,
+        procfs::pid::cgroup::CgroupOps,
         utils::{DirEntryVecExt, Inode},
     },
     prelude::*,
     process::{posix_thread::AsPosixThread, Process},
 };
 
+mod cgroup;
 mod cmdline;
 mod comm;
 mod exe;
@@ -62,6 +64,7 @@ impl DirOps for PidDirOps {
     fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
         let inode = match name {
             "exe" => ExeSymOps::new_inode(self.0.clone(), this_ptr.clone()),
+            "cgroup" => CgroupOps::new_inode(self.0.clone(), this_ptr.clone()),
             "comm" => CommFileOps::new_inode(self.0.clone(), this_ptr.clone()),
             "fd" => FdDirOps::new_inode(self.0.clone(), this_ptr.clone()),
             "cmdline" => CmdlineFileOps::new_inode(self.0.clone(), this_ptr.clone()),
@@ -85,6 +88,9 @@ impl DirOps for PidDirOps {
         let mut cached_children = this.cached_children().write();
         cached_children.put_entry_if_not_found("exe", || {
             ExeSymOps::new_inode(self.0.clone(), this_ptr.clone())
+        });
+        cached_children.put_entry_if_not_found("cgroup", || {
+            CgroupOps::new_inode(self.0.clone(), this_ptr.clone())
         });
         cached_children.put_entry_if_not_found("comm", || {
             CommFileOps::new_inode(self.0.clone(), this_ptr.clone())
