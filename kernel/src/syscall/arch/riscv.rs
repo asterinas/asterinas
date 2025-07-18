@@ -23,6 +23,7 @@ use super::{
     execve::{sys_execve, sys_execveat},
     exit::sys_exit,
     exit_group::sys_exit_group,
+    fadvise64::sys_fadvise64,
     fallocate::sys_fallocate,
     fcntl::sys_fcntl,
     flock::sys_flock,
@@ -284,6 +285,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_CLONE = 220              => sys_clone(args[..5], &user_ctx);
     SYS_EXECVE = 221             => sys_execve(args[..3], &mut user_ctx);
     SYS_MMAP = 222               => sys_mmap(args[..6]);
+    SYS_FADVISE64 = 223          => sys_fadvise64(args[..4]);
     SYS_MPROTECT = 226           => sys_mprotect(args[..3]);
     SYS_MSYNC = 227              => sys_msync(args[..3]);
     SYS_MADVISE = 233            => sys_madvise(args[..3]);
