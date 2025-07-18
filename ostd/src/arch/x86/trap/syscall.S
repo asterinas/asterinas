@@ -9,6 +9,7 @@
  *
  * We make the following new changes:
  * * Skip saving/restoring the fsgsbase registers.
+ * * Use new logic to determine whether to use sysret or iret.
  *
  * These changes are released under the following license:
  *
@@ -62,9 +63,27 @@ syscall_return:
     # trap_num
     # error_code
 
-    # determain sysret or iret
-    cmp dword ptr [rsp + 4*8], 0x100  # syscall?
+    # Determine whether to use sysret or iret.
+    # If returning to user space with a clean context,
+    # the fast sysret path can be used;
+    # otherwise, the slower iret path should be used.
+    # Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/arch/x86/entry/entry_64.S#L122>.
+
+    cmp qword ptr [rsp], rcx      # sysret requires rcx = rip
+    jne iret
+
+    cmp qword ptr [rsp + 8], r11  # sysret requires r11 = rflags
+    jne iret 
+
+    test r11, 0x10100             # sysret requires rflags not contain RF and TF flags
+    jnz iret
+
+    shl rcx, 64 - {ADDRESS_WIDTH}
+    sar rcx, 64 - {ADDRESS_WIDTH}
+    cmp qword ptr [rsp], rcx      # sysret requires rip be a canonical address
     je sysret
+    mov rcx, [rsp]
+
 iret:
     # construct trap frame
     push {USER_SS}          # push ss
@@ -76,9 +95,7 @@ iret:
     iretq
 
 sysret:
-    pop rcx                 # rcx = rip
-    pop r11                 # r11 = rflags
-    mov rsp, [rsp - 11*8]   # load rsp
+    mov rsp, [rsp - 9*8]    # load rsp
 
     sysretq
 
