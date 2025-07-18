@@ -8,7 +8,7 @@ use aster_rights::Rights;
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_handle::FileLike,
+        file_handle::{FileLike, FileMmapResult},
         file_table::{get_file_fast, FileDesc},
     },
     prelude::*,
@@ -135,21 +135,25 @@ fn do_sys_mmap(
                 return_errno!(Errno::EACCES);
             }
 
-            let inode = inode_handle.dentry().inode();
-            if inode.page_cache().is_none() {
-                return_errno_with_message!(Errno::EBADF, "File does not have page cache");
+            match file.mmap(len, offset)? {
+                FileMmapResult::PageCache(inode) => {
+                    options = options.inode(inode);
+                }
+                FileMmapResult::IoMem(io_mem) => {
+                    assert!(len <= io_mem.length().align_up(PAGE_SIZE));
+                    options = options.iomem(io_mem);
+                    options = options.map_populate(true);
+                }
             }
 
-            options = options
-                .inode(inode.clone())
-                .vmo_offset(offset)
-                .handle_page_faults_around();
+            options = options.vmo_offset(offset).handle_page_faults_around();
         }
 
         options
     };
 
     let map_addr = vm_map_options.build()?;
+
     Ok(map_addr)
 }
 

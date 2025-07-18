@@ -15,12 +15,12 @@ use inherit_methods_macro::inherit_methods;
 use crate::{
     events::IoEvents,
     fs::{
-        file_handle::FileLike,
+        file_handle::FileMmapResult,
         path::Dentry,
         utils::{
             AccessMode, DirentVisitor, FallocMode, FileRange, FlockItem, FlockList, InodeMode,
-            InodeType, IoctlCmd, Metadata, RangeLockItem, RangeLockItemBuilder, RangeLockList,
-            RangeLockType, SeekFrom, StatusFlags, OFFSET_MAX,
+            IoctlCmd, Metadata, RangeLockItem, RangeLockItemBuilder, RangeLockList, RangeLockType,
+            SeekFrom, StatusFlags, OFFSET_MAX,
         },
     },
     prelude::*,
@@ -215,6 +215,20 @@ impl InodeHandle_ {
         self.dentry.inode().ioctl(cmd, arg)
     }
 
+    fn mmap(&self, len: usize, offset: usize) -> Result<FileMmapResult> {
+        let inode = self.dentry.inode();
+        if inode.page_cache().is_some() {
+            // If the inode has a page cache, it is a file-backed mapping and
+            // directly return the corresponding inode.
+            Ok(FileMmapResult::PageCache(inode.clone()))
+        } else if let Some(ref file_io) = self.file_io {
+            // Else, let the file specific mmap to handle.
+            file_io.mmap(len, offset)
+        } else {
+            return_errno_with_message!(Errno::EINVAL, "mmap is not supported");
+        }
+    }
+
     fn test_range_lock(&self, lock: RangeLockItem) -> Result<RangeLockItem> {
         let mut req_lock = lock.clone();
         if let Some(extension) = self.dentry.inode().extension() {
@@ -383,6 +397,18 @@ pub trait FileIo: Pollable + Send + Sync + 'static {
     fn read(&self, writer: &mut VmWriter) -> Result<usize>;
 
     fn write(&self, reader: &mut VmReader) -> Result<usize>;
+
+    /// File specific mmap.
+    ///
+    /// This is the public interface for file specific mmap. It will **NOT**
+    /// take all the responsibility of syscall mmap, like building the mapping.
+    /// Instead, it will expose necessary information for the syscall handler to
+    /// finish the mmap.
+    ///
+    /// The returned [`FileMmapResult`] will be used to build the mapping.
+    fn mmap(&self, len: usize, offset: usize) -> Result<FileMmapResult> {
+        return_errno_with_message!(Errno::EINVAL, "mmap is not supported");
+    }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");
