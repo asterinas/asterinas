@@ -192,6 +192,29 @@ impl Default for ucontext_t {
     }
 }
 
+#[cfg(target_arch = "loongarch64")]
+#[derive(Clone, Copy, Debug, Pod)]
+#[repr(C)]
+/// Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/loongarch/include/uapi/asm/ucontext.h>
+pub struct ucontext_t {
+    pub uc_flags: u64,
+    pub uc_link: Vaddr, // *mut ucontext_t
+    pub uc_stack: stack_t,
+    pub uc_sigmask: sigset_t,
+    pub __unused: [u8; 120],
+    pub uc_mcontext: mcontext_t,
+}
+
+#[cfg(target_arch = "loongarch64")]
+impl Default for ucontext_t {
+    fn default() -> Self {
+        Self {
+            __unused: [0; 120],
+            ..Default::default()
+        }
+    }
+}
+
 pub type stack_t = sigaltstack_t;
 
 #[derive(Debug, Clone, Copy, Pod, Default)]
