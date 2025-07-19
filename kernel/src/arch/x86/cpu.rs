@@ -7,6 +7,7 @@ use alloc::{
 };
 
 use ostd::{
+    arch::tsc_freq,
     cpu::context::{cpuid, CpuException, PageFaultErrorCode, RawPageFaultInfo, UserContext},
     mm::Vaddr,
     Pod,
@@ -317,37 +318,50 @@ impl CpuInfo {
 
     fn get_clock_speed() -> Option<u32> {
         let cpuid = cpuid::CpuId::new();
-        let tsc_info = cpuid.get_tsc_info()?;
-        Some(
-            (tsc_info.tsc_frequency().unwrap_or(0) / 1_000_000)
-                .try_into()
-                .unwrap(),
-        )
+        if let Some(tsc_info) = cpuid.get_tsc_info() {
+            Some(
+                (tsc_info.tsc_frequency().unwrap_or(0) / 1_000_000)
+                    .try_into()
+                    .unwrap(),
+            )
+        } else {
+            // Fallback to RDTSC estimation using ostd's TSC frequency
+            // not accurate, but better than nothing
+            let tsc_freq_hz = tsc_freq();
+            if tsc_freq_hz > 0 {
+                Some((tsc_freq_hz / 1_000_000) as u32)
+            } else {
+                None
+            }
+        }
     }
 
     /// Get cache size in KB
     fn get_cache_size() -> Option<u32> {
         let cpuid = cpuid::CpuId::new();
-        let cache_info = cpuid.get_cache_info()?;
-
-        for cache in cache_info {
-            let desc = cache.desc();
-            if let Some(size) = desc.split_whitespace().find(|word| {
-                word.ends_with("KBytes") || word.ends_with("MBytes") || word.ends_with("GBytes")
-            }) {
-                let size_str = size
-                    .trim_end_matches(&['K', 'M', 'G'][..])
-                    .trim_end_matches("Bytes");
-                let cache_size = size_str.parse::<u32>().unwrap_or(0);
-
-                let cache_size = match size.chars().last().unwrap() {
-                    'K' => cache_size * 1024,
-                    'M' => cache_size * 1024 * 1024,
-                    'G' => cache_size * 1024 * 1024 * 1024,
-                    _ => cache_size,
-                };
-
-                return Some(cache_size);
+        if let Some(cache_info) = cpuid.get_cache_info() {
+            for cache in cache_info {
+                let desc = cache.desc();
+                if let Some(size) = desc.split_whitespace().find(|word| {
+                    word.ends_with("KBytes") || word.ends_with("MBytes") || word.ends_with("GBytes")
+                }) {
+                    let size_str = size
+                        .trim_end_matches(&['K', 'M', 'G'][..])
+                        .trim_end_matches("Bytes");
+                    let cache_size = size_str.parse::<u32>().unwrap_or(0);
+                    let cache_size = match size.chars().last().unwrap() {
+                        'K' => cache_size * 1024,
+                        'M' => cache_size * 1024 * 1024,
+                        'G' => cache_size * 1024 * 1024 * 1024,
+                        _ => cache_size,
+                    };
+                    return Some(cache_size);
+                }
+            }
+        } else {
+            // implementation for AMD CPUs
+            if let Some(cache) = cpuid.get_l2_l3_cache_and_tlb_info() {
+                return Some(cache.l2cache_size() as u32 * 1024);
             }
         }
 
@@ -356,17 +370,22 @@ impl CpuInfo {
 
     fn get_tlb_size() -> Option<u32> {
         let cpuid = cpuid::CpuId::new();
-        let cache_info = cpuid.get_cache_info()?;
-
-        for cache in cache_info {
-            let desc = cache.desc();
-            if let Some(size) = desc.split_whitespace().find(|word| word.ends_with("pages")) {
-                let size_str = size.trim_end_matches("pages");
-                let tlb_size = size_str.parse::<u32>().unwrap_or(0);
-                return Some(tlb_size);
+        let cache_info = cpuid.get_cache_info();
+        if let Some(cache_info) = cache_info {
+            for cache in cache_info {
+                let desc = cache.desc();
+                if let Some(size) = desc.split_whitespace().find(|word| word.ends_with("pages")) {
+                    let size_str = size.trim_end_matches("pages");
+                    let tlb_size = size_str.parse::<u32>().unwrap_or(0);
+                    return Some(tlb_size);
+                }
+            }
+        } else {
+            // implementation for AMD CPUs
+            if let Some(cache) = cpuid.get_l2_l3_cache_and_tlb_info() {
+                return Some(cache.dtlb_4k_size() as u32);
             }
         }
-
         None
     }
 
@@ -405,12 +424,7 @@ impl CpuInfo {
     }
 
     fn get_cpuid_level() -> u32 {
-        let cpuid = cpuid::CpuId::new();
-        if let Some(basic_info) = cpuid.get_tsc_info() {
-            basic_info.denominator()
-        } else {
-            0
-        }
+        cpuid::cpuid!(0x0).eax
     }
 
     fn get_cpu_flags() -> String {
@@ -514,7 +528,7 @@ impl CpuInfo {
 
     fn get_clflush_size() -> u8 {
         let cpuid = cpuid::CpuId::new();
-        cpuid.get_feature_info().unwrap().cflush_cache_line_size()
+        cpuid.get_feature_info().unwrap().cflush_cache_line_size() * 8
     }
 
     fn get_cache_alignment() -> u32 {
