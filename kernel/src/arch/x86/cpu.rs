@@ -7,6 +7,7 @@ use alloc::{
 };
 
 use ostd::{
+    arch::tsc_freq,
     cpu::context::{cpuid, CpuException, PageFaultErrorCode, RawPageFaultInfo, UserContext},
     mm::Vaddr,
     Pod,
@@ -317,12 +318,18 @@ impl CpuInfo {
 
     fn get_clock_speed() -> Option<u32> {
         let cpuid = cpuid::CpuId::new();
-        let tsc_info = cpuid.get_tsc_info()?;
-        Some(
-            (tsc_info.tsc_frequency().unwrap_or(0) / 1_000_000)
-                .try_into()
-                .unwrap(),
-        )
+        if let Some(tsc_info) = cpuid.get_tsc_info() {
+            Some(
+                (tsc_info.tsc_frequency().unwrap_or(0) / 1_000_000)
+                    .try_into()
+                    .unwrap(),
+            )
+        } else {
+            // Fallback to RDTSC estimation using ostd's TSC frequency
+            // not accurate, but better than nothing
+            let tsc_freq_hz = tsc_freq();// always > 0
+            Some((tsc_freq_hz / 1_000_000) as u32)
+        }
     }
 
     /// Get cache size in KB
