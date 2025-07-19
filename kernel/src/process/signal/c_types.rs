@@ -183,7 +183,9 @@ pub struct ucontext_t {
     pub uc_sigmask: sigset_t,
 }
 
-#[cfg(target_arch = "riscv64")]
+/// Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/riscv/include/uapi/asm/ucontext.h>
+/// Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/loongarch/include/uapi/asm/ucontext.h>
+#[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))]
 #[derive(Clone, Copy, Debug, Pod)]
 #[repr(C)]
 pub struct ucontext_t {
@@ -195,7 +197,7 @@ pub struct ucontext_t {
     pub uc_mcontext: mcontext_t,
 }
 
-#[cfg(target_arch = "riscv64")]
+#[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))]
 impl Default for ucontext_t {
     fn default() -> Self {
         Self {
