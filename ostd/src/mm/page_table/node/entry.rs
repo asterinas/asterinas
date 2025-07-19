@@ -147,14 +147,13 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         // Lock before writing the PTE, so no one else can operate on it.
         let pt_lock_guard = pt_ref.lock(guard);
 
+        self.pte = Child::PageTable(new_page).into_pte();
+
         // SAFETY:
         //  1. The index is within the bounds.
         //  2. The new PTE is a child in `C` and at the correct paging level.
         //  3. The ownership of the child is passed to the page table node.
-        unsafe {
-            self.node
-                .write_pte(self.idx, Child::PageTable(new_page).into_pte())
-        };
+        unsafe { self.node.write_pte(self.idx, self.pte) };
 
         *self.node.nr_children_mut() += 1;
 
@@ -199,14 +198,13 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             debug_assert!(old.is_none());
         }
 
+        self.pte = Child::PageTable(new_page).into_pte();
+
         // SAFETY:
         //  1. The index is within the bounds.
         //  2. The new PTE is a child in `C` and at the correct paging level.
         //  3. The ownership of the child is passed to the page table node.
-        unsafe {
-            self.node
-                .write_pte(self.idx, Child::PageTable(new_page).into_pte())
-        };
+        unsafe { self.node.write_pte(self.idx, self.pte) };
 
         Some(pt_lock_guard)
     }
