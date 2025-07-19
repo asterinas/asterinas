@@ -949,7 +949,11 @@ impl<'a> From<&'a mut [u8]> for VmWriter<'a, Infallible> {
 /// `read_once`/`write_once` will lead to a failed compile-time assertion.
 pub trait PodOnce: Pod {}
 
-#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
+#[cfg(any(
+    target_arch = "x86_64",
+    target_arch = "riscv64",
+    target_arch = "loongarch64"
+))]
 mod pod_once_impls {
     use super::PodOnce;
 

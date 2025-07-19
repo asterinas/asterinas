@@ -243,7 +243,7 @@ impl MemoryBar {
         location.write32(offset, raw);
         let mut address_length = AddrLen::Bits32;
         // base address, it may be bit64 or bit32
-        let base: u64 = match (raw & 0b110) >> 1 {
+        let raw_base: u64 = match (raw & 0b110) >> 1 {
             // bits32
             0 => (raw & !0xF) as u64,
             // bits64
@@ -257,6 +257,28 @@ impl MemoryBar {
         };
         // length
         let size = (!(len_encoded & !0xF)).wrapping_add(1);
+
+        cfg_if::cfg_if! {
+            // In LoongArch, the BAR base address needs to be allocated manually.
+            if #[cfg(target_arch = "loongarch64")] {
+                use crate::arch::pci::alloc_mmio;
+                use core::alloc::Layout;
+
+                let allocated_base = alloc_mmio(Layout::from_size_align(size as usize, size as usize).unwrap()).unwrap() as u64;
+
+                if address_length == AddrLen::Bits64 {
+                    location.write32(offset, allocated_base as u32);
+                    location.write32(offset + 4, (allocated_base >> 32) as u32);
+                } else {
+                    location.write32(offset, allocated_base as u32);
+                }
+
+                let base = allocated_base;
+            } else {
+                let base = raw_base;
+            }
+        }
+
         let prefetchable = raw & 0b1000 != 0;
         // The BAR is located in I/O memory region
         Ok(MemoryBar {

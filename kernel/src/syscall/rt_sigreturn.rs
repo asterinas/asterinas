@@ -53,7 +53,11 @@ pub fn sys_rt_sigreturn(ctx: &Context, user_ctx: &mut UserContext) -> Result<Sys
         } else if #[cfg(target_arch = "riscv64")] {
             // In RISC-V, FPU context is placed directly after `ucontext_t` on signal stack.
             let fpu_context_addr = sig_context_addr + size_of::<ucontext_t>();
-        } else {
+        } else if #[cfg(target_arch = "loongarch64")] {
+            // In LoongArch64, FPU context is placed directly after `ucontext_t` on signal stack.
+            let fpu_context_addr = sig_context_addr + size_of::<ucontext_t>();
+        }
+        else {
             compile_error!("unsupported target");
         }
     }

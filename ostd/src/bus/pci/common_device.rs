@@ -72,13 +72,19 @@ impl PciCommonDevice {
 
         let capabilities = Vec::new();
         let device_id = PciDeviceId::new(location);
-        let bar_manager = BarManager::new(location);
+        let bar_manager = BarManager {
+            bars: [const { None }; 6],
+        };
         let mut device = Self {
             device_id,
             location,
             bar_manager,
             capabilities,
         };
+        device.set_command(
+            device.command() | Command::MEMORY_SPACE | Command::BUS_MASTER | Command::IO_SPACE,
+        );
+        device.bar_manager = BarManager::new(location);
         device.capabilities = Capability::device_capabilities(&mut device);
         Some(device)
     }

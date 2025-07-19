@@ -174,7 +174,7 @@ fn do_new_base_crate(
     }
     // TODO: currently just x86_64 works; add support for other architectures
     // here when OSTD is ready
-    include_linker_script!(["x86_64.ld", "riscv64.ld"]);
+    include_linker_script!(["x86_64.ld", "riscv64.ld", "loongarch64.ld"]);
 
     // Overwrite the main.rs file
     let main_rs = include_str!("main.rs.template");

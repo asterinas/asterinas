@@ -272,12 +272,13 @@ impl VirtioPciModernTransport {
         common_device: PciCommonDevice,
     ) -> Result<Self, (BusProbeError, PciCommonDevice)> {
         let device_id = common_device.device_id().device_id;
-        if device_id <= 0x1040 {
-            warn!("Unrecognized virtio-pci device id:{:x?}", device_id);
-            return Err((BusProbeError::DeviceNotMatch, common_device));
-        }
+        let device_type_value = if device_id <= 0x1040 {
+            device_id - 0x1000
+        } else {
+            device_id - 0x1040
+        };
 
-        let device_type = match VirtioDeviceType::try_from((device_id - 0x1040) as u8) {
+        let device_type = match VirtioDeviceType::try_from(device_type_value as u8) {
             Ok(device) => device,
             Err(_) => {
                 warn!("Unrecognized virtio-pci device id:{:x?}", device_id);
