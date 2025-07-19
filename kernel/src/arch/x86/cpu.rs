@@ -13,7 +13,10 @@ use ostd::{
     Pod,
 };
 
-use crate::{cpu::LinuxAbi, thread::exception::PageFaultInfo, vm::perms::VmPerms};
+use crate::{
+    arch::cpu::cpuid::VendorInfo, cpu::LinuxAbi, thread::exception::PageFaultInfo,
+    vm::perms::VmPerms,
+};
 
 impl LinuxAbi for UserContext {
     fn syscall_num(&self) -> usize {
@@ -168,6 +171,22 @@ impl TryFrom<&CpuException> for PageFaultInfo {
     }
 }
 
+enum CpuVendor {
+    Intel,
+    Amd,
+    Unknown,
+}
+
+impl From<&VendorInfo> for CpuVendor {
+    fn from(info: &VendorInfo) -> Self {
+        match info.as_str() {
+            "GenuineIntel" => Self::Intel,
+            "AuthenticAMD" => Self::Amd,
+            _ => Self::Unknown,
+        }
+    }
+}
+
 /// CPU Information structure
 ///
 /// Reference:
@@ -318,63 +337,83 @@ impl CpuInfo {
 
     fn get_clock_speed() -> Option<u32> {
         let cpuid = cpuid::CpuId::new();
-        if let Some(tsc_info) = cpuid.get_tsc_info() {
-            Some(
-                (tsc_info.tsc_frequency().unwrap_or(0) / 1_000_000)
-                    .try_into()
-                    .unwrap(),
-            )
-        } else {
-            // Fallback to RDTSC estimation using ostd's TSC frequency
-            // not accurate, but better than nothing
-            let tsc_freq_hz = tsc_freq();// always > 0
-            Some((tsc_freq_hz / 1_000_000) as u32)
+        let vendor_info = cpuid.get_vendor_info()?;
+        match CpuVendor::from(&vendor_info) {
+            CpuVendor::Intel => {
+                let tsc_info = cpuid.get_tsc_info()?;
+                Some(
+                    (tsc_info.tsc_frequency().unwrap_or(0) / 1_000_000)
+                        .try_into()
+                        .unwrap(),
+                )
+            }
+            CpuVendor::Amd | CpuVendor::Unknown => {
+                let tsc_freq_hz = tsc_freq(); // always > 0
+                Some((tsc_freq_hz / 1_000_000) as u32)
+            }
         }
     }
 
     /// Get cache size in KB
     fn get_cache_size() -> Option<u32> {
         let cpuid = cpuid::CpuId::new();
-        let cache_info = cpuid.get_cache_info()?;
-
-        for cache in cache_info {
-            let desc = cache.desc();
-            if let Some(size) = desc.split_whitespace().find(|word| {
-                word.ends_with("KBytes") || word.ends_with("MBytes") || word.ends_with("GBytes")
-            }) {
-                let size_str = size
-                    .trim_end_matches(&['K', 'M', 'G'][..])
-                    .trim_end_matches("Bytes");
-                let cache_size = size_str.parse::<u32>().unwrap_or(0);
-
-                let cache_size = match size.chars().last().unwrap() {
-                    'K' => cache_size * 1024,
-                    'M' => cache_size * 1024 * 1024,
-                    'G' => cache_size * 1024 * 1024 * 1024,
-                    _ => cache_size,
-                };
-
-                return Some(cache_size);
+        let vendor_info = cpuid.get_vendor_info()?;
+        match CpuVendor::from(&vendor_info) {
+            CpuVendor::Intel => {
+                let cache_info = cpuid.get_cache_info()?;
+                for cache in cache_info {
+                    let desc = cache.desc();
+                    if let Some(size) = desc.split_whitespace().find(|word| {
+                        word.ends_with("KBytes")
+                            || word.ends_with("MBytes")
+                            || word.ends_with("GBytes")
+                    }) {
+                        let size_str = size
+                            .trim_end_matches(&['K', 'M', 'G'][..])
+                            .trim_end_matches("Bytes");
+                        let cache_size = size_str.parse::<u32>().unwrap_or(0);
+                        let cache_size = match size.chars().last().unwrap() {
+                            'K' => cache_size * 1024,
+                            'M' => cache_size * 1024 * 1024,
+                            'G' => cache_size * 1024 * 1024 * 1024,
+                            _ => cache_size,
+                        };
+                        return Some(cache_size);
+                    }
+                }
+                None
             }
+            CpuVendor::Amd => {
+                let cache = cpuid.get_l2_l3_cache_and_tlb_info()?;
+                Some(cache.l2cache_size() as u32 * 1024)
+            }
+            CpuVendor::Unknown => None,
         }
-
-        None
     }
 
     fn get_tlb_size() -> Option<u32> {
         let cpuid = cpuid::CpuId::new();
-        let cache_info = cpuid.get_cache_info()?;
-
-        for cache in cache_info {
-            let desc = cache.desc();
-            if let Some(size) = desc.split_whitespace().find(|word| word.ends_with("pages")) {
-                let size_str = size.trim_end_matches("pages");
-                let tlb_size = size_str.parse::<u32>().unwrap_or(0);
-                return Some(tlb_size);
+        let vendor_info = cpuid.get_vendor_info()?;
+        match CpuVendor::from(&vendor_info) {
+            CpuVendor::Intel => {
+                let cache_info = cpuid.get_cache_info()?;
+                for cache in cache_info {
+                    let desc = cache.desc();
+                    if let Some(size) = desc.split_whitespace().find(|word| word.ends_with("pages"))
+                    {
+                        let size_str = size.trim_end_matches("pages");
+                        let tlb_size = size_str.parse::<u32>().unwrap_or(0);
+                        return Some(tlb_size);
+                    }
+                }
+                None
             }
+            CpuVendor::Amd => {
+                let cache = cpuid.get_l2_l3_cache_and_tlb_info()?;
+                Some(cache.dtlb_4k_size() as u32)
+            }
+            CpuVendor::Unknown => None,
         }
-
-        None
     }
 
     fn get_physical_id() -> Option<u32> {
