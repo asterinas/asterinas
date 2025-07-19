@@ -405,12 +405,7 @@ impl CpuInfo {
     }
 
     fn get_cpuid_level() -> u32 {
-        let cpuid = cpuid::CpuId::new();
-        if let Some(basic_info) = cpuid.get_tsc_info() {
-            basic_info.denominator()
-        } else {
-            0
-        }
+        cpuid::cpuid!(0x0).eax
     }
 
     fn get_cpu_flags() -> String {
