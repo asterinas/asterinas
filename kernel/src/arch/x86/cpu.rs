@@ -514,7 +514,7 @@ impl CpuInfo {
 
     fn get_clflush_size() -> u8 {
         let cpuid = cpuid::CpuId::new();
-        cpuid.get_feature_info().unwrap().cflush_cache_line_size()
+        cpuid.get_feature_info().unwrap().cflush_cache_line_size() * 8
     }
 
     fn get_cache_alignment() -> u32 {
