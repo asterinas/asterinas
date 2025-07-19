@@ -339,26 +339,29 @@ impl CpuInfo {
     /// Get cache size in KB
     fn get_cache_size() -> Option<u32> {
         let cpuid = cpuid::CpuId::new();
-        let cache_info = cpuid.get_cache_info()?;
-
-        for cache in cache_info {
-            let desc = cache.desc();
-            if let Some(size) = desc.split_whitespace().find(|word| {
-                word.ends_with("KBytes") || word.ends_with("MBytes") || word.ends_with("GBytes")
-            }) {
-                let size_str = size
-                    .trim_end_matches(&['K', 'M', 'G'][..])
-                    .trim_end_matches("Bytes");
-                let cache_size = size_str.parse::<u32>().unwrap_or(0);
-
-                let cache_size = match size.chars().last().unwrap() {
-                    'K' => cache_size * 1024,
-                    'M' => cache_size * 1024 * 1024,
-                    'G' => cache_size * 1024 * 1024 * 1024,
-                    _ => cache_size,
-                };
-
-                return Some(cache_size);
+        if let Some(cache_info) = cpuid.get_cache_info() {
+            for cache in cache_info {
+                let desc = cache.desc();
+                if let Some(size) = desc.split_whitespace().find(|word| {
+                    word.ends_with("KBytes") || word.ends_with("MBytes") || word.ends_with("GBytes")
+                }) {
+                    let size_str = size
+                        .trim_end_matches(&['K', 'M', 'G'][..])
+                        .trim_end_matches("Bytes");
+                    let cache_size = size_str.parse::<u32>().unwrap_or(0);
+                    let cache_size = match size.chars().last().unwrap() {
+                        'K' => cache_size * 1024,
+                        'M' => cache_size * 1024 * 1024,
+                        'G' => cache_size * 1024 * 1024 * 1024,
+                        _ => cache_size,
+                    };
+                    return Some(cache_size);
+                }
+            }
+        } else {
+            // implementation for AMD CPUs
+            if let Some(cache) = cpuid.get_l2_l3_cache_and_tlb_info() {
+                return Some(cache.l2cache_size() as u32 * 1024);
             }
         }
 
@@ -367,17 +370,22 @@ impl CpuInfo {
 
     fn get_tlb_size() -> Option<u32> {
         let cpuid = cpuid::CpuId::new();
-        let cache_info = cpuid.get_cache_info()?;
-
-        for cache in cache_info {
-            let desc = cache.desc();
-            if let Some(size) = desc.split_whitespace().find(|word| word.ends_with("pages")) {
-                let size_str = size.trim_end_matches("pages");
-                let tlb_size = size_str.parse::<u32>().unwrap_or(0);
-                return Some(tlb_size);
+        let cache_info = cpuid.get_cache_info();
+        if let Some(cache_info) = cache_info {
+            for cache in cache_info {
+                let desc = cache.desc();
+                if let Some(size) = desc.split_whitespace().find(|word| word.ends_with("pages")) {
+                    let size_str = size.trim_end_matches("pages");
+                    let tlb_size = size_str.parse::<u32>().unwrap_or(0);
+                    return Some(tlb_size);
+                }
+            }
+        } else {
+            // implementation for AMD CPUs
+            if let Some(cache) = cpuid.get_l2_l3_cache_and_tlb_info() {
+                return Some(cache.dtlb_4k_size() as u32);
             }
         }
-
         None
     }
 
