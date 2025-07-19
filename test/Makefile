@@ -2,8 +2,13 @@
 
 ARCH ?= x86_64
 SMP ?= 1
+VERBOSE ?= 1
 SYSCALL_TEST_SUITE ?= ltp
 SYSCALL_TEST_WORKDIR ?= /tmp
+ENABLE_BASIC_TEST ?= false
+# Set Nix's cached tarballs to be live for a longer period of time (30 days) to avoid network traffics.
+# Nix's default value is rather small (1 hour or 3600 seconds).
+NIXPKGS_CACHE_TTL := 2592000 # In seconds
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 BUILD_DIR := $(CUR_DIR)/build
@@ -33,6 +38,11 @@ else
 ENABLE_SYSCALL_TEST = false
 endif
 
+# Decreases the level of verbosity of diagnostic messages from Nix.
+ifeq ($(VERBOSE), 0)
+NIX_QUIET = --quiet -Q
+endif
+
 .PHONY: all
 all: build
 
@@ -42,7 +52,9 @@ build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE)
 .PHONY: $(INITRAMFS_IMAGE)
 $(INITRAMFS_IMAGE): $(INITRAMFS)
 	@nix-build \
+		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
 		--argstr target $(ARCH) \
+		--arg enableBasicTest $(ENABLE_BASIC_TEST) \
 		--arg enableBenchmark $(ENABLE_BENCHMARK) \
 		--arg enableSyscallTest $(ENABLE_SYSCALL_TEST) \
 		--argstr syscallTestSuite $(SYSCALL_TEST_SUITE) \
@@ -55,7 +67,9 @@ $(INITRAMFS_IMAGE): $(INITRAMFS)
 .PHONY: $(INITRAMFS)
 $(INITRAMFS):
 	@nix-build \
+		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
 		--argstr target $(ARCH) \
+		--arg enableBasicTest $(ENABLE_BASIC_TEST) \
 		--arg enableBenchmark $(ENABLE_BENCHMARK) \
 		--arg enableSyscallTest $(ENABLE_SYSCALL_TEST) \
 		--argstr syscallTestSuite $(SYSCALL_TEST_SUITE) \
@@ -63,6 +77,79 @@ $(INITRAMFS):
 		--arg smp $(SMP) \
 		--out-link $@ \
 		nix -A initramfs
+
+# Prebuild x86_64 packages
+x86_64_pkgs:
+	@nix-build \
+		nix/default.nix \
+		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
+		$(NIX_QUIET) \
+		--argstr target x86_64 \
+		--arg enableBenchmark true \
+		--arg enableSyscallTest true \
+		--out-link /nix/var/nix/gcroots/auto/x86_64-pkgs \
+		-A busybox \
+		-A apps.package \
+		-A benchmark.fio \
+		-A benchmark.hackbench \
+		-A benchmark.iperf3 \
+		-A benchmark.lmbench \
+		-A benchmark.memcached \
+		-A benchmark.nginx \
+		-A benchmark.redis \
+		-A benchmark.schbench \
+		-A benchmark.sqlite-speedtest1 \
+		-A benchmark.sysbench \
+		-A syscall.ltp
+
+# Prebuild riscv64 packages
+# Note: This may cause GitHub Runner ResourceExhausted errors when publish nix docker image.
+# If such errors occur, try building each package individually and clear the build cache.
+riscv64_pkgs:
+	@nix-build \
+		nix/default.nix \
+		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
+		$(NIX_QUIET) \
+		--argstr target riscv64 \
+		--arg enableBenchmark true \
+		--arg enableSyscallTest true \
+		--out-link /nix/var/nix/gcroots/auto/riscv64-pkgs \
+		-A busybox \
+		-A apps.package \
+		-A benchmark.fio \
+		-A benchmark.hackbench \
+		-A benchmark.iperf3 \
+		-A benchmark.lmbench \
+		-A benchmark.memcached \
+		-A benchmark.nginx \
+		-A benchmark.redis \
+		-A benchmark.schbench \
+		-A benchmark.sqlite-speedtest1 \
+		-A syscall.ltp
+
+general_pkgs:
+	@nix-build \
+		nix/default.nix \
+		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
+		$(NIX_QUIET) \
+		--out-link /nix/var/nix/gcroots/auto/general \
+		-A linux_vdso \
+		-A apps.mongoose_src
+
+install_host_pkgs:
+	@nix-env \
+		--file nix/default.nix \
+		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
+		--install \
+		-A apacheHttpd \
+		-A iperf3 \
+		-A libmemcached \
+		-A lmbench \
+		-A redis
+
+nix_gc:
+	@nix-collect-garbage -d
+	@nix-store --optimise
 
 $(EXT2_IMAGE):
 	@dd if=/dev/zero of=$(EXT2_IMAGE) bs=2G count=1

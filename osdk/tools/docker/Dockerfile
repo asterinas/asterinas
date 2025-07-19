@@ -145,6 +145,11 @@ RUN curl https://sh.rustup.rs -sSf | \
     && cargo -V \
     && rustup component add rust-src rustc-dev llvm-tools-preview
 
+# Avoid github runner to create cache for cargo and rustup
+RUN mkdir -p /github/home \
+    && ln -s /root/.cargo /github/home/.cargo \
+    && ln -s /root/.rustup /github/home/.rustup
+
 # Install cargo tools
 RUN cargo install \
     cargo-binutils \
