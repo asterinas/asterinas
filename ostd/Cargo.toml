@@ -39,6 +39,15 @@ bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
 
 minicov = { version = "0.3", optional = true }
 
+# The targets are chosen to prevent the generated machine code from using any
+# vector or floating-point registers.
+#
+# - `x86_64-unknown-none` satisfies this property, as explained by [the
+#   official documentation](https://doc.rust-lang.org/rustc/platform-support/x86_64-unknown-none.html).
+# - `riscv64imac-unknown-none-elf` denotes a RISC-V ISA with only basic
+#   extensions (`imac`) and no floating-point-related extensions.
+# - `loongarch64-unknown-none-softfloat` is rather self-explaining.
+
 [target.x86_64-unknown-none.dependencies]
 x86_64 = "0.14.13"
 x86 = "0.52.0"
@@ -52,13 +61,13 @@ iced-x86 = { version = "1.21.0", default-features = false, features = [
 tdx-guest = { version = "0.2.1", optional = true }
 unwinding = { version = "=0.2.5", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
 
-[target.riscv64gc-unknown-none-elf.dependencies]
+[target.riscv64imac-unknown-none-elf.dependencies]
 riscv = { version = "0.11.1", features = ["s-mode"] }
 sbi-rt = "0.0.3"
 fdt = { version = "0.1.5", features = ["pretty-printing"] }
 unwinding = { version = "=0.2.5", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
 
-[target.loongarch64-unknown-none.dependencies]
+[target.loongarch64-unknown-none-softfloat.dependencies]
 loongArch64 = "0.2.5"
 fdt = { version = "0.1.5", features = ["pretty-printing"] }
 
