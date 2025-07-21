@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 pub mod cgroupfs;
+pub mod configfs;
 pub mod device;
 pub mod devpts;
 pub mod epoll;
@@ -10,6 +11,7 @@ pub mod file_handle;
 pub mod file_table;
 pub mod fs_resolver;
 pub mod inode_handle;
+pub mod kernel_config;
 pub mod named_pipe;
 pub mod overlayfs;
 pub mod path;
@@ -52,11 +54,13 @@ fn start_block_device(device_name: &str) -> Result<Arc<dyn BlockDevice>> {
 }
 
 pub fn lazy_init() {
+    kernel_config::init();
     registry::init();
 
     sysfs::init();
     procfs::init();
     cgroupfs::init();
+    configfs::init();
     ramfs::init();
     devpts::init();
 
