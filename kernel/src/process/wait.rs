@@ -12,6 +12,7 @@ use crate::{
         process_table,
         signal::sig_num::SigNum,
         status::StopWaitStatus,
+        Uid,
     },
     time::clocks::ProfClock,
 };
@@ -32,6 +33,8 @@ bitflags! {
 
 impl WaitOptions {
     pub fn check(&self) -> Result<()> {
+        // FIXME: The syscall `waitid` allows using WNOWAIT with
+        // WSTOPPED or WCONTINUED
         if self.intersects(WaitOptions::WSTOPPED | WaitOptions::WCONTINUED)
             && self.contains(WaitOptions::WNOWAIT)
         {
@@ -120,16 +123,17 @@ pub enum WaitStatus {
 }
 
 impl WaitStatus {
-    pub fn pid(&self) -> u32 {
+    pub fn pid(&self) -> Pid {
         self.process().pid()
     }
 
-    pub fn status_code(&self) -> u32 {
-        match self {
-            Self::Zombie(process) => process.status().exit_code(),
-            Self::Stop(_, sig_num) => ((sig_num.as_u8() as u32) << 8) | 0x7f,
-            Self::Continue(_) => 0xffff,
-        }
+    pub fn uid(&self) -> Uid {
+        self.process()
+            .main_thread()
+            .as_posix_thread()
+            .unwrap()
+            .credentials()
+            .ruid()
     }
 
     pub fn prof_clock(&self) -> &Arc<ProfClock> {

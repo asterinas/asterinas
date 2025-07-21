@@ -31,7 +31,7 @@ pub use process_vm::{renew_vm_and_map, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS};
 pub use program_loader::{check_executable_file, ProgramToLoad};
 pub use rlimit::ResourceType;
 pub use term_status::TermStatus;
-pub use wait::{do_wait, WaitOptions};
+pub use wait::{do_wait, WaitOptions, WaitStatus};
 
 pub(super) fn init() {
     process::init();
