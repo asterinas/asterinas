@@ -3,7 +3,7 @@
 use super::{getrusage::rusage_t, SyscallReturn};
 use crate::{
     prelude::*,
-    process::{do_wait, ProcessFilter, WaitOptions},
+    process::{do_wait, ProcessFilter, WaitOptions, WaitStatus},
 };
 
 pub fn sys_wait4(
@@ -31,7 +31,7 @@ pub fn sys_wait4(
         return Ok(SyscallReturn::Return(0 as _));
     };
 
-    let (return_pid, status_code) = (wait_status.pid(), wait_status.status_code());
+    let (return_pid, status_code) = (wait_status.pid(), calculate_status_code(&wait_status));
     if status_ptr != 0 {
         ctx.user_space().write_val(status_ptr as _, &status_code)?;
     }
@@ -47,4 +47,12 @@ pub fn sys_wait4(
     }
 
     Ok(SyscallReturn::Return(return_pid as _))
+}
+
+fn calculate_status_code(wait_status: &WaitStatus) -> u32 {
+    match wait_status {
+        WaitStatus::Zombie(process) => process.status().exit_code(),
+        WaitStatus::Stop(_, sig_num) => ((sig_num.as_u8() as u32) << 8) | 0x7f,
+        WaitStatus::Continue(_) => 0xffff,
+    }
 }

@@ -33,7 +33,7 @@ pub use process_vm::{
 pub use program_loader::{check_executable_file, ProgramToLoad};
 pub use rlimit::ResourceType;
 pub use term_status::TermStatus;
-pub use wait::{do_wait, WaitOptions};
+pub use wait::{do_wait, WaitOptions, WaitStatus};
 
 pub(super) fn init() {
     process::init();
