@@ -180,8 +180,6 @@ pub(crate) fn enable_cpu_features() {
         cpuid.get_feature_info().unwrap()
     });
 
-    cpu::context::enable_essential_features();
-
     let mut cr4 = x86_64::registers::control::Cr4::read();
     cr4 |= Cr4Flags::FSGSBASE
         | Cr4Flags::OSXSAVE
@@ -207,6 +205,8 @@ pub(crate) fn enable_cpu_features() {
     unsafe {
         x86_64::registers::xcontrol::XCr0::write(xcr0);
     }
+
+    cpu::context::enable_essential_features();
 
     unsafe {
         // enable non-executable page protection

@@ -666,7 +666,7 @@ pub(in crate::arch) fn enable_essential_features() {
         let size = cpuid
             .get_extended_state_info()
             .unwrap()
-            .xsave_area_size_supported_features() as usize;
+            .xsave_area_size_enabled_features() as usize;
         debug_assert!(size <= MAX_XSAVE_AREA_SIZE);
         size
     });
