@@ -39,6 +39,10 @@ RUN make general_pkgs VERBOSE=0 \
 # Clean source files
 RUN rm -rf /root/test
 
+# Let Github runners reuse Nixpkgs tarball installed in the Dockerfile.
+RUN mkdir -p /github/home/.cache \
+    && ln -s /root/.cache/nix /github/home/.cache/nix
+
 VOLUME [ "/root/asterinas" ]
 
 WORKDIR /root/asterinas

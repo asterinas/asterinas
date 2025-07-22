@@ -145,6 +145,12 @@ RUN curl https://sh.rustup.rs -sSf | \
     && cargo -V \
     && rustup component add rust-src rustc-dev llvm-tools-preview
 
+# Let Github runners reuse the Rust toolchain installed in the Dockerfile and
+# also the Cargo crates downloaded subsequently in the Docker build process.
+RUN mkdir -p /github/home \
+    && ln -s /root/.cargo /github/home/.cargo \
+    && ln -s /root/.rustup /github/home/.rustup
+
 # Install cargo tools
 RUN cargo install \
     cargo-binutils \
