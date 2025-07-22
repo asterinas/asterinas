@@ -1,13 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::vec::Vec;
+//! Support for the code coverage feature of OSDK.
+//!
+//! For more information about the code coverage feature (`cargo osdk run --coverage`),
+//! check out the OSDK reference manual.
 
-pub fn dump_profraw() {
-    let mut coverage = Vec::new();
+use alloc::vec::Vec;
+use core::mem::ManuallyDrop;
+
+/// A hook to be invoked on QEMU exit for dumping the code coverage data.
+pub(crate) fn on_qemu_exit() {
+    let mut coverage = ManuallyDrop::new(Vec::new());
     unsafe {
-        minicov::capture_coverage(&mut coverage).unwrap();
+        minicov::capture_coverage(&mut *coverage).unwrap();
     }
 
-    let coverage = coverage.leak();
     crate::early_println!("#### Coverage: {:p} {}", coverage.as_ptr(), coverage.len());
 }
