@@ -10,6 +10,8 @@
 
 English | [中文版](README_CN.md) | [日本語](README_JP.md)
 
+**NEWS: [SOSP'25](https://sigops.org/s/conferences/sosp/2025/) accepted yet another research paper on Asterinas: _CortenMM: Efficient Memory Management with Strong Correctness Guarantees_. Congratulations to the Asterinas community🎉🎉🎉**
+
 **NEWS: [USENIX ATC'25](https://www.usenix.org/conference/atc25) accepted two research papers on Asterinas: (1) _Asterinas: A Linux ABI-Compatible, Rust-Based Framekernel OS with a Small and Sound TCB_ and (2) _Converos: Practical Model Checking for Verifying Rust OS Kernel Concurrency_. Congratulations to the Asterinas community🎉🎉🎉**
 
 ## Introducing Asterinas
