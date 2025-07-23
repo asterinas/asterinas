@@ -1,24 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
+/// A trait that describes the Linux system call convention (ABI) for the user context.
 pub trait LinuxAbi {
-    /// Get number of syscall
+    /// Gets the system call number.
     fn syscall_num(&self) -> usize;
 
-    /// Get return value of syscall
+    /// Gets the return value of the system call.
     fn syscall_ret(&self) -> usize;
 
-    /// Set number of syscall
+    /// Sets the system call number.
     fn set_syscall_num(&mut self, num: usize);
 
-    /// Set return value of syscall
+    /// Sets the return value of the system call.
     fn set_syscall_ret(&mut self, ret: usize);
 
-    /// Get syscall args
+    /// Gets the arguments of the system call.
     fn syscall_args(&self) -> [usize; 6];
-
-    /// Set thread-local storage pointer
-    fn set_tls_pointer(&mut self, tls: usize);
-
-    /// Get thread-local storage pointer
-    fn tls_pointer(&self) -> usize;
 }

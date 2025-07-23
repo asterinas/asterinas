@@ -38,14 +38,6 @@ impl LinuxAbi for UserContext {
             self.a5(),
         ]
     }
-
-    fn set_tls_pointer(&mut self, tls: usize) {
-        self.set_tp(tls);
-    }
-
-    fn tls_pointer(&self) -> usize {
-        self.tp()
-    }
 }
 
 macro_rules! copy_gp_regs {
