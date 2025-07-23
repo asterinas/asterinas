@@ -372,51 +372,57 @@ fn map_segment_vmo(
         // Tail padding: If the segment's mem_size is larger than file size,
         // then the bytes that are not backed up by file content should be zeros.(usually .data/.bss sections).
 
+        // Head padding.
+        let page_offset = file_offset % PAGE_SIZE;
+        let head_frame = if page_offset != 0 {
+            let head_frame =
+                segment_vmo.commit_on(segment_offset / PAGE_SIZE, CommitFlags::empty())?;
+            let new_frame = duplicate_frame(&head_frame)?;
+
+            let buffer = vec![0u8; page_offset];
+            new_frame.write_bytes(0, &buffer).unwrap();
+            Some(new_frame)
+        } else {
+            None
+        };
+
+        // Tail padding.
+        let tail_padding_offset = program_header.file_size as usize + page_offset;
+        let tail_frame_and_addr = if segment_size > tail_padding_offset {
+            let tail_frame = {
+                let offset_index = (segment_offset + tail_padding_offset) / PAGE_SIZE;
+                segment_vmo.commit_on(offset_index, CommitFlags::empty())?
+            };
+            let new_frame = duplicate_frame(&tail_frame)?;
+
+            let buffer = vec![0u8; (segment_size - tail_padding_offset) % PAGE_SIZE];
+            new_frame
+                .write_bytes(tail_padding_offset % PAGE_SIZE, &buffer)
+                .unwrap();
+
+            let tail_page_addr = map_addr + tail_padding_offset.align_down(PAGE_SIZE);
+            Some((new_frame, tail_page_addr))
+        } else {
+            None
+        };
+
         let preempt_guard = disable_preempt();
         let mut cursor = root_vmar
             .vm_space()
             .cursor_mut(&preempt_guard, &(map_addr..map_addr + segment_size))?;
         let page_flags = PageFlags::from(perms) | PageFlags::ACCESSED;
 
-        // Head padding.
-        let page_offset = file_offset % PAGE_SIZE;
-        if page_offset != 0 {
-            let new_frame = {
-                let head_frame =
-                    segment_vmo.commit_on(segment_offset / PAGE_SIZE, CommitFlags::empty())?;
-                let new_frame = duplicate_frame(&head_frame)?;
-
-                let buffer = vec![0u8; page_offset];
-                new_frame.write_bytes(0, &buffer).unwrap();
-                new_frame
-            };
+        if let Some(head_frame) = head_frame {
             cursor.map(
-                new_frame.into(),
+                head_frame.into(),
                 PageProperty::new_user(page_flags, CachePolicy::Writeback),
             );
         }
 
-        // Tail padding.
-        let tail_padding_offset = program_header.file_size as usize + page_offset;
-        if segment_size > tail_padding_offset {
-            let new_frame = {
-                let tail_frame = {
-                    let offset_index = (segment_offset + tail_padding_offset) / PAGE_SIZE;
-                    segment_vmo.commit_on(offset_index, CommitFlags::empty())?
-                };
-                let new_frame = duplicate_frame(&tail_frame)?;
-
-                let buffer = vec![0u8; (segment_size - tail_padding_offset) % PAGE_SIZE];
-                new_frame
-                    .write_bytes(tail_padding_offset % PAGE_SIZE, &buffer)
-                    .unwrap();
-                new_frame
-            };
-
-            let tail_page_addr = map_addr + tail_padding_offset.align_down(PAGE_SIZE);
+        if let Some((tail_frame, tail_page_addr)) = tail_frame_and_addr {
             cursor.jump(tail_page_addr)?;
             cursor.map(
-                new_frame.into(),
+                tail_frame.into(),
                 PageProperty::new_user(page_flags, CachePolicy::Writeback),
             );
         }
