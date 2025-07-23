@@ -10,7 +10,7 @@ use super::observer::StreamObserver;
 use crate::{
     events::IoEvents,
     net::{
-        iface::{Iface, RawTcpSocketExt, TcpConnection},
+        iface::{BoundPort, Iface, RawTcpSocketExt, TcpConnection},
         socket::util::{LingerOption, SendRecvFlags, SockShutdownCmd},
     },
     prelude::*,
@@ -143,6 +143,10 @@ impl ConnectedStream {
 
     pub(super) fn iface(&self) -> &Arc<Iface> {
         self.tcp_conn.iface()
+    }
+
+    pub(super) fn bound_port(&self) -> &BoundPort {
+        self.tcp_conn.bound_port()
     }
 
     pub(super) fn finish_last_connect(&mut self) -> Result<()> {

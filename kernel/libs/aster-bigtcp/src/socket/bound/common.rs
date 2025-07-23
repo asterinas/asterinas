@@ -98,6 +98,10 @@ impl<T: Inner<E>, E: Ext> Socket<T, E> {
     pub fn iface(&self) -> &Arc<dyn Iface<E>> {
         self.0.bound.iface()
     }
+
+    pub fn bound_port(&self) -> &BoundPort<E> {
+        &self.0.bound
+    }
 }
 
 define_boolean_value!(

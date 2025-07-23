@@ -79,10 +79,15 @@ impl InitStream {
         Ok(())
     }
 
+    pub(super) fn bound_port(&self) -> Option<&BoundPort> {
+        self.bound_port.as_ref()
+    }
+
     pub(super) fn connect(
         self,
         remote_endpoint: &IpEndpoint,
         option: &RawTcpOption,
+        can_reuse: bool,
         observer: StreamObserver,
     ) -> core::result::Result<ConnectingStream, (Error, Self)> {
         debug_assert!(
@@ -94,7 +99,7 @@ impl InitStream {
             bound_port
         } else {
             let endpoint = get_ephemeral_endpoint(remote_endpoint);
-            match bind_port(&endpoint, false) {
+            match bind_port(&endpoint, can_reuse) {
                 Ok(bound_port) => bound_port,
                 Err(err) => return Err((err, self)),
             }

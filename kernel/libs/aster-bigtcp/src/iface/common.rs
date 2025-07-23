@@ -6,7 +6,7 @@ use alloc::{
     sync::Arc,
     vec::Vec,
 };
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use aster_softirq::BottomHalfDisabled;
 use bitflags::bitflags;
@@ -39,7 +39,7 @@ pub struct IfaceCommon<E: Ext> {
     flags: InterfaceFlags,
 
     interface: SpinLock<PollableIface<E>, BottomHalfDisabled>,
-    used_ports: SpinLock<BTreeMap<u16, usize>, BottomHalfDisabled>,
+    used_ports: SpinLock<BTreeMap<u16, PortState>, BottomHalfDisabled>,
     sockets: SpinLock<SocketTable<E>, BottomHalfDisabled>,
     sched_poll: E::ScheduleNextPoll,
 }
@@ -122,58 +122,81 @@ impl<E: Ext> IfaceCommon<E> {
         iface: Arc<dyn Iface<E>>,
         config: BindPortConfig,
     ) -> core::result::Result<BoundPort<E>, BindError> {
-        let port = self.bind_port(config)?;
-        Ok(BoundPort { iface, port })
+        let (port, can_reuse) = self.bind_port(config)?;
+        Ok(BoundPort {
+            iface,
+            port,
+            can_reuse: AtomicBool::new(can_reuse),
+        })
     }
 
-    /// Allocates an unused ephemeral port.
+    /// Allocates an ephemeral port.
     ///
     /// We follow the port range that many Linux kernels use by default, which is 32768-60999.
     ///
     /// See <https://en.wikipedia.org/wiki/Ephemeral_port>.
-    fn alloc_ephemeral_port(&self) -> Option<u16> {
-        let mut used_ports = self.used_ports.lock();
+    fn alloc_ephemeral_port(
+        used_ports: &mut BTreeMap<u16, PortState>,
+        _can_reuse: bool,
+    ) -> Option<u16> {
         for port in IP_LOCAL_PORT_START..=IP_LOCAL_PORT_END {
-            if let Entry::Vacant(e) = used_ports.entry(port) {
-                e.insert(0);
+            if let Entry::Vacant(..) = used_ports.entry(port) {
                 return Some(port);
             }
         }
+
+        // FIXME: If `can_reuse` is `true`, we should also check all in-use ephemeral ports
+        // to see if any can be reused instead of directly returning `None`.
+
         None
     }
 
-    fn bind_port(&self, config: BindPortConfig) -> Result<u16, BindError> {
+    fn bind_port(&self, config: BindPortConfig) -> Result<(u16, bool), BindError> {
+        let mut used_ports = self.used_ports.lock();
+        let config_can_reuse = config.can_reuse();
+
         let port = if let Some(port) = config.port() {
             port
         } else {
-            match self.alloc_ephemeral_port() {
+            match Self::alloc_ephemeral_port(&mut used_ports, config_can_reuse) {
                 Some(port) => port,
                 None => return Err(BindError::Exhausted),
             }
         };
 
-        let mut used_ports = self.used_ports.lock();
-
-        if let Some(used_times) = used_ports.get_mut(&port) {
-            if *used_times == 0 || config.can_reuse() {
-                // FIXME: Check if the previous socket was bound with SO_REUSEADDR.
-                *used_times += 1;
+        if let Some(port_state) = used_ports.get_mut(&port) {
+            // FIXME: If the socket is not a backlog socket,
+            // we should check whether there is a listening socket on the port.
+            // If there is, the socket cannot be bound to that port.
+            let can_reuse = matches!(config, BindPortConfig::Backlog(_))
+                || (port_state.can_reuse() & config_can_reuse);
+            if can_reuse {
+                port_state.nsocket += 1;
+                if config_can_reuse {
+                    port_state.nreuse += 1;
+                }
             } else {
                 return Err(BindError::InUse);
             }
         } else {
-            used_ports.insert(port, 1);
-        }
+            let port_state = PortState::new(config_can_reuse);
+            used_ports.insert(port, port_state);
+        };
 
-        Ok(port)
+        Ok((port, config_can_reuse))
     }
 
-    /// Releases the port so that it can be used again (if it is not being reused).
-    fn release_port(&self, port: u16) {
+    /// Releases the port so that it can be used again.
+    fn release_port(&self, port: u16, can_reuse: bool) {
         let mut used_ports = self.used_ports.lock();
-        if let Some(used_times) = used_ports.remove(&port) {
-            if used_times != 1 {
-                used_ports.insert(port, used_times - 1);
+        if let Entry::Occupied(mut entry) = used_ports.entry(port) {
+            let port_state = entry.get_mut();
+            port_state.nsocket -= 1;
+            if can_reuse {
+                port_state.nreuse -= 1;
+            }
+            if port_state.nsocket == 0 {
+                entry.remove_entry();
             }
         }
     }
@@ -252,6 +275,7 @@ impl<E: Ext> IfaceCommon<E> {
 pub struct BoundPort<E: Ext> {
     iface: Arc<dyn Iface<E>>,
     port: u16,
+    can_reuse: AtomicBool,
 }
 
 impl<E: Ext> BoundPort<E> {
@@ -273,11 +297,50 @@ impl<E: Ext> BoundPort<E> {
         };
         Some(IpEndpoint::new(ip_addr, self.port))
     }
+
+    /// Sets whether the port can be reused.
+    pub fn set_can_reuse(&self, can_reuse: bool) {
+        let iface_common = self.iface.common();
+        let mut used_ports = iface_common.used_ports.lock();
+
+        if self.can_reuse.load(Ordering::Relaxed) == can_reuse {
+            return;
+        }
+
+        if let Some(port_state) = used_ports.get_mut(&self.port) {
+            if can_reuse {
+                port_state.nreuse += 1;
+            } else {
+                port_state.nreuse -= 1;
+            }
+        }
+
+        self.can_reuse.store(can_reuse, Ordering::Relaxed);
+    }
 }
 
 impl<E: Ext> Drop for BoundPort<E> {
     fn drop(&mut self) {
-        self.iface.common().release_port(self.port);
+        self.iface
+            .common()
+            .release_port(self.port, *self.can_reuse.get_mut());
+    }
+}
+
+struct PortState {
+    nsocket: usize,
+    /// The number of sockets that have enabled address reuse on this port.
+    nreuse: usize,
+}
+
+impl PortState {
+    pub(self) fn new(can_reuse: bool) -> Self {
+        let nreuse = if can_reuse { 1 } else { 0 };
+        Self { nsocket: 1, nreuse }
+    }
+
+    pub(self) fn can_reuse(&self) -> bool {
+        self.nsocket == self.nreuse
     }
 }
 

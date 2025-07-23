@@ -174,6 +174,7 @@ impl SocketOptionSet {
             socket_reuse_addr: ReuseAddr => {
                 let reuse_addr = socket_reuse_addr.get().unwrap();
                 self.set_reuse_addr(*reuse_addr);
+                socket.set_reuse_addr(*reuse_addr);
             },
             socket_reuse_port: ReusePort => {
                 let reuse_port = socket_reuse_port.get().unwrap();
@@ -260,6 +261,9 @@ pub(in crate::net) trait GetSocketLevelOption {
 
 /// A trait used for setting socket level options on actual sockets.
 pub(in crate::net) trait SetSocketLevelOption {
+    /// Sets whether the socket address can be reused.
+    fn set_reuse_addr(&self, _reuse_addr: bool) {}
+
     /// Sets whether keepalive messages are enabled.
     fn set_keep_alive(&self, _keep_alive: bool) -> NeedIfacePoll {
         NeedIfacePoll::FALSE
