@@ -37,14 +37,6 @@ impl LinuxAbi for UserContext {
             self.a5(),
         ]
     }
-
-    fn set_tls_pointer(&mut self, tls: usize) {
-        self.set_tp(tls);
-    }
-
-    fn tls_pointer(&self) -> usize {
-        self.tp()
-    }
 }
 
 /// Represents the context of a signal handler.
