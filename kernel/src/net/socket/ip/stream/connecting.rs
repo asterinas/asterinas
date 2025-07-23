@@ -100,6 +100,10 @@ impl ConnectingStream {
         self.tcp_conn.iface()
     }
 
+    pub(super) fn bound_port(&self) -> &BoundPort {
+        self.tcp_conn.bound_port()
+    }
+
     pub(super) fn check_io_events(&self) -> IoEvents {
         IoEvents::empty()
     }

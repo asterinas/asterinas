@@ -233,6 +233,7 @@ impl StreamSocket {
             let (target_state, iface_to_poll) = match init_stream.connect(
                 remote_endpoint,
                 &raw_option,
+                options.socket.reuse_addr(),
                 StreamObserver::new(self.pollee.clone()),
             ) {
                 Ok(connecting_stream) => {
@@ -808,6 +809,25 @@ impl GetSocketLevelOption for State {
 }
 
 impl SetSocketLevelOption for State {
+    fn set_reuse_addr(&self, reuse_addr: bool) {
+        let bound_port = match self {
+            State::Init(init_stream) => {
+                if let Some(bound_port) = init_stream.bound_port() {
+                    bound_port
+                } else {
+                    return;
+                }
+            }
+            State::Connecting(connecting_stream) => connecting_stream.bound_port(),
+            State::Connected(connected_stream) => connected_stream.bound_port(),
+            // Setting a listening address as reusable has no effect,
+            // since no other sockets can bind to a listening port.
+            State::Listen(_) => return,
+        };
+
+        bound_port.set_can_reuse(reuse_addr);
+    }
+
     fn set_keep_alive(&self, keep_alive: bool) -> NeedIfacePoll {
         let interval = if keep_alive {
             Some(KEEPALIVE_INTERVAL)
