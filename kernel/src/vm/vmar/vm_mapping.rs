@@ -402,7 +402,7 @@ impl VmMapping {
                 Err(VmoCommitError::NeedIo(index)) => {
                     drop(preempt_guard);
                     vmo.commit_on(index, CommitFlags::empty())?;
-                    start_addr = index * PAGE_SIZE + self.map_to_addr;
+                    start_addr = (index * PAGE_SIZE - vmo.offset) + self.map_to_addr;
                     continue 'retry;
                 }
                 Err(VmoCommitError::Err(e)) => return Err(e),
