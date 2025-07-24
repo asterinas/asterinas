@@ -69,12 +69,20 @@ pub trait LocalRunQueue<T = Task> {
     /// position in the queue.
     ///
     /// If the current runnable task needs to be preempted, the method returns `true`.
+    #[must_use]
     fn update_current(&mut self, flags: UpdateFlags) -> bool;
 
     /// Picks the next current runnable task.
     ///
-    /// This method returns the chosen next current runnable task. If there is no
-    /// candidate for next current runnable task, this method returns `None`.
+    /// If a new runnable task can be found in the run queue, then a reference to it
+    /// will be returned. Otherwise, the method returns `None`.
+    ///
+    /// If a new runnable task is picked to replace the current one, then the current
+    /// one will still be kept in the run queue.
+    ///
+    /// OSTD guarantees that this method is invoked only when the current task is
+    /// either absent (due to a previous call to `dequeue_current`) or needs to be
+    /// preempted (because a previous call to `update_current` returns `true`).
     fn pick_next_current(&mut self) -> Option<&Arc<T>>;
 
     /// Removes the current runnable task from runqueue.
@@ -140,7 +148,9 @@ where
             // `dequeue_current` method and nothing bad will happen. This may need to be revisited
             // after more complex schedulers are introduced.
 
-            local_rq.update_current(UpdateFlags::Wait);
+            // Ignoring the return value of `update_current` here is OK, because we are going to
+            // dequeue the current task and pick a next task anyway.
+            let _should_preempt = local_rq.update_current(UpdateFlags::Wait);
             current = local_rq.dequeue_current();
         }
 
@@ -222,7 +232,11 @@ pub(super) fn exit_current() -> ! {
 #[track_caller]
 pub(super) fn yield_now() {
     reschedule(|local_rq| {
-        local_rq.update_current(UpdateFlags::Yield);
+        let should_preempt = local_rq.update_current(UpdateFlags::Yield);
+        if !should_preempt {
+            return ReschedAction::DoNothing;
+        }
+
         if let Some(next_task) = local_rq.pick_next_current() {
             ReschedAction::SwitchTo(next_task.clone())
         } else {
