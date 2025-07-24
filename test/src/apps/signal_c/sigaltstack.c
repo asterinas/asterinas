@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,7 +18,7 @@
 #define SS_AUTODISARM (1 << 31)
 #endif
 
-static void *g_alt_stack_base = NULL;
+static volatile void *g_alt_stack_base = NULL;
 static volatile int recursion_level = 0;
 static volatile bool sigstack_enabled = false;
 static volatile int stack_flags = 0;
