@@ -92,16 +92,15 @@ impl Capability {
             return Vec::new();
         }
         let mut capabilities = Vec::new();
-        let mut cap_ptr =
+        let mut cap_ptr = PciDeviceLocation::align_ptr(
             dev.location()
-                .read8(PciDeviceCommonCfgOffset::CapabilitiesPointer as u16) as u16
-                & PciDeviceLocation::BIT32_ALIGN_MASK;
+                .read8(PciDeviceCommonCfgOffset::CapabilitiesPointer as u16) as u16,
+        );
         let mut cap_ptr_vec = Vec::new();
         // read all cap_ptr so that it is easy for us to get the length.
         while cap_ptr > 0 {
             cap_ptr_vec.push(cap_ptr);
-            cap_ptr =
-                dev.location().read8(cap_ptr + 1) as u16 & PciDeviceLocation::BIT32_ALIGN_MASK;
+            cap_ptr = PciDeviceLocation::align_ptr(dev.location().read8(cap_ptr + 1) as u16);
         }
         cap_ptr_vec.sort();
         // Push here so that we can calculate the length of the last capability.
