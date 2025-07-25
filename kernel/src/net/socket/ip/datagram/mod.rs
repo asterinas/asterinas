@@ -260,4 +260,12 @@ impl GetSocketLevelOption for Inner<UnboundDatagram, BoundDatagram> {
     }
 }
 
-impl SetSocketLevelOption for Inner<UnboundDatagram, BoundDatagram> {}
+impl SetSocketLevelOption for Inner<UnboundDatagram, BoundDatagram> {
+    fn set_reuse_addr(&self, reuse_addr: bool) {
+        let Inner::Bound(bound) = self else {
+            return;
+        };
+
+        bound.bound_port().set_can_reuse(reuse_addr);
+    }
+}

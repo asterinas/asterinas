@@ -8,7 +8,7 @@ use aster_bigtcp::{
 use crate::{
     events::IoEvents,
     net::{
-        iface::{Iface, UdpSocket},
+        iface::{BoundPort, Iface, UdpSocket},
         socket::util::{datagram_common, SendRecvFlags},
     },
     prelude::*,
@@ -30,6 +30,10 @@ impl BoundDatagram {
 
     pub(super) fn iface(&self) -> &Arc<Iface> {
         self.bound_socket.iface()
+    }
+
+    pub(super) fn bound_port(&self) -> &BoundPort {
+        self.bound_socket.bound_port()
     }
 }
 
