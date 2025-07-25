@@ -9,7 +9,7 @@ pub(super) mod msix;
 
 use alloc::sync::Arc;
 
-use ostd::bus::pci::PCI_BUS;
+use aster_pci::PCI_BUS;
 use spin::Once;
 
 use self::driver::VirtioPciDriver;
