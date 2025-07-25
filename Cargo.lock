@@ -330,6 +330,7 @@ dependencies = [
  "aster-console",
  "aster-input",
  "aster-network",
+ "aster-pci",
  "aster-rights",
  "aster-softirq",
  "aster-systree",
