@@ -55,6 +55,16 @@
 #![no_std]
 #![deny(unsafe_code)]
 
+#[cfg(target_arch = "x86_64")]
+#[path = "arch/x86/mod.rs"]
+pub mod arch;
+#[cfg(target_arch = "riscv64")]
+#[path = "arch/riscv/mod.rs"]
+pub mod arch;
+#[cfg(target_arch = "loongarch64")]
+#[path = "arch/loongarch/mod.rs"]
+pub mod arch;
+
 pub mod bus;
 pub mod capability;
 pub mod cfg_space;

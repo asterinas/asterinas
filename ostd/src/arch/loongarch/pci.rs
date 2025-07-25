@@ -83,12 +83,6 @@ pub(crate) fn init() {
     PCI_ECAM_CFG_SPACE.call_once(|| IoMem::acquire(addr_start..addr_end).unwrap());
 }
 
-pub(crate) const MSIX_DEFAULT_MSG_ADDR: u32 = 0x2ff0_0000;
-
-pub(crate) fn construct_remappable_msix_address(_remapping_index: u32) -> u32 {
-    unimplemented!()
-}
-
 /// A simple MMIO allocator managing a linear region.
 ///
 /// In loongarch, the starting address of the memory bar of the PCI device

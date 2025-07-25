@@ -290,7 +290,7 @@ impl MemoryBar {
         #[cfg(target_arch = "loongarch64")]
         let base = {
             use core::alloc::Layout;
-            crate::arch::pci::alloc_mmio(
+            ostd::bus::pci::alloc_mmio(
                 Layout::from_size_align(size as usize, size as usize).unwrap(),
             )
             .unwrap() as u64
