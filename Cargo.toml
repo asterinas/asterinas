@@ -25,6 +25,7 @@ members = [
     "kernel/comps/mlsdisk",
     "kernel/comps/time",
     "kernel/comps/virtio",
+    "kernel/comps/pci",
     "kernel/libs/cpio-decoder",
     "kernel/libs/int-to-c-enum",
     "kernel/libs/int-to-c-enum/derive",

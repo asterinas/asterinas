@@ -252,6 +252,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "aster-pci"
+version = "0.1.0"
+dependencies = [
+ "component",
+ "log",
+ "ostd",
+ "spin",
+]
+
+[[package]]
 name = "aster-rights"
 version = "0.1.0"
 dependencies = [
