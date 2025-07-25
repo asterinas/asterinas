@@ -293,10 +293,8 @@ impl MemoryBar {
         #[cfg(target_arch = "loongarch64")]
         let base = {
             use core::alloc::Layout;
-            ostd::bus::pci::alloc_mmio(
-                Layout::from_size_align(size as usize, size as usize).unwrap(),
-            )
-            .unwrap() as u64
+            crate::arch::alloc_mmio(Layout::from_size_align(size as usize, size as usize).unwrap())
+                .unwrap() as u64
         };
         match address_length {
             AddrLen::Bits32 => location.write32(offset, base as u32),
