@@ -296,13 +296,7 @@ impl MemoryBar {
             size,
             prefetchable,
             address_length,
-            io_memory: unsafe {
-                IoMem::new(
-                    (base as usize)..((base + size as u64) as usize),
-                    PageFlags::RW,
-                    CachePolicy::Uncacheable,
-                )
-            },
+            io_memory: IoMem::acquire((base as usize)..((base + size as u64) as usize)).unwrap(),
         })
     }
 }
