@@ -6,10 +6,12 @@
 
 use alloc::vec::Vec;
 
+use ostd::bus::pci::PciDeviceLocation;
+
 use super::{
     capability::Capability,
     cfg_space::{AddrLen, Bar, Command, PciDeviceCommonCfgOffset, Status},
-    device_info::{PciDeviceId, PciDeviceLocation},
+    device_info::PciDeviceId,
 };
 
 /// PCI common device, Contains a range of information and functions common to PCI devices.
