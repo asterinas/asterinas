@@ -9,6 +9,12 @@ pub fn has_pci_bus() -> bool {
     crate::arch::pci::has_pci_bus()
 }
 
+#[cfg(target_arch = "loongarch64")]
+/// Allocates an MMIO address range using the global allocator.
+pub fn alloc_mmio(layout: core::alloc::Layout) -> Option<crate::prelude::Paddr> {
+    crate::arch::pci::alloc_mmio(layout)
+}
+
 /// PCI device Location
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PciDeviceLocation {
