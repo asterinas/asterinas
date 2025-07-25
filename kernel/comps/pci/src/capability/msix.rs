@@ -10,6 +10,7 @@ use alloc::{sync::Arc, vec::Vec};
 use ostd::{bus::pci::PciDeviceLocation, irq::IrqLine, mm::VmIoOnce};
 
 use crate::{
+    arch::{construct_remappable_msix_address, MSIX_DEFAULT_MSG_ADDR},
     cfg_space::{Bar, Command, MemoryBar},
     common_device::PciCommonDevice,
 };
