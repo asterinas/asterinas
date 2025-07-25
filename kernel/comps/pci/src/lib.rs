@@ -59,13 +59,13 @@
 
 #[cfg(target_arch = "x86_64")]
 #[path = "arch/x86/mod.rs"]
-pub mod arch;
+mod arch;
 #[cfg(target_arch = "riscv64")]
 #[path = "arch/riscv/mod.rs"]
-pub mod arch;
+mod arch;
 #[cfg(target_arch = "loongarch64")]
 #[path = "arch/loongarch/mod.rs"]
-pub mod arch;
+mod arch;
 
 pub mod bus;
 pub mod capability;
@@ -87,11 +87,18 @@ fn pci_init() -> Result<(), ComponentInitError> {
     Ok(())
 }
 
+/// Checks if the system has a PCI bus.
+pub fn has_pci_bus() -> bool {
+    crate::arch::has_pci_bus()
+}
+
 /// PCI bus instance
 pub static PCI_BUS: Mutex<PciBus> = Mutex::new(PciBus::new());
 
 fn init() {
-    if !has_pci_bus() {
+    crate::arch::init();
+
+    if !crate::arch::has_pci_bus() {
         return;
     }
 
