@@ -8,17 +8,14 @@ use alloc::sync::Arc;
 use core::mem::size_of;
 
 use bitflags::bitflags;
-
-use super::PciDeviceLocation;
-use crate::{
+use ostd::{
     arch::device::io_port::{PortRead, PortWrite},
     io::IoMem,
-    mm::{
-        page_prop::{CachePolicy, PageFlags},
-        PodOnce, VmIoOnce,
-    },
+    mm::{PodOnce, VmIoOnce},
     Error, Result,
 };
+
+use super::PciDeviceLocation;
 
 /// Offset in PCI device's common configuration space(Not the PCI bridge).
 #[repr(u16)]
