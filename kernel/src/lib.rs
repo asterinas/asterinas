@@ -96,12 +96,14 @@ pub fn init() {
     thread::init();
     util::random::init();
     driver::init();
+    // Initialize time before filesystem since ramfs needs timestamps for inodes
     time::init();
+    // Initialize rootfs before device::init() since device nodes need the filesystem
+    fs::rootfs::init(boot_info().initramfs.expect("No initramfs found!")).unwrap();
+    device::init().unwrap();
     #[cfg(target_arch = "x86_64")]
     net::init();
     sched::init();
-    fs::rootfs::init(boot_info().initramfs.expect("No initramfs found!")).unwrap();
-    device::init().unwrap();
     syscall::init();
     vdso::init();
     process::init();

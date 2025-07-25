@@ -37,6 +37,7 @@ TEST_APPS := \
 	pthread \
 	pty \
 	sched \
+	syslog \
 	shm \
 	vsock \
 
