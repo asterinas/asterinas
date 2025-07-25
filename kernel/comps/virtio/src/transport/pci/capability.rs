@@ -2,12 +2,12 @@
 
 use alloc::sync::Arc;
 
-use log::warn;
-use ostd::bus::pci::{
+use aster_pci::{
     capability::vendor::CapabilityVndrData,
     cfg_space::{Bar, MemoryBar},
     common_device::BarManager,
 };
+use log::warn;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]

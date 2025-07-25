@@ -255,6 +255,8 @@ dependencies = [
 name = "aster-pci"
 version = "0.1.0"
 dependencies = [
+ "bitflags 1.3.2",
+ "cfg-if",
  "component",
  "log",
  "ostd",
@@ -334,6 +336,7 @@ dependencies = [
  "aster-console",
  "aster-input",
  "aster-network",
+ "aster-pci",
  "aster-rights",
  "aster-softirq",
  "aster-systree",
