@@ -330,15 +330,7 @@ impl MemoryBar {
             size,
             prefetchable,
             address_length,
-            // SAFETY: The address range is initialized by the BIOS or allocated by us. It is
-            // guaranteed to be I/O memory.
-            io_memory: unsafe {
-                IoMem::new(
-                    (base as usize)..((base + size) as usize),
-                    PageFlags::RW,
-                    CachePolicy::Uncacheable,
-                )
-            },
+            io_memory: IoMem::acquire((base as usize)..((base + size) as usize)).unwrap(),
         })
     }
 }
