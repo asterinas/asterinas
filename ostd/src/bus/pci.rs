@@ -77,6 +77,11 @@ impl PciDeviceLocation {
 impl PciDeviceLocation {
     const BIT32_ALIGN_MASK: u16 = 0xFFFC;
 
+    /// Aligns the given pointer to a 32-bit boundary.
+    pub const fn align_ptr(ptr: u16) -> u16 {
+        ptr & Self::BIT32_ALIGN_MASK
+    }
+
     /// Reads a 8-bit value from the PCI configuration space at the specified offset.
     pub fn read8(&self, offset: u16) -> u8 {
         let val = self.read32(offset & Self::BIT32_ALIGN_MASK);
