@@ -41,7 +41,8 @@ impl LinuxAbi for UserContext {
 
 /// Represents the context of a signal handler.
 ///
-/// This contains the context saved before a signal handler is invoked and restored by `sys_rt_sigreturn`.
+/// This contains the context saved before a signal handler is invoked; it will be restored by
+/// `sys_rt_sigreturn`.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/loongarch/include/uapi/asm/sigcontext.h#L20>
 #[repr(C)]
