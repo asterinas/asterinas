@@ -172,6 +172,7 @@ union siginfo_addr_bnd_t {
     upper: Vaddr, // *const c_void,
 }
 
+/// Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/include/uapi/asm-generic/ucontext.h#L5>
 #[cfg(target_arch = "x86_64")]
 #[derive(Clone, Copy, Debug, Default, Pod)]
 #[repr(C)]
