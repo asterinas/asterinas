@@ -29,11 +29,14 @@ impl IoMemAllocator {
     ///
     /// If the range is not available, then the return value will be `None`.
     pub fn acquire(&self, range: Range<usize>) -> Option<IoMem> {
+        debug!(
+            "Try to acquire MMIO range:{:x?}..{:x?}",
+            range.start, range.end
+        );
+
         find_allocator(&self.allocators, &range)?
             .alloc_specific(&range)
             .ok()?;
-
-        debug!("Acquiring MMIO range:{:x?}..{:x?}", range.start, range.end);
 
         // SAFETY: The created `IoMem` is guaranteed not to access physical memory or system device I/O.
         unsafe { Some(IoMem::new(range, PageFlags::RW, CachePolicy::Uncacheable)) }
