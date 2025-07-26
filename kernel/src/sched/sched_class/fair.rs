@@ -344,6 +344,10 @@ impl SchedClassRq for FairClassRq {
                 rt.period_delta > self.time_slice(weight)
                     || vruntime > self.min_vruntime + self.vtime_slice()
             }
+            UpdateFlags::Exit => {
+                // TODO: consider do more (e.g., time accounting)
+                true
+            }
         }
     }
 }
