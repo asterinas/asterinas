@@ -237,7 +237,7 @@ impl Scheduler for ClassScheduler {
         should_preempt.then_some(cpu)
     }
 
-    fn local_mut_rq_with(&self, f: &mut dyn FnMut(&mut dyn LocalRunQueue)) {
+    fn mut_local_rq_with(&self, f: &mut dyn FnMut(&mut dyn LocalRunQueue)) {
         let guard = disable_local();
         let mut lock = self.rqs[guard.current_cpu().as_usize()].lock();
         f(&mut *lock)
@@ -339,7 +339,7 @@ impl LocalRunQueue for PerCpuClassRqSet {
         self.current.as_ref().map(|((task, _), _)| task)
     }
 
-    fn pick_next_current(&mut self) -> Option<&Arc<Task>> {
+    fn try_pick_next(&mut self) -> Option<&Arc<Task>> {
         self.pick_next_entity().and_then(|next| {
             // We guarantee that a task can appear at once in a `PerCpuClassRqSet`. So, the `next` cannot be the same
             // as the current task here.

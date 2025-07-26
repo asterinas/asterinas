@@ -220,6 +220,10 @@ impl SchedClassRq for RealTimeClassRq {
                 ts => ts <= rt.period_delta,
             },
             UpdateFlags::Yield => true,
+            UpdateFlags::Exit => {
+                // TODO: consider do more (e.g., time accounting)
+                true
+            }
         }
     }
 }
