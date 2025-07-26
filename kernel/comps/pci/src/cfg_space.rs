@@ -13,6 +13,7 @@ use ostd::{
     mm::{PodOnce, VmIoOnce},
     Error, Result,
 };
+use spin::Once;
 
 use super::PciDeviceLocation;
 
@@ -194,13 +195,13 @@ impl Bar {
 }
 
 /// Memory BAR
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct MemoryBar {
     base: u64,
     size: u64,
     prefetchable: bool,
     address_length: AddrLen,
-    io_memory: IoMem,
+    io_memory: Once<IoMem>,
 }
 
 impl MemoryBar {
@@ -227,7 +228,9 @@ impl MemoryBar {
 
     /// Grants I/O memory access
     pub fn io_mem(&self) -> &IoMem {
-        &self.io_memory
+        self.io_memory.call_once(|| {
+            IoMem::acquire((self.base as usize)..((self.base + self.size) as usize)).unwrap()
+        })
     }
 
     /// Creates a memory BAR structure.
@@ -327,7 +330,7 @@ impl MemoryBar {
             size,
             prefetchable,
             address_length,
-            io_memory: IoMem::acquire((base as usize)..((base + size) as usize)).unwrap(),
+            io_memory: Once::new(),
         })
     }
 }
