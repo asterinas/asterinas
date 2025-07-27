@@ -754,36 +754,6 @@ impl<'a> VmWriter<'a, Infallible> {
         Ok(())
     }
 
-    /// Fills the available space by repeating `value`.
-    ///
-    /// Returns the number of values written.
-    ///
-    /// # Panics
-    ///
-    /// The size of the available space must be a multiple of the size of `value`.
-    /// Otherwise, the method would panic.
-    pub fn fill<T: Pod>(&mut self, value: T) -> usize {
-        let cursor = self.cursor.cast::<T>();
-        assert!(cursor.is_aligned());
-
-        let avail = self.avail();
-        assert!(avail % core::mem::size_of::<T>() == 0);
-        let written_num = avail / core::mem::size_of::<T>();
-
-        for i in 0..written_num {
-            let cursor_i = cursor.wrapping_add(i);
-            // SAFETY: `written_num` is calculated by the avail size and the size of the type `T`,
-            // so the `write` operation will only manipulate the memory managed by this writer.
-            // We've checked that the cursor is properly aligned with respect to the type `T`. All
-            // other safety requirements are the same as for `Self::write`.
-            unsafe { cursor_i.write_volatile(value) };
-        }
-
-        // The available space has been filled so this cursor can be moved to the end.
-        self.cursor = self.end;
-        written_num
-    }
-
     /// Converts to a fallible writer.
     pub fn to_fallible(self) -> VmWriter<'a, Fallible> {
         // It is safe to construct a fallible reader since an infallible reader covers the
