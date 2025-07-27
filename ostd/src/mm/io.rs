@@ -306,6 +306,20 @@ unsafe fn memcpy(dst: *mut u8, src: *const u8, len: usize) {
     unsafe { core::intrinsics::volatile_copy_memory(dst, src, len) };
 }
 
+/// Fills `len` bytes of memory at `dst` with the specified `value`.
+///
+/// # Safety
+///
+/// - `dst` must be [valid] for writes of `len` bytes.
+///
+/// [valid]: crate::mm::io#safety
+unsafe fn memset(dst: *mut u8, value: u8, len: usize) {
+    // SAFETY: The safety is guaranteed by the safety preconditions and the explanation above.
+    unsafe {
+        core::intrinsics::volatile_set_memory(dst, value, len);
+    }
+}
+
 /// Copies `len` bytes from `src` to `dst`.
 /// This function will early stop copying if encountering an unresolvable page fault.
 ///
@@ -752,6 +766,25 @@ impl<'a> VmWriter<'a, Infallible> {
         self.cursor = self.cursor.wrapping_add(core::mem::size_of::<T>());
 
         Ok(())
+    }
+
+    /// Writes `len` zeros to the target memory.
+    ///
+    /// This method attempts to fill up to `len` bytes with zeros. If the available
+    /// memory from the current cursor position is less than `len`, it will only fill
+    /// the available space.
+    pub fn fill_zeros(&mut self, len: usize) -> usize {
+        let len_to_set = self.avail().min(len);
+        if len_to_set == 0 {
+            return 0;
+        }
+
+        // SAFETY: The destination is a subset of the memory range specified by
+        // the current writer, so it is valid for writing.
+        unsafe { memset(self.cursor, 0u8, len_to_set) };
+        self.cursor = self.cursor.wrapping_add(len_to_set);
+
+        len_to_set
     }
 
     /// Converts to a fallible writer.
