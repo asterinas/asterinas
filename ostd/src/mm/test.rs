@@ -118,6 +118,21 @@ mod io {
         writer_infallible.write_val(&val).unwrap();
     }
 
+    /// Tests the `fill` method in Infallible mode.
+    #[ktest]
+    fn fill_infallible() {
+        let mut buffer = vec![0x7Fu8; 8];
+        let mut writer_infallible = VmWriter::from(&mut buffer[..]);
+
+        // Fill with zeros
+        let filled = writer_infallible.fill_zeros(10);
+        assert_eq!(filled, 8);
+        // Ensure the cursor is at the end
+        assert_eq!(writer_infallible.avail(), 0);
+
+        assert_eq!(buffer, vec![0; 8]);
+    }
+
     /// Tests the `skip` method for reading in Infallible mode.
     #[ktest]
     fn skip_read_infallible() {

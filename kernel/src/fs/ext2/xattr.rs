@@ -314,10 +314,9 @@ impl Xattr {
         let len = entry.total_len();
         self.blocks_buf
             .writer()
-            .to_fallible()
             .skip(offset)
             .limit(len)
-            .fill_zeros(len)?;
+            .fill_zeros(len);
 
         let mut cache = cache.upgrade();
         let _ = cache.entries.remove(&offset);
