@@ -7,7 +7,7 @@ use ostd_pod::Pod;
 
 use crate::{
     mm::{
-        io::{VmIo, VmReader, VmWriter},
+        io::{VmIo, VmIoFill, VmReader, VmWriter},
         tlb::TlbFlushOp,
         vm_space::get_activated_vm_space,
         CachePolicy, FallibleVmRead, FallibleVmWrite, FrameAllocOptions, PageFlags, PageProperty,
@@ -381,19 +381,19 @@ mod io {
         assert_eq!(result, Err(Error::InvalidArgs));
     }
 
-    /// Tests the `write_vals` method in VmIO.
+    /// Tests the `fill_zeros` method in VmIO.
     #[ktest]
-    fn write_vals_segment() {
-        let mut buffer = [0u8; 12];
+    fn fill_zeros_segment() {
+        let mut buffer = [0u8; 5];
         let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-        let values = [1u32, 2, 3];
-        let nr_written = segment.write_vals(0, values.iter(), 4).unwrap();
-        assert_eq!(nr_written, 3);
+        let values = [1u8, 2, 3, 4, 5];
+        segment.write_slice(0, &values).unwrap();
+        segment.fill_zeros(1, 3).unwrap();
         segment.read_bytes(0, &mut buffer[..]).unwrap();
-        assert_eq!(buffer, [1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0]);
+        assert_eq!(buffer, [1, 0, 0, 0, 5]);
         // Writes with error offset
-        let result = segment.write_vals(8192, values.iter(), 4);
-        assert_eq!(result, Err(Error::InvalidArgs));
+        let result = segment.fill_zeros(8192, 3);
+        assert_eq!(result, Err((Error::InvalidArgs, 0)));
     }
 
     /// Tests the `write_slice` method in VmIO.
@@ -412,7 +412,7 @@ mod io {
     fn read_val_segment() {
         let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
         let values = [1u32, 2, 3];
-        segment.write_vals(0, values.iter(), 4).unwrap();
+        segment.write_slice(0, &values).unwrap();
         let val: u32 = segment.read_val(0).unwrap();
         assert_eq!(val, 1);
     }
@@ -422,7 +422,7 @@ mod io {
     fn read_slice_segment() {
         let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
         let values = [1u32, 2, 3];
-        segment.write_vals(0, values.iter(), 4).unwrap();
+        segment.write_slice(0, &values).unwrap();
         let mut read_buffer = [0u8; 12];
         segment.read_slice(0, &mut read_buffer[..]).unwrap();
         assert_eq!(read_buffer, [1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0]);

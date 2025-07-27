@@ -5,7 +5,7 @@
 use inherit_methods_macro::inherit_methods;
 use ostd_pod::Pod;
 
-use super::{Infallible, PodOnce, VmIo, VmIoOnce, VmReader, VmWriter};
+use super::{Infallible, PodOnce, VmIo, VmIoFill, VmIoOnce, VmReader, VmWriter};
 use crate::{
     mm::{FallibleVmRead, FallibleVmWrite},
     prelude::*,
@@ -16,7 +16,7 @@ use crate::{
 ///
 /// Having the reader and writer means that the type is capable of performing a range of VM
 /// operations. Thus, several traits will be automatically and efficiently implemented, such as
-/// [`VmIo`] and [`VmIoOnce`].
+/// [`VmIo`], [`VmIoFill`], and [`VmIoOnce`].
 pub trait HasVmReaderWriter {
     /// A marker type that denotes the return types of [`Self::reader`] and [`Self::writer`].
     ///
@@ -158,6 +158,24 @@ impl<S: HasVmReaderWriter + Send + Sync> VmIo for S {
         }
 
         writer.skip(offset).write_val(new_val)
+    }
+}
+
+impl<S: HasVmReaderWriter> VmIoFill for S {
+    fn fill_zeros(&self, offset: usize, len: usize) -> core::result::Result<(), (Error, usize)> {
+        let mut writer = <Self as HasVmReaderWriter>::Types::to_writer_result(self.writer())
+            .map_err(|err| (err, 0))?;
+
+        if offset > writer.avail() {
+            return Err((Error::InvalidArgs, 0));
+        }
+
+        let filled_len = writer.skip(offset).fill_zeros(len);
+        if filled_len == len {
+            Ok(())
+        } else {
+            Err((Error::InvalidArgs, filled_len))
+        }
     }
 }
 
