@@ -141,7 +141,7 @@ impl VmIo for Vmo<Rights> {
         self.0.write(offset, reader)?;
         Ok(())
     }
-    // TODO: Support efficient `write_vals()`
+    // TODO: Support efficient `fill_zeros()`
 }
 
 impl VmoRightsOp for Vmo<Rights> {
