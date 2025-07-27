@@ -42,8 +42,6 @@
 
 use core::{marker::PhantomData, mem::MaybeUninit};
 
-use align_ext::AlignExt;
-
 use crate::{
     arch::mm::{__memcpy_fallible, __memset_fallible},
     mm::{
@@ -171,67 +169,37 @@ pub trait VmIo: Send + Sync {
         let buf = unsafe { core::slice::from_raw_parts(ptr, len_in_bytes) };
         self.write_bytes(offset, buf)
     }
+}
 
-    /// Writes a sequence of values given by an iterator (`iter`) from the specified offset (`offset`).
+/// A trait that enables filling bytes (e.g., filling zeros) to a VM object.
+pub trait VmIoFill {
+    /// Writes `len` zeros at a specified offset.
     ///
-    /// The write process stops until the VM object does not have enough remaining space
-    /// or the iterator returns `None`. If any value is written, the function returns `Ok(nr_written)`,
-    /// where `nr_written` is the number of the written values.
+    /// Unlike the methods in [`VmIo`], this method allows for short writes because `len` can be
+    /// effectively unbounded. However, if not all bytes can be written successfully, an `Err(_)`
+    /// will be returned with the error and the number of zeros that have been written thus far.
     ///
-    /// The offset of every value written by this method is aligned to the `align`-byte boundary.
-    /// Naturally, when `align` equals to `0` or `1`, then the argument takes no effect:
-    /// the values will be written in the most compact way.
+    /// # A slow, general implementation
     ///
-    /// # Example
+    /// Suppose that [`VmIo`] has already been implemented for the type,
+    /// this method can be implemented in the following general way.
     ///
-    /// Initializes an VM object with the same value can be done easily with `write_values`.
-    ///
+    /// ```rust
+    /// fn fill_zeros(&self, offset: usize, len: usize) -> core::result::Result<(), (Error, usize)> {
+    ///     for i in 0..len {
+    ///         match self.write_slice(offset + i, &[0u8]) {
+    ///             Ok(()) => continue,
+    ///             Err(err) => return Err((err, i)),
+    ///         }
+    ///     }
+    ///     Ok(())
+    /// }
     /// ```
-    /// use core::iter::self;
     ///
-    /// let _nr_values = vm_obj.write_vals(0, iter::repeat(0_u32), 0).unwrap();
-    /// ```
-    ///
-    /// # Panics
-    ///
-    /// This method panics if `align` is greater than two,
-    /// but not a power of two, in release mode.
-    fn write_vals<'a, T: Pod + 'a, I: Iterator<Item = &'a T>>(
-        &self,
-        offset: usize,
-        iter: I,
-        align: usize,
-    ) -> Result<usize> {
-        let mut nr_written = 0;
-
-        let (mut offset, item_size) = if (align >> 1) == 0 {
-            // align is 0 or 1
-            (offset, core::mem::size_of::<T>())
-        } else {
-            // align is more than 2
-            (
-                offset.align_up(align),
-                core::mem::size_of::<T>().align_up(align),
-            )
-        };
-
-        for item in iter {
-            match self.write_val(offset, item) {
-                Ok(_) => {
-                    offset += item_size;
-                    nr_written += 1;
-                }
-                Err(e) => {
-                    if nr_written > 0 {
-                        return Ok(nr_written);
-                    }
-                    return Err(e);
-                }
-            }
-        }
-
-        Ok(nr_written)
-    }
+    /// But we choose not to provide a general, default implementation
+    /// because doing so would make it too easy for a concrete type of `VmIoFill`
+    /// to settle with a slower implementation for such a performance-sensitive operation.
+    fn fill_zeros(&self, offset: usize, len: usize) -> core::result::Result<(), (Error, usize)>;
 }
 
 /// A trait that enables reading/writing data from/to a VM object using one non-tearing memory

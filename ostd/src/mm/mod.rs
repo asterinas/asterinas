@@ -34,8 +34,8 @@ pub use self::{
         Frame,
     },
     io::{
-        Fallible, FallibleVmRead, FallibleVmWrite, Infallible, PodOnce, VmIo, VmIoOnce, VmReader,
-        VmWriter,
+        Fallible, FallibleVmRead, FallibleVmWrite, Infallible, PodOnce, VmIo, VmIoFill, VmIoOnce,
+        VmReader, VmWriter,
     },
     page_prop::{CachePolicy, PageFlags, PageProperty},
     vm_space::VmSpace,

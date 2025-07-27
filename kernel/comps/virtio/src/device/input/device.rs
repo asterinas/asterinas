@@ -6,7 +6,7 @@ use alloc::{
     sync::Arc,
     vec::Vec,
 };
-use core::{fmt::Debug, iter, mem};
+use core::{fmt::Debug, mem};
 
 use aster_input::{
     key::{Key, KeyStatus},
@@ -18,8 +18,9 @@ use log::{debug, info};
 use ostd::{
     arch::trap::TrapFrame,
     io::IoMem,
-    mm::{DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, VmIo, PAGE_SIZE},
+    mm::{DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, PAGE_SIZE},
     sync::{LocalIrqDisabled, RwLock, SpinLock},
+    Pod,
 };
 
 use super::{InputConfigSelect, VirtioInputConfig, VirtioInputEvent, QUEUE_EVENT, QUEUE_STATUS};
@@ -260,12 +261,14 @@ impl EventTable {
     fn new(num_events: usize) -> Self {
         assert!(num_events * mem::size_of::<VirtioInputEvent>() <= PAGE_SIZE);
 
-        let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-
-        let default_event = VirtioInputEvent::default();
-        let iter = iter::repeat_n(&default_event, EVENT_SIZE);
-        let nr_written = segment.write_vals(0, iter, 0).unwrap();
-        assert_eq!(nr_written, EVENT_SIZE);
+        let segment = FrameAllocOptions::new()
+            .zeroed(true)
+            .alloc_segment(1)
+            .unwrap();
+        debug_assert!(VirtioInputEvent::default()
+            .as_bytes()
+            .iter()
+            .all(|b| *b == 0));
 
         let stream = DmaStream::map(segment.into(), DmaDirection::FromDevice, false).unwrap();
         Self { stream, num_events }
