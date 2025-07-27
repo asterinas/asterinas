@@ -332,32 +332,6 @@ mod io {
         assert_eq!(val, read_val);
     }
 
-    /// Tests the `collect` method in Fallible mode.
-    #[ktest]
-    fn collect_fallible() {
-        let data = [5u8, 6, 7, 8, 9];
-        let reader = VmReader::from(&data[..]);
-        let mut reader_fallible = reader.to_fallible();
-
-        let collected = reader_fallible.collect().unwrap();
-        assert_eq!(collected, data);
-    }
-
-    /// Tests partial collection in Fallible mode.
-    #[ktest]
-    fn collect_partial_fallible() {
-        let data = [1u8, 2, 3, 4, 5];
-        let reader = VmReader::from(&data[..]);
-        let mut reader_fallible = reader.to_fallible();
-
-        // Limits the reader to 3 bytes
-        let limited_reader = reader_fallible.limit(3);
-
-        let result = limited_reader.collect();
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), vec![1, 2, 3]);
-    }
-
     /// Tests the `fill_zeros` method in Fallible mode.
     #[ktest]
     fn fill_zeros_fallible() {

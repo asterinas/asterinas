@@ -40,7 +40,6 @@
 //! user space, making it impossible to avoid data races). However, they may produce erroneous
 //! results, such as unexpected bytes being copied, but do not cause soundness problems.
 
-use alloc::vec;
 use core::marker::PhantomData;
 
 use align_ext::AlignExt;
@@ -605,25 +604,6 @@ impl VmReader<'_, Fallible> {
                 err
             })?;
         Ok(val)
-    }
-
-    /// Collects all the remaining bytes into a `Vec<u8>`.
-    ///
-    /// If the memory read failed, this method will return `Err`
-    /// and the current reader's cursor remains pointing to
-    /// the original starting position.
-    pub fn collect(&mut self) -> Result<Vec<u8>> {
-        let mut buf = vec![0u8; self.remain()];
-        self.read_fallible(&mut buf.as_mut_slice().into())
-            .map_err(|(err, copied_len)| {
-                // SAFETY: The `copied_len` is the number of bytes read so far.
-                // So the `cursor` can be moved back to the original position.
-                unsafe {
-                    self.cursor = self.cursor.sub(copied_len);
-                }
-                err
-            })?;
-        Ok(buf)
     }
 }
 
