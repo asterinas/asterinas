@@ -7,10 +7,7 @@ use aster_rights::Rights;
 
 use super::SyscallReturn;
 use crate::{
-    fs::{
-        file_handle::FileLike,
-        file_table::{get_file_fast, FileDesc},
-    },
+    fs::file_table::{get_file_fast, FileDesc},
     prelude::*,
     vm::{perms::VmPerms, vmar::is_userspace_vaddr, vmo::VmoOptions},
 };
@@ -122,9 +119,8 @@ fn do_sys_mmap(
         } else {
             let mut file_table = ctx.thread_local.borrow_file_table_mut();
             let file = get_file_fast!(&mut file_table, fd);
-            let inode_handle = file.as_inode_or_err()?;
 
-            let access_mode = inode_handle.access_mode();
+            let access_mode = file.access_mode();
             if vm_perms.contains(VmPerms::READ) && !access_mode.is_readable() {
                 return_errno!(Errno::EACCES);
             }
@@ -135,7 +131,9 @@ fn do_sys_mmap(
                 return_errno!(Errno::EACCES);
             }
 
-            let inode = inode_handle.dentry().inode();
+            let Some(inode) = file.inode() else {
+                return_errno_with_message!(Errno::EINVAL, "the file has no associated inode");
+            };
             if inode.page_cache().is_none() {
                 return_errno_with_message!(Errno::EBADF, "File does not have page cache");
             }
