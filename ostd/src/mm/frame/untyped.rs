@@ -6,14 +6,16 @@
 //! relaxed rules but we cannot create references to them. This module provides
 //! the declaration of untyped frames and segments, and the implementation of
 //! extra functionalities (such as [`VmIo`]) for them.
+//!
+//! [`VmIo`]: crate::mm::VmIo
 
 use super::{meta::AnyFrameMeta, Frame, Segment};
 use crate::{
     mm::{
-        io::{FallibleVmRead, FallibleVmWrite, VmIo, VmReader, VmWriter},
-        paddr_to_vaddr, Infallible,
+        io::{VmReader, VmWriter},
+        io_util, paddr_to_vaddr, Infallible,
     },
-    Error, Result,
+    Result,
 };
 
 /// The metadata of untyped frame.
@@ -82,48 +84,30 @@ macro_rules! impl_untyped_for {
         impl<UM: AnyUFrameMeta + ?Sized> UntypedMem for $t<UM> {
             fn reader(&self) -> VmReader<'_, Infallible> {
                 let ptr = paddr_to_vaddr(self.start_paddr()) as *const u8;
-                // SAFETY: Only untyped frames are allowed to be read.
+                // SAFETY:
+                // - The memory range points to untyped memory.
+                // - The frame/segment is alive during the lifetime `'_`.
+                // - Using `VmReader` and `VmWriter` is the only way to access the frame/segment.
                 unsafe { VmReader::from_kernel_space(ptr, self.size()) }
             }
 
             fn writer(&self) -> VmWriter<'_, Infallible> {
                 let ptr = paddr_to_vaddr(self.start_paddr()) as *mut u8;
-                // SAFETY: Only untyped frames are allowed to be written.
+                // SAFETY:
+                // - The memory range points to untyped memory.
+                // - The frame/segment is alive during the lifetime `'_`.
+                // - Using `VmReader` and `VmWriter` is the only way to access the frame/segment.
                 unsafe { VmWriter::from_kernel_space(ptr, self.size()) }
             }
         }
 
-        impl<UM: AnyUFrameMeta + ?Sized> VmIo for $t<UM> {
-            fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()> {
-                let read_len = writer.avail().min(self.size().saturating_sub(offset));
-                // Do bound check with potential integer overflow in mind
-                let max_offset = offset.checked_add(read_len).ok_or(Error::Overflow)?;
-                if max_offset > self.size() {
-                    return Err(Error::InvalidArgs);
-                }
-                let len = self
-                    .reader()
-                    .skip(offset)
-                    .read_fallible(writer)
-                    .map_err(|(e, _)| e)?;
-                debug_assert!(len == read_len);
-                Ok(())
+        impl<UM: AnyUFrameMeta + ?Sized> io_util::VmIoByReaderWriter for $t<UM> {
+            fn io_reader(&self) -> Result<VmReader<Infallible>> {
+                Ok(self.reader())
             }
 
-            fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()> {
-                let write_len = reader.remain().min(self.size().saturating_sub(offset));
-                // Do bound check with potential integer overflow in mind
-                let max_offset = offset.checked_add(write_len).ok_or(Error::Overflow)?;
-                if max_offset > self.size() {
-                    return Err(Error::InvalidArgs);
-                }
-                let len = self
-                    .writer()
-                    .skip(offset)
-                    .write_fallible(reader)
-                    .map_err(|(e, _)| e)?;
-                debug_assert!(len == write_len);
-                Ok(())
+            fn io_writer(&self) -> Result<VmWriter<Infallible>> {
+                Ok(self.writer())
             }
         }
     };

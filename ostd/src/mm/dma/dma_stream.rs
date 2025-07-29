@@ -9,7 +9,7 @@ use crate::{
     error::Error,
     mm::{
         dma::{dma_type, Daddr, DmaType},
-        HasPaddr, Infallible, Paddr, USegment, UntypedMem, VmIo, VmReader, VmWriter, PAGE_SIZE,
+        io_util, HasPaddr, Infallible, Paddr, USegment, UntypedMem, VmReader, VmWriter, PAGE_SIZE,
     },
 };
 
@@ -135,8 +135,8 @@ impl DmaStream {
     ///    (e.g., using [`write_bytes`]).
     ///    Before the CPU side notifies the device side to read, it must call the `sync` method first.
     ///
-    /// [`read_bytes`]: Self::read_bytes
-    /// [`write_bytes`]: Self::write_bytes
+    /// [`read_bytes`]: crate::mm::VmIo::read_bytes
+    /// [`write_bytes`]: crate::mm::VmIo::write_bytes
     pub fn sync(&self, _byte_range: Range<usize>) -> Result<(), Error> {
         cfg_if::cfg_if! {
             if #[cfg(target_arch = "x86_64")]{
@@ -203,21 +203,13 @@ impl Drop for DmaStreamInner {
     }
 }
 
-impl VmIo for DmaStream {
-    /// Reads data into the buffer.
-    fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<(), Error> {
-        if self.inner.direction == DmaDirection::ToDevice {
-            return Err(Error::AccessDenied);
-        }
-        self.inner.segment.read(offset, writer)
+impl io_util::VmIoByReaderWriter for DmaStream {
+    fn io_reader(&self) -> Result<VmReader<Infallible>, Error> {
+        self.reader()
     }
 
-    /// Writes data from the buffer.
-    fn write(&self, offset: usize, reader: &mut VmReader) -> Result<(), Error> {
-        if self.inner.direction == DmaDirection::FromDevice {
-            return Err(Error::AccessDenied);
-        }
-        self.inner.segment.write(offset, reader)
+    fn io_writer(&self) -> Result<VmWriter<Infallible>, Error> {
+        self.writer()
     }
 }
 
@@ -316,19 +308,13 @@ impl<Dma: AsRef<DmaStream>> DmaStreamSlice<Dma> {
     }
 }
 
-impl<Dma: AsRef<DmaStream> + Send + Sync> VmIo for DmaStreamSlice<Dma> {
-    fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<(), Error> {
-        if writer.avail() + offset > self.len {
-            return Err(Error::InvalidArgs);
-        }
-        self.stream.as_ref().read(self.offset + offset, writer)
+impl<Dma: AsRef<DmaStream> + Send + Sync> io_util::VmIoByReaderWriter for DmaStreamSlice<Dma> {
+    fn io_reader(&self) -> Result<VmReader<Infallible>, Error> {
+        self.reader()
     }
 
-    fn write(&self, offset: usize, reader: &mut VmReader) -> Result<(), Error> {
-        if reader.remain() + offset > self.len {
-            return Err(Error::InvalidArgs);
-        }
-        self.stream.as_ref().write(self.offset + offset, reader)
+    fn io_writer(&self) -> Result<VmWriter<Infallible>, Error> {
+        self.writer()
     }
 }
 

@@ -12,6 +12,7 @@ pub(crate) mod dma;
 pub mod frame;
 pub mod heap;
 pub mod io;
+pub(crate) mod io_util;
 pub(crate) mod kspace;
 pub(crate) mod page_prop;
 pub(crate) mod page_table;
