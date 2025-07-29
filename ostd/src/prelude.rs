@@ -14,6 +14,6 @@ pub use ostd_macros::ktest;
 
 pub use crate::{
     early_print as print, early_println as println,
-    mm::{Paddr, UntypedMem, Vaddr},
+    mm::{Paddr, Vaddr},
     panic::abort,
 };

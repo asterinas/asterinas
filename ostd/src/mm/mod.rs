@@ -12,6 +12,7 @@ pub(crate) mod dma;
 pub mod frame;
 pub mod heap;
 pub mod io;
+pub mod io_util;
 pub(crate) mod kspace;
 pub(crate) mod page_prop;
 pub(crate) mod page_table;
@@ -29,7 +30,7 @@ pub use self::{
         allocator::FrameAllocOptions,
         segment::{Segment, USegment},
         unique::UniqueFrame,
-        untyped::{AnyUFrameMeta, UFrame, UntypedMem},
+        untyped::{AnyUFrameMeta, UFrame},
         Frame,
     },
     io::{

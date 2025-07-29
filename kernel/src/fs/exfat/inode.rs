@@ -13,7 +13,7 @@ use aster_block::{
     BLOCK_SIZE,
 };
 use aster_rights::Full;
-use ostd::mm::{Segment, VmIo};
+use ostd::mm::{io_util::HasVmReaderWriter, Segment, VmIo};
 
 use super::{
     constants::*,

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::mm::UntypedMem;
+use ostd::mm::io_util::HasVmReaderWriter;
 
 use super::{block_ptr::Ext2Bid, prelude::*, Ext2, Inode};
 use crate::fs::utils::{XattrName, XattrNamespace, XattrSetFlags, XATTR_NAME_MAX_LEN};

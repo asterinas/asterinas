@@ -12,10 +12,10 @@ pub(super) use self::allocator::init;
 pub(crate) use self::allocator::IoMemAllocatorBuilder;
 use crate::{
     mm::{
+        io_util::{HasVmReaderWriter, VmReaderWriterIdentity},
         kspace::kvirt_area::KVirtArea,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
-        FallibleVmRead, FallibleVmWrite, HasPaddr, Infallible, Paddr, PodOnce, VmIo, VmIoOnce,
-        VmReader, VmWriter, PAGE_SIZE,
+        HasPaddr, Infallible, Paddr, VmReader, VmWriter, PAGE_SIZE,
     },
     prelude::*,
     Error,
@@ -29,12 +29,6 @@ pub struct IoMem {
     offset: usize,
     limit: usize,
     pa: Paddr,
-}
-
-impl HasPaddr for IoMem {
-    fn paddr(&self) -> Paddr {
-        self.pa
-    }
 }
 
 impl IoMem {
@@ -143,7 +137,9 @@ impl IoMem {
 // is in OSTD, so we can rely on the implementation details of `VmReader` and `VmWriter`, which we
 // know are also suitable for accessing I/O memory.
 
-impl IoMem {
+impl HasVmReaderWriter for IoMem {
+    type Types = VmReaderWriterIdentity;
+
     fn reader(&self) -> VmReader<'_, Infallible> {
         // SAFETY: The constructor of the `IoMem` structure has already ensured the
         // safety of reading from the mapped physical address, and the mapping is valid.
@@ -167,53 +163,9 @@ impl IoMem {
     }
 }
 
-impl VmIo for IoMem {
-    fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()> {
-        let offset = offset + self.offset;
-        if self
-            .limit
-            .checked_sub(offset)
-            .is_none_or(|remain| remain < writer.avail())
-        {
-            return Err(Error::InvalidArgs);
-        }
-
-        self.reader()
-            .skip(offset)
-            .read_fallible(writer)
-            .map_err(|(e, _)| e)?;
-        debug_assert!(!writer.has_avail());
-
-        Ok(())
-    }
-
-    fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()> {
-        let offset = offset + self.offset;
-        if self
-            .limit
-            .checked_sub(offset)
-            .is_none_or(|remain| remain < reader.remain())
-        {
-            return Err(Error::InvalidArgs);
-        }
-
-        self.writer()
-            .skip(offset)
-            .write_fallible(reader)
-            .map_err(|(e, _)| e)?;
-        debug_assert!(!reader.has_remain());
-
-        Ok(())
-    }
-}
-
-impl VmIoOnce for IoMem {
-    fn read_once<T: PodOnce>(&self, offset: usize) -> Result<T> {
-        self.reader().skip(offset).read_once()
-    }
-
-    fn write_once<T: PodOnce>(&self, offset: usize, new_val: &T) -> Result<()> {
-        self.writer().skip(offset).write_once(new_val)
+impl HasPaddr for IoMem {
+    fn paddr(&self) -> Paddr {
+        self.pa
     }
 }
 

@@ -5,8 +5,9 @@ use bitvec::array::BitArray;
 use int_to_c_enum::TryFromInt;
 use ostd::{
     mm::{
-        DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, Infallible, USegment, VmIo,
-        VmReader, VmWriter,
+        io_util::{HasVmReaderWriter, VmReaderWriterResult},
+        DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, Infallible, USegment, VmReader,
+        VmWriter,
     },
     sync::{SpinLock, WaitQueue},
     Error,
@@ -391,7 +392,7 @@ pub enum BioDirection {
     ToDevice,
 }
 
-impl<'a> BioSegment {
+impl BioSegment {
     /// Allocates a new `BioSegment` with the wanted blocks count and
     /// the bio direction.
     pub fn alloc(nblocks: usize, direction: BioDirection) -> Self {
@@ -484,25 +485,17 @@ impl<'a> BioSegment {
     pub fn inner_segment(&self) -> &USegment {
         self.inner.dma_slice.stream().segment()
     }
+}
 
-    /// Returns a reader to read data from it.
-    pub fn reader(&'a self) -> Result<VmReader<'a, Infallible>, Error> {
+impl HasVmReaderWriter for BioSegment {
+    type Types = VmReaderWriterResult;
+
+    fn reader(&self) -> Result<VmReader<'_, Infallible>, Error> {
         self.inner.dma_slice.reader()
     }
 
-    /// Returns a writer to write data into it.
-    pub fn writer(&'a self) -> Result<VmWriter<'a, Infallible>, Error> {
+    fn writer(&self) -> Result<VmWriter<'_, Infallible>, Error> {
         self.inner.dma_slice.writer()
-    }
-}
-
-impl VmIo for BioSegment {
-    fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<(), Error> {
-        self.inner.dma_slice.read(offset, writer)
-    }
-
-    fn write(&self, offset: usize, reader: &mut VmReader) -> Result<(), Error> {
-        self.inner.dma_slice.write(offset, reader)
     }
 }
 

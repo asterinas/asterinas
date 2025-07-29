@@ -43,7 +43,6 @@
 use core::{marker::PhantomData, mem::MaybeUninit};
 
 use align_ext::AlignExt;
-use inherit_methods_macro::inherit_methods;
 
 use crate::{
     arch::mm::{__memcpy_fallible, __memset_fallible},
@@ -255,42 +254,6 @@ pub trait VmIoOnce {
     /// [`VmWriter::write_once`].
     fn write_once<T: PodOnce>(&self, offset: usize, new_val: &T) -> Result<()>;
 }
-
-macro_rules! impl_vm_io_pointer {
-    ($typ:ty,$from:tt) => {
-        #[inherit_methods(from = $from)]
-        impl<T: VmIo> VmIo for $typ {
-            fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()>;
-            fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()>;
-            fn read_val<F: Pod>(&self, offset: usize) -> Result<F>;
-            fn read_slice<F: Pod>(&self, offset: usize, slice: &mut [F]) -> Result<()>;
-            fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()>;
-            fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()>;
-            fn write_val<F: Pod>(&self, offset: usize, new_val: &F) -> Result<()>;
-            fn write_slice<F: Pod>(&self, offset: usize, slice: &[F]) -> Result<()>;
-        }
-    };
-}
-
-impl_vm_io_pointer!(&T, "(**self)");
-impl_vm_io_pointer!(&mut T, "(**self)");
-impl_vm_io_pointer!(Box<T>, "(**self)");
-impl_vm_io_pointer!(Arc<T>, "(**self)");
-
-macro_rules! impl_vm_io_once_pointer {
-    ($typ:ty,$from:tt) => {
-        #[inherit_methods(from = $from)]
-        impl<T: VmIoOnce> VmIoOnce for $typ {
-            fn read_once<F: PodOnce>(&self, offset: usize) -> Result<F>;
-            fn write_once<F: PodOnce>(&self, offset: usize, new_val: &F) -> Result<()>;
-        }
-    };
-}
-
-impl_vm_io_once_pointer!(&T, "(**self)");
-impl_vm_io_once_pointer!(&mut T, "(**self)");
-impl_vm_io_once_pointer!(Box<T>, "(**self)");
-impl_vm_io_once_pointer!(Arc<T>, "(**self)");
 
 /// A marker type used for [`VmReader`] and [`VmWriter`],
 /// representing whether reads or writes on the underlying memory region are fallible.
