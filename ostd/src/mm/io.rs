@@ -40,7 +40,7 @@
 //! user space, making it impossible to avoid data races). However, they may produce erroneous
 //! results, such as unexpected bytes being copied, but do not cause soundness problems.
 
-use core::marker::PhantomData;
+use core::{marker::PhantomData, mem::MaybeUninit};
 
 use align_ext::AlignExt;
 use inherit_methods_macro::inherit_methods;
@@ -91,7 +91,25 @@ pub trait VmIo: Send + Sync {
 
     /// Reads a value of a specified type at a specified offset.
     fn read_val<T: Pod>(&self, offset: usize) -> Result<T> {
-        let mut val = T::new_uninit();
+        // Why not use `MaybeUninit` for a faster implementation?
+        //
+        // ```rust
+        // let mut val: MaybeUninit<T> = MaybeUninit::uninit();
+        // let writer = unsafe {
+        //     VmWriter::from_kernel_space(val.as_mut_ptr().cast(), core::mem::size_of::<T>())
+        // };
+        // self.read(offset, &mut writer.to_fallible())?;
+        // Ok(unsafe { val.assume_init() })
+        // ```
+        //
+        // The above implementation avoids initializing `val` upfront,
+        // so it is more efficient than our actual implementation.
+        // Unfortunately, it is unsound.
+        // This is because the `read` method,
+        // which could be implemented outside OSTD and thus is untrusted,
+        // may not really initialize the bits of `val` at all!
+
+        let mut val = T::new_zeroed();
         self.read_bytes(offset, val.as_bytes_mut())?;
         Ok(val)
     }
@@ -526,11 +544,25 @@ impl<'a> VmReader<'a, Infallible> {
             return Err(Error::InvalidArgs);
         }
 
-        let mut val = T::new_uninit();
-        let mut writer = VmWriter::from(val.as_bytes_mut());
+        let mut val = MaybeUninit::<T>::uninit();
 
+        // SAFETY:
+        // - The memory range points to typed memory.
+        // - The validity requirements for write accesses are met because the pointer is converted
+        //   from a mutable pointer where the underlying storage outlives the temporary lifetime
+        //   and no other Rust references to the same storage exist during the lifetime.
+        // - The type, i.e., `T`, is plain-old-data.
+        let mut writer = unsafe {
+            VmWriter::from_kernel_space(val.as_mut_ptr().cast(), core::mem::size_of::<T>())
+        };
         self.read(&mut writer);
-        Ok(val)
+        debug_assert!(!writer.has_avail());
+
+        // SAFETY:
+        // - `self.read` has initialized all the bytes in `val`.
+        // - The type is plain-old-data.
+        let val_inited = unsafe { val.assume_init() };
+        Ok(val_inited)
     }
 
     /// Reads a value of the `PodOnce` type using one non-tearing memory load.
@@ -606,8 +638,17 @@ impl VmReader<'_, Fallible> {
             return Err(Error::InvalidArgs);
         }
 
-        let mut val = T::new_uninit();
-        let mut writer = VmWriter::from(val.as_bytes_mut());
+        let mut val = MaybeUninit::<T>::uninit();
+
+        // SAFETY:
+        // - The memory range points to typed memory.
+        // - The validity requirements for write accesses are met because the pointer is converted
+        //   from a mutable pointer where the underlying storage outlives the temporary lifetime
+        //   and no other Rust references to the same storage exist during the lifetime.
+        // - The type, i.e., `T`, is plain-old-data.
+        let mut writer = unsafe {
+            VmWriter::from_kernel_space(val.as_mut_ptr().cast(), core::mem::size_of::<T>())
+        };
         self.read_fallible(&mut writer)
             .map_err(|(err, copied_len)| {
                 // The `copied_len` is the number of bytes read so far.
@@ -615,7 +656,13 @@ impl VmReader<'_, Fallible> {
                 self.cursor = self.cursor.wrapping_sub(copied_len);
                 err
             })?;
-        Ok(val)
+        debug_assert!(!writer.has_avail());
+
+        // SAFETY:
+        // - `self.read_fallible` has initialized all the bytes in `val`.
+        // - The type is plain-old-data.
+        let val_inited = unsafe { val.assume_init() };
+        Ok(val_inited)
     }
 }
 
