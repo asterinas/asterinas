@@ -610,11 +610,9 @@ impl VmReader<'_, Fallible> {
         let mut writer = VmWriter::from(val.as_bytes_mut());
         self.read_fallible(&mut writer)
             .map_err(|(err, copied_len)| {
-                // SAFETY: The `copied_len` is the number of bytes read so far.
+                // The `copied_len` is the number of bytes read so far.
                 // So the `cursor` can be moved back to the original position.
-                unsafe {
-                    self.cursor = self.cursor.sub(copied_len);
-                }
+                self.cursor = self.cursor.wrapping_sub(copied_len);
                 err
             })?;
         Ok(val)
@@ -836,11 +834,9 @@ impl VmWriter<'_, Fallible> {
         let mut reader = VmReader::from(new_val.as_bytes());
         self.write_fallible(&mut reader)
             .map_err(|(err, copied_len)| {
-                // SAFETY: The `copied_len` is the number of bytes written so far.
+                // The `copied_len` is the number of bytes written so far.
                 // So the `cursor` can be moved back to the original position.
-                unsafe {
-                    self.cursor = self.cursor.sub(copied_len);
-                }
+                self.cursor = self.cursor.wrapping_sub(copied_len);
                 err
             })?;
         Ok(())
