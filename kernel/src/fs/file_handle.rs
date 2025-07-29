@@ -6,7 +6,9 @@
 
 use super::inode_handle::InodeHandle;
 use crate::{
-    fs::utils::{AccessMode, FallocMode, InodeMode, IoctlCmd, Metadata, SeekFrom, StatusFlags},
+    fs::utils::{
+        AccessMode, FallocMode, Inode, InodeMode, IoctlCmd, Metadata, SeekFrom, StatusFlags,
+    },
     net::socket::Socket,
     prelude::*,
     process::{signal::Pollable, Gid, Uid},
@@ -99,6 +101,10 @@ pub trait FileLike: Pollable + Send + Sync + Any {
     }
 
     fn as_socket(&self) -> Option<&dyn Socket> {
+        None
+    }
+
+    fn inode(&self) -> Option<&Arc<dyn Inode>> {
         None
     }
 }

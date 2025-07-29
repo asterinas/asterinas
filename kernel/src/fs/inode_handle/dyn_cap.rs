@@ -4,7 +4,7 @@ use aster_rights::TRights;
 use inherit_methods_macro::inherit_methods;
 
 use super::*;
-use crate::{prelude::*, process::signal::Pollable};
+use crate::{fs::utils::Inode, prelude::*, process::signal::Pollable};
 
 impl InodeHandle<Rights> {
     pub fn new(dentry: Dentry, access_mode: AccessMode, status_flags: StatusFlags) -> Result<Self> {
@@ -125,5 +125,9 @@ impl FileLike for InodeHandle<Rights> {
             return_errno_with_message!(Errno::EBADF, "file is not writable");
         }
         self.0.fallocate(mode, offset, len)
+    }
+
+    fn inode(&self) -> Option<&Arc<dyn Inode>> {
+        Some(self.dentry().inode())
     }
 }
