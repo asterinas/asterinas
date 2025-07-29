@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{allocator::FrameAllocOptions, *};
-use crate::{impl_frame_meta_for, impl_untyped_frame_meta_for, prelude::*};
+use crate::{
+    impl_frame_meta_for, impl_untyped_frame_meta_for, mm::io_util::HasVmReaderWriter, prelude::*,
+};
 
 /// Typed mock metadata struct for testing
 #[derive(Debug, Default)]

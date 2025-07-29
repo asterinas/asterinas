@@ -7,7 +7,7 @@ use alloc::{borrow::ToOwned, rc::Rc};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use inherit_methods_macro::inherit_methods;
-use ostd::{const_assert, mm::UntypedMem};
+use ostd::{const_assert, mm::io_util::HasVmReaderWriter};
 
 use super::{
     block_ptr::{BidPath, BlockPtrs, Ext2Bid, BID_SIZE, MAX_BLOCK_PTRS},

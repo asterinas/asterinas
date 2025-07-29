@@ -7,7 +7,10 @@ use aster_console::{AnyConsoleDevice, ConsoleCallback};
 use log::debug;
 use ostd::{
     arch::trap::TrapFrame,
-    mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmReader},
+    mm::{
+        io_util::HasVmReaderWriter, DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions,
+        VmReader,
+    },
     sync::{Rcu, SpinLock},
 };
 

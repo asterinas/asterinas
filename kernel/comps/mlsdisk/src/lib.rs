@@ -25,7 +25,10 @@ use aster_block::{
     BlockDevice, SECTOR_SIZE,
 };
 use component::{init_component, ComponentInitError};
-use ostd::{mm::VmIo, prelude::*};
+use ostd::{
+    mm::{io_util::HasVmReaderWriter, VmIo},
+    prelude::*,
+};
 
 pub use self::{
     error::{Errno, Error},
