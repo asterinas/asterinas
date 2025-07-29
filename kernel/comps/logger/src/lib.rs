@@ -22,7 +22,9 @@ mod aster_logger;
 mod console;
 
 pub use aster_logger::{
-    get_console_log_level, register_syslog_callback, set_console_log_level, SyslogCallback,
+    clear_kernel_log, get_console_log_level, get_kernel_log_buffer_size, 
+    get_kernel_log_unread_size, read_kernel_log_all, read_kernel_log_destructive, 
+    set_console_log_level,
 };
 pub use console::_print;
 
