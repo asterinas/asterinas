@@ -352,6 +352,13 @@ impl LocalRunQueue for PerCpuClassRqSet {
 
     fn update_current(&mut self, flags: UpdateFlags) -> bool {
         if let Some(((_, cur), rt)) = &mut self.current {
+            if flags == UpdateFlags::Wait {
+                return !self.stop.is_empty()
+                    || !self.real_time.is_empty()
+                    || !self.fair.is_empty()
+                    || !self.idle.is_empty();
+            }
+
             rt.update();
             let attr = &cur.sched_attr();
 

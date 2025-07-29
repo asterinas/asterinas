@@ -121,12 +121,17 @@ impl PrioArray {
         let prio = iter.next()? as u8;
 
         let queue = &mut self.queue[usize::from(prio)];
-        let thread = queue.pop_front()?;
+        let thread = queue.pop_front().unwrap();
 
         if queue.is_empty() {
             self.map.set(usize::from(prio), false);
         }
         Some(thread)
+    }
+
+    fn peek_prio(&self) -> Option<u8> {
+        let mut iter = self.map.iter_ones();
+        Some(iter.next()? as u8)
     }
 }
 
@@ -214,12 +219,20 @@ impl SchedClassRq for RealTimeClassRq {
         let attr = &attr.real_time;
 
         match flags {
-            UpdateFlags::Tick | UpdateFlags::Wait => match attr.time_slice.load(Relaxed) {
-                0 => (self.inactive_array().map.iter_ones().next())
-                    .is_some_and(|prio| prio > usize::from(attr.prio.load(Relaxed))),
+            UpdateFlags::Wait => {
+                self.active_array().peek_prio().is_some()
+                    || self.inactive_array().peek_prio().is_some()
+            }
+            UpdateFlags::Tick | UpdateFlags::Yield => match attr.time_slice.load(Relaxed) {
+                0 => {
+                    self.active_array().peek_prio().is_some()
+                        || self
+                            .inactive_array()
+                            .peek_prio()
+                            .is_some_and(|prio| prio < attr.prio.load(Relaxed))
+                }
                 ts => ts <= rt.period_delta,
             },
-            UpdateFlags::Yield => true,
         }
     }
 }

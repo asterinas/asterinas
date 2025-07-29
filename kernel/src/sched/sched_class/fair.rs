@@ -332,13 +332,16 @@ impl SchedClassRq for FairClassRq {
         flags: UpdateFlags,
     ) -> bool {
         match flags {
-            UpdateFlags::Yield => true,
-            UpdateFlags::Tick | UpdateFlags::Wait => {
+            UpdateFlags::Wait => !self.is_empty(),
+            UpdateFlags::Tick | UpdateFlags::Yield => {
                 let (_old_weight, weight) = attr.fair.fetch_weight();
                 let vruntime = attr.fair.update_vruntime(rt.delta, weight);
-                self.min_vruntime = match self.entities.peek() {
-                    Some(Reverse(leftmost)) => vruntime.min(leftmost.key()),
-                    None => vruntime,
+                match self.entities.peek() {
+                    Some(Reverse(leftmost)) => self.min_vruntime = vruntime.min(leftmost.key()),
+                    None => {
+                        self.min_vruntime = vruntime;
+                        return false;
+                    }
                 };
 
                 rt.period_delta > self.time_slice(weight)
