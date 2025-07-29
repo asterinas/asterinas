@@ -40,11 +40,11 @@ pub fn make_install_bzimage(
                 let target_json = legacy32_rust_target_json();
                 let gen_target_json_path = target_dir.as_ref().join("x86_64-i386_pm-none.json");
                 std::fs::write(&gen_target_json_path, target_json).unwrap();
-                let arch = SetupInstallArch::Other(gen_target_json_path.canonicalize().unwrap());
+                let arch = gen_target_json_path.canonicalize().unwrap();
                 install_setup_with_arch(
                     setup_install_dir,
                     setup_target_dir,
-                    &arch,
+                    arch.to_str().unwrap(),
                     aster_elf,
                     encoding,
                 );
@@ -53,7 +53,7 @@ pub fn make_install_bzimage(
                 install_setup_with_arch(
                     setup_install_dir,
                     setup_target_dir,
-                    &SetupInstallArch::X86_64,
+                    "x86_64-unknown-none",
                     aster_elf,
                     encoding,
                 );
@@ -152,15 +152,10 @@ pub fn make_elf_for_qemu(install_dir: impl AsRef<Path>, elf: &AsterBin, strip: b
     )
 }
 
-enum SetupInstallArch {
-    X86_64,
-    Other(PathBuf),
-}
-
 fn install_setup_with_arch(
     install_dir: impl AsRef<Path>,
     target_dir: impl AsRef<Path>,
-    arch: &SetupInstallArch,
+    arch: &str,
     aster_elf: &AsterBin,
     encoding: PayloadEncoding,
 ) {
@@ -170,36 +165,15 @@ fn install_setup_with_arch(
     let target_dir = std::fs::canonicalize(target_dir).unwrap();
 
     let mut cmd = new_command_checked_exists("cargo");
-    let mut rustflags = vec![
+    let rustflags = [
         "-Cdebuginfo=2",
         "-Ccode-model=kernel",
         "-Crelocation-model=pie",
         "-Zplt=yes",
         "-Zrelax-elf-relocations=yes",
         "-Crelro-level=full",
+        "-Ctarget-feature=+crt-static",
     ];
-    let target_feature_args = match arch {
-        SetupInstallArch::X86_64 => {
-            concat!(
-                "-Ctarget-feature=",
-                "+crt-static",
-                ",-adx",
-                ",-aes",
-                ",-avx",
-                ",-avx2",
-                ",-fxsr",
-                ",-sse",
-                ",-sse2",
-                ",-sse3",
-                ",-sse4.1",
-                ",-sse4.2",
-                ",-ssse3",
-                ",-xsave",
-            )
-        }
-        SetupInstallArch::Other(_) => "-Ctarget-feature=+crt-static",
-    };
-    rustflags.push(target_feature_args);
     cmd.env("RUSTFLAGS", rustflags.join(" "));
     cmd.env("PAYLOAD_FILE", encode_kernel_to_file(aster_elf, encoding));
     cmd.arg("install").arg("linux-bzimage-setup");
@@ -212,10 +186,7 @@ fn install_setup_with_arch(
     } else {
         cmd.arg("--version").arg(env!("CARGO_PKG_VERSION"));
     }
-    cmd.arg("--target").arg(match arch {
-        SetupInstallArch::X86_64 => "x86_64-unknown-none",
-        SetupInstallArch::Other(path) => path.to_str().unwrap(),
-    });
+    cmd.arg("--target").arg(arch);
     cmd.arg("-Zbuild-std=core,alloc,compiler_builtins");
     cmd.arg("-Zbuild-std-features=compiler-builtins-mem");
     // Specify the build target directory to avoid cargo running
