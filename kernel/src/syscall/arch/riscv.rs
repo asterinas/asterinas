@@ -59,6 +59,7 @@ use super::{
     listen::sys_listen,
     lseek::sys_lseek,
     madvise::sys_madvise,
+    memfd_create::sys_memfd_create,
     mkdir::sys_mkdirat,
     mknod::sys_mknodat,
     mmap::sys_mmap,
@@ -300,6 +301,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SCHED_SETATTR = 274      => sys_sched_setattr(args[..3]);
     SYS_SCHED_GETATTR = 275      => sys_sched_getattr(args[..4]);
     SYS_GETRANDOM = 278          => sys_getrandom(args[..3]);
+    SYS_MEMFD_CREATE = 279     => sys_memfd_create(args[..2]);
     SYS_EXECVEAT = 281           => sys_execveat(args[..5], &mut user_ctx);
     SYS_PREADV2 = 286            => sys_preadv2(args[..5]);
     SYS_PWRITEV2 = 287           => sys_pwritev2(args[..5]);
