@@ -66,8 +66,9 @@ jobs:
             boot_protocol: 'multiboot2'
             smp: 4
 
-          # General Test (Linux EFI Handover)
-          - test_id: 'general-handover64'
+          # General Test (Linux EFI Handover) (Debug Build)
+          - test_id: 'general-handover64-debug'
+            release: false
             boot_protocol: 'linux-efi-handover64'
           # SMP General Test (Multiboot2)
           - test_id: 'general-multiboot2-smp4'
@@ -81,8 +82,8 @@ jobs:
         with:
           auto_test: ${{ (startsWith(matrix.test_id, 'boot') && 'boot') ||
               (startsWith(matrix.test_id, 'syscall') && 'syscall') || 'test' }}
-          release: ${{ matrix.release || true }}
-          enable_kvm: ${{ matrix.enable_kvm || true }}
+          release: ${{ !contains(matrix.release, 'false') }}
+          enable_kvm: ${{ !contains(matrix.enable_kvm, 'false') }}
           smp: ${{ matrix.smp }}
           netdev: ${{ matrix.netdev || 'tap' }}
           scheme: ${{ matrix.scheme }}
@@ -96,8 +97,8 @@ jobs:
         with:
           auto_test: ${{ (startsWith(matrix.test_id, 'boot') && 'boot') ||
               (startsWith(matrix.test_id, 'syscall') && 'syscall') || 'test' }}
-          release: ${{ matrix.release || true }}
-          enable_kvm: ${{ matrix.enable_kvm || true }}
+          release: ${{ !contains(matrix.release, 'false') }}
+          enable_kvm: ${{ !contains(matrix.enable_kvm, 'false') }}
           smp: ${{ matrix.smp }}
           netdev: ${{ matrix.netdev || 'tap' }}
           scheme: ${{ matrix.scheme }}
