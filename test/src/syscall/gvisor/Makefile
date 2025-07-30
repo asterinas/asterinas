@@ -21,6 +21,7 @@ TESTS ?= \
 	ioctl_test \
 	link_test \
 	lseek_test \
+	memfd_test \
 	mkdir_test \
 	mknod_test \
 	mmap_test \

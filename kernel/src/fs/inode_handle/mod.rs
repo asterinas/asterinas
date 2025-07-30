@@ -18,9 +18,9 @@ use crate::{
         file_handle::FileLike,
         path::Dentry,
         utils::{
-            AccessMode, DirentVisitor, FallocMode, FileRange, FlockItem, FlockList, InodeMode,
-            InodeType, IoctlCmd, Metadata, RangeLockItem, RangeLockItemBuilder, RangeLockList,
-            RangeLockType, SeekFrom, StatusFlags, OFFSET_MAX,
+            AccessMode, DirentVisitor, FallocMode, FileRange, FlockItem, FlockList, Inode,
+            InodeMode, InodeType, IoctlCmd, Metadata, RangeLockItem, RangeLockItemBuilder,
+            RangeLockList, RangeLockType, SeekFrom, StatusFlags, OFFSET_MAX,
         },
     },
     prelude::*,
@@ -114,32 +114,7 @@ impl InodeHandle_ {
     }
 
     pub fn seek(&self, pos: SeekFrom) -> Result<usize> {
-        let mut offset = self.offset.lock();
-        let new_offset: isize = match pos {
-            SeekFrom::Start(off /* as usize */) => {
-                if off > isize::MAX as usize {
-                    return_errno_with_message!(Errno::EINVAL, "file offset is too large");
-                }
-                off as isize
-            }
-            SeekFrom::End(off /* as isize */) => {
-                let file_size = self.dentry.size() as isize;
-                assert!(file_size >= 0);
-                file_size
-                    .checked_add(off)
-                    .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "file offset overflow"))?
-            }
-            SeekFrom::Current(off /* as isize */) => (*offset as isize)
-                .checked_add(off)
-                .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "file offset overflow"))?,
-        };
-        if new_offset < 0 {
-            return_errno_with_message!(Errno::EINVAL, "file offset must not be negative");
-        }
-        // Invariant: 0 <= new_offset <= isize::MAX
-        let new_offset = new_offset as usize;
-        *offset = new_offset;
-        Ok(new_offset)
+        do_seek_util(self.dentry.inode(), &self.offset, pos)
     }
 
     pub fn offset(&self) -> usize {
@@ -148,10 +123,7 @@ impl InodeHandle_ {
     }
 
     pub fn resize(&self, new_size: usize) -> Result<()> {
-        if self.status_flags().contains(StatusFlags::O_APPEND) {
-            return_errno_with_message!(Errno::EPERM, "can not resize append-only file");
-        }
-        self.dentry.resize(new_size)
+        do_resize_util(self.dentry.inode(), self.status_flags(), new_size)
     }
 
     pub fn access_mode(&self) -> AccessMode {
@@ -184,27 +156,7 @@ impl InodeHandle_ {
     }
 
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
-        let status_flags = self.status_flags();
-        if status_flags.contains(StatusFlags::O_APPEND)
-            && (mode == FallocMode::PunchHoleKeepSize
-                || mode == FallocMode::CollapseRange
-                || mode == FallocMode::InsertRange)
-        {
-            return_errno_with_message!(
-                Errno::EPERM,
-                "the flags do not work on the append-only file"
-            );
-        }
-        if status_flags.contains(StatusFlags::O_DIRECT)
-            || status_flags.contains(StatusFlags::O_PATH)
-        {
-            return_errno_with_message!(
-                Errno::EBADF,
-                "currently fallocate file with O_DIRECT or O_PATH is not supported"
-            );
-        }
-
-        self.dentry.inode().fallocate(mode, offset, len)
+        do_fallocate_util(self.dentry.inode(), self.status_flags(), mode, offset, len)
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
@@ -387,4 +339,72 @@ pub trait FileIo: Pollable + Send + Sync + 'static {
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");
     }
+}
+
+pub fn do_seek_util(inode: &Arc<dyn Inode>, offset: &Mutex<usize>, pos: SeekFrom) -> Result<usize> {
+    let mut offset = offset.lock();
+    let new_offset: isize = match pos {
+        SeekFrom::Start(off /* as usize */) => {
+            if off > isize::MAX as usize {
+                return_errno_with_message!(Errno::EINVAL, "file offset is too large");
+            }
+            off as isize
+        }
+        SeekFrom::End(off /* as isize */) => {
+            let file_size = inode.size() as isize;
+            assert!(file_size >= 0);
+            file_size
+                .checked_add(off)
+                .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "file offset overflow"))?
+        }
+        SeekFrom::Current(off /* as isize */) => (*offset as isize)
+            .checked_add(off)
+            .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "file offset overflow"))?,
+    };
+    if new_offset < 0 {
+        return_errno_with_message!(Errno::EINVAL, "file offset must not be negative");
+    }
+    // Invariant: 0 <= new_offset <= isize::MAX
+    let new_offset = new_offset as usize;
+    *offset = new_offset;
+    Ok(new_offset)
+}
+
+pub fn do_fallocate_util(
+    inode: &Arc<dyn Inode>,
+    status_flags: StatusFlags,
+    mode: FallocMode,
+    offset: usize,
+    len: usize,
+) -> Result<()> {
+    if status_flags.contains(StatusFlags::O_APPEND)
+        && (mode == FallocMode::PunchHoleKeepSize
+            || mode == FallocMode::CollapseRange
+            || mode == FallocMode::InsertRange)
+    {
+        return_errno_with_message!(
+            Errno::EPERM,
+            "the flags do not work on the append-only file"
+        );
+    }
+    if status_flags.contains(StatusFlags::O_DIRECT) || status_flags.contains(StatusFlags::O_PATH) {
+        return_errno_with_message!(
+            Errno::EBADF,
+            "currently fallocate file with O_DIRECT or O_PATH is not supported"
+        );
+    }
+
+    inode.fallocate(mode, offset, len)
+}
+
+pub fn do_resize_util(
+    inode: &Arc<dyn Inode>,
+    status_flags: StatusFlags,
+    new_size: usize,
+) -> Result<()> {
+    if status_flags.contains(StatusFlags::O_APPEND) {
+        // FIXME: It's allowed to `ftruncate` an append-only file on Linux.
+        return_errno_with_message!(Errno::EPERM, "can not resize append-only file");
+    }
+    inode.resize(new_size)
 }

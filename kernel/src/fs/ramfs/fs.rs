@@ -420,6 +420,19 @@ impl RamInode {
         })
     }
 
+    fn new_file_detached(mode: InodeMode, uid: Uid, gid: Gid) -> Arc<Self> {
+        Arc::new_cyclic(|weak_self| RamInode {
+            inner: Inner::new_file(weak_self.clone()),
+            metadata: SpinLock::new(InodeMeta::new(mode, uid, gid)),
+            ino: weak_self.as_ptr() as u64,
+            typ: InodeType::File,
+            this: weak_self.clone(),
+            fs: Weak::new(),
+            extension: Extension::new(),
+            xattr: RamXattr::new(),
+        })
+    }
+
     fn new_symlink(fs: &Arc<RamFS>, mode: InodeMode, uid: Uid, gid: Gid) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| RamInode {
             inner: Inner::new_symlink(),
@@ -1234,6 +1247,13 @@ impl Inode for RamInode {
         self.check_permission(Permission::MAY_WRITE)?;
         self.xattr.remove(name)
     }
+}
+
+/// Creates a RAM inode that is detached from any `RamFS`.
+///
+// TODO: Add "anonymous inode fs" and link the inode to it.
+pub fn new_detached_inode(mode: InodeMode, uid: Uid, gid: Gid) -> Arc<dyn Inode> {
+    RamInode::new_file_detached(mode, uid, gid)
 }
 
 fn write_lock_two_direntries_by_ino<'a>(
