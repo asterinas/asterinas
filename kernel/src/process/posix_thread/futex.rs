@@ -51,7 +51,7 @@ pub fn futex_wait_bitset(
         return_errno_with_message!(Errno::EINVAL, "at least one bit should be set");
     }
 
-    let futex_key = FutexKey::new(futex_addr, bitset, pid);
+    let futex_key = FutexKey::new(futex_addr, bitset, pid)?;
     let (futex_item, waiter) = FutexItem::create(futex_key);
 
     let (_, futex_bucket_ref) = get_futex_bucket(futex_key);
@@ -110,7 +110,7 @@ pub fn futex_wake_bitset(
         return_errno_with_message!(Errno::EINVAL, "at least one bit should be set");
     }
 
-    let futex_key = FutexKey::new(futex_addr, bitset, pid);
+    let futex_key = FutexKey::new(futex_addr, bitset, pid)?;
     let (_, futex_bucket_ref) = get_futex_bucket(futex_key);
     let mut futex_bucket = futex_bucket_ref.lock();
     let res = futex_bucket.remove_and_wake_items(futex_key, max_count);
@@ -238,8 +238,8 @@ pub fn futex_wake_op(
 ) -> Result<usize> {
     let wake_op = FutexWakeOpEncode::from_u32(wake_op_bits)?;
 
-    let futex_key_1 = FutexKey::new(futex_addr_1, FUTEX_BITSET_MATCH_ANY, pid);
-    let futex_key_2 = FutexKey::new(futex_addr_2, FUTEX_BITSET_MATCH_ANY, pid);
+    let futex_key_1 = FutexKey::new(futex_addr_1, FUTEX_BITSET_MATCH_ANY, pid)?;
+    let futex_key_2 = FutexKey::new(futex_addr_2, FUTEX_BITSET_MATCH_ANY, pid)?;
     let (index_1, futex_bucket_ref_1) = get_futex_bucket(futex_key_1);
     let (index_2, futex_bucket_ref_2) = get_futex_bucket(futex_key_2);
 
@@ -258,10 +258,9 @@ pub fn futex_wake_op(
         }
     };
 
-    // FIXME: This should be an atomic read-modify-write memory access here.
-    let old_val = ctx.user_space().read_val(futex_addr_2)?;
-    let new_val = wake_op.calculate_new_val(old_val);
-    ctx.user_space().write_val(futex_addr_2, &new_val)?;
+    let old_val = ctx
+        .user_space()
+        .atomic_update::<u32>(futex_addr_2, |val| wake_op.calculate_new_val(val))?;
 
     let mut res = futex_bucket_1.remove_and_wake_items(futex_key_1, max_count_1);
     if wake_op.should_wake(old_val) {
@@ -284,8 +283,8 @@ pub fn futex_requeue(
         return futex_wake(futex_addr, max_nwakes, pid);
     }
 
-    let futex_key = FutexKey::new(futex_addr, FUTEX_BITSET_MATCH_ANY, pid);
-    let futex_new_key = FutexKey::new(futex_new_addr, FUTEX_BITSET_MATCH_ANY, pid);
+    let futex_key = FutexKey::new(futex_addr, FUTEX_BITSET_MATCH_ANY, pid)?;
+    let futex_new_key = FutexKey::new(futex_new_addr, FUTEX_BITSET_MATCH_ANY, pid)?;
     let (bucket_idx, futex_bucket_ref) = get_futex_bucket(futex_key);
     let (new_bucket_idx, futex_new_bucket_ref) = get_futex_bucket(futex_new_key);
 
@@ -472,14 +471,25 @@ struct FutexKey {
 }
 
 impl FutexKey {
-    pub fn new(addr: Vaddr, bitset: FutexBitSet, pid: Option<Pid>) -> Self {
-        Self { addr, bitset, pid }
+    pub fn new(addr: Vaddr, bitset: FutexBitSet, pid: Option<Pid>) -> Result<Self> {
+        // "On all platforms, futexes are four-byte integers that must be aligned on a four-byte
+        // boundary."
+        // Reference: <https://man7.org/linux/man-pages/man2/futex.2.html>.
+        if addr % core::mem::align_of::<u32>() != 0 {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the futex word is not aligend on a four-byte boundary"
+            );
+        }
+
+        Ok(Self { addr, bitset, pid })
     }
 
     pub fn load_val(&self, ctx: &Context) -> Result<i32> {
-        // FIXME: how to implement a atomic load?
-        warn!("implement an atomic load");
-        ctx.user_space().read_val(self.addr)
+        Ok(ctx
+            .user_space()
+            .atomic_load::<u32>(self.addr)?
+            .cast_signed())
     }
 
     pub fn addr(&self) -> Vaddr {

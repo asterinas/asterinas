@@ -43,7 +43,9 @@
 use core::{marker::PhantomData, mem::MaybeUninit};
 
 use crate::{
-    arch::mm::{__memcpy_fallible, __memset_fallible},
+    arch::mm::{
+        __atomic_cmpxchg_fallible, __atomic_load_fallible, __memcpy_fallible, __memset_fallible,
+    },
     mm::{
         kspace::{KERNEL_BASE_VADDR, KERNEL_END_VADDR},
         MAX_USERSPACE_VADDR,
@@ -526,6 +528,9 @@ impl<'a> VmReader<'a, Infallible> {
         Ok(val)
     }
 
+    // Currently, there are no volatile atomic operations in `core::intrinsics`. Therefore, we do
+    // not provide an infallible implementation of `VmReader::atomic_load`.
+
     /// Converts to a fallible reader.
     pub fn to_fallible(self) -> VmReader<'a, Fallible> {
         // It is safe to construct a fallible reader since an infallible reader covers the
@@ -594,6 +599,37 @@ impl VmReader<'_, Fallible> {
         // - The type is plain-old-data.
         let val_inited = unsafe { val.assume_init() };
         Ok(val_inited)
+    }
+
+    /// Atomically loads a `PodAtomic` value.
+    ///
+    /// Regardless of whether it is successful, the cursor of the reader will not move.
+    ///
+    /// This method only guarantees the atomicity of the specific operation. There are no
+    /// synchronization constraints on other memory accesses. This aligns with the [Relaxed
+    /// ordering](https://en.cppreference.com/w/cpp/atomic/memory_order.html#Relaxed_ordering)
+    /// specified in the C++11 memory model.
+    ///
+    /// This method will fail with errors if
+    ///  1. the remaining space of the reader is less than `core::mem::size_of::<T>()` bytes, or
+    ///  2. the memory operation fails due to an unresolvable page fault.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the memory location is not aligned on a
+    /// `core::mem::align_of::<T>()`-byte boundary.
+    pub fn atomic_load<T: PodAtomic>(&self) -> Result<T> {
+        if self.remain() < core::mem::size_of::<T>() {
+            return Err(Error::InvalidArgs);
+        }
+
+        let cursor = self.cursor.cast::<T>();
+        assert!(cursor.is_aligned());
+
+        // SAFETY:
+        // 1. The cursor is either valid for reading or in user space for `size_of::<T>()` bytes.
+        // 2. The cursor is aligned on a `align_of::<T>()`-byte boundary.
+        unsafe { T::atomic_load_fallible(cursor) }
     }
 }
 
@@ -744,6 +780,9 @@ impl<'a> VmWriter<'a, Infallible> {
         Ok(())
     }
 
+    // Currently, there are no volatile atomic operations in `core::intrinsics`. Therefore, we do
+    // not provide an infallible implementation of `VmWriter::atomic_update`.
+
     /// Writes `len` zeros to the target memory.
     ///
     /// This method attempts to fill up to `len` bytes with zeros. If the available
@@ -818,6 +857,67 @@ impl VmWriter<'_, Fallible> {
                 err
             })?;
         Ok(())
+    }
+
+    /// Atomically updates a `PodAtomic` value.
+    ///
+    /// This is implemented by performing an atomic load, applying the operation, and performing an
+    /// atomic compare-and-exchange. So this cannot prevent the [ABA
+    /// problem](https://en.wikipedia.org/wiki/ABA_problem).
+    ///
+    /// The caller is required to provide a reader which points to the exactly same memory location
+    /// to ensure that reading from the memory is allowed.
+    ///
+    /// On success, the previous value will be returned with a boolean value denoting whether the
+    /// compare-and-exchange succeeds. The caller usually wants to retry if the flag is false.
+    ///
+    /// Regardless of whether it is successful, the cursor of the reader and writer will not move.
+    ///
+    /// This method only guarantees the atomicity of the specific operation. There are no
+    /// synchronization constraints on other memory accesses. This aligns with the [Relaxed
+    /// ordering](https://en.cppreference.com/w/cpp/atomic/memory_order.html#Relaxed_ordering)
+    /// specified in the C++11 memory model.
+    ///
+    /// This method will fail with errors if:
+    ///  1. the remaining (avail) space of the reader (writer) is less than
+    ///     `core::mem::size_of::<T>()` bytes, or
+    ///  2. the memory operation fails due to an unresolvable page fault.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if:
+    ///  1. the reader and the writer does not point to the same memory location, or
+    ///  2. the memory location is not aligned on a `core::mem::align_of::<T>()`-byte boundary.
+    pub fn atomic_update<T>(
+        &mut self,
+        reader: &VmReader,
+        op: impl FnOnce(T) -> T,
+    ) -> Result<(T, bool)>
+    where
+        T: PodAtomic + Eq,
+    {
+        if self.avail() < core::mem::size_of::<T>() || reader.remain() < core::mem::size_of::<T>() {
+            return Err(Error::InvalidArgs);
+        }
+
+        assert_eq!(self.cursor.cast_const(), reader.cursor);
+
+        let cursor = self.cursor.cast::<T>();
+        assert!(cursor.is_aligned());
+
+        // SAFETY:
+        // 1. The cursor is either valid for reading or in user space for `size_of::<T>()` bytes.
+        // 2. The cursor is aligned on a `align_of::<T>()`-byte boundary.
+        let old_val = unsafe { T::atomic_load_fallible(cursor)? };
+
+        let new_val = op(old_val);
+
+        // SAFETY:
+        // 1. The cursor is either valid for reading and writing or in user space for 4 bytes.
+        // 2. The cursor is aligned on a 4-byte boundary.
+        let cur_val = unsafe { T::atomic_cmpxchg_fallible(cursor, old_val, new_val)? };
+
+        Ok((old_val, old_val == cur_val))
     }
 
     /// Writes `len` zeros to the target memory.
@@ -935,5 +1035,62 @@ mod pod_once_impls {
         let size = core::mem::size_of::<T>();
 
         size == 1 || size == 2 || size == 4 || size == 8
+    }
+}
+
+/// A marker trait for POD types that can be read or written atomically.
+pub trait PodAtomic: Pod {
+    /// Atomically loads a value.
+    /// This function will return errors if encountering an unresolvable page fault.
+    ///
+    /// Returns the loaded value.
+    ///
+    /// # Safety
+    ///
+    /// - `ptr` must either be [valid] for writes of `core::mem::size_of::<T>()` bytes or be in user
+    ///   space for  `core::mem::size_of::<T>()` bytes.
+    /// - `ptr` must be aligned on a `core::mem::align_of::<T>()`-byte boundary.
+    ///
+    /// [valid]: crate::mm::io#safety
+    #[doc(hidden)]
+    unsafe fn atomic_load_fallible(ptr: *const Self) -> Result<Self>;
+
+    /// Atomically compares and exchanges a value.
+    /// This function will return errors if encountering an unresolvable page fault.
+    ///
+    /// Returns the previous value.
+    /// `new_val` will be written if and only if the previous value is equal to `old_val`.
+    ///
+    /// # Safety
+    ///
+    /// - `ptr` must either be [valid] for writes of `core::mem::size_of::<T>()` bytes or be in user
+    ///   space for  `core::mem::size_of::<T>()` bytes.
+    /// - `ptr` must be aligned on a `core::mem::align_of::<T>()`-byte boundary.
+    ///
+    /// [valid]: crate::mm::io#safety
+    #[doc(hidden)]
+    unsafe fn atomic_cmpxchg_fallible(ptr: *mut Self, old_val: Self, new_val: Self)
+        -> Result<Self>;
+}
+
+impl PodAtomic for u32 {
+    unsafe fn atomic_load_fallible(ptr: *const Self) -> Result<Self> {
+        // SAFETY: The safety is upheld by the caller.
+        let result = unsafe { __atomic_load_fallible(ptr) };
+        if result == !0 {
+            Err(Error::PageFault)
+        } else {
+            Ok(result as Self)
+        }
+    }
+
+    unsafe fn atomic_cmpxchg_fallible(ptr: *mut Self, old_val: Self, new_val: Self) -> Result<u32> {
+        // SAFETY: The safety is upheld by the caller.
+        let result = unsafe { __atomic_cmpxchg_fallible(ptr, old_val, new_val) };
+        if result == !0 {
+            Err(Error::PageFault)
+        } else {
+            Ok(result as Self)
+        }
     }
 }

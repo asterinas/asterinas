@@ -8,6 +8,7 @@ use ostd_pod::Pod;
 use crate::{
     mm::{
         io::{VmIo, VmIoFill, VmReader, VmWriter},
+        io_util::HasVmReaderWriter,
         tlb::TlbFlushOp,
         vm_space::get_activated_vm_space,
         CachePolicy, FallibleVmRead, FallibleVmWrite, FrameAllocOptions, PageFlags, PageProperty,
@@ -330,6 +331,57 @@ mod io {
 
         let read_val: u64 = reader_fallible.read_val().unwrap();
         assert_eq!(val, read_val);
+    }
+
+    /// Tests the `atomic_load` method in Fallible mode.
+    #[ktest]
+    fn atomic_load_fallible() {
+        let buffer = [1u8, 1, 1, 1, 2, 2, 2, 2];
+        let reader = VmReader::from(&buffer[..]);
+        let mut reader_fallible = reader.to_fallible();
+
+        assert_eq!(reader_fallible.atomic_load::<u32>().unwrap(), 0x01010101);
+        reader_fallible.skip(4);
+        assert_eq!(reader_fallible.atomic_load::<u32>().unwrap(), 0x02020202);
+    }
+
+    /// Tests the `atomic_update` method in Fallible mode.
+    #[ktest]
+    fn atomic_update_fallible() {
+        type Segment = crate::mm::Segment<()>;
+
+        fn update(segment: &Segment, old_val: u32, new_val: u32, f: fn(segment: &Segment)) -> bool {
+            let (val, is_succ) = segment
+                .writer()
+                .to_fallible()
+                .skip(4)
+                .atomic_update(segment.reader().to_fallible().skip(4), |val| {
+                    assert_eq!(val, old_val);
+                    f(segment);
+                    new_val
+                })
+                .unwrap();
+            assert_eq!(val, old_val);
+            is_succ
+        }
+
+        let segment = FrameAllocOptions::new()
+            .zeroed(true)
+            .alloc_segment(1)
+            .unwrap();
+
+        assert!(update(&segment, 0, 100, |_| ()));
+        assert!(update(&segment, 100, 200, |_| ()));
+
+        let is_succ = update(&segment, 200, 400, |segment| {
+            assert!(update(segment, 200, 300, |_| ()))
+        });
+        assert!(!is_succ);
+
+        let mut reader = segment.reader().to_fallible();
+        reader.skip(4);
+        assert_eq!(reader.atomic_load::<u32>().unwrap(), 300);
+        assert_eq!(reader.read_val::<u32>().unwrap(), 300);
     }
 
     /// Tests the `fill_zeros` method in Fallible mode.

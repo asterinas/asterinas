@@ -6,7 +6,9 @@ use alloc::fmt;
 use core::ops::Range;
 
 use cfg_if::cfg_if;
-pub(crate) use util::{__memcpy_fallible, __memset_fallible};
+pub(crate) use util::{
+    __atomic_cmpxchg_fallible, __atomic_load_fallible, __memcpy_fallible, __memset_fallible,
+};
 use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
 
 use crate::{
