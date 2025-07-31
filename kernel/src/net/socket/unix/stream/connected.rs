@@ -199,7 +199,7 @@ impl Connected {
         drop(reader);
 
         let ctrl_msgs = aux_data.generate_control(is_pass_cred);
-        debug_assert!(is_empty || read_tot_len != 0);
+        debug_assert!(is_seqpacket || read_tot_len != 0);
         peer_end
             .has_aux
             .store(!all_aux.is_empty(), Ordering::Relaxed);
