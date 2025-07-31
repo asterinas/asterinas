@@ -7,7 +7,7 @@ use core::{cell::Ref, mem};
 use aster_rights::Full;
 use ostd::{
     mm::{Fallible, Infallible, PodAtomic, VmReader, VmWriter, MAX_USERSPACE_VADDR},
-    task::{CurrentTask, Task},
+    task::Task,
 };
 
 use crate::{
@@ -50,8 +50,13 @@ pub struct CurrentUserSpace<'a>(Ref<'a, Option<Vmar<Full>>>);
 #[macro_export]
 macro_rules! current_userspace {
     () => {{
-        use $crate::context::CurrentUserSpace;
-        CurrentUserSpace::new(&ostd::task::Task::current().unwrap())
+        use $crate::{context::CurrentUserSpace, process::posix_thread::AsThreadLocal};
+        CurrentUserSpace::new(
+            ostd::task::Task::current()
+                .unwrap()
+                .as_thread_local()
+                .unwrap(),
+        )
     }};
 }
 
@@ -62,8 +67,7 @@ impl<'a> CurrentUserSpace<'a> {
     ///
     /// Otherwise, you can use the `current_userspace` macro
     /// to obtain an instance of `CurrentUserSpace` if it will only be used once.
-    pub fn new(current_task: &'a CurrentTask) -> Self {
-        let thread_local = current_task.as_thread_local().unwrap();
+    pub fn new(thread_local: &'a ThreadLocal) -> Self {
         let vmar_ref = thread_local.root_vmar().borrow();
         Self(vmar_ref)
     }
