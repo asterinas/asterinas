@@ -252,7 +252,9 @@ impl VmMapping {
                     let new_flags = PageFlags::W | PageFlags::ACCESSED | PageFlags::DIRTY;
 
                     if self.is_shared || only_reference {
-                        cursor.protect_next(PAGE_SIZE, |p| p.flags |= new_flags);
+                        cursor.protect_next(PAGE_SIZE, |flags, _cache| {
+                            *flags |= new_flags;
+                        });
                         cursor.flusher().issue_tlb_flush(TlbFlushOp::Range(va));
                         cursor.flusher().dispatch_tlb_flush();
                     } else {
@@ -555,7 +557,7 @@ impl VmMapping {
         let range = self.range();
         let mut cursor = vm_space.cursor_mut(&preempt_guard, &range).unwrap();
 
-        let op = |p: &mut PageProperty| p.flags = perms.into();
+        let op = |flags: &mut PageFlags, _cache: &mut CachePolicy| *flags = perms.into();
         while cursor.virt_addr() < range.end {
             if let Some(va) = cursor.protect_next(range.end - cursor.virt_addr(), op) {
                 cursor.flusher().issue_tlb_flush(TlbFlushOp::Range(va));

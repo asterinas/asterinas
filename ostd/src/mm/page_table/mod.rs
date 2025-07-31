@@ -122,8 +122,8 @@ pub(crate) unsafe trait PageTableConfig:
     ///    [`core::mem::ManuallyDrop`] that won't outlive the original item.
     ///
     /// A concrete trait implementation may require the caller to ensure that
-    ///  - the [`super::PageFlags::AVAIL1`] flag is the same as that returned
-    ///    from [`PageTableConfig::item_into_raw`].
+    ///  - the [`super::PageFlags::AVAIL1`] flag is preserved as it is reserved
+    ///    for all page tables.
     unsafe fn item_from_raw(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self::Item;
 }
 
