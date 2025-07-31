@@ -43,7 +43,9 @@
 use core::{marker::PhantomData, mem::MaybeUninit};
 
 use crate::{
-    arch::mm::{__memcpy_fallible, __memset_fallible},
+    arch::mm::{
+        __atomic_cmpxchg_fallible, __atomic_load_fallible, __memcpy_fallible, __memset_fallible,
+    },
     mm::{
         kspace::{KERNEL_BASE_VADDR, KERNEL_END_VADDR},
         MAX_USERSPACE_VADDR,
@@ -274,6 +276,45 @@ unsafe fn memset_fallible(dst: *mut u8, value: u8, len: usize) -> usize {
     len - failed_bytes
 }
 
+/// Atomically loads a 32-bit integer value.
+/// This function will return errors if encountering an unresolvable page fault.
+///
+/// Returns the loaded value.
+///
+/// # Safety
+///
+/// - `ptr` must either be [valid] for writes of 4 bytes or be in user space for 4 bytes.
+/// - `ptr` must be aligned on a 4-byte boundary.
+unsafe fn atomic_load_fallible(ptr: *const u32) -> Result<u32> {
+    // SAFETY: The safety is upheld by the caller.
+    let result = unsafe { __atomic_load_fallible(ptr) };
+    if result == !0 {
+        Err(Error::PageFault)
+    } else {
+        Ok(result as u32)
+    }
+}
+
+/// Atomically compares and exchanges a 32-bit integer value.
+/// This function will return errors if encountering an unresolvable page fault.
+///
+/// Returns the previous value.
+/// `new_val` will be written if and only if the previous value is equal to `old_val`.
+///
+/// # Safety
+///
+/// - `ptr` must either be [valid] for reads and writes of 4 bytes or be in user space for 4 bytes.
+/// - `ptr` must be aligned on a 4-byte boundary.
+unsafe fn atomic_cmpxchg_fallible(ptr: *mut u32, old_val: u32, new_val: u32) -> Result<u32> {
+    // SAFETY: The safety is upheld by the caller.
+    let result = unsafe { __atomic_cmpxchg_fallible(ptr, old_val, new_val) };
+    if result == !0 {
+        Err(Error::PageFault)
+    } else {
+        Ok(result as u32)
+    }
+}
+
 /// Fallible memory read from a `VmWriter`.
 pub trait FallibleVmRead<F> {
     /// Reads all data into the writer until one of the three conditions is met:
@@ -493,6 +534,9 @@ impl<'a> VmReader<'a, Infallible> {
         Ok(val)
     }
 
+    // Currently, there are no volatile atomic operations in `core::intrinsics`. Therefore, we do
+    // not provide an infallible implementation of `VmReader::atomic_load`.
+
     /// Converts to a fallible reader.
     pub fn to_fallible(self) -> VmReader<'a, Fallible> {
         // It is safe to construct a fallible reader since an infallible reader covers the
@@ -561,6 +605,32 @@ impl VmReader<'_, Fallible> {
         // - The type is plain-old-data.
         let val_inited = unsafe { val.assume_init() };
         Ok(val_inited)
+    }
+
+    /// Atomically loads a 32-bit integer value.
+    ///
+    /// Regardless of whether it is successful, the cursor of the reader and writer will not move.
+    ///
+    /// This method will fail with errors if
+    ///  1. the remaining space of the reader is less than 4 bytes (`size_of::<u32>()`), or
+    ///  2. the memory operation fails due to an unresolvable page fault.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the memory location is not aligned on a 4-byte boundary
+    /// (`align_of::<u32>()`).
+    pub fn atomic_load(&self) -> Result<u32> {
+        if self.remain() < core::mem::size_of::<u32>() {
+            return Err(Error::InvalidArgs);
+        }
+
+        let cursor = self.cursor.cast::<u32>();
+        assert!(cursor.is_aligned());
+
+        // SAFETY:
+        // 1. The cursor is either valid for reading or in user space for 4 bytes.
+        // 2. The cursor is aligned on a 4-byte boundary.
+        unsafe { atomic_load_fallible(cursor) }
     }
 }
 
@@ -711,6 +781,9 @@ impl<'a> VmWriter<'a, Infallible> {
         Ok(())
     }
 
+    // Currently, there are no volatile atomic operations in `core::intrinsics`. Therefore, we do
+    // not provide an infallible implementation of `VmWriter::atomic_update`.
+
     /// Writes `len` zeros to the target memory.
     ///
     /// This method attempts to fill up to `len` bytes with zeros. If the available
@@ -785,6 +858,59 @@ impl VmWriter<'_, Fallible> {
                 err
             })?;
         Ok(())
+    }
+
+    /// Atomically updates a 32-bit integer value.
+    ///
+    /// This is implemented by performing an atomic load, applying the operation, and performing an
+    /// atomic compare-and-exchange. So this cannot prevent the ABA problem.
+    ///
+    /// The caller is required to provide a reader which points to the exactly same memory location
+    /// to ensure that reading from the memory is allowed.
+    ///
+    /// On success, the previous value will be returned with a boolean value denoting whether the
+    /// compare-and-exchange succeeds. The caller usually wants to retry if the flag is false.
+    ///
+    /// Regardless of whether it is successful, the cursor of the reader and writer will not move.
+    ///
+    /// This method will fail with errors if:
+    ///  1. the remaining (avail) space of the reader (writer) is less than 4 bytes
+    ///     (`size_of::<u32>()`), or
+    ///  2. the memory operation fails due to an unresolvable page fault.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if:
+    ///  1. the reader and the writer does not point to the same memory location, or
+    ///  2. the memory location is not aligned on a 4-byte boundary (`align_of::<u32>()`).
+    pub fn atomic_update<F>(&mut self, reader: &VmReader, op: F) -> Result<(u32, bool)>
+    where
+        F: FnOnce(u32) -> u32,
+    {
+        if self.avail() < core::mem::size_of::<u32>()
+            || reader.remain() < core::mem::size_of::<u32>()
+        {
+            return Err(Error::InvalidArgs);
+        }
+
+        assert_eq!(self.cursor.cast_const(), reader.cursor);
+
+        let cursor = self.cursor.cast::<u32>();
+        assert!(cursor.is_aligned());
+
+        // SAFETY:
+        // 1. The cursor is either valid for reading or in user space for 4 bytes.
+        // 2. The cursor is aligned on a 4-byte boundary.
+        let old_val = unsafe { atomic_load_fallible(cursor)? };
+
+        let new_val = op(old_val);
+
+        // SAFETY:
+        // 1. The cursor is either valid for reading and writing or in user space for 4 bytes.
+        // 2. The cursor is aligned on a 4-byte boundary.
+        let cur_val = unsafe { atomic_cmpxchg_fallible(cursor, old_val, new_val)? };
+
+        Ok((old_val, old_val == cur_val))
     }
 
     /// Writes `len` zeros to the target memory.

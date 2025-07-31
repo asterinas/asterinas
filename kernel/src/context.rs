@@ -153,6 +153,42 @@ impl<'a> CurrentUserSpace<'a> {
         Ok(user_writer.write_val(val)?)
     }
 
+    /// Atomically loads a 32-bit unsigned integer.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if `vaddr` is not aligned on a 4-byte boundary.
+    pub fn atomic_load(&self, vaddr: Vaddr) -> Result<u32> {
+        check_vaddr(vaddr)?;
+
+        let user_reader = self.reader(vaddr, core::mem::size_of::<u32>())?;
+        Ok(user_reader.atomic_load()?)
+    }
+
+    /// Atomically updates a 32-bit unsigned integer.
+    ///
+    /// This method internally uses an atomic compare-and-exchange operation.If the value changes
+    /// concurrently, this method will retry so the operation may be performed multiple times.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if `vaddr` is not aligned on a 4-byte boundary.
+    pub fn atomic_update<F>(&self, vaddr: Vaddr, op: F) -> Result<u32>
+    where
+        F: Fn(u32) -> u32,
+    {
+        check_vaddr(vaddr)?;
+
+        let user_reader = self.reader(vaddr, core::mem::size_of::<u32>())?;
+        let mut user_writer = self.writer(vaddr, core::mem::size_of::<u32>())?;
+        loop {
+            match user_writer.atomic_update(&user_reader, &op)? {
+                (old_val, true) => return Ok(old_val),
+                (_, false) => continue,
+            }
+        }
+    }
+
     /// Reads a C string from the user space of the current process.
     /// The length of the string should not exceed `max_len`,
     /// including the final `\0` byte.
@@ -320,7 +356,7 @@ fn check_vaddr(va: Vaddr) -> Result<()> {
     if va < crate::vm::vmar::ROOT_VMAR_LOWEST_ADDR {
         Err(Error::with_message(
             Errno::EFAULT,
-            "Bad user space pointer specified",
+            "the userspace address is too small",
         ))
     } else {
         Ok(())
