@@ -20,8 +20,8 @@ use crate::{
             self,
             allocator::{self, EarlyAllocatedFrameMeta},
         },
-        nr_subpage_per_huge, paddr_to_vaddr, Frame, FrameAllocOptions, Paddr, PageFlags,
-        PageProperty, PagingConstsTrait, PagingLevel, Vaddr, PAGE_SIZE,
+        nr_subpage_per_huge, paddr_to_vaddr, Frame, FrameAllocOptions, Paddr, PageProperty,
+        PagingConstsTrait, PagingLevel, PrivilegedPageFlags, Vaddr, PAGE_SIZE,
     },
     sync::SpinLock,
 };
@@ -79,7 +79,7 @@ pub(crate) unsafe fn dismiss() {
             boot_pt.root_pt,
             PagingConsts::NR_LEVELS,
             &mut |pte| {
-                if !pte.prop().flags.contains(PTE_POINTS_TO_FIRMWARE_PT) {
+                if !pte.prop().priv_flags.contains(PTE_POINTS_TO_FIRMWARE_PT) {
                     // SAFETY: The pointed frame is allocated and forgotten with `into_raw`.
                     drop(unsafe { Frame::<EarlyAllocatedFrameMeta>::from_raw(pte.paddr()) })
                 }
@@ -121,7 +121,7 @@ pub(crate) struct BootPageTable<
 // The first available bit is used to differentiate firmware page tables from
 // the page tables allocated here. The second is for identifying double-visits
 // when walking the page tables since the PT can be a DAG.
-const PTE_POINTS_TO_FIRMWARE_PT: PageFlags = PageFlags::AVAIL1;
+const PTE_POINTS_TO_FIRMWARE_PT: PrivilegedPageFlags = PrivilegedPageFlags::AVAIL1;
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
     /// Creates a new boot page table from the current page table root
@@ -137,7 +137,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
         // Make sure the 2 available bits are not set for firmware page tables.
         dfs_walk_on_leave::<E, C>(root_pt, C::NR_LEVELS, &mut |pte: &mut E| {
             let mut prop = pte.prop();
-            prop.flags |= PTE_POINTS_TO_FIRMWARE_PT;
+            prop.priv_flags |= PTE_POINTS_TO_FIRMWARE_PT;
             pte.set_prop(prop);
         });
         Self {
