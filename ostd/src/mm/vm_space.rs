@@ -12,19 +12,20 @@ use core::{cmp::min, ops::Range, sync::atomic::Ordering};
 
 use align_ext::AlignExt;
 
-use super::{frame::max_paddr, page_table::PageTableConfig, AnyUFrameMeta, PagingLevel};
+use super::{page_table::PageTableConfig, AnyUFrameMeta, PagingLevel};
 use crate::{
     arch::mm::{current_page_table_paddr, PageTableEntry, PagingConsts},
     cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu},
     cpu_local_cell,
     io::IoMem,
     mm::{
-        frame::meta::ReservedMemoryMeta,
         io::Fallible,
         kspace::KERNEL_PAGE_TABLE,
+        page_prop::{CachePolicy, PageFlags},
         page_table::{self, PageTable, PageTableFrag},
         tlb::{TlbFlushOp, TlbFlusher},
-        Frame, PageProperty, UFrame, VmReader, VmWriter, MAX_USERSPACE_VADDR, PAGE_SIZE,
+        Frame, PageProperty, PrivilegedPageFlags, UFrame, VmReader, VmWriter, MAX_USERSPACE_VADDR,
+        PAGE_SIZE,
     },
     prelude::*,
     sync::SpinLock,
@@ -319,10 +320,6 @@ impl<'a> CursorMut<'a> {
                         self.flusher
                             .issue_tlb_flush_with(TlbFlushOp::Address(start_va), old_frame.into());
                     }
-                    MappedItem::ReservedFrame(old_frame) => {
-                        self.flusher
-                            .issue_tlb_flush_with(TlbFlushOp::Address(start_va), old_frame.into());
-                    }
                     MappedItem::UntrackedIoMem { .. } => {
                         // Flush the TLB entry for the current address, but DO
                         // NOT drop the corresponding `IoMem`. This is because
@@ -371,22 +368,10 @@ impl<'a> CursorMut<'a> {
             (current_paddr + len).align_up(PAGE_SIZE),
         );
         while current_paddr < paddr_end {
-            // Traverse the range and map it with the map function above
-            let map_result = if io_mem.paddr() < max_paddr() {
-                // The paddr is tracked, so we can convert it to reserved memory.
-                let frame = Frame::from_in_use(current_paddr)
-                    .unwrap()
-                    .try_into()
-                    .unwrap();
-
-                // SAFETY: It is safe to map tracked but unmapped memory into the userspace.
-                unsafe { self.pt_cursor.map(VmItem::new_reserved(frame, prop)) }
-            } else {
-                // SAFETY: It is safe to map I/O memory into the userspace.
-                unsafe {
-                    self.pt_cursor
-                        .map(VmItem::new_untracked_io(current_paddr, 1, prop))
-                }
+            // SAFETY: It is safe to map I/O memory into the userspace.
+            let map_result = unsafe {
+                self.pt_cursor
+                    .map(VmItem::new_untracked_io(current_paddr, 1, prop))
             };
 
             current_paddr += PAGE_SIZE;
@@ -444,13 +429,6 @@ impl<'a> CursorMut<'a> {
                     match item {
                         VmItem {
                             mapped_item: MappedItem::TrackedFrame(old_frame),
-                            ..
-                        } => {
-                            self.flusher
-                                .issue_tlb_flush_with(TlbFlushOp::Address(va), old_frame.into());
-                        }
-                        VmItem {
-                            mapped_item: MappedItem::ReservedFrame(old_frame),
                             ..
                         } => {
                             self.flusher
@@ -553,16 +531,8 @@ pub enum VmQueriedItem {
         prop: PageProperty,
     },
     /// The current slot is mapped, the frame within is allocated from the
-    /// reserved memory, and the physical address is tracked.
-    MappedReservedRam {
-        /// The mapped frame, which is a reserved memory.
-        frame: Frame<ReservedMemoryMeta>,
-        /// The property of the slot.
-        prop: PageProperty,
-    },
-    /// The current slot is mapped, the frame within is allocated from the
-    /// MMIO memory, and the physical address is not tracked.
-    MappedUntrackedIo {
+    /// MMIO memory.
+    MappedIoMem {
         /// The physical address of the corresponding I/O memory.
         paddr: Paddr,
         /// The paging level of the slot.
@@ -585,7 +555,6 @@ pub(crate) struct VmItem {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum MappedItem {
     TrackedFrame(UFrame),
-    ReservedFrame(Frame<ReservedMemoryMeta>),
     UntrackedIoMem { paddr: Paddr, level: PagingLevel },
 }
 
@@ -595,13 +564,6 @@ impl VmItem {
         Self {
             prop,
             mapped_item: MappedItem::TrackedFrame(frame),
-        }
-    }
-    /// Create a new `VmItem` that maps a reserved I/O memory, i.e. the I/O memory is tracked(paddr < max_paddr) and reserved for MMIO.
-    pub(crate) fn new_reserved(frame: Frame<ReservedMemoryMeta>, prop: PageProperty) -> Self {
-        Self {
-            prop,
-            mapped_item: MappedItem::ReservedFrame(frame),
         }
     }
 
@@ -620,11 +582,7 @@ impl VmItem {
                 frame,
                 prop: self.prop,
             },
-            MappedItem::ReservedFrame(frame) => VmQueriedItem::MappedReservedRam {
-                frame,
-                prop: self.prop,
-            },
-            MappedItem::UntrackedIoMem { paddr, level } => VmQueriedItem::MappedUntrackedIo {
+            MappedItem::UntrackedIoMem { paddr, level } => VmQueriedItem::MappedIoMem {
                 paddr,
                 level,
                 prop: self.prop,
@@ -654,27 +612,30 @@ unsafe impl PageTableConfig for UserPtConfig {
     fn item_into_raw(item: Self::Item) -> (Paddr, PagingLevel, PageProperty) {
         match item.mapped_item {
             MappedItem::TrackedFrame(frame) => {
+                let mut prop = item.prop;
+                prop.priv_flags -= PrivilegedPageFlags::AVAIL1; // Clear AVAIL1 for tracked frames
                 let level = frame.map_level();
                 let paddr = frame.into_raw();
-                (paddr, level, item.prop)
+                (paddr, level, prop)
             }
-            MappedItem::ReservedFrame(frame) => {
-                let level = 1; // Reserved frames are always base pages
-                let paddr = frame.into_raw();
-                (paddr, level, item.prop)
+            MappedItem::UntrackedIoMem { paddr, level } => {
+                let mut prop = item.prop;
+                prop.priv_flags |= PrivilegedPageFlags::AVAIL1; // Set AVAIL1 for I/O memory
+                (paddr, level, prop)
             }
-            MappedItem::UntrackedIoMem { paddr, level } => (paddr, level, item.prop),
         }
     }
 
     unsafe fn item_from_raw(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self::Item {
         debug_assert_eq!(level, 1);
-        // SAFETY: The caller ensures safety.
-        if paddr < max_paddr() {
+        if prop.priv_flags.contains(PrivilegedPageFlags::AVAIL1) {
+            // AVAIL1 bit is set, this is I/O memory
+            VmItem::new_untracked_io(paddr, level, prop)
+        } else {
+            // AVAIL1 bit is clear, this is tracked memory
+            // SAFETY: The caller ensures safety.
             let frame = unsafe { Frame::<dyn AnyUFrameMeta>::from_raw(paddr) };
             VmItem::new_tracked(frame, prop)
-        } else {
-            VmItem::new_untracked_io(paddr, level, prop)
         }
     }
 

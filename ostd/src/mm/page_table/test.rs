@@ -256,7 +256,12 @@ mod page_properties {
                 .map(VmItem::new_tracked(frame.into(), prop))
         };
         let queried = page_table.page_walk(virtual_range.start + 100).unwrap().1;
-        assert_eq!(queried, prop);
+
+        // When using VmItem::new_tracked(), it's always a tracked frame, not I/O memory
+        // So AVAIL1 bit should always be cleared, regardless of the input property
+        let mut expected = prop;
+        expected.priv_flags -= PrivilegedPageFlags::AVAIL1;
+        assert_eq!(queried, expected);
     }
 
     #[ktest]
