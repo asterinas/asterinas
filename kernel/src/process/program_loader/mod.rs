@@ -4,7 +4,7 @@ pub mod elf;
 mod shebang;
 
 use self::{
-    elf::{load_elf_to_vm, ElfLoadInfo},
+    elf::{load_elf_to_vm, ElfHeaders, ElfLoadInfo},
     shebang::parse_shebang_line,
 };
 use super::process_vm::ProcessVm;
@@ -23,7 +23,7 @@ use crate::{
 /// the `argv` and the `envp` which is required for the program execution.
 pub struct ProgramToLoad {
     elf_file: Dentry,
-    file_header: Box<[u8; PAGE_SIZE]>,
+    file_first_page: Box<[u8; PAGE_SIZE]>,
     argv: Vec<CString>,
     envp: Vec<CString>,
 }
@@ -44,13 +44,13 @@ impl ProgramToLoad {
         recursion_limit: usize,
     ) -> Result<Self> {
         let inode = elf_file.inode();
-        let file_header = {
-            // read the first page of file header
-            let mut file_header_buffer = Box::new([0u8; PAGE_SIZE]);
-            inode.read_bytes_at(0, &mut *file_header_buffer)?;
-            file_header_buffer
+        let file_first_page = {
+            // Read the first page of file header, which must contain the ELF header.
+            let mut buffer = Box::new([0u8; PAGE_SIZE]);
+            inode.read_bytes_at(0, &mut *buffer)?;
+            buffer
         };
-        if let Some(mut new_argv) = parse_shebang_line(&*file_header)? {
+        if let Some(mut new_argv) = parse_shebang_line(&*file_first_page)? {
             if recursion_limit == 0 {
                 return_errno_with_message!(Errno::ELOOP, "the recursieve limit is reached");
             }
@@ -72,7 +72,7 @@ impl ProgramToLoad {
 
         Ok(Self {
             elf_file,
-            file_header,
+            file_first_page,
             argv,
             envp,
         })
@@ -89,11 +89,12 @@ impl ProgramToLoad {
         fs_resolver: &FsResolver,
     ) -> Result<(String, ElfLoadInfo)> {
         let abs_path = self.elf_file.abs_path();
+        let elf_headers = ElfHeaders::parse_elf(&*self.file_first_page)?;
         let elf_load_info = load_elf_to_vm(
             process_vm,
-            &*self.file_header,
             self.elf_file,
             fs_resolver,
+            elf_headers,
             self.argv,
             self.envp,
         )?;
