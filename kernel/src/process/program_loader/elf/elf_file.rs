@@ -6,13 +6,16 @@ use xmas_elf::{
     program::{self, ProgramHeader64},
 };
 
-use crate::prelude::*;
-pub struct Elf {
+use crate::{
+    fs::{path::Dentry, utils::PATH_MAX},
+    prelude::*,
+};
+pub struct ElfHeaders {
     pub elf_header: ElfHeader,
     pub program_headers: Vec<ProgramHeader64>,
 }
 
-impl Elf {
+impl ElfHeaders {
     pub fn parse_elf(input: &[u8]) -> Result<Self> {
         // first parse elf header
         // The elf header is usually 64 bytes. pt1 is 16bytes and pt2 is 48 bytes.
@@ -84,13 +87,13 @@ impl Elf {
         );
     }
 
-    /// whether the elf is a shared object
+    /// Returns whether the ELF is a shared object.
     pub fn is_shared_object(&self) -> bool {
         self.elf_header.pt2.type_.as_type() == header::Type::SharedObject
     }
 
-    /// read the ldso path from the elf interpret section
-    pub fn ldso_path(&self, file_header_buf: &[u8]) -> Result<Option<String>> {
+    /// Reads the LDSO path from the ELF file.
+    pub fn read_ldso_path(&self, elf_file: &Dentry) -> Result<Option<CString>> {
         for program_header in &self.program_headers {
             let type_ = program_header.get_type().map_err(|_| {
                 Error::with_message(Errno::ENOEXEC, "parse program header type fails")
@@ -98,11 +101,26 @@ impl Elf {
             if type_ == program::Type::Interp {
                 let file_size = program_header.file_size as usize;
                 let file_offset = program_header.offset as usize;
-                debug_assert!(file_offset + file_size <= file_header_buf.len());
-                let ldso = CStr::from_bytes_with_nul(
-                    &file_header_buf[file_offset..file_offset + file_size],
-                )?;
-                return Ok(Some(ldso.to_string_lossy().to_string()));
+
+                if file_size > PATH_MAX {
+                    return_errno_with_message!(
+                        Errno::ENAMETOOLONG,
+                        "The size of the interpreter path exceeds PATH_MAX"
+                    );
+                }
+
+                let inode = elf_file.inode();
+                let mut buffer = vec![0; file_size];
+                inode.read_bytes_at(file_offset, &mut buffer)?;
+
+                let ldso_path = CString::from_vec_with_nul(buffer).map_err(|_| {
+                    Error::with_message(
+                        Errno::ENOEXEC,
+                        "The interpreter path specified in ELF is not a valid C string",
+                    )
+                })?;
+
+                return Ok(Some(ldso_path));
             }
         }
         Ok(None)
