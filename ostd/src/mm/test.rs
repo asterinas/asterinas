@@ -829,8 +829,8 @@ mod vmspace {
             let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
             cursor_mut.map(frame.clone(), prop);
             cursor_mut.jump(range.start).expect("Failed to jump cursor");
-            let protected_range = cursor_mut.protect_next(0x1000, |prop| {
-                prop.flags = PageFlags::R;
+            let protected_range = cursor_mut.protect_next(0x1000, |flags, _cache| {
+                *flags = PageFlags::R;
             });
 
             assert_eq!(protected_range, Some(0x7000..0x8000));
@@ -874,6 +874,6 @@ mod vmspace {
         let mut cursor_mut = vmspace
             .cursor_mut(&preempt_guard, &range)
             .expect("Failed to create mutable cursor");
-        cursor_mut.protect_next(0x2000, |_| {}); // Not page-aligned.
+        cursor_mut.protect_next(0x2000, |_flags, _cache| {}); // Not page-aligned.
     }
 }
