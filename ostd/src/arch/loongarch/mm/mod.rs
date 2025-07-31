@@ -302,13 +302,23 @@ pub(in crate::arch) fn paddr_to_daddr(pa: Paddr) -> usize {
 }
 
 pub(crate) unsafe fn __memcpy_fallible(dst: *mut u8, src: *const u8, size: usize) -> usize {
-    // TODO: implement fallible
+    // TODO: Implement this fallible operation.
     unsafe { core::ptr::copy(src, dst, size) };
     0
 }
 
 pub(crate) unsafe fn __memset_fallible(dst: *mut u8, value: u8, size: usize) -> usize {
-    // TODO: implement fallible
+    // TODO: Implement this fallible operation.
     unsafe { core::ptr::write_bytes(dst, value, size) };
     0
+}
+
+pub(crate) unsafe fn __atomic_load_fallible(ptr: *const u32) -> u64 {
+    // TODO: Implement this fallible operation.
+    unsafe { core::intrinsics::atomic_load_relaxed(ptr) as u64 }
+}
+
+pub(crate) unsafe fn __atomic_cmpxchg_fallible(ptr: *mut u32, old_val: u32, new_val: u32) -> u64 {
+    // TODO: Implement this fallible operation.
+    unsafe { core::intrinsics::atomic_cxchg_relaxed_relaxed(ptr, old_val, new_val).0 as u64 }
 }
