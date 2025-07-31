@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! PCI bus
+//! The PCI bus of Asterinas.
 //!
 //! Users can implement the bus under the `PciDriver` to the PCI bus to register devices,
 //! when the physical device and the driver match successfully, it will be provided through the driver `construct` function
@@ -50,21 +50,46 @@
 //! }
 //! ```
 
+#![no_std]
+#![deny(unsafe_code)]
+
+#[cfg(target_arch = "x86_64")]
+#[path = "arch/x86/mod.rs"]
+pub mod arch;
+#[cfg(target_arch = "riscv64")]
+#[path = "arch/riscv/mod.rs"]
+pub mod arch;
+#[cfg(target_arch = "loongarch64")]
+#[path = "arch/loongarch/mod.rs"]
+pub mod arch;
+
 pub mod bus;
 pub mod capability;
 pub mod cfg_space;
 pub mod common_device;
 mod device_info;
 
-pub use device_info::{PciDeviceId, PciDeviceLocation};
+extern crate alloc;
+
+use component::{init_component, ComponentInitError};
+pub use device_info::PciDeviceId;
+use ostd::{
+    bus::pci::{has_pci_bus, PciDeviceLocation},
+    sync::Mutex,
+};
 
 use self::{bus::PciBus, common_device::PciCommonDevice};
-use crate::{arch::pci::has_pci_bus, sync::Mutex};
+
+#[init_component]
+fn pci_init() -> Result<(), ComponentInitError> {
+    init();
+    Ok(())
+}
 
 /// PCI bus instance
 pub static PCI_BUS: Mutex<PciBus> = Mutex::new(PciBus::new());
 
-pub(crate) fn init() {
+fn init() {
     if !has_pci_bus() {
         return;
     }
