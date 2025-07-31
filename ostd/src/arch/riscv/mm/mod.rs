@@ -4,6 +4,7 @@ use alloc::fmt;
 use core::ops::Range;
 
 use crate::{
+    cpu::extension::{has_extensions, IsaExtensions},
     mm::{
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
         page_table::PageTableEntryTrait,
@@ -193,8 +194,12 @@ impl PageTableEntryTrait for PageTableEntry {
         match prop.cache {
             CachePolicy::Writeback => (),
             CachePolicy::Uncacheable => {
-                // Currently, Asterinas uses `Uncacheable` for I/O memory.
-                flags |= PageTableFlags::PBMT_IO.bits()
+                // TODO: Currently Asterinas uses `Uncacheable` only for I/O
+                // memory. Normal memory can also be `Noncacheable`, where the
+                // PBMT should be set to `PBMT_NC`.
+                if has_extensions(IsaExtensions::SVPBMT) {
+                    flags |= PageTableFlags::PBMT_IO.bits()
+                }
             }
             _ => panic!("unsupported cache policy"),
         }
