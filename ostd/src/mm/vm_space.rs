@@ -394,10 +394,18 @@ impl<'a> CursorMut<'a> {
     pub fn protect_next(
         &mut self,
         len: usize,
-        mut op: impl FnMut(&mut PageProperty),
+        mut op: impl FnMut(&mut PageFlags, &mut CachePolicy),
     ) -> Option<Range<Vaddr>> {
         // SAFETY: It is safe to protect memory in the userspace.
-        unsafe { self.pt_cursor.protect_next(len, &mut op) }
+        unsafe {
+            self.pt_cursor.protect_next(len, &mut |prop| {
+                let mut flags = prop.flags;
+                let mut cache = prop.cache;
+                op(&mut flags, &mut cache);
+                prop.flags = flags;
+                prop.cache = cache;
+            })
+        }
     }
 }
 
