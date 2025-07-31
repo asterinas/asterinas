@@ -13,7 +13,7 @@ use ostd::{
 };
 use xmas_elf::program::{self, ProgramHeader64};
 
-use super::elf_file::Elf;
+use super::elf_file::ElfHeaders;
 use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver, AT_FDCWD},
@@ -40,17 +40,15 @@ use crate::{
 /// initialize process init stack.
 pub fn load_elf_to_vm(
     process_vm: &ProcessVm,
-    file_header: &[u8],
     elf_file: Dentry,
     fs_resolver: &FsResolver,
+    elf_headers: ElfHeaders,
     argv: Vec<CString>,
     envp: Vec<CString>,
 ) -> Result<ElfLoadInfo> {
-    let parsed_elf = Elf::parse_elf(file_header)?;
+    let ldso = lookup_and_parse_ldso(&elf_headers, &elf_file, fs_resolver)?;
 
-    let ldso = lookup_and_parse_ldso(&parsed_elf, file_header, fs_resolver)?;
-
-    match init_and_map_vmos(process_vm, ldso, &parsed_elf, &elf_file) {
+    match init_and_map_vmos(process_vm, ldso, &elf_headers, &elf_file) {
         Ok((_range, entry_point, mut aux_vec)) => {
             // Map and set vdso entry.
             // Since vdso does not require being mapped to any specific address,
@@ -90,27 +88,38 @@ pub fn load_elf_to_vm(
 }
 
 fn lookup_and_parse_ldso(
-    elf: &Elf,
-    file_header: &[u8],
+    headers: &ElfHeaders,
+    elf_file: &Dentry,
     fs_resolver: &FsResolver,
-) -> Result<Option<(Dentry, Elf)>> {
+) -> Result<Option<(Dentry, ElfHeaders)>> {
     let ldso_file = {
-        let Some(ldso_path) = elf.ldso_path(file_header)? else {
+        let Some(ldso_path) = headers.read_ldso_path(elf_file)? else {
             return Ok(None);
         };
-        let fs_path = FsPath::new(AT_FDCWD, &ldso_path)?;
+        // Our FS requires the path to be valid UTF-8. This may be too restrictive.
+        let ldso_path = ldso_path.into_string().map_err(|_| {
+            Error::with_message(
+                Errno::ENOEXEC,
+                "The interpreter path specified in ELF is not a valid UTF-8 string",
+            )
+        })?;
+        let fs_path = FsPath::new(AT_FDCWD, ldso_path.as_str())?;
         fs_resolver.lookup(&fs_path)?
     };
     let ldso_elf = {
         let mut buf = Box::new([0u8; PAGE_SIZE]);
         let inode = ldso_file.inode();
         inode.read_bytes_at(0, &mut *buf)?;
-        Elf::parse_elf(&*buf)?
+        ElfHeaders::parse_elf(&*buf)?
     };
     Ok(Some((ldso_file, ldso_elf)))
 }
 
-fn load_ldso(root_vmar: &Vmar<Full>, ldso_file: &Dentry, ldso_elf: &Elf) -> Result<LdsoLoadInfo> {
+fn load_ldso(
+    root_vmar: &Vmar<Full>,
+    ldso_file: &Dentry,
+    ldso_elf: &ElfHeaders,
+) -> Result<LdsoLoadInfo> {
     let range = map_segment_vmos(ldso_elf, root_vmar, ldso_file)?;
     Ok(LdsoLoadInfo {
         entry_point: range
@@ -129,8 +138,8 @@ fn load_ldso(root_vmar: &Vmar<Full>, ldso_file: &Dentry, ldso_elf: &Elf) -> Resu
 /// Returns the mapped range, the entry point and the auxiliary vector.
 fn init_and_map_vmos(
     process_vm: &ProcessVm,
-    ldso: Option<(Dentry, Elf)>,
-    parsed_elf: &Elf,
+    ldso: Option<(Dentry, ElfHeaders)>,
+    parsed_elf: &ElfHeaders,
     elf_file: &Dentry,
 ) -> Result<(RelocatedRange, Vaddr, AuxVec)> {
     let process_vmar = process_vm.lock_root_vmar();
@@ -193,7 +202,7 @@ pub struct ElfLoadInfo {
 ///
 /// [`Vmo`]: crate::vm::vmo::Vmo
 pub fn map_segment_vmos(
-    elf: &Elf,
+    elf: &ElfHeaders,
     root_vmar: &Vmar<Full>,
     elf_file: &Dentry,
 ) -> Result<RelocatedRange> {
@@ -279,7 +288,7 @@ impl RelocatedRange {
 ///
 /// The range must be tight, i.e., will not include any padding bytes. So the
 /// boundaries may not be page-aligned.
-fn get_range_for_all_segments(elf: &Elf) -> Result<Range<Vaddr>> {
+fn get_range_for_all_segments(elf: &ElfHeaders) -> Result<Range<Vaddr>> {
     let loadable_ranges_iter = elf.program_headers.iter().filter_map(|ph| {
         if let Ok(program::Type::Load) = ph.get_type() {
             Some((ph.virtual_addr as Vaddr)..((ph.virtual_addr + ph.mem_size) as Vaddr))
@@ -468,7 +477,11 @@ fn check_segment_align(program_header: &ProgramHeader64) -> Result<()> {
     Ok(())
 }
 
-pub fn init_aux_vec(elf: &Elf, elf_map_addr: Vaddr, ldso_base: Option<Vaddr>) -> Result<AuxVec> {
+pub fn init_aux_vec(
+    elf: &ElfHeaders,
+    elf_map_addr: Vaddr,
+    ldso_base: Option<Vaddr>,
+) -> Result<AuxVec> {
     let mut aux_vec = AuxVec::new();
     aux_vec.set(AuxKey::AT_PAGESZ, PAGE_SIZE as _)?;
     let ph_addr = if elf.is_shared_object() {
