@@ -201,10 +201,10 @@ impl PageTableEntryTrait for PageTableEntry {
             | (parse_flags!(!self.0, PageTableFlags::NO_EXECUTE, PageFlags::X))
             | (parse_flags!(self.0, PageTableFlags::ACCESSED, PageFlags::ACCESSED))
             | (parse_flags!(self.0, PageTableFlags::DIRTY, PageFlags::DIRTY))
-            | (parse_flags!(self.0, PageTableFlags::HIGH_IGN1, PageFlags::AVAIL1))
             | (parse_flags!(self.0, PageTableFlags::HIGH_IGN2, PageFlags::AVAIL2));
         let priv_flags = (parse_flags!(self.0, PageTableFlags::USER, PrivFlags::USER))
-            | (parse_flags!(self.0, PageTableFlags::GLOBAL, PrivFlags::GLOBAL));
+            | (parse_flags!(self.0, PageTableFlags::GLOBAL, PrivFlags::GLOBAL))
+            | (parse_flags!(self.0, PageTableFlags::HIGH_IGN1, PrivFlags::AVAIL1));
         #[cfg(feature = "cvm_guest")]
         let priv_flags =
             priv_flags | (parse_flags!(self.0, PageTableFlags::SHARED, PrivFlags::SHARED));
@@ -237,8 +237,8 @@ impl PageTableEntryTrait for PageTableEntry {
             ))
             | (parse_flags!(prop.flags.bits(), PageFlags::DIRTY, PageTableFlags::DIRTY))
             | (parse_flags!(
-                prop.flags.bits(),
-                PageFlags::AVAIL1,
+                prop.priv_flags.bits(),
+                PrivFlags::AVAIL1,
                 PageTableFlags::HIGH_IGN1
             ))
             | (parse_flags!(
