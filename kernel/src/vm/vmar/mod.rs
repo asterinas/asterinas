@@ -14,7 +14,8 @@ use aster_rights::Rights;
 use ostd::{
     cpu::CpuId,
     mm::{
-        tlb::TlbFlushOp, vm_space::CursorMut, PageFlags, PageProperty, VmSpace, MAX_USERSPACE_VADDR,
+        tlb::TlbFlushOp, vm_space::CursorMut, CachePolicy, PageFlags, PageProperty, VmSpace,
+        MAX_USERSPACE_VADDR,
     },
     sync::RwMutexReadGuard,
     task::disable_preempt,
@@ -772,8 +773,8 @@ fn cow_copy_pt(src: &mut CursorMut<'_>, dst: &mut CursorMut<'_>, size: usize) ->
 
     let mut num_copied = 0;
 
-    let op = |page: &mut PageProperty| {
-        page.flags -= PageFlags::W;
+    let op = |flags: &mut PageFlags, _cache: &mut CachePolicy| {
+        *flags -= PageFlags::W;
     };
 
     while let Some(mapped_va) = src.find_next(remain_size) {
@@ -785,7 +786,7 @@ fn cow_copy_pt(src: &mut CursorMut<'_>, dst: &mut CursorMut<'_>, size: usize) ->
         src.protect_next(end_va - mapped_va, op).unwrap();
 
         dst.jump(mapped_va).unwrap();
-        op(&mut prop);
+        op(&mut prop.flags, &mut prop.cache);
         dst.map(frame, prop);
 
         remain_size = end_va - src.virt_addr();
