@@ -169,11 +169,9 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
                     // This is part of (if `split_huge` happens) a page table item mapped
                     // with a previous call to `C::item_into_raw`, where:
                     //  - The physical address and the paging level match it;
-                    //  - The item part is still mapped so we don't take its ownership.
-                    //
-                    // For page table configs that require the `AVAIL1` flag to be kept
-                    // (currently, only kernel page tables), the callers of the unsafe
-                    // `protect_next` method uphold this invariant.
+                    //  - The item part is still mapped so we don't take its ownership;
+                    //  - The `AVAIL1` flag is preserved by the cursor and the callers of
+                    //    the unsafe `protect_next` method.
                     let item = ManuallyDrop::new(unsafe { C::item_from_raw(pa, level, prop) });
                     // TODO: Provide a `PageTableItemRef` to reduce copies.
                     Some((*item).clone())
@@ -548,8 +546,8 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     /// The caller should ensure that:
     ///  - the range being protected with the operation does not affect
     ///    kernel's memory safety;
-    ///  - the privileged flag `AVAIL1` should not be altered if in the kernel
-    ///    page table (the restriction may be lifted in the futures).
+    ///  - the privileged flag `AVAIL1` should not be altered, since this flag
+    ///    is reserved for all page tables.
     ///
     /// # Panics
     ///
@@ -588,11 +586,9 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
                 // This is part of (if `split_huge` happens) a page table item mapped
                 // with a previous call to `C::item_into_raw`, where:
                 //  - The physical address and the paging level match it;
-                //  - The item part is now unmapped so we can take its ownership.
-                //
-                // For page table configs that require the `AVAIL1` flag to be kept
-                // (currently, only kernel page tables), the callers of the unsafe
-                // `protect_next` method uphold this invariant.
+                //  - The item part is now unmapped so we can take its ownership;
+                //  - The `AVAIL1` flag is preserved by the cursor and the callers of
+                //    the unsafe `protect_next` method.
                 let item = unsafe { C::item_from_raw(pa, level, prop) };
                 Some(PageTableFrag::Mapped { va, item })
             }

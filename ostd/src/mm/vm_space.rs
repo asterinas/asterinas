@@ -19,8 +19,8 @@ use crate::{
         kspace::KERNEL_PAGE_TABLE,
         page_table::{self, PageTable, PageTableConfig, PageTableFrag},
         tlb::{TlbFlushOp, TlbFlusher},
-        AnyUFrameMeta, Frame, PageProperty, PagingLevel, UFrame, VmReader, VmWriter,
-        MAX_USERSPACE_VADDR,
+        AnyUFrameMeta, CachePolicy, Frame, PageFlags, PageProperty, PagingLevel, UFrame, VmReader,
+        VmWriter, MAX_USERSPACE_VADDR,
     },
     prelude::*,
     task::{atomic_mode::AsAtomicModeGuard, disable_preempt, DisabledPreemptGuard},
@@ -394,10 +394,15 @@ impl<'a> CursorMut<'a> {
     pub fn protect_next(
         &mut self,
         len: usize,
-        mut op: impl FnMut(&mut PageProperty),
+        mut op: impl FnMut(&mut PageFlags, &mut CachePolicy),
     ) -> Option<Range<Vaddr>> {
-        // SAFETY: It is safe to protect memory in the userspace.
-        unsafe { self.pt_cursor.protect_next(len, &mut op) }
+        // SAFETY: It is safe to set `PageFlags` and `CachePolicy` of memory
+        // in the userspace.
+        unsafe {
+            self.pt_cursor.protect_next(len, &mut |prop| {
+                op(&mut prop.flags, &mut prop.cache);
+            })
+        }
     }
 }
 
