@@ -117,8 +117,6 @@ bitflags! {
         /// Has the memory page been written.
         const DIRTY     = 0b00010000;
 
-        /// The first bit available for software use.
-        const AVAIL1    = 0b01000000;
         /// The second bit available for software use.
         const AVAIL2    = 0b10000000;
     }
@@ -131,6 +129,11 @@ bitflags! {
         const USER      = 0b00000001;
         /// Global page that won't be evicted from TLB with normal TLB flush.
         const GLOBAL    = 0b00000010;
+
+        /// The first bit available for software use.
+        /// This flag is reserved for OSTD to distinguish between tracked
+        /// mappings and untracked mappings in the page table.
+        const AVAIL1    = 0b01000000;
 
         /// (TEE only) If the page is shared with the host.
         /// Otherwise the page is ensured confidential and not visible outside the guest.
