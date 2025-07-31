@@ -85,7 +85,7 @@ fn handle_get_report(arg: usize) -> Result<i32> {
     const SHARED_BIT: u8 = 51;
     const SHARED_MASK: u64 = 1u64 << SHARED_BIT;
     let current_task = ostd::task::Task::current().unwrap();
-    let user_space = CurrentUserSpace::new(&current_task);
+    let user_space = CurrentUserSpace::new(current_task.as_thread_local().unwrap());
     let user_request: TdxReportRequest = user_space.read_val(arg)?;
 
     let segment = FrameAllocOptions::new().alloc_segment(2).unwrap();

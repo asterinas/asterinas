@@ -22,6 +22,7 @@ pub struct ThreadLocal {
 
     // Virtual memory address regions.
     root_vmar: RefCell<Option<Vmar<Full>>>,
+    page_fault_disabled: Cell<bool>,
 
     // Robust futexes.
     // https://man7.org/linux/man-pages/man2/get_robust_list.2.html
@@ -59,6 +60,7 @@ impl ThreadLocal {
             set_child_tid: Cell::new(set_child_tid),
             clear_child_tid: Cell::new(clear_child_tid),
             root_vmar: RefCell::new(Some(root_vmar)),
+            page_fault_disabled: Cell::new(false),
             robust_list: RefCell::new(None),
             file_table: RefCell::new(Some(file_table)),
             fs: RefCell::new(fs),
@@ -79,6 +81,45 @@ impl ThreadLocal {
 
     pub fn root_vmar(&self) -> &RefCell<Option<Vmar<Full>>> {
         &self.root_vmar
+    }
+
+    /// Executes the closure with the page fault handler diasabled.
+    ///
+    /// When page faults occur, the handler may attempt to load the page from the disk, which can break
+    /// the atomic mode. By using this method, the page fault handler will fail immediately, so
+    /// fallible memory operation will return [`Errno::EFAULT`] once it triggers a page fault.
+    ///
+    /// Usually, we should _not_ try to access the userspace memory while being in the atomic mode
+    /// (e.g., when holding a spin lock). If we must do so, this method is a last resort that disables
+    /// the handler instead.
+    ///
+    /// Note that the closure runs with different semantics of the fallible memory operation.
+    /// Therefore, if it fails with a [`Errno::EFAULT`], this method will return [`None`] and it is
+    /// the caller's responsibility to exit the atomic mode, handle the page fault, and retry. Do
+    /// _not_ use this method without adding code that explicitly handles the page fault!
+    pub fn with_page_fault_disabled<F, T>(&self, func: F) -> Option<Result<T>>
+    where
+        F: FnOnce() -> Result<T>,
+    {
+        let is_disabled = self.is_page_fault_disabled();
+        self.page_fault_disabled.set(true);
+
+        let result = func();
+
+        self.page_fault_disabled.set(is_disabled);
+
+        if result
+            .as_ref()
+            .is_err_and(|err| err.error() == Errno::EFAULT)
+        {
+            None
+        } else {
+            Some(result)
+        }
+    }
+
+    pub fn is_page_fault_disabled(&self) -> bool {
+        self.page_fault_disabled.get()
     }
 
     pub fn robust_list(&self) -> &RefCell<Option<RobustListHead>> {
