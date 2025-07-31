@@ -278,12 +278,7 @@ impl VmMapping {
                     }
                     cursor.flusher().sync_tlb_flush();
                 }
-                Some(VmQueriedItem::MappedReservedRam { .. }) => {
-                    // The page of reserved memory should not go through the
-                    // page fault handler.
-                    panic!("Reserved memory page fault");
-                }
-                Some(VmQueriedItem::MappedUntrackedIo { .. }) => {
+                Some(VmQueriedItem::MappedIoMem { .. }) => {
                     // The page of I/O memory should not go through the
                     // page fault handler.
                     return_errno_with_message!(Errno::EFAULT, "I/O memory page fault");
