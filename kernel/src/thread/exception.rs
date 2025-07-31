@@ -9,10 +9,9 @@ use ostd::cpu::context::CpuException;
 use ostd::cpu::context::CpuExceptionInfo as CpuException;
 #[cfg(target_arch = "loongarch64")]
 use ostd::cpu::context::CpuExceptionInfo as CpuException;
-use ostd::cpu::context::UserContext;
+use ostd::{cpu::context::UserContext, task::Task};
 
 use crate::{
-    current_userspace,
     prelude::*,
     process::signal::signals::fault::FaultSignal,
     vm::{page_fault_handler::PageFaultHandler, perms::VmPerms, vmar::Vmar},
@@ -69,5 +68,15 @@ fn generate_fault_signal(exception: CpuException, ctx: &Context) {
 }
 
 pub(super) fn page_fault_handler(info: &CpuException) -> core::result::Result<(), ()> {
-    handle_page_fault_from_vmar(current_userspace!().root_vmar(), &info.try_into().unwrap())
+    let task = Task::current().unwrap();
+    let thread_local = task.as_thread_local().unwrap();
+
+    if thread_local.is_page_fault_disabled() {
+        // Do nothing if the page fault handler is disabled. This will typically cause the fallible
+        // memory operation to report `EFAULT` errors immediately.
+        return Err(());
+    }
+
+    let user_space = CurrentUserSpace::new(thread_local);
+    handle_page_fault_from_vmar(user_space.root_vmar(), &info.try_into().unwrap())
 }

@@ -17,6 +17,7 @@ pub struct ThreadLocal {
 
     // Virtual memory address regions.
     root_vmar: RefCell<Option<Vmar<Full>>>,
+    page_fault_disabled: Cell<u32>,
 
     // Robust futexes.
     // https://man7.org/linux/man-pages/man2/get_robust_list.2.html
@@ -50,6 +51,7 @@ impl ThreadLocal {
             set_child_tid: Cell::new(set_child_tid),
             clear_child_tid: Cell::new(clear_child_tid),
             root_vmar: RefCell::new(Some(root_vmar)),
+            page_fault_disabled: Cell::new(0),
             robust_list: RefCell::new(None),
             file_table: RefCell::new(Some(file_table)),
             sig_context: Cell::new(None),
@@ -69,6 +71,16 @@ impl ThreadLocal {
 
     pub fn root_vmar(&self) -> &RefCell<Option<Vmar<Full>>> {
         &self.root_vmar
+    }
+
+    pub fn disable_page_fault(&self) -> DisabledPageFaultGuard {
+        self.page_fault_disabled
+            .set(self.page_fault_disabled.get() + 1);
+        DisabledPageFaultGuard(self)
+    }
+
+    pub fn is_page_fault_disabled(&self) -> bool {
+        self.page_fault_disabled.get() != 0
     }
 
     pub fn robust_list(&self) -> &RefCell<Option<RobustListHead>> {
@@ -93,6 +105,30 @@ impl ThreadLocal {
 
     pub fn fpu(&self) -> ThreadFpu<'_> {
         ThreadFpu(self)
+    }
+}
+
+/// A guard that disables the page fault handler.
+///
+/// When page faults occur, the handler may attempt to load the page from the disk, which can break
+/// the atomic mode. By holding this guard, the page fault handler will fail immediately, so
+/// fallible memory operation will return [`Errno::EFAULT`] once it triggers a page fault.
+///
+/// Usually, we should _not_ try to access the userspace memory while being in the atomic mode
+/// (e.g., when holding a spin lock). If we must do so, this guard is a last resort that disables
+/// the handler instead. Note that this guard alters the semantics of the fallible memory
+/// operation. This means that it is the caller's responsibility to exit the atomic mode, handle
+/// the page fault, and retry when encountering a [`Errno::EFAULT`]. Do _not_ use this guard
+/// without adding code that explicitly handles the page fault!
+///
+/// This guard can be obtained from [`ThreadLocal::disable_page_fault`].
+pub struct DisabledPageFaultGuard<'a>(&'a ThreadLocal);
+
+impl Drop for DisabledPageFaultGuard<'_> {
+    fn drop(&mut self) {
+        self.0
+            .page_fault_disabled
+            .set(self.0.page_fault_disabled.get() - 1);
     }
 }
 
