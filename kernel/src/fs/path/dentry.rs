@@ -122,14 +122,20 @@ impl Dentry {
         self.flags().contains(DentryFlags::MOUNTED)
     }
 
-    pub fn set_mountpoint_dentry(&self) {
-        self.flags
-            .fetch_or(DentryFlags::MOUNTED.bits(), Ordering::Release);
+    pub(super) fn add_mount(&self) {
+        let old_count = self.mount_count.fetch_add(1, Ordering::AcqRel);
+        if old_count == 0 {
+            self.flags
+                .fetch_or(DentryFlags::MOUNTED.bits(), Ordering::Release);
+        }
     }
 
-    pub fn clear_mountpoint(&self) {
-        self.flags
-            .fetch_and(!(DentryFlags::MOUNTED.bits()), Ordering::Release);
+    pub(super) fn sub_mount(&self) {
+        let old_count = self.mount_count.fetch_sub(1, Ordering::AcqRel);
+        if old_count == 1 {
+            self.flags
+                .fetch_and(!(DentryFlags::MOUNTED.bits()), Ordering::Release);
+        }
     }
 
     /// Currently, the root `Dentry` of a fs is the root of a mount.

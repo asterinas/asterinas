@@ -23,6 +23,30 @@ use crate::{
 mod dentry;
 mod mount;
 
+/// The global mount lock, protecting the atomicity and consistency of mount-related
+/// operations, especially for operations across different mount namespace.
+pub(super) type MountLock = SpinLock<()>;
+
+pub(super) type MountLockGuard = SpinLockGuard<'static, (), PreemptDisabled>;
+
+/// The global instance of the mount lock.
+pub(super) static MOUNT_LOCK: MountLock = MountLock::new(());
+/// A mutex lock that protects the mount tree topology of a mount namespace.
+///
+/// # TODO: Maintains per-namespace instantiation after mount namespace mechanism
+/// achieved.
+pub(super) static NAMESPACE_LOCK: RwMutex<()> = RwMutex::new(());
+
+/// Acquires a read lock on the mount tree, returning a guard.
+fn begin_mount_tree_read() -> RwMutexReadGuard<'static, ()> {
+    NAMESPACE_LOCK.read()
+}
+
+/// Acquires a write lock on the mount tree, returning a guard.
+fn begin_mount_tree_write() -> RwMutexWriteGuard<'static, ()> {
+    NAMESPACE_LOCK.write()
+}
+
 /// A `Path` is used to represent an exact location in the VFS tree.
 #[derive(Debug, Clone)]
 pub struct Path {
@@ -148,6 +172,77 @@ impl Path {
         mount_parent.effective_parent()
     }
 
+    /// Gets the top `Path` of the current.
+    ///
+    /// Used when different file systems are mounted on the same mount point.
+    ///
+    /// For example, first `mount /dev/sda1 /mnt` and then `mount /dev/sda2 /mnt`.
+    /// After the second mount is completed, the content of the first mount will be overridden.
+    /// We need to recursively obtain the top `Path`.
+    fn top_path(self) -> Self {
+        let mut current_path = self;
+        while current_path.dentry.is_mountpoint() {
+            let Path { mount_node, dentry } = current_path;
+            current_path = {
+                let child_mount = mount_node.find_child_mount(&dentry).unwrap();
+                let dentry = child_mount.root_dentry().clone();
+                Self::new(child_mount, dentry)
+            };
+        }
+
+        current_path
+    }
+
+    /// Mounts the fs on current `Path` as a mountpoint.
+    ///
+    /// If the given mountpoint has already been mounted,
+    /// its mounted child mount will be updated.
+    /// The root Path cannot be mounted.
+    ///
+    /// Returns the mounted child mount.
+    pub fn mount(&self, fs: Arc<dyn FileSystem>) -> Result<Arc<MountNode>> {
+        if self.type_() != InodeType::Dir {
+            return_errno!(Errno::ENOTDIR);
+        }
+        if self.effective_parent().is_none() {
+            return_errno_with_message!(Errno::EINVAL, "can not mount on root");
+        }
+
+        let _write_guard = begin_mount_tree_write();
+
+        let child_mount = self.mount_node.new_child(fs);
+
+        let mount_lock = MOUNT_LOCK.lock();
+        self.mount_node.mount(child_mount.clone(), &mount_lock);
+        child_mount.set_mountpoint(self.dentry.clone());
+
+        Ok(child_mount)
+    }
+
+    /// Unmounts and returns the mounted child mount.
+    ///
+    /// Note that the root mount cannot be unmounted.
+    pub fn unmount(&self) -> Result<Arc<MountNode>> {
+        if !self.dentry.is_mount_root() {
+            return_errno_with_message!(Errno::EINVAL, "not mounted");
+        }
+
+        let Some(mountpoint) = self.mount_node.mountpoint() else {
+            return_errno_with_message!(Errno::EINVAL, "cannot umount root mount");
+        };
+
+        let _write_guard = begin_mount_tree_write();
+
+        let parent_mount_node = self.mount_node.parent().unwrap().upgrade().unwrap();
+
+        let mount_lock = MOUNT_LOCK.lock();
+        let old_mount = parent_mount_node
+            .unmount(&mountpoint, &mount_lock)
+            .ok_or(Error::new(Errno::EINVAL))?;
+        self.dentry.sub_mount();
+
+        Ok(old_mount)
+    }
 
     /// Creates a `Path` by making an inode of the `type_` with the `mode`.
     pub fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Self> {
