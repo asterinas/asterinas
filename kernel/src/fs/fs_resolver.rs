@@ -7,7 +7,7 @@ use ostd::task::Task;
 use super::{
     file_table::{get_file_fast, FileDesc},
     inode_handle::InodeHandle,
-    path::Dentry,
+    path::Path,
     rootfs::root_mount,
     utils::{AccessMode, CreationFlags, InodeMode, InodeType, StatusFlags, PATH_MAX, SYMLINKS_MAX},
 };
@@ -19,37 +19,37 @@ pub const AT_FDCWD: FileDesc = -100;
 /// File system resolver.
 #[derive(Debug, Clone)]
 pub struct FsResolver {
-    root: Dentry,
-    cwd: Dentry,
+    root: Path,
+    cwd: Path,
 }
 
 impl FsResolver {
     /// Creates a new file system resolver.
     pub fn new() -> Self {
         Self {
-            root: Dentry::new_fs_root(root_mount().clone()),
-            cwd: Dentry::new_fs_root(root_mount().clone()),
+            root: Path::new_fs_root(root_mount().clone()),
+            cwd: Path::new_fs_root(root_mount().clone()),
         }
     }
 
-    /// Gets the root directory.
-    pub fn root(&self) -> &Dentry {
+    /// Gets the path of the root directory.
+    pub fn root(&self) -> &Path {
         &self.root
     }
 
-    /// Gets the current working directory.
-    pub fn cwd(&self) -> &Dentry {
+    /// Gets the path of the current working directory.
+    pub fn cwd(&self) -> &Path {
         &self.cwd
     }
 
-    /// Sets the current working directory to the given `dentry`.
-    pub fn set_cwd(&mut self, dentry: Dentry) {
-        self.cwd = dentry;
+    /// Sets the current working directory to the given `path`.
+    pub fn set_cwd(&mut self, path: Path) {
+        self.cwd = path;
     }
 
-    /// Sets the root directory to the given `dentry`.
-    pub fn set_root(&mut self, dentry: Dentry) {
-        self.root = dentry;
+    /// Sets the root directory to the given `path`.
+    pub fn set_root(&mut self, path: Path) {
+        self.root = path;
     }
 
     /// Opens or creates a file inode handler.
@@ -76,11 +76,7 @@ impl FsResolver {
         Ok(inode_handle)
     }
 
-    fn open_existing_file(
-        &self,
-        target_dentry: Dentry,
-        open_args: &OpenArgs,
-    ) -> Result<InodeHandle> {
+    fn open_existing_file(&self, target_dentry: Path, open_args: &OpenArgs) -> Result<InodeHandle> {
         let inode = target_dentry.inode();
         let inode_type = inode.type_();
         let creation_flags = &open_args.creation_flags;
@@ -146,19 +142,19 @@ impl FsResolver {
 
     /// Lookups the target dentry according to the `path`.
     /// Symlinks are always followed.
-    pub fn lookup(&self, path: &FsPath) -> Result<Dentry> {
+    pub fn lookup(&self, path: &FsPath) -> Result<Path> {
         let (follow_tail_link, stop_on_parent) = (true, false);
         self.lookup_inner(path, &mut LookupCtx::new(follow_tail_link, stop_on_parent))
     }
 
     /// Lookups the target dentry according to the `path`.
     /// If the last component is a symlink, it will not be followed.
-    pub fn lookup_no_follow(&self, path: &FsPath) -> Result<Dentry> {
+    pub fn lookup_no_follow(&self, path: &FsPath) -> Result<Path> {
         let (follow_tail_link, stop_on_parent) = (false, false);
         self.lookup_inner(path, &mut LookupCtx::new(follow_tail_link, stop_on_parent))
     }
 
-    fn lookup_inner(&self, path: &FsPath, lookup_ctx: &mut LookupCtx) -> Result<Dentry> {
+    fn lookup_inner(&self, path: &FsPath, lookup_ctx: &mut LookupCtx) -> Result<Path> {
         let dentry = match path.inner {
             FsPathInner::Absolute(path) => {
                 self.lookup_from_parent(&self.root, path.trim_start_matches('/'), lookup_ctx)?
@@ -198,10 +194,10 @@ impl FsResolver {
     #[expect(clippy::redundant_closure)]
     fn lookup_from_parent(
         &self,
-        parent: &Dentry,
+        parent: &Path,
         relative_path: &str,
         lookup_ctx: &mut LookupCtx,
-    ) -> Result<Dentry> {
+    ) -> Result<Path> {
         debug_assert!(!relative_path.starts_with('/'));
 
         if relative_path.len() > PATH_MAX {
@@ -293,7 +289,7 @@ impl FsResolver {
     /// the base file name according to the given `path`.
     ///
     /// If the last component is a symlink, do not deference it.
-    pub fn lookup_dir_and_base_name(&self, path: &FsPath) -> Result<(Dentry, String)> {
+    pub fn lookup_dir_and_base_name(&self, path: &FsPath) -> Result<(Path, String)> {
         if matches!(path.inner, FsPathInner::Fd(_)) {
             return_errno!(Errno::ENOENT);
         }
@@ -321,7 +317,7 @@ impl FsResolver {
         &self,
         path: &FsPath,
         is_dir: bool,
-    ) -> Result<(Dentry, String)> {
+    ) -> Result<(Path, String)> {
         if matches!(path.inner, FsPathInner::Fd(_)) {
             return_errno!(Errno::ENOENT);
         }
@@ -362,7 +358,7 @@ struct LookupCtx {
     stop_on_parent: bool,
     // (file_name, file_is_dir)
     tail_file: Option<(String, bool)>,
-    parent: Option<Dentry>,
+    parent: Option<Path>,
 }
 
 impl LookupCtx {
@@ -392,7 +388,7 @@ impl LookupCtx {
             .unwrap_or(false)
     }
 
-    pub fn parent(&self) -> Option<&Dentry> {
+    pub fn parent(&self) -> Option<&Path> {
         self.parent.as_ref()
     }
 
@@ -400,7 +396,7 @@ impl LookupCtx {
         let _ = self.tail_file.insert((file_name.to_string(), file_is_dir));
     }
 
-    pub fn set_parent(&mut self, parent: &Dentry) {
+    pub fn set_parent(&mut self, parent: &Path) {
         let _ = self.parent.insert(parent.clone());
     }
 }

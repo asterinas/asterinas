@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         fs_resolver::{FsPath, AT_FDCWD},
-        path::Dentry,
+        path::Path,
         registry::FsProperties,
         utils::{FileSystem, InodeType},
     },
@@ -82,7 +82,7 @@ fn do_remount() -> Result<()> {
 /// Such as use user command `mount --rbind src dst`.
 fn do_bind_mount(
     src_name: CString,
-    dst_dentry: Dentry,
+    dst_dentry: Path,
     recursive: bool,
     ctx: &Context,
 ) -> Result<()> {
@@ -108,7 +108,7 @@ fn do_change_type() -> Result<()> {
 }
 
 /// Move a mount from src location to dst location.
-fn do_move_mount_old(src_name: CString, dst_dentry: Dentry, ctx: &Context) -> Result<()> {
+fn do_move_mount_old(src_name: CString, dst_dentry: Path, ctx: &Context) -> Result<()> {
     let src_dentry = {
         let src_name = src_name.to_string_lossy();
         if src_name.is_empty() {
@@ -118,7 +118,7 @@ fn do_move_mount_old(src_name: CString, dst_dentry: Dentry, ctx: &Context) -> Re
         ctx.posix_thread.fs().resolver().read().lookup(&fs_path)?
     };
 
-    if !src_dentry.is_root_of_mount() {
+    if !src_dentry.is_mount_root() {
         return_errno_with_message!(Errno::EINVAL, "src_name can not be moved");
     };
     if src_dentry.mount_node().parent().is_none() {
@@ -134,7 +134,7 @@ fn do_move_mount_old(src_name: CString, dst_dentry: Dentry, ctx: &Context) -> Re
 fn do_new_mount(
     devname: CString,
     fs_type: Vaddr,
-    target_dentry: Dentry,
+    target_dentry: Path,
     data: Vaddr,
     ctx: &Context,
 ) -> Result<()> {

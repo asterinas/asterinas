@@ -7,14 +7,14 @@ use super::*;
 use crate::{prelude::*, process::signal::Pollable};
 
 impl InodeHandle<Rights> {
-    pub fn new(dentry: Dentry, access_mode: AccessMode, status_flags: StatusFlags) -> Result<Self> {
+    pub fn new(dentry: Path, access_mode: AccessMode, status_flags: StatusFlags) -> Result<Self> {
         let inode = dentry.inode();
         inode.check_permission(access_mode.into())?;
         Self::new_unchecked_access(dentry, access_mode, status_flags)
     }
 
     pub fn new_unchecked_access(
-        dentry: Dentry,
+        dentry: Path,
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Result<Self> {
