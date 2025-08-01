@@ -201,6 +201,13 @@ pub fn clone_child(
         Ok(child_tid)
     } else {
         let child_process = clone_child_process(ctx, parent_context, clone_args)?;
+
+        let cgroup = ctx.process.cgroup();
+        if let Some(cgroup) = cgroup.get() {
+            cgroup.move_process(child_process.clone());
+        }
+        drop(cgroup);
+
         if clone_args.flags.contains(CloneFlags::CLONE_VFORK) {
             child_process.status().set_vfork_child(true);
         }
