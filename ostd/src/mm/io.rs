@@ -40,11 +40,7 @@
 //! user space, making it impossible to avoid data races). However, they may produce erroneous
 //! results, such as unexpected bytes being copied, but do not cause soundness problems.
 
-use alloc::vec;
-use core::marker::PhantomData;
-
-use align_ext::AlignExt;
-use inherit_methods_macro::inherit_methods;
+use core::{marker::PhantomData, mem::MaybeUninit};
 
 use crate::{
     arch::mm::{__memcpy_fallible, __memset_fallible},
@@ -92,7 +88,7 @@ pub trait VmIo: Send + Sync {
 
     /// Reads a value of a specified type at a specified offset.
     fn read_val<T: Pod>(&self, offset: usize) -> Result<T> {
-        let mut val = T::new_uninit();
+        let mut val = T::new_zeroed();
         self.read_bytes(offset, val.as_bytes_mut())?;
         Ok(val)
     }
@@ -156,65 +152,20 @@ pub trait VmIo: Send + Sync {
         self.write_bytes(offset, buf)
     }
 
-    /// Writes a sequence of values given by an iterator (`iter`) from the specified offset (`offset`).
+    /// Writes `len` zeros at a specified offset.
     ///
-    /// The write process stops until the VM object does not have enough remaining space
-    /// or the iterator returns `None`. If any value is written, the function returns `Ok(nr_written)`,
-    /// where `nr_written` is the number of the written values.
-    ///
-    /// The offset of every value written by this method is aligned to the `align`-byte boundary.
-    /// Naturally, when `align` equals to `0` or `1`, then the argument takes no effect:
-    /// the values will be written in the most compact way.
-    ///
-    /// # Example
-    ///
-    /// Initializes an VM object with the same value can be done easily with `write_values`.
-    ///
-    /// ```
-    /// use core::iter::self;
-    ///
-    /// let _nr_values = vm_obj.write_vals(0, iter::repeat(0_u32), 0).unwrap();
-    /// ```
-    ///
-    /// # Panics
-    ///
-    /// This method panics if `align` is greater than two,
-    /// but not a power of two, in release mode.
-    fn write_vals<'a, T: Pod + 'a, I: Iterator<Item = &'a T>>(
-        &self,
-        offset: usize,
-        iter: I,
-        align: usize,
-    ) -> Result<usize> {
-        let mut nr_written = 0;
-
-        let (mut offset, item_size) = if (align >> 1) == 0 {
-            // align is 0 or 1
-            (offset, core::mem::size_of::<T>())
-        } else {
-            // align is more than 2
-            (
-                offset.align_up(align),
-                core::mem::size_of::<T>().align_up(align),
-            )
-        };
-
-        for item in iter {
-            match self.write_val(offset, item) {
-                Ok(_) => {
-                    offset += item_size;
-                    nr_written += 1;
-                }
-                Err(e) => {
-                    if nr_written > 0 {
-                        return Ok(nr_written);
-                    }
-                    return Err(e);
-                }
+    /// Unlike the other methods above, this method allows for short writes because `len` can be
+    /// effectively unbounded. However, if not all bytes can be written successfully, an `Err(_)`
+    /// will be returned with the error and the number of zeros that have been written thus far.
+    fn fill_zeros(&self, offset: usize, len: usize) -> core::result::Result<(), (Error, usize)> {
+        // TODO: Optimize this default implementation by writing in chunks.
+        for i in 0..len {
+            match self.write_slice(offset + i, &[0u8]) {
+                Ok(()) => continue,
+                Err(err) => return Err((err, i)),
             }
         }
-
-        Ok(nr_written)
+        Ok(())
     }
 }
 
@@ -238,42 +189,6 @@ pub trait VmIoOnce {
     /// [`VmWriter::write_once`].
     fn write_once<T: PodOnce>(&self, offset: usize, new_val: &T) -> Result<()>;
 }
-
-macro_rules! impl_vm_io_pointer {
-    ($typ:ty,$from:tt) => {
-        #[inherit_methods(from = $from)]
-        impl<T: VmIo> VmIo for $typ {
-            fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()>;
-            fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()>;
-            fn read_val<F: Pod>(&self, offset: usize) -> Result<F>;
-            fn read_slice<F: Pod>(&self, offset: usize, slice: &mut [F]) -> Result<()>;
-            fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()>;
-            fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()>;
-            fn write_val<F: Pod>(&self, offset: usize, new_val: &F) -> Result<()>;
-            fn write_slice<F: Pod>(&self, offset: usize, slice: &[F]) -> Result<()>;
-        }
-    };
-}
-
-impl_vm_io_pointer!(&T, "(**self)");
-impl_vm_io_pointer!(&mut T, "(**self)");
-impl_vm_io_pointer!(Box<T>, "(**self)");
-impl_vm_io_pointer!(Arc<T>, "(**self)");
-
-macro_rules! impl_vm_io_once_pointer {
-    ($typ:ty,$from:tt) => {
-        #[inherit_methods(from = $from)]
-        impl<T: VmIoOnce> VmIoOnce for $typ {
-            fn read_once<F: PodOnce>(&self, offset: usize) -> Result<F>;
-            fn write_once<F: PodOnce>(&self, offset: usize, new_val: &F) -> Result<()>;
-        }
-    };
-}
-
-impl_vm_io_once_pointer!(&T, "(**self)");
-impl_vm_io_once_pointer!(&mut T, "(**self)");
-impl_vm_io_once_pointer!(Box<T>, "(**self)");
-impl_vm_io_once_pointer!(Arc<T>, "(**self)");
 
 /// A marker type used for [`VmReader`] and [`VmWriter`],
 /// representing whether reads or writes on the underlying memory region are fallible.
@@ -305,6 +220,20 @@ unsafe fn memcpy(dst: *mut u8, src: *const u8, len: usize) {
 
     // SAFETY: The safety is guaranteed by the safety preconditions and the explanation above.
     unsafe { core::intrinsics::volatile_copy_memory(dst, src, len) };
+}
+
+/// Fills `len` bytes of memory at `dst` with the specified `value`.
+///
+/// # Safety
+///
+/// - `dst` must be [valid] for writes of `len` bytes.
+///
+/// [valid]: crate::mm::io#safety
+unsafe fn memset(dst: *mut u8, value: u8, len: usize) {
+    // SAFETY: The safety is guaranteed by the safety preconditions and the explanation above.
+    unsafe {
+        core::intrinsics::volatile_set_memory(dst, value, len);
+    }
 }
 
 /// Copies `len` bytes from `src` to `dst`.
@@ -513,11 +442,25 @@ impl<'a> VmReader<'a, Infallible> {
             return Err(Error::InvalidArgs);
         }
 
-        let mut val = T::new_uninit();
-        let mut writer = VmWriter::from(val.as_bytes_mut());
+        let mut val = MaybeUninit::<T>::uninit();
 
+        // SAFETY:
+        // - The memory range points to typed memory.
+        // - The validity requirements for write accesses are met because the pointer is converted
+        //   from a mutable pointer where the underlying storage outlives the temporary lifetime
+        //   and no other Rust references to the same storage exist during the lifetime.
+        // - The type, i.e., `T`, is plain-old-data.
+        let mut writer = unsafe {
+            VmWriter::from_kernel_space(val.as_mut_ptr().cast(), core::mem::size_of::<T>())
+        };
         self.read(&mut writer);
-        Ok(val)
+        debug_assert!(!writer.has_avail());
+
+        // SAFETY:
+        // - `self.read` has initialized all the bytes in `val`.
+        // - The type is plain-old-data.
+        let val_inited = unsafe { val.assume_init() };
+        Ok(val_inited)
     }
 
     /// Reads a value of the `PodOnce` type using one non-tearing memory load.
@@ -593,37 +536,31 @@ impl VmReader<'_, Fallible> {
             return Err(Error::InvalidArgs);
         }
 
-        let mut val = T::new_uninit();
-        let mut writer = VmWriter::from(val.as_bytes_mut());
+        let mut val = MaybeUninit::<T>::uninit();
+
+        // SAFETY:
+        // - The memory range points to typed memory.
+        // - The validity requirements for write accesses are met because the pointer is converted
+        //   from a mutable pointer where the underlying storage outlives the temporary lifetime
+        //   and no other Rust references to the same storage exist during the lifetime.
+        // - The type, i.e., `T`, is plain-old-data.
+        let mut writer = unsafe {
+            VmWriter::from_kernel_space(val.as_mut_ptr().cast(), core::mem::size_of::<T>())
+        };
         self.read_fallible(&mut writer)
             .map_err(|(err, copied_len)| {
-                // SAFETY: The `copied_len` is the number of bytes read so far.
+                // The `copied_len` is the number of bytes read so far.
                 // So the `cursor` can be moved back to the original position.
-                unsafe {
-                    self.cursor = self.cursor.sub(copied_len);
-                }
+                self.cursor = self.cursor.wrapping_sub(copied_len);
                 err
             })?;
-        Ok(val)
-    }
+        debug_assert!(!writer.has_avail());
 
-    /// Collects all the remaining bytes into a `Vec<u8>`.
-    ///
-    /// If the memory read failed, this method will return `Err`
-    /// and the current reader's cursor remains pointing to
-    /// the original starting position.
-    pub fn collect(&mut self) -> Result<Vec<u8>> {
-        let mut buf = vec![0u8; self.remain()];
-        self.read_fallible(&mut buf.as_mut_slice().into())
-            .map_err(|(err, copied_len)| {
-                // SAFETY: The `copied_len` is the number of bytes read so far.
-                // So the `cursor` can be moved back to the original position.
-                unsafe {
-                    self.cursor = self.cursor.sub(copied_len);
-                }
-                err
-            })?;
-        Ok(buf)
+        // SAFETY:
+        // - `self.read_fallible` has initialized all the bytes in `val`.
+        // - The type is plain-old-data.
+        let val_inited = unsafe { val.assume_init() };
+        Ok(val_inited)
     }
 }
 
@@ -774,34 +711,23 @@ impl<'a> VmWriter<'a, Infallible> {
         Ok(())
     }
 
-    /// Fills the available space by repeating `value`.
+    /// Writes `len` zeros to the target memory.
     ///
-    /// Returns the number of values written.
-    ///
-    /// # Panics
-    ///
-    /// The size of the available space must be a multiple of the size of `value`.
-    /// Otherwise, the method would panic.
-    pub fn fill<T: Pod>(&mut self, value: T) -> usize {
-        let cursor = self.cursor.cast::<T>();
-        assert!(cursor.is_aligned());
-
-        let avail = self.avail();
-        assert!(avail % core::mem::size_of::<T>() == 0);
-        let written_num = avail / core::mem::size_of::<T>();
-
-        for i in 0..written_num {
-            let cursor_i = cursor.wrapping_add(i);
-            // SAFETY: `written_num` is calculated by the avail size and the size of the type `T`,
-            // so the `write` operation will only manipulate the memory managed by this writer.
-            // We've checked that the cursor is properly aligned with respect to the type `T`. All
-            // other safety requirements are the same as for `Self::write`.
-            unsafe { cursor_i.write_volatile(value) };
+    /// This method attempts to fill up to `len` bytes with zeros. If the available
+    /// memory from the current cursor position is less than `len`, it will only fill
+    /// the available space.
+    pub fn fill_zeros(&mut self, len: usize) -> usize {
+        let len_to_set = self.avail().min(len);
+        if len_to_set == 0 {
+            return 0;
         }
 
-        // The available space has been filled so this cursor can be moved to the end.
-        self.cursor = self.end;
-        written_num
+        // SAFETY: The destination is a subset of the memory range specified by
+        // the current writer, so it is valid for writing.
+        unsafe { memset(self.cursor, 0u8, len_to_set) };
+        self.cursor = self.cursor.wrapping_add(len_to_set);
+
+        len_to_set
     }
 
     /// Converts to a fallible writer.
@@ -853,11 +779,9 @@ impl VmWriter<'_, Fallible> {
         let mut reader = VmReader::from(new_val.as_bytes());
         self.write_fallible(&mut reader)
             .map_err(|(err, copied_len)| {
-                // SAFETY: The `copied_len` is the number of bytes written so far.
+                // The `copied_len` is the number of bytes written so far.
                 // So the `cursor` can be moved back to the original position.
-                unsafe {
-                    self.cursor = self.cursor.sub(copied_len);
-                }
+                self.cursor = self.cursor.wrapping_sub(copied_len);
                 err
             })?;
         Ok(())

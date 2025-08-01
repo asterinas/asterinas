@@ -10,11 +10,10 @@ use crate::{
     arch::iommu,
     mm::{
         dma::{dma_type, Daddr, DmaType},
-        io::VmIoOnce,
+        io_util,
         kspace::{paddr_to_vaddr, KERNEL_PAGE_TABLE},
         page_prop::CachePolicy,
-        HasPaddr, Infallible, Paddr, PodOnce, USegment, UntypedMem, VmIo, VmReader, VmWriter,
-        PAGE_SIZE,
+        HasPaddr, Infallible, Paddr, USegment, UntypedMem, VmReader, VmWriter, PAGE_SIZE,
     },
     prelude::*,
 };
@@ -176,25 +175,17 @@ impl Drop for DmaCoherentInner {
     }
 }
 
-impl VmIo for DmaCoherent {
-    fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()> {
-        self.inner.segment.read(offset, writer)
+impl io_util::VmIoByReaderWriter for DmaCoherent {
+    fn io_reader(&self) -> Result<VmReader<Infallible>> {
+        Ok(self.inner.segment.reader())
     }
 
-    fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()> {
-        self.inner.segment.write(offset, reader)
+    fn io_writer(&self) -> Result<VmWriter<Infallible>> {
+        Ok(self.inner.segment.writer())
     }
 }
 
-impl VmIoOnce for DmaCoherent {
-    fn read_once<T: PodOnce>(&self, offset: usize) -> Result<T> {
-        self.inner.segment.reader().skip(offset).read_once()
-    }
-
-    fn write_once<T: PodOnce>(&self, offset: usize, new_val: &T) -> Result<()> {
-        self.inner.segment.writer().skip(offset).write_once(new_val)
-    }
-}
+impl io_util::VmIoOnceByReaderWriter for DmaCoherent {}
 
 impl<'a> DmaCoherent {
     /// Returns a reader to read data from it.
