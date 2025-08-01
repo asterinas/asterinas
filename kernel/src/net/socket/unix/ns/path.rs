@@ -3,14 +3,14 @@
 use crate::{
     fs::{
         fs_resolver::{split_path, FsPath},
-        path::Dentry,
+        path::Path,
         utils::{InodeMode, InodeType, Permission},
     },
     prelude::*,
     process::posix_thread::AsPosixThread,
 };
 
-pub fn lookup_socket_file(path: &str) -> Result<Dentry> {
+pub fn lookup_socket_file(path: &str) -> Result<Path> {
     let dentry = {
         let current = current_thread!();
         let current = current.as_posix_thread().unwrap();
@@ -37,7 +37,7 @@ pub fn lookup_socket_file(path: &str) -> Result<Dentry> {
     Ok(dentry)
 }
 
-pub fn create_socket_file(path: &str) -> Result<Dentry> {
+pub fn create_socket_file(path: &str) -> Result<Path> {
     let (parent_pathname, file_name) = split_path(path);
 
     let parent = {

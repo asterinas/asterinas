@@ -4,7 +4,7 @@ use crate::{
     fs::{
         devpts::DevPts,
         fs_resolver::{FsPath, FsResolver},
-        path::Dentry,
+        path::Path,
         utils::{Inode, InodeMode, InodeType},
     },
     prelude::*,
@@ -17,7 +17,7 @@ pub use driver::PtySlave;
 pub use master::PtyMaster;
 use spin::Once;
 
-static DEV_PTS: Once<Dentry> = Once::new();
+static DEV_PTS: Once<Path> = Once::new();
 
 pub fn init() -> Result<()> {
     let fs = FsResolver::new();
@@ -27,7 +27,7 @@ pub fn init() -> Result<()> {
     let devpts_dentry =
         dev.new_fs_child("pts", InodeType::Dir, InodeMode::from_bits_truncate(0o755))?;
     let devpts_mount_node = devpts_dentry.mount(DevPts::new())?;
-    let devpts = Dentry::new_fs_root(devpts_mount_node.clone());
+    let devpts = Path::new_fs_root(devpts_mount_node.clone());
 
     DEV_PTS.call_once(|| devpts);
 

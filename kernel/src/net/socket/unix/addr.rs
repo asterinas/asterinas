@@ -4,7 +4,7 @@ use keyable_arc::KeyableArc;
 
 use super::ns::{self, AbstractHandle};
 use crate::{
-    fs::{path::Dentry, utils::Inode},
+    fs::{path::Path, utils::Inode},
     net::socket::util::SocketAddr,
     prelude::*,
 };
@@ -72,7 +72,7 @@ impl TryFrom<SocketAddr> for UnixSocketAddr {
 
 #[derive(Clone, Debug)]
 pub(super) enum UnixSocketAddrBound {
-    Path(Arc<str>, Dentry),
+    Path(Arc<str>, Path),
     Abstract(Arc<AbstractHandle>),
 }
 

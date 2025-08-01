@@ -7,7 +7,7 @@ use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
-        path::Dentry,
+        path::Path,
     },
     prelude::*,
     time::{clocks::RealTimeCoarseClock, timespec_t, timeval_t},
@@ -109,7 +109,7 @@ struct Utimbuf {
     modtime: i64,
 }
 
-fn vfs_utimes(dentry: &Dentry, times: Option<TimeSpecPair>) -> Result<SyscallReturn> {
+fn vfs_utimes(dentry: &Path, times: Option<TimeSpecPair>) -> Result<SyscallReturn> {
     let (atime, mtime, ctime) = match times {
         Some(times) => {
             if !times.atime.is_valid() || !times.mtime.is_valid() {
