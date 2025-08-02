@@ -24,7 +24,16 @@ pub(crate) fn init_cvm_guest() {
     // Unimplemented, no-op
 }
 
-pub(crate) unsafe fn late_init_on_bsp() {
+/// Architecture-specific initialization on the bootstrapping processor after
+/// heap and frame allocators are initialized.
+///
+/// # Safety
+///
+/// 1. This function must be called only once in the boot context of the
+///    bootstrapping processor.
+/// 2. This function should be called after the heap and frame allocators is
+///    initialized.
+pub(crate) unsafe fn init_on_bsp_after_heap() {
     // SAFETY: This function is called in the boot context of the BSP.
     unsafe { trap::init() };
 
@@ -42,6 +51,16 @@ pub(crate) unsafe fn late_init_on_bsp() {
 
     pci::init();
 }
+
+/// Architecture-specific initialization on the bootstrapping processor after
+/// kernel page table is activated.
+///
+/// # Safety
+///
+/// 1. This function must be called only once in the boot context of the
+///    bootstrapping processor.
+/// 2. This function should be called after the kernel page table is activated.
+pub(crate) unsafe fn init_on_bsp_after_kpt() {}
 
 pub(crate) unsafe fn init_on_ap() {
     unimplemented!()
