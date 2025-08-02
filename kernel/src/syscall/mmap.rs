@@ -7,7 +7,10 @@ use aster_rights::Rights;
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::{get_file_fast, FileDesc},
+    fs::{
+        file_handle::MemoryToMap,
+        file_table::{get_file_fast, FileDesc},
+    },
     prelude::*,
     vm::{perms::VmPerms, vmar::is_userspace_vaddr, vmo::VmoOptions},
 };
@@ -131,23 +134,25 @@ fn do_sys_mmap(
                 return_errno!(Errno::EACCES);
             }
 
-            let Some(inode) = file.inode() else {
-                return_errno_with_message!(Errno::EINVAL, "the file has no associated inode");
-            };
-            if inode.page_cache().is_none() {
-                return_errno_with_message!(Errno::EBADF, "File does not have page cache");
+            match file.mmap(len, offset)? {
+                MemoryToMap::PageCache(inode) => {
+                    options = options.inode(inode);
+                }
+                MemoryToMap::IoMem(io_mem) => {
+                    assert!(len <= io_mem.length().align_up(PAGE_SIZE));
+                    options = options.iomem(io_mem);
+                    options = options.map_populate(true);
+                }
             }
 
-            options = options
-                .inode(inode.clone())
-                .vmo_offset(offset)
-                .handle_page_faults_around();
+            options = options.vmo_offset(offset).handle_page_faults_around();
         }
 
         options
     };
 
     let map_addr = vm_map_options.build()?;
+
     Ok(map_addr)
 }
 
