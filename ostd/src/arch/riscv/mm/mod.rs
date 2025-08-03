@@ -3,12 +3,17 @@
 use alloc::fmt;
 use core::ops::Range;
 
+use spin::Once;
+
 use crate::{
-    arch::cpu::extension::{has_extensions, IsaExtensions},
+    arch::{
+        boot::DEVICE_TREE,
+        cpu::extension::{has_extensions, IsaExtensions},
+    },
     mm::{
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
         page_table::PageTableEntryTrait,
-        Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr, PAGE_SIZE,
+        DmaDirection, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr, PAGE_SIZE,
     },
     Pod,
 };
@@ -81,6 +86,50 @@ pub(crate) fn tlb_flush_all_excluding_global() {
 
 pub(crate) fn tlb_flush_all_including_global() {
     riscv::asm::sfence_vma_all()
+}
+
+pub(crate) fn sync_dma_range(range: Range<Vaddr>, direction: DmaDirection) {
+    if has_extensions(IsaExtensions::ZICBOM) {
+        static CMO_MANAGEMENT_BLOCK_SIZE: Once<usize> = Once::new();
+        CMO_MANAGEMENT_BLOCK_SIZE.call_once(|| {
+            DEVICE_TREE
+                .get()
+                .unwrap()
+                .cpus()
+                .find(|cpu| cpu.property("mmu-type").is_some())
+                .expect("Failed to find an application CPU node in device tree")
+                .property("riscv,cbom-block-size")
+                .expect("Failed to find `riscv,cbom-block-size` property of the CPU node")
+                .as_usize()
+                .unwrap_or(64)
+        });
+
+        for addr in range.step_by(*CMO_MANAGEMENT_BLOCK_SIZE.get().unwrap()) {
+            // SAFETY: These are cache maintenance operations on a valid, owned
+            // memory range. They are required for correctness on systems with
+            // non-coherent DMA.
+            unsafe {
+                match direction {
+                    DmaDirection::ToDevice => {
+                        core::arch::asm!("cbo.clean ({})", in(reg) addr, options(nostack))
+                    }
+                    DmaDirection::FromDevice => {
+                        core::arch::asm!("cbo.inval ({})", in(reg) addr, options(nostack));
+                    }
+                    DmaDirection::Bidirectional => {
+                        core::arch::asm!("cbo.flush ({})", in(reg) addr, options(nostack));
+                    }
+                }
+            }
+        }
+        // Ensure that all cache operations have completed before proceeding.
+        // SAFETY: Safe because it is only a memory fence.
+        unsafe {
+            core::arch::asm!("fence rw, rw", options(nostack));
+        }
+    } else {
+        // TODO: Implement DMA synchronization without ZICBOM support.
+    }
 }
 
 #[derive(Clone, Copy, Pod, Default)]
