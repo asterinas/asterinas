@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! Completely Fair Scheduler (CFS).
+
 #![warn(unused)]
 
 use alloc::{boxed::Box, sync::Arc};
@@ -119,6 +121,9 @@ trait SchedClassRq: Send + fmt::Debug {
     fn pick_next(&mut self) -> Option<Arc<Task>>;
 
     /// Update the information of the current task.
+    ///
+    /// The return value of this method indicates whether there is another task
+    /// **in this run queue** to replace the current one.
     fn update_current(&mut self, rt: &CurrentRuntime, attr: &SchedAttr, flags: UpdateFlags)
         -> bool;
 }
@@ -351,24 +356,29 @@ impl LocalRunQueue for PerCpuClassRqSet {
     }
 
     fn update_current(&mut self, flags: UpdateFlags) -> bool {
-        if let Some(((_, cur), rt)) = &mut self.current {
+        let (should_preempt, mut lookahead) = if let Some(((_, cur), rt)) = &mut self.current {
             rt.update();
             let attr = &cur.sched_attr();
 
-            let (current_expired, lookahead) = match attr.policy_kind() {
+            match attr.policy_kind() {
                 SchedPolicyKind::Stop => (self.stop.update_current(rt, attr, flags), 0),
                 SchedPolicyKind::RealTime => (self.real_time.update_current(rt, attr, flags), 1),
                 SchedPolicyKind::Fair => (self.fair.update_current(rt, attr, flags), 2),
                 SchedPolicyKind::Idle => (self.idle.update_current(rt, attr, flags), 3),
-            };
-
-            current_expired
-                || (lookahead >= 1 && !self.stop.is_empty())
-                || (lookahead >= 2 && !self.real_time.is_empty())
-                || (lookahead >= 3 && !self.fair.is_empty())
+            }
         } else {
-            true
+            (false, 4)
+        };
+
+        if matches!(flags, UpdateFlags::Wait | UpdateFlags::Exit) {
+            lookahead = 4;
         }
+
+        should_preempt
+            || (lookahead >= 1 && !self.stop.is_empty())
+            || (lookahead >= 2 && !self.real_time.is_empty())
+            || (lookahead >= 3 && !self.fair.is_empty())
+            || (lookahead >= 4 && !self.idle.is_empty())
     }
 
     fn dequeue_current(&mut self) -> Option<Arc<Task>> {
