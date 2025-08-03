@@ -91,3 +91,4 @@
 # The following critical files are singled out
 /CODEOWNERS                     @tatetian
 /VERSION                        @tatetian
+/RELEASES                       @tatetian
