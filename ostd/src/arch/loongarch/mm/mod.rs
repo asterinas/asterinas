@@ -7,7 +7,7 @@ use crate::{
     mm::{
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
         page_table::PageTableEntryTrait,
-        Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr, PAGE_SIZE,
+        DmaDirection, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr, PAGE_SIZE,
     },
     Pod,
 };
@@ -100,6 +100,10 @@ pub(crate) fn tlb_flush_all_including_global() {
     unsafe {
         asm!("invtlb 0, $zero, $zero");
     }
+}
+
+pub(crate) fn sync_dma_range(_range: Range<Vaddr>, _direction: DmaDirection) {
+    todo!("Implement DMA synchronization for LoongArch64 architecture");
 }
 
 /// Activates the given level 4 page table.

@@ -26,8 +26,6 @@ use crate::{
 pub struct DmaStream {
     segment: USegment,
     start_daddr: Daddr,
-    /// TODO: remove this field when on x86.
-    #[expect(unused)]
     is_cache_coherent: bool,
     direction: DmaDirection,
 }
@@ -123,28 +121,19 @@ impl DmaStream {
     ///
     /// [`read_bytes`]: crate::mm::VmIo::read_bytes
     /// [`write_bytes`]: crate::mm::VmIo::write_bytes
-    pub fn sync(&self, _byte_range: Range<usize>) -> Result<(), Error> {
-        cfg_if::cfg_if! {
-            if #[cfg(target_arch = "x86_64")]{
-                // The streaming DMA mapping in x86_64 is cache coherent, and does not require synchronization.
-                // Reference: <https://lwn.net/Articles/855328/>, <https://lwn.net/Articles/2265/>
-                Ok(())
-            } else {
-                if _byte_range.end > self.size() {
-                    return Err(Error::InvalidArgs);
-                }
-                if self.is_cache_coherent {
-                    return Ok(());
-                }
-                let _start_va = crate::mm::paddr_to_vaddr(self.segment.paddr()) as *const u8;
-                // TODO: Query the CPU for the cache line size via CPUID, we use 64 bytes as the cache line size here.
-                for _i in _byte_range.step_by(64) {
-                    // TODO: Call the cache line flush command in the corresponding architecture.
-                    todo!()
-                }
-                Ok(())
-            }
+    pub fn sync(&self, byte_range: Range<usize>) -> Result<(), Error> {
+        if byte_range.end > self.size() {
+            return Err(Error::InvalidArgs);
         }
+        if self.is_cache_coherent {
+            return Ok(());
+        }
+
+        let start_vaddr = crate::mm::paddr_to_vaddr(self.segment.paddr());
+        let range = (start_vaddr + byte_range.start)..(start_vaddr + byte_range.end);
+        crate::arch::mm::sync_dma_range(range, self.direction);
+
+        Ok(())
     }
 }
 

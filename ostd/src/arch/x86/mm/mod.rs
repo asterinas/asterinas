@@ -13,7 +13,7 @@ use crate::{
     mm::{
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
         page_table::PageTableEntryTrait,
-        Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr, PAGE_SIZE,
+        DmaDirection, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr, PAGE_SIZE,
     },
     Pod,
 };
@@ -108,6 +108,12 @@ pub(crate) fn tlb_flush_all_including_global() {
             *cr4 |= x86_64::registers::control::Cr4Flags::PAGE_GLOBAL;
         });
     }
+}
+
+pub(crate) fn sync_dma_range(_range: Range<Vaddr>, _direction: DmaDirection) {
+    // The streaming DMA mapping in x86_64 is cache coherent, and does not
+    // require synchronization.
+    // Reference: <https://lwn.net/Articles/855328/>, <https://lwn.net/Articles/2265/>.
 }
 
 #[derive(Clone, Copy, Pod, Default)]
