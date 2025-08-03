@@ -281,7 +281,7 @@ pub fn trace_panic_from_log(qemu_log: File, bin_path: PathBuf) {
     let exe = bin_path.to_string_lossy();
 
     let mut addr2line = new_command_checked_exists("addr2line");
-    addr2line.args(["-e", &exe]);
+    addr2line.args(["-e", &exe, "-f", "-C"]);
     let mut addr2line_proc = addr2line
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -299,11 +299,14 @@ pub fn trace_panic_from_log(qemu_log: File, bin_path: PathBuf) {
                 let mut stdin = addr2line_proc.stdin.as_ref().unwrap();
                 stdin.write_all(pc.as_bytes()).unwrap();
                 stdin.write_all(b"\n").unwrap();
+                let mut function = String::new();
                 let mut line = String::new();
                 let mut stdout = BufReader::new(addr2line_proc.stdout.as_mut().unwrap());
+                stdout.read_line(&mut function).unwrap();
                 stdout.read_line(&mut line).unwrap();
                 stack_num += 1;
-                println!("({: >3}) {}", stack_num, line.trim());
+                println!("({: >3}) {}", stack_num, function.trim());
+                println!("          at {}", line.trim());
             }
         }
     }
