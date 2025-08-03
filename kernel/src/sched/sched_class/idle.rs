@@ -55,7 +55,6 @@ impl SchedClassRq for IdleClassRq {
     }
 
     fn update_current(&mut self, _: &CurrentRuntime, _: &SchedAttr, _flags: UpdateFlags) -> bool {
-        // Idle entities has the greatest priority value. They should always be preempted.
-        true
+        !self.is_empty()
     }
 }

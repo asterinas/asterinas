@@ -99,7 +99,10 @@ impl<T: CommonSchedInfo> LocalRunQueue<T> for FifoRunQueue<T> {
     }
 
     fn update_current(&mut self, flags: super::UpdateFlags) -> bool {
-        !matches!(flags, UpdateFlags::Tick)
+        match flags {
+            UpdateFlags::Tick => false,
+            UpdateFlags::Wait | UpdateFlags::Yield | UpdateFlags::Exit => !self.queue.is_empty(),
+        }
     }
 
     fn try_pick_next(&mut self) -> Option<&Arc<T>> {
