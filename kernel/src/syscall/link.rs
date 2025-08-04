@@ -44,7 +44,8 @@ pub fn sys_linkat(
 
         let old_fs_path = FsPath::new(old_dirfd, old_path.as_ref())?;
         let new_fs_path = FsPath::new(new_dirfd, new_path.as_ref())?;
-        let fs = ctx.posix_thread.fs().resolver().read();
+        let fs_ref = ctx.thread_local.borrow_fs();
+        let fs = fs_ref.resolver().read();
         let old_dentry = if flags.contains(LinkFlags::AT_SYMLINK_FOLLOW) {
             fs.lookup(&old_fs_path)?
         } else {

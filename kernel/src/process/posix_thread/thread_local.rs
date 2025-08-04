@@ -6,7 +6,12 @@ use aster_rights::Full;
 use ostd::{cpu::context::FpuContext, mm::Vaddr, sync::RwArc, task::CurrentTask};
 
 use super::RobustListHead;
-use crate::{fs::file_table::FileTable, process::signal::SigStack, vm::vmar::Vmar};
+use crate::{
+    fs::{file_table::FileTable, thread_info::ThreadFsInfo},
+    prelude::*,
+    process::signal::SigStack,
+    vm::vmar::Vmar,
+};
 
 /// Local data for a POSIX thread.
 pub struct ThreadLocal {
@@ -23,7 +28,10 @@ pub struct ThreadLocal {
     robust_list: RefCell<Option<RobustListHead>>,
 
     // Files.
+    /// File table.
     file_table: RefCell<Option<RwArc<FileTable>>>,
+    /// File system.
+    fs: RefCell<Arc<ThreadFsInfo>>,
 
     // User FPU context.
     fpu_context: RefCell<FpuContext>,
@@ -44,6 +52,7 @@ impl ThreadLocal {
         clear_child_tid: Vaddr,
         root_vmar: Vmar<Full>,
         file_table: RwArc<FileTable>,
+        fs: Arc<ThreadFsInfo>,
         fpu_context: FpuContext,
     ) -> Self {
         Self {
@@ -52,6 +61,7 @@ impl ThreadLocal {
             root_vmar: RefCell::new(Some(root_vmar)),
             robust_list: RefCell::new(None),
             file_table: RefCell::new(Some(file_table)),
+            fs: RefCell::new(fs),
             sig_context: Cell::new(None),
             sig_stack: RefCell::new(None),
             fpu_context: RefCell::new(fpu_context),
@@ -81,6 +91,14 @@ impl ThreadLocal {
 
     pub fn borrow_file_table_mut(&self) -> FileTableRefMut {
         FileTableRefMut(self.file_table.borrow_mut())
+    }
+
+    pub fn borrow_fs(&self) -> Ref<'_, Arc<ThreadFsInfo>> {
+        self.fs.borrow()
+    }
+
+    pub fn borrow_fs_mut(&self) -> RefMut<'_, Arc<ThreadFsInfo>> {
+        self.fs.borrow_mut()
     }
 
     pub fn sig_context(&self) -> &Cell<Option<Vaddr>> {

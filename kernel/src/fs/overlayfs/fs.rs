@@ -1155,7 +1155,8 @@ impl FsType for OverlayFsType {
             }
         }
 
-        let fs = ctx.posix_thread.fs().resolver().read();
+        let fs_ref = ctx.thread_local.borrow_fs();
+        let fs = fs_ref.resolver().read();
 
         let upper = fs.lookup(&FsPath::new(AT_FDCWD, upper)?)?;
         let lower = lower

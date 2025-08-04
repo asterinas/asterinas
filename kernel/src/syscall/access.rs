@@ -88,7 +88,8 @@ pub fn do_faccessat(
     let dentry = {
         let path = path.to_string_lossy();
         let fs_path = FsPath::new(dirfd, path.as_ref())?;
-        let fs = ctx.posix_thread.fs().resolver().read();
+        let fs_ref = ctx.thread_local.borrow_fs();
+        let fs = fs_ref.resolver().read();
         if flags.contains(FaccessatFlags::AT_SYMLINK_NOFOLLOW) {
             fs.lookup_no_follow(&fs_path)?
         } else {

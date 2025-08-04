@@ -17,7 +17,7 @@ use crate::{
     },
     prelude::*,
     process::{
-        posix_thread::{AsPosixThread, AsThreadLocal},
+        posix_thread::AsThreadLocal,
         signal::{PollHandle, Pollable},
         Terminal,
     },
@@ -115,7 +115,6 @@ impl FileIo for PtyMaster {
             }
             IoctlCmd::TIOCGPTPEER => {
                 let current_task = Task::current().unwrap();
-                let posix_thread = current_task.as_posix_thread().unwrap();
                 let thread_local = current_task.as_thread_local().unwrap();
 
                 // TODO: Deal with `open()` flags.
@@ -128,10 +127,13 @@ impl FileIo for PtyMaster {
                     let fs_path = FsPath::try_from(slave_name.as_str())?;
 
                     let inode_handle = {
-                        let fs = posix_thread.fs().resolver().read();
                         let flags = AccessMode::O_RDWR as u32;
                         let mode = (InodeMode::S_IRUSR | InodeMode::S_IWUSR).bits();
-                        fs.open(&fs_path, flags, mode)?
+                        thread_local
+                            .borrow_fs()
+                            .resolver()
+                            .read()
+                            .open(&fs_path, flags, mode)?
                     };
                     Arc::new(inode_handle)
                 };

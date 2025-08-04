@@ -18,7 +18,11 @@ pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr, ctx: &Context) -> Resu
     let dentry = {
         let path = path.to_string_lossy();
         let fs_path = FsPath::try_from(path.as_ref())?;
-        ctx.posix_thread.fs().resolver().read().lookup(&fs_path)?
+        ctx.thread_local
+            .borrow_fs()
+            .resolver()
+            .read()
+            .lookup(&fs_path)?
     };
     let statfs = Statfs::from(dentry.fs().sb());
     user_space.write_val(statfs_buf_ptr, &statfs)?;

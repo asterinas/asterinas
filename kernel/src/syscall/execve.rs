@@ -66,7 +66,8 @@ fn lookup_executable_file(
         let file = get_file_fast!(&mut file_table, dfd);
         file.as_inode_or_err()?.dentry().clone()
     } else {
-        let fs_resolver = ctx.posix_thread.fs().resolver().read();
+        let fs_ref = ctx.thread_local.borrow_fs();
+        let fs_resolver = fs_ref.resolver().read();
         let fs_path = FsPath::new(dfd, &filename)?;
         if flags.contains(OpenFlags::AT_SYMLINK_NOFOLLOW) {
             fs_resolver.lookup_no_follow(&fs_path)?
@@ -123,9 +124,10 @@ fn do_execve(
     drop(closed_files);
 
     debug!("load program to root vmar");
-    let fs_resolver = &*posix_thread.fs().resolver().read();
+    let fs_ref = thread_local.borrow_fs();
+    let fs_resolver = fs_ref.resolver().read();
     let program_to_load =
-        ProgramToLoad::build_from_file(elf_file.clone(), fs_resolver, argv, envp, 1)?;
+        ProgramToLoad::build_from_file(elf_file.clone(), &fs_resolver, argv, envp, 1)?;
 
     renew_vm_and_map(ctx);
 
@@ -137,7 +139,7 @@ fn do_execve(
     }
 
     let (new_executable_path, elf_load_info) =
-        program_to_load.load_to_vm(process.vm(), fs_resolver)?;
+        program_to_load.load_to_vm(process.vm(), &fs_resolver)?;
 
     // After the program has been successfully loaded, the virtual memory of the current process
     // is initialized. Hence, it is necessary to clear the previously recorded robust list.

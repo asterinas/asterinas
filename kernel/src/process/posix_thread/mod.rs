@@ -19,7 +19,7 @@ use super::{
 };
 use crate::{
     events::Observer,
-    fs::{file_table::FileTable, thread_info::ThreadFsInfo},
+    fs::file_table::FileTable,
     prelude::*,
     process::signal::constants::SIGCONT,
     thread::{Thread, Tid},
@@ -56,8 +56,6 @@ pub struct PosixThread {
     // Files
     /// File table
     file_table: Mutex<Option<RoArc<FileTable>>>,
-    /// File system
-    fs: Arc<ThreadFsInfo>,
 
     // Signal
     /// Blocked signals
@@ -101,10 +99,6 @@ impl PosixThread {
 
     pub fn file_table(&self) -> &Mutex<Option<RoArc<FileTable>>> {
         &self.file_table
-    }
-
-    pub fn fs(&self) -> &Arc<ThreadFsInfo> {
-        &self.fs
     }
 
     /// Get the reference to the signal mask of the thread.
