@@ -82,6 +82,13 @@ impl<'a> CurrentUserSpace<'a> {
         self.0.as_ref().unwrap()
     }
 
+    /// Returns whether the VMAR is shared with other processes or threads.
+    pub fn is_vmar_shared(&self) -> bool {
+        // If the VMAR is not shared, its reference count should be exactly 2:
+        // one reference is held by `ThreadLocal` and the other by `ProcessVm` in `Process`.
+        self.root_vmar().reference_count() != 2
+    }
+
     /// Creates a reader to read data from the user space of the current task.
     ///
     /// Returns `Err` if the `vaddr` and `len` do not represent a user space memory range.
