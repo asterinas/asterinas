@@ -145,6 +145,7 @@ mod setfsuid;
 mod setgid;
 mod setgroups;
 mod setitimer;
+mod setns;
 mod setpgid;
 mod setregid;
 mod setresgid;

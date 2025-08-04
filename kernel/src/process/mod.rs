@@ -26,7 +26,7 @@ mod wait;
 pub use clone::{clone_child, CloneArgs, CloneFlags};
 pub use credentials::{Credentials, Gid, Uid};
 pub use kill::{kill, kill_all, kill_group, tgkill};
-pub use nsproxy::{check_unsupported_ns_flags, NsProxy, NsProxyBuilder};
+pub use nsproxy::{check_unsupported_ns_flags, ContextNsAdminApi, NsProxy, NsProxyBuilder};
 pub use pid_file::PidFile;
 pub use process::{
     broadcast_signal_async, enqueue_signal_async, spawn_init_process, ExitCode, JobControl, Pgid,
