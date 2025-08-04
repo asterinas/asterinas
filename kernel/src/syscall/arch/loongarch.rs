@@ -148,6 +148,7 @@ use super::{
     umount::sys_umount,
     uname::sys_uname,
     unlink::sys_unlinkat,
+    unshare::sys_unshare,
     utimens::sys_utimensat,
     wait4::sys_wait4,
     waitid::sys_waitid,
@@ -232,6 +233,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_EXIT_GROUP = 94              => sys_exit_group(args[..1]);
     SYS_WAITID = 95                  => sys_waitid(args[..5]);
     SYS_SET_TID_ADDRESS = 96         => sys_set_tid_address(args[..1]);
+    SYS_UNSHARE = 97                 => sys_unshare(args[..1]);
     SYS_FUTEX = 98                   => sys_futex(args[..6]);
     SYS_SET_ROBUST_LIST = 99         => sys_set_robust_list(args[..2]);
     SYS_NANOSLEEP = 101              => sys_nanosleep(args[..2]);
