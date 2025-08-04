@@ -26,6 +26,7 @@ pub use credentials::{Credentials, Gid, Uid};
 pub use kill::{kill, kill_all, kill_group, tgkill};
 pub use namespace::{
     nsproxy::{check_unsupported_ns_flags, ContextNsAdminApi, NsProxy, NsProxyBuilder},
+    unshare::ContextUnshareAdminApi,
     user_ns::UserNamespace,
 };
 pub use pid_file::PidFile;
