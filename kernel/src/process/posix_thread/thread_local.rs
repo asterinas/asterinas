@@ -8,6 +8,7 @@ use ostd::{cpu::context::FpuContext, mm::Vaddr, sync::RwArc, task::CurrentTask};
 use super::RobustListHead;
 use crate::{
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
+    namespace::{NsContext, UserNamespace},
     prelude::*,
     process::signal::SigStack,
     vm::vmar::Vmar,
@@ -44,9 +45,14 @@ pub struct ThreadLocal {
     sig_context: Cell<Option<Vaddr>>,
     /// Stack address, size, and flags for the signal handler.
     sig_stack: RefCell<SigStack>,
+
+    // Namespaces.
+    user_ns: RefCell<Option<Arc<UserNamespace>>>,
+    ns_context: RefCell<Option<Arc<NsContext>>>,
 }
 
 impl ThreadLocal {
+    #[expect(clippy::too_many_arguments)]
     pub(super) fn new(
         set_child_tid: Vaddr,
         clear_child_tid: Vaddr,
@@ -54,6 +60,8 @@ impl ThreadLocal {
         file_table: RwArc<FileTable>,
         fs: Arc<ThreadFsInfo>,
         fpu_context: FpuContext,
+        user_ns: Arc<UserNamespace>,
+        ns_context: Arc<NsContext>,
     ) -> Self {
         Self {
             set_child_tid: Cell::new(set_child_tid),
@@ -66,6 +74,8 @@ impl ThreadLocal {
             sig_stack: RefCell::new(SigStack::default()),
             fpu_context: RefCell::new(fpu_context),
             fpu_state: Cell::new(FpuState::Unloaded),
+            user_ns: RefCell::new(Some(user_ns)),
+            ns_context: RefCell::new(Some(ns_context)),
         }
     }
 
@@ -86,11 +96,11 @@ impl ThreadLocal {
     }
 
     pub fn borrow_file_table(&self) -> FileTableRef {
-        FileTableRef(self.file_table.borrow())
+        ThreadLocalOptionRef(self.file_table.borrow())
     }
 
     pub fn borrow_file_table_mut(&self) -> FileTableRefMut {
-        FileTableRefMut(self.file_table.borrow_mut())
+        ThreadLocalOptionRefMut(self.file_table.borrow_mut())
     }
 
     pub fn borrow_fs(&self) -> Ref<'_, Arc<ThreadFsInfo>> {
@@ -111,6 +121,22 @@ impl ThreadLocal {
 
     pub fn fpu(&self) -> ThreadFpu<'_> {
         ThreadFpu(self)
+    }
+
+    pub fn borrow_user_ns(&self) -> UserNsRef {
+        ThreadLocalOptionRef(self.user_ns.borrow())
+    }
+
+    pub fn borrow_user_ns_mut(&self) -> UserNsRefMut {
+        ThreadLocalOptionRefMut(self.user_ns.borrow_mut())
+    }
+
+    pub fn borrow_ns_context(&self) -> NsContextRef {
+        ThreadLocalOptionRef(self.ns_context.borrow())
+    }
+
+    pub fn borrow_ns_context_mut(&self) -> NsContextRefMut {
+        ThreadLocalOptionRefMut(self.ns_context.borrow_mut())
     }
 }
 
@@ -201,40 +227,58 @@ impl ThreadFpu<'_> {
 }
 
 /// An immutable, shared reference to the file table in [`ThreadLocal`].
-pub struct FileTableRef<'a>(Ref<'a, Option<RwArc<FileTable>>>);
+pub type FileTableRef<'a> = ThreadLocalOptionRef<'a, RwArc<FileTable>>;
 
-impl FileTableRef<'_> {
-    /// Unwraps and returns a reference to the file table.
+/// An immutable, shared reference to the user namespace in [`ThreadLocal`].
+pub type UserNsRef<'a> = ThreadLocalOptionRef<'a, Arc<UserNamespace>>;
+
+/// An immutable, shared reference to the namespaces in [`ThreadLocal`].
+pub type NsContextRef<'a> = ThreadLocalOptionRef<'a, Arc<NsContext>>;
+
+/// An immutable, shared reference to thread-local data contained within a `RefCell<Option<..>>`.
+pub struct ThreadLocalOptionRef<'a, T>(Ref<'a, Option<T>>);
+
+impl<T> ThreadLocalOptionRef<'_, T> {
+    /// Unwraps and returns a reference to the data.
     ///
     /// # Panics
     ///
-    /// This method will panic if the thread has exited and the file table has been dropped.
-    pub fn unwrap(&self) -> &RwArc<FileTable> {
+    /// This method will panic if the thread has exited and the data has been dropped.
+    pub fn unwrap(&self) -> &T {
         self.0.as_ref().unwrap()
     }
 }
 
 /// A mutable, exclusive reference to the file table in [`ThreadLocal`].
-pub struct FileTableRefMut<'a>(RefMut<'a, Option<RwArc<FileTable>>>);
+pub type FileTableRefMut<'a> = ThreadLocalOptionRefMut<'a, RwArc<FileTable>>;
 
-impl FileTableRefMut<'_> {
-    /// Unwraps and returns a reference to the file table.
+/// A mutable, exclusive reference to the user namespace in [`ThreadLocal`].
+pub type UserNsRefMut<'a> = ThreadLocalOptionRefMut<'a, Arc<UserNamespace>>;
+
+/// A mutable, exclusive reference to the `NsContext` in [`ThreadLocal`].
+pub type NsContextRefMut<'a> = ThreadLocalOptionRefMut<'a, Arc<NsContext>>;
+
+/// A mutable, exclusive reference to thread-local data contained within a `RefCell<Option<..>>`.
+pub struct ThreadLocalOptionRefMut<'a, T>(RefMut<'a, Option<T>>);
+
+impl<T> ThreadLocalOptionRefMut<'_, T> {
+    /// Unwraps and returns a reference to the data.
     ///
     /// # Panics
     ///
-    /// This method will panic if the thread has exited and the file table has been dropped.
-    pub fn unwrap(&mut self) -> &mut RwArc<FileTable> {
+    /// This method will panic if the thread has exited and the data has been dropped.
+    pub fn unwrap(&mut self) -> &mut T {
         self.0.as_mut().unwrap()
     }
 
-    /// Removes the file table and drops it.
+    /// Removes the data and drops it.
     pub(super) fn remove(&mut self) {
         *self.0 = None;
     }
 
-    /// Replaces the file table with a new one, returning the old one.
-    pub fn replace(&mut self, new_table: Option<RwArc<FileTable>>) -> Option<RwArc<FileTable>> {
-        core::mem::replace(&mut *self.0, new_table)
+    /// Replaces the data with a new one, returning the old one.
+    pub fn replace(&mut self, new: Option<T>) -> Option<T> {
+        core::mem::replace(&mut *self.0, new)
     }
 }
 
