@@ -18,7 +18,7 @@ use super::{
 };
 use crate::{
     prelude::*,
-    process::{signal::Pollee, status::StopWaitStatus, WaitOptions},
+    process::{signal::Pollee, status::StopWaitStatus, UserNamespace, WaitOptions},
     sched::{AtomicNice, Nice},
     thread::{AsThread, Thread},
     time::clocks::ProfClock,
@@ -122,6 +122,11 @@ pub struct Process {
 
     /// A manager that manages timer resources and utilities of the process.
     timer_manager: PosixTimerManager,
+
+    // Namespaces
+    /// The user namespace
+    #[expect(dead_code)]
+    user_ns: Mutex<Arc<UserNamespace>>,
 }
 
 /// Representing a parent process by holding a weak reference to it and its PID.
@@ -187,6 +192,7 @@ impl Process {
         Some(Task::current()?.as_posix_thread()?.process())
     }
 
+    #[expect(clippy::too_many_arguments)]
     pub(super) fn new(
         pid: Pid,
         parent: Weak<Process>,
@@ -196,6 +202,7 @@ impl Process {
         resource_limits: ResourceLimits,
         nice: Nice,
         sig_dispositions: Arc<Mutex<SigDispositions>>,
+        user_ns: Arc<UserNamespace>,
     ) -> Arc<Self> {
         // SIGCHID does not interrupt pauser. Child process will
         // resume paused parent when doing exit.
@@ -223,6 +230,7 @@ impl Process {
             nice: AtomicNice::new(nice),
             timer_manager: PosixTimerManager::new(&prof_clock, process_ref),
             prof_clock,
+            user_ns: Mutex::new(user_ns),
         })
     }
 

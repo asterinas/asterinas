@@ -9,7 +9,7 @@ use super::RobustListHead;
 use crate::{
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
-    process::signal::SigStack,
+    process::{signal::SigStack, NsProxy, UserNamespace},
     vm::vmar::Vmar,
 };
 
@@ -45,9 +45,14 @@ pub struct ThreadLocal {
     sig_context: Cell<Option<Vaddr>>,
     /// Stack address, size, and flags for the signal handler.
     sig_stack: RefCell<SigStack>,
+
+    // Namespaces.
+    user_ns: RefCell<Arc<UserNamespace>>,
+    ns_proxy: RefCell<Option<Arc<NsProxy>>>,
 }
 
 impl ThreadLocal {
+    #[expect(clippy::too_many_arguments)]
     pub(super) fn new(
         set_child_tid: Vaddr,
         clear_child_tid: Vaddr,
@@ -55,6 +60,8 @@ impl ThreadLocal {
         file_table: RwArc<FileTable>,
         fs: Arc<ThreadFsInfo>,
         fpu_context: FpuContext,
+        user_ns: Arc<UserNamespace>,
+        ns_proxy: Arc<NsProxy>,
     ) -> Self {
         Self {
             set_child_tid: Cell::new(set_child_tid),
@@ -68,6 +75,8 @@ impl ThreadLocal {
             sig_stack: RefCell::new(SigStack::default()),
             fpu_context: RefCell::new(fpu_context),
             fpu_state: Cell::new(FpuState::Unloaded),
+            user_ns: RefCell::new(user_ns),
+            ns_proxy: RefCell::new(Some(ns_proxy)),
         }
     }
 
@@ -127,19 +136,18 @@ impl ThreadLocal {
     }
 
     pub fn borrow_file_table(&self) -> FileTableRef {
-        FileTableRef(self.file_table.borrow())
+        ThreadLocalOptionRef(self.file_table.borrow())
     }
 
     pub fn borrow_file_table_mut(&self) -> FileTableRefMut {
-        FileTableRefMut(self.file_table.borrow_mut())
+        ThreadLocalOptionRefMut(self.file_table.borrow_mut())
     }
 
     pub fn borrow_fs(&self) -> Ref<'_, Arc<ThreadFsInfo>> {
         self.fs.borrow()
     }
 
-    #[expect(dead_code)]
-    pub fn borrow_fs_mut(&self) -> RefMut<'_, Arc<ThreadFsInfo>> {
+    pub(in crate::process) fn borrow_fs_mut(&self) -> RefMut<'_, Arc<ThreadFsInfo>> {
         self.fs.borrow_mut()
     }
 
@@ -153,6 +161,18 @@ impl ThreadLocal {
 
     pub fn fpu(&self) -> ThreadFpu<'_> {
         ThreadFpu(self)
+    }
+
+    pub fn borrow_user_ns(&self) -> Ref<'_, Arc<UserNamespace>> {
+        self.user_ns.borrow()
+    }
+
+    pub fn borrow_ns_proxy(&self) -> NsProxyRef {
+        ThreadLocalOptionRef(self.ns_proxy.borrow())
+    }
+
+    pub(in crate::process) fn borrow_ns_proxy_mut(&self) -> NsProxyRefMut {
+        ThreadLocalOptionRefMut(self.ns_proxy.borrow_mut())
     }
 }
 
@@ -243,40 +263,52 @@ impl ThreadFpu<'_> {
 }
 
 /// An immutable, shared reference to the file table in [`ThreadLocal`].
-pub struct FileTableRef<'a>(Ref<'a, Option<RwArc<FileTable>>>);
+pub type FileTableRef<'a> = ThreadLocalOptionRef<'a, RwArc<FileTable>>;
 
-impl FileTableRef<'_> {
-    /// Unwraps and returns a reference to the file table.
+/// An immutable, shared reference to the `NsProxy` in [`ThreadLocal`].
+pub type NsProxyRef<'a> = ThreadLocalOptionRef<'a, Arc<NsProxy>>;
+
+/// An immutable, shared reference to thread-local data contained within a `RefCell<Option<..>>`.
+pub struct ThreadLocalOptionRef<'a, T>(Ref<'a, Option<T>>);
+
+impl<T> ThreadLocalOptionRef<'_, T> {
+    /// Unwraps and returns a reference to the data.
     ///
     /// # Panics
     ///
-    /// This method will panic if the thread has exited and the file table has been dropped.
-    pub fn unwrap(&self) -> &RwArc<FileTable> {
+    /// This method will panic if the thread has exited and the data has been dropped.
+    pub fn unwrap(&self) -> &T {
         self.0.as_ref().unwrap()
     }
 }
 
 /// A mutable, exclusive reference to the file table in [`ThreadLocal`].
-pub struct FileTableRefMut<'a>(RefMut<'a, Option<RwArc<FileTable>>>);
+pub type FileTableRefMut<'a> = ThreadLocalOptionRefMut<'a, RwArc<FileTable>>;
 
-impl FileTableRefMut<'_> {
-    /// Unwraps and returns a reference to the file table.
+/// A mutable, exclusive reference to the `NsProxy` in [`ThreadLocal`].
+pub(in crate::process) type NsProxyRefMut<'a> = ThreadLocalOptionRefMut<'a, Arc<NsProxy>>;
+
+/// A mutable, exclusive reference to thread-local data contained within a `RefCell<Option<..>>`.
+pub struct ThreadLocalOptionRefMut<'a, T>(RefMut<'a, Option<T>>);
+
+impl<T> ThreadLocalOptionRefMut<'_, T> {
+    /// Unwraps and returns a reference to the data.
     ///
     /// # Panics
     ///
-    /// This method will panic if the thread has exited and the file table has been dropped.
-    pub fn unwrap(&mut self) -> &mut RwArc<FileTable> {
+    /// This method will panic if the thread has exited and the data has been dropped.
+    pub fn unwrap(&mut self) -> &mut T {
         self.0.as_mut().unwrap()
     }
 
-    /// Removes the file table and drops it.
+    /// Removes the data and drops it.
     pub(super) fn remove(&mut self) {
         *self.0 = None;
     }
 
-    /// Replaces the file table with a new one, returning the old one.
-    pub fn replace(&mut self, new_table: Option<RwArc<FileTable>>) -> Option<RwArc<FileTable>> {
-        core::mem::replace(&mut *self.0, new_table)
+    /// Replaces the data with a new one, returning the old one.
+    pub(in crate::process) fn replace(&mut self, new: Option<T>) -> Option<T> {
+        core::mem::replace(&mut *self.0, new)
     }
 }
 

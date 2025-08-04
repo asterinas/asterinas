@@ -20,7 +20,11 @@ use crate::{
         thread_info::ThreadFsInfo,
     },
     prelude::*,
-    process::{pid_file::PidFile, posix_thread::allocate_posix_tid},
+    process::{
+        pid_file::PidFile,
+        posix_thread::{allocate_posix_tid, PosixThread, ThreadLocal},
+        NsProxy, UserNamespace,
+    },
     sched::Nice,
     thread::{AsThread, Tid},
 };
@@ -28,6 +32,7 @@ use crate::{
 bitflags! {
     #[derive(Default)]
     pub struct CloneFlags: u32 {
+        const CLONE_NEWTIME = 0x00000080;       /* New time namespace */
         const CLONE_VM      = 0x00000100;       /* Set if VM shared between processes.  */
         const CLONE_FS      = 0x00000200;       /* Set if fs info shared between processes.  */
         const CLONE_FILES   = 0x00000400;       /* Set if open files shared between processes.  */
@@ -52,6 +57,16 @@ bitflags! {
         const CLONE_NEWPID	= 0x20000000;	    /* New pid namespace.  */
         const CLONE_NEWNET	= 0x40000000;	    /* New network namespace.  */
         const CLONE_IO	= 0x80000000;	        /* Clone I/O context.  */
+
+        /// A bitmask of all `CloneFlags` related to namespace creation.
+        const CLONE_NS_FLAGS = Self::CLONE_NEWTIME.bits() |
+            Self::CLONE_NEWNS.bits() |
+            Self::CLONE_NEWCGROUP.bits() |
+            Self::CLONE_NEWUTS.bits() |
+            Self::CLONE_NEWIPC.bits() |
+            Self::CLONE_NEWUSER.bits() |
+            Self::CLONE_NEWPID.bits() |
+            Self::CLONE_NEWNET.bits();
     }
 }
 
@@ -241,6 +256,13 @@ fn clone_child_task(
         );
     }
 
+    if clone_flags.contains(CloneFlags::CLONE_NEWUSER) {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "`CLONE_THREAD` cannot be used together with `CLONE_NEWUSER`"
+        )
+    }
+
     let Context {
         process,
         thread_local,
@@ -259,6 +281,15 @@ fn clone_child_task(
 
     // Clone FPU context
     let child_fpu_context = thread_local.fpu().clone_context();
+
+    // Clone namespaces
+    let child_user_ns = thread_local.borrow_user_ns().clone();
+    let child_ns_proxy = clone_ns_proxy(
+        thread_local.borrow_ns_proxy().unwrap(),
+        &child_user_ns,
+        clone_flags,
+        posix_thread,
+    )?;
 
     let child_user_ctx = Box::new(clone_user_ctx(
         parent_context,
@@ -287,7 +318,9 @@ fn clone_child_task(
             .sig_mask(sig_mask)
             .file_table(child_file_table)
             .fs(child_fs)
-            .fpu_context(child_fpu_context);
+            .fpu_context(child_fpu_context)
+            .user_ns(child_user_ns)
+            .ns_proxy(child_ns_proxy);
 
         // Deal with SETTID/CLEARTID flags
         clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
@@ -350,6 +383,15 @@ fn clone_child_process(
     // Clone FPU context
     let child_fpu_context = thread_local.fpu().clone_context();
 
+    // Clone the namespaces
+    let child_user_ns = clone_user_ns(clone_flags, thread_local)?;
+    let child_ns_proxy = clone_ns_proxy(
+        thread_local.borrow_ns_proxy().unwrap(),
+        &child_user_ns,
+        clone_flags,
+        posix_thread,
+    )?;
+
     // Inherit the parent's signal mask
     let child_sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed).into();
 
@@ -377,6 +419,8 @@ fn clone_child_process(
                 .file_table(child_file_table)
                 .fs(child_fs)
                 .fpu_context(child_fpu_context)
+                .user_ns(child_user_ns.clone())
+                .ns_proxy(child_ns_proxy)
         };
 
         // Deal with SETTID/CLEARTID flags
@@ -394,6 +438,7 @@ fn clone_child_process(
             child_resource_limits,
             child_nice,
             child_sig_dispositions,
+            child_user_ns,
             child_thread_builder,
         )
     };
@@ -568,6 +613,29 @@ fn clone_pidfd(
     }
 }
 
+fn clone_user_ns(
+    clone_flags: CloneFlags,
+    thread_local: &ThreadLocal,
+) -> Result<Arc<UserNamespace>> {
+    if clone_flags.contains(CloneFlags::CLONE_NEWUSER) {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "cloning a new user namespace is not supported"
+        );
+    } else {
+        Ok(thread_local.borrow_user_ns().clone())
+    }
+}
+
+fn clone_ns_proxy(
+    parent_ns_proxy: &Arc<NsProxy>,
+    user_ns: &Arc<UserNamespace>,
+    clone_flags: CloneFlags,
+    posix_thread: &PosixThread,
+) -> Result<Arc<NsProxy>> {
+    parent_ns_proxy.new_clone(user_ns, clone_flags, posix_thread)
+}
+
 #[expect(clippy::too_many_arguments)]
 fn create_child_process(
     pid: Pid,
@@ -577,6 +645,7 @@ fn create_child_process(
     resource_limits: ResourceLimits,
     nice: Nice,
     sig_dispositions: Arc<Mutex<SigDispositions>>,
+    user_ns: Arc<UserNamespace>,
     thread_builder: PosixThreadBuilder,
 ) -> Arc<Process> {
     let child_proc = Process::new(
@@ -587,6 +656,7 @@ fn create_child_process(
         resource_limits,
         nice,
         sig_dispositions,
+        user_ns,
     );
 
     let child_task = thread_builder.process(Arc::downgrade(&child_proc)).build();

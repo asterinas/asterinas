@@ -18,7 +18,7 @@ use crate::{
     process::{
         posix_thread::name::ThreadName,
         signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
-        Credentials, Process,
+        Credentials, NsProxy, Process, UserNamespace,
     },
     sched::{Nice, SchedPolicy},
     thread::{task, Thread, Tid},
@@ -43,6 +43,8 @@ pub struct PosixThreadBuilder {
     sig_queues: SigQueues,
     sched_policy: SchedPolicy,
     fpu_context: FpuContext,
+    user_ns: Option<Arc<UserNamespace>>,
+    ns_proxy: Option<Arc<NsProxy>>,
     is_init_process: bool,
 }
 
@@ -63,6 +65,8 @@ impl PosixThreadBuilder {
             sched_policy: SchedPolicy::Fair(Nice::default()),
             fpu_context: FpuContext::new(),
             is_init_process: false,
+            user_ns: None,
+            ns_proxy: None,
         }
     }
 
@@ -106,6 +110,16 @@ impl PosixThreadBuilder {
         self
     }
 
+    pub fn user_ns(mut self, user_ns: Arc<UserNamespace>) -> Self {
+        self.user_ns = Some(user_ns);
+        self
+    }
+
+    pub fn ns_proxy(mut self, ns_proxy: Arc<NsProxy>) -> Self {
+        self.ns_proxy = Some(ns_proxy);
+        self
+    }
+
     #[expect(clippy::wrong_self_convention)]
     pub(in crate::process) fn is_init_process(mut self) -> Self {
         self.is_init_process = true;
@@ -127,12 +141,18 @@ impl PosixThreadBuilder {
             sig_queues,
             sched_policy,
             fpu_context,
+            user_ns,
+            ns_proxy,
             is_init_process,
         } = self;
 
         let file_table = file_table.unwrap_or_else(|| RwArc::new(FileTable::new()));
 
         let fs = fs.unwrap_or_else(|| Arc::new(ThreadFsInfo::default()));
+
+        assert_eq!(user_ns.is_none(), ns_proxy.is_none());
+        let user_ns = user_ns.unwrap_or_else(|| UserNamespace::get_init_singleton().clone());
+        let ns_proxy = ns_proxy.unwrap_or_else(|| NsProxy::get_init_singleton().clone());
 
         let root_vmar = process
             .upgrade()
@@ -161,6 +181,7 @@ impl PosixThreadBuilder {
                     virtual_timer_manager,
                     prof_timer_manager,
                     io_priority: AtomicU32::new(0),
+                    ns_proxy: Mutex::new(Some(ns_proxy.clone())),
                 }
             };
 
@@ -179,6 +200,8 @@ impl PosixThreadBuilder {
                 file_table,
                 fs,
                 fpu_context,
+                user_ns,
+                ns_proxy,
             );
 
             thread_table::add_thread(tid, thread.clone());
