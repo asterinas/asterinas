@@ -9,6 +9,7 @@ use crate::{
     events::Observer,
     fs::{
         file_table::FdEvents,
+        procfs::pid::ns::NsDirOps,
         utils::{DirEntryVecExt, Inode},
     },
     prelude::*,
@@ -19,6 +20,7 @@ mod cmdline;
 mod comm;
 mod exe;
 mod fd;
+mod ns;
 mod stat;
 mod status;
 mod task;
@@ -72,6 +74,7 @@ impl DirOps for PidDirOps {
                 StatFileOps::new_inode(self.0.clone(), self.0.main_thread(), true, this_ptr.clone())
             }
             "task" => TaskDirOps::new_inode(self.0.clone(), this_ptr.clone()),
+            "ns" => NsDirOps::new_inode(self.0.clone(), this_ptr.clone()),
             _ => return_errno!(Errno::ENOENT),
         };
         Ok(inode)
@@ -103,6 +106,9 @@ impl DirOps for PidDirOps {
         });
         cached_children.put_entry_if_not_found("task", || {
             TaskDirOps::new_inode(self.0.clone(), this_ptr.clone())
+        });
+        cached_children.put_entry_if_not_found("ns", || {
+            NsDirOps::new_inode(self.0.clone(), this_ptr.clone())
         });
     }
 }

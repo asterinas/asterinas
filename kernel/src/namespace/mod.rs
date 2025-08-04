@@ -10,8 +10,10 @@ use crate::{
     process::{credentials::capabilities::CapSet, posix_thread::PosixThread, CloneFlags},
 };
 
+mod ns_file;
 mod user;
 
+pub use ns_file::NsFile;
 pub use user::UserNamespace;
 
 /// Represents the set of namespaces to which a thread belongs.
