@@ -129,6 +129,7 @@ use super::{
     setgid::sys_setgid,
     setgroups::sys_setgroups,
     setitimer::{sys_getitimer, sys_setitimer},
+    setns::sys_setns,
     setpgid::sys_setpgid,
     setregid::sys_setregid,
     setresgid::sys_setresgid,
@@ -376,6 +377,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_PREADV = 295           => sys_preadv(args[..4]);
     SYS_PWRITEV = 296          => sys_pwritev(args[..4]);
     SYS_PRLIMIT64 = 302        => sys_prlimit64(args[..4]);
+    SYS_SETNS = 308            => sys_setns(args[..2]);
     SYS_GETCPU = 309           => sys_getcpu(args[..3]);
     SYS_SCHED_SETATTR = 314    => sys_sched_setattr(args[..3]);
     SYS_SCHED_GETATTR = 315    => sys_sched_getattr(args[..4]);

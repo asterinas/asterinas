@@ -128,3 +128,22 @@ pub fn check_unsupported_ns_flags(flags: CloneFlags) -> Result<()> {
     warn!("unsupported clone ns flags: {:?}", unsupported_flags);
     return_errno_with_message!(Errno::EINVAL, "unsupported clone namespace flags");
 }
+
+/// Provides administrative APIs for switching to existing namespaces.
+pub trait ContextSetNsAdminApi {
+    /// Sets the namespace proxy for this context.
+    fn set_ns_proxy(&self, ns_proxy: Arc<NsProxy>);
+}
+
+impl ContextSetNsAdminApi for Context<'_> {
+    fn set_ns_proxy(&self, ns_proxy: Arc<NsProxy>) {
+        let mut pthread_ns_proxy = self.posix_thread.ns_proxy().lock();
+        let mut thread_local_ns_proxy = self.thread_local.borrow_ns_proxy_mut();
+
+        // TODO: When setting a specific namespace,
+        // other dependent fields of a posix thread may also need to be updated.
+
+        *pthread_ns_proxy = Some(ns_proxy.clone());
+        thread_local_ns_proxy.replace(Some(ns_proxy));
+    }
+}
