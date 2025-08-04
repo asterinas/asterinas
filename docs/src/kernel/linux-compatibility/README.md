@@ -328,7 +328,7 @@ provided by Linux on x86-64 architecture.
 | 305     | clock_adjtime          | ❌             |     |
 | 306     | syncfs                 | ❌             |     |
 | 307     | sendmmsg               | ❌             |     |
-| 308     | setns                  | ❌             |     |
+| 308     | setns                  | ✅             |     |
 | 309     | getcpu                 | ✅             |     |
 | 310     | process_vm_readv       | ❌             |     |
 | 311     | process_vm_writev      | ❌             |     |
