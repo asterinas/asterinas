@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         fs_resolver::{FsPath, AT_FDCWD},
-        path::Dentry,
+        path::Path,
         registry::FsProperties,
         utils::{FileSystem, InodeType},
     },
@@ -33,7 +33,7 @@ pub fn sys_mount(
         devname, dirname, fstype_addr, mount_flags, data,
     );
 
-    let dst_dentry = {
+    let dst_path = {
         let dirname = dirname.to_string_lossy();
         if dirname.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "dirname is empty");
@@ -53,7 +53,7 @@ pub fn sys_mount(
     } else if mount_flags.contains(MountFlags::MS_BIND) {
         do_bind_mount(
             devname,
-            dst_dentry,
+            dst_path,
             mount_flags.contains(MountFlags::MS_REC),
             ctx,
         )?;
@@ -64,9 +64,9 @@ pub fn sys_mount(
     {
         do_change_type()?;
     } else if mount_flags.contains(MountFlags::MS_MOVE) {
-        do_move_mount_old(devname, dst_dentry, ctx)?;
+        do_move_mount_old(devname, dst_path, ctx)?;
     } else {
-        do_new_mount(devname, fstype_addr, dst_dentry, data, ctx)?;
+        do_new_mount(devname, fstype_addr, dst_path, data, ctx)?;
     }
 
     Ok(SyscallReturn::Return(0))
@@ -84,13 +84,8 @@ fn do_remount() -> Result<()> {
 ///
 /// If recursive is true, then bind the mount recursively.
 /// Such as use user command `mount --rbind src dst`.
-fn do_bind_mount(
-    src_name: CString,
-    dst_dentry: Dentry,
-    recursive: bool,
-    ctx: &Context,
-) -> Result<()> {
-    let src_dentry = {
+fn do_bind_mount(src_name: CString, dst_path: Path, recursive: bool, ctx: &Context) -> Result<()> {
+    let src_path = {
         let src_name = src_name.to_string_lossy();
         if src_name.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "src_name is empty");
@@ -103,11 +98,11 @@ fn do_bind_mount(
             .lookup(&fs_path)?
     };
 
-    if src_dentry.type_() != InodeType::Dir {
+    if src_path.type_() != InodeType::Dir {
         return_errno_with_message!(Errno::ENOTDIR, "src_name must be directory");
     };
 
-    src_dentry.bind_mount_to(&dst_dentry, recursive)?;
+    src_path.bind_mount_to(&dst_path, recursive)?;
     Ok(())
 }
 
@@ -116,8 +111,8 @@ fn do_change_type() -> Result<()> {
 }
 
 /// Move a mount from src location to dst location.
-fn do_move_mount_old(src_name: CString, dst_dentry: Dentry, ctx: &Context) -> Result<()> {
-    let src_dentry = {
+fn do_move_mount_old(src_name: CString, dst_path: Path, ctx: &Context) -> Result<()> {
+    let src_path = {
         let src_name = src_name.to_string_lossy();
         if src_name.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "src_name is empty");
@@ -130,14 +125,14 @@ fn do_move_mount_old(src_name: CString, dst_dentry: Dentry, ctx: &Context) -> Re
             .lookup(&fs_path)?
     };
 
-    if !src_dentry.is_root_of_mount() {
+    if !src_path.is_mount_root() {
         return_errno_with_message!(Errno::EINVAL, "src_name can not be moved");
     };
-    if src_dentry.mount_node().parent().is_none() {
+    if src_path.mount_node().parent().is_none() {
         return_errno_with_message!(Errno::EINVAL, "src_name can not be moved");
     }
 
-    src_dentry.mount_node().graft_mount_node_tree(&dst_dentry)?;
+    src_path.mount_node().graft_mount_node_tree(&dst_path)?;
 
     Ok(())
 }
@@ -146,11 +141,11 @@ fn do_move_mount_old(src_name: CString, dst_dentry: Dentry, ctx: &Context) -> Re
 fn do_new_mount(
     devname: CString,
     fs_type: Vaddr,
-    target_dentry: Dentry,
+    target_path: Path,
     data: Vaddr,
     ctx: &Context,
 ) -> Result<()> {
-    if target_dentry.type_() != InodeType::Dir {
+    if target_path.type_() != InodeType::Dir {
         return_errno_with_message!(Errno::ENOTDIR, "mountpoint must be directory");
     };
 
@@ -159,7 +154,7 @@ fn do_new_mount(
         return_errno_with_message!(Errno::EINVAL, "fs_type is empty");
     }
     let fs = get_fs(fs_type, devname, data, ctx)?;
-    target_dentry.mount(fs)?;
+    target_path.mount(fs)?;
     Ok(())
 }
 

@@ -8,7 +8,7 @@ use crate::{
         file_handle::FileLike,
         file_table::{get_file_fast, FileDesc},
         fs_resolver::{FsPath, AT_FDCWD},
-        path::Dentry,
+        path::Path,
         utils::{
             XattrName, XattrNamespace, XattrSetFlags, XATTR_NAME_MAX_LEN, XATTR_VALUE_MAX_LEN,
         },
@@ -113,8 +113,8 @@ fn setxattr(
     }
     let mut value_reader = user_space.reader(value_ptr, value_len)?;
 
-    let dentry = lookup_dentry_for_xattr(&file_ctx, ctx)?;
-    dentry.set_xattr(xattr_name, &mut value_reader, flags)
+    let path = lookup_path_for_xattr(&file_ctx, ctx)?;
+    path.set_xattr(xattr_name, &mut value_reader, flags)
 }
 
 /// The context to describe the target file for xattr operations.
@@ -124,30 +124,30 @@ pub(super) enum XattrFileCtx<'a> {
     FileHandle(Cow<'a, Arc<dyn FileLike>>),
 }
 
-pub(super) fn lookup_dentry_for_xattr<'a>(
+pub(super) fn lookup_path_for_xattr<'a>(
     file_ctx: &'a XattrFileCtx<'a>,
     ctx: &'a Context,
-) -> Result<Cow<'a, Dentry>> {
-    let lookup_dentry_from_fs =
-        |path: &CString, ctx: &Context, symlink_no_follow: bool| -> Result<Cow<'_, Dentry>> {
+) -> Result<Cow<'a, Path>> {
+    let lookup_path_from_fs =
+        |path: &CString, ctx: &Context, symlink_no_follow: bool| -> Result<Cow<'_, Path>> {
             let path = path.to_string_lossy();
             let fs_path = FsPath::new(AT_FDCWD, path.as_ref())?;
             let fs_ref = ctx.thread_local.borrow_fs();
             let fs = fs_ref.resolver().read();
-            let dentry = if symlink_no_follow {
+            let path = if symlink_no_follow {
                 fs.lookup_no_follow(&fs_path)?
             } else {
                 fs.lookup(&fs_path)?
             };
-            Ok(Cow::Owned(dentry))
+            Ok(Cow::Owned(path))
         };
 
     match file_ctx {
-        XattrFileCtx::Path(path) => lookup_dentry_from_fs(path, ctx, false),
-        XattrFileCtx::PathNoFollow(path) => lookup_dentry_from_fs(path, ctx, true),
+        XattrFileCtx::Path(path) => lookup_path_from_fs(path, ctx, false),
+        XattrFileCtx::PathNoFollow(path) => lookup_path_from_fs(path, ctx, true),
         XattrFileCtx::FileHandle(file) => {
-            let dentry = file.as_inode_or_err()?.dentry();
-            Ok(Cow::Borrowed(dentry))
+            let path = file.as_inode_or_err()?.path();
+            Ok(Cow::Borrowed(path))
         }
     }
 }

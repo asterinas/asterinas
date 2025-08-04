@@ -19,24 +19,24 @@ pub(super) fn sys_rmdirat(
     path_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let path = ctx.user_space().read_cstring(path_addr, MAX_FILENAME_LEN)?;
+    let path_name = ctx.user_space().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     debug!("dirfd = {}, path_addr = {:?}", dirfd, path_addr);
 
-    let (dir_dentry, name) = {
-        let path = path.to_string_lossy();
-        if path.is_empty() {
+    let (dir_path, name) = {
+        let path_name = path_name.to_string_lossy();
+        if path_name.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
-        if path.trim_end_matches('/').is_empty() {
+        if path_name.trim_end_matches('/').is_empty() {
             return_errno_with_message!(Errno::EBUSY, "is root directory");
         }
-        let fs_path = FsPath::new(dirfd, path.as_ref())?;
+        let fs_path = FsPath::new(dirfd, path_name.as_ref())?;
         ctx.thread_local
             .borrow_fs()
             .resolver()
             .read()
             .lookup_dir_and_base_name(&fs_path)?
     };
-    dir_dentry.rmdir(name.trim_end_matches('/'))?;
+    dir_path.rmdir(name.trim_end_matches('/'))?;
     Ok(SyscallReturn::Return(0))
 }

@@ -2,7 +2,7 @@
 
 use super::{
     setxattr::{
-        check_xattr_namespace, lookup_dentry_for_xattr, parse_xattr_name,
+        check_xattr_namespace, lookup_path_for_xattr, parse_xattr_name,
         read_xattr_name_cstr_from_user, XattrFileCtx,
     },
     SyscallReturn,
@@ -52,6 +52,6 @@ fn removexattr(
     let xattr_name = parse_xattr_name(name_str.as_ref())?;
     check_xattr_namespace(xattr_name.namespace(), ctx)?;
 
-    let dentry = lookup_dentry_for_xattr(&file_ctx, ctx)?;
-    dentry.remove_xattr(xattr_name)
+    let path = lookup_path_for_xattr(&file_ctx, ctx)?;
+    path.remove_xattr(xattr_name)
 }

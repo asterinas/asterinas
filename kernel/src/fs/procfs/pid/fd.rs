@@ -109,12 +109,12 @@ impl FileSymOps {
 
 impl SymOps for FileSymOps {
     fn read_link(&self) -> Result<String> {
-        let path = if let Some(inode_handle) = self.0.downcast_ref::<InodeHandle>() {
-            inode_handle.dentry().abs_path()
+        let path_name = if let Some(inode_handle) = self.0.downcast_ref::<InodeHandle>() {
+            inode_handle.path().abs_path()
         } else {
             // TODO: get the real path for other FileLike object
             String::from("/dev/tty")
         };
-        Ok(path)
+        Ok(path_name)
     }
 }

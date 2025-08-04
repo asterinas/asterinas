@@ -8,19 +8,19 @@ use crate::{
 };
 
 pub fn sys_umount(path_addr: Vaddr, flags: u64, ctx: &Context) -> Result<SyscallReturn> {
-    let path = ctx.user_space().read_cstring(path_addr, MAX_FILENAME_LEN)?;
+    let path_name = ctx.user_space().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     let umount_flags = UmountFlags::from_bits_truncate(flags as u32);
-    debug!("path = {:?}, flags = {:?}", path, umount_flags);
+    debug!("path = {:?}, flags = {:?}", path_name, umount_flags);
 
     umount_flags.check_unsupported_flags()?;
 
-    let path = path.to_string_lossy();
-    if path.is_empty() {
+    let path_name = path_name.to_string_lossy();
+    if path_name.is_empty() {
         return_errno_with_message!(Errno::ENOENT, "path is empty");
     }
-    let fs_path = FsPath::new(AT_FDCWD, path.as_ref())?;
+    let fs_path = FsPath::new(AT_FDCWD, path_name.as_ref())?;
 
-    let target_dentry = if umount_flags.contains(UmountFlags::UMOUNT_NOFOLLOW) {
+    let target_path = if umount_flags.contains(UmountFlags::UMOUNT_NOFOLLOW) {
         ctx.thread_local
             .borrow_fs()
             .resolver()
@@ -34,7 +34,7 @@ pub fn sys_umount(path_addr: Vaddr, flags: u64, ctx: &Context) -> Result<Syscall
             .lookup(&fs_path)?
     };
 
-    target_dentry.unmount()?;
+    target_path.unmount()?;
 
     Ok(SyscallReturn::Return(0))
 }

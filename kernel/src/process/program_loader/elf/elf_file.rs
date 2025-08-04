@@ -7,7 +7,7 @@ use xmas_elf::{
 };
 
 use crate::{
-    fs::{path::Dentry, utils::PATH_MAX},
+    fs::{path::Path, utils::PATH_MAX},
     prelude::*,
 };
 pub struct ElfHeaders {
@@ -93,7 +93,7 @@ impl ElfHeaders {
     }
 
     /// Reads the LDSO path from the ELF file.
-    pub fn read_ldso_path(&self, elf_file: &Dentry) -> Result<Option<CString>> {
+    pub fn read_ldso_path(&self, elf_file: &Path) -> Result<Option<CString>> {
         for program_header in &self.program_headers {
             let type_ = program_header.get_type().map_err(|_| {
                 Error::with_message(Errno::ENOEXEC, "parse program header type fails")

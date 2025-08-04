@@ -20,7 +20,7 @@ pub fn sys_mknodat(
     dev: usize,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let path = ctx.user_space().read_cstring(path_addr, MAX_FILENAME_LEN)?;
+    let path_name = ctx.user_space().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     let fs_ref = ctx.thread_local.borrow_fs();
     let inode_mode = {
         let mask_mode = mode & !fs_ref.umask().read().get();
@@ -29,15 +29,15 @@ pub fn sys_mknodat(
     let inode_type = InodeType::from_raw_mode(mode)?;
     debug!(
         "dirfd = {}, path = {:?}, inode_mode = {:?}, inode_type = {:?}, dev = {}",
-        dirfd, path, inode_mode, inode_type, dev
+        dirfd, path_name, inode_mode, inode_type, dev
     );
 
-    let (dir_dentry, name) = {
-        let path = path.to_string_lossy();
-        if path.is_empty() {
+    let (dir_path, name) = {
+        let path_name = path_name.to_string_lossy();
+        if path_name.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
-        let fs_path = FsPath::new(dirfd, path.as_ref())?;
+        let fs_path = FsPath::new(dirfd, path_name.as_ref())?;
         fs_ref
             .resolver()
             .read()
@@ -46,14 +46,14 @@ pub fn sys_mknodat(
 
     match inode_type {
         InodeType::File => {
-            let _ = dir_dentry.new_fs_child(&name, InodeType::File, inode_mode)?;
+            let _ = dir_path.new_fs_child(&name, InodeType::File, inode_mode)?;
         }
         InodeType::CharDevice | InodeType::BlockDevice => {
             let device_inode = get_device(DeviceId::from_encoded_u64(dev as u64))?;
-            let _ = dir_dentry.mknod(&name, inode_mode, device_inode.into())?;
+            let _ = dir_path.mknod(&name, inode_mode, device_inode.into())?;
         }
         InodeType::NamedPipe => {
-            let _ = dir_dentry.mknod(&name, inode_mode, MknodType::NamedPipeNode)?;
+            let _ = dir_path.mknod(&name, inode_mode, MknodType::NamedPipeNode)?;
         }
         InodeType::Socket => {
             return_errno_with_message!(Errno::EINVAL, "unsupported file types")

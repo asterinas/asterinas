@@ -12,19 +12,22 @@ use crate::{
 
 pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     let user_space = ctx.user_space();
-    let path = user_space.read_cstring(path_ptr, PATH_MAX)?;
-    debug!("path = {:?}, statfs_buf_ptr = 0x{:x}", path, statfs_buf_ptr,);
+    let path_name = user_space.read_cstring(path_ptr, PATH_MAX)?;
+    debug!(
+        "path = {:?}, statfs_buf_ptr = 0x{:x}",
+        path_name, statfs_buf_ptr,
+    );
 
-    let dentry = {
-        let path = path.to_string_lossy();
-        let fs_path = FsPath::try_from(path.as_ref())?;
+    let path = {
+        let path_name = path_name.to_string_lossy();
+        let fs_path = FsPath::try_from(path_name.as_ref())?;
         ctx.thread_local
             .borrow_fs()
             .resolver()
             .read()
             .lookup(&fs_path)?
     };
-    let statfs = Statfs::from(dentry.fs().sb());
+    let statfs = Statfs::from(path.fs().sb());
     user_space.write_val(statfs_buf_ptr, &statfs)?;
     Ok(SyscallReturn::Return(0))
 }
@@ -35,7 +38,7 @@ pub fn sys_fstatfs(fd: FileDesc, statfs_buf_ptr: Vaddr, ctx: &Context) -> Result
     let fs = {
         let mut file_table = ctx.thread_local.borrow_file_table_mut();
         let file = get_file_fast!(&mut file_table, fd);
-        file.as_inode_or_err()?.dentry().fs()
+        file.as_inode_or_err()?.path().fs()
     };
 
     let statfs = Statfs::from(fs.sb());
