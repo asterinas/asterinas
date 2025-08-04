@@ -2,7 +2,7 @@
 
 use super::{
     setxattr::{
-        check_xattr_namespace, lookup_dentry_for_xattr, parse_xattr_name,
+        check_xattr_namespace, lookup_path_for_xattr, parse_xattr_name,
         read_xattr_name_cstr_from_user, XattrFileCtx,
     },
     SyscallReturn,
@@ -98,6 +98,6 @@ fn getxattr(
 
     let mut value_writer = user_space.writer(value_ptr, value_len.min(XATTR_VALUE_MAX_LEN))?;
 
-    let dentry = lookup_dentry_for_xattr(&file_ctx, ctx)?;
-    dentry.get_xattr(xattr_name, &mut value_writer)
+    let path = lookup_path_for_xattr(&file_ctx, ctx)?;
+    path.get_xattr(xattr_name, &mut value_writer)
 }

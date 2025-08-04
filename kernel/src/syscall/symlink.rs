@@ -19,22 +19,22 @@ pub fn sys_symlinkat(
 ) -> Result<SyscallReturn> {
     let user_space = ctx.user_space();
     let target = user_space.read_cstring(target_addr, MAX_FILENAME_LEN)?;
-    let linkpath = user_space.read_cstring(linkpath_addr, MAX_FILENAME_LEN)?;
+    let link_path_name = user_space.read_cstring(linkpath_addr, MAX_FILENAME_LEN)?;
     debug!(
         "target = {:?}, dirfd = {}, linkpath = {:?}",
-        target, dirfd, linkpath
+        target, dirfd, link_path_name
     );
 
     let target = target.to_string_lossy();
     if target.is_empty() {
         return_errno_with_message!(Errno::ENOENT, "target is empty");
     }
-    let (dir_dentry, link_name) = {
-        let linkpath = linkpath.to_string_lossy();
-        if linkpath.is_empty() {
+    let (dir_path, link_name) = {
+        let link_path_name = link_path_name.to_string_lossy();
+        if link_path_name.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "linkpath is empty");
         }
-        let fs_path = FsPath::new(dirfd, linkpath.as_ref())?;
+        let fs_path = FsPath::new(dirfd, link_path_name.as_ref())?;
         ctx.thread_local
             .borrow_fs()
             .resolver()
@@ -42,12 +42,12 @@ pub fn sys_symlinkat(
             .lookup_dir_and_new_basename(&fs_path, false)?
     };
 
-    let new_dentry = dir_dentry.new_fs_child(
+    let new_path = dir_path.new_fs_child(
         &link_name,
         InodeType::SymLink,
         InodeMode::from_bits_truncate(0o777),
     )?;
-    new_dentry.inode().write_link(&target)?;
+    new_path.inode().write_link(&target)?;
     Ok(SyscallReturn::Return(0))
 }
 

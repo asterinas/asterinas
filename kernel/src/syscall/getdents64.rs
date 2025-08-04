@@ -25,7 +25,7 @@ pub fn sys_getdents(
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
     let inode_handle = file.as_inode_or_err()?;
-    if inode_handle.dentry().type_() != InodeType::Dir {
+    if inode_handle.path().type_() != InodeType::Dir {
         return_errno!(Errno::ENOTDIR);
     }
     let mut buffer = vec![0u8; buf_len];
@@ -51,7 +51,7 @@ pub fn sys_getdents64(
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
     let inode_handle = file.as_inode_or_err()?;
-    if inode_handle.dentry().type_() != InodeType::Dir {
+    if inode_handle.path().type_() != InodeType::Dir {
         return_errno!(Errno::ENOTDIR);
     }
     let mut buffer = vec![0u8; buf_len];

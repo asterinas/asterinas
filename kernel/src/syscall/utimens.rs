@@ -7,7 +7,7 @@ use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
-        path::Dentry,
+        path::Path,
     },
     prelude::*,
     time::{clocks::RealTimeCoarseClock, timespec_t, timeval_t},
@@ -109,7 +109,7 @@ struct Utimbuf {
     modtime: i64,
 }
 
-fn vfs_utimes(dentry: &Dentry, times: Option<TimeSpecPair>) -> Result<SyscallReturn> {
+fn vfs_utimes(path: &Path, times: Option<TimeSpecPair>) -> Result<SyscallReturn> {
     let (atime, mtime, ctime) = match times {
         Some(times) => {
             if !times.atime.is_valid() || !times.mtime.is_valid() {
@@ -117,14 +117,14 @@ fn vfs_utimes(dentry: &Dentry, times: Option<TimeSpecPair>) -> Result<SyscallRet
             }
             let now = RealTimeCoarseClock::get().read_time();
             let atime = if times.atime.is_utime_omit() {
-                dentry.atime()
+                path.atime()
             } else if times.atime.is_utime_now() {
                 now
             } else {
                 Duration::try_from(times.atime)?
             };
             let mtime = if times.mtime.is_utime_omit() {
-                dentry.mtime()
+                path.mtime()
             } else if times.mtime.is_utime_now() {
                 now
             } else {
@@ -139,9 +139,9 @@ fn vfs_utimes(dentry: &Dentry, times: Option<TimeSpecPair>) -> Result<SyscallRet
     };
 
     // Update times
-    dentry.set_atime(atime);
-    dentry.set_mtime(mtime);
-    dentry.set_ctime(ctime);
+    path.set_atime(atime);
+    path.set_mtime(mtime);
+    path.set_ctime(ctime);
 
     Ok(SyscallReturn::Return(0))
 }
@@ -165,7 +165,7 @@ fn do_utimes(
             .read_cstring(pathname_ptr, MAX_FILENAME_LEN)?;
         cstring.to_string_lossy().into_owned()
     };
-    let dentry = {
+    let path = {
         // Determine the file system path and the corresponding entry
         let fs_path = FsPath::new(dirfd, pathname.as_ref())?;
         let fs_ref = ctx.thread_local.borrow_fs();
@@ -177,7 +177,7 @@ fn do_utimes(
         }
     };
 
-    vfs_utimes(&dentry, times)
+    vfs_utimes(&path, times)
 }
 
 // Sets the access and modification times for a file,

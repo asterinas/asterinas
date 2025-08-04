@@ -4,7 +4,7 @@ use super::inode_handle::FileIo;
 use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver},
-        path::Dentry,
+        path::Path,
         utils::{InodeMode, InodeType},
     },
     prelude::*,
@@ -102,8 +102,8 @@ impl DeviceId {
 ///
 /// If the parent path is not existing, `mkdir -p` the parent path.
 /// This function is used in registering device.
-pub fn add_node(device: Arc<dyn Device>, path: &str) -> Result<Dentry> {
-    let mut dentry = {
+pub fn add_node(device: Arc<dyn Device>, path: &str) -> Result<Path> {
+    let mut dev_path = {
         let fs_resolver = FsResolver::new();
         fs_resolver.lookup(&FsPath::try_from("/dev").unwrap())?
     };
@@ -123,24 +123,24 @@ pub fn add_node(device: Arc<dyn Device>, path: &str) -> Result<Dentry> {
             (relative_path, "")
         };
 
-        match dentry.lookup(next_name) {
-            Ok(next_dentry) => {
+        match dev_path.lookup(next_name) {
+            Ok(next_path) => {
                 if path_remain.is_empty() {
                     return_errno_with_message!(Errno::EEXIST, "device node is existing");
                 }
-                dentry = next_dentry;
+                dev_path = next_path;
             }
             Err(_) => {
                 if path_remain.is_empty() {
                     // Create the device node
-                    dentry = dentry.mknod(
+                    dev_path = dev_path.mknod(
                         next_name,
                         InodeMode::from_bits_truncate(0o666),
                         device.clone().into(),
                     )?;
                 } else {
                     // Mkdir parent path
-                    dentry = dentry.new_fs_child(
+                    dev_path = dev_path.new_fs_child(
                         next_name,
                         InodeType::Dir,
                         InodeMode::from_bits_truncate(0o755),
@@ -151,7 +151,7 @@ pub fn add_node(device: Arc<dyn Device>, path: &str) -> Result<Dentry> {
         relative_path = path_remain;
     }
 
-    Ok(dentry)
+    Ok(dev_path)
 }
 
 /// Delete the device node from FS for the device.
@@ -166,11 +166,11 @@ pub fn delete_node(path: &str) -> Result<()> {
         String::from("/dev") + "/" + device_path
     };
 
-    let (parent_dentry, name) = {
+    let (parent_path, name) = {
         let fs_resolver = FsResolver::new();
         fs_resolver.lookup_dir_and_base_name(&FsPath::try_from(abs_path.as_str()).unwrap())?
     };
 
-    parent_dentry.unlink(&name)?;
+    parent_path.unlink(&name)?;
     Ok(())
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{
-    setxattr::{lookup_dentry_for_xattr, XattrFileCtx},
+    setxattr::{lookup_path_for_xattr, XattrFileCtx},
     SyscallReturn,
 };
 use crate::{
@@ -89,8 +89,8 @@ fn listxattr(
     let namespace = get_current_xattr_namespace(ctx);
     let mut list_writer = user_space.writer(list_ptr, list_len)?;
 
-    let dentry = lookup_dentry_for_xattr(&file_ctx, ctx)?;
-    dentry.list_xattr(namespace, &mut list_writer)
+    let path = lookup_path_for_xattr(&file_ctx, ctx)?;
+    path.list_xattr(namespace, &mut list_writer)
 }
 
 fn get_current_xattr_namespace(ctx: &Context) -> XattrNamespace {

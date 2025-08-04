@@ -19,7 +19,7 @@ use crate::{
     fs::{
         device::Device,
         fs_resolver::{FsPath, AT_FDCWD},
-        path::Dentry,
+        path::Path,
         registry::{FsProperties, FsType},
         utils::{
             DirentCounter, DirentVisitor, FallocMode, FileSystem, FsFlags, Inode, InodeMode,
@@ -56,21 +56,21 @@ pub struct OverlayFS {
 
 /// The mutable upper layer of an `OverlayFS`.
 struct OverlayUpper {
-    dentry: Dentry,
+    path: Path,
 }
 
 /// The immutable lower layer of an `OverlayFS`.
-/// A lower layer may contain multiple `Dentry`s with different mount points.
+/// A lower layer may contain multiple `Path`s with different mount points.
 struct OverlayLower {
     /// Layered dentries from top to bottom.
-    dentries: Vec<Dentry>,
+    paths: Vec<Path>,
     // TODO: Support data-only lower layers.
 }
 
 /// The work directory. Must reside in
 /// the same file system as the upper layer.
 struct OverlayWork {
-    dentry: Dentry,
+    path: Path,
     // TODO: Align the work directory's behavior with Linux.
 }
 
@@ -113,14 +113,14 @@ impl OverlayFS {
     /// # Errors
     /// * `EINVAL` - If work and upper are on different filesystems
     /// * `EINVAL` - If work is not empty
-    pub fn new(upper: Dentry, lower: Vec<Dentry>, work: Dentry) -> Result<Arc<Self>> {
+    pub fn new(upper: Path, lower: Vec<Path>, work: Path) -> Result<Arc<Self>> {
         Self::validate_work_and_upper(&work, &upper)?;
         Self::validate_work_empty(&work)?;
 
         Ok(Arc::new_cyclic(|weak| Self {
-            upper: OverlayUpper { dentry: upper },
-            lower: OverlayLower { dentries: lower },
-            work: OverlayWork { dentry: work },
+            upper: OverlayUpper { path: upper },
+            lower: OverlayLower { paths: lower },
+            work: OverlayWork { path: work },
             config: OverlayConfig::default(),
             sb: OverlaySB,
             next_ino: AtomicU64::new(0),
@@ -129,7 +129,7 @@ impl OverlayFS {
     }
 
     /// Validates that work is on the same filesystem as upper.
-    fn validate_work_and_upper(work: &Dentry, upper: &Dentry) -> Result<()> {
+    fn validate_work_and_upper(work: &Path, upper: &Path) -> Result<()> {
         if !Arc::ptr_eq(upper.mount_node(), work.mount_node()) {
             return_errno_with_message!(
                 Errno::EINVAL,
@@ -140,7 +140,7 @@ impl OverlayFS {
     }
 
     /// Validates that work is empty.
-    fn validate_work_empty(work: &Dentry) -> Result<()> {
+    fn validate_work_empty(work: &Path) -> Result<()> {
         let mut counter = DirentCounter::new();
         let _ = work.inode().readdir_at(0, &mut counter);
         if counter.count() > 0 {
@@ -154,7 +154,7 @@ impl FileSystem for OverlayFS {
     /// Utilizes the layered directory entries to build the root inode.
     fn root_inode(&self) -> Arc<dyn Inode> {
         let fs = self.fs();
-        let upper_inode = fs.upper.dentry.inode().clone();
+        let upper_inode = fs.upper.path.inode().clone();
         let ino = upper_inode.ino();
         Arc::new_cyclic(|weak| OverlayInode {
             ino,
@@ -165,9 +165,9 @@ impl FileSystem for OverlayFS {
             upper_is_opaque: false,
             lowers: fs
                 .lower
-                .dentries
+                .paths
                 .iter()
-                .map(|dentry| dentry.inode())
+                .map(|path| path.inode())
                 .cloned()
                 .collect(),
             fs: self.self_.clone(),
@@ -1191,18 +1191,18 @@ mod tests {
         let mode = InodeMode::all();
         let upper = {
             let root_mount = MountNode::new_root(RamFS::new());
-            Dentry::new_fs_root(root_mount)
+            Path::new_fs_root(root_mount)
         };
         let lower = {
             let r1 = MountNode::new_root(RamFS::new());
             let r2 = MountNode::new_root(RamFS::new());
 
-            let l1 = Dentry::new_fs_root(r1);
+            let l1 = Path::new_fs_root(r1);
             l1.new_fs_child("f1", InodeType::File, mode).unwrap();
             let d1 = l1.new_fs_child("d1", InodeType::Dir, mode).unwrap();
             d1.new_fs_child("f11", InodeType::File, mode).unwrap();
 
-            let l2 = Dentry::new_fs_root(r2);
+            let l2 = Path::new_fs_root(r2);
             let f2 = l2.new_fs_child("f2", InodeType::File, mode).unwrap();
             let f2_inode = f2.inode();
             f2_inode
@@ -1233,9 +1233,9 @@ mod tests {
     fn work_and_upper_should_be_in_same_mount() {
         crate::time::clocks::init_for_ktest();
 
-        let upper = Dentry::new_fs_root(MountNode::new_root(RamFS::new()));
-        let lower = vec![Dentry::new_fs_root(MountNode::new_root(RamFS::new()))];
-        let work = Dentry::new_fs_root(MountNode::new_root(RamFS::new()));
+        let upper = Path::new_fs_root(MountNode::new_root(RamFS::new()));
+        let lower = vec![Path::new_fs_root(MountNode::new_root(RamFS::new()))];
+        let work = Path::new_fs_root(MountNode::new_root(RamFS::new()));
 
         let Err(e) = OverlayFS::new(upper, lower, work) else {
             panic!("OverlayFS::new should fail when work and upper are not in the same mount");
@@ -1249,11 +1249,11 @@ mod tests {
 
         let mode = InodeMode::all();
         let upper = {
-            let root = Dentry::new_fs_root(MountNode::new_root(RamFS::new()));
+            let root = Path::new_fs_root(MountNode::new_root(RamFS::new()));
             root.new_fs_child("file", InodeType::File, mode).unwrap();
             root
         };
-        let lower = vec![Dentry::new_fs_root(MountNode::new_root(RamFS::new()))];
+        let lower = vec![Path::new_fs_root(MountNode::new_root(RamFS::new()))];
         let work = upper.clone();
 
         let Err(e) = OverlayFS::new(upper, lower, work) else {
@@ -1267,7 +1267,7 @@ mod tests {
         crate::time::clocks::init_for_ktest();
 
         let mode = InodeMode::all();
-        let root = Dentry::new_fs_root(MountNode::new_root(RamFS::new()));
+        let root = Path::new_fs_root(MountNode::new_root(RamFS::new()));
         let upper = {
             let dir = root.new_fs_child("upper", InodeType::Dir, mode).unwrap();
             dir.new_fs_child("f1", InodeType::File, mode).unwrap();
@@ -1279,7 +1279,7 @@ mod tests {
         };
         let lower = {
             let l1 = {
-                let r1 = Dentry::new_fs_root(MountNode::new_root(RamFS::new()));
+                let r1 = Path::new_fs_root(MountNode::new_root(RamFS::new()));
                 r1.new_fs_child("f1", InodeType::Dir, mode).unwrap();
                 r1.new_fs_child("f2", InodeType::File, mode).unwrap();
                 let d1 = r1.new_fs_child("d1", InodeType::Dir, mode).unwrap();
@@ -1294,7 +1294,7 @@ mod tests {
                 r1
             };
             let l2 = {
-                let r2 = Dentry::new_fs_root(MountNode::new_root(RamFS::new()));
+                let r2 = Path::new_fs_root(MountNode::new_root(RamFS::new()));
                 r2.new_fs_child("f1", InodeType::File, mode).unwrap();
                 r2.new_fs_child("d1", InodeType::Dir, mode).unwrap();
                 r2.new_fs_child("d2", InodeType::Dir, mode).unwrap();
