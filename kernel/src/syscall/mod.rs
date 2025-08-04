@@ -172,6 +172,7 @@ mod umask;
 mod umount;
 mod uname;
 mod unlink;
+mod unshare;
 mod utimens;
 mod wait4;
 mod waitid;
