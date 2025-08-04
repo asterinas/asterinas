@@ -132,7 +132,8 @@ pub(super) fn lookup_dentry_for_xattr<'a>(
         |path: &CString, ctx: &Context, symlink_no_follow: bool| -> Result<Cow<'_, Dentry>> {
             let path = path.to_string_lossy();
             let fs_path = FsPath::new(AT_FDCWD, path.as_ref())?;
-            let fs = ctx.posix_thread.fs().resolver().read();
+            let fs_ref = ctx.thread_local.borrow_fs();
+            let fs = fs_ref.resolver().read();
             let dentry = if symlink_no_follow {
                 fs.lookup_no_follow(&fs_path)?
             } else {

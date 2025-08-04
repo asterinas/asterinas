@@ -21,13 +21,17 @@ pub fn sys_umount(path_addr: Vaddr, flags: u64, ctx: &Context) -> Result<Syscall
     let fs_path = FsPath::new(AT_FDCWD, path.as_ref())?;
 
     let target_dentry = if umount_flags.contains(UmountFlags::UMOUNT_NOFOLLOW) {
-        ctx.posix_thread
-            .fs()
+        ctx.thread_local
+            .borrow_fs()
             .resolver()
             .read()
             .lookup_no_follow(&fs_path)?
     } else {
-        ctx.posix_thread.fs().resolver().read().lookup(&fs_path)?
+        ctx.thread_local
+            .borrow_fs()
+            .resolver()
+            .read()
+            .lookup(&fs_path)?
     };
 
     target_dentry.unmount()?;

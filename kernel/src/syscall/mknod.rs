@@ -21,9 +21,9 @@ pub fn sys_mknodat(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let path = ctx.user_space().read_cstring(path_addr, MAX_FILENAME_LEN)?;
-    let current = ctx.posix_thread;
+    let fs_ref = ctx.thread_local.borrow_fs();
     let inode_mode = {
-        let mask_mode = mode & !current.fs().umask().read().get();
+        let mask_mode = mode & !fs_ref.umask().read().get();
         InodeMode::from_bits_truncate(mask_mode)
     };
     let inode_type = InodeType::from_raw_mode(mode)?;
@@ -38,8 +38,7 @@ pub fn sys_mknodat(
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
         let fs_path = FsPath::new(dirfd, path.as_ref())?;
-        current
-            .fs()
+        fs_ref
             .resolver()
             .read()
             .lookup_dir_and_new_basename(&fs_path, false)?

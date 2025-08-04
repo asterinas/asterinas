@@ -34,7 +34,11 @@ pub fn sys_truncate(path_ptr: Vaddr, len: isize, ctx: &Context) -> Result<Syscal
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
         let fs_path = FsPath::new(AT_FDCWD, path.as_ref())?;
-        ctx.posix_thread.fs().resolver().read().lookup(&fs_path)?
+        ctx.thread_local
+            .borrow_fs()
+            .resolver()
+            .read()
+            .lookup(&fs_path)?
     };
     dir_dentry.resize(len as usize)?;
     Ok(SyscallReturn::Return(0))

@@ -49,7 +49,8 @@ pub fn sys_statx(
     let dentry = {
         let filename = filename.to_string_lossy();
         let fs_path = FsPath::new(dirfd, filename.as_ref())?;
-        let fs = ctx.posix_thread.fs().resolver().read();
+        let fs_ref = ctx.thread_local.borrow_fs();
+        let fs = fs_ref.resolver().read();
         if flags.contains(StatxFlags::AT_SYMLINK_NOFOLLOW) {
             fs.lookup_no_follow(&fs_path)?
         } else {

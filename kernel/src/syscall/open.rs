@@ -24,13 +24,12 @@ pub fn sys_openat(
         dirfd, path, flags, mode
     );
 
-    let current = ctx.posix_thread;
     let file_handle = {
         let path = path.to_string_lossy();
         let fs_path = FsPath::new(dirfd, path.as_ref())?;
-        let mask_mode = mode & !current.fs().umask().read().get();
-        let inode_handle = current
-            .fs()
+        let fs_ref = ctx.thread_local.borrow_fs();
+        let mask_mode = mode & !fs_ref.umask().read().get();
+        let inode_handle = fs_ref
             .resolver()
             .read()
             .open(&fs_path, flags, mask_mode)

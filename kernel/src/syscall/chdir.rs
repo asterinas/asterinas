@@ -15,7 +15,8 @@ pub fn sys_chdir(path_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     let path = ctx.user_space().read_cstring(path_ptr, MAX_FILENAME_LEN)?;
     debug!("path = {:?}", path);
 
-    let mut fs = ctx.posix_thread.fs().resolver().write();
+    let fs_ref = ctx.thread_local.borrow_fs();
+    let mut fs = fs_ref.resolver().write();
     let dentry = {
         let path = path.to_string_lossy();
         if path.is_empty() {
@@ -42,6 +43,7 @@ pub fn sys_fchdir(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     if dentry.type_() != InodeType::Dir {
         return_errno_with_message!(Errno::ENOTDIR, "must be directory");
     }
-    ctx.posix_thread.fs().resolver().write().set_cwd(dentry);
+    let fs_ref = ctx.thread_local.borrow_fs();
+    fs_ref.resolver().write().set_cwd(dentry);
     Ok(SyscallReturn::Return(0))
 }

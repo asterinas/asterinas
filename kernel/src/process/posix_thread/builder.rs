@@ -145,7 +145,6 @@ impl PosixThreadBuilder {
                     name: Mutex::new(thread_name),
                     credentials,
                     file_table: Mutex::new(Some(file_table.clone_ro())),
-                    fs,
                     sig_mask,
                     sig_queues,
                     signalled_waker: SpinLock::new(None),
@@ -169,6 +168,7 @@ impl PosixThreadBuilder {
                 clear_child_tid,
                 root_vmar,
                 file_table,
+                fs,
                 fpu_context,
             );
 

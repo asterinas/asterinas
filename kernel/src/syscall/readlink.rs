@@ -30,8 +30,8 @@ pub fn sys_readlinkat(
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
         let fs_path = FsPath::new(dirfd, path.as_ref())?;
-        ctx.posix_thread
-            .fs()
+        ctx.thread_local
+            .borrow_fs()
             .resolver()
             .read()
             .lookup_no_follow(&fs_path)?
