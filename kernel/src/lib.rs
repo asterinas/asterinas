@@ -65,6 +65,7 @@ pub mod events;
 pub mod fs;
 pub mod ipc;
 pub mod kcmdline;
+mod namespace;
 pub mod net;
 pub mod prelude;
 mod process;
@@ -107,10 +108,10 @@ pub fn init() {
     sched::init();
     fs::rootfs::init(boot_info().initramfs.expect("No initramfs found!")).unwrap();
     device::init().unwrap();
-    syscall::init();
     #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
     vdso::init();
     process::init();
+    namespace::init();
 }
 
 fn ap_init() {
