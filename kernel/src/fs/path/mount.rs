@@ -4,7 +4,10 @@ use hashbrown::HashMap;
 
 use crate::{
     fs::{
-        path::dentry::{Dentry, DentryKey, Path},
+        path::{
+            dentry::{Dentry, DentryKey},
+            Path,
+        },
         utils::{FileSystem, InodeType},
     },
     prelude::*,
