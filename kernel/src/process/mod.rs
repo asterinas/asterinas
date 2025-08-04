@@ -4,6 +4,7 @@ mod clone;
 pub mod credentials;
 mod exit;
 mod kill;
+mod nsproxy;
 mod pid_file;
 pub mod posix_thread;
 #[expect(clippy::module_inception)]
@@ -18,11 +19,13 @@ mod status;
 pub mod sync;
 mod task_set;
 mod term_status;
+mod user_ns;
 mod wait;
 
 pub use clone::{clone_child, CloneArgs, CloneFlags};
 pub use credentials::{Credentials, Gid, Uid};
 pub use kill::{kill, kill_all, kill_group, tgkill};
+pub use nsproxy::{check_unsupported_ns_flags, NsProxy, NsProxyBuilder};
 pub use pid_file::PidFile;
 pub use process::{
     broadcast_signal_async, enqueue_signal_async, spawn_init_process, ExitCode, JobControl, Pgid,
@@ -33,6 +36,7 @@ pub use process_vm::{renew_vm_and_map, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS};
 pub use program_loader::{check_executable_file, ProgramToLoad};
 pub use rlimit::ResourceType;
 pub use term_status::TermStatus;
+pub use user_ns::UserNamespace;
 pub use wait::{do_wait, WaitOptions, WaitStatus};
 
 use crate::context::Context;

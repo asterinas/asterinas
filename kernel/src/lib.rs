@@ -105,7 +105,6 @@ fn init() {
     time::init();
     net::init();
     sched::init();
-    syscall::init();
     process::init();
     fs::init();
 }
