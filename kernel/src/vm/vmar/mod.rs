@@ -129,6 +129,11 @@ impl<R> Vmar<R> {
     ) -> Result<Vaddr> {
         self.0.remap(old_addr, old_size, new_addr, new_size)
     }
+
+    /// Returns the reference count of the `Vmar`.
+    pub fn reference_count(&self) -> usize {
+        Arc::strong_count(&self.0)
+    }
 }
 
 pub(super) struct Vmar_ {
