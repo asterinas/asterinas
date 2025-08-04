@@ -21,7 +21,7 @@ use crate::{
     events::Observer,
     fs::file_table::FileTable,
     prelude::*,
-    process::signal::constants::SIGCONT,
+    process::{namespace::nsproxy::NsProxy, signal::constants::SIGCONT},
     thread::{Thread, Tid},
     time::{clocks::ProfClock, Timer, TimerManager},
 };
@@ -77,6 +77,9 @@ pub struct PosixThread {
 
     /// I/O Scheduling priority value
     io_priority: AtomicU32,
+
+    /// The namespaces that the thread belongs to.
+    ns_proxy: Mutex<Option<Arc<NsProxy>>>,
 }
 
 impl PosixThread {
@@ -309,6 +312,11 @@ impl PosixThread {
     /// Returns the I/O priority value of the thread.
     pub fn io_priority(&self) -> &AtomicU32 {
         &self.io_priority
+    }
+
+    /// Returns the namespaces which the thread belongs to.
+    pub fn ns_proxy(&self) -> &Mutex<Option<Arc<NsProxy>>> {
+        &self.ns_proxy
     }
 }
 
