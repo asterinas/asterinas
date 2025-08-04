@@ -65,6 +65,7 @@ pub mod events;
 pub mod fs;
 pub mod ipc;
 pub mod kcmdline;
+mod namespace;
 pub mod net;
 pub mod prelude;
 mod process;

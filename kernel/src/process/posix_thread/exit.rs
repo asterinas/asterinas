@@ -81,10 +81,12 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
 
     // Drop fields in `PosixThread`.
     *posix_thread.file_table().lock() = None;
+    *posix_thread.ns_context().lock() = None;
 
     // Drop fields in `ThreadLocal`.
     *thread_local.root_vmar().borrow_mut() = None;
     thread_local.borrow_file_table_mut().remove();
+    thread_local.borrow_ns_context_mut().remove();
 
     if is_last_thread {
         exit_process(&posix_process);

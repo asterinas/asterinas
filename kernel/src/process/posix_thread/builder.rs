@@ -14,6 +14,7 @@ use ostd::{
 use super::{thread_table, PosixThread, ThreadLocal};
 use crate::{
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
+    namespace::NsContext,
     prelude::*,
     process::{
         posix_thread::name::ThreadName,
@@ -43,6 +44,7 @@ pub struct PosixThreadBuilder {
     sig_queues: SigQueues,
     sched_policy: SchedPolicy,
     fpu_context: FpuContext,
+    ns_context: Option<RwArc<NsContext>>,
 }
 
 impl PosixThreadBuilder {
@@ -61,6 +63,7 @@ impl PosixThreadBuilder {
             sig_queues: SigQueues::new(),
             sched_policy: SchedPolicy::Fair(Nice::default()),
             fpu_context: FpuContext::new(),
+            ns_context: None,
         }
     }
 
@@ -104,6 +107,11 @@ impl PosixThreadBuilder {
         self
     }
 
+    pub fn ns_context(mut self, ns_context: RwArc<NsContext>) -> Self {
+        self.ns_context = Some(ns_context);
+        self
+    }
+
     pub fn build(self) -> Arc<Task> {
         let Self {
             tid,
@@ -119,11 +127,14 @@ impl PosixThreadBuilder {
             sig_queues,
             sched_policy,
             fpu_context,
+            ns_context,
         } = self;
 
         let file_table = file_table.unwrap_or_else(|| RwArc::new(FileTable::new_with_stdio()));
 
         let fs = fs.unwrap_or_else(|| Arc::new(ThreadFsInfo::default()));
+
+        let ns_context = ns_context.unwrap_or_else(|| RwArc::new(NsContext::new_init()));
 
         let root_vmar = process
             .upgrade()
@@ -152,6 +163,7 @@ impl PosixThreadBuilder {
                     virtual_timer_manager,
                     prof_timer_manager,
                     io_priority: AtomicU32::new(0),
+                    ns_context: Mutex::new(Some(ns_context.clone_ro())),
                 }
             };
 
@@ -170,6 +182,7 @@ impl PosixThreadBuilder {
                 file_table,
                 fs,
                 fpu_context,
+                ns_context,
             );
 
             thread_table::add_thread(tid, thread.clone());

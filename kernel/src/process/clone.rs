@@ -19,8 +19,12 @@ use crate::{
         file_table::{FdFlags, FileTable},
         thread_info::ThreadFsInfo,
     },
+    namespace::NsContext,
     prelude::*,
-    process::{pid_file::PidFile, posix_thread::allocate_posix_tid},
+    process::{
+        pid_file::PidFile,
+        posix_thread::{allocate_posix_tid, PosixThread},
+    },
     sched::Nice,
     thread::{AsThread, Tid},
 };
@@ -28,6 +32,7 @@ use crate::{
 bitflags! {
     #[derive(Default)]
     pub struct CloneFlags: u32 {
+        const CLONE_NEWTIME = 0x00000080;       /* New time namespace */
         const CLONE_VM      = 0x00000100;       /* Set if VM shared between processes.  */
         const CLONE_FS      = 0x00000200;       /* Set if fs info shared between processes.  */
         const CLONE_FILES   = 0x00000400;       /* Set if open files shared between processes.  */
@@ -260,6 +265,13 @@ fn clone_child_task(
     // Clone FPU context
     let child_fpu_context = thread_local.fpu().clone_context();
 
+    // Clone namespaces
+    let child_ns_context = clone_namespaces(
+        thread_local.borrow_ns_context().unwrap(),
+        clone_flags,
+        posix_thread,
+    )?;
+
     let child_user_ctx = Arc::new(clone_user_ctx(
         parent_context,
         clone_args.stack,
@@ -287,7 +299,8 @@ fn clone_child_task(
             .sig_mask(sig_mask)
             .file_table(child_file_table)
             .fs(child_fs)
-            .fpu_context(child_fpu_context);
+            .fpu_context(child_fpu_context)
+            .ns_context(child_ns_context);
 
         // Deal with SETTID/CLEARTID flags
         clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
@@ -350,6 +363,13 @@ fn clone_child_process(
     // Clone FPU context
     let child_fpu_context = thread_local.fpu().clone_context();
 
+    // Clone the namespaces
+    let child_ns_context = clone_namespaces(
+        thread_local.borrow_ns_context().unwrap(),
+        clone_flags,
+        posix_thread,
+    )?;
+
     // Inherit the parent's signal mask
     let child_sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed).into();
 
@@ -377,6 +397,7 @@ fn clone_child_process(
                 .file_table(child_file_table)
                 .fs(child_fs)
                 .fpu_context(child_fpu_context)
+                .ns_context(child_ns_context)
         };
 
         // Deal with SETTID/CLEARTID flags
@@ -566,6 +587,14 @@ fn clone_pidfd(
             Err(e)
         }
     }
+}
+
+fn clone_namespaces(
+    parent_ns_context: &RwArc<NsContext>,
+    clone_flags: CloneFlags,
+    posix_thread: &PosixThread,
+) -> Result<RwArc<NsContext>> {
+    NsContext::clone_from(parent_ns_context, clone_flags, posix_thread)
 }
 
 #[expect(clippy::too_many_arguments)]
