@@ -17,7 +17,7 @@ jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    container: asterinas/asterinas:0.15.2-20250722
+    container: asterinas/asterinas:0.16.0-20250802
     steps:
       - uses: actions/checkout@v2
         with:

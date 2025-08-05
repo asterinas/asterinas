@@ -60,7 +60,7 @@ git clone https://github.com/asterinas/asterinas
 2. Run a Docker container as the development environment.
 
 ```bash
-docker run -it --privileged --network=host --device=/dev/kvm -v $(pwd)/asterinas:/root/asterinas asterinas/asterinas:0.15.2-20250722
+docker run -it --privileged --network=host --device=/dev/kvm -v $(pwd)/asterinas:/root/asterinas asterinas/asterinas:0.16.0-20250802
 ```
 
 3. Inside the container, go to the project folder to build and run Asterinas.
