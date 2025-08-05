@@ -11,26 +11,20 @@ use crate::{boot::memory_region::MemoryRegionType, io::IoMemAllocatorBuilder};
 /// address space as MMIO regions.
 pub(super) fn construct_io_mem_allocator_builder() -> IoMemAllocatorBuilder {
     let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
-    let mut reserved_filter = regions
-        .iter()
-        .filter(|r| {
-            r.typ() != MemoryRegionType::Unknown
-                && r.typ() != MemoryRegionType::Reserved
-                && r.typ() != MemoryRegionType::Framebuffer
-        })
-        .collect::<Vec<_>>();
-    reserved_filter.sort_by_key(|r| r.base());
+    let mut reserved_filter = regions.iter().filter(|r| {
+        r.typ() != MemoryRegionType::Unknown
+            && r.typ() != MemoryRegionType::Reserved
+            && r.typ() != MemoryRegionType::Framebuffer
+    });
 
     let mut ranges = Vec::new();
+
     let mut current_address = 0;
     for region in reserved_filter {
-        let base = region.base();
-        let size = region.len();
-
-        if base > current_address {
-            ranges.push(current_address..base);
+        if current_address < region.base() {
+            ranges.push(current_address..region.base());
         }
-        current_address = current_address.max(base + size);
+        current_address = region.end();
     }
     if current_address < usize::MAX {
         ranges.push(current_address..usize::MAX);
