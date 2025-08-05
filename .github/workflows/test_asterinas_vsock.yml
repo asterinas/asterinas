@@ -23,7 +23,7 @@ jobs:
         run: |
             docker run \
               --privileged --network=host --device=/dev/kvm \
-              -v ./:/root/asterinas asterinas/asterinas:0.15.2-20250722 \
+              -v ./:/root/asterinas asterinas/asterinas:0.16.0-20250802 \
               make run AUTO_TEST=vsock ENABLE_KVM=0 SCHEME=microvm RELEASE_MODE=1 &
       - name: Run Vsock Client on Host
         id: host_vsock_client
