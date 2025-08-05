@@ -107,6 +107,8 @@ endif
 
 ifeq ($(ARCH), riscv64)
 SCHEME = riscv
+else ifeq ($(ARCH), loongarch64)
+SCHEME = loongarch
 endif
 
 ifneq ($(SCHEME), "")
