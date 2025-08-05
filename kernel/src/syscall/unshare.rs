@@ -69,7 +69,7 @@ fn check_flags(flags: CloneFlags, ctx: &Context) -> Result<()> {
     Ok(())
 }
 
-fn unshare_files(flags: CloneFlags, ctx: &Context) {
+pub(super) fn unshare_files(flags: CloneFlags, ctx: &Context) {
     if !flags.contains(CloneFlags::CLONE_FILES) {
         return;
     }
