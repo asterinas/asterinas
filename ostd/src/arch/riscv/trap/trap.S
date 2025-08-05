@@ -15,10 +15,15 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 
-# Constants / Macros defined in Rust code:
-#   XLENB
-#   LOAD
-#   STORE
+    .equ XLENB, 8
+
+    .macro LOAD_SP a1, a2
+        ld \a1, \a2*XLENB(sp)
+    .endm
+
+    .macro STORE_SP a1, a2
+        sd \a1, \a2*XLENB(sp)
+    .endm
 
     .section .text
     .global trap_entry
@@ -32,47 +37,45 @@ trap_entry:
 trap_from_kernel:
     csrr sp, sscratch
     addi sp, sp, -34 * XLENB
-    # sscratch = previous-sp, sp = kernel-sp
 trap_from_user:
     # save general registers except sp(x2)
-    STORE_SP x1, 1
-    STORE_SP x3, 3
-    STORE_SP x4, 4
-    STORE_SP x5, 5
-    STORE_SP x6, 6
-    STORE_SP x7, 7
-    STORE_SP x8, 8
-    STORE_SP x9, 9
-    STORE_SP x10, 10
-    STORE_SP x11, 11
-    STORE_SP x12, 12
-    STORE_SP x13, 13
-    STORE_SP x14, 14
-    STORE_SP x15, 15
-    STORE_SP x16, 16
-    STORE_SP x17, 17
-    STORE_SP x18, 18
-    STORE_SP x19, 19
-    STORE_SP x20, 20
-    STORE_SP x21, 21
-    STORE_SP x22, 22
-    STORE_SP x23, 23
-    STORE_SP x24, 24
-    STORE_SP x25, 25
-    STORE_SP x26, 26
-    STORE_SP x27, 27
-    STORE_SP x28, 28
-    STORE_SP x29, 29
-    STORE_SP x30, 30
-    STORE_SP x31, 31
+    STORE_SP x1, 0
+    STORE_SP x3, 2
+    STORE_SP x4, 3
+    STORE_SP x5, 4
+    STORE_SP x6, 5
+    STORE_SP x7, 6
+    STORE_SP x8, 7
+    STORE_SP x9, 8
+    STORE_SP x10, 9
+    STORE_SP x11, 10
+    STORE_SP x12, 11
+    STORE_SP x13, 12
+    STORE_SP x14, 13
+    STORE_SP x15, 14
+    STORE_SP x16, 15
+    STORE_SP x17, 16
+    STORE_SP x18, 17
+    STORE_SP x19, 18
+    STORE_SP x20, 19
+    STORE_SP x21, 20
+    STORE_SP x22, 21
+    STORE_SP x23, 22
+    STORE_SP x24, 23
+    STORE_SP x25, 24
+    STORE_SP x26, 25
+    STORE_SP x27, 26
+    STORE_SP x28, 27
+    STORE_SP x29, 28
+    STORE_SP x30, 29
+    STORE_SP x31, 30
 
-    # save sp, sstatus, sepc
     csrrw t0, sscratch, x0  # sscratch = 0 (kernel)
     csrr t1, sstatus
     csrr t2, sepc
-    STORE_SP t0, 2          # save sp
-    STORE_SP t1, 32         # save sstatus
-    STORE_SP t2, 33         # save sepc
+    STORE_SP t0, 1          # save sp
+    STORE_SP t1, 31         # save sstatus
+    STORE_SP t2, 32         # save sepc
 
     li t0, 3 << 13
     or t1, t1, t0           # sstatus.FS = Dirty (3)
@@ -87,7 +90,7 @@ end_trap_from_kernel:
 
 end_trap_from_user:
     # load callee-saved registers
-    LOAD_SP sp, 0
+    LOAD_SP sp, 33
     LOAD_SP s0, 0
     LOAD_SP s1, 1
     LOAD_SP s2, 2
@@ -129,48 +132,48 @@ run_user:
 
     mv t0, sp
     mv sp, a0
-    STORE_SP t0, 0          # save kernel-sp
-    csrw sscratch, sp       # sscratch = bottom of trap frame
+    STORE_SP t0, 33         # save kernel-sp
+    csrw sscratch, sp       # sscratch = bottom of RawUserContext
 
 trap_return:
-    LOAD_SP t0, 32          # t0 = sstatus
-    LOAD_SP t1, 33          # t1 = sepc
+    LOAD_SP t0, 31          # t0 = sstatus
+    LOAD_SP t1, 32          # t1 = sepc
     csrw sstatus, t0        # load sstatus
     csrw sepc, t1           # load sepc
 
     # restore general registers except sp(x2)
-    LOAD_SP x1, 1
-    LOAD_SP x3, 3
-    LOAD_SP x4, 4
-    LOAD_SP x5, 5
-    LOAD_SP x6, 6
-    LOAD_SP x7, 7
-    LOAD_SP x8, 8
-    LOAD_SP x9, 9
-    LOAD_SP x10, 10
-    LOAD_SP x11, 11
-    LOAD_SP x12, 12
-    LOAD_SP x13, 13
-    LOAD_SP x14, 14
-    LOAD_SP x15, 15
-    LOAD_SP x16, 16
-    LOAD_SP x17, 17
-    LOAD_SP x18, 18
-    LOAD_SP x19, 19
-    LOAD_SP x20, 20
-    LOAD_SP x21, 21
-    LOAD_SP x22, 22
-    LOAD_SP x23, 23
-    LOAD_SP x24, 24
-    LOAD_SP x25, 25
-    LOAD_SP x26, 26
-    LOAD_SP x27, 27
-    LOAD_SP x28, 28
-    LOAD_SP x29, 29
-    LOAD_SP x30, 30
-    LOAD_SP x31, 31
+    LOAD_SP x1, 0
+    LOAD_SP x3, 2
+    LOAD_SP x4, 3
+    LOAD_SP x5, 4
+    LOAD_SP x6, 5
+    LOAD_SP x7, 6
+    LOAD_SP x8, 7
+    LOAD_SP x9, 8
+    LOAD_SP x10, 9
+    LOAD_SP x11, 10
+    LOAD_SP x12, 11
+    LOAD_SP x13, 12
+    LOAD_SP x14, 13
+    LOAD_SP x15, 14
+    LOAD_SP x16, 15
+    LOAD_SP x17, 16
+    LOAD_SP x18, 17
+    LOAD_SP x19, 18
+    LOAD_SP x20, 19
+    LOAD_SP x21, 20
+    LOAD_SP x22, 21
+    LOAD_SP x23, 22
+    LOAD_SP x24, 23
+    LOAD_SP x25, 24
+    LOAD_SP x26, 25
+    LOAD_SP x27, 26
+    LOAD_SP x28, 27
+    LOAD_SP x29, 28
+    LOAD_SP x30, 29
+    LOAD_SP x31, 30
     # restore sp last
-    LOAD_SP x2, 2
+    LOAD_SP x2, 1
 
     # return from supervisor call
     sret
