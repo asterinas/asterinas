@@ -26,12 +26,11 @@ pub struct UserContext {
     cpu_exception_info: Option<CpuExceptionInfo>,
 }
 
-/// General registers.
+/// General-purpose registers.
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
 #[expect(missing_docs)]
 pub struct GeneralRegs {
-    pub zero: usize,
     pub ra: usize,
     pub sp: usize,
     pub gp: usize,
@@ -109,12 +108,12 @@ impl CpuExceptionInfo {
 impl UserContext {
     /// Returns a reference to the general registers.
     pub fn general_regs(&self) -> &GeneralRegs {
-        &self.user_context.general
+        &self.user_context.general_regs
     }
 
     /// Returns a mutable reference to the general registers
     pub fn general_regs_mut(&mut self) -> &mut GeneralRegs {
-        &mut self.user_context.general
+        &mut self.user_context.general_regs
     }
 
     /// Returns the trap information.
@@ -197,7 +196,7 @@ impl UserContextApiInternal for UserContext {
 
     fn as_trap_frame(&self) -> TrapFrame {
         TrapFrame {
-            general: self.user_context.general,
+            general_regs: self.user_context.general_regs,
             sstatus: self.user_context.sstatus,
             sepc: self.user_context.sepc,
         }
@@ -237,13 +236,13 @@ macro_rules! cpu_context_impl_getter_setter {
                 #[doc = concat!("Gets the value of ", stringify!($field))]
                 #[inline(always)]
                 pub fn $field(&self) -> usize {
-                    self.user_context.general.$field
+                    self.user_context.general_regs.$field
                 }
 
                 #[doc = concat!("Sets the value of ", stringify!($field))]
                 #[inline(always)]
                 pub fn $setter_name(&mut self, $field: usize) {
-                    self.user_context.general.$field = $field;
+                    self.user_context.general_regs.$field = $field;
                 }
             )*
         }
