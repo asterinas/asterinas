@@ -35,10 +35,10 @@ pub(crate) unsafe fn late_init_on_bsp() {
 
     // SAFETY:
     // 1. All the system device memory have been removed from the builder.
-    // 2. LoongArch platforms does not have port I/O.
+    // 2. LoongArch platforms do not have port I/O.
     unsafe { crate::io::init(io_mem_builder) };
 
-    let _ = pci::init();
+    pci::init();
 }
 
 pub(crate) unsafe fn init_on_ap() {

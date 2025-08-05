@@ -63,10 +63,18 @@ pub struct PciDeviceLocation {
 }
 
 impl PciDeviceLocation {
+    // TODO: Find a proper way to obtain the bus range. For example, if the PCI bus is identified
+    // from a device tree, this information can be obtained from the `bus-range` field (e.g.,
+    // `bus-range = <0x00 0x7f>`).
     const MIN_BUS: u8 = 0;
+    #[cfg(not(target_arch = "loongarch64"))]
     const MAX_BUS: u8 = 255;
+    #[cfg(target_arch = "loongarch64")]
+    const MAX_BUS: u8 = 127;
+
     const MIN_DEVICE: u8 = 0;
     const MAX_DEVICE: u8 = 31;
+
     const MIN_FUNCTION: u8 = 0;
     const MAX_FUNCTION: u8 = 7;
 
