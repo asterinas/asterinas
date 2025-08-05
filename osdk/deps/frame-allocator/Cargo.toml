@@ -1,6 +1,6 @@
 [package]
 name = "osdk-frame-allocator"
-version = "0.15.2"
+version = "0.16.0"
 edition = "2021"
 description = "The default buddy system frame allocator shipped with OSDK."
 license = "MPL-2.0"
@@ -9,7 +9,7 @@ readme = "README.md"
 
 [dependencies]
 log = "0.4"
-ostd = { version = "0.15.2", path = "../../../ostd" }
+ostd = { version = "0.16.0", path = "../../../ostd" }
 paste = "1.0.15"
 
 [lints]

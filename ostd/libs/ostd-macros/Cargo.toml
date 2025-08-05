@@ -1,6 +1,6 @@
 [package]
 name = "ostd-macros"
-version = "0.15.2"
+version = "0.16.0"
 edition = "2021"
 description = "OSTD's proc macros"
 license = "MPL-2.0"

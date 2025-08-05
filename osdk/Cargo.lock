@@ -184,7 +184,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-osdk"
-version = "0.15.2"
+version = "0.16.0"
 dependencies = [
  "assert_cmd",
  "chrono",
@@ -622,7 +622,7 @@ dependencies = [
 
 [[package]]
 name = "linux-bzimage-builder"
-version = "0.15.2"
+version = "0.16.0"
 dependencies = [
  "align_ext",
  "bitflags 1.3.2",

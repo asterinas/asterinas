@@ -1,6 +1,6 @@
 [package]
 name = "linux-boot-params"
-version = "0.15.2"
+version = "0.16.0"
 edition = "2021"
 description = "The Boot Parameters for Linux Boot Protocol"
 license = "MPL-2.0"

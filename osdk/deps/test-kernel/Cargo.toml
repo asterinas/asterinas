@@ -1,6 +1,6 @@
 [package]
 name = "osdk-test-kernel"
-version = "0.15.2"
+version = "0.16.0"
 edition = "2021"
 description = "The OSTD-based kernel for running unit tests with OSDK."
 license = "MPL-2.0"
@@ -10,7 +10,7 @@ readme = "README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ostd = { version = "0.15.2", path = "../../../ostd" }
+ostd = { version = "0.16.0", path = "../../../ostd" }
 owo-colors = "4.0.0"
 
 [lints]

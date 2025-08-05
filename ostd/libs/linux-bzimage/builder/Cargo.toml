@@ -1,6 +1,6 @@
 [package]
 name = "linux-bzimage-builder"
-version = "0.15.2"
+version = "0.16.0"
 edition = "2021"
 description = "Linux boot compatibility for modern OSes"
 license = "MPL-2.0"

@@ -18,4 +18,4 @@ jobs:
         uses: pxpm/github-tag-action@1.0.1
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-          tag: v0.15.2
+          tag: v0.16.0
