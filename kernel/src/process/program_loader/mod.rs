@@ -11,7 +11,7 @@ use super::process_vm::ProcessVm;
 use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver, AT_FDCWD},
-        path::Dentry,
+        path::Path,
         utils::{InodeType, Permission},
     },
     prelude::*,
@@ -22,7 +22,7 @@ use crate::{
 /// This struct encapsulates the ELF file to be executed along with its header data,
 /// the `argv` and the `envp` which is required for the program execution.
 pub struct ProgramToLoad {
-    elf_file: Dentry,
+    elf_file: Path,
     file_header: Box<[u8; PAGE_SIZE]>,
     argv: Vec<CString>,
     envp: Vec<CString>,
@@ -37,7 +37,7 @@ impl ProgramToLoad {
     /// I guess for most cases, setting the `recursion_limit` as 1 should be enough.
     /// because the interpreter is usually an elf binary(e.g., /bin/bash)
     pub fn build_from_file(
-        elf_file: Dentry,
+        elf_file: Path,
         fs_resolver: &FsResolver,
         argv: Vec<CString>,
         envp: Vec<CString>,
@@ -102,7 +102,7 @@ impl ProgramToLoad {
     }
 }
 
-pub fn check_executable_file(dentry: &Dentry) -> Result<()> {
+pub fn check_executable_file(dentry: &Path) -> Result<()> {
     if dentry.type_().is_directory() {
         return_errno_with_message!(Errno::EISDIR, "the file is a directory");
     }

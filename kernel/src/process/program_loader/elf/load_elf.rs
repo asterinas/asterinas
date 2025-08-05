@@ -17,7 +17,7 @@ use super::elf_file::Elf;
 use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver, AT_FDCWD},
-        path::Dentry,
+        path::Path,
     },
     prelude::*,
     process::{
@@ -41,7 +41,7 @@ use crate::{
 pub fn load_elf_to_vm(
     process_vm: &ProcessVm,
     file_header: &[u8],
-    elf_file: Dentry,
+    elf_file: Path,
     fs_resolver: &FsResolver,
     argv: Vec<CString>,
     envp: Vec<CString>,
@@ -93,7 +93,7 @@ fn lookup_and_parse_ldso(
     elf: &Elf,
     file_header: &[u8],
     fs_resolver: &FsResolver,
-) -> Result<Option<(Dentry, Elf)>> {
+) -> Result<Option<(Path, Elf)>> {
     let ldso_file = {
         let Some(ldso_path) = elf.ldso_path(file_header)? else {
             return Ok(None);
@@ -110,7 +110,7 @@ fn lookup_and_parse_ldso(
     Ok(Some((ldso_file, ldso_elf)))
 }
 
-fn load_ldso(root_vmar: &Vmar<Full>, ldso_file: &Dentry, ldso_elf: &Elf) -> Result<LdsoLoadInfo> {
+fn load_ldso(root_vmar: &Vmar<Full>, ldso_file: &Path, ldso_elf: &Elf) -> Result<LdsoLoadInfo> {
     let range = map_segment_vmos(ldso_elf, root_vmar, ldso_file)?;
     Ok(LdsoLoadInfo {
         entry_point: range
@@ -129,9 +129,9 @@ fn load_ldso(root_vmar: &Vmar<Full>, ldso_file: &Dentry, ldso_elf: &Elf) -> Resu
 /// Returns the mapped range, the entry point and the auxiliary vector.
 fn init_and_map_vmos(
     process_vm: &ProcessVm,
-    ldso: Option<(Dentry, Elf)>,
+    ldso: Option<(Path, Elf)>,
     parsed_elf: &Elf,
-    elf_file: &Dentry,
+    elf_file: &Path,
 ) -> Result<(RelocatedRange, Vaddr, AuxVec)> {
     let process_vmar = process_vm.lock_root_vmar();
     let root_vmar = process_vmar.unwrap();
@@ -195,7 +195,7 @@ pub struct ElfLoadInfo {
 pub fn map_segment_vmos(
     elf: &Elf,
     root_vmar: &Vmar<Full>,
-    elf_file: &Dentry,
+    elf_file: &Path,
 ) -> Result<RelocatedRange> {
     let elf_va_range = get_range_for_all_segments(elf)?;
 
@@ -310,7 +310,7 @@ fn get_range_for_all_segments(elf: &Elf) -> Result<Range<Vaddr>> {
 /// If needed, create additional anonymous mapping to represents .bss segment.
 fn map_segment_vmo(
     program_header: &ProgramHeader64,
-    elf_file: &Dentry,
+    elf_file: &Path,
     root_vmar: &Vmar<Full>,
     map_at: Vaddr,
 ) -> Result<()> {

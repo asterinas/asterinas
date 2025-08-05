@@ -16,7 +16,7 @@ use crate::{
     events::IoEvents,
     fs::{
         file_handle::FileLike,
-        path::Dentry,
+        path::Path,
         utils::{
             AccessMode, DirentVisitor, FallocMode, FileRange, FlockItem, FlockList, Inode,
             InodeMode, InodeType, IoctlCmd, Metadata, RangeLockItem, RangeLockItemBuilder,
@@ -34,7 +34,7 @@ use crate::{
 pub struct InodeHandle<R = Rights>(Arc<InodeHandle_>, R);
 
 struct InodeHandle_ {
-    dentry: Dentry,
+    dentry: Path,
     /// `file_io` is Similar to `file_private` field in `file` structure in linux. If
     /// `file_io` is Some, typical file operations including `read`, `write`, `poll`,
     /// `ioctl` will be provided by `file_io`, instead of `dentry`.
@@ -295,7 +295,7 @@ impl Debug for InodeHandle_ {
 
 /// Methods for both dyn and static
 impl<R> InodeHandle<R> {
-    pub fn dentry(&self) -> &Dentry {
+    pub fn dentry(&self) -> &Path {
         &self.0.dentry
     }
 

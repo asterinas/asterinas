@@ -11,7 +11,7 @@ use crate::{
     fs::{
         file_table::{get_file_fast, FileDesc},
         fs_resolver::{FsPath, AT_FDCWD},
-        path::Dentry,
+        path::Path,
     },
     prelude::*,
     process::{
@@ -60,7 +60,7 @@ fn lookup_executable_file(
     filename: String,
     flags: OpenFlags,
     ctx: &Context,
-) -> Result<Dentry> {
+) -> Result<Path> {
     let dentry = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {
         let mut file_table = ctx.thread_local.borrow_file_table_mut();
         let file = get_file_fast!(&mut file_table, dfd);
@@ -81,7 +81,7 @@ fn lookup_executable_file(
 }
 
 fn do_execve(
-    elf_file: Dentry,
+    elf_file: Path,
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
     ctx: &Context,
@@ -217,7 +217,7 @@ fn read_cstring_vec(
 fn set_uid_from_elf(
     current: &Process,
     credentials: &Credentials<WriteOp>,
-    elf_file: &Dentry,
+    elf_file: &Path,
 ) -> Result<()> {
     if elf_file.mode()?.has_set_uid() {
         let uid = elf_file.owner()?;
@@ -235,7 +235,7 @@ fn set_uid_from_elf(
 fn set_gid_from_elf(
     current: &Process,
     credentials: &Credentials<WriteOp>,
-    elf_file: &Dentry,
+    elf_file: &Path,
 ) -> Result<()> {
     if elf_file.mode()?.has_set_gid() {
         let gid = elf_file.group()?;

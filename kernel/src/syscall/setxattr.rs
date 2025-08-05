@@ -8,7 +8,7 @@ use crate::{
         file_handle::FileLike,
         file_table::{get_file_fast, FileDesc},
         fs_resolver::{FsPath, AT_FDCWD},
-        path::Dentry,
+        path::Path,
         utils::{
             XattrName, XattrNamespace, XattrSetFlags, XATTR_NAME_MAX_LEN, XATTR_VALUE_MAX_LEN,
         },
@@ -127,9 +127,9 @@ pub(super) enum XattrFileCtx<'a> {
 pub(super) fn lookup_dentry_for_xattr<'a>(
     file_ctx: &'a XattrFileCtx<'a>,
     ctx: &'a Context,
-) -> Result<Cow<'a, Dentry>> {
+) -> Result<Cow<'a, Path>> {
     let lookup_dentry_from_fs =
-        |path: &CString, ctx: &Context, symlink_no_follow: bool| -> Result<Cow<'_, Dentry>> {
+        |path: &CString, ctx: &Context, symlink_no_follow: bool| -> Result<Cow<'_, Path>> {
             let path = path.to_string_lossy();
             let fs_path = FsPath::new(AT_FDCWD, path.as_ref())?;
             let fs = ctx.posix_thread.fs().resolver().read();
