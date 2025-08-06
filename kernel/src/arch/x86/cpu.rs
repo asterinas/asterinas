@@ -4,7 +4,6 @@ use alloc::{borrow::ToOwned, collections::btree_set::BTreeSet, string::String, v
 use core::{arch::x86_64::CpuidResult, ffi::CStr, fmt, str};
 
 use ostd::{
-    Pod,
     arch::{
         cpu::{
             context::{CpuException, PageFaultErrorCode, RawPageFaultInfo, UserContext},
@@ -12,11 +11,12 @@ use ostd::{
         },
         tsc_freq,
     },
-    cpu::{PinCurrentCpu, num_cpus},
+    cpu::{num_cpus, PinCurrentCpu},
     mm::Vaddr,
     sync::SpinLock,
     task::DisabledPreemptGuard,
     user::UserContextApi,
+    Pod,
 };
 
 use crate::{cpu::LinuxAbi, thread::exception::PageFaultInfo, vm::perms::VmPerms};
