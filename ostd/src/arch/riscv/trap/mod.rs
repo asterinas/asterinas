@@ -4,14 +4,15 @@
 
 mod trap;
 
-use riscv::register::scause::Interrupt;
 use spin::Once;
 pub(super) use trap::RawUserContext;
 pub use trap::TrapFrame;
 
-use super::cpu::context::CpuExceptionInfo;
 use crate::{
-    arch::plic::claim_interrupt, cpu::CpuId, cpu_local_cell, trap::call_irq_callback_functions,
+    arch::plic::claim_interrupt,
+    cpu::{context::CpuException, CpuId},
+    cpu_local_cell,
+    trap::call_irq_callback_functions,
 };
 
 cpu_local_cell! {
@@ -33,48 +34,66 @@ pub fn is_kernel_interrupted() -> bool {
 /// Handle traps (only from kernel).
 #[no_mangle]
 extern "C" fn trap_handler(f: &mut TrapFrame) {
-    use riscv::register::scause::Trap;
+    use riscv::register::scause::Trap::*;
 
-    match riscv::register::scause::read().cause() {
-        Trap::Interrupt(interrupt) => {
+    let scause = riscv::register::scause::read();
+    match scause.cause() {
+        Interrupt(interrupt) => {
+            use riscv::register::scause::Interrupt::*;
+
             IS_KERNEL_INTERRUPTED.store(true);
             match interrupt {
-                Interrupt::SupervisorTimer => {
+                SupervisorTimer => {
                     crate::arch::timer::handle_timer_interrupt();
                 }
-                Interrupt::SupervisorExternal => {
+                SupervisorExternal => {
                     while let irq_num = claim_interrupt(CpuId::current_racy().as_usize())
                         && irq_num != 0
                     {
                         call_irq_callback_functions(f, irq_num);
                     }
                 }
-                Interrupt::SupervisorSoft => todo!(),
-                _ => {
+                SupervisorSoft => todo!(),
+                Unknown => {
                     panic!(
-                        "cannot handle unknown supervisor interrupt: {interrupt:?}. trapframe: {f:#x?}.",
+                        "Cannot handle unknown supervisor interrupt, scause: {:#x}, trapframe: {:#x?}.",
+                        scause.bits(), f
                     );
                 }
             }
             IS_KERNEL_INTERRUPTED.store(false);
         }
-        Trap::Exception(e) => {
-            let stval = riscv::register::stval::read();
-            panic!(
-                "Cannot handle kernel cpu exception: {e:?}. stval: {stval:#x}, trapframe: {f:#x?}.",
-            );
+        Exception(e) => {
+            use CpuException::*;
+
+            let exception = e.into();
+            match exception {
+                Unknown => {
+                    panic!(
+                        "Cannot handle unknown exception, scause: {:#x}, trapframe: {:#x?}.",
+                        scause.bits(),
+                        f
+                    );
+                }
+                _ => {
+                    panic!(
+                        "Cannot handle kernel exception, exception: {:?}, trapframe: {:#x?}.",
+                        exception, f
+                    );
+                }
+            };
         }
     }
 }
 
 #[expect(clippy::type_complexity)]
-static USER_PAGE_FAULT_HANDLER: Once<fn(&CpuExceptionInfo) -> core::result::Result<(), ()>> =
+static USER_PAGE_FAULT_HANDLER: Once<fn(&CpuException) -> core::result::Result<(), ()>> =
     Once::new();
 
 /// Injects a custom handler for page faults that occur in the kernel and
 /// are caused by user-space address.
 pub fn inject_user_page_fault_handler(
-    handler: fn(info: &CpuExceptionInfo) -> core::result::Result<(), ()>,
+    handler: fn(info: &CpuException) -> core::result::Result<(), ()>,
 ) {
     USER_PAGE_FAULT_HANDLER.call_once(|| handler);
 }
