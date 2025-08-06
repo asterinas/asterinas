@@ -43,7 +43,7 @@ pub struct ThreadLocal {
     // `sig_context` is always equals with RSP.
     sig_context: Cell<Option<Vaddr>>,
     /// Stack address, size, and flags for the signal handler.
-    sig_stack: RefCell<Option<SigStack>>,
+    sig_stack: RefCell<SigStack>,
 }
 
 impl ThreadLocal {
@@ -63,7 +63,7 @@ impl ThreadLocal {
             file_table: RefCell::new(Some(file_table)),
             fs: RefCell::new(fs),
             sig_context: Cell::new(None),
-            sig_stack: RefCell::new(None),
+            sig_stack: RefCell::new(SigStack::default()),
             fpu_context: RefCell::new(fpu_context),
             fpu_state: Cell::new(FpuState::Unloaded),
         }
@@ -105,7 +105,7 @@ impl ThreadLocal {
         &self.sig_context
     }
 
-    pub fn sig_stack(&self) -> &RefCell<Option<SigStack>> {
+    pub fn sig_stack(&self) -> &RefCell<SigStack> {
         &self.sig_stack
     }
 

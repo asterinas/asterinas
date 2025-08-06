@@ -28,14 +28,14 @@ pub use poll::{PollAdaptor, PollHandle, Pollable, Pollee, Poller};
 use sig_action::{SigAction, SigActionFlags, SigDefaultAction};
 use sig_mask::SigMask;
 use sig_num::SigNum;
-pub use sig_stack::{SigStack, SigStackFlags};
+pub use sig_stack::{SigStack, SigStackFlags, SigStackStatus};
 
 use super::posix_thread::ThreadLocal;
 use crate::{
     cpu::LinuxAbi,
     current_userspace,
     prelude::*,
-    process::{posix_thread::do_exit_group, TermStatus},
+    process::{posix_thread::do_exit_group, signal::c_types::stack_t, TermStatus},
 };
 
 pub trait SignalContext {
@@ -184,7 +184,9 @@ pub fn handle_user_signal(
         .store(old_mask + mask, Ordering::Relaxed);
 
     // Set up signal stack.
-    let mut stack_pointer = if let Some(sp) = use_alternate_signal_stack(ctx.thread_local) {
+    let mut stack_pointer = if let Some(sp) =
+        use_alternate_signal_stack(flags, ctx.thread_local, user_ctx.stack_pointer())
+    {
         sp as u64
     } else {
         // Just use user stack
@@ -203,10 +205,24 @@ pub fn handle_user_signal(
 
     // 2. Write ucontext_t.
 
+    // Save the current signal stack information.
+    let uc_stack = {
+        let mut sig_stack = ctx.thread_local.sig_stack().borrow_mut();
+        let stack = stack_t::from(&*sig_stack);
+
+        if sig_stack.flags().contains(SigStackFlags::SS_AUTODISARM) {
+            sig_stack.reset();
+        }
+
+        stack
+    };
+
     let mut ucontext = ucontext_t {
         uc_sigmask: mask.into(),
+        uc_stack,
         ..Default::default()
     };
+
     ucontext.uc_mcontext.copy_user_regs_from(user_ctx);
     let sig_context = ctx.thread_local.sig_context().get();
     if let Some(sig_context_addr) = sig_context {
@@ -303,25 +319,25 @@ pub fn handle_user_signal(
     Ok(())
 }
 
-/// Use an alternate signal stack, which was installed by sigaltstack.
-/// It the stack is already active, we just increase the handler counter and return None, since
-/// the stack pointer can be read from context.
-/// It the stack is not used by any handler, we will return the new sp in alternate signal stack.
-fn use_alternate_signal_stack(thread_local: &ThreadLocal) -> Option<usize> {
-    let mut sig_stack = thread_local.sig_stack().borrow_mut();
-    let sig_stack = (*sig_stack).as_mut()?;
-
-    if sig_stack.is_disabled() {
+/// Uses the alternate signal stack configured via `sigaltstack`.
+///
+/// If the current stack pointer `sp` is already within the alternate signal stack
+/// or if the stack is disabled, this function returns `None`.
+/// Otherwise, it returns the starting stack pointer of the alternate signal stack.
+fn use_alternate_signal_stack(
+    flags: SigActionFlags,
+    thread_local: &ThreadLocal,
+    sp: usize,
+) -> Option<usize> {
+    if !flags.contains(SigActionFlags::SA_ONSTACK) {
         return None;
     }
 
-    if sig_stack.is_active() {
-        // The stack is already active, so we just use sp in context.
-        sig_stack.increase_handler_counter();
+    let sig_stack = thread_local.sig_stack().borrow();
+
+    if sig_stack.active_status(sp) != SigStackStatus::Inactive {
         return None;
     }
-
-    sig_stack.increase_handler_counter();
 
     // Make sp align at 16. FIXME: is this required?
     let stack_pointer = (sig_stack.base() + sig_stack.size()).align_down(16);
@@ -334,7 +350,7 @@ fn write_u64_to_user_stack(rsp: u64, value: u64) -> Result<u64> {
     Ok(rsp)
 }
 
-/// alloc memory of size on user stack, the return address should respect the align argument.
+/// Allocates `size` bytes on the user's stack, ensuring the returned address is aligned to `align`.
 fn alloc_aligned_in_user_stack(rsp: u64, size: usize, align: usize) -> Result<u64> {
     if !align.is_power_of_two() {
         return_errno_with_message!(Errno::EINVAL, "align must be power of two");
