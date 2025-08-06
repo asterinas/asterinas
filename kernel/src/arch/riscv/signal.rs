@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::arch::cpu::context::{CpuExceptionInfo, UserContext};
+use ostd::arch::cpu::context::{CpuException, UserContext};
 
 use crate::process::signal::{sig_num::SigNum, signals::fault::FaultSignal, SignalContext};
 
@@ -12,8 +12,8 @@ impl SignalContext for UserContext {
     }
 }
 
-impl From<&CpuExceptionInfo> for FaultSignal {
-    fn from(_trap_info: &CpuExceptionInfo) -> Self {
+impl From<&CpuException> for FaultSignal {
+    fn from(_trap_info: &CpuException) -> Self {
         unimplemented!()
     }
 }
