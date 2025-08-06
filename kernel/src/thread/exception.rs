@@ -5,7 +5,7 @@
 #[cfg(target_arch = "x86_64")]
 use ostd::arch::cpu::context::CpuException;
 #[cfg(target_arch = "riscv64")]
-use ostd::arch::cpu::context::CpuExceptionInfo as CpuException;
+use ostd::arch::cpu::context::CpuException;
 #[cfg(target_arch = "loongarch64")]
 use ostd::arch::cpu::context::CpuExceptionInfo as CpuException;
 use ostd::{arch::cpu::context::UserContext, task::Task};
