@@ -68,6 +68,23 @@ pub struct BootloaderFramebufferArg {
     pub height: usize,
     /// Bits per pixel of the buffer.
     pub bpp: usize,
+    /// The color information of the framebuffer.
+    /// The size of the red channel.
+    pub red_size: u8,
+    /// The position of the red channel.
+    pub red_pos: u8,
+    /// The size of the green channel.
+    pub green_size: u8,
+    /// The position of the green channel.
+    pub green_pos: u8,
+    /// The size of the blue channel.
+    pub blue_size: u8,
+    /// The position of the blue channel.
+    pub blue_pos: u8,
+    /// The size of the reserved channel.
+    pub reserved_size: u8,
+    /// The position of the reserved channel.
+    pub reserved_pos: u8,
 }
 
 /*************************** Boot-time information ***************************/

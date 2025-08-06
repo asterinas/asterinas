@@ -15,12 +15,12 @@ use inherit_methods_macro::inherit_methods;
 use crate::{
     events::IoEvents,
     fs::{
-        file_handle::FileLike,
+        file_handle::MemoryToMap,
         path::Dentry,
         utils::{
             AccessMode, DirentVisitor, FallocMode, FileRange, FlockItem, FlockList, Inode,
-            InodeMode, InodeType, IoctlCmd, Metadata, RangeLockItem, RangeLockItemBuilder,
-            RangeLockList, RangeLockType, SeekFrom, StatusFlags, OFFSET_MAX,
+            InodeMode, IoctlCmd, Metadata, RangeLockItem, RangeLockItemBuilder, RangeLockList,
+            RangeLockType, SeekFrom, StatusFlags, OFFSET_MAX,
         },
     },
     prelude::*,
@@ -165,6 +165,20 @@ impl InodeHandle_ {
         }
 
         self.dentry.inode().ioctl(cmd, arg)
+    }
+
+    fn mmap(&self, len: usize, offset: usize) -> Result<MemoryToMap> {
+        let inode = self.dentry.inode();
+        if inode.page_cache().is_some() {
+            // If the inode has a page cache, it is a file-backed mapping and
+            // directly return the corresponding inode.
+            Ok(MemoryToMap::PageCache(inode.clone()))
+        } else if let Some(ref file_io) = self.file_io {
+            // Else, let the file specific mmap to handle.
+            file_io.mmap(len, offset)
+        } else {
+            return_errno_with_message!(Errno::EINVAL, "mmap is not supported");
+        }
     }
 
     fn test_range_lock(&self, lock: RangeLockItem) -> Result<RangeLockItem> {
@@ -335,6 +349,16 @@ pub trait FileIo: Pollable + Send + Sync + 'static {
     fn read(&self, writer: &mut VmWriter) -> Result<usize>;
 
     fn write(&self, reader: &mut VmReader) -> Result<usize>;
+
+    /// File specific mmap.
+    ///
+    /// This is the public interface for file specific mmap. The function
+    /// returns a [`MemoryToMap`] that describes the memory object to be mapped
+    /// at the specified offset and length. The caller is responsible for
+    /// creating the actual memory mapping using this information.
+    fn mmap(&self, len: usize, offset: usize) -> Result<MemoryToMap> {
+        return_errno_with_message!(Errno::EINVAL, "mmap is not supported");
+    }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");
