@@ -19,6 +19,7 @@ use crate::{
     },
     cpu::{CpuId, PrivilegeLevel},
     irq::call_irq_callback_functions,
+    mm::MAX_USERSPACE_VADDR,
 };
 
 /// Initializes interrupt handling on RISC-V.
@@ -88,6 +89,13 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
             let was_irq_enabled = riscv::register::sstatus::read().spie();
             enable_local_if(was_irq_enabled);
             match exception {
+                InstructionPageFault(fault_addr)
+                | LoadPageFault(fault_addr)
+                | StorePageFault(fault_addr) => {
+                    if (0..MAX_USERSPACE_VADDR).contains(&fault_addr) {
+                        handle_user_page_fault(f, &exception);
+                    }
+                }
                 Unknown => {
                     panic!(
                         "Cannot handle unknown exception, scause: {:#x}, trapframe: {:#x?}.",
@@ -117,4 +125,17 @@ pub fn inject_user_page_fault_handler(
     handler: fn(info: &CpuException) -> core::result::Result<(), ()>,
 ) {
     USER_PAGE_FAULT_HANDLER.call_once(|| handler);
+}
+
+fn handle_user_page_fault(f: &mut TrapFrame, exception: &CpuException) {
+    let handler = USER_PAGE_FAULT_HANDLER
+        .get()
+        .expect("Page fault handler is missing");
+
+    handler(exception).unwrap_or_else(|_| {
+        panic!(
+            "Failed to handle page fault, exception: {:?}, trapframe: {:#x?}.",
+            exception, f
+        )
+    });
 }
