@@ -285,7 +285,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_CAPSET = 126           => sys_capset(args[..2]);
     SYS_RT_SIGPENDING = 127    => sys_rt_sigpending(args[..2]);
     SYS_RT_SIGSUSPEND = 130    => sys_rt_sigsuspend(args[..2]);
-    SYS_SIGALTSTACK = 131      => sys_sigaltstack(args[..2]);
+    SYS_SIGALTSTACK = 131      => sys_sigaltstack(args[..2], &user_ctx);
     SYS_UTIME = 132            => sys_utime(args[..2]);
     SYS_MKNOD = 133            => sys_mknod(args[..3]);
     SYS_STATFS = 137           => sys_statfs(args[..2]);

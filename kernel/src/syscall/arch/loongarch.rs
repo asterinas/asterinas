@@ -223,7 +223,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SCHED_GET_PRIORITY_MIN = 126 => sys_sched_get_priority_min(args[..1]);
     SYS_KILL = 129               => sys_kill(args[..2]);
     SYS_TGKILL = 131             => sys_tgkill(args[..3]);
-    SYS_SIGALTSTACK = 132        => sys_sigaltstack(args[..2]);
+    SYS_SIGALTSTACK = 132        => sys_sigaltstack(args[..2], &user_ctx);
     SYS_RT_SIGSUSPEND = 133      => sys_rt_sigsuspend(args[..2]);
     SYS_RT_SIGACTION = 134       => sys_rt_sigaction(args[..4]);
     SYS_RT_SIGPROCMASK = 135     => sys_rt_sigprocmask(args[..4]);
