@@ -151,7 +151,17 @@ impl Pause for Waiter {
 
         if let Some(posix_thread) = posix_thread_opt {
             posix_thread.set_signalled_waker(self.waker());
+            // Check `has_pending` after `set_signalled_waker` to avoid race conditions.
+            if posix_thread.has_pending() {
+                posix_thread.clear_signalled_waker();
+                return_errno_with_message!(
+                    Errno::EINTR,
+                    "the current thread is interrupted by a signal"
+                );
+            }
+
             self.wait();
+
             posix_thread.clear_signalled_waker();
         } else {
             self.wait();
