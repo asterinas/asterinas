@@ -2,28 +2,22 @@
 
 //! CPU execution context control.
 
-use core::{fmt::Debug, sync::atomic::Ordering};
+use core::fmt::Debug;
 
-use riscv::register::scause::{Exception, Interrupt, Trap};
+use riscv::register::scause::{Exception, Trap};
 
 use crate::{
-    arch::{
-        irq::{HwIrqLine, InterruptSource, IRQ_CHIP},
-        timer::TIMER_IRQ_NUM,
-        trap::{RawUserContext, TrapFrame},
-    },
-    cpu::{CpuId, PrivilegeLevel},
-    irq::call_irq_callback_functions,
+    arch::trap::{call_irq_callback_functions_by_scause, RawUserContext, TrapFrame},
+    cpu::PrivilegeLevel,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
 
 /// Userspace CPU context, including general-purpose registers and exception information.
-#[derive(Clone, Debug)]
+#[derive(Clone, Default, Debug)]
 #[repr(C)]
 pub struct UserContext {
     user_context: RawUserContext,
-    trap: Trap,
-    cpu_exception_info: Option<CpuExceptionInfo>,
+    exception: Option<CpuException>,
 }
 
 /// General registers.
@@ -65,45 +59,83 @@ pub struct GeneralRegs {
     pub t6: usize,
 }
 
-/// CPU exception information.
-//
-// TODO: Refactor the struct into an enum (similar to x86's `CpuException`).
-#[expect(missing_docs)]
+/// RISC-V CPU exceptions
+///
+/// Every enum variant corresponds to one exception defined by the RISC-V
+/// architecture. Variants that naturally carry an error code (in stval
+/// register) expose it through their associated data fields.
 #[derive(Clone, Copy, Debug)]
-#[repr(C)]
-pub struct CpuExceptionInfo {
-    /// The type of the exception.
-    pub code: Exception,
-    /// The error code associated with the exception.
-    pub page_fault_addr: usize,
-    pub error_code: usize, // TODO
+pub enum CpuException {
+    /// Instruction address misalignment exception.
+    InstructionMisaligned,
+    /// Instruction access fault exception.
+    InstructionFault,
+    /// Illegal instruction exception.
+    IllegalInstruction(FaultInstruction),
+    /// Breakpoint exception.
+    Breakpoint,
+    /// Load address misalignment exception.
+    LoadMisaligned(FaultAddress),
+    /// Load access fault exception.
+    LoadFault(FaultAddress),
+    /// Store address misalignment exception.
+    StoreMisaligned(FaultAddress),
+    /// Store access fault exception.
+    StoreFault(FaultAddress),
+    /// Environment call from user mode.
+    UserEnvCall,
+    /// Environment call from supervisor mode.
+    SupervisorEnvCall,
+    /// Instruction page fault exception.
+    InstructionPageFault(FaultAddress),
+    /// Load page fault exception.
+    LoadPageFault(FaultAddress),
+    /// Store page fault exception.
+    StorePageFault(FaultAddress),
+    /// Unknown.
+    Unknown,
 }
 
-impl Default for UserContext {
-    fn default() -> Self {
-        UserContext {
-            user_context: RawUserContext::default(),
-            trap: Trap::Exception(Exception::Unknown),
-            cpu_exception_info: None,
+impl CpuException {
+    pub(in crate::arch) fn new(raw_exception: Exception, stval: usize) -> Self {
+        use Exception::*;
+
+        match raw_exception {
+            InstructionMisaligned => Self::InstructionMisaligned,
+            InstructionFault => Self::InstructionFault,
+            IllegalInstruction => Self::IllegalInstruction({
+                if stval & 0x3 == 0x3 {
+                    FaultInstruction::Normal(stval as u32)
+                } else {
+                    FaultInstruction::Compressed(stval as u16)
+                }
+            }),
+            Breakpoint => Self::Breakpoint,
+            LoadMisaligned => Self::LoadMisaligned(stval),
+            LoadFault => Self::LoadFault(stval),
+            StoreMisaligned => Self::StoreMisaligned(stval),
+            StoreFault => Self::StoreFault(stval),
+            UserEnvCall => Self::UserEnvCall,
+            SupervisorEnvCall => Self::SupervisorEnvCall,
+            InstructionPageFault => Self::InstructionPageFault(stval),
+            LoadPageFault => Self::LoadPageFault(stval),
+            StorePageFault => Self::StorePageFault(stval),
+            Unknown => Self::Unknown,
         }
     }
 }
 
-impl Default for CpuExceptionInfo {
-    fn default() -> Self {
-        CpuExceptionInfo {
-            code: Exception::Unknown,
-            page_fault_addr: 0,
-            error_code: 0,
-        }
-    }
-}
+/// Data address of data access exceptions.
+pub type FaultAddress = usize;
 
-impl CpuExceptionInfo {
-    /// Get corresponding CPU exception
-    pub fn cpu_exception(&self) -> CpuException {
-        self.code
-    }
+/// Illegal instruction that caused exception.
+#[derive(Clone, Copy, Debug)]
+pub enum FaultInstruction {
+    /// Normal 4-byte instruction.
+    Normal(u32),
+    /// Compressed 2-byte instruction. Used only when compressed (C) extension
+    /// is enabled.
+    Compressed(u16),
 }
 
 impl UserContext {
@@ -117,9 +149,9 @@ impl UserContext {
         &mut self.user_context.general
     }
 
-    /// Returns the trap information.
-    pub fn take_exception(&mut self) -> Option<CpuExceptionInfo> {
-        self.cpu_exception_info.take()
+    /// Takes the CPU exception out.
+    pub fn take_exception(&mut self) -> Option<CpuException> {
+        self.exception.take()
     }
 
     /// Sets the thread-local storage pointer.
@@ -144,47 +176,32 @@ impl UserContextApiInternal for UserContext {
     where
         F: FnMut() -> bool,
     {
-        let return_reason = loop {
+        loop {
             crate::task::scheduler::might_preempt();
             self.user_context.run();
 
-            match riscv::register::scause::read().cause() {
-                Trap::Interrupt(Interrupt::SupervisorTimer) => {
-                    call_irq_callback_functions(
+            let scause = riscv::register::scause::read();
+            match scause.cause() {
+                Trap::Interrupt(interrupt) => {
+                    call_irq_callback_functions_by_scause(
                         &self.as_trap_frame(),
-                        &HwIrqLine::new(
-                            TIMER_IRQ_NUM.load(Ordering::Relaxed),
-                            InterruptSource::Timer,
-                        ),
+                        scause.bits(),
+                        interrupt,
                         PrivilegeLevel::User,
                     );
+                    crate::arch::irq::enable_local();
                 }
-                Trap::Interrupt(Interrupt::SupervisorExternal) => {
-                    // No races because we are in IRQs.
-                    let current_cpu = CpuId::current_racy().into();
-                    while let Some(hw_irq_line) =
-                        IRQ_CHIP.get().unwrap().claim_interrupt(current_cpu)
-                    {
-                        call_irq_callback_functions(
-                            &self.as_trap_frame(),
-                            &hw_irq_line,
-                            PrivilegeLevel::User,
-                        );
-                    }
-                }
-                Trap::Interrupt(_) => todo!(),
                 Trap::Exception(Exception::UserEnvCall) => {
+                    crate::arch::irq::enable_local();
                     self.user_context.sepc += 4;
                     break ReturnReason::UserSyscall;
                 }
-                Trap::Exception(e) => {
+                Trap::Exception(raw_exception) => {
                     let stval = riscv::register::stval::read();
-                    log::trace!("Exception, scause: {e:?}, stval: {stval:#x?}");
-                    self.cpu_exception_info = Some(CpuExceptionInfo {
-                        code: e,
-                        page_fault_addr: stval,
-                        error_code: 0,
-                    });
+                    crate::arch::irq::enable_local();
+
+                    let exception = CpuException::new(raw_exception, stval);
+                    self.exception = Some(exception);
                     break ReturnReason::UserException;
                 }
             }
@@ -192,10 +209,7 @@ impl UserContextApiInternal for UserContext {
             if has_kernel_event() {
                 break ReturnReason::KernelEvent;
             }
-        };
-
-        crate::arch::irq::enable_local();
-        return_reason
+        }
     }
 
     fn as_trap_frame(&self) -> TrapFrame {
@@ -286,9 +300,6 @@ cpu_context_impl_getter_setter!(
     [t5, set_t5],
     [t6, set_t6]
 );
-
-/// CPU exception.
-pub type CpuException = Exception;
 
 /// The FPU context of user task.
 ///
