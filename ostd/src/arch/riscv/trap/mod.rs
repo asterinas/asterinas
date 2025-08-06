@@ -13,6 +13,7 @@ use crate::{
     arch::irq::IRQ_CHIP,
     cpu::{context::CpuException, CpuId},
     cpu_local_cell,
+    mm::MAX_USERSPACE_VADDR,
     trap::call_irq_callback_functions,
 };
 
@@ -77,6 +78,13 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
 
             let exception = e.into();
             match exception {
+                InstructionPageFault(fault_addr)
+                | LoadPageFault(fault_addr)
+                | StorePageFault(fault_addr) => {
+                    if (0..MAX_USERSPACE_VADDR).contains(&fault_addr.0) {
+                        handle_user_page_fault(f, &exception);
+                    }
+                }
                 Unknown => {
                     panic!(
                         "Cannot handle unknown exception, scause: {:#x}, trapframe: {:#x?}.",
@@ -105,4 +113,17 @@ pub fn inject_user_page_fault_handler(
     handler: fn(info: &CpuException) -> core::result::Result<(), ()>,
 ) {
     USER_PAGE_FAULT_HANDLER.call_once(|| handler);
+}
+
+fn handle_user_page_fault(f: &mut TrapFrame, exception: &CpuException) {
+    let handler = USER_PAGE_FAULT_HANDLER
+        .get()
+        .expect("Page fault handler is missing");
+
+    handler(exception).unwrap_or_else(|_| {
+        panic!(
+            "Failed to handle page fault, exception: {:?}, trapframe: {:#x?}.",
+            exception, f
+        )
+    });
 }
