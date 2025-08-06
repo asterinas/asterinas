@@ -463,39 +463,6 @@ impl<T: ?Sized, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> Deref
     }
 }
 
-impl<T: ?Sized, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian>
-    RwLockWriteGuard_<T, R, G>
-{
-    /// Atomically downgrades a write guard to an upgradeable reader guard.
-    ///
-    /// This method always succeeds because the lock is exclusively held by the writer.
-    pub fn downgrade(mut self) -> RwLockUpgradeableGuard_<T, R, G> {
-        loop {
-            self = match self.try_downgrade() {
-                Ok(guard) => return guard,
-                Err(e) => e,
-            };
-        }
-    }
-
-    /// This is not exposed as a public method to prevent intermediate lock states from affecting the
-    /// downgrade process.
-    fn try_downgrade(mut self) -> Result<RwLockUpgradeableGuard_<T, R, G>, Self> {
-        let inner = self.inner.clone();
-        let res = self
-            .inner
-            .lock
-            .compare_exchange(WRITER, UPGRADEABLE_READER, AcqRel, Relaxed);
-        if res.is_ok() {
-            let guard = self.guard.transfer_to();
-            drop(self);
-            Ok(RwLockUpgradeableGuard_ { inner, guard })
-        } else {
-            Err(self)
-        }
-    }
-}
-
 impl<T: ?Sized, R: Deref<Target = RwLock<T, G>> + Clone, G: SpinGuardian> DerefMut
     for RwLockWriteGuard_<T, R, G>
 {
