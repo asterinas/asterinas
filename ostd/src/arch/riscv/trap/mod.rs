@@ -4,6 +4,8 @@
 
 mod trap;
 
+use alloc::format;
+
 use spin::Once;
 pub(super) use trap::RawUserContext;
 pub use trap::TrapFrame;
@@ -12,6 +14,7 @@ use crate::{
     arch::plic::claim_interrupt,
     cpu::{context::CpuException, CpuId},
     cpu_local_cell,
+    mm::MAX_USERSPACE_VADDR,
     trap::call_irq_callback_functions,
 };
 
@@ -68,6 +71,13 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
 
             let exception = e.into();
             match exception {
+                InstructionPageFault(fault_addr)
+                | LoadPageFault(fault_addr)
+                | StorePageFault(fault_addr) => {
+                    if (0..MAX_USERSPACE_VADDR).contains(&fault_addr.0) {
+                        handle_user_page_fault(f, &exception);
+                    }
+                }
                 Unknown => {
                     panic!(
                         "Cannot handle unknown exception, scause: {:#x}, trapframe: {:#x?}.",
@@ -96,4 +106,15 @@ pub fn inject_user_page_fault_handler(
     handler: fn(info: &CpuException) -> core::result::Result<(), ()>,
 ) {
     USER_PAGE_FAULT_HANDLER.call_once(|| handler);
+}
+
+fn handle_user_page_fault(f: &mut TrapFrame, exception: &CpuException) {
+    let handler = USER_PAGE_FAULT_HANDLER
+        .get()
+        .expect("Page fault handler is missing");
+
+    handler(exception).expect(&format!(
+        "Failed to handle page fault, exception: {:?}, trapframe: {:#x?}.",
+        exception, f
+    ));
 }
