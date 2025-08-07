@@ -75,19 +75,19 @@ pub fn do_faccessat(
     let flags = FaccessatFlags::from_bits(flags)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "Invalid flags"))?;
 
-    let path = ctx.user_space().read_cstring(path_ptr, PATH_MAX)?;
+    let path_name = ctx.user_space().read_cstring(path_ptr, PATH_MAX)?;
     debug!(
-        "dirfd = {}, path = {:?}, mode = {:o}, flags = {:?}",
-        dirfd, path, mode, flags
+        "dirfd = {}, path_name = {:?}, mode = {:o}, flags = {:?}",
+        dirfd, path_name, mode, flags
     );
 
-    if path.is_empty() && !flags.contains(FaccessatFlags::AT_EMPTY_PATH) {
+    if path_name.is_empty() && !flags.contains(FaccessatFlags::AT_EMPTY_PATH) {
         return_errno_with_message!(Errno::ENOENT, "path is empty");
     }
 
-    let dentry = {
-        let path = path.to_string_lossy();
-        let fs_path = FsPath::new(dirfd, path.as_ref())?;
+    let path = {
+        let path_name = path_name.to_string_lossy();
+        let fs_path = FsPath::new(dirfd, path_name.as_ref())?;
         let fs_ref = ctx.thread_local.borrow_fs();
         let fs = fs_ref.resolver().read();
         if flags.contains(FaccessatFlags::AT_SYMLINK_NOFOLLOW) {
@@ -96,12 +96,13 @@ pub fn do_faccessat(
             fs.lookup(&fs_path)?
         }
     };
+
     // AccessMode::empty() means F_OK and no more permission check needed.
     if mode.is_empty() {
         return Ok(SyscallReturn::Return(0));
     }
 
-    let inode = dentry.inode();
+    let inode = path.inode();
 
     // FIXME: The current implementation is dummy
     if mode.contains(AccessMode::R_OK) {

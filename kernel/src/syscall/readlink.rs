@@ -18,25 +18,26 @@ pub fn sys_readlinkat(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let user_space = ctx.user_space();
-    let path = user_space.read_cstring(path_addr, MAX_FILENAME_LEN)?;
+    let path_name = user_space.read_cstring(path_addr, MAX_FILENAME_LEN)?;
     debug!(
         "dirfd = {}, path = {:?}, usr_buf_addr = 0x{:x}, usr_buf_len = 0x{:x}",
-        dirfd, path, usr_buf_addr, usr_buf_len
+        dirfd, path_name, usr_buf_addr, usr_buf_len
     );
 
-    let dentry = {
-        let path = path.to_string_lossy();
-        if path.is_empty() {
+    let path = {
+        let path_name = path_name.to_string_lossy();
+        if path_name.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
-        let fs_path = FsPath::new(dirfd, path.as_ref())?;
+        let fs_path = FsPath::new(dirfd, path_name.as_ref())?;
         ctx.thread_local
             .borrow_fs()
             .resolver()
             .read()
             .lookup_no_follow(&fs_path)?
     };
-    let linkpath = dentry.inode().read_link()?;
+
+    let linkpath = path.inode().read_link()?;
     let bytes = linkpath.as_bytes();
     let write_len = bytes.len().min(usr_buf_len);
     user_space.write_bytes(usr_buf_addr, &mut VmReader::from(&bytes[..write_len]))?;
