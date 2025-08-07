@@ -253,7 +253,7 @@ impl MountNode {
     }
 
     /// Gets the parent mount node if any.
-    pub fn parent(&self) -> Option<Weak<Self>> {
+    pub(super) fn parent(&self) -> Option<Weak<Self>> {
         self.parent.read().as_ref().cloned()
     }
 
@@ -261,18 +261,13 @@ impl MountNode {
     ///
     /// In some cases we may need to reset the parent of
     /// the created MountNode, such as move mount.
-    pub fn set_parent(&self, mount_node: &Arc<MountNode>) {
+    fn set_parent(&self, mount_node: &Arc<MountNode>) {
         let mut parent = self.parent.write();
         *parent = Some(Arc::downgrade(mount_node));
     }
 
     fn this(&self) -> Arc<Self> {
         self.this.upgrade().unwrap()
-    }
-
-    /// Gets the associated fs.
-    pub fn fs(&self) -> &Arc<dyn FileSystem> {
-        &self.fs
     }
 }
 
