@@ -191,7 +191,7 @@ impl TaskOptions {
 
         let kstack = KernelStack::new_with_guard_page()?;
 
-        let mut ctx = TaskContext::default();
+        let mut ctx = TaskContext::new();
         ctx.set_instruction_pointer(kernel_task_entry as usize);
         // We should reserve space for the return address in the stack, otherwise
         // we will write across the page boundary due to the implementation of
