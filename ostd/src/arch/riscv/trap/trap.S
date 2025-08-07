@@ -68,15 +68,12 @@ trap_from_user:
 
     # save sp, sstatus, sepc
     csrrw t0, sscratch, x0  # sscratch = 0 (kernel)
-    csrr t1, sstatus
+    li t3, 0b11 << 13       # Disable FPU to prevent unexpected usage of floating point in kernel space
+    csrrc t1, sstatus, t3
     csrr t2, sepc
     STORE_SP t0, 2          # save sp
     STORE_SP t1, 32         # save sstatus
     STORE_SP t2, 33         # save sepc
-
-    li t0, 3 << 13
-    or t1, t1, t0           # sstatus.FS = Dirty (3)
-    csrw sstatus, t1
 
     andi t1, t1, 1 << 8     # sstatus.SPP == 1
     beqz t1, end_trap_from_user

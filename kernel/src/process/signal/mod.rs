@@ -255,12 +255,18 @@ pub fn handle_user_signal(
             const UC_FP_XSTATE: u64 = 1 << 0;
             ucontext.uc_flags = UC_FP_XSTATE;
         } else if #[cfg(target_arch = "riscv64")] {
+            use c_types::mcontext_t;
+
             let ucontext_addr = alloc_aligned_in_user_stack(
                 stack_pointer,
-                size_of::<ucontext_t>() + fpu_context_bytes.len(),
+                size_of::<ucontext_t>() + mcontext_t::FP_STATE_SIZE,
                 align_of::<ucontext_t>(),
             )?;
             let fpu_context_addr = (ucontext_addr as usize) + size_of::<ucontext_t>();
+
+            let zero_start = fpu_context_addr + fpu_context_bytes.len();
+            let zero_len = mcontext_t::FP_STATE_SIZE - fpu_context_bytes.len();
+            user_space.writer(zero_start, zero_len)?.fill_zeros(zero_len)?;
         } else if #[cfg(target_arch = "loongarch64")] {
             // FIXME: It seems that we still need to allocate an sctx_info struct
             // Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/loongarch/kernel/signal.c#L848>
@@ -277,7 +283,7 @@ pub fn handle_user_signal(
         }
     }
 
-    let mut fpu_context_reader = VmReader::from(fpu_context.as_bytes());
+    let mut fpu_context_reader = VmReader::from(fpu_context_bytes);
     user_space.write_bytes(fpu_context_addr as _, &mut fpu_context_reader)?;
 
     user_space.write_val(ucontext_addr as _, &ucontext)?;
