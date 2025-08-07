@@ -6,16 +6,16 @@ use crate::task::TaskContextApi;
 
 core::arch::global_asm!(include_str!("switch.S"));
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Clone)]
 #[repr(C)]
 pub(crate) struct TaskContext {
-    pub regs: CalleeRegs,
-    pub rip: usize,
-    pub fsbase: usize,
+    regs: CalleeRegs,
+    rip: usize,
+    fsbase: usize,
 }
 
 impl TaskContext {
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             regs: CalleeRegs::new(),
             rip: 0,
@@ -25,28 +25,21 @@ impl TaskContext {
 }
 
 /// Callee-saved registers.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Clone)]
 #[repr(C)]
-pub struct CalleeRegs {
-    /// RSP
-    pub rsp: u64,
-    /// RBX
-    pub rbx: u64,
-    /// RBP
-    pub rbp: u64,
-    /// R12
-    pub r12: u64,
-    /// R13
-    pub r13: u64,
-    /// R14
-    pub r14: u64,
-    /// R15
-    pub r15: u64,
+struct CalleeRegs {
+    rsp: u64,
+    rbx: u64,
+    rbp: u64,
+    r12: u64,
+    r13: u64,
+    r14: u64,
+    r15: u64,
 }
 
 impl CalleeRegs {
     /// Creates new `CalleeRegs`
-    pub const fn new() -> Self {
+    pub(self) const fn new() -> Self {
         CalleeRegs {
             rsp: 0,
             rbx: 0,
