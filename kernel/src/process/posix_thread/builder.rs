@@ -29,7 +29,7 @@ use crate::{
 pub struct PosixThreadBuilder {
     // The essential part
     tid: Tid,
-    user_ctx: Arc<UserContext>,
+    user_ctx: Box<UserContext>,
     process: Weak<Process>,
     credentials: Credentials,
 
@@ -46,7 +46,7 @@ pub struct PosixThreadBuilder {
 }
 
 impl PosixThreadBuilder {
-    pub fn new(tid: Tid, user_ctx: Arc<UserContext>, credentials: Credentials) -> Self {
+    pub fn new(tid: Tid, user_ctx: Box<UserContext>, credentials: Credentials) -> Self {
         Self {
             tid,
             user_ctx,

@@ -121,7 +121,7 @@ fn create_init_task(
     user_ctx.set_instruction_pointer(elf_load_info.entry_point as _);
     user_ctx.set_stack_pointer(elf_load_info.user_stack_top as _);
     let thread_name = Some(ThreadName::new_from_executable_path(executable_path)?);
-    let thread_builder = PosixThreadBuilder::new(tid, Arc::new(user_ctx), credentials)
+    let thread_builder = PosixThreadBuilder::new(tid, Box::new(user_ctx), credentials)
         .thread_name(thread_name)
         .process(process)
         .fs(Arc::new(fs));
