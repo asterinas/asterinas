@@ -74,8 +74,8 @@ pub fn read_random() -> Option<u64> {
 pub(crate) fn enable_cpu_features() {
     cpu::extension::init();
     unsafe {
-        // We adopt a lazy approach to enable the floating-point unit; it's not
-        // enabled before the first FPU trap.
-        riscv::register::sstatus::set_fs(riscv::register::sstatus::FS::Off);
+        // Enables FPU in kernel so that we can use floating-point instructions
+        // to save/restore userspace FPU context in kernel code.
+        riscv::register::sstatus::set_fs(riscv::register::sstatus::FS::Initial);
     }
 }
