@@ -64,7 +64,7 @@ pub fn sys_fstatat(
         return self::sys_fstat(dirfd, stat_buf_ptr, ctx);
     }
 
-    let dentry = {
+    let path = {
         let filename = filename.to_string_lossy();
         let fs_path = FsPath::new(dirfd, filename.as_ref())?;
         let fs_ref = ctx.thread_local.borrow_fs();
@@ -75,7 +75,8 @@ pub fn sys_fstatat(
             fs.lookup(&fs_path)?
         }
     };
-    let stat = Stat::from(dentry.metadata());
+
+    let stat = Stat::from(path.metadata());
     user_space.write_val(stat_buf_ptr, &stat)?;
     Ok(SyscallReturn::Return(0))
 }
