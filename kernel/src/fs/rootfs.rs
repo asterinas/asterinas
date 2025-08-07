@@ -8,7 +8,7 @@ use spin::Once;
 
 use super::{
     fs_resolver::{FsPath, FsResolver},
-    path::MountNode,
+    path::Mount,
     ramfs::RamFS,
     utils::{FileSystem, InodeMode, InodeType},
 };
@@ -119,15 +119,15 @@ pub fn mount_fs_at(fs: Arc<dyn FileSystem>, fs_path: &FsPath) -> Result<()> {
     Ok(())
 }
 
-static ROOT_MOUNT: Once<Arc<MountNode>> = Once::new();
+static ROOT_MOUNT: Once<Arc<Mount>> = Once::new();
 
 pub fn init_root_mount() {
-    ROOT_MOUNT.call_once(|| -> Arc<MountNode> {
+    ROOT_MOUNT.call_once(|| -> Arc<Mount> {
         let rootfs = RamFS::new();
-        MountNode::new_root(rootfs)
+        Mount::new_root(rootfs)
     });
 }
 
-pub fn root_mount() -> &'static Arc<MountNode> {
+pub fn root_mount() -> &'static Arc<Mount> {
     ROOT_MOUNT.get().unwrap()
 }
