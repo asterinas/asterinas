@@ -196,6 +196,11 @@ pub struct ucontext_t {
     pub uc_mcontext: mcontext_t,
 }
 
+// FIXME: Currently Rust generates array impls for every size up to 32 manually
+// and there is ongoing work on refactoring with const generics. We can just
+// derive the `Default` implementation once that is done.
+//
+// See <https://github.com/rust-lang/rust/issues/61415>.
 #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))]
 impl Default for ucontext_t {
     fn default() -> Self {

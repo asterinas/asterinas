@@ -258,9 +258,15 @@ pub fn handle_user_signal(
             const UC_FP_XSTATE: u64 = 1 << 0;
             ucontext.uc_flags = UC_FP_XSTATE;
         } else if #[cfg(target_arch = "riscv64")] {
+            // Reference:
+            // <https://elixir.bootlin.com/linux/v6.17.5/source/arch/riscv/include/uapi/asm/ptrace.h#L94-L98>,
+            // <https://elixir.bootlin.com/linux/v6.17.5/source/arch/riscv/include/uapi/asm/ptrace.h#L69-L77>.
+            const FP_STATE_SIZE: usize =
+                size_of::<ostd::arch::cpu::context::QFpuContext>() + 3 * size_of::<u32>();
+
             let ucontext_addr = alloc_aligned_in_user_stack(
                 stack_pointer,
-                size_of::<ucontext_t>() + fpu_context_bytes.len(),
+                size_of::<ucontext_t>() + FP_STATE_SIZE,
                 align_of::<ucontext_t>(),
             )?;
             let fpu_context_addr = (ucontext_addr as usize) + size_of::<ucontext_t>();
@@ -280,7 +286,7 @@ pub fn handle_user_signal(
         }
     }
 
-    let mut fpu_context_reader = VmReader::from(fpu_context.as_bytes());
+    let mut fpu_context_reader = VmReader::from(fpu_context_bytes);
     user_space.write_bytes(fpu_context_addr as _, &mut fpu_context_reader)?;
 
     user_space.write_val(ucontext_addr as _, &ucontext)?;

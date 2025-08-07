@@ -16,7 +16,10 @@
 
 use core::arch::{asm, global_asm};
 
-use crate::arch::cpu::context::GeneralRegs;
+use crate::arch::cpu::{
+    context::GeneralRegs,
+    extension::{has_extensions, IsaExtensions},
+};
 
 #[cfg(target_arch = "riscv32")]
 global_asm!(
@@ -43,7 +46,11 @@ global_asm!(
 "
 );
 
-global_asm!(include_str!("trap.S"));
+/// FPU status bits.
+/// Reference: <https://riscv.github.io/riscv-isa-manual/snapshot/privileged/#sstatus>.
+pub(in crate::arch) const SSTATUS_FS_MASK: usize = 0b11 << 13;
+
+global_asm!(include_str!("trap.S"), SSTATUS_FS_MASK = const SSTATUS_FS_MASK);
 
 /// Initialize interrupt handling for the current HART.
 ///
@@ -76,7 +83,7 @@ pub unsafe fn init() {
 ///     println!("TRAP! tf: {:#x?}", tf);
 /// }
 /// ```
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct TrapFrame {
     /// General registers
@@ -88,7 +95,7 @@ pub struct TrapFrame {
 }
 
 /// Saved registers on a trap.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub(in crate::arch) struct RawUserContext {
     /// General registers
@@ -97,6 +104,26 @@ pub(in crate::arch) struct RawUserContext {
     pub(in crate::arch) sstatus: usize,
     /// Supervisor Exception Program Counter
     pub(in crate::arch) sepc: usize,
+}
+
+impl Default for RawUserContext {
+    fn default() -> Self {
+        let sstatus = if has_extensions(IsaExtensions::F)
+            || has_extensions(IsaExtensions::D)
+            || has_extensions(IsaExtensions::Q)
+        {
+            const SSTATUS_FS_INITIAL: usize = 0b01 << 13;
+            SSTATUS_FS_INITIAL
+        } else {
+            0
+        };
+
+        Self {
+            general: GeneralRegs::default(),
+            sstatus,
+            sepc: 0,
+        }
+    }
 }
 
 impl RawUserContext {

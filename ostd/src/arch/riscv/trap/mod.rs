@@ -9,8 +9,8 @@ use core::sync::atomic::Ordering;
 
 use riscv::register::scause::{Interrupt, Trap};
 use spin::Once;
-pub(super) use trap::RawUserContext;
 pub use trap::TrapFrame;
+pub(super) use trap::{RawUserContext, SSTATUS_FS_MASK};
 
 use crate::{
     arch::{
