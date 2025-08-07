@@ -35,8 +35,8 @@ pub(super) struct Dentry {
 impl Dentry {
     /// Creates a new root `Dentry` with the given inode.
     ///
-    /// It is been created during the construction of the `MountNode`.
-    /// The `MountNode` holds an arc reference to this root `Dentry`.
+    /// It is been created during the construction of the `Mount`.
+    /// The `Mount` holds an arc reference to this root `Dentry`.
     pub(super) fn new_root(inode: Arc<dyn Inode>) -> Arc<Self> {
         Self::new(inode, DentryOptions::Root)
     }

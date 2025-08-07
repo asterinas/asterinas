@@ -13,8 +13,11 @@ use crate::{
     prelude::*,
 };
 
-/// The `MountNode` is used to form a mount tree to maintain the mount information.
-pub struct MountNode {
+/// A `Mount` represents a mounted filesystem instance in the VFS.
+///
+/// Each `Mount` can be viewed as a node in the mount tree, maintaining
+/// mount-related information and the structure of the mount tree.
+pub struct Mount {
     /// Root dentry.
     root_dentry: Arc<Dentry>,
     /// Mountpoint dentry. A mount node can be mounted on one dentry of another mount node,
@@ -23,14 +26,14 @@ pub struct MountNode {
     /// The associated FS.
     fs: Arc<dyn FileSystem>,
     /// The parent mount node.
-    parent: RwLock<Option<Weak<MountNode>>>,
+    parent: RwLock<Option<Weak<Mount>>>,
     /// Child mount nodes which are mounted on one dentry of self.
     children: RwLock<HashMap<DentryKey, Arc<Self>>>,
     /// Reference to self.
     this: Weak<Self>,
 }
 
-impl MountNode {
+impl Mount {
     /// Creates a root mount node with an associated FS.
     ///
     /// The root mount node is not mounted on other mount nodes (which means it has no
@@ -46,11 +49,11 @@ impl MountNode {
     ///
     /// Root mount node has no mountpoint which other mount nodes must have mountpoint.
     ///
-    /// Here, a MountNode is instantiated without an initial mountpoint,
+    /// Here, a Mount is instantiated without an initial mountpoint,
     /// avoiding fixed mountpoint limitations. This allows the root mount node to
     /// exist without a mountpoint, ensuring uniformity and security, while all other
     /// mount nodes must be explicitly assigned a mountpoint to maintain structural integrity.
-    fn new(fs: Arc<dyn FileSystem>, parent_mount: Option<Weak<MountNode>>) -> Arc<Self> {
+    fn new(fs: Arc<dyn FileSystem>, parent_mount: Option<Weak<Mount>>) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
             root_dentry: Dentry::new_root(fs.root_inode()),
             mountpoint: RwLock::new(None),
@@ -72,7 +75,7 @@ impl MountNode {
     /// mountpoint. It is the fs's responsibility to ensure the data consistency.
     ///
     /// Return the mounted child mount.
-    pub(super) fn mount(
+    pub(super) fn do_mount(
         self: &Arc<Self>,
         fs: Arc<dyn FileSystem>,
         mountpoint: &Arc<Dentry>,
@@ -92,7 +95,7 @@ impl MountNode {
     /// Unmounts a child mount node from the mountpoint and returns it.
     ///
     /// The mountpoint should belong to this mount node, or an error is returned.
-    pub(super) fn unmount(&self, mountpoint: &Dentry) -> Result<Arc<Self>> {
+    pub(super) fn do_unmount(&self, mountpoint: &Dentry) -> Result<Arc<Self>> {
         let child_mount = self
             .children
             .write()
@@ -108,7 +111,7 @@ impl MountNode {
     ///
     /// The new mount node will have the same fs as the original one and
     /// have no parent and children. We should set the parent and children manually.
-    fn clone_mount_node(&self, root_dentry: &Arc<Dentry>) -> Arc<Self> {
+    fn clone_mount(&self, root_dentry: &Arc<Dentry>) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
             root_dentry: root_dentry.clone(),
             mountpoint: RwLock::new(None),
@@ -127,12 +130,8 @@ impl MountNode {
     ///
     /// If `recursive` is set to `true`, the entire tree will be copied.
     /// Otherwise, only the root mount node will be copied.
-    pub(super) fn clone_mount_node_tree(
-        &self,
-        root_dentry: &Arc<Dentry>,
-        recursive: bool,
-    ) -> Arc<Self> {
-        let new_root_mount = self.clone_mount_node(root_dentry);
+    pub(super) fn clone_mount_tree(&self, root_dentry: &Arc<Dentry>, recursive: bool) -> Arc<Self> {
+        let new_root_mount = self.clone_mount(root_dentry);
         if !recursive {
             return new_root_mount;
         }
@@ -147,8 +146,7 @@ impl MountNode {
                 if !mountpoint.is_descendant_of(old_mount.root_dentry()) {
                     continue;
                 }
-                let new_child_mount =
-                    old_child_mount.clone_mount_node(old_child_mount.root_dentry());
+                let new_child_mount = old_child_mount.clone_mount(old_child_mount.root_dentry());
                 let key = mountpoint.key();
                 new_parent_mount
                     .children
@@ -192,7 +190,7 @@ impl MountNode {
     }
 
     /// Grafts the mount node tree to the mountpoint.
-    pub(super) fn graft_mount_node_tree(&self, target_path: &Path) -> Result<()> {
+    pub(super) fn graft_mount_tree(&self, target_path: &Path) -> Result<()> {
         if target_path.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
@@ -240,7 +238,7 @@ impl MountNode {
 
     /// Flushes all pending filesystem metadata and cached file data to the device.
     pub fn sync(&self) -> Result<()> {
-        let children: Vec<Arc<MountNode>> = {
+        let children: Vec<Arc<Mount>> = {
             let children = self.children.read();
             children.values().cloned().collect()
         };
@@ -260,10 +258,10 @@ impl MountNode {
     /// Sets the parent mount node.
     ///
     /// In some cases we may need to reset the parent of
-    /// the created MountNode, such as move mount.
-    fn set_parent(&self, mount_node: &Arc<MountNode>) {
+    /// the created Mount, such as move mount.
+    fn set_parent(&self, mount: &Arc<Mount>) {
         let mut parent = self.parent.write();
-        *parent = Some(Arc::downgrade(mount_node));
+        *parent = Some(Arc::downgrade(mount));
     }
 
     fn this(&self) -> Arc<Self> {
@@ -271,9 +269,9 @@ impl MountNode {
     }
 }
 
-impl Debug for MountNode {
+impl Debug for Mount {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("MountNode")
+        f.debug_struct("Mount")
             .field("root", &self.root_dentry)
             .field("mountpoint", &self.mountpoint)
             .field("fs", &self.fs)
