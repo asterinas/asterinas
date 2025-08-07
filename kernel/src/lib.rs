@@ -73,6 +73,8 @@ pub mod syscall;
 pub mod thread;
 pub mod time;
 mod util;
+// TODO: Add vDSO support for other architectures.
+#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 pub(crate) mod vdso;
 pub mod vm;
 
@@ -106,6 +108,7 @@ pub fn init() {
     fs::rootfs::init(boot_info().initramfs.expect("No initramfs found!")).unwrap();
     device::init().unwrap();
     syscall::init();
+    #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
     vdso::init();
     process::init();
 }
