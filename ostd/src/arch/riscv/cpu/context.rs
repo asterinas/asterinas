@@ -2,12 +2,13 @@
 
 //! CPU execution context control.
 
-use core::{fmt::Debug, sync::atomic::Ordering};
+use core::{arch::global_asm, fmt::Debug, sync::atomic::Ordering};
 
 use riscv::register::scause::Exception;
 
 use crate::{
     arch::{
+        cpu::extension::{has_extensions, IsaExtensions},
         irq::IRQ_CHIP,
         trap::{RawUserContext, TrapFrame},
         TIMER_IRQ_NUM,
@@ -189,6 +190,8 @@ impl UserContextApiInternal for UserContext {
 
         // Enable userspace traps.
         self.user_context.sstatus |= 1 << 5;
+        // Set FPU state to clean.
+        self.user_context.sstatus |= 2 << 13;
         loop {
             scheduler::might_preempt();
             self.user_context.run();
@@ -349,31 +352,200 @@ cpu_context_impl_getter_setter!(
 );
 
 /// The FPU context of user task.
-///
-/// This could be used for saving both legacy and modern state format.
-// FIXME: Implement FPU context on RISC-V platforms.
-#[derive(Clone, Debug, Default)]
-pub struct FpuContext;
+#[derive(Clone, Debug)]
+pub enum FpuContext {
+    /// FPU context for F extension (32-bit floating point).
+    F(FFpuContext),
+    /// FPU context for D extension (64-bit floating point).
+    D(DFpuContext),
+    /// FPU context for Q extension (128-bit floating point).
+    Q(QFpuContext),
+}
 
 impl FpuContext {
     /// Creates a new FPU context.
     pub fn new() -> Self {
-        Self
+        if has_extensions(IsaExtensions::Q) {
+            Self::Q(QFpuContext::default())
+        } else if has_extensions(IsaExtensions::D) {
+            Self::D(DFpuContext::default())
+        } else if has_extensions(IsaExtensions::F) {
+            Self::F(FFpuContext::default())
+        } else {
+            panic!("No FPU extensions enabled");
+        }
     }
 
-    /// Saves CPU's current FPU context to this instance, if needed.
-    pub fn save(&mut self) {}
+    /// Saves CPU's current FPU context to this instance.
+    pub fn save(&mut self) {
+        match self {
+            Self::F(ctx) => ctx.save(),
+            Self::D(ctx) => ctx.save(),
+            Self::Q(ctx) => ctx.save(),
+        }
+    }
 
-    /// Loads CPU's FPU context from this instance, if needed.
-    pub fn load(&mut self) {}
+    /// Loads CPU's FPU context from this instance.
+    pub fn load(&mut self) {
+        match self {
+            Self::F(ctx) => ctx.load(),
+            Self::D(ctx) => ctx.load(),
+            Self::Q(ctx) => ctx.load(),
+        }
+    }
 
     /// Returns the FPU context as a byte slice.
     pub fn as_bytes(&self) -> &[u8] {
-        &[]
+        match self {
+            Self::F(ctx) => ctx.as_bytes(),
+            Self::D(ctx) => ctx.as_bytes(),
+            Self::Q(ctx) => ctx.as_bytes(),
+        }
     }
 
     /// Returns the FPU context as a mutable byte slice.
     pub fn as_bytes_mut(&mut self) -> &mut [u8] {
-        &mut []
+        match self {
+            Self::F(ctx) => ctx.as_bytes_mut(),
+            Self::D(ctx) => ctx.as_bytes_mut(),
+            Self::Q(ctx) => ctx.as_bytes_mut(),
+        }
     }
+
+    // Linux uses a union of three kinds of FPU context here. We follow the same
+    // layout to be compatible with libraries that supports Linux.
+    const F_FPU_STATE_SIZE: usize = size_of::<u32>() * 32 + size_of::<u32>();
+    const D_FPU_STATE_SIZE: usize = size_of::<u64>() * 32 + size_of::<u32>();
+    const Q_FPU_STATE_SIZE: usize = size_of::<u64>() * 64 + size_of::<u32>();
+    const F_FPU_CONTEXT_RESERVED_LENGTH: usize =
+        (Self::FPU_CONTEXT_SIZE - Self::F_FPU_STATE_SIZE) / size_of::<u32>();
+    const D_FPU_CONTEXT_RESERVED_LENGTH: usize =
+        (Self::FPU_CONTEXT_SIZE - Self::D_FPU_STATE_SIZE) / size_of::<u32>();
+    const Q_FPU_CONTEXT_RESERVED_LENGTH: usize = 3;
+    const FPU_CONTEXT_SIZE: usize =
+        Self::Q_FPU_STATE_SIZE + size_of::<u32>() * Self::Q_FPU_CONTEXT_RESERVED_LENGTH;
+}
+
+impl Default for FpuContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// FPU context for F extension (32-bit floating point).
+#[repr(C)]
+#[derive(Clone, Debug)]
+pub struct FFpuContext {
+    f: [u32; 32],
+    fcsr: u32,
+    reserved: [u32; FpuContext::F_FPU_CONTEXT_RESERVED_LENGTH],
+}
+
+/// FPU context for D extension (64-bit floating point).
+#[repr(C)]
+#[derive(Clone, Debug)]
+pub struct DFpuContext {
+    f: [u64; 32],
+    fcsr: u32,
+    reserved: [u32; FpuContext::D_FPU_CONTEXT_RESERVED_LENGTH],
+}
+
+/// FPU context for Q extension (128-bit floating point).
+#[repr(C)]
+#[repr(align(16))]
+#[derive(Clone, Debug)]
+pub struct QFpuContext {
+    f: [u64; 64],
+    fcsr: u32,
+    reserved: [u32; FpuContext::Q_FPU_CONTEXT_RESERVED_LENGTH],
+}
+
+macro_rules! impl_fpu_context {
+    ($name:ident, $f_length:literal, $reserved_length:expr, $suffix:literal) => {
+        impl $name {
+            fn save(&mut self) {
+                unsafe {
+                    paste::paste! {
+                        [<save_fpu_context_$suffix>](self as *mut _);
+                    }
+                }
+            }
+
+            fn load(&self) {
+                unsafe {
+                    paste::paste! {
+                        [<load_fpu_context_$suffix>](self as *const _);
+                    }
+                }
+            }
+
+            fn as_bytes(&self) -> &[u8] {
+                unsafe {
+                    core::slice::from_raw_parts(
+                        self as *const Self as *const u8,
+                        core::mem::size_of::<Self>(),
+                    )
+                }
+            }
+
+            fn as_bytes_mut(&mut self) -> &mut [u8] {
+                unsafe {
+                    core::slice::from_raw_parts_mut(
+                        self as *mut Self as *mut u8,
+                        core::mem::size_of::<Self>(),
+                    )
+                }
+            }
+
+            // Currently Rust generates array impls for every size up to 32
+            // manually and there is ongoing work on refactoring with const
+            // generics. We can remove the `new` method and just derive the
+            // `Default` implementation once that is done.
+            //
+            // See https://github.com/rust-lang/rust/issues/61415.
+            fn new() -> Self {
+                Self {
+                    f: [0; $f_length],
+                    fcsr: 0,
+                    reserved: [0; $reserved_length],
+                }
+            }
+        }
+
+        impl Default for $name {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+    };
+}
+
+impl_fpu_context!(
+    FFpuContext,
+    32,
+    FpuContext::F_FPU_CONTEXT_RESERVED_LENGTH,
+    "f"
+);
+impl_fpu_context!(
+    DFpuContext,
+    32,
+    FpuContext::D_FPU_CONTEXT_RESERVED_LENGTH,
+    "d"
+);
+impl_fpu_context!(
+    QFpuContext,
+    64,
+    FpuContext::Q_FPU_CONTEXT_RESERVED_LENGTH,
+    "q"
+);
+
+global_asm!(include_str!("fpu.S"));
+
+extern "C" {
+    fn save_fpu_context_f(ctx: *mut FFpuContext);
+    fn load_fpu_context_f(ctx: *const FFpuContext);
+    fn save_fpu_context_d(ctx: *mut DFpuContext);
+    fn load_fpu_context_d(ctx: *const DFpuContext);
+    fn save_fpu_context_q(ctx: *mut QFpuContext);
+    fn load_fpu_context_q(ctx: *const QFpuContext);
 }
