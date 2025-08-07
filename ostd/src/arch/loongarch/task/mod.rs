@@ -70,16 +70,6 @@ impl TaskContext {
             tp: 0,
         }
     }
-
-    /// Sets thread-local storage pointer.
-    pub fn set_tls_pointer(&mut self, tls: usize) {
-        self.tp = tls;
-    }
-
-    /// Gets thread-local storage pointer.
-    pub fn tls_pointer(&self) -> usize {
-        self.tp
-    }
 }
 
 impl TaskContextApi for TaskContext {
@@ -87,16 +77,8 @@ impl TaskContextApi for TaskContext {
         self.ra = ip;
     }
 
-    fn instruction_pointer(&self) -> usize {
-        self.ra
-    }
-
     fn set_stack_pointer(&mut self, sp: usize) {
         self.regs.sp = sp;
-    }
-
-    fn stack_pointer(&self) -> usize {
-        self.regs.sp
     }
 }
 

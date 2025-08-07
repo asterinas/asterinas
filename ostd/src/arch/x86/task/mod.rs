@@ -22,16 +22,6 @@ impl TaskContext {
             fsbase: 0,
         }
     }
-
-    /// Sets thread-local storage pointer.
-    pub fn set_tls_pointer(&mut self, tls: usize) {
-        self.fsbase = tls;
-    }
-
-    /// Gets thread-local storage pointer.
-    pub fn tls_pointer(&self) -> usize {
-        self.fsbase
-    }
 }
 
 /// Callee-saved registers.
@@ -74,16 +64,8 @@ impl TaskContextApi for TaskContext {
         self.rip = ip;
     }
 
-    fn instruction_pointer(&self) -> usize {
-        self.rip
-    }
-
     fn set_stack_pointer(&mut self, sp: usize) {
         self.regs.rsp = sp as u64;
-    }
-
-    fn stack_pointer(&self) -> usize {
-        self.regs.rsp as usize
     }
 }
 
