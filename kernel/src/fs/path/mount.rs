@@ -72,16 +72,17 @@ impl MountNode {
     /// mountpoint. It is the fs's responsibility to ensure the data consistency.
     ///
     /// Return the mounted child mount.
-    pub fn mount(&self, fs: Arc<dyn FileSystem>, mountpoint: &Path) -> Result<Arc<Self>> {
-        if !Arc::ptr_eq(mountpoint.mount_node(), &self.this()) {
-            return_errno_with_message!(Errno::EINVAL, "mountpoint not belongs to this");
-        }
+    pub(super) fn mount(
+        self: &Arc<Self>,
+        fs: Arc<dyn FileSystem>,
+        mountpoint: &Arc<Dentry>,
+    ) -> Result<Arc<Self>> {
         if mountpoint.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
 
         let key = mountpoint.key();
-        let child_mount = Self::new(fs, Some(Arc::downgrade(mountpoint.mount_node())));
+        let child_mount = Self::new(fs, Some(Arc::downgrade(self)));
         self.children.write().insert(key, child_mount.clone());
         Ok(child_mount)
     }
@@ -89,11 +90,7 @@ impl MountNode {
     /// Unmounts a child mount node from the mountpoint and returns it.
     ///
     /// The mountpoint should belong to this mount node, or an error is returned.
-    pub fn unmount(&self, mountpoint: &Path) -> Result<Arc<Self>> {
-        if !Arc::ptr_eq(mountpoint.mount_node(), &self.this()) {
-            return_errno_with_message!(Errno::EINVAL, "mountpoint not belongs to this");
-        }
-
+    pub(super) fn unmount(&self, mountpoint: &Dentry) -> Result<Arc<Self>> {
         let child_mount = self
             .children
             .write()
@@ -196,10 +193,7 @@ impl MountNode {
     }
 
     /// Gets a child mount node from the mountpoint if any.
-    pub(super) fn get(&self, mountpoint: &Path) -> Option<Arc<Self>> {
-        if !Arc::ptr_eq(mountpoint.mount_node(), &self.this()) {
-            return None;
-        }
+    pub(super) fn get(&self, mountpoint: &Dentry) -> Option<Arc<Self>> {
         self.children.read().get(&mountpoint.key()).cloned()
     }
 

@@ -160,7 +160,7 @@ impl Path {
             return self;
         }
 
-        match self.mount_node.get(&self) {
+        match self.mount_node.get(&self.dentry) {
             Some(child_mount) => {
                 let inner = child_mount.root_dentry().clone();
                 Self::new(child_mount, inner).get_top_path()
@@ -191,7 +191,7 @@ impl Path {
             return_errno_with_message!(Errno::EINVAL, "can not mount on root");
         }
 
-        let child_mount = self.mount_node.mount(fs, &self.this())?;
+        let child_mount = self.mount_node.mount(fs, &self.dentry)?;
         self.set_mountpoint(child_mount.clone());
         Ok(child_mount)
     }
@@ -208,8 +208,9 @@ impl Path {
             return_errno_with_message!(Errno::EINVAL, "cannot umount root mount");
         };
 
-        let mountpoint_mount_node = self.mount_node.parent().unwrap().upgrade().unwrap();
-        let parent_mount_path = Self::new(mountpoint_mount_node.clone(), mountpoint.clone());
+        let parent_mount_node = self.mount_node.parent().unwrap().upgrade().unwrap();
+
+        let child_mount = parent_mount_node.unmount(&mountpoint)?;
 
         let child_mount = mountpoint_mount_node.unmount(&parent_mount_path)?;
         mountpoint.clear_mounted_bit();
