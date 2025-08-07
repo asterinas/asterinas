@@ -19,6 +19,7 @@ use aster_rights::Rights;
 use aster_time::{read_monotonic_time, Instant};
 use aster_util::coeff::Coeff;
 use ostd::{
+    const_assert,
     mm::{UFrame, VmIo, VmIoOnce, PAGE_SIZE},
     sync::SpinLock,
     Pod,
@@ -186,6 +187,12 @@ impl VdsoData {
     }
 }
 
+macro_rules! vdso_data_field_offset {
+    ($field:ident) => {
+        VDSO_VMO_LAYOUT.data_offset + core::mem::offset_of!(VdsoData, $field)
+    };
+}
+
 /// The vDSO singleton.
 ///
 /// See [the module-level documentations](self) for more about the vDSO mechanism.
@@ -201,9 +208,6 @@ struct Vdso {
     data_frame: UFrame,
 }
 
-/// The size of the vDSO VMO.
-pub const VDSO_VMO_SIZE: usize = 5 * PAGE_SIZE;
-
 impl Vdso {
     /// Constructs a new `Vdso`, including an initialized `VdsoData` and a VMO of the vDSO.
     fn new() -> Self {
@@ -211,10 +215,12 @@ impl Vdso {
         vdso_data.init();
 
         let (vdso_vmo, data_frame) = {
-            let vmo_options = VmoOptions::<Rights>::new(VDSO_VMO_SIZE);
+            let vmo_options = VmoOptions::<Rights>::new(VDSO_VMO_LAYOUT.size);
             let vdso_vmo = vmo_options.alloc().unwrap();
             // Write vDSO data to vDSO VMO.
-            vdso_vmo.write_bytes(0x80, vdso_data.as_bytes()).unwrap();
+            vdso_vmo
+                .write_bytes(VDSO_VMO_LAYOUT.data_offset, vdso_data.as_bytes())
+                .unwrap();
 
             let vdso_lib_vmo = {
                 let vdso_path = FsPath::new(AT_FDCWD, "/lib/x86_64-linux-gnu/vdso64.so").unwrap();
@@ -222,10 +228,12 @@ impl Vdso {
                 let vdso_lib = fs_resolver.lookup(&vdso_path).unwrap();
                 vdso_lib.inode().page_cache().unwrap()
             };
-            let mut vdso_text = Box::new([0u8; PAGE_SIZE]);
+            let mut vdso_text = Box::new([0u8; VDSO_VMO_LAYOUT.text_segment_size]);
             vdso_lib_vmo.read_bytes(0, &mut *vdso_text).unwrap();
             // Write vDSO library to vDSO VMO.
-            vdso_vmo.write_bytes(0x4000, &*vdso_text).unwrap();
+            vdso_vmo
+                .write_bytes(VDSO_VMO_LAYOUT.text_segment_offset, &*vdso_text)
+                .unwrap();
 
             let data_frame = vdso_vmo.try_commit_page(0).unwrap();
             (vdso_vmo, data_frame)
@@ -244,9 +252,13 @@ impl Vdso {
         data.update_high_res_instant(instant, instant_cycles);
 
         // Update begins.
-        self.data_frame.write_once(0x80, &1).unwrap();
+        self.data_frame
+            .write_once(vdso_data_field_offset!(seq), &1)
+            .unwrap();
 
-        self.data_frame.write_val(0x88, &instant_cycles).unwrap();
+        self.data_frame
+            .write_val(vdso_data_field_offset!(last_cycles), &instant_cycles)
+            .unwrap();
         for clock_id in HIGH_RES_CLOCK_IDS {
             self.update_data_frame_instant(clock_id, &mut data);
         }
@@ -254,7 +266,9 @@ impl Vdso {
         // Update finishes.
         // FIXME: To synchronize with the vDSO library, this needs to be an atomic write with the
         // Release memory order.
-        self.data_frame.write_once(0x80, &0).unwrap();
+        self.data_frame
+            .write_once(vdso_data_field_offset!(seq), &0)
+            .unwrap();
     }
 
     fn update_coarse_res_instant(&self, instant: Instant) {
@@ -263,7 +277,9 @@ impl Vdso {
         data.update_coarse_res_instant(instant);
 
         // Update begins.
-        self.data_frame.write_once(0x80, &1).unwrap();
+        self.data_frame
+            .write_once(vdso_data_field_offset!(seq), &1)
+            .unwrap();
 
         for clock_id in COARSE_RES_CLOCK_IDS {
             self.update_data_frame_instant(clock_id, &mut data);
@@ -272,15 +288,20 @@ impl Vdso {
         // Update finishes.
         // FIXME: To synchronize with the vDSO library, this needs to be an atomic write with the
         // Release memory order.
-        self.data_frame.write_once(0x80, &0).unwrap();
+        self.data_frame
+            .write_once(vdso_data_field_offset!(seq), &0)
+            .unwrap();
     }
 
     /// Updates the requisite fields of the vDSO data in the frame.
     fn update_data_frame_instant(&self, clockid: ClockId, data: &mut VdsoData) {
         let clock_index = clockid as usize;
 
-        let secs_offset = 0xA0 + clock_index * 0x10;
-        let nanos_info_offset = 0xA8 + clock_index * 0x10;
+        let secs_offset =
+            vdso_data_field_offset!(basetime) + clock_index * size_of::<VdsoInstant>();
+        let nanos_info_offset = vdso_data_field_offset!(basetime)
+            + core::mem::offset_of!(VdsoInstant, nanos_info)
+            + clock_index * size_of::<VdsoInstant>();
         self.data_frame
             .write_val(secs_offset, &data.basetime[clock_index].secs)
             .unwrap();
@@ -340,3 +361,55 @@ pub(super) fn init() {
 pub(crate) fn vdso_vmo() -> Option<Arc<Vmo>> {
     VDSO.get().map(|vdso| vdso.vmo.clone())
 }
+
+#[cfg(target_arch = "x86_64")]
+pub const VDSO_VMO_LAYOUT: VdsoVmoLayout = VdsoVmoLayout {
+    // https://elixir.bootlin.com/linux/v6.2.10/source/arch/x86/entry/vdso/vdso-layout.lds.S#L20
+    data_segment_offset: 0,
+    data_segment_size: PAGE_SIZE,
+    // https://elixir.bootlin.com/linux/v6.2.10/source/arch/x86/entry/vdso/vdso-layout.lds.S#L19
+    text_segment_offset: 4 * PAGE_SIZE,
+    text_segment_size: PAGE_SIZE,
+    // https://elixir.bootlin.com/linux/v6.2.10/source/arch/x86/include/asm/vvar.h#L51
+    data_offset: 0x80,
+
+    size: 5 * PAGE_SIZE,
+};
+
+#[cfg(target_arch = "riscv64")]
+pub const VDSO_VMO_LAYOUT: VdsoVmoLayout = VdsoVmoLayout {
+    // https://elixir.bootlin.com/linux/v6.2.10/source/arch/riscv/kernel/vdso.c#L247
+    data_segment_offset: 0,
+    data_segment_size: PAGE_SIZE,
+    // https://elixir.bootlin.com/linux/v6.2.10/source/arch/riscv/kernel/vdso.c#L256
+    text_segment_offset: 2 * PAGE_SIZE,
+    text_segment_size: PAGE_SIZE,
+    // https://elixir.bootlin.com/linux/v6.2.10/source/arch/riscv/kernel/vdso.c#L47
+    data_offset: 0,
+
+    size: 3 * PAGE_SIZE,
+};
+
+pub struct VdsoVmoLayout {
+    pub data_segment_offset: usize,
+    pub data_segment_size: usize,
+    pub text_segment_offset: usize,
+    pub text_segment_size: usize,
+    pub data_offset: usize,
+    pub size: usize,
+}
+
+const_assert!(VDSO_VMO_LAYOUT.data_segment_offset % PAGE_SIZE == 0);
+const_assert!(VDSO_VMO_LAYOUT.data_segment_size % PAGE_SIZE == 0);
+const_assert!(VDSO_VMO_LAYOUT.text_segment_offset % PAGE_SIZE == 0);
+const_assert!(VDSO_VMO_LAYOUT.text_segment_size % PAGE_SIZE == 0);
+const_assert!(VDSO_VMO_LAYOUT.size % PAGE_SIZE == 0);
+
+// Ensure that the vDSO data at `VDSO_VMO_LAYOUT.data_offset` is in the data segment.
+//
+// `VDSO_VMO_LAYOUT.data_segment_offset <= VDSO_VMO_LAYOUT.data_offset` should also hold, but we
+// skipped that assertion due to the broken `clippy::absurd_extreme_comparisons` lint.
+const_assert!(
+    VDSO_VMO_LAYOUT.data_offset + size_of::<VdsoData>()
+        <= VDSO_VMO_LAYOUT.data_segment_offset + VDSO_VMO_LAYOUT.data_segment_size
+);
