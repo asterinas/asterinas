@@ -28,7 +28,7 @@ pub use self::{
     scheduler::info::{AtomicCpuId, TaskScheduleInfo},
 };
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
-use crate::{cpu::context::UserContext, prelude::*, trap::in_interrupt_context};
+use crate::{prelude::*, trap::in_interrupt_context};
 
 static PRE_SCHEDULE_HANDLER: Once<fn()> = Once::new();
 
@@ -57,7 +57,6 @@ pub struct Task {
     data: Box<dyn Any + Send + Sync>,
     local_data: ForceSync<Box<dyn Any + Send>>,
 
-    user_ctx: Option<Arc<UserContext>>,
     ctx: SyncUnsafeCell<TaskContext>,
     /// kernel stack, note that the top is SyscallFrame/TrapFrame
     kstack: KernelStack,
@@ -128,15 +127,6 @@ impl Task {
     pub fn schedule_info(&self) -> &TaskScheduleInfo {
         &self.schedule_info
     }
-
-    /// Returns the user context of this task, if it has.
-    pub fn user_ctx(&self) -> Option<&Arc<UserContext>> {
-        if self.user_ctx.is_some() {
-            Some(self.user_ctx.as_ref().unwrap())
-        } else {
-            None
-        }
-    }
 }
 
 /// Options to create or spawn a new task.
@@ -144,7 +134,6 @@ pub struct TaskOptions {
     func: Option<Box<dyn FnOnce() + Send>>,
     data: Option<Box<dyn Any + Send + Sync>>,
     local_data: Option<Box<dyn Any + Send>>,
-    user_ctx: Option<Arc<UserContext>>,
 }
 
 impl TaskOptions {
@@ -157,7 +146,6 @@ impl TaskOptions {
             func: Some(Box::new(func)),
             data: None,
             local_data: None,
-            user_ctx: None,
         }
     }
 
@@ -185,12 +173,6 @@ impl TaskOptions {
         T: Any + Send,
     {
         self.local_data = Some(Box::new(data));
-        self
-    }
-
-    /// Sets the user context associated with the task.
-    pub fn user_ctx(mut self, user_ctx: Option<Arc<UserContext>>) -> Self {
-        self.user_ctx = user_ctx;
         self
     }
 
@@ -225,12 +207,8 @@ impl TaskOptions {
 
         let kstack = KernelStack::new_with_guard_page()?;
 
-        let mut ctx = SyncUnsafeCell::new(TaskContext::default());
-        if let Some(user_ctx) = self.user_ctx.as_ref() {
-            ctx.get_mut().set_tls_pointer(user_ctx.tls_pointer());
-        };
-        ctx.get_mut()
-            .set_instruction_pointer(kernel_task_entry as usize);
+        let mut ctx = TaskContext::default();
+        ctx.set_instruction_pointer(kernel_task_entry as usize);
         // We should reserve space for the return address in the stack, otherwise
         // we will write across the page boundary due to the implementation of
         // the context switch.
@@ -239,14 +217,13 @@ impl TaskOptions {
         // to at least 16 bytes. And a larger alignment is needed if larger arguments
         // are passed to the function. The `kernel_task_entry` function does not
         // have any arguments, so we only need to align the stack pointer to 16 bytes.
-        ctx.get_mut().set_stack_pointer(kstack.end_vaddr() - 16);
+        ctx.set_stack_pointer(kstack.end_vaddr() - 16);
 
         let new_task = Task {
             func: ForceSync::new(Cell::new(self.func)),
             data: self.data.unwrap_or_else(|| Box::new(())),
             local_data: ForceSync::new(self.local_data.unwrap_or_else(|| Box::new(()))),
-            user_ctx: self.user_ctx,
-            ctx,
+            ctx: SyncUnsafeCell::new(ctx),
             kstack,
             schedule_info: TaskScheduleInfo {
                 cpu: AtomicCpuId::default(),
