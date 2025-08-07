@@ -21,13 +21,14 @@ use aster_rights::Rights;
 use aster_time::{read_monotonic_time, Instant};
 use aster_util::coeff::Coeff;
 use ostd::{
-    mm::{UFrame, VmIo, PAGE_SIZE},
+    mm::{UFrame, VmIo},
     sync::SpinLock,
     Pod,
 };
 use spin::Once;
 
 use crate::{
+    arch::vdso::{VDSO_DATA_OFFSET, VDSO_TEXT_OFFSET, VDSO_TEXT_SIZE, VDSO_VMO_SIZE},
     fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD},
     syscall::ClockId,
     time::{clocks::MonotonicClock, timer::Timeout, SystemTime, START_TIME},
@@ -207,9 +208,6 @@ struct Vdso {
 /// A `SpinLock` for the `seq` field in `VdsoData`.
 static SEQ_LOCK: SpinLock<()> = SpinLock::new(());
 
-/// The size of the VDSO VMO.
-pub const VDSO_VMO_SIZE: usize = 5 * PAGE_SIZE;
-
 impl Vdso {
     /// Construct a new `Vdso`, including an initialized `VdsoData` and a VMO of the VDSO.
     fn new() -> Self {
@@ -220,7 +218,9 @@ impl Vdso {
             let vmo_options = VmoOptions::<Rights>::new(VDSO_VMO_SIZE);
             let vdso_vmo = vmo_options.alloc().unwrap();
             // Write VDSO data to VDSO VMO.
-            vdso_vmo.write_bytes(0x80, vdso_data.as_bytes()).unwrap();
+            vdso_vmo
+                .write_bytes(VDSO_DATA_OFFSET, vdso_data.as_bytes())
+                .unwrap();
 
             let vdso_lib_vmo = {
                 let vdso_path = FsPath::new(AT_FDCWD, "/lib/x86_64-linux-gnu/vdso64.so").unwrap();
@@ -228,10 +228,10 @@ impl Vdso {
                 let vdso_lib = fs_resolver.lookup(&vdso_path).unwrap();
                 vdso_lib.inode().page_cache().unwrap()
             };
-            let mut vdso_text = Box::new([0u8; PAGE_SIZE]);
+            let mut vdso_text = Box::new([0u8; VDSO_TEXT_SIZE]);
             vdso_lib_vmo.read_bytes(0, &mut *vdso_text).unwrap();
             // Write VDSO library to VDSO VMO.
-            vdso_vmo.write_bytes(0x4000, &*vdso_text).unwrap();
+            vdso_vmo.write_bytes(VDSO_TEXT_OFFSET, &*vdso_text).unwrap();
 
             let data_frame = vdso_vmo.try_commit_page(0).unwrap();
             (vdso_vmo, data_frame)
