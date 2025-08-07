@@ -6,7 +6,7 @@
 context_switch: # (cur: *mut TaskContext, nxt: *TaskContext)
   # Save cur's register
   mov rax, [rsp] # return address
-  mov [rdi + 56], rax # 56 = offsetof(Context, rip)
+  mov [rdi + 56], rax # 56 = offsetof(TaskContext, rip)
   mov [rdi + 0], rsp
   mov [rdi + 8], rbx
   mov [rdi + 16], rbp
@@ -15,7 +15,8 @@ context_switch: # (cur: *mut TaskContext, nxt: *TaskContext)
   mov [rdi + 40], r14
   mov [rdi + 48], r15
   rdfsbase r15
-  mov [rdi + 64], r15
+  mov [rdi + 64], r15 # 64 = offsetof(TaskContext, fsbase)
+
   # Restore nxt's registers
   mov r15, [rsi + 64]
   wrfsbase r15
