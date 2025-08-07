@@ -24,6 +24,7 @@
 #![feature(register_tool)]
 #![feature(min_specialization)]
 #![feature(step_trait)]
+#![feature(string_from_utf8_lossy_owned)]
 #![feature(trait_alias)]
 #![feature(trait_upcasting)]
 #![feature(associated_type_defaults)]

@@ -2,12 +2,12 @@
 
 use alloc::sync::Arc;
 
-use fs::CgroupFs;
+use fs::{CgroupFs, CgroupFsType};
 pub use inode::CgroupInode;
 use spin::Once;
+pub use systree_node::{CgroupNode, CgroupSystem};
 
-use crate::fs::cgroupfs::{fs::CgroupFsType, systree_node::CgroupSystem};
-
+mod controller;
 mod fs;
 mod inode;
 mod systree_node;
