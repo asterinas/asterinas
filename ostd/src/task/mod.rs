@@ -85,22 +85,6 @@ impl Task {
         &self.ctx
     }
 
-    /// Sets thread-local storage pointer.
-    pub fn set_tls_pointer(&self, tls: usize) {
-        let ctx_ptr = self.ctx.get();
-
-        // SAFETY: it's safe to set user tls pointer in kernel context.
-        unsafe { (*ctx_ptr).set_tls_pointer(tls) }
-    }
-
-    /// Gets thread-local storage pointer.
-    pub fn tls_pointer(&self) -> usize {
-        let ctx_ptr = self.ctx.get();
-
-        // SAFETY: it's safe to get user tls pointer in kernel context.
-        unsafe { (*ctx_ptr).tls_pointer() }
-    }
-
     /// Yields execution so that another task may be scheduled.
     ///
     /// Note that this method cannot be simply named "yield" as the name is
@@ -317,19 +301,13 @@ impl Borrow<Task> for CurrentTask {
     }
 }
 
-/// Trait for manipulating the task context.
-pub trait TaskContextApi {
-    /// Sets instruction pointer
+/// A trait that provides methods to manipulate the task context.
+pub(crate) trait TaskContextApi {
+    /// Sets the instruction pointer.
     fn set_instruction_pointer(&mut self, ip: usize);
 
-    /// Gets instruction pointer
-    fn instruction_pointer(&self) -> usize;
-
-    /// Sets stack pointer
+    /// Sets the stack pointer.
     fn set_stack_pointer(&mut self, sp: usize);
-
-    /// Gets stack pointer
-    fn stack_pointer(&self) -> usize;
 }
 
 #[cfg(ktest)]
