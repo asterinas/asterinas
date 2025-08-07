@@ -3,8 +3,8 @@ on:
   # In case of manual trigger, use workflow_dispatch
   workflow_dispatch:
   schedule:
-    # Schedule to run on every day at 20:00 UTC (04:00 Beijing Time)
-    - cron: '0 18 * * *'
+    # Schedule to run on every day at 16:00 UTC (00:00 Beijing Time)
+    - cron: '0 16 * * *'
 
 jobs:
   Benchmarks:
