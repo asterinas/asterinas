@@ -3,6 +3,7 @@
 use bitflags::bitflags;
 
 bitflags! {
+    // TODO: Add O_TMPFILE
     pub struct CreationFlags: u32 {
         /// create file if it does not exist
         const O_CREAT = 1 << 6;
@@ -18,8 +19,5 @@ bitflags! {
         const O_NOFOLLOW = 1 << 17;
         /// close on exec
         const O_CLOEXEC = 1 << 19;
-        /// create an unnamed temporary regular file
-        /// O_TMPFILE is (_O_TMPFILE | O_DIRECTORY)
-        const _O_TMPFILE = 1 << 22;
     }
 }
