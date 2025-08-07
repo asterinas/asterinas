@@ -11,7 +11,6 @@ core::arch::global_asm!(include_str!("switch.S"));
 pub(crate) struct TaskContext {
     pub regs: CalleeRegs,
     pub pc: usize,
-    pub fsbase: usize,
 }
 
 /// Callee-saved registers.
@@ -72,7 +71,6 @@ impl TaskContext {
         TaskContext {
             regs: CalleeRegs::new(),
             pc: 0,
-            fsbase: 0,
         }
     }
 }

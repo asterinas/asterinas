@@ -16,7 +16,6 @@ context_switch: # (cur: *mut TaskContext, nxt: *TaskContext)
   st.d  $s7, $a0, 0x48
   st.d  $s8, $a0, 0x50
   st.d  $ra, $a0, 0x58 # return address
-  st.d  $tp, $a0, 0x60 # thread-local storage pointer
 
   # Restore nxt's registers
   ld.d  $sp, $a1, 0x0
@@ -31,5 +30,4 @@ context_switch: # (cur: *mut TaskContext, nxt: *TaskContext)
   ld.d  $s7, $a1, 0x48
   ld.d  $s8, $a1, 0x50
   ld.d  $ra, $a1, 0x58 # return address
-  ld.d  $tp, $a1, 0x60 # thread-local storage pointer
   ret

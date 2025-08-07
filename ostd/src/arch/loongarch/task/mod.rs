@@ -11,8 +11,6 @@ core::arch::global_asm!(include_str!("switch.S"));
 pub(crate) struct TaskContext {
     pub regs: CalleeRegs,
     pub ra: usize,
-    /// Thread-local storage pointer.
-    pub tp: usize,
 }
 
 /// Callee-saved registers.
@@ -67,7 +65,6 @@ impl TaskContext {
         TaskContext {
             regs: CalleeRegs::new(),
             ra: 0,
-            tp: 0,
         }
     }
 }
