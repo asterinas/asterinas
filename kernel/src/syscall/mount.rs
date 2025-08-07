@@ -125,14 +125,7 @@ fn do_move_mount_old(src_name: CString, dst_path: Path, ctx: &Context) -> Result
             .lookup(&fs_path)?
     };
 
-    if !src_path.is_mount_root() {
-        return_errno_with_message!(Errno::EINVAL, "src_name can not be moved");
-    };
-    if src_path.mount_node().parent().is_none() {
-        return_errno_with_message!(Errno::EINVAL, "src_name can not be moved");
-    }
-
-    src_path.mount_node().graft_mount_node_tree(&dst_path)?;
+    src_path.move_mount_to(&dst_path)?;
 
     Ok(())
 }
