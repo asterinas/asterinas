@@ -131,8 +131,6 @@ unsafe fn init() {
         mm::kspace::activate_kernel_page_table();
     }
 
-    bus::init();
-
     arch::irq::enable_local();
 
     invoke_ffi_init_funcs();

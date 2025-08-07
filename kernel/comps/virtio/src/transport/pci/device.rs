@@ -3,20 +3,13 @@
 use alloc::boxed::Box;
 use core::fmt::Debug;
 
+use aster_pci::{
+    bus::PciDevice, capability::CapabilityData, cfg_space::Bar, common_device::PciCommonDevice,
+    PciDeviceId,
+};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use log::{info, warn};
-use ostd::{
-    bus::{
-        pci::{
-            bus::PciDevice, capability::CapabilityData, cfg_space::Bar,
-            common_device::PciCommonDevice, PciDeviceId,
-        },
-        BusProbeError,
-    },
-    io::IoMem,
-    mm::DmaCoherent,
-    trap::irq::IrqCallbackFunction,
-};
+use ostd::{bus::BusProbeError, io::IoMem, mm::DmaCoherent, trap::irq::IrqCallbackFunction};
 
 use super::{common_cfg::VirtioPciCommonCfg, msix::VirtioMsixManager};
 use crate::{

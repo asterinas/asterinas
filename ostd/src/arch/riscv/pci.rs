@@ -71,12 +71,6 @@ pub(crate) fn init() {
     PCI_ECAM_CFG_SPACE.call_once(|| IoMem::acquire(addr_start..addr_end).unwrap());
 }
 
-pub(crate) const MSIX_DEFAULT_MSG_ADDR: u32 = 0x2400_0000;
-
-pub(crate) fn construct_remappable_msix_address(remapping_index: u32) -> u32 {
-    unimplemented!()
-}
-
 /// Encodes the bus, device, and function into an address offset in the PCI MMIO region.
 fn encode_as_address_offset(location: &PciDeviceLocation) -> u32 {
     // We only support ECAM here for RISC-V platforms. Offsets are from
