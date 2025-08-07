@@ -1297,6 +1297,7 @@ dependencies = [
  "ostd-macros",
  "ostd-pod",
  "ostd-test",
+ "paste",
  "riscv",
  "sbi-rt",
  "smallvec",
