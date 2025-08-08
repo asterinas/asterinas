@@ -80,8 +80,8 @@ __from_user:
     mov rax, [rsp + 6*8]    # rax = user rsp
     mov gs:12, rax          # store user rsp -> scratch at TSS.sp1
 
-    mov rsp, [rsp + 8*8]    # load rsp <- UserContext
-    add rsp, 22*8           # rsp -> top of UserContext
+    mov rsp, [rsp + 8*8]    # load rsp <- RawUserContext
+    add rsp, 22*8           # rsp -> top of RawUserContext
     mov rax, gs:4           # rax = kernel stack
 
     # push trap_num, error_code
