@@ -4,6 +4,7 @@ use alloc::{borrow::ToOwned, collections::btree_set::BTreeSet, string::String, v
 use core::{arch::x86_64::CpuidResult, ffi::CStr, fmt, str};
 
 use ostd::{
+    Pod,
     arch::{
         cpu::{
             context::{CpuException, PageFaultErrorCode, RawPageFaultInfo, UserContext},
@@ -11,11 +12,11 @@ use ostd::{
         },
         tsc_freq,
     },
-    cpu::{num_cpus, PinCurrentCpu},
+    cpu::{PinCurrentCpu, num_cpus},
     mm::Vaddr,
     sync::SpinLock,
     task::DisabledPreemptGuard,
-    Pod,
+    user::UserContextApi,
 };
 
 use crate::{cpu::LinuxAbi, thread::exception::PageFaultInfo, vm::perms::VmPerms};
@@ -103,8 +104,6 @@ macro_rules! copy_gp_regs {
         $dst.r13 = $src.r13;
         $dst.r14 = $src.r14;
         $dst.r15 = $src.r15;
-        $dst.rip = $src.rip;
-        $dst.rflags = $src.rflags;
     };
 }
 
@@ -112,11 +111,15 @@ impl SigContext {
     pub fn copy_user_regs_to(&self, dst: &mut UserContext) {
         let gp_regs = dst.general_regs_mut();
         copy_gp_regs!(self, gp_regs);
+        dst.set_instruction_pointer(self.rip);
+        dst.set_rflags(self.rflags);
     }
 
     pub fn copy_user_regs_from(&mut self, src: &UserContext) {
         let gp_regs = src.general_regs();
         copy_gp_regs!(gp_regs, self);
+        self.rip = src.instruction_pointer();
+        self.rflags = src.rflags();
 
         // TODO: Fill exception information in `SigContext`.
     }

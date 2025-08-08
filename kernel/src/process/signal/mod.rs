@@ -315,7 +315,7 @@ pub fn handle_user_signal(
             // Clear `DF` flag for C function entry to conform to x86-64 calling convention.
             // Bit 10 is the DF flag.
             const X86_RFLAGS_DF: usize = 1 << 10;
-            user_ctx.general_regs_mut().rflags &= !X86_RFLAGS_DF;
+            user_ctx.set_rflags(user_ctx.rflags() & !X86_RFLAGS_DF);
         }
     }
 
