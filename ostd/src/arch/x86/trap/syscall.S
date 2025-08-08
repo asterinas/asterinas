@@ -32,7 +32,7 @@ syscall_return:
 
     push rdi                # keep rsp 16 bytes align
     mov gs:4, rsp           # store kernel rsp -> TSS.sp0
-    mov rsp, rdi            # set rsp -> UserContext
+    mov rsp, rdi            # set rsp -> RawUserContext
 
     # restore user gsbase
     swapgs
