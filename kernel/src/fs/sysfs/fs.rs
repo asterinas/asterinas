@@ -9,7 +9,6 @@ use crate::{
         registry::{FsProperties, FsType},
         sysfs::inode::SysFsInode,
         utils::{systree_inode::SysTreeInodeTy, FileSystem, FsFlags, Inode, SuperBlock},
-        Result,
     },
     prelude::*,
 };
