@@ -55,7 +55,7 @@ bitflags::bitflags! {
         // Second bit ignored by MMU.
         const RSV2 =            1 << 9;
 
-        // PBMT: Non-cacheable, idempotent, weakly-ordered (RVWMO), main memory
+        // PBMT: Non-cacheable, idempotent, ly-ordered (RVWMO), main memory
         const PBMT_NC =         1 << 61;
         // PBMT: Non-cacheable, non-idempotent, strongly-ordered (I/O ordering), I/O
         const PBMT_IO =         1 << 62;
@@ -228,20 +228,30 @@ impl fmt::Debug for PageTableEntry {
     }
 }
 
-pub(crate) fn __memcpy_fallible(dst: *mut u8, src: *const u8, size: usize) -> usize {
-    // TODO: implement fallible
-    unsafe {
-        riscv::register::sstatus::set_sum();
-    }
+pub(crate) unsafe fn __memcpy_fallible(dst: *mut u8, src: *const u8, size: usize) -> usize {
+    // TODO: Implement this fallible operation.
+    unsafe { riscv::register::sstatus::set_sum() };
     unsafe { core::ptr::copy(src, dst, size) };
     0
 }
 
-pub(crate) fn __memset_fallible(dst: *mut u8, value: u8, size: usize) -> usize {
-    // TODO: implement fallible
-    unsafe {
-        riscv::register::sstatus::set_sum();
-    }
+pub(crate) unsafe fn __memset_fallible(dst: *mut u8, value: u8, size: usize) -> usize {
+    // TODO: Implement this fallible operation.
+    unsafe { riscv::register::sstatus::set_sum() };
     unsafe { core::ptr::write_bytes(dst, value, size) };
     0
+}
+
+pub(crate) unsafe fn __atomic_load_fallible(ptr: *const u32) -> u64 {
+    // TODO: Implement this fallible operation.
+    unsafe { riscv::register::sstatus::set_sum() };
+    // TODO: How to choose the correct memory order here?
+    unsafe { core::intrinsics::atomic_load_seqcst(ptr) as u64 }
+}
+
+pub(crate) unsafe fn __atomic_cmpxchg_fallible(ptr: *mut u32, old_val: u32, new_val: u32) -> u64 {
+    // TODO: Implement this fallible operation.
+    unsafe { riscv::register::sstatus::set_sum() };
+    // TODO: How to choose the correct memory order here?
+    unsafe { core::intrinsics::atomic_cxchg_seqcst_seqcst(ptr, old_val, new_val).0 as u64 }
 }

@@ -128,7 +128,7 @@ const FUTEX_TID_MASK: u32 = 0x3FFF_FFFF;
 /// FIXME: requires atomic operations here
 pub fn wake_robust_futex(futex_addr: Vaddr, tid: Tid) -> Result<()> {
     let task = Task::current().unwrap();
-    let user_space = CurrentUserSpace::new(&task);
+    let user_space = CurrentUserSpace::new(task.as_thread_local().unwrap());
 
     let futex_val = {
         if futex_addr == 0 {

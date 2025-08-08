@@ -12,10 +12,10 @@ pub(super) use self::allocator::init;
 pub(crate) use self::allocator::IoMemAllocatorBuilder;
 use crate::{
     mm::{
+        io_util,
         kspace::kvirt_area::KVirtArea,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
-        FallibleVmRead, FallibleVmWrite, HasPaddr, Infallible, Paddr, PodOnce, VmIo, VmIoOnce,
-        VmReader, VmWriter, PAGE_SIZE,
+        HasPaddr, Infallible, Paddr, VmReader, VmWriter, PAGE_SIZE,
     },
     prelude::*,
     Error,
@@ -167,55 +167,17 @@ impl IoMem {
     }
 }
 
-impl VmIo for IoMem {
-    fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()> {
-        let offset = offset + self.offset;
-        if self
-            .limit
-            .checked_sub(offset)
-            .is_none_or(|remain| remain < writer.avail())
-        {
-            return Err(Error::InvalidArgs);
-        }
-
-        self.reader()
-            .skip(offset)
-            .read_fallible(writer)
-            .map_err(|(e, _)| e)?;
-        debug_assert!(!writer.has_avail());
-
-        Ok(())
+impl io_util::VmIoByReaderWriter for IoMem {
+    fn io_reader(&self) -> Result<VmReader<Infallible>> {
+        Ok(self.reader())
     }
 
-    fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()> {
-        let offset = offset + self.offset;
-        if self
-            .limit
-            .checked_sub(offset)
-            .is_none_or(|remain| remain < reader.remain())
-        {
-            return Err(Error::InvalidArgs);
-        }
-
-        self.writer()
-            .skip(offset)
-            .write_fallible(reader)
-            .map_err(|(e, _)| e)?;
-        debug_assert!(!reader.has_remain());
-
-        Ok(())
+    fn io_writer(&self) -> Result<VmWriter<Infallible>> {
+        Ok(self.writer())
     }
 }
 
-impl VmIoOnce for IoMem {
-    fn read_once<T: PodOnce>(&self, offset: usize) -> Result<T> {
-        self.reader().skip(offset).read_once()
-    }
-
-    fn write_once<T: PodOnce>(&self, offset: usize, new_val: &T) -> Result<()> {
-        self.writer().skip(offset).write_once(new_val)
-    }
-}
+impl io_util::VmIoOnceByReaderWriter for IoMem {}
 
 impl Drop for IoMem {
     fn drop(&mut self) {

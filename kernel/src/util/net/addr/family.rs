@@ -209,7 +209,7 @@ pub fn write_socket_addr_to_user(
     max_len_ptr: Vaddr,
 ) -> Result<()> {
     let current_task = Task::current().unwrap();
-    let user_space = CurrentUserSpace::new(&current_task);
+    let user_space = CurrentUserSpace::new(current_task.as_thread_local().unwrap());
 
     let max_len = user_space.read_val::<i32>(max_len_ptr)?;
 

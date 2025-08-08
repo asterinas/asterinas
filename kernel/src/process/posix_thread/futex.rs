@@ -7,7 +7,13 @@ use ostd::{
 };
 use spin::Once;
 
-use crate::{prelude::*, process::Pid, time::wait::ManagedTimeout};
+use crate::{
+    prelude::*,
+    process::Pid,
+    thread::exception::PageFaultInfo,
+    time::wait::ManagedTimeout,
+    vm::{page_fault_handler::PageFaultHandler, perms::VmPerms},
+};
 
 type FutexBitSet = u32;
 
@@ -51,23 +57,53 @@ pub fn futex_wait_bitset(
         return_errno_with_message!(Errno::EINVAL, "at least one bit should be set");
     }
 
-    let futex_key = FutexKey::new(futex_addr, bitset, pid);
+    let futex_key = FutexKey::new(futex_addr, bitset, pid)?;
     let (futex_item, waiter) = FutexItem::create(futex_key);
 
     let (_, futex_bucket_ref) = get_futex_bucket(futex_key);
-    // lock futex bucket ref here to avoid data race
-    let mut futex_bucket = futex_bucket_ref.lock();
 
-    if !futex_key.load_val(ctx).is_ok_and(|val| val == futex_val) {
+    let user_space = ctx.user_space();
+
+    let (mut futex_bucket, val) = loop {
+        // Lock the futex bucket first to avoid race conditions.
+        let futex_bucket = futex_bucket_ref.lock();
+
+        let guard = ctx.thread_local.disable_page_fault();
+        let result = user_space.atomic_load(futex_key.addr());
+        drop(guard);
+
+        match result {
+            Err(err) if err.error() == Errno::EFAULT => (),
+            _ => break (futex_bucket, result?),
+        }
+
+        drop(futex_bucket);
+
+        // The futex word is aligned on a 4-byte boundary, so it cannot cross the page boundary.
+        user_space
+            .root_vmar()
+            .handle_page_fault(&PageFaultInfo {
+                address: futex_key.addr(),
+                required_perms: VmPerms::READ,
+            })
+            .map_err(|_| {
+                Error::with_message(
+                    Errno::EFAULT,
+                    "the page fault of the futex word cannot be resolved",
+                )
+            })?;
+    };
+
+    if val != futex_val.cast_unsigned() {
         return_errno_with_message!(
             Errno::EAGAIN,
-            "futex value does not match or load_val failed"
+            "the futex word does not contain the expected value"
         );
     }
 
     futex_bucket.add_item(futex_item);
 
-    // drop lock
+    // Release the lock.
     drop(futex_bucket);
 
     let result = waiter.pause_timeout(&timeout.into());
@@ -110,7 +146,7 @@ pub fn futex_wake_bitset(
         return_errno_with_message!(Errno::EINVAL, "at least one bit should be set");
     }
 
-    let futex_key = FutexKey::new(futex_addr, bitset, pid);
+    let futex_key = FutexKey::new(futex_addr, bitset, pid)?;
     let (_, futex_bucket_ref) = get_futex_bucket(futex_key);
     let mut futex_bucket = futex_bucket_ref.lock();
     let res = futex_bucket.remove_and_wake_items(futex_key, max_count);
@@ -238,30 +274,55 @@ pub fn futex_wake_op(
 ) -> Result<usize> {
     let wake_op = FutexWakeOpEncode::from_u32(wake_op_bits)?;
 
-    let futex_key_1 = FutexKey::new(futex_addr_1, FUTEX_BITSET_MATCH_ANY, pid);
-    let futex_key_2 = FutexKey::new(futex_addr_2, FUTEX_BITSET_MATCH_ANY, pid);
+    let futex_key_1 = FutexKey::new(futex_addr_1, FUTEX_BITSET_MATCH_ANY, pid)?;
+    let futex_key_2 = FutexKey::new(futex_addr_2, FUTEX_BITSET_MATCH_ANY, pid)?;
     let (index_1, futex_bucket_ref_1) = get_futex_bucket(futex_key_1);
     let (index_2, futex_bucket_ref_2) = get_futex_bucket(futex_key_2);
 
-    let (mut futex_bucket_1, mut futex_bucket_2) = if index_1 == index_2 {
-        (futex_bucket_ref_1.lock(), None)
-    } else {
-        // Ensure that we always lock the buckets in a consistent order to avoid deadlocks.
-        if index_1 < index_2 {
-            let bucket_1 = futex_bucket_ref_1.lock();
-            let bucket_2 = futex_bucket_ref_2.lock();
-            (bucket_1, Some(bucket_2))
-        } else {
-            let bucket_2 = futex_bucket_ref_2.lock();
-            let bucket_1 = futex_bucket_ref_1.lock();
-            (bucket_1, Some(bucket_2))
-        }
-    };
+    let user_space = ctx.user_space();
 
-    // FIXME: This should be an atomic read-modify-write memory access here.
-    let old_val = ctx.user_space().read_val(futex_addr_2)?;
-    let new_val = wake_op.calculate_new_val(old_val);
-    ctx.user_space().write_val(futex_addr_2, &new_val)?;
+    let (mut futex_bucket_1, mut futex_bucket_2, old_val) = loop {
+        let (futex_bucket_1, futex_bucket_2) = if index_1 == index_2 {
+            (futex_bucket_ref_1.lock(), None)
+        } else {
+            // Ensure that we always lock the buckets in a consistent order to avoid deadlocks.
+            if index_1 < index_2 {
+                let bucket_1 = futex_bucket_ref_1.lock();
+                let bucket_2 = futex_bucket_ref_2.lock();
+                (bucket_1, Some(bucket_2))
+            } else {
+                let bucket_2 = futex_bucket_ref_2.lock();
+                let bucket_1 = futex_bucket_ref_1.lock();
+                (bucket_1, Some(bucket_2))
+            }
+        };
+
+        let guard = ctx.thread_local.disable_page_fault();
+        let result = user_space.atomic_update(futex_addr_2, |val| wake_op.calculate_new_val(val));
+        drop(guard);
+
+        match result {
+            Err(err) if err.error() == Errno::EFAULT => (),
+            _ => break (futex_bucket_1, futex_bucket_2, result?),
+        }
+
+        drop(futex_bucket_1);
+        drop(futex_bucket_2);
+
+        // The futex word is aligned on a 4-byte boundary, so it cannot cross the page boundary.
+        user_space
+            .root_vmar()
+            .handle_page_fault(&PageFaultInfo {
+                address: futex_addr_2,
+                required_perms: VmPerms::READ | VmPerms::WRITE,
+            })
+            .map_err(|_| {
+                Error::with_message(
+                    Errno::EFAULT,
+                    "the page fault of the futex word cannot be resolved",
+                )
+            })?;
+    };
 
     let mut res = futex_bucket_1.remove_and_wake_items(futex_key_1, max_count_1);
     if wake_op.should_wake(old_val) {
@@ -284,8 +345,8 @@ pub fn futex_requeue(
         return futex_wake(futex_addr, max_nwakes, pid);
     }
 
-    let futex_key = FutexKey::new(futex_addr, FUTEX_BITSET_MATCH_ANY, pid);
-    let futex_new_key = FutexKey::new(futex_new_addr, FUTEX_BITSET_MATCH_ANY, pid);
+    let futex_key = FutexKey::new(futex_addr, FUTEX_BITSET_MATCH_ANY, pid)?;
+    let futex_new_key = FutexKey::new(futex_new_addr, FUTEX_BITSET_MATCH_ANY, pid)?;
     let (bucket_idx, futex_bucket_ref) = get_futex_bucket(futex_key);
     let (new_bucket_idx, futex_new_bucket_ref) = get_futex_bucket(futex_new_key);
 
@@ -472,14 +533,18 @@ struct FutexKey {
 }
 
 impl FutexKey {
-    pub fn new(addr: Vaddr, bitset: FutexBitSet, pid: Option<Pid>) -> Self {
-        Self { addr, bitset, pid }
-    }
+    pub fn new(addr: Vaddr, bitset: FutexBitSet, pid: Option<Pid>) -> Result<Self> {
+        // "On all platforms, futexes are four-byte integers that must be aligned on a four-byte
+        // boundary."
+        // Reference: <https://man7.org/linux/man-pages/man2/futex.2.html>.
+        if addr % core::mem::align_of::<u32>() != 0 {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the futex word is not aligend on a four-byte boundary"
+            );
+        }
 
-    pub fn load_val(&self, ctx: &Context) -> Result<i32> {
-        // FIXME: how to implement a atomic load?
-        warn!("implement an atomic load");
-        ctx.user_space().read_val(self.addr)
+        Ok(Self { addr, bitset, pid })
     }
 
     pub fn addr(&self) -> Vaddr {
