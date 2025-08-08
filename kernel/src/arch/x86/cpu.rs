@@ -10,6 +10,7 @@ use ostd::{
     arch::tsc_freq,
     cpu::context::{cpuid, CpuException, PageFaultErrorCode, RawPageFaultInfo, UserContext},
     mm::Vaddr,
+    user::UserContextApi,
     Pod,
 };
 
@@ -105,8 +106,6 @@ macro_rules! copy_gp_regs {
         $dst.r13 = $src.r13;
         $dst.r14 = $src.r14;
         $dst.r15 = $src.r15;
-        $dst.rip = $src.rip;
-        $dst.rflags = $src.rflags;
     };
 }
 
@@ -114,11 +113,15 @@ impl SigContext {
     pub fn copy_user_regs_to(&self, dst: &mut UserContext) {
         let gp_regs = dst.general_regs_mut();
         copy_gp_regs!(self, gp_regs);
+        dst.set_instruction_pointer(self.rip);
+        dst.set_rflags(self.rflags);
     }
 
     pub fn copy_user_regs_from(&mut self, src: &UserContext) {
         let gp_regs = src.general_regs();
         copy_gp_regs!(gp_regs, self);
+        self.rip = src.instruction_pointer();
+        self.rflags = src.rflags();
 
         // TODO: Fill exception information in `SigContext`.
     }
