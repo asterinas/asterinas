@@ -32,6 +32,7 @@ cfg_if! {
 pub(super) struct IoApic {
     access: IoApicAccess,
     interrupt_base: u32,
+    max_redirection_entry: u8,
 }
 
 impl IoApic {
@@ -46,6 +47,7 @@ impl IoApic {
         io_mem_builder: &IoMemAllocatorBuilder,
     ) -> Self {
         let mut access = unsafe { IoApicAccess::new(base_address, io_mem_builder) };
+        let max_redirection_entry = access.max_redirection_entry();
 
         info!(
             "[IOAPIC]: Found at {:#x}, ID {}, version {}, interrupt base {}, interrupt count {}",
@@ -53,13 +55,21 @@ impl IoApic {
             access.id(),
             access.version(),
             base_interrupt,
-            access.max_redirection_entry()
+            max_redirection_entry,
         );
 
-        Self {
+        let mut ioapic = Self {
             access,
             interrupt_base: base_interrupt,
+            max_redirection_entry,
+        };
+
+        // Initialize all the entries to the disabled state.
+        for index in 0..=max_redirection_entry {
+            ioapic.disable(index).unwrap();
         }
+
+        ioapic
     }
 
     /// Enables an entry.
@@ -72,7 +82,7 @@ impl IoApic {
     /// This method will fail if the index exceeds the I/O APIC's maximum redirection entry, or if
     /// the entry is in use.
     pub(super) fn enable(&mut self, index: u8, irq: &IrqLine) -> Result<()> {
-        if index >= self.access.max_redirection_entry() {
+        if index > self.max_redirection_entry {
             return Err(Error::InvalidArgs);
         }
 
@@ -117,7 +127,7 @@ impl IoApic {
     /// This method will fail if the index exceeds the I/O APIC's maximum redirection entry, or if
     /// the entry is not in use.
     pub(super) fn disable(&mut self, index: u8) -> Result<()> {
-        if index >= self.access.max_redirection_entry() {
+        if index > self.max_redirection_entry {
             return Err(Error::InvalidArgs);
         }
 
@@ -191,14 +201,17 @@ impl IoApicAccess {
     }
 
     pub(self) fn id(&mut self) -> u8 {
+        // IOAPICID: "Bit 24-27: IOAPIC Identification - R/W."
         self.read(0).get_bits(24..28) as u8
     }
 
     pub(self) fn version(&mut self) -> u8 {
-        self.read(1).get_bits(0..9) as u8
+        // IOAPICVER: "Bit 7-0: APIC VERSION - RO."
+        self.read(1).get_bits(0..8) as u8
     }
 
     pub(self) fn max_redirection_entry(&mut self) -> u8 {
-        (self.read(1).get_bits(16..24) + 1) as u8
+        // IOAPICVER: "Bit 16-23: Maximum Redirection Entry - RO."
+        self.read(1).get_bits(16..24) as u8
     }
 }
