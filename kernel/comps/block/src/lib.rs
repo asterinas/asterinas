@@ -61,7 +61,7 @@ pub trait BlockDevice: Send + Sync + Any + Debug {
 }
 
 /// Metadata for a block device.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct BlockDeviceMeta {
     /// The upper limit for the number of segments per bio.
     pub max_nr_segments_per_bio: usize,

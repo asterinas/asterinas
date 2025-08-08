@@ -12,7 +12,6 @@ use crate::{
         cgroupfs::systree_node::CgroupSystem,
         registry::{FsProperties, FsType},
         utils::{systree_inode::SysTreeInodeTy, FileSystem, FsFlags, Inode, SuperBlock},
-        Result,
     },
     prelude::*,
 };

@@ -179,10 +179,7 @@ fn get_fs(
         .ok_or(Error::with_message(Errno::EINVAL, "Invalid fs type"))?;
 
     let disk = if fs_type.properties().contains(FsProperties::NEED_DISK) {
-        Some(
-            aster_block::get_device(devname.to_str().unwrap())
-                .ok_or(Error::with_message(Errno::ENOENT, "device does not exist"))?,
-        )
+        crate::fs::device::find_disk(devname.to_str().unwrap())
     } else {
         None
     };
