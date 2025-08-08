@@ -260,7 +260,7 @@ fn clone_child_task(
     // Clone FPU context
     let child_fpu_context = thread_local.fpu().clone_context();
 
-    let child_user_ctx = Arc::new(clone_user_ctx(
+    let child_user_ctx = Box::new(clone_user_ctx(
         parent_context,
         clone_args.stack,
         clone_args.stack_size,
@@ -327,7 +327,7 @@ fn clone_child_process(
     };
 
     // Clone the user context
-    let child_user_ctx = Arc::new(clone_user_ctx(
+    let child_user_ctx = Box::new(clone_user_ctx(
         parent_context,
         clone_args.stack,
         clone_args.stack_size,

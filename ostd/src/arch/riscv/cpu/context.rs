@@ -118,19 +118,20 @@ impl UserContext {
         self.cpu_exception_info.take()
     }
 
-    /// Sets thread-local storage pointer.
+    /// Sets the thread-local storage pointer.
     pub fn set_tls_pointer(&mut self, tls: usize) {
         self.set_tp(tls)
     }
 
-    /// Gets thread-local storage pointer.
+    /// Gets the thread-local storage pointer.
     pub fn tls_pointer(&self) -> usize {
         self.tp()
     }
 
-    /// Activates thread-local storage pointer on the current CPU.
+    /// Activates the thread-local storage pointer for the current task.
     pub fn activate_tls_pointer(&self) {
-        // No-op
+        // In RISC-V, `tp` will be loaded at `UserContext::execute`, so it does not need to be
+        // activated in advance.
     }
 }
 

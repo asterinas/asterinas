@@ -23,11 +23,11 @@ use crate::{
 
 /// create new task with userspace and parent process
 pub fn create_new_user_task(
-    user_ctx: Arc<UserContext>,
+    user_ctx: Box<UserContext>,
     thread_ref: Arc<Thread>,
     thread_local: ThreadLocal,
 ) -> Task {
-    fn user_task_entry() {
+    fn user_task_entry(user_ctx: UserContext) {
         let current_task = Task::current().unwrap();
         let current_thread = current_task.as_thread().unwrap();
         let current_posix_thread = current_thread.as_posix_thread().unwrap();
@@ -35,10 +35,8 @@ pub fn create_new_user_task(
         let current_process = current_posix_thread.process();
         let (stop_waiter, _) = Waiter::new_pair();
 
-        let user_ctx = current_task
-            .user_ctx()
-            .expect("user task should have user context");
-        let mut user_mode = UserMode::new(UserContext::clone(user_ctx));
+        let mut user_mode = UserMode::new(user_ctx);
+        user_mode.context_mut().activate_tls_pointer();
         debug!(
             "[Task entry] rip = 0x{:x}",
             user_mode.context().instruction_pointer()
@@ -52,11 +50,10 @@ pub fn create_new_user_task(
             user_mode.context().syscall_ret()
         );
 
-        let child_tid_ptr = current_thread_local.set_child_tid().get();
-
         // The `clone` syscall may require child process to write the thread pid to the specified address.
         // Make sure the store operation completes before the clone call returns control to user space
         // in the child process.
+        let child_tid_ptr = current_thread_local.set_child_tid().get();
         if is_userspace_vaddr(child_tid_ptr) {
             current_userspace!()
                 .write_val(child_tid_ptr, &current_posix_thread.tid())
@@ -116,14 +113,15 @@ pub fn create_new_user_task(
         }
     }
 
-    TaskOptions::new(|| {
+    let user_task_func = move || user_task_entry(*user_ctx);
+
+    TaskOptions::new(move || {
         // TODO: If a kernel "oops" is caught, we should kill the entire
         // process rather than just ending the thread.
-        let _ = oops::catch_panics_as_oops(user_task_entry);
+        let _ = oops::catch_panics_as_oops(user_task_func);
     })
     .data(thread_ref)
     .local_data(thread_local)
-    .user_ctx(Some(user_ctx))
     .build()
     .expect("spawn task failed")
 }

@@ -6,46 +6,43 @@ use crate::task::TaskContextApi;
 
 core::arch::global_asm!(include_str!("switch.S"));
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Clone)]
 #[repr(C)]
 pub(crate) struct TaskContext {
-    pub regs: CalleeRegs,
-    pub ra: usize,
-    /// Thread-local storage pointer.
-    pub tp: usize,
+    regs: CalleeRegs,
+    ra: usize,
+}
+
+impl TaskContext {
+    /// Creates a new `TaskContext`.
+    pub(crate) const fn new() -> Self {
+        TaskContext {
+            regs: CalleeRegs::new(),
+            ra: 0,
+        }
+    }
 }
 
 /// Callee-saved registers.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Clone)]
 #[repr(C)]
-pub struct CalleeRegs {
-    /// sp
-    pub sp: usize,
-    /// fp
-    pub fp: usize,
-    /// s0
-    pub s0: usize,
-    /// s1
-    pub s1: usize,
-    /// s2
-    pub s2: usize,
-    /// s3
-    pub s3: usize,
-    /// s4
-    pub s4: usize,
-    /// s5
-    pub s5: usize,
-    /// s6
-    pub s6: usize,
-    /// s7
-    pub s7: usize,
-    /// s8
-    pub s8: usize,
+struct CalleeRegs {
+    sp: usize,
+    fp: usize,
+    s0: usize,
+    s1: usize,
+    s2: usize,
+    s3: usize,
+    s4: usize,
+    s5: usize,
+    s6: usize,
+    s7: usize,
+    s8: usize,
 }
 
 impl CalleeRegs {
-    /// Creates new `CalleeRegs`
-    pub const fn new() -> Self {
+    /// Creates a new `CalleeRegs`.
+    pub(self) const fn new() -> Self {
         CalleeRegs {
             sp: 0,
             fp: 0,
@@ -62,41 +59,13 @@ impl CalleeRegs {
     }
 }
 
-impl TaskContext {
-    pub const fn new() -> Self {
-        TaskContext {
-            regs: CalleeRegs::new(),
-            ra: 0,
-            tp: 0,
-        }
-    }
-
-    /// Sets thread-local storage pointer.
-    pub fn set_tls_pointer(&mut self, tls: usize) {
-        self.tp = tls;
-    }
-
-    /// Gets thread-local storage pointer.
-    pub fn tls_pointer(&self) -> usize {
-        self.tp
-    }
-}
-
 impl TaskContextApi for TaskContext {
     fn set_instruction_pointer(&mut self, ip: usize) {
         self.ra = ip;
     }
 
-    fn instruction_pointer(&self) -> usize {
-        self.ra
-    }
-
     fn set_stack_pointer(&mut self, sp: usize) {
         self.regs.sp = sp;
-    }
-
-    fn stack_pointer(&self) -> usize {
-        self.regs.sp
     }
 }
 

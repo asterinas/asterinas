@@ -238,24 +238,26 @@ impl UserContext {
         self.exception.take()
     }
 
-    /// Sets thread-local storage pointer.
+    /// Sets the thread-local storage pointer.
     pub fn set_tls_pointer(&mut self, tls: usize) {
         self.set_fsbase(tls)
     }
 
-    /// Gets thread-local storage pointer.
+    /// Gets the thread-local storage pointer.
     pub fn tls_pointer(&self) -> usize {
         self.fsbase()
     }
 
-    /// Activates thread-local storage pointer on the current CPU.
-    ///
-    /// # Safety
+    /// Activates the thread-local storage pointer for the current task.
     ///
     /// The method by itself is safe because the value of the TLS register won't affect kernel code.
-    /// But if the user relies on the TLS pointer, make sure that the pointer is correctly set when
-    /// entering the user space.
+    /// But if the user program relies on the TLS pointer, make sure that the pointer is correctly
+    /// set when entering the user space.
     pub fn activate_tls_pointer(&self) {
+        // In x86, context switching preserves `fsbase`, but `fsbase` won't be loaded at
+        // `UserContext::execute`, so it must be activated in advance.
+        //
+        // SAFETY: Setting `fsbase` won't affect kernel code.
         unsafe { wrfsbase(self.fsbase() as u64) }
     }
 }
