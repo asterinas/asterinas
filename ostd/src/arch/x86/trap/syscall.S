@@ -22,9 +22,6 @@
     # extern "sysv64" fn syscall_return(&mut UserContext)
 .global syscall_return
 syscall_return:
-    # disable interrupt
-    cli
-
     # save callee-saved registers
     push r15
     push r14
