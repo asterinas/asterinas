@@ -6,13 +6,7 @@ use log::warn;
 use spin::Once;
 
 use super::boot::DEVICE_TREE;
-use crate::{
-    bus::pci::PciDeviceLocation,
-    io::{IoMem, IoMemAllocatorBuilder},
-    mm::{CachePolicy, PageFlags, VmIoOnce},
-    prelude::*,
-    Error,
-};
+use crate::{bus::pci::PciDeviceLocation, io::IoMem, mm::VmIoOnce, prelude::*, Error};
 
 static PCI_ECAM_CFG_SPACE: Once<IoMem> = Once::new();
 
@@ -28,6 +22,15 @@ pub(crate) fn read32(location: &PciDeviceLocation, offset: u32) -> Result<u32> {
         .get()
         .ok_or(Error::IoError)?
         .read_once((encode_as_address_offset(location) | (offset & 0xfc)) as usize)
+}
+
+/// Encodes the bus, device, and function into an address offset in the PCI MMIO region.
+fn encode_as_address_offset(location: &PciDeviceLocation) -> u32 {
+    // We only support ECAM here for RISC-V platforms. Offsets are from
+    // <https://www.kernel.org/doc/Documentation/devicetree/bindings/pci/host-generic-pci.txt>.
+    ((location.bus as u32) << 20)
+        | ((location.device as u32) << 15)
+        | ((location.function as u32) << 12)
 }
 
 pub(crate) fn has_pci_bus() -> bool {
@@ -75,13 +78,4 @@ pub(crate) const MSIX_DEFAULT_MSG_ADDR: u32 = 0x2400_0000;
 
 pub(crate) fn construct_remappable_msix_address(remapping_index: u32) -> u32 {
     unimplemented!()
-}
-
-/// Encodes the bus, device, and function into an address offset in the PCI MMIO region.
-fn encode_as_address_offset(location: &PciDeviceLocation) -> u32 {
-    // We only support ECAM here for RISC-V platforms. Offsets are from
-    // <https://www.kernel.org/doc/Documentation/devicetree/bindings/pci/host-generic-pci.txt>.
-    ((location.bus as u32) << 20)
-        | ((location.device as u32) << 15)
-        | ((location.function as u32) << 12)
 }
