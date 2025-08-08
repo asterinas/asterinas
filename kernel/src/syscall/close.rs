@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use bitflags::bitflags;
-use ostd::sync::RwArc;
 
 use super::SyscallReturn;
 use crate::{
     fs::file_table::{FdFlags, FileDesc},
     prelude::*,
+    process::CloneFlags,
+    syscall::unshare::unshare_files,
 };
 
 bitflags! {
@@ -57,23 +58,21 @@ pub fn sys_close_range(
 
     let flags = CloseRangeFlags::from_bits(raw_flags).ok_or_else(|| Error::new(Errno::EINVAL))?;
 
-    let original_table = ctx.thread_local.borrow_file_table().unwrap().clone();
+    if flags.contains(CloseRangeFlags::UNSHARE) {
+        // FIXME: While directly invoking `unshare_files` is logically correct,
+        // it might not be the most efficient approach.
+        // `unshare_files` clones the entire file table by duplicating all its entries.
+        // However, in the context of `close_range`,
+        // cloning files that are about to be closed is unnecessary overhead.
+        unshare_files(CloneFlags::CLONE_FILES, ctx);
+    }
 
-    let file_table = if flags.contains(CloseRangeFlags::UNSHARE) {
-        let new_table = RwArc::new(original_table.get_cloned());
-        let _ = ctx
-            .thread_local
-            .borrow_file_table_mut()
-            .replace(Some(new_table.clone()));
-        new_table
-    } else {
-        original_table
-    };
+    let file_table = ctx.thread_local.borrow_file_table();
 
     let mut files_to_drop = Vec::new();
 
     {
-        let mut file_table_locked = file_table.write();
+        let mut file_table_locked = file_table.unwrap().write();
 
         let table_len = file_table_locked.len() as u32;
         if first >= table_len {

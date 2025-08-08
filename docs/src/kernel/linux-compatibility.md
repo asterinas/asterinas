@@ -292,7 +292,7 @@ provided by Linux on x86-64 architecture.
 | 269     | faccessat        | ✅              |
 | 270     | pselect6         | ✅              |
 | 271     | ppoll            | ✅              |
-| 272     | unshare          | ❌              |
+| 272     | unshare          | ✅              |
 | 273     | set_robust_list  | ✅              |
 | 274     | get_robust_list  | ❌              |
 | 275     | splice           | ❌              |
@@ -328,7 +328,7 @@ provided by Linux on x86-64 architecture.
 | 305	  | clock_adjtime    | ❌              |
 | 306	  | syncfs           | ❌              |
 | 307	  | sendmmsg         | ❌              |
-| 308	  | setns            | ❌              |
+| 308	  | setns            | ✅              |
 | 309	  | getcpu	         | ✅              |
 | 310	  | process_vm_readv | ❌              |
 | 311	  | process_vm_writev | ❌              |

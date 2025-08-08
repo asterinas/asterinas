@@ -109,6 +109,7 @@ use super::{
     setgid::sys_setgid,
     setgroups::sys_setgroups,
     setitimer::{sys_getitimer, sys_setitimer},
+    setns::sys_setns,
     setpgid::sys_setpgid,
     setregid::sys_setregid,
     setresgid::sys_setresgid,
@@ -138,6 +139,7 @@ use super::{
     umount::sys_umount,
     uname::sys_uname,
     unlink::sys_unlinkat,
+    unshare::sys_unshare,
     utimens::sys_utimensat,
     wait4::sys_wait4,
     waitid::sys_waitid,
@@ -205,6 +207,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_EXIT_GROUP = 94          => sys_exit_group(args[..1]);
     SYS_WAITID = 95              => sys_waitid(args[..5]);
     SYS_SET_TID_ADDRESS = 96     => sys_set_tid_address(args[..1]);
+    SYS_UNSHARE = 97             => sys_unshare(args[..1]);
     SYS_FUTEX = 98               => sys_futex(args[..6]);
     SYS_SET_ROBUST_LIST = 99     => sys_set_robust_list(args[..2]);
     SYS_NANOSLEEP = 101          => sys_nanosleep(args[..2]);
@@ -291,6 +294,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_ACCEPT4 = 242            => sys_accept4(args[..4]);
     SYS_WAIT4 = 260              => sys_wait4(args[..4]);
     SYS_PRLIMIT64 = 261          => sys_prlimit64(args[..4]);
+    SYS_SETNS = 268              => sys_setns(args[..2]);
     SYS_SCHED_SETATTR = 274      => sys_sched_setattr(args[..3]);
     SYS_SCHED_GETATTR = 275      => sys_sched_getattr(args[..4]);
     SYS_GETRANDOM = 278          => sys_getrandom(args[..3]);
