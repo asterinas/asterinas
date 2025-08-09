@@ -3,7 +3,6 @@
 #![expect(dead_code)]
 
 use core::{
-    iter,
     ops::Range,
     sync::atomic::{AtomicU8, Ordering},
 };
@@ -14,7 +13,7 @@ use aster_rights::Full;
 use lru::LruCache;
 use ostd::{
     impl_untyped_frame_meta_for,
-    mm::{Frame, FrameAllocOptions, UFrame, VmIo},
+    mm::{Frame, FrameAllocOptions, UFrame, VmIoFill},
 };
 
 use crate::{
@@ -101,21 +100,18 @@ impl PageCache {
         let first_page_end = start.align_up(PAGE_SIZE);
         if first_page_end > start {
             let zero_len = first_page_end.min(end) - start;
-            self.pages()
-                .write_vals(start, iter::repeat_n(&0, zero_len), 0)?;
+            self.pages().fill_zeros(start, zero_len)?;
         }
 
         // Write zeros to the last partial page if any
         let last_page_start = end.align_down(PAGE_SIZE);
         if last_page_start < end && last_page_start >= start {
             let zero_len = end - last_page_start;
-            self.pages()
-                .write_vals(last_page_start, iter::repeat_n(&0, zero_len), 0)?;
+            self.pages().fill_zeros(last_page_start, zero_len)?;
         }
 
         for offset in (first_page_end..last_page_start).step_by(PAGE_SIZE) {
-            self.pages()
-                .write_vals(offset, iter::repeat_n(&0, PAGE_SIZE), 0)?;
+            self.pages().fill_zeros(offset, PAGE_SIZE)?;
         }
         Ok(())
     }

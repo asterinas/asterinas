@@ -3,7 +3,7 @@
 use core::ops::Range;
 
 use aster_rights::{Rights, TRights};
-use ostd::mm::{UFrame, VmIo};
+use ostd::mm::{UFrame, VmIo, VmIoFill};
 
 use super::{CommitFlags, Vmo, VmoCommitError, VmoRightsOp};
 use crate::prelude::*;
@@ -141,7 +141,23 @@ impl VmIo for Vmo<Rights> {
         self.0.write(offset, reader)?;
         Ok(())
     }
-    // TODO: Support efficient `write_vals()`
+}
+
+impl VmIoFill for Vmo<Rights> {
+    fn fill_zeros(
+        &self,
+        offset: usize,
+        len: usize,
+    ) -> core::result::Result<(), (ostd::Error, usize)> {
+        // TODO: Support efficient `fill_zeros()`.
+        for i in 0..len {
+            match self.write_slice(offset + i, &[0u8]) {
+                Ok(()) => continue,
+                Err(err) => return Err((err, i)),
+            }
+        }
+        Ok(())
+    }
 }
 
 impl VmoRightsOp for Vmo<Rights> {

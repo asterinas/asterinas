@@ -8,7 +8,7 @@ use core::{
 };
 
 use inherit_methods_macro::inherit_methods;
-use ostd::mm::{FrameAllocOptions, Segment, UntypedMem, VmIo};
+use ostd::mm::{io_util::HasVmReaderWriter, FrameAllocOptions, Segment, VmIo};
 
 use super::{MultiRead, MultiWrite};
 use crate::prelude::*;

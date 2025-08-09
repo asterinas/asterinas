@@ -5,8 +5,8 @@ use alloc::{collections::linked_list::LinkedList, sync::Arc};
 use aster_softirq::BottomHalfDisabled;
 use ostd::{
     mm::{
-        Daddr, DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, Infallible, VmReader,
-        VmWriter, PAGE_SIZE,
+        io_util::HasVmReaderWriter, Daddr, DmaDirection, DmaStream, FrameAllocOptions, HasDaddr,
+        Infallible, VmReader, VmWriter, PAGE_SIZE,
     },
     sync::SpinLock,
     Pod,

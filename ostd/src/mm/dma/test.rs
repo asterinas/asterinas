@@ -6,6 +6,7 @@ use crate::{
     mm::{
         dma::*,
         io::{VmIo, VmIoOnce},
+        io_util::HasVmReaderWriter,
         kspace::KERNEL_PAGE_TABLE,
         paddr_to_vaddr, CachePolicy, FrameAllocOptions, HasPaddr, VmReader, VmWriter, PAGE_SIZE,
     },

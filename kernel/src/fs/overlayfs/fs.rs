@@ -13,7 +13,7 @@ use aster_block::BLOCK_SIZE;
 use aster_rights::Full;
 use hashbrown::HashSet;
 use inherit_methods_macro::inherit_methods;
-use ostd::mm::{FrameAllocOptions, UntypedMem};
+use ostd::mm::{io_util::HasVmReaderWriter, FrameAllocOptions};
 
 use crate::{
     fs::{

@@ -7,12 +7,9 @@
 use alloc::sync::Arc;
 use core::ops::Range;
 
-use ostd::{
-    mm::{
-        FallibleVmRead, FallibleVmWrite, Infallible, Paddr, UFrame, USegment, UntypedMem, VmIo,
-        VmReader, VmWriter, PAGE_SIZE,
-    },
-    Error, Result,
+use ostd::mm::{
+    io_util::{HasVmReaderWriter, VmReaderWriterIdentity},
+    Infallible, Paddr, UFrame, USegment, VmReader, VmWriter, PAGE_SIZE,
 };
 
 /// A reference to a slice of a [`USegment`].
@@ -69,8 +66,15 @@ impl SegmentSlice {
         self.nframes() * PAGE_SIZE
     }
 
-    /// Gets a reader for the slice.
-    pub fn reader(&self) -> VmReader<'_, Infallible> {
+    fn start_frame_index(&self) -> usize {
+        self.inner.start_paddr() / PAGE_SIZE + self.range.start
+    }
+}
+
+impl HasVmReaderWriter for SegmentSlice {
+    type Types = VmReaderWriterIdentity;
+
+    fn reader(&self) -> VmReader<'_, Infallible> {
         let mut reader = self.inner.reader();
         reader
             .skip(self.start_paddr() - self.inner.start_paddr())
@@ -78,51 +82,12 @@ impl SegmentSlice {
         reader
     }
 
-    /// Gets a writer for the slice.
-    pub fn writer(&self) -> VmWriter<'_, Infallible> {
+    fn writer(&self) -> VmWriter<'_, Infallible> {
         let mut writer = self.inner.writer();
         writer
             .skip(self.start_paddr() - self.inner.start_paddr())
             .limit(self.nbytes());
         writer
-    }
-
-    fn start_frame_index(&self) -> usize {
-        self.inner.start_paddr() / PAGE_SIZE + self.range.start
-    }
-}
-
-impl VmIo for SegmentSlice {
-    fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()> {
-        let read_len = writer.avail();
-        // Do bound check with potential integer overflow in mind
-        let max_offset = offset.checked_add(read_len).ok_or(Error::Overflow)?;
-        if max_offset > self.nbytes() {
-            return Err(Error::InvalidArgs);
-        }
-        let len = self
-            .reader()
-            .skip(offset)
-            .read_fallible(writer)
-            .map_err(|(e, _)| e)?;
-        debug_assert!(len == read_len);
-        Ok(())
-    }
-
-    fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()> {
-        let write_len = reader.remain();
-        // Do bound check with potential integer overflow in mind
-        let max_offset = offset.checked_add(reader.remain()).ok_or(Error::Overflow)?;
-        if max_offset > self.nbytes() {
-            return Err(Error::InvalidArgs);
-        }
-        let len = self
-            .writer()
-            .skip(offset)
-            .write_fallible(reader)
-            .map_err(|(e, _)| e)?;
-        debug_assert!(len == write_len);
-        Ok(())
     }
 }
 

@@ -13,7 +13,7 @@ use core::{
 use align_ext::AlignExt;
 use aster_rights::Rights;
 use ostd::{
-    mm::{FrameAllocOptions, UFrame, UntypedMem, VmReader, VmWriter},
+    mm::{io_util::HasVmReaderWriter, FrameAllocOptions, UFrame, VmReader, VmWriter},
     task::disable_preempt,
 };
 use xarray::{Cursor, LockedXArray, XArray};

@@ -31,7 +31,7 @@ mod test {
         BlockDevice, BlockDeviceMeta,
     };
     use ostd::{
-        mm::{FrameAllocOptions, Segment, VmIo, PAGE_SIZE},
+        mm::{io_util::HasVmReaderWriter, FrameAllocOptions, Segment, VmIo, PAGE_SIZE},
         prelude::*,
     };
     use rand::{rngs::SmallRng, RngCore, SeedableRng};

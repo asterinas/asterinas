@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::mm::UntypedMem;
+use ostd::mm::io_util::HasVmReaderWriter;
 
 use super::{block_ptr::Ext2Bid, prelude::*, Ext2, Inode};
 use crate::fs::utils::{XattrName, XattrNamespace, XattrSetFlags, XATTR_NAME_MAX_LEN};
@@ -314,10 +314,9 @@ impl Xattr {
         let len = entry.total_len();
         self.blocks_buf
             .writer()
-            .to_fallible()
             .skip(offset)
             .limit(len)
-            .fill_zeros(len)?;
+            .fill_zeros(len);
 
         let mut cache = cache.upgrade();
         let _ = cache.entries.remove(&offset);
