@@ -103,6 +103,13 @@ impl RawUserContext {
     /// On return, the context will be reset to the status before the trap.
     /// Trap reason and error code will be placed at `scause` and `stval`.
     pub(in crate::arch) fn run(&mut self) {
+        // Here we explicitly disable kernel traps to avoid a subtle race
+        // condition. We set `sscratch` register to a non-zero value (here the
+        // address of `RawUserContext`) before going into userspace. If a trap
+        // happens after the set but before the `sret`, our trap handler would
+        // see a non-zero `sscratch` and take it as a trap from user-mode, and
+        // therefore executing different (and incorrect) code.
+        crate::arch::irq::disable_local();
         unsafe { run_user(self) }
     }
 }
