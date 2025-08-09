@@ -15,6 +15,9 @@ use xmas_elf::program::{self, ProgramHeader64};
 
 use super::elf_file::ElfHeaders;
 use crate::{
+    arch::vdso::{
+        VDSO_DATA_OFFSET, VDSO_DATA_SIZE, VDSO_TEXT_OFFSET, VDSO_TEXT_SIZE, VDSO_VMO_SIZE,
+    },
     fs::{
         fs_resolver::{FsPath, FsResolver, AT_FDCWD},
         path::Path,
@@ -25,7 +28,7 @@ use crate::{
         process_vm::{AuxKey, AuxVec, ProcessVm},
         TermStatus,
     },
-    vdso::{vdso_vmo, VDSO_VMO_SIZE},
+    vdso::vdso_vmo,
     vm::{
         perms::VmPerms,
         util::duplicate_frame,
@@ -517,16 +520,25 @@ fn map_vdso_to_vm(process_vm: &ProcessVm) -> Option<Vaddr> {
         .unwrap()
         .vmo(vdso_vmo.dup().unwrap());
 
-    let vdso_data_base = options.build().unwrap();
-    let vdso_text_base = vdso_data_base + 0x4000;
+    let vdso_vmo_base = options.build().unwrap();
+    let vdso_data_base = vdso_vmo_base + VDSO_DATA_OFFSET;
+    let vdso_text_base = vdso_vmo_base + VDSO_TEXT_OFFSET;
 
     let data_perms = VmPerms::READ | VmPerms::WRITE;
     let text_perms = VmPerms::READ | VmPerms::EXEC;
     root_vmar
-        .protect(data_perms, vdso_data_base..vdso_data_base + PAGE_SIZE)
+        .protect(
+            data_perms,
+            vdso_data_base.align_down(PAGE_SIZE)
+                ..(vdso_data_base + VDSO_DATA_SIZE).align_up(PAGE_SIZE),
+        )
         .unwrap();
     root_vmar
-        .protect(text_perms, vdso_text_base..vdso_text_base + PAGE_SIZE)
+        .protect(
+            text_perms,
+            vdso_text_base.align_down(PAGE_SIZE)
+                ..(vdso_text_base + VDSO_TEXT_SIZE).align_up(PAGE_SIZE),
+        )
         .unwrap();
     Some(vdso_text_base)
 }
