@@ -8,22 +8,23 @@ use crate::{
 };
 
 pub fn sys_chroot(path_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
-    let path = ctx.user_space().read_cstring(path_ptr, MAX_FILENAME_LEN)?;
-    debug!("path = {:?}", path);
+    let path_name = ctx.user_space().read_cstring(path_ptr, MAX_FILENAME_LEN)?;
+    debug!("path_name = {:?}", path_name);
 
     let fs_ref = ctx.thread_local.borrow_fs();
     let mut fs = fs_ref.resolver().write();
-    let dentry = {
-        let path = path.to_string_lossy();
-        if path.is_empty() {
+    let path = {
+        let path_name = path_name.to_string_lossy();
+        if path_name.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
-        let fs_path = FsPath::try_from(path.as_ref())?;
+        let fs_path = FsPath::try_from(path_name.as_ref())?;
         fs.lookup(&fs_path)?
     };
-    if dentry.type_() != InodeType::Dir {
+
+    if path.type_() != InodeType::Dir {
         return_errno_with_message!(Errno::ENOTDIR, "must be directory");
     }
-    fs.set_root(dentry);
+    fs.set_root(path);
     Ok(SyscallReturn::Return(0))
 }

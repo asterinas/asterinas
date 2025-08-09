@@ -27,8 +27,8 @@ pub fn init() -> Result<()> {
         // Create the "pts" directory and mount devpts on it.
         let devpts_path =
             dev.new_fs_child("pts", InodeType::Dir, InodeMode::from_bits_truncate(0o755))?;
-        let devpts_mount_node = devpts_path.mount(DevPts::new())?;
-        Path::new_fs_root(devpts_mount_node.clone())
+        let devpts_mount = devpts_path.mount(DevPts::new())?;
+        Path::new_fs_root(devpts_mount)
     };
 
     DEV_PTS.call_once(|| devpts_path);

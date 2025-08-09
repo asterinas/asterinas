@@ -54,15 +54,15 @@ pub fn sys_fchownat(
     flags: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let path = ctx.user_space().read_cstring(path_ptr, PATH_MAX)?;
+    let path_name = ctx.user_space().read_cstring(path_ptr, PATH_MAX)?;
     let flags = ChownFlags::from_bits(flags)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
     debug!(
         "dirfd = {}, path = {:?}, uid = {}, gid = {}, flags = {:?}",
-        dirfd, path, uid, gid, flags
+        dirfd, path_name, uid, gid, flags
     );
 
-    if path.is_empty() {
+    if path_name.is_empty() {
         if !flags.contains(ChownFlags::AT_EMPTY_PATH) {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
@@ -75,9 +75,9 @@ pub fn sys_fchownat(
         return Ok(SyscallReturn::Return(0));
     }
 
-    let dentry = {
-        let path = path.to_string_lossy();
-        let fs_path = FsPath::new(dirfd, path.as_ref())?;
+    let path = {
+        let path_name = path_name.to_string_lossy();
+        let fs_path: FsPath<'_> = FsPath::new(dirfd, path_name.as_ref())?;
         let fs_ref = ctx.thread_local.borrow_fs();
         let fs = fs_ref.resolver().read();
         if flags.contains(ChownFlags::AT_SYMLINK_NOFOLLOW) {
@@ -86,11 +86,12 @@ pub fn sys_fchownat(
             fs.lookup(&fs_path)?
         }
     };
+
     if let Some(uid) = uid {
-        dentry.set_owner(uid)?;
+        path.set_owner(uid)?;
     }
     if let Some(gid) = gid {
-        dentry.set_group(gid)?;
+        path.set_group(gid)?;
     }
     Ok(SyscallReturn::Return(0))
 }

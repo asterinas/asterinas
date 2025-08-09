@@ -5,7 +5,7 @@
 use core::time::Duration;
 
 use inherit_methods_macro::inherit_methods;
-pub use mount::MountNode;
+pub use mount::Mount;
 
 use crate::{
     fs::{
@@ -28,15 +28,15 @@ mod mount;
 /// may have multiple `Path` instances referencing it due to mount operations.
 #[derive(Debug, Clone)]
 pub struct Path {
-    mount_node: Arc<MountNode>,
+    mount: Arc<Mount>,
     dentry: Arc<Dentry>,
 }
 
 impl Path {
     /// Creates a new `Path` to represent the root directory of a file system.
-    pub fn new_fs_root(mount_node: Arc<MountNode>) -> Self {
-        let inner = mount_node.root_dentry().clone();
-        Self::new(mount_node, inner)
+    pub fn new_fs_root(mount: Arc<Mount>) -> Self {
+        let inner = mount.root_dentry().clone();
+        Self::new(mount, inner)
     }
 
     /// Creates a new `Path` to represent the child directory of a file system.
@@ -49,11 +49,16 @@ impl Path {
             return_errno!(Errno::EACCES);
         }
         let new_child_dentry = self.dentry.create(name, type_, mode)?;
-        Ok(Self::new(self.mount_node.clone(), new_child_dentry))
+        Ok(Self::new(self.mount.clone(), new_child_dentry))
     }
 
-    fn new(mount_node: Arc<MountNode>, dentry: Arc<Dentry>) -> Self {
-        Self { mount_node, dentry }
+    fn new(mount: Arc<Mount>, dentry: Arc<Dentry>) -> Self {
+        Self { mount, dentry }
+    }
+
+    /// Gets the mount node of current `Path`.
+    pub fn mount_node(&self) -> &Arc<Mount> {
+        &self.mount
     }
 
     /// Lookups the target `Path` given the `name`.
@@ -75,10 +80,10 @@ impl Path {
         } else {
             let target_inner_opt = self.dentry.lookup_via_cache(name)?;
             match target_inner_opt {
-                Some(target_inner) => Self::new(self.mount_node.clone(), target_inner),
+                Some(target_inner) => Self::new(self.mount.clone(), target_inner),
                 None => {
                     let target_inner = self.dentry.lookup_via_fs(name)?;
-                    Self::new(self.mount_node.clone(), target_inner)
+                    Self::new(self.mount.clone(), target_inner)
                 }
             }
         };
@@ -118,10 +123,10 @@ impl Path {
             return self.dentry.name();
         }
 
-        let Some(parent) = self.mount_node.parent() else {
+        let Some(parent) = self.mount.parent() else {
             return self.dentry.name();
         };
-        let Some(mountpoint) = self.mount_node.mountpoint() else {
+        let Some(mountpoint) = self.mount.mountpoint() else {
             return self.dentry.name();
         };
 
@@ -135,14 +140,11 @@ impl Path {
     /// to get the parent of the mountpoint recursively.
     fn effective_parent(&self) -> Option<Self> {
         if !self.dentry.is_mount_root() {
-            return Some(Self::new(
-                self.mount_node.clone(),
-                self.dentry.parent().unwrap(),
-            ));
+            return Some(Self::new(self.mount.clone(), self.dentry.parent().unwrap()));
         }
 
-        let parent = self.mount_node.parent()?;
-        let mountpoint = self.mount_node.mountpoint()?;
+        let parent = self.mount.parent()?;
+        let mountpoint = self.mount.mountpoint()?;
 
         let mount_parent = Self::new(parent.upgrade().unwrap(), mountpoint);
         mount_parent.effective_parent()
@@ -160,7 +162,7 @@ impl Path {
             return self;
         }
 
-        match self.mount_node.get(&self) {
+        match self.mount.get(&self.dentry) {
             Some(child_mount) => {
                 let inner = child_mount.root_dentry().clone();
                 Self::new(child_mount, inner).get_top_path()
@@ -169,13 +171,12 @@ impl Path {
         }
     }
 
-    /// Makes current `Dentry` to be a mountpoint,
-    /// sets it as the mountpoint of the child mount.
-    pub(super) fn set_mountpoint(&self, child_mount: Arc<MountNode>) {
-        child_mount.set_mountpoint(&self.dentry);
-        self.dentry.set_mounted_bit();
+    fn this(&self) -> Self {
+        self.clone()
     }
+}
 
+impl Path {
     /// Mounts the fs on current `Dentry` as a mountpoint.
     ///
     /// If the given mountpoint has already been mounted,
@@ -183,7 +184,7 @@ impl Path {
     /// The root Dentry cannot be mounted.
     ///
     /// Returns the mounted child mount.
-    pub fn mount(&self, fs: Arc<dyn FileSystem>) -> Result<Arc<MountNode>> {
+    pub fn mount(&self, fs: Arc<dyn FileSystem>) -> Result<Arc<Mount>> {
         if self.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
@@ -191,90 +192,84 @@ impl Path {
             return_errno_with_message!(Errno::EINVAL, "can not mount on root");
         }
 
-        let child_mount = self.mount_node.mount(fs, &self.this())?;
-        self.set_mountpoint(child_mount.clone());
+        let child_mount = self.mount.do_mount(fs, &self.dentry)?;
+
         Ok(child_mount)
     }
 
     /// Unmounts and returns the mounted child mount.
     ///
     /// Note that the root mount cannot be unmounted.
-    pub fn unmount(&self) -> Result<Arc<MountNode>> {
+    pub fn unmount(&self) -> Result<Arc<Mount>> {
         if !self.dentry.is_mount_root() {
             return_errno_with_message!(Errno::EINVAL, "not mounted");
         }
 
-        let Some(mountpoint) = self.mount_node.mountpoint() else {
+        let Some(mountpoint) = self.mount.mountpoint() else {
             return_errno_with_message!(Errno::EINVAL, "cannot umount root mount");
         };
 
-        let mountpoint_mount_node = self.mount_node.parent().unwrap().upgrade().unwrap();
-        let parent_mount_path = Self::new(mountpoint_mount_node.clone(), mountpoint.clone());
+        let parent_mount = self.mount.parent().unwrap().upgrade().unwrap();
 
-        let child_mount = mountpoint_mount_node.unmount(&parent_mount_path)?;
-        mountpoint.clear_mounted_bit();
+        let child_mount = parent_mount.do_unmount(&mountpoint)?;
+
         Ok(child_mount)
+    }
+
+    /// Binds mount of the current `Path` to the destination `Path`.
+    ///
+    /// This operation will creates a new mount node tree that mirrors either
+    /// just the root (non-recursive) or the entire mount subtree (recursive),
+    /// and grafts it to the destination `Path`.
+    pub fn bind_mount_to(&self, dst_path: &Self, recursive: bool) -> Result<()> {
+        let new_mount = self.mount.clone_mount_tree(&self.dentry, recursive);
+        new_mount.graft_mount_tree(dst_path)?;
+        Ok(())
+    }
+
+    /// Moves the mount tree rooted at the current `Path` to the destination `Path`.
+    ///
+    /// If the current path is not a mount root or is a root mount, returns `Err`.
+    pub fn move_mount_to(&self, dst_path: &Self) -> Result<()> {
+        if !self.is_mount_root() {
+            return_errno_with_message!(Errno::EINVAL, "The current path is not a mount root");
+        };
+        if self.mount_node().parent().is_none() {
+            return_errno_with_message!(Errno::EINVAL, "The root mount can not be moved");
+        }
+
+        self.mount.graft_mount_tree(dst_path)
     }
 
     /// Creates a `Path` by making an inode of the `type_` with the `mode`.
     pub fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Self> {
         let inner = self.dentry.mknod(name, mode, type_)?;
-        Ok(Self::new(self.mount_node.clone(), inner))
+        Ok(Self::new(self.mount.clone(), inner))
     }
 
     /// Links a new name for the `Path`.
     pub fn link(&self, old: &Self, name: &str) -> Result<()> {
-        if !Arc::ptr_eq(&old.mount_node, &self.mount_node) {
+        if !Arc::ptr_eq(&old.mount, &self.mount) {
             return_errno_with_message!(Errno::EXDEV, "cannot cross mount");
         }
 
         self.dentry.link(&old.dentry, name)
     }
 
-    /// Deletes a `Path`.
-    pub fn unlink(&self, name: &str) -> Result<()> {
-        self.dentry.unlink(name)
-    }
-
-    /// Deletes a directory `Path`.
-    pub fn rmdir(&self, name: &str) -> Result<()> {
-        self.dentry.rmdir(name)
-    }
-
     /// Renames a `Path` to the new `Path` by `rename()` the inner inode.
     pub fn rename(&self, old_name: &str, new_dir: &Self, new_name: &str) -> Result<()> {
-        if !Arc::ptr_eq(&self.mount_node, &new_dir.mount_node) {
+        if !Arc::ptr_eq(&self.mount, &new_dir.mount) {
             return_errno_with_message!(Errno::EXDEV, "cannot cross mount");
         }
 
         self.dentry.rename(old_name, &new_dir.dentry, new_name)
     }
-
-    /// Binds mount the `Path` to the destination `Path`.
-    ///
-    /// If `recursive` is true, it will bind mount the whole mount tree
-    /// to the destination `Path`. Otherwise, it will only bind mount
-    /// the root mount node.
-    pub fn bind_mount_to(&self, dst_path: &Self, recursive: bool) -> Result<()> {
-        let new_mount = self
-            .mount_node
-            .clone_mount_node_tree(&self.dentry, recursive);
-        new_mount.graft_mount_node_tree(dst_path)?;
-        Ok(())
-    }
-
-    fn this(&self) -> Self {
-        self.clone()
-    }
-
-    /// Gets the mount node of current `Path`.
-    pub fn mount_node(&self) -> &Arc<MountNode> {
-        &self.mount_node
-    }
 }
 
 #[inherit_methods(from = "self.dentry")]
 impl Path {
+    pub fn unlink(&self, name: &str) -> Result<()>;
+    pub fn rmdir(&self, name: &str) -> Result<()>;
     pub fn fs(&self) -> Arc<dyn FileSystem>;
     pub fn sync_all(&self) -> Result<()>;
     pub fn sync_data(&self) -> Result<()>;

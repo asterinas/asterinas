@@ -46,7 +46,7 @@ pub fn sys_statx(
         );
     }
 
-    let dentry = {
+    let path = {
         let filename = filename.to_string_lossy();
         let fs_path = FsPath::new(dirfd, filename.as_ref())?;
         let fs_ref = ctx.thread_local.borrow_fs();
@@ -58,7 +58,7 @@ pub fn sys_statx(
         }
     };
 
-    let statx = Statx::from(dentry.metadata());
+    let statx = Statx::from(path.metadata());
 
     user_space.write_val(statx_buf_ptr, &statx)?;
     Ok(SyscallReturn::Return(0))
