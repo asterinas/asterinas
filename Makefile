@@ -268,7 +268,7 @@ gdb_server: initramfs $(CARGO_OSDK)
 	@cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS) --gdb-server wait-client,vscode,addr=:$(GDB_TCP_PORT)
 
 .PHONY: gdb_client
-gdb_client: initramfs $(CARGO_OSDK)
+gdb_client: $(CARGO_OSDK)
 	@cd kernel && cargo osdk debug $(CARGO_OSDK_BUILD_ARGS) --remote :$(GDB_TCP_PORT)
 
 .PHONY: profile_server
@@ -276,7 +276,7 @@ profile_server: initramfs $(CARGO_OSDK)
 	@cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS) --gdb-server addr=:$(GDB_TCP_PORT)
 
 .PHONY: profile_client
-profile_client: initramfs $(CARGO_OSDK)
+profile_client: $(CARGO_OSDK)
 	@cd kernel && cargo osdk profile $(CARGO_OSDK_BUILD_ARGS) --remote :$(GDB_TCP_PORT) \
 		--samples $(GDB_PROFILE_COUNT) --interval $(GDB_PROFILE_INTERVAL) --format $(GDB_PROFILE_FORMAT)
 
