@@ -54,6 +54,7 @@ impl DirOps for TidDirOps {
         let inode = match name {
             "fd" => FdDirOps::new_inode(self.process_ref.clone(), this_ptr.clone()),
             "exe" => ExeSymOps::new_inode(self.process_ref.clone(), this_ptr.clone()),
+            "mem" => MemFileOps::new_inode(self.process_ref.clone(), this_ptr.clone()),
             "stat" => StatFileOps::new_inode(
                 self.process_ref.clone(),
                 self.thread_ref.clone(),
@@ -81,6 +82,9 @@ impl DirOps for TidDirOps {
         });
         cached_children.put_entry_if_not_found("exe", || {
             ExeSymOps::new_inode(self.process_ref.clone(), this_ptr.clone())
+        });
+        cached_children.put_entry_if_not_found("mem", || {
+            MemFileOps::new_inode(self.process_ref.clone(), this_ptr.clone())
         });
         cached_children.put_entry_if_not_found("stat", || {
             StatFileOps::new_inode(
