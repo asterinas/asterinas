@@ -3,7 +3,7 @@
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::Inode,
+        utils::{Inode, InodeMode},
     },
     prelude::*,
     Process,
@@ -16,6 +16,8 @@ impl CommFileOps {
     pub fn new_inode(process_ref: Arc<Process>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         ProcFileBuilder::new(Self(process_ref))
             .parent(parent)
+            // Reference: <https://github.com/torvalds/linux/blob/0ff41df1cb268fc69e703a08a57ee14ae967d0ca/fs/proc/base.c#L3330>
+            .mode(InodeMode::from_bits_truncate(0o644))
             .build()
             .unwrap()
     }
@@ -33,6 +35,11 @@ impl FileOps for CommFileOps {
         };
         comm_output.push(b'\n');
         Ok(comm_output)
+    }
+
+    fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
+        warn!("Writing to `/proc/[pid]/comm` is not supported currently.");
+        Err(Error::new(Errno::EOPNOTSUPP))
     }
 }
 

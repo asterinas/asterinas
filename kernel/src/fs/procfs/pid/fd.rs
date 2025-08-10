@@ -8,7 +8,7 @@ use crate::{
         procfs::{
             pid::FdEvents, DirOps, Observer, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps,
         },
-        utils::{DirEntryVecExt, Inode},
+        utils::{DirEntryVecExt, Inode, InodeMode},
     },
     prelude::*,
     process::posix_thread::AsPosixThread,
@@ -25,6 +25,8 @@ impl FdDirOps {
 
         let fd_inode = ProcDirBuilder::new(Self(process_ref.clone()))
             .parent(parent)
+            // Reference: <https://github.com/torvalds/linux/blob/0ff41df1cb268fc69e703a08a57ee14ae967d0ca/fs/proc/base.c#L3311>
+            .mode(InodeMode::from_bits_truncate(0o500))
             .build()
             .unwrap();
         // This is for an exiting process that has not yet been reaped by its parent,
@@ -100,8 +102,18 @@ struct FileSymOps(Arc<dyn FileLike>);
 
 impl FileSymOps {
     pub fn new_inode(file: Arc<dyn FileLike>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        // Reference: <https://github.com/torvalds/linux/blob/0ff41df1cb268fc69e703a08a57ee14ae967d0ca/fs/proc/fd.c#L127-L141>
+        let mut mode = InodeMode::empty();
+        if file.access_mode().is_readable() {
+            mode |= InodeMode::S_IRUSR | InodeMode::S_IXUSR;
+        }
+        if file.access_mode().is_writable() {
+            mode |= InodeMode::S_IWUSR | InodeMode::S_IXUSR;
+        }
+
         ProcSymBuilder::new(Self(file))
             .parent(parent)
+            .mode(mode)
             .build()
             .unwrap()
     }
