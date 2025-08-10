@@ -3,7 +3,7 @@
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::Inode,
+        utils::{Inode, InodeMode},
     },
     prelude::*,
     Process,
@@ -16,6 +16,7 @@ impl CmdlineFileOps {
     pub fn new_inode(process_ref: Arc<Process>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         ProcFileBuilder::new(Self(process_ref))
             .parent(parent)
+            .mode(InodeMode::from_bits_truncate(0o444))
             .build()
             .unwrap()
     }

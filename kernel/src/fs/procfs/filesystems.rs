@@ -6,7 +6,7 @@ use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
         registry::FsProperties,
-        utils::Inode,
+        utils::{Inode, InodeMode},
     },
     prelude::*,
 };
@@ -16,7 +16,11 @@ pub struct FileSystemsFileOps;
 
 impl FileSystemsFileOps {
     pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        ProcFileBuilder::new(Self).parent(parent).build().unwrap()
+        ProcFileBuilder::new(Self)
+            .parent(parent)
+            .mode(InodeMode::from_bits_truncate(0o444))
+            .build()
+            .unwrap()
     }
 }
 

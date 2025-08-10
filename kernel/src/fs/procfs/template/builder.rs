@@ -8,7 +8,7 @@ use super::{
     sym::{ProcSym, SymOps},
 };
 use crate::{
-    fs::utils::{FileSystem, Inode},
+    fs::utils::{FileSystem, Inode, InodeMode},
     prelude::*,
 };
 
@@ -21,7 +21,7 @@ pub struct ProcDirBuilder<O: DirOps> {
 
 impl<O: DirOps> ProcDirBuilder<O> {
     pub fn new(dir: O) -> Self {
-        let optional_builder: OptionalBuilder = Default::default();
+        let optional_builder = OptionalBuilder::new();
         Self {
             dir,
             optional_builder: Some(optional_builder),
@@ -44,9 +44,13 @@ impl<O: DirOps> ProcDirBuilder<O> {
         self.optional_builder(|ob| ob.ino(ino))
     }
 
+    pub fn mode(self, mode: InodeMode) -> Self {
+        self.optional_builder(|ob| ob.mode(mode))
+    }
+
     pub fn build(mut self) -> Result<Arc<ProcDir<O>>> {
-        let (fs, parent, ino, is_volatile) = self.optional_builder.take().unwrap().build()?;
-        Ok(ProcDir::new(self.dir, fs, parent, ino, is_volatile))
+        let (fs, parent, ino, is_volatile, mode) = self.optional_builder.take().unwrap().build()?;
+        Ok(ProcDir::new(self.dir, fs, parent, ino, is_volatile, mode))
     }
 
     fn optional_builder<F>(mut self, f: F) -> Self
@@ -68,7 +72,7 @@ pub struct ProcFileBuilder<O: FileOps> {
 
 impl<O: FileOps> ProcFileBuilder<O> {
     pub fn new(file: O) -> Self {
-        let optional_builder: OptionalBuilder = Default::default();
+        let optional_builder = OptionalBuilder::new();
         Self {
             file,
             optional_builder: Some(optional_builder),
@@ -83,9 +87,13 @@ impl<O: FileOps> ProcFileBuilder<O> {
         self.optional_builder(|ob| ob.volatile())
     }
 
+    pub fn mode(self, mode: InodeMode) -> Self {
+        self.optional_builder(|ob| ob.mode(mode))
+    }
+
     pub fn build(mut self) -> Result<Arc<ProcFile<O>>> {
-        let (fs, _, _, is_volatile) = self.optional_builder.take().unwrap().build()?;
-        Ok(ProcFile::new(self.file, fs, is_volatile))
+        let (fs, _, _, is_volatile, mode) = self.optional_builder.take().unwrap().build()?;
+        Ok(ProcFile::new(self.file, fs, is_volatile, mode))
     }
 
     fn optional_builder<F>(mut self, f: F) -> Self
@@ -107,7 +115,7 @@ pub struct ProcSymBuilder<O: SymOps> {
 
 impl<O: SymOps> ProcSymBuilder<O> {
     pub fn new(sym: O) -> Self {
-        let optional_builder: OptionalBuilder = Default::default();
+        let optional_builder = OptionalBuilder::new();
         Self {
             sym,
             optional_builder: Some(optional_builder),
@@ -122,9 +130,13 @@ impl<O: SymOps> ProcSymBuilder<O> {
         self.optional_builder(|ob| ob.volatile())
     }
 
+    pub fn mode(self, mode: InodeMode) -> Self {
+        self.optional_builder(|ob| ob.mode(mode))
+    }
+
     pub fn build(mut self) -> Result<Arc<ProcSym<O>>> {
-        let (fs, _, _, is_volatile) = self.optional_builder.take().unwrap().build()?;
-        Ok(ProcSym::new(self.sym, fs, is_volatile))
+        let (fs, _, _, is_volatile, mode) = self.optional_builder.take().unwrap().build()?;
+        Ok(ProcSym::new(self.sym, fs, is_volatile, mode))
     }
 
     fn optional_builder<F>(mut self, f: F) -> Self
@@ -137,15 +149,25 @@ impl<O: SymOps> ProcSymBuilder<O> {
     }
 }
 
-#[derive(Default)]
 struct OptionalBuilder {
     parent: Option<Weak<dyn Inode>>,
     fs: Option<Weak<dyn FileSystem>>,
     ino: Option<u64>,
     is_volatile: bool,
+    mode: InodeMode,
 }
 
 impl OptionalBuilder {
+    fn new() -> Self {
+        Self {
+            parent: None,
+            fs: None,
+            ino: None,
+            is_volatile: false,
+            mode: InodeMode::empty(),
+        }
+    }
+
     pub fn parent(mut self, parent: Weak<dyn Inode>) -> Self {
         self.parent = Some(parent);
         self
@@ -166,6 +188,11 @@ impl OptionalBuilder {
         self
     }
 
+    pub fn mode(mut self, mode: InodeMode) -> Self {
+        self.mode = mode;
+        self
+    }
+
     #[expect(clippy::type_complexity)]
     pub fn build(
         self,
@@ -174,6 +201,7 @@ impl OptionalBuilder {
         Option<Weak<dyn Inode>>,
         Option<u64>,
         bool,
+        InodeMode,
     )> {
         if self.parent.is_none() && self.fs.is_none() {
             return_errno_with_message!(Errno::EINVAL, "must have parent or fs");
@@ -193,6 +221,6 @@ impl OptionalBuilder {
             is_volatile
         };
 
-        Ok((fs, self.parent, self.ino, is_volatile))
+        Ok((fs, self.parent, self.ino, is_volatile, self.mode))
     }
 }
