@@ -17,7 +17,7 @@ use crate::{
             },
             template::{DirOps, ProcDir, ProcDirBuilder},
         },
-        utils::{DirEntryVecExt, Inode},
+        utils::{DirEntryVecExt, Inode, InodeMode},
     },
     process::posix_thread::AsPosixThread,
     thread::{AsThread, Thread},
@@ -38,6 +38,7 @@ impl TaskDirOps {
     pub fn new_inode(process_ref: Arc<Process>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         ProcDirBuilder::new(Self(process_ref))
             .parent(parent)
+            .mode(InodeMode::from_bits_truncate(0o555))
             .build()
             .unwrap()
     }
@@ -61,6 +62,7 @@ impl TidDirOps {
             thread_ref,
         })
         .parent(parent)
+        .mode(InodeMode::from_bits_truncate(0o555))
         .build()
         .unwrap()
     }
