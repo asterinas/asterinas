@@ -4,7 +4,7 @@ use self::kernel::KernelDirOps;
 use crate::{
     fs::{
         procfs::template::{DirOps, ProcDir, ProcDirBuilder},
-        utils::{DirEntryVecExt, Inode},
+        utils::{DirEntryVecExt, Inode, InodeMode},
     },
     prelude::*,
 };
@@ -16,7 +16,13 @@ pub struct SysDirOps;
 
 impl SysDirOps {
     pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        ProcDirBuilder::new(Self).parent(parent).build().unwrap()
+        // Reference:
+        // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/proc_sysctl.c#L1566>
+        // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/generic.c#L488-L489>
+        ProcDirBuilder::new(Self, InodeMode::from_bits_truncate(0o555))
+            .parent(parent)
+            .build()
+            .unwrap()
     }
 }
 

@@ -5,7 +5,7 @@ use core::fmt::Write;
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::Inode,
+        utils::{Inode, InodeMode},
     },
     prelude::*,
     process::{posix_thread::AsPosixThread, Process},
@@ -14,7 +14,7 @@ use crate::{
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/status` (and also `/proc/[pid]/status`).
-/// See https://github.com/torvalds/linux/blob/ce1c54fdff7c4556b08f5b875a331d8952e8b6b7/fs/proc/array.c#L148
+/// See <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/array.c#L148>.
 /// FIXME: Some fields are not implemented yet.
 ///
 /// Fields:
@@ -70,10 +70,14 @@ impl StatusFileOps {
         thread_ref: Arc<Thread>,
         parent: Weak<dyn Inode>,
     ) -> Arc<dyn Inode> {
-        ProcFileBuilder::new(Self {
-            process_ref,
-            thread_ref,
-        })
+        ProcFileBuilder::new(
+            Self {
+                process_ref,
+                thread_ref,
+            },
+            // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3326>
+            InodeMode::from_bits_truncate(0o444),
+        )
         .parent(parent)
         .build()
         .unwrap()
@@ -90,8 +94,8 @@ impl FileOps for StatusFileOps {
         // is exactly the same as its main thread's `/proc/<pid>/task/<pid>/status`.
         //
         // Reference:
-        // <https://github.com/torvalds/linux/blob/0ff41df1cb268fc69e703a08a57ee14ae967d0ca/fs/proc/base.c#L3320>
-        // <https://github.com/torvalds/linux/blob/0ff41df1cb268fc69e703a08a57ee14ae967d0ca/fs/proc/base.c#L3669>
+        // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3326>
+        // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3675>
 
         let mut status_output = String::new();
 

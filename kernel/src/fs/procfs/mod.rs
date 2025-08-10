@@ -18,7 +18,7 @@ use crate::{
     fs::{
         procfs::filesystems::FileSystemsFileOps,
         registry::{FsProperties, FsType},
-        utils::{DirEntryVecExt, FileSystem, FsFlags, Inode, SuperBlock, NAME_MAX},
+        utils::{DirEntryVecExt, FileSystem, FsFlags, Inode, InodeMode, SuperBlock, NAME_MAX},
     },
     prelude::*,
     process::{
@@ -120,7 +120,8 @@ struct RootDirOps;
 
 impl RootDirOps {
     pub fn new_inode(fs: Weak<ProcFs>) -> Arc<dyn Inode> {
-        let root_inode = ProcDirBuilder::new(Self)
+        // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/root.c#L368>
+        let root_inode = ProcDirBuilder::new(Self, InodeMode::from_bits_truncate(0o555))
             .fs(fs)
             .ino(PROC_ROOT_INO)
             .build()

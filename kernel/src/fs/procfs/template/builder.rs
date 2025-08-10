@@ -8,22 +8,24 @@ use super::{
     sym::{ProcSym, SymOps},
 };
 use crate::{
-    fs::utils::{FileSystem, Inode},
+    fs::utils::{FileSystem, Inode, InodeMode},
     prelude::*,
 };
 
 pub struct ProcDirBuilder<O: DirOps> {
     // Mandatory field
     dir: O,
+    mode: InodeMode,
     // Optional fields
     optional_builder: Option<OptionalBuilder>,
 }
 
 impl<O: DirOps> ProcDirBuilder<O> {
-    pub fn new(dir: O) -> Self {
-        let optional_builder: OptionalBuilder = Default::default();
+    pub fn new(dir: O, mode: InodeMode) -> Self {
+        let optional_builder = OptionalBuilder::new();
         Self {
             dir,
+            mode,
             optional_builder: Some(optional_builder),
         }
     }
@@ -46,7 +48,14 @@ impl<O: DirOps> ProcDirBuilder<O> {
 
     pub fn build(mut self) -> Result<Arc<ProcDir<O>>> {
         let (fs, parent, ino, is_volatile) = self.optional_builder.take().unwrap().build()?;
-        Ok(ProcDir::new(self.dir, fs, parent, ino, is_volatile))
+        Ok(ProcDir::new(
+            self.dir,
+            fs,
+            parent,
+            ino,
+            is_volatile,
+            self.mode,
+        ))
     }
 
     fn optional_builder<F>(mut self, f: F) -> Self
@@ -62,15 +71,17 @@ impl<O: DirOps> ProcDirBuilder<O> {
 pub struct ProcFileBuilder<O: FileOps> {
     // Mandatory field
     file: O,
+    mode: InodeMode,
     // Optional fields
     optional_builder: Option<OptionalBuilder>,
 }
 
 impl<O: FileOps> ProcFileBuilder<O> {
-    pub fn new(file: O) -> Self {
-        let optional_builder: OptionalBuilder = Default::default();
+    pub fn new(file: O, mode: InodeMode) -> Self {
+        let optional_builder = OptionalBuilder::new();
         Self {
             file,
+            mode,
             optional_builder: Some(optional_builder),
         }
     }
@@ -85,7 +96,7 @@ impl<O: FileOps> ProcFileBuilder<O> {
 
     pub fn build(mut self) -> Result<Arc<ProcFile<O>>> {
         let (fs, _, _, is_volatile) = self.optional_builder.take().unwrap().build()?;
-        Ok(ProcFile::new(self.file, fs, is_volatile))
+        Ok(ProcFile::new(self.file, fs, is_volatile, self.mode))
     }
 
     fn optional_builder<F>(mut self, f: F) -> Self
@@ -101,15 +112,17 @@ impl<O: FileOps> ProcFileBuilder<O> {
 pub struct ProcSymBuilder<O: SymOps> {
     // Mandatory field
     sym: O,
+    mode: InodeMode,
     // Optional fields
     optional_builder: Option<OptionalBuilder>,
 }
 
 impl<O: SymOps> ProcSymBuilder<O> {
-    pub fn new(sym: O) -> Self {
-        let optional_builder: OptionalBuilder = Default::default();
+    pub fn new(sym: O, mode: InodeMode) -> Self {
+        let optional_builder = OptionalBuilder::new();
         Self {
             sym,
+            mode,
             optional_builder: Some(optional_builder),
         }
     }
@@ -124,7 +137,7 @@ impl<O: SymOps> ProcSymBuilder<O> {
 
     pub fn build(mut self) -> Result<Arc<ProcSym<O>>> {
         let (fs, _, _, is_volatile) = self.optional_builder.take().unwrap().build()?;
-        Ok(ProcSym::new(self.sym, fs, is_volatile))
+        Ok(ProcSym::new(self.sym, fs, is_volatile, self.mode))
     }
 
     fn optional_builder<F>(mut self, f: F) -> Self
@@ -137,7 +150,6 @@ impl<O: SymOps> ProcSymBuilder<O> {
     }
 }
 
-#[derive(Default)]
 struct OptionalBuilder {
     parent: Option<Weak<dyn Inode>>,
     fs: Option<Weak<dyn FileSystem>>,
@@ -146,6 +158,15 @@ struct OptionalBuilder {
 }
 
 impl OptionalBuilder {
+    fn new() -> Self {
+        Self {
+            parent: None,
+            fs: None,
+            ino: None,
+            is_volatile: false,
+        }
+    }
+
     pub fn parent(mut self, parent: Weak<dyn Inode>) -> Self {
         self.parent = Some(parent);
         self
