@@ -17,15 +17,11 @@ pub struct ProcSym<S: SymOps> {
 }
 
 impl<S: SymOps> ProcSym<S> {
-    pub fn new(sym: S, fs: Weak<dyn FileSystem>, is_volatile: bool) -> Arc<Self> {
+    pub fn new(sym: S, fs: Weak<dyn FileSystem>, is_volatile: bool, mode: InodeMode) -> Arc<Self> {
         let common = {
             let arc_fs = fs.upgrade().unwrap();
             let procfs = arc_fs.downcast_ref::<ProcFs>().unwrap();
-            let metadata = Metadata::new_symlink(
-                procfs.alloc_id(),
-                InodeMode::from_bits_truncate(0o777),
-                super::BLOCK_SIZE,
-            );
+            let metadata = Metadata::new_symlink(procfs.alloc_id(), mode, super::BLOCK_SIZE);
             Common::new(metadata, fs, is_volatile)
         };
         Arc::new(Self { inner: sym, common })

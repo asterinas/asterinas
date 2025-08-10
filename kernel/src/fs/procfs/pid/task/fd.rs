@@ -8,7 +8,7 @@ use crate::{
         procfs::{
             pid::FdEvents, DirOps, Observer, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps,
         },
-        utils::{DirEntryVecExt, Inode},
+        utils::{DirEntryVecExt, Inode, InodeMode},
     },
     prelude::*,
     process::posix_thread::AsPosixThread,
@@ -23,10 +23,14 @@ impl FdDirOps {
         let posix_thread = thread_ref.as_posix_thread().unwrap();
         let file_table = posix_thread.file_table();
 
-        let fd_inode = ProcDirBuilder::new(Self(thread_ref.clone()))
-            .parent(parent)
-            .build()
-            .unwrap();
+        let fd_inode = ProcDirBuilder::new(
+            Self(thread_ref.clone()),
+            // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3317>
+            InodeMode::from_bits_truncate(0o500),
+        )
+        .parent(parent)
+        .build()
+        .unwrap();
         // This is for an exiting process that has not yet been reaped by its parent,
         // whose file table may have already been released.
         if let Some(file_table_ref) = file_table.lock().as_ref() {
@@ -100,7 +104,16 @@ struct FileSymOps(Arc<dyn FileLike>);
 
 impl FileSymOps {
     pub fn new_inode(file: Arc<dyn FileLike>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        ProcSymBuilder::new(Self(file))
+        // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/fd.c#L127-L141>
+        let mut mode = InodeMode::empty();
+        if file.access_mode().is_readable() {
+            mode |= InodeMode::S_IRUSR | InodeMode::S_IXUSR;
+        }
+        if file.access_mode().is_writable() {
+            mode |= InodeMode::S_IWUSR | InodeMode::S_IXUSR;
+        }
+
+        ProcSymBuilder::new(Self(file), mode)
             .parent(parent)
             .build()
             .unwrap()

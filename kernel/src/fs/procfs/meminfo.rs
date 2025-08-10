@@ -11,7 +11,7 @@ use alloc::format;
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::Inode,
+        utils::{Inode, InodeMode},
     },
     prelude::*,
 };
@@ -21,7 +21,13 @@ pub struct MemInfoFileOps;
 
 impl MemInfoFileOps {
     pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        ProcFileBuilder::new(Self).parent(parent).build().unwrap()
+        // Reference:
+        // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/meminfo.c#L178>
+        // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/generic.c#L549-L550>
+        ProcFileBuilder::new(Self, InodeMode::from_bits_truncate(0o444))
+            .parent(parent)
+            .build()
+            .unwrap()
     }
 }
 
