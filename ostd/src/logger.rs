@@ -1,11 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Logging support.
+//! Logger injection.
 //!
-//! This module provides a default log implementation while allowing users to inject
-//! their own logger at a higher level.
+//! OSTD allows its client to inject a custom implementation of logger.
+//! If no such logger is injected,
+//! then OSTD falls back to a built-in logger that
+//! simply dumps all log records with [`crate::console::early_print`].
 //!
-//! Generally IRQs are disabled while printing. So do not print long log messages.
+//! OSTD's logger facility relies on the [log] crate.
+//! Both an OSTD client and OSTD itself use the macros from the `log` crate
+//! such as `error`, `info`, and `debug` to emit log records.
+//! The injected logger is required to implement the [`log::Log`] trait.
+//!
+//! [log]: https://docs.rs/log
 
 use core::str::FromStr;
 
@@ -13,6 +20,29 @@ use log::{LevelFilter, Metadata, Record};
 use spin::Once;
 
 use crate::boot::EARLY_INFO;
+
+/// Injects a logger.
+///
+/// This method can be called at most once; calling it more than once has no effect.
+///
+/// # Requirements
+///
+/// As the logger may be invoked in stringent situations,
+/// such as an interrupt handler, an out-of-memory handler, or a panic handler,
+/// a logger should be implemented to be
+/// _short_ (simple and non-sleeping) and
+/// _heapless_ (not trigger heap allocations).
+/// Failing to do so may cause the kernel to panic or deadlock.
+pub fn inject_logger(new_logger: &'static dyn log::Log) {
+    LOGGER.backend.call_once(|| new_logger);
+}
+
+/// Initializes the logger. Users should avoid using the log macros before this function is called.
+pub(crate) fn init() {
+    let level = get_log_level().unwrap_or(LevelFilter::Off);
+    log::set_max_level(level);
+    log::set_logger(&LOGGER).unwrap();
+}
 
 static LOGGER: Logger = Logger::new();
 
@@ -26,18 +56,6 @@ impl Logger {
             backend: Once::new(),
         }
     }
-}
-
-/// Injects a logger as the global logger backend.
-///
-/// This method allows upper-level users to inject their own implemented loggers,
-/// but only allows injecting once. Subsequent injection will have no effect.
-///
-/// **Caution**: The implementation of log operation in the injected logger should ideally be
-/// heap-free and not involve sleep operations. Otherwise, users should refrain from calling `log`
-/// in sensitive locations, such as during heap allocations, as this may cause the system to block.
-pub fn inject_logger(new_logger: &'static dyn log::Log) {
-    LOGGER.backend.call_once(|| new_logger);
 }
 
 impl log::Log for Logger {
@@ -65,13 +83,6 @@ impl log::Log for Logger {
             logger.flush();
         };
     }
-}
-
-/// Initialize the logger. Users should avoid using the log macros before this function is called.
-pub(crate) fn init() {
-    let level = get_log_level().unwrap_or(LevelFilter::Off);
-    log::set_max_level(level);
-    log::set_logger(&LOGGER).unwrap();
 }
 
 fn get_log_level() -> Option<LevelFilter> {
