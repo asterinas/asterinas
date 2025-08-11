@@ -85,8 +85,8 @@ provided by Linux on x86-64 architecture.
 | 62      | kill                   | ✅             |     |
 | 63      | uname                  | ✅             |     |
 | 64      | semget                 | ✅             |     |
-| 65      | semop                  | ✅             |     |
-| 66      | semctl                 | ✅             |     |
+| 65      | semop                  | ✅             | [⚠️](limitations-on-system-calls/inter-process-communication.md#semop-and-semtimedop) |
+| 66      | semctl                 | ✅             | [⚠️](limitations-on-system-calls/inter-process-communication.md#semctl) |
 | 67      | shmdt                  | ❌             |     |
 | 68      | msgget                 | ❌             |     |
 | 69      | msgsnd                 | ❌             |     |
@@ -240,7 +240,7 @@ provided by Linux on x86-64 architecture.
 | 217     | getdents64             | ✅             |     |
 | 218     | set_tid_address        | ✅             |     |
 | 219     | restart_syscall        | ❌             |     |
-| 220     | semtimedop             | ✅             |     |
+| 220     | semtimedop             | ✅             | [⚠️](limitations-on-system-calls/inter-process-communication.md#semop-and-semtimedop) |
 | 221     | fadvise64              | ✅             |     |
 | 222     | timer_create           | ✅             |     |
 | 223     | timer_settime          | ✅             |     |
