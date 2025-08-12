@@ -18,8 +18,18 @@ pub fn sys_capget(
         user_space.read_val::<cap_user_header_t>(cap_user_header_addr)?;
 
     if cap_user_header.version != LINUX_CAPABILITY_VERSION_3 {
+        // Write the supported version back to userspace.
+        user_space.write_val(cap_user_header_addr, &LINUX_CAPABILITY_VERSION_3)?;
+        // If the data pointer is null, return success per Linux behavior.
+        if cap_user_data_addr == 0 {
+            return Ok(SyscallReturn::Return(0));
+        }
         return_errno_with_message!(Errno::EINVAL, "not supported (capability version is not 3)");
     };
+
+    if cap_user_data_addr == 0 {
+        return Ok(SyscallReturn::Return(0));
+    }
 
     // Extract target pid and validate whether it represents the current process.
     let header_pid = cap_user_header.pid;
