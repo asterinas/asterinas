@@ -117,7 +117,9 @@ unsafe fn init() {
 
     mm::dma::init();
 
-    unsafe { arch::late_init_on_bsp() };
+    // SAFETY: This function is called only once here, after heap and frame
+    // allocators are initialized, on the BSP.
+    unsafe { arch::init_on_bsp_after_heap() };
 
     #[cfg(target_arch = "x86_64")]
     arch::if_tdx_enabled!({
@@ -130,6 +132,10 @@ unsafe fn init() {
     unsafe {
         mm::kspace::activate_kernel_page_table();
     }
+
+    // SAFETY: This function is called only once here, after kernel page table
+    // is activated, on the BSP.
+    unsafe { arch::init_on_bsp_after_kpt() };
 
     bus::init();
 
