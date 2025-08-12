@@ -169,12 +169,7 @@ impl Path {
         }
     }
 
-    /// Makes current `Dentry` to be a mountpoint,
-    /// sets it as the mountpoint of the child mount.
-    pub(super) fn set_mountpoint(&self, child_mount: Arc<MountNode>) {
-        child_mount.set_mountpoint(&self.dentry);
-        self.dentry.set_mounted_bit();
-    }
+}
 
     /// Mounts the fs on current `Dentry` as a mountpoint.
     ///
@@ -192,7 +187,7 @@ impl Path {
         }
 
         let child_mount = self.mount_node.mount(fs, &self.dentry)?;
-        self.set_mountpoint(child_mount.clone());
+
         Ok(child_mount)
     }
 
@@ -212,8 +207,6 @@ impl Path {
 
         let child_mount = parent_mount_node.unmount(&mountpoint)?;
 
-        let child_mount = mountpoint_mount_node.unmount(&parent_mount_path)?;
-        mountpoint.clear_mounted_bit();
         Ok(child_mount)
     }
 

@@ -28,6 +28,7 @@ pub(super) struct Dentry {
     name_and_parent: RwLock<Option<(String, Arc<Dentry>)>>,
     children: RwMutex<DentryChildren>,
     flags: AtomicU32,
+    mount_count: AtomicU32,
     this: Weak<Dentry>,
 }
 
@@ -50,6 +51,7 @@ impl Dentry {
             },
             children: RwMutex::new(DentryChildren::new()),
             flags: AtomicU32::new(DentryFlags::empty().bits()),
+            mount_count: AtomicU32::new(0),
             this: weak_self.clone(),
         })
     }
@@ -120,14 +122,22 @@ impl Dentry {
         self.flags().contains(DentryFlags::MOUNTED)
     }
 
-    pub fn set_mounted_bit(&self) {
-        self.flags
-            .fetch_or(DentryFlags::MOUNTED.bits(), Ordering::Release);
+    pub(super) fn inc_mount_count(&self) {
+        // FIXME: Theoretically, an overflow could occur. In the future,
+        // we could prevent this by implementing a global maximum mount limit.
+        let old_count = self.mount_count.fetch_add(1, Ordering::Relaxed);
+        if old_count == 0 {
+            self.flags
+                .fetch_or(DentryFlags::MOUNTED.bits(), Ordering::Relaxed);
+        }
     }
 
-    pub fn clear_mounted_bit(&self) {
-        self.flags
-            .fetch_and(!(DentryFlags::MOUNTED.bits()), Ordering::Release);
+    pub(super) fn dec_mount_count(&self) {
+        let old_count = self.mount_count.fetch_sub(1, Ordering::Relaxed);
+        if old_count == 1 {
+            self.flags
+                .fetch_and(!(DentryFlags::MOUNTED.bits()), Ordering::Relaxed);
+        }
     }
 
     /// Currently, the root `Dentry` of a fs is the root of a mount.

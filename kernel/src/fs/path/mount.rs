@@ -84,6 +84,8 @@ impl MountNode {
         let key = mountpoint.key();
         let child_mount = Self::new(fs, Some(Arc::downgrade(self)));
         self.children.write().insert(key, child_mount.clone());
+        child_mount.set_mountpoint(mountpoint);
+
         Ok(child_mount)
     }
 
@@ -96,6 +98,9 @@ impl MountNode {
             .write()
             .remove(&mountpoint.key())
             .ok_or_else(|| Error::with_message(Errno::ENOENT, "can not find child mount"))?;
+
+        child_mount.clear_mountpoint();
+
         Ok(child_mount)
     }
 
@@ -160,18 +165,22 @@ impl MountNode {
     }
 
     /// Detaches the mount node from the parent mount node.
-    fn detach_mount_node(&self) {
+    fn detach_from_parent(&self) {
         if let Some(parent) = self.parent() {
             let parent = parent.upgrade().unwrap();
-            parent
+            let child = parent
                 .children
                 .write()
                 .remove(&self.mountpoint().unwrap().key());
+
+            if let Some(child) = child {
+                child.clear_mountpoint();
+            }
         }
     }
 
     /// Attaches the mount node to the mountpoint.
-    fn attach_mount_node(&self, target_path: &Path) {
+    fn attach_to_path(&self, target_path: &Path) {
         let key = target_path.key();
         target_path
             .mount_node()
@@ -179,7 +188,7 @@ impl MountNode {
             .write()
             .insert(key, self.this());
         self.set_parent(target_path.mount_node());
-        target_path.set_mountpoint(self.this());
+        self.set_mountpoint(&target_path.dentry);
     }
 
     /// Grafts the mount node tree to the mountpoint.
@@ -187,8 +196,9 @@ impl MountNode {
         if target_path.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
-        self.detach_mount_node();
-        self.attach_mount_node(target_path);
+
+        self.detach_from_parent();
+        self.attach_to_path(target_path);
         Ok(())
     }
 
@@ -208,12 +218,24 @@ impl MountNode {
     }
 
     /// Sets the mountpoint.
-    ///
-    /// In some cases we may need to reset the mountpoint of
-    /// the created `MountNode`, such as move mount.
-    pub(super) fn set_mountpoint(&self, inner: &Arc<Dentry>) {
+    pub(super) fn set_mountpoint(&self, dentry: &Arc<Dentry>) {
         let mut mountpoint = self.mountpoint.write();
-        *mountpoint = Some(inner.clone());
+        if let Some(mountpoint) = mountpoint.as_deref() {
+            mountpoint.dec_mount_count();
+        }
+
+        dentry.inc_mount_count();
+        *mountpoint = Some(dentry.clone());
+    }
+
+    /// Clears the mountpoint.
+    pub(super) fn clear_mountpoint(&self) {
+        let mut mountpoint = self.mountpoint.write();
+        if let Some(mountpoint) = mountpoint.as_deref() {
+            mountpoint.dec_mount_count();
+        }
+
+        *mountpoint = None;
     }
 
     /// Flushes all pending filesystem metadata and cached file data to the device.
