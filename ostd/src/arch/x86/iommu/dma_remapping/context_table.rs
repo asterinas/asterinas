@@ -9,7 +9,7 @@ use ostd_pod::Pod;
 
 use super::second_stage::IommuPtConfig;
 use crate::{
-    bus::pci::PciDeviceLocation,
+    arch::iommu::dma_remapping::PciDeviceLocation,
     mm::{
         page_prop::{CachePolicy, PageProperty, PrivilegedPageFlags as PrivFlags},
         page_table::PageTableError,
