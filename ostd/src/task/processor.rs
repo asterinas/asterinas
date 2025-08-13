@@ -79,7 +79,7 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
     unsafe {
         // This function may not return, for example, when the current task exits. So make sure
         // that all variables on the stack can be forgotten without causing resource leakage.
-        context_switch(current_task_ctx_ptr, next_task_ctx_ptr);
+        context_switch(next_task_ctx_ptr, current_task_ctx_ptr);
     }
 
     // SAFETY: The task is just switched back, `after_switching_to` hasn't been called yet.
