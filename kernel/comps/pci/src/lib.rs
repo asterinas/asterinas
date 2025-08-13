@@ -85,11 +85,18 @@ fn pci_init() -> Result<(), ComponentInitError> {
     Ok(())
 }
 
+/// Checks if the system has a PCI bus.
+pub fn has_pci_bus() -> bool {
+    crate::arch::has_pci_bus()
+}
+
 /// PCI bus instance
 pub static PCI_BUS: Mutex<PciBus> = Mutex::new(PciBus::new());
 
 fn init() {
-    if !has_pci_bus() {
+    crate::arch::init();
+
+    if !crate::arch::has_pci_bus() {
         return;
     }
 
