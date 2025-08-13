@@ -169,6 +169,30 @@ impl HasPaddr for IoMem {
     }
 }
 
+impl PartialEq for IoMem {
+    fn eq(&self, other: &Self) -> bool {
+        self.pa == other.pa && self.limit == other.limit
+    }
+}
+
+impl Eq for IoMem {}
+
+impl PartialOrd for IoMem {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for IoMem {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        // First compare by physical address, then by length
+        match self.pa.cmp(&other.pa) {
+            core::cmp::Ordering::Equal => self.limit.cmp(&other.limit),
+            other => other,
+        }
+    }
+}
+
 impl Drop for IoMem {
     fn drop(&mut self) {
         // TODO: Multiple `IoMem` instances should not overlap, we should refactor the driver code and
