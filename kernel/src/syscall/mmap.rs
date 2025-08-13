@@ -131,15 +131,8 @@ fn do_sys_mmap(
                 return_errno!(Errno::EACCES);
             }
 
-            let Some(inode) = file.inode() else {
-                return_errno_with_message!(Errno::EINVAL, "the file has no associated inode");
-            };
-            if inode.page_cache().is_none() {
-                return_errno_with_message!(Errno::EBADF, "File does not have page cache");
-            }
-
             options = options
-                .inode(inode.clone())
+                .memory_to_map(file.mmap()?)
                 .vmo_offset(offset)
                 .handle_page_faults_around();
         }
@@ -148,6 +141,7 @@ fn do_sys_mmap(
     };
 
     let map_addr = vm_map_options.build()?;
+
     Ok(map_addr)
 }
 

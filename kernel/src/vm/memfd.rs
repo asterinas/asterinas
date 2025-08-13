@@ -10,7 +10,7 @@ use inherit_methods_macro::inherit_methods;
 use crate::{
     events::IoEvents,
     fs::{
-        file_handle::FileLike,
+        file_handle::{FileLike, MemoryToMap},
         inode_handle::{do_fallocate_util, do_resize_util, do_seek_util},
         ramfs::new_detached_inode,
         utils::{
@@ -142,6 +142,10 @@ impl FileLike for MemfdFile {
 
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
         do_fallocate_util(&self.inode, self.status_flags(), mode, offset, len)
+    }
+
+    fn mmap(&self) -> Result<MemoryToMap> {
+        Ok(MemoryToMap::PageCache(self.inode.clone()))
     }
 
     fn inode(&self) -> Option<&Arc<dyn Inode>> {
