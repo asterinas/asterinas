@@ -2,9 +2,9 @@
 
 //! Vendor-specific capability support.
 
-use ostd::{bus::pci::PciDeviceLocation, Error, Result};
+use ostd::{Error, Result};
 
-use crate::common_device::PciCommonDevice;
+use crate::{common_device::PciCommonDevice, PciDeviceLocation};
 
 /// Vendor specific capability. Users can access this capability area at will,
 /// except for the PCI configuration space which cannot be accessed at will through this structure.
