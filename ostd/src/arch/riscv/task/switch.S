@@ -2,6 +2,8 @@
 
 .text
 .global context_switch
+.global first_context_switch
+
 context_switch: # (nxt: *const TaskContext, cur: *mut TaskContext)
   # Save cur's register
   sd  ra, 0x68(a1) # return address
@@ -18,7 +20,9 @@ context_switch: # (nxt: *const TaskContext, cur: *mut TaskContext)
   sd  s9, 0x50(a1)
   sd  s10, 0x58(a1)
   sd  s11, 0x60(a1)
+  # Fallthrough
 
+first_context_switch: # (nxt: *const TaskContext)
   # Restore nxt's registers
   ld  ra, 0x68(a0) # return address
   ld  sp, 0x0(a0)
