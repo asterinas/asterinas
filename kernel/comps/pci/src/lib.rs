@@ -54,6 +54,8 @@
 
 #![no_std]
 #![deny(unsafe_code)]
+#![feature(iter_from_coroutine)]
+#![feature(coroutines)]
 
 #[cfg(target_arch = "x86_64")]
 #[path = "arch/x86/mod.rs"]
@@ -74,11 +76,8 @@ mod device_info;
 extern crate alloc;
 
 use component::{init_component, ComponentInitError};
-pub use device_info::PciDeviceId;
-use ostd::{
-    bus::pci::{has_pci_bus, PciDeviceLocation},
-    sync::Mutex,
-};
+pub use device_info::{PciDeviceId, PciDeviceLocation};
+use ostd::sync::Mutex;
 
 use self::{bus::PciBus, common_device::PciCommonDevice};
 

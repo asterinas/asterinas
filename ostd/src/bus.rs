@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Bus operations
+//! Bus probe error
 
-pub mod pci;
+// TODO: Implement a bus component and move the `BusProbeError` into the module.
 
 /// An error that occurs during bus probing.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]

@@ -7,12 +7,13 @@
 
 use alloc::{sync::Arc, vec::Vec};
 
-use ostd::{bus::pci::PciDeviceLocation, mm::VmIoOnce, trap::irq::IrqLine};
+use ostd::{mm::VmIoOnce, trap::irq::IrqLine};
 
 use crate::{
     arch::{construct_remappable_msix_address, MSIX_DEFAULT_MSG_ADDR},
     cfg_space::{Bar, Command, MemoryBar},
     common_device::PciCommonDevice,
+    PciDeviceLocation,
 };
 
 /// MSI-X capability. It will set the BAR space it uses to be hidden.
