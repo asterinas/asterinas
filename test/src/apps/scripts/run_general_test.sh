@@ -15,6 +15,7 @@ if [ -z $BLOCK_UNSUPPORTED_SMP_TESTS ]; then
     ./fs.sh # will hang
     ./process.sh # will randomly hang
     ./network.sh # will hang
+    ./cgroup_test.sh
 fi
 
 echo "All general tests passed."

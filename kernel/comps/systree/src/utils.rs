@@ -21,7 +21,7 @@ use super::{
     node::{SysNodeId, SysObj},
     Error, Result, SysStr,
 };
-use crate::{SysBranchNode, SysNode, SysSymlink};
+use crate::{SysAttr, SysBranchNode, SysNode, SysSymlink};
 
 /// Fields for all `SysObj` types, including `SysNode` and `SysBranchNode`.
 #[derive(Debug)]
@@ -298,8 +298,12 @@ macro_rules! impl_default_read_attr_at {
 macro_rules! _inner_impl_sys_node {
     ($struct_name:ident, $field:ident, $helper_trait:ty) => {
         impl $crate::SysNode for $struct_name {
-            fn node_attrs(&self) -> &$crate::SysAttrSet {
-                self.$field.attr_set()
+            fn attr(&self, name: &str) -> Option<$crate::SysAttr> {
+                <_ as $helper_trait>::attr(self, name)
+            }
+
+            fn node_attrs(&self) -> alloc::borrow::Cow<$crate::SysAttrSet> {
+                <_ as $helper_trait>::node_attrs(self)
             }
 
             fn read_attr(
@@ -348,12 +352,22 @@ macro_rules! _inner_impl_sys_node {
 pub trait _InheritSysLeafNode<T: SysNode> {
     fn field(&self) -> &ObjFields<T>;
 
+    fn attr_set(&self) -> &SysAttrSet;
+
     fn is_root(&self) -> bool {
         false
     }
 
     fn init_parent(&self, parent: alloc::sync::Weak<dyn SysBranchNode>) {
         self.field().init_parent(parent);
+    }
+
+    fn attr(&self, name: &str) -> Option<SysAttr> {
+        self.node_attrs().get(name).cloned()
+    }
+
+    fn node_attrs(&self) -> alloc::borrow::Cow<SysAttrSet> {
+        alloc::borrow::Cow::Borrowed(self.attr_set())
     }
 
     fn read_attr(&self, _name: &str, _writer: &mut VmWriter) -> Result<usize> {
@@ -394,6 +408,8 @@ pub trait _InheritSysLeafNode<T: SysNode> {
 /// - Methods with default implementations that users can override:
 ///   - [`SysObj::is_root`]
 ///   - [`SysObj::init_parent`]
+///   - [`SysNode::attr`]
+///   - [`SysNode::node_attrs`]
 ///   - [`SysNode::read_attr`]
 ///   - [`SysNode::write_attr`]
 ///   - [`SysNode::read_attr_at`]
@@ -429,6 +445,10 @@ macro_rules! inherit_sys_leaf_node {
         impl $crate::_InheritSysLeafNode<$struct_name> for $struct_name {
             fn field(&self) -> &$crate::ObjFields<$struct_name> {
                 &self.$field.obj_field()
+            }
+
+            fn attr_set(&self) -> &$crate::SysAttrSet {
+                &self.$field.attr_set()
             }
 
             $($fn_override)*
@@ -480,8 +500,18 @@ macro_rules! inherit_sys_leaf_node {
 pub trait _InheritSysBranchNode<T: SysBranchNode> {
     fn field(&self) -> &ObjFields<T>;
 
+    fn attr_set(&self) -> &SysAttrSet;
+
     fn is_root(&self) -> bool {
         false
+    }
+
+    fn attr(&self, name: &str) -> Option<SysAttr> {
+        self.node_attrs().get(name).cloned()
+    }
+
+    fn node_attrs(&self) -> alloc::borrow::Cow<SysAttrSet> {
+        alloc::borrow::Cow::Borrowed(self.attr_set())
     }
 
     fn init_parent(&self, parent: alloc::sync::Weak<dyn SysBranchNode>) {
@@ -553,6 +583,10 @@ macro_rules! inherit_sys_branch_node {
         impl $crate::_InheritSysBranchNode<$struct_name> for $struct_name {
             fn field(&self) -> &$crate::ObjFields<$struct_name> {
                 &self.$field.obj_field()
+            }
+
+            fn attr_set(&self) -> &$crate::SysAttrSet {
+                &self.$field.attr_set()
             }
 
             $($fn_override)*
