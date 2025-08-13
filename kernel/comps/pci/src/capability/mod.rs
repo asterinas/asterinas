@@ -6,13 +6,12 @@
 
 use alloc::vec::Vec;
 
-use ostd::bus::pci::PciDeviceLocation;
-
 use self::{msix::CapabilityMsixData, vendor::CapabilityVndrData};
 use super::{
     cfg_space::{PciDeviceCommonCfgOffset, Status},
     common_device::PciCommonDevice,
 };
+use crate::PciDeviceLocation;
 
 pub mod msix;
 pub mod vendor;

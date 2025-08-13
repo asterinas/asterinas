@@ -2,7 +2,7 @@
 
 //! Bus operations
 
-pub mod pci;
+// TODO: Extract the bus operations into a separate module.
 
 /// An error that occurs during bus probing.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
