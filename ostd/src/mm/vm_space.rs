@@ -200,6 +200,25 @@ impl Default for VmSpace {
     }
 }
 
+impl VmSpace {
+    /// Finds the [`IoMem`] that contains the given physical address.
+    ///
+    /// It is private method for internal use only. Please refer to
+    /// [`CursorMut::find_iomem_by_paddr`] for more details.
+    fn find_iomem_by_paddr(&self, paddr: Paddr) -> Option<(IoMem, usize)> {
+        let iomems = self.iomems.lock();
+        for iomem in iomems.iter() {
+            let start = iomem.paddr();
+            let end = start + iomem.length();
+            if paddr >= start && paddr < end {
+                let offset = paddr - start;
+                return Some((iomem.clone(), offset));
+            }
+        }
+        None
+    }
+}
+
 /// The cursor for querying over the VM space without modifying it.
 ///
 /// It exclusively owns a sub-tree of the page table, preventing others from
@@ -372,6 +391,21 @@ impl<'a> CursorMut<'a> {
         {
             iomems.push(io_mem);
         }
+    }
+
+    /// Finds an [`IoMem`] that was previously mapped to by [`Self::map_iomem`] and contains the
+    /// physical address.
+    ///
+    /// This method can recover the originally mapped `IoMem` from the physical address returned by
+    /// [`Self::query`]. If the query returns a [`VmQueriedItem::MappedIoMem`], this method is
+    /// guaranteed to succeed with the specific physical address. However, if the corresponding
+    /// mapping is subsequently unmapped, it is unspecified whether this method will still succeed
+    /// or not.
+    ///
+    /// On success, this method returns the `IoMem` and the offset from the `IoMem` start to the
+    /// given physical address. Otherwise, this method returns `None`.
+    pub fn find_iomem_by_paddr(&self, paddr: Paddr) -> Option<(IoMem, usize)> {
+        self.vmspace.find_iomem_by_paddr(paddr)
     }
 
     /// Handles a page table fragment that was remapped.

@@ -21,7 +21,7 @@ use core::{
 use align_ext::AlignExt;
 use aster_rights::Full;
 use ostd::{
-    mm::{io_util::HasVmReaderWriter, VmIo, MAX_USERSPACE_VADDR},
+    mm::{io_util::HasVmReaderWriter, vm_space::VmQueriedItem, VmIo, MAX_USERSPACE_VADDR},
     task::disable_preempt,
 };
 
@@ -397,7 +397,7 @@ impl InitStackReader<'_> {
             &preempt_guard,
             &(page_base_addr..page_base_addr + PAGE_SIZE),
         )?;
-        let (_, Some((frame, _))) = cursor.query()? else {
+        let (_, Some(VmQueriedItem::MappedRam { frame, .. })) = cursor.query()? else {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
         };
 
@@ -425,7 +425,7 @@ impl InitStackReader<'_> {
             &preempt_guard,
             &(page_base_addr..page_base_addr + PAGE_SIZE),
         )?;
-        let (_, Some((frame, _))) = cursor.query()? else {
+        let (_, Some(VmQueriedItem::MappedRam { frame, .. })) = cursor.query()? else {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
         };
 
@@ -469,7 +469,7 @@ impl InitStackReader<'_> {
             &preempt_guard,
             &(page_base_addr..page_base_addr + PAGE_SIZE),
         )?;
-        let (_, Some((frame, _))) = cursor.query()? else {
+        let (_, Some(VmQueriedItem::MappedRam { frame, .. })) = cursor.query()? else {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
         };
 
