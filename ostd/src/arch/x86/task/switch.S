@@ -1,8 +1,10 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 
 .text
-.global context_switch
 .code64
+.global context_switch
+.global first_context_switch
+
 context_switch: # (nxt: *const TaskContext, cur: *mut TaskContext)
   # Save cur's register
   mov rax, [rsp] # return address
@@ -16,7 +18,9 @@ context_switch: # (nxt: *const TaskContext, cur: *mut TaskContext)
   mov [rsi + 48], r15
   rdfsbase r15
   mov [rsi + 64], r15 # 64 = offsetof(TaskContext, fsbase)
+  # Fallthrough
 
+first_context_switch: # (nxt: *const TaskContext)
   # Restore nxt's registers
   mov r15, [rdi + 64]
   wrfsbase r15
