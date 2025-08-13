@@ -4,7 +4,7 @@ use aster_rights::TRights;
 use inherit_methods_macro::inherit_methods;
 
 use super::*;
-use crate::{fs::utils::Inode, prelude::*, process::signal::Pollable};
+use crate::{fs::file_handle::Mappable, prelude::*, process::signal::Pollable};
 
 impl InodeHandle<Rights> {
     pub fn new(path: Path, access_mode: AccessMode, status_flags: StatusFlags) -> Result<Self> {
@@ -81,6 +81,7 @@ impl FileLike for InodeHandle<Rights> {
     fn group(&self) -> Result<Gid>;
     fn set_group(&self, gid: Gid) -> Result<()>;
     fn seek(&self, seek_from: SeekFrom) -> Result<usize>;
+    fn mappable(&self) -> Result<Mappable>;
 
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         if !self.1.contains(Rights::READ) {
@@ -127,9 +128,5 @@ impl FileLike for InodeHandle<Rights> {
             return_errno_with_message!(Errno::EBADF, "file is not writable");
         }
         self.0.fallocate(mode, offset, len)
-    }
-
-    fn inode(&self) -> Option<&Arc<dyn Inode>> {
-        Some(self.path().inode())
     }
 }

@@ -4,6 +4,8 @@
 
 //! Opened File Handle
 
+use ostd::io::IoMem;
+
 use super::inode_handle::InodeHandle;
 use crate::{
     fs::utils::{
@@ -47,6 +49,14 @@ pub trait FileLike: Pollable + Send + Sync + Any {
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");
+    }
+
+    /// Obtains the mappable object to map this file into the user address space.
+    ///
+    /// If this file has a corresponding mappable object of [`Mappable`],
+    /// then it can be either an inode or an MMIO region.
+    fn mappable(&self) -> Result<Mappable> {
+        return_errno_with_message!(Errno::EINVAL, "the file is not mappable");
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
@@ -106,10 +116,6 @@ pub trait FileLike: Pollable + Send + Sync + Any {
     fn as_socket(&self) -> Option<&dyn Socket> {
         None
     }
-
-    fn inode(&self) -> Option<&Arc<dyn Inode>> {
-        None
-    }
 }
 
 impl dyn FileLike {
@@ -148,4 +154,14 @@ impl dyn FileLike {
             Error::with_message(Errno::EINVAL, "the file is not related to an inode")
         })
     }
+}
+
+/// An object that may be memory mapped into the user address space.
+#[derive(Debug, Clone)]
+pub enum Mappable {
+    /// An inode object.
+    Inode(Arc<dyn Inode>),
+    /// An MMIO region.
+    #[expect(dead_code)]
+    IoMem(IoMem),
 }
