@@ -4,6 +4,8 @@
 
 use core::iter;
 
+use align_ext::AlignExt;
+
 use super::cfg_space::PciDeviceCommonCfgOffset;
 
 /// PCI device Location
@@ -66,22 +68,17 @@ impl PciDeviceLocation {
 }
 
 impl PciDeviceLocation {
-    const BIT32_ALIGN_MASK: u16 = 0xFFFC;
-
-    /// Aligns the given pointer to a 32-bit boundary.
-    pub const fn align_ptr(ptr: u16) -> u16 {
-        ptr & Self::BIT32_ALIGN_MASK
-    }
-
     /// Reads a 8-bit value from the PCI configuration space at the specified offset.
     pub fn read8(&self, offset: u16) -> u8 {
-        let val = self.read32(offset & Self::BIT32_ALIGN_MASK);
+        let align_offset = offset.align_down(align_of::<u32>() as _);
+        let val = self.read32(align_offset);
         ((val >> ((offset as usize & 0b11) << 3)) & 0xFF) as u8
     }
 
     /// Reads a 16-bit value from the PCI configuration space at the specified offset.
     pub fn read16(&self, offset: u16) -> u16 {
-        let val = self.read32(offset & Self::BIT32_ALIGN_MASK);
+        let align_offset = offset.align_down(align_of::<u32>() as _);
+        let val = self.read32(align_offset);
         ((val >> ((offset as usize & 0b10) << 3)) & 0xFFFF) as u16
     }
 
@@ -96,22 +93,24 @@ impl PciDeviceLocation {
 
     /// Writes an 8-bit value to the PCI configuration space at the specified offset.
     pub fn write8(&self, offset: u16, val: u8) {
-        let old = self.read32(offset & Self::BIT32_ALIGN_MASK);
+        let align_offset = offset.align_down(align_of::<u32>() as _);
+        let old = self.read32(align_offset);
         let dest = (offset as usize & 0b11) << 3;
         let mask = (0xFF << dest) as u32;
         self.write32(
-            offset & Self::BIT32_ALIGN_MASK,
+            align_offset,
             (((val as u32) << dest) | (old & !mask)).to_le(),
         );
     }
 
     /// Writes an 16-bit value to the PCI configuration space at the specified offset.
     pub fn write16(&self, offset: u16, val: u16) {
-        let old = self.read32(offset & Self::BIT32_ALIGN_MASK);
+        let align_offset = offset.align_down(align_of::<u32>() as _);
+        let old = self.read32(align_offset);
         let dest = (offset as usize & 0b10) << 3;
         let mask = (0xFFFF << dest) as u32;
         self.write32(
-            offset & Self::BIT32_ALIGN_MASK,
+            align_offset,
             (((val as u32) << dest) | (old & !mask)).to_le(),
         );
     }
