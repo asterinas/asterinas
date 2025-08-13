@@ -201,6 +201,33 @@ impl Default for VmSpace {
     }
 }
 
+impl VmSpace {
+    /// Finds the [`IoMem`] that contains the given physical address.
+    ///
+    /// This method searches through the [`VmSpace`]'s iomems set to find
+    /// an [`IoMem`] object that contains the specified physical address.
+    /// Returns the [`IoMem`] and the offset within that [`IoMem`].
+    pub fn find_iomem_for_paddr(&self, paddr: Paddr) -> Option<(IoMem, usize)> {
+        let iomems = self.iomems.lock();
+        for iomem in iomems.iter() {
+            let start = iomem.paddr();
+
+            // Early termination: if the start of this `IoMem` is already beyond
+            // our target address, no subsequent `IoMem` can contain the target.
+            if start > paddr {
+                break;
+            }
+
+            let end = start + iomem.length();
+            if paddr >= start && paddr < end {
+                let offset = paddr - start;
+                return Some((iomem.clone(), offset));
+            }
+        }
+        None
+    }
+}
+
 /// The cursor for querying over the VM space without modifying it.
 ///
 /// It exclusively owns a sub-tree of the page table, preventing others from
@@ -365,6 +392,14 @@ impl<'a> CursorMut<'a> {
         // memory, insert it to maintain the correct reference count.
         let mut iomems = self.vmspace.iomems.lock();
         iomems.insert(io_mem);
+    }
+
+    /// Finds the [`IoMem`] that contains the given physical address.
+    ///
+    /// This is a convenience method that delegates to the underlying
+    /// [`VmSpace`].
+    pub fn find_iomem_for_paddr(&self, paddr: Paddr) -> Option<(IoMem, usize)> {
+        self.vmspace.find_iomem_for_paddr(paddr)
     }
 
     /// Handles a page table fragment that was remapped.
