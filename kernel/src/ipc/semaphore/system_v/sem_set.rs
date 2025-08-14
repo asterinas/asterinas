@@ -51,6 +51,37 @@ pub struct SemaphoreSet {
     sem_otime: AtomicU64,
 }
 
+// https://github.com/torvalds/linux/blob/master/include/uapi/asm-generic/ipcbuf.h
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default, Pod)]
+pub struct IpcPerm {
+    key: u32,
+    uid: u32,
+    gid: u32,
+    cuid: u32,
+    cgid: u32,
+    mode: u16,
+    _pad1: u16,
+    seq: u16,
+    _pad2: u16,
+    _unused1: u64,
+    _unused2: u64,
+}
+
+// https://github.com/torvalds/linux/blob/master/arch/x86/include/uapi/asm/sembuf.h
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default, Pod)]
+pub struct SemidDs {
+    sem_perm: IpcPerm,
+    sem_otime: u64,
+    _unused1: u64,
+    sem_ctime: u64,
+    _unused2: u64,
+    sem_nsems: u64,
+    _unused3: u64,
+    _unused4: u64,
+}
+
 #[derive(Debug)]
 pub(super) struct SemSetInner {
     /// Semaphores
@@ -195,6 +226,26 @@ impl SemaphoreSet {
                 pending_const: LinkedList::new(),
             }),
         })
+    }
+
+    pub fn semid_ds(&self) -> SemidDs {
+        let ipc_perm = IpcPerm {
+            key: self.permission.key() as u32,
+            uid: self.permission.uid().into(),
+            gid: self.permission.gid().into(),
+            cuid: self.permission.cuid().into(),
+            cgid: self.permission.cguid().into(),
+            mode: self.permission.mode(),
+            ..IpcPerm::default()
+        };
+
+        SemidDs {
+            sem_perm: ipc_perm,
+            sem_otime: self.sem_otime.load(Ordering::Relaxed),
+            sem_ctime: self.sem_ctime.load(Ordering::Relaxed),
+            sem_nsems: self.nsems as u64,
+            ..SemidDs::default()
+        }
     }
 }
 

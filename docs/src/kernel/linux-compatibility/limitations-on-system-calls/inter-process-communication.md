@@ -7,7 +7,7 @@ futex, set_robust_list, and get_robust_list
 under this category.
 -->
 
-## `System V semaphore`
+## System V semaphore
 
 ### `semget`
 
@@ -80,10 +80,17 @@ semctl(
     semnum,
     cmd = GETVAL | GETPID | GETNCNT | GETZCNT
 );
+
+// Retrieve a copy of the `semid_ds` kernel structure for the specified semaphore set
+semctl(
+    semid,
+    semnum,
+    cmd = IPC_STAT,
+    arg
+);
 ```
 
 Unsupported commands:
-* `IPC_STAT`
 * `IPC_INFO`
 * `SEM_INFO`
 * `SEM_STAT`
