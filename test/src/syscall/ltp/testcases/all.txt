@@ -1290,7 +1290,7 @@ select03
 # semctl08
 # semctl09
 
-# semget01
+semget01
 # semget02
 # semget05
 
