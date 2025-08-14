@@ -739,7 +739,7 @@ impl Vmar_ {
                 rss_delta.add(vm_mapping.rss_type(), num_copied as isize);
             }
 
-            cur_cursor.flusher().issue_tlb_flush(TlbFlushOp::All);
+            cur_cursor.flusher().issue_tlb_flush(TlbFlushOp::for_all());
             cur_cursor.flusher().dispatch_tlb_flush();
             cur_cursor.flusher().sync_tlb_flush();
         }

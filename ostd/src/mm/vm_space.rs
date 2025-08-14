@@ -309,7 +309,7 @@ impl<'a> CursorMut<'a> {
                 debug_assert_eq!(va, start_va);
                 let (old_frame, _) = item;
                 self.flusher
-                    .issue_tlb_flush_with(TlbFlushOp::Address(start_va), old_frame.into());
+                    .issue_tlb_flush_with(TlbFlushOp::for_single(start_va), old_frame.into());
                 self.flusher.dispatch_tlb_flush();
             }
             PageTableFrag::StrayPageTable { .. } => {
@@ -351,7 +351,7 @@ impl<'a> CursorMut<'a> {
                     let (frame, _) = item;
                     num_unmapped += 1;
                     self.flusher
-                        .issue_tlb_flush_with(TlbFlushOp::Address(va), frame.into());
+                        .issue_tlb_flush_with(TlbFlushOp::for_single(va), frame.into());
                 }
                 PageTableFrag::StrayPageTable {
                     pt,
@@ -361,7 +361,7 @@ impl<'a> CursorMut<'a> {
                 } => {
                     num_unmapped += num_frames;
                     self.flusher
-                        .issue_tlb_flush_with(TlbFlushOp::Range(va..va + len), pt);
+                        .issue_tlb_flush_with(TlbFlushOp::for_range(va..va + len), pt);
                 }
             }
         }
