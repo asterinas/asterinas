@@ -40,14 +40,10 @@ echo "rust_version=$RUST_VERSION" >> $GITHUB_OUTPUT
 echo "Checking if Docker image exists..."
 if [[ "${IMAGE_NAME}" == "osdk" ]]; then
     DOCKER_IMAGE="asterinas/osdk:${IMAGE_VERSION}"
-elif [[ "${IMAGE_NAME}" == "osdk-tdx" ]]; then
-    DOCKER_IMAGE="asterinas/osdk:${IMAGE_VERSION}-tdx"
 elif [[ "${IMAGE_NAME}" == "nix" ]]; then
     DOCKER_IMAGE="asterinas/nix:${IMAGE_VERSION}"
 elif [[ "${IMAGE_NAME}" == "asterinas" ]]; then
     DOCKER_IMAGE="asterinas/asterinas:${IMAGE_VERSION}"
-elif [[ "${IMAGE_NAME}" == "asterinas-tdx" ]]; then
-    DOCKER_IMAGE="asterinas/asterinas:${IMAGE_VERSION}-tdx"
 else
     echo "Error: Unknown image name '${IMAGE_NAME}'"
     exit 4
