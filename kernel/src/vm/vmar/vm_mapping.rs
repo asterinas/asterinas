@@ -231,7 +231,7 @@ impl VmMapping {
                     if VmPerms::from(prop.flags).contains(required_perms) {
                         // The page fault is already handled maybe by other threads.
                         // Just flush the TLB and return.
-                        TlbFlushOp::Range(va).perform_on_current();
+                        TlbFlushOp::for_range(va).perform_on_current();
                         return Ok(());
                     }
                     assert!(is_write);
@@ -253,7 +253,7 @@ impl VmMapping {
 
                     if self.is_shared || only_reference {
                         cursor.protect_next(PAGE_SIZE, |p| p.flags |= new_flags);
-                        cursor.flusher().issue_tlb_flush(TlbFlushOp::Range(va));
+                        cursor.flusher().issue_tlb_flush(TlbFlushOp::for_range(va));
                         cursor.flusher().dispatch_tlb_flush();
                     } else {
                         let new_frame = duplicate_frame(&frame)?;
@@ -558,7 +558,7 @@ impl VmMapping {
         let op = |p: &mut PageProperty| p.flags = perms.into();
         while cursor.virt_addr() < range.end {
             if let Some(va) = cursor.protect_next(range.end - cursor.virt_addr(), op) {
-                cursor.flusher().issue_tlb_flush(TlbFlushOp::Range(va));
+                cursor.flusher().issue_tlb_flush(TlbFlushOp::for_range(va));
             } else {
                 break;
             }
