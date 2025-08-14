@@ -13,7 +13,7 @@ bitflags! {
         /// Performs `msync` asynchronously.
         const MS_ASYNC      = 0x01;
         /// Invalidates cache so that other processes mapping the same file
-        /// will immediately see the changes before this `msync` call.
+        /// will immediately see the changes after this `msync` call.
         ///
         /// Should be a no-op since we use the same page cache for all processes.
         const MS_INVALIDATE = 0x02;
@@ -89,10 +89,11 @@ pub fn sys_msync(start: Vaddr, size: usize, flag: i32, ctx: &Context) -> Result<
         }
     };
 
-    if flags.contains(MsyncFlags::MS_ASYNC) {
-        ThreadOptions::new(task_fn).spawn();
-    } else {
+    // If neither MS_SYNC nor MS_ASYNC is specified, Linux defaults to MS_ASYNC behavior.
+    if flags.contains(MsyncFlags::MS_SYNC) {
         task_fn();
+    } else {
+        ThreadOptions::new(task_fn).spawn();
     }
 
     Ok(SyscallReturn::Return(0))
