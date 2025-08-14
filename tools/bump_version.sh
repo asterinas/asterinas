@@ -124,6 +124,7 @@ update_all_docker_version_refs() {
     update_image_versions ${ASTER_SRC_DIR}/README_JP.md
     update_image_versions ${SCRIPT_DIR}/docker/README.md
     update_image_versions ${DOCS_DIR}/src/kernel/intel_tdx.md
+    update_image_versions ${DOCS_DIR}/src/osdk/guide/intel-tdx.md
 
     # Update Docker image versions in workflows
     ALL_WORKFLOWS=$(find "${ASTER_SRC_DIR}/.github/workflows/" -type f -name "*.yml")

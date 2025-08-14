@@ -30,28 +30,6 @@ jobs:
           build-args: |
             ASTER_RUST_VERSION=${{ steps.prepare-for-docker-build-and-push.outputs.rust_version }}
 
-  publish_osdk_tdx_image:
-    needs: publish_osdk_image
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Prepare for Docker build and push
-        id: prepare-for-docker-build-and-push
-        run: |
-          ./tools/github_workflows/prepare_for_docker_build_and_push.sh ${{ secrets.DOCKERHUB_USERNAME }} ${{ secrets.DOCKERHUB_TOKEN }} osdk-tdx
-
-      - name: Build and push the OSDK development image for Intel TDX
-        if: ${{ steps.prepare-for-docker-build-and-push.outputs.is_existed == 'false' }}
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: ./osdk/tools/docker/tdx/Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: asterinas/osdk:${{ steps.prepare-for-docker-build-and-push.outputs.image_version }}-tdx
-          build-args: |
-            BASE_VERSION=${{ steps.prepare-for-docker-build-and-push.outputs.image_version }}
-
   publish_nix_image:
     needs: publish_osdk_image
     runs-on: ubuntu-latest
@@ -93,27 +71,5 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: asterinas/asterinas:${{ steps.prepare-for-docker-build-and-push.outputs.image_version }}
-          build-args: |
-            BASE_VERSION=${{ steps.prepare-for-docker-build-and-push.outputs.image_version }}
-
-  publish_asterinas_tdx_image:
-    needs: publish_asterinas_image
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Prepare for Docker build and push
-        id: prepare-for-docker-build-and-push
-        run: |
-          ./tools/github_workflows/prepare_for_docker_build_and_push.sh ${{ secrets.DOCKERHUB_USERNAME }} ${{ secrets.DOCKERHUB_TOKEN }} asterinas-tdx
-
-      - name: Build and push the Asterinas development image for Intel TDX
-        if: ${{ steps.prepare-for-docker-build-and-push.outputs.is_existed == 'false' }}
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: ./tools/docker/tdx/Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: asterinas/asterinas:${{ steps.prepare-for-docker-build-and-push.outputs.image_version }}-tdx
           build-args: |
             BASE_VERSION=${{ steps.prepare-for-docker-build-and-push.outputs.image_version }}
