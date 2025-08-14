@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     ipc::{
         semaphore::system_v::{
-            sem_set::{check_sem, create_sem_set, create_sem_set_with_id, SEMMSL},
+            sem_set::{check_sem, create_sem_set, create_sem_set_with_id, SEMMNI, SEMMSL},
             PermissionMode,
         },
         IpcFlags,
@@ -32,7 +32,7 @@ pub fn sys_semget(key: i32, nsems: i32, semflags: i32, ctx: &Context) -> Result<
 
     // Create a new semaphore set directly
     const IPC_NEW: i32 = 0;
-    if key == IPC_NEW {
+    if key == IPC_NEW || (key as usize > SEMMNI && flags.contains(IpcFlags::IPC_CREAT)) {
         if nsems == 0 {
             return_errno!(Errno::EINVAL);
         }
