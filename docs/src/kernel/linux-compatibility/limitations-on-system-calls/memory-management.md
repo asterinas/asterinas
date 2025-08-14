@@ -7,7 +7,9 @@ shmget, shmat, shmctl, mlock, munlock, mbind, and set_mempolicy
 under this part.
 -->
 
-## `mmap`
+## Memory Mappings
+
+### `mmap` and `munmap`
 
 Supported functionality in SCML:
 
@@ -43,6 +45,9 @@ mmap(
     flags = MAP_SHARED | MAP_SHARED_VALIDATE | <opt_flags>
     fd, offset
 );
+
+// Unmap a memory mapping
+munmap(addr, length);
 ```
 
 Silently-ignored flags:
@@ -65,3 +70,113 @@ Unsupported flags:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/mmap.2.html).
+
+### `msync`
+
+Supported functionality in SCML:
+
+```c
+// Flush memory region to disk asynchronously
+msync(
+    addr, length,
+    flags = MS_ASYNC | MS_INVALIDATE
+);
+
+// Flush memory region to disk synchronously
+msync(
+    addr, length,
+    flags = MS_SYNC | MS_INVALIDATE
+);
+```
+
+Silently-ignored flags:
+* `MS_INVALIDATE` is ignored because all processes use the same page cache
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/msync.2.html).
+
+### `mremap`
+
+Supported functionality in SCML:
+
+```c
+// Resize an existing memory mapping. Relocation is allowed if given `MREMAP_MAYMOVE`.
+mremap(
+    old_address,
+    old_size,
+    new_size,
+    flags = MREMAP_MAYMOVE
+);
+
+// Resize an existing memory mapping and force relocation to a specified location.
+mremap(
+    old_address,
+    old_size,
+    new_size,
+    flags = MREMAP_MAYMOVE | MREMAP_FIXED,
+    new_address
+);
+```
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/mremap.2.html).
+
+### `mprotect`
+
+Supported functionality in SCML:
+
+```c
+// Set memory access permissions
+mprotect(
+    addr,
+    len,
+    prot = <prot>
+);
+```
+
+Silently-ignored protection flags:
+* `PROT_SEM`
+* `PROT_SAO`
+* `PROT_GROWSUP`
+* `PROT_GROWSDOWN`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/mprotect.2.html).
+
+### `madvise`
+
+Supported functionality in SCML:
+
+```c
+// Apply the default memory access pattern with no special optimizations
+madvise(addr, length, advice = MADV_NORMAL);
+
+// Indicate sequential access to enable aggressive read-ahead and immediate page release
+madvise(addr, length, advice = MADV_SEQUENTIAL);
+
+// Prefetch pages for near-future access to reduce latency
+madvise(addr, length, advice = MADV_WILLNEED);
+```
+
+Silently-ignored advice:
+* `MADV_DONTNEED`
+
+Unsupported advice:
+* `MADV_RANDOM`
+* `MADV_REMOVE`
+* `MADV_DONTFORK`
+* `MADV_DOFORK`
+* `MADV_HWPOISON`
+* `MADV_MERGEABLE`
+* `MADV_UNMERGEABLE`
+* `MADV_SOFT_OFFLINE`
+* `MADV_HUGEPAGE`
+* `MADV_NOHUGEPAGE`
+* `MADV_DONTDUMP`
+* `MADV_DODUMP`
+* `MADV_FREE`
+* `MADV_WIPEONFORK`
+* `MADV_KEEPONFORK`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/madvise.2.html).

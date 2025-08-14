@@ -29,8 +29,8 @@ provided by Linux on x86-64 architecture.
 | 6       | lstat                  | ✅             |     |
 | 7       | poll                   | ✅             |     |
 | 8       | lseek                  | ✅             |     |
-| 9       | mmap                   | ✅             | [⚠️](limitations-on-system-calls/memory-management.md#mmap) |
-| 10      | mprotect               | ✅             |     |
+| 9       | mmap                   | ✅             | [⚠️](limitations-on-system-calls/memory-management.md#mmap-and-munmap) |
+| 10      | mprotect               | ✅             | [⚠️](limitations-on-system-calls/memory-management.md#mprotect) |
 | 11      | munmap                 | ✅             |     |
 | 12      | brk                    | ✅             |     |
 | 13      | rt_sigaction           | ✅             |     |
@@ -46,9 +46,9 @@ provided by Linux on x86-64 architecture.
 | 23      | select                 | ✅             |     |
 | 24      | sched_yield            | ✅             |     |
 | 25      | mremap                 | ✅             |     |
-| 26      | msync                  | ✅             |     |
+| 26      | msync                  | ✅             | [⚠️](limitations-on-system-calls/memory-management.md#msync) |
 | 27      | mincore                | ❌             |     |
-| 28      | madvise                | ✅             |     |
+| 28      | madvise                | ✅             | [⚠️](limitations-on-system-calls/memory-management.md#madvise) |
 | 29      | shmget                 | ❌             |     |
 | 30      | shmat                  | ❌             |     |
 | 31      | shmctl                 | ❌             |     |
