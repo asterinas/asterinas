@@ -7,23 +7,23 @@ use core::alloc::Layout;
 use align_ext::AlignExt;
 use fdt::node::FdtNode;
 use log::warn;
+use ostd::{
+    arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce, prelude::Paddr, sync::SpinLock, Error,
+};
 use spin::Once;
 
-use super::boot::DEVICE_TREE;
-use crate::{
-    bus::pci::PciDeviceLocation, io::IoMem, mm::VmIoOnce, prelude::*, sync::SpinLock, Error,
-};
+use crate::PciDeviceLocation;
 
 static PCI_ECAM_CFG_SPACE: Once<IoMem> = Once::new();
 
-pub(crate) fn write32(location: &PciDeviceLocation, offset: u32, value: u32) -> Result<()> {
+pub(crate) fn write32(location: &PciDeviceLocation, offset: u32, value: u32) -> Result<(), Error> {
     PCI_ECAM_CFG_SPACE.get().ok_or(Error::IoError)?.write_once(
         (encode_as_address_offset(location) | (offset & 0xfc)) as usize,
         &value,
     )
 }
 
-pub(crate) fn read32(location: &PciDeviceLocation, offset: u32) -> Result<u32> {
+pub(crate) fn read32(location: &PciDeviceLocation, offset: u32) -> Result<u32, Error> {
     PCI_ECAM_CFG_SPACE
         .get()
         .ok_or(Error::IoError)?
@@ -81,12 +81,6 @@ pub(crate) fn init() {
     let addr_start = region.starting_address as usize;
     let addr_end = addr_start.checked_add(region.size.unwrap()).unwrap();
     PCI_ECAM_CFG_SPACE.call_once(|| IoMem::acquire(addr_start..addr_end).unwrap());
-}
-
-pub(crate) const MSIX_DEFAULT_MSG_ADDR: u32 = 0x2ff0_0000;
-
-pub(crate) fn construct_remappable_msix_address(remapping_index: u32) -> u32 {
-    unimplemented!()
 }
 
 /// A simple MMIO allocator managing a linear region.
@@ -158,4 +152,10 @@ fn init_mmio_allocator_from_fdt(node: &FdtNode) {
 /// Allocates an MMIO address range using the global allocator.
 pub(crate) fn alloc_mmio(layout: Layout) -> Option<Paddr> {
     MMIO_ALLOCATOR.get().unwrap().lock().allocate(layout)
+}
+
+pub(crate) const MSIX_DEFAULT_MSG_ADDR: u32 = 0x2ff0_0000;
+
+pub(crate) fn construct_remappable_msix_address(remapping_index: u32) -> u32 {
+    unimplemented!()
 }
