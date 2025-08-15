@@ -20,7 +20,7 @@ jobs:
   check_api_docs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    container: asterinas/asterinas:0.16.0-20250802
+    container: asterinas/asterinas:0.16.0-20250815
 
     steps: 
       - uses: actions/checkout@v4
