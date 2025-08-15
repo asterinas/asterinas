@@ -403,7 +403,7 @@ struct FutexBucketVec {
 }
 
 impl FutexBucketVec {
-    pub fn new(size: usize) -> FutexBucketVec {
+    fn new(size: usize) -> FutexBucketVec {
         let mut buckets = FutexBucketVec {
             vec: Vec::with_capacity(size),
         };
@@ -414,13 +414,13 @@ impl FutexBucketVec {
         buckets
     }
 
-    pub fn get_bucket(&self, key: &FutexKey) -> (usize, &SpinLock<FutexBucket>) {
-        let index = (self.size() - 1) & {
-            // The addr is a multiple of 4, so we ignore the last 2 bits
-            let addr = key.addr() >> 2;
-            // simple hash
-            addr / self.size()
-        };
+    fn get_bucket(&self, key: &FutexKey) -> (usize, &SpinLock<FutexBucket>) {
+        let addr = key.addr();
+        // `addr` is a multiple of 4, so we can ignore the last 2 bits.
+        let relevant_addr = addr >> 2;
+        // Since `self.size()` is known to be a power of 2, the following is
+        // equivalent to `relevant_addr % self.size()`, buf faster.
+        let index = relevant_addr & (self.size() - 1);
         (index, &self.vec[index])
     }
 
