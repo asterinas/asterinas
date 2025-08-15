@@ -226,6 +226,7 @@ dependencies = [
  "inherit-methods-macro",
  "int-to-c-enum",
  "intrusive-collections",
+ "jhash",
  "keyable-arc",
  "lending-iterator",
  "libflate",
