@@ -129,6 +129,7 @@ use super::{
     setgid::sys_setgid,
     setgroups::sys_setgroups,
     setitimer::{sys_getitimer, sys_setitimer},
+    setns::sys_setns,
     setpgid::sys_setpgid,
     setregid::sys_setregid,
     setresgid::sys_setresgid,
@@ -161,6 +162,7 @@ use super::{
     umount::sys_umount,
     uname::sys_uname,
     unlink::{sys_unlink, sys_unlinkat},
+    unshare::sys_unshare,
     utimens::{sys_futimesat, sys_utime, sys_utimensat, sys_utimes},
     wait4::sys_wait4,
     waitid::sys_waitid,
@@ -356,6 +358,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_FACCESSAT = 269        => sys_faccessat(args[..3]);
     SYS_PSELECT6 = 270         => sys_pselect6(args[..6]);
     SYS_PPOLL = 271            => sys_ppoll(args[..5]);
+    SYS_UNSHARE = 272          => sys_unshare(args[..1]);
     SYS_SET_ROBUST_LIST = 273  => sys_set_robust_list(args[..2]);
     SYS_UTIMENSAT = 280        => sys_utimensat(args[..4]);
     SYS_EPOLL_PWAIT = 281      => sys_epoll_pwait(args[..6]);
@@ -374,6 +377,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_PREADV = 295           => sys_preadv(args[..4]);
     SYS_PWRITEV = 296          => sys_pwritev(args[..4]);
     SYS_PRLIMIT64 = 302        => sys_prlimit64(args[..4]);
+    SYS_SETNS = 308            => sys_setns(args[..2]);
     SYS_GETCPU = 309           => sys_getcpu(args[..3]);
     SYS_SCHED_SETATTR = 314    => sys_sched_setattr(args[..3]);
     SYS_SCHED_GETATTR = 315    => sys_sched_getattr(args[..4]);
