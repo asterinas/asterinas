@@ -106,7 +106,6 @@ pub fn init() {
     sched::init();
     fs::rootfs::init(boot_info().initramfs.expect("No initramfs found!")).unwrap();
     device::init().unwrap();
-    syscall::init();
     vdso::init();
     process::init();
 }

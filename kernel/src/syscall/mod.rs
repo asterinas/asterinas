@@ -398,7 +398,3 @@ macro_rules! log_syscall_entry {
         }
     };
 }
-
-pub(super) fn init() {
-    uname::init();
-}
