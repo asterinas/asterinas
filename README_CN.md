@@ -51,7 +51,7 @@ git clone https://github.com/asterinas/asterinas
 2. 运行一个作为开发环境的Docker容器。
 
 ```bash
-docker run -it --privileged --network=host --device=/dev/kvm -v $(pwd)/asterinas:/root/asterinas asterinas/asterinas:0.16.0-20250802
+docker run -it --privileged --network=host --device=/dev/kvm -v $(pwd)/asterinas:/root/asterinas asterinas/asterinas:0.16.0-20250815
 ```
 
 3. 在容器内，进入项目文件夹构建并运行星绽。

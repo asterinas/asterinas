@@ -11,7 +11,7 @@ jobs:
   basic-test:
     runs-on: ubuntu-latest
     container:
-      image: asterinas/asterinas:0.16.0-20250802
+      image: asterinas/asterinas:0.16.0-20250815
       options: --device=/dev/kvm --privileged
     strategy:
       matrix:
@@ -28,7 +28,7 @@ jobs:
   integration-test:
     runs-on: ubuntu-latest
     container:
-      image: asterinas/asterinas:0.16.0-20250802
+      image: asterinas/asterinas:0.16.0-20250815
       options: --device=/dev/kvm --privileged
     strategy:
       matrix:
@@ -111,7 +111,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        image: ['asterinas/asterinas:0.16.0-20250802', 'asterinas/osdk:0.16.0-20250802']
+        image: ['asterinas/asterinas:0.16.0-20250815', 'asterinas/osdk:0.16.0-20250815']
       fail-fast: false
     container:
       image: ${{ matrix.image }}
