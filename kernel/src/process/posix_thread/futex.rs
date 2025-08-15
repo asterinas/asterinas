@@ -58,9 +58,8 @@ pub fn futex_wait_bitset(
     }
 
     let futex_key = FutexKey::new(futex_addr, bitset, pid)?;
+    let (_, futex_bucket_ref) = get_futex_bucket(&futex_key);
     let (futex_item, waiter) = FutexItem::create(futex_key);
-
-    let (_, futex_bucket_ref) = get_futex_bucket(futex_key);
 
     let user_space = ctx.user_space();
 
@@ -70,7 +69,7 @@ pub fn futex_wait_bitset(
 
         let pf_result = ctx
             .thread_local
-            .with_page_fault_disabled(|| user_space.atomic_load::<u32>(futex_key.addr()));
+            .with_page_fault_disabled(|| user_space.atomic_load::<u32>(futex_addr));
         if let Some(result) = pf_result {
             break (futex_bucket, result?);
         }
@@ -81,7 +80,7 @@ pub fn futex_wait_bitset(
         user_space
             .root_vmar()
             .handle_page_fault(&PageFaultInfo {
-                address: futex_key.addr(),
+                address: futex_addr,
                 required_perms: VmPerms::READ,
             })
             .map_err(|_| {
@@ -145,9 +144,9 @@ pub fn futex_wake_bitset(
     }
 
     let futex_key = FutexKey::new(futex_addr, bitset, pid)?;
-    let (_, futex_bucket_ref) = get_futex_bucket(futex_key);
+    let (_, futex_bucket_ref) = get_futex_bucket(&futex_key);
     let mut futex_bucket = futex_bucket_ref.lock();
-    let res = futex_bucket.remove_and_wake_items(futex_key, max_count);
+    let res = futex_bucket.remove_and_wake_items(&futex_key, max_count);
 
     Ok(res)
 }
@@ -274,8 +273,8 @@ pub fn futex_wake_op(
 
     let futex_key_1 = FutexKey::new(futex_addr_1, FUTEX_BITSET_MATCH_ANY, pid)?;
     let futex_key_2 = FutexKey::new(futex_addr_2, FUTEX_BITSET_MATCH_ANY, pid)?;
-    let (index_1, futex_bucket_ref_1) = get_futex_bucket(futex_key_1);
-    let (index_2, futex_bucket_ref_2) = get_futex_bucket(futex_key_2);
+    let (index_1, futex_bucket_ref_1) = get_futex_bucket(&futex_key_1);
+    let (index_2, futex_bucket_ref_2) = get_futex_bucket(&futex_key_2);
 
     let user_space = ctx.user_space();
 
@@ -320,10 +319,10 @@ pub fn futex_wake_op(
             })?;
     };
 
-    let mut res = futex_bucket_1.remove_and_wake_items(futex_key_1, max_count_1);
+    let mut res = futex_bucket_1.remove_and_wake_items(&futex_key_1, max_count_1);
     if wake_op.should_wake(old_val) {
         let bucket = futex_bucket_2.as_mut().unwrap_or(&mut futex_bucket_1);
-        res += bucket.remove_and_wake_items(futex_key_2, max_count_2);
+        res += bucket.remove_and_wake_items(&futex_key_2, max_count_2);
     }
 
     Ok(res)
@@ -343,14 +342,14 @@ pub fn futex_requeue(
 
     let futex_key = FutexKey::new(futex_addr, FUTEX_BITSET_MATCH_ANY, pid)?;
     let futex_new_key = FutexKey::new(futex_new_addr, FUTEX_BITSET_MATCH_ANY, pid)?;
-    let (bucket_idx, futex_bucket_ref) = get_futex_bucket(futex_key);
-    let (new_bucket_idx, futex_new_bucket_ref) = get_futex_bucket(futex_new_key);
+    let (bucket_idx, futex_bucket_ref) = get_futex_bucket(&futex_key);
+    let (new_bucket_idx, futex_new_bucket_ref) = get_futex_bucket(&futex_new_key);
 
     let nwakes = {
         if bucket_idx == new_bucket_idx {
             let mut futex_bucket = futex_bucket_ref.lock();
-            let nwakes = futex_bucket.remove_and_wake_items(futex_key, max_nwakes);
-            futex_bucket.update_item_keys(futex_key, futex_new_key, max_nrequeues);
+            let nwakes = futex_bucket.remove_and_wake_items(&futex_key, max_nwakes);
+            futex_bucket.update_item_keys(&futex_key, &futex_new_key, max_nrequeues);
             drop(futex_bucket);
             nwakes
         } else {
@@ -367,11 +366,11 @@ pub fn futex_requeue(
                 }
             };
 
-            let nwakes = futex_bucket.remove_and_wake_items(futex_key, max_nwakes);
+            let nwakes = futex_bucket.remove_and_wake_items(&futex_key, max_nwakes);
             futex_bucket.requeue_items_to_another_bucket(
-                futex_key,
+                &futex_key,
                 &mut futex_new_bucket,
-                futex_new_key,
+                &futex_new_key,
                 max_nrequeues,
             );
             nwakes
@@ -390,7 +389,7 @@ fn get_bucket_count() -> usize {
     ((1 << 8) * num_cpus()).next_power_of_two()
 }
 
-fn get_futex_bucket(key: FutexKey) -> (usize, &'static SpinLock<FutexBucket>) {
+fn get_futex_bucket(key: &FutexKey) -> (usize, &'static SpinLock<FutexBucket>) {
     FUTEX_BUCKETS.get().unwrap().get_bucket(key)
 }
 
@@ -415,9 +414,9 @@ impl FutexBucketVec {
         buckets
     }
 
-    pub fn get_bucket(&self, key: FutexKey) -> (usize, &SpinLock<FutexBucket>) {
+    pub fn get_bucket(&self, key: &FutexKey) -> (usize, &SpinLock<FutexBucket>) {
         let index = (self.size() - 1) & {
-            // The addr is the multiples of 4, so we ignore the last 2 bits
+            // The addr is a multiple of 4, so we ignore the last 2 bits
             let addr = key.addr() >> 2;
             // simple hash
             addr / self.size()
@@ -445,11 +444,11 @@ impl FutexBucket {
         self.items.push(item);
     }
 
-    pub fn remove_and_wake_items(&mut self, key: FutexKey, max_count: usize) -> usize {
+    pub fn remove_and_wake_items(&mut self, key: &FutexKey, max_count: usize) -> usize {
         let mut count = 0;
 
         self.items.retain(|item| {
-            if item.key.match_up(&key) && count < max_count {
+            if item.key.match_up(key) && count < max_count {
                 if item.wake() {
                     count += 1;
                 }
@@ -462,11 +461,11 @@ impl FutexBucket {
         count
     }
 
-    pub fn update_item_keys(&mut self, key: FutexKey, new_key: FutexKey, max_count: usize) {
+    pub fn update_item_keys(&mut self, key: &FutexKey, new_key: &FutexKey, max_count: usize) {
         let mut count = 0;
         for item in self.items.iter_mut() {
-            if item.key.match_up(&key) {
-                item.key = new_key;
+            if item.key.match_up(key) {
+                item.key = new_key.clone();
                 count += 1;
             }
             if count >= max_count {
@@ -477,15 +476,15 @@ impl FutexBucket {
 
     pub fn requeue_items_to_another_bucket(
         &mut self,
-        key: FutexKey,
+        key: &FutexKey,
         another: &mut Self,
-        new_key: FutexKey,
+        new_key: &FutexKey,
         max_nrequeues: usize,
     ) {
         let mut count = 0;
         self.items
             .extract_if(.., |item| {
-                if item.key.match_up(&key) && count < max_nrequeues {
+                if item.key.match_up(key) && count < max_nrequeues {
                     count += 1;
                     true
                 } else {
@@ -493,7 +492,7 @@ impl FutexBucket {
                 }
             })
             .for_each(|mut extracted| {
-                extracted.key = new_key;
+                extracted.key = new_key.clone();
                 another.add_item(extracted);
             });
     }
@@ -518,8 +517,8 @@ impl FutexItem {
     }
 }
 
-// The addr of a futex, it should be used to mark different futex word
-#[derive(Debug, Clone, Copy)]
+/// The key of a futex used to mark a futex word.
+#[derive(Debug, Clone)]
 struct FutexKey {
     addr: Vaddr,
     bitset: FutexBitSet,
