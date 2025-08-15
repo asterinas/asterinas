@@ -415,12 +415,9 @@ impl FutexBucketVec {
     }
 
     fn get_bucket(&self, key: &FutexKey) -> (usize, &SpinLock<FutexBucket>) {
-        let addr = key.addr();
-        // `addr` is a multiple of 4, so we can ignore the last 2 bits.
-        let relevant_addr = addr >> 2;
         // Since `self.size()` is known to be a power of 2, the following is
-        // equivalent to `relevant_addr % self.size()`, buf faster.
-        let index = relevant_addr & (self.size() - 1);
+        // equivalent to `key.hash % self.size()`, buf faster.
+        let index = key.hash & (self.size() - 1);
         (index, &self.vec[index])
     }
 
@@ -520,15 +517,14 @@ impl FutexItem {
 /// The key of a futex used to mark a futex word.
 #[derive(Debug, Clone)]
 struct FutexKey {
-    addr: Vaddr,
+    /// A hash value deterministically computed from the `Vaddr` and `Option<Pid>`
+    /// associated with the futex on instantiation.
+    hash: usize,
     bitset: FutexBitSet,
-    /// Specify whether this `FutexKey` is process private or shared. If `pid` is
-    /// None, then this `FutexKey` is shared.
-    pid: Option<Pid>,
 }
 
 impl FutexKey {
-    pub fn new(addr: Vaddr, bitset: FutexBitSet, pid: Option<Pid>) -> Result<Self> {
+    fn new(addr: Vaddr, bitset: FutexBitSet, pid: Option<Pid>) -> Result<Self> {
         // "On all platforms, futexes are four-byte integers that must be aligned on a four-byte
         // boundary."
         // Reference: <https://man7.org/linux/man-pages/man2/futex.2.html>.
@@ -539,16 +535,21 @@ impl FutexKey {
             );
         }
 
-        Ok(Self { addr, bitset, pid })
+        // Use `jhash` to hash `addr` and `pid`.
+        let hash = {
+            let addr_low = addr as u32;
+            let addr_high = (addr >> 32) as u32;
+            // Choose a different jhash seed (or salt) for each process (unless the futex is shared)
+            // to prevent common key patterns from causing excessive collisions in the table.
+            let seed = pid.unwrap_or(u32::MAX);
+            jhash::jhash_2vals(addr_low, addr_high, seed) as usize
+        };
+
+        Ok(Self { hash, bitset })
     }
 
-    pub fn addr(&self) -> Vaddr {
-        self.addr
-    }
-
-    pub fn match_up(&self, another: &Self) -> bool {
-        // TODO: Use hash value to do match_up
-        self.addr == another.addr && (self.bitset & another.bitset) != 0 && self.pid == another.pid
+    fn match_up(&self, another: &Self) -> bool {
+        self.hash == another.hash && (self.bitset & another.bitset) != 0
     }
 }
 

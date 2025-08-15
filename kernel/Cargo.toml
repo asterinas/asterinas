@@ -33,6 +33,7 @@ aster-bigtcp = { path = "libs/aster-bigtcp" }
 atomic-integer-wrapper = { path = "libs/atomic-integer-wrapper" }
 id-alloc = { path = "../ostd/libs/id-alloc" }
 int-to-c-enum = { path = "libs/int-to-c-enum" }
+jhash = { path = "libs/jhash" }
 cpio-decoder = { path = "libs/cpio-decoder" }
 xarray = { path = "libs/xarray" }
 intrusive-collections = "0.9.5"
