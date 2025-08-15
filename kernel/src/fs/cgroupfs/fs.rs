@@ -21,6 +21,7 @@ use crate::{
 pub struct CgroupFs {
     sb: SuperBlock,
     root: Arc<dyn Inode>,
+    systree_root: Arc<CgroupSystem>,
 }
 
 // Magic number for cgroupfs v2 (taken from Linux)
@@ -31,12 +32,18 @@ const NAME_MAX: usize = 255;
 impl CgroupFs {
     pub(super) fn new(root_node: Arc<CgroupSystem>) -> Arc<Self> {
         let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX);
-        let root_inode = CgroupInode::new_root(root_node);
+        let root_inode = CgroupInode::new_root(root_node.clone());
 
         Arc::new(Self {
             sb,
             root: root_inode,
+            systree_root: root_node,
         })
+    }
+
+    /// Returns the root node in the `SysTree`.
+    pub fn systree_root(&self) -> &Arc<CgroupSystem> {
+        &self.systree_root
     }
 }
 
