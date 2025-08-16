@@ -491,7 +491,8 @@ impl RamInode {
         })
     }
 
-    fn find(&self, name: &str) -> Result<Arc<Self>> {
+    /// Returns the inode with given path.
+    pub fn find(&self, name: &str) -> Result<Arc<Self>> {
         if self.typ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
         }
