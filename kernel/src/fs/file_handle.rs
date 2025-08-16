@@ -4,6 +4,8 @@
 
 //! Opened File Handle
 
+use ostd::io::IoMem;
+
 use super::inode_handle::InodeHandle;
 use crate::{
     fs::utils::{
@@ -47,6 +49,16 @@ pub trait FileLike: Pollable + Send + Sync + Any {
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");
+    }
+
+    /// Prepares file-specific mmap.
+    ///
+    /// This is the public interface for file-specific mmap. The function
+    /// returns a [`MemoryToMap`] that describes the memory object to be mapped.
+    /// The caller is responsible for creating the actual memory mapping using
+    /// this information.
+    fn mmap(&self) -> Result<MemoryToMap> {
+        return_errno_with_message!(Errno::EINVAL, "mmap is not supported");
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
@@ -144,4 +156,16 @@ impl dyn FileLike {
             Error::with_message(Errno::EINVAL, "the file is not related to an inode")
         })
     }
+}
+
+/// The result of [`FileLike::mmap`].
+///
+/// This is used to store the result of file-specific mmap, which can help to
+/// determine the correct the mapping options.
+#[derive(Debug, Clone)]
+pub enum MemoryToMap {
+    /// The mapping maps to the page cache.
+    PageCache(Arc<dyn Inode>),
+    /// The mapping maps to the I/O memory.
+    IoMem(IoMem),
 }

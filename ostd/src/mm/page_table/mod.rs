@@ -119,11 +119,9 @@ pub(crate) unsafe trait PageTableConfig:
     ///    item or part of it (as described above);
     ///  - either the ownership of the item is properly transferred to the
     ///    return value, or the return value is wrapped in a
-    ///    [`core::mem::ManuallyDrop`] that won't outlive the original item.
-    ///
-    /// A concrete trait implementation may require the caller to ensure that
-    ///  - the [`super::PageFlags::AVAIL1`] flag is the same as that returned
-    ///    from [`PageTableConfig::item_into_raw`].
+    ///    [`core::mem::ManuallyDrop`] that won't outlive the original item;
+    ///  - the [`super::PageFlags::AVAIL1`] flag is preserved, i.e., it is
+    ///    the same as that returned from [`PageTableConfig::item_into_raw`].
     unsafe fn item_from_raw(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self::Item;
 }
 

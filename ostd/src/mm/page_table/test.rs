@@ -5,6 +5,7 @@ use crate::{
     mm::{
         kspace::{KernelPtConfig, LINEAR_MAPPING_BASE_VADDR},
         page_prop::{CachePolicy, PageFlags},
+        vm_space::VmItem,
         FrameAllocOptions, MAX_USERSPACE_VADDR, PAGE_SIZE,
     },
     prelude::*,
@@ -28,7 +29,7 @@ mod test_utils {
             page_table
                 .cursor_mut(&preempt_guard, &virt_range)
                 .unwrap()
-                .map((frame.into(), page_property))
+                .map(VmItem::new_tracked(frame.into(), page_property))
         }
         .expect("First map found an unexpected item");
 
@@ -252,10 +253,16 @@ mod page_properties {
             page_table
                 .cursor_mut(&preempt_guard, &virtual_range)
                 .unwrap()
-                .map((frame.into(), prop))
+                .map(VmItem::new_tracked(frame.into(), prop))
         };
         let queried = page_table.page_walk(virtual_range.start + 100).unwrap().1;
-        assert_eq!(queried, prop);
+
+        // When using `VmItem::new_tracked()`, it's always a tracked frame, not
+        // I/O memory. So `AVAIL1` bit should always be cleared, regardless of
+        // the input property.
+        let mut expected = prop;
+        expected.priv_flags -= PrivilegedPageFlags::AVAIL1;
+        assert_eq!(queried, expected);
     }
 
     #[ktest]
@@ -385,7 +392,7 @@ mod navigation {
                     &(FIRST_MAP_ADDR..FIRST_MAP_ADDR + PAGE_SIZE),
                 )
                 .unwrap()
-                .map((frame1.clone().into(), page_property))
+                .map(VmItem::new_tracked(frame1.clone().into(), page_property))
                 .unwrap();
         }
 
@@ -396,7 +403,7 @@ mod navigation {
                     &(SECOND_MAP_ADDR..SECOND_MAP_ADDR + PAGE_SIZE),
                 )
                 .unwrap()
-                .map((frame2.clone().into(), page_property))
+                .map(VmItem::new_tracked(frame2.clone().into(), page_property))
                 .unwrap();
         }
 
@@ -578,7 +585,7 @@ mod mapping {
         unsafe {
             pt.cursor_mut(&preempt_guard, &virt_range)
                 .unwrap()
-                .map((frame.into(), page_property))
+                .map(VmItem::new_tracked(frame.into(), page_property))
                 .unwrap()
         }
 
@@ -586,7 +593,7 @@ mod mapping {
         let Err(frag) = (unsafe {
             pt.cursor_mut(&preempt_guard, &virt_range)
                 .unwrap()
-                .map((frame2.into(), page_property))
+                .map(VmItem::new_tracked(frame2.into(), page_property))
         }) else {
             panic!("Expected to get error on remapping, got `Ok`");
         };

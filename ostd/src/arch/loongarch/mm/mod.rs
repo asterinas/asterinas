@@ -205,14 +205,13 @@ impl PageTableEntryTrait for PageTableEntry {
             // TODO: How to get the accessed bit in loongarch?
             | (parse_flags!(self.0, PageTableFlags::PRESENT, PageFlags::ACCESSED))
             | (parse_flags!(self.0, PageTableFlags::DIRTY, PageFlags::DIRTY))
-            | (parse_flags!(self.0, PageTableFlags::RSV1, PageFlags::AVAIL1))
             | (parse_flags!(self.0, PageTableFlags::RSV2, PageFlags::AVAIL2));
-        let mut priv_flags = PrivFlags::empty().bits();
+        let mut priv_flags = parse_flags!(self.0, PageTableFlags::RSV1, PrivFlags::AVAIL1);
         if self.is_user() {
-            priv_flags |= PrivFlags::USER.bits();
+            priv_flags |= PrivFlags::USER.bits() as usize;
         }
         if self.is_global() {
-            priv_flags |= PrivFlags::GLOBAL.bits();
+            priv_flags |= PrivFlags::GLOBAL.bits() as usize;
         }
 
         let cache = if self.0 & PageTableFlags::MATL.bits() != 0 {
@@ -249,8 +248,12 @@ impl PageTableEntryTrait for PageTableEntry {
             | parse_flags!(prop.flags.bits(), PageFlags::DIRTY, PageTableFlags::DIRTY)
             // TODO: How to get the accessed bit in loongarch?
             | parse_flags!(prop.flags.bits(), PageFlags::ACCESSED, PageTableFlags::PRESENT)
-            | parse_flags!(prop.flags.bits(), PageFlags::AVAIL1, PageTableFlags::RSV1)
             | parse_flags!(prop.flags.bits(), PageFlags::AVAIL2, PageTableFlags::RSV2);
+        flags |= parse_flags!(
+            prop.priv_flags.bits(),
+            PrivFlags::AVAIL1,
+            PageTableFlags::RSV1
+        );
         if prop.priv_flags.contains(PrivFlags::USER) {
             flags |= PageTableFlags::PLVL.bits();
             flags |= PageTableFlags::PLVH.bits();

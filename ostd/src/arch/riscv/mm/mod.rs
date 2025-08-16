@@ -155,10 +155,10 @@ impl PageTableEntryTrait for PageTableEntry {
             | (parse_flags!(self.0, PageTableFlags::EXECUTABLE, PageFlags::X))
             | (parse_flags!(self.0, PageTableFlags::ACCESSED, PageFlags::ACCESSED))
             | (parse_flags!(self.0, PageTableFlags::DIRTY, PageFlags::DIRTY))
-            | (parse_flags!(self.0, PageTableFlags::RSV1, PageFlags::AVAIL1))
             | (parse_flags!(self.0, PageTableFlags::RSV2, PageFlags::AVAIL2));
         let priv_flags = (parse_flags!(self.0, PageTableFlags::USER, PrivFlags::USER))
-            | (parse_flags!(self.0, PageTableFlags::GLOBAL, PrivFlags::GLOBAL));
+            | (parse_flags!(self.0, PageTableFlags::GLOBAL, PrivFlags::GLOBAL))
+            | (parse_flags!(self.0, PageTableFlags::RSV1, PrivFlags::AVAIL1));
 
         let cache = if self.0 & PageTableFlags::PBMT_IO.bits() != 0 {
             CachePolicy::Uncacheable
@@ -188,7 +188,11 @@ impl PageTableEntryTrait for PageTableEntry {
                 PrivFlags::GLOBAL,
                 PageTableFlags::GLOBAL
             )
-            | parse_flags!(prop.flags.bits(), PageFlags::AVAIL1, PageTableFlags::RSV1)
+            | parse_flags!(
+                prop.priv_flags.bits(),
+                PrivFlags::AVAIL1,
+                PageTableFlags::RSV1
+            )
             | parse_flags!(prop.flags.bits(), PageFlags::AVAIL2, PageTableFlags::RSV2);
 
         match prop.cache {
