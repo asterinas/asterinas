@@ -859,40 +859,65 @@ impl VmWriter<'_, Fallible> {
         Ok(())
     }
 
-    /// Atomically updates a `PodAtomic` value.
+    /// Performs an atomic compare-and-update operation on a `PodAtomic` value.
     ///
-    /// This is implemented by performing an atomic load, applying the operation, and performing an
-    /// atomic compare-and-exchange. So this cannot prevent the [ABA
-    /// problem](https://en.wikipedia.org/wiki/ABA_problem).
+    /// This method reads the current value at the given memory location, applies
+    /// a user-provided operation, and conditionally updates the value using an
+    /// atomic compare-and-exchange. The operation follows **relaxed memory
+    /// ordering**. That is, only the atomicity of this single operation is
+    /// guaranteed, with no additional synchronization of other memory accesses.
+    /// This aligns with the [`Relaxed ordering`] specified in the C++11 memory
+    /// model.
     ///
-    /// The caller is required to provide a reader which points to the exactly same memory location
-    /// to ensure that reading from the memory is allowed.
+    /// The update can end in one of three outcomes:
     ///
-    /// On success, the previous value will be returned with a boolean value denoting whether the
-    /// compare-and-exchange succeeds. The caller usually wants to retry if the flag is false.
+    /// * **Canceled** — The provided closure returns `None`. No update attempt is made.
+    /// * **Succeeded** — The update attempt replaced the old value with the new one.
+    /// * **Failed** — The update attempt did not replace the value because the
+    ///   value in memory changed between the load and the update attempt. In this
+    ///   case, the latest observed value is returned and the caller usually wants
+    ///   to try `atomic_update` again.
     ///
-    /// Regardless of whether it is successful, the cursor of the reader and writer will not move.
+    /// The return value always includes:
+    /// * `old_val`: the value observed before the update attempt (or cancellation)
+    /// * `cur_val`: an `AtomicUpdateCurVal` describing the outcome
     ///
-    /// This method only guarantees the atomicity of the specific operation. There are no
-    /// synchronization constraints on other memory accesses. This aligns with the [Relaxed
-    /// ordering](https://en.cppreference.com/w/cpp/atomic/memory_order.html#Relaxed_ordering)
-    /// specified in the C++11 memory model.
+    /// # Preconditions
     ///
-    /// This method will fail with errors if:
-    ///  1. the remaining (avail) space of the reader (writer) is less than
-    ///     `core::mem::size_of::<T>()` bytes, or
-    ///  2. the memory operation fails due to an unresolvable page fault.
+    /// * `reader` must reference the exact same memory as `self`.
+    /// * The memory must be aligned to `core::mem::align_of::<T>()`.
+    /// * There must be at least `size_of::<T>()` bytes available to both `reader`
+    ///   and `self`.
+    ///
+    /// # Postconditions
+    ///
+    /// * The cursors of the reader and the writer will be the same as before.
+    /// * On success, the memory will be set with the value provided by the clusure.
+    ///
+    /// # Errors
+    ///
+    /// This method returns an error if:
+    /// 1. There is insufficient readable or writable space for `T`.
+    /// 2. The memory access fails due to an unresolvable page fault.
     ///
     /// # Panics
     ///
-    /// This method will panic if:
-    ///  1. the reader and the writer does not point to the same memory location, or
-    ///  2. the memory location is not aligned on a `core::mem::align_of::<T>()`-byte boundary.
+    /// Panics if:
+    /// 1. `reader` and `self` point to different locations.
+    /// 2. The target address is not aligned on a `core::mem::align_of::<T>()` boundary.
+    ///
+    /// # ABA Warning
+    ///
+    /// Because this implementation loads the old value, computes a new value,
+    /// and then attempts an update, it does not protect against the
+    /// [ABA problem](https://en.wikipedia.org/wiki/ABA_problem).
+    ///
+    /// [`Relaxed ordering`]: https://en.cppreference.com/w/cpp/atomic/memory_order.html#Relaxed_ordering
     pub fn atomic_update<T>(
         &mut self,
         reader: &VmReader,
-        op: impl FnOnce(T) -> T,
-    ) -> Result<(T, bool)>
+        op: impl FnOnce(T) -> Option<T>,
+    ) -> Result<AtomicUpdate<T>>
     where
         T: PodAtomic + Eq,
     {
@@ -910,14 +935,23 @@ impl VmWriter<'_, Fallible> {
         // 2. The cursor is aligned on a `align_of::<T>()`-byte boundary.
         let old_val = unsafe { T::atomic_load_fallible(cursor)? };
 
-        let new_val = op(old_val);
+        let cur_val = match op(old_val) {
+            None => AtomicUpdateCurVal::Canceled,
+            Some(new_val) => {
+                // SAFETY:
+                // 1. The cursor is either valid for reading and writing or in user space for 4 bytes.
+                // 2. The cursor is aligned on a 4-byte boundary.
+                let cur_val = unsafe { T::atomic_cmpxchg_fallible(cursor, old_val, new_val)? };
 
-        // SAFETY:
-        // 1. The cursor is either valid for reading and writing or in user space for 4 bytes.
-        // 2. The cursor is aligned on a 4-byte boundary.
-        let cur_val = unsafe { T::atomic_cmpxchg_fallible(cursor, old_val, new_val)? };
+                if old_val == cur_val {
+                    AtomicUpdateCurVal::Succeeded(new_val)
+                } else {
+                    AtomicUpdateCurVal::Failed(cur_val)
+                }
+            }
+        };
 
-        Ok((old_val, old_val == cur_val))
+        Ok(AtomicUpdate { old_val, cur_val })
     }
 
     /// Writes `len` zeros to the target memory.
@@ -944,6 +978,50 @@ impl VmWriter<'_, Fallible> {
         } else {
             Ok(len_to_set)
         }
+    }
+}
+
+/// Describes the outcome of [`atomic_update`](super::VmWriter::atomic_update).
+///
+/// This enum indicates whether the update was:
+///
+/// * `Canceled`: The operation was aborted before attempting an update because
+///   the provided closure returned `None`.
+/// * `Failed`: The update did not succeed because the value in memory was
+///   different from the expected `old_val` at the time of the attempt. The
+///   variant carries the most recently observed value from memory.
+/// * `Succeeded`: The update succeeded and the value was replaced with the
+///   provided new value. The variant carries the value that was written.
+pub enum AtomicUpdateCurVal<T> {
+    /// The operation was canceled by the closure.
+    Canceled,
+    /// The update failed; carries the most recently observed value from memory.
+    Failed(T),
+    /// The update succeeded; carries the value that was written.
+    Succeeded(T),
+}
+
+/// The result of [`atomic_update`](super::VmWriter::atomic_update).
+///
+/// This struct records both the value read before the update attempt (`old_val`)
+/// and the outcome (`cur_val`), which includes the most recent observed value
+/// or the successfully written value.
+///
+/// This allows the caller to distinguish between:
+/// * A canceled update (`AtomicUpdateCurVal::Canceled`)
+/// * A failed update that should be retried (`AtomicUpdateCurVal::Failed`)
+/// * A successful update (`AtomicUpdateCurVal::Succeeded`)
+pub struct AtomicUpdate<T> {
+    /// The value observed in memory before attempting the update (or cancellation).
+    pub old_val: T,
+    /// The outcome of the update attempt.
+    pub cur_val: AtomicUpdateCurVal<T>,
+}
+
+impl<T> AtomicUpdate<T> {
+    /// Returns `true` if the update succeeded (i.e., the update replaced the value).
+    pub fn succeeded(&self) -> bool {
+        matches!(self.cur_val, AtomicUpdateCurVal::Succeeded(_))
     }
 }
 
