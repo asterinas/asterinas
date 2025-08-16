@@ -38,7 +38,11 @@ use ostd::{
 use process::{spawn_init_process, Process};
 use sched::SchedPolicy;
 
-use crate::{prelude::*, thread::kernel_thread::ThreadOptions};
+use crate::{
+    fs::{fs_resolver::FsResolver, rootfs::init_root_mount},
+    prelude::*,
+    thread::kernel_thread::ThreadOptions,
+};
 
 extern crate alloc;
 extern crate lru;
@@ -103,8 +107,6 @@ pub fn init() {
     #[cfg(target_arch = "x86_64")]
     net::init();
     sched::init();
-    fs::rootfs::init(boot_info().initramfs.expect("No initramfs found!")).unwrap();
-    device::init().unwrap();
     syscall::init();
     vdso::init();
     process::init();
@@ -132,6 +134,19 @@ fn ap_init() {
 
 fn init_thread() {
     println!("[kernel] Spawn init thread");
+    fs::init_filesystems();
+
+    // TODO: After introducing the mount namespace, use an initial mount namespace to create
+    // the `FsResolver`, and the initial mount namespace should be passed to the first process.
+    init_root_mount();
+    let fs_resolver = FsResolver::new();
+    fs::rootfs::init(
+        boot_info().initramfs.expect("No initramfs found!"),
+        &fs_resolver,
+    )
+    .unwrap();
+    device::init(&fs_resolver).unwrap();
+
     // Work queue should be initialized before interrupt is enabled,
     // in case any irq handler uses work queue as bottom half
     thread::work_queue::init();

@@ -120,7 +120,7 @@ impl FileIo for PtyMaster {
                 // TODO: Deal with `open()` flags.
                 let slave = {
                     let slave_name = {
-                        let devpts_path = super::DEV_PTS.get().unwrap().abs_path();
+                        let devpts_path = "/dev/pts";
                         format!("{}/{}", devpts_path, self.slave.index())
                     };
 

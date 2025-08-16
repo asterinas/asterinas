@@ -14,7 +14,7 @@
 //! The module is initialized with `init`, which sets up the `START_SECS_COUNT` and prepares the VDSO instance for
 //! use. It also hooks up the VDSO data update routine to the time management subsystem for periodic updates.
 
-use alloc::{boxed::Box, sync::Arc};
+use alloc::sync::Arc;
 use core::{mem::ManuallyDrop, time::Duration};
 
 use aster_rights::Rights;
@@ -28,7 +28,6 @@ use ostd::{
 use spin::Once;
 
 use crate::{
-    fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD},
     syscall::ClockId,
     time::{clocks::MonotonicClock, timer::Timeout, SystemTime, START_TIME},
     vm::vmo::{Vmo, VmoOptions},
@@ -222,16 +221,15 @@ impl Vdso {
             // Write VDSO data to VDSO VMO.
             vdso_vmo.write_bytes(0x80, vdso_data.as_bytes()).unwrap();
 
-            let vdso_lib_vmo = {
-                let vdso_path = FsPath::new(AT_FDCWD, "/lib/x86_64-linux-gnu/vdso64.so").unwrap();
-                let fs_resolver = FsResolver::new();
-                let vdso_lib = fs_resolver.lookup(&vdso_path).unwrap();
-                vdso_lib.inode().page_cache().unwrap()
-            };
-            let mut vdso_text = Box::new([0u8; PAGE_SIZE]);
-            vdso_lib_vmo.read_bytes(0, &mut *vdso_text).unwrap();
+            // TODO: This is a temporary workaround. We should use the self-compiled VDSO library
+            // and store it directly in the kernel in the future.
+            let vdso_context =
+                include_bytes!("../../test/build/initramfs/lib/x86_64-linux-gnu/vdso64.so");
+
             // Write VDSO library to VDSO VMO.
-            vdso_vmo.write_bytes(0x4000, &*vdso_text).unwrap();
+            vdso_vmo
+                .write_bytes(0x4000, &vdso_context[..PAGE_SIZE])
+                .unwrap();
 
             let data_frame = vdso_vmo.try_commit_page(0).unwrap();
             (vdso_vmo, data_frame)
