@@ -226,7 +226,7 @@ impl FutexWakeOpEncode {
         })
     }
 
-    fn calculate_new_val(&self, old_val: u32) -> u32 {
+    fn calculate_new_val(&self, old_val: u32) -> Option<u32> {
         let oparg = if self.is_oparg_shift {
             if self.oparg > 31 {
                 // Linux might return EINVAL in the future
@@ -240,11 +240,11 @@ impl FutexWakeOpEncode {
         };
 
         match self.op {
-            FutexWakeOp::FUTEX_OP_SET => oparg,
-            FutexWakeOp::FUTEX_OP_ADD => oparg.wrapping_add(old_val),
-            FutexWakeOp::FUTEX_OP_OR => oparg | old_val,
-            FutexWakeOp::FUTEX_OP_ANDN => oparg & !old_val,
-            FutexWakeOp::FUTEX_OP_XOR => oparg ^ old_val,
+            FutexWakeOp::FUTEX_OP_SET => Some(oparg),
+            FutexWakeOp::FUTEX_OP_ADD => Some(oparg.wrapping_add(old_val)),
+            FutexWakeOp::FUTEX_OP_OR => Some(oparg | old_val),
+            FutexWakeOp::FUTEX_OP_ANDN => Some(oparg & !old_val),
+            FutexWakeOp::FUTEX_OP_XOR => Some(oparg ^ old_val),
         }
     }
 

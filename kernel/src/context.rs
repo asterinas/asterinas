@@ -6,7 +6,10 @@ use core::{cell::Ref, mem};
 
 use aster_rights::Full;
 use ostd::{
-    mm::{Fallible, Infallible, PodAtomic, VmReader, VmWriter, MAX_USERSPACE_VADDR},
+    mm::{
+        io::AtomicUpdateCurVal, Fallible, Infallible, PodAtomic, VmReader, VmWriter,
+        MAX_USERSPACE_VADDR,
+    },
     task::Task,
 };
 
@@ -95,6 +98,22 @@ impl<'a> CurrentUserSpace<'a> {
         Ok(self.root_vmar().vm_space().writer(vaddr, len)?)
     }
 
+    /// Creates a reader after validating the source address.
+    pub fn reader_checked(&self, src: Vaddr, len: usize) -> Result<VmReader<'_, Fallible>> {
+        if len > 0 {
+            check_vaddr(src)?;
+        }
+        self.reader(src, len)
+    }
+
+    /// Creates a writer after validating the destination address.
+    pub fn writer_checked(&self, dest: Vaddr, len: usize) -> Result<VmWriter<'_, Fallible>> {
+        if len > 0 {
+            check_vaddr(dest)?;
+        }
+        self.writer(dest, len)
+    }
+
     /// Reads bytes into the destination `VmWriter` from the user space of the
     /// current process.
     ///
@@ -105,24 +124,14 @@ impl<'a> CurrentUserSpace<'a> {
     /// checks if the current task and user space are available. If they are,
     /// it returns `Ok`.
     pub fn read_bytes(&self, src: Vaddr, dest: &mut VmWriter<'_, Infallible>) -> Result<()> {
-        let copy_len = dest.avail();
-
-        if copy_len > 0 {
-            check_vaddr(src)?;
-        }
-
-        let mut user_reader = self.reader(src, copy_len)?;
+        let mut user_reader = self.reader_checked(src, dest.avail())?;
         user_reader.read_fallible(dest).map_err(|err| err.0)?;
         Ok(())
     }
 
     /// Reads a value typed `Pod` from the user space of the current process.
     pub fn read_val<T: Pod>(&self, src: Vaddr) -> Result<T> {
-        if core::mem::size_of::<T>() > 0 {
-            check_vaddr(src)?;
-        }
-
-        let mut user_reader = self.reader(src, core::mem::size_of::<T>())?;
+        let mut user_reader = self.reader_checked(src, mem::size_of::<T>())?;
         Ok(user_reader.read_val()?)
     }
 
@@ -136,24 +145,14 @@ impl<'a> CurrentUserSpace<'a> {
     /// the current task and user space are available. If they are, it returns
     /// `Ok`.
     pub fn write_bytes(&self, dest: Vaddr, src: &mut VmReader<'_, Infallible>) -> Result<()> {
-        let copy_len = src.remain();
-
-        if copy_len > 0 {
-            check_vaddr(dest)?;
-        }
-
-        let mut user_writer = self.writer(dest, copy_len)?;
+        let mut user_writer = self.writer_checked(dest, src.remain())?;
         user_writer.write_fallible(src).map_err(|err| err.0)?;
         Ok(())
     }
 
     /// Writes `val` to the user space of the current process.
     pub fn write_val<T: Pod>(&self, dest: Vaddr, val: &T) -> Result<()> {
-        if core::mem::size_of::<T>() > 0 {
-            check_vaddr(dest)?;
-        }
-
-        let mut user_writer = self.writer(dest, core::mem::size_of::<T>())?;
+        let mut user_writer = self.writer_checked(dest, mem::size_of::<T>())?;
         Ok(user_writer.write_val(val)?)
     }
 
@@ -168,22 +167,34 @@ impl<'a> CurrentUserSpace<'a> {
     pub fn atomic_load<T: PodAtomic>(&self, vaddr: Vaddr) -> Result<T> {
         check_vaddr(vaddr)?;
 
-        let user_reader = self.reader(vaddr, core::mem::size_of::<T>())?;
+        let user_reader = self.reader(vaddr, mem::size_of::<T>())?;
         Ok(user_reader.atomic_load()?)
     }
 
-    /// Atomically updates a `PodAtomic` value with [`Ordering::Relaxed`] semantics.
+    /// Atomically reads, transforms, and writes a `PodAtomic` value in user memory
+    /// using [`Ordering::Relaxed`](core::sync::atomic::Ordering::Relaxed) semantics.
     ///
-    /// This method internally uses an atomic compare-and-exchange operation.If the value changes
-    /// concurrently, this method will retry so the operation may be performed multiple times.
+    /// This method repeatedly:
+    /// 1. Reads the current value from `vaddr`.
+    /// 2. Applies the user-provided transformation `op` to produce a new value.
+    ///    If `op` returns `None`, the update is aborted and the old value is
+    ///    returned.
+    /// 3. Attempts an atomic compare-and-exchange to replace the current value
+    ///    with the new value. If another thread or process modified the value in
+    ///    between, the update fails and the operation retries with the latest value.
+    ///
+    /// The method only returns when either:
+    /// - `op` returned `None` for the new value (no update performed), or
+    /// - The update succeeded.
+    ///
+    /// The returned value is always the value that was present at the start of
+    /// the *final* update attempt, regardless of whether an update was applied.
     ///
     /// # Panics
     ///
-    /// This method will panic if `vaddr` is not aligned on a `core::mem::align_of::<T>()`-byte
+    /// Panics if `vaddr` is not aligned on a `core::mem::align_of::<T>()` byte
     /// boundary.
-    ///
-    /// [`Ordering::Relaxed`]: core::sync::atomic::Ordering::Relaxed
-    pub fn atomic_update<T>(&self, vaddr: Vaddr, op: impl Fn(T) -> T) -> Result<T>
+    pub fn atomic_update<T>(&self, vaddr: Vaddr, op: impl Fn(T) -> Option<T>) -> Result<T>
     where
         T: PodAtomic + Eq,
     {
@@ -192,9 +203,12 @@ impl<'a> CurrentUserSpace<'a> {
         let user_reader = self.reader(vaddr, core::mem::size_of::<T>())?;
         let mut user_writer = self.writer(vaddr, core::mem::size_of::<T>())?;
         loop {
-            match user_writer.atomic_update(&user_reader, &op)? {
-                (old_val, true) => return Ok(old_val),
-                (_, false) => continue,
+            let atomic_update_result = user_writer.atomic_update(&user_reader, &op)?;
+            match atomic_update_result.cur_val {
+                AtomicUpdateCurVal::Canceled | AtomicUpdateCurVal::Succeeded(_) => {
+                    return Ok(atomic_update_result.old_val);
+                }
+                AtomicUpdateCurVal::Failed(_) => continue,
             }
         }
     }

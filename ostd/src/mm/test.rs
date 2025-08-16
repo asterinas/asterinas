@@ -351,18 +351,18 @@ mod io {
         type Segment = crate::mm::Segment<()>;
 
         fn update(segment: &Segment, old_val: u32, new_val: u32, f: fn(segment: &Segment)) -> bool {
-            let (val, is_succ) = segment
+            let atomic_update_result = segment
                 .writer()
                 .to_fallible()
                 .skip(4)
                 .atomic_update(segment.reader().to_fallible().skip(4), |val| {
                     assert_eq!(val, old_val);
                     f(segment);
-                    new_val
+                    Some(new_val)
                 })
                 .unwrap();
-            assert_eq!(val, old_val);
-            is_succ
+            assert_eq!(atomic_update_result.old_val, old_val);
+            atomic_update_result.succeeded()
         }
 
         let segment = FrameAllocOptions::new()
