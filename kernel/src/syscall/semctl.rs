@@ -92,6 +92,12 @@ pub fn sys_semctl(
 
             return Ok(SyscallReturn::Return(cnt as isize));
         }
+        IpcControlCmd::IPC_STAT => {
+            check_and_ctl(semid, PermissionMode::READ, |sem_set| {
+                let semid_ds = sem_set.semid_ds();
+                ctx.user_space().write_val(arg as Vaddr, &semid_ds)
+            })?;
+        }
         _ => todo!("Need to support {:?} in SYS_SEMCTL", cmd),
     }
 
