@@ -29,9 +29,7 @@ impl Read for BoxedReader<'_> {
 }
 
 /// Unpack and prepare the rootfs from the initramfs CPIO buffer.
-pub fn init(initramfs_buf: &[u8]) -> Result<()> {
-    init_root_mount();
-
+pub fn init(initramfs_buf: &[u8], fs_resolver: &FsResolver) -> Result<()> {
     let reader = {
         let mut initramfs_suffix = "";
         let reader = match &initramfs_buf[..4] {
@@ -53,7 +51,6 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
         reader
     };
     let mut decoder = CpioDecoder::new(reader);
-    let fs = FsResolver::new();
 
     loop {
         let Some(entry_result) = decoder.next() else {
@@ -76,9 +73,9 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
         // The mkinitramfs script uses `find` command to ensure that the entries are
         // sorted that a directory always appears before its child directories and files.
         let (parent, name) = if let Some((prefix, last)) = entry_name.rsplit_once('/') {
-            (fs.lookup(&FsPath::try_from(prefix)?)?, last)
+            (fs_resolver.lookup(&FsPath::try_from(prefix)?)?, last)
         } else {
-            (fs.root().clone(), entry_name)
+            (fs_resolver.root().clone(), entry_name)
         };
 
         let metadata = entry.metadata();
@@ -106,7 +103,7 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
         }
     }
     // Mount DevFS
-    let dev_path = fs.lookup(&FsPath::try_from("/dev")?)?;
+    let dev_path = fs_resolver.lookup(&FsPath::try_from("/dev")?)?;
     dev_path.mount(RamFS::new())?;
 
     println!("[kernel] rootfs is ready");

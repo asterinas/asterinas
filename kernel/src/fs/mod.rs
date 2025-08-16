@@ -25,14 +25,7 @@ pub mod utils;
 use aster_block::BlockDevice;
 use aster_virtio::device::block::device::BlockDevice as VirtIoBlockDevice;
 
-use crate::{
-    fs::{
-        exfat::{ExfatFS, ExfatMountOptions},
-        ext2::Ext2,
-        fs_resolver::FsPath,
-    },
-    prelude::*,
-};
+use crate::prelude::*;
 
 fn start_block_device(device_name: &str) -> Result<Arc<dyn BlockDevice>> {
     if let Some(device) = aster_block::get_device(device_name) {
@@ -51,7 +44,7 @@ fn start_block_device(device_name: &str) -> Result<Arc<dyn BlockDevice>> {
     }
 }
 
-pub fn lazy_init() {
+pub fn init_filesystems() {
     registry::init();
 
     sysfs::init();
@@ -63,22 +56,13 @@ pub fn lazy_init() {
     ext2::init();
     exfat::init();
     overlayfs::init();
+}
 
+pub fn lazy_init() {
     //The device name is specified in qemu args as --serial={device_name}
     let ext2_device_name = "vext2";
     let exfat_device_name = "vexfat";
 
-    if let Ok(block_device_ext2) = start_block_device(ext2_device_name) {
-        let ext2_fs = Ext2::open(block_device_ext2).unwrap();
-        let target_path = FsPath::try_from("/ext2").unwrap();
-        println!("[kernel] Mount Ext2 fs at {:?} ", target_path);
-        self::rootfs::mount_fs_at(ext2_fs, &target_path).unwrap();
-    }
-
-    if let Ok(block_device_exfat) = start_block_device(exfat_device_name) {
-        let exfat_fs = ExfatFS::open(block_device_exfat, ExfatMountOptions::default()).unwrap();
-        let target_path = FsPath::try_from("/exfat").unwrap();
-        println!("[kernel] Mount ExFat fs at {:?} ", target_path);
-        self::rootfs::mount_fs_at(exfat_fs, &target_path).unwrap();
-    }
+    start_block_device(ext2_device_name).unwrap();
+    start_block_device(exfat_device_name).unwrap();
 }
