@@ -80,24 +80,7 @@ fn do_sys_pwritev(
     let user_space = ctx.user_space();
     let mut reader_array = VmReaderArray::from_user_io_vecs(&user_space, io_vec_ptr, io_vec_count)?;
     for reader in reader_array.readers_mut() {
-        if !reader.has_remain() {
-            continue;
-        }
-
-        let reader_len = reader.remain();
-        if total_len.checked_add(reader_len).is_none()
-            || total_len
-                .checked_add(reader_len)
-                .and_then(|sum| sum.checked_add(cur_offset))
-                .is_none()
-            || total_len
-                .checked_add(reader_len)
-                .and_then(|sum| sum.checked_add(cur_offset))
-                .map(|sum| sum > isize::MAX as usize)
-                .unwrap_or(false)
-        {
-            return_errno_with_message!(Errno::EINVAL, "Total length overflow");
-        }
+        debug_assert!(reader.has_remain());
 
         // TODO: According to the man page
         // at <https://man7.org/linux/man-pages/man2/readv.2.html>,
@@ -140,9 +123,7 @@ fn do_sys_writev(
     let user_space = ctx.user_space();
     let mut reader_array = VmReaderArray::from_user_io_vecs(&user_space, io_vec_ptr, io_vec_count)?;
     for reader in reader_array.readers_mut() {
-        if !reader.has_remain() {
-            continue;
-        }
+        debug_assert!(reader.has_remain());
 
         // TODO: According to the man page
         // at <https://man7.org/linux/man-pages/man2/readv.2.html>,
