@@ -29,6 +29,7 @@ in stdenv.mkDerivation {
     ${lib.optionalString hostPlatform.isx86_64 ''
       cp -r ${linux_vdso}/vdso64.so $out/usr/lib/x86_64-linux-gnu/vdso64.so
     ''}
+    # FIXME: Use arch-aware path
     ${lib.optionalString hostPlatform.isRiscV64 ''
       cp -r ${linux_vdso}/riscv64-vdso.so $out/usr/lib/x86_64-linux-gnu/vdso64.so
     ''}

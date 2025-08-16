@@ -25,7 +25,6 @@ use crate::{
         process_vm::{AuxKey, AuxVec, ProcessVm},
         TermStatus,
     },
-    vdso::{vdso_vmo, VDSO_VMO_SIZE},
     vm::{
         perms::VmPerms,
         util::duplicate_frame,
@@ -53,6 +52,7 @@ pub fn load_elf_to_vm(
             // Map and set vdso entry.
             // Since vdso does not require being mapped to any specific address,
             // vdso is mapped after the elf file, heap and stack are mapped.
+            #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
             if let Some(vdso_text_base) = map_vdso_to_vm(process_vm) {
                 aux_vec
                     .set(AuxKey::AT_SYSINFO_EHDR, vdso_text_base as u64)
@@ -507,26 +507,38 @@ pub fn init_aux_vec(
 }
 
 /// Maps the VDSO VMO to the corresponding virtual memory address.
+#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 fn map_vdso_to_vm(process_vm: &ProcessVm) -> Option<Vaddr> {
+    use crate::vdso::{vdso_vmo, VdsoVmoLayout};
+
     let process_vmar = process_vm.lock_root_vmar();
     let root_vmar = process_vmar.unwrap();
     let vdso_vmo = vdso_vmo()?;
 
     let options = root_vmar
-        .new_map(VDSO_VMO_SIZE, VmPerms::empty())
+        .new_map(VdsoVmoLayout::SIZE, VmPerms::empty())
         .unwrap()
         .vmo(vdso_vmo.dup().unwrap());
 
-    let vdso_data_base = options.build().unwrap();
-    let vdso_text_base = vdso_data_base + 0x4000;
+    let vdso_vmo_base = options.build().unwrap();
+    let vdso_data_base = vdso_vmo_base + VdsoVmoLayout::DATA_OFFSET;
+    let vdso_text_base = vdso_vmo_base + VdsoVmoLayout::TEXT_OFFSET;
 
     let data_perms = VmPerms::READ | VmPerms::WRITE;
     let text_perms = VmPerms::READ | VmPerms::EXEC;
     root_vmar
-        .protect(data_perms, vdso_data_base..vdso_data_base + PAGE_SIZE)
+        .protect(
+            data_perms,
+            vdso_data_base.align_down(PAGE_SIZE)
+                ..(vdso_data_base + VdsoVmoLayout::DATA_SIZE).align_up(PAGE_SIZE),
+        )
         .unwrap();
     root_vmar
-        .protect(text_perms, vdso_text_base..vdso_text_base + PAGE_SIZE)
+        .protect(
+            text_perms,
+            vdso_text_base.align_down(PAGE_SIZE)
+                ..(vdso_text_base + VdsoVmoLayout::TEXT_SIZE).align_up(PAGE_SIZE),
+        )
         .unwrap();
     Some(vdso_text_base)
 }
