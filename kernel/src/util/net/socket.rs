@@ -4,7 +4,10 @@ use super::read_socket_addr_from_user;
 use crate::{
     net::socket::util::{ControlMessage, SocketAddr},
     prelude::*,
-    util::{net::write_socket_addr_with_max_len, VmReaderArray, VmWriterArray},
+    util::{
+        iovec::MAX_IO_VECTOR_LENGTH, net::write_socket_addr_with_max_len, VmReaderArray,
+        VmWriterArray,
+    },
 };
 
 /// Standard well-defined IP protocols.
@@ -154,6 +157,10 @@ impl CUserMsgHdr {
         &self,
         user_space: &'a CurrentUserSpace<'a>,
     ) -> Result<VmReaderArray<'a>> {
+        if self.msg_iovlen as usize > MAX_IO_VECTOR_LENGTH {
+            return_errno_with_message!(Errno::EMSGSIZE, "the I/O vector contains too many buffers");
+        }
+
         VmReaderArray::from_user_io_vecs(user_space, self.msg_iov, self.msg_iovlen as usize)
     }
 
@@ -161,6 +168,10 @@ impl CUserMsgHdr {
         &self,
         user_space: &'a CurrentUserSpace<'a>,
     ) -> Result<VmWriterArray<'a>> {
+        if self.msg_iovlen as usize > MAX_IO_VECTOR_LENGTH {
+            return_errno_with_message!(Errno::EMSGSIZE, "the I/O vector contains too many buffers");
+        }
+
         VmWriterArray::from_user_io_vecs(user_space, self.msg_iov, self.msg_iovlen as usize)
     }
 }

@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::file_table::{get_file_fast, FileDesc},
     prelude::*,
-    util::{MultiWrite, VmWriterArray},
+    util::VmWriterArray,
 };
 
 pub fn sys_readv(
@@ -78,24 +78,7 @@ fn do_sys_preadv(
     let user_space = ctx.user_space();
     let mut writer_array = VmWriterArray::from_user_io_vecs(&user_space, io_vec_ptr, io_vec_count)?;
     for writer in writer_array.writers_mut() {
-        if !writer.has_avail() {
-            continue;
-        }
-
-        let writer_len = writer.sum_lens();
-        if total_len.checked_add(writer_len).is_none()
-            || total_len
-                .checked_add(writer_len)
-                .and_then(|sum| sum.checked_add(cur_offset))
-                .is_none()
-            || total_len
-                .checked_add(writer_len)
-                .and_then(|sum| sum.checked_add(cur_offset))
-                .map(|sum| sum > isize::MAX as usize)
-                .unwrap_or(false)
-        {
-            return_errno_with_message!(Errno::EINVAL, "Total length overflow");
-        }
+        debug_assert!(writer.has_avail());
 
         // TODO: According to the man page
         // at <https://man7.org/linux/man-pages/man2/readv.2.html>,
@@ -143,9 +126,7 @@ fn do_sys_readv(
     let user_space = ctx.user_space();
     let mut writer_array = VmWriterArray::from_user_io_vecs(&user_space, io_vec_ptr, io_vec_count)?;
     for writer in writer_array.writers_mut() {
-        if !writer.has_avail() {
-            continue;
-        }
+        debug_assert!(writer.has_avail());
 
         // TODO: According to the man page
         // at <https://man7.org/linux/man-pages/man2/readv.2.html>,

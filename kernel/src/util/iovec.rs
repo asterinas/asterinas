@@ -53,6 +53,25 @@ impl IoVec {
     }
 }
 
+/// The maximum number of buffers in the I/O vector.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.16/source/include/uapi/linux/uio.h#L46>.
+pub(super) const MAX_IO_VECTOR_LENGTH: usize = 1024;
+/// The maximum bytes of all buffers in the I/O vector.
+///
+/// According to man pages, the kernel should fail with [`Errno::EINVAL`] if the number of bytes in
+/// the I/O vector exceeds this threshold. See
+/// <https://man7.org/linux/man-pages/man2/writev.2.html>.
+///
+/// However, the actual Linux behavior is to truncate the buffer and ignore the remaining buffer
+/// space. See <https://elixir.bootlin.com/linux/v6.12.6/source/lib/iov_iter.c#L1463>.
+///
+/// Typical 64-bit architectures do not have 64-bit virtual address space, and the value of
+/// [`MAX_IO_VECTOR_LENGTH`] is relatively small. Therefore, userspace may not be able to supply a
+/// valid I/O vector containing so many bytes. Nevertheless, we should still check against this to
+/// prevent overflows in the future, e.g., when the virtual address space becomes larger.
+const MAX_TOTAL_IOV_BYTES: usize = isize::MAX as usize;
+
 /// The util function for create [`VmReader`]/[`VmWriter`]s.
 fn copy_iovs_and_convert<'a, T: 'a>(
     user_space: &'a CurrentUserSpace<'a>,
@@ -60,17 +79,30 @@ fn copy_iovs_and_convert<'a, T: 'a>(
     count: usize,
     convert_iovec: impl Fn(&IoVec, &'a VmSpace) -> Result<T>,
 ) -> Result<Box<[T]>> {
+    if count > MAX_IO_VECTOR_LENGTH {
+        return_errno_with_message!(Errno::EINVAL, "the I/O vector contains too many buffers");
+    }
+
     let vm_space = user_space.root_vmar().vm_space();
 
     let mut v = Vec::with_capacity(count);
+    let mut max_len = MAX_TOTAL_IOV_BYTES;
+
     for idx in 0..count {
-        let iov = {
+        let mut iov = {
             let addr = start_addr + idx * core::mem::size_of::<UserIoVec>();
             let uiov: UserIoVec = vm_space
                 .reader(addr, core::mem::size_of::<UserIoVec>())?
                 .read_val()?;
             IoVec::try_from(uiov)?
         };
+
+        // Truncate the buffer if the number of bytes exceeds `MAX_TOTAL_IOV_BYTES`.
+        // See comments above the `MAX_TOTAL_IOV_BYTES` constant for more details.
+        if iov.len > max_len {
+            iov.len = max_len;
+        }
+        max_len -= iov.len;
 
         if iov.is_empty() {
             continue;
@@ -94,7 +126,10 @@ pub struct VmReaderArray<'a>(Box<[VmReader<'a>]>);
 pub struct VmWriterArray<'a>(Box<[VmWriter<'a>]>);
 
 impl<'a> VmReaderArray<'a> {
-    /// Creates a new `VmReaderArray` from user-provided io vec buffer.
+    /// Creates a new `VmReaderArray` from user-provided I/O vector buffers.
+    ///
+    /// This ensures that empty buffers are filtered out, meaning that all of the returned readers
+    /// should be non-empty.
     pub fn from_user_io_vecs(
         user_space: &'a CurrentUserSpace<'a>,
         start_addr: Vaddr,
@@ -117,7 +152,10 @@ impl<'a> VmReaderArray<'a> {
 }
 
 impl<'a> VmWriterArray<'a> {
-    /// Creates a new `VmWriterArray` from user-provided io vec buffer.
+    /// Creates a new `VmWriterArray` from user-provided I/O vector buffers.
+    ///
+    /// This ensures that empty buffers are filtered out, meaning that all of the returned writers
+    /// should be non-empty.
     pub fn from_user_io_vecs(
         user_space: &'a CurrentUserSpace<'a>,
         start_addr: Vaddr,
