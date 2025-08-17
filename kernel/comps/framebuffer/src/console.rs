@@ -5,7 +5,6 @@ use core::ops::Deref;
 
 use aster_console::{AnyConsoleDevice, BitmapFont, ConsoleCallback, ConsoleSetFontError};
 use aster_i8042_controller::InputKey;
-use font8x8::UnicodeFonts;
 use ostd::{
     mm::VmReader,
     sync::{LocalIrqDisabled, SpinLock},
@@ -60,6 +59,8 @@ impl AnyConsoleDevice for FramebufferConsole {
 
     fn set_font(&self, font: BitmapFont) -> Result<(), ConsoleSetFontError> {
         self.inner.lock().0.set_font(font)
+    }
+
     fn register_callback(&self, callback: &'static ConsoleCallback) {
         self.callbacks.lock().push(callback);
     }
@@ -90,12 +91,6 @@ impl FramebufferConsole {
 impl core::fmt::Debug for FramebufferConsole {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("FramebufferConsole").finish_non_exhaustive()
-    }
-}
-
-impl core::fmt::Debug for FramebufferConsole {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("FramebufferConsole").finish()
     }
 }
 

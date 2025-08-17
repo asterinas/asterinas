@@ -4,11 +4,11 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 use ostd::{
-    arch::{device::io_port::ReadWriteAccess},
+    arch::{device::io_port::ReadWriteAccess, trap::TrapFrame},
     io::IoPort,
     sync::SpinLock,
-    trap::{IrqLine, TrapFrame},
     sync::Mutex,
+    trap::irq::IrqLine,
 };
 use spin::Once;
 use alloc::sync::Arc;
