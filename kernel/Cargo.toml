@@ -19,7 +19,6 @@ aster-time = { path = "comps/time" }
 aster-virtio = { path = "comps/virtio" }
 aster-rights = { path = "libs/aster-rights" }
 aster-systree = { path = "comps/systree" }
-aster-keyboard = { path = "comps/keyboard" }
 component = { path = "libs/comp-sys/component" }
 controlled = { path = "libs/comp-sys/controlled" }
 osdk-frame-allocator = { path = "../osdk/deps/frame-allocator" }
