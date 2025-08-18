@@ -8,7 +8,7 @@ mod test;
 use alloc::collections::BTreeSet;
 
 pub use dma_coherent::DmaCoherent;
-pub use dma_stream::{DmaDirection, DmaStream, DmaStreamSlice};
+pub use dma_stream::{DmaDirection, DmaStream};
 use spin::Once;
 
 use super::{Daddr, Paddr};

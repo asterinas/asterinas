@@ -25,7 +25,7 @@ mod test;
 use core::{fmt::Debug, ops::Range};
 
 pub use self::{
-    dma::{DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice},
+    dma::{DmaCoherent, DmaDirection, DmaStream},
     frame::{
         allocator::FrameAllocOptions,
         segment::{Segment, USegment},
