@@ -2,19 +2,21 @@
 
 use crate::{
     fs::{
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::{
+            pid::util::PidOrTid,
+            template::{FileOps, ProcFileBuilder},
+        },
         utils::Inode,
     },
     prelude::*,
-    Process,
 };
 
-/// Represents the inode at `/proc/[pid]/comm`.
-pub struct CommFileOps(Arc<Process>);
+/// Represents the inode at `/proc/[pid]/comm` or `/proc/[pid]/task/[tid]/comm`.
+pub struct CommFileOps(PidOrTid);
 
 impl CommFileOps {
-    pub fn new_inode(process_ref: Arc<Process>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        ProcFileBuilder::new(Self(process_ref))
+    pub fn new_inode(pid_or_tid: PidOrTid, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        ProcFileBuilder::new(Self(pid_or_tid))
             .parent(parent)
             .build()
             .unwrap()
@@ -24,7 +26,7 @@ impl CommFileOps {
 impl FileOps for CommFileOps {
     fn data(&self) -> Result<Vec<u8>> {
         let mut comm_output = {
-            let exe_path = self.0.executable_path();
+            let exe_path = self.0.process().executable_path();
             let last_component = exe_path.rsplit('/').next().unwrap_or(&exe_path);
             let mut comm = last_component.as_bytes().to_vec();
             comm.push(b'\0');
