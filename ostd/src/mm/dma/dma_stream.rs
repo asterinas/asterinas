@@ -5,7 +5,6 @@
     allow(unfulfilled_lint_expectations)
 )]
 
-use alloc::sync::Arc;
 use core::ops::Range;
 
 use super::{check_and_insert_dma_mapping, remove_dma_mapping, DmaError};
@@ -19,18 +18,12 @@ use crate::{
     },
 };
 
-/// A streaming DMA mapping. Users must synchronize data
-/// before reading or after writing to ensure consistency.
+/// A streaming DMA mapping.
 ///
-/// The mapping is automatically destroyed when this object
-/// is dropped.
-#[derive(Debug, Clone)]
-pub struct DmaStream {
-    inner: Arc<DmaStreamInner>,
-}
-
+/// Users must synchronize data before reading or after writing to ensure
+/// consistency.
 #[derive(Debug)]
-struct DmaStreamInner {
+pub struct DmaStream {
     segment: USegment,
     start_daddr: Daddr,
     /// TODO: remove this field when on x86.
@@ -97,12 +90,10 @@ impl DmaStream {
         };
 
         Ok(Self {
-            inner: Arc::new(DmaStreamInner {
-                segment,
-                start_daddr,
-                is_cache_coherent,
-                direction,
-            }),
+            segment,
+            start_daddr,
+            is_cache_coherent,
+            direction,
         })
     }
 
@@ -113,12 +104,12 @@ impl DmaStream {
     /// there is a chance that the device is updating
     /// the memory. Do this at your own risk.
     pub fn segment(&self) -> &USegment {
-        &self.inner.segment
+        &self.segment
     }
 
     /// Returns the DMA direction.
     pub fn direction(&self) -> DmaDirection {
-        self.inner.direction
+        self.direction
     }
 
     /// Synchronizes the streaming DMA mapping with the device.
@@ -142,10 +133,10 @@ impl DmaStream {
                 if _byte_range.end > self.size() {
                     return Err(Error::InvalidArgs);
                 }
-                if self.inner.is_cache_coherent {
+                if self.is_cache_coherent {
                     return Ok(());
                 }
-                let _start_va = crate::mm::paddr_to_vaddr(self.inner.segment.paddr()) as *const u8;
+                let _start_va = crate::mm::paddr_to_vaddr(self.segment.paddr()) as *const u8;
                 // TODO: Query the CPU for the cache line size via CPUID, we use 64 bytes as the cache line size here.
                 for _i in _byte_range.step_by(64) {
                     // TODO: Call the cache line flush command in the corresponding architecture.
@@ -159,11 +150,11 @@ impl DmaStream {
 
 impl HasDaddr for DmaStream {
     fn daddr(&self) -> Daddr {
-        self.inner.start_daddr
+        self.start_daddr
     }
 }
 
-impl Drop for DmaStreamInner {
+impl Drop for DmaStream {
     fn drop(&mut self) {
         let paddr = self.segment.paddr();
         let frame_count = self.segment.size() / PAGE_SIZE;
@@ -201,28 +192,28 @@ impl HasVmReaderWriter for DmaStream {
     type Types = VmReaderWriterResult;
 
     fn reader(&self) -> Result<VmReader<'_, Infallible>, Error> {
-        if self.inner.direction == DmaDirection::ToDevice {
+        if self.direction == DmaDirection::ToDevice {
             return Err(Error::AccessDenied);
         }
-        Ok(self.inner.segment.reader())
+        Ok(self.segment.reader())
     }
 
     fn writer(&self) -> Result<VmWriter<'_, Infallible>, Error> {
-        if self.inner.direction == DmaDirection::FromDevice {
+        if self.direction == DmaDirection::FromDevice {
             return Err(Error::AccessDenied);
         }
-        Ok(self.inner.segment.writer())
+        Ok(self.segment.writer())
     }
 }
 
 impl HasPaddr for DmaStream {
     fn paddr(&self) -> Paddr {
-        self.inner.segment.paddr()
+        self.segment.paddr()
     }
 }
 
 impl HasSize for DmaStream {
     fn size(&self) -> usize {
-        self.inner.segment.size()
+        self.segment.size()
     }
 }

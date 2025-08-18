@@ -109,8 +109,8 @@ struct DeviceInner {
     features: VirtioBlockFeature,
     queue: SpinLock<VirtQueue>,
     transport: SpinLock<Box<dyn VirtioTransport>>,
-    block_requests: DmaStream,
-    block_responses: DmaStream,
+    block_requests: Arc<DmaStream>,
+    block_responses: Arc<DmaStream>,
     id_allocator: SpinLock<IdAlloc>,
     submitted_requests: SpinLock<BTreeMap<u16, SubmittedRequest>>,
 }
@@ -143,12 +143,12 @@ impl DeviceInner {
             .expect("create virtqueue failed");
         let block_requests = {
             let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-            DmaStream::map(segment.into(), DmaDirection::Bidirectional, false).unwrap()
+            Arc::new(DmaStream::map(segment.into(), DmaDirection::Bidirectional, false).unwrap())
         };
         assert!(Self::QUEUE_SIZE as usize * REQ_SIZE <= block_requests.size());
         let block_responses = {
             let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-            DmaStream::map(segment.into(), DmaDirection::Bidirectional, false).unwrap()
+            Arc::new(DmaStream::map(segment.into(), DmaDirection::Bidirectional, false).unwrap())
         };
         assert!(Self::QUEUE_SIZE as usize * RESP_SIZE <= block_responses.size());
 
@@ -268,7 +268,7 @@ impl DeviceInner {
                 .zeroed(false)
                 .alloc_segment(1)
                 .unwrap();
-            DmaStream::map(segment.into(), DmaDirection::FromDevice, false).unwrap()
+            Arc::new(DmaStream::map(segment.into(), DmaDirection::FromDevice, false).unwrap())
         };
         let device_id_slice = Slice::new(&device_id_stream, 0..MAX_ID_LENGTH);
         let outputs = vec![&device_id_slice, &resp_slice];

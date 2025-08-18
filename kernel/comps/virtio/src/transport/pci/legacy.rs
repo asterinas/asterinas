@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::boxed::Box;
+use alloc::{boxed::Box, sync::Arc};
 use core::fmt::Debug;
 
 use aster_util::safe_ptr::SafePtr;
@@ -163,9 +163,9 @@ impl VirtioTransport for VirtioPciLegacyTransport {
         &mut self,
         idx: u16,
         _queue_size: u16,
-        descriptor_ptr: &SafePtr<Descriptor, DmaCoherent>,
-        _avail_ring_ptr: &SafePtr<AvailRing, DmaCoherent>,
-        _used_ring_ptr: &SafePtr<UsedRing, DmaCoherent>,
+        descriptor_ptr: &SafePtr<Descriptor, Arc<DmaCoherent>>,
+        _avail_ring_ptr: &SafePtr<AvailRing, Arc<DmaCoherent>>,
+        _used_ring_ptr: &SafePtr<UsedRing, Arc<DmaCoherent>>,
     ) -> Result<(), VirtioTransportError> {
         // When using the legacy interface, there was no mechanism to negotiate
         // the queue size! The transitional driver MUST retrieve the `Queue Size`

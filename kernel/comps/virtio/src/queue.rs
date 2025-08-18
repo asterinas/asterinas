@@ -2,7 +2,7 @@
 
 //! Virtqueue
 
-use alloc::vec::Vec;
+use alloc::{sync::Arc, vec::Vec};
 use core::{
     mem::{offset_of, size_of},
     sync::atomic::{fence, Ordering},
@@ -37,11 +37,11 @@ pub enum QueueError {
 #[derive(Debug)]
 pub struct VirtQueue {
     /// Descriptor table
-    descs: Vec<SafePtr<Descriptor, DmaCoherent>>,
+    descs: Vec<SafePtr<Descriptor, Arc<DmaCoherent>>>,
     /// Available ring
-    avail: SafePtr<AvailRing, DmaCoherent>,
+    avail: SafePtr<AvailRing, Arc<DmaCoherent>>,
     /// Used ring
-    used: SafePtr<UsedRing, DmaCoherent>,
+    used: SafePtr<UsedRing, Arc<DmaCoherent>>,
     /// Notify configuration manager
     notify_config: ConfigManager<u32>,
 
@@ -98,13 +98,13 @@ impl VirtQueue {
 
                 continue_segment.split(seg1_frames * align_size)
             };
-            let desc_frame_ptr: SafePtr<Descriptor, DmaCoherent> =
-                SafePtr::new(DmaCoherent::map(seg1.into(), true).unwrap(), 0);
-            let mut avail_frame_ptr: SafePtr<AvailRing, DmaCoherent> =
+            let desc_frame_ptr: SafePtr<Descriptor, Arc<DmaCoherent>> =
+                SafePtr::new(Arc::new(DmaCoherent::map(seg1.into(), true).unwrap()), 0);
+            let mut avail_frame_ptr: SafePtr<AvailRing, Arc<DmaCoherent>> =
                 desc_frame_ptr.clone().cast();
             avail_frame_ptr.byte_add(desc_size);
-            let used_frame_ptr: SafePtr<UsedRing, DmaCoherent> =
-                SafePtr::new(DmaCoherent::map(seg2.into(), true).unwrap(), 0);
+            let used_frame_ptr: SafePtr<UsedRing, Arc<DmaCoherent>> =
+                SafePtr::new(Arc::new(DmaCoherent::map(seg2.into(), true).unwrap()), 0);
             (desc_frame_ptr, avail_frame_ptr, used_frame_ptr)
         } else {
             if size > 256 {
@@ -112,27 +112,33 @@ impl VirtQueue {
             }
             (
                 SafePtr::new(
-                    DmaCoherent::map(
-                        FrameAllocOptions::new().alloc_segment(1).unwrap().into(),
-                        true,
-                    )
-                    .unwrap(),
+                    Arc::new(
+                        DmaCoherent::map(
+                            FrameAllocOptions::new().alloc_segment(1).unwrap().into(),
+                            true,
+                        )
+                        .unwrap(),
+                    ),
                     0,
                 ),
                 SafePtr::new(
-                    DmaCoherent::map(
-                        FrameAllocOptions::new().alloc_segment(1).unwrap().into(),
-                        true,
-                    )
-                    .unwrap(),
+                    Arc::new(
+                        DmaCoherent::map(
+                            FrameAllocOptions::new().alloc_segment(1).unwrap().into(),
+                            true,
+                        )
+                        .unwrap(),
+                    ),
                     0,
                 ),
                 SafePtr::new(
-                    DmaCoherent::map(
-                        FrameAllocOptions::new().alloc_segment(1).unwrap().into(),
-                        true,
-                    )
-                    .unwrap(),
+                    Arc::new(
+                        DmaCoherent::map(
+                            FrameAllocOptions::new().alloc_segment(1).unwrap().into(),
+                            true,
+                        )
+                        .unwrap(),
+                    ),
                     0,
                 ),
             )
@@ -234,7 +240,7 @@ impl VirtQueue {
         let avail_slot = self.avail_idx & (self.queue_size - 1);
 
         {
-            let ring_ptr: SafePtr<[u16; 64], &DmaCoherent> =
+            let ring_ptr: SafePtr<[u16; 64], &Arc<DmaCoherent>> =
                 field_ptr!(&self.avail, AvailRing, ring);
             let mut ring_slot_ptr = ring_ptr.cast::<u16>();
             ring_slot_ptr.add(avail_slot as usize);
@@ -419,7 +425,7 @@ pub struct Descriptor {
     next: u16,
 }
 
-type DescriptorPtr<'a> = SafePtr<Descriptor, &'a DmaCoherent, TRightSet<TRights![Dup, Write]>>;
+type DescriptorPtr<'a> = SafePtr<Descriptor, &'a Arc<DmaCoherent>, TRightSet<TRights![Dup, Write]>>;
 
 fn set_dma_buf<T: DmaBuf>(desc_ptr: &DescriptorPtr, buf: &T) {
     // TODO: skip the empty dma buffer or just return error?

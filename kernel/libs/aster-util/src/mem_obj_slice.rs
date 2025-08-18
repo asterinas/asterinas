@@ -10,6 +10,7 @@
 //! [`IoMem`]: ostd::io::IoMem
 //! [`DmaStream`]: ostd::mm::dma::DmaStream
 
+use alloc::sync::Arc;
 use core::{borrow::Borrow, fmt::Debug, ops::Range};
 
 use ostd::mm::{
@@ -115,7 +116,8 @@ impl<MemObj: HasSize + HasVmReaderWriter<Types = VmReaderWriterResult>> HasVmRea
 }
 
 // A handy implementation for streaming DMA slice.
-impl<MemObj: HasSize + Borrow<DmaStream>> Slice<MemObj> {
+// TODO: Implement the `sync()` method also for `Slice<DmaStream>`/`Slice<&DmaStream>`.
+impl<MemObj: HasSize + Borrow<Arc<DmaStream>>> Slice<MemObj> {
     /// Synchronizes the slice of streaming DMA mapping with the device.
     ///
     /// The method will call [`DmaStream::sync`] with the offset range of this slice.
