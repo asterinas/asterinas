@@ -1,37 +1,47 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use self::{
-    cmdline::CmdlineFileOps, comm::CommFileOps, exe::ExeSymOps, fd::FdDirOps, stat::StatFileOps,
-    status::StatusFileOps, task::TaskDirOps,
-};
 use super::template::{DirOps, ProcDir, ProcDirBuilder};
 use crate::{
     events::Observer,
     fs::{
         file_table::FdEvents,
+        procfs::pid::{
+            stat::StatFileOps,
+            task::{TaskDirOps, TidDirOps},
+        },
         utils::{DirEntryVecExt, Inode},
     },
     prelude::*,
     process::{posix_thread::AsPosixThread, Process},
 };
 
-mod cmdline;
-mod comm;
-mod exe;
-mod fd;
 mod stat;
-mod status;
 mod task;
 
 /// Represents the inode at `/proc/[pid]`.
-pub struct PidDirOps(Arc<Process>);
+pub struct PidDirOps(
+    // The `/proc/<pid>` directory is a superset of the `/proc/<pid>/task/<tid>` directory.
+    // So we embed `TidDirOps` here so that `PidDirOps` can "inherit" entries and methods
+    // from `TidDirOps`.
+    TidDirOps,
+);
 
 impl PidDirOps {
     pub fn new_inode(process_ref: Arc<Process>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        let main_thread = process_ref.main_thread();
-        let file_table = main_thread.as_posix_thread().unwrap().file_table();
+        let tid_dir_ops = {
+            let thread_ref = process_ref.main_thread();
+            TidDirOps {
+                process_ref,
+                thread_ref,
+            }
+        };
+        let file_table = tid_dir_ops
+            .thread_ref
+            .as_posix_thread()
+            .unwrap()
+            .file_table();
 
-        let pid_inode = ProcDirBuilder::new(Self(process_ref.clone()))
+        let pid_inode = ProcDirBuilder::new(Self(tid_dir_ops.clone()))
             .parent(parent)
             // The pid directories must be volatile, because it is just associated with one process.
             .volatile()
@@ -60,21 +70,24 @@ impl Observer<FdEvents> for ProcDir<PidDirOps> {
 
 impl DirOps for PidDirOps {
     fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
-        let inode = match name {
-            "exe" => ExeSymOps::new_inode(self.0.clone(), this_ptr.clone()),
-            "comm" => CommFileOps::new_inode(self.0.clone(), this_ptr.clone()),
-            "fd" => FdDirOps::new_inode(self.0.clone(), this_ptr.clone()),
-            "cmdline" => CmdlineFileOps::new_inode(self.0.clone(), this_ptr.clone()),
-            "status" => {
-                StatusFileOps::new_inode(self.0.clone(), self.0.main_thread(), this_ptr.clone())
-            }
+        // Look up entries that either exist under `/proc/<pid>`
+        // but not under `/proc/<pid>/task/<tid>`,
+        // or entries whose contents differ between `/proc/<pid>` and `/proc/<pid>/task/<tid>`.
+        match name {
             "stat" => {
-                StatFileOps::new_inode(self.0.clone(), self.0.main_thread(), true, this_ptr.clone())
+                return Ok(StatFileOps::new_inode(
+                    self.0.process_ref.clone(),
+                    self.0.thread_ref.clone(),
+                    true,
+                    this_ptr,
+                ))
             }
-            "task" => TaskDirOps::new_inode(self.0.clone(), this_ptr.clone()),
-            _ => return_errno!(Errno::ENOENT),
-        };
-        Ok(inode)
+            "task" => return Ok(TaskDirOps::new_inode(self.0.process_ref.clone(), this_ptr)),
+            _ => {}
+        }
+
+        // For all other children, the content is the same under both `/proc/<pid>` and `/proc/<pid>/task/<tid>`.
+        self.0.lookup_child(this_ptr, name)
     }
 
     fn populate_children(&self, this_ptr: Weak<dyn Inode>) {
@@ -83,26 +96,25 @@ impl DirOps for PidDirOps {
             this.downcast_ref::<ProcDir<PidDirOps>>().unwrap().this()
         };
         let mut cached_children = this.cached_children().write();
-        cached_children.put_entry_if_not_found("exe", || {
-            ExeSymOps::new_inode(self.0.clone(), this_ptr.clone())
-        });
-        cached_children.put_entry_if_not_found("comm", || {
-            CommFileOps::new_inode(self.0.clone(), this_ptr.clone())
-        });
-        cached_children.put_entry_if_not_found("fd", || {
-            FdDirOps::new_inode(self.0.clone(), this_ptr.clone())
-        });
-        cached_children.put_entry_if_not_found("cmdline", || {
-            CmdlineFileOps::new_inode(self.0.clone(), this_ptr.clone())
-        });
-        cached_children.put_entry_if_not_found("status", || {
-            StatusFileOps::new_inode(self.0.clone(), self.0.main_thread(), this_ptr.clone())
-        });
+
+        // Populate entries that either exist under `/proc/<pid>`
+        // but not under `/proc/<pid>/task/<tid>`,
+        // or whose contents differ between the two paths.
         cached_children.put_entry_if_not_found("stat", || {
-            StatFileOps::new_inode(self.0.clone(), self.0.main_thread(), true, this_ptr.clone())
+            StatFileOps::new_inode(
+                self.0.process_ref.clone(),
+                self.0.thread_ref.clone(),
+                true,
+                this_ptr.clone(),
+            )
         });
         cached_children.put_entry_if_not_found("task", || {
-            TaskDirOps::new_inode(self.0.clone(), this_ptr.clone())
+            TaskDirOps::new_inode(self.0.process_ref.clone(), this_ptr.clone())
         });
+
+        // Populate the remaining children that are identical
+        // under both `/proc/<pid>` and `/proc/<pid>/task/<tid>`.
+        self.0
+            .populate_children_inner(&mut cached_children, this_ptr);
     }
 }

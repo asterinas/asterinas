@@ -6,10 +6,10 @@ use crate::{
         utils::Inode,
     },
     prelude::*,
-    Process,
+    process::Process,
 };
 
-/// Represents the inode at `/proc/[pid]/cmdline`.
+/// Represents the inode at `/proc/[pid]/task/[tid]/cmdline` (and also `/proc/[pid]/cmdline`).
 pub struct CmdlineFileOps(Arc<Process>);
 
 impl CmdlineFileOps {

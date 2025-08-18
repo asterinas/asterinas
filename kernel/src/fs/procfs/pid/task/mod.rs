@@ -2,16 +2,33 @@
 
 use alloc::format;
 
+use aster_util::slot_vec::SlotVec;
+
 use super::*;
 use crate::{
     fs::{
-        procfs::template::{DirOps, ProcDir, ProcDirBuilder},
+        procfs::{
+            pid::{
+                stat::StatFileOps,
+                task::{
+                    cmdline::CmdlineFileOps, comm::CommFileOps, exe::ExeSymOps, fd::FdDirOps,
+                    status::StatusFileOps,
+                },
+            },
+            template::{DirOps, ProcDir, ProcDirBuilder},
+        },
         utils::{DirEntryVecExt, Inode},
     },
     process::posix_thread::AsPosixThread,
     thread::{AsThread, Thread},
     Process,
 };
+
+mod cmdline;
+mod comm;
+mod exe;
+mod fd;
+mod status;
 
 /// Represents the inode at `/proc/[pid]/task`.
 pub struct TaskDirOps(Arc<Process>);
@@ -26,9 +43,10 @@ impl TaskDirOps {
 }
 
 /// Represents the inode at `/proc/[pid]/task/[tid]`.
-struct TidDirOps {
-    process_ref: Arc<Process>,
-    thread_ref: Arc<Thread>,
+#[derive(Clone)]
+pub(super) struct TidDirOps {
+    pub(super) process_ref: Arc<Process>,
+    pub(super) thread_ref: Arc<Thread>,
 }
 
 impl TidDirOps {
@@ -50,18 +68,20 @@ impl TidDirOps {
 impl DirOps for TidDirOps {
     fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
         let inode = match name {
-            "fd" => FdDirOps::new_inode(self.process_ref.clone(), this_ptr.clone()),
-            "exe" => ExeSymOps::new_inode(self.process_ref.clone(), this_ptr.clone()),
+            "cmdline" => CmdlineFileOps::new_inode(self.process_ref.clone(), this_ptr),
+            "comm" => CommFileOps::new_inode(self.process_ref.clone(), this_ptr),
+            "exe" => ExeSymOps::new_inode(self.process_ref.clone(), this_ptr),
+            "fd" => FdDirOps::new_inode(self.thread_ref.clone(), this_ptr),
             "stat" => StatFileOps::new_inode(
                 self.process_ref.clone(),
                 self.thread_ref.clone(),
                 false,
-                this_ptr.clone(),
+                this_ptr,
             ),
             "status" => StatusFileOps::new_inode(
                 self.process_ref.clone(),
                 self.thread_ref.clone(),
-                this_ptr.clone(),
+                this_ptr,
             ),
             _ => return_errno!(Errno::ENOENT),
         };
@@ -74,11 +94,27 @@ impl DirOps for TidDirOps {
             this.downcast_ref::<ProcDir<TidDirOps>>().unwrap().this()
         };
         let mut cached_children = this.cached_children().write();
-        cached_children.put_entry_if_not_found("fd", || {
-            FdDirOps::new_inode(self.process_ref.clone(), this_ptr.clone())
+        self.populate_children_inner(&mut cached_children, this_ptr);
+    }
+}
+
+impl TidDirOps {
+    pub(super) fn populate_children_inner(
+        &self,
+        cached_children: &mut SlotVec<(String, Arc<dyn Inode>)>,
+        this_ptr: Weak<dyn Inode>,
+    ) {
+        cached_children.put_entry_if_not_found("cmdline", || {
+            CmdlineFileOps::new_inode(self.process_ref.clone(), this_ptr.clone())
+        });
+        cached_children.put_entry_if_not_found("comm", || {
+            CommFileOps::new_inode(self.process_ref.clone(), this_ptr.clone())
         });
         cached_children.put_entry_if_not_found("exe", || {
             ExeSymOps::new_inode(self.process_ref.clone(), this_ptr.clone())
+        });
+        cached_children.put_entry_if_not_found("fd", || {
+            FdDirOps::new_inode(self.thread_ref.clone(), this_ptr.clone())
         });
         cached_children.put_entry_if_not_found("stat", || {
             StatFileOps::new_inode(
