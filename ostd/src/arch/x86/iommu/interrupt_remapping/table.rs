@@ -8,7 +8,7 @@ use int_to_c_enum::TryFromInt;
 
 use super::IrtEntryHandle;
 use crate::{
-    mm::{io_util::HasVmReaderWriter, FrameAllocOptions, Segment, PAGE_SIZE},
+    mm::{io_util::HasVmReaderWriter, FrameAllocOptions, HasPaddr, Segment, PAGE_SIZE},
     sync::{LocalIrqDisabled, SpinLock},
 };
 
@@ -89,7 +89,7 @@ impl IntRemappingTable {
 
     /// Encodes the value written into the Interrupt Remapping Table Register.
     pub(crate) fn encode(&self) -> u64 {
-        let mut encoded = self.segment.start_paddr() as u64;
+        let mut encoded = self.segment.paddr() as u64;
 
         // Bit Range 11 - Extended Interrupt Mode Enable (EIME)
         encoded |= match self.extended_interrupt_mode {

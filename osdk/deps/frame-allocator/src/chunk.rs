@@ -2,7 +2,7 @@
 
 use ostd::{
     impl_frame_meta_for,
-    mm::{frame::linked_list::Link, Paddr, UniqueFrame, PAGE_SIZE},
+    mm::{frame::linked_list::Link, HasPaddr, Paddr, UniqueFrame, PAGE_SIZE},
 };
 
 /// The order of a buddy chunk.
@@ -187,7 +187,7 @@ impl FreeChunk {
 
     /// Returns the address of the buddy chunk.
     pub(crate) fn addr(&self) -> Paddr {
-        self.head.start_paddr()
+        self.head.paddr()
     }
 
     /// Gets the address of the buddy of this chunk.
@@ -210,7 +210,7 @@ impl FreeChunk {
         let right_child_addr = addr ^ size_of_order(new_order);
 
         let mut unique_head = self.into_unique_head();
-        debug_assert_eq!(unique_head.start_paddr(), left_child_addr);
+        debug_assert_eq!(unique_head.paddr(), left_child_addr);
         unique_head.meta_mut().order = new_order;
 
         let left_child = FreeChunk { head: unique_head };
@@ -378,7 +378,7 @@ mod test {
         let order = 3;
         let size = size_of_order(order);
         let region = MockMemoryRegion::alloc(size);
-        let addr1 = region.start_paddr();
+        let addr1 = region.paddr();
         let addr2 = addr1 + size_of_order(order - 2);
         let addr3 = addr1 + size_of_order(order - 2) * 2;
 

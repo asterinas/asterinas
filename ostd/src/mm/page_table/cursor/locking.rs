@@ -14,7 +14,7 @@ use crate::{
             load_pte, page_size, pte_index, ChildRef, PageTable, PageTableConfig,
             PageTableEntryTrait, PageTableGuard, PageTableNodeRef, PagingConstsTrait, PagingLevel,
         },
-        Vaddr,
+        HasPaddr, Vaddr,
     },
     task::atomic_mode::InAtomicMode,
 };
@@ -94,7 +94,7 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig>(
     va: &Range<Vaddr>,
 ) -> Option<PageTableGuard<'rcu, C>> {
     let mut cur_node_guard: Option<PageTableGuard<C>> = None;
-    let mut cur_pt_addr = pt.root.start_paddr();
+    let mut cur_pt_addr = pt.root.paddr();
     for cur_level in (1..=C::NR_LEVELS).rev() {
         let start_idx = pte_index::<C>(va.start, cur_level);
         let level_too_high = {
@@ -136,13 +136,13 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig>(
         let mut cur_entry = pt_guard.entry(start_idx);
         if cur_entry.is_none() {
             let allocated_guard = cur_entry.alloc_if_none(guard).unwrap();
-            cur_pt_addr = allocated_guard.start_paddr();
+            cur_pt_addr = allocated_guard.paddr();
             cur_node_guard = Some(allocated_guard);
         } else if cur_entry.is_node() {
             let ChildRef::PageTable(pt) = cur_entry.to_ref() else {
                 unreachable!();
             };
-            cur_pt_addr = pt.start_paddr();
+            cur_pt_addr = pt.paddr();
             cur_node_guard = None;
         } else {
             break;

@@ -9,7 +9,7 @@ use bitvec::prelude::{bitvec, BitVec};
 use super::{AnyStorage, CpuLocal};
 use crate::{
     cpu::{all_cpus, num_cpus, CpuId, PinCurrentCpu},
-    mm::{paddr_to_vaddr, FrameAllocOptions, Segment, Vaddr, PAGE_SIZE},
+    mm::{paddr_to_vaddr, FrameAllocOptions, HasPaddr, Segment, Vaddr, PAGE_SIZE},
     trap::irq::DisabledLocalIrqGuard,
     Result,
 };
@@ -145,7 +145,7 @@ impl<const ITEM_SIZE: usize> DynCpuLocalChunk<ITEM_SIZE> {
 
     /// Returns a pointer to the local chunk owned by the BSP.
     fn start_vaddr(&self) -> Vaddr {
-        paddr_to_vaddr(self.segment.start_paddr())
+        paddr_to_vaddr(self.segment.paddr())
     }
 
     /// Allocates a CPU-local object from the chunk, and

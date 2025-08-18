@@ -6,7 +6,7 @@ use aster_softirq::BottomHalfDisabled;
 use ostd::{
     mm::{
         io_util::HasVmReaderWriter, Daddr, DmaDirection, DmaStream, FrameAllocOptions, HasDaddr,
-        Infallible, VmReader, VmWriter, PAGE_SIZE,
+        HasSize, Infallible, VmReader, VmWriter, PAGE_SIZE,
     },
     sync::SpinLock,
     Pod,
@@ -65,8 +65,10 @@ impl TxBuffer {
     fn sync(&self) {
         self.dma_stream.sync(0..self.nbytes).unwrap();
     }
+}
 
-    pub fn nbytes(&self) -> usize {
+impl HasSize for TxBuffer {
+    fn size(&self) -> usize {
         self.nbytes
     }
 }
@@ -126,8 +128,10 @@ impl RxBuffer {
         reader.limit(self.header_len + self.packet_len);
         reader
     }
+}
 
-    pub const fn buf_len(&self) -> usize {
+impl HasSize for RxBuffer {
+    fn size(&self) -> usize {
         self.segment.size()
     }
 }

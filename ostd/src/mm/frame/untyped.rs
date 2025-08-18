@@ -13,7 +13,7 @@ use super::{meta::AnyFrameMeta, Frame, Segment};
 use crate::mm::{
     io::{VmReader, VmWriter},
     io_util::{HasVmReaderWriter, VmReaderWriterIdentity},
-    paddr_to_vaddr, Infallible,
+    paddr_to_vaddr, HasPaddr, HasSize, Infallible,
 };
 
 /// The metadata of untyped frame.
@@ -72,7 +72,7 @@ macro_rules! impl_untyped_for {
             type Types = VmReaderWriterIdentity;
 
             fn reader(&self) -> VmReader<'_, Infallible> {
-                let ptr = paddr_to_vaddr(self.start_paddr()) as *const u8;
+                let ptr = paddr_to_vaddr(self.paddr()) as *const u8;
                 // SAFETY:
                 // - The memory range points to untyped memory.
                 // - The frame/segment is alive during the lifetime `'_`.
@@ -81,7 +81,7 @@ macro_rules! impl_untyped_for {
             }
 
             fn writer(&self) -> VmWriter<'_, Infallible> {
-                let ptr = paddr_to_vaddr(self.start_paddr()) as *mut u8;
+                let ptr = paddr_to_vaddr(self.paddr()) as *mut u8;
                 // SAFETY:
                 // - The memory range points to untyped memory.
                 // - The frame/segment is alive during the lifetime `'_`.
