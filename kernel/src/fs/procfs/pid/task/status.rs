@@ -8,13 +8,12 @@ use crate::{
         utils::Inode,
     },
     prelude::*,
-    process::posix_thread::AsPosixThread,
+    process::{posix_thread::AsPosixThread, Process},
     thread::Thread,
     vm::vmar::RssType,
-    Process,
 };
 
-/// Represents the inode at either `/proc/[pid]/status` or `/proc/[pid]/task/[tid]/status`.
+/// Represents the inode at `/proc/[pid]/task/[tid]/status` (and also `/proc/[pid]/status`).
 /// See https://github.com/torvalds/linux/blob/ce1c54fdff7c4556b08f5b875a331d8952e8b6b7/fs/proc/array.c#L148
 /// FIXME: Some fields are not implemented yet.
 ///

@@ -6,10 +6,10 @@ use crate::{
         utils::Inode,
     },
     prelude::*,
-    Process,
+    process::Process,
 };
 
-/// Represents the inode at `/proc/[pid]/comm`.
+/// Represents the inode at `/proc/[pid]/task/[tid]/comm` (and also `/proc/[pid]/comm`).
 pub struct CommFileOps(Arc<Process>);
 
 impl CommFileOps {

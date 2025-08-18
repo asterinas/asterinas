@@ -12,18 +12,18 @@ use crate::{
     },
     prelude::*,
     process::posix_thread::AsPosixThread,
-    Process,
+    thread::Thread,
 };
 
-/// Represents the inode at `/proc/[pid]/fd`.
-pub struct FdDirOps(Arc<Process>);
+/// Represents the inode at `/proc/[pid]/task/[tid]/fd` (and also `/proc/[pid]/fd`).
+pub struct FdDirOps(Arc<Thread>);
 
 impl FdDirOps {
-    pub fn new_inode(process_ref: Arc<Process>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        let main_thread = process_ref.main_thread();
-        let file_table = main_thread.as_posix_thread().unwrap().file_table();
+    pub fn new_inode(thread_ref: Arc<Thread>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        let posix_thread = thread_ref.as_posix_thread().unwrap();
+        let file_table = posix_thread.file_table();
 
-        let fd_inode = ProcDirBuilder::new(Self(process_ref.clone()))
+        let fd_inode = ProcDirBuilder::new(Self(thread_ref.clone()))
             .parent(parent)
             .build()
             .unwrap();
@@ -54,8 +54,8 @@ impl Observer<FdEvents> for ProcDir<FdDirOps> {
 
 impl DirOps for FdDirOps {
     fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
-        let main_thread = self.0.main_thread();
-        let file_table = main_thread.as_posix_thread().unwrap().file_table().lock();
+        let posix_thread = self.0.as_posix_thread().unwrap();
+        let file_table = posix_thread.file_table().lock();
         let file_table = file_table
             .as_ref()
             .ok_or_else(|| Error::new(Errno::ENOENT))?;
@@ -75,8 +75,8 @@ impl DirOps for FdDirOps {
     }
 
     fn populate_children(&self, this_ptr: Weak<dyn Inode>) {
-        let main_thread = self.0.main_thread();
-        let file_table = main_thread.as_posix_thread().unwrap().file_table().lock();
+        let posix_thread = self.0.as_posix_thread().unwrap();
+        let file_table = posix_thread.file_table().lock();
         let Some(file_table) = file_table.as_ref() else {
             return;
         };

@@ -8,10 +8,9 @@ use crate::{
         utils::Inode,
     },
     prelude::*,
-    process::posix_thread::AsPosixThread,
+    process::{posix_thread::AsPosixThread, Process},
     thread::Thread,
     vm::vmar::RssType,
-    Process,
 };
 
 /// Represents the inode at either `/proc/[pid]/stat` or `/proc/[pid]/task/[tid]/stat`.
