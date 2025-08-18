@@ -781,7 +781,7 @@ impl<'a> VmWriter<'a, Infallible> {
     }
 
     // Currently, there are no volatile atomic operations in `core::intrinsics`. Therefore, we do
-    // not provide an infallible implementation of `VmWriter::atomic_update`.
+    // not provide an infallible implementation of `VmWriter::atomic_compare_exchange`.
 
     /// Writes `len` zeros to the target memory.
     ///
@@ -859,27 +859,30 @@ impl VmWriter<'_, Fallible> {
         Ok(())
     }
 
-    /// Atomically updates a `PodAtomic` value.
+    /// Atomically compares and exchanges a `PodAtomic` value.
     ///
-    /// This is implemented by performing an atomic load, applying the operation, and performing an
-    /// atomic compare-and-exchange. So this cannot prevent the [ABA
-    /// problem](https://en.wikipedia.org/wiki/ABA_problem).
+    /// This method compares `old_val` with the value pointed by `self` and, if they are equal,
+    /// updates it with `new_val`.
     ///
-    /// The caller is required to provide a reader which points to the exactly same memory location
+    /// The value that was previously in memory will be returned, along with a boolean denoting
+    /// whether the compare-and-exchange succeeds. The caller usually wants to retry if this
+    /// flag is false, passing the most recent value that was returned by this method.
+    ///
+    /// The caller is required to provide a reader which points to the exact same memory location
     /// to ensure that reading from the memory is allowed.
     ///
-    /// On success, the previous value will be returned with a boolean value denoting whether the
-    /// compare-and-exchange succeeds. The caller usually wants to retry if the flag is false.
-    ///
-    /// Regardless of whether it is successful, the cursor of the reader and writer will not move.
+    /// Regardless of whether it is successful, the cursors of the reader and writer will not move.
     ///
     /// This method only guarantees the atomicity of the specific operation. There are no
     /// synchronization constraints on other memory accesses. This aligns with the [Relaxed
     /// ordering](https://en.cppreference.com/w/cpp/atomic/memory_order.html#Relaxed_ordering)
     /// specified in the C++11 memory model.
     ///
+    /// Since the operation does not involve memory locks, it can't prevent the [ABA
+    /// problem](https://en.wikipedia.org/wiki/ABA_problem).
+    ///
     /// This method will fail with errors if:
-    ///  1. the remaining (avail) space of the reader (writer) is less than
+    ///  1. the remaining space of the reader or the available space of the writer are less than
     ///     `core::mem::size_of::<T>()` bytes, or
     ///  2. the memory operation fails due to an unresolvable page fault.
     ///
@@ -888,10 +891,11 @@ impl VmWriter<'_, Fallible> {
     /// This method will panic if:
     ///  1. the reader and the writer does not point to the same memory location, or
     ///  2. the memory location is not aligned on a `core::mem::align_of::<T>()`-byte boundary.
-    pub fn atomic_update<T>(
-        &mut self,
+    pub fn atomic_compare_exchange<T>(
+        &self,
         reader: &VmReader,
-        op: impl FnOnce(T) -> T,
+        old_val: T,
+        new_val: T,
     ) -> Result<(T, bool)>
     where
         T: PodAtomic + Eq,
@@ -906,18 +910,11 @@ impl VmWriter<'_, Fallible> {
         assert!(cursor.is_aligned());
 
         // SAFETY:
-        // 1. The cursor is either valid for reading or in user space for `size_of::<T>()` bytes.
-        // 2. The cursor is aligned on a `align_of::<T>()`-byte boundary.
-        let old_val = unsafe { T::atomic_load_fallible(cursor)? };
-
-        let new_val = op(old_val);
-
-        // SAFETY:
         // 1. The cursor is either valid for reading and writing or in user space for 4 bytes.
         // 2. The cursor is aligned on a 4-byte boundary.
         let cur_val = unsafe { T::atomic_cmpxchg_fallible(cursor, old_val, new_val)? };
 
-        Ok((old_val, old_val == cur_val))
+        Ok((cur_val, old_val == cur_val))
     }
 
     /// Writes `len` zeros to the target memory.

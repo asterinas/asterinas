@@ -174,7 +174,7 @@ impl<'a> CurrentUserSpace<'a> {
 
     /// Atomically updates a `PodAtomic` value with [`Ordering::Relaxed`] semantics.
     ///
-    /// This method internally uses an atomic compare-and-exchange operation.If the value changes
+    /// This method internally uses [`atomic_compare_exchange`]. If the value changes
     /// concurrently, this method will retry so the operation may be performed multiple times.
     ///
     /// # Panics
@@ -183,18 +183,20 @@ impl<'a> CurrentUserSpace<'a> {
     /// boundary.
     ///
     /// [`Ordering::Relaxed`]: core::sync::atomic::Ordering::Relaxed
+    /// [`atomic_compare_exchange`]: VmWriter::atomic_compare_exchange
     pub fn atomic_update<T>(&self, vaddr: Vaddr, op: impl Fn(T) -> T) -> Result<T>
     where
         T: PodAtomic + Eq,
     {
         check_vaddr(vaddr)?;
+        let writer = self.writer(vaddr, core::mem::size_of::<T>())?;
+        let reader = self.reader(vaddr, core::mem::size_of::<T>())?;
 
-        let user_reader = self.reader(vaddr, core::mem::size_of::<T>())?;
-        let mut user_writer = self.writer(vaddr, core::mem::size_of::<T>())?;
+        let mut old_val = reader.atomic_load()?;
         loop {
-            match user_writer.atomic_update(&user_reader, &op)? {
-                (old_val, true) => return Ok(old_val),
-                (_, false) => continue,
+            match writer.atomic_compare_exchange(&reader, old_val, op(old_val))? {
+                (_, true) => return Ok(old_val),
+                (cur_val, false) => old_val = cur_val,
             }
         }
     }
