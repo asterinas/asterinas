@@ -5,7 +5,10 @@
 use core::alloc::Layout;
 
 use ostd::{
-    mm::{frame::GlobalFrameAllocator, FrameAllocOptions, Paddr, Segment, UniqueFrame, PAGE_SIZE},
+    mm::{
+        frame::GlobalFrameAllocator, FrameAllocOptions, HasPaddr, Paddr, Segment, UniqueFrame,
+        PAGE_SIZE,
+    },
     prelude::ktest,
 };
 
@@ -65,7 +68,7 @@ impl MockMemoryRegion {
         let seg = FrameAllocOptions::new()
             .alloc_segment(size / PAGE_SIZE)
             .unwrap();
-        let addr = seg.start_paddr();
+        let addr = seg.paddr();
         for frame in seg {
             UniqueFrame::try_from(frame).unwrap().reset_as_unused();
         }
@@ -73,7 +76,7 @@ impl MockMemoryRegion {
     }
 
     /// Gets the start address of the memory region.
-    pub(crate) fn start_paddr(&self) -> Paddr {
+    pub(crate) fn paddr(&self) -> Paddr {
         self.addr
     }
 }

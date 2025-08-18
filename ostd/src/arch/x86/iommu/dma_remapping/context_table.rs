@@ -12,10 +12,9 @@ use super::second_stage::IommuPtConfig;
 use crate::{
     bus::pci::PciDeviceLocation,
     mm::{
-        dma::Daddr,
         page_prop::{CachePolicy, PageProperty, PrivilegedPageFlags as PrivFlags},
         page_table::PageTableError,
-        Frame, FrameAllocOptions, Paddr, PageFlags, PageTable, VmIo, PAGE_SIZE,
+        Daddr, Frame, FrameAllocOptions, HasPaddr, Paddr, PageFlags, PageTable, VmIo, PAGE_SIZE,
     },
     task::disable_preempt,
 };
@@ -53,7 +52,7 @@ pub enum ContextTableError {
 
 impl RootTable {
     pub fn root_paddr(&self) -> Paddr {
-        self.root_frame.start_paddr()
+        self.root_frame.paddr()
     }
 
     pub(super) fn new() -> Self {
@@ -253,7 +252,7 @@ impl ContextTable {
     }
 
     fn paddr(&self) -> Paddr {
-        self.entries_frame.start_paddr()
+        self.entries_frame.paddr()
     }
 
     fn get_or_create_page_table(

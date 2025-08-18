@@ -8,7 +8,8 @@ use crate::{
         io::{VmIo, VmIoOnce},
         io_util::HasVmReaderWriter,
         kspace::KERNEL_PAGE_TABLE,
-        paddr_to_vaddr, CachePolicy, FrameAllocOptions, HasPaddr, VmReader, VmWriter, PAGE_SIZE,
+        paddr_to_vaddr, CachePolicy, FrameAllocOptions, HasDaddr, HasPaddr, VmReader, VmWriter,
+        PAGE_SIZE,
     },
     prelude::*,
 };
@@ -22,8 +23,8 @@ mod dma_coherent {
             .alloc_segment_with(1, |_| ())
             .unwrap();
         let dma_coherent = DmaCoherent::map(segment.clone().into(), true).unwrap();
-        assert_eq!(dma_coherent.paddr(), segment.start_paddr());
-        assert_eq!(dma_coherent.nbytes(), PAGE_SIZE);
+        assert_eq!(dma_coherent.paddr(), segment.paddr());
+        assert_eq!(dma_coherent.size(), PAGE_SIZE);
     }
 
     #[ktest]
@@ -32,10 +33,10 @@ mod dma_coherent {
             .alloc_segment_with(1, |_| ())
             .unwrap();
         let dma_coherent = DmaCoherent::map(segment.clone().into(), false).unwrap();
-        assert_eq!(dma_coherent.paddr(), segment.start_paddr());
-        assert_eq!(dma_coherent.nbytes(), PAGE_SIZE);
+        assert_eq!(dma_coherent.paddr(), segment.paddr());
+        assert_eq!(dma_coherent.size(), PAGE_SIZE);
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-        let vaddr = paddr_to_vaddr(segment.start_paddr());
+        let vaddr = paddr_to_vaddr(segment.paddr());
         assert!(page_table.page_walk(vaddr).unwrap().1.cache == CachePolicy::Uncacheable);
     }
 
@@ -153,13 +154,12 @@ mod dma_stream {
             .unwrap();
         let dma_stream =
             DmaStream::map(segment.clone().into(), DmaDirection::Bidirectional, true).unwrap();
-        assert_eq!(dma_stream.paddr(), segment.start_paddr());
-        assert_eq!(dma_stream.nbytes(), PAGE_SIZE);
+        assert_eq!(dma_stream.paddr(), segment.paddr());
+        assert_eq!(dma_stream.size(), PAGE_SIZE);
         assert_eq!(dma_stream.direction(), DmaDirection::Bidirectional);
-        assert_eq!(dma_stream.nframes(), 1);
 
         let underlying_segment = dma_stream.segment();
-        assert_eq!(underlying_segment.start_paddr(), segment.start_paddr());
+        assert_eq!(underlying_segment.paddr(), segment.paddr());
     }
 
     #[ktest]
@@ -218,10 +218,9 @@ mod dma_stream {
             .unwrap();
         let dma_stream =
             DmaStream::map(segment.clone().into(), DmaDirection::ToDevice, false).unwrap();
-        assert_eq!(dma_stream.paddr(), segment.start_paddr());
-        assert_eq!(dma_stream.nbytes(), PAGE_SIZE);
+        assert_eq!(dma_stream.paddr(), segment.paddr());
+        assert_eq!(dma_stream.size(), PAGE_SIZE);
         assert_eq!(dma_stream.direction(), DmaDirection::ToDevice);
-        assert_eq!(dma_stream.nframes(), 1);
 
         let mut buffer = [0u8; 8];
         let mut writer_fallible = VmWriter::from(&mut buffer[..]).to_fallible();
@@ -244,10 +243,9 @@ mod dma_stream {
             .unwrap();
         let dma_stream =
             DmaStream::map(segment.clone().into(), DmaDirection::FromDevice, false).unwrap();
-        assert_eq!(dma_stream.paddr(), segment.start_paddr());
-        assert_eq!(dma_stream.nbytes(), PAGE_SIZE);
+        assert_eq!(dma_stream.paddr(), segment.paddr());
+        assert_eq!(dma_stream.size(), PAGE_SIZE);
         assert_eq!(dma_stream.direction(), DmaDirection::FromDevice);
-        assert_eq!(dma_stream.nframes(), 1);
 
         let mut buffer = [0u8; 8];
         let mut writer_fallible = VmWriter::from(&mut buffer[..]).to_fallible();
@@ -296,7 +294,7 @@ mod dma_stream_slice {
         let dma_stream_slice = DmaStreamSlice::new(&dma_stream, PAGE_SIZE, PAGE_SIZE);
 
         assert_eq!(dma_stream_slice.offset(), PAGE_SIZE);
-        assert_eq!(dma_stream_slice.nbytes(), PAGE_SIZE);
+        assert_eq!(dma_stream_slice.size(), PAGE_SIZE);
         assert_eq!(dma_stream_slice.paddr(), dma_stream.paddr() + PAGE_SIZE);
         assert_eq!(dma_stream_slice.daddr(), dma_stream.daddr() + PAGE_SIZE);
 

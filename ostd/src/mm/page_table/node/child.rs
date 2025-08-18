@@ -6,7 +6,7 @@ use core::mem::ManuallyDrop;
 
 use super::{PageTableEntryTrait, PageTableNode, PageTableNodeRef};
 use crate::{
-    mm::{page_prop::PageProperty, page_table::PageTableConfig, Paddr, PagingLevel},
+    mm::{page_prop::PageProperty, page_table::PageTableConfig, HasPaddr, Paddr, PagingLevel},
     sync::RcuDrop,
 };
 
@@ -32,7 +32,7 @@ impl<C: PageTableConfig> Child<C> {
     pub(super) fn into_pte(self) -> C::E {
         match self {
             Child::PageTable(node) => {
-                let paddr = node.start_paddr();
+                let paddr = node.paddr();
                 let _ = ManuallyDrop::new(node);
                 C::E::new_pt(paddr)
             }

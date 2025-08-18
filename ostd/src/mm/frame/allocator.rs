@@ -59,7 +59,7 @@ impl FrameAllocOptions {
             .ok_or(Error::NoMemory)?;
 
         if self.zeroed {
-            let addr = paddr_to_vaddr(frame.start_paddr()) as *mut u8;
+            let addr = paddr_to_vaddr(frame.paddr()) as *mut u8;
             // SAFETY: The newly allocated frame is guaranteed to be valid.
             unsafe { core::ptr::write_bytes(addr, 0, PAGE_SIZE) }
         }
@@ -96,7 +96,7 @@ impl FrameAllocOptions {
             .ok_or(Error::NoMemory)?;
 
         if self.zeroed {
-            let addr = paddr_to_vaddr(segment.start_paddr()) as *mut u8;
+            let addr = paddr_to_vaddr(segment.paddr()) as *mut u8;
             // SAFETY: The newly allocated segment is guaranteed to be valid.
             unsafe { core::ptr::write_bytes(addr, 0, nframes * PAGE_SIZE) }
         }

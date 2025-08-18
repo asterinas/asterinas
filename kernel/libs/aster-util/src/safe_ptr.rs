@@ -172,8 +172,8 @@ impl<T, M> SafePtr<T, M> {
     }
 }
 
-impl<T, M: HasPaddr, R> SafePtr<T, M, R> {
-    pub fn paddr(&self) -> Paddr {
+impl<T, M: HasPaddr, R> HasPaddr for SafePtr<T, M, R> {
+    fn paddr(&self) -> Paddr {
         self.vm_obj.paddr() + self.offset
     }
 }

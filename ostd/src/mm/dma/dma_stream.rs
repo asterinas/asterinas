@@ -8,14 +8,14 @@
 use alloc::sync::Arc;
 use core::ops::Range;
 
-use super::{check_and_insert_dma_mapping, remove_dma_mapping, DmaError, HasDaddr};
+use super::{check_and_insert_dma_mapping, remove_dma_mapping, DmaError};
 use crate::{
     arch::iommu,
     error::Error,
     mm::{
         dma::{dma_type, Daddr, DmaType},
         io_util::{HasVmReaderWriter, VmReaderWriterResult},
-        HasPaddr, Infallible, Paddr, USegment, VmReader, VmWriter, PAGE_SIZE,
+        HasDaddr, HasPaddr, HasSize, Infallible, Paddr, USegment, VmReader, VmWriter, PAGE_SIZE,
     },
 };
 
@@ -60,10 +60,10 @@ impl DmaStream {
         direction: DmaDirection,
         is_cache_coherent: bool,
     ) -> Result<Self, DmaError> {
-        let start_paddr = segment.start_paddr();
+        let paddr = segment.paddr();
         let frame_count = segment.size() / PAGE_SIZE;
 
-        if !check_and_insert_dma_mapping(start_paddr, frame_count) {
+        if !check_and_insert_dma_mapping(paddr, frame_count) {
             return Err(DmaError::AlreadyMapped);
         }
 
@@ -79,21 +79,20 @@ impl DmaStream {
                     //    are contained in the linear mapping.
                     //  - The pages belong to a `USegment`, so they're all untyped memory.
                     unsafe {
-                        crate::arch::tdx_guest::unprotect_gpa_range(start_paddr, frame_count)
-                            .unwrap();
+                        crate::arch::tdx_guest::unprotect_gpa_range(paddr, frame_count).unwrap();
                     }
                 });
-                start_paddr as Daddr
+                paddr as Daddr
             }
             DmaType::Iommu => {
                 for i in 0..frame_count {
-                    let paddr = start_paddr + (i * PAGE_SIZE);
-                    // SAFETY: the `paddr` is restricted by the `start_paddr` and `frame_count` of the `segment`.
+                    let paddr = paddr + (i * PAGE_SIZE);
+                    // SAFETY: the `paddr` is restricted by the `paddr` and `frame_count` of the `segment`.
                     unsafe {
                         iommu::map(paddr as Daddr, paddr).unwrap();
                     }
                 }
-                start_paddr as Daddr
+                paddr as Daddr
             }
         };
 
@@ -115,16 +114,6 @@ impl DmaStream {
     /// the memory. Do this at your own risk.
     pub fn segment(&self) -> &USegment {
         &self.inner.segment
-    }
-
-    /// Returns the number of frames.
-    pub fn nframes(&self) -> usize {
-        self.inner.segment.size() / PAGE_SIZE
-    }
-
-    /// Returns the number of bytes.
-    pub fn nbytes(&self) -> usize {
-        self.inner.segment.size()
     }
 
     /// Returns the DMA direction.
@@ -150,13 +139,13 @@ impl DmaStream {
                 // Reference: <https://lwn.net/Articles/855328/>, <https://lwn.net/Articles/2265/>
                 Ok(())
             } else {
-                if _byte_range.end > self.nbytes() {
+                if _byte_range.end > self.size() {
                     return Err(Error::InvalidArgs);
                 }
                 if self.inner.is_cache_coherent {
                     return Ok(());
                 }
-                let _start_va = crate::mm::paddr_to_vaddr(self.inner.segment.start_paddr()) as *const u8;
+                let _start_va = crate::mm::paddr_to_vaddr(self.inner.segment.paddr()) as *const u8;
                 // TODO: Query the CPU for the cache line size via CPUID, we use 64 bytes as the cache line size here.
                 for _i in _byte_range.step_by(64) {
                     // TODO: Call the cache line flush command in the corresponding architecture.
@@ -176,7 +165,7 @@ impl HasDaddr for DmaStream {
 
 impl Drop for DmaStreamInner {
     fn drop(&mut self) {
-        let start_paddr = self.segment.start_paddr();
+        let paddr = self.segment.paddr();
         let frame_count = self.segment.size() / PAGE_SIZE;
 
         match dma_type() {
@@ -191,21 +180,20 @@ impl Drop for DmaStreamInner {
                     //    are contained in the linear mapping.
                     //  - The pages belong to a `USegment`, so they're all untyped memory.
                     unsafe {
-                        crate::arch::tdx_guest::protect_gpa_range(start_paddr, frame_count)
-                            .unwrap();
+                        crate::arch::tdx_guest::protect_gpa_range(paddr, frame_count).unwrap();
                     }
                 });
             }
             DmaType::Iommu => {
                 for i in 0..frame_count {
-                    let paddr = start_paddr + (i * PAGE_SIZE);
+                    let paddr = paddr + (i * PAGE_SIZE);
                     iommu::unmap(paddr as Daddr).unwrap();
                     // FIXME: After dropping it could be reused. IOTLB needs to be flushed.
                 }
             }
         }
 
-        remove_dma_mapping(start_paddr, frame_count);
+        remove_dma_mapping(paddr, frame_count);
     }
 }
 
@@ -229,7 +217,13 @@ impl HasVmReaderWriter for DmaStream {
 
 impl HasPaddr for DmaStream {
     fn paddr(&self) -> Paddr {
-        self.inner.segment.start_paddr()
+        self.inner.segment.paddr()
+    }
+}
+
+impl HasSize for DmaStream {
+    fn size(&self) -> usize {
+        self.inner.segment.size()
     }
 }
 
@@ -257,8 +251,8 @@ impl<Dma: AsRef<DmaStream>> DmaStreamSlice<Dma> {
     /// If the `offset + len` is greater than the length of the stream,
     /// this method will panic.
     pub fn new(stream: Dma, offset: usize, len: usize) -> Self {
-        assert!(offset < stream.as_ref().nbytes());
-        assert!(offset + len <= stream.as_ref().nbytes());
+        assert!(offset < stream.as_ref().size());
+        assert!(offset + len <= stream.as_ref().size());
 
         Self {
             stream,
@@ -278,7 +272,7 @@ impl<Dma: AsRef<DmaStream>> DmaStreamSlice<Dma> {
     }
 
     /// Returns the number of bytes.
-    pub fn nbytes(&self) -> usize {
+    pub fn size(&self) -> usize {
         self.len
     }
 
@@ -315,6 +309,12 @@ impl<Dma: AsRef<DmaStream>> HasDaddr for DmaStreamSlice<Dma> {
 impl<Dma: AsRef<DmaStream>> HasPaddr for DmaStreamSlice<Dma> {
     fn paddr(&self) -> Paddr {
         self.stream.as_ref().paddr() + self.offset
+    }
+}
+
+impl<Dma: AsRef<DmaStream>> HasSize for DmaStreamSlice<Dma> {
+    fn size(&self) -> usize {
+        self.len
     }
 }
 

@@ -9,7 +9,7 @@ use log::warn;
 use ostd::{
     bus::pci::cfg_space::Bar,
     io::IoMem,
-    mm::{DmaCoherent, PAGE_SIZE},
+    mm::{DmaCoherent, HasPaddr, PAGE_SIZE},
     sync::RwLock,
     trap::irq::IrqCallbackFunction,
 };

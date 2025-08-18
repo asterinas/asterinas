@@ -55,8 +55,7 @@ use meta::{mapping, AnyFrameMeta, GetFrameError, MetaSlot, REF_COUNT_UNUSED};
 pub use segment::Segment;
 use untyped::{AnyUFrameMeta, UFrame};
 
-use super::{PagingLevel, PAGE_SIZE};
-use crate::mm::{Paddr, PagingConsts, Vaddr};
+use crate::mm::{HasPaddr, HasSize, Paddr, PagingConsts, PagingLevel, Vaddr, PAGE_SIZE};
 
 static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
 
@@ -87,13 +86,13 @@ unsafe impl<M: AnyFrameMeta + ?Sized> Sync for Frame<M> {}
 
 impl<M: AnyFrameMeta + ?Sized> core::fmt::Debug for Frame<M> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "Frame({:#x})", self.start_paddr())
+        write!(f, "Frame({:#x})", self.paddr())
     }
 }
 
 impl<M: AnyFrameMeta + ?Sized> PartialEq for Frame<M> {
     fn eq(&self, other: &Self) -> bool {
-        self.start_paddr() == other.start_paddr()
+        self.paddr() == other.paddr()
     }
 }
 impl<M: AnyFrameMeta + ?Sized> Eq for Frame<M> {}
@@ -135,11 +134,6 @@ impl Frame<dyn AnyFrameMeta> {
 }
 
 impl<M: AnyFrameMeta + ?Sized> Frame<M> {
-    /// Gets the physical address of the start of the frame.
-    pub fn start_paddr(&self) -> Paddr {
-        self.slot().frame_paddr()
-    }
-
     /// Gets the map level of this page.
     ///
     /// This is the level of the page table entry that maps the frame,
@@ -149,11 +143,6 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     /// page frame.
     pub const fn map_level(&self) -> PagingLevel {
         1
-    }
-
-    /// Gets the size of this page in bytes.
-    pub const fn size(&self) -> usize {
-        PAGE_SIZE
     }
 
     /// Gets the dyncamically-typed metadata of this frame.
@@ -184,7 +173,7 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     /// Borrows a reference from the given frame.
     pub fn borrow(&self) -> FrameRef<'_, M> {
         // SAFETY: Both the lifetime and the type matches `self`.
-        unsafe { FrameRef::borrow_paddr(self.start_paddr()) }
+        unsafe { FrameRef::borrow_paddr(self.paddr()) }
     }
 
     /// Forgets the handle to the frame.
@@ -196,7 +185,7 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     /// data structures need to hold the frame handle such as the page table.
     pub(in crate::mm) fn into_raw(self) -> Paddr {
         let this = ManuallyDrop::new(self);
-        this.start_paddr()
+        this.paddr()
     }
 
     /// Restores a forgotten [`Frame`] from a physical address.
@@ -230,6 +219,18 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     }
 }
 
+impl<M: AnyFrameMeta + ?Sized> HasPaddr for Frame<M> {
+    fn paddr(&self) -> Paddr {
+        self.slot().frame_paddr()
+    }
+}
+
+impl<M: AnyFrameMeta + ?Sized> HasSize for Frame<M> {
+    fn size(&self) -> usize {
+        PAGE_SIZE
+    }
+}
+
 impl<M: AnyFrameMeta + ?Sized> Clone for Frame<M> {
     fn clone(&self) -> Self {
         // SAFETY: We have already held a reference to the frame.
@@ -255,7 +256,7 @@ impl<M: AnyFrameMeta + ?Sized> Drop for Frame<M> {
             // SAFETY: this is the last reference and is about to be dropped.
             unsafe { self.slot().drop_last_in_place() };
 
-            allocator::get_global_frame_allocator().dealloc(self.start_paddr(), PAGE_SIZE);
+            allocator::get_global_frame_allocator().dealloc(self.paddr(), PAGE_SIZE);
         }
     }
 }
