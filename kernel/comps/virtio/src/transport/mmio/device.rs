@@ -98,9 +98,9 @@ impl VirtioTransport for VirtioMmioTransport {
         &mut self,
         idx: u16,
         queue_size: u16,
-        descriptor_ptr: &SafePtr<Descriptor, DmaCoherent>,
-        driver_ptr: &SafePtr<AvailRing, DmaCoherent>,
-        device_ptr: &SafePtr<UsedRing, DmaCoherent>,
+        descriptor_ptr: &SafePtr<Descriptor, Arc<DmaCoherent>>,
+        driver_ptr: &SafePtr<AvailRing, Arc<DmaCoherent>>,
+        device_ptr: &SafePtr<UsedRing, Arc<DmaCoherent>>,
     ) -> Result<(), VirtioTransportError> {
         field_ptr!(&self.layout, VirtioMmioLayout, queue_sel)
             .write_once(&(idx as u32))

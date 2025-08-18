@@ -253,7 +253,7 @@ impl InputDevice {
 /// each of which is large enough to contain a `VirtioInputEvent`.
 #[derive(Debug)]
 struct EventTable {
-    stream: DmaStream,
+    stream: Arc<DmaStream>,
     num_events: usize,
 }
 
@@ -270,7 +270,8 @@ impl EventTable {
             .iter()
             .all(|b| *b == 0));
 
-        let stream = DmaStream::map(segment.into(), DmaDirection::FromDevice, false).unwrap();
+        let stream =
+            Arc::new(DmaStream::map(segment.into(), DmaDirection::FromDevice, false).unwrap());
         Self { stream, num_events }
     }
 

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
 use core::ops::Deref;
 
 use cfg_if::cfg_if;
@@ -29,13 +28,8 @@ cfg_if! {
 ///
 /// The mapping will be destroyed automatically when
 /// the object is dropped.
-#[derive(Debug, Clone)]
-pub struct DmaCoherent {
-    inner: Arc<DmaCoherentInner>,
-}
-
 #[derive(Debug)]
-struct DmaCoherentInner {
+pub struct DmaCoherent {
     segment: USegment,
     start_daddr: Daddr,
     is_cache_coherent: bool,
@@ -101,11 +95,9 @@ impl DmaCoherent {
         };
 
         Ok(Self {
-            inner: Arc::new(DmaCoherentInner {
-                segment,
-                start_daddr,
-                is_cache_coherent,
-            }),
+            segment,
+            start_daddr,
+            is_cache_coherent,
         })
     }
 }
@@ -113,11 +105,11 @@ impl DmaCoherent {
 impl Deref for DmaCoherent {
     type Target = USegment;
     fn deref(&self) -> &Self::Target {
-        &self.inner.segment
+        &self.segment
     }
 }
 
-impl Drop for DmaCoherentInner {
+impl Drop for DmaCoherent {
     fn drop(&mut self) {
         let paddr = self.segment.paddr();
         let frame_count = self.segment.size() / PAGE_SIZE;
@@ -165,19 +157,19 @@ impl Drop for DmaCoherentInner {
 
 impl HasPaddr for DmaCoherent {
     fn paddr(&self) -> Paddr {
-        self.inner.segment.paddr()
+        self.segment.paddr()
     }
 }
 
 impl HasSize for DmaCoherent {
     fn size(&self) -> usize {
-        self.inner.segment.size()
+        self.segment.size()
     }
 }
 
 impl HasDaddr for DmaCoherent {
     fn daddr(&self) -> Daddr {
-        self.inner.start_daddr
+        self.start_daddr
     }
 }
 
@@ -185,10 +177,10 @@ impl HasVmReaderWriter for DmaCoherent {
     type Types = VmReaderWriterIdentity;
 
     fn reader(&self) -> VmReader<'_, Infallible> {
-        self.inner.segment.reader()
+        self.segment.reader()
     }
 
     fn writer(&self) -> VmWriter<'_, Infallible> {
-        self.inner.segment.writer()
+        self.segment.writer()
     }
 }

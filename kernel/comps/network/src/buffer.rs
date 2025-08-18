@@ -16,16 +16,16 @@ use spin::Once;
 use crate::dma_pool::{DmaPool, DmaSegment};
 
 pub struct TxBuffer {
-    dma_stream: DmaStream,
+    dma_stream: Arc<DmaStream>,
     nbytes: usize,
-    pool: &'static SpinLock<LinkedList<DmaStream>, BottomHalfDisabled>,
+    pool: &'static SpinLock<LinkedList<Arc<DmaStream>>, BottomHalfDisabled>,
 }
 
 impl TxBuffer {
     pub fn new<H: Pod>(
         header: &H,
         packet: &[u8],
-        pool: &'static SpinLock<LinkedList<DmaStream>, BottomHalfDisabled>,
+        pool: &'static SpinLock<LinkedList<Arc<DmaStream>>, BottomHalfDisabled>,
     ) -> Self {
         let header = header.as_bytes();
         let nbytes = header.len() + packet.len();
@@ -38,7 +38,7 @@ impl TxBuffer {
             let segment = FrameAllocOptions::new()
                 .alloc_segment(TX_BUFFER_LEN / PAGE_SIZE)
                 .unwrap();
-            DmaStream::map(segment.into(), DmaDirection::ToDevice, false).unwrap()
+            Arc::new(DmaStream::map(segment.into(), DmaDirection::ToDevice, false).unwrap())
         };
 
         let tx_buffer = {
