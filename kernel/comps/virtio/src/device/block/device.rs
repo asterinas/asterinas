@@ -15,11 +15,12 @@ use aster_block::{
     request_queue::{BioRequest, BioRequestSingleQueue},
     BlockDeviceMeta,
 };
+use aster_util::mem_obj_slice::Slice;
 use id_alloc::IdAlloc;
 use log::{debug, info};
 use ostd::{
     arch::trap::TrapFrame,
-    mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, HasSize, VmIo},
+    mm::{DmaDirection, DmaStream, FrameAllocOptions, HasSize, VmIo},
     sync::SpinLock,
     Pod,
 };
@@ -204,8 +205,9 @@ impl DeviceInner {
 
             // Handles the response
             let id = complete_request.id as usize;
-            let resp_slice = DmaStreamSlice::new(&self.block_responses, id * RESP_SIZE, RESP_SIZE);
-            resp_slice.sync().unwrap();
+            let resp_slice =
+                Slice::new(&self.block_responses, id * RESP_SIZE..(id + 1) * RESP_SIZE);
+            sync_dma(&resp_slice);
             let resp: BlockResp = resp_slice.read_val(0).unwrap();
             self.id_allocator.lock().free(id);
             match RespStatus::try_from(resp.status).unwrap() {
@@ -224,7 +226,7 @@ impl DeviceInner {
                             .iter()
                             .map(|segment| segment.inner_dma_slice())
                     })
-                    .for_each(|dma_slice| dma_slice.sync().unwrap());
+                    .for_each(sync_dma_owned);
             }
 
             // Completes the bio request
@@ -243,19 +245,20 @@ impl DeviceInner {
     fn request_device_id(&self) -> String {
         let id = self.id_allocator.disable_irq().lock().alloc().unwrap();
         let req_slice = {
-            let req_slice = DmaStreamSlice::new(&self.block_requests, id * REQ_SIZE, REQ_SIZE);
+            let req_slice = Slice::new(&self.block_requests, id * REQ_SIZE..(id + 1) * REQ_SIZE);
             let req = BlockReq {
                 type_: ReqType::GetId as _,
                 reserved: 0,
                 sector: 0,
             };
             req_slice.write_val(0, &req).unwrap();
-            req_slice.sync().unwrap();
+            sync_dma(&req_slice);
             req_slice
         };
 
         let resp_slice = {
-            let resp_slice = DmaStreamSlice::new(&self.block_responses, id * RESP_SIZE, RESP_SIZE);
+            let resp_slice =
+                Slice::new(&self.block_responses, id * RESP_SIZE..(id + 1) * RESP_SIZE);
             resp_slice.write_val(0, &BlockResp::default()).unwrap();
             resp_slice
         };
@@ -267,7 +270,7 @@ impl DeviceInner {
                 .unwrap();
             DmaStream::map(segment.into(), DmaDirection::FromDevice, false).unwrap()
         };
-        let device_id_slice = DmaStreamSlice::new(&device_id_stream, 0, MAX_ID_LENGTH);
+        let device_id_slice = Slice::new(&device_id_stream, 0..MAX_ID_LENGTH);
         let outputs = vec![&device_id_slice, &resp_slice];
 
         let mut queue = self.queue.disable_irq().lock();
@@ -282,7 +285,7 @@ impl DeviceInner {
         }
         queue.pop_used_with_token(token).expect("pop used failed");
 
-        resp_slice.sync().unwrap();
+        sync_dma(&resp_slice);
         self.id_allocator.disable_irq().lock().free(id);
         let resp: BlockResp = resp_slice.read_val(0).unwrap();
         match RespStatus::try_from(resp.status).unwrap() {
@@ -291,7 +294,7 @@ impl DeviceInner {
         };
 
         let device_id = {
-            device_id_slice.sync().unwrap();
+            sync_dma(&device_id_slice);
             let mut device_id = vec![0u8; MAX_ID_LENGTH];
             let _ = device_id_slice.read_bytes(0, &mut device_id);
             let len = device_id
@@ -308,28 +311,31 @@ impl DeviceInner {
     fn read(&self, bio_request: BioRequest) {
         let id = self.id_allocator.disable_irq().lock().alloc().unwrap();
         let req_slice = {
-            let req_slice =
-                DmaStreamSlice::new(self.block_requests.clone(), id * REQ_SIZE, REQ_SIZE);
+            let req_slice = Slice::new(
+                self.block_requests.clone(),
+                id * REQ_SIZE..(id + 1) * REQ_SIZE,
+            );
             let req = BlockReq {
                 type_: ReqType::In as _,
                 reserved: 0,
                 sector: bio_request.sid_range().start.to_raw(),
             };
             req_slice.write_val(0, &req).unwrap();
-            req_slice.sync().unwrap();
+            sync_dma_owned(&req_slice);
             req_slice
         };
 
         let resp_slice = {
-            let resp_slice =
-                DmaStreamSlice::new(self.block_responses.clone(), id * RESP_SIZE, RESP_SIZE);
+            let resp_slice = Slice::new(
+                self.block_responses.clone(),
+                id * RESP_SIZE..(id + 1) * RESP_SIZE,
+            );
             resp_slice.write_val(0, &BlockResp::default()).unwrap();
             resp_slice
         };
 
         let outputs = {
-            let mut outputs: Vec<&DmaStreamSlice<_>> =
-                Vec::with_capacity(bio_request.num_segments() + 1);
+            let mut outputs: Vec<&Slice<_>> = Vec::with_capacity(bio_request.num_segments() + 1);
             let dma_slices_iter = bio_request.bios().flat_map(|bio| {
                 bio.segments()
                     .iter()
@@ -372,28 +378,31 @@ impl DeviceInner {
     fn write(&self, bio_request: BioRequest) {
         let id = self.id_allocator.disable_irq().lock().alloc().unwrap();
         let req_slice = {
-            let req_slice =
-                DmaStreamSlice::new(self.block_requests.clone(), id * REQ_SIZE, REQ_SIZE);
+            let req_slice = Slice::new(
+                self.block_requests.clone(),
+                id * REQ_SIZE..(id + 1) * REQ_SIZE,
+            );
             let req = BlockReq {
                 type_: ReqType::Out as _,
                 reserved: 0,
                 sector: bio_request.sid_range().start.to_raw(),
             };
             req_slice.write_val(0, &req).unwrap();
-            req_slice.sync().unwrap();
+            sync_dma_owned(&req_slice);
             req_slice
         };
 
         let resp_slice = {
-            let resp_slice =
-                DmaStreamSlice::new(self.block_responses.clone(), id * RESP_SIZE, RESP_SIZE);
+            let resp_slice = Slice::new(
+                self.block_responses.clone(),
+                id * RESP_SIZE..(id + 1) * RESP_SIZE,
+            );
             resp_slice.write_val(0, &BlockResp::default()).unwrap();
             resp_slice
         };
 
         let inputs = {
-            let mut inputs: Vec<&DmaStreamSlice<_>> =
-                Vec::with_capacity(bio_request.num_segments() + 1);
+            let mut inputs: Vec<&Slice<_>> = Vec::with_capacity(bio_request.num_segments() + 1);
             inputs.push(&req_slice);
             let dma_slices_iter = bio_request.bios().flat_map(|bio| {
                 bio.segments()
@@ -443,19 +452,20 @@ impl DeviceInner {
 
         let id = self.id_allocator.disable_irq().lock().alloc().unwrap();
         let req_slice = {
-            let req_slice = DmaStreamSlice::new(&self.block_requests, id * REQ_SIZE, REQ_SIZE);
+            let req_slice = Slice::new(&self.block_requests, id * REQ_SIZE..(id + 1) * REQ_SIZE);
             let req = BlockReq {
                 type_: ReqType::Flush as _,
                 reserved: 0,
                 sector: bio_request.sid_range().start.to_raw(),
             };
             req_slice.write_val(0, &req).unwrap();
-            req_slice.sync().unwrap();
+            sync_dma(&req_slice);
             req_slice
         };
 
         let resp_slice = {
-            let resp_slice = DmaStreamSlice::new(&self.block_responses, id * RESP_SIZE, RESP_SIZE);
+            let resp_slice =
+                Slice::new(&self.block_responses, id * RESP_SIZE..(id + 1) * RESP_SIZE);
             resp_slice.write_val(0, &BlockResp::default()).unwrap();
             resp_slice
         };
@@ -523,4 +533,12 @@ impl Default for BlockResp {
             status: RespStatus::_NotReady as _,
         }
     }
+}
+
+fn sync_dma(slice: &Slice<&DmaStream>) {
+    slice.mem_obj().sync(slice.offset().clone()).unwrap();
+}
+
+fn sync_dma_owned(slice: &Slice<DmaStream>) {
+    slice.mem_obj().sync(slice.offset().clone()).unwrap();
 }
