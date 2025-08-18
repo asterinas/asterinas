@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::boxed::Box;
+use alloc::{boxed::Box, sync::Arc};
 use core::fmt::Debug;
 
 use aster_util::{field_ptr, safe_ptr::SafePtr};
@@ -77,9 +77,9 @@ impl VirtioTransport for VirtioPciModernTransport {
         &mut self,
         idx: u16,
         queue_size: u16,
-        descriptor_ptr: &SafePtr<Descriptor, DmaCoherent>,
-        avail_ring_ptr: &SafePtr<AvailRing, DmaCoherent>,
-        used_ring_ptr: &SafePtr<UsedRing, DmaCoherent>,
+        descriptor_ptr: &SafePtr<Descriptor, Arc<DmaCoherent>>,
+        avail_ring_ptr: &SafePtr<AvailRing, Arc<DmaCoherent>>,
+        used_ring_ptr: &SafePtr<UsedRing, Arc<DmaCoherent>>,
     ) -> Result<(), VirtioTransportError> {
         if idx >= self.num_queues() {
             return Err(VirtioTransportError::InvalidArgs);

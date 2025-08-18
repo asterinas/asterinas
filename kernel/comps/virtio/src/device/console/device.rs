@@ -24,8 +24,8 @@ pub struct ConsoleDevice {
     transport: SpinLock<Box<dyn VirtioTransport>>,
     receive_queue: SpinLock<VirtQueue>,
     transmit_queue: SpinLock<VirtQueue>,
-    send_buffer: DmaStream,
-    receive_buffer: DmaStream,
+    send_buffer: Arc<DmaStream>,
+    receive_buffer: Arc<DmaStream>,
     #[expect(clippy::box_collection)]
     callbacks: Rcu<Box<Vec<&'static ConsoleCallback>>>,
 }
@@ -99,12 +99,12 @@ impl ConsoleDevice {
 
         let send_buffer = {
             let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-            DmaStream::map(segment.into(), DmaDirection::ToDevice, false).unwrap()
+            Arc::new(DmaStream::map(segment.into(), DmaDirection::ToDevice, false).unwrap())
         };
 
         let receive_buffer = {
             let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-            DmaStream::map(segment.into(), DmaDirection::FromDevice, false).unwrap()
+            Arc::new(DmaStream::map(segment.into(), DmaDirection::FromDevice, false).unwrap())
         };
 
         let device = Arc::new(Self {

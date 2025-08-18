@@ -360,7 +360,7 @@ impl Debug for NetworkDevice {
     }
 }
 
-static TX_BUFFER_POOL: SpinLock<LinkedList<DmaStream>, BottomHalfDisabled> =
+static TX_BUFFER_POOL: SpinLock<LinkedList<Arc<DmaStream>>, BottomHalfDisabled> =
     SpinLock::new(LinkedList::new());
 
 const QUEUE_RECV: u16 = 0;
