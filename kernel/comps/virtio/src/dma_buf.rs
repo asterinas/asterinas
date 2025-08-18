@@ -4,7 +4,10 @@ use alloc::sync::Arc;
 
 use aster_network::{DmaSegment, RxBuffer, TxBuffer};
 use aster_util::mem_obj_slice::Slice;
-use ostd::mm::{DmaCoherent, DmaStream, HasDaddr, HasSize};
+use ostd::mm::{
+    dma::{DmaCoherent, DmaDirection, DmaStream},
+    HasDaddr, HasSize,
+};
 
 /// A DMA-capable buffer.
 ///
@@ -15,16 +18,16 @@ pub trait DmaBuf: HasDaddr {
     fn len(&self) -> usize;
 }
 
-macro_rules! impl_dma_buf_for {
+macro_rules! impl_dma_buf_for_dma_types {
     ($($t:ty),*) => {
         $(
-            impl DmaBuf for $t {
+            impl<D: DmaDirection> DmaBuf for $t {
                 fn len(&self) -> usize {
                     self.size()
                 }
             }
 
-            impl DmaBuf for Slice<$t> {
+            impl<D: DmaDirection> DmaBuf for Slice<$t> {
                 fn len(&self) -> usize {
                     self.size()
                 }
@@ -33,18 +36,18 @@ macro_rules! impl_dma_buf_for {
     };
 }
 
-impl_dma_buf_for!(
-    DmaStream,
-    &DmaStream,
-    Arc<DmaStream>,
-    &Arc<DmaStream>,
-    DmaCoherent,
-    &DmaCoherent,
-    Arc<DmaCoherent>,
-    &Arc<DmaCoherent>
+impl_dma_buf_for_dma_types!(
+    DmaStream<D>,
+    &DmaStream<D>,
+    Arc<DmaStream<D>>,
+    &Arc<DmaStream<D>>,
+    DmaCoherent<D>,
+    &DmaCoherent<D>,
+    Arc<DmaCoherent<D>>,
+    &Arc<DmaCoherent<D>>
 );
 
-impl DmaBuf for DmaSegment {
+impl<D: DmaDirection> DmaBuf for DmaSegment<D> {
     fn len(&self) -> usize {
         self.size()
     }

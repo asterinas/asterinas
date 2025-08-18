@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::mm::{DmaCoherent, FrameAllocOptions, HasPaddr, VmIo};
+use ostd::mm::{
+    dma::{Bidirectional, DmaCoherent},
+    FrameAllocOptions, HasPaddr, VmIo,
+};
 use tdx_guest::tdcall::{get_report, TdCallError};
 
 use super::*;
@@ -89,7 +92,7 @@ fn handle_get_report(arg: usize) -> Result<i32> {
     let user_request: TdxReportRequest = user_space.read_val(arg)?;
 
     let segment = FrameAllocOptions::new().alloc_segment(2).unwrap();
-    let dma_coherent = DmaCoherent::map(segment.into(), false).unwrap();
+    let dma_coherent = DmaCoherent::<Bidirectional>::map(segment.into(), false);
     dma_coherent
         .write_bytes(0, &user_request.report_data)
         .unwrap();

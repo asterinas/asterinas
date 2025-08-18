@@ -8,7 +8,7 @@ use ostd::{
     arch::device::io_port::{PortRead, PortWrite},
     bus::pci::cfg_space::Bar,
     io::IoMem,
-    mm::{DmaCoherent, PodOnce},
+    mm::{dma::DmaCoherent, PodOnce},
     trap::irq::IrqCallbackFunction,
     Pod,
 };

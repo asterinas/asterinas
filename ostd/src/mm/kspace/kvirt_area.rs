@@ -11,7 +11,7 @@ use crate::{
         kspace::{KernelPtConfig, MappedItem},
         page_prop::PageProperty,
         page_table::largest_pages,
-        Paddr, Vaddr, PAGE_SIZE,
+        HasSize, Paddr, Vaddr, PAGE_SIZE,
     },
     task::disable_preempt,
     util::range_alloc::RangeAllocator,
@@ -37,6 +37,12 @@ pub struct KVirtArea {
     range: Range<Vaddr>,
 }
 
+impl HasSize for KVirtArea {
+    fn size(&self) -> usize {
+        self.range.len()
+    }
+}
+
 impl KVirtArea {
     pub fn start(&self) -> Vaddr {
         self.range.start
@@ -48,11 +54,6 @@ impl KVirtArea {
 
     pub fn range(&self) -> Range<Vaddr> {
         self.range.start..self.range.end
-    }
-
-    #[cfg(ktest)]
-    pub fn len(&self) -> usize {
-        self.range.len()
     }
 
     #[cfg(ktest)]
@@ -79,7 +80,7 @@ impl KVirtArea {
     ///  - the area size is not a multiple of [`PAGE_SIZE`];
     ///  - the map offset is not aligned to [`PAGE_SIZE`];
     ///  - the map offset plus the size of the pages exceeds the area size.
-    pub fn map_frames<T: AnyFrameMeta>(
+    pub fn map_frames<T: AnyFrameMeta + ?Sized>(
         area_size: usize,
         map_offset: usize,
         frames: impl Iterator<Item = Frame<T>>,
@@ -100,7 +101,7 @@ impl KVirtArea {
         for frame in frames.into_iter() {
             // SAFETY: The constructor of the `KVirtArea` has already ensured
             // that this mapping does not affect kernel's memory safety.
-            unsafe { cursor.map(MappedItem::Tracked(frame.into(), prop)) }
+            unsafe { cursor.map(MappedItem::Tracked(Frame::from_anysized(frame), prop)) }
                 .expect("Failed to map frame in a new `KVirtArea`");
         }
 

@@ -11,7 +11,7 @@ use ostd::{
         BusProbeError,
     },
     io::IoMem,
-    mm::{DmaCoherent, HasDaddr, PAGE_SIZE},
+    mm::{dma::DmaCoherent, HasDaddr, PAGE_SIZE},
     trap::irq::IrqCallbackFunction,
 };
 

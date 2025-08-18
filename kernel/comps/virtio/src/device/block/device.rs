@@ -20,7 +20,7 @@ use id_alloc::IdAlloc;
 use log::{debug, info};
 use ostd::{
     arch::trap::TrapFrame,
-    mm::{DmaDirection, DmaStream, FrameAllocOptions, HasSize, VmIo},
+    mm::{dma::DmaStream, FrameAllocOptions, HasSize, VmIo},
     sync::SpinLock,
     Pod,
 };
@@ -143,12 +143,12 @@ impl DeviceInner {
             .expect("create virtqueue failed");
         let block_requests = {
             let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-            Arc::new(DmaStream::map(segment.into(), DmaDirection::Bidirectional, false).unwrap())
+            Arc::new(DmaStream::map(segment.into(), false))
         };
         assert!(Self::QUEUE_SIZE as usize * REQ_SIZE <= block_requests.size());
         let block_responses = {
             let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-            Arc::new(DmaStream::map(segment.into(), DmaDirection::Bidirectional, false).unwrap())
+            Arc::new(DmaStream::map(segment.into(), false))
         };
         assert!(Self::QUEUE_SIZE as usize * RESP_SIZE <= block_responses.size());
 
@@ -268,7 +268,7 @@ impl DeviceInner {
                 .zeroed(false)
                 .alloc_segment(1)
                 .unwrap();
-            Arc::new(DmaStream::map(segment.into(), DmaDirection::FromDevice, false).unwrap())
+            Arc::new(DmaStream::map(segment.into(), false))
         };
         let device_id_slice = Slice::new(&device_id_stream, 0..MAX_ID_LENGTH);
         let outputs = vec![&device_id_slice, &resp_slice];

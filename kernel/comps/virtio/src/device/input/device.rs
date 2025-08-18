@@ -18,7 +18,7 @@ use log::{debug, info};
 use ostd::{
     arch::trap::TrapFrame,
     io::IoMem,
-    mm::{DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, PAGE_SIZE},
+    mm::{dma::DmaStream, FrameAllocOptions, HasDaddr, PAGE_SIZE},
     sync::{LocalIrqDisabled, RwLock, SpinLock},
     Pod,
 };
@@ -212,7 +212,13 @@ impl InputDevice {
         let callbacks = self.callbacks.read();
         // Returns true if there may be more events to handle
         let handle_event = |event: &EventBuf| -> bool {
-            event.sync().unwrap();
+            event
+                .vm()
+                .sync(
+                    event.cur_byte_offset()
+                        ..event.cur_byte_offset() + core::mem::size_of::<VirtioInputEvent>(),
+                )
+                .unwrap();
             let event: VirtioInputEvent = event.read().unwrap();
 
             match event.event_type {
@@ -270,8 +276,7 @@ impl EventTable {
             .iter()
             .all(|b| *b == 0));
 
-        let stream =
-            Arc::new(DmaStream::map(segment.into(), DmaDirection::FromDevice, false).unwrap());
+        let stream = Arc::new(DmaStream::map(segment.into(), false));
         Self { stream, num_events }
     }
 
