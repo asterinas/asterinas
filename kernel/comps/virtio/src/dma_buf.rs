@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_network::{DmaSegment, RxBuffer, TxBuffer};
-use ostd::mm::{DmaCoherent, DmaStream, DmaStreamSlice, HasDaddr, HasSize};
+use aster_util::mem_obj_slice::Slice;
+use ostd::mm::{DmaCoherent, DmaStream, HasDaddr, HasSize};
 
 /// A DMA-capable buffer.
 ///
@@ -18,7 +19,13 @@ impl DmaBuf for DmaStream {
     }
 }
 
-impl<Dma: AsRef<DmaStream>> DmaBuf for DmaStreamSlice<Dma> {
+impl DmaBuf for Slice<DmaStream> {
+    fn len(&self) -> usize {
+        self.size()
+    }
+}
+
+impl DmaBuf for Slice<&DmaStream> {
     fn len(&self) -> usize {
         self.size()
     }
