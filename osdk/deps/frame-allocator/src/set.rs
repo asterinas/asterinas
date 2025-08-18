@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::mm::{frame::linked_list::LinkedList, Paddr};
+use ostd::mm::{frame::linked_list::LinkedList, HasPaddr, Paddr};
 
 use crate::chunk::{size_of_order, BuddyOrder, FreeChunk, FreeHeadMeta};
 
@@ -46,7 +46,7 @@ impl<const MAX_ORDER: BuddyOrder> BuddySet<MAX_ORDER> {
                 break;
             };
             let taken = cursor.take_current().unwrap();
-            debug_assert_eq!(buddy_addr, taken.start_paddr());
+            debug_assert_eq!(buddy_addr, taken.paddr());
             chunk = chunk.merge_free(FreeChunk::from_free_head(taken));
         }
         // Insert the coalesced chunk into the free lists.
@@ -94,7 +94,7 @@ impl<const MAX_ORDER: BuddyOrder> BuddySet<MAX_ORDER> {
 
         // The remaining chunk is the one we want.
         let head_frame = chunk.take().unwrap().into_unique_head();
-        let paddr = head_frame.start_paddr();
+        let paddr = head_frame.paddr();
         head_frame.reset_as_unused(); // It will "drop" the frame without up-calling us.
         Some(paddr)
     }
@@ -111,7 +111,7 @@ mod test {
         let region_order = 4;
         let region_size = size_of_order(region_order);
         let region = MockMemoryRegion::alloc(region_size);
-        let region_start = region.start_paddr();
+        let region_start = region.paddr();
 
         let mut set = BuddySet::<5>::new_empty();
         set.insert_chunk(region_start, region_order);

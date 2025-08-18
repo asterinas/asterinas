@@ -14,7 +14,7 @@ use ostd::{
         BusProbeError,
     },
     io::IoMem,
-    mm::DmaCoherent,
+    mm::{DmaCoherent, HasPaddr},
     trap::irq::IrqCallbackFunction,
 };
 

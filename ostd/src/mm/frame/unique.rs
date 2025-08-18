@@ -8,7 +8,7 @@ use super::{
     meta::{GetFrameError, REF_COUNT_UNIQUE},
     AnyFrameMeta, Frame, MetaSlot,
 };
-use crate::mm::{frame::mapping, Paddr, PagingConsts, PagingLevel, PAGE_SIZE};
+use crate::mm::{frame::mapping, HasPaddr, HasSize, Paddr, PagingConsts, PagingLevel, PAGE_SIZE};
 
 /// An owning frame pointer.
 ///
@@ -26,7 +26,7 @@ unsafe impl<M: AnyFrameMeta + ?Sized> Sync for UniqueFrame<M> {}
 
 impl<M: AnyFrameMeta + ?Sized> core::fmt::Debug for UniqueFrame<M> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "UniqueFrame({:#x})", self.start_paddr())
+        write!(f, "UniqueFrame({:#x})", self.paddr())
     }
 }
 
@@ -66,11 +66,6 @@ impl<M: AnyFrameMeta> UniqueFrame<M> {
 }
 
 impl<M: AnyFrameMeta + ?Sized> UniqueFrame<M> {
-    /// Gets the physical address of the start of the frame.
-    pub fn start_paddr(&self) -> Paddr {
-        self.slot().frame_paddr()
-    }
-
     /// Gets the paging level of this page.
     ///
     /// This is the level of the page table entry that maps the frame,
@@ -80,11 +75,6 @@ impl<M: AnyFrameMeta + ?Sized> UniqueFrame<M> {
     /// page frame.
     pub const fn level(&self) -> PagingLevel {
         1
-    }
-
-    /// Gets the size of this page in bytes.
-    pub const fn size(&self) -> usize {
-        PAGE_SIZE
     }
 
     /// Gets the dyncamically-typed metadata of this frame.
@@ -127,7 +117,7 @@ impl<M: AnyFrameMeta + ?Sized> UniqueFrame<M> {
     /// Converts this frame into a raw physical address.
     pub(crate) fn into_raw(self) -> Paddr {
         let this = ManuallyDrop::new(self);
-        this.start_paddr()
+        this.paddr()
     }
 
     /// Restores a raw physical address back into a unique frame.
@@ -153,6 +143,18 @@ impl<M: AnyFrameMeta + ?Sized> UniqueFrame<M> {
     }
 }
 
+impl<M: AnyFrameMeta + ?Sized> HasPaddr for UniqueFrame<M> {
+    fn paddr(&self) -> Paddr {
+        self.slot().frame_paddr()
+    }
+}
+
+impl<M: AnyFrameMeta + ?Sized> HasSize for UniqueFrame<M> {
+    fn size(&self) -> usize {
+        PAGE_SIZE
+    }
+}
+
 impl<M: AnyFrameMeta + ?Sized> Drop for UniqueFrame<M> {
     fn drop(&mut self) {
         self.slot().ref_count.store(0, Ordering::Relaxed);
@@ -160,7 +162,7 @@ impl<M: AnyFrameMeta + ?Sized> Drop for UniqueFrame<M> {
         // The slot is initialized.
         unsafe { self.slot().drop_last_in_place() };
 
-        super::allocator::get_global_frame_allocator().dealloc(self.start_paddr(), PAGE_SIZE);
+        super::allocator::get_global_frame_allocator().dealloc(self.paddr(), PAGE_SIZE);
     }
 }
 

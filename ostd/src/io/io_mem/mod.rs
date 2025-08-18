@@ -15,7 +15,7 @@ use crate::{
         io_util::{HasVmReaderWriter, VmReaderWriterIdentity},
         kspace::kvirt_area::KVirtArea,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
-        HasPaddr, Infallible, Paddr, VmReader, VmWriter, PAGE_SIZE,
+        HasPaddr, HasSize, Infallible, Paddr, VmReader, VmWriter, PAGE_SIZE,
     },
     prelude::*,
     Error,
@@ -39,16 +39,6 @@ impl IoMem {
             .unwrap()
             .acquire(range)
             .ok_or(Error::AccessDenied)
-    }
-
-    /// Returns the physical address of the I/O memory.
-    pub fn paddr(&self) -> Paddr {
-        self.pa
-    }
-
-    /// Returns the length of the I/O memory region.
-    pub fn length(&self) -> usize {
-        self.limit
     }
 
     /// Slices the `IoMem`, returning another `IoMem` representing the subslice.
@@ -166,6 +156,12 @@ impl HasVmReaderWriter for IoMem {
 impl HasPaddr for IoMem {
     fn paddr(&self) -> Paddr {
         self.pa
+    }
+}
+
+impl HasSize for IoMem {
+    fn size(&self) -> usize {
+        self.limit
     }
 }
 

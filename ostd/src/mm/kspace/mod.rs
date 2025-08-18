@@ -52,7 +52,7 @@ use super::{
     },
     page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
     page_table::{PageTable, PageTableConfig},
-    Frame, Paddr, PagingConstsTrait, Vaddr,
+    Frame, HasSize, Paddr, PagingConstsTrait, Vaddr,
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},

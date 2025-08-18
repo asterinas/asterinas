@@ -7,18 +7,13 @@
     expect(unused_imports)
 )]
 
-/// Virtual addresses.
-pub type Vaddr = usize;
-
-/// Physical addresses.
-pub type Paddr = usize;
-
 pub(crate) mod dma;
 pub mod frame;
 pub mod heap;
 pub mod io;
 pub mod io_util;
 pub(crate) mod kspace;
+pub(crate) mod mem_obj;
 pub(crate) mod page_prop;
 pub(crate) mod page_table;
 pub mod tlb;
@@ -30,7 +25,7 @@ mod test;
 use core::{fmt::Debug, ops::Range};
 
 pub use self::{
-    dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
+    dma::{DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice},
     frame::{
         allocator::FrameAllocOptions,
         segment::{Segment, USegment},
@@ -42,6 +37,7 @@ pub use self::{
         Fallible, FallibleVmRead, FallibleVmWrite, Infallible, PodAtomic, PodOnce, VmIo, VmIoFill,
         VmIoOnce, VmReader, VmWriter,
     },
+    mem_obj::{HasDaddr, HasPaddr, HasPaddrRange, HasSize},
     page_prop::{CachePolicy, PageFlags, PageProperty},
     vm_space::VmSpace,
 };
@@ -49,6 +45,15 @@ pub(crate) use self::{
     kspace::paddr_to_vaddr, page_prop::PrivilegedPageFlags, page_table::PageTable,
 };
 use crate::arch::mm::PagingConsts;
+
+/// Virtual addresses.
+pub type Vaddr = usize;
+
+/// Physical addresses.
+pub type Paddr = usize;
+
+/// Device addresses.
+pub type Daddr = usize;
 
 /// The level of a page table node or a frame.
 pub type PagingLevel = u8;
@@ -128,12 +133,6 @@ pub const MAX_USERSPACE_VADDR: Vaddr = 0x0000_8000_0000_0000 - PAGE_SIZE;
 /// There are the high canonical addresses defined in most 48-bit width
 /// architectures.
 pub const KERNEL_VADDR_RANGE: Range<Vaddr> = 0xffff_8000_0000_0000..0xffff_ffff_ffff_0000;
-
-/// Gets physical address trait
-pub trait HasPaddr {
-    /// Returns the physical address.
-    fn paddr(&self) -> Paddr;
-}
 
 /// Checks if the given address is page-aligned.
 pub const fn is_page_aligned(p: usize) -> bool {
