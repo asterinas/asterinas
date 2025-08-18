@@ -23,7 +23,7 @@ fn kvirt_area_tracked_map_pages() {
     let frames = FrameAllocOptions::default()
         .alloc_segment_with(2, |_| ())
         .unwrap();
-    let start_paddr = frames.start_paddr();
+    let paddr = frames.paddr();
 
     let kvirt_area = KVirtArea::map_frames(size, 0, frames.into_iter(), default_prop());
 
@@ -36,7 +36,7 @@ fn kvirt_area_tracked_map_pages() {
         let MappedItem::Tracked(page, _) = kvirt_area.query(addr).unwrap() else {
             panic!("Expected a tracked page");
         };
-        assert_eq!(page.start_paddr(), start_paddr + (i * PAGE_SIZE));
+        assert_eq!(page.paddr(), paddr + (i * PAGE_SIZE));
     }
 }
 

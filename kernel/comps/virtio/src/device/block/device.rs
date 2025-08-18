@@ -19,7 +19,7 @@ use id_alloc::IdAlloc;
 use log::{debug, info};
 use ostd::{
     arch::trap::TrapFrame,
-    mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmIo},
+    mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, HasSize, VmIo},
     sync::SpinLock,
     Pod,
 };
@@ -144,12 +144,12 @@ impl DeviceInner {
             let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
             DmaStream::map(segment.into(), DmaDirection::Bidirectional, false).unwrap()
         };
-        assert!(Self::QUEUE_SIZE as usize * REQ_SIZE <= block_requests.nbytes());
+        assert!(Self::QUEUE_SIZE as usize * REQ_SIZE <= block_requests.size());
         let block_responses = {
             let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
             DmaStream::map(segment.into(), DmaDirection::Bidirectional, false).unwrap()
         };
-        assert!(Self::QUEUE_SIZE as usize * RESP_SIZE <= block_responses.nbytes());
+        assert!(Self::QUEUE_SIZE as usize * RESP_SIZE <= block_responses.size());
 
         let device = Arc::new(Self {
             config_manager,

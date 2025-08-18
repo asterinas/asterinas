@@ -9,7 +9,7 @@ use core::ops::Range;
 
 use ostd::mm::{
     io_util::{HasVmReaderWriter, VmReaderWriterIdentity},
-    Infallible, Paddr, UFrame, USegment, VmReader, VmWriter, PAGE_SIZE,
+    HasPaddr, HasSize, Infallible, Paddr, UFrame, USegment, VmReader, VmWriter, PAGE_SIZE,
 };
 
 /// A reference to a slice of a [`USegment`].
@@ -46,28 +46,20 @@ impl SegmentSlice {
         }
     }
 
-    /// Returns the start physical address.
-    pub fn start_paddr(&self) -> Paddr {
+    fn start_frame_index(&self) -> usize {
+        self.inner.paddr() / PAGE_SIZE + self.range.start
+    }
+}
+
+impl HasPaddr for SegmentSlice {
+    fn paddr(&self) -> Paddr {
         self.start_frame_index() * PAGE_SIZE
     }
+}
 
-    /// Returns the end physical address.
-    pub fn end_paddr(&self) -> Paddr {
-        (self.start_frame_index() + self.nframes()) * PAGE_SIZE
-    }
-
-    /// Returns the number of page frames.
-    pub fn nframes(&self) -> usize {
+impl HasSize for SegmentSlice {
+    fn size(&self) -> usize {
         self.range.len()
-    }
-
-    /// Returns the number of bytes.
-    pub fn nbytes(&self) -> usize {
-        self.nframes() * PAGE_SIZE
-    }
-
-    fn start_frame_index(&self) -> usize {
-        self.inner.start_paddr() / PAGE_SIZE + self.range.start
     }
 }
 
@@ -77,16 +69,16 @@ impl HasVmReaderWriter for SegmentSlice {
     fn reader(&self) -> VmReader<'_, Infallible> {
         let mut reader = self.inner.reader();
         reader
-            .skip(self.start_paddr() - self.inner.start_paddr())
-            .limit(self.nbytes());
+            .skip(self.paddr() - self.inner.paddr())
+            .limit(self.size());
         reader
     }
 
     fn writer(&self) -> VmWriter<'_, Infallible> {
         let mut writer = self.inner.writer();
         writer
-            .skip(self.start_paddr() - self.inner.start_paddr())
-            .limit(self.nbytes());
+            .skip(self.paddr() - self.inner.paddr())
+            .limit(self.size());
         writer
     }
 }

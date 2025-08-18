@@ -528,12 +528,12 @@ fn alloc_meta_frames(tot_nr_frames: usize) -> (usize, Paddr) {
         .checked_mul(size_of::<MetaSlot>())
         .unwrap()
         .div_ceil(PAGE_SIZE);
-    let start_paddr = allocator::early_alloc(
+    let paddr = allocator::early_alloc(
         Layout::from_size_align(nr_meta_pages * PAGE_SIZE, PAGE_SIZE).unwrap(),
     )
     .unwrap();
 
-    let slots = paddr_to_vaddr(start_paddr) as *mut MetaSlot;
+    let slots = paddr_to_vaddr(paddr) as *mut MetaSlot;
 
     // Initialize the metadata slots.
     for i in 0..tot_nr_frames {
@@ -552,7 +552,7 @@ fn alloc_meta_frames(tot_nr_frames: usize) -> (usize, Paddr) {
         };
     }
 
-    (nr_meta_pages, start_paddr)
+    (nr_meta_pages, paddr)
 }
 
 /// Unusable memory metadata. Cannot be used for any purposes.

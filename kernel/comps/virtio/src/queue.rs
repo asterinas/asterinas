@@ -13,7 +13,7 @@ use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
 use log::debug;
 use ostd::{
-    mm::{DmaCoherent, FrameAllocOptions, PodOnce},
+    mm::{DmaCoherent, FrameAllocOptions, HasPaddr, PodOnce},
     Pod,
 };
 

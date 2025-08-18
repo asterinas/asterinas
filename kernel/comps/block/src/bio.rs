@@ -6,8 +6,8 @@ use int_to_c_enum::TryFromInt;
 use ostd::{
     mm::{
         io_util::{HasVmReaderWriter, VmReaderWriterResult},
-        DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, Infallible, USegment, VmReader,
-        VmWriter,
+        DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, HasSize, Infallible, USegment,
+        VmReader, VmWriter,
     },
     sync::{SpinLock, WaitQueue},
     Error,
@@ -457,7 +457,7 @@ impl BioSegment {
 
     /// Returns the number of bytes.
     pub fn nbytes(&self) -> usize {
-        self.inner.dma_slice.nbytes()
+        self.inner.dma_slice.size()
     }
 
     /// Returns the number of sectors.
@@ -652,7 +652,7 @@ impl BioSegmentPool {
         let (start, end) = {
             let dma_slice = &bio_segment.dma_slice;
             let start = dma_slice.offset().align_down(BLOCK_SIZE) / BLOCK_SIZE;
-            let end = (dma_slice.offset() + dma_slice.nbytes()).align_up(BLOCK_SIZE) / BLOCK_SIZE;
+            let end = (dma_slice.offset() + dma_slice.size()).align_up(BLOCK_SIZE) / BLOCK_SIZE;
 
             if end <= start || end > self.total_blocks {
                 return;
