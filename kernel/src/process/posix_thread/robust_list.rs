@@ -124,38 +124,44 @@ const FUTEX_WAITERS: u32 = 0x8000_0000;
 const FUTEX_OWNER_DIED: u32 = 0x4000_0000;
 const FUTEX_TID_MASK: u32 = 0x3FFF_FFFF;
 
-/// Wakeup one robust futex owned by the thread
-/// FIXME: requires atomic operations here
+/// Attempts to wake a robust futex owned by the given thread.
+///
+/// If the futex at `futex_addr` is still owned by `tid`, it is marked with
+/// `FUTEX_OWNER_DIED` and one waiter (if any) is woken.  
+/// If the futex is owned by another thread, the operation is canceled.
 pub fn wake_robust_futex(futex_addr: Vaddr, tid: Tid) -> Result<()> {
+    if futex_addr == 0 {
+        return_errno_with_message!(Errno::EINVAL, "invalid futext addr");
+    }
+
     let task = Task::current().unwrap();
     let user_space = CurrentUserSpace::new(task.as_thread_local().unwrap());
 
-    let futex_val = {
-        if futex_addr == 0 {
-            return_errno_with_message!(Errno::EINVAL, "invalid futext addr");
-        }
-        user_space.read_val::<u32>(futex_addr)?
-    };
-    let mut old_val = futex_val;
+    // Instantiate reader and writer pointing at the same `futex_addr`, set up
+    // for the same length: the length of an `u32`.
+    const U32_LEN: usize = size_of::<u32>();
+    let writer = user_space.writer(futex_addr, U32_LEN)?;
+    let reader = user_space.reader(futex_addr, U32_LEN)?;
+
+    let mut old_val: u32 = reader.atomic_load()?;
     loop {
-        // This futex may held by another thread, do nothing
+        // This futex may be held by another thread. If so, do nothing.
         if old_val & FUTEX_TID_MASK != tid {
             break;
         }
+
         let new_val = (old_val & FUTEX_WAITERS) | FUTEX_OWNER_DIED;
-        let cur_val = user_space.read_val(futex_addr)?;
-        if cur_val != new_val {
-            // The futex value has changed, let's retry with current value
-            old_val = cur_val;
-            user_space.write_val(futex_addr, &new_val)?;
-            continue;
+        match writer.atomic_compare_exchange(&reader, old_val, new_val)? {
+            (cur_val, false) => old_val = cur_val, // Try again with `cur_val`.
+            (_, true) => {
+                // Wake up one waiter and break out from the loop.
+                if new_val & FUTEX_WAITERS != 0 {
+                    debug!("wake robust futex addr: {:?}", futex_addr);
+                    futex_wake(futex_addr, 1, None)?;
+                }
+                break;
+            }
         }
-        // Wakeup one waiter
-        if cur_val & FUTEX_WAITERS != 0 {
-            debug!("wake robust futex addr: {:?}", futex_addr);
-            futex_wake(futex_addr, 1, None)?;
-        }
-        break;
     }
     Ok(())
 }
