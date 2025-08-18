@@ -11,8 +11,8 @@ use device_id::{DeviceId, MinorId};
 use ostd::{
     const_assert,
     mm::{
-        io_util::HasVmReaderWriter, DmaCoherent, FrameAllocOptions, HasPaddr, HasSize, USegment,
-        VmIo, PAGE_SIZE,
+        dma::DmaCoherent, io_util::HasVmReaderWriter, FrameAllocOptions, HasPaddr, HasSize,
+        USegment, VmIo, PAGE_SIZE,
     },
     sync::WaitQueue,
 };
