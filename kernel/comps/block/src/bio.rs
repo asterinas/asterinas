@@ -379,7 +379,7 @@ pub struct BioSegment {
 #[derive(Debug)]
 struct BioSegmentInner {
     /// Internal DMA slice.
-    dma_slice: Slice<DmaStream>,
+    dma_slice: Slice<Arc<DmaStream>>,
     /// Whether the segment is allocated from the pool.
     from_pool: bool,
 }
@@ -435,7 +435,7 @@ impl BioSegment {
                     .unwrap();
                 let dma_stream = DmaStream::map(segment.into(), direction.into(), false).unwrap();
                 BioSegmentInner {
-                    dma_slice: Slice::new(dma_stream, offset..offset + len),
+                    dma_slice: Slice::new(Arc::new(dma_stream), offset..offset + len),
                     from_pool: false,
                 }
             });
@@ -451,7 +451,7 @@ impl BioSegment {
         let dma_stream = DmaStream::map(segment, direction.into(), false).unwrap();
         Self {
             inner: Arc::new(BioSegmentInner {
-                dma_slice: Slice::new(dma_stream, 0..len),
+                dma_slice: Slice::new(Arc::new(dma_stream), 0..len),
                 from_pool: false,
             }),
         }
@@ -478,7 +478,7 @@ impl BioSegment {
     }
 
     /// Returns the inner DMA slice.
-    pub fn inner_dma_slice(&self) -> &Slice<DmaStream> {
+    pub fn inner_dma_slice(&self) -> &Slice<Arc<DmaStream>> {
         &self.inner.dma_slice
     }
 
@@ -531,7 +531,7 @@ impl BioSegmentInner {
 /// the `DmaStream`.
 // TODO: Use a more advanced allocation algorithm to replace the naive one to improve efficiency.
 struct BioSegmentPool {
-    pool: DmaStream,
+    pool: Arc<DmaStream>,
     total_blocks: usize,
     direction: BioDirection,
     manager: SpinLock<PoolSlotManager>,
@@ -567,7 +567,7 @@ impl BioSegmentPool {
         });
 
         Self {
-            pool,
+            pool: Arc::new(pool),
             total_blocks,
             direction,
             manager,
