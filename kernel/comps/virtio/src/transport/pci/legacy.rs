@@ -10,7 +10,7 @@ use ostd::{
     bus::BusProbeError,
     io::IoMem,
     irq::IrqCallbackFunction,
-    mm::{DmaCoherent, HasDaddr, PAGE_SIZE},
+    mm::{dma::DmaCoherent, HasDaddr, PAGE_SIZE},
 };
 
 use crate::{

@@ -4,9 +4,8 @@ use core::{fmt::Debug, marker::PhantomData};
 
 use aster_rights::{Dup, Exec, Full, Read, Signal, TRightSet, TRights, Write};
 use aster_rights_proc::require;
-use inherit_methods_macro::inherit_methods;
 use ostd::{
-    mm::{Daddr, DmaStream, HasDaddr, HasPaddr, Paddr, PodOnce, VmIo, VmIoOnce},
+    mm::{Daddr, HasDaddr, HasPaddr, Paddr, PodOnce, VmIo, VmIoOnce},
     Pod, Result,
 };
 
@@ -279,6 +278,11 @@ impl<T, M, R> SafePtr<T, M, R> {
             self.offset -= (-bytes) as usize;
         }
     }
+
+    /// Returns the current byte offset of the pointer.
+    pub fn cur_byte_offset(&self) -> usize {
+        self.offset
+    }
 }
 
 // =============== VM object-related methods ==============
@@ -359,16 +363,11 @@ impl<T, M: HasDaddr, R> HasDaddr for SafePtr<T, M, R> {
     }
 }
 
-impl<T, R> SafePtr<T, DmaStream, R> {
+impl<T, R> SafePtr<T, ostd::mm::dma::DmaStream, R> {
     /// Synchronize the object in the streaming DMA mapping
     pub fn sync(&self) -> Result<()> {
         self.vm_obj.sync(self.offset..self.offset + size_of::<T>())
     }
-}
-
-#[inherit_methods(from = "(*self)")]
-impl<T, R> SafePtr<T, &DmaStream, R> {
-    pub fn sync(&self) -> Result<()>;
 }
 
 #[require(R > Dup)]

@@ -6,7 +6,10 @@ use align_ext::AlignExt;
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use device_id::DeviceId;
 use ostd::{
-    mm::{DmaCoherent, FrameAllocOptions, HasPaddr, HasSize, VmIo, PAGE_SIZE},
+    mm::{
+        dma::{Bidirectional, DmaCoherent},
+        FrameAllocOptions, HasPaddr, HasSize, VmIo, PAGE_SIZE,
+    },
     sync::WaitQueue,
 };
 use tdx_guest::{
@@ -186,7 +189,7 @@ fn tdx_get_report(inblob: &[u8]) -> Result<Box<[u8]>> {
     }
 
     let segment = FrameAllocOptions::new().alloc_segment(2)?;
-    let dma_coherent = DmaCoherent::map(segment.into(), false).unwrap();
+    let dma_coherent = DmaCoherent::<Bidirectional>::map(segment.into(), false);
     dma_coherent.write_bytes(0, &inblob).unwrap();
 
     // FIXME: The `get_report` API from the `tdx_guest` crate should have been marked `unsafe`
@@ -212,6 +215,6 @@ fn alloc_dma_buf(buf_len: usize) -> Result<DmaCoherent> {
     let aligned_buf_len = buf_len.align_up(PAGE_SIZE);
     let segment = FrameAllocOptions::new().alloc_segment(aligned_buf_len / PAGE_SIZE)?;
 
-    let dma_buf = DmaCoherent::map(segment.into(), false).unwrap();
+    let dma_buf = DmaCoherent::map(segment.into(), false);
     Ok(dma_buf)
 }

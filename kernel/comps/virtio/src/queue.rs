@@ -13,7 +13,7 @@ use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
 use log::debug;
 use ostd::{
-    mm::{DmaCoherent, FrameAllocOptions, HasPaddr, PodOnce},
+    mm::{dma::DmaCoherent, FrameAllocOptions, HasPaddr, PodOnce},
     Pod,
 };
 
@@ -99,12 +99,12 @@ impl VirtQueue {
                 continue_segment.split(seg1_frames * align_size)
             };
             let desc_frame_ptr: SafePtr<Descriptor, Arc<DmaCoherent>> =
-                SafePtr::new(Arc::new(DmaCoherent::map(seg1.into(), true).unwrap()), 0);
+                SafePtr::new(Arc::new(DmaCoherent::map(seg1.into(), true)), 0);
             let mut avail_frame_ptr: SafePtr<AvailRing, Arc<DmaCoherent>> =
                 desc_frame_ptr.clone().cast();
             avail_frame_ptr.byte_add(desc_size);
             let used_frame_ptr: SafePtr<UsedRing, Arc<DmaCoherent>> =
-                SafePtr::new(Arc::new(DmaCoherent::map(seg2.into(), true).unwrap()), 0);
+                SafePtr::new(Arc::new(DmaCoherent::map(seg2.into(), true)), 0);
             (desc_frame_ptr, avail_frame_ptr, used_frame_ptr)
         } else {
             if size > 256 {
@@ -112,33 +112,24 @@ impl VirtQueue {
             }
             (
                 SafePtr::new(
-                    Arc::new(
-                        DmaCoherent::map(
-                            FrameAllocOptions::new().alloc_segment(1).unwrap().into(),
-                            true,
-                        )
-                        .unwrap(),
-                    ),
+                    Arc::new(DmaCoherent::map(
+                        FrameAllocOptions::new().alloc_segment(1).unwrap().into(),
+                        true,
+                    )),
                     0,
                 ),
                 SafePtr::new(
-                    Arc::new(
-                        DmaCoherent::map(
-                            FrameAllocOptions::new().alloc_segment(1).unwrap().into(),
-                            true,
-                        )
-                        .unwrap(),
-                    ),
+                    Arc::new(DmaCoherent::map(
+                        FrameAllocOptions::new().alloc_segment(1).unwrap().into(),
+                        true,
+                    )),
                     0,
                 ),
                 SafePtr::new(
-                    Arc::new(
-                        DmaCoherent::map(
-                            FrameAllocOptions::new().alloc_segment(1).unwrap().into(),
-                            true,
-                        )
-                        .unwrap(),
-                    ),
+                    Arc::new(DmaCoherent::map(
+                        FrameAllocOptions::new().alloc_segment(1).unwrap().into(),
+                        true,
+                    )),
                     0,
                 ),
             )
