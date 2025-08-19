@@ -25,8 +25,8 @@ impl Driver for RtcLoongson {
             const SYS_TOYTRIM: usize = 0x20;
             // Initialize the RTC unit
             // Reference: <https://loongson.github.io/LoongArch-Documentation/Loongson-7A1000-usermanual-EN.html#rtc>
-            io_mem.write_once(SYS_TOYTRIM, &0x0u32);
-            io_mem.write_once(SYS_RTCCTRL, &0x2900u32);
+            io_mem.write_once(SYS_TOYTRIM, &0x0u32).unwrap();
+            io_mem.write_once(SYS_RTCCTRL, &0x2900u32).unwrap();
 
             Some(Self { io_mem })
         } else {

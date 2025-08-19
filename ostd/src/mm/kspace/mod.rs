@@ -34,6 +34,8 @@
 //! If the address width is (according to [`crate::arch::mm::PagingConsts`])
 //! 39 bits or 57 bits, the memory space just adjust proportionally.
 
+#![cfg_attr(target_arch = "loongarch64", expect(unused_imports))]
+
 pub(crate) mod kvirt_area;
 
 use core::ops::Range;

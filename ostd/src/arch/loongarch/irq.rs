@@ -20,7 +20,7 @@ impl IrqRemapping {
     ///
     /// This will do nothing if the entry is already initialized or interrupt
     /// remapping is disabled or not supported by the architecture.
-    pub(crate) fn init(&self, irq_num: u8) {}
+    pub(crate) fn init(&self, _irq_num: u8) {}
 
     /// Gets the remapping index of the IRQ line.
     ///
@@ -66,7 +66,7 @@ pub(crate) fn is_local_enabled() -> bool {
 pub(crate) struct HwCpuId(u32);
 
 impl HwCpuId {
-    pub(crate) fn read_current(guard: &dyn PinCurrentCpu) -> Self {
+    pub(crate) fn read_current(_guard: &dyn PinCurrentCpu) -> Self {
         // TODO: Support SMP in LoongArch.
         Self(0)
     }
@@ -79,6 +79,6 @@ impl HwCpuId {
 /// The caller must ensure that the interrupt number is valid and that
 /// the corresponding handler is configured correctly on the remote CPU.
 /// Furthermore, invoking the interrupt handler must also be safe.
-pub(crate) unsafe fn send_ipi(hw_cpu_id: HwCpuId, irq_num: u8, guard: &dyn PinCurrentCpu) {
+pub(crate) unsafe fn send_ipi(_hw_cpu_id: HwCpuId, _irq_num: u8, _guard: &dyn PinCurrentCpu) {
     unimplemented!()
 }

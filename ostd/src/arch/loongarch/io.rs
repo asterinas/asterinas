@@ -11,7 +11,7 @@ use crate::{boot::memory_region::MemoryRegionType, io::IoMemAllocatorBuilder};
 /// address space as MMIO regions.
 pub(super) fn construct_io_mem_allocator_builder() -> IoMemAllocatorBuilder {
     let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
-    let mut reserved_filter = regions.iter().filter(|r| {
+    let reserved_filter = regions.iter().filter(|r| {
         r.typ() != MemoryRegionType::Unknown
             && r.typ() != MemoryRegionType::Reserved
             && r.typ() != MemoryRegionType::Framebuffer

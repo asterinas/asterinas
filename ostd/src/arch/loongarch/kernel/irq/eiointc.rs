@@ -89,10 +89,7 @@ impl Eiointc {
 
         // Set the interrupt to bounce on the cores on node 0
         for i in 0..Self::MAX_INTERRUPT_NUM {
-            iocsr_write_b(
-                Self::EXT_IOI_MAP_CORE_BASE + i as usize,
-                (1 << core_num) - 1,
-            );
+            iocsr_write_b(Self::EXT_IOI_MAP_CORE_BASE + i, (1 << core_num) - 1);
         }
 
         // Set the node type0 to node 0

@@ -85,7 +85,7 @@ pub(crate) fn init() {
 
 pub(crate) const MSIX_DEFAULT_MSG_ADDR: u32 = 0x2ff0_0000;
 
-pub(crate) fn construct_remappable_msix_address(remapping_index: u32) -> u32 {
+pub(crate) fn construct_remappable_msix_address(_remapping_index: u32) -> u32 {
     unimplemented!()
 }
 
@@ -140,7 +140,7 @@ fn init_mmio_allocator_from_fdt(node: &FdtNode) {
 
     while i + entry_size <= data.len() {
         let pci_space = u32::from_be_bytes(data[i..i + 4].try_into().unwrap());
-        let pci_addr = u64::from_be_bytes(data[i + 4..i + 12].try_into().unwrap());
+        let _pci_addr = u64::from_be_bytes(data[i + 4..i + 12].try_into().unwrap());
         let cpu_addr = u64::from_be_bytes(data[i + 12..i + 20].try_into().unwrap());
         let size = u64::from_be_bytes(data[i + 20..i + 28].try_into().unwrap());
 

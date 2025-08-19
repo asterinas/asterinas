@@ -2,6 +2,8 @@
 
 //! Platform-specific code for the LoongArch platform.
 
+#![expect(dead_code)]
+
 pub mod boot;
 pub(crate) mod cpu;
 pub mod device;

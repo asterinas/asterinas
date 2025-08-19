@@ -270,6 +270,7 @@ impl MemoryBar {
         // 32 bit register is considered an extension of the first (i.e., bits 63:32). Software
         // writes a value of all 1's to both registers, reads them back, and combines the result
         // into a 64-bit value."
+        #[cfg_attr(target_arch = "loongarch64", expect(unused_variables))]
         let (raw64, size_encoded64) = match address_length {
             AddrLen::Bits32 => (raw as u64, size_encoded as u64 | ((u32::MAX as u64) << 32)),
             AddrLen::Bits64 => {
