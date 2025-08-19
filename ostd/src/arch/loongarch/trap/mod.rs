@@ -2,9 +2,8 @@
 
 //! Handles trap.
 
+#[expect(clippy::module_inception)]
 mod trap;
-
-use core::arch::asm;
 
 use loongArch64::register::estat::{self, Exception, Interrupt, Trap};
 use spin::Once;
@@ -12,11 +11,8 @@ pub(super) use trap::RawUserContext;
 pub use trap::TrapFrame;
 
 use crate::{
-    arch::{boot::loongarch_boot, mm::tlb_flush_addr},
-    cpu::context::CpuExceptionInfo,
-    cpu_local_cell,
-    mm::MAX_USERSPACE_VADDR,
-    trap::call_irq_callback_functions,
+    arch::mm::tlb_flush_addr, cpu::context::CpuExceptionInfo, cpu_local_cell,
+    mm::MAX_USERSPACE_VADDR, trap::call_irq_callback_functions,
 };
 
 cpu_local_cell! {
@@ -24,8 +20,10 @@ cpu_local_cell! {
 }
 
 /// Initialize trap handling on LoongArch.
-pub unsafe fn init() {
-    self::trap::init();
+pub(crate) unsafe fn init() {
+    unsafe {
+        self::trap::init();
+    }
 }
 
 /// Returns true if this function is called within the context of an IRQ handler
@@ -48,7 +46,6 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
             Exception::LoadPageFault
             | Exception::StorePageFault
             | Exception::FetchPageFault
-            | Exception::PageModifyFault
             | Exception::PageNonReadableFault
             | Exception::PageNonExecutableFault
             | Exception::PagePrivilegeIllegal => {
@@ -62,7 +59,7 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
                     && (0..MAX_USERSPACE_VADDR).contains(&(page_fault_addr as usize))
                     && handler(&CpuExceptionInfo {
                         code: exception,
-                        page_fault_addr: page_fault_addr,
+                        page_fault_addr,
                         error_code: 0,
                     })
                     .is_ok()
@@ -74,9 +71,6 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
             Exception::PageModifyFault => {
                 unimplemented!()
             }
-            Exception::PageNonReadableFault => todo!(),
-            Exception::PageNonExecutableFault => todo!(),
-            Exception::PagePrivilegeIllegal => todo!(),
             Exception::FetchInstructionAddressError => todo!(),
             Exception::MemoryAccessAddressError => todo!(),
             Exception::AddressNotAligned => todo!(),

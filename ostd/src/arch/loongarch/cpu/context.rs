@@ -2,9 +2,9 @@
 
 //! CPU execution context control.
 
-use core::{arch::asm, fmt::Debug};
+use core::fmt::Debug;
 
-use loongArch64::register::estat::{self, Exception, Interrupt, Trap};
+use loongArch64::register::estat::{Exception, Interrupt, Trap};
 
 use crate::{
     arch::{
@@ -86,7 +86,7 @@ impl CpuExceptionInfo {
 }
 
 /// Userspace CPU context, including general-purpose registers and exception information.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 #[repr(C)]
 pub struct UserContext {
     user_context: RawUserContext,
@@ -339,7 +339,7 @@ pub type CpuException = Exception;
 /// The FPU context of user task.
 /// Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/loongarch/include/uapi/asm/sigcontext.h#L37>
 // FIXME: Implement FPU context on LoongArch64 platforms.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct FpuContext;
 
 impl FpuContext {

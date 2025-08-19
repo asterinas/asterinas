@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! System call handlers.
-#![cfg_attr(target_arch = "riscv64", expect(dead_code))]
+
+#![cfg_attr(
+    any(target_arch = "riscv64", target_arch = "loongarch64"),
+    expect(dead_code)
+)]
 
 pub use clock_gettime::ClockId;
 use ostd::cpu::context::UserContext;

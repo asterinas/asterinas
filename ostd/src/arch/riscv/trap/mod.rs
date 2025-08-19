@@ -3,7 +3,6 @@
 //! Handles trap.
 
 #[expect(clippy::module_inception)]
-
 mod trap;
 
 use riscv::register::scause::Interrupt;

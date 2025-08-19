@@ -142,17 +142,17 @@ impl PageTableEntry {
 
     fn is_huge(&self) -> bool {
         if self.0 & PageTableFlags::IS_BASIC.bits() != 0 {
-            return false;
+            false
         } else {
-            return self.0 & PageTableFlags::GLOBAL_OR_HUGE.bits() != 0;
+            self.0 & PageTableFlags::GLOBAL_OR_HUGE.bits() != 0
         }
     }
 
     fn is_global(&self) -> bool {
         if self.0 & PageTableFlags::IS_BASIC.bits() != 0 {
-            return self.0 & PageTableFlags::GLOBAL_OR_HUGE.bits() != 0;
+            self.0 & PageTableFlags::GLOBAL_OR_HUGE.bits() != 0
         } else {
-            return self.0 & PageTableFlags::GLOBAL_IN_HUGE.bits() != 0;
+            self.0 & PageTableFlags::GLOBAL_IN_HUGE.bits() != 0
         }
     }
 }
@@ -226,10 +226,11 @@ impl PageTableEntryTrait for PageTableEntry {
         PageProperty {
             flags: PageFlags::from_bits(flags as u8).unwrap(),
             cache,
-            priv_flags: PrivFlags::from_bits(priv_flags as u8).unwrap(),
+            priv_flags: PrivFlags::from_bits(priv_flags).unwrap(),
         }
     }
 
+    #[expect(clippy::precedence)]
     fn set_prop(&mut self, prop: PageProperty) {
         let mut flags = PageTableFlags::VALID.bits()
             // FIXME: To avoid the PageModifyFault exception,

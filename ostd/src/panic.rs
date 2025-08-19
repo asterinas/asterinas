@@ -2,6 +2,8 @@
 
 //! Panic support.
 
+#![cfg_attr(target_arch = "loongarch64", expect(unused_imports))]
+
 use core::ffi::c_void;
 
 use crate::{
@@ -110,6 +112,7 @@ pub fn print_stack_trace() {
     _Unwind_Backtrace(callback, &mut data as *mut _ as _);
 }
 
+/// Catches unwinding panics.
 #[cfg(target_arch = "loongarch64")]
 pub fn catch_unwind<R, F: FnOnce() -> R>(
     f: F,
@@ -118,11 +121,13 @@ pub fn catch_unwind<R, F: FnOnce() -> R>(
     Ok(f())
 }
 
+/// Begins panic handling
 #[cfg(target_arch = "loongarch64")]
 pub fn begin_panic<R>(_: alloc::boxed::Box<R>) {
     // TODO: Support panic context in LoongArch.
 }
 
+/// Prints the stack trace of the current thread to the console.
 #[cfg(target_arch = "loongarch64")]
 pub fn print_stack_trace() {
     // TODO: Support stack trace print in LoongArch.

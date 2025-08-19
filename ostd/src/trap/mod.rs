@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! Handles trap across kernel and user space.
+
 #![cfg_attr(target_arch = "riscv64", expect(unused_imports))]
 
 mod handler;

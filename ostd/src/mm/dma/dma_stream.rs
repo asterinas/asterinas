@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![cfg_attr(target_arch = "riscv64", allow(unfulfilled_lint_expectations))]
+#![cfg_attr(
+    any(target_arch = "riscv64", target_arch = "loongarch64"),
+    allow(unfulfilled_lint_expectations)
+)]
 
 use alloc::sync::Arc;
 use core::ops::Range;
