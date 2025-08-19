@@ -92,7 +92,7 @@ provided by Linux on x86-64 architecture.
 | 69      | msgsnd                 | ❌             |     |
 | 70      | msgrcv                 | ❌             |     |
 | 71      | msgctl                 | ❌             |     |
-| 72      | fcntl                  | ✅             |     |
+| 72      | fcntl                  | ✅             | [⚠️](limitations-on-system-calls/file-descriptor-and-io-control.md#fcntl) |
 | 73      | flock                  | ✅             |     |
 | 74      | fsync                  | ✅             |     |
 | 75      | fdatasync              | ✅             |     |
@@ -310,10 +310,10 @@ provided by Linux on x86-64 architecture.
 | 287     | timerfd_gettime        | ✅             |     |
 | 288     | accept4                | ✅             |     |
 | 289     | signalfd4              | ✅             |     |
-| 290     | eventfd2               | ✅             |     |
+| 290     | eventfd2               | ✅             | [⚠️](limitations-on-system-calls/file-descriptor-and-io-control.md#eventfd-and-eventfd2) |
 | 291     | epoll_create1          | ✅             |     |
 | 292     | dup3                   | ✅             |     |
-| 293     | pipe2                  | ✅             |     |
+| 293     | pipe2                  | ✅             | [⚠️](limitations-on-system-calls/file-descriptor-and-io-control.md#pipe-and-pipe2) |
 | 294     | inotify_init1          | ❌             |     |
 | 295     | preadv                 | ✅             |     |
 | 296     | pwritev                | ✅             |     |
