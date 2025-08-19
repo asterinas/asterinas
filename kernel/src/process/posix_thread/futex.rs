@@ -295,7 +295,8 @@ pub fn futex_wake_op(
         };
 
         let pf_result = ctx.thread_local.with_page_fault_disabled(|| {
-            user_space.atomic_update::<u32>(futex_addr_2, |val| wake_op.calculate_new_val(val))
+            user_space
+                .atomic_fetch_update::<u32>(futex_addr_2, |val| wake_op.calculate_new_val(val))
         });
         if let Some(result) = pf_result {
             break (futex_bucket_1, futex_bucket_2, result?);

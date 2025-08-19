@@ -910,8 +910,9 @@ impl VmWriter<'_, Fallible> {
         assert!(cursor.is_aligned());
 
         // SAFETY:
-        // 1. The cursor is either valid for reading and writing or in user space for 4 bytes.
-        // 2. The cursor is aligned on a 4-byte boundary.
+        // 1. The cursor is either valid for reading and writing or in user space for
+        //    `size_of::<T>()` bytes.
+        // 2. The cursor is aligned on a `align_of::<T>()`-byte boundary.
         let cur_val = unsafe { T::atomic_cmpxchg_fallible(cursor, old_val, new_val)? };
 
         Ok((cur_val, old_val == cur_val))
