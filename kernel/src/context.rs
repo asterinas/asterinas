@@ -174,8 +174,12 @@ impl<'a> CurrentUserSpace<'a> {
 
     /// Atomically updates a `PodAtomic` value with [`Ordering::Relaxed`] semantics.
     ///
-    /// This method internally uses [`atomic_compare_exchange`]. If the value changes
+    /// This method internally fetches the old value via [`atomic_load`], applies `op` to compute a
+    /// new value, and updates the value via [`atomic_compare_exchange`]. If the value changes
     /// concurrently, this method will retry so the operation may be performed multiple times.
+    ///
+    /// If the update is completely successful, returns `Ok` with the old value (i.e., the value
+    /// _before_ applying `op`). Otherwise, it returns `Err`.
     ///
     /// # Panics
     ///
@@ -183,8 +187,9 @@ impl<'a> CurrentUserSpace<'a> {
     /// boundary.
     ///
     /// [`Ordering::Relaxed`]: core::sync::atomic::Ordering::Relaxed
+    /// [`atomic_load`]: VmReader::atomic_load
     /// [`atomic_compare_exchange`]: VmWriter::atomic_compare_exchange
-    pub fn atomic_update<T>(&self, vaddr: Vaddr, op: impl Fn(T) -> T) -> Result<T>
+    pub fn atomic_fetch_update<T>(&self, vaddr: Vaddr, op: impl Fn(T) -> T) -> Result<T>
     where
         T: PodAtomic + Eq,
     {
