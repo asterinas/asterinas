@@ -49,6 +49,7 @@
         * [cargo osdk debug](osdk/reference/commands/debug.md)
         * [cargo osdk profile](osdk/reference/commands/profile.md)
     * [Manifest](osdk/reference/manifest.md)
+    * [Environment Variables](osdk/reference/environment-variables.md)
 
 # How to Contribute
 
