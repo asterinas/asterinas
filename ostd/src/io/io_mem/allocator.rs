@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! I/O Memory allocator.
+#![cfg_attr(target_arch = "riscv64", expect(dead_code))]
 
 use alloc::vec::Vec;
 use core::ops::Range;

@@ -2,6 +2,8 @@
 
 //! Platform-specific code for the RISC-V platform.
 
+#![expect(dead_code)]
+
 pub mod boot;
 pub(crate) mod cpu;
 pub mod device;
@@ -47,7 +49,7 @@ pub(crate) unsafe fn init_on_ap() {
     unimplemented!()
 }
 
-pub(crate) fn interrupts_ack(irq_number: usize) {
+pub(crate) fn interrupts_ack(_irq_number: usize) {
     unimplemented!()
 }
 

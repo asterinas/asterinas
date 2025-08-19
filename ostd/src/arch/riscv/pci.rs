@@ -76,6 +76,6 @@ pub(crate) fn init() {
 
 pub(crate) const MSIX_DEFAULT_MSG_ADDR: u32 = 0x2400_0000;
 
-pub(crate) fn construct_remappable_msix_address(remapping_index: u32) -> u32 {
+pub(crate) fn construct_remappable_msix_address(_remapping_index: u32) -> u32 {
     unimplemented!()
 }

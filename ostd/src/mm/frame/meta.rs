@@ -49,7 +49,6 @@ use core::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use align_ext::AlignExt;
 use log::info;
 
 use crate::{
@@ -58,7 +57,6 @@ use crate::{
     const_assert,
     mm::{
         frame::allocator::{self, EarlyAllocatedFrameMeta},
-        kspace::LINEAR_MAPPING_BASE_VADDR,
         paddr_to_vaddr, page_size,
         page_table::boot_pt,
         CachePolicy, Infallible, Paddr, PageFlags, PageProperty, PrivilegedPageFlags, Segment,
@@ -611,6 +609,10 @@ fn mark_unusable_ranges() {
 /// initializing metadata.
 #[cfg(target_arch = "x86_64")]
 fn add_temp_linear_mapping(max_paddr: Paddr) {
+    use align_ext::AlignExt;
+
+    use crate::mm::kspace::LINEAR_MAPPING_BASE_VADDR;
+
     const PADDR4G: Paddr = 0x1_0000_0000;
 
     if max_paddr <= PADDR4G {

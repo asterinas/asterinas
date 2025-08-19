@@ -15,7 +15,7 @@ use crate::{
 };
 
 /// Userspace CPU context, including general-purpose registers and exception information.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 #[repr(C)]
 pub struct UserContext {
     user_context: RawUserContext,
@@ -65,6 +65,7 @@ pub struct GeneralRegs {
 /// CPU exception information.
 //
 // TODO: Refactor the struct into an enum (similar to x86's `CpuException`).
+#[expect(missing_docs)]
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CpuExceptionInfo {
@@ -268,7 +269,7 @@ pub type CpuException = Exception;
 ///
 /// This could be used for saving both legacy and modern state format.
 // FIXME: Implement FPU context on RISC-V platforms.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct FpuContext;
 
 impl FpuContext {

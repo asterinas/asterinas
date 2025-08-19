@@ -13,7 +13,7 @@ impl SignalContext for UserContext {
 }
 
 impl From<&CpuExceptionInfo> for FaultSignal {
-    fn from(trap_info: &CpuExceptionInfo) -> Self {
+    fn from(_trap_info: &CpuExceptionInfo) -> Self {
         unimplemented!()
     }
 }
