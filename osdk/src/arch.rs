@@ -79,7 +79,22 @@ impl Display for Arch {
 }
 
 /// Get the default architecture implied by the host rustc's default architecture.
+///
+/// If the environment variable `OSDK_TARGET_ARCH` is set, use it to determine the default
+/// architecture directly.
 pub fn get_default_arch() -> Arch {
+    if let Ok(arch) = std::env::var("OSDK_TARGET_ARCH") {
+        return match arch.as_str() {
+            "aarch64" => Arch::Aarch64,
+            "riscv64" => Arch::RiscV64,
+            "x86_64" => Arch::X86_64,
+            "loongarch64" => Arch::LoongArch64,
+            _ => panic!(
+                "The environment variable `OSDK_TARGET_ARCH` specifies an unsupported native architecture"
+            ),
+        };
+    };
+
     let output = crate::util::new_command_checked_exists("rustc")
         .arg("-vV")
         .output()
