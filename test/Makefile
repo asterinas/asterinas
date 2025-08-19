@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
-ARCH ?= x86_64
+OSDK_TARGET_ARCH ?= x86_64
 SMP ?= 1
 VERBOSE ?= 1
 SYSCALL_TEST_SUITE ?= ltp
@@ -47,7 +47,7 @@ endif
 all: build
 
 .PHONY: build
-ifeq ($(ARCH), loongarch64)
+ifeq ($(OSDK_TARGET_ARCH), loongarch64)
 build: $(EXT2_IMAGE) $(EXFAT_IMAGE)
 	@echo "For loongarch, we generate a fake initramfs to successfully test or build."
 	@touch $(INITRAMFS_IMAGE)
@@ -59,7 +59,7 @@ endif
 $(INITRAMFS_IMAGE): $(INITRAMFS)
 	@nix-build \
 		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
-		--argstr target $(ARCH) \
+		--argstr target $(OSDK_TARGET_ARCH) \
 		--arg enableBasicTest $(ENABLE_BASIC_TEST) \
 		--arg enableBenchmark $(ENABLE_BENCHMARK) \
 		--arg enableSyscallTest $(ENABLE_SYSCALL_TEST) \
@@ -74,7 +74,7 @@ $(INITRAMFS_IMAGE): $(INITRAMFS)
 $(INITRAMFS):
 	@nix-build \
 		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
-		--argstr target $(ARCH) \
+		--argstr target $(OSDK_TARGET_ARCH) \
 		--arg enableBasicTest $(ENABLE_BASIC_TEST) \
 		--arg enableBenchmark $(ENABLE_BENCHMARK) \
 		--arg enableSyscallTest $(ENABLE_SYSCALL_TEST) \

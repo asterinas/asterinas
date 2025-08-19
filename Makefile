@@ -3,7 +3,7 @@
 # =========================== Makefile options. ===============================
 
 # Global build options.
-ARCH ?= x86_64
+OSDK_TARGET_ARCH ?= x86_64
 BENCHMARK ?= none
 BOOT_METHOD ?= grub-rescue-iso
 BOOT_PROTOCOL ?= multiboot2
@@ -52,7 +52,7 @@ SHELL := /bin/bash
 CARGO_OSDK := ~/.cargo/bin/cargo-osdk
 
 # Common arguments for `cargo osdk` `build`, `run` and `test` commands.
-CARGO_OSDK_COMMON_ARGS := --target-arch=$(ARCH)
+CARGO_OSDK_COMMON_ARGS := --target-arch=$(OSDK_TARGET_ARCH)
 # The build arguments also apply to the `cargo osdk run` command.
 CARGO_OSDK_BUILD_ARGS := --kcmd-args="ostd.log_level=$(LOG_LEVEL)"
 CARGO_OSDK_TEST_ARGS :=
@@ -105,9 +105,9 @@ BOOT_METHOD = qemu-direct
 OVMF = off
 endif
 
-ifeq ($(ARCH), riscv64)
+ifeq ($(OSDK_TARGET_ARCH), riscv64)
 SCHEME = riscv
-else ifeq ($(ARCH), loongarch64)
+else ifeq ($(OSDK_TARGET_ARCH), loongarch64)
 SCHEME = loongarch
 endif
 
@@ -141,7 +141,7 @@ CARGO_OSDK_COMMON_ARGS += --grub-boot-protocol=$(BOOT_PROTOCOL)
 endif
 
 ifeq ($(ENABLE_KVM), 1)
-	ifeq ($(ARCH), x86_64)
+	ifeq ($(OSDK_TARGET_ARCH), x86_64)
 		CARGO_OSDK_COMMON_ARGS += --qemu-args="-accel kvm"
 	endif
 endif
@@ -314,7 +314,6 @@ format:
 	@$(MAKE) --no-print-directory -C test format
 
 .PHONY: check
-# FIXME: Make `make check` arch-aware.
 check: initramfs $(CARGO_OSDK)
 	@# Check formatting issues of the Rust code
 	@./tools/format_all.sh --check
@@ -345,6 +344,9 @@ check: initramfs $(CARGO_OSDK)
 	done
 	@for dir in $(OSDK_CRATES); do \
 		echo "Checking $$dir"; \
+		# Exclude linux-bzimage-setup since it only supports x86-64 currently and will panic \
+		# in other architectures. \
+		[ "$$dir" = "ostd/libs/linux-bzimage/setup" ] && [ "$(OSDK_TARGET_ARCH)" != "x86_64" ] && continue; \
 		(cd $$dir && cargo osdk clippy -- -- -D warnings) || exit 1; \
 	done
 	@
