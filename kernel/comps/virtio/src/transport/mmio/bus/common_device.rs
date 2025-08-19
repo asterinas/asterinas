@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! MMIO device common definitions or functions.
+#![cfg_attr(target_arch = "riscv64", expect(dead_code))]
 
 use int_to_c_enum::TryFromInt;
 use log::info;

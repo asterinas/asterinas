@@ -202,8 +202,12 @@ pub struct ucontext_t {
 impl Default for ucontext_t {
     fn default() -> Self {
         Self {
+            uc_flags: 0,
+            uc_link: Default::default(),
+            uc_stack: Default::default(),
+            uc_sigmask: Default::default(),
             __unused: [0; 120],
-            ..Default::default()
+            uc_mcontext: Default::default(),
         }
     }
 }

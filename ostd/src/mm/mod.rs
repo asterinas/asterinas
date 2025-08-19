@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! Virtual memory (VM).
+#![cfg_attr(target_arch = "riscv64", expect(unused_imports))]
 
 /// Virtual addresses.
 pub type Vaddr = usize;

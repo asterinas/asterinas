@@ -3,8 +3,7 @@
 use alloc::{format, string::String};
 
 use ostd::{
-    cpu::context::{CpuExceptionInfo, GeneralRegs, UserContext},
-    mm::Vaddr,
+    cpu::context::{CpuExceptionInfo, UserContext},
     user::UserContextApi,
     Pod,
 };

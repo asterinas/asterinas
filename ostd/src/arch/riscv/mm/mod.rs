@@ -101,7 +101,9 @@ pub struct PageTableEntry(usize);
 pub unsafe fn activate_page_table(root_paddr: Paddr, _root_pt_cache: CachePolicy) {
     assert!(root_paddr % PagingConsts::BASE_PAGE_SIZE == 0);
     let ppn = root_paddr >> 12;
-    riscv::register::satp::set(riscv::register::satp::Mode::Sv48, 0, ppn);
+    unsafe {
+        riscv::register::satp::set(riscv::register::satp::Mode::Sv48, 0, ppn);
+    }
 }
 
 pub fn current_page_table_paddr() -> Paddr {
@@ -173,6 +175,7 @@ impl PageTableEntryTrait for PageTableEntry {
         }
     }
 
+    #[expect(clippy::precedence)]
     fn set_prop(&mut self, prop: PageProperty) {
         let mut flags = PageTableFlags::VALID.bits()
             | parse_flags!(prop.flags.bits(), PageFlags::R, PageTableFlags::READABLE)

@@ -14,6 +14,8 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(unfulfilled_lint_expectations)]
+
 use core::arch::{asm, global_asm};
 
 use crate::arch::cpu::context::GeneralRegs;
@@ -55,11 +57,13 @@ global_asm!(include_str!("trap.S"));
 ///
 /// You **MUST NOT** modify these registers later.
 pub unsafe fn init() {
-    // Set sscratch register to 0, indicating to exception vector that we are
-    // presently executing in the kernel
-    asm!("csrw sscratch, zero");
-    // Set the exception vector address
-    asm!("csrw stvec, {}", in(reg) trap_entry as usize);
+    unsafe {
+        // Set sscratch register to 0, indicating to exception vector that we are
+        // presently executing in the kernel
+        asm!("csrw sscratch, zero");
+        // Set the exception vector address
+        asm!("csrw stvec, {}", in(reg) trap_entry as usize);
+    }
 }
 
 /// Trap frame of kernel interrupt

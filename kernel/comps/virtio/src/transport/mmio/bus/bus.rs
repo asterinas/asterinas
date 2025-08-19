@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! MMIO bus.
+#![cfg_attr(target_arch = "riscv64", expect(dead_code))]
 
 use alloc::{collections::VecDeque, fmt::Debug, sync::Arc, vec::Vec};
 

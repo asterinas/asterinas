@@ -32,9 +32,7 @@ fn parse_kernel_commandline() -> &'static str {
 }
 
 fn parse_initramfs() -> Option<&'static [u8]> {
-    let Some((start, end)) = parse_initramfs_range() else {
-        return None;
-    };
+    let (start, end) = parse_initramfs_range()?;
 
     let base_va = paddr_to_vaddr(start);
     let length = end - start;

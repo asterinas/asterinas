@@ -62,7 +62,7 @@ fn parse_isa_string(isa: &fdt::node::NodeProperty) -> IsaExtensions {
         for ch in first_part.chars() {
             if let Some(ext_data) = EXTENSION_TABLE
                 .iter()
-                .find(|e| e.name.len() == 1 && e.name.chars().next() == Some(ch))
+                .find(|e| e.name.len() == 1 && e.name.starts_with(ch))
             {
                 extensions |= ext_data.flag;
             }

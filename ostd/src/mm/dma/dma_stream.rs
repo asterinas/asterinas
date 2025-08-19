@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![cfg_attr(target_arch = "riscv64", allow(unfulfilled_lint_expectations))]
+
 use alloc::sync::Arc;
 use core::ops::Range;
 
@@ -151,9 +153,9 @@ impl DmaStream {
                 if self.inner.is_cache_coherent {
                     return Ok(());
                 }
-                let start_va = crate::mm::paddr_to_vaddr(self.inner.segment.start_paddr()) as *const u8;
+                let _start_va = crate::mm::paddr_to_vaddr(self.inner.segment.start_paddr()) as *const u8;
                 // TODO: Query the CPU for the cache line size via CPUID, we use 64 bytes as the cache line size here.
-                for i in _byte_range.step_by(64) {
+                for _i in _byte_range.step_by(64) {
                     // TODO: Call the cache line flush command in the corresponding architecture.
                     todo!()
                 }
