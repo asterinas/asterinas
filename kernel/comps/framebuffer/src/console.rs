@@ -52,8 +52,8 @@ impl AnyConsoleDevice for FramebufferConsole {
                 // The character is a NUL character.
                 continue;
             }
-
-            state.send_char(*byte);
+            //Fixme: disallow kernel to use framebuffer console after user space takes over it.
+            //state.send_char(*byte);
         }
     }
 
