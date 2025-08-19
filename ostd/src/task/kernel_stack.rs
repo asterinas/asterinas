@@ -21,19 +21,27 @@ use crate::{
 /// OSTD users can choose a smaller size by specifying
 /// the `OSTD_TASK_STACK_SIZE_IN_PAGES` environment variable
 /// at build time.
-pub static STACK_SIZE_IN_PAGES: u32 = parse_u32_or_default(
-    option_env!("OSTD_TASK_STACK_SIZE_IN_PAGES"),
-    DEFAULT_STACK_SIZE_IN_PAGES,
-);
+const STACK_SIZE_IN_PAGES: u32 =
+    if let Some(size_str) = option_env!("OSTD_TASK_STACK_SIZE_IN_PAGES") {
+        match u32::from_str_radix(size_str, 10) {
+            Ok(size) => size,
+            Err(_) => panic!(
+                "The environment variable `OSTD_TASK_STACK_SIZE_IN_PAGES` \
+                    specifies an invalid value"
+            ),
+        }
+    } else {
+        DEFAULT_STACK_SIZE_IN_PAGES
+    };
 
 /// The default kernel stack size of a task, specified in pages.
-pub const DEFAULT_STACK_SIZE_IN_PAGES: u32 = 128;
+const DEFAULT_STACK_SIZE_IN_PAGES: u32 = 128;
 
-pub static KERNEL_STACK_SIZE: usize = STACK_SIZE_IN_PAGES as usize * PAGE_SIZE;
+const KERNEL_STACK_SIZE: usize = STACK_SIZE_IN_PAGES as usize * PAGE_SIZE;
 
 #[derive(Debug)]
 #[expect(dead_code)]
-pub struct KernelStack {
+pub(super) struct KernelStack {
     kvirt_area: KVirtArea,
     tlb_coherent: AtomicCpuSet,
     end_vaddr: Vaddr,
@@ -54,7 +62,7 @@ impl KernelStack {
     // TODO: We map kernel stacks in the kernel virtual areas, which incurs
     // non-negligible TLB and mapping overhead on task creation. This could
     // be improved by caching/reusing kernel stacks with a pool.
-    pub fn new_with_guard_page() -> Result<Self> {
+    pub(super) fn new_with_guard_page() -> Result<Self> {
         let pages = FrameAllocOptions::new()
             .zeroed(false)
             .alloc_segment_with(KERNEL_STACK_SIZE / PAGE_SIZE, |_| KernelStackMeta)?;
@@ -88,26 +96,7 @@ impl KernelStack {
         }
     }
 
-    pub fn end_vaddr(&self) -> Vaddr {
+    pub(super) fn end_vaddr(&self) -> Vaddr {
         self.end_vaddr
     }
-}
-
-const fn parse_u32_or_default(size: Option<&str>, default: u32) -> u32 {
-    match size {
-        Some(value) => parse_u32(value),
-        None => default,
-    }
-}
-
-const fn parse_u32(input: &str) -> u32 {
-    let mut output: u32 = 0;
-    let bytes = input.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        let digit = (bytes[i] - b'0') as u32;
-        output = output * 10 + digit;
-        i += 1;
-    }
-    output
 }
