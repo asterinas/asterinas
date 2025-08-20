@@ -14,7 +14,7 @@ use ostd::{
         BusProbeError,
     },
     io::IoMem,
-    mm::{DmaCoherent, HasPaddr},
+    mm::{DmaCoherent, HasDaddr},
     trap::irq::IrqCallbackFunction,
 };
 
@@ -98,13 +98,13 @@ impl VirtioTransport for VirtioPciModernTransport {
             .write_once(&queue_size)
             .unwrap();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_desc)
-            .write_once(&(descriptor_ptr.paddr() as u64))
+            .write_once(&(descriptor_ptr.daddr() as u64))
             .unwrap();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_driver)
-            .write_once(&(avail_ring_ptr.paddr() as u64))
+            .write_once(&(avail_ring_ptr.daddr() as u64))
             .unwrap();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_device)
-            .write_once(&(used_ring_ptr.paddr() as u64))
+            .write_once(&(used_ring_ptr.daddr() as u64))
             .unwrap();
         // Enable queue
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_enable)

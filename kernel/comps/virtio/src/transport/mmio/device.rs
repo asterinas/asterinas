@@ -9,7 +9,7 @@ use log::warn;
 use ostd::{
     bus::pci::cfg_space::Bar,
     io::IoMem,
-    mm::{DmaCoherent, HasPaddr, PAGE_SIZE},
+    mm::{DmaCoherent, HasDaddr, PAGE_SIZE},
     sync::RwLock,
     trap::irq::IrqCallbackFunction,
 };
@@ -115,9 +115,9 @@ impl VirtioTransport for VirtioMmioTransport {
             return Err(VirtioTransportError::InvalidArgs);
         }
 
-        let descriptor_paddr = descriptor_ptr.paddr();
-        let driver_paddr = driver_ptr.paddr();
-        let device_paddr = device_ptr.paddr();
+        let descriptor_daddr = descriptor_ptr.daddr();
+        let driver_daddr = driver_ptr.daddr();
+        let device_daddr = device_ptr.daddr();
 
         field_ptr!(&self.layout, VirtioMmioLayout, queue_num)
             .write_once(&(queue_size as u32))
@@ -125,14 +125,14 @@ impl VirtioTransport for VirtioMmioTransport {
 
         match self.common_device.read_version().unwrap() {
             VirtioMmioVersion::Legacy => {
-                // The area should be continuous
+                // The area should be continuous.
                 assert_eq!(
-                    driver_paddr - descriptor_paddr,
+                    driver_daddr - descriptor_daddr,
                     size_of::<Descriptor>() * queue_size as usize
                 );
-                // Descriptor paddr should align
-                assert_eq!(descriptor_paddr % PAGE_SIZE, 0);
-                let pfn = (descriptor_paddr / PAGE_SIZE) as u32;
+                // Descriptor device addresses should be aligned.
+                assert_eq!(descriptor_daddr % PAGE_SIZE, 0);
+                let pfn = (descriptor_daddr / PAGE_SIZE) as u32;
                 field_ptr!(&self.layout, VirtioMmioLayout, legacy_queue_align)
                     .write_once(&(PAGE_SIZE as u32))
                     .unwrap();
@@ -142,24 +142,24 @@ impl VirtioTransport for VirtioMmioTransport {
             }
             VirtioMmioVersion::Modern => {
                 field_ptr!(&self.layout, VirtioMmioLayout, queue_desc_low)
-                    .write_once(&(descriptor_paddr as u32))
+                    .write_once(&(descriptor_daddr as u32))
                     .unwrap();
                 field_ptr!(&self.layout, VirtioMmioLayout, queue_desc_high)
-                    .write_once(&((descriptor_paddr >> 32) as u32))
+                    .write_once(&((descriptor_daddr >> 32) as u32))
                     .unwrap();
 
                 field_ptr!(&self.layout, VirtioMmioLayout, queue_driver_low)
-                    .write_once(&(driver_paddr as u32))
+                    .write_once(&(driver_daddr as u32))
                     .unwrap();
                 field_ptr!(&self.layout, VirtioMmioLayout, queue_driver_high)
-                    .write_once(&((driver_paddr >> 32) as u32))
+                    .write_once(&((driver_daddr >> 32) as u32))
                     .unwrap();
 
                 field_ptr!(&self.layout, VirtioMmioLayout, queue_device_low)
-                    .write_once(&(device_paddr as u32))
+                    .write_once(&(device_daddr as u32))
                     .unwrap();
                 field_ptr!(&self.layout, VirtioMmioLayout, queue_device_high)
-                    .write_once(&((device_paddr >> 32) as u32))
+                    .write_once(&((device_daddr >> 32) as u32))
                     .unwrap();
                 // enable queue
                 field_ptr!(&self.layout, VirtioMmioLayout, queue_sel)
