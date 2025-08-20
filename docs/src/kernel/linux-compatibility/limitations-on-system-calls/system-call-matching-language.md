@@ -161,6 +161,32 @@ poll(fds = [ <pollfd> ], nfds, timeout);
 
 Notice how SCML denotes an array with the `[ <struct_rule> ]` syntax.
 
+### Matching Rules for Built-in Flags
+
+SCML provides built-in constraint flags to match specific semantic requirements
+for system call parameters.
+
+Consider [`open`](https://man7.org/linux/man-pages/man2/openat.2.html) system call
+again, the `path` parameter must conform to OS-supported path.
+Use flag `<PATH>` to enforce this constraint.
+
+```c
+open(path = <PATH>, flags = <access_mode> | O_CLOEXEC);
+```
+
+Similarly, for [`timer_create`](https://man7.org/linux/man-pages/man2/timer_create.2.html) system call,
+the `clockid` parameter can accept numeric values returned by `clock_getcpuclockid()` and
+`pthread_getcpuclockid()`. To enforce a numeric constraint, use flag `<NUMBER>` for matching.
+
+```
+// Create a timer with user-specified clock ID
+timer_create(
+    clockid = <NUMBER>,
+    sevp,
+    timerid
+);
+```
+
 ### Advanced Usage
 
 Just like you can write multiple rules of the same system call,
