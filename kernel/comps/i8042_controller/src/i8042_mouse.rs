@@ -81,28 +81,47 @@ impl InputDevice for I8042Mouse {
 pub struct MouseState {
     buffer: [u8; 3],
     index: usize,
+    // Add previous button states
+    prev_left_button: bool,
+    prev_right_button: bool,
+    prev_middle_button: bool,
 }
 
-static MOUSE_STATE: Mutex<MouseState> = Mutex::new(MouseState { buffer: [0; 3], index: 0 });
+static MOUSE_STATE: Mutex<MouseState> = Mutex::new(MouseState {
+    buffer: [0; 3],
+    index: 0,
+    prev_left_button: false,
+    prev_right_button: false,
+    prev_middle_button: false,
+});
 
 pub fn handle_mouse_input(_trap_frame: &TrapFrame) {
-    // log::error!("-----This is handle_mouse_input in kernel/comps/i8042_controller/src/i8042_mouse.rs");
     let byte = MousePacket::read_one_byte();
 
-    let mut state = MOUSE_STATE.lock();
+    let packet = {
+        let mut state = MOUSE_STATE.lock();
 
-    if state.index == 0 && (byte & 0x08 == 0) {
-        log::error!("Invalid first byte! Abort.");
-        state.index = 0;
-        return;
-    }
-    let index = state.index;
-    state.buffer[index] = byte;
-    state.index += 1;
+        if state.index == 0 && (byte & 0x08 == 0) {
+            log::error!("Invalid first byte! Abort.");
+            state.index = 0;
+            return;
+        }
 
-    if state.index == 3 {
-        let packet = parse_input_packet(state.buffer);
-        state.index = 0;
+        let index = state.index;
+        state.buffer[index] = byte;
+        state.index += 1;
+
+        if state.index == 3 {
+            let packet = parse_input_packet(state.buffer);
+            state.index = 0;
+            Some(packet)
+        } else {
+            None
+        }
+    }; // Lock is dropped here
+
+    // Call handle_mouse_packet outside the lock
+    if let Some(packet) = packet {
         handle_mouse_packet(packet);
     }
 }
@@ -161,7 +180,7 @@ fn parse_input_packet(packet: [u8; 3]) -> MousePacket {
     }
 }
 
-fn parse_input_events(packet: MousePacket) -> Vec<InputEvent> {
+fn parse_input_events(packet: MousePacket, prev_state: &mut MouseState) -> Vec<InputEvent> {
     let mut events = Vec::new();
 
     // Get the current time in microseconds
@@ -188,38 +207,46 @@ fn parse_input_events(packet: MousePacket) -> Vec<InputEvent> {
         });
     }
 
-    // Add button press/release events
-    if packet.left_button {
+    // Left button state change
+    if packet.left_button != prev_state.prev_left_button {
         events.push(InputEvent {
             time: time_in_microseconds,
             type_: EventType::EvKey as u16,
             code: MouseKeyEvent::MouseLeft as u16,
-            value: 1,
+            value: if packet.left_button { 1 } else { 0 }, // 1 = press, 0 = release
         });
+        prev_state.prev_left_button = packet.left_button;
     }
-    if packet.right_button {
+
+    // Right button state change
+    if packet.right_button != prev_state.prev_right_button {
         events.push(InputEvent {
             time: time_in_microseconds,
             type_: EventType::EvKey as u16,
             code: MouseKeyEvent::MouseRight as u16,
-            value: 1,
+            value: if packet.right_button { 1 } else { 0 },
         });
+        prev_state.prev_right_button = packet.right_button;
     }
-    if packet.middle_button {
+
+    // Middle button state change
+    if packet.middle_button != prev_state.prev_middle_button {
         events.push(InputEvent {
             time: time_in_microseconds,
             type_: EventType::EvKey as u16,
             code: MouseKeyEvent::MouseMiddle as u16,
-            value: 1,
+            value: if packet.middle_button { 1 } else { 0 },
         });
+        prev_state.prev_middle_button = packet.middle_button;
     }
 
-    // Return the list of events
     events
 }
 
 fn handle_mouse_packet(packet: MousePacket) {
-    let mut events = parse_input_events(packet);  
+    let mut state = MOUSE_STATE.lock();
+    let mut events = parse_input_events(packet, &mut *state);
+    drop(state); // Release lock before processing events
     
     // Add a SYNC event to signal the end of the event group
     events.push(InputEvent {
@@ -228,9 +255,9 @@ fn handle_mouse_packet(packet: MousePacket) {
         code: 0,
         value: 0,
     });
+
     // Process each event
     for event in events {
-        // println!("----------------Event: {:?}", event);
         input_event(event, "PS/2 Generic Mouse");
     }
 
