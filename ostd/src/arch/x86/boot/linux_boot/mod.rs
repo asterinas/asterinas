@@ -11,9 +11,11 @@ use crate::{
     arch::if_tdx_enabled,
     boot::{
         memory_region::{MemoryRegion, MemoryRegionArray, MemoryRegionType},
-        BootloaderAcpiArg, BootloaderFramebufferArg,
+        BootloaderAcpiArg,
+        BootloaderFramebufferArg,
     },
     mm::kspace::paddr_to_vaddr,
+    mm::PAGE_SIZE,
 };
 
 fn parse_bootloader_name(boot_params: &BootParams) -> &str {
@@ -136,17 +138,43 @@ impl From<E820Type> for MemoryRegionType {
     }
 }
 
+fn ranges_overlap(range1: &core::ops::Range<usize>, range2: &core::ops::Range<usize>) -> bool {
+    range1.start < range2.end && range2.start < range1.end
+}
+
 fn parse_memory_regions(boot_params: &BootParams) -> MemoryRegionArray {
     let mut regions = MemoryRegionArray::new();
+
+    // Get framebuffer info first to check for overlaps
+    let framebuffer_info = parse_framebuffer_info(boot_params);
+    let fb_range = framebuffer_info.as_ref().map(|fb| {
+        let fb_size = fb.width * fb.height * (fb.bpp / 8);
+        // Align framebuffer size up to page boundary
+        let fb_size_aligned = (fb_size + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+        fb.address..(fb.address + fb_size_aligned)
+    });
 
     // Add regions from E820.
     let num_entries = boot_params.e820_entries as usize;
     for e820_entry in &boot_params.e820_table[0..num_entries] {
+        // Copy packed struct fields to local variables to avoid unaligned references
+        let addr = e820_entry.addr;
+        let size = e820_entry.size;
+        let typ = e820_entry.typ;
+        let e820_range = (addr as usize)..((addr + size) as usize);
+        let overlaps_with_fb = fb_range.as_ref()
+            .map(|fb| ranges_overlap(&e820_range, fb))
+            .unwrap_or(false);
+
+        if overlaps_with_fb {
+            continue; // Skip this E820 region, we'll add framebuffer explicitly
+        }
+
         regions
             .push(MemoryRegion::new(
-                e820_entry.addr.try_into().unwrap(),
-                e820_entry.size.try_into().unwrap(),
-                e820_entry.typ.into(),
+                addr.try_into().unwrap(),
+                size.try_into().unwrap(),
+                typ.into(),
             ))
             .unwrap();
     }

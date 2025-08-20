@@ -68,7 +68,14 @@ pub(crate) fn init() {
         let fb_size = framebuffer_arg.height.checked_mul(line_size).unwrap();
 
         let fb_base = framebuffer_arg.address;
-        let io_mem = IoMem::acquire(fb_base..fb_base.checked_add(fb_size).unwrap()).unwrap();
+        // Manual 4K alignment
+        const PAGE_SIZE: usize = 0x1000;
+        let fb_base_aligned = fb_base & !(PAGE_SIZE - 1);  // Align down
+        let fb_end = fb_base.checked_add(fb_size).unwrap();
+        let fb_end_aligned = (fb_end + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);  // Align up
+
+        let fb_size_aligned = fb_end_aligned - fb_base_aligned;
+        let io_mem = IoMem::acquire(fb_base_aligned..fb_end_aligned).unwrap();
 
         FrameBuffer {
             io_mem,

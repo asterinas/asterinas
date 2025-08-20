@@ -14,7 +14,14 @@ use crate::{boot::memory_region::MemoryRegionType, io::IoMemAllocatorBuilder};
 pub(super) fn construct_io_mem_allocator_builder() -> IoMemAllocatorBuilder {
     // TODO: Add MMIO regions below 1MB (e.g., VGA framebuffer).
     let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
-    let mut ranges = Vec::with_capacity(2);
+    let mut ranges = Vec::with_capacity(3);
+
+    for region in regions.iter() {
+        if region.typ() == MemoryRegionType::Framebuffer {
+            ranges.push(region.base()..(region.base() + region.len()));
+            break;
+        }
+    }
 
     let reserved_filter = regions.iter().filter(|r| {
         r.typ() != MemoryRegionType::Unknown
