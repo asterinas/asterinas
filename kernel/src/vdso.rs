@@ -3,16 +3,17 @@
 #![expect(dead_code)]
 #![expect(unused_variables)]
 
-//! The Virtual Dynamic Shared Object (VDSO) module enables user space applications to access kernel space routines
-//! without the need for context switching. This is particularly useful for frequently invoked operations such as
-//! obtaining the current time, which can be more efficiently handled within the user space.
+//! Virtual Dynamic Shared Object (vDSO).
 //!
-//! This module manages the VDSO mechanism through the `Vdso` struct, which contains a `VdsoData` instance with
-//! necessary time-related information, and a Virtual Memory Object (VMO) that encapsulates both the data and the
-//! VDSO routines. The VMO is intended to be mapped into the address space of every user space process for efficient access.
+//! vDSO enables user space applications to execute routines that access kernel space data without
+//! the need for user mode and kernel mode switching. This is particularly useful for frequently
+//! invoked, read-only operations such as obtaining the current time, which can be efficiently and
+//! securely handled within the user space.
 //!
-//! The module is initialized with `init`, which sets up the `START_SECS_COUNT` and prepares the VDSO instance for
-//! use. It also hooks up the VDSO data update routine to the time management subsystem for periodic updates.
+//! This module manages the vDSO mechanism through the [`Vdso`] structure, which contains a
+//! [`VdsoData`] instance with necessary time-related information, and a Virtual Memory Object
+//! ([`Vmo`]) that encapsulates both the data and the vDSO routines. The VMO is intended to be
+//! mapped into the address space of every user space process for efficient access.
 
 use alloc::{boxed::Box, sync::Arc};
 use core::{mem::ManuallyDrop, time::Duration};
@@ -50,18 +51,20 @@ enum VdsoClockMode {
     Timens = i32::MAX as isize,
 }
 
-/// Instant used in `VdsoData`.
+/// An instant used in [`VdsoData`]
 ///
-/// Each `VdsoInstant` will store a instant information for a specified `ClockId`.
-/// The `secs` field will record the seconds of the instant,
-/// and the `nanos_info` will store the nanoseconds of the instant
-/// (for `CLOCK_REALTIME_COARSE` and `CLOCK_MONOTONIC_COARSE`) or
-/// the calculation results of left-shift `nanos` with `lshift`
-/// (for other high-resolution `ClockId`s).
+/// This contains information that describes the current time with respect to a certain clock (see
+/// [`ClockId`]).
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Pod)]
 struct VdsoInstant {
+    /// Seconds.
     secs: u64,
+    /// Nanoseconds (for [`CLOCK_REALTIME_COARSE`] and [`CLOCK_MONOTONIC_COARSE`]) or shifted
+    /// nanoseconds (for other high-resolution clocks).
+    ///
+    /// [`CLOCK_REALTIME_COARSE`]: ClockId::CLOCK_REALTIME_COARSE
+    /// [`CLOCK_MONOTONIC_COARSE`]: ClockId::CLOCK_MONOTONIC_COARSE
     nanos_info: u64,
 }
 
@@ -78,11 +81,12 @@ impl VdsoInstant {
 #[derive(Debug, Default, Copy, Clone, Pod)]
 struct ArchVdsoData {}
 
-/// A POD (Plain Old Data) structure maintaining timing information that required for userspace.
+/// Plain-old-data vDSO data that will be mapped to userspace.
 ///
-/// Since currently we directly use the VDSO shared library of Linux,
-/// currently it aligns with the Linux VDSO shared library format and contents
-/// (Linux v6.2.10)
+/// Since we currently use the vDSO shared library directly from Linux, the layout of this
+/// structure must match what is specified in the Linux library.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.2.10/source/include/vdso/datapage.h#L90>.
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Pod)]
 struct VdsoData {
@@ -133,7 +137,7 @@ impl VdsoData {
         }
     }
 
-    /// Init VDSO data based on the default clocksource.
+    /// Initializes vDSO data based on the default clock source.
     fn init(&mut self) {
         let clocksource = aster_time::default_clocksource();
         let coeff = clocksource.coeff();
@@ -188,30 +192,27 @@ impl VdsoData {
     }
 }
 
-/// Vdso (virtual dynamic shared object) is used to export some safe kernel space routines to user space applications
-/// so that applications can call these kernel space routines in-process, without context switching.
+/// The vDSO singleton.
 ///
-/// Vdso maintains a `VdsoData` instance that contains data information required for VDSO mechanism,
-/// and a `Vmo` that contains all VDSO-related information, including the VDSO data and the VDSO calling interfaces.
-/// This `Vmo` must be mapped to every userspace process.
+/// See [the module-level documentations](self) for more about the vDSO mechanism.
 struct Vdso {
     /// A `VdsoData` instance.
     data: SpinLock<VdsoData>,
-    /// The VMO of the entire VDSO, including the library text and the VDSO data.
+    /// A VMO that contains the entire vDSO, including the library text and the vDSO data.
     vmo: Arc<Vmo>,
-    /// The `UFrame` that contains the VDSO data. This frame is contained in and
-    /// will not be removed from the VDSO VMO.
+    /// A frame that contains the vDSO data. This frame is contained in and will not be removed
+    /// from the vDSO VMO.
     data_frame: UFrame,
 }
 
 /// A `SpinLock` for the `seq` field in `VdsoData`.
 static SEQ_LOCK: SpinLock<()> = SpinLock::new(());
 
-/// The size of the VDSO VMO.
+/// The size of the vDSO VMO.
 pub const VDSO_VMO_SIZE: usize = 5 * PAGE_SIZE;
 
 impl Vdso {
-    /// Construct a new `Vdso`, including an initialized `VdsoData` and a VMO of the VDSO.
+    /// Constructs a new `Vdso`, including an initialized `VdsoData` and a VMO of the vDSO.
     fn new() -> Self {
         let mut vdso_data = VdsoData::empty();
         vdso_data.init();
@@ -219,7 +220,7 @@ impl Vdso {
         let (vdso_vmo, data_frame) = {
             let vmo_options = VmoOptions::<Rights>::new(VDSO_VMO_SIZE);
             let vdso_vmo = vmo_options.alloc().unwrap();
-            // Write VDSO data to VDSO VMO.
+            // Write vDSO data to vDSO VMO.
             vdso_vmo.write_bytes(0x80, vdso_data.as_bytes()).unwrap();
 
             let vdso_lib_vmo = {
@@ -230,7 +231,7 @@ impl Vdso {
             };
             let mut vdso_text = Box::new([0u8; PAGE_SIZE]);
             vdso_lib_vmo.read_bytes(0, &mut *vdso_text).unwrap();
-            // Write VDSO library to VDSO VMO.
+            // Write vDSO library to vDSO VMO.
             vdso_vmo.write_bytes(0x4000, &*vdso_text).unwrap();
 
             let data_frame = vdso_vmo.try_commit_page(0).unwrap();
@@ -274,7 +275,7 @@ impl Vdso {
         self.data_frame.write_val(0x80, &0).unwrap();
     }
 
-    /// Update the requisite fields of the VDSO data in the `data_frame`.
+    /// Updates the requisite fields of the vDSO data in the frame.
     fn update_data_frame_instant(&self, clockid: ClockId) {
         let clock_index = clockid as usize;
         let secs_offset = 0xA0 + clock_index * 0x10;
@@ -289,20 +290,20 @@ impl Vdso {
     }
 }
 
-/// Update the `VdsoInstant` for clock IDs with high resolution in Vdso.
+/// Updates instants with respect to high-resolution clocks in vDSO data.
 fn update_vdso_high_res_instant(instant: Instant, instant_cycles: u64) {
     VDSO.get()
         .unwrap()
         .update_high_res_instant(instant, instant_cycles);
 }
 
-/// Update the `VdsoInstant` for clock IDs with coarse resolution in Vdso.
+/// Updates instants with respect to coarse-resolution clocks in vDSO data.
 fn update_vdso_coarse_res_instant() {
     let instant = Instant::from(read_monotonic_time());
     VDSO.get().unwrap().update_coarse_res_instant(instant);
 }
 
-/// Init `START_SECS_COUNT`, which is used to record the seconds passed since 1970-01-01 00:00:00.
+/// Initializes the time duration from 1970-01-01 00:00:00 to the start time.
 fn init_start_secs_count() {
     let time_duration = START_TIME
         .get()
@@ -312,18 +313,19 @@ fn init_start_secs_count() {
     START_SECS_COUNT.call_once(|| time_duration.as_secs());
 }
 
+/// Initializes the vDSO singleton.
 fn init_vdso() {
     let vdso = Vdso::new();
     VDSO.call_once(|| Arc::new(vdso));
 }
 
-/// Init this module.
 pub(super) fn init() {
     init_start_secs_count();
     init_vdso();
+
     aster_time::VDSO_DATA_HIGH_RES_UPDATE_FN.call_once(|| Arc::new(update_vdso_high_res_instant));
 
-    // Coarse resolution clock IDs directly read the instant stored in VDSO data without
+    // Coarse resolution clock IDs directly read the instant stored in vDSO data without
     // using coefficients for calculation, thus the related instant requires more frequent updating.
     let coarse_instant_timer = ManuallyDrop::new(
         MonotonicClock::timer_manager().create_timer(update_vdso_coarse_res_instant),
@@ -332,8 +334,9 @@ pub(super) fn init() {
     coarse_instant_timer.set_timeout(Timeout::After(Duration::from_millis(100)));
 }
 
-/// Returns the VDSO VMO.
+/// Returns the vDSO VMO.
+///
+/// This function will return `None` if vDSO does not exist (e.g., if it has not been initialized).
 pub(crate) fn vdso_vmo() -> Option<Arc<Vmo>> {
-    // We allow that VDSO does not exist
     VDSO.get().map(|vdso| vdso.vmo.clone())
 }
