@@ -27,19 +27,20 @@ use crate::{
     },
 };
 
-/// Mapping a range of physical pages into a `Vmar`.
+/// A memory mapping for a range of virtual addresses in a [`Vmar`].
 ///
-/// A `VmMapping` can bind with a `Vmo` which can provide physical pages for
-/// mapping. Otherwise, it must be an anonymous mapping and will map any empty
-/// physical page. A `VmMapping` binding with a `Vmo` is called VMO-backed
-/// mapping. Generally, a VMO-backed mapping is a file-backed mapping. Yet
-/// there are also some situations where specific pages that are not in a file
-/// need to be mapped. e.g:
-///  - Mappings to the VDSO data.
-///  - Shared anonymous mappings. because the mapped pages need to be retained
-///    and shared with other processes.
+/// A `VmMapping` can be bound with a [`Vmo`] which can provide physical pages
+/// for the mapping. Such mappings are called VMO-backed mappings. Generally, a
+/// VMO-backed mapping is a file-backed mapping. There are also some exceptions
+/// where the pages that need to be mapped are not in a file, but the mappings
+/// are still considered as VMO-backed, e.g.,
+///  - Mappings to the vDSO data.
+///  - Shared anonymous mappings, where the mapped pages need to be retained and
+///    shared with other processes.
 ///
-/// Such mappings will also be VMO-backed mappings.
+/// Otherwise, the mapping may not be backed by a VMO, in which case it will be
+/// private and anonymous. Such mappings will map to newly allocated, zeroed
+/// physical pages.
 ///
 /// This type controls the actual mapping in the [`VmSpace`]. It is a linear
 /// type and cannot be [`Drop`]. To remove a mapping, use [`Self::unmap`].

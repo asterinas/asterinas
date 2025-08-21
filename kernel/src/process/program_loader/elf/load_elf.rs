@@ -506,7 +506,7 @@ pub fn init_aux_vec(
     Ok(aux_vec)
 }
 
-/// Maps the VDSO VMO to the corresponding virtual memory address.
+/// Maps the vDSO VMO to the corresponding virtual memory address.
 fn map_vdso_to_vm(process_vm: &ProcessVm) -> Option<Vaddr> {
     let process_vmar = process_vm.lock_root_vmar();
     let root_vmar = process_vmar.unwrap();
