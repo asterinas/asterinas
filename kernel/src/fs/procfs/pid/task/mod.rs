@@ -11,8 +11,8 @@ use crate::{
             pid::{
                 stat::StatFileOps,
                 task::{
-                    cmdline::CmdlineFileOps, comm::CommFileOps, exe::ExeSymOps, fd::FdDirOps,
-                    status::StatusFileOps,
+                    cmdline::CmdlineFileOps, comm::CommFileOps, environ::EnvironFileOps,
+                    exe::ExeSymOps, fd::FdDirOps, status::StatusFileOps,
                 },
             },
             template::{DirOps, ProcDir, ProcDirBuilder},
@@ -26,6 +26,7 @@ use crate::{
 
 mod cmdline;
 mod comm;
+mod environ;
 mod exe;
 mod fd;
 mod status;
@@ -70,6 +71,7 @@ impl DirOps for TidDirOps {
         let inode = match name {
             "cmdline" => CmdlineFileOps::new_inode(self.process_ref.clone(), this_ptr),
             "comm" => CommFileOps::new_inode(self.process_ref.clone(), this_ptr),
+            "environ" => EnvironFileOps::new_inode(self.process_ref.clone(), this_ptr),
             "exe" => ExeSymOps::new_inode(self.process_ref.clone(), this_ptr),
             "fd" => FdDirOps::new_inode(self.thread_ref.clone(), this_ptr),
             "stat" => StatFileOps::new_inode(
@@ -109,6 +111,9 @@ impl TidDirOps {
         });
         cached_children.put_entry_if_not_found("comm", || {
             CommFileOps::new_inode(self.process_ref.clone(), this_ptr.clone())
+        });
+        cached_children.put_entry_if_not_found("environ", || {
+            EnvironFileOps::new_inode(self.process_ref.clone(), this_ptr.clone())
         });
         cached_children.put_entry_if_not_found("exe", || {
             ExeSymOps::new_inode(self.process_ref.clone(), this_ptr.clone())
