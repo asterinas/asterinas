@@ -123,8 +123,11 @@ update_all_docker_version_refs() {
     update_image_versions ${ASTER_SRC_DIR}/README_CN.md
     update_image_versions ${ASTER_SRC_DIR}/README_JP.md
     update_image_versions ${SCRIPT_DIR}/docker/README.md
-    update_image_versions ${DOCS_DIR}/src/kernel/intel_tdx.md
-    update_image_versions ${DOCS_DIR}/src/osdk/guide/intel-tdx.md
+
+    # Update Docker image versions in the Book
+    update_image_versions ${BOOK_DIR}/src/kernel/README.md
+    update_image_versions ${BOOK_DIR}/src/kernel/intel_tdx.md
+    update_image_versions ${BOOK_DIR}/src/osdk/guide/intel-tdx.md
 
     # Update Docker image versions in workflows
     ALL_WORKFLOWS=$(find "${ASTER_SRC_DIR}/.github/workflows/" -type f -name "*.yml")
@@ -139,10 +142,6 @@ update_all_docker_version_refs() {
             update_image_versions "$workflow"
         fi
     done
-
-    # Update Docker image versions in the documentation
-    GET_STARTED_PATH=${ASTER_SRC_DIR}/docs/src/kernel/README.md
-    update_image_versions $GET_STARTED_PATH
 }
 
 # Update project dependencies (Cargo.toml and Cargo.lock)
@@ -214,7 +213,7 @@ update_tag_version() {
 
 SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 ASTER_SRC_DIR=${SCRIPT_DIR}/..
-DOCS_DIR=${ASTER_SRC_DIR}/docs
+BOOK_DIR=${ASTER_SRC_DIR}/book
 OSTD_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/Cargo.toml
 OSTD_TEST_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/libs/ostd-test/Cargo.toml
 OSTD_MACROS_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/libs/ostd-macros/Cargo.toml
