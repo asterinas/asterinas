@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(dead_code)]
-#![expect(unused_variables)]
-
 //! Virtual Dynamic Shared Object (vDSO).
 //!
 //! vDSO enables user space applications to execute routines that access kernel space data without
@@ -22,7 +19,7 @@ use aster_rights::Rights;
 use aster_time::{read_monotonic_time, Instant};
 use aster_util::coeff::Coeff;
 use ostd::{
-    mm::{UFrame, VmIo, PAGE_SIZE},
+    mm::{UFrame, VmIo, VmIoOnce, PAGE_SIZE},
     sync::SpinLock,
     Pod,
 };
@@ -46,9 +43,6 @@ static VDSO: Once<Arc<Vdso>> = Once::new();
 enum VdsoClockMode {
     None = 0,
     Tsc = 1,
-    Pvclock = 2,
-    Hvclock = 3,
-    Timens = i32::MAX as isize,
 }
 
 /// An instant used in [`VdsoData`]
@@ -202,11 +196,10 @@ struct Vdso {
     vmo: Arc<Vmo>,
     /// A frame that contains the vDSO data. This frame is contained in and will not be removed
     /// from the vDSO VMO.
+    ///
+    /// Note: This frame should only be updated while holding the spin lock on [`Self::data`].
     data_frame: UFrame,
 }
-
-/// A `SpinLock` for the `seq` field in `VdsoData`.
-static SEQ_LOCK: SpinLock<()> = SpinLock::new(());
 
 /// The size of the vDSO VMO.
 pub const VDSO_VMO_SIZE: usize = 5 * PAGE_SIZE;
@@ -237,6 +230,7 @@ impl Vdso {
             let data_frame = vdso_vmo.try_commit_page(0).unwrap();
             (vdso_vmo, data_frame)
         };
+
         Self {
             data: SpinLock::new(vdso_data),
             vmo: Arc::new(vdso_vmo),
@@ -245,42 +239,48 @@ impl Vdso {
     }
 
     fn update_high_res_instant(&self, instant: Instant, instant_cycles: u64) {
-        let seq_lock = SEQ_LOCK.lock();
-        self.data
-            .lock()
-            .update_high_res_instant(instant, instant_cycles);
+        let mut data = self.data.lock();
+
+        data.update_high_res_instant(instant, instant_cycles);
 
         // Update begins.
-        self.data_frame.write_val(0x80, &1).unwrap();
+        self.data_frame.write_once(0x80, &1).unwrap();
+
         self.data_frame.write_val(0x88, &instant_cycles).unwrap();
         for clock_id in HIGH_RES_CLOCK_IDS {
-            self.update_data_frame_instant(clock_id);
+            self.update_data_frame_instant(clock_id, &mut data);
         }
 
         // Update finishes.
-        self.data_frame.write_val(0x80, &0).unwrap();
+        // FIXME: To synchronize with the vDSO library, this needs to be an atomic write with the
+        // Release memory order.
+        self.data_frame.write_once(0x80, &0).unwrap();
     }
 
     fn update_coarse_res_instant(&self, instant: Instant) {
-        let seq_lock = SEQ_LOCK.lock();
-        self.data.lock().update_coarse_res_instant(instant);
+        let mut data = self.data.lock();
+
+        data.update_coarse_res_instant(instant);
 
         // Update begins.
-        self.data_frame.write_val(0x80, &1).unwrap();
+        self.data_frame.write_once(0x80, &1).unwrap();
+
         for clock_id in COARSE_RES_CLOCK_IDS {
-            self.update_data_frame_instant(clock_id);
+            self.update_data_frame_instant(clock_id, &mut data);
         }
 
         // Update finishes.
-        self.data_frame.write_val(0x80, &0).unwrap();
+        // FIXME: To synchronize with the vDSO library, this needs to be an atomic write with the
+        // Release memory order.
+        self.data_frame.write_once(0x80, &0).unwrap();
     }
 
     /// Updates the requisite fields of the vDSO data in the frame.
-    fn update_data_frame_instant(&self, clockid: ClockId) {
+    fn update_data_frame_instant(&self, clockid: ClockId, data: &mut VdsoData) {
         let clock_index = clockid as usize;
+
         let secs_offset = 0xA0 + clock_index * 0x10;
         let nanos_info_offset = 0xA8 + clock_index * 0x10;
-        let data = self.data.lock();
         self.data_frame
             .write_val(secs_offset, &data.basetime[clock_index].secs)
             .unwrap();
