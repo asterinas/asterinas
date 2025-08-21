@@ -13,6 +13,15 @@ WORKDIR /opt/linux_binary_cache
 RUN wget https://raw.githubusercontent.com/asterinas/linux_binary_cache/14598b6/vmlinuz-5.15.0-105 \
         -O vmlinuz
 
+#= Download VDSO files =====================================================
+
+WORKDIR /root
+RUN git clone https://github.com/asterinas/linux_vdso.git && \
+    cd linux_vdso && \
+    git checkout 7489835
+
+ENV VDSO_LIBRARY_PATH="/root/linux_vdso"
+
 #= Build syscall test =========================================================
 
 FROM build-base AS build-bazel
