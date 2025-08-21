@@ -305,8 +305,10 @@ docs: $(CARGO_OSDK)
 	@for dir in $(OSDK_CRATES); do \
 		(cd $$dir && cargo osdk doc --no-deps) || exit 1; \
 	done
-	@echo "" 						# Add a blank line
-	@cd docs && mdbook build 				# Build mdBook
+
+.PHONY: book
+book:
+	@cd book && mdbook build
 
 .PHONY: format
 format:
@@ -362,8 +364,8 @@ clean:
 	@cargo clean
 	@echo "Cleaning up OSDK workspace target files"
 	@cd osdk && cargo clean
-	@echo "Cleaning up documentation target files"
-	@cd docs && mdbook clean
+	@echo "Cleaning up mdBook output files"
+	@cd book && mdbook clean
 	@echo "Cleaning up test target files"
 	@$(MAKE) --no-print-directory -C test clean
 	@echo "Uninstalling OSDK"

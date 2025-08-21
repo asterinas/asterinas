@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - docs/**
+      - book/**
       - .github/workflows/update-website.yml
   push:
     branches:
       - main
     paths:
-      - docs/**
+      - book/**
       - .github/workflows/update-website.yml
 
 jobs:
@@ -26,7 +26,7 @@ jobs:
       
       - name: Build the website
         run: |
-          cd asterinas/docs
+          cd asterinas/book
           mdbook build
 
       - name: Deploy website
@@ -45,7 +45,7 @@ jobs:
           cd temp_book
           git checkout --orphan newBranch
           git rm -rf *
-          cp -r ../asterinas/docs/book/* ./
+          cp -r ../asterinas/book/book/* ./
           git add -A
           git commit -am "Update website"
           git branch -D main
