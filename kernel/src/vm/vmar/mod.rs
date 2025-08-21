@@ -1203,6 +1203,7 @@ impl Drop for RssDelta<'_> {
 #[cfg(ktest)]
 mod test {
     use ostd::{
+        io::IoMem,
         mm::{CachePolicy, FrameAllocOptions},
         prelude::*,
     };
@@ -1328,6 +1329,141 @@ mod test {
         assert!(matches!(
             sibling_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
             (va, Some(VmQueriedItem::MappedRam { frame, prop }))  if va.start == map_range.start && frame.paddr() == paddr && prop.flags == PageFlags::RW
+        ));
+
+        // Confirms that the child remains unmapped.
+        assert!(matches!(
+            child_space
+                .cursor(&preempt_guard, &map_range)
+                .unwrap()
+                .query()
+                .unwrap(),
+            (_, None)
+        ));
+    }
+
+    #[ktest]
+    fn test_cow_copy_pt_iomem() {
+        /// A very large address (1TiB) beyond typical physical memory for testing.
+        const IOMEM_PADDR: usize = 0x100_000_000_000;
+
+        let vm_space = VmSpace::new();
+        let map_range = PAGE_SIZE..(PAGE_SIZE * 2);
+        let cow_range = 0..PAGE_SIZE * 512 * 512;
+        let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Uncacheable);
+        let preempt_guard = disable_preempt();
+
+        // Creates and maps an `IoMem` instead of a frame.
+        let iomem = IoMem::acquire(IOMEM_PADDR..IOMEM_PADDR + PAGE_SIZE)
+            .expect("Failed to acquire `IoMem` for testing");
+        let iomem_clone_for_assert = iomem.clone();
+
+        vm_space
+            .cursor_mut(&preempt_guard, &map_range)
+            .unwrap()
+            .map_iomem(iomem.clone(), page_property, PAGE_SIZE, 0);
+
+        // Confirms the initial mapping.
+        assert!(matches!(
+            vm_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
+            (va, Some(VmQueriedItem::MappedIoMem { paddr, prop }))  if va.start == map_range.start && paddr == IOMEM_PADDR && prop.flags == PageFlags::RW
+        ));
+
+        // Creates a child page table with copy-on-write protection.
+        let child_space = VmSpace::new();
+        {
+            let mut child_cursor = child_space.cursor_mut(&preempt_guard, &cow_range).unwrap();
+            let mut parent_cursor = vm_space.cursor_mut(&preempt_guard, &cow_range).unwrap();
+            let num_copied = cow_copy_pt(&mut parent_cursor, &mut child_cursor, cow_range.len());
+            assert_eq!(num_copied, 0); // `IoMem` pages are not "copied" in the same sense as RAM pages.
+        };
+
+        // Confirms that parent and child VAs map to the same physical address.
+        {
+            let child_map_paddr = {
+                let (_, Some(VmQueriedItem::MappedIoMem { paddr, .. })) = child_space
+                    .cursor(&preempt_guard, &map_range)
+                    .unwrap()
+                    .query()
+                    .unwrap()
+                else {
+                    panic!("Child mapping query failed");
+                };
+                paddr
+            };
+            let parent_map_paddr = {
+                let (_, Some(VmQueriedItem::MappedIoMem { paddr, .. })) = vm_space
+                    .cursor(&preempt_guard, &map_range)
+                    .unwrap()
+                    .query()
+                    .unwrap()
+                else {
+                    panic!("Parent mapping query failed");
+                };
+                paddr
+            };
+            assert_eq!(child_map_paddr, parent_map_paddr);
+            assert_eq!(child_map_paddr, IOMEM_PADDR);
+        }
+
+        // Unmaps the range from the parent.
+        vm_space
+            .cursor_mut(&preempt_guard, &map_range)
+            .unwrap()
+            .unmap(map_range.len());
+
+        // Confirms that the child VA remains mapped.
+        assert!(matches!(
+            child_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
+            (va, Some(VmQueriedItem::MappedIoMem { paddr, prop }))  if va.start == map_range.start && paddr == IOMEM_PADDR && prop.flags == PageFlags::RW
+        ));
+
+        // Creates a sibling page table (from the now-modified parent).
+        let sibling_space = VmSpace::new();
+        {
+            let mut sibling_cursor = sibling_space
+                .cursor_mut(&preempt_guard, &cow_range)
+                .unwrap();
+            let mut parent_cursor = vm_space.cursor_mut(&preempt_guard, &cow_range).unwrap();
+            let num_copied = cow_copy_pt(&mut parent_cursor, &mut sibling_cursor, cow_range.len());
+            assert_eq!(num_copied, 0); // No pages should be copied
+        }
+
+        // Verifies that the sibling is unmapped as it was created after the parent unmapped the range.
+        assert!(matches!(
+            sibling_space
+                .cursor(&preempt_guard, &map_range)
+                .unwrap()
+                .query()
+                .unwrap(),
+            (_, None)
+        ));
+
+        // Drops the parent page table.
+        drop(vm_space);
+
+        // Confirms that the child VA remains mapped after the parent is dropped.
+        assert!(matches!(
+            child_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
+            (va, Some(VmQueriedItem::MappedIoMem { paddr, prop }))  if va.start == map_range.start && paddr == IOMEM_PADDR && prop.flags == PageFlags::RW
+        ));
+
+        // Unmaps the range from the child.
+        child_space
+            .cursor_mut(&preempt_guard, &map_range)
+            .unwrap()
+            .unmap(map_range.len());
+
+        // Maps the range in the sibling using the cloned IoMem.
+        sibling_space
+            .cursor_mut(&preempt_guard, &map_range)
+            .unwrap()
+            .map_iomem(iomem_clone_for_assert, page_property, PAGE_SIZE, 0);
+
+        // Confirms that the sibling mapping points back to the original `IoMem`'s physical address.
+        assert!(matches!(
+            sibling_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
+            (va, Some(VmQueriedItem::MappedIoMem { paddr, prop }))  if va.start == map_range.start && paddr == IOMEM_PADDR && prop.flags == PageFlags::RW
         ));
 
         // Confirms that the child remains unmapped.
