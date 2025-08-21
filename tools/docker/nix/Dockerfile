@@ -36,6 +36,12 @@ RUN make general_pkgs VERBOSE=0 \
     && make install_host_pkgs \
     && make nix_gc
 
+# Build initramfs packages to accelerate CI workflows
+#
+# It could also cache `stdenvNoCC`, a fundamental and predefined build environment.
+# Therefore, `make nix_gc` MUST NOT be run after this.
+RUN make initramfs_pkgs VERBOSE=0
+
 # Clean source files
 RUN rm -rf /root/test
 

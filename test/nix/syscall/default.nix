@@ -1,4 +1,4 @@
-{ lib, stdenv, callPackage, testSuite ? "ltp", workDir ? "/tmp", smp ? 1,
+{ lib, stdenvNoCC, callPackage, testSuite ? "ltp", workDir ? "/tmp", smp ? 1,
 }: rec {
   inherit testSuite;
   ltp = callPackage ./ltp.nix { };
@@ -8,7 +8,7 @@
     path = builtins.getEnv "GVISOR_PREBUILT_DIR";
   };
 
-  package = stdenv.mkDerivation {
+  package = stdenvNoCC.mkDerivation {
     pname = "syscall_test";
     version = "0.1.0";
     src = lib.fileset.toSource {
