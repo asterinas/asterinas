@@ -85,14 +85,38 @@ impl<'a> CurrentUserSpace<'a> {
     ///
     /// Returns `Err` if the `vaddr` and `len` do not represent a user space memory range.
     pub fn reader(&self, vaddr: Vaddr, len: usize) -> Result<VmReader<'_, Fallible>> {
+        if len > 0 {
+            check_vaddr(vaddr)?;
+        }
         Ok(self.root_vmar().vm_space().reader(vaddr, len)?)
     }
 
-    /// Creates a writer to write data into the user space.
+    /// Creates a writer to write data into the user space of the current task.
     ///
     /// Returns `Err` if the `vaddr` and `len` do not represent a user space memory range.
     pub fn writer(&self, vaddr: Vaddr, len: usize) -> Result<VmWriter<'_, Fallible>> {
+        if len > 0 {
+            check_vaddr(vaddr)?;
+        }
         Ok(self.root_vmar().vm_space().writer(vaddr, len)?)
+    }
+
+    /// Creates a reader/writer pair to read data from and write data into the user space
+    /// of the current task.
+    ///
+    /// Returns `Err` if the `vaddr` and `len` do not represent a user space memory range.
+    ///
+    /// This method is semantically equivalent to calling [`Self::reader`] and [`Self::writer`]
+    /// separately, but it avoids double checking the validity of the memory region.
+    pub fn reader_writer(
+        &self,
+        vaddr: Vaddr,
+        len: usize,
+    ) -> Result<(VmReader<'_, Fallible>, VmWriter<'_, Fallible>)> {
+        if len > 0 {
+            check_vaddr(vaddr)?;
+        }
+        Ok(self.root_vmar().vm_space().reader_writer(vaddr, len)?)
     }
 
     /// Reads bytes into the destination `VmWriter` from the user space of the
@@ -105,23 +129,13 @@ impl<'a> CurrentUserSpace<'a> {
     /// checks if the current task and user space are available. If they are,
     /// it returns `Ok`.
     pub fn read_bytes(&self, src: Vaddr, dest: &mut VmWriter<'_, Infallible>) -> Result<()> {
-        let copy_len = dest.avail();
-
-        if copy_len > 0 {
-            check_vaddr(src)?;
-        }
-
-        let mut user_reader = self.reader(src, copy_len)?;
+        let mut user_reader = self.reader(src, dest.avail())?;
         user_reader.read_fallible(dest).map_err(|err| err.0)?;
         Ok(())
     }
 
     /// Reads a value typed `Pod` from the user space of the current process.
     pub fn read_val<T: Pod>(&self, src: Vaddr) -> Result<T> {
-        if core::mem::size_of::<T>() > 0 {
-            check_vaddr(src)?;
-        }
-
         let mut user_reader = self.reader(src, core::mem::size_of::<T>())?;
         Ok(user_reader.read_val()?)
     }
@@ -136,23 +150,13 @@ impl<'a> CurrentUserSpace<'a> {
     /// the current task and user space are available. If they are, it returns
     /// `Ok`.
     pub fn write_bytes(&self, dest: Vaddr, src: &mut VmReader<'_, Infallible>) -> Result<()> {
-        let copy_len = src.remain();
-
-        if copy_len > 0 {
-            check_vaddr(dest)?;
-        }
-
-        let mut user_writer = self.writer(dest, copy_len)?;
+        let mut user_writer = self.writer(dest, src.remain())?;
         user_writer.write_fallible(src).map_err(|err| err.0)?;
         Ok(())
     }
 
     /// Writes `val` to the user space of the current process.
     pub fn write_val<T: Pod>(&self, dest: Vaddr, val: &T) -> Result<()> {
-        if core::mem::size_of::<T>() > 0 {
-            check_vaddr(dest)?;
-        }
-
         let mut user_writer = self.writer(dest, core::mem::size_of::<T>())?;
         Ok(user_writer.write_val(val)?)
     }
@@ -166,8 +170,6 @@ impl<'a> CurrentUserSpace<'a> {
     ///
     /// [`Ordering::Relaxed`]: core::sync::atomic::Ordering::Relaxed
     pub fn atomic_load<T: PodAtomic>(&self, vaddr: Vaddr) -> Result<T> {
-        check_vaddr(vaddr)?;
-
         let user_reader = self.reader(vaddr, core::mem::size_of::<T>())?;
         Ok(user_reader.atomic_load()?)
     }
@@ -193,9 +195,7 @@ impl<'a> CurrentUserSpace<'a> {
     where
         T: PodAtomic + Eq,
     {
-        check_vaddr(vaddr)?;
-        let writer = self.writer(vaddr, core::mem::size_of::<T>())?;
-        let reader = self.reader(vaddr, core::mem::size_of::<T>())?;
+        let (reader, writer) = self.reader_writer(vaddr, core::mem::size_of::<T>())?;
 
         let mut old_val = reader.atomic_load()?;
         loop {
@@ -210,10 +210,6 @@ impl<'a> CurrentUserSpace<'a> {
     /// The length of the string should not exceed `max_len`,
     /// including the final `\0` byte.
     pub fn read_cstring(&self, vaddr: Vaddr, max_len: usize) -> Result<CString> {
-        if max_len > 0 {
-            check_vaddr(vaddr)?;
-        }
-
         // If `vaddr` is within user address space, adjust `max_len`
         // to ensure `vaddr + max_len` does not exceed `MAX_USERSPACE_VADDR`.
         // If `vaddr` is outside user address space, `max_len` will be set to zero
