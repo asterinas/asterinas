@@ -1,5 +1,5 @@
-{ stdenv, pkgsBuildBuild, initramfs, compressed, }:
-stdenv.mkDerivation {
+{ stdenvNoCC, pkgsBuildBuild, initramfs, compressed, }:
+stdenvNoCC.mkDerivation {
   name = "initramfs-image";
   nativeBuildInputs = with pkgsBuildBuild; [ cpio gzip ];
   buildCommand = ''

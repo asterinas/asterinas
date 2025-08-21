@@ -1,4 +1,4 @@
-{ lib, stdenv, fetchFromGitHub, hostPlatform, writeClosure, busybox, apps
+{ lib, stdenvNoCC, fetchFromGitHub, hostPlatform, writeClosure, busybox, apps
 , linux_vdso, benchmark, syscall, }:
 let
   etc = lib.fileset.toSource {
@@ -13,7 +13,7 @@ let
     ++ lib.optionals (apps != null) [ apps.package ]
     ++ lib.optionals (benchmark != null) [ benchmark.package ]
     ++ lib.optionals (syscall != null) [ syscall.package ];
-in stdenv.mkDerivation {
+in stdenvNoCC.mkDerivation {
   name = "initramfs";
   buildCommand = ''
     mkdir -p $out/{dev,etc,root,usr,opt,tmp,var,proc,sys}

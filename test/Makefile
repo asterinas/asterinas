@@ -157,6 +157,17 @@ nix_gc:
 	@nix-collect-garbage -d
 	@nix-store --optimise
 
+# This target is used to accelerate CI workflows, e.g., `benchmark_x86` and `benchmark_x86_tdx`.
+initramfs_pkgs:
+	@nix-build \
+		nix/default.nix \
+		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
+		$(NIX_QUIET) \
+		--argstr target x86_64 \
+		--arg enableBenchmark true \
+		--out-link /nix/var/nix/gcroots/auto/x86_64-initramfs-with-benchmark \
+		-A initramfs-image
+
 $(EXT2_IMAGE):
 	@mkdir -p $(BUILD_DIR)
 	@dd if=/dev/zero of=$(EXT2_IMAGE) bs=2G count=1
