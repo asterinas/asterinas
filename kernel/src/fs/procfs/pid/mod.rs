@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use self::{
-    cmdline::CmdlineFileOps, comm::CommFileOps, exe::ExeSymOps, fd::FdDirOps, stat::StatFileOps,
-    status::StatusFileOps, task::TaskDirOps,
+    cmdline::CmdlineFileOps, comm::CommFileOps, environ::EnvironFileOps, exe::ExeSymOps,
+    fd::FdDirOps, stat::StatFileOps, status::StatusFileOps, task::TaskDirOps,
 };
 use super::template::{DirOps, ProcDir, ProcDirBuilder};
 use crate::{
@@ -17,6 +17,7 @@ use crate::{
 
 mod cmdline;
 mod comm;
+mod environ;
 mod exe;
 mod fd;
 mod stat;
@@ -62,6 +63,7 @@ impl DirOps for PidDirOps {
     fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
         let inode = match name {
             "exe" => ExeSymOps::new_inode(self.0.clone(), this_ptr.clone()),
+            "environ" => EnvironFileOps::new_inode(self.0.clone(), this_ptr.clone()),
             "comm" => CommFileOps::new_inode(self.0.clone(), this_ptr.clone()),
             "fd" => FdDirOps::new_inode(self.0.clone(), this_ptr.clone()),
             "cmdline" => CmdlineFileOps::new_inode(self.0.clone(), this_ptr.clone()),
@@ -85,6 +87,9 @@ impl DirOps for PidDirOps {
         let mut cached_children = this.cached_children().write();
         cached_children.put_entry_if_not_found("exe", || {
             ExeSymOps::new_inode(self.0.clone(), this_ptr.clone())
+        });
+        cached_children.put_entry_if_not_found("environ", || {
+            EnvironFileOps::new_inode(self.0.clone(), this_ptr.clone())
         });
         cached_children.put_entry_if_not_found("comm", || {
             CommFileOps::new_inode(self.0.clone(), this_ptr.clone())

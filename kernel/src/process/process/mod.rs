@@ -222,7 +222,10 @@ impl Process {
             prof_clock,
         })
     }
-
+    pub fn envp(&self) -> Result<Vec<CString>> {
+        let init_stack_reader = self.init_stack_reader();
+        init_stack_reader.envp()
+    }
     /// Runs the process.
     pub(super) fn run(&self) {
         let tasks = self.tasks.lock();
