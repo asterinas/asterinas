@@ -76,7 +76,7 @@ impl IoMem {
     /// - The given physical address range must be in the I/O memory region.
     /// - Reading from or writing to I/O memory regions may have side effects. Those side effects
     ///   must not cause soundness problems (e.g., they must not corrupt the kernel memory).
-    pub(crate) unsafe fn new(range: Range<Paddr>, flags: PageFlags, cache: CachePolicy) -> Self {
+    pub unsafe fn new(range: Range<Paddr>, flags: PageFlags, cache: CachePolicy) -> Self {
         let first_page_start = range.start.align_down(PAGE_SIZE);
         let last_page_end = range.end.align_up(PAGE_SIZE);
 
