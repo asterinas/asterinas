@@ -19,7 +19,14 @@ use crate::{boot::memory_region::MemoryRegionType, io::IoMemAllocatorBuilder};
 /// (<https://www.intel.com/content/dam/www/public/us/en/documents/datasheets/10th-gen-core-families-datasheet-vol-2-datasheet.pdf>).
 /// However, note that these specifics may differ between CPU generations and those manufactured by
 /// other vendors.
-pub(super) fn construct_io_mem_allocator_builder() -> IoMemAllocatorBuilder {
+///
+/// # Safety
+///
+/// 1. This function must be called only once in the boot context of the
+///    bootstrapping processor.
+/// 2. This function must be called after the kernel page table is activated on
+///    the bootstrapping processor.
+pub(super) unsafe fn construct_io_mem_allocator_builder() -> IoMemAllocatorBuilder {
     // TODO: Add MMIO regions below 1MB (e.g., VGA framebuffer).
     let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
     let mut ranges = Vec::with_capacity(2);
@@ -64,7 +71,11 @@ pub(super) fn construct_io_mem_allocator_builder() -> IoMemAllocatorBuilder {
     assert!(mmio_start_addr < HIGH_MMIO_TOP);
     ranges.push(mmio_start_addr..HIGH_MMIO_TOP);
 
-    // SAFETY: The range is guaranteed not to access physical memory.
+    // SAFETY:
+    // 1. This is the only place that creates an `IoMemAllocatorBuilder`. The
+    //    caller ensures that the function is only called once.
+    // 2. The caller ensures that the kernel page table is already activated.
+    // 3. The range is guaranteed not to access physical memory.
     unsafe { IoMemAllocatorBuilder::new(ranges) }
 }
 
