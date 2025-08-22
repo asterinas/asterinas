@@ -5,7 +5,7 @@ use alloc::{sync::Arc, vec::Vec};
 use aster_console::{AnyConsoleDevice, BitmapFont, ConsoleCallback, ConsoleSetFontError};
 use aster_keyboard::InputKey;
 use ostd::{
-    mm::VmReader,
+    mm::{Infallible, VmReader},
     sync::{LocalIrqDisabled, SpinLock},
 };
 use spin::Once;
@@ -82,6 +82,16 @@ impl FramebufferConsole {
         Self {
             callbacks: SpinLock::new(Vec::new()),
             inner: SpinLock::new((state, esc_fsm)),
+        }
+    }
+
+    /// Triggers the registered input callbacks with the given data.
+    pub(crate) fn trigger_input_callbacks(&self, bytes: &[u8]) {
+        let callbacks = self.callbacks.lock();
+        let reader = VmReader::<Infallible>::from(bytes);
+
+        for callback in callbacks.iter() {
+            callback(reader.clone());
         }
     }
 }
