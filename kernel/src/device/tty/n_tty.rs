@@ -3,6 +3,7 @@
 use alloc::{boxed::Box, sync::Arc, vec};
 
 use aster_console::AnyConsoleDevice;
+use aster_input::input_handler::RegisteredInputHandlerClass;
 use ostd::mm::{Infallible, VmReader, VmWriter};
 use spin::Once;
 
@@ -53,6 +54,7 @@ impl TtyDriver for ConsoleDriver {
 }
 
 static N_TTY: Once<Box<[Arc<Tty<ConsoleDriver>>]>> = Once::new();
+static REGISTERED_HANDLER: Once<RegisteredInputHandlerClass> = Once::new();
 
 pub(in crate::device) fn init() {
     let devices = {
@@ -73,6 +75,9 @@ pub(in crate::device) fn init() {
         .map(|(index, (_, device))| create_n_tty(index as _, device))
         .collect();
     N_TTY.call_once(|| ttys);
+
+    let tty_handler = super::input_handler::init();
+    REGISTERED_HANDLER.call_once(|| tty_handler);
 }
 
 fn create_n_tty(index: u32, device: Arc<dyn AnyConsoleDevice>) -> Arc<Tty<ConsoleDriver>> {

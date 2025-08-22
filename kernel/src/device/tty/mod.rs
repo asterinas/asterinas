@@ -23,6 +23,7 @@ use crate::{
 
 mod device;
 mod driver;
+mod input_handler;
 mod line_discipline;
 mod n_tty;
 mod termio;
