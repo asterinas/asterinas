@@ -67,10 +67,6 @@ impl FileTable {
         self.table.slots_len()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.table.is_empty()
-    }
-
     pub fn dup(&mut self, fd: FileDesc, new_fd: FileDesc, flags: FdFlags) -> Result<FileDesc> {
         let file = self
             .table
@@ -104,28 +100,11 @@ impl FileTable {
         self.table.put(entry) as FileDesc
     }
 
-    pub fn insert_at(
-        &mut self,
-        fd: FileDesc,
-        item: Arc<dyn FileLike>,
-        flags: FdFlags,
-    ) -> Option<Arc<dyn FileLike>> {
-        let entry = FileTableEntry::new(item, flags);
-        let entry = self.table.put_at(fd as usize, entry);
-        if entry.is_some() {
-            let events = FdEvents::Close(fd);
-            self.notify_fd_events(&events);
-            entry.as_ref().unwrap().notify_fd_events(&events);
-        }
-        entry.map(|e| e.file)
-    }
-
     pub fn close_file(&mut self, fd: FileDesc) -> Option<Arc<dyn FileLike>> {
         let removed_entry = self.table.remove(fd as usize)?;
 
         let events = FdEvents::Close(fd);
         self.notify_fd_events(&events);
-        removed_entry.notify_fd_events(&events);
 
         Some(removed_entry.file)
     }
@@ -155,7 +134,6 @@ impl FileTable {
             let removed_entry = self.table.remove(fd as usize).unwrap();
             let events = FdEvents::Close(fd);
             self.notify_fd_events(&events);
-            removed_entry.notify_fd_events(&events);
             closed_files.push(removed_entry.file);
         }
 
@@ -165,7 +143,7 @@ impl FileTable {
     pub fn get_file(&self, fd: FileDesc) -> Result<&Arc<dyn FileLike>> {
         self.table
             .get(fd as usize)
-            .map(|entry| &entry.file)
+            .map(|entry| entry.file())
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 
@@ -184,7 +162,7 @@ impl FileTable {
     pub fn fds_and_files(&self) -> impl Iterator<Item = (FileDesc, &'_ Arc<dyn FileLike>)> {
         self.table
             .idxes_and_items()
-            .map(|(idx, entry)| (idx as FileDesc, &entry.file))
+            .map(|(idx, entry)| (idx as FileDesc, entry.file()))
     }
 
     pub fn register_observer(&self, observer: Weak<dyn Observer<FdEvents>>) {
@@ -302,7 +280,6 @@ impl Events for FdEvents {}
 pub struct FileTableEntry {
     file: Arc<dyn FileLike>,
     flags: AtomicU8,
-    subject: Subject<FdEvents>,
     owner: Option<Owner>,
 }
 
@@ -311,7 +288,6 @@ impl FileTableEntry {
         Self {
             file,
             flags: AtomicU8::new(flags.bits()),
-            subject: Subject::new(),
             owner: None,
         }
     }
@@ -354,22 +330,6 @@ impl FileTableEntry {
     pub fn set_flags(&self, flags: FdFlags) {
         self.flags.store(flags.bits(), Ordering::Relaxed);
     }
-
-    pub fn clear_flags(&self) {
-        self.flags.store(0, Ordering::Relaxed);
-    }
-
-    pub fn register_observer(&self, epoll: Weak<dyn Observer<FdEvents>>) {
-        self.subject.register_observer(epoll, ());
-    }
-
-    pub fn unregister_observer(&self, epoll: &Weak<dyn Observer<FdEvents>>) {
-        self.subject.unregister_observer(epoll);
-    }
-
-    pub fn notify_fd_events(&self, events: &FdEvents) {
-        self.subject.notify_observers(events);
-    }
 }
 
 impl Clone for FileTableEntry {
@@ -377,7 +337,6 @@ impl Clone for FileTableEntry {
         Self {
             file: self.file.clone(),
             flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
-            subject: Subject::new(),
             owner: None,
         }
     }
