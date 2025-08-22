@@ -330,6 +330,7 @@ dependencies = [
  "aster-rights",
  "aster-softirq",
  "aster-systree",
+ "aster-time",
  "aster-util",
  "bitflags 1.3.2",
  "component",
