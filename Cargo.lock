@@ -120,7 +120,7 @@ name = "aster-framebuffer"
 version = "0.1.0"
 dependencies = [
  "aster-console",
- "aster-keyboard",
+ "aster-input",
  "component",
  "log",
  "ostd",

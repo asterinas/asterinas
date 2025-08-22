@@ -123,7 +123,7 @@ impl FramebufferConsole {
     }
 
     /// Triggers the registered input callbacks with the given data.
-    pub(self) fn trigger_input_callbacks(&self, bytes: &[u8]) {
+    pub(crate) fn trigger_input_callbacks(&self, bytes: &[u8]) {
         let callbacks = self.callbacks.lock();
         if !callbacks.is_input_enabled {
             return;
