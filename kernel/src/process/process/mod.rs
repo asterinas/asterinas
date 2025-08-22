@@ -170,10 +170,6 @@ impl ParentProcessGuard<'_> {
         self.guard.clone()
     }
 
-    pub fn pid(&self) -> Pid {
-        self.this.pid()
-    }
-
     /// Update both pid and weak ref.
     pub fn set_process(&mut self, new_process: &Arc<Process>) {
         self.this.pid.store(new_process.pid(), Ordering::Relaxed);

@@ -56,6 +56,7 @@ pub trait FileLike: Pollable + Send + Sync + Any {
     /// Get the metadata that describes this file.
     fn metadata(&self) -> Metadata;
 
+    #[expect(dead_code)]
     fn mode(&self) -> Result<InodeMode> {
         return_errno_with_message!(Errno::EINVAL, "mode is not supported");
     }
@@ -64,6 +65,7 @@ pub trait FileLike: Pollable + Send + Sync + Any {
         return_errno_with_message!(Errno::EINVAL, "set_mode is not supported");
     }
 
+    #[expect(dead_code)]
     fn owner(&self) -> Result<Uid> {
         return_errno_with_message!(Errno::EPERM, "owner is not supported");
     }
@@ -72,6 +74,7 @@ pub trait FileLike: Pollable + Send + Sync + Any {
         return_errno_with_message!(Errno::EPERM, "set_owner is not supported");
     }
 
+    #[expect(dead_code)]
     fn group(&self) -> Result<Gid> {
         return_errno_with_message!(Errno::EPERM, "group is not supported");
     }
@@ -129,6 +132,7 @@ impl dyn FileLike {
         self.read_at(offset, &mut writer)
     }
 
+    #[expect(dead_code)]
     pub fn write_bytes_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         let mut reader = VmReader::from(buf).to_fallible();
         self.write_at(offset, &mut reader)

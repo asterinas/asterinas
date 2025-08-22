@@ -51,10 +51,6 @@ impl Init {
         Ok(())
     }
 
-    pub fn is_bound(&self) -> bool {
-        self.bound_addr.lock().is_some()
-    }
-
     pub fn bound_addr(&self) -> Option<VsockSocketAddr> {
         *self.bound_addr.lock()
     }

@@ -26,12 +26,14 @@ pub const SEMMNI: usize = 32000;
 /// Maximum number of semaphores per semaphore ID.
 pub const SEMMSL: usize = 32000;
 /// Maximum number of seaphores in all semaphore sets.
+#[expect(dead_code)]
 pub const SEMMNS: usize = SEMMNI * SEMMSL;
 /// Maximum number of operations for semop.
 pub const SEMOPM: usize = 500;
 /// MAximum semaphore value.
 pub const SEMVMX: i32 = 32767;
 /// Maximum value that can be recorded for semaphore adjustment (SEM_UNDO).
+#[expect(dead_code)]
 pub const SEMAEM: i32 = SEMVMX;
 
 #[derive(Debug)]

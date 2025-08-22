@@ -96,6 +96,7 @@ impl Thread {
     }
 
     /// Returns the task associated with this thread.
+    #[expect(dead_code)]
     pub fn task(&self) -> Arc<Task> {
         self.task.upgrade().unwrap()
     }

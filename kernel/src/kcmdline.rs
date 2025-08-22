@@ -56,6 +56,7 @@ impl KCmdlineArg {
         &self.initproc.envp
     }
     /// Gets the argument vector of a kernel module.
+    #[expect(dead_code)]
     pub fn get_module_args(&self, module: &str) -> Option<&Vec<ModuleArg>> {
         self.module_args.get(module)
     }

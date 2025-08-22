@@ -52,10 +52,6 @@ impl XattrNamespace {
     pub fn is_user(&self) -> bool {
         matches!(self, XattrNamespace::User)
     }
-
-    pub fn is_admin(&self) -> bool {
-        matches!(self, XattrNamespace::Trusted)
-    }
 }
 
 impl<'a> XattrName<'a> {

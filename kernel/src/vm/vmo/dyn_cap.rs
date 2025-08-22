@@ -123,6 +123,7 @@ impl Vmo<Rights> {
     }
 
     /// Converts to a static capability.
+    #[expect(clippy::wrong_self_convention)]
     pub fn to_static<R1: TRights>(self) -> Result<Vmo<R1>> {
         self.check_rights(Rights::from_bits(R1::BITS).ok_or(Error::new(Errno::EINVAL))?)?;
         Ok(Vmo(self.0, R1::new()))

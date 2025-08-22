@@ -36,7 +36,7 @@ pub fn new_pair() -> Result<(Arc<PipeReader>, Arc<PipeWriter>)> {
     new_pair_with_capacity(DEFAULT_PIPE_BUF_SIZE)
 }
 
-pub fn new_pair_with_capacity(capacity: usize) -> Result<(Arc<PipeReader>, Arc<PipeWriter>)> {
+fn new_pair_with_capacity(capacity: usize) -> Result<(Arc<PipeReader>, Arc<PipeWriter>)> {
     let (producer, consumer) = RingBuffer::new(capacity).split();
     let (producer_state, consumer_state) =
         Endpoint::new_pair(EndpointState::default(), EndpointState::default());
