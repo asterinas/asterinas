@@ -8,6 +8,7 @@ extern crate alloc;
 
 mod ansi_escape;
 mod console;
+mod console_input;
 mod framebuffer;
 mod pixel;
 
@@ -20,5 +21,6 @@ pub use pixel::{Pixel, PixelFormat, RenderedPixel};
 fn init() -> Result<(), ComponentInitError> {
     framebuffer::init();
     console::init();
+    console_input::init();
     Ok(())
 }
