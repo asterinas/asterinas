@@ -10,6 +10,7 @@ mod ansi_escape;
 mod console;
 mod framebuffer;
 mod pixel;
+mod tty_input_handler;
 
 use component::{init_component, ComponentInitError};
 pub use console::{FramebufferConsole, CONSOLE_NAME, FRAMEBUFFER_CONSOLE};
@@ -20,5 +21,6 @@ pub use pixel::{Pixel, PixelFormat, RenderedPixel};
 fn init() -> Result<(), ComponentInitError> {
     framebuffer::init();
     console::init();
+    tty_input_handler::init();
     Ok(())
 }
