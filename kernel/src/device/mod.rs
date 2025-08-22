@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+mod evdev;
 mod null;
 mod pty;
 mod random;
@@ -56,6 +57,8 @@ pub fn init() -> Result<()> {
     pty::init()?;
 
     shm::init()?;
+
+    evdev::init()?;
 
     Ok(())
 }
