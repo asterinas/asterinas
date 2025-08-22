@@ -14,6 +14,7 @@ use crate::sched::nice::Nice;
 /// The scheduling policies are specified by the user, usually through its priority.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SchedPolicy {
+    #[expect(dead_code)]
     Stop,
     RealTime {
         rt_prio: RealTimePriority,

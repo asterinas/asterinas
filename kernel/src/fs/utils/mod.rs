@@ -79,6 +79,7 @@ impl<const N: usize> FixedCStr<N> {
         self.0.iter().position(|&b| b == 0).unwrap()
     }
 
+    #[expect(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -159,6 +160,7 @@ impl<const N: usize> FixedStr<N> {
         self.0.iter().position(|&b| b == 0).unwrap_or(N)
     }
 
+    #[expect(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }

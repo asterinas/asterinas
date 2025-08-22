@@ -36,20 +36,6 @@ pub enum InodeType {
 }
 
 impl InodeType {
-    pub fn support_read(&self) -> bool {
-        matches!(
-            self,
-            InodeType::File | InodeType::Socket | InodeType::CharDevice | InodeType::BlockDevice
-        )
-    }
-
-    pub fn support_write(&self) -> bool {
-        matches!(
-            self,
-            InodeType::File | InodeType::Socket | InodeType::CharDevice | InodeType::BlockDevice
-        )
-    }
-
     pub fn is_regular_file(&self) -> bool {
         *self == InodeType::File
     }
@@ -189,6 +175,7 @@ impl InodeMode {
         self.contains(Self::S_IXOTH)
     }
 
+    #[expect(dead_code)]
     pub fn has_sticky_bit(&self) -> bool {
         self.contains(Self::S_ISVTX)
     }
@@ -677,6 +664,7 @@ impl Extension {
 
     /// Put an object of `Arc<T>`. If there exists one object of the type,
     /// then the old one is returned.
+    #[expect(dead_code)]
     pub fn put<T: Any + Send + Sync>(&self, obj: Arc<T>) -> Option<Arc<T>> {
         let mut write_guard = self.data.write();
         write_guard
@@ -686,6 +674,7 @@ impl Extension {
 
     /// Delete an object of `Arc<T>`. If there exists one object of the type,
     /// then the old one is returned.
+    #[expect(dead_code)]
     pub fn del<T: Any + Send + Sync>(&self) -> Option<Arc<T>> {
         let mut write_guard = self.data.write();
         write_guard

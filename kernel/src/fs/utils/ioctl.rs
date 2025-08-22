@@ -2,6 +2,7 @@
 
 use crate::prelude::*;
 
+#[expect(clippy::upper_case_acronyms)]
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
 pub enum IoctlCmd {

@@ -3,7 +3,6 @@
 use alloc::sync::Arc;
 
 use fs::CgroupFs;
-pub use inode::CgroupInode;
 use spin::Once;
 
 use crate::fs::cgroupfs::{fs::CgroupFsType, systree_node::CgroupSystem};

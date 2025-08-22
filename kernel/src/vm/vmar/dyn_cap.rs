@@ -11,6 +11,7 @@ use crate::{
 
 impl Vmar<Rights> {
     /// Creates a root VMAR.
+    #[expect(dead_code)]
     pub fn new_root() -> Self {
         let inner = Vmar_::new_root();
         let rights = Rights::all();
@@ -57,6 +58,7 @@ impl Vmar<Rights> {
     /// Memory permissions may be changed through the `protect` method,
     /// which ensures that any updated memory permissions do not go beyond
     /// the access rights of the underlying VMOs.
+    #[expect(dead_code)]
     pub fn new_map(&self, size: usize, perms: VmPerms) -> Result<VmarMapOptions<Rights, Rights>> {
         Ok(VmarMapOptions::new(self, size, perms))
     }
@@ -70,6 +72,7 @@ impl Vmar<Rights> {
     ///
     /// The VMAR must have the rights corresponding to the specified memory
     /// permissions.
+    #[expect(dead_code)]
     pub fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
         self.check_rights(perms.into())?;
         self.0.protect(perms, range)
@@ -78,6 +81,7 @@ impl Vmar<Rights> {
     /// Clears all mappings.
     ///
     /// After being cleared, this vmar will become an empty vmar
+    #[expect(dead_code)]
     pub fn clear(&self) -> Result<()> {
         self.0.clear_root_vmar()
     }
@@ -89,6 +93,7 @@ impl Vmar<Rights> {
     ///
     /// Mappings may fall partially within the range; only the overlapped
     /// portions of the mappings are unmapped.
+    #[expect(dead_code)]
     pub fn remove_mapping(&self, range: Range<usize>) -> Result<()> {
         self.0.remove_mapping(range)
     }
@@ -98,6 +103,7 @@ impl Vmar<Rights> {
     /// # Access rights
     ///
     /// The method requires the Dup right.
+    #[expect(dead_code)]
     pub fn dup(&self) -> Result<Self> {
         self.check_rights(Rights::DUP)?;
         Ok(Vmar(self.0.clone(), self.1))
@@ -109,6 +115,7 @@ impl Vmar<Rights> {
     /// # Access rights
     ///
     /// The method requires the Read right.
+    #[expect(dead_code)]
     pub fn fork_from(vmar: &Self) -> Result<Self> {
         vmar.check_rights(Rights::READ)?;
         let vmar_ = vmar.0.new_fork_root()?;

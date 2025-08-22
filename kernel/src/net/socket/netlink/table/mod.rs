@@ -271,6 +271,7 @@ pub fn is_valid_protocol(protocol: NetlinkProtocolId) -> bool {
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/linux/netlink.h#L9>.
 #[expect(non_camel_case_types)]
+#[expect(clippy::upper_case_acronyms)]
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
 pub enum StandardNetlinkProtocol {
