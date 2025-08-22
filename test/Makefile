@@ -139,7 +139,6 @@ general_pkgs:
 		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
 		$(NIX_QUIET) \
 		--out-link /nix/var/nix/gcroots/auto/general \
-		-A linux_vdso \
 		-A apps.mongoose_src
 
 install_host_pkgs:

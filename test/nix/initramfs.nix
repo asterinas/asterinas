@@ -1,5 +1,5 @@
 { lib, stdenvNoCC, fetchFromGitHub, hostPlatform, writeClosure, busybox, apps
-, linux_vdso, benchmark, syscall, }:
+, benchmark, syscall, }:
 let
   etc = lib.fileset.toSource {
     root = ./../src/etc;
@@ -9,8 +9,7 @@ let
     name = "gvisor-libs";
     path = "/lib/x86_64-linux-gnu";
   };
-  all_pkgs = [ busybox etc linux_vdso ]
-    ++ lib.optionals (apps != null) [ apps.package ]
+  all_pkgs = [ busybox etc ] ++ lib.optionals (apps != null) [ apps.package ]
     ++ lib.optionals (benchmark != null) [ benchmark.package ]
     ++ lib.optionals (syscall != null) [ syscall.package ];
 in stdenvNoCC.mkDerivation {
@@ -24,14 +23,6 @@ in stdenvNoCC.mkDerivation {
     ln -sfn usr/lib $out/lib
     ln -sfn usr/lib64 $out/lib64
     cp -r ${busybox}/bin/* $out/bin/
-
-    mkdir -p $out/usr/lib/x86_64-linux-gnu
-    ${lib.optionalString hostPlatform.isx86_64 ''
-      cp -r ${linux_vdso}/vdso64.so $out/usr/lib/x86_64-linux-gnu/vdso64.so
-    ''}
-    ${lib.optionalString hostPlatform.isRiscV64 ''
-      cp -r ${linux_vdso}/riscv64-vdso.so $out/usr/lib/x86_64-linux-gnu/vdso64.so
-    ''}
 
     cp -r ${etc}/* $out/etc/
 
@@ -48,6 +39,7 @@ in stdenvNoCC.mkDerivation {
 
       # FIXME: Build gvisor syscall test with nix to avoid manual library copying.
       if [ "${syscall.testSuite}" == "gvisor" ]; then
+        mkdir -p $out/lib/x86_64-linux-gnu
         cp -L ${gvisor_libs}/ld-linux-x86-64.so.2 $out/lib64/ld-linux-x86-64.so.2
         cp -L ${gvisor_libs}/libstdc++.so.6 $out/lib/x86_64-linux-gnu/libstdc++.so.6
         cp -L ${gvisor_libs}/libgcc_s.so.1 $out/lib/x86_64-linux-gnu/libgcc_s.so.1
