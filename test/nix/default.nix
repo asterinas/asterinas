@@ -30,14 +30,8 @@ in rec {
     testSuite = syscallTestSuite;
     workDir = syscallTestWorkDir;
   };
-  linux_vdso = pkgs.fetchFromGitHub {
-    owner = "asterinas";
-    repo = "linux_vdso";
-    rev = "be255018febf8b9e2d36f356f6aeb15896521618";
-    hash = "sha256-F5RPtu/Hh2hDnjm6/0mc0wGqhQtfMNvPP+6/Id9Hcpk";
-  };
   initramfs = pkgs.callPackage ./initramfs.nix {
-    inherit busybox linux_vdso;
+    inherit busybox;
     apps = if enableBasicTest then apps else null;
     benchmark = if enableBenchmark then benchmark else null;
     syscall = if enableSyscallTest then syscall else null;
