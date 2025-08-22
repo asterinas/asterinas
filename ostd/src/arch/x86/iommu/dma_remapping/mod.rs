@@ -8,7 +8,6 @@ use spin::Once;
 use super::IommuError;
 use crate::{
     arch::iommu::registers::{CapabilitySagaw, IOMMU_REGS},
-    bus::pci::PciDeviceLocation,
     mm::{Daddr, PageTable},
     prelude::Paddr,
     sync::{LocalIrqDisabled, SpinLock},
@@ -19,6 +18,61 @@ mod second_stage;
 
 pub fn has_dma_remapping() -> bool {
     PAGE_TABLE.get().is_some()
+}
+
+/// PCI device Location
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PciDeviceLocation {
+    /// Bus number
+    pub bus: u8,
+    /// Device number with max 31
+    pub device: u8,
+    /// Device number with max 7
+    pub function: u8,
+}
+
+impl PciDeviceLocation {
+    // TODO: Find a proper way to obtain the bus range. For example, if the PCI bus is identified
+    // from a device tree, this information can be obtained from the `bus-range` field (e.g.,
+    // `bus-range = <0x00 0x7f>`).
+    const MIN_BUS: u8 = 0;
+    const MAX_BUS: u8 = 255;
+
+    const MIN_DEVICE: u8 = 0;
+    const MAX_DEVICE: u8 = 31;
+
+    const MIN_FUNCTION: u8 = 0;
+    const MAX_FUNCTION: u8 = 7;
+
+    /// Returns an iterator that enumerates all possible PCI device locations.
+    fn all() -> impl Iterator<Item = PciDeviceLocation> {
+        core::iter::from_coroutine(
+            #[coroutine]
+            || {
+                for bus in Self::MIN_BUS..=Self::MAX_BUS {
+                    for device in Self::MIN_DEVICE..=Self::MAX_DEVICE {
+                        for function in Self::MIN_FUNCTION..=Self::MAX_FUNCTION {
+                            let loc = PciDeviceLocation {
+                                bus,
+                                device,
+                                function,
+                            };
+                            yield loc;
+                        }
+                    }
+                }
+            },
+        )
+    }
+
+    /// Returns the zero PCI device location.
+    fn zero() -> Self {
+        Self {
+            bus: 0,
+            device: 0,
+            function: 0,
+        }
+    }
 }
 
 /// Mapping device address to physical address.

@@ -6,11 +6,12 @@
 
 use alloc::vec::Vec;
 
+use align_ext::AlignExt;
+
 use self::{msix::CapabilityMsixData, vendor::CapabilityVndrData};
 use super::{
     cfg_space::{PciDeviceCommonCfgOffset, Status},
     common_device::PciCommonDevice,
-    PciDeviceLocation,
 };
 
 pub mod msix;
@@ -92,15 +93,14 @@ impl Capability {
         }
         let mut capabilities = Vec::new();
         let mut cap_ptr =
-            dev.location()
-                .read8(PciDeviceCommonCfgOffset::CapabilitiesPointer as u16) as u16
-                & PciDeviceLocation::BIT32_ALIGN_MASK;
+            (dev.location()
+                .read8(PciDeviceCommonCfgOffset::CapabilitiesPointer as u16) as u16)
+                .align_down(align_of::<u32>() as _);
         let mut cap_ptr_vec = Vec::new();
         // read all cap_ptr so that it is easy for us to get the length.
         while cap_ptr > 0 {
             cap_ptr_vec.push(cap_ptr);
-            cap_ptr =
-                dev.location().read8(cap_ptr + 1) as u16 & PciDeviceLocation::BIT32_ALIGN_MASK;
+            cap_ptr = (dev.location().read8(cap_ptr + 1) as u16).align_down(align_of::<u32>() as _);
         }
         cap_ptr_vec.sort();
         // Push here so that we can calculate the length of the last capability.
