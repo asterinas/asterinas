@@ -12,7 +12,8 @@ mod io_mem;
 use cfg_if::cfg_if;
 
 pub use self::io_mem::IoMem;
-pub(crate) use self::io_mem::IoMemAllocatorBuilder;
+#[expect(unused_imports)]
+pub(crate) use self::io_mem::{IoMemAllocatorBuilder, Sensitive};
 
 cfg_if!(
     if #[cfg(target_arch = "x86_64")] {
