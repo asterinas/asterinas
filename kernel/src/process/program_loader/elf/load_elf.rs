@@ -528,7 +528,7 @@ fn map_vdso_to_vm(process_vm: &ProcessVm) -> Option<Vaddr> {
     let vdso_data_base = vdso_vmo_base + VDSO_VMO_LAYOUT.data_segment_offset;
     let vdso_text_base = vdso_vmo_base + VDSO_VMO_LAYOUT.text_segment_offset;
 
-    let data_perms = VmPerms::READ | VmPerms::WRITE;
+    let data_perms = VmPerms::READ;
     let text_perms = VmPerms::READ | VmPerms::EXEC;
     root_vmar
         .protect(
