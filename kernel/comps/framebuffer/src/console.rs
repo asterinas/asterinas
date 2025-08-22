@@ -3,7 +3,9 @@
 use alloc::{sync::Arc, vec::Vec};
 
 use aster_console::{AnyConsoleDevice, BitmapFont, ConsoleCallback, ConsoleSetFontError};
-use aster_keyboard::InputKey;
+// This is to let `aster_keyboard` component linked.
+#[expect(unused_imports)]
+use aster_keyboard::*;
 use ostd::{
     mm::{Infallible, VmReader},
     sync::{LocalIrqDisabled, SpinLock},
@@ -32,7 +34,6 @@ pub(crate) fn init() {
     };
 
     FRAMEBUFFER_CONSOLE.call_once(|| Arc::new(FramebufferConsole::new(fb.clone())));
-    aster_keyboard::register_callback(&handle_keyboard_input);
 }
 
 impl AnyConsoleDevice for FramebufferConsole {
@@ -235,17 +236,5 @@ impl EscapeOp for ConsoleState {
 
     fn set_bg_color(&mut self, val: Pixel) {
         self.bg_color = val;
-    }
-}
-
-fn handle_keyboard_input(key: InputKey) {
-    let Some(console) = FRAMEBUFFER_CONSOLE.get() else {
-        return;
-    };
-
-    let buffer = key.as_xterm_control_sequence();
-    for callback in console.callbacks.lock().iter() {
-        let reader = VmReader::from(buffer);
-        callback(reader);
     }
 }
