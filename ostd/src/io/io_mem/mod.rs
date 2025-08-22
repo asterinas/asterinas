@@ -4,7 +4,10 @@
 
 mod allocator;
 
-use core::ops::{Deref, Range};
+use core::{
+    marker::PhantomData,
+    ops::{Deref, Range},
+};
 
 use align_ext::AlignExt;
 
@@ -15,32 +18,34 @@ use crate::{
         io_util::{HasVmReaderWriter, VmReaderWriterIdentity},
         kspace::kvirt_area::KVirtArea,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
-        HasPaddr, Infallible, Paddr, VmReader, VmWriter, PAGE_SIZE,
+        HasPaddr, Infallible, Paddr, PodOnce, VmReader, VmWriter, PAGE_SIZE,
     },
     prelude::*,
     Error,
 };
 
+/// A marker type used for [`IoMem`],
+/// representing whether the underlying MMIO is used for security-sensitive operations.
+#[derive(Clone, Debug)]
+pub enum Sensitive {}
+
+/// A marker type used for [`IoMem`],
+/// representing whether the underlying MMIO is used for security-insensitive operations.
+#[derive(Clone, Debug)]
+pub enum Insensitive {}
+
 /// I/O memory.
 #[derive(Debug, Clone)]
-pub struct IoMem {
+pub struct IoMem<SecuritySensitivity = Insensitive> {
     kvirt_area: Arc<KVirtArea>,
     // The actually used range for MMIO is `kvirt_area.start + offset..kvirt_area.start + offset + limit`
     offset: usize,
     limit: usize,
     pa: Paddr,
+    phantom: PhantomData<SecuritySensitivity>,
 }
 
-impl IoMem {
-    /// Acquires an `IoMem` instance for the given range.
-    pub fn acquire(range: Range<Paddr>) -> Result<IoMem> {
-        allocator::IO_MEM_ALLOCATOR
-            .get()
-            .unwrap()
-            .acquire(range)
-            .ok_or(Error::AccessDenied)
-    }
-
+impl<SecuritySensitivity> IoMem<SecuritySensitivity> {
     /// Returns the physical address of the I/O memory.
     pub fn paddr(&self) -> Paddr {
         self.pa
@@ -66,6 +71,7 @@ impl IoMem {
             offset: self.offset + range.start,
             limit: range.len(),
             pa: self.pa + range.start,
+            phantom: PhantomData,
         }
     }
 
@@ -126,7 +132,72 @@ impl IoMem {
             offset: range.start - first_page_start,
             limit: range.len(),
             pa: range.start,
+            phantom: PhantomData,
         }
+    }
+}
+
+#[expect(unused)]
+impl IoMem<Sensitive> {
+    /// Reads a value of the `PodOnce` type at the specified offset using one
+    /// non-tearing memory load.
+    ///
+    /// Except that the offset is specified explicitly, the semantics of this
+    /// method is the same as [`VmReader::read_once`].
+    ///
+    /// # Safety
+    ///
+    /// 1. This function should only be called after the kernel page table is
+    ///    activated.
+    /// 2. The caller must ensure that the offset is valid, e.g., follows the
+    ///    specification when used for implementing drivers and does not cause
+    ///    any out-of-bounds access.
+    pub(crate) unsafe fn read_once<T: PodOnce>(&self, offset: usize) -> Result<T> {
+        // SAFETY: The constructor of the `IoMem` structure has already ensured the
+        // safety of reading from the mapped physical address, and the mapping is valid.
+        let mut reader = unsafe {
+            VmReader::from_kernel_space(
+                (self.kvirt_area.deref().start() + self.offset) as *mut u8,
+                self.limit,
+            )
+        };
+        reader.skip(offset).read_once()
+    }
+
+    /// Writes a value of the `PodOnce` type at the specified offset using one
+    /// non-tearing memory store.
+    ///
+    /// Except that the offset is specified explicitly, the semantics of this
+    /// method is the same as [`VmWriter::write_once`].
+    ///
+    /// # Safety
+    ///
+    /// 1. This function should only be called after the kernel page table is
+    ///    activated.
+    /// 2. The caller must ensure that the offset is valid, e.g., follows the
+    ///    specification when used for implementing drivers and does not cause
+    ///    any out-of-bounds access.
+    pub(crate) unsafe fn write_once<T: PodOnce>(&self, offset: usize, value: &T) -> Result<()> {
+        // SAFETY: The constructor of the `IoMem` structure has already ensured the
+        // safety of writing to the mapped physical address, and the mapping is valid.
+        let mut writer = unsafe {
+            VmWriter::from_kernel_space(
+                (self.kvirt_area.deref().start() + self.offset) as *mut u8,
+                self.limit,
+            )
+        };
+        writer.skip(offset).write_once(value)
+    }
+}
+
+impl IoMem<Insensitive> {
+    /// Acquires an `IoMem` instance for the given range.
+    pub fn acquire(range: Range<Paddr>) -> Result<IoMem<Insensitive>> {
+        allocator::IO_MEM_ALLOCATOR
+            .get()
+            .unwrap()
+            .acquire(range)
+            .ok_or(Error::AccessDenied)
     }
 }
 
@@ -137,7 +208,7 @@ impl IoMem {
 // is in OSTD, so we can rely on the implementation details of `VmReader` and `VmWriter`, which we
 // know are also suitable for accessing I/O memory.
 
-impl HasVmReaderWriter for IoMem {
+impl HasVmReaderWriter for IoMem<Insensitive> {
     type Types = VmReaderWriterIdentity;
 
     fn reader(&self) -> VmReader<'_, Infallible> {
@@ -163,13 +234,13 @@ impl HasVmReaderWriter for IoMem {
     }
 }
 
-impl HasPaddr for IoMem {
+impl<SecuritySensitivity> HasPaddr for IoMem<SecuritySensitivity> {
     fn paddr(&self) -> Paddr {
         self.pa
     }
 }
 
-impl Drop for IoMem {
+impl<SecuritySensitivity> Drop for IoMem<SecuritySensitivity> {
     fn drop(&mut self) {
         // TODO: Multiple `IoMem` instances should not overlap, we should refactor the driver code and
         // remove the `Clone` and `IoMem::slice`. After refactoring, the `Drop` can be implemented to recycle
