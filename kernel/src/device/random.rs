@@ -24,7 +24,7 @@ impl Random {
 
 impl Device for Random {
     fn type_(&self) -> DeviceType {
-        DeviceType::CharDevice
+        DeviceType::Char
     }
 
     fn id(&self) -> DeviceId {

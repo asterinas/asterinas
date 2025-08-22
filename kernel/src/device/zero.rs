@@ -14,7 +14,7 @@ pub struct Zero;
 
 impl Device for Zero {
     fn type_(&self) -> DeviceType {
-        DeviceType::CharDevice
+        DeviceType::Char
     }
 
     fn id(&self) -> DeviceId {

@@ -118,7 +118,7 @@ impl Inode for Ext2Inode {
     fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
         let inode_type = type_.inode_type();
         let inode = match type_ {
-            MknodType::CharDeviceNode(dev) | MknodType::BlockDeviceNode(dev) => {
+            MknodType::CharDevice(dev) | MknodType::BlockDevice(dev) => {
                 let inode = self.create(name, inode_type, mode.into())?;
                 inode.set_device_id(dev.id().as_encoded_u64()).unwrap();
                 inode

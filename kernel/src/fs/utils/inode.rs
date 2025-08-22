@@ -79,9 +79,9 @@ impl InodeType {
 impl From<DeviceType> for InodeType {
     fn from(type_: DeviceType) -> InodeType {
         match type_ {
-            DeviceType::CharDevice => InodeType::CharDevice,
-            DeviceType::BlockDevice => InodeType::BlockDevice,
-            DeviceType::MiscDevice => InodeType::CharDevice,
+            DeviceType::Char => InodeType::CharDevice,
+            DeviceType::Block => InodeType::BlockDevice,
+            DeviceType::Misc => InodeType::CharDevice,
         }
     }
 }
@@ -328,17 +328,17 @@ impl Metadata {
 }
 
 pub enum MknodType {
-    NamedPipeNode,
-    CharDeviceNode(Arc<dyn Device>),
-    BlockDeviceNode(Arc<dyn Device>),
+    NamedPipe,
+    CharDevice(Arc<dyn Device>),
+    BlockDevice(Arc<dyn Device>),
 }
 
 impl MknodType {
     pub fn inode_type(&self) -> InodeType {
         match self {
-            MknodType::NamedPipeNode => InodeType::NamedPipe,
-            MknodType::CharDeviceNode(_) => InodeType::CharDevice,
-            MknodType::BlockDeviceNode(_) => InodeType::BlockDevice,
+            MknodType::NamedPipe => InodeType::NamedPipe,
+            MknodType::CharDevice(_) => InodeType::CharDevice,
+            MknodType::BlockDevice(_) => InodeType::BlockDevice,
         }
     }
 }
@@ -347,8 +347,8 @@ impl From<Arc<dyn Device>> for MknodType {
     fn from(device: Arc<dyn Device>) -> Self {
         let inode_type: InodeType = device.type_().into();
         match inode_type {
-            InodeType::CharDevice => Self::CharDeviceNode(device),
-            InodeType::BlockDevice => Self::BlockDeviceNode(device),
+            InodeType::CharDevice => Self::CharDevice(device),
+            InodeType::BlockDevice => Self::BlockDevice(device),
             _ => unreachable!(),
         }
     }

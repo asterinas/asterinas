@@ -1435,7 +1435,7 @@ mod tests {
         let d1 = root.lookup("d1").unwrap();
         d1.set_mode(mode).unwrap();
         assert_ne!(f1.ino(), d1.ino());
-        d1.mknod("dev", mode, MknodType::NamedPipeNode).unwrap();
+        d1.mknod("dev", mode, MknodType::NamedPipe).unwrap();
 
         let link = d1.create("link", InodeType::SymLink, mode).unwrap();
         let link_str = "link_to_somewhere";

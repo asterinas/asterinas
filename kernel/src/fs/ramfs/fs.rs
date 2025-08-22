@@ -712,16 +712,14 @@ impl Inode for RamInode {
         }
 
         let new_inode = match type_ {
-            MknodType::CharDeviceNode(device) | MknodType::BlockDeviceNode(device) => {
-                RamInode::new_device(
-                    &self.fs.upgrade().unwrap(),
-                    mode,
-                    Uid::new_root(),
-                    Gid::new_root(),
-                    device,
-                )
-            }
-            MknodType::NamedPipeNode => RamInode::new_named_pipe(
+            MknodType::CharDevice(device) | MknodType::BlockDevice(device) => RamInode::new_device(
+                &self.fs.upgrade().unwrap(),
+                mode,
+                Uid::new_root(),
+                Gid::new_root(),
+                device,
+            ),
+            MknodType::NamedPipe => RamInode::new_named_pipe(
                 &self.fs.upgrade().unwrap(),
                 mode,
                 Uid::new_root(),
