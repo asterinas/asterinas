@@ -120,7 +120,7 @@ impl VdsoData {
             seq: 0,
             clock_mode: VdsoClockMode::None as i32,
             last_cycles: 0,
-            mask: 0,
+            mask: u64::MAX,
             mult: 0,
             shift: 0,
             basetime: [VdsoInstant::zero(); VDSO_BASES],
