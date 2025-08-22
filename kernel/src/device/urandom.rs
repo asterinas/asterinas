@@ -24,7 +24,7 @@ impl Urandom {
 
 impl Device for Urandom {
     fn type_(&self) -> DeviceType {
-        DeviceType::CharDevice
+        DeviceType::Char
     }
 
     fn id(&self) -> DeviceId {

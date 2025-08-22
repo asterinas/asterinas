@@ -27,7 +27,7 @@ impl Device for TtyDevice {
     }
 
     fn type_(&self) -> DeviceType {
-        DeviceType::CharDevice
+        DeviceType::Char
     }
 
     fn id(&self) -> DeviceId {

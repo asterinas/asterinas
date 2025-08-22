@@ -171,7 +171,7 @@ impl Inode for Ptmx {
 
 impl Device for Inner {
     fn type_(&self) -> DeviceType {
-        DeviceType::CharDevice
+        DeviceType::Char
     }
 
     fn id(&self) -> DeviceId {

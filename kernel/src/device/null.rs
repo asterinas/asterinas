@@ -14,7 +14,7 @@ pub struct Null;
 
 impl Device for Null {
     fn type_(&self) -> DeviceType {
-        DeviceType::CharDevice
+        DeviceType::Char
     }
 
     fn id(&self) -> DeviceId {
