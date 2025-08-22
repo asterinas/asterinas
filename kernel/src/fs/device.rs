@@ -33,12 +33,12 @@ impl Debug for dyn Device {
     }
 }
 
-#[derive(Debug)]
 /// Device type
+#[derive(Debug)]
 pub enum DeviceType {
-    CharDevice,
-    BlockDevice,
-    MiscDevice,
+    Char,
+    Block,
+    Misc,
 }
 
 /// A device ID, containing a major device number and a minor device number.

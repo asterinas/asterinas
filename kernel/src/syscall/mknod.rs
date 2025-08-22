@@ -53,7 +53,7 @@ pub fn sys_mknodat(
             let _ = dir_path.mknod(&name, inode_mode, device_inode.into())?;
         }
         InodeType::NamedPipe => {
-            let _ = dir_path.mknod(&name, inode_mode, MknodType::NamedPipeNode)?;
+            let _ = dir_path.mknod(&name, inode_mode, MknodType::NamedPipe)?;
         }
         InodeType::Socket => {
             return_errno_with_message!(Errno::EINVAL, "unsupported file types")
