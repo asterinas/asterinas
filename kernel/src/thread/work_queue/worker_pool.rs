@@ -237,10 +237,11 @@ impl Monitor {
                 current_monitor.run_monitor_loop();
             });
             let cpu_affinity = CpuSet::new_full();
-            let sched_policy = SchedPolicy::Fair(match priority {
-                WorkPriority::High => Nice::MIN,
-                WorkPriority::Normal => Nice::default(),
-            });
+            // let sched_policy = SchedPolicy::Fair(match priority {
+            //     WorkPriority::High => Nice::MIN,
+            //     WorkPriority::Normal => Nice::default(),
+            // });
+            let sched_policy = SchedPolicy::EarliestDeadline;
             let bound_task = ThreadOptions::new(task_fn)
                 .cpu_affinity(cpu_affinity)
                 .sched_policy(sched_policy)

@@ -30,6 +30,7 @@ use crate::thread::{AsThread, Thread};
 mod policy;
 mod time;
 
+mod eevdf;
 mod fair;
 mod idle;
 mod real_time;
@@ -70,6 +71,7 @@ struct PerCpuClassRqSet {
     stop: stop::StopClassRq,
     real_time: real_time::RealTimeClassRq,
     fair: fair::FairClassRq,
+    eevdf: eevdf::EarliestDeadlineRq,
     idle: idle::IdleClassRq,
     current: Option<(SchedEntity, CurrentRuntime)>,
 }
@@ -138,6 +140,7 @@ pub struct SchedAttr {
     last_cpu: AtomicCpuId,
     real_time: real_time::RealTimeAttr,
     fair: fair::FairAttr,
+    eevdf: eevdf::EarliestDeadlineAttr,
 }
 
 impl SchedAttr {
@@ -157,6 +160,7 @@ impl SchedAttr {
                 SchedPolicy::Fair(nice) => nice,
                 _ => Nice::default(),
             }),
+            eevdf: eevdf::EarliestDeadlineAttr::new(),
         }
     }
 
@@ -261,6 +265,7 @@ impl ClassScheduler {
                 stop: stop::StopClassRq::new(),
                 real_time: real_time::RealTimeClassRq::new(cpu),
                 fair: fair::FairClassRq::new(cpu),
+                eevdf: eevdf::EarliestDeadlineRq::new(),
                 idle: idle::IdleClassRq::new(),
                 current: None,
             })
@@ -315,7 +320,7 @@ impl PerCpuClassRqSet {
     fn pick_next_entity(&mut self) -> Option<SchedEntity> {
         (self.stop.pick_next())
             .or_else(|| self.real_time.pick_next())
-            .or_else(|| self.fair.pick_next())
+            .or_else(|| self.eevdf.pick_next())
             .or_else(|| self.idle.pick_next())
             .and_then(|task| {
                 let thread = task.as_thread()?.clone();
@@ -328,12 +333,13 @@ impl PerCpuClassRqSet {
             SchedPolicyKind::Stop => self.stop.enqueue(task, flags),
             SchedPolicyKind::RealTime => self.real_time.enqueue(task, flags),
             SchedPolicyKind::Fair => self.fair.enqueue(task, flags),
+            SchedPolicyKind::EarliestDeadline => self.eevdf.enqueue(task, flags),
             SchedPolicyKind::Idle => self.idle.enqueue(task, flags),
         }
     }
 
     fn nr_queued_and_running(&self) -> (u32, u32) {
-        let queued = self.stop.len() + self.real_time.len() + self.fair.len() + self.idle.len();
+        let queued = self.stop.len() + self.real_time.len() + self.eevdf.len() + self.idle.len();
         let running = usize::from(self.current.is_some());
         (queued as u32, running as u32)
     }
@@ -364,6 +370,9 @@ impl LocalRunQueue for PerCpuClassRqSet {
                 SchedPolicyKind::Stop => (self.stop.update_current(rt, attr, flags), 0),
                 SchedPolicyKind::RealTime => (self.real_time.update_current(rt, attr, flags), 1),
                 SchedPolicyKind::Fair => (self.fair.update_current(rt, attr, flags), 2),
+                SchedPolicyKind::EarliestDeadline => {
+                    (self.eevdf.update_current(rt, attr, flags), 2)
+                }
                 SchedPolicyKind::Idle => (self.idle.update_current(rt, attr, flags), 3),
             }
         } else {
@@ -377,7 +386,7 @@ impl LocalRunQueue for PerCpuClassRqSet {
         should_preempt
             || (lookahead >= 1 && !self.stop.is_empty())
             || (lookahead >= 2 && !self.real_time.is_empty())
-            || (lookahead >= 3 && !self.fair.is_empty())
+            || (lookahead >= 3 && !self.eevdf.is_empty())
             || (lookahead >= 4 && !self.idle.is_empty())
     }
 

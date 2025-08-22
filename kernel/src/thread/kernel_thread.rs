@@ -28,7 +28,7 @@ impl ThreadOptions {
         F: FnOnce() + Send + 'static,
     {
         let cpu_affinity = CpuSet::new_full();
-        let sched_policy = SchedPolicy::Fair(Nice::default());
+        let sched_policy = SchedPolicy::EarliestDeadline;
         Self {
             func: Some(Box::new(func)),
             cpu_affinity,

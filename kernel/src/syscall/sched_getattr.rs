@@ -83,6 +83,11 @@ impl TryFrom<SchedPolicy> for LinuxSchedAttr {
                 ..Default::default()
             },
 
+            SchedPolicy::EarliestDeadline => LinuxSchedAttr {
+                sched_policy: SCHED_NORMAL,
+                ..Default::default()
+            },
+
             SchedPolicy::Idle => {
                 return Err(Error::with_message(
                     Errno::EACCES,

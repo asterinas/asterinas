@@ -50,12 +50,13 @@ impl Worker {
             });
             let mut cpu_affinity = CpuSet::new_empty();
             cpu_affinity.add(bound_cpu);
-            let sched_policy =
-                SchedPolicy::Fair(if worker_pool.upgrade().unwrap().is_high_priority() {
-                    Nice::MIN
-                } else {
-                    Nice::default()
-                });
+            // let sched_policy =
+            //     SchedPolicy::Fair(if worker_pool.upgrade().unwrap().is_high_priority() {
+            //         Nice::MIN
+            //     } else {
+            //         Nice::default()
+            //     });
+            let sched_policy = SchedPolicy::EarliestDeadline;
             let bound_task = ThreadOptions::new(task_fn)
                 .cpu_affinity(cpu_affinity)
                 .sched_policy(sched_policy)

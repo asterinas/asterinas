@@ -20,6 +20,7 @@ pub enum SchedPolicy {
         rt_policy: RealTimePolicy,
     },
     Fair(Nice),
+    EarliestDeadline,
     Idle,
 }
 
@@ -29,7 +30,8 @@ pub(super) enum SchedPolicyKind {
     Stop = 0,
     RealTime = 1,
     Fair = 2,
-    Idle = 3,
+    EarliestDeadline = 3,
+    Idle = 4,
 }
 
 impl SchedPolicy {
@@ -38,6 +40,7 @@ impl SchedPolicy {
             SchedPolicy::Stop => SchedPolicyKind::Stop,
             SchedPolicy::RealTime { .. } => SchedPolicyKind::RealTime,
             SchedPolicy::Fair(_) => SchedPolicyKind::Fair,
+            SchedPolicy::EarliestDeadline => SchedPolicyKind::EarliestDeadline,
             SchedPolicy::Idle => SchedPolicyKind::Idle,
         }
     }

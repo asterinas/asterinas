@@ -65,6 +65,6 @@ fn spawn_background_poll_thread(iface: Arc<Iface>) {
     };
 
     ThreadOptions::new(task_fn)
-        .sched_policy(SchedPolicy::Fair(Nice::MIN))
+        .sched_policy(SchedPolicy::EarliestDeadline)
         .spawn();
 }

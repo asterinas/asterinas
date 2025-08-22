@@ -59,7 +59,7 @@ impl PosixThreadBuilder {
             fs: None,
             sig_mask: AtomicSigMask::new_empty(),
             sig_queues: SigQueues::new(),
-            sched_policy: SchedPolicy::Fair(Nice::default()),
+            sched_policy: SchedPolicy::EarliestDeadline,
             fpu_context: FpuContext::new(),
         }
     }
