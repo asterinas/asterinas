@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(dead_code)]
-
 /// Error number.
+#[expect(clippy::upper_case_acronyms)]
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Errno {
@@ -158,6 +157,7 @@ pub enum Errno {
 #[derive(Debug, Clone, Copy)]
 pub struct Error {
     errno: Errno,
+    #[expect(dead_code)]
     msg: Option<&'static str>,
 }
 

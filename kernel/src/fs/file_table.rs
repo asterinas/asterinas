@@ -137,6 +137,7 @@ impl FileTable {
         self.subject.register_observer(observer, ());
     }
 
+    #[expect(dead_code)]
     pub fn unregister_observer(&self, observer: &Weak<dyn Observer<FdEvents>>) {
         self.subject.unregister_observer(observer);
     }

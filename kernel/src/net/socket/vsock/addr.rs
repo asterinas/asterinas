@@ -62,8 +62,10 @@ impl From<VsockSocketAddr> for VsockDeviceAddr {
 pub const VMADDR_CID_ANY: u32 = u32::MAX;
 /// Use this as the destination CID in an address when referring to the local communication (loopback).
 /// This was VMADDR_CID_RESERVED
+#[expect(dead_code)]
 pub const VMADDR_CID_LOCAL: u32 = 1;
 /// Use this as the destination CID in an address when referring to the host (any process other than the hypervisor).
+#[expect(dead_code)]
 pub const VMADDR_CID_HOST: u32 = 2;
 /// Bind to any available port.
 pub const VMADDR_PORT_ANY: u32 = u32::MAX;

@@ -220,26 +220,31 @@ impl SuperBlock {
     }
 
     /// Returns the filesystem state.
+    #[expect(dead_code)]
     pub fn state(&self) -> FsState {
         self.state
     }
 
     /// Returns the revision level.
+    #[expect(dead_code)]
     pub fn rev_level(&self) -> RevLevel {
         self.rev_level
     }
 
     /// Returns the compatible feature set.
+    #[expect(dead_code)]
     pub fn feature_compat(&self) -> FeatureCompatSet {
         self.feature_compat
     }
 
     /// Returns the incompatible feature set.
+    #[expect(dead_code)]
     pub fn feature_incompat(&self) -> FeatureInCompatSet {
         self.feature_incompat
     }
 
     /// Returns the readonly-compatible feature set.
+    #[expect(dead_code)]
     pub fn feature_ro_compat(&self) -> FeatureRoCompatSet {
         self.feature_ro_compat
     }

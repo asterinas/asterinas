@@ -858,6 +858,7 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
     ///
     /// The provided alignment must be a power of two and a multiple of the
     /// page size.
+    #[expect(dead_code)]
     pub fn align(mut self, align: usize) -> Self {
         self.align = align;
         self
@@ -892,6 +893,7 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
     ///
     /// If this value is set to true, the mapping will be shared with child
     /// process when forking.
+    #[expect(clippy::wrong_self_convention)]
     pub fn is_shared(mut self, is_shared: bool) -> Self {
         self.is_shared = is_shared;
         self

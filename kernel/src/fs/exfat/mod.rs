@@ -13,7 +13,6 @@ mod utils;
 use alloc::sync::Arc;
 
 pub use fs::{ExfatFS, ExfatMountOptions};
-pub use inode::ExfatInode;
 
 use crate::fs::exfat::fs::ExfatType;
 

@@ -36,6 +36,7 @@ pub struct OopsInfo {
     /// The "oops" message.
     pub message: String,
     /// The thread where the "oops" happened.
+    #[expect(unused)]
     pub thread: Arc<Thread>,
 }
 

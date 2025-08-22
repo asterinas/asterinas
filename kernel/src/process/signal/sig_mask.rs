@@ -188,10 +188,6 @@ impl AtomicSigSet {
         AtomicSigSet::new(0)
     }
 
-    pub fn new_full() -> Self {
-        AtomicSigSet::new(!0)
-    }
-
     pub fn contains(&self, signals: impl Into<SigSet>, ordering: Ordering) -> bool {
         self.load(ordering).contains(signals.into())
     }

@@ -132,6 +132,7 @@ impl<R: TRights> Vmar<TRightSet<R>> {
     }
 
     /// Stricts the access rights.
+    #[expect(dead_code)]
     #[require(R > R1)]
     pub fn restrict<R1: TRights>(self) -> Vmar<R1> {
         Vmar(self.0, R1::new())

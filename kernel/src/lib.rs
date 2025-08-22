@@ -49,38 +49,39 @@ extern crate getset;
 
 #[cfg(target_arch = "x86_64")]
 #[path = "arch/x86/mod.rs"]
-pub mod arch;
+mod arch;
 #[cfg(target_arch = "riscv64")]
 #[path = "arch/riscv/mod.rs"]
-pub mod arch;
+mod arch;
 #[cfg(target_arch = "loongarch64")]
 #[path = "arch/loongarch/mod.rs"]
-pub mod arch;
-pub mod context;
-pub mod cpu;
-pub mod device;
-pub mod driver;
-pub mod error;
-pub mod events;
-pub mod fs;
-pub mod ipc;
-pub mod kcmdline;
-pub mod net;
-pub mod prelude;
+mod arch;
+
+mod context;
+mod cpu;
+mod device;
+mod driver;
+mod error;
+mod events;
+mod fs;
+mod ipc;
+mod kcmdline;
+mod net;
+mod prelude;
 mod process;
 mod sched;
-pub mod syscall;
-pub mod thread;
-pub mod time;
+mod syscall;
+mod thread;
+mod time;
 mod util;
 // TODO: Add vDSO support for other architectures.
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
-pub(crate) mod vdso;
-pub mod vm;
+mod vdso;
+mod vm;
 
 #[ostd::main]
 #[controlled]
-pub fn main() {
+fn main() {
     ostd::early_println!("[kernel] OSTD initialized. Preparing components.");
     component::init_all(component::parse_metadata!()).unwrap();
     init();
@@ -97,12 +98,11 @@ pub fn main() {
         .spawn();
 }
 
-pub fn init() {
+fn init() {
     thread::init();
     util::random::init();
     driver::init();
     time::init();
-    #[cfg(target_arch = "x86_64")]
     net::init();
     sched::init();
     syscall::init();
@@ -114,7 +114,6 @@ fn init_in_first_kthread(fs_resolver: &FsResolver) {
     // Work queue should be initialized before interrupt is enabled,
     // in case any irq handler uses work queue as bottom half
     thread::work_queue::init_in_first_kthread();
-    #[cfg(target_arch = "x86_64")]
     net::init_in_first_kthread();
     fs::init_in_first_kthread(fs_resolver);
     ipc::init_in_first_kthread();
