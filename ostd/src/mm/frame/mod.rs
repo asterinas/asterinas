@@ -34,6 +34,7 @@
 pub mod allocator;
 pub mod linked_list;
 pub mod meta;
+pub mod reclaimer;
 pub mod segment;
 pub mod unique;
 pub mod untyped;

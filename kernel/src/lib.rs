@@ -106,6 +106,10 @@ pub fn init() {
     net::init();
     sched::init();
     fs::rootfs::init(boot_info().initramfs.expect("No initramfs found!")).unwrap();
+    // Reclaim initrd memory after it's been processed
+    if let Err(e) = mm::frame::reclaimer::reclaim_initrd_memory() {
+        log::error!("Failed to reclaim initrd memory: {:?}", e);
+    }
     device::init().unwrap();
     syscall::init();
     #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
@@ -143,6 +147,12 @@ fn init_thread() {
     fs::lazy_init();
     ipc::init();
     // driver::pci::virtio::block::block_device_test();
+
+    // Reclaim boot memory regions and log any errors
+    if let Err(e) = mm::frame::reclaimer::reclaim_boot_memory_regions() {
+        log::error!("Failed to reclaim boot memory regions: {:?}", e);
+    }
+
     let thread = ThreadOptions::new(|| {
         println!("[kernel] Hello world from kernel!");
     })

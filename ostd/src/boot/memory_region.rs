@@ -27,6 +27,17 @@ pub enum MemoryRegionType {
     /// The memory region provided as the framebuffer.
     Framebuffer = 6,
     /// Once used in the boot phase. Kernel can reclaim it after initialization.
+    /// This type should be used for any boot-time memory that is no longer needed
+    /// after kernel initialization is complete. Examples include:
+    /// - Boot-time command line parsing buffers
+    /// - Initial ramdisk data after it's been processed
+    /// - Temporary boot-time data structures
+    ///
+    /// # Safety
+    ///
+    /// Memory marked as Reclaimable must not be accessed after reclamation.
+    /// The subsystem that owns the memory must ensure it's no longer in use
+    /// before marking it as Reclaimable.
     Reclaimable = 7,
     /// Directly usable by the frame allocator.
     Usable = 8,

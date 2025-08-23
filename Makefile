@@ -370,3 +370,4 @@ clean:
 	@$(MAKE) --no-print-directory -C test clean
 	@echo "Uninstalling OSDK"
 	@rm -f $(CARGO_OSDK)
+
