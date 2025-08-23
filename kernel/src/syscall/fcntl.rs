@@ -5,9 +5,7 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::{get_file_fast, FdFlags, FileDesc, WithFileTable},
-        utils::{
-            FileRange, RangeLockItem, RangeLockItemBuilder, RangeLockType, StatusFlags, OFFSET_MAX,
-        },
+        utils::{FileRange, RangeLockItem, RangeLockType, StatusFlags, OFFSET_MAX},
     },
     prelude::*,
     process::{process_table, Pid},
@@ -98,10 +96,7 @@ fn handle_getlk(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> 
     if lock_type == RangeLockType::Unlock {
         return_errno_with_message!(Errno::EINVAL, "invalid flock type for getlk");
     }
-    let mut lock = RangeLockItemBuilder::new()
-        .type_(lock_type)
-        .range(from_c_flock_and_file(&lock_mut_c, &**file)?)
-        .build()?;
+    let mut lock = RangeLockItem::new(lock_type, from_c_flock_and_file(&lock_mut_c, &**file)?);
     let inode_file = file.as_inode_or_err()?;
     lock = inode_file.test_range_lock(lock)?;
     lock_mut_c.copy_from_range_lock(&lock);
@@ -120,10 +115,7 @@ fn handle_setlk(
     let lock_mut_ptr = arg as Vaddr;
     let lock_mut_c = ctx.user_space().read_val::<c_flock>(lock_mut_ptr)?;
     let lock_type = RangeLockType::try_from(lock_mut_c.l_type)?;
-    let lock = RangeLockItemBuilder::new()
-        .type_(lock_type)
-        .range(from_c_flock_and_file(&lock_mut_c, &**file)?)
-        .build()?;
+    let lock = RangeLockItem::new(lock_type, from_c_flock_and_file(&lock_mut_c, &**file)?);
     let inode_file = file.as_inode_or_err()?;
     inode_file.set_range_lock(&lock, is_nonblocking)?;
     Ok(SyscallReturn::Return(0))

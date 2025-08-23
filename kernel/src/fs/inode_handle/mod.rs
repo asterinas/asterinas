@@ -19,8 +19,8 @@ use crate::{
         path::Path,
         utils::{
             AccessMode, DirentVisitor, FallocMode, FileRange, FlockItem, FlockList, Inode,
-            InodeMode, InodeType, IoctlCmd, Metadata, RangeLockItem, RangeLockItemBuilder,
-            RangeLockList, RangeLockType, SeekFrom, StatusFlags, OFFSET_MAX,
+            InodeMode, InodeType, IoctlCmd, Metadata, RangeLockItem, RangeLockList, RangeLockType,
+            SeekFrom, StatusFlags, OFFSET_MAX,
         },
     },
     prelude::*,
@@ -212,11 +212,10 @@ impl InodeHandle_ {
             return;
         }
 
-        let range_lock = RangeLockItemBuilder::new()
-            .type_(RangeLockType::Unlock)
-            .range(FileRange::new(0, OFFSET_MAX).unwrap())
-            .build()
-            .unwrap();
+        let range_lock = RangeLockItem::new(
+            RangeLockType::Unlock,
+            FileRange::new(0, OFFSET_MAX).unwrap(),
+        );
         self.unlock_range_lock(&range_lock);
     }
 
