@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::*;
+use crate::prelude::*;
 
 /// The maximum offset in a file.
 pub const OFFSET_MAX: usize = i64::MAX as usize;
@@ -30,10 +30,6 @@ impl FileRange {
 
     pub fn len(&self) -> usize {
         self.end - self.start
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
     }
 
     pub fn start(&self) -> usize {
