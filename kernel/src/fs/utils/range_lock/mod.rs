@@ -3,15 +3,11 @@
 use core::fmt;
 
 use ostd::sync::{RwMutexWriteGuard, WaitQueue, Waiter, Waker};
+pub use range::{FileRange, OFFSET_MAX};
+use range::{FileRangeChange, OverlapWith};
 
-use self::range::FileRangeChange;
-pub use self::{
-    builder::RangeLockItemBuilder,
-    range::{FileRange, OverlapWith, OFFSET_MAX},
-};
 use crate::{prelude::*, process::Pid};
 
-mod builder;
 mod range;
 
 /// The metadata of a POSIX advisory file range lock.
@@ -36,6 +32,20 @@ pub struct RangeLockItem {
 }
 
 impl RangeLockItem {
+    /// Creates a new instance with the given lock type and the file range.
+    /// The new instance will be associated with the current process.
+    pub fn new(type_: RangeLockType, range: FileRange) -> Self {
+        let lock = RangeLock {
+            owner: current!().pid(),
+            type_,
+            range,
+        };
+        Self {
+            lock,
+            waitqueue: Arc::new(WaitQueue::new()),
+        }
+    }
+
     /// Returns the type of the lock (READ/WRITE/UNLOCK)
     pub fn type_(&self) -> RangeLockType {
         self.lock.type_
@@ -118,7 +128,7 @@ impl RangeLockItem {
             .set_start(new_start)
             .expect("invalid new start");
         if let FileRangeChange::Shrunk = change {
-            self.wake_all();
+            self.waitqueue.wake_all();
         }
     }
 
@@ -127,22 +137,8 @@ impl RangeLockItem {
     pub fn set_end(&mut self, new_end: usize) {
         let change = self.range().set_end(new_end).expect("invalid new end");
         if let FileRangeChange::Shrunk = change {
-            self.wake_all();
+            self.waitqueue.wake_all();
         }
-    }
-
-    /// Puts the current process in a wait state until the lock condition is satisfied
-    pub fn wait_until<F>(&self, cond: F)
-    where
-        F: FnMut() -> Option<()>,
-    {
-        self.waitqueue.wait_until(cond);
-    }
-
-    /// Wakes all the processes waiting on this lock
-    /// Returns the number of processes that were woken
-    pub fn wake_all(&self) -> usize {
-        self.waitqueue.wake_all()
     }
 }
 
@@ -150,7 +146,7 @@ impl RangeLockItem {
 /// Ensures that all waiting processes are woken when this item goes out of scope
 impl Drop for RangeLockItem {
     fn drop(&mut self) {
-        self.wake_all();
+        self.waitqueue.wake_all();
     }
 }
 
