@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::{AtomicU64, Ordering};
+
 use int_to_c_enum::TryFromInt;
 use ostd::{
     cpu::num_cpus,
@@ -98,28 +100,38 @@ pub fn futex_wait_bitset(
         );
     }
 
+    let futex_id = futex_item.id;
     futex_bucket.add_item(futex_item);
 
     // Release the lock.
     drop(futex_bucket);
 
     let result = waiter.pause_timeout(&timeout.into());
-    match result {
-        // FIXME: If the futex is woken up and a signal comes at the same time, we should succeed
-        // instead of failing with `EINTR`. The code below is of course wrong, but was needed to
-        // make the gVisor tests happy. See <https://github.com/asterinas/asterinas/pull/1577>.
-        Err(err) if err.error() == Errno::EINTR => Ok(()),
-        res => res,
-    }
+    if let Err(err) = &result {
+        if matches!(err.error(), Errno::EINTR | Errno::ETIME) {
+            // If the futex wait operation was interrupted by a signal or timed out, the
+            // `FutexItem` must be dequeued and dropped. Otherwise, malicious user programs
+            // could repeatedly issue futex wait operations to exhaust kernel memory.
+            //
+            // Due to asynchronicity, this removal can't be done by queue position nor by
+            // futex key match up:
+            // * The position might have changed during the pause as some earlier futex might
+            //   have been dequeued
+            // * If two futexes with the same key are enqueued and then one of them times out
+            //   or is interrupted, a removal by key would likely dequeue the wrong futex
+            //
+            // Therefore, we need to perform a removal by unique global futex ID.
+            futex_bucket_ref.lock().remove_by_id(futex_id);
 
-    // TODO: Ensure the futex item is dequeued and dropped.
-    //
-    // The enqueued futex item remain undequeued
-    // if the futex wait operation is interrupted by a signal or times out.
-    // In such cases, the `Box<FutexItem>` would persist in memory,
-    // leaving our implementation vulnerable to exploitation by user programs
-    // that could repeatedly issue futex wait operations
-    // to exhaust kernel memory.
+            // FIXME: If the futex is woken up and a signal comes at the same time, we should succeed
+            // instead of failing with `EINTR`. The code below is of course wrong, but was needed to
+            // make the gVisor tests happy. See <https://github.com/asterinas/asterinas/pull/1577>.
+            if err.error() == Errno::EINTR {
+                return Ok(());
+            }
+        }
+    }
+    result
 }
 
 /// Does futex wake
@@ -442,6 +454,10 @@ impl FutexBucket {
         self.items.push(item);
     }
 
+    pub fn remove_by_id(&mut self, futex_id: u64) {
+        self.items.retain(|item| item.id != futex_id);
+    }
+
     pub fn remove_and_wake_items(&mut self, key: &FutexKey, max_count: usize) -> usize {
         let mut count = 0;
 
@@ -499,12 +515,14 @@ impl FutexBucket {
 struct FutexItem {
     key: FutexKey,
     waker: Arc<Waker>,
+    id: u64,
 }
 
 impl FutexItem {
     pub fn create(key: FutexKey) -> (Self, Waiter) {
         let (waiter, waker) = Waiter::new_pair();
-        let futex_item = FutexItem { key, waker };
+        let id = new_futex_id();
+        let futex_item = FutexItem { key, waker, id };
 
         (futex_item, waiter)
     }
@@ -552,6 +570,14 @@ impl FutexKey {
     fn match_up(&self, another: &Self) -> bool {
         self.hash == another.hash && (self.bitset & another.bitset) != 0
     }
+}
+
+/// Holds the global state for the next futex ID.
+static FUTEX_NEXT_ID: AtomicU64 = AtomicU64::new(0);
+
+/// Returns a new global futex ID.
+fn new_futex_id() -> u64 {
+    FUTEX_NEXT_ID.fetch_add(1, Ordering::Relaxed)
 }
 
 // The implementation is from occlum
