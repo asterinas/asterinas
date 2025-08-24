@@ -64,7 +64,8 @@
 * [Community]()
 * [Code of Conduct]()
 
-# Request for Comments (RFC)
+# Request for Comments (RFCs)
 
-* [RFC Overview]()
-    * [RFC-0001: RFC Process]()
+* [RFC Overview](rfcs/README.md)
+  * [RFC-0001: RFC Process](rfcs/0001-rfc-process.md)
+* [RFC Template](rfcs/rfc-template.md)
