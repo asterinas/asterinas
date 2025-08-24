@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use self::{
-    cmdline::CmdlineFileOps, comm::CommFileOps, exe::ExeSymOps, fd::FdDirOps, stat::StatFileOps,
-    status::StatusFileOps, task::TaskDirOps,
+    cmdline::CmdlineFileOps, comm::CommFileOps, exe::ExeSymOps, fd::FdDirOps, mem::MemFileOps,
+    stat::StatFileOps, status::StatusFileOps, task::TaskDirOps,
 };
 use super::template::{DirOps, ProcDir, ProcDirBuilder};
 use crate::{
     events::Observer,
     fs::{
         file_table::FdEvents,
-        utils::{DirEntryVecExt, Inode},
+        utils::{DirEntryVecExt, Inode, InodeMode},
     },
     prelude::*,
     process::{posix_thread::AsPosixThread, Process},
@@ -19,6 +19,7 @@ mod cmdline;
 mod comm;
 mod exe;
 mod fd;
+mod mem;
 mod stat;
 mod status;
 mod task;
@@ -35,6 +36,7 @@ impl PidDirOps {
             .parent(parent)
             // The pid directories must be volatile, because it is just associated with one process.
             .volatile()
+            .mode(InodeMode::from_bits_truncate(0o555))
             .build()
             .unwrap();
         // This is for an exiting process that has not yet been reaped by its parent,
@@ -65,6 +67,7 @@ impl DirOps for PidDirOps {
             "comm" => CommFileOps::new_inode(self.0.clone(), this_ptr.clone()),
             "fd" => FdDirOps::new_inode(self.0.clone(), this_ptr.clone()),
             "cmdline" => CmdlineFileOps::new_inode(self.0.clone(), this_ptr.clone()),
+            "mem" => MemFileOps::new_inode(self.0.clone(), this_ptr.clone()),
             "status" => {
                 StatusFileOps::new_inode(self.0.clone(), self.0.main_thread(), this_ptr.clone())
             }
@@ -94,6 +97,9 @@ impl DirOps for PidDirOps {
         });
         cached_children.put_entry_if_not_found("cmdline", || {
             CmdlineFileOps::new_inode(self.0.clone(), this_ptr.clone())
+        });
+        cached_children.put_entry_if_not_found("mem", || {
+            MemFileOps::new_inode(self.0.clone(), this_ptr.clone())
         });
         cached_children.put_entry_if_not_found("status", || {
             StatusFileOps::new_inode(self.0.clone(), self.0.main_thread(), this_ptr.clone())
