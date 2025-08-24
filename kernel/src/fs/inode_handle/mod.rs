@@ -15,7 +15,7 @@ use inherit_methods_macro::inherit_methods;
 use crate::{
     events::IoEvents,
     fs::{
-        file_handle::FileLike,
+        file_handle::{FileLike, MemoryToMap},
         path::Path,
         utils::{
             AccessMode, DirentVisitor, FallocMode, FileRange, FlockItem, FlockList, Inode,
@@ -165,6 +165,20 @@ impl InodeHandle_ {
         }
 
         self.path.inode().ioctl(cmd, arg)
+    }
+
+    fn mmap(&self) -> Result<MemoryToMap> {
+        let inode = self.path.inode();
+        if inode.page_cache().is_some() {
+            // If the inode has a page cache, it is a file-backed mapping and
+            // we directly return the corresponding inode.
+            Ok(MemoryToMap::PageCache(inode.clone()))
+        } else if let Some(ref file_io) = self.file_io {
+            // Otherwise, let the file-specific mmap handle.
+            file_io.mmap()
+        } else {
+            return_errno_with_message!(Errno::EINVAL, "mmap is not supported");
+        }
     }
 
     fn test_range_lock(&self, lock: RangeLockItem) -> Result<RangeLockItem> {
@@ -335,6 +349,11 @@ pub trait FileIo: Pollable + Send + Sync + 'static {
     fn read(&self, writer: &mut VmWriter) -> Result<usize>;
 
     fn write(&self, reader: &mut VmReader) -> Result<usize>;
+
+    /// See [`FileLike::mmap`].
+    fn mmap(&self) -> Result<MemoryToMap> {
+        return_errno_with_message!(Errno::EINVAL, "mmap is not supported");
+    }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");
