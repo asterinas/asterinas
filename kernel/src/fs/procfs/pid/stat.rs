@@ -4,14 +4,14 @@ use core::{fmt::Write, sync::atomic::Ordering};
 
 use crate::{
     fs::{
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::{
+            pid::util::PidOrTid,
+            template::{FileOps, ProcFileBuilder},
+        },
         utils::Inode,
     },
     prelude::*,
-    process::posix_thread::AsPosixThread,
-    thread::Thread,
     vm::vmar::RssType,
-    Process,
 };
 
 /// Represents the inode at either `/proc/[pid]/stat` or `/proc/[pid]/task/[tid]/stat`.
@@ -73,37 +73,23 @@ use crate::{
 /// - env_start        : Start address of environment variables.
 /// - env_end          : End address of environment variables.
 /// - exit_code        : Process exit code as returned by waitpid(2).
-pub struct StatFileOps {
-    process_ref: Arc<Process>,
-    thread_ref: Arc<Thread>,
-    /// If `is_pid_stat` is true, this file corresponds to a process-level `/proc/[pid]/stat`.
-    /// Otherwise, this file corresponds to the thread-level `/proc/[pid]/task/[tid]/stat`.
-    is_pid_stat: bool,
-}
+pub struct StatFileOps(PidOrTid);
 
 impl StatFileOps {
-    pub fn new_inode(
-        process_ref: Arc<Process>,
-        thread_ref: Arc<Thread>,
-        is_pid_stat: bool,
-        parent: Weak<dyn Inode>,
-    ) -> Arc<dyn Inode> {
-        ProcFileBuilder::new(Self {
-            process_ref,
-            thread_ref,
-            is_pid_stat,
-        })
-        .parent(parent)
-        .build()
-        .unwrap()
+    pub fn new_inode(pid_or_tid: PidOrTid, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        ProcFileBuilder::new(Self(pid_or_tid))
+            .parent(parent)
+            .build()
+            .unwrap()
     }
 }
 
 impl FileOps for StatFileOps {
     fn data(&self) -> Result<Vec<u8>> {
-        let process = &self.process_ref;
-        let thread = &self.thread_ref;
-        let posix_thread = thread.as_posix_thread().unwrap();
+        let process = self.0.process();
+        let thread = self.0.thread();
+        let posix_thread = self.0.posix_thread();
+        let is_pid_stat = self.0.is_pid();
 
         // According to the Linux implementation, a process's `/proc/<pid>/stat` should be
         // almost identical to its main thread's `/proc/<pid>/task/<pid>/stat`, except for
@@ -143,7 +129,7 @@ impl FileOps for StatFileOps {
         let cmaj_flt = 0;
 
         let (utime, stime) = {
-            let prof_clock = if self.is_pid_stat {
+            let prof_clock = if is_pid_stat {
                 process.prof_clock()
             } else {
                 posix_thread.prof_clock()

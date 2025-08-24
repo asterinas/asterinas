@@ -4,14 +4,14 @@ use core::fmt::Write;
 
 use crate::{
     fs::{
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::{
+            pid::util::PidOrTid,
+            template::{FileOps, ProcFileBuilder},
+        },
         utils::Inode,
     },
     prelude::*,
-    process::posix_thread::AsPosixThread,
-    thread::Thread,
     vm::vmar::RssType,
-    Process,
 };
 
 /// Represents the inode at either `/proc/[pid]/status` or `/proc/[pid]/task/[tid]/status`.
@@ -60,32 +60,22 @@ use crate::{
 /// - Mems_allowed_list: List of memory nodes allowed for this process.
 /// - voluntary_ctxt_switches: Number of voluntary context switches.
 /// - nonvoluntary_ctxt_switches: Number of nonvoluntary context switches.
-pub struct StatusFileOps {
-    process_ref: Arc<Process>,
-    thread_ref: Arc<Thread>,
-}
+pub struct StatusFileOps(PidOrTid);
 
 impl StatusFileOps {
-    pub fn new_inode(
-        process_ref: Arc<Process>,
-        thread_ref: Arc<Thread>,
-        parent: Weak<dyn Inode>,
-    ) -> Arc<dyn Inode> {
-        ProcFileBuilder::new(Self {
-            process_ref,
-            thread_ref,
-        })
-        .parent(parent)
-        .build()
-        .unwrap()
+    pub fn new_inode(pid_or_tid: PidOrTid, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        ProcFileBuilder::new(Self(pid_or_tid))
+            .parent(parent)
+            .build()
+            .unwrap()
     }
 }
 
 impl FileOps for StatusFileOps {
     fn data(&self) -> Result<Vec<u8>> {
-        let process = &self.process_ref;
-        let thread = &self.thread_ref;
-        let posix_thread = thread.as_posix_thread().unwrap();
+        let process = self.0.process();
+        let thread = self.0.thread();
+        let posix_thread = self.0.posix_thread();
 
         // According to the Linux implementation, a process's `/proc/<pid>/status`
         // is exactly the same as its main thread's `/proc/<pid>/task/<pid>/status`.

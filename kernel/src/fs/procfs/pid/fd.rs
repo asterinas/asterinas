@@ -6,24 +6,23 @@ use crate::{
         file_table::FileDesc,
         inode_handle::InodeHandle,
         procfs::{
-            pid::FdEvents, DirOps, Observer, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps,
+            pid::{util::PidOrTid, FdEvents},
+            DirOps, Observer, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps,
         },
         utils::{DirEntryVecExt, Inode},
     },
     prelude::*,
-    process::posix_thread::AsPosixThread,
-    Process,
 };
 
-/// Represents the inode at `/proc/[pid]/fd`.
-pub struct FdDirOps(Arc<Process>);
+/// Represents the inode at `/proc/[pid]/fd` or `/proc/[pid]/task/[tid]/fd`.
+pub struct FdDirOps(PidOrTid);
 
 impl FdDirOps {
-    pub fn new_inode(process_ref: Arc<Process>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        let main_thread = process_ref.main_thread();
-        let file_table = main_thread.as_posix_thread().unwrap().file_table();
+    pub fn new_inode(pid_or_tid: PidOrTid, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        let thread = pid_or_tid.posix_thread();
+        let file_table = thread.file_table();
 
-        let fd_inode = ProcDirBuilder::new(Self(process_ref.clone()))
+        let fd_inode = ProcDirBuilder::new(Self(pid_or_tid.clone()))
             .parent(parent)
             .build()
             .unwrap();
@@ -54,8 +53,8 @@ impl Observer<FdEvents> for ProcDir<FdDirOps> {
 
 impl DirOps for FdDirOps {
     fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
-        let main_thread = self.0.main_thread();
-        let file_table = main_thread.as_posix_thread().unwrap().file_table().lock();
+        let thread = self.0.posix_thread();
+        let file_table = thread.file_table().lock();
         let file_table = file_table
             .as_ref()
             .ok_or_else(|| Error::new(Errno::ENOENT))?;
@@ -75,8 +74,8 @@ impl DirOps for FdDirOps {
     }
 
     fn populate_children(&self, this_ptr: Weak<dyn Inode>) {
-        let main_thread = self.0.main_thread();
-        let file_table = main_thread.as_posix_thread().unwrap().file_table().lock();
+        let thread = self.0.posix_thread();
+        let file_table = thread.file_table().lock();
         let Some(file_table) = file_table.as_ref() else {
             return;
         };

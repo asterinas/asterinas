@@ -2,19 +2,21 @@
 
 use crate::{
     fs::{
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::{
+            pid::util::PidOrTid,
+            template::{FileOps, ProcFileBuilder},
+        },
         utils::Inode,
     },
     prelude::*,
-    Process,
 };
 
-/// Represents the inode at `/proc/[pid]/cmdline`.
-pub struct CmdlineFileOps(Arc<Process>);
+/// Represents the inode at `/proc/[pid]/cmdline`or `/proc/[pid]/task/[tid]/cmdline`.
+pub struct CmdlineFileOps(PidOrTid);
 
 impl CmdlineFileOps {
-    pub fn new_inode(process_ref: Arc<Process>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        ProcFileBuilder::new(Self(process_ref))
+    pub fn new_inode(pid_or_tid: PidOrTid, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        ProcFileBuilder::new(Self(pid_or_tid))
             .parent(parent)
             .build()
             .unwrap()
@@ -23,11 +25,11 @@ impl CmdlineFileOps {
 
 impl FileOps for CmdlineFileOps {
     fn data(&self) -> Result<Vec<u8>> {
-        let cmdline_output = if self.0.status().is_zombie() {
+        let cmdline_output = if self.0.process().status().is_zombie() {
             // Returns 0 characters for zombie process.
             Vec::new()
         } else {
-            let Ok(argv_cstrs) = self.0.vm().init_stack_reader().argv() else {
+            let Ok(argv_cstrs) = self.0.process().vm().init_stack_reader().argv() else {
                 return Ok(Vec::new());
             };
             argv_cstrs
