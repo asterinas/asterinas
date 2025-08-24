@@ -26,16 +26,8 @@ pub struct SemBuf {
 }
 
 impl SemBuf {
-    pub fn sem_num(&self) -> u16 {
+    pub(super) fn sem_num(&self) -> u16 {
         self.sem_num
-    }
-
-    pub fn sem_op(&self) -> i16 {
-        self.sem_op
-    }
-
-    pub fn sem_flags(&self) -> i16 {
-        self.sem_flags
     }
 }
 
@@ -58,7 +50,7 @@ define_atomic_version_of_integer_like_type!(Status, try_from = true, {
 });
 
 /// Pending atomic semop.
-pub struct PendingOp {
+pub(super) struct PendingOp {
     sops: Vec<SemBuf>,
     status: Arc<AtomicStatus>,
     waker: Option<Arc<Waker>>,
@@ -66,20 +58,16 @@ pub struct PendingOp {
 }
 
 impl PendingOp {
-    pub fn sops_iter(&self) -> Iter<SemBuf> {
+    pub(super) fn sops_iter(&self) -> Iter<SemBuf> {
         self.sops.iter()
     }
 
-    pub fn set_status(&self, status: Status) {
+    pub(super) fn set_status(&self, status: Status) {
         self.status.store(status, Ordering::Relaxed);
     }
 
-    pub fn waker(&self) -> &Option<Arc<Waker>> {
+    pub(super) fn waker(&self) -> &Option<Arc<Waker>> {
         &self.waker
-    }
-
-    pub fn pid(&self) -> Pid {
-        self.pid
     }
 }
 
@@ -104,7 +92,7 @@ pub struct Semaphore {
 }
 
 impl Semaphore {
-    pub fn set_val(&mut self, val: i32) {
+    pub(super) fn set_val(&mut self, val: i32) {
         self.val = val;
     }
 
@@ -112,7 +100,7 @@ impl Semaphore {
         self.val
     }
 
-    pub fn set_latest_modified_pid(&mut self, pid: Pid) {
+    pub(super) fn set_latest_modified_pid(&mut self, pid: Pid) {
         self.latest_modified_pid = pid;
     }
 

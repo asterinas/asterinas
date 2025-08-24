@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{collections::btree_map::BTreeMap, vec::Vec};
-use core::{
-    sync::atomic::{AtomicU64, Ordering},
-    time::Duration,
-};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use aster_rights::ReadOp;
 use id_alloc::IdAlloc;
@@ -93,7 +90,7 @@ pub(super) struct SemSetInner {
 }
 
 impl SemSetInner {
-    pub fn field_mut(
+    pub(super) fn field_mut(
         &mut self,
     ) -> (
         &mut Box<[Semaphore]>,
@@ -182,18 +179,14 @@ impl SemaphoreSet {
         &self.permission
     }
 
-    pub fn sem_ctime(&self) -> Duration {
-        Duration::from_secs(self.sem_ctime.load(Ordering::Relaxed))
-    }
-
-    pub fn update_ctime(&self) {
+    fn update_ctime(&self) {
         self.sem_ctime.store(
             RealTimeCoarseClock::get().read_time().as_secs(),
             Ordering::Relaxed,
         );
     }
 
-    pub fn update_otime(&self) {
+    pub(super) fn update_otime(&self) {
         self.sem_otime.store(
             RealTimeCoarseClock::get().read_time().as_secs(),
             Ordering::Relaxed,
