@@ -12,7 +12,7 @@
 //! ([`Vmo`]) that encapsulates both the data and the vDSO routines. The VMO is intended to be
 //! mapped into the address space of every user space process for efficient access.
 
-use alloc::{boxed::Box, sync::Arc};
+use alloc::sync::Arc;
 use core::{mem::ManuallyDrop, time::Duration};
 
 use aster_rights::Rights;
@@ -27,7 +27,6 @@ use ostd::{
 use spin::Once;
 
 use crate::{
-    fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD},
     syscall::ClockId,
     time::{clocks::MonotonicClock, timer::Timeout, SystemTime, START_TIME},
     vm::vmo::{Vmo, VmoOptions},
@@ -208,6 +207,23 @@ struct Vdso {
     data_frame: UFrame,
 }
 
+/// The binary of a prebuilt Linux vDSO library.
+///
+/// These binaries can be found in [this repo](https://github.com/asterinas/linux_vdso).
+/// The development environment should download these binaries before compiling the kernel.
+/// and provide the path of the local copy of the repo by setting the `VDSO_LIBRARY_DIR` env var.
+//
+// TODO: Remove this dependency of a Linux's prebuilt vDSO library.
+// Asterinas can implement vDSO library independently.
+// As long as our vDSO provides the same symbols as Linux does,
+// the libc will work just fine.
+#[cfg(target_arch = "x86_64")]
+const PREBUILT_VDSO_LIB: &[u8] =
+    include_bytes!(concat!(env!("VDSO_LIBRARY_DIR"), "/vdso_x86_64.so"));
+#[cfg(target_arch = "riscv64")]
+const PREBUILT_VDSO_LIB: &[u8] =
+    include_bytes!(concat!(env!("VDSO_LIBRARY_DIR"), "/vdso_riscv64.so"));
+
 impl Vdso {
     /// Constructs a new `Vdso`, including an initialized `VdsoData` and a VMO of the vDSO.
     fn new() -> Self {
@@ -222,17 +238,12 @@ impl Vdso {
                 .write_bytes(VDSO_VMO_LAYOUT.data_offset, vdso_data.as_bytes())
                 .unwrap();
 
-            let vdso_lib_vmo = {
-                let vdso_path = FsPath::new(AT_FDCWD, "/lib/x86_64-linux-gnu/vdso64.so").unwrap();
-                let fs_resolver = FsResolver::new();
-                let vdso_lib = fs_resolver.lookup(&vdso_path).unwrap();
-                vdso_lib.inode().page_cache().unwrap()
-            };
-            let mut vdso_text = Box::new([0u8; VDSO_VMO_LAYOUT.text_segment_size]);
-            vdso_lib_vmo.read_bytes(0, &mut *vdso_text).unwrap();
             // Write vDSO library to vDSO VMO.
             vdso_vmo
-                .write_bytes(VDSO_VMO_LAYOUT.text_segment_offset, &*vdso_text)
+                .write_bytes(
+                    VDSO_VMO_LAYOUT.text_segment_offset,
+                    &PREBUILT_VDSO_LIB[..VDSO_VMO_LAYOUT.text_segment_size],
+                )
                 .unwrap();
 
             let data_frame = vdso_vmo.try_commit_page(0).unwrap();
