@@ -101,7 +101,7 @@ end_trap_from_user:
     LOAD_SP s10, 10
     LOAD_SP s11, 11
     LOAD_SP ra, 12
-    # not callee-saved, but is used to store mhartid
+    # not callee-saved, but is used to store the CPU-local storage's base address
     LOAD_SP gp, 13
     addi sp, sp, 14 * XLENB
 
@@ -124,7 +124,7 @@ run_user: # (regs: &mut RawUserContext)
     STORE_SP s10, 10
     STORE_SP s11, 11
     STORE_SP ra, 12
-    # not callee-saved, but is used to store mhartid
+    # not callee-saved, but is used to store the CPU-local storage's base address
     STORE_SP gp, 13
 
     mv t0, sp

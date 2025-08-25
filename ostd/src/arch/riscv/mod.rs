@@ -60,7 +60,7 @@ pub(crate) unsafe fn late_init_on_bsp() {
 }
 
 pub(crate) unsafe fn init_on_ap() {
-    unimplemented!()
+    unimplemented!();
 }
 
 /// Return the frequency of TSC. The unit is Hz.

@@ -7,7 +7,7 @@ use alloc::{boxed::Box, collections::btree_map::BTreeMap, vec::Vec};
 use spin::Once;
 
 use crate::{
-    arch::{boot::smp::bringup_all_aps, irq::HwCpuId},
+    arch::irq::HwCpuId,
     mm::{
         frame::{meta::KernelMeta, Segment},
         paddr_to_vaddr, FrameAllocOptions, HasPaddrRange, PAGE_SIZE,
@@ -107,7 +107,7 @@ pub(crate) unsafe fn boot_all_aps() {
     let pt_ptr = crate::mm::page_table::boot_pt::with_borrow(|pt| pt.root_address()).unwrap();
     // SAFETY: It's the right time to boot APs (guaranteed by the caller) and
     // the arguments are valid to boot APs (generated above).
-    unsafe { bringup_all_aps(info_ptr, pt_ptr, num_cpus as u32) };
+    unsafe { crate::arch::boot::smp::bringup_all_aps(info_ptr, pt_ptr, num_cpus as u32) };
 
     wait_for_all_aps_started(num_cpus);
 
