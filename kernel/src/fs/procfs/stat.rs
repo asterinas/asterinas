@@ -7,6 +7,7 @@
 
 use alloc::format;
 
+use aster_softirq::softirq_stats;
 use ostd::cpu::num_cpus;
 
 use crate::{
@@ -70,8 +71,17 @@ impl StatFileOps {
             ));
         }
 
-        // TODO: Interrupt count
-        output.push_str("intr 0\n");
+        // Interrupt count with per-IRQ breakdown
+        let interrupt_stats = get_interrupt_stats();
+        let total_interrupts = get_total_interrupts();
+
+        // Build the intr line: total followed by per-IRQ counts
+        let mut intr_line = format!("intr {}", total_interrupts);
+        for count in interrupt_stats.iter() {
+            intr_line.push_str(&format!(" {}", count));
+        }
+        intr_line.push('\n');
+        output.push_str(&intr_line);
 
         // TODO: Context switches
         output.push_str("ctxt 0\n");
@@ -96,8 +106,23 @@ impl StatFileOps {
         // TODO: Blocked processes
         output.push_str("procs_blocked 0\n");
 
-        // TODO: Softirq
-        output.push_str("softirq 0 0 0 0 0 0 0 0 0 0 0\n");
+        // Softirq statistics
+        let softirq_stats = softirq_stats();
+        let total_softirqs: u64 = softirq_stats.iter().sum();
+        output.push_str(&format!(
+            "softirq {} {} {} {} {} {} {} {} {} {} {}\n",
+            total_softirqs,
+            softirq_stats[0],                   // TASKLESS_URGENT
+            softirq_stats[1],                   // TIMER
+            softirq_stats[2],                   // TASKLESS
+            softirq_stats[3],                   // NETWORK_TX
+            softirq_stats[4],                   // NETWORK_RX
+            softirq_stats.get(5).unwrap_or(&0), // Reserved
+            softirq_stats.get(6).unwrap_or(&0), // Reserved
+            softirq_stats.get(7).unwrap_or(&0), // Reserved
+            0u64,                               // Reserved
+            0u64                                // Reserved
+        ));
 
         output
     }
