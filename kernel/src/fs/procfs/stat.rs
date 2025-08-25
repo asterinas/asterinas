@@ -8,6 +8,7 @@
 use alloc::format;
 use core::sync::atomic::Ordering;
 
+use aster_softirq::get_softirq_stats;
 use ostd::cpu::num_cpus;
 
 use crate::{
@@ -100,8 +101,23 @@ impl StatFileOps {
         // TODO: blocked processes
         output.push_str("procs_blocked 0\n");
 
-        // TODO: Softirq
-        output.push_str("softirq 0 0 0 0 0 0 0 0 0 0 0\n");
+        // Softirq statistics
+        let softirq_stats = get_softirq_stats();
+        let total_softirqs: u64 = softirq_stats.iter().sum();
+        output.push_str(&format!(
+            "softirq {} {} {} {} {} {} {} {} {} {} {}\n",
+            total_softirqs,
+            softirq_stats[0],  // TASKLESS_URGENT
+            softirq_stats[1],  // TIMER
+            softirq_stats[2],  // TASKLESS
+            softirq_stats[3],  // NETWORK_TX
+            softirq_stats[4],  // NETWORK_RX
+            softirq_stats.get(5).unwrap_or(&0),  // Reserved
+            softirq_stats.get(6).unwrap_or(&0),  // Reserved
+            softirq_stats.get(7).unwrap_or(&0),  // Reserved
+            0u64,  // Reserved
+            0u64   // Reserved
+        ));
 
         output
     }
