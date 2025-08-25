@@ -2,8 +2,6 @@
 
 //! User mode.
 
-#![cfg_attr(target_arch = "riscv64", expect(dead_code))]
-
 use crate::{arch::trap::TrapFrame, cpu::context::UserContext};
 
 /// Specific architectures need to implement this trait. This should only used in [`UserMode`]

@@ -52,15 +52,16 @@ pub(crate) fn init_cvm_guest() {
 
 static CPU_FEATURES: Once<FeatureInfo> = Once::new();
 
-/// Architecture-specific initialization on the bootstrapping processor.
-///
-/// It should be called when the heap and frame allocators are available.
+/// Architecture-specific initialization on the bootstrapping processor after
+/// heap and frame allocators are initialized.
 ///
 /// # Safety
 ///
-/// This function must be called only once in the boot context of the
-/// bootstrapping processor.
-pub(crate) unsafe fn late_init_on_bsp() {
+/// 1. This function must be called only once in the boot context of the
+///    bootstrapping processor.
+/// 2. This function should be called after the heap and frame allocators is
+///    initialized.
+pub(crate) unsafe fn init_on_bsp_after_heap() {
     // SAFETY: This function is only called once on BSP.
     unsafe { trap::init() };
 
@@ -89,6 +90,16 @@ pub(crate) unsafe fn late_init_on_bsp() {
     // 3. `MAX_IO_PORT` defined in `crate::arch::io` is the maximum value specified by x86-64.
     unsafe { crate::io::init(io_mem_builder) };
 }
+
+/// Architecture-specific initialization on the bootstrapping processor after
+/// kernel page table is activated.
+///
+/// # Safety
+///
+/// 1. This function must be called only once in the boot context of the
+///    bootstrapping processor.
+/// 2. This function should be called after the kernel page table is activated.
+pub(crate) unsafe fn init_on_bsp_after_kpt() {}
 
 /// Architecture-specific initialization on the application processor.
 ///
