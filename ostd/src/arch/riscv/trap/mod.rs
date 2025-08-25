@@ -127,7 +127,14 @@ pub(super) fn call_irq_callback_functions_by_scause(
                 call_irq_callback_functions(trap_frame, &hw_irq_line, priv_level);
             }
         }
-        Interrupt::SupervisorSoft => todo!(),
+        Interrupt::SupervisorSoft => {
+            let ipi_irq_num = super::irq::ipi::IPI_IRQ.get().unwrap().num();
+            call_irq_callback_functions(
+                trap_frame,
+                &HwIrqLine::new(ipi_irq_num, InterruptSource::Software),
+                priv_level,
+            );
+        }
         Interrupt::Unknown => {
             panic!(
                 "Cannot handle unknown supervisor interrupt, scause: {:#x}, trapframe: {:#x?}.",

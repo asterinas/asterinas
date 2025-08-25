@@ -3,7 +3,7 @@
 //! Interrupts.
 
 pub(super) mod chip;
-mod ipi;
+pub(super) mod ipi;
 mod ops;
 mod remapping;
 

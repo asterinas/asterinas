@@ -10,13 +10,9 @@ use alloc::{boxed::Box, collections::VecDeque};
 use spin::Once;
 
 use crate::{
-    arch::{
-        irq::{send_ipi, HwCpuId},
-        trap::TrapFrame,
-    },
+    arch::{irq::HwCpuId, trap::TrapFrame},
     cpu::{CpuSet, PinCurrentCpu},
-    cpu_local,
-    irq::{self, IrqLine},
+    cpu_local, irq,
     sync::SpinLock,
     util::id_set::Id,
 };
@@ -40,7 +36,6 @@ pub fn inter_processor_call(targets: &CpuSet, f: fn()) {
     let this_cpu_id = irq_guard.current_cpu();
 
     let ipi_data = IPI_GLOBAL_DATA.get().unwrap();
-    let irq_num = ipi_data.irq.num();
 
     let mut call_on_self = false;
     for cpu_id in targets.iter() {
@@ -54,15 +49,12 @@ pub fn inter_processor_call(targets: &CpuSet, f: fn()) {
         if cpu_id == this_cpu_id {
             continue;
         }
+        let hw_cpu_id = ipi_data.hw_cpu_ids[cpu_id.as_usize()];
         // SAFETY: The value of `irq_num` corresponds to a valid IRQ line and
         // triggering it will not cause any safety issues.
         unsafe {
-            send_ipi(
-                ipi_data.hw_cpu_ids[cpu_id.as_usize()],
-                irq_num,
-                &irq_guard as _,
-            )
-        };
+            crate::arch::irq::send_ipi(hw_cpu_id, &irq_guard as _);
+        }
     }
     if call_on_self {
         // Execute the function synchronously.
@@ -71,7 +63,6 @@ pub fn inter_processor_call(targets: &CpuSet, f: fn()) {
 }
 
 struct IpiGlobalData {
-    irq: IrqLine,
     hw_cpu_ids: Box<[HwCpuId]>,
 }
 
@@ -81,7 +72,12 @@ cpu_local! {
     static CALL_QUEUES: SpinLock<VecDeque<fn()>> = SpinLock::new(VecDeque::new());
 }
 
-fn do_inter_processor_call(_trapframe: &TrapFrame) {
+/// Handles inter-processor calls.
+///
+/// # Safety
+///
+/// It should only be called upon the inter processor interrupt.
+pub(crate) unsafe fn do_inter_processor_call(_trapframe: &TrapFrame) {
     // No races because we are in IRQs.
     let this_cpu_id = crate::cpu::CpuId::current_racy();
 
@@ -98,11 +94,8 @@ fn do_inter_processor_call(_trapframe: &TrapFrame) {
 
 pub(super) fn init() {
     IPI_GLOBAL_DATA.call_once(|| {
-        let mut irq = IrqLine::alloc().unwrap();
-        irq.on_active(do_inter_processor_call);
-
         let hw_cpu_ids = crate::boot::smp::construct_hw_cpu_id_mapping();
 
-        IpiGlobalData { irq, hw_cpu_ids }
+        IpiGlobalData { hw_cpu_ids }
     });
 }

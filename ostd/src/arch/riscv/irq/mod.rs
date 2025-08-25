@@ -3,7 +3,7 @@
 //! Interrupts.
 
 pub(super) mod chip;
-mod ipi;
+pub(super) mod ipi;
 mod ops;
 mod remapping;
 
@@ -55,7 +55,11 @@ impl HwIrqLine {
                     *interrupt_source_on_chip,
                 );
             }
-            InterruptSource::Software => unimplemented!(),
+            InterruptSource::Software => {
+                // SAFETY: We have already handled the IPI. So clearing the
+                // software interrupt pending bit is safe.
+                unsafe { riscv::register::sip::clear_ssoft() };
+            }
         }
     }
 }
