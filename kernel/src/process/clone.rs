@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{num::NonZeroU64, sync::atomic::Ordering};
+use core::{
+    num::NonZeroU64,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use ostd::{cpu::context::UserContext, sync::RwArc, task::Task, user::UserContextApi};
 
@@ -53,6 +56,14 @@ bitflags! {
         const CLONE_NEWNET	= 0x40000000;	    /* New network namespace.  */
         const CLONE_IO	= 0x80000000;	        /* Clone I/O context.  */
     }
+}
+
+/// Total number of fork, vfork and clone.
+static TOTAL_FORKS: AtomicUsize = AtomicUsize::new(0);
+
+/// Returns total number of fork, vfork and clone.
+pub fn total_forks() -> usize {
+    TOTAL_FORKS.load(Ordering::Relaxed)
 }
 
 /// An internal structure to homogenize the arguments for `clone` and
@@ -195,8 +206,10 @@ pub fn clone_child(
     if clone_args.flags.contains(CloneFlags::CLONE_THREAD) {
         let child_task = clone_child_task(ctx, parent_context, clone_args)?;
         let child_thread = child_task.as_thread().unwrap();
-        child_thread.run();
 
+        TOTAL_FORKS.fetch_add(1, Ordering::Relaxed);
+
+        child_thread.run();
         let child_tid = child_thread.as_posix_thread().unwrap().tid();
         Ok(child_tid)
     } else {
@@ -204,6 +217,8 @@ pub fn clone_child(
         if clone_args.flags.contains(CloneFlags::CLONE_VFORK) {
             child_process.status().set_vfork_child(true);
         }
+
+        TOTAL_FORKS.fetch_add(1, Ordering::Relaxed);
 
         child_process.run();
 

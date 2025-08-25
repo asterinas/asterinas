@@ -20,7 +20,7 @@ mod task_set;
 mod term_status;
 mod wait;
 
-pub use clone::{clone_child, CloneArgs, CloneFlags};
+pub use clone::{clone_child, total_forks, CloneArgs, CloneFlags};
 pub use credentials::{Credentials, Gid, Uid};
 pub use kill::{kill, kill_all, kill_group, tgkill};
 pub use pid_file::PidFile;

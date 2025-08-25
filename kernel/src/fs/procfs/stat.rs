@@ -15,7 +15,7 @@ use crate::{
         utils::Inode,
     },
     prelude::*,
-    process::process_table,
+    process::total_forks,
     sched::nr_queued_and_running,
     time::{cpu_stat::CpuStatManager, SystemTime, START_TIME},
 };
@@ -87,16 +87,7 @@ impl StatFileOps {
             output.push_str("btime 0\n");
         }
 
-        // Process statistics
-        let process_table = process_table::process_table_mut();
-        let process_count = process_table
-            .iter()
-            .last()
-            .map(|entry| entry.pid())
-            .unwrap_or(0);
-        drop(process_table);
-
-        output.push_str(&format!("processes {}\n", process_count));
+        output.push_str(&format!("processes {}\n", total_forks()));
 
         // Running and blocked processes
         let (_, running_count) = nr_queued_and_running();
