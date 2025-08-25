@@ -87,7 +87,12 @@ fn listxattr(
     }
 
     let namespace = get_current_xattr_namespace(ctx);
-    let mut list_writer = user_space.writer(list_ptr, list_len)?;
+    let mut list_writer = if list_ptr != 0 && list_len != 0 {
+        user_space.writer(list_ptr, list_len)?
+    } else {
+        // A dummy writer that won't be used to write anything.
+        VmWriter::from([].as_mut_slice()).to_fallible()
+    };
 
     let path = lookup_path_for_xattr(&file_ctx, ctx)?;
     path.list_xattr(namespace, &mut list_writer)

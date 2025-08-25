@@ -85,9 +85,7 @@ impl<'a> CurrentUserSpace<'a> {
     ///
     /// Returns `Err` if the `vaddr` and `len` do not represent a user space memory range.
     pub fn reader(&self, vaddr: Vaddr, len: usize) -> Result<VmReader<'_, Fallible>> {
-        if len > 0 {
-            check_vaddr(vaddr)?;
-        }
+        check_vaddr(vaddr)?;
         Ok(self.root_vmar().vm_space().reader(vaddr, len)?)
     }
 
@@ -95,9 +93,7 @@ impl<'a> CurrentUserSpace<'a> {
     ///
     /// Returns `Err` if the `vaddr` and `len` do not represent a user space memory range.
     pub fn writer(&self, vaddr: Vaddr, len: usize) -> Result<VmWriter<'_, Fallible>> {
-        if len > 0 {
-            check_vaddr(vaddr)?;
-        }
+        check_vaddr(vaddr)?;
         Ok(self.root_vmar().vm_space().writer(vaddr, len)?)
     }
 
@@ -113,9 +109,7 @@ impl<'a> CurrentUserSpace<'a> {
         vaddr: Vaddr,
         len: usize,
     ) -> Result<(VmReader<'_, Fallible>, VmWriter<'_, Fallible>)> {
-        if len > 0 {
-            check_vaddr(vaddr)?;
-        }
+        check_vaddr(vaddr)?;
         Ok(self.root_vmar().vm_space().reader_writer(vaddr, len)?)
     }
 

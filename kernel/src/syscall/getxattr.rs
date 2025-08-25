@@ -91,12 +91,21 @@ fn getxattr(
     user_space: &CurrentUserSpace,
     ctx: &Context,
 ) -> Result<usize> {
+    if value_len > XATTR_VALUE_MAX_LEN {
+        return_errno_with_message!(Errno::E2BIG, "xattr value too long");
+    }
+
     let name_cstr = read_xattr_name_cstr_from_user(name_ptr, user_space)?;
     let name_str = name_cstr.to_string_lossy();
     let xattr_name = parse_xattr_name(name_str.as_ref())?;
     check_xattr_namespace(xattr_name.namespace(), ctx).map_err(|_| Error::new(Errno::ENODATA))?;
 
-    let mut value_writer = user_space.writer(value_ptr, value_len.min(XATTR_VALUE_MAX_LEN))?;
+    let mut value_writer = if value_ptr != 0 && value_len != 0 {
+        user_space.writer(value_ptr, value_len)?
+    } else {
+        // A dummy writer that won't be used to write anything.
+        VmWriter::from([].as_mut_slice()).to_fallible()
+    };
 
     let path = lookup_path_for_xattr(&file_ctx, ctx)?;
     path.get_xattr(xattr_name, &mut value_writer)
