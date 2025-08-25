@@ -2,7 +2,12 @@
 
 use alloc::sync::Arc;
 
-use ostd::{boot::boot_info, io::IoMem, mm::VmIo, Result};
+use ostd::{
+    boot::boot_info,
+    io::IoMem,
+    mm::{HasSize, VmIo},
+    Result,
+};
 use spin::Once;
 
 use crate::{Pixel, PixelFormat, RenderedPixel};
@@ -81,7 +86,7 @@ pub(crate) fn init() {
 impl FrameBuffer {
     /// Returns the size of the framebuffer in bytes.
     pub fn size(&self) -> usize {
-        self.io_mem.length()
+        self.io_mem.size()
     }
 
     /// Returns the width of the framebuffer in pixels.
