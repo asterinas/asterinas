@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Arc;
-use core::{ptr::NonNull, sync::atomic::Ordering};
+use core::{
+    ptr::NonNull,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use super::{Task, POST_SCHEDULE_HANDLER, PRE_SCHEDULE_HANDLER};
 use crate::{
@@ -17,6 +20,14 @@ cpu_local_cell! {
     /// It is used for delayed resource release since it would be the current
     /// task's job to recycle the previous resources.
     static PREVIOUS_TASK_PTR: *const Task = core::ptr::null();
+}
+
+/// Global context switch counter
+static CONTEXT_SWITCH_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Returns the total number of context switches
+pub fn get_context_switches() -> u64 {
+    CONTEXT_SWITCH_COUNTER.load(Ordering::Relaxed)
 }
 
 /// Returns a pointer to the current task running on the processor.
@@ -77,6 +88,9 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
         // We've switched to the first task on the current CPU.
         unreachable!("`first_context_switch` should never return");
     };
+
+    // Count the context switch before it happens
+    CONTEXT_SWITCH_COUNTER.fetch_add(1, Ordering::Relaxed);
 
     // SAFETY:
     // 1. We have exclusive access to both the current context and the next context (see above).

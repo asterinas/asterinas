@@ -9,7 +9,11 @@ use alloc::format;
 use core::sync::atomic::Ordering;
 
 use aster_softirq::get_softirq_stats;
-use ostd::cpu::num_cpus;
+use ostd::{
+    cpu::num_cpus,
+    task::get_context_switches,
+    trap::{get_interrupt_stats, get_total_interrupts},
+};
 
 use crate::{
     fs::{
@@ -84,8 +88,9 @@ impl StatFileOps {
         intr_line.push('\n');
         output.push_str(&intr_line);
 
-        // TODO: Context switches
-        output.push_str("ctxt 0\n");
+        // Context switches
+        let context_switches = get_context_switches();
+        output.push_str(&format!("ctxt {}\n", context_switches));
 
         // Boot time (seconds since UNIX epoch)
         if let Some(start_time) = START_TIME.get() {
@@ -116,16 +121,16 @@ impl StatFileOps {
         output.push_str(&format!(
             "softirq {} {} {} {} {} {} {} {} {} {} {}\n",
             total_softirqs,
-            softirq_stats[0],  // TASKLESS_URGENT
-            softirq_stats[1],  // TIMER
-            softirq_stats[2],  // TASKLESS
-            softirq_stats[3],  // NETWORK_TX
-            softirq_stats[4],  // NETWORK_RX
-            softirq_stats.get(5).unwrap_or(&0),  // Reserved
-            softirq_stats.get(6).unwrap_or(&0),  // Reserved
-            softirq_stats.get(7).unwrap_or(&0),  // Reserved
-            0u64,  // Reserved
-            0u64   // Reserved
+            softirq_stats[0],                   // TASKLESS_URGENT
+            softirq_stats[1],                   // TIMER
+            softirq_stats[2],                   // TASKLESS
+            softirq_stats[3],                   // NETWORK_TX
+            softirq_stats[4],                   // NETWORK_RX
+            softirq_stats.get(5).unwrap_or(&0), // Reserved
+            softirq_stats.get(6).unwrap_or(&0), // Reserved
+            softirq_stats.get(7).unwrap_or(&0), // Reserved
+            0u64,                               // Reserved
+            0u64                                // Reserved
         ));
 
         output
