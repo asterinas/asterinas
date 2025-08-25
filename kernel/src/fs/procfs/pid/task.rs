@@ -50,7 +50,9 @@ impl TidDirOps {
 impl DirOps for TidDirOps {
     fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
         let inode = match name {
+            "cmdline" => CmdlineFileOps::new_inode(self.process_ref.clone(), this_ptr.clone()),
             "fd" => FdDirOps::new_inode(self.process_ref.clone(), this_ptr.clone()),
+            "environ" => EnvironFileOps::new_inode(self.process_ref.clone(), this_ptr.clone()),
             "exe" => ExeSymOps::new_inode(self.process_ref.clone(), this_ptr.clone()),
             "stat" => StatFileOps::new_inode(
                 self.process_ref.clone(),
@@ -74,8 +76,14 @@ impl DirOps for TidDirOps {
             this.downcast_ref::<ProcDir<TidDirOps>>().unwrap().this()
         };
         let mut cached_children = this.cached_children().write();
+        cached_children.put_entry_if_not_found("cmdline", || {
+            CmdlineFileOps::new_inode(self.process_ref.clone(), this_ptr.clone())
+        });
         cached_children.put_entry_if_not_found("fd", || {
             FdDirOps::new_inode(self.process_ref.clone(), this_ptr.clone())
+        });
+        cached_children.put_entry_if_not_found("environ", || {
+            EnvironFileOps::new_inode(self.process_ref.clone(), this_ptr.clone())
         });
         cached_children.put_entry_if_not_found("exe", || {
             ExeSymOps::new_inode(self.process_ref.clone(), this_ptr.clone())
