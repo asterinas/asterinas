@@ -104,10 +104,16 @@ fn parse_initramfs_range() -> Option<(usize, usize)> {
     Some((initrd_start, initrd_end))
 }
 
+static mut BOOTSTRAP_HART_ID: u32 = u32::MAX;
+
 /// The entry point of the Rust code portion of Asterinas.
 #[no_mangle]
-pub extern "C" fn riscv_boot(_hart_id: usize, device_tree_paddr: usize) -> ! {
+pub extern "C" fn riscv_boot(hart_id: usize, device_tree_paddr: usize) -> ! {
     early_println!("Enter riscv_boot");
+
+    // SAFETY: We only write it once this time. Other processors will only read
+    // it. And other processors are not booted yet so there's no races.
+    unsafe { BOOTSTRAP_HART_ID = hart_id as u32 };
 
     let device_tree_ptr = paddr_to_vaddr(device_tree_paddr) as *const u8;
     let fdt = unsafe { fdt::Fdt::from_ptr(device_tree_ptr).unwrap() };

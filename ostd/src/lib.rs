@@ -71,7 +71,6 @@ pub use self::{error::Error, prelude::Result};
 // TODO: We need to refactor this function to make it more modular and
 // make inter-initialization-dependencies more clear and reduce usages of
 // boot stage only global variables.
-#[doc(hidden)]
 unsafe fn init() {
     arch::enable_cpu_features();
 
@@ -90,9 +89,9 @@ unsafe fn init() {
     logger::init();
 
     // SAFETY:
-    // 1. They are only called once in the boot context of the BSP.
-    // 2. The number of CPUs are available because ACPI has been initialized.
-    // 3. CPU-local storage has NOT been used.
+    //  1. They are only called once in the boot context of the BSP.
+    //  2. The number of CPUs are available because ACPI has been initialized.
+    //  3. CPU-local storage has NOT been used.
     unsafe { cpu::init_on_bsp() };
 
     // SAFETY: We are on the BSP and APs are not yet started.

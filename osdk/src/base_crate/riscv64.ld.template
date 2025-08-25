@@ -21,6 +21,11 @@ SECTIONS
         KEEP(*(.boot.stack))
         . = ALIGN(4096);
     }
+    
+    .ap_boot                : AT(LOADADDR(.boot) + SIZEOF(.boot)) {
+        KEEP(*(.ap_boot))
+        . = ALIGN(4096);
+    }
 
     # Then, we switch to virtual addresses for all the other sections.
     . += KERNEL_VMA_OFFSET;
