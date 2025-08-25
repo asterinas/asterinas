@@ -26,8 +26,8 @@ static TIMER_INTERVAL: AtomicU64 = AtomicU64::new(0);
 /// # Safety
 ///
 /// This function is safe to call on the following conditions:
-/// 1. It is called once and at most once at a proper timing in the boot context.
-/// 2. It is called before any other public functions of this module is called.
+///  1. It is called once and at most once at a proper timing in the boot context.
+///  2. It is called before any other public functions of this module is called.
 pub(super) unsafe fn init() {
     TIMEBASE_FREQ.store(
         DEVICE_TREE
@@ -60,6 +60,16 @@ pub(super) unsafe fn init() {
         timer_irq
     });
 
+    // SAFETY: The caller ensures that this is only called once on the boot hart.
+    unsafe { init_current_hart() };
+}
+
+/// Initializes the timer on the current hart.
+///
+/// # Safety
+///
+/// This function must be called in a hart that hasn't called this function.
+pub(super) unsafe fn init_current_hart() {
     set_next_timer();
     // SAFETY: Accessing the `sie` CSR to enable the timer interrupt is safe
     // here because this function is only called during timer initialization,
