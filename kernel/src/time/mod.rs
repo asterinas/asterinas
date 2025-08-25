@@ -5,9 +5,7 @@
 pub use core::{timer, Clock};
 
 use ::core::time::Duration;
-pub use system_time::SystemTime;
-#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))] // Now used for vDSO support only.
-pub use system_time::START_TIME;
+pub use system_time::{SystemTime, START_TIME};
 pub use timer::{Timer, TimerManager};
 
 use crate::prelude::*;
