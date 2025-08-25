@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use align_ext::AlignExt;
+use aster_util::mem_obj_slice::Slice;
 use bitvec::array::BitArray;
 use int_to_c_enum::TryFromInt;
 use ostd::{
     mm::{
         io_util::{HasVmReaderWriter, VmReaderWriterResult},
-        DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, Infallible, USegment, VmReader,
+        DmaDirection, DmaStream, FrameAllocOptions, HasSize, Infallible, USegment, VmReader,
         VmWriter,
     },
     sync::{SpinLock, WaitQueue},
@@ -375,10 +376,10 @@ pub struct BioSegment {
 
 /// The inner part of `BioSegment`.
 // TODO: Decouple `BioSegmentInner` with DMA-related buffers.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct BioSegmentInner {
     /// Internal DMA slice.
-    dma_slice: DmaStreamSlice<DmaStream>,
+    dma_slice: Slice<Arc<DmaStream>>,
     /// Whether the segment is allocated from the pool.
     from_pool: bool,
 }
@@ -416,16 +417,17 @@ impl BioSegment {
         len: usize,
         direction: BioDirection,
     ) -> Self {
+        let offset = offset_within_first_block;
         assert!(
-            is_sector_aligned(offset_within_first_block)
-                && offset_within_first_block < BLOCK_SIZE
+            is_sector_aligned(offset)
+                && offset < BLOCK_SIZE
                 && is_sector_aligned(len)
-                && offset_within_first_block + len <= nblocks * BLOCK_SIZE
+                && offset + len <= nblocks * BLOCK_SIZE
         );
 
         // The target segment is whether from the pool or newly-allocated
         let bio_segment_inner = target_pool(direction)
-            .and_then(|pool| pool.alloc(nblocks, offset_within_first_block, len))
+            .and_then(|pool| pool.alloc(nblocks, offset, len))
             .unwrap_or_else(|| {
                 let segment = FrameAllocOptions::new()
                     .zeroed(false)
@@ -433,7 +435,7 @@ impl BioSegment {
                     .unwrap();
                 let dma_stream = DmaStream::map(segment.into(), direction.into(), false).unwrap();
                 BioSegmentInner {
-                    dma_slice: DmaStreamSlice::new(dma_stream, offset_within_first_block, len),
+                    dma_slice: Slice::new(Arc::new(dma_stream), offset..offset + len),
                     from_pool: false,
                 }
             });
@@ -449,7 +451,7 @@ impl BioSegment {
         let dma_stream = DmaStream::map(segment, direction.into(), false).unwrap();
         Self {
             inner: Arc::new(BioSegmentInner {
-                dma_slice: DmaStreamSlice::new(dma_stream, 0, len),
+                dma_slice: Slice::new(Arc::new(dma_stream), 0..len),
                 from_pool: false,
             }),
         }
@@ -457,7 +459,7 @@ impl BioSegment {
 
     /// Returns the number of bytes.
     pub fn nbytes(&self) -> usize {
-        self.inner.dma_slice.nbytes()
+        self.inner.dma_slice.size()
     }
 
     /// Returns the number of sectors.
@@ -472,18 +474,18 @@ impl BioSegment {
 
     /// Returns the offset (in bytes) within the first block.
     pub fn offset_within_first_block(&self) -> usize {
-        self.inner.dma_slice.offset() % BLOCK_SIZE
+        self.inner.dma_slice.offset().start % BLOCK_SIZE
     }
 
     /// Returns the inner DMA slice.
-    pub fn inner_dma_slice(&self) -> &DmaStreamSlice<DmaStream> {
+    pub fn inner_dma_slice(&self) -> &Slice<Arc<DmaStream>> {
         &self.inner.dma_slice
     }
 
     /// Returns the inner VM segment.
     #[cfg(ktest)]
     pub fn inner_segment(&self) -> &USegment {
-        self.inner.dma_slice.stream().segment()
+        self.inner.dma_slice.mem_obj().segment()
     }
 }
 
@@ -514,7 +516,7 @@ impl Drop for BioSegmentInner {
 impl BioSegmentInner {
     /// Returns the bio direction.
     fn direction(&self) -> BioDirection {
-        match self.dma_slice.stream().direction() {
+        match self.dma_slice.mem_obj().direction() {
             DmaDirection::FromDevice => BioDirection::FromDevice,
             DmaDirection::ToDevice => BioDirection::ToDevice,
             _ => unreachable!(),
@@ -529,7 +531,7 @@ impl BioSegmentInner {
 /// the `DmaStream`.
 // TODO: Use a more advanced allocation algorithm to replace the naive one to improve efficiency.
 struct BioSegmentPool {
-    pool: DmaStream,
+    pool: Arc<DmaStream>,
     total_blocks: usize,
     direction: BioDirection,
     manager: SpinLock<PoolSlotManager>,
@@ -565,7 +567,7 @@ impl BioSegmentPool {
         });
 
         Self {
-            pool,
+            pool: Arc::new(pool),
             total_blocks,
             direction,
             manager,
@@ -627,11 +629,10 @@ impl BioSegmentPool {
             .map(|pos| end + pos)
             .unwrap_or(self.total_blocks);
 
-        let dma_slice = DmaStreamSlice::new(
-            self.pool.clone(),
-            start * BLOCK_SIZE + offset_within_first_block,
-            len,
-        );
+        let dma_slice = {
+            let offset = start * BLOCK_SIZE + offset_within_first_block;
+            Slice::new(self.pool.clone(), offset..offset + len)
+        };
         let bio_segment = BioSegmentInner {
             dma_slice,
             from_pool: true,
@@ -651,8 +652,8 @@ impl BioSegmentPool {
         assert!(bio_segment.from_pool && bio_segment.direction() == self.direction);
         let (start, end) = {
             let dma_slice = &bio_segment.dma_slice;
-            let start = dma_slice.offset().align_down(BLOCK_SIZE) / BLOCK_SIZE;
-            let end = (dma_slice.offset() + dma_slice.nbytes()).align_up(BLOCK_SIZE) / BLOCK_SIZE;
+            let start = dma_slice.offset().start.align_down(BLOCK_SIZE) / BLOCK_SIZE;
+            let end = dma_slice.offset().end.align_up(BLOCK_SIZE) / BLOCK_SIZE;
 
             if end <= start || end > self.total_blocks {
                 return;

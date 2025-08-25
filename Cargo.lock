@@ -95,6 +95,7 @@ name = "aster-block"
 version = "0.1.0"
 dependencies = [
  "align_ext",
+ "aster-util",
  "bitvec",
  "component",
  "int-to-c-enum",

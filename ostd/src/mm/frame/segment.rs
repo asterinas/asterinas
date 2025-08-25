@@ -9,7 +9,7 @@ use super::{
     meta::{AnyFrameMeta, GetFrameError},
     Frame,
 };
-use crate::mm::{AnyUFrameMeta, Paddr, PAGE_SIZE};
+use crate::mm::{AnyUFrameMeta, HasPaddr, HasSize, Paddr, PAGE_SIZE};
 
 /// A contiguous range of homogeneous physical memory frames.
 ///
@@ -126,21 +126,6 @@ impl<M: AnyFrameMeta> Segment<M> {
 }
 
 impl<M: AnyFrameMeta + ?Sized> Segment<M> {
-    /// Gets the start physical address of the contiguous frames.
-    pub fn start_paddr(&self) -> Paddr {
-        self.range.start
-    }
-
-    /// Gets the end physical address of the contiguous frames.
-    pub fn end_paddr(&self) -> Paddr {
-        self.range.end
-    }
-
-    /// Gets the length in bytes of the contiguous frames.
-    pub fn size(&self) -> usize {
-        self.range.end - self.range.start
-    }
-
     /// Splits the frames into two at the given byte offset from the start.
     ///
     /// The resulting frames cannot be empty. So the offset cannot be neither
@@ -205,9 +190,21 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
     }
 }
 
+impl<M: AnyFrameMeta + ?Sized> HasPaddr for Segment<M> {
+    fn paddr(&self) -> Paddr {
+        self.range.start
+    }
+}
+
+impl<M: AnyFrameMeta + ?Sized> HasSize for Segment<M> {
+    fn size(&self) -> usize {
+        self.range.end - self.range.start
+    }
+}
+
 impl<M: AnyFrameMeta + ?Sized> From<Frame<M>> for Segment<M> {
     fn from(frame: Frame<M>) -> Self {
-        let pa = frame.start_paddr();
+        let pa = frame.paddr();
         let _ = ManuallyDrop::new(frame);
         Self {
             range: pa..pa + PAGE_SIZE,

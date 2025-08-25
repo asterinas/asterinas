@@ -4,7 +4,7 @@ use core::mem::size_of;
 
 use crate::{
     mm::{FrameAllocOptions, Segment, VmIo, PAGE_SIZE},
-    prelude::Paddr,
+    prelude::*,
 };
 
 pub struct Queue {
@@ -33,7 +33,7 @@ impl Queue {
     }
 
     pub(crate) fn base_paddr(&self) -> Paddr {
-        self.segment.start_paddr()
+        self.segment.paddr()
     }
 
     pub(super) fn new() -> Self {

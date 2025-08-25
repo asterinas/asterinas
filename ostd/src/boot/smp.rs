@@ -10,7 +10,7 @@ use crate::{
     arch::{boot::smp::bringup_all_aps, irq::HwCpuId},
     mm::{
         frame::{meta::KernelMeta, Segment},
-        paddr_to_vaddr, FrameAllocOptions, PAGE_SIZE,
+        paddr_to_vaddr, FrameAllocOptions, HasPaddrRange, PAGE_SIZE,
     },
     sync::SpinLock,
     task::Task,

@@ -14,7 +14,7 @@ use core::{
 
 use super::{
     kspace::KernelPtConfig, nr_subpage_per_huge, page_prop::PageProperty, page_size,
-    vm_space::UserPtConfig, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
+    vm_space::UserPtConfig, HasPaddr, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
@@ -343,7 +343,7 @@ impl PageTable<KernelPtConfig> {
             // shared kernel page tables. It requires user page tables to
             // outlive the kernel page table, which is trivially true.
             // See also `<PageTablePageMeta as AnyFrameMeta>::on_drop`.
-            let pt_addr = pt.start_paddr();
+            let pt_addr = pt.paddr();
             let pte = PageTableEntry::new_pt(pt_addr);
             // SAFETY: The index is within the bounds and the PTE is at the
             // correct paging level. However, neither it's a `UserPtConfig`
@@ -403,7 +403,7 @@ impl<C: PageTableConfig> PageTable<C> {
     /// providing it to the hardware will be unsafe since the page table node may be dropped,
     /// resulting in UAF.
     pub fn root_paddr(&self) -> Paddr {
-        self.root.start_paddr()
+        self.root.paddr()
     }
 
     /// Query about the mapping of a single byte at the given virtual address.

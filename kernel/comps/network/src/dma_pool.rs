@@ -137,7 +137,7 @@ impl DmaPool {
 
 #[derive(Debug)]
 struct DmaPage {
-    storage: DmaStream,
+    storage: Arc<DmaStream>,
     segment_size: usize,
     // `BitArray` is 64 bits, since each `DmaSegment` is bigger than 64 bytes,
     // there's no more than `PAGE_SIZE` / 64 = 64 `DmaSegment`s in a `DmaPage`.
@@ -160,7 +160,7 @@ impl DmaPage {
         };
 
         Ok(Self {
-            storage: dma_stream,
+            storage: Arc::new(dma_stream),
             segment_size,
             allocated_segments: SpinLock::new(BitArray::ZERO),
             pool,
@@ -218,7 +218,7 @@ impl HasDaddr for DmaPage {
 /// Each `DmaSegment`'s daddr must be aligned with its size.
 #[derive(Debug)]
 pub struct DmaSegment {
-    dma_stream: DmaStream,
+    dma_stream: Arc<DmaStream>,
     start_addr: Daddr,
     size: usize,
     page: Weak<DmaPage>,

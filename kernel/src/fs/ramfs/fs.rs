@@ -11,7 +11,7 @@ use aster_rights::Full;
 use aster_util::slot_vec::SlotVec;
 use hashbrown::HashMap;
 use ostd::{
-    mm::{io_util::HasVmReaderWriter, VmIo},
+    mm::{io_util::HasVmReaderWriter, HasSize, VmIo},
     sync::{PreemptDisabled, RwLockWriteGuard},
 };
 
