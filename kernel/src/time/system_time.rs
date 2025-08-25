@@ -55,6 +55,7 @@ impl SystemTime {
     }
 
     /// Subtract a duration from self. If the result does not exceed inner bounds return Some(t), else return None.
+    #[expect(dead_code)]
     pub fn checked_sub(&self, duration: Duration) -> Option<Self> {
         let duration = convert_to_time_duration(duration);
         self.0.checked_sub(duration).map(SystemTime)
@@ -75,6 +76,7 @@ impl SystemTime {
     /// Return the difference between current time and the time when self was created.
     /// Return Error if current time is earlier than creating time.
     /// The error can happen if self was created by checked_add.
+    #[expect(dead_code)]
     pub fn elapsed(&self) -> Result<Duration> {
         let now = SystemTime::now();
         now.duration_since(self)

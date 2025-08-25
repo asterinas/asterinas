@@ -25,7 +25,7 @@ pub struct TdxGuest;
 
 impl Device for TdxGuest {
     fn type_(&self) -> DeviceType {
-        DeviceType::MiscDevice
+        DeviceType::Misc
     }
 
     fn id(&self) -> DeviceId {

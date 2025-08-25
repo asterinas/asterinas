@@ -9,7 +9,7 @@ use alloc::sync::Arc;
 
 use spin::Once;
 
-pub use self::{fs::SysFs, inode::SysFsInode};
+pub use self::fs::SysFs;
 use crate::fs::sysfs::fs::SysFsType;
 
 static SYSFS_SINGLETON: Once<Arc<SysFs>> = Once::new();

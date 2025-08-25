@@ -20,7 +20,6 @@ pub mod wait;
 pub type clockid_t = i32;
 pub type time_t = i64;
 pub type suseconds_t = i64;
-pub type clock_t = i64;
 
 const NSEC_PER_USEC: i64 = 1_000;
 const USEC_PER_SEC: i64 = 1_000_000;

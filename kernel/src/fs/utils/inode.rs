@@ -36,20 +36,6 @@ pub enum InodeType {
 }
 
 impl InodeType {
-    pub fn support_read(&self) -> bool {
-        matches!(
-            self,
-            InodeType::File | InodeType::Socket | InodeType::CharDevice | InodeType::BlockDevice
-        )
-    }
-
-    pub fn support_write(&self) -> bool {
-        matches!(
-            self,
-            InodeType::File | InodeType::Socket | InodeType::CharDevice | InodeType::BlockDevice
-        )
-    }
-
     pub fn is_regular_file(&self) -> bool {
         *self == InodeType::File
     }
@@ -79,9 +65,9 @@ impl InodeType {
 impl From<DeviceType> for InodeType {
     fn from(type_: DeviceType) -> InodeType {
         match type_ {
-            DeviceType::CharDevice => InodeType::CharDevice,
-            DeviceType::BlockDevice => InodeType::BlockDevice,
-            DeviceType::MiscDevice => InodeType::CharDevice,
+            DeviceType::Char => InodeType::CharDevice,
+            DeviceType::Block => InodeType::BlockDevice,
+            DeviceType::Misc => InodeType::CharDevice,
         }
     }
 }
@@ -189,6 +175,7 @@ impl InodeMode {
         self.contains(Self::S_IXOTH)
     }
 
+    #[expect(dead_code)]
     pub fn has_sticky_bit(&self) -> bool {
         self.contains(Self::S_ISVTX)
     }
@@ -328,17 +315,17 @@ impl Metadata {
 }
 
 pub enum MknodType {
-    NamedPipeNode,
-    CharDeviceNode(Arc<dyn Device>),
-    BlockDeviceNode(Arc<dyn Device>),
+    NamedPipe,
+    CharDevice(Arc<dyn Device>),
+    BlockDevice(Arc<dyn Device>),
 }
 
 impl MknodType {
     pub fn inode_type(&self) -> InodeType {
         match self {
-            MknodType::NamedPipeNode => InodeType::NamedPipe,
-            MknodType::CharDeviceNode(_) => InodeType::CharDevice,
-            MknodType::BlockDeviceNode(_) => InodeType::BlockDevice,
+            MknodType::NamedPipe => InodeType::NamedPipe,
+            MknodType::CharDevice(_) => InodeType::CharDevice,
+            MknodType::BlockDevice(_) => InodeType::BlockDevice,
         }
     }
 }
@@ -347,8 +334,8 @@ impl From<Arc<dyn Device>> for MknodType {
     fn from(device: Arc<dyn Device>) -> Self {
         let inode_type: InodeType = device.type_().into();
         match inode_type {
-            InodeType::CharDevice => Self::CharDeviceNode(device),
-            InodeType::BlockDevice => Self::BlockDeviceNode(device),
+            InodeType::CharDevice => Self::CharDevice(device),
+            InodeType::BlockDevice => Self::BlockDevice(device),
             _ => unreachable!(),
         }
     }
@@ -677,6 +664,7 @@ impl Extension {
 
     /// Put an object of `Arc<T>`. If there exists one object of the type,
     /// then the old one is returned.
+    #[expect(dead_code)]
     pub fn put<T: Any + Send + Sync>(&self, obj: Arc<T>) -> Option<Arc<T>> {
         let mut write_guard = self.data.write();
         write_guard
@@ -686,6 +674,7 @@ impl Extension {
 
     /// Delete an object of `Arc<T>`. If there exists one object of the type,
     /// then the old one is returned.
+    #[expect(dead_code)]
     pub fn del<T: Any + Send + Sync>(&self) -> Option<Arc<T>> {
         let mut write_guard = self.data.write();
         write_guard

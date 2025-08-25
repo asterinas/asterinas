@@ -39,6 +39,8 @@ impl InodeHandle<Rights> {
         Ok(Self(inner, Rights::from(access_mode)))
     }
 
+    #[expect(dead_code)]
+    #[expect(clippy::wrong_self_convention)]
     pub fn to_static<R1: TRights>(self) -> Result<InodeHandle<R1>> {
         let rights = Rights::from_bits(R1::BITS).ok_or(Error::new(Errno::EBADF))?;
         if !self.1.contains(rights) {

@@ -300,7 +300,7 @@ impl<D: TtyDriver> Terminal for Tty<D> {
 
 impl<D: TtyDriver> Device for Tty<D> {
     fn type_(&self) -> DeviceType {
-        DeviceType::CharDevice
+        DeviceType::Char
     }
 
     fn id(&self) -> DeviceId {

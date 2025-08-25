@@ -22,12 +22,6 @@ impl NamedPipe {
 
         Ok(Self { reader, writer })
     }
-
-    pub fn with_capacity(capacity: usize) -> Result<Self> {
-        let (reader, writer) = pipe::new_pair_with_capacity(capacity)?;
-
-        Ok(Self { reader, writer })
-    }
 }
 
 impl Pollable for NamedPipe {

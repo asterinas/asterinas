@@ -52,13 +52,10 @@ bitflags! {
 }
 
 /// Registers a new FS type.
+//
+// TODO: Figure out what should happen when unregistering the FS type.
 pub fn register(new_type: Arc<dyn FsType>) -> Result<()> {
     FS_REGISTRY.get().unwrap().register(new_type)
-}
-
-/// Unregisters a new FS type.
-pub fn unregister(name: &str) -> Result<Arc<dyn FsType>> {
-    FS_REGISTRY.get().unwrap().unregister(name)
 }
 
 /// Looks up a FS type.
@@ -129,7 +126,7 @@ impl FsRegistry {
     fn register(&self, new_type: Arc<dyn FsType>) -> crate::Result<()> {
         let mut fs_table = self.fs_table.lock();
         if fs_table.contains_key(new_type.name()) {
-            return_errno_with_message!(Errno::EEXIST, "File system type already registered");
+            return_errno_with_message!(Errno::EEXIST, "the file system type already exists");
         }
 
         if let Some(node) = new_type.sysnode() {
@@ -138,16 +135,6 @@ impl FsRegistry {
 
         fs_table.insert(new_type.name().to_owned(), new_type);
         Ok(())
-    }
-
-    /// Unregisters a file system control interface.
-    fn unregister(&self, name: &str) -> crate::Result<Arc<dyn FsType>> {
-        let _ = self.systree_fields.remove_child(name);
-
-        self.fs_table
-            .lock()
-            .remove(name)
-            .ok_or(Error::new(Errno::ENOENT))
     }
 }
 

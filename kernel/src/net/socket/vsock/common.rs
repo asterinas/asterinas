@@ -156,6 +156,7 @@ impl VsockSpace {
     }
 
     /// Send a shutdown packet to close a connection
+    #[expect(dead_code)]
     pub fn shutdown(&self, info: &ConnectionInfo) -> Result<()> {
         let mut driver = self.driver.disable_irq().lock();
         driver
@@ -172,6 +173,7 @@ impl VsockSpace {
     }
 
     /// Send a credit request packet
+    #[expect(dead_code)]
     pub fn request_credit(&self, info: &ConnectionInfo) -> Result<()> {
         let mut driver = self.driver.disable_irq().lock();
         driver
@@ -180,6 +182,7 @@ impl VsockSpace {
     }
 
     /// Send a credit update packet
+    #[expect(dead_code)]
     pub fn update_credit(&self, info: &ConnectionInfo) -> Result<()> {
         let mut driver = self.driver.disable_irq().lock();
         driver

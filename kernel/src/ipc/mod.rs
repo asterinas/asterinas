@@ -66,6 +66,7 @@ impl IpcPermission {
     }
 
     /// Returns owner's GID
+    #[expect(dead_code)]
     pub fn gid(&self) -> Gid {
         self.gid
     }
@@ -76,11 +77,13 @@ impl IpcPermission {
     }
 
     /// Returns creator's GID
+    #[expect(dead_code)]
     pub fn cguid(&self) -> Gid {
         self.cguid
     }
 
     /// Returns permission mode
+    #[expect(dead_code)]
     pub fn mode(&self) -> u16 {
         self.mode
     }

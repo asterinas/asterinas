@@ -33,12 +33,14 @@ impl Debug for dyn Device {
     }
 }
 
-#[derive(Debug)]
 /// Device type
+#[derive(Debug)]
 pub enum DeviceType {
-    CharDevice,
-    BlockDevice,
-    MiscDevice,
+    Char,
+    #[expect(dead_code)]
+    Block,
+    #[expect(dead_code)]
+    Misc,
 }
 
 /// A device ID, containing a major device number and a minor device number.
@@ -98,10 +100,12 @@ impl DeviceId {
     }
 }
 
-/// Add a device node to FS for the device.
+/// Adds a device node in `/dev`.
 ///
-/// If the parent path is not existing, `mkdir -p` the parent path.
-/// This function is used in registering device.
+/// If the parent path does not exist, it will be created as a directory.
+/// This function should be called when registering a device.
+//
+// TODO: Figure out what should happen when unregistering the device.
 pub fn add_node(device: Arc<dyn Device>, path: &str) -> Result<Path> {
     let mut dev_path = {
         let fs_resolver = FsResolver::new();
@@ -110,7 +114,7 @@ pub fn add_node(device: Arc<dyn Device>, path: &str) -> Result<Path> {
     let mut relative_path = {
         let relative_path = path.trim_start_matches('/');
         if relative_path.is_empty() {
-            return_errno_with_message!(Errno::EINVAL, "invalid device path");
+            return_errno_with_message!(Errno::EINVAL, "the device path is invalid");
         }
         relative_path
     };
@@ -126,7 +130,7 @@ pub fn add_node(device: Arc<dyn Device>, path: &str) -> Result<Path> {
         match dev_path.lookup(next_name) {
             Ok(next_path) => {
                 if path_remain.is_empty() {
-                    return_errno_with_message!(Errno::EEXIST, "device node is existing");
+                    return_errno_with_message!(Errno::EEXIST, "the device node already exists");
                 }
                 dev_path = next_path;
             }
@@ -139,7 +143,7 @@ pub fn add_node(device: Arc<dyn Device>, path: &str) -> Result<Path> {
                         device.clone().into(),
                     )?;
                 } else {
-                    // Mkdir parent path
+                    // Create the parent directory
                     dev_path = dev_path.new_fs_child(
                         next_name,
                         InodeType::Dir,
@@ -152,25 +156,4 @@ pub fn add_node(device: Arc<dyn Device>, path: &str) -> Result<Path> {
     }
 
     Ok(dev_path)
-}
-
-/// Delete the device node from FS for the device.
-///
-/// This function is used in unregistering device.
-pub fn delete_node(path: &str) -> Result<()> {
-    let abs_path = {
-        let device_path = path.trim_start_matches('/');
-        if device_path.is_empty() {
-            return_errno_with_message!(Errno::EINVAL, "invalid device path");
-        }
-        String::from("/dev") + "/" + device_path
-    };
-
-    let (parent_path, name) = {
-        let fs_resolver = FsResolver::new();
-        fs_resolver.lookup_dir_and_base_name(&FsPath::try_from(abs_path.as_str()).unwrap())?
-    };
-
-    parent_path.unlink(&name)?;
-    Ok(())
 }

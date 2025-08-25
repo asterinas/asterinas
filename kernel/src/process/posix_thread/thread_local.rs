@@ -138,6 +138,7 @@ impl ThreadLocal {
         self.fs.borrow()
     }
 
+    #[expect(dead_code)]
     pub fn borrow_fs_mut(&self) -> RefMut<'_, Arc<ThreadFsInfo>> {
         self.fs.borrow_mut()
     }

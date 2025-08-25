@@ -28,6 +28,7 @@ pub struct Context<'a> {
     pub thread_local: &'a ThreadLocal,
     pub posix_thread: &'a PosixThread,
     pub thread: &'a Thread,
+    #[expect(dead_code)]
     pub task: &'a Task,
 }
 
