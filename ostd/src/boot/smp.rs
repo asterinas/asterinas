@@ -7,7 +7,7 @@ use alloc::{boxed::Box, collections::btree_map::BTreeMap, vec::Vec};
 use spin::Once;
 
 use crate::{
-    arch::{boot::smp::bringup_all_aps, irq::HwCpuId},
+    arch::irq::HwCpuId,
     mm::{
         frame::{meta::KernelMeta, Segment},
         paddr_to_vaddr, FrameAllocOptions, PAGE_SIZE,
@@ -106,7 +106,7 @@ pub(crate) unsafe fn boot_all_aps() {
     let pt_ptr = crate::mm::page_table::boot_pt::with_borrow(|pt| pt.root_address()).unwrap();
     // SAFETY: It's the right time to boot APs (guaranteed by the caller) and
     // the arguments are valid to boot APs (generated above).
-    unsafe { bringup_all_aps(info_ptr, pt_ptr, num_cpus as u32) };
+    unsafe { crate::arch::boot::smp::bringup_all_aps(info_ptr, pt_ptr, num_cpus as u32) };
 
     wait_for_all_aps_started(num_cpus);
 
@@ -124,9 +124,9 @@ pub fn register_ap_entry(entry: fn()) {
 }
 
 #[no_mangle]
-fn ap_early_entry(cpu_id: u32) -> ! {
+extern "C" fn ap_early_entry(cpu_id: u32) -> ! {
     // SAFETY: `cpu_id` is the correct value of the CPU ID.
-    unsafe { crate::cpu::init_on_ap(cpu_id) };
+    unsafe { crate::cpu::set_this_cpu_id(cpu_id) };
 
     crate::arch::enable_cpu_features();
 
@@ -157,7 +157,9 @@ fn ap_early_entry(cpu_id: u32) -> ! {
 fn report_online_and_hw_cpu_id(cpu_id: u32) {
     // There are no races because this method will only be called in the boot
     // context, where preemption won't occur.
-    let hw_cpu_id = HwCpuId::read_current(&crate::task::disable_preempt());
+    //
+    // SAFETY: CPU-local memory must have been initialized by this point.
+    let hw_cpu_id = unsafe { HwCpuId::read_current(&crate::task::disable_preempt()) };
 
     let old_val = HW_CPU_ID_MAP.lock().insert(cpu_id, hw_cpu_id);
     assert!(old_val.is_none());
