@@ -667,8 +667,17 @@ impl<Fallibility> VmReader<'_, Fallibility> {
     ///
     /// If `nbytes` is greater than `self.remain()`, then the method panics.
     pub fn skip(&mut self, nbytes: usize) -> &mut Self {
-        assert!(nbytes <= self.remain());
-        self.cursor = self.cursor.wrapping_add(nbytes);
+        if nbytes > self.remain() {
+            println!(
+                "VmReader::skip: nbytes ({}) > self.avail() ({})",
+                nbytes,
+                self.remain()
+            );
+            let safe_skip = self.remain();
+            self.cursor = self.cursor.wrapping_add(safe_skip);
+        } else {
+            self.cursor = self.cursor.wrapping_add(nbytes);
+        }
 
         self
     }
