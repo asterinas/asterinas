@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::vec::Vec;
+use core::sync::atomic::{AtomicU64, Ordering};
+
 use spin::Once;
 
 use super::irq::{disable_local, process_top_half, DisabledLocalIrqGuard};
@@ -63,6 +66,11 @@ pub(crate) fn call_irq_callback_functions(trap_frame: &TrapFrame, irq_number: us
     // bottom half cannot be reentrant for the same reason.
     INTERRUPT_NESTED_LEVEL.add_assign(1);
 
+    // Count this interrupt
+    if irq_number < MAX_IRQ_LINES {
+        INTERRUPT_COUNTERS[irq_number].fetch_add(1, Ordering::Relaxed);
+    }
+
     process_top_half(trap_frame, irq_number);
     crate::arch::interrupts_ack(irq_number);
 
@@ -75,6 +83,29 @@ pub(crate) fn call_irq_callback_functions(trap_frame: &TrapFrame, irq_number: us
 
 cpu_local_cell! {
     static INTERRUPT_NESTED_LEVEL: u8 = 0;
+}
+
+/// The maximum number of IRQ lines we track (256 should have covered most common hardware).
+const MAX_IRQ_LINES: usize = 256;
+
+/// Global interrupt counters.
+static INTERRUPT_COUNTERS: [AtomicU64; MAX_IRQ_LINES] =
+    [const { AtomicU64::new(0) }; MAX_IRQ_LINES];
+
+/// Returns the interrupt counts for all IRQ lines.
+pub fn get_interrupt_stats() -> Vec<u64> {
+    INTERRUPT_COUNTERS
+        .iter()
+        .map(|counter| counter.load(Ordering::Relaxed))
+        .collect()
+}
+
+/// Returns the total interrupt count.
+pub fn get_total_interrupts() -> u64 {
+    INTERRUPT_COUNTERS
+        .iter()
+        .map(|counter| counter.load(Ordering::Relaxed))
+        .sum()
 }
 
 /// Returns whether we are in the interrupt context.

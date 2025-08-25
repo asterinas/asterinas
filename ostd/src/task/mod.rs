@@ -25,6 +25,7 @@ use utils::ForceSync;
 
 pub use self::{
     preempt::{disable_preempt, halt_cpu, DisabledPreemptGuard},
+    processor::context_switch_counts,
     scheduler::info::{AtomicCpuId, TaskScheduleInfo},
 };
 use crate::{arch::task::TaskContext, prelude::*, trap::in_interrupt_context};
