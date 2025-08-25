@@ -41,10 +41,24 @@ pub(in crate::arch) unsafe fn init(io_mem_builder: &IoMemAllocatorBuilder) {
     IRQ_CHIP.call_once(|| IrqChip {
         plics: SpinLock::new(plics.into_boxed_slice()),
     });
-    // SAFETY: Accessing the `sie` CSR to enable the external interrupt is
-    // safe here because this function is only called during PLIC
-    // initialization, and we ensure that only the external interrupt bit is
-    // set without affecting other interrupt sources.
+    // SAFETY: Accessing the `sie` CSR to enable the external interrupt is safe
+    // here because this function is only called during PLIC initialization,
+    // and we ensure that only the external interrupt bit is set without
+    // affecting other interrupt sources.
+    unsafe { riscv::register::sie::set_sext() };
+}
+
+/// Initializes application-processor-specific PLIC state.
+///
+/// # Safety
+///
+/// This function is safe to call on the following conditions:
+/// 1. It is called once and at most once on this AP.
+/// 2. It is called before any other public functions of this module is called
+///    on this AP.
+pub(in crate::arch) unsafe fn init_current_hart() {
+    // SAFETY: Accessing the `sie` CSR to enable the external interrupt is safe
+    // here due to the same reasons mentioned in `init`.
     unsafe { riscv::register::sie::set_sext() };
 }
 

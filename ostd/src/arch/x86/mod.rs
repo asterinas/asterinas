@@ -60,6 +60,7 @@ pub(crate) unsafe fn late_init_on_bsp() {
 
     kernel::apic::init(&io_mem_builder).expect("APIC doesn't exist");
     irq::chip::init(&io_mem_builder);
+    irq::ipi::init();
 
     kernel::tsc::init_tsc_freq();
     timer::init_on_bsp();
