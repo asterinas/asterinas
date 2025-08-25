@@ -11,11 +11,12 @@ use self::{
     sys::SysDirOps,
     template::{DirOps, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps},
     thread_self::ThreadSelfSymOps,
+    uptime::UptimeFileOps,
 };
 use crate::{
     events::Observer,
     fs::{
-        procfs::filesystems::FileSystemsFileOps,
+        procfs::{filesystems::FileSystemsFileOps, stat::StatFileOps},
         registry::{FsProperties, FsType},
         utils::{DirEntryVecExt, FileSystem, FsFlags, Inode, SuperBlock, NAME_MAX},
     },
@@ -32,10 +33,11 @@ mod loadavg;
 mod meminfo;
 mod pid;
 mod self_;
+mod stat;
 mod sys;
 mod template;
 mod thread_self;
-
+mod uptime;
 pub(super) fn init() {
     let procfs_type = Arc::new(ProcFsType);
     super::registry::register(procfs_type).unwrap();
@@ -151,6 +153,10 @@ impl DirOps for RootDirOps {
             LoadAvgFileOps::new_inode(this_ptr.clone())
         } else if name == "cpuinfo" {
             CpuInfoFileOps::new_inode(this_ptr.clone())
+        } else if name == "uptime" {
+            UptimeFileOps::new_inode(this_ptr.clone())
+        } else if name == "stat" {
+            StatFileOps::new_inode(this_ptr.clone())
         } else if let Ok(pid) = name.parse::<Pid>() {
             let process_ref =
                 process_table::get_process(pid).ok_or_else(|| Error::new(Errno::ENOENT))?;
@@ -181,6 +187,9 @@ impl DirOps for RootDirOps {
             .put_entry_if_not_found("loadavg", || LoadAvgFileOps::new_inode(this_ptr.clone()));
         cached_children
             .put_entry_if_not_found("cpuinfo", || CpuInfoFileOps::new_inode(this_ptr.clone()));
+        cached_children
+            .put_entry_if_not_found("uptime", || UptimeFileOps::new_inode(this_ptr.clone()));
+        cached_children.put_entry_if_not_found("stat", || StatFileOps::new_inode(this_ptr.clone()));
         for process in process_table::process_table_mut().iter() {
             let pid = process.pid().to_string();
             cached_children.put_entry_if_not_found(&pid, || {
