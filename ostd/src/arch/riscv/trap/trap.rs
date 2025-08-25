@@ -16,34 +16,11 @@
 
 #![allow(unfulfilled_lint_expectations)]
 
-use core::arch::{asm, global_asm};
+use core::arch::global_asm;
+
+use riscv::register::stvec::TrapMode;
 
 use crate::arch::cpu::context::GeneralRegs;
-
-#[cfg(target_arch = "riscv32")]
-global_asm!(
-    r"
-    .equ XLENB, 4
-    .macro LOAD_SP a1, a2
-        lw \a1, \a2*XLENB(sp)
-    .endm
-    .macro STORE_SP a1, a2
-        sw \a1, \a2*XLENB(sp)
-    .endm
-"
-);
-#[cfg(target_arch = "riscv64")]
-global_asm!(
-    r"
-    .equ XLENB, 8
-    .macro LOAD_SP a1, a2
-        ld \a1, \a2*XLENB(sp)
-    .endm
-    .macro STORE_SP a1, a2
-        sd \a1, \a2*XLENB(sp)
-    .endm
-"
-);
 
 global_asm!(include_str!("trap.S"));
 
@@ -60,13 +37,13 @@ pub unsafe fn init() {
     unsafe {
         // Set sscratch register to 0, indicating to exception vector that we are
         // presently executing in the kernel
-        asm!("csrw sscratch, zero");
+        riscv::register::sscratch::write(0);
         // Set the exception vector address
-        asm!("csrw stvec, {}", in(reg) trap_entry as usize);
+        riscv::register::stvec::write(trap_entry as usize, TrapMode::Direct);
     }
 }
 
-/// Trap frame of kernel interrupt
+/// Trap frame of kernel interrupt.
 ///
 /// # Trap handler
 ///
@@ -81,24 +58,26 @@ pub unsafe fn init() {
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
 pub struct TrapFrame {
-    /// General registers
-    pub general: GeneralRegs,
+    /// General-purpose registers
+    pub general_regs: GeneralRegs,
     /// Supervisor Status
     pub sstatus: usize,
     /// Supervisor Exception Program Counter
     pub sepc: usize,
 }
 
-/// Saved registers on a trap.
+/// Userspace context.
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
 pub(in crate::arch) struct RawUserContext {
-    /// General registers
-    pub(in crate::arch) general: GeneralRegs,
+    /// General-purpose registers
+    pub(in crate::arch) general_regs: GeneralRegs,
     /// Supervisor Status
     pub(in crate::arch) sstatus: usize,
     /// Supervisor Exception Program Counter
     pub(in crate::arch) sepc: usize,
+    /// Kernel stack pointer
+    kernel_sp: usize,
 }
 
 impl RawUserContext {
@@ -114,7 +93,6 @@ impl RawUserContext {
     }
 }
 
-#[expect(improper_ctypes)]
 extern "C" {
     fn trap_entry();
     fn run_user(regs: &mut RawUserContext);
