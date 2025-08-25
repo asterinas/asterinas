@@ -6,6 +6,7 @@
 //! Reference: <https://man7.org/linux/man-pages/man5/proc_stat.5.html>
 
 use alloc::format;
+use core::sync::atomic::Ordering;
 
 use ostd::cpu::num_cpus;
 
@@ -15,7 +16,7 @@ use crate::{
         utils::Inode,
     },
     prelude::*,
-    process::process_table,
+    process::process_table::TOTAL_FORKS,
     sched::nr_queued_and_running,
     time::{cputime::cpu_stat_manager, SystemTime, START_TIME},
 };
@@ -87,16 +88,10 @@ impl StatFileOps {
             output.push_str("btime 0\n");
         }
 
-        // Process statistics
-        let process_table = process_table::process_table_mut();
-        let process_count = process_table
-            .iter()
-            .last()
-            .map(|entry| entry.pid())
-            .unwrap_or(0);
-        drop(process_table);
-
-        output.push_str(&format!("processes {}\n", process_count));
+        output.push_str(&format!(
+            "processes {}\n",
+            TOTAL_FORKS.load(Ordering::Relaxed)
+        ));
 
         // Running and blocked processes
         let (_, running_count) = nr_queued_and_running();

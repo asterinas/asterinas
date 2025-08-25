@@ -7,6 +7,7 @@
 //! TODO: progress group, thread all need similar mapping
 
 use alloc::collections::btree_map::Values;
+use core::sync::atomic::AtomicUsize;
 
 use super::{Pgid, Pid, Process, ProcessGroup, Session, Sid};
 use crate::{
@@ -18,6 +19,8 @@ static PROCESS_TABLE: Mutex<ProcessTable> = Mutex::new(ProcessTable::new());
 static PROCESS_GROUP_TABLE: Mutex<BTreeMap<Pgid, Arc<ProcessGroup>>> = Mutex::new(BTreeMap::new());
 static SESSION_TABLE: Mutex<BTreeMap<Sid, Arc<Session>>> = Mutex::new(BTreeMap::new());
 
+// total nums of fork, vfork and clone.
+pub static TOTAL_FORKS: AtomicUsize = AtomicUsize::new(0);
 // ************ Process *************
 /// Gets a process with pid
 pub fn get_process(pid: Pid) -> Option<Arc<Process>> {
