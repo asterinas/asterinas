@@ -2,8 +2,6 @@
 
 //! Handles trap across kernel and user space.
 
-#![cfg_attr(target_arch = "riscv64", expect(unused_imports))]
-
 mod handler;
 pub mod irq;
 

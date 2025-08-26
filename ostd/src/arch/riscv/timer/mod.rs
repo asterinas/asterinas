@@ -4,14 +4,16 @@
 
 use core::{
     arch::asm,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicU64, AtomicU8, Ordering},
 };
 
+use spin::Once;
+
 use crate::{
-    arch::{self, boot::DEVICE_TREE},
+    arch::{self, boot::DEVICE_TREE, trap::TrapFrame},
     cpu::{extension::IsaExtensions, CpuId, PinCurrentCpu},
     timer::INTERRUPT_CALLBACKS,
-    trap,
+    trap::{self, irq::IrqLine},
 };
 
 /// The timer frequency (Hz). Here we choose 1000Hz since 1000Hz is easier for
@@ -21,6 +23,9 @@ use crate::{
 /// For system performance reasons, this rate cannot be set too high, otherwise
 /// most of the time is spent executing timer code.
 pub const TIMER_FREQ: u64 = 1000;
+
+static TIMER_IRQ: Once<IrqLine> = Once::new();
+pub(super) static TIMER_IRQ_NUM: AtomicU8 = AtomicU8::new(0);
 
 static TIMEBASE_FREQ: AtomicU64 = AtomicU64::new(0);
 static TIMER_INTERVAL: AtomicU64 = AtomicU64::new(0);
@@ -47,7 +52,6 @@ pub(super) unsafe fn init() {
         TIMEBASE_FREQ.load(Ordering::Relaxed) / TIMER_FREQ,
         Ordering::Relaxed,
     );
-
     if is_sstc_enabled() {
         // SAFETY: Mutating the static variable `SET_NEXT_TIMER_FN` is safe here
         // because we ensure that it is only modified during the initialization
@@ -56,6 +60,15 @@ pub(super) unsafe fn init() {
             SET_NEXT_TIMER_FN = set_next_timer_sstc;
         }
     }
+
+    TIMER_IRQ.call_once(|| {
+        let mut timer_irq = IrqLine::alloc().unwrap();
+        TIMER_IRQ_NUM.store(timer_irq.num(), Ordering::Relaxed);
+        timer_irq.on_active(timer_callback);
+
+        timer_irq
+    });
+
     set_next_timer();
     // SAFETY: Accessing the `sie` CSR to enable the timer interrupt is safe
     // here because this function is only called during timer initialization,
@@ -66,7 +79,7 @@ pub(super) unsafe fn init() {
     }
 }
 
-pub(super) fn handle_timer_interrupt() {
+fn timer_callback(_: &TrapFrame) {
     let irq_guard = trap::irq::disable_local();
     if irq_guard.current_cpu() == CpuId::bsp() {
         crate::timer::jiffies::ELAPSED.fetch_add(1, Ordering::Relaxed);
