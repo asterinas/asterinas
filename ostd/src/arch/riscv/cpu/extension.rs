@@ -8,7 +8,7 @@ use spin::Once;
 use crate::arch::boot::DEVICE_TREE;
 
 /// Detects available RISC-V ISA extensions.
-pub fn init() {
+pub(in crate::arch) fn init() {
     let mut global_isa_extensions = IsaExtensions::all();
 
     let device_tree = DEVICE_TREE.get().expect("Device tree not initialized");
@@ -32,6 +32,8 @@ pub fn init() {
 
         global_isa_extensions &= cpu_isa_extensions;
     }
+
+    log::info!("Detected ISA extensions: {:?}", global_isa_extensions);
 
     GLOBAL_ISA_EXTENSIONS.call_once(|| global_isa_extensions);
 }
@@ -107,7 +109,7 @@ macro_rules! define_isa_extensions {
         )*
     ) => {
         bitflags! {
-            /// RISC-V ISA extensions
+            /// RISC-V ISA extensions.
             pub struct IsaExtensions: u128 {
                 $(
                     #[doc = $doc]

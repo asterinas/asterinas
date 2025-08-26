@@ -18,16 +18,8 @@ pub(crate) mod task;
 pub mod timer;
 pub mod trap;
 
-use io::construct_io_mem_allocator_builder;
-use spin::Once;
-use x86::cpuid::{CpuId, FeatureInfo};
-
 #[cfg(feature = "cvm_guest")]
 pub(crate) mod tdx_guest;
-
-use core::sync::atomic::Ordering;
-
-use log::warn;
 
 #[cfg(feature = "cvm_guest")]
 pub(crate) fn init_cvm_guest() {
@@ -50,8 +42,6 @@ pub(crate) fn init_cvm_guest() {
     }
 }
 
-static CPU_FEATURES: Once<FeatureInfo> = Once::new();
-
 /// Architecture-specific initialization on the bootstrapping processor.
 ///
 /// It should be called when the heap and frame allocators are available.
@@ -64,7 +54,7 @@ pub(crate) unsafe fn late_init_on_bsp() {
     // SAFETY: This function is only called once on BSP.
     unsafe { trap::init() };
 
-    let io_mem_builder = construct_io_mem_allocator_builder();
+    let io_mem_builder = io::construct_io_mem_allocator_builder();
 
     kernel::apic::init(&io_mem_builder).expect("APIC doesn't exist");
     kernel::irq::init(&io_mem_builder);
@@ -79,7 +69,7 @@ pub(crate) unsafe fn late_init_on_bsp() {
     } else {
         match iommu::init(&io_mem_builder) {
             Ok(_) => {}
-            Err(err) => warn!("IOMMU initialization error:{:?}", err),
+            Err(err) => log::warn!("IOMMU initialization error:{:?}", err),
         }
     });
 
@@ -112,6 +102,8 @@ pub(crate) fn interrupts_ack(irq_number: usize) {
 
 /// Returns the frequency of TSC. The unit is Hz.
 pub fn tsc_freq() -> u64 {
+    use core::sync::atomic::Ordering;
+
     kernel::tsc::TSC_FREQ.load(Ordering::Acquire)
 }
 
@@ -125,9 +117,15 @@ pub fn read_tsc() -> u64 {
 
 /// Reads a hardware generated 64-bit random value.
 ///
-/// Returns None if no random value was generated.
+/// Returns `None` if no random value was generated.
 pub fn read_random() -> Option<u64> {
     use core::arch::x86_64::_rdrand64_step;
+
+    use cpu::extension::{has_extensions, IsaExtensions};
+
+    if !has_extensions(IsaExtensions::RDRAND) {
+        return None;
+    }
 
     // Recommendation from "Intel® Digital Random Number Generator (DRNG) Software
     // Implementation Guide" - Section 5.2.1 and "Intel® 64 and IA-32 Architectures
@@ -144,72 +142,46 @@ pub fn read_random() -> Option<u64> {
     None
 }
 
-fn has_avx() -> bool {
-    use core::arch::x86_64::{__cpuid, __cpuid_count};
-
-    let cpuid_result = unsafe { __cpuid(0) };
-    if cpuid_result.eax < 1 {
-        // CPUID function 1 is not supported
-        return false;
-    }
-
-    let cpuid_result = unsafe { __cpuid_count(1, 0) };
-    // Check for AVX (bit 28 of ecx)
-    cpuid_result.ecx & (1 << 28) != 0
-}
-
-fn has_avx512() -> bool {
-    use core::arch::x86_64::{__cpuid, __cpuid_count};
-
-    let cpuid_result = unsafe { __cpuid(0) };
-    if cpuid_result.eax < 7 {
-        // CPUID function 7 is not supported
-        return false;
-    }
-
-    let cpuid_result = unsafe { __cpuid_count(7, 0) };
-    // Check for AVX-512 Foundation (bit 16 of ebx)
-    cpuid_result.ebx & (1 << 16) != 0
-}
-
 pub(crate) fn enable_cpu_features() {
+    use cpu::extension::{has_extensions, IsaExtensions};
     use x86_64::registers::{control::Cr4Flags, model_specific::EferFlags, xcontrol::XCr0Flags};
 
-    CPU_FEATURES.call_once(|| {
-        let cpuid = CpuId::new();
-        cpuid.get_feature_info().unwrap()
-    });
+    cpu::extension::init();
 
     let mut cr4 = x86_64::registers::control::Cr4::read();
-    cr4 |= Cr4Flags::FSGSBASE
-        | Cr4Flags::OSXSAVE
-        | Cr4Flags::OSFXSR
-        | Cr4Flags::OSXMMEXCPT_ENABLE
-        | Cr4Flags::PAGE_GLOBAL;
-    unsafe {
-        x86_64::registers::control::Cr4::write(cr4);
+    cr4 |= Cr4Flags::OSFXSR | Cr4Flags::OSXMMEXCPT_ENABLE | Cr4Flags::PAGE_GLOBAL;
+    if has_extensions(IsaExtensions::XSAVE) {
+        cr4 |= Cr4Flags::OSXSAVE;
     }
-
-    let mut xcr0 = x86_64::registers::xcontrol::XCr0::read();
-
-    xcr0 |= XCr0Flags::SSE;
-
-    if has_avx() {
-        xcr0 |= XCr0Flags::AVX;
+    // For now, we unconditionally require the `rdfsbase`, `wrfsbase`, `rdgsbase`, and `wrgsbase`
+    // instructions because they are used when switching contexts, getting the address of a
+    // CPU-local variable, e.t.c. Meanwhile, this is at a very early stage of the boot process, so
+    // we want to avoid failing immediately even if we cannot enable these instructions (though the
+    // kernel will certainly fail later when they are absent).
+    //
+    // Note that this also enables the userspace to control their own FS/GS bases, which requires
+    // the kernel to properly deal with the arbitrary base values set by the userspace program.
+    if has_extensions(IsaExtensions::FSGSBASE) {
+        cr4 |= Cr4Flags::FSGSBASE;
     }
+    unsafe { x86_64::registers::control::Cr4::write(cr4) };
 
-    if has_avx512() {
-        xcr0 |= XCr0Flags::OPMASK | XCr0Flags::ZMM_HI256 | XCr0Flags::HI16_ZMM;
-    }
-
-    unsafe {
-        x86_64::registers::xcontrol::XCr0::write(xcr0);
+    if has_extensions(IsaExtensions::XSAVE) {
+        let mut xcr0 = x86_64::registers::xcontrol::XCr0::read();
+        xcr0 |= XCr0Flags::SSE;
+        if has_extensions(IsaExtensions::AVX) {
+            xcr0 |= XCr0Flags::AVX;
+        }
+        if has_extensions(IsaExtensions::AVX512F) {
+            xcr0 |= XCr0Flags::OPMASK | XCr0Flags::ZMM_HI256 | XCr0Flags::HI16_ZMM;
+        }
+        unsafe { x86_64::registers::xcontrol::XCr0::write(xcr0) };
     }
 
     cpu::context::enable_essential_features();
 
     unsafe {
-        // enable non-executable page protection
+        // Enable non-executable page protection.
         x86_64::registers::model_specific::Efer::update(|efer| {
             *efer |= EferFlags::NO_EXECUTE_ENABLE;
         });

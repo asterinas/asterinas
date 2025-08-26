@@ -54,11 +54,9 @@ pub(super) fn timer_callback() {
 
 /// Determines if the current system supports tsc_deadline mode APIC timer
 fn is_tsc_deadline_mode_supported() -> bool {
-    use x86::cpuid::cpuid;
+    use crate::arch::cpu::extension::{has_extensions, IsaExtensions};
 
-    const TSC_DEADLINE_MODE_SUPPORT: u32 = 1 << 24;
-    let cpuid = cpuid!(1);
-    (cpuid.ecx & TSC_DEADLINE_MODE_SUPPORT) > 0
+    has_extensions(IsaExtensions::TSC_DEADLINE)
 }
 
 fn init_timer(timer_irq: &IrqLine) {
