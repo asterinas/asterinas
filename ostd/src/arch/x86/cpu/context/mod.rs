@@ -18,10 +18,7 @@ use x86_64::registers::{
 };
 
 use crate::{
-    arch::{
-        trap::{RawUserContext, TrapFrame},
-        CPU_FEATURES,
-    },
+    arch::trap::{RawUserContext, TrapFrame},
     mm::Vaddr,
     task::scheduler,
     trap::call_irq_callback_functions,
@@ -505,8 +502,8 @@ impl FpuContext {
     /// Creates a new FPU context.
     pub fn new() -> Self {
         let mut area_size = size_of::<FxSaveArea>();
-        if CPU_FEATURES.get().unwrap().has_xsave() {
-            area_size = area_size.max(*XSAVE_AREA_SIZE.get().unwrap());
+        if let Some(xsave_area_size) = XSAVE_AREA_SIZE.get() {
+            area_size = area_size.max(*xsave_area_size);
         }
 
         Self {
@@ -519,7 +516,7 @@ impl FpuContext {
     pub fn save(&mut self) {
         let mem_addr = self.as_bytes_mut().as_mut_ptr();
 
-        if CPU_FEATURES.get().unwrap().has_xsave() {
+        if XSTATE_MAX_FEATURES.is_completed() {
             unsafe { _xsave64(mem_addr, XFEATURE_MASK_USER_RESTORE) };
         } else {
             unsafe { _fxsave64(mem_addr) };
@@ -532,8 +529,8 @@ impl FpuContext {
     pub fn load(&mut self) {
         let mem_addr = self.as_bytes().as_ptr();
 
-        if CPU_FEATURES.get().unwrap().has_xsave() {
-            let rs_mask = XFEATURE_MASK_USER_RESTORE & XSTATE_MAX_FEATURES.get().unwrap();
+        if let Some(xstate_max_features) = XSTATE_MAX_FEATURES.get() {
+            let rs_mask = XFEATURE_MASK_USER_RESTORE & *xstate_max_features;
 
             unsafe { _xrstor64(mem_addr, rs_mask) };
         } else {
@@ -593,8 +590,8 @@ struct XSaveArea {
 
 impl XSaveArea {
     fn new() -> Self {
-        let features = if CPU_FEATURES.get().unwrap().has_xsave() {
-            XCr0::read().bits() & XSTATE_MAX_FEATURES.get().unwrap()
+        let features = if let Some(xstate_max_features) = XSTATE_MAX_FEATURES.get() {
+            XCr0::read().bits() & *xstate_max_features
         } else {
             0
         };
@@ -647,7 +644,9 @@ static XSAVE_AREA_SIZE: Once<usize> = Once::new();
 const MAX_XSAVE_AREA_SIZE: usize = 4096;
 
 pub(in crate::arch) fn enable_essential_features() {
-    if CPU_FEATURES.get().unwrap().has_xsave() {
+    use super::extension::{has_extensions, IsaExtensions};
+
+    if has_extensions(IsaExtensions::XSAVE) {
         XSTATE_MAX_FEATURES.call_once(|| super::cpuid::query_xstate_max_features().unwrap());
         XSAVE_AREA_SIZE.call_once(|| {
             let xsave_area_size = super::cpuid::query_xsave_area_size().unwrap() as usize;
@@ -656,7 +655,9 @@ pub(in crate::arch) fn enable_essential_features() {
         });
     }
 
-    if CPU_FEATURES.get().unwrap().has_fpu() {
+    // We now assume that all x86-64 CPUs should have the FPU. Otherwise, we should check
+    // `has_extensions(IsaExtensions::FPU)` here.
+    {
         let mut cr0 = Cr0::read();
         cr0.remove(Cr0Flags::TASK_SWITCHED | Cr0Flags::EMULATE_COPROCESSOR);
 
