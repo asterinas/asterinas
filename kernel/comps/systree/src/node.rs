@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{
-    borrow::ToOwned,
+    borrow::{Cow, ToOwned},
     string::String,
     sync::{Arc, Weak},
-    vec,
     vec::Vec,
 };
 use core::{
@@ -17,6 +16,7 @@ use bitflags::bitflags;
 use ostd::mm::{VmReader, VmWriter};
 
 use super::{Error, Result, SysAttrSet, SysStr};
+use crate::SysAttr;
 
 pub const MAX_ATTR_SIZE: usize = 4096;
 
@@ -129,8 +129,13 @@ pub trait SysBranchNode: SysNode {
 /// This trait abstracts the common interface of "normal" nodes.
 /// In particular, every "normal" node may have associated attributes.
 pub trait SysNode: SysObj {
+    /// Returns the attribute with the given name.
+    ///
+    /// If the attribute does not exist, returns `None`.
+    fn attr(&self, name: &str) -> Option<SysAttr>;
+
     /// Returns the attribute set of a `SysNode`.
-    fn node_attrs(&self) -> &SysAttrSet;
+    fn node_attrs(&self) -> Cow<SysAttrSet>;
 
     /// Reads the value of an attribute.
     fn read_attr(&self, name: &str, writer: &mut VmWriter) -> Result<usize>;
@@ -150,7 +155,7 @@ pub trait SysNode: SysObj {
     /// So using this `show_attr` method is more convenient than
     /// the `read_attr` method.
     fn show_attr(&self, name: &str) -> Result<String> {
-        let mut buf: Vec<u8> = vec![0; MAX_ATTR_SIZE];
+        let mut buf: Vec<u8> = alloc::vec![0; MAX_ATTR_SIZE];
         let mut writer = VmWriter::from(buf.as_mut_slice()).to_fallible();
         let read_len = self.read_attr(name, &mut writer)?;
         // Use from_utf8_lossy or handle error properly if strict UTF-8 is needed

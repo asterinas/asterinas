@@ -71,8 +71,10 @@ pub type Result<T> = core::result::Result<T, Error>;
 pub enum Error {
     /// Attempted to access a non-existent systree item
     NotFound,
-    /// Invalid operation for node type
-    InvalidNodeOperation(SysNodeType),
+    /// Invalid operation
+    InvalidOperation,
+    /// Resource is unavailable
+    ResourceUnavailable,
     /// Attribute operation failed
     AttributeError,
     /// Permission denied for operation
@@ -89,9 +91,8 @@ impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         match self {
             Error::NotFound => write!(f, "Attempted to access a non-existent systree item"),
-            Error::InvalidNodeOperation(ty) => {
-                write!(f, "Invalid operation for node type: {:?}", ty)
-            }
+            Error::InvalidOperation => write!(f, "Invalid operation"),
+            Error::ResourceUnavailable => write!(f, "Resource is unavailable"),
             Error::AttributeError => write!(f, "Attribute error"),
             Error::PermissionDenied => write!(f, "Permission denied for operation"),
             Error::InternalError(msg) => write!(f, "Internal error: {}", msg),

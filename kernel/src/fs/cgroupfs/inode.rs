@@ -5,10 +5,15 @@ use alloc::sync::{Arc, Weak};
 use ostd::sync::RwLock;
 
 use crate::{
-    fs::utils::{
-        systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
-        FileSystem, Inode, InodeMode, Metadata,
+    fs::{
+        cgroupfs::CgroupNode,
+        path::{is_dot, is_dotdot},
+        utils::{
+            systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
+            FileSystem, Inode, InodeMode, Metadata,
+        },
     },
+    prelude::*,
     Result,
 };
 
@@ -74,5 +79,43 @@ impl SysTreeInodeTy for CgroupInode {
 impl Inode for CgroupInode {
     fn fs(&self) -> Arc<dyn FileSystem> {
         super::singleton().clone()
+    }
+
+    fn rmdir(&self, name: &str) -> Result<()> {
+        if is_dot(name) {
+            return_errno_with_message!(Errno::EINVAL, "rmdir on .");
+        }
+        if is_dotdot(name) {
+            return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..");
+        }
+
+        let SysTreeNodeKind::Branch(branch_node) = self.node_kind() else {
+            return_errno_with_message!(Errno::ENOTDIR, "current node is not a branch node");
+        };
+
+        let target_node = branch_node
+            .child(name)
+            .ok_or(crate::Error::new(Errno::ENOENT))?;
+
+        let target_node = target_node.cast_to_branch().unwrap();
+        if target_node.count_children() != 0 {
+            return_errno_with_message!(
+                Errno::ENOTEMPTY,
+                "only an empty cgroup hierarchy can be removed"
+            );
+        }
+
+        let target_cgroup_node = Arc::downcast::<CgroupNode>(target_node).unwrap();
+        if target_cgroup_node.have_processes() {
+            return_errno_with_message!(Errno::EBUSY, "the cgroup hierarchy still has processes");
+        }
+
+        branch_node.remove_child(name)?;
+
+        Ok(())
+    }
+
+    fn is_dentry_cacheable(&self) -> bool {
+        !matches!(self.node_kind, SysTreeNodeKind::Attr(..))
     }
 }

@@ -333,7 +333,8 @@ impl From<aster_systree::Error> for Error {
         use aster_systree::Error::*;
         match err {
             NotFound => Error::new(Errno::ENOENT),
-            InvalidNodeOperation(_) => Error::new(Errno::EINVAL),
+            InvalidOperation => Error::new(Errno::EINVAL),
+            ResourceUnavailable => Error::new(Errno::EBUSY),
             AttributeError => Error::new(Errno::EIO),
             PermissionDenied => Error::new(Errno::EACCES),
             InternalError(msg) => Error::with_message(Errno::EIO, msg),
