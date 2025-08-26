@@ -38,7 +38,7 @@ use ostd::{
 use process::{spawn_init_process, Process};
 use sched::SchedPolicy;
 
-use crate::{prelude::*, thread::kernel_thread::ThreadOptions};
+use crate::{fs::fs_resolver::FsResolver, prelude::*, thread::kernel_thread::ThreadOptions};
 
 extern crate alloc;
 extern crate lru;
@@ -91,7 +91,7 @@ pub fn main() {
     // Spawn the first kernel thread on BSP.
     let mut affinity = CpuSet::new_empty();
     affinity.add(CpuId::bsp());
-    ThreadOptions::new(init_thread)
+    ThreadOptions::new(first_kthread)
         .cpu_affinity(affinity)
         .sched_policy(SchedPolicy::Idle)
         .spawn();
@@ -105,12 +105,27 @@ pub fn init() {
     #[cfg(target_arch = "x86_64")]
     net::init();
     sched::init();
-    fs::rootfs::init(boot_info().initramfs.expect("No initramfs found!")).unwrap();
-    device::init().unwrap();
     syscall::init();
-    #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
-    vdso::init();
     process::init();
+    fs::init();
+}
+
+fn init_in_first_kthread(fs_resolver: &FsResolver) {
+    // Work queue should be initialized before interrupt is enabled,
+    // in case any irq handler uses work queue as bottom half
+    thread::work_queue::init_in_first_kthread();
+    #[cfg(target_arch = "x86_64")]
+    net::init_in_first_kthread();
+    fs::init_in_first_kthread(fs_resolver);
+    ipc::init_in_first_kthread();
+}
+
+fn init_in_first_process(ctx: &Context) {
+    device::init_in_first_process(ctx).unwrap();
+    fs::init_in_first_process(ctx);
+    process::init_in_first_process(ctx);
+    #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
+    vdso::init_in_first_process();
 }
 
 fn ap_init() {
@@ -133,21 +148,14 @@ fn ap_init() {
         .spawn();
 }
 
-fn init_thread() {
+fn first_kthread() {
     println!("[kernel] Spawn init thread");
-    // Work queue should be initialized before interrupt is enabled,
-    // in case any irq handler uses work queue as bottom half
-    thread::work_queue::init();
-    #[cfg(target_arch = "x86_64")]
-    net::lazy_init();
-    fs::lazy_init();
-    ipc::init();
-    // driver::pci::virtio::block::block_device_test();
-    let thread = ThreadOptions::new(|| {
-        println!("[kernel] Hello world from kernel!");
-    })
-    .spawn();
-    thread.join();
+
+    // TODO: After introducing the mount namespace, use an initial mount namespace to create
+    // the `FsResolver`, and the initial mount namespace should be passed to the first process.
+    let fs_resolver = FsResolver::new();
+
+    init_in_first_kthread(&fs_resolver);
 
     print_banner();
 

@@ -97,6 +97,6 @@ impl IpcPermission {
     }
 }
 
-pub(super) fn init() {
-    semaphore::init();
+pub(super) fn init_in_first_kthread() {
+    semaphore::init_in_first_kthread();
 }

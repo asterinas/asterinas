@@ -354,7 +354,7 @@ static ID_ALLOCATOR: Once<SpinLock<IdAlloc>> = Once::new();
 /// Semaphore sets in system
 static SEMAPHORE_SETS: RwLock<BTreeMap<key_t, SemaphoreSet>> = RwLock::new(BTreeMap::new());
 
-pub(super) fn init() {
+pub(super) fn init_in_first_kthread() {
     ID_ALLOCATOR.call_once(|| {
         let mut id_alloc = IdAlloc::with_capacity(SEMMNI + 1);
         // Remove the first index 0

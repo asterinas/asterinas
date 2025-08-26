@@ -6,6 +6,6 @@
 pub mod posix;
 pub mod system_v;
 
-pub(super) fn init() {
-    system_v::init();
+pub(super) fn init_in_first_kthread() {
+    system_v::init_in_first_kthread();
 }

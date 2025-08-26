@@ -23,39 +23,42 @@ use crate::{
 };
 
 /// Init the device node in fs, must be called after mounting rootfs.
-pub fn init() -> Result<()> {
+pub fn init_in_first_process(ctx: &Context) -> Result<()> {
+    let fs = ctx.thread_local.borrow_fs();
+    let fs_resolver = fs.resolver().read();
+
     let null = Arc::new(null::Null);
-    add_node(null, "null")?;
+    add_node(null, "null", &fs_resolver)?;
 
     let zero = Arc::new(zero::Zero);
-    add_node(zero, "zero")?;
+    add_node(zero, "zero", &fs_resolver)?;
 
     tty::init();
 
     let tty = Arc::new(tty::TtyDevice);
-    add_node(tty, "tty")?;
+    add_node(tty, "tty", &fs_resolver)?;
 
     let console = tty::system_console().clone();
-    add_node(console, "console")?;
+    add_node(console, "console", &fs_resolver)?;
 
     for (index, tty) in tty::iter_n_tty().enumerate() {
-        add_node(tty.clone(), &format!("tty{}", index))?;
+        add_node(tty.clone(), &format!("tty{}", index), &fs_resolver)?;
     }
 
     #[cfg(target_arch = "x86_64")]
     ostd::if_tdx_enabled!({
-        add_node(Arc::new(tdxguest::TdxGuest), "tdx_guest")?;
+        add_node(Arc::new(tdxguest::TdxGuest), "tdx_guest", &fs_resolver)?;
     });
 
     let random = Arc::new(random::Random);
-    add_node(random, "random")?;
+    add_node(random, "random", &fs_resolver)?;
 
     let urandom = Arc::new(urandom::Urandom);
-    add_node(urandom, "urandom")?;
+    add_node(urandom, "urandom", &fs_resolver)?;
 
-    pty::init()?;
+    pty::init_in_first_process(&fs_resolver)?;
 
-    shm::init()?;
+    shm::init_in_first_process(&fs_resolver)?;
 
     Ok(())
 }

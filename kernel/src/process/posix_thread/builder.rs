@@ -43,6 +43,7 @@ pub struct PosixThreadBuilder {
     sig_queues: SigQueues,
     sched_policy: SchedPolicy,
     fpu_context: FpuContext,
+    is_init_process: bool,
 }
 
 impl PosixThreadBuilder {
@@ -61,6 +62,7 @@ impl PosixThreadBuilder {
             sig_queues: SigQueues::new(),
             sched_policy: SchedPolicy::Fair(Nice::default()),
             fpu_context: FpuContext::new(),
+            is_init_process: false,
         }
     }
 
@@ -104,6 +106,12 @@ impl PosixThreadBuilder {
         self
     }
 
+    #[expect(clippy::wrong_self_convention)]
+    pub(in crate::process) fn is_init_process(mut self) -> Self {
+        self.is_init_process = true;
+        self
+    }
+
     pub fn build(self) -> Arc<Task> {
         let Self {
             tid,
@@ -119,9 +127,10 @@ impl PosixThreadBuilder {
             sig_queues,
             sched_policy,
             fpu_context,
+            is_init_process,
         } = self;
 
-        let file_table = file_table.unwrap_or_else(|| RwArc::new(FileTable::new_with_stdio()));
+        let file_table = file_table.unwrap_or_else(|| RwArc::new(FileTable::new()));
 
         let fs = fs.unwrap_or_else(|| Arc::new(ThreadFsInfo::default()));
 
@@ -173,7 +182,7 @@ impl PosixThreadBuilder {
             );
 
             thread_table::add_thread(tid, thread.clone());
-            task::create_new_user_task(user_ctx, thread, thread_local)
+            task::create_new_user_task(user_ctx, thread, thread_local, is_init_process)
         })
     }
 }

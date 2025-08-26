@@ -4,6 +4,7 @@ use core2::io::{Cursor, Read};
 use cpio_decoder::{CpioDecoder, FileType};
 use lending_iterator::LendingIterator;
 use libflate::gzip::Decoder as GZipDecoder;
+use ostd::boot::boot_info;
 use spin::Once;
 
 use super::{
@@ -29,8 +30,8 @@ impl Read for BoxedReader<'_> {
 }
 
 /// Unpack and prepare the rootfs from the initramfs CPIO buffer.
-pub fn init(initramfs_buf: &[u8]) -> Result<()> {
-    init_root_mount();
+pub fn init_in_first_kthread(fs_resolver: &FsResolver) -> Result<()> {
+    let initramfs_buf = boot_info().initramfs.expect("No initramfs found!");
 
     let reader = {
         let mut initramfs_suffix = "";
@@ -53,7 +54,6 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
         reader
     };
     let mut decoder = CpioDecoder::new(reader);
-    let fs = FsResolver::new();
 
     loop {
         let Some(entry_result) = decoder.next() else {
@@ -76,9 +76,9 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
         // The mkinitramfs script uses `find` command to ensure that the entries are
         // sorted that a directory always appears before its child directories and files.
         let (parent, name) = if let Some((prefix, last)) = entry_name.rsplit_once('/') {
-            (fs.lookup(&FsPath::try_from(prefix)?)?, last)
+            (fs_resolver.lookup(&FsPath::try_from(prefix)?)?, last)
         } else {
-            (fs.root().clone(), entry_name)
+            (fs_resolver.root().clone(), entry_name)
         };
 
         let metadata = entry.metadata();
@@ -106,22 +106,26 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
         }
     }
     // Mount DevFS
-    let dev_path = fs.lookup(&FsPath::try_from("/dev")?)?;
+    let dev_path = fs_resolver.lookup(&FsPath::try_from("/dev")?)?;
     dev_path.mount(RamFS::new())?;
 
     println!("[kernel] rootfs is ready");
     Ok(())
 }
 
-pub fn mount_fs_at(fs: Arc<dyn FileSystem>, fs_path: &FsPath) -> Result<()> {
-    let target_path = FsResolver::new().lookup(fs_path)?;
+pub fn mount_fs_at(
+    fs: Arc<dyn FileSystem>,
+    fs_path: &FsPath,
+    fs_resolver: &FsResolver,
+) -> Result<()> {
+    let target_path = fs_resolver.lookup(fs_path)?;
     target_path.mount(fs)?;
     Ok(())
 }
 
 static ROOT_MOUNT: Once<Arc<Mount>> = Once::new();
 
-pub fn init_root_mount() {
+pub(super) fn init() {
     ROOT_MOUNT.call_once(|| -> Arc<Mount> {
         let rootfs = RamFS::new();
         Mount::new_root(rootfs)
