@@ -18,7 +18,7 @@ use crate::{
     },
     thread::Thread,
     util::{MultiRead, VmReaderArray},
-    vm::vmar::Vmar,
+    vm::vmar::{Vmar, ROOT_VMAR_LOWEST_ADDR},
 };
 
 /// The context that can be accessed from the current POSIX thread.
@@ -83,24 +83,42 @@ impl<'a> CurrentUserSpace<'a> {
 
     /// Creates a reader to read data from the user space of the current task.
     ///
-    /// Returns `Err` if the `vaddr` and `len` do not represent a user space memory range.
+    /// The given user-space memory range must be valid.
+    /// This means that the input arguments must satisfy the following two conditions:
+    /// - The `vaddr` is not too small: `vaddr < ROOT_VMAR_LOWEST_ADDR if len != 0`
+    /// - The `len` is not too large: `vaddr.checked_add(len).unwrap_or(usize::MAX) > MAX_USERSPACE_VADDR`.
+    ///
+    /// Note that the above rules allow creating a zero-sized reader at address 0,
+    /// which can be useful to bear a special meaning.
     pub fn reader(&self, vaddr: Vaddr, len: usize) -> Result<VmReader<'_, Fallible>> {
-        check_vaddr(vaddr)?;
+        check_vaddr_and_len(vaddr, len)?;
         Ok(self.root_vmar().vm_space().reader(vaddr, len)?)
     }
 
     /// Creates a writer to write data into the user space of the current task.
     ///
-    /// Returns `Err` if the `vaddr` and `len` do not represent a user space memory range.
+    /// The given user-space memory range must be valid.
+    /// This means that the input arguments must satisfy the following two conditions:
+    /// - The `vaddr` is not too small: `vaddr < ROOT_VMAR_LOWEST_ADDR if len != 0`
+    /// - The `len` is not too large: `vaddr.checked_add(len).unwrap_or(usize::MAX) > MAX_USERSPACE_VADDR`.
+    ///
+    /// Note that the above rules allow creating a zero-sized writer at address 0,
+    /// which can be useful to bear a special meaning.
     pub fn writer(&self, vaddr: Vaddr, len: usize) -> Result<VmWriter<'_, Fallible>> {
-        check_vaddr(vaddr)?;
+        check_vaddr_and_len(vaddr, len)?;
         Ok(self.root_vmar().vm_space().writer(vaddr, len)?)
     }
 
     /// Creates a reader/writer pair to read data from and write data into the user space
     /// of the current task.
     ///
-    /// Returns `Err` if the `vaddr` and `len` do not represent a user space memory range.
+    /// The given user-space memory range must be valid.
+    /// This means that the input arguments must satisfy the following two conditions:
+    /// - The `vaddr` is not too small: `vaddr < ROOT_VMAR_LOWEST_ADDR if len != 0`
+    /// - The `len` is not too large: `vaddr.checked_add(len).unwrap_or(usize::MAX) > MAX_USERSPACE_VADDR`.
+    ///
+    /// Note that the above rules allow creating a zero-sized reader/writer pair at address 0,
+    /// which can be useful to bear a special meaning.
     ///
     /// This method is semantically equivalent to calling [`Self::reader`] and [`Self::writer`]
     /// separately, but it avoids double checking the validity of the memory region.
@@ -109,7 +127,7 @@ impl<'a> CurrentUserSpace<'a> {
         vaddr: Vaddr,
         len: usize,
     ) -> Result<(VmReader<'_, Fallible>, VmWriter<'_, Fallible>)> {
-        check_vaddr(vaddr)?;
+        check_vaddr_and_len(vaddr, len)?;
         Ok(self.root_vmar().vm_space().reader_writer(vaddr, len)?)
     }
 
@@ -348,7 +366,8 @@ const fn has_zero(value: usize) -> bool {
     value.wrapping_sub(ONE_BITS) & !value & HIGH_BITS != 0
 }
 
-/// Checks if the user space pointer is below the lowest userspace address.
+/// Checks if the user space pointer is below the lowest userspace address when
+/// the data length is not zero.
 ///
 /// If a pointer is below the lowest userspace address, it is likely to be a
 /// NULL pointer. Reading from or writing to a NULL pointer should trigger a
@@ -358,15 +377,11 @@ const fn has_zero(value: usize) -> bool {
 /// deny the access in the page fault handler either. It may save a page fault
 /// in some occasions. More importantly, double page faults may not be handled
 /// quite well on some platforms.
-fn check_vaddr(va: Vaddr) -> Result<()> {
-    if va < crate::vm::vmar::ROOT_VMAR_LOWEST_ADDR {
-        Err(Error::with_message(
-            Errno::EFAULT,
-            "the userspace address is too small",
-        ))
-    } else {
-        Ok(())
+fn check_vaddr_and_len(va: Vaddr, len: usize) -> Result<()> {
+    if len != 0 && va < ROOT_VMAR_LOWEST_ADDR {
+        return_errno_with_message!(Errno::EFAULT, "the userspace address is too small");
     }
+    Ok(())
 }
 
 /// Checks if the given address is aligned.
