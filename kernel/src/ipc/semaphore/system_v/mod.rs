@@ -15,6 +15,6 @@ bitflags! {
     }
 }
 
-pub(super) fn init() {
-    sem_set::init();
+pub(super) fn init_in_first_kthread() {
+    sem_set::init_in_first_kthread();
 }

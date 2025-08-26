@@ -13,7 +13,7 @@ use crate::{
     WaitTimeout,
 };
 
-pub fn lazy_init() {
+pub fn init_in_first_kthread() {
     for iface in iter_all_ifaces() {
         spawn_background_poll_thread(iface.clone());
     }

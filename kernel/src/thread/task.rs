@@ -26,8 +26,9 @@ pub fn create_new_user_task(
     user_ctx: Box<UserContext>,
     thread_ref: Arc<Thread>,
     thread_local: ThreadLocal,
+    is_init_process: bool,
 ) -> Task {
-    fn user_task_entry(user_ctx: UserContext) {
+    let user_task_entry = move |user_ctx: UserContext| {
         let current_task = Task::current().unwrap();
         let current_thread = current_task.as_thread().unwrap();
         let current_posix_thread = current_thread.as_posix_thread().unwrap();
@@ -70,6 +71,10 @@ pub fn create_new_user_task(
             task: &current_task,
         };
 
+        if is_init_process {
+            crate::init_in_first_process(&ctx);
+        }
+
         while !current_thread.is_exited() {
             // Execute the user code
             ctx.thread_local.fpu().activate();
@@ -111,7 +116,7 @@ pub fn create_new_user_task(
                 handle_pending_signal(user_ctx, &ctx, None);
             }
         }
-    }
+    };
 
     let user_task_func = move || user_task_entry(*user_ctx);
 

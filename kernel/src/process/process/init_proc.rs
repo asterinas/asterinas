@@ -4,7 +4,7 @@
 
 use ostd::{cpu::context::UserContext, task::Task, user::UserContextApi};
 
-use super::{Process, Terminal};
+use super::Process;
 use crate::{
     fs::{
         fs_resolver::{FsPath, AT_FDCWD},
@@ -35,9 +35,6 @@ pub fn spawn_init_process(
     let process = create_init_process(executable_path, argv, envp)?;
 
     set_session_and_group(&process);
-
-    // FIXME: This should be done by the userspace init process.
-    (crate::device::tty::system_console().clone() as Arc<dyn Terminal>).set_control(&process)?;
 
     process.run();
 
@@ -124,6 +121,7 @@ fn create_init_task(
     let thread_builder = PosixThreadBuilder::new(tid, Box::new(user_ctx), credentials)
         .thread_name(thread_name)
         .process(process)
-        .fs(Arc::new(fs));
+        .fs(Arc::new(fs))
+        .is_init_process();
     Ok(thread_builder.build())
 }

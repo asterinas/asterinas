@@ -10,6 +10,6 @@ pub fn init() {
 }
 
 /// Lazy init should be called after spawning init thread.
-pub fn lazy_init() {
-    iface::lazy_init();
+pub fn init_in_first_kthread() {
+    iface::init_in_first_kthread();
 }

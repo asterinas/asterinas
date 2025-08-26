@@ -35,7 +35,13 @@ pub use rlimit::ResourceType;
 pub use term_status::TermStatus;
 pub use wait::{do_wait, WaitOptions, WaitStatus};
 
+use crate::context::Context;
+
 pub(super) fn init() {
     process::init();
     posix_thread::futex::init();
+}
+
+pub(super) fn init_in_first_process(ctx: &Context) {
+    process::init_in_first_process(ctx);
 }
