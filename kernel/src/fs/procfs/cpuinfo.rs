@@ -11,7 +11,7 @@ use crate::{
     arch::cpu::CpuInfo,
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::Inode,
+        utils::{Inode, InodeMode},
     },
     prelude::*,
 };
@@ -22,7 +22,11 @@ pub struct CpuInfoFileOps;
 impl CpuInfoFileOps {
     /// Create a new inode for `/proc/cpuinfo`.
     pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        ProcFileBuilder::new(Self).parent(parent).build().unwrap()
+        ProcFileBuilder::new(Self)
+            .parent(parent)
+            .mode(InodeMode::from_bits_truncate(0o444))
+            .build()
+            .unwrap()
     }
 
     /// Collect and format CPU information for all cores.

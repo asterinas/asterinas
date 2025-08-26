@@ -6,7 +6,7 @@ use super::*;
 use crate::{
     fs::{
         procfs::template::{DirOps, ProcDir, ProcDirBuilder},
-        utils::{DirEntryVecExt, Inode},
+        utils::{DirEntryVecExt, Inode, InodeMode},
     },
     process::posix_thread::AsPosixThread,
     thread::{AsThread, Thread},
@@ -20,6 +20,7 @@ impl TaskDirOps {
     pub fn new_inode(process_ref: Arc<Process>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         ProcDirBuilder::new(Self(process_ref))
             .parent(parent)
+            .mode(InodeMode::from_bits_truncate(0o555))
             .build()
             .unwrap()
     }
@@ -42,6 +43,7 @@ impl TidDirOps {
             thread_ref,
         })
         .parent(parent)
+        .mode(InodeMode::from_bits_truncate(0o555))
         .build()
         .unwrap()
     }
@@ -52,6 +54,7 @@ impl DirOps for TidDirOps {
         let inode = match name {
             "fd" => FdDirOps::new_inode(self.process_ref.clone(), this_ptr.clone()),
             "exe" => ExeSymOps::new_inode(self.process_ref.clone(), this_ptr.clone()),
+            "mem" => MemFileOps::new_inode(self.process_ref.clone(), this_ptr.clone()),
             "stat" => StatFileOps::new_inode(
                 self.process_ref.clone(),
                 self.thread_ref.clone(),
@@ -79,6 +82,9 @@ impl DirOps for TidDirOps {
         });
         cached_children.put_entry_if_not_found("exe", || {
             ExeSymOps::new_inode(self.process_ref.clone(), this_ptr.clone())
+        });
+        cached_children.put_entry_if_not_found("mem", || {
+            MemFileOps::new_inode(self.process_ref.clone(), this_ptr.clone())
         });
         cached_children.put_entry_if_not_found("stat", || {
             StatFileOps::new_inode(
