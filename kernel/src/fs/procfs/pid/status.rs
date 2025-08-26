@@ -118,7 +118,17 @@ impl FileOps for StatusFileOps {
         writeln!(status_output, "Tgid:\t{}", process.pid()).unwrap();
         writeln!(status_output, "Pid:\t{}", posix_thread.tid()).unwrap();
         writeln!(status_output, "PPid:\t{}", process.parent().pid()).unwrap();
-        writeln!(status_output, "TracerPid:\t{}", 0).unwrap();
+        writeln!(
+            status_output,
+            "TracerPid:\t{}",
+            posix_thread
+                .tracee_status()
+                .lock()
+                .as_ref()
+                .map(|status| status.tracer_tid())
+                .unwrap_or(0)
+        )
+        .unwrap();
         writeln!(
             status_output,
             "FDSize:\t{}",

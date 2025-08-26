@@ -34,6 +34,7 @@ mod posix_thread_ext;
 mod robust_list;
 mod thread_local;
 pub mod thread_table;
+mod trace;
 
 pub use builder::PosixThreadBuilder;
 pub use exit::{do_exit, do_exit_group};
@@ -41,6 +42,7 @@ pub use name::{ThreadName, MAX_THREAD_NAME_LEN};
 pub use posix_thread_ext::AsPosixThread;
 pub use robust_list::RobustListHead;
 pub use thread_local::{AsThreadLocal, FileTableRefMut, ThreadLocal};
+pub use trace::TraceeStatus;
 
 pub struct PosixThread {
     // Immutable part
@@ -77,6 +79,12 @@ pub struct PosixThread {
 
     /// I/O Scheduling priority value
     io_priority: AtomicU32,
+
+    /// Status of being traced.
+    tracee_status: Mutex<Option<TraceeStatus>>,
+
+    /// Threads being traced by this thread.
+    tracees: Mutex<BTreeMap<Tid, Arc<Thread>>>,
 }
 
 impl PosixThread {
@@ -84,8 +92,8 @@ impl PosixThread {
         self.process.upgrade().unwrap()
     }
 
-    pub fn weak_process(&self) -> Weak<Process> {
-        Weak::clone(&self.process)
+    pub fn weak_process(&self) -> &Weak<Process> {
+        &self.process
     }
 
     /// Returns the thread id
@@ -309,6 +317,14 @@ impl PosixThread {
     /// Returns the I/O priority value of the thread.
     pub fn io_priority(&self) -> &AtomicU32 {
         &self.io_priority
+    }
+
+    pub fn tracee_status(&self) -> &Mutex<Option<TraceeStatus>> {
+        &self.tracee_status
+    }
+
+    pub fn tracees(&self) -> &Mutex<BTreeMap<Tid, Arc<Thread>>> {
+        &self.tracees
     }
 }
 

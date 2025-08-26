@@ -14,6 +14,7 @@ use crate::{
         status::StopWaitStatus,
         Uid,
     },
+    thread::Thread,
     time::clocks::ProfClock,
 };
 
@@ -95,10 +96,40 @@ pub fn do_wait(
                     .collect::<Box<_>>();
 
                 if unwaited_children.is_empty() {
-                    return Some(Err(Error::with_message(
-                        Errno::ECHILD,
-                        "the process has no child to wait",
-                    )));
+                    let Some(unwaited_tracee) = (match &child_filter {
+                        ProcessFilter::WithPid(pid) => {
+                            let tasks = ctx.process.tasks().lock();
+                            tasks
+                                .as_slice()
+                                .iter()
+                                .filter_map(|task| task.as_posix_thread())
+                                .find_map(|posix_thread| {
+                                    posix_thread.tracees().lock().get(pid).cloned()
+                                })
+                        }
+                        _ => None,
+                    }) else {
+                        return Some(Err(Error::with_message(
+                            Errno::ECHILD,
+                            "the process has no child to wait",
+                        )));
+                    };
+
+                    // FIXME: Figure out Linux's behavior when a tracee exits,
+                    // and then implement the corresponding logic.
+
+                    if let Some(status) =
+                        wait_stopped_or_continued_tracee(&unwaited_tracee, wait_options)
+                    {
+                        return Some(Ok(Some(status)));
+                    }
+
+                    if wait_options.contains(WaitOptions::WNOHANG) {
+                        return Some(Ok(None));
+                    }
+
+                    // wait
+                    return None;
                 }
 
                 if let Some(status) = wait_zombie(&unwaited_children) {
@@ -194,6 +225,21 @@ fn wait_stopped_or_continued(
     }
 
     None
+}
+
+fn wait_stopped_or_continued_tracee(
+    unwaited_tracee: &Arc<Thread>,
+    wait_options: WaitOptions,
+) -> Option<WaitStatus> {
+    let process = unwaited_tracee.as_posix_thread().unwrap().process();
+    let stop_wait_status =
+        process.wait_stopped_or_continued(wait_options | WaitOptions::WSTOPPED)?;
+
+    let wait_status = match stop_wait_status {
+        StopWaitStatus::Stopped(sig_num) => WaitStatus::Stop(process.clone(), sig_num),
+        StopWaitStatus::Continue => WaitStatus::Continue(process.clone()),
+    };
+    Some(wait_status)
 }
 
 /// Free zombie child with pid, returns the exit code of child process.

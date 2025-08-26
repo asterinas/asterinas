@@ -35,6 +35,7 @@ TEST_APPS := \
 	prctl \
 	process \
 	pthread \
+	ptrace \
 	pty \
 	sched \
 	shm \
