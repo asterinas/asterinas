@@ -128,5 +128,14 @@ fn unshare_namespaces(flags: CloneFlags, ctx: &Context) -> Result<()> {
     *pthread_ns_context = Some(new_ns_context.clone());
     *thread_local_ns_context = new_ns_context;
 
+    if flags.contains(CloneFlags::CLONE_NEWNS) {
+        ctx.thread_local
+            .borrow_fs()
+            .resolver()
+            .write()
+            .switch_to_mnt_ns(thread_local_ns_context.mnt_ns())
+            .unwrap();
+    }
+
     Ok(())
 }

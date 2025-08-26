@@ -11,7 +11,7 @@
 //! 2. A `PidFile` opened by `pidfd_open` or by opening `/proc/[pid]` directory.
 
 use crate::{
-    fs::file_table::FileDesc,
+    fs::{file_table::FileDesc, path::MountNamespace},
     namespace::{
         check_unsupported_ns_flags, NsContext, NsContextCloneBuilder, UtsNamespace, CLONE_NS_FLAGS,
     },
@@ -82,8 +82,13 @@ fn build_context_from_pid_file(
     let mut clone_builder = NsContextCloneBuilder::new(current_context);
 
     if flags.contains(CloneFlags::CLONE_NEWUTS) {
-        let target_ns = target_context.uts();
+        let target_ns = target_context.uts_ns();
         set_uts_ns(&mut clone_builder, target_ns, ctx)?;
+    }
+
+    if flags.contains(CloneFlags::CLONE_NEWNS) {
+        let target_ns = target_context.mnt_ns();
+        set_mnt_ns(&mut clone_builder, target_ns, ctx)?;
     }
 
     // TODO: Support setting other namespaces from the target process.
@@ -107,7 +112,28 @@ fn set_uts_ns(
 
     // TODO: Are the checks above sufficient?
 
-    clone_builder.new_uts(target_ns.clone());
+    clone_builder.new_uts_ns(target_ns.clone());
+
+    Ok(())
+}
+
+fn set_mnt_ns(
+    clone_builder: &mut NsContextCloneBuilder,
+    target_ns: &Arc<MountNamespace>,
+    ctx: &Context,
+) -> Result<()> {
+    // Verify the thread has SYS_ADMIN capability in the target namespace's owner
+    // and the current user namespace.
+    target_ns
+        .owner()
+        .check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
+    ctx.thread_local
+        .borrow_user_ns()
+        .check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
+
+    // TODO: Are the checks above sufficient?
+
+    clone_builder.new_mnt_ns(target_ns.clone());
 
     Ok(())
 }
