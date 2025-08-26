@@ -118,7 +118,7 @@ provided by Linux on x86-64 architecture.
 | 95      | umask                  | ✅             |     |
 | 96      | gettimeofday           | ✅             |     |
 | 97      | getrlimit              | ✅             |     |
-| 98      | getrusage              | ✅             |     |
+| 98      | getrusage              | ✅             | [⚠️](limitations-on-system-calls/system-information-and-misc.md#getrusage) |
 | 99      | sysinfo                | ✅             |     |
 | 100     | times                  | ❌             |     |
 | 101     | ptrace                 | ❌             |     |
@@ -178,7 +178,7 @@ provided by Linux on x86-64 architecture.
 | 155     | pivot_root             | ❌             |     |
 | 156     | _sysctl                | ❌             |     |
 | 157     | prctl                  | ✅             |     |
-| 158     | arch_prctl             | ✅             |     |
+| 158     | arch_prctl             | ✅             | [⚠️](limitations-on-system-calls/system-information-and-misc.md#arch_prctl) |
 | 159     | adjtimex               | ❌             |     |
 | 160     | setrlimit              | ✅             |     |
 | 161     | chroot                 | ✅             |     |
@@ -248,9 +248,9 @@ provided by Linux on x86-64 architecture.
 | 225     | timer_getoverrun       | ❌             |     |
 | 226     | timer_delete           | ✅             |     |
 | 227     | clock_settime          | ❌             |     |
-| 228     | clock_gettime          | ✅             |     |
+| 228     | clock_gettime          | ✅             | [⚠️](limitations-on-system-calls/system-information-and-misc.md#clock_gettime) |
 | 229     | clock_getres           | ❌             |     |
-| 230     | clock_nanosleep        | ✅             |     |
+| 230     | clock_nanosleep        | ✅             | [⚠️](limitations-on-system-calls/system-information-and-misc.md#clock_nanosleep) |
 | 231     | exit_group             | ✅             |     |
 | 232     | epoll_wait             | ✅             |     |
 | 233     | epoll_ctl              | ✅             |     |
@@ -336,7 +336,7 @@ provided by Linux on x86-64 architecture.
 | 313     | finit_module           | ❌             |     |
 | 314     | sched_setattr          | ✅             | [⚠️](limitations-on-system-calls/process-and-thread-management.md#sched_getattr-and-sched_setattr) |
 | 315     | sched_getattr          | ✅             | [⚠️](limitations-on-system-calls/process-and-thread-management.md#sched_getattr-and-sched_setattr) |
-| 318     | getrandom              | ✅             |     |
+| 318     | getrandom              | ✅             | [⚠️](limitations-on-system-calls/system-information-and-misc.md#getrandom) |
 | 319     | memfd_create           | ✅             |     |
 | 322     | execveat               | ✅             |     |
 | 327     | preadv2                | ✅             |     |
