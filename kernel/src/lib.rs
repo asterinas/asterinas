@@ -38,7 +38,10 @@ use ostd::{
 use process::{spawn_init_process, Process};
 use sched::SchedPolicy;
 
-use crate::{fs::fs_resolver::FsResolver, prelude::*, thread::kernel_thread::ThreadOptions};
+use crate::{
+    fs::fs_resolver::FsResolver, namespace::NsContext, prelude::*,
+    thread::kernel_thread::ThreadOptions,
+};
 
 extern crate alloc;
 extern crate lru;
@@ -65,6 +68,7 @@ pub mod events;
 pub mod fs;
 pub mod ipc;
 pub mod kcmdline;
+mod namespace;
 pub mod net;
 pub mod prelude;
 mod process;
@@ -105,9 +109,9 @@ pub fn init() {
     #[cfg(target_arch = "x86_64")]
     net::init();
     sched::init();
-    syscall::init();
     process::init();
     fs::init();
+    namespace::init();
 }
 
 fn init_in_first_kthread(fs_resolver: &FsResolver) {
@@ -151,9 +155,8 @@ fn ap_init() {
 fn first_kthread() {
     println!("[kernel] Spawn init thread");
 
-    // TODO: After introducing the mount namespace, use an initial mount namespace to create
-    // the `FsResolver`, and the initial mount namespace should be passed to the first process.
-    let fs_resolver = FsResolver::new();
+    let init_ns_context = NsContext::new_init();
+    let fs_resolver = init_ns_context.mnt_ns().create_fs_resolver();
 
     init_in_first_kthread(&fs_resolver);
 
@@ -165,6 +168,7 @@ fn first_kthread() {
         karg.get_initproc_path().unwrap(),
         karg.get_initproc_argv().to_vec(),
         karg.get_initproc_envp().to_vec(),
+        init_ns_context,
     )
     .expect("Run init process failed.");
 

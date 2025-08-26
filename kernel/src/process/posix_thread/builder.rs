@@ -14,6 +14,7 @@ use ostd::{
 use super::{thread_table, PosixThread, ThreadLocal};
 use crate::{
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
+    namespace::{NsContext, UserNamespace, INIT_USER_NS},
     prelude::*,
     process::{
         posix_thread::name::ThreadName,
@@ -43,6 +44,8 @@ pub struct PosixThreadBuilder {
     sig_queues: SigQueues,
     sched_policy: SchedPolicy,
     fpu_context: FpuContext,
+    user_ns: Option<Arc<UserNamespace>>,
+    ns_context: Option<Arc<NsContext>>,
     is_init_process: bool,
 }
 
@@ -62,6 +65,8 @@ impl PosixThreadBuilder {
             sig_queues: SigQueues::new(),
             sched_policy: SchedPolicy::Fair(Nice::default()),
             fpu_context: FpuContext::new(),
+            user_ns: None,
+            ns_context: None,
             is_init_process: false,
         }
     }
@@ -106,6 +111,16 @@ impl PosixThreadBuilder {
         self
     }
 
+    pub fn user_ns(mut self, user_ns: Arc<UserNamespace>) -> Self {
+        self.user_ns = Some(user_ns);
+        self
+    }
+
+    pub fn ns_context(mut self, ns_context: Arc<NsContext>) -> Self {
+        self.ns_context = Some(ns_context);
+        self
+    }
+
     #[expect(clippy::wrong_self_convention)]
     pub(in crate::process) fn is_init_process(mut self) -> Self {
         self.is_init_process = true;
@@ -127,12 +142,23 @@ impl PosixThreadBuilder {
             sig_queues,
             sched_policy,
             fpu_context,
+            ns_context,
+            user_ns,
             is_init_process,
         } = self;
 
         let file_table = file_table.unwrap_or_else(|| RwArc::new(FileTable::new()));
 
-        let fs = fs.unwrap_or_else(|| Arc::new(ThreadFsInfo::default()));
+        let user_ns = user_ns.unwrap_or_else(|| INIT_USER_NS.get().unwrap().clone());
+
+        let ns_context = ns_context.unwrap_or_else(|| {
+            assert!(Arc::ptr_eq(&user_ns, INIT_USER_NS.get().unwrap()));
+            NsContext::new_init()
+        });
+
+        let fs = fs.unwrap_or_else(|| {
+            Arc::new(ThreadFsInfo::new(ns_context.mnt_ns().create_fs_resolver()))
+        });
 
         let root_vmar = process
             .upgrade()
@@ -161,6 +187,7 @@ impl PosixThreadBuilder {
                     virtual_timer_manager,
                     prof_timer_manager,
                     io_priority: AtomicU32::new(0),
+                    ns_context: Mutex::new(Some(ns_context.clone())),
                 }
             };
 
@@ -179,6 +206,8 @@ impl PosixThreadBuilder {
                 file_table,
                 fs,
                 fpu_context,
+                user_ns,
+                ns_context,
             );
 
             thread_table::add_thread(tid, thread.clone());

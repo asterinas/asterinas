@@ -6,6 +6,7 @@ use core::time::Duration;
 
 use inherit_methods_macro::inherit_methods;
 pub use mount::Mount;
+pub use mount_namespace::MountNamespace;
 
 use crate::{
     fs::{
@@ -21,6 +22,7 @@ use crate::{
 
 mod dentry;
 mod mount;
+mod mount_namespace;
 
 /// A `Path` is used to represent an exact location in the VFS tree.
 ///
@@ -157,18 +159,25 @@ impl Path {
     /// For example, first `mount /dev/sda1 /mnt` and then `mount /dev/sda2 /mnt`.
     /// After the second mount is completed, the content of the first mount will be overridden.
     /// We need to recursively obtain the top `Dentry`.
-    fn get_top_path(self) -> Self {
-        if !self.dentry.is_mountpoint() {
-            return self;
+    fn get_top_path(mut self) -> Self {
+        while self.dentry.is_mountpoint() {
+            if let Some(child_mount) = self.mount.get(&self.dentry) {
+                let inner = child_mount.root_dentry().clone();
+                self = Self::new(child_mount, inner);
+            } else {
+                break;
+            }
         }
 
-        match self.mount.get(&self.dentry) {
-            Some(child_mount) => {
-                let inner = child_mount.root_dentry().clone();
-                Self::new(child_mount, inner).get_top_path()
-            }
-            None => self,
-        }
+        self
+    }
+
+    /// Finds the corresponding `Path` in the given mount namespace.
+    pub(super) fn find_corresponding_mount(&self, mnt_ns: &Arc<MountNamespace>) -> Option<Self> {
+        let corresponding_mount = self.mount.find_corresponding_mount(mnt_ns)?;
+        let corresponding_path = Self::new(corresponding_mount, self.dentry.clone());
+
+        Some(corresponding_path)
     }
 
     fn this(&self) -> Self {
@@ -177,30 +186,47 @@ impl Path {
 }
 
 impl Path {
-    /// Mounts the fs on current `Dentry` as a mountpoint.
+    /// Mounts a filesystem at the current path.
     ///
-    /// If the given mountpoint has already been mounted,
-    /// its mounted child mount will be updated.
-    /// The root Dentry cannot be mounted.
+    /// This method attaches a given filesystem to the VFS tree at the location
+    /// represented by `self`. The current path becomes the mountpoint for the new
+    /// filesystem.
     ///
-    /// Returns the mounted child mount.
-    pub fn mount(&self, fs: Arc<dyn FileSystem>) -> Result<Arc<Mount>> {
+    /// Returns the newly created child mount on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ENOTDIR` if the path is not a directory.
+    /// Returns `EINVAL` if attempting to mount on root or if the path is not
+    /// in the current mount namespace.
+    pub fn mount(&self, fs: Arc<dyn FileSystem>, ctx: &Context) -> Result<Arc<Mount>> {
         if self.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
         if self.effective_parent().is_none() {
             return_errno_with_message!(Errno::EINVAL, "can not mount on root");
         }
-
+        let current_ns_context = ctx.thread_local.borrow_ns_context();
+        let current_mnt_ns = current_ns_context.unwrap().mnt_ns();
+        if !current_mnt_ns.owns(&self.mount) {
+            return_errno_with_message!(Errno::EINVAL, "path is not in current mount namespace");
+        }
         let child_mount = self.mount.do_mount(fs, &self.dentry)?;
 
         Ok(child_mount)
     }
 
-    /// Unmounts and returns the mounted child mount.
+    /// Unmounts the filesystem mounted at the current path.
     ///
-    /// Note that the root mount cannot be unmounted.
-    pub fn unmount(&self) -> Result<Arc<Mount>> {
+    /// Returns the unmounted child mount on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns `EINVAL` in the following cases:
+    /// - The current path is not a mount root.
+    /// - The mount of the current path is the root mount.
+    /// - The current path is not in the current mount namespace.
+    pub fn unmount(&self, ctx: &Context) -> Result<Arc<Mount>> {
         if !self.dentry.is_mount_root() {
             return_errno_with_message!(Errno::EINVAL, "not mounted");
         }
@@ -209,6 +235,12 @@ impl Path {
             return_errno_with_message!(Errno::EINVAL, "cannot umount root mount");
         };
 
+        let current_ns_context = ctx.thread_local.borrow_ns_context();
+        let current_mnt_ns = current_ns_context.unwrap().mnt_ns();
+        if !current_mnt_ns.owns(&self.mount) {
+            return_errno_with_message!(Errno::EINVAL, "path is not in current mount namespace");
+        }
+
         let parent_mount = self.mount.parent().unwrap().upgrade().unwrap();
 
         let child_mount = parent_mount.do_unmount(&mountpoint)?;
@@ -216,26 +248,69 @@ impl Path {
         Ok(child_mount)
     }
 
-    /// Binds mount of the current `Path` to the destination `Path`.
+    /// Creates a bind mount from the current path to the destination path.
     ///
-    /// This operation will creates a new mount node tree that mirrors either
-    /// just the root (non-recursive) or the entire mount subtree (recursive),
-    /// and grafts it to the destination `Path`.
-    pub fn bind_mount_to(&self, dst_path: &Self, recursive: bool) -> Result<()> {
-        let new_mount = self.mount.clone_mount_tree(&self.dentry, recursive);
+    /// Creates a new mount tree that mirrors either the root mount (non-recursive)
+    /// or the entire mount subtree (recursive), and attaches it to the destination path.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ENOTDIR` if the `dst_path` is not a directory.
+    /// Returns `EINVAL` if either source or destination path is not in the
+    /// current mount namespace.
+    pub fn bind_mount_to(&self, dst_path: &Self, recursive: bool, ctx: &Context) -> Result<()> {
+        let current_ns_context = ctx.thread_local.borrow_ns_context();
+        let current_mnt_ns = current_ns_context.unwrap().mnt_ns();
+        if !current_mnt_ns.owns(&self.mount) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the source path is not in this mount namespace"
+            );
+        }
+
+        if !current_mnt_ns.owns(&dst_path.mount) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the destination path is not in this mount namespace"
+            );
+        }
+
+        let new_mount = self.mount.clone_mount_tree(&self.dentry, None, recursive);
         new_mount.graft_mount_tree(dst_path)?;
         Ok(())
     }
 
-    /// Moves the mount tree rooted at the current `Path` to the destination `Path`.
+    /// Moves a mount tree from the current path to the destination path.
     ///
-    /// If the current path is not a mount root or is a root mount, returns `Err`.
-    pub fn move_mount_to(&self, dst_path: &Self) -> Result<()> {
+    /// # Errors
+    ///
+    /// Returns `ENOTDIR` if the `dst_path` is not a directory.
+    /// Returns `EINVAL` in the following cases:
+    /// - The current path is not a mount root.
+    /// - The mount of the current path is the root mount.
+    /// - Either source or destination path is not in the current mount namespace
+    pub fn move_mount_to(&self, dst_path: &Self, ctx: &Context) -> Result<()> {
         if !self.is_mount_root() {
             return_errno_with_message!(Errno::EINVAL, "The current path is not a mount root");
         };
         if self.mount_node().parent().is_none() {
             return_errno_with_message!(Errno::EINVAL, "The root mount can not be moved");
+        }
+
+        let current_ns_context = ctx.thread_local.borrow_ns_context();
+        let current_mnt_ns = current_ns_context.unwrap().mnt_ns();
+        if !current_mnt_ns.owns(&self.mount) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the source path is not in this mount namespace"
+            );
+        }
+
+        if !current_mnt_ns.owns(&dst_path.mount) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the destination path is not in this mount namespace"
+            );
         }
 
         self.mount.graft_mount_tree(dst_path)

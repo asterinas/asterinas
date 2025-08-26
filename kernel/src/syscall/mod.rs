@@ -145,6 +145,7 @@ mod setfsuid;
 mod setgid;
 mod setgroups;
 mod setitimer;
+mod setns;
 mod setpgid;
 mod setregid;
 mod setresgid;
@@ -177,6 +178,7 @@ mod umask;
 mod umount;
 mod uname;
 mod unlink;
+mod unshare;
 mod utimens;
 mod wait4;
 mod waitid;
@@ -400,8 +402,4 @@ macro_rules! log_syscall_entry {
             );
         }
     };
-}
-
-pub(super) fn init() {
-    uname::init();
 }

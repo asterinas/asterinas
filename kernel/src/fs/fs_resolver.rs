@@ -8,10 +8,9 @@ use super::{
     file_table::{get_file_fast, FileDesc},
     inode_handle::InodeHandle,
     path::Path,
-    rootfs::root_mount,
     utils::{AccessMode, CreationFlags, InodeMode, InodeType, StatusFlags, PATH_MAX, SYMLINKS_MAX},
 };
-use crate::{prelude::*, process::posix_thread::AsThreadLocal};
+use crate::{fs::path::MountNamespace, prelude::*, process::posix_thread::AsThreadLocal};
 
 /// The file descriptor of the current working directory.
 pub const AT_FDCWD: FileDesc = -100;
@@ -24,12 +23,9 @@ pub struct FsResolver {
 }
 
 impl FsResolver {
-    /// Creates a new file system resolver.
-    pub fn new() -> Self {
-        Self {
-            root: Path::new_fs_root(root_mount().clone()),
-            cwd: Path::new_fs_root(root_mount().clone()),
-        }
+    /// Creates a new `FsResolver` with the given `root` and `cwd`.
+    pub(super) fn new(root: Path, cwd: Path) -> Self {
+        Self { root, cwd }
     }
 
     /// Gets the path of the root directory.
@@ -50,6 +46,33 @@ impl FsResolver {
     /// Sets the root directory to the given `path`.
     pub fn set_root(&mut self, path: Path) {
         self.root = path;
+    }
+
+    /// Switches the `FsResolver` to use the given mount namespace.
+    ///
+    /// If the target namespace already owns both the current root and working directory's mount nodes,
+    /// the operation is a no-op and returns immediately.
+    ///
+    /// Otherwise, the method will change both the `cwd` and `root` to their corresponding `Path`s
+    /// within the new `MountNamespace`.
+    pub fn switch_to_mnt_ns(&mut self, mnt_ns: &Arc<MountNamespace>) -> Result<()> {
+        if mnt_ns.owns(self.root.mount_node()) && mnt_ns.owns(self.cwd.mount_node()) {
+            return Ok(());
+        }
+
+        let new_root = self
+            .root
+            .find_corresponding_mount(mnt_ns)
+            .ok_or(Error::new(Errno::EINVAL))?;
+        let new_cwd = self
+            .cwd
+            .find_corresponding_mount(mnt_ns)
+            .ok_or(Error::new(Errno::EINVAL))?;
+
+        self.root = new_root;
+        self.cwd = new_cwd;
+
+        Ok(())
     }
 
     /// Opens or creates a file inode handler.
@@ -352,13 +375,6 @@ impl FsResolver {
         Ok((parent_dir.clone(), tail_file_name))
     }
 }
-
-impl Default for FsResolver {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Context information describing one lookup operation.
 #[derive(Debug)]
 struct LookupCtx {

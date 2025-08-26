@@ -65,8 +65,6 @@ pub fn init() {
     ext2::init();
     exfat::init();
     overlayfs::init();
-
-    rootfs::init();
 }
 
 pub fn init_in_first_kthread(fs_resolver: &FsResolver) {
@@ -85,14 +83,14 @@ pub fn init_in_first_process(ctx: &Context) {
         let ext2_fs = Ext2::open(block_device_ext2).unwrap();
         let target_path = FsPath::try_from("/ext2").unwrap();
         println!("[kernel] Mount Ext2 fs at {:?} ", target_path);
-        self::rootfs::mount_fs_at(ext2_fs, &target_path, &fs_resolver).unwrap();
+        self::rootfs::mount_fs_at(ext2_fs, &target_path, &fs_resolver, ctx).unwrap();
     }
 
     if let Ok(block_device_exfat) = start_block_device(exfat_device_name) {
         let exfat_fs = ExfatFS::open(block_device_exfat, ExfatMountOptions::default()).unwrap();
         let target_path = FsPath::try_from("/exfat").unwrap();
         println!("[kernel] Mount ExFat fs at {:?} ", target_path);
-        self::rootfs::mount_fs_at(exfat_fs, &target_path, &fs_resolver).unwrap();
+        self::rootfs::mount_fs_at(exfat_fs, &target_path, &fs_resolver, ctx).unwrap();
     }
 
     // Initialize the file table for the first process.

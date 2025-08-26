@@ -10,6 +10,7 @@ use crate::{
         fs_resolver::{FsPath, AT_FDCWD},
         thread_info::ThreadFsInfo,
     },
+    namespace::NsContext,
     prelude::*,
     process::{
         posix_thread::{allocate_posix_tid, PosixThreadBuilder, ThreadName},
@@ -28,11 +29,12 @@ pub fn spawn_init_process(
     executable_path: &str,
     argv: Vec<CString>,
     envp: Vec<CString>,
+    ns_context: Arc<NsContext>,
 ) -> Result<Arc<Process>> {
     // Ensure the path for init process executable is absolute.
     debug_assert!(executable_path.starts_with('/'));
 
-    let process = create_init_process(executable_path, argv, envp)?;
+    let process = create_init_process(executable_path, argv, envp, ns_context)?;
 
     set_session_and_group(&process);
 
@@ -45,6 +47,7 @@ fn create_init_process(
     executable_path: &str,
     argv: Vec<CString>,
     envp: Vec<CString>,
+    ns_context: Arc<NsContext>,
 ) -> Result<Arc<Process>> {
     let pid = allocate_posix_tid();
     let parent = Weak::new();
@@ -70,6 +73,7 @@ fn create_init_process(
         Arc::downgrade(&init_proc),
         argv,
         envp,
+        ns_context,
     )?;
     init_proc.tasks().lock().insert(init_task).unwrap();
 
@@ -101,9 +105,13 @@ fn create_init_task(
     process: Weak<Process>,
     argv: Vec<CString>,
     envp: Vec<CString>,
+    ns_context: Arc<NsContext>,
 ) -> Result<Arc<Task>> {
     let credentials = Credentials::new_root();
-    let fs = ThreadFsInfo::default();
+    let fs = {
+        let fs_resolver = ns_context.mnt_ns().create_fs_resolver();
+        ThreadFsInfo::new(fs_resolver)
+    };
     let (_, elf_load_info) = {
         let fs_resolver = fs.resolver().read();
         let fs_path = FsPath::new(AT_FDCWD, executable_path)?;
@@ -121,6 +129,7 @@ fn create_init_task(
     let thread_builder = PosixThreadBuilder::new(tid, Box::new(user_ctx), credentials)
         .thread_name(thread_name)
         .process(process)
+        .ns_context(ns_context)
         .fs(Arc::new(fs))
         .is_init_process();
     Ok(thread_builder.build())

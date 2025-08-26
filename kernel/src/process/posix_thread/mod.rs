@@ -20,6 +20,7 @@ use super::{
 use crate::{
     events::Observer,
     fs::file_table::FileTable,
+    namespace::NsContext,
     prelude::*,
     process::signal::constants::SIGCONT,
     thread::{Thread, Tid},
@@ -77,6 +78,9 @@ pub struct PosixThread {
 
     /// I/O Scheduling priority value
     io_priority: AtomicU32,
+
+    /// The namespaces that the thread belongs to.
+    ns_context: Mutex<Option<Arc<NsContext>>>,
 }
 
 impl PosixThread {
@@ -309,6 +313,11 @@ impl PosixThread {
     /// Returns the I/O priority value of the thread.
     pub fn io_priority(&self) -> &AtomicU32 {
         &self.io_priority
+    }
+
+    /// Returns the namespaces which the thread belongs to.
+    pub fn ns_context(&self) -> &Mutex<Option<Arc<NsContext>>> {
+        &self.ns_context
     }
 }
 
