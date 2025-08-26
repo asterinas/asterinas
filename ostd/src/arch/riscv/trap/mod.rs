@@ -5,13 +5,15 @@
 #[expect(clippy::module_inception)]
 mod trap;
 
+use core::sync::atomic::Ordering;
+
 use riscv::register::scause::Interrupt;
 use spin::Once;
 pub(super) use trap::RawUserContext;
 pub use trap::TrapFrame;
 
-use super::cpu::context::CpuExceptionInfo;
-use crate::cpu_local_cell;
+use super::{cpu::context::CpuExceptionInfo, timer::TIMER_IRQ_NUM};
+use crate::{cpu_local_cell, trap::call_irq_callback_functions};
 
 cpu_local_cell! {
     static IS_KERNEL_INTERRUPTED: bool = false;
@@ -41,7 +43,7 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
             IS_KERNEL_INTERRUPTED.store(true);
             match interrupt {
                 Interrupt::SupervisorTimer => {
-                    crate::arch::timer::handle_timer_interrupt();
+                    call_irq_callback_functions(f, TIMER_IRQ_NUM.load(Ordering::Relaxed) as usize);
                 }
                 Interrupt::SupervisorExternal => todo!(),
                 Interrupt::SupervisorSoft => todo!(),

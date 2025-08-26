@@ -2,15 +2,16 @@
 
 //! CPU execution context control.
 
-use core::fmt::Debug;
+use core::{fmt::Debug, sync::atomic::Ordering};
 
 use riscv::register::scause::{Exception, Interrupt, Trap};
 
 use crate::{
     arch::{
-        timer::handle_timer_interrupt,
         trap::{RawUserContext, TrapFrame},
+        TIMER_IRQ_NUM,
     },
+    trap::call_irq_callback_functions,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
 
@@ -145,7 +146,10 @@ impl UserContextApiInternal for UserContext {
             self.user_context.run();
             match riscv::register::scause::read().cause() {
                 Trap::Interrupt(Interrupt::SupervisorTimer) => {
-                    handle_timer_interrupt();
+                    call_irq_callback_functions(
+                        &self.as_trap_frame(),
+                        TIMER_IRQ_NUM.load(Ordering::Relaxed) as usize,
+                    );
                 }
                 Trap::Interrupt(_) => todo!(),
                 Trap::Exception(Exception::UserEnvCall) => {

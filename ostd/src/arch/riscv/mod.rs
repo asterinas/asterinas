@@ -18,6 +18,10 @@ pub(crate) mod task;
 pub mod timer;
 pub mod trap;
 
+use core::sync::atomic::Ordering;
+
+use crate::arch::timer::TIMER_IRQ_NUM;
+
 #[cfg(feature = "cvm_guest")]
 pub(crate) fn init_cvm_guest() {
     // Unimplemented, no-op
@@ -49,7 +53,13 @@ pub(crate) unsafe fn init_on_ap() {
     unimplemented!()
 }
 
-pub(crate) fn interrupts_ack(_irq_number: usize) {
+pub(crate) fn interrupts_ack(irq_number: usize) {
+    // TODO: We should check for software interrupts too here. Only those external
+    // interrupts would go through the IRQ chip.
+    if irq_number == TIMER_IRQ_NUM.load(Ordering::Relaxed) as usize {
+        return;
+    }
+
     unimplemented!()
 }
 
