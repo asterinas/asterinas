@@ -174,7 +174,7 @@ impl WorkQueue {
 }
 
 /// Initialize global worker pools and work queues.
-pub fn init() {
+pub fn init_in_first_kthread() {
     WORKERPOOL_NORMAL.call_once(|| {
         let cpu_set = CpuSet::new_full();
         WorkerPool::new(WorkPriority::Normal, cpu_set)

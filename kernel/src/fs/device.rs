@@ -102,11 +102,8 @@ impl DeviceId {
 ///
 /// If the parent path is not existing, `mkdir -p` the parent path.
 /// This function is used in registering device.
-pub fn add_node(device: Arc<dyn Device>, path: &str) -> Result<Path> {
-    let mut dev_path = {
-        let fs_resolver = FsResolver::new();
-        fs_resolver.lookup(&FsPath::try_from("/dev").unwrap())?
-    };
+pub fn add_node(device: Arc<dyn Device>, path: &str, fs_resolver: &FsResolver) -> Result<Path> {
+    let mut dev_path = fs_resolver.lookup(&FsPath::try_from("/dev").unwrap())?;
     let mut relative_path = {
         let relative_path = path.trim_start_matches('/');
         if relative_path.is_empty() {
@@ -157,7 +154,7 @@ pub fn add_node(device: Arc<dyn Device>, path: &str) -> Result<Path> {
 /// Delete the device node from FS for the device.
 ///
 /// This function is used in unregistering device.
-pub fn delete_node(path: &str) -> Result<()> {
+pub fn delete_node(path: &str, fs_resolver: &FsResolver) -> Result<()> {
     let abs_path = {
         let device_path = path.trim_start_matches('/');
         if device_path.is_empty() {
@@ -166,10 +163,8 @@ pub fn delete_node(path: &str) -> Result<()> {
         String::from("/dev") + "/" + device_path
     };
 
-    let (parent_path, name) = {
-        let fs_resolver = FsResolver::new();
-        fs_resolver.lookup_dir_and_base_name(&FsPath::try_from(abs_path.as_str()).unwrap())?
-    };
+    let (parent_path, name) =
+        fs_resolver.lookup_dir_and_base_name(&FsPath::try_from(abs_path.as_str()).unwrap())?;
 
     parent_path.unlink(&name)?;
     Ok(())

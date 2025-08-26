@@ -10,11 +10,8 @@ use crate::{
 };
 
 /// Initializes "/dev/shm" for POSIX shared memory usage.
-pub fn init() -> Result<()> {
-    let dev_path = {
-        let fs = FsResolver::new();
-        fs.lookup(&FsPath::try_from("/dev")?)?
-    };
+pub fn init_in_first_process(fs_resolver: &FsResolver) -> Result<()> {
+    let dev_path = fs_resolver.lookup(&FsPath::try_from("/dev")?)?;
 
     // Create the "shm" directory under "/dev" and mount a ramfs on it.
     let shm_path =

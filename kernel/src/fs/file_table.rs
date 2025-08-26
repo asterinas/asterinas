@@ -4,11 +4,7 @@ use core::sync::atomic::{AtomicU8, Ordering};
 
 use aster_util::slot_vec::SlotVec;
 
-use super::{
-    file_handle::FileLike,
-    fs_resolver::{FsPath, FsResolver, AT_FDCWD},
-    utils::{AccessMode, InodeMode},
-};
+use super::file_handle::FileLike;
 use crate::{
     events::{Events, IoEvents, Observer, Subject},
     fs::utils::StatusFlags,
@@ -31,34 +27,6 @@ impl FileTable {
     pub const fn new() -> Self {
         Self {
             table: SlotVec::new(),
-            subject: Subject::new(),
-        }
-    }
-
-    pub fn new_with_stdio() -> Self {
-        let mut table = SlotVec::new();
-        let fs_resolver = FsResolver::new();
-        let tty_path = FsPath::new(AT_FDCWD, "/dev/console").expect("cannot find tty");
-        let stdin = {
-            let flags = AccessMode::O_RDONLY as u32;
-            let mode = InodeMode::S_IRUSR;
-            fs_resolver.open(&tty_path, flags, mode.bits()).unwrap()
-        };
-        let stdout = {
-            let flags = AccessMode::O_WRONLY as u32;
-            let mode = InodeMode::S_IWUSR;
-            fs_resolver.open(&tty_path, flags, mode.bits()).unwrap()
-        };
-        let stderr = {
-            let flags = AccessMode::O_WRONLY as u32;
-            let mode = InodeMode::S_IWUSR;
-            fs_resolver.open(&tty_path, flags, mode.bits()).unwrap()
-        };
-        table.put(FileTableEntry::new(Arc::new(stdin), FdFlags::empty()));
-        table.put(FileTableEntry::new(Arc::new(stdout), FdFlags::empty()));
-        table.put(FileTableEntry::new(Arc::new(stderr), FdFlags::empty()));
-        Self {
-            table,
             subject: Subject::new(),
         }
     }
