@@ -152,6 +152,8 @@ impl PosixThreadBuilder {
                     virtual_timer_manager,
                     prof_timer_manager,
                     io_priority: AtomicU32::new(0),
+                    tracee_status: Mutex::new(None),
+                    tracees: Mutex::new(BTreeMap::new()),
                 }
             };
 

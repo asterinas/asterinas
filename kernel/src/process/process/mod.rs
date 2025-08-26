@@ -286,7 +286,7 @@ impl Process {
         self.parent.lock().process().upgrade().is_none()
     }
 
-    pub(super) fn children(&self) -> &Mutex<BTreeMap<Pid, Arc<Process>>> {
+    pub fn children(&self) -> &Mutex<BTreeMap<Pid, Arc<Process>>> {
         &self.children
     }
 
@@ -681,14 +681,14 @@ impl Process {
     // Consider extending the method signature to support `ptrace` if necessary.
     pub fn stop(&self, sig_num: SigNum) {
         if self.status.stop_status().stop(sig_num) {
-            self.wake_up_parent();
+            self.wake_up_parent_and_tracer();
         }
     }
 
     /// Resumes the stopped process.
     pub fn resume(&self) {
         if self.status.stop_status().resume() {
-            self.wake_up_parent();
+            self.wake_up_parent_and_tracer();
 
             // Note that the resume function is called by the thread which deals with SIGCONT,
             // since SIGCONT is handled by any thread in this process, we need to wake
@@ -710,10 +710,26 @@ impl Process {
         self.status.stop_status().wait(options)
     }
 
-    fn wake_up_parent(&self) {
+    fn wake_up_parent_and_tracer(&self) {
         let parent_guard = self.parent.lock();
         let parent = parent_guard.process().upgrade().unwrap();
         parent.children_wait_queue.wake_all();
+
+        for task in self.tasks.lock().as_slice() {
+            let Some(posix_thread) = task.as_posix_thread() else {
+                return;
+            };
+
+            let tracee_status = posix_thread.tracee_status().lock();
+
+            if let Some(tracer) = tracee_status
+                .as_ref()
+                .and_then(|status| status.tracer().upgrade())
+            {
+                let tracer = tracer.as_posix_thread().unwrap();
+                tracer.process().children_wait_queue.wake_all();
+            }
+        }
     }
 
     // ******************* Subreaper ********************
