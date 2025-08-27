@@ -161,6 +161,58 @@ poll(fds = [ <pollfd> ], nfds, timeout);
 
 Notice how SCML denotes an array with the `[ <struct_rule> ]` syntax.
 
+### Special Built-in Matching Rules
+
+Bitflags-based matching rules described above are expressive enough to
+capture most patterns of interesting system call arguments.
+But some system call arguments cannot be characterized with bitflags.
+To address such cases, SCML introduces two special built-in matching rules:
+`<PATH>` and `<INTEGER>`
+
+#### The file path matching rule
+
+The `<PATH>` matching rule is used to
+denote a system call argument of a C-string file path.
+For example, the matching rules for the `open` system call
+can be enhanced with `<PATH>` as follows:
+
+```c
+access_mode = O_RDONLY | O_WRONLY | O_RDWR;
+
+open(path = <PATH>, flags = <access_mode> | O_CLOEXEC);
+open(path = <PATH>, flags = O_CREAT | <access_mode> | O_CLOEXEC, mode);
+open(path = <PATH>, flags = O_PATH | O_CLOEXEC);
+```
+
+File paths provide a new dimension to determine whether a system call is supported or not.
+Linux has multiple pseudo file systems such as
+DevTmpFS, ProcFS, SysFS, CgroupFS, and ConfigFS,
+mounted at well-known locations.
+A Linux-compatible OS such as Asterinas may only support a sub-tree of an pseudo FS.
+Knowing which system call arguments refer to file paths,
+a tool may be built to automatically issue warnings
+when unsupported file paths are accessed by system calls.
+
+#### The integer matching rule
+
+The `<INTEGER>` matching rule can match any integer system call argument
+such as `1234`, `-100`, `0xdeadbeef`, and `0o666`.
+It can be used as a fallback rule
+when a system call takes an argument of either bitflags or integer.
+
+```c
+timer_create(
+    clockid =
+        // Static clock IDs represented as bitflags
+        CLOCK_PROCESS_CPUTIME_ID | CLOCK_THREAD_CPUTIME_ID | CLOCK_REALTIME | CLOCK_MONOTONIC | CLOCK_BOOTTIME |
+        // Dynamic clock IDs (per-process or per-thread clock IDs)
+        // represented as an integer value.
+        <INTEGER>,
+    sevp,
+    timerid
+);
+```
+
 ### Advanced Usage
 
 Just like you can write multiple rules of the same system call,

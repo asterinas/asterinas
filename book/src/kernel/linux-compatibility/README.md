@@ -33,7 +33,7 @@ provided by Linux on x86-64 architecture.
 | 10      | mprotect               | ✅             | [⚠️](limitations-on-system-calls/memory-management.md#mprotect) |
 | 11      | munmap                 | ✅             |     |
 | 12      | brk                    | ✅             |     |
-| 13      | rt_sigaction           | ✅             |     |
+| 13      | rt_sigaction           | ✅             | [⚠️](limitations-on-system-calls/signals-and-timers.md#rt_sigaction) |
 | 14      | rt_sigprocmask         | ✅             |     |
 | 15      | rt_sigreturn           | ✅             |     |
 | 16      | ioctl                  | ✅             |     |
@@ -242,7 +242,7 @@ provided by Linux on x86-64 architecture.
 | 219     | restart_syscall        | ❌             |     |
 | 220     | semtimedop             | ✅             | [⚠️](limitations-on-system-calls/inter-process-communication.md#semop-and-semtimedop) |
 | 221     | fadvise64              | ✅             |     |
-| 222     | timer_create           | ✅             |     |
+| 222     | timer_create           | ✅             | [⚠️](limitations-on-system-calls/signals-and-timers.md#timer_create) |
 | 223     | timer_settime          | ✅             |     |
 | 224     | timer_gettime          | ✅             |     |
 | 225     | timer_getoverrun       | ❌             |     |
