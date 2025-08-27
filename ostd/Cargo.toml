@@ -65,7 +65,7 @@ unwinding = { version = "=0.2.5", default-features = false, features = ["fde-gnu
 riscv = { version = "0.11.1", features = ["s-mode"] }
 sbi-rt = "0.0.3"
 fdt = { version = "0.1.5", features = ["pretty-printing"] }
-unwinding = { version = "=0.2.5", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
+unwinding = { version = "=0.2.5", default-features = false, features = ["fde-static", "hide-trace", "panic", "personality", "unwinder"] }
 
 [target.loongarch64-unknown-none-softfloat.dependencies]
 loongArch64 = "0.2.5"

@@ -34,10 +34,6 @@ SECTIONS
         *(.rodata .rodata.*)
     }
 
-    .eh_frame_hdr           : AT(ADDR(.eh_frame_hdr) - KERNEL_VMA_OFFSET) {
-        PROVIDE(__GNU_EH_FRAME_HDR = .);
-        KEEP(*(.eh_frame_hdr .eh_frame_hdr.*))
-    }
     . = ALIGN(8);
     .eh_frame               : AT(ADDR(.eh_frame) - KERNEL_VMA_OFFSET) {
         PROVIDE(__eh_frame = .);
