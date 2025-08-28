@@ -80,3 +80,20 @@ The SCML rules are omitted for brevity.
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/openat.2.html).
+
+## `renameat2`
+
+Supported functionality in SCML:
+
+```c
+// Rename a file, moving it between directories if required.
+renameat2(olddirfd, oldpath, newdirfd, newpath, 0);
+```
+
+Unsupported flags:
+* `RENAME_EXCHANGE`
+* `RENAME_NOREPLACE`
+* `RENAME_WHITEOUT`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/rename.2.html).
