@@ -36,8 +36,6 @@ cfg_if! {
     }
 }
 
-pub use x86::cpuid;
-
 /// Userspace CPU context, including general-purpose registers and exception information.
 #[derive(Clone, Default, Debug)]
 #[repr(C)]
@@ -649,29 +647,14 @@ static XSAVE_AREA_SIZE: Once<usize> = Once::new();
 const MAX_XSAVE_AREA_SIZE: usize = 4096;
 
 pub(in crate::arch) fn enable_essential_features() {
-    XSTATE_MAX_FEATURES.call_once(|| {
-        const XSTATE_CPUID: u32 = 0x0000000d;
-
-        // Find user xstates supported by the processor.
-        let res0 = cpuid::cpuid!(XSTATE_CPUID, 0);
-        let mut features = res0.eax as u64 + ((res0.edx as u64) << 32);
-
-        // Find supervisor xstates supported by the processor.
-        let res1 = cpuid::cpuid!(XSTATE_CPUID, 1);
-        features |= res1.ecx as u64 + ((res1.edx as u64) << 32);
-
-        features
-    });
-
-    XSAVE_AREA_SIZE.call_once(|| {
-        let cpuid = cpuid::CpuId::new();
-        let size = cpuid
-            .get_extended_state_info()
-            .unwrap()
-            .xsave_area_size_enabled_features() as usize;
-        debug_assert!(size <= MAX_XSAVE_AREA_SIZE);
-        size
-    });
+    if CPU_FEATURES.get().unwrap().has_xsave() {
+        XSTATE_MAX_FEATURES.call_once(|| super::cpuid::query_xstate_max_features().unwrap());
+        XSAVE_AREA_SIZE.call_once(|| {
+            let xsave_area_size = super::cpuid::query_xsave_area_size().unwrap() as usize;
+            assert!(xsave_area_size <= MAX_XSAVE_AREA_SIZE);
+            xsave_area_size
+        });
+    }
 
     if CPU_FEATURES.get().unwrap().has_fpu() {
         let mut cr0 = Cr0::read();

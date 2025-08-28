@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(unused_variables)]
-
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use log::info;
-use x86::cpuid::cpuid;
 
 use crate::{
     arch::{
@@ -18,58 +15,21 @@ use crate::{
     trap::irq::IrqLine,
 };
 
-/// The frequency of TSC(Hz)
+/// The frequency in Hz of the Time Stamp Counter (TSC).
 pub(in crate::arch) static TSC_FREQ: AtomicU64 = AtomicU64::new(0);
 
 pub fn init_tsc_freq() {
-    let tsc_freq =
-        determine_tsc_freq_via_cpuid().map_or_else(determine_tsc_freq_via_pit, |freq| freq);
+    use crate::arch::cpu::cpuid::query_tsc_freq as determine_tsc_freq_via_cpuid;
+
+    let tsc_freq = determine_tsc_freq_via_cpuid().unwrap_or_else(determine_tsc_freq_via_pit);
     TSC_FREQ.store(tsc_freq, Ordering::Relaxed);
-    info!("TSC frequency:{:?} Hz", tsc_freq);
+    info!("TSC frequency: {:?} Hz", tsc_freq);
 }
 
-/// Determines TSC frequency via CPUID. If the CPU does not support calculating TSC frequency by
-/// CPUID, the function will return None. The unit of the return value is KHz.
+/// Determines the TSC frequency with the help of the Programmable Interval Timer (PIT).
 ///
-/// Ref: function `native_calibrate_tsc` in linux `arch/x86/kernel/tsc.c`
-///
-pub fn determine_tsc_freq_via_cpuid() -> Option<u64> {
-    // Check the max cpuid supported
-    let cpuid = cpuid!(0);
-    let max_cpuid = cpuid.eax;
-    if max_cpuid <= 0x15 {
-        return None;
-    }
-
-    // TSC frequecny = ecx * ebx / eax
-    // CPUID 0x15: Time Stamp Counter and Nominal Core Crystal Clock Information Leaf
-    let mut cpuid = cpuid!(0x15);
-    if cpuid.eax == 0 || cpuid.ebx == 0 {
-        return None;
-    }
-    let eax_denominator = cpuid.eax;
-    let ebx_numerator = cpuid.ebx;
-    let mut crystal_khz = cpuid.ecx / 1000;
-
-    // Some Intel SoCs like Skylake and Kabylake don't report the crystal
-    // clock, but we can easily calculate it to a high degree of accuracy
-    // by considering the crystal ratio and the CPU speed.
-    if crystal_khz == 0 && max_cpuid >= 0x16 {
-        cpuid = cpuid!(0x16);
-        let base_mhz = cpuid.eax;
-        crystal_khz = base_mhz * 1000 * eax_denominator / ebx_numerator;
-    }
-
-    if crystal_khz == 0 {
-        None
-    } else {
-        let crystal_hz = crystal_khz as u64 * 1000;
-        Some(crystal_hz * ebx_numerator as u64 / eax_denominator as u64)
-    }
-}
-
-/// When kernel cannot get the TSC frequency from CPUID, it can leverage
-/// the PIT to calculate this frequency.
+/// When the TSC frequency is not enumerated in the results of the CPUID instruction, it can
+/// leverage the PIT to calculate the TSC frequency.
 pub fn determine_tsc_freq_via_pit() -> u64 {
     // Allocate IRQ
     let mut irq = IrqLine::alloc().unwrap();
@@ -100,7 +60,7 @@ pub fn determine_tsc_freq_via_pit() -> u64 {
 
     return FREQUENCY.load(Ordering::Acquire);
 
-    fn pit_callback(trap_frame: &TrapFrame) {
+    fn pit_callback(_trap_frame: &TrapFrame) {
         static IN_TIME: AtomicU64 = AtomicU64::new(0);
         static TSC_FIRST_COUNT: AtomicU64 = AtomicU64::new(0);
         // Set a certain times of callbacks to calculate the frequency
