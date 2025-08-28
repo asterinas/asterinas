@@ -5,7 +5,7 @@
 #![expect(dead_code)]
 
 pub mod boot;
-pub(crate) mod cpu;
+pub mod cpu;
 pub mod device;
 mod io;
 pub(crate) mod iommu;

@@ -3,7 +3,7 @@
 //! Platform-specific code for the x86 platform.
 
 pub mod boot;
-pub(crate) mod cpu;
+pub mod cpu;
 pub mod device;
 pub(crate) mod ex_table;
 pub(crate) mod io;

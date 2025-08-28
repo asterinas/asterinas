@@ -7,8 +7,10 @@ use alloc::{
 };
 
 use ostd::{
-    arch::tsc_freq,
-    cpu::context::{cpuid, CpuException, PageFaultErrorCode, RawPageFaultInfo, UserContext},
+    arch::{
+        cpu::context::{cpuid, CpuException, PageFaultErrorCode, RawPageFaultInfo, UserContext},
+        tsc_freq,
+    },
     mm::Vaddr,
     Pod,
 };
