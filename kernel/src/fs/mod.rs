@@ -71,6 +71,10 @@ pub fn init() {
     rootfs::init();
 }
 
+pub fn init_on_each_cpu() {
+    procfs::init_on_each_cpu();
+}
+
 pub fn init_in_first_kthread(fs_resolver: &FsResolver) {
     rootfs::init_in_first_kthread(fs_resolver).unwrap();
 }

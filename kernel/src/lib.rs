@@ -33,7 +33,7 @@ use kcmdline::KCmdlineArg;
 use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
     boot::boot_info,
-    cpu::{set::CpuSet, CpuId},
+    cpu::CpuId,
 };
 use process::{spawn_init_process, Process};
 use sched::SchedPolicy;
@@ -88,12 +88,11 @@ fn main() {
 
     // Spawn all AP idle threads.
     ostd::boot::smp::register_ap_entry(ap_init);
+    init_on_each_cpu();
 
     // Spawn the first kernel thread on BSP.
-    let mut affinity = CpuSet::new_empty();
-    affinity.add(CpuId::bsp());
     ThreadOptions::new(first_kthread)
-        .cpu_affinity(affinity)
+        .cpu_affinity(CpuId::bsp().into())
         .sched_policy(SchedPolicy::Idle)
         .spawn();
 }
@@ -108,6 +107,10 @@ fn init() {
     syscall::init();
     process::init();
     fs::init();
+}
+
+fn init_on_each_cpu() {
+    fs::init_on_each_cpu();
 }
 
 fn init_in_first_kthread(fs_resolver: &FsResolver) {
@@ -128,6 +131,8 @@ fn init_in_first_process(ctx: &Context) {
 }
 
 fn ap_init() {
+    init_on_each_cpu();
+
     fn ap_idle_thread() {
         log::info!(
             "Kernel idle thread for CPU #{} started.",

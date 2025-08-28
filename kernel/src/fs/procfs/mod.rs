@@ -41,6 +41,10 @@ pub(super) fn init() {
     super::registry::register(procfs_type).unwrap();
 }
 
+pub(super) fn init_on_each_cpu() {
+    cpuinfo::init_on_each_cpu();
+}
+
 /// Magic number.
 const PROC_MAGIC: u64 = 0x9fa0;
 /// Root Inode ID.
