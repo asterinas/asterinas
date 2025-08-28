@@ -224,6 +224,13 @@ const PREBUILT_VDSO_LIB: &[u8] =
 const PREBUILT_VDSO_LIB: &[u8] =
     include_bytes!(concat!(env!("VDSO_LIBRARY_DIR"), "/vdso_riscv64.so"));
 
+/// The offset from the vDSO base to the `__vdso_rt_sigreturn` function.
+///
+/// This constant is specific to the prebuilt vDSO library and can be obtained from
+/// `readelf -s vdso_riscv64.so | grep '__vdso_rt_sigreturn'`.
+#[cfg(target_arch = "riscv64")]
+pub(crate) const __VDSO_RT_SIGRETURN_OFFSET: usize = 0x5b0;
+
 impl Vdso {
     /// Constructs a new `Vdso`, including an initialized `VdsoData` and a VMO of the vDSO.
     fn new() -> Self {

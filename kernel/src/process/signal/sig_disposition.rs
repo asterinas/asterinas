@@ -79,11 +79,15 @@ fn check_sigaction(sig_action: &SigAction) -> Result<()> {
             // On x86-64, `SA_RESTORER` is mandatory and cannot be omitted.
             // Ref: <https://elixir.bootlin.com/linux/v6.13/source/arch/x86/kernel/signal_64.c#L172>
             return_errno_with_message!(Errno::EINVAL, "x86-64 should always use SA_RESTORER");
+        } else if #[cfg(target_arch = "riscv64")] {
+            // On RISC-V, if `SA_RESTORER` is not specified, `__vdso_rt_sigreturn` will be used as a fallback.
+            Ok(())
         } else {
             // FIXME: The support for user-provided signal handlers
             // without `SA_RESTORER` is arch-dependent.
             // Other archs may need to handle scenarios where `SA_RESTORER` is omitted.
-            return_errno_with_message!(Errno::EINVAL, "TODO: properly deal with SA_RESTORER");
+            warn!("SA_RESTORER fallback mechanism not implemented for this architecture");
+            return_errno_with_message!(Errno::EINVAL, "this architecture currently requires SA_RESTORER");
         }
     }
 }

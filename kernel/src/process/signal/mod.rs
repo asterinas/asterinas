@@ -295,6 +295,9 @@ pub fn handle_user_signal(
             "After writing restorer addr: user_rsp = 0x{:x}",
             stack_pointer
         );
+    } else {
+        #[cfg(target_arch = "riscv64")]
+        user_ctx.set_ra(ctx.process.vm().vdso_base() + crate::vdso::__VDSO_RT_SIGRETURN_OFFSET);
     }
 
     // 4. Set correct register values

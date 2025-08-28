@@ -58,6 +58,8 @@ pub fn load_elf_to_vm(
             // the vDSO is mapped after the ELF file, heap, and stack.
             #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
             if let Some(vdso_text_base) = map_vdso_to_vm(process_vm) {
+                #[cfg(target_arch = "riscv64")]
+                process_vm.set_vdso_base(vdso_text_base);
                 aux_vec
                     .set(AuxKey::AT_SYSINFO_EHDR, vdso_text_base as u64)
                     .unwrap();
