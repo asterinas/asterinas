@@ -12,6 +12,9 @@
 mod heap;
 mod init_stack;
 
+#[cfg(target_arch = "riscv64")]
+use core::sync::atomic::{AtomicUsize, Ordering};
+
 use aster_rights::Full;
 pub use heap::Heap;
 use ostd::{sync::MutexGuard, task::disable_preempt};
@@ -66,6 +69,8 @@ pub struct ProcessVm {
     root_vmar: Mutex<Option<Vmar<Full>>>,
     init_stack: InitStack,
     heap: Heap,
+    #[cfg(target_arch = "riscv64")]
+    vdso_base: AtomicUsize,
 }
 
 /// A guard to the [`Vmar`] used by a process.
@@ -109,6 +114,8 @@ impl Clone for ProcessVm {
             root_vmar: Mutex::new(Some(root_vmar.unwrap().dup().unwrap())),
             init_stack: self.init_stack.clone(),
             heap: self.heap.clone(),
+            #[cfg(target_arch = "riscv64")]
+            vdso_base: AtomicUsize::new(self.vdso_base.load(Ordering::Relaxed)),
         }
     }
 }
@@ -124,6 +131,8 @@ impl ProcessVm {
             root_vmar: Mutex::new(Some(root_vmar)),
             heap,
             init_stack,
+            #[cfg(target_arch = "riscv64")]
+            vdso_base: AtomicUsize::new(0),
         }
     }
 
@@ -137,6 +146,8 @@ impl ProcessVm {
             root_vmar,
             heap: other.heap.clone(),
             init_stack: other.init_stack.clone(),
+            #[cfg(target_arch = "riscv64")]
+            vdso_base: AtomicUsize::new(other.vdso_base.load(Ordering::Relaxed)),
         })
     }
 
@@ -171,6 +182,16 @@ impl ProcessVm {
 
     pub(super) fn heap(&self) -> &Heap {
         &self.heap
+    }
+
+    #[cfg(target_arch = "riscv64")]
+    pub(super) fn vdso_base(&self) -> Vaddr {
+        self.vdso_base.load(Ordering::Relaxed)
+    }
+
+    #[cfg(target_arch = "riscv64")]
+    pub(super) fn set_vdso_base(&self, addr: Vaddr) {
+        self.vdso_base.store(addr, Ordering::Relaxed);
     }
 
     /// Clears existing mappings and then maps the heap VMO to the current VMAR.
