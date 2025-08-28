@@ -20,6 +20,7 @@ pub mod registry;
 pub mod rootfs;
 pub mod sysfs;
 pub mod thread_info;
+pub mod tmpfs;
 pub mod utils;
 
 use aster_block::BlockDevice;
@@ -60,6 +61,7 @@ pub fn init() {
     procfs::init();
     cgroupfs::init();
     ramfs::init();
+    tmpfs::init();
     devpts::init();
 
     ext2::init();
