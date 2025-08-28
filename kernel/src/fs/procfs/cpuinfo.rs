@@ -5,10 +5,16 @@
 //!
 //! Reference: <https://man7.org/linux/man-pages/man5/proc_cpuinfo.5.html>
 
-use ostd::cpu::num_cpus;
+use ostd::{
+    cpu::{all_cpus, set::CpuSet, CpuId, PinCurrentCpu},
+    cpu_local,
+    smp::inter_processor_call,
+    task::disable_preempt,
+};
+use spin::Once;
 
 use crate::{
-    arch::cpu::CpuInfo,
+    arch::cpu::CpuInformation,
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
         utils::Inode,
@@ -20,30 +26,33 @@ use crate::{
 pub struct CpuInfoFileOps;
 
 impl CpuInfoFileOps {
-    /// Create a new inode for `/proc/cpuinfo`.
+    /// Creates a new inode for `/proc/cpuinfo`.
     pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         ProcFileBuilder::new(Self).parent(parent).build().unwrap()
-    }
-
-    /// Collect and format CPU information for all cores.
-    fn collect_cpu_info() -> String {
-        let num_cpus = num_cpus() as u32;
-
-        // Iterate over each core and collect CPU information
-        (0..num_cpus)
-            .map(|core_id| {
-                let cpuinfo = CpuInfo::new(core_id);
-                cpuinfo.collect_cpu_info()
-            })
-            .collect::<Vec<String>>()
-            .join("\n\n")
     }
 }
 
 impl FileOps for CpuInfoFileOps {
-    /// Retrieve the data for `/proc/cpuinfo`.
+    /// Retrieves the data for `/proc/cpuinfo`.
     fn data(&self) -> Result<Vec<u8>> {
-        let output = Self::collect_cpu_info();
+        cpu_local! {
+            static CPU_INFORMATION: Once<CpuInformation> = Once::new();
+        }
+
+        if !CPU_INFORMATION.get_on_cpu(CpuId::bsp()).is_completed() {
+            // There can be races, but they do not matter at all.
+            inter_processor_call(&CpuSet::new_full(), || {
+                let guard = disable_preempt();
+                CPU_INFORMATION
+                    .get_on_cpu(guard.current_cpu())
+                    .call_once(|| CpuInformation::new(&guard));
+            });
+        }
+
+        let output = all_cpus()
+            .map(|cpu| CPU_INFORMATION.get_on_cpu(cpu).wait().to_string())
+            .collect::<Vec<String>>()
+            .join("\n");
         Ok(output.into_bytes())
     }
 }

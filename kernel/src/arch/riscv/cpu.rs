@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{format, string::String};
+use core::fmt;
 
 use ostd::{
     arch::cpu::context::{CpuExceptionInfo, UserContext},
+    cpu::PinCurrentCpu,
+    task::DisabledPreemptGuard,
     user::UserContextApi,
     Pod,
 };
@@ -157,21 +159,27 @@ impl TryFrom<&CpuExceptionInfo> for PageFaultInfo {
     }
 }
 
-/// CPU Information structure.
+/// CPU information to be shown in `/proc/cpuinfo`.
+///
+/// Different CPUs may have different information, such as the core ID. Therefore, [`Self::new`]
+/// should be called on every CPU.
+//
 // TODO: Implement CPU information retrieval on RISC-V platforms.
-pub struct CpuInfo {
+pub struct CpuInformation {
     processor: u32,
 }
 
-impl CpuInfo {
-    pub fn new(processor_id: u32) -> Self {
+impl CpuInformation {
+    /// Constructs the information for the current CPU.
+    pub fn new(guard: &DisabledPreemptGuard) -> Self {
         Self {
-            processor: processor_id,
+            processor: guard.current_cpu().as_usize() as u32,
         }
     }
+}
 
-    /// Collect and format CPU information into a `String`.
-    pub fn collect_cpu_info(&self) -> String {
-        format!("processor\t: {}\n", self.processor)
+impl fmt::Display for CpuInformation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "processor\t: {}", self.processor)
     }
 }
