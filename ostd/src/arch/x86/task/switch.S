@@ -4,6 +4,7 @@
 .code64
 .global context_switch
 .global first_context_switch
+.global kernel_task_entry_wrapper
 
 context_switch: # (nxt: *const TaskContext, cur: *mut TaskContext)
   # Save cur's register
@@ -31,8 +32,13 @@ first_context_switch: # (nxt: *const TaskContext)
   mov r13, [rdi + 32]
   mov r14, [rdi + 40]
   mov r15, [rdi + 48]
-  mov rax, [rdi + 56]
-  # for stack balance, we have to use mov instead of push here
-  mov qword ptr [rsp + 8], 0 # kernel_task_entry's return address
-  mov [rsp], rax             # first_context_switch's return address
+  mov rax, [rdi + 56] # restore return address
+  mov [rsp], rax # for stack balance, must use mov instead of push
   ret
+
+kernel_task_entry_wrapper:
+  .cfi_startproc
+  .cfi_undefined rip # mark return address as undefined to indicate end of call stack
+  add rsp, 8 # for stack balance, must increase rsp before the following call
+  call kernel_task_entry
+  .cfi_endproc

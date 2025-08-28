@@ -163,9 +163,9 @@ impl TaskOptions {
     pub fn build(self) -> Result<Task> {
         // All tasks will enter this function. It is meant to execute the `task_fn` in `Task`.
         //
-        // RISC-V provides an assembly wrapper for this function as the end of call stack so
-        // we have to disable name mangling for it on RISC-V.
-        #[cfg_attr(target_arch = "riscv64", no_mangle)]
+        // We provide an assembly wrapper for this function as the end of call stack so we
+        // have to disable name mangling for it.
+        #[no_mangle]
         extern "C" fn kernel_task_entry() -> ! {
             // SAFETY: The new task is switched on a CPU for the first time, `after_switching_to`
             // hasn't been called yet.
@@ -191,18 +191,10 @@ impl TaskOptions {
             scheduler::exit_current();
         }
 
-        #[cfg(target_arch = "riscv64")]
-        extern "C" {
-            fn kernel_task_entry_wrapper();
-        }
-
         let kstack = KernelStack::new_with_guard_page()?;
 
         let mut ctx = TaskContext::new();
-        #[cfg(not(target_arch = "riscv64"))]
-        ctx.set_instruction_pointer(kernel_task_entry as usize);
-        #[cfg(target_arch = "riscv64")]
-        ctx.set_instruction_pointer(kernel_task_entry_wrapper as usize);
+        ctx.set_instruction_pointer(crate::arch::task::kernel_task_entry_wrapper as usize);
         // We should reserve space for the return address in the stack, otherwise
         // we will write across the page boundary due to the implementation of
         // the context switch.

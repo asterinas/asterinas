@@ -3,6 +3,7 @@
 .text
 .global context_switch
 .global first_context_switch
+.global kernel_task_entry_wrapper
 
 context_switch: # (nxt: *const TaskContext, cur: *mut TaskContext)
   # Save cur's register
@@ -35,3 +36,9 @@ first_context_switch: # (nxt: *const TaskContext)
   ld.d  $s8, $a0, 0x50
   ld.d  $ra, $a0, 0x58 # return address
   ret
+
+kernel_task_entry_wrapper:
+  .cfi_startproc
+  .cfi_undefined 1 # mark return address as undefined to indicate end of call stack
+  bl kernel_task_entry
+  .cfi_endproc
