@@ -8,7 +8,7 @@
 )]
 
 pub use clock_gettime::ClockId;
-use ostd::cpu::context::UserContext;
+use ostd::arch::cpu::context::UserContext;
 pub use timer_create::create_timer;
 
 use crate::{context::Context, cpu::LinuxAbi, prelude::*};
@@ -310,7 +310,7 @@ macro_rules! impl_syscall_nums_and_dispatch_fn {
             syscall_number: u64,
             args: [u64; 6],
             ctx: &crate::context::Context,
-            user_ctx: &mut ostd::cpu::context::UserContext,
+            user_ctx: &mut ostd::arch::cpu::context::UserContext,
         ) -> $crate::prelude::Result<$crate::syscall::SyscallReturn> {
             match syscall_number {
                 $(

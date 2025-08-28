@@ -12,7 +12,10 @@ use core::{ops::Range, sync::atomic::Ordering};
 
 use crate::{
     arch::mm::{current_page_table_paddr, PageTableEntry, PagingConsts},
-    cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu},
+    cpu::{
+        set::{AtomicCpuSet, CpuSet},
+        PinCurrentCpu,
+    },
     cpu_local_cell,
     mm::{
         io::Fallible,

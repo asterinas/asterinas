@@ -10,8 +10,8 @@ use core::{
 use spin::Once;
 
 use crate::{
-    arch::{self, boot::DEVICE_TREE, trap::TrapFrame},
-    cpu::{extension::IsaExtensions, CpuId, PinCurrentCpu},
+    arch::{self, boot::DEVICE_TREE, cpu::extension::IsaExtensions, trap::TrapFrame},
+    cpu::{CpuId, PinCurrentCpu},
     timer::INTERRUPT_CALLBACKS,
     trap::{self, irq::IrqLine},
 };

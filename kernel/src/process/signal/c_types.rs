@@ -7,7 +7,7 @@ use core::mem::{self, size_of};
 
 use aster_util::read_union_field;
 use inherit_methods_macro::inherit_methods;
-use ostd::cpu::context::UserContext;
+use ostd::arch::cpu::context::UserContext;
 
 use super::sig_num::SigNum;
 use crate::{

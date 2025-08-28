@@ -5,7 +5,7 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use ostd::{
-    cpu::{AtomicCpuSet, CpuSet},
+    cpu::set::{AtomicCpuSet, CpuSet},
     task::Task,
 };
 

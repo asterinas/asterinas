@@ -4,7 +4,10 @@ use core::sync::atomic::Ordering;
 
 use crate::{
     arch::mm::tlb_flush_addr_range,
-    cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu},
+    cpu::{
+        set::{AtomicCpuSet, CpuSet},
+        PinCurrentCpu,
+    },
     impl_frame_meta_for,
     mm::{
         kspace::kvirt_area::KVirtArea,

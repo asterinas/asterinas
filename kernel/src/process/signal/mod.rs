@@ -20,7 +20,7 @@ use c_types::{siginfo_t, ucontext_t};
 use constants::SIGSEGV;
 pub use events::{SigEvents, SigEventsFilter};
 use ostd::{
-    cpu::context::{FpuContext, UserContext},
+    arch::cpu::context::{FpuContext, UserContext},
     user::UserContextApi,
 };
 pub use pause::{with_sigmask_changed, Pause};

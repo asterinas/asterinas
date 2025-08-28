@@ -3,7 +3,7 @@
 use core::sync::atomic::Ordering;
 
 use ostd::{
-    cpu::context::{FpuContext, UserContext},
+    arch::cpu::context::{FpuContext, UserContext},
     user::UserContextApi,
 };
 
