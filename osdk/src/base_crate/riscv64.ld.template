@@ -34,6 +34,11 @@ SECTIONS
         *(.rodata .rodata.*)
     }
 
+    # Rust's "riscv64imac-unknown-none-elf" target doesn't enable generation of
+    # the .eh_frame_hdr section so we don't declare that in the linker script.
+    #
+    # See https://github.com/rust-lang/rust/blob/43a216604a7fc98deb0744513341fc0d09e461d4/compiler/rustc_target/src/spec/targets/riscv64imac_unknown_none_elf.rs#L30
+
     . = ALIGN(8);
     .eh_frame               : AT(ADDR(.eh_frame) - KERNEL_VMA_OFFSET) {
         PROVIDE(__eh_frame = .);
