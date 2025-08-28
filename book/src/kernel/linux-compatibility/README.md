@@ -145,8 +145,8 @@ provided by Linux on x86-64 architecture.
 | 122     | setfsuid               | ✅             |     |
 | 123     | setfsgid               | ✅             |     |
 | 124     | getsid                 | ✅             |     |
-| 125     | capget                 | ✅             |     |
-| 126     | capset                 | ✅             |     |
+| 125     | capget                 | ✅             | [⚠️](limitations-on-system-calls/namespaces-cgroups-and-security.md#capget-and-capset) |
+| 126     | capset                 | ✅             | [⚠️](limitations-on-system-calls/namespaces-cgroups-and-security.md#capget-and-capset) |
 | 127     | rt_sigpending          | ✅             |     |
 | 128     | rt_sigtimedwait        | ❌             |     |
 | 129     | rt_sigqueueinfo        | ❌             |     |
@@ -177,7 +177,7 @@ provided by Linux on x86-64 architecture.
 | 154     | modify_ldt             | ❌             |     |
 | 155     | pivot_root             | ❌             |     |
 | 156     | _sysctl                | ❌             |     |
-| 157     | prctl                  | ✅             |     |
+| 157     | prctl                  | ✅             | [⚠️](limitations-on-system-calls/namespaces-cgroups-and-security.md#prctl) |
 | 158     | arch_prctl             | ✅             | [⚠️](limitations-on-system-calls/system-information-and-misc.md#arch_prctl) |
 | 159     | adjtimex               | ❌             |     |
 | 160     | setrlimit              | ✅             |     |
