@@ -139,9 +139,7 @@ pub fn wake_robust_futex(futex_addr: Vaddr, tid: Tid) -> Result<()> {
 
     // Instantiate reader and writer pointing at the same `futex_addr`, set up
     // for the same length: the length of an `u32`.
-    const U32_LEN: usize = size_of::<u32>();
-    let writer = user_space.writer(futex_addr, U32_LEN)?;
-    let reader = user_space.reader(futex_addr, U32_LEN)?;
+    let (reader, writer) = user_space.reader_writer(futex_addr, size_of::<u32>())?;
 
     let mut old_val: u32 = reader.atomic_load()?;
     loop {
