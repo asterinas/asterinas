@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::boxed::Box;
+use alloc::{boxed::Box, sync::Arc};
 use core::fmt::Debug;
 
 use aster_util::{field_ptr, safe_ptr::SafePtr};
@@ -14,7 +14,7 @@ use ostd::{
         BusProbeError,
     },
     io::IoMem,
-    mm::DmaCoherent,
+    mm::{DmaCoherent, HasDaddr},
     trap::irq::IrqCallbackFunction,
 };
 
@@ -77,9 +77,9 @@ impl VirtioTransport for VirtioPciModernTransport {
         &mut self,
         idx: u16,
         queue_size: u16,
-        descriptor_ptr: &SafePtr<Descriptor, DmaCoherent>,
-        avail_ring_ptr: &SafePtr<AvailRing, DmaCoherent>,
-        used_ring_ptr: &SafePtr<UsedRing, DmaCoherent>,
+        descriptor_ptr: &SafePtr<Descriptor, Arc<DmaCoherent>>,
+        avail_ring_ptr: &SafePtr<AvailRing, Arc<DmaCoherent>>,
+        used_ring_ptr: &SafePtr<UsedRing, Arc<DmaCoherent>>,
     ) -> Result<(), VirtioTransportError> {
         if idx >= self.num_queues() {
             return Err(VirtioTransportError::InvalidArgs);
@@ -98,13 +98,13 @@ impl VirtioTransport for VirtioPciModernTransport {
             .write_once(&queue_size)
             .unwrap();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_desc)
-            .write_once(&(descriptor_ptr.paddr() as u64))
+            .write_once(&(descriptor_ptr.daddr() as u64))
             .unwrap();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_driver)
-            .write_once(&(avail_ring_ptr.paddr() as u64))
+            .write_once(&(avail_ring_ptr.daddr() as u64))
             .unwrap();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_device)
-            .write_once(&(used_ring_ptr.paddr() as u64))
+            .write_once(&(used_ring_ptr.daddr() as u64))
             .unwrap();
         // Enable queue
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_enable)

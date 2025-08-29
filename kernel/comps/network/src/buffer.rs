@@ -6,7 +6,7 @@ use aster_softirq::BottomHalfDisabled;
 use ostd::{
     mm::{
         io_util::HasVmReaderWriter, Daddr, DmaDirection, DmaStream, FrameAllocOptions, HasDaddr,
-        Infallible, VmReader, VmWriter, PAGE_SIZE,
+        HasSize, Infallible, VmReader, VmWriter, PAGE_SIZE,
     },
     sync::SpinLock,
     Pod,
@@ -16,16 +16,16 @@ use spin::Once;
 use crate::dma_pool::{DmaPool, DmaSegment};
 
 pub struct TxBuffer {
-    dma_stream: DmaStream,
+    dma_stream: Arc<DmaStream>,
     nbytes: usize,
-    pool: &'static SpinLock<LinkedList<DmaStream>, BottomHalfDisabled>,
+    pool: &'static SpinLock<LinkedList<Arc<DmaStream>>, BottomHalfDisabled>,
 }
 
 impl TxBuffer {
     pub fn new<H: Pod>(
         header: &H,
         packet: &[u8],
-        pool: &'static SpinLock<LinkedList<DmaStream>, BottomHalfDisabled>,
+        pool: &'static SpinLock<LinkedList<Arc<DmaStream>>, BottomHalfDisabled>,
     ) -> Self {
         let header = header.as_bytes();
         let nbytes = header.len() + packet.len();
@@ -38,7 +38,7 @@ impl TxBuffer {
             let segment = FrameAllocOptions::new()
                 .alloc_segment(TX_BUFFER_LEN / PAGE_SIZE)
                 .unwrap();
-            DmaStream::map(segment.into(), DmaDirection::ToDevice, false).unwrap()
+            Arc::new(DmaStream::map(segment.into(), DmaDirection::ToDevice, false).unwrap())
         };
 
         let tx_buffer = {
@@ -65,8 +65,10 @@ impl TxBuffer {
     fn sync(&self) {
         self.dma_stream.sync(0..self.nbytes).unwrap();
     }
+}
 
-    pub fn nbytes(&self) -> usize {
+impl HasSize for TxBuffer {
+    fn size(&self) -> usize {
         self.nbytes
     }
 }
@@ -126,8 +128,10 @@ impl RxBuffer {
         reader.limit(self.header_len + self.packet_len);
         reader
     }
+}
 
-    pub const fn buf_len(&self) -> usize {
+impl HasSize for RxBuffer {
+    fn size(&self) -> usize {
         self.segment.size()
     }
 }
