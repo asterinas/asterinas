@@ -6,11 +6,12 @@ use core::mem::size_of;
 use ostd_pod::Pod;
 
 use crate::{
+    io::IoMem,
     mm::{
         io::{VmIo, VmIoFill, VmReader, VmWriter},
         io_util::HasVmReaderWriter,
         tlb::TlbFlushOp,
-        vm_space::get_activated_vm_space,
+        vm_space::{get_activated_vm_space, VmQueriedItem},
         CachePolicy, FallibleVmRead, FallibleVmWrite, FrameAllocOptions, PageFlags, PageProperty,
         UFrame, VmSpace,
     },
@@ -499,6 +500,12 @@ mod vmspace {
         uframe
     }
 
+    /// Helper function to create a dummy `IoMem` for testing.
+    fn create_dummy_iomem(paddr: Paddr, size: usize) -> IoMem {
+        // SAFETY: This is for testing only, we use a safe physical address range
+        unsafe { IoMem::new(paddr..paddr + size, PageFlags::RW, CachePolicy::Uncacheable) }
+    }
+
     /// Creates a new `VmSpace` and verifies its initial state.
     #[ktest]
     fn vmspace_creation() {
@@ -538,7 +545,13 @@ mod vmspace {
             assert_eq!(cursor.virt_addr(), range.start);
             assert_eq!(
                 cursor.query().unwrap(),
-                (range.clone(), Some((frame.clone(), prop)))
+                (
+                    range.clone(),
+                    Some(VmQueriedItem::MappedRam {
+                        frame: frame.clone(),
+                        prop
+                    })
+                )
             );
         }
 
@@ -579,7 +592,13 @@ mod vmspace {
                 .expect("Failed to create cursor");
             assert_eq!(
                 cursor.query().unwrap(),
-                (range.clone(), Some((frame.clone(), prop)))
+                (
+                    range.clone(),
+                    Some(VmQueriedItem::MappedRam {
+                        frame: frame.clone(),
+                        prop
+                    })
+                )
             );
         }
 
@@ -596,7 +615,13 @@ mod vmspace {
                 .expect("Failed to create cursor");
             assert_eq!(
                 cursor.query().unwrap(),
-                (range.clone(), Some((frame.clone(), prop)))
+                (
+                    range.clone(),
+                    Some(VmQueriedItem::MappedRam {
+                        frame: frame.clone(),
+                        prop
+                    })
+                )
             );
         }
 
@@ -687,7 +712,13 @@ mod vmspace {
                 .expect("Failed to create cursor");
             assert_eq!(
                 cursor.next().unwrap(),
-                (range.clone(), Some((frame.clone(), prop)))
+                (
+                    range.clone(),
+                    Some(VmQueriedItem::MappedRam {
+                        frame: frame.clone(),
+                        prop
+                    })
+                )
             );
         }
 
@@ -709,10 +740,10 @@ mod vmspace {
                 cursor.next().unwrap(),
                 (
                     range.clone(),
-                    Some((
-                        frame.clone(),
-                        PageProperty::new_user(PageFlags::R, CachePolicy::Writeback)
-                    ))
+                    Some(VmQueriedItem::MappedRam {
+                        frame: frame.clone(),
+                        prop: PageProperty::new_user(PageFlags::R, CachePolicy::Writeback)
+                    })
                 )
             );
         }
@@ -800,15 +831,14 @@ mod vmspace {
             .cursor(&preempt_guard, &range)
             .expect("Failed to create cursor");
         assert!(cursor.jump(range.start).is_ok());
-        let item = cursor.next();
         assert_eq!(
-            item.unwrap(),
+            cursor.next().unwrap(),
             (
                 range.clone(),
-                Some((
-                    frame.clone(),
-                    PageProperty::new_user(PageFlags::R, CachePolicy::Writeback)
-                ))
+                Some(VmQueriedItem::MappedRam {
+                    frame,
+                    prop: PageProperty::new_user(PageFlags::R, CachePolicy::Writeback)
+                })
             )
         );
 
@@ -830,8 +860,8 @@ mod vmspace {
             let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
             cursor_mut.map(frame.clone(), prop);
             cursor_mut.jump(range.start).expect("Failed to jump cursor");
-            let protected_range = cursor_mut.protect_next(0x1000, |prop| {
-                prop.flags = PageFlags::R;
+            let protected_range = cursor_mut.protect_next(0x1000, |flags, _cache| {
+                *flags = PageFlags::R;
             });
 
             assert_eq!(protected_range, Some(0x7000..0x8000));
@@ -844,10 +874,10 @@ mod vmspace {
             cursor.next().unwrap(),
             (
                 range.clone(),
-                Some((
-                    frame.clone(),
-                    PageProperty::new_user(PageFlags::R, CachePolicy::Writeback)
-                ))
+                Some(VmQueriedItem::MappedRam {
+                    frame: frame.clone(),
+                    prop: PageProperty::new_user(PageFlags::R, CachePolicy::Writeback)
+                })
             )
         );
     }
@@ -875,6 +905,148 @@ mod vmspace {
         let mut cursor_mut = vmspace
             .cursor_mut(&preempt_guard, &range)
             .expect("Failed to create mutable cursor");
-        cursor_mut.protect_next(0x2000, |_| {}); // Not page-aligned.
+        cursor_mut.protect_next(0x2000, |_flags, _cache| {}); // Not page-aligned.
+    }
+
+    /// Tests mapping and querying IoMem using `CursorMut`.
+    #[ktest]
+    fn vmspace_map_query_iomem() {
+        let vmspace = VmSpace::new();
+        let range = 0x1000..0x2000;
+        let iomem = create_dummy_iomem(0x10000, 0x1000);
+        let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Uncacheable);
+        let preempt_guard = disable_preempt();
+
+        {
+            let mut cursor_mut = vmspace
+                .cursor_mut(&preempt_guard, &range)
+                .expect("Failed to create mutable cursor");
+            // Initially, the page should not be mapped.
+            assert_eq!(cursor_mut.query().unwrap(), (range.clone(), None));
+            // Maps IoMem.
+            cursor_mut.map_iomem(iomem.clone(), prop, 0x1000, 0);
+        }
+
+        // Queries the mapping.
+        {
+            let mut cursor = vmspace
+                .cursor(&preempt_guard, &range)
+                .expect("Failed to create cursor");
+            assert_eq!(cursor.virt_addr(), range.start);
+            let (query_range, query_item) = cursor.query().unwrap();
+            assert_eq!(query_range, range);
+
+            // The query result should have AVAIL1 flag set for IoMem
+            assert!(matches!(
+                query_item,
+                Some(VmQueriedItem::MappedIoMem { paddr, prop: query_prop })
+                if paddr == 0x10000 && query_prop.flags == prop.flags && query_prop.cache == prop.cache
+            ));
+        }
+
+        // Tests find_iomem_by_paddr.
+        {
+            let cursor_mut = vmspace
+                .cursor_mut(&preempt_guard, &range)
+                .expect("Failed to create mutable cursor");
+            let (found_iomem, offset) = cursor_mut.find_iomem_by_paddr(0x10000).unwrap();
+            assert_eq!(found_iomem.paddr(), 0x10000);
+            assert_eq!(found_iomem.length(), 0x1000);
+            assert_eq!(offset, 0);
+
+            // Test finding with offset.
+            let (found_iomem, offset) = cursor_mut.find_iomem_by_paddr(0x10080).unwrap();
+            assert_eq!(found_iomem.paddr(), 0x10000);
+            assert_eq!(found_iomem.length(), 0x1000);
+            assert_eq!(offset, 0x80);
+
+            // Test finding non-existent address.
+            assert!(cursor_mut.find_iomem_by_paddr(0x20000).is_none());
+        }
+    }
+
+    /// Tests mapping IoMem with offset and length.
+    #[ktest]
+    fn vmspace_map_iomem_with_offset() {
+        let vmspace = VmSpace::new();
+        let range = 0x2000..0x3000;
+        let iomem = create_dummy_iomem(0x20000, 0x2000);
+        let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Uncacheable);
+        let preempt_guard = disable_preempt();
+
+        {
+            let mut cursor_mut = vmspace
+                .cursor_mut(&preempt_guard, &range)
+                .expect("Failed to create mutable cursor");
+            // Maps IoMem with offset.
+            cursor_mut.map_iomem(iomem.clone(), prop, 0x1000, 0x1000);
+        }
+
+        // Queries the mapping.
+        {
+            let mut cursor = vmspace
+                .cursor(&preempt_guard, &range)
+                .expect("Failed to create cursor");
+            let (query_range, query_item) = cursor.query().unwrap();
+            assert_eq!(query_range, range);
+            // The query result should have AVAIL1 flag set for IoMem
+            assert!(matches!(
+                query_item,
+                Some(VmQueriedItem::MappedIoMem { paddr, prop: query_prop })
+                if paddr == 0x21000 && query_prop.flags == prop.flags && query_prop.cache == prop.cache
+            ));
+        }
+
+        // Tests find_iomem_by_paddr with offset.
+        {
+            let cursor_mut = vmspace
+                .cursor_mut(&preempt_guard, &range)
+                .expect("Failed to create mutable cursor");
+            let (found_iomem, offset) = cursor_mut.find_iomem_by_paddr(0x21000).unwrap();
+            assert_eq!(found_iomem.paddr(), 0x20000);
+            assert_eq!(found_iomem.length(), 0x2000);
+            assert_eq!(offset, 0x1000);
+        }
+    }
+
+    /// Tests that IoMem is not removed from VmSpace when unmapped.
+    #[ktest]
+    fn vmspace_iomem_persistence() {
+        let vmspace = VmSpace::new();
+        let range = 0x3000..0x4000;
+        let iomem = create_dummy_iomem(0x30000, 0x1000);
+        let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Uncacheable);
+        let preempt_guard = disable_preempt();
+
+        {
+            let mut cursor_mut = vmspace
+                .cursor_mut(&preempt_guard, &range)
+                .expect("Failed to create mutable cursor");
+            cursor_mut.map_iomem(iomem.clone(), prop, 0x1000, 0);
+        }
+
+        // Verify IoMem is in VmSpace.
+        {
+            let cursor_mut = vmspace
+                .cursor_mut(&preempt_guard, &range)
+                .expect("Failed to create mutable cursor");
+            assert!(cursor_mut.find_iomem_by_paddr(0x30000).is_some());
+        }
+
+        // Unmap the IoMem.
+        {
+            let mut cursor_mut = vmspace
+                .cursor_mut(&preempt_guard, &range)
+                .expect("Failed to create mutable cursor");
+            cursor_mut.unmap(0x1000);
+        }
+
+        // Verify IoMem is still in VmSpace (persistence).
+        {
+            let cursor_mut = vmspace
+                .cursor_mut(&preempt_guard, &range)
+                .expect("Failed to create mutable cursor");
+            assert!(cursor_mut.find_iomem_by_paddr(0x30000).is_some());
+        }
     }
 }
