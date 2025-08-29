@@ -100,7 +100,10 @@ pub(crate) fn is_local_enabled() -> bool {
 pub(crate) struct HwCpuId(u32);
 
 impl HwCpuId {
-    pub(crate) fn read_current(guard: &dyn PinCurrentCpu) -> Self {
+    /// # Safety
+    ///
+    /// This function must be called after CPU local memory is initialized.
+    pub(crate) unsafe fn read_current(guard: &dyn PinCurrentCpu) -> Self {
         use crate::arch::kernel::apic;
 
         let apic = apic::get_or_init(guard);
