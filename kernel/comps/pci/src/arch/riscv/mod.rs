@@ -3,21 +3,21 @@
 //! PCI bus access
 
 use log::warn;
+use ostd::{arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce, Error};
 use spin::Once;
 
-use super::boot::DEVICE_TREE;
-use crate::{bus::pci::PciDeviceLocation, io::IoMem, mm::VmIoOnce, prelude::*, Error};
+use crate::PciDeviceLocation;
 
 static PCI_ECAM_CFG_SPACE: Once<IoMem> = Once::new();
 
-pub(crate) fn write32(location: &PciDeviceLocation, offset: u32, value: u32) -> Result<()> {
+pub(crate) fn write32(location: &PciDeviceLocation, offset: u32, value: u32) -> Result<(), Error> {
     PCI_ECAM_CFG_SPACE.get().ok_or(Error::IoError)?.write_once(
         (encode_as_address_offset(location) | (offset & 0xfc)) as usize,
         &value,
     )
 }
 
-pub(crate) fn read32(location: &PciDeviceLocation, offset: u32) -> Result<u32> {
+pub(crate) fn read32(location: &PciDeviceLocation, offset: u32) -> Result<u32, Error> {
     PCI_ECAM_CFG_SPACE
         .get()
         .ok_or(Error::IoError)?
