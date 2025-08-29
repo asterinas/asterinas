@@ -144,7 +144,7 @@ impl VmSpace {
 
     /// Creates a reader to read data from the user space of the current task.
     ///
-    /// Returns `Err` if this `VmSpace` is not belonged to the user space of the current task
+    /// Returns `Err` if this `VmSpace` doesn't belong to the user space of the current task
     /// or the `vaddr` and `len` do not represent a user space memory range.
     ///
     /// Users must ensure that no other page table is activated in the current task during the
@@ -164,7 +164,7 @@ impl VmSpace {
 
     /// Creates a writer to write data into the user space.
     ///
-    /// Returns `Err` if this `VmSpace` is not belonged to the user space of the current task
+    /// Returns `Err` if this `VmSpace` doesn't belong to the user space of the current task
     /// or the `vaddr` and `len` do not represent a user space memory range.
     ///
     /// Users must ensure that no other page table is activated in the current task during the
@@ -184,6 +184,43 @@ impl VmSpace {
         //
         // SAFETY: The memory range is in user space, as checked above.
         Ok(unsafe { VmWriter::<Fallible>::from_user_space(vaddr as *mut u8, len) })
+    }
+
+    /// Creates a reader/writer pair to read data from and write data into the user space.
+    ///
+    /// Returns `Err` if this `VmSpace` doesn't belong to the user space of the current task
+    /// or the `vaddr` and `len` do not represent a user space memory range.
+    ///
+    /// Users must ensure that no other page table is activated in the current task during the
+    /// lifetime of the created `VmReader` and `VmWriter`. This guarantees that the `VmReader`
+    /// and the `VmWriter` can operate correctly.
+    ///
+    /// This method is semantically equivalent to calling [`Self::reader`] and [`Self::writer`]
+    /// separately, but it avoids double checking the validity of the memory region.
+    pub fn reader_writer(
+        &self,
+        vaddr: Vaddr,
+        len: usize,
+    ) -> Result<(VmReader<'_, Fallible>, VmWriter<'_, Fallible>)> {
+        if current_page_table_paddr() != self.pt.root_paddr() {
+            return Err(Error::AccessDenied);
+        }
+
+        if vaddr.checked_add(len).unwrap_or(usize::MAX) > MAX_USERSPACE_VADDR {
+            return Err(Error::AccessDenied);
+        }
+
+        // SAFETY: The memory range is in user space, as checked above.
+        let reader = unsafe { VmReader::<Fallible>::from_user_space(vaddr as *const u8, len) };
+
+        // `VmWriter` is neither `Sync` nor `Send`, so it will not live longer than the current
+        // task. This ensures that the correct page table is activated during the usage period of
+        // the `VmWriter`.
+        //
+        // SAFETY: The memory range is in user space, as checked above.
+        let writer = unsafe { VmWriter::<Fallible>::from_user_space(vaddr as *mut u8, len) };
+
+        Ok((reader, writer))
     }
 }
 

@@ -18,7 +18,7 @@ use crate::{
     },
     thread::Thread,
     util::{MultiRead, VmReaderArray},
-    vm::vmar::Vmar,
+    vm::vmar::{Vmar, ROOT_VMAR_LOWEST_ADDR},
 };
 
 /// The context that can be accessed from the current POSIX thread.
@@ -84,16 +84,50 @@ impl<'a> CurrentUserSpace<'a> {
 
     /// Creates a reader to read data from the user space of the current task.
     ///
-    /// Returns `Err` if the `vaddr` and `len` do not represent a user space memory range.
+    /// Returns `Err` if `vaddr` and `len` do not represent a user space memory range.
     pub fn reader(&self, vaddr: Vaddr, len: usize) -> Result<VmReader<'_, Fallible>> {
+        // Do NOT attempt to call `check_vaddr_lowerbound` here.
+        //
+        // Linux has a **delayed buffer validation** behavior:
+        // The Linux kernel assumes that a given user-space pointer is valid until it attempts to access it.
+        // For example, the following invocation of the `read` system call with a `NULL` pointer as the buffer
+        //
+        // ```c
+        // read(fd, NULL, 1);
+        // ```
+        //
+        // will return 0 (rather than an error) if the file referred to by `fd` has zero length.
+        //
+        // Asterinas's system call entry points follow a pattern of converting user-space pointers to
+        // a reader/writer first and using the reader/writer later.
+        // So adding any pointer check here would break Asterinas's delayed buffer validation behavior.
         Ok(self.root_vmar().vm_space().reader(vaddr, len)?)
     }
 
-    /// Creates a writer to write data into the user space.
+    /// Creates a writer to write data into the user space of the current task.
     ///
-    /// Returns `Err` if the `vaddr` and `len` do not represent a user space memory range.
+    /// Returns `Err` if `vaddr` and `len` do not represent a user space memory range.
     pub fn writer(&self, vaddr: Vaddr, len: usize) -> Result<VmWriter<'_, Fallible>> {
+        // Do NOT attempt to call `check_vaddr_lowerbound` here.
+        // See the comments in the `reader` method.
         Ok(self.root_vmar().vm_space().writer(vaddr, len)?)
+    }
+
+    /// Creates a reader/writer pair to read data from or write data into the user space
+    /// of the current task.
+    ///
+    /// Returns `Err` if `vaddr` and `len` do not represent a user space memory range.
+    ///
+    /// This method is semantically equivalent to calling [`Self::reader`] and [`Self::writer`]
+    /// separately, but it avoids double checking the validity of the memory region.
+    pub fn reader_writer(
+        &self,
+        vaddr: Vaddr,
+        len: usize,
+    ) -> Result<(VmReader<'_, Fallible>, VmWriter<'_, Fallible>)> {
+        // Do NOT attempt to call `check_vaddr_lowerbound` here.
+        // See the comments in the `reader` method.
+        Ok(self.root_vmar().vm_space().reader_writer(vaddr, len)?)
     }
 
     /// Reads bytes into the destination `VmWriter` from the user space of the
@@ -109,7 +143,7 @@ impl<'a> CurrentUserSpace<'a> {
         let copy_len = dest.avail();
 
         if copy_len > 0 {
-            check_vaddr(src)?;
+            check_vaddr_lowerbound(src)?;
         }
 
         let mut user_reader = self.reader(src, copy_len)?;
@@ -120,7 +154,7 @@ impl<'a> CurrentUserSpace<'a> {
     /// Reads a value typed `Pod` from the user space of the current process.
     pub fn read_val<T: Pod>(&self, src: Vaddr) -> Result<T> {
         if core::mem::size_of::<T>() > 0 {
-            check_vaddr(src)?;
+            check_vaddr_lowerbound(src)?;
         }
 
         let mut user_reader = self.reader(src, core::mem::size_of::<T>())?;
@@ -140,7 +174,7 @@ impl<'a> CurrentUserSpace<'a> {
         let copy_len = src.remain();
 
         if copy_len > 0 {
-            check_vaddr(dest)?;
+            check_vaddr_lowerbound(dest)?;
         }
 
         let mut user_writer = self.writer(dest, copy_len)?;
@@ -151,7 +185,7 @@ impl<'a> CurrentUserSpace<'a> {
     /// Writes `val` to the user space of the current process.
     pub fn write_val<T: Pod>(&self, dest: Vaddr, val: &T) -> Result<()> {
         if core::mem::size_of::<T>() > 0 {
-            check_vaddr(dest)?;
+            check_vaddr_lowerbound(dest)?;
         }
 
         let mut user_writer = self.writer(dest, core::mem::size_of::<T>())?;
@@ -167,7 +201,9 @@ impl<'a> CurrentUserSpace<'a> {
     ///
     /// [`Ordering::Relaxed`]: core::sync::atomic::Ordering::Relaxed
     pub fn atomic_load<T: PodAtomic>(&self, vaddr: Vaddr) -> Result<T> {
-        check_vaddr(vaddr)?;
+        if core::mem::size_of::<T>() > 0 {
+            check_vaddr_lowerbound(vaddr)?;
+        }
 
         let user_reader = self.reader(vaddr, core::mem::size_of::<T>())?;
         Ok(user_reader.atomic_load()?)
@@ -194,9 +230,11 @@ impl<'a> CurrentUserSpace<'a> {
     where
         T: PodAtomic + Eq,
     {
-        check_vaddr(vaddr)?;
-        let writer = self.writer(vaddr, core::mem::size_of::<T>())?;
-        let reader = self.reader(vaddr, core::mem::size_of::<T>())?;
+        if core::mem::size_of::<T>() > 0 {
+            check_vaddr_lowerbound(vaddr)?;
+        }
+
+        let (reader, writer) = self.reader_writer(vaddr, core::mem::size_of::<T>())?;
 
         let mut old_val = reader.atomic_load()?;
         loop {
@@ -212,13 +250,12 @@ impl<'a> CurrentUserSpace<'a> {
     /// including the final `\0` byte.
     pub fn read_cstring(&self, vaddr: Vaddr, max_len: usize) -> Result<CString> {
         if max_len > 0 {
-            check_vaddr(vaddr)?;
+            check_vaddr_lowerbound(vaddr)?;
         }
 
-        // If `vaddr` is within user address space, adjust `max_len`
-        // to ensure `vaddr + max_len` does not exceed `MAX_USERSPACE_VADDR`.
-        // If `vaddr` is outside user address space, `max_len` will be set to zero
-        // and further call to `self.reader` will return `EFAULT` in this case.
+        // Adjust `max_len` to ensure `vaddr + max_len` does not exceed `MAX_USERSPACE_VADDR`.
+        // If `vaddr` is outside user address space, `max_len` will be set to zero and further
+        // call to `self.reader` will return `EFAULT`.
         let max_len = MAX_USERSPACE_VADDR.saturating_sub(vaddr).min(max_len);
 
         let mut user_reader = self.reader(vaddr, max_len)?;
@@ -367,18 +404,14 @@ const fn has_zero(value: usize) -> bool {
 /// segmentation fault.
 ///
 /// If it is not checked here, a kernel page fault will happen and we would
-/// deny the access in the page fault handler either. It may save a page fault
+/// deny the access in the page fault handler anyway. It may save a page fault
 /// in some occasions. More importantly, double page faults may not be handled
 /// quite well on some platforms.
-fn check_vaddr(va: Vaddr) -> Result<()> {
-    if va < crate::vm::vmar::ROOT_VMAR_LOWEST_ADDR {
-        Err(Error::with_message(
-            Errno::EFAULT,
-            "the userspace address is too small",
-        ))
-    } else {
-        Ok(())
+fn check_vaddr_lowerbound(va: Vaddr) -> Result<()> {
+    if va < ROOT_VMAR_LOWEST_ADDR {
+        return_errno_with_message!(Errno::EFAULT, "the userspace address is too small");
     }
+    Ok(())
 }
 
 /// Checks if the given address is aligned.
