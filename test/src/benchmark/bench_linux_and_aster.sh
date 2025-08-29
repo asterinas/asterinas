@@ -159,7 +159,7 @@ run_benchmark() {
             -machine confidential-guest-support=tdx0 \
             -cpu host,-kvm-steal-time,pmu=off \
             -bios /root/ovmf/release/OVMF.fd \
-            -serial stdio \
+            -serial /dev/ttyS0 \
             -nodefaults \
             -object '{ "qom-type": "tdx-guest", "id": "tdx0", "sept-ve-disable": true, "quote-generation-socket": { "type": "vsock", "cid": "2", "port": "4050" } }' \
             -device "virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off,csum=off,guest_csum=off,ctrl_guest_offloads=off,guest_tso4=off,guest_tso6=off,guest_ecn=off,guest_ufo=off,host_tso4=off,host_tso6=off,host_ecn=off,host_ufo=off,mrg_rxbuf=off,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,ctrl_rx_extra=off,guest_announce=off,ctrl_mac_addr=off,host_ufo=off"
