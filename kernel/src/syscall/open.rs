@@ -24,6 +24,10 @@ pub fn sys_openat(
         dirfd, path, flags, mode
     );
 
+    if path.is_empty() {
+        return_errno_with_message!(Errno::ENOENT, "openat fails with empty path");
+    }
+
     let file_handle = {
         let path = path.to_string_lossy();
         let fs_path = FsPath::new(dirfd, path.as_ref())?;
