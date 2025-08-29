@@ -7,6 +7,7 @@ use ostd::{cpu::context::UserContext, sync::RwArc, task::Task, user::UserContext
 use super::{
     posix_thread::{AsPosixThread, PosixThreadBuilder, ThreadName},
     process_table,
+    process_table::TOTAL_FORKS,
     process_vm::ProcessVm,
     rlimit::ResourceLimits,
     signal::{constants::SIGCHLD, sig_disposition::SigDispositions, sig_num::SigNum},
@@ -198,6 +199,9 @@ pub fn clone_child(
         child_thread.run();
 
         let child_tid = child_thread.as_posix_thread().unwrap().tid();
+
+        TOTAL_FORKS.fetch_add(1, Ordering::Relaxed);
+
         Ok(child_tid)
     } else {
         let child_process = clone_child_process(ctx, parent_context, clone_args)?;
@@ -214,6 +218,9 @@ pub fn clone_child(
         }
 
         let child_pid = child_process.pid();
+
+        TOTAL_FORKS.fetch_add(1, Ordering::Relaxed);
+
         Ok(child_pid)
     }
 }

@@ -14,6 +14,7 @@ use crate::prelude::*;
 
 pub mod clocks;
 mod core;
+pub mod cputime;
 mod softirq;
 mod system_time;
 pub mod timerfd;
@@ -31,6 +32,7 @@ pub(super) fn init() {
     system_time::init();
     clocks::init();
     softirq::init();
+    cputime::init();
 }
 
 #[repr(C)]
