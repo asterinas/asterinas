@@ -23,6 +23,7 @@ ostd = { path = "../../../ostd" }
 component = { path = "../../libs/comp-sys/component" }
 log = "0.4"
 int-to-c-enum = { path = "../../libs/int-to-c-enum" }
+aster-time = { path = "../time" }
 
 [target.x86_64-unknown-none.dependencies]
 tdx-guest = { version = "0.2.1", optional = true }
