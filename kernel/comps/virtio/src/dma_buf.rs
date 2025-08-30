@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::sync::Arc;
+
 use aster_network::{DmaSegment, RxBuffer, TxBuffer};
-use ostd::mm::{DmaCoherent, DmaStream, DmaStreamSlice, HasDaddr};
+use aster_util::mem_obj_slice::Slice;
+use ostd::mm::{
+    dma::{DmaCoherent, DmaDirection, DmaStream},
+    HasDaddr, HasSize,
+};
 
 /// A DMA-capable buffer.
 ///
@@ -12,25 +18,36 @@ pub trait DmaBuf: HasDaddr {
     fn len(&self) -> usize;
 }
 
-impl DmaBuf for DmaStream {
-    fn len(&self) -> usize {
-        self.nbytes()
-    }
+macro_rules! impl_dma_buf_for_dma_types {
+    ($($t:ty),*) => {
+        $(
+            impl<D: DmaDirection> DmaBuf for $t {
+                fn len(&self) -> usize {
+                    self.size()
+                }
+            }
+
+            impl<D: DmaDirection> DmaBuf for Slice<$t> {
+                fn len(&self) -> usize {
+                    self.size()
+                }
+            }
+        )*
+    };
 }
 
-impl<Dma: AsRef<DmaStream>> DmaBuf for DmaStreamSlice<Dma> {
-    fn len(&self) -> usize {
-        self.nbytes()
-    }
-}
+impl_dma_buf_for_dma_types!(
+    DmaStream<D>,
+    &DmaStream<D>,
+    Arc<DmaStream<D>>,
+    &Arc<DmaStream<D>>,
+    DmaCoherent<D>,
+    &DmaCoherent<D>,
+    Arc<DmaCoherent<D>>,
+    &Arc<DmaCoherent<D>>
+);
 
-impl DmaBuf for DmaCoherent {
-    fn len(&self) -> usize {
-        self.nbytes()
-    }
-}
-
-impl DmaBuf for DmaSegment {
+impl<D: DmaDirection> DmaBuf for DmaSegment<D> {
     fn len(&self) -> usize {
         self.size()
     }

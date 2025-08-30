@@ -12,7 +12,11 @@ use aster_network::{
 use aster_softirq::BottomHalfDisabled;
 use aster_util::slot_vec::SlotVec;
 use log::{debug, warn};
-use ostd::{arch::trap::TrapFrame, mm::DmaStream, sync::SpinLock};
+use ostd::{
+    arch::trap::TrapFrame,
+    mm::dma::{DmaStream, ToDevice},
+    sync::SpinLock,
+};
 
 use super::{config::VirtioNetConfig, header::VirtioNetHdr};
 use crate::{
@@ -360,7 +364,7 @@ impl Debug for NetworkDevice {
     }
 }
 
-static TX_BUFFER_POOL: SpinLock<LinkedList<DmaStream>, BottomHalfDisabled> =
+static TX_BUFFER_POOL: SpinLock<LinkedList<Arc<DmaStream<ToDevice>>>, BottomHalfDisabled> =
     SpinLock::new(LinkedList::new());
 
 const QUEUE_RECV: u16 = 0;

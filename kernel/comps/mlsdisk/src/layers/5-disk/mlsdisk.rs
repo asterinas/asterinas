@@ -15,7 +15,7 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use ostd::mm::VmIo;
+use ostd::mm::{HasSize, VmIo};
 use ostd_pod::Pod;
 
 use super::{

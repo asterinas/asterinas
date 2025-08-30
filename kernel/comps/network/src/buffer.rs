@@ -5,8 +5,9 @@ use alloc::{collections::linked_list::LinkedList, sync::Arc};
 use aster_softirq::BottomHalfDisabled;
 use ostd::{
     mm::{
-        io_util::HasVmReaderWriter, Daddr, DmaDirection, DmaStream, FrameAllocOptions, HasDaddr,
-        Infallible, VmReader, VmWriter, PAGE_SIZE,
+        dma::{DmaStream, FromDevice, ToDevice},
+        io_util::HasVmReaderWriter,
+        Daddr, FrameAllocOptions, HasDaddr, Infallible, VmReader, VmWriter, PAGE_SIZE,
     },
     sync::SpinLock,
     Pod,
@@ -16,16 +17,16 @@ use spin::Once;
 use crate::dma_pool::{DmaPool, DmaSegment};
 
 pub struct TxBuffer {
-    dma_stream: DmaStream,
+    dma_stream: Arc<DmaStream<ToDevice>>,
     nbytes: usize,
-    pool: &'static SpinLock<LinkedList<DmaStream>, BottomHalfDisabled>,
+    pool: &'static SpinLock<LinkedList<Arc<DmaStream<ToDevice>>>, BottomHalfDisabled>,
 }
 
 impl TxBuffer {
     pub fn new<H: Pod>(
         header: &H,
         packet: &[u8],
-        pool: &'static SpinLock<LinkedList<DmaStream>, BottomHalfDisabled>,
+        pool: &'static SpinLock<LinkedList<Arc<DmaStream<ToDevice>>>, BottomHalfDisabled>,
     ) -> Self {
         let header = header.as_bytes();
         let nbytes = header.len() + packet.len();
@@ -38,7 +39,7 @@ impl TxBuffer {
             let segment = FrameAllocOptions::new()
                 .alloc_segment(TX_BUFFER_LEN / PAGE_SIZE)
                 .unwrap();
-            DmaStream::map(segment.into(), DmaDirection::ToDevice, false).unwrap()
+            Arc::new(DmaStream::<ToDevice>::map(segment.into(), false))
         };
 
         let tx_buffer = {
@@ -84,13 +85,13 @@ impl Drop for TxBuffer {
 }
 
 pub struct RxBuffer {
-    segment: DmaSegment,
+    segment: DmaSegment<FromDevice>,
     header_len: usize,
     packet_len: usize,
 }
 
 impl RxBuffer {
-    pub fn new(header_len: usize, pool: &Arc<DmaPool>) -> Self {
+    pub fn new(header_len: usize, pool: &Arc<DmaPool<FromDevice>>) -> Self {
         assert!(header_len <= pool.segment_size());
         let segment = pool.alloc_segment().unwrap();
         Self {
@@ -140,18 +141,12 @@ impl HasDaddr for RxBuffer {
 
 pub const RX_BUFFER_LEN: usize = 4096;
 pub const TX_BUFFER_LEN: usize = 4096;
-pub static RX_BUFFER_POOL: Once<Arc<DmaPool>> = Once::new();
+pub static RX_BUFFER_POOL: Once<Arc<DmaPool<FromDevice>>> = Once::new();
 
 pub fn init() {
     const POOL_INIT_SIZE: usize = 64;
     const POOL_HIGH_WATERMARK: usize = 128;
     RX_BUFFER_POOL.call_once(|| {
-        DmaPool::new(
-            RX_BUFFER_LEN,
-            POOL_INIT_SIZE,
-            POOL_HIGH_WATERMARK,
-            DmaDirection::FromDevice,
-            false,
-        )
+        DmaPool::<FromDevice>::new(RX_BUFFER_LEN, POOL_INIT_SIZE, POOL_HIGH_WATERMARK, false)
     });
 }

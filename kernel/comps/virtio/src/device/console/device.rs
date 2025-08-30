@@ -4,13 +4,11 @@ use alloc::{boxed::Box, fmt::Debug, string::ToString, sync::Arc, vec::Vec};
 use core::hint::spin_loop;
 
 use aster_console::{AnyConsoleDevice, ConsoleCallback};
+use aster_util::mem_obj_slice::Slice;
 use log::debug;
 use ostd::{
     arch::trap::TrapFrame,
-    mm::{
-        io_util::HasVmReaderWriter, DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions,
-        VmReader,
-    },
+    mm::{dma::DmaStream, io_util::HasVmReaderWriter, FrameAllocOptions, VmReader},
     sync::{Rcu, SpinLock},
 };
 
@@ -26,8 +24,8 @@ pub struct ConsoleDevice {
     transport: SpinLock<Box<dyn VirtioTransport>>,
     receive_queue: SpinLock<VirtQueue>,
     transmit_queue: SpinLock<VirtQueue>,
-    send_buffer: DmaStream,
-    receive_buffer: DmaStream,
+    send_buffer: Arc<DmaStream>,
+    receive_buffer: Arc<DmaStream>,
     #[expect(clippy::box_collection)]
     callbacks: Rcu<Box<Vec<&'static ConsoleCallback>>>,
 }
@@ -42,7 +40,7 @@ impl AnyConsoleDevice for ConsoleDevice {
             let len = writer.write(&mut reader);
             self.send_buffer.sync(0..len).unwrap();
 
-            let slice = DmaStreamSlice::new(&self.send_buffer, 0, len);
+            let slice = Slice::new(&self.send_buffer, 0..len);
             transmit_queue.add_dma_buf(&[&slice], &[]).unwrap();
 
             if transmit_queue.should_notify() {
@@ -101,12 +99,12 @@ impl ConsoleDevice {
 
         let send_buffer = {
             let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-            DmaStream::map(segment.into(), DmaDirection::ToDevice, false).unwrap()
+            Arc::new(DmaStream::map(segment.into(), false))
         };
 
         let receive_buffer = {
             let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-            DmaStream::map(segment.into(), DmaDirection::FromDevice, false).unwrap()
+            Arc::new(DmaStream::map(segment.into(), false))
         };
 
         let device = Arc::new(Self {
@@ -169,7 +167,7 @@ impl ConsoleDevice {
             //
             // For the QEMU bug, see details at
             // <https://lore.kernel.org/qemu-devel/20240707111940.232549-3-lrh2000@pku.edu.cn/T/#u>.
-            .add_dma_buf(&[], &[&DmaStreamSlice::new(&self.receive_buffer, 0, 1)])
+            .add_dma_buf(&[], &[&Slice::new(&self.receive_buffer, 0..1)])
             .unwrap();
 
         if receive_queue.should_notify() {

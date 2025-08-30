@@ -45,7 +45,7 @@ use crate::{
         frame::{meta::AnyFrameMeta, Frame, FrameRef},
         paddr_to_vaddr,
         page_table::{load_pte, store_pte},
-        FrameAllocOptions, Infallible, PagingConstsTrait, PagingLevel, VmReader,
+        FrameAllocOptions, HasPaddr, Infallible, PagingConstsTrait, PagingLevel, VmReader,
     },
     task::atomic_mode::InAtomicMode,
 };
@@ -104,7 +104,7 @@ impl<C: PageTableConfig> PageTableNode<C> {
         assert_eq!(self.level(), C::NR_LEVELS);
 
         let last_activated_paddr = current_page_table_paddr();
-        if last_activated_paddr == self.start_paddr() {
+        if last_activated_paddr == self.paddr() {
             return;
         }
 
@@ -214,7 +214,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     /// The caller must ensure that the index is within the bound.
     pub(super) unsafe fn read_pte(&self, idx: usize) -> C::E {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = paddr_to_vaddr(self.start_paddr()) as *mut C::E;
+        let ptr = paddr_to_vaddr(self.paddr()) as *mut C::E;
         // SAFETY:
         // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
         // - All page table entries are aligned and accessed with atomic operations only.
@@ -235,7 +235,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     ///     after this method.
     pub(super) unsafe fn write_pte(&mut self, idx: usize, pte: C::E) {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = paddr_to_vaddr(self.start_paddr()) as *mut C::E;
+        let ptr = paddr_to_vaddr(self.paddr()) as *mut C::E;
         // SAFETY:
         // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
         // - All page table entries are aligned and accessed with atomic operations only.

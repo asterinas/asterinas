@@ -15,7 +15,12 @@ use ostd::arch::kernel::MappedIrqLine;
 use ostd::trap::irq::IrqLine as MappedIrqLine;
 #[cfg(target_arch = "loongarch64")] // TODO: Add `MappedIrqLine` support for Loongarch.
 use ostd::trap::irq::IrqLine as MappedIrqLine;
-use ostd::{io::IoMem, mm::VmIoOnce, trap::irq::IrqLine, Error, Result};
+use ostd::{
+    io::IoMem,
+    mm::{HasPaddr, VmIoOnce},
+    trap::irq::IrqLine,
+    Error, Result,
+};
 
 /// A MMIO common device.
 #[derive(Debug)]
