@@ -156,10 +156,19 @@ impl DmaStream {
                 if self.inner.is_cache_coherent {
                     return Ok(());
                 }
-                let _start_va = crate::mm::paddr_to_vaddr(self.inner.segment.start_paddr()) as *const u8;
+                #[cfg(target_arch = "riscv64")]
+                unsafe {
+                    // TODO: We are doing a full cache flush here, which is
+                    // expensive.
+                    core::arch::asm!(
+                        "fence rw,rw",
+                        options(nostack, preserves_flags)
+                    );
+                }
                 // TODO: Query the CPU for the cache line size via CPUID, we use 64 bytes as the cache line size here.
                 for _i in _byte_range.step_by(64) {
                     // TODO: Call the cache line flush command in the corresponding architecture.
+                    #[cfg(not(target_arch = "riscv64"))]
                     todo!()
                 }
                 Ok(())
