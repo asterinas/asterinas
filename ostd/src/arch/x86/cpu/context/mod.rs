@@ -38,7 +38,8 @@ cfg_if! {
 
 pub use x86::cpuid;
 
-/// Userspace CPU context, including general-purpose registers and exception information.
+/// Userspace CPU context, including general-purpose registers, software-saved
+/// user state, and exception information.
 #[derive(Clone, Default, Debug)]
 #[repr(C)]
 pub struct UserContext {
@@ -46,7 +47,7 @@ pub struct UserContext {
     exception: Option<CpuException>,
 }
 
-/// General registers.
+/// General-purpose registers.
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
 #[repr(C)]
 #[expect(missing_docs)]
@@ -67,10 +68,6 @@ pub struct GeneralRegs {
     pub r13: usize,
     pub r14: usize,
     pub r15: usize,
-    pub rip: usize,
-    pub rflags: usize,
-    pub fsbase: usize,
-    pub gsbase: usize,
 }
 
 /// Architectural CPU exceptions (x86-64 vectors 0-31).
@@ -223,14 +220,24 @@ impl CpuException {
 pub struct SelectorErrorCode(usize);
 
 impl UserContext {
-    /// Returns a reference to the general registers.
+    /// Returns a reference to the general-purpose registers.
     pub fn general_regs(&self) -> &GeneralRegs {
-        &self.user_context.general
+        &self.user_context.general_regs
     }
 
-    /// Returns a mutable reference to the general registers
+    /// Returns a mutable reference to the general-purpose registers.
     pub fn general_regs_mut(&mut self) -> &mut GeneralRegs {
-        &mut self.user_context.general
+        &mut self.user_context.general_regs
+    }
+
+    /// Returns the RFLAGS register.
+    pub fn rflags(&self) -> usize {
+        self.user_context.rflags
+    }
+
+    /// Sets the RFLAGS register.
+    pub fn set_rflags(&mut self, rflags: usize) {
+        self.user_context.rflags = rflags;
     }
 
     /// Takes the CPU exception out.
@@ -240,12 +247,12 @@ impl UserContext {
 
     /// Sets the thread-local storage pointer.
     pub fn set_tls_pointer(&mut self, tls: usize) {
-        self.set_fsbase(tls)
+        self.user_context.fsbase = tls;
     }
 
     /// Gets the thread-local storage pointer.
     pub fn tls_pointer(&self) -> usize {
-        self.fsbase()
+        self.user_context.fsbase
     }
 
     /// Activates the thread-local storage pointer for the current task.
@@ -258,7 +265,7 @@ impl UserContext {
         // `UserContext::execute`, so it must be activated in advance.
         //
         // SAFETY: Setting `fsbase` won't affect kernel code.
-        unsafe { wrfsbase(self.fsbase() as u64) }
+        unsafe { wrfsbase(self.user_context.fsbase as u64) }
     }
 }
 
@@ -269,7 +276,7 @@ impl UserContextApiInternal for UserContext {
     {
         // set interrupt flag so that in user mode it can receive external interrupts
         // set ID flag which means cpu support CPUID instruction
-        self.user_context.general.rflags |= (RFlags::INTERRUPT_FLAG | RFlags::ID).bits() as usize;
+        self.user_context.rflags |= (RFlags::INTERRUPT_FLAG | RFlags::ID).bits() as usize;
 
         const SYSCALL_TRAPNUM: usize = 0x100;
 
@@ -322,28 +329,13 @@ impl UserContextApiInternal for UserContext {
 
     fn as_trap_frame(&self) -> TrapFrame {
         TrapFrame {
-            rax: self.user_context.general.rax,
-            rbx: self.user_context.general.rbx,
-            rcx: self.user_context.general.rcx,
-            rdx: self.user_context.general.rdx,
-            rsi: self.user_context.general.rsi,
-            rdi: self.user_context.general.rdi,
-            rbp: self.user_context.general.rbp,
-            rsp: self.user_context.general.rsp,
-            r8: self.user_context.general.r8,
-            r9: self.user_context.general.r9,
-            r10: self.user_context.general.r10,
-            r11: self.user_context.general.r11,
-            r12: self.user_context.general.r12,
-            r13: self.user_context.general.r13,
-            r14: self.user_context.general.r14,
-            r15: self.user_context.general.r15,
+            general_regs: self.user_context.general_regs,
             _pad: 0,
             trap_num: self.user_context.trap_num,
             error_code: self.user_context.error_code,
-            rip: self.user_context.general.rip,
+            rip: self.user_context.rip,
             cs: 0,
-            rflags: self.user_context.general.rflags,
+            rflags: self.user_context.rflags,
         }
     }
 }
@@ -435,7 +427,7 @@ impl UserContextApi for UserContext {
     }
 
     fn set_instruction_pointer(&mut self, ip: usize) {
-        self.set_rip(ip);
+        self.user_context.rip = ip;
     }
 
     fn set_stack_pointer(&mut self, sp: usize) {
@@ -447,7 +439,7 @@ impl UserContextApi for UserContext {
     }
 
     fn instruction_pointer(&self) -> usize {
-        self.rip()
+        self.user_context.rip
     }
 }
 
@@ -458,13 +450,13 @@ macro_rules! cpu_context_impl_getter_setter {
                 #[doc = concat!("Gets the value of ", stringify!($field))]
                 #[inline(always)]
                 pub fn $field(&self) -> usize {
-                    self.user_context.general.$field
+                    self.user_context.general_regs.$field
                 }
 
                 #[doc = concat!("Sets the value of ", stringify!(field))]
                 #[inline(always)]
                 pub fn $setter_name(&mut self, $field: usize) {
-                    self.user_context.general.$field = $field;
+                    self.user_context.general_regs.$field = $field;
                 }
             )*
         }
@@ -487,11 +479,7 @@ cpu_context_impl_getter_setter!(
     [r12, set_r12],
     [r13, set_r13],
     [r14, set_r14],
-    [r15, set_r15],
-    [rip, set_rip],
-    [rflags, set_rflags],
-    [fsbase, set_fsbase],
-    [gsbase, set_gsbase]
+    [r15, set_r15]
 );
 
 /// The FPU context of user task.

@@ -111,6 +111,11 @@ unsafe fn init() {
 
     mm::kspace::init_kernel_page_table(meta_pages);
 
+    // SAFETY: This function is called only once on the BSP.
+    unsafe {
+        mm::kspace::activate_kernel_page_table();
+    }
+
     sync::init();
 
     boot::init_after_heap();
@@ -119,17 +124,18 @@ unsafe fn init() {
 
     unsafe { arch::late_init_on_bsp() };
 
+    // SAFETY: the boot page table is OK to be dismissed now since
+    // the kernel page table is activated just now.
+    unsafe {
+        mm::page_table::boot_pt::dismiss();
+    }
+
     #[cfg(target_arch = "x86_64")]
     arch::if_tdx_enabled!({
         arch::serial::init();
     });
 
     smp::init();
-
-    // SAFETY: This function is called only once on the BSP.
-    unsafe {
-        mm::kspace::activate_kernel_page_table();
-    }
 
     bus::init();
 

@@ -76,24 +76,8 @@ cpu_local_cell! {
 #[expect(missing_docs)]
 pub struct TrapFrame {
     // Pushed by 'trap.S'
-    pub rax: usize,
-    pub rbx: usize,
-    pub rcx: usize,
-    pub rdx: usize,
-    pub rsi: usize,
-    pub rdi: usize,
-    pub rbp: usize,
-    pub rsp: usize,
-    pub r8: usize,
-    pub r9: usize,
-    pub r10: usize,
-    pub r11: usize,
-    pub r12: usize,
-    pub r13: usize,
-    pub r14: usize,
-    pub r15: usize,
+    pub general_regs: GeneralRegs,
     pub _pad: usize,
-
     pub trap_num: usize,
     pub error_code: usize,
 
@@ -133,7 +117,15 @@ pub(crate) unsafe fn init() {
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
 #[repr(C)]
 pub(super) struct RawUserContext {
-    pub(super) general: GeneralRegs,
+    pub(super) general_regs: GeneralRegs,
+
+    // Software-saved user state.
+    pub(super) rip: usize,
+    pub(super) rflags: usize,
+    pub(super) fsbase: usize,
+    pub(super) gsbase: usize,
+
+    // Trap information
     pub(super) trap_num: usize,
     pub(super) error_code: usize,
 }
