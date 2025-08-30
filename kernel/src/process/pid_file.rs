@@ -57,7 +57,7 @@ impl PidFile {
         self.is_nonblocking.load(Ordering::Relaxed)
     }
 
-    pub(super) fn process(&self) -> &Arc<Process> {
+    pub fn process(&self) -> &Arc<Process> {
         &self.process
     }
 }

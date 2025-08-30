@@ -17,7 +17,7 @@ use crate::{
         process_vm::ProcessVm,
         rlimit::ResourceLimits,
         signal::sig_disposition::SigDispositions,
-        Credentials, ProgramToLoad,
+        Credentials, ProgramToLoad, UserNamespace,
     },
     sched::Nice,
     thread::Tid,
@@ -52,6 +52,7 @@ fn create_init_process(
     let resource_limits = ResourceLimits::default();
     let nice = Nice::default();
     let sig_dispositions = Arc::new(Mutex::new(SigDispositions::default()));
+    let user_ns = UserNamespace::get_init_singleton().clone();
 
     let init_proc = Process::new(
         pid,
@@ -61,6 +62,7 @@ fn create_init_process(
         resource_limits,
         nice,
         sig_dispositions,
+        user_ns,
     );
 
     let init_task = create_init_task(

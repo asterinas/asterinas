@@ -16,9 +16,10 @@ use crate::{
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
     process::{
+        nsproxy::NsProxy,
         posix_thread::name::ThreadName,
         signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
-        Credentials, Process,
+        Credentials, Process, UserNamespace,
     },
     sched::{Nice, SchedPolicy},
     thread::{task, Thread, Tid},
@@ -44,6 +45,8 @@ pub struct PosixThreadBuilder {
     sched_policy: SchedPolicy,
     fpu_context: FpuContext,
     is_init_process: bool,
+    user_ns: Option<Arc<UserNamespace>>,
+    ns_proxy: Option<Arc<NsProxy>>,
 }
 
 impl PosixThreadBuilder {
@@ -63,6 +66,8 @@ impl PosixThreadBuilder {
             sched_policy: SchedPolicy::Fair(Nice::default()),
             fpu_context: FpuContext::new(),
             is_init_process: false,
+            user_ns: None,
+            ns_proxy: None,
         }
     }
 
@@ -112,6 +117,16 @@ impl PosixThreadBuilder {
         self
     }
 
+    pub fn user_ns(mut self, user_ns: Arc<UserNamespace>) -> Self {
+        self.user_ns = Some(user_ns);
+        self
+    }
+
+    pub fn ns_proxy(mut self, ns_proxy: Arc<NsProxy>) -> Self {
+        self.ns_proxy = Some(ns_proxy);
+        self
+    }
+
     pub fn build(self) -> Arc<Task> {
         let Self {
             tid,
@@ -128,11 +143,20 @@ impl PosixThreadBuilder {
             sched_policy,
             fpu_context,
             is_init_process,
+            user_ns,
+            ns_proxy,
         } = self;
 
         let file_table = file_table.unwrap_or_else(|| RwArc::new(FileTable::new()));
 
         let fs = fs.unwrap_or_else(|| Arc::new(ThreadFsInfo::default()));
+
+        let user_ns = user_ns.unwrap_or_else(|| UserNamespace::get_init_singleton().clone());
+
+        let ns_proxy = ns_proxy.unwrap_or_else(|| {
+            assert!(Arc::ptr_eq(&user_ns, UserNamespace::get_init_singleton()));
+            NsProxy::get_init_singleton().clone()
+        });
 
         let root_vmar = process
             .upgrade()
@@ -161,6 +185,7 @@ impl PosixThreadBuilder {
                     virtual_timer_manager,
                     prof_timer_manager,
                     io_priority: AtomicU32::new(0),
+                    ns_proxy: Mutex::new(Some(ns_proxy.clone())),
                 }
             };
 
@@ -179,6 +204,8 @@ impl PosixThreadBuilder {
                 file_table,
                 fs,
                 fpu_context,
+                user_ns,
+                ns_proxy,
             );
 
             thread_table::add_thread(tid, thread.clone());
