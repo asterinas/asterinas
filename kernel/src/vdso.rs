@@ -358,7 +358,7 @@ fn init_vdso() {
     VDSO.call_once(|| Arc::new(vdso));
 }
 
-pub(super) fn init_in_first_process() {
+pub(super) fn init_in_first_kthread() {
     init_start_secs_count();
     init_vdso();
 

@@ -117,14 +117,14 @@ fn init_in_first_kthread(fs_resolver: &FsResolver) {
     net::init_in_first_kthread();
     fs::init_in_first_kthread(fs_resolver);
     ipc::init_in_first_kthread();
+    #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
+    vdso::init_in_first_kthread();
 }
 
 fn init_in_first_process(ctx: &Context) {
     device::init_in_first_process(ctx).unwrap();
     fs::init_in_first_process(ctx);
     process::init_in_first_process(ctx);
-    #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
-    vdso::init_in_first_process();
 }
 
 fn ap_init() {
