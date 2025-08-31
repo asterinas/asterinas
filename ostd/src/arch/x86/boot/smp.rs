@@ -44,7 +44,7 @@ use crate::{
         memory_region::{MemoryRegion, MemoryRegionType},
         smp::PerApRawInfo,
     },
-    mm::{Paddr, PAGE_SIZE},
+    mm::{paddr_to_vaddr, Paddr, PAGE_SIZE},
     task::disable_preempt,
 };
 
@@ -112,11 +112,16 @@ pub(crate) fn count_processors() -> Option<u32> {
 ///
 /// The caller must ensure that
 /// 1. we're in the boot context of the BSP,
-/// 2. all APs have not yet been booted, and
-/// 3. the arguments are valid to boot APs.
+/// 2. the kernel page table is already activated on the BSP,
+/// 3. all APs have not yet been booted, and
+/// 4. the arguments are valid to boot APs.
 pub(crate) unsafe fn bringup_all_aps(info_ptr: *const PerApRawInfo, pt_ptr: Paddr, num_cpus: u32) {
-    // SAFETY: The code and data to boot AP is valid to write because
-    // there are no readers and we are the only writer at this point.
+    // SAFETY:
+    // 1. The code and data to boot AP is valid to write because the caller
+    //    ensures that there are no readers and we are the only writer at this
+    //    point.
+    // 2. The caller ensures that the function is called after the kernel page
+    //    table is activated on the BSP.
     unsafe {
         copy_ap_boot_code();
         fill_boot_info_ptr(info_ptr);
@@ -186,7 +191,9 @@ unsafe fn fill_boot_info_ptr(info_ptr: *const PerApRawInfo) {
 
 /// # Safety
 ///
-/// The caller must ensure the pointer to be filled is valid to write.
+/// 1. The caller must ensure the pointer to be filled is valid to write.
+/// 2. This function should be called after the kernel page table is activated
+///    on the BSP.
 unsafe fn fill_boot_pt_ptr(pt_ptr: Paddr) {
     extern "C" {
         static mut __boot_page_table_pointer: u32;
@@ -194,9 +201,11 @@ unsafe fn fill_boot_pt_ptr(pt_ptr: Paddr) {
 
     let pt_ptr32 = pt_ptr.try_into().unwrap();
 
-    // SAFETY: The safety is upheld by the caller.
+    // SAFETY: The manual address translation here translates an identical
+    // mapped (in boot page table) symbol's physical address to its valid
+    // virtual address in kernel page table.
     unsafe {
-        __boot_page_table_pointer = pt_ptr32;
+        *(paddr_to_vaddr(&raw mut __boot_page_table_pointer as Paddr) as *mut u32) = pt_ptr32;
     }
 }
 

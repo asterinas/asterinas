@@ -257,7 +257,9 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
 ///
 /// # Safety
 ///
-/// This function should only be called once per CPU.
+/// 1. This function should only be called once per CPU.
+/// 2. All address translation of symbols in the boot sections must be manually
+///    done from now on.
 pub unsafe fn activate_kernel_page_table() {
     let kpt = KERNEL_PAGE_TABLE
         .get()
@@ -266,11 +268,5 @@ pub unsafe fn activate_kernel_page_table() {
     unsafe {
         kpt.first_activate_unchecked();
         crate::arch::mm::tlb_flush_all_including_global();
-    }
-
-    // SAFETY: the boot page table is OK to be dismissed now since
-    // the kernel page table is activated just now.
-    unsafe {
-        crate::mm::page_table::boot_pt::dismiss();
     }
 }
