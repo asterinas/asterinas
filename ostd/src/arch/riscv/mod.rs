@@ -26,6 +26,14 @@ pub(crate) fn init_cvm_guest() {
     // Unimplemented, no-op
 }
 
+/// Architecture-specific initialization on the bootstrapping processor.
+///
+/// It should be called when the heap and frame allocators are available.
+///
+/// # Safety
+///
+/// This function must be called only once in the boot context of the
+/// bootstrapping processor.
 pub(crate) unsafe fn late_init_on_bsp() {
     // SAFETY: This function is called in the boot context of the BSP.
     unsafe { trap::init() };
