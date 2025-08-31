@@ -27,13 +27,25 @@ pub(crate) fn init_cvm_guest() {
     // Unimplemented, no-op
 }
 
+/// Architecture-specific initialization on the bootstrapping processor.
+///
+/// # Safety
+///
+/// 1. This function should only be called once in the boot context of the BSP.
+/// 2. This function should be called after the heap allocator is initialized.
+/// 3. This function should be called after the kernel page table is activated
+///    on the BSP.
 pub(crate) unsafe fn late_init_on_bsp() {
     // SAFETY: This function is called in the boot context of the BSP.
     unsafe { trap::init() };
 
     let io_mem_builder = io::construct_io_mem_allocator_builder();
 
-    // SAFETY: We're on the BSP and we're ready to boot all APs.
+    // SAFETY:
+    // 1. The caller ensures that the function is only called once in the
+    //    boot context of the BSP.
+    // 2. The caller ensures that the function is called after the kernel
+    //    page table is activated on the BSP.
     unsafe { crate::boot::smp::boot_all_aps() };
 
     // SAFETY: This function is called once and at most once at a proper timing
