@@ -44,7 +44,7 @@ use crate::{
         memory_region::{MemoryRegion, MemoryRegionType},
         smp::PerApRawInfo,
     },
-    mm::{Paddr, PAGE_SIZE},
+    mm::{paddr_to_vaddr, Paddr, PAGE_SIZE},
     task::disable_preempt,
 };
 
@@ -196,8 +196,8 @@ unsafe fn fill_boot_pt_ptr(pt_ptr: Paddr) {
 
     // SAFETY: The safety is upheld by the caller.
     unsafe {
-        __boot_page_table_pointer = pt_ptr32;
-    }
+        *(paddr_to_vaddr(&raw mut __boot_page_table_pointer as Paddr) as *mut u32) = pt_ptr32
+    };
 }
 
 // The symbols are defined in the linker script.
