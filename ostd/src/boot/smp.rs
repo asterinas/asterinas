@@ -65,8 +65,9 @@ static HW_CPU_ID_MAP: SpinLock<BTreeMap<u32, HwCpuId>> = SpinLock::new(BTreeMap:
 ///
 /// # Safety
 ///
-/// This function can only be called in the boot context of the BSP where APs have
-/// not yet been booted.
+/// 1. This function should only be called once in the boot context of the BSP.
+/// 2. This function should be called after the kernel page table is activated
+///    on the BSP.
 pub(crate) unsafe fn boot_all_aps() {
     // Mark the BSP as started.
     report_online_and_hw_cpu_id(crate::cpu::CpuId::bsp().as_usize().try_into().unwrap());
@@ -104,8 +105,12 @@ pub(crate) unsafe fn boot_all_aps() {
 
     let info_ptr = AP_BOOT_INFO.get().unwrap().per_ap_raw_info.as_ptr();
     let pt_ptr = crate::mm::page_table::boot_pt::with_borrow(|pt| pt.root_address()).unwrap();
-    // SAFETY: It's the right time to boot APs (guaranteed by the caller) and
-    // the arguments are valid to boot APs (generated above).
+    // SAFETY:
+    // 1. The caller ensures that the function is only called once in the
+    //    boot context of the BSP.
+    // 2. The caller ensures that the function is called after the kernel
+    //    page table is activated on the BSP.
+    // 3. The arguments here are valid to boot APs.
     unsafe { bringup_all_aps(info_ptr, pt_ptr, num_cpus as u32) };
 
     wait_for_all_aps_started(num_cpus);
@@ -141,6 +146,14 @@ fn ap_early_entry(cpu_id: u32) -> ! {
 
     // SAFETY: This function is only called once on this AP.
     unsafe { crate::mm::kspace::activate_kernel_page_table() };
+
+    // SAFETY:
+    // 1. The kernel page table is activated on this AP.
+    // 2. The function is called only once on this AP.
+    // 3. No remaining `with_borrow` invocations on this CPU from now on.
+    unsafe {
+        crate::mm::page_table::boot_pt::dismiss();
+    }
 
     // Mark the AP as started.
     report_online_and_hw_cpu_id(cpu_id);

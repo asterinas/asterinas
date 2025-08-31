@@ -54,12 +54,12 @@ static CPU_FEATURES: Once<FeatureInfo> = Once::new();
 
 /// Architecture-specific initialization on the bootstrapping processor.
 ///
-/// It should be called when the heap and frame allocators are available.
-///
 /// # Safety
 ///
-/// This function must be called only once in the boot context of the
-/// bootstrapping processor.
+/// 1. This function should only be called once in the boot context of the BSP.
+/// 2. This function should be called after the heap allocator is initialized.
+/// 3. This function should be called after the kernel page table is activated
+///    on the BSP.
 pub(crate) unsafe fn late_init_on_bsp() {
     // SAFETY: This function is only called once on BSP.
     unsafe { trap::init() };
@@ -72,7 +72,11 @@ pub(crate) unsafe fn late_init_on_bsp() {
     kernel::tsc::init_tsc_freq();
     timer::init_bsp();
 
-    // SAFETY: We're on the BSP and we're ready to boot all APs.
+    // SAFETY:
+    // 1. The caller ensures that the function is only called once in the
+    //    boot context of the BSP.
+    // 2. The caller ensures that the function is called after the kernel
+    //    page table is activated on the BSP.
     unsafe { crate::boot::smp::boot_all_aps() };
 
     if_tdx_enabled!({
