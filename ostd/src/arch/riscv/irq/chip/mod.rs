@@ -17,7 +17,6 @@ use crate::{
         boot::DEVICE_TREE,
         irq::{chip::plic::Plic, HwIrqLine, InterruptSource},
     },
-    cpu::CpuId,
     io::IoMemAllocatorBuilder,
     irq::IrqLine,
     sync::{LocalIrqDisabled, SpinLock},
@@ -92,9 +91,9 @@ impl IrqChip {
 
         plic.map_interrupt_source_to(interrupt_source_in_fdt.interrupt, &irq_line)?;
         plic.set_priority(interrupt_source_in_fdt.interrupt, 1);
-        // FIXME: Here we only enable external insterrupt on the BSP. We should
-        // enable it on APs as well when SMP is supported.
-        plic.set_interrupt_enabled(CpuId::bsp().into(), interrupt_source_in_fdt.interrupt, true);
+        plic.managed_harts().for_each(|hart| {
+            plic.set_interrupt_enabled(hart, interrupt_source_in_fdt.interrupt, true)
+        });
 
         Ok(MappedIrqLine {
             irq_line,
@@ -145,9 +144,8 @@ impl IrqChip {
         let InterruptSourceOnChip { index, interrupt } = &mapped_irq_line.interrupt_source_on_chip;
         let plic = &mut plics[*index];
 
-        // FIXME: Here we only disable external insterrupt on the BSP. We should
-        // disable it on APs as well when SMP is supported.
-        plic.set_interrupt_enabled(CpuId::bsp().into(), *interrupt, false);
+        plic.managed_harts()
+            .for_each(|hart| plic.set_interrupt_enabled(hart, *interrupt, false));
         plic.set_priority(*interrupt, 0);
         plic.unmap_interrupt_source(*interrupt);
     }

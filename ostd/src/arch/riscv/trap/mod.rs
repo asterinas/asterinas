@@ -21,7 +21,7 @@ use crate::{
         irq::{disable_local, enable_local, HwIrqLine, InterruptSource, IRQ_CHIP},
         timer::TIMER_IRQ_NUM,
     },
-    cpu::{CpuId, PrivilegeLevel},
+    cpu::PrivilegeLevel,
     ex_table::ExTable,
     irq::call_irq_callback_functions,
     mm::MAX_USERSPACE_VADDR,
@@ -115,9 +115,8 @@ pub(super) fn handle_irq(trap_frame: &TrapFrame, interrupt: Interrupt, priv_leve
             );
         }
         Interrupt::SupervisorExternal => {
-            // No races because we are in IRQs.
-            let current_cpu = CpuId::current_racy().into();
-            while let Some(hw_irq_line) = IRQ_CHIP.get().unwrap().claim_interrupt(current_cpu) {
+            let hart_id = crate::arch::boot::smp::get_current_hart_id();
+            while let Some(hw_irq_line) = IRQ_CHIP.get().unwrap().claim_interrupt(hart_id) {
                 call_irq_callback_functions(trap_frame, &hw_irq_line, priv_level);
             }
         }
