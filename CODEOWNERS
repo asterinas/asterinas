@@ -49,6 +49,7 @@
 /kernel/comps/logger/           @cchanging
 /kernel/comps/mlsdisk/          @cqs21 @lucassong-mh
 /kernel/comps/network/          @StevenJiang1110 @lrh2000
+/kernel/comps/pci/              @sdww0
 /kernel/comps/softirq/          @cchanging
 /kernel/comps/time/             @cchanging
 /kernel/comps/virtio/           @sdww0
@@ -72,7 +73,6 @@
 /ostd/                          @lrh2000 @junyang-zh @sdww0
 
 # Module code owners
-/ostd/src/bus/                  @sdww0
 /ostd/src/logger.rs             @cchanging
 /ostd/src/timer/                @cchanging
 

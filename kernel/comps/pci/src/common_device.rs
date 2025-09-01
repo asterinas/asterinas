@@ -9,8 +9,9 @@ use alloc::vec::Vec;
 use super::{
     capability::Capability,
     cfg_space::{AddrLen, Bar, Command, PciDeviceCommonCfgOffset, Status},
-    device_info::{PciDeviceId, PciDeviceLocation},
+    device_info::PciDeviceId,
 };
+use crate::device_info::PciDeviceLocation;
 
 /// PCI common device, Contains a range of information and functions common to PCI devices.
 #[derive(Debug)]

@@ -11,7 +11,6 @@ mod io;
 pub(crate) mod iommu;
 pub(crate) mod irq;
 pub(crate) mod mm;
-pub(crate) mod pci;
 pub mod qemu;
 pub(crate) mod serial;
 pub(crate) mod task;
@@ -45,8 +44,6 @@ pub(crate) unsafe fn late_init_on_bsp() {
     // 1. All the system device memory have been removed from the builder.
     // 2. RISC-V platforms do not have port I/O.
     unsafe { crate::io::init(io_mem_builder) };
-
-    pci::init();
 }
 
 pub(crate) unsafe fn init_on_ap() {
