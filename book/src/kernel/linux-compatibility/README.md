@@ -336,6 +336,7 @@ provided by Linux on x86-64 architecture.
 | 313     | finit_module           | ❌             |     |
 | 314     | sched_setattr          | ✅             | [⚠️](limitations-on-system-calls/process-and-thread-management.md#sched_getattr-and-sched_setattr) |
 | 315     | sched_getattr          | ✅             | [⚠️](limitations-on-system-calls/process-and-thread-management.md#sched_getattr-and-sched_setattr) |
+| 316     | renameat2              | ✅             | [⚠️](limitations-on-system-calls/file-and-directory-operations.md#renameat2) |
 | 318     | getrandom              | ✅             | [⚠️](limitations-on-system-calls/system-information-and-misc.md#getrandom) |
 | 319     | memfd_create           | ✅             |     |
 | 322     | execveat               | ✅             |     |
