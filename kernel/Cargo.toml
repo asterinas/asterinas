@@ -69,7 +69,7 @@ cfg-if = "1.0"
 tdx-guest = { version = "0.2.1", optional = true }
 
 [target.riscv64imac-unknown-none-elf.dependencies]
-riscv = { version = "0.11.1", features = ["s-mode"] }
+riscv = { version = "0.15.0", features = ["s-mode"] }
 
 [target.loongarch64-unknown-none-softfloat.dependencies]
 loongArch64 = "0.2.5"

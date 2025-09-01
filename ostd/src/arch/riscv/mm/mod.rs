@@ -84,9 +84,7 @@ bitflags::bitflags! {
 }
 
 pub(crate) fn tlb_flush_addr(vaddr: Vaddr) {
-    unsafe {
-        riscv::asm::sfence_vma(0, vaddr);
-    }
+    riscv::asm::sfence_vma(0, vaddr);
 }
 
 pub(crate) fn tlb_flush_addr_range(range: &Range<Vaddr>) {
