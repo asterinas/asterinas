@@ -62,20 +62,20 @@ provided by Linux on x86-64 architecture.
 | 39      | getpid                 | ✅             |     |
 | 40      | sendfile               | ✅             |     |
 | 41      | socket                 | ✅             | [⚠️](limitations-on-system-calls/networking-and-sockets.html#socket) |
-| 42      | connect                | ✅             |     |
+| 42      | connect                | ✅             | [⚠️](limitations-on-system-calls/networking-and-sockets.html#connect) |
 | 43      | accept                 | ✅             |     |
-| 44      | sendto                 | ✅             |     |
-| 45      | recvfrom               | ✅             |     |
-| 46      | sendmsg                | ✅             |     |
-| 47      | recvmsg                | ✅             |     |
+| 44      | sendto                 | ✅             | [⚠️](limitations-on-system-calls/networking-and-sockets.html#sendto-and-sendmsg) |
+| 45      | recvfrom               | ✅             | [⚠️](limitations-on-system-calls/networking-and-sockets.html#recvfrom-and-recvmsg) |
+| 46      | sendmsg                | ✅             | [⚠️](limitations-on-system-calls/networking-and-sockets.html#sendto-and-sendmsg) |
+| 47      | recvmsg                | ✅             | [⚠️](limitations-on-system-calls/networking-and-sockets.html#recvfrom-and-recvmsg) |
 | 48      | shutdown               | ✅             |     |
-| 49      | bind                   | ✅             |     |
+| 49      | bind                   | ✅             | [⚠️](limitations-on-system-calls/networking-and-sockets.html#bind) |
 | 50      | listen                 | ✅             |     |
 | 51      | getsockname            | ✅             |     |
 | 52      | getpeername            | ✅             |     |
-| 53      | socketpair             | ✅             |     |
-| 54      | setsockopt             | ✅             |     |
-| 55      | getsockopt             | ✅             |     |
+| 53      | socketpair             | ✅             | [⚠️](limitations-on-system-calls/networking-and-sockets.html#socketpair) |
+| 54      | setsockopt             | ✅             | [⚠️](limitations-on-system-calls/networking-and-sockets.html#getsockopt-and-setsockopt) |
+| 55      | getsockopt             | ✅             | [⚠️](limitations-on-system-calls/networking-and-sockets.html#getsockopt-and-setsockopt) |
 | 56      | clone                  | ✅             |     |
 | 57      | fork                   | ✅             |     |
 | 58      | vfork                  | ❌             |     |
