@@ -1,0 +1,35 @@
+From 1d5f4a3bbfd9527e9225880320ef04f618df0656 Mon Sep 17 00:00:00 2001
+From: Wei Zhang <ruoyuan.zw@antgroup.com>
+Date: Wed, 7 May 2025 05:34:47 +0000
+Subject: [PATCH] Skip checking graphics under sys
+
+Signed-off-by: Wei Zhang <ruoyuan.zw@antgroup.com>
+---
+ hw/xfree86/fbdevhw/fbdevhw.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/hw/xfree86/fbdevhw/fbdevhw.c b/hw/xfree86/fbdevhw/fbdevhw.c
+index 3d8b92e..1593f48 100644
+--- a/hw/xfree86/fbdevhw/fbdevhw.c
++++ b/hw/xfree86/fbdevhw/fbdevhw.c
+@@ -328,7 +328,7 @@ fbdev_open(int scrnIndex, const char *dev, char **namep)
+         xf86DrvMsg(scrnIndex, X_ERROR, "open %s: %s\n", dev, strerror(errno));
+         return -1;
+     }
+-
++#if 0
+     /* only touch non-PCI devices on this path */
+     {
+         char buf[PATH_MAX] = {0};
+@@ -344,7 +344,7 @@ fbdev_open(int scrnIndex, const char *dev, char **namep)
+         }
+         free(sysfs_path);
+     }
+-
++#endif
+     if (namep) {
+         if (-1 == ioctl(fd, FBIOGET_FSCREENINFO, (void *) (&fix))) {
+             *namep = NULL;
+-- 
+2.34.1
+

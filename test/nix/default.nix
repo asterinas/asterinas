@@ -1,6 +1,7 @@
 { target ? "x86_64", enableBasicTest ? false, enableBenchmark ? false
 , enableSyscallTest ? false, syscallTestSuite ? "ltp"
-, syscallTestWorkDir ? "/tmp", smp ? 1, initramfsCompressed ? true, }:
+, syscallTestWorkDir ? "/tmp", smp ? 1, desktopEnvironment ? "none"
+, initramfsCompressed ? true, }:
 let
   crossSystem.config = if target == "x86_64" then
     "x86_64-unknown-linux-gnu"
@@ -30,11 +31,21 @@ in rec {
     testSuite = syscallTestSuite;
     workDir = syscallTestWorkDir;
   };
+
+  xfce = pkgs.callPackage ./xfce.nix {
+    inherit pkgs;
+  };
+  xorg = pkgs.callPackage ./xorg.nix {
+    inherit pkgs;
+  };
+
   initramfs = pkgs.callPackage ./initramfs.nix {
     inherit busybox;
     apps = if enableBasicTest then apps else null;
     benchmark = if enableBenchmark then benchmark else null;
     syscall = if enableSyscallTest then syscall else null;
+    xfce = if desktopEnvironment == "xfce" then xfce else null;
+    xorg = if desktopEnvironment == "xfce" then xorg else null;
   };
   initramfs-image = pkgs.callPackage ./initramfs-image.nix {
     inherit initramfs;

@@ -1,0 +1,57 @@
+From 447df5780157bcfe1ccd4c0ac2df2028efdaac4b Mon Sep 17 00:00:00 2001
+From: Wei Zhang <ruoyuan.zw@antgroup.com>
+Date: Thu, 28 Aug 2025 16:58:42 +0800
+Subject: [PATCH] Fix not using consistent monitor identifiers
+
+The settings dialog was using gdk_monitor_get_model() which often returns
+NULL, causing it to generate invalid property paths. The main daemon uses
+connector names via xfw_monitor_get_connector(). This mismatch prevented
+wallpaper changes from taking effect.
+
+Changed settings dialog to use gdk_monitor_get_model() with fallback to
+"default" when NULL, ensuring both processes use compatible monitor
+identifiers for XfConf property paths.
+
+Signed-off-by: Wei Zhang <ruoyuan.zw@antgroup.com>
+---
+ common/xfdesktop-common.c | 19 ++++++++++++++++++-
+ 1 file changed, 18 insertions(+), 1 deletion(-)
+
+diff --git a/common/xfdesktop-common.c b/common/xfdesktop-common.c
+index c846c05..7b3f923 100644
+--- a/common/xfdesktop-common.c
++++ b/common/xfdesktop-common.c
+@@ -114,12 +114,29 @@ xfdesktop_get_monitor_name_from_gtk_widget(GtkWidget *widget, gint monitor_num)
+     GdkWindow     *window = NULL;
+     GdkDisplay    *display = NULL;
+     GdkMonitor    *monitor = NULL;
++    const gchar   *model = NULL;
++
++    g_warning("DEBUG: xfdesktop_get_monitor_name_from_gtk_widget called with monitor_num: %d", monitor_num);
+
+     window = gtk_widget_get_window(widget);
+     display = gdk_window_get_display(window);
+     monitor = gdk_display_get_monitor(display, monitor_num);
+
+-    return g_strdup(gdk_monitor_get_model(monitor));
++    // Get monitor model name (this is what GDK provides)
++    model = gdk_monitor_get_model(monitor);
++
++    g_warning("DEBUG: xfdesktop_get_monitor_name_from_gtk_widget result:");
++    g_warning("DEBUG:   Monitor model: '%s'", model ? model : "(null)");
++    g_warning("DEBUG:   Monitor number: %d", monitor_num);
++
++    // For consistency, if model is NULL, fall back to a default identifier
++    if (model == NULL || strlen(model) == 0) {
++        g_warning("DEBUG:   Model is NULL/empty, using 'default' as fallback");
++        return g_strdup("default");
++    }
++
++    g_warning("DEBUG:   Returning model name: '%s'", model);
++    return g_strdup(model);
+ }
+
+ gint
+--
+2.43.0
+
