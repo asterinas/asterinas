@@ -7,7 +7,10 @@ mod trap;
 
 use core::sync::atomic::Ordering;
 
-use riscv::register::scause::{Interrupt, Trap};
+use riscv::{
+    interrupt::supervisor::{Exception, Interrupt},
+    register::scause::Trap,
+};
 use spin::Once;
 pub use trap::TrapFrame;
 pub(super) use trap::{RawUserContext, SSTATUS_FS_MASK, SSTATUS_SUM};
@@ -54,14 +57,17 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
     }
 
     let scause = riscv::register::scause::read();
-    let exception = match scause.cause() {
+    let Ok(cause) = Trap::<Interrupt, Exception>::try_from(scause.cause()) else {
+        panic!(
+            "Cannot handle unknown trap, scause: {:#x}, trapframe: {:#x?}.",
+            scause.bits(),
+            f
+        );
+    };
+
+    let exception = match cause {
         Trap::Interrupt(interrupt) => {
-            call_irq_callback_functions_by_scause(
-                f,
-                scause.bits(),
-                interrupt,
-                PrivilegeLevel::Kernel,
-            );
+            handle_irq(f, interrupt, PrivilegeLevel::Kernel);
             return;
         }
         Trap::Exception(raw_exception) => {
@@ -86,13 +92,6 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
                 panic!("Cannot handle page fault in kernel space, exception: {:#x?}, trapframe: {:#x?}.", exception, f);
             }
         }
-        CpuException::Unknown => {
-            panic!(
-                "Cannot handle unknown exception, scause: {:#x}, trapframe: {:#x?}.",
-                scause.bits(),
-                f
-            );
-        }
         _ => {
             panic!(
                 "Cannot handle kernel exception, exception: {:#x?}, trapframe: {:#x?}.",
@@ -103,12 +102,7 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
     disable_local_if(was_irq_enabled);
 }
 
-pub(super) fn call_irq_callback_functions_by_scause(
-    trap_frame: &TrapFrame,
-    scause: usize,
-    interrupt: Interrupt,
-    priv_level: PrivilegeLevel,
-) {
+pub(super) fn handle_irq(trap_frame: &TrapFrame, interrupt: Interrupt, priv_level: PrivilegeLevel) {
     match interrupt {
         Interrupt::SupervisorTimer => {
             call_irq_callback_functions(
@@ -133,12 +127,6 @@ pub(super) fn call_irq_callback_functions_by_scause(
                 trap_frame,
                 &HwIrqLine::new(ipi_irq_num, InterruptSource::Software),
                 priv_level,
-            );
-        }
-        Interrupt::Unknown => {
-            panic!(
-                "Cannot handle unknown supervisor interrupt, scause: {:#x}, trapframe: {:#x?}.",
-                scause, trap_frame
             );
         }
     }

@@ -6,12 +6,15 @@ use alloc::boxed::Box;
 use core::{arch::global_asm, fmt::Debug};
 
 use ostd_pod::Pod;
-use riscv::register::scause::{Exception, Trap};
+use riscv::{
+    interrupt::supervisor::{Exception, Interrupt},
+    register::scause::Trap,
+};
 
 use crate::{
     arch::{
         cpu::extension::{has_extensions, IsaExtensions},
-        trap::{call_irq_callback_functions_by_scause, RawUserContext, TrapFrame, SSTATUS_FS_MASK},
+        trap::{handle_irq, RawUserContext, TrapFrame, SSTATUS_FS_MASK},
     },
     cpu::PrivilegeLevel,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
@@ -125,7 +128,6 @@ impl CpuException {
             InstructionPageFault => Self::InstructionPageFault(stval),
             LoadPageFault => Self::LoadPageFault(stval),
             StorePageFault => Self::StorePageFault(stval),
-            Unknown => Self::Unknown,
         }
     }
 }
@@ -186,14 +188,21 @@ impl UserContextApiInternal for UserContext {
             self.user_context.run();
 
             let scause = riscv::register::scause::read();
-            match scause.cause() {
+            let Ok(cause) = Trap::<Interrupt, Exception>::try_from(scause.cause()) else {
+                match scause.cause() {
+                    Trap::Interrupt(i) => {
+                        panic!("Unknown interrupt in user mode: {:?}", i);
+                    }
+                    Trap::Exception(e) => {
+                        log::info!("Unknown exception in user mode: {:?}", e);
+                        self.exception = Some(CpuException::Unknown);
+                        break ReturnReason::UserException;
+                    }
+                }
+            };
+            match cause {
                 Trap::Interrupt(interrupt) => {
-                    call_irq_callback_functions_by_scause(
-                        &self.as_trap_frame(),
-                        scause.bits(),
-                        interrupt,
-                        PrivilegeLevel::User,
-                    );
+                    handle_irq(&self.as_trap_frame(), interrupt, PrivilegeLevel::User);
                     crate::arch::irq::enable_local();
                 }
                 Trap::Exception(Exception::UserEnvCall) => {
