@@ -108,6 +108,11 @@ impl Plic {
         unsafe { self.io_mem.write_once(offset, &interrupt_source) };
     }
 
+    /// Gets an iterator of harts managed by this PLIC.
+    pub(super) fn managed_harts(&self) -> impl Iterator<Item = u32> + use<'_> {
+        self.hart_to_target_mapping.keys().copied()
+    }
+
     /// Initializes the PLIC.
     pub(super) fn init(&mut self) {
         // Initialize priorities of all interrupt sources to 0.
@@ -115,20 +120,20 @@ impl Plic {
             self.set_priority(interrupt_source, 0);
         }
 
-        for hart in self.hart_to_target_mapping.keys() {
+        for hart in self.managed_harts() {
             // Disable all interrupt sources for all targets.
             for interrupt_source in 1..self.num_interrupt_sources() {
-                self.set_interrupt_enabled(*hart, interrupt_source, false);
+                self.set_interrupt_enabled(hart, interrupt_source, false);
             }
 
             // Set all targets' thresholds to 0 to allow all priority levels.
-            self.set_threshold(*hart, 0);
+            self.set_threshold(hart, 0);
 
             // Clear all pending claims.
-            while let irq_num = self.claim_interrupt(*hart)
+            while let irq_num = self.claim_interrupt(hart)
                 && irq_num != 0
             {
-                self.complete_interrupt(*hart, irq_num);
+                self.complete_interrupt(hart, irq_num);
             }
         }
     }
