@@ -11,11 +11,12 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_renameat(
+pub fn sys_renameat2(
     old_dirfd: FileDesc,
     old_path_addr: Vaddr,
     new_dirfd: FileDesc,
     new_path_addr: Vaddr,
+    flags: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let user_space = ctx.user_space();
@@ -25,6 +26,14 @@ pub fn sys_renameat(
         "old_dirfd = {}, old_path = {:?}, new_dirfd = {}, new_path = {:?}",
         old_dirfd, old_path_name, new_dirfd, new_path_name
     );
+    let Some(flags) = Flags::from_bits(flags) else {
+        return_errno_with_message!(Errno::EINVAL, "invalid flags");
+    };
+    // TODO: Add support for handling the `NOREPLACE`, `EXCHANGE`, and `WHITEOUT` flags.
+    if !flags.is_empty() {
+        warn!("unsupported flags: {:?}", flags);
+        return_errno_with_message!(Errno::EINVAL, "unsupported flags");
+    }
 
     let fs_ref = ctx.thread_local.borrow_fs();
     let fs = fs_ref.resolver().read();
@@ -70,10 +79,31 @@ pub fn sys_renameat(
     Ok(SyscallReturn::Return(0))
 }
 
+pub fn sys_renameat(
+    old_dirfd: FileDesc,
+    old_path_addr: Vaddr,
+    new_dirfd: FileDesc,
+    new_path_addr: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
+    self::sys_renameat2(old_dirfd, old_path_addr, new_dirfd, new_path_addr, 0, ctx)
+}
+
 pub fn sys_rename(
     old_path_addr: Vaddr,
     new_path_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    self::sys_renameat(AT_FDCWD, old_path_addr, AT_FDCWD, new_path_addr, ctx)
+    self::sys_renameat2(AT_FDCWD, old_path_addr, AT_FDCWD, new_path_addr, 0, ctx)
+}
+
+bitflags! {
+    /// Flags used in the `renameat2` system call.
+    ///
+    /// Reference: <https://elixir.bootlin.com/linux/v6.16.3/source/include/uapi/linux/fcntl.h#L140-L143>.
+    struct Flags: u32 {
+        const NOREPLACE = 1 << 0;
+        const EXCHANGE  = 1 << 1;
+        const WHITEOUT  = 1 << 2;
+    }
 }
