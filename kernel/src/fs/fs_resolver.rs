@@ -34,7 +34,6 @@ impl FsResolver {
     }
 
     /// Gets the path of the current working directory.
-    #[expect(dead_code)]
     pub fn cwd(&self) -> &Path {
         &self.cwd
     }

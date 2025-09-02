@@ -18,7 +18,10 @@ use crate::{
         },
     },
     prelude::*,
-    process::{Gid, Uid},
+    process::{
+        posix_thread::{thread_table, AsPosixThread},
+        Gid, Uid,
+    },
 };
 
 mod dentry;
@@ -316,6 +319,92 @@ impl Path {
         }
 
         self.mount.graft_mount_tree(dst_path)
+    }
+
+    /// Changes the root filesystem of the calling process.
+    ///
+    /// This function moves the root mount of the current process to the
+    /// directory `put_old_path` and makes `self` (the new root path) the new
+    /// root mount of the namespace. It also changes the root directory and the
+    /// current working directory of each process or thread in the same mount
+    /// namespace to `new_root` if they point to the old root directory.
+    pub fn pivot_root(&self, put_old_path: &Self, ctx: &Context) -> Result<()> {
+        if self.type_() != InodeType::Dir || put_old_path.type_() != InodeType::Dir {
+            return_errno_with_message!(Errno::ENOTDIR, "new_root and put_old must be directories");
+        }
+        if !self.is_mount_root() {
+            return_errno_with_message!(Errno::EINVAL, "new_root must be a mountpoint");
+        }
+        if self.mount.parent().is_none() {
+            return_errno_with_message!(Errno::EINVAL, "cannot pivot_root to root mount");
+        }
+
+        let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
+        let current_mnt_ns = current_ns_proxy.unwrap().mnt_ns();
+        if !current_mnt_ns.owns(self.mount_node())
+            || !current_mnt_ns.owns(put_old_path.mount_node())
+        {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "new_root and put_old must be in the current mount namespace"
+            );
+        }
+
+        if !Arc::ptr_eq(self.mount_node(), put_old_path.mount_node()) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "put_old must be on the same mount as new_root"
+            );
+        }
+        if !put_old_path.dentry.is_descendant_of(&self.dentry) {
+            return_errno_with_message!(Errno::EINVAL, "put_old must be underneath new_root");
+        }
+
+        let old_root = {
+            let fs = ctx.thread_local.borrow_fs();
+            let fs_resolver = fs.resolver().read();
+            fs_resolver.root().clone()
+        };
+        if Arc::ptr_eq(&old_root.mount, &self.mount) {
+            return_errno_with_message!(Errno::EBUSY, "new_root is the current root");
+        }
+
+        let parent_path = {
+            let parent_mount = old_root.mount.parent().unwrap().upgrade().unwrap();
+            let mountpoint = old_root.mount.mountpoint().unwrap();
+            Path::new(parent_mount, mountpoint)
+        };
+
+        let new_root = self;
+        new_root.mount.graft_mount_tree(&parent_path).unwrap();
+        old_root.mount.graft_mount_tree(put_old_path).unwrap();
+
+        thread_table::for_each_thread(|thread| {
+            let posix_thread = thread.as_posix_thread().unwrap();
+            let ns_proxy = posix_thread.ns_proxy().lock();
+            if let Some(ns_proxy) = ns_proxy.as_ref() {
+                let mnt_ns = ns_proxy.mnt_ns();
+                if Arc::ptr_eq(mnt_ns, current_mnt_ns) {
+                    let fs = posix_thread.fs();
+                    let mut fs_resolver = fs.resolver().write();
+
+                    let root_path = fs_resolver.root();
+                    if Arc::ptr_eq(&root_path.mount, &old_root.mount)
+                        && Arc::ptr_eq(&root_path.dentry, &old_root.dentry)
+                    {
+                        fs_resolver.set_root(new_root.clone());
+                    }
+
+                    let cwd_path = fs_resolver.cwd();
+                    if Arc::ptr_eq(&cwd_path.mount, &old_root.mount)
+                        && Arc::ptr_eq(&cwd_path.dentry, &old_root.dentry)
+                    {
+                        fs_resolver.set_cwd(new_root.clone());
+                    }
+                }
+            }
+        });
+        Ok(())
     }
 
     /// Creates a `Path` by making an inode of the `type_` with the `mode`.

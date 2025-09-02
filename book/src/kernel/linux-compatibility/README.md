@@ -175,7 +175,7 @@ provided by Linux on x86-64 architecture.
 | 152     | munlockall             | ❌             |     |
 | 153     | vhangup                | ❌             |     |
 | 154     | modify_ldt             | ❌             |     |
-| 155     | pivot_root             | ❌             |     |
+| 155     | pivot_root             | ✅             |     |
 | 156     | _sysctl                | ❌             |     |
 | 157     | prctl                  | ✅             |     |
 | 158     | arch_prctl             | ✅             |     |
