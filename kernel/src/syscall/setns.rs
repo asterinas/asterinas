@@ -11,7 +11,7 @@
 //! 2. A `PidFile` opened by `pidfd_open` or by opening `/proc/[pid]` directory.
 
 use crate::{
-    fs::file_table::FileDesc,
+    fs::{file_table::FileDesc, path::MountNamespace},
     net::UtsNamespace,
     prelude::*,
     process::{
@@ -85,6 +85,18 @@ fn build_proxy_from_pid_file(
         set_uts_ns(&mut builder, target_ns, ctx)?;
     }
 
+    if flags.contains(CloneFlags::CLONE_NEWNS) {
+        if ctx.thread_local.is_fs_shared() {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "cannot change mount namespace with shared filesystem"
+            );
+        }
+
+        let target_ns = target_proxy.mnt_ns();
+        set_mnt_ns(&mut builder, target_ns, ctx)?;
+    }
+
     // TODO: Support setting other namespaces from the target process.
 
     Ok(builder.build())
@@ -107,6 +119,27 @@ fn set_uts_ns(
     // TODO: Are the checks above sufficient?
 
     builder.uts_ns(target_ns.clone());
+
+    Ok(())
+}
+
+fn set_mnt_ns(
+    builder: &mut NsProxyBuilder,
+    target_ns: &Arc<MountNamespace>,
+    ctx: &Context,
+) -> Result<()> {
+    // Verify the thread has SYS_ADMIN capability in the target namespace's owner
+    // and the current user namespace.
+    target_ns
+        .owner()
+        .check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
+    ctx.thread_local
+        .borrow_user_ns()
+        .check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
+
+    // TODO: Are the checks above sufficient?
+
+    builder.mnt_ns(target_ns.clone());
 
     Ok(())
 }
