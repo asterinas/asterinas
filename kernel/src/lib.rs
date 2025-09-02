@@ -74,6 +74,7 @@ mod syscall;
 mod thread;
 mod time;
 mod util;
+mod wait;
 // TODO: Add vDSO support for other architectures.
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 mod vdso;

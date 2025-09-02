@@ -24,6 +24,7 @@ use crate::{
     },
     prelude::*,
     process::signal::Pollee,
+    wait::SigTimeoutWaitQueue,
 };
 
 pub(super) struct Listener {
@@ -160,7 +161,7 @@ pub(super) struct Backlog {
     pollee: Pollee,
     backlog: AtomicUsize,
     incoming_conns: SpinLock<Option<VecDeque<Connected>>>,
-    wait_queue: WaitQueue,
+    wait_queue: SigTimeoutWaitQueue,
     listener_cred: SocketCred<ReadDupOp>,
     is_seqpacket: bool,
 }

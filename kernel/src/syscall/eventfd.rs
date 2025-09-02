@@ -30,6 +30,7 @@ use crate::{
         Gid, Uid,
     },
     time::clocks::RealTimeClock,
+    wait::SigTimeoutWaitQueue,
 };
 
 pub fn sys_eventfd(init_val: u64, ctx: &Context) -> Result<SyscallReturn> {
@@ -78,7 +79,7 @@ struct EventFile {
     counter: Mutex<u64>,
     pollee: Pollee,
     flags: Mutex<Flags>,
-    write_wait_queue: WaitQueue,
+    write_wait_queue: SigTimeoutWaitQueue,
 }
 
 impl EventFile {

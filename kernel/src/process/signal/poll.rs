@@ -5,15 +5,13 @@ use core::{
     time::Duration,
 };
 
-use ostd::{
-    sync::{Waiter, Waker},
-    task::Task,
-};
+use ostd::{sync::Waiter, task::Task};
 
 use crate::{
     events::{IoEvents, Observer, Subject},
     prelude::*,
     time::wait::TimeoutExt,
+    wait::{SigTimeoutWaiter, SigTimeoutWaker},
 };
 
 /// A pollee represents any I/O object (e.g., a file or socket) that can be polled.
@@ -275,7 +273,7 @@ impl<O> PollAdaptor<O> {
 /// A poller that can be used to wait for some events.
 pub struct Poller {
     poller: PollHandle,
-    waiter: Waiter,
+    waiter: SigTimeoutWaiter,
     timeout: TimeoutExt<'static>,
 }
 
@@ -315,7 +313,7 @@ impl Poller {
     }
 }
 
-impl Observer<IoEvents> for Waker {
+impl Observer<IoEvents> for SigTimeoutWaker {
     fn on_events(&self, _events: &IoEvents) {
         self.wake_up();
     }

@@ -2,11 +2,12 @@
 use alloc::fmt;
 use core::ptr;
 
-use ostd::sync::{WaitQueue, Waiter, Waker};
+use ostd::sync::{WaitQueue, Waiter};
 
 use crate::{
     fs::{file_handle::FileLike, inode_handle::InodeHandle},
     prelude::*,
+    wait::{SigTimeoutWaitQueue, SigTimeoutWaker},
 };
 
 /// Represents a file lock (FLOCK) with an owner and type.
@@ -23,7 +24,7 @@ struct Flock {
 pub struct FlockItem {
     lock: Flock,
     /// A wait queue for any threads that are blocked by this lock.
-    waitqueue: Arc<WaitQueue>,
+    waitqueue: Arc<SigTimeoutWaitQueue>,
 }
 
 impl FlockItem {
@@ -113,7 +114,11 @@ impl FlockList {
     /// If a conflicting lock exists:
     /// - If waker is not `None`, it is added to the conflicting lock's waitqueue, and the function returns `EAGAIN`.
     /// - If waker is `None`, the function returns `EAGAIN`.
-    fn try_set_lock(&self, req_lock: &FlockItem, waker: Option<&Arc<Waker>>) -> Result<()> {
+    fn try_set_lock(
+        &self,
+        req_lock: &FlockItem,
+        waker: Option<&Arc<SigTimeoutWaker>>,
+    ) -> Result<()> {
         let mut list = self.inner.lock();
         if let Some(conflict_lock) = list.iter().find(|l| req_lock.conflict_with(l)) {
             if let Some(waker) = waker {

@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{collections::VecDeque, sync::Arc};
-use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use alloc::{boxed::Box, collections::VecDeque, sync::Arc};
+use core::{
+    ptr,
+    sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering},
+};
 
 use super::{LocalIrqDisabled, SpinLock};
 use crate::task::{scheduler, Task};
@@ -40,13 +43,13 @@ use crate::task::{scheduler, Task};
 /// Multiple threads may be the waiters of a wait queue.
 /// Other threads may invoke the `wake`-family methods of a wait queue to
 /// wake up one or many waiting threads.
-pub struct WaitQueue {
+pub struct WaitQueue<T = ()> {
     // A copy of `wakers.len()`, used for the lock-free fast path in `wake_one` and `wake_all`.
     num_wakers: AtomicU32,
-    wakers: SpinLock<VecDeque<Arc<Waker>>, LocalIrqDisabled>,
+    wakers: SpinLock<VecDeque<Arc<Waker<T>>>, LocalIrqDisabled>,
 }
 
-impl WaitQueue {
+impl<T> WaitQueue<T> {
     /// Creates a new, empty wait queue.
     pub const fn new() -> Self {
         WaitQueue {
@@ -142,14 +145,14 @@ impl WaitQueue {
 
     /// Enqueues the input [`Waker`] to the wait queue.
     #[doc(hidden)]
-    pub fn enqueue(&self, waker: Arc<Waker>) {
+    pub fn enqueue(&self, waker: Arc<Waker<T>>) {
         let mut wakers = self.wakers.lock();
         wakers.push_back(waker);
         self.num_wakers.fetch_add(1, Ordering::Acquire);
     }
 }
 
-impl Default for WaitQueue {
+impl<T> Default for WaitQueue<T> {
     fn default() -> Self {
         Self::new()
     }
@@ -160,28 +163,37 @@ impl Default for WaitQueue {
 ///
 /// By definition, a waiter belongs to the current thread, so it cannot be sent to another thread
 /// and its reference cannot be shared between threads.
-pub struct Waiter {
-    waker: Arc<Waker>,
+pub struct Waiter<T> {
+    waker: Arc<Waker<T>>,
 }
 
-impl !Send for Waiter {}
-impl !Sync for Waiter {}
+impl<T> !Send for Waiter<T> {}
+impl<T> !Sync for Waiter<T> {}
 
 /// A waker that can wake up the associated [`Waiter`].
 ///
 /// A waker can be created by calling [`Waiter::new_pair`]. This method creates an `Arc<Waker>` that can
 /// be used across different threads.
-pub struct Waker {
+pub struct Waker<T = ()> {
     has_woken: AtomicBool,
     task: Arc<Task>,
+    wake_reason: AtomicPtr<T>,
 }
 
-impl Waiter {
+impl Waiter<()> {
+    /// Calls [`Self::new_pair`] with the default reason type `()`.
+    pub fn new_pair_default() -> (Self, Arc<Waker<()>>) {
+        Self::new_pair()
+    }
+}
+
+impl<T> Waiter<T> {
     /// Creates a waiter and its associated [`Waker`].
-    pub fn new_pair() -> (Self, Arc<Waker>) {
+    pub fn new_pair() -> (Self, Arc<Waker<T>>) {
         let waker = Arc::new(Waker {
             has_woken: AtomicBool::new(false),
             task: Task::current().unwrap().cloned(),
+            wake_reason: AtomicPtr::new(ptr::null_mut()),
         });
         let waiter = Self {
             waker: waker.clone(),
@@ -189,12 +201,14 @@ impl Waiter {
         (waiter, waker)
     }
 
-    /// Waits until the waiter is woken up by calling [`Waker::wake_up`] on the associated
-    /// [`Waker`].
+    /// Waits until the waiter is woken up by calling [`Waker::wake_up`] or [`Waker::wake_up_with_reason`]
+    /// on the associated [`Waker`].
     ///
     /// This method returns immediately if the waiter has been woken since the end of the last call
     /// to this method (or since the waiter was created, if this method has not been called
     /// before). Otherwise, it puts the current thread to sleep until the waiter is woken up.
+    ///
+    /// Calling this method clears up the wake reason.
     #[track_caller]
     pub fn wait(&self) {
         self.waker.do_wait();
@@ -231,7 +245,7 @@ impl Waiter {
     }
 
     /// Gets the associated [`Waker`] of the current waiter.
-    pub fn waker(&self) -> Arc<Waker> {
+    pub fn waker(&self) -> Arc<Waker<T>> {
         self.waker.clone()
     }
 
@@ -239,9 +253,14 @@ impl Waiter {
     pub fn task(&self) -> &Arc<Task> {
         &self.waker.task
     }
+
+    /// Returns the wake reason for the associated [`Waker`].
+    pub fn wake_reason(&self) -> Option<&T> {
+        self.waker.wake_reason()
+    }
 }
 
-impl Drop for Waiter {
+impl<T> Drop for Waiter<T> {
     fn drop(&mut self) {
         // When dropping the waiter, we need to close the waker to ensure that if someone wants to
         // wake up the waiter afterwards, they will perform a no-op.
@@ -249,7 +268,7 @@ impl Drop for Waiter {
     }
 }
 
-impl Waker {
+impl<T> Waker<T> {
     /// Wakes up the associated [`Waiter`].
     ///
     /// This method returns `true` if the waiter is woken by this call. It returns `false` if the
@@ -268,17 +287,75 @@ impl Waker {
         true
     }
 
+    /// Wakes up the associated [`Waiter`] with a reason.
+    ///
+    /// This method returns `true` if the waiter is woken by this call. It returns `false` if the
+    /// waiter has already been woken by a previous call to the method, or if the waiter has been
+    /// dropped.
+    ///
+    /// If multiple threads attempt to wake the waiter with different reasons, only the first
+    /// reason will be stored and delivered to the waiter.
+    ///
+    /// Note that if this method returns `true`, it implies that the wake event will be properly
+    /// delivered, _or_ that the waiter will be dropped after being woken. It's up to the caller to
+    /// handle the latter case properly to avoid missing the wake event.
+    pub fn wake_up_with_reason(&self, reason: T) -> bool {
+        if self.has_woken.swap(true, Ordering::Release) {
+            return false;
+        }
+
+        // Store the reason, as this is the call that awakens the waker.
+        let reason_box = Box::new(reason);
+        let reason_ptr = Box::into_raw(reason_box) as *mut _;
+        self.wake_reason.store(reason_ptr, Ordering::Release);
+
+        scheduler::unpark_target(self.task.clone());
+
+        true
+    }
+
+    /// Gets the wake reason, if one was provided when the waiter was woken up.
+    ///
+    /// This method returns a reference to the wake reason that was set by the most recent
+    /// successful call to [`wake_up_with_reason`]. The reason remains available until the
+    /// next call to [`do_wait`] or [`reset_wake_reason`].
+    ///
+    /// Note that if the waiter was woken up without a reason (using [`wake_up`]), this method
+    /// will return `None`.
+    pub fn wake_reason(&self) -> Option<&T> {
+        let reason_ptr = self.wake_reason.load(Ordering::Acquire);
+        // SAFETY: `reason_ptr` is constrained to be a pointer to a `T` via Rust's
+        // type system. If it's not null, it must have been set by `wake_up_with_reason`,
+        // which guarantees type safety.
+        unsafe { reason_ptr.as_ref() }
+    }
+
     #[track_caller]
     fn do_wait(&self) {
+        self.reset_wake_reason(); // Clear any previous reason
         while !self.has_woken.swap(false, Ordering::Acquire) {
             scheduler::park_current(|| self.has_woken.load(Ordering::Acquire));
         }
     }
 
     fn close(&self) {
+        self.reset_wake_reason();
         // This must use `Ordering::Acquire`, although we do not care about the return value. See
         // the memory order explanation at the top of the file for details.
         let _ = self.has_woken.swap(true, Ordering::Acquire);
+    }
+
+    fn reset_wake_reason(&self) {
+        let old_ptr = self.wake_reason.swap(ptr::null_mut(), Ordering::Release);
+        if !old_ptr.is_null() {
+            // Avoid memory leaks
+
+            // SAFETY: `wake_reason` is constrained to be a pointer to a `T` via Rust's
+            // type system. If it's not null, it must have been set by `wake_up_with_reason`,
+            // which guarantees type safety.
+            let old_reason = unsafe { Box::from_raw(old_ptr) };
+            drop(old_reason)
+        }
     }
 }
 
@@ -328,7 +405,7 @@ mod test {
 
     #[ktest]
     fn waiter_wake_twice() {
-        let (_waiter, waker) = Waiter::new_pair();
+        let (_waiter, waker) = Waiter::new_pair_default();
 
         assert!(waker.wake_up());
         assert!(!waker.wake_up());
@@ -336,7 +413,7 @@ mod test {
 
     #[ktest]
     fn waiter_wake_drop() {
-        let (waiter, waker) = Waiter::new_pair();
+        let (waiter, waker) = Waiter::new_pair_default();
 
         drop(waiter);
         assert!(!waker.wake_up());
@@ -344,7 +421,7 @@ mod test {
 
     #[ktest]
     fn waiter_wake_async() {
-        let (waiter, waker) = Waiter::new_pair();
+        let (waiter, waker) = Waiter::new_pair_default();
 
         let cond = Arc::new(AtomicBool::new(false));
         let cond_cloned = cond.clone();
@@ -366,12 +443,12 @@ mod test {
 
     #[ktest]
     fn waiter_wake_reorder() {
-        let (waiter, waker) = Waiter::new_pair();
+        let (waiter, waker) = Waiter::new_pair_default();
 
         let cond = Arc::new(AtomicBool::new(false));
         let cond_cloned = cond.clone();
 
-        let (waiter2, waker2) = Waiter::new_pair();
+        let (waiter2, waker2) = Waiter::new_pair_default();
 
         let cond2 = Arc::new(AtomicBool::new(false));
         let cond2_cloned = cond2.clone();

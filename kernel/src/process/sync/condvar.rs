@@ -8,7 +8,7 @@ use core::time::Duration;
 
 use ostd::sync::{MutexGuard, SpinLock, WaitQueue};
 
-use crate::time::wait::WaitTimeout;
+use crate::{time::wait::WaitTimeout, wait::SigTimeoutWaitQueue};
 
 /// Represents potential errors during lock operations on synchronization primitives,
 /// specifically for operations associated with a `Condvar` (Condition Variable).
@@ -83,7 +83,7 @@ impl<Guard> LockErr<Guard> {
 /// The main thread waits for the flag to be set to `true`,
 /// utilizing the `Condvar` to sleep efficiently until the condition is met.
 pub struct Condvar {
-    waitqueue: Arc<WaitQueue>,
+    waitqueue: Arc<SigTimeoutWaitQueue>,
     counter: SpinLock<Inner>,
 }
 

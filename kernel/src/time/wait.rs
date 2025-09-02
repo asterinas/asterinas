@@ -2,10 +2,13 @@
 
 use core::time::Duration;
 
-use ostd::sync::{WaitQueue, Waiter};
+use ostd::sync::Waiter;
 
 use super::{clocks::JIFFIES_TIMER_MANAGER, timer::Timeout, Timer, TimerManager};
-use crate::prelude::*;
+use crate::{
+    prelude::*,
+    wait::{SigTimeoutWaitQueue, SigTimeoutWaiter, SigTimeoutWake},
+};
 
 /// A trait that provide the timeout related function for [`Waiter`] and [`WaitQueue`]`.
 pub trait WaitTimeout {
@@ -167,7 +170,7 @@ impl<'a> ManagedTimeout<'a> {
     }
 }
 
-impl WaitTimeout for Waiter {
+impl WaitTimeout for SigTimeoutWaiter {
     fn wait_until_or_timeout_cancelled<F, R, FCancel>(
         &self,
         cond: F,
@@ -184,7 +187,7 @@ impl WaitTimeout for Waiter {
         let timer = timeout.map(|timeout| {
             let waker = self.waker();
             timeout.create_timer(move || {
-                waker.wake_up();
+                waker.wake_up_with_reason(SigTimeoutWake::Timeout);
             })
         });
 
@@ -219,7 +222,7 @@ impl WaitTimeout for Waiter {
     }
 }
 
-impl WaitTimeout for WaitQueue {
+impl WaitTimeout for SigTimeoutWaitQueue {
     fn wait_until_or_timeout_cancelled<F, R, FCancel>(
         &self,
         mut cond: F,

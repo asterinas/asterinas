@@ -22,6 +22,7 @@ use crate::{
     sched::{AtomicNice, Nice},
     thread::{AsThread, Thread},
     time::clocks::ProfClock,
+    wait::SigTimeoutWaitQueue,
 };
 
 mod init_proc;
@@ -70,7 +71,7 @@ pub struct Process {
 
     process_vm: ProcessVm,
     /// Wait for child status changed
-    children_wait_queue: WaitQueue,
+    children_wait_queue: SigTimeoutWaitQueue,
     pub(super) pidfile_pollee: Pollee,
 
     // Mutable Part
@@ -301,7 +302,7 @@ impl Process {
         &self.children
     }
 
-    pub fn children_wait_queue(&self) -> &WaitQueue {
+    pub fn children_wait_queue(&self) -> &SigTimeoutWaitQueue {
         &self.children_wait_queue
     }
 

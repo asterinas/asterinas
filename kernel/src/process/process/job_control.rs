@@ -3,7 +3,7 @@
 use ostd::sync::{LocalIrqDisabled, WaitQueue};
 
 use super::{ProcessGroup, Session};
-use crate::prelude::*;
+use crate::{prelude::*, wait::SigTimeoutWaitQueue};
 
 /// The job control for terminals like TTY and PTY.
 ///
@@ -13,7 +13,7 @@ use crate::prelude::*;
 /// for a terminal.
 pub struct JobControl {
     inner: SpinLock<Inner, LocalIrqDisabled>,
-    wait_queue: WaitQueue,
+    wait_queue: SigTimeoutWaitQueue,
 }
 
 #[derive(Default)]

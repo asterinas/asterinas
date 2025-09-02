@@ -2,11 +2,15 @@
 
 use core::fmt;
 
-use ostd::sync::{RwMutexWriteGuard, WaitQueue, Waiter, Waker};
+use ostd::sync::{RwMutexWriteGuard, WaitQueue, Waiter};
 pub use range::{FileRange, OFFSET_MAX};
 use range::{FileRangeChange, OverlapWith};
 
-use crate::{prelude::*, process::Pid};
+use crate::{
+    prelude::*,
+    process::Pid,
+    wait::{SigTimeoutWaitQueue, SigTimeoutWaker},
+};
 
 mod range;
 
@@ -28,7 +32,7 @@ pub struct RangeLockItem {
     /// The lock data including its properties
     lock: RangeLock,
     /// Waiters that are being blocked by this lock
-    waitqueue: Arc<WaitQueue>,
+    waitqueue: Arc<SigTimeoutWaitQueue>,
 }
 
 impl RangeLockItem {
@@ -221,7 +225,11 @@ impl RangeLockList {
     /// If a conflicting lock exists:
     /// - If waker is not `None`, it is added to the conflicting lock's waitqueue, and the function returns `EAGAIN`.
     /// - If waker is `None`, the function returns `EAGAIN`.
-    fn try_set_lock(&self, req_lock: &RangeLockItem, waker: Option<&Arc<Waker>>) -> Result<()> {
+    fn try_set_lock(
+        &self,
+        req_lock: &RangeLockItem,
+        waker: Option<&Arc<SigTimeoutWaker>>,
+    ) -> Result<()> {
         let mut list = self.inner.write();
         if let Some(conflict_lock) = list.iter().find(|l| req_lock.conflict_with(l)) {
             if let Some(waker) = waker {

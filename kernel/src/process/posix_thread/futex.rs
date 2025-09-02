@@ -3,10 +3,7 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use int_to_c_enum::TryFromInt;
-use ostd::{
-    cpu::num_cpus,
-    sync::{Waiter, Waker},
-};
+use ostd::{cpu::num_cpus, sync::Waiter};
 use spin::Once;
 
 use crate::{
@@ -15,6 +12,7 @@ use crate::{
     thread::exception::PageFaultInfo,
     time::wait::ManagedTimeout,
     vm::{page_fault_handler::PageFaultHandler, perms::VmPerms},
+    wait::{SigTimeoutWaiter, SigTimeoutWaker},
 };
 
 type FutexBitSet = u32;
@@ -122,13 +120,6 @@ pub fn futex_wait_bitset(
             //
             // Therefore, we need to perform a removal by unique global futex ID.
             futex_bucket_ref.lock().remove_by_id(futex_id);
-
-            // FIXME: If the futex is woken up and a signal comes at the same time, we should succeed
-            // instead of failing with `EINTR`. The code below is of course wrong, but was needed to
-            // make the gVisor tests happy. See <https://github.com/asterinas/asterinas/pull/1577>.
-            if err.error() == Errno::EINTR {
-                return Ok(());
-            }
         }
     }
     result
@@ -515,11 +506,11 @@ impl FutexBucket {
 struct FutexItem {
     id: u64,
     key: FutexKey,
-    waker: Arc<Waker>,
+    waker: Arc<SigTimeoutWaker>,
 }
 
 impl FutexItem {
-    pub fn create(key: FutexKey) -> (Self, Waiter) {
+    pub fn create(key: FutexKey) -> (Self, SigTimeoutWaiter) {
         let id = next_futex_id();
         let (waiter, waker) = Waiter::new_pair();
         let futex_item = FutexItem { id, key, waker };

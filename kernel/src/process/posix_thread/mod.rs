@@ -3,7 +3,7 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use aster_rights::{ReadDupOp, ReadOp, WriteOp};
-use ostd::sync::{RoArc, Waker};
+use ostd::sync::RoArc;
 
 use super::{
     kill::SignalSenderIds,
@@ -24,6 +24,7 @@ use crate::{
     process::{namespace::nsproxy::NsProxy, signal::constants::SIGCONT},
     thread::{Thread, Tid},
     time::{clocks::ProfClock, Timer, TimerManager},
+    wait::{SigTimeoutWake, SigTimeoutWaker},
 };
 
 mod builder;
@@ -64,7 +65,7 @@ pub struct PosixThread {
     sig_queues: SigQueues,
     /// The per-thread signal [`Waker`], which will be used to wake up the thread
     /// when enqueuing a signal.
-    signalled_waker: SpinLock<Option<Arc<Waker>>>,
+    signalled_waker: SpinLock<Option<Arc<SigTimeoutWaker>>>,
 
     /// A profiling clock measures the user CPU time and kernel CPU time in the thread.
     prof_clock: Arc<ProfClock>,
@@ -188,7 +189,7 @@ impl PosixThread {
     ///
     /// If setting a new waker before clearing the current thread's signalled waker
     /// this method will panic.
-    pub fn set_signalled_waker(&self, waker: Arc<Waker>) {
+    pub fn set_signalled_waker(&self, waker: Arc<SigTimeoutWaker>) {
         let mut signalled_waker = self.signalled_waker.lock();
         assert!(signalled_waker.is_none());
         *signalled_waker = Some(waker);
@@ -202,7 +203,7 @@ impl PosixThread {
     /// Wakes up the signalled waker.
     pub fn wake_signalled_waker(&self) {
         if let Some(waker) = &*self.signalled_waker.lock() {
-            waker.wake_up();
+            waker.wake_up_with_reason(SigTimeoutWake::Signal);
         }
     }
 

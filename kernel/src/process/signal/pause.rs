@@ -10,6 +10,7 @@ use crate::{
     process::posix_thread::AsPosixThread,
     thread::AsThread,
     time::wait::{ManagedTimeout, TimeoutExt},
+    wait::{SigTimeoutWaitQueue, SigTimeoutWaiter, SigTimeoutWake},
 };
 
 /// `Pause` is an extension trait to make [`Waiter`] and [`WaitQueue`] signal aware.
@@ -99,7 +100,7 @@ pub trait Pause: WaitTimeout {
     fn pause_timeout(&self, timeout: &TimeoutExt<'_>) -> Result<()>;
 }
 
-impl Pause for Waiter {
+impl Pause for SigTimeoutWaiter {
     fn pause_until_or_timeout_impl<F, R>(
         &self,
         cond: F,
@@ -140,7 +141,7 @@ impl Pause for Waiter {
         let timer = timeout.check_expired()?.map(|timeout| {
             let waker = self.waker();
             timeout.create_timer(move || {
-                waker.wake_up();
+                waker.wake_up_with_reason(SigTimeoutWake::Timeout);
             })
         });
 
@@ -168,28 +169,24 @@ impl Pause for Waiter {
         }
 
         if let Some(timer) = timer {
-            if timer.remain().is_zero() {
-                return_errno_with_message!(Errno::ETIME, "the time limit is reached");
-            }
             // If the timeout is not expired, cancel the timer manually.
             timer.cancel();
         }
 
-        if posix_thread_opt
-            .as_ref()
-            .is_some_and(|posix_thread| posix_thread.has_pending())
-        {
-            return_errno_with_message!(
+        match self.wake_reason() {
+            None => Ok(()),
+            Some(SigTimeoutWake::Signal) => return_errno_with_message!(
                 Errno::EINTR,
                 "the current thread is interrupted by a signal"
-            );
+            ),
+            Some(SigTimeoutWake::Timeout) => {
+                return_errno_with_message!(Errno::ETIME, "the time limit is reached")
+            }
         }
-
-        Ok(())
     }
 }
 
-impl Pause for WaitQueue {
+impl Pause for SigTimeoutWaitQueue {
     fn pause_until_or_timeout_impl<F, R>(
         &self,
         mut cond: F,

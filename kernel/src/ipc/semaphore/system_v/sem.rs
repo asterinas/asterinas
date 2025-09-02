@@ -164,7 +164,7 @@ pub fn sem_op(
 
     // Prepare to wait
     let status = pending_op.status.clone();
-    let (waiter, waker) = Waiter::new_pair();
+    let (waiter, waker) = Waiter::new_pair_default();
 
     // Check if timeout exists to avoid calling `Arc::clone()`
     if let Some(timeout) = timeout {
