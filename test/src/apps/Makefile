@@ -33,6 +33,7 @@ TEST_APPS := \
 	namespace \
 	network \
 	pipe \
+	pivot_root \
 	prctl \
 	process \
 	pthread \

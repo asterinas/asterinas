@@ -35,6 +35,7 @@ mmap/mmap_readahead
 mmap/mmap_vmrss
 namespace/setns
 namespace/unshare
+pivot_root/pivot_root
 process/group_session
 process/job_control
 process/pidfd
