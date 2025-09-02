@@ -151,6 +151,10 @@ impl OverlayFS {
 }
 
 impl FileSystem for OverlayFS {
+    fn name(&self) -> &'static str {
+        "overlay"
+    }
+
     /// Utilizes the layered directory entries to build the root inode.
     fn root_inode(&self) -> Arc<dyn Inode> {
         let fs = self.fs();

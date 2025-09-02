@@ -74,6 +74,10 @@ impl RamFS {
 }
 
 impl FileSystem for RamFS {
+    fn name(&self) -> &'static str {
+        "ramfs"
+    }
+
     fn sync(&self) -> Result<()> {
         // do nothing
         Ok(())

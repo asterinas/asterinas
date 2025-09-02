@@ -67,6 +67,8 @@ pub fn init() {
     ext2::init();
     exfat::init();
     overlayfs::init();
+
+    path::init();
 }
 
 pub fn init_in_first_kthread(fs_resolver: &FsResolver) {
