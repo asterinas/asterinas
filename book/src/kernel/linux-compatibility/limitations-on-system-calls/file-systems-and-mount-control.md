@@ -58,7 +58,6 @@ Partially supported mount flags:
 Unsupported mount flags:
 * `MS_REMOUNT`
 * `MS_SHARED`
-* `MS_PRIVATE`
 * `MS_SLAVE`
 * `MS_UNBINDABLE`
 
