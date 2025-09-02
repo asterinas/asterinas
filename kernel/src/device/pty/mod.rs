@@ -19,12 +19,12 @@ use spin::Once;
 
 static DEV_PTS: Once<Path> = Once::new();
 
-pub fn init_in_first_process(fs_resolver: &FsResolver) -> Result<()> {
+pub fn init_in_first_process(fs_resolver: &FsResolver, ctx: &Context) -> Result<()> {
     let dev = fs_resolver.lookup(&FsPath::try_from("/dev")?)?;
     // Create the "pts" directory and mount devpts on it.
     let devpts_path =
         dev.new_fs_child("pts", InodeType::Dir, InodeMode::from_bits_truncate(0o755))?;
-    let devpts_mount = devpts_path.mount(DevPts::new())?;
+    let devpts_mount = devpts_path.mount(DevPts::new(), ctx)?;
 
     DEV_PTS.call_once(|| Path::new_fs_root(devpts_mount));
 
