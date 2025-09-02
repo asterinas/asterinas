@@ -96,7 +96,7 @@ use super::{
     recvfrom::sys_recvfrom,
     recvmsg::sys_recvmsg,
     removexattr::{sys_fremovexattr, sys_lremovexattr, sys_removexattr},
-    rename::{sys_rename, sys_renameat},
+    rename::{sys_rename, sys_renameat, sys_renameat2},
     rmdir::sys_rmdir,
     rt_sigaction::sys_rt_sigaction,
     rt_sigpending::sys_rt_sigpending,
@@ -381,6 +381,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_GETCPU = 309           => sys_getcpu(args[..3]);
     SYS_SCHED_SETATTR = 314    => sys_sched_setattr(args[..3]);
     SYS_SCHED_GETATTR = 315    => sys_sched_getattr(args[..4]);
+    SYS_RENAMEAT2 = 316        => sys_renameat2(args[..5]);
     SYS_GETRANDOM = 318        => sys_getrandom(args[..3]);
     SYS_MEMFD_CREATE = 319     => sys_memfd_create(args[..2]);
     SYS_EXECVEAT = 322         => sys_execveat(args[..5], &mut user_ctx);
