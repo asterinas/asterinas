@@ -50,6 +50,7 @@ fn apply_implied_flags(flags: &mut CloneFlags) {
 
 fn check_flags(flags: CloneFlags, ctx: &Context) -> Result<()> {
     const VALID_FLAGS: CloneFlags = CloneFlags::CLONE_NS_FLAGS
+        .union(CloneFlags::CLONE_NEWNS)
         .union(CloneFlags::CLONE_FILES)
         .union(CloneFlags::CLONE_FS)
         .union(CloneFlags::CLONE_SYSVSEM)
