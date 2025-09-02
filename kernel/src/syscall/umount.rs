@@ -34,7 +34,7 @@ pub fn sys_umount(path_addr: Vaddr, flags: u64, ctx: &Context) -> Result<Syscall
             .lookup(&fs_path)?
     };
 
-    target_path.unmount()?;
+    target_path.unmount(ctx)?;
 
     Ok(SyscallReturn::Return(0))
 }

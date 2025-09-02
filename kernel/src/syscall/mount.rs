@@ -102,7 +102,7 @@ fn do_bind_mount(src_name: CString, dst_path: Path, recursive: bool, ctx: &Conte
         return_errno_with_message!(Errno::ENOTDIR, "src_name must be directory");
     };
 
-    src_path.bind_mount_to(&dst_path, recursive)?;
+    src_path.bind_mount_to(&dst_path, recursive, ctx)?;
     Ok(())
 }
 
@@ -125,7 +125,7 @@ fn do_move_mount_old(src_name: CString, dst_path: Path, ctx: &Context) -> Result
             .lookup(&fs_path)?
     };
 
-    src_path.move_mount_to(&dst_path)?;
+    src_path.move_mount_to(&dst_path, ctx)?;
 
     Ok(())
 }
@@ -147,7 +147,7 @@ fn do_new_mount(
         return_errno_with_message!(Errno::EINVAL, "fs_type is empty");
     }
     let fs = get_fs(fs_type, devname, data, ctx)?;
-    target_path.mount(fs)?;
+    target_path.mount(fs, ctx)?;
     Ok(())
 }
 

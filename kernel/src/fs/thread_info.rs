@@ -11,6 +11,14 @@ pub struct ThreadFsInfo {
 }
 
 impl ThreadFsInfo {
+    /// Creates a new `ThreadFsInfo` with the given [`FsResolver`].
+    pub fn new(fs_resolver: FsResolver) -> Self {
+        Self {
+            resolver: RwMutex::new(fs_resolver),
+            umask: RwLock::new(FileCreationMask::default()),
+        }
+    }
+
     /// Returns the associated `FsResolver`.
     pub fn resolver(&self) -> &RwMutex<FsResolver> {
         &self.resolver
@@ -19,15 +27,6 @@ impl ThreadFsInfo {
     /// Returns the associated `FileCreationMask`.
     pub fn umask(&self) -> &RwLock<FileCreationMask> {
         &self.umask
-    }
-}
-
-impl Default for ThreadFsInfo {
-    fn default() -> Self {
-        Self {
-            resolver: RwMutex::new(FsResolver::default()),
-            umask: RwLock::new(FileCreationMask::default()),
-        }
     }
 }
 
