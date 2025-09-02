@@ -14,6 +14,24 @@ use crate::{
     prelude::*,
 };
 
+/// Mount propagation types.
+///
+/// This type defines how mount and unmount events are propagated
+/// from this mount to other mounts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MountPropType {
+    /// A private type is the default mount type. Mount and unmount events
+    /// do not propagate to or from the private mounts.
+    Private,
+    // TODO: Implement other propagation types.
+}
+
+impl Default for MountPropType {
+    fn default() -> Self {
+        Self::Private
+    }
+}
+
 /// A `Mount` represents a mounted filesystem instance in the VFS.
 ///
 /// Each `Mount` can be viewed as a node in the mount tree, maintaining
@@ -32,6 +50,8 @@ pub struct Mount {
     pub(super) children: RwLock<HashMap<DentryKey, Arc<Self>>>,
     /// The associated mount namespace.
     mnt_ns: Weak<MountNamespace>,
+    /// Propagation type of this mount (e.g., private, shared).
+    propagation: RwLock<MountPropType>,
     /// Reference to self.
     this: Weak<Self>,
 }
@@ -69,6 +89,7 @@ impl Mount {
             mountpoint: RwLock::new(None),
             parent: RwLock::new(parent_mount),
             children: RwLock::new(HashMap::new()),
+            propagation: RwLock::new(MountPropType::default()),
             fs,
             mnt_ns,
             this: weak_self.clone(),
@@ -135,6 +156,7 @@ impl Mount {
             mountpoint: RwLock::new(None),
             parent: RwLock::new(None),
             children: RwLock::new(HashMap::new()),
+            propagation: RwLock::new(MountPropType::default()),
             fs: self.fs.clone(),
             mnt_ns: new_ns.cloned().unwrap_or_else(|| self.mnt_ns.clone()),
             this: weak_self.clone(),
@@ -188,6 +210,20 @@ impl Mount {
         }
 
         new_root_mount
+    }
+
+    /// Sets the propagation type of this mount.
+    pub(super) fn set_propagation(&self, prop: MountPropType, recursive: bool) {
+        *self.propagation.write() = prop;
+        if !recursive {
+            return;
+        }
+
+        let mut worklist: VecDeque<Arc<Mount>> = self.children.read().values().cloned().collect();
+        while let Some(mount) = worklist.pop_front() {
+            *mount.propagation.write() = prop;
+            worklist.extend(mount.children.read().values().cloned());
+        }
     }
 
     /// Detaches the mount node from the parent mount node.
