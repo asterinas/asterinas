@@ -55,7 +55,7 @@ pub(super) fn init() {
     });
 
     let idtr = DescriptorTablePointer {
-        limit: (core::mem::size_of_val(idt) - 1) as u16,
+        limit: (size_of_val(idt) - 1) as u16,
         base: VirtAddr::new(idt.as_ptr().addr() as u64),
     };
     // SAFETY: The IDT is valid to load because:

@@ -5,7 +5,7 @@
 use crate::arch::device::io_port::{IoPortReadAccess, IoPortWriteAccess, PortRead, PortWrite};
 mod allocator;
 
-use core::{marker::PhantomData, mem::size_of};
+use core::marker::PhantomData;
 
 pub(super) use self::allocator::init;
 use crate::{prelude::*, Error};

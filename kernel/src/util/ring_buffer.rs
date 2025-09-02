@@ -68,7 +68,7 @@ pub type RbProducer<T> = Producer<T, Arc<RingBuffer<T>>>;
 pub type RbConsumer<T> = Consumer<T, Arc<RingBuffer<T>>>;
 
 impl<T> RingBuffer<T> {
-    const T_SIZE: usize = core::mem::size_of::<T>();
+    const T_SIZE: usize = size_of::<T>();
 
     /// Creates a new [`RingBuffer`] with the given capacity.
     pub fn new(capacity: usize) -> Self {
@@ -246,7 +246,7 @@ impl RingBuffer<u8> {
 }
 
 impl<T: Pod, R: Deref<Target = RingBuffer<T>>> Producer<T, R> {
-    const T_SIZE: usize = core::mem::size_of::<T>();
+    const T_SIZE: usize = size_of::<T>();
 
     /// Pushes an item to the `RingBuffer`.
     ///
@@ -362,7 +362,7 @@ impl<T, R: Deref<Target = RingBuffer<T>>> Producer<T, R> {
 }
 
 impl<T: Pod, R: Deref<Target = RingBuffer<T>>> Consumer<T, R> {
-    const T_SIZE: usize = core::mem::size_of::<T>();
+    const T_SIZE: usize = size_of::<T>();
 
     /// Pops an item from the `RingBuffer`.
     ///

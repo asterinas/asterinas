@@ -31,7 +31,7 @@ use ostd::Pod;
 
 use super::error::{self, SocketError};
 
-pub const VIRTIO_VSOCK_HDR_LEN: usize = core::mem::size_of::<VirtioVsockHdr>();
+pub const VIRTIO_VSOCK_HDR_LEN: usize = size_of::<VirtioVsockHdr>();
 
 /// Socket address.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]

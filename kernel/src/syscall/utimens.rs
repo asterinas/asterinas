@@ -214,7 +214,7 @@ fn read_time_from_user<T: Pod>(time_ptr: Vaddr, ctx: &Context) -> Result<(T, T)>
     let mut time_addr = time_ptr;
     let user_space = ctx.user_space();
     let autime = user_space.read_val::<T>(time_addr)?;
-    time_addr += core::mem::size_of::<T>();
+    time_addr += size_of::<T>();
     let mutime = user_space.read_val::<T>(time_addr)?;
     Ok((autime, mutime))
 }

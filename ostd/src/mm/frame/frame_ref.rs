@@ -51,7 +51,7 @@ unsafe impl<M: AnyFrameMeta + ?Sized> NonNullPtr for Frame<M> {
     where
         Self: 'a;
 
-    const ALIGN_BITS: u32 = core::mem::align_of::<MetaSlot>().trailing_zeros();
+    const ALIGN_BITS: u32 = align_of::<MetaSlot>().trailing_zeros();
 
     fn into_raw(self) -> NonNull<Self::Target> {
         let ptr = NonNull::new(self.ptr.cast_mut()).unwrap();

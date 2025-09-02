@@ -113,7 +113,7 @@ impl Pollable for TimerfdFile {
 
 impl FileLike for TimerfdFile {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        let read_len = core::mem::size_of::<u64>();
+        let read_len = size_of::<u64>();
 
         if writer.avail() < read_len {
             return_errno_with_message!(Errno::EINVAL, "buf len is less len u64 size");

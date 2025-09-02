@@ -13,7 +13,7 @@ pub mod sig_queues;
 mod sig_stack;
 pub mod signals;
 
-use core::{mem, sync::atomic::Ordering};
+use core::sync::atomic::Ordering;
 
 use align_ext::AlignExt;
 use c_types::{siginfo_t, ucontext_t};
@@ -199,7 +199,7 @@ pub fn handle_user_signal(
     let user_space = ctx.user_space();
 
     // 1. Write siginfo_t
-    stack_pointer -= mem::size_of::<siginfo_t>() as u64;
+    stack_pointer -= size_of::<siginfo_t>() as u64;
     user_space.write_val(stack_pointer as _, &sig_info)?;
     let siginfo_addr = stack_pointer;
 

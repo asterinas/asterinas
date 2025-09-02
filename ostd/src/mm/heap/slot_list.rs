@@ -50,7 +50,7 @@ impl<const SLOT_SIZE: usize> SlabSlotList<SLOT_SIZE> {
         };
 
         assert_eq!(slot_size, SLOT_SIZE);
-        const { assert!(SLOT_SIZE >= core::mem::size_of::<usize>()) };
+        const { assert!(SLOT_SIZE >= size_of::<usize>()) };
 
         let original_head = self.head;
 

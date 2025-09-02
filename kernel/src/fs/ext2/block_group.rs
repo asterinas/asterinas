@@ -42,7 +42,7 @@ impl BlockGroup {
                 let descriptor = {
                     // Read the block group descriptor
                     // TODO: if the main is corrupted, should we load the backup?
-                    let offset = idx * core::mem::size_of::<RawGroupDescriptor>();
+                    let offset = idx * size_of::<RawGroupDescriptor>();
                     let raw_descriptor = group_descriptors_segment
                         .read_val::<RawGroupDescriptor>(offset)
                         .unwrap();
@@ -487,7 +487,7 @@ impl From<RawGroupDescriptor> for GroupDescriptor {
     }
 }
 
-const_assert!(core::mem::size_of::<RawGroupDescriptor>() == 32);
+const_assert!(size_of::<RawGroupDescriptor>() == 32);
 
 /// The raw block group descriptor.
 ///

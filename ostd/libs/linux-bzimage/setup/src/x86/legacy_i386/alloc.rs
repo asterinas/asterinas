@@ -37,7 +37,7 @@ pub(super) unsafe fn init(boot_params: &'static linux_boot_params::BootParams) {
 
     used[1] = range_from_start_and_len(
         core::ptr::from_ref(boot_params).addr(),
-        core::mem::size_of::<linux_boot_params::BootParams>(),
+        size_of::<linux_boot_params::BootParams>(),
     );
     // No need to worry about `ext_*` addresses/sizes since we're 32-bit.
     used[2] = range_from_start_and_len(

@@ -18,7 +18,7 @@ pub use self::{
 
 pub type BlockId = usize;
 pub const BLOCK_SIZE: usize = 0x1000;
-pub const BID_SIZE: usize = core::mem::size_of::<BlockId>();
+pub const BID_SIZE: usize = size_of::<BlockId>();
 
 // This definition of `BlockId` assumes the target architecture is 64-bit.
 const_assert!(BID_SIZE == 8);

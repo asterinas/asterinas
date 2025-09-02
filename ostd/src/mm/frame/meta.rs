@@ -19,8 +19,6 @@ pub(crate) mod mapping {
     //! The metadata of each physical page is linear mapped to fixed virtual addresses
     //! in [`FRAME_METADATA_RANGE`].
 
-    use core::mem::size_of;
-
     use super::MetaSlot;
     use crate::mm::{kspace::FRAME_METADATA_RANGE, Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE};
 
@@ -171,11 +169,9 @@ macro_rules! impl_frame_meta_for {
         // SAFETY: `on_drop` won't read the page.
         unsafe impl $crate::mm::frame::meta::AnyFrameMeta for $t {}
 
+        $crate::const_assert!(size_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_SIZE);
         $crate::const_assert!(
-            core::mem::size_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_SIZE
-        );
-        $crate::const_assert!(
-            $crate::mm::frame::meta::FRAME_METADATA_MAX_ALIGN % core::mem::align_of::<$t>() == 0
+            $crate::mm::frame::meta::FRAME_METADATA_MAX_ALIGN % align_of::<$t>() == 0
         );
     };
 }

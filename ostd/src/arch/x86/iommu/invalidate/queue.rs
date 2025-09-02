@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::mem::size_of;
-
 use crate::{
     mm::{FrameAllocOptions, Segment, VmIo, PAGE_SIZE},
     prelude::*,

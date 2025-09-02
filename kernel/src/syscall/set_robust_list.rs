@@ -13,7 +13,7 @@ pub fn sys_set_robust_list(
         robust_list_head_ptr, len
     );
 
-    if len != core::mem::size_of::<RobustListHead>() {
+    if len != size_of::<RobustListHead>() {
         return_errno_with_message!(
             Errno::EINVAL,
             "the length is not equal to the size of the robust list head"

@@ -3,7 +3,6 @@
 #![expect(dead_code)]
 
 use alloc::collections::BTreeMap;
-use core::mem::size_of;
 
 use log::trace;
 use ostd_pod::Pod;

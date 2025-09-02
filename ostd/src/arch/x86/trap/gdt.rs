@@ -59,7 +59,7 @@ pub(super) unsafe fn init() {
 
     // Load the new GDT.
     let gdtr = DescriptorTablePointer {
-        limit: (core::mem::size_of_val(gdt) - 1) as u16,
+        limit: (size_of_val(gdt) - 1) as u16,
         base: VirtAddr::new(gdt.as_ptr().addr() as u64),
     };
     // SAFETY: The GDT is valid to load because:

@@ -330,7 +330,7 @@ impl<S> Snapshot<S> {
 
     /// Return the length of metadata.
     pub fn meta_len() -> usize {
-        core::mem::size_of::<BlockId>()
+        size_of::<BlockId>()
     }
 }
 
@@ -966,7 +966,7 @@ mod tests {
         let mut journal = EditJournal::format(
             disk.subset(0..16).unwrap(),
             XState { sum: 0 },
-            core::mem::size_of::<XState>() * 2,
+            size_of::<XState>() * 2,
             ThresholdPolicy::new(threshold),
         )
         .unwrap();
@@ -1031,7 +1031,7 @@ mod tests {
         let disk = MemDisk::create(16).unwrap();
 
         let journal_disk = disk.subset(0..12).unwrap();
-        let state_max_nbytes = core::mem::size_of::<XState>() * 2;
+        let state_max_nbytes = size_of::<XState>() * 2;
         let compact_policy =
             DefaultCompactPolicy::new::<MemDisk>(journal_disk.nblocks(), state_max_nbytes);
         let mut journal: EditJournal<XEdit, XState, MemDisk, DefaultCompactPolicy> =

@@ -193,7 +193,7 @@ macro_rules! impl_from_bytes {
                 let header = $header_struct::from_bytes(bytes);
                 debug_assert_eq!(header.length as usize, bytes.len());
 
-                let mut index = core::mem::size_of::<$header_struct>();
+                let mut index = size_of::<$header_struct>();
                 let mut device_scopes = Vec::new();
                 while index != (header.length as usize) {
                     let val = DeviceScope::from_bytes_prefix(&bytes[index..]);
@@ -228,7 +228,7 @@ impl DeviceScope {
         let header = DeviceScopeHeader::from_bytes(bytes);
         debug_assert!((header.length as usize) <= bytes.len());
 
-        let mut index = core::mem::size_of::<DeviceScopeHeader>();
+        let mut index = size_of::<DeviceScopeHeader>();
         debug_assert!((header.length as usize) >= index);
 
         let mut path = Vec::new();
@@ -266,7 +266,7 @@ impl Andd {
         let header = AnddHeader::from_bytes(bytes);
         debug_assert_eq!(header.length as usize, bytes.len());
 
-        let header_len = core::mem::size_of::<AnddHeader>();
+        let header_len = size_of::<AnddHeader>();
         let acpi_object_name = core::str::from_utf8(&bytes[header_len..])
             .unwrap()
             .to_owned();

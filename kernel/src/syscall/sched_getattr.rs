@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::mem;
-
 use super::{
     sched_get_priority_max::{rt_to_static, static_to_rt, SCHED_PRIORITY_RANGE},
     SyscallReturn,
@@ -141,7 +139,7 @@ pub(super) fn read_linux_sched_attr_from_user(
     addr: Vaddr,
     ctx: &Context,
 ) -> Result<LinuxSchedAttr> {
-    let type_size = mem::size_of::<LinuxSchedAttr>();
+    let type_size = size_of::<LinuxSchedAttr>();
 
     let space = ctx.user_space();
 
@@ -149,7 +147,7 @@ pub(super) fn read_linux_sched_attr_from_user(
 
     space.read_bytes(
         addr,
-        &mut VmWriter::from(&mut attr.as_bytes_mut()[..mem::size_of::<u32>()]),
+        &mut VmWriter::from(&mut attr.as_bytes_mut()[..size_of::<u32>()]),
     )?;
 
     let size = type_size.min(attr.size as usize);
@@ -175,7 +173,7 @@ pub(super) fn write_linux_sched_attr_to_user(
 ) -> Result<()> {
     let space = ctx.user_space();
 
-    attr.size = (mem::size_of::<LinuxSchedAttr>() as u32).min(user_size);
+    attr.size = (size_of::<LinuxSchedAttr>() as u32).min(user_size);
 
     let range = SCHED_PRIORITY_RANGE
         .get(attr.sched_policy as usize)

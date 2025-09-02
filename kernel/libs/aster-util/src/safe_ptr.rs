@@ -247,18 +247,18 @@ impl<T: PodOnce, M: VmIoOnce, R: TRights> SafePtr<T, M, TRightSet<R>> {
 // =============== Address-related methods ==============
 impl<T, M, R> SafePtr<T, M, R> {
     pub const fn is_aligned(&self) -> bool {
-        self.offset % core::mem::align_of::<T>() == 0
+        self.offset % align_of::<T>() == 0
     }
 
     /// Increase the address in units of bytes occupied by the generic T.
     pub fn add(&mut self, count: usize) {
-        let offset = count * core::mem::size_of::<T>();
+        let offset = count * size_of::<T>();
         self.offset += offset;
     }
 
     /// Increase or decrease the address in units of bytes occupied by the generic T.
     pub fn offset(&mut self, count: isize) {
-        let offset = count * core::mem::size_of::<T>() as isize;
+        let offset = count * size_of::<T>() as isize;
         if count >= 0 {
             self.offset += offset as usize;
         } else {
@@ -362,8 +362,7 @@ impl<T, M: HasDaddr, R> HasDaddr for SafePtr<T, M, R> {
 impl<T, R> SafePtr<T, DmaStream, R> {
     /// Synchronize the object in the streaming DMA mapping
     pub fn sync(&self) -> Result<()> {
-        self.vm_obj
-            .sync(self.offset..self.offset + core::mem::size_of::<T>())
+        self.vm_obj.sync(self.offset..self.offset + size_of::<T>())
     }
 }
 

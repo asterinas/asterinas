@@ -83,7 +83,7 @@ mod test_utils {
         const ADDRESS_WIDTH: usize = 48;
         const VA_SIGN_EXT: bool = true;
         const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 3;
-        const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
+        const PTE_SIZE: usize = size_of::<PageTableEntry>();
     }
 
     #[derive(Clone, Debug)]

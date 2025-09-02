@@ -154,7 +154,7 @@ impl TryFrom<RawSuperBlock> for SuperBlock {
             first_ino: sb.first_ino,
             inode_size: {
                 let inode_size = sb.inode_size as _;
-                if inode_size < core::mem::size_of::<RawInode>() {
+                if inode_size < size_of::<RawInode>() {
                     return_errno_with_message!(Errno::EINVAL, "inode size is too small");
                 }
                 inode_size
@@ -422,7 +422,7 @@ pub enum RevLevel {
     Dynamic = 1,
 }
 
-const_assert!(core::mem::size_of::<RawSuperBlock>() == SUPER_BLOCK_SIZE);
+const_assert!(size_of::<RawSuperBlock>() == SUPER_BLOCK_SIZE);
 
 /// The raw superblock, it must be exactly 1024 bytes in length.
 #[repr(C)]

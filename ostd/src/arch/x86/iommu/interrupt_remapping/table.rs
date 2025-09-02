@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{fmt::Debug, mem::size_of};
+use core::fmt::Debug;
 
 use bitflags::bitflags;
 use id_alloc::IdAlloc;

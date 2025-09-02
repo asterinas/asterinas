@@ -330,7 +330,7 @@ impl Header {
     where
         R: Read,
     {
-        let mut buf = vec![0u8; core::mem::size_of::<Self>()];
+        let mut buf = vec![0u8; size_of::<Self>()];
         reader.read_exact(&mut buf)?;
 
         let header = Self {
@@ -356,7 +356,7 @@ impl Header {
     }
 
     fn len(&self) -> usize {
-        core::mem::size_of::<Self>()
+        size_of::<Self>()
     }
 }
 

@@ -93,7 +93,7 @@ impl Dmar {
             )
         };
 
-        let mut index = core::mem::size_of::<DmarHeader>();
+        let mut index = size_of::<DmarHeader>();
         let mut remapping_structures = Vec::new();
         while index != (header.header.length as usize) {
             // CommonHeader { type: u16, length: u16 }

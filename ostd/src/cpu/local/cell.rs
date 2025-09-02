@@ -116,7 +116,7 @@ impl<T: 'static> CpuLocalCell<T> {
             let bsp_va = self as *const _ as usize;
             let bsp_base = __cpu_local_start as usize;
             // The implementation should ensure that the CPU-local object resides in the `.cpu_local`.
-            debug_assert!(bsp_va + core::mem::size_of::<T>() <= __cpu_local_end as usize);
+            debug_assert!(bsp_va + size_of::<T>() <= __cpu_local_end as usize);
 
             bsp_va - bsp_base as usize
         };
@@ -125,7 +125,7 @@ impl<T: 'static> CpuLocalCell<T> {
         let local_va = local_base + offset;
 
         // A sanity check about the alignment.
-        debug_assert_eq!(local_va % core::mem::align_of::<T>(), 0);
+        debug_assert_eq!(local_va % align_of::<T>(), 0);
 
         local_va as *mut T
     }

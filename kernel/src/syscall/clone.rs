@@ -38,7 +38,7 @@ pub fn sys_clone3(
         clong_args_addr,
         size
     );
-    if size != core::mem::size_of::<Clone3Args>() {
+    if size != size_of::<Clone3Args>() {
         return_errno_with_message!(Errno::EINVAL, "invalid size");
     }
 

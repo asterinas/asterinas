@@ -181,7 +181,7 @@ impl ExfatBitmap {
         mut cur_unit_offset: u32,
         total_cluster_num: u32,
     ) -> (u32, u32) {
-        let unit_size: u32 = (BITS_PER_BYTE * core::mem::size_of::<BitStore>()) as u32;
+        let unit_size: u32 = (BITS_PER_BYTE * size_of::<BitStore>()) as u32;
         while cur_unit_index < total_cluster_num {
             let leading_zeros = bytes[cur_unit_index as usize].leading_zeros();
             let head_cluster_num = unit_size - cur_unit_offset;
@@ -241,7 +241,7 @@ impl ExfatBitmap {
         cur_unit_offset: u32,
         num_clusters: u32,
     ) -> Range<ClusterID> {
-        let unit_size: u32 = (BITS_PER_BYTE * core::mem::size_of::<BitStore>()) as u32;
+        let unit_size: u32 = (BITS_PER_BYTE * size_of::<BitStore>()) as u32;
         let result_bit_index = cur_unit_index * unit_size + cur_unit_offset;
         result_bit_index + EXFAT_RESERVED_CLUSTERS
             ..result_bit_index + EXFAT_RESERVED_CLUSTERS + num_clusters
@@ -261,7 +261,7 @@ impl ExfatBitmap {
         }
 
         let bytes: &[BitStore] = self.bitvec.as_raw_slice();
-        let unit_size: u32 = (BITS_PER_BYTE * core::mem::size_of::<BitStore>()) as u32;
+        let unit_size: u32 = (BITS_PER_BYTE * size_of::<BitStore>()) as u32;
         let start_cluster_index = search_start_cluster - EXFAT_RESERVED_CLUSTERS;
         let mut cur_unit_index = start_cluster_index / unit_size;
         let mut cur_unit_offset = start_cluster_index % unit_size;
@@ -354,7 +354,7 @@ impl ExfatBitmap {
     }
 
     fn write_to_disk(&mut self, clusters: Range<ClusterID>, sync: bool) -> Result<()> {
-        let unit_size = core::mem::size_of::<BitStore>() * BITS_PER_BYTE;
+        let unit_size = size_of::<BitStore>() * BITS_PER_BYTE;
         let start_byte_off: usize = (clusters.start - EXFAT_RESERVED_CLUSTERS) as usize / unit_size;
         let end_byte_off: usize =
             ((clusters.end - EXFAT_RESERVED_CLUSTERS) as usize).align_up(unit_size) / unit_size;
