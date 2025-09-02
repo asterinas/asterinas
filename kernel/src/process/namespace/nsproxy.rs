@@ -169,6 +169,8 @@ impl ContextSetNsAdminApi for Context<'_> {
         // TODO: When setting a specific namespace,
         // other dependent fields of a posix thread may also need to be updated.
 
+        *self.thread_local.borrow_fs().resolver().write() = ns_proxy.mnt_ns.new_fs_resolver();
+
         *pthread_ns_proxy = Some(ns_proxy.clone());
         thread_local_ns_proxy.replace(Some(ns_proxy));
     }

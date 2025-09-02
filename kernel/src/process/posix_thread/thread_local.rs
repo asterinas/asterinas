@@ -151,6 +151,10 @@ impl ThreadLocal {
         self.fs.borrow_mut()
     }
 
+    pub fn is_fs_shared(&self) -> bool {
+        Arc::strong_count(&self.fs.borrow()) > 1
+    }
+
     pub fn sig_context(&self) -> &Cell<Option<Vaddr>> {
         &self.sig_context
     }
