@@ -41,7 +41,7 @@ macro_rules! impl_read_write_for_32bit_type {
     ($pod_ty: ty) => {
         impl ReadFromUser for $pod_ty {
             fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
-                if (max_len as usize) < core::mem::size_of::<$pod_ty>() {
+                if (max_len as usize) < size_of::<$pod_ty>() {
                     return_errno_with_message!(Errno::EINVAL, "max_len is too short");
                 }
                 crate::current_userspace!().read_val::<$pod_ty>(addr)
@@ -50,7 +50,7 @@ macro_rules! impl_read_write_for_32bit_type {
 
         impl WriteToUser for $pod_ty {
             fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
-                let write_len = core::mem::size_of::<$pod_ty>();
+                let write_len = size_of::<$pod_ty>();
 
                 if (max_len as usize) < write_len {
                     return_errno_with_message!(Errno::EINVAL, "max_len is too short");
@@ -121,7 +121,7 @@ impl WriteToUser for IpTtl {
 
 impl WriteToUser for Option<Error> {
     fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
-        let write_len = core::mem::size_of::<i32>();
+        let write_len = size_of::<i32>();
 
         if (max_len as usize) < write_len {
             return_errno_with_message!(Errno::EINVAL, "max_len is too short");
@@ -139,7 +139,7 @@ impl WriteToUser for Option<Error> {
 
 impl ReadFromUser for LingerOption {
     fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
-        if (max_len as usize) < core::mem::size_of::<CLinger>() {
+        if (max_len as usize) < size_of::<CLinger>() {
             return_errno_with_message!(Errno::EINVAL, "max_len is too short");
         }
 
@@ -151,7 +151,7 @@ impl ReadFromUser for LingerOption {
 
 impl WriteToUser for LingerOption {
     fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
-        let write_len = core::mem::size_of::<CLinger>();
+        let write_len = size_of::<CLinger>();
 
         if (max_len as usize) < write_len {
             return_errno_with_message!(Errno::EINVAL, "max_len is too short");
@@ -229,7 +229,7 @@ impl From<CLinger> for LingerOption {
 
 impl WriteToUser for CUserCred {
     fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
-        let write_len = core::mem::size_of::<CUserCred>();
+        let write_len = size_of::<CUserCred>();
 
         if (max_len as usize) < write_len {
             return_errno_with_message!(Errno::EINVAL, "max_len is too short");

@@ -22,7 +22,7 @@ pub fn sys_rt_sigsuspend(
         sigmask_addr, sigmask_size
     );
 
-    if sigmask_size != core::mem::size_of::<SigMask>() {
+    if sigmask_size != size_of::<SigMask>() {
         return_errno_with_message!(Errno::EINVAL, "invalid sigmask size");
     }
 

@@ -124,8 +124,7 @@ struct DirentInner {
 impl DirentSerializer for Dirent {
     fn new(ino: u64, offset: u64, _type_: InodeType, name: CString) -> Self {
         let d_reclen = {
-            let len =
-                core::mem::size_of::<Dirent64Inner>() + name.as_c_str().to_bytes_with_nul().len();
+            let len = size_of::<Dirent64Inner>() + name.as_c_str().to_bytes_with_nul().len();
             align_up(len, 8) as u16
         };
         Self {
@@ -184,8 +183,7 @@ struct Dirent64Inner {
 impl DirentSerializer for Dirent64 {
     fn new(ino: u64, offset: u64, type_: InodeType, name: CString) -> Self {
         let d_reclen = {
-            let len =
-                core::mem::size_of::<Dirent64Inner>() + name.as_c_str().to_bytes_with_nul().len();
+            let len = size_of::<Dirent64Inner>() + name.as_c_str().to_bytes_with_nul().len();
             align_up(len, 8) as u16
         };
         let d_type = DirentType::from(type_) as u8;

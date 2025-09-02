@@ -13,10 +13,7 @@
 //! so the content reading from init stack may not be the same as the process init status.
 //!
 
-use core::{
-    mem,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 use align_ext::AlignExt;
 use aster_rights::Full;
@@ -289,10 +286,10 @@ impl InitStackWriter {
     fn adjust_stack_alignment(&self, envp_pointers: &[u64], argv_pointers: &[u64]) -> Result<()> {
         // Ensure 8-byte alignment
         self.write_u64(0)?;
-        let auxvec_size = (self.auxvec.table().len() + 1) * (mem::size_of::<u64>() * 2);
-        let envp_pointers_size = (envp_pointers.len() + 1) * mem::size_of::<u64>();
-        let argv_pointers_size = (argv_pointers.len() + 1) * mem::size_of::<u64>();
-        let argc_size = mem::size_of::<u64>();
+        let auxvec_size = (self.auxvec.table().len() + 1) * (size_of::<u64>() * 2);
+        let envp_pointers_size = (envp_pointers.len() + 1) * size_of::<u64>();
+        let argv_pointers_size = (argv_pointers.len() + 1) * size_of::<u64>();
+        let argc_size = size_of::<u64>();
         let to_write_size = auxvec_size + envp_pointers_size + argv_pointers_size + argc_size;
         if (self.pos() - to_write_size) % 16 != 0 {
             self.write_u64(0)?;

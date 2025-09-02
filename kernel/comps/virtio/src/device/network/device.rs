@@ -3,7 +3,7 @@
 use alloc::{
     boxed::Box, collections::linked_list::LinkedList, string::ToString, sync::Arc, vec::Vec,
 };
-use core::{fmt::Debug, mem::size_of};
+use core::fmt::Debug;
 
 use aster_bigtcp::device::{Checksum, DeviceCapabilities, Medium};
 use aster_network::{

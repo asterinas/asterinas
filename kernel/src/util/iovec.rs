@@ -90,10 +90,8 @@ fn copy_iovs_and_convert<'a, T: 'a>(
 
     for idx in 0..count {
         let mut iov = {
-            let addr = start_addr + idx * core::mem::size_of::<UserIoVec>();
-            let uiov: UserIoVec = vm_space
-                .reader(addr, core::mem::size_of::<UserIoVec>())?
-                .read_val()?;
+            let addr = start_addr + idx * size_of::<UserIoVec>();
+            let uiov: UserIoVec = vm_space.reader(addr, size_of::<UserIoVec>())?.read_val()?;
             IoVec::try_from(uiov)?
         };
 

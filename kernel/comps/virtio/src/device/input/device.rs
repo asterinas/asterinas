@@ -6,7 +6,7 @@ use alloc::{
     sync::Arc,
     vec::Vec,
 };
-use core::{fmt::Debug, mem};
+use core::fmt::Debug;
 
 use aster_input::{
     key::{Key, KeyStatus},
@@ -259,7 +259,7 @@ struct EventTable {
 
 impl EventTable {
     fn new(num_events: usize) -> Self {
-        assert!(num_events * mem::size_of::<VirtioInputEvent>() <= PAGE_SIZE);
+        assert!(num_events * size_of::<VirtioInputEvent>() <= PAGE_SIZE);
 
         let segment = FrameAllocOptions::new()
             .zeroed(true)
@@ -287,12 +287,12 @@ impl EventTable {
     }
 }
 
-const EVENT_SIZE: usize = core::mem::size_of::<VirtioInputEvent>();
+const EVENT_SIZE: usize = size_of::<VirtioInputEvent>();
 type EventBuf<'a> = SafePtr<VirtioInputEvent, &'a DmaStream>;
 
 impl<T, M: HasDaddr> DmaBuf for SafePtr<T, M> {
     fn len(&self) -> usize {
-        core::mem::size_of::<T>()
+        size_of::<T>()
     }
 }
 

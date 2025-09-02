@@ -24,7 +24,7 @@ impl PagingConstsTrait for PagingConsts {
     const VA_SIGN_EXT: bool = true;
     // TODO: Support huge page
     const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 1;
-    const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
+    const PTE_SIZE: usize = size_of::<PageTableEntry>();
 }
 
 bitflags::bitflags! {

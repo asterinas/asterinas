@@ -3,8 +3,6 @@
 #![expect(dead_code)]
 #![expect(non_camel_case_types)]
 
-use core::mem::{self, size_of};
-
 use aster_util::read_union_field;
 use inherit_methods_macro::inherit_methods;
 use ostd::cpu::context::UserContext;
@@ -77,7 +75,7 @@ impl siginfo_t {
 #[derive(Clone, Copy, Pod)]
 #[repr(C)]
 union siginfo_fields_t {
-    bytes: [u8; 128 - mem::size_of::<i32>() * 4],
+    bytes: [u8; 128 - size_of::<i32>() * 4],
     common: siginfo_common_t,
     sigfault: siginfo_sigfault_t,
 }
@@ -85,7 +83,7 @@ union siginfo_fields_t {
 impl siginfo_fields_t {
     fn zero_fields() -> Self {
         Self {
-            bytes: [0; 128 - mem::size_of::<i32>() * 4],
+            bytes: [0; 128 - size_of::<i32>() * 4],
         }
     }
 }

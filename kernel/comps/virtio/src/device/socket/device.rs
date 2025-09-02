@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{boxed::Box, string::ToString, sync::Arc, vec};
-use core::{fmt::Debug, hint::spin_loop, mem::size_of};
+use core::{fmt::Debug, hint::spin_loop};
 
 use aster_network::{RxBuffer, TxBuffer};
 use aster_util::{field_ptr, slot_vec::SlotVec};

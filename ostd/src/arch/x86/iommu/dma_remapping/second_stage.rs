@@ -48,7 +48,7 @@ impl PagingConstsTrait for PagingConsts {
     const ADDRESS_WIDTH: usize = 39;
     const VA_SIGN_EXT: bool = true;
     const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 1;
-    const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
+    const PTE_SIZE: usize = size_of::<PageTableEntry>();
 }
 
 bitflags::bitflags! {

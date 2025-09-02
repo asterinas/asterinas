@@ -176,4 +176,4 @@ pub const MAX_TB_INDIRECT_BLOCKS: Ext2Bid = MAX_INDIRECT_BLOCKS * MAX_DB_INDIREC
 pub const MAX_BLOCK_PTRS: usize = TB_INDIRECT + 1;
 
 /// The size of of the block id.
-pub const BID_SIZE: usize = core::mem::size_of::<Ext2Bid>();
+pub const BID_SIZE: usize = size_of::<Ext2Bid>();

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::vec;
-use core::mem::size_of;
 
 use ostd_pod::Pod;
 

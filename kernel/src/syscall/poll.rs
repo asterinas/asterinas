@@ -50,7 +50,7 @@ pub fn do_sys_poll(
 
         for _ in 0..nfds {
             let c_poll_fd = user_space.read_val::<c_pollfd>(read_addr)?;
-            read_addr += core::mem::size_of::<c_pollfd>();
+            read_addr += size_of::<c_pollfd>();
 
             let poll_fd = PollFd::from(c_poll_fd);
             // Always clear the revents fields first
@@ -74,7 +74,7 @@ pub fn do_sys_poll(
         let c_poll_fd = c_pollfd::from(pollfd);
 
         user_space.write_val(write_addr, &c_poll_fd)?;
-        write_addr += core::mem::size_of::<c_pollfd>();
+        write_addr += size_of::<c_pollfd>();
     }
 
     Ok(SyscallReturn::Return(num_revents as _))

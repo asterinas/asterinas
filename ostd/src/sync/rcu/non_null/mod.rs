@@ -110,7 +110,7 @@ unsafe impl<T: 'static> NonNullPtr for Box<T> {
     where
         Self: 'a;
 
-    const ALIGN_BITS: u32 = core::mem::align_of::<T>().trailing_zeros();
+    const ALIGN_BITS: u32 = align_of::<T>().trailing_zeros();
 
     fn into_raw(self) -> NonNull<Self::Target> {
         let ptr = Box::into_raw(self);
@@ -172,7 +172,7 @@ unsafe impl<T: 'static> NonNullPtr for Arc<T> {
     where
         Self: 'a;
 
-    const ALIGN_BITS: u32 = core::mem::align_of::<T>().trailing_zeros();
+    const ALIGN_BITS: u32 = align_of::<T>().trailing_zeros();
 
     fn into_raw(self) -> NonNull<Self::Target> {
         let ptr = Arc::into_raw(self).cast_mut();

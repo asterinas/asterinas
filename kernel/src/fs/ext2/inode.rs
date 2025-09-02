@@ -1308,9 +1308,9 @@ impl InodeImpl {
     }
 
     pub fn set_device_id(&mut self, device_id: u64) {
-        self.desc.block_ptrs.as_bytes_mut()[..core::mem::size_of::<u64>()]
+        self.desc.block_ptrs.as_bytes_mut()[..size_of::<u64>()]
             .copy_from_slice(device_id.as_bytes());
-        self.block_manager.block_ptrs.write().as_bytes_mut()[..core::mem::size_of::<u64>()]
+        self.block_manager.block_ptrs.write().as_bytes_mut()[..size_of::<u64>()]
             .copy_from_slice(device_id.as_bytes());
     }
 
@@ -1318,7 +1318,7 @@ impl InodeImpl {
         let mut device_id: u64 = 0;
         device_id
             .as_bytes_mut()
-            .copy_from_slice(&self.desc.block_ptrs.as_bytes()[..core::mem::size_of::<u64>()]);
+            .copy_from_slice(&self.desc.block_ptrs.as_bytes()[..size_of::<u64>()]);
         device_id
     }
 
@@ -2284,7 +2284,7 @@ bitflags! {
     }
 }
 
-const_assert!(core::mem::size_of::<RawInode>() == 128);
+const_assert!(size_of::<RawInode>() == 128);
 
 /// The raw inode on device.
 #[repr(C)]

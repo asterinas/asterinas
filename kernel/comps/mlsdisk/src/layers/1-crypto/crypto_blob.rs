@@ -64,7 +64,7 @@ struct Header {
 
 impl<B: BlockSet> CryptoBlob<B> {
     /// The size of the header of a crypto blob in bytes.
-    pub const HEADER_NBYTES: usize = core::mem::size_of::<Header>();
+    pub const HEADER_NBYTES: usize = size_of::<Header>();
 
     /// Opens an existing `CryptoBlob`.
     ///

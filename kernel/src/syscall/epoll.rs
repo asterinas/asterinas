@@ -16,7 +16,7 @@ use crate::{
 };
 
 // See: https://elixir.bootlin.com/linux/v6.11.5/source/fs/eventpoll.c#L2437
-const EP_MAX_EVENTS: usize = i32::MAX as usize / core::mem::size_of::<c_epoll_event>();
+const EP_MAX_EVENTS: usize = i32::MAX as usize / size_of::<c_epoll_event>();
 
 pub fn sys_epoll_create(size: i32, ctx: &Context) -> Result<SyscallReturn> {
     if size <= 0 {
@@ -152,7 +152,7 @@ fn do_epoll_pwait2(
     for epoll_event in epoll_events.iter() {
         let c_epoll_event = c_epoll_event::from(epoll_event);
         user_space.write_val(write_addr, &c_epoll_event)?;
-        write_addr += core::mem::size_of::<c_epoll_event>();
+        write_addr += size_of::<c_epoll_event>();
     }
 
     Ok(epoll_events.len())

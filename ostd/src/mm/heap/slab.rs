@@ -87,7 +87,7 @@ impl<const SLOT_SIZE: usize> Slab<SLOT_SIZE> {
     pub fn new() -> crate::prelude::Result<Self> {
         const { assert!(SLOT_SIZE <= PAGE_SIZE) };
         // To ensure we can store a pointer in each slot.
-        const { assert!(SLOT_SIZE >= core::mem::size_of::<usize>()) };
+        const { assert!(SLOT_SIZE >= size_of::<usize>()) };
         // To ensure `nr_allocated` can be stored in a `u16`.
         const { assert!(PAGE_SIZE / SLOT_SIZE <= u16::MAX as usize) };
 

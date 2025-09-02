@@ -93,13 +93,13 @@ impl RawSocketOption for PeerGroups {
         let groups = self.get().unwrap();
 
         let old_len = *buffer_len;
-        *buffer_len = (groups.len() * core::mem::size_of::<Gid>()) as u32;
+        *buffer_len = (groups.len() * size_of::<Gid>()) as u32;
         if old_len < *buffer_len {
             return_errno_with_message!(Errno::ERANGE, "the buffer is too small");
         }
 
         for (i, gid) in groups.iter().enumerate() {
-            let dst = addr + i * core::mem::size_of::<Gid>();
+            let dst = addr + i * size_of::<Gid>();
             current_userspace!().write_val(dst, gid)?;
         }
 

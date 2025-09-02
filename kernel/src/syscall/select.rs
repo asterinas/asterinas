@@ -199,7 +199,7 @@ fn convert_events_to_rwe(events: IoEvents) -> Result<(bool, bool, bool)> {
 }
 
 const FD_SETSIZE: usize = 1024;
-const USIZE_BITS: usize = core::mem::size_of::<usize>() * 8;
+const USIZE_BITS: usize = usize::BITS as usize;
 
 #[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]

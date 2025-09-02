@@ -2,7 +2,7 @@
 
 //! Transactions in WriteAhead Log.
 use alloc::vec;
-use core::{fmt::Debug, mem::size_of};
+use core::fmt::Debug;
 
 use ostd_pod::Pod;
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{cmp, mem, sync::atomic::Ordering};
+use core::{cmp, sync::atomic::Ordering};
 
 use ostd::cpu::{num_cpus, CpuId, CpuSet};
 
@@ -59,7 +59,7 @@ pub fn sys_sched_setaffinity(
 // Linux uses `DECLARE_BITMAP` for `cpu_set_t`, inside which each part is a
 // `long`. We use the same scheme to ensure byte endianness compatibility.
 type Part = u64;
-const SIZE_OF_PART: usize = mem::size_of::<Part>();
+const SIZE_OF_PART: usize = size_of::<Part>();
 const CPUS_IN_PART: usize = SIZE_OF_PART * 8;
 
 fn read_cpu_set_from(

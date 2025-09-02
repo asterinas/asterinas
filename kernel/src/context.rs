@@ -2,7 +2,7 @@
 
 //! The context that can be accessed from the current task, thread or process.
 
-use core::{cell::Ref, mem};
+use core::cell::Ref;
 
 use aster_rights::Full;
 use ostd::{
@@ -160,11 +160,11 @@ impl<'a> CurrentUserSpace<'a> {
 
     /// Reads a value typed `Pod` from the user space of the current process.
     pub fn read_val<T: Pod>(&self, src: Vaddr) -> Result<T> {
-        if core::mem::size_of::<T>() > 0 {
+        if size_of::<T>() > 0 {
             check_vaddr_lowerbound(src)?;
         }
 
-        let mut user_reader = self.reader(src, core::mem::size_of::<T>())?;
+        let mut user_reader = self.reader(src, size_of::<T>())?;
         Ok(user_reader.read_val()?)
     }
 
@@ -191,11 +191,11 @@ impl<'a> CurrentUserSpace<'a> {
 
     /// Writes `val` to the user space of the current process.
     pub fn write_val<T: Pod>(&self, dest: Vaddr, val: &T) -> Result<()> {
-        if core::mem::size_of::<T>() > 0 {
+        if size_of::<T>() > 0 {
             check_vaddr_lowerbound(dest)?;
         }
 
-        let mut user_writer = self.writer(dest, core::mem::size_of::<T>())?;
+        let mut user_writer = self.writer(dest, size_of::<T>())?;
         Ok(user_writer.write_val(val)?)
     }
 
@@ -203,16 +203,15 @@ impl<'a> CurrentUserSpace<'a> {
     ///
     /// # Panics
     ///
-    /// This method will panic if `vaddr` is not aligned on a `core::mem::align_of::<T>()`-byte
-    /// boundary.
+    /// This method will panic if `vaddr` is not aligned on an `align_of::<T>()`-byte boundary.
     ///
     /// [`Ordering::Relaxed`]: core::sync::atomic::Ordering::Relaxed
     pub fn atomic_load<T: PodAtomic>(&self, vaddr: Vaddr) -> Result<T> {
-        if core::mem::size_of::<T>() > 0 {
+        if size_of::<T>() > 0 {
             check_vaddr_lowerbound(vaddr)?;
         }
 
-        let user_reader = self.reader(vaddr, core::mem::size_of::<T>())?;
+        let user_reader = self.reader(vaddr, size_of::<T>())?;
         Ok(user_reader.atomic_load()?)
     }
 
@@ -227,8 +226,7 @@ impl<'a> CurrentUserSpace<'a> {
     ///
     /// # Panics
     ///
-    /// This method will panic if `vaddr` is not aligned on a `core::mem::align_of::<T>()`-byte
-    /// boundary.
+    /// This method will panic if `vaddr` is not aligned on an `align_of::<T>()`-byte boundary.
     ///
     /// [`Ordering::Relaxed`]: core::sync::atomic::Ordering::Relaxed
     /// [`atomic_load`]: VmReader::atomic_load
@@ -237,11 +235,11 @@ impl<'a> CurrentUserSpace<'a> {
     where
         T: PodAtomic + Eq,
     {
-        if core::mem::size_of::<T>() > 0 {
+        if size_of::<T>() > 0 {
             check_vaddr_lowerbound(vaddr)?;
         }
 
-        let (reader, writer) = self.reader_writer(vaddr, core::mem::size_of::<T>())?;
+        let (reader, writer) = self.reader_writer(vaddr, size_of::<T>())?;
 
         let mut old_val = reader.atomic_load()?;
         loop {
@@ -360,7 +358,7 @@ fn read_until_nul_byte(
 
     // Handle the rest of the bytes in bulk
     let mut cloned_reader = reader.clone();
-    while (buffer.len() + mem::size_of::<usize>()) <= max_len {
+    while (buffer.len() + size_of::<usize>()) <= max_len {
         let Ok(word) = cloned_reader.read_val::<usize>() else {
             break;
         };
@@ -398,8 +396,8 @@ fn read_until_nul_byte(
 /// This magic algorithm is from the Linux `has_zero` function:
 /// <https://elixir.bootlin.com/linux/v6.0.9/source/include/asm-generic/word-at-a-time.h#L93>
 const fn has_zero(value: usize) -> bool {
-    const ONE_BITS: usize = usize::from_le_bytes([0x01; mem::size_of::<usize>()]);
-    const HIGH_BITS: usize = usize::from_le_bytes([0x80; mem::size_of::<usize>()]);
+    const ONE_BITS: usize = usize::from_le_bytes([0x01; size_of::<usize>()]);
+    const HIGH_BITS: usize = usize::from_le_bytes([0x80; size_of::<usize>()]);
 
     value.wrapping_sub(ONE_BITS) & !value & HIGH_BITS != 0
 }
@@ -423,7 +421,7 @@ fn check_vaddr_lowerbound(va: Vaddr) -> Result<()> {
 
 /// Checks if the given address is aligned.
 const fn is_addr_aligned(addr: usize) -> bool {
-    (addr & (mem::size_of::<usize>() - 1)) == 0
+    (addr & (size_of::<usize>() - 1)) == 0
 }
 
 #[cfg(ktest)]

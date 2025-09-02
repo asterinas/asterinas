@@ -8,7 +8,7 @@
 //! The reference to the Linux PE header definition:
 //! <https://github.com/torvalds/linux/blob/master/include/linux/pe.h>
 
-use std::{mem::size_of, vec};
+use std::vec;
 
 use align_ext::AlignExt;
 use bytemuck::{Pod, Zeroable};

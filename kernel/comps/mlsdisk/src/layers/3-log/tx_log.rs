@@ -720,7 +720,7 @@ impl<D: BlockSet + 'static> Debug for TxLogStore<D> {
 }
 
 impl Superblock {
-    const SUPERBLOCK_SIZE: usize = core::mem::size_of::<Superblock>();
+    const SUPERBLOCK_SIZE: usize = size_of::<Superblock>();
 
     /// Returns the total number of blocks occupied by the `TxLogStore`.
     pub fn total_nblocks(&self) -> usize {

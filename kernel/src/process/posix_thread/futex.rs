@@ -547,7 +547,7 @@ impl FutexKey {
         // "On all platforms, futexes are four-byte integers that must be aligned on a four-byte
         // boundary."
         // Reference: <https://man7.org/linux/man-pages/man2/futex.2.html>.
-        if addr % core::mem::align_of::<u32>() != 0 {
+        if addr % align_of::<u32>() != 0 {
             return_errno_with_message!(
                 Errno::EINVAL,
                 "the futex word is not aligend on a four-byte boundary"

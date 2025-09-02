@@ -55,7 +55,7 @@ pub fn sys_signalfd4(
         fd, mask_ptr, sizemask, flags
     );
 
-    if sizemask != core::mem::size_of::<SigMask>() {
+    if sizemask != size_of::<SigMask>() {
         return Err(Error::with_message(Errno::EINVAL, "invalid mask size"));
     }
 
@@ -216,7 +216,7 @@ impl SignalFile {
 
         // Mask is inverted to get the signals that are not blocked
         let mask = !self.signals_mask.load(Ordering::Relaxed);
-        let max_signals = writer.avail() / core::mem::size_of::<SignalfdSiginfo>();
+        let max_signals = writer.avail() / size_of::<SignalfdSiginfo>();
         let mut count = 0;
 
         for _ in 0..max_signals {
@@ -233,7 +233,7 @@ impl SignalFile {
         if count == 0 {
             return_errno!(Errno::EAGAIN);
         }
-        Ok(count * core::mem::size_of::<SignalfdSiginfo>())
+        Ok(count * size_of::<SignalfdSiginfo>())
     }
 }
 
@@ -261,7 +261,7 @@ impl Pollable for SignalFile {
 
 impl FileLike for SignalFile {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        if writer.avail() < core::mem::size_of::<SignalfdSiginfo>() {
+        if writer.avail() < size_of::<SignalfdSiginfo>() {
             return_errno_with_message!(Errno::EINVAL, "Buffer too small for siginfo structure");
         }
 

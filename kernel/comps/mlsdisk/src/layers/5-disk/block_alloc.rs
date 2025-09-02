@@ -3,7 +3,6 @@
 //! Block allocation.
 use alloc::vec;
 use core::{
-    mem::size_of,
     num::NonZeroUsize,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };

@@ -173,7 +173,7 @@ impl Pollable for EventFile {
 
 impl FileLike for EventFile {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        let read_len = core::mem::size_of::<u64>();
+        let read_len = size_of::<u64>();
 
         if writer.avail() < read_len {
             return_errno_with_message!(Errno::EINVAL, "buf len is less len u64 size");
@@ -189,7 +189,7 @@ impl FileLike for EventFile {
     }
 
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
-        let write_len = core::mem::size_of::<u64>();
+        let write_len = size_of::<u64>();
         if reader.remain() < write_len {
             return_errno_with_message!(Errno::EINVAL, "buf len is less than the size of u64");
         }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{boxed::Box, sync::Arc};
-use core::mem::{offset_of, size_of};
+use core::mem::offset_of;
 
 use aster_rights::{ReadOp, WriteOp};
 use aster_util::{field_ptr, safe_ptr::SafePtr};

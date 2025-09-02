@@ -8,7 +8,7 @@ use alloc::{
     vec,
     vec::Vec,
 };
-use core::{fmt::Debug, hint::spin_loop, mem::size_of};
+use core::{fmt::Debug, hint::spin_loop};
 
 use aster_block::{
     bio::{bio_segment_pool_init, BioEnqueueError, BioStatus, BioType, SubmittedBio},

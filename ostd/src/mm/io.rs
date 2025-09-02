@@ -95,7 +95,7 @@ pub trait VmIo: Send + Sync {
         // ```rust
         // let mut val: MaybeUninit<T> = MaybeUninit::uninit();
         // let writer = unsafe {
-        //     VmWriter::from_kernel_space(val.as_mut_ptr().cast(), core::mem::size_of::<T>())
+        //     VmWriter::from_kernel_space(val.as_mut_ptr().cast(), size_of::<T>())
         // };
         // self.read(offset, &mut writer.to_fallible())?;
         // Ok(unsafe { val.assume_init() })
@@ -121,7 +121,7 @@ pub trait VmIo: Send + Sync {
     ///
     /// [`read`]: VmIo::read
     fn read_slice<T: Pod>(&self, offset: usize, slice: &mut [T]) -> Result<()> {
-        let len_in_bytes = core::mem::size_of_val(slice);
+        let len_in_bytes = size_of_val(slice);
         let ptr = slice as *mut [T] as *mut u8;
         // SAFETY: the slice can be transmuted to a writable byte slice since the elements
         // are all Plain-Old-Data (Pod) types.
@@ -164,7 +164,7 @@ pub trait VmIo: Send + Sync {
     ///
     /// [`write`]: VmIo::write
     fn write_slice<T: Pod>(&self, offset: usize, slice: &[T]) -> Result<()> {
-        let len_in_bytes = core::mem::size_of_val(slice);
+        let len_in_bytes = size_of_val(slice);
         let ptr = slice as *const [T] as *const u8;
         // SAFETY: the slice can be transmuted to a readable byte slice since the elements
         // are all Plain-Old-Data (Pod) types.
@@ -473,7 +473,7 @@ impl<'a> VmReader<'a, Infallible> {
     /// If the length of the `Pod` type exceeds `self.remain()`,
     /// this method will return `Err`.
     pub fn read_val<T: Pod>(&mut self) -> Result<T> {
-        if self.remain() < core::mem::size_of::<T>() {
+        if self.remain() < size_of::<T>() {
             return Err(Error::InvalidArgs);
         }
 
@@ -485,9 +485,8 @@ impl<'a> VmReader<'a, Infallible> {
         //   from a mutable pointer where the underlying storage outlives the temporary lifetime
         //   and no other Rust references to the same storage exist during the lifetime.
         // - The type, i.e., `T`, is plain-old-data.
-        let mut writer = unsafe {
-            VmWriter::from_kernel_space(val.as_mut_ptr().cast(), core::mem::size_of::<T>())
-        };
+        let mut writer =
+            unsafe { VmWriter::from_kernel_space(val.as_mut_ptr().cast(), size_of::<T>()) };
         self.read(&mut writer);
         debug_assert!(!writer.has_avail());
 
@@ -510,7 +509,7 @@ impl<'a> VmReader<'a, Infallible> {
     /// This method will panic if the current position of the reader does not meet the alignment
     /// requirements of type `T`.
     pub fn read_once<T: PodOnce>(&mut self) -> Result<T> {
-        if self.remain() < core::mem::size_of::<T>() {
+        if self.remain() < size_of::<T>() {
             return Err(Error::InvalidArgs);
         }
 
@@ -523,7 +522,7 @@ impl<'a> VmReader<'a, Infallible> {
         // and that the cursor is properly aligned with respect to the type `T`. All other safety
         // requirements are the same as for `Self::read`.
         let val = unsafe { cursor.read_volatile() };
-        self.cursor = self.cursor.wrapping_add(core::mem::size_of::<T>());
+        self.cursor = self.cursor.wrapping_add(size_of::<T>());
 
         Ok(val)
     }
@@ -570,7 +569,7 @@ impl VmReader<'_, Fallible> {
     /// and the current reader's cursor remains pointing to
     /// the original starting position.
     pub fn read_val<T: Pod>(&mut self) -> Result<T> {
-        if self.remain() < core::mem::size_of::<T>() {
+        if self.remain() < size_of::<T>() {
             return Err(Error::InvalidArgs);
         }
 
@@ -582,9 +581,8 @@ impl VmReader<'_, Fallible> {
         //   from a mutable pointer where the underlying storage outlives the temporary lifetime
         //   and no other Rust references to the same storage exist during the lifetime.
         // - The type, i.e., `T`, is plain-old-data.
-        let mut writer = unsafe {
-            VmWriter::from_kernel_space(val.as_mut_ptr().cast(), core::mem::size_of::<T>())
-        };
+        let mut writer =
+            unsafe { VmWriter::from_kernel_space(val.as_mut_ptr().cast(), size_of::<T>()) };
         self.read_fallible(&mut writer)
             .map_err(|(err, copied_len)| {
                 // The `copied_len` is the number of bytes read so far.
@@ -611,15 +609,15 @@ impl VmReader<'_, Fallible> {
     /// specified in the C++11 memory model.
     ///
     /// This method will fail with errors if
-    ///  1. the remaining space of the reader is less than `core::mem::size_of::<T>()` bytes, or
+    ///  1. the remaining space of the reader is less than `size_of::<T>()` bytes, or
     ///  2. the memory operation fails due to an unresolvable page fault.
     ///
     /// # Panics
     ///
-    /// This method will panic if the memory location is not aligned on a
-    /// `core::mem::align_of::<T>()`-byte boundary.
+    /// This method will panic if the memory location is not aligned on an `align_of::<T>()`-byte
+    /// boundary.
     pub fn atomic_load<T: PodAtomic>(&self) -> Result<T> {
-        if self.remain() < core::mem::size_of::<T>() {
+        if self.remain() < size_of::<T>() {
             return Err(Error::InvalidArgs);
         }
 
@@ -628,7 +626,7 @@ impl VmReader<'_, Fallible> {
 
         // SAFETY:
         // 1. The cursor is either valid for reading or in user space for `size_of::<T>()` bytes.
-        // 2. The cursor is aligned on a `align_of::<T>()`-byte boundary.
+        // 2. The cursor is aligned on an `align_of::<T>()`-byte boundary.
         unsafe { T::atomic_load_fallible(cursor) }
     }
 }
@@ -744,7 +742,7 @@ impl<'a> VmWriter<'a, Infallible> {
     /// If the length of the `Pod` type exceeds `self.avail()`,
     /// this method will return `Err`.
     pub fn write_val<T: Pod>(&mut self, new_val: &T) -> Result<()> {
-        if self.avail() < core::mem::size_of::<T>() {
+        if self.avail() < size_of::<T>() {
             return Err(Error::InvalidArgs);
         }
 
@@ -762,7 +760,7 @@ impl<'a> VmWriter<'a, Infallible> {
     /// This method will panic if the current position of the writer does not meet the alignment
     /// requirements of type `T`.
     pub fn write_once<T: PodOnce>(&mut self, new_val: &T) -> Result<()> {
-        if self.avail() < core::mem::size_of::<T>() {
+        if self.avail() < size_of::<T>() {
             return Err(Error::InvalidArgs);
         }
 
@@ -775,7 +773,7 @@ impl<'a> VmWriter<'a, Infallible> {
         // and that the cursor is properly aligned with respect to the type `T`. All other safety
         // requirements are the same as for `Self::write`.
         unsafe { cursor.write_volatile(*new_val) };
-        self.cursor = self.cursor.wrapping_add(core::mem::size_of::<T>());
+        self.cursor = self.cursor.wrapping_add(size_of::<T>());
 
         Ok(())
     }
@@ -844,7 +842,7 @@ impl VmWriter<'_, Fallible> {
     /// and the current writer's cursor remains pointing to
     /// the original starting position.
     pub fn write_val<T: Pod>(&mut self, new_val: &T) -> Result<()> {
-        if self.avail() < core::mem::size_of::<T>() {
+        if self.avail() < size_of::<T>() {
             return Err(Error::InvalidArgs);
         }
 
@@ -883,14 +881,14 @@ impl VmWriter<'_, Fallible> {
     ///
     /// This method will fail with errors if:
     ///  1. the remaining space of the reader or the available space of the writer are less than
-    ///     `core::mem::size_of::<T>()` bytes, or
+    ///     `size_of::<T>()` bytes, or
     ///  2. the memory operation fails due to an unresolvable page fault.
     ///
     /// # Panics
     ///
     /// This method will panic if:
     ///  1. the reader and the writer does not point to the same memory location, or
-    ///  2. the memory location is not aligned on a `core::mem::align_of::<T>()`-byte boundary.
+    ///  2. the memory location is not aligned on an `align_of::<T>()`-byte boundary.
     pub fn atomic_compare_exchange<T>(
         &self,
         reader: &VmReader,
@@ -900,7 +898,7 @@ impl VmWriter<'_, Fallible> {
     where
         T: PodAtomic + Eq,
     {
-        if self.avail() < core::mem::size_of::<T>() || reader.remain() < core::mem::size_of::<T>() {
+        if self.avail() < size_of::<T>() || reader.remain() < size_of::<T>() {
             return Err(Error::InvalidArgs);
         }
 
@@ -912,7 +910,7 @@ impl VmWriter<'_, Fallible> {
         // SAFETY:
         // 1. The cursor is either valid for reading and writing or in user space for
         //    `size_of::<T>()` bytes.
-        // 2. The cursor is aligned on a `align_of::<T>()`-byte boundary.
+        // 2. The cursor is aligned on an `align_of::<T>()`-byte boundary.
         let cur_val = unsafe { T::atomic_cmpxchg_fallible(cursor, old_val, new_val)? };
 
         Ok((cur_val, old_val == cur_val))
@@ -1030,7 +1028,7 @@ mod pod_once_impls {
     /// LangRef is ambiguous. But this is unlikely to break in practice because the Linux kernel
     /// also uses "volatile" semantics to implement `READ_ONCE`/`WRITE_ONCE`.
     pub(super) const fn is_non_tearing<T>() -> bool {
-        let size = core::mem::size_of::<T>();
+        let size = size_of::<T>();
 
         size == 1 || size == 2 || size == 4 || size == 8
     }
@@ -1045,9 +1043,9 @@ pub trait PodAtomic: Pod {
     ///
     /// # Safety
     ///
-    /// - `ptr` must either be [valid] for writes of `core::mem::size_of::<T>()` bytes or be in user
-    ///   space for  `core::mem::size_of::<T>()` bytes.
-    /// - `ptr` must be aligned on a `core::mem::align_of::<T>()`-byte boundary.
+    /// - `ptr` must either be [valid] for writes of `size_of::<T>()` bytes or be in user
+    ///   space for `size_of::<T>()` bytes.
+    /// - `ptr` must be aligned on an `align_of::<T>()`-byte boundary.
     ///
     /// [valid]: crate::mm::io#safety
     #[doc(hidden)]
@@ -1061,9 +1059,9 @@ pub trait PodAtomic: Pod {
     ///
     /// # Safety
     ///
-    /// - `ptr` must either be [valid] for writes of `core::mem::size_of::<T>()` bytes or be in user
-    ///   space for  `core::mem::size_of::<T>()` bytes.
-    /// - `ptr` must be aligned on a `core::mem::align_of::<T>()`-byte boundary.
+    /// - `ptr` must either be [valid] for writes of `size_of::<T>()` bytes or be in user
+    ///   space for `size_of::<T>()` bytes.
+    /// - `ptr` must be aligned on an `align_of::<T>()`-byte boundary.
     ///
     /// [valid]: crate::mm::io#safety
     #[doc(hidden)]

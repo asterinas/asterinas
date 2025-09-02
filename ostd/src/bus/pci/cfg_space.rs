@@ -5,7 +5,6 @@
 //! Reference: <https://wiki.osdev.org/PCI>
 
 use alloc::sync::Arc;
-use core::mem::size_of;
 
 use bitflags::bitflags;
 

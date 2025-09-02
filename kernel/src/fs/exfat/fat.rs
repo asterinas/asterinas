@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::mem::size_of;
-
 use super::{
     bitmap::ExfatBitmap,
     constants::{EXFAT_FIRST_CLUSTER, EXFAT_RESERVED_CLUSTERS},

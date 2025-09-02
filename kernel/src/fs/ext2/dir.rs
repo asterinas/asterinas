@@ -18,7 +18,7 @@ pub struct DirEntry {
 
 impl DirEntry {
     const ALIGN: usize = 4;
-    const HEADER_LEN: usize = core::mem::size_of::<DirEntryHeader>();
+    const HEADER_LEN: usize = size_of::<DirEntryHeader>();
     const PARENT_OFFSET: usize = Self::HEADER_LEN + Self::ALIGN;
 
     /// Constructs a new `DirEntry` object with the specified inode (`ino`),

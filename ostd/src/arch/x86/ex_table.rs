@@ -62,8 +62,7 @@ impl ExTable {
     /// if the exception handling fails and there is a predefined recovery action,
     /// then the found recovery action will be taken.
     pub fn find_recovery_inst_addr(inst_addr: Vaddr) -> Option<Vaddr> {
-        let table_size =
-            (__ex_table_end as usize - __ex_table as usize) / core::mem::size_of::<ExTableItem>();
+        let table_size = (__ex_table_end as usize - __ex_table as usize) / size_of::<ExTableItem>();
         // SAFETY: `__ex_table` is a static section consisting of `ExTableItem`.
         let ex_table =
             unsafe { core::slice::from_raw_parts(__ex_table as *const ExTableItem, table_size) };

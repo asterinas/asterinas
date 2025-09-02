@@ -49,7 +49,7 @@ pub struct BootParams {
     pub sentinel: u8,                   /* 0x1ef */
     pub _pad6: [u8; 1],                 /* 0x1f0 */
     pub hdr: SetupHeader,               /* setup header 0x1f1 */
-    pub _pad7: [u8; 0x290 - 0x1f1 - core::mem::size_of::<SetupHeader>()],
+    pub _pad7: [u8; 0x290 - 0x1f1 - size_of::<SetupHeader>()],
     pub edd_mbr_sig_buffer: [u32; EDD_MBR_SIG_MAX], /* 0x290 */
     pub e820_table: [BootE820Entry; E820_MAX_ENTRIES_ZEROPAGE], /* 0x2d0 */
     pub _pad8: [u8; 48],                            /* 0xcd0 */

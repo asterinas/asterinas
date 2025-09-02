@@ -2,7 +2,7 @@
 
 //! Sorted String Table.
 use alloc::vec;
-use core::{marker::PhantomData, mem::size_of, num::NonZeroUsize, ops::RangeInclusive};
+use core::{marker::PhantomData, num::NonZeroUsize, ops::RangeInclusive};
 
 use lru::LruCache;
 use ostd_pod::Pod;

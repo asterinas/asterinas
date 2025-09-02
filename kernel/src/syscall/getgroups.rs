@@ -26,7 +26,7 @@ pub fn sys_getgroups(size: i32, group_list_addr: Vaddr, ctx: &Context) -> Result
 
     let user_space = ctx.user_space();
     for (idx, gid) in groups.iter().enumerate() {
-        let addr = group_list_addr + idx * core::mem::size_of_val(gid);
+        let addr = group_list_addr + idx * size_of_val(gid);
         user_space.write_val(addr, gid)?;
     }
 

@@ -48,7 +48,7 @@ impl Ext2 {
 
         let group_descriptors_segment: USegment = {
             let npages = ((super_block.block_groups_count() as usize)
-                * core::mem::size_of::<RawGroupDescriptor>())
+                * size_of::<RawGroupDescriptor>())
             .div_ceil(BLOCK_SIZE);
             let segment = FrameAllocOptions::new()
                 .zeroed(false)
@@ -214,7 +214,7 @@ impl Ext2 {
         block_group_idx: usize,
         raw_descriptor: &RawGroupDescriptor,
     ) -> Result<()> {
-        let offset = block_group_idx * core::mem::size_of::<RawGroupDescriptor>();
+        let offset = block_group_idx * size_of::<RawGroupDescriptor>();
         self.group_descriptors_segment
             .write_val(offset, raw_descriptor)?;
         Ok(())

@@ -98,7 +98,7 @@ static ALLOCATOR_32: CpuLocalAllocator<32> = CpuLocalAllocator::new();
 ///
 /// Currently, the size of `T` must be no larger than 32 bytes.
 pub fn alloc_cpu_local<T>(mut init_values: impl FnMut(CpuId) -> T) -> Result<CpuLocalBox<T>> {
-    let size = core::mem::size_of::<T>();
+    let size = size_of::<T>();
     let class = CommonSizeClass::from_size(size).ok_or(Error::InvalidArgs)?;
     let cpu_local = match class {
         CommonSizeClass::Bytes8 => ALLOCATOR_8.alloc::<T>(&mut init_values),
@@ -115,7 +115,7 @@ pub fn alloc_cpu_local<T>(mut init_values: impl FnMut(CpuId) -> T) -> Result<Cpu
 
 /// Deallocates a dynamically-allocated CPU-local object of type `T`.
 fn dealloc_cpu_local<T>(cpu_local: DynamicCpuLocal<T>) {
-    let size = core::mem::size_of::<T>();
+    let size = size_of::<T>();
     let class = CommonSizeClass::from_size(size).unwrap();
     match class {
         CommonSizeClass::Bytes8 => ALLOCATOR_8.dealloc(cpu_local),

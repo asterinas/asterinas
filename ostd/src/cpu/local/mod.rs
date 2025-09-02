@@ -209,7 +209,7 @@ pub(crate) unsafe fn copy_bsp_for_ap(num_cpus: usize) {
 
     // Allocate a region to store the pointers to the CPU-local storage segments.
     let res = {
-        let size = core::mem::size_of::<Paddr>()
+        let size = size_of::<Paddr>()
             .checked_mul(num_aps)
             .unwrap()
             .align_up(PAGE_SIZE);

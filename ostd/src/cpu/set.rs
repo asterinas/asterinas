@@ -18,7 +18,7 @@ pub struct CpuSet {
 
 type InnerPart = u64;
 
-const BITS_PER_PART: usize = core::mem::size_of::<InnerPart>() * 8;
+const BITS_PER_PART: usize = InnerPart::BITS as usize;
 const NR_PARTS_NO_ALLOC: usize = 2;
 
 const fn part_idx(cpu_id: CpuId) -> usize {
@@ -159,7 +159,7 @@ pub struct AtomicCpuSet {
 }
 
 type AtomicInnerPart = AtomicU64;
-const_assert!(core::mem::size_of::<AtomicInnerPart>() * 8 == BITS_PER_PART);
+const_assert!(size_of::<AtomicInnerPart>() * 8 == BITS_PER_PART);
 
 impl AtomicCpuSet {
     /// Creates a new `AtomicCpuSet` with an initial value.
