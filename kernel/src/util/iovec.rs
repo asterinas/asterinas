@@ -4,14 +4,14 @@ use ostd::mm::{Infallible, VmSpace};
 
 use crate::prelude::*;
 
-/// A kernel space IO vector.
+/// A kernel space I/O vector.
 #[derive(Debug, Clone, Copy)]
 struct IoVec {
     base: Vaddr,
     len: usize,
 }
 
-/// A user space IO vector.
+/// A user space I/O vector.
 ///
 /// The difference between `IoVec` and `UserIoVec`
 /// is that `UserIoVec` uses `isize` as the length type,
@@ -28,7 +28,7 @@ impl TryFrom<UserIoVec> for IoVec {
 
     fn try_from(value: UserIoVec) -> Result<Self> {
         if value.len < 0 {
-            return_errno_with_message!(Errno::EINVAL, "the length of IO vector cannot be negative");
+            return_errno_with_message!(Errno::EINVAL, "the I/O buffer length cannot be negative");
         }
 
         Ok(IoVec {
