@@ -9,6 +9,7 @@ use crate::{
         page_prop::PageProperty,
         page_size,
         page_table::{PageTableConfig, PageTableNodeRef},
+        HasPaddr,
     },
     sync::RcuDrop,
     task::atomic_mode::InAtomicMode,
@@ -137,7 +138,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         let level = self.node.level();
         let new_page = RcuDrop::new(PageTableNode::<C>::alloc(level - 1));
 
-        let paddr = new_page.start_paddr();
+        let paddr = new_page.paddr();
         // SAFETY: The page table won't be dropped before the RCU grace period
         // ends, so it outlives `'rcu`.
         let pt_ref = unsafe { PageTableNodeRef::borrow_paddr(paddr) };
@@ -181,7 +182,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
         let new_page = RcuDrop::new(PageTableNode::<C>::alloc(level - 1));
 
-        let paddr = new_page.start_paddr();
+        let paddr = new_page.paddr();
         // SAFETY: The page table won't be dropped before the RCU grace period
         // ends, so it outlives `'rcu`.
         let pt_ref = unsafe { PageTableNodeRef::borrow_paddr(paddr) };

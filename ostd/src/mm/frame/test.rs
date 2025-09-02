@@ -2,7 +2,9 @@
 
 use super::{allocator::FrameAllocOptions, *};
 use crate::{
-    impl_frame_meta_for, impl_untyped_frame_meta_for, mm::io_util::HasVmReaderWriter, prelude::*,
+    impl_frame_meta_for, impl_untyped_frame_meta_for,
+    mm::{io_util::HasVmReaderWriter, HasPaddrRange},
+    prelude::*,
 };
 
 /// Typed mock metadata struct for testing
@@ -42,7 +44,7 @@ mod frame {
             .alloc_frame_with(meta)
             .expect("Failed to allocate single frame");
         let frame2 = frame1.clone();
-        assert_eq!(frame1.start_paddr(), frame2.start_paddr());
+        assert_eq!(frame1.paddr(), frame2.paddr());
         assert_eq!(frame1.meta().value, frame2.meta().value);
         assert_eq!(frame1.reference_count(), 2);
         assert_eq!(frame2.reference_count(), 2);
@@ -55,13 +57,13 @@ mod frame {
             .alloc_frame_with(metadata)
             .expect("Failed to allocate single frame");
         let ref_count_before = frame.reference_count();
-        let paddr_before = frame.start_paddr();
+        let paddr_before = frame.paddr();
         assert_eq!(ref_count_before, 1);
         drop(frame);
         let new_frame = FrameAllocOptions::new()
             .alloc_frame_with(MockFrameMeta { value: 42 })
             .expect("Failed to allocate single frame");
-        assert_eq!(new_frame.start_paddr(), paddr_before);
+        assert_eq!(new_frame.paddr(), paddr_before);
         assert_eq!(new_frame.reference_count(), 1);
         assert_eq!(new_frame.meta().value, 42);
     }
@@ -147,15 +149,15 @@ mod linked_list {
         let frame1 = alloc_options
             .alloc_frame_with(Link::new(MockUFrameMeta { value: 1 }))
             .unwrap();
-        let frame1_addr = frame1.start_paddr();
+        let frame1_addr = frame1.paddr();
         let frame2 = alloc_options
             .alloc_frame_with(Link::new(MockUFrameMeta { value: 2 }))
             .unwrap();
-        let frame2_addr = frame2.start_paddr();
+        let frame2_addr = frame2.paddr();
         let frame3 = alloc_options
             .alloc_frame_with(Link::new(MockUFrameMeta { value: 3 }))
             .unwrap();
-        let frame3_addr = frame3.start_paddr();
+        let frame3_addr = frame3.paddr();
 
         let frame_outside = alloc_options
             .alloc_frame_with(Link::new(MockUFrameMeta { value: 4 }))
@@ -166,8 +168,8 @@ mod linked_list {
         list.push_front(frame2.try_into().unwrap());
         list.push_front(frame3.try_into().unwrap());
 
-        assert!(!list.contains(frame_outside.start_paddr()));
-        assert!(list.cursor_mut_at(frame_outside.start_paddr()).is_none());
+        assert!(!list.contains(frame_outside.paddr()));
+        assert!(list.cursor_mut_at(frame_outside.paddr()).is_none());
 
         assert!(list.contains(frame1_addr));
         assert!(list.contains(frame2_addr));
@@ -301,7 +303,7 @@ mod segment {
             .alloc_segment(range.len() / PAGE_SIZE)
             .expect("Failed to allocate segment");
         assert_eq!(segment.size(), range.len());
-        assert_eq!(segment.end_paddr() - segment.start_paddr(), range.len());
+        assert_eq!(segment.end_paddr() - segment.paddr(), range.len());
     }
 
     #[ktest]
@@ -352,7 +354,7 @@ mod segment {
             .expect("Failed to allocate segment");
         let slice = segment.slice(&(PAGE_SIZE..PAGE_SIZE * 2));
         assert_eq!(slice.size(), PAGE_SIZE);
-        assert_eq!(slice.start_paddr(), segment.start_paddr() + PAGE_SIZE);
+        assert_eq!(slice.paddr(), segment.paddr() + PAGE_SIZE);
     }
 
     #[ktest]
@@ -389,7 +391,7 @@ mod segment {
         assert!(result.is_ok());
         let usegment = result.unwrap();
         assert_eq!(usegment.size(), PAGE_SIZE);
-        assert_eq!(usegment.start_paddr(), segment.start_paddr());
+        assert_eq!(usegment.paddr(), segment.paddr());
     }
 
     #[ktest]
@@ -414,10 +416,10 @@ mod segment {
         let frame = FrameAllocOptions::new()
             .alloc_frame_with(MockFrameMeta { value: 42 })
             .unwrap();
-        let paddr = frame.start_paddr();
+        let paddr = frame.paddr();
         let segment: Segment<MockFrameMeta> = frame.into();
         assert_eq!(segment.size(), PAGE_SIZE);
-        assert_eq!(segment.start_paddr(), paddr);
+        assert_eq!(segment.paddr(), paddr);
         for frame in segment {
             assert_eq!(frame.meta().value, 42);
         }
@@ -427,10 +429,10 @@ mod segment {
     fn segment_drop() {
         let options = FrameAllocOptions::new();
         let segment = options.alloc_segment(1).unwrap();
-        let paddr_before = segment.start_paddr();
+        let paddr_before = segment.paddr();
         drop(segment);
         let new_segment = options.alloc_segment(1).unwrap();
-        assert_eq!(new_segment.start_paddr(), paddr_before);
+        assert_eq!(new_segment.paddr(), paddr_before);
     }
 }
 
@@ -516,17 +518,17 @@ mod frame_ref {
         let frame = FrameAllocOptions::new()
             .alloc_frame_with(MockUFrameMeta { value: init_val })
             .expect("Failed to allocate frame");
-        let ptr = frame.start_paddr();
+        let ptr = frame.paddr();
         let uframe: UFrame = frame.into();
 
         // Converts and retrieves the frame from raw pointer
         let raw_ptr = NonNullPtr::into_raw(uframe);
         let frame_from_raw: Frame<MockUFrameMeta> = unsafe { NonNullPtr::from_raw(raw_ptr.cast()) };
-        assert_eq!(frame_from_raw.start_paddr(), ptr);
+        assert_eq!(frame_from_raw.paddr(), ptr);
         assert_eq!(frame_from_raw.meta().value, init_val);
 
         // References the frame from raw pointer
         let frame_ref: FrameRef<MockUFrameMeta> = unsafe { Frame::raw_as_ref(raw_ptr.cast()) };
-        assert_eq!(frame_ref.start_paddr(), ptr);
+        assert_eq!(frame_ref.paddr(), ptr);
     }
 }

@@ -7,7 +7,7 @@ use core::{alloc::AllocError, ptr::NonNull};
 use super::{slot::HeapSlot, slot_list::SlabSlotList};
 use crate::mm::{
     frame::{linked_list::Link, meta::AnyFrameMeta},
-    paddr_to_vaddr, FrameAllocOptions, UniqueFrame, PAGE_SIZE,
+    paddr_to_vaddr, FrameAllocOptions, HasPaddr, HasSize, UniqueFrame, PAGE_SIZE,
 };
 
 /// A slab.
@@ -100,7 +100,7 @@ impl<const SLOT_SIZE: usize> Slab<SLOT_SIZE> {
             .try_into()
             .unwrap();
 
-        let head_paddr = slab.start_paddr();
+        let head_paddr = slab.paddr();
         let head_vaddr = paddr_to_vaddr(head_paddr);
 
         // Push each slot to the free list.
@@ -120,7 +120,7 @@ impl<const SLOT_SIZE: usize> Slab<SLOT_SIZE> {
     ///
     /// If the slot does not belong to the slab it returns [`AllocError`].
     pub fn dealloc(&mut self, slot: HeapSlot) -> Result<(), AllocError> {
-        if !(self.start_paddr()..self.start_paddr() + self.size()).contains(&slot.paddr()) {
+        if !(self.paddr()..self.paddr() + self.size()).contains(&slot.paddr()) {
             log::error!("Deallocating a slot to a slab that does not own the slot");
             return Err(AllocError);
         }

@@ -1152,7 +1152,7 @@ mod test {
 
         // Allocates and maps a frame.
         let frame = FrameAllocOptions::default().alloc_frame().unwrap();
-        let start_paddr = frame.start_paddr();
+        let paddr = frame.paddr();
         let frame_clone_for_assert = frame.clone();
 
         vm_space
@@ -1163,7 +1163,7 @@ mod test {
         // Confirms the initial mapping.
         assert!(matches!(
             vm_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
-            (va, Some((frame, prop))) if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::RW
+            (va, Some((frame, prop))) if va.start == map_range.start && frame.paddr() == paddr && prop.flags == PageFlags::RW
         ));
 
         // Creates a child page table with copy-on-write protection.
@@ -1186,7 +1186,7 @@ mod test {
                 else {
                     panic!("Child mapping query failed");
                 };
-                frame.start_paddr()
+                frame.paddr()
             };
             let parent_map_frame_addr = {
                 let (_, Some((frame, _))) = vm_space
@@ -1197,10 +1197,10 @@ mod test {
                 else {
                     panic!("Parent mapping query failed");
                 };
-                frame.start_paddr()
+                frame.paddr()
             };
             assert_eq!(child_map_frame_addr, parent_map_frame_addr);
-            assert_eq!(child_map_frame_addr, start_paddr);
+            assert_eq!(child_map_frame_addr, paddr);
         }
 
         // Unmaps the range from the parent.
@@ -1212,7 +1212,7 @@ mod test {
         // Confirms that the child VA remains mapped.
         assert!(matches!(
             child_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
-            (va, Some((frame, prop)))  if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::R
+            (va, Some((frame, prop)))  if va.start == map_range.start && frame.paddr() == paddr && prop.flags == PageFlags::R
         ));
 
         // Creates a sibling page table (from the now-modified parent).
@@ -1242,7 +1242,7 @@ mod test {
         // Confirms that the child VA remains mapped after the parent is dropped.
         assert!(matches!(
             child_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
-            (va, Some((frame, prop)))  if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::R
+            (va, Some((frame, prop)))  if va.start == map_range.start && frame.paddr() == paddr && prop.flags == PageFlags::R
         ));
 
         // Unmaps the range from the child.
@@ -1260,7 +1260,7 @@ mod test {
         // Confirms that the sibling mapping points back to the original frame's physical address.
         assert!(matches!(
             sibling_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
-            (va, Some((frame, prop)))  if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::RW
+            (va, Some((frame, prop)))  if va.start == map_range.start && frame.paddr() == paddr && prop.flags == PageFlags::RW
         ));
 
         // Confirms that the child remains unmapped.

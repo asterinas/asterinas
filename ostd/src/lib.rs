@@ -115,8 +115,6 @@ unsafe fn init() {
 
     boot::init_after_heap();
 
-    mm::dma::init();
-
     unsafe { arch::late_init_on_bsp() };
 
     #[cfg(target_arch = "x86_64")]

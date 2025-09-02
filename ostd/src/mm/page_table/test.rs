@@ -145,7 +145,7 @@ mod create_page_table {
             };
             assert_eq!(user_node.level(), PagingConsts::NR_LEVELS - 1);
 
-            assert_eq!(kernel_node.start_paddr(), user_node.start_paddr());
+            assert_eq!(kernel_node.paddr(), user_node.paddr());
         }
     }
 
@@ -422,10 +422,7 @@ mod navigation {
         };
         assert_eq!(queried_va, FIRST_MAP_ADDR..FIRST_MAP_ADDR + PAGE_SIZE);
         let (pa, prop) = pa_prop_from_item::<UserPtConfig>(queried_item);
-        assert_eq!(
-            pa,
-            first_frame.start_paddr()..first_frame.start_paddr() + PAGE_SIZE
-        );
+        assert_eq!(pa, first_frame.paddr()..first_frame.paddr() + PAGE_SIZE);
         assert_eq!(
             prop,
             PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback)
@@ -869,7 +866,7 @@ mod boot_pt {
     #[ktest]
     fn map_base_page() {
         let root_frame = FrameAllocOptions::new().alloc_frame().unwrap();
-        let root_paddr = root_frame.start_paddr();
+        let root_paddr = root_frame.paddr();
         let mut boot_pt = BootPageTable::<PageTableEntry, PagingConsts>::new(
             root_paddr / PagingConsts::BASE_PAGE_SIZE,
         );
@@ -894,7 +891,7 @@ mod boot_pt {
     #[should_panic]
     fn map_base_page_already_mapped() {
         let root_frame = FrameAllocOptions::new().alloc_frame().unwrap();
-        let root_paddr = root_frame.start_paddr();
+        let root_paddr = root_frame.paddr();
         let mut boot_pt = BootPageTable::<PageTableEntry, PagingConsts>::new(
             root_paddr / PagingConsts::BASE_PAGE_SIZE,
         );
@@ -914,7 +911,7 @@ mod boot_pt {
     #[should_panic]
     fn protect_base_page_unmapped() {
         let root_frame = FrameAllocOptions::new().alloc_frame().unwrap();
-        let root_paddr = root_frame.start_paddr();
+        let root_paddr = root_frame.paddr();
         let mut boot_pt = BootPageTable::<PageTableEntry, PagingConsts>::new(
             root_paddr / PagingConsts::BASE_PAGE_SIZE,
         );
@@ -929,7 +926,7 @@ mod boot_pt {
     #[ktest]
     fn map_protect() {
         let root_frame = FrameAllocOptions::new().alloc_frame().unwrap();
-        let root_paddr = root_frame.start_paddr();
+        let root_paddr = root_frame.paddr();
         let mut boot_pt = BootPageTable::<PageTableEntry, PagingConsts>::new(
             root_paddr / PagingConsts::BASE_PAGE_SIZE,
         );
