@@ -1179,19 +1179,29 @@ mod tests {
     use ostd::{mm::VmIo, prelude::ktest};
 
     use super::*;
-    use crate::fs::{path::Mount, ramfs::RamFs};
+    use crate::fs::{
+        path::{Mount, MountNamespace},
+        ramfs::RamFs,
+    };
+
+    fn new_dummy_mount() -> Arc<Mount> {
+        Mount::new_root(
+            RamFs::new(),
+            Arc::downgrade(MountNamespace::get_init_singleton()),
+        )
+    }
 
     fn create_overlay_fs() -> Arc<dyn FileSystem> {
         crate::time::clocks::init_for_ktest();
 
         let mode = InodeMode::all();
         let upper = {
-            let root_mount = Mount::new_root(RamFs::new());
+            let root_mount = new_dummy_mount();
             Path::new_fs_root(root_mount)
         };
         let lower = {
-            let r1 = Mount::new_root(RamFs::new());
-            let r2 = Mount::new_root(RamFs::new());
+            let r1 = new_dummy_mount();
+            let r2 = new_dummy_mount();
 
             let l1 = Path::new_fs_root(r1);
             l1.new_fs_child("f1", InodeType::File, mode).unwrap();
@@ -1229,9 +1239,9 @@ mod tests {
     fn work_and_upper_should_be_in_same_mount() {
         crate::time::clocks::init_for_ktest();
 
-        let upper = Path::new_fs_root(Mount::new_root(RamFs::new()));
-        let lower = vec![Path::new_fs_root(Mount::new_root(RamFs::new()))];
-        let work = Path::new_fs_root(Mount::new_root(RamFs::new()));
+        let upper = Path::new_fs_root(new_dummy_mount());
+        let lower = vec![Path::new_fs_root(new_dummy_mount())];
+        let work = Path::new_fs_root(new_dummy_mount());
 
         let Err(e) = OverlayFs::new(upper, lower, work) else {
             panic!("OverlayFs::new should fail when work and upper are not in the same mount");
@@ -1245,11 +1255,11 @@ mod tests {
 
         let mode = InodeMode::all();
         let upper = {
-            let root = Path::new_fs_root(Mount::new_root(RamFs::new()));
+            let root = Path::new_fs_root(new_dummy_mount());
             root.new_fs_child("file", InodeType::File, mode).unwrap();
             root
         };
-        let lower = vec![Path::new_fs_root(Mount::new_root(RamFs::new()))];
+        let lower = vec![Path::new_fs_root(new_dummy_mount())];
         let work = upper.clone();
 
         let Err(e) = OverlayFs::new(upper, lower, work) else {
@@ -1263,7 +1273,7 @@ mod tests {
         crate::time::clocks::init_for_ktest();
 
         let mode = InodeMode::all();
-        let root = Path::new_fs_root(Mount::new_root(RamFs::new()));
+        let root = Path::new_fs_root(new_dummy_mount());
         let upper = {
             let dir = root.new_fs_child("upper", InodeType::Dir, mode).unwrap();
             dir.new_fs_child("f1", InodeType::File, mode).unwrap();
@@ -1275,7 +1285,7 @@ mod tests {
         };
         let lower = {
             let l1 = {
-                let r1 = Path::new_fs_root(Mount::new_root(RamFs::new()));
+                let r1 = Path::new_fs_root(new_dummy_mount());
                 r1.new_fs_child("f1", InodeType::Dir, mode).unwrap();
                 r1.new_fs_child("f2", InodeType::File, mode).unwrap();
                 let d1 = r1.new_fs_child("d1", InodeType::Dir, mode).unwrap();
@@ -1290,7 +1300,7 @@ mod tests {
                 r1
             };
             let l2 = {
-                let r2 = Path::new_fs_root(Mount::new_root(RamFs::new()));
+                let r2 = Path::new_fs_root(new_dummy_mount());
                 r2.new_fs_child("f1", InodeType::File, mode).unwrap();
                 r2.new_fs_child("d1", InodeType::Dir, mode).unwrap();
                 r2.new_fs_child("d2", InodeType::Dir, mode).unwrap();
