@@ -101,25 +101,16 @@ impl datagram_common::Bound for BoundNetlinkRoute {
 
         let mut receive_queue = self.receive_queue.lock();
 
-        let Some(response) = receive_queue.peek() else {
-            return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty");
-        };
+        receive_queue.dequeue_if(|response, response_len| {
+            let len = response_len.min(writer.sum_lens());
+            response.write_to(writer)?;
 
-        let len = {
-            let max_len = writer.sum_lens();
-            response.total_len().min(max_len)
-        };
+            // TODO: The message can only come from kernel socket currently.
+            let remote = NetlinkSocketAddr::new_unspecified();
 
-        response.write_to(writer)?;
-
-        if !flags.contains(SendRecvFlags::MSG_PEEK) {
-            receive_queue.dequeue().unwrap();
-        }
-
-        // TODO: The message can only come from kernel socket currently.
-        let remote = NetlinkSocketAddr::new_unspecified();
-
-        Ok((len, remote))
+            let should_dequeue = !flags.contains(SendRecvFlags::MSG_PEEK);
+            Ok((should_dequeue, (len, remote)))
+        })
     }
 
     fn check_io_events(&self) -> IoEvents {

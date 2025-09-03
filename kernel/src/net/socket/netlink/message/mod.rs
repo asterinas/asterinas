@@ -16,6 +16,7 @@ pub(super) use segment::{
     CSegmentType, SegmentBody,
 };
 
+use super::receiver::QueueableMessage;
 use crate::{
     prelude::*,
     util::{MultiRead, MultiWrite},
@@ -26,11 +27,11 @@ use crate::{
 /// A netlink message can be transmitted to and from user space using a single send/receive syscall.
 /// It consists of one or more [`ProtocolSegment`]s.
 #[derive(Debug)]
-pub struct Message<T: ProtocolSegment> {
+pub struct Message<T> {
     segments: Vec<T>,
 }
 
-impl<T: ProtocolSegment> Message<T> {
+impl<T> Message<T> {
     pub(super) const fn new(segments: Vec<T>) -> Self {
         Self { segments }
     }
@@ -42,7 +43,9 @@ impl<T: ProtocolSegment> Message<T> {
     pub(super) fn segments_mut(&mut self) -> &mut [T] {
         &mut self.segments
     }
+}
 
+impl<T: ProtocolSegment> Message<T> {
     pub(super) fn read_from(reader: &mut dyn MultiRead) -> Result<Self> {
         // FIXME: Does a request contain only one segment? We need to investigate further.
         let segments = {
@@ -60,8 +63,10 @@ impl<T: ProtocolSegment> Message<T> {
 
         Ok(())
     }
+}
 
-    pub(super) fn total_len(&self) -> usize {
+impl<T: ProtocolSegment> QueueableMessage for Message<T> {
+    fn total_len(&self) -> usize {
         self.segments
             .iter()
             .map(|segment| segment.header().len as usize)

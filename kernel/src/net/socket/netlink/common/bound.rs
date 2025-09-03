@@ -50,6 +50,9 @@ impl<Message: 'static> BoundNetlink<Message> {
         if !receive_queue.is_empty() {
             events |= IoEvents::IN;
         }
+        if receive_queue.has_errors() {
+            events |= IoEvents::ERR;
+        }
 
         events
     }

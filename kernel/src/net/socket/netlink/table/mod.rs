@@ -4,7 +4,10 @@ use multicast::MulticastGroup;
 pub(super) use multicast::MulticastMessage;
 use spin::Once;
 
-use super::addr::{GroupIdSet, NetlinkProtocolId, NetlinkSocketAddr, PortNum, MAX_GROUPS};
+use super::{
+    addr::{GroupIdSet, NetlinkProtocolId, NetlinkSocketAddr, PortNum, MAX_GROUPS},
+    receiver::QueueableMessage,
+};
 use crate::{
     net::socket::netlink::{
         addr::UNSPECIFIED_PORT, kobject_uevent::UeventMessage, receiver::MessageReceiver,
@@ -46,7 +49,10 @@ pub trait SupportedNetlinkProtocol {
         socket_table.bind(Self::socket_table(), addr, receiver)
     }
 
-    fn unicast(dst_port: PortNum, message: Self::Message) -> Result<()> {
+    fn unicast(dst_port: PortNum, message: Self::Message) -> Result<()>
+    where
+        Self::Message: QueueableMessage,
+    {
         let socket_table = Self::socket_table().read();
         socket_table.unicast(dst_port, message)
     }
@@ -141,13 +147,17 @@ impl<Message: 'static> ProtocolSocketTable<Message> {
         Ok(BoundHandle::new(socket_table, port, addr.groups()))
     }
 
-    fn unicast(&self, dst_port: PortNum, message: Message) -> Result<()> {
+    fn unicast(&self, dst_port: PortNum, message: Message) -> Result<()>
+    where
+        Message: QueueableMessage,
+    {
         let Some(receiver) = self.unicast_sockets.get(&dst_port) else {
             // FIXME: Should we return error here?
             return Ok(());
         };
+        receiver.enqueue_message(message);
 
-        receiver.enqueue_message(message)
+        Ok(())
     }
 
     fn multicast(&self, dst_groups: GroupIdSet, message: Message) -> Result<()>
@@ -163,9 +173,7 @@ impl<Message: 'static> ProtocolSocketTable<Message> {
                 let Some(receiver) = self.unicast_sockets.get(port_num) else {
                     continue;
                 };
-
-                // FIXME: Should we slightly ignore the error if the socket's buffer has no enough space?
-                receiver.enqueue_message(message.clone())?;
+                receiver.enqueue_message(message.clone());
             }
         }
 
