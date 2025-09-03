@@ -156,6 +156,14 @@ struct nl_req {
 	char abuf[4];
 };
 
+#define INIT_REQ(req)                                               \
+	memset(&req, 0, sizeof(req));                               \
+	req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifaddrmsg)); \
+	req.hdr.nlmsg_type = RTM_GETADDR;                           \
+	req.hdr.nlmsg_flags = NLM_F_REQUEST;                        \
+	req.hdr.nlmsg_seq = 1;                                      \
+	req.ifa.ifa_family = AF_UNSPEC;
+
 FN_TEST(get_addr_error)
 {
 	int sock_fd;
@@ -170,12 +178,7 @@ FN_TEST(get_addr_error)
 
 	// 1. Without NLM_F_DUMP flag
 	struct nl_req req;
-	memset(&req, 0, sizeof(req));
-	req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifaddrmsg));
-	req.hdr.nlmsg_type = RTM_GETADDR;
-	req.hdr.nlmsg_flags = NLM_F_REQUEST;
-	req.hdr.nlmsg_seq = 1;
-	req.ifa.ifa_family = AF_UNSPEC;
+	INIT_REQ(req);
 
 	struct iovec iov = { &req, req.hdr.nlmsg_len };
 	struct msghdr msg = { &sa, sizeof(sa), &iov, 1, NULL, 0, 0 };
@@ -187,18 +190,20 @@ FN_TEST(get_addr_error)
 				 -EOPNOTSUPP);
 
 	int found_new_addr;
-#define TEST_KERNEL_RESPONSE                                              \
-	found_new_addr = 0;                                               \
-	while (1) {                                                       \
-		size_t recv_len =                                         \
-			TEST_SUCC(recv(sock_fd, buffer, BUFFER_SIZE, 0)); \
-                                                                          \
-		int found_done = TEST_SUCC(find_new_addr_until_done(      \
-			buffer, recv_len, &found_new_addr));              \
-                                                                          \
-		if (found_done != 0) {                                    \
-			break;                                            \
-		}                                                         \
+#define TEST_KERNEL_RESPONSE                                                \
+	found_new_addr = 0;                                                 \
+	while (1) {                                                         \
+		size_t recv_len =                                           \
+			TEST_SUCC(recv(sock_fd, buffer, BUFFER_SIZE, 0));   \
+                                                                            \
+		int found_done =                                            \
+			TEST_RES(find_new_addr_until_done(buffer, recv_len, \
+							  &found_new_addr), \
+				 _ret >= 0);                                \
+                                                                            \
+		if (found_done != 0) {                                      \
+			break;                                              \
+		}                                                           \
 	}
 
 	// 2. Invalid required index
@@ -232,13 +237,7 @@ FN_TEST(bufsize_msgsize)
 
 	sock_fd = TEST_SUCC(
 		socket(AF_NETLINK, SOCK_RAW | SOCK_NONBLOCK, NETLINK_ROUTE));
-
-	memset(&req, 0, sizeof(req));
-	req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifaddrmsg));
-	req.hdr.nlmsg_type = RTM_GETADDR;
-	req.hdr.nlmsg_flags = NLM_F_REQUEST;
-	req.hdr.nlmsg_seq = 1;
-	req.ifa.ifa_family = AF_UNSPEC;
+	INIT_REQ(req);
 
 	// Send the request
 	TEST_RES(send(sock_fd, &req, sizeof(req), 0), _ret == sizeof(req));
@@ -248,6 +247,50 @@ FN_TEST(bufsize_msgsize)
 
 	// The truncated message is now lost
 	TEST_ERRNO(recv(sock_fd, buffer, BUFFER_SIZE, 0), EAGAIN);
+
+	TEST_SUCC(close(sock_fd));
+}
+END_TEST()
+
+int fill_receive_buffer(int sock_fd, const struct nl_req *req)
+{
+	struct pollfd pfd = { .fd = sock_fd, .events = POLLIN | POLLOUT };
+	int i;
+
+	for (i = 0; i < 4096; ++i) {
+		if (send(sock_fd, req, sizeof(*req), 0) != sizeof(*req))
+			return -1;
+		if (poll(&pfd, 1, 0) < 0)
+			return -1;
+		switch (pfd.revents) {
+		case POLLIN | POLLOUT:
+			continue;
+		case POLLIN | POLLOUT | POLLERR:
+			return 0;
+		default:
+			return -1;
+		}
+	}
+
+	return -1;
+}
+
+FN_TEST(enobufs)
+{
+	int sock_fd;
+	struct nl_req req;
+
+	sock_fd = TEST_SUCC(
+		socket(AF_NETLINK, SOCK_RAW | SOCK_NONBLOCK, NETLINK_ROUTE));
+	INIT_REQ(req);
+
+	TEST_RES(fill_receive_buffer(sock_fd, &req), _ret >= 0);
+
+	// Now the receive buffer is full. We can still send a new message,
+	// but the first `recv` should fail with `ENOBUFS`.
+	TEST_RES(send(sock_fd, &req, sizeof(req), 0), _ret == sizeof(req));
+	TEST_ERRNO(recv(sock_fd, buffer, 1, 0), ENOBUFS);
+	TEST_SUCC(recv(sock_fd, buffer, 1, 0));
 
 	TEST_SUCC(close(sock_fd));
 }

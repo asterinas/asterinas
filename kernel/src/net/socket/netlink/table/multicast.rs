@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::{net::socket::netlink::addr::PortNum, prelude::*};
+use crate::{
+    net::socket::netlink::{addr::PortNum, receiver::QueueableMessage},
+    prelude::*,
+};
 
 /// A netlink multicast group.
 ///
@@ -34,4 +37,4 @@ impl MulticastGroup {
     }
 }
 
-pub trait MulticastMessage: Clone {}
+pub trait MulticastMessage: QueueableMessage + Clone {}

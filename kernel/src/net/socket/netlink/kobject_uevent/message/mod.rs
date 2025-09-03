@@ -5,7 +5,9 @@
 use uevent::Uevent;
 
 use crate::{
-    net::socket::netlink::{table::MulticastMessage, NetlinkSocketAddr},
+    net::socket::netlink::{
+        receiver::QueueableMessage, table::MulticastMessage, NetlinkSocketAddr,
+    },
     prelude::*,
     util::MultiWrite,
 };
@@ -39,17 +41,18 @@ impl UeventMessage {
         &self.src_addr
     }
 
-    /// Returns the total length of the uevent.
-    pub(super) fn total_len(&self) -> usize {
-        self.uevent.len()
-    }
-
     /// Writes the uevent to the given `writer`.
     pub(super) fn write_to(&self, writer: &mut dyn MultiWrite) -> Result<()> {
         let _nbytes = writer.write(&mut VmReader::from(self.uevent.as_bytes()))?;
         // `_nbytes` may be smaller than the message size. We ignore it to truncate the message.
 
         Ok(())
+    }
+}
+
+impl QueueableMessage for UeventMessage {
+    fn total_len(&self) -> usize {
+        self.uevent.len()
     }
 }
 
