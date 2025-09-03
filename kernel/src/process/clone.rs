@@ -16,6 +16,7 @@ use crate::{
     cpu::LinuxAbi,
     current_userspace,
     fs::{
+        cgroupfs::CgroupMembership,
         file_table::{FdFlags, FileTable},
         thread_info::ThreadFsInfo,
     },
@@ -216,6 +217,13 @@ pub fn clone_child(
         Ok(child_tid)
     } else {
         let child_process = clone_child_process(ctx, parent_context, clone_args)?;
+
+        let cgroup_membership = CgroupMembership::new();
+        if let Some(cgroup) = cgroup_membership.cgroup_of(ctx.process) {
+            cgroup.move_process(child_process.clone(), &cgroup_membership);
+        }
+        drop(cgroup_membership);
+
         if clone_args.flags.contains(CloneFlags::CLONE_VFORK) {
             child_process.status().set_vfork_child(true);
         }
