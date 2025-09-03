@@ -4,12 +4,14 @@ pub mod c_types;
 pub mod capabilities;
 mod credentials_;
 mod group;
+mod secure;
 mod static_cap;
 mod user;
 
 use aster_rights::FullOp;
 use credentials_::Credentials_;
 pub use group::Gid;
+pub use secure::Securebits;
 pub use user::Uid;
 
 use crate::prelude::*;
