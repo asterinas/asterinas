@@ -11,11 +11,14 @@ use crate::{
 pub struct BoundNetlink<Message: 'static> {
     pub(in crate::net::socket::netlink) handle: BoundHandle<Message>,
     pub(in crate::net::socket::netlink) remote_addr: NetlinkSocketAddr,
-    pub(in crate::net::socket::netlink) receive_queue: MessageQueue<Message>,
+    pub(in crate::net::socket::netlink) receive_queue: Arc<Mutex<MessageQueue<Message>>>,
 }
 
 impl<Message: 'static> BoundNetlink<Message> {
-    pub(super) fn new(handle: BoundHandle<Message>, message_queue: MessageQueue<Message>) -> Self {
+    pub(super) fn new(
+        handle: BoundHandle<Message>,
+        message_queue: Arc<Mutex<MessageQueue<Message>>>,
+    ) -> Self {
         Self {
             handle,
             remote_addr: NetlinkSocketAddr::new_unspecified(),
@@ -43,7 +46,7 @@ impl<Message: 'static> BoundNetlink<Message> {
     pub(in crate::net::socket::netlink) fn check_io_events_common(&self) -> IoEvents {
         let mut events = IoEvents::OUT;
 
-        let receive_queue = self.receive_queue.0.lock();
+        let receive_queue = self.receive_queue.lock();
         if !receive_queue.is_empty() {
             events |= IoEvents::IN;
         }

@@ -6,9 +6,7 @@ use crate::{
     events::IoEvents,
     net::socket::{
         netlink::{
-            common::bound::BoundNetlink,
-            receiver::{MessageQueue, MessageReceiver},
-            table::SupportedNetlinkProtocol,
+            common::bound::BoundNetlink, receiver::MessageQueue, table::SupportedNetlinkProtocol,
             GroupIdSet, NetlinkSocketAddr,
         },
         util::datagram_common,
@@ -55,7 +53,8 @@ impl<P: SupportedNetlinkProtocol> datagram_common::Unbound for UnboundNetlink<P>
         pollee: &Pollee,
         _options: Self::BindOptions,
     ) -> Result<Self::Bound> {
-        let message_queue = MessageQueue::<P::Message>::new();
+        let (message_queue, message_receiver) =
+            MessageQueue::<P::Message>::new_pair(pollee.clone());
 
         let bound_handle = {
             let endpoint = {
@@ -63,8 +62,7 @@ impl<P: SupportedNetlinkProtocol> datagram_common::Unbound for UnboundNetlink<P>
                 endpoint.add_groups(self.groups);
                 endpoint
             };
-            let receiver = MessageReceiver::new(message_queue.clone(), pollee.clone());
-            <P as SupportedNetlinkProtocol>::bind(&endpoint, receiver)?
+            <P as SupportedNetlinkProtocol>::bind(&endpoint, message_receiver)?
         };
 
         Ok(BoundNetlink::new(bound_handle, message_queue))
@@ -75,7 +73,8 @@ impl<P: SupportedNetlinkProtocol> datagram_common::Unbound for UnboundNetlink<P>
         _remote_endpoint: &Self::Endpoint,
         pollee: &Pollee,
     ) -> Result<Self::Bound> {
-        let message_queue = MessageQueue::<P::Message>::new();
+        let (message_queue, message_receiver) =
+            MessageQueue::<P::Message>::new_pair(pollee.clone());
 
         let bound_handle = {
             let endpoint = {
@@ -83,8 +82,7 @@ impl<P: SupportedNetlinkProtocol> datagram_common::Unbound for UnboundNetlink<P>
                 endpoint.add_groups(self.groups);
                 endpoint
             };
-            let receiver = MessageReceiver::new(message_queue.clone(), pollee.clone());
-            <P as SupportedNetlinkProtocol>::bind(&endpoint, receiver)?
+            <P as SupportedNetlinkProtocol>::bind(&endpoint, message_receiver)?
         };
 
         Ok(BoundNetlink::new(bound_handle, message_queue))
