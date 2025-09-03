@@ -67,10 +67,10 @@ impl datagram_common::Bound for BoundNetlinkUevent {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        let mut receive_queue = self.receive_queue.0.lock();
+        let mut receive_queue = self.receive_queue.lock();
 
-        let Some(response) = receive_queue.front() else {
-            return_errno_with_message!(Errno::EAGAIN, "nothing to receive");
+        let Some(response) = receive_queue.peek() else {
+            return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty");
         };
 
         let len = {
@@ -83,7 +83,7 @@ impl datagram_common::Bound for BoundNetlinkUevent {
         let remote = *response.src_addr();
 
         if !flags.contains(SendRecvFlags::MSG_PEEK) {
-            receive_queue.pop_front().unwrap();
+            receive_queue.dequeue().unwrap();
         }
 
         Ok((len, remote))
