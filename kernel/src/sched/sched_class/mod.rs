@@ -43,7 +43,7 @@ pub use self::{
 
 type SchedEntity = (Arc<Task>, Arc<Thread>);
 
-pub fn init() {
+pub fn init_on_bsp() {
     let scheduler = Box::leak(Box::new(ClassScheduler::new()));
 
     // Inject the scheduler into the ostd for actual scheduling work.
@@ -53,6 +53,13 @@ pub fn init() {
     // We set this after injecting the scheduler into ostd,
     // so that the loadavg statistics are updated after the scheduler is used.
     set_stats_from_scheduler(scheduler);
+}
+
+pub fn init_on_ap() {
+    let scheduler = Box::leak(Box::new(ClassScheduler::new()));
+
+    // Inject the scheduler into the ostd for actual scheduling work.
+    inject_scheduler(scheduler);
 }
 
 /// Represents the middle layer between scheduling classes and generic scheduler

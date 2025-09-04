@@ -43,9 +43,13 @@ pub use wait::{do_wait, WaitOptions, WaitStatus};
 
 use crate::context::Context;
 
-pub(super) fn init() {
+pub(super) fn init_on_bsp() {
     process::init();
     posix_thread::futex::init();
+}
+
+pub(super) fn init_on_ap() {
+    process::init();
 }
 
 pub(super) fn init_in_first_process(ctx: &Context) {

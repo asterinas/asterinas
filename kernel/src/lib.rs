@@ -104,8 +104,8 @@ fn init() {
     driver::init();
     time::init();
     net::init();
-    sched::init();
-    process::init();
+    sched::init_on_bsp();
+    process::init_on_bsp();
     fs::init();
 }
 
@@ -138,6 +138,9 @@ fn ap_init() {
             ostd::task::halt_cpu();
         }
     }
+
+    sched::init_on_ap();
+    process::init_on_ap();
 
     ThreadOptions::new(ap_idle_thread)
         // No races because `ap_init` runs on a certain AP.
