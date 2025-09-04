@@ -120,6 +120,13 @@ impl CloneArgs {
     ) -> Result<Self> {
         const FLAG_MASK: u64 = 0xff;
         let flags = CloneFlags::from(raw_flags & !FLAG_MASK);
+        if flags.contains(CloneFlags::CLONE_NEWNS | CloneFlags::CLONE_FS) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "CLONE_NEWNS cannot be used with CLONE_FS for clone syscall"
+            );
+        }
+
         let exit_signal = raw_flags & FLAG_MASK;
         // Disambiguate the `parent_tid` parameter. The field is used
         // both for `CLONE_PIDFD` and `CLONE_PARENT_SETTID`, so at
@@ -188,7 +195,8 @@ impl CloneFlags {
             | CloneFlags::CLONE_PARENT_SETTID
             | CloneFlags::CLONE_CHILD_SETTID
             | CloneFlags::CLONE_CHILD_CLEARTID
-            | CloneFlags::CLONE_VFORK;
+            | CloneFlags::CLONE_VFORK
+            | CloneFlags::CLONE_NEWNS;
         let unsupported_flags = *self - supported_flags;
         if !unsupported_flags.is_empty() {
             warn!("contains unsupported clone flags: {:?}", unsupported_flags);
@@ -291,6 +299,13 @@ fn clone_child_task(
         posix_thread,
     )?;
 
+    if clone_flags.contains(CloneFlags::CLONE_NEWNS) {
+        child_fs
+            .resolver()
+            .write()
+            .switch_to_mnt_ns(child_ns_proxy.mnt_ns())?;
+    }
+
     let child_user_ctx = Box::new(clone_user_ctx(
         parent_context,
         clone_args.stack,
@@ -391,6 +406,13 @@ fn clone_child_process(
         clone_flags,
         posix_thread,
     )?;
+
+    if clone_flags.contains(CloneFlags::CLONE_NEWNS) {
+        child_fs
+            .resolver()
+            .write()
+            .switch_to_mnt_ns(child_ns_proxy.mnt_ns())?;
+    }
 
     // Inherit the parent's signal mask
     let child_sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed).into();

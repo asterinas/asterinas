@@ -5,12 +5,9 @@ use cpio_decoder::{CpioDecoder, FileType};
 use lending_iterator::LendingIterator;
 use libflate::gzip::Decoder as GZipDecoder;
 use ostd::boot::boot_info;
-use spin::Once;
 
 use super::{
     fs_resolver::{FsPath, FsResolver},
-    path::Mount,
-    ramfs::RamFS,
     utils::{FileSystem, InodeMode, InodeType},
 };
 use crate::{fs::path::is_dot, prelude::*};
@@ -105,9 +102,6 @@ pub fn init_in_first_kthread(fs_resolver: &FsResolver) -> Result<()> {
             }
         }
     }
-    // Mount DevFS
-    let dev_path = fs_resolver.lookup(&FsPath::try_from("/dev")?)?;
-    dev_path.mount(RamFS::new())?;
 
     println!("[kernel] rootfs is ready");
     Ok(())
@@ -117,21 +111,9 @@ pub fn mount_fs_at(
     fs: Arc<dyn FileSystem>,
     fs_path: &FsPath,
     fs_resolver: &FsResolver,
+    ctx: &Context,
 ) -> Result<()> {
     let target_path = fs_resolver.lookup(fs_path)?;
-    target_path.mount(fs)?;
+    target_path.mount(fs, ctx)?;
     Ok(())
-}
-
-static ROOT_MOUNT: Once<Arc<Mount>> = Once::new();
-
-pub(super) fn init() {
-    ROOT_MOUNT.call_once(|| -> Arc<Mount> {
-        let rootfs = RamFS::new();
-        Mount::new_root(rootfs)
-    });
-}
-
-pub fn root_mount() -> &'static Arc<Mount> {
-    ROOT_MOUNT.get().unwrap()
 }
