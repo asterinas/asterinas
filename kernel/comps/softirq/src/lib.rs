@@ -7,7 +7,7 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use core::sync::atomic::{AtomicU8, Ordering};
+use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 
 use component::{init_component, ComponentInitError};
 use lock::is_softirq_enabled;
@@ -130,6 +130,15 @@ cpu_local_cell! {
     static PENDING_MASK: u8 = 0;
 }
 
+/// Global softirq execution counters for each softirq line.
+static SOFTIRQ_COUNTERS: [AtomicU64; SoftIrqLine::NR_LINES as usize] =
+    [const { AtomicU64::new(0) }; SoftIrqLine::NR_LINES as usize];
+
+/// Returns the execution count for all softirq lines.
+pub fn softirq_stats() -> [u64; SoftIrqLine::NR_LINES as usize] {
+    core::array::from_fn(|i| SOFTIRQ_COUNTERS[i].load(Ordering::Relaxed))
+}
+
 /// Processes pending softirqs.
 fn process_pending(irq_guard: DisabledLocalIrqGuard) -> DisabledLocalIrqGuard {
     if !is_softirq_enabled() {
@@ -161,6 +170,11 @@ fn process_all_pending(mut irq_guard: DisabledLocalIrqGuard) -> DisabledLocalIrq
 
         while action_mask > 0 {
             let action_id = u8::trailing_zeros(action_mask) as u8;
+
+            // Increment the global counter for this softirq line
+            SOFTIRQ_COUNTERS[action_id as usize].fetch_add(1, Ordering::Relaxed);
+
+            // Execute the callback
             SoftIrqLine::get(action_id).callback.get().unwrap()();
             action_mask &= action_mask - 1;
         }
