@@ -43,6 +43,10 @@ ifeq ($(VERBOSE), 0)
 NIX_QUIET = --quiet -Q
 endif
 
+# DE: Desktop Environment ("xfce", "none", etc.)
+# Usage: make DE=xfce build
+DE ?= none
+
 .PHONY: all
 all: build
 
@@ -67,6 +71,7 @@ $(INITRAMFS_IMAGE): $(INITRAMFS)
 		--argstr syscallTestWorkDir $(SYSCALL_TEST_WORKDIR) \
 		--arg initramfsCompressed $(INITRAMFS_COMPRESSED) \
 		--arg smp $(SMP) \
+		--argstr desktopEnvironment $(DE) \
 		--out-link $@ \
 		nix -A initramfs-image
 
@@ -81,6 +86,7 @@ $(INITRAMFS):
 		--argstr syscallTestSuite $(SYSCALL_TEST_SUITE) \
 		--argstr syscallTestWorkDir $(SYSCALL_TEST_WORKDIR) \
 		--arg smp $(SMP) \
+		--argstr desktopEnvironment $(DE) \
 		--out-link $@ \
 		nix -A initramfs
 

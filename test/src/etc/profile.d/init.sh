@@ -7,3 +7,5 @@
 mount -t sysfs none /sys
 mount -t proc none /proc
 mount -t cgroup2 none /sys/fs/cgroup
+
+/usr/bin/run_as_xfce.sh
