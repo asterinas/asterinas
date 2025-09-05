@@ -167,7 +167,7 @@ impl InodeHandle_ {
         self.path.inode().ioctl(cmd, arg)
     }
 
-    fn mappable(&self) -> Result<Mappable> {
+    fn mappable(&self, _is_shared_maywrite: bool) -> Result<Mappable> {
         let inode = self.path.inode();
         if inode.page_cache().is_some() {
             // If the inode has a page cache, it is a file-backed mapping and
