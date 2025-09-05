@@ -733,3 +733,35 @@ macro_rules! inherit_sys_symlink_node {
         $crate::inherit_sys_symlink_node!($struct_name, $field, {/* no overrides */});
     };
 }
+
+/// An empty node in the `SysTree`.
+///
+/// This node has no attributes. It is usually used to represent a placeholder for a mount point.
+#[derive(Debug)]
+pub struct EmptyNode {
+    fields: NormalNodeFields<Self>,
+}
+
+impl EmptyNode {
+    pub fn new(name: SysStr) -> Arc<Self> {
+        Arc::new_cyclic(|weak_self| {
+            let attr_set = SysAttrSet::new_empty();
+            let fields = NormalNodeFields::new(name, attr_set, weak_self.clone());
+            Self { fields }
+        })
+    }
+}
+
+inherit_sys_leaf_node!(EmptyNode, fields, {
+    fn perms(&self) -> crate::SysPerms {
+        crate::SysPerms::DEFAULT_RO_PERMS
+    }
+
+    fn read_attr(&self, _name: &str, _writer: &mut ostd::mm::VmWriter) -> Result<usize> {
+        Err(Error::NotFound)
+    }
+
+    fn write_attr(&self, _name: &str, _reader: &mut ostd::mm::VmReader) -> Result<usize> {
+        Err(Error::NotFound)
+    }
+});
