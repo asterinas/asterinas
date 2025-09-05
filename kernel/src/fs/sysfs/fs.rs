@@ -2,12 +2,10 @@
 
 use alloc::sync::Arc;
 
-use aster_systree::singleton as systree_singleton;
-
 use crate::{
     fs::{
         registry::{FsProperties, FsType},
-        sysfs::inode::SysFsInode,
+        sysfs::{self, inode::SysFsInode},
         utils::{systree_inode::SysTreeInodeTy, FileSystem, FsFlags, Inode, SuperBlock},
         Result,
     },
@@ -26,9 +24,9 @@ const BLOCK_SIZE: usize = 4096;
 const NAME_MAX: usize = 255;
 
 impl SysFs {
-    pub(crate) fn new() -> Arc<Self> {
+    pub(super) fn new() -> Arc<Self> {
         let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX);
-        let systree_ref = systree_singleton();
+        let systree_ref = sysfs::systree_singleton();
         let root_inode = SysFsInode::new_root(systree_ref.root().clone());
 
         Arc::new(Self {
@@ -74,15 +72,10 @@ impl FsType for SysFsType {
         _disk: Option<Arc<dyn aster_block::BlockDevice>>,
         _ctx: &Context,
     ) -> Result<Arc<dyn FileSystem>> {
-        if super::SYSFS_SINGLETON.is_completed() {
-            return_errno_with_message!(Errno::EBUSY, "the sysfs has been created");
-        }
-
-        super::SYSFS_SINGLETON.call_once(SysFs::new);
         Ok(super::singleton().clone())
     }
 
-    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysBranchNode>> {
+    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
         None
     }
 }

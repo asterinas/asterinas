@@ -13,9 +13,8 @@ use core::fmt::Debug;
 
 use aster_systree::{
     inherit_sys_branch_node, inherit_sys_leaf_node, inherit_sys_symlink_node, init_for_ktest,
-    singleton as systree_singleton, BranchNodeFields, Error as SysTreeError, NormalNodeFields,
-    Result as SysTreeResult, SymlinkNodeFields, SysAttrSetBuilder, SysObj, SysPerms, SysStr,
-    SysTree,
+    BranchNodeFields, Error as SysTreeError, NormalNodeFields, Result as SysTreeResult,
+    SymlinkNodeFields, SysAttrSetBuilder, SysObj, SysPerms, SysStr,
 };
 use ostd::{
     mm::{FallibleVmRead, FallibleVmWrite, VmReader, VmWriter},
@@ -25,7 +24,7 @@ use ostd::{
 
 use crate::{
     fs::{
-        sysfs::fs::SysFs,
+        sysfs::{self, fs::SysFs},
         utils::{DirentVisitor, FileSystem, InodeMode, InodeType},
     },
     time::clocks::init_for_ktest as time_init_for_ktest,
@@ -209,11 +208,11 @@ inherit_sys_symlink_node!(MockSymlinkNode, fields);
 // --- Test Setup ---
 
 // Create a mock SysTree instance populated with mock nodes.
-fn create_mock_systree_instance() -> &'static Arc<SysTree> {
+fn create_mock_systree_instance() {
     time_init_for_ktest();
     init_for_ktest();
     // Create nodes
-    let root = systree_singleton().root();
+    let root = sysfs::systree_singleton().root();
     let branch1 = MockBranchNode::new("branch1");
     let leaf1 = MockLeafNode::new("leaf1".into(), &["r_attr1"], &["rw_attr1"]);
     let leaf2 = MockLeafNode::new("leaf2".into(), &["r_attr2"], &[]);
@@ -224,13 +223,11 @@ fn create_mock_systree_instance() -> &'static Arc<SysTree> {
     let _ = root.add_child(branch1.clone() as Arc<dyn SysObj>);
     let _ = root.add_child(leaf2.clone() as Arc<dyn SysObj>);
     let _ = root.add_child(symlink1.clone() as Arc<dyn SysObj>);
-
-    systree_singleton()
 }
 
 // Initialize a SysFs instance using the mock systree.
 fn init_sysfs_with_mock_tree() -> Arc<SysFs> {
-    let _ = create_mock_systree_instance();
+    create_mock_systree_instance();
     SysFs::new()
 }
 

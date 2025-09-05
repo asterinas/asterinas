@@ -4,11 +4,14 @@ use alloc::borrow::ToOwned;
 
 use aster_block::BlockDevice;
 use aster_systree::{
-    inherit_sys_branch_node, AttrLessBranchNodeFields, SysBranchNode, SysObj, SysPerms, SysStr,
+    inherit_sys_branch_node, AttrLessBranchNodeFields, SysNode, SysObj, SysPerms, SysStr,
 };
 use spin::Once;
 
-use crate::{fs::utils::FileSystem, prelude::*};
+use crate::{
+    fs::{sysfs, utils::FileSystem},
+    prelude::*,
+};
 
 /// A type of file system.
 pub trait FsType: Send + Sync + 'static {
@@ -36,7 +39,7 @@ pub trait FsType: Send + Sync + 'static {
     ///
     /// The same result will be returned by this method
     /// when it is called multiple times.
-    fn sysnode(&self) -> Option<Arc<dyn SysBranchNode>>;
+    fn sysnode(&self) -> Option<Arc<dyn SysNode>>;
 }
 
 bitflags! {
@@ -86,7 +89,7 @@ pub fn init() {
     // This object will appear at the `/sys/fs` path
     FS_REGISTRY.call_once(|| {
         let singleton = FsRegistry::new();
-        aster_systree::singleton()
+        sysfs::systree_singleton()
             .root()
             .add_child(singleton.clone())
             .unwrap();

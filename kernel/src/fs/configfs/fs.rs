@@ -3,13 +3,12 @@
 use alloc::sync::Arc;
 
 use aster_block::BlockDevice;
-use aster_systree::{EmptyNode, SysNode};
+use aster_systree::SysNode;
 
-use super::inode::CgroupInode;
+use super::inode::ConfigInode;
 use crate::{
-    context::Context,
     fs::{
-        cgroupfs::systree_node::CgroupSystem,
+        configfs::systree_node::ConfigRootNode,
         registry::{FsProperties, FsType},
         utils::{systree_inode::SysTreeInodeTy, FileSystem, FsFlags, Inode, SuperBlock},
         Result,
@@ -17,32 +16,43 @@ use crate::{
     prelude::*,
 };
 
-/// A file system for managing cgroups.
-pub struct CgroupFs {
+/// A file system that provides a user-space interface for configuring kernel objects.
+///
+/// `ConfigFs` is a RAM-based file system that allows user-space applications to create,
+/// configure, and manage kernel objects through a virtual file system interface.
+/// Unlike sysfs which is primarily read-only and represents existing kernel state,
+/// `ConfigFs` is designed for dynamic creation and configuration of kernel objects.
+pub struct ConfigFs {
     sb: SuperBlock,
     root: Arc<dyn Inode>,
+    systree_root: Arc<ConfigRootNode>,
 }
 
-// Magic number for cgroupfs v2 (taken from Linux)
-const MAGIC_NUMBER: u64 = 0x63677270;
+// Magic number for `ConfigFs` (taken from Linux).
+const MAGIC_NUMBER: u64 = 0x62656570;
 const BLOCK_SIZE: usize = 4096;
 const NAME_MAX: usize = 255;
 
-impl CgroupFs {
-    pub(super) fn new(root_node: Arc<CgroupSystem>) -> Arc<Self> {
+impl ConfigFs {
+    pub(super) fn new(root_node: Arc<ConfigRootNode>) -> Arc<Self> {
         let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX);
-        let root_inode = CgroupInode::new_root(root_node);
+        let root_inode = ConfigInode::new_root(root_node.clone());
 
         Arc::new(Self {
             sb,
             root: root_inode,
+            systree_root: root_node,
         })
+    }
+
+    pub(super) fn systree_root(&self) -> &Arc<ConfigRootNode> {
+        &self.systree_root
     }
 }
 
-impl FileSystem for CgroupFs {
+impl FileSystem for ConfigFs {
     fn sync(&self) -> Result<()> {
-        // CgroupFs is volatile, sync is a no-op
+        // `ConfigFs` is volatile, sync is a no-op
         Ok(())
     }
 
@@ -59,11 +69,11 @@ impl FileSystem for CgroupFs {
     }
 }
 
-pub(super) struct CgroupFsType;
+pub(super) struct ConfigFsType;
 
-impl FsType for CgroupFsType {
+impl FsType for ConfigFsType {
     fn name(&self) -> &'static str {
-        "cgroup2"
+        "configfs"
     }
 
     fn properties(&self) -> FsProperties {
@@ -80,6 +90,6 @@ impl FsType for CgroupFsType {
     }
 
     fn sysnode(&self) -> Option<Arc<dyn SysNode>> {
-        Some(EmptyNode::new("cgroup".into()))
+        None
     }
 }
