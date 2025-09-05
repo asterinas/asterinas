@@ -51,9 +51,12 @@ TESTS ?= \
 	sigaltstack_test \
 	signalfd_test \
 	socket_netlink_route_test \
+	socket_unix_dgram_local_test \
+	socket_unix_dgram_non_blocking_test \
 	socket_unix_pair_test \
 	socket_unix_seqpacket_local_test \
 	socket_unix_stream_test \
+	socket_unix_unbound_dgram_test \
 	socket_unix_unbound_seqpacket_test \
 	socket_unix_unbound_stream_test \
 	stat_test \

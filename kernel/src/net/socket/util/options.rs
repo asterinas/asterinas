@@ -14,7 +14,7 @@ use crate::{
             AcceptConn, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority, RecvBuf,
             RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
         },
-        unix::{CUserCred, UNIX_STREAM_DEFAULT_BUF_SIZE},
+        unix::{CUserCred, UNIX_DATAGRAM_DEFAULT_BUF_SIZE, UNIX_STREAM_DEFAULT_BUF_SIZE},
     },
     prelude::*,
     process::{credentials::capabilities::CapSet, posix_thread::AsPosixThread},
@@ -73,6 +73,15 @@ impl SocketOptionSet {
         Self {
             send_buf: UNIX_STREAM_DEFAULT_BUF_SIZE as u32,
             recv_buf: UNIX_STREAM_DEFAULT_BUF_SIZE as u32,
+            ..Default::default()
+        }
+    }
+
+    /// Returns the default socket level options for unix datagram socket.
+    pub(in crate::net) fn new_unix_datagram() -> Self {
+        Self {
+            send_buf: UNIX_DATAGRAM_DEFAULT_BUF_SIZE as u32,
+            recv_buf: UNIX_DATAGRAM_DEFAULT_BUF_SIZE as u32,
             ..Default::default()
         }
     }
