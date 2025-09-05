@@ -17,6 +17,10 @@ bitflags! {
         const MFD_ALLOW_SEALING = 1 << 1;
         /// Create in the hugetlbfs.
         const MFD_HUGETLB = 1 << 2;
+        /// Not executable and sealed to prevent changing to executable.
+        const MFD_NOEXEC_SEAL = 1 << 3;
+        /// Executable.
+        const MFD_EXEC = 1 << 4;
     }
 }
 
@@ -29,8 +33,6 @@ pub fn sys_memfd_create(name_addr: Vaddr, flags: u32, ctx: &Context) -> Result<S
         .read_cstring(name_addr, MAX_MEMFD_NAME_LEN + 1)?;
     debug!("sys_memfd_create: name = {:?}, flags = {}", name, flags);
 
-    let memfd_file = MemfdFile::new(name.to_string_lossy().as_ref())?;
-
     let fd = {
         let memfd_flags = MemfdFlags::from_bits(flags).ok_or(Errno::EINVAL)?;
         let fd_flags = if memfd_flags.contains(MemfdFlags::MFD_CLOEXEC) {
@@ -41,10 +43,27 @@ pub fn sys_memfd_create(name_addr: Vaddr, flags: u32, ctx: &Context) -> Result<S
         let file_table = ctx.thread_local.borrow_file_table();
         let mut file_table_locked = file_table.unwrap().write();
 
-        // FIXME: Support `MFD_ALLOW_SEALING` and `MFD_HUGETLB`.
-        if memfd_flags.contains(MemfdFlags::MFD_ALLOW_SEALING) {
-            warn!("sealing not supported");
+        // FIXME: Support `MFD_HUGETLB`.
+        if memfd_flags.contains(MemfdFlags::MFD_HUGETLB) {
+            warn!("`MFD_HUGETLB` not supported");
         }
+
+        if memfd_flags.contains(MemfdFlags::MFD_NOEXEC_SEAL | MemfdFlags::MFD_EXEC) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "Both `MFD_NOEXEC_SEAL` and `MFD_EXEC` are set"
+            );
+        }
+
+        let (allow_sealing, executable) = if memfd_flags.contains(MemfdFlags::MFD_NOEXEC_SEAL) {
+            (true, false)
+        } else {
+            (memfd_flags.contains(MemfdFlags::MFD_ALLOW_SEALING), true)
+        };
+
+        let memfd_file =
+            MemfdFile::new(name.to_string_lossy().as_ref(), allow_sealing, executable)?;
+
         file_table_locked.insert(Arc::new(memfd_file), fd_flags)
     };
 
