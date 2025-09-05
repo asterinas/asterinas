@@ -36,8 +36,6 @@
 //! 1. Supports merging small read/write operations.
 //! 2. Handles the intermediate failure status correctly.
 
-use alloc::sync::Arc;
-
 pub use fs::Ext2;
 pub use inode::{FilePerm, Inode};
 pub use super_block::{SuperBlock, MAGIC_NUM};
@@ -57,6 +55,5 @@ mod utils;
 mod xattr;
 
 pub(super) fn init() {
-    let ext2_type = Arc::new(Ext2Type);
-    super::registry::register(ext2_type).unwrap();
+    super::registry::register(&Ext2Type).unwrap();
 }

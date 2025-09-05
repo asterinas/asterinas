@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
-
 use aster_systree::singleton as systree_singleton;
 use spin::Once;
 

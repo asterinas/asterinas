@@ -130,8 +130,7 @@ impl FsType for DevPtsType {
 }
 
 pub(super) fn init() {
-    let devpts_type = Arc::new(DevPtsType);
-    super::registry::register(devpts_type).unwrap();
+    super::registry::register(&DevPtsType).unwrap();
 }
 
 struct RootInode {
