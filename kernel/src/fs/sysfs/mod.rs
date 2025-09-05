@@ -5,6 +5,7 @@ mod inode;
 #[cfg(ktest)]
 mod test;
 
+pub use aster_systree::primary_tree as systree_singleton;
 use fs::SysFsType;
 
 // This method should be called during kernel file system initialization,
