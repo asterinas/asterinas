@@ -9,6 +9,7 @@ extern crate alloc;
 
 pub mod coeff;
 pub mod dup;
+pub mod per_cpu_counter;
 pub mod safe_ptr;
 pub mod segment_slice;
 pub mod slot_vec;

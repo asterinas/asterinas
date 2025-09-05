@@ -11,6 +11,7 @@ use core::{array, num::NonZeroUsize, ops::Range};
 
 use align_ext::AlignExt;
 use aster_rights::Rights;
+use aster_util::per_cpu_counter::PerCpuCounter;
 use ostd::{
     cpu::CpuId,
     mm::{
@@ -29,7 +30,6 @@ use crate::{
     prelude::*,
     process::{Process, ResourceType},
     thread::exception::PageFaultInfo,
-    util::per_cpu_counter::PerCpuCounter,
     vm::{
         perms::VmPerms,
         vmo::{Vmo, VmoRightsOp},
