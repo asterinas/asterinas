@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::borrow::ToOwned;
-
 use aster_block::BlockDevice;
 use aster_systree::{
     inherit_sys_branch_node, AttrLessBranchNodeFields, SysNode, SysObj, SysPerms, SysStr,
@@ -53,12 +51,12 @@ bitflags! {
 /// Registers a new FS type.
 //
 // TODO: Figure out what should happen when unregistering the FS type.
-pub fn register(new_type: Arc<dyn FsType>) -> Result<()> {
+pub fn register(new_type: &'static dyn FsType) -> Result<()> {
     FS_REGISTRY.get().unwrap().register(new_type)
 }
 
 /// Looks up a FS type.
-pub fn look_up(name: &str) -> Option<Arc<dyn FsType>> {
+pub fn look_up(name: &str) -> Option<&'static dyn FsType> {
     FS_REGISTRY
         .get()
         .unwrap()
@@ -72,15 +70,15 @@ pub fn look_up(name: &str) -> Option<Arc<dyn FsType>> {
 /// and every FS type.
 pub fn with_iter<F, R>(f: F) -> R
 where
-    F: FnOnce(&mut dyn Iterator<Item = (&String, &Arc<dyn FsType>)>) -> R,
+    F: FnOnce(&mut dyn Iterator<Item = (&str, &dyn FsType)>) -> R,
 {
     let guard = FS_REGISTRY.get().unwrap().fs_table.lock();
-    let mut iter = guard.iter();
 
+    let mut iter = guard.iter().map(|(name, fs_type)| (*name, *fs_type));
     f(&mut iter)
 }
 
-/// Initialize the FS registry module.
+/// Initializes the FS registry module.
 pub fn init() {
     // This object will appear at the `/sys/fs` path
     FS_REGISTRY.call_once(|| {
@@ -96,7 +94,7 @@ pub fn init() {
 static FS_REGISTRY: Once<Arc<FsRegistry>> = Once::new();
 
 struct FsRegistry {
-    fs_table: Mutex<BTreeMap<String, Arc<dyn FsType>>>,
+    fs_table: Mutex<BTreeMap<&'static str, &'static dyn FsType>>,
     systree_fields: AttrLessBranchNodeFields<dyn SysObj, Self>,
 }
 
@@ -122,7 +120,7 @@ impl FsRegistry {
     }
 
     /// Registers a file system control interface.
-    fn register(&self, new_type: Arc<dyn FsType>) -> crate::Result<()> {
+    fn register(&self, new_type: &'static dyn FsType) -> crate::Result<()> {
         let mut fs_table = self.fs_table.lock();
         if fs_table.contains_key(new_type.name()) {
             return_errno_with_message!(Errno::EEXIST, "the file system type already exists");
@@ -132,7 +130,7 @@ impl FsRegistry {
             self.systree_fields.add_child(node)?;
         }
 
-        fs_table.insert(new_type.name().to_owned(), new_type);
+        fs_table.insert(new_type.name(), new_type);
         Ok(())
     }
 }

@@ -37,8 +37,7 @@ mod template;
 mod thread_self;
 
 pub(super) fn init() {
-    let procfs_type = Arc::new(ProcFsType);
-    super::registry::register(procfs_type).unwrap();
+    super::registry::register(&ProcFsType).unwrap();
 }
 
 /// Magic number.
