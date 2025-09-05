@@ -2,8 +2,11 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::{FdFlags, FileDesc},
-    net::socket::unix::UnixStreamSocket,
+    fs::{
+        file_handle::FileLike,
+        file_table::{FdFlags, FileDesc},
+    },
+    net::socket::unix::{UnixDatagramSocket, UnixStreamSocket},
     prelude::*,
     util::net::{CSocketAddrFamily, Protocol, SockFlags, SockType, SOCK_TYPE_MASK},
 };
@@ -24,18 +27,27 @@ pub fn sys_socketpair(
         domain, sock_type, sock_flags, protocol
     );
 
-    // TODO: deal with all sock_flags and protocol
+    macro_rules! file_pair {
+        ($expr:expr) => {{
+            let (socket_a, socket_b) = $expr;
+            (socket_a as Arc<dyn FileLike>, socket_b as Arc<dyn FileLike>)
+        }};
+    }
+
     let nonblocking = sock_flags.contains(SockFlags::SOCK_NONBLOCK);
     let (socket_a, socket_b) = match (domain, sock_type) {
         (CSocketAddrFamily::AF_UNIX, SockType::SOCK_STREAM) => {
-            UnixStreamSocket::new_pair(nonblocking, false)
+            file_pair!(UnixStreamSocket::new_pair(nonblocking, false))
         }
         (CSocketAddrFamily::AF_UNIX, SockType::SOCK_SEQPACKET) => {
-            UnixStreamSocket::new_pair(nonblocking, true)
+            file_pair!(UnixStreamSocket::new_pair(nonblocking, true))
+        }
+        (CSocketAddrFamily::AF_UNIX, SockType::SOCK_RAW | SockType::SOCK_DGRAM) => {
+            file_pair!(UnixDatagramSocket::new_pair(nonblocking))
         }
         _ => return_errno_with_message!(
             Errno::EAFNOSUPPORT,
-            "cannot create socket pair for this family"
+            "creating a socket pair for this family is not supported"
         ),
     };
 

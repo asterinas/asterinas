@@ -1,9 +1,3 @@
-# TODO: Support `SOCK_DGRAM` sockets
-AllUnixDomainSockets/*/2
-AllUnixDomainSockets/*/3
-AllUnixDomainSockets/*/8
-AllUnixDomainSockets/*/9
-
 # TODO: Support the `recvmmsg` system call
 AllUnixDomainSockets/UnixSocketPairTest.RecvmmsgTimeoutAfterRecv/*
 

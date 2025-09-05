@@ -36,6 +36,7 @@ sleep 0.2
 ./udp_err
 ./unix_stream_err
 ./unix_seqpacket_err
+./unix_datagram_err
 
 ./netlink_route
 ./rtnl_err
