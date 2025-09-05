@@ -14,15 +14,13 @@ use super::{
 use crate::{inherit_sys_branch_node, BranchNodeFields, SysPerms};
 
 #[derive(Debug)]
-pub struct SysTree {
-    root: Arc<RootNode>,
+pub struct SysTree<Root: SysBranchNode> {
+    root: Arc<Root>,
     // event_hub: SysEventHub,
 }
 
-impl SysTree {
-    /// Creates a new `SysTree` instance with a default root node
-    /// and standard subdirectories like "devices", "block", "kernel".
-    /// This is intended to be called once for the singleton.
+impl SysTree<RootNode> {
+    /// Creates a new `SysTree` instance with a default root node.
     pub(crate) fn new() -> Self {
         let name = ""; // Only the root has an empty name
         let attr_set = SysAttrSet::new_empty(); // The root has no attributes
@@ -34,14 +32,27 @@ impl SysTree {
 
         Self { root: root_node }
     }
+}
+
+impl<Root: SysBranchNode> SysTree<Root> {
+    /// Creates a new `SysTree` instance with the provided root node.
+    pub fn new_with_root(root: Arc<Root>) -> Result<Self> {
+        if !root.is_root() {
+            return Err(crate::Error::InternalError(
+                "The provided root is not a root node",
+            ));
+        }
+
+        Ok(Self { root })
+    }
 
     /// Returns a reference to the root node of the tree.
-    pub fn root(&self) -> &Arc<RootNode> {
+    pub fn root(&self) -> &Arc<Root> {
         &self.root
     }
 }
 
-/// The root node in the `SysTree`.
+/// The default root node in the `SysTree`.
 ///
 /// A `RootNode` can work like a branching node, allowing to add additional nodes
 /// as its children.
