@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+aster-util = { path = "../../libs/aster-util" }
 ostd = { path = "../../../ostd" }
 component = { path = "../../libs/comp-sys/component" }
 intrusive-collections = "0.9.5"
