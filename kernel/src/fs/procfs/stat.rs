@@ -73,8 +73,16 @@ impl StatFileOps {
             ));
         }
 
-        // TODO: Interrupt count
-        output.push_str("intr 0\n");
+        // Interrupt count with per-IRQ breakdown
+        let irq_stats = collect_per_irq_counts_across_all_cpus();
+        let total_irqs: usize = irq_stats.iter().sum();
+        // Build the irq line: total followed by per-IRQ counts
+        let mut irq_line = format!("irq {}", total_irqs);
+        for count in irq_stats.iter() {
+            irq_line.push_str(&format!(" {}", count));
+        }
+        irq_line.push('\n');
+        output.push_str(&irq_line);
 
         // TODO: Context switches
         output.push_str("ctxt 0\n");
