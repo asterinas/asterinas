@@ -13,7 +13,11 @@ mod systree_node;
 
 static CGROUP_SINGLETON: Once<Arc<CgroupFs>> = Once::new();
 
-/// Returns a reference to the global [`CgroupFs`] instance. Panics if not initialized.
+/// Returns a reference to the global [`CgroupFs`] instance.
+///
+/// # Panics
+///
+/// if the instance is not initialized, this function will panic.
 pub fn singleton() -> &'static Arc<CgroupFs> {
     CGROUP_SINGLETON.get().expect("CgroupFs is not initialized")
 }

@@ -7,3 +7,4 @@
 mount -t sysfs none /sys
 mount -t proc none /proc
 mount -t cgroup2 none /sys/fs/cgroup
+mount -t configfs none /sys/kernel/config
