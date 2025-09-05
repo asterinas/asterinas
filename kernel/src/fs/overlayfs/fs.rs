@@ -13,7 +13,10 @@ use aster_block::BLOCK_SIZE;
 use aster_rights::Full;
 use hashbrown::HashSet;
 use inherit_methods_macro::inherit_methods;
-use ostd::mm::{io_util::HasVmReaderWriter, FrameAllocOptions};
+use ostd::{
+    mm::{io_util::HasVmReaderWriter, FrameAllocOptions},
+    task::Task,
+};
 
 use crate::{
     fs::{
@@ -1113,11 +1116,14 @@ impl FsType for OverlayFsType {
         "overlay"
     }
 
+    fn properties(&self) -> FsProperties {
+        FsProperties::empty()
+    }
+
     fn create(
         &self,
         args: Option<CString>,
         _disk: Option<Arc<dyn aster_block::BlockDevice>>,
-        ctx: &Context,
     ) -> Result<Arc<dyn FileSystem>> {
         let mut lower = Vec::new();
         let mut upper = "";
@@ -1155,7 +1161,9 @@ impl FsType for OverlayFsType {
             }
         }
 
-        let fs_ref = ctx.thread_local.borrow_fs();
+        let task = Task::current().unwrap();
+        let thread_local = task.as_thread_local().unwrap();
+        let fs_ref = thread_local.borrow_fs();
         let fs = fs_ref.resolver().read();
 
         let upper = fs.lookup(&FsPath::new(AT_FDCWD, upper)?)?;
@@ -1168,11 +1176,7 @@ impl FsType for OverlayFsType {
         OverlayFS::new(upper, lower, work).map(|fs| fs as _)
     }
 
-    fn properties(&self) -> FsProperties {
-        FsProperties::empty()
-    }
-
-    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysBranchNode>> {
+    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
         None
     }
 }

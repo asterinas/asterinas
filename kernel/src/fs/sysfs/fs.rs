@@ -3,6 +3,7 @@
 use alloc::sync::Arc;
 
 use aster_systree::singleton as systree_singleton;
+use spin::Once;
 
 use crate::{
     fs::{
@@ -16,7 +17,7 @@ use crate::{
 
 /// A file system for exposing kernel information to the user space.
 #[derive(Debug)]
-pub struct SysFs {
+pub(super) struct SysFs {
     sb: SuperBlock,
     root: Arc<dyn Inode>,
 }
@@ -26,7 +27,19 @@ const BLOCK_SIZE: usize = 4096;
 const NAME_MAX: usize = 255;
 
 impl SysFs {
-    pub(crate) fn new() -> Arc<Self> {
+    /// Returns the `SysFs` singleton.
+    pub(super) fn singleton() -> &'static Arc<SysFs> {
+        static SINGLETON: Once<Arc<SysFs>> = Once::new();
+
+        SINGLETON.call_once(Self::new)
+    }
+
+    #[cfg(ktest)]
+    pub(super) fn new_for_ktest() -> Arc<Self> {
+        Self::new()
+    }
+
+    fn new() -> Arc<Self> {
         let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX);
         let systree_ref = systree_singleton();
         let root_inode = SysFsInode::new_root(systree_ref.root().clone());
@@ -72,17 +85,11 @@ impl FsType for SysFsType {
         &self,
         _args: Option<CString>,
         _disk: Option<Arc<dyn aster_block::BlockDevice>>,
-        _ctx: &Context,
     ) -> Result<Arc<dyn FileSystem>> {
-        if super::SYSFS_SINGLETON.is_completed() {
-            return_errno_with_message!(Errno::EBUSY, "the sysfs has been created");
-        }
-
-        super::SYSFS_SINGLETON.call_once(SysFs::new);
-        Ok(super::singleton().clone())
+        Ok(SysFs::singleton().clone() as _)
     }
 
-    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysBranchNode>> {
+    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
         None
     }
 }

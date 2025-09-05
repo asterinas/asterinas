@@ -12,6 +12,7 @@ use aster_systree::{
 };
 use inherit_methods_macro::inherit_methods;
 use ostd::mm::{VmReader, VmWriter};
+use spin::Once;
 
 /// The root of a cgroup hierarchy, serving as the entry point to
 /// the entire cgroup control system.
@@ -19,7 +20,7 @@ use ostd::mm::{VmReader, VmWriter};
 /// The cgroup system provides v2 unified hierarchy, and is also used as a root
 /// node in the cgroup systree.
 #[derive(Debug)]
-pub struct CgroupSystem {
+pub(super) struct CgroupSystem {
     fields: BranchNodeFields<CgroupNode, Self>,
 }
 
@@ -29,24 +30,31 @@ pub struct CgroupSystem {
 /// management. Except for the root node, all nodes in the cgroup tree are of
 /// this type.
 #[derive(Debug)]
-pub struct CgroupNode {
+struct CgroupNode {
     fields: BranchNodeFields<CgroupNode, Self>,
 }
 
 #[inherit_methods(from = "self.fields")]
 impl CgroupSystem {
     /// Adds a child node.
-    pub fn add_child(&self, new_child: Arc<CgroupNode>) -> Result<()>;
+    fn add_child(&self, new_child: Arc<CgroupNode>) -> Result<()>;
 }
 
 #[inherit_methods(from = "self.fields")]
 impl CgroupNode {
     /// Adds a child node.
-    pub fn add_child(&self, new_child: Arc<CgroupNode>) -> Result<()>;
+    fn add_child(&self, new_child: Arc<CgroupNode>) -> Result<()>;
 }
 
 impl CgroupSystem {
-    pub(super) fn new() -> Arc<Self> {
+    /// Returns the `CgroupSystem` singleton.
+    pub(super) fn singleton() -> &'static Arc<CgroupSystem> {
+        static SINGLETON: Once<Arc<CgroupSystem>> = Once::new();
+
+        SINGLETON.call_once(Self::new)
+    }
+
+    fn new() -> Arc<Self> {
         let name = SysStr::from("cgroup");
 
         let mut builder = SysAttrSetBuilder::new();
@@ -78,7 +86,7 @@ impl CgroupSystem {
 }
 
 impl CgroupNode {
-    pub(super) fn new(name: SysStr) -> Arc<Self> {
+    pub(self) fn new(name: SysStr) -> Arc<Self> {
         let mut builder = SysAttrSetBuilder::new();
         // TODO: Add more attributes as needed. The normal cgroup node may have
         // more attributes than the unified one.

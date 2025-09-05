@@ -112,20 +112,19 @@ impl FsType for DevPtsType {
         "devpts"
     }
 
-    fn create(
-        &self,
-        _args: Option<CString>,
-        _disk: Option<Arc<dyn aster_block::BlockDevice>>,
-        _ctx: &Context,
-    ) -> Result<Arc<dyn FileSystem>> {
-        Ok(DevPts::new())
-    }
-
     fn properties(&self) -> FsProperties {
         FsProperties::empty()
     }
 
-    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysBranchNode>> {
+    fn create(
+        &self,
+        _args: Option<CString>,
+        _disk: Option<Arc<dyn aster_block::BlockDevice>>,
+    ) -> Result<Arc<dyn FileSystem>> {
+        Ok(DevPts::new())
+    }
+
+    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
         None
     }
 }

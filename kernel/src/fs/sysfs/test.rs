@@ -231,7 +231,7 @@ fn create_mock_systree_instance() -> &'static Arc<SysTree> {
 // Initialize a SysFs instance using the mock systree.
 fn init_sysfs_with_mock_tree() -> Arc<SysFs> {
     let _ = create_mock_systree_instance();
-    SysFs::new()
+    SysFs::new_for_ktest()
 }
 
 #[ktest]

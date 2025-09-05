@@ -4,6 +4,7 @@ use alloc::sync::{Arc, Weak};
 
 use ostd::sync::RwLock;
 
+use super::fs::CgroupFs;
 use crate::{
     fs::utils::{
         systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
@@ -13,7 +14,7 @@ use crate::{
 };
 
 /// An inode abstraction used in the cgroup file system.
-pub struct CgroupInode {
+pub(super) struct CgroupInode {
     /// The corresponding node in the SysTree.
     node_kind: SysTreeNodeKind,
     /// The metadata of this inode.
@@ -67,12 +68,14 @@ impl SysTreeInodeTy for CgroupInode {
     }
 
     fn this(&self) -> Arc<Self> {
-        self.this.upgrade().expect("Weak ref invalid")
+        self.this
+            .upgrade()
+            .expect("invalid weak reference to `self`")
     }
 }
 
 impl Inode for CgroupInode {
     fn fs(&self) -> Arc<dyn FileSystem> {
-        super::singleton().clone()
+        CgroupFs::singleton().clone()
     }
 }

@@ -44,22 +44,21 @@ impl FsType for TmpFsType {
         "tmpfs"
     }
 
+    fn properties(&self) -> FsProperties {
+        FsProperties::empty()
+    }
+
     fn create(
         &self,
         _args: Option<CString>,
         _disk: Option<Arc<dyn aster_block::BlockDevice>>,
-        _ctx: &Context,
     ) -> Result<Arc<dyn FileSystem>> {
         Ok(Arc::new(TmpFs {
             inner: RamFS::new(),
         }))
     }
 
-    fn properties(&self) -> FsProperties {
-        FsProperties::empty()
-    }
-
-    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysBranchNode>> {
+    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
         None
     }
 }
