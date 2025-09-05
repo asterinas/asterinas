@@ -116,6 +116,17 @@ impl SoftIrqLine {
 /// A slice that stores the [`SoftIrqLine`]s, whose ID is equal to its offset in the slice.
 static LINES: Once<[SoftIrqLine; SoftIrqLine::NR_LINES as usize]> = Once::new();
 
+/// The maximum number of IRQ lines we track (256 should have covered most common hardware).
+const MAX_IRQ_LINES: usize = 256;
+
+/// Global interrupt counter.
+static INTERRUPT_COUNTERS: Once<[PerCpuCounter; MAX_IRQ_LINES]> = Once::new();
+
+/// Returns the interrupt counters for all IRQ lines.
+pub fn collect_per_irq_counts_across_all_cpus() -> [usize; MAX_IRQ_LINES] {
+    core::array::from_fn(|i| INTERRUPT_COUNTERS.get().unwrap()[i].sum_all_cpus())
+}
+
 /// A per-CPU counter for softirq execution.
 static SOFTIRQ_COUNTERS: Once<[PerCpuCounter; SoftIrqLine::NR_LINES as usize]> = Once::new();
 
@@ -134,13 +145,14 @@ fn init() -> Result<(), ComponentInitError> {
     let lines: [SoftIrqLine; SoftIrqLine::NR_LINES as usize] =
         core::array::from_fn(|i| SoftIrqLine::new(i as u8));
     LINES.call_once(|| lines);
+
     let softirq_counter: [PerCpuCounter; SoftIrqLine::NR_LINES as usize] =
         core::array::from_fn(|_| PerCpuCounter::new());
     SOFTIRQ_COUNTERS.call_once(|| softirq_counter);
 
     let interrupt_counter: [PerCpuCounter; MAX_IRQ_LINES] =
         core::array::from_fn(|_| PerCpuCounter::new());
-    INTERRUPT_COUNTER.call_once(|| interrupt_counter);
+    INTERRUPT_COUNTERS.call_once(|| interrupt_counter);
 
     register_bottom_half_handler(process_pending);
 
@@ -156,6 +168,10 @@ cpu_local_cell! {
 
 /// Processes pending softirqs.
 fn process_pending(irq_guard: DisabledLocalIrqGuard, irq_number: usize) -> DisabledLocalIrqGuard {
+    if irq_number < MAX_IRQ_LINES {
+        // Increment the global counter for this IRQ line
+        INTERRUPT_COUNTERS.get().unwrap()[irq_number].add_on_cpu(irq_guard.current_cpu(), 1);
+    }
     if !is_softirq_enabled() {
         return irq_guard;
     }
