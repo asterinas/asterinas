@@ -19,7 +19,7 @@ pub struct CpuId(u32);
 
 impl CpuId {
     /// Returns the CPU ID of the bootstrap processor (BSP).
-    pub const fn bsp() -> Self {
+    pub fn bsp() -> Self {
         CpuId(0)
     }
 
@@ -100,7 +100,7 @@ pub fn all_cpus() -> impl Iterator<Item = CpuId> {
 }
 
 cpu_local_cell! {
-    /// The current CPU ID.
+    /// The current (software) CPU ID.
     static CURRENT_CPU: u32 = 0;
     /// The initialization state of the current CPU ID.
     #[cfg(debug_assertions)]
@@ -116,7 +116,7 @@ cpu_local_cell! {
 ///
 /// The caller must ensure that this function is called with
 /// the correct value of the CPU ID.
-unsafe fn set_this_cpu_id(id: u32) {
+pub(crate) unsafe fn set_this_cpu_id(id: u32) {
     // FIXME: If there are safe APIs that rely on the correctness of
     // the CPU ID for soundness, we'd better make the CPU ID a global
     // invariant and initialize it before entering `ap_early_entry`.
@@ -156,9 +156,9 @@ unsafe impl PinCurrentCpu for dyn InAtomicMode + '_ {}
 /// # Safety
 ///
 /// The caller must ensure that
-/// 1. We're in the boot context of the BSP and APs have not yet booted.
-/// 2. The number of available processors is available.
-/// 3. No CPU-local objects have been accessed.
+///  1. We're in the boot context of the BSP and APs have not yet booted.
+///  2. The number of available processors is available.
+///  3. No CPU-local objects have been accessed.
 pub(crate) unsafe fn init_on_bsp() {
     let num_cpus = crate::arch::boot::smp::count_processors().unwrap_or(1);
 
@@ -174,14 +174,4 @@ pub(crate) unsafe fn init_on_bsp() {
         // See its implementation for details.
         init_num_cpus(num_cpus);
     }
-}
-
-/// # Safety
-///
-/// The caller must ensure that:
-/// 1. We're in the boot context of an AP.
-/// 2. The CPU ID of the AP is `cpu_id`.
-pub(crate) unsafe fn init_on_ap(cpu_id: u32) {
-    // SAFETY: The safety is upheld by the caller.
-    unsafe { set_this_cpu_id(cpu_id) };
 }

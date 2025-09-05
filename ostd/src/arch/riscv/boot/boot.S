@@ -21,6 +21,10 @@ _start:
     #   a0 = hart id
     #   a1 = device tree paddr (not touched)
 
+    # Store the bootstrap hart ID.
+    la     t0, __bootstrap_hart_id - KERNEL_VMA
+    sd     a0, 0(t0)
+
     # Set up the page table.
     #   boot_l4pt[511] = (PPN(boot_l3pt) << PTE_PPN_SHIFT) | PTE_V
     la     t1, boot_l4pt
@@ -70,7 +74,13 @@ boot_stack_bottom:
     .skip 0x40000  # 256 KiB
 boot_stack_top:
 
-# From here, we're in the .text section: we no longer use physical address.
+# From here, we no longer use physical address.
+
+.data
+.global __bootstrap_hart_id
+__bootstrap_hart_id:
+    .skip 4
+
 .text
 .globl _start_virt
 _start_virt:
