@@ -17,7 +17,7 @@ use crate::{
     fs::{
         procfs::filesystems::FileSystemsFileOps,
         registry::{FsProperties, FsType},
-        utils::{DirEntryVecExt, FileSystem, FsFlags, Inode, SuperBlock, NAME_MAX},
+        utils::{DirEntryVecExt, FileSystem, FsFlags, Inode, InodeMode, SuperBlock, NAME_MAX},
     },
     prelude::*,
     process::{
@@ -119,6 +119,7 @@ impl RootDirOps {
         let root_inode = ProcDirBuilder::new(Self)
             .fs(fs)
             .ino(PROC_ROOT_INO)
+            .mode(InodeMode::from_bits_truncate(0o555))
             .build()
             .unwrap();
         let weak_ptr = Arc::downgrade(&root_inode);

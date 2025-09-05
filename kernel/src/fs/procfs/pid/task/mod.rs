@@ -12,12 +12,13 @@ use crate::{
                 stat::StatFileOps,
                 task::{
                     cmdline::CmdlineFileOps, comm::CommFileOps, environ::EnvironFileOps,
-                    exe::ExeSymOps, fd::FdDirOps, status::StatusFileOps,
+                    exe::ExeSymOps, fd::FdDirOps, oom_score_adj::OOMScoreAdjFileOps,
+                    status::StatusFileOps,
                 },
             },
             template::{DirOps, ProcDir, ProcDirBuilder},
         },
-        utils::{DirEntryVecExt, Inode},
+        utils::{DirEntryVecExt, Inode, InodeMode},
     },
     process::posix_thread::AsPosixThread,
     thread::{AsThread, Thread},
@@ -29,6 +30,7 @@ mod comm;
 mod environ;
 mod exe;
 mod fd;
+mod oom_score_adj;
 mod status;
 
 /// Represents the inode at `/proc/[pid]/task`.
@@ -38,6 +40,7 @@ impl TaskDirOps {
     pub fn new_inode(process_ref: Arc<Process>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         ProcDirBuilder::new(Self(process_ref))
             .parent(parent)
+            .mode(InodeMode::from_bits_truncate(0o555))
             .build()
             .unwrap()
     }
@@ -61,6 +64,7 @@ impl TidDirOps {
             thread_ref,
         })
         .parent(parent)
+        .mode(InodeMode::from_bits_truncate(0o555))
         .build()
         .unwrap()
     }
@@ -74,6 +78,7 @@ impl DirOps for TidDirOps {
             "environ" => EnvironFileOps::new_inode(self.process_ref.clone(), this_ptr),
             "exe" => ExeSymOps::new_inode(self.process_ref.clone(), this_ptr),
             "fd" => FdDirOps::new_inode(self.thread_ref.clone(), this_ptr),
+            "oom_score_adj" => OOMScoreAdjFileOps::new_inode(self.process_ref.clone(), this_ptr),
             "stat" => StatFileOps::new_inode(
                 self.process_ref.clone(),
                 self.thread_ref.clone(),
@@ -120,6 +125,9 @@ impl TidDirOps {
         });
         cached_children.put_entry_if_not_found("fd", || {
             FdDirOps::new_inode(self.thread_ref.clone(), this_ptr.clone())
+        });
+        cached_children.put_entry_if_not_found("oom_score_adj", || {
+            OOMScoreAdjFileOps::new_inode(self.process_ref.clone(), this_ptr.clone())
         });
         cached_children.put_entry_if_not_found("stat", || {
             StatFileOps::new_inode(

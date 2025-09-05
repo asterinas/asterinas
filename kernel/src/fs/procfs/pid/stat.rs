@@ -5,7 +5,7 @@ use core::{fmt::Write, sync::atomic::Ordering};
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::Inode,
+        utils::{Inode, InodeMode},
     },
     prelude::*,
     process::{posix_thread::AsPosixThread, Process},
@@ -93,6 +93,7 @@ impl StatFileOps {
             is_pid_stat,
         })
         .parent(parent)
+        .mode(InodeMode::from_bits_truncate(0o444))
         .build()
         .unwrap()
     }

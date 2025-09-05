@@ -9,7 +9,7 @@ use crate::{
             stat::StatFileOps,
             task::{TaskDirOps, TidDirOps},
         },
-        utils::{DirEntryVecExt, Inode},
+        utils::{DirEntryVecExt, Inode, InodeMode},
     },
     prelude::*,
     process::{posix_thread::AsPosixThread, Process},
@@ -45,6 +45,7 @@ impl PidDirOps {
             .parent(parent)
             // The pid directories must be volatile, because it is just associated with one process.
             .volatile()
+            .mode(InodeMode::from_bits_truncate(0o555))
             .build()
             .unwrap();
         // This is for an exiting process that has not yet been reaped by its parent,
