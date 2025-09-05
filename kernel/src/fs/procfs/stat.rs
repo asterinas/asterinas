@@ -7,7 +7,10 @@
 
 use alloc::format;
 
-use aster_softirq::{irq_count, softirq_count, softirq_id::*};
+use aster_softirq::{
+    collect_per_irq_counts_across_all_cpus, collect_per_softirq_counts_across_all_cpus,
+    softirq_id::*,
+};
 
 use crate::{
     fs::{
@@ -96,8 +99,24 @@ impl StatFileOps {
         // TODO: Blocked processes
         output.push_str("procs_blocked 0\n");
 
-        // TODO: Softirq
-        output.push_str("softirq 0 0 0 0 0 0 0 0 0 0 0\n");
+        // Softirq statistics
+        let softirq_stats = collect_per_softirq_counts_across_all_cpus();
+        let total_softirqs: usize = softirq_stats.iter().sum();
+
+        output.push_str(&format!(
+            "softirq {} {} {} {} {} {} {} {} {} {} {}\n",
+            total_softirqs,
+            softirq_stats[TASKLESS_URGENT_SOFTIRQ_ID as usize], // TASKLESS_URGENT
+            softirq_stats[TIMER_SOFTIRQ_ID as usize],           // TIMER
+            softirq_stats[TASKLESS_SOFTIRQ_ID as usize],        // TASKLESS
+            softirq_stats[NETWORK_TX_SOFTIRQ_ID as usize],      // NETWORK_TX
+            softirq_stats[NETWORK_RX_SOFTIRQ_ID as usize],      // NETWORK_RX
+            0usize,                                             // Reserved
+            0usize,                                             // Reserved
+            0usize,                                             // Reserved
+            0usize,                                             // Reserved
+            0usize                                              // Reserved
+        ));
 
         output
     }

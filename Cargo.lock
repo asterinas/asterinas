@@ -272,6 +272,7 @@ dependencies = [
 name = "aster-softirq"
 version = "0.1.0"
 dependencies = [
+ "aster-util",
  "component",
  "intrusive-collections",
  "ostd",

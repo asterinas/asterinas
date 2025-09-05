@@ -9,10 +9,13 @@ extern crate alloc;
 use alloc::boxed::Box;
 use core::sync::atomic::{AtomicU8, Ordering};
 
+use aster_util::per_cpu_counter::PerCpuCounter;
 use component::{init_component, ComponentInitError};
 use lock::is_softirq_enabled;
 use ostd::{
+    cpu::{CpuId, PinCurrentCpu},
     cpu_local_cell,
+    task::disable_preempt,
     trap::{
         irq::{disable_local, DisabledLocalIrqGuard},
         register_bottom_half_handler,
@@ -113,11 +116,32 @@ impl SoftIrqLine {
 /// A slice that stores the [`SoftIrqLine`]s, whose ID is equal to its offset in the slice.
 static LINES: Once<[SoftIrqLine; SoftIrqLine::NR_LINES as usize]> = Once::new();
 
+/// A per-CPU counter for softirq execution.
+static SOFTIRQ_COUNTERS: Once<[PerCpuCounter; SoftIrqLine::NR_LINES as usize]> = Once::new();
+
+/// Returns the execution count for all softirq lines.
+pub fn collect_per_softirq_counts_across_all_cpus() -> [usize; SoftIrqLine::NR_LINES as usize] {
+    core::array::from_fn(|i| SOFTIRQ_COUNTERS.get().unwrap()[i].sum_all_cpus())
+}
+
+/// Returns the softirq counters for a specific CPU.
+pub fn collect_per_softirq_counts_on_cpu(cpuid: CpuId) -> [usize; SoftIrqLine::NR_LINES as usize] {
+    core::array::from_fn(|i| SOFTIRQ_COUNTERS.get().unwrap()[i].get_on_cpu(cpuid))
+}
+
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {
     let lines: [SoftIrqLine; SoftIrqLine::NR_LINES as usize] =
         core::array::from_fn(|i| SoftIrqLine::new(i as u8));
     LINES.call_once(|| lines);
+    let softirq_counter: [PerCpuCounter; SoftIrqLine::NR_LINES as usize] =
+        core::array::from_fn(|_| PerCpuCounter::new());
+    SOFTIRQ_COUNTERS.call_once(|| softirq_counter);
+
+    let interrupt_counter: [PerCpuCounter; MAX_IRQ_LINES] =
+        core::array::from_fn(|_| PerCpuCounter::new());
+    INTERRUPT_COUNTER.call_once(|| interrupt_counter);
+
     register_bottom_half_handler(process_pending);
 
     taskless::init();
@@ -161,6 +185,10 @@ fn process_all_pending(mut irq_guard: DisabledLocalIrqGuard) -> DisabledLocalIrq
 
         while action_mask > 0 {
             let action_id = u8::trailing_zeros(action_mask) as u8;
+
+            // SAFETY: `CpuId::current_racy()` is safe to call because we are in IRQ context.
+            SOFTIRQ_COUNTERS.get().unwrap()[action_id as usize]
+                .add_on_cpu(CpuId::current_racy(), 1);
             SoftIrqLine::get(action_id).callback.get().unwrap()();
             action_mask &= action_mask - 1;
         }
