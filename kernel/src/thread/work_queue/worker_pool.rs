@@ -8,7 +8,7 @@ use core::{
 };
 
 use ostd::{
-    cpu::{CpuId, CpuSet},
+    cpu::{set::CpuSet, CpuId},
     sync::WaitQueue,
     task::Task,
 };

@@ -3,10 +3,8 @@
 use core::sync::atomic::AtomicU32;
 
 use ostd::{
-    cpu::{
-        context::{FpuContext, UserContext},
-        CpuSet,
-    },
+    arch::cpu::context::{FpuContext, UserContext},
+    cpu::set::CpuSet,
     sync::RwArc,
     task::Task,
 };

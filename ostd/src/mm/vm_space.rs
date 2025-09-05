@@ -13,7 +13,10 @@ use core::{ops::Range, sync::atomic::Ordering};
 use super::{page_table::PageTableConfig, AnyUFrameMeta, PagingLevel};
 use crate::{
     arch::mm::{current_page_table_paddr, PageTableEntry, PagingConsts},
-    cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu},
+    cpu::{
+        set::{AtomicCpuSet, CpuSet},
+        PinCurrentCpu,
+    },
     cpu_local_cell,
     io::IoMem,
     mm::{

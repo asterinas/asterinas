@@ -2,7 +2,7 @@
 
 //! User mode.
 
-use crate::{arch::trap::TrapFrame, cpu::context::UserContext};
+use crate::arch::{cpu::context::UserContext, trap::TrapFrame};
 
 /// Specific architectures need to implement this trait. This should only used in [`UserMode`]
 ///

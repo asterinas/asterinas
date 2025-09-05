@@ -2,7 +2,7 @@
 
 use core::{cmp, sync::atomic::Ordering};
 
-use ostd::cpu::{num_cpus, CpuId, CpuSet};
+use ostd::cpu::{num_cpus, set::CpuSet, CpuId};
 
 use super::SyscallReturn;
 use crate::{prelude::*, process::posix_thread::thread_table, thread::Tid};

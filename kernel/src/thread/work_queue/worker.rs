@@ -3,7 +3,7 @@
 #![expect(dead_code)]
 
 use ostd::{
-    cpu::{CpuId, CpuSet},
+    cpu::{set::CpuSet, CpuId},
     task::Task,
 };
 

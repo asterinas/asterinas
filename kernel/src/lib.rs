@@ -33,7 +33,7 @@ use kcmdline::KCmdlineArg;
 use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
     boot::boot_info,
-    cpu::{CpuId, CpuSet},
+    cpu::{set::CpuSet, CpuId},
 };
 use process::{spawn_init_process, Process};
 use sched::SchedPolicy;

@@ -2,7 +2,7 @@
 
 //! This module defines functions related to spawning the init process.
 
-use ostd::{cpu::context::UserContext, task::Task, user::UserContextApi};
+use ostd::{arch::cpu::context::UserContext, task::Task, user::UserContextApi};
 
 use super::Process;
 use crate::{

@@ -3,7 +3,7 @@
 use core::cell::{Cell, Ref, RefCell, RefMut};
 
 use aster_rights::Full;
-use ostd::{cpu::context::FpuContext, mm::Vaddr, sync::RwArc, task::CurrentTask};
+use ostd::{arch::cpu::context::FpuContext, mm::Vaddr, sync::RwArc, task::CurrentTask};
 
 use super::RobustListHead;
 use crate::{

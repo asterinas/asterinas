@@ -34,6 +34,12 @@ impl XApic {
         })
     }
 
+    pub(super) fn has_xapic() -> bool {
+        use crate::arch::cpu::extension::{has_extensions, IsaExtensions};
+
+        has_extensions(IsaExtensions::XAPIC)
+    }
+
     /// Reads a register from the MMIO region.
     fn read(&self, offset: u32) -> u32 {
         assert!(offset as usize % 4 == 0);
@@ -57,11 +63,6 @@ impl XApic {
         // Set SVR, Enable APIC and set Spurious Vector to 15 (Reserved irq number)
         let svr: u32 = (1 << 8) | 15;
         self.write(xapic::XAPIC_SVR, svr);
-    }
-
-    pub(super) fn has_xapic() -> bool {
-        let value = unsafe { core::arch::x86_64::__cpuid(1) };
-        value.edx & 0x100 != 0
     }
 }
 

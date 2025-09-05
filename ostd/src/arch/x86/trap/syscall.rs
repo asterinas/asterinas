@@ -18,10 +18,8 @@
 
 use core::arch::global_asm;
 
-use x86::cpuid::CpuId;
 use x86_64::{
     registers::{
-        control::{Cr4, Cr4Flags},
         model_specific::{Efer, EferFlags, LStar, SFMask},
         rflags::RFlags,
     },
@@ -43,13 +41,8 @@ global_asm!(
 /// The caller needs to ensure that `gdt::init` has been called before, so the segment selectors
 /// used in the `syscall` and `sysret` instructions have been properly initialized.
 pub(super) unsafe fn init() {
-    let cpuid = CpuId::new();
-
-    assert!(cpuid
-        .get_extended_processor_and_feature_identifiers()
-        .unwrap()
-        .has_syscall_sysret());
-    assert!(cpuid.get_extended_feature_info().unwrap().has_fsgsbase());
+    // We now assume that all x86-64 CPUs should support the `syscall` and `sysret` instructions.
+    // Otherwise, we should check `has_extensions(IsaExtensions::SYSCALL)` here.
 
     // Flags to clear on syscall.
     //
@@ -69,15 +62,6 @@ pub(super) unsafe fn init() {
             efer.insert(EferFlags::SYSTEM_CALL_EXTENSIONS);
         });
     }
-
-    // SAFETY: Enabling the `rdfsbase`, `wrfsbase`, `rdgsbase`, and `wrgsbase` instructions is safe
-    // as long as the kernel properly deals with the arbitrary base values set by the userspace
-    // program. (FIXME: Do we really need to unconditionally enable them?)
-    unsafe {
-        Cr4::update(|cr4| {
-            cr4.insert(Cr4Flags::FSGSBASE);
-        })
-    };
 }
 
 extern "sysv64" {

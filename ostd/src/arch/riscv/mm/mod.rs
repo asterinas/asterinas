@@ -4,7 +4,7 @@ use alloc::fmt;
 use core::ops::Range;
 
 use crate::{
-    cpu::extension::{has_extensions, IsaExtensions},
+    arch::cpu::extension::{has_extensions, IsaExtensions},
     mm::{
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
         page_table::PageTableEntryTrait,

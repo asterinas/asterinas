@@ -11,8 +11,8 @@ use core::str;
 use alloc::sync::Arc;
 use alloc::vec;
 
+use ostd::arch::cpu::context::UserContext;
 use ostd::arch::qemu::{exit_qemu, QemuExitCode};
-use ostd::cpu::context::UserContext;
 use ostd::mm::{
     CachePolicy, FallibleVmRead, FrameAllocOptions, PageFlags, PageProperty, Vaddr, VmIo, VmSpace,
     VmWriter, PAGE_SIZE,

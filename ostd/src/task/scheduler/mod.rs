@@ -72,7 +72,7 @@ use spin::Once;
 
 use super::{preempt::cpu_local, processor, Task};
 use crate::{
-    cpu::{CpuId, CpuSet, PinCurrentCpu},
+    cpu::{set::CpuSet, CpuId, PinCurrentCpu},
     prelude::*,
     task::disable_preempt,
     timer,

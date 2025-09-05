@@ -14,7 +14,7 @@ use crate::{
         irq::{send_ipi, HwCpuId},
         trap::TrapFrame,
     },
-    cpu::{CpuSet, PinCurrentCpu},
+    cpu::{set::CpuSet, PinCurrentCpu},
     cpu_local,
     sync::SpinLock,
     trap::{self, irq::IrqLine},

@@ -28,10 +28,10 @@ use spin::Once;
 use super::{cpu::context::GeneralRegs, ex_table::ExTable};
 use crate::{
     arch::{
+        cpu::context::{CpuException, PageFaultErrorCode, RawPageFaultInfo},
         if_tdx_enabled,
         irq::{disable_local, enable_local},
     },
-    cpu::context::{CpuException, PageFaultErrorCode, RawPageFaultInfo},
     cpu_local_cell,
     mm::{
         kspace::{KERNEL_PAGE_TABLE, LINEAR_MAPPING_BASE_VADDR, LINEAR_MAPPING_VADDR_RANGE},

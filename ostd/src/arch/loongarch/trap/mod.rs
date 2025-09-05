@@ -11,8 +11,10 @@ pub(super) use trap::RawUserContext;
 pub use trap::TrapFrame;
 
 use crate::{
-    arch::mm::tlb_flush_addr, cpu::context::CpuExceptionInfo, cpu_local_cell,
-    mm::MAX_USERSPACE_VADDR, trap::call_irq_callback_functions,
+    arch::{cpu::context::CpuExceptionInfo, mm::tlb_flush_addr},
+    cpu_local_cell,
+    mm::MAX_USERSPACE_VADDR,
+    trap::call_irq_callback_functions,
 };
 
 cpu_local_cell! {

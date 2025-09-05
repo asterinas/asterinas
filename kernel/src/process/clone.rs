@@ -2,7 +2,7 @@
 
 use core::{num::NonZeroU64, sync::atomic::Ordering};
 
-use ostd::{cpu::context::UserContext, sync::RwArc, task::Task, user::UserContextApi};
+use ostd::{arch::cpu::context::UserContext, sync::RwArc, task::Task, user::UserContextApi};
 
 use super::{
     posix_thread::{AsPosixThread, PosixThreadBuilder, ThreadName},
