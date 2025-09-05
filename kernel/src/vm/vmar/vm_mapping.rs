@@ -112,6 +112,8 @@ impl VmMapping {
     }
 
     pub(super) fn new_fork(&self) -> Result<VmMapping> {
+        self.increment_vmo_writable_mapping();
+
         Ok(VmMapping {
             mapped_mem: self.mapped_mem.dup()?,
             inode: self.inode.clone(),
@@ -199,6 +201,26 @@ impl VmMapping {
         cursor.map_iomem(io_mem, io_page_prop, self.map_size.get(), vmo_offset);
 
         Ok(())
+    }
+
+    /// Increments the writable mapping status of the associated VMO,
+    /// if the mapping is shared and potentially writable.
+    pub(super) fn increment_vmo_writable_mapping(&self) {
+        if is_shared_maywrite(self.is_shared, self.perms) {
+            if let Some(vmo) = self.vmo() {
+                vmo.vmo().writable_mapping_status().increment();
+            }
+        }
+    }
+
+    /// Decrements the writable mapping status of the associated VMO,
+    /// if the mapping is shared and potentially writable.
+    pub(super) fn decrement_vmo_writable_mapping(&self) {
+        if is_shared_maywrite(self.is_shared, self.perms) {
+            if let Some(vmo) = self.vmo() {
+                vmo.vmo().writable_mapping_status().decrement();
+            }
+        }
     }
 }
 
@@ -534,6 +556,8 @@ impl VmMapping {
             ..self
         };
 
+        left.increment_vmo_writable_mapping();
+
         Ok((left, right))
     }
 
@@ -764,6 +788,16 @@ impl MappedVmo {
     }
 }
 
+/// Returns whether the mapping described by the given flags is shared and
+/// potentially writable.
+pub fn is_shared_maywrite(is_shared: bool, _perms: VmPerms) -> bool {
+    // FIXME: Add support for the `MAY_WRITE` flag in `VmPerms`, and only return
+    // true if `MAY_WRITE` is set. For example, when a file is opened in read-only
+    // mode, the mapping should never be upgraded to writable with `mprotect`,
+    // since `MAY_WRITE` is not set.
+    is_shared
+}
+
 /// Attempts to merge two [`VmMapping`]s into a single mapping if they are
 /// adjacent and compatible.
 ///
@@ -806,6 +840,7 @@ fn try_merge(left: &VmMapping, right: &VmMapping) -> Option<VmMapping> {
     };
 
     let map_size = NonZeroUsize::new(left.map_size() + right.map_size()).unwrap();
+    left.decrement_vmo_writable_mapping();
 
     Some(VmMapping {
         map_size,

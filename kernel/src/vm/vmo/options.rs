@@ -11,7 +11,7 @@ use aster_rights::{Rights, TRightSet, TRights};
 use ostd::mm::{FrameAllocOptions, UFrame, USegment};
 use xarray::XArray;
 
-use super::{Pager, Vmo, VmoFlags};
+use super::{Pager, Vmo, VmoFlags, WritableMappingStatus};
 use crate::{prelude::*, vm::vmo::Vmo_};
 
 /// Options for allocating a root VMO.
@@ -128,6 +128,7 @@ fn alloc_vmo_(size: usize, flags: VmoFlags, pager: Option<Arc<dyn Pager>>) -> Re
         flags,
         pages,
         size: AtomicUsize::new(size),
+        writable_mapping_status: WritableMappingStatus::default(),
     })
 }
 

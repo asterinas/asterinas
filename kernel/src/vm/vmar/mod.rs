@@ -318,6 +318,7 @@ impl VmarInner {
                 self.insert_without_try_merge(right);
             }
 
+            taken.decrement_vmo_writable_mapping();
             rss_delta.add(taken.rss_type(), -(taken.unmap(vm_space) as isize));
         }
 
@@ -512,6 +513,9 @@ impl Vmar_ {
     /// Clears all content of the root VMAR.
     fn clear_root_vmar(&self) -> Result<()> {
         let mut inner = self.inner.write();
+        for vm_mapping in inner.vm_mappings.iter() {
+            vm_mapping.decrement_vmo_writable_mapping();
+        }
         inner.vm_mappings.clear();
 
         // Keep `inner` locked to avoid race conditions.
@@ -1016,6 +1020,12 @@ where
                 Err(e)
             }
         })?;
+
+        if vm_mapping::is_shared_maywrite(is_shared, perms) {
+            if let Some(vmo) = &vmo {
+                vmo.writable_mapping_status().map()?;
+            }
+        }
 
         // Allocates a free region.
         trace!("allocate free region, map_size = 0x{:x}, offset = {:x?}, align = 0x{:x}, can_overwrite = {}", map_size, offset, align, can_overwrite);
