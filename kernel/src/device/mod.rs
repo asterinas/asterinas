@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+mod evdev;
 mod null;
 mod pty;
 mod random;
@@ -59,6 +60,8 @@ pub fn init_in_first_process(ctx: &Context) -> Result<()> {
     pty::init_in_first_process(&fs_resolver)?;
 
     shm::init_in_first_process(&fs_resolver)?;
+
+    evdev::init(&fs_resolver)?;
 
     Ok(())
 }

@@ -12,6 +12,7 @@ bitflags = "2.5"
 log = "0.4"
 spin = "0.9.4"
 aster-input = { path = "../input" }
+aster-time = { path = "../time" }
 
 [lints]
 workspace = true

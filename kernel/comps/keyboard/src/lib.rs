@@ -32,6 +32,8 @@ pub fn register_callback(callback: &'static KeyboardCallback) {
 }
 
 /// Define unified keycodes for different types of keyboards.
+///
+/// The values of these enum variants are based on the ASCII table.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InputKey {
     // Control characters
