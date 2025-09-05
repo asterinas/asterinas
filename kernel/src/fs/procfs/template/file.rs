@@ -51,7 +51,7 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
     fn fs(&self) -> Arc<dyn FileSystem>;
 
     fn resize(&self, _new_size: usize) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        Ok(())
     }
 
     fn type_(&self) -> InodeType {
