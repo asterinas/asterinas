@@ -84,8 +84,9 @@ impl StatFileOps {
         irq_line.push('\n');
         output.push_str(&irq_line);
 
-        // TODO: Context switches
-        output.push_str("ctxt 0\n");
+        // Context switch count
+        let context_switches: usize = context_switch_count();
+        output.push_str(&format!("ctxt {}\n", context_switches));
 
         // Boot time (seconds since UNIX epoch)
         if let Some(start_time) = START_TIME.get() {
