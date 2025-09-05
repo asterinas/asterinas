@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{collections::VecDeque, sync::Arc};
-use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 
 use super::{LocalIrqDisabled, SpinLock};
 use crate::task::{scheduler, Task};
@@ -172,7 +172,7 @@ impl !Sync for Waiter {}
 /// A waker can be created by calling [`Waiter::new_pair`]. This method creates an `Arc<Waker>` that can
 /// be used across different threads.
 pub struct Waker {
-    has_woken: AtomicBool,
+    wake_flags: AtomicU8,
     task: Arc<Task>,
 }
 
@@ -180,7 +180,7 @@ impl Waiter {
     /// Creates a waiter and its associated [`Waker`].
     pub fn new_pair() -> (Self, Arc<Waker>) {
         let waker = Arc::new(Waker {
-            has_woken: AtomicBool::new(false),
+            wake_flags: AtomicU8::new(0),
             task: Task::current().unwrap().cloned(),
         });
         let waiter = Self {
@@ -239,6 +239,11 @@ impl Waiter {
     pub fn task(&self) -> &Arc<Task> {
         &self.waker.task
     }
+
+    /// TODO
+    pub fn wake_flags(&self) -> WakeFlags {
+        self.waker.wake_flags()
+    }
 }
 
 impl Drop for Waiter {
@@ -250,7 +255,25 @@ impl Drop for Waiter {
 }
 
 impl Waker {
-    /// Wakes up the associated [`Waiter`].
+    /// Wakes up the associated [`Waiter`] with a wake flag.
+    ///
+    /// This method returns `true` if the waiter is woken by this call. It returns `false` if the
+    /// waiter has already been woken by a previous call to the method, or if the waiter has been
+    /// dropped.
+    ///
+    /// Note that if this method returns `true`, it implies that the wake event will be properly
+    /// delivered, _or_ that the waiter will be dropped after being woken. It's up to the caller to
+    /// handle the latter case properly to avoid missing the wake event.
+    pub fn wake_up_with_flag(&self, flag: WakeFlag) -> bool {
+        if self.wake_flags.fetch_or(flag as u8, Ordering::Release) != 0 {
+            return false;
+        }
+        scheduler::unpark_target(self.task.clone());
+
+        true
+    }
+
+    /// Wakes up the associated [`Waiter`] with [`WakeFlag::Flag0`].
     ///
     /// This method returns `true` if the waiter is woken by this call. It returns `false` if the
     /// waiter has already been woken by a previous call to the method, or if the waiter has been
@@ -260,25 +283,60 @@ impl Waker {
     /// delivered, _or_ that the waiter will be dropped after being woken. It's up to the caller to
     /// handle the latter case properly to avoid missing the wake event.
     pub fn wake_up(&self) -> bool {
-        if self.has_woken.swap(true, Ordering::Release) {
-            return false;
-        }
-        scheduler::unpark_target(self.task.clone());
+        self.wake_up_with_flag(WakeFlag::Flag0)
+    }
 
-        true
+    /// TODO
+    pub fn wake_flags(&self) -> WakeFlags {
+        WakeFlags(self.wake_flags.load(Ordering::Acquire))
     }
 
     #[track_caller]
     fn do_wait(&self) {
-        while !self.has_woken.swap(false, Ordering::Acquire) {
-            scheduler::park_current(|| self.has_woken.load(Ordering::Acquire));
+        while self.wake_flags.swap(0, Ordering::Acquire) == 0 {
+            scheduler::park_current(|| self.wake_flags.load(Ordering::Acquire) != 0);
         }
     }
 
     fn close(&self) {
         // This must use `Ordering::Acquire`, although we do not care about the return value. See
         // the memory order explanation at the top of the file for details.
-        let _ = self.has_woken.swap(true, Ordering::Acquire);
+        let _ = self
+            .wake_flags
+            .fetch_or(WakeFlag::Flag0 as u8, Ordering::Acquire);
+    }
+}
+
+/// TODO
+#[repr(u8)]
+#[derive(Clone, Copy)]
+pub enum WakeFlag {
+    /// TODO
+    Flag0 = 0b1,
+    /// TODO
+    Flag1 = 0b10,
+    /// TODO
+    Flag2 = 0b100,
+    /// TODO
+    Flag3 = 0b1000,
+    /// TODO
+    Flag4 = 0b10000,
+    /// TODO
+    Flag5 = 0b100000,
+    /// TODO
+    Flag6 = 0b1000000,
+    /// TODO
+    Flag7 = 0b10000000,
+}
+
+/// TODO
+#[derive(Clone, Copy)]
+pub struct WakeFlags(u8);
+
+impl WakeFlags {
+    /// TODO
+    pub fn contains(self, flag: WakeFlag) -> bool {
+        self.0 & (flag as u8) != 0
     }
 }
 

@@ -10,6 +10,7 @@ use crate::{
     process::posix_thread::AsPosixThread,
     thread::AsThread,
     time::wait::{ManagedTimeout, TimeoutExt},
+    wake::{WAKE_DEFAULT, WAKE_SIGNAL, WAKE_TIMEOUT},
 };
 
 /// `Pause` is an extension trait to make [`Waiter`] and [`WaitQueue`] signal aware.
@@ -140,7 +141,7 @@ impl Pause for Waiter {
         let timer = timeout.check_expired()?.map(|timeout| {
             let waker = self.waker();
             timeout.create_timer(move || {
-                waker.wake_up();
+                waker.wake_up_with_flag(WAKE_TIMEOUT);
             })
         });
 
@@ -168,24 +169,26 @@ impl Pause for Waiter {
         }
 
         if let Some(timer) = timer {
-            if timer.remain().is_zero() {
-                return_errno_with_message!(Errno::ETIME, "the time limit is reached");
-            }
             // If the timeout is not expired, cancel the timer manually.
             timer.cancel();
         }
 
-        if posix_thread_opt
-            .as_ref()
-            .is_some_and(|posix_thread| posix_thread.has_pending())
-        {
+        let wake_flags = self.wake_flags();
+
+        // Resolve by the priority order:
+        // default wake up > signal wake up > timeout wake up > spurious wake up
+        if wake_flags.contains(WAKE_DEFAULT) {
+            Ok(())
+        } else if wake_flags.contains(WAKE_SIGNAL) {
             return_errno_with_message!(
                 Errno::EINTR,
                 "the current thread is interrupted by a signal"
             );
+        } else if wake_flags.contains(WAKE_TIMEOUT) {
+            return_errno_with_message!(Errno::ETIME, "the time limit is reached");
+        } else {
+            Ok(())
         }
-
-        Ok(())
     }
 }
 

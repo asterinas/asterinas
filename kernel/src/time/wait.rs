@@ -5,7 +5,7 @@ use core::time::Duration;
 use ostd::sync::{WaitQueue, Waiter};
 
 use super::{clocks::JIFFIES_TIMER_MANAGER, timer::Timeout, Timer, TimerManager};
-use crate::prelude::*;
+use crate::{prelude::*, wake::WAKE_TIMEOUT};
 
 /// A trait that provide the timeout related function for [`Waiter`] and [`WaitQueue`]`.
 pub trait WaitTimeout {
@@ -184,7 +184,7 @@ impl WaitTimeout for Waiter {
         let timer = timeout.map(|timeout| {
             let waker = self.waker();
             timeout.create_timer(move || {
-                waker.wake_up();
+                waker.wake_up_with_flag(WAKE_TIMEOUT);
             })
         });
 

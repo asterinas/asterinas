@@ -78,6 +78,7 @@ mod util;
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 mod vdso;
 mod vm;
+mod wake;
 
 #[ostd::main]
 #[controlled]
