@@ -3,7 +3,7 @@
 use alloc::sync::Arc;
 
 use aster_block::BlockDevice;
-use aster_systree::SysBranchNode;
+use aster_systree::{EmptyNode, SysNode};
 
 use super::inode::CgroupInode;
 use crate::{
@@ -59,15 +59,7 @@ impl FileSystem for CgroupFs {
     }
 }
 
-pub(super) struct CgroupFsType {
-    systree_root: Arc<CgroupSystem>,
-}
-
-impl CgroupFsType {
-    pub(super) fn new(systree_root: Arc<CgroupSystem>) -> Arc<Self> {
-        Arc::new(Self { systree_root })
-    }
-}
+pub(super) struct CgroupFsType;
 
 impl FsType for CgroupFsType {
     fn name(&self) -> &'static str {
@@ -84,17 +76,10 @@ impl FsType for CgroupFsType {
         _disk: Option<Arc<dyn BlockDevice>>,
         _ctx: &Context,
     ) -> Result<Arc<dyn FileSystem>> {
-        if super::CGROUP_SINGLETON.is_completed() {
-            return_errno_with_message!(Errno::EBUSY, "the cgroupfs has been created");
-        }
-
-        let cgroupfs = CgroupFs::new(self.systree_root.clone());
-        super::CGROUP_SINGLETON.call_once(|| cgroupfs.clone());
-
-        Ok(cgroupfs)
+        Ok(super::singleton().clone())
     }
 
-    fn sysnode(&self) -> Option<Arc<dyn SysBranchNode>> {
-        Some(self.systree_root.clone())
+    fn sysnode(&self) -> Option<Arc<dyn SysNode>> {
+        Some(EmptyNode::new("cgroup".into()))
     }
 }

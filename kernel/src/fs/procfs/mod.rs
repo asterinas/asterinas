@@ -106,7 +106,7 @@ impl FsType for ProcFsType {
         FsProperties::empty()
     }
 
-    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysBranchNode>> {
+    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
         None
     }
 }

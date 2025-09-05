@@ -1292,7 +1292,7 @@ impl FsType for RamFsType {
         FsProperties::empty()
     }
 
-    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysBranchNode>> {
+    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
         None
     }
 }

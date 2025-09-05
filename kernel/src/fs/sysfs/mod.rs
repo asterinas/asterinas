@@ -7,6 +7,7 @@ mod test;
 
 use alloc::sync::Arc;
 
+pub use aster_systree::primary_tree as systree_singleton;
 use spin::Once;
 
 pub use self::fs::SysFs;
@@ -19,10 +20,13 @@ pub fn singleton() -> &'static Arc<SysFs> {
     SYSFS_SINGLETON.get().expect("SysFs not initialized")
 }
 
-/// Initializes the SysFs singleton.
+/// Initializes the [`SysFs`] singleton.
+///
 /// Ensures that the singleton is created by calling it.
 /// Should be called during kernel file system initialization, *after* aster_systree::init().
-pub fn init() {
+pub(super) fn init() {
+    SYSFS_SINGLETON.call_once(SysFs::new);
+
     let sysfs_type = Arc::new(SysFsType);
     super::registry::register(sysfs_type).unwrap();
 }

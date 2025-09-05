@@ -13,16 +13,21 @@ mod systree_node;
 
 static CGROUP_SINGLETON: Once<Arc<CgroupFs>> = Once::new();
 
-/// Returns a reference to the global CgroupFs instance. Panics if not initialized.
+/// Returns a reference to the global [`CgroupFs`] instance. Panics if not initialized.
 pub fn singleton() -> &'static Arc<CgroupFs> {
     CGROUP_SINGLETON.get().expect("CgroupFs is not initialized")
 }
 
-/// Initializes the CgroupFs singleton.
+/// Initializes the [`CgroupFs`] singleton.
+///
 /// Ensures that the singleton is created by calling it.
 /// Should be called during kernel file system initialization, *after* aster_systree::init().
 pub fn init() {
     let cgroup_root = CgroupSystem::new();
-    let cgroup_fs_type = CgroupFsType::new(cgroup_root);
+    let cgroup_fs = CgroupFs::new(cgroup_root);
+
+    CGROUP_SINGLETON.call_once(|| cgroup_fs);
+
+    let cgroup_fs_type = Arc::new(CgroupFsType);
     super::registry::register(cgroup_fs_type).unwrap();
 }
