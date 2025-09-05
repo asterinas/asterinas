@@ -4,6 +4,7 @@ use alloc::sync::{Arc, Weak};
 
 use ostd::sync::RwLock;
 
+use super::fs::SysFs;
 use crate::{
     fs::utils::{
         systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
@@ -14,7 +15,7 @@ use crate::{
 };
 
 /// An inode abstraction used in the sysfs file system.
-pub struct SysFsInode {
+pub(super) struct SysFsInode {
     /// The corresponding node in the SysTree.
     node_kind: SysTreeNodeKind,
     /// The metadata of this inode.
@@ -74,16 +75,21 @@ impl SysTreeInodeTy for SysFsInode {
     }
 
     fn this(&self) -> Arc<Self> {
-        self.this.upgrade().expect("Weak ref invalid")
+        self.this
+            .upgrade()
+            .expect("invalid weak reference to `self`")
     }
 }
 
 impl Inode for SysFsInode {
     fn fs(&self) -> Arc<dyn FileSystem> {
-        super::singleton().clone()
+        SysFs::singleton().clone()
     }
 
     fn create(&self, _name: &str, _type_: InodeType, _mode: InodeMode) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::EPERM))
+        Err(Error::with_message(
+            Errno::EPERM,
+            "file creation under sysfs is not allowed",
+        ))
     }
 }

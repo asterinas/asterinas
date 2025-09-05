@@ -4,7 +4,7 @@ use alloc::borrow::ToOwned;
 
 use aster_block::BlockDevice;
 use aster_systree::{
-    inherit_sys_branch_node, AttrLessBranchNodeFields, SysBranchNode, SysObj, SysPerms, SysStr,
+    inherit_sys_branch_node, AttrLessBranchNodeFields, SysNode, SysObj, SysPerms, SysStr,
 };
 use spin::Once;
 
@@ -26,7 +26,6 @@ pub trait FsType: Send + Sync + 'static {
         &self,
         args: Option<CString>,
         disk: Option<Arc<dyn BlockDevice>>,
-        ctx: &Context,
     ) -> Result<Arc<dyn FileSystem>>;
 
     /// Returns a `SysTree` node that represents the FS type.
@@ -36,7 +35,7 @@ pub trait FsType: Send + Sync + 'static {
     ///
     /// The same result will be returned by this method
     /// when it is called multiple times.
-    fn sysnode(&self) -> Option<Arc<dyn SysBranchNode>>;
+    fn sysnode(&self) -> Option<Arc<dyn SysNode>>;
 }
 
 bitflags! {

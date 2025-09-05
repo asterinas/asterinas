@@ -180,7 +180,7 @@ fn get_fs(
         None
     };
 
-    fs_type.create(data, disk, ctx)
+    fs_type.create(data, disk)
 }
 
 bitflags! {

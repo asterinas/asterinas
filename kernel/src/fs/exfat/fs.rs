@@ -458,20 +458,19 @@ impl FsType for ExfatType {
         "exfat"
     }
 
-    fn create(
-        &self,
-        _args: Option<CString>,
-        disk: Option<Arc<dyn BlockDevice>>,
-        ctx: &Context,
-    ) -> Result<Arc<dyn FileSystem>> {
-        ExfatFS::open(disk.unwrap(), ExfatMountOptions::default()).map(|fs| fs as _)
-    }
-
     fn properties(&self) -> FsProperties {
         FsProperties::NEED_DISK
     }
 
-    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysBranchNode>> {
+    fn create(
+        &self,
+        _args: Option<CString>,
+        disk: Option<Arc<dyn BlockDevice>>,
+    ) -> Result<Arc<dyn FileSystem>> {
+        ExfatFS::open(disk.unwrap(), ExfatMountOptions::default()).map(|fs| fs as _)
+    }
+
+    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
         None
     }
 }

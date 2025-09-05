@@ -3,11 +3,10 @@
 use alloc::sync::Arc;
 
 use aster_block::BlockDevice;
-use aster_systree::SysBranchNode;
+use spin::Once;
 
 use super::inode::CgroupInode;
 use crate::{
-    context::Context,
     fs::{
         cgroupfs::systree_node::CgroupSystem,
         registry::{FsProperties, FsType},
@@ -18,7 +17,7 @@ use crate::{
 };
 
 /// A file system for managing cgroups.
-pub struct CgroupFs {
+pub(super) struct CgroupFs {
     sb: SuperBlock,
     root: Arc<dyn Inode>,
 }
@@ -29,7 +28,14 @@ const BLOCK_SIZE: usize = 4096;
 const NAME_MAX: usize = 255;
 
 impl CgroupFs {
-    pub(super) fn new(root_node: Arc<CgroupSystem>) -> Arc<Self> {
+    /// Returns the `CgroupFs` singleton.
+    pub(super) fn singleton() -> &'static Arc<CgroupFs> {
+        static SINGLETON: Once<Arc<CgroupFs>> = Once::new();
+
+        SINGLETON.call_once(|| Self::new(CgroupSystem::singleton().clone()))
+    }
+
+    fn new(root_node: Arc<CgroupSystem>) -> Arc<Self> {
         let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX);
         let root_inode = CgroupInode::new_root(root_node);
 
@@ -59,15 +65,7 @@ impl FileSystem for CgroupFs {
     }
 }
 
-pub(super) struct CgroupFsType {
-    systree_root: Arc<CgroupSystem>,
-}
-
-impl CgroupFsType {
-    pub(super) fn new(systree_root: Arc<CgroupSystem>) -> Arc<Self> {
-        Arc::new(Self { systree_root })
-    }
-}
+pub(super) struct CgroupFsType;
 
 impl FsType for CgroupFsType {
     fn name(&self) -> &'static str {
@@ -82,19 +80,11 @@ impl FsType for CgroupFsType {
         &self,
         _args: Option<CString>,
         _disk: Option<Arc<dyn BlockDevice>>,
-        _ctx: &Context,
     ) -> Result<Arc<dyn FileSystem>> {
-        if super::CGROUP_SINGLETON.is_completed() {
-            return_errno_with_message!(Errno::EBUSY, "the cgroupfs has been created");
-        }
-
-        let cgroupfs = CgroupFs::new(self.systree_root.clone());
-        super::CGROUP_SINGLETON.call_once(|| cgroupfs.clone());
-
-        Ok(cgroupfs)
+        Ok(CgroupFs::singleton().clone() as _)
     }
 
-    fn sysnode(&self) -> Option<Arc<dyn SysBranchNode>> {
-        Some(self.systree_root.clone())
+    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
+        Some(CgroupSystem::singleton().clone() as _)
     }
 }
