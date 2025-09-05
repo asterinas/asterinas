@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_systree::singleton as systree_singleton;
 use spin::Once;
 
 use crate::{
     fs::{
         registry::{FsProperties, FsType},
-        sysfs::inode::SysFsInode,
+        sysfs::{self, inode::SysFsInode},
         utils::{systree_inode::SysTreeInodeTy, FileSystem, FsFlags, Inode, SuperBlock},
         Result,
     },
@@ -39,7 +38,7 @@ impl SysFs {
 
     fn new() -> Arc<Self> {
         let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX);
-        let systree_ref = systree_singleton();
+        let systree_ref = sysfs::systree_singleton();
         let root_inode = SysFsInode::new_root(systree_ref.root().clone());
 
         Arc::new(Self {
