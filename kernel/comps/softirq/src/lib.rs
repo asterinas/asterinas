@@ -21,11 +21,15 @@ use ostd::{
     },
 };
 use spin::Once;
-
+pub use stats::{
+    collect_per_irq_counts_across_all_cpus, collect_per_softirq_counts_across_all_cpus,
+    collect_per_softirq_counts_on_cpu, MAX_IRQ_LINES,
+};
+use stats::{INTERRUPT_COUNTERS, SOFTIRQ_COUNTERS};
 mod lock;
 pub mod softirq_id;
+mod stats;
 mod taskless;
-
 pub use lock::{BottomHalfDisabled, DisableLocalBottomHalfGuard};
 pub use taskless::Taskless;
 
@@ -116,30 +120,6 @@ impl SoftIrqLine {
 
 /// A slice that stores the [`SoftIrqLine`]s, whose ID is equal to its offset in the slice.
 static LINES: Once<[SoftIrqLine; SoftIrqLine::NR_LINES as usize]> = Once::new();
-
-/// The maximum number of IRQ lines we track (256 should have covered most common hardware).
-const MAX_IRQ_LINES: usize = 256;
-
-/// Global interrupt counter.
-static INTERRUPT_COUNTERS: Once<[PerCpuCounter; MAX_IRQ_LINES]> = Once::new();
-
-/// Returns the interrupt counters for all IRQ lines.
-pub fn collect_per_irq_counts_across_all_cpus() -> [usize; MAX_IRQ_LINES] {
-    core::array::from_fn(|i| INTERRUPT_COUNTERS.get().unwrap()[i].sum_all_cpus())
-}
-
-/// A per-CPU counter for softirq execution.
-static SOFTIRQ_COUNTERS: Once<[PerCpuCounter; SoftIrqLine::NR_LINES as usize]> = Once::new();
-
-/// Returns the execution count for all softirq lines.
-pub fn collect_per_softirq_counts_across_all_cpus() -> [usize; SoftIrqLine::NR_LINES as usize] {
-    core::array::from_fn(|i| SOFTIRQ_COUNTERS.get().unwrap()[i].sum_all_cpus())
-}
-
-/// Returns the softirq counters for a specific CPU.
-pub fn collect_per_softirq_counts_on_cpu(cpuid: CpuId) -> [usize; SoftIrqLine::NR_LINES as usize] {
-    core::array::from_fn(|i| SOFTIRQ_COUNTERS.get().unwrap()[i].get_on_cpu(cpuid))
-}
 
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {
