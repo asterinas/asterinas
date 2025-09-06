@@ -9,7 +9,6 @@ use ostd::{
     task::Task,
     user::UserContextApi,
 };
-use spin::Once;
 
 use super::{
     posix_thread::{AsPosixThread, PosixThreadBuilder, ThreadName},
@@ -27,7 +26,7 @@ use crate::{
         thread_info::ThreadFsInfo,
     },
     prelude::*,
-    process::{pid_file::PidFile, posix_thread::allocate_posix_tid},
+    process::{pid_file::PidFile, posix_thread::allocate_posix_tid, stats::FORKS_COUNTER},
     sched::Nice,
     thread::{AsThread, Tid},
 };
@@ -631,12 +630,4 @@ fn set_parent_and_group(parent: &Process, child: &Arc<Process>) {
 
     // Put the child process in the global table
     process_table_mut.insert(child.pid(), child.clone());
-}
-
-/// The total number of fork, vfork and clone.
-static FORKS_COUNTER: Once<PerCpuCounter> = Once::new();
-
-/// Returns the total number of fork, vfork and clone.
-pub fn forks_count() -> usize {
-    FORKS_COUNTER.get().unwrap().sum_all_cpus()
 }
