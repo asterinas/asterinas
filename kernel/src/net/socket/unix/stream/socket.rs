@@ -362,7 +362,7 @@ impl Socket for UnixStreamSocket {
         let addr = match self.state.read().as_ref() {
             State::Init(init) => init.addr().cloned(),
             State::Listen(listen) => Some(listen.addr().clone()),
-            State::Connected(connected) => connected.addr(),
+            State::Connected(connected) => connected.addr().cloned(),
         };
 
         Ok(addr.into())

@@ -238,11 +238,12 @@ END_TEST()
 
 FN_TEST(bind_connected)
 {
-	int fildes[2];
+	int fildes[2], sk;
 	struct sockaddr_un addr;
 	socklen_t addrlen;
 
 	TEST_SUCC(socketpair(PF_UNIX, SOCK_TYPE, 0, fildes));
+	sk = TEST_SUCC(socket(PF_UNIX, SOCK_TYPE, 0));
 
 	TEST_SUCC(bind(fildes[0], (struct sockaddr *)&UNIX_ADDR("\0X"),
 		       PATH_OFFSET + 2));
@@ -269,8 +270,24 @@ FN_TEST(bind_connected)
 	TEST_SUCC(bind(fildes[1], (struct sockaddr *)&UNNAMED_ADDR,
 		       UNNAMED_ADDRLEN));
 
+	// Closing the socket will release the bound address.
+	// So another socket can bind to it again.
+	TEST_ERRNO(bind(sk, (struct sockaddr *)&UNIX_ADDR("\0X"),
+			PATH_OFFSET + 2),
+		   EADDRINUSE);
 	TEST_SUCC(close(fildes[0]));
+	TEST_SUCC(bind(sk, (struct sockaddr *)&UNIX_ADDR("\0X"),
+		       PATH_OFFSET + 2));
+
+	// But the released address is still "visible" from
+	// the previously connected socket.
+	addrlen = sizeof(addr);
+	TEST_RES(getpeername(fildes[1], (struct sockaddr *)&addr, &addrlen),
+		 addrlen == PATH_OFFSET + 2 && memcmp(&addr, &UNIX_ADDR("\0X"),
+						      PATH_OFFSET + 2) == 0);
+
 	TEST_SUCC(close(fildes[1]));
+	TEST_SUCC(close(sk));
 }
 END_TEST()
 
