@@ -14,13 +14,13 @@ mod process_vm;
 mod program_loader;
 pub mod rlimit;
 pub mod signal;
+mod stats;
 mod status;
 pub mod sync;
 mod task_set;
 mod term_status;
 mod wait;
-
-pub use clone::{clone_child, forks_count, CloneArgs, CloneFlags};
+pub use clone::{clone_child, CloneArgs, CloneFlags};
 pub use credentials::{Credentials, Gid, Uid};
 pub use kill::{kill, kill_all, kill_group, tgkill};
 pub use pid_file::PidFile;
@@ -32,6 +32,7 @@ pub use process_filter::ProcessFilter;
 pub use process_vm::{renew_vm_and_map, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS};
 pub use program_loader::{check_executable_file, ProgramToLoad};
 pub use rlimit::ResourceType;
+pub use stats::forks_count;
 pub use term_status::TermStatus;
 pub use wait::{do_wait, WaitOptions, WaitStatus};
 
