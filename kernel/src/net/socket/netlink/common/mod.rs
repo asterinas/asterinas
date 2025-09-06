@@ -153,10 +153,10 @@ where
 
     fn recvmsg(
         &self,
-        writers: &mut dyn MultiWrite,
+        writer: &mut dyn MultiWrite,
         flags: SendRecvFlags,
     ) -> Result<(usize, MessageHeader)> {
-        let (received_len, addr) = self.block_on(IoEvents::IN, || self.try_recv(writers, flags))?;
+        let (received_len, addr) = self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
 
         // TODO: Receive control message
 

@@ -54,7 +54,9 @@ mod util;
 
 pub struct StreamSocket {
     // Lock order: `state` first, `options` second
-    state: RwLock<Takeable<State>, PreemptDisabled>,
+    // FIXME: We perform userspace reads/writes when holding the spin locks (e.g., this state lock
+    // and other locks in `aster-bigtcp`), which will break the atomic mode.
+    state: RwLock<Takeable<State>>,
     options: RwLock<OptionSet>,
 
     is_nonblocking: AtomicBool,

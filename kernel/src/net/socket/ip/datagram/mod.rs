@@ -29,6 +29,15 @@ mod bound;
 pub(super) mod observer;
 mod unbound;
 
+pub struct DatagramSocket {
+    // Lock order: `inner` first, `options` second
+    inner: RwMutex<Inner<UnboundDatagram, BoundDatagram>>,
+    options: RwLock<OptionSet>,
+
+    is_nonblocking: AtomicBool,
+    pollee: Pollee,
+}
+
 #[derive(Debug, Clone)]
 struct OptionSet {
     socket: SocketOptionSet,
@@ -40,15 +49,6 @@ impl OptionSet {
         let socket = SocketOptionSet::new_udp();
         OptionSet { socket }
     }
-}
-
-pub struct DatagramSocket {
-    // Lock order: `inner` first, `options` second
-    inner: RwMutex<Inner<UnboundDatagram, BoundDatagram>>,
-    options: RwLock<OptionSet>,
-
-    is_nonblocking: AtomicBool,
-    pollee: Pollee,
 }
 
 impl DatagramSocket {
