@@ -69,6 +69,10 @@ impl ProcFS {
 }
 
 impl FileSystem for ProcFS {
+    fn name(&self) -> &'static str {
+        "proc"
+    }
+
     fn sync(&self) -> Result<()> {
         Ok(())
     }

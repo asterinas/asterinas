@@ -88,6 +88,10 @@ impl DevPts {
 }
 
 impl FileSystem for DevPts {
+    fn name(&self) -> &'static str {
+        "devpts"
+    }
+
     fn sync(&self) -> Result<()> {
         Ok(())
     }
