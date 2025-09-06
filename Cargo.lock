@@ -308,6 +308,7 @@ dependencies = [
  "aster-rights",
  "aster-rights-proc",
  "inherit-methods-macro",
+ "osdk-heap-allocator",
  "ostd",
  "typeflags-util",
 ]

@@ -20,7 +20,7 @@ mod task_set;
 mod term_status;
 mod wait;
 
-pub use clone::{clone_child, CloneArgs, CloneFlags};
+pub use clone::{clone_child, forks_count, CloneArgs, CloneFlags};
 pub use credentials::{Credentials, Gid, Uid};
 pub use kill::{kill, kill_all, kill_group, tgkill};
 pub use pid_file::PidFile;
@@ -40,6 +40,7 @@ use crate::context::Context;
 pub(super) fn init() {
     process::init();
     posix_thread::futex::init();
+    clone::init();
 }
 
 pub(super) fn init_in_first_process(ctx: &Context) {
