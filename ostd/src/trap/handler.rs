@@ -5,7 +5,8 @@ use spin::Once;
 use super::irq::{disable_local, process_top_half, DisabledLocalIrqGuard};
 use crate::{arch::trap::TrapFrame, cpu_local_cell, task::disable_preempt};
 
-static BOTTOM_HALF_HANDLER: Once<fn(DisabledLocalIrqGuard) -> DisabledLocalIrqGuard> = Once::new();
+static BOTTOM_HALF_HANDLER: Once<fn(DisabledLocalIrqGuard, usize) -> DisabledLocalIrqGuard> =
+    Once::new();
 
 /// Registers a function to the interrupt bottom half execution.
 ///
@@ -21,12 +22,19 @@ static BOTTOM_HALF_HANDLER: Once<fn(DisabledLocalIrqGuard) -> DisabledLocalIrqGu
 /// When the handler returns, interrupts should remain disabled,
 /// as the handler is expected to return an IRQ guard.
 ///
+/// The registered handler takes two arguments:
+/// the first one, as mentioned before, is an IRQ guard;
+/// and the second one is the number of the interrupt that triggers the bottom-half mechanism.
+/// The interrupt number is provided mostly for debugging and accounting purposes.
+///
 /// This function can only be registered once. Subsequent calls will do nothing.
-pub fn register_bottom_half_handler(func: fn(DisabledLocalIrqGuard) -> DisabledLocalIrqGuard) {
+pub fn register_bottom_half_handler(
+    func: fn(DisabledLocalIrqGuard, usize) -> DisabledLocalIrqGuard,
+) {
     BOTTOM_HALF_HANDLER.call_once(|| func);
 }
 
-fn process_bottom_half() {
+fn process_bottom_half(irq_number: usize) {
     let Some(handler) = BOTTOM_HALF_HANDLER.get() else {
         return;
     };
@@ -42,7 +50,7 @@ fn process_bottom_half() {
     // when the handler returns to prevent race conditions.
     // See <https://github.com/asterinas/asterinas/pull/1623#discussion_r1964709636> for more details.
     let irq_guard = disable_local();
-    let irq_guard = handler(irq_guard);
+    let irq_guard = handler(irq_guard, irq_number);
 
     // Interrupts should remain disabled when `process_bottom_half` returns,
     // so we simply forget the guard.
@@ -67,7 +75,7 @@ pub(crate) fn call_irq_callback_functions(trap_frame: &TrapFrame, irq_number: us
     crate::arch::interrupts_ack(irq_number);
 
     if INTERRUPT_NESTED_LEVEL.load() == 1 {
-        process_bottom_half();
+        process_bottom_half(irq_number);
     }
 
     INTERRUPT_NESTED_LEVEL.sub_assign(1);
