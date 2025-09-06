@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{num::NonZeroU64, sync::atomic::Ordering};
+use core::{
+    num::NonZeroU64,
+    sync::atomic::{Ordering},
+};
 
-use ostd::{cpu::context::UserContext, sync::RwArc, task::Task, user::UserContextApi};
+use aster_util::per_cpu_counter::PerCpuCounter;
+use ostd::{cpu::{CpuId, context::UserContext}, sync::RwArc, task::Task, user::UserContextApi};
+use spin::Once;
 
 use super::{
     posix_thread::{AsPosixThread, PosixThreadBuilder, ThreadName},
@@ -53,6 +58,10 @@ bitflags! {
         const CLONE_NEWNET	= 0x40000000;	    /* New network namespace.  */
         const CLONE_IO	= 0x80000000;	        /* Clone I/O context.  */
     }
+}
+
+pub(super) fn init(){
+    FORKS_COUNTER.call_once(||PerCpuCounter::new());
 }
 
 /// An internal structure to homogenize the arguments for `clone` and
@@ -214,6 +223,7 @@ pub fn clone_child(
         }
 
         let child_pid = child_process.pid();
+        FORKS_COUNTER.get().unwrap().add_on_cpu(CpuId::current_racy(), 1);
         Ok(child_pid)
     }
 }
@@ -616,4 +626,12 @@ fn set_parent_and_group(parent: &Process, child: &Arc<Process>) {
 
     // Put the child process in the global table
     process_table_mut.insert(child.pid(), child.clone());
+}
+
+/// The total number of fork, vfork and clone.
+static FORKS_COUNTER: Once<PerCpuCounter> = Once::new();
+
+/// Returns the total number of fork, vfork and clone.
+pub fn forks_count() -> usize {
+    FORKS_COUNTER.get().unwrap().sum_all_cpus()
 }
