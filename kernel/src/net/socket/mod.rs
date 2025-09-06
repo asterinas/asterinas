@@ -118,7 +118,7 @@ pub trait Socket: private::SocketPrivate + Send + Sync {
     /// and the message header.
     fn recvmsg(
         &self,
-        writers: &mut dyn MultiWrite,
+        writer: &mut dyn MultiWrite,
         flags: SendRecvFlags,
     ) -> Result<(usize, MessageHeader)>;
 }

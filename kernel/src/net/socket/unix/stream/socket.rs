@@ -35,40 +35,12 @@ use crate::{
 pub struct UnixStreamSocket {
     // Lock order: `state` first, `options` second
     state: RwMutex<Takeable<State>>,
-    options: RwMutex<OptionSet>,
+    options: RwLock<OptionSet>,
 
     pollee: Pollee,
     is_nonblocking: AtomicBool,
 
     is_seqpacket: bool,
-}
-
-impl UnixStreamSocket {
-    pub(super) fn new_init(init: Init, is_nonblocking: bool, is_seqpacket: bool) -> Arc<Self> {
-        Arc::new(Self {
-            state: RwMutex::new(Takeable::new(State::Init(init))),
-            options: RwMutex::new(OptionSet::new()),
-            pollee: Pollee::new(),
-            is_nonblocking: AtomicBool::new(is_nonblocking),
-            is_seqpacket,
-        })
-    }
-
-    pub(super) fn new_connected(
-        connected: Connected,
-        options: OptionSet,
-        is_nonblocking: bool,
-        is_seqpacket: bool,
-    ) -> Arc<Self> {
-        let cloned_pollee = connected.cloned_pollee();
-        Arc::new(Self {
-            state: RwMutex::new(Takeable::new(State::Connected(connected))),
-            options: RwMutex::new(options),
-            pollee: cloned_pollee,
-            is_nonblocking: AtomicBool::new(is_nonblocking),
-            is_seqpacket,
-        })
-    }
 }
 
 enum State {
@@ -164,6 +136,16 @@ impl UnixStreamSocket {
         Self::new_init(Init::new(), is_nonblocking, is_seqpacket)
     }
 
+    fn new_init(init: Init, is_nonblocking: bool, is_seqpacket: bool) -> Arc<Self> {
+        Arc::new(Self {
+            state: RwMutex::new(Takeable::new(State::Init(init))),
+            options: RwLock::new(OptionSet::new()),
+            pollee: Pollee::new(),
+            is_nonblocking: AtomicBool::new(is_nonblocking),
+            is_seqpacket,
+        })
+    }
+
     pub fn new_pair(is_nonblocking: bool, is_seqpacket: bool) -> (Arc<Self>, Arc<Self>) {
         let cred = SocketCred::<ReadDupOp>::new_current();
         let options = OptionSet::new();
@@ -181,6 +163,22 @@ impl UnixStreamSocket {
             Self::new_connected(conn_a, options, is_nonblocking, is_seqpacket),
             Self::new_connected(conn_b, OptionSet::new(), is_nonblocking, is_seqpacket),
         )
+    }
+
+    pub(super) fn new_connected(
+        connected: Connected,
+        options: OptionSet,
+        is_nonblocking: bool,
+        is_seqpacket: bool,
+    ) -> Arc<Self> {
+        let cloned_pollee = connected.cloned_pollee();
+        Arc::new(Self {
+            state: RwMutex::new(Takeable::new(State::Connected(connected))),
+            options: RwLock::new(options),
+            pollee: cloned_pollee,
+            is_nonblocking: AtomicBool::new(is_nonblocking),
+            is_seqpacket,
+        })
     }
 
     fn try_send(
@@ -303,7 +301,7 @@ impl Socket for UnixStreamSocket {
         if self.is_nonblocking() {
             self.try_connect(&backlog)
         } else {
-            backlog.pause_until(|| self.try_connect(&backlog))
+            backlog.block_connect(|| self.try_connect(&backlog))
         }
     }
 
@@ -381,6 +379,46 @@ impl Socket for UnixStreamSocket {
         Ok(peer_addr.into())
     }
 
+    fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
+        let state = self.state.read();
+        let options = self.options.read();
+
+        // Deal with UNIX-socket-specific socket-level options
+        match do_unix_getsockopt(option, state.as_ref()) {
+            Err(err) if err.error() == Errno::ENOPROTOOPT => (),
+            res => return res,
+        }
+
+        // Deal with socket-level options
+        match options.socket.get_option(option, state.as_ref()) {
+            Err(err) if err.error() == Errno::ENOPROTOOPT => (),
+            res => return res,
+        }
+
+        // TODO: Deal with socket options from other levels
+        warn!("only socket-level options are supported");
+
+        return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to get is unknown")
+    }
+
+    fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
+        let state = self.state.read();
+        let mut options = self.options.write();
+
+        match options.socket.set_option(option, state.as_ref()) {
+            Ok(_) => Ok(()),
+            Err(err) if err.error() == Errno::ENOPROTOOPT => {
+                // TODO: Deal with socket options from other levels
+                warn!("only socket-level options are supported");
+                return_errno_with_message!(
+                    Errno::ENOPROTOOPT,
+                    "the socket option to get is unknown"
+                )
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     fn sendmsg(
         &self,
         reader: &mut dyn MultiRead,
@@ -435,46 +473,6 @@ impl Socket for UnixStreamSocket {
         let message_header = MessageHeader::new(None, control_messages);
 
         Ok((received_bytes, message_header))
-    }
-
-    fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
-        let state = self.state.read();
-        let options = self.options.read();
-
-        // Deal with UNIX-socket-specific socket-level options
-        match do_unix_getsockopt(option, state.as_ref()) {
-            Err(err) if err.error() == Errno::ENOPROTOOPT => (),
-            res => return res,
-        }
-
-        // Deal with socket-level options
-        match options.socket.get_option(option, state.as_ref()) {
-            Err(err) if err.error() == Errno::ENOPROTOOPT => (),
-            res => return res,
-        }
-
-        // TODO: Deal with socket options from other levels
-        warn!("only socket-level options are supported");
-
-        return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to get is unknown")
-    }
-
-    fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
-        let mut state = self.state.write();
-        let mut options = self.options.write();
-
-        match options.socket.set_option(option, state.as_mut()) {
-            Ok(_) => Ok(()),
-            Err(err) if err.error() == Errno::ENOPROTOOPT => {
-                // TODO: Deal with socket options from other levels
-                warn!("only socket-level options are supported");
-                return_errno_with_message!(
-                    Errno::ENOPROTOOPT,
-                    "the socket option to get is unknown"
-                )
-            }
-            Err(e) => Err(e),
-        }
     }
 }
 

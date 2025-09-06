@@ -101,7 +101,7 @@ impl Drop for Listener {
     fn drop(&mut self) {
         self.backlog.shutdown();
 
-        unregister_backlog(&self.backlog.addr().to_key())
+        BACKLOG_TABLE.remove_backlog(&self.backlog.addr().to_key());
     }
 }
 
@@ -141,17 +141,19 @@ impl BacklogTable {
             is_shutdown,
             is_seqpacket,
         ));
-        backlog_sockets.insert(addr_key, new_backlog.clone());
+        let old_backlog = backlog_sockets.insert(addr_key, new_backlog.clone());
+        debug_assert!(old_backlog.is_none());
 
         Some(new_backlog)
     }
 
-    fn get_backlog(&self, addr: &UnixSocketAddrKey) -> Option<Arc<Backlog>> {
-        self.backlog_sockets.read().get(addr).cloned()
+    fn get_backlog(&self, addr_key: &UnixSocketAddrKey) -> Option<Arc<Backlog>> {
+        self.backlog_sockets.read().get(addr_key).cloned()
     }
 
     fn remove_backlog(&self, addr_key: &UnixSocketAddrKey) {
-        self.backlog_sockets.write().remove(addr_key);
+        let old_backlog = self.backlog_sockets.write().remove(addr_key);
+        debug_assert!(old_backlog.is_some());
     }
 }
 
@@ -160,7 +162,7 @@ pub(super) struct Backlog {
     pollee: Pollee,
     backlog: AtomicUsize,
     incoming_conns: SpinLock<Option<VecDeque<Connected>>>,
-    wait_queue: WaitQueue,
+    connect_wait_queue: WaitQueue,
     listener_cred: SocketCred<ReadDupOp>,
     is_seqpacket: bool,
 }
@@ -184,7 +186,7 @@ impl Backlog {
             pollee,
             backlog: AtomicUsize::new(backlog),
             incoming_conns: SpinLock::new(incoming_sockets),
-            wait_queue: WaitQueue::new(),
+            connect_wait_queue: WaitQueue::new(),
             listener_cred: SocketCred::<ReadDupOp>::new_current(),
             is_seqpacket,
         }
@@ -206,7 +208,7 @@ impl Backlog {
 
         if conn.is_some() {
             self.pollee.invalidate();
-            self.wait_queue.wake_one();
+            self.connect_wait_queue.wake_one();
         }
 
         conn.ok_or_else(|| Error::with_message(Errno::EAGAIN, "no pending connection is available"))
@@ -216,7 +218,7 @@ impl Backlog {
         let old_backlog = self.backlog.swap(backlog, Ordering::Relaxed);
 
         if old_backlog < backlog {
-            self.wait_queue.wake_all();
+            self.connect_wait_queue.wake_all();
         }
     }
 
@@ -224,7 +226,7 @@ impl Backlog {
         *self.incoming_conns.lock() = None;
 
         self.pollee.notify(SHUT_READ_EVENTS);
-        self.wait_queue.wake_all();
+        self.connect_wait_queue.wake_all();
     }
 
     fn is_shutdown(&self) -> bool {
@@ -301,19 +303,17 @@ impl Backlog {
         Ok(client_conn)
     }
 
-    pub(super) fn pause_until<F>(&self, mut cond: F) -> Result<()>
+    /// Blocks until the backlogs are free and the `try_connect` succeeds, or until interrupted.
+    pub(super) fn block_connect<F>(&self, mut try_connect: F) -> Result<()>
     where
         F: FnMut() -> Result<()>,
     {
-        self.wait_queue.pause_until(|| match cond() {
-            Err(err) if err.error() == Errno::EAGAIN => None,
-            result => Some(result),
-        })?
+        self.connect_wait_queue
+            .pause_until(|| match try_connect() {
+                Err(err) if err.error() == Errno::EAGAIN => None,
+                result => Some(result),
+            })?
     }
-}
-
-fn unregister_backlog(addr: &UnixSocketAddrKey) {
-    BACKLOG_TABLE.remove_backlog(addr);
 }
 
 pub(super) fn get_backlog(server_key: &UnixSocketAddrKey) -> Result<Arc<Backlog>> {
