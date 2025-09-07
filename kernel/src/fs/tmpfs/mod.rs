@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Temporary file system (tmpfs) based on RamFS.
+//! Temporary file system (tmpfs) based on RamFs.
 
 use alloc::sync::Arc;
 

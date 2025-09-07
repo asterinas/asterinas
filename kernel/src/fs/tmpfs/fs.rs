@@ -2,7 +2,7 @@
 
 use crate::{
     fs::{
-        ramfs::RamFS,
+        ramfs::RamFs,
         registry::{FsProperties, FsType},
         utils::{FileSystem, FsFlags, Inode, SuperBlock},
     },
@@ -11,11 +11,11 @@ use crate::{
 
 /// The temporary file system (tmpfs) structure.
 //
-// TODO: Currently, tmpfs is implemented as a thin wrapper around RamFS.
+// TODO: Currently, tmpfs is implemented as a thin wrapper around RamFs.
 // In the future we need to implement tmpfs-specific features such as
 // memory limits and swap support.
 pub struct TmpFs {
-    inner: Arc<RamFS>,
+    inner: Arc<RamFs>,
 }
 
 impl FileSystem for TmpFs {
@@ -54,7 +54,7 @@ impl FsType for TmpFsType {
         _disk: Option<Arc<dyn aster_block::BlockDevice>>,
     ) -> Result<Arc<dyn FileSystem>> {
         Ok(Arc::new(TmpFs {
-            inner: RamFS::new(),
+            inner: RamFs::new(),
         }))
     }
 

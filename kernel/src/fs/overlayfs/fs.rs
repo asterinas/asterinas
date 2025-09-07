@@ -37,10 +37,10 @@ use crate::{
 
 const OVERLAY_FS_MAGIC: u64 = 0x794C7630;
 
-/// An `OverlayFS` is a union pseudo file system employed to merge
+/// An `OverlayFs` is a union pseudo file system employed to merge
 /// upper and lower directories that potentially comes from different
 /// file systems, into a single, unified view at a designated mount point.
-pub struct OverlayFS {
+pub struct OverlayFs {
     /// The writable upper layer.
     upper: OverlayUpper,
     /// The read-only lower layer.
@@ -54,15 +54,15 @@ pub struct OverlayFS {
     /// Unique inode number generator.
     next_ino: AtomicU64,
     /// Weak self reference.
-    self_: Weak<OverlayFS>,
+    self_: Weak<OverlayFs>,
 }
 
-/// The mutable upper layer of an `OverlayFS`.
+/// The mutable upper layer of an `OverlayFs`.
 struct OverlayUpper {
     path: Path,
 }
 
-/// The immutable lower layer of an `OverlayFS`.
+/// The immutable lower layer of an `OverlayFs`.
 /// A lower layer may contain multiple `Path`s with different mount points.
 struct OverlayLower {
     /// Layered dentries from top to bottom.
@@ -97,13 +97,13 @@ struct OverlayInode {
     /// The immutable lower layered regular inodes.
     lowers: Vec<Arc<dyn Inode>>,
     /// Weak fs reference.
-    fs: Weak<OverlayFS>,
+    fs: Weak<OverlayFs>,
     /// Weak self reference.
     self_: Weak<OverlayInode>,
 }
 
-impl OverlayFS {
-    /// Creates a new OverlayFS instance.
+impl OverlayFs {
+    /// Creates a new OverlayFs instance.
     ///
     /// # Arguments
     /// * `upper` - The upper directory (writable layer)
@@ -111,7 +111,7 @@ impl OverlayFS {
     /// * `work` - The work directory (must be empty and on same filesystem as upper)
     ///
     /// # Returns
-    /// An `Arc<OverlayFS>` on success, or an error if validation fails.
+    /// An `Arc<OverlayFs>` on success, or an error if validation fails.
     ///
     /// # Errors
     /// * `EINVAL` - If work and upper are on different filesystems
@@ -153,7 +153,7 @@ impl OverlayFS {
     }
 }
 
-impl FileSystem for OverlayFS {
+impl FileSystem for OverlayFs {
     /// Utilizes the layered directory entries to build the root inode.
     fn root_inode(&self) -> Arc<dyn Inode> {
         let fs = self.fs();
@@ -193,8 +193,8 @@ impl FileSystem for OverlayFS {
     }
 }
 
-impl OverlayFS {
-    fn fs(&self) -> Arc<OverlayFS> {
+impl OverlayFs {
+    fn fs(&self) -> Arc<OverlayFs> {
         self.self_.upgrade().unwrap()
     }
 
@@ -601,7 +601,7 @@ impl OverlayInode {
         self.name_upon_creation.lock().clone()
     }
 
-    fn overlay_fs(&self) -> Arc<OverlayFS> {
+    fn overlay_fs(&self) -> Arc<OverlayFs> {
         self.fs.upgrade().unwrap()
     }
 
@@ -964,10 +964,10 @@ impl Inode for OverlayInode {
     fn remove_xattr(&self, name: XattrName) -> Result<()>;
 }
 
-/// The index of the layer of an `OverlayFS`.
+/// The index of the layer of an `OverlayFs`.
 type LayerIdx = u8; // Currently only support 256 layers.
 
-/// A visitor used by `OverlayFS` that merges the objects
+/// A visitor used by `OverlayFs` that merges the objects
 /// from the upper layer and the lower layer.
 struct OverlayDirVisitor {
     dir_map: BTreeMap<usize, (String, u64, InodeType)>,
@@ -1173,7 +1173,7 @@ impl FsType for OverlayFsType {
             .collect();
         let work = fs.lookup(&FsPath::new(AT_FDCWD, work)?)?;
 
-        OverlayFS::new(upper, lower, work).map(|fs| fs as _)
+        OverlayFs::new(upper, lower, work).map(|fs| fs as _)
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
@@ -1187,19 +1187,19 @@ mod tests {
     use ostd::{mm::VmIo, prelude::ktest};
 
     use super::*;
-    use crate::fs::{path::Mount, ramfs::RamFS};
+    use crate::fs::{path::Mount, ramfs::RamFs};
 
     fn create_overlay_fs() -> Arc<dyn FileSystem> {
         crate::time::clocks::init_for_ktest();
 
         let mode = InodeMode::all();
         let upper = {
-            let root_mount = Mount::new_root(RamFS::new());
+            let root_mount = Mount::new_root(RamFs::new());
             Path::new_fs_root(root_mount)
         };
         let lower = {
-            let r1 = Mount::new_root(RamFS::new());
-            let r2 = Mount::new_root(RamFS::new());
+            let r1 = Mount::new_root(RamFs::new());
+            let r2 = Mount::new_root(RamFs::new());
 
             let l1 = Path::new_fs_root(r1);
             l1.new_fs_child("f1", InodeType::File, mode).unwrap();
@@ -1228,7 +1228,7 @@ mod tests {
         };
         let work = upper.clone();
 
-        let fs = OverlayFS::new(upper, lower, work).unwrap();
+        let fs = OverlayFs::new(upper, lower, work).unwrap();
         assert_eq!(fs.sb().magic, OVERLAY_FS_MAGIC);
         fs
     }
@@ -1237,12 +1237,12 @@ mod tests {
     fn work_and_upper_should_be_in_same_mount() {
         crate::time::clocks::init_for_ktest();
 
-        let upper = Path::new_fs_root(Mount::new_root(RamFS::new()));
-        let lower = vec![Path::new_fs_root(Mount::new_root(RamFS::new()))];
-        let work = Path::new_fs_root(Mount::new_root(RamFS::new()));
+        let upper = Path::new_fs_root(Mount::new_root(RamFs::new()));
+        let lower = vec![Path::new_fs_root(Mount::new_root(RamFs::new()))];
+        let work = Path::new_fs_root(Mount::new_root(RamFs::new()));
 
-        let Err(e) = OverlayFS::new(upper, lower, work) else {
-            panic!("OverlayFS::new should fail when work and upper are not in the same mount");
+        let Err(e) = OverlayFs::new(upper, lower, work) else {
+            panic!("OverlayFs::new should fail when work and upper are not in the same mount");
         };
         assert_eq!(e.error(), Errno::EINVAL);
     }
@@ -1253,15 +1253,15 @@ mod tests {
 
         let mode = InodeMode::all();
         let upper = {
-            let root = Path::new_fs_root(Mount::new_root(RamFS::new()));
+            let root = Path::new_fs_root(Mount::new_root(RamFs::new()));
             root.new_fs_child("file", InodeType::File, mode).unwrap();
             root
         };
-        let lower = vec![Path::new_fs_root(Mount::new_root(RamFS::new()))];
+        let lower = vec![Path::new_fs_root(Mount::new_root(RamFs::new()))];
         let work = upper.clone();
 
-        let Err(e) = OverlayFS::new(upper, lower, work) else {
-            panic!("OverlayFS::new should fail when work is not empty");
+        let Err(e) = OverlayFs::new(upper, lower, work) else {
+            panic!("OverlayFs::new should fail when work is not empty");
         };
         assert_eq!(e.error(), Errno::EINVAL);
     }
@@ -1271,7 +1271,7 @@ mod tests {
         crate::time::clocks::init_for_ktest();
 
         let mode = InodeMode::all();
-        let root = Path::new_fs_root(Mount::new_root(RamFS::new()));
+        let root = Path::new_fs_root(Mount::new_root(RamFs::new()));
         let upper = {
             let dir = root.new_fs_child("upper", InodeType::Dir, mode).unwrap();
             dir.new_fs_child("f1", InodeType::File, mode).unwrap();
@@ -1283,7 +1283,7 @@ mod tests {
         };
         let lower = {
             let l1 = {
-                let r1 = Path::new_fs_root(Mount::new_root(RamFS::new()));
+                let r1 = Path::new_fs_root(Mount::new_root(RamFs::new()));
                 r1.new_fs_child("f1", InodeType::Dir, mode).unwrap();
                 r1.new_fs_child("f2", InodeType::File, mode).unwrap();
                 let d1 = r1.new_fs_child("d1", InodeType::Dir, mode).unwrap();
@@ -1298,7 +1298,7 @@ mod tests {
                 r1
             };
             let l2 = {
-                let r2 = Path::new_fs_root(Mount::new_root(RamFS::new()));
+                let r2 = Path::new_fs_root(Mount::new_root(RamFs::new()));
                 r2.new_fs_child("f1", InodeType::File, mode).unwrap();
                 r2.new_fs_child("d1", InodeType::Dir, mode).unwrap();
                 r2.new_fs_child("d2", InodeType::Dir, mode).unwrap();
@@ -1309,7 +1309,7 @@ mod tests {
         };
         let work = root.new_fs_child("work", InodeType::Dir, mode).unwrap();
 
-        let fs = OverlayFS::new(upper, lower, work).unwrap();
+        let fs = OverlayFs::new(upper, lower, work).unwrap();
         let root = fs.root_inode();
 
         let f1 = root.lookup("f1").unwrap();

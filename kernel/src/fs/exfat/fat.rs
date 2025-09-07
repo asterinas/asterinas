@@ -3,7 +3,7 @@
 use super::{
     bitmap::ExfatBitmap,
     constants::{EXFAT_FIRST_CLUSTER, EXFAT_RESERVED_CLUSTERS},
-    fs::ExfatFS,
+    fs::ExfatFs,
 };
 use crate::prelude::*;
 
@@ -61,7 +61,7 @@ pub struct ExfatChain {
     num_clusters: u32,
     // use FAT or not
     flags: FatChainFlags,
-    fs: Weak<ExfatFS>,
+    fs: Weak<ExfatFs>,
 }
 
 // A position by the chain and relative offset in the cluster.
@@ -69,7 +69,7 @@ pub type ExfatChainPosition = (ExfatChain, usize);
 
 impl ExfatChain {
     pub(super) fn new(
-        fs: Weak<ExfatFS>,
+        fs: Weak<ExfatFs>,
         current: ClusterID,
         num_clusters: Option<u32>,
         flags: FatChainFlags,
@@ -118,7 +118,7 @@ impl ExfatChain {
         self.flags = flags;
     }
 
-    fn fs(&self) -> Arc<ExfatFS> {
+    fn fs(&self) -> Arc<ExfatFs> {
         self.fs.upgrade().unwrap()
     }
 

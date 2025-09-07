@@ -12,7 +12,7 @@ mod utils;
 
 use alloc::sync::Arc;
 
-pub use fs::{ExfatFS, ExfatMountOptions};
+pub use fs::{ExfatFs, ExfatMountOptions};
 
 use crate::fs::exfat::fs::ExfatType;
 
@@ -39,7 +39,7 @@ mod test {
         fs::{
             exfat::{
                 constants::{EXFAT_RESERVED_CLUSTERS, MAX_NAME_LENGTH},
-                ExfatFS, ExfatMountOptions,
+                ExfatFs, ExfatMountOptions,
             },
             utils::{generate_random_operation, new_fs_in_memory, Inode, InodeMode, InodeType},
         },
@@ -130,11 +130,11 @@ mod test {
     }
 
     // Generate a simulated exfat file system
-    fn load_exfat() -> Arc<ExfatFS> {
+    fn load_exfat() -> Arc<ExfatFs> {
         let segment = new_vm_segment_from_image();
         let disk = ExfatMemoryDisk::new(segment);
         let mount_option = ExfatMountOptions::default();
-        let fs = ExfatFS::open(Arc::new(disk), mount_option);
+        let fs = ExfatFs::open(Arc::new(disk), mount_option);
         assert!(fs.is_ok(), "Fs failed to init:{:?}", fs.unwrap_err());
         fs.unwrap()
     }

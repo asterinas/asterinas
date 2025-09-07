@@ -312,7 +312,7 @@ impl ReadaheadState {
             if pg_waiter.nreqs() > 0 {
                 self.waiter.concat(pg_waiter);
             } else {
-                // Some backends (e.g. RamFS) do not issue requests, but fill the page directly.
+                // Some backends (e.g. RamFs) do not issue requests, but fill the page directly.
                 async_page.store_state(PageState::UpToDate);
             }
             pages.put(async_idx, async_page);

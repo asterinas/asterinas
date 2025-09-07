@@ -28,7 +28,7 @@ use super::{
 use crate::{
     events::IoEvents,
     fs::{
-        exfat::{dentry::ExfatDentryIterator, fat::ExfatChain, fs::ExfatFS},
+        exfat::{dentry::ExfatDentryIterator, fat::ExfatChain, fs::ExfatFs},
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
         utils::{
             CachePage, DirentVisitor, Extension, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
@@ -128,7 +128,7 @@ struct ExfatInodeInner {
     parent_hash: usize,
 
     /// A pointer to exFAT fs.
-    fs: Weak<ExfatFS>,
+    fs: Weak<ExfatFs>,
 
     /// Important: To enlarge the page_cache, we need to update the page_cache size before we update the size of inode, to avoid extra data read.
     /// To shrink the page_cache, we need to update the page_cache size after we update the size of inode, to avoid extra data write.
@@ -225,7 +225,7 @@ impl ExfatInodeInner {
         false
     }
 
-    fn fs(&self) -> Arc<ExfatFS> {
+    fn fs(&self) -> Arc<ExfatFs> {
         self.fs.upgrade().unwrap()
     }
 
@@ -635,7 +635,7 @@ impl ExfatInode {
     }
 
     pub(super) fn build_root_inode(
-        fs_weak: Weak<ExfatFS>,
+        fs_weak: Weak<ExfatFs>,
         root_chain: ExfatChain,
     ) -> Result<Arc<ExfatInode>> {
         let sb = fs_weak.upgrade().unwrap().super_block();
@@ -694,7 +694,7 @@ impl ExfatInode {
     }
 
     fn build_from_dentry_set(
-        fs: Arc<ExfatFS>,
+        fs: Arc<ExfatFs>,
         dentry_set: &ExfatDentrySet,
         dentry_set_position: ExfatChainPosition,
         dentry_entry: u32,
@@ -804,7 +804,7 @@ impl ExfatInode {
 
     /// The caller of the function should give a unique ino to assign to the inode.
     pub(super) fn read_from_iterator(
-        fs: Arc<ExfatFS>,
+        fs: Arc<ExfatFs>,
         dentry_entry: usize,
         chain_pos: ExfatChainPosition,
         file_dentry: &ExfatFileDentry,
