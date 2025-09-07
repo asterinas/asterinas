@@ -4,7 +4,7 @@
 
 use alloc::sync::Arc;
 
-pub use fs::{new_detached_inode, RamFS};
+pub use fs::{new_detached_inode, RamFs};
 
 use crate::fs::ramfs::fs::RamFsType;
 

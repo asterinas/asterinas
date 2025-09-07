@@ -13,7 +13,7 @@ use super::{
     constants::EXFAT_RESERVED_CLUSTERS,
     dentry::{ExfatBitmapDentry, ExfatDentry, ExfatDentryIterator},
     fat::{ClusterID, ExfatChain},
-    fs::ExfatFS,
+    fs::ExfatFs,
 };
 use crate::{fs::exfat::fat::FatChainFlags, prelude::*, vm::vmo::Vmo};
 
@@ -31,12 +31,12 @@ pub(super) struct ExfatBitmap {
 
     // Used to track the number of free clusters.
     num_free_cluster: u32,
-    fs: Weak<ExfatFS>,
+    fs: Weak<ExfatFs>,
 }
 
 impl ExfatBitmap {
     pub(super) fn load(
-        fs_weak: Weak<ExfatFS>,
+        fs_weak: Weak<ExfatFs>,
         root_page_cache: Vmo<Full>,
         root_chain: ExfatChain,
     ) -> Result<Self> {
@@ -55,7 +55,7 @@ impl ExfatBitmap {
         return_errno_with_message!(Errno::EINVAL, "bitmap not found")
     }
 
-    fn load_bitmap_from_dentry(fs_weak: Weak<ExfatFS>, dentry: &ExfatBitmapDentry) -> Result<Self> {
+    fn load_bitmap_from_dentry(fs_weak: Weak<ExfatFs>, dentry: &ExfatBitmapDentry) -> Result<Self> {
         let fs = fs_weak.upgrade().unwrap();
         let num_clusters = (dentry.size as usize).align_up(fs.cluster_size()) / fs.cluster_size();
 
@@ -83,7 +83,7 @@ impl ExfatBitmap {
         })
     }
 
-    fn fs(&self) -> Arc<ExfatFS> {
+    fn fs(&self) -> Arc<ExfatFs> {
         self.fs.upgrade().unwrap()
     }
 

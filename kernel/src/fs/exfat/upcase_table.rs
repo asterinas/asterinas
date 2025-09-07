@@ -10,7 +10,7 @@ use super::{
     constants::UNICODE_SIZE,
     dentry::{ExfatDentry, ExfatDentryIterator, ExfatUpcaseDentry, UTF16Char},
     fat::ExfatChain,
-    fs::ExfatFS,
+    fs::ExfatFs,
     utils::calc_checksum_32,
 };
 use crate::{fs::exfat::fat::FatChainFlags, prelude::*, vm::vmo::Vmo};
@@ -20,7 +20,7 @@ const UPCASE_MANDATORY_SIZE: usize = 128;
 #[derive(Debug)]
 pub(super) struct ExfatUpcaseTable {
     upcase_table: [u16; UPCASE_MANDATORY_SIZE],
-    fs: Weak<ExfatFS>,
+    fs: Weak<ExfatFs>,
 }
 
 impl ExfatUpcaseTable {
@@ -32,7 +32,7 @@ impl ExfatUpcaseTable {
     }
 
     pub(super) fn load(
-        fs_weak: Weak<ExfatFS>,
+        fs_weak: Weak<ExfatFs>,
         root_page_cache: Vmo<Full>,
         root_chain: ExfatChain,
     ) -> Result<Self> {
@@ -48,7 +48,7 @@ impl ExfatUpcaseTable {
         return_errno_with_message!(Errno::EINVAL, "Upcase table not found")
     }
 
-    fn load_table_from_dentry(fs_weak: Weak<ExfatFS>, dentry: &ExfatUpcaseDentry) -> Result<Self> {
+    fn load_table_from_dentry(fs_weak: Weak<ExfatFs>, dentry: &ExfatUpcaseDentry) -> Result<Self> {
         if (dentry.size as usize) < UPCASE_MANDATORY_SIZE * UNICODE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "Upcase table too small")
         }

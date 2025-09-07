@@ -8,7 +8,7 @@ pub use self::{
     file::FileOps,
     sym::SymOps,
 };
-use super::{ProcFS, BLOCK_SIZE};
+use super::{ProcFs, BLOCK_SIZE};
 use crate::{
     fs::utils::{FileSystem, InodeMode, InodeType, Metadata},
     prelude::*,

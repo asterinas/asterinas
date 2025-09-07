@@ -32,7 +32,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct ExfatFS {
+pub struct ExfatFs {
     block_device: Arc<dyn BlockDevice>,
     super_block: ExfatSuperBlock,
 
@@ -59,7 +59,7 @@ const FAT_LRU_CACHE_SIZE: usize = 1024;
 
 pub(super) const EXFAT_ROOT_INO: Ino = 1;
 
-impl ExfatFS {
+impl ExfatFs {
     pub fn open(
         block_device: Arc<dyn BlockDevice>,
         mount_option: ExfatMountOptions,
@@ -67,7 +67,7 @@ impl ExfatFS {
         // Load the super_block
         let super_block = Self::read_super_block(block_device.as_ref())?;
         let fs_size = super_block.num_clusters as usize * super_block.cluster_size as usize;
-        let exfat_fs = Arc::new_cyclic(|weak_self| ExfatFS {
+        let exfat_fs = Arc::new_cyclic(|weak_self| ExfatFs {
             block_device,
             super_block,
             bitmap: Arc::new(Mutex::new(ExfatBitmap::default())),
@@ -368,7 +368,7 @@ impl ExfatFS {
     }
 }
 
-impl PageCacheBackend for ExfatFS {
+impl PageCacheBackend for ExfatFs {
     fn read_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
         if self.fs_size() < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "invalid read size")
@@ -402,7 +402,7 @@ impl PageCacheBackend for ExfatFS {
     }
 }
 
-impl FileSystem for ExfatFS {
+impl FileSystem for ExfatFs {
     fn sync(&self) -> Result<()> {
         for inode in self.inodes.read().values() {
             inode.sync_all()?;
@@ -467,7 +467,7 @@ impl FsType for ExfatType {
         _args: Option<CString>,
         disk: Option<Arc<dyn BlockDevice>>,
     ) -> Result<Arc<dyn FileSystem>> {
-        ExfatFS::open(disk.unwrap(), ExfatMountOptions::default()).map(|fs| fs as _)
+        ExfatFs::open(disk.unwrap(), ExfatMountOptions::default()).map(|fs| fs as _)
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

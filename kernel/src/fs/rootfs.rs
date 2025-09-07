@@ -10,7 +10,7 @@ use spin::Once;
 use super::{
     fs_resolver::{FsPath, FsResolver},
     path::Mount,
-    ramfs::RamFS,
+    ramfs::RamFs,
     utils::{FileSystem, InodeMode, InodeType},
 };
 use crate::{fs::path::is_dot, prelude::*};
@@ -107,7 +107,7 @@ pub fn init_in_first_kthread(fs_resolver: &FsResolver) -> Result<()> {
     }
     // Mount DevFS
     let dev_path = fs_resolver.lookup(&FsPath::try_from("/dev")?)?;
-    dev_path.mount(RamFS::new())?;
+    dev_path.mount(RamFs::new())?;
 
     println!("[kernel] rootfs is ready");
     Ok(())
@@ -127,7 +127,7 @@ static ROOT_MOUNT: Once<Arc<Mount>> = Once::new();
 
 pub(super) fn init() {
     ROOT_MOUNT.call_once(|| -> Arc<Mount> {
-        let rootfs = RamFS::new();
+        let rootfs = RamFs::new();
         Mount::new_root(rootfs)
     });
 }

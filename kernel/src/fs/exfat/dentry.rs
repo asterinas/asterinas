@@ -8,7 +8,7 @@ use ostd::mm::VmIo;
 use super::{
     constants::{EXFAT_FILE_NAME_LEN, MAX_NAME_LENGTH},
     fat::FatChainFlags,
-    fs::ExfatFS,
+    fs::ExfatFs,
     inode::FatAttr,
     upcase_table::ExfatUpcaseTable,
     utils::{calc_checksum_16, DosTimestamp},
@@ -219,7 +219,7 @@ impl ExfatDentrySet {
     }
 
     pub(super) fn from(
-        fs: Arc<ExfatFS>,
+        fs: Arc<ExfatFs>,
         name: &str,
         inode_type: InodeType,
         _mode: InodeMode,

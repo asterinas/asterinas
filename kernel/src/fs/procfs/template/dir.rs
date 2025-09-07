@@ -7,7 +7,7 @@ use core::time::Duration;
 use aster_util::slot_vec::SlotVec;
 use inherit_methods_macro::inherit_methods;
 
-use super::{Common, ProcFS};
+use super::{Common, ProcFs};
 use crate::{
     fs::{
         path::{is_dot, is_dotdot},
@@ -36,7 +36,7 @@ impl<D: DirOps> ProcDir<D> {
         let common = {
             let ino = ino.unwrap_or_else(|| {
                 let arc_fs = fs.upgrade().unwrap();
-                let procfs = arc_fs.downcast_ref::<ProcFS>().unwrap();
+                let procfs = arc_fs.downcast_ref::<ProcFs>().unwrap();
                 procfs.alloc_id()
             });
 

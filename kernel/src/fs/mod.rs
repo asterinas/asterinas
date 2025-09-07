@@ -28,7 +28,7 @@ use aster_virtio::device::block::device::BlockDevice as VirtIoBlockDevice;
 
 use crate::{
     fs::{
-        exfat::{ExfatFS, ExfatMountOptions},
+        exfat::{ExfatFs, ExfatMountOptions},
         ext2::Ext2,
         file_table::FdFlags,
         fs_resolver::{FsPath, FsResolver},
@@ -91,7 +91,7 @@ pub fn init_in_first_process(ctx: &Context) {
     }
 
     if let Ok(block_device_exfat) = start_block_device(exfat_device_name) {
-        let exfat_fs = ExfatFS::open(block_device_exfat, ExfatMountOptions::default()).unwrap();
+        let exfat_fs = ExfatFs::open(block_device_exfat, ExfatMountOptions::default()).unwrap();
         let target_path = FsPath::try_from("/exfat").unwrap();
         println!("[kernel] Mount ExFat fs at {:?} ", target_path);
         self::rootfs::mount_fs_at(exfat_fs, &target_path, &fs_resolver).unwrap();

@@ -48,13 +48,13 @@ const PROC_ROOT_INO: u64 = 1;
 /// Block size.
 const BLOCK_SIZE: usize = 1024;
 
-pub struct ProcFS {
+pub struct ProcFs {
     sb: SuperBlock,
     root: Arc<dyn Inode>,
     inode_allocator: AtomicU64,
 }
 
-impl ProcFS {
+impl ProcFs {
     pub fn new() -> Arc<Self> {
         Arc::new_cyclic(|weak_fs| Self {
             sb: SuperBlock::new(PROC_MAGIC, BLOCK_SIZE, NAME_MAX),
@@ -68,7 +68,7 @@ impl ProcFS {
     }
 }
 
-impl FileSystem for ProcFS {
+impl FileSystem for ProcFs {
     fn sync(&self) -> Result<()> {
         Ok(())
     }
@@ -102,7 +102,7 @@ impl FsType for ProcFsType {
         _args: Option<CString>,
         _disk: Option<Arc<dyn aster_block::BlockDevice>>,
     ) -> Result<Arc<dyn FileSystem>> {
-        Ok(ProcFS::new())
+        Ok(ProcFs::new())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
@@ -114,7 +114,7 @@ impl FsType for ProcFsType {
 struct RootDirOps;
 
 impl RootDirOps {
-    pub fn new_inode(fs: Weak<ProcFS>) -> Arc<dyn Inode> {
+    pub fn new_inode(fs: Weak<ProcFs>) -> Arc<dyn Inode> {
         let root_inode = ProcDirBuilder::new(Self)
             .fs(fs)
             .ino(PROC_ROOT_INO)

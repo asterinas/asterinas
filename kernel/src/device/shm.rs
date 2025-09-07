@@ -3,7 +3,7 @@
 use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver},
-        ramfs::RamFS,
+        ramfs::RamFs,
         utils::{InodeMode, InodeType},
     },
     prelude::*,
@@ -16,7 +16,7 @@ pub fn init_in_first_process(fs_resolver: &FsResolver) -> Result<()> {
     // Create the "shm" directory under "/dev" and mount a ramfs on it.
     let shm_path =
         dev_path.new_fs_child("shm", InodeType::Dir, InodeMode::from_bits_truncate(0o1777))?;
-    shm_path.mount(RamFS::new())?;
-    log::debug!("Mount RamFS at \"/dev/shm\"");
+    shm_path.mount(RamFs::new())?;
+    log::debug!("Mount RamFs at \"/dev/shm\"");
     Ok(())
 }
