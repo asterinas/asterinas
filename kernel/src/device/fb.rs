@@ -1,15 +1,27 @@
 // SPDX-License-Identifier: MPL-2.0
 
 pub(crate) use aster_framebuffer::get_framebuffer_info;
-use aster_framebuffer::FrameBuffer;
+use aster_framebuffer::{FrameBuffer, PixelFormat};
+use ostd::Pod;
 
 use super::*;
 use crate::{
+    current_userspace,
     events::IoEvents,
     fs::{file_handle::Mappable, inode_handle::FileIo, utils::IoctlCmd},
     prelude::*,
     process::signal::{PollHandle, Pollable},
 };
+
+/// Default pixel clock calculation for efifb compatibility
+const DEFAULT_PIXEL_CLOCK_DIVISOR: u32 = 10_000_000;
+
+/// Default timing parameters for efifb compatibility
+const DEFAULT_RIGHT_MARGIN: u32 = 32;
+const DEFAULT_UPPER_MARGIN: u32 = 16;
+const DEFAULT_LOWER_MARGIN: u32 = 4;
+const DEFAULT_VSYNC_LEN: u32 = 4;
+
 pub struct Fb;
 
 /// Variable screen information structure for framebuffer devices.
@@ -133,11 +145,135 @@ pub struct FbFixScreenInfo {
 }
 
 impl Fb {
-    /// Get the framebuffer instance or return an error if not initialized.
+    /// Gets the framebuffer instance or return an error if not initialized
     fn get_framebuffer(&self) -> Result<Arc<FrameBuffer>> {
         get_framebuffer_info().ok_or_else(|| {
             Error::with_message(Errno::ENODEV, "Framebuffer has not been initialized")
         })
+    }
+
+    /// Converts pixel format to framebuffer bitfields
+    fn pixel_format_to_bitfields(
+        pixel_format: PixelFormat,
+    ) -> (FbBitfield, FbBitfield, FbBitfield, FbBitfield) {
+        match pixel_format {
+            PixelFormat::Grayscale8 => {
+                let bitfield = FbBitfield {
+                    offset: 0,
+                    length: 8,
+                    msb_right: 0,
+                };
+                (bitfield, bitfield, bitfield, FbBitfield::default())
+            }
+            PixelFormat::Rgb565 => (
+                FbBitfield {
+                    offset: 11,
+                    length: 5,
+                    msb_right: 0,
+                },
+                FbBitfield {
+                    offset: 5,
+                    length: 6,
+                    msb_right: 0,
+                },
+                FbBitfield {
+                    offset: 0,
+                    length: 5,
+                    msb_right: 0,
+                },
+                FbBitfield::default(),
+            ),
+            PixelFormat::Rgb888 => (
+                FbBitfield {
+                    offset: 16,
+                    length: 8,
+                    msb_right: 0,
+                },
+                FbBitfield {
+                    offset: 8,
+                    length: 8,
+                    msb_right: 0,
+                },
+                FbBitfield {
+                    offset: 0,
+                    length: 8,
+                    msb_right: 0,
+                },
+                FbBitfield::default(),
+            ),
+            PixelFormat::BgrReserved => (
+                FbBitfield {
+                    offset: 16,
+                    length: 8,
+                    msb_right: 0,
+                },
+                FbBitfield {
+                    offset: 8,
+                    length: 8,
+                    msb_right: 0,
+                },
+                FbBitfield {
+                    offset: 0,
+                    length: 8,
+                    msb_right: 0,
+                },
+                FbBitfield {
+                    offset: 24,
+                    length: 8,
+                    msb_right: 0,
+                },
+            ),
+        }
+    }
+
+    /// Handles [`IoctlCmd::GETVSCREENINFO`] ioctl command
+    fn handle_get_var_screen_info(&self, arg: usize) -> Result<i32> {
+        log::debug!("Fb ioctl: Get virtual screen info");
+
+        let framebuffer = self.get_framebuffer()?;
+        let pixel_format = framebuffer.pixel_format();
+        let (red, green, blue, transp) = Self::pixel_format_to_bitfields(pixel_format);
+
+        let screen_info = FbVarScreenInfo {
+            xres: framebuffer.width() as u32,
+            yres: framebuffer.height() as u32,
+            xres_virtual: framebuffer.width() as u32,
+            yres_virtual: framebuffer.height() as u32,
+            bits_per_pixel: (8 * pixel_format.nbytes()) as u32,
+            red,
+            green,
+            blue,
+            transp,
+            pixclock: DEFAULT_PIXEL_CLOCK_DIVISOR / framebuffer.width() as u32 * 1000
+                / framebuffer.height() as u32,
+            left_margin: (framebuffer.width() as u32 / 8) & 0xf8,
+            right_margin: DEFAULT_RIGHT_MARGIN,
+            upper_margin: DEFAULT_UPPER_MARGIN,
+            lower_margin: DEFAULT_LOWER_MARGIN,
+            vsync_len: DEFAULT_VSYNC_LEN,
+            hsync_len: (framebuffer.width() as u32 / 8) & 0xf8,
+            ..Default::default()
+        };
+
+        current_userspace!().write_val(arg, &screen_info)?;
+        Ok(0)
+    }
+
+    /// Handles [`IoctlCmd::GETFSCREENINFO`] ioctl command
+    fn handle_get_fix_screen_info(&self, arg: usize) -> Result<i32> {
+        log::debug!("Fb ioctl: Get fixed screen info");
+
+        let framebuffer = self.get_framebuffer()?;
+        let screen_info = FbFixScreenInfo {
+            smem_start: framebuffer.io_mem_base() as u64,
+            smem_len: (framebuffer.width() * framebuffer.height() * framebuffer.bytes_per_pixel())
+                as u32,
+            line_length: (framebuffer.width() * framebuffer.bytes_per_pixel()) as u32,
+            ..Default::default()
+        };
+
+        current_userspace!().write_val(arg, &screen_info)?;
+        Ok(0)
     }
 }
 
@@ -180,8 +316,36 @@ impl FileIo for Fb {
         Ok(Mappable::IoMem(iomem.clone()))
     }
 
-    fn ioctl(&self, cmd: IoctlCmd, _arg: usize) -> Result<i32> {
-        log::debug!("Fb ioctl: Unsupported command -> {:?}", cmd);
-        return_errno!(Errno::EINVAL);
+    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+        match cmd {
+            IoctlCmd::GETVSCREENINFO => self.handle_get_var_screen_info(arg),
+            IoctlCmd::GETFSCREENINFO => self.handle_get_fix_screen_info(arg),
+            IoctlCmd::PUTVSCREENINFO => {
+                // Not supported for efifb, behavior aligned with Linux
+                Ok(0)
+            }
+            IoctlCmd::GETCMAP => {
+                log::debug!("Fb ioctl: Get color map");
+                // TODO: Implement logic to get the color map
+                Ok(0)
+            }
+            IoctlCmd::PUTCMAP => {
+                log::debug!("Fb ioctl: Set color map");
+                // TODO: Implement logic to set the color map
+                Ok(0)
+            }
+            IoctlCmd::PANDISPLAY => {
+                // Not supported for efifb, behavior aligned with Linux
+                return_errno!(Errno::EINVAL);
+            }
+            IoctlCmd::FBIOBLANK => {
+                // Not supported for efifb, behavior aligned with Linux
+                return_errno!(Errno::EINVAL);
+            }
+            _ => {
+                log::debug!("Fb ioctl: Unsupported command -> {:?}", cmd);
+                return_errno!(Errno::EINVAL);
+            }
+        }
     }
 }
