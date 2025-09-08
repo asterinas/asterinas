@@ -617,10 +617,10 @@ macro_rules! inherit_sys_branch_node {
                 }
             }
 
-            fn child(&self, name: &str) -> Option<Arc<dyn SysObj>> {
+            fn child(&self, name: &str) -> Option<Arc<dyn $crate::SysObj>> {
                 self.$field
                     .child(name)
-                    .map(|child| child as Arc<dyn SysObj>)
+                    .map(|child| child as Arc<dyn $crate::SysObj>)
             }
 
             fn create_child(&self, name: &str) -> $crate::Result<alloc::sync::Arc<dyn $crate::SysObj>> {
