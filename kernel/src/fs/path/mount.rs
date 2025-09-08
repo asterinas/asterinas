@@ -6,6 +6,7 @@ use crate::{
     fs::{
         path::{
             dentry::{Dentry, DentryKey},
+            mount_namespace::MountNamespace,
             Path,
         },
         utils::{FileSystem, InodeType},
@@ -28,7 +29,9 @@ pub struct Mount {
     /// The parent mount node.
     parent: RwLock<Option<Weak<Mount>>>,
     /// Child mount nodes which are mounted on one dentry of self.
-    children: RwLock<HashMap<DentryKey, Arc<Self>>>,
+    pub(super) children: RwLock<HashMap<DentryKey, Arc<Self>>>,
+    /// The associated mount namespace.
+    mnt_ns: Weak<MountNamespace>,
     /// Reference to self.
     this: Weak<Self>,
 }
@@ -41,8 +44,11 @@ impl Mount {
     ///
     /// It is allowed to create a mount node even if the fs has been provided to another
     /// mount node. It is the fs's responsibility to ensure the data consistency.
-    pub fn new_root(fs: Arc<dyn FileSystem>) -> Arc<Self> {
-        Self::new(fs, None)
+    pub(in crate::fs) fn new_root(
+        fs: Arc<dyn FileSystem>,
+        mnt_ns: Weak<MountNamespace>,
+    ) -> Arc<Self> {
+        Self::new(fs, None, mnt_ns)
     }
 
     /// The internal constructor.
@@ -53,13 +59,18 @@ impl Mount {
     /// avoiding fixed mountpoint limitations. This allows the root mount node to
     /// exist without a mountpoint, ensuring uniformity and security, while all other
     /// mount nodes must be explicitly assigned a mountpoint to maintain structural integrity.
-    fn new(fs: Arc<dyn FileSystem>, parent_mount: Option<Weak<Mount>>) -> Arc<Self> {
+    fn new(
+        fs: Arc<dyn FileSystem>,
+        parent_mount: Option<Weak<Mount>>,
+        mnt_ns: Weak<MountNamespace>,
+    ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
             root_dentry: Dentry::new_root(fs.root_inode()),
             mountpoint: RwLock::new(None),
             parent: RwLock::new(parent_mount),
             children: RwLock::new(HashMap::new()),
             fs,
+            mnt_ns,
             this: weak_self.clone(),
         })
     }
@@ -85,7 +96,7 @@ impl Mount {
         }
 
         let key = mountpoint.key();
-        let child_mount = Self::new(fs, Some(Arc::downgrade(self)));
+        let child_mount = Self::new(fs, Some(Arc::downgrade(self)), self.mnt_ns.clone());
         self.children.write().insert(key, child_mount.clone());
         child_mount.set_mountpoint(mountpoint);
 
@@ -111,13 +122,21 @@ impl Mount {
     ///
     /// The new mount node will have the same fs as the original one and
     /// have no parent and children. We should set the parent and children manually.
-    fn clone_mount(&self, root_dentry: &Arc<Dentry>) -> Arc<Self> {
+    ///
+    /// If the `new_ns` is set, the new mount will belong to the given mount namespace.
+    /// Otherwise, it will belong to the same mount namespace as the current mount.
+    fn clone_mount(
+        &self,
+        root_dentry: &Arc<Dentry>,
+        new_ns: Option<&Weak<MountNamespace>>,
+    ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
             root_dentry: root_dentry.clone(),
             mountpoint: RwLock::new(None),
             parent: RwLock::new(None),
             children: RwLock::new(HashMap::new()),
             fs: self.fs.clone(),
+            mnt_ns: new_ns.cloned().unwrap_or_else(|| self.mnt_ns.clone()),
             this: weak_self.clone(),
         })
     }
@@ -130,8 +149,16 @@ impl Mount {
     ///
     /// If `recursive` is set to `true`, the entire tree will be copied.
     /// Otherwise, only the root mount node will be copied.
-    pub(super) fn clone_mount_tree(&self, root_dentry: &Arc<Dentry>, recursive: bool) -> Arc<Self> {
-        let new_root_mount = self.clone_mount(root_dentry);
+    ///
+    /// If the `new_ns` is set, the new mount tree will belong to the given mount namespace.
+    /// Otherwise, it will belong to the same mount namespace as the current mount.
+    pub(super) fn clone_mount_tree(
+        &self,
+        root_dentry: &Arc<Dentry>,
+        new_ns: Option<&Weak<MountNamespace>>,
+        recursive: bool,
+    ) -> Arc<Self> {
+        let new_root_mount = self.clone_mount(root_dentry, new_ns);
         if !recursive {
             return new_root_mount;
         }
@@ -143,16 +170,17 @@ impl Mount {
             let old_children = old_mount.children.read();
             for old_child_mount in old_children.values() {
                 let mountpoint = old_child_mount.mountpoint().unwrap();
-                if !mountpoint.is_descendant_of(old_mount.root_dentry()) {
+                if !mountpoint.is_descendant_of(root_dentry) {
                     continue;
                 }
-                let new_child_mount = old_child_mount.clone_mount(old_child_mount.root_dentry());
+                let new_child_mount =
+                    old_child_mount.clone_mount(old_child_mount.root_dentry(), new_ns);
                 let key = mountpoint.key();
                 new_parent_mount
                     .children
                     .write()
                     .insert(key, new_child_mount.clone());
-                new_child_mount.set_parent(&new_parent_mount);
+                new_child_mount.set_parent(Some(&new_parent_mount));
                 new_child_mount.set_mountpoint(&old_child_mount.mountpoint().unwrap());
                 stack.push(old_child_mount.clone());
                 new_stack.push(new_child_mount);
@@ -163,7 +191,7 @@ impl Mount {
     }
 
     /// Detaches the mount node from the parent mount node.
-    fn detach_from_parent(&self) {
+    pub(super) fn detach_from_parent(&self) {
         if let Some(parent) = self.parent() {
             let parent = parent.upgrade().unwrap();
             let child = parent
@@ -185,7 +213,7 @@ impl Mount {
             .children
             .write()
             .insert(key, self.this());
-        self.set_parent(target_path.mount_node());
+        self.set_parent(Some(target_path.mount_node()));
         self.set_mountpoint(&target_path.dentry);
     }
 
@@ -255,13 +283,50 @@ impl Mount {
         self.parent.read().as_ref().cloned()
     }
 
+    /// Gets the associated mount namespace.
+    pub(super) fn mnt_ns(&self) -> &Weak<MountNamespace> {
+        &self.mnt_ns
+    }
+
     /// Sets the parent mount node.
     ///
     /// In some cases we may need to reset the parent of
     /// the created Mount, such as move mount.
-    fn set_parent(&self, mount: &Arc<Mount>) {
+    pub(super) fn set_parent(&self, mount: Option<&Arc<Mount>>) {
         let mut parent = self.parent.write();
-        *parent = Some(Arc::downgrade(mount));
+        *parent = mount.map(Arc::downgrade);
+    }
+
+    /// Finds the corresponding `Mount` in the given mount namespace.
+    pub(super) fn find_corresponding_mount(
+        &self,
+        mnt_ns: &Arc<MountNamespace>,
+    ) -> Option<Arc<Self>> {
+        // Collect the ancestors from self to the root mount (The root mount is not included).
+        let mut ancestors = VecDeque::new();
+        let mut current = self.this();
+        while let Some(weak_parent) = current.parent() {
+            ancestors.push_front(current.clone());
+            current = weak_parent.upgrade().unwrap();
+        }
+
+        let mut target_mount = mnt_ns.root().clone();
+        while let Some(ancestor) = ancestors.pop_front() {
+            // Find the child mount that matches the mountpoint of ancestor.
+            let mount_point = ancestor.mountpoint().unwrap();
+            let child_mount = target_mount
+                .children
+                .read()
+                .get(&mount_point.key())
+                .cloned();
+            if let Some(child_mount) = child_mount {
+                target_mount = child_mount;
+            } else {
+                return None;
+            }
+        }
+
+        Some(target_mount)
     }
 
     fn this(&self) -> Arc<Self> {
