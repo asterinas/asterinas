@@ -140,11 +140,6 @@ impl Dentry {
         }
     }
 
-    /// Currently, the root `Dentry` of a fs is the root of a mount.
-    pub(super) fn is_mount_root(&self) -> bool {
-        self.name_and_parent.read().as_ref().is_none()
-    }
-
     /// Creates a `Dentry_` by creating a new inode of the `type_` with the `mode`.
     pub(super) fn create(
         &self,
