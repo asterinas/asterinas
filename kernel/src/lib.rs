@@ -186,14 +186,6 @@ fn first_kthread() {
 }
 
 fn print_banner() {
-    println!("\x1B[36m");
-    println!(
-        r"
-   _   ___ _____ ___ ___ ___ _  _   _   ___
-  /_\ / __|_   _| __| _ \_ _| \| | /_\ / __|
- / _ \\__ \ | | | _||   /| || .` |/ _ \\__ \
-/_/ \_\___/ |_| |___|_|_\___|_|\_/_/ \_\___/
-"
-    );
-    println!("\x1B[0m");
+    println!("");
+    println!("{}", logo_ascii_art::get_gradient_color_version());
 }

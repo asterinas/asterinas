@@ -22,6 +22,7 @@ aster-systree = { path = "comps/systree" }
 aster-keyboard = { path = "comps/keyboard" }
 component = { path = "libs/comp-sys/component" }
 controlled = { path = "libs/comp-sys/controlled" }
+logo-ascii-art = { path = "libs/logo-ascii-art" }
 osdk-frame-allocator = { path = "../osdk/deps/frame-allocator" }
 osdk-heap-allocator = { path = "../osdk/deps/heap-allocator" }
 ostd = { path = "../ostd" }
