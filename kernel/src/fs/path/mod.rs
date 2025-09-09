@@ -61,6 +61,11 @@ impl Path {
         &self.mount
     }
 
+    /// Returns true if the current `Path` is the root of its mount.
+    pub(super) fn is_mount_root(&self) -> bool {
+        Arc::ptr_eq(&self.dentry, self.mount.root_dentry())
+    }
+
     /// Lookups the target `Path` given the `name`.
     pub fn lookup(&self, name: &str) -> Result<Self> {
         if self.type_() != InodeType::Dir {
@@ -119,7 +124,7 @@ impl Path {
     /// If it is the root of a mount, it will go up to the mountpoint
     /// to get the name of the mountpoint recursively.
     fn effective_name(&self) -> String {
-        if !self.dentry.is_mount_root() {
+        if !self.is_mount_root() {
             return self.dentry.name();
         }
 
@@ -139,7 +144,7 @@ impl Path {
     /// If it is the root of a mount, it will go up to the mountpoint
     /// to get the parent of the mountpoint recursively.
     fn effective_parent(&self) -> Option<Self> {
-        if !self.dentry.is_mount_root() {
+        if !self.is_mount_root() {
             return Some(Self::new(self.mount.clone(), self.dentry.parent().unwrap()));
         }
 
@@ -201,7 +206,7 @@ impl Path {
     ///
     /// Note that the root mount cannot be unmounted.
     pub fn unmount(&self) -> Result<Arc<Mount>> {
-        if !self.dentry.is_mount_root() {
+        if !self.is_mount_root() {
             return_errno_with_message!(Errno::EINVAL, "not mounted");
         }
 
@@ -291,7 +296,6 @@ impl Path {
     pub fn set_ctime(&self, time: Duration);
     pub fn key(&self) -> DentryKey;
     pub fn inode(&self) -> &Arc<dyn Inode>;
-    pub fn is_mount_root(&self) -> bool;
     pub fn is_mountpoint(&self) -> bool;
     pub fn set_xattr(
         &self,
