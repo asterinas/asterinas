@@ -232,6 +232,7 @@ dependencies = [
  "lending-iterator",
  "libflate",
  "log",
+ "logo-ascii-art",
  "loongArch64",
  "lru",
  "osdk-frame-allocator",
@@ -1104,6 +1105,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
 
 [[package]]
+name = "logo-ascii-art"
+version = "0.1.0"
+dependencies = [
+ "owo-colors 4.2.2",
+]
+
+[[package]]
 name = "loongArch64"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1269,7 +1277,7 @@ name = "osdk-test-kernel"
 version = "0.16.0"
 dependencies = [
  "ostd",
- "owo-colors 4.2.0",
+ "owo-colors 4.2.2",
 ]
 
 [[package]]
@@ -1350,9 +1358,9 @@ checksum = "c1b04fb49957986fdce4d6ee7a65027d55d4b6d2265e5848bbb507b58ccfdb6f"
 
 [[package]]
 name = "owo-colors"
-version = "4.2.0"
+version = "4.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1036865bb9422d3300cf723f657c2851d0e9ab12567854b1f4eba3d77decf564"
+checksum = "48dd4f4a2c8405440fd0462561f0e5806bd0f77e86f51c761481bdd4018b545e"
 
 [[package]]
 name = "paste"
