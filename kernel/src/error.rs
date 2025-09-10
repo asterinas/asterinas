@@ -333,12 +333,13 @@ impl From<aster_systree::Error> for Error {
         use aster_systree::Error::*;
         match err {
             NotFound => Error::new(Errno::ENOENT),
-            InvalidNodeOperation(_) => Error::new(Errno::EINVAL),
+            InvalidOperation => Error::new(Errno::EINVAL),
             AttributeError => Error::new(Errno::EIO),
             PermissionDenied => Error::new(Errno::EACCES),
             InternalError(msg) => Error::with_message(Errno::EIO, msg),
             AlreadyExists => Error::new(Errno::EEXIST),
             Overflow => Error::new(Errno::EOVERFLOW),
+            PageFault => Error::new(Errno::EFAULT),
         }
     }
 }
