@@ -155,7 +155,7 @@ pub trait SysNode: SysObj {
         let read_len = self.read_attr(name, &mut writer)?;
         // Use from_utf8_lossy or handle error properly if strict UTF-8 is needed
         let attr_val =
-            String::from_utf8(buf[..read_len].to_vec()).map_err(|_| Error::AttributeError)?;
+            String::from_utf8(buf[..read_len].to_vec()).map_err(|_| Error::InvalidOperation)?;
         Ok(attr_val)
     }
 

@@ -81,7 +81,7 @@ inherit_sys_branch_node!(DeviceNode, fields, {
         let mut writer = VmWriter::from(&mut buffer[..]);
         let read_len = reader
             .read_fallible(&mut writer)
-            .map_err(|_| Error::AttributeError)?;
+            .map_err(|_| Error::PageFault)?;
 
         Ok(read_len)
     }

@@ -85,11 +85,7 @@ inherit_sys_leaf_node!(MockLeafNode, fields, {
             return Err(SysTreeError::PermissionDenied);
         }
         let data = self.data.read();
-        let value = data.get(name).ok_or(SysTreeError::AttributeError)?; // Should exist if in attrs
-        let bytes = value.as_bytes();
-        writer
-            .write_fallible(&mut bytes.into())
-            .map_err(|_| SysTreeError::AttributeError)
+        let value = data.get(name).ok_or(SysTreeError::NotFound)?; // Should exist if in attrs
     }
 
     fn write_attr(&self, name: &str, reader: &mut VmReader) -> SysTreeResult<usize> {
@@ -163,7 +159,7 @@ inherit_sys_branch_node!(MockBranchNode, fields, {
         }
         let value = match name {
             "branch_attr" => "branch_value",
-            _ => return Err(SysTreeError::AttributeError),
+            _ => return Err(SysTreeError::NotFound),
         };
         let bytes = value.as_bytes();
         writer

@@ -71,8 +71,8 @@ pub type Result<T> = core::result::Result<T, Error>;
 pub enum Error {
     /// Attempted to access a non-existent systree item
     NotFound,
-    /// Invalid operation for node type
-    InvalidNodeOperation(SysNodeType),
+    /// Invalid operation occurred
+    InvalidOperation,
     /// Attribute operation failed
     AttributeError,
     /// Permission denied for operation
@@ -83,20 +83,21 @@ pub enum Error {
     AlreadyExists,
     /// Arithmetic overflow occurred
     Overflow,
+    /// Page fault occurred during memory access
+    PageFault,
 }
 
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         match self {
             Error::NotFound => write!(f, "Attempted to access a non-existent systree item"),
-            Error::InvalidNodeOperation(ty) => {
-                write!(f, "Invalid operation for node type: {:?}", ty)
-            }
+            Error::InvalidOperation => write!(f, "Invalid operation occurred"),
             Error::AttributeError => write!(f, "Attribute error"),
             Error::PermissionDenied => write!(f, "Permission denied for operation"),
             Error::InternalError(msg) => write!(f, "Internal error: {}", msg),
             Error::AlreadyExists => write!(f, "The systree item already exists"),
             Error::Overflow => write!(f, "Numerical overflow occurred"),
+            Error::PageFault => write!(f, "Page fault occurred during memory access"),
         }
     }
 }
