@@ -31,6 +31,7 @@ mod utils;
 
 use alloc::{borrow::Cow, sync::Arc};
 
+use aster_util::printer::VmPrinterError;
 use component::{init_component, ComponentInitError};
 use spin::Once;
 
@@ -98,6 +99,14 @@ impl core::fmt::Display for Error {
             Error::AlreadyExists => write!(f, "The systree item already exists"),
             Error::Overflow => write!(f, "Numerical overflow occurred"),
             Error::PageFault => write!(f, "Page fault occurred during memory access"),
+        }
+    }
+}
+
+impl From<VmPrinterError> for Error {
+    fn from(value: VmPrinterError) -> Self {
+        match value {
+            VmPrinterError::PageFault => Error::PageFault,
         }
     }
 }

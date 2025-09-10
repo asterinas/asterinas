@@ -17,8 +17,9 @@ use aster_systree::{
     Result as SysTreeResult, SymlinkNodeFields, SysAttrSetBuilder, SysObj, SysPerms, SysStr,
     SysTree,
 };
+use aster_util::printer::VmPrinter;
 use ostd::{
-    mm::{FallibleVmRead, FallibleVmWrite, VmReader, VmWriter},
+    mm::{FallibleVmRead, VmReader, VmWriter},
     prelude::ktest,
     sync::RwLock,
 };
@@ -75,7 +76,12 @@ impl MockLeafNode {
 }
 
 inherit_sys_leaf_node!(MockLeafNode, fields, {
-    fn read_attr(&self, name: &str, writer: &mut VmWriter) -> SysTreeResult<usize> {
+    fn read_attr_at(
+        &self,
+        name: &str,
+        offset: usize,
+        writer: &mut VmWriter,
+    ) -> SysTreeResult<usize> {
         let attr = self
             .fields
             .attr_set()
@@ -86,6 +92,11 @@ inherit_sys_leaf_node!(MockLeafNode, fields, {
         }
         let data = self.data.read();
         let value = data.get(name).ok_or(SysTreeError::NotFound)?; // Should exist if in attrs
+
+        let mut printer = VmPrinter::new_skip(writer, offset);
+        write!(printer, "{}", value)?;
+
+        Ok(printer.bytes_written())
     }
 
     fn write_attr(&self, name: &str, reader: &mut VmReader) -> SysTreeResult<usize> {
@@ -102,7 +113,7 @@ inherit_sys_leaf_node!(MockLeafNode, fields, {
         let mut writer = VmWriter::from(&mut buffer[..]);
         let read_len = reader
             .read_fallible(&mut writer)
-            .map_err(|_| SysTreeError::AttributeError)?;
+            .map_err(|_| SysTreeError::PageFault)?;
 
         let new_value = String::from_utf8_lossy(&buffer[..read_len]).to_string();
 
@@ -148,7 +159,12 @@ impl MockBranchNode {
 }
 
 inherit_sys_branch_node!(MockBranchNode, fields, {
-    fn read_attr(&self, name: &str, writer: &mut VmWriter) -> SysTreeResult<usize> {
+    fn read_attr_at(
+        &self,
+        name: &str,
+        offset: usize,
+        writer: &mut VmWriter,
+    ) -> SysTreeResult<usize> {
         let attr = self
             .fields
             .attr_set()
@@ -161,10 +177,11 @@ inherit_sys_branch_node!(MockBranchNode, fields, {
             "branch_attr" => "branch_value",
             _ => return Err(SysTreeError::NotFound),
         };
-        let bytes = value.as_bytes();
-        writer
-            .write_fallible(&mut bytes.into())
-            .map_err(|_| SysTreeError::AttributeError)
+
+        let mut printer = VmPrinter::new_skip(writer, offset);
+        write!(printer, "{}", value)?;
+
+        Ok(printer.bytes_written())
     }
 
     fn write_attr(&self, name: &str, _reader: &mut VmReader) -> SysTreeResult<usize> {

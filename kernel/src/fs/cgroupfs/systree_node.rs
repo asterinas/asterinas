@@ -125,7 +125,7 @@ inherit_sys_branch_node!(CgroupSystem, fields, {
         // This method should be a no-op for `RootNode`.
     }
 
-    fn read_attr(&self, _name: &str, _writer: &mut VmWriter) -> Result<usize> {
+    fn read_attr_at(&self, _name: &str, _offset: usize, _writer: &mut VmWriter) -> Result<usize> {
         // TODO: Add support for reading attributes.
         Err(Error::AttributeError)
     }
@@ -147,7 +147,7 @@ inherit_sys_branch_node!(CgroupSystem, fields, {
 });
 
 inherit_sys_branch_node!(CgroupNode, fields, {
-    fn read_attr(&self, _name: &str, _writer: &mut VmWriter) -> Result<usize> {
+    fn read_attr_at(&self, _name: &str, _offset: usize, _writer: &mut VmWriter) -> Result<usize> {
         // TODO: Add support for reading attributes.
         Err(Error::AttributeError)
     }
