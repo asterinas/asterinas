@@ -3,9 +3,10 @@
 use alloc::{borrow::Cow, string::ToString, sync::Arc, vec::Vec};
 use core::fmt::Debug;
 
+use aster_util::printer::VmPrinter;
 use inherit_methods_macro::inherit_methods;
 use ostd::{
-    mm::{FallibleVmRead, FallibleVmWrite, VmReader, VmWriter},
+    mm::{FallibleVmRead, VmReader, VmWriter},
     prelude::ktest,
 };
 
@@ -43,7 +44,7 @@ impl DeviceNode {
 }
 
 inherit_sys_branch_node!(DeviceNode, fields, {
-    fn read_attr(&self, name: &str, writer: &mut VmWriter) -> Result<usize> {
+    fn read_attr_at(&self, name: &str, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         // Check if attribute exists
         if !self.fields.attr_set().contains(name) {
             return Err(Error::NotFound);
@@ -61,10 +62,11 @@ inherit_sys_branch_node!(DeviceNode, fields, {
             _ => "",
         };
 
+        let mut printer = VmPrinter::new_skip(writer, offset);
         // Write the value to the provided writer
-        writer
-            .write_fallible(&mut (value.as_bytes()).into())
-            .map_err(|_| Error::AttributeError)
+        write!(printer, "{}", value)?;
+
+        Ok(printer.bytes_written())
     }
 
     fn write_attr(&self, name: &str, reader: &mut VmReader) -> Result<usize> {

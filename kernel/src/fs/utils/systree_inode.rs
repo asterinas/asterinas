@@ -361,13 +361,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
             return Err(Error::new(Errno::EINVAL));
         };
 
-        let len = if offset == 0 {
-            leaf.read_attr(attr.name(), buf)?
-        } else {
-            // The `read_attr_at` method is more general than `read_attr`,
-            // but it could be less efficient. So we only use the more general form when necessary.
-            leaf.read_attr_at(attr.name(), offset, buf)?
-        };
+        let len = leaf.read_attr_at(attr.name(), offset, buf)?;
 
         Ok(len)
     }

@@ -6,12 +6,11 @@ use alloc::{
     collections::BTreeMap,
     string::String,
     sync::{Arc, Weak},
-    vec,
 };
 
 use inherit_methods_macro::inherit_methods;
 use ostd::{
-    mm::{FallibleVmWrite, VmReader, VmWriter},
+    mm::{VmReader, VmWriter},
     sync::RwLock,
 };
 use spin::Once;
@@ -269,30 +268,6 @@ impl<T: SysSymlink> SymlinkNodeFields<T> {
     }
 }
 
-macro_rules! impl_default_read_attr_at {
-    () => {
-        fn read_attr_at(&self, name: &str, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-            let (attr_buffer, attr_len) = {
-                let attr_buffer_len = writer.avail().checked_add(offset).ok_or(Error::Overflow)?;
-                let mut buffer = vec![0; attr_buffer_len];
-                let len = self.read_attr(
-                    name,
-                    &mut VmWriter::from(buffer.as_mut_slice()).to_fallible(),
-                )?;
-                (buffer, len)
-            };
-
-            if attr_len <= offset {
-                return Ok(0);
-            }
-
-            writer
-                .write_fallible(VmReader::from(attr_buffer.as_slice()).skip(offset))
-                .map_err(|_| Error::AttributeError)
-        }
-    };
-}
-
 #[doc(hidden)]
 #[macro_export]
 macro_rules! _inner_impl_sys_node {
@@ -356,15 +331,17 @@ pub trait _InheritSysLeafNode<T: SysNode> {
         self.field().init_parent(parent);
     }
 
-    fn read_attr(&self, _name: &str, _writer: &mut VmWriter) -> Result<usize> {
-        Err(Error::AttributeError)
+    fn read_attr(&self, name: &str, writer: &mut VmWriter) -> Result<usize> {
+        self.read_attr_at(name, 0, writer)
     }
 
     fn write_attr(&self, _name: &str, _reader: &mut VmReader) -> Result<usize> {
         Err(Error::AttributeError)
     }
 
-    impl_default_read_attr_at!();
+    fn read_attr_at(&self, _name: &str, _offset: usize, _writer: &mut VmWriter) -> Result<usize> {
+        Err(Error::AttributeError)
+    }
 
     fn write_attr_at(&self, name: &str, _offset: usize, reader: &mut VmReader) -> Result<usize> {
         // In general, the `offset` for attribute write operations is ignored directly.
@@ -403,6 +380,12 @@ pub trait _InheritSysLeafNode<T: SysNode> {
 /// Here, "default implementations" refer to either directly inheriting the implementation of a
 /// method with the same name from the target `field` or, in the absence of a method with the same
 /// name, the default implementation provided by the trait.
+///
+/// Note that for the `SysNode` trait, `read_attr` can be automatically implemented in terms of `read_attr_at`,
+/// and `write_attr_at` can be automatically implemented in terms of `write_attr` since most
+/// sysfs attributes do not support partial writes and will ignore the `offset`. Therefore, it is **recommended**
+/// to override the `read_attr_at` and `write_attr` methods. In addition, users can use
+/// [`aster_util::printer::VmPrinter`] to easily handle the `offset` when overriding the `read_attr_at` method.
 ///
 /// ## Examples
 ///
@@ -488,15 +471,17 @@ pub trait _InheritSysBranchNode<T: SysBranchNode> {
         self.field().init_parent(parent);
     }
 
-    fn read_attr(&self, _name: &str, _writer: &mut VmWriter) -> Result<usize> {
-        Err(Error::AttributeError)
+    fn read_attr(&self, name: &str, writer: &mut VmWriter) -> Result<usize> {
+        self.read_attr_at(name, 0, writer)
     }
 
     fn write_attr(&self, _name: &str, _reader: &mut VmReader) -> Result<usize> {
         Err(Error::AttributeError)
     }
 
-    impl_default_read_attr_at!();
+    fn read_attr_at(&self, _name: &str, _offset: usize, _writer: &mut VmWriter) -> Result<usize> {
+        Err(Error::AttributeError)
+    }
 
     fn write_attr_at(&self, name: &str, _offset: usize, reader: &mut VmReader) -> Result<usize> {
         // In general, the `offset` for attribute write operations is ignored directly.
