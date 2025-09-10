@@ -255,10 +255,6 @@ impl Mount {
 
     /// Grafts the mount node tree to the mountpoint.
     pub(super) fn graft_mount_tree(&self, target_path: &Path) -> Result<()> {
-        if target_path.type_() != InodeType::Dir {
-            return_errno!(Errno::ENOTDIR);
-        }
-
         self.detach_from_parent();
         self.attach_to_path(target_path);
         Ok(())
