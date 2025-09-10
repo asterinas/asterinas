@@ -127,9 +127,9 @@ pub fn read_random() -> Option<u64> {
         return None;
     }
 
-    // Recommendation from "Intel® Digital Random Number Generator (DRNG) Software
-    // Implementation Guide" - Section 5.2.1 and "Intel® 64 and IA-32 Architectures
-    // Software Developer’s Manual" - Volume 1 - Section 7.3.17.1.
+    // Recommendation from "Intel(R) Digital Random Number Generator (DRNG) Software
+    // Implementation Guide" - Section 5.2.1 and "Intel(R) 64 and IA-32 Architectures
+    // Software Developer's Manual" - Volume 1 - Section 7.3.17.1.
     const RETRY_LIMIT: usize = 10;
 
     for _ in 0..RETRY_LIMIT {
@@ -144,9 +144,21 @@ pub fn read_random() -> Option<u64> {
 
 pub(crate) fn enable_cpu_features() {
     use cpu::extension::{has_extensions, IsaExtensions};
-    use x86_64::registers::{control::Cr4Flags, model_specific::EferFlags, xcontrol::XCr0Flags};
+    use x86_64::registers::{
+        control::{Cr0Flags, Cr4Flags},
+        model_specific::EferFlags,
+        xcontrol::XCr0Flags,
+    };
 
     cpu::extension::init();
+
+    let mut cr0 = x86_64::registers::control::Cr0::read();
+    cr0 |= Cr0Flags::WRITE_PROTECT;
+    // These FPU control bits should be set for new CPUs (e.g., all CPUs with 64-bit support) and
+    // modern OSes. See recommendation from "Intel(R) 64 and IA-32 Architectures Software
+    // Developer's Manual" - Volume 3 - Section 10.2.1, Configuring the x87 FPU Environment.
+    cr0 |= Cr0Flags::NUMERIC_ERROR | Cr0Flags::MONITOR_COPROCESSOR;
+    unsafe { x86_64::registers::control::Cr0::write(cr0) };
 
     let mut cr4 = x86_64::registers::control::Cr4::read();
     cr4 |= Cr4Flags::OSFXSR | Cr4Flags::OSXMMEXCPT_ENABLE | Cr4Flags::PAGE_GLOBAL;
