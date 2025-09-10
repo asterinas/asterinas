@@ -267,6 +267,18 @@ impl Path {
     /// Returns `EINVAL` if either source or destination path is not in the
     /// current mount namespace.
     pub fn bind_mount_to(&self, dst_path: &Self, recursive: bool, ctx: &Context) -> Result<()> {
+        let can_bind = {
+            let src_is_dir = self.type_() == InodeType::Dir;
+            let dst_is_dir = dst_path.type_() == InodeType::Dir;
+            (src_is_dir && dst_is_dir) || (!src_is_dir && !dst_is_dir)
+        };
+        if !can_bind {
+            return_errno_with_message!(
+                Errno::ENOTDIR,
+                "the source and destination must both be directories or both be non-directories"
+            );
+        }
+
         let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
         let current_mnt_ns = current_ns_proxy.unwrap().mnt_ns();
         if !current_mnt_ns.owns(&self.mount) {
