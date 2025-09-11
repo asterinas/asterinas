@@ -62,8 +62,8 @@ impl TaskContextApi for TaskContext {
     }
 }
 
-extern "C" {
-    pub(crate) fn context_switch(nxt: *const TaskContext, cur: *mut TaskContext);
-    pub(crate) fn first_context_switch(nxt: *const TaskContext);
-    pub(crate) fn kernel_task_entry_wrapper();
+unsafe extern "C" {
+    pub(crate) unsafe fn context_switch(nxt: *const TaskContext, cur: *mut TaskContext);
+    pub(crate) unsafe fn first_context_switch(nxt: *const TaskContext);
+    pub(crate) unsafe fn kernel_task_entry_wrapper();
 }

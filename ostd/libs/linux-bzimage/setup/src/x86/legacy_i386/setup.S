@@ -2,9 +2,9 @@
 
 // The load address of the setup section is CODE32_START (0x100000).
 // See the linker script.
-.section ".setup", "ax"
-
+.section ".setup", "ax", @progbits
 .code32
+
 .global entry_legacy32
 entry_legacy32:
     // This is the 32-bit Linux legacy entry point.
@@ -52,9 +52,10 @@ halt:
     hlt
     jmp halt
 
+.rodata
+
 // GDT. We define GDT ourselves to ensure that the GDT page will not be
 // accidentally overwritten by the allocated memory.
-.rodata
 .align 16
 gdtr:
     .word gdt_end - gdt - 1
@@ -66,8 +67,9 @@ gdt:
     .quad 0x00cf92000000ffff // 16: 32-bit data segment
 gdt_end:
 
-// A small stack for the setup code.
 .bss
+
+// A small stack for the setup code.
 .align 8
 __stack_bottom:
     .space 0x1000

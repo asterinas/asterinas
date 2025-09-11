@@ -16,12 +16,12 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 
-.code64
 
 .text
-    # extern "sysv64" fn syscall_return(&mut UserContext)
+.code64
+
 .global syscall_return
-syscall_return:
+syscall_return: # (regs: &mut RawUserContext)
     # save callee-saved registers
     push r15
     push r14

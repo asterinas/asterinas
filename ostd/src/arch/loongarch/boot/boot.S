@@ -33,7 +33,8 @@
 .equ KERNEL_VMA_OFFSET,             0x9000000000000000
 
 .section ".boot", "awx", @progbits
-.globl _start
+
+.global _start
 _start:
     # Set DMW0 (kernel)
     li.d    $t0, 0x9000000000000011     # CA, PLV0, 0x9000_xxxx_xxxx_xxxx
@@ -96,21 +97,19 @@ _start:
     jr      $t0
 
 .balign 4096
-.globl boot_l4pt
 boot_l4pt:
     .zero 8 * 512
 
 .section ".boot.stack", "aw", @nobits
-.globl boot_stack_bottom
+
 boot_stack_bottom:
     .balign 4096
     .skip 0x40000  # 256 KiB
-.globl boot_stack_top
 boot_stack_top:
 
 # From here, we're in the .text section: we no longer use physical address.
 .text
-.globl _start_virt
+
 _start_virt:
     # Unset DMW1 (kernel)
     csrwr   $zero, LOONGARCH_CSR_DMW1
@@ -124,8 +123,6 @@ _start_virt:
     jr      $t0
 
 .balign 4096
-.text
-.globl _handle_tlb_refill
 _handle_tlb_refill:
     # Save $t0, $t1
     csrwr   $t0, LOONGARCH_CSR_TLBRSAVE

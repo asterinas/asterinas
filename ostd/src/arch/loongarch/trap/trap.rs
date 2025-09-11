@@ -80,11 +80,11 @@ impl RawUserContext {
         // Return to userspace with interrupts disabled. Otherwise, interrupts
         // after switching `SAVE_SCRATCH` will mess up the CPU state.
         crate::arch::irq::disable_local();
-        unsafe { run_user(self as *mut RawUserContext) }
+        unsafe { run_user(self) }
     }
 }
 
 unsafe extern "C" {
     unsafe fn trap_entry();
-    unsafe fn run_user(regs: *mut RawUserContext);
+    unsafe fn run_user(regs: &mut RawUserContext);
 }

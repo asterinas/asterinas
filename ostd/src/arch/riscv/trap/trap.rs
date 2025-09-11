@@ -14,8 +14,6 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unfulfilled_lint_expectations)]
-
 use core::arch::{asm, global_asm};
 
 use crate::arch::cpu::context::GeneralRegs;
@@ -114,8 +112,7 @@ impl RawUserContext {
     }
 }
 
-#[expect(improper_ctypes)]
-extern "C" {
-    fn trap_entry();
-    fn run_user(regs: &mut RawUserContext);
+unsafe extern "C" {
+    unsafe fn trap_entry();
+    unsafe fn run_user(regs: &mut RawUserContext);
 }

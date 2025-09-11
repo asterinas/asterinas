@@ -17,9 +17,10 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 
-.code64
-
 .equ NUM_INT, 256
+
+.text
+.code64
 
 .altmacro
 .macro DEF_HANDLER, i
@@ -35,7 +36,6 @@ _trap_handler_\i:
 .endif
 .endm
 
-.section .text
 _trap_handlers:
 .set i, 0
 .rept NUM_INT
@@ -43,11 +43,12 @@ _trap_handlers:
     .set i, i + 1
 .endr
 
+.rodata
+
 .macro DEF_TABLE_ENTRY, i
     .quad _trap_handler_\i
 .endm
 
-.section .rodata
 .global trap_handler_table
 trap_handler_table:
 .set i, 0
@@ -56,7 +57,9 @@ trap_handler_table:
     .set i, i + 1
 .endr
 
-.section .text
+.text
+.code64
+
 .global trap_common
 trap_common:
     cld                     # clear DF before calling/returning to any C function to conform to x86-64 calling convention

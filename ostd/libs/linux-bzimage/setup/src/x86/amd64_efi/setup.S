@@ -2,7 +2,7 @@
 
 // The load address of the setup section is CODE32_START (0x100000).
 // See the linker script.
-.section ".setup", "ax"
+.section ".setup", "ax", @progbits
 CODE32_START = 0x100000
 
 .code32

@@ -2,12 +2,6 @@
 
 // The boot routine executed by the application processor.
 
-.global ap_boot_from_real_mode
-.global ap_boot_from_long_mode
-
-.section ".ap_boot", "awx", @progbits
-.align 4096
-
 IA32_EFER_MSR     = 0xC0000080
 IA32_EFER_BIT_LME = 1 << 8
 IA32_EFER_BIT_NXE = 1 << 11
@@ -19,6 +13,8 @@ CR0_BIT_PG        = 1 << 31
 
 CR4_BIT_PAE       = 1 << 5
 CR4_BIT_PGE       = 1 << 7
+
+.section ".ap_boot", "awx", @progbits
 
 .macro setup_64bit_gdt_and_page_table eax
     // Use the 64-bit GDT.
@@ -45,6 +41,7 @@ CR4_BIT_PGE       = 1 << 7
 .endm
 
 .code16
+.global ap_boot_from_real_mode
 ap_boot_from_real_mode:
     cli // disable interrupts
     cld
@@ -52,6 +49,7 @@ ap_boot_from_real_mode:
     jmp ap_real_mode
 
 .code64
+.global ap_boot_from_long_mode
 ap_boot_from_long_mode:
     cli // disable interrupts
     cld
@@ -65,8 +63,8 @@ ap_boot_from_long_mode:
     retf // 32-bit far return
 .align 8
 retf_stack_bottom:
-.long ap_long_mode_in_low_address
-.long 0x8
+    .long ap_long_mode_in_low_address
+    .long 0x8
 retf_stack_top:
 
 .code16
@@ -121,8 +119,8 @@ ap_protect_mode:
 
 // This is a pointer to the page table used by the APs.
 // The BSP will fill this pointer before kicking the APs.
-.global __boot_page_table_pointer
 .align 4
+.global __boot_page_table_pointer
 __boot_page_table_pointer:
     .skip 4
 
@@ -140,6 +138,7 @@ ap_long_mode_in_low_address:
     jmp rax
 
 .data
+
 // This is a pointer to be filled by the BSP when boot information
 // of all APs are allocated and initialized.
 .global __ap_boot_info_array_pointer
@@ -151,6 +150,7 @@ __ap_boot_cpu_id_tail:
 
 .text
 .code64
+
 ap_long_mode:
     mov rdi, 1
     lock xadd [__ap_boot_cpu_id_tail], rdi

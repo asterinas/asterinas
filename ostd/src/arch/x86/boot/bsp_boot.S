@@ -18,7 +18,6 @@ KERNEL_VMA        = 0xffffffff80000000
 // in the boot section. The boot section is mapped writable since kernel may
 // modify the initial page table.
 .section ".bsp_boot", "awx", @progbits
-.code32
 
 // With every entry types we could go through common paging or machine
 // state setup routines. Thus we make a mark of protocol used in each entrypoint
@@ -311,7 +310,7 @@ long_mode_in_low_address:
     jmp rax
 
 .section ".bsp_boot.stack", "aw", @nobits
-.global boot_stack_top
+
 boot_stack_bottom:
     .align 4096
     .skip 0x40000  # 256 KiB
@@ -320,6 +319,7 @@ boot_stack_top:
 // From here, we're in the .text section: we no longer use physical address.
 .text
 .code64
+
 long_mode:
     // Clear .bss section.
     mov al, 0x00
