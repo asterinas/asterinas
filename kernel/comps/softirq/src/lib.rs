@@ -13,9 +13,8 @@ use aster_util::per_cpu_counter::PerCpuCounter;
 use component::{init_component, ComponentInitError};
 use lock::is_softirq_enabled;
 use ostd::{
-    cpu::{CpuId, PinCurrentCpu},
+    cpu::CpuId,
     cpu_local_cell,
-    task::disable_preempt,
     trap::{
         irq::{disable_local, DisabledLocalIrqGuard},
         register_bottom_half_handler,

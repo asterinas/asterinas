@@ -5,7 +5,8 @@ use spin::Once;
 use super::irq::{disable_local, process_top_half, DisabledLocalIrqGuard};
 use crate::{arch::trap::TrapFrame, cpu_local_cell, task::disable_preempt};
 
-static BOTTOM_HALF_HANDLER: Once<fn(DisabledLocalIrqGuard) -> DisabledLocalIrqGuard> = Once::new();
+static BOTTOM_HALF_HANDLER: Once<fn(DisabledLocalIrqGuard, usize, usize) -> DisabledLocalIrqGuard> =
+    Once::new();
 
 /// Registers a function to the interrupt bottom half execution.
 ///
@@ -21,12 +22,19 @@ static BOTTOM_HALF_HANDLER: Once<fn(DisabledLocalIrqGuard) -> DisabledLocalIrqGu
 /// When the handler returns, interrupts should remain disabled,
 /// as the handler is expected to return an IRQ guard.
 ///
+/// The registered handler takes two arguments:
+/// the first one, as mentioned before, is an IRQ guard;
+/// and the second one is the number of the interrupt that triggers the bottom-half mechanism.
+/// The interrupt number is provided mostly for debugging and accounting purposes.
+/// The third argument is how many times the irq called since last bottom half processing.
 /// This function can only be registered once. Subsequent calls will do nothing.
-pub fn register_bottom_half_handler(func: fn(DisabledLocalIrqGuard) -> DisabledLocalIrqGuard) {
+pub fn register_bottom_half_handler(
+    func: fn(DisabledLocalIrqGuard, usize, usize) -> DisabledLocalIrqGuard,
+) {
     BOTTOM_HALF_HANDLER.call_once(|| func);
 }
 
-fn process_bottom_half() {
+fn process_bottom_half(irq_number: usize, call_count: usize) {
     let Some(handler) = BOTTOM_HALF_HANDLER.get() else {
         return;
     };
@@ -42,7 +50,7 @@ fn process_bottom_half() {
     // when the handler returns to prevent race conditions.
     // See <https://github.com/asterinas/asterinas/pull/1623#discussion_r1964709636> for more details.
     let irq_guard = disable_local();
-    let irq_guard = handler(irq_guard);
+    let irq_guard = handler(irq_guard, irq_number, call_count);
 
     // Interrupts should remain disabled when `process_bottom_half` returns,
     // so we simply forget the guard.
@@ -62,12 +70,14 @@ pub(crate) fn call_irq_callback_functions(trap_frame: &TrapFrame, irq_number: us
     // enabled while the bottom half is being processing. The counter cannot exceed two because the
     // bottom half cannot be reentrant for the same reason.
     INTERRUPT_NESTED_LEVEL.add_assign(1);
+    INTERRUPTS_SERVICED_IN_BOTTOM_HALF.add_assign(1);
 
     process_top_half(trap_frame, irq_number);
     crate::arch::interrupts_ack(irq_number);
 
     if INTERRUPT_NESTED_LEVEL.load() == 1 {
-        process_bottom_half();
+        process_bottom_half(irq_number, INTERRUPTS_SERVICED_IN_BOTTOM_HALF.load());
+        INTERRUPTS_SERVICED_IN_BOTTOM_HALF.store(0);
     }
 
     INTERRUPT_NESTED_LEVEL.sub_assign(1);
@@ -75,6 +85,7 @@ pub(crate) fn call_irq_callback_functions(trap_frame: &TrapFrame, irq_number: us
 
 cpu_local_cell! {
     static INTERRUPT_NESTED_LEVEL: u8 = 0;
+    static INTERRUPTS_SERVICED_IN_BOTTOM_HALF: usize = 0;
 }
 
 /// Returns whether we are in the interrupt context.
