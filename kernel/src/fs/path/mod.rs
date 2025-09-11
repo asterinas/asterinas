@@ -5,7 +5,7 @@
 use core::time::Duration;
 
 use inherit_methods_macro::inherit_methods;
-pub use mount::Mount;
+pub use mount::{Mount, MountPropType};
 
 use crate::{
     fs::{
@@ -239,6 +239,11 @@ impl Path {
         }
 
         self.mount.graft_mount_tree(dst_path)
+    }
+
+    /// Sets the propagation type of the mount of this `Path`.
+    pub fn set_propagation(&self, prop: mount::MountPropType, recursive: bool) {
+        self.mount.set_propagation(prop, recursive);
     }
 
     /// Creates a `Path` by making an inode of the `type_` with the `mode`.
