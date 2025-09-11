@@ -15,7 +15,8 @@ PAGE_SHIFT             = 12
 KERNEL_VMA_OFFSET      = 0xffffffff00000000
 
 .section ".boot", "awx", @progbits
-.globl _start
+
+.global _start
 _start:
     # Arguments passed from SBI:
     #   a0 = hart id
@@ -64,7 +65,7 @@ boot_l3pt:  # 0xffff_ffff_0000_0000 -> 0x0000_0000_0000_0000
     .quad 0
 
 .section ".boot.stack", "aw", @nobits
-.globl boot_stack_top
+
 boot_stack_bottom:
     .balign 4096
     .skip 0x40000  # 256 KiB
@@ -72,7 +73,7 @@ boot_stack_top:
 
 # From here, we're in the .text section: we no longer use physical address.
 .text
-.globl _start_virt
+
 _start_virt:
     # Initialize GP to the CPU-local start address.
 .extern __cpu_local_start

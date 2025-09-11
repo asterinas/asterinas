@@ -13,8 +13,9 @@
 .equ SAVE_SCRATCH,                  0x37    /* Save 7 */
 
 .text
+
 .balign 4096
-.globl trap_entry
+.global trap_entry
 trap_entry:
     # If coming from userspace, preserve the user stack pointer and load
     # the kernel stack pointer. If we came from the kernel, SAVE_SCRATCH
@@ -103,8 +104,8 @@ end_trap_from_user:
 
     ret
 
-.globl run_user
-run_user:
+.global run_user
+run_user: # (regs: &mut RawUserContext)
     # save callee-saved registers in kernel stack
     addi.d  $sp, $sp, -13 * XLENB
     STORE_SP $s0, 0

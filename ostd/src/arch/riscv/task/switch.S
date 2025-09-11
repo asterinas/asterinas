@@ -1,10 +1,8 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 
 .text
-.global context_switch
-.global first_context_switch
-.global kernel_task_entry_wrapper
 
+.global context_switch
 context_switch: # (nxt: *const TaskContext, cur: *mut TaskContext)
   # Save cur's register
   sd  ra, 0x68(a1) # return address
@@ -23,6 +21,7 @@ context_switch: # (nxt: *const TaskContext, cur: *mut TaskContext)
   sd  s11, 0x60(a1)
   # Fallthrough
 
+.global first_context_switch
 first_context_switch: # (nxt: *const TaskContext)
   # Restore nxt's registers
   ld  ra, 0x68(a0) # return address
@@ -41,6 +40,7 @@ first_context_switch: # (nxt: *const TaskContext)
   ld  s11, 0x60(a0)
   ret
 
+.global kernel_task_entry_wrapper
 kernel_task_entry_wrapper:
   .cfi_startproc
   .cfi_undefined ra # mark return address as undefined to indicate end of call stack

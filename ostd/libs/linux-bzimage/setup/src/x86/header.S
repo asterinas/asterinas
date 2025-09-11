@@ -7,7 +7,7 @@
 // The bootloader may fill some fields at runtime, which can
 // be read by the kernel (via `boot_params.hdr`).
 
-.section ".header", "a"
+.section ".header", "a", @progbits
 
 CODE32_START = 0x100000
 

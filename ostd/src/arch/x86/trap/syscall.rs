@@ -64,9 +64,9 @@ pub(super) unsafe fn init() {
     }
 }
 
-extern "sysv64" {
-    fn syscall_entry();
-    fn syscall_return(regs: &mut RawUserContext);
+unsafe extern "C" {
+    unsafe fn syscall_entry();
+    unsafe fn syscall_return(regs: &mut RawUserContext);
 }
 
 impl RawUserContext {
