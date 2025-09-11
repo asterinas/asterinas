@@ -5,7 +5,7 @@
 //!
 //! Reference: <https://man7.org/linux/man-pages/man5/proc_stat.5.html>
 
-use alloc::format;
+use core::fmt::Write;
 
 use aster_softirq::{
     collect_per_irq_counts_across_all_cpus, collect_per_softirq_counts_across_all_cpus,
@@ -37,11 +37,12 @@ impl StatFileOps {
         // Get global CPU statistics
         let global_stats = cpu_manager.collect_stats_on_all_cpus();
 
-        let mut output = String::new();
+        let mut stat_output = String::new();
 
         // Global CPU line: cpu <user> <nice> <system> <idle> <iowait> <irq> <softirq> <steal> <guest> <guest_nice>
-        output.push_str(&format!(
-            "cpu {} {} {} {} {} {} {} {} {} {}\n",
+        writeln!(
+            stat_output,
+            "cpu {} {} {} {} {} {} {} {} {} {}",
             global_stats.user.as_u64(),
             global_stats.nice.as_u64(),
             global_stats.system.as_u64(),
@@ -52,13 +53,15 @@ impl StatFileOps {
             global_stats.steal.as_u64(),
             global_stats.guest.as_u64(),
             global_stats.guest_nice.as_u64()
-        ));
+        )
+        .unwrap();
 
         // Per-CPU lines
         for cpu_id in ostd::cpu::all_cpus() {
             let cpu_stats = cpu_manager.collect_stats_on_cpu(cpu_id);
-            output.push_str(&format!(
-                "cpu{} {} {} {} {} {} {} {} {} {} {}\n",
+            writeln!(
+                stat_output,
+                "cpu{} {} {} {} {} {} {} {} {} {} {}",
                 cpu_id.as_usize(),
                 cpu_stats.user.as_u64(),
                 cpu_stats.nice.as_u64(),
@@ -70,23 +73,23 @@ impl StatFileOps {
                 cpu_stats.steal.as_u64(),
                 cpu_stats.guest.as_u64(),
                 cpu_stats.guest_nice.as_u64()
-            ));
+            )
+            .unwrap();
         }
 
         // Interrupt count with per-IRQ breakdown
         let irq_stats = collect_per_irq_counts_across_all_cpus();
         let total_irqs: usize = irq_stats.iter().sum();
         // Build the irq line: total followed by per-IRQ counts
-        let mut irq_line = format!("irq {}", total_irqs);
+        write!(stat_output, "irq {}", total_irqs).unwrap();
         for count in irq_stats.iter() {
-            irq_line.push_str(&format!(" {}", count));
+            write!(stat_output, " {}", count).unwrap();
         }
-        irq_line.push('\n');
-        output.push_str(&irq_line);
+        writeln!(stat_output).unwrap();
 
         // Context switch count
         let context_switches: usize = context_switch_count();
-        output.push_str(&format!("ctxt {}\n", context_switches));
+        writeln!(stat_output, "ctxt {}", context_switches).unwrap();
 
         // Boot time (seconds since UNIX epoch)
         if let Some(start_time) = START_TIME.get() {
@@ -94,26 +97,27 @@ impl StatFileOps {
                 .duration_since(&SystemTime::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
-            output.push_str(&format!("btime {}\n", boot_time));
+            writeln!(stat_output, "btime {}", boot_time).unwrap();
         } else {
-            output.push_str("btime 0\n");
+            writeln!(stat_output, "btime {}", 0).unwrap();
         }
 
-        output.push_str(&format!("processes {}\n", forks_count()));
+        writeln!(stat_output, "processes {}", forks_count()).unwrap();
 
         // Running and blocked processes
         let (_, running_count) = nr_queued_and_running();
-        output.push_str(&format!("procs_running {}\n", running_count));
+        writeln!(stat_output, "procs_running {}", running_count).unwrap();
 
         // TODO: Blocked processes
-        output.push_str("procs_blocked 0\n");
+        writeln!(stat_output, "procs_blocked {}", 0).unwrap();
 
         // Softirq statistics
         let softirq_stats = collect_per_softirq_counts_across_all_cpus();
         let total_softirqs: usize = softirq_stats.iter().sum();
 
-        output.push_str(&format!(
-            "softirq {} {} {} {} {} {} {} {} {} {} {}\n",
+        writeln!(
+            stat_output,
+            "softirq {} {} {} {} {} {} {} {} {} {} {}",
             total_softirqs,
             softirq_stats[TASKLESS_URGENT_SOFTIRQ_ID as usize], // TASKLESS_URGENT
             softirq_stats[TIMER_SOFTIRQ_ID as usize],           // TIMER
@@ -125,9 +129,10 @@ impl StatFileOps {
             0usize,                                             // Reserved
             0usize,                                             // Reserved
             0usize                                              // Reserved
-        ));
+        )
+        .unwrap();
 
-        output
+        stat_output
     }
 }
 
