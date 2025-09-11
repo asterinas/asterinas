@@ -24,6 +24,7 @@ use crate::{
     process::{namespace::nsproxy::NsProxy, signal::constants::SIGCONT},
     thread::{Thread, Tid},
     time::{clocks::ProfClock, Timer, TimerManager},
+    wake::WAKE_SIGNAL,
 };
 
 mod builder;
@@ -202,7 +203,7 @@ impl PosixThread {
     /// Wakes up the signalled waker.
     pub fn wake_signalled_waker(&self) {
         if let Some(waker) = &*self.signalled_waker.lock() {
-            waker.wake_up();
+            waker.wake_up_with_flag(WAKE_SIGNAL);
         }
     }
 

@@ -122,13 +122,6 @@ pub fn futex_wait_bitset(
             //
             // Therefore, we need to perform a removal by unique global futex ID.
             futex_bucket_ref.lock().remove_by_id(futex_id);
-
-            // FIXME: If the futex is woken up and a signal comes at the same time, we should succeed
-            // instead of failing with `EINTR`. The code below is of course wrong, but was needed to
-            // make the gVisor tests happy. See <https://github.com/asterinas/asterinas/pull/1577>.
-            if err.error() == Errno::EINTR {
-                return Ok(());
-            }
         }
     }
     result
