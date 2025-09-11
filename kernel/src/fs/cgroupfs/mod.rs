@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use fs::CgroupFsType;
+pub use systree_node::{lock_cgroup_membership, CgroupNode, CgroupSystem};
 
 mod fs;
 mod inode;

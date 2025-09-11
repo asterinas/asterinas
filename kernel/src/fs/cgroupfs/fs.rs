@@ -37,7 +37,7 @@ impl CgroupFs {
 
     fn new(root_node: Arc<CgroupSystem>) -> Arc<Self> {
         let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX);
-        let root_inode = CgroupInode::new_root(root_node);
+        let root_inode = CgroupInode::new_root(root_node.clone());
 
         Arc::new(Self {
             sb,

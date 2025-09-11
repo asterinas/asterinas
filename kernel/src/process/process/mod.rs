@@ -17,6 +17,7 @@ use super::{
     task_set::TaskSet,
 };
 use crate::{
+    fs::cgroupfs::CgroupNode,
     prelude::*,
     process::{signal::Pollee, status::StopWaitStatus, UserNamespace, WaitOptions},
     sched::{AtomicNice, Nice},
@@ -34,7 +35,10 @@ mod timer_manager;
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 pub use init_proc::spawn_init_process;
 pub use job_control::JobControl;
-use ostd::{sync::WaitQueue, task::Task};
+use ostd::{
+    sync::{RcuOption, RcuOptionReadGuard, WaitQueue},
+    task::Task,
+};
 pub use process_group::ProcessGroup;
 pub use session::Session;
 pub use terminal::Terminal;
@@ -88,6 +92,10 @@ pub struct Process {
     pub(super) process_group: Mutex<Weak<ProcessGroup>>,
     /// resource limits
     resource_limits: ResourceLimits,
+    /// The bound cgroup of the process.
+    ///
+    /// If this field is `None`, the process is bound to the root cgroup.
+    cgroup: RcuOption<Arc<CgroupNode>>,
     /// Scheduling priority nice value
     /// According to POSIX.1, the nice value is a per-process attribute,
     /// the threads in a process should share a nice value.
@@ -227,6 +235,7 @@ impl Process {
             parent_death_signal: AtomicSigNum::new_empty(),
             exit_signal: AtomicSigNum::new_empty(),
             resource_limits,
+            cgroup: RcuOption::new(None),
             nice: AtomicNice::new(nice),
             timer_manager: PosixTimerManager::new(&prof_clock, process_ref),
             prof_clock,
@@ -767,6 +776,28 @@ impl Process {
                 }
             }
         }
+    }
+
+    // ******************* cgroup ********************
+
+    /// Returns a RCU read guard to the cgroup of the process.
+    ///
+    /// The returned cgroup is not a stable snapshot. It may be changed by other threads
+    /// and encounter race conditions. Users can use [`lock_cgroup_membership`] to obtain
+    /// a lock to prevent the cgroup from being changed.
+    ///
+    /// [`lock_cgroup_membership`]: crate::fs::cgroupfs::lock_cgroup_membership
+    pub fn cgroup(&self) -> RcuOptionReadGuard<Arc<CgroupNode>> {
+        self.cgroup.read()
+    }
+
+    /// Sets the cgroup for this process.
+    ///
+    /// Note: This function should only be called within the cgroup module.
+    /// Arbitrary calls may likely cause race conditions.
+    #[doc(hidden)]
+    pub fn set_cgroup(&self, cgroup: Option<Arc<CgroupNode>>) {
+        self.cgroup.update(cgroup);
     }
 }
 
