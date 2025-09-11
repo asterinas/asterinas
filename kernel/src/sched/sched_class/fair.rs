@@ -25,8 +25,6 @@ use crate::{
 
 const WEIGHT_0: u64 = 1024;
 
-const HAS_PENDING: u64 = 1 << (u64::BITS - 1);
-
 pub const fn nice_to_weight(nice: Nice) -> u64 {
     // Calculated by the formula below:
     //
@@ -56,7 +54,6 @@ pub const fn nice_to_weight(nice: Nice) -> u64 {
                     WEIGHT_0 * numerator / denominator
                 }
             };
-            assert!(ret[index] & HAS_PENDING == 0);
 
             index += 1;
             nice += 1;
@@ -100,35 +97,13 @@ pub const fn nice_to_weight(nice: Nice) -> u64 {
 ///
 /// # The weight update process
 ///
-/// The weight of a thread can be updated by the `sched_setattr` syscall series in
-/// any thread. This makes it difficult to re-evaluate the data of its run queue
-/// instantly after the update without a direct backward reference (which is
-/// impossible to be represented in safe Rust).
-///
-/// To handle this problem, we use a `pending_weight` field to store the new weight.
-/// When the thread is scheduled within the run queue, we will check if the weight
-/// needs to be updated since both the old and new weights are needed for re-evaluation.
-///
-/// To indicate whether the weight needs to be updated, we pack the `weight` field
-/// with a bit flag `HAS_PENDING`. The overall mechanism is similar to an optimized
-/// version of spin locks. When accessing the `weight` field:
-///
-/// - If the weight does not need to be updated (i.e. `weight & IS_PENDING == 0`),
-///   we simply return the weight.
-/// - If the weight needs to be updated (i.e. `weight & IS_PENDING != 0`), we try to
-///   store the new weight into the `weight` field with `IS_PENDING` cleared via a
-///   `compare_exchange_weak` loop, which shouldn't take too much time since the update
-///   frequency is usually relatively low.
-/// - If the result of the loop turns out that the weight doesn't need to be updated, we
-///   return the weight directly.
-/// - After a successful update, we re-evaluate the data of the run queue.
-///
-/// This method allows the access to the weight lock-free and ensures only 1 load
-/// is needed most of the time.
+/// The weight of a thread can be updated by the `sched_setattr` syscall series
+/// in any thread. To maintain consistency when removing the weight from the
+/// total queued weight, the scheduler stores its value as an attribute of
+/// [`FairQueueItem`] for when the task is picked to run next.
 #[derive(Debug)]
 pub struct FairAttr {
     weight: AtomicU64,
-    pending_weight: AtomicU64,
     vruntime: AtomicU64,
 }
 
@@ -136,60 +111,30 @@ impl FairAttr {
     pub fn new(nice: Nice) -> Self {
         FairAttr {
             weight: nice_to_weight(nice).into(),
-            pending_weight: Default::default(),
             vruntime: Default::default(),
         }
     }
 
     pub fn update(&self, nice: Nice) {
-        self.pending_weight
-            .store(nice_to_weight(nice), Ordering::Relaxed);
-        self.weight.fetch_or(HAS_PENDING, Ordering::Release);
+        self.weight.store(nice_to_weight(nice), Ordering::Release);
     }
 
     fn update_vruntime(&self, delta: u64, weight: u64) -> u64 {
         let delta = delta * WEIGHT_0 / weight;
         self.vruntime.fetch_add(delta, Ordering::Relaxed) + delta
     }
-
-    fn fetch_weight(&self) -> (u64, u64) {
-        let mut weight = self.weight.load(Ordering::Acquire);
-        if weight & HAS_PENDING == 0 {
-            return (weight, weight);
-        }
-
-        let mut new_weight = self.pending_weight.load(Ordering::Relaxed);
-        loop {
-            match self.weight.compare_exchange_weak(
-                weight,
-                new_weight,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => break,
-                Err(failure) => {
-                    if failure & HAS_PENDING == 0 {
-                        return (failure, failure);
-                    }
-                    weight = failure;
-                    new_weight = self.pending_weight.load(Ordering::Relaxed);
-                }
-            }
-        }
-        let old_weight = weight & !HAS_PENDING;
-
-        // The `vruntime` field is an accumulated value, and we don't update
-        // it here.
-
-        (old_weight, new_weight)
-    }
 }
 
 /// The wrapper for threads in the FAIR run queue.
 ///
 /// This structure is used to provide the capability for keying in the
-/// run queue implemented by `BTreeSet` in the `FairClassRq`.
-struct FairQueueItem(Arc<Task>, u64);
+/// run queue implemented by `BinaryHeap` in the `FairClassRq`.
+struct FairQueueItem {
+    task: Arc<Task>,
+    vruntime: u64,
+    /// The weight of the task as of enqueue time.
+    weight: u64,
+}
 
 impl core::fmt::Debug for FairQueueItem {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -199,7 +144,7 @@ impl core::fmt::Debug for FairQueueItem {
 
 impl FairQueueItem {
     fn key(&self) -> u64 {
-        self.1
+        self.vruntime
     }
 }
 
@@ -227,8 +172,8 @@ impl Ord for FairQueueItem {
 ///
 /// See [`FairAttr`] for the explanation of vruntimes and scheduling periods.
 ///
-/// The structure contains a `BTreeSet` to store the threads in the run queue to
-/// ensure the efficiency for finding next-to-run threads.
+/// The structure contains a [`BinaryHeap`] to store the threads in the run queue
+/// to ensure the efficiency for finding next-to-run threads.
 #[derive(Debug)]
 pub(super) struct FairClassRq {
     #[expect(unused)]
@@ -286,13 +231,13 @@ impl FairClassRq {
 }
 
 impl SchedClassRq for FairClassRq {
-    fn enqueue(&mut self, entity: Arc<Task>, flags: Option<EnqueueFlags>) {
-        let fair_attr = &entity.as_thread().unwrap().sched_attr().fair;
+    fn enqueue(&mut self, task: Arc<Task>, flags: Option<EnqueueFlags>) {
+        let fair_attr = &task.as_thread().unwrap().sched_attr().fair;
         let vruntime = match flags {
             Some(EnqueueFlags::Spawn) => self.min_vruntime + self.vtime_slice(),
             _ => self.min_vruntime,
         };
-        let (_old_weight, weight) = fair_attr.fetch_weight();
+        let weight = fair_attr.weight.load(Ordering::Relaxed);
 
         let vruntime = fair_attr
             .vruntime
@@ -300,7 +245,11 @@ impl SchedClassRq for FairClassRq {
             .max(vruntime);
 
         self.total_weight += weight;
-        self.entities.push(Reverse(FairQueueItem(entity, vruntime)));
+        self.entities.push(Reverse(FairQueueItem {
+            task,
+            vruntime,
+            weight,
+        }));
     }
 
     fn len(&self) -> usize {
@@ -312,17 +261,9 @@ impl SchedClassRq for FairClassRq {
     }
 
     fn pick_next(&mut self) -> Option<Arc<Task>> {
-        let Reverse(FairQueueItem(entity, _)) = self.entities.pop()?;
-
-        let sched_attr = entity.as_thread().unwrap().sched_attr();
-        let (old_weight, _weight) = sched_attr.fair.fetch_weight();
-        // Equals to:
-        //
-        // self.total_weight = self.total_weight + weight - old_weight;
-        // self.total_weight -= weight;
-        self.total_weight -= old_weight;
-
-        Some(entity)
+        let Reverse(FairQueueItem { task, weight, .. }) = self.entities.pop()?;
+        self.total_weight -= weight;
+        Some(task)
     }
 
     fn update_current(
@@ -333,7 +274,7 @@ impl SchedClassRq for FairClassRq {
     ) -> bool {
         match flags {
             UpdateFlags::Tick | UpdateFlags::Yield | UpdateFlags::Wait => {
-                let (_old_weight, weight) = attr.fair.fetch_weight();
+                let weight = attr.fair.weight.load(Ordering::Relaxed);
                 let vruntime = attr.fair.update_vruntime(rt.delta, weight);
                 let leftmost = self.entities.peek();
                 self.min_vruntime = match leftmost {
