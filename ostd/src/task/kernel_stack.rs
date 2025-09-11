@@ -43,12 +43,10 @@ const DEFAULT_STACK_SIZE_IN_PAGES: u32 = 128;
 const KERNEL_STACK_SIZE: usize = STACK_SIZE_IN_PAGES as usize * PAGE_SIZE;
 
 #[derive(Debug)]
-#[expect(dead_code)]
 pub(super) struct KernelStack {
     kvirt_area: KVirtArea,
     tlb_coherent: AtomicCpuSet,
     end_vaddr: Vaddr,
-    has_guard_page: bool,
 }
 
 #[derive(Debug, Default)]
@@ -86,7 +84,6 @@ impl KernelStack {
             kvirt_area: new_kvirt_area,
             tlb_coherent: AtomicCpuSet::new(CpuSet::new_empty()),
             end_vaddr: mapped_end,
-            has_guard_page: true,
         })
     }
 
