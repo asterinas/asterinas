@@ -6,10 +6,15 @@ use ostd::sync::RwLock;
 
 use super::fs::CgroupFs;
 use crate::{
-    fs::utils::{
-        systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
-        FileSystem, Inode, InodeMode, Metadata,
+    fs::{
+        cgroupfs::CgroupNode,
+        path::{is_dot, is_dotdot},
+        utils::{
+            systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
+            FileSystem, Inode, InodeMode, Metadata,
+        },
     },
+    prelude::*,
     Result,
 };
 
@@ -77,5 +82,30 @@ impl SysTreeInodeTy for CgroupInode {
 impl Inode for CgroupInode {
     fn fs(&self) -> Arc<dyn FileSystem> {
         CgroupFs::singleton().clone()
+    }
+
+    fn rmdir(&self, name: &str) -> Result<()> {
+        if is_dot(name) {
+            return_errno_with_message!(Errno::EINVAL, "rmdir on .");
+        }
+        if is_dotdot(name) {
+            return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..");
+        }
+
+        let SysTreeNodeKind::Branch(branch_node) = self.node_kind() else {
+            return_errno_with_message!(Errno::ENOTDIR, "the current node is not a branch node");
+        };
+
+        let target_node = branch_node.child(name).ok_or(crate::Error::with_message(
+            Errno::ENOENT,
+            "the child node does not exist",
+        ))?;
+
+        let target_node_ref = target_node.as_any().downcast_ref::<CgroupNode>().unwrap();
+
+        target_node_ref.try_run_if_empty(|| {
+            branch_node.remove_child(name)?;
+            Ok(())
+        })
     }
 }

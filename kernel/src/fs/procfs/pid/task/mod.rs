@@ -11,8 +11,8 @@ use crate::{
             pid::{
                 stat::StatFileOps,
                 task::{
-                    cmdline::CmdlineFileOps, comm::CommFileOps, environ::EnvironFileOps,
-                    exe::ExeSymOps, fd::FdDirOps, status::StatusFileOps,
+                    cgroup::CgroupOps, cmdline::CmdlineFileOps, comm::CommFileOps,
+                    environ::EnvironFileOps, exe::ExeSymOps, fd::FdDirOps, status::StatusFileOps,
                 },
             },
             template::{DirOps, ProcDir, ProcDirBuilder},
@@ -24,6 +24,7 @@ use crate::{
     Process,
 };
 
+mod cgroup;
 mod cmdline;
 mod comm;
 mod environ;
@@ -69,6 +70,7 @@ impl TidDirOps {
 impl DirOps for TidDirOps {
     fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
         let inode = match name {
+            "cgroup" => CgroupOps::new_inode(self.process_ref.clone(), this_ptr),
             "cmdline" => CmdlineFileOps::new_inode(self.process_ref.clone(), this_ptr),
             "comm" => CommFileOps::new_inode(self.process_ref.clone(), this_ptr),
             "environ" => EnvironFileOps::new_inode(self.process_ref.clone(), this_ptr),
@@ -106,6 +108,9 @@ impl TidDirOps {
         cached_children: &mut SlotVec<(String, Arc<dyn Inode>)>,
         this_ptr: Weak<dyn Inode>,
     ) {
+        cached_children.put_entry_if_not_found("cgroup", || {
+            CgroupOps::new_inode(self.process_ref.clone(), this_ptr.clone())
+        });
         cached_children.put_entry_if_not_found("cmdline", || {
             CmdlineFileOps::new_inode(self.process_ref.clone(), this_ptr.clone())
         });
