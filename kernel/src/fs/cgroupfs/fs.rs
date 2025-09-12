@@ -3,6 +3,7 @@
 use alloc::sync::Arc;
 
 use aster_block::BlockDevice;
+use aster_systree::EmptyNode;
 use spin::Once;
 
 use super::inode::CgroupInode;
@@ -85,6 +86,6 @@ impl FsType for CgroupFsType {
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
-        Some(CgroupSystem::singleton().clone() as _)
+        Some(EmptyNode::new("cgroup".into()))
     }
 }

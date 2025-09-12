@@ -6,7 +6,10 @@ use aster_systree::{
 };
 use spin::Once;
 
-use crate::{fs::utils::FileSystem, prelude::*};
+use crate::{
+    fs::{sysfs, utils::FileSystem},
+    prelude::*,
+};
 
 /// A type of file system.
 pub trait FsType: Send + Sync + 'static {
@@ -83,7 +86,7 @@ pub fn init() {
     // This object will appear at the `/sys/fs` path
     FS_REGISTRY.call_once(|| {
         let singleton = FsRegistry::new();
-        aster_systree::singleton()
+        sysfs::systree_singleton()
             .root()
             .add_child(singleton.clone())
             .unwrap();
