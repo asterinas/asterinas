@@ -100,3 +100,63 @@ Unsupported commands:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/semctl.2.html).
+
+### `futex`
+
+Supported functionality in SCML:
+
+```c
+opt_flags = FUTEX_PRIVATE_FLAG | FUTEX_CLOCK_REALTIME;
+
+// Block current thread if target value at `uaddr` matches `val`
+futex(
+    uaddr,
+    futex_op = FUTEX_WAIT | <opt_flags>,
+    val, timeout
+);
+
+// Block current thread with bitmask condition if target value at `uaddr` matches `val`
+futex(
+    uaddr,
+    futex_op = FUTEX_WAIT_BITSET | <opt_flags>,
+    val, timeout, uaddr2 = NULL, val3
+);
+
+// Unblock up to `val` threads waiting on `uaddr`
+futex(
+    uaddr,
+    futex_op = FUTEX_WAKE | <opt_flags>,
+    val
+);
+
+// Unblock threads matching bitmask, up to `val` waiters
+futex(
+    uaddr,
+    futex_op = FUTEX_WAKE_BITSET | <opt_flags>,
+    val, timeout, uaddr2 = NULL, val3
+);
+
+// Transfer `val` waiters to another wait queue
+futex(
+    uaddr,
+    futex_op = FUTEX_REQUEUE | <opt_flags>,
+    val, val2, uaddr2
+);
+
+// Wake waiters after atomic operation on `uaddr2`
+futex(
+    uaddr,
+    futex_op = FUTEX_WAKE_OP | <opt_flags>,
+    val, val2, uaddr2, val3
+);
+```
+
+Unsupported operations:
+* `FUTEX_FD`
+* `FUTEX_CMP_REQUEUE`
+* `FUTEX_LOCK_PI`
+* `FUTEX_UNLOCK_PI`
+* `FUTEX_TRYLOCK_PI`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/futex.2.html).
