@@ -10,7 +10,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 #= Download dependency =====================================================
 
 WORKDIR /opt/linux_binary_cache
-RUN wget https://raw.githubusercontent.com/asterinas/linux_binary_cache/14598b6/vmlinuz-5.15.0-105 \
+RUN wget https://raw.githubusercontent.com/asterinas/linux_binary_cache/24db4ff/vmlinuz-6.16.0 \
         -O vmlinuz
 
 #= Download VDSO files =====================================================
