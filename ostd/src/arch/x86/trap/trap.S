@@ -9,6 +9,7 @@
  *
  * We make the following new changes:
  * * Add the `trap_handler_table`.
+ * * Adjust some symbol names.
  *
  * These changes are released under the following license:
  *
@@ -21,7 +22,7 @@
 
 .altmacro
 .macro DEF_HANDLER, i
-.Ltrap_handler_\i:
+_trap_handler_\i:
 .if \i == 8 || (\i >= 10 && \i <= 14) || \i == 17
     # error code pushed by CPU
     push    \i          # interrupt vector
@@ -42,7 +43,7 @@ _trap_handlers:
 .endr
 
 .macro DEF_TABLE_ENTRY, i
-    .quad .Ltrap_handler_\i
+    .quad _trap_handler_\i
 .endm
 
 .section .rodata
@@ -61,21 +62,20 @@ trap_common:
     push rax
     mov ax, [rsp + 4*8]     # load cs
     and ax, 0x3             # test
-    jz __from_kernel        # continue trap
+    jz _trap_from_kernel    # continue trap
 
-__from_user:
-    /*
-    kernel stack:
-    - ptr to UserContext
-    - ss
-    - rsp
-    - rflags
-    - cs
-    - rip
-    - error code
-    - trap num
-    - rax
-    */
+_trap_from_user:
+    # kernel stack:
+    # - ptr to UserContext
+    # - ss
+    # - rsp
+    # - rflags
+    # - cs
+    # - rip
+    # - error code
+    # - trap num
+    # - rax
+
     swapgs                  # swap in kernel gs
     mov rax, [rsp + 6*8]    # rax = user rsp
     mov gs:12, rax          # store user rsp -> scratch at TSS.sp1
@@ -94,16 +94,15 @@ __from_user:
     mov rax, [rax - 8*8]    # pop rax
     jmp trap_syscall_entry
 
-__from_kernel:
-    /*
-    kernel stack:
-    - rflags
-    - cs
-    - rip
-    - error code
-    - trap num
-    - rax
-    */
+_trap_from_kernel:
+    # kernel stack:
+    # - rflags
+    # - cs
+    # - rip
+    # - error code
+    # - trap num
+    # - rax
+
     pop rax
     push 0
     push r15
