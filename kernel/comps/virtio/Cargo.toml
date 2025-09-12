@@ -12,6 +12,7 @@ aster-input = { path = "../input" }
 aster-block = { path = "../block" }
 aster-network = { path = "../network" }
 aster-console = { path = "../console" }
+aster-crypto = { path = "../crypto" }
 aster-util = { path = "../../libs/aster-util" }
 aster-rights = { path = "../../libs/aster-rights" }
 aster-bigtcp = { path = "../../libs/aster-bigtcp" }
