@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+mod fb;
 mod null;
 mod pty;
 mod random;
@@ -56,6 +57,8 @@ pub fn init_in_first_process(ctx: &Context) -> Result<()> {
     let urandom = Arc::new(urandom::Urandom);
     add_node(urandom, "urandom", &fs_resolver)?;
 
+    let fb = Arc::new(fb::Fb);
+    add_node(fb, "fb0", &fs_resolver)?;
     pty::init_in_first_process(&fs_resolver)?;
 
     shm::init_in_first_process(&fs_resolver)?;
@@ -77,6 +80,7 @@ pub fn get_device(devid: DeviceId) -> Result<Arc<dyn Device>> {
         (5, 0) => Ok(Arc::new(tty::TtyDevice)),
         (1, 8) => Ok(Arc::new(random::Random)),
         (1, 9) => Ok(Arc::new(urandom::Urandom)),
+        (29, 0) => Ok(Arc::new(fb::Fb)),
         _ => return_errno_with_message!(Errno::EINVAL, "the device ID is invalid or unsupported"),
     }
 }
