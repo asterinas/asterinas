@@ -1477,10 +1477,10 @@ setuid01
 # setxattr02
 # setxattr03
 
-# shmat01
+shmat01
 # shmat02
-# shmat03
-# shmat04
+shmat03
+shmat04
 
 # shmctl01
 # shmctl02
@@ -1489,14 +1489,14 @@ setuid01
 # shmctl05
 # shmctl06
 # shmctl07
-# shmctl08
+shmctl08
 
-# shmdt01
-# shmdt02
+shmdt01
+shmdt02
 
 # shmget02
 # shmget03
-# shmget04
+shmget04
 # shmget05
 # shmget06
 
