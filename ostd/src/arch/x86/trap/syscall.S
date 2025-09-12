@@ -67,21 +67,21 @@ syscall_return:
     # Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/arch/x86/entry/entry_64.S#L122>.
 
     cmp qword ptr [rsp], rcx      # sysret requires rcx = rip
-    jne iret
+    jne _syscall_iret
 
     cmp qword ptr [rsp + 8], r11  # sysret requires r11 = rflags
-    jne iret 
+    jne _syscall_iret
 
     test r11, 0x10100             # sysret requires rflags not contain RF and TF flags
-    jnz iret
+    jnz _syscall_iret
 
     shl rcx, 64 - {ADDRESS_WIDTH}
     sar rcx, 64 - {ADDRESS_WIDTH}
     cmp qword ptr [rsp], rcx      # sysret requires rip be a canonical address
-    je sysret
+    je _syscall_sysret
     mov rcx, [rsp]
 
-iret:
+_syscall_iret:
     # construct trap frame
     push {USER_SS}          # push ss
     push [rsp - 8*8]        # push rsp
@@ -91,15 +91,14 @@ iret:
 
     iretq
 
-sysret:
+_syscall_sysret:
     mov rsp, [rsp - 9*8]    # load rsp
-
-    sysretq
 
     # sysretq instruction do:
     # - load cs, ss
     # - load rflags <- r11
     # - load rip <- rcx
+    sysretq
 
 .global syscall_entry
 syscall_entry:
