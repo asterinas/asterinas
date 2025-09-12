@@ -1,0 +1,66 @@
+# Assembly Guidelines
+
+## Define sections
+
+To define built-in sections, such as the text section,
+it is preferable to use the short directive, e.g., `.text`.
+For other sections,
+the section directive with the desired flags and type should be used,
+e.g., `.section ".bsp_boot", "awx", @progbits`.
+
+To ensure consistency and clarity,
+a blank line should follow each section definition,
+creating a separate code block for each definition.
+```asm
+.section ".bsp_boot.stack", "aw", @nobits
+
+boot_stack_bottom:
+    .align 4096
+    .skip 0x40000  # 256 KiB
+boot_stack_top:
+```
+
+In x86-64, if an executable section contains only 64-bit code,
+the `.code64` directive should be placed directly after the section definition.
+The same applies to the `.code32` directive for 32-bit code.
+```asm
+.text
+.code64
+
+.global foo
+foo:
+   mov rax, 1
+   ret
+```
+
+## Define functions
+
+Function attributes, such as `.global` and `.align`,
+should be placed directly before the function.
+These function attributes should not be indented.
+```asm
+.align 4
+.global foo
+foo:
+   mov rax, 1
+   ret
+```
+
+The assembler treats the directives `.global` and `.globl` as the same.
+For clarity, however, `.global` is preferred.
+
+In x86-64, if an executable section contains a mix of 32-bit and 64-bit code,
+the `.code64` and `.code32` directives are treated as function attributes.
+```asm
+.code32
+.global foo32
+foo32:
+    mov eax, 1
+    ret
+
+.code64
+.global foo64
+foo64:
+    mov rax, 1
+    ret
+```
