@@ -12,7 +12,7 @@ PTE_SIZE               = 8
 
 PAGE_SHIFT             = 12
 
-KERNEL_VMA             = 0xffffffff00000000
+KERNEL_VMA_OFFSET      = 0xffffffff00000000
 
 .section ".boot", "awx", @progbits
 .globl _start
@@ -23,16 +23,16 @@ _start:
 
     # Set up the page table.
     #   boot_l4pt[511] = (PPN(boot_l3pt) << PTE_PPN_SHIFT) | PTE_V
-    la     t1, boot_l4pt
+    lla    t1, boot_l4pt
     li     t0, 511 * PTE_SIZE
     add    t1, t1, t0
-    la     t0, boot_l3pt
+    lla    t0, boot_l3pt
     srli   t0, t0, PAGE_SHIFT - PTE_PPN_SHIFT
     ori    t0, t0, PTE_V
     sd     t0, 0(t1)
 
     # Load the page table.
-    la     t0, boot_l4pt
+    lla    t0, boot_l4pt
     li     t1, SATP_MODE_SV48
     srli   t0, t0, PAGE_SHIFT - SATP_PPN_SHIFT
     or     t0, t0, t1
@@ -40,10 +40,10 @@ _start:
     sfence.vma
 
     # Update SP/PC to use the virtual address.
-    li     t1, KERNEL_VMA
-    la     sp, boot_stack_top
+    li     t1, KERNEL_VMA_OFFSET
+    lla    sp, boot_stack_top
     or     sp, sp, t1
-    la     t0, _start_virt - KERNEL_VMA
+    lla    t0, _start_virt - KERNEL_VMA_OFFSET
     or     t0, t0, t1
     jr     t0
 
@@ -76,8 +76,8 @@ boot_stack_top:
 _start_virt:
     # Initialize GP to the CPU-local start address.
 .extern __cpu_local_start
-    la     gp, __cpu_local_start
+    lla    gp, __cpu_local_start
 
     # Jump into Rust code.
-    la     t0, riscv_boot
+    lla    t0, riscv_boot
     jr     t0

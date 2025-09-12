@@ -82,7 +82,8 @@ trap_from_user:
     beqz t1, end_trap_from_user
 end_trap_from_kernel:
     mv a0, sp               # first arg is TrapFrame
-    la ra, trap_return      # set return address
+    lla ra, trap_return     # set return address
+.extern trap_handler
     j trap_handler
 
 end_trap_from_user:

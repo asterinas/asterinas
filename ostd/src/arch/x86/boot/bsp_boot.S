@@ -2,6 +2,18 @@
 
 // The boot routine executed by the bootstrap processor.
 
+IA32_EFER_MSR     = 0xC0000080
+IA32_EFER_BIT_LME = 1 << 8
+
+IA32_GS_BASE_MSR  = 0xC0000101
+
+CR0_BIT_PG        = 1 << 31
+
+CR4_BIT_PAE       = 1 << 5
+CR4_BIT_PGE       = 1 << 7
+
+KERNEL_VMA        = 0xffffffff80000000
+
 // The boot header, initial boot setup code, temporary GDT and page tables are
 // in the boot section. The boot section is mapped writable since kernel may
 // modify the initial page table.
@@ -18,8 +30,6 @@ ENTRYTYPE_LINUX_64      = 4
 
 MULTIBOOT_ENTRY_MAGIC   = 0x2BADB002
 MULTIBOOT2_ENTRY_MAGIC  = 0x36D76289
-
-KERNEL_VMA              = 0xffffffff80000000
 
 // The Linux 32-bit Boot Protocol entry point.
 // Must be located at 0x8001000, ABI immutable!
@@ -122,7 +132,7 @@ protected_mode:
 
     // Enable PAE and PGE.
     mov eax, cr4
-    or  eax, 0xa0
+    or  eax, CR4_BIT_PAE | CR4_BIT_PGE
     mov cr4, eax
 
     // Set the page table address.
@@ -130,9 +140,9 @@ protected_mode:
     mov cr3, eax
 
     // Enable long mode.
-    mov ecx, 0xc0000080
+    mov ecx, IA32_EFER_MSR
     rdmsr
-    or  eax, 0x0100
+    or  eax, IA32_EFER_BIT_LME
     wrmsr
 
     // Prepare for far return.
@@ -142,7 +152,7 @@ protected_mode:
 
     // Enable paging.
     mov eax, cr0
-    or  eax, 0x80000000
+    or  eax, CR0_BIT_PG
     mov cr0, eax
 
     retf
@@ -325,8 +335,8 @@ long_mode:
 .extern __cpu_local_start
     lea rax, [rip + __cpu_local_start]
     mov rdx, rax
-    shr rdx, 32          // EDX:EAX = __cpu_local_start
-    mov ecx, 0xC0000101  // ECX = GS.base
+    shr rdx, 32                // EDX:EAX = __cpu_local_start
+    mov ecx, IA32_GS_BASE_MSR  // ECX = GS.base
     wrmsr
 
     // Call the corresponding Rust entrypoint according to the boot entrypoint.
