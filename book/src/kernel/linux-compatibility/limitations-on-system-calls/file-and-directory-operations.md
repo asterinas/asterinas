@@ -80,3 +80,40 @@ The SCML rules are omitted for brevity.
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/openat.2.html).
+
+## `lseek`
+
+Supported functionality in SCML:
+
+```c
+// Set file offset
+lseek(
+    fd, offset,
+    whence = SEEK_SET | SEEK_CUR | SEEK_END
+);
+```
+
+Unsupported flags:
+* `SEEK_DATA`
+* `SEEK_HOLE`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/lseek.2.html).
+
+## `newfstatat`
+
+Supported functionality in SCML:
+
+```c
+// Retrieve file status by file descriptor
+newfstatat(
+    dirfd, path, statbuf,
+    flags = AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW
+);
+```
+
+Silently-ignored flags:
+* `AT_NO_AUTOMOUNT`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/newfstatat.2.html).
