@@ -74,9 +74,13 @@ pub(crate) fn is_local_enabled() -> bool {
 pub(crate) struct HwCpuId(u32);
 
 impl HwCpuId {
-    pub(crate) fn read_current(_guard: &dyn PinCurrentCpu) -> Self {
-        // TODO: Support SMP in RISC-V.
-        Self(0)
+    /// # Safety
+    ///
+    /// This function must be called after CPU local memory is initialized.
+    pub(crate) unsafe fn read_current(guard: &dyn PinCurrentCpu) -> Self {
+        let _ = guard;
+        // SAFETY: The safety is ensured by the caller.
+        Self(unsafe { super::boot::smp::get_current_hart_id() })
     }
 }
 
