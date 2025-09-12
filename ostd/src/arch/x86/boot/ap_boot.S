@@ -12,6 +12,8 @@ IA32_EFER_MSR     = 0xC0000080
 IA32_EFER_BIT_LME = 1 << 8
 IA32_EFER_BIT_NXE = 1 << 11
 
+IA32_GS_BASE_MSR  = 0xC0000101
+
 CR0_BIT_PE        = 1 << 0
 CR0_BIT_PG        = 1 << 31
 
@@ -163,8 +165,8 @@ ap_long_mode:
     // Setup the GS base (the CPU-local address).
     mov rax, [rbx + rax - 8]     // raw_info[cpu_id - 1].cpu_local
     mov rdx, rax
-    shr rdx, 32          // EDX:EAX = raw_info.cpu_local
-    mov ecx, 0xC0000101  // ECX = GS.base
+    shr rdx, 32                // EDX:EAX = raw_info.cpu_local
+    mov ecx, IA32_GS_BASE_MSR  // ECX = GS.base
     wrmsr
 
     // Go to Rust code.

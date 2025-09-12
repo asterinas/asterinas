@@ -62,7 +62,7 @@ trap_from_user:
     # save sp, prmd, era, euen
     csrrd   $t0, SAVE_SCRATCH
     csrwr   $zero, SAVE_SCRATCH     # SAVE_SCRATCH = 0 (kernel)
-    csrrd	$t1, LOONGARCH_CSR_PRMD
+    csrrd   $t1, LOONGARCH_CSR_PRMD
     csrrd   $t2, LOONGARCH_CSR_ERA
     csrrd   $t3, LOONGARCH_CSR_EUEN
     STORE_SP $t0, 3          # save sp
@@ -74,10 +74,10 @@ trap_from_user:
     bnez    $t1, end_trap_from_user
 
 end_trap_from_kernel:
-    move $a0, $sp           # first arg is TrapFrame
+    move    $a0, $sp           # first arg is TrapFrame
+    la.local   $ra, trap_return
 .extern trap_handler
-    la.local    $ra, trap_return
-    la.global   $t0, trap_handler
+    la.local   $t0, trap_handler
     jr      $t0
 
 end_trap_from_user:
