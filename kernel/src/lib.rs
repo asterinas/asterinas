@@ -29,6 +29,7 @@
 #![feature(associated_type_defaults)]
 #![register_tool(component_access_control)]
 
+use component::InitStage;
 use kcmdline::KCmdlineArg;
 use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
@@ -83,7 +84,7 @@ mod vm;
 #[controlled]
 fn main() {
     ostd::early_println!("[kernel] OSTD initialized. Preparing components.");
-    component::init_all(component::parse_metadata!()).unwrap();
+    component::init_all(InitStage::Bootstrap, component::parse_metadata!()).unwrap();
     init();
 
     // Spawn all AP idle threads.
@@ -121,12 +122,14 @@ fn init_in_first_kthread(fs_resolver: &FsResolver) {
     ipc::init_in_first_kthread();
     #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
     vdso::init_in_first_kthread();
+    component::init_all(InitStage::Kthread, component::parse_metadata!()).unwrap();
 }
 
 fn init_in_first_process(ctx: &Context) {
     device::init_in_first_process(ctx).unwrap();
     fs::init_in_first_process(ctx);
     process::init_in_first_process(ctx);
+    component::init_all(InitStage::Process, component::parse_metadata!()).unwrap();
 }
 
 fn ap_init() {

@@ -1,0 +1,4 @@
+# template
+[components]
+init-stage = { name = "init-stage" }
+foo = { name = "foo" }
