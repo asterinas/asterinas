@@ -174,17 +174,17 @@ NON_OSDK_CRATES := \
 	ostd/libs/linux-bzimage/boot-params \
 	ostd/libs/ostd-macros \
 	ostd/libs/ostd-test \
+	kernel/libs/aster-rights \
+	kernel/libs/aster-rights-proc \
+	kernel/libs/atomic-integer-wrapper \
 	kernel/libs/cpio-decoder \
 	kernel/libs/int-to-c-enum \
 	kernel/libs/int-to-c-enum/derive \
-	kernel/libs/aster-rights \
-	kernel/libs/aster-rights-proc \
 	kernel/libs/jhash \
 	kernel/libs/keyable-arc \
+	kernel/libs/logo-ascii-art \
 	kernel/libs/typeflags \
-	kernel/libs/typeflags-util \
-	kernel/libs/atomic-integer-wrapper \
-	kernel/libs/logo-ascii-art
+	kernel/libs/typeflags-util
 
 # In contrast, OSDK crates depend on OSTD (or being `ostd` itself)
 # and need to be built or tested with OSDK.
