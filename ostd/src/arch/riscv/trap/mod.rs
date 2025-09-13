@@ -13,7 +13,7 @@ pub(super) use trap::RawUserContext;
 pub use trap::TrapFrame;
 
 use super::{cpu::context::CpuExceptionInfo, timer::TIMER_IRQ_NUM};
-use crate::{cpu_local_cell, trap::call_irq_callback_functions};
+use crate::{cpu_local_cell, irq::call_irq_callback_functions};
 
 cpu_local_cell! {
     static IS_KERNEL_INTERRUPTED: bool = false;

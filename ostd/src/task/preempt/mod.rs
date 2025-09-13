@@ -23,7 +23,7 @@ pub use self::guard::{disable_preempt, DisabledPreemptGuard};
 pub fn halt_cpu() {
     crate::task::atomic_mode::might_sleep();
 
-    let irq_guard = crate::trap::irq::disable_local();
+    let irq_guard = crate::irq::disable_local();
 
     if cpu_local::need_preempt() {
         drop(irq_guard);

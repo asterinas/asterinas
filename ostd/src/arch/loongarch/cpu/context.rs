@@ -11,7 +11,7 @@ use crate::{
         mm::tlb_flush_addr,
         trap::{RawUserContext, TrapFrame},
     },
-    trap::call_irq_callback_functions,
+    irq::call_irq_callback_functions,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
 

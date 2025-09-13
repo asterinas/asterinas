@@ -12,8 +12,8 @@ use spin::Once;
 use crate::{
     arch::{self, boot::DEVICE_TREE, cpu::extension::IsaExtensions, trap::TrapFrame},
     cpu::{CpuId, PinCurrentCpu},
+    irq::{self, IrqLine},
     timer::INTERRUPT_CALLBACKS,
-    trap::{self, irq::IrqLine},
 };
 
 /// The timer frequency (Hz). Here we choose 1000Hz since 1000Hz is easier for
@@ -80,7 +80,7 @@ pub(super) unsafe fn init() {
 }
 
 fn timer_callback(_: &TrapFrame) {
-    let irq_guard = trap::irq::disable_local();
+    let irq_guard = irq::disable_local();
     if irq_guard.current_cpu() == CpuId::bsp() {
         crate::timer::jiffies::ELAPSED.fetch_add(1, Ordering::Relaxed);
     }

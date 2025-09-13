@@ -11,9 +11,9 @@ use core::{
 
 use ostd::{
     cpu_local,
+    irq::DisabledLocalIrqGuard,
     mm::Paddr,
     sync::{LocalIrqDisabled, SpinLock, SpinLockGuard},
-    trap::irq::DisabledLocalIrqGuard,
 };
 
 use crate::chunk::{greater_order_of, lesser_order_of, size_of_order, split_to_chunks, BuddyOrder};

@@ -11,7 +11,7 @@ use volatile::{
 };
 
 use crate::{
-    arch::if_tdx_enabled, io::IoMemAllocatorBuilder, mm::paddr_to_vaddr, trap::irq::IrqLine, Error,
+    arch::if_tdx_enabled, io::IoMemAllocatorBuilder, irq::IrqLine, mm::paddr_to_vaddr, Error,
     Result,
 };
 

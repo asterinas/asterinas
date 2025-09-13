@@ -10,7 +10,7 @@
 use core::marker::PhantomData;
 
 use super::{AnyStorage, CpuLocal, __cpu_local_end, __cpu_local_start};
-use crate::{arch, cpu::CpuId, trap::irq::DisabledLocalIrqGuard};
+use crate::{arch, cpu::CpuId, irq::DisabledLocalIrqGuard};
 
 /// Defines a statically-allocated CPU-local variable.
 ///
@@ -38,7 +38,7 @@ use crate::{arch, cpu::CpuId, trap::irq::DisabledLocalIrqGuard};
 ///     let val_of_foo = ref_of_foo.load(Ordering::Relaxed);
 ///     println!("FOO VAL: {}", val_of_foo);
 ///
-///     let irq_guard = trap::irq::disable_local();
+///     let irq_guard = irq::disable_local();
 ///     let bar_guard = BAR.get_with(&irq_guard);
 ///     let val_of_bar = bar_guard.get();
 ///     println!("BAR VAL: {}", val_of_bar);

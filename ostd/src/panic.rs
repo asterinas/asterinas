@@ -24,7 +24,7 @@ use gimli::Register;
 #[linkage = "weak"]
 #[no_mangle]
 pub fn __ostd_panic_handler(info: &core::panic::PanicInfo) -> ! {
-    let _irq_guard = crate::trap::irq::disable_local();
+    let _irq_guard = crate::irq::disable_local();
 
     crate::cpu_local_cell! {
         static IN_PANIC: bool = false;

@@ -76,7 +76,7 @@ impl super::Apic for X2Apic {
     }
 
     unsafe fn send_ipi(&self, icr: super::Icr) {
-        let _guard = crate::trap::irq::disable_local();
+        let _guard = crate::irq::disable_local();
         // SAFETY: These `rdmsr` and `wrmsr` instructions write the interrupt command to APIC and
         // wait for results. The caller guarantees it's safe to execute this interrupt command.
         unsafe {

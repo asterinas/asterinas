@@ -42,6 +42,7 @@ pub mod console;
 pub mod cpu;
 mod error;
 pub mod io;
+pub mod irq;
 pub mod logger;
 pub mod mm;
 pub mod panic;
@@ -50,7 +51,6 @@ pub mod smp;
 pub mod sync;
 pub mod task;
 pub mod timer;
-pub mod trap;
 pub mod user;
 pub mod util;
 

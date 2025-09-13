@@ -12,7 +12,7 @@ use crate::{
         },
         trap::TrapFrame,
     },
-    trap::irq::IrqLine,
+    irq::IrqLine,
 };
 
 /// The frequency in Hz of the Time Stamp Counter (TSC).

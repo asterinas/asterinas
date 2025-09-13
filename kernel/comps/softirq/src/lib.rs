@@ -13,10 +13,7 @@ use component::{init_component, ComponentInitError};
 use lock::is_softirq_enabled;
 use ostd::{
     cpu_local_cell,
-    trap::{
-        irq::{disable_local, DisabledLocalIrqGuard},
-        register_bottom_half_handler,
-    },
+    irq::{disable_local, register_bottom_half_handler, DisabledLocalIrqGuard},
 };
 use spin::Once;
 

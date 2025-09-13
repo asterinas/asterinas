@@ -13,8 +13,8 @@ pub use trap::TrapFrame;
 use crate::{
     arch::{cpu::context::CpuExceptionInfo, mm::tlb_flush_addr},
     cpu_local_cell,
+    irq::call_irq_callback_functions,
     mm::MAX_USERSPACE_VADDR,
-    trap::call_irq_callback_functions,
 };
 
 cpu_local_cell! {

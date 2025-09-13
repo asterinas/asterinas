@@ -2,12 +2,12 @@
 
 use ostd::{
     cpu_local_cell,
+    irq::{disable_local, in_interrupt_context},
     sync::{GuardTransfer, SpinGuardian},
     task::{
         atomic_mode::{AsAtomicModeGuard, InAtomicMode},
         disable_preempt, DisabledPreemptGuard,
     },
-    trap::{in_interrupt_context, irq::disable_local},
 };
 
 use crate::process_all_pending;

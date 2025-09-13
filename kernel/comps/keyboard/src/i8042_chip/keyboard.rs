@@ -10,7 +10,7 @@ use ostd::{
         kernel::{MappedIrqLine, IRQ_CHIP},
         trap::TrapFrame,
     },
-    trap::irq::IrqLine,
+    irq::IrqLine,
 };
 use spin::Once;
 

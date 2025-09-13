@@ -27,7 +27,7 @@ pub use self::{
     preempt::{disable_preempt, halt_cpu, DisabledPreemptGuard},
     scheduler::info::{AtomicCpuId, TaskScheduleInfo},
 };
-use crate::{arch::task::TaskContext, prelude::*, trap::in_interrupt_context};
+use crate::{arch::task::TaskContext, irq::in_interrupt_context, prelude::*};
 
 static PRE_SCHEDULE_HANDLER: Once<fn()> = Once::new();
 

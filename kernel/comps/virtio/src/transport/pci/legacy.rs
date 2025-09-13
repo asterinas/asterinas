@@ -11,8 +11,8 @@ use ostd::{
         BusProbeError,
     },
     io::IoMem,
+    irq::IrqCallbackFunction,
     mm::{DmaCoherent, HasDaddr, PAGE_SIZE},
-    trap::irq::IrqCallbackFunction,
 };
 
 use crate::{
