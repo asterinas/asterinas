@@ -8,13 +8,12 @@ use core::{
 };
 
 use ostd::{
-    cpu_local,
+    cpu_local, irq,
     mm::{
         heap::{GlobalHeapAllocator, HeapSlot, SlabSlotList, SlotInfo},
         PAGE_SIZE,
     },
     sync::{LocalIrqDisabled, SpinLock},
-    trap,
 };
 
 use crate::slab_cache::SlabCache;
@@ -296,7 +295,7 @@ impl GlobalHeapAllocator for HeapAllocator {
             return HeapSlot::alloc_large(layout.size().div_ceil(PAGE_SIZE) * PAGE_SIZE);
         };
 
-        let irq_guard = trap::irq::disable_local();
+        let irq_guard = irq::disable_local();
         let this_cache = LOCAL_POOL.get_with(&irq_guard);
         let mut local_cache = this_cache.borrow_mut();
 
@@ -309,7 +308,7 @@ impl GlobalHeapAllocator for HeapAllocator {
             return Ok(());
         };
 
-        let irq_guard = trap::irq::disable_local();
+        let irq_guard = irq::disable_local();
         let this_cache = LOCAL_POOL.get_with(&irq_guard);
         let mut local_cache = this_cache.borrow_mut();
 

@@ -19,9 +19,9 @@ use x86_64::registers::{
 
 use crate::{
     arch::trap::{RawUserContext, TrapFrame},
+    irq::call_irq_callback_functions,
     mm::Vaddr,
     task::scheduler,
-    trap::call_irq_callback_functions,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
 
@@ -70,8 +70,8 @@ pub struct GeneralRegs {
 
 /// Architectural CPU exceptions (x86-64 vectors 0-31).
 ///
-/// For the authoritative specification of each vector, see the  
-/// Intel® 64 and IA-32 Architectures Software Developer’s Manual,  
+/// For the authoritative specification of each vector, see the
+/// Intel® 64 and IA-32 Architectures Software Developer’s Manual,
 /// Volume 3 “System Programming Guide”, Chapter 6 “Interrupt and Exception
 /// Handling”, in particular Section 6.15 “Exception and Interrupt
 /// Reference”.
@@ -112,14 +112,14 @@ pub enum CpuException {
     SegmentNotPresent(SelectorErrorCode),
     /// 12 – #SS  Stack-segment fault.
     StackSegmentFault(SelectorErrorCode),
-    /// 13 – #GP  General protection fault  
+    /// 13 – #GP  General protection fault
     GeneralProtectionFault(Option<SelectorErrorCode>),
     /// 14 – #PF  Page fault.
     PageFault(RawPageFaultInfo),
     // 15: Reserved
     /// 16 – #MF  x87 floating-point exception.
     X87FloatingPointException,
-    /// 17 – #AC  Alignment check.  
+    /// 17 – #AC  Alignment check.
     AlignmentCheck,
     /// 18 – #MC  Machine check.
     MachineCheck,

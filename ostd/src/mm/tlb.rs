@@ -82,7 +82,7 @@ impl<'a, G: PinCurrentCpu> TlbFlusher<'a, G> {
     /// function. But it may not be synchronous. Upon the return of this
     /// function, the TLB entries may not be coherent.
     pub fn dispatch_tlb_flush(&mut self) {
-        let irq_guard = crate::trap::irq::disable_local();
+        let irq_guard = crate::irq::disable_local();
 
         if self.ops_stack.is_empty() {
             return;

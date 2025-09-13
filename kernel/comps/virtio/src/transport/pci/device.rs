@@ -14,8 +14,8 @@ use ostd::{
         BusProbeError,
     },
     io::IoMem,
+    irq::IrqCallbackFunction,
     mm::{DmaCoherent, HasDaddr},
-    trap::irq::IrqCallbackFunction,
 };
 
 use super::{common_cfg::VirtioPciCommonCfg, msix::VirtioMsixManager};

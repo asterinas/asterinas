@@ -11,7 +11,7 @@ use crate::{
         trap::{RawUserContext, TrapFrame},
         TIMER_IRQ_NUM,
     },
-    trap::call_irq_callback_functions,
+    irq::call_irq_callback_functions,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
 

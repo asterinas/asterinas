@@ -14,8 +14,8 @@ use super::trap::TrapFrame;
 use crate::{
     arch::kernel,
     cpu::{CpuId, PinCurrentCpu},
+    irq::{self, IrqLine},
     timer::INTERRUPT_CALLBACKS,
-    trap::{self, irq::IrqLine},
 };
 
 /// The timer frequency (Hz).
@@ -62,7 +62,7 @@ pub(super) fn init_ap() {
 }
 
 fn timer_callback(_: &TrapFrame) {
-    let irq_guard = trap::irq::disable_local();
+    let irq_guard = irq::disable_local();
     if irq_guard.current_cpu() == CpuId::bsp() {
         crate::timer::jiffies::ELAPSED.fetch_add(1, Ordering::SeqCst);
     }

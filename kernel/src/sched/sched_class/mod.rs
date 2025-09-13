@@ -10,6 +10,7 @@ use core::{fmt, sync::atomic::Ordering};
 use ostd::{
     arch::read_tsc as sched_clock,
     cpu::{all_cpus, CpuId, PinCurrentCpu},
+    irq::disable_local,
     sync::SpinLock,
     task::{
         scheduler::{
@@ -18,7 +19,6 @@ use ostd::{
         },
         AtomicCpuId, Task,
     },
-    trap::irq::disable_local,
 };
 
 use super::{

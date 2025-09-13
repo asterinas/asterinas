@@ -12,8 +12,8 @@ use crate::{
         trap::TrapFrame,
         tsc_freq,
     },
+    irq::IrqLine,
     task::disable_preempt,
-    trap::irq::IrqLine,
 };
 
 /// Initializes APIC with TSC-deadline mode or periodic mode.

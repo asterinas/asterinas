@@ -12,8 +12,8 @@ use volatile::{
 
 use crate::{
     arch::kernel::{acpi::get_acpi_tables, MappedIrqLine, IRQ_CHIP},
+    irq::IrqLine,
     mm::paddr_to_vaddr,
-    trap::irq::IrqLine,
 };
 
 static HPET_INSTANCE: Once<Hpet> = Once::new();

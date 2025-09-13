@@ -89,7 +89,7 @@ impl FastSmpCounter {
 
 #[cfg(ktest)]
 mod test {
-    use ostd::{cpu::PinCurrentCpu, prelude::*, trap};
+    use ostd::{cpu::PinCurrentCpu, irq, prelude::*};
 
     #[ktest]
     fn test_per_cpu_counter() {
@@ -98,7 +98,7 @@ mod test {
             pub static FREE_SIZE_COUNTER: usize;
         }
 
-        let guard = trap::irq::disable_local();
+        let guard = irq::disable_local();
         let cur_cpu = guard.current_cpu();
         FREE_SIZE_COUNTER.add(cur_cpu, 10);
         assert_eq!(FREE_SIZE_COUNTER.get(), 10);

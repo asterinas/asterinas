@@ -9,13 +9,13 @@ use crate::{
         PinCurrentCpu,
     },
     impl_frame_meta_for,
+    irq::DisabledLocalIrqGuard,
     mm::{
         kspace::kvirt_area::KVirtArea,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
         FrameAllocOptions, PAGE_SIZE,
     },
     prelude::*,
-    trap::irq::DisabledLocalIrqGuard,
 };
 
 /// The kernel stack size of a task, specified in pages.

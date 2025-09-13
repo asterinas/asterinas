@@ -41,7 +41,7 @@ pub trait SingleInstructionAddAssign<Rhs = Self> {
 
 impl<T: num_traits::WrappingAdd + Copy> SingleInstructionAddAssign<T> for T {
     default unsafe fn add_assign(offset: *mut Self, rhs: T) {
-        let _guard = crate::trap::irq::disable_local();
+        let _guard = crate::irq::disable_local();
         let base = crate::arch::cpu::local::get_base() as usize;
         let addr = (base + offset as usize) as *mut Self;
         // SAFETY:
@@ -67,7 +67,7 @@ pub trait SingleInstructionSubAssign<Rhs = Self> {
 
 impl<T: num_traits::WrappingSub + Copy> SingleInstructionSubAssign<T> for T {
     default unsafe fn sub_assign(offset: *mut Self, rhs: T) {
-        let _guard = crate::trap::irq::disable_local();
+        let _guard = crate::irq::disable_local();
         let base = crate::arch::cpu::local::get_base() as usize;
         let addr = (base + offset as usize) as *mut Self;
         // SAFETY: Same as `add_assign`.
@@ -87,7 +87,7 @@ pub trait SingleInstructionBitOrAssign<Rhs = Self> {
 
 impl<T: core::ops::BitOr<Output = T> + Copy> SingleInstructionBitOrAssign<T> for T {
     default unsafe fn bitor_assign(offset: *mut Self, rhs: T) {
-        let _guard = crate::trap::irq::disable_local();
+        let _guard = crate::irq::disable_local();
         let base = crate::arch::cpu::local::get_base() as usize;
         let addr = (base + offset as usize) as *mut Self;
         // SAFETY: Same as `add_assign`.
@@ -107,7 +107,7 @@ pub trait SingleInstructionBitAndAssign<Rhs = Self> {
 
 impl<T: core::ops::BitAnd<Output = T> + Copy> SingleInstructionBitAndAssign<T> for T {
     default unsafe fn bitand_assign(offset: *mut Self, rhs: T) {
-        let _guard = crate::trap::irq::disable_local();
+        let _guard = crate::irq::disable_local();
         let base = crate::arch::cpu::local::get_base() as usize;
         let addr = (base + offset as usize) as *mut Self;
         // SAFETY: Same as `add_assign`.
@@ -127,7 +127,7 @@ pub trait SingleInstructionBitXorAssign<Rhs = Self> {
 
 impl<T: core::ops::BitXor<Output = T> + Copy> SingleInstructionBitXorAssign<T> for T {
     default unsafe fn bitxor_assign(offset: *mut Self, rhs: T) {
-        let _guard = crate::trap::irq::disable_local();
+        let _guard = crate::irq::disable_local();
         let base = crate::arch::cpu::local::get_base() as usize;
         let addr = (base + offset as usize) as *mut Self;
         // SAFETY: Same as `add_assign`.
@@ -147,7 +147,7 @@ pub trait SingleInstructionLoad {
 
 impl<T: Copy> SingleInstructionLoad for T {
     default unsafe fn load(offset: *const Self) -> Self {
-        let _guard = crate::trap::irq::disable_local();
+        let _guard = crate::irq::disable_local();
         let base = crate::arch::cpu::local::get_base() as usize;
         let ptr = (base + offset as usize) as *const Self;
         // SAFETY: Same as `add_assign`.
@@ -167,7 +167,7 @@ pub trait SingleInstructionStore {
 
 impl<T: Copy> SingleInstructionStore for T {
     default unsafe fn store(offset: *mut Self, val: Self) {
-        let _guard = crate::trap::irq::disable_local();
+        let _guard = crate::irq::disable_local();
         let base = crate::arch::cpu::local::get_base() as usize;
         let ptr = (base + offset as usize) as *mut Self;
         // SAFETY: Same as `add_assign`.

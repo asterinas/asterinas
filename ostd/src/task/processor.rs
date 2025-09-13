@@ -7,7 +7,7 @@ use super::{Task, POST_SCHEDULE_HANDLER, PRE_SCHEDULE_HANDLER};
 use crate::{
     arch::task::{context_switch, first_context_switch},
     cpu_local_cell,
-    trap::irq::DisabledLocalIrqGuard,
+    irq::DisabledLocalIrqGuard,
 };
 
 cpu_local_cell! {
@@ -45,7 +45,7 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
         crate::sync::finish_grace_period();
     }
 
-    let irq_guard = crate::trap::irq::disable_local();
+    let irq_guard = crate::irq::disable_local();
 
     before_switching_to(&next_task, &irq_guard);
 

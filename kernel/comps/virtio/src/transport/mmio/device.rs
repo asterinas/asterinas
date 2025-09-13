@@ -9,9 +9,9 @@ use log::warn;
 use ostd::{
     bus::pci::cfg_space::Bar,
     io::IoMem,
+    irq::IrqCallbackFunction,
     mm::{DmaCoherent, HasDaddr, PAGE_SIZE},
     sync::RwLock,
-    trap::irq::IrqCallbackFunction,
 };
 
 use super::{

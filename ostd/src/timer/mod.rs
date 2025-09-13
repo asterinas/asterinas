@@ -9,7 +9,7 @@ use core::cell::RefCell;
 
 pub use jiffies::Jiffies;
 
-use crate::{cpu_local, trap};
+use crate::{cpu_local, irq};
 
 type InterruptCallback = Box<dyn Fn() + Sync + Send>;
 
@@ -22,7 +22,7 @@ pub fn register_callback<F>(func: F)
 where
     F: Fn() + Sync + Send + 'static,
 {
-    let irq_guard = trap::irq::disable_local();
+    let irq_guard = irq::disable_local();
     INTERRUPT_CALLBACKS
         .get_with(&irq_guard)
         .borrow_mut()

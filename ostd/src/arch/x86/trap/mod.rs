@@ -33,13 +33,13 @@ use crate::{
         irq::{disable_local, enable_local},
     },
     cpu_local_cell,
+    irq::call_irq_callback_functions,
     mm::{
         kspace::{KERNEL_PAGE_TABLE, LINEAR_MAPPING_BASE_VADDR, LINEAR_MAPPING_VADDR_RANGE},
         page_prop::{CachePolicy, PageProperty},
         PageFlags, PrivilegedPageFlags as PrivFlags, MAX_USERSPACE_VADDR, PAGE_SIZE,
     },
     task::disable_preempt,
-    trap::call_irq_callback_functions,
 };
 
 cfg_if! {
