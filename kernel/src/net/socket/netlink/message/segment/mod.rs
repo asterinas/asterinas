@@ -3,7 +3,7 @@
 use align_ext::AlignExt;
 use header::CMsgSegHdr;
 
-use super::NLMSG_ALIGN;
+use super::{ContinueRead, NLMSG_ALIGN};
 use crate::{
     prelude::*,
     util::{MultiRead, MultiWrite},
@@ -26,20 +26,14 @@ pub trait SegmentBody: Sized + Clone + Copy {
     /// Reads the segment body from the `reader`.
     ///
     /// This method returns the body and the remaining length to be read from the `reader`.
-    fn read_from(header: &CMsgSegHdr, reader: &mut dyn MultiRead) -> Result<(Self, usize)>
+    fn read_from(
+        header: &CMsgSegHdr,
+        reader: &mut dyn MultiRead,
+    ) -> Result<ContinueRead<(Self, usize)>>
     where
         Error: From<<Self::CType as TryInto<Self>>::Error>,
     {
-        let mut remaining_len = (header.len as usize)
-            .checked_sub(size_of_val(header))
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "the message length is too small"))?;
-
-        // Align `remaining_len` up to `NLMSG_ALIGN`.
-        let reader_len = reader.sum_lens();
-        if reader_len < remaining_len {
-            return_errno_with_message!(Errno::EINVAL, "the reader length is too small");
-        }
-        remaining_len = remaining_len.align_up(NLMSG_ALIGN).min(reader_len);
+        let mut remaining_len = header.calc_payload_len_with_padding(reader)?;
 
         // Read the body.
         let (c_type, padding_len) = if remaining_len >= size_of::<Self::CType>() {
@@ -53,7 +47,11 @@ pub trait SegmentBody: Sized + Clone + Copy {
 
             (Self::CType::from(legacy), Self::lecacy_padding_len())
         } else {
-            return_errno_with_message!(Errno::EINVAL, "the message length is too small");
+            reader.skip_some(remaining_len);
+            return Ok(ContinueRead::skipped_with_error(
+                Errno::EINVAL,
+                "the message length is too small",
+            ));
         };
 
         // Skip the padding bytes.
@@ -61,10 +59,16 @@ pub trait SegmentBody: Sized + Clone + Copy {
         reader.skip_some(padding_len);
         remaining_len -= padding_len;
 
-        let body = c_type.try_into()?;
-        Ok((body, remaining_len))
+        match c_type.try_into() {
+            Ok(body) => Ok(ContinueRead::Parsed((body, remaining_len))),
+            Err(err) => {
+                reader.skip_some(remaining_len);
+                Ok(ContinueRead::SkippedErr(err.into()))
+            }
+        }
     }
 
+    /// Writes the segment body to the `writer`.
     fn write_to(&self, writer: &mut dyn MultiWrite) -> Result<()> {
         // Write the body.
         let c_body = Self::CType::from(*self);

@@ -2,7 +2,7 @@
 
 use super::{header::CMsgSegHdr, SegmentBody};
 use crate::{
-    net::socket::netlink::message::attr::Attribute,
+    net::socket::netlink::message::{attr::Attribute, ContinueRead},
     prelude::*,
     util::{MultiRead, MultiWrite},
 };
@@ -47,18 +47,27 @@ impl<Body: SegmentBody, Attr: Attribute> SegmentCommon<Body, Attr> {
         res
     }
 
-    pub fn read_from(header: CMsgSegHdr, reader: &mut dyn MultiRead) -> Result<Self>
+    pub fn read_from(header: &CMsgSegHdr, reader: &mut dyn MultiRead) -> Result<ContinueRead<Self>>
     where
         Error: From<<Body::CType as TryInto<Body>>::Error>,
     {
-        let (body, remain_len) = Body::read_from(&header, reader)?;
-        let attrs = Attr::read_all_from(reader, remain_len)?;
+        let (body, remain_len) = match Body::read_from(header, reader)? {
+            ContinueRead::Parsed(parsed) => parsed,
+            ContinueRead::Skipped => return Ok(ContinueRead::Skipped),
+            ContinueRead::SkippedErr(err) => return Ok(ContinueRead::SkippedErr(err)),
+        };
 
-        Ok(Self {
-            header,
+        let attrs = match Attr::read_all_from(reader, remain_len)? {
+            ContinueRead::Parsed(attrs) => attrs,
+            ContinueRead::Skipped => Vec::new(),
+            ContinueRead::SkippedErr(err) => return Ok(ContinueRead::SkippedErr(err)),
+        };
+
+        Ok(ContinueRead::Parsed(Self {
+            header: *header,
             body,
             attrs,
-        })
+        }))
     }
 
     pub fn write_to(&self, writer: &mut dyn MultiWrite) -> Result<()> {

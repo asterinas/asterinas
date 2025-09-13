@@ -2,7 +2,7 @@
 
 use super::IFNAME_SIZE;
 use crate::{
-    net::socket::netlink::message::{Attribute, CAttrHeader},
+    net::socket::netlink::message::{Attribute, CAttrHeader, ContinueRead},
     prelude::*,
     util::MultiRead,
 };
@@ -118,7 +118,7 @@ impl Attribute for LinkAttr {
         }
     }
 
-    fn read_from(header: &CAttrHeader, reader: &mut dyn MultiRead) -> Result<Option<Self>>
+    fn read_from(header: &CAttrHeader, reader: &mut dyn MultiRead) -> Result<ContinueRead<Self>>
     where
         Self: Sized,
     {
@@ -129,7 +129,7 @@ impl Attribute for LinkAttr {
             // Unknown attributes should be ignored.
             // Reference: <https://docs.kernel.org/userspace-api/netlink/intro.html#unknown-attributes>.
             reader.skip_some(payload_len);
-            return Ok(None);
+            return Ok(ContinueRead::Skipped);
         };
 
         let res = match (class, payload_len) {
@@ -153,17 +153,21 @@ impl Attribute for LinkAttr {
                 _,
             ) => {
                 warn!("link attribute `{:?}` contains invalid payload", class);
-                return_errno_with_message!(Errno::EINVAL, "the link attribute is invalid");
+                reader.skip_some(payload_len);
+                return Ok(ContinueRead::skipped_with_error(
+                    Errno::EINVAL,
+                    "the link attribute is invalid",
+                ));
             }
 
             (_, _) => {
                 warn!("link attribute `{:?}` is not supported", class);
                 reader.skip_some(payload_len);
-                return Ok(None);
+                return Ok(ContinueRead::Skipped);
             }
         };
 
-        Ok(Some(res))
+        Ok(ContinueRead::Parsed(res))
     }
 }
 

@@ -9,7 +9,7 @@ use super::message::{RtnlMessage, RtnlSegment};
 use crate::{
     net::socket::netlink::{
         addr::PortNum,
-        message::{CSegmentType, ErrorSegment, ProtocolSegment},
+        message::{ErrorSegment, ProtocolSegment},
         table::{NetlinkRouteProtocol, SupportedNetlinkProtocol},
     },
     prelude::*,
@@ -30,39 +30,43 @@ impl NetlinkRouteKernelSocket {
         }
     }
 
-    pub(super) fn request(&self, request: &RtnlMessage, dst_port: PortNum) {
+    pub(super) fn handle_request(&self, request: &RtnlSegment, dst_port: PortNum) {
         debug!("netlink route request: {:?}", request);
 
-        for segment in request.segments() {
-            let request_header = segment.header();
+        let request_header = request.header();
 
-            let segment_type = CSegmentType::try_from(request_header.type_).unwrap();
+        let response_segments = match request {
+            RtnlSegment::GetLink(request_segment) => link::do_get_link(request_segment),
+            RtnlSegment::GetAddr(request_segment) => addr::do_get_addr(request_segment),
+            _ => Err(Error::with_message(
+                Errno::EOPNOTSUPP,
+                "the netlink route request is not supported",
+            )),
+        };
 
-            let response_segments = match segment {
-                RtnlSegment::GetLink(request_segment) => link::do_get_link(request_segment),
-                RtnlSegment::GetAddr(request_segment) => addr::do_get_addr(request_segment),
-                _ => {
-                    // FIXME: The error is currently silently ignored.
-                    warn!("unsupported request type: {:?}", segment_type);
-                    return;
-                }
-            };
+        let response = match response_segments {
+            Ok(segments) => RtnlMessage::new(segments),
+            Err(error) => {
+                // TODO: Deal with the `NetlinkMessageCommonFlags::ACK` flag.
+                // Should we return `ErrorSegment` if ACK flag does not exist?
+                // Reference: <https://docs.kernel.org/userspace-api/netlink/intro.html#netlink-message-types>.
+                let err_segment = ErrorSegment::new_from_request(request_header, Some(error));
+                self.report_error(err_segment, dst_port);
+                return;
+            }
+        };
 
-            let response = match response_segments {
-                Ok(segments) => RtnlMessage::new(segments),
-                Err(error) => {
-                    // TODO: Deal with the `NetlinkMessageCommonFlags::ACK` flag.
-                    // Should we return `ErrorSegment` if ACK flag does not exist?
-                    // Reference: <https://docs.kernel.org/userspace-api/netlink/intro.html#netlink-message-types>.
-                    let err_segment = ErrorSegment::new_from_request(request_header, Some(error));
-                    RtnlMessage::new(vec![RtnlSegment::Error(err_segment)])
-                }
-            };
+        debug!("netlink route response: {:?}", response);
 
-            debug!("netlink route response: {:?}", response);
+        NetlinkRouteProtocol::unicast(dst_port, response).unwrap();
+    }
 
-            NetlinkRouteProtocol::unicast(dst_port, response).unwrap();
-        }
+    pub(super) fn report_error(&self, err_segment: ErrorSegment, dst_port: PortNum) {
+        let response = RtnlMessage::new(vec![RtnlSegment::Error(err_segment)]);
+
+        debug!("netlink route error: {:?}", response);
+
+        NetlinkRouteProtocol::unicast(dst_port, response).unwrap();
     }
 }
 

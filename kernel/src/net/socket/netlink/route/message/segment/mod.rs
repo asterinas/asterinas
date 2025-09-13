@@ -39,7 +39,7 @@ use link::LinkSegment;
 
 use crate::{
     net::socket::netlink::message::{
-        CMsgSegHdr, CSegmentType, DoneSegment, ErrorSegment, ProtocolSegment,
+        CMsgSegHdr, CSegmentType, ContinueRead, DoneSegment, ErrorSegment, ProtocolSegment,
     },
     prelude::*,
     util::{MultiRead, MultiWrite},
@@ -83,18 +83,29 @@ impl ProtocolSegment for RtnlSegment {
         }
     }
 
-    fn read_from(reader: &mut dyn MultiRead) -> Result<Self> {
+    fn read_from(reader: &mut dyn MultiRead) -> Result<ContinueRead<Self, ErrorSegment>> {
         let header = reader
             .read_val_opt::<CMsgSegHdr>()?
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "the reader length is too small"))?;
 
-        let segment = match CSegmentType::try_from(header.type_)? {
-            CSegmentType::GETLINK => RtnlSegment::GetLink(LinkSegment::read_from(header, reader)?),
-            CSegmentType::GETADDR => RtnlSegment::GetAddr(AddrSegment::read_from(header, reader)?),
-            _ => return_errno_with_message!(Errno::EINVAL, "unsupported segment type"),
+        let segment = match CSegmentType::try_from(header.type_) {
+            Ok(CSegmentType::GETLINK) => {
+                LinkSegment::read_from(&header, reader)?.map(RtnlSegment::GetLink)
+            }
+            Ok(CSegmentType::GETADDR) => {
+                AddrSegment::read_from(&header, reader)?.map(RtnlSegment::GetAddr)
+            }
+            _ => {
+                let payload_len = header.calc_payload_len_with_padding(reader)?;
+                reader.skip_some(payload_len);
+                ContinueRead::skipped_with_error(
+                    Errno::EOPNOTSUPP,
+                    "the segment type is not supported",
+                )
+            }
         };
 
-        Ok(segment)
+        Ok(segment.map_err(|error| ErrorSegment::new_from_request(&header, Some(error))))
     }
 
     fn write_to(&self, writer: &mut dyn MultiWrite) -> Result<()> {
