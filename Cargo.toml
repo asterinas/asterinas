@@ -34,6 +34,7 @@ members = [
     "kernel/libs/aster-bigtcp",
     "kernel/libs/jhash",
     "kernel/libs/keyable-arc",
+    "kernel/libs/logo-ascii-art",
     "kernel/libs/typeflags",
     "kernel/libs/typeflags-util",
     "kernel/libs/atomic-integer-wrapper",
