@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::IFNAME_SIZE;
 use crate::{
-    net::socket::netlink::message::{Attribute, CAttrHeader},
+    net::socket::netlink::message::{Attribute, CAttrHeader, ContinueRead},
     prelude::*,
     util::MultiRead,
 };
@@ -58,41 +57,31 @@ impl Attribute for AddrAttr {
         }
     }
 
-    fn read_from(header: &CAttrHeader, reader: &mut dyn MultiRead) -> Result<Option<Self>>
+    fn read_from(header: &CAttrHeader, reader: &mut dyn MultiRead) -> Result<ContinueRead<Self>>
     where
         Self: Sized,
     {
         let payload_len = header.payload_len();
+        reader.skip_some(payload_len);
 
-        // TODO: Currently, `IS_NET_BYTEORDER_MASK` and `IS_NESTED_MASK` are ignored.
-        let Ok(class) = AddrAttrClass::try_from(header.type_()) else {
-            // Unknown attributes should be ignored.
-            // Reference: <https://docs.kernel.org/userspace-api/netlink/intro.html#unknown-attributes>.
-            reader.skip_some(payload_len);
-            return Ok(None);
-        };
+        // GETADDR only supports dump requests. These requests do not have any attributes.
+        // According to the Linux behavior, we should just ignore all the attributes.
 
-        let res = match (class, payload_len) {
-            (AddrAttrClass::ADDRESS, 4) => {
-                Self::Address(reader.read_val_opt::<[u8; 4]>()?.unwrap())
-            }
-            (AddrAttrClass::LOCAL, 4) => Self::Local(reader.read_val_opt::<[u8; 4]>()?.unwrap()),
-            (AddrAttrClass::LABEL, 1..=IFNAME_SIZE) => {
-                Self::Label(reader.read_cstring_with_max_len(payload_len)?)
-            }
+        Ok(ContinueRead::Skipped)
+    }
 
-            (AddrAttrClass::ADDRESS | AddrAttrClass::LOCAL | AddrAttrClass::LABEL, _) => {
-                warn!("address attribute `{:?}` contains invalid payload", class);
-                return_errno_with_message!(Errno::EINVAL, "the address attribute is invalid");
-            }
+    fn read_all_from(
+        reader: &mut dyn MultiRead,
+        total_len: usize,
+    ) -> Result<ContinueRead<Vec<Self>>>
+    where
+        Self: Sized,
+    {
+        reader.skip_some(total_len);
 
-            (_, _) => {
-                warn!("address attribute `{:?}` is not supported", class);
-                reader.skip_some(payload_len);
-                return Ok(None);
-            }
-        };
+        // GETADDR only supports dump requests. These requests do not have any attributes.
+        // According to the Linux behavior, we should just ignore all the attributes.
 
-        Ok(Some(res))
+        Ok(ContinueRead::Skipped)
     }
 }
