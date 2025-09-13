@@ -34,9 +34,14 @@ impl FileOps for OomScoreAdjFileOps {
     }
 
     fn write_at(&self, _offset: usize, reader: &mut VmReader) -> Result<usize> {
-        // TODO: Extend the `ReadCString` trait to read a C string without
-        // requiring the nul terminator.
-        let (val, read_bytes) = read_i32_from(reader)?;
+        let (cstr, read_bytes) = reader.read_cstring_until_end(BUF_SIZE_I32 - 1)?;
+        let val = cstr
+            .to_str()
+            .ok()
+            .and_then(|str| str.parse::<i32>().ok())
+            .ok_or_else(|| {
+                Error::with_message(Errno::EINVAL, "the value is not a valid integer")
+            })?;
         if !(OOM_SCORE_ADJ_MIN..=OOM_SCORE_ADJ_MAX).contains(&val) {
             return_errno_with_message!(Errno::EINVAL, "the OOM score adjustment is out of range");
         }
@@ -50,22 +55,6 @@ impl FileOps for OomScoreAdjFileOps {
 
         Ok(read_bytes)
     }
-}
-
-/// Reads an `i32` from the given `VmReader`.
-///
-/// Returns the read value and the number of bytes read from the given `VmReader`.
-fn read_i32_from(reader: &mut VmReader) -> Result<(i32, usize)> {
-    let mut buf = [0u8; BUF_SIZE_I32];
-
-    let read_bytes = reader.read_fallible(&mut (&mut buf[..BUF_SIZE_I32 - 1]).into())?;
-    let val = CStr::from_bytes_until_nul(&buf)
-        .unwrap()
-        .to_str()
-        .ok()
-        .and_then(|str| str.parse::<i32>().ok())
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "the value is not a valid integer"))?;
-    Ok((val, read_bytes))
 }
 
 /// Worst case buffer size needed for holding an integer.

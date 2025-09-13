@@ -10,7 +10,7 @@ use crate::{
 /// Link-level attributes.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/if_link.h#L297>.
-#[derive(Debug, Clone, Copy, TryFromInt)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
 #[repr(u16)]
 #[expect(non_camel_case_types)]
 #[expect(clippy::upper_case_acronyms)]
@@ -134,7 +134,18 @@ impl Attribute for LinkAttr {
 
         let res = match (class, payload_len) {
             (LinkAttrClass::IFNAME, 1..=IFNAME_SIZE) => {
-                Self::Name(reader.read_cstring_with_max_len(payload_len)?)
+                let (name, namelen) =
+                    reader.read_cstring_until_end(IFNAME_SIZE.min(payload_len))?;
+                if namelen != payload_len {
+                    reader.skip_some(payload_len - namelen);
+                }
+                if name.as_bytes().len() == IFNAME_SIZE {
+                    return Ok(ContinueRead::skipped_with_error(
+                        Errno::ERANGE,
+                        "the link attribute is invalid",
+                    ));
+                }
+                Self::Name(name)
             }
             (LinkAttrClass::MTU, 4) => Self::Mtu(reader.read_val_opt::<u32>()?.unwrap()),
             (LinkAttrClass::TXQLEN, 4) => Self::TxqLen(reader.read_val_opt::<u32>()?.unwrap()),
@@ -155,7 +166,11 @@ impl Attribute for LinkAttr {
                 warn!("link attribute `{:?}` contains invalid payload", class);
                 reader.skip_some(payload_len);
                 return Ok(ContinueRead::skipped_with_error(
-                    Errno::EINVAL,
+                    if class == LinkAttrClass::IFNAME {
+                        Errno::ERANGE
+                    } else {
+                        Errno::EINVAL
+                    },
                     "the link attribute is invalid",
                 ));
             }

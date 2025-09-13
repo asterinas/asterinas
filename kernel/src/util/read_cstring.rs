@@ -2,66 +2,96 @@
 
 use ostd::mm::Fallible;
 
-use super::{MultiRead, VmReaderArray};
+use super::VmReaderArray;
 use crate::prelude::*;
 
 /// A trait providing the ability to read a C string from the user space.
 pub trait ReadCString {
-    /// Reads a C string from `self`.
+    /// Reads bytes until the first nul byte and creates a C string.
     ///
-    /// This method should read the bytes iteratively in `self` until
-    /// encountering the end of the reader or reading a `\0` (which is also
-    /// included in the final C String).
-    fn read_cstring(&mut self) -> Result<CString>;
+    /// This method reads up to `max_len` bytes. The kernel must limit `max_len`
+    /// to prevent unbounded heap allocation (i.e. it cannot be a value
+    /// specified arbitrarily by the user space). If no nul terminator is found
+    /// after exhausting the reader or reading out `max_len` bytes, this method
+    /// will return `None`.
+    fn read_cstring_until_nul(&mut self, max_len: usize) -> Result<Option<CString>>;
 
-    /// Reads a C string from `self` with a maximum length of `max_len`.
+    /// Reads bytes until the first nul byte or the reader end, and creates a
+    /// C string.
     ///
-    /// This method functions similarly to [`ReadCString::read_cstring`],
-    /// but imposes an additional limit on the length of the C string.
-    fn read_cstring_with_max_len(&mut self, max_len: usize) -> Result<CString>;
+    /// This method reads up to `max_len` bytes. The kernel must limit `max_len`
+    /// to prevent unbounded heap allocation (i.e. it cannot be a value
+    /// specified arbitrarily by the user space). If no nul terminator is found
+    /// after exhausting the reader or reading `max_len` bytes, this method will
+    /// construct a C string with a nul byte appended.
+    ///
+    /// Depending on whether the nul byte is found in the reader, the number of
+    /// bytes read may equal the length of the C string or the length of the C
+    /// string plus one (i.e., the nul byte). To distinguish the two cases, this
+    /// method also returns an integer representing the number of bytes read.
+    fn read_cstring_until_end(&mut self, max_len: usize) -> Result<(CString, usize)>;
 }
 
-impl ReadCString for VmReader<'_, Fallible> {
-    fn read_cstring(&mut self) -> Result<CString> {
-        self.read_cstring_with_max_len(self.remain())
-    }
+/// The recommended size for initial allocation.
+///
+/// This is used to optimize the allocated space for the most common case, in
+/// which the user provides a short string.
+const INIT_ALLOC_SIZE: usize = 128;
 
-    fn read_cstring_with_max_len(&mut self, max_len: usize) -> Result<CString> {
+impl ReadCString for VmReader<'_, Fallible> {
+    fn read_cstring_until_nul(&mut self, max_len: usize) -> Result<Option<CString>> {
         // This implementation is inspired by
         // the `do_strncpy_from_user` function in Linux kernel.
         // The original Linux implementation can be found at:
         // <https://elixir.bootlin.com/linux/v6.0.9/source/lib/strncpy_from_user.c#L28>
-        let mut buffer: Vec<u8> = Vec::with_capacity(max_len);
+
+        let mut buffer: Vec<u8> = Vec::with_capacity(INIT_ALLOC_SIZE.min(max_len));
 
         if read_until_nul_byte(self, &mut buffer, max_len)? {
-            return Ok(CString::from_vec_with_nul(buffer).unwrap());
+            return Ok(Some(CString::from_vec_with_nul(buffer).unwrap()));
         }
 
-        return_errno_with_message!(
-            Errno::EFAULT,
-            "no nul terminator is present before reaching the buffer limit"
-        );
+        Ok(None)
+    }
+
+    fn read_cstring_until_end(&mut self, max_len: usize) -> Result<(CString, usize)> {
+        let mut buffer: Vec<u8> = Vec::with_capacity(INIT_ALLOC_SIZE.min(max_len));
+
+        if read_until_nul_byte(self, &mut buffer, max_len)? {
+            let buffer_len = buffer.len();
+            return Ok((CString::from_vec_with_nul(buffer).unwrap(), buffer_len));
+        }
+
+        let buffer_len = buffer.len();
+        Ok((CString::new(buffer).unwrap(), buffer_len))
     }
 }
 
 impl ReadCString for VmReaderArray<'_> {
-    fn read_cstring(&mut self) -> Result<CString> {
-        self.read_cstring_with_max_len(self.sum_lens())
-    }
-
-    fn read_cstring_with_max_len(&mut self, max_len: usize) -> Result<CString> {
-        let mut buffer: Vec<u8> = Vec::with_capacity(max_len);
+    fn read_cstring_until_nul(&mut self, max_len: usize) -> Result<Option<CString>> {
+        let mut buffer: Vec<u8> = Vec::with_capacity(INIT_ALLOC_SIZE.min(max_len));
 
         for reader in self.readers_mut() {
             if read_until_nul_byte(reader, &mut buffer, max_len)? {
-                return Ok(CString::from_vec_with_nul(buffer).unwrap());
+                return Ok(Some(CString::from_vec_with_nul(buffer).unwrap()));
             }
         }
 
-        return_errno_with_message!(
-            Errno::EFAULT,
-            "no nul terminator is present before reaching the buffer limit"
-        );
+        Ok(None)
+    }
+
+    fn read_cstring_until_end(&mut self, max_len: usize) -> Result<(CString, usize)> {
+        let mut buffer: Vec<u8> = Vec::with_capacity(INIT_ALLOC_SIZE.min(max_len));
+
+        for reader in self.readers_mut() {
+            if read_until_nul_byte(reader, &mut buffer, max_len)? {
+                let buffer_len = buffer.len();
+                return Ok((CString::from_vec_with_nul(buffer).unwrap(), buffer_len));
+            }
+        }
+
+        let buffer_len = buffer.len();
+        Ok((CString::new(buffer).unwrap(), buffer_len))
     }
 }
 
@@ -69,7 +99,8 @@ impl ReadCString for VmReaderArray<'_> {
 ///
 /// This method returns the following values:
 /// 1. `Ok(true)`: If a nul byte is found in the reader;
-/// 2. `Ok(false)`: If no nul byte is found and the `reader` is exhausted;
+/// 2. `Ok(false)`: If no nul byte is found and the `reader` is exhausted
+///    or the `max_len` is reached;
 /// 3. `Err(_)`: If an error occurs while reading from the `reader`.
 fn read_until_nul_byte(
     reader: &mut VmReader,
@@ -118,14 +149,7 @@ fn read_until_nul_byte(
     // Handle the last few bytes that are not enough for a word
     read_one_byte_at_a_time_while!(buffer.len() < max_len && reader.has_remain());
 
-    if buffer.len() >= max_len {
-        return_errno_with_message!(
-            Errno::EFAULT,
-            "no nul terminator is present before exceeding the maximum length"
-        );
-    } else {
-        Ok(false)
-    }
+    Ok(false)
 }
 
 /// Determines whether the value contains a zero byte.
@@ -149,6 +173,7 @@ mod test {
     use ostd::prelude::*;
 
     use super::*;
+    use crate::util::MultiRead;
 
     fn init_buffer(cstrs: &[CString]) -> Vec<u8> {
         let mut buffer = vec![255u8; 100];
@@ -173,14 +198,12 @@ mod test {
         let buffer = init_buffer(&strs);
 
         let mut reader = VmReader::from(buffer.as_slice()).to_fallible();
-        let read_str1 = reader.read_cstring().unwrap();
-        assert_eq!(read_str1, strs[0]);
-        let read_str2 = reader.read_cstring().unwrap();
-        assert_eq!(read_str2, strs[1]);
+        let read_str1 = reader.read_cstring_until_nul(1024).unwrap();
+        assert_eq!(read_str1.as_ref(), Some(&strs[0]));
+        let read_str2 = reader.read_cstring_until_nul(1024).unwrap();
+        assert_eq!(read_str2.as_ref(), Some(&strs[1]));
 
-        assert!(reader
-            .read_cstring()
-            .is_err_and(|err| err.error() == Errno::EFAULT));
+        assert_eq!(reader.read_cstring_until_nul(1024).unwrap(), None);
     }
 
     #[ktest]
@@ -202,15 +225,45 @@ mod test {
         };
 
         let multiread = &mut readers as &mut dyn MultiRead;
-        let read_str1 = multiread.read_cstring().unwrap();
-        assert_eq!(read_str1, strs[0]);
-        let read_str2 = multiread.read_cstring().unwrap();
-        assert_eq!(read_str2, strs[1]);
-        let read_str3 = multiread.read_cstring().unwrap();
-        assert_eq!(read_str3, strs[2]);
+        let read_str1 = multiread.read_cstring_until_nul(1024).unwrap();
+        assert_eq!(read_str1.as_ref(), Some(&strs[0]));
+        let read_str2 = multiread.read_cstring_until_nul(1024).unwrap();
+        assert_eq!(read_str2.as_ref(), Some(&strs[1]));
+        let read_str3 = multiread.read_cstring_until_nul(1024).unwrap();
+        assert_eq!(read_str3.as_ref(), Some(&strs[2]));
 
-        assert!(multiread
-            .read_cstring()
-            .is_err_and(|err| err.error() == Errno::EFAULT));
+        assert_eq!(multiread.read_cstring_until_nul(1024).unwrap(), None);
+    }
+
+    #[ktest]
+    fn read_cstring_until_end() {
+        let strs = {
+            let str1 = CString::new("hello").unwrap();
+            let str2 = CString::new("world!").unwrap();
+            vec![str1, str2]
+        };
+
+        let buffer = init_buffer(&strs);
+
+        let mut readers = {
+            let reader1 = VmReader::from(&buffer[0..3]).to_fallible();
+            let reader2 = VmReader::from(&buffer[3..10]).to_fallible();
+            let reader3 = VmReader::from(&buffer[10..60]).to_fallible();
+            VmReaderArray::new(vec![reader1, reader2, reader3].into_boxed_slice())
+        };
+
+        let multiread = &mut readers as &mut dyn MultiRead;
+        let (read_str1, read_len1) = multiread.read_cstring_until_end(4).unwrap();
+        assert_eq!(read_str1.as_bytes(), b"hell");
+        assert_eq!(read_len1, 4);
+        let (read_str2, read_len2) = multiread.read_cstring_until_end(4).unwrap();
+        assert_eq!(read_str2.as_bytes(), b"o");
+        assert_eq!(read_len2, 2);
+        let (read_str3, read_len3) = multiread.read_cstring_until_end(6).unwrap();
+        assert_eq!(read_str3.as_bytes(), b"world!");
+        assert_eq!(read_len3, 6);
+        let (read_str4, read_len4) = multiread.read_cstring_until_end(6).unwrap();
+        assert_eq!(read_str4.as_bytes(), b"");
+        assert_eq!(read_len4, 1);
     }
 }

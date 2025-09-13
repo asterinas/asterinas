@@ -156,14 +156,15 @@ pub(super) fn read_xattr_name_cstr_from_user(
     name_ptr: Vaddr,
     user_space: &CurrentUserSpace,
 ) -> Result<CString> {
-    let mut reader = user_space.reader(name_ptr, XATTR_NAME_MAX_LEN + 1)?;
-    reader.read_cstring().map_err(|e| {
-        if reader.remain() == 0 {
-            Error::with_message(Errno::ERANGE, "xattr name too long")
-        } else {
-            e
-        }
-    })
+    user_space
+        .read_cstring(name_ptr, XATTR_NAME_MAX_LEN + 1)
+        .map_err(|err| {
+            if err.error() == Errno::ENAMETOOLONG {
+                Error::with_message(Errno::ERANGE, "xattr name too long")
+            } else {
+                err
+            }
+        })
 }
 
 pub(super) fn parse_xattr_name(name_str: &str) -> Result<XattrName> {

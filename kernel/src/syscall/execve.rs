@@ -190,29 +190,36 @@ fn read_cstring_vec(
     max_string_len: usize,
     ctx: &Context,
 ) -> Result<Vec<CString>> {
-    let mut res = Vec::new();
     // On Linux, argv pointer and envp pointer can be specified as NULL.
     if array_ptr == 0 {
-        return Ok(res);
+        return Ok(Vec::new());
     }
+
+    let mut res = Vec::new();
     let mut read_addr = array_ptr;
-    let mut find_null = false;
+
     let user_space = ctx.user_space();
     for _ in 0..max_string_number {
         let cstring_ptr = user_space.read_val::<usize>(read_addr)?;
         read_addr += 8;
-        // read a null pointer
+
         if cstring_ptr == 0 {
-            find_null = true;
-            break;
+            return Ok(res);
         }
-        let cstring = user_space.read_cstring(cstring_ptr, max_string_len)?;
+
+        let cstring = user_space
+            .read_cstring(cstring_ptr, max_string_len)
+            .map_err(|err| {
+                if err.error() == Errno::ENAMETOOLONG {
+                    Error::with_message(Errno::E2BIG, "there are too many bytes in the argument")
+                } else {
+                    err
+                }
+            })?;
         res.push(cstring);
     }
-    if !find_null {
-        return_errno_with_message!(Errno::E2BIG, "Cannot find null pointer in vector");
-    }
-    Ok(res)
+
+    return_errno_with_message!(Errno::E2BIG, "there are too many arguments");
 }
 
 /// Sets uid for credentials as the same of uid of elf file if elf file has `set_uid` bit.
