@@ -9,7 +9,7 @@ use crate::{
 /// Address-related attributes.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/if_addr.h#L26>.
-#[derive(Debug, Clone, Copy, TryFromInt)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
 #[repr(u16)]
 #[expect(non_camel_case_types)]
 #[expect(clippy::upper_case_acronyms)]

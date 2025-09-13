@@ -395,8 +395,10 @@ impl InitStackReader<'_> {
             &(page_base_addr..page_base_addr + PAGE_SIZE),
         )?;
         let (_, Some(VmQueriedItem::MappedRam { frame, .. })) = cursor.query()? else {
-            return_errno_with_message!(Errno::EACCES, "Page not accessible");
+            return_errno_with_message!(Errno::EACCES, "the page is not accessible");
         };
+        drop(cursor);
+        drop(preempt_guard);
 
         let argc = frame.read_val::<u64>(stack_base - page_base_addr)?;
         if argc > MAX_NR_STRING_ARGS as u64 {
@@ -423,20 +425,26 @@ impl InitStackReader<'_> {
             &(page_base_addr..page_base_addr + PAGE_SIZE),
         )?;
         let (_, Some(VmQueriedItem::MappedRam { frame, .. })) = cursor.query()? else {
-            return_errno_with_message!(Errno::EACCES, "Page not accessible");
+            return_errno_with_message!(Errno::EACCES, "the page is not accessible");
         };
+        drop(cursor);
+        drop(preempt_guard);
 
         let mut arg_ptr_reader = frame.reader();
         arg_ptr_reader.skip(read_offset - page_base_addr);
         for _ in 0..argc {
             let arg = {
                 let arg_ptr = arg_ptr_reader.read_val::<Vaddr>()?;
+
                 let arg_offset = arg_ptr
                     .checked_sub(page_base_addr)
-                    .ok_or_else(|| Error::with_message(Errno::EINVAL, "arg_ptr is corrupted"))?;
+                    .filter(|off| *off < PAGE_SIZE)
+                    .ok_or_else(|| Error::with_message(Errno::EINVAL, "argv is corrupted"))?;
                 let mut arg_reader = frame.reader().to_fallible();
-                arg_reader.skip(arg_offset).limit(MAX_LEN_STRING_ARG);
-                arg_reader.read_cstring()?
+                arg_reader
+                    .skip(arg_offset)
+                    .read_cstring_until_nul(MAX_LEN_STRING_ARG)?
+                    .ok_or_else(|| Error::with_message(Errno::EINVAL, "argv is corrupted"))?
             };
             argv.push(arg);
         }
@@ -467,25 +475,29 @@ impl InitStackReader<'_> {
             &(page_base_addr..page_base_addr + PAGE_SIZE),
         )?;
         let (_, Some(VmQueriedItem::MappedRam { frame, .. })) = cursor.query()? else {
-            return_errno_with_message!(Errno::EACCES, "Page not accessible");
+            return_errno_with_message!(Errno::EACCES, "the page is not accessible");
         };
+        drop(cursor);
+        drop(preempt_guard);
 
-        let mut envp_ptr_reader = frame.reader();
-        envp_ptr_reader.skip(read_offset - page_base_addr);
+        let mut env_ptr_reader = frame.reader();
+        env_ptr_reader.skip(read_offset - page_base_addr);
         for _ in 0..MAX_NR_STRING_ARGS {
             let env = {
-                let envp_ptr = envp_ptr_reader.read_val::<Vaddr>()?;
-
-                if envp_ptr == 0 {
+                let env_ptr = env_ptr_reader.read_val::<Vaddr>()?;
+                if env_ptr == 0 {
                     break;
                 }
 
-                let envp_offset = envp_ptr
+                let env_offset = env_ptr
                     .checked_sub(page_base_addr)
+                    .filter(|off| *off < PAGE_SIZE)
                     .ok_or_else(|| Error::with_message(Errno::EINVAL, "envp is corrupted"))?;
-                let mut envp_reader = frame.reader().to_fallible();
-                envp_reader.skip(envp_offset).limit(MAX_LEN_STRING_ARG);
-                envp_reader.read_cstring()?
+                let mut env_reader = frame.reader().to_fallible();
+                env_reader
+                    .skip(env_offset)
+                    .read_cstring_until_nul(MAX_LEN_STRING_ARG)?
+                    .ok_or_else(|| Error::with_message(Errno::EINVAL, "envp is corrupted"))?
             };
             envp.push(env);
         }

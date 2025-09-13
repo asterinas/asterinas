@@ -157,7 +157,7 @@ impl<'a> CurrentUserSpace<'a> {
         Ok(())
     }
 
-    /// Reads a value typed `Pod` from the user space of the current process.
+    /// Reads a POD value from the user space of the current process.
     pub fn read_val<T: Pod>(&self, src: Vaddr) -> Result<T> {
         if size_of::<T>() > 0 {
             check_vaddr_lowerbound(src)?;
@@ -188,7 +188,7 @@ impl<'a> CurrentUserSpace<'a> {
         Ok(())
     }
 
-    /// Writes `val` to the user space of the current process.
+    /// Writes a POD value to the user space of the current process.
     pub fn write_val<T: Pod>(&self, dest: Vaddr, val: &T) -> Result<()> {
         if size_of::<T>() > 0 {
             check_vaddr_lowerbound(dest)?;
@@ -250,20 +250,39 @@ impl<'a> CurrentUserSpace<'a> {
     }
 
     /// Reads a C string from the user space of the current process.
-    /// The length of the string should not exceed `max_len`,
-    /// including the final `\0` byte.
+    ///
+    /// The length of the string should not exceed `max_len`, including the final nul byte.
+    /// Otherwise, this method will fail with [`Errno::ENAMETOOLONG`].
+    ///
+    /// This method is commonly used to read a file name or path. In that case, when the nul byte
+    /// cannot be found within `max_len` bytes, the correct error code is [`Errno::ENAMETOOLONG`].
+    /// However, in other cases, the caller may want to fix the error code manually.
     pub fn read_cstring(&self, vaddr: Vaddr, max_len: usize) -> Result<CString> {
         if max_len > 0 {
             check_vaddr_lowerbound(vaddr)?;
         }
 
         // Adjust `max_len` to ensure `vaddr + max_len` does not exceed `MAX_USERSPACE_VADDR`.
-        // If `vaddr` is outside user address space, `max_len` will be set to zero and further
-        // call to `self.reader` will return `EFAULT`.
-        let max_len = MAX_USERSPACE_VADDR.saturating_sub(vaddr).min(max_len);
+        // If `vaddr` is outside user address space, `userspace_max_len` will be set to zero and
+        // further call to `self.reader` will return `EFAULT`.
+        let userspace_max_len = MAX_USERSPACE_VADDR.saturating_sub(vaddr).min(max_len);
 
-        let mut user_reader = self.reader(vaddr, max_len)?;
-        user_reader.read_cstring()
+        let mut user_reader = self.reader(vaddr, userspace_max_len)?;
+        user_reader.read_cstring_until_nul(userspace_max_len)?
+            .ok_or_else(|| if userspace_max_len == max_len {
+                // There may be more bytes in the userspace, but the length limit has been reached.
+                Error::with_message(
+                    Errno::ENAMETOOLONG,
+                    "the C string does not end before reaching the maximum length"
+                )
+            } else {
+                // There cannot be any bytes in the userspace, but the C string still does not end.
+                // This is the Linux behavior in its `do_strncpy_from_user` implementation.
+                Error::with_message(
+                    Errno::EFAULT,
+                    "the C string does not end before reaching the maximum userspace virtual address"
+                )
+            })
     }
 }
 
