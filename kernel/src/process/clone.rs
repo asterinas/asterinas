@@ -401,6 +401,9 @@ fn clone_child_process(
     // Inherit the parent's nice value
     let child_nice = process.nice().load(Ordering::Relaxed);
 
+    // Inherit the parent's OOM score adjustment
+    let child_oom_score_adj = process.oom_score_adj().load(Ordering::Relaxed);
+
     let child_tid = allocate_posix_tid();
 
     let child = {
@@ -437,6 +440,7 @@ fn clone_child_process(
             child_process_vm,
             child_resource_limits,
             child_nice,
+            child_oom_score_adj,
             child_sig_dispositions,
             child_user_ns,
             child_thread_builder,
@@ -644,6 +648,7 @@ fn create_child_process(
     process_vm: ProcessVm,
     resource_limits: ResourceLimits,
     nice: Nice,
+    oom_score_adj: i16,
     sig_dispositions: Arc<Mutex<SigDispositions>>,
     user_ns: Arc<UserNamespace>,
     thread_builder: PosixThreadBuilder,
@@ -655,6 +660,7 @@ fn create_child_process(
         process_vm,
         resource_limits,
         nice,
+        oom_score_adj,
         sig_dispositions,
         user_ns,
     );

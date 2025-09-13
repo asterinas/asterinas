@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicI16, AtomicU32, Ordering};
 
 use self::timer_manager::PosixTimerManager;
 use super::{
@@ -92,6 +92,9 @@ pub struct Process {
     /// According to POSIX.1, the nice value is a per-process attribute,
     /// the threads in a process should share a nice value.
     nice: AtomicNice,
+    /// The adjustment value of the out-of-memory (OOM) killer score.
+    // FIXME: Support OOM killer.
+    oom_score_adj: AtomicI16,
 
     // Child reaper attribute
     /// Whether the process is a child subreaper.
@@ -201,6 +204,7 @@ impl Process {
 
         resource_limits: ResourceLimits,
         nice: Nice,
+        oom_score_adj: i16,
         sig_dispositions: Arc<Mutex<SigDispositions>>,
         user_ns: Arc<UserNamespace>,
     ) -> Arc<Self> {
@@ -228,6 +232,7 @@ impl Process {
             exit_signal: AtomicSigNum::new_empty(),
             resource_limits,
             nice: AtomicNice::new(nice),
+            oom_score_adj: AtomicI16::new(oom_score_adj),
             timer_manager: PosixTimerManager::new(&prof_clock, process_ref),
             prof_clock,
             user_ns: Mutex::new(user_ns),
@@ -285,6 +290,10 @@ impl Process {
 
     pub fn main_thread(&self) -> Arc<Thread> {
         self.tasks.lock().main().as_thread().unwrap().clone()
+    }
+
+    pub fn oom_score_adj(&self) -> &AtomicI16 {
+        &self.oom_score_adj
     }
 
     // *********** Parent and child ***********

@@ -51,6 +51,7 @@ fn create_init_process(
     let process_vm = ProcessVm::alloc();
     let resource_limits = ResourceLimits::default();
     let nice = Nice::default();
+    let oom_score_adj = 0;
     let sig_dispositions = Arc::new(Mutex::new(SigDispositions::default()));
     let user_ns = UserNamespace::get_init_singleton().clone();
 
@@ -61,6 +62,7 @@ fn create_init_process(
         process_vm,
         resource_limits,
         nice,
+        oom_score_adj,
         sig_dispositions,
         user_ns,
     );
