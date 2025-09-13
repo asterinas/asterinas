@@ -3,7 +3,7 @@
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::Inode,
+        utils::{Inode, InodeMode},
     },
     prelude::*,
     process::Process,
@@ -14,7 +14,8 @@ pub struct CommFileOps(Arc<Process>);
 
 impl CommFileOps {
     pub fn new_inode(process_ref: Arc<Process>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        ProcFileBuilder::new(Self(process_ref))
+        // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3336>
+        ProcFileBuilder::new(Self(process_ref), InodeMode::from_bits_truncate(0o644))
             .parent(parent)
             .build()
             .unwrap()
@@ -33,6 +34,14 @@ impl FileOps for CommFileOps {
         };
         comm_output.push(b'\n');
         Ok(comm_output)
+    }
+
+    fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
+        warn!("writing to `/proc/[pid]/comm` is not supported");
+        return_errno_with_message!(
+            Errno::EOPNOTSUPP,
+            "writing to `/proc/[pid]/comm` is not supported"
+        );
     }
 }
 

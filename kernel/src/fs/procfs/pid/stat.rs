@@ -5,7 +5,7 @@ use core::{fmt::Write, sync::atomic::Ordering};
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::Inode,
+        utils::{Inode, InodeMode},
     },
     prelude::*,
     process::{posix_thread::AsPosixThread, Process},
@@ -16,7 +16,7 @@ use crate::{
 /// Represents the inode at either `/proc/[pid]/stat` or `/proc/[pid]/task/[tid]/stat`.
 ///
 /// The fields are the same as the ones in `/proc/[pid]/status`, but the format is different.
-/// See <https://github.com/torvalds/linux/blob/ce1c54fdff7c4556b08f5b875a331d8952e8b6b7/fs/proc/array.c#L467>.
+/// See <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/array.c#L467>.
 ///
 /// FIXME: Some fields are not implemented or contain placeholders yet.
 ///
@@ -87,11 +87,15 @@ impl StatFileOps {
         is_pid_stat: bool,
         parent: Weak<dyn Inode>,
     ) -> Arc<dyn Inode> {
-        ProcFileBuilder::new(Self {
-            process_ref,
-            thread_ref,
-            is_pid_stat,
-        })
+        ProcFileBuilder::new(
+            Self {
+                process_ref,
+                thread_ref,
+                is_pid_stat,
+            },
+            // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3341>
+            InodeMode::from_bits_truncate(0o444),
+        )
         .parent(parent)
         .build()
         .unwrap()
@@ -108,7 +112,7 @@ impl FileOps for StatFileOps {
         // almost identical to its main thread's `/proc/<pid>/task/<pid>/stat`, except for
         // fields `exit_code`, `wchan`, `min_flt`, `maj_flt`, `gtime`, `utime`, and `stime`.
         //
-        // Reference: <https://github.com/torvalds/linux/blob/0ff41df1cb268fc69e703a08a57ee14ae967d0ca/fs/proc/array.c#L467-L681>
+        // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/array.c#L467-L681>
 
         let pid = posix_thread.tid();
         let comm = posix_thread

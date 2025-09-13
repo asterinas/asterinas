@@ -17,15 +17,11 @@ pub struct ProcFile<F: FileOps> {
 }
 
 impl<F: FileOps> ProcFile<F> {
-    pub fn new(file: F, fs: Weak<dyn FileSystem>, is_volatile: bool) -> Arc<Self> {
+    pub fn new(file: F, fs: Weak<dyn FileSystem>, is_volatile: bool, mode: InodeMode) -> Arc<Self> {
         let common = {
             let arc_fs = fs.upgrade().unwrap();
             let procfs = arc_fs.downcast_ref::<ProcFs>().unwrap();
-            let metadata = Metadata::new_file(
-                procfs.alloc_id(),
-                InodeMode::from_bits_truncate(0o444),
-                super::BLOCK_SIZE,
-            );
+            let metadata = Metadata::new_file(procfs.alloc_id(), mode, super::BLOCK_SIZE);
             Common::new(metadata, fs, is_volatile)
         };
         Arc::new(Self {
@@ -55,7 +51,7 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
     fn fs(&self) -> Arc<dyn FileSystem>;
 
     fn resize(&self, _new_size: usize) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        Ok(())
     }
 
     fn type_(&self) -> InodeType {
@@ -63,24 +59,19 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
     }
 
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let data = self.inner.data()?;
-        let start = data.len().min(offset);
-        let end = data.len().min(offset + writer.avail());
-        let len = end - start;
-        writer.write_fallible(&mut (&data[start..end]).into())?;
-        Ok(len)
+        self.inner.read_at(offset, writer)
     }
 
     fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         self.read_at(offset, writer)
     }
 
-    fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
-        Err(Error::new(Errno::EPERM))
+    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+        self.inner.write_at(offset, reader)
     }
 
-    fn write_direct_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
-        Err(Error::new(Errno::EPERM))
+    fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+        self.write_at(offset, reader)
     }
 
     fn read_link(&self) -> Result<String> {
@@ -102,4 +93,18 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
 
 pub trait FileOps: Sync + Send {
     fn data(&self) -> Result<Vec<u8>>;
+
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let data = self.data()?;
+        if offset >= data.len() {
+            return Ok(0);
+        }
+
+        let written_len = writer.write_fallible(&mut (&data[offset..]).into())?;
+        Ok(written_len)
+    }
+
+    fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
+        return_errno_with_message!(Errno::EPERM, "the file is not writable");
+    }
 }

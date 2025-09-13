@@ -5,7 +5,7 @@ use alloc::format;
 use crate::{
     fs::{
         procfs::{ProcSymBuilder, SymOps},
-        utils::Inode,
+        utils::{Inode, InodeMode},
     },
     prelude::*,
     process::posix_thread::AsPosixThread,
@@ -16,7 +16,11 @@ pub struct ThreadSelfSymOps;
 
 impl ThreadSelfSymOps {
     pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        ProcSymBuilder::new(Self).parent(parent).build().unwrap()
+        // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/thread_self.c#L50>
+        ProcSymBuilder::new(Self, InodeMode::from_bits_truncate(0o777))
+            .parent(parent)
+            .build()
+            .unwrap()
     }
 }
 
