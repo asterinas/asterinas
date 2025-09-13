@@ -50,11 +50,12 @@ macro_rules! current_thread {
 pub(crate) use aster_logger::{print, println};
 
 pub(crate) use crate::{
-    context::{Context, CurrentUserSpace, ReadCString},
+    context::{Context, CurrentUserSpace},
     current, current_thread,
     error::{Errno, Error},
     process::{posix_thread::AsThreadLocal, signal::Pause},
     time::{wait::WaitTimeout, Clock},
+    util::ReadCString,
 };
 pub(crate) type Result<T> = core::result::Result<T, Error>;
 pub(crate) use crate::{return_errno, return_errno_with_message};
