@@ -11,7 +11,6 @@ pub(crate) mod iommu;
 pub(crate) mod irq;
 pub mod kernel;
 pub(crate) mod mm;
-pub(crate) mod pci;
 pub mod qemu;
 pub(crate) mod serial;
 pub(crate) mod task;

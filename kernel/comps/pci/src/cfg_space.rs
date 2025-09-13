@@ -7,17 +7,15 @@
 use alloc::sync::Arc;
 
 use bitflags::bitflags;
-
-use super::PciDeviceLocation;
-use crate::{
+use ostd::{
     arch::device::io_port::{PortRead, PortWrite},
     io::IoMem,
-    mm::{
-        page_prop::{CachePolicy, PageFlags},
-        PodOnce, VmIoOnce,
-    },
+    mm::{PodOnce, VmIoOnce},
     Error, Result,
 };
+use spin::Once;
+
+use super::PciDeviceLocation;
 
 /// Offset in PCI device's common configuration space(Not the PCI bridge).
 #[repr(u16)]
@@ -197,13 +195,13 @@ impl Bar {
 }
 
 /// Memory BAR
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct MemoryBar {
     base: u64,
     size: u64,
     prefetchable: bool,
     address_length: AddrLen,
-    io_memory: IoMem,
+    io_memory: Once<IoMem>,
 }
 
 impl MemoryBar {
@@ -230,7 +228,9 @@ impl MemoryBar {
 
     /// Grants I/O memory access
     pub fn io_mem(&self) -> &IoMem {
-        &self.io_memory
+        self.io_memory.call_once(|| {
+            IoMem::acquire((self.base as usize)..((self.base + self.size) as usize)).unwrap()
+        })
     }
 
     /// Creates a memory BAR structure.
@@ -293,10 +293,8 @@ impl MemoryBar {
         #[cfg(target_arch = "loongarch64")]
         let base = {
             use core::alloc::Layout;
-            crate::arch::pci::alloc_mmio(
-                Layout::from_size_align(size as usize, size as usize).unwrap(),
-            )
-            .unwrap() as u64
+            crate::arch::alloc_mmio(Layout::from_size_align(size as usize, size as usize).unwrap())
+                .unwrap() as u64
         };
         match address_length {
             AddrLen::Bits32 => location.write32(offset, base as u32),
@@ -330,15 +328,7 @@ impl MemoryBar {
             size,
             prefetchable,
             address_length,
-            // SAFETY: The address range is initialized by the BIOS or allocated by us. It is
-            // guaranteed to be I/O memory.
-            io_memory: unsafe {
-                IoMem::new(
-                    (base as usize)..((base + size) as usize),
-                    PageFlags::RW,
-                    CachePolicy::Uncacheable,
-                )
-            },
+            io_memory: Once::new(),
         })
     }
 }
@@ -380,13 +370,13 @@ impl IoBar {
         if self.size < size_of::<T>() as u32 || offset > self.size - size_of::<T>() as u32 {
             return Err(Error::InvalidArgs);
         }
-        // SAFETY: The range of ports accessed is within the scope managed by the IoBar and
-        // an out-of-bounds check is performed.
-        unsafe { Ok(T::read_from_port((self.base + offset) as u16)) }
+
+        // TODO: Implement the read operation based on `IoPortAllocator`.
+        Err(Error::IoError)
     }
 
     /// Writes to port
-    pub fn write<T: PortWrite>(&self, offset: u32, value: T) -> Result<()> {
+    pub fn write<T: PortWrite>(&self, offset: u32, _value: T) -> Result<()> {
         // Check alignment
         if (self.base + offset) % size_of::<T>() as u32 != 0 {
             return Err(Error::InvalidArgs);
@@ -395,10 +385,9 @@ impl IoBar {
         if size_of::<T>() as u32 > self.size || offset > self.size - size_of::<T>() as u32 {
             return Err(Error::InvalidArgs);
         }
-        // SAFETY: The range of ports accessed is within the scope managed by the IoBar and
-        // an out-of-bounds check is performed.
-        unsafe { T::write_to_port((self.base + offset) as u16, value) }
-        Ok(())
+
+        // TODO: Implement the write operation based on `IoPortAllocator`.
+        Err(Error::IoError)
     }
 
     /// Creates an I/O port BAR structure.
