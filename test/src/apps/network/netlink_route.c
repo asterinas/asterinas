@@ -149,6 +149,104 @@ int find_new_addr_until_done(char *buffer, size_t len, int *found_new_addr)
 #define BUFFER_SIZE 8192
 char buffer[BUFFER_SIZE];
 
+FN_TEST(get_link_error)
+{
+	int sock_fd;
+	struct sockaddr_nl sa;
+
+	sock_fd = TEST_SUCC(socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE));
+
+	memset(&sa, 0, sizeof(sa));
+	sa.nl_family = AF_NETLINK;
+
+	TEST_SUCC(bind(sock_fd, (struct sockaddr *)&sa, sizeof(sa)));
+
+	struct nl_req {
+		struct nlmsghdr hdr;
+		struct ifinfomsg ifi;
+		struct nlattr ahdr;
+		char abuf[IFNAMSIZ];
+	};
+
+	struct nl_req req;
+	memset(&req, 0, sizeof(req));
+	req.hdr.nlmsg_type = RTM_GETLINK;
+	req.hdr.nlmsg_flags = NLM_F_REQUEST;
+	req.hdr.nlmsg_seq = 1;
+	req.ifi.ifi_family = AF_UNSPEC;
+	req.ifi.ifi_change = ~0;
+	req.ahdr.nla_type = IFLA_IFNAME;
+
+	struct iovec iov = { &req, sizeof(req) };
+	struct msghdr msg = { &sa, sizeof(sa), &iov, 1, NULL, 0, 0 };
+
+#define TEST_ERROR_SEGMENT(errno)                                          \
+	TEST_SUCC(sendmsg(sock_fd, &msg, 0));                              \
+	TEST_RES(recv(sock_fd, buffer, BUFFER_SIZE, 0),                    \
+		 ((struct nlmsghdr *)buffer)->nlmsg_type == NLMSG_ERROR && \
+			 ((struct nlmsgerr *)NLMSG_DATA(buffer))->error == \
+				 -errno);
+
+	// ifname = "a" * IFNAMSIZ without nul
+	req.hdr.nlmsg_len = sizeof(struct nl_req);
+	req.ahdr.nla_len = sizeof(struct nlattr) + IFNAMSIZ;
+	memset(req.abuf, 'a', sizeof(req.abuf));
+	TEST_ERROR_SEGMENT(ERANGE);
+
+	// ifname = "a" * (IFNAMSIZ - 1) with nul
+	req.abuf[IFNAMSIZ - 1] = '\0';
+	TEST_ERROR_SEGMENT(ENODEV);
+
+	// ifname = "a" * (IFNAMSIZ - 1) without nul
+	req.hdr.nlmsg_len = sizeof(struct nl_req) - 1;
+	req.ahdr.nla_len = sizeof(struct nlattr) + IFNAMSIZ - 1;
+	req.abuf[IFNAMSIZ - 1] = 'a';
+	TEST_ERROR_SEGMENT(ENODEV);
+
+	// ifname = "" without nul
+	req.hdr.nlmsg_len = sizeof(struct nl_req) - IFNAMSIZ;
+	req.ahdr.nla_len = sizeof(struct nlattr);
+	TEST_ERROR_SEGMENT(ERANGE);
+
+	// ifname = "a" without nul
+	req.hdr.nlmsg_len = sizeof(struct nl_req) - IFNAMSIZ + 1;
+	req.ahdr.nla_len = sizeof(struct nlattr) + 1;
+	TEST_ERROR_SEGMENT(ENODEV);
+
+	// ifname = "" with nul
+	req.abuf[0] = '\0';
+	TEST_ERROR_SEGMENT(ENODEV);
+
+	// Invalid name attribute (too short) without index
+	req.hdr.nlmsg_len = sizeof(struct nl_req) - IFNAMSIZ;
+	TEST_ERROR_SEGMENT(EINVAL);
+
+	// Invalid name attribute (too short) with index
+	req.ifi.ifi_index = 1234;
+	// FIXME: Asterinas will report `EINVAL` because it performs strict validation.
+	// TEST_ERROR_SEGMENT(ENODEV);
+
+	// Invalid name attribute (too long) with index
+	req.hdr.nlmsg_len = sizeof(struct nl_req) + 1;
+	req.ahdr.nla_len = sizeof(struct nlattr) + IFNAMSIZ + 1;
+	req.abuf[0] = 'a';
+	req.abuf[1] = '\0';
+	iov.iov_len = req.hdr.nlmsg_len;
+	TEST_ERROR_SEGMENT(ERANGE);
+
+	// Invalid message body
+	req.hdr.nlmsg_len = NLMSG_LENGTH(2);
+	iov.iov_len = req.hdr.nlmsg_len;
+	TEST_ERROR_SEGMENT(EINVAL);
+
+	// Invalid message type
+	req.hdr.nlmsg_type = 555;
+	TEST_ERROR_SEGMENT(EOPNOTSUPP);
+
+	TEST_SUCC(close(sock_fd));
+}
+END_TEST()
+
 struct nl_req {
 	struct nlmsghdr hdr;
 	struct ifaddrmsg ifa;
