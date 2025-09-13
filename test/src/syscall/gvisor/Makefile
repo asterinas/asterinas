@@ -34,6 +34,7 @@ TESTS ?= \
 	prctl_setuid_test \
 	pread64_test \
 	preadv2_test \
+	proc_pid_oomscore_test \
 	proc_test \
 	pselect_test \
 	pty_test \
