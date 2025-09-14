@@ -27,7 +27,7 @@ pub use self::{
     preempt::{disable_preempt, halt_cpu, DisabledPreemptGuard},
     scheduler::info::{AtomicCpuId, TaskScheduleInfo},
 };
-use crate::{arch::task::TaskContext, irq::in_interrupt_context, prelude::*};
+use crate::{arch::task::TaskContext, irq::InterruptLevel, prelude::*};
 
 static PRE_SCHEDULE_HANDLER: Once<fn()> = Once::new();
 
@@ -261,7 +261,7 @@ impl CurrentTask {
     ///
     /// This method will panic if called in a non-task context.
     pub fn local_data(&self) -> &(dyn Any + Send) {
-        assert!(!in_interrupt_context());
+        assert!(InterruptLevel::current().is_task_context());
 
         let local_data = &self.local_data;
 

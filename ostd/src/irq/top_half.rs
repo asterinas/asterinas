@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! IRQ line and IRQ guards.
+//! The top half of interrupt handling.
 
 use core::{fmt::Debug, ops::Deref};
 
@@ -185,11 +185,12 @@ impl Drop for CallbackHandle {
     }
 }
 
-pub(super) fn process_top_half(trap_frame: &TrapFrame, irq_num: usize) {
+pub(super) fn process(trap_frame: &TrapFrame, irq_num: usize) {
     let inner = &INNERS[irq_num - (IRQ_NUM_MIN as usize)];
     for callback in &*inner.callbacks.read() {
         callback(trap_frame);
     }
+    crate::arch::interrupts_ack(irq_num);
 }
 
 #[cfg(ktest)]
