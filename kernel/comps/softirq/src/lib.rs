@@ -13,7 +13,7 @@ use component::{init_component, ComponentInitError};
 use lock::is_softirq_enabled;
 use ostd::{
     cpu_local_cell,
-    irq::{disable_local, register_bottom_half_handler, DisabledLocalIrqGuard},
+    irq::{disable_local, register_bottom_half_handler_l1, DisabledLocalIrqGuard},
 };
 use spin::Once;
 
@@ -115,7 +115,7 @@ fn init() -> Result<(), ComponentInitError> {
     let lines: [SoftIrqLine; SoftIrqLine::NR_LINES as usize] =
         core::array::from_fn(|i| SoftIrqLine::new(i as u8));
     LINES.call_once(|| lines);
-    register_bottom_half_handler(process_pending);
+    register_bottom_half_handler_l1(process_pending);
 
     taskless::init();
     Ok(())

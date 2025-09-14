@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! The IRQ disabling guard.
+
 use crate::{arch::irq as arch_irq, sync::GuardTransfer, task::atomic_mode::InAtomicMode};
 
 /// Disables all IRQs on the current CPU (i.e., locally).
