@@ -115,6 +115,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "aster-crypto"
+version = "0.1.0"
+dependencies = [
+ "aster-util",
+ "bitflags 1.3.2",
+ "component",
+ "log",
+ "ostd",
+ "spin",
+]
+
+[[package]]
 name = "aster-framebuffer"
 version = "0.1.0"
 dependencies = [
@@ -199,6 +211,7 @@ dependencies = [
  "aster-bigtcp",
  "aster-block",
  "aster-console",
+ "aster-crypto",
  "aster-framebuffer",
  "aster-input",
  "aster-keyboard",
@@ -321,6 +334,7 @@ dependencies = [
  "aster-bigtcp",
  "aster-block",
  "aster-console",
+ "aster-crypto",
  "aster-input",
  "aster-network",
  "aster-rights",

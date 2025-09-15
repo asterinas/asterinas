@@ -11,6 +11,7 @@ aster-input = { path = "comps/input" }
 aster-block = { path = "comps/block" }
 aster-network = { path = "comps/network" }
 aster-console = { path = "comps/console" }
+aster-crypto = { path = "comps/crypto" }
 aster-framebuffer = { path = "comps/framebuffer" }
 aster-softirq = { path = "comps/softirq" }
 aster-logger = { path = "comps/logger" }
