@@ -5,7 +5,7 @@
 use core::time::Duration;
 
 use inherit_methods_macro::inherit_methods;
-pub use mount::Mount;
+pub use mount::{AtimePolicy, Mount, MountOptions};
 
 use crate::{
     fs::{
