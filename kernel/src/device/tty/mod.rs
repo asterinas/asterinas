@@ -304,6 +304,6 @@ impl<D: TtyDriver> Device for Tty<D> {
     }
 
     fn id(&self) -> DeviceId {
-        DeviceId::new(88, self.index)
+        DeviceId::new(4, self.index)
     }
 }
