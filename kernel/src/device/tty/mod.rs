@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_console::{font::BitmapFont, AnyConsoleDevice};
+use aster_console::{font::BitmapFont, mode::ConsoleMode, AnyConsoleDevice};
 use ostd::sync::LocalIrqDisabled;
 
 use self::{line_discipline::LineDiscipline, termio::CFontOp};
@@ -308,6 +308,20 @@ impl<D: TtyDriver> FileIo for Tty<D> {
                 let font_op = current_userspace!().read_val(arg)?;
 
                 self.handle_set_font(&font_op)?;
+            }
+            IoctlCmd::KDSETMODE => {
+                let console = self.console()?;
+
+                let mode = ConsoleMode::try_from(arg as i32)?;
+                if !console.set_mode(mode) {
+                    return_errno_with_message!(Errno::EINVAL, "the console mode is not supported");
+                }
+            }
+            IoctlCmd::KDGETMODE => {
+                let console = self.console()?;
+
+                let mode = console.mode().unwrap_or(ConsoleMode::Text);
+                current_userspace!().write_val(arg, &(mode as i32))?;
             }
             _ => (self.weak_self.upgrade().unwrap() as Arc<dyn Terminal>)
                 .job_ioctl(cmd, arg, false)?,

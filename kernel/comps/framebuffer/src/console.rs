@@ -2,7 +2,9 @@
 
 use alloc::{sync::Arc, vec::Vec};
 
-use aster_console::{font::BitmapFont, AnyConsoleDevice, ConsoleCallback, ConsoleSetFontError};
+use aster_console::{
+    font::BitmapFont, mode::ConsoleMode, AnyConsoleDevice, ConsoleCallback, ConsoleSetFontError,
+};
 use aster_keyboard::InputKey;
 use ostd::{
     mm::VmReader,
@@ -62,6 +64,15 @@ impl AnyConsoleDevice for FramebufferConsole {
     fn set_font(&self, font: BitmapFont) -> Result<(), ConsoleSetFontError> {
         self.inner.lock().0.set_font(font)
     }
+
+    fn set_mode(&self, mode: ConsoleMode) -> bool {
+        self.inner.lock().0.set_mode(mode);
+        true
+    }
+
+    fn mode(&self) -> Option<ConsoleMode> {
+        Some(self.inner.lock().0.mode())
+    }
 }
 
 impl FramebufferConsole {
@@ -73,6 +84,8 @@ impl FramebufferConsole {
             fg_color: Pixel::WHITE,
             bg_color: Pixel::BLACK,
             font: BitmapFont::new_basic8x8(),
+            is_output_enabled: true,
+
             bytes: alloc::vec![0u8; framebuffer.size()],
             backend: framebuffer,
         };
@@ -99,6 +112,9 @@ struct ConsoleState {
     fg_color: Pixel,
     bg_color: Pixel,
     font: BitmapFont,
+    /// Whether the output characters will be drawn in the framebuffer.
+    is_output_enabled: bool,
+
     bytes: Vec<u8>,
     backend: Arc<FrameBuffer>,
 }
@@ -140,7 +156,9 @@ impl ConsoleState {
         self.bytes.copy_within(offset.., 0);
         self.bytes[self.backend.size() - offset..].fill(0);
 
-        self.backend.write_bytes_at(0, &self.bytes).unwrap();
+        if self.is_output_enabled {
+            self.backend.write_bytes_at(0, &self.bytes).unwrap();
+        }
 
         self.y_pos -= self.font.height();
     }
@@ -184,7 +202,9 @@ impl ConsoleState {
             }
 
             // Write pixels to the framebuffer.
-            self.backend.write_bytes_at(off_st, render_buf).unwrap();
+            if self.is_output_enabled {
+                self.backend.write_bytes_at(off_st, render_buf).unwrap();
+            }
 
             offset.y_add(1);
         }
@@ -205,6 +225,32 @@ impl ConsoleState {
         }
 
         Ok(())
+    }
+
+    /// Sets the console mode (text or graphics).
+    pub(self) fn set_mode(&mut self, mode: ConsoleMode) {
+        if mode == ConsoleMode::Graphics {
+            self.is_output_enabled = false;
+            return;
+        }
+
+        if self.is_output_enabled {
+            return;
+        }
+
+        // We're switching from the graphics mode back to the text mode. The characters need to be
+        // redrawn in the framebuffer.
+        self.is_output_enabled = true;
+        self.backend.write_bytes_at(0, &self.bytes).unwrap();
+    }
+
+    /// Gets the current console mode.
+    pub(self) fn mode(&self) -> ConsoleMode {
+        if self.is_output_enabled {
+            ConsoleMode::Text
+        } else {
+            ConsoleMode::Graphics
+        }
     }
 }
 
