@@ -106,24 +106,27 @@ struct ConsoleState {
 impl ConsoleState {
     /// Sends a single character to be drawn on the framebuffer.
     pub(self) fn send_char(&mut self, ch: u8) {
-        if ch == b'\n' {
-            self.newline();
-            return;
-        } else if ch == b'\r' {
-            self.carriage_return();
-            return;
-        } else if ch == b'\x08' {
-            self.backspace();
-            return;
+        match ch {
+            b'\n' => {
+                self.newline();
+                return;
+            }
+            b'\r' => {
+                self.carriage_return;
+                return;
+            }
+            b'\x08' => {
+                self.backspace();
+                return;
+            }
+            _ => {
+                if self.x_pos > self.backend.width() - self.font.width() {
+                    self.newline();
+                }
+                self.draw_char(ch);
+                self.x_pos += self.font.width();
+            }
         }
-
-        if self.x_pos > self.backend.width() - self.font.width() {
-            self.newline();
-        }
-
-        self.draw_char(ch);
-
-        self.x_pos += self.font.width();
     }
 
     fn newline(&mut self) {
@@ -152,6 +155,8 @@ impl ConsoleState {
     fn backspace(&mut self) {
         if self.x_pos < self.font.width() {
             // TODO: What should we do if we're at the beginning of the line?
+            // An option could be signalling the process. Then the process can decide what to do.
+            // Another option could be playing a beep on Speaker/Buzzer.
             return;
         }
 
