@@ -56,6 +56,16 @@ impl TryFrom<usize> for CpuId {
     }
 }
 
+/// The CPU privilege level: user mode or kernel mode.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum PrivilegeLevel {
+    /// User mode.
+    User = 0,
+    /// Kernel mode.
+    Kernel = 1,
+}
+
 /// The number of CPUs.
 static mut NUM_CPUS: u32 = 1;
 

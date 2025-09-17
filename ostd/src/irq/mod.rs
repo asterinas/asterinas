@@ -81,11 +81,18 @@ pub use guard::{disable_local, DisabledLocalIrqGuard};
 pub use level::InterruptLevel;
 pub use top_half::{IrqCallbackFunction, IrqLine};
 
-use crate::arch::trap::TrapFrame;
+use crate::{arch::trap::TrapFrame, cpu::PrivilegeLevel};
 
-pub(crate) fn call_irq_callback_functions(trap_frame: &TrapFrame, irq_num: usize) {
-    level::enter(move || {
-        top_half::process(trap_frame, irq_num);
-        bottom_half::process();
-    });
+pub(crate) fn call_irq_callback_functions(
+    trap_frame: &TrapFrame,
+    irq_num: usize,
+    cpu_priv_at_irq: PrivilegeLevel,
+) {
+    level::enter(
+        move || {
+            top_half::process(trap_frame, irq_num);
+            bottom_half::process();
+        },
+        cpu_priv_at_irq,
+    );
 }
