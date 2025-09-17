@@ -6,7 +6,7 @@ use aster_console::AnyConsoleDevice;
 use ostd::mm::{Infallible, VmReader, VmWriter};
 use spin::Once;
 
-use super::{PushCharError, Tty, TtyDriver};
+use super::{HasConsole, PushCharError, Tty, TtyDriver};
 use crate::{
     error::Errno,
     prelude::{return_errno_with_message, Result},
@@ -49,6 +49,12 @@ impl TtyDriver for ConsoleDriver {
                 return_errno_with_message!(Errno::EINVAL, "the font is invalid for the console")
             }
         }
+    }
+}
+
+impl HasConsole for ConsoleDriver {
+    fn console(&self) -> Option<&dyn AnyConsoleDevice> {
+        Some(&*self.console)
     }
 }
 

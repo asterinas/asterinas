@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_console::BitmapFont;
+use aster_console::{AnyConsoleDevice, BitmapFont, ConsoleMode};
 use ostd::sync::LocalIrqDisabled;
 use termio::CFontOp;
 
 use self::line_discipline::LineDiscipline;
 use crate::{
     current_userspace,
+    device::tty::driver::HasConsole,
     events::IoEvents,
     fs::{
         device::{Device, DeviceId, DeviceType},
@@ -31,8 +32,47 @@ pub use device::TtyDevice;
 pub use driver::{PushCharError, TtyDriver};
 pub(super) use n_tty::init;
 pub use n_tty::{iter_n_tty, system_console};
+pub(crate) type Result<T> = core::result::Result<T, Error>;
 
 const IO_CAPACITY: usize = 4096;
+
+/// A type for the input value of the `KDSETMODE` ioctl and the output value of `KDGETMODE` ioctl.
+///
+/// See https://man7.org/linux/man-pages/man2/ioctl_kd.2.html.
+#[repr(u32)]
+enum RawConsoleMode {
+    KdText = 0,
+    KdGraphics = 1,
+}
+
+impl From<ConsoleMode> for RawConsoleMode {
+    fn from(mode: ConsoleMode) -> Self {
+        match mode {
+            ConsoleMode::Text => RawConsoleMode::KdText,
+            ConsoleMode::Graphics => RawConsoleMode::KdGraphics,
+        }
+    }
+}
+
+impl TryFrom<u32> for RawConsoleMode {
+    type Error = Error;
+    fn try_from(value: u32) -> Result<Self> {
+        match value {
+            0 => Ok(RawConsoleMode::KdText),
+            1 => Ok(RawConsoleMode::KdGraphics),
+            _ => Err(Error::from(Errno::EINVAL)),
+        }
+    }
+}
+
+impl From<RawConsoleMode> for ConsoleMode {
+    fn from(raw: RawConsoleMode) -> Self {
+        match raw {
+            RawConsoleMode::KdText => ConsoleMode::Text,
+            RawConsoleMode::KdGraphics => ConsoleMode::Graphics,
+        }
+    }
+}
 
 /// A teletyper (TTY).
 ///
@@ -96,6 +136,13 @@ impl<D> Tty<D> {
     /// to `true`.
     pub fn notify_output(&self) {
         self.pollee.notify(IoEvents::OUT);
+    }
+}
+
+impl<D: TtyDriver + HasConsole> Tty<D> {
+    /// Returns a reference to the console device if available
+    pub fn console(&self) -> Option<&dyn AnyConsoleDevice> {
+        self.driver.console()
     }
 }
 
@@ -283,6 +330,23 @@ impl<D: TtyDriver> FileIo for Tty<D> {
                 let font_op = current_userspace!().read_val(arg)?;
 
                 self.handle_set_font(&font_op)?;
+            }
+            IoctlCmd::KDSETMODE => {
+                let Some(console) = self.console() else {
+                    return_errno_with_message!(Errno::ENOTTY, "Console not available");
+                };
+
+                let raw_mode = RawConsoleMode::try_from(arg as u32)?;
+                console.set_mode(ConsoleMode::from(raw_mode));
+            }
+            IoctlCmd::KDGETMODE => {
+                let Some(console) = self.console() else {
+                    return_errno_with_message!(Errno::ENOTTY, "Console not available");
+                };
+
+                let mode = console.get_mode().unwrap_or(ConsoleMode::Text);
+                let raw_mode = RawConsoleMode::from(mode);
+                current_userspace!().write_val(arg, &(raw_mode as u32))?;
             }
             _ => (self.weak_self.upgrade().unwrap() as Arc<dyn Terminal>)
                 .job_ioctl(cmd, arg, false)?,
