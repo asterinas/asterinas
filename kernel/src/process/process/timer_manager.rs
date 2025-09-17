@@ -7,7 +7,7 @@ use alloc::{
 };
 
 use id_alloc::IdAlloc;
-use ostd::{arch::trap::is_kernel_interrupted, sync::Mutex, timer};
+use ostd::{cpu::PrivilegeLevel, irq::InterruptLevel, sync::Mutex, timer};
 
 use super::Process;
 use crate::{
@@ -31,6 +31,19 @@ use crate::{
 /// invoke the callbacks of expired timers which are based on the updated
 /// CPU clock.
 fn update_cpu_time() {
+    // Retrieve some info about the timer interrupt
+    let is_kernel_interrupted = {
+        let interrupt_level = InterruptLevel::current();
+        let InterruptLevel::L1(cpu_priv_at_irq) = interrupt_level else {
+            // We are at the interrupt level 2.
+            // This means that bottom half of IRQ handling is interrupted.
+            // We should not count this time slice on the head of the current task.
+            return;
+        };
+        cpu_priv_at_irq == PrivilegeLevel::Kernel
+    };
+
+    // Retrieve some info about the current task
     let Some(current_thread) = Thread::current() else {
         return;
     };
@@ -42,11 +55,12 @@ fn update_cpu_time() {
         // `None` here.
         return;
     };
+
     let timer_manager = process.timer_manager();
     // Based on whether the timer interrupt occurs in kernel mode or user mode,
     // the function will add the duration of one timer interrupt interval to the
     // corresponding CPU clocks.
-    if is_kernel_interrupted() {
+    if is_kernel_interrupted {
         posix_thread.prof_clock().kernel_clock().add_jiffies(1);
         process.prof_clock().kernel_clock().add_jiffies(1);
     } else {

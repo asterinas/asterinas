@@ -32,7 +32,7 @@ use crate::{
         if_tdx_enabled,
         irq::{disable_local, enable_local},
     },
-    cpu_local_cell,
+    cpu::PrivilegeLevel,
     irq::call_irq_callback_functions,
     mm::{
         kspace::{KERNEL_PAGE_TABLE, LINEAR_MAPPING_BASE_VADDR, LINEAR_MAPPING_VADDR_RANGE},
@@ -47,10 +47,6 @@ cfg_if! {
         use tdx_guest::{tdcall, handle_virtual_exception};
         use crate::arch::tdx_guest::TrapFrameWrapper;
     }
-}
-
-cpu_local_cell! {
-    static KERNEL_INTERRUPT_NESTED_LEVEL: u8 = 0;
 }
 
 /// Trap frame of kernel interrupt
@@ -138,13 +134,6 @@ pub(super) struct RawUserContext {
     pub(super) error_code: usize,
 }
 
-/// Returns true if this function is called within the context of an IRQ handler
-/// and the IRQ occurs while the CPU is executing in the kernel mode.
-/// Otherwise, it returns false.
-pub fn is_kernel_interrupted() -> bool {
-    KERNEL_INTERRUPT_NESTED_LEVEL.load() != 0
-}
-
 /// Handle traps (only from kernel).
 #[no_mangle]
 extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
@@ -197,9 +186,7 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
             );
         }
         None => {
-            KERNEL_INTERRUPT_NESTED_LEVEL.add_assign(1);
-            call_irq_callback_functions(f, f.trap_num);
-            KERNEL_INTERRUPT_NESTED_LEVEL.sub_assign(1);
+            call_irq_callback_functions(f, f.trap_num, PrivilegeLevel::Kernel);
         }
     }
 }

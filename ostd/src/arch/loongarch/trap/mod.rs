@@ -12,27 +12,16 @@ pub use trap::TrapFrame;
 
 use crate::{
     arch::{cpu::context::CpuExceptionInfo, mm::tlb_flush_addr},
-    cpu_local_cell,
+    cpu::PrivilegeLevel,
     irq::call_irq_callback_functions,
     mm::MAX_USERSPACE_VADDR,
 };
-
-cpu_local_cell! {
-    static IS_KERNEL_INTERRUPTED: bool = false;
-}
 
 /// Initialize trap handling on LoongArch.
 pub(crate) unsafe fn init() {
     unsafe {
         self::trap::init();
     }
-}
-
-/// Returns true if this function is called within the context of an IRQ handler
-/// and the IRQ occurs while the CPU is executing in the kernel mode.
-/// Otherwise, it returns false.
-pub fn is_kernel_interrupted() -> bool {
-    IS_KERNEL_INTERRUPTED.load()
 }
 
 /// Handle traps (only from kernel).
@@ -85,7 +74,6 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
             Exception::TLBRFill => unreachable!(),
         },
         Trap::Interrupt(interrupt) => {
-            IS_KERNEL_INTERRUPTED.store(true);
             match interrupt {
                 Interrupt::SWI0 => todo!(),
                 Interrupt::SWI1 => todo!(),
@@ -100,14 +88,13 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
                     log::debug!("Handling hardware interrupt: {:?}", interrupt);
                     while let Some(irq) = crate::arch::kernel::irq::claim() {
                         // Call the IRQ callback functions for the claimed interrupt
-                        call_irq_callback_functions(f, irq as _);
+                        call_irq_callback_functions(f, irq as _, PrivilegeLevel::Kernel);
                     }
                 }
                 Interrupt::PMI => todo!(),
                 Interrupt::Timer => todo!(),
                 Interrupt::IPI => todo!(),
             }
-            IS_KERNEL_INTERRUPTED.store(false);
         }
         Trap::MachineError(machine_error) => panic!(
             "Machine error: {machine_error:?}, badv: {badv:#x?}, badi: {badi:#x?}, era: {era:#x?}"

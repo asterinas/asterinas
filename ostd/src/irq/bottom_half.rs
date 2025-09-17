@@ -37,7 +37,7 @@ static BOTTOM_HALF_HANDLER_L2: Once<fn()> = Once::new();
 
 pub(super) fn process() {
     match InterruptLevel::current() {
-        InterruptLevel::L1 => process_l1(),
+        InterruptLevel::L1(_) => process_l1(),
         InterruptLevel::L2 => process_l2(),
         _ => unreachable!("this function must have been call in interrupt context"),
     }
