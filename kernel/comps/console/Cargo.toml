@@ -10,6 +10,7 @@ ostd = { path = "../../../ostd" }
 component = { path = "../../libs/comp-sys/component" }
 spin = "0.9.4"
 font8x8 = { version = "0.2.5", default-features = false, features = [ "unicode" ] }
+int-to-c-enum = { path = "../../libs/int-to-c-enum" }
 
 [lints]
 workspace = true

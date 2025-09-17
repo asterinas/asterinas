@@ -44,6 +44,10 @@ pub enum IoctlCmd {
     TIOCGPTPEER = 0x40045441,
     /// font operations
     KDFONTOP = 0x4B72,
+    /// Get console mode
+    KDGETMODE = 0x4B3B,
+    /// Set console mode
+    KDSETMODE = 0x4B3A,
     /// Get tdx report using TDCALL
     TDXGETREPORT = 0xc4405401,
 }
