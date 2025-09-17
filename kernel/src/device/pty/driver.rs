@@ -112,8 +112,4 @@ impl TtyDriver for PtyDriver {
     fn notify_input(&self) {
         self.pollee.notify(IoEvents::OUT);
     }
-
-    fn set_font(&self, _font: aster_console::BitmapFont) -> Result<()> {
-        return_errno_with_message!(Errno::ENOTTY, "the console has no support for font setting");
-    }
 }

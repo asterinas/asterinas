@@ -27,6 +27,12 @@ pub enum ConsoleSetFontError {
     InvalidFont,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ConsoleMode {
+    Text,
+    Graphics,
+}
+
 pub trait AnyConsoleDevice: Send + Sync + Any + Debug {
     /// Sends data to the console device.
     fn send(&self, buf: &[u8]);
@@ -39,6 +45,24 @@ pub trait AnyConsoleDevice: Send + Sync + Any + Debug {
     /// Sets the font of the console device.
     fn set_font(&self, _font: BitmapFont) -> Result<(), ConsoleSetFontError> {
         Err(ConsoleSetFontError::InappropriateDevice)
+    }
+
+    /// Sets the console mode (text or graphics)
+    ///
+    /// In text mode, the console will display text characters.
+    /// In graphics mode, the console will not display text and may be used
+    /// for graphical output (e.g., by X server).
+    ///
+    /// Returns true if the mode was changed, false if the mode is unsupported.
+    fn set_mode(&self, _mode: ConsoleMode) -> bool {
+        false
+    }
+
+    /// Gets the current console mode
+    ///
+    /// Returns the current console mode, or None if mode switching is not supported.
+    fn get_mode(&self) -> Option<ConsoleMode> {
+        None
     }
 }
 
