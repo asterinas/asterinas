@@ -84,6 +84,17 @@ impl FsResolver {
 
         match inode_type {
             InodeType::NamedPipe => {
+                let named_pipe = inode.as_named_pipe().unwrap();
+                // TODO: Open with O_PATH is not fully supported yet.
+                // We need to forbid some operations such as read and write
+                // for the `InodeHandle` when O_PATH is set.
+                if !open_args.status_flags.contains(StatusFlags::O_PATH) {
+                    let read = open_args.access_mode.is_readable();
+                    let write = open_args.access_mode.is_writable();
+                    let is_nonblocking = open_args.status_flags.contains(StatusFlags::O_NONBLOCK);
+                    named_pipe.prepare_open(read, write, is_nonblocking)?;
+                }
+
                 warn!("NamedPipe doesn't support additional operation when opening.");
                 debug!("Open NamedPipe with args: {open_args:?}.");
             }

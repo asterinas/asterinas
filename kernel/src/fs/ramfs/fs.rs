@@ -20,7 +20,6 @@ use crate::{
     events::IoEvents,
     fs::{
         device::Device,
-        file_handle::FileLike,
         named_pipe::NamedPipe,
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
         registry::{FsProperties, FsType},
@@ -740,6 +739,14 @@ impl Inode for RamInode {
             return None;
         }
         self.inner.as_device().cloned()
+    }
+
+    fn as_named_pipe(&self) -> Option<&NamedPipe> {
+        if self.typ != InodeType::NamedPipe {
+            return None;
+        }
+
+        self.inner.as_named_pipe()
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
