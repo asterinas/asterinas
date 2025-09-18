@@ -12,9 +12,27 @@ pub mod inotify;
 
 use super::utils::{Inode, InodeType};
 
-#[derive(Debug)]
 pub struct FsnotifyCommon {
     fsnotify_marks: RwLock<Vec<Arc<dyn FsnotifyMark>>>,
+}
+
+impl Debug for FsnotifyCommon {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let marks = self.fsnotify_marks.read();
+        write!(f, "FsnotifyCommon {{ num_marks: {}, marks: [", marks.len())?;
+        for (i, m) in marks.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(
+                f,
+                "(mask=0x{:x}, flags=0x{:x})",
+                m.mark_mask(),
+                m.mark_flags()
+            )?;
+        }
+        write!(f, "] }}")
+    }
 }
 
 impl Default for FsnotifyCommon {
@@ -74,14 +92,14 @@ impl FsnotifyCommon {
 /// A group is a "thing" that wants to receive notification about filesystem
 /// events.  The notifications is a list of events that are sent to the group.
 /// The marks is a list of marks that are attached to the group.
-pub trait FsnotifyGroup: Any + Send + Sync + Debug {
+pub trait FsnotifyGroup: Any + Send + Sync {
     fn send_event(&self, mark: &Arc<dyn FsnotifyMark>, mask: u32, name: String);
     fn pop_event(&self) -> Option<Arc<dyn FsnotifyEvent>>;
     fn get_all_event_size(&self) -> usize;
     fn free_mark(&self, mark: &Arc<dyn FsnotifyMark>);
 }
 
-pub trait FsnotifyEvent: Any + Send + Sync + Debug {
+pub trait FsnotifyEvent: Any + Send + Sync {
     fn copy_to_user(&self, writer: &mut VmWriter) -> Result<usize>;
     fn get_size(&self) -> usize;
 }
@@ -93,10 +111,17 @@ pub trait FsnotifyEvent: Any + Send + Sync + Debug {
 /// when the inode is modified (as seen by fsnotify_access).  Some fsnotify
 /// users (such as dnotify) will flush these when the open fd is closed and not
 /// at inode eviction or modification.
-pub trait FsnotifyMark: Any + Send + Sync + Debug {
+pub trait FsnotifyMark: Any + Send + Sync {
     /// Group this mark is for
     fn fsnotify_group(&self) -> Arc<dyn FsnotifyGroup>;
     fn update_mark(&self, mask: u32) -> Result<u32>;
+    /// Debug helpers to expose core values generically
+    fn mark_mask(&self) -> u32 {
+        0
+    }
+    fn mark_flags(&self) -> u32 {
+        0
+    }
 }
 
 impl dyn FsnotifyMark {

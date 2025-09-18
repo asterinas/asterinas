@@ -17,19 +17,19 @@ use crate::{
         utils::{Inode, InodeMode, IoctlCmd, Metadata},
     },
     prelude::*,
-    process::signal::{PollHandle, Pollable},
+    process::signal::{PollHandle, Pollable, Pollee},
     return_errno_with_message,
 };
 
 type InodeAndMark = (Arc<dyn Inode>, Arc<dyn FsnotifyMark>);
 
-#[derive(Debug)]
 pub struct InotifyFile {
     wd_allocator: AtomicU32,
     wd_map: RwLock<HashMap<u32, InodeAndMark>>,
     flags: InotifyFlags,
     notifications: RwLock<Vec<Arc<dyn FsnotifyEvent>>>,
     this: Weak<InotifyFile>,
+    pollee: Pollee,
 }
 
 impl Drop for InotifyFile {
@@ -52,6 +52,7 @@ impl InotifyFile {
             flags,
             notifications: RwLock::new(Vec::new()),
             this: weak_self.clone(),
+            pollee: Pollee::new(),
         })
     }
 
@@ -170,6 +171,8 @@ impl FsnotifyGroup for InotifyFile {
         ));
         // TODO: inotify merge event
         self.notifications.write().push(event);
+        // New event makes the file readable
+        self.pollee.notify(IoEvents::IN);
     }
 
     fn pop_event(&self) -> Option<Arc<dyn FsnotifyEvent>> {
@@ -200,9 +203,14 @@ impl FsnotifyGroup for InotifyFile {
 }
 
 impl Pollable for InotifyFile {
-    fn poll(&self, _mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
-        warn!("Inotify file doesn't support poll now, return IoEvents::empty for now.");
-        IoEvents::empty()
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
+        self.pollee.poll_with(mask, poller, || {
+            if self.get_all_event_size() > 0 {
+                IoEvents::IN
+            } else {
+                IoEvents::empty()
+            }
+        })
     }
 }
 
@@ -216,6 +224,8 @@ impl FileLike for InotifyFile {
         while let Some(event) = self.pop_event() {
             size += event.copy_to_user(writer)?;
         }
+        // Events drained; invalidate cached readiness
+        self.pollee.invalidate();
         Ok(size)
     }
 
@@ -300,14 +310,12 @@ bitflags! {
     }
 }
 
-#[derive(Debug)]
 struct InotifyMark {
     inner: Mutex<InotifyMarkInner>,
     wd: u32,
     inotify_file: Arc<InotifyFile>,
 }
 
-#[derive(Debug)]
 struct InotifyMarkInner {
     mask: u32,
     flags: u32,
@@ -354,9 +362,16 @@ impl FsnotifyMark for InotifyMark {
 
         Ok(self.wd())
     }
+
+    fn mark_mask(&self) -> u32 {
+        self.inner.lock().mask
+    }
+
+    fn mark_flags(&self) -> u32 {
+        self.inner.lock().flags
+    }
 }
 
-#[derive(Debug)]
 struct InotifyEvent {
     wd: u32,
     mask: u32,
