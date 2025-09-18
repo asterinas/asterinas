@@ -5,7 +5,6 @@
 
 #![no_std]
 #![deny(unsafe_code)]
-#![feature(fn_traits)]
 
 extern crate alloc;
 
@@ -210,9 +209,9 @@ fn match_and_call(
     debug!("component infos: {infos:?}");
     info!("Components initializing in {stage:?} stage...");
 
-    for i in infos {
-        info!("Component initializing:{:?}", i);
-        if let Err(res) = i.function.unwrap().call(()) {
+    for info in infos {
+        info!("Component initializing:{:?}", info);
+        if let Err(res) = (info.function.unwrap())() {
             error!("Component initialize error:{:?}", res);
         } else {
             info!("Component initialize complete");

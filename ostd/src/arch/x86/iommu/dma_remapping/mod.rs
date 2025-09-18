@@ -46,23 +46,18 @@ impl PciDeviceLocation {
 
     /// Returns an iterator that enumerates all possible PCI device locations.
     fn all() -> impl Iterator<Item = PciDeviceLocation> {
-        core::iter::from_coroutine(
-            #[coroutine]
-            || {
-                for bus in Self::MIN_BUS..=Self::MAX_BUS {
-                    for device in Self::MIN_DEVICE..=Self::MAX_DEVICE {
-                        for function in Self::MIN_FUNCTION..=Self::MAX_FUNCTION {
-                            let loc = PciDeviceLocation {
-                                bus,
-                                device,
-                                function,
-                            };
-                            yield loc;
-                        }
-                    }
-                }
-            },
-        )
+        let all_bus = Self::MIN_BUS..=Self::MAX_BUS;
+        let all_dev = Self::MIN_DEVICE..=Self::MAX_DEVICE;
+        let all_func = Self::MIN_FUNCTION..=Self::MAX_FUNCTION;
+
+        all_bus
+            .flat_map(move |bus| all_dev.clone().map(move |dev| (bus, dev)))
+            .flat_map(move |(bus, dev)| all_func.clone().map(move |func| (bus, dev, func)))
+            .map(|(bus, dev, func)| PciDeviceLocation {
+                bus,
+                device: dev,
+                function: func,
+            })
     }
 
     /// Returns the zero PCI device location.
@@ -75,11 +70,16 @@ impl PciDeviceLocation {
     }
 }
 
-/// Mapping device address to physical address.
+/// Maps a device address to a physical address.
+///
+/// The physical address should point to a page containing untyped, non-sensitive data that can be
+/// accessed by the device.
 ///
 /// # Safety
 ///
-/// Mapping an incorrect address may lead to a kernel data leak.
+/// While the physical address is mapped as the device address (i.e. from calling this method to
+/// calling [`unmap`]), it must point to an untyped memory page. Otherwise, the device may corrupt
+/// kernel data, which could lead to memory safety issues.
 pub unsafe fn map(daddr: Daddr, paddr: Paddr) -> Result<(), IommuError> {
     let Some(table) = PAGE_TABLE.get() else {
         return Err(IommuError::NoIommu);
@@ -99,6 +99,9 @@ pub unsafe fn map(daddr: Daddr, paddr: Paddr) -> Result<(), IommuError> {
     }
 }
 
+/// Unmaps a device address.
+///
+/// This method will fail if the device address is not mapped (by [`map`]) before.
 pub fn unmap(daddr: Daddr) -> Result<(), IommuError> {
     let Some(table) = PAGE_TABLE.get() else {
         return Err(IommuError::NoIommu);

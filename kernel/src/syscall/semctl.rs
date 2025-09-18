@@ -111,5 +111,5 @@ where
     check_sem(semid, None, permission)?;
     let sem_sets = sem_sets();
     let sem_set = sem_sets.get(&semid).ok_or(Error::new(Errno::EINVAL))?;
-    ctl_func.call_once((sem_set,))
+    ctl_func(sem_set)
 }
