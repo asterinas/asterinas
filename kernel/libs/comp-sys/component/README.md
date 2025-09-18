@@ -3,11 +3,24 @@
 ## Overview
 This crate is used for the initialization of the component system, which provides a priority initialization scheme based on the inventory crate.
 
+## Initialization Stages
+The component system supports three distinct initialization stages that execute in a specific order during system boot:
+1. **Bootstrap**: The earliest stage, called after OSTD initialization is complete but before kernel subsystem initialization begins. This stage runs on the BSP (Bootstrap Processor) only, before SMP (Symmetric Multi-Processing) is enabled. Components in this stage can initialize core kernel services that other components depend on.
+2. **Kthread**: The kernel thread stage, initialized after SMP is enabled and the first kernel thread is spawned. This stage runs in the context of the first kernel thread on the BSP.
+3. **Process**: The process stage, initialized after the first user process is created. This stage runs in the context of the first user process, and prepares the system for user-space execution.
+
 ## Usage
 
 ### Register component
 
-Registering a crate as component by marking a function in the lib.rs with `#[init_component]` macro. The specific definition of the function can refer to the comments in the macro.
+Registering a crate as component by marking a function in the lib.rs with `#[init_component]` macro. You can specify the initialization stage for your component:
+- `#[init_component]` or `#[init_component(bootstrap)]` - registers for the **Bootstrap** stage
+- `#[init_component(kthread)]` - registers for the **Kthread** stage
+- `#[init_component(process)]` - registers for the **Process** stage
+
+**Note**: Each crate can declare up to three initialization functions (one for each stage), but each function can only be associated with one specific stage. A given stage can only be declared once per crate.
+
+The specific definition of the function can refer to the comments in the macro.
 
 ### Component initialization
 
@@ -34,7 +47,7 @@ fn comp1_init() -> Result<(), component::ComponentInitError> {
 // src/main.rs
 use std::sync::atomic::Ordering::Relaxed;
 
-use component::init_component;
+use component::{init_component, InitStage};
 use comp1::INIT_COUNT;
 
 #[init_component]
@@ -45,7 +58,7 @@ fn init() -> Result<(), component::ComponentInitError> {
 }
 
 fn main(){
-    component::init_all(component::parse_metadata!()).unwrap();
+    component::init_all(InitStage::Bootstrap, component::parse_metadata!()).unwrap();
     assert_eq!(INIT_COUNT.load(Relaxed),2);
 }
 ```

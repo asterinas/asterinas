@@ -21,6 +21,26 @@ pub use component_macro::*;
 pub use inventory::submit;
 use log::{debug, error, info};
 
+/// The initialization stages of the component system.
+///
+/// - `Bootstrap`: The earliest stage, called after OSTD initialization is
+///   complete but before kernel subsystem initialization begins. This stage
+///   runs on the BSP (Bootstrap Processor) only, before SMP (Symmetric
+///   Multi-Processing) is enabled. Components in this stage can initialize
+///   core kernel services that other components depend on.
+/// - `Kthread`: The kernel thread stage, initialized after SMP is enabled
+///   and the first kernel thread is spawned. This stage runs in the context
+///   of the first kernel thread on the BSP.
+/// - `Process`: The process stage, initialized after the first user process
+///   is created. This stage runs in the context of the first user process,
+///   and prepares the system for user-space execution.
+#[derive(Debug, PartialEq, Eq)]
+pub enum InitStage {
+    Bootstrap,
+    Kthread,
+    Process,
+}
+
 #[derive(Debug)]
 pub enum ComponentInitError {
     UninitializedDependencies(String),
@@ -28,16 +48,22 @@ pub enum ComponentInitError {
 }
 
 pub struct ComponentRegistry {
+    stage: InitStage,
     function: &'static (dyn Fn() -> Result<(), ComponentInitError> + Sync),
     path: &'static str,
 }
 
 impl ComponentRegistry {
     pub const fn new(
+        stage: InitStage,
         function: &'static (dyn Fn() -> Result<(), ComponentInitError> + Sync),
         path: &'static str,
     ) -> Self {
-        Self { function, path }
+        Self {
+            stage,
+            function,
+            path,
+        }
     }
 }
 
@@ -46,6 +72,7 @@ inventory::collect!(ComponentRegistry);
 impl Debug for ComponentRegistry {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ComponentRegistry")
+            .field("stage", &self.stage)
             .field("path", &self.path)
             .finish()
     }
@@ -105,17 +132,24 @@ pub enum ComponentSystemInitError {
     NotIncludeAllComponent(String),
 }
 
-/// Component system initialization. It will collect invoke all functions that are marked by init_component based on dependencies between crates.
+/// Initializes the component system for a specific stage.
+///
+/// It collects all functions marked with the `init_component` macro, filters them
+/// according to the given stage, and invokes them in the correct order while honoring
+/// dependencies and priorities between crates.
 ///
 /// The collection of ComponentInfo usually generate by `parse_metadata` macro.
 ///
 /// ```rust
-///     component::init_all(component::parse_metadata!());
+///     component::init_all(component::InitStage::Bootstrap, component::parse_metadata!());
 /// ```
 ///
-pub fn init_all(components: Vec<ComponentInfo>) -> Result<(), ComponentSystemInitError> {
+pub fn init_all(
+    stage: InitStage,
+    components: Vec<ComponentInfo>,
+) -> Result<(), ComponentSystemInitError> {
     let components_info = parse_input(components);
-    match_and_call(components_info)?;
+    match_and_call(stage, components_info)?;
     Ok(())
 }
 
@@ -130,10 +164,15 @@ fn parse_input(components: Vec<ComponentInfo>) -> BTreeMap<String, ComponentInfo
 
 /// Match the ComponentInfo with ComponentRegistry. The key is the relative path of one component
 fn match_and_call(
+    stage: InitStage,
     mut components: BTreeMap<String, ComponentInfo>,
 ) -> Result<(), ComponentSystemInitError> {
     let mut infos = Vec::new();
     for registry in inventory::iter::<ComponentRegistry> {
+        if registry.stage != stage {
+            continue;
+        }
+
         // relative/path/to/comps/pci/src/lib.rs
         let mut str: String = registry.path.to_owned();
         str = str.replace('\\', "/");
@@ -169,7 +208,7 @@ fn match_and_call(
 
     infos.sort();
     debug!("component infos: {infos:?}");
-    info!("Components initializing...");
+    info!("Components initializing in {stage:?} stage...");
 
     for i in infos {
         info!("Component initializing:{:?}", i);
@@ -179,6 +218,6 @@ fn match_and_call(
             info!("Component initialize complete");
         }
     }
-    info!("All components initialization completed");
+    info!("All components initialization in {stage:?} stage completed");
     Ok(())
 }
