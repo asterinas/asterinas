@@ -17,13 +17,17 @@ pub(crate) const COMPONENT_FILE_NAME: &str = "Components.toml";
 
 /// Register a function to be called when the component system is initialized. The function should not public.
 ///
+/// You can specify the initialization stage by:
+/// - `#[init_component]` or `#[init_component(bootstrap)]` - the **Bootstrap** stage
+/// - `#[init_component(kthread)]` - the **Kthread** stage
+/// - `#[init_component(process)]` - the **Process** stage
+///
 /// Example:
 /// ```rust
 /// #[init_component]
 /// fn init() -> Result<(), component::ComponentInitError> {
 ///     Ok(())
 /// }
-///
 /// ```
 ///
 /// It will expand to
@@ -32,26 +36,28 @@ pub(crate) const COMPONENT_FILE_NAME: &str = "Components.toml";
 ///     Ok(())
 /// }
 ///
-/// const fn file() -> &'static str{
-///     file!()
-/// }
-///
-/// component::submit!(component::ComponentRegistry::new(&init,file()));
+/// component::submit!(component::ComponentRegistry::new(component::InitStage::Bootstrap, &init, file!()));
 /// ```
 /// The priority will calculate automatically
 ///
 #[proc_macro_attribute]
-pub fn init_component(_: TokenStream, input: TokenStream) -> proc_macro::TokenStream {
+pub fn init_component(args: TokenStream, input: TokenStream) -> proc_macro::TokenStream {
+    let stage = match args.to_string().as_str() {
+        "" | "bootstrap" => quote! { Bootstrap },
+        "kthread" => quote! { Kthread },
+        "process" => quote! { Process },
+        _ => panic!("Invalid argument for init_component"),
+    };
     let function = parse_macro_input!(input as ComponentInitFunction);
     let function_name = &function.function_name;
     quote! {
         #function
 
-        const fn file() -> &'static str{
-            file!()
-        }
-
-        component::submit!(component::ComponentRegistry::new(&#function_name,file()));
+        component::submit!(component::ComponentRegistry::new(
+            component::InitStage::#stage,
+            &#function_name,
+            file!())
+        );
     }
     .into()
 }
@@ -65,7 +71,7 @@ pub fn init_component(_: TokenStream, input: TokenStream) -> proc_macro::TokenSt
 /// Example:
 ///
 /// ```rust
-///     component::init_all(component::parse_metadata!());
+///     component::init_all(component::InitStage::Bootstrap, component::parse_metadata!());
 /// ```
 ///
 #[proc_macro]
