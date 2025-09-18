@@ -54,8 +54,6 @@
 
 #![no_std]
 #![deny(unsafe_code)]
-#![feature(iter_from_coroutine)]
-#![feature(coroutines)]
 
 #[cfg(target_arch = "x86_64")]
 #[path = "arch/x86/mod.rs"]

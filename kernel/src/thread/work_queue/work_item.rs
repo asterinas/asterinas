@@ -61,6 +61,6 @@ impl WorkItem {
     }
 
     pub(super) fn call_work_func(&self) {
-        self.work_func.call(())
+        (self.work_func)()
     }
 }

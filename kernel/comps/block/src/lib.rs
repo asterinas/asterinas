@@ -28,7 +28,6 @@
 //!
 #![no_std]
 #![deny(unsafe_code)]
-#![feature(fn_traits)]
 #![feature(step_trait)]
 #![feature(trait_upcasting)]
 

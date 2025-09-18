@@ -2,8 +2,6 @@
 
 //! PCI device Information
 
-use core::iter;
-
 use super::cfg_space::PciDeviceCommonCfgOffset;
 
 /// PCI device Location
@@ -35,23 +33,18 @@ impl PciDeviceLocation {
 
     /// Returns an iterator that enumerates all possible PCI device locations.
     pub fn all() -> impl Iterator<Item = PciDeviceLocation> {
-        iter::from_coroutine(
-            #[coroutine]
-            || {
-                for bus in Self::MIN_BUS..=Self::MAX_BUS {
-                    for device in Self::MIN_DEVICE..=Self::MAX_DEVICE {
-                        for function in Self::MIN_FUNCTION..=Self::MAX_FUNCTION {
-                            let loc = PciDeviceLocation {
-                                bus,
-                                device,
-                                function,
-                            };
-                            yield loc;
-                        }
-                    }
-                }
-            },
-        )
+        let all_bus = Self::MIN_BUS..=Self::MAX_BUS;
+        let all_dev = Self::MIN_DEVICE..=Self::MAX_DEVICE;
+        let all_func = Self::MIN_FUNCTION..=Self::MAX_FUNCTION;
+
+        all_bus
+            .flat_map(move |bus| all_dev.clone().map(move |dev| (bus, dev)))
+            .flat_map(move |(bus, dev)| all_func.clone().map(move |func| (bus, dev, func)))
+            .map(|(bus, dev, func)| PciDeviceLocation {
+                bus,
+                device: dev,
+                function: func,
+            })
     }
 }
 

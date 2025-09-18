@@ -1,23 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! The standard library for Asterinas and other Rust OSes.
+
 #![feature(alloc_error_handler)]
 #![feature(allocator_api)]
 #![feature(btree_cursors)]
-#![feature(const_ptr_sub_ptr)]
-#![feature(const_trait_impl)]
 #![feature(core_intrinsics)]
-#![feature(coroutines)]
-#![feature(fn_traits)]
 #![feature(iter_advance_by)]
-#![feature(iter_from_coroutine)]
 #![feature(let_chains)]
 #![feature(linkage)]
 #![feature(macro_metavar_expr)]
 #![feature(min_specialization)]
 #![feature(negative_impls)]
 #![feature(ptr_metadata)]
-#![feature(ptr_sub_ptr)]
 #![feature(sync_unsafe_cell)]
 #![feature(trait_upcasting)]
 #![feature(unbounded_shifts)]
@@ -36,6 +31,7 @@ pub mod arch;
 #[cfg(target_arch = "loongarch64")]
 #[path = "arch/loongarch/mod.rs"]
 pub mod arch;
+
 pub mod boot;
 pub mod bus;
 pub mod console;

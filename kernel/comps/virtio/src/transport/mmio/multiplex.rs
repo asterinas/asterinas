@@ -54,7 +54,7 @@ impl MultiplexIrq {
                 &irq.cfg_callbacks
             };
             for callback in callbacks.iter() {
-                callback.call((trap_frame,));
+                (callback)(trap_frame);
             }
             irq.interrupt_ack.write_once(&interrupt_status).unwrap();
         };

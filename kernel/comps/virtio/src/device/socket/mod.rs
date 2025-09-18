@@ -56,7 +56,7 @@ pub fn handle_recv_irq(name: &str) {
     };
     let lock = callbacks.disable_irq().lock();
     for callback in lock.iter() {
-        callback.call(())
+        (callback)();
     }
 }
 

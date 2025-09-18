@@ -3,8 +3,6 @@
 #![no_std]
 #![deny(unsafe_code)]
 #![feature(trait_alias)]
-#![feature(fn_traits)]
-#![feature(linked_list_cursors)]
 
 mod buffer;
 pub mod dma_pool;
