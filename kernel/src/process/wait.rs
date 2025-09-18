@@ -12,7 +12,7 @@ use crate::{
         process_table,
         signal::sig_num::SigNum,
         status::StopWaitStatus,
-        Uid,
+        ReapedChildrenStats, Uid,
     },
     time::clocks::ProfClock,
 };
@@ -103,7 +103,11 @@ pub fn do_wait(
 
                 if let Some(status) = wait_zombie(&unwaited_children) {
                     if !wait_options.contains(WaitOptions::WNOWAIT) {
-                        reap_zombie_child(status.pid(), &mut children_lock);
+                        reap_zombie_child(
+                            status.pid(),
+                            &mut children_lock,
+                            ctx.process.reaped_children_stats(),
+                        );
                     }
                     return Some(Ok(Some(status)));
                 }
@@ -196,9 +200,13 @@ fn wait_stopped_or_continued(
     None
 }
 
-/// Free zombie child with pid, returns the exit code of child process.
-fn reap_zombie_child(pid: Pid, children_lock: &mut BTreeMap<Pid, Arc<Process>>) -> ExitCode {
-    let child_process = children_lock.remove(&pid).unwrap();
+/// Free zombie child with `child_pid`, returns the exit code of child process.
+fn reap_zombie_child(
+    child_pid: Pid,
+    children_lock: &mut BTreeMap<Pid, Arc<Process>>,
+    reaped_children_stats: &Mutex<ReapedChildrenStats>,
+) -> ExitCode {
+    let child_process = children_lock.remove(&child_pid).unwrap();
     assert!(child_process.status().is_zombie());
 
     for task in child_process.tasks().lock().as_slice() {
@@ -222,6 +230,11 @@ fn reap_zombie_child(pid: Pid, children_lock: &mut BTreeMap<Pid, Arc<Process>>) 
         &mut group_table_mut,
     );
     *child_group_mut = Weak::new();
+
+    let (mut user_time, mut kernel_time) = child_process.reaped_children_stats().lock().get();
+    user_time += child_process.prof_clock().user_clock().read_time();
+    kernel_time += child_process.prof_clock().kernel_clock().read_time();
+    reaped_children_stats.lock().add(user_time, kernel_time);
 
     child_process.status().exit_code()
 }

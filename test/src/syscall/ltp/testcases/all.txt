@@ -537,7 +537,7 @@ getrlimit03
 # get_mempolicy02
 # get_robust_list01
 
-# getrusage01
+getrusage01
 getrusage02
 # getrusage03
 # getrusage04

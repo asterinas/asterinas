@@ -32,7 +32,7 @@ pub use namespace::{
 pub use pid_file::PidFile;
 pub use process::{
     broadcast_signal_async, enqueue_signal_async, spawn_init_process, ExitCode, JobControl, Pgid,
-    Pid, Process, ProcessGroup, Session, Sid, Terminal,
+    Pid, Process, ProcessGroup, ReapedChildrenStats, Session, Sid, Terminal,
 };
 pub use process_filter::ProcessFilter;
 pub use process_vm::{renew_vm_and_map, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS};
