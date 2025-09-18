@@ -1379,8 +1379,9 @@ setgroups02
 # setgroups03
 # setgroups03_16
 
-# sethostname01
-# sethostname02
+sethostname01
+sethostname02
+# This test verifies that calling sethostname() as an unprivileged user fails with EPERM. 
 # sethostname03
 
 # setitimer01

@@ -128,6 +128,7 @@ use super::{
     setfsuid::sys_setfsuid,
     setgid::sys_setgid,
     setgroups::sys_setgroups,
+    sethostname::sys_sethostname,
     setitimer::{sys_getitimer, sys_setitimer},
     setns::sys_setns,
     setpgid::sys_setpgid,
@@ -306,7 +307,8 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_CHROOT = 161           => sys_chroot(args[..1]);
     SYS_SYNC = 162             => sys_sync(args[..0]);
     SYS_MOUNT = 165            => sys_mount(args[..5]);
-    SYS_UMOUNT2 = 166           => sys_umount(args[..2]);
+    SYS_UMOUNT2 = 166          => sys_umount(args[..2]);
+    SYS_SETHOSTNAME = 170      => sys_sethostname(args[..2]);
     SYS_GETTID = 186           => sys_gettid(args[..0]);
     SYS_SETXATTR = 188         => sys_setxattr(args[..5]);
     SYS_LSETXATTR = 189        => sys_lsetxattr(args[..5]);

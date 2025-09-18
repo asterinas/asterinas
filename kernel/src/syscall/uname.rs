@@ -6,6 +6,6 @@ pub fn sys_uname(old_uname_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> 
     debug!("old uname addr = 0x{:x}", old_uname_addr);
     let ns_proxy = ctx.thread_local.borrow_ns_proxy();
     let uts_name = ns_proxy.unwrap().uts_ns().uts_name();
-    ctx.user_space().write_val(old_uname_addr, uts_name)?;
+    ctx.user_space().write_val(old_uname_addr, &*uts_name)?;
     Ok(SyscallReturn::Return(0))
 }
