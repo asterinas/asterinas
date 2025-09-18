@@ -55,8 +55,8 @@ pub type Sid = u32;
 
 pub type ExitCode = u32;
 
-pub(super) fn init() {
-    timer_manager::init();
+pub(super) fn init_on_each_cpu() {
+    timer_manager::init_on_each_cpu();
 }
 
 pub(super) fn init_in_first_process(ctx: &Context) {

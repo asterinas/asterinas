@@ -110,6 +110,8 @@ fn init() {
 }
 
 fn init_on_each_cpu() {
+    sched::init_on_each_cpu();
+    process::init_on_each_cpu();
     fs::init_on_each_cpu();
 }
 
