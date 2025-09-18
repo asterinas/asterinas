@@ -41,16 +41,6 @@ impl<M: AnyFrameMeta> UniqueFrame<M> {
         })
     }
 
-    /// Repurposes the frame with a new metadata.
-    pub fn repurpose<M1: AnyFrameMeta>(self, metadata: M1) -> UniqueFrame<M1> {
-        // SAFETY: We are the sole owner and the metadata is initialized.
-        unsafe { self.slot().drop_meta_in_place() };
-        // SAFETY: We are the sole owner.
-        unsafe { self.slot().write_meta(metadata) };
-        // SAFETY: The metadata is initialized with type `M1`.
-        unsafe { core::mem::transmute(self) }
-    }
-
     /// Gets the metadata of this page.
     pub fn meta(&self) -> &M {
         // SAFETY: The type is tracked by the type system.
@@ -92,6 +82,16 @@ impl<M: AnyFrameMeta + ?Sized> UniqueFrame<M> {
         // SAFETY: The metadata is initialized and valid. We have the exclusive
         // access to the frame.
         unsafe { &mut *self.slot().dyn_meta_ptr() }
+    }
+
+    /// Repurposes the frame with a new metadata.
+    pub fn repurpose<M1: AnyFrameMeta>(self, metadata: M1) -> UniqueFrame<M1> {
+        // SAFETY: We are the sole owner and the metadata is initialized.
+        unsafe { self.slot().drop_meta_in_place() };
+        // SAFETY: We are the sole owner.
+        unsafe { self.slot().write_meta(metadata) };
+        // SAFETY: The metadata is initialized with type `M1`.
+        unsafe { core::mem::transmute(self) }
     }
 
     /// Resets the frame to unused without up-calling the allocator.
