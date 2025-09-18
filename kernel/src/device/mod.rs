@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+mod full;
 mod null;
 mod pty;
 mod random;
@@ -55,6 +56,9 @@ pub fn init_in_first_process(ctx: &Context) -> Result<()> {
 
     let urandom = Arc::new(urandom::Urandom);
     add_node(urandom, "urandom", &fs_resolver)?;
+
+    let full = Arc::new(full::Full);
+    add_node(full, "full", &fs_resolver)?;
 
     pty::init_in_first_process(&fs_resolver)?;
 

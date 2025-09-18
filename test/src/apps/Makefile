@@ -17,6 +17,7 @@ TEST_APPS := \
 	capability \
 	clone3 \
 	cpu_affinity \
+	devfs \
 	epoll \
 	eventfd2 \
 	execve \
