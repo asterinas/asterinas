@@ -117,6 +117,7 @@ use super::{
     setfsuid::sys_setfsuid,
     setgid::sys_setgid,
     setgroups::sys_setgroups,
+    sethostname::sys_sethostname,
     setitimer::{sys_getitimer, sys_setitimer},
     setns::sys_setns,
     setpgid::sys_setpgid,
@@ -283,6 +284,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_GETGROUPS = 158              => sys_getgroups(args[..2]);
     SYS_SETGROUPS = 159              => sys_setgroups(args[..2]);
     SYS_NEWUNAME = 160               => sys_uname(args[..1]);
+    SYS_SETHOSTNAME = 161            => sys_sethostname(args[..2]);
     SYS_GETRLIMIT = 163              => sys_getrlimit(args[..2]);
     SYS_SETRLIMIT = 164              => sys_setrlimit(args[..2]);
     SYS_GETRUSAGE = 165              => sys_getrusage(args[..2]);

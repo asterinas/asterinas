@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use ostd::sync::RwMutexReadGuard;
 use spin::Once;
 
 use crate::{
@@ -10,7 +11,7 @@ use crate::{
 
 /// The UTS namespace.
 pub struct UtsNamespace {
-    uts_name: UtsName,
+    uts_name: RwMutex<UtsName>,
     owner: Arc<UserNamespace>,
 }
 
@@ -34,7 +35,10 @@ impl UtsNamespace {
 
             let owner = UserNamespace::get_init_singleton().clone();
 
-            Arc::new(Self { uts_name, owner })
+            Arc::new(Self {
+                uts_name: RwMutex::new(uts_name),
+                owner,
+            })
         })
     }
 
@@ -46,7 +50,7 @@ impl UtsNamespace {
     ) -> Result<Arc<Self>> {
         owner.check_cap(CapSet::SYS_ADMIN, posix_thread)?;
         Ok(Arc::new(Self {
-            uts_name: self.uts_name,
+            uts_name: RwMutex::new(*self.uts_name.read()),
             owner,
         }))
     }
@@ -56,9 +60,25 @@ impl UtsNamespace {
         &self.owner
     }
 
-    /// Returns the UTS name.
-    pub fn uts_name(&self) -> &UtsName {
-        &self.uts_name
+    /// Returns a read-only lock guard for accessing the UTS name.
+    pub fn uts_name(&self) -> RwMutexReadGuard<'_, UtsName> {
+        self.uts_name.read()
+    }
+
+    /// Sets a new hostname for the UTS namespace.
+    ///
+    /// This method will fail with `EPERM` if the caller does not have the SYS_ADMIN capability
+    /// in the owner user namespace.
+    pub fn set_hostname(&self, addr: Vaddr, len: usize, ctx: &Context) -> Result<()> {
+        self.owner.check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
+
+        let new_host_name = copy_uts_field_from_user(addr, len as _, ctx)?;
+        debug!(
+            "set host name: {:?}",
+            CStr::from_bytes_until_nul(new_host_name.as_bytes()).unwrap()
+        );
+        self.uts_name.write().nodename = new_host_name;
+        Ok(())
     }
 }
 
@@ -73,4 +93,30 @@ pub struct UtsName {
     version: [u8; UTS_FIELD_LEN],
     machine: [u8; UTS_FIELD_LEN],
     domainname: [u8; UTS_FIELD_LEN],
+}
+
+fn copy_uts_field_from_user(addr: Vaddr, len: u32, ctx: &Context) -> Result<[u8; UTS_FIELD_LEN]> {
+    if len.cast_signed() < 0 {
+        return_errno_with_message!(Errno::EINVAL, "the buffer length cannot be negative");
+    }
+
+    let user_space = ctx.user_space();
+    let mut reader = user_space.reader(addr, len as usize)?;
+
+    // UTS fields represent C strings, which must be nul-terminated.
+    // Therefore, the user-provided buffer length cannot exceed `UTS_FIELD_LEN - 1`
+    // to ensure space for the terminating nul byte.
+    if reader.remain() > UTS_FIELD_LEN - 1 {
+        return_errno_with_message!(Errno::EINVAL, "the UTS name is too long");
+    }
+
+    let mut buffer = [0u8; UTS_FIELD_LEN];
+
+    // Partial reads are acceptable,
+    // but an error is returned if no bytes can be read successfully.
+    if let Err((err, 0)) = reader.read_fallible(&mut VmWriter::from(buffer.as_mut_slice())) {
+        return Err(err.into());
+    }
+
+    Ok(buffer)
 }

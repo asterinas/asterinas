@@ -1379,8 +1379,9 @@ setgroups02
 # setgroups03
 # setgroups03_16
 
-# sethostname01
-# sethostname02
+sethostname01
+sethostname02
+# TODO: Drop capabilities on UID changes, so that sethostname() will fail with EPERM. 
 # sethostname03
 
 # setitimer01
