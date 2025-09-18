@@ -12,8 +12,9 @@ use crate::{
                 stat::StatFileOps,
                 task::{
                     cmdline::CmdlineFileOps, comm::CommFileOps, environ::EnvironFileOps,
-                    exe::ExeSymOps, fd::FdDirOps, oom_score_adj::OomScoreAdjFileOps,
-                    status::StatusFileOps,
+                    exe::ExeSymOps, fd::FdDirOps, gid_map::GidMapFileOps,
+                    oom_score_adj::OomScoreAdjFileOps, status::StatusFileOps,
+                    uid_map::UidMapFileOps,
                 },
             },
             template::{DirOps, ProcDir, ProcDirBuilder},
@@ -30,8 +31,10 @@ mod comm;
 mod environ;
 mod exe;
 mod fd;
+mod gid_map;
 mod oom_score_adj;
 mod status;
+mod uid_map;
 
 /// Represents the inode at `/proc/[pid]/task`.
 pub struct TaskDirOps(Arc<Process>);
@@ -81,6 +84,7 @@ impl DirOps for TidDirOps {
             "environ" => EnvironFileOps::new_inode(self.process_ref.clone(), this_ptr),
             "exe" => ExeSymOps::new_inode(self.process_ref.clone(), this_ptr),
             "fd" => FdDirOps::new_inode(self.thread_ref.clone(), this_ptr),
+            "gid_map" => GidMapFileOps::new_inode(self.process_ref.clone(), this_ptr),
             "oom_score_adj" => OomScoreAdjFileOps::new_inode(self.process_ref.clone(), this_ptr),
             "stat" => StatFileOps::new_inode(
                 self.process_ref.clone(),
@@ -93,6 +97,7 @@ impl DirOps for TidDirOps {
                 self.thread_ref.clone(),
                 this_ptr,
             ),
+            "uid_map" => UidMapFileOps::new_inode(self.process_ref.clone(), this_ptr),
             _ => return_errno!(Errno::ENOENT),
         };
         Ok(inode)
@@ -129,6 +134,9 @@ impl TidDirOps {
         cached_children.put_entry_if_not_found("fd", || {
             FdDirOps::new_inode(self.thread_ref.clone(), this_ptr.clone())
         });
+        cached_children.put_entry_if_not_found("gid_map", || {
+            GidMapFileOps::new_inode(self.process_ref.clone(), this_ptr.clone())
+        });
         cached_children.put_entry_if_not_found("oom_score_adj", || {
             OomScoreAdjFileOps::new_inode(self.process_ref.clone(), this_ptr.clone())
         });
@@ -146,6 +154,9 @@ impl TidDirOps {
                 self.thread_ref.clone(),
                 this_ptr.clone(),
             )
+        });
+        cached_children.put_entry_if_not_found("uid_map", || {
+            UidMapFileOps::new_inode(self.process_ref.clone(), this_ptr.clone())
         });
     }
 }
