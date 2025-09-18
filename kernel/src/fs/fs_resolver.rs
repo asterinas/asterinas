@@ -70,10 +70,17 @@ impl FsResolver {
                 if e.error() == Errno::ENOENT
                     && open_args.creation_flags.contains(CreationFlags::O_CREAT) =>
             {
-                let parent_dentry = lookup_ctx.parent().unwrap().clone();
-                let tail_file_name = lookup_ctx.tail_file_name().unwrap().clone();
                 let inode_handle = self.create_new_file(&open_args, &mut lookup_ctx)?;
-                fsnotify_create(&parent_dentry, tail_file_name)?;
+                match (lookup_ctx.parent(), lookup_ctx.tail_file_name()) {
+                    (Some(parent_dentry), Some(tail_file_name)) => {
+                        if let Err(e) = fsnotify_create(parent_dentry, tail_file_name) {
+                            warn!("Failed to send fsnotify_create event: {:?}", e);
+                        }
+                    }
+                    _ => {
+                        warn!("Failed to get parent dentry or tail file name for fsnotify_create");
+                    }
+                }
                 inode_handle
             }
             Err(e) => return Err(e),
