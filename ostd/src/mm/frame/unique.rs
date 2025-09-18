@@ -86,12 +86,14 @@ impl<M: AnyFrameMeta + ?Sized> UniqueFrame<M> {
 
     /// Repurposes the frame with a new metadata.
     pub fn repurpose<M1: AnyFrameMeta>(self, metadata: M1) -> UniqueFrame<M1> {
+        let this = ManuallyDrop::new(self);
+
         // SAFETY: We are the sole owner and the metadata is initialized.
-        unsafe { self.slot().drop_meta_in_place() };
+        unsafe { this.slot().drop_meta_in_place() };
         // SAFETY: We are the sole owner.
-        unsafe { self.slot().write_meta(metadata) };
+        unsafe { this.slot().write_meta(metadata) };
         // SAFETY: The metadata is initialized with type `M1`.
-        unsafe { core::mem::transmute(self) }
+        unsafe { core::mem::transmute(ManuallyDrop::into_inner(this)) }
     }
 
     /// Resets the frame to unused without up-calling the allocator.
