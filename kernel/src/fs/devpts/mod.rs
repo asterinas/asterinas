@@ -13,7 +13,8 @@ use super::utils::MknodType;
 use crate::{
     device::PtyMaster,
     fs::{
-        device::{Device, DeviceType},
+        device::{Device, DeviceId, DeviceType},
+        notify::FsnotifyPublisher,
         registry::{FsProperties, FsType},
         utils::{
             mkmod, DirEntryVecExt, DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType,
@@ -145,7 +146,7 @@ struct RootInode {
     slaves: RwLock<SlotVec<(String, Arc<dyn Inode>)>>,
     metadata: RwLock<Metadata>,
     fs: Weak<DevPts>,
-    fsnotify: FsnotifyCommon,
+    fsnotify_publisher: FsnotifyPublisher,
 }
 
 impl RootInode {
@@ -155,7 +156,7 @@ impl RootInode {
             slaves: RwLock::new(SlotVec::new()),
             metadata: RwLock::new(Metadata::new_dir(ROOT_INO, mkmod!(a+rx, u+w), BLOCK_SIZE)),
             fs,
-            fsnotify: FsnotifyCommon::new(),
+            fsnotify_publisher: FsnotifyPublisher::new(),
         })
     }
 }
@@ -327,8 +328,8 @@ impl Inode for RootInode {
         false
     }
 
-    fn fsnotify(&self) -> &FsnotifyCommon {
-        &self.fsnotify
+    fn fsnotify_publisher(&self) -> &FsnotifyPublisher {
+        &self.fsnotify_publisher
     }
 
     // devpts is not supported link and unlink, so the hard link count is dummy

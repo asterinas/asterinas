@@ -7,7 +7,7 @@ use ostd::sync::RwLock;
 use super::fs::SysFs;
 use crate::{
     fs::{
-        notify::FsnotifyCommon,
+        notify::FsnotifyPublisher,
         utils::{
             systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
             FileSystem, Inode, InodeMode, InodeType, Metadata,
@@ -34,8 +34,8 @@ pub(super) struct SysFsInode {
     parent: Weak<SysFsInode>,
     /// Weak self-reference for cyclic data structures.
     this: Weak<SysFsInode>,
-    /// Fsnotify common.
-    fsnotify_common: FsnotifyCommon,
+    /// Fsnotify publisher.
+    fsnotify_publisher: FsnotifyPublisher,
 }
 
 impl SysTreeInodeTy for SysFsInode {
@@ -54,7 +54,7 @@ impl SysTreeInodeTy for SysFsInode {
             mode: RwLock::new(mode),
             parent,
             this: this.clone(),
-            fsnotify_common: FsnotifyCommon::new(),
+            fsnotify_publisher: FsnotifyPublisher::new(),
         })
     }
 
@@ -85,8 +85,8 @@ impl SysTreeInodeTy for SysFsInode {
             .expect("invalid weak reference to `self`")
     }
 
-    fn fsnotify(&self) -> &FsnotifyCommon {
-        &self.fsnotify_common
+    fn fsnotify_publisher(&self) -> &FsnotifyPublisher {
+        &self.fsnotify_publisher
     }
 }
 

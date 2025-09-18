@@ -19,9 +19,8 @@ use crate::{
     events::IoEvents,
     fs::{
         device::Device,
-        file_handle::FileLike,
         inode_handle::FileIo,
-        notify::FsnotifyCommon,
+        notify::FsnotifyPublisher,
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
         pipe::NamedPipe,
         registry::{FsProperties, FsType},
@@ -65,7 +64,7 @@ impl RamFs {
                 fs: weak_fs.clone(),
                 extension: Extension::new(),
                 xattr: RamXattr::new(),
-                fsnotify: FsnotifyCommon::new(),
+                fsnotify_publisher: FsnotifyPublisher::new(),
             }),
             inode_allocator: AtomicU64::new(ROOT_INO + 1),
         })
@@ -113,8 +112,8 @@ pub(super) struct RamInode {
     extension: Extension,
     /// Extended attributes
     xattr: RamXattr,
-    /// Fsnotify common
-    fsnotify: FsnotifyCommon,
+    /// Fsnotify publisher
+    fsnotify_publisher: FsnotifyPublisher,
 }
 
 /// Inode inner specifics.
@@ -418,7 +417,7 @@ impl RamInode {
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
             xattr: RamXattr::new(),
-            fsnotify: FsnotifyCommon::new(),
+            fsnotify_publisher: FsnotifyPublisher::new(),
         })
     }
 
@@ -432,7 +431,7 @@ impl RamInode {
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
             xattr: RamXattr::new(),
-            fsnotify: FsnotifyCommon::new(),
+            fsnotify_publisher: FsnotifyPublisher::new(),
         })
     }
 
@@ -452,7 +451,7 @@ impl RamInode {
             fs: Weak::new(),
             extension: Extension::new(),
             xattr: RamXattr::new(),
-            fsnotify: FsnotifyCommon::new(),
+            fsnotify_publisher: FsnotifyPublisher::new(),
         }
     }
 
@@ -466,7 +465,7 @@ impl RamInode {
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
             xattr: RamXattr::new(),
-            fsnotify: FsnotifyCommon::new(),
+            fsnotify_publisher: FsnotifyPublisher::new(),
         })
     }
 
@@ -486,7 +485,7 @@ impl RamInode {
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
             xattr: RamXattr::new(),
-            fsnotify: FsnotifyCommon::new(),
+            fsnotify_publisher: FsnotifyPublisher::new(),
         })
     }
 
@@ -500,7 +499,7 @@ impl RamInode {
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
             xattr: RamXattr::new(),
-            fsnotify: FsnotifyCommon::new(),
+            fsnotify_publisher: FsnotifyPublisher::new(),
         })
     }
 
@@ -514,7 +513,7 @@ impl RamInode {
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
             xattr: RamXattr::new(),
-            fsnotify: FsnotifyCommon::new(),
+            fsnotify_publisher: FsnotifyPublisher::new(),
         })
     }
 
@@ -1268,8 +1267,8 @@ impl Inode for RamInode {
         self.xattr.remove(name)
     }
 
-    fn fsnotify(&self) -> &FsnotifyCommon {
-        &self.fsnotify
+    fn fsnotify_publisher(&self) -> &FsnotifyPublisher {
+        &self.fsnotify_publisher
     }
 }
 

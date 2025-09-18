@@ -15,9 +15,8 @@ use aster_systree::{
 use crate::{
     events::IoEvents,
     fs::{
-        device::Device,
         inode_handle::FileIo,
-        notify::FsnotifyCommon,
+        notify::FsnotifyPublisher,
         utils::{
             mkmod, AccessMode, DirentVisitor, FallocMode, FileSystem, Inode, InodeMode, InodeType,
             IoctlCmd, Metadata, MknodType, StatusFlags, SymbolicLink,
@@ -56,7 +55,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
 
     fn set_mode(&self, mode: InodeMode) -> Result<()>;
 
-    fn fsnotify(&self) -> &FsnotifyCommon;
+    fn fsnotify_publisher(&self) -> &FsnotifyPublisher;
 
     fn parent(&self) -> &Weak<Self>;
 
@@ -597,8 +596,8 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         true
     }
 
-    default fn fsnotify(&self) -> &FsnotifyCommon {
-        self.fsnotify()
+    default fn fsnotify_publisher(&self) -> &FsnotifyPublisher {
+        self.fsnotify_publisher()
     }
 }
 

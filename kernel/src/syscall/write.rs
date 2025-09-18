@@ -2,10 +2,8 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::{
-        file_table::{get_file_fast, FileDesc},
-        notify::fsnotify_modify,
-    },
+    fs,
+    fs::file_table::{get_file_fast, FileDesc},
     prelude::*,
 };
 
@@ -45,7 +43,7 @@ pub fn sys_write(
     if let Some(path) = file.path()
         && write_len > 0
     {
-        fsnotify_modify(path)?;
+        fs::notify::on_modify(path)?;
     }
     Ok(SyscallReturn::Return(write_len as _))
 }

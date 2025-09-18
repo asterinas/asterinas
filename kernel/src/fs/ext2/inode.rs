@@ -20,7 +20,7 @@ use super::{
 };
 use crate::{
     fs::{
-        notify::FsnotifyCommon,
+        notify::FsnotifyPublisher,
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
         utils::{
             Extension, FallocMode, Inode as _, InodeMode, Metadata, Permission, XattrName,
@@ -45,7 +45,7 @@ pub struct Inode {
     fs: Weak<Ext2>,
     extension: Extension,
     xattr: Option<Xattr>,
-    fsnotify: FsnotifyCommon,
+    fsnotify_publisher: FsnotifyPublisher,
 }
 
 impl Inode {
@@ -65,7 +65,7 @@ impl Inode {
             inner: RwMutex::new(InodeInner::new(desc, weak_self.clone(), fs.clone())),
             fs,
             extension: Extension::new(),
-            fsnotify: FsnotifyCommon::new(),
+            fsnotify_publisher: FsnotifyPublisher::new(),
         })
     }
 
@@ -109,8 +109,8 @@ impl Inode {
         }
     }
 
-    pub fn fsnotify(&self) -> &FsnotifyCommon {
-        &self.fsnotify
+    pub fn fsnotify_publisher(&self) -> &FsnotifyPublisher {
+        &self.fsnotify_publisher
     }
 
     pub fn resize(&self, new_size: usize) -> Result<()> {

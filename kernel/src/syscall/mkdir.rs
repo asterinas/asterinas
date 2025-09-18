@@ -2,10 +2,10 @@
 
 use super::SyscallReturn;
 use crate::{
+    fs,
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
-        notify::fsnotify_mkdir,
         utils::{InodeMode, InodeType},
     },
     prelude::*,
@@ -37,7 +37,7 @@ pub fn sys_mkdirat(
         InodeMode::from_bits_truncate(mask_mode)
     };
     let path = dir_path.new_fs_child(name.trim_end_matches('/'), InodeType::Dir, inode_mode)?;
-    fsnotify_mkdir(&dir_path, path.effective_name())?;
+    fs::notify::on_mkdir(&dir_path, path.effective_name())?;
     Ok(SyscallReturn::Return(0))
 }
 

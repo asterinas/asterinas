@@ -4,10 +4,10 @@ use core::time::Duration;
 
 use super::{constants::MAX_FILENAME_LEN, SyscallReturn};
 use crate::{
+    fs,
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
-        notify::fsnotify_attr_change,
         path::Path,
     },
     prelude::*,
@@ -143,7 +143,7 @@ fn vfs_utimes(path: &Path, times: Option<TimeSpecPair>) -> Result<SyscallReturn>
     path.set_atime(atime);
     path.set_mtime(mtime);
     path.set_ctime(ctime);
-    fsnotify_attr_change(path)?;
+    fs::notify::on_attr_change(path)?;
     Ok(SyscallReturn::Return(0))
 }
 

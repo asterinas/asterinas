@@ -8,6 +8,7 @@ use super::fs::CgroupFs;
 use crate::{
     fs::{
         cgroupfs::CgroupNode,
+        notify::FsnotifyPublisher,
         path::{is_dot, is_dotdot},
         utils::{
             systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
@@ -29,8 +30,8 @@ pub(super) struct CgroupInode {
     parent: Weak<CgroupInode>,
     /// Weak self-reference for cyclic data structures.
     this: Weak<CgroupInode>,
-    /// Fsnotify common.
-    fsnotify_common: FsnotifyCommon,
+    /// Fsnotify publisher.
+    fsnotify_publisher: FsnotifyPublisher,
 }
 
 impl SysTreeInodeTy for CgroupInode {
@@ -49,7 +50,7 @@ impl SysTreeInodeTy for CgroupInode {
             mode: RwLock::new(mode),
             parent,
             this: this.clone(),
-            fsnotify_common: FsnotifyCommon::new(),
+            fsnotify_publisher: FsnotifyPublisher::new(),
         })
     }
 
@@ -80,8 +81,8 @@ impl SysTreeInodeTy for CgroupInode {
             .expect("invalid weak reference to `self`")
     }
 
-    fn fsnotify(&self) -> &FsnotifyCommon {
-        &self.fsnotify_common
+    fn fsnotify_publisher(&self) -> &FsnotifyPublisher {
+        &self.fsnotify_publisher
     }
 }
 

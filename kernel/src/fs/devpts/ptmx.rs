@@ -7,7 +7,7 @@ use crate::{
     events::IoEvents,
     fs::{
         inode_handle::FileIo,
-        notify::FsnotifyCommon,
+        notify::FsnotifyPublisher,
         utils::{AccessMode, StatusFlags},
     },
     process::signal::{PollHandle, Pollable},
@@ -25,7 +25,7 @@ const PTMX_MINOR_NUM: u32 = 2;
 pub struct Ptmx {
     inner: Inner,
     metadata: RwLock<Metadata>,
-    fsnotify: FsnotifyCommon,
+    fsnotify_publisher: FsnotifyPublisher,
 }
 
 #[derive(Clone)]
@@ -42,7 +42,7 @@ impl Ptmx {
                 &inner,
             )),
             inner,
-            fsnotify: FsnotifyCommon::new(),
+            fsnotify_publisher: FsnotifyPublisher::new(),
         })
     }
 
@@ -162,8 +162,8 @@ impl Inode for Ptmx {
         false
     }
 
-    fn fsnotify(&self) -> &FsnotifyCommon {
-        &self.fsnotify
+    fn fsnotify_publisher(&self) -> &FsnotifyPublisher {
+        &self.fsnotify_publisher
     }
 }
 

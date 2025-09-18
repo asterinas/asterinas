@@ -8,10 +8,8 @@ use super::{
     SyscallReturn,
 };
 use crate::{
-    fs::{
-        file_table::{get_file_fast, FileDesc},
-        notify::fsnotify_attr_change,
-    },
+    fs,
+    fs::file_table::{get_file_fast, FileDesc},
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
 };
@@ -57,6 +55,6 @@ fn removexattr(
 
     let path = lookup_path_for_xattr(&file_ctx, ctx)?;
     path.remove_xattr(xattr_name)?;
-    fsnotify_attr_change(&path)?;
+    fs::notify::on_attr_change(&path)?;
     Ok(())
 }

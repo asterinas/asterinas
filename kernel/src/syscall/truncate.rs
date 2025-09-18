@@ -2,10 +2,10 @@
 
 use super::SyscallReturn;
 use crate::{
+    fs,
     fs::{
         file_table::{get_file_fast, FileDesc},
         fs_resolver::{FsPath, AT_FDCWD},
-        notify::fsnotify_modify,
         utils::PATH_MAX,
     },
     prelude::*,
@@ -23,7 +23,7 @@ pub fn sys_ftruncate(fd: FileDesc, len: isize, ctx: &Context) -> Result<SyscallR
     // Some file is not supported dentry, such as epoll file,
     // TODO: Add anonymous inode support.
     if let Some(path) = file.path() {
-        fsnotify_modify(path)?;
+        fs::notify::on_modify(path)?;
     }
     Ok(SyscallReturn::Return(0))
 }
@@ -44,7 +44,7 @@ pub fn sys_truncate(path_ptr: Vaddr, len: isize, ctx: &Context) -> Result<Syscal
             .lookup(&fs_path)?
     };
     dir_path.resize(len as usize)?;
-    fsnotify_modify(&dir_path)?;
+    fs::notify::on_modify(&dir_path)?;
     Ok(SyscallReturn::Return(0))
 }
 

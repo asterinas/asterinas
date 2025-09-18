@@ -2,9 +2,9 @@
 
 use super::SyscallReturn;
 use crate::{
+    fs,
     fs::{
         file_table::{get_file_fast, FileDesc},
-        notify::fsnotify_modify,
         utils::FallocMode,
     },
     prelude::*,
@@ -37,7 +37,7 @@ pub fn sys_fallocate(
     // Some file is not supported dentry, such as epoll file,
     // TODO: Add anonymous inode support.
     if let Some(path) = file.path() {
-        fsnotify_modify(path)?;
+        fs::notify::on_modify(path)?;
     }
     Ok(SyscallReturn::Return(0))
 }

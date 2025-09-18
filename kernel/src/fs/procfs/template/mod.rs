@@ -11,7 +11,7 @@ pub use self::{
 use super::{ProcFs, BLOCK_SIZE};
 use crate::{
     fs::{
-        notify::FsnotifyCommon,
+        notify::FsnotifyPublisher,
         utils::{FileSystem, InodeMode, InodeType, Metadata},
     },
     prelude::*,
@@ -27,7 +27,7 @@ struct Common {
     metadata: RwLock<Metadata>,
     fs: Weak<dyn FileSystem>,
     is_volatile: bool,
-    fsnotify: FsnotifyCommon,
+    fsnotify_publisher: FsnotifyPublisher,
 }
 
 impl Common {
@@ -36,7 +36,7 @@ impl Common {
             metadata: RwLock::new(metadata),
             fs,
             is_volatile,
-            fsnotify: FsnotifyCommon::new(),
+            fsnotify_publisher: FsnotifyPublisher::new(),
         }
     }
 
@@ -115,7 +115,7 @@ impl Common {
         self.is_volatile
     }
 
-    pub fn fsnotify(&self) -> &FsnotifyCommon {
-        &self.fsnotify
+    pub fn fsnotify_publisher(&self) -> &FsnotifyPublisher {
+        &self.fsnotify_publisher
     }
 }

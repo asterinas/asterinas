@@ -28,7 +28,7 @@ use crate::{
     events::IoEvents,
     fs::{
         exfat::{dentry::ExfatDentryIterator, fat::ExfatChain, fs::ExfatFs},
-        notify::FsnotifyCommon,
+        notify::FsnotifyPublisher,
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
         utils::{
             mkmod, CachePage, DirentVisitor, Extension, Inode, InodeMode, InodeType, IoctlCmd,
@@ -80,7 +80,7 @@ impl FatAttr {
 pub struct ExfatInode {
     inner: RwMutex<ExfatInodeInner>,
     extension: Extension,
-    fsnotify: FsnotifyCommon,
+    fsnotify_publisher: FsnotifyPublisher,
 }
 
 #[derive(Debug)]
@@ -678,7 +678,7 @@ impl ExfatInode {
                 page_cache: PageCache::with_capacity(size, weak_self.clone() as _).unwrap(),
             }),
             extension: Extension::new(),
-            fsnotify: FsnotifyCommon::new(),
+            fsnotify_publisher: FsnotifyPublisher::new(),
         });
 
         let inner = inode.inner.upread();
@@ -789,7 +789,7 @@ impl ExfatInode {
                 page_cache: PageCache::with_capacity(size, weak_self.clone() as _).unwrap(),
             }),
             extension: Extension::new(),
-            fsnotify: FsnotifyCommon::new(),
+            fsnotify_publisher: FsnotifyPublisher::new(),
         });
 
         if matches!(inode_type, InodeType::Dir) {
@@ -1722,7 +1722,7 @@ impl Inode for ExfatInode {
         Some(&self.extension)
     }
 
-    fn fsnotify(&self) -> &FsnotifyCommon {
-        &self.fsnotify
+    fn fsnotify_publisher(&self) -> &FsnotifyPublisher {
+        &self.fsnotify_publisher
     }
 }

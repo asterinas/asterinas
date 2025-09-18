@@ -11,7 +11,6 @@ pub use mount_namespace::MountNamespace;
 use crate::{
     fs::{
         inode_handle::InodeHandle,
-        notify::{FsnotifyGroup, FsnotifyMark},
         path::dentry::{Dentry, DentryKey},
         utils::{
             CreationFlags, FileSystem, FsFlags, Inode, InodeMode, InodeType, Metadata, MknodType,
@@ -187,14 +186,6 @@ impl Path {
         let corresponding_path = Self::new(corresponding_mount, self.dentry.clone());
 
         Some(corresponding_path)
-    }
-
-    /// Find the fsnotify mark of the current `Path`.
-    pub fn find_fsnotify_mark(
-        &self,
-        fsnotify_group: &Arc<dyn FsnotifyGroup>,
-    ) -> Option<Arc<dyn FsnotifyMark>> {
-        self.inode().find_fsnotify_mark(fsnotify_group)
     }
 
     fn this(&self) -> Self {

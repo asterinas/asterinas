@@ -4,11 +4,11 @@ use alloc::borrow::Cow;
 
 use super::SyscallReturn;
 use crate::{
+    fs,
     fs::{
         file_handle::FileLike,
         file_table::{get_file_fast, FileDesc},
         fs_resolver::{FsPath, AT_FDCWD},
-        notify::fsnotify_attr_change,
         path::Path,
         utils::{
             XattrName, XattrNamespace, XattrSetFlags, XATTR_NAME_MAX_LEN, XATTR_VALUE_MAX_LEN,
@@ -116,7 +116,7 @@ fn setxattr(
 
     let path = lookup_path_for_xattr(&file_ctx, ctx)?;
     path.set_xattr(xattr_name, &mut value_reader, flags)?;
-    fsnotify_attr_change(&path)?;
+    fs::notify::on_attr_change(&path)?;
     Ok(())
 }
 

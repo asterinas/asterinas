@@ -7,7 +7,6 @@ use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
-        notify::fsnotify_access,
         path::Path,
     },
     prelude::*,

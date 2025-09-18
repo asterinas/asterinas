@@ -1,5 +1,6 @@
 Inotify.SymlinkGeneratesCreateEvent
 Inotify.LinkGeneratesAttribAndCreateEvents
+Inotify.HardlinksReuseSameWatch
 Inotify.Fallocate
 Inotify.LinkOnOtherParent
 Inotify.Xattr

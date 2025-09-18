@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #![expect(dead_code)]
-
 use core::{
     sync::atomic::{AtomicU32, Ordering},
     time::Duration,
@@ -13,11 +12,9 @@ use ostd::sync::RwMutexWriteGuard;
 
 use super::is_dot_or_dotdot;
 use crate::{
+    fs,
     fs::{
-        notify::{
-            fsnotify_delete, fsnotify_inode_removed, fsnotify_link, fsnotify_link_count,
-            FsnotifyCommon, FsnotifyGroup, FsnotifyMark,
-        },
+        notify::FsnotifyPublisher,
         utils::{
             FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType, XattrName,
             XattrNamespace, XattrSetFlags,
@@ -246,7 +243,7 @@ impl Dentry {
         if dentry.is_dentry_cacheable() {
             children.upgrade().insert(name, dentry.clone());
         }
-        fsnotify_link(
+        fs::notify::on_link(
             dentry.parent().unwrap().inode(),
             dentry.inode(),
             dentry.name(),
@@ -266,12 +263,12 @@ impl Dentry {
         self.inode.unlink(name)?;
         let child = children.find(name)?.unwrap();
         let child_inode = child.inode();
-        fsnotify_link_count(child_inode)?;
+        fs::notify::on_link_count(child_inode)?;
         if child_inode.hard_links() == 0 {
-            fsnotify_inode_removed(child_inode)?;
-            child_inode.remove_fsnotify_marks();
+            fs::notify::on_inode_removed(child_inode)?;
+            child_inode.fsnotify_publisher().remove_all_subscribers()?;
         }
-        fsnotify_delete(self.inode(), child_inode, String::from(name))?;
+        fs::notify::on_delete(self.inode(), child_inode, String::from(name))?;
         let mut children = children.upgrade();
         children.delete(name);
         Ok(())
@@ -290,10 +287,10 @@ impl Dentry {
         let child = children.find(name)?.unwrap();
         let child_inode = child.inode();
         if child_inode.hard_links() == 0 {
-            fsnotify_inode_removed(child_inode)?;
-            child_inode.remove_fsnotify_marks();
+            fs::notify::on_inode_removed(child_inode)?;
+            child_inode.fsnotify_publisher().remove_all_subscribers()?;
         }
-        fsnotify_delete(self.inode(), child_inode, String::from(name))?;
+        fs::notify::on_delete(self.inode(), child_inode, String::from(name))?;
         let mut children = children.upgrade();
         children.delete(name);
         Ok(())
@@ -413,14 +410,7 @@ impl Dentry {
         list_writer: &mut VmWriter,
     ) -> Result<usize>;
     pub(super) fn remove_xattr(&self, name: XattrName) -> Result<()>;
-    pub(super) fn fsnotify(&self) -> &FsnotifyCommon;
-    pub(super) fn add_fsnotify_mark(&self, mark: Arc<dyn FsnotifyMark>, add_flags: u32);
-    pub(super) fn remove_fsnotify_mark(&self, mark: &Arc<dyn FsnotifyMark>);
-    pub(super) fn find_fsnotify_mark(
-        &self,
-        fsnotify_group: &Arc<dyn FsnotifyGroup>,
-    ) -> Option<Arc<dyn FsnotifyMark>>;
-    pub(super) fn send_fsnotify(&self, mask: u32, name: String);
+    pub(super) fn fsnotify_publisher(&self) -> &FsnotifyPublisher;
 }
 
 impl Debug for Dentry {

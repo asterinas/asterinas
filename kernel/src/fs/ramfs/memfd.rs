@@ -22,6 +22,7 @@ use crate::{
         inode_handle::{do_fallocate_util, do_resize_util, do_seek_util},
         path::check_open_util,
         tmpfs::TmpFs,
+        notify::FsnotifyPublisher,
         utils::{
             chmod, mkmod, AccessMode, CachePage, CreationFlags, Extension, FallocMode, FileSystem,
             Inode, InodeMode, InodeType, IoctlCmd, Metadata, OpenArgs, PageCacheBackend, SeekFrom,
@@ -222,6 +223,8 @@ impl Inode for MemfdInode {
         static MEMFD_TMPFS: Once<Arc<TmpFs>> = Once::new();
         MEMFD_TMPFS.call_once(TmpFs::new).clone()
     }
+
+    fn fsnotify_publisher(&self) -> &FsnotifyPublisher {}
 }
 
 pub struct MemfdFile {

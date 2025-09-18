@@ -2,10 +2,8 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::{
-        file_table::{get_file_fast, FileDesc},
-        notify::fsnotify_access,
-    },
+    fs,
+    fs::file_table::{get_file_fast, FileDesc},
     prelude::*,
 };
 
@@ -45,7 +43,7 @@ pub fn sys_read(
     if let Some(path) = file.path()
         && read_len > 0
     {
-        fsnotify_access(path)?;
+        fs::notify::on_access(path)?;
     }
     Ok(SyscallReturn::Return(read_len as _))
 }

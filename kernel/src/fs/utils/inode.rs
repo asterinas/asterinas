@@ -16,7 +16,7 @@ use crate::{
     fs::{
         device::{Device, DeviceType},
         inode_handle::FileIo,
-        notify::{FsnotifyCommon, FsnotifyGroup, FsnotifyMark},
+        notify::FsnotifyPublisher,
         utils::StatusFlags,
     },
     prelude::*,
@@ -403,37 +403,12 @@ pub trait Inode: Any + Sync + Send {
         None
     }
 
-    /// Returns a reference to the `FsnotifyCommon` structure associated with this inode.
+    /// Returns a reference to the `FsnotifyPublisher` structure associated with this inode.
     ///
     /// This method provides access to the notification framework for this inode,
-    /// allowing the addition and removal of notification marks and the delivery
+    /// allowing the addition and removal of notification subscribers and the delivery
     /// of filesystem events to interested parties.
-    fn fsnotify(&self) -> &FsnotifyCommon;
-
-    fn add_fsnotify_mark(&self, mark: Arc<dyn FsnotifyMark>, add_flags: u32) {
-        self.fsnotify().add_fsnotify_mark(mark, add_flags);
-    }
-
-    fn remove_fsnotify_mark(&self, mark: &Arc<dyn FsnotifyMark>) {
-        self.fsnotify().remove_fsnotify_mark(mark);
-    }
-
-    fn remove_fsnotify_marks(&self) {
-        self.fsnotify().remove_fsnotify_marks();
-    }
-
-    fn find_fsnotify_mark(
-        &self,
-        fsnotify_group: &Arc<dyn FsnotifyGroup>,
-    ) -> Option<Arc<dyn FsnotifyMark>> {
-        self.fsnotify().find_fsnotify_mark(fsnotify_group)
-    }
-
-    /// Traverse all the fsnotify marks of this inode and send the fsnotify event to the group.
-    /// We should check the mask if group is interested in the event.
-    fn send_fsnotify(&self, mask: u32, name: String) {
-        self.fsnotify().send_fsnotify(mask, name);
-    }
+    fn fsnotify_publisher(&self) -> &FsnotifyPublisher;
 
     fn set_xattr(
         &self,

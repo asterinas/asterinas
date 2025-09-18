@@ -9,6 +9,7 @@ use crate::{
     events::IoEvents,
     fs::{
         inode_handle::FileIo,
+        notify::FsnotifyPublisher,
         utils::{AccessMode, StatusFlags},
     },
     process::signal::{PollHandle, Pollable},
@@ -22,7 +23,7 @@ pub struct PtySlaveInode {
     device: Arc<PtySlave>,
     metadata: RwLock<Metadata>,
     fs: Weak<DevPts>,
-    fsnotify: FsnotifyCommon,
+    fsnotify_publisher: FsnotifyPublisher,
 }
 
 impl PtySlaveInode {
@@ -36,7 +37,7 @@ impl PtySlaveInode {
             )),
             device,
             fs,
-            fsnotify: FsnotifyCommon::new(),
+            fsnotify_publisher: FsnotifyPublisher::new(),
         })
     }
 }
@@ -157,7 +158,7 @@ impl Inode for PtySlaveInode {
         self.device.open()
     }
 
-    fn fsnotify(&self) -> &FsnotifyCommon {
-        &self.fsnotify
+    fn fsnotify_publisher(&self) -> &FsnotifyPublisher {
+        &self.fsnotify_publisher
     }
 }
