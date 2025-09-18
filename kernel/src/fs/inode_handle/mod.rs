@@ -88,6 +88,22 @@ impl InodeHandle_ {
             todo!("support read_at for FileIo");
         }
 
+        if let Some(named_pipe) = self.path.inode().as_named_pipe() {
+            if offset != 0 {
+                return_errno_with_message!(Errno::ESPIPE, "named pipe does not support seek");
+            }
+
+            if !writer.has_avail() {
+                return Ok(0);
+            }
+
+            if self.status_flags().contains(StatusFlags::O_NONBLOCK) {
+                return named_pipe.read(writer);
+            } else {
+                return named_pipe.wait_events(IoEvents::IN, None, || named_pipe.read(writer));
+            }
+        }
+
         if self.status_flags().contains(StatusFlags::O_DIRECT) {
             self.path.inode().read_direct_at(offset, writer)
         } else {
@@ -104,6 +120,22 @@ impl InodeHandle_ {
         if status_flags.contains(StatusFlags::O_APPEND) {
             // If the file has the O_APPEND flag, the offset is ignored
             offset = self.path.size();
+        }
+
+        if let Some(named_pipe) = self.path.inode().as_named_pipe() {
+            if offset != 0 {
+                return_errno_with_message!(Errno::ESPIPE, "named pipe does not support seek");
+            }
+
+            if !reader.has_remain() {
+                return Ok(0);
+            }
+
+            if self.status_flags().contains(StatusFlags::O_NONBLOCK) {
+                return named_pipe.write(reader);
+            } else {
+                return named_pipe.wait_events(IoEvents::OUT, None, || named_pipe.write(reader));
+            }
         }
 
         if status_flags.contains(StatusFlags::O_DIRECT) {
@@ -304,6 +336,16 @@ impl Debug for InodeHandle_ {
             .field("access_mode", &self.access_mode())
             .field("status_flags", &self.status_flags())
             .finish()
+    }
+}
+
+impl Drop for InodeHandle_ {
+    fn drop(&mut self) {
+        if let Some(named_pipe) = self.path.inode().as_named_pipe() {
+            let read = self.access_mode().is_readable();
+            let write = self.access_mode().is_writable();
+            named_pipe.prepare_close(read, write);
+        }
     }
 }
 
