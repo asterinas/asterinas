@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicBool, AtomicI16, AtomicU32, Ordering};
+use core::{
+    sync::atomic::{AtomicBool, AtomicI16, AtomicU32, Ordering},
+    time::Duration,
+};
 
 use self::timer_manager::PosixTimerManager;
 use super::{
@@ -86,6 +89,8 @@ pub struct Process {
     children: Mutex<BTreeMap<Pid, Arc<Process>>>,
     /// Process group
     pub(super) process_group: Mutex<Weak<ProcessGroup>>,
+    /// The resource usage statistics of reaped child processes.
+    reaped_children_stats: Mutex<ReapedChildrenStats>,
     /// resource limits
     resource_limits: ResourceLimits,
     /// Scheduling priority nice value
@@ -225,6 +230,7 @@ impl Process {
             parent: ParentProcess::new(parent),
             children: Mutex::new(BTreeMap::new()),
             process_group: Mutex::new(Weak::new()),
+            reaped_children_stats: Mutex::new(ReapedChildrenStats::default()),
             is_child_subreaper: AtomicBool::new(false),
             has_child_subreaper: AtomicBool::new(false),
             sig_dispositions,
@@ -312,6 +318,10 @@ impl Process {
 
     pub fn children_wait_queue(&self) -> &WaitQueue {
         &self.children_wait_queue
+    }
+
+    pub fn reaped_children_stats(&self) -> &Mutex<ReapedChildrenStats> {
+        &self.reaped_children_stats
     }
 
     // *********** Process group & Session ***********
@@ -814,4 +824,27 @@ pub fn broadcast_signal_async(process_group: Weak<ProcessGroup>, signum: SigNum)
         },
         work_queue::WorkPriority::High,
     );
+}
+
+/// The resource usage statistics of child processes that have terminated and
+/// been reaped by the parent.
+///
+/// These statistics include the resources consumed by grandchildren and more
+/// distant descendants, if all intermediate child processes have waited on
+/// their own terminated children.
+#[derive(Default)]
+pub struct ReapedChildrenStats {
+    user_time: Duration,
+    kernel_time: Duration,
+}
+
+impl ReapedChildrenStats {
+    pub fn add(&mut self, utime: Duration, stime: Duration) {
+        self.user_time += utime;
+        self.kernel_time += stime;
+    }
+
+    pub fn get(&self) -> (Duration, Duration) {
+        (self.user_time, self.kernel_time)
+    }
 }

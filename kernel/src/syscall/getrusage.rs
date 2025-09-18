@@ -10,7 +10,6 @@ use crate::{prelude::*, time::timeval_t};
 enum RusageTarget {
     ForSelf = 0,
     Children = -1,
-    Both = -2,
     Thread = 1,
 }
 
@@ -40,11 +39,13 @@ pub fn sys_getrusage(target: i32, rusage_addr: Vaddr, ctx: &Context) -> Result<S
                     ..Default::default()
                 }
             }
-            // To support `Children` and `Both` we need to implement the functionality to
-            // accumulate the resources of a child process back to the parent process
-            // upon the child's termination.
-            _ => {
-                return_errno_with_message!(Errno::EINVAL, "the target type is not supported")
+            RusageTarget::Children => {
+                let (user_time, kernel_time) = ctx.process.reaped_children_stats().lock().get();
+                rusage_t {
+                    ru_utime: user_time.into(),
+                    ru_stime: kernel_time.into(),
+                    ..Default::default()
+                }
             }
         };
 
