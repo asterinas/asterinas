@@ -84,7 +84,20 @@ use crate::{
 /// before any [`Task`]-related APIs are invoked.
 pub fn inject_scheduler(scheduler: &'static dyn Scheduler<Task>) {
     SCHEDULER.call_once(|| scheduler);
+}
 
+/// Enables preemptive scheduling.
+///
+/// After calling this function on a CPU,
+/// a task that is executing in the user mode may get preempted
+/// if another runnable task on the same CPU is deemed more urgent by the scheduler.
+///
+/// OSTD achieves task preemption by registering a per-CPU timer callback
+/// to invoke the scheduler periodically.
+/// Thus, this function should be called _once_ on every CPU
+/// by an OSTD-based kernel during its initialization phase,
+/// after it has injected its scheduler via [`inject_scheduler`].
+pub fn enable_preemption() {
     timer::register_callback(|| {
         SCHEDULER.get().unwrap().mut_local_rq_with(&mut |local_rq| {
             let should_pick_next = local_rq.update_current(UpdateFlags::Tick);
