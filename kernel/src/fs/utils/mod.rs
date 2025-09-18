@@ -10,7 +10,7 @@ pub use endpoint::{Endpoint, EndpointState};
 pub use falloc_mode::FallocMode;
 pub use file_creation_mask::FileCreationMask;
 pub use flock::{FlockItem, FlockList, FlockType};
-pub use fs::{FileSystem, FsFlags, SuperBlock};
+pub use fs::{FileSystem, FsFlags, FsMountOptions, SuperBlock};
 pub use inode::{Extension, Inode, InodeMode, InodeType, Metadata, MknodType, Permission};
 pub use ioctl::IoctlCmd;
 pub use page_cache::{CachePage, PageCache, PageCacheBackend};
