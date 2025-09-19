@@ -4,7 +4,6 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use log::info;
 
-use super::TIMER_FREQ;
 use crate::{
     arch::{
         kernel::apic::{self, Apic, DivideConfig},
@@ -14,6 +13,7 @@ use crate::{
     },
     irq::IrqLine,
     task::disable_preempt,
+    timer::TIMER_FREQ,
 };
 
 /// Initializes APIC with TSC-deadline mode or periodic mode.

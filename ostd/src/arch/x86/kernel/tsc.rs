@@ -6,13 +6,11 @@ use log::info;
 
 use crate::{
     arch::{
-        timer::{
-            pit::{self, OperatingMode},
-            TIMER_FREQ,
-        },
+        timer::pit::{self, OperatingMode},
         trap::TrapFrame,
     },
     irq::IrqLine,
+    timer::TIMER_FREQ,
 };
 
 /// The frequency in Hz of the Time Stamp Counter (TSC).

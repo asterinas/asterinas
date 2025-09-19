@@ -11,18 +11,9 @@ use spin::Once;
 
 use crate::{
     arch::{self, boot::DEVICE_TREE, cpu::extension::IsaExtensions, trap::TrapFrame},
-    cpu::{CpuId, PinCurrentCpu},
-    irq::{self, IrqLine},
-    timer::INTERRUPT_CALLBACKS,
+    irq::IrqLine,
+    timer::TIMER_FREQ,
 };
-
-/// The timer frequency (Hz). Here we choose 1000Hz since 1000Hz is easier for
-/// unit conversion and convenient for timer. What's more, the frequency cannot
-/// be set too high or too low, 1000Hz is a modest choice.
-///
-/// For system performance reasons, this rate cannot be set too high, otherwise
-/// most of the time is spent executing timer code.
-pub const TIMER_FREQ: u64 = 1000;
 
 static TIMER_IRQ: Once<IrqLine> = Once::new();
 pub(super) static TIMER_IRQ_NUM: AtomicU8 = AtomicU8::new(0);
@@ -79,17 +70,8 @@ pub(super) unsafe fn init() {
     }
 }
 
-fn timer_callback(_: &TrapFrame) {
-    let irq_guard = irq::disable_local();
-    if irq_guard.current_cpu() == CpuId::bsp() {
-        crate::timer::jiffies::ELAPSED.fetch_add(1, Ordering::Relaxed);
-    }
-
-    let callbacks_guard = INTERRUPT_CALLBACKS.get_with(&irq_guard);
-    for callback in callbacks_guard.borrow().iter() {
-        (callback)();
-    }
-    drop(callbacks_guard);
+fn timer_callback(trapframe: &TrapFrame) {
+    crate::timer::call_timer_callback_functions(trapframe);
 
     set_next_timer();
 }

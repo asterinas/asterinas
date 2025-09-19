@@ -2,10 +2,10 @@
 
 //! The timer support.
 
-/// The timer frequency (Hz). Here we choose 1000Hz since 1000Hz is easier for
-/// unit conversion and convenient for timer. What's more, the frequency cannot
-/// be set too high or too low, 1000Hz is a modest choice.
-///
-/// For system performance reasons, this rate cannot be set too high, otherwise
-/// most of the time is spent executing timer code.
-pub const TIMER_FREQ: u64 = 1000;
+use super::trap::TrapFrame;
+
+// TODO: Add LoongArch timer support and call this method.
+#[expect(dead_code)]
+fn timer_callback(trapframe: &TrapFrame) {
+    crate::timer::call_timer_callback_functions(trapframe);
+}

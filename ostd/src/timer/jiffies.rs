@@ -5,7 +5,7 @@ use core::{
     time::Duration,
 };
 
-use crate::arch::timer::TIMER_FREQ;
+use super::TIMER_FREQ;
 
 /// Jiffies is a term used to denote the units of time measurement by the kernel.
 ///
