@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_console::BitmapFont;
+use aster_console::{AnyConsoleDevice, BitmapFont, ConsoleMode};
 use ostd::sync::LocalIrqDisabled;
 use termio::CFontOp;
 
 use self::line_discipline::LineDiscipline;
 use crate::{
     current_userspace,
+    device::tty::driver::HasConsole,
     events::IoEvents,
     fs::{
         device::{Device, DeviceId, DeviceType},
@@ -17,7 +18,8 @@ use crate::{
     process::{
         broadcast_signal_async,
         signal::{PollHandle, Pollable, Pollee},
-        JobControl, Terminal,
+        JobControl,
+        Terminal,
     },
 };
 
@@ -33,6 +35,9 @@ pub(super) use n_tty::init;
 pub use n_tty::{iter_n_tty, system_console};
 
 const IO_CAPACITY: usize = 4096;
+const KD_TEXT: u32 = 0x00;
+const KD_GRAPHICS: u32 = 0x01;
+
 
 /// A teletyper (TTY).
 ///
@@ -96,6 +101,13 @@ impl<D> Tty<D> {
     /// to `true`.
     pub fn notify_output(&self) {
         self.pollee.notify(IoEvents::OUT);
+    }
+}
+
+impl<D: TtyDriver + HasConsole> Tty<D> {
+    /// Returns a reference to the console device if available
+    pub fn console(&self) -> Option<&dyn AnyConsoleDevice> {
+        self.driver.console()
     }
 }
 
@@ -284,6 +296,37 @@ impl<D: TtyDriver> FileIo for Tty<D> {
 
                 self.handle_set_font(&font_op)?;
             }
+            IoctlCmd::KDSETMODE => {
+                if let Some(console) = self.console() {
+                    let new_mode = arg as u32;
+                    match new_mode {
+                        KD_TEXT => {
+                            console.set_mode(ConsoleMode::Text);
+                        }
+                        KD_GRAPHICS => {
+                            console.set_mode(ConsoleMode::Graphics);
+                        }
+                        _ => {
+                            return_errno_with_message!(Errno::EINVAL, "Invalid console mode");
+                        }
+                    }
+                } else {
+                    return_errno_with_message!(Errno::ENOTTY, "Console not available");
+                }
+            }
+            IoctlCmd::KDGETMODE => {
+                let mode = if let Some(console) = self.console() {
+                    match console.get_mode() {
+                        Some(ConsoleMode::Text) => KD_TEXT,
+                        Some(ConsoleMode::Graphics) => KD_GRAPHICS,
+                        None => KD_TEXT,
+                    }
+                } else {
+                    KD_TEXT
+                };
+
+                current_userspace!().write_val(arg, &mode)?;
+            }
             _ => (self.weak_self.upgrade().unwrap() as Arc<dyn Terminal>)
                 .job_ioctl(cmd, arg, false)?,
         }
@@ -304,6 +347,6 @@ impl<D: TtyDriver> Device for Tty<D> {
     }
 
     fn id(&self) -> DeviceId {
-        DeviceId::new(88, self.index)
+        DeviceId::new(4, self.index)
     }
 }
