@@ -27,6 +27,7 @@ TEST_APPS := \
 	getcpu \
 	getpid \
 	hello_pie \
+	inotify \
 	itimer \
 	mmap \
 	mongoose \

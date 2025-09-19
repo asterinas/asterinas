@@ -7,6 +7,7 @@ use ostd::task::Task;
 use super::{
     file_table::{get_file_fast, FileDesc},
     inode_handle::InodeHandle,
+    notify::fsnotify_create,
     path::Path,
     rootfs::root_mount,
     utils::{AccessMode, CreationFlags, InodeMode, InodeType, StatusFlags, PATH_MAX, SYMLINKS_MAX},
@@ -69,7 +70,18 @@ impl FsResolver {
                 if e.error() == Errno::ENOENT
                     && open_args.creation_flags.contains(CreationFlags::O_CREAT) =>
             {
-                self.create_new_file(&open_args, &mut lookup_ctx)?
+                let inode_handle = self.create_new_file(&open_args, &mut lookup_ctx)?;
+                match (lookup_ctx.parent(), lookup_ctx.tail_file_name()) {
+                    (Some(parent_dentry), Some(tail_file_name)) => {
+                        if let Err(e) = fsnotify_create(parent_dentry, tail_file_name) {
+                            warn!("Failed to send fsnotify_create event: {:?}", e);
+                        }
+                    }
+                    _ => {
+                        warn!("Failed to get parent dentry or tail file name for fsnotify_create");
+                    }
+                }
+                inode_handle
             }
             Err(e) => return Err(e),
         };
