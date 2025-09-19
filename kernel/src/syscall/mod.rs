@@ -140,6 +140,7 @@ mod set_ioprio;
 mod set_priority;
 mod set_robust_list;
 mod set_tid_address;
+mod setdomainname;
 mod setfsgid;
 mod setfsuid;
 mod setgid;
