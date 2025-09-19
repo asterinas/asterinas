@@ -91,7 +91,7 @@ pub(crate) fn call_irq_callback_functions(
     level::enter(
         move || {
             top_half::process(trap_frame, irq_num);
-            bottom_half::process();
+            bottom_half::process(irq_num);
         },
         cpu_priv_at_irq,
     );
