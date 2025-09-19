@@ -11,6 +11,7 @@ use core::{array, num::NonZeroUsize, ops::Range};
 
 use align_ext::AlignExt;
 use aster_rights::Rights;
+use aster_util::per_cpu_counter::PerCpuCounter;
 use ostd::{
     cpu::CpuId,
     mm::{
@@ -32,7 +33,6 @@ use crate::{
     prelude::*,
     process::{Process, ResourceType},
     thread::exception::PageFaultInfo,
-    util::per_cpu_counter::PerCpuCounter,
     vm::{
         perms::VmPerms,
         vmo::{Vmo, VmoRightsOp},
@@ -732,13 +732,13 @@ impl Vmar_ {
     }
 
     pub fn get_rss_counter(&self, rss_type: RssType) -> usize {
-        self.rss_counters[rss_type as usize].get()
+        self.rss_counters[rss_type as usize].sum_all_cpus()
     }
 
     fn add_rss_counter(&self, rss_type: RssType, val: isize) {
         // There are races but updating a remote counter won't cause any problems.
         let cpu_id = CpuId::current_racy();
-        self.rss_counters[rss_type as usize].add(cpu_id, val);
+        self.rss_counters[rss_type as usize].add_on_cpu(cpu_id, val);
     }
 }
 
