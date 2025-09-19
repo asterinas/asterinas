@@ -80,6 +80,22 @@ impl UtsNamespace {
         self.uts_name.write().nodename = new_host_name;
         Ok(())
     }
+
+    /// Sets a new domain name for the UTS namespace.
+    ///
+    /// This method will fail with `EPERM` if the caller does not have the SYS_ADMIN capability
+    /// in the owner user namespace.
+    pub fn set_domainname(&self, addr: Vaddr, len: usize, ctx: &Context) -> Result<()> {
+        self.owner.check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
+
+        let new_domain_name = copy_uts_field_from_user(addr, len as _, ctx)?;
+        debug!(
+            "set domain name: {:?}",
+            CStr::from_bytes_until_nul(new_domain_name.as_bytes()).unwrap()
+        );
+        self.uts_name.write().domainname = new_domain_name;
+        Ok(())
+    }
 }
 
 const UTS_FIELD_LEN: usize = 65;
