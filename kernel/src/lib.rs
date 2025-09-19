@@ -112,6 +112,7 @@ fn init_on_each_cpu() {
     sched::init_on_each_cpu();
     process::init_on_each_cpu();
     fs::init_on_each_cpu();
+    time::init_on_each_cpu();
 }
 
 fn init_in_first_kthread(fs_resolver: &FsResolver) {
