@@ -288,6 +288,7 @@ dependencies = [
 name = "aster-softirq"
 version = "0.1.0"
 dependencies = [
+ "aster-util",
  "component",
  "intrusive-collections",
  "ostd",
@@ -325,6 +326,7 @@ dependencies = [
  "aster-rights",
  "aster-rights-proc",
  "inherit-methods-macro",
+ "osdk-heap-allocator",
  "ostd",
  "typeflags-util",
 ]
