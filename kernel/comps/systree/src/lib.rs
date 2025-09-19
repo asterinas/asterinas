@@ -3,19 +3,21 @@
 //! This crate organizes the kernel information
 //! about the entire system in a tree structure called `SysTree`.
 //!
-//! This crate provides a singleton of `SysTree`,
-//! which is the "model" part of Asterinas's
-//! model-view-controller (MVC) architecture
-//! for organizing and managing device and kernel information.
-//! The "view" part is sysfs,
-//! a file system that exposes the system information
-//! of the in-kernel `SysTree` to the user space.
-//! The "controller" part consists of
-//! various subsystems, buses, drivers, and kernel modules.
-//! The "view" part has read-only access to the "model",
-//! whereas the "controller" part can make changes to the "model".
-//! This MVC architecture achieves separation of concerns,
-//! making the code more modular, maintainable, and easier to understand.
+//! Each `SysTree` instance represents a hierarchical model of system state,
+//! suitable for use by various subsystems. For example, sysfs, cgroup, and
+//! configfs can each maintain their own independent `SysTree`.
+//!
+//! The crate exposes a singleton for the primary system tree, typically used as
+//! the backing model for sysfs. Other trees can be instantiated as needed by
+//! subsystems or kernel modules.
+//!
+//! This design follows the model-view-controller (MVC) pattern:
+//! - The "model" is the in-kernel `SysTree`.
+//! - The "view" is a file system (such as sysfs) that exposes the tree to user space.
+//! - The "controller" consists of subsystems, buses, drivers, and kernel modules
+//!   that update the tree.
+//!
+//! By separating concerns, this architecture improves modularity, maintainability, and clarity.
 
 #![no_std]
 #![deny(unsafe_code)]
@@ -40,12 +42,13 @@ pub use self::{
     node::{SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj, SysPerms, SysSymlink},
     tree::SysTree,
     utils::{
-        AttrLessBranchNodeFields, BranchNodeFields, NormalNodeFields, ObjFields, SymlinkNodeFields,
-        _InheritSysBranchNode, _InheritSysLeafNode, _InheritSysSymlinkNode,
+        AttrLessBranchNodeFields, BranchNodeFields, EmptyNode, NormalNodeFields, ObjFields,
+        SymlinkNodeFields, _InheritSysBranchNode, _InheritSysLeafNode, _InheritSysSymlinkNode,
     },
 };
+use crate::tree::RootNode;
 
-static SINGLETON: Once<Arc<SysTree>> = Once::new();
+static SINGLETON: Once<Arc<SysTree<RootNode>>> = Once::new();
 
 #[init_component]
 fn init() -> core::result::Result<(), ComponentInitError> {
@@ -58,8 +61,14 @@ pub fn init_for_ktest() {
     SINGLETON.call_once(|| Arc::new(SysTree::new()));
 }
 
-/// Returns a reference to the global SysTree instance. Panics if not initialized. (Asterinas specific)
-pub fn singleton() -> &'static Arc<SysTree> {
+/// Returns a reference to the primary `SysTree` instance.
+///
+/// This tree usually serves as the main system information model exposed to user space via sysfs.
+///
+/// # Panics
+///
+/// Panics if the tree has not been initialized.
+pub fn primary_tree() -> &'static Arc<SysTree<RootNode>> {
     SINGLETON.get().expect("SysTree not initialized")
 }
 
