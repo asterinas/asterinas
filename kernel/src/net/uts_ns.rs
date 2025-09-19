@@ -30,7 +30,8 @@ impl UtsNamespace {
                 release: padded(b"5.13.0"),
                 version: padded(b"5.13.0"),
                 machine: padded(b"x86_64"),
-                domainname: padded(b""),
+                // Reference: <https://elixir.bootlin.com/linux/v6.16/source/include/linux/uts.h#L17>.
+                domainname: padded(b"(none)"),
             };
 
             let owner = UserNamespace::get_init_singleton().clone();
