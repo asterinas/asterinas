@@ -70,6 +70,7 @@ TESTS ?= \
 	timerfd_test \
 	timers_test \
 	truncate_test \
+	uname_test \
 	uidgid_test \
 	unlink_test \
 	utimes_test \
