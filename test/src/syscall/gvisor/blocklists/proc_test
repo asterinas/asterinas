@@ -16,11 +16,7 @@ ProcSelfFdInfo.Flags
 ProcCpuinfo.RequiredFieldsArePresent
 ProcCpuinfo.DeniesWriteRoot
 ProcCpuinfo.DeniesWriteNonRoot
-ProcUptime.IsPresent
 ProcMeminfo.ContainsBasicFields
-ProcStat.ContainsBasicFields
-ProcStat.EndsWithNewline
-ProcStat.Fields
 ProcSelfStat.PopulateWriteRSS
 ProcSelfStat.PopulateNoneRSS
 ProcPidStatusTest.HasBasicFields
