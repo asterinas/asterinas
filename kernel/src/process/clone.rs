@@ -2,7 +2,10 @@
 
 use core::{num::NonZeroU64, sync::atomic::Ordering};
 
-use ostd::{arch::cpu::context::UserContext, sync::RwArc, task::Task, user::UserContextApi};
+use aster_util::per_cpu_counter::PerCpuCounter;
+use ostd::{
+    arch::cpu::context::UserContext, cpu::CpuId, sync::RwArc, task::Task, user::UserContextApi,
+};
 
 use super::{
     posix_thread::{AsPosixThread, PosixThreadBuilder, ThreadName},
@@ -23,6 +26,7 @@ use crate::{
     process::{
         pid_file::PidFile,
         posix_thread::{allocate_posix_tid, PosixThread, ThreadLocal},
+        stats::FORKS_COUNTER,
         NsProxy, UserNamespace,
     },
     sched::Nice,
@@ -68,6 +72,10 @@ bitflags! {
             Self::CLONE_NEWPID.bits() |
             Self::CLONE_NEWNET.bits();
     }
+}
+
+pub(super) fn init() {
+    FORKS_COUNTER.call_once(PerCpuCounter::new);
 }
 
 /// An internal structure to homogenize the arguments for `clone` and
@@ -229,6 +237,10 @@ pub fn clone_child(
         }
 
         let child_pid = child_process.pid();
+        FORKS_COUNTER
+            .get()
+            .unwrap()
+            .add_on_cpu(CpuId::current_racy(), 1);
         Ok(child_pid)
     }
 }
