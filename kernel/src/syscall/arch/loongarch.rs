@@ -113,6 +113,7 @@ use super::{
     set_priority::sys_set_priority,
     set_robust_list::sys_set_robust_list,
     set_tid_address::sys_set_tid_address,
+    setdomainname::sys_setdomainname,
     setfsgid::sys_setfsgid,
     setfsuid::sys_setfsuid,
     setgid::sys_setgid,
@@ -285,6 +286,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SETGROUPS = 159              => sys_setgroups(args[..2]);
     SYS_NEWUNAME = 160               => sys_uname(args[..1]);
     SYS_SETHOSTNAME = 161            => sys_sethostname(args[..2]);
+    SYS_SETDOMAINNAME = 162          => sys_setdomainname(args[..2]);
     SYS_GETRUSAGE = 165              => sys_getrusage(args[..2]);
     SYS_UMASK = 166                  => sys_umask(args[..1]);
     SYS_PRCTL = 167                  => sys_prctl(args[..5]);

@@ -1340,8 +1340,9 @@ set_robust_list01
 # set_thread_area01
 # set_tid_address01
 
-# setdomainname01
-# setdomainname02
+setdomainname01
+setdomainname02
+# TODO: Drop capabilities on UID changes, so that setdomainname() will fail with EPERM.
 # setdomainname03
 
 # setfsgid01
