@@ -27,7 +27,7 @@ impl PerCpuCounter {
     }
 
     /// Adds `increment` to the counter on the given CPU.
-    pub fn add(&self, on_cpu: CpuId, increment: isize) {
+    pub fn add_on_cpu(&self, on_cpu: CpuId, increment: isize) {
         self.per_cpu_counter
             .get_on_cpu(on_cpu)
             .fetch_add(increment, Ordering::Relaxed);
@@ -37,7 +37,7 @@ impl PerCpuCounter {
     ///
     /// This function may be inaccurate since other CPUs may be
     /// updating the counter.
-    pub fn get(&self) -> usize {
+    pub fn sum_all_cpus(&self) -> usize {
         let mut total: isize = 0;
         for cpu in all_cpus() {
             total =
@@ -50,5 +50,22 @@ impl PerCpuCounter {
         } else {
             total as usize
         }
+    }
+
+    /// Gets the counter value on a specific CPU.
+    pub fn get_on_cpu(&self, cpu: CpuId) -> usize {
+        let val = self.per_cpu_counter.get_on_cpu(cpu).load(Ordering::Relaxed);
+        if val < 0 {
+            // See explanation in `sum_all_cpus`.
+            0
+        } else {
+            val as usize
+        }
+    }
+}
+
+impl Default for PerCpuCounter {
+    fn default() -> Self {
+        Self::new()
     }
 }
