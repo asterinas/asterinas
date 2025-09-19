@@ -1340,8 +1340,9 @@ set_robust_list01
 # set_thread_area01
 # set_tid_address01
 
-# setdomainname01
-# setdomainname02
+setdomainname01
+setdomainname02
+# This test verifies that calling setdomainname() as an unprivileged user fails with EPERM.
 # setdomainname03
 
 # setfsgid01
@@ -1379,8 +1380,9 @@ setgroups02
 # setgroups03
 # setgroups03_16
 
-# sethostname01
-# sethostname02
+sethostname01
+sethostname02
+# This test verifies that calling sethostname() as an unprivileged user fails with EPERM. 
 # sethostname03
 
 # setitimer01
