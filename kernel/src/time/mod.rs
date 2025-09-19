@@ -5,15 +5,14 @@
 pub use core::{timer, Clock};
 
 use ::core::time::Duration;
-pub use system_time::SystemTime;
-#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))] // Now used for vDSO support only.
-pub use system_time::START_TIME;
+pub use system_time::{SystemTime, START_TIME};
 pub use timer::{Timer, TimerManager};
 
 use crate::prelude::*;
 
 pub mod clocks;
 mod core;
+pub mod cpu_time_stats;
 mod softirq;
 mod system_time;
 pub mod timerfd;
@@ -31,6 +30,11 @@ pub(super) fn init() {
     system_time::init();
     clocks::init();
     softirq::init();
+    cpu_time_stats::init();
+}
+
+pub(super) fn init_on_each_cpu() {
+    cpu_time_stats::init_on_each_cpu();
 }
 
 #[repr(C)]
