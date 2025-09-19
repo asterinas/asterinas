@@ -15,7 +15,7 @@ pub(crate) mod pci;
 pub mod qemu;
 pub(crate) mod serial;
 pub(crate) mod task;
-pub mod timer;
+mod timer;
 pub mod trap;
 
 use core::sync::atomic::Ordering;

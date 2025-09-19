@@ -7,8 +7,8 @@ use alloc::sync::Arc;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use ostd::{
-    arch::{read_tsc, timer::TIMER_FREQ, tsc_freq},
-    timer,
+    arch::{read_tsc, tsc_freq},
+    timer::{self, TIMER_FREQ},
 };
 use spin::Once;
 

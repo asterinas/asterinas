@@ -6,7 +6,10 @@
 
 use core::sync::atomic::{AtomicU64, Ordering::Relaxed};
 
-use ostd::{arch::timer::TIMER_FREQ, sync::RwLock, timer};
+use ostd::{
+    sync::RwLock,
+    timer::{self, TIMER_FREQ},
+};
 
 /// Fixed-point representation of the load average.
 ///

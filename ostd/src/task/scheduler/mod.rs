@@ -150,7 +150,7 @@ pub trait Scheduler<T = Task>: Sync + Send {
 ///   or any synchronization primitive built upon it (e.g., [`crate::sync::WaitQueue`], [`crate::sync::Mutex`]),
 ///   which blocks the current task until a wake-up event occurs.
 /// - **Ticking**, triggered periodically by the system timer
-///   (see [`crate::arch::timer::TIMER_FREQ`]),
+///   (see [`crate::timer::TIMER_FREQ`]),
 ///   which provides an opportunity to do time accounting and consider preemption.
 /// - **Exiting**, triggered when the execution logic of a task has come to an end,
 ///   which informs the scheduler that the task is exiting and will never be enqueued again.
