@@ -3,7 +3,6 @@
 mod iovec;
 pub mod net;
 mod padded;
-pub mod per_cpu_counter;
 pub mod random;
 mod read_cstring;
 pub mod ring_buffer;
