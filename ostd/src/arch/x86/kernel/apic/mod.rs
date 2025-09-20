@@ -363,7 +363,3 @@ pub fn init(io_mem_builder: &IoMemAllocatorBuilder) -> Result<(), ApicInitError>
         Err(ApicInitError::NoApic)
     }
 }
-
-pub fn exists() -> bool {
-    APIC_TYPE.is_completed()
-}

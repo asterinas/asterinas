@@ -19,7 +19,7 @@ use crate::{
 /// Initializes APIC with TSC-deadline mode or periodic mode.
 ///
 /// Return the corresponding [`IrqLine`] for the system timer.
-pub(super) fn init_bsp() -> IrqLine {
+pub(super) fn init_on_bsp() -> IrqLine {
     if is_tsc_deadline_mode_supported() {
         init_deadline_mode_config();
     } else {
@@ -34,7 +34,7 @@ pub(super) fn init_bsp() -> IrqLine {
 /// Initializes APIC timer on AP.
 ///
 /// The caller should provide the [`IrqLine`] for the system timer.
-pub(super) fn init_ap(timer_irq: &IrqLine) {
+pub(super) fn init_on_ap(timer_irq: &IrqLine) {
     init_timer(timer_irq);
 }
 

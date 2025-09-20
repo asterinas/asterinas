@@ -60,7 +60,7 @@ pub(crate) unsafe fn late_init_on_bsp() {
     kernel::irq::init(&io_mem_builder);
 
     kernel::tsc::init_tsc_freq();
-    timer::init_bsp();
+    timer::init_on_bsp();
 
     // SAFETY: We're on the BSP and we're ready to boot all APs.
     unsafe { crate::boot::smp::boot_all_aps() };
@@ -89,7 +89,7 @@ pub(crate) unsafe fn late_init_on_bsp() {
 ///
 /// [`init_on_bsp`]: crate::cpu::init_on_bsp
 pub(crate) unsafe fn init_on_ap() {
-    timer::init_ap();
+    timer::init_on_ap();
 }
 
 pub(crate) fn interrupts_ack(irq_number: usize) {

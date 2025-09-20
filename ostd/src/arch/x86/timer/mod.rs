@@ -9,25 +9,16 @@ pub(in crate::arch) mod pit;
 use spin::Once;
 
 use super::trap::TrapFrame;
-use crate::{arch::kernel, irq::IrqLine};
+use crate::irq::IrqLine;
 
 static TIMER_IRQ: Once<IrqLine> = Once::new();
 
 /// Initializes the timer state and enable timer interrupts on BSP.
-pub(super) fn init_bsp() {
-    let mut timer_irq = if kernel::apic::exists() {
-        apic::init_bsp()
-    } else {
-        pit::init(pit::OperatingMode::SquareWaveGenerator);
+pub(super) fn init_on_bsp() {
+    // TODO: Currently, we only enable per-CPU APIC timers. We may also need to enable a global
+    // timer, such as a PIT or HPET.
 
-        /// In PIT mode, channel 0 is connected directly to IRQ0, which is
-        /// the `IrqLine` with the `irq_num` 32 (0-31 `IrqLine`s are reserved).
-        ///
-        /// Ref: https://wiki.osdev.org/Programmable_Interval_Timer#Outputs.
-        const PIT_MODE_TIMER_IRQ_NUM: u8 = 32;
-
-        IrqLine::alloc_specific(PIT_MODE_TIMER_IRQ_NUM).unwrap()
-    };
+    let mut timer_irq = apic::init_on_bsp();
 
     timer_irq.on_active(timer_callback);
 
@@ -35,10 +26,8 @@ pub(super) fn init_bsp() {
 }
 
 /// Enables timer interrupt on this AP.
-pub(super) fn init_ap() {
-    if kernel::apic::exists() {
-        apic::init_ap(TIMER_IRQ.get().unwrap());
-    }
+pub(super) fn init_on_ap() {
+    apic::init_on_ap(TIMER_IRQ.get().unwrap());
 }
 
 fn timer_callback(trapframe: &TrapFrame) {
