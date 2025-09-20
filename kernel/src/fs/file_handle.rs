@@ -14,6 +14,7 @@ use crate::{
     net::socket::Socket,
     prelude::*,
     process::{signal::Pollable, Gid, Uid},
+    vm::memfd::FileSeals,
 };
 
 /// The basic operations defined on a file
@@ -55,7 +56,11 @@ pub trait FileLike: Pollable + Send + Sync + Any {
     ///
     /// If this file has a corresponding mappable object of [`Mappable`],
     /// then it can be either an inode or an MMIO region.
-    fn mappable(&self) -> Result<Mappable> {
+    ///
+    /// If a mapping is to be created and it will be shared with potential write
+    /// access, the caller should set `is_shared_maywrite` to `true`. In that case,
+    /// if the file is sealed against writing, this function returns a `EPERM`.
+    fn mappable(&self, is_shared_maywrite: bool) -> Result<Mappable> {
         return_errno_with_message!(Errno::EINVAL, "the file is not mappable");
     }
 
@@ -66,7 +71,6 @@ pub trait FileLike: Pollable + Send + Sync + Any {
     /// Get the metadata that describes this file.
     fn metadata(&self) -> Metadata;
 
-    #[expect(dead_code)]
     fn mode(&self) -> Result<InodeMode> {
         return_errno_with_message!(Errno::EINVAL, "mode is not supported");
     }
@@ -115,6 +119,14 @@ pub trait FileLike: Pollable + Send + Sync + Any {
 
     fn as_socket(&self) -> Option<&dyn Socket> {
         None
+    }
+
+    fn inode(&self) -> Option<&Arc<dyn Inode>> {
+        None
+    }
+
+    fn seals(&self) -> Result<&Mutex<FileSeals>> {
+        return_errno_with_message!(Errno::EINVAL, "sealing is not supported");
     }
 }
 

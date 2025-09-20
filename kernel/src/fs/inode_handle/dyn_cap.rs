@@ -81,7 +81,7 @@ impl FileLike for InodeHandle<Rights> {
     fn group(&self) -> Result<Gid>;
     fn set_group(&self, gid: Gid) -> Result<()>;
     fn seek(&self, seek_from: SeekFrom) -> Result<usize>;
-    fn mappable(&self) -> Result<Mappable>;
+    fn mappable(&self, is_shared_maywrite: bool) -> Result<Mappable>;
 
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         if !self.1.contains(Rights::READ) {
@@ -128,5 +128,9 @@ impl FileLike for InodeHandle<Rights> {
             return_errno_with_message!(Errno::EBADF, "file is not writable");
         }
         self.0.fallocate(mode, offset, len)
+    }
+
+    fn inode(&self) -> Option<&Arc<dyn Inode>> {
+        Some(self.path().inode())
     }
 }
