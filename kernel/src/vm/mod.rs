@@ -22,6 +22,7 @@ use osdk_heap_allocator::{type_from_layout, HeapAllocator};
 pub mod memfd;
 pub mod page_fault_handler;
 pub mod perms;
+pub mod shared_mem;
 pub mod util;
 pub mod vmar;
 pub mod vmo;
