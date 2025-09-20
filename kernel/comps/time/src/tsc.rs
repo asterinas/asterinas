@@ -85,5 +85,5 @@ fn init_timer() {
     };
 
     // TODO: re-organize the code structure and use the `Timer` to achieve the updating.
-    timer::register_callback(update);
+    timer::register_callback_on_cpu(update);
 }

@@ -86,7 +86,7 @@ pub fn inject_scheduler(scheduler: &'static dyn Scheduler<Task>) {
     SCHEDULER.call_once(|| scheduler);
 }
 
-/// Enables preemptive scheduling.
+/// Enables preemptive scheduling on the current CPU.
 ///
 /// After calling this function on a CPU,
 /// a task that is executing in the user mode may get preempted
@@ -97,8 +97,8 @@ pub fn inject_scheduler(scheduler: &'static dyn Scheduler<Task>) {
 /// Thus, this function should be called _once_ on every CPU
 /// by an OSTD-based kernel during its initialization phase,
 /// after it has injected its scheduler via [`inject_scheduler`].
-pub fn enable_preemption() {
-    timer::register_callback(|| {
+pub fn enable_preemption_on_cpu() {
+    timer::register_callback_on_cpu(|| {
         SCHEDULER.get().unwrap().mut_local_rq_with(&mut |local_rq| {
             let should_pick_next = local_rq.update_current(UpdateFlags::Tick);
             if should_pick_next {
