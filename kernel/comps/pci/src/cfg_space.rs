@@ -407,7 +407,7 @@ impl IoBar {
         let size = !(size_encoded & !0x3) + 1;
 
         // Restore the original base address.
-        let base = raw & 0x3;
+        let base = raw & !0x3;
         location.write32(offset, base);
 
         // FIXME: As with the memory BAR check, we assume that a zero base address means that the
