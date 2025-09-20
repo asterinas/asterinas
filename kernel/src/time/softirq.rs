@@ -11,7 +11,7 @@ static TIMER_SOFTIRQ_CALLBACKS: RcuOption<Box<Vec<fn()>>> = RcuOption::new_none(
 pub(super) fn init() {
     SoftIrqLine::get(TIMER_SOFTIRQ_ID).enable(timer_softirq_handler);
 
-    timer::register_callback(|| {
+    timer::register_callback_on_cpu(|| {
         SoftIrqLine::get(TIMER_SOFTIRQ_ID).raise();
     });
 }

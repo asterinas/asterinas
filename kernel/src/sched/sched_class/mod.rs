@@ -14,7 +14,7 @@ use ostd::{
     sync::SpinLock,
     task::{
         scheduler::{
-            enable_preemption, info::CommonSchedInfo, inject_scheduler, EnqueueFlags,
+            enable_preemption_on_cpu, info::CommonSchedInfo, inject_scheduler, EnqueueFlags,
             LocalRunQueue, Scheduler, UpdateFlags,
         },
         AtomicCpuId, Task,
@@ -56,7 +56,7 @@ pub fn init() {
 }
 
 pub fn init_on_each_cpu() {
-    enable_preemption();
+    enable_preemption_on_cpu();
 }
 
 /// Represents the middle layer between scheduling classes and generic scheduler

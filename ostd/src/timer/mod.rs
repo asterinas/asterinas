@@ -30,8 +30,8 @@ cpu_local! {
     static INTERRUPT_CALLBACKS: RefCell<Vec<InterruptCallback>> = RefCell::new(Vec::new());
 }
 
-/// Register a function that will be executed during the system timer interruption.
-pub fn register_callback<F>(func: F)
+/// Registers a function that will be executed during the timer interrupt on the current CPU.
+pub fn register_callback_on_cpu<F>(func: F)
 where
     F: Fn() + Sync + Send + 'static,
 {
