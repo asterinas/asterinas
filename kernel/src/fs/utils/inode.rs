@@ -195,6 +195,163 @@ impl From<SysPerms> for InodeMode {
     }
 }
 
+/// Change an inode mode.
+///
+/// # Syntax
+///
+/// If you are familiar with the `chmod` tool, the syntax of the `chmod` macro
+/// should appear natural and self-explaining.
+///
+/// The `chmod` macro takes two or more arguments. The first argument is an
+/// initial value of the inode mode. The rest arguments are one or more
+/// symbolic mode, each of which dictates how the current value of the inode
+/// mode shall be changed.
+///
+/// The format of a symbolic mode is as follows:
+///
+/// ```
+/// [ugoa][+-=][perms]
+/// ```
+///
+/// where `[perms]` is either zero or more letters from `rwx`.
+///
+/// The user part, `[ugoa]`,
+/// controls the target users whose access to the file will be changed:
+/// * `u`: the user who owns it;
+/// * `g`: other users in the file owner's group;
+/// * `o`: other users not in the file owner's group;
+/// * `a`: all users.
+///
+/// The operator part, `[+-=]`,
+/// indicates how the file permission bits are changed:
+/// * `+`: `[perms]` are added to the target users' permissions;
+/// * `-`: `[perms]` are removed from the target users' permissions;
+/// * `=`: `[perms]` are set to the target users' permissions.
+///
+/// The permission part, `[perms]`, is a combination of `rwx`.
+/// * `r`: the read permission;
+/// * `w`: the write permission;
+/// * `x`: the execute/search permission.
+///
+/// # Examples
+///
+/// ```
+/// // Add the read and write permissions to everyone
+/// let mode0 = mkmod!(a+rw);
+/// assert!(mode0.bits() == 0o666);
+///
+/// // Add the execute permissions to the owner user
+/// let mode1 = chmod!(mode0, u+x);
+/// assert!(mode1.bits() == 0o766);
+///
+/// // Combine the above two steps into one invocation
+/// let mode2 = mkmod!(a+rw, u+x);
+/// assert!(mode2.bits() == 0o766);
+/// ```
+#[macro_export]
+macro_rules! chmod {
+    ($mode:expr) => { $mode };
+
+    ($mode:expr, $who:ident + $perms:ident $(, $($rest:tt)*)?) => {
+        chmod!(@apply $mode, $who, '+', $perms $(, $($rest)*)?)
+    };
+    ($mode:expr, $who:ident - $perms:ident $(, $($rest:tt)*)?) => {
+        chmod!(@apply $mode, $who, '-', $perms $(, $($rest)*)?)
+    };
+    ($mode:expr, $who:ident = $perms:ident $(, $($rest:tt)*)?) => {
+        chmod!(@apply $mode, $who, '=', $perms $(, $($rest)*)?)
+    };
+    ($mode:expr, $who:ident = $(, $($rest:tt)*)?) => {
+        chmod!(@apply $mode, $who, '=', none $(, $($rest)*)?)
+    };
+
+    (@apply $mode:expr, $who:ident, $op:expr, $perms:ident $(, $($rest:tt)*)?) => {{
+        use $crate::fs::utils::{InodeMode, who_and_perms_to_mask, who_to_mask, perms_to_mask};
+        let mask = who_and_perms_to_mask!($who, $perms);
+        let new_mode = match $op {
+            '+' => $mode | mask,
+            '-' => $mode & !mask,
+            '=' => ($mode & !who_and_perms_to_mask!($who, rwx)) | mask,
+            _ => unreachable!(),
+        };
+        chmod!(new_mode $(, $($rest)*)?)
+    }};
+}
+
+/// Make an inode mode.
+///
+/// `mkmod` is equivalent to `chmod` with the first argument set to
+/// `InodeMode::empty()`. See [`chmod`] for details.
+#[macro_export]
+macro_rules! mkmod {
+    ($($args:tt)*) => {
+        chmod!(InodeMode::empty(), $($args)*)
+    };
+}
+
+macro_rules! who_and_perms_to_mask {
+    ($who:ident, $perms:ident) => {
+        InodeMode::from_bits_truncate(who_to_mask!($who) & perms_to_mask!($perms))
+    };
+}
+pub(crate) use who_and_perms_to_mask;
+
+macro_rules! who_to_mask {
+    (u) => {
+        0o700
+    };
+    (g) => {
+        0o070
+    };
+    (o) => {
+        0o007
+    };
+    (ug) => {
+        0o770
+    };
+    (uo) => {
+        0o707
+    };
+    (go) => {
+        0o077
+    };
+    (a) => {
+        0o777
+    };
+    (ugo) => {
+        0o777
+    };
+}
+pub(crate) use who_to_mask;
+
+macro_rules! perms_to_mask {
+    (none) => {
+        0
+    };
+    (r) => {
+        0o444
+    };
+    (w) => {
+        0o222
+    };
+    (x) => {
+        0o111
+    };
+    (rw) => {
+        0o666
+    };
+    (rx) => {
+        0o555
+    };
+    (wx) => {
+        0o333
+    };
+    (rwx) => {
+        0o777
+    };
+}
+pub(crate) use perms_to_mask;
+
 #[derive(Debug, Clone, Copy)]
 pub struct Metadata {
     pub dev: u64,

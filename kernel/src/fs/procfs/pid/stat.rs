@@ -5,7 +5,7 @@ use core::{fmt::Write, sync::atomic::Ordering};
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::{Inode, InodeMode},
+        utils::Inode,
     },
     prelude::*,
     process::{posix_thread::AsPosixThread, Process},
@@ -93,8 +93,7 @@ impl StatFileOps {
                 thread_ref,
                 is_pid_stat,
             },
-            // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3341>
-            InodeMode::from_bits_truncate(0o444),
+            mkmod!(a + r),
         )
         .parent(parent)
         .build()
