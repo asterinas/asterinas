@@ -46,4 +46,46 @@ pub enum IoctlCmd {
     KDFONTOP = 0x4B72,
     /// Get tdx report using TDCALL
     TDXGETREPORT = 0xc4405401,
+    /// Get variable screen information (resolution, color depth, etc.)
+    ///
+    /// # Arguments
+    /// - Input: none
+    /// - Output: [`FbVarScreenInfo`] structure filled with current settings
+    GETVSCREENINFO = 0x4600,
+    /// Set variable screen information
+    ///
+    /// # Arguments
+    /// - Input: [`FbVarScreenInfo`] with desired settings
+    /// - Output: [`FbVarScreenInfo`] with actual applied settings
+    PUTVSCREENINFO = 0x4601,
+    /// Get fixed screen information (memory layout, line length, etc.)
+    ///
+    /// # Arguments
+    /// - Input: none
+    /// - Output: [`FbFixScreenInfo`] structure with hardware-specific information
+    GETFSCREENINFO = 0x4602,
+    /// Get framebuffer color map
+    ///
+    /// # Arguments
+    /// - Input: [`FbCmap`] specifying range
+    /// - Output: [`FbCmap`] filled with color palette data
+    GETCMAP = 0x4604,
+    /// Set framebuffer color map
+    ///
+    /// # Arguments
+    /// - Input: [`FbCmap`] with color palette data
+    /// - Output: none
+    PUTCMAP = 0x4605,
+    /// Pan display to show different part of virtual screen
+    ///
+    /// # Arguments
+    /// - Input: [`FbVarScreenInfo`] with updated xoffset/yoffset
+    /// - Output: none
+    PANDISPLAY = 0x4606,
+    /// Blank or unblank the framebuffer display
+    ///
+    /// # Arguments
+    /// - Input: u32 blank mode (0=unblank, 1=normal blank, 4=powerdown)
+    /// - Output: none
+    FBIOBLANK = 0x4611,
 }
