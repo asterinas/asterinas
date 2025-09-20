@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Bus operations
+//! Bus probe error
 
-pub mod pci;
+// TODO: Implement a bus component and move the `BusProbeError` into the module.
 
 /// An error that occurs during bus probing.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -11,9 +11,4 @@ pub enum BusProbeError {
     DeviceNotMatch,
     /// An error in accessing the configuration space of the device.
     ConfigurationSpaceError,
-}
-
-/// Initializes the bus
-pub(crate) fn init() {
-    pci::init();
 }

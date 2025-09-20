@@ -7,7 +7,6 @@ use aster_rights::{ReadOp, WriteOp};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use log::warn;
 use ostd::{
-    bus::pci::cfg_space::Bar,
     io::IoMem,
     irq::IrqCallbackFunction,
     mm::{DmaCoherent, HasDaddr, PAGE_SIZE},
@@ -206,7 +205,7 @@ impl VirtioTransport for VirtioMmioTransport {
         Some(self.common_device.io_mem().slice(0x100..0x200))
     }
 
-    fn device_config_bar(&self) -> Option<(Bar, usize)> {
+    fn device_config_bar(&self) -> Option<(aster_pci::cfg_space::Bar, usize)> {
         None
     }
 
