@@ -200,6 +200,13 @@ impl VmMapping {
 
         Ok(())
     }
+
+    /// Returns whether this mapping is a COW mapping.
+    ///
+    /// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/include/linux/mm.h#L1470-L1473>
+    fn is_cow(&self) -> bool {
+        !self.is_shared && self.perms.contains(VmPerms::MAY_WRITE)
+    }
 }
 
 /****************************** Page faults **********************************/
@@ -629,11 +636,16 @@ impl VmMapping {
 
     /// Change the perms of the mapping.
     pub(super) fn protect(self, vm_space: &VmSpace, perms: VmPerms) -> Self {
+        let mut new_flags = PageFlags::from(perms);
+        if self.is_cow() && !self.perms.contains(VmPerms::WRITE) {
+            new_flags.remove(PageFlags::W);
+        }
+
         let preempt_guard = disable_preempt();
         let range = self.range();
         let mut cursor = vm_space.cursor_mut(&preempt_guard, &range).unwrap();
 
-        let op = |flags: &mut PageFlags, _cache: &mut CachePolicy| *flags = perms.into();
+        let op = |flags: &mut PageFlags, _cache: &mut CachePolicy| *flags = new_flags;
         while cursor.virt_addr() < range.end {
             if let Some(va) = cursor.protect_next(range.end - cursor.virt_addr(), op) {
                 cursor.flusher().issue_tlb_flush(TlbFlushOp::for_range(va));

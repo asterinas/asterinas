@@ -28,6 +28,7 @@ hello_world/hello_world
 itimer/setitimer
 itimer/timer_create
 mmap/mmap_and_fork
+mmap/mmap_and_mprotect
 mmap/mmap_and_mremap
 mmap/mmap_beyond_the_file
 mmap/mmap_shared_filebacked

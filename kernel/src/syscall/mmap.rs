@@ -84,6 +84,8 @@ fn do_sys_mmap(
         vm_perms
     };
 
+    let mut vm_may_perms = VmPerms::ALL_MAY_PERMS;
+
     let user_space = ctx.user_space();
     let root_vmar = user_space.root_vmar();
     let vm_map_options = {
@@ -124,14 +126,15 @@ fn do_sys_mmap(
             if vm_perms.contains(VmPerms::READ) && !access_mode.is_readable() {
                 return_errno!(Errno::EACCES);
             }
-            if option.typ() == MMapType::Shared
-                && vm_perms.contains(VmPerms::WRITE)
-                && !access_mode.is_writable()
-            {
-                return_errno!(Errno::EACCES);
+            if option.typ() == MMapType::Shared && !access_mode.is_writable() {
+                if vm_perms.contains(VmPerms::WRITE) {
+                    return_errno!(Errno::EACCES);
+                }
+                vm_may_perms.remove(VmPerms::MAY_WRITE);
             }
 
             options = options
+                .may_perms(vm_may_perms)
                 .mappable(file.mappable()?)
                 .vmo_offset(offset)
                 .handle_page_faults_around();
