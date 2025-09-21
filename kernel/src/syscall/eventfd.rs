@@ -22,7 +22,7 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::{FdFlags, FileDesc},
-        utils::{CreationFlags, InodeMode, InodeType, Metadata, StatusFlags},
+        utils::{mkmod, CreationFlags, InodeType, Metadata, StatusFlags},
     },
     prelude::*,
     process::{
@@ -248,7 +248,7 @@ impl FileLike for EventFile {
             mtime: now,
             ctime: now,
             type_: InodeType::NamedPipe,
-            mode: InodeMode::from_bits_truncate(0o200),
+            mode: mkmod!(u+w),
             nlinks: 1,
             uid: Uid::new_root(),
             gid: Gid::new_root(),

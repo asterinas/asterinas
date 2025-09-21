@@ -25,7 +25,7 @@ use crate::{
         path::Path,
         registry::{FsProperties, FsType},
         utils::{
-            DirentCounter, DirentVisitor, FallocMode, FileSystem, FsFlags, Inode, InodeMode,
+            mkmod, DirentCounter, DirentVisitor, FallocMode, FileSystem, FsFlags, Inode, InodeMode,
             InodeType, IoctlCmd, Metadata, MknodType, SuperBlock, XattrName, XattrNamespace,
             XattrSetFlags, NAME_MAX, XATTR_VALUE_MAX_LEN,
         },
@@ -353,11 +353,7 @@ impl OverlayInode {
         }
 
         if target_has_valid_lower {
-            let whiteout = upper.create(
-                &whiteout_name(name),
-                InodeType::File,
-                InodeMode::from_bits_truncate(0o644),
-            )?;
+            let whiteout = upper.create(&whiteout_name(name), InodeType::File, mkmod!(a+r, u+w))?;
             // FIXME: Align the whiteout xattr behavior with Linux
             whiteout.set_xattr(
                 XattrName::try_from_full_name(WHITEOUT_XATTR_NAME).unwrap(),
@@ -403,11 +399,7 @@ impl OverlayInode {
 
         upper.rmdir(name)?;
 
-        let whiteout = upper.create(
-            &whiteout_name(name),
-            InodeType::File,
-            InodeMode::from_bits_truncate(0o644),
-        )?;
+        let whiteout = upper.create(&whiteout_name(name), InodeType::File, mkmod!(a+r, u+w))?;
         // FIXME: Align the whiteout xattr behavior with Linux
         whiteout.set_xattr(
             XattrName::try_from_full_name(WHITEOUT_XATTR_NAME).unwrap(),

@@ -7,7 +7,7 @@ use crate::{
             template::{DirOps, ProcDirBuilder},
             ProcDir,
         },
-        utils::{DirEntryVecExt, Inode, InodeMode},
+        utils::{mkmod, DirEntryVecExt, Inode},
     },
     prelude::*,
 };
@@ -23,7 +23,7 @@ impl KernelDirOps {
         // Reference:
         // <https://elixir.bootlin.com/linux/v6.16.5/source/kernel/sysctl.c#L1765>
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/proc_sysctl.c#L978>
-        ProcDirBuilder::new(Self, InodeMode::from_bits_truncate(0o555))
+        ProcDirBuilder::new(Self, mkmod!(a+rx))
             .parent(parent)
             .build()
             .unwrap()

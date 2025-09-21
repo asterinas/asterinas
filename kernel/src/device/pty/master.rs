@@ -13,7 +13,7 @@ use crate::{
         file_table::FdFlags,
         fs_resolver::FsPath,
         inode_handle::FileIo,
-        utils::{AccessMode, Inode, InodeMode, IoctlCmd},
+        utils::{mkmod, AccessMode, Inode, IoctlCmd},
     },
     prelude::*,
     process::{
@@ -128,7 +128,7 @@ impl FileIo for PtyMaster {
 
                     let inode_handle = {
                         let flags = AccessMode::O_RDWR as u32;
-                        let mode = (InodeMode::S_IRUSR | InodeMode::S_IWUSR).bits();
+                        let mode = mkmod!(u+rw).bits();
                         thread_local
                             .borrow_fs()
                             .resolver()

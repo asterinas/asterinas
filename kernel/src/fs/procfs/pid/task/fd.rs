@@ -8,7 +8,7 @@ use crate::{
         procfs::{
             pid::FdEvents, DirOps, Observer, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps,
         },
-        utils::{DirEntryVecExt, Inode, InodeMode},
+        utils::{chmod, mkmod, DirEntryVecExt, Inode},
     },
     prelude::*,
     process::posix_thread::AsPosixThread,
@@ -26,7 +26,7 @@ impl FdDirOps {
         let fd_inode = ProcDirBuilder::new(
             Self(thread_ref.clone()),
             // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3317>
-            InodeMode::from_bits_truncate(0o500),
+            mkmod!(u+rx),
         )
         .parent(parent)
         .build()
@@ -105,12 +105,12 @@ struct FileSymOps(Arc<dyn FileLike>);
 impl FileSymOps {
     pub fn new_inode(file: Arc<dyn FileLike>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/fd.c#L127-L141>
-        let mut mode = InodeMode::empty();
+        let mut mode = mkmod!(a=);
         if file.access_mode().is_readable() {
-            mode |= InodeMode::S_IRUSR | InodeMode::S_IXUSR;
+            mode = chmod!(mode, u+rx);
         }
         if file.access_mode().is_writable() {
-            mode |= InodeMode::S_IWUSR | InodeMode::S_IXUSR;
+            mode = chmod!(mode, u+wx);
         }
 
         ProcSymBuilder::new(Self(file), mode)

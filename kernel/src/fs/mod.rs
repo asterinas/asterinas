@@ -32,7 +32,7 @@ use crate::{
         ext2::Ext2,
         file_table::FdFlags,
         fs_resolver::{FsPath, FsResolver},
-        utils::{AccessMode, InodeMode},
+        utils::{mkmod, AccessMode},
     },
     prelude::*,
 };
@@ -105,17 +105,17 @@ pub fn init_in_first_process(ctx: &Context) {
     let tty_path = FsPath::new(fs_resolver::AT_FDCWD, "/dev/console").expect("cannot find tty");
     let stdin = {
         let flags = AccessMode::O_RDONLY as u32;
-        let mode = InodeMode::S_IRUSR;
+        let mode = mkmod!(u+r);
         fs_resolver.open(&tty_path, flags, mode.bits()).unwrap()
     };
     let stdout = {
         let flags = AccessMode::O_WRONLY as u32;
-        let mode = InodeMode::S_IWUSR;
+        let mode = mkmod!(u+w);
         fs_resolver.open(&tty_path, flags, mode.bits()).unwrap()
     };
     let stderr = {
         let flags = AccessMode::O_WRONLY as u32;
-        let mode = InodeMode::S_IWUSR;
+        let mode = mkmod!(u+w);
         fs_resolver.open(&tty_path, flags, mode.bits()).unwrap()
     };
 

@@ -6,7 +6,7 @@ use crate::{
     events::IoEvents,
     fs::{
         file_handle::FileLike,
-        utils::{InodeMode, InodeType, Metadata, StatusFlags},
+        utils::{mkmod, InodeType, Metadata, StatusFlags},
     },
     prelude::*,
     process::{
@@ -83,7 +83,7 @@ impl FileLike for PidFile {
             mtime: now,
             ctime: now,
             type_: InodeType::Unknown,
-            mode: InodeMode::from_bits_truncate(0o600),
+            mode: mkmod!(u+rw),
             nlinks: 1,
             // FIXME: Should we use the process's UID and GID here?
             uid: Uid::new_root(),

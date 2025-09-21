@@ -16,7 +16,7 @@ use crate::{
     arch::cpu::CpuInformation,
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::{Inode, InodeMode},
+        utils::{mkmod, Inode},
     },
     prelude::*,
 };
@@ -30,7 +30,7 @@ impl CpuInfoFileOps {
         // Reference:
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/cpuinfo.c#L25>
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/generic.c#L549-L550>
-        ProcFileBuilder::new(Self, InodeMode::from_bits_truncate(0o444))
+        ProcFileBuilder::new(Self, mkmod!(a+r))
             .parent(parent)
             .build()
             .unwrap()

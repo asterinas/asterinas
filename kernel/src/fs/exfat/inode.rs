@@ -31,8 +31,8 @@ use crate::{
         exfat::{dentry::ExfatDentryIterator, fat::ExfatChain, fs::ExfatFs},
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
         utils::{
-            CachePage, DirentVisitor, Extension, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
-            MknodType, PageCache, PageCacheBackend,
+            mkmod, CachePage, DirentVisitor, Extension, Inode, InodeMode, InodeType, IoctlCmd,
+            Metadata, MknodType, PageCache, PageCacheBackend,
         },
     },
     prelude::*,
@@ -65,7 +65,7 @@ impl FatAttr {
     fn make_mode(&self, mount_option: ExfatMountOptions, mode: InodeMode) -> InodeMode {
         let mut ret = mode;
         if self.contains(FatAttr::READONLY) && !self.contains(FatAttr::DIRECTORY) {
-            ret.remove(InodeMode::S_IWGRP | InodeMode::S_IWUSR | InodeMode::S_IWOTH);
+            ret.remove(mkmod!(a+w));
         }
         if self.contains(FatAttr::DIRECTORY) {
             ret.remove(InodeMode::from_bits_truncate(mount_option.fs_dmask));

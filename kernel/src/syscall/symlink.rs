@@ -5,7 +5,7 @@ use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
-        utils::{InodeMode, InodeType},
+        utils::{mkmod, InodeType},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -42,11 +42,7 @@ pub fn sys_symlinkat(
             .lookup_dir_and_new_basename(&fs_path, false)?
     };
 
-    let new_path = dir_path.new_fs_child(
-        &link_name,
-        InodeType::SymLink,
-        InodeMode::from_bits_truncate(0o777),
-    )?;
+    let new_path = dir_path.new_fs_child(&link_name, InodeType::SymLink, mkmod!(a+rwx))?;
     new_path.inode().write_link(&target)?;
     Ok(SyscallReturn::Return(0))
 }

@@ -33,7 +33,7 @@ impl Ptmx {
         Arc::new(Self {
             metadata: RwLock::new(Metadata::new_device(
                 PTMX_INO,
-                InodeMode::from_bits_truncate(0o666),
+                mkmod!(a+rw),
                 super::BLOCK_SIZE,
                 &inner,
             )),

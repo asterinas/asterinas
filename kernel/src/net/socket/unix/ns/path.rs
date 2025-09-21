@@ -6,7 +6,7 @@ use crate::{
     fs::{
         fs_resolver::{split_path, FsPath},
         path::Path,
-        utils::{InodeMode, InodeType, Permission},
+        utils::{mkmod, InodeType, Permission},
     },
     prelude::*,
 };
@@ -50,11 +50,7 @@ pub fn create_socket_file(path_name: &str) -> Result<Path> {
     };
 
     parent
-        .new_fs_child(
-            file_name,
-            InodeType::Socket,
-            InodeMode::S_IRUSR | InodeMode::S_IWUSR,
-        )
+        .new_fs_child(file_name, InodeType::Socket, mkmod!(u+rw))
         .map_err(|err| {
             if err.error() == Errno::EEXIST {
                 Error::with_message(Errno::EADDRINUSE, "the socket file already exists")
