@@ -465,9 +465,12 @@ impl Vmar_ {
         }
 
         for (vm_mapping_addr, vm_mapping_perms) in protect_mappings {
-            if perms == vm_mapping_perms {
+            if perms == vm_mapping_perms & VmPerms::ALL_PERMS {
                 continue;
             }
+            let new_perms = perms | (vm_mapping_perms & VmPerms::ALL_MAY_PERMS);
+            new_perms.check()?;
+
             let vm_mapping = inner.remove(&vm_mapping_addr).unwrap();
             let vm_mapping_range = vm_mapping.range();
             let intersected_range = get_intersected_range(&range, &vm_mapping_range);
@@ -484,7 +487,7 @@ impl Vmar_ {
             }
 
             // Protects part of the `VmMapping`.
-            let taken = taken.protect(vm_space.as_ref(), perms);
+            let taken = taken.protect(vm_space.as_ref(), new_perms);
             inner.insert_try_merge(taken);
         }
 
@@ -815,6 +818,7 @@ pub struct VmarMapOptions<'a, R1, R2> {
     vmo: Option<Vmo<R2>>,
     mappable: Option<Mappable>,
     perms: VmPerms,
+    may_perms: VmPerms,
     vmo_offset: usize,
     size: usize,
     offset: Option<usize>,
@@ -839,6 +843,7 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
             vmo: None,
             mappable: None,
             perms,
+            may_perms: VmPerms::ALL_MAY_PERMS,
             vmo_offset: 0,
             size,
             offset: None,
@@ -847,6 +852,18 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
             is_shared: false,
             handle_page_faults_around: false,
         }
+    }
+
+    /// Sets the `VmPerms::MAY*` memory access permissions of the mapping.
+    ///
+    /// The default value is `MAY_READ | MAY_WRITE | MAY_EXEC`.
+    ///
+    /// The provided `may_perms` must be a subset of all the may-permissions,
+    /// and must include the may-permissions corresponding to already requested
+    /// normal permissions (`READ | WRITE | EXEC`).
+    pub fn may_perms(mut self, may_perms: VmPerms) -> Self {
+        self.may_perms = may_perms;
+        self
     }
 
     /// Binds a [`Vmo`] to the mapping.
@@ -992,6 +1009,7 @@ where
             vmo,
             mappable,
             perms,
+            may_perms,
             vmo_offset,
             size: map_size,
             offset,
@@ -1072,7 +1090,7 @@ where
             inode,
             is_shared,
             handle_page_faults_around,
-            perms,
+            perms | may_perms,
         );
 
         // Populate device memory if needed before adding to VMAR.
@@ -1119,11 +1137,20 @@ where
 
     /// Checks whether the permissions of the mapping is subset of vmo rights.
     fn check_perms(&self) -> Result<()> {
+        if !VmPerms::ALL_MAY_PERMS.contains(self.may_perms)
+            || !VmPerms::ALL_PERMS.contains(self.perms)
+        {
+            return_errno_with_message!(Errno::EACCES, "invalid perms");
+        }
+
+        let vm_perms = self.perms | self.may_perms;
+        vm_perms.check()?;
+
         let Some(vmo) = &self.vmo else {
             return Ok(());
         };
 
-        let perm_rights = Rights::from(self.perms);
+        let perm_rights = Rights::from(vm_perms);
         vmo.check_rights(perm_rights)
     }
 }
