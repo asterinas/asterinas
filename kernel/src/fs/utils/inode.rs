@@ -5,13 +5,12 @@
 use core::{any::TypeId, time::Duration};
 
 use aster_rights::Full;
-use aster_systree::SysPerms;
 use core2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
 use ostd::task::Task;
 
 use super::{
-    AccessMode, DirentVisitor, FallocMode, FileSystem, IoctlCmd, XattrName, XattrNamespace,
-    XattrSetFlags,
+    AccessMode, DirentVisitor, FallocMode, FileSystem, InodeMode, IoctlCmd, XattrName,
+    XattrNamespace, XattrSetFlags,
 };
 use crate::{
     events::IoEvents,
@@ -106,92 +105,6 @@ impl From<AccessMode> for Permission {
             AccessMode::O_WRONLY => Permission::MAY_WRITE,
             AccessMode::O_RDWR => Permission::MAY_READ | Permission::MAY_WRITE,
         }
-    }
-}
-
-bitflags! {
-    pub struct InodeMode: u16 {
-        /// set-user-ID
-        const S_ISUID = 0o4000;
-        /// set-group-ID
-        const S_ISGID = 0o2000;
-        /// sticky bit
-        const S_ISVTX = 0o1000;
-        /// read by owner
-        const S_IRUSR = 0o0400;
-        /// write by owner
-        const S_IWUSR = 0o0200;
-        /// execute/search by owner
-        const S_IXUSR = 0o0100;
-        /// read by group
-        const S_IRGRP = 0o0040;
-        /// write by group
-        const S_IWGRP = 0o0020;
-        /// execute/search by group
-        const S_IXGRP = 0o0010;
-        /// read by others
-        const S_IROTH = 0o0004;
-        /// write by others
-        const S_IWOTH = 0o0002;
-        /// execute/search by others
-        const S_IXOTH = 0o0001;
-    }
-}
-
-impl InodeMode {
-    pub fn is_owner_readable(&self) -> bool {
-        self.contains(Self::S_IRUSR)
-    }
-
-    pub fn is_owner_writable(&self) -> bool {
-        self.contains(Self::S_IWUSR)
-    }
-
-    pub fn is_owner_executable(&self) -> bool {
-        self.contains(Self::S_IXUSR)
-    }
-
-    pub fn is_group_readable(&self) -> bool {
-        self.contains(Self::S_IRGRP)
-    }
-
-    pub fn is_group_writable(&self) -> bool {
-        self.contains(Self::S_IWGRP)
-    }
-
-    pub fn is_group_executable(&self) -> bool {
-        self.contains(Self::S_IXGRP)
-    }
-
-    pub fn is_other_readable(&self) -> bool {
-        self.contains(Self::S_IROTH)
-    }
-
-    pub fn is_other_writable(&self) -> bool {
-        self.contains(Self::S_IWOTH)
-    }
-
-    pub fn is_other_executable(&self) -> bool {
-        self.contains(Self::S_IXOTH)
-    }
-
-    #[expect(dead_code)]
-    pub fn has_sticky_bit(&self) -> bool {
-        self.contains(Self::S_ISVTX)
-    }
-
-    pub fn has_set_uid(&self) -> bool {
-        self.contains(Self::S_ISUID)
-    }
-
-    pub fn has_set_gid(&self) -> bool {
-        self.contains(Self::S_ISGID)
-    }
-}
-
-impl From<SysPerms> for InodeMode {
-    fn from(value: SysPerms) -> Self {
-        InodeMode::from_bits_truncate(value.bits())
     }
 }
 
