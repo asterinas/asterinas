@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_framebuffer::{FrameBuffer, PixelFormat, FRAMEBUFFER};
+use core::mem::size_of;
+
+use aster_framebuffer::{FbBitfield, FrameBuffer, FRAMEBUFFER};
 use ostd::{
     mm::{HasPaddr, HasSize, VmIo},
     Pod,
@@ -27,6 +29,9 @@ const DEFAULT_RIGHT_MARGIN: u32 = 32;
 const DEFAULT_UPPER_MARGIN: u32 = 16;
 const DEFAULT_LOWER_MARGIN: u32 = 4;
 const DEFAULT_VSYNC_LEN: u32 = 4;
+
+/// Maximum number of pseudo palette entries (for efifb compatibility)
+const PSEUDO_PALETTE_SIZE: usize = 16;
 
 pub struct Fb;
 
@@ -102,20 +107,6 @@ pub struct FbVarScreenInfo {
     pub reserved: [u32; 4],
 }
 
-/// Bitfield structure describing color channel layout.
-///
-/// This structure is aligned with Linux's `fb_bitfield` for system call compatibility.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Default)]
-pub struct FbBitfield {
-    /// Bit offset of the field
-    pub offset: u32,
-    /// Length of the field in bits
-    pub length: u32,
-    /// Most significant bit position (0 = left, 1 = right)
-    pub msb_right: u32,
-}
-
 /// Fixed screen information structure for framebuffer devices.
 ///
 /// This structure is aligned with Linux's `fb_fix_screeninfo` to maintain
@@ -153,6 +144,26 @@ pub struct FbFixScreenInfo {
     pub capabilities: u16,
     /// Reserved for future compatibility
     pub reserved: [u16; 2],
+}
+
+/// Framebuffer colormap structure for userspace communication.
+///
+/// This structure is aligned with Linux's `fb_cmap_user` for compatibility.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub struct FbCmapUser {
+    /// Starting offset in colormap
+    pub start: u32,
+    /// Number of colormap entries
+    pub len: u32,
+    /// Pointer to red color values in userspace
+    pub red: usize,
+    /// Pointer to green color values in userspace
+    pub green: usize,
+    /// Pointer to blue color values in userspace
+    pub blue: usize,
+    /// Pointer to transparency values in userspace (may be null)
+    pub transp: usize,
 }
 
 impl Device for Fb {
@@ -206,84 +217,34 @@ impl FileIo for Fb {
 }
 
 impl FbHandle {
-    /// Converts pixel format to framebuffer bitfields
-    fn pixel_format_to_bitfields(
-        pixel_format: PixelFormat,
-    ) -> (FbBitfield, FbBitfield, FbBitfield, FbBitfield) {
-        match pixel_format {
-            PixelFormat::Grayscale8 => {
-                let bitfield = FbBitfield {
-                    offset: 0,
-                    length: 8,
-                    msb_right: 0,
-                };
-                (bitfield, bitfield, bitfield, FbBitfield::default())
-            }
-            PixelFormat::Rgb565 => (
-                FbBitfield {
-                    offset: 11,
-                    length: 5,
-                    msb_right: 0,
-                },
-                FbBitfield {
-                    offset: 5,
-                    length: 6,
-                    msb_right: 0,
-                },
-                FbBitfield {
-                    offset: 0,
-                    length: 5,
-                    msb_right: 0,
-                },
-                FbBitfield::default(),
-            ),
-            PixelFormat::Rgb888 => (
-                FbBitfield {
-                    offset: 16,
-                    length: 8,
-                    msb_right: 0,
-                },
-                FbBitfield {
-                    offset: 8,
-                    length: 8,
-                    msb_right: 0,
-                },
-                FbBitfield {
-                    offset: 0,
-                    length: 8,
-                    msb_right: 0,
-                },
-                FbBitfield::default(),
-            ),
-            PixelFormat::BgrReserved => (
-                FbBitfield {
-                    offset: 16,
-                    length: 8,
-                    msb_right: 0,
-                },
-                FbBitfield {
-                    offset: 8,
-                    length: 8,
-                    msb_right: 0,
-                },
-                FbBitfield {
-                    offset: 0,
-                    length: 8,
-                    msb_right: 0,
-                },
-                FbBitfield {
-                    offset: 24,
-                    length: 8,
-                    msb_right: 0,
-                },
-            ),
+    /// Reads an array of u16 values from userspace
+    pub fn read_color_maps_from_user(addr: usize, data: &mut [u16]) -> Result<()> {
+        if addr == 0 {
+            return Ok(());
         }
+        for (i, item) in data.iter_mut().enumerate() {
+            let user_addr = addr + i * size_of::<u16>();
+            *item = current_userspace!().read_val(user_addr)?;
+        }
+        Ok(())
     }
 
+    /// Writes an array of u16 values to userspace
+    pub fn write_color_maps_to_user(addr: usize, data: &[u16]) -> Result<()> {
+        if addr == 0 {
+            return Ok(());
+        }
+        for (i, &value) in data.iter().enumerate() {
+            let user_addr = addr + i * size_of::<u16>();
+            current_userspace!().write_val(user_addr, &value)?;
+        }
+        Ok(())
+    }
     /// Handles the [`IoctlCmd::GETVSCREENINFO`] ioctl command.
+    /// Takes no input and outputs a [`FbVarScreenInfo`] structure filled with current screen settings.
     fn handle_get_var_screen_info(&self, arg: usize) -> Result<i32> {
         let pixel_format = self.framebuffer.pixel_format();
-        let (red, green, blue, transp) = Self::pixel_format_to_bitfields(pixel_format);
+        let (red, green, blue, transp) = FrameBuffer::pixel_format_to_bitfields(pixel_format);
 
         let screen_info = FbVarScreenInfo {
             xres: self.framebuffer.width() as u32,
@@ -311,6 +272,7 @@ impl FbHandle {
     }
 
     /// Handles the [`IoctlCmd::GETFSCREENINFO`] ioctl command.
+    /// Takes no input and outputs a [`FbFixScreenInfo`] structure with hardware-specific information.
     fn handle_get_fix_screen_info(&self, arg: usize) -> Result<i32> {
         let screen_info = FbFixScreenInfo {
             smem_start: self.framebuffer.io_mem().paddr() as u64,
@@ -323,6 +285,109 @@ impl FbHandle {
         };
 
         current_userspace!().write_val(arg, &screen_info)?;
+        Ok(0)
+    }
+
+    /// Handles the [`IoctlCmd::GETCMAP`] ioctl command.
+    /// Takes a [`aster_framebuffer::FbCmap`] structure specifying the range as input and outputs the same structure filled with color palette data.
+    fn handle_get_cmap(&self, arg: usize) -> Result<i32> {
+        let cmap_user: FbCmapUser = current_userspace!().read_val(arg)?;
+
+        if cmap_user.len == 0 {
+            return Ok(0);
+        }
+
+        let cmap = self.framebuffer.cmap().lock();
+
+        // Check bounds
+        let start = cmap_user.start as usize;
+        let len = cmap_user.len as usize;
+
+        if start >= cmap.red.len() || start + len > cmap.red.len() {
+            return_errno_with_message!(Errno::EINVAL, "colormap index out of bounds");
+        }
+
+        // Copy color data to userspace
+        let red_slice = &cmap.red[start..start + len];
+        Self::write_color_maps_to_user(cmap_user.red, red_slice)?;
+
+        let green_slice = &cmap.green[start..start + len];
+        Self::write_color_maps_to_user(cmap_user.green, green_slice)?;
+
+        let blue_slice = &cmap.blue[start..start + len];
+        Self::write_color_maps_to_user(cmap_user.blue, blue_slice)?;
+
+        if let Some(ref transp) = cmap.transp {
+            let transp_slice = &transp[start..start + len];
+            Self::write_color_maps_to_user(cmap_user.transp, transp_slice)?;
+        }
+
+        Ok(0)
+    }
+
+    /// Handles the [`IoctlCmd::PUTCMAP`] ioctl command.
+    /// Takes a [`aster_framebuffer::FbCmap`] structure with color palette data as input and produces no output.
+    fn handle_set_cmap(&self, arg: usize) -> Result<i32> {
+        let cmap_user: FbCmapUser = current_userspace!().read_val(arg)?;
+
+        if cmap_user.len == 0 {
+            return Ok(0);
+        }
+
+        // Size check to prevent excessive memory allocation
+        if cmap_user.len > 256 {
+            return_errno_with_message!(Errno::EINVAL, "colormap too large");
+        }
+
+        let start = cmap_user.start as usize;
+        let len = cmap_user.len as usize;
+
+        // Update the colormap directly
+        let mut cmap = self.framebuffer.cmap().lock();
+
+        // Ensure the colormap has enough space
+        let required_len = start + len;
+        if cmap.red.len() < required_len {
+            cmap.red.resize(required_len, 0);
+            cmap.green.resize(required_len, 0);
+            cmap.blue.resize(required_len, 0);
+            if cmap_user.transp != 0 {
+                if cmap.transp.is_none() {
+                    cmap.transp = Some(alloc::vec![0u16; required_len]);
+                } else if let Some(ref mut transp) = cmap.transp {
+                    transp.resize(required_len, 0);
+                }
+            }
+            cmap.len = required_len as u32;
+        }
+
+        // Read color data directly into colormap
+        Self::read_color_maps_from_user(cmap_user.red, &mut cmap.red[start..start + len])?;
+        Self::read_color_maps_from_user(cmap_user.green, &mut cmap.green[start..start + len])?;
+        Self::read_color_maps_from_user(cmap_user.blue, &mut cmap.blue[start..start + len])?;
+
+        if cmap_user.transp != 0 {
+            if let Some(ref mut transp) = cmap.transp {
+                Self::read_color_maps_from_user(cmap_user.transp, &mut transp[start..start + len])?;
+            }
+        }
+
+        // Update pseudo palette entries
+        for i in 0..len.min(PSEUDO_PALETTE_SIZE) {
+            let idx = start + i;
+            if idx < PSEUDO_PALETTE_SIZE {
+                let transp_val = cmap.transp.as_ref().map(|t| t[idx]).unwrap_or(0);
+                let _ = self.framebuffer.set_color_regs(
+                    idx as u32,
+                    cmap.red[idx],
+                    cmap.green[idx],
+                    cmap.blue[idx],
+                    transp_val,
+                    cmap.len,
+                );
+            }
+        }
+
         Ok(0)
     }
 }
@@ -393,16 +458,8 @@ impl FileIo for FbHandle {
                 //  consistent with Linux's efifb driver.
                 self.handle_get_var_screen_info(arg)
             }
-            IoctlCmd::GETCMAP => {
-                log::debug!("Fb ioctl: Get color map");
-                // TODO: Implement logic to get the color map
-                Ok(0)
-            }
-            IoctlCmd::PUTCMAP => {
-                log::debug!("Fb ioctl: Set color map");
-                // TODO: Implement logic to set the color map
-                Ok(0)
-            }
+            IoctlCmd::GETCMAP => self.handle_get_cmap(arg),
+            IoctlCmd::PUTCMAP => self.handle_set_cmap(arg),
             IoctlCmd::PANDISPLAY | IoctlCmd::FBIOBLANK => {
                 // These commands are not supported by efifb.
                 // We return errors according to the Linux behavior.
