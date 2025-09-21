@@ -12,7 +12,7 @@ use ostd::boot::boot_info;
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::{Inode, InodeMode},
+        utils::{mkmod, Inode},
     },
     prelude::*,
 };
@@ -26,7 +26,7 @@ impl CmdLineFileOps {
         // Reference:
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/cmdline.c#L19>
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/generic.c#L549-L550>
-        ProcFileBuilder::new(Self, InodeMode::from_bits_truncate(0o444))
+        ProcFileBuilder::new(Self, mkmod!(a+r))
             .parent(parent)
             .build()
             .unwrap()

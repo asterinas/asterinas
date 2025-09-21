@@ -5,7 +5,7 @@ use alloc::format;
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::{Inode, InodeMode},
+        utils::{mkmod, Inode},
     },
     prelude::*,
     process::credentials::capabilities::CapSet,
@@ -17,7 +17,7 @@ pub struct CapLastCapFileOps;
 impl CapLastCapFileOps {
     pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/kernel/sysctl.c#L1701>
-        ProcFileBuilder::new(Self, InodeMode::from_bits_truncate(0o444))
+        ProcFileBuilder::new(Self, mkmod!(a+r))
             .parent(parent)
             .build()
             .unwrap()

@@ -9,7 +9,7 @@ use crate::{
             stat::StatFileOps,
             task::{TaskDirOps, TidDirOps},
         },
-        utils::{DirEntryVecExt, Inode, InodeMode},
+        utils::{mkmod, DirEntryVecExt, Inode},
     },
     prelude::*,
     process::{posix_thread::AsPosixThread, Process},
@@ -41,16 +41,13 @@ impl PidDirOps {
             .unwrap()
             .file_table();
 
-        let pid_inode = ProcDirBuilder::new(
-            Self(tid_dir_ops.clone()),
-            // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3493>
-            InodeMode::from_bits_truncate(0o555),
-        )
-        .parent(parent)
-        // The pid directories must be volatile, because it is just associated with one process.
-        .volatile()
-        .build()
-        .unwrap();
+        // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3493>
+        let pid_inode = ProcDirBuilder::new(Self(tid_dir_ops.clone()), mkmod!(a+rx))
+            .parent(parent)
+            // The pid directories must be volatile, because it is just associated with one process.
+            .volatile()
+            .build()
+            .unwrap();
 
         // This is for an exiting process that has not yet been reaped by its parent,
         // whose file table may have already been released.

@@ -25,9 +25,9 @@ use crate::{
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
         registry::{FsProperties, FsType},
         utils::{
-            CStr256, CachePage, DirentVisitor, Extension, FallocMode, FileSystem, FsFlags, Inode,
-            InodeMode, InodeType, IoctlCmd, Metadata, MknodType, PageCache, PageCacheBackend,
-            Permission, SuperBlock, XattrName, XattrNamespace, XattrSetFlags,
+            mkmod, CStr256, CachePage, DirentVisitor, Extension, FallocMode, FileSystem, FsFlags,
+            Inode, InodeMode, InodeType, IoctlCmd, Metadata, MknodType, PageCache,
+            PageCacheBackend, Permission, SuperBlock, XattrName, XattrNamespace, XattrSetFlags,
         },
     },
     prelude::*,
@@ -53,7 +53,7 @@ impl RamFs {
             root: Arc::new_cyclic(|weak_root| RamInode {
                 inner: Inner::new_dir(weak_root.clone(), weak_root.clone()),
                 metadata: SpinLock::new(InodeMeta::new_dir(
-                    InodeMode::from_bits_truncate(0o755),
+                    mkmod!(a+rx, u+w),
                     Uid::new_root(),
                     Gid::new_root(),
                 )),

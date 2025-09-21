@@ -17,8 +17,8 @@ use crate::{
     fs::{
         device::Device,
         utils::{
-            DirentVisitor, FallocMode, FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
-            MknodType,
+            mkmod, DirentVisitor, FallocMode, FileSystem, Inode, InodeMode, InodeType, IoctlCmd,
+            Metadata, MknodType,
         },
     },
     prelude::{VmReader, VmWriter},
@@ -83,7 +83,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
             ctime: now,
             type_,
             // The mode field in metadata will not be used
-            mode: InodeMode::from_bits_truncate(0o000),
+            mode: mkmod!(a=),
             nlinks: 1,
             uid: Uid::new_root(),
             gid: Gid::new_root(),
@@ -109,7 +109,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
         let node_kind = SysTreeNodeKind::Symlink(symlink);
         let ino = ino::from_node_kind(&node_kind);
         let metadata = Self::new_metadata(ino, InodeType::SymLink);
-        let mode = InodeMode::from_bits_truncate(0o777);
+        let mode = mkmod!(a+rwx);
         Self::new_arc(node_kind, metadata, mode, parent)
     }
 

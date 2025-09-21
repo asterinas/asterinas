@@ -15,8 +15,8 @@ use crate::{
         device::{Device, DeviceId, DeviceType},
         registry::{FsProperties, FsType},
         utils::{
-            DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
-            SuperBlock, NAME_MAX,
+            mkmod, DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd,
+            Metadata, SuperBlock, NAME_MAX,
         },
     },
     prelude::*,
@@ -145,11 +145,7 @@ impl RootInode {
         Arc::new(Self {
             ptmx: Ptmx::new(fs.clone()),
             slaves: RwLock::new(SlotVec::new()),
-            metadata: RwLock::new(Metadata::new_dir(
-                ROOT_INO,
-                InodeMode::from_bits_truncate(0o755),
-                BLOCK_SIZE,
-            )),
+            metadata: RwLock::new(Metadata::new_dir(ROOT_INO, mkmod!(a+rx, u+w), BLOCK_SIZE)),
             fs,
         })
     }

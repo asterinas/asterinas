@@ -4,7 +4,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use super::{
     file_handle::FileLike,
-    utils::{AccessMode, Endpoint, EndpointState, InodeMode, InodeType, Metadata, StatusFlags},
+    utils::{mkmod, AccessMode, Endpoint, EndpointState, InodeType, Metadata, StatusFlags},
 };
 use crate::{
     events::IoEvents,
@@ -140,7 +140,7 @@ impl FileLike for PipeReader {
             mtime: now,
             ctime: now,
             type_: InodeType::NamedPipe,
-            mode: InodeMode::from_bits_truncate(0o400),
+            mode: mkmod!(u+r),
             nlinks: 1,
             uid: Uid::new_root(),
             gid: Gid::new_root(),
@@ -251,7 +251,7 @@ impl FileLike for PipeWriter {
             mtime: now,
             ctime: now,
             type_: InodeType::NamedPipe,
-            mode: InodeMode::from_bits_truncate(0o200),
+            mode: mkmod!(u+w),
             nlinks: 1,
             uid: Uid::new_root(),
             gid: Gid::new_root(),

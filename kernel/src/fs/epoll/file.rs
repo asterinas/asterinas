@@ -15,7 +15,7 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::{get_file_fast, FileDesc},
-        utils::{InodeMode, IoctlCmd, Metadata},
+        utils::{mkmod, IoctlCmd, Metadata},
     },
     prelude::*,
     process::{
@@ -269,11 +269,7 @@ impl FileLike for EpollFile {
     fn metadata(&self) -> Metadata {
         // This is a dummy implementation.
         // TODO: Add "anonymous inode fs" and link `EpollFile` to it.
-        Metadata::new_file(
-            0,
-            InodeMode::from_bits_truncate(0o600),
-            aster_block::BLOCK_SIZE,
-        )
+        Metadata::new_file(0, mkmod!(u+rw), aster_block::BLOCK_SIZE)
     }
 }
 

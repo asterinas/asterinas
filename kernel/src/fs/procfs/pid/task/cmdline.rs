@@ -3,7 +3,7 @@
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::{Inode, InodeMode},
+        utils::{mkmod, Inode},
     },
     prelude::*,
     process::Process,
@@ -15,7 +15,7 @@ pub struct CmdlineFileOps(Arc<Process>);
 impl CmdlineFileOps {
     pub fn new_inode(process_ref: Arc<Process>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3340>
-        ProcFileBuilder::new(Self(process_ref), InodeMode::from_bits_truncate(0o444))
+        ProcFileBuilder::new(Self(process_ref), mkmod!(a+r))
             .parent(parent)
             .build()
             .unwrap()

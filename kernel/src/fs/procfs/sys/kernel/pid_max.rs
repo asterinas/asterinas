@@ -5,7 +5,7 @@ use alloc::format;
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::{Inode, InodeMode},
+        utils::{mkmod, Inode},
     },
     prelude::*,
     process::posix_thread::PID_MAX,
@@ -17,7 +17,7 @@ pub struct PidMaxFileOps;
 impl PidMaxFileOps {
     pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/kernel/pid.c#L721>
-        ProcFileBuilder::new(Self, InodeMode::from_bits_truncate(0o644))
+        ProcFileBuilder::new(Self, mkmod!(a+r, u+w))
             .parent(parent)
             .build()
             .unwrap()

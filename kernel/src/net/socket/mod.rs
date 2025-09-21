@@ -6,7 +6,7 @@ use util::{MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr};
 use crate::{
     fs::{
         file_handle::FileLike,
-        utils::{InodeMode, Metadata, StatusFlags},
+        utils::{mkmod, Metadata, StatusFlags},
     },
     prelude::*,
     util::{MultiRead, MultiWrite},
@@ -170,10 +170,6 @@ impl<T: Socket + 'static> FileLike for T {
     fn metadata(&self) -> Metadata {
         // This is a dummy implementation.
         // TODO: Add "SockFS" and link `Socket` to it.
-        Metadata::new_socket(
-            0,
-            InodeMode::from_bits_truncate(0o140777),
-            aster_block::BLOCK_SIZE,
-        )
+        Metadata::new_socket(0, mkmod!(a+rwx), aster_block::BLOCK_SIZE)
     }
 }

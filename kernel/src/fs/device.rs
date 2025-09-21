@@ -5,7 +5,7 @@ use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver},
         path::Path,
-        utils::{InodeMode, InodeType},
+        utils::{mkmod, InodeType},
     },
     prelude::*,
 };
@@ -134,18 +134,11 @@ pub fn add_node(device: Arc<dyn Device>, path: &str, fs_resolver: &FsResolver) -
             Err(_) => {
                 if path_remain.is_empty() {
                     // Create the device node
-                    dev_path = dev_path.mknod(
-                        next_name,
-                        InodeMode::from_bits_truncate(0o666),
-                        device.clone().into(),
-                    )?;
+                    dev_path = dev_path.mknod(next_name, mkmod!(a+rw), device.clone().into())?;
                 } else {
                     // Create the parent directory
-                    dev_path = dev_path.new_fs_child(
-                        next_name,
-                        InodeType::Dir,
-                        InodeMode::from_bits_truncate(0o755),
-                    )?;
+                    dev_path =
+                        dev_path.new_fs_child(next_name, InodeType::Dir, mkmod!(a+rx, u+w))?;
                 }
             }
         }

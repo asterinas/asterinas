@@ -3,7 +3,7 @@
 use crate::{
     fs::{
         procfs::{ProcSymBuilder, SymOps},
-        utils::{Inode, InodeMode},
+        utils::{mkmod, Inode},
     },
     prelude::*,
     process::Process,
@@ -17,7 +17,7 @@ impl ExeSymOps {
         // Reference:
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3350>
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L174-L175>
-        ProcSymBuilder::new(Self(process_ref), InodeMode::from_bits_truncate(0o777))
+        ProcSymBuilder::new(Self(process_ref), mkmod!(a+rwx))
             .parent(parent)
             .build()
             .unwrap()

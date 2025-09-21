@@ -4,7 +4,7 @@ use self::kernel::KernelDirOps;
 use crate::{
     fs::{
         procfs::template::{DirOps, ProcDir, ProcDirBuilder},
-        utils::{DirEntryVecExt, Inode, InodeMode},
+        utils::{mkmod, DirEntryVecExt, Inode},
     },
     prelude::*,
 };
@@ -19,7 +19,7 @@ impl SysDirOps {
         // Reference:
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/proc_sysctl.c#L1566>
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/generic.c#L488-L489>
-        ProcDirBuilder::new(Self, InodeMode::from_bits_truncate(0o555))
+        ProcDirBuilder::new(Self, mkmod!(a+rx))
             .parent(parent)
             .build()
             .unwrap()

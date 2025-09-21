@@ -14,7 +14,8 @@ use crate::{
         inode_handle::{do_fallocate_util, do_resize_util, do_seek_util},
         ramfs::new_detached_inode,
         utils::{
-            AccessMode, FallocMode, Inode, InodeMode, IoctlCmd, Metadata, SeekFrom, StatusFlags,
+            mkmod, AccessMode, FallocMode, Inode, InodeMode, IoctlCmd, Metadata, SeekFrom,
+            StatusFlags,
         },
     },
     prelude::*,
@@ -52,11 +53,7 @@ impl MemfdFile {
         //
         // Reference: <https://github.com/torvalds/linux/blob/379f604cc3dc2c865dc2b13d81faa166b6df59ec/mm/shmem.c#L5803-L5837>
         let name = format!("/memfd:{} (deleted)", name);
-        let inode = new_detached_inode(
-            InodeMode::from_bits_truncate(0o777),
-            Uid::new_root(),
-            Gid::new_root(),
-        );
+        let inode = new_detached_inode(mkmod!(a+rwx), Uid::new_root(), Gid::new_root());
 
         Ok(Self {
             inode,
