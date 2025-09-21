@@ -9,7 +9,11 @@ use super::SyscallReturn;
 use crate::{
     fs::file_table::{get_file_fast, FileDesc},
     prelude::*,
-    vm::{perms::VmPerms, vmar::is_userspace_vaddr, vmo::VmoOptions},
+    vm::{
+        perms::VmPerms,
+        vmar::{is_userspace_vaddr, vm_mapping},
+        vmo::VmoOptions,
+    },
 };
 
 pub fn sys_mmap(
@@ -131,8 +135,13 @@ fn do_sys_mmap(
                 return_errno!(Errno::EACCES);
             }
 
+            let mappable = file.mappable(vm_mapping::is_shared_maywrite(
+                option.typ() == MMapType::Shared,
+                vm_perms,
+            ))?;
+
             options = options
-                .mappable(file.mappable()?)
+                .mappable(mappable)
                 .vmo_offset(offset)
                 .handle_page_faults_around();
         }
