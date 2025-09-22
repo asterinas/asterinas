@@ -629,6 +629,16 @@ pub enum VmQueriedItem {
     },
 }
 
+impl VmQueriedItem {
+    /// Returns the page property of the mapped item.
+    pub fn prop(&self) -> &PageProperty {
+        match self {
+            Self::MappedRam { prop, .. } => prop,
+            Self::MappedIoMem { prop, .. } => prop,
+        }
+    }
+}
+
 /// Internal representation of a VM item.
 ///
 /// This is kept private to ensure memory safety. The public interface
