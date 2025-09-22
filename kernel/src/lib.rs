@@ -39,7 +39,11 @@ use ostd::{
 use process::{spawn_init_process, Process};
 use sched::SchedPolicy;
 
-use crate::{fs::fs_resolver::FsResolver, prelude::*, thread::kernel_thread::ThreadOptions};
+use crate::{
+    fs::{fs_resolver::FsResolver, path::MountNamespace},
+    prelude::*,
+    thread::kernel_thread::ThreadOptions,
+};
 
 extern crate alloc;
 extern crate lru;
@@ -159,9 +163,8 @@ fn ap_init() {
 fn first_kthread() {
     println!("[kernel] Spawn init thread");
 
-    // TODO: After introducing the mount namespace, use an initial mount namespace to create
-    // the `FsResolver`, and the initial mount namespace should be passed to the first process.
-    let fs_resolver = FsResolver::new();
+    let init_mnt_ns = MountNamespace::get_init_singleton();
+    let fs_resolver = init_mnt_ns.new_fs_resolver();
 
     init_in_first_kthread(&fs_resolver);
 
