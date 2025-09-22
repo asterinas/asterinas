@@ -34,7 +34,8 @@ pub(super) fn exit_process(current_process: &Process) {
 // that created the child exits, not when the whole process exits. For more details, see the
 // "CAVEATS" section in <https://man7.org/linux/man-pages/man2/pr_set_pdeathsig.2const.html>.
 fn send_parent_death_signal(current_process: &Process) {
-    for (_, child) in current_process.children().lock().iter() {
+    let current_children = current_process.children().lock();
+    for child in current_children.as_ref().unwrap().values() {
         let Some(signum) = child.parent_death_signal() else {
             continue;
         };
@@ -83,12 +84,14 @@ fn move_process_children(
     let mut reaper_process_children = reaper_process.children().lock();
 
     let is_init = is_init_process(reaper_process);
-    let is_zombie = reaper_process.status().is_zombie();
+    let is_zombie = reaper_process_children.is_none();
     if !is_init && is_zombie {
         return Err(());
     }
 
-    for (_, child_process) in current_process.children().lock().extract_if(|_, _| true) {
+    let reaper_process_children = reaper_process_children.as_mut().unwrap();
+    let mut current_children = current_process.children().lock().take().unwrap();
+    for (_, child_process) in current_children.extract_if(|_, _| true) {
         let mut parent = child_process.parent.lock();
         reaper_process_children.insert(child_process.pid(), child_process.clone());
         parent.set_process(reaper_process);

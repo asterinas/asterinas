@@ -32,7 +32,7 @@ pub fn kill(pid: Pid, signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
             return Ok(());
         }
 
-        return kill_process(ctx.process, Some(signal), ctx);
+        return kill_process(ctx.process.as_ref(), Some(signal), ctx);
     }
 
     // Slow path

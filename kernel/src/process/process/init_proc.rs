@@ -48,7 +48,6 @@ fn create_init_process(
     envp: Vec<CString>,
 ) -> Result<Arc<Process>> {
     let pid = allocate_posix_tid();
-    let parent = Weak::new();
     let process_vm = ProcessVm::alloc();
     let resource_limits = ResourceLimits::default();
     let nice = Nice::default();
@@ -58,7 +57,6 @@ fn create_init_process(
 
     let init_proc = Process::new(
         pid,
-        parent,
         executable_path.to_string(),
         process_vm,
         resource_limits,

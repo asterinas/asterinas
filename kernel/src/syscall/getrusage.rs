@@ -24,7 +24,7 @@ pub fn sys_getrusage(target: i32, rusage_addr: Vaddr, ctx: &Context) -> Result<S
     if rusage_addr != 0 {
         let rusage = match rusage_target {
             RusageTarget::ForSelf => {
-                let process = ctx.process;
+                let process = ctx.process.as_ref();
                 rusage_t {
                     ru_utime: process.prof_clock().user_clock().read_time().into(),
                     ru_stime: process.prof_clock().kernel_clock().read_time().into(),

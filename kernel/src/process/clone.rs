@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::borrow::Cow;
 use core::{num::NonZeroU64, sync::atomic::Ordering};
 
 use ostd::{arch::cpu::context::UserContext, sync::RwArc, task::Task, user::UserContextApi};
@@ -196,7 +197,8 @@ impl CloneFlags {
             | CloneFlags::CLONE_CHILD_SETTID
             | CloneFlags::CLONE_CHILD_CLEARTID
             | CloneFlags::CLONE_VFORK
-            | CloneFlags::CLONE_NEWNS;
+            | CloneFlags::CLONE_NEWNS
+            | CloneFlags::CLONE_PARENT;
         let unsupported_flags = *self - supported_flags;
         if !unsupported_flags.is_empty() {
             warn!("contains unsupported clone flags: {:?}", unsupported_flags);
@@ -232,7 +234,7 @@ pub fn clone_child(
 
         if child_process.status().is_vfork_child() {
             let cond = || (!child_process.status().is_vfork_child()).then_some(());
-            let current = ctx.process;
+            let current = ctx.process.as_ref();
             current.children_wait_queue().wait_until(cond);
         }
 
@@ -270,6 +272,12 @@ fn clone_child_task(
             "`CLONE_THREAD` cannot be used together with `CLONE_NEWUSER`"
         )
     }
+
+    // Check CLONE_PARENT flag.
+    // The CLONE_PARENT flag has no real effect when cloning a new thread.
+    // A newly created thread always has the same parent process as the caller,
+    // no matter whether the flag is set. However, we still need to perform the required check.
+    check_clone_parent(&clone_args, ctx)?;
 
     let Context {
         process,
@@ -368,6 +376,9 @@ fn clone_child_process(
 
     let clone_flags = clone_args.flags;
 
+    // Check the CLONE_PARENT flag.
+    check_clone_parent(&clone_args, ctx)?;
+
     // Clone the virtual memory space
     let child_process_vm = {
         let parent_process_vm = process.vm();
@@ -457,7 +468,6 @@ fn clone_child_process(
 
         create_child_process(
             child_tid,
-            posix_thread.weak_process(),
             &child_elf_path,
             child_process_vm,
             child_resource_limits,
@@ -476,14 +486,7 @@ fn clone_child_process(
     };
 
     // Sets parent process and group for child process.
-    set_parent_and_group(process, &child);
-
-    // Updates `has_child_subreaper` for the child process after inserting
-    // it to its parent's children to make sure the `has_child_subreaper`
-    // state of the child process will be consistent with its parent.
-    if process.has_child_subreaper.load(Ordering::Relaxed) {
-        child.has_child_subreaper.store(true, Ordering::Relaxed);
-    }
+    set_parent_and_group(clone_flags, process, &child);
 
     Ok(child)
 }
@@ -665,7 +668,6 @@ fn clone_ns_proxy(
 #[expect(clippy::too_many_arguments)]
 fn create_child_process(
     pid: Pid,
-    parent: Weak<Process>,
     executable_path: &str,
     process_vm: ProcessVm,
     resource_limits: ResourceLimits,
@@ -677,7 +679,6 @@ fn create_child_process(
 ) -> Arc<Process> {
     let child_proc = Process::new(
         pid,
-        parent,
         executable_path.to_string(),
         process_vm,
         resource_limits,
@@ -693,25 +694,91 @@ fn create_child_process(
     child_proc
 }
 
-fn set_parent_and_group(parent: &Process, child: &Arc<Process>) {
-    // Lock order: children of process -> process table -> group of process
-    // -> group inner -> session inner
-    let mut children_mut = parent.children().lock();
+fn set_parent_and_group(clone_flags: CloneFlags, parent: &Arc<Process>, child: &Arc<Process>) {
+    loop {
+        let real_parent = clone_parent(clone_flags, parent);
 
-    let mut process_table_mut = process_table::process_table_mut();
+        // Lock the parent's children before checking its status.
+        let mut children_mut = real_parent.children().lock();
 
-    let process_group_mut = parent.process_group.lock();
+        if children_mut.is_none() {
+            // The real parent is concurrently exiting group.
+            // Wait until it finishes exiting and then retry.
+            continue;
+        }
 
-    let process_group = process_group_mut.upgrade().unwrap();
-    let mut process_group_inner = process_group.lock();
+        // Lock order: children of process -> parent of process
+        child.parent().lock().set_process(&real_parent);
 
-    // Put the child process in the parent's process group
-    process_group_inner.insert_process(child.clone());
-    *child.process_group.lock() = Arc::downgrade(&process_group);
+        // Updates `has_child_subreaper` for the child process to
+        // make sure the `has_child_subreaper` state of the child process
+        // will be consistent with its parent.
+        if real_parent.has_child_subreaper.load(Ordering::Relaxed) {
+            child.has_child_subreaper.store(true, Ordering::Relaxed);
+        }
 
-    // Put the child process in the parent's `children` field
-    children_mut.insert(child.pid(), child.clone());
+        // Lock order: children of process -> process table -> group of process
+        // -> group inner -> session inner
 
-    // Put the child process in the global table
-    process_table_mut.insert(child.pid(), child.clone());
+        let mut process_table_mut = process_table::process_table_mut();
+
+        let process_group_mut = parent.process_group.lock();
+
+        let process_group = process_group_mut.upgrade().unwrap();
+        let mut process_group_inner = process_group.lock();
+
+        // Put the child process in the parent's process group
+        process_group_inner.insert_process(child.clone());
+        *child.process_group.lock() = Arc::downgrade(&process_group);
+
+        // Put the child process in the parent's `children` field
+        let children_mut = children_mut.as_mut().unwrap();
+        children_mut.insert(child.pid(), child.clone());
+
+        // Put the child process in the global table
+        process_table_mut.insert(child.pid(), child.clone());
+
+        return;
+    }
+}
+
+fn check_clone_parent(clone_args: &CloneArgs, ctx: &Context) -> Result<()> {
+    let clone_flags = clone_args.flags;
+
+    if !clone_flags.contains(CloneFlags::CLONE_PARENT) {
+        return Ok(());
+    }
+
+    if clone_flags.intersects(CloneFlags::CLONE_NEWUSER | CloneFlags::CLONE_NEWPID) {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "`CLONE_PARENT` cannot be used together with `CLONE_NEWUSER` or `CLONE_NEWPID`"
+        );
+    }
+
+    if clone_args.exit_signal.is_some() {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "`CLONE_PARENT` cannot be used if the exit signal is specified"
+        )
+    }
+
+    if ctx.process.is_init_process() {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "`CLONE_PARENT` cannot be used if the process is the init process"
+        )
+    }
+
+    Ok(())
+}
+
+fn clone_parent(clone_flags: CloneFlags, current: &Arc<Process>) -> Cow<'_, Arc<Process>> {
+    if clone_flags.contains(CloneFlags::CLONE_PARENT) {
+        // The parent process of the current process cannot be `None`, since we have checked that
+        // the current process is not the init process.
+        Cow::Owned(current.parent().lock().process().upgrade().unwrap())
+    } else {
+        Cow::Borrowed(current)
+    }
 }

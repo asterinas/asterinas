@@ -62,7 +62,7 @@ pub fn handle_pending_signal(
     };
 
     let posix_thread = ctx.posix_thread;
-    let current = ctx.process;
+    let current = ctx.process.as_ref();
 
     let signal = {
         let sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed);
