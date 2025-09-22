@@ -8,6 +8,7 @@ use super::Process;
 use crate::{
     fs::{
         fs_resolver::{FsPath, AT_FDCWD},
+        path::MountNamespace,
         thread_info::ThreadFsInfo,
     },
     prelude::*,
@@ -107,7 +108,10 @@ fn create_init_task(
     envp: Vec<CString>,
 ) -> Result<Arc<Task>> {
     let credentials = Credentials::new_root();
-    let fs = ThreadFsInfo::default();
+    let fs = {
+        let fs_resolver = MountNamespace::get_init_singleton().new_fs_resolver();
+        ThreadFsInfo::new(fs_resolver)
+    };
     let (_, elf_load_info) = {
         let fs_resolver = fs.resolver().read();
         let fs_path = FsPath::new(AT_FDCWD, executable_path)?;

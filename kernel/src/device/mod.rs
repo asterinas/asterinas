@@ -19,7 +19,11 @@ pub use random::Random;
 pub use urandom::Urandom;
 
 use crate::{
-    fs::device::{add_node, Device, DeviceId, DeviceType},
+    fs::{
+        device::{add_node, Device, DeviceId, DeviceType},
+        fs_resolver::FsPath,
+        ramfs::RamFs,
+    },
     prelude::*,
 };
 
@@ -27,6 +31,10 @@ use crate::{
 pub fn init_in_first_process(ctx: &Context) -> Result<()> {
     let fs = ctx.thread_local.borrow_fs();
     let fs_resolver = fs.resolver().read();
+
+    // Mount DevFS
+    let dev_path = fs_resolver.lookup(&FsPath::try_from("/dev")?)?;
+    dev_path.mount(RamFs::new(), ctx)?;
 
     let null = Arc::new(null::Null);
     add_node(null, "null", &fs_resolver)?;
@@ -60,9 +68,9 @@ pub fn init_in_first_process(ctx: &Context) -> Result<()> {
     let full = Arc::new(full::Full);
     add_node(full, "full", &fs_resolver)?;
 
-    pty::init_in_first_process(&fs_resolver)?;
+    pty::init_in_first_process(&fs_resolver, ctx)?;
 
-    shm::init_in_first_process(&fs_resolver)?;
+    shm::init_in_first_process(&fs_resolver, ctx)?;
 
     Ok(())
 }
