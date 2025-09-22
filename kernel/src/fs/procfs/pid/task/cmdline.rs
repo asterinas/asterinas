@@ -24,18 +24,12 @@ impl CmdlineFileOps {
 
 impl FileOps for CmdlineFileOps {
     fn data(&self) -> Result<Vec<u8>> {
-        let cmdline_output = if self.0.status().is_zombie() {
-            // Returns 0 characters for zombie process.
-            Vec::new()
-        } else {
-            let Ok(argv_cstrs) = self.0.init_stack_reader().argv() else {
-                return Ok(Vec::new());
-            };
-            argv_cstrs
-                .into_iter()
-                .flat_map(|c_str| c_str.into_bytes_with_nul().into_iter())
-                .collect()
-        };
-        Ok(cmdline_output)
+        Ok(self
+            .0
+            .init_stack_reader()
+            .argv()
+            // According to Linux behavior, return an empty string if an error occurs
+            // (which is likely because the process is a zombie process).
+            .unwrap_or_else(|_| Vec::new()))
     }
 }

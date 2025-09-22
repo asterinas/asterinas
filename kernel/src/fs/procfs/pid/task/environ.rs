@@ -24,18 +24,12 @@ impl EnvironFileOps {
 
 impl FileOps for EnvironFileOps {
     fn data(&self) -> Result<Vec<u8>> {
-        let envp_output = if self.0.status().is_zombie() {
-            // Returns 0 characters for zombie process.
-            Vec::new()
-        } else {
-            let Ok(envp_cstrs) = self.0.init_stack_reader().envp() else {
-                return Ok(Vec::new());
-            };
-            envp_cstrs
-                .into_iter()
-                .flat_map(|cstr| cstr.into_bytes_with_nul().into_iter())
-                .collect()
-        };
-        Ok(envp_output)
+        Ok(self
+            .0
+            .init_stack_reader()
+            .envp()
+            // According to Linux behavior, return an empty string if an error occurs
+            // (which is likely because the process is a zombie process).
+            .unwrap_or_else(|_| Vec::new()))
     }
 }
