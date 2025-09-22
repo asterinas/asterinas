@@ -13,6 +13,85 @@ use crate::{
     prelude::*,
 };
 
+/// The options of a [`Mount`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MountOptions {
+    inner: MountOptionsInner,
+    atime_policy: AtimePolicy,
+}
+
+impl Default for MountOptions {
+    fn default() -> Self {
+        Self {
+            inner: MountOptionsInner::empty(),
+            atime_policy: AtimePolicy::Relatime,
+        }
+    }
+}
+
+impl MountOptions {
+    /// Sets nosuid attribute.
+    pub fn set_nosuid(&mut self) {
+        self.inner.set(MountOptionsInner::NOSUID, true);
+    }
+
+    /// Sets nodev attribute.
+    pub fn set_nodev(&mut self) {
+        self.inner.set(MountOptionsInner::NODEV, true);
+    }
+
+    /// Sets noexec attribute.
+    pub fn set_noexec(&mut self) {
+        self.inner.set(MountOptionsInner::NOEXEC, true);
+    }
+
+    /// Sets rdonly attribute.
+    pub fn set_rdonly(&mut self) {
+        self.inner.set(MountOptionsInner::RDONLY, true);
+    }
+
+    /// Sets nodiratime attribute.
+    pub fn set_nodiratime(&mut self) {
+        self.inner.set(MountOptionsInner::NODIRATIME, true);
+    }
+
+    /// Sets the atime policy.
+    pub fn set_atime_policy(&mut self, policy: AtimePolicy) {
+        self.atime_policy = policy;
+    }
+
+    /// Returns the atime policy.
+    pub fn atime_policy(&self) -> AtimePolicy {
+        self.atime_policy
+    }
+}
+
+bitflags! {
+    struct MountOptionsInner: u8 {
+        /// Ignore suid and sgid bits.
+        const NOSUID = 1 << 0;
+        /// Disallow access to device special files.
+        const NODEV = 1 << 1;
+        /// Disallow program execution.
+        const NOEXEC = 1 << 2;
+        /// Mount read-only.
+        const RDONLY = 1 << 3;
+        /// Do not update directory access times.
+        const NODIRATIME = 1 << 4;
+    }
+}
+
+/// The policy for updating access times (atime).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AtimePolicy {
+    /// Update atime relative to mtime/ctime.
+    Relatime,
+    /// Do not update access times.
+    Noatime,
+    /// Always perform atime updates.
+    Strictatime,
+}
+
 /// A `Mount` represents a mounted filesystem instance in the VFS.
 ///
 /// Each `Mount` can be viewed as a node in the mount tree, maintaining
@@ -29,6 +108,8 @@ pub struct Mount {
     parent: RwLock<Option<Weak<Mount>>>,
     /// Child mount nodes which are mounted on one dentry of self.
     children: RwLock<HashMap<DentryKey, Arc<Self>>>,
+    /// The options of this mount.
+    options: Mutex<MountOptions>,
     /// Reference to self.
     this: Weak<Self>,
 }
@@ -60,6 +141,7 @@ impl Mount {
             parent: RwLock::new(parent_mount),
             children: RwLock::new(HashMap::new()),
             fs,
+            options: Mutex::new(MountOptions::default()),
             this: weak_self.clone(),
         })
     }
@@ -118,6 +200,7 @@ impl Mount {
             parent: RwLock::new(None),
             children: RwLock::new(HashMap::new()),
             fs: self.fs.clone(),
+            options: Mutex::new(*self.options.lock()),
             this: weak_self.clone(),
         })
     }
@@ -248,6 +331,11 @@ impl Mount {
 
         self.fs.sync()?;
         Ok(())
+    }
+
+    /// Gets the locked mount options.
+    pub fn options(&self) -> MutexGuard<'_, MountOptions> {
+        self.options.lock()
     }
 
     /// Gets the parent mount node if any.

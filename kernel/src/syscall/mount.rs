@@ -4,9 +4,9 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         fs_resolver::{FsPath, AT_FDCWD},
-        path::Path,
+        path::{AtimePolicy, Mount, MountOptions, Path},
         registry::FsProperties,
-        utils::{FileSystem, InodeType},
+        utils::{FileSystem, FsMountOptions, InodeType},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -47,9 +47,10 @@ pub fn sys_mount(
     };
 
     if mount_flags.contains(MountFlags::MS_REMOUNT) && mount_flags.contains(MountFlags::MS_BIND) {
-        do_reconfigure_mnt()?;
+        do_remount_mnt(dst_path.mount_node(), mount_flags, ctx)?
     } else if mount_flags.contains(MountFlags::MS_REMOUNT) {
-        do_remount()?;
+        do_remount_mnt(dst_path.mount_node(), mount_flags, ctx)?;
+        do_remount_fs(&dst_path.fs(), mount_flags, data, ctx)?;
     } else if mount_flags.contains(MountFlags::MS_BIND) {
         do_bind_mount(
             devname,
@@ -66,18 +67,40 @@ pub fn sys_mount(
     } else if mount_flags.contains(MountFlags::MS_MOVE) {
         do_move_mount_old(devname, dst_path, ctx)?;
     } else {
-        do_new_mount(devname, fstype_addr, dst_path, data, ctx)?;
+        do_new_mount(devname, mount_flags, fstype_addr, dst_path, data, ctx)?;
     }
 
     Ok(SyscallReturn::Return(0))
 }
 
-fn do_reconfigure_mnt() -> Result<()> {
-    return_errno_with_message!(Errno::EINVAL, "do_reconfigure_mnt is not supported");
+/// Remount the mount with new flags.
+fn do_remount_mnt(mount: &Mount, flags: MountFlags, _ctx: &Context) -> Result<()> {
+    let mut new_options: MountOptions = flags.into();
+    let specified_atime_policy = flags.contains(MountFlags::MS_STRICTATIME)
+        || flags.contains(MountFlags::MS_NOATIME)
+        || flags.contains(MountFlags::MS_RELATIME);
+
+    let mut old_options = mount.options();
+    if !specified_atime_policy {
+        // Preserve the existing atime policy if none is specified in the flags
+        new_options.set_atime_policy(old_options.atime_policy());
+    }
+    *old_options = new_options;
+
+    Ok(())
 }
 
-fn do_remount() -> Result<()> {
-    return_errno_with_message!(Errno::EINVAL, "do_remount is not supported");
+/// Remount the filesystem with new flags and data.
+fn do_remount_fs(
+    fs: &Arc<dyn FileSystem>,
+    flags: MountFlags,
+    data: Vaddr,
+    ctx: &Context,
+) -> Result<()> {
+    let fs_mount_options: FsMountOptions = flags.into();
+    fs.set_mount_options(fs_mount_options, data, ctx)?;
+
+    Ok(())
 }
 
 /// Bind a mount to a dst location.
@@ -133,6 +156,7 @@ fn do_move_mount_old(src_name: CString, dst_path: Path, ctx: &Context) -> Result
 /// Mount a new filesystem.
 fn do_new_mount(
     devname: CString,
+    flags: MountFlags,
     fs_type: Vaddr,
     target_path: Path,
     data: Vaddr,
@@ -147,7 +171,12 @@ fn do_new_mount(
         return_errno_with_message!(Errno::EINVAL, "fs_type is empty");
     }
     let fs = get_fs(fs_type, devname, data, ctx)?;
-    target_path.mount(fs)?;
+    fs.set_mount_options(flags.into(), data, ctx)?;
+
+    let new_mount = target_path.mount(fs)?;
+    let new_mount_options: MountOptions = flags.into();
+    *new_mount.options() = new_mount_options;
+
     Ok(())
 }
 
@@ -207,5 +236,62 @@ bitflags! {
         const MS_SHARED        =   1 << 20;      // Change to shared.
         const MS_RELATIME      =   1 << 21; 	 // Update atime relative to mtime/ctime.
         const MS_KERNMOUNT     =   1 << 22;      // This is a kern_mount call.
+        const MS_STRICTATIME   =   1 << 24; 	 // Always perform atime updates.
+        const MS_LAZYTIME      =   1 << 25; 	 // Update the on-disk [acm]times lazily.
+    }
+}
+
+impl From<MountFlags> for MountOptions {
+    fn from(flags: MountFlags) -> Self {
+        let mut options = MountOptions::default();
+        if flags.contains(MountFlags::MS_NOSUID) {
+            options.set_nosuid();
+        }
+        if flags.contains(MountFlags::MS_NODEV) {
+            options.set_nodev();
+        }
+        if flags.contains(MountFlags::MS_NOEXEC) {
+            options.set_noexec();
+        }
+        if flags.contains(MountFlags::MS_RDONLY) {
+            options.set_rdonly();
+        }
+        if flags.contains(MountFlags::MS_NODIRATIME) {
+            options.set_nodiratime();
+        }
+
+        if flags.contains(MountFlags::MS_STRICTATIME) {
+            options.set_atime_policy(AtimePolicy::Strictatime);
+        } else if flags.contains(MountFlags::MS_NOATIME) {
+            options.set_atime_policy(AtimePolicy::Noatime);
+        }
+
+        options
+    }
+}
+
+impl From<MountFlags> for FsMountOptions {
+    fn from(flags: MountFlags) -> Self {
+        let mut options = FsMountOptions::empty();
+        if flags.contains(MountFlags::MS_RDONLY) {
+            options |= FsMountOptions::READONLY;
+        }
+        if flags.contains(MountFlags::MS_SYNCHRONOUS) {
+            options |= FsMountOptions::SYNCHRONOUS;
+        }
+        if flags.contains(MountFlags::MS_MANDLOCK) {
+            options |= FsMountOptions::MANDLOCK;
+        }
+        if flags.contains(MountFlags::MS_DIRSYNC) {
+            options |= FsMountOptions::DIRSYNC;
+        }
+        if flags.contains(MountFlags::MS_SILENT) {
+            options |= FsMountOptions::SILENT;
+        }
+        if flags.contains(MountFlags::MS_LAZYTIME) {
+            options |= FsMountOptions::LAZYTIME;
+        }
+
+        options
     }
 }

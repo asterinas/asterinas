@@ -43,6 +43,24 @@ bitflags! {
     }
 }
 
+bitflags! {
+    /// Mount options for a filesystem.
+    pub struct FsMountOptions: u8 {
+        /// The filesystem is mounted read-only.
+        const READONLY      =   1 << 0;
+        /// Writes are synced at once.
+        const SYNCHRONOUS   =   1 << 1;
+        /// Allow mandatory locks on an FS.
+        const MANDLOCK      =   1 << 2;
+        /// Directory modifications are synchronous.
+        const DIRSYNC       =   1 << 3;
+        /// Suppress certain messages in kernel log.
+        const SILENT        =   1 << 4;
+        /// Update the on-disk [acm]times lazily.
+        const LAZYTIME      =   1 << 5;
+    }
+}
+
 pub trait FileSystem: Any + Sync + Send {
     fn sync(&self) -> Result<()>;
 
@@ -51,6 +69,18 @@ pub trait FileSystem: Any + Sync + Send {
     fn sb(&self) -> SuperBlock;
 
     fn flags(&self) -> FsFlags;
+
+    fn set_mount_options(
+        &self,
+        _options: FsMountOptions,
+        _data: Vaddr,
+        _ctx: &Context,
+    ) -> Result<()> {
+        // TODO: Currently we do not support any flags for filesystems.
+        // Remove the default empty implementation and add handling code
+        // for each filesystem in the future.
+        Ok(())
+    }
 }
 
 impl dyn FileSystem {
