@@ -5,7 +5,7 @@ use alloc::{sync::Arc, vec::Vec};
 use aster_console::{AnyConsoleDevice, BitmapFont, ConsoleCallback, ConsoleSetFontError};
 use aster_keyboard::InputKey;
 use ostd::{
-    mm::VmReader,
+    mm::{HasSize, VmReader},
     sync::{LocalIrqDisabled, SpinLock},
 };
 use spin::Once;
@@ -73,7 +73,7 @@ impl FramebufferConsole {
             fg_color: Pixel::WHITE,
             bg_color: Pixel::BLACK,
             font: BitmapFont::new_basic8x8(),
-            bytes: alloc::vec![0u8; framebuffer.size()],
+            bytes: alloc::vec![0u8; framebuffer.io_mem().size()],
             backend: framebuffer,
         };
 
@@ -138,7 +138,7 @@ impl ConsoleState {
     fn shift_lines_up(&mut self) {
         let offset = self.backend.calc_offset(0, self.font.height()).as_usize();
         self.bytes.copy_within(offset.., 0);
-        self.bytes[self.backend.size() - offset..].fill(0);
+        self.bytes[self.backend.io_mem().size() - offset..].fill(0);
 
         self.backend.write_bytes_at(0, &self.bytes).unwrap();
 
