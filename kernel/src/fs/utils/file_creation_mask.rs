@@ -1,27 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::AtomicU16;
+
+use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
+
+use crate::error::Error;
+
 /// A mask for the file mode of a newly-created file or directory.
 ///
 /// This mask is always a subset of `0o777`.
 pub struct FileCreationMask(u16);
 
 impl FileCreationMask {
-    // Creates a new instance, the initial value is `0o777`.
-    pub fn new(val: u16) -> Self {
-        Self(0o777 & val)
-    }
+    /// The valid bits of a `FileCreationMask`.
+    const MASK: u16 = 0o777;
 
     /// Get a new value.
     pub fn get(&self) -> u16 {
         self.0
-    }
-
-    /// Set a new value.
-    pub fn set(&mut self, new_mask: u16) -> u16 {
-        let new_mask = new_mask & 0o777;
-        let old_mask = self.0;
-        self.0 = new_mask;
-        old_mask
     }
 }
 
@@ -30,3 +26,30 @@ impl Default for FileCreationMask {
         Self(0o022)
     }
 }
+
+impl TryFrom<u16> for FileCreationMask {
+    type Error = crate::Error;
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        if value & !Self::MASK != 0 {
+            Err(Error::with_message(
+                crate::Errno::EINVAL,
+                "Invalid FileCreationMask.",
+            ))
+        } else {
+            Ok(Self(value))
+        }
+    }
+}
+
+impl From<FileCreationMask> for u16 {
+    fn from(value: FileCreationMask) -> Self {
+        value.0
+    }
+}
+
+define_atomic_version_of_integer_like_type!(FileCreationMask, try_from = true, {
+    /// An atomic version of `FileCreationMask`.
+    #[derive(Debug)]
+    pub struct AtomicFileCreationMask(AtomicU16);
+});

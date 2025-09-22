@@ -32,7 +32,7 @@ pub fn sys_openat(
         let path = path.to_string_lossy();
         let fs_path = FsPath::new(dirfd, path.as_ref())?;
         let fs_ref = ctx.thread_local.borrow_fs();
-        let mask_mode = mode & !fs_ref.umask().read().get();
+        let mask_mode = mode & !fs_ref.umask().get();
         let inode_handle = fs_ref
             .resolver()
             .read()

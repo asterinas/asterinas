@@ -23,7 +23,7 @@ pub fn sys_mknodat(
     let path_name = ctx.user_space().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     let fs_ref = ctx.thread_local.borrow_fs();
     let inode_mode = {
-        let mask_mode = mode & !fs_ref.umask().read().get();
+        let mask_mode = mode & !fs_ref.umask().get();
         InodeMode::from_bits_truncate(mask_mode)
     };
     let inode_type = InodeType::from_raw_mode(mode)?;

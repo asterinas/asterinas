@@ -34,7 +34,7 @@ pub fn sys_mkdirat(
     };
 
     let inode_mode = {
-        let mask_mode = mode & !fs_ref.umask().read().get();
+        let mask_mode = mode & !fs_ref.umask().get();
         InodeMode::from_bits_truncate(mask_mode)
     };
     let _ = dir_path.new_fs_child(name.trim_end_matches('/'), InodeType::Dir, inode_mode)?;

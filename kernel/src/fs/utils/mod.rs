@@ -8,7 +8,7 @@ pub use dirent_visitor::{DirentCounter, DirentVisitor};
 pub use direntry_vec::DirEntryVecExt;
 pub use endpoint::{Endpoint, EndpointState};
 pub use falloc_mode::FallocMode;
-pub use file_creation_mask::FileCreationMask;
+pub use file_creation_mask::{AtomicFileCreationMask, FileCreationMask};
 pub use flock::{FlockItem, FlockList, FlockType};
 pub use fs::{FileSystem, FsFlags, SuperBlock};
 pub use inode::{Extension, Inode, InodeType, Metadata, MknodType, Permission};

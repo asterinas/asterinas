@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::sync::{RwLock, RwMutex};
+use core::sync::atomic::Ordering;
 
-use super::{fs_resolver::FsResolver, utils::FileCreationMask};
+use ostd::sync::RwMutex;
+
+use super::{fs_resolver::FsResolver, utils::AtomicFileCreationMask};
+use crate::fs::utils::FileCreationMask;
 
 /// FS information for a POSIX thread.
 pub struct ThreadFsInfo {
     resolver: RwMutex<FsResolver>,
-    umask: RwLock<FileCreationMask>,
+    umask: AtomicFileCreationMask,
 }
 
 impl ThreadFsInfo {
@@ -15,7 +18,7 @@ impl ThreadFsInfo {
     pub fn new(fs_resolver: FsResolver) -> Self {
         Self {
             resolver: RwMutex::new(fs_resolver),
-            umask: RwLock::new(FileCreationMask::default()),
+            umask: AtomicFileCreationMask::new(FileCreationMask::default()),
         }
     }
 
@@ -25,8 +28,13 @@ impl ThreadFsInfo {
     }
 
     /// Returns the associated `FileCreationMask`.
-    pub fn umask(&self) -> &RwLock<FileCreationMask> {
-        &self.umask
+    pub fn umask(&self) -> FileCreationMask {
+        self.umask.load(Ordering::Acquire)
+    }
+
+    /// Sets a new `FileCreationMask`, returning the old one.
+    pub fn swap_umask(&self, new_mask: FileCreationMask) -> FileCreationMask {
+        self.umask.swap(new_mask, Ordering::AcqRel)
     }
 }
 
@@ -34,7 +42,7 @@ impl Clone for ThreadFsInfo {
     fn clone(&self) -> Self {
         Self {
             resolver: RwMutex::new(self.resolver.read().clone()),
-            umask: RwLock::new(FileCreationMask::new(self.umask.read().get())),
+            umask: AtomicFileCreationMask::new(self.umask.load(Ordering::Acquire)),
         }
     }
 }
