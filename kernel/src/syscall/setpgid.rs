@@ -7,7 +7,7 @@ use crate::{
 };
 
 pub fn sys_setpgid(pid: Pid, pgid: Pgid, ctx: &Context) -> Result<SyscallReturn> {
-    let current = ctx.process;
+    let current = ctx.process.as_ref();
 
     // The documentation quoted below is from
     // <https://www.man7.org/linux/man-pages/man2/setpgid.2.html>.

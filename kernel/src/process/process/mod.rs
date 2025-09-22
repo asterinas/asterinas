@@ -62,7 +62,7 @@ pub(super) fn init_on_each_cpu() {
 pub(super) fn init_in_first_process(ctx: &Context) {
     // FIXME: This should be done by the userspace init process.
     (crate::device::tty::system_console().clone() as Arc<dyn Terminal>)
-        .set_control(ctx.process)
+        .set_control(ctx.process.as_ref())
         .unwrap();
 }
 
@@ -86,7 +86,7 @@ pub struct Process {
     /// Parent process
     pub(super) parent: ParentProcess,
     /// Children processes
-    children: Mutex<BTreeMap<Pid, Arc<Process>>>,
+    children: Mutex<Option<BTreeMap<Pid, Arc<Process>>>>,
     /// Process group
     pub(super) process_group: Mutex<Weak<ProcessGroup>>,
     /// The resource usage statistics of reaped child processes.
@@ -203,7 +203,6 @@ impl Process {
     #[expect(clippy::too_many_arguments)]
     pub(super) fn new(
         pid: Pid,
-        parent: Weak<Process>,
         executable_path: String,
         process_vm: ProcessVm,
 
@@ -227,8 +226,8 @@ impl Process {
             children_wait_queue,
             pidfile_pollee: Pollee::new(),
             status: ProcessStatus::default(),
-            parent: ParentProcess::new(parent),
-            children: Mutex::new(BTreeMap::new()),
+            parent: ParentProcess::new(Weak::new()),
+            children: Mutex::new(Some(BTreeMap::new())),
             process_group: Mutex::new(Weak::new()),
             reaped_children_stats: Mutex::new(ReapedChildrenStats::default()),
             is_child_subreaper: AtomicBool::new(false),
@@ -312,7 +311,7 @@ impl Process {
         self.parent.lock().process().upgrade().is_none()
     }
 
-    pub(super) fn children(&self) -> &Mutex<BTreeMap<Pid, Arc<Process>>> {
+    pub(super) fn children(&self) -> &Mutex<Option<BTreeMap<Pid, Arc<Process>>>> {
         &self.children
     }
 
@@ -771,7 +770,11 @@ impl Process {
     fn propagate_has_child_subreaper(&self) {
         let mut process_queue = VecDeque::new();
         let children = self.children().lock();
-        for child_process in children.values() {
+        let Some(children_ref) = children.as_ref() else {
+            // The current process is exiting group at the same time.
+            return;
+        };
+        for child_process in children_ref.values() {
             if !child_process.has_child_subreaper.load(Ordering::Acquire) {
                 process_queue.push_back(child_process.clone());
             }
@@ -780,7 +783,11 @@ impl Process {
         while let Some(process) = process_queue.pop_front() {
             process.has_child_subreaper.store(true, Ordering::Release);
             let children = process.children().lock();
-            for child_process in children.values() {
+            let Some(children_ref) = children.as_ref() else {
+                // The process is exiting group at the same time.
+                continue;
+            };
+            for child_process in children_ref.values() {
                 if !child_process.has_child_subreaper.load(Ordering::Acquire) {
                     process_queue.push_back(child_process.clone());
                 }
