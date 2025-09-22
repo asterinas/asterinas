@@ -1,7 +1,6 @@
 Inotify.WatchSetAfterOpenReportsCloseFdEvent
 Inotify.MoveGeneratesEvents
 Inotify.MoveWatchedTargetGeneratesEvents
-Inotify.CoalesceEvents
 Inotify.GetdentsGeneratesAccessEvent
 Inotify.ConcurrentFileDeletionAndWatchRemoval
 Inotify.ChmodGeneratesAttribEvent_NoRandomSave

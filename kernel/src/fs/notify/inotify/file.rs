@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{string::String, sync::Arc};
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::{
+    any::Any,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 use bitflags::bitflags;
 use hashbrown::HashMap;
@@ -150,6 +153,21 @@ impl InotifyFile {
     }
 }
 
+fn is_mergeable_event_type(mask: u32) -> bool {
+    (mask
+        & (InotifyMask::IN_MODIFY.bits()
+            | InotifyMask::IN_ATTRIB.bits()
+            | InotifyMask::IN_ACCESS.bits()))
+        != 0
+}
+
+fn can_merge_events(existing: &InotifyEvent, new_event: &InotifyEvent) -> bool {
+    existing.wd == new_event.wd
+        && existing.name == new_event.name
+        && existing.mask == new_event.mask
+        && is_mergeable_event_type(new_event.mask)
+}
+
 impl FsnotifyGroup for InotifyFile {
     fn send_event(&self, mark: &Arc<dyn FsnotifyMark>, mask: u32, name: String) {
         let wd = mark.downcast_ref::<InotifyMark>().unwrap().wd();
@@ -162,16 +180,39 @@ impl FsnotifyGroup for InotifyFile {
         if mark_mask & mask == 0 && mask != InotifyMask::IN_IGNORED.bits() {
             return;
         }
-        let event = Arc::new(InotifyEvent::new(
+        let new_event: Arc<dyn FsnotifyEvent> = Arc::new(InotifyEvent::new(
             mask,
             wd,
             0,
             (name.len() + 1) as u32,
-            name,
+            name.clone(),
         ));
-        // TODO: inotify merge event
-        self.notifications.write().push(event);
-        // New event makes the file readable
+
+        // Try to merge with the last event if possible
+        let mut notifications = self.notifications.write();
+        let mut merged = false;
+        if let Some(last_event) = notifications.last() {
+            if let Some(last_inotify_event) =
+                (last_event.as_ref() as &dyn Any).downcast_ref::<InotifyEvent>()
+            {
+                // Downcast new_event for comparison
+                if let Some(new_inotify_event) =
+                    (new_event.as_ref() as &dyn Any).downcast_ref::<InotifyEvent>()
+                {
+                    if can_merge_events(last_inotify_event, new_inotify_event) {
+                        // Replace the last event with the new one
+                        notifications.pop();
+                        notifications.push(new_event.clone());
+                        merged = true;
+                    }
+                }
+            }
+        }
+        if !merged {
+            notifications.push(new_event.clone());
+        }
+        drop(notifications);
+        // New or merged event makes the file readable
         self.pollee.notify(IoEvents::IN);
     }
 
@@ -221,10 +262,28 @@ impl FileLike for InotifyFile {
         }
 
         let mut size = 0;
-        while let Some(event) = self.pop_event() {
-            size += event.copy_to_user(writer)?;
+        let mut consumed_events = 0;
+        loop {
+            let event = match self.pop_event() {
+                Some(event) => event,
+                None => break,
+            };
+
+            match event.copy_to_user(writer) {
+                Ok(event_size) => {
+                    size += event_size;
+                    consumed_events += 1;
+                }
+                Err(e) => {
+                    // Put the failed event back at the front for the next read
+                    self.notifications.write().insert(0, event);
+                    if consumed_events == 0 {
+                        return Err(e);
+                    }
+                    break;
+                }
+            }
         }
-        // Events drained; invalidate cached readiness
         self.pollee.invalidate();
         Ok(size)
     }

@@ -6,7 +6,10 @@ use core::any::Any;
 use bitflags::bitflags;
 use ostd::{mm::VmWriter, sync::RwLock};
 
-use crate::{fs::path::Path, prelude::*};
+use crate::{
+    fs::{file_handle::FileLike, path::Path, AccessMode},
+    prelude::*,
+};
 
 pub mod inotify;
 
@@ -273,10 +276,17 @@ pub fn fsnotify_open(path: &Path) -> Result<()> {
 
 /// File was closed.
 /// path is the Path of the file that was closed.
-pub fn fsnotify_close(path: &Path) -> Result<()> {
-    // TODO: check file's mode is contain FMODE_WRITE
-    fsnotify_parent(path, FsnotifyFlags::FS_CLOSE_WRITE, path.effective_name())?;
-    fsnotify(path.inode(), FsnotifyFlags::FS_CLOSE_WRITE, String::new())?;
+pub fn fsnotify_close(file: Arc<dyn FileLike>) -> Result<()> {
+    // Some file is not supported dentry, such as epoll file,
+    // TODO: Add anonymous inode support.
+    if let Some(path) = file.path() {
+        let flag = match file.access_mode() {
+            AccessMode::O_RDONLY => FsnotifyFlags::FS_CLOSE_NOWRITE,
+            _ => FsnotifyFlags::FS_CLOSE_WRITE,
+        };
+        fsnotify_parent(path, flag, path.effective_name())?;
+        fsnotify(path.inode(), flag, String::new())?;
+    }
     Ok(())
 }
 
