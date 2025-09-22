@@ -305,7 +305,9 @@ impl VmMapping {
                         cursor.protect_next(PAGE_SIZE, |flags, _cache| {
                             *flags |= new_flags;
                         });
-                        cursor.flusher().issue_tlb_flush(TlbFlushOp::for_range(va));
+                        cursor
+                            .flusher()
+                            .issue_tlb_flush(TlbFlushOp::for_range(va), vm_space);
                         cursor.flusher().dispatch_tlb_flush();
                     } else {
                         let new_frame = duplicate_frame(&frame)?;
@@ -636,7 +638,9 @@ impl VmMapping {
         let op = |flags: &mut PageFlags, _cache: &mut CachePolicy| *flags = perms.into();
         while cursor.virt_addr() < range.end {
             if let Some(va) = cursor.protect_next(range.end - cursor.virt_addr(), op) {
-                cursor.flusher().issue_tlb_flush(TlbFlushOp::for_range(va));
+                cursor
+                    .flusher()
+                    .issue_tlb_flush(TlbFlushOp::for_range(va), vm_space);
             } else {
                 break;
             }
