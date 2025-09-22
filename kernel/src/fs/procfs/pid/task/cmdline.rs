@@ -28,13 +28,10 @@ impl FileOps for CmdlineFileOps {
             // Returns 0 characters for zombie process.
             Vec::new()
         } else {
-            let Ok(argv_cstrs) = self.0.init_stack_reader().argv() else {
-                return Ok(Vec::new());
-            };
-            argv_cstrs
-                .into_iter()
-                .flat_map(|c_str| c_str.into_bytes_with_nul().into_iter())
-                .collect()
+            self.0
+                .init_stack_reader()
+                .argv()
+                .unwrap_or_else(|_| Vec::new())
         };
         Ok(cmdline_output)
     }
