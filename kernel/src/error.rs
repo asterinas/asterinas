@@ -211,6 +211,13 @@ impl From<(ostd::Error, usize)> for Error {
     }
 }
 
+impl From<(Error, usize)> for Error {
+    // Used in fallible remote process memory read/write API
+    fn from(err: (Error, usize)) -> Self {
+        err.0
+    }
+}
+
 impl From<aster_block::bio::BioEnqueueError> for Error {
     fn from(error: aster_block::bio::BioEnqueueError) -> Self {
         match error {
