@@ -81,8 +81,9 @@ pub fn do_wait(
                 // We want to ensure that multiple waiting threads
                 // do not return the same waited process status.
                 let mut children_lock = ctx.process.children().lock();
+                let children_mut = children_lock.as_mut().unwrap();
 
-                let unwaited_children = children_lock
+                let unwaited_children = children_mut
                     .values()
                     .filter(|child| match &child_filter {
                         ProcessFilter::Any => true,
@@ -105,7 +106,7 @@ pub fn do_wait(
                     if !wait_options.contains(WaitOptions::WNOWAIT) {
                         reap_zombie_child(
                             status.pid(),
-                            &mut children_lock,
+                            children_mut,
                             ctx.process.reaped_children_stats(),
                         );
                     }

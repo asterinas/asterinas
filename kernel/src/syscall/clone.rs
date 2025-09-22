@@ -23,7 +23,7 @@ pub fn sys_clone(
 ) -> Result<SyscallReturn> {
     let args = CloneArgs::for_clone(clone_flags, parent_tidptr, child_tidptr, tls, new_sp)?;
     debug!("flags = {:?}, child_stack_ptr = 0x{:x}, parent_tid_ptr = 0x{:x?}, child tid ptr = 0x{:x}, tls = 0x{:x}", args.flags, args.stack, args.parent_tid, args.child_tid, args.tls);
-    let child_pid = clone_child(ctx, parent_context, args).unwrap();
+    let child_pid = clone_child(ctx, parent_context, args)?;
     Ok(SyscallReturn::Return(child_pid as _))
 }
 
@@ -45,7 +45,7 @@ pub fn sys_clone3(
     let clone_args = {
         let args: Clone3Args = ctx.user_space().read_val(clong_args_addr)?;
         trace!("clone3 args = {:x?}", args);
-        CloneArgs::from(args)
+        CloneArgs::try_from(args)?
     };
     debug!("clone args = {:x?}", clone_args);
 
@@ -81,8 +81,10 @@ struct Clone3Args {
     cgroup: u64,
 }
 
-impl From<Clone3Args> for CloneArgs {
-    fn from(value: Clone3Args) -> Self {
+impl TryFrom<Clone3Args> for CloneArgs {
+    type Error = Error;
+
+    fn try_from(value: Clone3Args) -> Result<Self> {
         // TODO: Deal with set_tid, set_tid_size, cgroup
         if value.set_tid != 0 || value.set_tid_size != 0 {
             warn!("set_tid is not supported");
@@ -92,18 +94,32 @@ impl From<Clone3Args> for CloneArgs {
             warn!("cgroup is not supported");
         }
 
-        Self {
-            flags: CloneFlags::from_bits_truncate(value.flags as u32),
+        let flags = CloneFlags::from_bits(value.flags as u32)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clone flags"))?;
+        let exit_signal =
+            (value.exit_signal != 0).then(|| SigNum::from_u8(value.exit_signal as u8));
+
+        if flags.intersects(CloneFlags::CLONE_PARENT | CloneFlags::CLONE_THREAD)
+            && exit_signal.is_some()
+        {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "`CLONE_PARENT` and  `CLONE_THREAD` cannot be used if the exit signal is specified"
+            )
+        }
+
+        Ok(Self {
+            flags,
             pidfd: Some(value.pidfd as Vaddr),
             child_tid: value.child_tid as _,
             parent_tid: Some(value.parent_tid as _),
-            exit_signal: (value.exit_signal != 0).then(|| SigNum::from_u8(value.exit_signal as u8)),
+            exit_signal,
             stack: value.stack,
             stack_size: NonZeroU64::new(value.stack_size),
             tls: value.tls,
             _set_tid: Some(value.set_tid),
             _set_tid_size: Some(value.set_tid_size),
             _cgroup: Some(value.cgroup),
-        }
+        })
     }
 }

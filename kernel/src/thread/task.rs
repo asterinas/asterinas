@@ -64,7 +64,7 @@ pub fn create_new_user_task(
         let has_kernel_event_fn = || current_posix_thread.has_pending();
 
         let ctx = Context {
-            process: current_process.as_ref(),
+            process: current_process,
             thread_local: current_thread_local,
             posix_thread: current_posix_thread,
             thread: current_thread.as_ref(),
@@ -111,8 +111,8 @@ pub fn create_new_user_task(
             // Certain signals, such as SIGKILL, should be handled even if the process is stopped.
             // We need to further investigate Linux behavior regarding which signals should be handled
             // when the thread is stopped.
-            while !current_thread.is_exited() && current_process.is_stopped() {
-                let _ = stop_waiter.pause_until(|| (!current_process.is_stopped()).then_some(()));
+            while !current_thread.is_exited() && ctx.process.is_stopped() {
+                let _ = stop_waiter.pause_until(|| (!ctx.process.is_stopped()).then_some(()));
                 handle_pending_signal(user_ctx, &ctx, None);
             }
         }
