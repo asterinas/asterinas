@@ -66,6 +66,7 @@ mod net;
 mod prelude;
 mod process;
 mod sched;
+mod security;
 mod syscall;
 mod thread;
 mod time;
@@ -102,6 +103,7 @@ fn init() {
     sched::init();
     process::init();
     fs::init();
+    security::init();
 }
 
 fn init_on_each_cpu() {
