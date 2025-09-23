@@ -55,7 +55,6 @@ if [ "$1" = "tdx" ]; then
         -monitor pty \
         -nodefaults \
         -bios /root/ovmf/release/OVMF.fd \
-        -object tdx-guest,sept-ve-disable=on,id=tdx0 \
         -cpu host,-kvm-steal-time,pmu=off \
         -machine q35,kernel-irqchip=split,confidential-guest-support=tdx0 \
         -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES \
