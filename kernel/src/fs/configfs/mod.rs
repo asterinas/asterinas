@@ -13,6 +13,9 @@ mod systree_node;
 #[cfg(ktest)]
 mod test;
 
+#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+mod tsm;
+
 // This method should be called during kernel file system initialization,
 // _after_ `aster_systree::init`.
 pub(super) fn init() {

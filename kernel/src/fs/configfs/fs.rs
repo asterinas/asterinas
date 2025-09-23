@@ -38,7 +38,12 @@ impl ConfigFs {
     pub(super) fn singleton() -> &'static Arc<ConfigFs> {
         static SINGLETON: Once<Arc<ConfigFs>> = Once::new();
 
-        SINGLETON.call_once(|| Self::new(ConfigRootNode::singleton().clone()))
+        SINGLETON.call_once(|| Self::new(ConfigRootNode::singleton().clone()));
+
+        #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+        super::tsm::init_tsm_subsystem();
+
+        SINGLETON.get().unwrap()
     }
 
     fn new(root_node: Arc<ConfigRootNode>) -> Arc<Self> {
