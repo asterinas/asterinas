@@ -33,7 +33,7 @@ mmap/mmap_beyond_the_file
 mmap/mmap_shared_filebacked
 mmap/mmap_readahead
 mmap/mmap_vmrss
-namepsace/mnt_ns
+namespace/mnt_ns
 namespace/setns
 namespace/unshare
 process/group_session

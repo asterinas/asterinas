@@ -2,15 +2,9 @@
 
 #define _GNU_SOURCE
 #include <sched.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/mount.h>
-#include <unistd.h>
 #include <sys/wait.h>
-#include <errno.h>
 #include <sys/stat.h>
-#include <fcntl.h>
-#include <limits.h>
 #include <sys/syscall.h>
 
 #include "../test.h"
@@ -168,14 +162,21 @@ FN_TEST(setns_newns)
 
 	close(pipefd[1]);
 
-	char buf;
+	char buf[10];
 	TEST_SUCC(read(pipefd[0], &buf, 1));
 	close(pipefd[0]);
 
 	int pid_fd = TEST_SUCC(syscall(SYS_pidfd_open, child_pid, 0));
 
-	// Switch into the child's mount namespace using the pidfd.
+	// Switching into the child's UTS namespace will not change the CWD.
+	TEST_SUCC(chdir("/mnt"));
+	TEST_SUCC(setns(pid_fd, CLONE_NEWUTS));
+	TEST_RES(getcwd(buf, sizeof(buf)), strcmp(buf, "/mnt") == 0);
+
+	// Switching into the child's mount namespace will reset the CWD.
 	TEST_SUCC(setns(pid_fd, CLONE_NEWNS));
+	TEST_RES(getcwd(buf, sizeof(buf)), strcmp(buf, "/") == 0);
+
 	TEST_SUCC(close(pid_fd));
 
 	// Check if we can see the file created by the child in its namespace.

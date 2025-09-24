@@ -63,8 +63,7 @@ impl ContextUnshareAdminApi for Context<'_> {
                 .borrow_fs()
                 .resolver()
                 .write()
-                .switch_to_mnt_ns(new_ns_proxy.mnt_ns())
-                .unwrap();
+                .switch_to_mnt_ns(new_ns_proxy.mnt_ns())?;
         }
 
         *pthread_ns_proxy = Some(new_ns_proxy.clone());
