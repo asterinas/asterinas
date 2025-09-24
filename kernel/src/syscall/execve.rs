@@ -108,8 +108,7 @@ fn do_execve(
         executable_path, argv, envp
     );
     // FIXME: should we set thread name in execve?
-    *posix_thread.thread_name().lock() =
-        Some(ThreadName::new_from_executable_path(&executable_path)?);
+    *posix_thread.thread_name().lock() = ThreadName::new_from_executable_path(&executable_path);
     // clear ctid
     // FIXME: should we clear ctid when execve?
     thread_local.clear_child_tid().set(0);

@@ -27,12 +27,12 @@ use crate::{
 pub struct PosixThreadBuilder {
     // The essential part
     tid: Tid,
+    thread_name: ThreadName,
     user_ctx: Box<UserContext>,
     process: Weak<Process>,
     credentials: Credentials,
 
     // Optional part
-    thread_name: Option<ThreadName>,
     set_child_tid: Vaddr,
     clear_child_tid: Vaddr,
     file_table: Option<RwArc<FileTable>>,
@@ -47,13 +47,18 @@ pub struct PosixThreadBuilder {
 }
 
 impl PosixThreadBuilder {
-    pub fn new(tid: Tid, user_ctx: Box<UserContext>, credentials: Credentials) -> Self {
+    pub fn new(
+        tid: Tid,
+        thread_name: ThreadName,
+        user_ctx: Box<UserContext>,
+        credentials: Credentials,
+    ) -> Self {
         Self {
             tid,
+            thread_name,
             user_ctx,
             process: Weak::new(),
             credentials,
-            thread_name: None,
             set_child_tid: 0,
             clear_child_tid: 0,
             file_table: None,
@@ -70,11 +75,6 @@ impl PosixThreadBuilder {
 
     pub fn process(mut self, process: Weak<Process>) -> Self {
         self.process = process;
-        self
-    }
-
-    pub fn thread_name(mut self, thread_name: Option<ThreadName>) -> Self {
-        self.thread_name = thread_name;
         self
     }
 
