@@ -1,9 +1,13 @@
 { lib, stdenvNoCC, fetchFromGitHub, hostPlatform, writeClosure, busybox, apps
-, benchmark, syscall, dnsServer, pkgs }:
+, benchmark, syscall, dnsServer, pkgs, podman ? null }:
 let
   etc = lib.fileset.toSource {
     root = ./../src/etc;
     fileset = ./../src/etc;
+  };
+  podman_config_files = lib.fileset.toSource {
+    root = ./podman/etc;
+    fileset = ./podman/etc;
   };
   gvisor_libs = builtins.path {
     name = "gvisor-libs";
@@ -13,7 +17,8 @@ let
   all_pkgs = [ busybox etc resolv_conf ]
     ++ lib.optionals (apps != null) [ apps.package ]
     ++ lib.optionals (benchmark != null) [ benchmark.package ]
-    ++ lib.optionals (syscall != null) [ syscall.package ];
+    ++ lib.optionals (syscall != null) [ syscall.package ]
+    ++ lib.optionals (podman != null) [ podman ];
 in stdenvNoCC.mkDerivation {
   name = "initramfs";
   buildCommand = ''
@@ -50,6 +55,20 @@ in stdenvNoCC.mkDerivation {
         cp -L ${gvisor_libs}/libc.so.6 $out/lib/x86_64-linux-gnu/libc.so.6
         cp -L ${gvisor_libs}/libm.so.6 $out/lib/x86_64-linux-gnu/libm.so.6
       fi
+    ''}
+
+    ${lib.optionalString (podman != null) ''
+      mkdir -p $out/{lib,libexec,share}
+      cp -r ${podman}/bin/* $out/bin
+      cp -r ${podman}/lib/* $out/lib
+      cp -r ${podman}/libexec/* $out/libexec
+      cp -r ${podman}/share/* $out/share
+      mkdir -p $out/var/tmp
+      mkdir -p $out/usr/lib/x86_64-linux-gnu
+      mkdir -p $out/etc
+      cp -r ${podman_config_files}/* $out/etc/
+      mkdir -p $out/nix/store
+      cp -r ${podman} $out/nix/store/
     ''}
 
     # Use `writeClosure` to retrieve all dependencies of the specified packages.
