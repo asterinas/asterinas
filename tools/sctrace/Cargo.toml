@@ -1,0 +1,16 @@
+[package]
+name = "sctrace"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "sctrace"
+path = "src/lib.rs"
+
+[dependencies]
+clap = { version = "4.5.47", features = ["derive"] }
+regex = "1.11.2"
+nom = "7"
+
+[dev-dependencies]
+tempfile = "3.0"
