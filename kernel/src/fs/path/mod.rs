@@ -71,13 +71,13 @@ impl Path {
     /// Lookups the target `Path` given the `name`.
     pub fn lookup(&self, name: &str) -> Result<Self> {
         if self.type_() != InodeType::Dir {
-            return_errno!(Errno::ENOTDIR);
+            return_errno_with_message!(Errno::ENOTDIR, "the path is not a directory");
         }
         if self.inode().check_permission(Permission::MAY_EXEC).is_err() {
-            return_errno!(Errno::EACCES);
+            return_errno_with_message!(Errno::EACCES, "the path cannot be looked up");
         }
         if name.len() > NAME_MAX {
-            return_errno!(Errno::ENAMETOOLONG);
+            return_errno_with_message!(Errno::ENAMETOOLONG, "the path name is too long");
         }
 
         let target_path = if is_dot(name) {
@@ -206,16 +206,19 @@ impl Path {
     /// in the current mount namespace.
     pub fn mount(&self, fs: Arc<dyn FileSystem>, ctx: &Context) -> Result<Arc<Mount>> {
         if self.type_() != InodeType::Dir {
-            return_errno!(Errno::ENOTDIR);
+            return_errno_with_message!(Errno::ENOTDIR, "the path is not a directory");
         }
+
         if self.effective_parent().is_none() {
-            return_errno_with_message!(Errno::EINVAL, "can not mount on root");
+            return_errno_with_message!(Errno::EINVAL, "the root cannot be mounted on");
         }
+
         let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
         let current_mnt_ns = current_ns_proxy.unwrap().mnt_ns();
         if !current_mnt_ns.owns(&self.mount) {
-            return_errno_with_message!(Errno::EINVAL, "path is not in current mount namespace");
+            return_errno_with_message!(Errno::EINVAL, "the path is not in this mount namespace");
         }
+
         let child_mount = self.mount.do_mount(fs, &self.dentry)?;
 
         Ok(child_mount)
@@ -233,21 +236,20 @@ impl Path {
     /// - The current path is not in the current mount namespace.
     pub fn unmount(&self, ctx: &Context) -> Result<Arc<Mount>> {
         if !self.is_mount_root() {
-            return_errno_with_message!(Errno::EINVAL, "not mounted");
+            return_errno_with_message!(Errno::EINVAL, "the path is not a mount root");
         }
 
         let Some(mountpoint) = self.mount.mountpoint() else {
-            return_errno_with_message!(Errno::EINVAL, "cannot umount root mount");
+            return_errno_with_message!(Errno::EINVAL, "the root mount cannot be unmounted");
         };
 
         let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
         let current_mnt_ns = current_ns_proxy.unwrap().mnt_ns();
         if !current_mnt_ns.owns(&self.mount) {
-            return_errno_with_message!(Errno::EINVAL, "path is not in current mount namespace");
+            return_errno_with_message!(Errno::EINVAL, "the path is not in this mount namespace");
         }
 
         let parent_mount = self.mount.parent().unwrap().upgrade().unwrap();
-
         let child_mount = parent_mount.do_unmount(&mountpoint)?;
 
         Ok(child_mount)
@@ -272,7 +274,6 @@ impl Path {
                 "the source path is not in this mount namespace"
             );
         }
-
         if !current_mnt_ns.owns(&dst_path.mount) {
             return_errno_with_message!(
                 Errno::EINVAL,
@@ -296,10 +297,10 @@ impl Path {
     /// - Either source or destination path is not in the current mount namespace
     pub fn move_mount_to(&self, dst_path: &Self, ctx: &Context) -> Result<()> {
         if !self.is_mount_root() {
-            return_errno_with_message!(Errno::EINVAL, "The current path is not a mount root");
+            return_errno_with_message!(Errno::EINVAL, "the path is not a mount root");
         };
         if self.mount_node().parent().is_none() {
-            return_errno_with_message!(Errno::EINVAL, "The root mount can not be moved");
+            return_errno_with_message!(Errno::EINVAL, "the root mount can not be moved");
         }
 
         let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
@@ -310,7 +311,6 @@ impl Path {
                 "the source path is not in this mount namespace"
             );
         }
-
         if !current_mnt_ns.owns(&dst_path.mount) {
             return_errno_with_message!(
                 Errno::EINVAL,
@@ -330,7 +330,7 @@ impl Path {
     /// Links a new name for the `Path`.
     pub fn link(&self, old: &Self, name: &str) -> Result<()> {
         if !Arc::ptr_eq(&old.mount, &self.mount) {
-            return_errno_with_message!(Errno::EXDEV, "cannot cross mount");
+            return_errno_with_message!(Errno::EXDEV, "the operation cannot cross mounts");
         }
 
         self.dentry.link(&old.dentry, name)
@@ -339,7 +339,7 @@ impl Path {
     /// Renames a `Path` to the new `Path` by `rename()` the inner inode.
     pub fn rename(&self, old_name: &str, new_dir: &Self, new_name: &str) -> Result<()> {
         if !Arc::ptr_eq(&self.mount, &new_dir.mount) {
-            return_errno_with_message!(Errno::EXDEV, "cannot cross mount");
+            return_errno_with_message!(Errno::EXDEV, "the operation cannot cross mounts");
         }
 
         self.dentry.rename(old_name, &new_dir.dentry, new_name)
