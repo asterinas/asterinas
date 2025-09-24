@@ -12,8 +12,8 @@ use crate::{
                 stat::StatFileOps,
                 task::{
                     cmdline::CmdlineFileOps, comm::CommFileOps, environ::EnvironFileOps,
-                    exe::ExeSymOps, fd::FdDirOps, oom_score_adj::OomScoreAdjFileOps,
-                    status::StatusFileOps,
+                    exe::ExeSymOps, fd::FdDirOps, mountinfo::MountInfoFileOps,
+                    oom_score_adj::OomScoreAdjFileOps, status::StatusFileOps,
                 },
             },
             template::{DirOps, ProcDir, ProcDirBuilder},
@@ -30,6 +30,7 @@ mod comm;
 mod environ;
 mod exe;
 mod fd;
+mod mountinfo;
 mod oom_score_adj;
 mod status;
 
@@ -81,6 +82,7 @@ impl DirOps for TidDirOps {
             "environ" => EnvironFileOps::new_inode(self.process_ref.clone(), this_ptr),
             "exe" => ExeSymOps::new_inode(self.process_ref.clone(), this_ptr),
             "fd" => FdDirOps::new_inode(self.thread_ref.clone(), this_ptr),
+            "mountinfo" => MountInfoFileOps::new_inode(self.thread_ref.clone(), this_ptr),
             "oom_score_adj" => OomScoreAdjFileOps::new_inode(self.process_ref.clone(), this_ptr),
             "stat" => StatFileOps::new_inode(
                 self.process_ref.clone(),
@@ -128,6 +130,9 @@ impl TidDirOps {
         });
         cached_children.put_entry_if_not_found("fd", || {
             FdDirOps::new_inode(self.thread_ref.clone(), this_ptr.clone())
+        });
+        cached_children.put_entry_if_not_found("mountinfo", || {
+            MountInfoFileOps::new_inode(self.thread_ref.clone(), this_ptr.clone())
         });
         cached_children.put_entry_if_not_found("oom_score_adj", || {
             OomScoreAdjFileOps::new_inode(self.process_ref.clone(), this_ptr.clone())
