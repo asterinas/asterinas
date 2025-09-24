@@ -44,12 +44,19 @@ bitflags! {
 }
 
 pub trait FileSystem: Any + Sync + Send {
+    /// Gets the name of this FS type such as `"ext4"` or `"sysfs"`.
+    fn name(&self) -> &'static str;
+
+    /// Syncs the file system.
     fn sync(&self) -> Result<()>;
 
+    /// Returns the root inode of this file system.
     fn root_inode(&self) -> Arc<dyn Inode>;
 
+    /// Returns the super block of this file system.
     fn sb(&self) -> SuperBlock;
 
+    /// Returns the flags of this file system.
     fn flags(&self) -> FsFlags;
 }
 

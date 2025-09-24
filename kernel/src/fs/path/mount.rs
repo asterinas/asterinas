@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use hashbrown::HashMap;
+use id_alloc::IdAlloc;
+use spin::Once;
 
 use crate::{
     fs::{
@@ -14,11 +16,22 @@ use crate::{
     prelude::*,
 };
 
+static ID_ALLOCATOR: Once<SpinLock<IdAlloc>> = Once::new();
+
+pub(super) fn init() {
+    // TODO: Make it configurable.
+    const MAX_MOUNT_NUM: usize = 10000;
+
+    ID_ALLOCATOR.call_once(|| SpinLock::new(IdAlloc::with_capacity(MAX_MOUNT_NUM)));
+}
+
 /// A `Mount` represents a mounted filesystem instance in the VFS.
 ///
 /// Each `Mount` can be viewed as a node in the mount tree, maintaining
 /// mount-related information and the structure of the mount tree.
 pub struct Mount {
+    /// Global unique identifier for the mount node.
+    id: usize,
     /// Root dentry.
     root_dentry: Arc<Dentry>,
     /// Mountpoint dentry. A mount node can be mounted on one dentry of another mount node,
@@ -64,7 +77,9 @@ impl Mount {
         parent_mount: Option<Weak<Mount>>,
         mnt_ns: Weak<MountNamespace>,
     ) -> Arc<Self> {
+        let id = ID_ALLOCATOR.get().unwrap().lock().alloc().unwrap();
         Arc::new_cyclic(|weak_self| Self {
+            id,
             root_dentry: Dentry::new_root(fs.root_inode()),
             mountpoint: RwLock::new(None),
             parent: RwLock::new(parent_mount),
@@ -73,6 +88,11 @@ impl Mount {
             mnt_ns,
             this: weak_self.clone(),
         })
+    }
+
+    /// Gets the mount ID.
+    pub(super) fn id(&self) -> usize {
+        self.id
     }
 
     /// Mounts a fs on the mountpoint, it will create a new child mount node.
@@ -131,6 +151,7 @@ impl Mount {
         new_ns: Option<&Weak<MountNamespace>>,
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
+            id: ID_ALLOCATOR.get().unwrap().lock().alloc().unwrap(),
             root_dentry: root_dentry.clone(),
             mountpoint: RwLock::new(None),
             parent: RwLock::new(None),
@@ -326,6 +347,24 @@ impl Mount {
         Some(target_mount)
     }
 
+    /// Traverses the mount tree starting from this mount as the root,
+    /// applying a closure to each mount node.
+    pub(super) fn traverse_with<F>(&self, mut f: F)
+    where
+        F: FnMut(&Arc<Self>),
+    {
+        let mut stack = vec![self.this()];
+
+        while let Some(current_mount) = stack.pop() {
+            f(&current_mount);
+
+            let children = current_mount.children.read();
+            for child_mount in children.values() {
+                stack.push(child_mount.clone());
+            }
+        }
+    }
+
     fn this(&self) -> Arc<Self> {
         self.this.upgrade().unwrap()
     }
@@ -338,5 +377,11 @@ impl Debug for Mount {
             .field("mountpoint", &self.mountpoint)
             .field("fs", &self.fs)
             .finish()
+    }
+}
+
+impl Drop for Mount {
+    fn drop(&mut self) {
+        ID_ALLOCATOR.get().unwrap().lock().free(self.id);
     }
 }

@@ -11,6 +11,10 @@ use crate::{
 };
 
 impl FileSystem for Ext2 {
+    fn name(&self) -> &'static str {
+        "ext2"
+    }
+
     fn sync(&self) -> Result<()> {
         self.sync_all_inodes()?;
         self.sync_metadata()?;
