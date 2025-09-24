@@ -491,7 +491,10 @@ impl RamInode {
         })
     }
 
-    fn find(&self, name: &str) -> Result<Arc<Self>> {
+    /// Finds a child `RamInode` by the given name.
+    ///
+    /// If the current inode does not represent a directory, returns `Err`.
+    pub fn find(&self, name: &str) -> Result<Arc<Self>> {
         if self.typ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
         }

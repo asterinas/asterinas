@@ -111,6 +111,7 @@ fn init() {
     sched::init();
     process::init();
     fs::init();
+    vm::shared_mem::init();
 }
 
 fn init_on_each_cpu() {
