@@ -154,6 +154,10 @@ impl OverlayFs {
 }
 
 impl FileSystem for OverlayFs {
+    fn name(&self) -> &'static str {
+        "overlay"
+    }
+
     /// Utilizes the layered directory entries to build the root inode.
     fn root_inode(&self) -> Arc<dyn Inode> {
         let fs = self.fs();
@@ -1193,6 +1197,7 @@ mod tests {
 
     fn create_overlay_fs() -> Arc<dyn FileSystem> {
         crate::time::clocks::init_for_ktest();
+        crate::fs::path::init();
 
         let mode = InodeMode::all();
         let upper = {
@@ -1238,6 +1243,7 @@ mod tests {
     #[ktest]
     fn work_and_upper_should_be_in_same_mount() {
         crate::time::clocks::init_for_ktest();
+        crate::fs::path::init();
 
         let upper = Path::new_fs_root(new_dummy_mount());
         let lower = vec![Path::new_fs_root(new_dummy_mount())];
@@ -1252,6 +1258,7 @@ mod tests {
     #[ktest]
     fn work_should_be_empty() {
         crate::time::clocks::init_for_ktest();
+        crate::fs::path::init();
 
         let mode = InodeMode::all();
         let upper = {
@@ -1271,6 +1278,7 @@ mod tests {
     #[ktest]
     fn obscured_multi_layers() {
         crate::time::clocks::init_for_ktest();
+        crate::fs::path::init();
 
         let mode = InodeMode::all();
         let root = Path::new_fs_root(new_dummy_mount());

@@ -6,6 +6,7 @@ use core::time::Duration;
 
 use inherit_methods_macro::inherit_methods;
 pub use mount::Mount;
+pub use mount_info::MountInfo;
 pub use mount_namespace::MountNamespace;
 
 use crate::{
@@ -22,6 +23,7 @@ use crate::{
 
 mod dentry;
 mod mount;
+mod mount_info;
 mod mount_namespace;
 
 /// A `Path` is used to represent an exact location in the VFS tree.
@@ -413,3 +415,7 @@ pub const fn is_dot_or_dotdot(filename: &str) -> bool {
 }
 
 const DOT_BYTE: u8 = b'.';
+
+pub(super) fn init() {
+    mount::init();
+}

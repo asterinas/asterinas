@@ -19,6 +19,10 @@ pub struct TmpFs {
 }
 
 impl FileSystem for TmpFs {
+    fn name(&self) -> &'static str {
+        "tmpfs"
+    }
+
     fn sync(&self) -> Result<()> {
         // do nothing
         Ok(())
