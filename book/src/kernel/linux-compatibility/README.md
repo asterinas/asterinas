@@ -190,8 +190,8 @@ provided by Linux on x86-64 architecture.
 | 167     | swapon                 | ❌             |     |
 | 168     | swapoff                | ❌             |     |
 | 169     | reboot                 | ❌             |     |
-| 170     | sethostname            | ❌             |     |
-| 171     | setdomainname          | ❌             |     |
+| 170     | sethostname            | ✅             |     |
+| 171     | setdomainname          | ✅             |     |
 | 172     | iopl                   | ❌             |     |
 | 173     | ioperm                 | ❌             |     |
 | 174     | create_module          | ❌             |     |
