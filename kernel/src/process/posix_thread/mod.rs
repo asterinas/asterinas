@@ -48,7 +48,7 @@ pub struct PosixThread {
     tid: Tid,
 
     // Mutable part
-    name: Mutex<Option<ThreadName>>,
+    name: Mutex<ThreadName>,
 
     /// Process credentials. At the kernel level, credentials are a per-thread attribute.
     credentials: Credentials,
@@ -96,7 +96,7 @@ impl PosixThread {
         self.tid
     }
 
-    pub fn thread_name(&self) -> &Mutex<Option<ThreadName>> {
+    pub fn thread_name(&self) -> &Mutex<ThreadName> {
         &self.name
     }
 
