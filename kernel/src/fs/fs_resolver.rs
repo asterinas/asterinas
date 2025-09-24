@@ -64,14 +64,18 @@ impl FsResolver {
             return Ok(());
         }
 
-        let new_root = self
-            .root
-            .find_corresponding_mount(mnt_ns)
-            .ok_or(Error::new(Errno::EINVAL))?;
-        let new_cwd = self
-            .cwd
-            .find_corresponding_mount(mnt_ns)
-            .ok_or(Error::new(Errno::EINVAL))?;
+        let new_root = self.root.find_corresponding_mount(mnt_ns).ok_or_else(|| {
+            Error::with_message(
+                Errno::EINVAL,
+                "the root directory does not exist in the target mount namespace",
+            )
+        })?;
+        let new_cwd = self.cwd.find_corresponding_mount(mnt_ns).ok_or_else(|| {
+            Error::with_message(
+                Errno::EINVAL,
+                "the current working directory does not exist in the target mount namespace",
+            )
+        })?;
 
         self.root = new_root;
         self.cwd = new_cwd;

@@ -89,7 +89,7 @@ fn build_proxy_from_pid_file(
         if ctx.thread_local.is_fs_shared() {
             return_errno_with_message!(
                 Errno::EINVAL,
-                "cannot change mount namespace with shared filesystem"
+                "setting a mount namespace is not allowed with shared filesystem information"
             );
         }
 
