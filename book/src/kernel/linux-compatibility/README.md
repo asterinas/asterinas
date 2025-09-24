@@ -76,12 +76,12 @@ which are summarized in the table below.
 | 53      | socketpair             | ✅             | [⚠️](limitations-on-system-calls/networking-and-sockets.html#socketpair) |
 | 54      | setsockopt             | ✅             | [⚠️](limitations-on-system-calls/networking-and-sockets.html#getsockopt-and-setsockopt) |
 | 55      | getsockopt             | ✅             | [⚠️](limitations-on-system-calls/networking-and-sockets.html#getsockopt-and-setsockopt) |
-| 56      | clone                  | ✅             |     |
+| 56      | clone                  | ✅             | [⚠️](limitations-on-system-calls/process-and-thread-management.md#clone) |
 | 57      | fork                   | ✅             |     |
 | 58      | vfork                  | ❌             |     |
 | 59      | execve                 | ✅             |     |
 | 60      | exit                   | ✅             |     |
-| 61      | wait4                  | ✅             |     |
+| 61      | wait4                  | ✅             | [⚠️](limitations-on-system-calls/process-and-thread-management.md#wait4) |
 | 62      | kill                   | ✅             |     |
 | 63      | uname                  | ✅             |     |
 | 64      | semget                 | ✅             |     |
