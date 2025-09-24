@@ -88,6 +88,21 @@ open(path, flags = O_PATH | O_CLOEXEC);
 SCML rules constrain only the flagged arguments;
 other parameters (like `path` and `mode`) accept any value.
 
+In many system calls, the number of arguments may vary depending on the flags provided.
+To accommodate this, SCML allows you to use the `..` wildcard in the parameter list.
+This indicates that any additional arguments are accepted, regardless of their value or count.
+
+For example:
+
+```c
+open(path, flags = O_RDONLY | O_WRONLY | O_RDWR | O_CLOEXEC, ..);
+```
+
+Here, the `..` wildcard makes the rule flexible enough to match invocations of `open` with extra parameters,
+such as when the `O_CREAT` flag is present and a `mode` argument is required.
+This approach makes it easy to write concise rules that only constrain the arguments of interest,
+while allowing other parameters to vary as needed.
+
 ### C-Style Comments
 
 SCML also supports C‑style comments:
@@ -259,7 +274,8 @@ Non‑terminals are in angle brackets, terminals in quotes.
                    | <bitflags-rule> ';'
 
 <syscall-rule>   ::= <identifier> '(' [ <param-list> ] ')'
-<param-list>     ::= <param> { ',' <param> }
+<param-list>     ::= '..'
+                   | <param> { ',' <param> } [ ',' '..' ]
 <param>          ::= <identifier> '=' <expr>
                    | <identifier>
 
