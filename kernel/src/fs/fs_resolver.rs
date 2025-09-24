@@ -56,6 +56,9 @@ impl FsResolver {
     ///
     /// Otherwise, the method will change both the `cwd` and `root` to their corresponding
     /// `Path`s within the new `MountNamespace`.
+    //
+    // FIXME: This cannot fail if we clone mount namespaces and update resolvers in an atomic way.
+    // We currently leak this error to userspace, which is not a correct behavior.
     pub fn switch_to_mnt_ns(&mut self, mnt_ns: &Arc<MountNamespace>) -> Result<()> {
         if mnt_ns.owns(self.root.mount_node()) && mnt_ns.owns(self.cwd.mount_node()) {
             return Ok(());
