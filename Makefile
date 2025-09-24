@@ -155,7 +155,7 @@ endif
 
 # Skip GZIP to make encoding and decoding of initramfs faster
 ifeq ($(INITRAMFS_SKIP_GZIP),1)
-CARGO_OSDK_INITRAMFS_OPTION := --initramfs=$(realpath test/build/initramfs.cpio)
+CARGO_OSDK_INITRAMFS_OPTION := --initramfs=$(abspath test/build/initramfs.cpio)
 CARGO_OSDK_COMMON_ARGS += $(CARGO_OSDK_INITRAMFS_OPTION)
 endif
 
