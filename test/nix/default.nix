@@ -1,7 +1,7 @@
 { target ? "x86_64", enableBasicTest ? false, enableBenchmark ? false
 , enableSyscallTest ? false, syscallTestSuite ? "ltp"
 , syscallTestWorkDir ? "/tmp", dnsServer ? "none", smp ? 1
-, initramfsCompressed ? true, }:
+, initramfsCompressed ? true, buildPodman ? false, }:
 let
   crossSystem.config = if target == "x86_64" then
     "x86_64-unknown-linux-gnu"
@@ -31,12 +31,21 @@ in rec {
     testSuite = syscallTestSuite;
     workDir = syscallTestWorkDir;
   };
+  patched_runc = pkgs.runc.overrideAttrs (oldAttrs: {
+    patches = (oldAttrs.patches or [ ])
+      ++ [ ./podman/0001-Patch-runc-for-Asterinas.patch ];
+  });
+  podman = (pkgs.podman.overrideAttrs (oldAttrs: {
+    patches = (oldAttrs.patches or [ ])
+      ++ [ ./podman/0001-Patch-podman-for-Asterinas.patch ];
+  })).override { runc = patched_runc; };
   initramfs = pkgs.callPackage ./initramfs.nix {
     inherit busybox;
     apps = if enableBasicTest then apps else null;
     benchmark = if enableBenchmark then benchmark else null;
     syscall = if enableSyscallTest then syscall else null;
     dnsServer = dnsServer;
+    podman = if buildPodman then podman else null;
   };
   initramfs-image = pkgs.callPackage ./initramfs-image.nix {
     inherit initramfs;

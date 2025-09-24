@@ -1,0 +1,116 @@
+From 0de8d368f392957905ce7f8e514eb9fc8519394b Mon Sep 17 00:00:00 2001
+From: jiangjianfeng <jiangjianfeng.jjf@antgroup.com>
+Date: Wed, 17 Sep 2025 11:36:57 +0000
+Subject: [PATCH] Patch runc for Asterinas
+
+---
+ libcontainer/cgroups/fs2/devices.go | 13 ++++++-------
+ libcontainer/init_linux.go          |  4 ++--
+ libcontainer/rootfs_linux.go        | 11 ++++++-----
+ libcontainer/state_linux.go         |  2 ++
+ 4 files changed, 16 insertions(+), 14 deletions(-)
+
+diff --git a/libcontainer/cgroups/fs2/devices.go b/libcontainer/cgroups/fs2/devices.go
+index 0d234560..5b16fb9b 100644
+--- a/libcontainer/cgroups/fs2/devices.go
++++ b/libcontainer/cgroups/fs2/devices.go
+@@ -5,7 +5,6 @@ import (
+ 
+ 	"golang.org/x/sys/unix"
+ 
+-	"github.com/opencontainers/runc/libcontainer/cgroups/ebpf"
+ 	"github.com/opencontainers/runc/libcontainer/cgroups/ebpf/devicefilter"
+ 	"github.com/opencontainers/runc/libcontainer/configs"
+ 	"github.com/opencontainers/runc/libcontainer/devices"
+@@ -57,7 +56,7 @@ func setDevices(dirPath string, r *configs.Resources) error {
+ 	if r.SkipDevices {
+ 		return nil
+ 	}
+-	insts, license, err := devicefilter.DeviceFilter(r.Devices)
++	_, _, err := devicefilter.DeviceFilter(r.Devices)
+ 	if err != nil {
+ 		return err
+ 	}
+@@ -66,10 +65,10 @@ func setDevices(dirPath string, r *configs.Resources) error {
+ 		return fmt.Errorf("cannot get dir FD for %s", dirPath)
+ 	}
+ 	defer unix.Close(dirFD)
+-	if _, err := ebpf.LoadAttachCgroupDeviceFilter(insts, license, dirFD); err != nil {
+-		if !canSkipEBPFError(r) {
+-			return err
+-		}
+-	}
++	// if _, err := ebpf.LoadAttachCgroupDeviceFilter(insts, license, dirFD); err != nil {
++	// 	if !canSkipEBPFError(r) {
++	// 		return err
++	// 	}
++	// }
+ 	return nil
+ }
+diff --git a/libcontainer/init_linux.go b/libcontainer/init_linux.go
+index c849ec6b..9de25d5c 100644
+--- a/libcontainer/init_linux.go
++++ b/libcontainer/init_linux.go
+@@ -218,7 +218,7 @@ func finalizeNamespace(config *initConfig) error {
+ 		return fmt.Errorf("unable to set keep caps: %w", err)
+ 	}
+ 	if err := setupUser(config); err != nil {
+-		return fmt.Errorf("unable to setup user: %w", err)
++		// return fmt.Errorf("unable to setup user: %w", err)
+ 	}
+ 	// Change working directory AFTER the user has been set up, if we haven't done it yet.
+ 	if doChdir {
+@@ -234,7 +234,7 @@ func finalizeNamespace(config *initConfig) error {
+ 		return fmt.Errorf("unable to clear keep caps: %w", err)
+ 	}
+ 	if err := w.ApplyCaps(); err != nil {
+-		return fmt.Errorf("unable to apply caps: %w", err)
++		// return fmt.Errorf("unable to apply caps: %w", err)
+ 	}
+ 	return nil
+ }
+diff --git a/libcontainer/rootfs_linux.go b/libcontainer/rootfs_linux.go
+index 04ec6d7e..1c2ea07a 100644
+--- a/libcontainer/rootfs_linux.go
++++ b/libcontainer/rootfs_linux.go
+@@ -482,7 +482,7 @@ func mountToRootfs(m *configs.Mount, c *mountConfig) error {
+ 	}
+ 
+ 	mountFd := c.fd
+-	dest, err := createMountpoint(rootfs, m, mountFd, m.Source)
++	_, err := createMountpoint(rootfs, m, mountFd, m.Source)
+ 	if err != nil {
+ 		return fmt.Errorf("create mount destination for %s mount: %w", m.Destination, err)
+ 	}
+@@ -490,10 +490,11 @@ func mountToRootfs(m *configs.Mount, c *mountConfig) error {
+ 
+ 	switch m.Device {
+ 	case "mqueue":
+-		if err := mountPropagate(m, rootfs, "", nil); err != nil {
+-			return err
+-		}
+-		return label.SetFileLabel(dest, mountLabel)
++		// if err := mountPropagate(m, rootfs, "", nil); err != nil {
++		// 	return err
++		// }
++		// return label.SetFileLabel(dest, mountLabel)
++		return nil
+ 	case "tmpfs":
+ 		if m.Extensions&configs.EXT_COPYUP == configs.EXT_COPYUP {
+ 			err = doTmpfsCopyUp(m, rootfs, mountLabel)
+diff --git a/libcontainer/state_linux.go b/libcontainer/state_linux.go
+index aa6259b1..52615b93 100644
+--- a/libcontainer/state_linux.go
++++ b/libcontainer/state_linux.go
+@@ -94,6 +94,8 @@ func (b *stoppedState) transition(s containerState) error {
+ 		return nil
+ 	case *stoppedState:
+ 		return nil
++	case *createdState:
++		return nil
+ 	}
+ 	return newStateTransitionError(b, s)
+ }
+-- 
+2.34.1
+

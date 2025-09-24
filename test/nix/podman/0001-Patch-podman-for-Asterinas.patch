@@ -1,0 +1,43 @@
+From 1dba6222ebd82385bdd4e0e2f814ccb175df7bb9 Mon Sep 17 00:00:00 2001
+From: jiangjianfeng <jiangjianfeng.jjf@antgroup.com>
+Date: Wed, 17 Sep 2025 12:02:50 +0000
+Subject: [PATCH] Patch podman for Asterinas
+
+---
+ libpod/container_internal.go | 12 +++++++-----
+ 1 file changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/libpod/container_internal.go b/libpod/container_internal.go
+index 1d879d06cb..3c4c1ed921 100644
+--- a/libpod/container_internal.go
++++ b/libpod/container_internal.go
+@@ -1013,7 +1013,8 @@ func (c *Container) completeNetworkSetup() error {
+ 	}
+ 	if netDisabled {
+ 		// with net=none we still want to set up /etc/hosts
+-		return c.addHosts()
++		// return c.addHosts()
++		return nil
+ 	}
+ 	if c.config.NetNsCtr != "" {
+ 		return nil
+@@ -1030,11 +1031,12 @@ func (c *Container) completeNetworkSetup() error {
+ 		}
+ 	}
+ 	// add /etc/hosts entries
+-	if err := c.addHosts(); err != nil {
+-		return err
+-	}
++	// if err := c.addHosts(); err != nil {
++	// 	return err
++	// }
+ 
+-	return c.addResolvConf()
++	// return c.addResolvConf()
++	return nil
+ }
+ 
+ // Initialize a container, creating it in the runtime
+-- 
+2.34.1
+
