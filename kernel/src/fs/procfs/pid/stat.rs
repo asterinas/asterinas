@@ -115,12 +115,13 @@ impl FileOps for StatFileOps {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/array.c#L467-L681>
 
         let pid = posix_thread.tid();
+
         let comm = posix_thread
             .thread_name()
             .lock()
-            .as_ref()
-            .and_then(|name| name.as_string())
-            .unwrap_or_else(|| process.executable_path());
+            .name()
+            .to_string_lossy()
+            .into_owned();
         let state = if thread.is_exited() { 'Z' } else { 'R' };
         let ppid = process.parent().pid();
         let pgrp = process.pgid();

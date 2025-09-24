@@ -365,7 +365,7 @@ fn clone_child_task(
     let sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed).into();
 
     // Inherit the thread name.
-    let thread_name = posix_thread.thread_name().lock().as_ref().cloned();
+    let thread_name = posix_thread.thread_name().lock().clone();
 
     let child_tid = allocate_posix_tid();
     let child_task = {
@@ -374,15 +374,15 @@ fn clone_child_task(
             Credentials::new_from(&credentials)
         };
 
-        let mut thread_builder = PosixThreadBuilder::new(child_tid, child_user_ctx, credentials)
-            .process(posix_thread.weak_process())
-            .thread_name(thread_name)
-            .sig_mask(sig_mask)
-            .file_table(child_file_table)
-            .fs(child_fs)
-            .fpu_context(child_fpu_context)
-            .user_ns(child_user_ns)
-            .ns_proxy(child_ns_proxy);
+        let mut thread_builder =
+            PosixThreadBuilder::new(child_tid, thread_name, child_user_ctx, credentials)
+                .process(posix_thread.weak_process())
+                .sig_mask(sig_mask)
+                .file_table(child_file_table)
+                .fs(child_fs)
+                .fpu_context(child_fpu_context)
+                .user_ns(child_user_ns)
+                .ns_proxy(child_ns_proxy);
 
         // Deal with SETTID/CLEARTID flags
         clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
@@ -478,15 +478,14 @@ fn clone_child_process(
     let child = {
         let child_elf_path = process.executable_path();
         let mut child_thread_builder = {
-            let child_thread_name = ThreadName::new_from_executable_path(&child_elf_path)?;
+            let child_thread_name = ThreadName::new_from_executable_path(&child_elf_path);
 
             let credentials = {
                 let credentials = ctx.posix_thread.credentials();
                 Credentials::new_from(&credentials)
             };
 
-            PosixThreadBuilder::new(child_tid, child_user_ctx, credentials)
-                .thread_name(Some(child_thread_name))
+            PosixThreadBuilder::new(child_tid, child_thread_name, child_user_ctx, credentials)
                 .sig_mask(child_sig_mask)
                 .file_table(child_file_table)
                 .fs(child_fs)

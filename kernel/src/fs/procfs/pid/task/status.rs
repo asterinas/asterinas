@@ -102,12 +102,7 @@ impl FileOps for StatusFileOps {
         writeln!(
             status_output,
             "Name:\t{}",
-            posix_thread
-                .thread_name()
-                .lock()
-                .as_ref()
-                .and_then(|name| name.as_string())
-                .unwrap_or_else(|| process.executable_path())
+            posix_thread.thread_name().lock().name().to_string_lossy()
         )
         .unwrap();
 
