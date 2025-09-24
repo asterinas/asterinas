@@ -302,9 +302,11 @@ impl ClassScheduler {
                     .iter()
                     .filter(|&cpu| cpu.as_usize() as isize <= last_chosen),
             );
+        let policy = thread.sched_attr().policy_kind();
         for candidate in affinity_iter {
             let rq = self.rqs[candidate.as_usize()].lock();
-            let (load, _) = rq.nr_queued_and_running();
+            let (queued, running) = rq.nr_queued_and_running_for_policy(policy);
+            let load = queued + running;
             if load < minimum_load {
                 minimum_load = load;
                 selected = candidate;
@@ -338,8 +340,19 @@ impl PerCpuClassRqSet {
 
     fn nr_queued_and_running(&self) -> (u32, u32) {
         let queued = self.stop.len() + self.real_time.len() + self.fair.len() + self.idle.len();
-        let running = usize::from(self.current.is_some());
-        (queued as u32, running as u32)
+        let running = u32::from(self.current.is_some());
+        (queued as u32, running)
+    }
+
+    fn nr_queued_and_running_for_policy(&self, policy: SchedPolicyKind) -> (u32, u32) {
+        let queued = match policy {
+            SchedPolicyKind::Stop => self.stop.len(),
+            SchedPolicyKind::RealTime => self.real_time.len(),
+            SchedPolicyKind::Fair => self.fair.len(),
+            SchedPolicyKind::Idle => self.idle.len(),
+        };
+        let running = u32::from(self.current.is_some());
+        (queued as u32, running)
     }
 }
 
