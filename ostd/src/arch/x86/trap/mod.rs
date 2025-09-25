@@ -25,7 +25,7 @@ use cfg_if::cfg_if;
 use log::debug;
 use spin::Once;
 
-use super::{cpu::context::GeneralRegs, ex_table::ExTable};
+use super::cpu::context::GeneralRegs;
 use crate::{
     arch::{
         cpu::context::{CpuException, PageFaultErrorCode, RawPageFaultInfo},
@@ -33,6 +33,7 @@ use crate::{
         irq::{disable_local, enable_local, HwIrqLine},
     },
     cpu::PrivilegeLevel,
+    ex_table::ExTable,
     irq::call_irq_callback_functions,
     mm::{
         kspace::{KERNEL_PAGE_TABLE, LINEAR_MAPPING_BASE_VADDR, LINEAR_MAPPING_VADDR_RANGE},
