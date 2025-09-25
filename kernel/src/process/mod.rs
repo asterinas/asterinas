@@ -2,6 +2,7 @@
 
 mod clone;
 pub mod credentials;
+mod execve;
 mod exit;
 mod kill;
 mod namespace;
@@ -23,6 +24,7 @@ mod term_status;
 mod wait;
 pub use clone::{clone_child, CloneArgs, CloneFlags};
 pub use credentials::{Credentials, Gid, Uid};
+pub use execve::do_execve;
 pub use kill::{kill, kill_all, kill_group, tgkill};
 pub use namespace::{
     nsproxy::{check_unsupported_ns_flags, ContextSetNsAdminApi, NsProxy, NsProxyBuilder},
@@ -35,7 +37,6 @@ pub use process::{
     Pid, Process, ProcessGroup, ReapedChildrenStats, Session, Sid, Terminal,
 };
 pub use process_filter::ProcessFilter;
-pub use process_vm::{renew_vm_and_map, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS};
 pub use program_loader::{check_executable_file, ProgramToLoad};
 pub use rlimit::ResourceType;
 pub use stats::collect_process_creation_count;

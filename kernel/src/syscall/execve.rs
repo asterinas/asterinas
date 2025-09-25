@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_rights::WriteOp;
-use ostd::{
-    arch::cpu::context::{FpuContext, GeneralRegs, UserContext},
-    user::UserContextApi,
-};
+use ostd::arch::cpu::context::UserContext;
 
 use super::{constants::*, SyscallReturn};
 use crate::{
@@ -14,10 +10,7 @@ use crate::{
         path::Path,
     },
     prelude::*,
-    process::{
-        check_executable_file, posix_thread::ThreadName, renew_vm_and_map, Credentials, Process,
-        ProgramToLoad, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS,
-    },
+    process::{check_executable_file, do_execve},
 };
 
 pub fn sys_execve(
@@ -87,171 +80,9 @@ fn lookup_executable_file(
     Ok(path)
 }
 
-fn do_execve(
-    elf_file: Path,
-    argv_ptr_ptr: Vaddr,
-    envp_ptr_ptr: Vaddr,
-    ctx: &Context,
-    user_context: &mut UserContext,
-) -> Result<()> {
-    let Context {
-        process,
-        thread_local,
-        posix_thread,
-        ..
-    } = ctx;
-
-    let executable_path = elf_file.abs_path();
-    // FIXME: A malicious user could cause a kernel panic by exhausting available memory.
-    // Currently, the implementation reads up to `MAX_NR_STRING_ARGS` arguments, each up to
-    // `MAX_LEN_STRING_ARG` in length, without first verifying the total combined size.
-    // To prevent excessive memory allocation, a preliminary check should sum the lengths
-    // of all strings to enforce a sensible overall limit.
-    let argv = read_cstring_vec(argv_ptr_ptr, MAX_NR_STRING_ARGS, MAX_LEN_STRING_ARG, ctx)?;
-    let envp = read_cstring_vec(envp_ptr_ptr, MAX_NR_STRING_ARGS, MAX_LEN_STRING_ARG, ctx)?;
-    debug!(
-        "filename: {:?}, argv = {:?}, envp = {:?}",
-        executable_path, argv, envp
-    );
-    // FIXME: should we set thread name in execve?
-    *posix_thread.thread_name().lock() = ThreadName::new_from_executable_path(&executable_path);
-    // clear ctid
-    // FIXME: should we clear ctid when execve?
-    thread_local.clear_child_tid().set(0);
-
-    // Ensure that the file descriptors with the close-on-exec flag are closed.
-    // FIXME: This is just wrong if the file table is shared with other processes.
-    let closed_files = thread_local
-        .borrow_file_table()
-        .unwrap()
-        .write()
-        .close_files_on_exec();
-    drop(closed_files);
-
-    debug!("load program to root vmar");
-    let fs_ref = thread_local.borrow_fs();
-    let fs_resolver = fs_ref.resolver().read();
-    let program_to_load =
-        ProgramToLoad::build_from_file(elf_file.clone(), &fs_resolver, argv, envp, 1)?;
-
-    renew_vm_and_map(ctx);
-
-    if process.status().is_vfork_child() {
-        // Resumes the parent process.
-        process.status().set_vfork_child(false);
-        let parent = process.parent().lock().process().upgrade().unwrap();
-        parent.children_wait_queue().wake_all();
-    }
-
-    let (new_executable_path, elf_load_info) =
-        program_to_load.load_to_vm(process.vm(), &fs_resolver)?;
-
-    // After the program has been successfully loaded, the virtual memory of the current process
-    // is initialized. Hence, it is necessary to clear the previously recorded robust list.
-    *thread_local.robust_list().borrow_mut() = None;
-    debug!("load elf in execve succeeds");
-
-    // Reset FPU context
-    thread_local.fpu().set_context(FpuContext::new());
-
-    let credentials = posix_thread.credentials_mut();
-    set_uid_from_elf(process, &credentials, &elf_file)?;
-    set_gid_from_elf(process, &credentials, &elf_file)?;
-    credentials.set_keep_capabilities(false);
-
-    // set executable path
-    process.set_executable_path(new_executable_path);
-    // set signal disposition to default
-    process.sig_dispositions().lock().inherit();
-    // set cpu context to default
-    *user_context.general_regs_mut() = GeneralRegs::default();
-    user_context.set_tls_pointer(0);
-    // set new entry point
-    user_context.set_instruction_pointer(elf_load_info.entry_point as _);
-    debug!("entry_point: 0x{:x}", elf_load_info.entry_point);
-    // set new user stack top
-    user_context.set_stack_pointer(elf_load_info.user_stack_top as _);
-    debug!("user stack top: 0x{:x}", elf_load_info.user_stack_top);
-    Ok(())
-}
-
 bitflags::bitflags! {
     struct OpenFlags: u32 {
         const AT_EMPTY_PATH = 0x1000;
         const AT_SYMLINK_NOFOLLOW = 0x100;
     }
-}
-
-fn read_cstring_vec(
-    array_ptr: Vaddr,
-    max_string_number: usize,
-    max_string_len: usize,
-    ctx: &Context,
-) -> Result<Vec<CString>> {
-    // On Linux, argv pointer and envp pointer can be specified as NULL.
-    if array_ptr == 0 {
-        return Ok(Vec::new());
-    }
-
-    let mut res = Vec::new();
-    let mut read_addr = array_ptr;
-
-    let user_space = ctx.user_space();
-    for _ in 0..max_string_number {
-        let cstring_ptr = user_space.read_val::<usize>(read_addr)?;
-        read_addr += 8;
-
-        if cstring_ptr == 0 {
-            return Ok(res);
-        }
-
-        let cstring = user_space
-            .read_cstring(cstring_ptr, max_string_len)
-            .map_err(|err| {
-                if err.error() == Errno::ENAMETOOLONG {
-                    Error::with_message(Errno::E2BIG, "there are too many bytes in the argument")
-                } else {
-                    err
-                }
-            })?;
-        res.push(cstring);
-    }
-
-    return_errno_with_message!(Errno::E2BIG, "there are too many arguments");
-}
-
-/// Sets uid for credentials as the same of uid of elf file if elf file has `set_uid` bit.
-fn set_uid_from_elf(
-    current: &Process,
-    credentials: &Credentials<WriteOp>,
-    elf_file: &Path,
-) -> Result<()> {
-    if elf_file.mode()?.has_set_uid() {
-        let uid = elf_file.owner()?;
-        credentials.set_euid(uid);
-
-        current.clear_parent_death_signal();
-    }
-
-    // No matter whether the elf_file has `set_uid` bit, suid should be reset.
-    credentials.reset_suid();
-    Ok(())
-}
-
-/// Sets gid for credentials as the same of gid of elf file if elf file has `set_gid` bit.
-fn set_gid_from_elf(
-    current: &Process,
-    credentials: &Credentials<WriteOp>,
-    elf_file: &Path,
-) -> Result<()> {
-    if elf_file.mode()?.has_set_gid() {
-        let gid = elf_file.group()?;
-        credentials.set_egid(gid);
-
-        current.clear_parent_death_signal();
-    }
-
-    // No matter whether the the elf file has `set_gid` bit, sgid should be reset.
-    credentials.reset_sgid();
-    Ok(())
 }

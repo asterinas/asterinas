@@ -20,11 +20,7 @@ use crate::{
         path::Path,
     },
     prelude::*,
-    process::{
-        posix_thread::do_exit_group,
-        process_vm::{AuxKey, AuxVec, ProcessVm},
-        TermStatus,
-    },
+    process::process_vm::{AuxKey, AuxVec, ProcessVm},
     vm::{
         perms::VmPerms,
         util::duplicate_frame,
@@ -47,50 +43,33 @@ pub fn load_elf_to_vm(
 ) -> Result<ElfLoadInfo> {
     let ldso = lookup_and_parse_ldso(&elf_headers, &elf_file, fs_resolver)?;
 
-    match init_and_map_vmos(process_vm, ldso, &elf_headers, &elf_file) {
-        #[cfg_attr(
-            not(any(target_arch = "x86_64", target_arch = "riscv64")),
-            expect(unused_mut)
-        )]
-        Ok((_range, entry_point, mut aux_vec)) => {
-            // Map the vDSO and set the entry.
-            // Since the vDSO does not require being mapped to any specific address,
-            // the vDSO is mapped after the ELF file, heap, and stack.
-            #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
-            if let Some(vdso_text_base) = map_vdso_to_vm(process_vm) {
-                #[cfg(target_arch = "riscv64")]
-                process_vm.set_vdso_base(vdso_text_base);
-                aux_vec
-                    .set(AuxKey::AT_SYSINFO_EHDR, vdso_text_base as u64)
-                    .unwrap();
-            }
+    #[cfg_attr(
+        not(any(target_arch = "x86_64", target_arch = "riscv64")),
+        expect(unused_mut)
+    )]
+    let (_range, entry_point, mut aux_vec) =
+        init_and_map_vmos(process_vm, ldso, &elf_headers, &elf_file)?;
 
-            process_vm.map_and_write_init_stack(argv, envp, aux_vec)?;
-
-            let user_stack_top = process_vm.user_stack_top();
-            Ok(ElfLoadInfo {
-                entry_point,
-                user_stack_top,
-                _private: (),
-            })
-        }
-        Err(err) => {
-            // Since the process_vm is in invalid state,
-            // the process cannot return to user space again,
-            // so `Vmar::clear` and `do_exit_group` are called here.
-            // FIXME: sending a fault signal is an alternative approach.
-            process_vm.lock_root_vmar().unwrap().clear().unwrap();
-
-            // FIXME: `current` macro will be used in `do_exit_group`.
-            // if the macro is used when creating the init process,
-            // the macro will panic. This corner case should be handled later.
-            // FIXME: how to set the correct exit status?
-            do_exit_group(TermStatus::Exited(1));
-
-            // The process will exit and the error code will be ignored.
-            Err(err)
-        }
+    // Map the vDSO and set the entry.
+    // Since the vDSO does not require being mapped to any specific address,
+    // the vDSO is mapped after the ELF file, heap, and stack.
+    #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
+    if let Some(vdso_text_base) = map_vdso_to_vm(process_vm) {
+        #[cfg(target_arch = "riscv64")]
+        process_vm.set_vdso_base(vdso_text_base);
+        aux_vec
+            .set(AuxKey::AT_SYSINFO_EHDR, vdso_text_base as u64)
+            .unwrap();
     }
+
+    process_vm.map_and_write_init_stack(argv, envp, aux_vec)?;
+
+    let user_stack_top = process_vm.user_stack_top();
+    Ok(ElfLoadInfo {
+        entry_point,
+        user_stack_top,
+        _private: (),
+    })
 }
 
 fn lookup_and_parse_ldso(
