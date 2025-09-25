@@ -95,7 +95,7 @@ SECTIONS
     # The section to store exception table (ExTable).
     # This table is used for recovering from specific exception handling faults
     # occurring at known points in the code.
-    # Ref: /aster-frame/src/arch/x86/ex_table.rs
+    # Ref: /ostd/src/ex_table.rs
     .ex_table               : AT(ADDR(.ex_table) - KERNEL_VMA) {
         __ex_table = .;
         KEEP(*(SORT(.ex_table)))
