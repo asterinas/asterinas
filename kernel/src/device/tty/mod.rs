@@ -204,9 +204,18 @@ impl<D: TtyDriver> Pollable for Tty<D> {
 
 impl<D: TtyDriver> FileIo for Tty<D> {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+        // TODO: Add support for non-blocking mode and timeout
+        self.read_blocked(writer)
+    }
+
+    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+        // TODO: Add support for non-blocking mode and timeout
+        self.write_blocked(reader)
+    }
+
+    fn read_blocked(&self, writer: &mut VmWriter) -> Result<usize> {
         self.job_control.wait_until_in_foreground()?;
 
-        // TODO: Add support for non-blocking mode and timeout
         let mut buf = vec![0u8; writer.avail().min(IO_CAPACITY)];
         let read_len =
             self.wait_events(IoEvents::IN, None, || self.ldisc.lock().try_read(&mut buf))?;
@@ -218,11 +227,10 @@ impl<D: TtyDriver> FileIo for Tty<D> {
         Ok(read_len)
     }
 
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+    fn write_blocked(&self, reader: &mut VmReader) -> Result<usize> {
         let mut buf = vec![0u8; reader.remain().min(IO_CAPACITY)];
         let write_len = reader.read_fallible(&mut buf.as_mut_slice().into())?;
 
-        // TODO: Add support for non-blocking mode and timeout
         let len = self.wait_events(IoEvents::OUT, None, || {
             Ok(self.driver.push_output(&buf[..write_len])?)
         })?;

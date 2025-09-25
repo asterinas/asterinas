@@ -23,8 +23,14 @@ impl InodeHandle<Rights> {
             return_errno_with_message!(Errno::EISDIR, "directory cannot open to write");
         }
 
-        let file_io = if let Some(device) = inode.as_device() {
+        // TODO: Still need some additional processing to ensure that certain behaviors
+        // of files opened with O_PATH are prohibited.
+        let file_io = if status_flags.contains(StatusFlags::O_PATH) {
+            None
+        } else if let Some(device) = inode.as_device() {
             device.open()?
+        } else if let Some(named_pipe) = inode.as_named_pipe() {
+            Some(named_pipe.open(access_mode, status_flags)?)
         } else {
             None
         };
