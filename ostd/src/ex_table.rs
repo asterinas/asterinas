@@ -61,6 +61,10 @@ impl ExTable {
     /// This function is generally used when an exception (such as a page fault) occurs.
     /// if the exception handling fails and there is a predefined recovery action,
     /// then the found recovery action will be taken.
+    #[cfg_attr(
+        any(target_arch = "riscv64", target_arch = "loongarch64"),
+        expect(unused)
+    )]
     pub fn find_recovery_inst_addr(inst_addr: Vaddr) -> Option<Vaddr> {
         let table_size = (__ex_table_end as usize - __ex_table as usize) / size_of::<ExTableItem>();
         // SAFETY: `__ex_table` is a static section consisting of `ExTableItem`.
