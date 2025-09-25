@@ -68,19 +68,20 @@ trap_from_user:
     STORE_SP x31, 31
 
     # save sp, sstatus, sepc
-    csrrw t0, sscratch, x0   # sscratch = 0 (kernel)
-    li t3, {SSTATUS_FS_MASK} # disable FPU to prevent unexpected usage of floating point in kernel space
+    csrrw t0, sscratch, x0                   # sscratch = 0 (kernel)
+    li t3, {SSTATUS_FS_MASK} | {SSTATUS_SUM} # disable FPU to prevent unexpected usage of floating point in kernel space
+                                             # disable U-mode memory access as it should be set on demand
     csrrc t1, sstatus, t3
     csrr t2, sepc
-    STORE_SP t0, 2           # save sp
-    STORE_SP t1, 32          # save sstatus
-    STORE_SP t2, 33          # save sepc
+    STORE_SP t0, 2                           # save sp
+    STORE_SP t1, 32                          # save sstatus
+    STORE_SP t2, 33                          # save sepc
 
-    andi t1, t1, 1 << 8      # sstatus.SPP == 1
+    andi t1, t1, 1 << 8                      # sstatus.SPP == 1
     beqz t1, end_trap_from_user
 end_trap_from_kernel:
-    mv a0, sp                # first arg is TrapFrame
-    lla ra, trap_return      # set return address
+    mv a0, sp                                # first arg is TrapFrame
+    lla ra, trap_return                      # set return address
 .extern trap_handler
     j trap_handler
 
