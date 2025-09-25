@@ -106,7 +106,7 @@ fn create_init_task(
         let fs_resolver = MountNamespace::get_init_singleton().new_fs_resolver();
         ThreadFsInfo::new(fs_resolver)
     };
-    let (_, elf_load_info) = {
+    let elf_load_info = {
         let fs_resolver = fs.resolver().read();
         let fs_path = FsPath::try_from(executable_path)?;
         let elf_file = fs.resolver().read().lookup(&fs_path)?;

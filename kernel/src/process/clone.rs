@@ -396,7 +396,12 @@ fn clone_child_task(
         .tasks()
         .lock()
         .insert(child_task.clone())
-        .map_err(|_| Error::with_message(Errno::EINTR, "the process has exited"))?;
+        .map_err(|_| {
+            Error::with_message(
+                Errno::EINTR,
+                "the process has exited or has already executed a new program",
+            )
+        })?;
 
     Ok(child_task)
 }

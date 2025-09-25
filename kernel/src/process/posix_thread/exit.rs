@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::task::{CurrentTask, Task};
+use ostd::task::Task;
 
 use super::{
     futex::futex_wake, robust_list::wake_robust_futex, thread_table, AsPosixThread, AsThreadLocal,
@@ -47,15 +47,16 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
     let is_last_thread = {
         let mut tasks = posix_process.tasks().lock();
         let has_exited_group = tasks.has_exited_group();
+        let in_evecve = tasks.in_execve();
 
-        if is_exiting_group && !has_exited_group {
+        if is_exiting_group && !has_exited_group && !in_evecve {
             sigkill_other_threads(&current_task, &tasks);
             tasks.set_exited_group();
         }
 
         // According to Linux's behavior, the last thread's exit code will become the process's
         // exit code, so here we should just overwrite the old value (if any).
-        if !has_exited_group {
+        if !has_exited_group && !in_evecve {
             posix_process.status().set_exit_code(term_status.as_u32());
         }
 
@@ -94,11 +95,14 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
 }
 
 /// Sends `SIGKILL` to all other threads in the current process.
-///
-/// This is only needed when initiating an `exit_group` for the first time.
-fn sigkill_other_threads(current_task: &CurrentTask, task_set: &TaskSet) {
+pub(in crate::process) fn sigkill_other_threads(current_task: &Task, task_set: &TaskSet) {
+    debug_assert!(task_set
+        .as_slice()
+        .iter()
+        .any(|task| core::ptr::eq(current_task, task.as_ref())));
+
     for task in task_set.as_slice() {
-        if core::ptr::eq(current_task.as_ref(), task.as_ref()) {
+        if core::ptr::eq(current_task, task.as_ref()) {
             continue;
         }
         task.as_posix_thread()
