@@ -20,11 +20,7 @@ use crate::{
         path::Path,
     },
     prelude::*,
-    process::{
-        posix_thread::do_exit_group,
-        process_vm::{AuxKey, AuxVec, ProcessVm},
-        TermStatus,
-    },
+    process::process_vm::{AuxKey, AuxVec, ProcessVm},
     vm::{
         perms::VmPerms,
         util::duplicate_frame,
@@ -80,12 +76,6 @@ pub fn load_elf_to_vm(
             // so `Vmar::clear` and `do_exit_group` are called here.
             // FIXME: sending a fault signal is an alternative approach.
             process_vm.lock_root_vmar().unwrap().clear().unwrap();
-
-            // FIXME: `current` macro will be used in `do_exit_group`.
-            // if the macro is used when creating the init process,
-            // the macro will panic. This corner case should be handled later.
-            // FIXME: how to set the correct exit status?
-            do_exit_group(TermStatus::Exited(1));
 
             // The process will exit and the error code will be ignored.
             Err(err)
