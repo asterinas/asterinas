@@ -87,8 +87,7 @@ impl ProgramToLoad {
         self,
         process_vm: &ProcessVm,
         fs_resolver: &FsResolver,
-    ) -> Result<(String, ElfLoadInfo)> {
-        let abs_path = self.elf_file.abs_path();
+    ) -> Result<ElfLoadInfo> {
         let elf_headers = ElfHeaders::parse_elf(&*self.file_first_page)?;
         let elf_load_info = load_elf_to_vm(
             process_vm,
@@ -99,7 +98,7 @@ impl ProgramToLoad {
             self.envp,
         )?;
 
-        Ok((abs_path, elf_load_info))
+        Ok(elf_load_info)
     }
 }
 

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use ostd::sync::PreemptDisabled;
+
 use super::{Thread, Tid};
 use crate::{prelude::*, process::posix_thread::AsPosixThread};
 
@@ -19,4 +21,9 @@ pub fn remove_thread(tid: Tid) {
 /// Gets a posix thread from the global thread table
 pub fn get_thread(tid: Tid) -> Option<Arc<Thread>> {
     THREAD_TABLE.lock().get(&tid).cloned()
+}
+
+/// Locks the thread table.
+pub fn lock() -> SpinLockGuard<'static, BTreeMap<Tid, Arc<Thread>>, PreemptDisabled> {
+    THREAD_TABLE.lock()
 }

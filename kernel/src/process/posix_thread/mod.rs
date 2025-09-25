@@ -21,7 +21,11 @@ use crate::{
     events::Observer,
     fs::file_table::FileTable,
     prelude::*,
-    process::{namespace::nsproxy::NsProxy, signal::constants::SIGCONT},
+    process::{
+        namespace::nsproxy::NsProxy,
+        signal::constants::{SIGCONT, SIGKILL},
+        Pid,
+    },
     thread::{Thread, Tid},
     time::{clocks::ProfClock, Timer, TimerManager},
 };
@@ -36,6 +40,7 @@ mod thread_local;
 pub mod thread_table;
 
 pub use builder::PosixThreadBuilder;
+pub(super) use exit::sigkill_other_threads;
 pub use exit::{do_exit, do_exit_group};
 pub use name::{ThreadName, MAX_THREAD_NAME_LEN};
 pub use posix_thread_ext::AsPosixThread;
@@ -45,9 +50,10 @@ pub use thread_local::{AsThreadLocal, FileTableRefMut, ThreadLocal};
 pub struct PosixThread {
     // Immutable part
     process: Weak<Process>,
-    tid: Tid,
 
     // Mutable part
+    tid: AtomicU32,
+
     name: Mutex<ThreadName>,
 
     /// Process credentials. At the kernel level, credentials are a per-thread attribute.
@@ -93,7 +99,15 @@ impl PosixThread {
 
     /// Returns the thread id
     pub fn tid(&self) -> Tid {
-        self.tid
+        self.tid.load(Ordering::Relaxed)
+    }
+
+    /// Sets the thread as the main thread by changing its thread ID.
+    pub(super) fn set_main(&self, pid: Pid) {
+        debug_assert_eq!(pid, self.process.upgrade().unwrap().pid());
+        debug_assert_ne!(pid, self.tid.load(Ordering::Relaxed));
+
+        self.tid.store(pid, Ordering::Relaxed);
     }
 
     pub fn thread_name(&self) -> &Mutex<ThreadName> {
@@ -121,6 +135,12 @@ impl PosixThread {
     /// that are not blocked.
     pub fn has_pending(&self) -> bool {
         let blocked = self.sig_mask().load(Ordering::Relaxed);
+        self.sig_queues.has_pending(blocked)
+    }
+
+    /// Returns whether the thread has pending SIGKILL signal.
+    pub fn has_pending_sigkill(&self) -> bool {
+        let blocked = SigSet::new_full() - SIGKILL;
         self.sig_queues.has_pending(blocked)
     }
 

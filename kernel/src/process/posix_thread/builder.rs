@@ -169,7 +169,7 @@ impl PosixThreadBuilder {
 
                 PosixThread {
                     process,
-                    tid,
+                    tid: AtomicU32::new(tid),
                     name: Mutex::new(thread_name),
                     credentials,
                     file_table: Mutex::new(Some(file_table.clone_ro())),
