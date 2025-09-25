@@ -85,6 +85,8 @@ end_trap_from_kernel:
     j trap_handler
 
 end_trap_from_user:
+    li t3, 1 << 18
+    csrs sstatus, t3        # set sstatus.SUM
     # load callee-saved registers
     LOAD_SP sp, 33
     LOAD_SP s0, 0
