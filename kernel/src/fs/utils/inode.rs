@@ -16,7 +16,10 @@ use crate::{
     events::IoEvents,
     fs::device::{Device, DeviceType},
     prelude::*,
-    process::{posix_thread::AsPosixThread, signal::PollHandle, Gid, Uid},
+    process::{
+        credentials::capabilities::CapSet, posix_thread::AsPosixThread, signal::PollHandle, Gid,
+        Uid,
+    },
     time::clocks::RealTimeCoarseClock,
     vm::vmo::Vmo,
 };
@@ -441,6 +444,30 @@ pub trait Inode: Any + Sync + Send {
             },
             None => return Ok(()),
         };
+
+        // With DAC_OVERRIDE capability, the user can bypass some permission checks.
+        if creds.effective_capset().contains(CapSet::DAC_OVERRIDE) {
+            // Read/write DACs are always overridable.
+            perm -= Permission::MAY_READ | Permission::MAY_WRITE;
+
+            // Executable DACs are overridable when there is at least one exec bit set.
+            if perm.may_exec() {
+                let metadata = self.metadata();
+                let mode = metadata.mode;
+
+                if mode.is_owner_executable()
+                    || mode.is_group_executable()
+                    || mode.is_other_executable()
+                {
+                    perm -= Permission::MAY_EXEC;
+                } else {
+                    return_errno_with_message!(
+                        Errno::EACCES,
+                        "root execute permission denied: no execute bits set"
+                    );
+                }
+            }
+        }
 
         perm =
             perm.intersection(Permission::MAY_READ | Permission::MAY_WRITE | Permission::MAY_EXEC);
