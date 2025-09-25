@@ -10,7 +10,7 @@ use core::sync::atomic::Ordering;
 use riscv::register::scause::{Interrupt, Trap};
 use spin::Once;
 pub use trap::TrapFrame;
-pub(super) use trap::{RawUserContext, SSTATUS_FS_MASK};
+pub(super) use trap::{RawUserContext, SSTATUS_FS_MASK, SSTATUS_SUM};
 
 use crate::{
     arch::{

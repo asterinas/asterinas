@@ -30,6 +30,16 @@ SECTIONS
         PROVIDE(__etext = .);
     }
 
+    # The section to store exception table (ExTable).
+    # This table is used for recovering from specific exception handling faults
+    # occurring at known points in the code.
+    # Ref: /ostd/src/ex_table.rs
+    .ex_table               : AT(ADDR(.ex_table) - KERNEL_VMA_OFFSET) {
+        __ex_table = .;
+        KEEP(*(SORT(.ex_table)))
+        __ex_table_end = .;
+    }
+
     .rodata                 : AT(ADDR(.rodata) - KERNEL_VMA_OFFSET) {
         *(.rodata .rodata.*)
     }

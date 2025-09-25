@@ -49,8 +49,11 @@ global_asm!(
 /// FPU status bits.
 /// Reference: <https://riscv.github.io/riscv-isa-manual/snapshot/privileged/#sstatus>.
 pub(in crate::arch) const SSTATUS_FS_MASK: usize = 0b11 << 13;
+/// Supervisor User Memory access bit.
+/// Reference: <https://riscv.github.io/riscv-isa-manual/snapshot/privileged/#sstatus>.
+pub(in crate::arch) const SSTATUS_SUM: usize = 0b1 << 18;
 
-global_asm!(include_str!("trap.S"), SSTATUS_FS_MASK = const SSTATUS_FS_MASK);
+global_asm!(include_str!("trap.S"), SSTATUS_FS_MASK = const SSTATUS_FS_MASK, SSTATUS_SUM = const SSTATUS_SUM);
 
 /// Initialize interrupt handling for the current HART.
 ///
