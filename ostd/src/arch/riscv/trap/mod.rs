@@ -19,6 +19,7 @@ use crate::{
         timer::TIMER_IRQ_NUM,
     },
     cpu::{CpuId, PrivilegeLevel},
+    ex_table::ExTable,
     irq::call_irq_callback_functions,
     mm::MAX_USERSPACE_VADDR,
 };
@@ -146,10 +147,20 @@ fn handle_user_page_fault(f: &mut TrapFrame, exception: &CpuException) {
         .get()
         .expect("Page fault handler is missing");
 
-    handler(exception).unwrap_or_else(|_| {
+    let res = handler(exception);
+    // Copying bytes by bytes can recover directly
+    // if handling the page fault successfully.
+    if res.is_ok() {
+        return;
+    }
+
+    // Use the exception table to recover to normal execution.
+    if let Some(addr) = ExTable::find_recovery_inst_addr(f.sepc) {
+        f.sepc = addr;
+    } else {
         panic!(
             "Failed to handle page fault, exception: {:?}, trapframe: {:#x?}.",
             exception, f
         )
-    });
+    }
 }
