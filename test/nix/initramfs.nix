@@ -13,6 +13,14 @@ let
     name = "gvisor-libs";
     path = "/lib/x86_64-linux-gnu";
   };
+  ssl_cert = builtins.path {
+    name = "ssl-cert";
+    path = "/etc/ssl/certs";
+  };
+  resolv_conf = builtins.path {
+    name = "resolv-conf";
+    path = "/etc";
+  };
   all_pkgs = [ busybox etc ] ++ lib.optionals (apps != null) [ apps.package ]
     ++ lib.optionals (benchmark != null) [ benchmark.package ]
     ++ lib.optionals (syscall != null) [ syscall.package ]
@@ -65,6 +73,9 @@ in stdenvNoCC.mkDerivation {
       cp -r ${podman_config_files}/* $out/etc/
       mkdir -p $out/nix/store
       cp -r ${podman} $out/nix/store/
+      mkdir -p $out/etc/ssl/certs
+      cp -r ${ssl_cert}/ca-certificates.crt $out/etc/ssl/certs/
+      cp -r ${resolv_conf}/resolv.conf $out/etc/
     ''}
 
     # Use `writeClosure` to retrieve all dependencies of the specified packages.
