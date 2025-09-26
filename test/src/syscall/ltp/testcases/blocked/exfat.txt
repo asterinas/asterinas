@@ -68,6 +68,7 @@ sendfile06
 sendfile06_64
 sendfile08
 sendfile08_64
+setuid04
 stat02
 stat02_64
 symlink02
