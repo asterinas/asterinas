@@ -29,10 +29,6 @@ impl LinuxAbi for UserContext {
         self.rax()
     }
 
-    fn set_syscall_num(&mut self, num: usize) {
-        self.set_rax(num);
-    }
-
     fn set_syscall_ret(&mut self, ret: usize) {
         self.set_rax(ret);
     }
