@@ -1419,7 +1419,7 @@ setregid01
 
 # setresuid01
 # setresuid01_16
-# setresuid02
+setresuid02
 # setresuid02_16
 setresuid03
 # setresuid03_16
@@ -1434,11 +1434,11 @@ setreuid01
 # setreuid02_16
 # setreuid03
 # setreuid03_16
-# setreuid04
+setreuid04
 # setreuid04_16
 # setreuid05
 # setreuid05_16
-# setreuid06
+setreuid06
 # setreuid06_16
 # setreuid07
 # setreuid07_16
@@ -1470,7 +1470,7 @@ setuid01
 # setuid01_16
 # setuid03
 # setuid03_16
-# setuid04
+setuid04
 # setuid04_16
 
 # setxattr01
