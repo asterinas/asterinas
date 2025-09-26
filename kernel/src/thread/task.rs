@@ -83,14 +83,14 @@ pub fn create_new_user_task(
 
             // Handle user events
             let user_ctx = user_mode.context_mut();
-            let mut syscall_number = None;
+            let mut pre_syscall_ret = None;
             match return_reason {
                 ReturnReason::UserException => {
                     let exception = user_ctx.take_exception().unwrap();
                     handle_exception(&ctx, user_ctx, exception)
                 }
                 ReturnReason::UserSyscall => {
-                    syscall_number = Some(user_ctx.syscall_num());
+                    pre_syscall_ret = Some(user_ctx.syscall_ret());
                     handle_syscall(&ctx, user_ctx);
                 }
                 ReturnReason::KernelEvent => {}
@@ -102,7 +102,7 @@ pub fn create_new_user_task(
             }
 
             // Handle signals
-            handle_pending_signal(user_ctx, &ctx, syscall_number);
+            handle_pending_signal(user_ctx, &ctx, pre_syscall_ret);
 
             // Handle signals while the thread is stopped
             // FIXME: Currently, we handle all signals when the process is stopped.
