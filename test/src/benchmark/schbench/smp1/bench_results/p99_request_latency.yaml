@@ -9,4 +9,4 @@ chart:
 result_extraction:
   nth_occurrence: 2
   result_index: 3
-  search_pattern: \*
+  search_pattern: '99.0th:'
