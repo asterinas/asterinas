@@ -112,7 +112,7 @@ fn create_init_task(
         let fs_resolver = MountNamespace::get_init_singleton().new_fs_resolver();
         ThreadFsInfo::new(fs_resolver)
     };
-    let (_, elf_load_info) = {
+    let elf_load_info = {
         let fs_resolver = fs.resolver().read();
         let fs_path = FsPath::new(AT_FDCWD, executable_path)?;
         let elf_file = fs.resolver().read().lookup(&fs_path)?;
@@ -125,9 +125,8 @@ fn create_init_task(
     let mut user_ctx = UserContext::default();
     user_ctx.set_instruction_pointer(elf_load_info.entry_point as _);
     user_ctx.set_stack_pointer(elf_load_info.user_stack_top as _);
-    let thread_name = Some(ThreadName::new_from_executable_path(executable_path)?);
-    let thread_builder = PosixThreadBuilder::new(tid, Box::new(user_ctx), credentials)
-        .thread_name(thread_name)
+    let thread_name = ThreadName::new_from_executable_path(executable_path);
+    let thread_builder = PosixThreadBuilder::new(tid, thread_name, Box::new(user_ctx), credentials)
         .process(process)
         .fs(Arc::new(fs))
         .is_init_process();
