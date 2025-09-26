@@ -102,10 +102,7 @@ impl Credentials_ {
 
     pub(super) fn set_uid(&self, uid: Uid) {
         if self.is_privileged() {
-            self.ruid.store(uid, Ordering::Relaxed);
-            self.euid.store(uid, Ordering::Relaxed);
-            self.suid.store(uid, Ordering::Relaxed);
-            self.fsuid.store(uid, Ordering::Relaxed);
+            self.set_resuid_unchecked(Some(uid), Some(uid), Some(uid));
         } else {
             // Unprivileged processes can only switch between ruid, euid, suid
             if uid != self.ruid.load(Ordering::Relaxed)
@@ -115,15 +112,10 @@ impl Credentials_ {
                 // No permission to set to this UID
                 return;
             }
-            self.euid.store(uid, Ordering::Relaxed);
-            self.fsuid.store(uid, Ordering::Relaxed);
+            self.set_resuid_unchecked(None, Some(uid), None)
         }
-        if !self.keep_capabilities.load(Ordering::Relaxed) {
-            self.set_permitted_capset(CapSet::empty());
-            self.set_inheritable_capset(CapSet::empty());
-        }
-        // Always clear the effective capabilities when changing the UID
-        self.set_effective_capset(CapSet::empty());
+
+        self.set_fsuid_unchecked(uid)
     }
 
     pub(super) fn set_reuid(&self, ruid: Option<Uid>, euid: Option<Uid>) -> Result<()> {
@@ -140,7 +132,7 @@ impl Credentials_ {
         // FIXME: should we set fsuid here? The linux document for syscall `setfsuid` is contradictory
         // with the document of syscall `setreuid`. The `setfsuid` document says the `fsuid` is always
         // the same as `euid`, but `setreuid` does not mention the `fsuid` should be set.
-        self.fsuid.store(self.euid(), Ordering::Release);
+        self.set_fsuid_unchecked(self.euid());
 
         Ok(())
     }
@@ -155,7 +147,7 @@ impl Credentials_ {
 
         self.set_resuid_unchecked(ruid, euid, suid);
 
-        self.fsuid.store(self.euid(), Ordering::Release);
+        self.set_fsuid_unchecked(self.euid());
 
         Ok(())
     }
@@ -179,17 +171,17 @@ impl Credentials_ {
             )
         }
 
-        self.fsuid.store(fsuid, Ordering::Release);
+        self.set_fsuid_unchecked(fsuid);
 
         Ok(old_fsuid)
     }
 
     pub(super) fn set_euid(&self, euid: Uid) {
-        self.euid.store(euid, Ordering::Release);
+        self.set_resuid_unchecked(None, Some(euid), None);
     }
 
     pub(super) fn set_suid(&self, suid: Uid) {
-        self.suid.store(suid, Ordering::Release);
+        self.set_resuid_unchecked(None, None, Some(suid));
     }
 
     // For `setreuid`, ruid can *NOT* be set to old suid,
@@ -242,16 +234,73 @@ impl Credentials_ {
     }
 
     fn set_resuid_unchecked(&self, ruid: Option<Uid>, euid: Option<Uid>, suid: Option<Uid>) {
-        if let Some(ruid) = ruid {
+        let old_ruid = self.ruid();
+        let old_euid = self.euid();
+        let old_suid = self.suid();
+
+        let new_ruid = if let Some(ruid) = ruid {
             self.ruid.store(ruid, Ordering::Relaxed);
-        }
+            ruid
+        } else {
+            old_ruid
+        };
 
-        if let Some(euid) = euid {
+        let new_euid = if let Some(euid) = euid {
             self.euid.store(euid, Ordering::Relaxed);
-        }
+            euid
+        } else {
+            old_euid
+        };
 
-        if let Some(suid) = suid {
+        let new_suid = if let Some(suid) = suid {
             self.suid.store(suid, Ordering::Relaxed);
+            suid
+        } else {
+            old_suid
+        };
+
+        // Begin to adjust capabilities.
+        // Reference: The "Effect of user ID changes on capabilities" section in
+        // https://man7.org/linux/man-pages/man7/capabilities.7.html
+        let had_root = old_ruid.is_root() || old_euid.is_root() || old_suid.is_root();
+        let all_nonroot = !new_ruid.is_root() && !new_euid.is_root() && !new_suid.is_root();
+
+        if had_root && all_nonroot {
+            if !self.keep_capabilities() {
+                self.set_permitted_capset(CapSet::empty());
+                self.set_inheritable_capset(CapSet::empty());
+                // TODO: Also need to clear ambient capabilities when we support it
+            }
+
+            self.set_effective_capset(CapSet::empty());
+        } else {
+            if old_euid.is_root() && !new_euid.is_root() {
+                self.set_effective_capset(CapSet::empty());
+            }
+
+            if !old_euid.is_root() && new_euid.is_root() {
+                let permitted = self.permitted_capset();
+                self.set_effective_capset(permitted);
+            }
+        }
+    }
+
+    fn set_fsuid_unchecked(&self, fsuid: Uid) {
+        let old_uid = self.fsuid.swap(fsuid, Ordering::Relaxed);
+
+        if old_uid.is_root() && !fsuid.is_root() {
+            // Reference: The "Effect of user ID changes on capabilities" section in
+            // https://man7.org/linux/man-pages/man7/capabilities.7.html
+            let cap_to_remove = CapSet::CHOWN
+                | CapSet::DAC_OVERRIDE
+                | CapSet::FOWNER
+                | CapSet::DAC_READ_SEARCH
+                | CapSet::FSETID
+                | CapSet::LINUX_IMMUTABLE
+                | CapSet::MAC_OVERRIDE
+                | CapSet::MKNOD;
+            let old_cap = self.effective_capset();
+            self.set_effective_capset(old_cap - cap_to_remove);
         }
     }
 
