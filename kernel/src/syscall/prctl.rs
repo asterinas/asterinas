@@ -81,7 +81,7 @@ pub fn sys_prctl(
             }
         }
         PrctlCmd::PR_SET_CHILD_SUBREAPER(is_set) => {
-            let process = ctx.process;
+            let process = ctx.process.as_ref();
             if is_set {
                 process.set_child_subreaper();
             } else {
@@ -89,7 +89,7 @@ pub fn sys_prctl(
             }
         }
         PrctlCmd::PR_GET_CHILD_SUBREAPER(write_addr) => {
-            let process = ctx.process;
+            let process = ctx.process.as_ref();
             ctx.user_space()
                 .write_val(write_addr, &(process.is_child_subreaper() as u32))?;
         }

@@ -23,7 +23,7 @@ use crate::{
 /// The context that can be accessed from the current POSIX thread.
 #[derive(Clone)]
 pub struct Context<'a> {
-    pub process: &'a Process,
+    pub process: Arc<Process>,
     pub thread_local: &'a ThreadLocal,
     pub posix_thread: &'a PosixThread,
     pub thread: &'a Thread,

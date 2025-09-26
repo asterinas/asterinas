@@ -83,6 +83,8 @@ pub fn do_wait(
                 let mut children_lock = ctx.process.children().lock();
 
                 let unwaited_children = children_lock
+                    .as_ref()
+                    .unwrap()
                     .values()
                     .filter(|child| match &child_filter {
                         ProcessFilter::Any => true,
@@ -105,7 +107,7 @@ pub fn do_wait(
                     if !wait_options.contains(WaitOptions::WNOWAIT) {
                         reap_zombie_child(
                             status.pid(),
-                            &mut children_lock,
+                            children_lock.as_mut().unwrap(),
                             ctx.process.reaped_children_stats(),
                         );
                     }
