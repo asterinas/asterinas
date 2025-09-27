@@ -28,13 +28,10 @@ impl FileOps for EnvironFileOps {
             // Returns 0 characters for zombie process.
             Vec::new()
         } else {
-            let Ok(envp_cstrs) = self.0.init_stack_reader().envp() else {
-                return Ok(Vec::new());
-            };
-            envp_cstrs
-                .into_iter()
-                .flat_map(|cstr| cstr.into_bytes_with_nul().into_iter())
-                .collect()
+            self.0
+                .init_stack_reader()
+                .envp()
+                .unwrap_or_else(|_| Vec::new())
         };
         Ok(envp_output)
     }

@@ -720,7 +720,9 @@ mod vmspace {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
                 .expect("Failed to create mutable cursor");
-            cursor_mut.flusher().issue_tlb_flush(TlbFlushOp::for_all());
+            cursor_mut
+                .flusher()
+                .issue_tlb_flush(TlbFlushOp::for_all(), &vmspace);
             cursor_mut.flusher().dispatch_tlb_flush();
         }
 
