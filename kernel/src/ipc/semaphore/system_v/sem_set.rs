@@ -67,14 +67,18 @@ pub struct IpcPerm {
     _unused2: u64,
 }
 
-// https://github.com/torvalds/linux/blob/master/arch/x86/include/uapi/asm/sembuf.h
+// In Linux, most popular 64-bit architectures except x86_64 adopt the same
+// layout of `semid_ds`.
+// Reference: <https://elixir.bootlin.com/linux/v6.16.9/A/ident/semid64_ds>.
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, Pod)]
 pub struct SemidDs {
     sem_perm: IpcPerm,
     sem_otime: u64,
+    #[cfg(target_arch = "x86_64")]
     _unused1: u64,
     sem_ctime: u64,
+    #[cfg(target_arch = "x86_64")]
     _unused2: u64,
     sem_nsems: u64,
     _unused3: u64,
