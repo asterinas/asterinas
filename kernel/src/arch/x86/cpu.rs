@@ -138,7 +138,9 @@ impl From<&RawPageFaultInfo> for PageFaultInfo {
         {
             VmPerms::EXEC
         } else if raw_info.error_code.contains(PageFaultErrorCode::WRITE) {
-            VmPerms::WRITE
+            // On x86_64, writable pages must also be readable.
+            // Reference: Section 5.11.3 from <https://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-vol-3a-part-1-manual.pdf>.
+            VmPerms::READ | VmPerms::WRITE
         } else {
             VmPerms::READ
         };
