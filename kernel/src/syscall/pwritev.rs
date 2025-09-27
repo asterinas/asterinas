@@ -21,9 +21,14 @@ pub fn sys_pwritev(
     fd: FileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
-    offset: i64,
+    offset_low: u64,
+    _offset_high: u64,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
+    // On 64-bit platforms, Linux assumes the `offset_low` contains the full
+    // 64-bit offset.
+    // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/fs/read_write.c#L1114-L1118>.
+    let offset = offset_low.cast_signed();
     let res = do_sys_pwritev(fd, io_vec_ptr, io_vec_count, offset, RWFFlag::empty(), ctx)?;
     Ok(SyscallReturn::Return(res as _))
 }
@@ -32,10 +37,15 @@ pub fn sys_pwritev2(
     fd: FileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
-    offset: i64,
+    offset_low: u64,
+    _offset_high: u64,
     flags: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
+    // On 64-bit platforms, Linux assumes the `offset_low` contains the full
+    // 64-bit offset.
+    // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/fs/read_write.c#L1114-L1118>.
+    let offset = offset_low.cast_signed();
     let flags = match RWFFlag::from_bits(flags) {
         Some(flags) => flags,
         None => return_errno_with_message!(Errno::EINVAL, "invalid flags"),

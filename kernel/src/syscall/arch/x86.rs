@@ -378,8 +378,8 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_EPOLL_CREATE1 = 291    => sys_epoll_create1(args[..1]);
     SYS_DUP3 = 292             => sys_dup3(args[..3]);
     SYS_PIPE2 = 293            => sys_pipe2(args[..2]);
-    SYS_PREADV = 295           => sys_preadv(args[..4]);
-    SYS_PWRITEV = 296          => sys_pwritev(args[..4]);
+    SYS_PREADV = 295           => sys_preadv(args[..5]);
+    SYS_PWRITEV = 296          => sys_pwritev(args[..5]);
     SYS_PRLIMIT64 = 302        => sys_prlimit64(args[..4]);
     SYS_SETNS = 308            => sys_setns(args[..2]);
     SYS_GETCPU = 309           => sys_getcpu(args[..3]);
@@ -389,8 +389,8 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_GETRANDOM = 318        => sys_getrandom(args[..3]);
     SYS_MEMFD_CREATE = 319     => sys_memfd_create(args[..2]);
     SYS_EXECVEAT = 322         => sys_execveat(args[..5], &mut user_ctx);
-    SYS_PREADV2 = 327          => sys_preadv2(args[..5]);
-    SYS_PWRITEV2 = 328         => sys_pwritev2(args[..5]);
+    SYS_PREADV2 = 327          => sys_preadv2(args[..6]);
+    SYS_PWRITEV2 = 328         => sys_pwritev2(args[..6]);
     SYS_STATX = 332            => sys_statx(args[..5]);
     SYS_PIDFD_OPEN = 434       => sys_pidfd_open(args[..2]);
     SYS_CLONE3 = 435           => sys_clone3(args[..2], &user_ctx);

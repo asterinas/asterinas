@@ -215,8 +215,8 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_WRITEV = 66                  => sys_writev(args[..3]);
     SYS_PREAD64 = 67                 => sys_pread64(args[..4]);
     SYS_PWRITE64 = 68                => sys_pwrite64(args[..4]);
-    SYS_PREADV = 69                  => sys_preadv(args[..4]);
-    SYS_PWRITEV = 70                 => sys_pwritev(args[..4]);
+    SYS_PREADV = 69                  => sys_preadv(args[..5]);
+    SYS_PWRITEV = 70                 => sys_pwritev(args[..5]);
     SYS_SENDFILE64 = 71              => sys_sendfile(args[..4]);
     SYS_PSELECT6 = 72                => sys_pselect6(args[..6]);
     SYS_PPOLL = 73                   => sys_ppoll(args[..5]);
@@ -341,8 +341,8 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_GETRANDOM = 278              => sys_getrandom(args[..3]);
     SYS_MEMFD_CREATE = 279           => sys_memfd_create(args[..2]);
     SYS_EXECVEAT = 281               => sys_execveat(args[..5], &mut user_ctx);
-    SYS_PREADV2 = 286                => sys_preadv2(args[..5]);
-    SYS_PWRITEV2 = 287               => sys_pwritev2(args[..5]);
+    SYS_PREADV2 = 286                => sys_preadv2(args[..6]);
+    SYS_PWRITEV2 = 287               => sys_pwritev2(args[..6]);
     SYS_STATX = 291                  => sys_statx(args[..5]);
     SYS_PIDFD_OPEN = 434             => sys_pidfd_open(args[..2]);
     SYS_CLONE3 = 435                 => sys_clone3(args[..2], &user_ctx);
