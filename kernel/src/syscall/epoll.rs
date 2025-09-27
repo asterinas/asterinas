@@ -265,7 +265,10 @@ pub fn sys_epoll_pwait2(
 }
 
 #[derive(Debug, Clone, Copy, Pod)]
-#[repr(C, packed)]
+#[repr(C)]
+// Here we use `repr(packed)` on x86_64 to ensure the same layout as Linux.
+// Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/include/uapi/linux/eventpoll.h#L71-L81>.
+#[cfg_attr(target_arch = "x86_64", repr(packed))]
 struct c_epoll_event {
     events: u32,
     data: u64,
