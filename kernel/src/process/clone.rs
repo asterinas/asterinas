@@ -3,7 +3,6 @@
 use alloc::borrow::Cow;
 use core::{num::NonZeroU64, sync::atomic::Ordering};
 
-use aster_util::per_cpu_counter::PerCpuCounter;
 use ostd::{
     arch::cpu::context::UserContext, cpu::CpuId, sync::RwArc, task::Task, user::UserContextApi,
 };
@@ -27,7 +26,7 @@ use crate::{
     process::{
         pid_file::PidFile,
         posix_thread::{allocate_posix_tid, PosixThread, ThreadLocal},
-        stats::FORKS_COUNTER,
+        stats::PROCESS_CREATION_COUNTER,
         NsProxy, UserNamespace,
     },
     sched::Nice,
@@ -73,10 +72,6 @@ bitflags! {
             Self::CLONE_NEWPID.bits() |
             Self::CLONE_NEWNET.bits();
     }
-}
-
-pub(super) fn init() {
-    FORKS_COUNTER.call_once(PerCpuCounter::new);
 }
 
 /// An internal structure to homogenize the arguments for `clone` and
@@ -299,6 +294,12 @@ pub fn clone_child(
 
         child_process.run();
 
+        PROCESS_CREATION_COUNTER
+            .get()
+            .unwrap()
+            // Race conditions are fine as we don't really care which CPU creates a process.
+            .add_on_cpu(CpuId::current_racy(), 1);
+
         if child_process.status().is_vfork_child() {
             let cond = || (!child_process.status().is_vfork_child()).then_some(());
             let current = ctx.process.as_ref();
@@ -306,10 +307,6 @@ pub fn clone_child(
         }
 
         let child_pid = child_process.pid();
-        FORKS_COUNTER
-            .get()
-            .unwrap()
-            .add_on_cpu(CpuId::current_racy(), 1);
         Ok(child_pid)
     }
 }
