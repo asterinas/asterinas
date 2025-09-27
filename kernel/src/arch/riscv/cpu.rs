@@ -144,7 +144,7 @@ impl TryFrom<&CpuException> for PageFaultInfo {
         let (fault_addr, required_perms) = match value {
             InstructionPageFault(addr) => (addr, VmPerms::EXEC),
             LoadPageFault(addr) => (addr, VmPerms::READ),
-            StorePageFault(addr) => (addr, VmPerms::WRITE),
+            StorePageFault(addr) => (addr, VmPerms::READ | VmPerms::WRITE),
             _ => return Err(()),
         };
 
