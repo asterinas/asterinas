@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 use aster_util::per_cpu_counter::PerCpuCounter;
-use ostd::{cpu::CpuId, timer::Jiffies};
+use ostd::{
+    cpu::{CpuId, PrivilegeLevel},
+    irq::InterruptLevel,
+    timer::Jiffies,
+};
 use spin::Once;
 
 use crate::{sched::SchedPolicy, thread::Thread};
@@ -123,34 +127,28 @@ impl CpuTimeStatsManager {
 
 fn update_cpu_statistics() {
     let manager = CpuTimeStatsManager::singleton();
+
     // No races because we are in IRQs.
     let cpu_id = CpuId::current_racy();
 
-    // Idle time is not counted towards CPU usage.
-
-    // Non-idle time is counted as system time or user time.
-    let interrupt_level = ostd::irq::InterruptLevel::current();
-
-    match interrupt_level {
-        // In Level 1 interrupt context, check the privilege level of interrupted code
-        ostd::irq::InterruptLevel::L1(cpu_priv_at_irq) => match cpu_priv_at_irq {
-            ostd::cpu::PrivilegeLevel::Kernel => {
-                if is_idle() {
-                    manager.inc_idle_time(cpu_id);
-                    return;
-                }
+    match InterruptLevel::current() {
+        // The kernel code is interrupted.
+        InterruptLevel::L1(PrivilegeLevel::Kernel) => {
+            if is_idle() {
+                // Idle time is not counted towards CPU usage.
+                manager.inc_idle_time(cpu_id)
+            } else {
+                // Non-idle time is counted as kernel time.
                 manager.inc_system_time(cpu_id);
             }
-            ostd::cpu::PrivilegeLevel::User => manager.inc_user_time(cpu_id),
-        },
-        // In Level 2 interrupt context (nested interrupt), always count as system time
-        ostd::irq::InterruptLevel::L2 => {
-            manager.inc_system_time(cpu_id);
         }
-        // In task context, this shouldn't happen in timer interrupt handler
-        ostd::irq::InterruptLevel::L0 => {
-            unreachable!();
-        }
+        // The user code is interrupted.
+        InterruptLevel::L1(PrivilegeLevel::User) => manager.inc_user_time(cpu_id),
+        // The interrupt code is interrupted.
+        InterruptLevel::L2 => manager.inc_system_time(cpu_id),
+
+        // We're handling timer interrupts, so this is unreachable.
+        InterruptLevel::L0 => unreachable!("interrupts must not run in the task context"),
     }
 }
 

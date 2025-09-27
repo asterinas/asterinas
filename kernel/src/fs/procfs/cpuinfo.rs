@@ -25,7 +25,6 @@ use crate::{
 pub struct CpuInfoFileOps;
 
 impl CpuInfoFileOps {
-    /// Creates a new inode for `/proc/cpuinfo`.
     pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference:
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/cpuinfo.c#L25>
@@ -38,10 +37,9 @@ impl CpuInfoFileOps {
 }
 
 impl FileOps for CpuInfoFileOps {
-    /// Retrieves the data for `/proc/cpuinfo`.
     fn data(&self) -> Result<Vec<u8>> {
         let output = all_cpus()
-            .map(|cpu| CPU_INFORMATION.get_on_cpu(cpu).wait().to_string())
+            .map(|cpu| CPU_INFORMATION.get_on_cpu(cpu).get().unwrap().to_string())
             .collect::<Vec<String>>()
             .join("\n");
         Ok(output.into_bytes())

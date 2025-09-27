@@ -21,7 +21,6 @@ use crate::{
 pub struct CmdLineFileOps;
 
 impl CmdLineFileOps {
-    /// Create a new inode for `/proc/cmdline`.
     pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference:
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/cmdline.c#L19>
@@ -34,7 +33,6 @@ impl CmdLineFileOps {
 }
 
 impl FileOps for CmdLineFileOps {
-    /// Retrieve the data for `/proc/cmdline`.
     fn data(&self) -> Result<Vec<u8>> {
         // TODO: Parse additional kernel command line information with `bootconfig`.
         // See <https://docs.kernel.org/admin-guide/bootconfig.html> for details.
