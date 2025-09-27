@@ -11,7 +11,7 @@ use aster_rights::{Rights, TRightSet, TRights};
 use ostd::mm::{FrameAllocOptions, UFrame, USegment};
 use xarray::XArray;
 
-use super::{Pager, Vmo, VmoFlags};
+use super::{Pager, Vmo, VmoFlags, WritableMappingStatus};
 use crate::{prelude::*, vm::vmo::Vmo_};
 
 /// Options for allocating a root VMO.
@@ -123,11 +123,16 @@ impl<R: TRights> VmoOptions<TRightSet<R>> {
 fn alloc_vmo_(size: usize, flags: VmoFlags, pager: Option<Arc<dyn Pager>>) -> Result<Vmo_> {
     let size = size.align_up(PAGE_SIZE);
     let pages = committed_pages_if_continuous(flags, size)?;
+    // Only writable file-backed mappings need to be counted.
+    let writable_mapping_status = pager
+        .as_ref()
+        .map(|_| Arc::new(WritableMappingStatus::default()));
     Ok(Vmo_ {
         pager,
         flags,
         pages,
         size: AtomicUsize::new(size),
+        writable_mapping_status,
     })
 }
 
