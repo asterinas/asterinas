@@ -13,7 +13,29 @@ impl SignalContext for UserContext {
 }
 
 impl From<&CpuException> for FaultSignal {
-    fn from(_trap_info: &CpuException) -> Self {
-        unimplemented!()
+    fn from(exception: &CpuException) -> Self {
+        use CpuException::*;
+
+        use crate::process::signal::constants::*;
+
+        // FIXME: All the `None` addresses here should be the value of `sepc`
+        // CSR on trap. So we should either encode that in `CpuException` or
+        // pass it as an additional parameter here.
+        let (num, code, addr) = match exception {
+            InstructionMisaligned => (SIGBUS, BUS_ADRALN, None),
+            InstructionFault => (SIGSEGV, SEGV_ACCERR, None),
+            IllegalInstruction(_) => (SIGILL, ILL_ILLOPC, None),
+            Breakpoint => (SIGTRAP, TRAP_BRKPT, None),
+            LoadMisaligned(_) | StoreMisaligned(_) => (SIGBUS, BUS_ADRALN, None),
+            LoadFault(_) | StoreFault(_) => (SIGSEGV, SEGV_ACCERR, None),
+            UserEnvCall => unreachable!(),
+            SupervisorEnvCall => (SIGILL, ILL_ILLTRP, None),
+            InstructionPageFault(addr) | LoadPageFault(addr) | StorePageFault(addr) => {
+                (SIGSEGV, SEGV_MAPERR, Some(*addr as u64))
+            }
+            Unknown => (SIGILL, ILL_ILLTRP, None),
+        };
+
+        FaultSignal::new(num, code, addr)
     }
 }

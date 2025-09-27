@@ -105,3 +105,10 @@ pub const CLD_DUMPED: i32 = 3;
 pub const CLD_TRAPPED: i32 = 4;
 pub const CLD_STOPPED: i32 = 5;
 pub const CLD_CONTINUED: i32 = 6;
+
+pub const TRAP_BRKPT: i32 = 1;
+pub const TRAP_TRACE: i32 = 2;
+pub const TRAP_BRANCH: i32 = 3;
+pub const TRAP_HWBKPT: i32 = 4;
+pub const TRAP_UNK: i32 = 5;
+pub const TRAP_PERF: i32 = 6;
