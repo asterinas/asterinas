@@ -10,8 +10,9 @@ including crates, modules, structs, traits, functions, macros, and more.
 The use of the `#[warn(missing_docs)]` lint enforces this rule.
 
 Asterinas adheres to the API style guidelines of the Rust community.
-The recommended API documentation style can be found at
-[How to write documentation - The rustdoc book](https://doc.rust-lang.org/rustdoc/how-to-write-documentation.html).
+The recommended API documentation style are specified by two official resources:
+1. The rustdoc book: [How to write documentation](https://doc.rust-lang.org/rustdoc/how-to-write-documentation.html);
+2. The Rust RFC book: [API Documentation Conventions](https://rust-lang.github.io/rfcs/1574-more-api-documentation-conventions.html#appendix-a-full-conventions-text).
 
 ## Lint Guidelines
 
