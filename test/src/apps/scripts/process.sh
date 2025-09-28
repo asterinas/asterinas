@@ -42,6 +42,7 @@ process/group_session
 process/job_control
 process/pidfd
 process/wait4
+procfs/pid_mem
 pthread/pthread_test
 pty/open_pty
 pty/pty_blocking
