@@ -15,8 +15,8 @@ support the loading of Linux kernel modules.
 ## System Calls
 
 At the time of writing,
-Asterinas implements 219 out of the 336 system calls
-provided by Linux on x86-64 architecture.
+Asterinas supports over 220 Linux system calls for the x86-64 architecture,
+which are summarized in the table below.
 
 | Numbers | Names                  | Supported      | Limitations |
 | ------- | ---------------------- | -------------- | --- |
@@ -348,6 +348,9 @@ provided by Linux on x86-64 architecture.
 | 436     | close_range            | ✅             |     |
 | 439     | faccessat2             | ✅             |     |
 | 441     | epoll_pwait2           | ✅             |     |
+
+Most of these system calls (or their variants) are also supported
+for the RISC-V and LoongArch architectures.
 
 ## File Systems
 
