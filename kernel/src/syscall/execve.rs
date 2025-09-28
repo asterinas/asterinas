@@ -57,7 +57,10 @@ fn lookup_executable_file(
 ) -> Result<Path> {
     let path = if filename.is_empty() {
         if !flags.contains(OpenFlags::AT_EMPTY_PATH) {
-            return_errno_with_message!(Errno::ENOENT, "filename is empty while O_AT_EMPTY_PATH is not specified");
+            return_errno_with_message!(
+                Errno::ENOENT,
+                "filename is empty while O_AT_EMPTY_PATH is not specified"
+            );
         }
         let mut file_table = ctx.thread_local.borrow_file_table_mut();
         let file = get_file_fast!(&mut file_table, dfd);
