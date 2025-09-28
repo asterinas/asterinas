@@ -466,10 +466,13 @@ FN_TEST(ns_path)
 	TEST_ERRNO(bind(sk_unbound, (struct sockaddr *)&UNIX_ADDR("/tmp/.bad"),
 			sizeof(struct sockaddr)),
 		   EADDRINUSE);
+	// This fails with `EACCES` for non-root users. However, since we
+	// currently assume that all tests should be run as root, it should
+	// fail with `ECONNREFUSED` instead.
 	TEST_ERRNO(connect(sk_unbound,
 			   (struct sockaddr *)&UNIX_ADDR("/tmp/.bad"),
 			   sizeof(struct sockaddr)),
-		   EACCES);
+		   ECONNREFUSED);
 	TEST_SUCC(close(fd));
 	TEST_SUCC(unlink("/tmp/.bad"));
 }
