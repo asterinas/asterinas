@@ -142,7 +142,10 @@ fn do_sys_mmap(
                 option.typ() == MMapType::Shared,
                 vm_perms | vm_may_perms,
             );
-            if file.downcast_ref::<MemfdFile>().is_some() && is_shared_maywrite {
+            if let Some(memfd) = file.downcast_ref::<MemfdFile>()
+                && is_shared_maywrite
+            {
+                memfd.check_writable()?;
                 options = options.track_vmo_writable_mapping_status();
             }
 
