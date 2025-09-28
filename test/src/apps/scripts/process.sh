@@ -17,6 +17,7 @@ clone3/clone_parent
 clone3/clone_process
 cpu_affinity/cpu_affinity
 execve/execve
+execve/execve_multithread
 exit/exit_code
 exit/exit_procfs
 eventfd2/eventfd2
