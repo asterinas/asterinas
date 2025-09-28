@@ -1,0 +1,16 @@
+PipeTest.*
+Pipe2Test.*
+Pipes/PipeTest.*/pipe
+Pipes/PipeTest.*/pipe2blocking
+Pipes/PipeTest.*/pipe2nonblocking
+Pipes/PipeTest.*/smallbuffer
+Pipes/PipeTest.Seek/*
+Pipes/PipeTest.OffsetCalls/*
+Pipes/PipeTest.Flags/*
+Pipes/PipeTest.BlockWriteClosed/*
+Pipes/PipeTest.BlockPartialWriteClosed/*
+Pipes/PipeTest.FionRead/*
+Pipes/PipeTest.ProcFDInfoReleasesFile/*
+Pipes/PipeTest.Streaming/*
+Pipes/PipeTest.OpenViaProcSelfFD*
+Pipes/PipeTest.SizeChange*

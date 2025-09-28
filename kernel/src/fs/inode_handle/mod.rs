@@ -47,7 +47,11 @@ struct InodeHandle_ {
 impl InodeHandle_ {
     pub fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         if let Some(ref file_io) = self.file_io {
-            return file_io.read(writer);
+            return if self.status_flags().contains(StatusFlags::O_NONBLOCK) {
+                file_io.read(writer)
+            } else {
+                file_io.read_blocked(writer)
+            };
         }
 
         if !self.path.inode().is_seekable() {
@@ -64,7 +68,11 @@ impl InodeHandle_ {
 
     pub fn write(&self, reader: &mut VmReader) -> Result<usize> {
         if let Some(ref file_io) = self.file_io {
-            return file_io.write(reader);
+            return if self.status_flags().contains(StatusFlags::O_NONBLOCK) {
+                file_io.write(reader)
+            } else {
+                file_io.write_blocked(reader)
+            };
         }
 
         if !self.path.inode().is_seekable() {
@@ -345,10 +353,34 @@ impl<R> Drop for InodeHandle<R> {
     }
 }
 
+/// A trait for file-like objects that provide custom I/O operations.
+///
+/// This trait is typically implemented for special files like devices or
+/// named pipes (FIFOs), which have behaviors different from regular on-disk files.
 pub trait FileIo: Pollable + Send + Sync + 'static {
+    /// Reads data from the file into the given `VmWriter`.
     fn read(&self, writer: &mut VmWriter) -> Result<usize>;
 
+    /// Writes data from the given `VmReader` into the file.
     fn write(&self, reader: &mut VmReader) -> Result<usize>;
+
+    /// Reads data from the file into the given `VmWriter`, blocking if necessary.
+    ///
+    /// The default implementation simply calls the non-blocking `read`.
+    /// Implementors that support blocking I/O should override this method to wait
+    /// for data to become available.
+    fn read_blocked(&self, writer: &mut VmWriter) -> Result<usize> {
+        self.read(writer)
+    }
+
+    /// Writes data from the given `VmReader` into the file, blocking if necessary.
+    ///
+    /// The default implementation simply calls the non-blocking `write`.
+    /// Implementors that support blocking I/O should override this method to wait
+    /// until the file can accept data.
+    fn write_blocked(&self, reader: &mut VmReader) -> Result<usize> {
+        self.write(reader)
+    }
 
     /// See [`FileLike::mappable`].
     fn mappable(&self) -> Result<Mappable> {
