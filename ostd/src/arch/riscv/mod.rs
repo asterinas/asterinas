@@ -46,9 +46,7 @@ pub(crate) unsafe fn late_init_on_bsp() {
     unsafe { crate::io::init(io_mem_builder) };
 }
 
-pub(crate) unsafe fn init_on_ap() {
-    unimplemented!()
-}
+pub(crate) unsafe fn init_on_ap() {}
 
 pub(crate) fn interrupts_ack(irq_number: usize) {
     // TODO: We should check for software interrupts too here. Only those external
