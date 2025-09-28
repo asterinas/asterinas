@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_console::BitmapFont;
+use aster_device::{register_device_ids, Device, DeviceIdAllocator, DeviceType};
 use ostd::sync::LocalIrqDisabled;
+use spin::Once;
 use termio::CFontOp;
 
 use self::line_discipline::LineDiscipline;
@@ -9,7 +11,7 @@ use crate::{
     current_userspace,
     events::IoEvents,
     fs::{
-        device::{Device, DeviceId, DeviceType},
+        device::{add_device, DeviceFile},
         inode_handle::FileIo,
         utils::IoctlCmd,
     },
@@ -29,8 +31,7 @@ mod termio;
 
 pub use device::TtyDevice;
 pub use driver::{PushCharError, TtyDriver};
-pub(super) use n_tty::init;
-pub use n_tty::{iter_n_tty, system_console};
+pub use n_tty::system_console;
 
 const IO_CAPACITY: usize = 4096;
 
@@ -299,11 +300,45 @@ impl<D: TtyDriver> Terminal for Tty<D> {
 }
 
 impl<D: TtyDriver> Device for Tty<D> {
-    fn type_(&self) -> DeviceType {
-        DeviceType::Char
+    fn device_type(&self) -> DeviceType {
+        self.driver().as_device().device_type()
     }
 
-    fn id(&self) -> DeviceId {
-        DeviceId::new(88, self.index)
+    fn device_id(&self) -> Option<aster_device::DeviceId> {
+        self.driver().as_device().device_id()
     }
+
+    fn sysnode(&self) -> Arc<dyn aster_systree::SysBranchNode> {
+        self.driver().as_device().sysnode()
+    }
+}
+
+impl<D: TtyDriver> DeviceFile for Tty<D> {
+    fn open(&self) -> Result<Option<Arc<dyn FileIo>>> {
+        Ok(Some(self.weak_self.upgrade().unwrap()))
+    }
+}
+
+impl<D> Debug for Tty<D> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Tty")
+            .field("index", &self.index)
+            .finish_non_exhaustive()
+    }
+}
+
+const TTY_MAJOR: u32 = 4;
+const TTYAUX_MAJOR: u32 = 5;
+
+pub static TTY_ID_ALLOCATOR: Once<DeviceIdAllocator> = Once::new();
+pub static TTYAUX_ID_ALLOCATOR: Once<DeviceIdAllocator> = Once::new();
+
+pub(super) fn init_in_first_process() {
+    TTY_ID_ALLOCATOR
+        .call_once(|| register_device_ids(DeviceType::Char, TTY_MAJOR, 0..256).unwrap());
+    TTYAUX_ID_ALLOCATOR
+        .call_once(|| register_device_ids(DeviceType::Char, TTYAUX_MAJOR, 0..256).unwrap());
+
+    add_device(TtyDevice::new());
+    n_tty::init_in_first_process();
 }

@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_device::{Device, DeviceId, DeviceType};
+use aster_systree::SysBranchNode;
+
 use super::inode_handle::FileIo;
 use crate::{
     fs::{
@@ -10,94 +13,61 @@ use crate::{
     prelude::*,
 };
 
-/// The abstract of device
-pub trait Device: FileIo {
-    /// Return the device type.
-    fn type_(&self) -> DeviceType;
+/// The abstract of device file.
+pub trait DeviceFile: Device + FileIo {
+    fn open(&self) -> Result<Option<Arc<dyn FileIo>>>;
+}
 
-    /// Return the device ID.
-    fn id(&self) -> DeviceId;
+struct DeviceFileWrapper {
+    inner: Arc<dyn DeviceFile>,
+}
 
-    /// Open a device.
-    fn open(&self) -> Result<Option<Arc<dyn FileIo>>> {
-        Ok(None)
+impl DeviceFileWrapper {
+    fn new(inner: Arc<dyn DeviceFile>) -> Arc<Self> {
+        Arc::new(Self { inner })
     }
 }
 
-impl Debug for dyn Device {
+impl Debug for DeviceFileWrapper {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("Device")
-            .field("type", &self.type_())
-            .field("id", &self.id())
-            .finish()
+        f.debug_struct("DeviceFileWrapper").finish_non_exhaustive()
     }
 }
 
-/// Device type
-#[derive(Debug)]
-pub enum DeviceType {
-    Char,
-    #[expect(dead_code)]
-    Block,
-    #[expect(dead_code)]
-    Misc,
-}
-
-/// A device ID, containing a major device number and a minor device number.
-#[derive(Clone, Copy, Debug)]
-pub struct DeviceId {
-    major: u32,
-    minor: u32,
-}
-
-impl DeviceId {
-    /// Creates a device ID from the major device number and the minor device number.
-    pub fn new(major: u32, minor: u32) -> Self {
-        Self { major, minor }
+impl Device for DeviceFileWrapper {
+    fn device_type(&self) -> DeviceType {
+        self.inner.device_type()
     }
 
-    /// Returns the major device number.
-    pub fn major(&self) -> u32 {
-        self.major
+    fn device_id(&self) -> Option<DeviceId> {
+        self.inner.device_id()
     }
 
-    /// Returns the minor device number.
-    pub fn minor(&self) -> u32 {
-        self.minor
+    fn sysnode(&self) -> Arc<dyn SysBranchNode> {
+        self.inner.sysnode()
     }
 }
 
-impl DeviceId {
-    /// Creates a device ID from the encoded `u64` value.
-    ///
-    /// See [`as_encoded_u64`] for details about how to encode a device ID to a `u64` value.
-    ///
-    /// [`as_encoded_u64`]: Self::as_encoded_u64
-    pub fn from_encoded_u64(raw: u64) -> Self {
-        let major = ((raw >> 32) & 0xffff_f000 | (raw >> 8) & 0x0000_0fff) as u32;
-        let minor = ((raw >> 12) & 0xffff_ff00 | raw & 0x0000_00ff) as u32;
-        Self::new(major, minor)
-    }
+/// Adds a device in `/sys/devices`.
+pub fn add_device(device: Arc<dyn DeviceFile>) {
+    let wrapper = DeviceFileWrapper::new(device);
+    aster_device::add_device(wrapper);
+}
 
-    /// Encodes the device ID as a `u64` value.
-    ///
-    /// The lower 32 bits use the same encoding strategy as Linux. See the Linux implementation at:
-    /// <https://github.com/torvalds/linux/blob/0ff41df1cb268fc69e703a08a57ee14ae967d0ca/include/linux/kdev_t.h#L39-L44>.
-    ///
-    /// If the major or minor device number is too large, the additional bits will be recorded
-    /// using the higher 32 bits. Note that as of 2025, the Linux kernel still has no support for
-    /// 64-bit device IDs:
-    /// <https://github.com/torvalds/linux/blob/0ff41df1cb268fc69e703a08a57ee14ae967d0ca/include/linux/types.h#L18>.
-    /// So this encoding follows the implementation in glibc:
-    /// <https://github.com/bminor/glibc/blob/632d895f3e5d98162f77b9c3c1da4ec19968b671/bits/sysmacros.h#L26-L34>.
-    pub fn as_encoded_u64(&self) -> u64 {
-        let major = self.major() as u64;
-        let minor = self.minor() as u64;
-        ((major & 0xffff_f000) << 32)
-            | ((major & 0x0000_0fff) << 8)
-            | ((minor & 0xffff_ff00) << 12)
-            | (minor & 0x0000_00ff)
-    }
+/// Returns a specified device in `/sys/dev`.
+pub fn get_device(type_: DeviceType, id: DeviceId) -> Option<Arc<dyn DeviceFile>> {
+    aster_device::get_device(type_, id).map(|wrapper| {
+        let wrapper = Arc::downcast::<DeviceFileWrapper>(wrapper).unwrap();
+        wrapper.inner.clone()
+    })
+}
+
+/// Returns all devices in `/sys/dev`.
+pub fn all_devices() -> impl Iterator<Item = Arc<dyn DeviceFile>> {
+    aster_device::all_devices().map(|wrapper| {
+        let wrapper = Arc::downcast::<DeviceFileWrapper>(wrapper).unwrap();
+        wrapper.inner.clone()
+    })
 }
 
 /// Adds a device node in `/dev`.
@@ -106,7 +76,7 @@ impl DeviceId {
 /// This function should be called when registering a device.
 //
 // TODO: Figure out what should happen when unregistering the device.
-pub fn add_node(device: Arc<dyn Device>, path: &str, fs_resolver: &FsResolver) -> Result<Path> {
+pub fn add_node(device: Arc<dyn DeviceFile>, path: &str, fs_resolver: &FsResolver) -> Result<Path> {
     let mut dev_path = fs_resolver.lookup(&FsPath::try_from("/dev").unwrap())?;
     let mut relative_path = {
         let relative_path = path.trim_start_matches('/');

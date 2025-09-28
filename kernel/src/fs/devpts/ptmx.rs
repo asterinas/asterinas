@@ -3,17 +3,16 @@
 #![expect(dead_code)]
 #![expect(unused_variables)]
 
+use aster_device::{Device, DeviceId, DeviceType};
+use aster_systree::SysBranchNode;
+
 use super::*;
 use crate::{
+    device::PTMX_DEVICE,
     events::IoEvents,
-    fs::inode_handle::FileIo,
+    fs::{device::DeviceFile, inode_handle::FileIo},
     process::signal::{PollHandle, Pollable},
 };
-
-/// Same major number with Linux.
-const PTMX_MAJOR_NUM: u32 = 5;
-/// Same minor number with Linux.
-const PTMX_MINOR_NUM: u32 = 2;
 
 /// Ptmx is the multiplexing master of devpts.
 ///
@@ -35,7 +34,7 @@ impl Ptmx {
                 PTMX_INO,
                 mkmod!(a+rw),
                 super::BLOCK_SIZE,
-                &inner,
+                PTMX_DEVICE.get().unwrap().as_ref(),
             )),
             inner,
         })
@@ -54,11 +53,11 @@ impl Ptmx {
     }
 
     pub fn device_type(&self) -> DeviceType {
-        self.inner.type_()
+        self.inner.device_type()
     }
 
     pub fn device_id(&self) -> DeviceId {
-        self.inner.id()
+        self.inner.device_id().unwrap()
     }
 }
 
@@ -160,7 +159,7 @@ impl Inode for Ptmx {
         self.devpts()
     }
 
-    fn as_device(&self) -> Option<Arc<dyn Device>> {
+    fn as_device(&self) -> Option<Arc<dyn DeviceFile>> {
         Some(Arc::new(self.inner.clone()))
     }
 
@@ -169,19 +168,23 @@ impl Inode for Ptmx {
     }
 }
 
+impl Debug for Inner {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("PtmxInner").finish_non_exhaustive()
+    }
+}
+
 impl Device for Inner {
-    fn type_(&self) -> DeviceType {
-        DeviceType::Char
+    fn device_type(&self) -> DeviceType {
+        PTMX_DEVICE.get().unwrap().device_type()
     }
 
-    fn id(&self) -> DeviceId {
-        DeviceId::new(PTMX_MAJOR_NUM, PTMX_MINOR_NUM)
+    fn device_id(&self) -> Option<DeviceId> {
+        PTMX_DEVICE.get().unwrap().device_id()
     }
 
-    fn open(&self) -> Result<Option<Arc<dyn FileIo>>> {
-        let devpts = self.0.upgrade().unwrap();
-        let (master, _) = devpts.create_master_slave_pair()?;
-        Ok(Some(master as _))
+    fn sysnode(&self) -> Arc<dyn SysBranchNode> {
+        PTMX_DEVICE.get().unwrap().sysnode()
     }
 }
 
@@ -198,5 +201,13 @@ impl FileIo for Inner {
 
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "cannot write ptmx");
+    }
+}
+
+impl DeviceFile for Inner {
+    fn open(&self) -> Result<Option<Arc<dyn FileIo>>> {
+        let devpts = self.0.upgrade().unwrap();
+        let (master, _) = devpts.create_master_slave_pair()?;
+        Ok(Some(master as _))
     }
 }

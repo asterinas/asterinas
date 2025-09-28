@@ -41,7 +41,7 @@ pub struct PtyMaster {
 
 impl PtyMaster {
     pub(super) fn new(ptmx: Arc<dyn Inode>, index: u32) -> Arc<Self> {
-        let slave = PtySlave::new(index, PtyDriver::new());
+        let slave = PtySlave::new(index, PtyDriver::new(index));
 
         Arc::new(Self { ptmx, slave })
     }

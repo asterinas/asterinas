@@ -1,13 +1,26 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::sync::{Arc, Weak};
+
+use aster_device::{register_device_ids, Device, DeviceId, DeviceIdAllocator, DeviceType};
+use aster_systree::{
+    inherit_sys_branch_node, BranchNodeFields, SysAttrSetBuilder, SysBranchNode, SysObj, SysPerms,
+    SysStr,
+};
+use inherit_methods_macro::inherit_methods;
 use ostd::mm::{DmaCoherent, FrameAllocOptions, HasPaddr, VmIo};
+use spin::Once;
 use tdx_guest::tdcall::{get_report, TdCallError};
 
 use super::*;
 use crate::{
     error::Error,
     events::IoEvents,
-    fs::{inode_handle::FileIo, utils::IoctlCmd},
+    fs::{
+        device::{add_device, DeviceFile},
+        inode_handle::FileIo,
+        utils::IoctlCmd,
+    },
     process::signal::{PollHandle, Pollable},
 };
 
@@ -21,15 +34,68 @@ pub struct TdxReportRequest {
     tdx_report: [u8; TDX_REPORT_LEN],
 }
 
-pub struct TdxGuest;
+const MISC_MAJOR: u32 = 10;
+
+const TDX_GUEST_MINOR: u32 = 0x7b;
+
+/// The `/dev/tdx_guest` device.
+#[derive(Debug)]
+pub struct TdxGuest {
+    id: DeviceId,
+    fields: BranchNodeFields<dyn SysBranchNode, Self>,
+}
 
 impl Device for TdxGuest {
-    fn type_(&self) -> DeviceType {
-        DeviceType::Misc
+    fn device_type(&self) -> DeviceType {
+        DeviceType::Char
     }
 
-    fn id(&self) -> DeviceId {
-        DeviceId::new(0xa, 0x7b)
+    fn device_id(&self) -> Option<DeviceId> {
+        Some(self.id)
+    }
+
+    fn sysnode(&self) -> Arc<dyn SysBranchNode> {
+        self.weak_self().upgrade().unwrap()
+    }
+}
+
+inherit_sys_branch_node!(TdxGuest, fields, {
+    fn perms(&self) -> SysPerms {
+        SysPerms::DEFAULT_RW_PERMS
+    }
+});
+
+#[inherit_methods(from = "self.fields")]
+impl TdxGuest {
+    pub fn init_parent(&self, parent: Weak<dyn SysBranchNode>);
+    pub fn weak_self(&self) -> &Weak<Self>;
+    pub fn child(&self, name: &str) -> Option<Arc<dyn SysBranchNode>>;
+    pub fn add_child(&self, new_child: Arc<dyn SysBranchNode>) -> aster_systree::Result<()>;
+    pub fn remove_child(&self, child_name: &str) -> aster_systree::Result<Arc<dyn SysBranchNode>>;
+}
+
+impl TdxGuest {
+    fn new() -> Arc<Self> {
+        let id = MISC_ID_ALLOCATOR
+            .get()
+            .unwrap()
+            .allocate(TDX_GUEST_MINOR)
+            .unwrap();
+        let name = SysStr::from("tdx_guest");
+
+        let builder = SysAttrSetBuilder::new();
+        let attrs = builder.build().expect("Failed to build attribute set");
+
+        Arc::new_cyclic(|weak_self| TdxGuest {
+            id,
+            fields: BranchNodeFields::new(name, attrs, weak_self.clone()),
+        })
+    }
+}
+
+impl Drop for TdxGuest {
+    fn drop(&mut self) {
+        MISC_ID_ALLOCATOR.get().unwrap().release(self.id.minor());
     }
 }
 
@@ -81,6 +147,12 @@ impl FileIo for TdxGuest {
     }
 }
 
+impl DeviceFile for TdxGuest {
+    fn open(&self) -> crate::prelude::Result<Option<Arc<dyn FileIo>>> {
+        Ok(Some(self.weak_self().upgrade().unwrap()))
+    }
+}
+
 fn handle_get_report(arg: usize) -> Result<i32> {
     const SHARED_BIT: u8 = 51;
     const SHARED_MASK: u64 = 1u64 << SHARED_BIT;
@@ -114,4 +186,13 @@ fn handle_get_report(arg: usize) -> Result<i32> {
     let report_slice: &[u8] = &generated_report;
     user_space.write_bytes(tdx_report_vaddr, &mut VmReader::from(report_slice))?;
     Ok(0)
+}
+
+static MISC_ID_ALLOCATOR: Once<DeviceIdAllocator> = Once::new();
+
+pub(super) fn init_in_first_process() {
+    let ida = register_device_ids(DeviceType::Char, MISC_MAJOR, 0..256).unwrap();
+    MISC_ID_ALLOCATOR.call_once(|| ida);
+
+    add_device(TdxGuest::new());
 }
