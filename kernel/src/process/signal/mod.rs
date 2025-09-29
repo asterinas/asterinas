@@ -75,9 +75,22 @@ pub fn handle_pending_signal(
     let sig_num = signal.num();
     trace!("sig_num = {:?}, sig_name = {}", sig_num, sig_num.sig_name());
 
-    let mut sig_dispositions = current.sig_dispositions().lock();
+    let sig_action = {
+        let sig_dispositions = current.sig_dispositions().lock();
+        let mut sig_dispositions = sig_dispositions.lock();
+        let sig_action = sig_dispositions.get(sig_num);
 
-    let sig_action = sig_dispositions.get(sig_num);
+        if let SigAction::User { flags, .. } = &sig_action
+            && flags.contains(SigActionFlags::SA_RESETHAND)
+        {
+            // In Linux, SA_RESETHAND corresponds to SA_ONESHOT,
+            // which means the user handler will be executed only once and then reset to the default.
+            // Refer to https://elixir.bootlin.com/linux/v6.0.9/source/kernel/signal.c#L2761.
+            sig_dispositions.set_default(sig_num);
+        }
+
+        sig_action
+    };
     trace!("sig action: {:x?}", sig_action);
 
     match sig_action {
@@ -105,14 +118,6 @@ pub fn handle_pending_signal(
                     .set_instruction_pointer(user_ctx.instruction_pointer() - SYSCALL_INSTR_LEN);
             }
 
-            if flags.contains(SigActionFlags::SA_RESETHAND) {
-                // In Linux, SA_RESETHAND corresponds to SA_ONESHOT,
-                // which means the user handler will be executed only once and then reset to the default.
-                // Refer to https://elixir.bootlin.com/linux/v6.0.9/source/kernel/signal.c#L2761.
-                sig_dispositions.set_default(sig_num);
-            }
-
-            drop(sig_dispositions);
             if let Err(e) = handle_user_signal(
                 ctx,
                 sig_num,
@@ -130,8 +135,6 @@ pub fn handle_pending_signal(
             }
         }
         SigAction::Dfl => {
-            drop(sig_dispositions);
-
             let sig_default_action = SigDefaultAction::from_signum(sig_num);
             trace!("sig_default_action: {:?}", sig_default_action);
             match sig_default_action {
