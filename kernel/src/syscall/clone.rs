@@ -8,6 +8,7 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::{clone_child, signal::sig_num::SigNum, CloneArgs, CloneFlags},
+    vm::vmar::is_userspace_vaddr,
 };
 
 // The order of arguments for clone differs in different architecture.
@@ -22,7 +23,8 @@ pub fn sys_clone(
     parent_context: &UserContext,
 ) -> Result<SyscallReturn> {
     let args = CloneArgs::for_clone(clone_flags, parent_tidptr, child_tidptr, tls, new_sp)?;
-    debug!("flags = {:?}, child_stack_ptr = 0x{:x}, parent_tid_ptr = 0x{:x?}, child tid ptr = 0x{:x}, tls = 0x{:x}", args.flags, args.stack, args.parent_tid, args.child_tid, args.tls);
+    debug!("clone args = {:x?}", args);
+
     let child_pid = clone_child(ctx, parent_context, args)?;
     Ok(SyscallReturn::Return(child_pid as _))
 }
@@ -89,16 +91,17 @@ impl TryFrom<Clone3Args> for CloneArgs {
         if value.set_tid != 0 || value.set_tid_size != 0 {
             warn!("set_tid is not supported");
         }
-
         if value.cgroup != 0 {
             warn!("cgroup is not supported");
         }
+
+        // This checks arguments only for the `clone3()` system call.
+        // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/kernel/fork.c#L2843-L2869>.
 
         let flags = CloneFlags::from_bits(value.flags as u32)
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clone flags"))?;
         let exit_signal =
             (value.exit_signal != 0).then(|| SigNum::from_u8(value.exit_signal as u8));
-
         if flags.intersects(CloneFlags::CLONE_PARENT | CloneFlags::CLONE_THREAD)
             && exit_signal.is_some()
         {
@@ -108,14 +111,36 @@ impl TryFrom<Clone3Args> for CloneArgs {
             )
         }
 
+        let (stack, stack_size) = match (
+            NonZeroU64::new(value.stack),
+            NonZeroU64::new(value.stack_size),
+        ) {
+            (Some(_), None) | (None, Some(_)) => return_errno_with_message!(
+                Errno::EINVAL,
+                "the stack and the stack size must be specified together"
+            ),
+            (Some(stack), Some(stack_size))
+                if !is_userspace_vaddr(stack.get() as Vaddr)
+                    || stack
+                        .checked_add(stack_size.get() - 1)
+                        .is_none_or(|stack_end| !is_userspace_vaddr(stack_end.get() as Vaddr)) =>
+            {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "the stack address is not in the userspace"
+                )
+            }
+            vals => vals,
+        };
+
         Ok(Self {
             flags,
             pidfd: Some(value.pidfd as Vaddr),
             child_tid: value.child_tid as _,
             parent_tid: Some(value.parent_tid as _),
             exit_signal,
-            stack: value.stack,
-            stack_size: NonZeroU64::new(value.stack_size),
+            stack,
+            stack_size,
             tls: value.tls,
             _set_tid: Some(value.set_tid),
             _set_tid_size: Some(value.set_tid_size),
