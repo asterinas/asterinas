@@ -51,14 +51,14 @@ pub fn create_new_user_task(
             user_mode.context().syscall_ret()
         );
 
-        // The `clone` syscall may require child process to write the thread pid to the specified address.
-        // Make sure the store operation completes before the clone call returns control to user space
-        // in the child process.
+        // The `clone` syscall may require the child process to write its thread TID to the
+        // specified address. Make sure that the store operation completes before we return control
+        // to user space in the child process.
         let child_tid_ptr = current_thread_local.set_child_tid().get();
         if is_userspace_vaddr(child_tid_ptr) {
-            current_userspace!()
-                .write_val(child_tid_ptr, &current_posix_thread.tid())
-                .unwrap();
+            // At this point, we can do almost nothing if the address is not valid and the store
+            // operation fails. So we ignore the error here.
+            let _ = current_userspace!().write_val(child_tid_ptr, &current_posix_thread.tid());
         }
 
         let has_kernel_event_fn = || current_posix_thread.has_pending();
