@@ -50,27 +50,32 @@ fn send_parent_death_signal(current_process: &Process) {
 ///
 /// If there is no reaper process for `current_process`, returns `None`.
 fn find_reaper_process(current_process: &Process) -> Option<Arc<Process>> {
-    let mut parent = current_process.parent().lock().process();
+    let mut parent = current_process.parent().lock().process().upgrade().unwrap();
 
-    while let Some(process) = parent.upgrade() {
-        if is_init_process(&process) {
-            return Some(process);
+    loop {
+        if parent.is_init_process() {
+            return Some(parent);
         }
 
-        if !process.has_child_subreaper.load(Ordering::Acquire) {
+        if !parent.has_child_subreaper.load(Ordering::Acquire) {
             return None;
         }
 
-        let is_reaper = process.is_child_subreaper();
-        let is_zombie = process.status().is_zombie();
+        let is_reaper = parent.is_child_subreaper();
+        let is_zombie = parent.status().is_zombie();
         if is_reaper && !is_zombie {
-            return Some(process);
+            return Some(parent);
         }
 
-        parent = process.parent().lock().process();
+        let grandparent = parent.parent().lock().process().upgrade();
+        if let Some(grandparent) = grandparent {
+            parent = grandparent;
+        } else {
+            // If both the parent and grandparent have exited concurrently, we will lose the clue
+            // about the ancestor processes. Therefore, we have to retry.
+            parent = current_process.parent().lock().process().upgrade().unwrap();
+        }
     }
-
-    None
 }
 
 /// Moves the children of `current_process` to be the children of `reaper_process`.
@@ -80,17 +85,15 @@ fn move_process_children(
     current_process: &Process,
     reaper_process: &Arc<Process>,
 ) -> core::result::Result<(), ()> {
-    // Take the lock first to avoid the race when the `reaper_process` is exiting concurrently.
+    // Lock order: children of process -> parent of process
     let mut reaper_process_children = reaper_process.children().lock();
-
     let Some(reaper_process_children) = reaper_process_children.as_mut() else {
         // The reaper process has exited, and it is not the init process
         // (since we never clear the init process's children).
         return Err(());
     };
 
-    // Lock order: children of process -> parent of process
-    // We holds the lock of children while update the children's parents.
+    // We hold the lock of children while updating the children's parents.
     // This ensures when dealing with CLONE_PARENT,
     // the retrial will see an up-to-date real parent.
     let mut current_children = current_process.children().lock();
@@ -106,7 +109,7 @@ fn move_process_children(
 
 /// Moves the children to a reaper process.
 fn move_children_to_reaper_process(current_process: &Process) {
-    if is_init_process(current_process) {
+    if current_process.is_init_process() {
         return;
     }
 
@@ -116,11 +119,10 @@ fn move_children_to_reaper_process(current_process: &Process) {
         }
     }
 
-    let Some(init_process) = get_init_process() else {
-        return;
-    };
+    const INIT_PROCESS_PID: Pid = 1;
 
-    let _ = move_process_children(current_process, &init_process);
+    let init_process = process_table::get_process(INIT_PROCESS_PID).unwrap();
+    move_process_children(current_process, &init_process).unwrap();
 }
 
 /// Sends a child-death signal to the parent.
@@ -133,15 +135,4 @@ fn send_child_death_signal(current_process: &Process) {
         parent.enqueue_signal(signal);
     };
     parent.children_wait_queue().wake_all();
-}
-
-const INIT_PROCESS_PID: Pid = 1;
-
-/// Gets the init process
-fn get_init_process() -> Option<Arc<Process>> {
-    process_table::get_process(INIT_PROCESS_PID)
-}
-
-fn is_init_process(process: &Process) -> bool {
-    process.pid() == INIT_PROCESS_PID
 }

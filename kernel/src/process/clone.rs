@@ -748,8 +748,8 @@ fn set_parent_and_group(clone_flags: CloneFlags, parent: &Arc<Process>, child: &
         // Update `has_child_subreaper` for the child process to
         // make sure the `has_child_subreaper` state of the child process
         // will be consistent with its parent.
-        if real_parent.has_child_subreaper.load(Ordering::Relaxed) {
-            child.has_child_subreaper.store(true, Ordering::Relaxed);
+        if real_parent.has_child_subreaper.load(Ordering::Acquire) {
+            child.has_child_subreaper.store(true, Ordering::Release);
         }
 
         // Lock order: children of process -> process table
