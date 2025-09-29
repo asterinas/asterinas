@@ -161,8 +161,8 @@ fn do_execve_no_return(
     *posix_thread.thread_name().lock() = ThreadName::new_from_executable_path(&executable_path);
     process.set_executable_path(executable_path);
 
-    // Reset signal dispositions to their default actions.
-    process.sig_dispositions().lock().inherit();
+    // Unshare and reset signal dispositions to their default actions.
+    unshare_and_reset_sigdispositions(process);
     // Reset the alternate signal stack to its default state.
     *thread_local.sig_stack().borrow_mut() = SigStack::default();
     // Restore the process exit signal to SIGCHLD.
@@ -302,4 +302,13 @@ fn unshare_and_close_files(ctx: &Context) {
         .unwrap()
         .write()
         .close_files_on_exec();
+}
+
+fn unshare_and_reset_sigdispositions(process: &Process) {
+    let mut sig_dispositions = process.sig_dispositions().lock();
+
+    let mut new = *sig_dispositions.lock();
+    new.inherit();
+
+    *sig_dispositions = Arc::new(Mutex::new(new));
 }

@@ -118,7 +118,7 @@ pub struct Process {
 
     // Signal
     /// Sig dispositions
-    sig_dispositions: Arc<Mutex<SigDispositions>>,
+    sig_dispositions: Mutex<Arc<Mutex<SigDispositions>>>,
     /// The signal that the process should receive when parent process exits.
     parent_death_signal: AtomicSigNum,
 
@@ -232,7 +232,7 @@ impl Process {
             reaped_children_stats: Mutex::new(ReapedChildrenStats::default()),
             is_child_subreaper: AtomicBool::new(false),
             has_child_subreaper: AtomicBool::new(false),
-            sig_dispositions,
+            sig_dispositions: Mutex::new(sig_dispositions),
             parent_death_signal: AtomicSigNum::new_empty(),
             exit_signal: AtomicSigNum::new_empty(),
             resource_limits,
@@ -628,7 +628,7 @@ impl Process {
 
     // ****************** Signal ******************
 
-    pub fn sig_dispositions(&self) -> &Arc<Mutex<SigDispositions>> {
+    pub fn sig_dispositions(&self) -> &Mutex<Arc<Mutex<SigDispositions>>> {
         &self.sig_dispositions
     }
 
@@ -647,6 +647,7 @@ impl Process {
         }
 
         let sig_dispositions = self.sig_dispositions.lock();
+        let sig_dispositions = sig_dispositions.lock();
 
         // Drop the signal if it's ignored. See explanation at `enqueue_signal_locked`.
         let signum = signal.num();
@@ -660,7 +661,7 @@ impl Process {
         for thread in threads.as_slice() {
             let posix_thread = thread.as_posix_thread().unwrap();
             if !posix_thread.has_signal_blocked(signal.num()) {
-                posix_thread.enqueue_signal_locked(Box::new(signal), sig_dispositions);
+                posix_thread.enqueue_signal_locked(Box::new(signal), &sig_dispositions);
                 return;
             }
         }
@@ -668,7 +669,7 @@ impl Process {
         // If all threads block the signal, enqueue the signal to the main thread.
         let thread = threads.main();
         let posix_thread = thread.as_posix_thread().unwrap();
-        posix_thread.enqueue_signal_locked(Box::new(signal), sig_dispositions);
+        posix_thread.enqueue_signal_locked(Box::new(signal), &sig_dispositions);
     }
 
     /// Clears the parent death signal.

@@ -132,6 +132,7 @@ pub fn kill_all(signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
 
 fn kill_process(process: &Process, signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
     let sig_dispositions = process.sig_dispositions().lock();
+    let sig_dispositions = sig_dispositions.lock();
     let tasks = process.tasks().lock();
 
     let signum = signal.map(|signal| signal.num());
@@ -196,7 +197,7 @@ fn kill_process(process: &Process, signal: Option<UserSignal>, ctx: &Context) ->
         return Ok(());
     }
 
-    thread_to_enqueue.enqueue_signal_locked(Box::new(signal), sig_dispositions);
+    thread_to_enqueue.enqueue_signal_locked(Box::new(signal), &sig_dispositions);
 
     Ok(())
 }

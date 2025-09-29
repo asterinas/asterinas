@@ -626,15 +626,17 @@ fn clone_files(parent_file_table: &RwArc<FileTable>, clone_flags: CloneFlags) ->
 }
 
 fn clone_sighand(
-    parent_sig_dispositions: &Arc<Mutex<SigDispositions>>,
+    parent_sig_dispositions: &Mutex<Arc<Mutex<SigDispositions>>>,
     clone_flags: CloneFlags,
 ) -> Arc<Mutex<SigDispositions>> {
     // If CLONE_SIGHAND is set, the child and parent shares the same signal handlers.
     // Otherwise, the child has a copy of the parent's signal handlers.
     if clone_flags.contains(CloneFlags::CLONE_SIGHAND) {
-        parent_sig_dispositions.clone()
+        parent_sig_dispositions.lock().clone()
     } else {
-        Arc::new(Mutex::new(*parent_sig_dispositions.lock()))
+        let sig_dispositions = parent_sig_dispositions.lock();
+        let sig_dispositions = sig_dispositions.lock();
+        Arc::new(Mutex::new(*sig_dispositions))
     }
 }
 
