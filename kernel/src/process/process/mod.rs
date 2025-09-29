@@ -308,7 +308,7 @@ impl Process {
     }
 
     pub fn is_init_process(&self) -> bool {
-        self.parent.lock().process().upgrade().is_none()
+        self.parent.pid() == 0
     }
 
     pub(super) fn children(&self) -> &Mutex<Option<BTreeMap<Pid, Arc<Process>>>> {
@@ -748,9 +748,13 @@ impl Process {
     // ******************* Subreaper ********************
 
     /// Sets the child subreaper attribute of the current process.
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if the process is a zombie process.
     pub fn set_child_subreaper(&self) {
-        self.is_child_subreaper.store(true, Ordering::Release);
-        let has_child_subreaper = self.has_child_subreaper.fetch_or(true, Ordering::AcqRel);
+        self.is_child_subreaper.store(true, Ordering::Relaxed);
+        let has_child_subreaper = self.has_child_subreaper.fetch_or(true, Ordering::Release);
         if !has_child_subreaper {
             self.propagate_has_child_subreaper();
         }
@@ -758,37 +762,38 @@ impl Process {
 
     /// Unsets the child subreaper attribute of the current process.
     pub fn unset_child_subreaper(&self) {
-        self.is_child_subreaper.store(false, Ordering::Release);
+        self.is_child_subreaper.store(false, Ordering::Relaxed);
     }
 
     /// Returns whether this process is a child subreaper.
     pub fn is_child_subreaper(&self) -> bool {
-        self.is_child_subreaper.load(Ordering::Acquire)
+        self.is_child_subreaper.load(Ordering::Relaxed)
     }
 
     /// Sets all descendants of the current process as having child subreaper.
     fn propagate_has_child_subreaper(&self) {
         let mut process_queue = VecDeque::new();
         let children = self.children().lock();
-        let Some(children_ref) = children.as_ref() else {
-            // The current process is exiting group at the same time.
-            return;
-        };
-        for child_process in children_ref.values() {
-            if !child_process.has_child_subreaper.load(Ordering::Acquire) {
+        for child_process in children.as_ref().unwrap().values() {
+            let has_child_subreaper = child_process
+                .has_child_subreaper
+                .fetch_or(true, Ordering::Release);
+            if !has_child_subreaper {
                 process_queue.push_back(child_process.clone());
             }
         }
 
         while let Some(process) = process_queue.pop_front() {
-            process.has_child_subreaper.store(true, Ordering::Release);
             let children = process.children().lock();
             let Some(children_ref) = children.as_ref() else {
                 // The process is exiting group at the same time.
                 continue;
             };
             for child_process in children_ref.values() {
-                if !child_process.has_child_subreaper.load(Ordering::Acquire) {
+                let has_child_subreaper = child_process
+                    .has_child_subreaper
+                    .fetch_or(true, Ordering::Release);
+                if !has_child_subreaper {
                     process_queue.push_back(child_process.clone());
                 }
             }
