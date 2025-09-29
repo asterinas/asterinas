@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use cfg_if::cfg_if;
-
 use super::SyscallReturn;
 use crate::{
     fs::{
@@ -89,124 +87,109 @@ bitflags::bitflags! {
     }
 }
 
-cfg_if! {
-    if #[cfg(target_arch = "x86_64")] {
-        /// File Stat
-        #[derive(Debug, Clone, Copy, Pod, Default)]
-        #[repr(C)]
-        pub struct Stat {
-            /// ID of device containing file
-            st_dev: u64,
-            /// Inode number
-            st_ino: u64,
-            /// Number of hard links
-            st_nlink: usize,
-            /// File type and mode
-            st_mode: u32,
-            /// User ID of owner
-            st_uid: u32,
-            /// Group ID of owner
-            st_gid: u32,
-            /// Padding bytes
-            __pad0: u32,
-            /// Device ID (if special file)
-            st_rdev: u64,
-            /// Total size, in bytes
-            st_size: isize,
-            /// Block size for filesystem I/O
-            st_blksize: isize,
-            /// Number of 512-byte blocks allocated
-            st_blocks: isize,
-            /// Time of last access
-            st_atime: timespec_t,
-            /// Time of last modification
-            st_mtime: timespec_t,
-            /// Time of last status change
-            st_ctime: timespec_t,
-            /// Unused field
-            __unused: [i64; 3],
-        }
+/// File status; `struct stat` in Linux.
+///
+/// This is the x86_64-specific version.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/arch/x86/include/uapi/asm/stat.h#L83>.
+#[derive(Debug, Clone, Copy, Pod, Default)]
+#[repr(C)]
+#[cfg(target_arch = "x86_64")]
+struct Stat {
+    /// Device.
+    st_dev: u64,
+    /// File serial number.
+    st_ino: u64,
+    /// Link count.
+    st_nlink: u64,
+    /// File mode.
+    st_mode: u32,
+    /// User ID of the file's owner.
+    st_uid: u32,
+    /// Group ID of the file's group.
+    st_gid: u32,
+    /// Padding bytes.
+    __pad0: u32,
+    /// Device number, if device.
+    st_rdev: u64,
+    /// Total size, in bytes
+    st_size: i64,
+    /// Optimal block size for I/O.
+    st_blksize: i64,
+    /// Number 512-byte blocks allocated.
+    st_blocks: i64,
+    /// Time of last access.
+    st_atime: timespec_t,
+    /// Time of last modification.
+    st_mtime: timespec_t,
+    /// Time of last status change.
+    st_ctime: timespec_t,
+    /// Unused fields.
+    __unused: [i64; 3],
+}
 
-        impl From<Metadata> for Stat {
-            fn from(info: Metadata) -> Self {
-                Self {
-                    st_dev: info.dev,
-                    st_ino: info.ino,
-                    st_nlink: info.nlinks,
-                    st_mode: info.type_ as u32 | info.mode.bits() as u32,
-                    st_uid: info.uid.into(),
-                    st_gid: info.gid.into(),
-                    __pad0: 0,
-                    st_rdev: info.rdev,
-                    st_size: info.size as isize,
-                    st_blksize: info.blk_size as isize,
-                    st_blocks: (info.blocks * (info.blk_size / 512)) as isize,
-                    st_atime: info.atime.into(),
-                    st_mtime: info.mtime.into(),
-                    st_ctime: info.ctime.into(),
-                    __unused: [0; 3],
-                }
-            }
-        }
-    } else if #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))] {
-        /// File Stat
-        #[derive(Debug, Clone, Copy, Pod, Default)]
-        #[repr(C)]
-        pub struct Stat {
-            /// ID of device containing file
-            st_dev: u64,
-            /// Inode number
-            st_ino: u64,
-            /// File type and mode
-            st_mode: u32,
-            /// Number of hard links
-            st_nlink: u32,
-            /// User ID of owner
-            st_uid: u32,
-            /// Group ID of owner
-            st_gid: u32,
-            /// Device ID (if special file)
-            st_rdev: u64,
-            /// Padding bytes
-            __pad0: u64,
-            /// Total size, in bytes
-            st_size: isize,
-            /// Block size for filesystem I/O
-            st_blksize: i32,
-            /// Padding bytes
-            __pad1: i32,
-            /// Number of 512-byte blocks allocated
-            st_blocks: isize,
-            /// Time of last access
-            st_atime: timespec_t,
-            /// Time of last modification
-            st_mtime: timespec_t,
-            /// Time of last status change
-            st_ctime: timespec_t,
-        }
+/// File status; `struct stat` in Linux.
+///
+/// This is the generic version that is used by most popular 64-bit architectures except x86_64.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/include/uapi/asm-generic/stat.h#L24>.
+#[derive(Debug, Clone, Copy, Pod, Default)]
+#[repr(C)]
+#[cfg(not(target_arch = "x86_64"))]
+struct Stat {
+    /// Device.
+    st_dev: u64,
+    /// File serial number.
+    st_ino: u64,
+    /// File mode.
+    st_mode: u32,
+    /// Link count.
+    st_nlink: u32,
+    /// User ID of the file's owner.
+    st_uid: u32,
+    /// Group ID of the file's group.
+    st_gid: u32,
+    /// Device number, if device.
+    st_rdev: u64,
+    /// Padding bytes.
+    __pad1: u64,
+    /// Size of file, in bytes.
+    st_size: i64,
+    /// Optimal block size for I/O.
+    st_blksize: i32,
+    /// Padding bytes.
+    __pad2: i32,
+    /// Number 512-byte blocks allocated.
+    st_blocks: i64,
+    /// Time of last access.
+    st_atime: timespec_t,
+    /// Time of last modification.
+    st_mtime: timespec_t,
+    /// Time of last status change.
+    st_ctime: timespec_t,
+    /// Unused fields.
+    __unused4: u32,
+    /// Unused fields.
+    __unused5: u32,
+}
 
-        impl From<Metadata> for Stat {
-            fn from(info: Metadata) -> Self {
-                Self {
-                    st_dev: info.dev,
-                    st_ino: info.ino,
-                    st_nlink: info.nlinks as _,
-                    st_mode: info.type_ as u32 | info.mode.bits() as u32,
-                    st_uid: info.uid.into(),
-                    st_gid: info.gid.into(),
-                    __pad0: 0,
-                    st_rdev: info.rdev,
-                    st_size: info.size as isize,
-                    st_blksize: info.blk_size as _,
-                    st_blocks: (info.blocks * (info.blk_size / 512)) as isize,
-                    st_atime: info.atime.into(),
-                    st_mtime: info.mtime.into(),
-                    st_ctime: info.ctime.into(),
-                    __pad1: 0,
-                }
-            }
+impl From<Metadata> for Stat {
+    fn from(info: Metadata) -> Self {
+        Self {
+            st_dev: info.dev,
+            st_ino: info.ino,
+            st_nlink: info.nlinks as _,
+            st_mode: info.type_ as u32 | info.mode.bits() as u32,
+            st_uid: info.uid.into(),
+            st_gid: info.gid.into(),
+            st_rdev: info.rdev,
+            st_size: info.size as i64,
+            st_blksize: info.blk_size as _,
+            st_blocks: (info.blocks * (info.blk_size / 512)) as i64,
+            st_atime: info.atime.into(),
+            st_mtime: info.mtime.into(),
+            st_ctime: info.ctime.into(),
+            ..Default::default()
         }
-    } else {
-        compile_error!("unsupported target");
     }
 }
