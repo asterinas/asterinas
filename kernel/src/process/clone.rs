@@ -110,7 +110,7 @@ pub struct CloneArgs {
     pub child_tid: Vaddr,
     pub parent_tid: Option<Vaddr>,
     pub exit_signal: Option<SigNum>,
-    pub stack: u64,
+    pub stack: Option<NonZeroU64>,
     pub stack_size: Option<NonZeroU64>,
     pub tls: u64,
     pub _set_tid: Option<u64>,
@@ -129,14 +129,8 @@ impl CloneArgs {
     ) -> Result<Self> {
         const FLAG_MASK: u64 = 0xff;
         let flags = CloneFlags::from(raw_flags & !FLAG_MASK);
-        if flags.contains(CloneFlags::CLONE_NEWNS | CloneFlags::CLONE_FS) {
-            return_errno_with_message!(
-                Errno::EINVAL,
-                "CLONE_NEWNS cannot be used with CLONE_FS for clone syscall"
-            );
-        }
-
         let exit_signal = raw_flags & FLAG_MASK;
+
         // Disambiguate the `parent_tid` parameter. The field is used
         // both for `CLONE_PIDFD` and `CLONE_PARENT_SETTID`, so at
         // most only one can be specified.
@@ -150,7 +144,7 @@ impl CloneArgs {
             (true, true) => {
                 return_errno_with_message!(
                     Errno::EINVAL,
-                    "CLONE_PIDFD was specified with CLONE_PARENT_SETTID"
+                    "`CLONE_PIDFD` and `CLONE_PARENT_SETTID` cannot be specified together"
                 );
             }
         };
@@ -161,7 +155,7 @@ impl CloneArgs {
             child_tid,
             parent_tid,
             exit_signal: (exit_signal != 0).then(|| SigNum::from_u8(exit_signal as u8)),
-            stack,
+            stack: NonZeroU64::new(stack),
             tls,
             ..Default::default()
         })
@@ -186,6 +180,19 @@ impl CloneArgs {
         let clone_flags = self.flags;
         clone_flags.check_unsupported_flags()?;
 
+        // This checks the arguments for all clone-related system calls.
+        // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/kernel/fork.c#L1926-L1978>.
+
+        // Reject invalid argument combinations related to the CLONE_FS flag.
+        if clone_flags.contains(CloneFlags::CLONE_FS)
+            && clone_flags.intersects(CloneFlags::CLONE_NEWNS | CloneFlags::CLONE_NEWUSER)
+        {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "`CLONE_FS` cannot be used together with `CLONE_NEWNS` or `CLONE_NEWUSER`"
+            );
+        }
+
         // Reject invalid argument combinations related to the CLONE_PARENT flag.
         if clone_flags.contains(CloneFlags::CLONE_PARENT) {
             if clone_flags.intersects(CloneFlags::CLONE_NEWUSER | CloneFlags::CLONE_NEWPID) {
@@ -204,9 +211,7 @@ impl CloneArgs {
         }
 
         // Reject invalid argument combinations related to the CLONE_THREAD flag.
-        if self.flags.contains(CloneFlags::CLONE_THREAD) {
-            // This combination is not valid, according to the Linux man pages. See
-            // <https://www.man7.org/linux/man-pages/man2/clone.2.html>.
+        if clone_flags.contains(CloneFlags::CLONE_THREAD) {
             if !clone_flags.contains(CloneFlags::CLONE_VM | CloneFlags::CLONE_SIGHAND) {
                 return_errno_with_message!(
                     Errno::EINVAL,
@@ -220,6 +225,16 @@ impl CloneArgs {
                     "`CLONE_THREAD` cannot be used together with `CLONE_PIDFD` or `CLONE_NEWUSER`"
                 );
             }
+        }
+
+        // Reject invalid argument combinations related to the CLONE_SIGHAND flag.
+        if clone_flags.contains(CloneFlags::CLONE_SIGHAND)
+            && !clone_flags.contains(CloneFlags::CLONE_VM)
+        {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "`CLONE_SIGHAND` without `CLONE_VM` is not valid"
+            );
         }
 
         Ok(())
@@ -552,9 +567,9 @@ fn clone_parent_settid(
     Ok(())
 }
 
-/// Clone child process vm. If CLONE_VM is set, both threads share the same root vmar.
-/// Otherwise, fork a new copy-on-write vmar.
 fn clone_vm(parent_process_vm: &ProcessVm, clone_flags: CloneFlags) -> Result<ProcessVm> {
+    // If CLONE_VM is set, the child and parent share the same VMAR.
+    // Otherwise, the child has a copy of the parent's VMAR.
     if clone_flags.contains(CloneFlags::CLONE_VM) {
         Ok(parent_process_vm.clone())
     } else {
@@ -564,23 +579,22 @@ fn clone_vm(parent_process_vm: &ProcessVm, clone_flags: CloneFlags) -> Result<Pr
 
 fn clone_user_ctx(
     parent_context: &UserContext,
-    new_sp: u64,
+    new_sp: Option<NonZeroU64>,
     stack_size: Option<NonZeroU64>,
     tls: u64,
     clone_flags: CloneFlags,
 ) -> UserContext {
     let mut child_context = parent_context.clone();
-    // The return value of child thread is zero
+    // The return value in the child thread is zero.
     child_context.set_syscall_ret(0);
 
-    if new_sp != 0 {
-        // If stack size is not 0, the `new_sp` points to the BOTTOMMOST byte of stack.
-        if let Some(size) = stack_size {
-            child_context.set_stack_pointer((new_sp + size.get()) as usize)
-        }
-        // If stack size is 0, the new_sp points to the TOPMOST byte of stack.
-        else {
-            child_context.set_stack_pointer(new_sp as usize);
+    if let Some(new_sp) = new_sp {
+        if let Some(stack_size) = stack_size {
+            // `new_sp` is the stack bottom if the stack size is specified.
+            child_context.set_stack_pointer((new_sp.get() + stack_size.get()) as usize);
+        } else {
+            // `new_sp` is the stack top if the stack size is not specified.
+            child_context.set_stack_pointer(new_sp.get() as usize);
         }
     }
     if clone_flags.contains(CloneFlags::CLONE_SETTLS) {
@@ -591,6 +605,8 @@ fn clone_user_ctx(
 }
 
 fn clone_fs(parent_fs: &Arc<ThreadFsInfo>, clone_flags: CloneFlags) -> Arc<ThreadFsInfo> {
+    // If CLONE_FS is set, the child and parent share the same filesystem information.
+    // Otherwise, the child has a copy of the parent's filesystem information.
     if clone_flags.contains(CloneFlags::CLONE_FS) {
         parent_fs.clone()
     } else {
@@ -599,9 +615,8 @@ fn clone_fs(parent_fs: &Arc<ThreadFsInfo>, clone_flags: CloneFlags) -> Arc<Threa
 }
 
 fn clone_files(parent_file_table: &RwArc<FileTable>, clone_flags: CloneFlags) -> RwArc<FileTable> {
-    // if CLONE_FILES is set, the child and parent shares the same file table
-    // Otherwise, the child will deep copy a new file table.
-    // FIXME: the clone may not be deep copy.
+    // If CLONE_FILES is set, the child and parent share the same file table.
+    // Otherwise, the child has a copy of the parent's file table.
     if clone_flags.contains(CloneFlags::CLONE_FILES) {
         parent_file_table.clone()
     } else {
@@ -613,7 +628,8 @@ fn clone_sighand(
     parent_sig_dispositions: &Arc<Mutex<SigDispositions>>,
     clone_flags: CloneFlags,
 ) -> Arc<Mutex<SigDispositions>> {
-    // similar to CLONE_FILES
+    // If CLONE_SIGHAND is set, the child and parent shares the same signal handlers.
+    // Otherwise, the child has a copy of the parent's signal handlers.
     if clone_flags.contains(CloneFlags::CLONE_SIGHAND) {
         parent_sig_dispositions.clone()
     } else {
