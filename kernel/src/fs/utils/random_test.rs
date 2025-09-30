@@ -59,31 +59,31 @@ impl Operation {
         idx: u32,
         rng: &mut dyn RngCore,
     ) -> Self {
-        let op_id = rng.gen_range(0..Self::DIR_OP_NUM);
+        let op_id = rng.random_range(0..Self::DIR_OP_NUM);
         if op_id == Self::CREATE_FILE_ID {
             Operation::Create(idx.to_string(), InodeType::File)
         } else if op_id == Self::CREATE_DIR_ID {
             Operation::Create(idx.to_string(), InodeType::Dir)
         } else if op_id == Self::UNLINK_ID && !dir.sub_names.is_empty() {
-            let rand_idx = rng.gen_range(0..dir.sub_names.len());
+            let rand_idx = rng.random_range(0..dir.sub_names.len());
             let name = dir.sub_names[rand_idx].clone();
             Operation::Unlink(name)
         } else if op_id == Self::RMDIR_ID && !dir.sub_names.is_empty() {
-            let rand_idx = rng.gen_range(0..dir.sub_names.len());
+            let rand_idx = rng.random_range(0..dir.sub_names.len());
             let name = dir.sub_names[rand_idx].clone();
             Operation::Rmdir(name)
         } else if op_id == Self::LOOKUP_ID && !dir.sub_names.is_empty() {
-            let rand_idx = rng.gen_range(0..dir.sub_names.len());
+            let rand_idx = rng.random_range(0..dir.sub_names.len());
             let name = dir.sub_names[rand_idx].clone();
             Operation::Lookup(name)
         } else if op_id == Self::READDIR_ID {
             Operation::Readdir()
         } else if op_id == Self::RENAME_ID && !dir.sub_names.is_empty() {
-            let rand_old_idx = rng.gen_range(0..dir.sub_names.len());
+            let rand_old_idx = rng.random_range(0..dir.sub_names.len());
             let old_name = dir.sub_names[rand_old_idx].clone();
-            let rename_to_an_exist = rng.gen_bool(0.5);
+            let rename_to_an_exist = rng.random_bool(0.5);
             if rename_to_an_exist {
-                let rand_new_idx = rng.gen_range(0..dir.sub_names.len());
+                let rand_new_idx = rng.random_range(0..dir.sub_names.len());
                 let new_name = dir.sub_names[rand_new_idx].clone();
                 Operation::Rename(old_name, new_name)
             } else {
@@ -99,7 +99,7 @@ impl Operation {
         idx: u32,
         rng: &mut dyn RngCore,
     ) -> Self {
-        let op_id = rng.gen_range(0..Self::FILE_OP_NUM);
+        let op_id = rng.random_range(0..Self::FILE_OP_NUM);
         if op_id == Self::READ_ID {
             let (offset, len) =
                 generate_random_offset_len(Self::MAX_PAGE_PER_FILE * PAGE_SIZE, rng);
@@ -109,7 +109,7 @@ impl Operation {
                 generate_random_offset_len(Self::MAX_PAGE_PER_FILE * PAGE_SIZE, rng);
             Operation::Write(offset, len)
         } else if op_id == Self::RESIZE_ID {
-            let pg_num = rng.gen_range(0..Self::MAX_PAGE_PER_FILE);
+            let pg_num = rng.random_range(0..Self::MAX_PAGE_PER_FILE);
             let new_size = (pg_num * PAGE_SIZE).max(file.contents.len());
             Operation::Resize(new_size)
         } else {
@@ -499,11 +499,11 @@ fn random_select_from_dir_tree<'a>(
     if sub_cnt == 0 {
         root
     } else {
-        let stop_get_deeper = rng.gen_bool(0.5);
+        let stop_get_deeper = rng.random_bool(0.5);
         if stop_get_deeper {
             root
         } else if let DentryInMemory::Dir(dir) = root {
-            let sub_idx = rng.gen_range(0..sub_cnt);
+            let sub_idx = rng.random_range(0..sub_cnt);
             let sub = dir.sub_dirs.get_mut(&dir.sub_names[sub_idx]);
             let sub_dir = sub.unwrap();
             random_select_from_dir_tree(sub_dir, rng)
@@ -514,8 +514,8 @@ fn random_select_from_dir_tree<'a>(
 }
 
 fn generate_random_offset_len(max_size: usize, rng: &mut dyn RngCore) -> (usize, usize) {
-    let offset = rng.gen_range(0..max_size);
-    let len = rng.gen_range(0..max_size - offset);
+    let offset = rng.random_range(0..max_size);
+    let len = rng.random_range(0..max_size - offset);
     (offset, len)
 }
 
