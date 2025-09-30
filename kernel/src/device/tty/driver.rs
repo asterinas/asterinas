@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_console::AnyConsoleDevice;
+
 use crate::prelude::{Errno, Error, Result};
 
 /// An error indicating that no characters can be pushed because the buffer is full.
@@ -51,4 +53,14 @@ pub trait TtyDriver: Send + Sync + 'static {
 
     /// Sets the TTY font.
     fn set_font(&self, font: aster_console::BitmapFont) -> Result<()>;
+}
+
+pub trait HasConsole {
+    fn console(&self) -> Option<&dyn AnyConsoleDevice>;
+}
+
+impl<D: TtyDriver> HasConsole for D {
+    default fn console(&self) -> Option<&dyn AnyConsoleDevice> {
+        None
+    }
 }
