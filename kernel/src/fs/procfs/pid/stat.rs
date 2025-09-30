@@ -118,8 +118,7 @@ impl FileOps for StatFileOps {
         let comm = posix_thread
             .thread_name()
             .lock()
-            .as_ref()
-            .and_then(|name| name.as_string())
+            .as_string()
             .unwrap_or_else(|| process.executable_path());
         let state = if thread.is_exited() { 'Z' } else { 'R' };
         let ppid = process.parent().pid();

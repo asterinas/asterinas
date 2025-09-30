@@ -202,8 +202,8 @@ impl ProcessVm {
     }
 }
 
-/// Renews the [`ProcessVm`] of the current process and then maps the heap VMO to the new VMAR.
-pub fn renew_vm_and_map(ctx: &Context) {
+/// Renews the [`ProcessVm`] of of the current process and then maps the heap VMO to the new VMAR.
+pub(super) fn renew_vmar_and_map_heap(ctx: &Context) {
     let process_vm = ctx.process.vm();
     let mut root_vmar = process_vm.lock_root_vmar();
 

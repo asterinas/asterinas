@@ -7,57 +7,39 @@ use crate::prelude::*;
 pub const MAX_THREAD_NAME_LEN: usize = 16;
 
 #[derive(Debug, Clone)]
-pub struct ThreadName {
-    inner: [u8; MAX_THREAD_NAME_LEN],
-    count: usize,
-}
-
-impl Default for ThreadName {
-    fn default() -> Self {
-        ThreadName::new()
-    }
-}
+pub struct ThreadName([u8; MAX_THREAD_NAME_LEN]);
 
 impl ThreadName {
-    pub fn new() -> Self {
-        ThreadName {
-            inner: [0; MAX_THREAD_NAME_LEN],
-            count: 0,
-        }
+    fn new() -> Self {
+        ThreadName([0; MAX_THREAD_NAME_LEN])
     }
 
-    pub fn new_from_executable_path(executable_path: &str) -> Result<Self> {
+    pub fn new_from_executable_path(executable_path: &str) -> Self {
         let mut thread_name = ThreadName::new();
-        let executable_file_name = executable_path
-            .split('/')
-            .next_back()
-            .ok_or(Error::with_message(Errno::EINVAL, "invalid elf path"))?;
-        let name = CString::new(executable_file_name)?;
-        thread_name.set_name(&name)?;
-        Ok(thread_name)
+        let Some(file_name) = executable_path.split('/').next_back() else {
+            return thread_name;
+        };
+
+        thread_name.set_name_as_bytes(file_name.as_bytes());
+        thread_name
     }
 
-    pub fn set_name(&mut self, name: &CStr) -> Result<()> {
-        let bytes = name.to_bytes_with_nul();
-        let bytes_len = bytes.len();
-        if bytes_len > MAX_THREAD_NAME_LEN {
-            // if len > MAX_THREAD_NAME_LEN, truncate it.
-            self.count = MAX_THREAD_NAME_LEN;
-            self.inner[..MAX_THREAD_NAME_LEN].clone_from_slice(&bytes[..MAX_THREAD_NAME_LEN]);
-            self.inner[MAX_THREAD_NAME_LEN - 1] = 0;
-            return Ok(());
-        }
-        self.count = bytes_len;
-        self.inner[..bytes_len].clone_from_slice(bytes);
-        Ok(())
+    pub fn set_name(&mut self, name: &CStr) {
+        self.set_name_as_bytes(name.to_bytes());
     }
 
-    pub fn name(&self) -> Option<&CStr> {
-        CStr::from_bytes_until_nul(&self.inner).ok()
+    fn set_name_as_bytes(&mut self, name_as_bytes: &[u8]) {
+        let name_len = name_as_bytes.len().min(MAX_THREAD_NAME_LEN - 1);
+        self.0[..name_len].copy_from_slice(&name_as_bytes[..name_len]);
+        self.0[name_len..].fill(0);
+    }
+
+    pub fn name(&self) -> &CStr {
+        CStr::from_bytes_until_nul(&self.0).unwrap()
     }
 
     pub fn as_string(&self) -> Option<String> {
-        let name = self.name()?;
+        let name = self.name();
         name.to_str().ok().map(|name| name.to_owned())
     }
 }

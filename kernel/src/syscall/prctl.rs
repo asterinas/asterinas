@@ -62,23 +62,18 @@ pub fn sys_prctl(
         }
         PrctlCmd::PR_GET_NAME(write_to_addr) => {
             let thread_name = ctx.posix_thread.thread_name().lock();
-            if let Some(thread_name) = &*thread_name {
-                if let Some(thread_name) = thread_name.name() {
-                    ctx.user_space().write_bytes(
-                        write_to_addr,
-                        &mut VmReader::from(thread_name.to_bytes_with_nul()),
-                    )?;
-                }
-            }
+
+            ctx.user_space().write_bytes(
+                write_to_addr,
+                &mut VmReader::from(thread_name.name().to_bytes_with_nul()),
+            )?;
         }
         PrctlCmd::PR_SET_NAME(read_addr) => {
+            let new_thread_name = ctx
+                .user_space()
+                .read_cstring(read_addr, MAX_THREAD_NAME_LEN)?;
             let mut thread_name = ctx.posix_thread.thread_name().lock();
-            if let Some(thread_name) = &mut *thread_name {
-                let new_thread_name = ctx
-                    .user_space()
-                    .read_cstring(read_addr, MAX_THREAD_NAME_LEN)?;
-                thread_name.set_name(&new_thread_name)?;
-            }
+            thread_name.set_name(&new_thread_name);
         }
         PrctlCmd::PR_SET_CHILD_SUBREAPER(is_set) => {
             let process = ctx.process.as_ref();

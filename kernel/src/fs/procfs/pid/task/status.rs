@@ -105,8 +105,7 @@ impl FileOps for StatusFileOps {
             posix_thread
                 .thread_name()
                 .lock()
-                .as_ref()
-                .and_then(|name| name.as_string())
+                .as_string()
                 .unwrap_or_else(|| process.executable_path())
         )
         .unwrap();
