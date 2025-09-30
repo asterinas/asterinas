@@ -1,4 +1,9 @@
-{ lib, stdenv, fetchFromGitHub, hostPlatform, glibc, libnl, }: rec {
+{ lib, stdenv, fetchFromGitHub, hostPlatform, glibc, libnl, callPackage,
+}: rec {
+
+  tdxAttest = lib.optionalAttrs (builtins.getEnv "INTEL_TDX" == "1")
+    (callPackage ./tdx-attest.nix { });
+
   mongoose_src = fetchFromGitHub {
     owner = "cesanta";
     repo = "mongoose";
@@ -15,6 +20,10 @@
     };
 
     MONGOOSE_DIR = "${mongoose_src}";
+
+    INTEL_TDX = builtins.getEnv "INTEL_TDX";
+    TDX_ATTEST_DIR = lib.optionalString (builtins.getEnv "INTEL_TDX" == "1")
+      "${tdxAttest}/QuoteGeneration";
 
     HOST_PLATFORM = "${hostPlatform.system}";
     CC = "${stdenv.cc.targetPrefix}cc";
