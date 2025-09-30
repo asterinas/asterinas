@@ -14,7 +14,7 @@ use crate::{
         inode_handle::{do_fallocate_util, do_resize_util, do_seek_util},
         ramfs::new_detached_inode,
         utils::{
-            mkmod, AccessMode, FallocMode, Inode, InodeMode, IoctlCmd, Metadata, SeekFrom,
+            chmod, mkmod, AccessMode, FallocMode, Inode, InodeMode, IoctlCmd, Metadata, SeekFrom,
             StatusFlags,
         },
     },
@@ -37,10 +37,11 @@ pub struct MemfdFile {
     offset: Mutex<usize>,
     access_mode: AccessMode,
     status_flags: AtomicU32,
+    seals: Mutex<FileSeals>,
 }
 
 impl MemfdFile {
-    pub fn new(name: &str) -> Result<Self> {
+    pub fn new(name: &str, memfd_flags: MemfdFlags) -> Result<Self> {
         if name.len() > MAX_MEMFD_NAME_LEN {
             return_errno_with_message!(Errno::EINVAL, "MemfdManager: `name` is too long.");
         }
@@ -53,7 +54,27 @@ impl MemfdFile {
         //
         // Reference: <https://github.com/torvalds/linux/blob/379f604cc3dc2c865dc2b13d81faa166b6df59ec/mm/shmem.c#L5803-L5837>
         let name = format!("/memfd:{} (deleted)", name);
-        let inode = new_detached_inode(mkmod!(a+rwx), Uid::new_root(), Gid::new_root());
+
+        let (allow_sealing, executable) = if memfd_flags.contains(MemfdFlags::MFD_NOEXEC_SEAL) {
+            (true, false)
+        } else {
+            (memfd_flags.contains(MemfdFlags::MFD_ALLOW_SEALING), true)
+        };
+
+        let mut mode = mkmod!(a+rw);
+        if executable {
+            mode = chmod!(mode, a+x);
+        }
+        let inode = new_detached_inode(mode, Uid::new_root(), Gid::new_root());
+
+        let mut seals = if allow_sealing {
+            FileSeals::empty()
+        } else {
+            FileSeals::F_SEAL_SEAL
+        };
+        if !executable {
+            seals |= FileSeals::F_SEAL_EXEC;
+        }
 
         Ok(Self {
             inode,
@@ -61,7 +82,21 @@ impl MemfdFile {
             offset: Mutex::new(0),
             access_mode: AccessMode::O_RDWR,
             status_flags: AtomicU32::new(0),
+            seals: Mutex::new(seals),
         })
+    }
+
+    pub fn seals(&self) -> &Mutex<FileSeals> {
+        &self.seals
+    }
+
+    /// Checks whether writing is allowed to this memfd file.
+    pub fn check_writable(&self) -> Result<()> {
+        let seals = self.seals.lock();
+        if seals.intersects(FileSeals::F_SEAL_WRITE | FileSeals::F_SEAL_FUTURE_WRITE) {
+            return_errno_with_message!(Errno::EPERM, "File is sealed against writing");
+        }
+        Ok(())
     }
 }
 
@@ -77,11 +112,23 @@ impl FileLike for MemfdFile {
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32>;
     fn metadata(&self) -> Metadata;
     fn mode(&self) -> Result<InodeMode>;
-    fn set_mode(&self, mode: InodeMode) -> Result<()>;
     fn owner(&self) -> Result<Uid>;
     fn set_owner(&self, uid: Uid) -> Result<()>;
     fn group(&self) -> Result<Gid>;
     fn set_group(&self, gid: Gid) -> Result<()>;
+
+    fn set_mode(&self, mode: InodeMode) -> Result<()> {
+        let seals = self.seals.lock();
+        if seals.contains(FileSeals::F_SEAL_EXEC)
+            && (self.mode().unwrap() ^ mode).intersects(InodeMode::from_bits_truncate(0o111))
+        {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "File is sealed against modifying executable bits"
+            );
+        }
+        self.inode.set_mode(mode)
+    }
 
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         let mut offset = self.offset.lock();
@@ -106,15 +153,40 @@ impl FileLike for MemfdFile {
     }
 
     fn write_at(&self, mut offset: usize, reader: &mut VmReader) -> Result<usize> {
+        if !reader.has_remain() {
+            return Ok(0);
+        }
+
+        let seals = self.seals.lock();
+        if seals.intersects(FileSeals::F_SEAL_WRITE | FileSeals::F_SEAL_FUTURE_WRITE) {
+            return_errno_with_message!(Errno::EPERM, "File is sealed against writing");
+        }
+
         if self.status_flags().contains(StatusFlags::O_APPEND) {
             // If the file has the O_APPEND flag, the offset is ignored
             offset = self.inode.size();
+        }
+
+        if seals.contains(FileSeals::F_SEAL_GROW) {
+            let file_size = self.inode.size();
+            if offset >= file_size {
+                return_errno_with_message!(Errno::EPERM, "File is sealed against growing");
+            } else {
+                reader.limit(file_size - offset);
+            }
         }
 
         self.inode.write_at(offset, reader)
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
+        let seals = self.seals.lock();
+        if seals.contains(FileSeals::F_SEAL_SHRINK) && new_size < self.inode.size() {
+            return_errno_with_message!(Errno::EPERM, "File is sealed against shrinking");
+        }
+        if seals.contains(FileSeals::F_SEAL_GROW) && new_size > self.inode.size() {
+            return_errno_with_message!(Errno::EPERM, "File is sealed against growing");
+        }
         do_resize_util(&self.inode, self.status_flags(), new_size)
     }
 
@@ -138,10 +210,57 @@ impl FileLike for MemfdFile {
     }
 
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
+        let seals = self.seals.lock();
+        if seals.contains(FileSeals::F_SEAL_GROW)
+            && offset.checked_add(len).ok_or(Error::new(Errno::EINVAL))? > self.inode.size()
+        {
+            return_errno_with_message!(Errno::EPERM, "File is sealed against growing");
+        }
+        if seals.intersects(FileSeals::F_SEAL_WRITE | FileSeals::F_SEAL_FUTURE_WRITE)
+            && mode == FallocMode::PunchHoleKeepSize
+        {
+            return_errno_with_message!(Errno::EPERM, "File is sealed against writing");
+        }
         do_fallocate_util(&self.inode, self.status_flags(), mode, offset, len)
     }
 
     fn mappable(&self) -> Result<Mappable> {
         Ok(Mappable::Inode(self.inode.clone()))
+    }
+
+    fn inode(&self) -> Option<&Arc<dyn Inode>> {
+        Some(&self.inode)
+    }
+}
+
+bitflags! {
+    pub struct MemfdFlags: u32 {
+        /// Close on exec.
+        const MFD_CLOEXEC = 1 << 0;
+        /// Allow sealing operations on this file.
+        const MFD_ALLOW_SEALING = 1 << 1;
+        /// Create in the hugetlbfs.
+        const MFD_HUGETLB = 1 << 2;
+        /// Not executable and sealed to prevent changing to executable.
+        const MFD_NOEXEC_SEAL = 1 << 3;
+        /// Executable.
+        const MFD_EXEC = 1 << 4;
+    }
+}
+
+bitflags! {
+    pub struct FileSeals: u32 {
+        /// Prevent further seals from being set.
+        const F_SEAL_SEAL = 0x0001;
+        /// Prevent file from shrinking.
+        const F_SEAL_SHRINK = 0x0002;
+        /// Prevent file from growing.
+        const F_SEAL_GROW = 0x0004;
+        /// Prevent writes.
+        const F_SEAL_WRITE = 0x0008;
+        /// Prevent future writes while mapped.
+        const F_SEAL_FUTURE_WRITE = 0x0010;
+        /// Prevent chmod modifying exec bits.
+        const F_SEAL_EXEC = 0x0020;
     }
 }

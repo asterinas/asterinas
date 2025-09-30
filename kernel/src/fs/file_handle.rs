@@ -66,7 +66,6 @@ pub trait FileLike: Pollable + Send + Sync + Any {
     /// Get the metadata that describes this file.
     fn metadata(&self) -> Metadata;
 
-    #[expect(dead_code)]
     fn mode(&self) -> Result<InodeMode> {
         return_errno_with_message!(Errno::EINVAL, "mode is not supported");
     }
@@ -114,6 +113,10 @@ pub trait FileLike: Pollable + Send + Sync + Any {
     }
 
     fn as_socket(&self) -> Option<&dyn Socket> {
+        None
+    }
+
+    fn inode(&self) -> Option<&Arc<dyn Inode>> {
         None
     }
 }

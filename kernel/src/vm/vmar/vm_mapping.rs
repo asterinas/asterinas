@@ -25,7 +25,7 @@ use crate::{
         perms::VmPerms,
         util::duplicate_frame,
         vmar::is_intersected,
-        vmo::{CommitFlags, Vmo, VmoCommitError},
+        vmo::{CommitFlags, Vmo, VmoCommitError, WritableMappingStatus},
     },
 };
 
@@ -80,6 +80,12 @@ pub struct VmMapping {
     ///
     /// All pages within the same `VmMapping` have the same permissions.
     perms: VmPerms,
+    /// The writable mapping status of the associated VMO, if any.
+    ///
+    /// This field is `Some()` only when the VMO's writable mappings need to be
+    /// tracked, and the mapping is a writable mapping, i.e., shared and may be
+    /// protected to writable.
+    vmo_writable_mapping_status: Option<Arc<WritableMappingStatus>>,
 }
 
 impl Interval<Vaddr> for VmMapping {
@@ -91,6 +97,7 @@ impl Interval<Vaddr> for VmMapping {
 /***************************** Basic methods *********************************/
 
 impl VmMapping {
+    #[expect(clippy::too_many_arguments)]
     pub(super) fn new(
         map_size: NonZeroUsize,
         map_to_addr: Vaddr,
@@ -99,6 +106,7 @@ impl VmMapping {
         is_shared: bool,
         handle_page_faults_around: bool,
         perms: VmPerms,
+        vmo_writable_mapping_status: Option<Arc<WritableMappingStatus>>,
     ) -> Self {
         Self {
             map_size,
@@ -108,13 +116,17 @@ impl VmMapping {
             is_shared,
             handle_page_faults_around,
             perms,
+            vmo_writable_mapping_status,
         }
     }
 
     pub(super) fn new_fork(&self) -> Result<VmMapping> {
+        self.increment_vmo_writable_mapping();
+
         Ok(VmMapping {
             mapped_mem: self.mapped_mem.dup()?,
             inode: self.inode.clone(),
+            vmo_writable_mapping_status: self.vmo_writable_mapping_status.clone(),
             ..*self
         })
     }
@@ -199,6 +211,26 @@ impl VmMapping {
         cursor.map_iomem(io_mem, io_page_prop, self.map_size.get(), vmo_offset);
 
         Ok(())
+    }
+
+    /// Increments the writable mapping status of the associated VMO, if tracked.
+    pub(super) fn increment_vmo_writable_mapping(&self) {
+        if let Some(status) = &self.vmo_writable_mapping_status {
+            status.increment();
+        }
+    }
+
+    /// Decrements the writable mapping status of the associated VMO, if tracked.
+    pub(super) fn decrement_vmo_writable_mapping(&self) {
+        if let Some(status) = &self.vmo_writable_mapping_status {
+            status.decrement();
+        }
+    }
+
+    /// Returns whether the mapping described by the given flags is shared and
+    /// potentially writable.
+    pub fn is_shared_maywrite(is_shared: bool, perms: VmPerms) -> bool {
+        is_shared && perms.contains(VmPerms::MAY_WRITE)
     }
 
     /// Returns whether this mapping is a COW mapping.
@@ -531,15 +563,17 @@ impl VmMapping {
             map_size: NonZeroUsize::new(left_size).unwrap(),
             mapped_mem: l_mapped_mem,
             inode: self.inode.clone(),
+            vmo_writable_mapping_status: self.vmo_writable_mapping_status.clone(),
             ..self
         };
         let right = Self {
             map_to_addr: at,
             map_size: NonZeroUsize::new(right_size).unwrap(),
             mapped_mem: r_mapped_mem,
-            inode: self.inode,
             ..self
         };
+
+        left.increment_vmo_writable_mapping();
 
         Ok((left, right))
     }
@@ -818,11 +852,13 @@ fn try_merge(left: &VmMapping, right: &VmMapping) -> Option<VmMapping> {
     };
 
     let map_size = NonZeroUsize::new(left.map_size() + right.map_size()).unwrap();
+    left.decrement_vmo_writable_mapping();
 
     Some(VmMapping {
         map_size,
         mapped_mem,
         inode: left.inode.clone(),
+        vmo_writable_mapping_status: left.vmo_writable_mapping_status.clone(),
         ..*left
     })
 }

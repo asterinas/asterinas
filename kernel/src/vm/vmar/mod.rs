@@ -318,6 +318,7 @@ impl VmarInner {
                 self.insert_without_try_merge(right);
             }
 
+            taken.decrement_vmo_writable_mapping();
             rss_delta.add(taken.rss_type(), -(taken.unmap(vm_space) as isize));
         }
 
@@ -419,6 +420,14 @@ impl VmarInner {
     }
 }
 
+impl Drop for VmarInner {
+    fn drop(&mut self) {
+        for vm_mapping in self.vm_mappings.iter() {
+            vm_mapping.decrement_vmo_writable_mapping();
+        }
+    }
+}
+
 pub const ROOT_VMAR_LOWEST_ADDR: Vaddr = 0x001_0000; // 64 KiB is the Linux configurable default
 const ROOT_VMAR_CAP_ADDR: Vaddr = MAX_USERSPACE_VADDR;
 
@@ -515,6 +524,9 @@ impl Vmar_ {
     /// Clears all content of the root VMAR.
     fn clear_root_vmar(&self) -> Result<()> {
         let mut inner = self.inner.write();
+        for vm_mapping in inner.vm_mappings.iter() {
+            vm_mapping.decrement_vmo_writable_mapping();
+        }
         inner.vm_mappings.clear();
 
         // Keep `inner` locked to avoid race conditions.
@@ -828,6 +840,7 @@ pub struct VmarMapOptions<'a, R1, R2> {
     is_shared: bool,
     // Whether the mapping needs to handle surrounding pages when handling page fault.
     handle_page_faults_around: bool,
+    track_vmo_writable_mapping_status: bool,
 }
 
 impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
@@ -851,6 +864,7 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
             can_overwrite: false,
             is_shared: false,
             handle_page_faults_around: false,
+            track_vmo_writable_mapping_status: false,
         }
     }
 
@@ -958,6 +972,15 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
         self.handle_page_faults_around = true;
         self
     }
+
+    /// Sets the mapping to be tracked within the VMO's writable mapping status.
+    ///
+    /// Used only when the VMO's writable mappings need to be tracked, and this
+    /// mapping is writable to the VMO.
+    pub fn track_vmo_writable_mapping_status(mut self) -> Self {
+        self.track_vmo_writable_mapping_status = true;
+        self
+    }
 }
 
 impl<R1> VmarMapOptions<'_, R1, Rights> {
@@ -1017,6 +1040,7 @@ where
             can_overwrite,
             is_shared,
             handle_page_faults_around,
+            track_vmo_writable_mapping_status,
         } = self;
 
         let mut inner = parent.0.inner.write();
@@ -1034,6 +1058,13 @@ where
                 Err(e)
             }
         })?;
+
+        let mut vmo_writable_mapping_status = None;
+
+        if track_vmo_writable_mapping_status {
+            vmo_writable_mapping_status = vmo.as_ref().unwrap().writable_mapping_status().clone();
+            vmo_writable_mapping_status.as_ref().unwrap().map()?;
+        }
 
         // Allocates a free region.
         trace!("allocate free region, map_size = 0x{:x}, offset = {:x?}, align = 0x{:x}, can_overwrite = {}", map_size, offset, align, can_overwrite);
@@ -1091,6 +1122,7 @@ where
             is_shared,
             handle_page_faults_around,
             perms | may_perms,
+            vmo_writable_mapping_status,
         );
 
         // Populate device memory if needed before adding to VMAR.
