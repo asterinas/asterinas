@@ -206,6 +206,14 @@ impl PosixThread {
         }
     }
 
+    /// Returns whether the thread is currently paused via a `pause`-family method,
+    /// provided by [`Pause`].
+    ///
+    /// [`Pause`]: crate::process::signal::Pause
+    pub fn is_paused(&self) -> bool {
+        self.signalled_waker.lock().is_some()
+    }
+
     /// Enqueues a thread-directed signal.
     ///
     /// This method does not perform permission checks on user signals. Therefore, unless the
