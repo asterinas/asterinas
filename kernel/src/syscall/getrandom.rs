@@ -13,9 +13,9 @@ pub fn sys_getrandom(buf: Vaddr, count: usize, flags: u32, ctx: &Context) -> Res
     // Currently our getrandom implementation relies on x86-specific `rdrand` instruction, so it will never block.
     let mut buffer = vec![0u8; count];
     let read_len = if flags.contains(GetRandomFlags::GRND_RANDOM) {
-        device::Random::getrandom(&mut buffer)?
+        device::getrandom(&mut buffer)?
     } else {
-        device::Urandom::getrandom(&mut buffer)?
+        device::geturandom(&mut buffer)?
     };
     ctx.user_space()
         .write_bytes(buf, &mut VmReader::from(buffer.as_slice()))?;

@@ -12,7 +12,6 @@ use super::utils::MknodType;
 use crate::{
     device::PtyMaster,
     fs::{
-        device::{Device, DeviceId, DeviceType},
         registry::{FsProperties, FsType},
         utils::{
             mkmod, DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd,

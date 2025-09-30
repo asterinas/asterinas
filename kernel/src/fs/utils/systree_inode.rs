@@ -15,7 +15,7 @@ use aster_systree::{
 use crate::{
     events::IoEvents,
     fs::{
-        device::Device,
+        device::DeviceFile,
         utils::{
             mkmod, DirentVisitor, FallocMode, FileSystem, Inode, InodeMode, InodeType, IoctlCmd,
             Metadata, MknodType,
@@ -547,7 +547,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         Err(Error::new(Errno::EPERM))
     }
 
-    default fn as_device(&self) -> Option<Arc<dyn Device>> {
+    default fn as_device(&self) -> Option<Arc<dyn DeviceFile>> {
         None
     }
 

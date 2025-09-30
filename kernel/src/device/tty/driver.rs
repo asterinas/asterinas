@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::sync::Arc;
+
+use aster_device::Device;
+
 use crate::prelude::{Errno, Error, Result};
 
 /// An error indicating that no characters can be pushed because the buffer is full.
@@ -51,4 +55,6 @@ pub trait TtyDriver: Send + Sync + 'static {
 
     /// Sets the TTY font.
     fn set_font(&self, font: aster_console::BitmapFont) -> Result<()>;
+
+    fn as_device(&self) -> Arc<dyn Device>;
 }
