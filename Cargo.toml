@@ -51,6 +51,7 @@ exclude = [
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"
+unexpected_cfgs = { level = "allow", check-cfg = ['cfg(ktest)'] }
 
 [workspace.lints.clippy]
 allow_attributes = "warn"
