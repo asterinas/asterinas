@@ -4,7 +4,8 @@ use tdx_guest::{
     handle_virtual_exception as do_handle_virtual_exception, tdcall, TdgVeInfo, TdxTrapFrame,
 };
 
-use super::{GeneralRegs, UserContext};
+use super::UserContext;
+use crate::arch::trap::RawUserContext;
 
 pub(crate) struct VirtualizationExceptionHandler {
     ve_info: TdgVeInfo,
@@ -28,50 +29,50 @@ impl VirtualizationExceptionHandler {
     }
 
     pub fn handle(&self, ctx: &mut UserContext) {
-        let mut generalrags_wrapper = GeneralRegsWrapper(&mut *ctx.general_regs_mut());
+        let mut generalrags_wrapper = GeneralRegsWrapper(&mut ctx.user_context);
         do_handle_virtual_exception(&mut generalrags_wrapper, &self.ve_info);
-        *ctx.general_regs_mut() = *generalrags_wrapper.0;
+        ctx.user_context = *generalrags_wrapper.0;
     }
 }
 
-struct GeneralRegsWrapper<'a>(&'a mut GeneralRegs);
+struct GeneralRegsWrapper<'a>(&'a mut RawUserContext);
 
 impl TdxTrapFrame for GeneralRegsWrapper<'_> {
     fn rax(&self) -> usize {
-        self.0.rax
+        self.0.general_regs.rax
     }
     fn set_rax(&mut self, rax: usize) {
-        self.0.rax = rax;
+        self.0.general_regs.rax = rax;
     }
     fn rbx(&self) -> usize {
-        self.0.rbx
+        self.0.general_regs.rbx
     }
     fn set_rbx(&mut self, rbx: usize) {
-        self.0.rbx = rbx;
+        self.0.general_regs.rbx = rbx;
     }
     fn rcx(&self) -> usize {
-        self.0.rcx
+        self.0.general_regs.rcx
     }
     fn set_rcx(&mut self, rcx: usize) {
-        self.0.rcx = rcx;
+        self.0.general_regs.rcx = rcx;
     }
     fn rdx(&self) -> usize {
-        self.0.rdx
+        self.0.general_regs.rdx
     }
     fn set_rdx(&mut self, rdx: usize) {
-        self.0.rdx = rdx;
+        self.0.general_regs.rdx = rdx;
     }
     fn rsi(&self) -> usize {
-        self.0.rsi
+        self.0.general_regs.rsi
     }
     fn set_rsi(&mut self, rsi: usize) {
-        self.0.rsi = rsi;
+        self.0.general_regs.rsi = rsi;
     }
     fn rdi(&self) -> usize {
-        self.0.rdi
+        self.0.general_regs.rdi
     }
     fn set_rdi(&mut self, rdi: usize) {
-        self.0.rdi = rdi;
+        self.0.general_regs.rdi = rdi;
     }
     fn rip(&self) -> usize {
         self.0.rip
@@ -80,57 +81,57 @@ impl TdxTrapFrame for GeneralRegsWrapper<'_> {
         self.0.rip = rip;
     }
     fn r8(&self) -> usize {
-        self.0.r8
+        self.0.general_regs.r8
     }
     fn set_r8(&mut self, r8: usize) {
-        self.0.r8 = r8;
+        self.0.general_regs.r8 = r8;
     }
     fn r9(&self) -> usize {
-        self.0.r9
+        self.0.general_regs.r9
     }
     fn set_r9(&mut self, r9: usize) {
-        self.0.r9 = r9;
+        self.0.general_regs.r9 = r9;
     }
     fn r10(&self) -> usize {
-        self.0.r10
+        self.0.general_regs.r10
     }
     fn set_r10(&mut self, r10: usize) {
-        self.0.r10 = r10;
+        self.0.general_regs.r10 = r10;
     }
     fn r11(&self) -> usize {
-        self.0.r11
+        self.0.general_regs.r11
     }
     fn set_r11(&mut self, r11: usize) {
-        self.0.r11 = r11;
+        self.0.general_regs.r11 = r11;
     }
     fn r12(&self) -> usize {
-        self.0.r12
+        self.0.general_regs.r12
     }
     fn set_r12(&mut self, r12: usize) {
-        self.0.r12 = r12;
+        self.0.general_regs.r12 = r12;
     }
     fn r13(&self) -> usize {
-        self.0.r13
+        self.0.general_regs.r13
     }
     fn set_r13(&mut self, r13: usize) {
-        self.0.r13 = r13;
+        self.0.general_regs.r13 = r13;
     }
     fn r14(&self) -> usize {
-        self.0.r14
+        self.0.general_regs.r14
     }
     fn set_r14(&mut self, r14: usize) {
-        self.0.r14 = r14;
+        self.0.general_regs.r14 = r14;
     }
     fn r15(&self) -> usize {
-        self.0.r15
+        self.0.general_regs.r15
     }
     fn set_r15(&mut self, r15: usize) {
-        self.0.r15 = r15;
+        self.0.general_regs.r15 = r15;
     }
     fn rbp(&self) -> usize {
-        self.0.rbp
+        self.0.general_regs.rbp
     }
     fn set_rbp(&mut self, rbp: usize) {
-        self.0.rbp = rbp;
+        self.0.general_regs.rbp = rbp;
     }
 }
