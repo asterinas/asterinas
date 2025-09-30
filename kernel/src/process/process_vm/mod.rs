@@ -15,9 +15,14 @@ mod init_stack;
 #[cfg(target_arch = "riscv64")]
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+use align_ext::AlignExt;
 use aster_rights::Full;
 pub use heap::Heap;
-use ostd::{sync::MutexGuard, task::disable_preempt};
+use ostd::{
+    mm::{io_util::HasVmReaderWriter, vm_space::VmQueriedItem, PageFlags, UFrame},
+    sync::MutexGuard,
+    task::disable_preempt,
+};
 
 pub use self::{
     heap::USER_HEAP_SIZE_LIMIT,
@@ -26,7 +31,14 @@ pub use self::{
         InitStack, InitStackReader, INIT_STACK_SIZE, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS,
     },
 };
-use crate::{prelude::*, vm::vmar::Vmar};
+use crate::{
+    prelude::*,
+    thread::exception::PageFaultInfo,
+    vm::{
+        page_fault_handler::PageFaultHandler,
+        vmar::{is_userspace_vaddr, Vmar},
+    },
+};
 
 /*
  * The user's virtual memory space layout looks like below.
@@ -161,7 +173,7 @@ impl ProcessVm {
     /// Returns a reader for reading contents from
     /// the `InitStack`.
     pub fn init_stack_reader(&self) -> InitStackReader {
-        self.init_stack.reader(self.lock_root_vmar())
+        self.init_stack.reader(self)
     }
 
     /// Returns the top address of the user stack.
@@ -199,6 +211,145 @@ impl ProcessVm {
         let root_vmar = self.lock_root_vmar();
         root_vmar.unwrap().clear().unwrap();
         self.heap.alloc_and_map_vm(root_vmar.unwrap()).unwrap();
+    }
+}
+
+impl ProcessVm {
+    /// Reads memory from the process user space.
+    ///
+    /// The corresponding `VmSpace` is not required be activated on the current CPU.
+    pub fn read_remote(&self, vaddr: Vaddr, writer: &mut VmWriter) -> Result<usize> {
+        let len = writer.avail();
+        let read = |frame: UFrame, skip_offset: usize| {
+            let mut reader = frame.reader();
+            reader.skip(skip_offset);
+            reader.read_fallible(writer)
+        };
+
+        self.access_remote(vaddr, len, PageFlags::R, read)
+    }
+
+    /// Writes memory to the process user space.
+    ///
+    /// The corresponding `VmSpace` is not required be activated on the current CPU.
+    pub fn write_remote(&self, vaddr: Vaddr, reader: &mut VmReader) -> Result<usize> {
+        let len = reader.remain();
+        let write = |frame: UFrame, skip_offset: usize| {
+            let mut writer = frame.writer();
+            writer.skip(skip_offset);
+            writer.write_fallible(reader)
+        };
+
+        self.access_remote(vaddr, len, PageFlags::W, write)
+    }
+
+    /// Access memory at `vaddr..vaddr+len` within the process user space using `op`.
+    ///
+    /// The corresponding `VmSpace` is not required be activated on the current CPU.
+    /// If any page in the range is not mapped or does not have the required page
+    /// flags, a page fault will be handled to try to make the page accessible.
+    fn access_remote<F>(
+        &self,
+        vaddr: Vaddr,
+        len: usize,
+        required_page_flags: PageFlags,
+        mut op: F,
+    ) -> Result<usize>
+    where
+        F: FnMut(UFrame, usize) -> core::result::Result<usize, (ostd::Error, usize)>,
+    {
+        if len == 0 {
+            return Ok(0);
+        }
+
+        let range = {
+            let Some(end) = vaddr.checked_add(len) else {
+                return_errno_with_message!(Errno::EINVAL, "address overflow");
+            };
+            if !is_userspace_vaddr(vaddr) || !is_userspace_vaddr(end - 1) {
+                return_errno_with_message!(Errno::EINVAL, "invalid user space address");
+            }
+            vaddr.align_down(PAGE_SIZE)..end.align_up(PAGE_SIZE)
+        };
+
+        let mut current_va = range.start;
+        let mut bytes = 0;
+
+        while current_va < range.end {
+            let mut item = self.query_page(current_va, None)?;
+
+            if item
+                .as_ref()
+                .is_none_or(|item| !item.prop().flags.contains(required_page_flags))
+            {
+                let vmar_guard = self.lock_root_vmar();
+                let vmar = vmar_guard
+                    .as_ref()
+                    .ok_or_else(|| Error::with_message(Errno::ESRCH, "the process has exited"))?;
+
+                let page_fault_info = PageFaultInfo {
+                    address: current_va,
+                    required_perms: required_page_flags.into(),
+                };
+                if vmar.handle_page_fault(&page_fault_info).is_err() {
+                    if bytes == 0 {
+                        return_errno_with_message!(Errno::EIO, "the page is not accessible");
+                    } else {
+                        return Ok(bytes);
+                    }
+                };
+
+                item = self.query_page(current_va, Some(vmar_guard))?;
+            }
+
+            let item = item.unwrap();
+            debug_assert!(item.prop().flags.contains(required_page_flags));
+
+            match item {
+                VmQueriedItem::MappedRam { frame, .. } => {
+                    let skip_offset = if current_va == range.start {
+                        vaddr - range.start
+                    } else {
+                        0
+                    };
+                    match op(frame, skip_offset) {
+                        Ok(n) => bytes += n,
+                        Err((err, n)) if bytes + n == 0 => return Err(Error::from(err)),
+                        Err((_, n)) => return Ok(bytes + n),
+                    }
+                }
+                VmQueriedItem::MappedIoMem { .. } => {
+                    return_errno_with_message!(
+                        Errno::EOPNOTSUPP,
+                        "accessing remote MMIO memory is not supported currently"
+                    );
+                }
+            }
+
+            current_va += PAGE_SIZE;
+        }
+
+        Ok(bytes)
+    }
+
+    fn query_page(
+        &self,
+        vaddr: Vaddr,
+        vmar_guard: Option<ProcessVmarGuard>,
+    ) -> Result<Option<VmQueriedItem>> {
+        debug_assert!(is_userspace_vaddr(vaddr) && vaddr % PAGE_SIZE == 0);
+
+        let vmar_guard = vmar_guard.unwrap_or_else(|| self.lock_root_vmar());
+        let vmar = vmar_guard
+            .as_ref()
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "the process has exited"))?;
+
+        let preempt_guard = disable_preempt();
+        let vmspace = vmar.vm_space();
+        let mut cursor = vmspace.cursor(&preempt_guard, &(vaddr..vaddr + PAGE_SIZE))?;
+        let (_, item) = cursor.query()?;
+
+        Ok(item)
     }
 }
 

@@ -12,8 +12,8 @@ use crate::{
                 stat::StatFileOps,
                 task::{
                     cmdline::CmdlineFileOps, comm::CommFileOps, environ::EnvironFileOps,
-                    exe::ExeSymOps, fd::FdDirOps, oom_score_adj::OomScoreAdjFileOps,
-                    status::StatusFileOps,
+                    exe::ExeSymOps, fd::FdDirOps, mem::MemFileOps,
+                    oom_score_adj::OomScoreAdjFileOps, status::StatusFileOps,
                 },
             },
             template::{DirOps, ProcDir, ProcDirBuilder},
@@ -30,6 +30,7 @@ mod comm;
 mod environ;
 mod exe;
 mod fd;
+mod mem;
 mod oom_score_adj;
 mod status;
 
@@ -82,6 +83,7 @@ impl DirOps for TidDirOps {
             "exe" => ExeSymOps::new_inode(self.process_ref.clone(), this_ptr),
             "fd" => FdDirOps::new_inode(self.thread_ref.clone(), this_ptr),
             "oom_score_adj" => OomScoreAdjFileOps::new_inode(self.process_ref.clone(), this_ptr),
+            "mem" => MemFileOps::new_inode(self.process_ref.clone(), this_ptr),
             "stat" => StatFileOps::new_inode(
                 self.process_ref.clone(),
                 self.thread_ref.clone(),
@@ -131,6 +133,9 @@ impl TidDirOps {
         });
         cached_children.put_entry_if_not_found("oom_score_adj", || {
             OomScoreAdjFileOps::new_inode(self.process_ref.clone(), this_ptr.clone())
+        });
+        cached_children.put_entry_if_not_found("mem", || {
+            MemFileOps::new_inode(self.process_ref.clone(), this_ptr.clone())
         });
         cached_children.put_entry_if_not_found("stat", || {
             StatFileOps::new_inode(
