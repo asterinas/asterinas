@@ -57,6 +57,12 @@ signal_c/signal_test
 signal_c/signal_test2
 "
 
+if [ "$INTEL_TDX" = "1" ]; then
+tests="${tests}
+generate_tdx_quote/generate_tdx_quote
+"
+fi
+
 for testcase in ${tests}
 do
     echo "Running test ${testcase}......"
