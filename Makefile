@@ -70,6 +70,7 @@ ENABLE_BASIC_TEST := true
 	ifneq ($(SMP), 1)
 		CARGO_OSDK_BUILD_ARGS += --kcmd-args="BLOCK_UNSUPPORTED_SMP_TESTS=1"
 	endif
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="INTEL_TDX=$(INTEL_TDX)"
 CARGO_OSDK_BUILD_ARGS += --init-args="/test/run_general_test.sh"
 else ifeq ($(AUTO_TEST), boot)
 ENABLE_BASIC_TEST := true
