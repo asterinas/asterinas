@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use rand::{rngs::StdRng, Error as RandError, RngCore, SeedableRng};
+use rand::{rngs::StdRng, RngCore, SeedableRng};
 use spin::Once;
 
 use crate::prelude::*;
@@ -10,8 +10,8 @@ static RNG: Once<SpinLock<StdRng>> = Once::new();
 /// Fill `dest` with random bytes.
 ///
 /// It's cryptographically secure, as documented in [`rand::rngs::StdRng`].
-pub fn getrandom(dst: &mut [u8]) -> Result<()> {
-    Ok(RNG.get().unwrap().lock().try_fill_bytes(dst)?)
+pub fn getrandom(dst: &mut [u8]) {
+    RNG.get().unwrap().lock().fill_bytes(dst);
 }
 
 pub fn init() {
@@ -54,10 +54,4 @@ fn get_random_seed() -> <StdRng as SeedableRng>::Seed {
         .try_into()
         .unwrap();
     seed
-}
-
-impl From<RandError> for Error {
-    fn from(_value: RandError) -> Self {
-        Error::with_message(Errno::ENOSYS, "cannot generate random bytes")
-    }
 }

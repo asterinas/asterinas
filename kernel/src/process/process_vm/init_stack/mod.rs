@@ -133,7 +133,7 @@ impl InitStack {
             // make the stack values of a buggy user program harder
             // to be exploited by attackers.
             let mut nr_random_padding_pages: u8 = 0;
-            getrandom(nr_random_padding_pages.as_bytes_mut()).unwrap();
+            getrandom(nr_random_padding_pages.as_bytes_mut());
 
             nr_random_padding_pages as usize + NR_FIXED_PADDING_PAGES
         };
@@ -370,7 +370,7 @@ impl InitStackWriter {
 
 fn generate_random_for_aux_vec() -> [u8; 16] {
     let mut rand_val = [0; 16];
-    getrandom(&mut rand_val).unwrap();
+    getrandom(&mut rand_val);
     rand_val
 }
 

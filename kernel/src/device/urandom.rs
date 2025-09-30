@@ -17,7 +17,7 @@ pub struct Urandom;
 
 impl Urandom {
     pub fn getrandom(buf: &mut [u8]) -> Result<usize> {
-        getrandom(buf)?;
+        getrandom(buf);
         Ok(buf.len())
     }
 }
