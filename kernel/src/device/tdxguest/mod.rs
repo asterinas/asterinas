@@ -3,11 +3,14 @@
 use ostd::mm::{DmaCoherent, FrameAllocOptions, HasPaddr, VmIo};
 use tdx_guest::tdcall::{get_report, TdCallError};
 
-use super::*;
 use crate::{
-    error::Error,
     events::IoEvents,
-    fs::{inode_handle::FileIo, utils::IoctlCmd},
+    fs::{
+        device::{Device, DeviceId, DeviceType},
+        inode_handle::FileIo,
+        utils::IoctlCmd,
+    },
+    prelude::*,
     process::signal::{PollHandle, Pollable},
 };
 

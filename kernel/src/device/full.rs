@@ -18,7 +18,7 @@ impl Device for Full {
     }
 
     fn id(&self) -> DeviceId {
-        // Same value with Linux
+        // The same value as Linux
         DeviceId::new(1, 7)
     }
 

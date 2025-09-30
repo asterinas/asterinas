@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(unused_variables)]
-
+use super::Urandom;
 use crate::{
     events::IoEvents,
     fs::{
@@ -10,15 +9,14 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
-    util::random::getrandom,
 };
 
 pub struct Random;
 
 impl Random {
-    pub fn getrandom(buf: &mut [u8]) -> Result<usize> {
-        getrandom(buf);
-        Ok(buf.len())
+    pub fn getrandom(writer: &mut VmWriter) -> Result<usize> {
+        // TODO: Support true randomness by collecting environment noise.
+        Urandom::getrandom(writer)
     }
 }
 
@@ -38,7 +36,7 @@ impl Device for Random {
 }
 
 impl Pollable for Random {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
         let events = IoEvents::IN | IoEvents::OUT;
         events & mask
     }
@@ -46,13 +44,12 @@ impl Pollable for Random {
 
 impl FileIo for Random {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        let mut buf = vec![0; writer.avail()];
-        let size = Self::getrandom(buf.as_mut_slice());
-        writer.write_fallible(&mut buf.as_slice().into())?;
-        size
+        Self::getrandom(writer)
     }
 
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
-        Ok(reader.remain())
+        let len = reader.remain();
+        reader.skip(len);
+        Ok(len)
     }
 }

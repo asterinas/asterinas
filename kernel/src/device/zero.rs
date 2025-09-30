@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(unused_variables)]
-
-use super::*;
 use crate::{
     events::IoEvents,
-    fs::inode_handle::FileIo,
+    fs::{
+        device::{Device, DeviceId, DeviceType},
+        inode_handle::FileIo,
+    },
     prelude::*,
     process::signal::{PollHandle, Pollable},
 };
@@ -18,7 +18,7 @@ impl Device for Zero {
     }
 
     fn id(&self) -> DeviceId {
-        // Same value with Linux
+        // The same value as Linux
         DeviceId::new(1, 5)
     }
 
@@ -28,7 +28,7 @@ impl Device for Zero {
 }
 
 impl Pollable for Zero {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
         let events = IoEvents::IN | IoEvents::OUT;
         events & mask
     }

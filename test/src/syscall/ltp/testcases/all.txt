@@ -513,7 +513,7 @@ getrandom01
 getrandom02
 getrandom03
 getrandom04
-# getrandom05
+getrandom05
 
 getresgid01
 # getresgid01_16
