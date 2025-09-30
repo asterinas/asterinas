@@ -34,7 +34,7 @@ type FrameNumber = usize;
 /// function will acquire the lock and call the closure with a mutable
 /// reference to the boot page table as the argument.
 ///
-/// The boot page table will be dropped when there's no CPU activating it.
+/// The boot page table will be dropped when all CPUs have dismissed it.
 /// This function will return an [`Err`] if the boot page table is dropped.
 pub(crate) fn with_borrow<F, R>(f: F) -> Result<R, ()>
 where
@@ -68,8 +68,6 @@ where
 ///  - another legitimate page table is activated on this CPU;
 ///  - this function should be called only once per CPU;
 ///  - no [`with_borrow`] calls are performed on this CPU after this dismissal;
-///  - no [`with_borrow`] calls are performed on this CPU after the activation
-///    of another page table and before this dismissal.
 pub(crate) unsafe fn dismiss() {
     IS_DISMISSED.store(true);
     if DISMISS_COUNT.fetch_add(1, Ordering::SeqCst) as usize == num_cpus() - 1 {
