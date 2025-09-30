@@ -20,7 +20,7 @@ pub use urandom::Urandom;
 
 use crate::{
     fs::{
-        device::{add_node, Device, DeviceId, DeviceType},
+        device::{add_node, Device, DeviceId},
         fs_resolver::FsPath,
         ramfs::RamFs,
     },
