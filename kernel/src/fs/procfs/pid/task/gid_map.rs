@@ -8,7 +8,7 @@ use crate::{
         utils::{mkmod, Inode},
     },
     prelude::*,
-    process::Process,
+    process::{Gid, Process},
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/gid_map` (and also `/proc/[pid]/gid_map`).
@@ -30,8 +30,7 @@ impl FileOps for GidMapFileOps {
         // This is the default GID map for the initial user namespace.
         // TODO: Retrieve the GID map from the user namespace of the current process
         // instead of returning this hard-coded value.
-        const INVALID_GID: u32 = u32::MAX;
-        let res = format!("{:>10}{:>10}{:>10}", 0, 0, INVALID_GID);
-        Ok(res.into_bytes())
+        let output = format!("{:>10} {:>10} {:>10}\n", 0, 0, u32::from(Gid::INVALID));
+        Ok(output.into_bytes())
     }
 }
