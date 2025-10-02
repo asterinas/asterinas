@@ -11,7 +11,7 @@ use ostd::{
     arch::read_tsc as sched_clock,
     cpu::{all_cpus, CpuId, PinCurrentCpu},
     irq::disable_local,
-    sync::SpinLock,
+    sync::{LocalIrqDisabled, SpinLock},
     task::{
         scheduler::{
             enable_preemption_on_cpu, info::CommonSchedInfo, inject_scheduler, EnqueueFlags,
@@ -63,7 +63,12 @@ pub fn init_on_each_cpu() {
 /// traits. It consists of all the sets of run queues for CPU cores. Other global
 /// information may also be stored here.
 pub struct ClassScheduler {
-    rqs: Box<[SpinLock<PerCpuClassRqSet>]>,
+    /// The per-CPU runqueues.
+    ///
+    /// We use the `LocalIrqDisabled` marker for this spinlock to ensure local IRQs are always disabled,
+    /// preventing potential deadlocks due to the fact that
+    /// the runqueues may be accessed in both the task and interrupt context (L1 and L2).
+    rqs: Box<[SpinLock<PerCpuClassRqSet, LocalIrqDisabled>]>,
     last_chosen_cpu: AtomicCpuId,
 }
 
@@ -225,7 +230,7 @@ impl Scheduler for ClassScheduler {
             }
         };
 
-        let mut rq = self.rqs[cpu.as_usize()].disable_irq().lock();
+        let mut rq = self.rqs[cpu.as_usize()].lock();
 
         // Note: call set_if_is_none again to prevent a race condition.
         if still_in_rq && task.cpu().set_if_is_none(cpu).is_err() {
