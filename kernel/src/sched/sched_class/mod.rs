@@ -395,6 +395,7 @@ impl LocalRunQueue for PerCpuClassRqSet {
 
 impl SchedulerStats for ClassScheduler {
     fn nr_queued_and_running(&self) -> (u32, u32) {
+        let _guard = disable_local();
         self.rqs.iter().fold((0, 0), |(queued, running), rq| {
             let (q, r) = rq.lock().nr_queued_and_running();
             (queued + q, running + r)
