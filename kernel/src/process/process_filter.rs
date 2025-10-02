@@ -40,25 +40,28 @@ impl ProcessFilter {
     }
 
     // For `wait4` and `kill`.
-    pub fn from_id(wait_pid: i32) -> Self {
+    pub fn from_id(wait_pid: i32) -> Result<Self> {
         // Reference:
         // <https://man7.org/linux/man-pages/man2/waitpid.2.html>
         // <https://man7.org/linux/man-pages/man2/kill.2.html>
-        if wait_pid < -1 {
+        if wait_pid == i32::MIN {
+            // Note that performing `-wait_pid` will overflow, so we return an error directly.
+            return_errno_with_message!(Errno::ESRCH, "the target group does not exist");
+        } else if wait_pid < -1 {
             // "wait for any child process whose process group ID is equal to the absolute value of
             // `pid`"
-            ProcessFilter::WithPgid((-wait_pid).cast_unsigned())
+            Ok(ProcessFilter::WithPgid((-wait_pid).cast_unsigned()))
         } else if wait_pid == -1 {
             // "wait for any child process"
-            ProcessFilter::Any
+            Ok(ProcessFilter::Any)
         } else if wait_pid == 0 {
             // "wait for any child process whose process group ID is equal to that of the calling
             // process at the time of the call to `waitpid()`"
             let pgid = current!().pgid();
-            ProcessFilter::WithPgid(pgid)
+            Ok(ProcessFilter::WithPgid(pgid))
         } else {
             // "wait for the child whose process ID is equal to the value of `pid`"
-            ProcessFilter::WithPid(wait_pid.cast_unsigned())
+            Ok(ProcessFilter::WithPid(wait_pid.cast_unsigned()))
         }
     }
 }

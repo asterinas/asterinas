@@ -20,7 +20,7 @@ pub fn sys_wait4(
         wait_pid as i32, status_ptr, wait_options
     );
     debug!("wait4 current pid = {}", ctx.process.pid());
-    let process_filter = ProcessFilter::from_id(wait_pid as _);
+    let process_filter = ProcessFilter::from_id(wait_pid as _)?;
 
     let wait_status =
         do_wait(process_filter, wait_options, ctx).map_err(|err| match err.error() {
