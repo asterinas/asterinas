@@ -89,8 +89,8 @@ pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<UserSignal>, ctx: &Context) ->
 
     // Check permission
     let signum = signal.map(|signal| signal.num());
-    let sender = current_thread_sender_ids(signum.as_ref(), ctx);
-    posix_thread.check_signal_perm(signum.as_ref(), &sender)?;
+    let sender_ids = SignalSenderIds::for_current_thread(ctx, signum);
+    posix_thread.check_signal_perm(signum.as_ref(), &sender_ids)?;
 
     if let Some(signal) = signal {
         // We've checked the permission issues above.
@@ -107,9 +107,8 @@ pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<UserSignal>, ctx: &Context) ->
 /// The credentials of the current process will be checked to determine
 /// if it is authorized to send the signal to the target group.
 pub fn kill_all(signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
-    let current = current!();
     for process in process_table::process_table_mut().iter() {
-        if Arc::ptr_eq(&current, process) || process.is_init_process() {
+        if Arc::ptr_eq(&ctx.process, process) || process.is_init_process() {
             continue;
         }
 
@@ -124,7 +123,7 @@ fn kill_process(process: &Process, signal: Option<UserSignal>, ctx: &Context) ->
     let tasks = process.tasks().lock();
 
     let signum = signal.map(|signal| signal.num());
-    let sender_ids = current_thread_sender_ids(signum.as_ref(), ctx);
+    let sender_ids = SignalSenderIds::for_current_thread(ctx, signum);
 
     let mut permitted_thread = None;
     for task in tasks.as_slice() {
@@ -169,24 +168,10 @@ fn kill_process(process: &Process, signal: Option<UserSignal>, ctx: &Context) ->
     Ok(())
 }
 
-fn current_thread_sender_ids(signum: Option<&SigNum>, ctx: &Context) -> SignalSenderIds {
-    let credentials = ctx.posix_thread.credentials();
-    let ruid = credentials.ruid();
-    let euid = credentials.euid();
-    let sid = signum.and_then(|signum| {
-        if *signum == SIGCONT {
-            Some(ctx.process.sid())
-        } else {
-            None
-        }
-    });
-
-    SignalSenderIds::new(ruid, euid, sid)
-}
-
-/// The ids of the signal sender process.
+/// The IDs of the signal sender process.
 ///
-/// This struct now includes effective user id, real user id and session id.
+/// For all signals, this structure includes the sender thread's effective user ID and real user
+/// ID. For SIGCONT, this structure additionally includes the sender thread's session ID.
 pub(super) struct SignalSenderIds {
     ruid: Uid,
     euid: Uid,
@@ -194,7 +179,19 @@ pub(super) struct SignalSenderIds {
 }
 
 impl SignalSenderIds {
-    fn new(ruid: Uid, euid: Uid, sid: Option<Sid>) -> Self {
+    pub(self) fn for_current_thread(ctx: &Context, signum: Option<SigNum>) -> Self {
+        let credentials = ctx.posix_thread.credentials();
+        let ruid = credentials.ruid();
+        let euid = credentials.euid();
+
+        let sid = signum.and_then(|signum| {
+            if signum == SIGCONT {
+                Some(ctx.process.sid())
+            } else {
+                None
+            }
+        });
+
         Self { ruid, euid, sid }
     }
 
