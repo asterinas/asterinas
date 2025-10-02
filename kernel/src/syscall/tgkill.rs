@@ -13,15 +13,18 @@ use crate::{
     thread::Tid,
 };
 
-/// tgkill send a signal to a thread with pid as its thread id, and tgid as its thread group id.
+/// Sends a signal to a thread with `tid` as its thread ID, and `tgid` as its thread group ID.
 pub fn sys_tgkill(tgid: Pid, tid: Tid, sig_num: u8, ctx: &Context) -> Result<SyscallReturn> {
     let sig_num = if sig_num == 0 {
         None
     } else {
         Some(SigNum::try_from(sig_num)?)
     };
-
     debug!("tgid = {}, pid = {}, sig_num = {:?}", tgid, tid, sig_num);
+
+    if tgid.cast_signed() < 0 || tid.cast_signed() < 0 {
+        return_errno_with_message!(Errno::EINVAL, "negative TGIDs or TIDs are not valid");
+    }
 
     let signal = sig_num.map(|sig_num| {
         let pid = ctx.process.pid();

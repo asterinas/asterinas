@@ -49,6 +49,7 @@ pty/pty_blocking
 sched/sched_attr
 sched/sched_attr_idle
 shm/posix_shm
+signal_c/kill
 signal_c/parent_death_signal
 signal_c/sigaltstack
 signal_c/signal_fpu

@@ -687,7 +687,7 @@ ioprio_set02
 # kcmp03
 
 kill02
-# kill03
+kill03
 # kill05
 kill06
 # kill07
@@ -1647,9 +1647,9 @@ sysinfo02
 # syslog11
 # syslog12
 
-# tgkill01
+tgkill01
 # tgkill02
-# tgkill03
+tgkill03
 
 time01
 
