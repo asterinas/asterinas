@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicU64, Ordering};
-
 use int_to_c_enum::TryFromInt;
 use ostd::{
     cpu::num_cpus,
@@ -448,18 +446,23 @@ impl FutexBucket {
         self.items.push(item);
     }
 
-    pub(self) fn remove_by_id(&mut self, futex_id: u64) {
-        self.items.retain(|item| item.id != futex_id);
+    pub(self) fn remove_by_waker(&mut self, waker: &Arc<Waker>) -> Option<FutexItem> {
+        let idx = self
+            .items
+            .iter()
+            .position(|item| Arc::ptr_eq(&item.waker, waker))?;
+        Some(self.items.swap_remove(idx))
     }
 
     pub(self) fn remove_and_wake_items(&mut self, key: &FutexKey, max_count: usize) -> usize {
         let mut count = 0;
 
         self.items.retain(|item| {
-            if item.key.match_up(key) && count < max_count {
-                if item.wake() {
-                    count += 1;
-                }
+            // FIXME: `match_up` only checks the hash, which may wake up unrelated futex items. We
+            // need to check a globally unique identifier here instead. This is important because
+            // the number of woken items will be returned as the system call return value.
+            if item.key.match_up(key) && count < max_count && item.wake() {
+                count += 1;
                 false
             } else {
                 true
@@ -507,16 +510,14 @@ impl FutexBucket {
 }
 
 struct FutexItem {
-    id: u64,
     key: FutexKey,
     waker: Arc<Waker>,
 }
 
 impl FutexItem {
     pub(self) fn create(key: FutexKey) -> (Self, Waiter) {
-        let id = next_futex_id();
         let (waiter, waker) = Waiter::new_pair();
-        let futex_item = FutexItem { id, key, waker };
+        let futex_item = FutexItem { key, waker };
 
         (futex_item, waiter)
     }
@@ -537,6 +538,10 @@ struct FutexKey {
 }
 
 impl FutexKey {
+    // FIXME: Shared mappings can be mapped to different virtual addresses in different processes.
+    // Using the virtual address as the key does not makes any sense at all. We need to use a
+    // global identifier here, e.g., something like the one used in the Linux implementation:
+    // <https://elixir.bootlin.com/linux/v6.17/source/kernel/futex/core.c#L533-L544>.
     pub(self) fn new(addr: Vaddr, bitset: FutexBitSet, pid: Option<Pid>) -> Result<Self> {
         // "On all platforms, futexes are four-byte integers that must be aligned on a four-byte
         // boundary."
@@ -564,13 +569,6 @@ impl FutexKey {
     pub(self) fn match_up(&self, another: &Self) -> bool {
         self.hash == another.hash && (self.bitset & another.bitset) != 0
     }
-}
-
-static NEXT_FUTEX_ID: AtomicU64 = AtomicU64::new(0);
-
-/// Returns a new global futex ID.
-fn next_futex_id() -> u64 {
-    NEXT_FUTEX_ID.fetch_add(1, Ordering::Relaxed)
 }
 
 // The implementation is from occlum
