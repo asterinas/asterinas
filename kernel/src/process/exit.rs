@@ -115,6 +115,7 @@ fn move_children_to_reaper_process(current_process: &Process) {
 
     while let Some(reaper_process) = find_reaper_process(current_process) {
         if move_process_children(current_process, &reaper_process).is_ok() {
+            reaper_process.children_wait_queue().wake_all();
             return;
         }
     }
@@ -123,6 +124,7 @@ fn move_children_to_reaper_process(current_process: &Process) {
 
     let init_process = process_table::get_process(INIT_PROCESS_PID).unwrap();
     move_process_children(current_process, &init_process).unwrap();
+    init_process.children_wait_queue().wake_all();
 }
 
 /// Sends a child-death signal to the parent.
