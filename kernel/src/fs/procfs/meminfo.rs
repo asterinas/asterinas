@@ -42,10 +42,13 @@ impl FileOps for MemInfoFileOps {
         // Convert the values to KiB.
         let total = total / 1024;
         let available = available / 1024;
-        let free = total - available;
+
+        // Available memory should include both free memory and cached pages that can be
+        // immediately evicted from main memory. Currently, no pages can be evicted when memory is
+        // allocated, resulting in the two values being reported as the same.
         let output = format!(
             "MemTotal:\t{} kB\nMemFree:\t{} kB\nMemAvailable:\t{} kB\n",
-            total, free, available
+            total, available, available
         );
         Ok(output.into_bytes())
     }
