@@ -38,7 +38,7 @@ pub use process_filter::ProcessFilter;
 pub use process_vm::{renew_vm_and_map, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS};
 pub use program_loader::{check_executable_file, ProgramToLoad};
 pub use rlimit::ResourceType;
-pub use stats::count_total_forks;
+pub use stats::collect_process_creation_count;
 pub use term_status::TermStatus;
 pub use wait::{do_wait, WaitOptions, WaitStatus};
 
@@ -46,7 +46,7 @@ use crate::context::Context;
 
 pub(super) fn init() {
     posix_thread::futex::init();
-    clone::init();
+    stats::init();
 }
 
 pub(super) fn init_on_each_cpu() {

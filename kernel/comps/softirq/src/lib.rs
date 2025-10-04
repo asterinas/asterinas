@@ -100,10 +100,10 @@ impl SoftIrqLine {
     }
 
     /// Enables a softirq line by registering its callback.
-    /// Also allocates a per-CPU counter for tracking the execution count of this softirq line.
+    ///
     /// # Panics
     ///
-    /// Each softirq can only be enabled once.
+    /// Each softirq can only be enabled once. Subsequent calls will panic.
     pub fn enable<F>(&self, callback: F)
     where
         F: Fn() + 'static + Sync + Send,
@@ -111,7 +111,6 @@ impl SoftIrqLine {
         assert!(!self.is_enabled());
 
         self.counter.call_once(PerCpuCounter::new);
-
         self.callback.call_once(|| Box::new(callback));
         ENABLED_MASK.fetch_or(1 << self.id, Ordering::Release);
     }
@@ -163,7 +162,7 @@ fn process_pending(irq_guard: DisabledLocalIrqGuard, irq_num: usize) -> Disabled
 fn process_all_pending(mut irq_guard: DisabledLocalIrqGuard) -> DisabledLocalIrqGuard {
     const SOFTIRQ_RUN_TIMES: u8 = 5;
 
-    for _i in 0..SOFTIRQ_RUN_TIMES {
+    for _ in 0..SOFTIRQ_RUN_TIMES {
         let mut action_mask = {
             let pending_mask = PENDING_MASK.load();
             PENDING_MASK.store(0);
@@ -179,15 +178,15 @@ fn process_all_pending(mut irq_guard: DisabledLocalIrqGuard) -> DisabledLocalIrq
         while action_mask > 0 {
             let action_id = u8::trailing_zeros(action_mask) as u8;
 
-            // No races because we are in IRQs.
-
             let softirq_line = SoftIrqLine::get(action_id);
             softirq_line
                 .counter
                 .get()
                 .unwrap()
+                // No races because we are in IRQs.
                 .add_on_cpu(CpuId::current_racy(), 1);
             softirq_line.callback.get().unwrap()();
+
             action_mask &= action_mask - 1;
         }
 

@@ -14,10 +14,10 @@ use aster_softirq::{
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::{Inode, InodeMode},
+        utils::{mkmod, Inode},
     },
     prelude::*,
-    process::count_total_forks,
+    process::collect_process_creation_count,
     sched::nr_queued_and_running,
     thread::collect_context_switch_count,
     time::{cpu_time_stats::CpuTimeStatsManager, SystemTime, START_TIME},
@@ -28,7 +28,10 @@ pub struct StatFileOps;
 
 impl StatFileOps {
     pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        ProcFileBuilder::new(Self, InodeMode::from_bits_truncate(0o444))
+        // Reference:
+        // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/stat.c#L213>
+        // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/generic.c#L549-L550>
+        ProcFileBuilder::new(Self, mkmod!(a+r))
             .parent(parent)
             .build()
             .unwrap()
@@ -36,6 +39,7 @@ impl StatFileOps {
 
     fn collect_stats() -> String {
         let mut stat_output = String::new();
+
         let stats_manager = CpuTimeStatsManager::singleton();
 
         // Global CPU statistics:
@@ -57,7 +61,7 @@ impl StatFileOps {
         )
         .unwrap();
 
-        // Per-CPU lines
+        // Per-CPU statistics:
         for cpu_id in ostd::cpu::all_cpus() {
             let cpu_stats = stats_manager.collect_stats_on_cpu(cpu_id);
             writeln!(
@@ -108,8 +112,13 @@ impl StatFileOps {
             writeln!(stat_output, "btime {}", 0).unwrap();
         }
 
-        // Process count (number of forks since boot)
-        writeln!(stat_output, "processes {}", count_total_forks()).unwrap();
+        // Process count (number of created processes since boot)
+        writeln!(
+            stat_output,
+            "processes {}",
+            collect_process_creation_count()
+        )
+        .unwrap();
 
         // Running and blocked processes
         let (_, running_count) = nr_queued_and_running();
@@ -141,14 +150,13 @@ impl StatFileOps {
             0usize,                                             // Reserved
         )
         .unwrap();
+
         stat_output
     }
 }
 
 impl FileOps for StatFileOps {
-    /// Retrieve the data for `/proc/stat`.
     fn data(&self) -> Result<Vec<u8>> {
-        // Implementation to gather and format the statistics
         let output = Self::collect_stats();
         Ok(output.into_bytes())
     }

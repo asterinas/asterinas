@@ -4,7 +4,6 @@ use alloc::format;
 
 use aster_util::slot_vec::SlotVec;
 
-use super::*;
 use crate::{
     fs::{
         procfs::{
@@ -21,6 +20,7 @@ use crate::{
         },
         utils::{mkmod, DirEntryVecExt, Inode},
     },
+    prelude::*,
     process::posix_thread::AsPosixThread,
     thread::{AsThread, Thread},
     Process,
