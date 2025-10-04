@@ -23,7 +23,6 @@ const FUTEX_OP_MASK: u32 = 0x0000_000F;
 const FUTEX_FLAGS_MASK: u32 = 0xFFFF_FFF0;
 const FUTEX_BITSET_MATCH_ANY: FutexBitSet = 0xFFFF_FFFF;
 
-/// do futex wait
 pub fn futex_wait(
     futex_addr: u64,
     futex_val: i32,
@@ -41,7 +40,6 @@ pub fn futex_wait(
     )
 }
 
-/// Does futex wait bitset
 pub fn futex_wait_bitset(
     futex_addr: Vaddr,
     futex_val: i32,
@@ -134,12 +132,10 @@ pub fn futex_wait_bitset(
     result
 }
 
-/// Does futex wake
 pub fn futex_wake(futex_addr: Vaddr, max_count: usize, pid: Option<Pid>) -> Result<usize> {
     futex_wake_bitset(futex_addr, max_count, FUTEX_BITSET_MATCH_ANY, pid)
 }
 
-/// Does futex wake with bitset
 pub fn futex_wake_bitset(
     futex_addr: Vaddr,
     max_count: usize,
@@ -326,7 +322,6 @@ pub fn futex_wake_op(
     Ok(res)
 }
 
-/// Does futex requeue
 pub fn futex_requeue(
     futex_addr: Vaddr,
     max_nwakes: usize,
@@ -362,10 +357,10 @@ pub fn futex_requeue(
 
 static FUTEX_BUCKETS: Once<FutexBucketVec> = Once::new();
 
-/// Get the futex hash bucket count.
+/// Gets the futex hash bucket count.
 ///
 /// This number is calculated the same way as Linux's:
-/// <https://github.com/torvalds/linux/blob/master/kernel/futex/core.c>
+/// <https://elixir.bootlin.com/linux/v6.17/source/kernel/futex/core.c#L1981>.
 fn get_bucket_count() -> usize {
     ((1 << 8) * num_cpus()).next_power_of_two()
 }
@@ -405,7 +400,7 @@ fn lock_bucket_pairs(
     }
 }
 
-/// Initialize the futex system.
+/// Initializes the futex system.
 pub fn init() {
     FUTEX_BUCKETS.call_once(|| FutexBucketVec::new(get_bucket_count()));
 }
@@ -415,7 +410,7 @@ struct FutexBucketVec {
 }
 
 impl FutexBucketVec {
-    fn new(size: usize) -> FutexBucketVec {
+    pub(self) fn new(size: usize) -> FutexBucketVec {
         let mut buckets = FutexBucketVec {
             vec: Vec::with_capacity(size),
         };
@@ -426,14 +421,14 @@ impl FutexBucketVec {
         buckets
     }
 
-    fn get_bucket(&self, key: &FutexKey) -> (usize, &SpinLock<FutexBucket>) {
+    pub(self) fn get_bucket(&self, key: &FutexKey) -> (usize, &SpinLock<FutexBucket>) {
         // Since `self.size()` is known to be a power of 2, the following is
         // equivalent to `key.hash % self.size()`, buf faster.
         let index = key.hash & (self.size() - 1);
         (index, &self.vec[index])
     }
 
-    fn size(&self) -> usize {
+    pub(self) fn size(&self) -> usize {
         self.vec.len()
     }
 }
@@ -443,21 +438,21 @@ struct FutexBucket {
 }
 
 impl FutexBucket {
-    pub fn new() -> FutexBucket {
+    pub(self) fn new() -> FutexBucket {
         FutexBucket {
             items: Vec::with_capacity(1),
         }
     }
 
-    pub fn add_item(&mut self, item: FutexItem) {
+    pub(self) fn add_item(&mut self, item: FutexItem) {
         self.items.push(item);
     }
 
-    pub fn remove_by_id(&mut self, futex_id: u64) {
+    pub(self) fn remove_by_id(&mut self, futex_id: u64) {
         self.items.retain(|item| item.id != futex_id);
     }
 
-    pub fn remove_and_wake_items(&mut self, key: &FutexKey, max_count: usize) -> usize {
+    pub(self) fn remove_and_wake_items(&mut self, key: &FutexKey, max_count: usize) -> usize {
         let mut count = 0;
 
         self.items.retain(|item| {
@@ -474,7 +469,7 @@ impl FutexBucket {
         count
     }
 
-    pub fn update_item_keys(&mut self, key: &FutexKey, new_key: &FutexKey, max_count: usize) {
+    pub(self) fn update_item_keys(&mut self, key: &FutexKey, new_key: &FutexKey, max_count: usize) {
         let mut count = 0;
         for item in self.items.iter_mut() {
             if item.key.match_up(key) {
@@ -487,7 +482,7 @@ impl FutexBucket {
         }
     }
 
-    pub fn requeue_items_to_another_bucket(
+    pub(self) fn requeue_items_to_another_bucket(
         &mut self,
         key: &FutexKey,
         another: &mut Self,
@@ -518,7 +513,7 @@ struct FutexItem {
 }
 
 impl FutexItem {
-    pub fn create(key: FutexKey) -> (Self, Waiter) {
+    pub(self) fn create(key: FutexKey) -> (Self, Waiter) {
         let id = next_futex_id();
         let (waiter, waker) = Waiter::new_pair();
         let futex_item = FutexItem { id, key, waker };
@@ -527,7 +522,7 @@ impl FutexItem {
     }
 
     #[must_use]
-    pub fn wake(&self) -> bool {
+    pub(self) fn wake(&self) -> bool {
         self.waker.wake_up()
     }
 }
@@ -542,7 +537,7 @@ struct FutexKey {
 }
 
 impl FutexKey {
-    fn new(addr: Vaddr, bitset: FutexBitSet, pid: Option<Pid>) -> Result<Self> {
+    pub(self) fn new(addr: Vaddr, bitset: FutexBitSet, pid: Option<Pid>) -> Result<Self> {
         // "On all platforms, futexes are four-byte integers that must be aligned on a four-byte
         // boundary."
         // Reference: <https://man7.org/linux/man-pages/man2/futex.2.html>.
@@ -566,7 +561,7 @@ impl FutexKey {
         Ok(Self { hash, bitset })
     }
 
-    fn match_up(&self, another: &Self) -> bool {
+    pub(self) fn match_up(&self, another: &Self) -> bool {
         self.hash == another.hash && (self.bitset & another.bitset) != 0
     }
 }
