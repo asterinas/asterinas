@@ -108,20 +108,22 @@ impl CpuSet {
         self.bits.fill(0);
     }
 
-    /// Iterates over the CPUs in the set.
+    /// Returns an iterator over the CPUs in the set.
     ///
-    /// The order of the iteration is guaranteed to be in ascending order.
-    pub fn iter(&self) -> impl Iterator<Item = CpuId> + '_ {
-        self.bits.iter().enumerate().flat_map(|(part_idx, &part)| {
-            (0..BITS_PER_PART).filter_map(move |bit_idx| {
-                if (part & (1 << bit_idx)) != 0 {
-                    let id = part_idx * BITS_PER_PART + bit_idx;
-                    Some(CpuId(id as u32))
-                } else {
-                    None
-                }
-            })
-        })
+    /// The elements yielded are guaranteed to be in ascending order.
+    pub fn iter(&self) -> CpuCycler<'_> {
+        CpuCycler::new(self, 0)
+    }
+
+    /// Returns an iterator over the CPUs in the set, starting *after* the given
+    /// [`CpuId`].
+    ///
+    /// The iteration order is ascending up to the wrapping point, after which it
+    /// continues from the first CPU in the set, in ascending order again.
+    ///
+    /// If the given [`CpuId`] is in the set, it will be the last element yielded.
+    pub fn iter_after(&self, cpu_id: CpuId) -> CpuCycler<'_> {
+        CpuCycler::new(self, cpu_id.as_usize() + 1)
     }
 
     /// Only for internal use. The set cannot contain non-existent CPUs.
@@ -137,6 +139,78 @@ impl CpuSet {
         if num_cpus % BITS_PER_PART != 0 {
             let num_parts = parts_for_cpus(num_cpus);
             self.bits[num_parts - 1] &= (1 << (num_cpus % BITS_PER_PART)) - 1;
+        }
+    }
+}
+
+/// An iterator that cycles through the CPUs in a [`CpuSet`], starting from a
+/// specified position and possibly wrapping around once, at most.
+pub struct CpuCycler<'a> {
+    cpu_set: &'a CpuSet,
+    pos: usize,
+    first_found: Option<usize>,
+    finished: bool,
+}
+
+impl<'a> CpuCycler<'a> {
+    fn new(cpu_set: &'a CpuSet, start: usize) -> Self {
+        CpuCycler {
+            cpu_set,
+            pos: start,
+            first_found: None,
+            finished: false,
+        }
+    }
+}
+
+impl Iterator for CpuCycler<'_> {
+    type Item = CpuId;
+
+    fn next(&mut self) -> Option<CpuId> {
+        if self.finished {
+            return None;
+        }
+
+        if self.cpu_set.bits.is_empty() {
+            self.finished = true;
+            return None;
+        }
+
+        loop {
+            let part_idx = self.pos / BITS_PER_PART;
+            if part_idx >= self.cpu_set.bits.len() {
+                // Wrapped around past the highest bit.
+                self.pos = 0;
+                continue;
+            }
+
+            let part = self.cpu_set.bits[part_idx];
+            let part_bit_idx = self.pos % BITS_PER_PART;
+            let remaining = part >> part_bit_idx;
+
+            if remaining != 0 {
+                // Skip trailing zeros for efficiency.
+                let nr_zeros = remaining.trailing_zeros() as usize;
+                let cpu_idx = part_idx * BITS_PER_PART + part_bit_idx + nr_zeros;
+
+                if let Some(first_found) = self.first_found {
+                    if cpu_idx == first_found {
+                        // We've cycled back to the first CPU found in the set.
+                        self.finished = true;
+                        return None;
+                    }
+                } else {
+                    // This is the first CPU found in the set. Cache it.
+                    self.first_found = Some(cpu_idx);
+                }
+
+                // Advance the position for the next call and return the `CpuId`.
+                self.pos = cpu_idx + 1;
+                return Some(CpuId(cpu_idx as u32));
+            } else {
+                // Move to next part.
+                self.pos = (part_idx + 1) * BITS_PER_PART;
+            }
         }
     }
 }
@@ -255,8 +329,8 @@ mod test {
     #[ktest]
     fn test_empty_cpu_set_iter_is_empty() {
         let set = CpuSet::new_empty();
-        let set_cpus = set.iter().collect::<Vec<_>>();
-        assert!(set_cpus.is_empty());
+        let mut set_cpus = set.iter();
+        assert!(set_cpus.next().is_none());
     }
 
     #[ktest]
@@ -301,5 +375,86 @@ mod test {
                 atomic_set.add(cpu_id, Ordering::Relaxed);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::prelude::*;
+
+    fn make_cpu_set(indices: &[usize]) -> CpuSet {
+        let mut set = CpuSet::default();
+        let num_parts = (indices.iter().max().unwrap_or(&0) / BITS_PER_PART) + 1;
+        set.bits.resize(num_parts, 0);
+        for &idx in indices {
+            let part_idx = idx / BITS_PER_PART;
+            let bit_idx = idx % BITS_PER_PART;
+            set.bits[part_idx] |= 1 << bit_idx;
+        }
+        set
+    }
+
+    #[test]
+    fn iter_single_cpu() {
+        let set = make_cpu_set(&[3]);
+        let ids: Vec<_> = set.iter().collect();
+        assert_eq!(ids, vec![CpuId(3)]);
+    }
+
+    #[test]
+    fn iter_multiple_cpus() {
+        let set = make_cpu_set(&[0, 2, 5, 63, 64, 70]);
+        let ids: Vec<_> = set.iter().collect();
+        assert_eq!(
+            ids,
+            vec![
+                CpuId(0),
+                CpuId(2),
+                CpuId(5),
+                CpuId(63),
+                CpuId(64),
+                CpuId(70)
+            ]
+        );
+    }
+
+    #[test]
+    fn iter_after_wraps_around() {
+        let set = make_cpu_set(&[1, 3, 5, 7]);
+        let ids: Vec<_> = set.iter_after(CpuId(3)).collect();
+        // Should start after 3, so [5, 7, 1, 3].
+        assert_eq!(ids, vec![CpuId(5), CpuId(7), CpuId(1), CpuId(3)]);
+
+        let ids: Vec<_> = set.iter_after(CpuId(4)).collect();
+        // Should start after 4, so [5, 7, 1, 3].
+        assert_eq!(ids, vec![CpuId(5), CpuId(7), CpuId(1), CpuId(3)]);
+    }
+
+    #[test]
+    fn iter_after_single_cpu() {
+        let set = make_cpu_set(&[42]);
+        let ids: Vec<_> = set.iter_after(CpuId(42)).collect();
+        // Only one CPU in the set, so iteration should still yield it.
+        assert_eq!(ids, vec![CpuId(42)]);
+    }
+
+    #[test]
+    fn iter_after_beyond_max() {
+        let set = make_cpu_set(&[2, 4, 6]);
+        let ids: Vec<_> = set.iter_after(CpuId(100)).collect();
+        // Start is beyond any present CPUs, so should start at the lowest.
+        assert_eq!(ids, vec![CpuId(2), CpuId(4), CpuId(6)]);
+    }
+
+    #[test]
+    fn iter_and_iter_after_equivalence() {
+        let set = make_cpu_set(&(0..10).collect::<Vec<_>>());
+        let all: Vec<_> = set.iter().collect();
+        let shifted: Vec<_> = set.iter_after(CpuId(4)).collect();
+        // Rotated version of all.
+        let expected: Vec<_> = (5..10).chain(0..=4).map(|i| CpuId(i as u32)).collect();
+        assert_eq!(all, (0..10).map(|i| CpuId(i)).collect::<Vec<_>>());
+        assert_eq!(shifted, expected);
     }
 }

@@ -285,23 +285,15 @@ impl ClassScheduler {
         let affinity = thread.atomic_cpu_affinity().load(Ordering::Relaxed);
         let mut selected = guard.current_cpu();
         let mut minimum_load = u32::MAX;
-        let last_chosen = match self.last_chosen_cpu.get() {
-            Some(cpu) => cpu.as_usize() as isize,
-            None => -1,
-        };
-        // Simulate a round-robin selection starting from the last chosen CPU.
+
+        // Simulate a round-robin selection starting after the last chosen CPU.
         //
-        // It still checks every CPU to find the one with the minimum load, but
-        // avoids keeping selecting the same CPU when there are multiple equally
-        // idle CPUs.
-        let affinity_iter = affinity
-            .iter()
-            .filter(|&cpu| cpu.as_usize() as isize > last_chosen)
-            .chain(
-                affinity
-                    .iter()
-                    .filter(|&cpu| cpu.as_usize() as isize <= last_chosen),
-            );
+        // It still checks every CPU in the affinity set to find the one with the
+        // minimum load, but avoids selecting the same CPU again in case of a tie.
+        let affinity_iter = match self.last_chosen_cpu.get() {
+            Some(last_chosen_cpu) => affinity.iter_after(last_chosen_cpu),
+            None => affinity.iter(),
+        };
         for candidate in affinity_iter {
             let rq = self.rqs[candidate.as_usize()].lock();
             let (load, _) = rq.nr_queued_and_running();
