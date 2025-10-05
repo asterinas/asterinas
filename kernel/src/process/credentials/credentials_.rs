@@ -76,10 +76,6 @@ impl Credentials_ {
         }
     }
 
-    fn is_privileged(&self) -> bool {
-        self.euid.is_root()
-    }
-
     //  ******* Uid methods *******
 
     pub(super) fn ruid(&self) -> Uid {
@@ -98,39 +94,25 @@ impl Credentials_ {
         self.fsuid.load(Ordering::Relaxed)
     }
 
-    pub(super) fn set_uid(&self, uid: Uid) {
-        if self.is_privileged() {
+    pub(super) fn set_uid(&self, uid: Uid) -> Result<()> {
+        if self.effective_capset().contains(CapSet::SETUID) {
             self.set_resuid_unchecked(Some(uid), Some(uid), Some(uid));
+            Ok(())
         } else {
-            // Unprivileged processes can only switch between ruid, euid, suid
-            if uid != self.ruid.load(Ordering::Relaxed)
-                && uid != self.euid.load(Ordering::Relaxed)
-                && uid != self.suid.load(Ordering::Relaxed)
-            {
-                // No permission to set to this UID
-                return;
-            }
-            self.set_resuid_unchecked(None, Some(uid), None)
+            self.set_resuid(None, Some(uid), None)
         }
-
-        self.set_fsuid_unchecked(uid)
     }
 
     pub(super) fn set_reuid(&self, ruid: Option<Uid>, euid: Option<Uid>) -> Result<()> {
         self.check_uid_perm(ruid.as_ref(), euid.as_ref(), None, false)?;
 
         let should_set_suid = ruid.is_some() || euid.is_some_and(|euid| euid != self.ruid());
-
-        self.set_resuid_unchecked(ruid, euid, None);
-
-        if should_set_suid {
-            self.suid.store(self.euid(), Ordering::Release);
-        }
-
-        // FIXME: should we set fsuid here? The linux document for syscall `setfsuid` is contradictory
-        // with the document of syscall `setreuid`. The `setfsuid` document says the `fsuid` is always
-        // the same as `euid`, but `setreuid` does not mention the `fsuid` should be set.
-        self.set_fsuid_unchecked(self.euid());
+        let suid = if should_set_suid {
+            Some(euid.unwrap_or_else(|| self.euid()))
+        } else {
+            None
+        };
+        self.set_resuid_unchecked(ruid, euid, suid);
 
         Ok(())
     }
@@ -145,28 +127,24 @@ impl Credentials_ {
 
         self.set_resuid_unchecked(ruid, euid, suid);
 
-        self.set_fsuid_unchecked(self.euid());
-
         Ok(())
     }
 
-    pub(super) fn set_fsuid(&self, fsuid: Option<Uid>) -> Result<Uid> {
+    pub(super) fn set_fsuid(&self, fsuid: Option<Uid>) -> core::result::Result<Uid, Uid> {
         let old_fsuid = self.fsuid();
 
         let Some(fsuid) = fsuid else {
             return Ok(old_fsuid);
         };
 
-        if self.is_privileged() {
-            self.fsuid.store(fsuid, Ordering::Release);
+        if self.effective_capset().contains(CapSet::SETUID) {
+            self.set_fsuid_unchecked(fsuid);
             return Ok(old_fsuid);
         }
 
         if fsuid != self.ruid() && fsuid != self.euid() && fsuid != self.suid() {
-            return_errno_with_message!(
-                Errno::EPERM,
-                "fsuid can only be one of old ruid, old euid and old suid."
-            )
+            // The new filesystem UID is not one of the associated UIDs.
+            return Err(old_fsuid);
         }
 
         self.set_fsuid_unchecked(fsuid);
@@ -191,7 +169,7 @@ impl Credentials_ {
         suid: Option<&Uid>,
         ruid_may_be_old_suid: bool,
     ) -> Result<()> {
-        if self.is_privileged() {
+        if self.effective_capset().contains(CapSet::SETUID) {
             return Ok(());
         }
 
@@ -257,45 +235,43 @@ impl Credentials_ {
             old_suid
         };
 
+        self.set_fsuid_unchecked(new_euid);
+
         // If the `SECBIT_NO_SETUID_FIXUP` bit is set, do not adjust capabilities.
         // Reference: The "SECBIT_NO_SETUID_FIXUP" section in
-        // https://man7.org/linux/man-pages/man7/capabilities.7.html
+        // <https://man7.org/linux/man-pages/man7/capabilities.7.html>.
         if self.securebits().no_setuid_fixup() {
             return;
         }
 
         // Begin to adjust capabilities.
         // Reference: The "Effect of user ID changes on capabilities" section in
-        // https://man7.org/linux/man-pages/man7/capabilities.7.html
+        // <https://man7.org/linux/man-pages/man7/capabilities.7.html>.
+
         let had_root = old_ruid.is_root() || old_euid.is_root() || old_suid.is_root();
         let all_nonroot = !new_ruid.is_root() && !new_euid.is_root() && !new_suid.is_root();
+        if had_root && all_nonroot && !self.keep_capabilities() {
+            self.set_permitted_capset(CapSet::empty());
+            self.set_inheritable_capset(CapSet::empty());
+            // TODO: Clear ambient capabilities when we support it. Note that ambient capabilities
+            // should be cleared even if `keep_capabilities` is true.
+        }
 
-        if had_root && all_nonroot {
-            if !self.keep_capabilities() {
-                self.set_permitted_capset(CapSet::empty());
-                self.set_inheritable_capset(CapSet::empty());
-                // TODO: Also need to clear ambient capabilities when we support it
-            }
-
+        if old_euid.is_root() && !new_euid.is_root() {
             self.set_effective_capset(CapSet::empty());
-        } else {
-            if old_euid.is_root() && !new_euid.is_root() {
-                self.set_effective_capset(CapSet::empty());
-            }
-
-            if !old_euid.is_root() && new_euid.is_root() {
-                let permitted = self.permitted_capset();
-                self.set_effective_capset(permitted);
-            }
+        } else if !old_euid.is_root() && new_euid.is_root() {
+            let permitted = self.permitted_capset();
+            self.set_effective_capset(permitted);
         }
     }
 
     fn set_fsuid_unchecked(&self, fsuid: Uid) {
-        let old_uid = self.fsuid.swap(fsuid, Ordering::Relaxed);
+        let old_fsuid = self.fsuid();
+        self.fsuid.store(fsuid, Ordering::Relaxed);
 
-        if old_uid.is_root() && !fsuid.is_root() {
+        if old_fsuid.is_root() && !fsuid.is_root() {
             // Reference: The "Effect of user ID changes on capabilities" section in
-            // https://man7.org/linux/man-pages/man7/capabilities.7.html
+            // <https://man7.org/linux/man-pages/man7/capabilities.7.html>.
             let cap_to_remove = CapSet::CHOWN
                 | CapSet::DAC_OVERRIDE
                 | CapSet::FOWNER
@@ -327,15 +303,12 @@ impl Credentials_ {
         self.fsgid.load(Ordering::Relaxed)
     }
 
-    pub(super) fn set_gid(&self, gid: Gid) {
-        if self.is_privileged() {
-            self.rgid.store(gid, Ordering::Relaxed);
-            self.egid.store(gid, Ordering::Relaxed);
-            self.sgid.store(gid, Ordering::Relaxed);
-            self.fsgid.store(gid, Ordering::Relaxed);
+    pub(super) fn set_gid(&self, gid: Gid) -> Result<()> {
+        if self.effective_capset().contains(CapSet::SETGID) {
+            self.set_resgid_unchecked(Some(gid), Some(gid), Some(gid));
+            Ok(())
         } else {
-            self.egid.store(gid, Ordering::Relaxed);
-            self.fsgid.store(gid, Ordering::Relaxed);
+            self.set_resgid(None, Some(gid), None)
         }
     }
 
@@ -343,14 +316,12 @@ impl Credentials_ {
         self.check_gid_perm(rgid.as_ref(), egid.as_ref(), None, false)?;
 
         let should_set_sgid = rgid.is_some() || egid.is_some_and(|egid| egid != self.rgid());
-
-        self.set_resgid_unchecked(rgid, egid, None);
-
-        if should_set_sgid {
-            self.sgid.store(self.egid(), Ordering::Relaxed);
-        }
-
-        self.fsgid.store(self.egid(), Ordering::Relaxed);
+        let sgid = if should_set_sgid {
+            Some(egid.unwrap_or_else(|| self.egid()))
+        } else {
+            None
+        };
+        self.set_resgid_unchecked(rgid, egid, sgid);
 
         Ok(())
     }
@@ -365,41 +336,41 @@ impl Credentials_ {
 
         self.set_resgid_unchecked(rgid, egid, sgid);
 
-        self.fsgid.store(self.egid(), Ordering::Relaxed);
-
         Ok(())
     }
 
-    pub(super) fn set_fsgid(&self, fsgid: Option<Gid>) -> Result<Gid> {
+    pub(super) fn set_fsgid(&self, fsgid: Option<Gid>) -> core::result::Result<Gid, Gid> {
         let old_fsgid = self.fsgid();
 
         let Some(fsgid) = fsgid else {
             return Ok(old_fsgid);
         };
 
-        if self.is_privileged() {
-            self.fsgid.store(fsgid, Ordering::Relaxed);
+        if fsgid == old_fsgid {
+            return Ok(old_fsgid);
+        }
+
+        if self.effective_capset().contains(CapSet::SETGID) {
+            self.set_fsgid_unchecked(fsgid);
             return Ok(old_fsgid);
         }
 
         if fsgid != self.rgid() && fsgid != self.egid() && fsgid != self.sgid() {
-            return_errno_with_message!(
-                Errno::EPERM,
-                "fsuid can only be one of old ruid, old euid and old suid."
-            )
+            // The new filesystem GID is not one of the associated GIDs.
+            return Err(old_fsgid);
         }
 
-        self.fsgid.store(fsgid, Ordering::Relaxed);
+        self.set_fsgid_unchecked(fsgid);
 
         Ok(old_fsgid)
     }
 
     pub(super) fn set_egid(&self, egid: Gid) {
-        self.egid.store(egid, Ordering::Relaxed);
+        self.set_resgid_unchecked(None, Some(egid), None);
     }
 
     pub(super) fn set_sgid(&self, sgid: Gid) {
-        self.sgid.store(sgid, Ordering::Relaxed);
+        self.set_resgid_unchecked(None, None, Some(sgid));
     }
 
     // For `setregid`, rgid can *NOT* be set to old sgid,
@@ -411,7 +382,7 @@ impl Credentials_ {
         sgid: Option<&Gid>,
         rgid_may_be_old_sgid: bool,
     ) -> Result<()> {
-        if self.is_privileged() {
+        if self.effective_capset().contains(CapSet::SETGID) {
             return Ok(());
         }
 
@@ -463,6 +434,12 @@ impl Credentials_ {
         if let Some(sgid) = sgid {
             self.sgid.store(sgid, Ordering::Relaxed);
         }
+
+        self.set_fsgid_unchecked(self.egid());
+    }
+
+    fn set_fsgid_unchecked(&self, fsuid: Gid) {
+        self.fsgid.store(fsuid, Ordering::Relaxed);
     }
 
     //  ******* Supplementary groups methods *******
