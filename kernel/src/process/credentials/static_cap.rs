@@ -82,8 +82,8 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_uid(&self, uid: Uid) {
-        self.0.set_uid(uid);
+    pub fn set_uid(&self, uid: Uid) -> Result<()> {
+        self.0.set_uid(uid)
     }
 
     /// Sets real, effective user ids as `ruid`, `euid` respectively. if `ruid` or `euid`
@@ -114,7 +114,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_fsuid(&self, fsuid: Option<Uid>) -> Result<Uid> {
+    pub fn set_fsuid(&self, fsuid: Option<Uid>) -> core::result::Result<Uid, Uid> {
         self.0.set_fsuid(fsuid)
     }
 
@@ -176,8 +176,8 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_gid(&self, gid: Gid) {
-        self.0.set_gid(gid);
+    pub fn set_gid(&self, gid: Gid) -> Result<()> {
+        self.0.set_gid(gid)
     }
 
     /// Sets real, effective group ids as `rgid`, `egid` respectively. if `rgid` or `egid`
@@ -208,7 +208,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_fsgid(&self, fsgid: Option<Gid>) -> Result<Gid> {
+    pub fn set_fsgid(&self, fsgid: Option<Gid>) -> core::result::Result<Gid, Gid> {
         self.0.set_fsgid(fsgid)
     }
 
