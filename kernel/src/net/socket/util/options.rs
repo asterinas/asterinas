@@ -242,7 +242,7 @@ fn check_current_privileged() -> Result<()> {
         posix_thread.credentials()
     };
 
-    if credentials.euid().is_root() || credentials.effective_capset().contains(CapSet::NET_ADMIN) {
+    if credentials.effective_capset().contains(CapSet::NET_ADMIN) {
         return Ok(());
     }
 

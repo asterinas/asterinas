@@ -254,9 +254,7 @@ impl AuxiliaryData {
             warn!("UNIX sockets in SCM_RIGHTS messages can leak kernel resource");
 
             let credentials = current_thread!().as_posix_thread().unwrap().credentials();
-            if !credentials.euid().is_root()
-                && !credentials.effective_capset().contains(CapSet::SYS_ADMIN)
-            {
+            if !credentials.effective_capset().contains(CapSet::SYS_ADMIN) {
                 return_errno_with_message!(
                     Errno::EPERM,
                     "UNIX sockets in SCM_RIGHTS messages can leak kernel resource"
