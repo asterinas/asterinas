@@ -9,7 +9,12 @@ use super::SyscallReturn;
 use crate::{
     fs::file_table::{get_file_fast, FileDesc},
     prelude::*,
-    vm::{perms::VmPerms, vmar::is_userspace_vaddr, vmo::VmoOptions},
+    vm::{
+        memfd::MemfdFile,
+        perms::VmPerms,
+        vmar::{is_userspace_vaddr, vm_mapping::is_shared_maywrite},
+        vmo::VmoOptions,
+    },
 };
 
 pub fn sys_mmap(
@@ -131,6 +136,12 @@ fn do_sys_mmap(
                     return_errno!(Errno::EACCES);
                 }
                 vm_may_perms.remove(VmPerms::MAY_WRITE);
+            }
+
+            if file.downcast_ref::<MemfdFile>().is_some()
+                && is_shared_maywrite(option.typ() == MMapType::Shared, vm_perms | vm_may_perms)
+            {
+                options = options.track_vmo_writable_mapping_status();
             }
 
             options = options
