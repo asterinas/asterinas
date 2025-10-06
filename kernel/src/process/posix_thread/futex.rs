@@ -96,38 +96,32 @@ pub fn futex_wait_bitset(
         );
     }
 
-    let futex_id = futex_item.id;
     futex_bucket.add_item(futex_item);
 
     // Release the lock.
     drop(futex_bucket);
 
     let result = waiter.pause_timeout(&timeout.into());
-    if let Err(err) = &result {
-        if matches!(err.error(), Errno::EINTR | Errno::ETIME) {
-            // If the futex wait operation was interrupted by a signal or timed out, the
-            // `FutexItem` must be dequeued and dropped. Otherwise, malicious user programs
-            // could repeatedly issue futex wait operations to exhaust kernel memory.
-            //
-            // Due to asynchronicity, this removal can't be done by queue position nor by
-            // futex key match up:
-            // * The position might have changed during the pause as some earlier futex might
-            //   have been dequeued
-            // * If two futexes with the same key are enqueued and then one of them times out
-            //   or is interrupted, a removal by key would likely dequeue the wrong futex
-            //
-            // Therefore, we need to perform a removal by unique global futex ID.
-            futex_bucket_ref.lock().remove_by_id(futex_id);
 
-            // FIXME: If the futex is woken up and a signal comes at the same time, we should succeed
-            // instead of failing with `EINTR`. The code below is of course wrong, but was needed to
-            // make the gVisor tests happy. See <https://github.com/asterinas/asterinas/pull/1577>.
-            if err.error() == Errno::EINTR {
-                return Ok(());
-            }
-        }
+    // If the futex wait operation was interrupted by a signal or timed out, the
+    // `FutexItem` must be dequeued and dropped. Otherwise, malicious user programs
+    // could repeatedly issue futex wait operations to exhaust kernel memory.
+    let item = futex_bucket_ref.lock().remove_by_waker(&waiter.waker());
+    if item.is_none() {
+        // The futex item will be removed asynchronously if and only if it has been woken up. In
+        // that case, we should report success to the user.
+        // FIXME: `pause_timeout` should return `Ok(())` in this case, but it currently may return
+        // errors due to race conditions.
+        Ok(())
+    } else if let Err(err) = result {
+        Err(err)
+    } else {
+        // Spurious wakeups. Return `EINTR` anyway.
+        return_errno_with_message!(
+            Errno::EINTR,
+            "the current thread is interrupted by a signal"
+        );
     }
-    result
 }
 
 pub fn futex_wake(futex_addr: Vaddr, max_count: usize, pid: Option<Pid>) -> Result<usize> {
