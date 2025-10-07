@@ -152,10 +152,19 @@ mod test {
         let range = vec![0x4000_0000..0x4200_0000];
         let allocator =
             unsafe { IoMemAllocator::new(IoMemAllocatorBuilder::new(range).allocators) };
+
         assert!(allocator.acquire(0..0).is_none());
-        assert!(allocator.acquire(0x4000_0000..0x4000_0000).is_none());
-        assert!(allocator.acquire(0x4000_1000..0x4000_0000).is_none());
         assert!(allocator.acquire(usize::MAX..0).is_none());
+
+        assert!(allocator.acquire(0x4000_0000..0x4000_0000).is_none());
+        assert!(allocator.acquire(0x4000_1000..0x4000_1000).is_none());
+        assert!(allocator.acquire(0x41ff_0000..0x41ff_0000).is_none());
+        assert!(allocator.acquire(0x4200_0000..0x4200_0000).is_none());
+
+        assert!(allocator.acquire(0x4000_1000..0x4000_0000).is_none());
+        assert!(allocator.acquire(0x4000_2000..0x4000_1000).is_none());
+        assert!(allocator.acquire(0x41ff_f000..0x41ff_e000).is_none());
+        assert!(allocator.acquire(0x4200_0000..0x41ff_f000).is_none());
     }
 
     #[ktest]

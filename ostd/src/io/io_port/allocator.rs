@@ -25,11 +25,11 @@ pub(super) struct IoPortAllocator {
 impl IoPortAllocator {
     /// Acquires the `IoPort`. Return None if any region in `port` cannot be allocated.
     pub(super) fn acquire<T, A>(&self, port: u16) -> Option<IoPort<T, A>> {
-        let mut range = port..(port + size_of::<T>() as u16);
+        let range = port..port.checked_add(size_of::<T>().try_into().ok()?)?;
         debug!("Try to acquire PIO range: {:#x?}", range);
 
         let mut allocator = self.allocator.lock();
-        if range.any(|i| allocator.is_allocated(i as usize)) {
+        if range.clone().any(|i| allocator.is_allocated(i as usize)) {
             return None;
         }
 
@@ -37,7 +37,7 @@ impl IoPortAllocator {
             allocator.alloc_specific(i as usize);
         }
 
-        // SAFETY: The created IoPort is guaranteed not to access system device I/O
+        // SAFETY: The created `IoPort` is guaranteed not to access system device I/O.
         unsafe { Some(IoPort::new(port)) }
     }
 
@@ -98,4 +98,37 @@ pub(in crate::io) unsafe fn init() {
     IO_PORT_ALLOCATOR.call_once(|| IoPortAllocator {
         allocator: SpinLock::new(allocator),
     });
+}
+
+#[cfg(ktest)]
+mod test {
+    use crate::{arch::device::io_port::ReadWriteAccess, prelude::*};
+
+    type IoPort = crate::io::IoPort<u32, ReadWriteAccess>;
+
+    #[ktest]
+    fn illegal_region() {
+        let io_port_a = IoPort::acquire(0xffff);
+        assert!(io_port_a.is_err());
+
+        type IllegalIoPort = crate::io::IoPort<[u8; 0x10008], ReadWriteAccess>;
+        let io_port_b = IllegalIoPort::acquire(0);
+        assert!(io_port_b.is_err());
+    }
+
+    #[ktest]
+    fn conflict_region() {
+        let io_port_a = IoPort::acquire(0x60);
+        assert!(io_port_a.is_ok());
+
+        // This allocation will fail because its range conflicts with `io_port_a`.
+        let io_port_b = IoPort::acquire(0x62);
+        assert!(io_port_b.is_err());
+
+        drop(io_port_a);
+
+        // After dropping `io_port_a`, conflicts no longer exist so the allocation will succeed.
+        let io_port_b = IoPort::acquire(0x62);
+        assert!(io_port_b.is_ok());
+    }
 }
