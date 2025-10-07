@@ -371,7 +371,7 @@ impl Mount {
 
     /// Attaches the mount node to the mountpoint.
     fn attach_to_path(&self, target_path: &Path) {
-        let key = target_path.key();
+        let key = target_path.dentry.key();
         target_path
             .mount_node()
             .children
