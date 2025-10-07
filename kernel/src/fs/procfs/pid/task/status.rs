@@ -113,6 +113,12 @@ impl FileOps for StatusFileOps {
 
         let state = if thread.is_exited() {
             "Z (zombie)"
+        } else if process.is_stopped() {
+            "T (stopped)"
+        } else if thread.task().is_parked() {
+            "D (disk sleep)"
+        } else if posix_thread.is_paused() {
+            "S (sleeping)"
         } else {
             "R (running)"
         };
