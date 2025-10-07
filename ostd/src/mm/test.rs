@@ -901,7 +901,7 @@ mod vmspace {
         cursor_mut.protect_next(0x2000, |_flags, _cache| {}); // Not page-aligned.
     }
 
-    /// A very large address (1TiB) beyond typical physical memory for testing.
+    /// A very large address (16 TiB) beyond typical physical memory for testing.
     const IOMEM_PADDR: usize = 0x100_000_000_000;
 
     /// Maps and queries an `IoMem` using `CursorMut`.

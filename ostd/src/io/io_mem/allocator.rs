@@ -160,7 +160,7 @@ mod test {
 
     #[ktest]
     fn conflict_region() {
-        let max_paddr = 0x100_000_000_000; // 16 TB
+        let max_paddr = 0x100_000_000_000; // 16 TiB
 
         let io_mem_region_a = max_paddr..max_paddr + 0x200_0000;
         let io_mem_region_b =
