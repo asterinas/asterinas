@@ -11,6 +11,14 @@ use crate::{boot::memory_region::MemoryRegionType, io::IoMemAllocatorBuilder};
 /// In x86-64, the available physical memory area is divided into two regions below 32 bits (Low memory)
 /// and above (High memory). The area from the top of low memory to 0xffff_ffff and the area after the
 /// top of high memory are available MMIO areas.
+///
+/// This memory layout is documented in Intel's datasheets. The MMIO area is defined by specific
+/// registers that are configured by the BIOS and locked down, preventing the OS from reconfiguring
+/// them. For the details, one can read the "Processor Configuration Register Definitions and
+/// Address Ranges" section in the "10th Generation Intel(R) Processor Families" datasheet
+/// (<https://www.intel.com/content/dam/www/public/us/en/documents/datasheets/10th-gen-core-families-datasheet-vol-2-datasheet.pdf>).
+/// However, note that these specifics may differ between CPU generations and those manufactured by
+/// other vendors.
 pub(super) fn construct_io_mem_allocator_builder() -> IoMemAllocatorBuilder {
     // TODO: Add MMIO regions below 1MB (e.g., VGA framebuffer).
     let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
@@ -23,12 +31,13 @@ pub(super) fn construct_io_mem_allocator_builder() -> IoMemAllocatorBuilder {
     });
 
     // Find the TOLM (Top of Low Memory) and initialize Low MMIO region (TOLM ~ LOW_MMIO_TOP).
-    // Align start address to LOW_MMIO_ALIGN
-    const LOW_MMIO_TOP: usize = 0x1_0000_0000;
-    const LOW_MMIO_ALIGN: usize = 0x1000_0000;
+    // Align start address to LOW_MMIO_ALIGN (according to Intel's datasheets, the lower 20 bits
+    // are zeroed).
+    const LOW_MMIO_TOP: usize = 0x1_0000_0000; // 4 GiB, 32 bits
+    const LOW_MMIO_ALIGN: usize = 0x10_0000; // 1 MiB, 20 bits
     let (lower_half_base, lower_half_len) = reserved_filter
         .clone()
-        .filter(|r| r.base() < u32::MAX as usize)
+        .filter(|r| r.base() < LOW_MMIO_TOP)
         .max_by(|a, b| a.base().cmp(&b.base()))
         .map(|reg| (reg.base(), reg.len()))
         .unwrap();
@@ -37,17 +46,19 @@ pub(super) fn construct_io_mem_allocator_builder() -> IoMemAllocatorBuilder {
     assert!(mmio_start_addr < LOW_MMIO_TOP);
     ranges.push(mmio_start_addr..LOW_MMIO_TOP);
 
-    // Find the TOHM (Top of High Memory) and initialize High MMIO region.
-    // Here, using HIGH_MMIO_TOP as the top of High MMIO region.
+    // Find the TOHM (Top of High Memory) and initialize High MMIO region (TOHM ~ HIGH_MMIO_TOP).
+    // Align start address to HIGH_MMIO_ALIGN (according to Intel's datasheets, the lower 20 bits
+    // are zeroed).
     //
-    // TODO: Update the High MMIO region in runtime.
-    const HIGH_MMIO_TOP: usize = 0x8000_0000_0000;
-    const HIGH_MMIO_ALIGN: usize = 0x1_0000_0000;
+    // TODO: Use the CPUID instruction to determine the maximum number of bits in physical
+    // addresses. We use 52 bits here, which is the architectural limit for physical addresses.
+    const HIGH_MMIO_TOP: usize = 0x10_0000_0000_0000; // 4 PiB, 52 bits
+    const HIGH_MMIO_ALIGN: usize = 0x10_0000; // 1 MiB, 20 bits
     let (upper_half_base, upper_half_len) = reserved_filter
-        .filter(|r| r.base() >= u32::MAX as usize)
+        .filter(|r| r.base() >= LOW_MMIO_TOP)
         .max_by(|a, b| a.base().cmp(&b.base()))
         .map(|reg| (reg.base(), reg.len()))
-        .unwrap_or((HIGH_MMIO_ALIGN, 0));
+        .unwrap_or((LOW_MMIO_TOP, 0));
 
     let mmio_start_addr = (upper_half_base + upper_half_len).align_up(HIGH_MMIO_ALIGN);
     assert!(mmio_start_addr < HIGH_MMIO_TOP);
