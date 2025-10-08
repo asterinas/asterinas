@@ -14,7 +14,7 @@ use crate::{
 };
 
 /// I/O port allocator that allocates port I/O access to device drivers.
-pub struct IoPortAllocator {
+pub(super) struct IoPortAllocator {
     /// Each ID indicates whether a Port I/O (1B) is allocated.
     ///
     /// Instead of using `RangeAllocator` like `IoMemAllocator` does, it is more reasonable to use `IdAlloc`,
@@ -24,9 +24,11 @@ pub struct IoPortAllocator {
 
 impl IoPortAllocator {
     /// Acquires the `IoPort`. Return None if any region in `port` cannot be allocated.
-    pub fn acquire<T, A>(&self, port: u16) -> Option<IoPort<T, A>> {
-        let mut allocator = self.allocator.lock();
+    pub(super) fn acquire<T, A>(&self, port: u16) -> Option<IoPort<T, A>> {
         let mut range = port..(port + size_of::<T>() as u16);
+        debug!("Try to acquire PIO range: {:#x?}", range);
+
+        let mut allocator = self.allocator.lock();
         if range.any(|i| allocator.is_allocated(i as usize)) {
             return None;
         }
@@ -44,8 +46,8 @@ impl IoPortAllocator {
     /// # Safety
     ///
     /// The caller must have ownership of the PIO region through the `IoPortAllocator::acquire` interface.
-    pub(in crate::io) unsafe fn recycle(&self, range: Range<u16>) {
-        debug!("Recycling MMIO range: {:#x?}", range);
+    pub(super) unsafe fn recycle(&self, range: Range<u16>) {
+        debug!("Recycling PIO range: {:#x?}", range);
 
         self.allocator
             .lock()
@@ -66,7 +68,7 @@ pub(super) static IO_PORT_ALLOCATOR: Once<IoPortAllocator> = Once::new();
 ///
 /// 2. `MAX_IO_PORT` defined in `crate::arch::io` is guaranteed not to exceed the maximum
 ///    value specified by architecture.
-pub(crate) unsafe fn init() {
+pub(in crate::io) unsafe fn init() {
     // SAFETY: `MAX_IO_PORT` is guaranteed not to exceed the maximum value specified by architecture.
     let mut allocator = IdAlloc::with_capacity(crate::arch::io::MAX_IO_PORT as usize);
 

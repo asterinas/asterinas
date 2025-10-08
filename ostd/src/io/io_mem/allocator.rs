@@ -20,7 +20,7 @@ use crate::{
 };
 
 /// I/O memory allocator that allocates memory I/O access to device drivers.
-pub struct IoMemAllocator {
+pub(super) struct IoMemAllocator {
     allocators: Vec<RangeAllocator>,
 }
 
@@ -28,11 +28,8 @@ impl IoMemAllocator {
     /// Acquires the I/O memory access for `range`.
     ///
     /// If the range is not available, then the return value will be `None`.
-    pub fn acquire(&self, range: Range<usize>) -> Option<IoMem> {
-        debug!(
-            "Try to acquire MMIO range:{:x?}..{:x?}",
-            range.start, range.end
-        );
+    pub(super) fn acquire(&self, range: Range<usize>) -> Option<IoMem> {
+        debug!("Try to acquire MMIO range: {:#x?}", range);
 
         find_allocator(&self.allocators, &range)?
             .alloc_specific(&range)
@@ -48,10 +45,10 @@ impl IoMemAllocator {
     ///
     /// The caller must have ownership of the MMIO region through the `IoMemAllocator::get` interface.
     #[expect(dead_code)]
-    pub(in crate::io) unsafe fn recycle(&self, range: Range<usize>) {
-        let allocator = find_allocator(&self.allocators, &range).unwrap();
+    pub(super) unsafe fn recycle(&self, range: Range<usize>) {
+        debug!("Recycling MMIO range: {:#x?}", range);
 
-        debug!("Recycling MMIO range:{:x}..{:x}", range.start, range.end);
+        let allocator = find_allocator(&self.allocators, &range).unwrap();
 
         allocator.free(range);
     }
@@ -113,7 +110,7 @@ impl IoMemAllocatorBuilder {
 }
 
 /// The I/O Memory allocator of the system.
-pub static IO_MEM_ALLOCATOR: Once<IoMemAllocator> = Once::new();
+pub(super) static IO_MEM_ALLOCATOR: Once<IoMemAllocator> = Once::new();
 
 /// Initializes the static `IO_MEM_ALLOCATOR` based on builder.
 ///
@@ -121,7 +118,7 @@ pub static IO_MEM_ALLOCATOR: Once<IoMemAllocator> = Once::new();
 ///
 /// User must ensure all the memory I/O regions that belong to the system device have been removed by calling the
 /// `remove` function.
-pub(crate) unsafe fn init(io_mem_builder: IoMemAllocatorBuilder) {
+pub(in crate::io) unsafe fn init(io_mem_builder: IoMemAllocatorBuilder) {
     // SAFETY: The safety is upheld by the caller.
     IO_MEM_ALLOCATOR.call_once(|| unsafe { IoMemAllocator::new(io_mem_builder.allocators) });
 }
