@@ -112,11 +112,8 @@ impl FsResolver {
         let inode_type = inode.type_();
         let creation_flags = &open_args.creation_flags;
 
+        #[expect(clippy::single_match)]
         match inode_type {
-            InodeType::NamedPipe => {
-                warn!("NamedPipe doesn't support additional operation when opening.");
-                debug!("Open NamedPipe with args: {open_args:?}.");
-            }
             InodeType::SymLink => {
                 if creation_flags.contains(CreationFlags::O_NOFOLLOW)
                     && !open_args.status_flags.contains(StatusFlags::O_PATH)
