@@ -45,6 +45,10 @@ NETDEV ?= user
 VHOST ?= off
 # End of network settings
 
+# Whether to include podman in initramfs
+BUILD_PODMAN ?= true
+INITRAMFS_SKIP_GZIP = 1
+
 # ========================= End of Makefile options. ==========================
 
 SHELL := /bin/bash
