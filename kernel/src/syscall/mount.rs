@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         fs_resolver::{FsPath, AT_FDCWD},
-        path::Path,
+        path::{MountPropType, Path},
         registry::FsProperties,
         utils::{FileSystem, InodeType},
     },
@@ -57,12 +57,8 @@ pub fn sys_mount(
             mount_flags.contains(MountFlags::MS_REC),
             ctx,
         )?;
-    } else if mount_flags.contains(MountFlags::MS_SHARED)
-        | mount_flags.contains(MountFlags::MS_PRIVATE)
-        | mount_flags.contains(MountFlags::MS_SLAVE)
-        | mount_flags.contains(MountFlags::MS_UNBINDABLE)
-    {
-        do_change_type()?;
+    } else if mount_flags.intersects(MS_PROPAGATION) {
+        do_change_type(dst_path, mount_flags, ctx)?;
     } else if mount_flags.contains(MountFlags::MS_MOVE) {
         do_move_mount_old(devname, dst_path, ctx)?;
     } else {
@@ -106,8 +102,37 @@ fn do_bind_mount(src_name: CString, dst_path: Path, recursive: bool, ctx: &Conte
     Ok(())
 }
 
-fn do_change_type() -> Result<()> {
-    return_errno_with_message!(Errno::EINVAL, "do_change_type is not supported");
+// All valid propagation flags.
+const MS_PROPAGATION: MountFlags = MountFlags::MS_SHARED
+    .union(MountFlags::MS_PRIVATE)
+    .union(MountFlags::MS_SLAVE)
+    .union(MountFlags::MS_UNBINDABLE);
+
+fn do_change_type(target_path: Path, flags: MountFlags, ctx: &Context) -> Result<()> {
+    // All flags that are allowed during a propagation change.
+    const ALLOWED_FLAGS: MountFlags = MS_PROPAGATION
+        .union(MountFlags::MS_REC)
+        .union(MountFlags::MS_SILENT);
+
+    if !(flags & !ALLOWED_FLAGS).is_empty() {
+        return_errno_with_message!(Errno::EINVAL, "the mount propagation flags are unsupported");
+    }
+
+    let propagation_flags = flags & MS_PROPAGATION;
+    if propagation_flags.bits().count_ones() > 1 {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "mount flags includes more than one of MS_SHARED, MS_PRIVATE, MS_SLAVE, or MS_UNBINDABLE"
+        );
+    }
+
+    if flags.contains(MountFlags::MS_PRIVATE) {
+        let recursive = flags.contains(MountFlags::MS_REC);
+        target_path.set_mount_propagation(MountPropType::Private, recursive, ctx)?;
+        Ok(())
+    } else {
+        return_errno_with_message!(Errno::EINVAL, "the mount propagation type is unsupported");
+    }
 }
 
 /// Move a mount from src location to dst location.

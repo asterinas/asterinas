@@ -5,7 +5,7 @@
 use core::time::Duration;
 
 use inherit_methods_macro::inherit_methods;
-pub use mount::Mount;
+pub use mount::{Mount, MountPropType};
 pub use mount_namespace::MountNamespace;
 
 use crate::{
@@ -319,6 +319,28 @@ impl Path {
         }
 
         self.mount.graft_mount_tree(dst_path)
+    }
+
+    /// Sets the propagation type of the mount of this `Path`.
+    pub fn set_mount_propagation(
+        &self,
+        prop: MountPropType,
+        recursive: bool,
+        ctx: &Context,
+    ) -> Result<()> {
+        if !self.is_mount_root() {
+            return_errno_with_message!(Errno::EINVAL, "the path is not a mount root");
+        };
+
+        let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
+        let current_mnt_ns = current_ns_proxy.unwrap().mnt_ns();
+        if !current_mnt_ns.owns(&self.mount) {
+            return_errno_with_message!(Errno::EINVAL, "the path is not in this mount namespace");
+        }
+
+        self.mount.set_propagation(prop, recursive);
+
+        Ok(())
     }
 
     /// Creates a `Path` by making an inode of the `type_` with the `mode`.
