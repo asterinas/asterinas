@@ -28,7 +28,9 @@ impl RangeAllocator {
 
     /// Allocates a specific kernel virtual area.
     pub fn alloc_specific(&self, allocate_range: &Range<usize>) -> Result<(), RangeAllocError> {
-        debug_assert!(allocate_range.start < allocate_range.end);
+        if allocate_range.is_empty() {
+            return Err(RangeAllocError);
+        }
 
         let mut lock_guard = self.get_freelist_guard();
         let freelist = lock_guard.as_mut().unwrap();

@@ -48,12 +48,12 @@ impl<T, A> IoPort<T, A> {
         size_of::<T>() as u16
     }
 
-    /// Create an I/O port.
+    /// Creates an I/O port.
     ///
     /// # Safety
     ///
-    /// This function is marked unsafe as creating an I/O port is considered
-    /// a privileged operation.
+    /// Reading from or writing to the I/O port may have side effects. Those side effects must not
+    /// cause soundness problems (e.g., they must not corrupt the kernel memory).
     pub const unsafe fn new(port: u16) -> Self {
         Self {
             port,
@@ -65,7 +65,6 @@ impl<T, A> IoPort<T, A> {
 
 impl<T: PortRead, A: IoPortReadAccess> IoPort<T, A> {
     /// Reads from the I/O port
-    #[inline]
     pub fn read(&self) -> T {
         unsafe { PortRead::read_from_port(self.port) }
     }
@@ -73,7 +72,6 @@ impl<T: PortRead, A: IoPortReadAccess> IoPort<T, A> {
 
 impl<T: PortWrite, A: IoPortWriteAccess> IoPort<T, A> {
     /// Writes to the I/O port
-    #[inline]
     pub fn write(&self, value: T) {
         unsafe { PortWrite::write_to_port(self.port, value) }
     }
