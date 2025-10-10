@@ -308,8 +308,12 @@ impl ClassScheduler {
                     .filter(|&cpu| cpu.as_usize() as isize <= last_chosen),
             );
         for candidate in affinity_iter {
-            let rq = self.rqs[candidate.as_usize()].lock();
-            let (load, _) = rq.nr_queued_and_running();
+            let PerCpuLoadStats {
+                queued_non_idle,
+                running_non_idle,
+            } = self.rqs[candidate.as_usize()].lock().load_stats();
+            let running = u32::from(running_non_idle.is_some());
+            let load = queued_non_idle + running;
             if load < minimum_load {
                 minimum_load = load;
                 selected = candidate;
@@ -341,10 +345,16 @@ impl PerCpuClassRqSet {
         }
     }
 
-    fn nr_queued_and_running(&self) -> (u32, u32) {
-        let queued = self.stop.len() + self.real_time.len() + self.fair.len() + self.idle.len();
-        let running = usize::from(self.current.is_some());
-        (queued as u32, running as u32)
+    fn load_stats(&self) -> PerCpuLoadStats {
+        let queued_non_idle = (self.stop.len() + self.real_time.len() + self.fair.len()) as u32;
+        let running_non_idle = self
+            .current
+            .as_ref()
+            .map(|((_, thread), _)| thread.sched_attr().policy_kind() != SchedPolicyKind::Idle);
+        PerCpuLoadStats {
+            queued_non_idle,
+            running_non_idle,
+        }
     }
 }
 
@@ -398,12 +408,28 @@ impl LocalRunQueue for PerCpuClassRqSet {
     }
 }
 
+/// Holds per-CPU load information.
+struct PerCpuLoadStats {
+    /// The number of queued threads, excluding the idle one.
+    queued_non_idle: u32,
+    /// Whether the running thread is not the idle one.
+    /// [`None`] means that there's no thread currently running.
+    running_non_idle: Option<bool>,
+}
+
 impl SchedulerStats for ClassScheduler {
     fn nr_queued_and_running(&self) -> (u32, u32) {
-        self.rqs.iter().fold((0, 0), |(queued, running), rq| {
-            let (q, r) = rq.lock().nr_queued_and_running();
-            (queued + q, running + r)
-        })
+        self.rqs
+            .iter()
+            .fold((0, 0), |(mut queued, mut running), rq| {
+                let PerCpuLoadStats {
+                    queued_non_idle,
+                    running_non_idle,
+                } = rq.lock().load_stats();
+                queued += queued_non_idle;
+                running += u32::from(running_non_idle == Some(true));
+                (queued, running)
+            })
     }
 }
 
