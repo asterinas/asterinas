@@ -9,6 +9,7 @@ extern crate alloc;
 
 pub mod coeff;
 pub mod dup;
+pub mod fixed_point;
 pub mod mem_obj_slice;
 pub mod per_cpu_counter;
 pub mod printer;
