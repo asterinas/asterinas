@@ -278,6 +278,49 @@ struct msghdr = {
 recvmsg(socket, message = <msghdr>, flags);
 ```
 
+SCML supports arrays with nested structures and heterogeneous element types,
+as encountered in system calls like `recvmsg` where netlink message payloads
+follow the TLV (Type-Length-Value) format.
+Arrays can contain multiple elements of varying types:
+inline struct patterns (`{ ... }`), nested arrays (`[ ... ]`),
+or references to named rules (`<identifier>`).
+This flexibility allows SCML to represent hierarchical data structures
+as they appear in strace output.
+
+For example, when receiving a netlink message about adding a network address:
+
+```c
+struct iovec = {
+    iov_base = [
+        [
+            {
+                nlmsg_type = RTM_NEWADDR,
+                ..
+            },
+            [
+                [ { nla_type = IFA_CACHEINFO, .. } ]
+            ]
+        ]
+    ],
+    ..
+};
+
+recvmsg(
+    sockfd,
+    msg = {
+        msg_iov = [ <iovec> ],
+        ..
+    },
+    flags
+);
+```
+
+This example demonstrates receiving a netlink message of type
+`RTM_NEWADDR` containing nested attributes with cache information
+(`IFA_CACHEINFO`). The nested array structure illustrates how SCML
+handles heterogeneous arrays where elements can be both structs and
+nested arrays, reflecting the hierarchical TLV encoding typical of netlink.
+
 ## Formal Syntax
 
 Below is the formal syntax of SCML,
@@ -302,8 +345,10 @@ Non‑terminals are in angle brackets, terminals in quotes.
 <flag-part>      ::= <identifier>
                    | '<' <identifier> '>'
 
-<array-pattern>  ::= '[' <array-element> ']'
+<array-pattern>  ::= '[' <array-element> { ',' <array-element> } ']'
 <array-element>  ::= '<' <identifier> '>'
+                   | <struct-pattern>
+                   | <array-pattern>
 
 <struct-rule>    ::= 'struct' <identifier> '=' <struct-pattern>
 <struct-pattern> ::= '{' <field-list> [ ',' '..' ] '}'
