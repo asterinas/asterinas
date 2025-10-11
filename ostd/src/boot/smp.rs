@@ -142,6 +142,12 @@ fn ap_early_entry(cpu_id: u32) -> ! {
     // SAFETY: This function is only called once on this AP.
     unsafe { crate::mm::kspace::activate_kernel_page_table() };
 
+    // SAFETY:
+    // 1. The kernel page table is activated on this AP.
+    // 2. The function is called only once on this AP.
+    // 3. No remaining `with_borrow` invocations on this CPU from now on.
+    unsafe { crate::mm::page_table::boot_pt::dismiss() };
+
     // Mark the AP as started.
     report_online_and_hw_cpu_id(cpu_id);
 

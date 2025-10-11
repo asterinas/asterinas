@@ -13,7 +13,11 @@ pub(super) use trap::RawUserContext;
 pub use trap::TrapFrame;
 
 use super::{cpu::context::CpuExceptionInfo, timer::TIMER_IRQ_NUM};
-use crate::{cpu::PrivilegeLevel, irq::call_irq_callback_functions};
+use crate::{
+    arch::irq::IRQ_CHIP,
+    cpu::{CpuId, PrivilegeLevel},
+    irq::call_irq_callback_functions,
+};
 
 /// Initializes interrupt handling on RISC-V.
 pub(crate) unsafe fn init() {
@@ -36,7 +40,12 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
                     PrivilegeLevel::Kernel,
                 );
             }
-            Interrupt::SupervisorExternal => todo!(),
+            Interrupt::SupervisorExternal => {
+                let current_cpu = CpuId::current_racy().as_usize() as u32;
+                while let Some(irq_num) = IRQ_CHIP.get().unwrap().claim_interrupt(current_cpu) {
+                    call_irq_callback_functions(f, irq_num as usize, PrivilegeLevel::Kernel);
+                }
+            }
             Interrupt::SupervisorSoft => todo!(),
             _ => {
                 panic!(
