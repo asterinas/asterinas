@@ -11,7 +11,14 @@ use crate::{boot::memory_region::MemoryRegionType, io::IoMemAllocatorBuilder};
 /// In x86-64, the available physical memory area is divided into two regions below 32 bits (Low memory)
 /// and above (High memory). The area from the top of low memory to 0xffff_ffff and the area after the
 /// top of high memory are available MMIO areas.
-pub(super) fn construct_io_mem_allocator_builder() -> IoMemAllocatorBuilder {
+///
+/// # Safety
+///
+/// 1. This function must be called only once in the boot context of the
+///    bootstrapping processor.
+/// 2. This function must be called after the kernel page table is activated on
+///    the bootstrapping processor.
+pub(super) unsafe fn construct_io_mem_allocator_builder() -> IoMemAllocatorBuilder {
     // TODO: Add MMIO regions below 1MB (e.g., VGA framebuffer).
     let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
     let mut ranges = Vec::with_capacity(2);
