@@ -93,16 +93,6 @@ struct AbsInfo {
     res: u32,
 }
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone, Pod)]
-#[expect(dead_code)]
-struct DevIds {
-    bustype: u16,
-    vendor: u16,
-    product: u16,
-    version: u16,
-}
-
 /// Both queues use the same `virtio_input_event` struct. `type`, `code` and `value`
 /// are filled according to the Linux input layer (evdev) interface.
 #[repr(C)]
