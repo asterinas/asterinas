@@ -35,6 +35,71 @@ use crate::{
     },
 };
 
+fn try_generate_symbols(elf_path: &Path, out_dir: &Path) {
+    let kallsyms_path = out_dir.join("kallsyms");
+
+    let nm_exe = "nm";
+
+    let mut cmd = std::process::Command::new(nm_exe);
+    cmd.arg("-n").arg("-C").arg(elf_path);
+    let output = match cmd.output() {
+        Ok(o) => o,
+        Err(e) => {
+            info!("Failed to run {}: {}", nm_exe, e);
+            return;
+        }
+    };
+    if !output.status.success() {
+        info!(
+            "{} returned non-zero exit status; skip symbol generation",
+            nm_exe
+        );
+        return;
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    // Apply grep-style filters:
+    let mut filtered = String::new();
+    for line in text.lines() {
+        let keep_tt = line.contains(" T ") || line.contains(" t ");
+        let has_local_label = line.contains(".L");
+        let has_dollar_x = line.contains("$x");
+        if keep_tt && !has_local_label && !has_dollar_x {
+            filtered.push_str(line);
+            filtered.push('\n');
+        }
+    }
+
+    let mut child = std::process::Command::new("gen_ksym")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn gen_ksym");
+    {
+        use std::io::Write;
+        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+        stdin
+            .write_all(filtered.as_bytes())
+            .expect("Failed to write to gen_ksym stdin");
+    }
+    let output = child
+        .wait_with_output()
+        .expect("Failed to read gen_ksym output");
+    if !output.status.success() {
+        info!("gen_ksym returned non-zero exit status; using unfiltered symbols");
+        if let Err(e) = std::fs::write(&kallsyms_path, filtered) {
+            info!("Failed to write {:?}: {}", kallsyms_path, e);
+        }
+        info!("kallsyms generated at: {:?}", kallsyms_path);
+        return;
+    }
+    if let Err(e) = std::fs::write(&kallsyms_path, &output.stdout) {
+        info!("Failed to write {:?}: {}", kallsyms_path, e);
+        return;
+    }
+    info!("kallsyms generated at: {:?}", kallsyms_path);
+}
+
 pub fn execute_build_command(config: &Config, build_args: &BuildArgs) {
     let cargo_target_directory = get_target_directory();
     let osdk_output_directory = build_args
@@ -179,10 +244,20 @@ pub fn do_cached_build(
                 bundle.consume_vm_image(bootdev_image);
             }
             bundle.consume_aster_bin(aster_elf);
+            // Generate symbols for the base ELF if requested
+            if let Some(bin_path) = bundle.aster_bin_abs_path() {
+                let out_dir = bin_path.parent().unwrap();
+                try_generate_symbols(&bin_path, out_dir);
+            }
         }
         BootMethod::QemuDirect => {
             let qemu_elf = make_elf_for_qemu(&osdk_output_directory, &aster_elf, build.strip_elf);
             bundle.consume_aster_bin(qemu_elf);
+            // Generate symbols for the base ELF if requested
+            if let Some(bin_path) = bundle.aster_bin_abs_path() {
+                let out_dir = bin_path.parent().unwrap();
+                try_generate_symbols(&bin_path, out_dir);
+            }
         }
     }
 

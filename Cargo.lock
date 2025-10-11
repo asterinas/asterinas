@@ -229,6 +229,7 @@ dependencies = [
  "intrusive-collections",
  "jhash",
  "keyable-arc",
+ "ksym",
  "lending-iterator",
  "libflate",
  "log",
@@ -1006,6 +1007,15 @@ name = "keyable-arc"
 version = "0.1.0"
 
 [[package]]
+name = "ksym"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "55a3aa2406a5c0a2d0817b8ae3f5f901164e501818c833f9fefc7642c9dd8851"
+dependencies = [
+ "lazyinit",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1013,6 +1023,12 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 dependencies = [
  "spin",
 ]
+
+[[package]]
+name = "lazyinit"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17f03abfebdaaf0fad16790237a0348baf84886d3ade460db13bae59e614a180"
 
 [[package]]
 name = "lending-iterator"
@@ -1310,6 +1326,7 @@ dependencies = [
  "inherit-methods-macro",
  "int-to-c-enum",
  "intrusive-collections",
+ "ksym",
  "linux-boot-params",
  "log",
  "loongArch64",

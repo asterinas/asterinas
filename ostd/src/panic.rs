@@ -77,9 +77,11 @@ pub fn print_stack_trace() {
         let pc = _Unwind_GetIP(unwind_ctx);
         if pc > 0 {
             let fde_initial_address = _Unwind_FindEnclosingFunction(pc as *mut c_void) as usize;
+            let symbol_info = ksym::lookup_kallsyms(fde_initial_address).unwrap_or(("?", 0));
             early_println!(
-                "{:4}: fn {:#18x} - pc {:#18x} / registers:",
+                "{:4}: {} {:#18x} - pc {:#18x} / registers:",
                 data.counter,
+                symbol_info.0,
                 fde_initial_address,
                 pc,
             );

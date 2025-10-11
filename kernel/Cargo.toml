@@ -66,6 +66,7 @@ cfg-if = "1.0"
 # Fixed point numbers
 # TODO: fork this crate to rewrite all the (unnecessary) unsafe usage
 fixed = "1.28.0"
+ksym = "0.2"
 
 [target.x86_64-unknown-none.dependencies]
 tdx-guest = { version = "0.2.1", optional = true }
