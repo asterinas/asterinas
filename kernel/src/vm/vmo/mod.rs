@@ -7,7 +7,7 @@
 
 use core::{
     ops::Range,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::atomic::{AtomicIsize, AtomicUsize, Ordering},
 };
 
 use align_ext::AlignExt;
@@ -155,6 +155,9 @@ pub(super) struct Vmo_ {
     /// the [`XArray`] in the `pages` field. Therefore, the size read after locking the
     /// `pages` will be the latest size.
     size: AtomicUsize,
+    /// The status of writable mappings of the VMO.
+    /// This field is `None` if the VMO is not backed by a pager.
+    writable_mapping_status: Option<WritableMappingStatus>,
 }
 
 impl Debug for Vmo_ {
@@ -494,6 +497,11 @@ impl<R> Vmo<R> {
     pub fn flags(&self) -> VmoFlags {
         self.0.flags()
     }
+
+    /// Returns the status of writable mappings of the VMO.
+    pub fn writable_mapping_status(&self) -> &Option<WritableMappingStatus> {
+        &self.0.writable_mapping_status
+    }
 }
 
 /// Gets the page index range that contains the offset range of VMO.
@@ -501,4 +509,57 @@ pub fn get_page_idx_range(vmo_offset_range: &Range<usize>) -> Range<usize> {
     let start = vmo_offset_range.start.align_down(PAGE_SIZE);
     let end = vmo_offset_range.end.align_up(PAGE_SIZE);
     (start / PAGE_SIZE)..(end / PAGE_SIZE)
+}
+
+/// The status of writable mappings of a VMO, i.e., shared mappings that may
+/// include the `PROT_WRITE` permission.
+///
+/// Internally, it uses an `AtomicIsize` counter with the following rules:
+///
+/// - **Positive values**: number of active writable mappings.
+/// - **Zero**: no writable mappings, and writable mappings are still allowed.
+/// - **Negative values**: writable mappings are denied.
+#[derive(Debug, Default)]
+pub struct WritableMappingStatus(AtomicIsize);
+
+impl WritableMappingStatus {
+    /// Builds a new writable mapping.
+    ///
+    /// Fails with `EPERM` if writable mappings have been denied.
+    pub fn map(&self) -> Result<()> {
+        // Increase unless negative
+        self.0
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| {
+                (v >= 0).then(|| v + 1)
+            })
+            .map_err(|_| Error::new(Errno::EPERM))?;
+        Ok(())
+    }
+
+    /// Denies any future writable mapping.
+    ///
+    /// Fails with `EBUSY` if there are still active writable mappings.
+    pub fn deny(&self) -> Result<()> {
+        // Decrease unless positive
+        self.0
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| {
+                (v <= 0).then_some(-1)
+            })
+            .map_err(|_| Error::new(Errno::EBUSY))?;
+        Ok(())
+    }
+
+    /// Increments the writable mapping counter.
+    ///
+    /// Typically used when splitting an existing mapping, or forking a process.
+    pub fn increment(&self) {
+        self.0.fetch_add(1, Ordering::Release);
+    }
+
+    /// Decrements the writable mapping counter.
+    ///
+    /// Typically used when unmapping a region, exiting a process, or merging mappings.
+    pub fn decrement(&self) {
+        self.0.fetch_sub(1, Ordering::Release);
+    }
 }

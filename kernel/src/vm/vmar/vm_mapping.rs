@@ -510,8 +510,8 @@ impl VmMapping {
             MappedMemory::Vmo(vmo) => {
                 let at_offset = vmo.offset() + (at - self.map_to_addr);
                 (
-                    MappedMemory::Vmo(MappedVmo::new(vmo.vmo().dup()?, vmo.offset())),
-                    MappedMemory::Vmo(MappedVmo::new(vmo.vmo().dup()?, at_offset)),
+                    MappedMemory::Vmo(vmo.dup()?),
+                    MappedMemory::Vmo(vmo.dup_at_offset(at_offset)?),
                 )
             }
             MappedMemory::Anonymous => {
@@ -537,7 +537,6 @@ impl VmMapping {
             map_to_addr: at,
             map_size: NonZeroUsize::new(right_size).unwrap(),
             mapped_mem: r_mapped_mem,
-            inode: self.inode,
             ..self
         };
 
@@ -699,12 +698,23 @@ pub(super) struct MappedVmo {
     vmo: Vmo,
     /// Represents the mapped offset in the VMO for the mapping.
     offset: usize,
+    /// Whether the VMO's writable mappings need to be tracked, and the
+    /// mapping is writable to the VMO.
+    is_writable_tracked: bool,
 }
 
 impl MappedVmo {
-    /// Creates a `MappedVmo` used for the mapping.
-    pub(super) fn new(vmo: Vmo, offset: usize) -> Self {
-        Self { vmo, offset }
+    /// Maps a `MappedVmo` used for the mapping.
+    pub(super) fn map(vmo: Vmo, offset: usize, is_writable_tracked: bool) -> Result<Self> {
+        if is_writable_tracked {
+            vmo.writable_mapping_status().as_ref().unwrap().map()?;
+        }
+
+        Ok(Self {
+            vmo,
+            offset,
+            is_writable_tracked,
+        })
     }
 
     /// Returns the **valid** size of the `MappedVmo`.
@@ -769,11 +779,43 @@ impl MappedVmo {
 
     /// Duplicates the capability.
     pub fn dup(&self) -> Result<Self> {
+        self.dup_at_offset(self.offset)
+    }
+
+    /// Duplicates the capability at a specific offset.
+    fn dup_at_offset(&self, offset: usize) -> Result<Self> {
+        if self.is_writable_tracked {
+            self.vmo
+                .writable_mapping_status()
+                .as_ref()
+                .unwrap()
+                .increment();
+        }
+
         Ok(Self {
             vmo: self.vmo.dup()?,
-            offset: self.offset,
+            offset,
+            is_writable_tracked: self.is_writable_tracked,
         })
     }
+}
+
+impl Drop for MappedVmo {
+    fn drop(&mut self) {
+        if self.is_writable_tracked {
+            self.vmo
+                .writable_mapping_status()
+                .as_ref()
+                .unwrap()
+                .decrement();
+        }
+    }
+}
+
+/// Returns whether a [`VmMapping`] described by the given flags is shared and
+/// potentially writable.
+pub fn is_shared_maywrite(is_shared: bool, perms: VmPerms) -> bool {
+    is_shared && perms.contains(VmPerms::MAY_WRITE)
 }
 
 /// Attempts to merge two [`VmMapping`]s into a single mapping if they are
