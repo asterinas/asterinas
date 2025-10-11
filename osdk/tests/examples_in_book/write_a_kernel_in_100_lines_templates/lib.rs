@@ -19,7 +19,7 @@ use ostd::mm::{
 };
 use ostd::prelude::*;
 use ostd::task::{disable_preempt, Task, TaskOptions};
-use ostd::user::{ReturnReason, UserMode};
+use ostd::user::{ReturnReason, UserContextApi, UserMode};
 
 /// The kernel's boot and initialization process is managed by OSTD.
 /// After the process is done, the kernel's execution environment
@@ -102,7 +102,7 @@ fn create_user_context() -> UserContext {
     // abstraction.
     let mut user_ctx = UserContext::default();
     const ENTRY_POINT: Vaddr = 0x0040_1000; // The entry point for statically-linked executable
-    user_ctx.set_rip(ENTRY_POINT);
+    user_ctx.set_instruction_pointer(ENTRY_POINT);
     user_ctx
 }
 

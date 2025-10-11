@@ -2,11 +2,6 @@
 
 //! I/O Memory allocator.
 
-#![cfg_attr(
-    any(target_arch = "riscv64", target_arch = "loongarch64"),
-    expect(dead_code)
-)]
-
 use alloc::vec::Vec;
 use core::ops::Range;
 
@@ -14,7 +9,7 @@ use log::{debug, info};
 use spin::Once;
 
 use crate::{
-    io::io_mem::IoMem,
+    io::io_mem::{Insensitive, IoMem, Sensitive},
     mm::{CachePolicy, PageFlags},
     util::range_alloc::RangeAllocator,
 };
@@ -25,12 +20,12 @@ pub struct IoMemAllocator {
 }
 
 impl IoMemAllocator {
-    /// Acquires the I/O memory access for `range`.
+    /// Acquires `range` for insensitive MMIO.
     ///
     /// If the range is not available, then the return value will be `None`.
-    pub fn acquire(&self, range: Range<usize>) -> Option<IoMem> {
+    pub fn acquire(&self, range: Range<usize>) -> Option<IoMem<Insensitive>> {
         debug!(
-            "Try to acquire MMIO range:{:x?}..{:x?}",
+            "Try to acquire range {:x?}..{:x?} for security-insensitive MMIO",
             range.start, range.end
         );
 
@@ -38,7 +33,12 @@ impl IoMemAllocator {
             .alloc_specific(&range)
             .ok()?;
 
-        // SAFETY: The created `IoMem` is guaranteed not to access physical memory or system device I/O.
+        // SAFETY:
+        // 1. The `IoMemAllocator` instance is built from an
+        //    `IoMemAllocatorBuilder` instance, which is constructed after the
+        //    kernel page table is activated.
+        // 2. The created `IoMem` is guaranteed not to access physical memory or
+        //    system device I/O.
         unsafe { Some(IoMem::new(range, PageFlags::RW, CachePolicy::Uncacheable)) }
     }
 
@@ -90,6 +90,28 @@ impl IoMemAllocatorBuilder {
             allocators.push(RangeAllocator::new(range));
         }
         Self { allocators }
+    }
+
+    /// Reserves `range` from the allocator for sensitive MMIO.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the specified range is not available.
+    #[cfg_attr(not(target_arch = "riscv64"), expect(unused))]
+    pub(crate) fn reserve(&self, range: Range<usize>) -> IoMem<Sensitive> {
+        debug!(
+            "Try to reserve range {:x?}..{:x?} for security-sensitive MMIO",
+            range.start, range.end
+        );
+
+        self.remove(range.start..range.end);
+
+        // SAFETY:
+        // 1. The `IoMemAllocatorBuilder` instance is constructed after the
+        //    kernel page table is activated.
+        // 2. The range falls within I/O memory area and does not overlap
+        //    with other system devices' I/O memory.
+        unsafe { IoMem::new(range, PageFlags::RW, CachePolicy::Uncacheable) }
     }
 
     /// Removes access to a specific memory I/O range.
