@@ -3,7 +3,10 @@
 use core::sync::atomic::Ordering;
 
 use super::{process_table, Pid, Process};
-use crate::{events::IoEvents, prelude::*, process::signal::signals::kernel::KernelSignal};
+use crate::{
+    events::IoEvents, fs::cgroupfs::CgroupMembership, prelude::*,
+    process::signal::signals::kernel::KernelSignal,
+};
 
 /// Exits the current POSIX process.
 ///
@@ -26,6 +29,11 @@ pub(super) fn exit_process(current_process: &Process) {
     move_children_to_reaper_process(current_process);
 
     send_child_death_signal(current_process);
+
+    // Remove the process from the cgroup.
+    let mut cgroup_guard = CgroupMembership::lock();
+    cgroup_guard.move_process_to_root(current_process);
+    drop(cgroup_guard);
 }
 
 /// Sends parent-death signals to the children.

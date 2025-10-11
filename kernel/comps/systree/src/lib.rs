@@ -39,7 +39,9 @@ use spin::Once;
 
 pub use self::{
     attr::{SysAttr, SysAttrSet, SysAttrSetBuilder},
-    node::{SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj, SysPerms, SysSymlink},
+    node::{
+        SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj, SysPerms, SysSymlink, MAX_ATTR_SIZE,
+    },
     tree::SysTree,
     utils::{
         AttrLessBranchNodeFields, BranchNodeFields, EmptyNode, NormalNodeFields, ObjFields,
