@@ -2,7 +2,7 @@
 
 //! Platform-specific code for the x86 platform.
 
-pub mod boot;
+pub(crate) mod boot;
 pub mod cpu;
 pub mod device;
 pub(crate) mod ex_table;
@@ -92,11 +92,10 @@ pub(crate) unsafe fn init_on_ap() {
 }
 
 pub(crate) fn interrupts_ack(irq_number: usize) {
-    if !cpu::context::CpuException::is_cpu_exception(irq_number) {
-        // TODO: We're in the interrupt context, so `disable_preempt()` is not
-        // really necessary here.
-        kernel::apic::get_or_init(&crate::task::disable_preempt() as _).eoi();
-    }
+    debug_assert!(!cpu::context::CpuException::is_cpu_exception(irq_number));
+    // TODO: We're in the interrupt context, so `disable_preempt()` is not
+    // really necessary here.
+    kernel::apic::get_or_init(&crate::task::disable_preempt() as _).eoi();
 }
 
 /// Returns the frequency of TSC. The unit is Hz.

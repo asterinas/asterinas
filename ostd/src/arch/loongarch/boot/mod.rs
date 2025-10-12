@@ -3,7 +3,8 @@
 //! The LoongArch boot module defines the entrypoints of Asterinas.
 
 mod efi;
-pub mod smp;
+pub(crate) mod smp;
+
 use core::{arch::global_asm, ffi::CStr};
 
 use fdt::Fdt;
