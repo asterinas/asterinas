@@ -12,7 +12,7 @@
 use crate::{
     arch::{
         device::io_port::WriteOnlyAccess,
-        kernel::{MappedIrqLine, IRQ_CHIP},
+        irq::{MappedIrqLine, IRQ_CHIP},
     },
     io::{sensitive_io_port, IoPort},
     irq::IrqLine,

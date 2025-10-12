@@ -11,7 +11,10 @@ use volatile::{
 };
 
 use crate::{
-    arch::kernel::{acpi::get_acpi_tables, MappedIrqLine, IRQ_CHIP},
+    arch::{
+        irq::{MappedIrqLine, IRQ_CHIP},
+        kernel::acpi::get_acpi_tables,
+    },
     irq::IrqLine,
     mm::paddr_to_vaddr,
 };

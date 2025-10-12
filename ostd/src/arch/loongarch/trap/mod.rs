@@ -86,7 +86,7 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
                 | Interrupt::HWI6
                 | Interrupt::HWI7 => {
                     log::debug!("Handling hardware interrupt: {:?}", interrupt);
-                    while let Some(irq) = crate::arch::kernel::irq::claim() {
+                    while let Some(irq) = crate::arch::irq::chip::claim() {
                         // Call the IRQ callback functions for the claimed interrupt
                         call_irq_callback_functions(f, irq as _, PrivilegeLevel::Kernel);
                     }

@@ -7,7 +7,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use aster_input::key::KeyStatus;
 use ostd::{
     arch::{
-        kernel::{MappedIrqLine, IRQ_CHIP},
+        irq::{MappedIrqLine, IRQ_CHIP},
         trap::TrapFrame,
     },
     irq::IrqLine,
