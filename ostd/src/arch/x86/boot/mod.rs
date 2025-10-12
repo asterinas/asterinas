@@ -22,7 +22,7 @@ mod linux_boot;
 mod multiboot;
 mod multiboot2;
 
-pub mod smp;
+pub(crate) mod smp;
 
 use core::arch::global_asm;
 

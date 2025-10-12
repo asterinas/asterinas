@@ -13,10 +13,8 @@ use crate::{
     Pod,
 };
 
-pub(crate) const NR_ENTRIES_PER_PAGE: usize = 512;
-
 #[derive(Clone, Debug, Default)]
-pub struct PagingConsts {}
+pub(crate) struct PagingConsts {}
 
 impl PagingConstsTrait for PagingConsts {
     const BASE_PAGE_SIZE: usize = 4096;
@@ -31,7 +29,7 @@ bitflags::bitflags! {
     #[derive(Pod)]
     #[repr(C)]
     /// Possible flags for a page table entry.
-    pub struct PageTableFlags: usize {
+    pub(crate) struct PageTableFlags: usize {
         /// Specifies whether the mapped frame or page table is valid.
         const VALID =           1 << 0;
         /// Controls whether reads to the mapped frames are allowed.
@@ -87,7 +85,7 @@ pub(crate) fn tlb_flush_all_including_global() {
 
 #[derive(Clone, Copy, Pod, Default)]
 #[repr(C)]
-pub struct PageTableEntry(usize);
+pub(crate) struct PageTableEntry(usize);
 
 /// Activate the given level 4 page table.
 ///
@@ -98,7 +96,7 @@ pub struct PageTableEntry(usize);
 ///
 /// Changing the level 4 page table is unsafe, because it's possible to violate memory safety by
 /// changing the page mapping.
-pub unsafe fn activate_page_table(root_paddr: Paddr, _root_pt_cache: CachePolicy) {
+pub(crate) unsafe fn activate_page_table(root_paddr: Paddr, _root_pt_cache: CachePolicy) {
     assert!(root_paddr % PagingConsts::BASE_PAGE_SIZE == 0);
     let ppn = root_paddr >> 12;
     unsafe {
@@ -106,7 +104,7 @@ pub unsafe fn activate_page_table(root_paddr: Paddr, _root_pt_cache: CachePolicy
     }
 }
 
-pub fn current_page_table_paddr() -> Paddr {
+pub(crate) fn current_page_table_paddr() -> Paddr {
     riscv::register::satp::read().ppn() << 12
 }
 

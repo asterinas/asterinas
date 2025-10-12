@@ -12,10 +12,8 @@ use crate::{
     Pod,
 };
 
-pub(crate) const NR_ENTRIES_PER_PAGE: usize = 512;
-
 #[derive(Clone, Debug, Default)]
-pub struct PagingConsts {}
+pub(crate) struct PagingConsts {}
 
 impl PagingConstsTrait for PagingConsts {
     const BASE_PAGE_SIZE: usize = 4096;
@@ -31,7 +29,7 @@ bitflags::bitflags! {
     #[derive(Pod)]
     #[repr(C)]
     /// Possible flags for a page table entry.
-    pub struct PageTableFlags: usize {
+    pub(crate) struct PageTableFlags: usize {
         /// Specifies whether the mapped frame is valid.
         const VALID =           1 << 0;
         /// Whether the memory area represented by this entry is modified.
@@ -113,13 +111,13 @@ pub(crate) fn tlb_flush_all_including_global() {
 ///
 /// Changing the level 4 page table is unsafe, because it's possible to violate memory safety by
 /// changing the page mapping.
-pub unsafe fn activate_page_table(root_paddr: Paddr, _root_pt_cache: CachePolicy) {
+pub(crate) unsafe fn activate_page_table(root_paddr: Paddr, _root_pt_cache: CachePolicy) {
     assert!(root_paddr % PagingConsts::BASE_PAGE_SIZE == 0);
     loongArch64::register::pgdl::set_base(root_paddr);
     loongArch64::register::pgdh::set_base(root_paddr);
 }
 
-pub fn current_page_table_paddr() -> Paddr {
+pub(crate) fn current_page_table_paddr() -> Paddr {
     let pgdl = loongArch64::register::pgdl::read().raw();
     let pgdh = loongArch64::register::pgdh::read().raw();
     assert_eq!(
@@ -131,7 +129,7 @@ pub fn current_page_table_paddr() -> Paddr {
 
 #[derive(Clone, Copy, Pod, Default)]
 #[repr(C)]
-pub struct PageTableEntry(usize);
+pub(crate) struct PageTableEntry(usize);
 
 impl PageTableEntry {
     const PHYS_ADDR_MASK: usize = 0x0000_FFFF_FFFF_F000;
