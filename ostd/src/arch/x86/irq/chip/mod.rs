@@ -10,8 +10,10 @@ use ioapic::IoApic;
 use log::info;
 use spin::Once;
 
-use super::acpi::get_acpi_tables;
-use crate::{io::IoMemAllocatorBuilder, irq::IrqLine, sync::SpinLock, Error, Result};
+use crate::{
+    arch::kernel::acpi::get_acpi_tables, io::IoMemAllocatorBuilder, irq::IrqLine, sync::SpinLock,
+    Error, Result,
+};
 
 mod ioapic;
 mod pic;

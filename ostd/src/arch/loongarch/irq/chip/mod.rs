@@ -4,7 +4,8 @@ mod eiointc;
 
 use loongArch64::register::ecfg::LineBasedInterrupt;
 
-use crate::arch::{irq, kernel::irq::eiointc::Eiointc};
+use self::eiointc::Eiointc;
+use crate::arch::irq;
 
 pub(in crate::arch) fn init() {
     // FIXME: Support SMP in LoongArch

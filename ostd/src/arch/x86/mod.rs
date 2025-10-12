@@ -8,8 +8,8 @@ pub mod device;
 pub(crate) mod ex_table;
 pub(crate) mod io;
 pub(crate) mod iommu;
-pub(crate) mod irq;
-pub mod kernel;
+pub mod irq;
+mod kernel;
 pub(crate) mod mm;
 pub mod qemu;
 pub(crate) mod serial;
@@ -56,7 +56,7 @@ pub(crate) unsafe fn late_init_on_bsp() {
     let io_mem_builder = io::construct_io_mem_allocator_builder();
 
     kernel::apic::init(&io_mem_builder).expect("APIC doesn't exist");
-    kernel::irq::init(&io_mem_builder);
+    irq::chip::init(&io_mem_builder);
 
     kernel::tsc::init_tsc_freq();
     timer::init_on_bsp();
