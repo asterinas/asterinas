@@ -15,7 +15,7 @@ English | [中文版](README_CN.md) | [日本語](README_JP.md)
 **News:**
 * 2025-10-14: [*CortenMM: Efficient Memory Management with Strong Correctness Guarantees*](https://dl.acm.org/doi/10.1145/3731569.3764836) received the **Best Paper Award** at **SOSP 2025**.
 * 2025-07-23: **SOSP 2025** accepted another Asterinas paper: [*CortenMM: Efficient Memory Management with Strong Correctness Guarantees*](https://dl.acm.org/doi/10.1145/3731569.3764836).
-* 2025-06-18: **USENIX’s _;login:_** magazine published [*Asterinas: A Rust-Based Framekernel to Reimagine Linux in the 2020s*](https://www.usenix.org/publications/loginonline/asterinas-rust-based-framekernel-reimagine-linux-2020s).
+* 2025-06-18: **USENIX _;login:_ magazine** published [*Asterinas: A Rust-Based Framekernel to Reimagine Linux in the 2020s*](https://www.usenix.org/publications/loginonline/asterinas-rust-based-framekernel-reimagine-linux-2020s).
 * 2025-04-30: **USENIX ATC 2025** accepted two Asterinas papers:
     1. [*Asterinas: A Linux ABI-Compatible, Rust-Based Framekernel OS with a Small and Sound TCB*](https://www.usenix.org/conference/atc25/presentation/peng-yuke);
     2. [*Converos: Practical Model Checking for Verifying Rust OS Kernel Concurrency*](https://www.usenix.org/conference/atc25/presentation/tang).
