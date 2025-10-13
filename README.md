@@ -12,9 +12,15 @@
 
 English | [中文版](README_CN.md) | [日本語](README_JP.md)
 
-**NEWS: [SOSP'25](https://sigops.org/s/conferences/sosp/2025/) accepted yet another research paper on Asterinas: _CortenMM: Efficient Memory Management with Strong Correctness Guarantees_. Congratulations to the Asterinas community🎉🎉🎉**
+**News:**
+* 2025-10-14: [*CortenMM: Efficient Memory Management with Strong Correctness Guarantees*](https://dl.acm.org/doi/10.1145/3731569.3764836) received the **Best Paper Award** at **SOSP 2025**.
+* 2025-07-23: **SOSP 2025** accepted another Asterinas paper: [*CortenMM: Efficient Memory Management with Strong Correctness Guarantees*](https://dl.acm.org/doi/10.1145/3731569.3764836).
+* 2025-06-18: **USENIX’s _;login:_** magazine published [*Asterinas: A Rust-Based Framekernel to Reimagine Linux in the 2020s*](https://www.usenix.org/publications/loginonline/asterinas-rust-based-framekernel-reimagine-linux-2020s).
+* 2025-04-30: **USENIX ATC 2025** accepted two Asterinas papers:
+    1. [*Asterinas: A Linux ABI-Compatible, Rust-Based Framekernel OS with a Small and Sound TCB*](https://www.usenix.org/conference/atc25/presentation/peng-yuke);
+    2. [*Converos: Practical Model Checking for Verifying Rust OS Kernel Concurrency*](https://www.usenix.org/conference/atc25/presentation/tang).
 
-**NEWS: [USENIX ATC'25](https://www.usenix.org/conference/atc25) accepted two research papers on Asterinas: (1) _Asterinas: A Linux ABI-Compatible, Rust-Based Framekernel OS with a Small and Sound TCB_ and (2) _Converos: Practical Model Checking for Verifying Rust OS Kernel Concurrency_. Congratulations to the Asterinas community🎉🎉🎉**
+Congratulations to the Asterinas community🎉🎉🎉
 
 ## Introducing Asterinas
 
@@ -79,7 +85,7 @@ See [The Asterinas Book](https://asterinas.github.io/book/) to learn more about 
 
 ## License
 
-Asterinas's source code and documentation primarily use the 
+Asterinas's source code and documentation primarily use the
 [Mozilla Public License (MPL), Version 2.0](https://github.com/asterinas/asterinas/blob/main/LICENSE-MPL).
 Select components are under more permissive licenses,
 detailed [here](https://github.com/asterinas/asterinas/blob/main/.licenserc.yaml). For the rationales behind the choice of MPL, see [here](https://asterinas.github.io/book/index.html#licensing).
