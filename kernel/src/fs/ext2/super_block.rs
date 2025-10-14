@@ -216,7 +216,7 @@ impl SuperBlock {
 
     /// Returns the number of block groups.
     pub fn block_groups_count(&self) -> u32 {
-        self.blocks_count / self.blocks_per_group
+        self.blocks_count.div_ceil(self.blocks_per_group)
     }
 
     /// Returns the filesystem state.

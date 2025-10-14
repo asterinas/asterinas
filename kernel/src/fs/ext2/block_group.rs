@@ -58,10 +58,15 @@ impl BlockGroup {
                     Ok(IdAlloc::from_bytes_with_capacity(&buf, capacity))
                 };
 
-                let block_bitmap = get_bitmap(
-                    descriptor.block_bitmap_bid,
-                    super_block.blocks_per_group() as usize,
-                )?;
+                let block_bitmap = {
+                    let num_blocks = if (idx as u32) < super_block.block_groups_count() - 1 {
+                        super_block.blocks_per_group()
+                    } else {
+                        // The last block group may have less blocks than others.
+                        super_block.total_blocks() - super_block.blocks_per_group() * idx as u32
+                    };
+                    get_bitmap(descriptor.block_bitmap_bid, num_blocks as usize)?
+                };
                 let inode_bitmap = get_bitmap(
                     descriptor.inode_bitmap_bid,
                     super_block.inodes_per_group() as usize,
