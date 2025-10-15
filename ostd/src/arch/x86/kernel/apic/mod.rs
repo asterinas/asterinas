@@ -6,7 +6,7 @@ use bit_field::BitField;
 use spin::Once;
 use xapic::get_xapic_base_address;
 
-use crate::{cpu::PinCurrentCpu, cpu_local, io::IoMemAllocatorBuilder};
+use crate::{cpu::PinCurrentCpu, cpu_local, if_tdx_enabled, io::IoMemAllocatorBuilder};
 
 mod x2apic;
 mod xapic;
@@ -87,12 +87,16 @@ pub fn get_or_init(_guard: &dyn PinCurrentCpu) -> &(dyn Apic + 'static) {
             let mut x2apic = x2apic::X2Apic::new().unwrap();
             x2apic.enable();
             let version = x2apic.version();
-            log::info!(
-                "x2APIC ID:{:x}, Version:{:x}, Max LVT:{:x}",
-                x2apic.id(),
-                version & 0xff,
-                (version >> 16) & 0xff
-            );
+            if_tdx_enabled!({
+                // In TDX environments, X2APIC ID and Version values are not trustable.
+            } else {
+                log::info!(
+                    "x2APIC ID:{:x}, Version:{:x}, Max LVT:{:x}",
+                    x2apic.id(),
+                    version & 0xff,
+                    (version >> 16) & 0xff
+                );
+            });
             ForceSyncSend(Box::new(x2apic))
         }
     });

@@ -7,6 +7,7 @@ use x86::msr::{
 };
 
 use super::ApicTimer;
+use crate::if_tdx_enabled;
 
 #[derive(Debug)]
 pub struct X2Apic {
@@ -45,13 +46,13 @@ impl X2Apic {
         // We are using them to read and write to the `IA32_APIC_BASE` and `IA32_X2APIC_SIVR` MSRs, which are well-defined and valid MSRs in x86 systems.
         // Therefore, we are not causing any undefined behavior or violating any of the requirements of the `rdmsr` and `wrmsr` functions.
         unsafe {
-            // Enable x2APIC mode globally
-            let mut base = rdmsr(IA32_APIC_BASE);
-            // Enable x2APIC and xAPIC if they are not enabled by default
-            if base & X2APIC_ENABLE_BITS != X2APIC_ENABLE_BITS {
-                base |= X2APIC_ENABLE_BITS;
-                wrmsr(IA32_APIC_BASE, base);
-            }
+            if_tdx_enabled!({
+                // In TDX environments, x2APIC is enabled by default.
+                // Reading the untrusted input `IA32_APIC_BASE` will introduce additional risks.
+            } else {
+                // Enable x2APIC mode globally
+                wrmsr(IA32_APIC_BASE, X2APIC_ENABLE_BITS);
+            });
 
             // Set SVR, Enable APIC and set Spurious Vector to 15 (Reserved irq number)
             let svr: u64 = (1 << 8) | 15;
