@@ -10,6 +10,7 @@
  * We make the following new changes:
  * * Add the `trap_handler_table`.
  * * Adjust some symbol names.
+ * * Fix an off-by-one bug to correct the RSP value in the trap frame.
  *
  * These changes are released under the following license:
  *
@@ -113,7 +114,7 @@ _trap_from_kernel:
     push r10
     push r9
     push r8
-    lea r8, [rsp + 13*8]
+    lea r8, [rsp + 14*8]
     push r8                 # push rsp
     push rbp
     push rdi
