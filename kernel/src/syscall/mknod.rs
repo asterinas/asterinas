@@ -34,15 +34,12 @@ pub fn sys_mknodat(
 
     let (dir_path, name) = {
         let path_name = path_name.to_string_lossy();
-        if path_name.is_empty() {
-            return_errno_with_message!(Errno::ENOENT, "path is empty");
-        }
-        let fs_path = FsPath::new(dirfd, path_name.as_ref())?;
+        let fs_path = FsPath::from_fd_and_path(dirfd, &path_name)?;
         fs_ref
             .resolver()
             .read()
             .lookup_unresolved_no_follow(&fs_path)?
-            .into_parent_and_tail_filename()?
+            .into_parent_and_filename()?
     };
 
     match inode_type {

@@ -81,13 +81,14 @@ pub fn do_faccessat(
         dirfd, path_name, mode, flags
     );
 
-    if path_name.is_empty() && !flags.contains(FaccessatFlags::AT_EMPTY_PATH) {
-        return_errno_with_message!(Errno::ENOENT, "path is empty");
-    }
-
     let path = {
         let path_name = path_name.to_string_lossy();
-        let fs_path = FsPath::new(dirfd, path_name.as_ref())?;
+        let fs_path = if flags.contains(FaccessatFlags::AT_EMPTY_PATH) && path_name.is_empty() {
+            FsPath::from_fd(dirfd)?
+        } else {
+            FsPath::from_fd_and_path(dirfd, &path_name)?
+        };
+
         let fs_ref = ctx.thread_local.borrow_fs();
         let fs = fs_ref.resolver().read();
         if flags.contains(FaccessatFlags::AT_SYMLINK_NOFOLLOW) {

@@ -10,7 +10,7 @@ use self::{
 use super::process_vm::ProcessVm;
 use crate::{
     fs::{
-        fs_resolver::{FsPath, FsResolver, AT_FDCWD},
+        fs_resolver::{FsPath, FsResolver},
         path::Path,
         utils::{InodeType, Permission},
     },
@@ -57,7 +57,7 @@ impl ProgramToLoad {
             new_argv.extend_from_slice(&argv);
             let interpreter = {
                 let filename = new_argv[0].to_str()?.to_string();
-                let fs_path = FsPath::new(AT_FDCWD, &filename)?;
+                let fs_path = FsPath::try_from(filename.as_str())?;
                 fs_resolver.lookup(&fs_path)?
             };
             check_executable_file(&interpreter)?;

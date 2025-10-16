@@ -4,7 +4,7 @@ use ostd::task::Task;
 
 use crate::{
     fs::{
-        fs_resolver::{split_path, FsPath},
+        fs_resolver::{FsPath, SplitPath},
         path::Path,
         utils::{mkmod, InodeType, Permission},
     },
@@ -39,7 +39,7 @@ pub fn lookup_socket_file(path: &str) -> Result<Path> {
 }
 
 pub fn create_socket_file(path_name: &str) -> Result<Path> {
-    let (parent_path_name, file_name) = split_path(path_name);
+    let (parent_path_name, file_name) = path_name.split_dirname_and_filename()?;
 
     let parent = {
         let current = Task::current().unwrap();

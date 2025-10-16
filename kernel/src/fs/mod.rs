@@ -104,7 +104,7 @@ pub fn init_in_first_process(ctx: &Context) {
     }
 
     // Initialize the file table for the first process.
-    let tty_path = FsPath::new(fs_resolver::AT_FDCWD, "/dev/console").expect("cannot find tty");
+    let tty_path = FsPath::try_from("/dev/console").unwrap();
     let stdin = {
         let open_args = OpenArgs::from_modes(AccessMode::O_RDONLY, mkmod!(u+r));
         fs_resolver

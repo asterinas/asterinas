@@ -30,10 +30,7 @@ pub fn sys_truncate(path_ptr: Vaddr, len: isize, ctx: &Context) -> Result<Syscal
 
     let dir_path = {
         let path_name = path_name.to_string_lossy();
-        if path_name.is_empty() {
-            return_errno_with_message!(Errno::ENOENT, "path is empty");
-        }
-        let fs_path = FsPath::new(AT_FDCWD, path_name.as_ref())?;
+        let fs_path = FsPath::from_fd_and_path(AT_FDCWD, &path_name)?;
         ctx.thread_local
             .borrow_fs()
             .resolver()

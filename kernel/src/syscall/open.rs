@@ -26,13 +26,9 @@ pub fn sys_openat(
         dirfd, path, flags, mode
     );
 
-    if path.is_empty() {
-        return_errno_with_message!(Errno::ENOENT, "openat fails with empty path");
-    }
-
     let file_handle = {
         let path = path.to_string_lossy();
-        let fs_path = FsPath::new(dirfd, path.as_ref())?;
+        let fs_path = FsPath::from_fd_and_path(dirfd, path.as_ref())?;
 
         let fs_ref = ctx.thread_local.borrow_fs();
         let mask_mode = mode & !fs_ref.umask().get();
@@ -107,7 +103,7 @@ fn do_open(
                 return_errno_with_message!(Errno::EISDIR, "cannot create directory");
             }
 
-            let (parent, tail_name) = result.into_parent_and_tail_name();
+            let (parent, tail_name) = result.into_parent_and_basename();
             let new_path =
                 parent.new_fs_child(&tail_name, InodeType::File, open_args.inode_mode)?;
 

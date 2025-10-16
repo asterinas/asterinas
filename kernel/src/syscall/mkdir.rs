@@ -23,22 +23,19 @@ pub fn sys_mkdirat(
     let fs_ref = ctx.thread_local.borrow_fs();
     let (dir_path, name) = {
         let path = path.to_string_lossy();
-        if path.is_empty() {
-            return_errno_with_message!(Errno::ENOENT, "path is empty");
-        }
-        let fs_path = FsPath::new(dirfd, path.as_ref())?;
+        let fs_path = FsPath::from_fd_and_path(dirfd, &path)?;
         fs_ref
             .resolver()
             .read()
             .lookup_unresolved_no_follow(&fs_path)?
-            .into_parent_and_tail_name()?
+            .into_parent_and_basename()?
     };
 
     let inode_mode = {
         let mask_mode = mode & !fs_ref.umask().get();
         InodeMode::from_bits_truncate(mask_mode)
     };
-    let _ = dir_path.new_fs_child(name.trim_end_matches('/'), InodeType::Dir, inode_mode)?;
+    let _ = dir_path.new_fs_child(&name, InodeType::Dir, inode_mode)?;
     Ok(SyscallReturn::Return(0))
 }
 

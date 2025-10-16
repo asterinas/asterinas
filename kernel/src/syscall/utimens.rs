@@ -155,19 +155,26 @@ fn do_utimes(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let flags = UtimensFlags::from_bits(flags)
-        .ok_or(Error::with_message(Errno::EINVAL, "invalid flags"))?;
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
 
-    let pathname = if pathname_ptr == 0 {
-        String::new()
+    // Unlike other system calls, `utimesat` has special handling for the NULL path string.
+    // Reference: <https://elixir.bootlin.com/linux/v6.17.1/source/fs/utimes.c#L138-L139>
+    let pathname = if dirfd != AT_FDCWD && pathname_ptr == 0 {
+        None
     } else {
-        let cstring = ctx
+        let pathname = ctx
             .user_space()
             .read_cstring(pathname_ptr, MAX_FILENAME_LEN)?;
-        cstring.to_string_lossy().into_owned()
+        Some(pathname.to_string_lossy().into_owned())
     };
+
     let path = {
-        // Determine the file system path and the corresponding entry
-        let fs_path = FsPath::new(dirfd, pathname.as_ref())?;
+        let fs_path = if let Some(pathname) = pathname.as_ref() {
+            FsPath::from_fd_and_path(dirfd, pathname)?
+        } else {
+            FsPath::from_fd(dirfd)?
+        };
+
         let fs_ref = ctx.thread_local.borrow_fs();
         let fs = fs_ref.resolver().read();
         if flags.contains(UtimensFlags::AT_SYMLINK_NOFOLLOW) {

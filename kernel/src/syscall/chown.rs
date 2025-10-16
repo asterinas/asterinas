@@ -62,10 +62,7 @@ pub fn sys_fchownat(
         dirfd, path_name, uid, gid, flags
     );
 
-    if path_name.is_empty() {
-        if !flags.contains(ChownFlags::AT_EMPTY_PATH) {
-            return_errno_with_message!(Errno::ENOENT, "path is empty");
-        }
+    if flags.contains(ChownFlags::AT_EMPTY_PATH) && path_name.is_empty() {
         return self::sys_fchown(dirfd, uid, gid, ctx);
     }
 
@@ -77,7 +74,8 @@ pub fn sys_fchownat(
 
     let path = {
         let path_name = path_name.to_string_lossy();
-        let fs_path: FsPath<'_> = FsPath::new(dirfd, path_name.as_ref())?;
+        let fs_path = FsPath::from_fd_and_path(dirfd, &path_name)?;
+
         let fs_ref = ctx.thread_local.borrow_fs();
         let fs = fs_ref.resolver().read();
         if flags.contains(ChownFlags::AT_SYMLINK_NOFOLLOW) {

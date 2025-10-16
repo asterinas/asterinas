@@ -27,20 +27,18 @@ pub fn sys_symlinkat(
 
     let target = target.to_string_lossy();
     if target.is_empty() {
-        return_errno_with_message!(Errno::ENOENT, "target is empty");
+        return_errno_with_message!(Errno::ENOENT, "the symlink path is empty");
     }
+
     let (dir_path, link_name) = {
         let link_path_name = link_path_name.to_string_lossy();
-        if link_path_name.is_empty() {
-            return_errno_with_message!(Errno::ENOENT, "linkpath is empty");
-        }
-        let fs_path = FsPath::new(dirfd, link_path_name.as_ref())?;
+        let fs_path = FsPath::from_fd_and_path(dirfd, &link_path_name)?;
         ctx.thread_local
             .borrow_fs()
             .resolver()
             .read()
             .lookup_unresolved_no_follow(&fs_path)?
-            .into_parent_and_tail_filename()?
+            .into_parent_and_filename()?
     };
 
     let new_path = dir_path.new_fs_child(&link_name, InodeType::SymLink, mkmod!(a+rwx))?;
