@@ -438,6 +438,7 @@ where
 
             let should_pick_next = local_rq.update_current(UpdateFlags::Wait);
             current = local_rq.dequeue_current();
+            current.as_ref().unwrap().set_parked(true);
             should_pick_next.then(|| local_rq.pick_next())
         } else {
             local_rq.try_pick_next()
@@ -457,6 +458,7 @@ where
 
 /// Unblocks a target task.
 pub(crate) fn unpark_target(runnable: Arc<Task>) {
+    runnable.set_parked(false);
     let preempt_cpu = SCHEDULER
         .get()
         .unwrap()

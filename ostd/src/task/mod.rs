@@ -15,7 +15,7 @@ use core::{
     cell::{Cell, SyncUnsafeCell},
     ops::Deref,
     ptr::NonNull,
-    sync::atomic::AtomicBool,
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use kernel_stack::KernelStack;
@@ -67,6 +67,8 @@ pub struct Task {
     switched_to_cpu: AtomicBool,
 
     schedule_info: TaskScheduleInfo,
+
+    parked: AtomicBool,
 }
 
 impl Task {
@@ -109,6 +111,16 @@ impl Task {
     /// Get the attached scheduling information.
     pub fn schedule_info(&self) -> &TaskScheduleInfo {
         &self.schedule_info
+    }
+
+    /// Sets whether the task is parked.
+    pub fn set_parked(&self, parked: bool) {
+        self.parked.store(parked, Ordering::Release);
+    }
+
+    /// Returns whether the task is parked.
+    pub fn is_parked(&self) -> bool {
+        self.parked.load(Ordering::Acquire)
     }
 }
 
@@ -215,6 +227,7 @@ impl TaskOptions {
                 cpu: AtomicCpuId::default(),
             },
             switched_to_cpu: AtomicBool::new(false),
+            parked: AtomicBool::new(false),
         };
 
         Ok(new_task)
