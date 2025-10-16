@@ -6,8 +6,7 @@ use crate::{
         file_table::{FdFlags, FileDesc},
         fs_resolver::{FsPath, FsResolver, LookupResult, AT_FDCWD},
         inode_handle::InodeHandle,
-        open_args::OpenArgs,
-        utils::{AccessMode, CreationFlags, InodeMode, InodeType},
+        utils::{AccessMode, CreationFlags, InodeMode, InodeType, OpenArgs},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -91,16 +90,22 @@ fn do_open(
         LookupResult::Resolved(target_path) => target_path.open(open_args)?,
         LookupResult::AtParent(result) => {
             if !open_args.creation_flags.contains(CreationFlags::O_CREAT) {
-                return_errno_with_message!(Errno::ENOENT, "file does not exist");
+                return_errno_with_message!(Errno::ENOENT, "the file does not exist");
             }
             if open_args
                 .creation_flags
                 .contains(CreationFlags::O_DIRECTORY)
             {
-                return_errno_with_message!(Errno::ENOTDIR, "cannot create directory");
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "O_CREAT and O_DIRECTORY cannot be specified together"
+                );
             }
             if result.target_is_dir() {
-                return_errno_with_message!(Errno::EISDIR, "cannot create directory");
+                return_errno_with_message!(
+                    Errno::EISDIR,
+                    "O_CREAT is specified but the file is a directory"
+                );
             }
 
             let (parent, tail_name) = result.into_parent_and_basename();

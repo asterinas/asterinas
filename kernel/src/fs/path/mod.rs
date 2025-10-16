@@ -11,10 +11,9 @@ pub use mount_namespace::MountNamespace;
 use crate::{
     fs::{
         inode_handle::InodeHandle,
-        open_args::OpenArgs,
         path::dentry::{Dentry, DentryKey},
         utils::{
-            CreationFlags, FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType,
+            CreationFlags, FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType, OpenArgs,
             Permission, StatusFlags, XattrName, XattrNamespace, XattrSetFlags, NAME_MAX,
         },
     },
@@ -379,14 +378,14 @@ impl Path {
 
         match inode_type {
             InodeType::NamedPipe => {
-                warn!("NamedPipe doesn't support additional operation when opening.");
-                debug!("Open NamedPipe with args: {open_args:?}.");
+                warn!("named pipes don't support additional operation when opening");
+                debug!("the named pipe is opened with {:?}", open_args);
             }
             InodeType::SymLink => {
                 if creation_flags.contains(CreationFlags::O_NOFOLLOW)
                     && !open_args.status_flags.contains(StatusFlags::O_PATH)
                 {
-                    return_errno_with_message!(Errno::ELOOP, "file is a symlink");
+                    return_errno_with_message!(Errno::ELOOP, "the file is a symlink");
                 }
             }
             _ => {}
@@ -395,12 +394,12 @@ impl Path {
         if creation_flags.contains(CreationFlags::O_CREAT)
             && creation_flags.contains(CreationFlags::O_EXCL)
         {
-            return_errno_with_message!(Errno::EEXIST, "file exists");
+            return_errno_with_message!(Errno::EEXIST, "the file already exists");
         }
         if creation_flags.contains(CreationFlags::O_DIRECTORY) && inode_type != InodeType::Dir {
             return_errno_with_message!(
                 Errno::ENOTDIR,
-                "O_DIRECTORY is specified but file is not a directory"
+                "O_DIRECTORY is specified but the file is not a directory"
             );
         }
 

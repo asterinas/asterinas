@@ -13,8 +13,7 @@ use crate::{
         file_table::FdFlags,
         fs_resolver::FsPath,
         inode_handle::FileIo,
-        open_args::OpenArgs,
-        utils::{mkmod, AccessMode, Inode, IoctlCmd},
+        utils::{mkmod, AccessMode, Inode, IoctlCmd, OpenArgs},
     },
     prelude::*,
     process::{
