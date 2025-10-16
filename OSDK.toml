@@ -53,7 +53,8 @@ build.strip_elf = false
 qemu.args = """\
     -cpu rv64,zba=true,zbb=true \
     -machine virt \
-    -m 8G \
+    -m ${MEM-:8G} \
+    -smp ${SMP-:1} \
     --no-reboot \
     -nographic \
     -display none \
