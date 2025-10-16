@@ -51,7 +51,10 @@ pub fn sys_linkat(
         } else {
             fs.lookup_no_follow(&old_fs_path)?
         };
-        let (new_path, new_name) = fs.lookup_dir_and_new_basename(&new_fs_path, false)?;
+        let (new_path, new_name) = fs
+            .lookup_unresolved_no_follow(&new_fs_path)?
+            .into_parent_and_tail_filename()?;
+
         (old_path, new_path, new_name)
     };
 

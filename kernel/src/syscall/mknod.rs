@@ -41,7 +41,8 @@ pub fn sys_mknodat(
         fs_ref
             .resolver()
             .read()
-            .lookup_dir_and_new_basename(&fs_path, false)?
+            .lookup_unresolved_no_follow(&fs_path)?
+            .into_parent_and_tail_filename()?
     };
 
     match inode_type {

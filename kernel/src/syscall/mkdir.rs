@@ -30,7 +30,8 @@ pub fn sys_mkdirat(
         fs_ref
             .resolver()
             .read()
-            .lookup_dir_and_new_basename(&fs_path, true)?
+            .lookup_unresolved_no_follow(&fs_path)?
+            .into_parent_and_tail_name()?
     };
 
     let inode_mode = {
