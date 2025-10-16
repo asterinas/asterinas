@@ -1,18 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_console::BitmapFont;
+use aster_device::{register_device_ids, Device, DeviceId, DeviceIdAllocator, DeviceType};
 use ostd::sync::LocalIrqDisabled;
+use spin::Once;
 use termio::CFontOp;
 
 use self::line_discipline::LineDiscipline;
 use crate::{
     current_userspace,
     events::IoEvents,
-    fs::{
-        device::{Device, DeviceId, DeviceType},
-        inode_handle::FileIo,
-        utils::IoctlCmd,
-    },
+    fs::{device::add_device, inode_handle::FileIo, utils::IoctlCmd},
     prelude::*,
     process::{
         broadcast_signal_async,
@@ -21,15 +19,16 @@ use crate::{
     },
 };
 
+mod console;
 mod device;
 mod driver;
 mod line_discipline;
 mod n_tty;
 mod termio;
 
-pub use device::TtyDevice;
+use console::DevConsole;
+use device::{NttyDevice, TtyDevice};
 pub use driver::{PushCharError, TtyDriver};
-pub(super) use n_tty::init;
 pub use n_tty::{iter_n_tty, system_console};
 
 const IO_CAPACITY: usize = 4096;
@@ -57,6 +56,7 @@ const IO_CAPACITY: usize = 4096;
 pub struct Tty<D> {
     index: u32,
     driver: D,
+    device_id: Once<DeviceId>,
     ldisc: SpinLock<LineDiscipline, LocalIrqDisabled>,
     job_control: JobControl,
     pollee: Pollee,
@@ -68,6 +68,7 @@ impl<D> Tty<D> {
         Arc::new_cyclic(move |weak_ref| Tty {
             index,
             driver,
+            device_id: Once::new(),
             ldisc: SpinLock::new(LineDiscipline::new()),
             job_control: JobControl::new(),
             pollee: Pollee::new(),
@@ -81,6 +82,10 @@ impl<D> Tty<D> {
 
     pub fn driver(&self) -> &D {
         &self.driver
+    }
+
+    pub fn set_device_id(&self, device_id: DeviceId) {
+        self.device_id.call_once(|| device_id);
     }
 
     /// Returns whether new characters can be pushed into the input buffer.
@@ -296,14 +301,40 @@ impl<D: TtyDriver> Terminal for Tty<D> {
     fn job_control(&self) -> &JobControl {
         &self.job_control
     }
+
+    fn device_id(&self) -> &DeviceId {
+        self.device_id.get().unwrap()
+    }
 }
 
-impl<D: TtyDriver> Device for Tty<D> {
-    fn type_(&self) -> DeviceType {
-        DeviceType::Char
+impl<D> Debug for Tty<D> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Tty")
+            .field("index", &self.index)
+            .field("device_id", &self.device_id.get())
+            .finish_non_exhaustive()
     }
+}
 
-    fn id(&self) -> DeviceId {
-        DeviceId::new(88, self.index)
-    }
+const TTY_MAJOR: u32 = 4;
+const TTYAUX_MAJOR: u32 = 5;
+
+pub static TTY_ID_ALLOCATOR: Once<DeviceIdAllocator> = Once::new();
+pub static TTYAUX_ID_ALLOCATOR: Once<DeviceIdAllocator> = Once::new();
+
+pub(super) fn init_in_first_process() {
+    TTY_ID_ALLOCATOR
+        .call_once(|| register_device_ids(DeviceType::Char, TTY_MAJOR, 0..256).unwrap());
+    TTYAUX_ID_ALLOCATOR
+        .call_once(|| register_device_ids(DeviceType::Char, TTYAUX_MAJOR, 0..256).unwrap());
+
+    n_tty::init_in_first_process();
+
+    add_device(TtyDevice::new());
+    iter_n_tty().enumerate().for_each(|(index, tty)| {
+        let tty_device = NttyDevice::new(index as u32, tty);
+        tty.set_device_id(tty_device.device_id().unwrap());
+        add_device(tty_device);
+    });
+    add_device(DevConsole::new(system_console()));
 }

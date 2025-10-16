@@ -2,9 +2,11 @@
 
 use core::time::Duration;
 
+use aster_device::DeviceId;
+
 use super::SyscallReturn;
 use crate::{
-    fs::{device::DeviceId, file_table::FileDesc, fs_resolver::FsPath, utils::Metadata},
+    fs::{file_table::FileDesc, fs_resolver::FsPath, utils::Metadata},
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
 };

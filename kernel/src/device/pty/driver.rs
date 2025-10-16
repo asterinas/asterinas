@@ -1,14 +1,34 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::sync::SpinLock;
+use alloc::{
+    format,
+    sync::{Arc, Weak},
+};
+
+use aster_device::{Device, DeviceId, DeviceType};
+use aster_systree::{
+    inherit_sys_branch_node, BranchNodeFields, SysAttrSetBuilder, SysBranchNode, SysPerms, SysStr,
+};
+use inherit_methods_macro::inherit_methods;
+use ostd::{
+    mm::{VmReader, VmWriter},
+    sync::SpinLock,
+};
 
 use crate::{
-    device::tty::{PushCharError, Tty, TtyDriver},
+    device::{
+        pty::UNIX98_PTY_SLAVE_ID_ALLOCATOR,
+        tty::{PushCharError, Tty, TtyDriver},
+    },
     events::IoEvents,
+    fs::{device::DeviceFile, file_handle::Mappable, inode_handle::FileIo, utils::IoctlCmd},
     prelude::{return_errno_with_message, Errno, Result},
-    process::signal::Pollee,
+    process::signal::{PollHandle, Pollable, Pollee},
     util::ring_buffer::RingBuffer,
 };
+
+/// A pseudoterminal slave.
+pub type PtySlave = PtyDevice;
 
 const BUFFER_CAPACITY: usize = 8192;
 
@@ -21,9 +41,6 @@ pub struct PtyDriver {
     output: SpinLock<RingBuffer<u8>>,
     pollee: Pollee,
 }
-
-/// A pseudoterminal slave.
-pub type PtySlave = Tty<PtyDriver>;
 
 impl PtyDriver {
     pub(super) fn new() -> Self {
@@ -115,5 +132,104 @@ impl TtyDriver for PtyDriver {
 
     fn set_font(&self, _font: aster_console::BitmapFont) -> Result<()> {
         return_errno_with_message!(Errno::ENOTTY, "the console has no support for font setting");
+    }
+}
+
+/// The PTY slave device.
+#[derive(Debug)]
+pub struct PtyDevice {
+    id: DeviceId,
+    fields: BranchNodeFields<dyn SysBranchNode, Self>,
+    tty: Arc<Tty<PtyDriver>>,
+}
+
+impl Device for PtyDevice {
+    fn device_type(&self) -> DeviceType {
+        DeviceType::Char
+    }
+
+    fn device_id(&self) -> Option<DeviceId> {
+        Some(self.id)
+    }
+}
+
+inherit_sys_branch_node!(PtyDevice, fields, {
+    fn perms(&self) -> SysPerms {
+        SysPerms::DEFAULT_RW_PERMS
+    }
+});
+
+#[inherit_methods(from = "self.fields")]
+impl PtyDevice {
+    pub fn init_parent(&self, parent: Weak<dyn SysBranchNode>);
+    pub fn weak_self(&self) -> &Weak<Self>;
+    pub fn child(&self, name: &str) -> Option<Arc<dyn SysBranchNode>>;
+    pub fn add_child(&self, new_child: Arc<dyn SysBranchNode>) -> aster_systree::Result<()>;
+    pub fn remove_child(&self, child_name: &str) -> aster_systree::Result<Arc<dyn SysBranchNode>>;
+}
+
+impl PtyDevice {
+    pub(super) fn new(index: u32) -> Arc<Self> {
+        let id = UNIX98_PTY_SLAVE_ID_ALLOCATOR
+            .get()
+            .unwrap()
+            .allocate(index)
+            .unwrap();
+        let name = SysStr::from(format!("{}", index));
+
+        let builder = SysAttrSetBuilder::new();
+        let attrs = builder.build().expect("Failed to build attribute set");
+
+        let tty = Tty::new(index, PtyDriver::new());
+        tty.set_device_id(id);
+
+        Arc::new_cyclic(|weak_self| PtyDevice {
+            id,
+            fields: BranchNodeFields::new(name, attrs, weak_self.clone()),
+            tty,
+        })
+    }
+
+    pub fn as_tty(&self) -> &Arc<Tty<PtyDriver>> {
+        &self.tty
+    }
+}
+
+impl Drop for PtyDevice {
+    fn drop(&mut self) {
+        UNIX98_PTY_SLAVE_ID_ALLOCATOR
+            .get()
+            .unwrap()
+            .release(self.id.minor());
+    }
+}
+
+impl Pollable for PtyDevice {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
+        self.as_tty().poll(mask, poller)
+    }
+}
+
+impl FileIo for PtyDevice {
+    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+        self.as_tty().read(writer)
+    }
+
+    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+        self.as_tty().write(reader)
+    }
+
+    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+        self.as_tty().ioctl(cmd, arg)
+    }
+
+    fn mappable(&self) -> Result<Mappable> {
+        self.as_tty().mappable()
+    }
+}
+
+impl DeviceFile for PtyDevice {
+    fn open(&self) -> Result<Option<Arc<dyn FileIo>>> {
+        Ok(Some(self.tty.clone()))
     }
 }

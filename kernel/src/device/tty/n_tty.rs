@@ -54,7 +54,7 @@ impl TtyDriver for ConsoleDriver {
 
 static N_TTY: Once<Box<[Arc<Tty<ConsoleDriver>>]>> = Once::new();
 
-pub(in crate::device) fn init() {
+pub(in crate::device) fn init_in_first_process() {
     let devices = {
         let mut devices = aster_console::all_devices();
         // Sort by priorities to ensure that the TTY for the virtio-console device comes first. Is

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_device::{DeviceId, DeviceType};
+
 use super::SyscallReturn;
 use crate::{
-    device::get_device,
     fs::{
-        device::DeviceId,
+        device::get_device,
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         utils::{InodeMode, InodeType, MknodType},
@@ -48,8 +49,20 @@ pub fn sys_mknodat(
         InodeType::File => {
             let _ = dir_path.new_fs_child(&name, InodeType::File, inode_mode)?;
         }
-        InodeType::CharDevice | InodeType::BlockDevice => {
-            let device_inode = get_device(DeviceId::from_encoded_u64(dev as u64))?;
+        InodeType::BlockDevice => {
+            let Some(device_inode) =
+                get_device(DeviceType::Block, DeviceId::from_encoded_u64(dev as u64))
+            else {
+                return_errno_with_message!(Errno::EINVAL, "invalid device id")
+            };
+            let _ = dir_path.mknod(&name, inode_mode, device_inode.into())?;
+        }
+        InodeType::CharDevice => {
+            let Some(device_inode) =
+                get_device(DeviceType::Char, DeviceId::from_encoded_u64(dev as u64))
+            else {
+                return_errno_with_message!(Errno::EINVAL, "invalid device id")
+            };
             let _ = dir_path.mknod(&name, inode_mode, device_inode.into())?;
         }
         InodeType::NamedPipe => {

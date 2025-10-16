@@ -4,7 +4,7 @@ use alloc::format;
 
 use ostd::task::Task;
 
-use super::{driver::PtyDriver, PtySlave};
+use super::PtySlave;
 use crate::{
     current_userspace,
     events::IoEvents,
@@ -41,7 +41,7 @@ pub struct PtyMaster {
 
 impl PtyMaster {
     pub(super) fn new(ptmx: Arc<dyn Inode>, index: u32) -> Arc<Self> {
-        let slave = PtySlave::new(index, PtyDriver::new());
+        let slave = PtySlave::new(index);
 
         Arc::new(Self { ptmx, slave })
     }
@@ -53,11 +53,11 @@ impl PtyMaster {
     fn check_io_events(&self) -> IoEvents {
         let mut events = IoEvents::empty();
 
-        if self.slave().driver().buffer_len() > 0 {
+        if self.slave.as_tty().driver().buffer_len() > 0 {
             events |= IoEvents::IN;
         }
 
-        if self.slave().can_push() {
+        if self.slave.as_tty().can_push() {
             events |= IoEvents::OUT;
         }
 
@@ -67,7 +67,8 @@ impl PtyMaster {
 
 impl Pollable for PtyMaster {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        self.slave
+        self.slave()
+            .as_tty()
             .driver()
             .pollee()
             .poll_with(mask, poller, || self.check_io_events())
@@ -79,10 +80,10 @@ impl FileIo for PtyMaster {
         // TODO: Add support for non-blocking mode and timeout
         let mut buf = vec![0u8; writer.avail().min(IO_CAPACITY)];
         let read_len = self.wait_events(IoEvents::IN, None, || {
-            self.slave.driver().try_read(&mut buf)
+            self.slave().as_tty().driver().try_read(&mut buf)
         })?;
-        self.slave.driver().pollee().invalidate();
-        self.slave.notify_output();
+        self.slave().as_tty().driver().pollee().invalidate();
+        self.slave().as_tty().notify_output();
 
         // TODO: Confirm what we should do if `write_fallible` fails in the middle.
         writer.write_fallible(&mut buf[..read_len].into())?;
@@ -95,9 +96,9 @@ impl FileIo for PtyMaster {
 
         // TODO: Add support for non-blocking mode and timeout
         let len = self.wait_events(IoEvents::OUT, None, || {
-            Ok(self.slave.push_input(&buf[..write_len])?)
+            Ok(self.slave().as_tty().push_input(&buf[..write_len])?)
         })?;
-        self.slave.driver().pollee().invalidate();
+        self.slave().as_tty().driver().pollee().invalidate();
         Ok(len)
     }
 
@@ -109,7 +110,7 @@ impl FileIo for PtyMaster {
             | IoctlCmd::TCSETSF
             | IoctlCmd::TIOCGWINSZ
             | IoctlCmd::TIOCSWINSZ
-            | IoctlCmd::TIOCGPTN => return self.slave.ioctl(cmd, arg),
+            | IoctlCmd::TIOCGPTN => return self.slave().ioctl(cmd, arg),
             IoctlCmd::TIOCSPTLCK => {
                 // TODO: Lock or unlock the PTY.
             }
@@ -121,7 +122,7 @@ impl FileIo for PtyMaster {
                 let slave = {
                     let slave_name = {
                         let devpts_path = super::DEV_PTS.get().unwrap().abs_path();
-                        format!("{}/{}", devpts_path, self.slave.index())
+                        format!("{}/{}", devpts_path, self.slave().as_tty().index())
                     };
 
                     let fs_path = FsPath::try_from(slave_name.as_str())?;
@@ -147,10 +148,10 @@ impl FileIo for PtyMaster {
                 return Ok(fd);
             }
             IoctlCmd::FIONREAD => {
-                let len = self.slave.driver().buffer_len() as i32;
+                let len = self.slave().as_tty().driver().buffer_len() as i32;
                 current_userspace!().write_val(arg, &len)?;
             }
-            _ => (self.slave.clone() as Arc<dyn Terminal>).job_ioctl(cmd, arg, true)?,
+            _ => (self.slave().as_tty().clone() as Arc<dyn Terminal>).job_ioctl(cmd, arg, true)?,
         }
 
         Ok(0)
@@ -162,7 +163,7 @@ impl Drop for PtyMaster {
         let fs = self.ptmx.fs();
         let devpts = fs.downcast_ref::<DevPts>().unwrap();
 
-        let index = self.slave.index();
+        let index = self.slave().as_tty().index();
         devpts.remove_slave(index);
     }
 }

@@ -25,9 +25,9 @@ pub fn sys_getrandom(buf: Vaddr, count: usize, flags: u32, ctx: &Context) -> Res
     let user_space = ctx.user_space();
     let mut writer = user_space.writer(buf, count)?;
     let read_len = if flags.contains(GetRandomFlags::GRND_RANDOM) {
-        device::Random::getrandom(&mut writer)?
+        device::getrandom(&mut writer)?
     } else {
-        device::Urandom::getrandom(&mut writer)?
+        device::geturandom(&mut writer)?
     };
     Ok(SyscallReturn::Return(read_len as isize))
 }
