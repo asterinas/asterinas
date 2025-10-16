@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FileDesc,
-        fs_resolver::{split_path, FsPath, AT_FDCWD},
+        fs_resolver::{FsPath, SplitPath, AT_FDCWD},
         utils::InodeType,
     },
     prelude::*,
@@ -39,30 +39,27 @@ pub fn sys_renameat2(
     let fs = fs_ref.resolver().read();
 
     let old_path_name = old_path_name.to_string_lossy();
-    if old_path_name.is_empty() {
-        return_errno_with_message!(Errno::ENOENT, "oldpath is empty");
-    }
     let (old_dir_path, old_name) = {
-        let (old_parent_path_name, old_name) = split_path(&old_path_name);
-        let old_fs_path = FsPath::new(old_dirfd, old_parent_path_name)?;
+        let (old_parent_path_name, old_name) = old_path_name.split_dirname_and_basename()?;
+        let old_fs_path = FsPath::from_fd_and_path(old_dirfd, old_parent_path_name)?;
         (fs.lookup(&old_fs_path)?, old_name)
     };
     let old_path = old_dir_path.lookup(old_name)?;
+    if old_path.type_() != InodeType::Dir && old_path_name.ends_with('/') {
+        return_errno_with_message!(Errno::ENOTDIR, "the old path is not a directory");
+    }
 
     let new_path_name = new_path_name.to_string_lossy();
-    if new_path_name.is_empty() {
-        return_errno_with_message!(Errno::ENOENT, "newpath is empty");
-    }
-    if new_path_name.ends_with('/') && old_path.type_() != InodeType::Dir {
-        return_errno_with_message!(Errno::ENOTDIR, "oldpath is not dir");
-    }
     let (new_dir_path, new_name) = {
-        let (new_parent_path_name, new_name) = split_path(&new_path_name);
-        let new_fs_path = FsPath::new(new_dirfd, new_parent_path_name.trim_end_matches('/'))?;
+        if old_path.type_() != InodeType::Dir && new_path_name.ends_with('/') {
+            return_errno_with_message!(Errno::EISDIR, "the new path is a directory");
+        }
+        let (new_parent_path_name, new_name) = new_path_name.split_dirname_and_basename()?;
+        let new_fs_path = FsPath::from_fd_and_path(new_dirfd, new_parent_path_name)?;
         (fs.lookup(&new_fs_path)?, new_name)
     };
 
-    // Check abs_path
+    // Check the absolute path
     let old_abs_path = old_path.abs_path();
     let new_abs_path = new_dir_path.abs_path() + "/" + new_name;
     if new_abs_path.starts_with(&old_abs_path) {
@@ -71,7 +68,7 @@ pub fn sys_renameat2(
         } else {
             return_errno_with_message!(
                 Errno::EINVAL,
-                "newpath contains a path prefix of the oldpath"
+                "the new path contains a path prefix of the old path"
             );
         }
     }

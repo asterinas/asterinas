@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FileDesc,
-        fs_resolver::{split_path, FsPath, AT_FDCWD},
+        fs_resolver::{FsPath, SplitPath, AT_FDCWD},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -23,16 +23,9 @@ pub(super) fn sys_rmdirat(
     debug!("dirfd = {}, path_addr = {:?}", dirfd, path_addr);
 
     let path_name = path_name.to_string_lossy();
-    if path_name.is_empty() {
-        return_errno_with_message!(Errno::ENOENT, "path is empty");
-    }
-    if path_name.trim_end_matches('/').is_empty() {
-        return_errno_with_message!(Errno::EBUSY, "is root directory");
-    }
-
     let (dir_path, name) = {
-        let (parent_path_name, target_name) = split_path(&path_name);
-        let fs_path = FsPath::new(dirfd, parent_path_name)?;
+        let (parent_path_name, target_name) = path_name.split_dirname_and_basename()?;
+        let fs_path = FsPath::from_fd_and_path(dirfd, parent_path_name)?;
         (
             ctx.thread_local
                 .borrow_fs()
@@ -43,6 +36,6 @@ pub(super) fn sys_rmdirat(
         )
     };
 
-    dir_path.rmdir(name.trim_end_matches('/'))?;
+    dir_path.rmdir(name)?;
     Ok(SyscallReturn::Return(0))
 }

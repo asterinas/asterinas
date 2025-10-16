@@ -9,7 +9,7 @@ use ostd::{
 use super::{constants::*, SyscallReturn};
 use crate::{
     fs::{
-        file_table::{get_file_fast, FileDesc},
+        file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         path::Path,
     },
@@ -28,8 +28,8 @@ pub fn sys_execve(
     user_context: &mut UserContext,
 ) -> Result<SyscallReturn> {
     let elf_file = {
-        let executable_path = read_filename(filename_ptr, ctx)?;
-        lookup_executable_file(AT_FDCWD, executable_path, OpenFlags::empty(), ctx)?
+        let flags = OpenFlags::empty();
+        lookup_executable_file(AT_FDCWD, filename_ptr, flags, ctx)?
     };
 
     do_execve(elf_file, argv_ptr_ptr, envp_ptr_ptr, ctx, user_context)?;
@@ -46,9 +46,9 @@ pub fn sys_execveat(
     user_context: &mut UserContext,
 ) -> Result<SyscallReturn> {
     let elf_file = {
-        let flags = OpenFlags::from_bits_truncate(flags);
-        let filename = read_filename(filename_ptr, ctx)?;
-        lookup_executable_file(dfd, filename, flags, ctx)?
+        let flags = OpenFlags::from_bits(flags)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
+        lookup_executable_file(dfd, filename_ptr, flags, ctx)?
     };
 
     do_execve(elf_file, argv_ptr_ptr, envp_ptr_ptr, ctx, user_context)?;
@@ -57,18 +57,24 @@ pub fn sys_execveat(
 
 fn lookup_executable_file(
     dfd: FileDesc,
-    filename: String,
+    filename_ptr: Vaddr,
     flags: OpenFlags,
     ctx: &Context,
 ) -> Result<Path> {
-    let path = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {
-        let mut file_table = ctx.thread_local.borrow_file_table_mut();
-        let file = get_file_fast!(&mut file_table, dfd);
-        file.as_inode_or_err()?.path().clone()
-    } else {
+    let filename = ctx
+        .user_space()
+        .read_cstring(filename_ptr, MAX_FILENAME_LEN)?;
+
+    let path = {
+        let filename = filename.to_string_lossy();
+        let fs_path = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {
+            FsPath::from_fd(dfd)?
+        } else {
+            FsPath::from_fd_and_path(dfd, &filename)?
+        };
+
         let fs_ref = ctx.thread_local.borrow_fs();
         let fs_resolver = fs_ref.resolver().read();
-        let fs_path = FsPath::new(dfd, &filename)?;
         if flags.contains(OpenFlags::AT_SYMLINK_NOFOLLOW) {
             fs_resolver.lookup_no_follow(&fs_path)?
         } else {
@@ -174,13 +180,6 @@ bitflags::bitflags! {
         const AT_EMPTY_PATH = 0x1000;
         const AT_SYMLINK_NOFOLLOW = 0x100;
     }
-}
-
-fn read_filename(filename_ptr: Vaddr, ctx: &Context) -> Result<String> {
-    let filename = ctx
-        .user_space()
-        .read_cstring(filename_ptr, MAX_FILENAME_LEN)?;
-    Ok(filename.into_string().unwrap())
 }
 
 fn read_cstring_vec(

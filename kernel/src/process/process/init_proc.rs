@@ -6,11 +6,7 @@ use ostd::{arch::cpu::context::UserContext, task::Task, user::UserContextApi};
 
 use super::Process;
 use crate::{
-    fs::{
-        fs_resolver::{FsPath, AT_FDCWD},
-        path::MountNamespace,
-        thread_info::ThreadFsInfo,
-    },
+    fs::{fs_resolver::FsPath, path::MountNamespace, thread_info::ThreadFsInfo},
     prelude::*,
     process::{
         posix_thread::{allocate_posix_tid, PosixThreadBuilder, ThreadName},
@@ -112,7 +108,7 @@ fn create_init_task(
     };
     let (_, elf_load_info) = {
         let fs_resolver = fs.resolver().read();
-        let fs_path = FsPath::new(AT_FDCWD, executable_path)?;
+        let fs_path = FsPath::try_from(executable_path)?;
         let elf_file = fs.resolver().read().lookup(&fs_path)?;
         let program_to_load =
             ProgramToLoad::build_from_file(elf_file, &fs_resolver, argv, envp, 1)?;

@@ -21,7 +21,7 @@ use ostd::{
 use crate::{
     fs::{
         device::Device,
-        fs_resolver::{FsPath, AT_FDCWD},
+        fs_resolver::FsPath,
         path::Path,
         registry::{FsProperties, FsType},
         utils::{
@@ -1158,12 +1158,12 @@ impl FsType for OverlayFsType {
         let fs_ref = thread_local.borrow_fs();
         let fs = fs_ref.resolver().read();
 
-        let upper = fs.lookup(&FsPath::new(AT_FDCWD, upper)?)?;
+        let upper = fs.lookup(&FsPath::try_from(upper)?)?;
         let lower = lower
             .iter()
-            .map(|lower| fs.lookup(&FsPath::new(AT_FDCWD, lower).unwrap()).unwrap())
+            .map(|&lower| fs.lookup(&FsPath::try_from(lower).unwrap()).unwrap())
             .collect();
-        let work = fs.lookup(&FsPath::new(AT_FDCWD, work)?)?;
+        let work = fs.lookup(&FsPath::try_from(work)?)?;
 
         OverlayFs::new(upper, lower, work).map(|fs| fs as _)
     }

@@ -29,10 +29,6 @@ pub fn sys_statx(
         dirfd, filename, flags, mask, statx_buf_ptr,
     );
 
-    if filename.is_empty() && !flags.contains(StatxFlags::AT_EMPTY_PATH) {
-        return_errno_with_message!(Errno::ENOENT, "path is empty");
-    }
-
     if flags.contains(StatxFlags::AT_STATX_FORCE_SYNC)
         && flags.contains(StatxFlags::AT_STATX_DONT_SYNC)
     {
@@ -48,7 +44,13 @@ pub fn sys_statx(
 
     let path = {
         let filename = filename.to_string_lossy();
-        let fs_path = FsPath::new(dirfd, filename.as_ref())?;
+        let fs_path = if flags.contains(StatxFlags::AT_EMPTY_PATH) && filename.is_empty() {
+            // TODO: We can retrieve the metadata from `FileLike`. See `sys_fstat` as an example.
+            FsPath::from_fd(dirfd)?
+        } else {
+            FsPath::from_fd_and_path(dirfd, &filename)?
+        };
+
         let fs_ref = ctx.thread_local.borrow_fs();
         let fs = fs_ref.resolver().read();
         if flags.contains(StatxFlags::AT_SYMLINK_NOFOLLOW) {

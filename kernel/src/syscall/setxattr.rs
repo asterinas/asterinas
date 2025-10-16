@@ -131,7 +131,7 @@ pub(super) fn lookup_path_for_xattr<'a>(
     let lookup_path_from_fs =
         |path: &CString, ctx: &Context, symlink_no_follow: bool| -> Result<Cow<'_, Path>> {
             let path = path.to_string_lossy();
-            let fs_path = FsPath::new(AT_FDCWD, path.as_ref())?;
+            let fs_path = FsPath::from_fd_and_path(AT_FDCWD, &path)?;
             let fs_ref = ctx.thread_local.borrow_fs();
             let fs = fs_ref.resolver().read();
             let path = if symlink_no_follow {

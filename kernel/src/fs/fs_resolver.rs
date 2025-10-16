@@ -33,7 +33,6 @@ impl FsResolver {
     }
 
     /// Gets the path of the current working directory.
-    #[expect(dead_code)]
     pub fn cwd(&self) -> &Path {
         &self.cwd
     }
@@ -269,28 +268,44 @@ enum FsPathInner<'a> {
 }
 
 impl<'a> FsPath<'a> {
+    /// Creates a new `FsPath` from the given `dirfd`.
+    ///
+    /// If the FD is not valid (i.e., it's negative and it's not [`AT_FDCWD`]), an error will be
+    /// returned.
+    pub fn from_fd(dirfd: FileDesc) -> Result<Self> {
+        let fs_path_inner = if dirfd >= 0 {
+            FsPathInner::Fd(dirfd)
+        } else if dirfd == AT_FDCWD {
+            FsPathInner::Cwd
+        } else {
+            return_errno_with_message!(Errno::EBADF, "the dirfd is invalid");
+        };
+
+        Ok(Self {
+            inner: fs_path_inner,
+        })
+    }
+
     /// Creates a new `FsPath` from the given `dirfd` and `path`.
-    pub fn new(dirfd: FileDesc, path: &'a str) -> Result<Self> {
+    ///
+    /// If the FD is not valid (i.e., it's negative and it's not [`AT_FDCWD`]) or the path is empty
+    /// or too long, an error will be returned.
+    pub fn from_fd_and_path(dirfd: FileDesc, path: &'a str) -> Result<Self> {
+        if path.is_empty() {
+            return_errno_with_message!(Errno::ENOENT, "the path is empty")
+        }
         if path.len() > PATH_MAX {
-            return_errno_with_message!(Errno::ENAMETOOLONG, "path name too long");
+            return_errno_with_message!(Errno::ENAMETOOLONG, "the path is too long");
         }
 
         let fs_path_inner = if path.starts_with('/') {
             FsPathInner::Absolute(path)
         } else if dirfd >= 0 {
-            if path.is_empty() {
-                FsPathInner::Fd(dirfd)
-            } else {
-                FsPathInner::FdRelative(dirfd, path)
-            }
+            FsPathInner::FdRelative(dirfd, path)
         } else if dirfd == AT_FDCWD {
-            if path.is_empty() {
-                FsPathInner::Cwd
-            } else {
-                FsPathInner::CwdRelative(path)
-            }
+            FsPathInner::CwdRelative(path)
         } else {
-            return_errno_with_message!(Errno::EBADF, "invalid dirfd number");
+            return_errno_with_message!(Errno::EBADF, "the dirfd is invalid");
         };
 
         Ok(Self {
@@ -303,10 +318,7 @@ impl<'a> TryFrom<&'a str> for FsPath<'a> {
     type Error = crate::error::Error;
 
     fn try_from(path: &'a str) -> Result<FsPath<'a>> {
-        if path.is_empty() {
-            return_errno_with_message!(Errno::ENOENT, "path is an empty string");
-        }
-        FsPath::new(AT_FDCWD, path)
+        FsPath::from_fd_and_path(AT_FDCWD, path)
     }
 }
 
@@ -329,25 +341,25 @@ impl LookupResult {
         }
     }
 
-    /// Consumes the `LookupResult` and returns the parent path and the tail file name.
+    /// Consumes the `LookupResult` and returns the parent path and the unresolved file name.
     ///
-    /// If the path was resolved or the target was expected to be a directory,
-    /// an error will be returned.
-    pub fn into_parent_and_tail_filename(self) -> Result<(Path, String)> {
+    /// If the path was resolved or the unresolved name was expected to be a directory, an error
+    /// will be returned.
+    pub fn into_parent_and_filename(self) -> Result<(Path, String)> {
         let LookupResult::AtParent(res) = self else {
             return_errno_with_message!(Errno::EEXIST, "the path already exists");
         };
-        res.into_parent_and_tail_filename()
+        res.into_parent_and_filename()
     }
 
-    /// Consumes the `LookupResult` and returns the parent path and the tail name.
+    /// Consumes the `LookupResult` and returns the parent path and the unresolved name.
     ///
     /// If the path was resolved, an error will be returned.
-    pub fn into_parent_and_tail_name(self) -> Result<(Path, String)> {
+    pub fn into_parent_and_basename(self) -> Result<(Path, String)> {
         let LookupResult::AtParent(res) = self else {
             return_errno_with_message!(Errno::EEXIST, "the path already exists");
         };
-        Ok(res.into_parent_and_tail_name())
+        Ok(res.into_parent_and_basename())
     }
 }
 
@@ -357,16 +369,16 @@ pub struct LookupParentResult {
     /// The path of the parent directory where resolution stopped.
     parent: Path,
     /// The remaining unresolved component name.
-    tail_name: String,
+    unresolved_name: String,
     /// Indicates whether the target was expected to be a directory.
     target_is_dir: bool,
 }
 
 impl LookupParentResult {
-    fn new(parent: Path, tail_name: String, target_is_dir: bool) -> Self {
+    fn new(parent: Path, unresolved_name: String, target_is_dir: bool) -> Self {
         Self {
             parent,
-            tail_name,
+            unresolved_name,
             target_is_dir,
         }
     }
@@ -376,48 +388,169 @@ impl LookupParentResult {
         self.target_is_dir
     }
 
-    /// Consumes the `LookupParentResult` and returns the parent path and the tail file name.
+    /// Consumes the `LookupParentResult` and returns the parent path and the unresolved file name.
     ///
-    /// If the target was expected to be a directory, an error will be returned.
-    pub fn into_parent_and_tail_filename(self) -> Result<(Path, String)> {
+    /// If the unresolved name was expected to be a directory, an error will be returned.
+    pub fn into_parent_and_filename(self) -> Result<(Path, String)> {
         if self.target_is_dir {
             return_errno_with_message!(Errno::ENOENT, "the path is a directory");
         }
-        Ok((self.parent, self.tail_name))
+        Ok((self.parent, self.unresolved_name))
     }
 
-    /// Consumes the `LookupParentResult` and returns the parent path and the tail name.
-    pub fn into_parent_and_tail_name(self) -> (Path, String) {
-        (self.parent, self.tail_name)
+    /// Consumes the `LookupParentResult` and returns the parent path and the unresolved name.
+    pub fn into_parent_and_basename(self) -> (Path, String) {
+        (self.parent, self.unresolved_name)
     }
 }
 
-/// Splits a `path` to (`dir_path`, `file_name`).
-///
-/// The `dir_path` must be a directory.
-///
-/// The `file_name` is the last component. It can be suffixed by "/".
-///
-/// Example:
-///
-/// The path "/dir/file/" will be split to ("/dir", "file/").
-pub fn split_path(path: &str) -> (&str, &str) {
-    let file_name = path
-        .split_inclusive('/')
-        .filter(|&x| x != "/")
-        .next_back()
-        .unwrap_or(".");
+/// Utilities to split a string into its path components.
+pub trait SplitPath {
+    /// Splits a path into the parent directory name and the final component name, which is
+    /// expected to be a file (not a directory).
+    ///
+    /// If the final component refers to a directory, an error will be returned. Aside from the
+    /// constraint on the final component, this is similar to [`Self::split_dirname_and_basename`].
+    fn split_dirname_and_filename(&self) -> Result<(&Self, &Self)>;
 
-    let mut split = path.trim_end_matches('/').rsplitn(2, '/');
-    let dir_path = if split.next().unwrap().is_empty() {
-        "/"
-    } else {
-        let mut dir = split.next().unwrap_or(".").trim_end_matches('/');
-        if dir.is_empty() {
-            dir = "/";
+    /// Splits a path into the parent directory name and the final component name.
+    ///
+    /// This behaves in a similar way to the POSIX C functions [`dirname()` and
+    /// `basename()`](https://man7.org/linux/man-pages/man3/basename.3.html). Trailing slashes
+    /// (`/`) are trimmed from returned names unless the name refers to the root directory. In that
+    /// case, the name contains a single slash.
+    ///
+    /// If the original path is an empty string, an error will be returned.
+    ///
+    /// If the original path directly points to the root directory (e.g., `/` or `//`, but not `/.`
+    /// or `/./`), an error will be returned.
+    fn split_dirname_and_basename(&self) -> Result<(&Self, &Self)>;
+}
+
+impl SplitPath for str {
+    fn split_dirname_and_filename(&self) -> Result<(&Self, &Self)> {
+        if self.ends_with('/') {
+            return_errno_with_message!(Errno::EISDIR, "the path is a directory");
         }
-        dir
-    };
 
-    (dir_path, file_name)
+        self.split_dirname_and_basename()
+    }
+
+    fn split_dirname_and_basename(&self) -> Result<(&Self, &Self)> {
+        if self.is_empty() {
+            return_errno_with_message!(Errno::ENOENT, "the path is empty");
+        }
+
+        let trimmed = self.trim_end_matches('/');
+        if trimmed.is_empty() {
+            return_errno_with_message!(Errno::EBUSY, "the path is the root directory");
+        }
+
+        if let Some(pos) = trimmed.rfind('/') {
+            let dirname = trimmed[..pos].trim_end_matches('/');
+            Ok((
+                if dirname.is_empty() { "/" } else { dirname },
+                &trimmed[pos + 1..],
+            ))
+        } else {
+            Ok((".", trimmed))
+        }
+    }
+}
+
+#[cfg(ktest)]
+mod test {
+    use ostd::prelude::ktest;
+
+    use super::*;
+
+    type SplitResult = core::result::Result<(&'static str, &'static str), Errno>;
+
+    #[track_caller]
+    fn assert_split_results(
+        cases: &Vec<(&'static str, SplitResult)>,
+        split: impl Fn(&str) -> Result<(&str, &str)>,
+    ) {
+        for case in cases.iter() {
+            let result = split(case.0);
+            assert_eq!(
+                result.map_err(|err| err.error()),
+                case.1,
+                "splitting '{}' failed",
+                case.0
+            );
+        }
+    }
+
+    #[ktest]
+    fn path_split_filename() {
+        let cases = vec![
+            ("", Err(Errno::ENOENT)),
+            ("/", Err(Errno::EISDIR)),
+            ("///", Err(Errno::EISDIR)),
+            ("///.", Ok(("/", "."))),
+            ("//./", Err(Errno::EISDIR)),
+            ("a", Ok((".", "a"))),
+            ("/a", Ok(("/", "a"))),
+            ("b/a", Ok(("b", "a"))),
+            ("/b/a", Ok(("/b", "a"))),
+            ("a", Ok((".", "a"))),
+            ("//a", Ok(("/", "a"))),
+            ("b//a", Ok(("b", "a"))),
+            ("//b//a", Ok(("//b", "a"))),
+            ("a/", Err(Errno::EISDIR)),
+            ("/a/", Err(Errno::EISDIR)),
+            ("b/a/", Err(Errno::EISDIR)),
+            ("/b/a/", Err(Errno::EISDIR)),
+            ("a//", Err(Errno::EISDIR)),
+            ("/a//", Err(Errno::EISDIR)),
+            ("b/a//", Err(Errno::EISDIR)),
+            ("/b/a//", Err(Errno::EISDIR)),
+            (" a ", Ok((".", " a "))),
+            (" //a ", Ok((" ", "a "))),
+            (" b//a ", Ok((" b", "a "))),
+            (" //b//a ", Ok((" //b", "a "))),
+            (" a/ ", Ok((" a", " "))),
+            (" //a/ ", Ok((" //a", " "))),
+            (" b//a/ ", Ok((" b//a", " "))),
+            (" //b//a/ ", Ok((" //b//a", " "))),
+        ];
+        assert_split_results(&cases, SplitPath::split_dirname_and_filename);
+    }
+
+    #[ktest]
+    fn path_split_basename() {
+        let cases = vec![
+            ("", Err(Errno::ENOENT)),
+            ("/", Err(Errno::EBUSY)),
+            ("///", Err(Errno::EBUSY)),
+            ("///.", Ok(("/", "."))),
+            ("//./", Ok(("/", "."))),
+            ("a", Ok((".", "a"))),
+            ("/a", Ok(("/", "a"))),
+            ("b/a", Ok(("b", "a"))),
+            ("/b/a", Ok(("/b", "a"))),
+            ("a", Ok((".", "a"))),
+            ("//a", Ok(("/", "a"))),
+            ("b//a", Ok(("b", "a"))),
+            ("//b//a", Ok(("//b", "a"))),
+            ("a/", Ok((".", "a"))),
+            ("/a/", Ok(("/", "a"))),
+            ("b/a/", Ok(("b", "a"))),
+            ("/b/a/", Ok(("/b", "a"))),
+            ("a//", Ok((".", "a"))),
+            ("/a//", Ok(("/", "a"))),
+            ("b/a//", Ok(("b", "a"))),
+            ("/b/a//", Ok(("/b", "a"))),
+            (" a ", Ok((".", " a "))),
+            (" //a ", Ok((" ", "a "))),
+            (" b//a ", Ok((" b", "a "))),
+            (" //b//a ", Ok((" //b", "a "))),
+            (" a/ ", Ok((" a", " "))),
+            (" //a/ ", Ok((" //a", " "))),
+            (" b//a/ ", Ok((" b//a", " "))),
+            (" //b//a/ ", Ok((" //b//a", " "))),
+        ];
+        assert_split_results(&cases, SplitPath::split_dirname_and_basename);
+    }
 }

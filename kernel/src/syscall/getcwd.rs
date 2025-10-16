@@ -1,21 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{
-    fs::fs_resolver::{FsPath, AT_FDCWD},
-    prelude::*,
-};
+use crate::prelude::*;
 
 pub fn sys_getcwd(buf: Vaddr, len: usize, ctx: &Context) -> Result<SyscallReturn> {
-    let dirent = ctx
-        .thread_local
-        .borrow_fs()
-        .resolver()
-        .read()
-        .lookup(&FsPath::new(AT_FDCWD, "").unwrap())
-        .unwrap();
+    let dirent = ctx.thread_local.borrow_fs().resolver().read().cwd().clone();
     let name = dirent.abs_path();
-
     debug!("getcwd: {:?}", name);
 
     let cwd = CString::new(name)?;

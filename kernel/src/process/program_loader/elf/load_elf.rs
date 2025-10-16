@@ -16,7 +16,7 @@ use xmas_elf::program::{self, ProgramHeader64};
 use super::elf_file::ElfHeaders;
 use crate::{
     fs::{
-        fs_resolver::{FsPath, FsResolver, AT_FDCWD},
+        fs_resolver::{FsPath, FsResolver},
         path::Path,
     },
     prelude::*,
@@ -109,7 +109,7 @@ fn lookup_and_parse_ldso(
                 "The interpreter path specified in ELF is not a valid UTF-8 string",
             )
         })?;
-        let fs_path = FsPath::new(AT_FDCWD, ldso_path.as_str())?;
+        let fs_path = FsPath::try_from(ldso_path.as_str())?;
         fs_resolver.lookup(&fs_path)?
     };
     let ldso_elf = {

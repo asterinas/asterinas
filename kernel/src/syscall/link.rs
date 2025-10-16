@@ -5,6 +5,7 @@ use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
+        utils::InodeType,
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -31,29 +32,30 @@ pub fn sys_linkat(
 
     let (old_path, new_path, new_name) = {
         let old_path_name = old_path_name.to_string_lossy();
-        if old_path_name.ends_with('/') {
-            return_errno_with_message!(Errno::EPERM, "oldpath is dir");
-        }
-        if old_path_name.is_empty() && !flags.contains(LinkFlags::AT_EMPTY_PATH) {
-            return_errno_with_message!(Errno::ENOENT, "oldpath is empty");
-        }
         let new_path_name = new_path_name.to_string_lossy();
-        if new_path_name.is_empty() {
-            return_errno_with_message!(Errno::ENOENT, "newpath is empty");
-        }
 
-        let old_fs_path = FsPath::new(old_dirfd, old_path_name.as_ref())?;
-        let new_fs_path = FsPath::new(new_dirfd, new_path_name.as_ref())?;
+        let old_fs_path = if flags.contains(LinkFlags::AT_EMPTY_PATH) && old_path_name.is_empty() {
+            FsPath::from_fd(old_dirfd)?
+        } else {
+            FsPath::from_fd_and_path(old_dirfd, &old_path_name)?
+        };
+        let new_fs_path = FsPath::from_fd_and_path(new_dirfd, &new_path_name)?;
+
         let fs_ref = ctx.thread_local.borrow_fs();
         let fs = fs_ref.resolver().read();
+
         let old_path = if flags.contains(LinkFlags::AT_SYMLINK_FOLLOW) {
             fs.lookup(&old_fs_path)?
         } else {
             fs.lookup_no_follow(&old_fs_path)?
         };
+        if old_path.type_() == InodeType::Dir {
+            return_errno_with_message!(Errno::EPERM, "the link path is a directory");
+        }
+
         let (new_path, new_name) = fs
             .lookup_unresolved_no_follow(&new_fs_path)?
-            .into_parent_and_tail_filename()?;
+            .into_parent_and_filename()?;
 
         (old_path, new_path, new_name)
     };

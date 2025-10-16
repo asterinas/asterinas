@@ -35,10 +35,7 @@ pub fn sys_mount(
 
     let dst_path = {
         let dirname = dirname.to_string_lossy();
-        if dirname.is_empty() {
-            return_errno_with_message!(Errno::ENOENT, "dirname is empty");
-        }
-        let fs_path = FsPath::new(AT_FDCWD, dirname.as_ref())?;
+        let fs_path = FsPath::from_fd_and_path(AT_FDCWD, &dirname)?;
         ctx.thread_local
             .borrow_fs()
             .resolver()
@@ -83,10 +80,7 @@ fn do_remount() -> Result<()> {
 fn do_bind_mount(src_name: CString, dst_path: Path, recursive: bool, ctx: &Context) -> Result<()> {
     let src_path = {
         let src_name = src_name.to_string_lossy();
-        if src_name.is_empty() {
-            return_errno_with_message!(Errno::ENOENT, "src_name is empty");
-        }
-        let fs_path = FsPath::new(AT_FDCWD, src_name.as_ref())?;
+        let fs_path = FsPath::from_fd_and_path(AT_FDCWD, &src_name)?;
         ctx.thread_local
             .borrow_fs()
             .resolver()
@@ -139,10 +133,7 @@ fn do_change_type(target_path: Path, flags: MountFlags, ctx: &Context) -> Result
 fn do_move_mount_old(src_name: CString, dst_path: Path, ctx: &Context) -> Result<()> {
     let src_path = {
         let src_name = src_name.to_string_lossy();
-        if src_name.is_empty() {
-            return_errno_with_message!(Errno::ENOENT, "src_name is empty");
-        }
-        let fs_path = FsPath::new(AT_FDCWD, src_name.as_ref())?;
+        let fs_path = FsPath::from_fd_and_path(AT_FDCWD, &src_name)?;
         ctx.thread_local
             .borrow_fs()
             .resolver()
