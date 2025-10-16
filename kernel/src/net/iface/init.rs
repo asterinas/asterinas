@@ -27,6 +27,9 @@ pub fn iter_all_ifaces() -> Iter<'static, Arc<Iface>> {
     IFACES.get().unwrap().iter()
 }
 
+// TODO: Support multiple network devices and avoid the hardcoded device name.
+const VIRTIO_DEVICE_NAME: &str = aster_virtio::device::network::DEVICE_NAME;
+
 pub fn init() {
     IFACES.call_once(|| {
         let mut ifaces = Vec::with_capacity(2);
@@ -43,12 +46,9 @@ pub fn init() {
     });
 
     if let Some(iface_virtio) = virtio_iface() {
-        for (name, _) in aster_network::all_devices() {
-            // TODO: further check that the irq num is the same as iface's irq num
-            let callback = || iface_virtio.poll();
-            aster_network::register_recv_callback(&name, callback);
-            aster_network::register_send_callback(&name, callback);
-        }
+        let callback = || iface_virtio.poll();
+        aster_network::register_recv_callback(VIRTIO_DEVICE_NAME, callback);
+        aster_network::register_send_callback(VIRTIO_DEVICE_NAME, callback);
     }
 
     poll_ifaces();
@@ -101,13 +101,12 @@ fn new_virtio() -> Option<Arc<Iface>> {
         wire::{EthernetAddress, Ipv4Address, Ipv4Cidr},
     };
     use aster_network::AnyNetworkDevice;
-    use aster_virtio::device::network::DEVICE_NAME;
 
     const VIRTIO_ADDRESS: Ipv4Address = Ipv4Address::new(10, 0, 2, 15);
     const VIRTIO_ADDRESS_PREFIX_LEN: u8 = 24; // mask: 255.255.255.0
     const VIRTIO_GATEWAY: Ipv4Address = Ipv4Address::new(10, 0, 2, 2);
 
-    let virtio_net = aster_network::get_device(DEVICE_NAME)?;
+    let virtio_net = aster_network::get_device(VIRTIO_DEVICE_NAME)?;
 
     let ether_addr = virtio_net.lock().mac_addr().0;
 

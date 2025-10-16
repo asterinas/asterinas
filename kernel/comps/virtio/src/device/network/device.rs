@@ -6,9 +6,7 @@ use alloc::{
 use core::fmt::Debug;
 
 use aster_bigtcp::device::{Checksum, DeviceCapabilities, Medium};
-use aster_network::{
-    AnyNetworkDevice, EthernetAddr, RxBuffer, TxBuffer, VirtioNetError, RX_BUFFER_POOL,
-};
+use aster_network::{AnyNetworkDevice, EthernetAddr, NetError, RxBuffer, TxBuffer, RX_BUFFER_POOL};
 use aster_softirq::BottomHalfDisabled;
 use aster_util::slot_vec::SlotVec;
 use log::{debug, warn};
@@ -153,7 +151,7 @@ impl NetworkDevice {
     }
 
     /// Adds a `RxBuffer` to the receive queue.
-    fn add_rx_buffer(&mut self, rx_buffer: RxBuffer) -> Result<(), VirtioNetError> {
+    fn add_rx_buffer(&mut self, rx_buffer: RxBuffer) -> Result<(), NetError> {
         let token = self
             .recv_queue
             .add_dma_buf(&[], &[&rx_buffer])
@@ -172,13 +170,13 @@ impl NetworkDevice {
     }
 
     /// Receives a packet from network.
-    fn receive(&mut self) -> Result<RxBuffer, VirtioNetError> {
+    fn receive(&mut self) -> Result<RxBuffer, NetError> {
         let (token, len) = self.recv_queue.pop_used().map_err(queue_to_network_error)?;
         debug!("receive packet: token = {}, len = {}", token, len);
         let mut rx_buffer = self
             .rx_buffers
             .remove(token as usize)
-            .ok_or(VirtioNetError::WrongToken)?;
+            .ok_or(NetError::WrongToken)?;
         rx_buffer.set_packet_len(len as usize - size_of::<VirtioNetHdr>());
         // FIXME: Ideally, we can reuse the returned buffer without creating new buffer.
         // But this requires locking device to be compatible with smoltcp interface.
@@ -189,9 +187,9 @@ impl NetworkDevice {
     }
 
     /// Sends a packet to network.
-    fn send(&mut self, packet: &[u8]) -> Result<(), VirtioNetError> {
+    fn send(&mut self, packet: &[u8]) -> Result<(), NetError> {
         if !self.can_send() {
-            return Err(VirtioNetError::Busy);
+            return Err(NetError::Busy);
         }
 
         let tx_buffer = TxBuffer::new(&self.header, packet, &TX_BUFFER_POOL);
@@ -263,12 +261,12 @@ impl NetworkDevice {
     }
 }
 
-fn queue_to_network_error(err: QueueError) -> VirtioNetError {
+fn queue_to_network_error(err: QueueError) -> NetError {
     match err {
-        QueueError::NotReady => VirtioNetError::NotReady,
-        QueueError::WrongToken => VirtioNetError::WrongToken,
-        QueueError::BufferTooSmall => VirtioNetError::Busy,
-        _ => VirtioNetError::Unknown,
+        QueueError::NotReady => NetError::NotReady,
+        QueueError::WrongToken => NetError::WrongToken,
+        QueueError::BufferTooSmall => NetError::Busy,
+        _ => NetError::Unknown,
     }
 }
 
@@ -328,11 +326,11 @@ impl AnyNetworkDevice for NetworkDevice {
         self.send_queue.available_desc() >= 1
     }
 
-    fn receive(&mut self) -> Result<RxBuffer, VirtioNetError> {
+    fn receive(&mut self) -> Result<RxBuffer, NetError> {
         self.receive()
     }
 
-    fn send(&mut self, packet: &[u8]) -> Result<(), VirtioNetError> {
+    fn send(&mut self, packet: &[u8]) -> Result<(), NetError> {
         self.send(packet)
     }
 

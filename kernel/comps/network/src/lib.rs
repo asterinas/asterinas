@@ -29,7 +29,7 @@ use spin::Once;
 pub struct EthernetAddr(pub [u8; 6]);
 
 #[derive(Debug, Clone, Copy)]
-pub enum VirtioNetError {
+pub enum NetError {
     NotReady,
     WrongToken,
     Busy,
@@ -48,11 +48,11 @@ pub trait AnyNetworkDevice: Send + Sync + Any + Debug {
     fn can_send(&self) -> bool;
 
     /// Receives a packet from network. If packet is ready, returns a `RxBuffer` containing the packet.
-    /// Otherwise, return [`VirtioNetError::NotReady`].
-    fn receive(&mut self) -> Result<RxBuffer, VirtioNetError>;
+    /// Otherwise, return [`NetError::NotReady`].
+    fn receive(&mut self) -> Result<RxBuffer, NetError>;
 
     /// Sends a packet to network.
-    fn send(&mut self, packet: &[u8]) -> Result<(), VirtioNetError>;
+    fn send(&mut self, packet: &[u8]) -> Result<(), NetError>;
 
     /// Frees processes tx buffers.
     fn free_processed_tx_buffers(&mut self);
