@@ -13,6 +13,7 @@ use crate::{
         file_table::FdFlags,
         fs_resolver::FsPath,
         inode_handle::FileIo,
+        open_args::OpenArgs,
         utils::{mkmod, AccessMode, Inode, IoctlCmd},
     },
     prelude::*,
@@ -127,13 +128,13 @@ impl FileIo for PtyMaster {
                     let fs_path = FsPath::try_from(slave_name.as_str())?;
 
                     let inode_handle = {
-                        let flags = AccessMode::O_RDWR as u32;
-                        let mode = mkmod!(u+rw).bits();
+                        let open_args = OpenArgs::from_modes(AccessMode::O_RDWR, mkmod!(u+rw));
                         thread_local
                             .borrow_fs()
                             .resolver()
                             .read()
-                            .open(&fs_path, flags, mode)?
+                            .lookup(&fs_path)?
+                            .open(open_args)?
                     };
                     Arc::new(inode_handle)
                 };

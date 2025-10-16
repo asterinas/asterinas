@@ -10,10 +10,12 @@ pub use mount_namespace::MountNamespace;
 
 use crate::{
     fs::{
+        inode_handle::InodeHandle,
+        open_args::OpenArgs,
         path::dentry::{Dentry, DentryKey},
         utils::{
-            FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType, Permission, XattrName,
-            XattrNamespace, XattrSetFlags, NAME_MAX,
+            CreationFlags, FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType,
+            Permission, StatusFlags, XattrName, XattrNamespace, XattrSetFlags, NAME_MAX,
         },
     },
     prelude::*,
@@ -365,6 +367,47 @@ impl Path {
         }
 
         self.dentry.rename(old_name, &new_dir.dentry, new_name)
+    }
+
+    /// Opens the `Path` with the given `OpenArgs`.
+    ///
+    /// Returns an `InodeHandle` on success.
+    pub fn open(&self, open_args: OpenArgs) -> Result<InodeHandle> {
+        let inode = self.inode();
+        let inode_type = inode.type_();
+        let creation_flags = &open_args.creation_flags;
+
+        match inode_type {
+            InodeType::NamedPipe => {
+                warn!("NamedPipe doesn't support additional operation when opening.");
+                debug!("Open NamedPipe with args: {open_args:?}.");
+            }
+            InodeType::SymLink => {
+                if creation_flags.contains(CreationFlags::O_NOFOLLOW)
+                    && !open_args.status_flags.contains(StatusFlags::O_PATH)
+                {
+                    return_errno_with_message!(Errno::ELOOP, "file is a symlink");
+                }
+            }
+            _ => {}
+        }
+
+        if creation_flags.contains(CreationFlags::O_CREAT)
+            && creation_flags.contains(CreationFlags::O_EXCL)
+        {
+            return_errno_with_message!(Errno::EEXIST, "file exists");
+        }
+        if creation_flags.contains(CreationFlags::O_DIRECTORY) && inode_type != InodeType::Dir {
+            return_errno_with_message!(
+                Errno::ENOTDIR,
+                "O_DIRECTORY is specified but file is not a directory"
+            );
+        }
+
+        if inode_type.is_regular_file() && creation_flags.contains(CreationFlags::O_TRUNC) {
+            self.resize(0)?;
+        }
+        InodeHandle::new(self.clone(), open_args.access_mode, open_args.status_flags)
     }
 }
 

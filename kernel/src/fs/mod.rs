@@ -12,6 +12,7 @@ pub mod file_table;
 pub mod fs_resolver;
 pub mod inode_handle;
 pub mod named_pipe;
+pub mod open_args;
 pub mod overlayfs;
 pub mod path;
 pub mod pipe;
@@ -33,6 +34,7 @@ use crate::{
         ext2::Ext2,
         file_table::FdFlags,
         fs_resolver::{FsPath, FsResolver},
+        open_args::OpenArgs,
         utils::{mkmod, AccessMode},
     },
     prelude::*,
@@ -104,19 +106,28 @@ pub fn init_in_first_process(ctx: &Context) {
     // Initialize the file table for the first process.
     let tty_path = FsPath::new(fs_resolver::AT_FDCWD, "/dev/console").expect("cannot find tty");
     let stdin = {
-        let flags = AccessMode::O_RDONLY as u32;
-        let mode = mkmod!(u+r);
-        fs_resolver.open(&tty_path, flags, mode.bits()).unwrap()
+        let open_args = OpenArgs::from_modes(AccessMode::O_RDONLY, mkmod!(u+r));
+        fs_resolver
+            .lookup(&tty_path)
+            .unwrap()
+            .open(open_args)
+            .unwrap()
     };
     let stdout = {
-        let flags = AccessMode::O_WRONLY as u32;
-        let mode = mkmod!(u+w);
-        fs_resolver.open(&tty_path, flags, mode.bits()).unwrap()
+        let open_args = OpenArgs::from_modes(AccessMode::O_WRONLY, mkmod!(u+w));
+        fs_resolver
+            .lookup(&tty_path)
+            .unwrap()
+            .open(open_args)
+            .unwrap()
     };
     let stderr = {
-        let flags = AccessMode::O_WRONLY as u32;
-        let mode = mkmod!(u+w);
-        fs_resolver.open(&tty_path, flags, mode.bits()).unwrap()
+        let open_args = OpenArgs::from_modes(AccessMode::O_WRONLY, mkmod!(u+w));
+        fs_resolver
+            .lookup(&tty_path)
+            .unwrap()
+            .open(open_args)
+            .unwrap()
     };
 
     let mut file_table_ref = ctx.thread_local.borrow_file_table_mut();
