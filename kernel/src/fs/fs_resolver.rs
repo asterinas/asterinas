@@ -6,9 +6,8 @@ use ostd::task::Task;
 
 use super::{
     file_table::{get_file_fast, FileDesc},
-    inode_handle::InodeHandle,
     path::Path,
-    utils::{AccessMode, CreationFlags, InodeMode, InodeType, StatusFlags, PATH_MAX, SYMLINKS_MAX},
+    utils::{InodeType, PATH_MAX, SYMLINKS_MAX},
 };
 use crate::{fs::path::MountNamespace, prelude::*, process::posix_thread::AsThreadLocal};
 
@@ -83,136 +82,64 @@ impl FsResolver {
         Ok(())
     }
 
-    /// Opens or creates a file inode handler.
-    pub fn open(&self, path: &FsPath, flags: u32, mode: u16) -> Result<InodeHandle> {
-        let open_args = OpenArgs::from_flags_and_mode(flags, mode)?;
-
-        let follow_tail_link = open_args.follow_tail_link();
-        let stop_on_parent = false;
-        let mut lookup_ctx = LookupCtx::new(follow_tail_link, stop_on_parent);
-
-        let lookup_res = self.lookup_inner(path, &mut lookup_ctx);
-
-        let inode_handle = match lookup_res {
-            Ok(target_path) => self.open_existing_file(target_path, &open_args)?,
-            Err(e)
-                if e.error() == Errno::ENOENT
-                    && open_args.creation_flags.contains(CreationFlags::O_CREAT) =>
-            {
-                self.create_new_file(&open_args, &mut lookup_ctx)?
-            }
-            Err(e) => return Err(e),
-        };
-
-        Ok(inode_handle)
-    }
-
-    fn open_existing_file(&self, target_path: Path, open_args: &OpenArgs) -> Result<InodeHandle> {
-        let inode = target_path.inode();
-        let inode_type = inode.type_();
-        let creation_flags = &open_args.creation_flags;
-
-        match inode_type {
-            InodeType::NamedPipe => {
-                warn!("NamedPipe doesn't support additional operation when opening.");
-                debug!("Open NamedPipe with args: {open_args:?}.");
-            }
-            InodeType::SymLink => {
-                if creation_flags.contains(CreationFlags::O_NOFOLLOW)
-                    && !open_args.status_flags.contains(StatusFlags::O_PATH)
-                {
-                    return_errno_with_message!(Errno::ELOOP, "file is a symlink");
-                }
-            }
-            _ => {}
-        }
-
-        if creation_flags.contains(CreationFlags::O_CREAT)
-            && creation_flags.contains(CreationFlags::O_EXCL)
-        {
-            return_errno_with_message!(Errno::EEXIST, "file exists");
-        }
-        if creation_flags.contains(CreationFlags::O_DIRECTORY) && inode_type != InodeType::Dir {
-            return_errno_with_message!(
-                Errno::ENOTDIR,
-                "O_DIRECTORY is specified but file is not a directory"
-            );
-        }
-
-        if inode_type.is_regular_file() && creation_flags.contains(CreationFlags::O_TRUNC) {
-            target_path.resize(0)?;
-        }
-        InodeHandle::new(target_path, open_args.access_mode, open_args.status_flags)
-    }
-
-    fn create_new_file(
-        &self,
-        open_args: &OpenArgs,
-        lookup_ctx: &mut LookupCtx,
-    ) -> Result<InodeHandle> {
-        if open_args
-            .creation_flags
-            .contains(CreationFlags::O_DIRECTORY)
-        {
-            return_errno_with_message!(Errno::ENOTDIR, "cannot create directory");
-        }
-        if lookup_ctx.tail_is_dir() {
-            return_errno_with_message!(Errno::EISDIR, "path refers to a directory");
-        }
-
-        let parent = lookup_ctx
-            .parent()
-            .ok_or_else(|| Error::with_message(Errno::ENOENT, "parent not found"))?;
-
-        let tail_file_name = lookup_ctx.tail_file_name().unwrap();
-        let new_path =
-            parent.new_fs_child(&tail_file_name, InodeType::File, open_args.inode_mode)?;
-        // Don't check access mode for newly created file
-        InodeHandle::new_unchecked_access(new_path, open_args.access_mode, open_args.status_flags)
-    }
-
     /// Lookups the target path according to the `fs_path`.
     ///
     /// Symlinks are always followed.
     pub fn lookup(&self, fs_path: &FsPath) -> Result<Path> {
-        let (follow_tail_link, stop_on_parent) = (true, false);
-        self.lookup_inner(
-            fs_path,
-            &mut LookupCtx::new(follow_tail_link, stop_on_parent),
-        )
+        self.lookup_inner(fs_path, true)?.into_path()
     }
 
     /// Lookups the target path according to the `fs_path`.
     ///
     /// If the last component is a symlink, it will not be followed.
     pub fn lookup_no_follow(&self, fs_path: &FsPath) -> Result<Path> {
-        let (follow_tail_link, stop_on_parent) = (false, false);
-        self.lookup_inner(
-            fs_path,
-            &mut LookupCtx::new(follow_tail_link, stop_on_parent),
-        )
+        self.lookup_inner(fs_path, false)?.into_path()
     }
 
-    fn lookup_inner(&self, path: &FsPath, lookup_ctx: &mut LookupCtx) -> Result<Path> {
-        let path = match path.inner {
+    /// Lookups the target path according to the `fs_path` and leaves
+    /// the result unresolved.
+    ///
+    /// An unresolved result may indicate either successful full-path resolution,
+    /// or resolution stopping at a parent path when the target doesn't exist
+    /// but its parent does.
+    ///
+    /// Symlinks are always followed.
+    pub fn lookup_unresolved(&self, fs_path: &FsPath) -> Result<LookupResult> {
+        self.lookup_inner(fs_path, true)
+    }
+
+    /// Lookups the target path according to the `fs_path` and leaves
+    /// the result unresolved.
+    ///
+    /// An unresolved result may indicate either successful full-path resolution,
+    /// or resolution stopping at a parent path when the target doesn't exist
+    /// but its parent does.
+    ///
+    /// If the last component is a symlink, it will not be followed.
+    pub fn lookup_unresolved_no_follow(&self, fs_path: &FsPath) -> Result<LookupResult> {
+        self.lookup_inner(fs_path, false)
+    }
+
+    fn lookup_inner(&self, fs_path: &FsPath, follow_tail_link: bool) -> Result<LookupResult> {
+        let path = match fs_path.inner {
             FsPathInner::Absolute(path) => {
-                self.lookup_from_parent(&self.root, path.trim_start_matches('/'), lookup_ctx)?
+                self.lookup_from_parent(&self.root, path.trim_start_matches('/'), follow_tail_link)?
             }
             FsPathInner::CwdRelative(path) => {
-                self.lookup_from_parent(&self.cwd, path, lookup_ctx)?
+                self.lookup_from_parent(&self.cwd, path, follow_tail_link)?
             }
-            FsPathInner::Cwd => self.cwd.clone(),
+            FsPathInner::Cwd => LookupResult::Resolved(self.cwd.clone()),
             FsPathInner::FdRelative(fd, path) => {
                 let task = Task::current().unwrap();
                 let mut file_table = task.as_thread_local().unwrap().borrow_file_table_mut();
                 let file = get_file_fast!(&mut file_table, fd);
-                self.lookup_from_parent(file.as_inode_or_err()?.path(), path, lookup_ctx)?
+                self.lookup_from_parent(file.as_inode_or_err()?.path(), path, follow_tail_link)?
             }
             FsPathInner::Fd(fd) => {
                 let task = Task::current().unwrap();
                 let mut file_table = task.as_thread_local().unwrap().borrow_file_table_mut();
                 let file = get_file_fast!(&mut file_table, fd);
-                file.as_inode_or_err()?.path().clone()
+                LookupResult::Resolved(file.as_inode_or_err()?.path().clone())
             }
         };
 
@@ -235,19 +162,18 @@ impl FsResolver {
         &self,
         parent: &Path,
         relative_path: &str,
-        lookup_ctx: &mut LookupCtx,
-    ) -> Result<Path> {
+        follow_tail_link: bool,
+    ) -> Result<LookupResult> {
         debug_assert!(!relative_path.starts_with('/'));
 
         if relative_path.len() > PATH_MAX {
             return_errno_with_message!(Errno::ENAMETOOLONG, "path is too long");
         }
         if relative_path.is_empty() {
-            return Ok(parent.clone());
+            return Ok(LookupResult::Resolved(parent.clone()));
         }
 
         // To handle symlinks
-        let follow_tail_link = lookup_ctx.follow_tail_link;
         let mut link_path_opt = None;
         let mut follows = 0;
 
@@ -255,7 +181,7 @@ impl FsResolver {
         let (mut current_path, mut relative_path) = (parent.clone(), relative_path);
 
         while !relative_path.is_empty() {
-            let (next_name, path_remain, must_be_dir) =
+            let (next_name, path_remain, target_is_dir) =
                 if let Some((prefix, suffix)) = relative_path.split_once('/') {
                     let suffix = suffix.trim_start_matches('/');
                     (prefix, suffix, true)
@@ -265,24 +191,21 @@ impl FsResolver {
 
             // Iterate next path
             let next_is_tail = path_remain.is_empty();
-            if next_is_tail && lookup_ctx.stop_on_parent {
-                lookup_ctx.set_tail_file(next_name, must_be_dir);
-                return Ok(current_path);
-            }
-
             let next_path = match current_path.lookup(next_name) {
                 Ok(current_dir) => current_dir,
                 Err(e) => {
-                    if next_is_tail && e.error() == Errno::ENOENT && lookup_ctx.tail_file.is_none()
-                    {
-                        lookup_ctx.set_tail_file(next_name, must_be_dir);
-                        lookup_ctx.set_parent(&current_path);
+                    if next_is_tail && e.error() == Errno::ENOENT {
+                        return Ok(LookupResult::AtParent(LookupParentResult::new(
+                            current_path,
+                            next_name.to_string(),
+                            target_is_dir,
+                        )));
                     }
                     return Err(e);
                 }
             };
-            let next_type = next_path.type_();
 
+            let next_type = next_path.type_();
             // If next inode is a symlink, follow symlinks at most `SYMLINKS_MAX` times.
             if next_type == InodeType::SymLink && (follow_tail_link || !next_is_tail) {
                 if follows >= SYMLINKS_MAX {
@@ -296,7 +219,7 @@ impl FsResolver {
                     if !path_remain.is_empty() {
                         tmp_link_path += "/";
                         tmp_link_path += path_remain;
-                    } else if must_be_dir {
+                    } else if target_is_dir {
                         tmp_link_path += "/";
                     }
                     tmp_link_path
@@ -313,7 +236,7 @@ impl FsResolver {
                 follows += 1;
             } else {
                 // If path ends with `/`, the inode must be a directory
-                if must_be_dir && next_type != InodeType::Dir {
+                if target_is_dir && next_type != InodeType::Dir {
                     return_errno_with_message!(Errno::ENOTDIR, "inode is not dir");
                 }
                 current_path = next_path;
@@ -321,146 +244,7 @@ impl FsResolver {
             }
         }
 
-        Ok(current_path)
-    }
-
-    /// Lookups the target parent directory path and
-    /// the base file name according to the given `path`.
-    ///
-    /// If the last component is a symlink, do not deference it.
-    pub fn lookup_dir_and_base_name(&self, path: &FsPath) -> Result<(Path, String)> {
-        if matches!(path.inner, FsPathInner::Fd(_)) {
-            return_errno!(Errno::ENOENT);
-        }
-
-        let (follow_tail_link, stop_on_parent) = (false, true);
-        let mut lookup_ctx = LookupCtx::new(follow_tail_link, stop_on_parent);
-        let parent_dir = self.lookup_inner(path, &mut lookup_ctx)?;
-
-        let tail_file_name = lookup_ctx.tail_file_name().unwrap();
-        Ok((parent_dir, tail_file_name))
-    }
-
-    /// Lookups the target parent directory path and checks whether
-    /// the base file does not exist yet according to the given `path`.
-    ///
-    /// `is_dir` is used to determine whether a directory needs to be created.
-    ///
-    /// # Usage case
-    ///
-    /// `mkdir`, `mknod`, `link`, and `symlink` all need to create
-    /// new file and all need to perform unique processing on the last
-    /// component of the path name. It is used to provide a unified
-    /// method for pathname lookup and error handling.
-    pub fn lookup_dir_and_new_basename(
-        &self,
-        path: &FsPath,
-        is_dir: bool,
-    ) -> Result<(Path, String)> {
-        if matches!(path.inner, FsPathInner::Fd(_)) {
-            return_errno!(Errno::ENOENT);
-        }
-
-        let (follow_tail_link, stop_on_parent) = (false, true);
-        let mut lookup_ctx = LookupCtx::new(follow_tail_link, stop_on_parent);
-        let parent_dir = self.lookup_inner(path, &mut lookup_ctx)?;
-        let tail_file_name = lookup_ctx.tail_file_name().ok_or_else(|| {
-            // If the path is the root directory ("/"), there is no basename,
-            // so this operation is not allowed.
-            Error::with_message(Errno::EEXIST, "operation not allowed on root directory")
-        })?;
-
-        if parent_dir
-            .lookup(tail_file_name.trim_end_matches('/'))
-            .is_ok()
-        {
-            return_errno_with_message!(Errno::EEXIST, "file exists");
-        }
-        if !is_dir && lookup_ctx.tail_is_dir() {
-            return_errno_with_message!(Errno::ENOENT, "No such file or directory");
-        }
-
-        Ok((parent_dir.clone(), tail_file_name))
-    }
-}
-
-/// Context information describing one lookup operation.
-#[derive(Debug)]
-struct LookupCtx {
-    follow_tail_link: bool,
-    stop_on_parent: bool,
-    // (file_name, file_is_dir)
-    tail_file: Option<(String, bool)>,
-    parent: Option<Path>,
-}
-
-impl LookupCtx {
-    pub fn new(follow_tail_link: bool, stop_on_parent: bool) -> Self {
-        Self {
-            follow_tail_link,
-            stop_on_parent,
-            tail_file: None,
-            parent: None,
-        }
-    }
-
-    pub fn tail_file_name(&self) -> Option<String> {
-        self.tail_file.as_ref().map(|(file_name, file_is_dir)| {
-            let mut tail_file_name = file_name.clone();
-            if *file_is_dir {
-                tail_file_name += "/";
-            }
-            tail_file_name
-        })
-    }
-
-    pub fn tail_is_dir(&self) -> bool {
-        self.tail_file
-            .as_ref()
-            .map(|(_, is_dir)| *is_dir)
-            .unwrap_or(false)
-    }
-
-    pub fn parent(&self) -> Option<&Path> {
-        self.parent.as_ref()
-    }
-
-    pub fn set_tail_file(&mut self, file_name: &str, file_is_dir: bool) {
-        let _ = self.tail_file.insert((file_name.to_string(), file_is_dir));
-    }
-
-    pub fn set_parent(&mut self, parent: &Path) {
-        let _ = self.parent.insert(parent.clone());
-    }
-}
-
-#[derive(Debug)]
-/// Arguments for an open request.
-struct OpenArgs {
-    creation_flags: CreationFlags,
-    status_flags: StatusFlags,
-    access_mode: AccessMode,
-    inode_mode: InodeMode,
-}
-
-impl OpenArgs {
-    pub fn from_flags_and_mode(flags: u32, mode: u16) -> Result<Self> {
-        let creation_flags = CreationFlags::from_bits_truncate(flags);
-        let status_flags = StatusFlags::from_bits_truncate(flags);
-        let access_mode = AccessMode::from_u32(flags)?;
-        let inode_mode = InodeMode::from_bits_truncate(mode);
-        Ok(Self {
-            creation_flags,
-            status_flags,
-            access_mode,
-            inode_mode,
-        })
-    }
-
-    pub fn follow_tail_link(&self) -> bool {
-        !(self.creation_flags.contains(CreationFlags::O_NOFOLLOW)
-            || self.creation_flags.contains(CreationFlags::O_CREAT)
-                && self.creation_flags.contains(CreationFlags::O_EXCL))
+        Ok(LookupResult::Resolved(current_path))
     }
 }
 
@@ -523,6 +307,88 @@ impl<'a> TryFrom<&'a str> for FsPath<'a> {
             return_errno_with_message!(Errno::ENOENT, "path is an empty string");
         }
         FsPath::new(AT_FDCWD, path)
+    }
+}
+
+// A result type for lookup operations.
+pub enum LookupResult {
+    /// The entire path was resolved to a final `Path`.
+    Resolved(Path),
+    /// The path resolution stopped at a parent directory.
+    AtParent(LookupParentResult),
+}
+
+impl LookupResult {
+    fn into_path(self) -> Result<Path> {
+        match self {
+            LookupResult::Resolved(path) => Ok(path),
+            LookupResult::AtParent(_) => Err(Error::with_message(
+                Errno::ENOENT,
+                "path resolution did not reach the final target",
+            )),
+        }
+    }
+
+    /// Consumes the `LookupResult` and returns the parent path and the tail file name.
+    ///
+    /// If the path was resolved or the target was expected to be a directory,
+    /// an error will be returned.
+    pub fn into_parent_and_tail_filename(self) -> Result<(Path, String)> {
+        let LookupResult::AtParent(res) = self else {
+            return_errno_with_message!(Errno::EEXIST, "the path already exists");
+        };
+        res.into_parent_and_tail_filename()
+    }
+
+    /// Consumes the `LookupResult` and returns the parent path and the tail name.
+    ///
+    /// If the path was resolved, an error will be returned.
+    pub fn into_parent_and_tail_name(self) -> Result<(Path, String)> {
+        let LookupResult::AtParent(res) = self else {
+            return_errno_with_message!(Errno::EEXIST, "the path already exists");
+        };
+        Ok(res.into_parent_and_tail_name())
+    }
+}
+
+/// A result that contains information about a path lookup that stopped
+/// at a parent directory.
+pub struct LookupParentResult {
+    /// The path of the parent directory where resolution stopped.
+    parent: Path,
+    /// The remaining unresolved component name.
+    tail_name: String,
+    /// Indicates whether the target was expected to be a directory.
+    target_is_dir: bool,
+}
+
+impl LookupParentResult {
+    fn new(parent: Path, tail_name: String, target_is_dir: bool) -> Self {
+        Self {
+            parent,
+            tail_name,
+            target_is_dir,
+        }
+    }
+
+    /// Returns true if the target was expected to be a directory.
+    pub fn target_is_dir(&self) -> bool {
+        self.target_is_dir
+    }
+
+    /// Consumes the `LookupParentResult` and returns the parent path and the tail file name.
+    ///
+    /// If the target was expected to be a directory, an error will be returned.
+    pub fn into_parent_and_tail_filename(self) -> Result<(Path, String)> {
+        if self.target_is_dir {
+            return_errno_with_message!(Errno::ENOENT, "the path is a directory");
+        }
+        Ok((self.parent, self.tail_name))
+    }
+
+    /// Consumes the `LookupParentResult` and returns the parent path and the tail name.
+    pub fn into_parent_and_tail_name(self) -> (Path, String) {
+        (self.parent, self.tail_name)
     }
 }
 

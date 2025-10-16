@@ -39,7 +39,8 @@ pub fn sys_symlinkat(
             .borrow_fs()
             .resolver()
             .read()
-            .lookup_dir_and_new_basename(&fs_path, false)?
+            .lookup_unresolved_no_follow(&fs_path)?
+            .into_parent_and_tail_filename()?
     };
 
     let new_path = dir_path.new_fs_child(&link_name, InodeType::SymLink, mkmod!(a+rwx))?;

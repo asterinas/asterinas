@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FileDesc,
-        fs_resolver::{FsPath, AT_FDCWD},
+        fs_resolver::{split_path, FsPath, AT_FDCWD},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -25,22 +25,28 @@ pub fn sys_unlinkat(
     let path_name = ctx.user_space().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     debug!("dirfd = {}, path = {:?}", dirfd, path_name);
 
+    let path_name = path_name.to_string_lossy();
+    if path_name.is_empty() {
+        return_errno_with_message!(Errno::ENOENT, "path is empty");
+    }
+    if path_name.ends_with('/') {
+        return_errno_with_message!(Errno::EISDIR, "unlink on directory");
+    }
+
     let (dir_path, name) = {
-        let path_name = path_name.to_string_lossy();
-        if path_name.is_empty() {
-            return_errno_with_message!(Errno::ENOENT, "path is empty");
-        }
-        if path_name.ends_with('/') {
-            return_errno_with_message!(Errno::EISDIR, "unlink on directory");
-        }
-        let fs_path = FsPath::new(dirfd, path_name.as_ref())?;
-        ctx.thread_local
-            .borrow_fs()
-            .resolver()
-            .read()
-            .lookup_dir_and_base_name(&fs_path)?
+        let (parent_path_name, target_name) = split_path(&path_name);
+        let fs_path = FsPath::new(dirfd, parent_path_name)?;
+        (
+            ctx.thread_local
+                .borrow_fs()
+                .resolver()
+                .read()
+                .lookup(&fs_path)?,
+            target_name,
+        )
     };
-    dir_path.unlink(&name)?;
+
+    dir_path.unlink(name)?;
     Ok(SyscallReturn::Return(0))
 }
 
