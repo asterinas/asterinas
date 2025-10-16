@@ -166,7 +166,7 @@ impl FsResolver {
         debug_assert!(!relative_path.starts_with('/'));
 
         if relative_path.len() > PATH_MAX {
-            return_errno_with_message!(Errno::ENAMETOOLONG, "path is too long");
+            return_errno_with_message!(Errno::ENAMETOOLONG, "the path is too long");
         }
         if relative_path.is_empty() {
             return Ok(LookupResult::Resolved(parent.clone()));
@@ -208,12 +208,12 @@ impl FsResolver {
             // If next inode is a symlink, follow symlinks at most `SYMLINKS_MAX` times.
             if next_type == InodeType::SymLink && (follow_tail_link || !next_is_tail) {
                 if follows >= SYMLINKS_MAX {
-                    return_errno_with_message!(Errno::ELOOP, "too many symlinks");
+                    return_errno_with_message!(Errno::ELOOP, "there are too many symlinks");
                 }
                 let link_path_remain = {
                     let mut tmp_link_path = next_path.inode().read_link()?;
                     if tmp_link_path.is_empty() {
-                        return_errno_with_message!(Errno::ENOENT, "empty symlink");
+                        return_errno_with_message!(Errno::ENOENT, "the symlink path is empty");
                     }
                     if !path_remain.is_empty() {
                         tmp_link_path += "/";
@@ -236,7 +236,7 @@ impl FsResolver {
             } else {
                 // If path ends with `/`, the inode must be a directory
                 if target_is_dir && next_type != InodeType::Dir {
-                    return_errno_with_message!(Errno::ENOTDIR, "inode is not dir");
+                    return_errno_with_message!(Errno::ENOTDIR, "the inode is not a directory");
                 }
                 current_path = next_path;
                 relative_path = path_remain;

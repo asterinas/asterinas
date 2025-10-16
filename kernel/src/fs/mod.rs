@@ -12,7 +12,6 @@ pub mod file_table;
 pub mod fs_resolver;
 pub mod inode_handle;
 pub mod named_pipe;
-pub mod open_args;
 pub mod overlayfs;
 pub mod path;
 pub mod pipe;
@@ -34,8 +33,7 @@ use crate::{
         ext2::Ext2,
         file_table::FdFlags,
         fs_resolver::{FsPath, FsResolver},
-        open_args::OpenArgs,
-        utils::{mkmod, AccessMode},
+        utils::{mkmod, AccessMode, OpenArgs},
     },
     prelude::*,
 };
