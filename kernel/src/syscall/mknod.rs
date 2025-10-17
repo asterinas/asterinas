@@ -5,7 +5,7 @@ use aster_device::{DeviceId, DeviceType};
 use super::SyscallReturn;
 use crate::{
     fs::{
-        device::get_device,
+        device::{get_device, DummyDevice},
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         utils::{InodeMode, InodeType, MknodType},
@@ -49,21 +49,15 @@ pub fn sys_mknodat(
         InodeType::File => {
             let _ = dir_path.new_fs_child(&name, InodeType::File, inode_mode)?;
         }
-        InodeType::BlockDevice => {
-            let Some(device_inode) =
-                get_device(DeviceType::Block, DeviceId::from_encoded_u64(dev as u64))
-            else {
-                return_errno_with_message!(Errno::EINVAL, "invalid device id")
+        InodeType::BlockDevice | InodeType::CharDevice => {
+            let type_ = if inode_type == InodeType::BlockDevice {
+                DeviceType::Block
+            } else {
+                DeviceType::Char
             };
-            let _ = dir_path.mknod(&name, inode_mode, device_inode.into())?;
-        }
-        InodeType::CharDevice => {
-            let Some(device_inode) =
-                get_device(DeviceType::Char, DeviceId::from_encoded_u64(dev as u64))
-            else {
-                return_errno_with_message!(Errno::EINVAL, "invalid device id")
-            };
-            let _ = dir_path.mknod(&name, inode_mode, device_inode.into())?;
+            let id = DeviceId::from_encoded_u64(dev as u64);
+            let device = get_device(type_, id).unwrap_or(DummyDevice::new(type_, id));
+            let _ = dir_path.mknod(&name, inode_mode, device.into())?;
         }
         InodeType::NamedPipe => {
             let _ = dir_path.mknod(&name, inode_mode, MknodType::NamedPipe)?;

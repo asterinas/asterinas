@@ -1,20 +1,87 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::format;
+
 use aster_device::{Device, DeviceId, DeviceType};
+use aster_systree::{
+    inherit_sys_branch_node, BranchNodeFields, SysAttrSetBuilder, SysBranchNode, SysPerms, SysStr,
+};
 
 use super::inode_handle::FileIo;
 use crate::{
+    events::IoEvents,
     fs::{
         fs_resolver::{FsPath, FsResolver},
         path::Path,
         utils::{mkmod, InodeType},
     },
     prelude::*,
+    process::signal::{PollHandle, Pollable},
 };
 
 /// The abstract of device file.
 pub trait DeviceFile: Device + FileIo {
     fn open(&self) -> Result<Option<Arc<dyn FileIo>>>;
+}
+
+#[derive(Debug)]
+pub struct DummyDevice {
+    type_: DeviceType,
+    id: DeviceId,
+    fields: BranchNodeFields<dyn SysBranchNode, Self>,
+}
+
+impl Device for DummyDevice {
+    fn device_type(&self) -> DeviceType {
+        self.type_
+    }
+
+    fn device_id(&self) -> Option<DeviceId> {
+        Some(self.id)
+    }
+}
+
+inherit_sys_branch_node!(DummyDevice, fields, {
+    fn perms(&self) -> SysPerms {
+        SysPerms::DEFAULT_RW_PERMS
+    }
+});
+
+impl DummyDevice {
+    pub fn new(type_: DeviceType, id: DeviceId) -> Arc<Self> {
+        let name = SysStr::from(format!("dummy{}", id.as_encoded_u64()));
+        let attrs = SysAttrSetBuilder::new()
+            .build()
+            .expect("Failed to build attribute set");
+
+        Arc::new_cyclic(|weak_self| DummyDevice {
+            type_,
+            id,
+            fields: BranchNodeFields::new(name, attrs, weak_self.clone()),
+        })
+    }
+}
+
+impl FileIo for DummyDevice {
+    fn read(&self, _writer: &mut VmWriter) -> Result<usize> {
+        return_errno_with_message!(Errno::ENXIO, "cannot read dummy device");
+    }
+
+    fn write(&self, _reader: &mut VmReader) -> Result<usize> {
+        return_errno_with_message!(Errno::ENXIO, "cannot write dummy device");
+    }
+}
+
+impl Pollable for DummyDevice {
+    fn poll(&self, _mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
+        IoEvents::empty()
+    }
+}
+
+impl DeviceFile for DummyDevice {
+    fn open(&self) -> Result<Option<Arc<dyn FileIo>>> {
+        return_errno_with_message!(Errno::ENXIO, "cannot open dummy device");
+    }
 }
 
 struct AllDevices {
