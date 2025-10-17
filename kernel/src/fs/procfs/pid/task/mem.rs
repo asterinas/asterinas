@@ -28,7 +28,11 @@ impl FileOps for MemFileOps {
     }
 
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        match self.0.vm().read_remote(offset, writer) {
+        let vmar_guard = self.0.lock_vmar();
+        let Some(vmar) = vmar_guard.as_ref() else {
+            return_errno_with_message!(Errno::ESRCH, "the process has exited");
+        };
+        match vmar.read_remote(offset, writer) {
             Ok(bytes) => Ok(bytes),
             Err((err, 0)) => Err(err),
             Err((_, bytes)) => Ok(bytes),
@@ -36,7 +40,11 @@ impl FileOps for MemFileOps {
     }
 
     fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        match self.0.vm().write_remote(offset, reader) {
+        let vmar_guard = self.0.lock_vmar();
+        let Some(vmar) = vmar_guard.as_ref() else {
+            return_errno_with_message!(Errno::ESRCH, "the process has exited");
+        };
+        match vmar.write_remote(offset, reader) {
             Ok(bytes) => Ok(bytes),
             Err((err, 0)) => Err(err),
             Err((_, bytes)) => Ok(bytes),

@@ -48,20 +48,20 @@ fn do_sys_mremap(
     let new_size = new_size.align_up(PAGE_SIZE);
 
     let user_space = ctx.user_space();
-    let root_vmar = user_space.root_vmar();
+    let vmar = user_space.vmar();
 
     if !flags.contains(MremapFlags::MREMAP_FIXED) && new_size <= old_size {
         // We can shrink a old range which spans multiple mappings. See
         // <https://github.com/google/gvisor/blob/95d875276806484f974ce9e95556a561331f8e22/test/syscalls/linux/mremap.cc#L100-L117>.
-        root_vmar.resize_mapping(old_addr, old_size, new_size, false)?;
+        vmar.resize_mapping(old_addr, old_size, new_size, false)?;
         return Ok(old_addr);
     }
 
     if flags.contains(MremapFlags::MREMAP_MAYMOVE) {
         if flags.contains(MremapFlags::MREMAP_FIXED) {
-            root_vmar.remap(old_addr, old_size, Some(new_addr), new_size)
+            vmar.remap(old_addr, old_size, Some(new_addr), new_size)
         } else {
-            root_vmar.remap(old_addr, old_size, None, new_size)
+            vmar.remap(old_addr, old_size, None, new_size)
         }
     } else {
         if flags.contains(MremapFlags::MREMAP_FIXED) {
@@ -78,7 +78,7 @@ fn do_sys_mremap(
         // if the `MREMAP_MAYMOVE` flag is not set, and the mapping cannot
         // be expanded at the current `Vaddr`, we should return an `ENOMEM`.
         // However, `resize_mapping` returns a `EACCES` in this case.
-        root_vmar.resize_mapping(old_addr, old_size, new_size, true)?;
+        vmar.resize_mapping(old_addr, old_size, new_size, true)?;
         Ok(old_addr)
     }
 }

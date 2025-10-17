@@ -1,23 +1,28 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use core::ops::Range;
+#[cfg(target_arch = "riscv64")]
+use core::sync::atomic::Ordering;
 
 use aster_rights::{Dup, Read, Rights, TRightSet, TRights, Write};
 use aster_rights_proc::require;
 
 use super::{VmPerms, Vmar, VmarMapOptions, VmarQueryGuard, VmarRightsOp, Vmar_};
 use crate::{
-    prelude::*, thread::exception::PageFaultInfo, vm::page_fault_handler::PageFaultHandler,
+    prelude::*,
+    process::{Heap, InitStack},
+    thread::exception::PageFaultInfo,
+    vm::page_fault_handler::PageFaultHandler,
 };
 
 impl<R: TRights> Vmar<TRightSet<R>> {
-    /// Creates a root VMAR.
+    /// Creates a new VMAR.
     ///
     /// # Access rights
     ///
-    /// A root VMAR is initially given full access rights.
-    pub fn new_root() -> Self {
-        let inner = Vmar_::new_root();
+    /// A new VMAR is initially given full access rights.
+    pub fn new() -> Self {
+        let inner = Vmar_::new();
         let rights = R::new();
         Self(inner, TRightSet(rights))
     }
@@ -93,8 +98,8 @@ impl<R: TRights> Vmar<TRightSet<R>> {
     /// Clears all mappings.
     ///
     /// After being cleared, this vmar will become an empty vmar
-    pub fn clear(&self) -> Result<()> {
-        self.0.clear_root_vmar()
+    pub fn clear(&self) {
+        self.0.clear_vmar()
     }
 
     /// Destroys all mappings that fall within the specified
@@ -119,7 +124,7 @@ impl<R: TRights> Vmar<TRightSet<R>> {
         Ok(Vmar(self.0.clone(), self.1))
     }
 
-    /// Creates a new root VMAR whose content is inherited from another
+    /// Creates a new VMAR whose content is inherited from another
     /// using copy-on-write (COW) technique.
     ///
     /// # Access rights
@@ -127,7 +132,7 @@ impl<R: TRights> Vmar<TRightSet<R>> {
     /// The method requires the Read right.
     #[require(R > Read)]
     pub fn fork_from(vmar: &Self) -> Result<Self> {
-        let vmar_ = vmar.0.new_fork_root()?;
+        let vmar_ = vmar.0.new_fork()?;
         Ok(Vmar(vmar_, TRightSet(R::new())))
     }
 
@@ -144,6 +149,28 @@ impl<R: TRights> Vmar<TRightSet<R>> {
         } else {
             return_errno_with_message!(Errno::EACCES, "check rights failed");
         }
+    }
+
+    /// Returns the initial portion of the main stack of a process.
+    pub fn init_stack(&self) -> &InitStack {
+        &self.0.init_stack
+    }
+
+    /// Returns the user heap.
+    pub fn heap(&self) -> &Heap {
+        &self.0.heap
+    }
+
+    /// Returns the base address for vDSO segment.
+    #[cfg(target_arch = "riscv64")]
+    pub fn vdso_base(&self) -> Vaddr {
+        self.0.vdso_base.load(Ordering::Relaxed)
+    }
+
+    /// Sets the base address for vDSO segment.
+    #[cfg(target_arch = "riscv64")]
+    pub fn set_vdso_base(&self, addr: Vaddr) {
+        self.0.vdso_base.store(addr, Ordering::Relaxed);
     }
 }
 

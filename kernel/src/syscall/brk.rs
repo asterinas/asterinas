@@ -10,7 +10,8 @@ pub fn sys_brk(heap_end: u64, ctx: &Context) -> Result<SyscallReturn> {
         Some(heap_end as usize)
     };
     debug!("new heap end = {:x?}", heap_end);
-    let user_heap = ctx.process.heap();
+    let vmar_ref = ctx.thread_local.vmar().borrow();
+    let user_heap = vmar_ref.as_ref().unwrap().heap();
     let new_heap_end = user_heap.brk(new_heap_end, ctx)?;
 
     Ok(SyscallReturn::Return(new_heap_end as _))

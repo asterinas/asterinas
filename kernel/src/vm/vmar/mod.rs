@@ -7,6 +7,8 @@ mod interval_set;
 mod static_cap;
 pub mod vm_mapping;
 
+#[cfg(target_arch = "riscv64")]
+use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{array, num::NonZeroUsize, ops::Range};
 
 use align_ext::AlignExt;
@@ -31,7 +33,7 @@ use self::{
 use crate::{
     fs::file_handle::Mappable,
     prelude::*,
-    process::{Process, ResourceType},
+    process::{Heap, InitStack, Process, ResourceType},
     thread::exception::PageFaultInfo,
     vm::{
         perms::VmPerms,
@@ -146,6 +148,13 @@ pub(super) struct Vmar_ {
     vm_space: Arc<VmSpace>,
     /// The RSS counters.
     rss_counters: [PerCpuCounter; NUM_RSS_COUNTERS],
+    /// The initial portion of the main stack of a process.
+    init_stack: InitStack,
+    /// The user heap
+    heap: Heap,
+    /// The base address for vDSO segment
+    #[cfg(target_arch = "riscv64")]
+    vdso_base: AtomicUsize,
 }
 
 struct VmarInner {
@@ -333,11 +342,11 @@ impl VmarInner {
             .vm_mappings
             .iter()
             .next_back()
-            .map_or(ROOT_VMAR_LOWEST_ADDR, |vm_mapping| vm_mapping.range().end);
+            .map_or(VMAR_LOWEST_ADDR, |vm_mapping| vm_mapping.range().end);
         // FIXME: The up-align may overflow.
         let last_occupied_aligned = highest_occupied.align_up(align);
         if let Some(last) = last_occupied_aligned.checked_add(size) {
-            if last <= ROOT_VMAR_CAP_ADDR {
+            if last <= VMAR_CAP_ADDR {
                 return Ok(last_occupied_aligned..last);
             }
         }
@@ -345,7 +354,7 @@ impl VmarInner {
         // Slow path that we need to search for a free region.
         // Here, we use a simple brute-force FIRST-FIT algorithm.
         // Allocate as low as possible to reduce fragmentation.
-        let mut last_end: Vaddr = ROOT_VMAR_LOWEST_ADDR;
+        let mut last_end: Vaddr = VMAR_LOWEST_ADDR;
         for vm_mapping in self.vm_mappings.iter() {
             let range = vm_mapping.range();
 
@@ -419,16 +428,16 @@ impl VmarInner {
     }
 }
 
-pub const ROOT_VMAR_LOWEST_ADDR: Vaddr = 0x001_0000; // 64 KiB is the Linux configurable default
-const ROOT_VMAR_CAP_ADDR: Vaddr = MAX_USERSPACE_VADDR;
+pub const VMAR_LOWEST_ADDR: Vaddr = 0x001_0000; // 64 KiB is the Linux configurable default
+const VMAR_CAP_ADDR: Vaddr = MAX_USERSPACE_VADDR;
 
 /// Returns whether the input `vaddr` is a legal user space virtual address.
 pub fn is_userspace_vaddr(vaddr: Vaddr) -> bool {
-    (ROOT_VMAR_LOWEST_ADDR..ROOT_VMAR_CAP_ADDR).contains(&vaddr)
+    (VMAR_LOWEST_ADDR..VMAR_CAP_ADDR).contains(&vaddr)
 }
 
 impl Vmar_ {
-    fn new_root() -> Arc<Self> {
+    fn new() -> Arc<Self> {
         let inner = VmarInner::new();
         let vm_space = VmSpace::new();
         let rss_counters = array::from_fn(|_| PerCpuCounter::new());
@@ -436,6 +445,10 @@ impl Vmar_ {
             inner: RwMutex::new(inner),
             vm_space: Arc::new(vm_space),
             rss_counters,
+            init_stack: InitStack::new(),
+            heap: Heap::new(),
+            #[cfg(target_arch = "riscv64")]
+            vdso_base: AtomicUsize::new(0),
         })
     }
 
@@ -512,8 +525,8 @@ impl Vmar_ {
         );
     }
 
-    /// Clears all content of the root VMAR.
-    fn clear_root_vmar(&self) -> Result<()> {
+    /// Clears all content of the VMAR.
+    fn clear_vmar(&self) {
         let mut inner = self.inner.write();
         inner.vm_mappings.clear();
 
@@ -526,8 +539,6 @@ impl Vmar_ {
             .unwrap();
         cursor.unmap(full_range.len());
         cursor.flusher().sync_tlb_flush();
-
-        Ok(())
     }
 
     pub fn remove_mapping(&self, range: Range<usize>) -> Result<()> {
@@ -693,8 +704,16 @@ impl Vmar_ {
         &self.vm_space
     }
 
-    pub(super) fn new_fork_root(self: &Arc<Self>) -> Result<Arc<Self>> {
-        let new_vmar_ = Vmar_::new_root();
+    pub(super) fn new_fork(self: &Arc<Self>) -> Result<Arc<Self>> {
+        let new_vmar_ = Arc::new(Vmar_ {
+            inner: RwMutex::new(VmarInner::new()),
+            vm_space: Arc::new(VmSpace::new()),
+            rss_counters: array::from_fn(|_| PerCpuCounter::new()),
+            init_stack: self.init_stack.clone(),
+            heap: self.heap.clone(),
+            #[cfg(target_arch = "riscv64")]
+            vdso_base: AtomicUsize::new(self.vdso_base.load(Ordering::Relaxed)),
+        });
 
         {
             let inner = self.inner.read();
@@ -702,7 +721,7 @@ impl Vmar_ {
 
             // Clone mappings.
             let preempt_guard = disable_preempt();
-            let range = ROOT_VMAR_LOWEST_ADDR..ROOT_VMAR_CAP_ADDR;
+            let range = VMAR_LOWEST_ADDR..VMAR_CAP_ADDR;
             let new_vmspace = new_vmar_.vm_space();
             let mut new_cursor = new_vmspace.cursor_mut(&preempt_guard, &range).unwrap();
             let cur_vmspace = self.vm_space();

@@ -13,8 +13,6 @@ mod heap;
 mod init_stack;
 
 use core::ops::Range;
-#[cfg(target_arch = "riscv64")]
-use core::sync::atomic::{AtomicUsize, Ordering};
 
 use align_ext::AlignExt;
 use aster_rights::Full;
@@ -78,18 +76,12 @@ use crate::{
  */
 
 /// The process user space virtual memory
-pub struct ProcessVm {
-    root_vmar: Mutex<Option<Vmar<Full>>>,
-    init_stack: InitStack,
-    heap: Heap,
-    #[cfg(target_arch = "riscv64")]
-    vdso_base: AtomicUsize,
-}
+pub struct ProcessVm(Mutex<Option<Vmar<Full>>>);
 
 /// A guard to the [`Vmar`] used by a process.
 ///
 /// It is bound to a [`ProcessVm`] and can only be obtained from
-/// the [`ProcessVm::lock_root_vmar`] method.
+/// the [`ProcessVm::lock_vmar`] method.
 pub struct ProcessVmarGuard<'a> {
     inner: MutexGuard<'a, Option<Vmar<Full>>>,
 }
@@ -122,64 +114,51 @@ impl ProcessVmarGuard<'_> {
 
 impl Clone for ProcessVm {
     fn clone(&self) -> Self {
-        let root_vmar = self.lock_root_vmar();
-        Self {
-            root_vmar: Mutex::new(Some(root_vmar.unwrap().dup().unwrap())),
-            init_stack: self.init_stack.clone(),
-            heap: self.heap.clone(),
-            #[cfg(target_arch = "riscv64")]
-            vdso_base: AtomicUsize::new(self.vdso_base.load(Ordering::Relaxed)),
-        }
+        let vmar = self.lock_vmar();
+        Self(Mutex::new(Some(vmar.unwrap().dup().unwrap())))
     }
 }
 
 impl ProcessVm {
     /// Allocates a new `ProcessVm`
     pub fn alloc() -> Self {
-        let root_vmar = Vmar::<Full>::new_root();
-        let init_stack = InitStack::new();
-        let heap = Heap::new();
-        heap.alloc_and_map_vm(&root_vmar).unwrap();
-        Self {
-            root_vmar: Mutex::new(Some(root_vmar)),
-            heap,
-            init_stack,
-            #[cfg(target_arch = "riscv64")]
-            vdso_base: AtomicUsize::new(0),
-        }
+        let vmar = Vmar::<Full>::new();
+        let heap = vmar.heap();
+        heap.alloc_and_map(&vmar).unwrap();
+        Self(Mutex::new(Some(vmar)))
     }
 
     /// Forks a `ProcessVm` from `other`.
     ///
     /// The returned `ProcessVm` will have a forked `Vmar`.
     pub fn fork_from(other: &ProcessVm) -> Result<Self> {
-        let process_vmar = other.lock_root_vmar();
-        let root_vmar = Mutex::new(Some(Vmar::<Full>::fork_from(process_vmar.unwrap())?));
-        Ok(Self {
-            root_vmar,
-            heap: other.heap.clone(),
-            init_stack: other.init_stack.clone(),
-            #[cfg(target_arch = "riscv64")]
-            vdso_base: AtomicUsize::new(other.vdso_base.load(Ordering::Relaxed)),
-        })
+        let process_vmar = other.lock_vmar();
+        let vmar = Mutex::new(Some(Vmar::<Full>::fork_from(process_vmar.unwrap())?));
+        Ok(Self(vmar))
     }
 
-    /// Locks the root VMAR and gets a guard to it.
-    pub fn lock_root_vmar(&self) -> ProcessVmarGuard {
+    /// Locks the VMAR and gets a guard to it.
+    pub fn lock_vmar(&self) -> ProcessVmarGuard {
         ProcessVmarGuard {
-            inner: self.root_vmar.lock(),
+            inner: self.0.lock(),
         }
     }
 
+    /// Clears existing mappings and then maps the heap VMO to the current VMAR.
+    pub fn clear_and_map_heap(&self) {
+        let vmar = self.lock_vmar();
+        let vmar = vmar.unwrap();
+        vmar.clear();
+        vmar.heap().alloc_and_map(vmar).unwrap();
+    }
+}
+
+// TODO: Move the below code to the vm module.
+impl Vmar<Full> {
     /// Returns a reader for reading contents from
     /// the `InitStack`.
     pub fn init_stack_reader(&self) -> InitStackReader {
-        self.init_stack.reader(self)
-    }
-
-    /// Returns the top address of the user stack.
-    pub fn user_stack_top(&self) -> Vaddr {
-        self.init_stack.user_stack_top()
+        self.init_stack().reader(self)
     }
 
     pub(super) fn map_and_write_init_stack(
@@ -188,34 +167,12 @@ impl ProcessVm {
         envp: Vec<CString>,
         aux_vec: AuxVec,
     ) -> Result<()> {
-        let root_vmar: ProcessVmarGuard<'_> = self.lock_root_vmar();
-        self.init_stack
-            .map_and_write(root_vmar.unwrap(), argv, envp, aux_vec)
-    }
-
-    pub(super) fn heap(&self) -> &Heap {
-        &self.heap
-    }
-
-    #[cfg(target_arch = "riscv64")]
-    pub(super) fn vdso_base(&self) -> Vaddr {
-        self.vdso_base.load(Ordering::Relaxed)
-    }
-
-    #[cfg(target_arch = "riscv64")]
-    pub(super) fn set_vdso_base(&self, addr: Vaddr) {
-        self.vdso_base.store(addr, Ordering::Relaxed);
-    }
-
-    /// Clears existing mappings and then maps the heap VMO to the current VMAR.
-    pub fn clear_and_map(&self) {
-        let root_vmar = self.lock_root_vmar();
-        root_vmar.unwrap().clear().unwrap();
-        self.heap.alloc_and_map_vm(root_vmar.unwrap()).unwrap();
+        self.init_stack().map_and_write(self, argv, envp, aux_vec)
     }
 }
 
-impl ProcessVm {
+// TODO: Move the below code to the vm module.
+impl Vmar<Full> {
     /// Reads memory from the process user space.
     ///
     /// This method reads until one of the conditions is met:
@@ -316,12 +273,7 @@ impl ProcessVm {
         vaddr: Vaddr,
         required_page_flags: PageFlags,
     ) -> Result<UFrame> {
-        let vmar_guard = self.lock_root_vmar();
-        let Some(vmar) = vmar_guard.as_ref() else {
-            return_errno_with_message!(Errno::ESRCH, "the process has exited");
-        };
-
-        let mut item = self.query_page(vaddr, vmar)?;
+        let mut item = self.query_page(vaddr)?;
 
         if item
             .as_ref()
@@ -331,10 +283,10 @@ impl ProcessVm {
                 address: vaddr,
                 required_perms: required_page_flags.into(),
             };
-            vmar.handle_page_fault(&page_fault_info)
+            self.handle_page_fault(&page_fault_info)
                 .map_err(|_| Error::with_message(Errno::EIO, "the page is not accessible"))?;
 
-            item = self.query_page(vaddr, vmar)?;
+            item = self.query_page(vaddr)?;
         }
 
         let item = item.unwrap();
@@ -351,11 +303,11 @@ impl ProcessVm {
         }
     }
 
-    fn query_page(&self, vaddr: Vaddr, vmar: &Vmar<Full>) -> Result<Option<VmQueriedItem>> {
+    fn query_page(&self, vaddr: Vaddr) -> Result<Option<VmQueriedItem>> {
         debug_assert!(is_userspace_vaddr(vaddr) && vaddr % PAGE_SIZE == 0);
 
         let preempt_guard = disable_preempt();
-        let vmspace = vmar.vm_space();
+        let vmspace = self.vm_space();
         let mut cursor = vmspace.cursor(&preempt_guard, &(vaddr..vaddr + PAGE_SIZE))?;
         let (_, item) = cursor.query()?;
 
@@ -363,22 +315,17 @@ impl ProcessVm {
     }
 }
 
-/// Renews the [`ProcessVm`] of of the current process and then maps the heap VMO to the new VMAR.
-pub(super) fn renew_vmar_and_map_heap(ctx: &Context) {
-    let process_vm = ctx.process.vm();
-    let mut root_vmar = process_vm.lock_root_vmar();
-
-    let new_vmar = Vmar::<Full>::new_root();
+/// Unshares and renews the [`Vmar`] of the current process.
+pub(super) fn unshare_and_renew_vmar(ctx: &Context, vmar: &mut ProcessVmarGuard) {
+    let new_vmar = Vmar::<Full>::new();
     let guard = disable_preempt();
-    *ctx.thread_local.root_vmar().borrow_mut() = Some(new_vmar.dup().unwrap());
+    *ctx.thread_local.vmar().borrow_mut() = Some(new_vmar.dup().unwrap());
     new_vmar.vm_space().activate();
-    root_vmar.set_vmar(Some(new_vmar));
+    vmar.set_vmar(Some(new_vmar));
     drop(guard);
 
-    process_vm
-        .heap
-        .alloc_and_map_vm(root_vmar.unwrap())
-        .unwrap();
+    let new_vmar = vmar.unwrap();
+    new_vmar.heap().alloc_and_map(new_vmar).unwrap();
 }
 
 fn check_userspace_page_range(vaddr: Vaddr, len: usize) -> Result<Range<Vaddr>> {

@@ -10,10 +10,10 @@ use crate::{
 };
 
 impl Vmar<Rights> {
-    /// Creates a root VMAR.
+    /// Creates a new VMAR.
     #[expect(dead_code)]
-    pub fn new_root() -> Self {
-        let inner = Vmar_::new_root();
+    pub fn new() -> Self {
+        let inner = Vmar_::new();
         let rights = Rights::all();
         Self(inner, rights)
     }
@@ -82,8 +82,8 @@ impl Vmar<Rights> {
     ///
     /// After being cleared, this vmar will become an empty vmar
     #[expect(dead_code)]
-    pub fn clear(&self) -> Result<()> {
-        self.0.clear_root_vmar()
+    pub fn clear(&self) {
+        self.0.clear_vmar()
     }
 
     /// Destroys all mappings that fall within the specified
@@ -109,7 +109,7 @@ impl Vmar<Rights> {
         Ok(Vmar(self.0.clone(), self.1))
     }
 
-    /// Creates a new root VMAR whose content is inherited from another
+    /// Creates a new VMAR whose content is inherited from another
     /// using copy-on-write (COW) technique.
     ///
     /// # Access rights
@@ -118,7 +118,7 @@ impl Vmar<Rights> {
     #[expect(dead_code)]
     pub fn fork_from(vmar: &Self) -> Result<Self> {
         vmar.check_rights(Rights::READ)?;
-        let vmar_ = vmar.0.new_fork_root()?;
+        let vmar_ = vmar.0.new_fork()?;
         Ok(Vmar(vmar_, Rights::all()))
     }
 }

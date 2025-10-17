@@ -300,7 +300,15 @@ pub fn handle_user_signal(
         );
     } else {
         #[cfg(target_arch = "riscv64")]
-        user_ctx.set_ra(ctx.process.vm().vdso_base() + crate::vdso::__VDSO_RT_SIGRETURN_OFFSET);
+        user_ctx.set_ra(
+            ctx.thread_local
+                .vmar()
+                .borrow()
+                .as_ref()
+                .unwrap()
+                .vdso_base()
+                + crate::vdso::__VDSO_RT_SIGRETURN_OFFSET,
+        );
     }
 
     // 4. Set correct register values

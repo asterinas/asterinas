@@ -55,9 +55,9 @@ pub fn sys_madvise(
 
 fn madv_free(start: Vaddr, end: Vaddr, ctx: &Context) -> Result<()> {
     let user_space = ctx.user_space();
-    let root_vmar = user_space.root_vmar();
+    let vmar = user_space.vmar();
     let advised_range = start..end;
-    let _ = root_vmar.remove_mapping(advised_range);
+    let _ = vmar.remove_mapping(advised_range);
 
     Ok(())
 }

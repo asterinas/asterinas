@@ -53,7 +53,7 @@ pub struct VmMapping {
     ///
     /// Zero sized mapping is not allowed. So this field is always non-zero.
     map_size: NonZeroUsize,
-    /// The base address relative to the root VMAR where the VMO is mapped.
+    /// The base address relative to the VMAR where the VMO is mapped.
     map_to_addr: Vaddr,
     /// The mapped memory object. This field specifies what type of memory is
     /// mapped and provides access to the underlying memory object (VMO, device

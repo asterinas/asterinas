@@ -76,7 +76,7 @@ pub fn futex_wait_bitset(
 
         // The futex word is aligned on a 4-byte boundary, so it cannot cross the page boundary.
         user_space
-            .root_vmar()
+            .vmar()
             .handle_page_fault(&PageFaultInfo {
                 address: futex_addr,
                 required_perms: VmPerms::READ,
@@ -292,7 +292,7 @@ pub fn futex_wake_op(
 
         // The futex word is aligned on a 4-byte boundary, so it cannot cross the page boundary.
         user_space
-            .root_vmar()
+            .vmar()
             .handle_page_fault(&PageFaultInfo {
                 address: futex_addr_2,
                 required_perms: VmPerms::READ | VmPerms::WRITE,

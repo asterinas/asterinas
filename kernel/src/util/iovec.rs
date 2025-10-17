@@ -83,7 +83,7 @@ fn copy_iovs_and_convert<'a, T: 'a>(
         return_errno_with_message!(Errno::EINVAL, "the I/O vector contains too many buffers");
     }
 
-    let vm_space = user_space.root_vmar().vm_space();
+    let vm_space = user_space.vmar().vm_space();
 
     let mut v = Vec::with_capacity(count);
     let mut max_len = MAX_TOTAL_IOV_BYTES;

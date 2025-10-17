@@ -19,13 +19,13 @@ pub fn sys_munmap(addr: Vaddr, len: usize, ctx: &Context) -> Result<SyscallRetur
     }
 
     let user_space = ctx.user_space();
-    let root_vmar = user_space.root_vmar();
+    let vmar = user_space.vmar();
     let len = len.align_up(PAGE_SIZE);
     let end = addr.checked_add(len).ok_or(Error::with_message(
         Errno::EINVAL,
         "integer overflow when (addr + len)",
     ))?;
     debug!("unmap range = 0x{:x} - 0x{:x}", addr, end);
-    root_vmar.remove_mapping(addr..end)?;
+    vmar.remove_mapping(addr..end)?;
     Ok(SyscallReturn::Return(0))
 }

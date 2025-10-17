@@ -35,13 +35,10 @@ impl Heap {
     }
 
     /// Initializes and maps the heap virtual memory.
-    pub(super) fn alloc_and_map_vm(&self, root_vmar: &Vmar<Full>) -> Result<()> {
+    pub(super) fn alloc_and_map(&self, vmar: &Vmar<Full>) -> Result<()> {
         let vmar_map_options = {
             let perms = VmPerms::READ | VmPerms::WRITE;
-            root_vmar
-                .new_map(PAGE_SIZE, perms)
-                .unwrap()
-                .offset(self.base)
+            vmar.new_map(PAGE_SIZE, perms).unwrap().offset(self.base)
         };
         vmar_map_options.build()?;
 
@@ -54,8 +51,7 @@ impl Heap {
         // may be moved to another place.
         let vmar_reserve_options = {
             let perms = VmPerms::empty();
-            root_vmar
-                .new_map(USER_HEAP_SIZE_LIMIT - PAGE_SIZE, perms)
+            vmar.new_map(USER_HEAP_SIZE_LIMIT - PAGE_SIZE, perms)
                 .unwrap()
                 .offset(self.base + PAGE_SIZE)
         };
@@ -67,7 +63,7 @@ impl Heap {
 
     pub fn brk(&self, new_heap_end: Option<Vaddr>, ctx: &Context) -> Result<Vaddr> {
         let user_space = ctx.user_space();
-        let root_vmar = user_space.root_vmar();
+        let vmar = user_space.vmar();
         match new_heap_end {
             None => Ok(self.current_heap_end.load(Ordering::Relaxed)),
             Some(new_heap_end) => {
@@ -85,13 +81,13 @@ impl Heap {
                 let new_heap_end = new_heap_end.align_up(PAGE_SIZE);
 
                 // Remove the reserved space.
-                root_vmar.remove_mapping(current_heap_end..new_heap_end)?;
+                vmar.remove_mapping(current_heap_end..new_heap_end)?;
 
                 let old_size = current_heap_end - self.base;
                 let new_size = new_heap_end - self.base;
 
                 // Expand the heap.
-                root_vmar.resize_mapping(self.base, old_size, new_size, false)?;
+                vmar.resize_mapping(self.base, old_size, new_size, false)?;
 
                 self.current_heap_end.store(new_heap_end, Ordering::Release);
                 Ok(new_heap_end)

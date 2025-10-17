@@ -21,7 +21,7 @@ pub struct ThreadLocal {
     clear_child_tid: Cell<Vaddr>,
 
     // Virtual memory address regions.
-    root_vmar: RefCell<Option<Vmar<Full>>>,
+    vmar: RefCell<Option<Vmar<Full>>>,
     page_fault_disabled: Cell<bool>,
 
     // Robust futexes.
@@ -56,7 +56,7 @@ impl ThreadLocal {
     pub(super) fn new(
         set_child_tid: Vaddr,
         clear_child_tid: Vaddr,
-        root_vmar: Vmar<Full>,
+        vmar: Vmar<Full>,
         file_table: RwArc<FileTable>,
         fs: Arc<ThreadFsInfo>,
         fpu_context: FpuContext,
@@ -66,7 +66,7 @@ impl ThreadLocal {
         Self {
             set_child_tid: Cell::new(set_child_tid),
             clear_child_tid: Cell::new(clear_child_tid),
-            root_vmar: RefCell::new(Some(root_vmar)),
+            vmar: RefCell::new(Some(vmar)),
             page_fault_disabled: Cell::new(false),
             robust_list: RefCell::new(None),
             file_table: RefCell::new(Some(file_table)),
@@ -88,8 +88,8 @@ impl ThreadLocal {
         &self.clear_child_tid
     }
 
-    pub fn root_vmar(&self) -> &RefCell<Option<Vmar<Full>>> {
-        &self.root_vmar
+    pub fn vmar(&self) -> &RefCell<Option<Vmar<Full>>> {
+        &self.vmar
     }
 
     /// Executes the closure with the page fault handler diasabled.

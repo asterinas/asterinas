@@ -3,11 +3,12 @@
 pub mod elf;
 mod shebang;
 
+use aster_rights::Full;
+
 use self::{
-    elf::{load_elf_to_vm, ElfHeaders, ElfLoadInfo},
+    elf::{load_elf_to_vmar, ElfHeaders, ElfLoadInfo},
     shebang::parse_shebang_line,
 };
-use super::process_vm::ProcessVm;
 use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver},
@@ -15,6 +16,7 @@ use crate::{
         utils::{InodeType, Permission},
     },
     prelude::*,
+    vm::vmar::Vmar,
 };
 
 /// Represents an executable file that is ready to be loaded into memory and executed.
@@ -33,7 +35,7 @@ impl ProgramToLoad {
     ///
     /// About `recursion_limit`: recursion limit is used to limit th recursion depth of shebang executables.
     /// If the interpreter(the program behind #!) of shebang executable is also a shebang,
-    /// then it will trigger recursion. We will try to setup root vmar for the interpreter.
+    /// then it will trigger recursion. We will try to setup VMAR for the interpreter.
     /// I guess for most cases, setting the `recursion_limit` as 1 should be enough.
     /// because the interpreter is usually an elf binary(e.g., /bin/bash)
     pub fn build_from_file(
@@ -83,14 +85,10 @@ impl ProgramToLoad {
     /// Returns a tuple containing:
     /// 1. The absolute path of the loaded executable.
     /// 2. Information about the ELF loading process.
-    pub fn load_to_vm(
-        self,
-        process_vm: &ProcessVm,
-        fs_resolver: &FsResolver,
-    ) -> Result<ElfLoadInfo> {
+    pub fn load_to_vmar(self, vmar: &Vmar<Full>, fs_resolver: &FsResolver) -> Result<ElfLoadInfo> {
         let elf_headers = ElfHeaders::parse_elf(&*self.file_first_page)?;
-        let elf_load_info = load_elf_to_vm(
-            process_vm,
+        let elf_load_info = load_elf_to_vmar(
+            vmar,
             self.elf_file,
             fs_resolver,
             elf_headers,

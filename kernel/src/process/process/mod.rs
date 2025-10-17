@@ -9,7 +9,7 @@ use self::timer_manager::PosixTimerManager;
 use super::{
     posix_thread::AsPosixThread,
     process_table,
-    process_vm::{Heap, InitStackReader, ProcessVm, ProcessVmarGuard},
+    process_vm::{ProcessVm, ProcessVmarGuard},
     rlimit::ResourceLimits,
     signal::{
         sig_disposition::SigDispositions,
@@ -614,16 +614,8 @@ impl Process {
         &self.process_vm
     }
 
-    pub fn lock_root_vmar(&self) -> ProcessVmarGuard {
-        self.process_vm.lock_root_vmar()
-    }
-
-    pub fn heap(&self) -> &Heap {
-        self.process_vm.heap()
-    }
-
-    pub fn init_stack_reader(&self) -> InitStackReader {
-        self.process_vm.init_stack_reader()
+    pub fn lock_vmar(&self) -> ProcessVmarGuard {
+        self.process_vm.lock_vmar()
     }
 
     // ****************** Signal ******************
