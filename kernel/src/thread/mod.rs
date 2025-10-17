@@ -48,8 +48,8 @@ fn post_schedule_handler() {
         return;
     };
 
-    let root_vmar = thread_local.root_vmar().borrow();
-    if let Some(vmar) = root_vmar.as_ref() {
+    let vmar = thread_local.vmar().borrow();
+    if let Some(vmar) = vmar.as_ref() {
         vmar.vm_space().activate()
     }
 

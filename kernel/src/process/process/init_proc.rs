@@ -112,8 +112,9 @@ fn create_init_task(
         let elf_file = fs.resolver().read().lookup(&fs_path)?;
         let program_to_load =
             ProgramToLoad::build_from_file(elf_file, &fs_resolver, argv, envp, 1)?;
-        process_vm.clear_and_map();
-        program_to_load.load_to_vm(process_vm, &fs_resolver)?
+        process_vm.clear_and_map_heap();
+        let vmar = process_vm.lock_vmar();
+        program_to_load.load_to_vmar(vmar.unwrap(), &fs_resolver)?
     };
 
     let mut user_ctx = UserContext::default();

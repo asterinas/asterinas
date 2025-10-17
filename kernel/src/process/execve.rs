@@ -12,7 +12,7 @@ use crate::{
     prelude::*,
     process::{
         posix_thread::{sigkill_other_threads, thread_table, PosixThread, ThreadLocal, ThreadName},
-        process_vm::{renew_vmar_and_map_heap, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS},
+        process_vm::{unshare_and_renew_vmar, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS},
         program_loader::elf::ElfLoadInfo,
         signal::{
             constants::{SIGCHLD, SIGKILL},
@@ -136,15 +136,19 @@ fn do_execve_no_return(
     wait_other_threads_exit(ctx)?;
     thread_table::make_current_main_thread(ctx);
 
-    // Reset the virtual memory state.
-    renew_vmar_and_map_heap(ctx);
+    let elf_load_info = {
+        let mut vmar = ctx.process.lock_vmar();
+        // Reset the virtual memory state.
+        unshare_and_renew_vmar(ctx, &mut vmar);
+        // Load the binary into the process's address space
+        program_to_load.load_to_vmar(vmar.unwrap(), fs_resolver)?
+    };
     // After the program has been successfully loaded, the virtual memory of the current process
     // is initialized. Hence, it is necessary to clear the previously recorded robust list.
     *thread_local.robust_list().borrow_mut() = None;
     thread_local.clear_child_tid().set(0);
 
-    // Load the binary into the process's address space and set up the CPU context.
-    let elf_load_info = program_to_load.load_to_vm(process.vm(), fs_resolver)?;
+    // Set up the CPU context.
     set_cpu_context(thread_local, user_context, &elf_load_info);
 
     // Apply file-capability changes.

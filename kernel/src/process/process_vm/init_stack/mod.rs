@@ -23,7 +23,6 @@ use aster_rights::Full;
 use ostd::mm::{VmIo, MAX_USERSPACE_VADDR};
 
 use self::aux_vec::{AuxKey, AuxVec};
-use super::ProcessVm;
 use crate::{
     prelude::*,
     util::random::getrandom,
@@ -127,7 +126,7 @@ impl Clone for InitStack {
 }
 
 impl InitStack {
-    pub(super) fn new() -> Self {
+    pub fn new() -> Self {
         let nr_pages_padding = {
             // We do not want the stack top too close to MAX_USERSPACE_VADDR.
             // So we add this fixed padding. Any small value greater than zero will do.
@@ -166,7 +165,7 @@ impl InitStack {
     /// Maps the VMO of the init stack and constructs a writer to initialize its content.
     pub(super) fn map_and_write(
         &self,
-        root_vmar: &Vmar<Full>,
+        vmar: &Vmar<Full>,
         argv: Vec<CString>,
         envp: Vec<CString>,
         auxvec: AuxVec,
@@ -181,8 +180,7 @@ impl InitStack {
             let perms = VmPerms::READ | VmPerms::WRITE;
             let map_addr = self.initial_top - self.max_size;
             debug_assert!(map_addr % PAGE_SIZE == 0);
-            root_vmar
-                .new_map(self.max_size, perms)?
+            vmar.new_map(self.max_size, perms)?
                 .offset(map_addr)
                 .vmo(vmo.dup().to_dyn())
         };
@@ -206,11 +204,11 @@ impl InitStack {
 
     /// Constructs a reader to parse the content of an `InitStack`.
     /// The `InitStack` should only be read after initialized
-    pub(super) fn reader<'a>(&self, process_vm: &'a ProcessVm) -> InitStackReader<'a> {
+    pub(super) fn reader<'a>(&self, vmar: &'a Vmar<Full>) -> InitStackReader<'a> {
         debug_assert!(self.is_initialized());
         InitStackReader {
             base: self.pos(),
-            process_vm,
+            vmar,
             map_addr: self.initial_top - self.max_size,
             argv_range: self.argv_range.lock().clone(),
             envp_range: self.envp_range.lock().clone(),
@@ -399,7 +397,7 @@ fn generate_random_for_aux_vec() -> [u8; 16] {
 /// A reader to parse the content of an `InitStack`.
 pub struct InitStackReader<'a> {
     base: Vaddr,
-    process_vm: &'a ProcessVm,
+    vmar: &'a Vmar<Full>,
     /// The mapping address of the `InitStack`.
     map_addr: usize,
     argv_range: Range<Vaddr>,
@@ -411,7 +409,7 @@ impl InitStackReader<'_> {
     pub fn argc(&self) -> Result<u64> {
         let mut buffer = [0u8; 8];
 
-        self.process_vm.read_remote(
+        self.vmar.read_remote(
             self.init_stack_bottom(),
             &mut VmWriter::from(&mut buffer[..]).to_fallible(),
         )?;
@@ -428,7 +426,7 @@ impl InitStackReader<'_> {
     pub fn argv(&self) -> Result<Vec<u8>> {
         let mut buffer = vec![0u8; self.argv_range.end - self.argv_range.start];
 
-        self.process_vm.read_remote(
+        self.vmar.read_remote(
             self.argv_range.start,
             &mut VmWriter::from(&mut buffer[..]).to_fallible(),
         )?;
@@ -440,7 +438,7 @@ impl InitStackReader<'_> {
     pub fn envp(&self) -> Result<Vec<u8>> {
         let mut buffer = vec![0u8; self.envp_range.end - self.envp_range.start];
 
-        self.process_vm.read_remote(
+        self.vmar.read_remote(
             self.envp_range.start,
             &mut VmWriter::from(&mut buffer[..]).to_fallible(),
         )?;

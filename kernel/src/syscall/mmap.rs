@@ -87,9 +87,9 @@ fn do_sys_mmap(
     let mut vm_may_perms = VmPerms::ALL_MAY_PERMS;
 
     let user_space = ctx.user_space();
-    let root_vmar = user_space.root_vmar();
+    let vmar = user_space.vmar();
     let vm_map_options = {
-        let mut options = root_vmar.new_map(len, vm_perms)?;
+        let mut options = vmar.new_map(len, vm_perms)?;
         let flags = option.flags;
         if flags.contains(MMapFlags::MAP_FIXED) {
             options = options.offset(addr).can_overwrite(true);

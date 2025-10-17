@@ -12,7 +12,7 @@ pub fn sys_mprotect(addr: Vaddr, len: usize, perms: u64, ctx: &Context) -> Resul
         addr, len, vm_perms
     );
     let user_space = ctx.user_space();
-    let root_vmar = user_space.root_vmar();
+    let vmar = user_space.vmar();
 
     // According to linux behavior,
     // <https://elixir.bootlin.com/linux/v6.0.9/source/mm/mprotect.c#L681>,
@@ -43,6 +43,6 @@ pub fn sys_mprotect(addr: Vaddr, len: usize, perms: u64, ctx: &Context) -> Resul
         vm_perms
     };
 
-    root_vmar.protect(vm_perms, range)?;
+    vmar.protect(vm_perms, range)?;
     Ok(SyscallReturn::Return(0))
 }

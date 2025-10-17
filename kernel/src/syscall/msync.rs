@@ -53,8 +53,8 @@ pub fn sys_msync(start: Vaddr, size: usize, flag: i32, ctx: &Context) -> Result<
     };
 
     let user_space = ctx.user_space();
-    let root_vmar = user_space.root_vmar().dup()?;
-    let guard = root_vmar.query(range.clone());
+    let vmar = user_space.vmar().dup()?;
+    let guard = vmar.query(range.clone());
     let mut mappings_iter = guard.iter();
 
     // Check if the range is fully mapped.

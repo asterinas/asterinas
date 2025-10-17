@@ -166,7 +166,7 @@ impl FileOps for StatFileOps {
         let itrealvalue = 0;
         let starttime = 0;
 
-        let (vsize, rss) = if let Some(vmar_ref) = process.lock_root_vmar().as_ref() {
+        let (vsize, rss) = if let Some(vmar_ref) = process.lock_vmar().as_ref() {
             let vsize = vmar_ref.get_mappings_total_size();
             let anon = vmar_ref.get_rss_counter(RssType::RSS_ANONPAGES);
             let file = vmar_ref.get_rss_counter(RssType::RSS_FILEPAGES);

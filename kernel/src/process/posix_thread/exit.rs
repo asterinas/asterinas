@@ -85,7 +85,7 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
     *posix_thread.ns_proxy().lock() = None;
 
     // Drop fields in `ThreadLocal`.
-    *thread_local.root_vmar().borrow_mut() = None;
+    *thread_local.vmar().borrow_mut() = None;
     thread_local.borrow_file_table_mut().remove();
     thread_local.borrow_ns_proxy_mut().remove();
 

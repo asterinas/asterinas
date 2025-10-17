@@ -24,12 +24,16 @@ impl CmdlineFileOps {
 
 impl FileOps for CmdlineFileOps {
     fn data(&self) -> Result<Vec<u8>> {
-        Ok(self
-            .0
+        let vmar_guard = self.0.lock_vmar();
+        let Some(vmar) = vmar_guard.as_ref() else {
+            // According to Linux behavior, return an empty string
+            // if the process is a zombie process.
+            return Ok(Vec::new());
+        };
+        Ok(vmar
             .init_stack_reader()
             .argv()
-            // According to Linux behavior, return an empty string if an error occurs
-            // (which is likely because the process is a zombie process).
+            // Should we return an empty string if an error occurs?
             .unwrap_or_else(|_| Vec::new()))
     }
 }

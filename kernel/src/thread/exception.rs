@@ -37,8 +37,8 @@ pub fn handle_exception(ctx: &Context, context: &UserContext, exception: CpuExce
 
     if let Ok(page_fault_info) = PageFaultInfo::try_from(&exception) {
         let user_space = ctx.user_space();
-        let root_vmar = user_space.root_vmar();
-        if handle_page_fault_from_vmar(root_vmar, &page_fault_info).is_ok() {
+        let vmar = user_space.vmar();
+        if handle_page_fault_from_vmar(vmar, &page_fault_info).is_ok() {
             return;
         }
     }
@@ -46,12 +46,12 @@ pub fn handle_exception(ctx: &Context, context: &UserContext, exception: CpuExce
     generate_fault_signal(exception, ctx);
 }
 
-/// Handles the page fault occurs in the input `Vmar`.
+/// Handles the page fault occurs in the VMAR.
 fn handle_page_fault_from_vmar(
-    root_vmar: &Vmar<Full>,
+    vmar: &Vmar<Full>,
     page_fault_info: &PageFaultInfo,
 ) -> core::result::Result<(), ()> {
-    if let Err(e) = root_vmar.handle_page_fault(page_fault_info) {
+    if let Err(e) = vmar.handle_page_fault(page_fault_info) {
         warn!(
             "page fault handler failed: addr: 0x{:x}, err: {:?}",
             page_fault_info.address, e
@@ -78,5 +78,5 @@ pub(super) fn page_fault_handler(info: &CpuException) -> core::result::Result<()
     }
 
     let user_space = CurrentUserSpace::new(thread_local);
-    handle_page_fault_from_vmar(user_space.root_vmar(), &info.try_into().unwrap())
+    handle_page_fault_from_vmar(user_space.vmar(), &info.try_into().unwrap())
 }

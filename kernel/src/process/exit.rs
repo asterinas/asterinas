@@ -17,7 +17,7 @@ pub(super) fn exit_process(current_process: &Process) {
     current_process.status().set_vfork_child(false);
 
     // Drop fields in `Process`.
-    current_process.lock_root_vmar().set_vmar(None);
+    current_process.lock_vmar().set_vmar(None);
 
     current_process.pidfile_pollee.notify(IoEvents::IN);
 

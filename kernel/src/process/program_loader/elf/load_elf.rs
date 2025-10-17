@@ -20,7 +20,7 @@ use crate::{
         path::Path,
     },
     prelude::*,
-    process::process_vm::{AuxKey, AuxVec, ProcessVm},
+    process::process_vm::{AuxKey, AuxVec},
     vm::{
         perms::VmPerms,
         util::duplicate_frame,
@@ -29,12 +29,12 @@ use crate::{
     },
 };
 
-/// Loads elf to the process vm.
+/// Loads elf to the process VMAR.
 ///
 /// This function will map elf segments and
 /// initialize process init stack.
-pub fn load_elf_to_vm(
-    process_vm: &ProcessVm,
+pub fn load_elf_to_vmar(
+    vmar: &Vmar<Full>,
     elf_file: Path,
     fs_resolver: &FsResolver,
     elf_headers: ElfHeaders,
@@ -48,23 +48,23 @@ pub fn load_elf_to_vm(
         expect(unused_mut)
     )]
     let (_range, entry_point, mut aux_vec) =
-        init_and_map_vmos(process_vm, ldso, &elf_headers, &elf_file)?;
+        init_and_map_vmos(vmar, ldso, &elf_headers, &elf_file)?;
 
     // Map the vDSO and set the entry.
     // Since the vDSO does not require being mapped to any specific address,
     // the vDSO is mapped after the ELF file, heap, and stack.
     #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
-    if let Some(vdso_text_base) = map_vdso_to_vm(process_vm) {
+    if let Some(vdso_text_base) = map_vdso_to_vmar(vmar) {
         #[cfg(target_arch = "riscv64")]
-        process_vm.set_vdso_base(vdso_text_base);
+        vmar.set_vdso_base(vdso_text_base);
         aux_vec
             .set(AuxKey::AT_SYSINFO_EHDR, vdso_text_base as u64)
             .unwrap();
     }
 
-    process_vm.map_and_write_init_stack(argv, envp, aux_vec)?;
+    vmar.map_and_write_init_stack(argv, envp, aux_vec)?;
 
-    let user_stack_top = process_vm.user_stack_top();
+    let user_stack_top = vmar.init_stack().user_stack_top();
     Ok(ElfLoadInfo {
         entry_point,
         user_stack_top,
@@ -100,12 +100,8 @@ fn lookup_and_parse_ldso(
     Ok(Some((ldso_file, ldso_elf)))
 }
 
-fn load_ldso(
-    root_vmar: &Vmar<Full>,
-    ldso_file: &Path,
-    ldso_elf: &ElfHeaders,
-) -> Result<LdsoLoadInfo> {
-    let range = map_segment_vmos(ldso_elf, root_vmar, ldso_file)?;
+fn load_ldso(vmar: &Vmar<Full>, ldso_file: &Path, ldso_elf: &ElfHeaders) -> Result<LdsoLoadInfo> {
+    let range = map_segment_vmos(ldso_elf, vmar, ldso_file)?;
     Ok(LdsoLoadInfo {
         entry_point: range
             .relocated_addr_of(ldso_elf.entry_point())
@@ -122,22 +118,19 @@ fn load_ldso(
 ///
 /// Returns the mapped range, the entry point and the auxiliary vector.
 fn init_and_map_vmos(
-    process_vm: &ProcessVm,
+    vmar: &Vmar<Full>,
     ldso: Option<(Path, ElfHeaders)>,
     parsed_elf: &ElfHeaders,
     elf_file: &Path,
 ) -> Result<(RelocatedRange, Vaddr, AuxVec)> {
-    let process_vmar = process_vm.lock_root_vmar();
-    let root_vmar = process_vmar.unwrap();
-
     // After we clear process vm, if any error happens, we must call exit_group instead of return to user space.
     let ldso_load_info = if let Some((ldso_file, ldso_elf)) = ldso {
-        Some(load_ldso(root_vmar, &ldso_file, &ldso_elf)?)
+        Some(load_ldso(vmar, &ldso_file, &ldso_elf)?)
     } else {
         None
     };
 
-    let elf_map_range = map_segment_vmos(parsed_elf, root_vmar, elf_file)?;
+    let elf_map_range = map_segment_vmos(parsed_elf, vmar, elf_file)?;
 
     let aux_vec = {
         let ldso_base = ldso_load_info
@@ -179,7 +172,7 @@ pub struct ElfLoadInfo {
     _private: (),
 }
 
-/// Initializes a [`Vmo`] for each segment and then map to the root [`Vmar`].
+/// Initializes a [`Vmo`] for each segment and then map to the [`Vmar`].
 ///
 /// This function will return the mapped range that covers all segments. The
 /// range will be tight, i.e., will not include any padding bytes. So the
@@ -188,7 +181,7 @@ pub struct ElfLoadInfo {
 /// [`Vmo`]: crate::vm::vmo::Vmo
 pub fn map_segment_vmos(
     elf: &ElfHeaders,
-    root_vmar: &Vmar<Full>,
+    vmar: &Vmar<Full>,
     elf_file: &Path,
 ) -> Result<RelocatedRange> {
     let elf_va_range = get_range_for_all_segments(elf)?;
@@ -204,7 +197,7 @@ pub fn map_segment_vmos(
             elf_va_range.start.align_down(PAGE_SIZE)..elf_va_range.end.align_up(PAGE_SIZE);
         let map_size = elf_va_range_aligned.len();
 
-        let vmar_map_options = root_vmar
+        let vmar_map_options = vmar
             .new_map(map_size, VmPerms::empty())?
             .handle_page_faults_around();
         let aligned_range = vmar_map_options.build().map(|addr| addr..addr + map_size)?;
@@ -232,7 +225,7 @@ pub fn map_segment_vmos(
                 .relocated_addr_of(program_header.virtual_addr as Vaddr)
                 .expect("Address not covered by `get_range_for_all_segments`");
 
-            map_segment_vmo(program_header, elf_file, root_vmar, map_at)?;
+            map_segment_vmo(program_header, elf_file, vmar, map_at)?;
         }
     }
 
@@ -300,12 +293,12 @@ fn get_range_for_all_segments(elf: &ElfHeaders) -> Result<Range<Vaddr>> {
     Ok(min_addr..max_addr)
 }
 
-/// Creates and map the corresponding segment VMO to `root_vmar`.
+/// Creates and map the corresponding segment VMO to `vmar`.
 /// If needed, create additional anonymous mapping to represents .bss segment.
 fn map_segment_vmo(
     program_header: &ProgramHeader64,
     elf_file: &Path,
-    root_vmar: &Vmar<Full>,
+    vmar: &Vmar<Full>,
     map_at: Vaddr,
 ) -> Result<()> {
     trace!(
@@ -352,7 +345,7 @@ fn map_segment_vmo(
     let perms = parse_segment_perm(program_header.flags);
     let offset = map_at.align_down(PAGE_SIZE);
     if segment_size != 0 {
-        let mut vm_map_options = root_vmar
+        let mut vm_map_options = vmar
             .new_map(segment_size, perms)?
             .vmo(segment_vmo.dup()?)
             .vmo_offset(segment_offset)
@@ -401,7 +394,7 @@ fn map_segment_vmo(
         };
 
         let preempt_guard = disable_preempt();
-        let mut cursor = root_vmar
+        let mut cursor = vmar
             .vm_space()
             .cursor_mut(&preempt_guard, &(map_addr..map_addr + segment_size))?;
         let page_flags = PageFlags::from(perms) | PageFlags::ACCESSED;
@@ -424,9 +417,8 @@ fn map_segment_vmo(
 
     let anonymous_map_size: usize = total_map_size.saturating_sub(segment_size);
     if anonymous_map_size > 0 {
-        let mut anonymous_map_options = root_vmar
-            .new_map(anonymous_map_size, perms)?
-            .can_overwrite(true);
+        let mut anonymous_map_options =
+            vmar.new_map(anonymous_map_size, perms)?.can_overwrite(true);
         anonymous_map_options = anonymous_map_options.offset(offset + segment_size);
         anonymous_map_options.build()?;
     }
@@ -493,14 +485,12 @@ pub fn init_aux_vec(
 
 /// Maps the vDSO VMO to the corresponding virtual memory address.
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
-fn map_vdso_to_vm(process_vm: &ProcessVm) -> Option<Vaddr> {
+fn map_vdso_to_vmar(vmar: &Vmar<Full>) -> Option<Vaddr> {
     use crate::vdso::{vdso_vmo, VDSO_VMO_LAYOUT};
 
-    let process_vmar = process_vm.lock_root_vmar();
-    let root_vmar = process_vmar.unwrap();
     let vdso_vmo = vdso_vmo()?;
 
-    let options = root_vmar
+    let options = vmar
         .new_map(VDSO_VMO_LAYOUT.size, VmPerms::empty())
         .unwrap()
         .vmo(vdso_vmo.dup().unwrap());
@@ -511,17 +501,15 @@ fn map_vdso_to_vm(process_vm: &ProcessVm) -> Option<Vaddr> {
 
     let data_perms = VmPerms::READ;
     let text_perms = VmPerms::READ | VmPerms::EXEC;
-    root_vmar
-        .protect(
-            data_perms,
-            vdso_data_base..(vdso_data_base + VDSO_VMO_LAYOUT.data_segment_size),
-        )
-        .unwrap();
-    root_vmar
-        .protect(
-            text_perms,
-            vdso_text_base..(vdso_text_base + VDSO_VMO_LAYOUT.text_segment_size),
-        )
-        .unwrap();
+    vmar.protect(
+        data_perms,
+        vdso_data_base..(vdso_data_base + VDSO_VMO_LAYOUT.data_segment_size),
+    )
+    .unwrap();
+    vmar.protect(
+        text_perms,
+        vdso_text_base..(vdso_text_base + VDSO_VMO_LAYOUT.text_segment_size),
+    )
+    .unwrap();
     Some(vdso_text_base)
 }

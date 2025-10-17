@@ -153,10 +153,10 @@ impl PosixThreadBuilder {
         let fs =
             fs.unwrap_or_else(|| Arc::new(ThreadFsInfo::new(ns_proxy.mnt_ns().new_fs_resolver())));
 
-        let root_vmar = process
+        let vmar = process
             .upgrade()
             .unwrap()
-            .lock_root_vmar()
+            .lock_vmar()
             .unwrap()
             .dup()
             .unwrap();
@@ -196,7 +196,7 @@ impl PosixThreadBuilder {
             let thread_local = ThreadLocal::new(
                 set_child_tid,
                 clear_child_tid,
-                root_vmar,
+                vmar,
                 file_table,
                 fs,
                 fpu_context,

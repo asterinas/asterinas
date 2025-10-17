@@ -17,7 +17,7 @@ use crate::{
         Process,
     },
     thread::Thread,
-    vm::vmar::{Vmar, ROOT_VMAR_LOWEST_ADDR},
+    vm::vmar::{Vmar, VMAR_LOWEST_ADDR},
 };
 
 /// The context that can be accessed from the current POSIX thread.
@@ -33,7 +33,7 @@ pub struct Context<'a> {
 impl Context<'_> {
     /// Gets the userspace of the current task.
     pub fn user_space(&self) -> CurrentUserSpace {
-        CurrentUserSpace(self.thread_local.root_vmar().borrow())
+        CurrentUserSpace(self.thread_local.vmar().borrow())
     }
 }
 
@@ -67,16 +67,16 @@ impl<'a> CurrentUserSpace<'a> {
     /// Otherwise, you can use the `current_userspace` macro
     /// to obtain an instance of `CurrentUserSpace` if it will only be used once.
     pub fn new(thread_local: &'a ThreadLocal) -> Self {
-        let vmar_ref = thread_local.root_vmar().borrow();
+        let vmar_ref = thread_local.vmar().borrow();
         Self(vmar_ref)
     }
 
-    /// Returns the root `Vmar` of the current userspace.
+    /// Returns the `Vmar` of the current userspace.
     ///
     /// # Panics
     ///
     /// This method will panic if the current process has cleared its `Vmar`.
-    pub fn root_vmar(&self) -> &Vmar<Full> {
+    pub fn vmar(&self) -> &Vmar<Full> {
         self.0.as_ref().unwrap()
     }
 
@@ -84,7 +84,7 @@ impl<'a> CurrentUserSpace<'a> {
     pub fn is_vmar_shared(&self) -> bool {
         // If the VMAR is not shared, its reference count should be exactly 2:
         // one reference is held by `ThreadLocal` and the other by `ProcessVm` in `Process`.
-        self.root_vmar().reference_count() != 2
+        self.vmar().reference_count() != 2
     }
 
     /// Creates a reader to read data from the user space of the current task.
@@ -106,7 +106,7 @@ impl<'a> CurrentUserSpace<'a> {
         // Asterinas's system call entry points follow a pattern of converting user-space pointers to
         // a reader/writer first and using the reader/writer later.
         // So adding any pointer check here would break Asterinas's delayed buffer validation behavior.
-        Ok(self.root_vmar().vm_space().reader(vaddr, len)?)
+        Ok(self.vmar().vm_space().reader(vaddr, len)?)
     }
 
     /// Creates a writer to write data into the user space of the current task.
@@ -115,7 +115,7 @@ impl<'a> CurrentUserSpace<'a> {
     pub fn writer(&self, vaddr: Vaddr, len: usize) -> Result<VmWriter<'_, Fallible>> {
         // Do NOT attempt to call `check_vaddr_lowerbound` here.
         // See the comments in the `reader` method.
-        Ok(self.root_vmar().vm_space().writer(vaddr, len)?)
+        Ok(self.vmar().vm_space().writer(vaddr, len)?)
     }
 
     /// Creates a reader/writer pair to read data from or write data into the user space
@@ -132,7 +132,7 @@ impl<'a> CurrentUserSpace<'a> {
     ) -> Result<(VmReader<'_, Fallible>, VmWriter<'_, Fallible>)> {
         // Do NOT attempt to call `check_vaddr_lowerbound` here.
         // See the comments in the `reader` method.
-        Ok(self.root_vmar().vm_space().reader_writer(vaddr, len)?)
+        Ok(self.vmar().vm_space().reader_writer(vaddr, len)?)
     }
 
     /// Reads bytes into the destination `VmWriter` from the user space of the
@@ -296,7 +296,7 @@ impl<'a> CurrentUserSpace<'a> {
 /// in some occasions. More importantly, double page faults may not be handled
 /// quite well on some platforms.
 fn check_vaddr_lowerbound(va: Vaddr) -> Result<()> {
-    if va < ROOT_VMAR_LOWEST_ADDR {
+    if va < VMAR_LOWEST_ADDR {
         return_errno_with_message!(Errno::EFAULT, "the userspace address is too small");
     }
     Ok(())
