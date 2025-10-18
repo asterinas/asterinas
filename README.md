@@ -13,6 +13,7 @@
 English | [中文版](README_CN.md) | [日本語](README_JP.md)
 
 **News:**
+* 2025-10-17: **ICSE 2026** accepted yet another paper about Asterinas: _RusyFuzz: Unhandled Exception Guided Fuzzing for Rust OS Kernel_.
 * 2025-10-14: [*CortenMM: Efficient Memory Management with Strong Correctness Guarantees*](https://dl.acm.org/doi/10.1145/3731569.3764836) received the **Best Paper Award** at **SOSP 2025**.
 * 2025-07-23: **SOSP 2025** accepted another Asterinas paper: [*CortenMM: Efficient Memory Management with Strong Correctness Guarantees*](https://dl.acm.org/doi/10.1145/3731569.3764836).
 * 2025-06-18: **USENIX _;login:_ magazine** published [*Asterinas: A Rust-Based Framekernel to Reimagine Linux in the 2020s*](https://www.usenix.org/publications/loginonline/asterinas-rust-based-framekernel-reimagine-linux-2020s).
