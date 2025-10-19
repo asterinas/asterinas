@@ -115,8 +115,12 @@ impl CpuSet {
         self.bits.iter().enumerate().flat_map(|(part_idx, &part)| {
             (0..BITS_PER_PART).filter_map(move |bit_idx| {
                 if (part & (1 << bit_idx)) != 0 {
-                    let id = part_idx * BITS_PER_PART + bit_idx;
-                    Some(CpuId(id as u32))
+                    let cpu_id = {
+                        let raw_id = part_idx * BITS_PER_PART + bit_idx;
+                        // SAFETY: all bit 1s in the bitmap must be a valid CPU ID.
+                        unsafe { CpuId::new_unchecked(raw_id as u32) }
+                    };
+                    Some(cpu_id)
                 } else {
                     None
                 }

@@ -96,7 +96,7 @@ unsafe fn init() {
     // SAFETY:
     // 1. They are only called once in the boot context of the BSP.
     // 2. The number of CPUs are available because ACPI has been initialized.
-    // 3. No CPU-local objects have been accessed yet.
+    // 3. CPU-local storage has NOT been used.
     unsafe { cpu::init_on_bsp() };
 
     // SAFETY: We are on the BSP and APs are not yet started.

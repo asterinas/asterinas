@@ -125,7 +125,9 @@ pub fn register_ap_entry(entry: fn()) {
 
 #[no_mangle]
 fn ap_early_entry(cpu_id: u32) -> ! {
-    // SAFETY: `cpu_id` is the correct value of the CPU ID.
+    // SAFETY:
+    // 1. We're in the boot context of an AP.
+    // 2. The CPU ID of the AP is correct.
     unsafe { crate::cpu::init_on_ap(cpu_id) };
 
     crate::arch::enable_cpu_features();
