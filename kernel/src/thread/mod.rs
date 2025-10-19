@@ -6,10 +6,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use aster_util::per_cpu_counter::PerCpuCounter;
 use ostd::{
-    cpu::{
-        set::{AtomicCpuSet, CpuSet},
-        CpuId,
-    },
+    cpu::{AtomicCpuSet, CpuId, CpuSet},
     task::Task,
 };
 

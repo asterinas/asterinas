@@ -3,6 +3,7 @@
 //! Utility types and methods.
 
 mod either;
+pub mod id_set;
 mod macros;
 pub(crate) mod ops;
 pub(crate) mod range_alloc;
