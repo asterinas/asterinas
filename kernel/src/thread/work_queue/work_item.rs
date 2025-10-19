@@ -5,7 +5,7 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
-use ostd::cpu::{set::CpuSet, CpuId};
+use ostd::cpu::{CpuId, CpuSet};
 
 use crate::prelude::*;
 

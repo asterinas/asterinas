@@ -7,10 +7,7 @@ use core::sync::atomic::{
 };
 
 use crate::{
-    cpu::{
-        set::{AtomicCpuSet, CpuSet},
-        CpuId, PinCurrentCpu,
-    },
+    cpu::{AtomicCpuSet, CpuId, CpuSet, PinCurrentCpu},
     prelude::*,
     sync::SpinLock,
     task::atomic_mode::AsAtomicModeGuard,

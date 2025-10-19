@@ -4,7 +4,7 @@ use core::sync::atomic::AtomicU32;
 
 use ostd::{
     arch::cpu::context::{FpuContext, UserContext},
-    cpu::set::CpuSet,
+    cpu::CpuSet,
     sync::RwArc,
     task::Task,
 };

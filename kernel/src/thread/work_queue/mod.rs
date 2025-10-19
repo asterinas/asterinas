@@ -48,7 +48,7 @@
 //! Certainly, users can also create a dedicated WorkQueue and WorkerPool.
 //!
 //! ```rust
-//! use ostd::cpu::set::CpuSet;
+//! use ostd::cpu::CpuSet;
 //! use crate::thread::work_queue::{WorkQueue, WorkerPool, WorkItem};
 //!
 //! fn deferred_task(){
@@ -65,7 +65,7 @@
 //! ```
 
 use intrusive_collections::linked_list::LinkedList;
-use ostd::cpu::{set::CpuSet, CpuId};
+use ostd::cpu::{CpuId, CpuSet};
 use spin::Once;
 use work_item::{WorkItem, WorkItemAdapter};
 use worker_pool::WorkerPool;

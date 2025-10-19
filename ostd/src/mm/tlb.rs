@@ -16,10 +16,7 @@ use super::{
 use crate::{
     arch::irq,
     const_assert,
-    cpu::{
-        set::{AtomicCpuSet, CpuSet},
-        PinCurrentCpu,
-    },
+    cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu},
     cpu_local,
     sync::{LocalIrqDisabled, SpinLock},
 };

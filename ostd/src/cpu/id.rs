@@ -3,6 +3,9 @@
 //! CPU identification numbers.
 
 pub use current::PinCurrentCpu;
+pub use set::{AtomicCpuSet, CpuSet};
+
+use crate::util::id_set::Id;
 
 /// The ID of a CPU in the system.
 ///
@@ -24,20 +27,6 @@ impl CpuId {
         unsafe { Self::new_unchecked(raw_id) }
     }
 
-    /// Creates a new instance.
-    ///
-    /// # Safety
-    ///
-    /// The given number must be smaller than the total number of CPUs
-    /// (`ostd::cpu::num_cpus()`).
-    pub(super) unsafe fn new_unchecked(raw_id: u32) -> Self {
-        // This function should NOT be marked `const`.
-        // The number of CPUs (`num_cpus()`) is a runtime value,
-        // making it impossible to safely create `CpuId` in a const context.
-
-        Self(raw_id)
-    }
-
     /// Returns the CPU ID of the bootstrap processor (BSP).
     ///
     /// The number for the BSP is always zero.
@@ -51,6 +40,12 @@ impl CpuId {
     /// Converts the CPU ID to an `usize`.
     pub const fn as_usize(self) -> usize {
         self.0 as usize
+    }
+}
+
+impl From<CpuId> for u32 {
+    fn from(cpu_id: CpuId) -> Self {
+        cpu_id.0
     }
 }
 
@@ -89,11 +84,34 @@ pub fn all_cpus() -> impl Iterator<Item = CpuId> {
     })
 }
 
+mod set {
+    use super::{num_cpus, CpuId};
+    use crate::util::id_set::{AtomicIdSet, Id, IdSet};
+
+    /// A set of CPU IDs.
+    pub type CpuSet = IdSet<CpuId>;
+
+    /// A set of CPU IDs, with support for concurrent access.
+    pub type AtomicCpuSet = AtomicIdSet<CpuId>;
+
+    // SAFETY: `CpuId`s and the integers within 0 to `num_cpus` (exclusive)
+    // have 1:1 mapping.
+    unsafe impl Id for CpuId {
+        unsafe fn new_unchecked(raw_id: u32) -> Self {
+            Self(raw_id)
+        }
+
+        fn cardinality() -> u32 {
+            num_cpus() as u32
+        }
+    }
+}
+
 mod current {
     //! The current CPU ID.
 
     use super::CpuId;
-    use crate::{cpu_local_cell, task::atomic_mode::InAtomicMode};
+    use crate::{cpu_local_cell, task::atomic_mode::InAtomicMode, util::id_set::Id};
 
     /// A marker trait for guard types that can "pin" the current task to the
     /// current CPU.
