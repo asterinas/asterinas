@@ -36,14 +36,34 @@ const fn parts_for_cpus(num_cpus: usize) -> usize {
 impl CpuSet {
     /// Creates a new `CpuSet` with all CPUs in the system.
     pub fn new_full() -> Self {
-        let mut ret = Self::with_capacity_val(num_cpus(), !0);
-        ret.clear_nonexistent_cpu_bits();
-        ret
+        let mut bits = Self::with_bit_pattern(!0);
+        Self::clear_invalid_cpu_bits(&mut bits);
+        Self { bits }
     }
 
     /// Creates a new `CpuSet` with no CPUs in the system.
     pub fn new_empty() -> Self {
-        Self::with_capacity_val(num_cpus(), 0)
+        let bits = Self::with_bit_pattern(0);
+        Self { bits }
+    }
+
+    /// Creates a new bitmap with each of its parts filled with the given bits.
+    ///
+    /// Depending on the bit pattern and the number of CPUs,
+    /// the resulting bitmap may end with some invalid bits.
+    fn with_bit_pattern(part_bits: InnerPart) -> SmallVec<[InnerPart; NR_PARTS_NO_ALLOC]> {
+        let num_parts = parts_for_cpus(num_cpus());
+        let mut bits = SmallVec::with_capacity(num_parts);
+        bits.resize(num_parts, part_bits);
+        bits
+    }
+
+    fn clear_invalid_cpu_bits(bits: &mut SmallVec<[InnerPart; NR_PARTS_NO_ALLOC]>) {
+        let num_cpus = num_cpus();
+        if num_cpus % BITS_PER_PART != 0 {
+            let num_parts = parts_for_cpus(num_cpus);
+            bits[num_parts - 1] &= (1 << (num_cpus % BITS_PER_PART)) - 1;
+        }
     }
 
     /// Adds a CPU to the set.
@@ -100,7 +120,7 @@ impl CpuSet {
     /// Adds all CPUs to the set.
     pub fn add_all(&mut self) {
         self.bits.fill(!0);
-        self.clear_nonexistent_cpu_bits();
+        Self::clear_invalid_cpu_bits(&mut self.bits);
     }
 
     /// Removes all CPUs from the set.
@@ -126,22 +146,6 @@ impl CpuSet {
                 }
             })
         })
-    }
-
-    /// Only for internal use. The set cannot contain non-existent CPUs.
-    fn with_capacity_val(num_cpus: usize, val: InnerPart) -> Self {
-        let num_parts = parts_for_cpus(num_cpus);
-        let mut bits = SmallVec::with_capacity(num_parts);
-        bits.resize(num_parts, val);
-        Self { bits }
-    }
-
-    fn clear_nonexistent_cpu_bits(&mut self) {
-        let num_cpus = num_cpus();
-        if num_cpus % BITS_PER_PART != 0 {
-            let num_parts = parts_for_cpus(num_cpus);
-            self.bits[num_parts - 1] &= (1 << (num_cpus % BITS_PER_PART)) - 1;
-        }
     }
 }
 
@@ -268,42 +272,6 @@ mod test {
         let set = CpuSet::new_empty();
         for cpu_id in all_cpus() {
             assert!(!set.contains(cpu_id));
-        }
-    }
-
-    #[ktest]
-    fn test_atomic_cpu_set_multiple_sizes() {
-        for test_num_cpus in [1usize, 3, 12, 64, 96, 99, 128, 256, 288, 1024] {
-            let test_all_iter = || (0..test_num_cpus).map(|id| CpuId(id as u32));
-
-            let set = CpuSet::with_capacity_val(test_num_cpus, 0);
-            let atomic_set = AtomicCpuSet::new(set);
-
-            for cpu_id in test_all_iter() {
-                assert!(!atomic_set.contains(cpu_id, Ordering::Relaxed));
-                if cpu_id.as_usize() % 3 == 0 {
-                    atomic_set.add(cpu_id, Ordering::Relaxed);
-                }
-            }
-
-            let loaded = atomic_set.load(Ordering::Relaxed);
-            for cpu_id in loaded.iter() {
-                if cpu_id.as_usize() % 3 == 0 {
-                    assert!(loaded.contains(cpu_id));
-                } else {
-                    assert!(!loaded.contains(cpu_id));
-                }
-            }
-
-            atomic_set.store(
-                &CpuSet::with_capacity_val(test_num_cpus, 0),
-                Ordering::Relaxed,
-            );
-
-            for cpu_id in test_all_iter() {
-                assert!(!atomic_set.contains(cpu_id, Ordering::Relaxed));
-                atomic_set.add(cpu_id, Ordering::Relaxed);
-            }
         }
     }
 }
