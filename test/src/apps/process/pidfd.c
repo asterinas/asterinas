@@ -82,6 +82,9 @@ FN_TEST(wait)
 	pfd.revents = 0;
 	TEST_RES(poll(&pfd, 1, 0), pfd.revents == POLLIN);
 	TEST_ERRNO(waitid(P_PIDFD, pid_fd, NULL, WNOHANG | WEXITED), ECHILD);
+
+	TEST_ERRNO(waitid(P_PIDFD, 100, NULL, WNOHANG | WEXITED), EBADF);
+	TEST_ERRNO(waitid(P_PIDFD, -100, NULL, WNOHANG | WEXITED), EINVAL);
 }
 END_TEST()
 
