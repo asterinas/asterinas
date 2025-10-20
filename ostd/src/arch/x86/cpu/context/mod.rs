@@ -22,7 +22,6 @@ use crate::{
     cpu::PrivilegeLevel,
     irq::call_irq_callback_functions,
     mm::Vaddr,
-    task::scheduler,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
 
@@ -271,7 +270,7 @@ impl UserContextApiInternal for UserContext {
 
         // Return when it is syscall or cpu exception type is Fault or Trap.
         loop {
-            scheduler::might_preempt();
+            crate::task::scheduler::might_preempt();
             self.user_context.run();
 
             let exception =

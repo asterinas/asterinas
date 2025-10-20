@@ -149,6 +149,7 @@ impl UserContextApiInternal for UserContext {
         F: FnMut() -> bool,
     {
         let ret = loop {
+            crate::task::scheduler::might_preempt();
             self.user_context.run();
 
             let cause = loongArch64::register::estat::read().cause();
