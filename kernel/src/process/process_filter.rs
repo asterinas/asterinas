@@ -26,9 +26,16 @@ impl ProcessFilter {
             P_PID => Ok(ProcessFilter::WithPid(id)),
             P_PGID => Ok(ProcessFilter::WithPgid(id)),
             P_PIDFD => {
+                let fd = {
+                    let fd = id.cast_signed();
+                    if fd < 0 {
+                        return_errno_with_message!(Errno::EINVAL, "the pidfd is invalid");
+                    }
+                    fd
+                };
                 let file = {
                     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-                    get_file_fast!(&mut file_table, id.cast_signed()).into_owned()
+                    get_file_fast!(&mut file_table, fd).into_owned()
                 };
                 let pid_file = Arc::downcast(file).map_err(|_| {
                     Error::with_message(Errno::EINVAL, "the file is not a PID file")
