@@ -144,7 +144,9 @@ impl UserContextApiInternal for UserContext {
         F: FnMut() -> bool,
     {
         let ret = loop {
+            crate::task::scheduler::might_preempt();
             self.user_context.run();
+
             match riscv::register::scause::read().cause() {
                 Trap::Interrupt(Interrupt::SupervisorTimer) => {
                     call_irq_callback_functions(
