@@ -43,6 +43,8 @@ SYSCALL_TEST_WORKDIR ?= /tmp
 # NETDEV possible values are user,tap
 NETDEV ?= user
 VHOST ?= off
+# The name server listed by /etc/resolv.conf inside the Asterinas VM
+DNS_SERVER ?= none
 # End of network settings
 
 # ========================= End of Makefile options. ==========================
