@@ -3,7 +3,6 @@
 use super::{
     file_handle::FileLike,
     pipe::{self, PipeReader, PipeWriter},
-    utils::{AccessMode, Metadata},
 };
 use crate::{
     events::IoEvents,
@@ -22,29 +21,19 @@ impl NamedPipe {
 
         Ok(Self { reader, writer })
     }
+
+    pub fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+        self.reader.read(writer)
+    }
+
+    pub fn write(&self, reader: &mut VmReader) -> Result<usize> {
+        self.writer.write(reader)
+    }
 }
 
 impl Pollable for NamedPipe {
     fn poll(&self, _mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
         warn!("Named pipe doesn't support poll now, return IoEvents::empty for now.");
         IoEvents::empty()
-    }
-}
-
-impl FileLike for NamedPipe {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        self.reader.read(writer)
-    }
-
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
-        self.writer.write(reader)
-    }
-
-    fn access_mode(&self) -> AccessMode {
-        AccessMode::O_RDWR
-    }
-
-    fn metadata(&self) -> Metadata {
-        self.reader.metadata()
     }
 }

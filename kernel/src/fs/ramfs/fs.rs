@@ -20,7 +20,6 @@ use crate::{
     events::IoEvents,
     fs::{
         device::Device,
-        file_handle::FileLike,
         named_pipe::NamedPipe,
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
         registry::{FsProperties, FsType},
