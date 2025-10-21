@@ -1,5 +1,5 @@
 { lib, stdenvNoCC, fetchFromGitHub, hostPlatform, writeClosure, busybox, apps
-, benchmark, syscall, }:
+, benchmark, syscall, dnsServer, pkgs }:
 let
   etc = lib.fileset.toSource {
     root = ./../src/etc;
@@ -9,7 +9,9 @@ let
     name = "gvisor-libs";
     path = "/lib/x86_64-linux-gnu";
   };
-  all_pkgs = [ busybox etc ] ++ lib.optionals (apps != null) [ apps.package ]
+  resolv_conf = pkgs.callPackage ./resolv_conf.nix { dnsServer = dnsServer; };
+  all_pkgs = [ busybox etc resolv_conf ]
+    ++ lib.optionals (apps != null) [ apps.package ]
     ++ lib.optionals (benchmark != null) [ benchmark.package ]
     ++ lib.optionals (syscall != null) [ syscall.package ];
 in stdenvNoCC.mkDerivation {
@@ -25,6 +27,8 @@ in stdenvNoCC.mkDerivation {
     cp -r ${busybox}/bin/* $out/bin/
 
     cp -r ${etc}/* $out/etc/
+
+    cp ${resolv_conf}/resolv.conf $out/etc/
 
     ${lib.optionalString (apps != null) ''
       cp -r ${apps.package}/* $out/test/
