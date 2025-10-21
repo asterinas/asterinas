@@ -59,6 +59,7 @@ iced-x86 = { version = "1.21.0", default-features = false, features = [
 ], optional = true }
 tdx-guest = { version = "0.2.1", optional = true }
 unwinding = { version = "=0.2.5", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
+ksym-bin = { path = "../kernel/libs/ksym-bin" }
 
 [target.riscv64imac-unknown-none-elf.dependencies]
 riscv = { version = "0.11.1", features = ["s-mode"] }

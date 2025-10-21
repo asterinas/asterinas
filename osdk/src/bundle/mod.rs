@@ -83,6 +83,14 @@ impl Bundle {
         created
     }
 
+    /// Get the absolute path of the kernel binary inside the bundle directory, if present.
+    pub fn aster_bin_abs_path(&self) -> Option<PathBuf> {
+        self.manifest
+            .aster_bin
+            .as_ref()
+            .map(|bin| self.path.join(bin.path()))
+    }
+
     // Load the bundle from the file system. If the bundle does not exist or have inconsistencies,
     // it will return `None`.
     pub fn load(path: impl AsRef<Path>) -> Option<Self> {
