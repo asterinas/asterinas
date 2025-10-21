@@ -43,6 +43,8 @@ SYSCALL_TEST_WORKDIR ?= /tmp
 # NETDEV possible values are user,tap
 NETDEV ?= user
 VHOST ?= off
+# The nameserver used to generate /etc/resolv.conf
+ASTER_DNS ?= none
 # End of network settings
 
 # ========================= End of Makefile options. ==========================
