@@ -7,7 +7,7 @@ use super::*;
 use crate::{
     device::PtySlave,
     events::IoEvents,
-    fs::inode_handle::FileIo,
+    fs::{device::DeviceFile, inode_handle::FileIo},
     process::signal::{PollHandle, Pollable},
 };
 
@@ -25,7 +25,7 @@ impl PtySlaveInode {
     pub fn new(device: Arc<PtySlave>, fs: Weak<DevPts>) -> Arc<Self> {
         Arc::new(Self {
             metadata: RwLock::new(Metadata::new_device(
-                device.index() as u64 + FIRST_SLAVE_INO,
+                device.as_tty().index() as u64 + FIRST_SLAVE_INO,
                 mkmod!(u+rw, g+w),
                 super::BLOCK_SIZE,
                 device.as_ref(),
@@ -144,7 +144,7 @@ impl Inode for PtySlaveInode {
         self.fs.upgrade().unwrap()
     }
 
-    fn as_device(&self) -> Option<Arc<dyn Device>> {
+    fn as_device(&self) -> Option<Arc<dyn DeviceFile>> {
         Some(self.device.clone())
     }
 }

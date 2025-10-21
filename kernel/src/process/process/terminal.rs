@@ -2,10 +2,12 @@
 
 use alloc::sync::Arc;
 
+use aster_device::DeviceId;
+
 use super::{session::SessionGuard, JobControl, Pgid, Process, Session, Sid};
 use crate::{
     current_userspace,
-    fs::{device::Device, inode_handle::FileIo, utils::IoctlCmd},
+    fs::{inode_handle::FileIo, utils::IoctlCmd},
     prelude::{current, return_errno_with_message, warn, Errno, Error, Result},
     process::process_table,
 };
@@ -14,9 +16,12 @@ use crate::{
 ///
 /// We currently support two kinds of terminal, the TTY and PTY. They're associated with a
 /// `JobControl` to track the session and the foreground process group.
-pub trait Terminal: FileIo + Device {
+pub trait Terminal: FileIo {
     /// Returns the job control of the terminal.
     fn job_control(&self) -> &JobControl;
+
+    /// Returns the `DeviceId` of the terminal.
+    fn device_id(&self) -> &DeviceId;
 }
 
 impl dyn Terminal {
