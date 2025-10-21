@@ -3,7 +3,7 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use super::{
-    file_handle::FileLike,
+    file_handle::{FileLike, PseudoFile},
     utils::{mkmod, AccessMode, Endpoint, EndpointState, InodeType, Metadata, StatusFlags},
 };
 use crate::{
@@ -147,6 +147,14 @@ impl FileLike for PipeReader {
             rdev: 0,
         }
     }
+
+    fn into_pseudo(self: Arc<Self>) -> Option<Arc<dyn PseudoFile>> {
+        Some(self)
+    }
+}
+
+impl PseudoFile for PipeReader {
+    // TODO: Support opening pipe readers.
 }
 
 impl Drop for PipeReader {
@@ -258,6 +266,14 @@ impl FileLike for PipeWriter {
             rdev: 0,
         }
     }
+
+    fn into_pseudo(self: Arc<Self>) -> Option<Arc<dyn PseudoFile>> {
+        Some(self)
+    }
+}
+
+impl PseudoFile for PipeWriter {
+    // TODO: Support opening pipe writers.
 }
 
 fn check_status_flags(status_flags: StatusFlags) -> Result<()> {

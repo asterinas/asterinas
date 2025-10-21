@@ -10,12 +10,13 @@ use inherit_methods_macro::inherit_methods;
 use crate::{
     events::IoEvents,
     fs::{
-        file_handle::{FileLike, Mappable},
+        file_handle::{FileLike, Mappable, PseudoFile},
         inode_handle::{do_fallocate_util, do_resize_util, do_seek_util},
+        path::check_open_util,
         ramfs::new_detached_inode,
         utils::{
-            mkmod, AccessMode, FallocMode, Inode, InodeMode, IoctlCmd, Metadata, SeekFrom,
-            StatusFlags,
+            mkmod, AccessMode, CreationFlags, FallocMode, Inode, InodeMode, IoctlCmd, Metadata,
+            OpenArgs, SeekFrom, StatusFlags,
         },
     },
     prelude::*,
@@ -30,10 +31,15 @@ use crate::{
 /// See <https://man7.org/linux/man-pages/man2/memfd_create.2.html>
 pub const MAX_MEMFD_NAME_LEN: usize = 249;
 
-pub struct MemfdFile {
+struct MemfdInode {
     inode: Arc<dyn Inode>,
     #[expect(dead_code)]
     name: String,
+    // TODO: Add seals field to support sealing operations.
+}
+
+pub struct MemfdFile {
+    memfd_inode: Arc<MemfdInode>,
     offset: Mutex<usize>,
     access_mode: AccessMode,
     status_flags: AtomicU32,
@@ -56,12 +62,15 @@ impl MemfdFile {
         let inode = new_detached_inode(mkmod!(a+rwx), Uid::new_root(), Gid::new_root());
 
         Ok(Self {
-            inode,
-            name,
+            memfd_inode: Arc::new(MemfdInode { inode, name }),
             offset: Mutex::new(0),
             access_mode: AccessMode::O_RDWR,
             status_flags: AtomicU32::new(0),
         })
+    }
+
+    fn inode(&self) -> &Arc<dyn Inode> {
+        &self.memfd_inode.inode
     }
 }
 
@@ -71,7 +80,7 @@ impl Pollable for MemfdFile {
     }
 }
 
-#[inherit_methods(from = "self.inode")]
+#[inherit_methods(from = "self.inode()")]
 impl FileLike for MemfdFile {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize>;
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32>;
@@ -96,7 +105,7 @@ impl FileLike for MemfdFile {
         let mut offset = self.offset.lock();
 
         if self.status_flags().contains(StatusFlags::O_APPEND) {
-            *offset = self.inode.size();
+            *offset = self.inode().size();
         }
 
         let len = self.write_at(*offset, reader)?;
@@ -108,14 +117,14 @@ impl FileLike for MemfdFile {
     fn write_at(&self, mut offset: usize, reader: &mut VmReader) -> Result<usize> {
         if self.status_flags().contains(StatusFlags::O_APPEND) {
             // If the file has the O_APPEND flag, the offset is ignored
-            offset = self.inode.size();
+            offset = self.inode().size();
         }
 
-        self.inode.write_at(offset, reader)
+        self.inode().write_at(offset, reader)
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
-        do_resize_util(&self.inode, self.status_flags(), new_size)
+        do_resize_util(self.inode(), self.status_flags(), new_size)
     }
 
     fn status_flags(&self) -> StatusFlags {
@@ -134,14 +143,40 @@ impl FileLike for MemfdFile {
     }
 
     fn seek(&self, pos: SeekFrom) -> Result<usize> {
-        do_seek_util(&self.inode, &self.offset, pos)
+        do_seek_util(self.inode(), &self.offset, pos)
     }
 
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
-        do_fallocate_util(&self.inode, self.status_flags(), mode, offset, len)
+        do_fallocate_util(self.inode(), self.status_flags(), mode, offset, len)
     }
 
     fn mappable(&self) -> Result<Mappable> {
-        Ok(Mappable::Inode(self.inode.clone()))
+        Ok(Mappable::Inode(self.inode().clone()))
+    }
+
+    fn into_pseudo(self: Arc<Self>) -> Option<Arc<dyn PseudoFile>> {
+        Some(self)
+    }
+}
+
+impl PseudoFile for MemfdFile {
+    fn open(&self, open_args: OpenArgs) -> Result<Arc<dyn PseudoFile>> {
+        let inode = self.inode();
+        inode.check_permission(open_args.access_mode.into())?;
+        check_open_util(inode, &open_args)?;
+        if open_args.creation_flags.contains(CreationFlags::O_TRUNC) {
+            self.resize(0)?;
+        }
+
+        Ok(Arc::new(Self {
+            memfd_inode: self.memfd_inode.clone(),
+            offset: Mutex::new(0),
+            access_mode: open_args.access_mode,
+            status_flags: AtomicU32::new(open_args.status_flags.bits()),
+        }))
+    }
+
+    fn display_name(&self) -> String {
+        self.memfd_inode.name.clone()
     }
 }
