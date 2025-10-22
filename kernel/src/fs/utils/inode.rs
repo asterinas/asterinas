@@ -14,7 +14,10 @@ use super::{
 };
 use crate::{
     events::IoEvents,
-    fs::device::{Device, DeviceType},
+    fs::{
+        device::{Device, DeviceType},
+        file_handle::PseudoFile,
+    },
     prelude::*,
     process::{
         credentials::capabilities::CapSet, posix_thread::AsPosixThread, signal::PollHandle, Gid,
@@ -348,7 +351,7 @@ pub trait Inode: Any + Sync + Send {
         Err(Error::new(Errno::ENOTDIR))
     }
 
-    fn read_link(&self) -> Result<String> {
+    fn read_link(&self) -> Result<ReadLinkResult> {
         Err(Error::new(Errno::EISDIR))
     }
 
@@ -634,5 +637,37 @@ impl Clone for Extension {
 impl Default for Extension {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// The result of reading a symbolic link `Inode`.
+pub enum ReadLinkResult {
+    /// The symbolic link points to a real path.
+    Real(String),
+    /// The symbolic link points to a pseudo file.
+    Pseudo(Arc<dyn PseudoFile>),
+}
+
+impl ReadLinkResult {
+    pub fn into_real(self) -> Option<String> {
+        match self {
+            ReadLinkResult::Real(s) => Some(s),
+            ReadLinkResult::Pseudo(_) => None,
+        }
+    }
+
+    #[expect(dead_code)]
+    pub fn into_pseudo(self) -> Option<Arc<dyn PseudoFile>> {
+        match self {
+            ReadLinkResult::Real(_) => None,
+            ReadLinkResult::Pseudo(p) => Some(p),
+        }
+    }
+
+    pub fn into_string(self) -> String {
+        match self {
+            ReadLinkResult::Real(s) => s,
+            ReadLinkResult::Pseudo(p) => p.display_name(),
+        }
     }
 }

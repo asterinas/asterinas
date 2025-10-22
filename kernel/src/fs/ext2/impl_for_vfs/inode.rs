@@ -11,7 +11,8 @@ use crate::{
         ext2::{FilePerm, Inode as Ext2Inode},
         utils::{
             DirentVisitor, Extension, FallocMode, FileSystem, Inode, InodeMode, InodeType,
-            IoctlCmd, Metadata, MknodType, XattrName, XattrNamespace, XattrSetFlags,
+            IoctlCmd, Metadata, MknodType, ReadLinkResult, XattrName, XattrNamespace,
+            XattrSetFlags,
         },
     },
     prelude::*,
@@ -159,8 +160,8 @@ impl Inode for Ext2Inode {
         self.rename(old_name, target, new_name)
     }
 
-    fn read_link(&self) -> Result<String> {
-        self.read_link()
+    fn read_link(&self) -> Result<ReadLinkResult> {
+        self.read_link().map(ReadLinkResult::Real)
     }
 
     fn write_link(&self, target: &str) -> Result<()> {

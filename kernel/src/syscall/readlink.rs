@@ -34,7 +34,7 @@ pub fn sys_readlinkat(
             .lookup_no_follow(&fs_path)?
     };
 
-    let linkpath = path.inode().read_link()?;
+    let linkpath = path.inode().read_link()?.into_string();
     let bytes = linkpath.as_bytes();
     let write_len = bytes.len().min(usr_buf_len);
     user_space.write_bytes(usr_buf_addr, &mut VmReader::from(&bytes[..write_len]))?;

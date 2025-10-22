@@ -9,7 +9,11 @@ use super::{
     path::Path,
     utils::{InodeType, PATH_MAX, SYMLINKS_MAX},
 };
-use crate::{fs::path::MountNamespace, prelude::*, process::posix_thread::AsThreadLocal};
+use crate::{
+    fs::{path::MountNamespace, utils::ReadLinkResult},
+    prelude::*,
+    process::posix_thread::AsThreadLocal,
+};
 
 /// The file descriptor of the current working directory.
 pub const AT_FDCWD: FileDesc = -100;
@@ -211,7 +215,12 @@ impl FsResolver {
                     return_errno_with_message!(Errno::ELOOP, "there are too many symlinks");
                 }
                 let link_path_remain = {
-                    let mut tmp_link_path = next_path.inode().read_link()?;
+                    let read_link_res = next_path.inode().read_link()?;
+                    if let ReadLinkResult::Pseudo(pseudo_file) = read_link_res {
+                        // FIXME: return Ok(LookupResult::Resolved(FsItem::Pseudo(pseudo_file)));
+                        return Ok(LookupResult::Resolved(current_path));
+                    }
+                    let mut tmp_link_path = read_link_res.into_real().unwrap();
                     if tmp_link_path.is_empty() {
                         return_errno_with_message!(Errno::ENOENT, "the symlink path is empty");
                     }

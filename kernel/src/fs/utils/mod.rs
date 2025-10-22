@@ -11,7 +11,7 @@ pub use falloc_mode::FallocMode;
 pub use file_creation_mask::{AtomicFileCreationMask, FileCreationMask};
 pub use flock::{FlockItem, FlockList, FlockType};
 pub use fs::{FileSystem, FsFlags, SuperBlock};
-pub use inode::{Extension, Inode, InodeType, Metadata, MknodType, Permission};
+pub use inode::{Extension, Inode, InodeType, Metadata, MknodType, Permission, ReadLinkResult};
 pub use inode_mode::InodeMode;
 pub(crate) use inode_mode::{chmod, mkmod, perms_to_mask, who_and_perms_to_mask, who_to_mask};
 pub use ioctl::IoctlCmd;
