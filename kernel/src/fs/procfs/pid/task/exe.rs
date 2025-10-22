@@ -3,6 +3,7 @@
 use super::TidDirOps;
 use crate::{
     fs::{
+        fs_resolver::PathOrInode,
         procfs::{ProcSymBuilder, SymOps},
         utils::{mkmod, Inode, SymbolicLink},
     },
@@ -28,6 +29,10 @@ impl ExeSymOps {
 
 impl SymOps for ExeSymOps {
     fn read_link(&self) -> Result<SymbolicLink> {
-        Ok(SymbolicLink::Plain(self.0.executable_path()))
+        let res = match self.0.executable_file() {
+            PathOrInode::Path(path) => SymbolicLink::Path(path),
+            PathOrInode::Inode(inode) => SymbolicLink::Inode(inode),
+        };
+        Ok(res)
     }
 }
