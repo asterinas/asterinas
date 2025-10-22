@@ -8,7 +8,10 @@ use ostd::{
 };
 
 use crate::{
-    fs::{fs_resolver::FsResolver, path::Path, utils::Inode},
+    fs::{
+        fs_resolver::{FsResolver, PathOrInode},
+        utils::Inode,
+    },
     prelude::*,
     process::{
         posix_thread::{sigkill_other_threads, thread_table, PosixThread, ThreadLocal, ThreadName},
@@ -24,7 +27,7 @@ use crate::{
 };
 
 pub fn do_execve(
-    elf_file: Path,
+    elf_file: PathOrInode,
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
     ctx: &Context,
@@ -39,7 +42,7 @@ pub fn do_execve(
     let envp = read_cstring_vec(envp_ptr_ptr, MAX_NR_STRING_ARGS, MAX_LEN_STRING_ARG, ctx)?;
     debug!(
         "filename: {:?}, argv = {:?}, envp = {:?}",
-        elf_file.abs_path(),
+        elf_file.display_name(),
         argv,
         envp
     );
@@ -67,7 +70,7 @@ pub fn do_execve(
     // After this point, failures in subsequent operations are fatal: the process
     // state may be left inconsistent and it can never return to user mode.
 
-    let res = do_execve_no_return(ctx, user_context, &elf_file, &fs_resolver, program_to_load);
+    let res = do_execve_no_return(ctx, user_context, elf_file, &fs_resolver, program_to_load);
 
     if res.is_err() {
         ctx.posix_thread
@@ -120,7 +123,7 @@ fn read_cstring_vec(
 fn do_execve_no_return(
     ctx: &Context,
     user_context: &mut UserContext,
-    elf_file: &Path,
+    elf_file: PathOrInode,
     fs_resolver: &FsResolver,
     program_to_load: ProgramToLoad,
 ) -> Result<()> {
@@ -161,7 +164,7 @@ fn do_execve_no_return(
     unshare_and_close_files(ctx);
 
     // Update the process's executable path and set the thread name
-    let executable_path = elf_file.abs_path();
+    let executable_path = elf_file.display_name();
     *posix_thread.thread_name().lock() = ThreadName::new_from_executable_path(&executable_path);
     process.set_executable_path(executable_path);
 

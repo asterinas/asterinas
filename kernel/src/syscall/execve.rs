@@ -6,8 +6,7 @@ use super::{constants::*, SyscallReturn};
 use crate::{
     fs::{
         file_table::FileDesc,
-        fs_resolver::{FsPath, AT_FDCWD},
-        path::Path,
+        fs_resolver::{FsPath, PathOrInode, AT_FDCWD},
     },
     prelude::*,
     process::{check_executable_inode, do_execve},
@@ -53,12 +52,12 @@ fn lookup_executable_file(
     filename_ptr: Vaddr,
     flags: OpenFlags,
     ctx: &Context,
-) -> Result<Path> {
+) -> Result<PathOrInode> {
     let filename = ctx
         .user_space()
         .read_cstring(filename_ptr, MAX_FILENAME_LEN)?;
 
-    let path = {
+    let path_or_inode = {
         let filename = filename.to_string_lossy();
         let fs_path = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {
             FsPath::from_fd(dfd)?
@@ -69,15 +68,16 @@ fn lookup_executable_file(
         let fs_ref = ctx.thread_local.borrow_fs();
         let fs_resolver = fs_ref.resolver().read();
         if flags.contains(OpenFlags::AT_SYMLINK_NOFOLLOW) {
-            fs_resolver.lookup_no_follow(&fs_path)?
+            fs_resolver.lookup_inode_no_follow(&fs_path)?
         } else {
-            fs_resolver.lookup(&fs_path)?
+            fs_resolver.lookup_inode(&fs_path)?
         }
     };
 
-    check_executable_inode(path.inode())?;
+    let inode = path_or_inode.inode();
+    check_executable_inode(inode)?;
 
-    Ok(path)
+    Ok(path_or_inode)
 }
 
 bitflags::bitflags! {
