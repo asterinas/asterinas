@@ -88,7 +88,7 @@ fn set_next_timer() {
 static mut SET_NEXT_TIMER_FN: fn() = set_next_timer_sbi;
 
 fn set_next_timer_sbi() {
-    sbi_rt::set_timer(TIMER_INTERVAL.load(Ordering::Relaxed));
+    sbi_rt::set_timer(get_next_when());
 }
 
 fn set_next_timer_sstc() {
