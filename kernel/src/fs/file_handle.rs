@@ -124,6 +124,10 @@ pub trait FileLike: Pollable + Send + Sync + Any {
     fn into_pseudo(self: Arc<Self>) -> Option<Arc<dyn PseudoFile>> {
         None
     }
+
+    fn inode(&self) -> Option<&Arc<dyn Inode>> {
+        None
+    }
 }
 
 /// A pseudo file that do not have a corresponding `Path`.

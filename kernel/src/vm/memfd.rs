@@ -157,6 +157,10 @@ impl FileLike for MemfdFile {
     fn into_pseudo(self: Arc<Self>) -> Option<Arc<dyn PseudoFile>> {
         Some(self)
     }
+
+    fn inode(&self) -> Option<&Arc<dyn Inode>> {
+        Some(self.inode())
+    }
 }
 
 impl PseudoFile for MemfdFile {

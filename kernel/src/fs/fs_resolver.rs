@@ -13,7 +13,7 @@ use crate::{
     fs::{
         file_handle::{FileLike, PseudoFile},
         path::MountNamespace,
-        utils::ReadLinkResult,
+        utils::{Inode, ReadLinkResult},
     },
     prelude::*,
     process::posix_thread::AsThreadLocal,
@@ -381,6 +381,13 @@ impl FsItem {
         match self {
             FsItem::Real(path) => path.abs_path(),
             FsItem::Pseudo(pseudo_file) => pseudo_file.display_name(),
+        }
+    }
+
+    pub fn inode(&self) -> Option<&Arc<dyn Inode>> {
+        match self {
+            FsItem::Real(path) => Some(path.inode()),
+            FsItem::Pseudo(pseudo_file) => pseudo_file.inode(),
         }
     }
 
