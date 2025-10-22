@@ -166,7 +166,7 @@ fn do_execve_no_return(
     // Update the process's executable path and set the thread name
     let executable_path = elf_file.display_name();
     *posix_thread.thread_name().lock() = ThreadName::new_from_executable_path(&executable_path);
-    process.set_executable_path(executable_path);
+    process.set_executable_file(elf_file);
 
     // Unshare and reset signal dispositions to their default actions.
     unshare_and_reset_sigdispositions(process);

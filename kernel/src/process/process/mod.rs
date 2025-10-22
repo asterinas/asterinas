@@ -21,6 +21,7 @@ use super::{
 };
 use crate::{
     fs::cgroupfs::CgroupNode,
+    fs::fs_resolver::PathOrInode,
     prelude::*,
     process::{
         signal::{sig_queues::SigQueues, Pollee},
@@ -86,8 +87,8 @@ pub struct Process {
     pub(super) pidfile_pollee: Pollee,
 
     // Mutable Part
-    /// The executable path.
-    executable_path: RwLock<String>,
+    /// The executable `PathOrInode`.
+    executable_file: RwLock<PathOrInode>,
     /// The threads
     tasks: Mutex<TaskSet>,
     /// Process status
@@ -217,7 +218,7 @@ impl Process {
     #[expect(clippy::too_many_arguments)]
     pub(super) fn new(
         pid: Pid,
-        executable_path: String,
+        executable_file: PathOrInode,
         vmar: Arc<Vmar>,
 
         resource_limits: ResourceLimits,
@@ -235,7 +236,7 @@ impl Process {
         Arc::new_cyclic(|process_ref: &Weak<Process>| Self {
             pid,
             tasks: Mutex::new(TaskSet::new()),
-            executable_path: RwLock::new(executable_path),
+            executable_file: RwLock::new(executable_file),
             vmar: Mutex::new(Some(vmar)),
             children_wait_queue,
             pidfile_pollee: Pollee::new(),
@@ -293,12 +294,12 @@ impl Process {
         &self.tasks
     }
 
-    pub fn executable_path(&self) -> String {
-        self.executable_path.read().clone()
+    pub fn executable_file(&self) -> PathOrInode {
+        self.executable_file.read().clone()
     }
 
-    pub fn set_executable_path(&self, executable_path: String) {
-        *self.executable_path.write() = executable_path;
+    pub fn set_executable_file(&self, executable_file: PathOrInode) {
+        *self.executable_file.write() = executable_file;
     }
 
     pub fn resource_limits(&self) -> &ResourceLimits {

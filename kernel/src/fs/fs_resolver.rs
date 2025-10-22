@@ -410,7 +410,7 @@ impl PathOrInode {
             PathOrInode::Inode(inode) => {
                 // FIXME: Add pseudo dentries to store the correct name.
                 if let Some(memfd_inode) = inode.downcast_ref::<MemfdInode>() {
-                    memfd_inode.name()
+                    memfd_inode.name().to_string()
                 } else {
                     String::from("[pseudo inode]")
                 }
