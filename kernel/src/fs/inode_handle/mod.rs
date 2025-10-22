@@ -47,7 +47,7 @@ struct InodeHandle_ {
 impl InodeHandle_ {
     pub fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         if let Some(ref file_io) = self.file_io {
-            return file_io.read(writer);
+            return file_io.read(writer, self.status_flags());
         }
 
         if !self.path.inode().is_seekable() {
@@ -64,7 +64,7 @@ impl InodeHandle_ {
 
     pub fn write(&self, reader: &mut VmReader) -> Result<usize> {
         if let Some(ref file_io) = self.file_io {
-            return file_io.write(reader);
+            return file_io.write(reader, self.status_flags());
         }
 
         if !self.path.inode().is_seekable() {
@@ -345,10 +345,20 @@ impl<R> Drop for InodeHandle<R> {
     }
 }
 
+/// A trait for file-like objects that provide custom I/O operations.
+///
+/// This trait is typically implemented for special files like devices or
+/// named pipes (FIFOs), which have behaviors different from regular on-disk files.
+//
+// TODO: The `status_flags` parameter in `read` and `write` may need to be stored directly
+// in the `FileIo`. We need further refactoring to find an appropriate way to enable `FileIo`
+// to utilize the information in the `InodeHandle_`.
 pub trait FileIo: Pollable + Send + Sync + 'static {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize>;
+    /// Reads data from the file into the given `VmWriter`.
+    fn read(&self, writer: &mut VmWriter, status_flags: StatusFlags) -> Result<usize>;
 
-    fn write(&self, reader: &mut VmReader) -> Result<usize>;
+    /// Writes data from the given `VmReader` into the file.
+    fn write(&self, reader: &mut VmReader, status_flags: StatusFlags) -> Result<usize>;
 
     /// See [`FileLike::mappable`].
     fn mappable(&self) -> Result<Mappable> {

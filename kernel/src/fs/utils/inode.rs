@@ -14,7 +14,10 @@ use super::{
 };
 use crate::{
     events::IoEvents,
-    fs::device::{Device, DeviceType},
+    fs::{
+        device::{Device, DeviceType},
+        named_pipe::NamedPipe,
+    },
     prelude::*,
     process::{
         credentials::capabilities::CapSet, posix_thread::AsPosixThread, signal::PollHandle, Gid,
@@ -321,6 +324,10 @@ pub trait Inode: Any + Sync + Send {
     }
 
     fn as_device(&self) -> Option<Arc<dyn Device>> {
+        None
+    }
+
+    fn as_named_pipe(&self) -> Option<&NamedPipe> {
         None
     }
 

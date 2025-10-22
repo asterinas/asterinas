@@ -10,7 +10,12 @@ use crate::{
     events::IoEvents,
     prelude::*,
     process::{
-        signal::{PollHandle, Pollable},
+        posix_thread::AsPosixThread,
+        signal::{
+            constants::SIGPIPE,
+            signals::user::{UserSignal, UserSignalKind},
+            PollHandle, Pollable,
+        },
         Gid, Uid,
     },
     time::clocks::RealTimeCoarseClock,
@@ -33,15 +38,15 @@ const PIPE_BUF: usize = 4096;
 const PIPE_BUF: usize = 2;
 
 /// Creates a pair of connected pipe file handles with the default capacity.
-pub fn new_pair_file() -> Result<(Arc<PipeReaderFile>, Arc<PipeWriterFile>)> {
-    new_pair_file_with_capacity(DEFAULT_PIPE_BUF_SIZE)
+pub fn new_file_pair() -> Result<(Arc<PipeReaderFile>, Arc<PipeWriterFile>)> {
+    new_file_pair_with_capacity(DEFAULT_PIPE_BUF_SIZE)
 }
 
 pub(super) fn new_pair() -> (PipeReader, PipeWriter) {
     new_pair_with_capacity(DEFAULT_PIPE_BUF_SIZE)
 }
 
-fn new_pair_file_with_capacity(
+fn new_file_pair_with_capacity(
     capacity: usize,
 ) -> Result<(Arc<PipeReaderFile>, Arc<PipeWriterFile>)> {
     let (reader, writer) = new_pair_with_capacity(capacity);
@@ -204,7 +209,20 @@ impl PipeWriter {
             producer.write_fallible(reader)
         };
 
-        self.state.write_with(write)
+        let res = self.state.write_with(write);
+        if res.is_err_and(|e| e.error() == Errno::EPIPE) {
+            let thread = current_thread!();
+            if let Some(posix_thread) = thread.as_posix_thread() {
+                posix_thread.enqueue_signal(Box::new(UserSignal::new(
+                    SIGPIPE,
+                    UserSignalKind::Kill,
+                    posix_thread.process().pid(),
+                    posix_thread.credentials().ruid(),
+                )));
+            }
+        }
+
+        res
     }
 
     pub(super) fn check_io_events(&self) -> IoEvents {
@@ -338,7 +356,7 @@ mod test {
         W: FnOnce(Arc<PipeWriterFile>) + Send + 'static,
         R: FnOnce(Arc<PipeReaderFile>) + Send + 'static,
     {
-        let (reader, writer) = new_pair_file_with_capacity(2).unwrap();
+        let (reader, writer) = new_file_pair_with_capacity(2).unwrap();
 
         let signal_writer = Arc::new(AtomicBool::new(false));
         let signal_reader = signal_writer.clone();

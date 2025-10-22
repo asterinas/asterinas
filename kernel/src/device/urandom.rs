@@ -5,6 +5,7 @@ use crate::{
     fs::{
         device::{Device, DeviceId, DeviceType},
         inode_handle::FileIo,
+        utils::StatusFlags,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -60,11 +61,11 @@ impl Pollable for Urandom {
 }
 
 impl FileIo for Urandom {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter, _status_flags: StatusFlags) -> Result<usize> {
         Self::getrandom(writer)
     }
 
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader, _status_flags: StatusFlags) -> Result<usize> {
         let len = reader.remain();
         reader.skip(len);
         Ok(len)
