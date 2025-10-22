@@ -50,14 +50,7 @@ impl MemfdFile {
             return_errno_with_message!(Errno::EINVAL, "MemfdManager: `name` is too long.");
         }
 
-        // When Linux performs `memfd_create`, it first creates a RAM inode in a ramfs,
-        // then immediately unlinks it, and finally returns only the file descriptor.
-        // Therefore, when using `readlink("/proc/<pid>/fd/<fd>", ...)` to get the file
-        // path of a `memfd` file, the result will have a `(deleted)` suffix. We stay
-        // consistent with Linux here.
-        //
-        // Reference: <https://github.com/torvalds/linux/blob/379f604cc3dc2c865dc2b13d81faa166b6df59ec/mm/shmem.c#L5803-L5837>
-        let name = format!("/memfd:{} (deleted)", name);
+        let name = format!("/memfd:{}", name);
         let inode = new_detached_inode(mkmod!(a+rwx), Uid::new_root(), Gid::new_root());
 
         Ok(Self {
