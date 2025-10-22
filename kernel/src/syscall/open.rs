@@ -86,11 +86,9 @@ fn do_open(
     };
 
     let file_handle: Arc<dyn FileLike> = match lookup_res {
-        LookupResult::Resolved(fsitem) => {
-            match fsitem {
-                FsItem::Real(target_path) => Arc::new(target_path.open(open_args)?),
-                FsItem::Pseudo(pseudo_file) => pseudo_file.open(open_args)?,
-            }
+        LookupResult::Resolved(fsitem) => match fsitem {
+            FsItem::Real(target_path) => Arc::new(target_path.open(open_args)?),
+            FsItem::Pseudo(pseudo_file) => pseudo_file.open(open_args)?,
         },
         LookupResult::AtParent(result) => {
             if !open_args.creation_flags.contains(CreationFlags::O_CREAT) {

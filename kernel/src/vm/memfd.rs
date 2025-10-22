@@ -33,7 +33,6 @@ pub const MAX_MEMFD_NAME_LEN: usize = 249;
 
 struct MemfdInode {
     inode: Arc<dyn Inode>,
-    #[expect(dead_code)]
     name: String,
     // TODO: Add seals field to support sealing operations.
 }

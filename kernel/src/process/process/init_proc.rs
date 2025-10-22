@@ -106,12 +106,12 @@ fn create_init_task(
         let fs_resolver = MountNamespace::get_init_singleton().new_fs_resolver();
         ThreadFsInfo::new(fs_resolver)
     };
-    let (_, elf_load_info) = {
+    let elf_load_info = {
         let fs_resolver = fs.resolver().read();
         let fs_path = FsPath::try_from(executable_path)?;
         let elf_file = fs.resolver().read().lookup(&fs_path)?;
         let program_to_load =
-            ProgramToLoad::build_from_file(elf_file, &fs_resolver, argv, envp, 1)?;
+            ProgramToLoad::build_from_inode(elf_file.inode(), &fs_resolver, argv, envp, 1)?;
         process_vm.clear_and_map();
         program_to_load.load_to_vm(process_vm, &fs_resolver)?
     };
