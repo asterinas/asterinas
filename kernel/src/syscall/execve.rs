@@ -10,7 +10,7 @@ use crate::{
         path::Path,
     },
     prelude::*,
-    process::{check_executable_file, do_execve},
+    process::{check_executable_inode, do_execve},
 };
 
 pub fn sys_execve(
@@ -75,7 +75,7 @@ fn lookup_executable_file(
         }
     };
 
-    check_executable_file(&path)?;
+    check_executable_inode(path.inode())?;
 
     Ok(path)
 }

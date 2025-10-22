@@ -103,7 +103,7 @@ fn create_init_task(
         let fs_path = FsPath::try_from(executable_path)?;
         let elf_file = fs.resolver().read().lookup(&fs_path)?;
         let program_to_load =
-            ProgramToLoad::build_from_file(elf_file, &fs_resolver, argv, envp, 1)?;
+            ProgramToLoad::build_from_inode(elf_file.inode(), &fs_resolver, argv, envp, 1)?;
         let vmar = process.lock_vmar();
         program_to_load.load_to_vmar(vmar.unwrap(), &fs_resolver)?
     };
