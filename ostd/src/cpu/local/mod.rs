@@ -57,6 +57,7 @@ use super::CpuId;
 use crate::{
     irq::DisabledLocalIrqGuard,
     mm::{frame::allocator, paddr_to_vaddr, Paddr, PAGE_SIZE},
+    util::id_set::Id,
 };
 
 /// Dynamically-allocated CPU-local objects.

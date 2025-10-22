@@ -36,11 +36,6 @@ impl CpuId {
         // SAFETY: There is at least one CPU.
         Self(bsp_raw_cpu_id)
     }
-
-    /// Converts the CPU ID to an `usize`.
-    pub const fn as_usize(self) -> usize {
-        self.0 as usize
-    }
 }
 
 impl From<CpuId> for u32 {

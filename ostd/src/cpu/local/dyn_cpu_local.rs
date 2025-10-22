@@ -11,6 +11,7 @@ use crate::{
     cpu::{all_cpus, num_cpus, CpuId, PinCurrentCpu},
     irq::DisabledLocalIrqGuard,
     mm::{paddr_to_vaddr, FrameAllocOptions, HasPaddr, Segment, Vaddr, PAGE_SIZE},
+    util::id_set::Id,
     Result,
 };
 

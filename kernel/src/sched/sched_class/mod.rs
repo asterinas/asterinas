@@ -5,11 +5,11 @@
 #![warn(unused)]
 
 use alloc::{boxed::Box, sync::Arc};
-use core::{fmt, sync::atomic::Ordering};
+use core::{fmt, ops::Bound, sync::atomic::Ordering};
 
 use ostd::{
     arch::read_tsc as sched_clock,
-    cpu::{all_cpus, CpuId, PinCurrentCpu},
+    cpu::{all_cpus, CpuId, CpuSet, PinCurrentCpu},
     irq::disable_local,
     sync::{LocalIrqDisabled, SpinLock},
     task::{
@@ -19,6 +19,7 @@ use ostd::{
         },
         AtomicCpuId, Task,
     },
+    util::id_set::Id,
 };
 
 use super::{
@@ -286,28 +287,14 @@ impl ClassScheduler {
             return last_cpu;
         }
         debug_assert!(flags == EnqueueFlags::Spawn);
+
         let guard = disable_local();
-        let affinity = thread.atomic_cpu_affinity().load(Ordering::Relaxed);
+
         let mut selected = guard.current_cpu();
         let mut minimum_load = u32::MAX;
-        let last_chosen = match self.last_chosen_cpu.get() {
-            Some(cpu) => cpu.as_usize() as isize,
-            None => -1,
-        };
-        // Simulate a round-robin selection starting from the last chosen CPU.
-        //
-        // It still checks every CPU to find the one with the minimum load, but
-        // avoids keeping selecting the same CPU when there are multiple equally
-        // idle CPUs.
-        let affinity_iter = affinity
-            .iter()
-            .filter(|&cpu| cpu.as_usize() as isize > last_chosen)
-            .chain(
-                affinity
-                    .iter()
-                    .filter(|&cpu| cpu.as_usize() as isize <= last_chosen),
-            );
-        for candidate in affinity_iter {
+
+        // Set `selected` as `candidate` if the candidate's load is smaller.
+        let test_candidate = |candidate: CpuId| {
             let PerCpuLoadStats { queue_len, .. } =
                 self.rqs[candidate.as_usize()].lock().load_stats();
             let load = queue_len;
@@ -315,9 +302,35 @@ impl ClassScheduler {
                 minimum_load = load;
                 selected = candidate;
             }
+        };
+
+        let affinity = thread.atomic_cpu_affinity().load(Ordering::Relaxed);
+        match self.last_chosen_cpu.get() {
+            Some(cpu) => {
+                // Perform a round-robin selection starting after the last chosen CPU.
+                //
+                // It still checks every CPU in the affinity set to find the one with the
+                // minimum load, but avoids selecting the same CPU again in case of a tie.
+                Self::cycle_after(cpu, &affinity).for_each(test_candidate)
+            }
+            None => affinity.iter().for_each(test_candidate),
         }
+
         self.last_chosen_cpu.set_anyway(selected);
         selected
+    }
+
+    /// Returns a cycling iterator over the CPUs in the [`CpuSet`], starting *after*
+    /// the given [`CpuId`].
+    ///
+    /// The iteration order is ascending up to the wrapping point, after which it
+    /// continues from the first CPU in the set in ascending order again.
+    ///
+    /// If the given [`CpuId`] is in the set, it will be the last element yielded.
+    fn cycle_after(cpu: CpuId, cpu_set: &CpuSet) -> impl Iterator<Item = CpuId> + '_ {
+        cpu_set
+            .iter_in((Bound::Excluded(cpu), Bound::Unbounded))
+            .chain(cpu_set.iter_in(..=cpu))
     }
 }
 

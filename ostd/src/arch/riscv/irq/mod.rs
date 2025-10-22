@@ -51,7 +51,7 @@ impl HwIrqLine {
             InterruptSource::External(interrupt_source_on_chip) => {
                 IRQ_CHIP.get().unwrap().complete_interrupt(
                     // No races because we are in IRQs.
-                    CpuId::current_racy().as_usize() as u32,
+                    CpuId::current_racy().into(),
                     *interrupt_source_on_chip,
                 );
             }

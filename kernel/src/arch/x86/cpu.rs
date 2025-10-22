@@ -233,7 +233,7 @@ impl CpuInformation {
     /// Constructs the information for the current CPU.
     pub fn new(guard: &DisabledPreemptGuard) -> Self {
         let mut result = Self {
-            processor: guard.current_cpu().as_usize() as u32,
+            processor: guard.current_cpu().into(),
             vendor_id: "unknown".to_owned(),
             cpu_family: 0,
             model: 0,
