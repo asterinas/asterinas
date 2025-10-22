@@ -10,6 +10,7 @@ use core::fmt::Write;
 use aster_softirq::{
     iter_irq_counts_across_all_cpus, iter_softirq_counts_across_all_cpus, softirq_id::*,
 };
+use ostd::util::id_set::Id;
 
 use crate::{
     fs::{

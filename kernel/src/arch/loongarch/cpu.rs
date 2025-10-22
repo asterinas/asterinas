@@ -173,7 +173,7 @@ impl CpuInformation {
     /// Constructs the information for the current CPU.
     pub fn new(guard: &DisabledPreemptGuard) -> Self {
         Self {
-            processor: guard.current_cpu().as_usize() as u32,
+            processor: guard.current_cpu().into(),
         }
     }
 }

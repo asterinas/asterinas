@@ -23,9 +23,11 @@ use core::{
     fmt::Debug,
     marker::PhantomData,
     mem::size_of,
+    ops::{Bound, Range, RangeFrom, RangeFull, RangeTo, RangeToInclusive},
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use bitvec::{order::Lsb0, view::BitView};
 use smallvec::SmallVec;
 
 use crate::const_assert;
@@ -73,6 +75,11 @@ pub unsafe trait Id: Copy + Clone + Debug + Eq + Into<u32> + PartialEq {
 
     /// The number of unique IDs representable by this type.
     fn cardinality() -> u32;
+
+    /// Returns an [`usize`] from the [`Id`]'s corresponding [`u32`].
+    fn as_usize(self) -> usize {
+        Into::<u32>::into(self) as usize
+    }
 }
 
 /// A set of IDs.
@@ -241,27 +248,84 @@ impl<I: Id> IdSet<I> {
         self.bits.fill(0);
     }
 
-    /// Iterates over the IDs in the set.
+    /// Iterates over all IDs in the set.
     ///
-    /// The order of the iteration is guaranteed to be in ascending order.
+    /// The iteration is guaranteed to be in ascending order.
+    #[inline]
     pub fn iter(&self) -> impl Iterator<Item = I> + '_ {
-        let max_raw_id = I::cardinality() as usize;
-        self.bits
-            .iter()
-            .enumerate()
-            .flat_map(move |(part_idx, &part)| {
-                (0..BITS_PER_PART).filter_map(move |bit_idx| {
-                    if (part & (1 << bit_idx)) != 0 {
-                        let raw_id = part_idx * BITS_PER_PART + bit_idx;
-                        debug_assert!(raw_id < max_raw_id);
-                        // SAFETY: All bit 1s in the bitmap must be a valid ID.
-                        let id = unsafe { I::new_unchecked(raw_id as u32) };
-                        Some(id)
-                    } else {
-                        None
-                    }
-                })
+        self.iter_in(..)
+    }
+
+    /// Iterates over the IDs in the set within the specified range.
+    ///
+    /// The iteration is guaranteed to be in ascending order.
+    /// Only IDs that are both in the set and within the specified range will be returned.
+    pub fn iter_in<S: IdSetSlicer<I>>(&self, slicer: S) -> impl Iterator<Item = I> + '_ {
+        let (start, end) = slicer.to_range_bounds();
+
+        self.bits.view_bits::<Lsb0>()[start..end]
+            .iter_ones()
+            .map(move |offset| {
+                // SAFETY: `offset` is relative to the slice `[start..end]`,
+                // therefore `start + offset` is the absolute index of the bit.
+                // Since `offset` only iterates over relative positions of bit 1s, the
+                // resulting absolute index must refer to an active bit in `self.bits`.
+                unsafe { I::new_unchecked((start + offset) as u32) }
             })
+    }
+}
+
+/// A trait that unifies all types that slice a portion of [`IdSet`].
+pub trait IdSetSlicer<I: Id> {
+    /// Converts the index type to inclusive start and exclusive end bounds.
+    ///
+    /// Returns `(start, end)` where:
+    /// - `start`: inclusive lower bound
+    /// - `end`: exclusive upper bound
+    fn to_range_bounds(self) -> (usize, usize);
+}
+
+// In the following implementations of `IdSetSlicer`, the `Id` values are upcast
+// from `u32` to `usize`. So adding one is guaranteed to *not* overflow.
+impl<I: Id> IdSetSlicer<I> for RangeTo<I> {
+    fn to_range_bounds(self) -> (usize, usize) {
+        (0, self.end.as_usize())
+    }
+}
+impl<I: Id> IdSetSlicer<I> for RangeFrom<I> {
+    fn to_range_bounds(self) -> (usize, usize) {
+        (self.start.as_usize(), I::cardinality() as usize)
+    }
+}
+impl<I: Id> IdSetSlicer<I> for Range<I> {
+    fn to_range_bounds(self) -> (usize, usize) {
+        (self.start.as_usize(), self.end.as_usize())
+    }
+}
+impl<I: Id> IdSetSlicer<I> for RangeFull {
+    fn to_range_bounds(self) -> (usize, usize) {
+        (0, I::cardinality() as usize)
+    }
+}
+impl<I: Id> IdSetSlicer<I> for RangeToInclusive<I> {
+    fn to_range_bounds(self) -> (usize, usize) {
+        (0, self.end.as_usize() + 1)
+    }
+}
+impl<I: Id> IdSetSlicer<I> for (Bound<I>, Bound<I>) {
+    fn to_range_bounds(self) -> (usize, usize) {
+        let (start_bound, end_bound) = self;
+        let start = match start_bound {
+            Bound::Included(id) => id.as_usize(),
+            Bound::Excluded(id) => id.as_usize() + 1,
+            Bound::Unbounded => 0,
+        };
+        let end = match end_bound {
+            Bound::Included(id) => id.as_usize() + 1,
+            Bound::Excluded(id) => id.as_usize(),
+            Bound::Unbounded => I::cardinality() as usize,
+        };
+        (start, end)
     }
 }
 
@@ -647,5 +711,229 @@ mod id_set_tests {
         let set: IdSet<TestId> = Default::default();
         assert!(set.is_empty());
         assert_eq!(set.count(), 0);
+    }
+
+    #[ktest]
+    fn iter_in_range() {
+        type TestId = MockId<7>;
+        let mut set: IdSet<TestId> = IdSet::new_empty();
+        set.add(TestId::new(0));
+        set.add(TestId::new(1));
+        set.add(TestId::new(2));
+        set.add(TestId::new(5));
+        set.add(TestId::new(6));
+
+        let collected_ids: Vec<TestId> = set.iter_in(TestId::new(1)..TestId::new(5)).collect();
+        assert_eq!(collected_ids, vec![TestId::new(1), TestId::new(2)],);
+    }
+
+    #[ktest]
+    fn iter_in_range_to() {
+        type TestId = MockId<7>;
+        let mut set: IdSet<TestId> = IdSet::new_empty();
+        set.add(TestId::new(0));
+        set.add(TestId::new(1));
+        set.add(TestId::new(2));
+        set.add(TestId::new(5));
+        set.add(TestId::new(6));
+
+        let collected_ids: Vec<TestId> = set.iter_in(..TestId::new(5)).collect();
+        assert_eq!(
+            collected_ids,
+            vec![TestId::new(0), TestId::new(1), TestId::new(2)],
+        );
+    }
+
+    #[ktest]
+    fn iter_in_range_to_inclusive() {
+        type TestId = MockId<7>;
+        let mut set: IdSet<TestId> = IdSet::new_empty();
+        set.add(TestId::new(0));
+        set.add(TestId::new(1));
+        set.add(TestId::new(2));
+        set.add(TestId::new(5));
+        set.add(TestId::new(6));
+
+        let collected_ids: Vec<TestId> = set.iter_in(..=TestId::new(5)).collect();
+        assert_eq!(
+            collected_ids,
+            vec![
+                TestId::new(0),
+                TestId::new(1),
+                TestId::new(2),
+                TestId::new(5)
+            ],
+        );
+    }
+
+    #[ktest]
+    fn iter_in_range_from() {
+        type TestId = MockId<7>;
+        let mut set: IdSet<TestId> = IdSet::new_empty();
+        set.add(TestId::new(0));
+        set.add(TestId::new(1));
+        set.add(TestId::new(2));
+        set.add(TestId::new(5));
+        set.add(TestId::new(6));
+
+        let collected_ids: Vec<TestId> = set.iter_in(TestId::new(2)..).collect();
+        assert_eq!(
+            collected_ids,
+            vec![TestId::new(2), TestId::new(5), TestId::new(6)],
+        );
+    }
+
+    #[ktest]
+    fn iter_in_range_full() {
+        type TestId = MockId<7>;
+        let mut set: IdSet<TestId> = IdSet::new_empty();
+        set.add(TestId::new(0));
+        set.add(TestId::new(1));
+        set.add(TestId::new(2));
+        set.add(TestId::new(5));
+        set.add(TestId::new(6));
+
+        let collected_ids: Vec<TestId> = set.iter_in(..).collect();
+        assert_eq!(
+            collected_ids,
+            vec![
+                TestId::new(0),
+                TestId::new(1),
+                TestId::new(2),
+                TestId::new(5),
+                TestId::new(6)
+            ],
+        );
+    }
+
+    #[ktest]
+    fn iter_in_bound_tuple_inclusive_exclusive() {
+        type TestId = MockId<7>;
+        let mut set: IdSet<TestId> = IdSet::new_empty();
+        set.add(TestId::new(0));
+        set.add(TestId::new(1));
+        set.add(TestId::new(2));
+        set.add(TestId::new(5));
+        set.add(TestId::new(6));
+
+        let collected_ids: Vec<TestId> = set
+            .iter_in((
+                Bound::Included(TestId::new(1)),
+                Bound::Excluded(TestId::new(5)),
+            ))
+            .collect();
+        assert_eq!(collected_ids, vec![TestId::new(1), TestId::new(2)],);
+    }
+
+    #[ktest]
+    fn iter_in_bound_tuple_exclusive_inclusive() {
+        type TestId = MockId<7>;
+        let mut set: IdSet<TestId> = IdSet::new_empty();
+        set.add(TestId::new(0));
+        set.add(TestId::new(1));
+        set.add(TestId::new(2));
+        set.add(TestId::new(5));
+        set.add(TestId::new(6));
+
+        let collected_ids: Vec<TestId> = set
+            .iter_in((
+                Bound::Excluded(TestId::new(1)),
+                Bound::Included(TestId::new(5)),
+            ))
+            .collect();
+        assert_eq!(collected_ids, vec![TestId::new(2), TestId::new(5)],);
+    }
+
+    #[ktest]
+    fn iter_in_unbounded_bounds() {
+        type TestId = MockId<7>;
+        let mut set: IdSet<TestId> = IdSet::new_empty();
+        set.add(TestId::new(0));
+        set.add(TestId::new(1));
+        set.add(TestId::new(2));
+        set.add(TestId::new(5));
+        set.add(TestId::new(6));
+
+        let collected_ids: Vec<TestId> = set
+            .iter_in((Bound::Unbounded::<TestId>, Bound::Unbounded::<TestId>))
+            .collect();
+        assert_eq!(
+            collected_ids,
+            vec![
+                TestId::new(0),
+                TestId::new(1),
+                TestId::new(2),
+                TestId::new(5),
+                TestId::new(6)
+            ],
+        );
+    }
+
+    #[ktest]
+    fn iter_in_half_unbounded() {
+        type TestId = MockId<7>;
+        let mut set: IdSet<TestId> = IdSet::new_empty();
+        set.add(TestId::new(0));
+        set.add(TestId::new(1));
+        set.add(TestId::new(2));
+        set.add(TestId::new(5));
+        set.add(TestId::new(6));
+
+        let collected_ids: Vec<TestId> = set
+            .iter_in((Bound::Included(TestId::new(2)), Bound::Unbounded::<TestId>))
+            .collect();
+        assert_eq!(
+            collected_ids,
+            vec![TestId::new(2), TestId::new(5), TestId::new(6)],
+        );
+
+        let collected_ids: Vec<TestId> = set
+            .iter_in((Bound::Unbounded::<TestId>, Bound::Included(TestId::new(2))))
+            .collect();
+        assert_eq!(
+            collected_ids,
+            vec![TestId::new(0), TestId::new(1), TestId::new(2)],
+        );
+    }
+
+    #[ktest]
+    fn iter_in_range_starts_after_last() {
+        type TestId = MockId<7>;
+        let mut set: IdSet<TestId> = IdSet::new_empty();
+        set.add(TestId::new(0));
+        set.add(TestId::new(1));
+        set.add(TestId::new(2));
+
+        let collected_ids: Vec<TestId> = set.iter_in(TestId::new(3)..).collect();
+        assert_eq!(collected_ids, vec![],);
+    }
+
+    #[ktest]
+    fn iter_in_range_ends_after_last() {
+        type TestId = MockId<7>;
+        let mut set: IdSet<TestId> = IdSet::new_empty();
+        set.add(TestId::new(0));
+        set.add(TestId::new(1));
+        set.add(TestId::new(2));
+
+        let collected_ids: Vec<TestId> = set.iter_in(..TestId::new(3)).collect();
+        assert_eq!(
+            collected_ids,
+            vec![TestId::new(0), TestId::new(1), TestId::new(2)],
+        );
+    }
+
+    #[ktest]
+    fn iter_in_range_next_part() {
+        type TestId = MockId<{ InnerPart::BITS }>;
+        let last_id = TestId::new(InnerPart::BITS - 1);
+
+        let mut set: IdSet<TestId> = IdSet::new_empty();
+        set.add(last_id);
+
+        let collected_ids: Vec<TestId> = set
+            .iter_in((Bound::Excluded(last_id), Bound::Included(last_id)))
+            .collect();
+        assert_eq!(collected_ids, vec![],);
     }
 }

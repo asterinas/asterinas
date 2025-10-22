@@ -45,7 +45,7 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
             }
             Interrupt::SupervisorExternal => {
                 // No races because we are in IRQs.
-                let current_cpu = CpuId::current_racy().as_usize() as u32;
+                let current_cpu = CpuId::current_racy().into();
                 while let Some(hw_irq_line) = IRQ_CHIP.get().unwrap().claim_interrupt(current_cpu) {
                     call_irq_callback_functions(f, &hw_irq_line, PrivilegeLevel::Kernel);
                 }

@@ -30,6 +30,7 @@ use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
     boot::boot_info,
     cpu::CpuId,
+    util::id_set::Id,
 };
 use process::{spawn_init_process, Process};
 use sched::SchedPolicy;

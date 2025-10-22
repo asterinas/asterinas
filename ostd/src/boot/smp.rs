@@ -14,6 +14,7 @@ use crate::{
     },
     sync::SpinLock,
     task::Task,
+    util::id_set::Id,
 };
 
 static AP_BOOT_INFO: Once<ApBootInfo> = Once::new();

@@ -80,11 +80,7 @@ impl IrqChip {
         plic.set_priority(interrupt_source_in_fdt.interrupt, 1);
         // FIXME: Here we only enable external insterrupt on the BSP. We should
         // enable it on APs as well when SMP is supported.
-        plic.set_interrupt_enabled(
-            CpuId::bsp().as_usize() as u32,
-            interrupt_source_in_fdt.interrupt,
-            true,
-        );
+        plic.set_interrupt_enabled(CpuId::bsp().into(), interrupt_source_in_fdt.interrupt, true);
 
         Ok(MappedIrqLine {
             irq_line,
@@ -137,7 +133,7 @@ impl IrqChip {
 
         // FIXME: Here we only disable external insterrupt on the BSP. We should
         // disable it on APs as well when SMP is supported.
-        plic.set_interrupt_enabled(CpuId::bsp().as_usize() as u32, *interrupt, false);
+        plic.set_interrupt_enabled(CpuId::bsp().into(), *interrupt, false);
         plic.set_priority(*interrupt, 0);
         plic.unmap_interrupt_source(*interrupt);
     }

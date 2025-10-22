@@ -18,6 +18,7 @@ use crate::{
     cpu_local,
     irq::{self, IrqLine},
     sync::SpinLock,
+    util::id_set::Id,
 };
 
 /// Executes a function on other processors.

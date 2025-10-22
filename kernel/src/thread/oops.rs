@@ -22,7 +22,7 @@ use core::{
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
-use ostd::{cpu::PinCurrentCpu, panic, task::disable_preempt};
+use ostd::{cpu::PinCurrentCpu, panic, task::disable_preempt, util::id_set::Id};
 
 use super::Thread;
 

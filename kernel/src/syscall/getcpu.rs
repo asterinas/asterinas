@@ -9,7 +9,7 @@ pub fn sys_getcpu(cpu: Vaddr, node: Vaddr, _tcache: Vaddr, ctx: &Context) -> Res
     // The third argument `tcache` is unused since Linux 2.6.24, so we ignore it.
 
     // The system call itself is inherently racy, so using `current_racy` here should be fine.
-    let current_cpu = CpuId::current_racy().as_usize() as u32;
+    let current_cpu: u32 = CpuId::current_racy().into();
     // TODO: Support NUMA.
     let current_node = 0u32;
 

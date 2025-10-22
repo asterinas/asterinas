@@ -40,7 +40,7 @@ impl AtomicCpuId {
         self.0
             .compare_exchange(
                 Self::NONE,
-                cpu_id.as_usize() as u32,
+                cpu_id.into(),
                 Ordering::Relaxed,
                 Ordering::Relaxed,
             )
@@ -50,7 +50,7 @@ impl AtomicCpuId {
 
     /// Sets the inner value of an `AtomicCpuId` anyway.
     pub fn set_anyway(&self, cpu_id: CpuId) {
-        self.0.store(cpu_id.as_usize() as u32, Ordering::Relaxed);
+        self.0.store(cpu_id.into(), Ordering::Relaxed);
     }
 
     /// Sets the inner value of an `AtomicCpuId` to `AtomicCpuId::NONE`, i.e. makes

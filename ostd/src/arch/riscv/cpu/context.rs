@@ -161,7 +161,7 @@ impl UserContextApiInternal for UserContext {
                 }
                 Trap::Interrupt(Interrupt::SupervisorExternal) => {
                     // No races because we are in IRQs.
-                    let current_cpu = CpuId::current_racy().as_usize() as u32;
+                    let current_cpu = CpuId::current_racy().into();
                     while let Some(hw_irq_line) =
                         IRQ_CHIP.get().unwrap().claim_interrupt(current_cpu)
                     {

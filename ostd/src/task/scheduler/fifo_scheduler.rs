@@ -9,6 +9,7 @@ use crate::{
     cpu::{num_cpus, CpuId, PinCurrentCpu},
     sync::SpinLock,
     task::{disable_preempt, Task},
+    util::id_set::Id,
 };
 
 pub fn init() {
