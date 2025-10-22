@@ -828,6 +828,7 @@ pub struct VmarMapOptions<'a, R1, R2> {
     is_shared: bool,
     // Whether the mapping needs to handle surrounding pages when handling page fault.
     handle_page_faults_around: bool,
+    track_vmo_writable_mapping_status: bool,
 }
 
 impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
@@ -851,6 +852,7 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
             can_overwrite: false,
             is_shared: false,
             handle_page_faults_around: false,
+            track_vmo_writable_mapping_status: false,
         }
     }
 
@@ -958,6 +960,15 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
         self.handle_page_faults_around = true;
         self
     }
+
+    /// Sets the mapping to be tracked within the VMO's writable mapping status.
+    ///
+    /// Used only when the VMO's writable mappings need to be tracked, and this
+    /// mapping is writable to the VMO.
+    pub fn track_vmo_writable_mapping_status(mut self) -> Self {
+        self.track_vmo_writable_mapping_status = true;
+        self
+    }
 }
 
 impl<R1> VmarMapOptions<'_, R1, Rights> {
@@ -1017,6 +1028,7 @@ where
             can_overwrite,
             is_shared,
             handle_page_faults_around,
+            track_vmo_writable_mapping_status,
         } = self;
 
         let mut inner = parent.0.inner.write();
@@ -1066,15 +1078,22 @@ where
                 Mappable::Inode(inode_handle) => {
                     // Since `Mappable::Inode` is provided, it is
                     // reasonable to assume that the VMO is provided.
-                    let mapped_mem =
-                        MappedMemory::Vmo(MappedVmo::new(vmo.unwrap().to_dyn(), vmo_offset));
+                    let mapped_mem = MappedMemory::Vmo(MappedVmo::map(
+                        vmo.unwrap().to_dyn(),
+                        vmo_offset,
+                        track_vmo_writable_mapping_status,
+                    )?);
                     (mapped_mem, Some(inode_handle), None)
                 }
                 Mappable::IoMem(iomem) => (MappedMemory::Device, None, Some(iomem)),
             }
         } else if let Some(vmo) = vmo {
             (
-                MappedMemory::Vmo(MappedVmo::new(vmo.to_dyn(), vmo_offset)),
+                MappedMemory::Vmo(MappedVmo::map(
+                    vmo.to_dyn(),
+                    vmo_offset,
+                    track_vmo_writable_mapping_status,
+                )?),
                 None,
                 None,
             )
