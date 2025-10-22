@@ -24,6 +24,12 @@ pub enum SchedPolicy {
     Idle,
 }
 
+impl Default for SchedPolicy {
+    fn default() -> Self {
+        Self::Fair(Nice::default())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, TryFromInt)]
 #[repr(u8)]
 pub(super) enum SchedPolicyKind {
