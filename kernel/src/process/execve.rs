@@ -8,7 +8,7 @@ use ostd::{
 };
 
 use crate::{
-    fs::{fs_resolver::FsResolver, path::Path},
+    fs::{fs_resolver::FsResolver, path::Path, utils::Inode},
     prelude::*,
     process::{
         posix_thread::{sigkill_other_threads, thread_table, PosixThread, ThreadLocal, ThreadName},
@@ -46,8 +46,8 @@ pub fn do_execve(
 
     let fs_ref = ctx.thread_local.borrow_fs();
     let fs_resolver = fs_ref.resolver().read();
-    let program_to_load =
-        ProgramToLoad::build_from_file(elf_file.clone(), &fs_resolver, argv, envp, 1)?;
+    let elf_inode = elf_file.inode();
+    let program_to_load = ProgramToLoad::build_from_inode(elf_inode, &fs_resolver, argv, envp, 1)?;
 
     // Ensure no other thread is concurrently performing exit_group or execve.
     // If such an operation is in progress, return EAGAIN.
@@ -152,7 +152,7 @@ fn do_execve_no_return(
     set_cpu_context(thread_local, user_context, &elf_load_info);
 
     // Apply file-capability changes.
-    apply_caps_from_exec(process, posix_thread, elf_file)?;
+    apply_caps_from_exec(process, posix_thread, elf_file.inode())?;
 
     // If this was a vfork child, reset vfork-specific state.
     reset_vfork_child(process);
@@ -230,62 +230,62 @@ fn set_cpu_context(
     debug!("user stack top: 0x{:x}", elf_load_info.user_stack_top);
 }
 
-/// Sets the UID and GID in the credentials according to the ELF file.
+/// Sets the UID and GID in the credentials according to the ELF inode.
 ///
 /// The capabilities will be updated accordingly.
 fn apply_caps_from_exec(
     process: &Process,
     posix_thread: &PosixThread,
-    elf_file: &Path,
+    elf_inode: &Arc<dyn Inode>,
 ) -> Result<()> {
-    // FIXME: We need to recalculate the capabilities during execve even the executable file
+    // FIXME: We need to recalculate the capabilities during execve even the executable inode
     // does not have setuid/setgid bit.
     let credentials = posix_thread.credentials_mut();
-    set_uid_from_elf(process, &credentials, elf_file)?;
-    set_gid_from_elf(process, &credentials, elf_file)?;
+    set_uid_from_elf(process, &credentials, elf_inode)?;
+    set_gid_from_elf(process, &credentials, elf_inode)?;
     credentials.set_keep_capabilities(false)?;
 
     Ok(())
 }
 
-/// Sets the UID in the credentials according to the ELF file.
+/// Sets the UID in the credentials according to the ELF inode.
 ///
-/// If the ELF file has the `set_uid` bit, the effective UID is set to the same value as the ELF
-/// file's UID.
+/// If the ELF inode has the `set_uid` bit, the effective UID is set to the same value as the ELF
+/// inode's UID.
 fn set_uid_from_elf(
     current: &Process,
     credentials: &Credentials<WriteOp>,
-    elf_file: &Path,
+    elf_inode: &Arc<dyn Inode>,
 ) -> Result<()> {
-    if elf_file.mode()?.has_set_uid() {
-        let uid = elf_file.owner()?;
+    if elf_inode.mode()?.has_set_uid() {
+        let uid = elf_inode.owner()?;
         credentials.set_euid(uid);
 
         current.clear_parent_death_signal();
     }
 
-    // No matter whether the ELF file has `set_uid` bit, SUID should be reset.
+    // No matter whether the ELF inode has `set_uid` bit, SUID should be reset.
     credentials.reset_suid();
     Ok(())
 }
 
-/// Sets the GID in the credentials according to the ELF file.
+/// Sets the GID in the credentials according to the ELF inode.
 ///
-/// If the ELF file has the `set_gid` bit, the effective GID is set to the same value as the ELF
-/// file's GID.
+/// If the ELF inode has the `set_gid` bit, the effective GID is set to the same value as the ELF
+/// inode's GID.
 fn set_gid_from_elf(
     current: &Process,
     credentials: &Credentials<WriteOp>,
-    elf_file: &Path,
+    elf_inode: &Arc<dyn Inode>,
 ) -> Result<()> {
-    if elf_file.mode()?.has_set_gid() {
-        let gid = elf_file.group()?;
+    if elf_inode.mode()?.has_set_gid() {
+        let gid = elf_inode.group()?;
         credentials.set_egid(gid);
 
         current.clear_parent_death_signal();
     }
 
-    // No matter whether the ELF file has `set_gid` bit, SGID should be reset.
+    // No matter whether the ELF inode has `set_gid` bit, SGID should be reset.
     credentials.reset_sgid();
     Ok(())
 }
