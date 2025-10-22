@@ -88,6 +88,6 @@ fn discard_signals_if_ignored(ctx: &Context, signum: SigNum, sig_action: &SigAct
             continue;
         };
 
-        posix_thread.dequeue_signal(&mask);
+        while posix_thread.dequeue_signal(&mask).is_some() {}
     }
 }

@@ -2,7 +2,6 @@
 
 pub mod c_types;
 pub mod constants;
-mod events;
 mod pause;
 mod poll;
 pub mod sig_action;
@@ -18,7 +17,6 @@ use core::sync::atomic::Ordering;
 use align_ext::AlignExt;
 use c_types::{siginfo_t, ucontext_t};
 use constants::SIGSEGV;
-pub use events::{SigEvents, SigEventsFilter};
 use ostd::{
     arch::cpu::context::{FpuContext, UserContext},
     user::UserContextApi,
@@ -64,10 +62,14 @@ pub fn handle_pending_signal(
     let posix_thread = ctx.posix_thread;
     let current = ctx.process.as_ref();
 
-    let signal = {
+    let mut sig_dispositions = current.sig_dispositions().lock();
+    let signal = loop {
         let sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed);
         if let Some(signal) = posix_thread.dequeue_signal(&sig_mask) {
-            signal
+            if sig_dispositions.will_ignore(signal.as_ref()) {
+                continue;
+            }
+            break signal;
         } else {
             return;
         }
@@ -75,14 +77,12 @@ pub fn handle_pending_signal(
     let sig_num = signal.num();
     trace!("sig_num = {:?}, sig_name = {}", sig_num, sig_num.sig_name());
 
-    let mut sig_dispositions = current.sig_dispositions().lock();
-
     let sig_action = sig_dispositions.get(sig_num);
     trace!("sig action: {:x?}", sig_action);
 
     match sig_action {
         SigAction::Ign => {
-            trace!("Ignore signal {:?}", sig_num);
+            unreachable!("signals that will be ignored should have been filtered out")
         }
         SigAction::User {
             handler_addr,
@@ -144,7 +144,9 @@ pub fn handle_pending_signal(
                     // We should exit current here, since we cannot restore a valid status from trap now.
                     do_exit_group(TermStatus::Killed(sig_num));
                 }
-                SigDefaultAction::Ign => {}
+                SigDefaultAction::Ign => {
+                    unreachable!("signals that will be ignored should have been filtered out")
+                }
                 SigDefaultAction::Stop => ctx.process.stop(sig_num),
                 SigDefaultAction::Cont => ctx.process.resume(),
             }

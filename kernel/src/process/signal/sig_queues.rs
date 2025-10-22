@@ -7,11 +7,11 @@ use super::{
     sig_mask::{SigMask, SigSet},
     sig_num::SigNum,
     signals::Signal,
-    SigEvents, SigEventsFilter,
 };
 use crate::{
-    events::{Observer, Subject},
+    events::IoEvents,
     prelude::*,
+    process::signal::{sig_disposition::SigDispositions, PollHandle, Pollee},
 };
 
 pub struct SigQueues {
@@ -19,7 +19,7 @@ pub struct SigQueues {
     // Useful for quickly determining if any signals are pending without locking `queues`.
     count: AtomicUsize,
     queues: Mutex<Queues>,
-    subject: Subject<SigEvents, SigEventsFilter>,
+    signalfd_pollee: Pollee,
 }
 
 impl SigQueues {
@@ -27,7 +27,7 @@ impl SigQueues {
         Self {
             count: AtomicUsize::new(0),
             queues: Mutex::new(Queues::new()),
-            subject: Subject::new(),
+            signalfd_pollee: Pollee::new(),
         }
     }
 
@@ -36,14 +36,10 @@ impl SigQueues {
     }
 
     pub fn enqueue(&self, signal: Box<dyn Signal>) {
-        let signum = signal.num();
-
         let mut queues = self.queues.lock();
         if queues.enqueue(signal) {
             self.count.fetch_add(1, Ordering::Relaxed);
-            // Avoid holding lock when notifying observers
-            drop(queues);
-            self.subject.notify_observers(&SigEvents::new(signum));
+            self.signalfd_pollee.notify(IoEvents::IN);
         }
     }
 
@@ -68,23 +64,20 @@ impl SigQueues {
     }
 
     /// Returns whether there's some pending signals that are not blocked
-    pub fn has_pending(&self, blocked: SigMask) -> bool {
-        if self.is_empty() {
-            return false;
-        }
-        self.queues.lock().has_pending(blocked)
-    }
-
-    pub fn register_observer(
+    pub(in crate::process) fn has_pending(
         &self,
-        observer: Weak<dyn Observer<SigEvents>>,
-        filter: SigEventsFilter,
-    ) {
-        self.subject.register_observer(observer, filter);
+        blocked: SigMask,
+        sig_dispositions: &SigDispositions,
+    ) -> bool {
+        self.queues.lock().has_pending(blocked, sig_dispositions)
     }
 
-    pub fn unregister_observer(&self, observer: &Weak<dyn Observer<SigEvents>>) {
-        self.subject.unregister_observer(observer);
+    pub(in crate::process) fn register_signalfd_poller(
+        &self,
+        poller: &mut PollHandle,
+        mask: IoEvents,
+    ) {
+        self.signalfd_pollee.register_poller(poller, mask);
     }
 }
 
@@ -199,12 +192,18 @@ impl Queues {
     }
 
     /// Returns whether the `SigQueues` has some pending signals which are not blocked
-    fn has_pending(&self, blocked: SigMask) -> bool {
+    fn has_pending(&self, blocked: SigMask, sig_dispositions: &SigDispositions) -> bool {
         self.std_queues.iter().any(|signal| {
-            signal
-                .as_ref()
-                .is_some_and(|signal| !blocked.contains(signal.num()))
-        }) || self.rt_queues.iter().any(|rt_queue| !rt_queue.is_empty())
+            signal.as_ref().is_some_and(|signal| {
+                !blocked.contains(signal.num()) && !sig_dispositions.will_ignore(signal.as_ref())
+            })
+        }) || self.rt_queues.iter().any(|rt_queue| {
+            let Some(signal) = rt_queue.front() else {
+                return false;
+            };
+
+            !blocked.contains(signal.num()) && !sig_dispositions.will_ignore(signal.as_ref())
+        })
     }
 
     fn get_std_queue_mut(&mut self, signum: SigNum) -> &mut Option<Box<dyn Signal>> {

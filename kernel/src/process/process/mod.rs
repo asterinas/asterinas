@@ -21,7 +21,11 @@ use super::{
 };
 use crate::{
     prelude::*,
-    process::{signal::Pollee, status::StopWaitStatus, UserNamespace, WaitOptions},
+    process::{
+        signal::{sig_queues::SigQueues, Pollee},
+        status::StopWaitStatus,
+        UserNamespace, WaitOptions,
+    },
     sched::{AtomicNice, Nice},
     thread::{AsThread, Thread},
     time::clocks::ProfClock,
@@ -119,6 +123,8 @@ pub struct Process {
     // Signal
     /// Sig dispositions
     sig_dispositions: Arc<Mutex<SigDispositions>>,
+    /// The process-level sigqueue.
+    sig_queues: SigQueues,
     /// The signal that the process should receive when parent process exits.
     parent_death_signal: AtomicSigNum,
 
@@ -133,7 +139,6 @@ pub struct Process {
 
     // Namespaces
     /// The user namespace
-    #[expect(dead_code)]
     user_ns: Mutex<Arc<UserNamespace>>,
 }
 
@@ -233,6 +238,7 @@ impl Process {
             is_child_subreaper: AtomicBool::new(false),
             has_child_subreaper: AtomicBool::new(false),
             sig_dispositions,
+            sig_queues: SigQueues::new(),
             parent_death_signal: AtomicSigNum::new_empty(),
             exit_signal: AtomicSigNum::new_empty(),
             resource_limits,
@@ -632,43 +638,37 @@ impl Process {
         &self.sig_dispositions
     }
 
+    pub(super) fn sig_queues(&self) -> &SigQueues {
+        &self.sig_queues
+    }
+
     /// Enqueues a process-directed signal.
     ///
-    /// This method should only be used for enqueue kernel signals and fault signals.
-    ///
-    /// The signal may be delivered to any one of the threads that does not currently have the
-    /// signal blocked. If more than one of the threads have the signal unblocked, then this method
-    /// chooses an arbitrary thread to which to deliver the signal.
-    //
-    // TODO: Restrict this method with the access control tool.
+    /// When enqueuing a user signal, the caller must perform the required permission checks.
     pub fn enqueue_signal(&self, signal: impl Signal + Clone + 'static) {
         if self.status.is_zombie() {
             return;
         }
 
-        let sig_dispositions = self.sig_dispositions.lock();
-
-        // Drop the signal if it's ignored. See explanation at `enqueue_signal_locked`.
         let signum = signal.num();
-        if sig_dispositions.get(signum).will_ignore(signum) {
-            return;
-        }
+
+        let sig_dispositions = self.sig_dispositions().lock();
+        let will_ignore = sig_dispositions.will_ignore(&signal);
+
+        self.sig_queues.enqueue(Box::new(signal));
 
         let threads = self.tasks.lock();
-
-        // Enqueue the signal to the first thread that does not block the signal.
         for thread in threads.as_slice() {
             let posix_thread = thread.as_posix_thread().unwrap();
-            if !posix_thread.has_signal_blocked(signal.num()) {
-                posix_thread.enqueue_signal_locked(Box::new(signal), sig_dispositions);
-                return;
+            // FIXME: This behavior differs from Linux.
+            // Linux wakes up a single thread that neither blocks the signal
+            // nor already has the same pending signal;
+            // for simplicity we wake up all threads that do not block the signal.
+            // Reference: <https://elixir.bootlin.com/linux/v6.17/source/kernel/signal.c#L969>.
+            if !posix_thread.has_signal_blocked(signum) && !will_ignore {
+                posix_thread.wake_signalled_waker();
             }
         }
-
-        // If all threads block the signal, enqueue the signal to the main thread.
-        let thread = threads.main();
-        let posix_thread = thread.as_posix_thread().unwrap();
-        posix_thread.enqueue_signal_locked(Box::new(signal), sig_dispositions);
     }
 
     /// Clears the parent death signal.
@@ -798,6 +798,10 @@ impl Process {
                 }
             }
         }
+    }
+
+    pub fn user_ns(&self) -> &Mutex<Arc<UserNamespace>> {
+        &self.user_ns
     }
 }
 

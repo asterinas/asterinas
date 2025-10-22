@@ -6,22 +6,19 @@ use aster_rights::{ReadDupOp, ReadOp, WriteOp};
 use ostd::sync::{RoArc, Waker};
 
 use super::{
-    kill::SignalSenderIds,
     signal::{
-        sig_disposition::SigDispositions,
         sig_mask::{AtomicSigMask, SigMask, SigSet},
         sig_num::SigNum,
         sig_queues::SigQueues,
         signals::Signal,
-        SigEvents, SigEventsFilter,
     },
     Credentials, Process,
 };
 use crate::{
-    events::Observer,
+    events::IoEvents,
     fs::file_table::FileTable,
     prelude::*,
-    process::{namespace::nsproxy::NsProxy, signal::constants::SIGCONT},
+    process::{namespace::nsproxy::NsProxy, signal::PollHandle},
     thread::{Thread, Tid},
     time::{clocks::ProfClock, Timer, TimerManager},
 };
@@ -114,69 +111,33 @@ impl PosixThread {
     }
 
     pub fn sig_pending(&self) -> SigSet {
-        self.sig_queues.sig_pending()
+        let process = self.process.upgrade().unwrap();
+        self.sig_queues.sig_pending() | process.sig_queues().sig_pending()
     }
 
     /// Returns whether the thread has some pending signals
-    /// that are not blocked.
+    /// that are not blocked and not ignored.
     pub fn has_pending(&self) -> bool {
+        let process = self.process.upgrade().unwrap();
+
+        // Fast path: No signals are pending.
+        if self.sig_queues.is_empty() && process.sig_queues().is_empty() {
+            return false;
+        }
+
+        // Slow path: Some signals are pending.
+
+        let sig_dispositions = process.sig_dispositions().lock();
         let blocked = self.sig_mask().load(Ordering::Relaxed);
-        self.sig_queues.has_pending(blocked)
+
+        self.sig_queues.has_pending(blocked, &sig_dispositions)
+            || process.sig_queues().has_pending(blocked, &sig_dispositions)
     }
 
     /// Returns whether the signal is blocked by the thread.
     pub(in crate::process) fn has_signal_blocked(&self, signum: SigNum) -> bool {
         // FIXME: Some signals cannot be blocked, even set in sig_mask.
         self.sig_mask.contains(signum, Ordering::Relaxed)
-    }
-
-    /// Checks whether the signal can be delivered to the thread.
-    ///
-    /// For a signal can be delivered to the thread, the sending thread must either
-    /// be privileged, or the real or effective user ID of the sending thread must equal
-    /// the real or saved set-user-ID of the target thread.
-    ///
-    /// For SIGCONT, the sending and receiving processes should belong to the same session.
-    pub(in crate::process) fn check_signal_perm(
-        &self,
-        signum: Option<&SigNum>,
-        sender: &SignalSenderIds,
-    ) -> Result<()> {
-        if sender.euid().is_root() {
-            return Ok(());
-        }
-
-        if let Some(signum) = signum
-            && *signum == SIGCONT
-        {
-            let receiver_sid = self.process().sid();
-            if receiver_sid == sender.sid().unwrap() {
-                return Ok(());
-            }
-
-            return_errno_with_message!(
-                Errno::EPERM,
-                "sigcont requires that sender and receiver belongs to the same session"
-            );
-        }
-
-        let (receiver_ruid, receiver_suid) = {
-            let credentials = self.credentials();
-            (credentials.ruid(), credentials.suid())
-        };
-
-        // FIXME: further check the below code to ensure the behavior is same as Linux. According
-        // to man(2) kill, the real or effective user ID of the sending process must equal the
-        // real or saved set-user-ID of the target process.
-        if sender.ruid() == receiver_ruid
-            || sender.ruid() == receiver_suid
-            || sender.euid() == receiver_ruid
-            || sender.euid() == receiver_suid
-        {
-            return Ok(());
-        }
-
-        return_errno_with_message!(Errno::EPERM, "sending signal to the thread is not allowed.");
     }
 
     /// Sets the input [`Waker`] as the signalled waker of this thread.
@@ -215,32 +176,17 @@ impl PosixThread {
         let process = self.process();
         let sig_dispositions = process.sig_dispositions().lock();
 
-        let signum = signal.num();
-        if sig_dispositions.get(signum).will_ignore(signum) {
+        let will_ignore = sig_dispositions.will_ignore(signal.as_ref());
+        let blocked = self.has_signal_blocked(signal.num());
+        if will_ignore && !blocked {
             return;
         }
 
-        self.enqueue_signal_locked(signal, sig_dispositions);
-    }
-
-    /// Enqueues a thread-directed signal with locked dispositions.
-    ///
-    /// By locking dispositions, the caller should have already checked the signal is not to be
-    /// ignored.
-    //
-    // FIXME: According to Linux behavior, we should enqueue ignored signals blocked by all
-    // threads, as a thread may change the signal handler and unblock them in the future. However,
-    // achieving this behavior properly without maintaining a process-wide signal queue is
-    // difficult. For instance, if we randomly select a thread-wide signal queue, the thread that
-    // modifies the signal handler and unblocks the signal may not be the same one. Consequently,
-    // the current implementation uses a simpler mechanism that never enqueues any ignored signals.
-    pub(in crate::process) fn enqueue_signal_locked(
-        &self,
-        signal: Box<dyn Signal>,
-        _sig_dispositions: MutexGuard<SigDispositions>,
-    ) {
         self.sig_queues.enqueue(signal);
-        self.wake_signalled_waker();
+
+        if !blocked && !will_ignore {
+            self.wake_signalled_waker();
+        }
     }
 
     /// Returns a reference to the profiling clock of the current thread.
@@ -271,19 +217,16 @@ impl PosixThread {
     }
 
     pub fn dequeue_signal(&self, mask: &SigMask) -> Option<Box<dyn Signal>> {
-        self.sig_queues.dequeue(mask)
+        self.sig_queues
+            .dequeue(mask)
+            .or_else(|| self.process.upgrade().unwrap().sig_queues().dequeue(mask))
     }
 
-    pub fn register_sigqueue_observer(
-        &self,
-        observer: Weak<dyn Observer<SigEvents>>,
-        filter: SigEventsFilter,
-    ) {
-        self.sig_queues.register_observer(observer, filter);
-    }
-
-    pub fn unregister_sigqueue_observer(&self, observer: &Weak<dyn Observer<SigEvents>>) {
-        self.sig_queues.unregister_observer(observer);
+    pub fn register_signalfd_poller(&self, poller: &mut PollHandle, mask: IoEvents) {
+        self.sig_queues.register_signalfd_poller(poller, mask);
+        self.process()
+            .sig_queues()
+            .register_signalfd_poller(poller, mask);
     }
 
     /// Gets the read-only credentials of the thread.
