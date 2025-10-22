@@ -140,7 +140,7 @@ Consider [`sigaction`](https://man7.org/linux/man-pages/man2/sigaction.2.html):
 
 ```c
 struct sigaction = {
-    sa_flags: SA_NOCLDSTOP | SA_NOCLDWAIT,
+    sa_flags = SA_NOCLDSTOP | SA_NOCLDWAIT,
     ..
 };
 ```
@@ -152,6 +152,23 @@ refers to the struct rule using the `<struct_rule>` syntax.
 
 ```c
 sigaction(signum, act = <sigaction>, oldact = <sigaction>);
+```
+
+Instead of defining a separate struct rule,
+you can also inline the struct pattern directly in the parameter list.
+This is convenient when the struct pattern is only used once
+or when you want to express different constraints for the same struct type in different contexts.
+
+For example, the following rule inlines the struct pattern for `capget`:
+
+```c
+capget(
+    hdrp = {
+        version = _LINUX_CAPABILITY_VERSION_3,
+        ..
+    },
+    datap
+);
 ```
 
 ### Matching Rules for Arrays
@@ -276,23 +293,27 @@ Non‑terminals are in angle brackets, terminals in quotes.
 <syscall-rule>   ::= <identifier> '(' [ <param-list> ] ')'
 <param-list>     ::= '..'
                    | <param> { ',' <param> } [ ',' '..' ]
-<param>          ::= <identifier> '=' <expr>
+<param>          ::= <identifier> '=' <flag-pattern>
+                   | <identifier> '=' <struct-pattern>
+                   | <identifier> '=' <array-pattern>
                    | <identifier>
 
-<expr>           ::= <expr> '|' <expr>
-                   | <term>
-<term>           ::= <identifier>
+<flag-pattern>   ::= <flag-part> { '|' <flag-part> }
+<flag-part>      ::= <identifier>
                    | '<' <identifier> '>'
 
-<array>          ::= '[' '<' <identifier> '>' ']'  
+<array-pattern>  ::= '[' <array-element> ']'
+<array-element>  ::= '<' <identifier> '>'
 
-<struct-rule>    ::= 'struct' <identifier> '=' '{' <field-list> [ ',' '..' ] '}'
+<struct-rule>    ::= 'struct' <identifier> '=' <struct-pattern>
+<struct-pattern> ::= '{' <field-list> [ ',' '..' ] '}'
 <field-list>     ::= <field> { ',' <field> }
 <field>          ::= <identifier>
-                   | <identifier> ':' <expr>
-                   | <identifier> ':' <array>
+                   | <identifier> '=' <flag-pattern>
+                   | <identifier> '=' <struct-pattern>
+                   | <identifier> '=' <array-pattern>
 
-<bitflags-rule>  ::= <identifier> '=' <expr>
+<bitflags-rule>  ::= <identifier> '=' <flag-pattern>
 
 <identifier>     ::= letter { letter | digit | '_' }
 
