@@ -161,8 +161,8 @@ fn do_execve(
     set_gid_from_elf(process, &credentials, elf_inode)?;
     credentials.set_keep_capabilities(false);
 
-    // set executable path
-    process.set_executable_path(executable_path);
+    // set executable `FsItem`
+    process.set_executable_fsitem(elf_file);
     // set signal disposition to default
     process.sig_dispositions().lock().inherit();
     // set cpu context to default

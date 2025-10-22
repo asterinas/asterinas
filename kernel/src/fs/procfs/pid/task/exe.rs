@@ -2,6 +2,7 @@
 
 use crate::{
     fs::{
+        fs_resolver::FsItem,
         procfs::{ProcSymBuilder, SymOps},
         utils::{mkmod, Inode, ReadLinkResult},
     },
@@ -26,6 +27,10 @@ impl ExeSymOps {
 
 impl SymOps for ExeSymOps {
     fn read_link(&self) -> Result<ReadLinkResult> {
-        Ok(ReadLinkResult::Real(self.0.executable_path()))
+        let res = match self.0.executable_fsitem() {
+            FsItem::Real(path) => ReadLinkResult::Real(path.abs_path()),
+            FsItem::Pseudo(pseudo_file) => ReadLinkResult::Pseudo(pseudo_file.clone()),
+        };
+        Ok(res)
     }
 }

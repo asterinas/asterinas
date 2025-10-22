@@ -20,6 +20,7 @@ use super::{
     task_set::TaskSet,
 };
 use crate::{
+    fs::fs_resolver::FsItem,
     prelude::*,
     process::{signal::Pollee, status::StopWaitStatus, UserNamespace, WaitOptions},
     sched::{AtomicNice, Nice},
@@ -77,8 +78,8 @@ pub struct Process {
     pub(super) pidfile_pollee: Pollee,
 
     // Mutable Part
-    /// The executable path.
-    executable_path: RwLock<String>,
+    /// The executable `FsItem`.
+    executable_fsitem: RwLock<FsItem>,
     /// The threads
     tasks: Mutex<TaskSet>,
     /// Process status
@@ -203,7 +204,7 @@ impl Process {
     #[expect(clippy::too_many_arguments)]
     pub(super) fn new(
         pid: Pid,
-        executable_path: String,
+        executable_fsitem: FsItem,
         process_vm: ProcessVm,
 
         resource_limits: ResourceLimits,
@@ -221,7 +222,7 @@ impl Process {
         Arc::new_cyclic(|process_ref: &Weak<Process>| Self {
             pid,
             tasks: Mutex::new(TaskSet::new()),
-            executable_path: RwLock::new(executable_path),
+            executable_fsitem: RwLock::new(executable_fsitem),
             process_vm,
             children_wait_queue,
             pidfile_pollee: Pollee::new(),
@@ -277,12 +278,12 @@ impl Process {
         &self.tasks
     }
 
-    pub fn executable_path(&self) -> String {
-        self.executable_path.read().clone()
+    pub fn executable_fsitem(&self) -> FsItem {
+        self.executable_fsitem.read().clone()
     }
 
-    pub fn set_executable_path(&self, executable_path: String) {
-        *self.executable_path.write() = executable_path;
+    pub fn set_executable_fsitem(&self, executable_fsitem: FsItem) {
+        *self.executable_fsitem.write() = executable_fsitem;
     }
 
     pub fn resource_limits(&self) -> &ResourceLimits {

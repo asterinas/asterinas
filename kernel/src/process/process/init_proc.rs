@@ -6,7 +6,11 @@ use ostd::{arch::cpu::context::UserContext, task::Task, user::UserContextApi};
 
 use super::Process;
 use crate::{
-    fs::{fs_resolver::FsPath, path::MountNamespace, thread_info::ThreadFsInfo},
+    fs::{
+        fs_resolver::{FsItem, FsPath},
+        path::MountNamespace,
+        thread_info::ThreadFsInfo,
+    },
     prelude::*,
     process::{
         posix_thread::{allocate_posix_tid, PosixThreadBuilder, ThreadName},
@@ -51,9 +55,16 @@ fn create_init_process(
     let sig_dispositions = Arc::new(Mutex::new(SigDispositions::default()));
     let user_ns = UserNamespace::get_init_singleton().clone();
 
+    let fs = {
+        let fs_resolver = MountNamespace::get_init_singleton().new_fs_resolver();
+        ThreadFsInfo::new(fs_resolver)
+    };
+    let fs_path = FsPath::try_from(executable_path)?;
+    let elf_file = FsItem::Real(fs.resolver().read().lookup(&fs_path)?);
+
     let init_proc = Process::new(
         pid,
-        executable_path.to_string(),
+        elf_file.clone(),
         process_vm,
         resource_limits,
         nice,
@@ -65,7 +76,8 @@ fn create_init_process(
     let init_task = create_init_task(
         pid,
         init_proc.vm(),
-        executable_path,
+        fs,
+        &elf_file,
         Arc::downgrade(&init_proc),
         argv,
         envp,
@@ -96,22 +108,23 @@ fn set_session_and_group(process: &Arc<Process>) {
 fn create_init_task(
     tid: Tid,
     process_vm: &ProcessVm,
-    executable_path: &str,
+    fs: ThreadFsInfo,
+    elf_file: &FsItem,
     process: Weak<Process>,
     argv: Vec<CString>,
     envp: Vec<CString>,
 ) -> Result<Arc<Task>> {
     let credentials = Credentials::new_root();
-    let fs = {
-        let fs_resolver = MountNamespace::get_init_singleton().new_fs_resolver();
-        ThreadFsInfo::new(fs_resolver)
-    };
+
     let elf_load_info = {
         let fs_resolver = fs.resolver().read();
-        let fs_path = FsPath::try_from(executable_path)?;
-        let elf_file = fs.resolver().read().lookup(&fs_path)?;
-        let program_to_load =
-            ProgramToLoad::build_from_inode(elf_file.inode(), &fs_resolver, argv, envp, 1)?;
+        let program_to_load = ProgramToLoad::build_from_inode(
+            elf_file.inode().unwrap(),
+            &fs_resolver,
+            argv,
+            envp,
+            1,
+        )?;
         process_vm.clear_and_map();
         program_to_load.load_to_vm(process_vm, &fs_resolver)?
     };
@@ -119,7 +132,7 @@ fn create_init_task(
     let mut user_ctx = UserContext::default();
     user_ctx.set_instruction_pointer(elf_load_info.entry_point as _);
     user_ctx.set_stack_pointer(elf_load_info.user_stack_top as _);
-    let thread_name = ThreadName::new_from_executable_path(executable_path);
+    let thread_name = ThreadName::new_from_executable_path(&elf_file.display_name());
     let thread_builder = PosixThreadBuilder::new(tid, thread_name, Box::new(user_ctx), credentials)
         .process(process)
         .fs(Arc::new(fs))
