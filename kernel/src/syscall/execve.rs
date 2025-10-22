@@ -10,8 +10,7 @@ use super::{constants::*, SyscallReturn};
 use crate::{
     fs::{
         file_table::FileDesc,
-        fs_resolver::{FsPath, AT_FDCWD},
-        path::Path,
+        fs_resolver::{FsItem, FsPath, AT_FDCWD},
         utils::Inode,
     },
     prelude::*,
@@ -61,12 +60,12 @@ fn lookup_executable_file(
     filename_ptr: Vaddr,
     flags: OpenFlags,
     ctx: &Context,
-) -> Result<Path> {
+) -> Result<FsItem> {
     let filename = ctx
         .user_space()
         .read_cstring(filename_ptr, MAX_FILENAME_LEN)?;
 
-    let path = {
+    let fsitem = {
         let filename = filename.to_string_lossy();
         let fs_path = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {
             FsPath::from_fd(dfd)?
@@ -77,19 +76,22 @@ fn lookup_executable_file(
         let fs_ref = ctx.thread_local.borrow_fs();
         let fs_resolver = fs_ref.resolver().read();
         if flags.contains(OpenFlags::AT_SYMLINK_NOFOLLOW) {
-            fs_resolver.lookup_no_follow(&fs_path)?
+            fs_resolver.lookup_fsitem_no_follow(&fs_path)?
         } else {
-            fs_resolver.lookup(&fs_path)?
+            fs_resolver.lookup_fsitem(&fs_path)?
         }
     };
 
-    check_executable_inode(path.inode())?;
+    let inode = fsitem
+        .inode()
+        .ok_or_else(|| Error::with_message(Errno::EACCES, "the file do not have an inode"))?;
+    check_executable_inode(inode)?;
 
-    Ok(path)
+    Ok(fsitem)
 }
 
 fn do_execve(
-    elf_file: Path,
+    elf_file: FsItem,
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
     ctx: &Context,
@@ -102,7 +104,7 @@ fn do_execve(
         ..
     } = ctx;
 
-    let executable_path = elf_file.abs_path();
+    let executable_path = elf_file.display_name();
     // FIXME: A malicious user could cause a kernel panic by exhausting available memory.
     // Currently, the implementation reads up to `MAX_NR_STRING_ARGS` arguments, each up to
     // `MAX_LEN_STRING_ARG` in length, without first verifying the total combined size.
@@ -132,7 +134,7 @@ fn do_execve(
     debug!("load program to root vmar");
     let fs_ref = thread_local.borrow_fs();
     let fs_resolver = fs_ref.resolver().read();
-    let elf_inode = elf_file.inode();
+    let elf_inode = elf_file.inode().unwrap();
     let program_to_load = ProgramToLoad::build_from_inode(elf_inode, &fs_resolver, argv, envp, 1)?;
 
     renew_vm_and_map(ctx);
@@ -160,7 +162,7 @@ fn do_execve(
     credentials.set_keep_capabilities(false);
 
     // set executable path
-    process.set_executable_path(elf_file.abs_path());
+    process.set_executable_path(executable_path);
     // set signal disposition to default
     process.sig_dispositions().lock().inherit();
     // set cpu context to default

@@ -56,11 +56,14 @@ impl ProgramToLoad {
             let interpreter = {
                 let filename = new_argv[0].to_str()?.to_string();
                 let fs_path = FsPath::try_from(filename.as_str())?;
-                fs_resolver.lookup(&fs_path)?
+                fs_resolver.lookup_fsitem(&fs_path)?
             };
-            check_executable_inode(interpreter.inode())?;
+            let interpreter_inode = interpreter.inode().ok_or_else(|| {
+                Error::with_message(Errno::EACCES, "the interpreter do not have an inode")
+            })?;
+            check_executable_inode(interpreter_inode)?;
             return Self::build_from_inode(
-                interpreter.inode(),
+                interpreter_inode,
                 fs_resolver,
                 new_argv,
                 envp,
