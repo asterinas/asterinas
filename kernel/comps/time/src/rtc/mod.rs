@@ -23,16 +23,18 @@ macro_rules! declare_rtc_drivers {
             mod $module;
         )*
 
-        pub fn init_rtc_driver() -> Option<Arc<dyn Driver + Send + Sync>> {
+        pub fn init_rtc_driver() -> Arc<dyn Driver + Send + Sync> {
             // iterate all possible drivers and pick one that can be initialized
             $(
                 #[cfg $cfg]
                 if let Some(driver) = $module::$name::try_new() {
-                    return Some(Arc::new(driver));
+                    return Arc::new(driver);
                 }
             )*
 
-            None
+            log::warn!("No RTC device found, falling back to a dummy RTC.");
+
+            Arc::new(RtcDummy)
         }
     }
 }
@@ -41,4 +43,24 @@ declare_rtc_drivers! {
     #[cfg(target_arch = "x86_64")] cmos::RtcCmos,
     #[cfg(target_arch = "riscv64")] goldfish::RtcGoldfish,
     #[cfg(target_arch = "loongarch64")] loongson::RtcLoongson,
+}
+
+struct RtcDummy;
+
+impl Driver for RtcDummy {
+    fn try_new() -> Option<Self> {
+        Some(Self)
+    }
+
+    fn read_rtc(&self) -> SystemTime {
+        SystemTime {
+            year: 1970,
+            month: 1,
+            day: 1,
+            hour: 0,
+            minute: 0,
+            second: 0,
+            nanos: 0,
+        }
+    }
 }

@@ -28,7 +28,7 @@ static RTC_DRIVER: Once<Arc<dyn Driver + Send + Sync>> = Once::new();
 
 #[init_component]
 fn time_init() -> Result<(), ComponentInitError> {
-    let rtc = rtc::init_rtc_driver().ok_or(ComponentInitError::Unknown)?;
+    let rtc = rtc::init_rtc_driver();
     RTC_DRIVER.call_once(|| rtc);
     tsc::init();
     Ok(())
