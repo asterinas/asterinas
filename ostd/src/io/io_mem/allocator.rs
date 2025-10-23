@@ -100,7 +100,7 @@ impl IoMemAllocatorBuilder {
     /// # Panics
     ///
     /// This function will panic if the specified range is not available.
-    #[cfg_attr(not(target_arch = "riscv64"), expect(unused))]
+    #[cfg_attr(target_arch = "loongarch64", expect(unused))]
     pub(crate) fn reserve(&self, range: Range<usize>) -> IoMem<Sensitive> {
         debug!(
             "Try to reserve security-sensitive MMIO range: {:#x?}",
