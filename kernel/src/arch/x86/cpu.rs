@@ -467,6 +467,13 @@ impl CpuInformation {
     }
 
     fn fill_topology_info(&mut self) {
+        // TODO: Prevent Iago attack: CPUID Topology triggers #VE, untrusted host/VMM
+        // could return malicious topology data that may cause:
+        // - Invalid APIC ID values leading to incorrect processor identification
+        // - Malicious shift values (eax & 0x1f) causing incorrect core_id calculation
+        // - Inconsistent topology information across multiple CPU queries
+        // Consider implementing: Sanitize CPUID topology data before use, ensure topology data coherence,
+        // and fallback mechanisms for invalid topology data.
         let Some(CpuidResult { eax, edx, .. }) = cpuid(CpuidLeaf::Topology as u32, 0) else {
             return;
         };
