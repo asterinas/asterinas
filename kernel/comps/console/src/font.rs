@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! Font types.
+
 use alloc::{boxed::Box, vec::Vec};
 
 use font8x8::UnicodeFonts;

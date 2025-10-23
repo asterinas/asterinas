@@ -2,7 +2,7 @@
 
 use alloc::{sync::Arc, vec::Vec};
 
-use aster_console::{AnyConsoleDevice, BitmapFont, ConsoleCallback, ConsoleSetFontError};
+use aster_console::{font::BitmapFont, AnyConsoleDevice, ConsoleCallback, ConsoleSetFontError};
 use aster_keyboard::InputKey;
 use ostd::{
     mm::VmReader,
