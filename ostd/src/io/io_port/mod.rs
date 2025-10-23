@@ -95,6 +95,13 @@ impl<T, A> IoPort<T, A> {
 
 impl<T: PortRead, A: IoPortReadAccess> IoPort<T, A> {
     /// Reads from the I/O port
+    // TODO: Prevent Iago attack: Validate read values from sensitive I/O ports in Intel TDX environment.
+    // The untrusted host/VMM could return malicious values that may cause:
+    // - Out-of-range values leading to undefined behavior in device drivers
+    // - Inconsistent values across multiple reads (TOCTOU attacks)
+    // - Values designed to exploit vulnerabilities in device driver logic
+    // Consider implementing: range validation, caching to detect modifications,
+    // and safe error handling to prevent driver vulnerabilities.
     pub fn read(&self) -> T {
         unsafe { PortRead::read_from_port(self.port) }
     }
@@ -102,6 +109,13 @@ impl<T: PortRead, A: IoPortReadAccess> IoPort<T, A> {
 
 impl<T: PortWrite, A: IoPortWriteAccess> IoPort<T, A> {
     /// Writes to the I/O port
+    // TODO: Prevent Iago attack: Validate written values to sensitive I/O ports in Intel TDX environment.
+    // The untrusted host/VMM could exploit write operations to:
+    // - Device misconfiguration leading to security bypass
+    // - Silent write failures causing system instability
+    // - Modify written values, causing device misbehavior or security vulnerabilities
+    // - Partially tamper with written values, leading to inconsistent device states
+    // Consider implementing: immediate readback verification and functional verification.
     pub fn write(&self, value: T) {
         unsafe { PortWrite::write_to_port(self.port, value) }
     }

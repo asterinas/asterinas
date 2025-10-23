@@ -69,6 +69,26 @@ impl DmaStream {
                     //  - A `USegment` always points to normal physical memory, so all the pages
                     //    are contained in the linear mapping.
                     //  - The pages belong to a `USegment`, so they're all untyped memory.
+                    // TODO: Prevent Iago attack: DMA stream buffer unprotection creates bidirectional VMM data access:
+                    // unprotect_gpa_range() exposes DMA stream buffers to untrusted VMM based on direction.
+                    // This creates critical security boundaries depending on DMA direction and data sensitivity.
+                    // Primary Security Risks (TDX threat model scope):
+                    // - **Kernel Data Integrity Violation**: VMM may modify DMA buffer contents during device I/O,
+                    //   corrupting data that kernel expects to be authentic. Direction-specific impacts:
+                    //   * ToDevice (CPU->Device): VMM may read sensitive kernel data being sent to device
+                    //   * FromDevice (Device->CPU): VMM may inject semantically malicious data appearing from device
+                    //   * Bidirectional: Combined read/write exposure maximizes attack surface
+                    // - **Privilege Escalation Risk**: Malicious DMA buffer content may exploit kernel driver
+                    //   vulnerabilities through direction-specific attack vectors:
+                    //   * FromDevice: Crafted device responses triggering incorrect state transitions
+                    //   * ToDevice: VMM inspection of command buffers may reveal kernel state/addresses
+                    // Consider implementing:
+                    // - **Input Validation**: Sanitize all FromDevice data before kernel processing
+                    //   * Validate network packet headers, lengths, and protocol conformance
+                    //   * Verify storage read data against expected file system structures
+                    //   * Bounds-check all device-provided buffer addresses and sizes
+                    // - **Output Protection**: Minimize ToDevice data exposure
+                    //   * Scrub sensitive data from command buffers after device consumption
                     unsafe {
                         crate::arch::tdx_guest::unprotect_gpa_range(paddr, frame_count).unwrap();
                     }
