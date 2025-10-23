@@ -59,6 +59,21 @@ pub trait AnyConsoleDevice: Send + Sync + Any + Debug {
     fn mode(&self) -> Option<mode::ConsoleMode> {
         None
     }
+
+    /// Sets the keyboard mode (see [`mode::KeyboardMode`]).
+    ///
+    /// Returns true if the mode was changed, false if the mode is not supported.
+    #[must_use]
+    fn set_keyboard_mode(&self, _mode: mode::KeyboardMode) -> bool {
+        false
+    }
+
+    /// Gets the current keyboard mode.
+    ///
+    /// Returns the current keyboard mode, or `None` if mode switching is not supported.
+    fn keyboard_mode(&self) -> Option<mode::KeyboardMode> {
+        None
+    }
 }
 
 pub fn register_device(name: String, device: Arc<dyn AnyConsoleDevice>) {

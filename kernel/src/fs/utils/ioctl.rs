@@ -8,6 +8,7 @@ use crate::prelude::*;
 pub enum IoctlCmd {
     /// Get terminal attributes
     TCGETS = 0x5401,
+    /// Set terminal attributes
     TCSETS = 0x5402,
     /// Drain the output buffer and set attributes
     TCSETSW = 0x5403,
@@ -21,8 +22,9 @@ pub enum IoctlCmd {
     TIOCSPGRP = 0x5410,
     /// Get the number of bytes in the input buffer.
     FIONREAD = 0x541B,
-    /// Set window size
+    /// Get window size
     TIOCGWINSZ = 0x5413,
+    /// Set window size
     TIOCSWINSZ = 0x5414,
     /// Enable or disable non-blocking I/O mode.
     FIONBIO = 0x5421,
@@ -48,6 +50,10 @@ pub enum IoctlCmd {
     KDGETMODE = 0x4B3B,
     /// Set console mode
     KDSETMODE = 0x4B3A,
+    /// Get keyboard mode
+    KDGKBMODE = 0x4B44,
+    /// Set keyboard mode
+    KDSKBMODE = 0x4B45,
     /// Get tdx report using TDCALL
     TDXGETREPORT = 0xc4405401,
 }
