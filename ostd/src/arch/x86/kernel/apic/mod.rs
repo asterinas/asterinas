@@ -4,9 +4,12 @@ use alloc::boxed::Box;
 
 use bit_field::BitField;
 use spin::Once;
-use xapic::get_xapic_base_address;
 
-use crate::{cpu::PinCurrentCpu, cpu_local, io::IoMemAllocatorBuilder};
+use crate::{
+    cpu::PinCurrentCpu,
+    cpu_local,
+    io::{IoMem, IoMemAllocatorBuilder, Sensitive},
+};
 
 mod x2apic;
 mod xapic;
@@ -71,8 +74,8 @@ pub fn get_or_init(_guard: &dyn PinCurrentCpu) -> &(dyn Apic + 'static) {
 
     // Initialize the APIC instance now.
     apic_instance.call_once(|| match APIC_TYPE.get().unwrap() {
-        ApicType::XApic => {
-            let mut xapic = xapic::XApic::new().unwrap();
+        ApicType::XApic(io_mem) => {
+            let mut xapic = xapic::XApic::new(io_mem).unwrap();
             xapic.enable();
             let version = xapic.version();
             log::info!(
@@ -136,7 +139,7 @@ pub trait ApicTimer {
 }
 
 enum ApicType {
-    XApic,
+    XApic(IoMem<Sensitive>),
     X2Apic,
 }
 
@@ -251,7 +254,7 @@ impl ApicId {
 impl From<u32> for ApicId {
     fn from(value: u32) -> Self {
         match APIC_TYPE.get().unwrap() {
-            ApicType::XApic => ApicId::XApic(value as u8),
+            ApicType::XApic(_) => ApicId::XApic(value as u8),
             ApicType::X2Apic => ApicId::X2Apic(value),
         }
     }
@@ -354,9 +357,10 @@ pub fn init(io_mem_builder: &IoMemAllocatorBuilder) -> Result<(), ApicInitError>
         Ok(())
     } else if xapic::XApic::has_xapic() {
         log::info!("xAPIC found!");
-        let base_address = get_xapic_base_address();
-        io_mem_builder.remove(base_address..(base_address + size_of::<[u32; 256]>()));
-        APIC_TYPE.call_once(|| ApicType::XApic);
+        // SAFETY: xAPIC is present.
+        let base_address = unsafe { xapic::read_xapic_base_address() };
+        let io_mem = io_mem_builder.reserve(base_address..(base_address + xapic::XAPIC_MMIO_SIZE));
+        APIC_TYPE.call_once(|| ApicType::XApic(io_mem));
         Ok(())
     } else {
         log::warn!("Neither x2APIC nor xAPIC found!");
