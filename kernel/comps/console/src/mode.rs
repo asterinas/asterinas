@@ -16,3 +16,24 @@ pub enum ConsoleMode {
     /// and may be used for graphical output (e.g., by X server).
     Graphics = 1,
 }
+
+/// The keyboard mode.
+///
+/// This mode determines how a console behaves when it receives input from the keyboard. For more
+/// details, see <https://lct.sourceforge.net/lct/x60.html>.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.17.4/source/include/uapi/linux/kd.h#L81-L85>.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
+#[repr(i32)]
+pub enum KeyboardMode {
+    /// The scancode mode (`K_RAW` in Linux).
+    Raw = 0,
+    /// The ASCII mode (`K_XLATE` in Linux).
+    Xlate = 1,
+    /// The keycode mode (`K_MEDIUMRAW` in Linux).
+    MediumRaw = 2,
+    /// The Unicode mode (`K_UNICODE` in Linux).
+    Unicode = 3,
+    /// The off mode (`K_OFF` in Linux).
+    Off = 4,
+}

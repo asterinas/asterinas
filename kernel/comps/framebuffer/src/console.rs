@@ -3,7 +3,9 @@
 use alloc::{sync::Arc, vec::Vec};
 
 use aster_console::{
-    font::BitmapFont, mode::ConsoleMode, AnyConsoleDevice, ConsoleCallback, ConsoleSetFontError,
+    font::BitmapFont,
+    mode::{ConsoleMode, KeyboardMode},
+    AnyConsoleDevice, ConsoleCallback, ConsoleSetFontError,
 };
 use aster_keyboard::InputKey;
 use ostd::{
@@ -19,7 +21,7 @@ use crate::{
 
 /// A text console rendered onto the framebuffer.
 pub struct FramebufferConsole {
-    callbacks: SpinLock<Vec<&'static ConsoleCallback>, LocalIrqDisabled>,
+    callbacks: SpinLock<ConsoleCallbacks, LocalIrqDisabled>,
     inner: SpinLock<(ConsoleState, EscapeFsm), LocalIrqDisabled>,
 }
 
@@ -58,7 +60,7 @@ impl AnyConsoleDevice for FramebufferConsole {
     }
 
     fn register_callback(&self, callback: &'static ConsoleCallback) {
-        self.callbacks.lock().push(callback);
+        self.callbacks.lock().callbacks.push(callback);
     }
 
     fn set_font(&self, font: BitmapFont) -> Result<(), ConsoleSetFontError> {
@@ -73,11 +75,33 @@ impl AnyConsoleDevice for FramebufferConsole {
     fn mode(&self) -> Option<ConsoleMode> {
         Some(self.inner.lock().0.mode())
     }
+
+    fn set_keyboard_mode(&self, mode: KeyboardMode) -> bool {
+        match mode {
+            KeyboardMode::Xlate => self.callbacks.lock().is_input_enabled = true,
+            KeyboardMode::Off => self.callbacks.lock().is_input_enabled = false,
+            _ => return false,
+        }
+        true
+    }
+
+    fn keyboard_mode(&self) -> Option<KeyboardMode> {
+        if self.callbacks.lock().is_input_enabled {
+            Some(KeyboardMode::Xlate)
+        } else {
+            Some(KeyboardMode::Off)
+        }
+    }
 }
 
 impl FramebufferConsole {
     /// Creates a new framebuffer console.
     pub(self) fn new(framebuffer: Arc<FrameBuffer>) -> Self {
+        let callbacks = ConsoleCallbacks {
+            callbacks: Vec::new(),
+            is_input_enabled: true,
+        };
+
         let state = ConsoleState {
             x_pos: 0,
             y_pos: 0,
@@ -93,8 +117,21 @@ impl FramebufferConsole {
         let esc_fsm = EscapeFsm::new();
 
         Self {
-            callbacks: SpinLock::new(Vec::new()),
+            callbacks: SpinLock::new(callbacks),
             inner: SpinLock::new((state, esc_fsm)),
+        }
+    }
+
+    /// Triggers the registered input callbacks with the given data.
+    pub(self) fn trigger_input_callbacks(&self, bytes: &[u8]) {
+        let callbacks = self.callbacks.lock();
+        if !callbacks.is_input_enabled {
+            return;
+        }
+
+        let reader = VmReader::from(bytes);
+        for callback in callbacks.callbacks.iter() {
+            callback(reader.clone());
         }
     }
 }
@@ -103,6 +140,12 @@ impl core::fmt::Debug for FramebufferConsole {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("FramebufferConsole").finish_non_exhaustive()
     }
+}
+
+struct ConsoleCallbacks {
+    callbacks: Vec<&'static ConsoleCallback>,
+    /// Whether the input characters will be handled by the callbacks.
+    is_input_enabled: bool,
 }
 
 #[derive(Debug)]
@@ -280,8 +323,5 @@ fn handle_keyboard_input(key: InputKey) {
     };
 
     let buffer = key.as_xterm_control_sequence();
-    for callback in console.callbacks.lock().iter() {
-        let reader = VmReader::from(buffer);
-        callback(reader);
-    }
+    console.trigger_input_callbacks(buffer);
 }

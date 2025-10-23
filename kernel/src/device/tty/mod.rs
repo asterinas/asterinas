@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_console::{font::BitmapFont, mode::ConsoleMode, AnyConsoleDevice};
+use aster_console::{
+    font::BitmapFont,
+    mode::{ConsoleMode, KeyboardMode},
+    AnyConsoleDevice,
+};
 use ostd::sync::LocalIrqDisabled;
 
 use self::{line_discipline::LineDiscipline, termio::CFontOp};
@@ -321,6 +325,20 @@ impl<D: TtyDriver> FileIo for Tty<D> {
                 let console = self.console()?;
 
                 let mode = console.mode().unwrap_or(ConsoleMode::Text);
+                current_userspace!().write_val(arg, &(mode as i32))?;
+            }
+            IoctlCmd::KDSKBMODE => {
+                let console = self.console()?;
+
+                let mode = KeyboardMode::try_from(arg as i32)?;
+                if !console.set_keyboard_mode(mode) {
+                    return_errno_with_message!(Errno::EINVAL, "the keyboard mode is not supported");
+                }
+            }
+            IoctlCmd::KDGKBMODE => {
+                let console = self.console()?;
+
+                let mode = console.keyboard_mode().unwrap_or(KeyboardMode::Xlate);
                 current_userspace!().write_val(arg, &(mode as i32))?;
             }
             _ => (self.weak_self.upgrade().unwrap() as Arc<dyn Terminal>)
