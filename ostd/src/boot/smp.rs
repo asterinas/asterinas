@@ -136,14 +136,14 @@ fn ap_early_entry(cpu_id: u32) -> ! {
     // SAFETY: This function is called in the boot context of the AP.
     unsafe { crate::arch::trap::init() };
 
+    // SAFETY: This function is only called once on this AP.
+    unsafe { crate::mm::kspace::activate_kernel_page_table() };
+
     // SAFETY: This function is only called once on this AP, after the BSP has
     // done the architecture-specific initialization.
     unsafe { crate::arch::init_on_ap() };
 
     crate::arch::irq::enable_local();
-
-    // SAFETY: This function is only called once on this AP.
-    unsafe { crate::mm::kspace::activate_kernel_page_table() };
 
     // SAFETY:
     // 1. The kernel page table is activated on this AP.
