@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! The console device of Asterinas.
+
 #![no_std]
 #![deny(unsafe_code)]
 
 extern crate alloc;
 
-mod font;
+pub mod font;
 
 use alloc::{collections::BTreeMap, fmt::Debug, string::String, sync::Arc, vec::Vec};
 use core::any::Any;
 
 use component::{init_component, ComponentInitError};
-pub use font::{BitmapChar, BitmapCharRow, BitmapFont};
 use ostd::{
     mm::{Infallible, VmReader},
     sync::{LocalIrqDisabled, SpinLock, SpinLockGuard},
@@ -37,7 +37,7 @@ pub trait AnyConsoleDevice: Send + Sync + Any + Debug {
     fn register_callback(&self, callback: &'static ConsoleCallback);
 
     /// Sets the font of the console device.
-    fn set_font(&self, _font: BitmapFont) -> Result<(), ConsoleSetFontError> {
+    fn set_font(&self, _font: font::BitmapFont) -> Result<(), ConsoleSetFontError> {
         Err(ConsoleSetFontError::InappropriateDevice)
     }
 }
