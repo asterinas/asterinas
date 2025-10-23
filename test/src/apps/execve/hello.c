@@ -4,7 +4,7 @@
 
 int main(int argc, char *argv[], char *envp[])
 {
-	printf("Hello world from hello.c(execved in execve.c)!\n");
+	printf("Hello world from hello.c!\n");
 	printf("argc = %d\n", argc);
 	for (int i = 0; i < argc; i++) {
 		printf("%s\n", argv[i]);
