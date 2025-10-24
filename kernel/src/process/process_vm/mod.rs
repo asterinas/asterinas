@@ -12,14 +12,7 @@
 mod heap;
 mod init_stack;
 
-use core::ops::Range;
-
-use align_ext::AlignExt;
-use ostd::{
-    mm::{io_util::HasVmReaderWriter, vm_space::VmQueriedItem, PageFlags, UFrame},
-    sync::MutexGuard,
-    task::disable_preempt,
-};
+use ostd::{sync::MutexGuard, task::disable_preempt};
 
 pub use self::{
     heap::{Heap, USER_HEAP_SIZE_LIMIT},
@@ -28,14 +21,7 @@ pub use self::{
         InitStack, InitStackReader, INIT_STACK_SIZE, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS,
     },
 };
-use crate::{
-    prelude::*,
-    thread::exception::PageFaultInfo,
-    vm::{
-        page_fault_handler::PageFaultHandler,
-        vmar::{is_userspace_vaddr, Vmar},
-    },
-};
+use crate::{prelude::*, vm::vmar::Vmar};
 
 /*
  * The user's virtual memory space layout looks like below.
@@ -177,150 +163,6 @@ impl Vmar {
     }
 }
 
-// TODO: Move the below code to the vm module.
-impl Vmar {
-    /// Reads memory from the process user space.
-    ///
-    /// This method reads until one of the conditions is met:
-    /// 1. The writer has no available space.
-    /// 2. Reading from the process user space or writing to the writer encounters some error.
-    ///
-    /// On success, the number of bytes read is returned;
-    /// On error, both the error and the number of bytes read so far are returned.
-    ///
-    /// The `VmSpace` of the process is not required be activated on the current CPU.
-    pub fn read_remote(
-        &self,
-        vaddr: Vaddr,
-        writer: &mut VmWriter,
-    ) -> core::result::Result<usize, (Error, usize)> {
-        let len = writer.avail();
-        let read = |frame: UFrame, skip_offset: usize| {
-            let mut reader = frame.reader();
-            reader.skip(skip_offset);
-            reader.read_fallible(writer)
-        };
-
-        self.access_remote(vaddr, len, PageFlags::R, read)
-    }
-
-    /// Writes memory to the process user space.
-    ///
-    /// This method writes until one of the conditions is met:
-    /// 1. The reader has no remaining data.
-    /// 2. Reading from the reader or writing to the process user space encounters some error.
-    ///
-    /// On success, the number of bytes written is returned;
-    /// On error, both the error and the number of bytes written so far are returned.
-    ///
-    /// The `VmSpace` of the process is not required be activated on the current CPU.
-    pub fn write_remote(
-        &self,
-        vaddr: Vaddr,
-        reader: &mut VmReader,
-    ) -> core::result::Result<usize, (Error, usize)> {
-        let len = reader.remain();
-        let write = |frame: UFrame, skip_offset: usize| {
-            let mut writer = frame.writer();
-            writer.skip(skip_offset);
-            writer.write_fallible(reader)
-        };
-
-        self.access_remote(vaddr, len, PageFlags::W, write)
-    }
-
-    /// Accesses memory at `vaddr..vaddr+len` within the process user space using `op`.
-    ///
-    /// The `VmSpace` of the process is not required be activated on the current CPU.
-    /// If any page in the range is not mapped or does not have the required page
-    /// flags, a page fault will be handled to try to make the page accessible.
-    fn access_remote<F>(
-        &self,
-        vaddr: Vaddr,
-        len: usize,
-        required_page_flags: PageFlags,
-        mut op: F,
-    ) -> core::result::Result<usize, (Error, usize)>
-    where
-        F: FnMut(UFrame, usize) -> core::result::Result<usize, (ostd::Error, usize)>,
-    {
-        if len == 0 {
-            return Ok(0);
-        }
-
-        let range = check_userspace_page_range(vaddr, len).map_err(|err| (err, 0))?;
-
-        let mut current_va = range.start;
-        let mut bytes = 0;
-
-        while current_va < range.end {
-            let frame = self
-                .query_page_with_required_flags(current_va, required_page_flags)
-                .map_err(|err| (err, bytes))?;
-
-            let skip_offset = if current_va == range.start {
-                vaddr - range.start
-            } else {
-                0
-            };
-            match op(frame, skip_offset) {
-                Ok(n) => bytes += n,
-                Err((err, n)) => return Err((err.into(), bytes + n)),
-            }
-
-            current_va += PAGE_SIZE;
-        }
-
-        Ok(bytes)
-    }
-
-    fn query_page_with_required_flags(
-        &self,
-        vaddr: Vaddr,
-        required_page_flags: PageFlags,
-    ) -> Result<UFrame> {
-        let mut item = self.query_page(vaddr)?;
-
-        if item
-            .as_ref()
-            .is_none_or(|item| !item.prop().flags.contains(required_page_flags))
-        {
-            let page_fault_info = PageFaultInfo {
-                address: vaddr,
-                required_perms: required_page_flags.into(),
-            };
-            self.handle_page_fault(&page_fault_info)
-                .map_err(|_| Error::with_message(Errno::EIO, "the page is not accessible"))?;
-
-            item = self.query_page(vaddr)?;
-        }
-
-        let item = item.unwrap();
-        debug_assert!(item.prop().flags.contains(required_page_flags));
-
-        match item {
-            VmQueriedItem::MappedRam { frame, .. } => Ok(frame),
-            VmQueriedItem::MappedIoMem { .. } => {
-                return_errno_with_message!(
-                    Errno::EOPNOTSUPP,
-                    "accessing remote MMIO memory is not supported currently"
-                );
-            }
-        }
-    }
-
-    fn query_page(&self, vaddr: Vaddr) -> Result<Option<VmQueriedItem>> {
-        debug_assert!(is_userspace_vaddr(vaddr) && vaddr % PAGE_SIZE == 0);
-
-        let preempt_guard = disable_preempt();
-        let vmspace = self.vm_space();
-        let mut cursor = vmspace.cursor(&preempt_guard, &(vaddr..vaddr + PAGE_SIZE))?;
-        let (_, item) = cursor.query()?;
-
-        Ok(item)
-    }
-}
-
 /// Unshares and renews the [`Vmar`] of the current process.
 pub(super) fn unshare_and_renew_vmar(ctx: &Context, vmar: &mut ProcessVmarGuard) {
     let new_vmar = Vmar::new();
@@ -332,14 +174,4 @@ pub(super) fn unshare_and_renew_vmar(ctx: &Context, vmar: &mut ProcessVmarGuard)
 
     let new_vmar = vmar.unwrap();
     new_vmar.heap().alloc_and_map(new_vmar).unwrap();
-}
-
-fn check_userspace_page_range(vaddr: Vaddr, len: usize) -> Result<Range<Vaddr>> {
-    let Some(end) = vaddr.checked_add(len) else {
-        return_errno_with_message!(Errno::EINVAL, "address overflow");
-    };
-    if !is_userspace_vaddr(vaddr) || !is_userspace_vaddr(end - 1) {
-        return_errno_with_message!(Errno::EINVAL, "invalid user space address");
-    }
-    Ok(vaddr.align_down(PAGE_SIZE)..end.align_up(PAGE_SIZE))
 }
