@@ -55,15 +55,16 @@ pub fn load_elf_to_vmar(
     #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
     if let Some(vdso_text_base) = map_vdso_to_vmar(vmar) {
         #[cfg(target_arch = "riscv64")]
-        vmar.set_vdso_base(vdso_text_base);
+        vmar.process_vm().set_vdso_base(vdso_text_base);
         aux_vec
             .set(AuxKey::AT_SYSINFO_EHDR, vdso_text_base as u64)
             .unwrap();
     }
 
-    vmar.map_and_write_init_stack(argv, envp, aux_vec)?;
+    vmar.process_vm()
+        .map_and_write_init_stack(vmar, argv, envp, aux_vec)?;
 
-    let user_stack_top = vmar.init_stack().user_stack_top();
+    let user_stack_top = vmar.process_vm().init_stack().user_stack_top();
     Ok(ElfLoadInfo {
         entry_point,
         user_stack_top,
