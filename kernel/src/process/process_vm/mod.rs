@@ -15,8 +15,6 @@ mod init_stack;
 use core::ops::Range;
 
 use align_ext::AlignExt;
-use aster_rights::Full;
-pub use heap::Heap;
 use ostd::{
     mm::{io_util::HasVmReaderWriter, vm_space::VmQueriedItem, PageFlags, UFrame},
     sync::MutexGuard,
@@ -24,7 +22,7 @@ use ostd::{
 };
 
 pub use self::{
-    heap::USER_HEAP_SIZE_LIMIT,
+    heap::{Heap, USER_HEAP_SIZE_LIMIT},
     init_stack::{
         aux_vec::{AuxKey, AuxVec},
         InitStack, InitStackReader, INIT_STACK_SIZE, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS,
@@ -76,14 +74,14 @@ use crate::{
  */
 
 /// The process user space virtual memory
-pub struct ProcessVm(Mutex<Option<Vmar<Full>>>);
+pub struct ProcessVm(Mutex<Option<Arc<Vmar>>>);
 
 /// A guard to the [`Vmar`] used by a process.
 ///
 /// It is bound to a [`ProcessVm`] and can only be obtained from
 /// the [`ProcessVm::lock_vmar`] method.
 pub struct ProcessVmarGuard<'a> {
-    inner: MutexGuard<'a, Option<Vmar<Full>>>,
+    inner: MutexGuard<'a, Option<Arc<Vmar>>>,
 }
 
 impl ProcessVmarGuard<'_> {
@@ -92,37 +90,45 @@ impl ProcessVmarGuard<'_> {
     /// # Panics
     ///
     /// This method will panic if the process has exited and its VMAR has been dropped.
-    pub fn unwrap(&self) -> &Vmar<Full> {
+    pub fn unwrap(&self) -> &Vmar {
         self.inner.as_ref().unwrap()
     }
 
     /// Returns a reference to the process VMAR if it exists.
     ///
     /// Returns `None` if the process has exited and its VMAR has been dropped.
-    pub fn as_ref(&self) -> Option<&Vmar<Full>> {
-        self.inner.as_ref()
+    pub fn as_ref(&self) -> Option<&Vmar> {
+        self.inner.as_ref().map(|v| &**v)
     }
 
     /// Sets a new VMAR for the binding process.
     ///
     /// If the `new_vmar` is `None`, this method will remove the
     /// current VMAR.
-    pub(super) fn set_vmar(&mut self, new_vmar: Option<Vmar<Full>>) {
+    pub(super) fn set_vmar(&mut self, new_vmar: Option<Arc<Vmar>>) {
         *self.inner = new_vmar;
+    }
+
+    /// Duplicates a new VMAR from the binding process.
+    ///
+    /// This method should only be used when creating a process that
+    /// shares the same VMAR.
+    pub(super) fn dup_vmar(&self) -> Option<Arc<Vmar>> {
+        self.inner.as_ref().cloned()
     }
 }
 
 impl Clone for ProcessVm {
     fn clone(&self) -> Self {
-        let vmar = self.lock_vmar();
-        Self(Mutex::new(Some(vmar.unwrap().dup().unwrap())))
+        let vmar = self.lock_vmar().dup_vmar();
+        Self(Mutex::new(vmar))
     }
 }
 
 impl ProcessVm {
     /// Allocates a new `ProcessVm`
     pub fn alloc() -> Self {
-        let vmar = Vmar::<Full>::new();
+        let vmar = Vmar::new();
         let heap = vmar.heap();
         heap.alloc_and_map(&vmar).unwrap();
         Self(Mutex::new(Some(vmar)))
@@ -133,7 +139,7 @@ impl ProcessVm {
     /// The returned `ProcessVm` will have a forked `Vmar`.
     pub fn fork_from(other: &ProcessVm) -> Result<Self> {
         let process_vmar = other.lock_vmar();
-        let vmar = Mutex::new(Some(Vmar::<Full>::fork_from(process_vmar.unwrap())?));
+        let vmar = Mutex::new(Some(Vmar::fork_from(process_vmar.unwrap())?));
         Ok(Self(vmar))
     }
 
@@ -154,7 +160,7 @@ impl ProcessVm {
 }
 
 // TODO: Move the below code to the vm module.
-impl Vmar<Full> {
+impl Vmar {
     /// Returns a reader for reading contents from
     /// the `InitStack`.
     pub fn init_stack_reader(&self) -> InitStackReader {
@@ -172,7 +178,7 @@ impl Vmar<Full> {
 }
 
 // TODO: Move the below code to the vm module.
-impl Vmar<Full> {
+impl Vmar {
     /// Reads memory from the process user space.
     ///
     /// This method reads until one of the conditions is met:
@@ -317,9 +323,9 @@ impl Vmar<Full> {
 
 /// Unshares and renews the [`Vmar`] of the current process.
 pub(super) fn unshare_and_renew_vmar(ctx: &Context, vmar: &mut ProcessVmarGuard) {
-    let new_vmar = Vmar::<Full>::new();
+    let new_vmar = Vmar::new();
     let guard = disable_preempt();
-    *ctx.thread_local.vmar().borrow_mut() = Some(new_vmar.dup().unwrap());
+    *ctx.thread_local.vmar().borrow_mut() = Some(new_vmar.clone());
     new_vmar.vm_space().activate();
     vmar.set_vmar(Some(new_vmar));
     drop(guard);
