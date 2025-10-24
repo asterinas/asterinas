@@ -50,3 +50,8 @@ pub fn mem_total() -> usize {
 
     total
 }
+
+/// Memory unit size in bytes.
+pub const fn mem_unit() -> usize {
+    1
+}

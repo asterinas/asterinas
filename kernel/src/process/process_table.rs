@@ -28,6 +28,11 @@ pub fn process_table_mut() -> MutexGuard<'static, ProcessTable> {
     PROCESS_TABLE.lock()
 }
 
+/// Returns the number of current processes.
+pub fn process_num() -> usize {
+    PROCESS_TABLE.lock().inner.len()
+}
+
 /// Process Table.
 pub struct ProcessTable {
     inner: BTreeMap<Pid, Arc<Process>>,
