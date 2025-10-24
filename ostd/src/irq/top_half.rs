@@ -9,7 +9,7 @@ use spin::Once;
 
 use crate::{
     arch::{
-        irq::{IrqRemapping, IRQ_NUM_MAX, IRQ_NUM_MIN},
+        irq::{HwIrqLine, IrqRemapping, IRQ_NUM_MAX, IRQ_NUM_MIN},
         trap::TrapFrame,
     },
     prelude::*,
@@ -185,12 +185,12 @@ impl Drop for CallbackHandle {
     }
 }
 
-pub(super) fn process(trap_frame: &TrapFrame, irq_num: usize) {
-    let inner = &INNERS[irq_num - (IRQ_NUM_MIN as usize)];
+pub(super) fn process(trap_frame: &TrapFrame, hw_irq_line: &HwIrqLine) {
+    let inner = &INNERS[(hw_irq_line.irq_num() - IRQ_NUM_MIN) as usize];
     for callback in &*inner.callbacks.read() {
         callback(trap_frame);
     }
-    crate::arch::interrupts_ack(irq_num);
+    hw_irq_line.ack();
 }
 
 #[cfg(ktest)]

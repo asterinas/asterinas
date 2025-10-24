@@ -11,7 +11,7 @@ pub(super) use trap::RawUserContext;
 pub use trap::TrapFrame;
 
 use crate::{
-    arch::{cpu::context::CpuExceptionInfo, mm::tlb_flush_addr},
+    arch::{cpu::context::CpuExceptionInfo, irq::HwIrqLine, mm::tlb_flush_addr},
     cpu::PrivilegeLevel,
     irq::call_irq_callback_functions,
     mm::MAX_USERSPACE_VADDR,
@@ -86,9 +86,13 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
                 | Interrupt::HWI6
                 | Interrupt::HWI7 => {
                     log::debug!("Handling hardware interrupt: {:?}", interrupt);
-                    while let Some(irq) = crate::arch::irq::chip::claim() {
+                    while let Some(irq_num) = crate::arch::irq::chip::claim() {
                         // Call the IRQ callback functions for the claimed interrupt
-                        call_irq_callback_functions(f, irq as _, PrivilegeLevel::Kernel);
+                        call_irq_callback_functions(
+                            f,
+                            &HwIrqLine::new(irq_num),
+                            PrivilegeLevel::Kernel,
+                        );
                     }
                 }
                 Interrupt::PMI => todo!(),

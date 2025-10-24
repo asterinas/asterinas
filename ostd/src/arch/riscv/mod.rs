@@ -9,7 +9,7 @@ pub mod cpu;
 pub mod device;
 mod io;
 pub(crate) mod iommu;
-pub(crate) mod irq;
+pub mod irq;
 pub(crate) mod mm;
 pub mod qemu;
 pub(crate) mod serial;
@@ -17,20 +17,33 @@ pub(crate) mod task;
 mod timer;
 pub mod trap;
 
-use core::sync::atomic::Ordering;
-
-use crate::arch::timer::TIMER_IRQ_NUM;
-
 #[cfg(feature = "cvm_guest")]
 pub(crate) fn init_cvm_guest() {
     // Unimplemented, no-op
 }
 
+/// Architecture-specific initialization on the bootstrapping processor.
+///
+/// It should be called when the heap and frame allocators are available.
+///
+/// # Safety
+///
+/// 1. This function must be called only once in the boot context of the
+///    bootstrapping processor.
+/// 2. This function must be called after the kernel page table is activated on
+///    the bootstrapping processor.
 pub(crate) unsafe fn late_init_on_bsp() {
     // SAFETY: This function is called in the boot context of the BSP.
     unsafe { trap::init() };
 
-    let io_mem_builder = io::construct_io_mem_allocator_builder();
+    // SAFETY: The caller ensures that this function is only called once on BSP,
+    // after the kernel page table is activated.
+    let io_mem_builder = unsafe { io::construct_io_mem_allocator_builder() };
+
+    // SAFETY: This function is called once and at most once at a proper timing
+    // in the boot context of the BSP, with no external interrupt-related
+    // operations having been performed.
+    unsafe { irq::chip::init(&io_mem_builder) };
 
     // SAFETY: We're on the BSP and we're ready to boot all APs.
     unsafe { crate::boot::smp::boot_all_aps() };
@@ -47,16 +60,6 @@ pub(crate) unsafe fn late_init_on_bsp() {
 }
 
 pub(crate) unsafe fn init_on_ap() {
-    unimplemented!()
-}
-
-pub(crate) fn interrupts_ack(irq_number: usize) {
-    // TODO: We should check for software interrupts too here. Only those external
-    // interrupts would go through the IRQ chip.
-    if irq_number == TIMER_IRQ_NUM.load(Ordering::Relaxed) as usize {
-        return;
-    }
-
     unimplemented!()
 }
 
@@ -80,9 +83,4 @@ pub fn read_random() -> Option<u64> {
 
 pub(crate) fn enable_cpu_features() {
     cpu::extension::init();
-    unsafe {
-        // We adopt a lazy approach to enable the floating-point unit; it's not
-        // enabled before the first FPU trap.
-        riscv::register::sstatus::set_fs(riscv::register::sstatus::FS::Off);
-    }
 }

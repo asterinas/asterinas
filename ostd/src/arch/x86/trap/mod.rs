@@ -25,14 +25,15 @@ use cfg_if::cfg_if;
 use log::debug;
 use spin::Once;
 
-use super::{cpu::context::GeneralRegs, ex_table::ExTable};
+use super::cpu::context::GeneralRegs;
 use crate::{
     arch::{
         cpu::context::{CpuException, PageFaultErrorCode, RawPageFaultInfo},
         if_tdx_enabled,
-        irq::{disable_local, enable_local},
+        irq::{disable_local, enable_local, HwIrqLine},
     },
     cpu::PrivilegeLevel,
+    ex_table::ExTable,
     irq::call_irq_callback_functions,
     mm::{
         kspace::{KERNEL_PAGE_TABLE, LINEAR_MAPPING_BASE_VADDR, LINEAR_MAPPING_VADDR_RANGE},
@@ -186,7 +187,11 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
             );
         }
         None => {
-            call_irq_callback_functions(f, f.trap_num, PrivilegeLevel::Kernel);
+            call_irq_callback_functions(
+                f,
+                &HwIrqLine::new(f.trap_num as u8),
+                PrivilegeLevel::Kernel,
+            );
         }
     }
 }

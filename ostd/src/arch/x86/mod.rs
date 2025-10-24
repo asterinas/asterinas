@@ -5,7 +5,6 @@
 pub(crate) mod boot;
 pub mod cpu;
 pub mod device;
-pub(crate) mod ex_table;
 pub(crate) mod io;
 pub(crate) mod iommu;
 pub mod irq;
@@ -47,13 +46,17 @@ pub(crate) fn init_cvm_guest() {
 ///
 /// # Safety
 ///
-/// This function must be called only once in the boot context of the
-/// bootstrapping processor.
+/// 1. This function must be called only once in the boot context of the
+///    bootstrapping processor.
+/// 2. This function must be called after the kernel page table is activated on
+///    the bootstrapping processor.
 pub(crate) unsafe fn late_init_on_bsp() {
     // SAFETY: This function is only called once on BSP.
     unsafe { trap::init() };
 
-    let io_mem_builder = io::construct_io_mem_allocator_builder();
+    // SAFETY: The caller ensures that this function is only called once on BSP,
+    // after the kernel page table is activated.
+    let io_mem_builder = unsafe { io::construct_io_mem_allocator_builder() };
 
     kernel::apic::init(&io_mem_builder).expect("APIC doesn't exist");
     irq::chip::init(&io_mem_builder);
@@ -89,13 +92,6 @@ pub(crate) unsafe fn late_init_on_bsp() {
 /// [`init_on_bsp`]: crate::cpu::init_on_bsp
 pub(crate) unsafe fn init_on_ap() {
     timer::init_on_ap();
-}
-
-pub(crate) fn interrupts_ack(irq_number: usize) {
-    debug_assert!(!cpu::context::CpuException::is_cpu_exception(irq_number));
-    // TODO: We're in the interrupt context, so `disable_preempt()` is not
-    // really necessary here.
-    kernel::apic::get_or_init(&crate::task::disable_preempt() as _).eoi();
 }
 
 /// Returns the frequency of TSC. The unit is Hz.

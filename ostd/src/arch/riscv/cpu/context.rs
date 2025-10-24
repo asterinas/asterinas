@@ -2,27 +2,30 @@
 
 //! CPU execution context control.
 
-use core::{fmt::Debug, sync::atomic::Ordering};
+use alloc::boxed::Box;
+use core::{arch::global_asm, fmt::Debug, sync::atomic::Ordering};
 
-use riscv::register::scause::{Exception, Interrupt, Trap};
+use ostd_pod::Pod;
+use riscv::register::scause::Exception;
 
 use crate::{
     arch::{
+        cpu::extension::{has_extensions, IsaExtensions},
+        irq::{HwIrqLine, InterruptSource, IRQ_CHIP},
+        timer::TIMER_IRQ_NUM,
         trap::{RawUserContext, TrapFrame},
-        TIMER_IRQ_NUM,
     },
-    cpu::PrivilegeLevel,
+    cpu::{CpuId, PrivilegeLevel},
     irq::call_irq_callback_functions,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
 
 /// Userspace CPU context, including general-purpose registers and exception information.
-#[derive(Clone, Debug)]
+#[derive(Clone, Default, Debug)]
 #[repr(C)]
 pub struct UserContext {
     user_context: RawUserContext,
-    trap: Trap,
-    cpu_exception_info: Option<CpuExceptionInfo>,
+    exception: Option<CpuException>,
 }
 
 /// General registers.
@@ -64,45 +67,86 @@ pub struct GeneralRegs {
     pub t6: usize,
 }
 
-/// CPU exception information.
-//
-// TODO: Refactor the struct into an enum (similar to x86's `CpuException`).
-#[expect(missing_docs)]
+/// RISC-V CPU exceptions
+///
+/// Every enum variant corresponds to one exception defined by the RISC-V
+/// architecture. Variants that naturally carry an error code (in stval
+/// register) expose it through their associated data fields.
 #[derive(Clone, Copy, Debug)]
-#[repr(C)]
-pub struct CpuExceptionInfo {
-    /// The type of the exception.
-    pub code: Exception,
-    /// The error code associated with the exception.
-    pub page_fault_addr: usize,
-    pub error_code: usize, // TODO
+pub enum CpuException {
+    /// Instruction address misalignment exception.
+    InstructionMisaligned,
+    /// Instruction access fault exception.
+    InstructionFault,
+    /// Illegal instruction exception.
+    IllegalInstruction(FaultInstruction),
+    /// Breakpoint exception.
+    Breakpoint,
+    /// Load address misalignment exception.
+    LoadMisaligned(FaultAddress),
+    /// Load access fault exception.
+    LoadFault(FaultAddress),
+    /// Store address misalignment exception.
+    StoreMisaligned(FaultAddress),
+    /// Store access fault exception.
+    StoreFault(FaultAddress),
+    /// Environment call from user mode.
+    UserEnvCall,
+    /// Environment call from supervisor mode.
+    SupervisorEnvCall,
+    /// Environment call from machine mode.
+    MachineEnvCall,
+    /// Instruction page fault exception.
+    InstructionPageFault(FaultAddress),
+    /// Load page fault exception.
+    LoadPageFault(FaultAddress),
+    /// Store page fault exception.
+    StorePageFault(FaultAddress),
+    /// Unknown.
+    Unknown,
 }
 
-impl Default for UserContext {
-    fn default() -> Self {
-        UserContext {
-            user_context: RawUserContext::default(),
-            trap: Trap::Exception(Exception::Unknown),
-            cpu_exception_info: None,
+impl From<Exception> for CpuException {
+    fn from(value: Exception) -> Self {
+        use Exception::*;
+
+        let stval = riscv::register::stval::read();
+        match value {
+            InstructionMisaligned => Self::InstructionMisaligned,
+            InstructionFault => Self::InstructionFault,
+            IllegalInstruction => Self::IllegalInstruction({
+                if stval & 0x3 == 0x3 {
+                    FaultInstruction::Normal(stval as u32)
+                } else {
+                    FaultInstruction::Compressed(stval as u16)
+                }
+            }),
+            Breakpoint => Self::Breakpoint,
+            LoadMisaligned => Self::LoadMisaligned(stval),
+            LoadFault => Self::LoadFault(stval),
+            StoreMisaligned => Self::StoreMisaligned(stval),
+            StoreFault => Self::StoreFault(stval),
+            UserEnvCall => Self::UserEnvCall,
+            SupervisorEnvCall => Self::SupervisorEnvCall,
+            InstructionPageFault => Self::InstructionPageFault(stval),
+            LoadPageFault => Self::LoadPageFault(stval),
+            StorePageFault => Self::StorePageFault(stval),
+            Unknown => Self::Unknown,
         }
     }
 }
 
-impl Default for CpuExceptionInfo {
-    fn default() -> Self {
-        CpuExceptionInfo {
-            code: Exception::Unknown,
-            page_fault_addr: 0,
-            error_code: 0,
-        }
-    }
-}
+/// Data address of data access exceptions.
+pub type FaultAddress = usize;
 
-impl CpuExceptionInfo {
-    /// Get corresponding CPU exception
-    pub fn cpu_exception(&self) -> CpuException {
-        self.code
-    }
+/// Illegal instruction that caused exception.
+#[derive(Clone, Copy, Debug)]
+pub enum FaultInstruction {
+    /// Normal 4-byte instruction.
+    Normal(u32),
+    /// Compressed 2-byte instruction. Used only when compressed (C) extension
+    /// is enabled.
+    Compressed(u16),
 }
 
 impl UserContext {
@@ -117,8 +161,8 @@ impl UserContext {
     }
 
     /// Returns the trap information.
-    pub fn take_exception(&mut self) -> Option<CpuExceptionInfo> {
-        self.cpu_exception_info.take()
+    pub fn take_exception(&mut self) -> Option<CpuException> {
+        self.exception.take()
     }
 
     /// Sets the thread-local storage pointer.
@@ -143,32 +187,74 @@ impl UserContextApiInternal for UserContext {
     where
         F: FnMut() -> bool,
     {
-        let ret = loop {
+        use riscv::register::scause::Trap::*;
+
+        let return_reason = loop {
             crate::task::scheduler::might_preempt();
             self.user_context.run();
 
-            match riscv::register::scause::read().cause() {
-                Trap::Interrupt(Interrupt::SupervisorTimer) => {
-                    call_irq_callback_functions(
-                        &self.as_trap_frame(),
-                        TIMER_IRQ_NUM.load(Ordering::Relaxed) as usize,
-                        PrivilegeLevel::User,
-                    );
+            let scause = riscv::register::scause::read();
+            match scause.cause() {
+                Interrupt(interrupt) => {
+                    use riscv::register::scause::Interrupt::*;
+
+                    match interrupt {
+                        SupervisorTimer => {
+                            call_irq_callback_functions(
+                                &self.as_trap_frame(),
+                                &HwIrqLine::new(
+                                    TIMER_IRQ_NUM.load(Ordering::Relaxed),
+                                    InterruptSource::Timer,
+                                ),
+                                PrivilegeLevel::User,
+                            );
+                        }
+                        SupervisorExternal => {
+                            // No races because we are in IRQs.
+                            let current_cpu = CpuId::current_racy().as_usize() as u32;
+                            while let Some(hw_irq_line) =
+                                IRQ_CHIP.get().unwrap().claim_interrupt(current_cpu)
+                            {
+                                call_irq_callback_functions(
+                                    &self.as_trap_frame(),
+                                    &hw_irq_line,
+                                    PrivilegeLevel::User,
+                                );
+                            }
+                        }
+                        SupervisorSoft => todo!(),
+                        Unknown => {
+                            panic!(
+                                "Cannot handle unknown supervisor interrupt, scause: {:#x}, trapframe: {:?}.",
+                                scause.bits(),
+                                self.as_trap_frame()
+                            );
+                        }
+                    };
+                    crate::arch::irq::enable_local();
                 }
-                Trap::Interrupt(_) => todo!(),
-                Trap::Exception(Exception::UserEnvCall) => {
-                    self.user_context.sepc += 4;
-                    break ReturnReason::UserSyscall;
-                }
-                Trap::Exception(e) => {
-                    let stval = riscv::register::stval::read();
-                    log::trace!("Exception, scause: {e:?}, stval: {stval:#x?}");
-                    self.cpu_exception_info = Some(CpuExceptionInfo {
-                        code: e,
-                        page_fault_addr: stval,
-                        error_code: 0,
-                    });
-                    break ReturnReason::UserException;
+                Exception(e) => {
+                    use CpuException::*;
+
+                    let exception = e.into();
+                    crate::arch::irq::enable_local();
+                    match exception {
+                        UserEnvCall => {
+                            self.user_context.sepc += 4;
+                            break ReturnReason::UserSyscall;
+                        }
+                        Unknown => {
+                            panic!(
+                                "Cannot handle unknown exception, scause: {:#x}, trapframe: {:?}.",
+                                scause.bits(),
+                                self.as_trap_frame()
+                            );
+                        }
+                        _ => {
+                            self.exception = Some(exception);
+                            break ReturnReason::UserException;
+                        }
+                    }
                 }
             }
 
@@ -177,8 +263,7 @@ impl UserContextApiInternal for UserContext {
             }
         };
 
-        crate::arch::irq::enable_local();
-        ret
+        return_reason
     }
 
     fn as_trap_frame(&self) -> TrapFrame {
@@ -270,35 +355,167 @@ cpu_context_impl_getter_setter!(
     [t6, set_t6]
 );
 
-/// CPU exception.
-pub type CpuException = Exception;
-
 /// The FPU context of user task.
-///
-/// This could be used for saving both legacy and modern state format.
-// FIXME: Implement FPU context on RISC-V platforms.
-#[derive(Clone, Debug, Default)]
-pub struct FpuContext;
+#[derive(Clone, Debug)]
+pub enum FpuContext {
+    /// FPU context for F extension (32-bit floating point).
+    F(Box<FFpuContext>),
+    /// FPU context for D extension (64-bit floating point).
+    D(Box<DFpuContext>),
+    /// FPU context for Q extension (128-bit floating point).
+    Q(Box<QFpuContext>),
+    /// No FPU context (no FPU extensions enabled).
+    None,
+}
 
 impl FpuContext {
     /// Creates a new FPU context.
     pub fn new() -> Self {
-        Self
+        if has_extensions(IsaExtensions::Q) {
+            Self::Q(Box::default())
+        } else if has_extensions(IsaExtensions::D) {
+            Self::D(Box::default())
+        } else if has_extensions(IsaExtensions::F) {
+            Self::F(Box::default())
+        } else {
+            Self::None
+        }
     }
 
-    /// Saves CPU's current FPU context to this instance, if needed.
-    pub fn save(&mut self) {}
+    /// Saves CPU's current FPU context to this instance.
+    pub fn save(&mut self) {
+        match self {
+            Self::F(ctx) => ctx.save(),
+            Self::D(ctx) => ctx.save(),
+            Self::Q(ctx) => ctx.save(),
+            Self::None => {}
+        }
+    }
 
-    /// Loads CPU's FPU context from this instance, if needed.
-    pub fn load(&mut self) {}
+    /// Loads CPU's FPU context from this instance.
+    pub fn load(&self) {
+        match self {
+            Self::F(ctx) => ctx.load(),
+            Self::D(ctx) => ctx.load(),
+            Self::Q(ctx) => ctx.load(),
+            Self::None => {}
+        }
+    }
 
     /// Returns the FPU context as a byte slice.
     pub fn as_bytes(&self) -> &[u8] {
-        &[]
+        match self {
+            Self::F(ctx) => ctx.as_bytes(),
+            Self::D(ctx) => ctx.as_bytes(),
+            Self::Q(ctx) => ctx.as_bytes(),
+            Self::None => &[],
+        }
     }
 
     /// Returns the FPU context as a mutable byte slice.
     pub fn as_bytes_mut(&mut self) -> &mut [u8] {
-        &mut []
+        match self {
+            Self::F(ctx) => ctx.as_bytes_mut(),
+            Self::D(ctx) => ctx.as_bytes_mut(),
+            Self::Q(ctx) => ctx.as_bytes_mut(),
+            Self::None => &mut [],
+        }
     }
+}
+
+impl Default for FpuContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// FPU context for F extension (32-bit floating point).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
+pub struct FFpuContext {
+    f: [u32; 32],
+    fcsr: u32,
+}
+
+/// FPU context for D extension (64-bit floating point).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
+pub struct DFpuContext {
+    f: [u64; 32],
+    fcsr: u32,
+}
+
+/// FPU context for Q extension (128-bit floating point).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub struct QFpuContext {
+    f: [u64; 64],
+    fcsr: u32,
+}
+
+// FIXME: Currently Rust generates array impls for every size up to 32 manually
+// and there is ongoing work on refactoring with const generics. We can just
+// derive the `Default` implementation once that is done.
+//
+// See https://github.com/rust-lang/rust/issues/61415.
+impl Default for QFpuContext {
+    fn default() -> Self {
+        Self {
+            f: [0; 64],
+            fcsr: 0,
+        }
+    }
+}
+
+impl FFpuContext {
+    fn save(&mut self) {
+        unsafe {
+            save_fpu_context_f(self as *mut _);
+        }
+    }
+
+    fn load(&self) {
+        unsafe {
+            load_fpu_context_f(self as *const _);
+        }
+    }
+}
+
+impl DFpuContext {
+    fn save(&mut self) {
+        unsafe {
+            save_fpu_context_d(self as *mut _);
+        }
+    }
+
+    fn load(&self) {
+        unsafe {
+            load_fpu_context_d(self as *const _);
+        }
+    }
+}
+
+impl QFpuContext {
+    fn save(&mut self) {
+        unsafe {
+            save_fpu_context_q(self as *mut _);
+        }
+    }
+
+    fn load(&self) {
+        unsafe {
+            load_fpu_context_q(self as *const _);
+        }
+    }
+}
+
+global_asm!(include_str!("fpu.S"));
+
+unsafe extern "C" {
+    unsafe fn save_fpu_context_f(ctx: *mut FFpuContext);
+    unsafe fn load_fpu_context_f(ctx: *const FFpuContext);
+    unsafe fn save_fpu_context_d(ctx: *mut DFpuContext);
+    unsafe fn load_fpu_context_d(ctx: *const DFpuContext);
+    unsafe fn save_fpu_context_q(ctx: *mut QFpuContext);
+    unsafe fn load_fpu_context_q(ctx: *const QFpuContext);
 }

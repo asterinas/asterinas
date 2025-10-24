@@ -37,6 +37,7 @@ pub mod bus;
 pub mod console;
 pub mod cpu;
 mod error;
+mod ex_table;
 pub mod io;
 pub mod irq;
 pub mod logger;
@@ -108,12 +109,16 @@ unsafe fn init() {
 
     mm::kspace::init_kernel_page_table(meta_pages);
 
+    // SAFETY: This function is called only once on the BSP.
+    unsafe { mm::kspace::activate_kernel_page_table() };
+
     sync::init();
 
     boot::init_after_heap();
 
     mm::dma::init();
 
+    // SAFETY: This function is called only once on the BSP.
     unsafe { arch::late_init_on_bsp() };
 
     #[cfg(target_arch = "x86_64")]
@@ -123,10 +128,11 @@ unsafe fn init() {
 
     smp::init();
 
-    // SAFETY: This function is called only once on the BSP.
-    unsafe {
-        mm::kspace::activate_kernel_page_table();
-    }
+    // SAFETY:
+    // 1. The kernel page table is activated on the BSP.
+    // 2. The function is called only once on the BSP.
+    // 3. No remaining `with_borrow` invocations from now.
+    unsafe { crate::mm::page_table::boot_pt::dismiss() };
 
     arch::irq::enable_local();
 

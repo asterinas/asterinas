@@ -75,9 +75,9 @@ fn do_sys_mmap(
         return_errno_with_message!(Errno::ENOMEM, "mmap (addr + len) too large");
     }
 
-    // On x86, `PROT_WRITE` implies `PROT_READ`.
+    // On x86_64 and riscv64, `PROT_WRITE` implies `PROT_READ`.
     // <https://man7.org/linux/man-pages/man2/mmap.2.html>
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
     let vm_perms = if !vm_perms.contains(VmPerms::READ) && vm_perms.contains(VmPerms::WRITE) {
         vm_perms | VmPerms::READ
     } else {

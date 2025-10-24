@@ -5,6 +5,8 @@
 
 use aster_util::read_union_field;
 use inherit_methods_macro::inherit_methods;
+#[cfg(target_arch = "riscv64")]
+use ostd::arch::cpu::context::QFpuContext;
 use ostd::arch::cpu::context::UserContext;
 
 use super::sig_num::SigNum;
@@ -196,6 +198,11 @@ pub struct ucontext_t {
     pub uc_mcontext: mcontext_t,
 }
 
+// FIXME: Currently Rust generates array impls for every size up to 32 manually
+// and there is ongoing work on refactoring with const generics. We can just
+// derive the `Default` implementation once that is done.
+//
+// See https://github.com/rust-lang/rust/issues/61415.
 #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))]
 impl Default for ucontext_t {
     fn default() -> Self {
@@ -234,6 +241,12 @@ impl mcontext_t {
     pub fn fpu_context_addr(&self) -> Vaddr;
     #[cfg(target_arch = "x86_64")]
     pub fn set_fpu_context_addr(&mut self, addr: Vaddr);
+}
+
+#[cfg(target_arch = "riscv64")]
+impl mcontext_t {
+    // Reference: <https://elixir.bootlin.com/glibc/glibc-2.42.9000/source/sysdeps/unix/sysv/linux/riscv/sys/ucontext.h#L84>.
+    pub(super) const FP_STATE_SIZE: usize = size_of::<QFpuContext>() + 3 * size_of::<u32>();
 }
 
 #[derive(Clone, Copy, Pod)]
