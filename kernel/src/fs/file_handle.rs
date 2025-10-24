@@ -4,6 +4,7 @@
 
 //! Opened File Handle
 
+use aster_util::printer::VmPrinter;
 use ostd::io::IoMem;
 
 use super::inode_handle::InodeHandle;
@@ -115,6 +116,17 @@ pub trait FileLike: Pollable + Send + Sync + Any {
 
     fn as_socket(&self) -> Option<&dyn Socket> {
         None
+    }
+
+    fn read_info(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
+        writeln!(printer, "pos:\t{}", 0)?;
+        writeln!(printer, "flags:\t0{:o}", self.status_flags().bits())?;
+        writeln!(printer, "mnt_id:\t{}", 0)?;
+        writeln!(printer, "ino:\t{}", self.metadata().ino)?;
+
+        Ok(printer.bytes_written())
     }
 }
 

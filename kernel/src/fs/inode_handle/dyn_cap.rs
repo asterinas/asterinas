@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_rights::TRights;
+use aster_util::printer::VmPrinter;
 use inherit_methods_macro::inherit_methods;
 
 use super::*;
@@ -128,5 +129,16 @@ impl FileLike for InodeHandle<Rights> {
             return_errno_with_message!(Errno::EBADF, "file is not writable");
         }
         self.0.fallocate(mode, offset, len)
+    }
+
+    fn read_info(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
+        writeln!(printer, "pos:\t{}", self.offset())?;
+        writeln!(printer, "flags:\t0{:o}", self.status_flags().bits())?;
+        writeln!(printer, "mnt_id:\t{}", self.0.path.mount_node().id())?;
+        writeln!(printer, "ino:\t{}", self.metadata().ino)?;
+
+        Ok(printer.bytes_written())
     }
 }

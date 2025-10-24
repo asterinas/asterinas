@@ -2,6 +2,8 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use aster_util::printer::VmPrinter;
+
 use crate::{
     events::IoEvents,
     fs::{
@@ -108,6 +110,21 @@ impl FileLike for PidFile {
         } else {
             StatusFlags::empty()
         }
+    }
+
+    fn read_info(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
+        writeln!(printer, "pos:\t{}", 0)?;
+        writeln!(printer, "flags:\t0{:o}", self.status_flags().bits())?;
+        // TODO: This should be the mount ID of the pseudo filesystem.
+        writeln!(printer, "mnt_id:\t{}", 0)?;
+        writeln!(printer, "ino:\t{}", self.metadata().ino)?;
+        writeln!(printer, "Pid:\t{}", self.process.pid())?;
+        // TODO: Currently we do not support PID namespaces. Just print the PID once.
+        writeln!(printer, "NSpid:\t{}", self.process.pid())?;
+
+        Ok(printer.bytes_written())
     }
 }
 
