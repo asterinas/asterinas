@@ -56,14 +56,14 @@ const PROC_ROOT_INO: u64 = 1;
 /// Block size.
 const BLOCK_SIZE: usize = 1024;
 
-pub struct ProcFs {
+struct ProcFs {
     sb: SuperBlock,
     root: Arc<dyn Inode>,
     inode_allocator: AtomicU64,
 }
 
 impl ProcFs {
-    pub fn new() -> Arc<Self> {
+    pub(self) fn new() -> Arc<Self> {
         Arc::new_cyclic(|weak_fs| Self {
             sb: SuperBlock::new(PROC_MAGIC, BLOCK_SIZE, NAME_MAX),
             root: RootDirOps::new_inode(weak_fs.clone()),
@@ -71,7 +71,7 @@ impl ProcFs {
         })
     }
 
-    pub(in crate::fs::procfs) fn alloc_id(&self) -> u64 {
+    pub(self) fn alloc_id(&self) -> u64 {
         self.inode_allocator.fetch_add(1, Ordering::SeqCst)
     }
 }
@@ -130,8 +130,10 @@ impl RootDirOps {
             .ino(PROC_ROOT_INO)
             .build()
             .unwrap();
+
         let weak_ptr = Arc::downgrade(&root_inode);
         process_table::register_observer(weak_ptr);
+
         root_inode
     }
 }

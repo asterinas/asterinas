@@ -17,7 +17,12 @@ pub struct ProcFile<F: FileOps> {
 }
 
 impl<F: FileOps> ProcFile<F> {
-    pub fn new(file: F, fs: Weak<dyn FileSystem>, is_volatile: bool, mode: InodeMode) -> Arc<Self> {
+    pub(super) fn new(
+        file: F,
+        fs: Weak<dyn FileSystem>,
+        is_volatile: bool,
+        mode: InodeMode,
+    ) -> Arc<Self> {
         let common = {
             let arc_fs = fs.upgrade().unwrap();
             let procfs = arc_fs.downcast_ref::<ProcFs>().unwrap();

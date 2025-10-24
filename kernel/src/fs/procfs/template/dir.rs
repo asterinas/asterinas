@@ -26,7 +26,7 @@ pub struct ProcDir<D: DirOps> {
 }
 
 impl<D: DirOps> ProcDir<D> {
-    pub fn new(
+    pub(super) fn new(
         dir: D,
         fs: Weak<dyn FileSystem>,
         parent: Option<Weak<dyn Inode>>,
@@ -40,7 +40,6 @@ impl<D: DirOps> ProcDir<D> {
                 let procfs = arc_fs.downcast_ref::<ProcFs>().unwrap();
                 procfs.alloc_id()
             });
-
             let metadata = Metadata::new_dir(ino, mode, super::BLOCK_SIZE);
             Common::new(metadata, fs, is_volatile)
         };
