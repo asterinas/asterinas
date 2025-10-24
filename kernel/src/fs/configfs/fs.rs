@@ -53,6 +53,10 @@ impl ConfigFs {
 }
 
 impl FileSystem for ConfigFs {
+    fn name(&self) -> &'static str {
+        "configfs"
+    }
+
     fn sync(&self) -> Result<()> {
         // `ConfigFs` is volatile, sync is a no-op
         Ok(())
