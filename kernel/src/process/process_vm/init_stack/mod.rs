@@ -165,7 +165,7 @@ impl InitStack {
     /// Maps the VMO of the init stack and constructs a writer to initialize its content.
     pub(super) fn map_and_write(
         &self,
-        vmar: &Vmar<Full>,
+        vmar: &Vmar,
         argv: Vec<CString>,
         envp: Vec<CString>,
         auxvec: AuxVec,
@@ -204,7 +204,7 @@ impl InitStack {
 
     /// Constructs a reader to parse the content of an `InitStack`.
     /// The `InitStack` should only be read after initialized
-    pub(super) fn reader<'a>(&self, vmar: &'a Vmar<Full>) -> InitStackReader<'a> {
+    pub(super) fn reader<'a>(&self, vmar: &'a Vmar) -> InitStackReader<'a> {
         debug_assert!(self.is_initialized());
         InitStackReader {
             base: self.pos(),
@@ -397,7 +397,7 @@ fn generate_random_for_aux_vec() -> [u8; 16] {
 /// A reader to parse the content of an `InitStack`.
 pub struct InitStackReader<'a> {
     base: Vaddr,
-    vmar: &'a Vmar<Full>,
+    vmar: &'a Vmar,
     /// The mapping address of the `InitStack`.
     map_addr: usize,
     argv_range: Range<Vaddr>,

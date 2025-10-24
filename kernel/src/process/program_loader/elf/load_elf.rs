@@ -6,7 +6,6 @@
 use core::ops::Range;
 
 use align_ext::AlignExt;
-use aster_rights::Full;
 use ostd::{
     mm::{CachePolicy, PageFlags, PageProperty, VmIo},
     task::disable_preempt,
@@ -34,7 +33,7 @@ use crate::{
 /// This function will map elf segments and
 /// initialize process init stack.
 pub fn load_elf_to_vmar(
-    vmar: &Vmar<Full>,
+    vmar: &Vmar,
     elf_file: Path,
     fs_resolver: &FsResolver,
     elf_headers: ElfHeaders,
@@ -100,7 +99,7 @@ fn lookup_and_parse_ldso(
     Ok(Some((ldso_file, ldso_elf)))
 }
 
-fn load_ldso(vmar: &Vmar<Full>, ldso_file: &Path, ldso_elf: &ElfHeaders) -> Result<LdsoLoadInfo> {
+fn load_ldso(vmar: &Vmar, ldso_file: &Path, ldso_elf: &ElfHeaders) -> Result<LdsoLoadInfo> {
     let range = map_segment_vmos(ldso_elf, vmar, ldso_file)?;
     Ok(LdsoLoadInfo {
         entry_point: range
@@ -118,7 +117,7 @@ fn load_ldso(vmar: &Vmar<Full>, ldso_file: &Path, ldso_elf: &ElfHeaders) -> Resu
 ///
 /// Returns the mapped range, the entry point and the auxiliary vector.
 fn init_and_map_vmos(
-    vmar: &Vmar<Full>,
+    vmar: &Vmar,
     ldso: Option<(Path, ElfHeaders)>,
     parsed_elf: &ElfHeaders,
     elf_file: &Path,
@@ -179,11 +178,7 @@ pub struct ElfLoadInfo {
 /// boundaries may not be page-aligned.
 ///
 /// [`Vmo`]: crate::vm::vmo::Vmo
-pub fn map_segment_vmos(
-    elf: &ElfHeaders,
-    vmar: &Vmar<Full>,
-    elf_file: &Path,
-) -> Result<RelocatedRange> {
+pub fn map_segment_vmos(elf: &ElfHeaders, vmar: &Vmar, elf_file: &Path) -> Result<RelocatedRange> {
     let elf_va_range = get_range_for_all_segments(elf)?;
 
     let map_range = if elf.is_shared_object() {
@@ -298,7 +293,7 @@ fn get_range_for_all_segments(elf: &ElfHeaders) -> Result<Range<Vaddr>> {
 fn map_segment_vmo(
     program_header: &ProgramHeader64,
     elf_file: &Path,
-    vmar: &Vmar<Full>,
+    vmar: &Vmar,
     map_at: Vaddr,
 ) -> Result<()> {
     trace!(
@@ -485,7 +480,7 @@ pub fn init_aux_vec(
 
 /// Maps the vDSO VMO to the corresponding virtual memory address.
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
-fn map_vdso_to_vmar(vmar: &Vmar<Full>) -> Option<Vaddr> {
+fn map_vdso_to_vmar(vmar: &Vmar) -> Option<Vaddr> {
     use crate::vdso::{vdso_vmo, VDSO_VMO_LAYOUT};
 
     let vdso_vmo = vdso_vmo()?;
