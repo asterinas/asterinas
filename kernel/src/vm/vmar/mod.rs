@@ -5,8 +5,6 @@
 mod interval_set;
 mod vm_mapping;
 
-#[cfg(target_arch = "riscv64")]
-use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{array, num::NonZeroUsize, ops::Range};
 
 use align_ext::AlignExt;
@@ -32,7 +30,7 @@ use super::page_fault_handler::PageFaultHandler;
 use crate::{
     fs::file_handle::Mappable,
     prelude::*,
-    process::{Heap, InitStack, Process, ResourceType},
+    process::{Process, ProcessVm, ResourceType},
     thread::exception::PageFaultInfo,
     vm::{
         perms::VmPerms,
@@ -49,13 +47,8 @@ pub struct Vmar {
     vm_space: Arc<VmSpace>,
     /// The RSS counters.
     rss_counters: [PerCpuCounter; NUM_RSS_COUNTERS],
-    /// The initial portion of the main stack of a process.
-    init_stack: InitStack,
-    /// The user heap
-    heap: Heap,
-    /// The base address for vDSO segment
-    #[cfg(target_arch = "riscv64")]
-    vdso_base: AtomicUsize,
+    /// The process VM
+    process_vm: ProcessVm,
 }
 
 impl Vmar {
@@ -64,14 +57,12 @@ impl Vmar {
         let inner = VmarInner::new();
         let vm_space = VmSpace::new();
         let rss_counters = array::from_fn(|_| PerCpuCounter::new());
+        let process_vm = ProcessVm::new();
         Arc::new(Vmar {
             inner: RwMutex::new(inner),
             vm_space: Arc::new(vm_space),
             rss_counters,
-            init_stack: InitStack::new(),
-            heap: Heap::new(),
-            #[cfg(target_arch = "riscv64")]
-            vdso_base: AtomicUsize::new(0),
+            process_vm,
         })
     }
 
@@ -166,6 +157,7 @@ impl Vmar {
     /// Clears all mappings.
     ///
     /// After being cleared, this vmar will become an empty vmar
+    #[expect(dead_code)] // TODO: This should be called when the last process drops the VMAR.
     pub fn clear(&self) {
         let mut inner = self.inner.write();
         inner.vm_mappings.clear();
@@ -207,10 +199,9 @@ impl Vmar {
             inner: RwMutex::new(VmarInner::new()),
             vm_space: Arc::new(VmSpace::new()),
             rss_counters: array::from_fn(|_| PerCpuCounter::new()),
-            init_stack: vmar.init_stack.clone(),
-            heap: vmar.heap.clone(),
-            #[cfg(target_arch = "riscv64")]
-            vdso_base: AtomicUsize::new(vmar.vdso_base.load(Ordering::Relaxed)),
+            // FIXME: There are race conditions because `process_vm` is not operating under the
+            // `vmar.inner` lock.
+            process_vm: ProcessVm::fork_from(&vmar.process_vm),
         });
 
         {
@@ -293,26 +284,9 @@ impl Vmar {
         &self.vm_space
     }
 
-    /// Returns the initial portion of the main stack of a process.
-    pub fn init_stack(&self) -> &InitStack {
-        &self.init_stack
-    }
-
-    /// Returns the user heap.
-    pub fn heap(&self) -> &Heap {
-        &self.heap
-    }
-
-    /// Returns the base address for vDSO segment.
-    #[cfg(target_arch = "riscv64")]
-    pub fn vdso_base(&self) -> Vaddr {
-        self.vdso_base.load(Ordering::Relaxed)
-    }
-
-    /// Sets the base address for vDSO segment.
-    #[cfg(target_arch = "riscv64")]
-    pub fn set_vdso_base(&self, addr: Vaddr) {
-        self.vdso_base.store(addr, Ordering::Relaxed);
+    /// Returns the attached `ProcessVm`.
+    pub fn process_vm(&self) -> &ProcessVm {
+        &self.process_vm
     }
 
     /// Resizes the original mapping.

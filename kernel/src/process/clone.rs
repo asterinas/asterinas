@@ -10,7 +10,6 @@ use ostd::{
 use super::{
     posix_thread::{AsPosixThread, PosixThreadBuilder, ThreadName},
     process_table,
-    process_vm::ProcessVm,
     rlimit::ResourceLimits,
     signal::{constants::SIGCHLD, sig_disposition::SigDispositions, sig_num::SigNum},
     Credentials, Pid, Process,
@@ -31,6 +30,7 @@ use crate::{
     },
     sched::Nice,
     thread::{AsThread, Tid},
+    vm::vmar::Vmar,
 };
 
 bitflags! {
@@ -421,10 +421,7 @@ fn clone_child_process(
     let clone_flags = clone_args.flags;
 
     // Clone the virtual memory space
-    let child_process_vm = {
-        let parent_process_vm = process.vm();
-        clone_vm(parent_process_vm, clone_flags)?
-    };
+    let child_vmar = clone_vmar(thread_local.vmar().borrow().as_ref().unwrap(), clone_flags)?;
 
     // Clone the user context
     let child_user_ctx = Box::new(clone_user_ctx(
@@ -509,7 +506,7 @@ fn clone_child_process(
         create_child_process(
             child_tid,
             &child_elf_path,
-            child_process_vm,
+            child_vmar,
             child_resource_limits,
             child_nice,
             child_oom_score_adj,
@@ -568,13 +565,13 @@ fn clone_parent_settid(
     Ok(())
 }
 
-fn clone_vm(parent_process_vm: &ProcessVm, clone_flags: CloneFlags) -> Result<ProcessVm> {
+fn clone_vmar(parent_vmar: &Arc<Vmar>, clone_flags: CloneFlags) -> Result<Arc<Vmar>> {
     // If CLONE_VM is set, the child and parent share the same VMAR.
     // Otherwise, the child has a copy of the parent's VMAR.
     if clone_flags.contains(CloneFlags::CLONE_VM) {
-        Ok(parent_process_vm.clone())
+        Ok(parent_vmar.clone())
     } else {
-        ProcessVm::fork_from(parent_process_vm)
+        Ok(Vmar::fork_from(parent_vmar)?)
     }
 }
 
@@ -706,7 +703,7 @@ fn clone_ns_proxy(
 fn create_child_process(
     pid: Pid,
     executable_path: &str,
-    process_vm: ProcessVm,
+    vmar: Arc<Vmar>,
     resource_limits: ResourceLimits,
     nice: Nice,
     oom_score_adj: i16,
@@ -717,7 +714,7 @@ fn create_child_process(
     let child_proc = Process::new(
         pid,
         executable_path.to_string(),
-        process_vm,
+        vmar,
         resource_limits,
         nice,
         oom_score_adj,
