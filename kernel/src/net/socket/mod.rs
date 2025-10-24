@@ -5,8 +5,8 @@ use util::{MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr};
 
 use crate::{
     fs::{
-        file_handle::FileLike,
-        utils::{mkmod, Metadata, StatusFlags},
+        file_handle::{FileLike, PseudoFile},
+        utils::{mkmod, Metadata, OpenArgs, StatusFlags},
     },
     prelude::*,
     util::{MultiRead, MultiWrite},
@@ -171,5 +171,15 @@ impl<T: Socket + 'static> FileLike for T {
         // This is a dummy implementation.
         // TODO: Add "SockFS" and link `Socket` to it.
         Metadata::new_socket(0, mkmod!(a+rwx), aster_block::BLOCK_SIZE)
+    }
+
+    fn into_pseudo(self: Arc<Self>) -> Option<Arc<dyn PseudoFile>> {
+        Some(self)
+    }
+}
+
+impl<T: Socket + 'static> PseudoFile for T {
+    fn open(&self, _open_args: OpenArgs) -> Result<Arc<dyn PseudoFile>> {
+        return_errno_with_message!(Errno::ENXIO, "open() on a socket is not supported");
     }
 }

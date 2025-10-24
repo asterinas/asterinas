@@ -13,7 +13,7 @@ use super::{
 use crate::{
     events::IoEvents,
     fs::{
-        file_handle::FileLike,
+        file_handle::{FileLike, PseudoFile},
         file_table::{get_file_fast, FileDesc},
         utils::{mkmod, IoctlCmd, Metadata},
     },
@@ -271,7 +271,13 @@ impl FileLike for EpollFile {
         // TODO: Add "anonymous inode fs" and link `EpollFile` to it.
         Metadata::new_file(0, mkmod!(u+rw), aster_block::BLOCK_SIZE)
     }
+
+    fn into_pseudo(self: Arc<Self>) -> Option<Arc<dyn PseudoFile>> {
+        Some(self)
+    }
 }
+
+impl PseudoFile for EpollFile {}
 
 struct EntryHolder(Arc<Entry>);
 

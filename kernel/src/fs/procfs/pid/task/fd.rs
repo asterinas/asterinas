@@ -8,7 +8,7 @@ use crate::{
         procfs::{
             pid::FdEvents, DirOps, Observer, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps,
         },
-        utils::{chmod, mkmod, DirEntryVecExt, Inode},
+        utils::{chmod, mkmod, DirEntryVecExt, Inode, ReadLinkResult},
     },
     prelude::*,
     process::posix_thread::AsPosixThread,
@@ -121,13 +121,12 @@ impl FileSymOps {
 }
 
 impl SymOps for FileSymOps {
-    fn read_link(&self) -> Result<String> {
-        let path_name = if let Some(inode_handle) = self.0.downcast_ref::<InodeHandle>() {
-            inode_handle.path().abs_path()
+    fn read_link(&self) -> Result<ReadLinkResult> {
+        let res = if let Some(inode_handle) = self.0.downcast_ref::<InodeHandle>() {
+            ReadLinkResult::Real(inode_handle.path().abs_path())
         } else {
-            // TODO: get the real path for other FileLike object
-            String::from("/dev/tty")
+            ReadLinkResult::Pseudo(self.0.clone().into_pseudo().unwrap())
         };
-        Ok(path_name)
+        Ok(res)
     }
 }

@@ -5,7 +5,7 @@ use alloc::format;
 use crate::{
     fs::{
         procfs::{ProcSymBuilder, SymOps},
-        utils::{mkmod, Inode},
+        utils::{mkmod, Inode, ReadLinkResult},
     },
     prelude::*,
     process::posix_thread::AsPosixThread,
@@ -25,9 +25,9 @@ impl ThreadSelfSymOps {
 }
 
 impl SymOps for ThreadSelfSymOps {
-    fn read_link(&self) -> Result<String> {
+    fn read_link(&self) -> Result<ReadLinkResult> {
         let pid = current!().pid();
         let tid = current_thread!().as_posix_thread().unwrap().tid();
-        Ok(format!("{}/task/{}", pid, tid))
+        Ok(ReadLinkResult::Real(format!("{}/task/{}", pid, tid)))
     }
 }

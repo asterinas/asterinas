@@ -9,7 +9,8 @@ use ostd::io::IoMem;
 use super::inode_handle::InodeHandle;
 use crate::{
     fs::utils::{
-        AccessMode, FallocMode, Inode, InodeMode, IoctlCmd, Metadata, SeekFrom, StatusFlags,
+        AccessMode, FallocMode, Inode, InodeMode, IoctlCmd, Metadata, OpenArgs, SeekFrom,
+        StatusFlags,
     },
     net::socket::Socket,
     prelude::*,
@@ -115,6 +116,32 @@ pub trait FileLike: Pollable + Send + Sync + Any {
 
     fn as_socket(&self) -> Option<&dyn Socket> {
         None
+    }
+
+    /// Convert this file to a pseudo file.
+    ///
+    /// If this file is not a pseudo file, returns `None`.
+    fn into_pseudo(self: Arc<Self>) -> Option<Arc<dyn PseudoFile>> {
+        None
+    }
+
+    fn inode(&self) -> Option<&Arc<dyn Inode>> {
+        None
+    }
+}
+
+/// A pseudo file that do not have a corresponding `Path`.
+pub trait PseudoFile: FileLike {
+    /// Opens the pseudo file with the given `OpenArgs`.
+    ///
+    /// Returns an `Arc` to the newly opened pseudo file.
+    fn open(&self, open_args: OpenArgs) -> Result<Arc<dyn PseudoFile>> {
+        return_errno_with_message!(Errno::EACCES, "open is not supported");
+    }
+
+    fn display_name(&self) -> String {
+        // TODO: remove this default implementation after all pseudo files implement this method.
+        String::from("[pseudo file]")
     }
 }
 

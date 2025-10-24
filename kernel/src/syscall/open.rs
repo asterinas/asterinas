@@ -3,8 +3,9 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
+        file_handle::FileLike,
         file_table::{FdFlags, FileDesc},
-        fs_resolver::{FsPath, FsResolver, LookupResult, AT_FDCWD},
+        fs_resolver::{FsItem, FsPath, FsResolver, LookupResult, AT_FDCWD},
         inode_handle::InodeHandle,
         utils::{AccessMode, CreationFlags, InodeMode, InodeType, OpenArgs},
     },
@@ -33,7 +34,7 @@ pub fn sys_openat(
         let mask_mode = mode & !fs_ref.umask().get();
 
         let fs_resolver = fs_ref.resolver().read();
-        let inode_handle = do_open(
+        do_open(
             &fs_resolver,
             &fs_path,
             flags,
@@ -42,9 +43,7 @@ pub fn sys_openat(
         .map_err(|err| match err.error() {
             Errno::EINTR => Error::new(Errno::ERESTARTSYS),
             _ => err,
-        })?;
-
-        Arc::new(inode_handle)
+        })?
     };
 
     let fd = {
@@ -77,7 +76,7 @@ fn do_open(
     path: &FsPath,
     flags: u32,
     mode: InodeMode,
-) -> Result<InodeHandle> {
+) -> Result<Arc<dyn FileLike>> {
     let open_args = OpenArgs::from_flags_and_mode(flags, mode)?;
 
     let lookup_res = if open_args.follow_tail_link() {
@@ -86,8 +85,11 @@ fn do_open(
         fs_resolver.lookup_unresolved_no_follow(path)?
     };
 
-    let inode_handle = match lookup_res {
-        LookupResult::Resolved(target_path) => target_path.open(open_args)?,
+    let file_handle: Arc<dyn FileLike> = match lookup_res {
+        LookupResult::Resolved(fsitem) => match fsitem {
+            FsItem::Real(target_path) => Arc::new(target_path.open(open_args)?),
+            FsItem::Pseudo(pseudo_file) => pseudo_file.open(open_args)?,
+        },
         LookupResult::AtParent(result) => {
             if !open_args.creation_flags.contains(CreationFlags::O_CREAT) {
                 return_errno_with_message!(Errno::ENOENT, "the file does not exist");
@@ -113,13 +115,13 @@ fn do_open(
                 parent.new_fs_child(&tail_name, InodeType::File, open_args.inode_mode)?;
 
             // Don't check access mode for newly created file.
-            InodeHandle::new_unchecked_access(
+            Arc::new(InodeHandle::new_unchecked_access(
                 new_path,
                 open_args.access_mode,
                 open_args.status_flags,
-            )?
+            )?)
         }
     };
 
-    Ok(inode_handle)
+    Ok(file_handle)
 }

@@ -20,6 +20,7 @@ use crate::{
     current_userspace,
     fs::{
         file_table::{FdFlags, FileTable},
+        fs_resolver::FsItem,
         thread_info::ThreadFsInfo,
     },
     prelude::*,
@@ -476,9 +477,10 @@ fn clone_child_process(
     let child_tid = allocate_posix_tid();
 
     let child = {
-        let child_elf_path = process.executable_path();
+        let child_elf_fsitem = process.executable_fsitem().clone();
         let mut child_thread_builder = {
-            let child_thread_name = ThreadName::new_from_executable_path(&child_elf_path);
+            let child_thread_name =
+                ThreadName::new_from_executable_path(&child_elf_fsitem.display_name());
 
             let credentials = {
                 let credentials = ctx.posix_thread.credentials();
@@ -503,7 +505,7 @@ fn clone_child_process(
 
         create_child_process(
             child_tid,
-            &child_elf_path,
+            child_elf_fsitem,
             child_process_vm,
             child_resource_limits,
             child_nice,
@@ -698,7 +700,7 @@ fn clone_ns_proxy(
 #[expect(clippy::too_many_arguments)]
 fn create_child_process(
     pid: Pid,
-    executable_path: &str,
+    executable_fsitem: FsItem,
     process_vm: ProcessVm,
     resource_limits: ResourceLimits,
     nice: Nice,
@@ -709,7 +711,7 @@ fn create_child_process(
 ) -> Arc<Process> {
     let child_proc = Process::new(
         pid,
-        executable_path.to_string(),
+        executable_fsitem,
         process_vm,
         resource_limits,
         nice,

@@ -6,7 +6,7 @@ use super::clockid_t;
 use crate::{
     events::IoEvents,
     fs::{
-        file_handle::FileLike,
+        file_handle::{FileLike, PseudoFile},
         utils::{mkmod, CreationFlags, InodeType, Metadata, StatusFlags},
     },
     prelude::*,
@@ -173,4 +173,10 @@ impl FileLike for TimerfdFile {
             rdev: 0,
         }
     }
+
+    fn into_pseudo(self: Arc<Self>) -> Option<Arc<dyn PseudoFile>> {
+        Some(self)
+    }
 }
+
+impl PseudoFile for TimerfdFile {}

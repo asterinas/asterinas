@@ -2,7 +2,7 @@
 
 use alloc::{
     borrow::Cow,
-    string::{String, ToString},
+    string::ToString,
     sync::{Arc, Weak},
     vec::Vec,
 };
@@ -18,7 +18,7 @@ use crate::{
         device::Device,
         utils::{
             mkmod, DirentVisitor, FallocMode, FileSystem, Inode, InodeMode, InodeType, IoctlCmd,
-            Metadata, MknodType,
+            Metadata, MknodType, ReadLinkResult,
         },
     },
     prelude::{VmReader, VmWriter},
@@ -536,9 +536,9 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         Ok((next_ino - start_ino) as usize)
     }
 
-    default fn read_link(&self) -> Result<String> {
+    default fn read_link(&self) -> Result<ReadLinkResult> {
         match &self.node_kind() {
-            SysTreeNodeKind::Symlink(s) => Ok(s.target_path().to_string()),
+            SysTreeNodeKind::Symlink(s) => Ok(ReadLinkResult::Real(s.target_path().to_string())),
             _ => Err(Error::new(Errno::EINVAL)),
         }
     }

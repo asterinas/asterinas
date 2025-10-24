@@ -36,7 +36,7 @@ pub use process::{
 };
 pub use process_filter::ProcessFilter;
 pub use process_vm::{renew_vm_and_map, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS};
-pub use program_loader::{check_executable_file, ProgramToLoad};
+pub use program_loader::{check_executable_inode, ProgramToLoad};
 pub use rlimit::ResourceType;
 pub use stats::collect_process_creation_count;
 pub use term_status::TermStatus;

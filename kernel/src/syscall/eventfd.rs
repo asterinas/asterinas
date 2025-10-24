@@ -20,7 +20,7 @@ use super::SyscallReturn;
 use crate::{
     events::IoEvents,
     fs::{
-        file_handle::FileLike,
+        file_handle::{FileLike, PseudoFile},
         file_table::{FdFlags, FileDesc},
         utils::{mkmod, CreationFlags, InodeType, Metadata, StatusFlags},
     },
@@ -255,4 +255,10 @@ impl FileLike for EventFile {
             rdev: 0,
         }
     }
+
+    fn into_pseudo(self: Arc<Self>) -> Option<Arc<dyn PseudoFile>> {
+        Some(self)
+    }
 }
+
+impl PseudoFile for EventFile {}

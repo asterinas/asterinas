@@ -10,12 +10,12 @@ use super::{constants::*, SyscallReturn};
 use crate::{
     fs::{
         file_table::FileDesc,
-        fs_resolver::{FsPath, AT_FDCWD},
-        path::Path,
+        fs_resolver::{FsItem, FsPath, AT_FDCWD},
+        utils::Inode,
     },
     prelude::*,
     process::{
-        check_executable_file, posix_thread::ThreadName, renew_vm_and_map, Credentials, Process,
+        check_executable_inode, posix_thread::ThreadName, renew_vm_and_map, Credentials, Process,
         ProgramToLoad, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS,
     },
 };
@@ -60,12 +60,12 @@ fn lookup_executable_file(
     filename_ptr: Vaddr,
     flags: OpenFlags,
     ctx: &Context,
-) -> Result<Path> {
+) -> Result<FsItem> {
     let filename = ctx
         .user_space()
         .read_cstring(filename_ptr, MAX_FILENAME_LEN)?;
 
-    let path = {
+    let fsitem = {
         let filename = filename.to_string_lossy();
         let fs_path = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {
             FsPath::from_fd(dfd)?
@@ -76,19 +76,22 @@ fn lookup_executable_file(
         let fs_ref = ctx.thread_local.borrow_fs();
         let fs_resolver = fs_ref.resolver().read();
         if flags.contains(OpenFlags::AT_SYMLINK_NOFOLLOW) {
-            fs_resolver.lookup_no_follow(&fs_path)?
+            fs_resolver.lookup_fsitem_no_follow(&fs_path)?
         } else {
-            fs_resolver.lookup(&fs_path)?
+            fs_resolver.lookup_fsitem(&fs_path)?
         }
     };
 
-    check_executable_file(&path)?;
+    let inode = fsitem
+        .inode()
+        .ok_or_else(|| Error::with_message(Errno::EACCES, "the file do not have an inode"))?;
+    check_executable_inode(inode)?;
 
-    Ok(path)
+    Ok(fsitem)
 }
 
 fn do_execve(
-    elf_file: Path,
+    elf_file: FsItem,
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
     ctx: &Context,
@@ -101,7 +104,7 @@ fn do_execve(
         ..
     } = ctx;
 
-    let executable_path = elf_file.abs_path();
+    let executable_path = elf_file.display_name();
     // FIXME: A malicious user could cause a kernel panic by exhausting available memory.
     // Currently, the implementation reads up to `MAX_NR_STRING_ARGS` arguments, each up to
     // `MAX_LEN_STRING_ARG` in length, without first verifying the total combined size.
@@ -131,8 +134,8 @@ fn do_execve(
     debug!("load program to root vmar");
     let fs_ref = thread_local.borrow_fs();
     let fs_resolver = fs_ref.resolver().read();
-    let program_to_load =
-        ProgramToLoad::build_from_file(elf_file.clone(), &fs_resolver, argv, envp, 1)?;
+    let elf_inode = elf_file.inode().unwrap();
+    let program_to_load = ProgramToLoad::build_from_inode(elf_inode, &fs_resolver, argv, envp, 1)?;
 
     renew_vm_and_map(ctx);
 
@@ -143,8 +146,7 @@ fn do_execve(
         parent.children_wait_queue().wake_all();
     }
 
-    let (new_executable_path, elf_load_info) =
-        program_to_load.load_to_vm(process.vm(), &fs_resolver)?;
+    let elf_load_info = program_to_load.load_to_vm(process.vm(), &fs_resolver)?;
 
     // After the program has been successfully loaded, the virtual memory of the current process
     // is initialized. Hence, it is necessary to clear the previously recorded robust list.
@@ -155,12 +157,12 @@ fn do_execve(
     thread_local.fpu().set_context(FpuContext::new());
 
     let credentials = posix_thread.credentials_mut();
-    set_uid_from_elf(process, &credentials, &elf_file)?;
-    set_gid_from_elf(process, &credentials, &elf_file)?;
+    set_uid_from_elf(process, &credentials, elf_inode)?;
+    set_gid_from_elf(process, &credentials, elf_inode)?;
     credentials.set_keep_capabilities(false);
 
-    // set executable path
-    process.set_executable_path(new_executable_path);
+    // set executable `FsItem`
+    process.set_executable_fsitem(elf_file);
     // set signal disposition to default
     process.sig_dispositions().lock().inherit();
     // set cpu context to default
@@ -220,38 +222,40 @@ fn read_cstring_vec(
     return_errno_with_message!(Errno::E2BIG, "there are too many arguments");
 }
 
-/// Sets uid for credentials as the same of uid of elf file if elf file has `set_uid` bit.
+/// Sets uid for credentials as the same of uid of the elf inode if the elf
+/// inode has `set_uid` bit.
 fn set_uid_from_elf(
     current: &Process,
     credentials: &Credentials<WriteOp>,
-    elf_file: &Path,
+    elf_inode: &Arc<dyn Inode>,
 ) -> Result<()> {
-    if elf_file.mode()?.has_set_uid() {
-        let uid = elf_file.owner()?;
+    if elf_inode.mode()?.has_set_uid() {
+        let uid = elf_inode.owner()?;
         credentials.set_euid(uid);
 
         current.clear_parent_death_signal();
     }
 
-    // No matter whether the elf_file has `set_uid` bit, suid should be reset.
+    // No matter whether the `elf_inode` has `set_uid` bit, suid should be reset.
     credentials.reset_suid();
     Ok(())
 }
 
-/// Sets gid for credentials as the same of gid of elf file if elf file has `set_gid` bit.
+/// Sets gid for credentials as the same of gid of the elf inode if the elf
+/// inode has `set_gid` bit.
 fn set_gid_from_elf(
     current: &Process,
     credentials: &Credentials<WriteOp>,
-    elf_file: &Path,
+    elf_inode: &Arc<dyn Inode>,
 ) -> Result<()> {
-    if elf_file.mode()?.has_set_gid() {
-        let gid = elf_file.group()?;
+    if elf_inode.mode()?.has_set_gid() {
+        let gid = elf_inode.group()?;
         credentials.set_egid(gid);
 
         current.clear_parent_death_signal();
     }
 
-    // No matter whether the the elf file has `set_gid` bit, sgid should be reset.
+    // No matter whether the the `elf_inode` has `set_gid` bit, sgid should be reset.
     credentials.reset_sgid();
     Ok(())
 }

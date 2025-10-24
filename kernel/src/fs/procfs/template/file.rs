@@ -6,7 +6,7 @@ use inherit_methods_macro::inherit_methods;
 
 use super::{Common, ProcFs};
 use crate::{
-    fs::utils::{FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata},
+    fs::utils::{FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata, ReadLinkResult},
     prelude::*,
     process::{Gid, Uid},
 };
@@ -74,7 +74,7 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
         self.write_at(offset, reader)
     }
 
-    fn read_link(&self) -> Result<String> {
+    fn read_link(&self) -> Result<ReadLinkResult> {
         Err(Error::new(Errno::EINVAL))
     }
 

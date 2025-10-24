@@ -9,7 +9,15 @@ use super::{
     path::Path,
     utils::{InodeType, PATH_MAX, SYMLINKS_MAX},
 };
-use crate::{fs::path::MountNamespace, prelude::*, process::posix_thread::AsThreadLocal};
+use crate::{
+    fs::{
+        file_handle::{FileLike, PseudoFile},
+        path::MountNamespace,
+        utils::{Inode, ReadLinkResult},
+    },
+    prelude::*,
+    process::posix_thread::AsThreadLocal,
+};
 
 /// The file descriptor of the current working directory.
 pub const AT_FDCWD: FileDesc = -100;
@@ -85,17 +93,35 @@ impl FsResolver {
     ///
     /// Symlinks are always followed.
     pub fn lookup(&self, fs_path: &FsPath) -> Result<Path> {
-        self.lookup_inner(fs_path, true)?.into_path()
+        self.lookup_fsitem(fs_path)?
+            .into_real()
+            .ok_or_else(|| Error::with_message(Errno::EPERM, "the path refers to a pseudo file"))
     }
 
     /// Lookups the target path according to the `fs_path`.
     ///
     /// If the last component is a symlink, it will not be followed.
     pub fn lookup_no_follow(&self, fs_path: &FsPath) -> Result<Path> {
-        self.lookup_inner(fs_path, false)?.into_path()
+        self.lookup_fsitem_no_follow(fs_path)?
+            .into_real()
+            .ok_or_else(|| Error::with_message(Errno::EPERM, "the path refers to a pseudo file"))
     }
 
-    /// Lookups the target path according to the `fs_path` and leaves
+    /// Lookups the target `FsItem` according to the `fs_path`.
+    ///
+    /// Symlinks are always followed.
+    pub fn lookup_fsitem(&self, fs_path: &FsPath) -> Result<FsItem> {
+        self.lookup_inner(fs_path, true)?.into_fsitem()
+    }
+
+    /// Lookups the target `FsItem` according to the `fs_path`.
+    ///
+    /// If the last component is a symlink, it will not be followed.
+    pub fn lookup_fsitem_no_follow(&self, fs_path: &FsPath) -> Result<FsItem> {
+        self.lookup_inner(fs_path, false)?.into_fsitem()
+    }
+
+    /// Lookups the target `FsItem` according to the `fs_path` and leaves
     /// the result unresolved.
     ///
     /// An unresolved result may indicate either successful full-path resolution,
@@ -107,7 +133,7 @@ impl FsResolver {
         self.lookup_inner(fs_path, true)
     }
 
-    /// Lookups the target path according to the `fs_path` and leaves
+    /// Lookups the target `FsItem` according to the `fs_path` and leaves
     /// the result unresolved.
     ///
     /// An unresolved result may indicate either successful full-path resolution,
@@ -120,14 +146,14 @@ impl FsResolver {
     }
 
     fn lookup_inner(&self, fs_path: &FsPath, follow_tail_link: bool) -> Result<LookupResult> {
-        let path = match fs_path.inner {
+        let lookup_res = match fs_path.inner {
             FsPathInner::Absolute(path) => {
                 self.lookup_from_parent(&self.root, path.trim_start_matches('/'), follow_tail_link)?
             }
             FsPathInner::CwdRelative(path) => {
                 self.lookup_from_parent(&self.cwd, path, follow_tail_link)?
             }
-            FsPathInner::Cwd => LookupResult::Resolved(self.cwd.clone()),
+            FsPathInner::Cwd => LookupResult::Resolved(FsItem::Real(self.cwd.clone())),
             FsPathInner::FdRelative(fd, path) => {
                 let task = Task::current().unwrap();
                 let mut file_table = task.as_thread_local().unwrap().borrow_file_table_mut();
@@ -138,11 +164,11 @@ impl FsResolver {
                 let task = Task::current().unwrap();
                 let mut file_table = task.as_thread_local().unwrap().borrow_file_table_mut();
                 let file = get_file_fast!(&mut file_table, fd);
-                LookupResult::Resolved(file.as_inode_or_err()?.path().clone())
+                LookupResult::Resolved(FsItem::from_file(&file))
             }
         };
 
-        Ok(path)
+        Ok(lookup_res)
     }
 
     /// Lookups the target path according to the parent directory path.
@@ -169,7 +195,7 @@ impl FsResolver {
             return_errno_with_message!(Errno::ENAMETOOLONG, "the path is too long");
         }
         if relative_path.is_empty() {
-            return Ok(LookupResult::Resolved(parent.clone()));
+            return Ok(LookupResult::Resolved(FsItem::Real(parent.clone())));
         }
 
         // To handle symlinks
@@ -211,7 +237,11 @@ impl FsResolver {
                     return_errno_with_message!(Errno::ELOOP, "there are too many symlinks");
                 }
                 let link_path_remain = {
-                    let mut tmp_link_path = next_path.inode().read_link()?;
+                    let read_link_res = next_path.inode().read_link()?;
+                    if let ReadLinkResult::Pseudo(pseudo_file) = read_link_res {
+                        return Ok(LookupResult::Resolved(FsItem::Pseudo(pseudo_file)));
+                    }
+                    let mut tmp_link_path = read_link_res.into_real().unwrap();
                     if tmp_link_path.is_empty() {
                         return_errno_with_message!(Errno::ENOENT, "the symlink path is empty");
                     }
@@ -243,7 +273,7 @@ impl FsResolver {
             }
         }
 
-        Ok(LookupResult::Resolved(current_path))
+        Ok(LookupResult::Resolved(FsItem::Real(current_path)))
     }
 }
 
@@ -322,18 +352,77 @@ impl<'a> TryFrom<&'a str> for FsPath<'a> {
     }
 }
 
+/// An FS item that may be obtained via FS path lookup.
+#[derive(Clone)]
+pub enum FsItem {
+    /// An FS item backed by a real inode.
+    Real(Path),
+    /// An FS item backed by a pseudo inode.
+    Pseudo(Arc<dyn PseudoFile>),
+}
+
+impl FsItem {
+    pub fn into_real(self) -> Option<Path> {
+        match self {
+            FsItem::Real(path) => Some(path),
+            FsItem::Pseudo(_) => None,
+        }
+    }
+
+    #[expect(dead_code)]
+    pub fn into_pseudo(self) -> Option<Arc<dyn PseudoFile>> {
+        match self {
+            FsItem::Real(_) => None,
+            FsItem::Pseudo(pseudo_file) => Some(pseudo_file),
+        }
+    }
+
+    pub fn display_name(&self) -> String {
+        match self {
+            FsItem::Real(path) => path.abs_path(),
+            FsItem::Pseudo(pseudo_file) => pseudo_file.display_name(),
+        }
+    }
+
+    pub fn inode(&self) -> Option<&Arc<dyn Inode>> {
+        match self {
+            FsItem::Real(path) => Some(path.inode()),
+            FsItem::Pseudo(pseudo_file) => pseudo_file.inode(),
+        }
+    }
+
+    fn from_file(file: &Arc<dyn FileLike>) -> Self {
+        if let Ok(inode_handle) = file.as_inode_or_err() {
+            FsItem::Real(inode_handle.path().clone())
+        } else {
+            FsItem::Pseudo(file.clone().into_pseudo().unwrap())
+        }
+    }
+}
+
+impl Debug for FsItem {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            FsItem::Real(path) => write!(f, "FsItem::Real({})", path.abs_path()),
+            FsItem::Pseudo(pseudo_file) => {
+                write!(f, "FsItem::Pseudo({})", pseudo_file.display_name())
+            }
+        }
+    }
+}
+
 // A result type for lookup operations.
 pub enum LookupResult {
-    /// The entire path was resolved to a final `Path`.
-    Resolved(Path),
+    /// The entire path was resolved to a final `FsItem`.
+    Resolved(FsItem),
     /// The path resolution stopped at a parent directory.
     AtParent(LookupParentResult),
 }
 
 impl LookupResult {
-    fn into_path(self) -> Result<Path> {
+    fn into_fsitem(self) -> Result<FsItem> {
         match self {
-            LookupResult::Resolved(path) => Ok(path),
+            LookupResult::Resolved(fsitem) => Ok(fsitem),
             LookupResult::AtParent(_) => Err(Error::with_message(
                 Errno::ENOENT,
                 "path resolution did not reach the final target",

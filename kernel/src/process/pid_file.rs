@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use crate::{
     events::IoEvents,
     fs::{
-        file_handle::FileLike,
+        file_handle::{FileLike, PseudoFile},
         utils::{mkmod, InodeType, Metadata, StatusFlags},
     },
     prelude::*,
@@ -109,7 +109,13 @@ impl FileLike for PidFile {
             StatusFlags::empty()
         }
     }
+
+    fn into_pseudo(self: Arc<Self>) -> Option<Arc<dyn PseudoFile>> {
+        Some(self)
+    }
 }
+
+impl PseudoFile for PidFile {}
 
 impl Pollable for PidFile {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
