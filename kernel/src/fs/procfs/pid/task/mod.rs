@@ -12,8 +12,8 @@ use crate::{
                 task::{
                     cmdline::CmdlineFileOps, comm::CommFileOps, environ::EnvironFileOps,
                     exe::ExeSymOps, fd::FdDirOps, gid_map::GidMapFileOps, mem::MemFileOps,
-                    oom_score_adj::OomScoreAdjFileOps, status::StatusFileOps,
-                    uid_map::UidMapFileOps,
+                    mountinfo::MountInfoFileOps, oom_score_adj::OomScoreAdjFileOps,
+                    status::StatusFileOps, uid_map::UidMapFileOps,
                 },
             },
             template::{DirOps, ProcDir, ProcDirBuilder},
@@ -33,6 +33,7 @@ mod exe;
 mod fd;
 mod gid_map;
 mod mem;
+mod mountinfo;
 mod oom_score_adj;
 mod status;
 mod uid_map;
@@ -87,6 +88,7 @@ impl DirOps for TidDirOps {
             "fd" => FdDirOps::new_inode(self.thread_ref.clone(), this_ptr),
             "gid_map" => GidMapFileOps::new_inode(self.process_ref.clone(), this_ptr),
             "mem" => MemFileOps::new_inode(self.process_ref.clone(), this_ptr),
+            "mountinfo" => MountInfoFileOps::new_inode(self.thread_ref.clone(), this_ptr),
             "oom_score_adj" => OomScoreAdjFileOps::new_inode(self.process_ref.clone(), this_ptr),
             "stat" => StatFileOps::new_inode(
                 self.process_ref.clone(),
@@ -141,6 +143,9 @@ impl TidDirOps {
         });
         cached_children.put_entry_if_not_found("mem", || {
             MemFileOps::new_inode(self.process_ref.clone(), this_ptr.clone())
+        });
+        cached_children.put_entry_if_not_found("mountinfo", || {
+            MountInfoFileOps::new_inode(self.thread_ref.clone(), this_ptr.clone())
         });
         cached_children.put_entry_if_not_found("oom_score_adj", || {
             OomScoreAdjFileOps::new_inode(self.process_ref.clone(), this_ptr.clone())
