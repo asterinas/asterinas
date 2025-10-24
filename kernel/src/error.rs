@@ -351,6 +351,16 @@ impl From<aster_systree::Error> for Error {
     }
 }
 
+impl From<aster_util::printer::VmPrinterError> for Error {
+    fn from(value: aster_util::printer::VmPrinterError) -> Self {
+        match value {
+            aster_util::printer::VmPrinterError::PageFault => {
+                Error::with_message(Errno::EFAULT, "Page fault occurred during VmPrinter write")
+            }
+        }
+    }
+}
+
 #[macro_export]
 macro_rules! return_errno {
     ($errno: expr) => {

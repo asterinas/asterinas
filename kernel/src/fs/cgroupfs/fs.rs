@@ -48,6 +48,10 @@ impl CgroupFs {
 }
 
 impl FileSystem for CgroupFs {
+    fn name(&self) -> &'static str {
+        "cgroup2"
+    }
+
     fn sync(&self) -> Result<()> {
         // CgroupFs is volatile, sync is a no-op
         Ok(())

@@ -69,6 +69,8 @@ pub fn init() {
     ext2::init();
     exfat::init();
     overlayfs::init();
+
+    path::init();
 }
 
 pub fn init_on_each_cpu() {

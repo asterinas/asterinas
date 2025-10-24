@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_util::printer::VmPrinter;
 use hashbrown::HashMap;
+use id_alloc::IdAlloc;
+use spin::Once;
 
 use crate::{
     fs::{
@@ -32,11 +35,22 @@ impl Default for MountPropType {
     }
 }
 
+static ID_ALLOCATOR: Once<SpinLock<IdAlloc>> = Once::new();
+
+pub(super) fn init() {
+    // TODO: Make it configurable.
+    const MAX_MOUNT_NUM: usize = 10000;
+
+    ID_ALLOCATOR.call_once(|| SpinLock::new(IdAlloc::with_capacity(MAX_MOUNT_NUM)));
+}
+
 /// A `Mount` represents a mounted filesystem instance in the VFS.
 ///
 /// Each `Mount` can be viewed as a node in the mount tree, maintaining
 /// mount-related information and the structure of the mount tree.
 pub struct Mount {
+    /// Global unique identifier for the mount node.
+    id: usize,
     /// Root dentry.
     root_dentry: Arc<Dentry>,
     /// Mountpoint dentry. A mount node can be mounted on one dentry of another mount node,
@@ -84,7 +98,9 @@ impl Mount {
         parent_mount: Option<Weak<Mount>>,
         mnt_ns: Weak<MountNamespace>,
     ) -> Arc<Self> {
+        let id = ID_ALLOCATOR.get().unwrap().lock().alloc().unwrap();
         Arc::new_cyclic(|weak_self| Self {
+            id,
             root_dentry: Dentry::new_root(fs.root_inode()),
             mountpoint: RwLock::new(None),
             parent: RwLock::new(parent_mount),
@@ -94,6 +110,11 @@ impl Mount {
             mnt_ns,
             this: weak_self.clone(),
         })
+    }
+
+    /// Gets the mount ID.
+    pub fn id(&self) -> usize {
+        self.id
     }
 
     /// Mounts a fs on the mountpoint, it will create a new child mount node.
@@ -152,6 +173,7 @@ impl Mount {
         new_ns: Option<&Weak<MountNamespace>>,
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
+            id: ID_ALLOCATOR.get().unwrap().lock().alloc().unwrap(),
             root_dentry: root_dentry.clone(),
             mountpoint: RwLock::new(None),
             parent: RwLock::new(None),
@@ -362,6 +384,59 @@ impl Mount {
         Some(target_mount)
     }
 
+    /// Reads the mount information starting from this mount as the root,
+    pub fn read_mount_info(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
+        let mut stack = vec![self.this()];
+        while let Some(mount) = stack.pop() {
+            let mount_id = mount.id();
+            let parent = mount.parent().and_then(|parent| parent.upgrade());
+            let parent_id = parent.as_ref().map_or(mount_id, |p| p.id());
+            let root = Path::new_fs_root(mount.clone()).abs_path();
+            let mount_point = if let Some(parent) = parent {
+                if let Some(mount_point_dentry) = mount.mountpoint() {
+                    Path::new(parent, mount_point_dentry).abs_path()
+                } else {
+                    "".to_string()
+                }
+            } else {
+                // No parent means it's the root of the namespace.
+                "/".to_string()
+            };
+            let fs_type = mount.fs().name();
+
+            // The following fields are dummy for now.
+            let major = 0;
+            let minor = 0;
+            let mount_options = "rw,relatime";
+            let source = "none";
+            let super_options = "rw";
+
+            let entry = MountInfoEntry {
+                mount_id,
+                parent_id,
+                major,
+                minor,
+                root: &root,
+                mount_point: &mount_point,
+                mount_options,
+                fs_type,
+                source,
+                super_options,
+            };
+
+            writeln!(printer, "{}", entry)?;
+
+            let children = mount.children.read();
+            for child_mount in children.values() {
+                stack.push(child_mount.clone());
+            }
+        }
+
+        Ok(printer.bytes_written())
+    }
+
     fn this(&self) -> Arc<Self> {
         self.this.upgrade().unwrap()
     }
@@ -374,5 +449,54 @@ impl Debug for Mount {
             .field("mountpoint", &self.mountpoint)
             .field("fs", &self.fs)
             .finish()
+    }
+}
+
+impl Drop for Mount {
+    fn drop(&mut self) {
+        ID_ALLOCATOR.get().unwrap().lock().free(self.id);
+    }
+}
+
+/// A single entry in the mountinfo file.
+struct MountInfoEntry<'a> {
+    /// A unique ID for the mount (but not guaranteed to be unique across reboots).
+    mount_id: usize,
+    /// The ID of the parent mount (or self if it has no parent).
+    parent_id: usize,
+    /// The major device ID of the filesystem.
+    major: u32,
+    /// The minor device ID of the filesystem.
+    minor: u32,
+    /// The root of the mount within the filesystem.
+    root: &'a str,
+    /// The mount point relative to the process's root directory.
+    mount_point: &'a str,
+    /// Per-mount options.
+    mount_options: &'a str,
+    /// The type of the filesystem in the form "type[.subtype]".
+    fs_type: &'a str,
+    /// Filesystem-specific information or "none".
+    source: &'a str,
+    /// Per-superblock options.
+    super_options: &'a str,
+}
+
+impl core::fmt::Display for MountInfoEntry<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "{} {} {}:{} {} {} {} - {} {} {}",
+            self.mount_id,
+            self.parent_id,
+            self.major,
+            self.minor,
+            &self.root,
+            &self.mount_point,
+            &self.mount_options,
+            &self.fs_type,
+            &self.source,
+            &self.super_options
+        )
     }
 }

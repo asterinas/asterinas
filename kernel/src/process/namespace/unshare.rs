@@ -33,6 +33,7 @@ impl ContextUnshareAdminApi for Context<'_> {
         let mut fs_ref = self.thread_local.borrow_fs_mut();
         let new_fs = fs_ref.as_ref().clone();
         *fs_ref = Arc::new(new_fs);
+        self.posix_thread.update_fs(fs_ref.clone());
     }
 
     fn unshare_sysvsem(&self) {

@@ -172,6 +172,7 @@ impl PosixThreadBuilder {
                     tid,
                     name: Mutex::new(thread_name),
                     credentials,
+                    fs: RwMutex::new(fs.clone()),
                     file_table: Mutex::new(Some(file_table.clone_ro())),
                     sig_mask,
                     sig_queues,
