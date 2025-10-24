@@ -17,7 +17,12 @@ pub struct ProcSym<S: SymOps> {
 }
 
 impl<S: SymOps> ProcSym<S> {
-    pub fn new(sym: S, fs: Weak<dyn FileSystem>, is_volatile: bool, mode: InodeMode) -> Arc<Self> {
+    pub(super) fn new(
+        sym: S,
+        fs: Weak<dyn FileSystem>,
+        is_volatile: bool,
+        mode: InodeMode,
+    ) -> Arc<Self> {
         let common = {
             let arc_fs = fs.upgrade().unwrap();
             let procfs = arc_fs.downcast_ref::<ProcFs>().unwrap();

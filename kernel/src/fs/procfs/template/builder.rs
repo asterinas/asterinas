@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(dead_code)]
-
 use super::{
     dir::{DirOps, ProcDir},
     file::{FileOps, ProcFile},
@@ -90,6 +88,7 @@ impl<O: FileOps> ProcFileBuilder<O> {
         self.optional_builder(|ob| ob.parent(parent))
     }
 
+    #[expect(dead_code)]
     pub fn volatile(self) -> Self {
         self.optional_builder(|ob| ob.volatile())
     }
@@ -131,6 +130,7 @@ impl<O: SymOps> ProcSymBuilder<O> {
         self.optional_builder(|ob| ob.parent(parent))
     }
 
+    #[expect(dead_code)]
     pub fn volatile(self) -> Self {
         self.optional_builder(|ob| ob.volatile())
     }

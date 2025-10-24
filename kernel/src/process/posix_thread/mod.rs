@@ -106,12 +106,12 @@ impl PosixThread {
     }
 
     /// Returns a read guard to the filesystem information of the thread.
-    pub fn fs(&self) -> RwMutexReadGuard<Arc<ThreadFsInfo>> {
+    pub fn read_fs(&self) -> RwMutexReadGuard<Arc<ThreadFsInfo>> {
         self.fs.read()
     }
 
-    /// Updates the filesystem information of the thread.
-    pub fn update_fs(&self, new_fs: Arc<ThreadFsInfo>) {
+    /// Sets the filesystem information of the thread.
+    pub(in crate::process) fn set_fs(&self, new_fs: Arc<ThreadFsInfo>) {
         let mut fs_lock = self.fs.write();
         *fs_lock = new_fs;
     }
@@ -120,7 +120,7 @@ impl PosixThread {
         &self.file_table
     }
 
-    /// Get the reference to the signal mask of the thread.
+    /// Gets the reference to the signal mask of the thread.
     ///
     /// Note that while this function offers mutable access to the signal mask,
     /// it is not sound for callers other than the current thread to modify the

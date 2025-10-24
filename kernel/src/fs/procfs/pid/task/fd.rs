@@ -99,7 +99,7 @@ impl DirOps for FdDirOps {
     }
 }
 
-/// Represents the inode at `/proc/[pid]/fd/N`.
+/// Represents the inode at `/proc/[pid]/task/[tid]/fd/[n]` (and also `/proc/[pid]/fd/[n]`).
 struct FileSymOps(Arc<dyn FileLike>);
 
 impl FileSymOps {

@@ -10,13 +10,14 @@ use crate::{
     thread::Thread,
 };
 
-/// Represents the inode at `/proc/[pid]/mountinfo`.
+/// Represents the inode at `/proc/[pid]/task/[tid]/mountinfo` (and also `/proc/[pid]/mountinfo`).
 pub struct MountInfoFileOps {
     thread_ref: Arc<Thread>,
 }
 
 impl MountInfoFileOps {
     pub fn new_inode(thread_ref: Arc<Thread>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3352>
         ProcFileBuilder::new(Self { thread_ref }, mkmod!(a+r))
             .parent(parent)
             .build()
@@ -26,12 +27,12 @@ impl MountInfoFileOps {
 
 impl FileOps for MountInfoFileOps {
     fn data(&self) -> Result<Vec<u8>> {
-        unimplemented!()
+        unreachable!()
     }
 
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let posix_thread = self.thread_ref.as_posix_thread().unwrap();
-        let fs = posix_thread.fs();
+        let fs = posix_thread.read_fs();
         let fs_resolver = fs.resolver().read();
         let root_mount = fs_resolver.root().mount_node();
 

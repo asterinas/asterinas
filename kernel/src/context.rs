@@ -83,7 +83,7 @@ impl<'a> CurrentUserSpace<'a> {
     pub fn is_vmar_shared(&self) -> bool {
         // If the VMAR is not shared, its reference count should be exactly 2:
         // one reference is held by `ThreadLocal` and the other by `ProcessVm` in `Process`.
-        Arc::strong_count(self.0.as_ref().unwrap()) != 2
+        Arc::strong_count(self.0.as_ref().unwrap()) > 2
     }
 
     /// Creates a reader to read data from the user space of the current task.

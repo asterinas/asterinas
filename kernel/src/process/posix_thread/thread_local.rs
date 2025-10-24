@@ -151,6 +151,8 @@ impl ThreadLocal {
     }
 
     pub fn is_fs_shared(&self) -> bool {
+        // If the filesystem information is not shared, its reference count should be exactly 2:
+        // one reference is held by `ThreadLocal` and the other by `PosixThread`.
         Arc::strong_count(&self.fs.borrow()) > 2
     }
 
