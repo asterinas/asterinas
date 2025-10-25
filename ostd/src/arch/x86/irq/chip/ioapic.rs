@@ -1,18 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::ptr::NonNull;
-
 use bit_field::BitField;
 use cfg_if::cfg_if;
 use log::info;
-use volatile::{
-    access::{ReadWrite, WriteOnly},
-    VolatileRef,
-};
 
 use crate::{
-    arch::if_tdx_enabled, io::IoMemAllocatorBuilder, irq::IrqLine, mm::paddr_to_vaddr, Error,
-    Result,
+    arch::if_tdx_enabled,
+    io::{IoMem, IoMemAllocatorBuilder, Sensitive},
+    irq::IrqLine,
+    Error, Result,
 };
 
 cfg_if! {
@@ -36,8 +32,6 @@ pub(super) struct IoApic {
 }
 
 impl IoApic {
-    const TABLE_REG_BASE: u8 = 0x10;
-
     /// # Safety
     ///
     /// The caller must ensure that the base address is a valid I/O APIC base address.
@@ -86,7 +80,8 @@ impl IoApic {
             return Err(Error::InvalidArgs);
         }
 
-        let value = self.access.read(Self::TABLE_REG_BASE + 2 * index);
+        // SAFETY: `index` is inbound. The redirection table is safe to read.
+        let value = unsafe { self.access.read(IoApicAccess::IOREDTBL + 2 * index) };
         if value.get_bits(0..8) as u8 != 0 {
             return Err(Error::AccessDenied);
         }
@@ -103,18 +98,26 @@ impl IoApic {
             value |= ((remapping_index & 0x8000) >> 4) as u64;
             value |= (remapping_index as u64 & 0x7FFF) << 49;
 
-            self.access.write(
-                Self::TABLE_REG_BASE + 2 * index,
-                value.get_bits(0..32) as u32,
-            );
-            self.access.write(
-                Self::TABLE_REG_BASE + 2 * index + 1,
-                value.get_bits(32..64) as u32,
-            );
+            // SAFETY: `index` is inbound. It is safe to enable the redirection entry with the
+            // correct remapping index.
+            unsafe {
+                self.access.write(
+                    IoApicAccess::IOREDTBL + 2 * index,
+                    value.get_bits(0..32) as u32,
+                );
+                self.access.write(
+                    IoApicAccess::IOREDTBL + 2 * index + 1,
+                    value.get_bits(32..64) as u32,
+                );
+            }
         } else {
-            self.access
-                .write(Self::TABLE_REG_BASE + 2 * index, irq.num() as u32);
-            self.access.write(Self::TABLE_REG_BASE + 2 * index + 1, 0);
+            // SAFETY: `index` is inbound. It is safe to enable the redirection entry with the
+            // legal IRQ number.
+            unsafe {
+                self.access
+                    .write(IoApicAccess::IOREDTBL + 2 * index, irq.num() as u32);
+                self.access.write(IoApicAccess::IOREDTBL + 2 * index + 1, 0);
+            }
         }
 
         Ok(())
@@ -131,9 +134,13 @@ impl IoApic {
             return Err(Error::InvalidArgs);
         }
 
-        // "Bit 16: Interrupt Mask - R/W. When this bit is 1, the interrupt signal is masked."
-        self.access.write(Self::TABLE_REG_BASE + 2 * index, 1 << 16);
-        self.access.write(Self::TABLE_REG_BASE + 2 * index + 1, 0);
+        // SAFETY: `index` is inbound. Disabling the redirection entry is always safe.
+        unsafe {
+            // "Bit 16: Interrupt Mask - R/W. When this bit is 1, the interrupt signal is masked."
+            self.access
+                .write(IoApicAccess::IOREDTBL + 2 * index, 1 << 16);
+            self.access.write(IoApicAccess::IOREDTBL + 2 * index + 1, 0);
+        }
 
         Ok(())
     }
@@ -145,16 +152,30 @@ impl IoApic {
 }
 
 struct IoApicAccess {
-    register: VolatileRef<'static, u32, WriteOnly>,
-    data: VolatileRef<'static, u32, ReadWrite>,
+    io_mem: IoMem<Sensitive>,
 }
 
 impl IoApicAccess {
+    /// I/O Register Select (index).
+    const MMIO_REGSEL: usize = 0x00;
+    /// I/O Window (data).
+    const MMIO_WIN: usize = 0x10;
+    /// The size of the MMIO region.
+    const MMIO_SIZE: usize = 0x20;
+
+    /// IOAPIC ID.
+    const IOAPICID: u8 = 0x00;
+    /// IOAPIC Version.
+    const IOAPICVER: u8 = 0x01;
+    /// Redirection Table.
+    pub(self) const IOREDTBL: u8 = 0x10;
+
     /// # Safety
     ///
     /// The caller must ensure that the base address is a valid I/O APIC base address.
     pub(self) unsafe fn new(base_address: usize, io_mem_builder: &IoMemAllocatorBuilder) -> Self {
-        io_mem_builder.remove(base_address..(base_address + 0x20));
+        let io_mem = io_mem_builder.reserve(base_address..(base_address + Self::MMIO_SIZE));
+
         if_tdx_enabled!({
             assert_eq!(
                 base_address % crate::mm::PAGE_SIZE,
@@ -175,43 +196,42 @@ impl IoApicAccess {
             unsafe { tdx_guest::unprotect_gpa_range(base_address, 1).unwrap() };
         });
 
-        let register_addr = NonNull::new(paddr_to_vaddr(base_address) as *mut u32).unwrap();
-        // SAFETY:
-        // - The caller guarantees that the memory is an I/O APIC register.
-        // - `io_mem_builder.remove()` guarantees that we have exclusive ownership of the register.
-        let register = unsafe { VolatileRef::new_restricted(WriteOnly, register_addr) };
-
-        let data_addr = NonNull::new(paddr_to_vaddr(base_address + 0x10) as *mut u32).unwrap();
-        // SAFETY:
-        // - The caller guarantees that the memory is an I/O APIC register.
-        // - `io_mem_builder.remove()` guarantees that we have exclusive ownership of the register.
-        let data = unsafe { VolatileRef::new(data_addr) };
-
-        Self { register, data }
+        Self { io_mem }
     }
 
-    pub(self) fn read(&mut self, register: u8) -> u32 {
-        self.register.as_mut_ptr().write(register as u32);
-        self.data.as_ptr().read()
+    pub(self) unsafe fn read(&mut self, register: u8) -> u32 {
+        // SAFETY: This reads data from an I/O APIC register. The safety is upheld by the caller.
+        unsafe {
+            self.io_mem
+                .write_once(Self::MMIO_REGSEL, &(register as u32));
+            self.io_mem.read_once(Self::MMIO_WIN)
+        }
     }
 
-    pub(self) fn write(&mut self, register: u8, data: u32) {
-        self.register.as_mut_ptr().write(register as u32);
-        self.data.as_mut_ptr().write(data);
+    pub(self) unsafe fn write(&mut self, register: u8, data: u32) {
+        // SAFETY: This writes data to an I/O APIC register. The safety is upheld by the caller.
+        unsafe {
+            self.io_mem
+                .write_once(Self::MMIO_REGSEL, &(register as u32));
+            self.io_mem.write_once(Self::MMIO_WIN, &data);
+        }
     }
 
     pub(self) fn id(&mut self) -> u8 {
         // IOAPICID: "Bit 24-27: IOAPIC Identification - R/W."
-        self.read(0).get_bits(24..28) as u8
+        // SAFETY: IOAPICID is safe to read.
+        unsafe { self.read(Self::IOAPICID).get_bits(24..28) as u8 }
     }
 
     pub(self) fn version(&mut self) -> u8 {
         // IOAPICVER: "Bit 7-0: APIC VERSION - RO."
-        self.read(1).get_bits(0..8) as u8
+        // SAFETY: IOAPICVER is safe to read.
+        unsafe { self.read(Self::IOAPICVER).get_bits(0..8) as u8 }
     }
 
     pub(self) fn max_redirection_entry(&mut self) -> u8 {
         // IOAPICVER: "Bit 16-23: Maximum Redirection Entry - RO."
-        self.read(1).get_bits(16..24) as u8
+        // SAFETY: IOAPICVER is safe to read.
+        unsafe { self.read(Self::IOAPICVER).get_bits(16..24) as u8 }
     }
 }
