@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::marker::PhantomData;
+
 use crate::{
     fs::{
         file_handle::FileLike,
         file_table::FileDesc,
         inode_handle::InodeHandle,
         procfs::{
-            pid::FdEvents, DirOps, Observer, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps,
+            pid::FdEvents,
+            template::{FileOps, ProcFileBuilder},
+            DirOps, Observer, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps,
         },
         utils::{chmod, mkmod, DirEntryVecExt, Inode},
     },
@@ -16,15 +20,21 @@ use crate::{
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/fd` (and also `/proc/[pid]/fd`).
-pub struct FdDirOps(Arc<Thread>);
+pub(super) struct FdDirOps<T> {
+    thread: Arc<Thread>,
+    marker: PhantomData<T>,
+}
 
-impl FdDirOps {
+impl<T: FdOps> FdDirOps<T> {
     pub fn new_inode(thread_ref: Arc<Thread>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         let posix_thread = thread_ref.as_posix_thread().unwrap();
         let file_table = posix_thread.file_table();
 
         let fd_inode = ProcDirBuilder::new(
-            Self(thread_ref.clone()),
+            Self {
+                thread: thread_ref.clone(),
+                marker: PhantomData,
+            },
             // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3317>
             mkmod!(u+rx),
         )
@@ -43,7 +53,7 @@ impl FdDirOps {
     }
 }
 
-impl Observer<FdEvents> for ProcDir<FdDirOps> {
+impl<T: FdOps> Observer<FdEvents> for ProcDir<FdDirOps<T>> {
     fn on_events(&self, events: &FdEvents) {
         let fd_string = if let FdEvents::Close(fd) = events {
             fd.to_string()
@@ -56,9 +66,9 @@ impl Observer<FdEvents> for ProcDir<FdDirOps> {
     }
 }
 
-impl DirOps for FdDirOps {
+impl<T: FdOps> DirOps for FdDirOps<T> {
     fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
-        let posix_thread = self.0.as_posix_thread().unwrap();
+        let posix_thread = self.thread.as_posix_thread().unwrap();
         let file_table = posix_thread.file_table().lock();
         let file_table = file_table
             .as_ref()
@@ -75,11 +85,11 @@ impl DirOps for FdDirOps {
                 .clone()
         };
 
-        Ok(FileSymOps::new_inode(file, this_ptr.clone()))
+        Ok(T::new_inode(file, this_ptr.clone()))
     }
 
     fn populate_children(&self, this_ptr: Weak<dyn Inode>) {
-        let posix_thread = self.0.as_posix_thread().unwrap();
+        let posix_thread = self.thread.as_posix_thread().unwrap();
         let file_table = posix_thread.file_table().lock();
         let Some(file_table) = file_table.as_ref() else {
             return;
@@ -87,23 +97,27 @@ impl DirOps for FdDirOps {
 
         let this = {
             let this = this_ptr.upgrade().unwrap();
-            this.downcast_ref::<ProcDir<FdDirOps>>().unwrap().this()
+            this.downcast_ref::<ProcDir<FdDirOps<T>>>().unwrap().this()
         };
         let mut cached_children = this.cached_children().write();
 
         for (fd, file) in file_table.read().fds_and_files() {
             cached_children.put_entry_if_not_found(&fd.to_string(), || {
-                FileSymOps::new_inode(file.clone(), this_ptr.clone())
+                T::new_inode(file.clone(), this_ptr.clone())
             });
         }
     }
 }
 
-/// Represents the inode at `/proc/[pid]/fd/N`.
-struct FileSymOps(Arc<dyn FileLike>);
+pub(super) trait FdOps: Send + Sync + 'static {
+    fn new_inode(file: Arc<dyn FileLike>, parent: Weak<dyn Inode>) -> Arc<dyn Inode>;
+}
 
-impl FileSymOps {
-    pub fn new_inode(file: Arc<dyn FileLike>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+/// Represents the inode at `/proc/[pid]/fd/N`.
+pub(super) struct FileSymOps(Arc<dyn FileLike>);
+
+impl FdOps for FileSymOps {
+    fn new_inode(file: Arc<dyn FileLike>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/fd.c#L127-L141>
         let mut mode = mkmod!(a=);
         if file.access_mode().is_readable() {
@@ -129,5 +143,29 @@ impl SymOps for FileSymOps {
             String::from("/dev/tty")
         };
         Ok(path_name)
+    }
+}
+
+/// Represents the inode at `/proc/[pid]/fdinfo/N`.
+pub(super) struct FileInfoOps(Arc<dyn FileLike>);
+
+impl FdOps for FileInfoOps {
+    fn new_inode(file: Arc<dyn FileLike>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        let mode = mkmod!(a+r);
+
+        ProcFileBuilder::new(Self(file), mode)
+            .parent(parent)
+            .build()
+            .unwrap()
+    }
+}
+
+impl FileOps for FileInfoOps {
+    fn data(&self) -> Result<Vec<u8>> {
+        unimplemented!()
+    }
+
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        self.0.read_info(offset, writer)
     }
 }

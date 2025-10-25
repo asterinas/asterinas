@@ -85,7 +85,8 @@ impl DirOps for TidDirOps {
             "comm" => CommFileOps::new_inode(self.process_ref.clone(), this_ptr),
             "environ" => EnvironFileOps::new_inode(self.process_ref.clone(), this_ptr),
             "exe" => ExeSymOps::new_inode(self.process_ref.clone(), this_ptr),
-            "fd" => FdDirOps::new_inode(self.thread_ref.clone(), this_ptr),
+            "fd" => FdDirOps::<fd::FileSymOps>::new_inode(self.thread_ref.clone(), this_ptr),
+            "fdinfo" => FdDirOps::<fd::FileInfoOps>::new_inode(self.thread_ref.clone(), this_ptr),
             "gid_map" => GidMapFileOps::new_inode(self.process_ref.clone(), this_ptr),
             "mem" => MemFileOps::new_inode(self.process_ref.clone(), this_ptr),
             "mountinfo" => MountInfoFileOps::new_inode(self.thread_ref.clone(), this_ptr),
@@ -136,7 +137,10 @@ impl TidDirOps {
             ExeSymOps::new_inode(self.process_ref.clone(), this_ptr.clone())
         });
         cached_children.put_entry_if_not_found("fd", || {
-            FdDirOps::new_inode(self.thread_ref.clone(), this_ptr.clone())
+            FdDirOps::<fd::FileSymOps>::new_inode(self.thread_ref.clone(), this_ptr.clone())
+        });
+        cached_children.put_entry_if_not_found("fdinfo", || {
+            FdDirOps::<fd::FileInfoOps>::new_inode(self.thread_ref.clone(), this_ptr.clone())
         });
         cached_children.put_entry_if_not_found("gid_map", || {
             GidMapFileOps::new_inode(self.process_ref.clone(), this_ptr.clone())
