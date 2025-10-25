@@ -37,6 +37,7 @@ pub mod bus;
 pub mod console;
 pub mod cpu;
 mod error;
+mod ex_table;
 pub mod io;
 pub mod irq;
 pub mod logger;

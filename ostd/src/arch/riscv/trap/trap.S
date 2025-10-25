@@ -68,7 +68,8 @@ trap_from_user:
 
     # save sp, sstatus, sepc
     csrrw t0, sscratch, x0  # sscratch = 0 (kernel)
-    csrr t1, sstatus
+    li t3, 0b1 << 18        # disable U-mode memory access as it should be set on demand
+    csrrc t1, sstatus, t3
     csrr t2, sepc
     STORE_SP t0, 2          # save sp
     STORE_SP t1, 32         # save sstatus
