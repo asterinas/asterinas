@@ -2,7 +2,11 @@
 
 use alloc::{sync::Arc, vec::Vec};
 
-use aster_console::{AnyConsoleDevice, BitmapFont, ConsoleCallback, ConsoleSetFontError};
+use aster_console::{
+    font::BitmapFont,
+    mode::{ConsoleMode, KeyboardMode},
+    AnyConsoleDevice, ConsoleCallback, ConsoleSetFontError,
+};
 use aster_keyboard::InputKey;
 use ostd::{
     mm::VmReader,
@@ -17,7 +21,7 @@ use crate::{
 
 /// A text console rendered onto the framebuffer.
 pub struct FramebufferConsole {
-    callbacks: SpinLock<Vec<&'static ConsoleCallback>, LocalIrqDisabled>,
+    callbacks: SpinLock<ConsoleCallbacks, LocalIrqDisabled>,
     inner: SpinLock<(ConsoleState, EscapeFsm), LocalIrqDisabled>,
 }
 
@@ -56,23 +60,56 @@ impl AnyConsoleDevice for FramebufferConsole {
     }
 
     fn register_callback(&self, callback: &'static ConsoleCallback) {
-        self.callbacks.lock().push(callback);
+        self.callbacks.lock().callbacks.push(callback);
     }
 
     fn set_font(&self, font: BitmapFont) -> Result<(), ConsoleSetFontError> {
         self.inner.lock().0.set_font(font)
+    }
+
+    fn set_mode(&self, mode: ConsoleMode) -> bool {
+        self.inner.lock().0.set_mode(mode);
+        true
+    }
+
+    fn mode(&self) -> Option<ConsoleMode> {
+        Some(self.inner.lock().0.mode())
+    }
+
+    fn set_keyboard_mode(&self, mode: KeyboardMode) -> bool {
+        match mode {
+            KeyboardMode::Xlate => self.callbacks.lock().is_input_enabled = true,
+            KeyboardMode::Off => self.callbacks.lock().is_input_enabled = false,
+            _ => return false,
+        }
+        true
+    }
+
+    fn keyboard_mode(&self) -> Option<KeyboardMode> {
+        if self.callbacks.lock().is_input_enabled {
+            Some(KeyboardMode::Xlate)
+        } else {
+            Some(KeyboardMode::Off)
+        }
     }
 }
 
 impl FramebufferConsole {
     /// Creates a new framebuffer console.
     pub(self) fn new(framebuffer: Arc<FrameBuffer>) -> Self {
+        let callbacks = ConsoleCallbacks {
+            callbacks: Vec::new(),
+            is_input_enabled: true,
+        };
+
         let state = ConsoleState {
             x_pos: 0,
             y_pos: 0,
             fg_color: Pixel::WHITE,
             bg_color: Pixel::BLACK,
             font: BitmapFont::new_basic8x8(),
+            is_output_enabled: true,
+
             bytes: alloc::vec![0u8; framebuffer.size()],
             backend: framebuffer,
         };
@@ -80,8 +117,21 @@ impl FramebufferConsole {
         let esc_fsm = EscapeFsm::new();
 
         Self {
-            callbacks: SpinLock::new(Vec::new()),
+            callbacks: SpinLock::new(callbacks),
             inner: SpinLock::new((state, esc_fsm)),
+        }
+    }
+
+    /// Triggers the registered input callbacks with the given data.
+    pub(self) fn trigger_input_callbacks(&self, bytes: &[u8]) {
+        let callbacks = self.callbacks.lock();
+        if !callbacks.is_input_enabled {
+            return;
+        }
+
+        let reader = VmReader::from(bytes);
+        for callback in callbacks.callbacks.iter() {
+            callback(reader.clone());
         }
     }
 }
@@ -92,6 +142,12 @@ impl core::fmt::Debug for FramebufferConsole {
     }
 }
 
+struct ConsoleCallbacks {
+    callbacks: Vec<&'static ConsoleCallback>,
+    /// Whether the input characters will be handled by the callbacks.
+    is_input_enabled: bool,
+}
+
 #[derive(Debug)]
 struct ConsoleState {
     x_pos: usize,
@@ -99,6 +155,9 @@ struct ConsoleState {
     fg_color: Pixel,
     bg_color: Pixel,
     font: BitmapFont,
+    /// Whether the output characters will be drawn in the framebuffer.
+    is_output_enabled: bool,
+
     bytes: Vec<u8>,
     backend: Arc<FrameBuffer>,
 }
@@ -140,7 +199,9 @@ impl ConsoleState {
         self.bytes.copy_within(offset.., 0);
         self.bytes[self.backend.size() - offset..].fill(0);
 
-        self.backend.write_bytes_at(0, &self.bytes).unwrap();
+        if self.is_output_enabled {
+            self.backend.write_bytes_at(0, &self.bytes).unwrap();
+        }
 
         self.y_pos -= self.font.height();
     }
@@ -184,7 +245,9 @@ impl ConsoleState {
             }
 
             // Write pixels to the framebuffer.
-            self.backend.write_bytes_at(off_st, render_buf).unwrap();
+            if self.is_output_enabled {
+                self.backend.write_bytes_at(off_st, render_buf).unwrap();
+            }
 
             offset.y_add(1);
         }
@@ -205,6 +268,32 @@ impl ConsoleState {
         }
 
         Ok(())
+    }
+
+    /// Sets the console mode (text or graphics).
+    pub(self) fn set_mode(&mut self, mode: ConsoleMode) {
+        if mode == ConsoleMode::Graphics {
+            self.is_output_enabled = false;
+            return;
+        }
+
+        if self.is_output_enabled {
+            return;
+        }
+
+        // We're switching from the graphics mode back to the text mode. The characters need to be
+        // redrawn in the framebuffer.
+        self.is_output_enabled = true;
+        self.backend.write_bytes_at(0, &self.bytes).unwrap();
+    }
+
+    /// Gets the current console mode.
+    pub(self) fn mode(&self) -> ConsoleMode {
+        if self.is_output_enabled {
+            ConsoleMode::Text
+        } else {
+            ConsoleMode::Graphics
+        }
     }
 }
 
@@ -234,8 +323,5 @@ fn handle_keyboard_input(key: InputKey) {
     };
 
     let buffer = key.as_xterm_control_sequence();
-    for callback in console.callbacks.lock().iter() {
-        let reader = VmReader::from(buffer);
-        callback(reader);
-    }
+    console.trigger_input_callbacks(buffer);
 }

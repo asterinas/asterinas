@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_console::AnyConsoleDevice;
 use ostd::sync::SpinLock;
 
 use crate::{
@@ -113,7 +114,7 @@ impl TtyDriver for PtyDriver {
         self.pollee.notify(IoEvents::OUT);
     }
 
-    fn set_font(&self, _font: aster_console::BitmapFont) -> Result<()> {
-        return_errno_with_message!(Errno::ENOTTY, "the console has no support for font setting");
+    fn console(&self) -> Option<&dyn AnyConsoleDevice> {
+        None
     }
 }

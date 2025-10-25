@@ -110,6 +110,7 @@ version = "0.1.0"
 dependencies = [
  "component",
  "font8x8",
+ "int-to-c-enum",
  "ostd",
  "spin",
 ]

@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! The console device of Asterinas.
+
 #![no_std]
 #![deny(unsafe_code)]
 
 extern crate alloc;
 
-mod font;
+pub mod font;
+pub mod mode;
 
 use alloc::{collections::BTreeMap, fmt::Debug, string::String, sync::Arc, vec::Vec};
 use core::any::Any;
 
 use component::{init_component, ComponentInitError};
-pub use font::{BitmapChar, BitmapCharRow, BitmapFont};
 use ostd::{
     mm::{Infallible, VmReader},
     sync::{LocalIrqDisabled, SpinLock, SpinLockGuard},
@@ -22,6 +23,7 @@ use spin::Once;
 pub type ConsoleCallback = dyn Fn(VmReader<Infallible>) + Send + Sync;
 
 /// An error returned by [`AnyConsoleDevice::set_font`].
+#[derive(Debug, Clone, Copy)]
 pub enum ConsoleSetFontError {
     InappropriateDevice,
     InvalidFont,
@@ -37,8 +39,40 @@ pub trait AnyConsoleDevice: Send + Sync + Any + Debug {
     fn register_callback(&self, callback: &'static ConsoleCallback);
 
     /// Sets the font of the console device.
-    fn set_font(&self, _font: BitmapFont) -> Result<(), ConsoleSetFontError> {
+    fn set_font(&self, _font: font::BitmapFont) -> Result<(), ConsoleSetFontError> {
         Err(ConsoleSetFontError::InappropriateDevice)
+    }
+
+    // TODO: Add support for getting the font of the console device.
+
+    /// Sets the console mode (text or graphics, see [`mode::ConsoleMode`]).
+    ///
+    /// Returns true if the mode was changed, false if the mode is not supported.
+    #[must_use]
+    fn set_mode(&self, _mode: mode::ConsoleMode) -> bool {
+        false
+    }
+
+    /// Gets the current console mode.
+    ///
+    /// Returns the current console mode, or `None` if mode switching is not supported.
+    fn mode(&self) -> Option<mode::ConsoleMode> {
+        None
+    }
+
+    /// Sets the keyboard mode (see [`mode::KeyboardMode`]).
+    ///
+    /// Returns true if the mode was changed, false if the mode is not supported.
+    #[must_use]
+    fn set_keyboard_mode(&self, _mode: mode::KeyboardMode) -> bool {
+        false
+    }
+
+    /// Gets the current keyboard mode.
+    ///
+    /// Returns the current keyboard mode, or `None` if mode switching is not supported.
+    fn keyboard_mode(&self) -> Option<mode::KeyboardMode> {
+        None
     }
 }
 

@@ -7,10 +7,6 @@ use ostd::mm::{Infallible, VmReader, VmWriter};
 use spin::Once;
 
 use super::{PushCharError, Tty, TtyDriver};
-use crate::{
-    error::Errno,
-    prelude::{return_errno_with_message, Result},
-};
 
 pub struct ConsoleDriver {
     console: Arc<dyn AnyConsoleDevice>,
@@ -34,21 +30,8 @@ impl TtyDriver for ConsoleDriver {
 
     fn notify_input(&self) {}
 
-    fn set_font(&self, font: aster_console::BitmapFont) -> Result<()> {
-        use aster_console::ConsoleSetFontError;
-
-        match self.console.set_font(font) {
-            Ok(()) => Ok(()),
-            Err(ConsoleSetFontError::InappropriateDevice) => {
-                return_errno_with_message!(
-                    Errno::ENOTTY,
-                    "the console has no support for font setting"
-                )
-            }
-            Err(ConsoleSetFontError::InvalidFont) => {
-                return_errno_with_message!(Errno::EINVAL, "the font is invalid for the console")
-            }
-        }
+    fn console(&self) -> Option<&dyn AnyConsoleDevice> {
+        Some(&*self.console)
     }
 }
 

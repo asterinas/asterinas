@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_console::BitmapFont;
+use aster_console::{
+    font::BitmapFont,
+    mode::{ConsoleMode, KeyboardMode},
+    AnyConsoleDevice,
+};
 use ostd::sync::LocalIrqDisabled;
-use termio::CFontOp;
 
-use self::line_discipline::LineDiscipline;
+use self::{line_discipline::LineDiscipline, termio::CFontOp};
 use crate::{
     current_userspace,
     events::IoEvents,
@@ -145,8 +148,18 @@ impl<D: TtyDriver> Tty<D> {
 
         events
     }
+}
+
+impl<D: TtyDriver> Tty<D> {
+    fn console(&self) -> Result<&dyn AnyConsoleDevice> {
+        self.driver.console().ok_or_else(|| {
+            Error::with_message(Errno::ENOTTY, "the TTY is not connected to a console")
+        })
+    }
 
     fn handle_set_font(&self, font_op: &CFontOp) -> Result<()> {
+        let console = self.console()?;
+
         let CFontOp {
             op,
             flags: _,
@@ -159,7 +172,9 @@ impl<D: TtyDriver> Tty<D> {
         let vpitch = match *op {
             CFontOp::OP_SET => CFontOp::NONTALL_VPITCH,
             CFontOp::OP_SET_TALL => font_op.height,
-            CFontOp::OP_SET_DEFAULT => return self.driver.set_font(BitmapFont::new_basic8x8()),
+            CFontOp::OP_SET_DEFAULT => {
+                return console_set_font(console, BitmapFont::new_basic8x8());
+            }
             _ => return_errno_with_message!(Errno::EINVAL, "the font operation is invalid"),
         };
 
@@ -189,9 +204,23 @@ impl<D: TtyDriver> Tty<D> {
             vpitch as usize,
             font_data,
         );
-        self.driver.set_font(font)?;
+        console_set_font(console, font)?;
 
         Ok(())
+    }
+}
+
+fn console_set_font(console: &dyn AnyConsoleDevice, font: BitmapFont) -> Result<()> {
+    use aster_console::ConsoleSetFontError;
+
+    match console.set_font(font) {
+        Ok(()) => Ok(()),
+        Err(ConsoleSetFontError::InappropriateDevice) => {
+            return_errno_with_message!(Errno::ENOTTY, "the console has no support for font setting")
+        }
+        Err(ConsoleSetFontError::InvalidFont) => {
+            return_errno_with_message!(Errno::EINVAL, "the font is invalid for the console")
+        }
     }
 }
 
@@ -284,6 +313,34 @@ impl<D: TtyDriver> FileIo for Tty<D> {
 
                 self.handle_set_font(&font_op)?;
             }
+            IoctlCmd::KDSETMODE => {
+                let console = self.console()?;
+
+                let mode = ConsoleMode::try_from(arg as i32)?;
+                if !console.set_mode(mode) {
+                    return_errno_with_message!(Errno::EINVAL, "the console mode is not supported");
+                }
+            }
+            IoctlCmd::KDGETMODE => {
+                let console = self.console()?;
+
+                let mode = console.mode().unwrap_or(ConsoleMode::Text);
+                current_userspace!().write_val(arg, &(mode as i32))?;
+            }
+            IoctlCmd::KDSKBMODE => {
+                let console = self.console()?;
+
+                let mode = KeyboardMode::try_from(arg as i32)?;
+                if !console.set_keyboard_mode(mode) {
+                    return_errno_with_message!(Errno::EINVAL, "the keyboard mode is not supported");
+                }
+            }
+            IoctlCmd::KDGKBMODE => {
+                let console = self.console()?;
+
+                let mode = console.keyboard_mode().unwrap_or(KeyboardMode::Xlate);
+                current_userspace!().write_val(arg, &(mode as i32))?;
+            }
             _ => (self.weak_self.upgrade().unwrap() as Arc<dyn Terminal>)
                 .job_ioctl(cmd, arg, false)?,
         }
@@ -304,6 +361,6 @@ impl<D: TtyDriver> Device for Tty<D> {
     }
 
     fn id(&self) -> DeviceId {
-        DeviceId::new(88, self.index)
+        DeviceId::new(4, self.index)
     }
 }
