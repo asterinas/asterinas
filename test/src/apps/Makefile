@@ -52,6 +52,10 @@ TEST_APPS += \
 	signal_c
 endif
 
+ifeq ($(INTEL_TDX), 1)
+TEST_APPS += generate_tdx_quote
+endif
+
 # The C head and source files of all the apps, excluding the downloaded mongoose files
 C_SOURCES := \
 	$(shell find . -type f \( -name "*.c" -or -name "*.h" \) \

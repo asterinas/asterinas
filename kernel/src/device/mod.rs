@@ -10,7 +10,7 @@ mod urandom;
 mod zero;
 
 #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
-mod tdxguest;
+pub mod tdxguest;
 
 use alloc::format;
 
