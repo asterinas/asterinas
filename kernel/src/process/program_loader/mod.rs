@@ -3,8 +3,6 @@
 pub mod elf;
 mod shebang;
 
-use aster_rights::Full;
-
 use self::{
     elf::{load_elf_to_vmar, ElfHeaders, ElfLoadInfo},
     shebang::parse_shebang_line,
@@ -85,7 +83,7 @@ impl ProgramToLoad {
     /// Returns a tuple containing:
     /// 1. The absolute path of the loaded executable.
     /// 2. Information about the ELF loading process.
-    pub fn load_to_vmar(self, vmar: &Vmar<Full>, fs_resolver: &FsResolver) -> Result<ElfLoadInfo> {
+    pub fn load_to_vmar(self, vmar: &Vmar, fs_resolver: &FsResolver) -> Result<ElfLoadInfo> {
         let elf_headers = ElfHeaders::parse_elf(&*self.file_first_page)?;
         let elf_load_info = load_elf_to_vmar(
             vmar,

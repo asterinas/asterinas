@@ -153,13 +153,7 @@ impl PosixThreadBuilder {
         let fs =
             fs.unwrap_or_else(|| Arc::new(ThreadFsInfo::new(ns_proxy.mnt_ns().new_fs_resolver())));
 
-        let vmar = process
-            .upgrade()
-            .unwrap()
-            .lock_vmar()
-            .unwrap()
-            .dup()
-            .unwrap();
+        let vmar = process.upgrade().unwrap().lock_vmar().dup_vmar().unwrap();
 
         Arc::new_cyclic(|weak_task| {
             let posix_thread = {

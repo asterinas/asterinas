@@ -11,7 +11,7 @@ use crate::{
     process::{
         posix_thread::{allocate_posix_tid, PosixThreadBuilder, ThreadName},
         process_table,
-        process_vm::ProcessVm,
+        process_vm::new_vmar_and_map,
         rlimit::ResourceLimits,
         signal::sig_disposition::SigDispositions,
         Credentials, ProgramToLoad, UserNamespace,
@@ -44,7 +44,7 @@ fn create_init_process(
     envp: Vec<CString>,
 ) -> Result<Arc<Process>> {
     let pid = allocate_posix_tid();
-    let process_vm = ProcessVm::alloc();
+    let process_vm = new_vmar_and_map();
     let resource_limits = ResourceLimits::default();
     let nice = Nice::default();
     let oom_score_adj = 0;
@@ -62,14 +62,7 @@ fn create_init_process(
         user_ns,
     );
 
-    let init_task = create_init_task(
-        pid,
-        init_proc.vm(),
-        executable_path,
-        Arc::downgrade(&init_proc),
-        argv,
-        envp,
-    )?;
+    let init_task = create_init_task(pid, &init_proc, executable_path, argv, envp)?;
     init_proc.tasks().lock().insert(init_task).unwrap();
 
     Ok(init_proc)
@@ -95,9 +88,8 @@ fn set_session_and_group(process: &Arc<Process>) {
 /// Creates the init task from the given executable file.
 fn create_init_task(
     tid: Tid,
-    process_vm: &ProcessVm,
+    process: &Arc<Process>,
     executable_path: &str,
-    process: Weak<Process>,
     argv: Vec<CString>,
     envp: Vec<CString>,
 ) -> Result<Arc<Task>> {
@@ -112,8 +104,7 @@ fn create_init_task(
         let elf_file = fs.resolver().read().lookup(&fs_path)?;
         let program_to_load =
             ProgramToLoad::build_from_file(elf_file, &fs_resolver, argv, envp, 1)?;
-        process_vm.clear_and_map_heap();
-        let vmar = process_vm.lock_vmar();
+        let vmar = process.lock_vmar();
         program_to_load.load_to_vmar(vmar.unwrap(), &fs_resolver)?
     };
 
@@ -122,7 +113,7 @@ fn create_init_task(
     user_ctx.set_stack_pointer(elf_load_info.user_stack_top as _);
     let thread_name = ThreadName::new_from_executable_path(executable_path);
     let thread_builder = PosixThreadBuilder::new(tid, thread_name, Box::new(user_ctx), credentials)
-        .process(process)
+        .process(Arc::downgrade(process))
         .fs(Arc::new(fs))
         .is_init_process();
     Ok(thread_builder.build())

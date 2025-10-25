@@ -37,7 +37,7 @@ pub use process::{
     Pid, Process, ProcessGroup, ReapedChildrenStats, Session, Sid, Terminal,
 };
 pub use process_filter::ProcessFilter;
-pub use process_vm::{Heap, InitStack};
+pub use process_vm::ProcessVm;
 pub use program_loader::{check_executable_file, ProgramToLoad};
 pub use rlimit::ResourceType;
 pub use stats::collect_process_creation_count;

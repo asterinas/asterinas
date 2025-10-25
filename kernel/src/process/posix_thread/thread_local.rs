@@ -2,7 +2,6 @@
 
 use core::cell::{Cell, Ref, RefCell, RefMut};
 
-use aster_rights::Full;
 use ostd::{arch::cpu::context::FpuContext, mm::Vaddr, sync::RwArc, task::CurrentTask};
 
 use super::RobustListHead;
@@ -21,7 +20,7 @@ pub struct ThreadLocal {
     clear_child_tid: Cell<Vaddr>,
 
     // Virtual memory address regions.
-    vmar: RefCell<Option<Vmar<Full>>>,
+    vmar: RefCell<Option<Arc<Vmar>>>,
     page_fault_disabled: Cell<bool>,
 
     // Robust futexes.
@@ -56,7 +55,7 @@ impl ThreadLocal {
     pub(super) fn new(
         set_child_tid: Vaddr,
         clear_child_tid: Vaddr,
-        vmar: Vmar<Full>,
+        vmar: Arc<Vmar>,
         file_table: RwArc<FileTable>,
         fs: Arc<ThreadFsInfo>,
         fpu_context: FpuContext,
@@ -88,7 +87,7 @@ impl ThreadLocal {
         &self.clear_child_tid
     }
 
-    pub fn vmar(&self) -> &RefCell<Option<Vmar<Full>>> {
+    pub fn vmar(&self) -> &RefCell<Option<Arc<Vmar>>> {
         &self.vmar
     }
 

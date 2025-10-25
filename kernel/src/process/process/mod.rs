@@ -9,7 +9,7 @@ use self::timer_manager::PosixTimerManager;
 use super::{
     posix_thread::AsPosixThread,
     process_table,
-    process_vm::{ProcessVm, ProcessVmarGuard},
+    process_vm::ProcessVmarGuard,
     rlimit::ResourceLimits,
     signal::{
         sig_disposition::SigDispositions,
@@ -25,6 +25,7 @@ use crate::{
     sched::{AtomicNice, Nice},
     thread::{AsThread, Thread},
     time::clocks::ProfClock,
+    vm::vmar::Vmar,
 };
 
 mod init_proc;
@@ -71,7 +72,7 @@ pub struct Process {
     // Immutable Part
     pid: Pid,
 
-    process_vm: ProcessVm,
+    vmar: Mutex<Option<Arc<Vmar>>>,
     /// Wait for child status changed
     children_wait_queue: WaitQueue,
     pub(super) pidfile_pollee: Pollee,
@@ -204,7 +205,7 @@ impl Process {
     pub(super) fn new(
         pid: Pid,
         executable_path: String,
-        process_vm: ProcessVm,
+        vmar: Arc<Vmar>,
 
         resource_limits: ResourceLimits,
         nice: Nice,
@@ -222,7 +223,7 @@ impl Process {
             pid,
             tasks: Mutex::new(TaskSet::new()),
             executable_path: RwLock::new(executable_path),
-            process_vm,
+            vmar: Mutex::new(Some(vmar)),
             children_wait_queue,
             pidfile_pollee: Pollee::new(),
             status: ProcessStatus::default(),
@@ -610,12 +611,8 @@ impl Process {
 
     // ************** Virtual Memory *************
 
-    pub fn vm(&self) -> &ProcessVm {
-        &self.process_vm
-    }
-
     pub fn lock_vmar(&self) -> ProcessVmarGuard {
-        self.process_vm.lock_vmar()
+        ProcessVmarGuard::new(self.vmar.lock())
     }
 
     // ****************** Signal ******************

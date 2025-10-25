@@ -108,7 +108,7 @@ pub struct InitStack {
     /// Before initialized, `pos` points to the `initial_top`,
     /// After initialized, `pos` points to the user stack pointer(rsp)
     /// of the process.
-    pos: Arc<AtomicUsize>,
+    pos: AtomicUsize,
     argv_range: SpinLock<Range<Vaddr>>,
     envp_range: SpinLock<Range<Vaddr>>,
 }
@@ -118,7 +118,7 @@ impl Clone for InitStack {
         Self {
             initial_top: self.initial_top,
             max_size: self.max_size,
-            pos: Arc::new(AtomicUsize::new(self.pos.load(Ordering::Relaxed))),
+            pos: AtomicUsize::new(self.pos.load(Ordering::Relaxed)),
             argv_range: SpinLock::new(self.argv_range.lock().clone()),
             envp_range: SpinLock::new(self.envp_range.lock().clone()),
         }
@@ -146,7 +146,7 @@ impl InitStack {
         Self {
             initial_top,
             max_size,
-            pos: Arc::new(AtomicUsize::new(initial_top)),
+            pos: AtomicUsize::new(initial_top),
             argv_range: SpinLock::new(0..0),
             envp_range: SpinLock::new(0..0),
         }
@@ -165,7 +165,7 @@ impl InitStack {
     /// Maps the VMO of the init stack and constructs a writer to initialize its content.
     pub(super) fn map_and_write(
         &self,
-        vmar: &Vmar<Full>,
+        vmar: &Vmar,
         argv: Vec<CString>,
         envp: Vec<CString>,
         auxvec: AuxVec,
@@ -187,7 +187,7 @@ impl InitStack {
         vmar_map_options.build()?;
 
         let writer = InitStackWriter {
-            pos: self.pos.clone(),
+            pos: &self.pos,
             vmo,
             argv,
             envp,
@@ -204,7 +204,7 @@ impl InitStack {
 
     /// Constructs a reader to parse the content of an `InitStack`.
     /// The `InitStack` should only be read after initialized
-    pub(super) fn reader<'a>(&self, vmar: &'a Vmar<Full>) -> InitStackReader<'a> {
+    pub(super) fn reader<'a>(&self, vmar: &'a Vmar) -> InitStackReader<'a> {
         debug_assert!(self.is_initialized());
         InitStackReader {
             base: self.pos(),
@@ -229,8 +229,8 @@ impl InitStack {
 }
 
 /// A writer to initialize the content of an `InitStack`.
-struct InitStackWriter {
-    pos: Arc<AtomicUsize>,
+struct InitStackWriter<'a> {
+    pos: &'a AtomicUsize,
     vmo: Vmo<Full>,
     argv: Vec<CString>,
     envp: Vec<CString>,
@@ -239,7 +239,7 @@ struct InitStackWriter {
     map_addr: usize,
 }
 
-impl InitStackWriter {
+impl InitStackWriter<'_> {
     /// Writes the content to the init stack.
     ///
     /// Returns the range of argv and envp in the init stack.
@@ -397,7 +397,7 @@ fn generate_random_for_aux_vec() -> [u8; 16] {
 /// A reader to parse the content of an `InitStack`.
 pub struct InitStackReader<'a> {
     base: Vaddr,
-    vmar: &'a Vmar<Full>,
+    vmar: &'a Vmar,
     /// The mapping address of the `InitStack`.
     map_addr: usize,
     argv_range: Range<Vaddr>,

@@ -53,7 +53,7 @@ pub fn sys_msync(start: Vaddr, size: usize, flag: i32, ctx: &Context) -> Result<
     };
 
     let user_space = ctx.user_space();
-    let vmar = user_space.vmar().dup()?;
+    let vmar = user_space.vmar();
     let guard = vmar.query(range.clone());
     let mut mappings_iter = guard.iter();
 
