@@ -39,6 +39,7 @@ pub mod cpu;
 mod error;
 pub mod io;
 pub mod irq;
+pub mod ksym;
 pub mod logger;
 pub mod mm;
 pub mod panic;

@@ -210,7 +210,8 @@ OSDK_CRATES := \
 	kernel/comps/pci \
 	kernel/libs/aster-util \
 	kernel/libs/aster-bigtcp \
-	kernel/libs/xarray
+	kernel/libs/xarray \
+	kernel/libs/ksym-bin
 
 # OSDK dependencies
 OSDK_SRC_FILES := \
@@ -257,16 +258,27 @@ check_vdso:
 initramfs: check_vdso
 	@$(MAKE) --no-print-directory -C test
 
+KALLSYMS_PATH := ./target/osdk/aster-nix/kallsyms
+KALLSYMS_DST := ./test/src/proc/kallsyms
+
 .PHONY: build
 build: initramfs $(CARGO_OSDK)
 	@cd kernel && cargo osdk build $(CARGO_OSDK_BUILD_ARGS)
+	@if [ -f "$(KALLSYMS_PATH)" ]; then \
+		cp "$(KALLSYMS_PATH)" "$(KALLSYMS_DST)"; \
+	else \
+		echo "Warning: kallsyms not generated, skipping copy."; \
+	fi
+# 	remake initramfs to include the updated kallsyms
+	@make initramfs
+	@echo "// dummy kallsyms" > ./test/src/proc/kallsyms
 
 .PHONY: tools
 tools:
 	@cd kernel/libs/comp-sys && cargo install --path cargo-component
 
 .PHONY: run
-run: initramfs $(CARGO_OSDK)
+run: build
 	@cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS)
 # Check the running status of auto tests from the QEMU log
 ifeq ($(AUTO_TEST), syscall)

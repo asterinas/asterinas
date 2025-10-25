@@ -72,14 +72,20 @@ pub fn print_stack_trace() {
         counter: usize,
     }
     extern "C" fn callback(unwind_ctx: &UnwindContext<'_>, arg: *mut c_void) -> UnwindReasonCode {
+        let mut name_buf = [0u8; 1024];
         let data = unsafe { &mut *(arg as *mut CallbackData) };
         data.counter += 1;
         let pc = _Unwind_GetIP(unwind_ctx);
         if pc > 0 {
             let fde_initial_address = _Unwind_FindEnclosingFunction(pc as *mut c_void) as usize;
+            let symbol_info = super::ksym::KSYM
+                .get()
+                .and_then(|helper| helper.lookup_address(pc as u64, &mut name_buf))
+                .unwrap_or(("?", 0, 0, '?'));
             early_println!(
-                "{:4}: fn {:#18x} - pc {:#18x} / registers:",
+                "{:4}: {} {:#18x} - pc {:#18x} / registers:",
                 data.counter,
+                symbol_info.0,
                 fde_initial_address,
                 pc,
             );

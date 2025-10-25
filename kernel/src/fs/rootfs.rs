@@ -11,7 +11,6 @@ use super::{
     utils::{FileSystem, InodeMode, InodeType},
 };
 use crate::{fs::path::is_dot, prelude::*};
-
 struct BoxedReader<'a>(Box<dyn Read + 'a>);
 
 impl<'a> BoxedReader<'a> {
@@ -83,6 +82,17 @@ pub fn init_in_first_kthread(fs_resolver: &FsResolver) -> Result<()> {
         match metadata.file_type() {
             FileType::File => {
                 let path = parent.new_fs_child(name, InodeType::File, mode)?;
+                if name == "kallsyms" {
+                    let mut kallsyms_data = Vec::new();
+                    entry.read_all(&mut kallsyms_data)?;
+                    println!(
+                        "[kernel] initramfs: loading kernel symbols: {} bytes",
+                        kallsyms_data.len()
+                    );
+                    let kallsyms_data = kallsyms_data.leak();
+                    ostd::ksym::init_ksym(kallsyms_data);
+                    continue;
+                }
                 entry.read_all(path.inode().writer(0))?;
             }
             FileType::Dir => {
