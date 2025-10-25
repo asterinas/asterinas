@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 #![no_std]
 
 use alloc::string::String;
@@ -150,7 +152,7 @@ impl<'a> KallsymsMapped<'a> {
             let name =
                 self.expand_symbol(&self.kallsyms_names[start + PREFIX_LEN..end], &mut name_buf);
             use core::fmt::Write as _;
-            let _ = writeln!(out, "{:016x} {} {}", addr, ty as char, name);
+            let _ = writeln!(out, "{:016x} {ty} {}", addr, name);
         }
         out
     }
@@ -207,7 +209,7 @@ impl<'a> KallsymsMapped<'a> {
         }
         // little-endian: lo first, then hi
         // we skip the type byte
-        let len_lo = bytes[0 + TY_LEN] as u16;
+        let len_lo = bytes[TY_LEN] as u16;
         let len_hi = bytes[1 + TY_LEN] as u16;
         ((len_hi << 8) | len_lo, bytes[0] as char)
     }
@@ -300,7 +302,7 @@ impl<'a> KallsymsMapped<'a> {
             let end = start + PREFIX_LEN + len as usize;
             let mid_name =
                 self.expand_symbol(&self.kallsyms_names[start + PREFIX_LEN..end], &mut name_buf);
-            match name.cmp(&mid_name) {
+            match name.cmp(mid_name) {
                 core::cmp::Ordering::Equal => break,
                 core::cmp::Ordering::Less => high = mid - 1,
                 core::cmp::Ordering::Greater => low = mid + 1,
@@ -342,6 +344,6 @@ impl<'a> KallsymsMapped<'a> {
             }
         }
 
-        return Some((low, high));
+        Some((low, high))
     }
 }

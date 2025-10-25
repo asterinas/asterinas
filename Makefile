@@ -210,7 +210,8 @@ OSDK_CRATES := \
 	kernel/comps/pci \
 	kernel/libs/aster-util \
 	kernel/libs/aster-bigtcp \
-	kernel/libs/xarray
+	kernel/libs/xarray \
+	kernel/libs/ksym-bin
 
 # OSDK dependencies
 OSDK_SRC_FILES := \

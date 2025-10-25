@@ -4,3 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 description = "A Rust crate for generating kernel symbol tables (ksyms) from kernel binaries."
+
+[lints]
+workspace = true

@@ -1,4 +1,6 @@
-use std::{collections::HashMap, fmt::Debug, u64};
+// SPDX-License-Identifier: MPL-2.0
+
+use std::{collections::HashMap, fmt::Debug};
 
 const TOKEN_MARKER: u8 = 0xFF;
 
@@ -231,7 +233,7 @@ impl KallsymsBlob {
         // offsets [u32]
         pad(&mut blob, 4);
         for &off in &self.kallsyms_offsets {
-            blob.extend_from_slice(&(off as u32).to_le_bytes());
+            blob.extend_from_slice(&(off).to_le_bytes());
         }
         // seqs [u32]
         pad(&mut blob, 4);
@@ -272,7 +274,7 @@ pub fn symbol_info(line: &str) -> Option<(String, u64, char)> {
     if symbol.starts_with("_ZN") {
         symbol = format!("{:#}", rustc_demangle::demangle(&symbol));
     } else {
-        symbol = format!("{}", symbol);
+        symbol = symbol.to_string();
     }
     Some((symbol, vaddr, symbol_type))
 }

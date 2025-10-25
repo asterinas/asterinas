@@ -1,4 +1,6 @@
-// ! Kernel symbol table support.
+// SPDX-License-Identifier: MPL-2.0
+
+//! Kernel symbol table support.
 //!
 //! This module provides functionality to initialize and dump the kernel symbol table
 //! using the `ksym-bin` crate.
@@ -17,8 +19,9 @@ extern "C" {
 
 /// Initialize the kernel symbol table from the given ksym data blob.
 pub fn init_ksym(ksym_data: &'static [u8]) {
-    let kallsyms = KallsymsMapped::from_blob(ksym_data, __stext as u64, __etext as u64)
-        .expect("Failed to parse ksym data");
+    let kallsyms =
+        KallsymsMapped::from_blob(ksym_data, __stext as usize as u64, __etext as usize as u64)
+            .expect("Failed to parse ksym data");
     KSYM.call_once(|| kallsyms);
 }
 

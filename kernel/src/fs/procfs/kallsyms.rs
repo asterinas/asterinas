@@ -29,7 +29,7 @@ impl FileOps for KallsymsFileOps {
     fn data(&self) -> Result<Vec<u8>> {
         let data = ostd::ksym::dump_ksyms()
             .map(|sym| sym.into_bytes())
-            .unwrap_or(Vec::new());
+            .unwrap_or_default();
         Ok(data)
     }
 }
