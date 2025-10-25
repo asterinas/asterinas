@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 mod bin;
+mod gen_ksym;
 mod grub;
 mod qcow2;
-
 use std::{
     ffi::OsString,
     path::{Path, PathBuf},
@@ -58,42 +58,26 @@ fn try_generate_symbols(elf_path: &Path, out_dir: &Path) {
     }
 
     let text = String::from_utf8_lossy(&output.stdout);
+
+    let mut symbol_table = Vec::new();
+
     // Apply grep-style filters:
-    let mut filtered = String::new();
     for line in text.lines() {
+        let line = line.trim();
         let keep_tt = line.contains(" T ") || line.contains(" t ");
         let has_local_label = line.contains(".L");
         let has_dollar_x = line.contains("$x");
         if keep_tt && !has_local_label && !has_dollar_x {
-            filtered.push_str(line);
-            filtered.push('\n');
+            if let Some(item) = gen_ksym::symbol_info(line) {
+                symbol_table.push(item);
+            }
         }
     }
+    let mut blob = gen_ksym::KallsymsBlob::new();
+    blob.compress_symbols(&symbol_table);
+    let binary_blob = blob.to_blob();
 
-    let mut child = std::process::Command::new("gen_ksym")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .expect("Failed to spawn gen_ksym");
-    {
-        use std::io::Write;
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(filtered.as_bytes())
-            .expect("Failed to write to gen_ksym stdin");
-    }
-    let output = child
-        .wait_with_output()
-        .expect("Failed to read gen_ksym output");
-    if !output.status.success() {
-        info!("gen_ksym returned non-zero exit status; using unfiltered symbols");
-        if let Err(e) = std::fs::write(&kallsyms_path, filtered) {
-            info!("Failed to write {:?}: {}", kallsyms_path, e);
-        }
-        info!("kallsyms generated at: {:?}", kallsyms_path);
-        return;
-    }
-    if let Err(e) = std::fs::write(&kallsyms_path, &output.stdout) {
+    if let Err(e) = std::fs::write(&kallsyms_path, binary_blob) {
         info!("Failed to write {:?}: {}", kallsyms_path, e);
         return;
     }

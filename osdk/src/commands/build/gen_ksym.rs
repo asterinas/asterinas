@@ -1,6 +1,6 @@
-use std::{collections::HashMap, fmt::Debug, io::Write, u64};
+use std::{collections::HashMap, fmt::Debug, u64};
 
-use ksym_bin::TOKEN_MARKER;
+const TOKEN_MARKER: u8 = 0xFF;
 
 /// Candidate prefix lengths for heuristic tokenization
 // const PREFIX_CANDIDATE_LENS: &[usize] = &[8, 16, 24, 32, 64, 96, 128, 512, 1024, 2048];
@@ -261,7 +261,7 @@ impl KallsymsBlob {
     }
 }
 
-fn read_symbol(line: &str) -> Option<(String, u64, char)> {
+pub fn symbol_info(line: &str) -> Option<(String, u64, char)> {
     if line.len() > 4096 {
         panic!("The kernel symbol is too long: {}", line);
     }
@@ -269,14 +269,6 @@ fn read_symbol(line: &str) -> Option<(String, u64, char)> {
     let vaddr = u64::from_str_radix(parts.next()?, 16).ok()?;
     let symbol_type = parts.next()?.chars().next()?;
     let mut symbol = parts.collect::<Vec<_>>().join(" ");
-    // local symbol or global symbol in text section
-    if symbol_type != 'T' && symbol_type != 't' {
-        return None;
-    }
-    // skip $x symbol
-    if symbol.contains("$x") {
-        return None;
-    }
     if symbol.starts_with("_ZN") {
         symbol = format!("{:#}", rustc_demangle::demangle(&symbol));
     } else {
@@ -285,39 +277,11 @@ fn read_symbol(line: &str) -> Option<(String, u64, char)> {
     Some((symbol, vaddr, symbol_type))
 }
 
-fn read_map() -> Vec<(String, u64, char)> {
-    let mut symbol_table = Vec::new();
-    let mut line = String::new();
-    loop {
-        let size = std::io::stdin().read_line(&mut line).unwrap();
-        if size == 0 {
-            break;
-        }
-        line = line.trim().to_string();
-        if let Some(entry) = read_symbol(&line) {
-            symbol_table.push(entry);
-        }
-        line.clear();
-    }
-    symbol_table
-}
-
-fn main() {
-    let symbol_table = read_map();
-    let mut blob = KallsymsBlob::new();
-    blob.compress_symbols(&symbol_table);
-    let binary_blob = blob.to_blob();
-    // Output to stdout
-    std::io::stdout()
-        .write_all(&binary_blob)
-        .expect("Failed to write blob");
-}
-
 #[cfg(test)]
 mod tests {
-    use ksym_bin::KSYM_NAME_LEN;
+    const KSYM_NAME_LEN: usize = 1024;
 
-    use crate::KallsymsBlob;
+    use super::KallsymsBlob;
     #[test]
     fn test() {
         let symbols = r#"
@@ -330,7 +294,7 @@ mod tests {
     "#;
         let symbols: Vec<(String, u64, char)> = symbols
             .lines()
-            .filter_map(|line| super::read_symbol(line.trim()))
+            .filter_map(|line| super::symbol_info(line.trim()))
             .collect();
 
         println!("Original symbols: {:?}", symbols);
