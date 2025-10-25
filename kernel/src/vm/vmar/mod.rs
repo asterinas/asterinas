@@ -589,10 +589,14 @@ impl Vmar {
     ) -> Result<UFrame> {
         let mut item = self.query_page(vaddr)?;
 
-        if item
-            .as_ref()
-            .is_none_or(|item| !item.prop().flags.contains(required_page_flags))
-        {
+        let vm_item = loop {
+            match item {
+                Some(vm_item) if vm_item.prop().flags.contains(required_page_flags) => {
+                    break vm_item;
+                }
+                Some(_) | None => (),
+            }
+
             let page_fault_info = PageFaultInfo {
                 address: vaddr,
                 required_perms: required_page_flags.into(),
@@ -601,12 +605,13 @@ impl Vmar {
                 .map_err(|_| Error::with_message(Errno::EIO, "the page is not accessible"))?;
 
             item = self.query_page(vaddr)?;
-        }
 
-        let item = item.unwrap();
-        debug_assert!(item.prop().flags.contains(required_page_flags));
+            // Note that we are not holding `self.inner.lock()` here. Therefore, in race conditions
+            // (e.g., if the mapping is removed concurrently), we will need to try again. The same
+            // is true for real page faults; they may occur more than once at the same address.
+        };
 
-        match item {
+        match vm_item {
             VmQueriedItem::MappedRam { frame, .. } => Ok(frame),
             VmQueriedItem::MappedIoMem { .. } => {
                 return_errno_with_message!(
