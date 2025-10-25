@@ -1,5 +1,5 @@
 { lib, stdenvNoCC, fetchFromGitHub, hostPlatform, writeClosure, busybox, apps
-, benchmark, syscall, }:
+, benchmark, syscall, asterDns }:
 let
   etc = lib.fileset.toSource {
     root = ./../src/etc;
@@ -8,6 +8,10 @@ let
   gvisor_libs = builtins.path {
     name = "gvisor-libs";
     path = "/lib/x86_64-linux-gnu";
+  };
+  host_resolv_conf = builtins.path {
+    name = "host-resolv-conf";
+    path = "/etc/resolv.conf";
   };
   all_pkgs = [ busybox etc ] ++ lib.optionals (apps != null) [ apps.package ]
     ++ lib.optionals (benchmark != null) [ benchmark.package ]
@@ -25,6 +29,24 @@ in stdenvNoCC.mkDerivation {
     cp -r ${busybox}/bin/* $out/bin/
 
     cp -r ${etc}/* $out/etc/
+
+    RESOLV_CONF_FILE="$out/etc/resolv.conf"
+    if [ -n "${asterDns}" ] && [ "${asterDns}" != "none" ]; then
+      echo "nameserver ${asterDns}" > "$RESOLV_CONF_FILE"
+    else
+      if [ ! -f "${host_resolv_conf}" ]; then
+        echo "/etc/resolv.conf does not exist. resolv.conf is not generated"
+      else
+        FIRST_NAMESERVER=$(grep -oP '(?<=^nameserver\s)\S+' ${host_resolv_conf} | head -n 1)
+
+        if [ "$FIRST_NAMESERVER" = "127.0.0.53" ]; then
+          echo "Host DNS is managed by man:systemd-resolved(8). resolv.conf is not generated"
+        else
+          cp "${host_resolv_conf}" "$RESOLV_CONF_FILE"
+          echo "resolv.conf is generated from /etc/resolv.conf"
+        fi
+      fi
+    fi
 
     ${lib.optionalString (apps != null) ''
       cp -r ${apps.package}/* $out/test/

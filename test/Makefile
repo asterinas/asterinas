@@ -6,6 +6,7 @@ VERBOSE ?= 1
 SYSCALL_TEST_SUITE ?= ltp
 SYSCALL_TEST_WORKDIR ?= /tmp
 ENABLE_BASIC_TEST ?= false
+ASTER_DNS ?= none
 # Set Nix's cached tarballs to be live for a longer period of time (30 days) to avoid network traffics.
 # Nix's default value is rather small (1 hour or 3600 seconds).
 NIXPKGS_CACHE_TTL := 2592000 # In seconds
@@ -65,6 +66,7 @@ $(INITRAMFS_IMAGE): $(INITRAMFS)
 		--arg enableSyscallTest $(ENABLE_SYSCALL_TEST) \
 		--argstr syscallTestSuite $(SYSCALL_TEST_SUITE) \
 		--argstr syscallTestWorkDir $(SYSCALL_TEST_WORKDIR) \
+		--argstr asterDns ${ASTER_DNS} \
 		--arg initramfsCompressed $(INITRAMFS_COMPRESSED) \
 		--arg smp $(SMP) \
 		--out-link $@ \
@@ -80,6 +82,7 @@ $(INITRAMFS):
 		--arg enableSyscallTest $(ENABLE_SYSCALL_TEST) \
 		--argstr syscallTestSuite $(SYSCALL_TEST_SUITE) \
 		--argstr syscallTestWorkDir $(SYSCALL_TEST_WORKDIR) \
+		--argstr asterDns ${ASTER_DNS} \
 		--arg smp $(SMP) \
 		--out-link $@ \
 		nix -A initramfs
