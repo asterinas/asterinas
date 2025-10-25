@@ -15,6 +15,13 @@ pub(in crate::arch) fn init() {
     let mut cpu_count = 0;
 
     for cpu in device_tree.cpus() {
+        // FIXME: We should find a robust method to identify the management
+        // harts. Here we simply skip those harts without MMU, which is supposed
+        // to work in most cases.
+        if cpu.property("mmu-type").is_none() {
+            continue;
+        }
+
         cpu_count += 1;
 
         let cpu_isa_extensions = if let Some(isa_extensions) = cpu.property("riscv,isa-extensions")
