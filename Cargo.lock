@@ -86,7 +86,7 @@ dependencies = [
  "jhash",
  "ostd",
  "smoltcp",
- "spin",
+ "spin 0.9.8",
  "takeable",
 ]
 
@@ -101,7 +101,7 @@ dependencies = [
  "int-to-c-enum",
  "log",
  "ostd",
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -112,7 +112,7 @@ dependencies = [
  "font8x8",
  "int-to-c-enum",
  "ostd",
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -124,7 +124,7 @@ dependencies = [
  "component",
  "log",
  "ostd",
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -136,7 +136,7 @@ dependencies = [
  "component",
  "log",
  "ostd",
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -148,7 +148,7 @@ dependencies = [
  "component",
  "log",
  "ostd",
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -156,6 +156,9 @@ name = "aster-logger"
 version = "0.1.0"
 dependencies = [
  "aster-console",
+ "aster-framebuffer",
+ "aster-uart",
+ "aster-virtio",
  "component",
  "log",
  "ostd",
@@ -191,7 +194,7 @@ dependencies = [
  "bitvec",
  "component",
  "ostd",
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -213,6 +216,7 @@ dependencies = [
  "aster-softirq",
  "aster-systree",
  "aster-time",
+ "aster-uart",
  "aster-util",
  "aster-virtio",
  "atomic-integer-wrapper",
@@ -243,7 +247,7 @@ dependencies = [
  "paste",
  "rand",
  "riscv",
- "spin",
+ "spin 0.9.8",
  "takeable",
  "tdx-guest",
  "time",
@@ -264,7 +268,7 @@ dependencies = [
  "fdt",
  "log",
  "ostd",
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -294,7 +298,7 @@ dependencies = [
  "component",
  "intrusive-collections",
  "ostd",
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -306,7 +310,7 @@ dependencies = [
  "component",
  "inherit-methods-macro",
  "ostd",
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -318,7 +322,17 @@ dependencies = [
  "component",
  "log",
  "ostd",
- "spin",
+ "spin 0.9.8",
+]
+
+[[package]]
+name = "aster-uart"
+version = "0.1.0"
+dependencies = [
+ "aster-console",
+ "component",
+ "ostd",
+ "spin 0.10.0",
 ]
 
 [[package]]
@@ -353,7 +367,7 @@ dependencies = [
  "int-to-c-enum",
  "log",
  "ostd",
- "spin",
+ "spin 0.9.8",
  "tdx-guest",
  "typeflags-util",
 ]
@@ -859,7 +873,7 @@ dependencies = [
  "hash32 0.2.1",
  "rustc_version",
  "serde",
- "spin",
+ "spin 0.9.8",
  "stable_deref_trait",
 ]
 
@@ -979,7 +993,7 @@ version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 dependencies = [
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -1290,7 +1304,7 @@ dependencies = [
  "riscv",
  "sbi-rt",
  "smallvec",
- "spin",
+ "spin 0.9.8",
  "tdx-guest",
  "unwinding",
  "volatile 0.6.1",
@@ -1655,6 +1669,15 @@ name = "spin"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
+dependencies = [
+ "lock_api",
+]
+
+[[package]]
+name = "spin"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5fe4ccb98d9c292d56fec89a5e07da7fc4cf0dc11e156b41793132775d3e591"
 dependencies = [
  "lock_api",
 ]
