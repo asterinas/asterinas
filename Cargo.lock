@@ -571,15 +571,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "790eea4361631c5e7d22598ecd5723ff611904e3344ce8720784c93e3d83d40b"
 
 [[package]]
-name = "ctor"
-version = "0.1.25"
-source = "git+https://github.com/asterinas/rust-ctor#e30a5d960a3eccf79a7caddfa4de43b5dce424a0"
-dependencies = [
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
 name = "ctr"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -801,17 +792,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ghost"
-version = "0.1.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a8661f18e73000bcea2f0d68262eb8ac1b1e951e10eb936d3f95b36201c136d"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.101",
-]
-
-[[package]]
 name = "gimli"
 version = "0.28.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -957,11 +937,11 @@ dependencies = [
 
 [[package]]
 name = "inventory"
-version = "0.3.3"
-source = "git+https://github.com/asterinas/inventory?rev=9dce587#9dce58712d1cd1e51ff067634d42b5c5fea29f48"
+version = "0.3.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc61209c082fbeb19919bee74b176221b27223e27b65d781eb91af24eb1fb46e"
 dependencies = [
- "ctor",
- "ghost",
+ "rustversion",
 ]
 
 [[package]]
