@@ -64,3 +64,22 @@ foo64:
     mov rax, 1
     ret
 ```
+
+Functions that can be called from Rust code should also
+include the `.type` and `.size` directives.
+This will give debuggers a better understanding of the function.
+For example:
+```asm
+.global bar
+.type bar, @function
+bar:
+    mov rax, 2
+    ret
+.size bar, .-bar
+```
+Note that this rule explicitly limits the functions to
+those that can be called from Rust code.
+Therefore, it does not apply to boot entry points,
+exception trampolines, or interrupt trampolines.
+They may not fit into the typical definition of "function",
+and their sizes may be ill-defined.

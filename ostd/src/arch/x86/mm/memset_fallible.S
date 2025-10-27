@@ -10,6 +10,7 @@
 //
 // Ref: [https://github.com/torvalds/linux/blob/2ab79514109578fc4b6df90633d500cf281eb689/arch/x86/lib/memset_64.S]
 .global __memset_fallible
+.type __memset_fallible, @function
 __memset_fallible: # (dst: *mut u8, value: u8, size: usize) -> usize
     mov rcx, rdx           # Move the size to rcx for counting
     mov al, sil            # Move the value to al
@@ -18,6 +19,7 @@ __memset_fallible: # (dst: *mut u8, value: u8, size: usize) -> usize
 .memset_exit:
     mov rax, rcx           # Return the size remaining
     ret
+.size __memset_fallible, .-__memset_fallible
 
 .pushsection .ex_table, "a", @progbits
     .align 8

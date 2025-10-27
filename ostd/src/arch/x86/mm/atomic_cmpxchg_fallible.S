@@ -8,6 +8,7 @@
 //
 // Returns the previous value or `!0u64` if failed to update.
 .global __atomic_cmpxchg_fallible
+.type __atomic_cmpxchg_fallible, @function
 __atomic_cmpxchg_fallible: # (ptr: *mut u32, old_val: u32, new_val: u32) -> u64
     mov eax, esi
 .cmpxchg:
@@ -16,6 +17,7 @@ __atomic_cmpxchg_fallible: # (ptr: *mut u32, old_val: u32, new_val: u32) -> u64
 .cmpxchg_fault:
     mov rax, -1
     ret
+.size __atomic_cmpxchg_fallible, .-__atomic_cmpxchg_fallible
 
 .pushsection .ex_table, "a", @progbits
     .align 8

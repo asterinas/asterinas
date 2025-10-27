@@ -11,6 +11,7 @@
 //
 // Ref: [https://github.com/torvalds/linux/blob/2ab79514109578fc4b6df90633d500cf281eb689/arch/x86/lib/copy_user_64.S]
 .global __memcpy_fallible
+.type __memcpy_fallible, @function
 __memcpy_fallible: # (dst: *mut u8, src: *const u8, size: usize) -> usize
     mov rcx, rdx           # Move the size to rcx for counting
 .move:
@@ -18,6 +19,7 @@ __memcpy_fallible: # (dst: *mut u8, src: *const u8, size: usize) -> usize
 .memcpy_exit:
     mov rax, rcx           # Return the size remaining
     ret
+.size __memcpy_fallible, .-__memcpy_fallible
 
 .pushsection .ex_table, "a", @progbits
     .align 8

@@ -3,6 +3,7 @@
 .text
 
 .global context_switch
+.type context_switch, @function
 context_switch: # (nxt: *const TaskContext, cur: *mut TaskContext)
   # Save cur's register
   st.d  $sp, $a1, 0x0
@@ -20,6 +21,7 @@ context_switch: # (nxt: *const TaskContext, cur: *mut TaskContext)
   # Fallthrough
 
 .global first_context_switch
+.type first_context_switch, @function
 first_context_switch: # (nxt: *const TaskContext)
   # Restore nxt's registers
   ld.d  $sp, $a0, 0x0
@@ -34,11 +36,16 @@ first_context_switch: # (nxt: *const TaskContext)
   ld.d  $s7, $a0, 0x48
   ld.d  $s8, $a0, 0x50
   ld.d  $ra, $a0, 0x58 # return address
+
   ret
+.size context_switch, .-context_switch
+.size first_context_switch, .-first_context_switch
 
 .global kernel_task_entry_wrapper
+.type kernel_task_entry_wrapper, @function
 kernel_task_entry_wrapper:
   .cfi_startproc
   .cfi_undefined 1 # mark return address as undefined to indicate end of call stack
   bl kernel_task_entry
   .cfi_endproc
+.size kernel_task_entry_wrapper, .-kernel_task_entry_wrapper
