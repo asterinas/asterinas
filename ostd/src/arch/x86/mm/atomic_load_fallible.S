@@ -8,6 +8,7 @@
 //
 // Returns the loaded value or `!0u64` if failed to load.
 .global __atomic_load_fallible
+.type __atomic_load_fallible, @function
 __atomic_load_fallible: # (ptr: *const u32) -> u64;
 .load:
     mov eax, [rdi]
@@ -15,6 +16,7 @@ __atomic_load_fallible: # (ptr: *const u32) -> u64;
 .load_fault:
     mov rax, -1
     ret
+.size __atomic_load_fallible, .-__atomic_load_fallible
 
 .pushsection .ex_table, "a", @progbits
     .align 8
