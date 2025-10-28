@@ -132,12 +132,21 @@ fn init_and_map_vmos(
 
     let elf_map_range = map_segment_vmos(parsed_elf, vmar, elf_file)?;
 
-    let aux_vec = {
+    let mut aux_vec = {
         let ldso_base = ldso_load_info
             .as_ref()
             .map(|load_info| load_info.range.relocated_start);
         init_aux_vec(parsed_elf, elf_map_range.relocated_start, ldso_base)?
     };
+
+    // Set AT_SECURE based on setuid/setgid bits of the executable file.
+    let mode = elf_file.inode().mode()?;
+    let secure = if mode.has_set_uid() || mode.has_set_gid() {
+        1
+    } else {
+        0
+    };
+    aux_vec.set(AuxKey::AT_SECURE, secure)?;
 
     let entry_point = if let Some(ldso_load_info) = ldso_load_info {
         // Normal shared object
