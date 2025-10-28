@@ -10,7 +10,6 @@ use core::{
 
 use align_ext::AlignExt;
 use aster_block::BLOCK_SIZE;
-use aster_rights::Full;
 use hashbrown::HashSet;
 use inherit_methods_macro::inherit_methods;
 use ostd::{
@@ -445,7 +444,7 @@ impl OverlayInode {
         self.type_
     }
 
-    pub fn page_cache(&self) -> Option<Vmo<Full>> {
+    pub fn page_cache(&self) -> Option<Arc<Vmo>> {
         let _ = self.get_top_valid_inode().page_cache()?;
         // Do copy-up for the potential memory mapping operations
         let upper = self.build_upper_recursively_if_needed().unwrap();
@@ -928,7 +927,7 @@ impl Inode for OverlayInode {
     fn set_mtime(&self, time: Duration);
     fn ctime(&self) -> Duration;
     fn set_ctime(&self, time: Duration);
-    fn page_cache(&self) -> Option<Vmo<Full>>;
+    fn page_cache(&self) -> Option<Arc<Vmo>>;
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize>;
     fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize>;
     fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize>;

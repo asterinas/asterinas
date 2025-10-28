@@ -7,11 +7,10 @@ use core::{
 
 use align_ext::AlignExt;
 use aster_block::bio::BioWaiter;
-use aster_rights::Full;
 use aster_util::slot_vec::SlotVec;
 use hashbrown::HashMap;
 use ostd::{
-    mm::{io_util::HasVmReaderWriter, HasSize, VmIo},
+    mm::{io_util::HasVmReaderWriter, HasSize},
     sync::{PreemptDisabled, RwLockWriteGuard},
 };
 
@@ -529,10 +528,10 @@ impl PageCacheBackend for RamInode {
 }
 
 impl Inode for RamInode {
-    fn page_cache(&self) -> Option<Vmo<Full>> {
+    fn page_cache(&self) -> Option<Arc<Vmo>> {
         self.inner
             .as_file()
-            .map(|page_cache| page_cache.pages().dup())
+            .map(|page_cache| page_cache.pages().clone())
     }
 
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {

@@ -348,7 +348,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         unimplemented!("fs() method should be implemented by the concrete inode type");
     }
 
-    default fn page_cache(&self) -> Option<crate::vm::vmo::Vmo<aster_rights::Full>> {
+    default fn page_cache(&self) -> Option<Arc<crate::vm::vmo::Vmo>> {
         None
     }
 

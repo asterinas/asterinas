@@ -111,18 +111,18 @@ impl VmMapping {
         }
     }
 
-    pub(super) fn new_fork(&self) -> Result<VmMapping> {
-        Ok(VmMapping {
-            mapped_mem: self.mapped_mem.dup()?,
+    pub(super) fn new_fork(&self) -> VmMapping {
+        VmMapping {
+            mapped_mem: self.mapped_mem.dup(),
             inode: self.inode.clone(),
             ..*self
-        })
+        }
     }
 
-    pub(super) fn clone_for_remap_at(&self, va: Vaddr) -> Result<VmMapping> {
-        let mut vm_mapping = self.new_fork()?;
+    pub(super) fn clone_for_remap_at(&self, va: Vaddr) -> VmMapping {
+        let mut vm_mapping = self.new_fork();
         vm_mapping.map_to_addr = va;
-        Ok(vm_mapping)
+        vm_mapping
     }
 
     /// Returns the mapping's start address.
@@ -506,13 +506,11 @@ impl VmMapping {
         debug_assert!(self.map_to_addr < at && at < self.map_end());
         debug_assert!(at % PAGE_SIZE == 0);
 
-        let (l_mapped_mem, r_mapped_mem) = match &self.mapped_mem {
+        let (l_mapped_mem, r_mapped_mem) = match self.mapped_mem {
             MappedMemory::Vmo(vmo) => {
                 let at_offset = vmo.offset() + (at - self.map_to_addr);
-                (
-                    MappedMemory::Vmo(MappedVmo::new(vmo.vmo().dup()?, vmo.offset())),
-                    MappedMemory::Vmo(MappedVmo::new(vmo.vmo().dup()?, at_offset)),
-                )
+                let r_mapped_vmo = MappedVmo::new(vmo.vmo().clone(), at_offset);
+                (MappedMemory::Vmo(vmo), MappedMemory::Vmo(r_mapped_vmo))
             }
             MappedMemory::Anonymous => {
                 // For anonymous mappings, we create new anonymous mappings for the split parts
@@ -683,12 +681,12 @@ pub(super) enum MappedMemory {
 
 impl MappedMemory {
     /// Duplicates the mapped memory capability.
-    pub(super) fn dup(&self) -> Result<Self> {
-        Ok(match self {
+    pub(super) fn dup(&self) -> Self {
+        match self {
             MappedMemory::Anonymous => MappedMemory::Anonymous,
-            MappedMemory::Vmo(v) => MappedMemory::Vmo(v.dup()?),
+            MappedMemory::Vmo(v) => MappedMemory::Vmo(v.dup()),
             MappedMemory::Device => MappedMemory::Device,
-        })
+        }
     }
 }
 
@@ -696,14 +694,14 @@ impl MappedMemory {
 /// that need to be provided to mappings from the VMO.
 #[derive(Debug)]
 pub(super) struct MappedVmo {
-    vmo: Vmo,
+    vmo: Arc<Vmo>,
     /// Represents the mapped offset in the VMO for the mapping.
     offset: usize,
 }
 
 impl MappedVmo {
     /// Creates a `MappedVmo` used for the mapping.
-    pub(super) fn new(vmo: Vmo, offset: usize) -> Self {
+    pub(super) fn new(vmo: Arc<Vmo>, offset: usize) -> Self {
         Self { vmo, offset }
     }
 
@@ -758,7 +756,7 @@ impl MappedVmo {
     }
 
     /// Gets a reference to the underlying VMO.
-    pub fn vmo(&self) -> &Vmo {
+    pub fn vmo(&self) -> &Arc<Vmo> {
         &self.vmo
     }
 
@@ -768,11 +766,11 @@ impl MappedVmo {
     }
 
     /// Duplicates the capability.
-    pub fn dup(&self) -> Result<Self> {
-        Ok(Self {
-            vmo: self.vmo.dup()?,
+    pub fn dup(&self) -> Self {
+        Self {
+            vmo: self.vmo.clone(),
             offset: self.offset,
-        })
+        }
     }
 }
 
@@ -802,13 +800,13 @@ fn try_merge(left: &VmMapping, right: &VmMapping) -> Option<VmMapping> {
             let l_vmo = l_vmo_obj.vmo();
             let r_vmo = r_vmo_obj.vmo();
 
-            if Arc::ptr_eq(&l_vmo.0, &r_vmo.0) {
+            if Arc::ptr_eq(l_vmo, r_vmo) {
                 let is_offset_contiguous =
                     l_vmo_obj.offset() + left.map_size() == r_vmo_obj.offset();
                 if !is_offset_contiguous {
                     return None;
                 }
-                MappedMemory::Vmo(l_vmo_obj.dup().ok()?)
+                MappedMemory::Vmo(l_vmo_obj.dup())
             } else {
                 return None;
             }

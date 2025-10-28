@@ -11,19 +11,18 @@ use core::{
 };
 
 use align_ext::AlignExt;
-use aster_rights::Rights;
 use ostd::{
-    mm::{io_util::HasVmReaderWriter, FrameAllocOptions, UFrame, VmReader, VmWriter},
+    mm::{
+        io_util::HasVmReaderWriter, FrameAllocOptions, UFrame, VmIo, VmIoFill, VmReader, VmWriter,
+    },
     task::disable_preempt,
 };
 use xarray::{Cursor, LockedXArray, XArray};
 
 use crate::prelude::*;
 
-mod dyn_cap;
 mod options;
 mod pager;
-mod static_cap;
 
 pub use options::VmoOptions;
 pub use pager::Pager;
@@ -31,14 +30,17 @@ pub use pager::Pager;
 /// Virtual Memory Objects (VMOs) are a type of capability that represents a
 /// range of memory pages.
 ///
+/// Broadly speaking, there are two types of VMO:
+/// 1. File-backed VMO: the VMO backed by a file and resides in the page cache,
+///    which includes a [`Pager`] to provide it with actual pages.
+/// 2. Anonymous VMO: the VMO without a file backup, which does not have a `Pager`.
+///
 /// # Features
 ///
 ///  * **I/O interface.** A VMO provides read and write methods to access the
 ///    memory pages that it contain.
 ///  * **On-demand paging.** The memory pages of a VMO (except for _contiguous_
 ///    VMOs) are allocated lazily when the page is first accessed.
-///  * **Access control.** As capabilities, VMOs restrict the
-///    accessible range of memory and the allowed I/O operations.
 ///  * **Device driver support.** If specified upon creation, VMOs will be
 ///    backed by physically contiguous memory pages starting at a target address.
 ///  * **File system support.** By default, a VMO's memory pages are initially
@@ -46,22 +48,6 @@ pub use pager::Pager;
 ///    then its memory pages will be populated by the pager.
 ///    With this pager mechanism, file systems can easily implement page caches
 ///    with VMOs by attaching the VMOs to pagers backed by inodes.
-///
-/// # Capabilities
-///
-/// As a capability, each VMO is associated with a set of access rights,
-/// whose semantics are explained below.
-///
-///  * The Dup right allows duplicating a VMO and creating children out of
-///    a VMO.
-///  * The Read, Write, Exec rights allow creating memory mappings with
-///    readable, writable, and executable access permissions, respectively.
-///  * The Read and Write rights allow the VMO to be read from and written to
-///    directly.
-///  * The Write right allows resizing a resizable VMO.
-///
-/// VMOs are implemented with two flavors of capabilities:
-/// the dynamic one (`Vmo<Rights>`) and the static one (`Vmo<R: TRights>).
 ///
 /// # Examples
 ///
@@ -74,27 +60,28 @@ pub use pager::Pager;
 /// Compared with `UFrame`,
 /// `Vmo` is easier to use (by offering more powerful APIs) and
 /// harder to misuse (thanks to its nature of being capability).
-#[derive(Debug)]
-pub struct Vmo<R = Rights>(pub(super) Arc<Vmo_>, R);
+pub struct Vmo {
+    pager: Option<Arc<dyn Pager>>,
+    /// Flags
+    flags: VmoFlags,
+    /// The virtual pages where the VMO resides.
+    pages: XArray<UFrame>,
+    /// The size of the VMO.
+    ///
+    /// Note: This size may not necessarily match the size of the `pages`, but it is
+    /// required here that modifications to the size can only be made after locking
+    /// the [`XArray`] in the `pages` field. Therefore, the size read after locking the
+    /// `pages` will be the latest size.
+    size: AtomicUsize,
+}
 
-/// Functions exist both for static capbility and dynamic capability
-pub trait VmoRightsOp {
-    /// Returns the access rights.
-    fn rights(&self) -> Rights;
-
-    /// Checks whether current rights meet the input `rights`.
-    fn check_rights(&self, rights: Rights) -> Result<()> {
-        if self.rights().contains(rights) {
-            Ok(())
-        } else {
-            return_errno_with_message!(Errno::EACCES, "VMO rights are insufficient");
-        }
+impl Debug for Vmo {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Vmo")
+            .field("flags", &self.flags)
+            .field("size", &self.size())
+            .finish()
     }
-
-    /// Converts to a dynamic capability.
-    fn to_dyn(self) -> Vmo<Rights>
-    where
-        Self: Sized;
 }
 
 bitflags! {
@@ -136,36 +123,6 @@ impl From<ostd::Error> for VmoCommitError {
     }
 }
 
-/// `Vmo_` is the structure that actually manages the content of VMO.
-///
-/// Broadly speaking, there are two types of VMO:
-/// 1. File-backed VMO: the VMO backed by a file and resides in the page cache,
-///    which includes a [`Pager`] to provide it with actual pages.
-/// 2. Anonymous VMO: the VMO without a file backup, which does not have a `Pager`.
-pub(super) struct Vmo_ {
-    pager: Option<Arc<dyn Pager>>,
-    /// Flags
-    flags: VmoFlags,
-    /// The virtual pages where the VMO resides.
-    pages: XArray<UFrame>,
-    /// The size of the VMO.
-    ///
-    /// Note: This size may not necessarily match the size of the `pages`, but it is
-    /// required here that modifications to the size can only be made after locking
-    /// the [`XArray`] in the `pages` field. Therefore, the size read after locking the
-    /// `pages` will be the latest size.
-    size: AtomicUsize,
-}
-
-impl Debug for Vmo_ {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("Vmo_")
-            .field("flags", &self.flags)
-            .field("size", &self.size())
-            .finish()
-    }
-}
-
 bitflags! {
     /// Commit Flags.
     pub struct CommitFlags: u8 {
@@ -181,7 +138,7 @@ impl CommitFlags {
     }
 }
 
-impl Vmo_ {
+impl Vmo {
     /// Prepares a new `UFrame` for the target index in pages, returns this new frame.
     ///
     /// This operation may involve I/O operations if the VMO is backed by a pager.
@@ -324,6 +281,10 @@ impl Vmo_ {
     }
 
     /// Decommits a range of pages in the VMO.
+    ///
+    /// The range must be within the size of the VMO.
+    ///
+    /// The start and end addresses will be rounded down and up to page boundaries.
     pub fn decommit(&self, range: Range<usize>) -> Result<()> {
         let locked_pages = self.pages.lock();
         if range.end > self.size() {
@@ -401,7 +362,7 @@ impl Vmo_ {
         Ok(())
     }
 
-    /// Clears the target range in current VMO.
+    /// Clears the target range in current VMO by writing zeros.
     pub fn clear(&self, range: Range<usize>) -> Result<()> {
         let buffer = vec![0u8; range.end - range.start];
         let mut reader = VmReader::from(buffer.as_slice()).to_fallible();
@@ -415,6 +376,10 @@ impl Vmo_ {
     }
 
     /// Resizes current VMO to target size.
+    ///
+    /// The VMO must be resizable.
+    ///
+    /// The new size will be rounded up to page boundaries.
     pub fn resize(&self, new_size: usize) -> Result<()> {
         assert!(self.flags.contains(VmoFlags::RESIZABLE));
         let new_size = new_size.align_up(PAGE_SIZE);
@@ -473,6 +438,7 @@ impl Vmo_ {
         self.flags
     }
 
+    /// Replaces the page at the `page_idx` in the VMO with the input `page`.
     fn replace(&self, page: UFrame, page_idx: usize) -> Result<()> {
         let mut locked_pages = self.pages.lock();
         if page_idx >= self.size() / PAGE_SIZE {
@@ -484,15 +450,32 @@ impl Vmo_ {
     }
 }
 
-impl<R> Vmo<R> {
-    /// Returns the size (in bytes) of a VMO.
-    pub fn size(&self) -> usize {
-        self.0.size()
+impl VmIo for Vmo {
+    fn read(&self, offset: usize, writer: &mut VmWriter) -> ostd::Result<()> {
+        self.read(offset, writer)?;
+        Ok(())
     }
 
-    /// Returns the flags of a VMO.
-    pub fn flags(&self) -> VmoFlags {
-        self.0.flags()
+    fn write(&self, offset: usize, reader: &mut VmReader) -> ostd::Result<()> {
+        self.write(offset, reader)?;
+        Ok(())
+    }
+}
+
+impl VmIoFill for Vmo {
+    fn fill_zeros(
+        &self,
+        offset: usize,
+        len: usize,
+    ) -> core::result::Result<(), (ostd::Error, usize)> {
+        // TODO: Support efficient `fill_zeros()`.
+        for i in 0..len {
+            match self.write_slice(offset + i, &[0u8]) {
+                Ok(()) => continue,
+                Err(err) => return Err((err, i)),
+            }
+        }
+        Ok(())
     }
 }
 

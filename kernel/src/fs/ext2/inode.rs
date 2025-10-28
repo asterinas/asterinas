@@ -82,8 +82,8 @@ impl Inode {
         self.fs.upgrade().unwrap()
     }
 
-    pub fn page_cache(&self) -> Vmo<Full> {
-        self.inner.read().page_cache.pages().dup()
+    pub fn page_cache(&self) -> Arc<Vmo> {
+        self.inner.read().page_cache.pages().clone()
     }
 
     pub fn metadata(&self) -> Metadata {

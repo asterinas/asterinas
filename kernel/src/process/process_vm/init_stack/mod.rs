@@ -19,7 +19,6 @@ use core::{
 };
 
 use align_ext::AlignExt;
-use aster_rights::Full;
 use ostd::mm::{VmIo, MAX_USERSPACE_VADDR};
 
 use self::aux_vec::{AuxKey, AuxVec};
@@ -29,7 +28,7 @@ use crate::{
     vm::{
         perms::VmPerms,
         vmar::Vmar,
-        vmo::{Vmo, VmoOptions, VmoRightsOp},
+        vmo::{Vmo, VmoOptions},
     },
 };
 
@@ -173,7 +172,7 @@ impl InitStack {
         self.set_uninitialized();
 
         let vmo = {
-            let vmo_options = VmoOptions::<Full>::new(self.max_size);
+            let vmo_options = VmoOptions::new(self.max_size);
             vmo_options.alloc()?
         };
         let vmar_map_options = {
@@ -182,7 +181,7 @@ impl InitStack {
             debug_assert!(map_addr % PAGE_SIZE == 0);
             vmar.new_map(self.max_size, perms)?
                 .offset(map_addr)
-                .vmo(vmo.dup().to_dyn())
+                .vmo(vmo.clone())
         };
         vmar_map_options.build()?;
 
@@ -231,7 +230,7 @@ impl InitStack {
 /// A writer to initialize the content of an `InitStack`.
 struct InitStackWriter<'a> {
     pos: &'a AtomicUsize,
-    vmo: Vmo<Full>,
+    vmo: Arc<Vmo>,
     argv: Vec<CString>,
     envp: Vec<CString>,
     auxvec: AuxVec,

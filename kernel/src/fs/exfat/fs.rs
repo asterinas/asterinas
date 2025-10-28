@@ -98,17 +98,12 @@ impl ExfatFs {
 
         let root = ExfatInode::build_root_inode(weak_fs.clone(), root_chain.clone())?;
 
-        let upcase_table = ExfatUpcaseTable::load(
-            weak_fs.clone(),
-            root.page_cache().unwrap(),
-            root_chain.clone(),
-        )?;
+        let root_page_cache = root.page_cache().unwrap();
 
-        let bitmap = ExfatBitmap::load(
-            weak_fs.clone(),
-            root.page_cache().unwrap(),
-            root_chain.clone(),
-        )?;
+        let upcase_table =
+            ExfatUpcaseTable::load(weak_fs.clone(), &root_page_cache, root_chain.clone())?;
+
+        let bitmap = ExfatBitmap::load(weak_fs.clone(), &root_page_cache, root_chain.clone())?;
 
         *exfat_fs.bitmap.lock() = bitmap;
         *exfat_fs.upcase_table.lock() = upcase_table;

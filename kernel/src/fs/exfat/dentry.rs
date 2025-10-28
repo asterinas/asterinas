@@ -2,7 +2,6 @@
 
 use core::{fmt::Display, ops::Range};
 
-use aster_rights::Full;
 use ostd::mm::VmIo;
 
 use super::{
@@ -278,7 +277,7 @@ impl ExfatDentrySet {
         Self::new(dentries, false)
     }
 
-    pub(super) fn read_from(page_cache: Vmo<Full>, offset: usize) -> Result<Self> {
+    pub(super) fn read_from(page_cache: &Vmo, offset: usize) -> Result<Self> {
         let mut iter = ExfatDentryIterator::new(page_cache, offset, None)?;
         let primary_dentry_result = iter.next();
 
@@ -439,17 +438,17 @@ impl Checksum for ExfatDentrySet {
     }
 }
 
-pub(super) struct ExfatDentryIterator {
+pub(super) struct ExfatDentryIterator<'a> {
     /// The dentry position in current inode.
     entry: u32,
     /// The page cache of the iterated inode.
-    page_cache: Vmo<Full>,
+    page_cache: &'a Vmo,
     /// Remaining size that can be iterated. If none, iterate through the whole cluster chain.
     size: Option<usize>,
 }
 
-impl ExfatDentryIterator {
-    pub fn new(page_cache: Vmo<Full>, offset: usize, size: Option<usize>) -> Result<Self> {
+impl<'a> ExfatDentryIterator<'a> {
+    pub fn new(page_cache: &'a Vmo, offset: usize, size: Option<usize>) -> Result<Self> {
         if size.is_some() && size.unwrap() % DENTRY_SIZE != 0 {
             return_errno_with_message!(Errno::EINVAL, "remaining size unaligned to dentry size")
         }
@@ -466,7 +465,7 @@ impl ExfatDentryIterator {
     }
 }
 
-impl Iterator for ExfatDentryIterator {
+impl Iterator for ExfatDentryIterator<'_> {
     type Item = Result<ExfatDentry>;
 
     fn next(&mut self) -> Option<Self::Item> {

@@ -4,8 +4,6 @@
 
 use core::time::Duration;
 
-use aster_rights::Full;
-
 use crate::{
     fs::{
         ext2::{FilePerm, Inode as Ext2Inode},
@@ -91,7 +89,7 @@ impl Inode for Ext2Inode {
         Ok(())
     }
 
-    fn page_cache(&self) -> Option<Vmo<Full>> {
+    fn page_cache(&self) -> Option<Arc<Vmo>> {
         Some(self.page_cache())
     }
 
