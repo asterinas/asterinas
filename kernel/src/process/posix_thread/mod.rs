@@ -6,15 +6,7 @@ use aster_rights::{ReadDupOp, ReadOp, WriteOp};
 use ostd::sync::{RoArc, RwMutexReadGuard, Waker};
 
 use super::{
-    kill::SignalSenderIds,
-    signal::{
-        sig_disposition::SigDispositions,
-        sig_mask::{AtomicSigMask, SigMask, SigSet},
-        sig_num::SigNum,
-        sig_queues::SigQueues,
-        signals::Signal,
-        SigEvents, SigEventsFilter,
-    },
+    signal::{sig_mask::AtomicSigMask, sig_num::SigNum, sig_queues::SigQueues, signals::Signal},
     Credentials, Process,
 };
 use crate::{
@@ -22,8 +14,11 @@ use crate::{
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
     process::{
+        kill::SignalSenderIds,
         namespace::nsproxy::NsProxy,
-        signal::constants::{SIGCONT, SIGKILL},
+        signal::{
+            constants::SIGCONT, sig_disposition::SigDispositions, SigEvents, SigEventsFilter,
+        },
         Pid,
     },
     thread::{Thread, Tid},
@@ -141,25 +136,12 @@ impl PosixThread {
         &self.sig_mask
     }
 
-    pub fn sig_pending(&self) -> SigSet {
-        self.sig_queues.sig_pending()
-    }
-
-    /// Returns whether the thread has some pending signals
-    /// that are not blocked.
-    pub fn has_pending(&self) -> bool {
-        let blocked = self.sig_mask().load(Ordering::Relaxed);
-        self.sig_queues.has_pending(blocked)
-    }
-
-    /// Returns whether the thread has pending SIGKILL signal.
-    pub fn has_pending_sigkill(&self) -> bool {
-        let blocked = SigSet::new_full() - SIGKILL;
-        self.sig_queues.has_pending(blocked)
+    pub(super) fn sig_queues(&self) -> &SigQueues {
+        &self.sig_queues
     }
 
     /// Returns whether the signal is blocked by the thread.
-    pub(in crate::process) fn has_signal_blocked(&self, signum: SigNum) -> bool {
+    pub fn has_signal_blocked(&self, signum: SigNum) -> bool {
         // FIXME: Some signals cannot be blocked, even set in sig_mask.
         self.sig_mask.contains(signum, Ordering::Relaxed)
     }
@@ -242,20 +224,12 @@ impl PosixThread {
 
     /// Enqueues a thread-directed signal.
     ///
-    /// This method does not perform permission checks on user signals. Therefore, unless the
-    /// caller can ensure that there are no permission issues, this method should be used for
-    /// enqueue kernel signals or fault signals.
+    /// This method does not perform permission checks on user signals.
+    /// Therefore, unless the caller can ensure that there are no permission issues,
+    /// this method should be used to enqueue kernel signals or fault signals.
     pub fn enqueue_signal(&self, signal: Box<dyn Signal>) {
-        let process = self.process();
-        let sig_dispositions = process.sig_dispositions().lock();
-        let sig_dispositions = sig_dispositions.lock();
-
-        let signum = signal.num();
-        if sig_dispositions.get(signum).will_ignore(signum) {
-            return;
-        }
-
-        self.enqueue_signal_locked(signal, &sig_dispositions);
+        self.sig_queues.enqueue(signal);
+        self.wake_signalled_waker();
     }
 
     /// Enqueues a thread-directed signal with locked dispositions.
@@ -303,10 +277,6 @@ impl PosixThread {
     /// If any have timed out, call the corresponding callback functions.
     pub fn process_expired_timers(&self) {
         self.prof_timer_manager.process_expired_timers();
-    }
-
-    pub fn dequeue_signal(&self, mask: &SigMask) -> Option<Box<dyn Signal>> {
-        self.sig_queues.dequeue(mask)
     }
 
     pub fn register_sigqueue_observer(

@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{constants::*, sig_action::SigAction, sig_num::SigNum};
-use crate::{prelude::*, process::signal::sig_action::SigActionFlags};
+use crate::{
+    prelude::*,
+    process::signal::{sig_action::SigActionFlags, signals::Signal},
+};
 
 #[derive(Copy, Clone)]
 pub struct SigDispositions {
@@ -52,6 +55,11 @@ impl SigDispositions {
 
     fn num_to_idx(num: SigNum) -> usize {
         (num.as_u8() - MIN_STD_SIG_NUM) as usize
+    }
+
+    pub fn will_ignore(&self, signal: &dyn Signal) -> bool {
+        let signum = signal.num();
+        self.get(signum).will_ignore(signum)
     }
 }
 

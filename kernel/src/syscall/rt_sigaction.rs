@@ -11,6 +11,7 @@ use crate::{
             sig_action::SigAction,
             sig_mask::SigSet,
             sig_num::SigNum,
+            HandlePendingSignal,
         },
     },
 };
@@ -49,7 +50,10 @@ pub fn sys_rt_sigaction(
         let sig_action_c = ctx.user_space().read_val::<sigaction_t>(sig_action_addr)?;
         let sig_action = SigAction::from(sig_action_c);
         trace!("sig action = {:?}", sig_action);
-        discard_signals_if_ignored(ctx, sig_num, &sig_action);
+        if sig_action.will_ignore(sig_num) {
+            discard_signals_if_ignored(ctx, sig_num);
+        }
+
         sig_dispositions.set(sig_num, sig_action)?
     } else {
         sig_dispositions.get(sig_num)
@@ -77,11 +81,7 @@ pub fn sys_rt_sigaction(
 // pending and whose default action is to ignore the signal
 // (for example, SIGCHLD), shall cause the pending signal to
 // be discarded, whether or not it is blocked
-fn discard_signals_if_ignored(ctx: &Context, signum: SigNum, sig_action: &SigAction) {
-    if !sig_action.will_ignore(signum) {
-        return;
-    }
-
+fn discard_signals_if_ignored(ctx: &Context, signum: SigNum) {
     let mask = SigSet::new_full() - signum;
 
     for task in ctx.process.tasks().lock().as_slice() {
@@ -89,6 +89,6 @@ fn discard_signals_if_ignored(ctx: &Context, signum: SigNum, sig_action: &SigAct
             continue;
         };
 
-        posix_thread.dequeue_signal(&mask);
+        while posix_thread.dequeue_signal(&mask).is_some() {}
     }
 }
