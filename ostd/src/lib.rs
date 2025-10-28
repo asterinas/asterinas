@@ -161,6 +161,13 @@ fn invoke_ffi_init_funcs() {
     }
 }
 
+mod feature_validation {
+    #[cfg(all(not(target_arch = "riscv64"), feature = "riscv_sv39_mode"))]
+    compile_error!(
+        "feature \"riscv_sv39_mode\" cannot be specified for architectures other than RISC-V"
+    );
+}
+
 /// Simple unit tests for the ktest framework.
 #[cfg(ktest)]
 mod test {
