@@ -161,7 +161,11 @@ impl IoApicAccess {
     /// I/O Window (data).
     const MMIO_WIN: usize = 0x10;
     /// The size of the MMIO region.
-    const MMIO_SIZE: usize = 0x20;
+    ///
+    /// I/O APICs only have two MMIO registers, at offsets 0x00 and 0x10. Therefore, the size of
+    /// the MMIO region may be 0x20. However, we use a page here because (1) multiple I/O APICs
+    /// typically use different MMIO pages and (2) TD guests do not support sub-page MMIO regions.
+    const MMIO_SIZE: usize = crate::mm::PAGE_SIZE;
 
     /// IOAPIC ID.
     const IOAPICID: u8 = 0x00;
