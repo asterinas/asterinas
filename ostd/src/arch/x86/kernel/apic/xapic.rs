@@ -145,4 +145,8 @@ pub(super) unsafe fn read_xapic_base_address() -> usize {
 }
 
 /// The size of the xAPIC MMIO region.
-pub(super) const XAPIC_MMIO_SIZE: usize = size_of::<[u32; 256]>();
+///
+/// Intel(R) 64 and IA-32 Architectures Software Developer's Manual, CHAPTER 11 ADVANCED
+/// PROGRAMMABLE INTERRUPT CONTROLLER (APIC) says "The local-APIC register-address space comprises
+/// the 4 KBytes at the physical address specified in the IA32_APIC_BASE MSR."
+pub(super) const XAPIC_MMIO_SIZE: usize = crate::mm::PAGE_SIZE;
