@@ -140,7 +140,6 @@ pub struct Process {
 
     // Namespaces
     /// The user namespace
-    #[expect(dead_code)]
     user_ns: Mutex<Arc<UserNamespace>>,
 }
 
@@ -782,6 +781,10 @@ impl Process {
                 }
             }
         }
+    }
+
+    pub fn user_ns(&self) -> &Mutex<Arc<UserNamespace>> {
+        &self.user_ns
     }
 }
 

@@ -119,8 +119,7 @@ impl PipeWriter {
 
         let res = self.state.write_with(write);
         if res.is_err_and(|e| e.error() == Errno::EPIPE) {
-            let thread = current_thread!();
-            if let Some(posix_thread) = thread.as_posix_thread() {
+            if let Some(posix_thread) = current_thread!().as_posix_thread() {
                 posix_thread.enqueue_signal(Box::new(UserSignal::new(
                     SIGPIPE,
                     UserSignalKind::Kill,
