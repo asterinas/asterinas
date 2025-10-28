@@ -6,21 +6,17 @@ use aster_rights::{ReadDupOp, ReadOp, WriteOp};
 use ostd::sync::{RoArc, RwMutexReadGuard, Waker};
 
 use super::{
-    signal::{sig_mask::AtomicSigMask, sig_num::SigNum, sig_queues::SigQueues, signals::Signal},
+    signal::{
+        sig_mask::AtomicSigMask, sig_num::SigNum, sig_queues::SigQueues, signals::Signal,
+        SigEvents, SigEventsFilter,
+    },
     Credentials, Process,
 };
 use crate::{
     events::Observer,
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
-    process::{
-        kill::SignalSenderIds,
-        namespace::nsproxy::NsProxy,
-        signal::{
-            constants::SIGCONT, sig_disposition::SigDispositions, SigEvents, SigEventsFilter,
-        },
-        Pid,
-    },
+    process::{namespace::nsproxy::NsProxy, Pid},
     thread::{Thread, Tid},
     time::{clocks::ProfClock, Timer, TimerManager},
 };
@@ -146,55 +142,6 @@ impl PosixThread {
         self.sig_mask.contains(signum, Ordering::Relaxed)
     }
 
-    /// Checks whether the signal can be delivered to the thread.
-    ///
-    /// For a signal can be delivered to the thread, the sending thread must either
-    /// be privileged, or the real or effective user ID of the sending thread must equal
-    /// the real or saved set-user-ID of the target thread.
-    ///
-    /// For SIGCONT, the sending and receiving processes should belong to the same session.
-    pub(in crate::process) fn check_signal_perm(
-        &self,
-        signum: Option<&SigNum>,
-        sender: &SignalSenderIds,
-    ) -> Result<()> {
-        if sender.euid().is_root() {
-            return Ok(());
-        }
-
-        if let Some(signum) = signum
-            && *signum == SIGCONT
-        {
-            let receiver_sid = self.process().sid();
-            if receiver_sid == sender.sid().unwrap() {
-                return Ok(());
-            }
-
-            return_errno_with_message!(
-                Errno::EPERM,
-                "sigcont requires that sender and receiver belongs to the same session"
-            );
-        }
-
-        let (receiver_ruid, receiver_suid) = {
-            let credentials = self.credentials();
-            (credentials.ruid(), credentials.suid())
-        };
-
-        // FIXME: further check the below code to ensure the behavior is same as Linux. According
-        // to man(2) kill, the real or effective user ID of the sending process must equal the
-        // real or saved set-user-ID of the target process.
-        if sender.ruid() == receiver_ruid
-            || sender.ruid() == receiver_suid
-            || sender.euid() == receiver_ruid
-            || sender.euid() == receiver_suid
-        {
-            return Ok(());
-        }
-
-        return_errno_with_message!(Errno::EPERM, "sending signal to the thread is not allowed.");
-    }
-
     /// Sets the input [`Waker`] as the signalled waker of this thread.
     ///
     /// This approach can collaborate with signal-aware wait methods.
@@ -228,26 +175,6 @@ impl PosixThread {
     /// Therefore, unless the caller can ensure that there are no permission issues,
     /// this method should be used to enqueue kernel signals or fault signals.
     pub fn enqueue_signal(&self, signal: Box<dyn Signal>) {
-        self.sig_queues.enqueue(signal);
-        self.wake_signalled_waker();
-    }
-
-    /// Enqueues a thread-directed signal with locked dispositions.
-    ///
-    /// By locking dispositions, the caller should have already checked the signal is not to be
-    /// ignored.
-    //
-    // FIXME: According to Linux behavior, we should enqueue ignored signals blocked by all
-    // threads, as a thread may change the signal handler and unblock them in the future. However,
-    // achieving this behavior properly without maintaining a process-wide signal queue is
-    // difficult. For instance, if we randomly select a thread-wide signal queue, the thread that
-    // modifies the signal handler and unblocks the signal may not be the same one. Consequently,
-    // the current implementation uses a simpler mechanism that never enqueues any ignored signals.
-    pub(in crate::process) fn enqueue_signal_locked(
-        &self,
-        signal: Box<dyn Signal>,
-        _sig_dispositions: &SigDispositions,
-    ) {
         self.sig_queues.enqueue(signal);
         self.wake_signalled_waker();
     }

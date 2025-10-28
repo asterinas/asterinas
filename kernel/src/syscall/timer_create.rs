@@ -86,8 +86,8 @@ pub fn sys_timer_create(
                     }
                     let signal = KernelSignal::new(SigNum::try_from(signo as u8)?);
                     Box::new(move || {
-                        if let Some(thread) = thread.as_posix_thread() {
-                            thread.enqueue_signal(Box::new(signal));
+                        if let Some(posix_thread) = thread.as_posix_thread() {
+                            posix_thread.enqueue_signal(Box::new(signal));
                         }
                     })
                 }
