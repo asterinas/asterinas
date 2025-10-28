@@ -3,7 +3,6 @@
 //! This mod defines mmap flags and the handler to syscall mmap
 
 use align_ext::AlignExt;
-use aster_rights::Rights;
 
 use super::SyscallReturn;
 use crate::{
@@ -116,7 +115,7 @@ fn do_sys_mmap(
             // Anonymous shared mapping should share the same memory pages.
             if option.typ() == MMapType::Shared {
                 let shared_vmo = {
-                    let vmo_options: VmoOptions<Rights> = VmoOptions::new(len);
+                    let vmo_options = VmoOptions::new(len);
                     vmo_options.alloc()?
                 };
                 options = options.vmo(shared_vmo);

@@ -15,7 +15,6 @@
 use alloc::sync::Arc;
 use core::{mem::ManuallyDrop, time::Duration};
 
-use aster_rights::Rights;
 use aster_time::{read_monotonic_time, Instant};
 use aster_util::coeff::Coeff;
 use ostd::{
@@ -238,7 +237,7 @@ impl Vdso {
         vdso_data.init();
 
         let (vdso_vmo, data_frame) = {
-            let vmo_options = VmoOptions::<Rights>::new(VDSO_VMO_LAYOUT.size);
+            let vmo_options = VmoOptions::new(VDSO_VMO_LAYOUT.size);
             let vdso_vmo = vmo_options.alloc().unwrap();
             // Write vDSO data to vDSO VMO.
             vdso_vmo
@@ -259,7 +258,7 @@ impl Vdso {
 
         Self {
             data: SpinLock::new(vdso_data),
-            vmo: Arc::new(vdso_vmo),
+            vmo: vdso_vmo,
             data_frame,
         }
     }

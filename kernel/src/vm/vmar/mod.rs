@@ -8,7 +8,6 @@ mod vm_mapping;
 use core::{array, num::NonZeroUsize, ops::Range};
 
 use align_ext::AlignExt;
-use aster_rights::Rights;
 use aster_util::per_cpu_counter::PerCpuCounter;
 use ostd::{
     cpu::CpuId,
@@ -32,10 +31,7 @@ use crate::{
     prelude::*,
     process::{Process, ProcessVm, ResourceType},
     thread::exception::PageFaultInfo,
-    vm::{
-        perms::VmPerms,
-        vmo::{Vmo, VmoRightsOp},
-    },
+    vm::{perms::VmPerms, vmo::Vmo},
 };
 
 /// Virtual Memory Address Regions (VMARs) are a type of capability that manages
@@ -71,13 +67,12 @@ impl Vmar {
     /// # Examples
     ///
     /// ```
-    /// use aster_rights::Rights;
     /// use ostd::mm::PAGE_SIZE;
     ///
     /// use crate::vm::{perms::VmPerms, vmar::Vmar, vmo::VmoOptions};
     ///
     /// let vmar = Vmar::new();
-    /// let vmo = VmoOptions::<Rights>::new(10 * PAGE_SIZE).alloc().unwrap();
+    /// let vmo = VmoOptions::new(10 * PAGE_SIZE).alloc().unwrap();
     /// let target_vaddr = 0x1234000;
     /// let real_vaddr = vmar
     ///     // Create a 4 * PAGE_SIZE bytes, read-only mapping
@@ -95,7 +90,7 @@ impl Vmar {
     /// ```
     ///
     /// For more details on the available options, see `VmarMapOptions`.
-    pub fn new_map(&self, size: usize, perms: VmPerms) -> Result<VmarMapOptions<Rights>> {
+    pub fn new_map(&self, size: usize, perms: VmPerms) -> Result<VmarMapOptions> {
         Ok(VmarMapOptions::new(self, size, perms))
     }
 
@@ -221,7 +216,7 @@ impl Vmar {
                 let base = vm_mapping.map_to_addr();
 
                 // Clone the `VmMapping` to the new VMAR.
-                let new_mapping = vm_mapping.new_fork()?;
+                let new_mapping = vm_mapping.new_fork();
                 new_inner.insert_without_try_merge(new_mapping);
 
                 // Protect the mapping and copy to the new page table for COW.
@@ -416,7 +411,7 @@ impl Vmar {
             old_mapping
         };
         // Note that we have ensured that `new_size >= old_size` at the beginning.
-        let new_mapping = old_mapping.clone_for_remap_at(new_range.start).unwrap();
+        let new_mapping = old_mapping.clone_for_remap_at(new_range.start);
         inner.insert_try_merge(new_mapping.enlarge(new_size - old_size));
 
         let preempt_guard = disable_preempt();
@@ -953,9 +948,9 @@ fn cow_copy_pt(src: &mut CursorMut<'_>, dst: &mut CursorMut<'_>, size: usize) ->
 /// Options for creating a new mapping. The mapping is not allowed to overlap
 /// with any child VMARs. And unless specified otherwise, it is not allowed
 /// to overlap with any existing mapping, either.
-pub struct VmarMapOptions<'a, R> {
+pub struct VmarMapOptions<'a> {
     parent: &'a Vmar,
-    vmo: Option<Vmo<R>>,
+    vmo: Option<Arc<Vmo>>,
     mappable: Option<Mappable>,
     perms: VmPerms,
     may_perms: VmPerms,
@@ -970,13 +965,9 @@ pub struct VmarMapOptions<'a, R> {
     handle_page_faults_around: bool,
 }
 
-impl<'a, R> VmarMapOptions<'a, R> {
-    /// Creates a default set of options with the VMO and the memory access
+impl<'a> VmarMapOptions<'a> {
+    /// Creates a default set of options with the size and the memory access
     /// permissions.
-    ///
-    /// The VMO must have access rights that correspond to the memory
-    /// access permissions. For example, if `perms` contains `VmPerms::Write`,
-    /// then `vmo.rights()` should contain `Rights::WRITE`.
     pub fn new(parent: &'a Vmar, size: usize, perms: VmPerms) -> Self {
         Self {
             parent,
@@ -1026,7 +1017,7 @@ impl<'a, R> VmarMapOptions<'a, R> {
     /// # Panics
     ///
     /// This function panics if a [`Mappable`] is already provided.
-    pub fn vmo(mut self, vmo: Vmo<R>) -> Self {
+    pub fn vmo(mut self, vmo: Arc<Vmo>) -> Self {
         if self.mappable.is_some() {
             panic!("Cannot set `vmo` when `mappable` is already set");
         }
@@ -1098,9 +1089,7 @@ impl<'a, R> VmarMapOptions<'a, R> {
         self.handle_page_faults_around = true;
         self
     }
-}
 
-impl VmarMapOptions<'_, Rights> {
     /// Binds memory to map based on the [`Mappable`] enum.
     ///
     /// This method accepts file-specific details, like a page cache (inode)
@@ -1119,24 +1108,14 @@ impl VmarMapOptions<'_, Rights> {
 
         // Verify whether the page cache inode is valid.
         if let Mappable::Inode(ref inode) = mappable {
-            self.vmo = Some(
-                inode
-                    .page_cache()
-                    .expect("Map an inode without page cache")
-                    .to_dyn(),
-            );
+            self.vmo = Some(inode.page_cache().expect("Map an inode without page cache"));
         }
 
         self.mappable = Some(mappable);
 
         self
     }
-}
 
-impl<R> VmarMapOptions<'_, R>
-where
-    Vmo<R>: VmoRightsOp,
-{
     /// Creates the mapping and adds it to the parent VMAR.
     ///
     /// All options will be checked at this point.
@@ -1206,15 +1185,14 @@ where
                 Mappable::Inode(inode_handle) => {
                     // Since `Mappable::Inode` is provided, it is
                     // reasonable to assume that the VMO is provided.
-                    let mapped_mem =
-                        MappedMemory::Vmo(MappedVmo::new(vmo.unwrap().to_dyn(), vmo_offset));
+                    let mapped_mem = MappedMemory::Vmo(MappedVmo::new(vmo.unwrap(), vmo_offset));
                     (mapped_mem, Some(inode_handle), None)
                 }
                 Mappable::IoMem(iomem) => (MappedMemory::Device, None, Some(iomem)),
             }
         } else if let Some(vmo) = vmo {
             (
-                MappedMemory::Vmo(MappedVmo::new(vmo.to_dyn(), vmo_offset)),
+                MappedMemory::Vmo(MappedVmo::new(vmo, vmo_offset)),
                 None,
                 None,
             )
@@ -1271,11 +1249,10 @@ where
                 return_errno_with_message!(Errno::EINVAL, "invalid offset");
             }
         }
-        self.check_perms()?;
-        Ok(())
+        self.check_perms()
     }
 
-    /// Checks whether the permissions of the mapping is subset of vmo rights.
+    /// Checks whether the permissions of the mapping is valid.
     fn check_perms(&self) -> Result<()> {
         if !VmPerms::ALL_MAY_PERMS.contains(self.may_perms)
             || !VmPerms::ALL_PERMS.contains(self.perms)
@@ -1284,14 +1261,7 @@ where
         }
 
         let vm_perms = self.perms | self.may_perms;
-        vm_perms.check()?;
-
-        let Some(vmo) = &self.vmo else {
-            return Ok(());
-        };
-
-        let perm_rights = Rights::from(vm_perms);
-        vmo.check_rights(perm_rights)
+        vm_perms.check()
     }
 }
 

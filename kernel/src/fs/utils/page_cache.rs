@@ -9,7 +9,6 @@ use core::{
 
 use align_ext::AlignExt;
 use aster_block::bio::{BioStatus, BioWaiter};
-use aster_rights::Full;
 use lru::LruCache;
 use ostd::{
     impl_untyped_frame_meta_for,
@@ -22,7 +21,7 @@ use crate::{
 };
 
 pub struct PageCache {
-    pages: Vmo<Full>,
+    pages: Arc<Vmo>,
     manager: Arc<PageCacheManager>,
 }
 
@@ -30,7 +29,7 @@ impl PageCache {
     /// Creates an empty size page cache associated with a new backend.
     pub fn new(backend: Weak<dyn PageCacheBackend>) -> Result<Self> {
         let manager = Arc::new(PageCacheManager::new(backend));
-        let pages = VmoOptions::<Full>::new(0)
+        let pages = VmoOptions::new(0)
             .flags(VmoFlags::RESIZABLE)
             .pager(manager.clone())
             .alloc()?;
@@ -43,7 +42,7 @@ impl PageCache {
     /// This size usually corresponds to the size of the backend.
     pub fn with_capacity(capacity: usize, backend: Weak<dyn PageCacheBackend>) -> Result<Self> {
         let manager = Arc::new(PageCacheManager::new(backend));
-        let pages = VmoOptions::<Full>::new(capacity)
+        let pages = VmoOptions::new(capacity)
             .flags(VmoFlags::RESIZABLE)
             .pager(manager.clone())
             .alloc()?;
@@ -51,9 +50,7 @@ impl PageCache {
     }
 
     /// Returns the Vmo object.
-    // TODO: The capability is too high，restrict it to eliminate the possibility of misuse.
-    //       For example, the `resize` api should be forbidded.
-    pub fn pages(&self) -> &Vmo<Full> {
+    pub fn pages(&self) -> &Arc<Vmo> {
         &self.pages
     }
 

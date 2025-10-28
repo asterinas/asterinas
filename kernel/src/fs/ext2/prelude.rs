@@ -11,7 +11,6 @@ pub(super) use aster_block::{
     id::Bid,
     BlockDevice, BLOCK_SIZE,
 };
-pub(super) use aster_rights::Full;
 pub(super) use ostd::{
     mm::{Frame, FrameAllocOptions, Segment, USegment, VmIo},
     sync::{RwMutex, RwMutexReadGuard, RwMutexWriteGuard},

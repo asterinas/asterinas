@@ -20,12 +20,7 @@ use crate::{
     },
     prelude::*,
     process::process_vm::{AuxKey, AuxVec},
-    vm::{
-        perms::VmPerms,
-        util::duplicate_frame,
-        vmar::Vmar,
-        vmo::{CommitFlags, VmoRightsOp},
-    },
+    vm::{perms::VmPerms, util::duplicate_frame, vmar::Vmar, vmo::CommitFlags},
 };
 
 /// Loads elf to the process VMAR.
@@ -315,14 +310,10 @@ fn map_segment_vmo(
     debug_assert!(file_offset % PAGE_SIZE == virtual_addr % PAGE_SIZE);
     let segment_vmo = {
         let inode = elf_file.inode();
-        inode
-            .page_cache()
-            .ok_or(Error::with_message(
-                Errno::ENOENT,
-                "executable has no page cache",
-            ))?
-            .to_dyn()
-            .dup()?
+        inode.page_cache().ok_or(Error::with_message(
+            Errno::ENOENT,
+            "executable has no page cache",
+        ))?
     };
 
     let total_map_size = {
@@ -343,7 +334,7 @@ fn map_segment_vmo(
     if segment_size != 0 {
         let mut vm_map_options = vmar
             .new_map(segment_size, perms)?
-            .vmo(segment_vmo.dup()?)
+            .vmo(segment_vmo.clone())
             .vmo_offset(segment_offset)
             .can_overwrite(true);
         vm_map_options = vm_map_options.offset(offset).handle_page_faults_around();
@@ -489,7 +480,7 @@ fn map_vdso_to_vmar(vmar: &Vmar) -> Option<Vaddr> {
     let options = vmar
         .new_map(VDSO_VMO_LAYOUT.size, VmPerms::empty())
         .unwrap()
-        .vmo(vdso_vmo.dup().unwrap());
+        .vmo(vdso_vmo);
 
     let vdso_vmo_base = options.build().unwrap();
     let vdso_data_base = vdso_vmo_base + VDSO_VMO_LAYOUT.data_segment_offset;

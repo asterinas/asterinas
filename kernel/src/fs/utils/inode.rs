@@ -4,7 +4,6 @@
 
 use core::{any::TypeId, time::Duration};
 
-use aster_rights::Full;
 use core2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
 use ostd::task::Task;
 
@@ -292,7 +291,7 @@ pub trait Inode: Any + Sync + Send {
 
     fn set_ctime(&self, time: Duration);
 
-    fn page_cache(&self) -> Option<Vmo<Full>> {
+    fn page_cache(&self) -> Option<Arc<Vmo>> {
         None
     }
 

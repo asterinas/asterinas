@@ -6,7 +6,6 @@
 use core::ops::Range;
 
 use align_ext::AlignExt;
-use aster_rights::Full;
 use bitvec::prelude::*;
 
 use super::{
@@ -37,7 +36,7 @@ pub(super) struct ExfatBitmap {
 impl ExfatBitmap {
     pub(super) fn load(
         fs_weak: Weak<ExfatFs>,
-        root_page_cache: Vmo<Full>,
+        root_page_cache: &Vmo,
         root_chain: ExfatChain,
     ) -> Result<Self> {
         let dentry_iterator = ExfatDentryIterator::new(root_page_cache, 0, None)?;
