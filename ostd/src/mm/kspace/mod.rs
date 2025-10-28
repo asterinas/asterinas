@@ -57,23 +57,41 @@ use super::{
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     boot::memory_region::MemoryRegionType,
-    mm::{page_table::largest_pages, PagingLevel},
+    const_assert,
+    mm::{page_table::largest_pages, PagingLevel, PAGE_SIZE},
     task::disable_preempt,
 };
 
-/// The shortest supported address width is 39 bits. And the literal
-/// values are written for 48 bits address width. Adjust the values
-/// by arithmetic left shift.
-const ADDR_WIDTH_SHIFT: isize = PagingConsts::ADDRESS_WIDTH as isize - 48;
+// The shortest supported address width is 39 bits. So the literal
+// values are written for 39 bits address width and we adjust the values
+// by arithmetic left shift.
+const_assert!(PagingConsts::ADDRESS_WIDTH >= 39);
+const ADDR_WIDTH_SHIFT: usize = PagingConsts::ADDRESS_WIDTH - 39;
 
 /// Start of the kernel address space.
-/// This is the _lowest_ address of the x86-64's _high_ canonical addresses.
 #[cfg(not(target_arch = "loongarch64"))]
-pub const KERNEL_BASE_VADDR: Vaddr = 0xffff_8000_0000_0000 << ADDR_WIDTH_SHIFT;
+pub const KERNEL_BASE_VADDR: Vaddr = 0xffff_ffc0_0000_0000 << ADDR_WIDTH_SHIFT;
 #[cfg(target_arch = "loongarch64")]
-pub const KERNEL_BASE_VADDR: Vaddr = 0x9000_0000_0000_0000 << ADDR_WIDTH_SHIFT;
+pub const KERNEL_BASE_VADDR: Vaddr = 0x9000_0000_0000_0000;
 /// End of the kernel address space (non inclusive).
-pub const KERNEL_END_VADDR: Vaddr = 0xffff_ffff_ffff_0000 << ADDR_WIDTH_SHIFT;
+pub const KERNEL_END_VADDR: Vaddr = 0xffff_ffff_ffff_0000;
+
+/// The maximum virtual address of user space (non inclusive).
+///
+/// A typical way to reserve half of the address space for the kernel is
+/// to use the highest `ADDRESS_WIDTH`-bit virtual address space.
+///
+/// Also, the top page is not regarded as usable since it's a workaround
+/// for some x86_64 CPUs' bugs. See
+/// <https://github.com/torvalds/linux/blob/480e035fc4c714fb5536e64ab9db04fedc89e910/arch/x86/include/asm/page_64.h#L68-L78>
+/// for the rationale.
+pub const MAX_USERSPACE_VADDR: Vaddr = (0x0000_0040_0000_0000 << ADDR_WIDTH_SHIFT) - PAGE_SIZE;
+
+/// The kernel address space.
+///
+/// They are the high canonical addresses (i.e., the negative part of the
+/// address space, with the most significant bits in the addresses set).
+pub const KERNEL_VADDR_RANGE: Range<Vaddr> = KERNEL_BASE_VADDR..KERNEL_END_VADDR;
 
 /// The kernel code is linear mapped to this address.
 ///
@@ -85,26 +103,26 @@ pub fn kernel_loaded_offset() -> usize {
 }
 
 #[cfg(target_arch = "x86_64")]
-const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_8000_0000 << ADDR_WIDTH_SHIFT;
+const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_8000_0000;
 #[cfg(target_arch = "riscv64")]
-const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_0000_0000 << ADDR_WIDTH_SHIFT;
+const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_0000_0000;
 #[cfg(target_arch = "loongarch64")]
-const KERNEL_CODE_BASE_VADDR: usize = 0x9000_0000_0000_0000 << ADDR_WIDTH_SHIFT;
+const KERNEL_CODE_BASE_VADDR: usize = 0x9000_0000_0000_0000;
 
-const FRAME_METADATA_CAP_VADDR: Vaddr = 0xffff_e100_0000_0000 << ADDR_WIDTH_SHIFT;
-const FRAME_METADATA_BASE_VADDR: Vaddr = 0xffff_e000_0000_0000 << ADDR_WIDTH_SHIFT;
+const FRAME_METADATA_CAP_VADDR: Vaddr = 0xffff_fff0_8000_0000 << ADDR_WIDTH_SHIFT;
+const FRAME_METADATA_BASE_VADDR: Vaddr = 0xffff_fff0_0000_0000 << ADDR_WIDTH_SHIFT;
 pub(in crate::mm) const FRAME_METADATA_RANGE: Range<Vaddr> =
     FRAME_METADATA_BASE_VADDR..FRAME_METADATA_CAP_VADDR;
 
-const VMALLOC_BASE_VADDR: Vaddr = 0xffff_c000_0000_0000 << ADDR_WIDTH_SHIFT;
+const VMALLOC_BASE_VADDR: Vaddr = 0xffff_ffe0_0000_0000 << ADDR_WIDTH_SHIFT;
 pub const VMALLOC_VADDR_RANGE: Range<Vaddr> = VMALLOC_BASE_VADDR..FRAME_METADATA_BASE_VADDR;
 
 /// The base address of the linear mapping of all physical
 /// memory in the kernel address space.
 #[cfg(not(target_arch = "loongarch64"))]
-pub const LINEAR_MAPPING_BASE_VADDR: Vaddr = 0xffff_8000_0000_0000 << ADDR_WIDTH_SHIFT;
+pub const LINEAR_MAPPING_BASE_VADDR: Vaddr = 0xffff_ffc0_0000_0000 << ADDR_WIDTH_SHIFT;
 #[cfg(target_arch = "loongarch64")]
-pub const LINEAR_MAPPING_BASE_VADDR: Vaddr = 0x9000_0000_0000_0000 << ADDR_WIDTH_SHIFT;
+pub const LINEAR_MAPPING_BASE_VADDR: Vaddr = 0x9000_0000_0000_0000;
 pub const LINEAR_MAPPING_VADDR_RANGE: Range<Vaddr> = LINEAR_MAPPING_BASE_VADDR..VMALLOC_BASE_VADDR;
 
 /// Convert physical address to virtual address using offset, only available inside `ostd`
