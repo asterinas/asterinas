@@ -7,12 +7,11 @@ use super::{
     sig_mask::{SigMask, SigSet},
     sig_num::SigNum,
     signals::Signal,
-    SigEvents, SigEventsFilter,
 };
 use crate::{
-    events::{Observer, Subject},
+    events::IoEvents,
     prelude::*,
-    process::signal::sig_disposition::SigDispositions,
+    process::signal::{sig_disposition::SigDispositions, PollHandle, Pollee},
 };
 
 pub struct SigQueues {
@@ -20,7 +19,7 @@ pub struct SigQueues {
     // Useful for quickly determining if any signals are pending without locking `queues`.
     count: AtomicUsize,
     queues: Mutex<Queues>,
-    subject: Subject<SigEvents, SigEventsFilter>,
+    signalfd_pollee: Pollee,
 }
 
 impl SigQueues {
@@ -28,7 +27,7 @@ impl SigQueues {
         Self {
             count: AtomicUsize::new(0),
             queues: Mutex::new(Queues::new()),
-            subject: Subject::new(),
+            signalfd_pollee: Pollee::new(),
         }
     }
 
@@ -37,14 +36,12 @@ impl SigQueues {
     }
 
     pub fn enqueue(&self, signal: Box<dyn Signal>) {
-        let signum = signal.num();
-
         let mut queues = self.queues.lock();
         if queues.enqueue(signal) {
             self.count.fetch_add(1, Ordering::Relaxed);
             // Avoid holding lock when notifying observers
             drop(queues);
-            self.subject.notify_observers(&SigEvents::new(signum));
+            self.signalfd_pollee.notify(IoEvents::IN);
         }
     }
 
@@ -86,16 +83,12 @@ impl SigQueues {
         self.queues.lock().has_pending_signal(signum)
     }
 
-    pub fn register_observer(
+    pub(in crate::process) fn register_signalfd_poller(
         &self,
-        observer: Weak<dyn Observer<SigEvents>>,
-        filter: SigEventsFilter,
+        poller: &mut PollHandle,
+        mask: IoEvents,
     ) {
-        self.subject.register_observer(observer, filter);
-    }
-
-    pub fn unregister_observer(&self, observer: &Weak<dyn Observer<SigEvents>>) {
-        self.subject.unregister_observer(observer);
+        self.signalfd_pollee.register_poller(poller, mask);
     }
 }
 

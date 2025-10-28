@@ -6,17 +6,14 @@ use aster_rights::{ReadDupOp, ReadOp, WriteOp};
 use ostd::sync::{RoArc, RwMutexReadGuard, Waker};
 
 use super::{
-    signal::{
-        sig_mask::AtomicSigMask, sig_num::SigNum, sig_queues::SigQueues, signals::Signal,
-        SigEvents, SigEventsFilter,
-    },
+    signal::{sig_mask::AtomicSigMask, sig_num::SigNum, sig_queues::SigQueues, signals::Signal},
     Credentials, Process,
 };
 use crate::{
-    events::Observer,
+    events::IoEvents,
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
-    process::{namespace::nsproxy::NsProxy, Pid},
+    process::{namespace::nsproxy::NsProxy, signal::PollHandle, Pid},
     thread::{Thread, Tid},
     time::{clocks::ProfClock, Timer, TimerManager},
 };
@@ -179,6 +176,13 @@ impl PosixThread {
         self.wake_signalled_waker();
     }
 
+    pub fn register_signalfd_poller(&self, poller: &mut PollHandle, mask: IoEvents) {
+        self.sig_queues.register_signalfd_poller(poller, mask);
+        self.process()
+            .sig_queues()
+            .register_signalfd_poller(poller, mask);
+    }
+
     /// Returns a reference to the profiling clock of the current thread.
     pub fn prof_clock(&self) -> &Arc<ProfClock> {
         &self.prof_clock
@@ -204,18 +208,6 @@ impl PosixThread {
     /// If any have timed out, call the corresponding callback functions.
     pub fn process_expired_timers(&self) {
         self.prof_timer_manager.process_expired_timers();
-    }
-
-    pub fn register_sigqueue_observer(
-        &self,
-        observer: Weak<dyn Observer<SigEvents>>,
-        filter: SigEventsFilter,
-    ) {
-        self.sig_queues.register_observer(observer, filter);
-    }
-
-    pub fn unregister_sigqueue_observer(&self, observer: &Weak<dyn Observer<SigEvents>>) {
-        self.sig_queues.unregister_observer(observer);
     }
 
     /// Gets the read-only credentials of the thread.

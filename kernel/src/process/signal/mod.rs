@@ -2,7 +2,6 @@
 
 pub mod c_types;
 pub mod constants;
-mod events;
 mod pause;
 mod pending;
 mod poll;
@@ -19,7 +18,6 @@ use core::sync::atomic::Ordering;
 use align_ext::AlignExt;
 use c_types::{siginfo_t, ucontext_t};
 use constants::SIGSEGV;
-pub use events::{SigEvents, SigEventsFilter};
 use ostd::{
     arch::cpu::context::{FpuContext, UserContext},
     user::UserContextApi,

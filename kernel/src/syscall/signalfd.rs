@@ -12,7 +12,7 @@ use bitflags::bitflags;
 
 use super::SyscallReturn;
 use crate::{
-    events::{IoEvents, Observer},
+    events::IoEvents,
     fs::{
         file_handle::FileLike,
         file_table::{get_file_fast, FdFlags, FileDesc},
@@ -20,12 +20,12 @@ use crate::{
     },
     prelude::*,
     process::{
-        posix_thread::AsPosixThread,
+        posix_thread::{AsPosixThread, PosixThread},
         signal::{
             constants::{SIGKILL, SIGSTOP},
             sig_mask::{AtomicSigMask, SigMask},
             signals::Signal,
-            PollHandle, Pollable, Pollee, SigEvents, SigEventsFilter,
+            HandlePendingSignal, PollHandle, Pollable, Poller,
         },
         Gid, Uid,
     },
@@ -89,10 +89,10 @@ fn create_new_signalfd(
     non_blocking: bool,
     fd_flags: FdFlags,
 ) -> Result<FileDesc> {
-    let atomic_mask = AtomicSigMask::new(mask);
-    let signal_file = SignalFile::new(atomic_mask, non_blocking);
-
-    register_observer(ctx, &signal_file, mask)?;
+    let signal_file = {
+        let atomic_mask = AtomicSigMask::new(mask);
+        Arc::new(SignalFile::new(atomic_mask, non_blocking))
+    };
 
     let file_table = ctx.thread_local.borrow_file_table();
     let fd = file_table.unwrap().write().insert(signal_file, fd_flags);
@@ -118,17 +118,6 @@ fn update_existing_signalfd(
     Ok(fd)
 }
 
-fn register_observer(ctx: &Context, signal_file: &Arc<SignalFile>, mask: SigMask) -> Result<()> {
-    // The `mask` specifies the set of signals that are accepted by the signalfd,
-    // so we need to filter out the signals that are not in the mask.
-    let filter = SigEventsFilter::new(!mask);
-
-    ctx.posix_thread
-        .register_sigqueue_observer(signal_file.observer_ref(), filter);
-
-    Ok(())
-}
-
 bitflags! {
     /// Signal file descriptor creation flags
     struct SignalFileFlags: u32 {
@@ -144,42 +133,24 @@ bitflags! {
 struct SignalFile {
     /// Atomic signal mask for filtering signals
     signals_mask: AtomicSigMask,
-    /// I/O event notifier
-    pollee: Pollee,
     /// Non-blocking mode flag
     non_blocking: AtomicBool,
-    /// Weak reference to self as an observer
-    weak_self: Weak<dyn Observer<SigEvents>>,
 }
 
 impl SignalFile {
     /// Create a new signalfd instance
-    fn new(mask: AtomicSigMask, non_blocking: bool) -> Arc<Self> {
-        Arc::new_cyclic(|weak_ref| {
-            let weak_self = weak_ref.clone() as Weak<dyn Observer<SigEvents>>;
-            Self {
-                signals_mask: mask,
-                pollee: Pollee::new(),
-                non_blocking: AtomicBool::new(non_blocking),
-                weak_self,
-            }
-        })
+    fn new(mask: AtomicSigMask, non_blocking: bool) -> Self {
+        Self {
+            signals_mask: mask,
+            non_blocking: AtomicBool::new(non_blocking),
+        }
     }
 
     fn mask(&self) -> &AtomicSigMask {
         &self.signals_mask
     }
 
-    fn observer_ref(&self) -> Weak<dyn Observer<SigEvents>> {
-        self.weak_self.clone()
-    }
-
     fn update_signal_mask(&self, new_mask: SigMask) -> Result<()> {
-        if let Some(thread) = current_thread!().as_posix_thread() {
-            thread.unregister_sigqueue_observer(&self.weak_self);
-            let filter = SigEventsFilter::new(!new_mask);
-            thread.register_sigqueue_observer(self.weak_self.clone(), filter);
-        }
         self.signals_mask.store(new_mask, Ordering::Relaxed);
         Ok(())
     }
@@ -193,14 +164,9 @@ impl SignalFile {
     }
 
     /// Check current readable I/O events
-    fn check_io_events(&self) -> IoEvents {
-        let current = current_thread!();
-        let Some(thread) = current.as_posix_thread() else {
-            return IoEvents::empty();
-        };
-
+    fn check_io_events(&self, posix_thread: &PosixThread) -> IoEvents {
         let mask = self.signals_mask.load(Ordering::Relaxed);
-        if thread.sig_pending().intersects(mask) {
+        if posix_thread.pending_signals().intersects(mask) {
             IoEvents::IN
         } else {
             IoEvents::empty()
@@ -208,12 +174,7 @@ impl SignalFile {
     }
 
     /// Attempt non-blocking read operation
-    fn try_read(&self, writer: &mut VmWriter) -> Result<usize> {
-        let current = current_thread!();
-        let thread = current
-            .as_posix_thread()
-            .ok_or_else(|| Error::with_message(Errno::ESRCH, "Not a POSIX thread"))?;
-
+    fn try_read(&self, writer: &mut VmWriter, thread: &PosixThread) -> Result<usize> {
         // Mask is inverted to get the signals that are not blocked
         let mask = !self.signals_mask.load(Ordering::Relaxed);
         let max_signals = writer.avail() / size_of::<SignalfdSiginfo>();
@@ -224,7 +185,6 @@ impl SignalFile {
                 Some(signal) => {
                     writer.write_val(&signal.to_signalfd_siginfo())?;
                     count += 1;
-                    self.pollee.invalidate();
                 }
                 None => break,
             }
@@ -237,25 +197,18 @@ impl SignalFile {
     }
 }
 
-impl Observer<SigEvents> for SignalFile {
-    // TODO: Fix signal notifications.
-    // Child processes do not inherit the parent's observer mechanism for signal event notifications.
-    // `sys_poll` with blocking mode gets stuck if the signal is received after polling.
-    fn on_events(&self, events: &SigEvents) {
-        if self
-            .signals_mask
-            .load(Ordering::Relaxed)
-            .contains(events.sig_num())
-        {
-            self.pollee.notify(IoEvents::IN);
-        }
-    }
-}
-
 impl Pollable for SignalFile {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        self.pollee
-            .poll_with(mask, poller, || self.check_io_events())
+        let current = current_thread!();
+        let Some(posix_thread) = current.as_posix_thread() else {
+            return IoEvents::empty();
+        };
+
+        if let Some(poller) = poller {
+            posix_thread.register_signalfd_poller(poller, mask);
+        }
+
+        self.check_io_events(posix_thread) & mask
     }
 }
 
@@ -265,10 +218,27 @@ impl FileLike for SignalFile {
             return_errno_with_message!(Errno::EINVAL, "Buffer too small for siginfo structure");
         }
 
-        if self.is_non_blocking() {
-            self.try_read(writer)
-        } else {
-            self.wait_events(IoEvents::IN, None, || self.try_read(writer))
+        let thread = current_thread!();
+        let posix_thread = thread
+            .as_posix_thread()
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "Not a POSIX thread"))?;
+
+        // Fast path: There are already pending signals or the signalfd is non-blocking.
+        // So we don't need to create and register the poller.
+        match self.try_read(writer, posix_thread) {
+            Err(e) if e.error() == Errno::EAGAIN && !self.is_non_blocking() => {}
+            res => return res,
+        }
+
+        // Slow path
+        let mut poller = Poller::new(None);
+        posix_thread.register_signalfd_poller(poller.as_handle_mut(), IoEvents::IN);
+
+        loop {
+            match self.try_read(writer, posix_thread) {
+                Err(e) if e.error() == Errno::EAGAIN => poller.wait()?,
+                res => return res,
+            }
         }
     }
 
@@ -306,15 +276,6 @@ impl FileLike for SignalFile {
             uid: Uid::new_root(),
             gid: Gid::new_root(),
             rdev: 0,
-        }
-    }
-}
-
-impl Drop for SignalFile {
-    // TODO: Fix signal notifications. See `on_events` method.
-    fn drop(&mut self) {
-        if let Some(thread) = current_thread!().as_posix_thread() {
-            thread.unregister_sigqueue_observer(&self.weak_self);
         }
     }
 }
