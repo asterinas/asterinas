@@ -12,6 +12,7 @@ use super::{
 use crate::{
     events::{Observer, Subject},
     prelude::*,
+    process::signal::sig_disposition::SigDispositions,
 };
 
 pub struct SigQueues {
@@ -67,12 +68,22 @@ impl SigQueues {
         queues.sig_pending()
     }
 
-    /// Returns whether there's some pending signals that are not blocked
-    pub fn has_pending(&self, blocked: SigMask) -> bool {
-        if self.is_empty() {
-            return false;
-        }
-        self.queues.lock().has_pending(blocked)
+    /// Returns whether there's some pending signals that are not blocked and not ignored.
+    ///
+    /// Note that ignored but not blocked signals may be dequeued silently.
+    pub(in crate::process) fn has_pending(
+        &self,
+        blocked: SigMask,
+        sig_dispositions: &SigDispositions,
+    ) -> bool {
+        let mut queues = self.queues.lock();
+        let (dequeued_signals, has_pending) = queues.has_pending(blocked, sig_dispositions);
+        self.count.fetch_sub(dequeued_signals, Ordering::Relaxed);
+        has_pending
+    }
+
+    pub(in crate::process) fn has_pending_signal(&self, signum: SigNum) -> bool {
+        self.queues.lock().has_pending_signal(signum)
     }
 
     pub fn register_observer(
@@ -198,19 +209,81 @@ impl Queues {
         None
     }
 
-    /// Returns whether the `SigQueues` has some pending signals which are not blocked
-    fn has_pending(&self, blocked: SigMask) -> bool {
-        self.std_queues.iter().any(|signal| {
-            signal
-                .as_ref()
-                .is_some_and(|signal| !blocked.contains(signal.num()))
-        }) || self.rt_queues.iter().any(|rt_queue| !rt_queue.is_empty())
+    /// Returns whether the `SigQueues` has some pending signals which are not blocked.
+    ///
+    /// Note that signals are ignored but not blocked may be dequeued silently.
+    fn has_pending(
+        &mut self,
+        blocked: SigMask,
+        sig_dispositions: &SigDispositions,
+    ) -> (usize, bool) {
+        let mut dequeued_signals = 0;
+
+        let has_pending = self.std_queues.iter_mut().any(|signal| {
+            let Some(signal_ref) = signal.as_ref().map(AsRef::as_ref) else {
+                return false;
+            };
+
+            if blocked.contains(signal_ref.num()) {
+                return false;
+            }
+
+            // Dequeue signals that should be ignored but not blocked.
+            if sig_dispositions.will_ignore(signal_ref) {
+                dequeued_signals += 1;
+                *signal = None;
+                return false;
+            }
+
+            true
+        }) || self.rt_queues.iter_mut().any(|rt_queue| {
+            let Some(signal) = rt_queue.front() else {
+                return false;
+            };
+
+            if blocked.contains(signal.num()) {
+                return false;
+            }
+
+            // Dequeue signals that should be ignored but not blocked.
+            if sig_dispositions.will_ignore(signal.as_ref()) {
+                dequeued_signals += rt_queue.len();
+                rt_queue.clear();
+                return false;
+            }
+
+            true
+        });
+
+        (dequeued_signals, has_pending)
+    }
+
+    fn has_pending_signal(&self, signum: SigNum) -> bool {
+        if signum.is_std() {
+            self.get_std_queue(signum).is_some()
+        } else if signum.is_real_time() {
+            !self.get_rt_queue(signum).is_empty()
+        } else {
+            false
+        }
+    }
+
+    fn get_std_queue(&self, signum: SigNum) -> &Option<Box<dyn Signal>> {
+        debug_assert!(signum.is_std());
+        let idx = (signum.as_u8() - MIN_STD_SIG_NUM) as usize;
+        &self.std_queues[idx]
     }
 
     fn get_std_queue_mut(&mut self, signum: SigNum) -> &mut Option<Box<dyn Signal>> {
         debug_assert!(signum.is_std());
         let idx = (signum.as_u8() - MIN_STD_SIG_NUM) as usize;
         &mut self.std_queues[idx]
+    }
+
+    fn get_rt_queue(&self, signum: SigNum) -> &VecDeque<Box<dyn Signal>> {
+        debug_assert!(signum.is_real_time());
+        let idx = (signum.as_u8() - MIN_RT_SIG_NUM) as usize;
+        &self.rt_queues[idx]
     }
 
     fn get_rt_queue_mut(&mut self, signum: SigNum) -> &mut VecDeque<Box<dyn Signal>> {

@@ -4,6 +4,7 @@ pub mod c_types;
 pub mod constants;
 mod events;
 mod pause;
+mod pending;
 mod poll;
 pub mod sig_action;
 pub mod sig_disposition;
@@ -24,6 +25,7 @@ use ostd::{
     user::UserContextApi,
 };
 pub use pause::{with_sigmask_changed, Pause};
+pub use pending::HandlePendingSignal;
 pub use poll::{PollAdaptor, PollHandle, Pollable, Pollee, Poller};
 use sig_action::{SigAction, SigActionFlags, SigDefaultAction};
 use sig_mask::SigMask;
@@ -35,7 +37,11 @@ use crate::{
     cpu::LinuxAbi,
     current_userspace,
     prelude::*,
-    process::{posix_thread::do_exit_group, signal::c_types::stack_t, TermStatus},
+    process::{
+        posix_thread::do_exit_group,
+        signal::{c_types::stack_t, signals::Signal},
+        TermStatus,
+    },
 };
 
 pub trait SignalContext {
@@ -61,38 +67,11 @@ pub fn handle_pending_signal(
         None
     };
 
-    let posix_thread = ctx.posix_thread;
-    let current = ctx.process.as_ref();
-
-    let signal = {
-        let sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed);
-        if let Some(signal) = posix_thread.dequeue_signal(&sig_mask) {
-            signal
-        } else {
-            return;
-        }
+    let Some((signal, sig_action)) = dequeue_pending_signal(ctx) else {
+        return;
     };
+
     let sig_num = signal.num();
-    trace!("sig_num = {:?}, sig_name = {}", sig_num, sig_num.sig_name());
-
-    let sig_action = {
-        let sig_dispositions = current.sig_dispositions().lock();
-        let mut sig_dispositions = sig_dispositions.lock();
-        let sig_action = sig_dispositions.get(sig_num);
-
-        if let SigAction::User { flags, .. } = &sig_action
-            && flags.contains(SigActionFlags::SA_RESETHAND)
-        {
-            // In Linux, SA_RESETHAND corresponds to SA_ONESHOT,
-            // which means the user handler will be executed only once and then reset to the default.
-            // Refer to https://elixir.bootlin.com/linux/v6.0.9/source/kernel/signal.c#L2761.
-            sig_dispositions.set_default(sig_num);
-        }
-
-        sig_action
-    };
-    trace!("sig action: {:x?}", sig_action);
-
     match sig_action {
         SigAction::Ign => {
             trace!("Ignore signal {:?}", sig_num);
@@ -141,7 +120,7 @@ pub fn handle_pending_signal(
                 SigDefaultAction::Core | SigDefaultAction::Term => {
                     warn!(
                         "{:?}: terminating on signal {}",
-                        current.executable_path(),
+                        ctx.process.executable_path(),
                         sig_num.sig_name()
                     );
                     // We should exit current here, since we cannot restore a valid status from trap now.
@@ -153,6 +132,43 @@ pub fn handle_pending_signal(
             }
         }
     }
+}
+
+fn dequeue_pending_signal(ctx: &Context) -> Option<(Box<dyn Signal>, SigAction)> {
+    let posix_thread = ctx.posix_thread;
+
+    let sig_dispositions = ctx.process.sig_dispositions().lock();
+    let mut sig_dispositions = sig_dispositions.lock();
+
+    let sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed);
+    let (signal, sig_num, sig_action) = loop {
+        let signal = ctx.dequeue_signal(&sig_mask)?;
+        let sig_num = signal.num();
+        let sig_action = sig_dispositions.get(sig_num);
+        if sig_action.will_ignore(sig_num) {
+            continue;
+        }
+
+        break (signal, sig_num, sig_action);
+    };
+
+    if let SigAction::User { flags, .. } = &sig_action
+        && flags.contains(SigActionFlags::SA_RESETHAND)
+    {
+        // In Linux, SA_RESETHAND corresponds to SA_ONESHOT,
+        // which means the user handler will be executed only once and then reset to the default.
+        // Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/kernel/signal.c#L2761>.
+        sig_dispositions.set_default(sig_num);
+    }
+
+    trace!(
+        "sig_num = {:?}, sig_name = {}, sig_action = {:#x?}",
+        signal.num(),
+        signal.num().sig_name(),
+        sig_action
+    );
+
+    Some((signal, sig_action))
 }
 
 #[expect(clippy::too_many_arguments)]

@@ -14,7 +14,7 @@ use crate::{
     prelude::*,
     process::{
         posix_thread::{AsPosixThread, AsThreadLocal, ThreadLocal},
-        signal::handle_pending_signal,
+        signal::{handle_pending_signal, HandlePendingSignal},
     },
     syscall::handle_syscall,
     thread::{exception::handle_exception, AsThread},
@@ -61,8 +61,6 @@ pub fn create_new_user_task(
             let _ = current_userspace!().write_val(child_tid_ptr, &current_posix_thread.tid());
         }
 
-        let has_kernel_event_fn = || current_posix_thread.has_pending();
-
         let ctx = Context {
             process: current_process,
             thread_local: current_thread_local,
@@ -70,6 +68,8 @@ pub fn create_new_user_task(
             thread: current_thread.as_ref(),
             task: &current_task,
         };
+
+        let has_kernel_event_fn = || ctx.has_pending();
 
         if is_init_process {
             crate::init_in_first_process(&ctx);
