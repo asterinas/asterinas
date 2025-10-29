@@ -68,6 +68,23 @@ qemu.args = """\
     -device virtconsole,chardev=mux \
 """
 
+[scheme."sifive_u"]
+supported_archs = ["riscv64"]
+build.features = ["riscv_sv39_mode"]
+boot.method = "qemu-direct"
+build.strip_elf = false
+
+qemu.args = """\
+    -machine sifive_u \
+    -m 8G \
+    -no-reboot \
+    -nographic \
+    -display none \
+    -serial chardev:mux \
+    -monitor chardev:mux \
+    -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log
+"""
+
 [scheme."loongarch"]
 boot.method = "qemu-direct"
 build.strip_elf = false
