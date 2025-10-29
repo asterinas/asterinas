@@ -26,6 +26,7 @@ SECTIONS
     . += KERNEL_VMA_OFFSET;
 
     .text                   : AT(ADDR(.text) - KERNEL_VMA_OFFSET) {
+        PROVIDE(__stext = .);
         *(.text .text.*)
         PROVIDE(__etext = .);
     }

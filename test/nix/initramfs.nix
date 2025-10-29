@@ -5,11 +5,16 @@ let
     root = ./../src/etc;
     fileset = ./../src/etc;
   };
+  proc = lib.fileset.toSource {
+    root = ./../src/proc;
+    fileset = ./../src/proc;
+  };
   gvisor_libs = builtins.path {
     name = "gvisor-libs";
     path = "/lib/x86_64-linux-gnu";
   };
-  all_pkgs = [ busybox etc ] ++ lib.optionals (apps != null) [ apps.package ]
+  all_pkgs = [ busybox etc proc ]
+    ++ lib.optionals (apps != null) [ apps.package ]
     ++ lib.optionals (benchmark != null) [ benchmark.package ]
     ++ lib.optionals (syscall != null) [ syscall.package ];
 in stdenvNoCC.mkDerivation {
@@ -25,6 +30,7 @@ in stdenvNoCC.mkDerivation {
     cp -r ${busybox}/bin/* $out/bin/
 
     cp -r ${etc}/* $out/etc/
+    cp -r ${proc}/* $out/proc/
 
     ${lib.optionalString (apps != null) ''
       cp -r ${apps.package}/* $out/test/

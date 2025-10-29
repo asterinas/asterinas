@@ -193,11 +193,13 @@ dependencies = [
  "indexmap",
  "indicatif",
  "inferno",
+ "ksym-bin",
  "linux-bzimage-builder",
  "log",
  "quote",
  "regex",
  "rev_buf_reader",
+ "rustc-demangle",
  "serde",
  "serde_json",
  "shlex",
@@ -591,6 +593,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ksym-bin"
+version = "0.1.0"
+
+[[package]]
 name = "libc"
 version = "0.2.172"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -846,6 +852,12 @@ name = "rle-decode-fast"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
+
+[[package]]
+name = "rustc-demangle"
+version = "0.1.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56f7d92ca342cea22a06f2121d944b4fd82af56988c270852495420f961d4ace"
 
 [[package]]
 name = "rustix"

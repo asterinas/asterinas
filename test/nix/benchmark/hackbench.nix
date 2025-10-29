@@ -1,4 +1,4 @@
-{ stdenv, fetchurl, }:
+{ stdenv, fetchurl }:
 stdenv.mkDerivation rec {
   pname = "hackbench";
   version = "0.92";
