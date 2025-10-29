@@ -234,6 +234,12 @@ impl PageTableEntryTrait for PageTableEntry {
             | parse_flags!(prop.flags.bits(), PageFlags::W, PageTableFlags::WRITABLE)
             | parse_flags!(prop.flags.bits(), PageFlags::X, PageTableFlags::EXECUTABLE)
             | parse_flags!(
+                prop.flags.bits(),
+                PageFlags::ACCESSED,
+                PageTableFlags::ACCESSED
+            )
+            | parse_flags!(prop.flags.bits(), PageFlags::DIRTY, PageTableFlags::DIRTY)
+            | parse_flags!(
                 prop.priv_flags.bits(),
                 PrivFlags::USER,
                 PageTableFlags::USER
