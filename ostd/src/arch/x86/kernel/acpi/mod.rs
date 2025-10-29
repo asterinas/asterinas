@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
-pub mod dmar;
-pub mod remapping;
+pub(in crate::arch) mod dmar;
+pub(in crate::arch) mod remapping;
 
-use core::ptr::NonNull;
+use core::{num::NonZeroU8, ptr::NonNull};
 
-use acpi::{rsdp::Rsdp, AcpiHandler, AcpiTables};
+use acpi::{
+    fadt::{Fadt, IaPcBootArchFlags},
+    rsdp::Rsdp,
+    AcpiHandler, AcpiTables,
+};
 use log::warn;
+use spin::Once;
 
 use crate::{
     boot::{self, BootloaderAcpiArg},
@@ -14,7 +19,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct AcpiMemoryHandler {}
+pub(crate) struct AcpiMemoryHandler {}
 
 impl AcpiHandler for AcpiMemoryHandler {
     unsafe fn map_physical_region<T>(
@@ -64,4 +69,39 @@ pub(crate) fn get_acpi_tables() -> Option<AcpiTables<AcpiMemoryHandler>> {
     };
 
     Some(acpi_tables)
+}
+
+/// The platform information provided by the ACPI tables.
+///
+/// Currently, this structure contains only a limited set of fields, far fewer than those in all
+/// ACPI tables. However, the goal is to expand it properly to keep the simplicity of the OSTD code
+/// while enabling OSTD users to safely retrieve information from the ACPI tables.
+#[derive(Debug)]
+pub struct AcpiInfo {
+    /// The RTC CMOS RAM index to the century of data value; the "CENTURY" field in the FADT.
+    pub century_register: Option<NonZeroU8>,
+    /// IA-PC Boot Architecture Flags; the "IAPC_BOOT_ARCH" field in the FADT.
+    pub boot_flags: Option<IaPcBootArchFlags>,
+}
+
+/// The [`AcpiInfo`] singleton.
+pub static ACPI_INFO: Once<AcpiInfo> = Once::new();
+
+pub(in crate::arch) fn init() {
+    let mut acpi_info = AcpiInfo {
+        century_register: None,
+        boot_flags: None,
+    };
+
+    if let Some(acpi_tables) = get_acpi_tables()
+        && let Ok(fadt) = acpi_tables.find_table::<Fadt>()
+    {
+        // A zero means that the century register does not exist.
+        acpi_info.century_register = NonZeroU8::new(fadt.century);
+        acpi_info.boot_flags = Some(fadt.iapc_boot_arch);
+    };
+
+    log::info!("[ACPI]: Collected information {:?}", acpi_info);
+
+    ACPI_INFO.call_once(|| acpi_info);
 }

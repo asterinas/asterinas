@@ -32,7 +32,7 @@ macro_rules! declare_rtc_drivers {
                 }
             )*
 
-            log::warn!("No RTC device found, falling back to a dummy RTC.");
+            log::warn!("No RTC device found, falling back to a dummy RTC");
 
             Arc::new(RtcDummy)
         }

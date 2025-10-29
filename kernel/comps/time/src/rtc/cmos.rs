@@ -1,9 +1,22 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! CMOS RTC.
+//!
+//! "CMOS" is a tiny bit of very low power static memory that lives on the same chip as the
+//! Real-Time Clock (RTC).
+//!
+//! According to the Linux implementation, in x86, if the CMOS/RTC is present at the legacy
+//! addresses (I/O Ports 0x70 and 0x71), then it is an MC146818 CMOS/RTC. Therefore, in this
+//! module, the register addresses and data interpretation are based on the MC146818 datasheet.
+//!
+//! Reference:
+//! <https://elixir.bootlin.com/linux/v6.17.5/source/arch/x86/kernel/rtc.c#L69>
+//! <https://www.scs.stanford.edu/23wi-cs212/pintos/specs/mc146818a.pdf>
+
 use core::num::NonZeroU8;
 
 use log::warn;
-use ostd::{arch::device::io_port::{ReadWriteAccess, WriteOnlyAccess}, io::IoPort, sync::SpinLock};
+use ostd::{arch::{device::io_port::{ReadWriteAccess, WriteOnlyAccess}, kernel::ACPI_INFO}, io::IoPort, sync::SpinLock};
 
 use crate::SystemTime;
 use super::Driver;
@@ -27,6 +40,15 @@ impl Driver for RtcCmos {
         const IOPORT_SEL: u16 = 0x70;
         const IOPORT_VAL: u16 = 0x71;
 
+        let acpi_info = ACPI_INFO.get().unwrap();
+
+        if acpi_info.boot_flags.is_some_and(|flags| flags.use_time_and_alarm_namespace_for_rtc()) {
+            // "If set, indicates that the CMOS RTC is either not implemented, or does not exist at
+            // the legacy addresses". See:
+            // <https://uefi.org/specs/ACPI/6.5/05_ACPI_Software_Programming_Model.html#ia-pc-boot-architecture-flags>.
+            return None;
+        }
+
         let (io_sel, io_val) = match (IoPort::acquire(IOPORT_SEL), IoPort::acquire(IOPORT_VAL)) {
             (Ok(io_sel), Ok(io_val)) => (io_sel, io_val),
             _ => {
@@ -35,7 +57,7 @@ impl Driver for RtcCmos {
             }
         };
 
-        let century_register = ostd::arch::device::cmos::century_register().and_then(NonZeroU8::new);
+        let century_register = acpi_info.century_register;
 
         let mut access = CmosAccess {
             io_sel,
@@ -43,6 +65,14 @@ impl Driver for RtcCmos {
             century_register,
         };
         let status_b = access.read_status_b();
+
+        // Ideally, the absence of the CMOS RTC should be reported in the ACPI tables (We've
+        // checked the flag above). However, the ACPI tables are sometimes unreliable (e.g., QEMU
+        // never sets the flag), so we need to perform additional checks.
+        if !access.check_presence() {
+            warn!("CMOS RTC reports unexpected status, ignoring this device");
+            return None;
+        }
 
         Some(Self {
             access: SpinLock::new(access),
@@ -72,6 +102,8 @@ enum Register {
 
     StatusA = 0x0A,
     StatusB = 0x0B,
+    // `StatusC` is not used.
+    StatusD = 0x0D,
 }
 
 bitflags::bitflags! {
@@ -94,6 +126,15 @@ bitflags::bitflags! {
     }
 }
 
+bitflags::bitflags! {
+    struct StatusD: u8 {
+        /// The valid RAM and time (VRT) bit.
+        ///
+        /// This bit is set when the RAM and time are valid.
+        const VRT = 1 << 7;
+    }
+}
+
 impl CmosAccess {
     pub(self) fn read_register(&mut self, reg: Register) -> u8 {
         self.read_register_impl(reg as u8)
@@ -109,6 +150,12 @@ impl CmosAccess {
 
     pub(self) fn read_status_b(&mut self) -> StatusB {
         StatusB::from_bits_truncate(self.read_register_impl(Register::StatusB as u8))
+    }
+
+    pub(self) fn check_presence(&mut self) -> bool {
+        // If a working CMOS RTC is present, `VRT` should be set and all other reserved bits should
+        // not be set.
+        self.read_register_impl(Register::StatusD as u8) == StatusD::VRT.bits()
     }
 
     fn read_register_impl(&mut self, reg: u8) -> u8 {
