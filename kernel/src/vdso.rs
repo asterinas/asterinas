@@ -361,7 +361,7 @@ pub(super) fn init_in_first_kthread() {
     init_start_secs_count();
     init_vdso();
 
-    aster_time::VDSO_DATA_HIGH_RES_UPDATE_FN.call_once(|| Arc::new(update_vdso_high_res_instant));
+    aster_time::VDSO_DATA_HIGH_RES_UPDATE_FN.call_once(|| update_vdso_high_res_instant);
 
     // Coarse resolution clock IDs directly read the instant stored in vDSO data without
     // using coefficients for calculation, thus the related instant requires more frequent updating.
