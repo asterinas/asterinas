@@ -7,7 +7,7 @@
 
 use bitflags::bitflags;
 use ostd::{
-    arch::device::io_port::ReadWriteAccess,
+    arch::{device::io_port::ReadWriteAccess, kernel::ACPI_INFO},
     io::IoPort,
     sync::{LocalIrqDisabled, SpinLock},
 };
@@ -112,8 +112,17 @@ const MAX_WAITING_COUNT: usize = 64;
 
 impl I8042Controller {
     fn new() -> Result<Self, I8042ControllerError> {
-        // TODO: Check the flags in the ACPI table to determine if the PS/2 controller exists. See:
-        // <https://uefi.org/specs/ACPI/6.5/05_ACPI_Software_Programming_Model.html#ia-pc-boot-architecture-flags>.
+        if ACPI_INFO
+            .get()
+            .unwrap()
+            .boot_flags
+            .is_some_and(|flags| !flags.motherboard_implements_8042())
+        {
+            // The PS/2 controller does not exist. See:
+            // <https://uefi.org/specs/ACPI/6.5/05_ACPI_Software_Programming_Model.html#ia-pc-boot-architecture-flags>.
+            return Err(I8042ControllerError::NotPresent);
+        }
+
         let controller = Self {
             data_port: IoPort::acquire(0x60).unwrap(),
             status_or_command_port: IoPort::acquire(0x64).unwrap(),
@@ -212,6 +221,7 @@ impl I8042Controller {
 /// Errors that can occur when initializing the i8042 controller.
 #[derive(Debug, Clone, Copy)]
 pub(super) enum I8042ControllerError {
+    NotPresent,
     ControllerTestFailed,
     FirstPortTestFailed,
     SecondPortTestFailed,

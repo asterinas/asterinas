@@ -8,7 +8,7 @@ pub mod device;
 pub(crate) mod io;
 pub(crate) mod iommu;
 pub mod irq;
-mod kernel;
+pub mod kernel;
 pub(crate) mod mm;
 pub mod qemu;
 pub(crate) mod serial;
@@ -63,6 +63,8 @@ pub(crate) unsafe fn late_init_on_bsp() {
 
     kernel::tsc::init_tsc_freq();
     timer::init_on_bsp();
+
+    kernel::acpi::init();
 
     // SAFETY: We're on the BSP and we're ready to boot all APs.
     unsafe { crate::boot::smp::boot_all_aps() };
