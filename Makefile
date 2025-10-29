@@ -112,10 +112,12 @@ BOOT_METHOD = qemu-direct
 OVMF = off
 endif
 
-ifeq ($(OSDK_TARGET_ARCH), riscv64)
-SCHEME = riscv
-else ifeq ($(OSDK_TARGET_ARCH), loongarch64)
-SCHEME = loongarch
+ifeq ($(SCHEME), "")
+	ifeq ($(OSDK_TARGET_ARCH), riscv64)
+	SCHEME = riscv
+	else ifeq ($(OSDK_TARGET_ARCH), loongarch64)
+	SCHEME = loongarch
+	endif
 endif
 
 ifneq ($(SCHEME), "")
