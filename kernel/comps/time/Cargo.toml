@@ -11,6 +11,7 @@ aster-util = { path = "../../libs/aster-util" }
 component = { path = "../../libs/comp-sys/component" }
 log = "0.4"
 spin = "0.9.4"
+bitflags = "2.5"
 
 [target.riscv64imac-unknown-none-elf.dependencies]
 chrono = { version = "0.4.38", default-features = false }
