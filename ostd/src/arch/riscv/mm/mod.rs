@@ -3,6 +3,8 @@
 use alloc::fmt;
 use core::ops::Range;
 
+use log::warn;
+
 use crate::{
     arch::cpu::extension::{has_extensions, IsaExtensions},
     mm::{
@@ -160,10 +162,15 @@ impl PageTableEntryTrait for PageTableEntry {
             | (parse_flags!(self.0, PageTableFlags::GLOBAL, PrivFlags::GLOBAL))
             | (parse_flags!(self.0, PageTableFlags::RSV1, PrivFlags::AVAIL1));
 
-        let cache = if self.0 & PageTableFlags::PBMT_IO.bits() != 0 {
-            CachePolicy::Uncacheable
+        let cache = if has_extensions(IsaExtensions::SVPBMT) {
+            // TODO: Check other possible PBMT values.
+            if self.0 & PageTableFlags::PBMT_IO.bits() != 0 {
+                CachePolicy::Uncacheable
+            } else {
+                CachePolicy::Writeback
+            }
         } else {
-            CachePolicy::Writeback
+            CachePolicy::NonConfigurable
         };
 
         PageProperty {
@@ -197,16 +204,25 @@ impl PageTableEntryTrait for PageTableEntry {
             | parse_flags!(prop.flags.bits(), PageFlags::AVAIL2, PageTableFlags::RSV2);
 
         match prop.cache {
-            CachePolicy::Writeback => (),
-            CachePolicy::Uncacheable => {
-                // TODO: Currently Asterinas uses `Uncacheable` only for I/O
-                // memory. Normal memory can also be `Noncacheable`, where the
-                // PBMT should be set to `PBMT_NC`.
+            CachePolicy::NonConfigurable => {
                 if has_extensions(IsaExtensions::SVPBMT) {
-                    flags |= PageTableFlags::PBMT_IO.bits()
+                    panic!("Should use meaningful cache policy since SVPBMT is supported on this platform.");
                 }
             }
-            _ => panic!("unsupported cache policy"),
+            cache => {
+                if has_extensions(IsaExtensions::SVPBMT) {
+                    match cache {
+                        CachePolicy::Writeback => {}
+                        // TODO: Currently Asterinas uses `Uncacheable` only for I/O
+                        // memory. Normal memory can also be `Noncacheable`, where the
+                        // PBMT should be set to `PBMT_NC`.
+                        CachePolicy::Uncacheable => flags |= PageTableFlags::PBMT_IO.bits(),
+                        _ => panic!("unsupported cache policy"),
+                    }
+                } else {
+                    warn!("Cannot set page cache policy since SVPBMT is not supported on this platform.");
+                }
+            }
         }
 
         self.0 = (self.0 & Self::PHYS_ADDR_MASK) | flags;

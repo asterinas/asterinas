@@ -40,7 +40,11 @@ impl PageProperty {
 /// A type to control the cacheability of the main memory.
 ///
 /// The type currently follows the definition as defined by the AMD64 manual.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(
+    not(target_arch = "riscv64"),
+    derive(Clone, Copy, Debug, PartialEq, Eq)
+)]
+#[cfg_attr(target_arch = "riscv64", derive(Clone, Copy, Debug, Eq))]
 pub enum CachePolicy {
     /// Uncacheable (UC).
     ///
@@ -94,6 +98,34 @@ pub enum CachePolicy {
     /// This type of memory provides the highest-possible performance
     /// and is useful for most software and data stored in system memory (DRAM).
     Writeback,
+    /// Non-Configurable.
+    ///
+    /// A phantom cache policy indicating that the page cache policy is not
+    /// configurable since svpbmt extension is not supported on the platform.
+    ///
+    /// One should never create a page with this cache policy on a platform that
+    /// supports svpbmt extension.
+    #[cfg(target_arch = "riscv64")]
+    NonConfigurable,
+}
+
+#[cfg(target_arch = "riscv64")]
+impl PartialEq for CachePolicy {
+    fn eq(&self, other: &Self) -> bool {
+        use CachePolicy::*;
+
+        use crate::arch::cpu::extension::{has_extensions, IsaExtensions};
+
+        match (self, other) {
+            (NonConfigurable, NonConfigurable) => true,
+            // We consider `NonConfigurable` equal to any other cache policy if
+            // svpbmt extension is not supported on the platform because in that
+            // case setting any cache policy is a no-op, having the same effect
+            // as `NonConfigurable`.
+            (NonConfigurable, _) | (_, NonConfigurable) => !has_extensions(IsaExtensions::SVPBMT),
+            (a, b) => core::mem::discriminant(a) == core::mem::discriminant(b),
+        }
+    }
 }
 
 bitflags! {
