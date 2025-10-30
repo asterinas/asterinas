@@ -48,14 +48,9 @@ extern crate controlled;
 #[macro_use]
 extern crate getset;
 
-#[cfg(target_arch = "x86_64")]
-#[path = "arch/x86/mod.rs"]
-mod arch;
-#[cfg(target_arch = "riscv64")]
-#[path = "arch/riscv/mod.rs"]
-mod arch;
-#[cfg(target_arch = "loongarch64")]
-#[path = "arch/loongarch/mod.rs"]
+#[cfg_attr(target_arch = "x86_64", path = "arch/x86/mod.rs")]
+#[cfg_attr(target_arch = "riscv64", path = "arch/riscv/mod.rs")]
+#[cfg_attr(target_arch = "loongarch64", path = "arch/loongarch/mod.rs")]
 mod arch;
 
 mod context;

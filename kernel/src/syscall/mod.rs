@@ -13,18 +13,14 @@ pub use timer_create::create_timer;
 
 use crate::{context::Context, cpu::LinuxAbi, prelude::*};
 
+#[cfg_attr(target_arch = "x86_64", path = "arch/x86.rs")]
+#[cfg_attr(target_arch = "riscv64", path = "arch/riscv.rs")]
+#[cfg_attr(target_arch = "loongarch64", path = "arch/loongarch.rs")]
+mod arch;
+
 mod accept;
 mod access;
 mod alarm;
-#[cfg(target_arch = "x86_64")]
-#[path = "arch/x86.rs"]
-mod arch;
-#[cfg(target_arch = "riscv64")]
-#[path = "arch/riscv.rs"]
-mod arch;
-#[cfg(target_arch = "loongarch64")]
-#[path = "arch/loongarch.rs"]
-mod arch;
 mod arch_prctl;
 mod bind;
 mod brk;

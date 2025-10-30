@@ -19,6 +19,10 @@ pub(super) fn probe_for_device() {
         })
     });
     mmio_nodes.for_each(|node| {
+        let mmio_region = node.reg().unwrap().next().unwrap();
+        let mmio_start = mmio_region.starting_address as usize;
+        let mmio_end = mmio_start + mmio_region.size.unwrap();
+
         let interrupt_source_in_fdt = InterruptSourceInFdt {
             interrupt: node.interrupts().unwrap().next().unwrap() as u32,
             interrupt_parent: node
@@ -26,9 +30,6 @@ pub(super) fn probe_for_device() {
                 .and_then(|prop| prop.as_usize())
                 .unwrap() as u32,
         };
-        let mmio_region = node.reg().unwrap().next().unwrap();
-        let mmio_start = mmio_region.starting_address as usize;
-        let mmio_end = mmio_start + mmio_region.size.unwrap();
 
         let _ = super::try_register_mmio_device(mmio_start..mmio_end, |irq_line| {
             IRQ_CHIP
