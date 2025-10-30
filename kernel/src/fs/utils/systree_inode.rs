@@ -15,10 +15,10 @@ use aster_systree::{
 use crate::{
     events::IoEvents,
     fs::{
-        device::Device,
+        inode_handle::FileIo,
         utils::{
-            mkmod, DirentVisitor, FallocMode, FileSystem, Inode, InodeMode, InodeType, IoctlCmd,
-            Metadata, MknodType,
+            mkmod, AccessMode, DirentVisitor, FallocMode, FileSystem, Inode, InodeMode, InodeType,
+            IoctlCmd, Metadata, MknodType, StatusFlags,
         },
     },
     prelude::{VmReader, VmWriter},
@@ -547,7 +547,11 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         Err(Error::new(Errno::EPERM))
     }
 
-    default fn as_device(&self) -> Option<Arc<dyn Device>> {
+    default fn open(
+        &self,
+        _access_mode: AccessMode,
+        _status_flags: StatusFlags,
+    ) -> Option<Result<Arc<dyn FileIo>>> {
         None
     }
 

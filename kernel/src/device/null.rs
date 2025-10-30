@@ -22,8 +22,8 @@ impl Device for Null {
         DeviceId::new(1, 3)
     }
 
-    fn open(&self) -> Result<Option<Arc<dyn FileIo>>> {
-        Ok(Some(Arc::new(Null)))
+    fn open(&self) -> Option<Result<Arc<dyn FileIo>>> {
+        Some(Ok(Arc::new(Null)))
     }
 }
 

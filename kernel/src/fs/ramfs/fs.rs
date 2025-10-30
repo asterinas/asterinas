@@ -174,9 +174,14 @@ impl Inner {
         }
     }
 
-    fn as_named_pipe(&self) -> Option<&NamedPipe> {
+    fn open(
+        &self,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Option<Result<Arc<dyn FileIo>>> {
         match self {
-            Self::NamedPipe(pipe) => Some(pipe),
+            Self::Device(device) => device.open(),
+            Self::NamedPipe(pipe) => Some(pipe.open(access_mode, status_flags)),
             _ => None,
         }
     }
@@ -734,11 +739,12 @@ impl Inode for RamInode {
         Ok(new_inode)
     }
 
-    fn as_device(&self) -> Option<Arc<dyn Device>> {
-        if !self.typ.is_device() {
-            return None;
-        }
-        self.inner.as_device().cloned()
+    fn open(
+        &self,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Option<Result<Arc<dyn FileIo>>> {
+        self.inner.open(access_mode, status_flags)
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {

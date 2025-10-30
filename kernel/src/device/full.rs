@@ -22,8 +22,8 @@ impl Device for Full {
         DeviceId::new(1, 7)
     }
 
-    fn open(&self) -> Result<Option<Arc<dyn FileIo>>> {
-        Ok(Some(Arc::new(Full)))
+    fn open(&self) -> Option<Result<Arc<dyn FileIo>>> {
+        Some(Ok(Arc::new(Full)))
     }
 }
 
