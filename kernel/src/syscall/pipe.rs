@@ -13,7 +13,7 @@ use crate::{
 pub fn sys_pipe2(fds: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("flags: {:?}", flags);
 
-    let (pipe_reader, pipe_writer) = pipe::new_pair()?;
+    let (pipe_reader, pipe_writer) = pipe::new_pair_file()?;
 
     let fd_flags = if CreationFlags::from_bits_truncate(flags).contains(CreationFlags::O_CLOEXEC) {
         FdFlags::CLOEXEC
