@@ -15,7 +15,8 @@ use crate::transport::mmio::bus::common_device::{
 #[cfg_attr(target_arch = "x86_64", path = "arch/x86.rs")]
 #[cfg_attr(target_arch = "riscv64", path = "arch/riscv.rs")]
 #[cfg_attr(target_arch = "loongarch64", path = "arch/loongarch.rs")]
-pub mod arch;
+mod arch;
+
 #[expect(clippy::module_inception)]
 pub(super) mod bus;
 pub(super) mod common_device;
@@ -37,7 +38,7 @@ pub(super) fn init() {
     arch::probe_for_device();
 }
 
-/// Try to validate a potential VirtIO-MMIO device, map it to an IRQ line, and
+/// Tries to validate a potential VirtIO-MMIO device, map it to an IRQ line, and
 /// register it as a VirtIO-MMIO device.
 ///
 /// Returns `Ok(())` if the device was registered, or a specific
