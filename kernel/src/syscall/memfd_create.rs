@@ -26,9 +26,9 @@ pub fn sys_memfd_create(name_addr: Vaddr, flags: u32, ctx: &Context) -> Result<S
         let file_table = ctx.thread_local.borrow_file_table();
         let mut file_table_locked = file_table.unwrap().write();
 
-        // FIXME: Support `MFD_ALLOW_SEALING` and `MFD_HUGETLB`.
-        if memfd_flags.contains(MemfdFlags::MFD_ALLOW_SEALING) {
-            warn!("sealing not supported");
+        // FIXME: Support `MFD_HUGETLB`.
+        if memfd_flags.contains(MemfdFlags::MFD_HUGETLB) {
+            warn!("`MFD_HUGETLB` not supported");
         }
 
         if memfd_flags.contains(MemfdFlags::MFD_NOEXEC_SEAL | MemfdFlags::MFD_EXEC) {

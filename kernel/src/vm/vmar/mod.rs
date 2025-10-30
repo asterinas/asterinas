@@ -1128,7 +1128,7 @@ impl<'a> VmarMapOptions<'a> {
             vmo,
             mappable,
             perms,
-            may_perms,
+            mut may_perms,
             vmo_offset,
             size: map_size,
             offset,
@@ -1183,9 +1183,16 @@ impl<'a> VmarMapOptions<'a> {
             // Handle the memory backed by device or page cache.
             match mappable {
                 Mappable::Inode(inode) => {
-                    let is_writable_tracked = inode.downcast_ref::<MemfdInode>().is_some()
+                    let is_writable_tracked = if let Some(memfd_inode) =
+                        inode.downcast_ref::<MemfdInode>()
                         && is_shared
-                        && may_perms.contains(VmPerms::MAY_WRITE);
+                        && may_perms.contains(VmPerms::MAY_WRITE)
+                    {
+                        memfd_inode.check_writable(perms, &mut may_perms)?;
+                        true
+                    } else {
+                        false
+                    };
 
                     // Since `Mappable::Inode` is provided, it is
                     // reasonable to assume that the VMO is provided.

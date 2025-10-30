@@ -9,6 +9,7 @@ use crate::{
     },
     prelude::*,
     process::{process_table, Pid},
+    vm::memfd::{FileSeals, MemfdFile},
 };
 
 pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
@@ -29,6 +30,8 @@ pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64, ctx: &Context) -> Result<Sysc
         }),
         FcntlCmd::F_GETOWN => handle_getown(fd, ctx),
         FcntlCmd::F_SETOWN => handle_setown(fd, arg, ctx),
+        FcntlCmd::F_ADD_SEALS => handle_addseal(fd, arg, ctx),
+        FcntlCmd::F_GET_SEALS => handle_getseal(fd, ctx),
     }
 }
 
@@ -154,6 +157,39 @@ fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn>
     Ok(SyscallReturn::Return(0))
 }
 
+fn handle_addseal(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
+    let new_seals = FileSeals::from_bits(arg as u32)
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid seals"))?;
+
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
+    let file = get_file_fast!(&mut file_table, fd);
+    let memfd_file = file.downcast_ref::<MemfdFile>().ok_or_else(|| {
+        Error::with_message(
+            Errno::EINVAL,
+            "file seals can only be applied to memfd files",
+        )
+    })?;
+
+    memfd_file.add_seals(new_seals)?;
+
+    Ok(SyscallReturn::Return(0))
+}
+
+fn handle_getseal(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
+    let file = get_file_fast!(&mut file_table, fd);
+    let memfd_file = file.downcast_ref::<MemfdFile>().ok_or_else(|| {
+        Error::with_message(
+            Errno::EINVAL,
+            "file seals can only be applied to memfd files",
+        )
+    })?;
+
+    let file_seals = memfd_file.get_seals();
+
+    Ok(SyscallReturn::Return(file_seals.bits() as _))
+}
+
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
 #[expect(non_camel_case_types)]
@@ -169,6 +205,8 @@ enum FcntlCmd {
     F_SETOWN = 8,
     F_GETOWN = 9,
     F_DUPFD_CLOEXEC = 1030,
+    F_ADD_SEALS = 1033,
+    F_GET_SEALS = 1034,
 }
 
 #[expect(non_camel_case_types)]
