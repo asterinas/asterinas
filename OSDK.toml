@@ -47,11 +47,12 @@ grub.boot_protocol = "linux"
 qemu.args = "$(./tools/qemu_args.sh tdx)"
 
 [scheme."riscv"]
+supported_archs = ["riscv64"]
 boot.method = "qemu-direct"
 build.strip_elf = false
 
 qemu.args = """\
-    -cpu rv64,zba=true,zbb=true \
+    -cpu rv64,svpbmt=true \
     -machine virt \
     -m 8G \
     --no-reboot \
