@@ -144,7 +144,11 @@ impl Inode for PtySlaveInode {
         self.fs.upgrade().unwrap()
     }
 
-    fn as_device(&self) -> Option<Arc<dyn Device>> {
-        Some(self.device.clone())
+    fn open(
+        &self,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Option<Result<Arc<dyn FileIo>>> {
+        self.device.open()
     }
 }

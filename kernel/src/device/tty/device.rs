@@ -15,15 +15,15 @@ use crate::{
 pub struct TtyDevice;
 
 impl Device for TtyDevice {
-    fn open(&self) -> Result<Option<Arc<dyn FileIo>>> {
+    fn open(&self) -> Option<Result<Arc<dyn FileIo>>> {
         let Some(terminal) = current!().terminal() else {
-            return_errno_with_message!(
+            return Some(Err(Error::with_message(
                 Errno::ENOTTY,
-                "the process does not have a controlling terminal"
-            );
+                "the process does not have a controlling terminal",
+            )));
         };
 
-        Ok(Some(terminal as Arc<dyn FileIo>))
+        Some(Ok(terminal as Arc<dyn FileIo>))
     }
 
     fn type_(&self) -> DeviceType {

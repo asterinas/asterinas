@@ -160,8 +160,12 @@ impl Inode for Ptmx {
         self.devpts()
     }
 
-    fn as_device(&self) -> Option<Arc<dyn Device>> {
-        Some(Arc::new(self.inner.clone()))
+    fn open(
+        &self,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Option<Result<Arc<dyn FileIo>>> {
+        self.inner.open()
     }
 
     fn is_dentry_cacheable(&self) -> bool {
@@ -178,10 +182,13 @@ impl Device for Inner {
         DeviceId::new(PTMX_MAJOR_NUM, PTMX_MINOR_NUM)
     }
 
-    fn open(&self) -> Result<Option<Arc<dyn FileIo>>> {
+    fn open(&self) -> Option<Result<Arc<dyn FileIo>>> {
         let devpts = self.0.upgrade().unwrap();
-        let (master, _) = devpts.create_master_slave_pair()?;
-        Ok(Some(master as _))
+        Some(
+            devpts
+                .create_master_slave_pair()
+                .map(|(master, _)| master as _),
+        )
     }
 }
 

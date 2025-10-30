@@ -14,7 +14,11 @@ use super::{
 };
 use crate::{
     events::IoEvents,
-    fs::device::{Device, DeviceType},
+    fs::{
+        device::{Device, DeviceType},
+        inode_handle::FileIo,
+        utils::StatusFlags,
+    },
     prelude::*,
     process::{
         credentials::capabilities::CapSet, posix_thread::AsPosixThread, signal::PollHandle, Gid,
@@ -320,7 +324,11 @@ pub trait Inode: Any + Sync + Send {
         Err(Error::new(Errno::ENOTDIR))
     }
 
-    fn as_device(&self) -> Option<Arc<dyn Device>> {
+    fn open(
+        &self,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Option<Result<Arc<dyn FileIo>>> {
         None
     }
 

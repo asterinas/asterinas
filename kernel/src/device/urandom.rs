@@ -47,8 +47,8 @@ impl Device for Urandom {
         DeviceId::new(1, 9)
     }
 
-    fn open(&self) -> Result<Option<Arc<dyn FileIo>>> {
-        Ok(Some(Arc::new(Urandom)))
+    fn open(&self) -> Option<Result<Arc<dyn FileIo>>> {
+        Some(Ok(Arc::new(Urandom)))
     }
 }
 

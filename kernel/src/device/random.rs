@@ -30,8 +30,8 @@ impl Device for Random {
         DeviceId::new(1, 8)
     }
 
-    fn open(&self) -> Result<Option<Arc<dyn FileIo>>> {
-        Ok(Some(Arc::new(Random)))
+    fn open(&self) -> Option<Result<Arc<dyn FileIo>>> {
+        Some(Ok(Arc::new(Random)))
     }
 }
 

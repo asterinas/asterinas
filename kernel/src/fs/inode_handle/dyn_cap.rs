@@ -23,10 +23,12 @@ impl InodeHandle<Rights> {
             return_errno_with_message!(Errno::EISDIR, "directory cannot open to write");
         }
 
-        let file_io = if let Some(device) = inode.as_device() {
-            device.open()?
-        } else {
+        // TODO: Add more checks to ensure that certain behaviors
+        // of files opened with `O_PATH` are prohibited.
+        let file_io = if status_flags.contains(StatusFlags::O_PATH) {
             None
+        } else {
+            inode.open(access_mode, status_flags).transpose()?
         };
 
         let inner = Arc::new(InodeHandle_ {

@@ -19,8 +19,8 @@ pub trait Device: FileIo {
     fn id(&self) -> DeviceId;
 
     /// Open a device.
-    fn open(&self) -> Result<Option<Arc<dyn FileIo>>> {
-        Ok(None)
+    fn open(&self) -> Option<Result<Arc<dyn FileIo>>> {
+        None
     }
 }
 
