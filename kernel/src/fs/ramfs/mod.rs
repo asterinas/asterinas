@@ -3,7 +3,7 @@
 //! Ramfs based on PageCache
 
 use fs::RamFsType;
-pub use fs::{new_detached_inode, RamFs};
+pub use fs::{new_detached_inode_in_memfd, RamFs, RamInode};
 
 mod fs;
 mod xattr;
