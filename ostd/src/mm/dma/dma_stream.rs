@@ -122,16 +122,20 @@ impl DmaStream {
     /// [`read_bytes`]: crate::mm::VmIo::read_bytes
     /// [`write_bytes`]: crate::mm::VmIo::write_bytes
     pub fn sync(&self, byte_range: Range<usize>) -> Result<(), Error> {
-        if byte_range.end > self.size() {
+        let size = self.size();
+        if byte_range.end > size || byte_range.start > size {
             return Err(Error::InvalidArgs);
         }
+
         if self.is_cache_coherent {
             return Ok(());
         }
 
         let start_vaddr = crate::mm::paddr_to_vaddr(self.segment.paddr());
         let range = (start_vaddr + byte_range.start)..(start_vaddr + byte_range.end);
-        crate::arch::mm::sync_dma_range(range, self.direction);
+        // SAFETY: We've checked that the range is inbound, so the virtual address range and the
+        // DMA direction correspond to a DMA region (they're part of `self`).
+        unsafe { crate::arch::mm::sync_dma_range(range, self.direction) };
 
         Ok(())
     }
