@@ -1,5 +1,5 @@
 { lib, stdenvNoCC, fetchFromGitHub, hostPlatform, writeClosure, busybox, apps
-, benchmark, syscall, dnsServer, pkgs, podman ? null }:
+, benchmark, syscall, dnsServer, pkgs, cacert, podman ? null }:
 let
   etc = lib.fileset.toSource {
     root = ./../src/etc;
@@ -18,7 +18,7 @@ let
     ++ lib.optionals (apps != null) [ apps.package ]
     ++ lib.optionals (benchmark != null) [ benchmark.package ]
     ++ lib.optionals (syscall != null) [ syscall.package ]
-    ++ lib.optionals (podman != null) [ podman ];
+    ++ lib.optionals (podman != null) [ podman cacert ];
 in stdenvNoCC.mkDerivation {
   name = "initramfs";
   buildCommand = ''
@@ -69,6 +69,9 @@ in stdenvNoCC.mkDerivation {
       cp -r ${podman_config_files}/* $out/etc/
       mkdir -p $out/nix/store
       cp -r ${podman} $out/nix/store/
+
+      mkdir -p $out/etc/ssl/certs
+      cp -r ${cacert}/etc/ssl/certs/ca-bundle.crt $out/etc/ssl/certs/ca-certificates.crt
     ''}
 
     # Use `writeClosure` to retrieve all dependencies of the specified packages.
