@@ -29,7 +29,7 @@ use crate::{
         signal::{PollHandle, Pollable},
         Gid, Uid,
     },
-    vm::vmo::Vmo,
+    vm::{perms::VmPerms, vmo::Vmo},
 };
 
 /// Maximum file name length for `memfd_create`, excluding the final `\0` byte.
@@ -41,6 +41,62 @@ pub struct MemfdInode {
     inode: RamInode,
     #[expect(dead_code)]
     name: String,
+    seals: Mutex<FileSeals>,
+}
+
+impl MemfdInode {
+    pub fn add_seals(&self, mut new_seals: FileSeals) -> Result<()> {
+        let mut seals = self.seals.lock();
+
+        if seals.contains(FileSeals::F_SEAL_SEAL) {
+            return_errno_with_message!(Errno::EPERM, "the file is sealed against sealing");
+        }
+
+        // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/mm/memfd.c#L262-L266>
+        if new_seals.contains(FileSeals::F_SEAL_EXEC)
+            && self
+                .mode()
+                .unwrap()
+                .intersects(InodeMode::from_bits_truncate(0o111))
+        {
+            new_seals |= FileSeals::F_SEAL_SHRINK
+                | FileSeals::F_SEAL_GROW
+                | FileSeals::F_SEAL_WRITE
+                | FileSeals::F_SEAL_FUTURE_WRITE;
+        }
+
+        if new_seals.contains(FileSeals::F_SEAL_WRITE) {
+            let page_cache = self.page_cache().unwrap();
+            page_cache
+                .writable_mapping_status()
+                .as_ref()
+                .unwrap()
+                .deny()?;
+        }
+
+        *seals |= new_seals;
+
+        Ok(())
+    }
+
+    pub fn get_seals(&self) -> FileSeals {
+        *self.seals.lock()
+    }
+
+    /// Checks whether writing to this memfd inode is allowed.
+    ///
+    /// This method restricts the `may_perms` if needed.
+    pub fn check_writable(&self, perms: VmPerms, may_perms: &mut VmPerms) -> Result<()> {
+        let seals = self.seals.lock();
+        if seals.intersects(FileSeals::F_SEAL_WRITE | FileSeals::F_SEAL_FUTURE_WRITE) {
+            if perms.contains(VmPerms::WRITE) {
+                return_errno_with_message!(Errno::EPERM, "the file is sealed against writing");
+            }
+            // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/mm/memfd.c#L356>
+            may_perms.remove(VmPerms::MAY_WRITE);
+        }
+        Ok(())
+    }
 }
 
 #[inherit_methods(from = "self.inode")]
@@ -85,18 +141,64 @@ impl Inode for MemfdInode {
     fn remove_xattr(&self, name: XattrName) -> Result<()>;
 
     fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+        if !reader.has_remain() {
+            return Ok(0);
+        }
+
+        let seals = self.seals.lock();
+        if seals.intersects(FileSeals::F_SEAL_WRITE | FileSeals::F_SEAL_FUTURE_WRITE) {
+            return_errno_with_message!(Errno::EPERM, "the file is sealed against writing");
+        }
+
+        if seals.contains(FileSeals::F_SEAL_GROW) {
+            let file_size = self.inode.size();
+            if offset >= file_size {
+                return_errno_with_message!(Errno::EPERM, "the file is sealed against growing");
+            } else {
+                reader.limit(file_size - offset);
+            }
+        }
+
         self.inode.write_at(offset, reader)
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
+        let seals = self.seals.lock();
+        if seals.contains(FileSeals::F_SEAL_SHRINK) && new_size < self.inode.size() {
+            return_errno_with_message!(Errno::EPERM, "the file is sealed against shrinking");
+        }
+        if seals.contains(FileSeals::F_SEAL_GROW) && new_size > self.inode.size() {
+            return_errno_with_message!(Errno::EPERM, "the file is sealed against growing");
+        }
+
         self.inode.resize(new_size)
     }
 
     fn set_mode(&self, mode: InodeMode) -> Result<()> {
+        let seals = self.seals.lock();
+        if seals.contains(FileSeals::F_SEAL_EXEC)
+            && (self.mode().unwrap() ^ mode).intersects(InodeMode::from_bits_truncate(0o111))
+        {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "the file is sealed against modifying executable bits"
+            );
+        }
+
         self.inode.set_mode(mode)
     }
 
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
+        let seals = self.seals.lock();
+        if seals.contains(FileSeals::F_SEAL_GROW) && offset + len > self.inode.size() {
+            return_errno_with_message!(Errno::EPERM, "the file is sealed against growing");
+        }
+        if seals.intersects(FileSeals::F_SEAL_WRITE | FileSeals::F_SEAL_FUTURE_WRITE)
+            && mode == FallocMode::PunchHoleKeepSize
+        {
+            return_errno_with_message!(Errno::EPERM, "the file is sealed against writing");
+        }
+
         self.inode.fallocate(mode, offset, len)
     }
 
@@ -138,9 +240,18 @@ impl MemfdFile {
             let ram_inode =
                 new_detached_inode_in_memfd(weak_self, mode, Uid::new_root(), Gid::new_root());
 
+            let mut seals = FileSeals::empty();
+            if !allow_sealing {
+                seals |= FileSeals::F_SEAL_SEAL;
+            }
+            if !executable {
+                seals |= FileSeals::F_SEAL_EXEC;
+            }
+
             MemfdInode {
                 inode: ram_inode,
                 name,
+                seals: Mutex::new(seals),
             }
         });
 
@@ -150,6 +261,17 @@ impl MemfdFile {
             access_mode: AccessMode::O_RDWR,
             status_flags: AtomicU32::new(0),
         })
+    }
+
+    pub fn add_seals(&self, new_seals: FileSeals) -> Result<()> {
+        if !self.access_mode.is_writable() {
+            return_errno_with_message!(Errno::EPERM, "the file is not opened writable");
+        }
+        self.memfd_inode().add_seals(new_seals)
+    }
+
+    pub fn get_seals(&self) -> FileSeals {
+        self.memfd_inode().get_seals()
     }
 
     fn memfd_inode(&self) -> &MemfdInode {
@@ -250,5 +372,22 @@ bitflags! {
         const MFD_NOEXEC_SEAL = 1 << 3;
         /// Executable.
         const MFD_EXEC = 1 << 4;
+    }
+}
+
+bitflags! {
+    pub struct FileSeals: u32 {
+        /// Prevent further seals from being set.
+        const F_SEAL_SEAL = 0x0001;
+        /// Prevent file from shrinking.
+        const F_SEAL_SHRINK = 0x0002;
+        /// Prevent file from growing.
+        const F_SEAL_GROW = 0x0004;
+        /// Prevent writes.
+        const F_SEAL_WRITE = 0x0008;
+        /// Prevent future writes while mapped.
+        const F_SEAL_FUTURE_WRITE = 0x0010;
+        /// Prevent chmod modifying exec bits.
+        const F_SEAL_EXEC = 0x0020;
     }
 }

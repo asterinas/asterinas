@@ -1,6 +1,4 @@
 MemfdTest.Name
-MemfdTest.Seal*
-MemfdTest.NoPartialSealApplicationWhenWriteSealRejected
-MemfdTest.TmpfsFilesHaveSealSeal
 MemfdTest.CanOpenFromProcfs
+MemfdTest.SealGrowPartialWriteTruncatedSamePage
 MemfdTest.MemfdMustBeWritableToModifySeals
