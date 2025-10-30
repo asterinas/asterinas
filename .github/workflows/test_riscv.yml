@@ -15,7 +15,7 @@ jobs:
       options: --device=/dev/kvm --privileged
     strategy:
       matrix:
-        id: ['lint', 'compile']
+        id: ['lint', 'compile', 'usermode_test', 'ktest']
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
@@ -23,5 +23,30 @@ jobs:
         uses: ./.github/actions/test
         with:
           auto_test: 'general'
-          runs_on: 'ubuntu-latest'
           arch: 'riscv64'
+
+  integration-test:
+    runs-on: ubuntu-latest
+    container:
+      image: asterinas/asterinas:0.16.1-20250922
+      options: --device=/dev/kvm --privileged
+    strategy:
+      matrix:
+        include:
+          - test_id: 'boot-debug'
+
+          - test_id: 'boot-release'
+            release: true
+
+          - test_id: 'syscall-release'
+            release: true
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run integration tests ${{ (startsWith(matrix.test_id, 'syscall') && 'with LTP') || '' }}
+        uses: ./.github/actions/test
+        with:
+          auto_test: ${{ (startsWith(matrix.test_id, 'boot') && 'boot') || 'syscall' }}
+          release: ${{ !contains(matrix.release, 'false') }}
+          arch: 'riscv64'
+          syscall_test_suite: 'ltp'
