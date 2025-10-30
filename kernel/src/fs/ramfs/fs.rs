@@ -33,7 +33,7 @@ use crate::{
     prelude::*,
     process::{signal::PollHandle, Gid, Uid},
     time::clocks::RealTimeCoarseClock,
-    vm::vmo::Vmo,
+    vm::{memfd::MemfdInode, vmo::Vmo},
 };
 
 /// A volatile file system whose data and metadata exists only in memory.
@@ -93,7 +93,7 @@ impl FileSystem for RamFs {
 }
 
 /// An inode of `RamFs`.
-struct RamInode {
+pub struct RamInode {
     /// Inode inner specifics
     inner: Inner,
     /// Inode metadata
@@ -145,6 +145,10 @@ impl Inner {
 
     pub fn new_named_pipe() -> Self {
         Self::NamedPipe(NamedPipe::new().unwrap())
+    }
+
+    fn new_file_in_memfd(this: Weak<MemfdInode>) -> Self {
+        Self::File(PageCache::new(this).unwrap())
     }
 
     fn as_direntry(&self) -> Option<&RwLock<DirEntry>> {
@@ -425,17 +429,22 @@ impl RamInode {
         })
     }
 
-    fn new_file_detached(mode: InodeMode, uid: Uid, gid: Gid) -> Arc<Self> {
-        Arc::new_cyclic(|weak_self| RamInode {
-            inner: Inner::new_file(weak_self.clone()),
+    fn new_file_detached_in_memfd(
+        weak_self: &Weak<MemfdInode>,
+        mode: InodeMode,
+        uid: Uid,
+        gid: Gid,
+    ) -> Self {
+        Self {
+            inner: Inner::new_file_in_memfd(weak_self.clone()),
             metadata: SpinLock::new(InodeMeta::new(mode, uid, gid)),
             ino: weak_self.as_ptr() as u64,
             typ: InodeType::File,
-            this: weak_self.clone(),
+            this: Weak::new(),
             fs: Weak::new(),
             extension: Extension::new(),
             xattr: RamXattr::new(),
-        })
+        }
     }
 
     fn new_symlink(fs: &Arc<RamFs>, mode: InodeMode, uid: Uid, gid: Gid) -> Arc<Self> {
@@ -1243,11 +1252,16 @@ impl Inode for RamInode {
     }
 }
 
-/// Creates a RAM inode that is detached from any `RamFs`.
+/// Creates a RAM inode that is detached from any `RamFs`, and resides in a `MemfdInode`.
 ///
 // TODO: Add "anonymous inode fs" and link the inode to it.
-pub fn new_detached_inode(mode: InodeMode, uid: Uid, gid: Gid) -> Arc<dyn Inode> {
-    RamInode::new_file_detached(mode, uid, gid)
+pub fn new_detached_inode_in_memfd(
+    weak_self: &Weak<MemfdInode>,
+    mode: InodeMode,
+    uid: Uid,
+    gid: Gid,
+) -> RamInode {
+    RamInode::new_file_detached_in_memfd(weak_self, mode, uid, gid)
 }
 
 fn write_lock_two_direntries_by_ino<'a>(
