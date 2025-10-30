@@ -110,7 +110,11 @@ pub(crate) fn tlb_flush_all_including_global() {
     }
 }
 
-pub(crate) fn sync_dma_range(_range: Range<Vaddr>, _direction: DmaDirection) {
+/// # Safety
+///
+/// The caller must ensure that the virtual address range and DMA direction correspond correctly to
+/// a DMA region.
+pub(crate) unsafe fn sync_dma_range(_range: Range<Vaddr>, _direction: DmaDirection) {
     // The streaming DMA mapping in x86_64 is cache coherent, and does not
     // require synchronization.
     // Reference: <https://lwn.net/Articles/855328/>, <https://lwn.net/Articles/2265/>.

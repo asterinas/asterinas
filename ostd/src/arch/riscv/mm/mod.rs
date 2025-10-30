@@ -93,48 +93,51 @@ pub(crate) fn tlb_flush_all_including_global() {
     riscv::asm::sfence_vma_all()
 }
 
-pub(crate) fn sync_dma_range(range: Range<Vaddr>, direction: DmaDirection) {
-    if has_extensions(IsaExtensions::ZICBOM) {
-        static CMO_MANAGEMENT_BLOCK_SIZE: Once<usize> = Once::new();
-        CMO_MANAGEMENT_BLOCK_SIZE.call_once(|| {
-            DEVICE_TREE
-                .get()
-                .unwrap()
-                .cpus()
-                .find(|cpu| cpu.property("mmu-type").is_some())
-                .expect("Failed to find an application CPU node in device tree")
-                .property("riscv,cbom-block-size")
-                .expect("Failed to find `riscv,cbom-block-size` property of the CPU node")
-                .as_usize()
-                .unwrap_or(64)
-        });
+/// # Safety
+///
+/// The caller must ensure that the virtual address range and DMA direction correspond correctly to
+/// a DMA region.
+pub(crate) unsafe fn sync_dma_range(range: Range<Vaddr>, direction: DmaDirection) {
+    if !has_extensions(IsaExtensions::ZICBOM) {
+        unimplemented!("DMA synchronization is unimplemented without ZICBOM extension")
+    }
 
-        for addr in range.step_by(*CMO_MANAGEMENT_BLOCK_SIZE.get().unwrap()) {
-            // SAFETY: These are cache maintenance operations on a valid, owned
-            // memory range. They are required for correctness on systems with
-            // non-coherent DMA.
-            unsafe {
-                match direction {
-                    DmaDirection::ToDevice => {
-                        core::arch::asm!("cbo.clean ({})", in(reg) addr, options(nostack))
-                    }
-                    DmaDirection::FromDevice => {
-                        core::arch::asm!("cbo.inval ({})", in(reg) addr, options(nostack));
-                    }
-                    DmaDirection::Bidirectional => {
-                        core::arch::asm!("cbo.flush ({})", in(reg) addr, options(nostack));
-                    }
+    static CMO_MANAGEMENT_BLOCK_SIZE: Once<usize> = Once::new();
+    let cmo_management_block_size = *CMO_MANAGEMENT_BLOCK_SIZE.call_once(|| {
+        DEVICE_TREE
+            .get()
+            .unwrap()
+            .cpus()
+            .find(|cpu| cpu.property("mmu-type").is_some())
+            .expect("Failed to find an application CPU node in device tree")
+            .property("riscv,cbom-block-size")
+            .expect("Failed to find `riscv,cbom-block-size` property of the CPU node")
+            .as_usize()
+            .expect("Failed to parse `riscv,cbom-block-size` property of the CPU node")
+    });
+
+    for addr in range.step_by(cmo_management_block_size) {
+        // Performing cache maintenance operations is required for correctness on systems with
+        // non-coherent DMA.
+        // SAFETY: The caller ensures that the virtual address range corresponds to a DMA region.
+        // So the underlying memory is untyped and the operations are safe to perform.
+        unsafe {
+            match direction {
+                DmaDirection::ToDevice => {
+                    core::arch::asm!("cbo.clean ({})", in(reg) addr, options(nostack));
+                }
+                DmaDirection::FromDevice => {
+                    core::arch::asm!("cbo.inval ({})", in(reg) addr, options(nostack));
+                }
+                DmaDirection::Bidirectional => {
+                    core::arch::asm!("cbo.flush ({})", in(reg) addr, options(nostack));
                 }
             }
         }
-        // Ensure that all cache operations have completed before proceeding.
-        // SAFETY: Safe because it is only a memory fence.
-        unsafe {
-            core::arch::asm!("fence rw, rw", options(nostack));
-        }
-    } else {
-        // TODO: Implement DMA synchronization without ZICBOM support.
     }
+    // Ensure that all cache operations have completed before proceeding.
+    // SAFETY: Performing a memory fence is always safe.
+    unsafe { core::arch::asm!("fence rw, rw", options(nostack)) };
 }
 
 #[derive(Clone, Copy, Pod, Default)]

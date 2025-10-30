@@ -102,9 +102,17 @@ pub(crate) fn tlb_flush_all_including_global() {
     }
 }
 
-pub(crate) fn sync_dma_range(_range: Range<Vaddr>, _direction: DmaDirection) {
-    todo!("Implement DMA synchronization for LoongArch64 architecture");
+/// # Safety
+///
+/// The caller must ensure that the virtual address range and DMA direction correspond correctly to
+/// a DMA region.
+pub(crate) unsafe fn sync_dma_range(_range: Range<Vaddr>, _direction: DmaDirection) {
+    unimplemented!("DMA synchronization is unimplemented in LoongArch64")
 }
+
+#[derive(Clone, Copy, Pod, Default)]
+#[repr(C)]
+pub(crate) struct PageTableEntry(usize);
 
 /// Activates the given level 4 page table.
 ///
@@ -130,10 +138,6 @@ pub(crate) fn current_page_table_paddr() -> Paddr {
     );
     pgdl
 }
-
-#[derive(Clone, Copy, Pod, Default)]
-#[repr(C)]
-pub(crate) struct PageTableEntry(usize);
 
 impl PageTableEntry {
     const PHYS_ADDR_MASK: usize = 0x0000_FFFF_FFFF_F000;
