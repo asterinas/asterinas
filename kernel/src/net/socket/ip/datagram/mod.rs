@@ -12,6 +12,7 @@ use crate::{
     fs::utils::Inode,
     match_sock_option_mut,
     net::socket::{
+        ip::options::{IpOptionSet, SetIpLevelOption},
         new_pseudo_inode,
         options::{Error as SocketError, SocketOption},
         private::SocketPrivate,
@@ -44,13 +45,15 @@ pub struct DatagramSocket {
 #[derive(Debug, Clone)]
 struct OptionSet {
     socket: SocketOptionSet,
+    ip: IpOptionSet,
     // TODO: UDP option set
 }
 
 impl OptionSet {
     fn new() -> Self {
         let socket = SocketOptionSet::new_udp();
-        OptionSet { socket }
+        let ip = IpOptionSet::new_udp();
+        OptionSet { socket, ip }
     }
 }
 
@@ -228,33 +231,47 @@ impl Socket for DatagramSocket {
         });
 
         let inner = self.inner.read();
-        self.options.read().socket.get_option(option, &*inner)
+        let options = self.options.read();
+
+        // Deal with socket-level options
+        match options.socket.get_option(option, &*inner) {
+            Err(err) if err.error() == Errno::ENOPROTOOPT => (),
+            res => return res,
+        }
+
+        // Deal with IP-level options
+        options.ip.get_option(option)
     }
 
     fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
         let inner = self.inner.read();
         let mut options = self.options.write();
 
-        match options.socket.set_option(option, &*inner) {
-            Err(e) => Err(e),
-            Ok(need_iface_poll) => {
-                let iface_to_poll = need_iface_poll
-                    .then(|| match &*inner {
-                        Inner::Unbound(_) => None,
-                        Inner::Bound(bound_datagram) => Some(bound_datagram.iface().clone()),
-                    })
-                    .flatten();
-
-                drop(inner);
-                drop(options);
-
-                if let Some(iface) = iface_to_poll {
-                    iface.poll();
-                }
-
-                Ok(())
+        // Deal with socket-level options
+        let need_iface_poll = match options.socket.set_option(option, &*inner) {
+            Err(err) if err.error() == Errno::ENOPROTOOPT => {
+                // Deal with IP-level options
+                options.ip.set_option(option, &*inner)?
             }
+            Err(err) => return Err(err),
+            Ok(need_iface_poll) => need_iface_poll,
+        };
+
+        let iface_to_poll = need_iface_poll
+            .then(|| match &*inner {
+                Inner::Unbound(_) => None,
+                Inner::Bound(bound_datagram) => Some(bound_datagram.iface().clone()),
+            })
+            .flatten();
+
+        drop(inner);
+        drop(options);
+
+        if let Some(iface) = iface_to_poll {
+            iface.poll();
         }
+
+        Ok(())
     }
 
     fn pseudo_inode(&self) -> &Arc<dyn Inode> {
@@ -275,5 +292,14 @@ impl SetSocketLevelOption for Inner<UnboundDatagram, BoundDatagram> {
         };
 
         bound.bound_port().set_can_reuse(reuse_addr);
+    }
+}
+
+impl SetIpLevelOption for Inner<UnboundDatagram, BoundDatagram> {
+    fn set_hdrincl(&self, _hdrincl: bool) -> Result<()> {
+        return_errno_with_message!(
+            Errno::ENOPROTOOPT,
+            "IP_HDRINCL cannot be set on UDP sockets"
+        );
     }
 }

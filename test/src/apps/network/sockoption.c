@@ -13,6 +13,7 @@ int sk_unbound;
 int sk_listen;
 int sk_connected;
 int sk_accepted;
+int sk_udp;
 
 struct sockaddr_in listen_addr;
 #define LISTEN_PORT htons(0x1242)
@@ -35,6 +36,8 @@ FN_SETUP(general)
 		      sizeof(listen_addr)));
 
 	sk_accepted = CHECK(accept(sk_listen, NULL, NULL));
+
+	sk_udp = CHECK(socket(AF_INET, SOCK_DGRAM, 0));
 }
 END_SETUP()
 
@@ -287,12 +290,17 @@ FN_TEST(ip_tos)
 	// 1. Check default value
 	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_TOS, &tos, &tos_len),
 		 tos == 0 && tos_len == 4);
+	TEST_RES(getsockopt(sk_udp, IPPROTO_IP, IP_TOS, &tos, &tos_len),
+		 tos == 0 && tos_len == 4);
 
 	// 2. Set and get value
 	tos = 0x10;
 	CHECK(setsockopt(sk_unbound, IPPROTO_IP, IP_TOS, &tos, tos_len));
+	CHECK(setsockopt(sk_udp, IPPROTO_IP, IP_TOS, &tos, tos_len));
 	tos = 0;
 	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_TOS, &tos, &tos_len),
+		 tos == 0x10 && tos_len == 4);
+	TEST_RES(getsockopt(sk_udp, IPPROTO_IP, IP_TOS, &tos, &tos_len),
 		 tos == 0x10 && tos_len == 4);
 
 	tos = 0x123;
@@ -317,6 +325,8 @@ FN_TEST(ip_ttl)
 	// 1. Check default value
 	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_TTL, &ttl, &ttl_len),
 		 ttl == 64 && ttl_len == 4);
+	TEST_RES(getsockopt(sk_udp, IPPROTO_IP, IP_TTL, &ttl, &ttl_len),
+		 ttl == 64 && ttl_len == 4);
 
 	// 2. Set and get value
 	ttl = 0x0;
@@ -329,9 +339,12 @@ FN_TEST(ip_ttl)
 
 	ttl = 0x10;
 	CHECK(setsockopt(sk_unbound, IPPROTO_IP, IP_TTL, &ttl, ttl_len));
+	CHECK(setsockopt(sk_udp, IPPROTO_IP, IP_TTL, &ttl, ttl_len));
 
 	ttl = 0;
 	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_TTL, &ttl, &ttl_len),
+		 ttl == 0x10 && ttl_len == 4);
+	TEST_RES(getsockopt(sk_udp, IPPROTO_IP, IP_TTL, &ttl, &ttl_len),
 		 ttl == 0x10 && ttl_len == 4);
 
 	ttl = -1;
@@ -352,10 +365,16 @@ FN_TEST(ip_hdrincl)
 	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_HDRINCL, &hdrincl,
 			    &hdrincl_len),
 		 hdrincl == 0 && hdrincl_len == 4);
+	TEST_RES(getsockopt(sk_udp, IPPROTO_IP, IP_HDRINCL, &hdrincl,
+			    &hdrincl_len),
+		 hdrincl == 0 && hdrincl_len == 4);
 
-	// 2. Set value
+	// 2. Set and get value
 	hdrincl = 0x10;
 	TEST_ERRNO(setsockopt(sk_unbound, IPPROTO_IP, IP_HDRINCL, &hdrincl,
+			      hdrincl_len),
+		   ENOPROTOOPT);
+	TEST_ERRNO(setsockopt(sk_udp, IPPROTO_IP, IP_HDRINCL, &hdrincl,
 			      hdrincl_len),
 		   ENOPROTOOPT);
 }
