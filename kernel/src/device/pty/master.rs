@@ -13,7 +13,7 @@ use crate::{
         file_table::FdFlags,
         fs_resolver::FsPath,
         inode_handle::FileIo,
-        utils::{mkmod, AccessMode, Inode, IoctlCmd, OpenArgs},
+        utils::{mkmod, AccessMode, Inode, IoctlCmd, OpenArgs, StatusFlags},
     },
     prelude::*,
     process::{
@@ -75,7 +75,7 @@ impl Pollable for PtyMaster {
 }
 
 impl FileIo for PtyMaster {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter, _status_flags: StatusFlags) -> Result<usize> {
         // TODO: Add support for non-blocking mode and timeout
         let mut buf = vec![0u8; writer.avail().min(IO_CAPACITY)];
         let read_len = self.wait_events(IoEvents::IN, None, || {
@@ -89,7 +89,7 @@ impl FileIo for PtyMaster {
         Ok(read_len)
     }
 
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader, _status_flags: StatusFlags) -> Result<usize> {
         let mut buf = vec![0u8; reader.remain().min(IO_CAPACITY)];
         let write_len = reader.read_fallible(&mut buf.as_mut_slice().into())?;
 

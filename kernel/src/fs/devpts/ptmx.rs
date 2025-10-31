@@ -6,7 +6,10 @@
 use super::*;
 use crate::{
     events::IoEvents,
-    fs::inode_handle::FileIo,
+    fs::{
+        inode_handle::FileIo,
+        utils::{AccessMode, StatusFlags},
+    },
     process::signal::{PollHandle, Pollable},
 };
 
@@ -199,11 +202,11 @@ impl Pollable for Inner {
 }
 
 impl FileIo for Inner {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter, _status_flags: StatusFlags) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "cannot read ptmx");
     }
 
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader, _status_flags: StatusFlags) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "cannot write ptmx");
     }
 }

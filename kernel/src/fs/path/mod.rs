@@ -376,19 +376,11 @@ impl Path {
         let inode_type = inode.type_();
         let creation_flags = &open_args.creation_flags;
 
-        match inode_type {
-            InodeType::NamedPipe => {
-                warn!("named pipes don't support additional operation when opening");
-                debug!("the named pipe is opened with {:?}", open_args);
-            }
-            InodeType::SymLink => {
-                if creation_flags.contains(CreationFlags::O_NOFOLLOW)
-                    && !open_args.status_flags.contains(StatusFlags::O_PATH)
-                {
-                    return_errno_with_message!(Errno::ELOOP, "the file is a symlink");
-                }
-            }
-            _ => {}
+        if inode_type == InodeType::SymLink
+            && creation_flags.contains(CreationFlags::O_NOFOLLOW)
+            && !open_args.status_flags.contains(StatusFlags::O_PATH)
+        {
+            return_errno_with_message!(Errno::ELOOP, "the file is a symlink");
         }
 
         if creation_flags.contains(CreationFlags::O_CREAT)

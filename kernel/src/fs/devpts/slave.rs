@@ -7,7 +7,10 @@ use super::*;
 use crate::{
     device::PtySlave,
     events::IoEvents,
-    fs::inode_handle::FileIo,
+    fs::{
+        inode_handle::FileIo,
+        utils::{AccessMode, StatusFlags},
+    },
     process::signal::{PollHandle, Pollable},
 };
 
@@ -117,19 +120,19 @@ impl Inode for PtySlaveInode {
     }
 
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        self.device.read(writer)
+        self.device.read(writer, StatusFlags::empty())
     }
 
     fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        self.device.read(writer)
+        self.device.read(writer, StatusFlags::empty())
     }
 
     fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        self.device.write(reader)
+        self.device.write(reader, StatusFlags::empty())
     }
 
     fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        self.device.write(reader)
+        self.device.write(reader, StatusFlags::empty())
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {

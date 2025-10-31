@@ -8,7 +8,7 @@ use crate::{
     fs::{
         device::{Device, DeviceId, DeviceType},
         inode_handle::FileIo,
-        utils::IoctlCmd,
+        utils::{IoctlCmd, StatusFlags},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -68,11 +68,11 @@ impl Pollable for TdxGuest {
 }
 
 impl FileIo for TdxGuest {
-    fn read(&self, _writer: &mut VmWriter) -> Result<usize> {
+    fn read(&self, _writer: &mut VmWriter, _status_flags: StatusFlags) -> Result<usize> {
         return_errno_with_message!(Errno::EPERM, "Read operation not supported")
     }
 
-    fn write(&self, _reader: &mut VmReader) -> Result<usize> {
+    fn write(&self, _reader: &mut VmReader, _status_flags: StatusFlags) -> Result<usize> {
         return_errno_with_message!(Errno::EPERM, "Write operation not supported")
     }
 

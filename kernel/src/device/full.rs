@@ -5,6 +5,7 @@ use crate::{
     fs::{
         device::{Device, DeviceId, DeviceType},
         inode_handle::FileIo,
+        utils::StatusFlags,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -35,13 +36,13 @@ impl Pollable for Full {
 }
 
 impl FileIo for Full {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter, _status_flags: StatusFlags) -> Result<usize> {
         let len = writer.avail();
         writer.fill_zeros(len)?;
         Ok(len)
     }
 
-    fn write(&self, _reader: &mut VmReader) -> Result<usize> {
+    fn write(&self, _reader: &mut VmReader, _status_flags: StatusFlags) -> Result<usize> {
         return_errno_with_message!(Errno::ENOSPC, "no space left on /dev/full")
     }
 }

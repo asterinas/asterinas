@@ -71,6 +71,10 @@ impl PipeReader {
         self.state.peer_shutdown();
     }
 
+    pub(super) fn peer_activate(&self) {
+        self.state.peer_activate();
+    }
+
     fn check_io_events(&self) -> IoEvents {
         let mut events = IoEvents::empty();
         if self.state.is_peer_shutdown() {
@@ -131,6 +135,10 @@ impl PipeWriter {
 
     pub(super) fn shutdown(&self) {
         self.state.shutdown();
+    }
+
+    pub(super) fn activate(&self) {
+        self.state.activate();
     }
 
     fn check_io_events(&self) -> IoEvents {

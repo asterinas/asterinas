@@ -194,7 +194,8 @@ impl<T: AsRef<EndpointState>> Endpoint<T> {
 
     /// Shuts down the local endpoint.
     ///
-    /// After this method, data cannot be written to from the local endpoint.
+    /// After this method, data cannot be written to from the local endpoint
+    /// until it is activated again.
     pub fn shutdown(&self) {
         let this_end = self.this_end().as_ref();
         let peer_end = self.peer_end().as_ref();
@@ -204,7 +205,8 @@ impl<T: AsRef<EndpointState>> Endpoint<T> {
 
     /// Shuts down the remote endpoint.
     ///
-    /// After this method, data cannot be written to from the remote endpoint.
+    /// After this method, data cannot be written to from the remote endpoint
+    /// until it is activated again.
     pub fn peer_shutdown(&self) {
         let this_end = self.this_end().as_ref();
         let peer_end = self.peer_end().as_ref();
@@ -220,6 +222,24 @@ impl<T: AsRef<EndpointState>> Endpoint<T> {
         this_end
             .pollee
             .notify(IoEvents::HUP | IoEvents::ERR | IoEvents::OUT);
+    }
+
+    /// Activates the local endpoint.
+    pub(in crate::fs) fn activate(&self) {
+        self.this_end()
+            .as_ref()
+            .is_shutdown
+            .store(false, Ordering::Relaxed);
+        self.this_end().as_ref().pollee.invalidate();
+    }
+
+    /// Activates the remote endpoint.
+    pub(in crate::fs) fn peer_activate(&self) {
+        self.peer_end()
+            .as_ref()
+            .is_shutdown
+            .store(false, Ordering::Relaxed);
+        self.peer_end().as_ref().pollee.invalidate();
     }
 
     /// Returns whether the local endpoint has shut down.
