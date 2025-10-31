@@ -92,10 +92,6 @@ impl FileSystem for ProcFs {
     fn sb(&self) -> SuperBlock {
         self.sb.clone()
     }
-
-    fn flags(&self) -> FsFlags {
-        FsFlags::empty()
-    }
 }
 
 struct ProcFsType;
@@ -111,6 +107,7 @@ impl FsType for ProcFsType {
 
     fn create(
         &self,
+        _flags: FsFlags,
         _args: Option<CString>,
         _disk: Option<Arc<dyn aster_block::BlockDevice>>,
     ) -> Result<Arc<dyn FileSystem>> {

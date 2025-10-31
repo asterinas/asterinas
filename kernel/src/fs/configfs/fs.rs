@@ -69,10 +69,6 @@ impl FileSystem for ConfigFs {
     fn sb(&self) -> SuperBlock {
         self.sb.clone()
     }
-
-    fn flags(&self) -> FsFlags {
-        FsFlags::empty()
-    }
 }
 
 pub(super) struct ConfigFsType;
@@ -88,6 +84,7 @@ impl FsType for ConfigFsType {
 
     fn create(
         &self,
+        _flags: FsFlags,
         _args: Option<CString>,
         _disk: Option<Arc<dyn BlockDevice>>,
     ) -> Result<Arc<dyn FileSystem>> {

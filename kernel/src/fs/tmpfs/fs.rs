@@ -35,10 +35,6 @@ impl FileSystem for TmpFs {
     fn sb(&self) -> SuperBlock {
         self.inner.sb()
     }
-
-    fn flags(&self) -> FsFlags {
-        FsFlags::DENTRY_UNEVICTABLE
-    }
 }
 
 pub(super) struct TmpFsType;
@@ -54,6 +50,7 @@ impl FsType for TmpFsType {
 
     fn create(
         &self,
+        _flags: FsFlags,
         _args: Option<CString>,
         _disk: Option<Arc<dyn aster_block::BlockDevice>>,
     ) -> Result<Arc<dyn FileSystem>> {

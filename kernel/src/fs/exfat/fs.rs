@@ -422,10 +422,6 @@ impl FileSystem for ExfatFs {
     fn sb(&self) -> SuperBlock {
         SuperBlock::new(BOOT_SIGNATURE as u64, self.sector_size(), MAX_NAME_LENGTH)
     }
-
-    fn flags(&self) -> FsFlags {
-        FsFlags::DENTRY_UNEVICTABLE
-    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -468,6 +464,7 @@ impl FsType for ExfatType {
 
     fn create(
         &self,
+        _flags: FsFlags,
         _args: Option<CString>,
         disk: Option<Arc<dyn BlockDevice>>,
     ) -> Result<Arc<dyn FileSystem>> {

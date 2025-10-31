@@ -64,10 +64,6 @@ impl FileSystem for CgroupFs {
     fn sb(&self) -> SuperBlock {
         self.sb.clone()
     }
-
-    fn flags(&self) -> FsFlags {
-        FsFlags::empty()
-    }
 }
 
 pub(super) struct CgroupFsType;
@@ -83,6 +79,7 @@ impl FsType for CgroupFsType {
 
     fn create(
         &self,
+        _flags: FsFlags,
         _args: Option<CString>,
         _disk: Option<Arc<dyn BlockDevice>>,
     ) -> Result<Arc<dyn FileSystem>> {

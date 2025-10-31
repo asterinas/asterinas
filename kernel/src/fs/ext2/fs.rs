@@ -11,7 +11,7 @@ use super::{
 };
 use crate::fs::{
     registry::{FsProperties, FsType},
-    utils::FileSystem,
+    utils::{FileSystem, FsFlags},
 };
 
 /// The root inode number.
@@ -452,6 +452,7 @@ impl FsType for Ext2Type {
 
     fn create(
         &self,
+        _flags: FsFlags,
         _args: Option<CString>,
         disk: Option<Arc<dyn BlockDevice>>,
     ) -> Result<Arc<dyn FileSystem>> {

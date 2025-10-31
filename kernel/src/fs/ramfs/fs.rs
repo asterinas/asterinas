@@ -90,10 +90,6 @@ impl FileSystem for RamFs {
     fn sb(&self) -> SuperBlock {
         self.sb.clone()
     }
-
-    fn flags(&self) -> FsFlags {
-        FsFlags::DENTRY_UNEVICTABLE
-    }
 }
 
 /// An inode of `RamFs`.
@@ -1289,6 +1285,7 @@ impl FsType for RamFsType {
 
     fn create(
         &self,
+        _flags: FsFlags,
         _args: Option<CString>,
         _disk: Option<Arc<dyn aster_block::BlockDevice>>,
     ) -> Result<Arc<dyn FileSystem>> {

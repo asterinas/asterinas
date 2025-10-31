@@ -191,10 +191,6 @@ impl FileSystem for OverlayFs {
         // TODO: Fill the super block with valid field values.
         SuperBlock::new(OVERLAY_FS_MAGIC, BLOCK_SIZE, NAME_MAX)
     }
-
-    fn flags(&self) -> FsFlags {
-        FsFlags::empty()
-    }
 }
 
 impl OverlayFs {
@@ -1118,6 +1114,7 @@ impl FsType for OverlayFsType {
 
     fn create(
         &self,
+        _flags: FsFlags,
         args: Option<CString>,
         _disk: Option<Arc<dyn aster_block::BlockDevice>>,
     ) -> Result<Arc<dyn FileSystem>> {
