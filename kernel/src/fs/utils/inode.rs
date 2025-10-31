@@ -4,6 +4,7 @@
 
 use core::{any::TypeId, time::Duration};
 
+use aster_device::{Device, DeviceType};
 use core2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
 use ostd::task::Task;
 
@@ -13,7 +14,7 @@ use super::{
 };
 use crate::{
     events::IoEvents,
-    fs::device::{Device, DeviceType},
+    fs::device::DeviceFile,
     prelude::*,
     process::{
         credentials::capabilities::CapSet, posix_thread::AsPosixThread, signal::PollHandle, Gid,
@@ -68,7 +69,7 @@ impl From<DeviceType> for InodeType {
         match type_ {
             DeviceType::Char => InodeType::CharDevice,
             DeviceType::Block => InodeType::BlockDevice,
-            DeviceType::Misc => InodeType::CharDevice,
+            DeviceType::Other => InodeType::Unknown,
         }
     }
 }
@@ -204,7 +205,7 @@ impl Metadata {
             nlinks: 1,
             uid: Uid::new_root(),
             gid: Gid::new_root(),
-            rdev: device.id().as_encoded_u64(),
+            rdev: device.id().unwrap().as_encoded_u64(),
         }
     }
 
@@ -231,8 +232,8 @@ impl Metadata {
 
 pub enum MknodType {
     NamedPipe,
-    CharDevice(Arc<dyn Device>),
-    BlockDevice(Arc<dyn Device>),
+    CharDevice(Arc<dyn DeviceFile>),
+    BlockDevice(Arc<dyn DeviceFile>),
 }
 
 impl MknodType {
@@ -245,8 +246,8 @@ impl MknodType {
     }
 }
 
-impl From<Arc<dyn Device>> for MknodType {
-    fn from(device: Arc<dyn Device>) -> Self {
+impl From<Arc<dyn DeviceFile>> for MknodType {
+    fn from(device: Arc<dyn DeviceFile>) -> Self {
         let inode_type: InodeType = device.type_().into();
         match inode_type {
             InodeType::CharDevice => Self::CharDevice(device),
@@ -319,7 +320,7 @@ pub trait Inode: Any + Sync + Send {
         Err(Error::new(Errno::ENOTDIR))
     }
 
-    fn as_device(&self) -> Option<Arc<dyn Device>> {
+    fn as_device(&self) -> Option<Arc<dyn DeviceFile>> {
         None
     }
 

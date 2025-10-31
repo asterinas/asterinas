@@ -19,7 +19,7 @@ use ostd::{
 
 use crate::{
     fs::{
-        device::Device,
+        device::DeviceFile,
         fs_resolver::FsPath,
         path::Path,
         registry::{FsProperties, FsType},
@@ -521,7 +521,7 @@ impl OverlayInode {
     pub fn atime(&self) -> Duration;
     pub fn mtime(&self) -> Duration;
     pub fn ctime(&self) -> Duration;
-    pub fn as_device(&self) -> Option<Arc<dyn Device>>;
+    pub fn as_device(&self) -> Option<Arc<dyn DeviceFile>>;
     pub fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize>;
     pub fn list_xattr(
         &self,
@@ -934,7 +934,7 @@ impl Inode for OverlayInode {
     fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize>;
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>>;
     fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>>;
-    fn as_device(&self) -> Option<Arc<dyn Device>>;
+    fn as_device(&self) -> Option<Arc<dyn DeviceFile>>;
     fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize>;
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()>;
     fn unlink(&self, name: &str) -> Result<()>;

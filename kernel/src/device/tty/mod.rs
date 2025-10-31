@@ -5,14 +5,17 @@ use aster_console::{
     mode::{ConsoleMode, KeyboardMode},
     AnyConsoleDevice,
 };
+use aster_device::{register_device_ids, Device, DeviceId, DeviceIdAllocator, DeviceType};
+use aster_systree::SysBranchNode;
 use ostd::sync::LocalIrqDisabled;
+use spin::Once;
 
 use self::{line_discipline::LineDiscipline, termio::CFontOp};
 use crate::{
     current_userspace,
     events::IoEvents,
     fs::{
-        device::{Device, DeviceId, DeviceType},
+        device::{add_device, DeviceFile},
         inode_handle::FileIo,
         utils::IoctlCmd,
     },
@@ -30,9 +33,8 @@ mod line_discipline;
 mod n_tty;
 mod termio;
 
-pub use device::TtyDevice;
+use device::{DevConsole, TtyDevice};
 pub use driver::{PushCharError, TtyDriver};
-pub(super) use n_tty::init;
 pub use n_tty::{iter_n_tty, system_console};
 
 const IO_CAPACITY: usize = 4096;
@@ -349,18 +351,55 @@ impl<D: TtyDriver> FileIo for Tty<D> {
     }
 }
 
-impl<D: TtyDriver> Terminal for Tty<D> {
-    fn job_control(&self) -> &JobControl {
-        &self.job_control
+impl<D> Debug for Tty<D> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Tty")
+            .field("index", &self.index)
+            .finish_non_exhaustive()
     }
+}
+
+const TTY_MAJOR: u32 = 4;
+const TTYAUX_MAJOR: u32 = 5;
+
+pub static TTY_ID_ALLOCATOR: Once<DeviceIdAllocator> = Once::new();
+pub static TTYAUX_ID_ALLOCATOR: Once<DeviceIdAllocator> = Once::new();
+
+pub(super) fn init_in_first_process() {
+    TTY_ID_ALLOCATOR
+        .call_once(|| register_device_ids(DeviceType::Char, TTY_MAJOR, 0..256).unwrap());
+    TTYAUX_ID_ALLOCATOR
+        .call_once(|| register_device_ids(DeviceType::Char, TTYAUX_MAJOR, 0..256).unwrap());
+
+    n_tty::init_in_first_process();
+
+    add_device(TtyDevice::new());
+    add_device(DevConsole::new(system_console()));
+    iter_n_tty().for_each(|tty| add_device(tty.clone()));
 }
 
 impl<D: TtyDriver> Device for Tty<D> {
     fn type_(&self) -> DeviceType {
-        DeviceType::Char
+        self.driver().device().type_()
     }
 
-    fn id(&self) -> DeviceId {
-        DeviceId::new(4, self.index)
+    fn id(&self) -> Option<DeviceId> {
+        self.driver().device().id()
+    }
+
+    fn sysnode(&self) -> Arc<dyn SysBranchNode> {
+        self.driver().device().sysnode()
+    }
+}
+
+impl<D: TtyDriver> DeviceFile for Tty<D> {
+    fn open(&self) -> Result<Option<Arc<dyn FileIo>>> {
+        Ok(Some(self.weak_self.upgrade().unwrap()))
+    }
+}
+
+impl<D: TtyDriver> Terminal for Tty<D> {
+    fn job_control(&self) -> &JobControl {
+        &self.job_control
     }
 }

@@ -2,10 +2,12 @@
 
 use alloc::sync::Arc;
 
+use aster_device::Device;
+
 use super::{session::SessionGuard, JobControl, Pgid, Process, Session, Sid};
 use crate::{
     current_userspace,
-    fs::{device::Device, inode_handle::FileIo, utils::IoctlCmd},
+    fs::{inode_handle::FileIo, utils::IoctlCmd},
     prelude::{current, return_errno_with_message, warn, Errno, Error, Result},
     process::process_table,
 };

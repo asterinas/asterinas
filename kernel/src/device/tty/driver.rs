@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::sync::Arc;
+
 use aster_console::AnyConsoleDevice;
+use aster_device::Device;
 
 use crate::prelude::{Errno, Error};
 
@@ -55,4 +58,7 @@ pub trait TtyDriver: Send + Sync + 'static {
     ///
     /// If the TTY is not associated with any console device, this method will return `None`.
     fn console(&self) -> Option<&dyn AnyConsoleDevice>;
+
+    /// Returns the device associated with the TTY.
+    fn device(&self) -> Arc<dyn Device>;
 }

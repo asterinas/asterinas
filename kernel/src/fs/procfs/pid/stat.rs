@@ -129,7 +129,7 @@ impl FileOps for StatFileOps {
 
         let (tty_nr, tpgid) = if let Some(terminal) = process.terminal() {
             (
-                terminal.id().as_encoded_u64(),
+                terminal.id().unwrap().as_encoded_u64(),
                 terminal
                     .job_control()
                     .foreground()

@@ -3,13 +3,16 @@
 use alloc::{boxed::Box, sync::Arc, vec};
 
 use aster_console::AnyConsoleDevice;
+use aster_device::Device;
 use ostd::mm::{Infallible, VmReader, VmWriter};
 use spin::Once;
 
 use super::{PushCharError, Tty, TtyDriver};
+use crate::device::tty::device::NttyDevice;
 
 pub struct ConsoleDriver {
     console: Arc<dyn AnyConsoleDevice>,
+    device: Arc<dyn Device>,
 }
 
 impl TtyDriver for ConsoleDriver {
@@ -33,11 +36,15 @@ impl TtyDriver for ConsoleDriver {
     fn console(&self) -> Option<&dyn AnyConsoleDevice> {
         Some(&*self.console)
     }
+
+    fn device(&self) -> Arc<dyn Device> {
+        self.device.clone()
+    }
 }
 
 static N_TTY: Once<Box<[Arc<Tty<ConsoleDriver>>]>> = Once::new();
 
-pub(in crate::device) fn init() {
+pub(in crate::device) fn init_in_first_process() {
     let devices = {
         let mut devices = aster_console::all_devices();
         // Sort by priorities to ensure that the TTY for the virtio-console device comes first. Is
@@ -61,6 +68,7 @@ pub(in crate::device) fn init() {
 fn create_n_tty(index: u32, device: Arc<dyn AnyConsoleDevice>) -> Arc<Tty<ConsoleDriver>> {
     let driver = ConsoleDriver {
         console: device.clone(),
+        device: NttyDevice::new(index),
     };
 
     let tty = Tty::new(index, driver);

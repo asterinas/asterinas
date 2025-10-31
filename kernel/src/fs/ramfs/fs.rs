@@ -18,7 +18,7 @@ use super::{xattr::RamXattr, *};
 use crate::{
     events::IoEvents,
     fs::{
-        device::Device,
+        device::DeviceFile,
         file_handle::FileLike,
         named_pipe::NamedPipe,
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
@@ -120,7 +120,7 @@ enum Inner {
     Dir(RwLock<DirEntry>),
     File(PageCache),
     SymLink(SpinLock<String>),
-    Device(Arc<dyn Device>),
+    Device(Arc<dyn DeviceFile>),
     Socket,
     NamedPipe(NamedPipe),
 }
@@ -138,7 +138,7 @@ impl Inner {
         Self::SymLink(SpinLock::new(String::from("")))
     }
 
-    pub fn new_device(device: Arc<dyn Device>) -> Self {
+    pub fn new_device(device: Arc<dyn DeviceFile>) -> Self {
         Self::Device(device)
     }
 
@@ -171,7 +171,7 @@ impl Inner {
         }
     }
 
-    fn as_device(&self) -> Option<&Arc<dyn Device>> {
+    fn as_device(&self) -> Option<&Arc<dyn DeviceFile>> {
         match self {
             Self::Device(device) => Some(device),
             _ => None,
@@ -454,7 +454,7 @@ impl RamInode {
         mode: InodeMode,
         uid: Uid,
         gid: Gid,
-        device: Arc<dyn Device>,
+        device: Arc<dyn DeviceFile>,
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| RamInode {
             inner: Inner::new_device(device.clone()),
@@ -738,7 +738,7 @@ impl Inode for RamInode {
         Ok(new_inode)
     }
 
-    fn as_device(&self) -> Option<Arc<dyn Device>> {
+    fn as_device(&self) -> Option<Arc<dyn DeviceFile>> {
         if !self.typ.is_device() {
             return None;
         }
@@ -1120,7 +1120,7 @@ impl Inode for RamInode {
         let rdev = self
             .inner
             .as_device()
-            .map(|device| device.id().as_encoded_u64())
+            .map(|device| device.id().unwrap().as_encoded_u64())
             .unwrap_or(0);
         let inode_metadata = self.metadata.lock();
         Metadata {

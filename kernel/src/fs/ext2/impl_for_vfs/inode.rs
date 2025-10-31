@@ -118,7 +118,9 @@ impl Inode for Ext2Inode {
         let inode = match type_ {
             MknodType::CharDevice(dev) | MknodType::BlockDevice(dev) => {
                 let inode = self.create(name, inode_type, mode.into())?;
-                inode.set_device_id(dev.id().as_encoded_u64()).unwrap();
+                inode
+                    .set_device_id(dev.id().unwrap().as_encoded_u64())
+                    .unwrap();
                 inode
             }
             _ => todo!(),

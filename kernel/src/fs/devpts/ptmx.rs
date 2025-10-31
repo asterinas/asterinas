@@ -3,17 +3,10 @@
 #![expect(dead_code)]
 #![expect(unused_variables)]
 
-use super::*;
-use crate::{
-    events::IoEvents,
-    fs::inode_handle::FileIo,
-    process::signal::{PollHandle, Pollable},
-};
+use aster_device::{Device, DeviceId, DeviceType};
 
-/// Same major number with Linux.
-const PTMX_MAJOR_NUM: u32 = 5;
-/// Same minor number with Linux.
-const PTMX_MINOR_NUM: u32 = 2;
+use super::*;
+use crate::fs::device::DeviceFile;
 
 /// Ptmx is the multiplexing master of devpts.
 ///
@@ -28,16 +21,15 @@ pub struct Ptmx {
 struct Inner(Weak<DevPts>);
 
 impl Ptmx {
-    pub fn new(fs: Weak<DevPts>) -> Arc<Self> {
-        let inner = Inner(fs);
+    pub fn new(fs: Weak<DevPts>, device: Arc<PtmxDevice>) -> Arc<Self> {
         Arc::new(Self {
             metadata: RwLock::new(Metadata::new_device(
                 PTMX_INO,
                 mkmod!(a+rw),
                 super::BLOCK_SIZE,
-                &inner,
+                device.as_ref(),
             )),
-            inner,
+            inner: Inner(fs),
         })
     }
 
@@ -54,11 +46,11 @@ impl Ptmx {
     }
 
     pub fn device_type(&self) -> DeviceType {
-        self.inner.type_()
+        self.devpts().ptmx().type_()
     }
 
     pub fn device_id(&self) -> DeviceId {
-        self.inner.id()
+        self.devpts().ptmx().id().unwrap()
     }
 }
 
@@ -160,43 +152,11 @@ impl Inode for Ptmx {
         self.devpts()
     }
 
-    fn as_device(&self) -> Option<Arc<dyn Device>> {
-        Some(Arc::new(self.inner.clone()))
+    fn as_device(&self) -> Option<Arc<dyn DeviceFile>> {
+        Some(self.devpts().ptmx().clone())
     }
 
     fn is_dentry_cacheable(&self) -> bool {
         false
-    }
-}
-
-impl Device for Inner {
-    fn type_(&self) -> DeviceType {
-        DeviceType::Char
-    }
-
-    fn id(&self) -> DeviceId {
-        DeviceId::new(PTMX_MAJOR_NUM, PTMX_MINOR_NUM)
-    }
-
-    fn open(&self) -> Result<Option<Arc<dyn FileIo>>> {
-        let devpts = self.0.upgrade().unwrap();
-        let (master, _) = devpts.create_master_slave_pair()?;
-        Ok(Some(master as _))
-    }
-}
-
-impl Pollable for Inner {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        IoEvents::empty()
-    }
-}
-
-impl FileIo for Inner {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "cannot read ptmx");
-    }
-
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "cannot write ptmx");
     }
 }

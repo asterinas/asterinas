@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_device::{DeviceId, DeviceType};
+
 use super::SyscallReturn;
 use crate::{
-    device::get_device,
     fs::{
-        device::DeviceId,
+        device::{get_device, DummyDevice},
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         utils::{InodeMode, InodeType, MknodType},
@@ -47,8 +48,14 @@ pub fn sys_mknodat(
             let _ = dir_path.new_fs_child(&name, InodeType::File, inode_mode)?;
         }
         InodeType::CharDevice | InodeType::BlockDevice => {
-            let device_inode = get_device(DeviceId::from_encoded_u64(dev as u64))?;
-            let _ = dir_path.mknod(&name, inode_mode, device_inode.into())?;
+            let type_ = if inode_type == InodeType::BlockDevice {
+                DeviceType::Block
+            } else {
+                DeviceType::Char
+            };
+            let id = DeviceId::from_encoded_u64(dev as u64);
+            let device = get_device(type_, id).unwrap_or(DummyDevice::new(type_, id));
+            let _ = dir_path.mknod(&name, inode_mode, device.into())?;
         }
         InodeType::NamedPipe => {
             let _ = dir_path.mknod(&name, inode_mode, MknodType::NamedPipe)?;

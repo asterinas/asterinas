@@ -10,9 +10,8 @@ use id_alloc::IdAlloc;
 use self::{ptmx::Ptmx, slave::PtySlaveInode};
 use super::utils::MknodType;
 use crate::{
-    device::PtyMaster,
+    device::{PtmxDevice, PtyMaster},
     fs::{
-        device::{Device, DeviceId, DeviceType},
         registry::{FsProperties, FsType},
         utils::{
             mkmod, DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd,
@@ -47,20 +46,31 @@ pub struct DevPts {
     root: Arc<RootInode>,
     index_alloc: Mutex<IdAlloc>,
     this: Weak<Self>,
+    ptmx: Arc<PtmxDevice>,
 }
 
 impl DevPts {
     pub fn new() -> Arc<Self> {
-        Arc::new_cyclic(|weak_self| Self {
-            sb: SuperBlock::new(DEVPTS_MAGIC, BLOCK_SIZE, NAME_MAX),
-            root: RootInode::new(weak_self.clone()),
-            index_alloc: Mutex::new(IdAlloc::with_capacity(MAX_PTY_NUM)),
-            this: weak_self.clone(),
+        Arc::new_cyclic(|weak_self| {
+            let ptmx = PtmxDevice::new(weak_self.clone());
+            let root = RootInode::new(weak_self.clone(), ptmx.clone());
+
+            Self {
+                sb: SuperBlock::new(DEVPTS_MAGIC, BLOCK_SIZE, NAME_MAX),
+                root,
+                index_alloc: Mutex::new(IdAlloc::with_capacity(MAX_PTY_NUM)),
+                this: weak_self.clone(),
+                ptmx,
+            }
         })
     }
 
+    pub fn ptmx(&self) -> &Arc<PtmxDevice> {
+        &self.ptmx
+    }
+
     /// Create the master and slave pair.
-    fn create_master_slave_pair(&self) -> Result<(Arc<PtyMaster>, Arc<PtySlaveInode>)> {
+    pub fn create_master_slave_pair(&self) -> Result<(Arc<PtyMaster>, Arc<PtySlaveInode>)> {
         let index = self
             .index_alloc
             .lock()
@@ -145,9 +155,9 @@ struct RootInode {
 }
 
 impl RootInode {
-    pub fn new(fs: Weak<DevPts>) -> Arc<Self> {
+    pub fn new(fs: Weak<DevPts>, device: Arc<PtmxDevice>) -> Arc<Self> {
         Arc::new(Self {
-            ptmx: Ptmx::new(fs.clone()),
+            ptmx: Ptmx::new(fs.clone(), device),
             slaves: RwLock::new(SlotVec::new()),
             metadata: RwLock::new(Metadata::new_dir(ROOT_INO, mkmod!(a+rx, u+w), BLOCK_SIZE)),
             fs,
