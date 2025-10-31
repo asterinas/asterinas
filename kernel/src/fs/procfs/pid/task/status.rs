@@ -9,8 +9,7 @@ use crate::{
         utils::{mkmod, Inode},
     },
     prelude::*,
-    process::{posix_thread::AsPosixThread, Process},
-    thread::Thread,
+    process::posix_thread::AsPosixThread,
     vm::vmar::RssType,
 };
 
@@ -60,33 +59,22 @@ use crate::{
 /// - Mems_allowed_list: List of memory nodes allowed for this process.
 /// - voluntary_ctxt_switches: Number of voluntary context switches.
 /// - nonvoluntary_ctxt_switches: Number of nonvoluntary context switches.
-pub struct StatusFileOps {
-    process_ref: Arc<Process>,
-    thread_ref: Arc<Thread>,
-}
+pub struct StatusFileOps(TidDirOps);
 
 impl StatusFileOps {
     pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        let process_ref = dir.process_ref.clone();
-        let thread_ref = dir.thread_ref.clone();
-        ProcFileBuilder::new(
-            Self {
-                process_ref,
-                thread_ref,
-            },
-            // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3326>
-            mkmod!(a+r),
-        )
-        .parent(parent)
-        .build()
-        .unwrap()
+        // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3326>
+        ProcFileBuilder::new(Self(dir.clone()), mkmod!(a+r))
+            .parent(parent)
+            .build()
+            .unwrap()
     }
 }
 
 impl FileOps for StatusFileOps {
     fn data(&self) -> Result<Vec<u8>> {
-        let process = &self.process_ref;
-        let thread = &self.thread_ref;
+        let process = self.0.process_ref.as_ref();
+        let thread = self.0.thread();
         let posix_thread = thread.as_posix_thread().unwrap();
 
         // According to the Linux implementation, a process's `/proc/<pid>/status`
@@ -141,7 +129,7 @@ impl FileOps for StatusFileOps {
             .unwrap();
         }
 
-        if Arc::ptr_eq(thread, &process.main_thread()) {
+        if process.pid() == posix_thread.tid() {
             writeln!(
                 status_output,
                 "Threads:\t{}",

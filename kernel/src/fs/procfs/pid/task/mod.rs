@@ -7,14 +7,11 @@ use super::PidDirOps;
 use crate::{
     fs::{
         procfs::{
-            pid::{
-                stat::StatFileOps,
-                task::{
-                    cmdline::CmdlineFileOps, comm::CommFileOps, environ::EnvironFileOps,
-                    exe::ExeSymOps, fd::FdDirOps, gid_map::GidMapFileOps, mem::MemFileOps,
-                    mountinfo::MountInfoFileOps, oom_score_adj::OomScoreAdjFileOps,
-                    status::StatusFileOps, uid_map::UidMapFileOps,
-                },
+            pid::task::{
+                cmdline::CmdlineFileOps, comm::CommFileOps, environ::EnvironFileOps,
+                exe::ExeSymOps, fd::FdDirOps, gid_map::GidMapFileOps, mem::MemFileOps,
+                mountinfo::MountInfoFileOps, oom_score_adj::OomScoreAdjFileOps, stat::StatFileOps,
+                status::StatusFileOps, uid_map::UidMapFileOps,
             },
             template::{
                 lookup_child_from_table, populate_children_from_table, DirOps, ProcDir,
@@ -38,6 +35,7 @@ mod gid_map;
 mod mem;
 mod mountinfo;
 mod oom_score_adj;
+mod stat;
 mod status;
 mod uid_map;
 
@@ -59,7 +57,9 @@ impl TaskDirOps {
 #[derive(Clone)]
 pub(super) struct TidDirOps {
     pub(super) process_ref: Arc<Process>,
-    pub(super) thread_ref: Arc<Thread>,
+    /// If `thread_ref` is `None`, this corresponds to a process-level `/proc/[pid]/*` file.
+    /// Otherwise, this corresponds to a thread-level `/proc/[pid]/task/[tid]/*` file.
+    pub(super) thread_ref: Option<Arc<Thread>>,
 }
 
 impl TidDirOps {
@@ -71,7 +71,7 @@ impl TidDirOps {
         ProcDirBuilder::new(
             Self {
                 process_ref,
-                thread_ref,
+                thread_ref: Some(thread_ref),
             },
             // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3796>
             mkmod!(a+rx),
@@ -79,6 +79,12 @@ impl TidDirOps {
         .parent(parent)
         .build()
         .unwrap()
+    }
+
+    pub fn thread(&self) -> Arc<Thread> {
+        self.thread_ref
+            .clone()
+            .unwrap_or_else(|| self.process_ref.main_thread())
     }
 
     #[expect(clippy::type_complexity)]
@@ -95,7 +101,7 @@ impl TidDirOps {
         ("mem", MemFileOps::new_inode),
         ("mountinfo", MountInfoFileOps::new_inode),
         ("oom_score_adj", OomScoreAdjFileOps::new_inode),
-        ("stat", StatFileOps::new_inode_tid),
+        ("stat", StatFileOps::new_inode),
         ("status", StatusFileOps::new_inode),
         ("uid_map", UidMapFileOps::new_inode),
     ];

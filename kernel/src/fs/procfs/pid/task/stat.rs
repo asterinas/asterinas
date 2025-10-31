@@ -2,15 +2,14 @@
 
 use core::{fmt::Write, sync::atomic::Ordering};
 
-use super::{PidDirOps, TidDirOps};
+use super::TidDirOps;
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
         utils::{mkmod, Inode},
     },
     prelude::*,
-    process::{posix_thread::AsPosixThread, Process},
-    thread::Thread,
+    process::posix_thread::AsPosixThread,
     vm::vmar::RssType,
 };
 
@@ -73,52 +72,22 @@ use crate::{
 /// - env_start        : Start address of environment variables.
 /// - env_end          : End address of environment variables.
 /// - exit_code        : Process exit code as returned by waitpid(2).
-pub struct StatFileOps {
-    process_ref: Arc<Process>,
-    thread_ref: Arc<Thread>,
-    /// If `is_pid_stat` is true, this file corresponds to a process-level `/proc/[pid]/stat`.
-    /// Otherwise, this file corresponds to the thread-level `/proc/[pid]/task/[tid]/stat`.
-    is_pid_stat: bool,
-}
+pub struct StatFileOps(TidDirOps);
 
 impl StatFileOps {
-    pub fn new_inode_pid(dir: &PidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        let process_ref = dir.0.process_ref.clone();
-        let thread_ref = dir.0.thread_ref.clone();
-        Self::new_inode_impl(process_ref, thread_ref, true, parent)
-    }
-
-    pub fn new_inode_tid(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        let process_ref = dir.process_ref.clone();
-        let thread_ref = dir.thread_ref.clone();
-        Self::new_inode_impl(process_ref, thread_ref, false, parent)
-    }
-
-    fn new_inode_impl(
-        process_ref: Arc<Process>,
-        thread_ref: Arc<Thread>,
-        is_pid_stat: bool,
-        parent: Weak<dyn Inode>,
-    ) -> Arc<dyn Inode> {
-        ProcFileBuilder::new(
-            Self {
-                process_ref,
-                thread_ref,
-                is_pid_stat,
-            },
-            // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3341>
-            mkmod!(a+r),
-        )
-        .parent(parent)
-        .build()
-        .unwrap()
+    pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3341>
+        ProcFileBuilder::new(Self(dir.clone()), mkmod!(a+r))
+            .parent(parent)
+            .build()
+            .unwrap()
     }
 }
 
 impl FileOps for StatFileOps {
     fn data(&self) -> Result<Vec<u8>> {
-        let process = &self.process_ref;
-        let thread = &self.thread_ref;
+        let process = self.0.process_ref.as_ref();
+        let thread = self.0.thread();
         let posix_thread = thread.as_posix_thread().unwrap();
 
         // According to the Linux implementation, a process's `/proc/<pid>/stat` should be
@@ -160,7 +129,7 @@ impl FileOps for StatFileOps {
         let cmaj_flt = 0;
 
         let (utime, stime) = {
-            let prof_clock = if self.is_pid_stat {
+            let prof_clock = if self.0.thread_ref.is_none() {
                 process.prof_clock()
             } else {
                 posix_thread.prof_clock()

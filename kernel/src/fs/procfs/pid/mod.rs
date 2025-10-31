@@ -8,17 +8,13 @@ use super::template::{
 };
 use crate::{
     fs::{
-        procfs::pid::{
-            stat::StatFileOps,
-            task::{TaskDirOps, TidDirOps},
-        },
+        procfs::pid::task::{TaskDirOps, TidDirOps},
         utils::{mkmod, Inode},
     },
     prelude::*,
     process::Process,
 };
 
-mod stat;
 mod task;
 
 /// Represents the inode at `/proc/[pid]`.
@@ -31,12 +27,9 @@ pub struct PidDirOps(
 
 impl PidDirOps {
     pub fn new_inode(process_ref: Arc<Process>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        let tid_dir_ops = {
-            let thread_ref = process_ref.main_thread();
-            TidDirOps {
-                process_ref,
-                thread_ref,
-            }
+        let tid_dir_ops = TidDirOps {
+            process_ref,
+            thread_ref: None,
         };
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3493>
         ProcDirBuilder::new(Self(tid_dir_ops.clone()), mkmod!(a+rx))
@@ -51,10 +44,7 @@ impl PidDirOps {
     const STATIC_ENTRIES: &'static [(
         &'static str,
         fn(&PidDirOps, Weak<dyn Inode>) -> Arc<dyn Inode>,
-    )] = &[
-        ("stat", StatFileOps::new_inode_pid),
-        ("task", TaskDirOps::new_inode),
-    ];
+    )] = &[("task", TaskDirOps::new_inode)];
 }
 
 impl DirOps for PidDirOps {
