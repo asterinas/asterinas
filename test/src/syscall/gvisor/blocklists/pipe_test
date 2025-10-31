@@ -1,0 +1,23 @@
+# TODO: Support `fstatfs` syscall for pipe files.
+PipeTest.StatFS
+# TODO: Support opening pipe files via `/proc/self/fd` path.
+Pipes/PipeTest.OpenViaProcSelfFDWithWrites/pipe
+# TODO: Deal with more flags in `pipe2` syscall.
+Pipe2Test.*
+Pipes/PipeTest.*/pipe2blocking
+Pipes/PipeTest.*/pipe2nonblocking
+# TODO: Support `F_SETPIPE_SZ/F_GETPIPE_SZ` for `fcntl` syscall.
+Pipes/PipeTest.*/smallbuffer
+Pipes/PipeTest.BlockWriteClosed/*
+Pipes/PipeTest.BlockPartialWriteClosed/*
+Pipes/PipeTest.Streaming/*
+Pipes/PipeTest.SizeChange*
+# TODO: Support seek operation on pipe files.
+Pipes/PipeTest.Seek/*
+Pipes/PipeTest.OffsetCalls/*
+# TODO: Support `O_LARGEFILE` flag.
+Pipes/PipeTest.Flags/*
+# TODO: Support ioctl for pipe files.
+Pipes/PipeTest.FionRead/*
+# TODO: Support fdinfo in procfs.
+Pipes/PipeTest.ProcFDInfoReleasesFile/*
