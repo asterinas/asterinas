@@ -30,6 +30,7 @@ TESTS ?= \
 	msync_test \
 	open_create_test \
 	open_test \
+	pipe_test \
 	ppoll_test \
 	prctl_setuid_test \
 	pread64_test \
@@ -93,6 +94,7 @@ INITRAMFS ?= $(CUR_DIR)/../../../build/initramfs
 TARGET_DIR := $(INITRAMFS)/opt/gvisor
 RUN_BASH := $(CUR_DIR)/run_gvisor_test.sh
 BLOCK_LIST := $(CUR_DIR)/blocklists
+EXT2_BLOCK_LIST := $(CUR_DIR)/blocklists.ext2
 EXFAT_BLOCK_LIST := $(CUR_DIR)/blocklists.exfat
 
 .PHONY: all
@@ -116,12 +118,14 @@ $(SRC_DIR):
 	@cd $@ && git clone -b 20200921.0 https://github.com/asterinas/gvisor.git .
 endif
 
-$(TARGET_DIR): $(RUN_BASH) $(BLOCK_LIST) $(EXFAT_BLOCK_LIST)
+$(TARGET_DIR): $(RUN_BASH) $(BLOCK_LIST) $(EXT2_BLOCK_LIST) $(EXFAT_BLOCK_LIST)
 	@rm -rf $@ && mkdir -p $@
 	@# Prepare tests dir for test binaries
 	@mkdir $@/tests
 	@# Copy blocklists
 	@cp -rf $(BLOCK_LIST) $@
+	@# Copy ext2 specific blocklists
+	@cp -rf $(EXT2_BLOCK_LIST) $@
 	@# Copy exFAT specific blocklists
 	@cp -rf $(EXFAT_BLOCK_LIST) $@
 	@# Copy bash script

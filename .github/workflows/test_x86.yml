@@ -49,10 +49,12 @@ jobs:
           # Syscall Test at Ext2 (MicroVM)
           - test_id: 'syscall-ext2-microvm'
             scheme: 'microvm'
+            extra_blocklists: 'blocklists.ext2'
             syscall_test_workdir: '/ext2'
           # Syscall Test at Ext2 (IOMMU) (Debug Build)
           - test_id: 'syscall-ext2-iommu-debug'
             scheme: 'iommu'
+            extra_blocklists: 'blocklists.ext2'
             syscall_test_workdir: '/ext2'
             release: false
           # Syscall Test at Exfat (Multiboot2) (without KVM enabled)
