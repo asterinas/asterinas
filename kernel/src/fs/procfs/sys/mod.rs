@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_util::slot_vec::SlotVec;
+use ostd::sync::RwMutexUpgradeableGuard;
+
 use self::kernel::KernelDirOps;
+use super::template::populate_children_from_table;
 use crate::{
     fs::{
-        procfs::template::{DirOps, ProcDir, ProcDirBuilder},
-        utils::{mkmod, DirEntryVecExt, Inode},
+        procfs::template::{lookup_child_from_table, DirOps, ProcDir, ProcDirBuilder},
+        utils::{mkmod, Inode},
     },
     prelude::*,
 };
@@ -24,24 +28,37 @@ impl SysDirOps {
             .build()
             .unwrap()
     }
+
+    #[expect(clippy::type_complexity)]
+    const STATIC_ENTRIES: &'static [(&'static str, fn(Weak<dyn Inode>) -> Arc<dyn Inode>)] =
+        &[("kernel", KernelDirOps::new_inode)];
 }
 
 impl DirOps for SysDirOps {
-    fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
-        let inode = match name {
-            "kernel" => KernelDirOps::new_inode(this_ptr.clone()),
-            _ => return_errno!(Errno::ENOENT),
-        };
-        Ok(inode)
+    fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
+        let mut cached_children = dir.cached_children().write();
+
+        if let Some(child) =
+            lookup_child_from_table(name, &mut cached_children, Self::STATIC_ENTRIES, |f| {
+                (f)(dir.this_weak().clone())
+            })
+        {
+            return Ok(child);
+        }
+
+        return_errno_with_message!(Errno::ENOENT, "the file does not exist");
     }
 
-    fn populate_children(&self, this_ptr: Weak<dyn Inode>) {
-        let this = {
-            let this = this_ptr.upgrade().unwrap();
-            this.downcast_ref::<ProcDir<SysDirOps>>().unwrap().this()
-        };
-        let mut cached_children = this.cached_children().write();
-        cached_children
-            .put_entry_if_not_found("kernel", || KernelDirOps::new_inode(this_ptr.clone()))
+    fn populate_children<'a>(
+        &self,
+        dir: &'a ProcDir<Self>,
+    ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>> {
+        let mut cached_children = dir.cached_children().write();
+
+        populate_children_from_table(&mut cached_children, Self::STATIC_ENTRIES, |f| {
+            (f)(dir.this_weak().clone())
+        });
+
+        cached_children.downgrade()
     }
 }

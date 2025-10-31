@@ -31,6 +31,10 @@ impl<S: SymOps> ProcSym<S> {
         };
         Arc::new(Self { inner: sym, common })
     }
+
+    pub fn inner(&self) -> &S {
+        &self.inner
+    }
 }
 
 #[inherit_methods(from = "self.common")]

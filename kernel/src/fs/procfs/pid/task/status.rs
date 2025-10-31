@@ -2,6 +2,7 @@
 
 use core::fmt::Write;
 
+use super::TidDirOps;
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
@@ -65,11 +66,9 @@ pub struct StatusFileOps {
 }
 
 impl StatusFileOps {
-    pub fn new_inode(
-        process_ref: Arc<Process>,
-        thread_ref: Arc<Thread>,
-        parent: Weak<dyn Inode>,
-    ) -> Arc<dyn Inode> {
+    pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        let process_ref = dir.process_ref.clone();
+        let thread_ref = dir.thread_ref.clone();
         ProcFileBuilder::new(
             Self {
                 process_ref,

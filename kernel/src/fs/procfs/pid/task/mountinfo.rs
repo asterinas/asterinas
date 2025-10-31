@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use super::TidDirOps;
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
@@ -16,7 +17,8 @@ pub struct MountInfoFileOps {
 }
 
 impl MountInfoFileOps {
-    pub fn new_inode(thread_ref: Arc<Thread>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        let thread_ref = dir.thread_ref.clone();
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3352>
         ProcFileBuilder::new(Self { thread_ref }, mkmod!(a+r))
             .parent(parent)

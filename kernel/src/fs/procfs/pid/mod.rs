@@ -1,18 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::template::{DirOps, ProcDir, ProcDirBuilder};
+use aster_util::slot_vec::SlotVec;
+use ostd::sync::RwMutexUpgradeableGuard;
+
+use super::template::{
+    lookup_child_from_table, populate_children_from_table, DirOps, ProcDir, ProcDirBuilder,
+};
 use crate::{
-    events::Observer,
     fs::{
-        file_table::FdEvents,
         procfs::pid::{
             stat::StatFileOps,
             task::{TaskDirOps, TidDirOps},
         },
-        utils::{mkmod, DirEntryVecExt, Inode},
+        utils::{mkmod, Inode},
     },
     prelude::*,
-    process::{posix_thread::AsPosixThread, Process},
+    process::Process,
 };
 
 mod stat;
@@ -35,88 +38,63 @@ impl PidDirOps {
                 thread_ref,
             }
         };
-        let file_table = tid_dir_ops
-            .thread_ref
-            .as_posix_thread()
-            .unwrap()
-            .file_table();
-
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3493>
-        let pid_inode = ProcDirBuilder::new(Self(tid_dir_ops.clone()), mkmod!(a+rx))
+        ProcDirBuilder::new(Self(tid_dir_ops.clone()), mkmod!(a+rx))
             .parent(parent)
-            // The pid directories must be volatile, because it is just associated with one process.
+            // The PID directories must be volatile, because it is just associated with one process.
             .volatile()
             .build()
-            .unwrap();
-
-        // This is for an exiting process that has not yet been reaped by its parent,
-        // whose file table may have already been released.
-        if let Some(file_table_ref) = file_table.lock().as_ref() {
-            file_table_ref
-                .read()
-                .register_observer(Arc::downgrade(&pid_inode) as _);
-        }
-
-        pid_inode
+            .unwrap()
     }
-}
 
-impl Observer<FdEvents> for ProcDir<PidDirOps> {
-    fn on_events(&self, events: &FdEvents) {
-        if let FdEvents::DropFileTable = events {
-            let mut cached_children = self.cached_children().write();
-            cached_children.remove_entry_by_name("fd");
-        }
-    }
+    #[expect(clippy::type_complexity)]
+    const STATIC_ENTRIES: &'static [(
+        &'static str,
+        fn(&PidDirOps, Weak<dyn Inode>) -> Arc<dyn Inode>,
+    )] = &[
+        ("stat", StatFileOps::new_inode_pid),
+        ("task", TaskDirOps::new_inode),
+    ];
 }
 
 impl DirOps for PidDirOps {
-    fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
+    fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
+        let mut cached_children = dir.cached_children().write();
+
         // Look up entries that either exist under `/proc/<pid>`
         // but not under `/proc/<pid>/task/<tid>`,
         // or entries whose contents differ between `/proc/<pid>` and `/proc/<pid>/task/<tid>`.
-        match name {
-            "stat" => {
-                return Ok(StatFileOps::new_inode(
-                    self.0.process_ref.clone(),
-                    self.0.thread_ref.clone(),
-                    true,
-                    this_ptr,
-                ))
-            }
-            "task" => return Ok(TaskDirOps::new_inode(self.0.process_ref.clone(), this_ptr)),
-            _ => {}
+        if let Some(child) =
+            lookup_child_from_table(name, &mut cached_children, Self::STATIC_ENTRIES, |f| {
+                (f)(self, dir.this_weak().clone())
+            })
+        {
+            return Ok(child);
         }
 
         // For all other children, the content is the same under both `/proc/<pid>` and `/proc/<pid>/task/<tid>`.
-        self.0.lookup_child(this_ptr, name)
+        self.0
+            .lookup_child_locked(&mut cached_children, dir.this_weak().clone(), name)
     }
 
-    fn populate_children(&self, this_ptr: Weak<dyn Inode>) {
-        let this = {
-            let this = this_ptr.upgrade().unwrap();
-            this.downcast_ref::<ProcDir<PidDirOps>>().unwrap().this()
-        };
-        let mut cached_children = this.cached_children().write();
+    fn populate_children<'a>(
+        &self,
+        dir: &'a ProcDir<Self>,
+    ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>> {
+        let mut cached_children = dir.cached_children().write();
 
         // Populate entries that either exist under `/proc/<pid>`
         // but not under `/proc/<pid>/task/<tid>`,
         // or whose contents differ between the two paths.
-        cached_children.put_entry_if_not_found("stat", || {
-            StatFileOps::new_inode(
-                self.0.process_ref.clone(),
-                self.0.thread_ref.clone(),
-                true,
-                this_ptr.clone(),
-            )
-        });
-        cached_children.put_entry_if_not_found("task", || {
-            TaskDirOps::new_inode(self.0.process_ref.clone(), this_ptr.clone())
+        populate_children_from_table(&mut cached_children, Self::STATIC_ENTRIES, |f| {
+            (f)(self, dir.this_weak().clone())
         });
 
         // Populate the remaining children that are identical
         // under both `/proc/<pid>` and `/proc/<pid>/task/<tid>`.
         self.0
-            .populate_children_inner(&mut cached_children, this_ptr);
+            .populate_children_locked(&mut cached_children, dir.this_weak().clone());
+
+        cached_children.downgrade()
     }
 }
