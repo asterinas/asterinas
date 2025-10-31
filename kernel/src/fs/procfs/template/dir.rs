@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(unused_variables)]
-
 use core::time::Duration;
 
 use aster_util::slot_vec::SlotVec;
 use inherit_methods_macro::inherit_methods;
+use ostd::sync::RwMutexUpgradeableGuard;
 
 use super::{Common, ProcFs};
 use crate::{
     fs::{
         path::{is_dot, is_dotdot},
-        utils::{DirentVisitor, FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType},
+        utils::{
+            DirEntryVecExt, DirentVisitor, FileSystem, Inode, InodeMode, InodeType, Metadata,
+            MknodType,
+        },
     },
     prelude::*,
     process::{Gid, Uid},
@@ -56,6 +58,10 @@ impl<D: DirOps> ProcDir<D> {
         self.this.upgrade().unwrap()
     }
 
+    pub fn this_weak(&self) -> &Weak<ProcDir<D>> {
+        &self.this
+    }
+
     pub fn parent(&self) -> Option<Arc<dyn Inode>> {
         self.parent.as_ref().and_then(|p| p.upgrade())
     }
@@ -96,7 +102,7 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn mknod(&self, _name: &str, _mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
+    fn mknod(&self, _name: &str, _mode: InodeMode, _type_: MknodType) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::EPERM))
     }
 
@@ -120,8 +126,7 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
             }
 
             // Read the normal child entries.
-            self.inner.populate_children(self.this.clone());
-            let cached_children = self.cached_children.read();
+            let cached_children = self.inner.populate_children(self);
             let start_offset = *offset;
             for (idx, (name, child)) in cached_children
                 .idxes_and_items()
@@ -154,23 +159,22 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
     }
 
     fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
-        let inode = if is_dot(name) {
-            self.this()
-        } else if is_dotdot(name) {
-            self.parent().unwrap_or(self.this())
-        } else {
-            let mut cached_children = self.cached_children.write();
-            if let Some((_, inode)) = cached_children
-                .iter()
-                .find(|(child_name, inode)| child_name.as_str() == name)
-            {
-                return Ok(inode.clone());
-            }
-            let inode = self.inner.lookup_child(self.this.clone(), name)?;
-            cached_children.put((String::from(name), inode.clone()));
-            inode
-        };
-        Ok(inode)
+        if is_dot(name) {
+            return Ok(self.this());
+        }
+        if is_dotdot(name) {
+            return Ok(self.parent().unwrap_or(self.this()));
+        }
+
+        let cached_children = self.cached_children.read();
+        if let Some(inode) = cached_children.find_entry_by_name(name)
+            && self.inner.validate_child(inode.as_ref())
+        {
+            return Ok(inode.clone());
+        }
+        drop(cached_children);
+
+        self.inner.lookup_child(self, name)
     }
 
     fn rename(&self, _old_name: &str, _target: &Arc<dyn Inode>, _new_name: &str) -> Result<()> {
@@ -182,10 +186,53 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
     }
 }
 
-pub trait DirOps: Sync + Send {
-    fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::ENOENT))
+pub trait DirOps: Sync + Send + Sized {
+    fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>>;
+
+    fn populate_children<'a>(
+        &self,
+        dir: &'a ProcDir<Self>,
+    ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>>;
+
+    #[must_use]
+    fn validate_child(&self, _child: &dyn Inode) -> bool {
+        true
+    }
+}
+
+pub fn lookup_child_from_table<Fp, F>(
+    name: &str,
+    cached_children: &mut SlotVec<(String, Arc<dyn Inode>)>,
+    table: &[(&str, Fp)],
+    constructor_adaptor: F,
+) -> Option<Arc<dyn Inode>>
+where
+    Fp: Copy,
+    F: FnOnce(Fp) -> Arc<dyn Inode>,
+{
+    for (child_name, child_constructor) in table.iter() {
+        if *child_name == name {
+            return Some(
+                cached_children
+                    .put_entry_if_not_found(name, || (constructor_adaptor)(*child_constructor))
+                    .clone(),
+            );
+        }
     }
 
-    fn populate_children(&self, this_ptr: Weak<dyn Inode>) {}
+    None
+}
+
+pub fn populate_children_from_table<Fp, F>(
+    cached_children: &mut SlotVec<(String, Arc<dyn Inode>)>,
+    table: &[(&str, Fp)],
+    constructor_adaptor: F,
+) where
+    Fp: Copy,
+    F: Fn(Fp) -> Arc<dyn Inode>,
+{
+    for (child_name, child_constructor) in table.iter() {
+        cached_children
+            .put_entry_if_not_found(child_name, || (constructor_adaptor)(*child_constructor));
+    }
 }

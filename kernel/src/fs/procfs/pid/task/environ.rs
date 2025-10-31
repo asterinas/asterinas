@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use super::TidDirOps;
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
@@ -13,7 +14,8 @@ use crate::{
 pub struct EnvironFileOps(Arc<Process>);
 
 impl EnvironFileOps {
-    pub fn new_inode(process_ref: Arc<Process>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        let process_ref = dir.process_ref.clone();
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3324>
         ProcFileBuilder::new(Self(process_ref), mkmod!(u+r))
             .parent(parent)

@@ -6,7 +6,7 @@ use aster_util::slot_vec::SlotVec;
 
 use super::file_handle::FileLike;
 use crate::{
-    events::{Events, IoEvents, Observer, Subject},
+    events::{IoEvents, Observer},
     fs::utils::StatusFlags,
     prelude::*,
     process::{
@@ -18,16 +18,15 @@ use crate::{
 
 pub type FileDesc = i32;
 
+#[derive(Clone)]
 pub struct FileTable {
     table: SlotVec<FileTableEntry>,
-    subject: Subject<FdEvents>,
 }
 
 impl FileTable {
     pub const fn new() -> Self {
         Self {
             table: SlotVec::new(),
-            subject: Subject::new(),
         }
     }
 
@@ -70,10 +69,6 @@ impl FileTable {
 
     pub fn close_file(&mut self, fd: FileDesc) -> Option<Arc<dyn FileLike>> {
         let removed_entry = self.table.remove(fd as usize)?;
-
-        let events = FdEvents::Close(fd);
-        self.notify_fd_events(&events);
-
         Some(removed_entry.file)
     }
 
@@ -100,8 +95,6 @@ impl FileTable {
 
         for fd in closed_fds {
             let removed_entry = self.table.remove(fd as usize).unwrap();
-            let events = FdEvents::Close(fd);
-            self.notify_fd_events(&events);
             closed_files.push(removed_entry.file);
         }
 
@@ -132,43 +125,11 @@ impl FileTable {
             .idxes_and_items()
             .map(|(idx, entry)| (idx as FileDesc, entry.file()))
     }
-
-    pub fn register_observer(&self, observer: Weak<dyn Observer<FdEvents>>) {
-        self.subject.register_observer(observer, ());
-    }
-
-    #[expect(dead_code)]
-    pub fn unregister_observer(&self, observer: &Weak<dyn Observer<FdEvents>>) {
-        self.subject.unregister_observer(observer);
-    }
-
-    fn notify_fd_events(&self, events: &FdEvents) {
-        self.subject.notify_observers(events);
-    }
 }
 
 impl Default for FileTable {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl Clone for FileTable {
-    fn clone(&self) -> Self {
-        Self {
-            table: self.table.clone(),
-            subject: Subject::new(),
-        }
-    }
-}
-
-impl Drop for FileTable {
-    fn drop(&mut self) {
-        // Closes all files first.
-        self.close_files(|_| true);
-
-        let events = FdEvents::DropFileTable;
-        self.subject.notify_observers(&events);
     }
 }
 
@@ -237,14 +198,6 @@ macro_rules! get_file_fast {
 }
 
 pub(crate) use get_file_fast;
-
-#[derive(Copy, Clone, Debug)]
-pub enum FdEvents {
-    Close(FileDesc),
-    DropFileTable,
-}
-
-impl Events for FdEvents {}
 
 pub struct FileTableEntry {
     file: Arc<dyn FileLike>,

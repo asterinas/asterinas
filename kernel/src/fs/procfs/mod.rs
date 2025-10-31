@@ -2,6 +2,10 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
+use aster_util::slot_vec::SlotVec;
+use ostd::sync::RwMutexUpgradeableGuard;
+use template::{lookup_child_from_table, populate_children_from_table};
+
 use self::{
     cmdline::CmdLineFileOps,
     cpuinfo::CpuInfoFileOps,
@@ -136,78 +140,83 @@ impl RootDirOps {
 
         root_inode
     }
+
+    #[expect(clippy::type_complexity)]
+    const STATIC_ENTRIES: &'static [(&'static str, fn(Weak<dyn Inode>) -> Arc<dyn Inode>)] = &[
+        ("cmdline", CmdLineFileOps::new_inode),
+        ("cpuinfo", CpuInfoFileOps::new_inode),
+        ("filesystems", FileSystemsFileOps::new_inode),
+        ("loadavg", LoadAvgFileOps::new_inode),
+        ("meminfo", MemInfoFileOps::new_inode),
+        ("self", SelfSymOps::new_inode),
+        ("stat", StatFileOps::new_inode),
+        ("sys", SysDirOps::new_inode),
+        ("thread-self", ThreadSelfSymOps::new_inode),
+        ("uptime", UptimeFileOps::new_inode),
+    ];
 }
 
 impl Observer<PidEvent> for ProcDir<RootDirOps> {
     fn on_events(&self, events: &PidEvent) {
         let PidEvent::Exit(pid) = events;
+
         let mut cached_children = self.cached_children().write();
         cached_children.remove_entry_by_name(&pid.to_string());
     }
 }
 
 impl DirOps for RootDirOps {
-    fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
-        let child = if name == "self" {
-            SelfSymOps::new_inode(this_ptr.clone())
-        } else if name == "sys" {
-            SysDirOps::new_inode(this_ptr.clone())
-        } else if name == "thread-self" {
-            ThreadSelfSymOps::new_inode(this_ptr.clone())
-        } else if name == "filesystems" {
-            FileSystemsFileOps::new_inode(this_ptr.clone())
-        } else if name == "meminfo" {
-            MemInfoFileOps::new_inode(this_ptr.clone())
-        } else if name == "loadavg" {
-            LoadAvgFileOps::new_inode(this_ptr.clone())
-        } else if name == "cpuinfo" {
-            CpuInfoFileOps::new_inode(this_ptr.clone())
-        } else if name == "uptime" {
-            UptimeFileOps::new_inode(this_ptr.clone())
-        } else if name == "stat" {
-            StatFileOps::new_inode(this_ptr.clone())
-        } else if name == "cmdline" {
-            CmdLineFileOps::new_inode(this_ptr.clone())
-        } else if let Ok(pid) = name.parse::<Pid>() {
-            let process_ref =
-                process_table::get_process(pid).ok_or_else(|| Error::new(Errno::ENOENT))?;
-            PidDirOps::new_inode(process_ref, this_ptr.clone())
-        } else {
-            return_errno!(Errno::ENOENT);
-        };
-        Ok(child)
+    // Lock order: process table -> cached entries
+    //
+    // Note that inverting the lock order is non-trivial because `Observer::on_events` will be
+    // called with the process table locked.
+
+    fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
+        if let Ok(pid) = name.parse::<Pid>()
+            && let process_table_mut = process_table::process_table_mut()
+            && let Some(process_ref) = process_table_mut.get(pid)
+        {
+            let mut cached_children = dir.cached_children().write();
+            return Ok(cached_children
+                .put_entry_if_not_found(name, || {
+                    PidDirOps::new_inode(process_ref.clone(), dir.this_weak().clone())
+                })
+                .clone());
+        }
+
+        let mut cached_children = dir.cached_children().write();
+
+        if let Some(child) =
+            lookup_child_from_table(name, &mut cached_children, Self::STATIC_ENTRIES, |f| {
+                (f)(dir.this_weak().clone())
+            })
+        {
+            return Ok(child);
+        }
+
+        return_errno_with_message!(Errno::ENOENT, "the file does not exist");
     }
 
-    fn populate_children(&self, this_ptr: Weak<dyn Inode>) {
-        let this = {
-            let this = this_ptr.upgrade().unwrap();
-            this.downcast_ref::<ProcDir<RootDirOps>>().unwrap().this()
-        };
-        let mut cached_children = this.cached_children().write();
-        cached_children.put_entry_if_not_found("self", || SelfSymOps::new_inode(this_ptr.clone()));
-        cached_children.put_entry_if_not_found("thread-self", || {
-            ThreadSelfSymOps::new_inode(this_ptr.clone())
-        });
-        cached_children.put_entry_if_not_found("sys", || SysDirOps::new_inode(this_ptr.clone()));
-        cached_children.put_entry_if_not_found("filesystems", || {
-            FileSystemsFileOps::new_inode(this_ptr.clone())
-        });
-        cached_children
-            .put_entry_if_not_found("meminfo", || MemInfoFileOps::new_inode(this_ptr.clone()));
-        cached_children
-            .put_entry_if_not_found("loadavg", || LoadAvgFileOps::new_inode(this_ptr.clone()));
-        cached_children
-            .put_entry_if_not_found("cpuinfo", || CpuInfoFileOps::new_inode(this_ptr.clone()));
-        cached_children
-            .put_entry_if_not_found("uptime", || UptimeFileOps::new_inode(this_ptr.clone()));
-        cached_children.put_entry_if_not_found("stat", || StatFileOps::new_inode(this_ptr.clone()));
-        cached_children
-            .put_entry_if_not_found("cmdline", || CmdLineFileOps::new_inode(this_ptr.clone()));
-        for process in process_table::process_table_mut().iter() {
-            let pid = process.pid().to_string();
+    fn populate_children<'a>(
+        &self,
+        dir: &'a ProcDir<Self>,
+    ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>> {
+        let process_table_mut = process_table::process_table_mut();
+        let mut cached_children = dir.cached_children().write();
+
+        for process_ref in process_table_mut.iter() {
+            let pid = process_ref.pid().to_string();
             cached_children.put_entry_if_not_found(&pid, || {
-                PidDirOps::new_inode(process.clone(), this_ptr.clone())
+                PidDirOps::new_inode(process_ref.clone(), dir.this_weak().clone())
             });
         }
+
+        drop(process_table_mut);
+
+        populate_children_from_table(&mut cached_children, Self::STATIC_ENTRIES, |f| {
+            (f)(dir.this_weak().clone())
+        });
+
+        cached_children.downgrade()
     }
 }

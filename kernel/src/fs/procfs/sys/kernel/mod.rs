@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_util::slot_vec::SlotVec;
+use ostd::sync::RwMutexUpgradeableGuard;
+
 use crate::{
     fs::{
         procfs::{
             sys::kernel::{cap_last_cap::CapLastCapFileOps, pid_max::PidMaxFileOps},
-            template::{DirOps, ProcDirBuilder},
+            template::{
+                lookup_child_from_table, populate_children_from_table, DirOps, ProcDirBuilder,
+            },
             ProcDir,
         },
-        utils::{mkmod, DirEntryVecExt, Inode},
+        utils::{mkmod, Inode},
     },
     prelude::*,
 };
@@ -28,28 +33,39 @@ impl KernelDirOps {
             .build()
             .unwrap()
     }
+
+    #[expect(clippy::type_complexity)]
+    const STATIC_ENTRIES: &'static [(&'static str, fn(Weak<dyn Inode>) -> Arc<dyn Inode>)] = &[
+        ("cap_last_cap", CapLastCapFileOps::new_inode),
+        ("pid_max", PidMaxFileOps::new_inode),
+    ];
 }
 
 impl DirOps for KernelDirOps {
-    fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
-        let inode = match name {
-            "cap_last_cap" => CapLastCapFileOps::new_inode(this_ptr.clone()),
-            "pid_max" => PidMaxFileOps::new_inode(this_ptr.clone()),
-            _ => return_errno!(Errno::ENOENT),
-        };
-        Ok(inode)
+    fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
+        let mut cached_children = dir.cached_children().write();
+
+        if let Some(child) =
+            lookup_child_from_table(name, &mut cached_children, Self::STATIC_ENTRIES, |f| {
+                (f)(dir.this_weak().clone())
+            })
+        {
+            return Ok(child);
+        }
+
+        return_errno_with_message!(Errno::ENOENT, "the file does not exist");
     }
 
-    fn populate_children(&self, this_ptr: Weak<dyn Inode>) {
-        let this = {
-            let this = this_ptr.upgrade().unwrap();
-            this.downcast_ref::<ProcDir<KernelDirOps>>().unwrap().this()
-        };
-        let mut cached_children = this.cached_children().write();
-        cached_children.put_entry_if_not_found("cap_last_cap", || {
-            CapLastCapFileOps::new_inode(this_ptr.clone())
+    fn populate_children<'a>(
+        &self,
+        dir: &'a ProcDir<Self>,
+    ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>> {
+        let mut cached_children = dir.cached_children().write();
+
+        populate_children_from_table(&mut cached_children, Self::STATIC_ENTRIES, |f| {
+            (f)(dir.this_weak().clone())
         });
-        cached_children
-            .put_entry_if_not_found("pid_max", || PidMaxFileOps::new_inode(this_ptr.clone()));
+
+        cached_children.downgrade()
     }
 }

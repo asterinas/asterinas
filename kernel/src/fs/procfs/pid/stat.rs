@@ -2,6 +2,7 @@
 
 use core::{fmt::Write, sync::atomic::Ordering};
 
+use super::{PidDirOps, TidDirOps};
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
@@ -81,7 +82,19 @@ pub struct StatFileOps {
 }
 
 impl StatFileOps {
-    pub fn new_inode(
+    pub fn new_inode_pid(dir: &PidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        let process_ref = dir.0.process_ref.clone();
+        let thread_ref = dir.0.thread_ref.clone();
+        Self::new_inode_impl(process_ref, thread_ref, true, parent)
+    }
+
+    pub fn new_inode_tid(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        let process_ref = dir.process_ref.clone();
+        let thread_ref = dir.thread_ref.clone();
+        Self::new_inode_impl(process_ref, thread_ref, false, parent)
+    }
+
+    fn new_inode_impl(
         process_ref: Arc<Process>,
         thread_ref: Arc<Thread>,
         is_pid_stat: bool,
