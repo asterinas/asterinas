@@ -5,7 +5,7 @@
 use core::time::Duration;
 
 use inherit_methods_macro::inherit_methods;
-pub use mount::{Mount, MountPropType};
+pub use mount::{Mount, MountPropType, PerMountFlags};
 pub use mount_namespace::MountNamespace;
 
 use crate::{
@@ -13,8 +13,8 @@ use crate::{
         inode_handle::InodeHandle,
         path::dentry::{Dentry, DentryKey},
         utils::{
-            CreationFlags, FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType, OpenArgs,
-            Permission, StatusFlags, XattrName, XattrNamespace, XattrSetFlags, NAME_MAX,
+            CreationFlags, FileSystem, FsFlags, Inode, InodeMode, InodeType, Metadata, MknodType,
+            OpenArgs, Permission, StatusFlags, XattrName, XattrNamespace, XattrSetFlags, NAME_MAX,
         },
     },
     prelude::*,
@@ -205,7 +205,12 @@ impl Path {
     /// Returns `ENOTDIR` if the path is not a directory.
     /// Returns `EINVAL` if attempting to mount on root or if the path is not
     /// in the current mount namespace.
-    pub fn mount(&self, fs: Arc<dyn FileSystem>, ctx: &Context) -> Result<Arc<Mount>> {
+    pub fn mount(
+        &self,
+        fs: Arc<dyn FileSystem>,
+        flags: PerMountFlags,
+        ctx: &Context,
+    ) -> Result<Arc<Mount>> {
         if self.type_() != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "the path is not a directory");
         }
@@ -220,7 +225,7 @@ impl Path {
             return_errno_with_message!(Errno::EINVAL, "the path is not in this mount namespace");
         }
 
-        let child_mount = self.mount.do_mount(fs, &self.dentry)?;
+        let child_mount = self.mount.do_mount(fs, flags, &self.dentry)?;
 
         Ok(child_mount)
     }
@@ -254,6 +259,36 @@ impl Path {
         let child_mount = parent_mount.do_unmount(&mountpoint)?;
 
         Ok(child_mount)
+    }
+
+    /// Remounts the filesystem with new `PerMountFlags` and optionally new `FsFlags`.
+    ///
+    /// If `fs_flags` is provided, it will update the flags of the mounted filesystem,
+    /// otherwise, only the flags of the current mount will be updated.
+    ///
+    /// # Errors
+    ///
+    /// Returns `EINVAL` in the following cases:
+    /// - The current path is not a mount root.
+    /// - The current path is not in the current mount namespace.
+    pub fn remount(
+        &self,
+        mount_flags: PerMountFlags,
+        fs_flags: Option<FsFlags>,
+        data: Option<CString>,
+        ctx: &Context,
+    ) -> Result<()> {
+        if !self.is_mount_root() {
+            return_errno_with_message!(Errno::EINVAL, "the path is not a mount root");
+        };
+
+        let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
+        let current_mnt_ns = current_ns_proxy.unwrap().mnt_ns();
+        if !current_mnt_ns.owns(&self.mount) {
+            return_errno_with_message!(Errno::EINVAL, "the path is not in this mount namespace");
+        }
+
+        self.mount.remount(mount_flags, fs_flags, data, ctx)
     }
 
     /// Creates a bind mount from the current path to the destination path.

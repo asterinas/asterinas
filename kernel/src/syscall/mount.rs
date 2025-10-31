@@ -4,23 +4,23 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         fs_resolver::{FsPath, AT_FDCWD},
-        path::{MountPropType, Path},
+        path::{MountPropType, Path, PerMountFlags},
         registry::FsProperties,
-        utils::{FileSystem, InodeType},
+        utils::{FileSystem, FsFlags, InodeType},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-/// The `data` argument is interpreted by the different filesystems.
-/// Typically it is a string of comma-separated options understood by
-/// this filesystem. The current implementation only considers the case
-/// where it is `NULL`. Because it should be interpreted by the specific filesystems.
 pub fn sys_mount(
     devname_addr: Vaddr,
     dirname_addr: Vaddr,
     fstype_addr: Vaddr,
     flags: u64,
+    // The `data` argument is interpreted by the different filesystems.
+    // Typically it is a string of comma-separated options understood by
+    // this filesystem. The current implementation only considers the case
+    // where it is `NULL`. Because it should be interpreted by the specific filesystems.
     data: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
@@ -44,9 +44,10 @@ pub fn sys_mount(
     };
 
     if mount_flags.contains(MountFlags::MS_REMOUNT) && mount_flags.contains(MountFlags::MS_BIND) {
-        do_reconfigure_mnt()?;
+        // If `MS_BIND` is specified, only the mount flags are changed.
+        do_remount_mnt(&dst_path, mount_flags, ctx)?;
     } else if mount_flags.contains(MountFlags::MS_REMOUNT) {
-        do_remount()?;
+        do_remount_mnt_and_fs(&dst_path, mount_flags, data, ctx)?;
     } else if mount_flags.contains(MountFlags::MS_BIND) {
         do_bind_mount(
             devname,
@@ -59,21 +60,33 @@ pub fn sys_mount(
     } else if mount_flags.contains(MountFlags::MS_MOVE) {
         do_move_mount_old(devname, dst_path, ctx)?;
     } else {
-        do_new_mount(devname, fstype_addr, dst_path, data, ctx)?;
+        do_new_mount(devname, mount_flags, fstype_addr, dst_path, data, ctx)?;
     }
 
     Ok(SyscallReturn::Return(0))
 }
 
-fn do_reconfigure_mnt() -> Result<()> {
-    return_errno_with_message!(Errno::EINVAL, "do_reconfigure_mnt is not supported");
+/// Remounts the mount with new flags.
+fn do_remount_mnt(path: &Path, flags: MountFlags, ctx: &Context) -> Result<()> {
+    let per_mount_flags = PerMountFlags::from(flags);
+
+    path.remount(per_mount_flags, None, None, ctx)
 }
 
-fn do_remount() -> Result<()> {
-    return_errno_with_message!(Errno::EINVAL, "do_remount is not supported");
+/// Remounts the filesystem with new flags and data.
+fn do_remount_mnt_and_fs(path: &Path, flags: MountFlags, data: Vaddr, ctx: &Context) -> Result<()> {
+    let per_mount_flags = PerMountFlags::from(flags);
+    let fs_flags = FsFlags::from(flags);
+    let data = if data == 0 {
+        None
+    } else {
+        Some(ctx.user_space().read_cstring(data, MAX_FILENAME_LEN)?)
+    };
+
+    path.remount(per_mount_flags, Some(fs_flags), data, ctx)
 }
 
-/// Bind a mount to a dst location.
+/// Binds a mount to a dst location.
 ///
 /// If recursive is true, then bind the mount recursively.
 /// Such as use user command `mount --rbind src dst`.
@@ -125,7 +138,7 @@ fn do_change_type(target_path: Path, flags: MountFlags, ctx: &Context) -> Result
     }
 }
 
-/// Move a mount from src location to dst location.
+/// Moves a mount from src location to dst location.
 fn do_move_mount_old(src_name: CString, dst_path: Path, ctx: &Context) -> Result<()> {
     let src_path = {
         let src_name = src_name.to_string_lossy();
@@ -160,7 +173,7 @@ fn do_new_mount(
         return_errno_with_message!(Errno::EINVAL, "fs_type is empty");
     }
     let fs = get_fs(devname, flags, fs_type, data, ctx)?;
-    target_path.mount(fs, ctx)?;
+    target_path.mount(fs, flags.into(), ctx)?;
     Ok(())
 }
 
@@ -225,6 +238,13 @@ bitflags! {
         const MS_LAZYTIME      =   1 << 25; 	 // Update the on-disk [acm]times lazily.
     }
 }
+
+impl From<MountFlags> for PerMountFlags {
+    fn from(flags: MountFlags) -> Self {
+        Self::from_bits_truncate(flags.bits())
+    }
+}
+
 impl From<MountFlags> for FsFlags {
     fn from(flags: MountFlags) -> Self {
         Self::from_bits_truncate(flags.bits())

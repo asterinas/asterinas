@@ -32,31 +32,29 @@ mount(
 // Create a bind mount
 mount(
     source, target, filesystemtype,
-    mountflags = MS_BIND | MS_REC | MS_MOVE,
+    mountflags = MS_BIND | MS_REC,
     data
 );
 ```
 
-Silently-ignored mount flags:
-* `MS_DIRSYNC`
-* `MS_LAZYTIME`
-* `MS_MANDLOCK`
-* `MS_NOATIME`
-* `MS_NODEV`
-* `MS_NODIRATIME`
-* `MS_NOEXEC`
-* `MS_NOSUID`
-* `MS_RDONLY`
-* `MS_RELATIME`
-* `MS_SILENT`
-* `MS_STRICTATIME`
-* `MS_SYNCHRONOUS`
-
 Partially supported mount flags:
 * `MS_REC` is only effective when used in conjunction with `MS_BIND`
+* `MS_REMOUNT` can be used, but the set options have no actual effect.
+* `MS_DIRSYNC` can be set but have no actual effect.
+* `MS_LAZYTIME` can be set but have no actual effect.
+* `MS_MANDLOCK` can be set but have no actual effect.
+* `MS_NOATIME` can be set but have no actual effect.
+* `MS_NODEV` can be set but have no actual effect.
+* `MS_NODIRATIME` can be set but have no actual effect.
+* `MS_NOEXEC` can be set but have no actual effect.
+* `MS_NOSUID` can be set but have no actual effect.
+* `MS_RDONLY` can be set but have no actual effect.
+* `MS_RELATIME` can be set but have no actual effect.
+* `MS_SILENT` can be set but have no actual effect.
+* `MS_STRICTATIME` can be set but have no actual effect.
+* `MS_SYNCHRONOUS` can be set but have no actual effect.
 
 Unsupported mount flags:
-* `MS_REMOUNT`
 * `MS_SHARED`
 * `MS_SLAVE`
 * `MS_UNBINDABLE`
