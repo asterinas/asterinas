@@ -18,7 +18,7 @@ impl Events for () {}
 /// The unit type `()` can serve as a no-op event filter.
 /// It implements `EventsFilter<E>` for any events type `E`,
 /// with a `filter` method that always returns `true`.
-/// If the `F` type of `Subject<E, F>` is not specified explicitly,
+/// If the `F` type of `SyncSubject<E, F>` is not specified explicitly,
 /// then the unit type `()` is chosen as the event filter.
 ///
 /// # Per-object event filter

@@ -298,7 +298,7 @@ impl ReadySet {
         //
         // We don't need to take the lock because
         // - `set_enabled` is guaranteed to be visible after its following `FileLike::poll`. This
-        //   synchronization relies on the lock in `Subject`. As a result, no events are lost.
+        //   synchronization relies on the lock in `SyncSubject`. As a result, no events are lost.
         // - Catching spurious events here is always fine because we always check them later before
         //   returning events to the user (in `Entry::poll`).
         if !observer.is_enabled() {

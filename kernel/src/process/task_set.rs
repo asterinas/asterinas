@@ -7,7 +7,12 @@ use ostd::{
     task::{CurrentTask, Task},
 };
 
-use crate::prelude::*;
+use super::Pid;
+use crate::{
+    events::{Events, Observer, Subject},
+    prelude::*,
+    thread::Tid,
+};
 
 /// A task set that maintains all tasks in a POSIX process.
 pub struct TaskSet {
@@ -16,6 +21,7 @@ pub struct TaskSet {
     has_exited_group: bool,
     in_execve: bool,
     execve_waker: Option<Arc<Waker>>,
+    subject: Subject<TidEvent>,
 }
 
 impl TaskSet {
@@ -27,6 +33,7 @@ impl TaskSet {
             has_exited_group: false,
             in_execve: false,
             execve_waker: None,
+            subject: Subject::new(),
         }
     }
 
@@ -53,7 +60,7 @@ impl TaskSet {
     /// # Panics
     ///
     /// This method will panic if the task is not in the task set.
-    pub(super) fn remove_exited(&mut self, task: &CurrentTask) -> bool {
+    pub(super) fn remove_exited(&mut self, task: &CurrentTask, tid: Tid) -> bool {
         let position = self
             .tasks
             .iter()
@@ -65,6 +72,7 @@ impl TaskSet {
             self.has_exited_main = true;
         } else {
             self.tasks.swap_remove(position);
+            self.notify_tid_exit(tid);
         }
 
         if let Some(waker) = self.execve_waker.as_ref() {
@@ -82,9 +90,15 @@ impl TaskSet {
     /// Removes the main task and makes the remaining task become the main task.
     ///
     /// The method should only be calling when doing execve.
-    pub(super) fn swap_main(&mut self) {
+    pub(super) fn swap_main(&mut self, pid: Pid, tid: Tid) {
+        // This is an extremely internal method. The caller must uphold certain invariants, update
+        // the thread status, modify the thread table, etc.
+
         self.tasks.swap_remove(0);
         self.has_exited_main = false;
+
+        self.notify_tid_exit(pid);
+        self.notify_tid_exit(tid);
     }
 
     /// Sets a flag that denotes that an `exit_group` has been initiated.
@@ -127,6 +141,11 @@ impl TaskSet {
     pub(super) fn clear_execve_waker(&mut self) {
         self.execve_waker = None;
     }
+
+    /// Notifies `TidEvent::Exit` events to the subject.
+    fn notify_tid_exit(&mut self, tid: Tid) {
+        self.subject.notify_observers(&TidEvent::Exit(tid));
+    }
 }
 
 impl TaskSet {
@@ -139,4 +158,22 @@ impl TaskSet {
     pub fn main(&self) -> &Arc<Task> {
         &self.tasks[0]
     }
+
+    /// Registers an observer which watches `TidEvent`.
+    pub fn register_observer(&mut self, observer: Weak<dyn Observer<TidEvent>>) {
+        self.subject.register_observer(observer);
+    }
+
+    /// Unregisters an observer which watches `TidEvent`.
+    #[expect(dead_code)]
+    pub fn unregister_observer(&mut self, observer: &Weak<dyn Observer<TidEvent>>) {
+        self.subject.unregister_observer(observer);
+    }
 }
+
+#[derive(Copy, Clone)]
+pub enum TidEvent {
+    Exit(Tid),
+}
+
+impl Events for TidEvent {}

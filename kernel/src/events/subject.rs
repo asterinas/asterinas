@@ -8,15 +8,71 @@ use ostd::sync::LocalIrqDisabled;
 use super::{Events, EventsFilter, Observer};
 use crate::prelude::*;
 
-/// A Subject notifies interesting events to registered observers.
-pub struct Subject<E: Events, F: EventsFilter<E> = ()> {
+/// A subject that notifies interesting events to registered observers.
+///
+/// This type does not have any inner locks. Therefore, users need to maintain an outer lock to
+/// obtain a mutable reference. Consequently, observers can break the atomic mode as long as the
+/// outer lock also permits it.
+pub struct Subject<E: Events>(BTreeSet<KeyableWeak<dyn Observer<E>>>);
+
+impl<E: Events> Subject<E> {
+    /// Creates an empty subject.
+    pub const fn new() -> Self {
+        Self(BTreeSet::new())
+    }
+
+    /// Registers an observer.
+    ///
+    /// A registered observer will get notified through its `on_events` method.
+    pub fn register_observer(&mut self, observer: Weak<dyn Observer<E>>) {
+        self.0.insert(KeyableWeak::from(observer));
+    }
+
+    /// Unregisters an observer.
+    ///
+    /// If such an observer is found, then the registered observer will be
+    /// removed from the set and this method will return `true`. Otherwise,
+    /// a `false` will be returned.
+    pub fn unregister_observer(&mut self, observer: &Weak<dyn Observer<E>>) -> bool {
+        self.0.remove(&KeyableWeak::from(observer.clone()))
+    }
+
+    /// Notifies events to all registered observers.
+    ///
+    /// It will remove the observers which have been freed.
+    pub fn notify_observers(&mut self, events: &E) {
+        self.0.retain(|observer| {
+            if let Some(observer) = observer.upgrade() {
+                observer.on_events(events);
+                true
+            } else {
+                false
+            }
+        });
+    }
+}
+
+impl<E: Events> Default for Subject<E> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// A synchronized subject that notifies interesting events to registered observers.
+///
+/// This type can be used via an immutable reference across threads. To enable this, the type
+/// maintains registered observers in a spin lock. As a result, when called on events, all
+/// registered observers should not break atomic mode. See also [`Subject`] if the condition may be
+/// violated.
+pub struct SyncSubject<E: Events, F: EventsFilter<E> = ()> {
     // A table that maintains all interesting observers.
     observers: SpinLock<BTreeMap<KeyableWeak<dyn Observer<E>>, F>, LocalIrqDisabled>,
     // To reduce lock contentions, we maintain a counter for the size of the table
     num_observers: AtomicUsize,
 }
 
-impl<E: Events, F: EventsFilter<E>> Subject<E, F> {
+impl<E: Events, F: EventsFilter<E>> SyncSubject<E, F> {
+    /// Creates an empty subject.
     pub const fn new() -> Self {
         Self {
             observers: SpinLock::new(BTreeMap::new()),
@@ -24,7 +80,7 @@ impl<E: Events, F: EventsFilter<E>> Subject<E, F> {
         }
     }
 
-    /// Register an observer.
+    /// Registers an observer.
     ///
     /// A registered observer will get notified through its `on_events` method.
     /// If events `filter` is provided, only filtered events will notify the observer.
@@ -43,7 +99,7 @@ impl<E: Events, F: EventsFilter<E>> Subject<E, F> {
         }
     }
 
-    /// Unregister an observer.
+    /// Unregisters an observer.
     ///
     /// If such an observer is found, then the registered observer will be
     /// removed from the subject and returned as the return value. Otherwise,
@@ -63,7 +119,7 @@ impl<E: Events, F: EventsFilter<E>> Subject<E, F> {
         observer
     }
 
-    /// Notify events to all registered observers.
+    /// Notifies events to all registered observers.
     ///
     /// It will remove the observers which have been freed.
     pub fn notify_observers(&self, events: &E) {
@@ -77,14 +133,12 @@ impl<E: Events, F: EventsFilter<E>> Subject<E, F> {
         }
 
         // Slow path: broadcast the new events to all observers.
-        let mut active_observers = Vec::new();
         let mut num_freed = 0;
         let mut observers = self.observers.lock();
         observers.retain(|observer, filter| {
             if let Some(observer) = observer.upgrade() {
                 if filter.filter(events) {
-                    // XXX: Mind the performance impact when there comes many active observers
-                    active_observers.push(observer.clone());
+                    observer.on_events(events);
                 }
                 true
             } else {
@@ -95,15 +149,10 @@ impl<E: Events, F: EventsFilter<E>> Subject<E, F> {
         if num_freed > 0 {
             self.num_observers.fetch_sub(num_freed, Ordering::Relaxed);
         }
-        drop(observers);
-
-        for observer in active_observers {
-            observer.on_events(events);
-        }
     }
 }
 
-impl<E: Events> Default for Subject<E> {
+impl<E: Events> Default for SyncSubject<E> {
     fn default() -> Self {
         Self::new()
     }

@@ -5,6 +5,7 @@ use ostd::sync::RwMutexUpgradeableGuard;
 
 use super::PidDirOps;
 use crate::{
+    events::Observer,
     fs::{
         procfs::{
             pid::task::{
@@ -21,7 +22,7 @@ use crate::{
         utils::{mkmod, DirEntryVecExt, Inode},
     },
     prelude::*,
-    process::posix_thread::AsPosixThread,
+    process::{posix_thread::AsPosixThread, task_set::TidEvent},
     thread::{AsThread, Thread, Tid},
     Process,
 };
@@ -46,10 +47,15 @@ impl TaskDirOps {
     pub fn new_inode(dir: &PidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         let process_ref = dir.0.process_ref.clone();
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3316>
-        ProcDirBuilder::new(Self(process_ref), mkmod!(a+rx))
+        let task_dir_inode = ProcDirBuilder::new(Self(process_ref), mkmod!(a+rx))
             .parent(parent)
             .build()
-            .unwrap()
+            .unwrap();
+
+        let weak_ptr = Arc::downgrade(&task_dir_inode);
+        dir.0.process_ref.tasks().lock().register_observer(weak_ptr);
+
+        task_dir_inode
     }
 }
 
@@ -152,7 +158,21 @@ impl TidDirOps {
     }
 }
 
+impl Observer<TidEvent> for ProcDir<TaskDirOps> {
+    fn on_events(&self, events: &TidEvent) {
+        let TidEvent::Exit(tid) = events;
+
+        let mut cached_children = self.cached_children().write();
+        cached_children.remove_entry_by_name(&tid.to_string());
+    }
+}
+
 impl DirOps for TaskDirOps {
+    // Lock order: task set -> cached entries
+    //
+    // Note that inverting the lock order is non-trivial because `Observer::on_events` will be
+    // called with the task set locked.
+
     fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
         let Ok(tid) = name.parse::<Tid>() else {
             return_errno_with_message!(Errno::ENOENT, "the name is not a valid TID");

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(unused_variables)]
-
 use super::Events;
 
 /// An observer for events.
@@ -30,10 +28,10 @@ use super::Events;
 /// assert!(empty.upgrade().is_empty());
 /// ```
 pub trait Observer<E: Events>: Send + Sync {
-    /// Notify the observer that some interesting events happen.
+    /// Notifies the observer that some interesting events happen.
     fn on_events(&self, events: &E);
 }
 
 impl<E: Events> Observer<E> for () {
-    fn on_events(&self, events: &E) {}
+    fn on_events(&self, _events: &E) {}
 }
