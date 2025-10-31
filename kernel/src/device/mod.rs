@@ -22,6 +22,7 @@ use crate::{
     fs::{
         device::{add_node, Device, DeviceId},
         fs_resolver::FsPath,
+        path::PerMountFlags,
         ramfs::RamFs,
     },
     prelude::*,
@@ -34,7 +35,7 @@ pub fn init_in_first_process(ctx: &Context) -> Result<()> {
 
     // Mount DevFS
     let dev_path = fs_resolver.lookup(&FsPath::try_from("/dev")?)?;
-    dev_path.mount(RamFs::new(), ctx)?;
+    dev_path.mount(RamFs::new(), PerMountFlags::default(), ctx)?;
 
     let null = Arc::new(null::Null);
     add_node(null, "null", &fs_resolver)?;

@@ -10,7 +10,10 @@ use super::{
     fs_resolver::{FsPath, FsResolver},
     utils::{FileSystem, InodeMode, InodeType},
 };
-use crate::{fs::path::is_dot, prelude::*};
+use crate::{
+    fs::path::{is_dot, PerMountFlags},
+    prelude::*,
+};
 
 struct BoxedReader<'a>(Box<dyn Read + 'a>);
 
@@ -114,6 +117,6 @@ pub fn mount_fs_at(
     ctx: &Context,
 ) -> Result<()> {
     let target_path = fs_resolver.lookup(fs_path)?;
-    target_path.mount(fs, ctx)?;
+    target_path.mount(fs, PerMountFlags::default(), ctx)?;
     Ok(())
 }

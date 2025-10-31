@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::{AtomicU32, Ordering};
+
 use aster_util::printer::VmPrinter;
+use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use hashbrown::HashMap;
 use id_alloc::IdAlloc;
 use spin::Once;
@@ -12,7 +15,7 @@ use crate::{
             mount_namespace::MountNamespace,
             Path,
         },
-        utils::{FileSystem, InodeType},
+        utils::{FileSystem, FsFlags, InodeType},
     },
     prelude::*,
 };
@@ -44,6 +47,103 @@ pub(super) fn init() {
     ID_ALLOCATOR.call_once(|| SpinLock::new(IdAlloc::with_capacity(MAX_MOUNT_NUM)));
 }
 
+bitflags! {
+    pub struct PerMountFlags: u32 {
+        /// Mount read-only.
+        const RDONLY         = 1 << 0;
+        /// Ignore suid and sgid bits.
+        const NOSUID         = 1 << 1;
+        /// Disallow access to device special files.
+        const NODEV          = 1 << 2;
+        /// Disallow program execution.
+        const NOEXEC         = 1 << 3;
+        /// Do not update access times.
+        const NOATIME        = 1 << 10;
+        /// Do not update directory access times.
+        const NODIRATIME     = 1 << 11;
+        /// Update atime relative to mtime/ctime.
+        const RELATIME       = 1 << 21;
+        /// Always perform atime updates.
+        const STRICTATIME    = 1 << 24;
+    }
+}
+
+impl Default for PerMountFlags {
+    fn default() -> Self {
+        let empty = Self::empty();
+        empty | Self::RELATIME
+    }
+}
+
+impl PerMountFlags {
+    /// Gets the atime policy.
+    fn atime_policy(&self) -> AtimePolicy {
+        if self.contains(PerMountFlags::STRICTATIME) {
+            AtimePolicy::Strictatime
+        } else if self.contains(PerMountFlags::NOATIME) {
+            AtimePolicy::Noatime
+        } else {
+            AtimePolicy::Relatime
+        }
+    }
+}
+
+/// The policy for updating access times (atime).
+///
+/// A Mount can only have one of the following atime policies.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AtimePolicy {
+    Relatime,
+    Noatime,
+    Strictatime,
+}
+
+impl core::fmt::Display for PerMountFlags {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        if self.contains(PerMountFlags::RDONLY) {
+            write!(f, "ro")?;
+        } else {
+            write!(f, "rw")?;
+        };
+        if self.contains(PerMountFlags::NOSUID) {
+            write!(f, ",nosuid")?;
+        }
+        if self.contains(PerMountFlags::NODEV) {
+            write!(f, ",nodev")?;
+        }
+        if self.contains(PerMountFlags::NOEXEC) {
+            write!(f, ",noexec")?;
+        }
+        if self.contains(PerMountFlags::NODIRATIME) {
+            write!(f, ",nodiratime")?;
+        }
+        let atime_policy = match self.atime_policy() {
+            AtimePolicy::Relatime => "relatime",
+            AtimePolicy::Noatime => "noatime",
+            AtimePolicy::Strictatime => "strictatime",
+        };
+        write!(f, ",{}", atime_policy)
+    }
+}
+
+impl From<u32> for PerMountFlags {
+    fn from(value: u32) -> Self {
+        Self::from_bits_truncate(value)
+    }
+}
+
+impl From<PerMountFlags> for u32 {
+    fn from(value: PerMountFlags) -> Self {
+        value.bits()
+    }
+}
+
+define_atomic_version_of_integer_like_type!(PerMountFlags, {
+    /// An atomic version of `PerMountFlags`.
+    #[derive(Debug)]
+    pub struct AtomicPerMountFlags(AtomicU32);
+});
+
 /// A `Mount` represents a mounted filesystem instance in the VFS.
 ///
 /// Each `Mount` can be viewed as a node in the mount tree, maintaining
@@ -66,6 +166,8 @@ pub struct Mount {
     mnt_ns: Weak<MountNamespace>,
     /// Propagation type of this mount (e.g., private, shared).
     propagation: RwLock<MountPropType>,
+    /// The flags of this mount.
+    flags: AtomicPerMountFlags,
     /// Reference to self.
     this: Weak<Self>,
 }
@@ -82,7 +184,7 @@ impl Mount {
         fs: Arc<dyn FileSystem>,
         mnt_ns: Weak<MountNamespace>,
     ) -> Arc<Self> {
-        Self::new(fs, None, mnt_ns)
+        Self::new(fs, PerMountFlags::default(), None, mnt_ns)
     }
 
     /// The internal constructor.
@@ -95,6 +197,7 @@ impl Mount {
     /// mount nodes must be explicitly assigned a mountpoint to maintain structural integrity.
     fn new(
         fs: Arc<dyn FileSystem>,
+        flags: PerMountFlags,
         parent_mount: Option<Weak<Mount>>,
         mnt_ns: Weak<MountNamespace>,
     ) -> Arc<Self> {
@@ -108,6 +211,7 @@ impl Mount {
             propagation: RwLock::new(MountPropType::default()),
             fs,
             mnt_ns,
+            flags: AtomicPerMountFlags::new(flags),
             this: weak_self.clone(),
         })
     }
@@ -131,6 +235,7 @@ impl Mount {
     pub(super) fn do_mount(
         self: &Arc<Self>,
         fs: Arc<dyn FileSystem>,
+        flags: PerMountFlags,
         mountpoint: &Arc<Dentry>,
     ) -> Result<Arc<Self>> {
         if mountpoint.type_() != InodeType::Dir {
@@ -138,7 +243,7 @@ impl Mount {
         }
 
         let key = mountpoint.key();
-        let child_mount = Self::new(fs, Some(Arc::downgrade(self)), self.mnt_ns.clone());
+        let child_mount = Self::new(fs, flags, Some(Arc::downgrade(self)), self.mnt_ns.clone());
         self.children.write().insert(key, child_mount.clone());
         child_mount.set_mountpoint(mountpoint);
 
@@ -181,6 +286,7 @@ impl Mount {
             propagation: RwLock::new(MountPropType::default()),
             fs: self.fs.clone(),
             mnt_ns: new_ns.cloned().unwrap_or_else(|| self.mnt_ns.clone()),
+            flags: AtomicPerMountFlags::new(self.flags.load(Ordering::Relaxed)),
             this: weak_self.clone(),
         })
     }
@@ -324,6 +430,45 @@ impl Mount {
         Ok(())
     }
 
+    pub(super) fn remount(
+        &self,
+        mount_flags: PerMountFlags,
+        fs_flags: Option<FsFlags>,
+        data: Option<CString>,
+        ctx: &Context,
+    ) -> Result<()> {
+        // TODO: This lock is a workaround to guarantee the atomicity of remount operation.
+        // We need to re-design the lock mechanism of `Mount` and file system in the future.
+        static REMOUNT_LOCK: Mutex<()> = Mutex::new(());
+
+        let _guard = REMOUNT_LOCK.lock();
+
+        if let Some(flags) = fs_flags {
+            self.fs.set_fs_flags(flags, data, ctx)?;
+        }
+
+        // The logics here are consistent with Linux.
+        // In Linux, `NOATIME`, `RELATIME`, and `STRICTATIME` are mutually exclusive.
+        // If none of them nor `NODIRATIME` are set, the atime policy will be inherited
+        // from the old flags.
+        // Reference: https://elixir.bootlin.com/linux/v6.17/source/fs/namespace.c#L4097
+        const ATIME_MASK: PerMountFlags = PerMountFlags::NOATIME
+            .union(PerMountFlags::RELATIME)
+            .union(PerMountFlags::STRICTATIME);
+
+        let need_inherit_atime = !mount_flags.intersects(ATIME_MASK | PerMountFlags::NODIRATIME);
+
+        if need_inherit_atime {
+            let old_flags = self.flags.load(Ordering::Relaxed);
+            let new_flags = mount_flags | (old_flags & ATIME_MASK);
+            self.flags.store(new_flags, Ordering::Relaxed);
+        } else {
+            self.flags.store(mount_flags, Ordering::Relaxed);
+        }
+
+        Ok(())
+    }
+
     /// Gets the parent mount node if any.
     pub(super) fn parent(&self) -> Option<Weak<Self>> {
         self.parent.read().as_ref().cloned()
@@ -400,14 +545,14 @@ impl Mount {
                 // No parent means it's the root of the namespace.
                 "/".to_string()
             };
+            let mount_flags = self.flags.load(Ordering::Relaxed);
             let fs_type = mount.fs().name();
+            let fs_flags = mount.fs().flags();
 
             // The following fields are dummy for now.
             let major = 0;
             let minor = 0;
-            let mount_options = "rw,relatime";
             let source = "none";
-            let super_options = "rw";
 
             let entry = MountInfoEntry {
                 mount_id,
@@ -416,10 +561,10 @@ impl Mount {
                 minor,
                 root: &root,
                 mount_point: &mount_point,
-                mount_options,
+                mount_flags,
                 fs_type,
                 source,
-                super_options,
+                fs_flags,
             };
 
             writeln!(printer, "{}", entry)?;
@@ -468,14 +613,14 @@ struct MountInfoEntry<'a> {
     root: &'a str,
     /// The mount point relative to the process's root directory.
     mount_point: &'a str,
-    /// Per-mount options.
-    mount_options: &'a str,
+    /// Per-mount flags.
+    mount_flags: PerMountFlags,
     /// The type of the filesystem in the form "type[.subtype]".
     fs_type: &'a str,
     /// Filesystem-specific information or "none".
     source: &'a str,
-    /// Per-superblock options.
-    super_options: &'a str,
+    /// Per-filesystem flags.
+    fs_flags: FsFlags,
 }
 
 impl core::fmt::Display for MountInfoEntry<'_> {
@@ -489,10 +634,10 @@ impl core::fmt::Display for MountInfoEntry<'_> {
             self.minor,
             &self.root,
             &self.mount_point,
-            &self.mount_options,
+            &self.mount_flags,
             &self.fs_type,
             &self.source,
-            &self.super_options
+            &self.fs_flags,
         )
     }
 }
