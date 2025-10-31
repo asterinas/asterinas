@@ -107,8 +107,11 @@ impl Inode {
     }
 
     pub fn resize(&self, new_size: usize) -> Result<()> {
-        if self.type_ != InodeType::File {
+        if self.type_ == InodeType::Dir {
             return_errno!(Errno::EISDIR);
+        }
+        if self.type_ != InodeType::File {
+            return_errno!(Errno::EINVAL);
         }
 
         let inner = self.inner.upread();
@@ -782,10 +785,6 @@ impl Inode {
     }
 
     pub fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
-        if self.type_ != InodeType::File {
-            return_errno_with_message!(Errno::EISDIR, "not regular file");
-        }
-
         match mode {
             FallocMode::PunchHoleKeepSize => {
                 // Make the whole operation atomic

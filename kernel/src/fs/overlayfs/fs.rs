@@ -414,8 +414,11 @@ impl OverlayInode {
     }
 
     pub fn resize(&self, new_size: usize) -> Result<()> {
+        if self.type_ == InodeType::Dir {
+            return_errno_with_message!(Errno::EISDIR, "the inode is a directory");
+        }
         if self.type_ != InodeType::File {
-            return_errno_with_message!(Errno::EISDIR, "not regular file");
+            return_errno_with_message!(Errno::EINVAL, "the inode is not a regular file");
         }
 
         if self.get_top_valid_inode().size() == new_size {

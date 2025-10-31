@@ -1108,6 +1108,9 @@ impl Inode for ExfatInode {
         if inner.inode_type.is_directory() {
             return_errno!(Errno::EISDIR)
         }
+        if !inner.inode_type.is_regular_file() {
+            return_errno!(Errno::EINVAL);
+        }
 
         let file_size = inner.size;
         let fs = inner.fs();
