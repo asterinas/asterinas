@@ -11,7 +11,7 @@ use ostd::{
 };
 
 use crate::{
-    events::{IoEvents, Observer, Subject},
+    events::{IoEvents, Observer, SyncSubject},
     prelude::*,
     time::wait::TimeoutExt,
 };
@@ -38,7 +38,7 @@ const INV_STATE: isize = -1;
 
 struct PolleeInner {
     /// A subject which is monitored with pollers.
-    subject: Subject<IoEvents, IoEvents>,
+    subject: SyncSubject<IoEvents, IoEvents>,
     /// A state that describes how events are cached in the pollee.
     ///
     /// The meaning of this field depends on its value:
@@ -68,7 +68,7 @@ impl Pollee {
     /// Creates a new pollee.
     pub fn new() -> Self {
         let inner = PolleeInner {
-            subject: Subject::new(),
+            subject: SyncSubject::new(),
             state: AtomicIsize::new(INV_STATE),
         };
         Self {

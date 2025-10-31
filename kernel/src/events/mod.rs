@@ -6,10 +6,9 @@ mod io_events;
 mod observer;
 mod subject;
 
-pub use io_events::IoEvents;
-
 pub use self::{
     events::{Events, EventsFilter},
+    io_events::IoEvents,
     observer::Observer,
-    subject::Subject,
+    subject::{Subject, SyncSubject},
 };

@@ -40,7 +40,7 @@ pub(in crate::process) fn make_current_main_thread(ctx: &Context) {
     assert_eq!(tasks.as_slice().len(), 2);
     assert!(core::ptr::eq(ctx.task, tasks.as_slice()[1].as_ref()));
 
-    tasks.swap_main();
+    tasks.swap_main(pid, old_tid);
     ctx.posix_thread.set_main(pid);
 
     thread_table.remove(&pid).unwrap();

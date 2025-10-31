@@ -68,12 +68,12 @@ impl ProcessTable {
     }
 
     /// Registers an observer which watches `PidEvent`.
-    pub fn register_observer(&self, observer: Weak<dyn Observer<PidEvent>>) {
-        self.subject.register_observer(observer, ());
+    pub fn register_observer(&mut self, observer: Weak<dyn Observer<PidEvent>>) {
+        self.subject.register_observer(observer);
     }
 
     /// Unregisters an observer which watches `PidEvent`.
-    pub fn unregister_observer(&self, observer: &Weak<dyn Observer<PidEvent>>) {
+    pub fn unregister_observer(&mut self, observer: &Weak<dyn Observer<PidEvent>>) {
         self.subject.unregister_observer(observer);
     }
 }

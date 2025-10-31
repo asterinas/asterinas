@@ -19,9 +19,10 @@ pub mod signal;
 mod stats;
 mod status;
 pub mod sync;
-mod task_set;
+pub mod task_set;
 mod term_status;
 mod wait;
+
 pub use clone::{clone_child, CloneArgs, CloneFlags};
 pub use credentials::{Credentials, Gid, Uid};
 pub use execve::do_execve;
