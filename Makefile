@@ -202,6 +202,7 @@ OSDK_CRATES := \
 	kernel \
 	kernel/comps/block \
 	kernel/comps/console \
+	kernel/comps/device \
 	kernel/comps/framebuffer \
 	kernel/comps/input \
 	kernel/comps/keyboard \

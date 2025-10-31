@@ -116,6 +116,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "aster-device"
+version = "0.1.0"
+dependencies = [
+ "aster-systree",
+ "component",
+ "inherit-methods-macro",
+ "ostd",
+ "spin",
+]
+
+[[package]]
 name = "aster-framebuffer"
 version = "0.1.0"
 dependencies = [
@@ -202,6 +213,7 @@ dependencies = [
  "aster-bigtcp",
  "aster-block",
  "aster-console",
+ "aster-device",
  "aster-framebuffer",
  "aster-input",
  "aster-keyboard",
