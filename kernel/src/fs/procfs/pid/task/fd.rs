@@ -13,17 +13,15 @@ use crate::{
     },
     prelude::*,
     process::posix_thread::AsPosixThread,
-    thread::Thread,
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/fd` (and also `/proc/[pid]/fd`).
-pub struct FdDirOps(Arc<Thread>);
+pub struct FdDirOps(TidDirOps);
 
 impl FdDirOps {
     pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        let thread_ref = dir.thread_ref.clone();
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3317>
-        ProcDirBuilder::new(Self(thread_ref), mkmod!(u+rx))
+        ProcDirBuilder::new(Self(dir.clone()), mkmod!(u+rx))
             .parent(parent)
             .build()
             .unwrap()
@@ -43,7 +41,9 @@ impl DirOps for FdDirOps {
 
         let mut cached_children = dir.cached_children().write();
 
-        let posix_thread = self.0.as_posix_thread().unwrap();
+        let thread = self.0.thread();
+        let posix_thread = thread.as_posix_thread().unwrap();
+
         let access_mode = if let Some(file_table) = posix_thread.file_table().lock().as_ref()
             && let Ok(file) = file_table.read().get_file(file_desc)
         {
@@ -73,7 +73,9 @@ impl DirOps for FdDirOps {
     ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>> {
         let mut cached_children = dir.cached_children().write();
 
-        let posix_thread = self.0.as_posix_thread().unwrap();
+        let thread = self.0.thread();
+        let posix_thread = thread.as_posix_thread().unwrap();
+
         let file_table = posix_thread.file_table().lock();
         let Some(file_table) = file_table.as_ref() else {
             *cached_children = SlotVec::new();
@@ -118,7 +120,9 @@ impl DirOps for FdDirOps {
     fn validate_child(&self, child: &dyn Inode) -> bool {
         let ops = child.downcast_ref::<ProcSym<FileSymOps>>().unwrap();
 
-        let posix_thread = self.0.as_posix_thread().unwrap();
+        let thread = self.0.thread();
+        let posix_thread = thread.as_posix_thread().unwrap();
+
         let is_valid = if let Some(file_table) = posix_thread.file_table().lock().as_ref()
             && let Ok(file) = file_table.read().get_file(ops.inner().file_desc)
         {
@@ -135,14 +139,14 @@ impl DirOps for FdDirOps {
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/fd/[n]` (and also `/proc/[pid]/fd/[n]`).
 struct FileSymOps {
-    thread_ref: Arc<Thread>,
+    tid_dir_ops: TidDirOps,
     file_desc: FileDesc,
     access_mode: AccessMode,
 }
 
 impl FileSymOps {
     pub fn new_inode(
-        thread_ref: Arc<Thread>,
+        tid_dir_ops: TidDirOps,
         file_desc: FileDesc,
         access_mode: AccessMode,
         parent: Weak<dyn Inode>,
@@ -158,7 +162,7 @@ impl FileSymOps {
 
         ProcSymBuilder::new(
             Self {
-                thread_ref,
+                tid_dir_ops,
                 file_desc,
                 access_mode,
             },
@@ -172,7 +176,8 @@ impl FileSymOps {
 
 impl SymOps for FileSymOps {
     fn read_link(&self) -> Result<String> {
-        let posix_thread = self.thread_ref.as_posix_thread().unwrap();
+        let thread = self.tid_dir_ops.thread();
+        let posix_thread = thread.as_posix_thread().unwrap();
 
         let file = if let Some(file_table) = posix_thread.file_table().lock().as_ref()
             && let Ok(file) = file_table.read().get_file(self.file_desc)
