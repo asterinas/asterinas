@@ -31,6 +31,14 @@ impl IpOptionSet {
         }
     }
 
+    pub(super) const fn new_udp() -> Self {
+        Self {
+            tos: 0,
+            ttl: IpTtl(None),
+            hdrincl: false,
+        }
+    }
+
     pub(super) fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
         match_sock_option_mut!(option, {
             ip_tos: Tos => {
