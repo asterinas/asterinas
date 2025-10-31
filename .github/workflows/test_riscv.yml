@@ -33,13 +33,18 @@ jobs:
     strategy:
       matrix:
         include:
-          - test_id: 'boot-debug'
+          - test_id: 'boot-debug-smp4'
+            smp: 4
 
           - test_id: 'boot-release'
             release: true
 
           - test_id: 'syscall-release'
             release: true
+
+          - test_id: 'syscall-release-smp4'
+            release: true
+            smp: 4
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
