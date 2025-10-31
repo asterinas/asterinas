@@ -14,13 +14,13 @@ pub trait SocketOption: Any + Send + Sync + Debug {
 
 impl_socket_options!(
     pub struct ReuseAddr(bool);
-    pub struct ReusePort(bool);
+    pub struct Error(Option<crate::error::Error>);
     pub struct SendBuf(u32);
     pub struct RecvBuf(u32);
-    pub struct Error(Option<crate::error::Error>);
+    pub struct KeepAlive(bool);
     pub struct Priority(i32);
     pub struct Linger(LingerOption);
-    pub struct KeepAlive(bool);
+    pub struct ReusePort(bool);
     pub struct PassCred(bool);
     pub struct PeerCred(CUserCred);
     pub struct AcceptConn(bool);
