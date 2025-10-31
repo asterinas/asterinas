@@ -406,6 +406,18 @@ pub fn do_fallocate_util(
     offset: usize,
     len: usize,
 ) -> Result<()> {
+    let inode_type = inode.type_();
+    // TODO: `fallocate` on pipe files also fails with `ESPIPE`.
+    if inode_type == InodeType::NamedPipe {
+        return_errno_with_message!(Errno::ESPIPE, "the inode is a FIFO file");
+    }
+    if !(inode_type == InodeType::File || inode_type == InodeType::Dir) {
+        return_errno_with_message!(
+            Errno::ENODEV,
+            "the inode is not a regular file or a directory"
+        );
+    }
+
     if status_flags.contains(StatusFlags::O_APPEND)
         && (mode == FallocMode::PunchHoleKeepSize
             || mode == FallocMode::CollapseRange

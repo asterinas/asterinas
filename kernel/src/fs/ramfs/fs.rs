@@ -614,8 +614,11 @@ impl Inode for RamInode {
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
+        if self.typ == InodeType::Dir {
+            return_errno_with_message!(Errno::EISDIR, "the inode is a directory");
+        }
         if self.typ != InodeType::File {
-            return_errno_with_message!(Errno::EISDIR, "not regular file");
+            return_errno_with_message!(Errno::EINVAL, "the inode is not a regular file");
         }
 
         let file_size = self.size();
@@ -1157,10 +1160,6 @@ impl Inode for RamInode {
     }
 
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
-        if self.typ != InodeType::File {
-            return_errno_with_message!(Errno::EISDIR, "not regular file");
-        }
-
         // The support for flags is consistent with Linux
         match mode {
             FallocMode::Allocate => {
