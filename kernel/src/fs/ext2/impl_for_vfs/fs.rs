@@ -5,7 +5,7 @@ use ostd::sync::RwMutexReadGuard;
 use crate::{
     fs::{
         ext2::{utils::Dirty, Ext2, SuperBlock as Ext2SuperBlock, MAGIC_NUM as EXT2_MAGIC},
-        utils::{FileSystem, FsFlags, Inode, SuperBlock, NAME_MAX},
+        utils::{FileSystem, Inode, SuperBlock, NAME_MAX},
     },
     prelude::*,
 };
@@ -29,10 +29,6 @@ impl FileSystem for Ext2 {
 
     fn sb(&self) -> SuperBlock {
         SuperBlock::from(self.super_block())
-    }
-
-    fn flags(&self) -> FsFlags {
-        FsFlags::empty()
     }
 }
 

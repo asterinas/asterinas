@@ -7,7 +7,10 @@ use aster_systree::{
 use spin::Once;
 
 use crate::{
-    fs::{sysfs, utils::FileSystem},
+    fs::{
+        sysfs,
+        utils::{FileSystem, FsFlags},
+    },
     prelude::*,
 };
 
@@ -25,6 +28,7 @@ pub trait FsType: Send + Sync + 'static {
     /// if `self.properties()` contains `FsProperties::NEED_DISK`.
     fn create(
         &self,
+        flags: FsFlags,
         args: Option<CString>,
         disk: Option<Arc<dyn BlockDevice>>,
     ) -> Result<Arc<dyn FileSystem>>;

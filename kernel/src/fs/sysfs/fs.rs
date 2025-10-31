@@ -65,10 +65,6 @@ impl FileSystem for SysFs {
     fn sb(&self) -> SuperBlock {
         self.sb.clone()
     }
-
-    fn flags(&self) -> FsFlags {
-        FsFlags::empty()
-    }
 }
 
 pub(super) struct SysFsType;
@@ -84,6 +80,7 @@ impl FsType for SysFsType {
 
     fn create(
         &self,
+        _flags: FsFlags,
         _args: Option<CString>,
         _disk: Option<Arc<dyn aster_block::BlockDevice>>,
     ) -> Result<Arc<dyn FileSystem>> {

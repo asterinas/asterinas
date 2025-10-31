@@ -142,9 +142,10 @@ fn do_move_mount_old(src_name: CString, dst_path: Path, ctx: &Context) -> Result
     Ok(())
 }
 
-/// Mount a new filesystem.
+/// Mounts a new filesystem.
 fn do_new_mount(
     devname: CString,
+    flags: MountFlags,
     fs_type: Vaddr,
     target_path: Path,
     data: Vaddr,
@@ -158,15 +159,16 @@ fn do_new_mount(
     if fs_type.is_empty() {
         return_errno_with_message!(Errno::EINVAL, "fs_type is empty");
     }
-    let fs = get_fs(fs_type, devname, data, ctx)?;
+    let fs = get_fs(devname, flags, fs_type, data, ctx)?;
     target_path.mount(fs, ctx)?;
     Ok(())
 }
 
-/// Get the filesystem by fs_type and devname.
+/// Gets the filesystem by fs_type and devname.
 fn get_fs(
-    fs_type: CString,
     devname: CString,
+    flags: MountFlags,
+    fs_type: CString,
     data: Vaddr,
     ctx: &Context,
 ) -> Result<Arc<dyn FileSystem>> {
@@ -192,7 +194,7 @@ fn get_fs(
         None
     };
 
-    fs_type.create(data, disk)
+    fs_type.create(flags.into(), data, disk)
 }
 
 bitflags! {
@@ -219,5 +221,12 @@ bitflags! {
         const MS_SHARED        =   1 << 20;      // Change to shared.
         const MS_RELATIME      =   1 << 21; 	 // Update atime relative to mtime/ctime.
         const MS_KERNMOUNT     =   1 << 22;      // This is a kern_mount call.
+        const MS_STRICTATIME   =   1 << 24; 	 // Always perform atime updates.
+        const MS_LAZYTIME      =   1 << 25; 	 // Update the on-disk [acm]times lazily.
+    }
+}
+impl From<MountFlags> for FsFlags {
+    fn from(flags: MountFlags) -> Self {
+        Self::from_bits_truncate(flags.bits())
     }
 }
