@@ -5,6 +5,7 @@ use crate::{
     fs::{
         device::{Device, DeviceId, DeviceType},
         inode_handle::FileIo,
+        utils::StatusFlags,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -42,11 +43,11 @@ impl Pollable for TtyDevice {
 }
 
 impl FileIo for TtyDevice {
-    fn read(&self, _writer: &mut VmWriter) -> Result<usize> {
+    fn read(&self, _writer: &mut VmWriter, _status_flags: StatusFlags) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "cannot read tty device");
     }
 
-    fn write(&self, _reader: &mut VmReader) -> Result<usize> {
+    fn write(&self, _reader: &mut VmReader, _status_flags: StatusFlags) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "cannot write tty device");
     }
 }

@@ -5,6 +5,7 @@ use crate::{
     fs::{
         device::{Device, DeviceId, DeviceType},
         inode_handle::FileIo,
+        utils::StatusFlags,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -35,12 +36,12 @@ impl Pollable for Zero {
 }
 
 impl FileIo for Zero {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter, _status_flags: StatusFlags) -> Result<usize> {
         let read_len = writer.fill_zeros(writer.avail())?;
         Ok(read_len)
     }
 
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader, _status_flags: StatusFlags) -> Result<usize> {
         Ok(reader.remain())
     }
 }

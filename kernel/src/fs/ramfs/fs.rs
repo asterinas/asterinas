@@ -19,14 +19,15 @@ use crate::{
     events::IoEvents,
     fs::{
         device::Device,
-        file_handle::FileLike,
-        named_pipe::NamedPipe,
+        inode_handle::FileIo,
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
+        pipe::NamedPipe,
         registry::{FsProperties, FsType},
         utils::{
-            mkmod, CStr256, CachePage, DirentVisitor, Extension, FallocMode, FileSystem, FsFlags,
-            Inode, InodeMode, InodeType, IoctlCmd, Metadata, MknodType, PageCache,
-            PageCacheBackend, Permission, SuperBlock, XattrName, XattrNamespace, XattrSetFlags,
+            mkmod, AccessMode, CStr256, CachePage, DirentVisitor, Extension, FallocMode,
+            FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd, Metadata, MknodType,
+            PageCache, PageCacheBackend, Permission, StatusFlags, SuperBlock, XattrName,
+            XattrNamespace, XattrSetFlags,
         },
     },
     prelude::*,
@@ -549,11 +550,10 @@ impl Inode for RamInode {
                     read_len
                 }
                 Inner::Device(device) => {
-                    device.read(writer)?
+                    device.read(writer, StatusFlags::empty())?
                     // Typically, devices like "/dev/zero" or "/dev/null" do not require modifying
                     // timestamps here. Please adjust this behavior accordingly if there are special devices.
                 }
-                Inner::NamedPipe(named_pipe) => named_pipe.read(writer)?,
                 _ => return_errno_with_message!(Errno::EISDIR, "read is not supported"),
             }
         };
@@ -595,13 +595,9 @@ impl Inode for RamInode {
             }
             InodeType::CharDevice | InodeType::BlockDevice => {
                 let device = self.inner.as_device().unwrap();
-                device.write(reader)?
+                device.write(reader, StatusFlags::empty())?
                 // Typically, devices like "/dev/zero" or "/dev/null" do not require modifying
                 // timestamps here. Please adjust this behavior accordingly if there are special devices.
-            }
-            InodeType::NamedPipe => {
-                let named_pipe = self.inner.as_named_pipe().unwrap();
-                named_pipe.write(reader)?
             }
             _ => return_errno_with_message!(Errno::EISDIR, "write is not supported"),
         };

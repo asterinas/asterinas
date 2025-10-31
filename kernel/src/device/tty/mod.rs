@@ -14,7 +14,7 @@ use crate::{
     fs::{
         device::{Device, DeviceId, DeviceType},
         inode_handle::FileIo,
-        utils::IoctlCmd,
+        utils::{IoctlCmd, StatusFlags},
     },
     prelude::*,
     process::{
@@ -232,7 +232,7 @@ impl<D: TtyDriver> Pollable for Tty<D> {
 }
 
 impl<D: TtyDriver> FileIo for Tty<D> {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter, _status_flags: StatusFlags) -> Result<usize> {
         self.job_control.wait_until_in_foreground()?;
 
         // TODO: Add support for non-blocking mode and timeout
@@ -247,7 +247,7 @@ impl<D: TtyDriver> FileIo for Tty<D> {
         Ok(read_len)
     }
 
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader, _status_flags: StatusFlags) -> Result<usize> {
         let mut buf = vec![0u8; reader.remain().min(IO_CAPACITY)];
         let write_len = reader.read_fallible(&mut buf.as_mut_slice().into())?;
 
