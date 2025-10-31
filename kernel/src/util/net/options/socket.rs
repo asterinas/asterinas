@@ -50,15 +50,15 @@ enum CSocketOptionName {
 pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
     let name = CSocketOptionName::try_from(name).map_err(|_| Errno::ENOPROTOOPT)?;
     match name {
-        CSocketOptionName::SNDBUF => Ok(Box::new(SendBuf::new())),
-        CSocketOptionName::RCVBUF => Ok(Box::new(RecvBuf::new())),
         CSocketOptionName::REUSEADDR => Ok(Box::new(ReuseAddr::new())),
         CSocketOptionName::ERROR => Ok(Box::new(Error::new())),
-        CSocketOptionName::REUSEPORT => Ok(Box::new(ReusePort::new())),
+        CSocketOptionName::SNDBUF => Ok(Box::new(SendBuf::new())),
+        CSocketOptionName::RCVBUF => Ok(Box::new(RecvBuf::new())),
+        CSocketOptionName::KEEPALIVE => Ok(Box::new(KeepAlive::new())),
         CSocketOptionName::PRIORITY => Ok(Box::new(Priority::new())),
         CSocketOptionName::LINGER => Ok(Box::new(Linger::new())),
+        CSocketOptionName::REUSEPORT => Ok(Box::new(ReusePort::new())),
         CSocketOptionName::PASSCRED => Ok(Box::new(PassCred::new())),
-        CSocketOptionName::KEEPALIVE => Ok(Box::new(KeepAlive::new())),
         CSocketOptionName::PEERCRED => Ok(Box::new(PeerCred::new())),
         CSocketOptionName::ACCPETCONN => Ok(Box::new(AcceptConn::new())),
         CSocketOptionName::SNDBUFFORCE => Ok(Box::new(SendBufForce::new())),
@@ -68,14 +68,14 @@ pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
     }
 }
 
-impl_raw_socket_option!(SendBuf);
-impl_raw_socket_option!(RecvBuf);
 impl_raw_socket_option!(ReuseAddr);
 impl_raw_sock_option_get_only!(Error);
-impl_raw_socket_option!(ReusePort);
+impl_raw_socket_option!(SendBuf);
+impl_raw_socket_option!(RecvBuf);
+impl_raw_socket_option!(KeepAlive);
 impl_raw_socket_option!(Priority);
 impl_raw_socket_option!(Linger);
-impl_raw_socket_option!(KeepAlive);
+impl_raw_socket_option!(ReusePort);
 impl_raw_socket_option!(PassCred);
 impl_raw_sock_option_get_only!(PeerCred);
 impl_raw_sock_option_get_only!(AcceptConn);
