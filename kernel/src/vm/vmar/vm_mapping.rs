@@ -509,7 +509,7 @@ impl VmMapping {
         let (l_mapped_mem, r_mapped_mem) = match self.mapped_mem {
             MappedMemory::Vmo(vmo) => {
                 let at_offset = vmo.offset() + (at - self.map_to_addr);
-                let r_mapped_vmo = MappedVmo::new(vmo.vmo().clone(), at_offset);
+                let r_mapped_vmo = vmo.dup_at_offset(at_offset);
                 (MappedMemory::Vmo(vmo), MappedMemory::Vmo(r_mapped_vmo))
             }
             MappedMemory::Anonymous => {
@@ -535,7 +535,6 @@ impl VmMapping {
             map_to_addr: at,
             map_size: NonZeroUsize::new(right_size).unwrap(),
             mapped_mem: r_mapped_mem,
-            inode: self.inode,
             ..self
         };
 
@@ -697,12 +696,23 @@ pub(super) struct MappedVmo {
     vmo: Arc<Vmo>,
     /// Represents the mapped offset in the VMO for the mapping.
     offset: usize,
+    /// Whether the VMO's writable mappings need to be tracked, and the
+    /// mapping is writable to the VMO.
+    is_writable_tracked: bool,
 }
 
 impl MappedVmo {
     /// Creates a `MappedVmo` used for the mapping.
-    pub(super) fn new(vmo: Arc<Vmo>, offset: usize) -> Self {
-        Self { vmo, offset }
+    pub(super) fn new(vmo: Arc<Vmo>, offset: usize, is_writable_tracked: bool) -> Result<Self> {
+        if is_writable_tracked {
+            vmo.writable_mapping_status().as_ref().unwrap().map()?;
+        }
+
+        Ok(Self {
+            vmo,
+            offset,
+            is_writable_tracked,
+        })
     }
 
     /// Returns the **valid** size of the `MappedVmo`.
@@ -767,9 +777,35 @@ impl MappedVmo {
 
     /// Duplicates the capability.
     pub fn dup(&self) -> Self {
+        self.dup_at_offset(self.offset)
+    }
+
+    /// Duplicates the capability at a specific offset.
+    fn dup_at_offset(&self, offset: usize) -> Self {
+        if self.is_writable_tracked {
+            self.vmo
+                .writable_mapping_status()
+                .as_ref()
+                .unwrap()
+                .increment();
+        }
+
         Self {
             vmo: self.vmo.clone(),
-            offset: self.offset,
+            offset,
+            is_writable_tracked: self.is_writable_tracked,
+        }
+    }
+}
+
+impl Drop for MappedVmo {
+    fn drop(&mut self) {
+        if self.is_writable_tracked {
+            self.vmo
+                .writable_mapping_status()
+                .as_ref()
+                .unwrap()
+                .decrement();
         }
     }
 }
