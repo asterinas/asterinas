@@ -31,7 +31,7 @@ use crate::{
     prelude::*,
     process::{Process, ProcessVm, ResourceType},
     thread::exception::PageFaultInfo,
-    vm::{perms::VmPerms, vmo::Vmo},
+    vm::{memfd::MemfdInode, perms::VmPerms, vmo::Vmo},
 };
 
 /// Virtual Memory Address Regions (VMARs) are a type of capability that manages
@@ -1182,17 +1182,25 @@ impl<'a> VmarMapOptions<'a> {
         let (mapped_mem, inode, io_mem) = if let Some(mappable) = mappable {
             // Handle the memory backed by device or page cache.
             match mappable {
-                Mappable::Inode(inode_handle) => {
+                Mappable::Inode(inode) => {
+                    let is_writable_tracked = inode.downcast_ref::<MemfdInode>().is_some()
+                        && is_shared
+                        && may_perms.contains(VmPerms::MAY_WRITE);
+
                     // Since `Mappable::Inode` is provided, it is
                     // reasonable to assume that the VMO is provided.
-                    let mapped_mem = MappedMemory::Vmo(MappedVmo::new(vmo.unwrap(), vmo_offset));
-                    (mapped_mem, Some(inode_handle), None)
+                    let mapped_mem = MappedMemory::Vmo(MappedVmo::new(
+                        vmo.unwrap(),
+                        vmo_offset,
+                        is_writable_tracked,
+                    )?);
+                    (mapped_mem, Some(inode), None)
                 }
                 Mappable::IoMem(iomem) => (MappedMemory::Device, None, Some(iomem)),
             }
         } else if let Some(vmo) = vmo {
             (
-                MappedMemory::Vmo(MappedVmo::new(vmo, vmo_offset)),
+                MappedMemory::Vmo(MappedVmo::new(vmo, vmo_offset, false)?),
                 None,
                 None,
             )
