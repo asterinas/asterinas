@@ -3,6 +3,8 @@
 //! Handle keyboard input.
 #![no_std]
 #![deny(unsafe_code)]
+#![allow(incomplete_features)]
+#![feature(array_try_from_fn, generic_const_exprs)]
 
 extern crate alloc;
 

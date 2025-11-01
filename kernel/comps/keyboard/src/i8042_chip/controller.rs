@@ -96,7 +96,17 @@ pub(super) fn init() -> Result<(), I8042ControllerError> {
         );
     }
 
-    // TODO: Add a mouse driver and enable the second PS/2 port (if it exists).
+    // Enable the second PS/2 port (mouse) if it exists.
+    if has_second_port {
+        controller.wait_and_send_command(Command::EnableSecondPort)?;
+        if let Err(err) = super::mouse::init(&mut controller) {
+            log::warn!("i8042 mouse initialization failed: {:?}", err);
+            controller.wait_and_send_command(Command::DisableSecondPort)?;
+        } else {
+            config.remove(Configuration::SECOND_PORT_CLOCK_DISABLED);
+            config.insert(Configuration::SECOND_PORT_INTERRUPT_ENABLED);
+        }
+    }
 
     I8042_CONTROLLER.call_once(|| SpinLock::new(controller));
     let mut controller = I8042_CONTROLLER.get().unwrap().lock();
@@ -179,6 +189,11 @@ impl I8042Controller {
         Err(I8042ControllerError::OutputBusy)
     }
 
+    pub(super) fn write_to_second_port(&mut self, data: u8) -> Result<(), I8042ControllerError> {
+        self.wait_and_send_command(Command::WriteToSecondPort)?;
+        self.wait_and_send_data(data)
+    }
+
     pub(super) fn send_data(&mut self, data: u8) -> Result<(), I8042ControllerError> {
         if !self.read_status().contains(Status::INPUT_BUFFER_IS_FULL) {
             self.write_data(data);
@@ -247,6 +262,7 @@ enum Command {
     TestFirstPort = 0xAB,
     DisableFirstPort = 0xAD,
     EnableFirstPort = 0xAE,
+    WriteToSecondPort = 0xD4,
 }
 
 bitflags! {
