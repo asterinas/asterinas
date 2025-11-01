@@ -2,6 +2,7 @@
 
 mod controller;
 mod keyboard;
+mod mouse;
 
 pub(crate) fn init() {
     if let Err(err) = controller::init() {
