@@ -39,8 +39,23 @@ int exec_child()
 	}
 
 	char exec_path[PATH_MAX];
-	char *child_name = "execve_multithread_child";
+	char *child_name = "execve_mt_child";
 	sprintf(exec_path, "%s/%s", dir_name, child_name);
+
+	FILE *stat;
+	int id, flag;
+
+	id = flag = -1;
+	CHECK_WITH(stat = fopen("/proc/self/stat", "r"), stat != NULL);
+	fscanf(stat, "%d (execve_mt_paren) %n", &id, &flag);
+	CHECK(fclose(stat));
+	CHECK_WITH(getpid(), _ret == id && flag != -1);
+
+	id = flag = -1;
+	CHECK_WITH(stat = fopen("/proc/thread-self/stat", "r"), stat != NULL);
+	fscanf(stat, "%d (execve_mt_paren) %n", &id, &flag);
+	CHECK(fclose(stat));
+	CHECK_WITH(syscall(SYS_gettid), _ret == id && flag != -1);
 
 	CHECK(execl(exec_path, child_name, NULL));
 
@@ -157,6 +172,8 @@ FN_TEST(clone_files)
 	pid = TEST_SUCC(sys_clone3(&args));
 
 	if (pid == 0) {
+		CHECK(access("/proc/self/fd/100", F_OK));
+		CHECK(access("/proc/thread-self/fd/100", F_OK));
 		CHECK(write_stat(102, dupped_pipe_fd));
 
 		struct info info = { .should_sleep = false };
