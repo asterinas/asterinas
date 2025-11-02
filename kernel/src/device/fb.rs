@@ -251,6 +251,24 @@ impl FileIo for Fb {
 }
 
 impl FbHandle {
+    /// Reads an array of `u16` color map values from userspace.
+    pub fn read_color_maps_from_user(addr: usize, data: &mut [u16]) -> Result<()> {
+        for (i, item) in data.iter_mut().enumerate() {
+            let user_addr = addr + i * size_of::<u16>();
+            *item = current_userspace!().read_val(user_addr)?;
+        }
+        Ok(())
+    }
+
+    /// Writes an array of `u16` color map values to userspace.
+    pub fn write_color_maps_to_user(addr: usize, data: &[u16]) -> Result<()> {
+        for (i, &value) in data.iter().enumerate() {
+            let user_addr = addr + i * size_of::<u16>();
+            current_userspace!().write_val(user_addr, &value)?;
+        }
+        Ok(())
+    }
+
     /// Handles the [`IoctlCmd::GETVSCREENINFO`] ioctl command.
     ///
     /// Arguments:
@@ -308,6 +326,93 @@ impl FbHandle {
         };
 
         current_userspace!().write_val(arg, &screen_info)?;
+        Ok(0)
+    }
+
+    /// Handles the [`IoctlCmd::GETCMAP`] ioctl command.
+    ///
+    /// Arguments:
+    ///  - Input: [`FbCmapUser`] (specifying the range).
+    ///  - Output: [`FbCmapUser`] (filled with color palette data).
+    fn handle_get_cmap(&self, arg: usize) -> Result<i32> {
+        let cmap_user: FbCmapUser = current_userspace!().read_val(arg)?;
+
+        if cmap_user.len == 0 {
+            return Ok(0);
+        }
+
+        let start = cmap_user.start as usize;
+        let len = cmap_user.len as usize;
+
+        // Get color map entries from framebuffer
+        let entries = self.framebuffer.get_color_map(start, len).ok_or_else(|| {
+            Error::with_message(Errno::EINVAL, "color map index is out of bounds")
+        })?;
+
+        // Extract color channels and write to userspace
+        let red: Vec<u16> = entries.iter().map(|e| e.red).collect();
+        let green: Vec<u16> = entries.iter().map(|e| e.green).collect();
+        let blue: Vec<u16> = entries.iter().map(|e| e.blue).collect();
+        let transp: Vec<u16> = entries.iter().map(|e| e.transp).collect();
+
+        Self::write_color_maps_to_user(cmap_user.red, &red)?;
+        Self::write_color_maps_to_user(cmap_user.green, &green)?;
+        Self::write_color_maps_to_user(cmap_user.blue, &blue)?;
+        if cmap_user.transp != 0 {
+            Self::write_color_maps_to_user(cmap_user.transp, &transp)?;
+        }
+
+        Ok(0)
+    }
+
+    /// Handles the [`IoctlCmd::PUTCMAP`] ioctl command.
+    ///
+    /// Arguments:
+    ///  - Input: [`FbCmapUser`] (with color palette data).
+    ///  - Output: None.
+    fn handle_set_cmap(&self, arg: usize) -> Result<i32> {
+        let cmap_user: FbCmapUser = current_userspace!().read_val(arg)?;
+
+        if cmap_user.len == 0 {
+            return Ok(0);
+        }
+
+        let start = cmap_user.start as usize;
+        let len = cmap_user.len as usize;
+
+        // Check the size to prevent excessive memory allocation
+        if start > MAX_CMAP_SIZE || len > MAX_CMAP_SIZE - start {
+            return_errno_with_message!(Errno::EINVAL, "the color map range exceeds maximum size");
+        }
+
+        // Read color data from userspace
+        let mut red = vec![0u16; len];
+        let mut green = vec![0u16; len];
+        let mut blue = vec![0u16; len];
+        let mut transp = vec![0u16; len];
+
+        Self::read_color_maps_from_user(cmap_user.red, &mut red)?;
+        Self::read_color_maps_from_user(cmap_user.green, &mut green)?;
+        Self::read_color_maps_from_user(cmap_user.blue, &mut blue)?;
+        if cmap_user.transp != 0 {
+            Self::read_color_maps_from_user(cmap_user.transp, &mut transp)?;
+        }
+
+        // Build color map entries
+        let entries: Vec<ColorMapEntry> = (0..len)
+            .map(|i| ColorMapEntry {
+                red: red[i],
+                green: green[i],
+                blue: blue[i],
+                transp: transp[i],
+            })
+            .collect();
+
+        // Set color map entries in framebuffer
+        self.framebuffer
+            .set_color_map(start, &entries)
+            .map_err(|_| Error::with_message(Errno::EINVAL, "failed to set color map"))?;
+
         Ok(0)
     }
 }
@@ -431,6 +536,8 @@ impl FileIo for FbHandle {
                 // Reference: <https://elixir.bootlin.com/linux/v6.17/source/drivers/video/fbdev/core/fbmem.c#L276-L279>.
                 self.handle_get_var_screen_info(arg)
             }
+            IoctlCmd::GETCMAP => self.handle_get_cmap(arg),
+            IoctlCmd::PUTCMAP => self.handle_set_cmap(arg),
             IoctlCmd::PANDISPLAY | IoctlCmd::FBIOBLANK => {
                 // These commands are not supported by efifb.
                 // We return errors according to the Linux behavior.
