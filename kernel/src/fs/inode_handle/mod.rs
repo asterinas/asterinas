@@ -15,7 +15,7 @@ use inherit_methods_macro::inherit_methods;
 use crate::{
     events::IoEvents,
     fs::{
-        file_handle::{FileLike, Mappable},
+        file_handle::Mappable,
         path::Path,
         utils::{
             AccessMode, DirentVisitor, FallocMode, FileRange, FlockItem, FlockList, Inode,
@@ -85,7 +85,7 @@ impl InodeHandle_ {
 
     pub fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         if let Some(ref file_io) = self.file_io {
-            todo!("support read_at for FileIo");
+            return file_io.read_at(offset, writer);
         }
 
         if self.status_flags().contains(StatusFlags::O_DIRECT) {
@@ -97,7 +97,7 @@ impl InodeHandle_ {
 
     pub fn write_at(&self, mut offset: usize, reader: &mut VmReader) -> Result<usize> {
         if let Some(ref file_io) = self.file_io {
-            todo!("support write_at for FileIo");
+            return file_io.write_at(offset, reader);
         }
 
         let status_flags = self.status_flags();
@@ -114,7 +114,11 @@ impl InodeHandle_ {
     }
 
     pub fn seek(&self, pos: SeekFrom) -> Result<usize> {
-        do_seek_util(self.path.inode(), &self.offset, pos)
+        let new_offset = do_seek_util(self.path.inode(), &self.offset, pos)?;
+        if let Some(ref file_io) = self.file_io {
+            file_io.set_offset(new_offset);
+        }
+        Ok(new_offset)
     }
 
     pub fn offset(&self) -> usize {
@@ -359,6 +363,20 @@ pub trait FileIo: Pollable + Send + Sync + 'static {
 
     /// Writes data from the given `VmReader` into the file.
     fn write(&self, reader: &mut VmReader, status_flags: StatusFlags) -> Result<usize>;
+
+    fn read_at(&self, _offset: usize, _writer: &mut VmWriter) -> Result<usize> {
+        return_errno_with_message!(Errno::ESPIPE, "read_at is not supported");
+    }
+
+    fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
+        return_errno_with_message!(Errno::ESPIPE, "write_at is not supported");
+    }
+
+    /// Updates the internal file offset hint.
+    ///
+    /// Implementations that maintain their own offsets can override this method to
+    /// synchronize with the offset managed by [`InodeHandle`].
+    fn set_offset(&self, _offset: usize) {}
 
     /// See [`FileLike::mappable`].
     fn mappable(&self) -> Result<Mappable> {
