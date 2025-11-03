@@ -45,6 +45,7 @@ process/pidfd
 process/wait4
 procfs/pid_mem
 pthread/pthread_test
+pty/close_pty
 pty/open_pty
 pty/pty_blocking
 sched/sched_attr
