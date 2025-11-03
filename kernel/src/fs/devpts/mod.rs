@@ -7,7 +7,8 @@ use core::time::Duration;
 use aster_util::slot_vec::SlotVec;
 use id_alloc::IdAlloc;
 
-use self::{ptmx::Ptmx, slave::PtySlaveInode};
+pub use self::ptmx::Ptmx;
+use self::slave::PtySlaveInode;
 use super::utils::MknodType;
 use crate::{
     device::PtyMaster,

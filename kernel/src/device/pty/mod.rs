@@ -2,10 +2,10 @@
 
 use crate::{
     fs::{
-        devpts::DevPts,
+        devpts::{DevPts, Ptmx},
         fs_resolver::{FsPath, FsResolver},
         path::{Path, PerMountFlags},
-        utils::{mkmod, Inode, InodeType},
+        utils::{mkmod, InodeType},
     },
     prelude::*,
 };
@@ -35,7 +35,7 @@ pub fn init_in_first_process(fs_resolver: &FsResolver, ctx: &Context) -> Result<
     Ok(())
 }
 
-pub fn new_pty_pair(index: u32, ptmx: Arc<dyn Inode>) -> Result<(Arc<PtyMaster>, Arc<PtySlave>)> {
+pub fn new_pty_pair(index: u32, ptmx: Arc<Ptmx>) -> Result<(Arc<PtyMaster>, Arc<PtySlave>)> {
     debug!("pty index = {}", index);
     let master = PtyMaster::new(ptmx, index);
     let slave = master.slave().clone();
