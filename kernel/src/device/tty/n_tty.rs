@@ -1,19 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, sync::Arc, vec};
-
 use aster_console::AnyConsoleDevice;
 use ostd::mm::{Infallible, VmReader, VmWriter};
 use spin::Once;
 
-use super::{PushCharError, Tty, TtyDriver};
+use super::{Tty, TtyDriver};
+use crate::prelude::*;
 
 pub struct ConsoleDriver {
     console: Arc<dyn AnyConsoleDevice>,
 }
 
 impl TtyDriver for ConsoleDriver {
-    fn push_output(&self, chs: &[u8]) -> core::result::Result<usize, PushCharError> {
+    fn push_output(&self, chs: &[u8]) -> Result<usize> {
         self.console.send(chs);
         Ok(chs.len())
     }
@@ -26,6 +25,10 @@ impl TtyDriver for ConsoleDriver {
 
     fn can_push(&self) -> bool {
         true
+    }
+
+    fn is_closed(&self) -> bool {
+        false
     }
 
     fn notify_input(&self) {}

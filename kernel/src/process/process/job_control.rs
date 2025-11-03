@@ -5,7 +5,7 @@ use ostd::sync::{LocalIrqDisabled, WaitQueue};
 use super::{ProcessGroup, Session};
 use crate::prelude::*;
 
-/// The job control for terminals like TTY and PTY.
+/// The job control for terminals like TTY and pty.
 ///
 /// This structure is used to support the shell job control, allowing users to
 /// run commands in the foreground or in the background. To achieve this, this

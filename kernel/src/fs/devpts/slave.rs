@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::{
-    device::PtySlave,
+    device::{PtySlave, PtySlaveFile},
     events::IoEvents,
     fs::{
         inode_handle::FileIo,
@@ -152,6 +152,6 @@ impl Inode for PtySlaveInode {
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Option<Result<Arc<dyn FileIo>>> {
-        self.device.open()
+        Some(Ok(Arc::new(PtySlaveFile::new(self.device.clone()))))
     }
 }

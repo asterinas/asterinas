@@ -12,7 +12,7 @@ use crate::{
 
 /// A terminal.
 ///
-/// We currently support two kinds of terminal, the TTY and PTY. They're associated with a
+/// We currently support two kinds of terminal, the TTY and pty. They're associated with a
 /// `JobControl` to track the session and the foreground process group.
 pub trait Terminal: FileIo + Device {
     /// Returns the job control of the terminal.

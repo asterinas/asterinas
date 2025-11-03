@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::format;
+use core::sync::atomic::Ordering;
 
 use ostd::task::Task;
 
@@ -61,6 +62,10 @@ impl PtyMaster {
             events |= IoEvents::OUT;
         }
 
+        if self.slave.driver().opened_slaves().load(Ordering::Relaxed) == 0 {
+            events |= IoEvents::HUP;
+        }
+
         events
     }
 }
@@ -95,7 +100,7 @@ impl FileIo for PtyMaster {
 
         // TODO: Add support for non-blocking mode and timeout
         let len = self.wait_events(IoEvents::OUT, None, || {
-            Ok(self.slave.push_input(&buf[..write_len])?)
+            self.slave.push_input(&buf[..write_len])
         })?;
         self.slave.driver().pollee().invalidate();
         Ok(len)
@@ -111,7 +116,7 @@ impl FileIo for PtyMaster {
             | IoctlCmd::TIOCSWINSZ
             | IoctlCmd::TIOCGPTN => return self.slave.ioctl(cmd, arg),
             IoctlCmd::TIOCSPTLCK => {
-                // TODO: Lock or unlock the PTY.
+                // TODO: Lock or unlock the pty.
             }
             IoctlCmd::TIOCGPTPEER => {
                 let current_task = Task::current().unwrap();
@@ -164,5 +169,8 @@ impl Drop for PtyMaster {
 
         let index = self.slave.index();
         devpts.remove_slave(index);
+
+        self.slave.driver().set_master_closed();
+        self.slave.notify_hup();
     }
 }

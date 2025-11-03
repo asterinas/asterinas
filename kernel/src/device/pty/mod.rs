@@ -11,9 +11,11 @@ use crate::{
 };
 
 mod driver;
+mod file;
 mod master;
 
 pub use driver::PtySlave;
+pub use file::PtySlaveFile;
 pub use master::PtyMaster;
 use spin::Once;
 
