@@ -5,11 +5,11 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::{get_file_fast, FdFlags, FileDesc, WithFileTable},
+        ramfs::memfd::{FileSeals, MemfdFile},
         utils::{FileRange, RangeLockItem, RangeLockType, StatusFlags, OFFSET_MAX},
     },
     prelude::*,
     process::{process_table, Pid},
-    vm::memfd::{FileSeals, MemfdFile},
 };
 
 pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64, ctx: &Context) -> Result<SyscallReturn> {

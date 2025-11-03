@@ -453,7 +453,7 @@ impl Vmo {
     }
 
     /// Returns the status of writable mappings of the VMO.
-    pub(super) fn writable_mapping_status(&self) -> &Option<WritableMappingStatus> {
+    pub fn writable_mapping_status(&self) -> &Option<WritableMappingStatus> {
         &self.writable_mapping_status
     }
 }
@@ -503,7 +503,7 @@ pub fn get_page_idx_range(vmo_offset_range: &Range<usize>) -> Range<usize> {
 /// - **Zero**: no writable mappings, and writable mappings are still allowed.
 /// - **Negative values**: writable mappings are denied.
 #[derive(Debug, Default)]
-pub(super) struct WritableMappingStatus(AtomicIsize);
+pub struct WritableMappingStatus(AtomicIsize);
 
 impl WritableMappingStatus {
     /// Builds a new writable mapping.
@@ -522,7 +522,7 @@ impl WritableMappingStatus {
     /// Denies any future writable mapping.
     ///
     /// Fails with `EBUSY` if there are still active writable mappings.
-    pub(super) fn deny(&self) -> Result<()> {
+    pub fn deny(&self) -> Result<()> {
         // Decrease unless positive
         self.0
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {

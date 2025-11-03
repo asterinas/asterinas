@@ -27,11 +27,11 @@ use self::{
 };
 use super::page_fault_handler::PageFaultHandler;
 use crate::{
-    fs::file_handle::Mappable,
+    fs::{file_handle::Mappable, ramfs::memfd::MemfdInode},
     prelude::*,
     process::{Process, ProcessVm, ResourceType},
     thread::exception::PageFaultInfo,
-    vm::{memfd::MemfdInode, perms::VmPerms, vmo::Vmo},
+    vm::{perms::VmPerms, vmo::Vmo},
 };
 
 /// Virtual Memory Address Regions (VMARs) are a type of capability that manages
