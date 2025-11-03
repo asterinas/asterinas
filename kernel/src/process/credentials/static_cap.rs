@@ -4,7 +4,7 @@ use aster_rights::{Dup, Read, TRights, Write};
 use aster_rights_proc::require;
 use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
 
-use super::{capabilities::CapSet, credentials_::Credentials_, Credentials, Gid, Uid};
+use super::{capabilities::CapSet, credentials_::Credentials_, Credentials, Gid, SecureBits, Uid};
 use crate::prelude::*;
 
 impl<R: TRights> Credentials<R> {
@@ -147,10 +147,12 @@ impl<R: TRights> Credentials<R> {
 
     /// Sets keep capabilities flag.
     ///
+    /// If the [`SecureBits::KEEP_CAPS_LOCKED`] is set, this method will return an error.
+    ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_keep_capabilities(&self, keep_capabilities: bool) {
-        self.0.set_keep_capabilities(keep_capabilities);
+    pub fn set_keep_capabilities(&self, keep_capabilities: bool) -> Result<()> {
+        self.0.set_keep_capabilities(keep_capabilities)
     }
 
     // *********** Gid methods **********
@@ -245,6 +247,27 @@ impl<R: TRights> Credentials<R> {
     pub fn reset_sgid(&self) {
         let egid = self.0.egid();
         self.0.set_sgid(egid);
+    }
+
+    // *********** SecureBits methods **********
+
+    /// Gets the secure bits.
+    ///
+    /// This method requires the `Read` right.
+    #[require(R > Read)]
+    pub fn securebits(&self) -> SecureBits {
+        self.0.securebits()
+    }
+
+    /// Sets the secure bits.
+    ///
+    /// If the caller does not have the `CAP_SETPCAP` capability, or if it tries to set
+    /// locked bits, this method will return an error.
+    ///
+    /// This method requires the `Write` right.
+    #[require(R > Write)]
+    pub fn set_securebits(&self, securebits: SecureBits) -> Result<()> {
+        self.0.set_securebits(securebits)
     }
 
     // *********** Supplementary group methods **********
