@@ -2,9 +2,11 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::FdFlags,
+    fs::{
+        file_table::FdFlags,
+        ramfs::memfd::{MemfdFile, MemfdFlags, MAX_MEMFD_NAME_LEN},
+    },
     prelude::*,
-    vm::memfd::{MemfdFile, MemfdFlags, MAX_MEMFD_NAME_LEN},
 };
 
 pub fn sys_memfd_create(name_addr: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn> {

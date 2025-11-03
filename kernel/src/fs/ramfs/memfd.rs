@@ -12,12 +12,12 @@ use aster_block::bio::BioWaiter;
 use inherit_methods_macro::inherit_methods;
 use spin::Once;
 
+use super::fs::{RamFs, RamInode};
 use crate::{
     events::IoEvents,
     fs::{
         file_handle::{FileLike, Mappable},
         inode_handle::{do_fallocate_util, do_resize_util, do_seek_util},
-        ramfs::{new_detached_inode_in_memfd, RamFs, RamInode},
         utils::{
             chmod, mkmod, AccessMode, CachePage, Extension, FallocMode, FileSystem, Inode,
             InodeMode, InodeType, IoctlCmd, Metadata, PageCacheBackend, SeekFrom, StatusFlags,
@@ -45,7 +45,7 @@ pub struct MemfdInode {
 }
 
 impl MemfdInode {
-    pub fn add_seals(&self, mut new_seals: FileSeals) -> Result<()> {
+    pub(self) fn add_seals(&self, mut new_seals: FileSeals) -> Result<()> {
         let mut seals = self.seals.lock();
 
         if seals.contains(FileSeals::F_SEAL_SEAL) {
@@ -79,7 +79,7 @@ impl MemfdInode {
         Ok(())
     }
 
-    pub fn get_seals(&self) -> FileSeals {
+    pub(self) fn get_seals(&self) -> FileSeals {
         *self.seals.lock()
     }
 
@@ -237,8 +237,12 @@ impl MemfdFile {
         };
 
         let memfd_inode = Arc::new_cyclic(|weak_self| {
-            let ram_inode =
-                new_detached_inode_in_memfd(weak_self, mode, Uid::new_root(), Gid::new_root());
+            let ram_inode = RamInode::new_file_detached_in_memfd(
+                weak_self,
+                mode,
+                Uid::new_root(),
+                Gid::new_root(),
+            );
 
             let mut seals = FileSeals::empty();
             if !allow_sealing {

@@ -14,7 +14,7 @@ use ostd::{
     sync::{PreemptDisabled, RwLockWriteGuard},
 };
 
-use super::{xattr::RamXattr, *};
+use super::{memfd::MemfdInode, xattr::RamXattr, *};
 use crate::{
     events::IoEvents,
     fs::{
@@ -32,7 +32,7 @@ use crate::{
     prelude::*,
     process::{signal::PollHandle, Gid, Uid},
     time::clocks::RealTimeCoarseClock,
-    vm::{memfd::MemfdInode, vmo::Vmo},
+    vm::vmo::Vmo,
 };
 
 /// A volatile file system whose data and metadata exists only in memory.
@@ -96,7 +96,7 @@ impl FileSystem for RamFs {
 }
 
 /// An inode of `RamFs`.
-pub struct RamInode {
+pub(super) struct RamInode {
     /// Inode inner specifics
     inner: Inner,
     /// Inode metadata
@@ -126,31 +126,31 @@ enum Inner {
 }
 
 impl Inner {
-    pub fn new_dir(this: Weak<RamInode>, parent: Weak<RamInode>) -> Self {
+    pub(self) fn new_dir(this: Weak<RamInode>, parent: Weak<RamInode>) -> Self {
         Self::Dir(RwLock::new(DirEntry::new(this, parent)))
     }
 
-    pub fn new_file(this: Weak<RamInode>) -> Self {
+    pub(self) fn new_file(this: Weak<RamInode>) -> Self {
         Self::File(PageCache::new(this).unwrap())
     }
 
-    pub fn new_symlink() -> Self {
+    pub(self) fn new_symlink() -> Self {
         Self::SymLink(SpinLock::new(String::from("")))
     }
 
-    pub fn new_device(device: Arc<dyn Device>) -> Self {
+    pub(self) fn new_device(device: Arc<dyn Device>) -> Self {
         Self::Device(device)
     }
 
-    pub fn new_socket() -> Self {
+    pub(self) fn new_socket() -> Self {
         Self::Socket
     }
 
-    pub fn new_named_pipe() -> Self {
+    pub(self) fn new_named_pipe() -> Self {
         Self::NamedPipe(NamedPipe::new().unwrap())
     }
 
-    fn new_file_in_memfd(this: Weak<MemfdInode>) -> Self {
+    pub(self) fn new_file_in_memfd(this: Weak<MemfdInode>) -> Self {
         Self::File(PageCache::new(this).unwrap())
     }
 
@@ -427,7 +427,8 @@ impl RamInode {
         })
     }
 
-    fn new_file_detached_in_memfd(
+    /// Creates a `RamInode` that is detached from any `RamFs`, and resides in a `MemfdInode`.
+    pub(super) fn new_file_detached_in_memfd(
         weak_self: &Weak<MemfdInode>,
         mode: InodeMode,
         uid: Uid,
@@ -1253,18 +1254,6 @@ impl Inode for RamInode {
         self.check_permission(Permission::MAY_WRITE)?;
         self.xattr.remove(name)
     }
-}
-
-/// Creates a RAM inode that is detached from any `RamFs`, and resides in a `MemfdInode`.
-///
-// TODO: Add "anonymous inode fs" and link the inode to it.
-pub fn new_detached_inode_in_memfd(
-    weak_self: &Weak<MemfdInode>,
-    mode: InodeMode,
-    uid: Uid,
-    gid: Gid,
-) -> RamInode {
-    RamInode::new_file_detached_in_memfd(weak_self, mode, uid, gid)
 }
 
 fn write_lock_two_direntries_by_ino<'a>(

@@ -2,10 +2,11 @@
 
 //! Ramfs based on PageCache
 
+pub use fs::RamFs;
 use fs::RamFsType;
-pub use fs::{new_detached_inode_in_memfd, RamFs, RamInode};
 
 mod fs;
+pub mod memfd;
 mod xattr;
 
 const RAMFS_MAGIC: u64 = 0x8584_58f6;
