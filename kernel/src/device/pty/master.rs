@@ -10,11 +10,11 @@ use crate::{
     current_userspace,
     events::IoEvents,
     fs::{
-        devpts::DevPts,
+        devpts::Ptmx,
         file_table::FdFlags,
         fs_resolver::FsPath,
         inode_handle::FileIo,
-        utils::{mkmod, AccessMode, Inode, IoctlCmd, OpenArgs, StatusFlags},
+        utils::{mkmod, AccessMode, IoctlCmd, OpenArgs, StatusFlags},
     },
     prelude::*,
     process::{
@@ -36,12 +36,12 @@ const IO_CAPACITY: usize = 4096;
 ///
 /// [`Tty`]: crate::device::tty::Tty
 pub struct PtyMaster {
-    ptmx: Arc<dyn Inode>,
+    ptmx: Arc<Ptmx>,
     slave: Arc<PtySlave>,
 }
 
 impl PtyMaster {
-    pub(super) fn new(ptmx: Arc<dyn Inode>, index: u32) -> Arc<Self> {
+    pub(super) fn new(ptmx: Arc<Ptmx>, index: u32) -> Arc<Self> {
         let slave = PtySlave::new(index, PtyDriver::new());
 
         Arc::new(Self { ptmx, slave })
@@ -164,11 +164,10 @@ impl FileIo for PtyMaster {
 
 impl Drop for PtyMaster {
     fn drop(&mut self) {
-        let fs = self.ptmx.fs();
-        let devpts = fs.downcast_ref::<DevPts>().unwrap();
-
-        let index = self.slave.index();
-        devpts.remove_slave(index);
+        if let Some(devpts) = self.ptmx.devpts() {
+            let index = self.slave.index();
+            devpts.remove_slave(index);
+        }
 
         self.slave.driver().set_master_closed();
         self.slave.notify_hup();

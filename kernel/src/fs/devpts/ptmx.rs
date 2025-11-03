@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(dead_code)]
-#![expect(unused_variables)]
-
 use super::*;
 use crate::{
     events::IoEvents,
@@ -44,24 +41,8 @@ impl Ptmx {
         })
     }
 
-    /// The open method for ptmx.
-    ///
-    /// Creates a master and slave pair and returns the master inode.
-    pub fn open(&self) -> Result<Arc<PtyMaster>> {
-        let (master, _) = self.devpts().create_master_slave_pair()?;
-        Ok(master)
-    }
-
-    pub fn devpts(&self) -> Arc<DevPts> {
-        self.inner.0.upgrade().unwrap()
-    }
-
-    pub fn device_type(&self) -> DeviceType {
-        self.inner.type_()
-    }
-
-    pub fn device_id(&self) -> DeviceId {
-        self.inner.id()
+    pub fn devpts(&self) -> Option<Arc<DevPts>> {
+        self.inner.0.upgrade()
     }
 }
 
@@ -160,7 +141,8 @@ impl Inode for Ptmx {
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {
-        self.devpts()
+        // FIXME: The below code may panic if the devpts is dropped.
+        self.devpts().unwrap()
     }
 
     fn open(
