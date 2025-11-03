@@ -13,29 +13,29 @@ use crate::{
 };
 
 pub fn sys_mount(
-    devname_addr: Vaddr,
-    dirname_addr: Vaddr,
-    fstype_addr: Vaddr,
+    src_name_addr: Vaddr,
+    dst_name_addr: Vaddr,
+    fs_type_addr: Vaddr,
     flags: u64,
     // The `data` argument is interpreted by the different filesystems.
     // Typically it is a string of comma-separated options understood by
     // this filesystem. The current implementation only considers the case
     // where it is `NULL`. Because it should be interpreted by the specific filesystems.
-    data: Vaddr,
+    data_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let user_space = ctx.user_space();
-    let devname = user_space.read_cstring(devname_addr, MAX_FILENAME_LEN)?;
-    let dirname = user_space.read_cstring(dirname_addr, MAX_FILENAME_LEN)?;
+    let dst_name = ctx
+        .user_space()
+        .read_cstring(dst_name_addr, MAX_FILENAME_LEN)?;
     let mount_flags = MountFlags::from_bits_truncate(flags as u32);
     debug!(
-        "devname = {:?}, dirname = {:?}, fstype = 0x{:x}, flags = {:?}, data = 0x{:x}",
-        devname, dirname, fstype_addr, mount_flags, data,
+        "src_name_addr = 0x{:x}, dst_name = {:?}, fstype = 0x{:x}, flags = {:?}, data_addr = 0x{:x}",
+        src_name_addr, dst_name, fs_type_addr, mount_flags, data_addr,
     );
 
     let dst_path = {
-        let dirname = dirname.to_string_lossy();
-        let fs_path = FsPath::from_fd_and_path(AT_FDCWD, &dirname)?;
+        let dst_name = dst_name.to_string_lossy();
+        let fs_path = FsPath::from_fd_and_path(AT_FDCWD, &dst_name)?;
         ctx.thread_local
             .borrow_fs()
             .resolver()
@@ -47,10 +47,10 @@ pub fn sys_mount(
         // If `MS_BIND` is specified, only the mount flags are changed.
         do_remount_mnt(&dst_path, mount_flags, ctx)?;
     } else if mount_flags.contains(MountFlags::MS_REMOUNT) {
-        do_remount_mnt_and_fs(&dst_path, mount_flags, data, ctx)?;
+        do_remount_mnt_and_fs(&dst_path, mount_flags, data_addr, ctx)?;
     } else if mount_flags.contains(MountFlags::MS_BIND) {
         do_bind_mount(
-            devname,
+            src_name_addr,
             dst_path,
             mount_flags.contains(MountFlags::MS_REC),
             ctx,
@@ -58,9 +58,16 @@ pub fn sys_mount(
     } else if mount_flags.intersects(MS_PROPAGATION) {
         do_change_type(dst_path, mount_flags, ctx)?;
     } else if mount_flags.contains(MountFlags::MS_MOVE) {
-        do_move_mount_old(devname, dst_path, ctx)?;
+        do_move_mount_old(src_name_addr, dst_path, ctx)?;
     } else {
-        do_new_mount(devname, mount_flags, fstype_addr, dst_path, data, ctx)?;
+        do_new_mount(
+            src_name_addr,
+            mount_flags,
+            fs_type_addr,
+            dst_path,
+            data_addr,
+            ctx,
+        )?;
     }
 
     Ok(SyscallReturn::Return(0))
@@ -74,13 +81,18 @@ fn do_remount_mnt(path: &Path, flags: MountFlags, ctx: &Context) -> Result<()> {
 }
 
 /// Remounts the filesystem with new flags and data.
-fn do_remount_mnt_and_fs(path: &Path, flags: MountFlags, data: Vaddr, ctx: &Context) -> Result<()> {
+fn do_remount_mnt_and_fs(
+    path: &Path,
+    flags: MountFlags,
+    data_addr: Vaddr,
+    ctx: &Context,
+) -> Result<()> {
     let per_mount_flags = PerMountFlags::from(flags);
     let fs_flags = FsFlags::from(flags);
-    let data = if data == 0 {
+    let data = if data_addr == 0 {
         None
     } else {
-        Some(ctx.user_space().read_cstring(data, MAX_FILENAME_LEN)?)
+        Some(ctx.user_space().read_cstring(data_addr, MAX_FILENAME_LEN)?)
     };
 
     path.remount(per_mount_flags, Some(fs_flags), data, ctx)
@@ -90,8 +102,16 @@ fn do_remount_mnt_and_fs(path: &Path, flags: MountFlags, data: Vaddr, ctx: &Cont
 ///
 /// If recursive is true, then bind the mount recursively.
 /// Such as use user command `mount --rbind src dst`.
-fn do_bind_mount(src_name: CString, dst_path: Path, recursive: bool, ctx: &Context) -> Result<()> {
+fn do_bind_mount(
+    src_name_addr: Vaddr,
+    dst_path: Path,
+    recursive: bool,
+    ctx: &Context,
+) -> Result<()> {
     let src_path = {
+        let src_name = ctx
+            .user_space()
+            .read_cstring(src_name_addr, MAX_FILENAME_LEN)?;
         let src_name = src_name.to_string_lossy();
         let fs_path = FsPath::from_fd_and_path(AT_FDCWD, &src_name)?;
         ctx.thread_local
@@ -139,8 +159,11 @@ fn do_change_type(target_path: Path, flags: MountFlags, ctx: &Context) -> Result
 }
 
 /// Moves a mount from src location to dst location.
-fn do_move_mount_old(src_name: CString, dst_path: Path, ctx: &Context) -> Result<()> {
+fn do_move_mount_old(src_name_addr: Vaddr, dst_path: Path, ctx: &Context) -> Result<()> {
     let src_path = {
+        let src_name = ctx
+            .user_space()
+            .read_cstring(src_name_addr, MAX_FILENAME_LEN)?;
         let src_name = src_name.to_string_lossy();
         let fs_path = FsPath::from_fd_and_path(AT_FDCWD, &src_name)?;
         ctx.thread_local
@@ -157,48 +180,53 @@ fn do_move_mount_old(src_name: CString, dst_path: Path, ctx: &Context) -> Result
 
 /// Mounts a new filesystem.
 fn do_new_mount(
-    devname: CString,
+    src_name_addr: Vaddr,
     flags: MountFlags,
-    fs_type: Vaddr,
+    fs_type_addr: Vaddr,
     target_path: Path,
-    data: Vaddr,
+    data_addr: Vaddr,
     ctx: &Context,
 ) -> Result<()> {
     if target_path.type_() != InodeType::Dir {
         return_errno_with_message!(Errno::ENOTDIR, "mountpoint must be directory");
     };
 
-    let fs_type = ctx.user_space().read_cstring(fs_type, MAX_FILENAME_LEN)?;
+    let fs_type = ctx
+        .user_space()
+        .read_cstring(fs_type_addr, MAX_FILENAME_LEN)?;
     if fs_type.is_empty() {
         return_errno_with_message!(Errno::EINVAL, "fs_type is empty");
     }
-    let fs = get_fs(devname, flags, fs_type, data, ctx)?;
+    let fs = get_fs(src_name_addr, flags, fs_type, data_addr, ctx)?;
     target_path.mount(fs, flags.into(), ctx)?;
     Ok(())
 }
 
 /// Gets the filesystem by fs_type and devname.
 fn get_fs(
-    devname: CString,
+    src_name_addr: Vaddr,
     flags: MountFlags,
     fs_type: CString,
-    data: Vaddr,
+    data_addr: Vaddr,
     ctx: &Context,
 ) -> Result<Arc<dyn FileSystem>> {
     let user_space = ctx.user_space();
-    let data = if data == 0 {
+    let data = if data_addr == 0 {
         None
     } else {
-        Some(user_space.read_cstring(data, MAX_FILENAME_LEN)?)
+        Some(user_space.read_cstring(data_addr, MAX_FILENAME_LEN)?)
     };
 
     let fs_type = fs_type
         .to_str()
-        .map_err(|_| Error::with_message(Errno::ENODEV, "Invalid file system type"))?;
-    let fs_type = crate::fs::registry::look_up(fs_type)
-        .ok_or(Error::with_message(Errno::EINVAL, "Invalid fs type"))?;
+        .map_err(|_| Error::with_message(Errno::ENODEV, "invalid file system type"))?;
+    let fs_type = crate::fs::registry::look_up(fs_type).ok_or(Error::with_message(
+        Errno::ENODEV,
+        "the filesystem is not configured in the kernel",
+    ))?;
 
     let disk = if fs_type.properties().contains(FsProperties::NEED_DISK) {
+        let devname = user_space.read_cstring(src_name_addr, MAX_FILENAME_LEN)?;
         Some(
             aster_block::get_device(devname.to_str().unwrap())
                 .ok_or(Error::with_message(Errno::ENOENT, "device does not exist"))?,
