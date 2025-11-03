@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
 use aster_console::AnyConsoleDevice;
 use ostd::sync::SpinLock;
 
 use crate::{
-    device::tty::{PushCharError, Tty, TtyDriver},
+    device::tty::{Tty, TtyDriver},
     events::IoEvents,
     prelude::{return_errno_with_message, Errno, Result},
     process::signal::Pollee,
@@ -15,12 +17,14 @@ const BUFFER_CAPACITY: usize = 8192;
 
 /// A pseudoterminal driver.
 ///
-/// This is contained in the PTY slave, but it maintains the output buffer and the pollee of the
+/// This is contained in the pty slave, but it maintains the output buffer and the pollee of the
 /// master. The pollee of the slave is part of the [`Tty`] structure (see the definition of
 /// [`PtySlave`]).
 pub struct PtyDriver {
     output: SpinLock<RingBuffer<u8>>,
     pollee: Pollee,
+    is_master_closed: AtomicBool,
+    opened_slaves: AtomicUsize,
 }
 
 /// A pseudoterminal slave.
@@ -31,6 +35,8 @@ impl PtyDriver {
         Self {
             output: SpinLock::new(RingBuffer::new(BUFFER_CAPACITY)),
             pollee: Pollee::new(),
+            is_master_closed: AtomicBool::new(false),
+            opened_slaves: AtomicUsize::new(0),
         }
     }
 
@@ -41,6 +47,12 @@ impl PtyDriver {
 
         let mut output = self.output.lock();
         if output.is_empty() {
+            if self.opened_slaves.load(Ordering::Relaxed) == 0 {
+                return_errno_with_message!(
+                    Errno::EIO,
+                    "the pty master does not have opened slaves"
+                );
+            }
             return_errno_with_message!(Errno::EAGAIN, "the buffer is empty");
         }
 
@@ -57,10 +69,22 @@ impl PtyDriver {
     pub(super) fn buffer_len(&self) -> usize {
         self.output.lock().len()
     }
+
+    pub(super) fn set_master_closed(&self) {
+        self.is_master_closed.store(true, Ordering::Relaxed);
+    }
+
+    pub(super) fn opened_slaves(&self) -> &AtomicUsize {
+        &self.opened_slaves
+    }
 }
 
 impl TtyDriver for PtyDriver {
-    fn push_output(&self, chs: &[u8]) -> core::result::Result<usize, PushCharError> {
+    fn push_output(&self, chs: &[u8]) -> Result<usize> {
+        if self.is_closed() {
+            return_errno_with_message!(Errno::EIO, "the pty master has been closed");
+        }
+
         let mut output = self.output.lock();
 
         let mut len = 0;
@@ -73,7 +97,7 @@ impl TtyDriver for PtyDriver {
             } else if *ch != b'\n' && !output.is_full() {
                 output.push(*ch).unwrap();
             } else if len == 0 {
-                return Err(PushCharError);
+                return_errno_with_message!(Errno::EAGAIN, "the output buffer is full");
             } else {
                 break;
             }
@@ -108,6 +132,10 @@ impl TtyDriver for PtyDriver {
     fn can_push(&self) -> bool {
         let output = self.output.lock();
         output.capacity() - output.len() >= 2
+    }
+
+    fn is_closed(&self) -> bool {
+        self.is_master_closed.load(Ordering::Relaxed)
     }
 
     fn notify_input(&self) {

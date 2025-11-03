@@ -31,7 +31,7 @@ mod n_tty;
 mod termio;
 
 pub use device::TtyDevice;
-pub use driver::{PushCharError, TtyDriver};
+pub use driver::TtyDriver;
 pub(super) use n_tty::init;
 pub use n_tty::{iter_n_tty, system_console};
 
@@ -100,6 +100,11 @@ impl<D> Tty<D> {
     pub fn notify_output(&self) {
         self.pollee.notify(IoEvents::OUT);
     }
+
+    /// Notifies that the other end has been closed.
+    pub fn notify_hup(&self) {
+        self.pollee.notify(IoEvents::HUP);
+    }
 }
 
 impl<D: TtyDriver> Tty<D> {
@@ -107,7 +112,7 @@ impl<D: TtyDriver> Tty<D> {
     ///
     /// This method returns the number of bytes pushed or fails with an error if no bytes can be
     /// pushed because the buffer is full.
-    pub fn push_input(&self, chs: &[u8]) -> core::result::Result<usize, PushCharError> {
+    pub fn push_input(&self, chs: &[u8]) -> Result<usize> {
         let mut ldisc = self.ldisc.lock();
         let mut echo = self.driver.echo_callback();
 
@@ -123,7 +128,7 @@ impl<D: TtyDriver> Tty<D> {
                 &mut echo,
             );
             if res.is_err() && len == 0 {
-                return Err(PushCharError);
+                return_errno_with_message!(Errno::EAGAIN, "the line discipline is full");
             } else if res.is_err() {
                 break;
             } else {
@@ -144,6 +149,10 @@ impl<D: TtyDriver> Tty<D> {
 
         if self.driver.can_push() {
             events |= IoEvents::OUT;
+        }
+
+        if self.driver.is_closed() {
+            events |= IoEvents::HUP;
         }
 
         events
@@ -233,6 +242,10 @@ impl<D: TtyDriver> Pollable for Tty<D> {
 
 impl<D: TtyDriver> FileIo for Tty<D> {
     fn read(&self, writer: &mut VmWriter, _status_flags: StatusFlags) -> Result<usize> {
+        if self.driver.is_closed() {
+            return Ok(0);
+        }
+
         self.job_control.wait_until_in_foreground()?;
 
         // TODO: Add support for non-blocking mode and timeout
@@ -253,7 +266,7 @@ impl<D: TtyDriver> FileIo for Tty<D> {
 
         // TODO: Add support for non-blocking mode and timeout
         let len = self.wait_events(IoEvents::OUT, None, || {
-            Ok(self.driver.push_output(&buf[..write_len])?)
+            self.driver.push_output(&buf[..write_len])
         })?;
         self.pollee.invalidate();
         Ok(len)
@@ -304,6 +317,10 @@ impl<D: TtyDriver> FileIo for Tty<D> {
                 current_userspace!().write_val(arg, &idx)?;
             }
             IoctlCmd::FIONREAD => {
+                if self.driver().is_closed() {
+                    return_errno_with_message!(Errno::EIO, "the TTY is closed");
+                }
+
                 let buffer_len = self.ldisc.lock().buffer_len() as u32;
 
                 current_userspace!().write_val(arg, &buffer_len)?;

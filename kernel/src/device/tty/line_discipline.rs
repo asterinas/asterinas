@@ -2,10 +2,7 @@
 
 use ostd::const_assert;
 
-use super::{
-    termio::{CCtrlCharId, CTermios, CWinSize},
-    PushCharError,
-};
+use super::termio::{CCtrlCharId, CTermios, CWinSize};
 use crate::{
     prelude::*,
     process::signal::{
@@ -100,7 +97,7 @@ impl LineDiscipline {
         ch: u8,
         mut signal_callback: F1,
         echo_callback: F2,
-    ) -> core::result::Result<(), PushCharError> {
+    ) -> Result<()> {
         let ch = if self.termios.contains_icrnl() && ch == b'\r' {
             b'\n'
         } else {
@@ -122,7 +119,7 @@ impl LineDiscipline {
             // If the buffer is full, we should not push the character into the buffer. The caller
             // can silently ignore the error (if the input comes from the keyboard) or block the
             // user space (if the input comes from the pseduoterminal master).
-            return Err(PushCharError);
+            return_errno_with_message!(Errno::EAGAIN, "the buffer is full");
         }
 
         // Raw mode

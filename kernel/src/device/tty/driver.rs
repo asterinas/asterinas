@@ -2,17 +2,7 @@
 
 use aster_console::AnyConsoleDevice;
 
-use crate::prelude::{Errno, Error};
-
-/// An error indicating that no characters can be pushed because the buffer is full.
-#[derive(Debug, Clone, Copy)]
-pub struct PushCharError;
-
-impl From<PushCharError> for Error {
-    fn from(_value: PushCharError) -> Self {
-        Error::with_message(Errno::EAGAIN, "the buffer is full")
-    }
-}
+use crate::prelude::*;
 
 /// A TTY driver.
 ///
@@ -26,8 +16,8 @@ pub trait TtyDriver: Send + Sync + 'static {
     /// Pushes characters into the output buffer.
     ///
     /// This method returns the number of bytes pushed or fails with an error if no bytes can be
-    /// pushed because the buffer is full.
-    fn push_output(&self, chs: &[u8]) -> core::result::Result<usize, PushCharError>;
+    /// pushed.
+    fn push_output(&self, chs: &[u8]) -> Result<usize>;
 
     /// Drains the output buffer.
     fn drain_output(&self);
@@ -42,6 +32,12 @@ pub trait TtyDriver: Send + Sync + 'static {
     ///
     /// This method should return `false` if the output buffer is full.
     fn can_push(&self) -> bool;
+
+    /// Returns whether the TTY is closed.
+    ///
+    /// For a pty slave, this method returns `true` only if its associated master has been closed.
+    /// For other TTY types, this method returns `false`.
+    fn is_closed(&self) -> bool;
 
     /// Notifies that the input buffer now has room for new characters.
     ///
