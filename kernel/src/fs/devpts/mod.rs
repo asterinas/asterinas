@@ -16,8 +16,8 @@ use crate::{
         device::{Device, DeviceId, DeviceType},
         registry::{FsProperties, FsType},
         utils::{
-            mkmod, DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd,
-            Metadata, SuperBlock, NAME_MAX,
+            mkmod, DirEntryVecExt, DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType,
+            IoctlCmd, Metadata, SuperBlock, NAME_MAX,
         },
     },
     prelude::*,
@@ -71,7 +71,10 @@ impl DevPts {
         let (master, slave) = crate::device::new_pty_pair(index as u32, self.root.ptmx.clone())?;
 
         let slave_inode = PtySlaveInode::new(slave, self.this.clone());
-        self.root.add_slave(index.to_string(), slave_inode.clone());
+        self.root
+            .slaves
+            .write()
+            .put_entry_if_not_found(&index.to_string(), || slave_inode.clone());
 
         Ok((master, slave_inode))
     }
@@ -79,12 +82,14 @@ impl DevPts {
     /// Remove the slave from fs.
     ///
     /// This is called when the master is being dropped.
-    pub fn remove_slave(&self, index: u32) -> Option<Arc<PtySlaveInode>> {
-        let removed_slave = self.root.remove_slave(&index.to_string());
-        if removed_slave.is_some() {
-            self.index_alloc.lock().free(index as usize);
-        }
-        removed_slave
+    pub fn remove_slave(&self, index: u32) -> Option<Arc<dyn Inode>> {
+        let (_, removed_slave) = self
+            .root
+            .slaves
+            .write()
+            .remove_entry_by_name(&index.to_string())?;
+        self.index_alloc.lock().free(index as usize);
+        Some(removed_slave)
     }
 }
 
@@ -137,7 +142,7 @@ pub(super) fn init() {
 
 struct RootInode {
     ptmx: Arc<Ptmx>,
-    slaves: RwLock<SlotVec<(String, Arc<PtySlaveInode>)>>,
+    slaves: RwLock<SlotVec<(String, Arc<dyn Inode>)>>,
     metadata: RwLock<Metadata>,
     fs: Weak<DevPts>,
 }
@@ -150,27 +155,6 @@ impl RootInode {
             metadata: RwLock::new(Metadata::new_dir(ROOT_INO, mkmod!(a+rx, u+w), BLOCK_SIZE)),
             fs,
         })
-    }
-
-    fn add_slave(&self, name: String, slave: Arc<PtySlaveInode>) {
-        self.slaves.write().put((name, slave));
-    }
-
-    fn remove_slave(&self, name: &str) -> Option<Arc<PtySlaveInode>> {
-        let removed_slave = {
-            let mut slaves = self.slaves.write();
-            let pos = slaves
-                .idxes_and_items()
-                .find(|(_, (child, _))| child == name)
-                .map(|(pos, _)| pos);
-            match pos {
-                None => {
-                    return None;
-                }
-                Some(pos) => slaves.remove(pos).map(|(_, node)| node).unwrap(),
-            }
-        };
-        Some(removed_slave)
     }
 }
 
@@ -296,7 +280,18 @@ impl Inode for RootInode {
     }
 
     fn unlink(&self, name: &str) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        match name {
+            "." | ".." => {
+                return_errno_with_message!(Errno::EISDIR, "the devpts directory cannot be unlinked")
+            }
+            "ptmx" => return_errno_with_message!(Errno::EPERM, "the ptmx inode cannot be unlinked"),
+            slave => {
+                if self.slaves.read().find_entry_by_name(slave).is_none() {
+                    return_errno_with_message!(Errno::ENOENT, "the slave inode does not exist");
+                }
+                return_errno_with_message!(Errno::EPERM, "the slave inode cannot be unlinked");
+            }
+        }
     }
 
     fn rmdir(&self, name: &str) -> Result<()> {
@@ -311,9 +306,8 @@ impl Inode for RootInode {
             slave => self
                 .slaves
                 .read()
-                .idxes_and_items()
-                .find(|(_, (child_name, _))| child_name == slave)
-                .map(|(_, (_, node))| node.clone())
+                .find_entry_by_name(slave)
+                .cloned()
                 .ok_or(Error::new(Errno::ENOENT))?,
         };
         Ok(inode)
