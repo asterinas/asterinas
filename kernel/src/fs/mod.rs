@@ -15,6 +15,7 @@ pub mod overlayfs;
 pub mod path;
 pub mod pipe;
 pub mod procfs;
+pub mod pseudofs;
 pub mod ramfs;
 pub mod registry;
 pub mod rootfs;
@@ -65,6 +66,7 @@ pub fn init() {
     ramfs::init();
     tmpfs::init();
     devpts::init();
+    pseudofs::init();
 
     ext2::init();
     exfat::init();
