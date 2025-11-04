@@ -189,11 +189,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "aster-input"
+name = "aster-i8042"
 version = "0.1.0"
 dependencies = [
- "bitflags 1.3.2",
- "bitvec",
+ "aster-input",
+ "bitflags 2.9.1",
  "component",
  "log",
  "ostd",
@@ -201,11 +201,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "aster-keyboard"
+name = "aster-input"
 version = "0.1.0"
 dependencies = [
- "aster-input",
- "bitflags 2.9.1",
+ "bitflags 1.3.2",
+ "bitvec",
  "component",
  "log",
  "ostd",
@@ -265,8 +265,8 @@ dependencies = [
  "aster-block",
  "aster-console",
  "aster-framebuffer",
+ "aster-i8042",
  "aster-input",
- "aster-keyboard",
  "aster-logger",
  "aster-mlsdisk",
  "aster-network",

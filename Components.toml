@@ -12,7 +12,7 @@ framebuffer = { name = "aster-framebuffer" }
 network = { name = "aster-network" }
 mlsdisk = { name = "aster-mlsdisk" }
 systree = { name = "aster-systree" }
-keyboard = { name = "aster-keyboard" }
+i8042 = { name = "aster-i8042" }
 pci = { name = "aster-pci" }
 
 [whitelist]
