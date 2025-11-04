@@ -14,7 +14,7 @@ pub fn init() {
     // devices are linked and their `#[init_component]` hooks can run to register the devices with
     // the input core. We should find a way to avoid this in the future.
     #[expect(unused_imports)]
-    use aster_keyboard::*;
+    use aster_i8042::*;
 
     if let Some(console) = FRAMEBUFFER_CONSOLE.get() {
         aster_console::register_device(CONSOLE_NAME.to_string(), console.clone());
