@@ -12,9 +12,13 @@ use super::{
 };
 use crate::{
     events::IoEvents,
-    fs::{file_handle::FileLike, utils::EndpointState},
+    fs::{
+        file_handle::FileLike,
+        utils::{EndpointState, Inode},
+    },
     match_sock_option_mut,
     net::socket::{
+        new_pseudo_inode,
         options::{PeerCred, PeerGroups, SocketOption},
         private::SocketPrivate,
         unix::{cred::SocketCred, ctrl_msg::AuxiliaryData, CUserCred, UnixSocketAddr},
@@ -41,6 +45,7 @@ pub struct UnixStreamSocket {
     is_nonblocking: AtomicBool,
 
     is_seqpacket: bool,
+    pseudo_inode: Arc<dyn Inode>,
 }
 
 enum State {
@@ -143,6 +148,7 @@ impl UnixStreamSocket {
             pollee: Pollee::new(),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             is_seqpacket,
+            pseudo_inode: new_pseudo_inode(),
         })
     }
 
@@ -178,6 +184,7 @@ impl UnixStreamSocket {
             pollee: cloned_pollee,
             is_nonblocking: AtomicBool::new(is_nonblocking),
             is_seqpacket,
+            pseudo_inode: new_pseudo_inode(),
         })
     }
 
@@ -473,6 +480,10 @@ impl Socket for UnixStreamSocket {
         let message_header = MessageHeader::new(None, control_messages);
 
         Ok((received_bytes, message_header))
+    }
+
+    fn pseudo_inode(&self) -> &Arc<dyn Inode> {
+        &self.pseudo_inode
     }
 }
 

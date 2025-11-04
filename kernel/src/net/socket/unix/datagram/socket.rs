@@ -5,7 +5,9 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use super::message::{MessageQueue, MessageReceiver};
 use crate::{
     events::IoEvents,
+    fs::utils::Inode,
     net::socket::{
+        new_pseudo_inode,
         options::SocketOption,
         private::SocketPrivate,
         unix::{ctrl_msg::AuxiliaryData, UnixSocketAddr},
@@ -27,6 +29,7 @@ pub struct UnixDatagramSocket {
 
     is_nonblocking: AtomicBool,
     is_write_shutdown: AtomicBool,
+    pseudo_inode: Arc<dyn Inode>,
 }
 
 #[derive(Clone, Debug)]
@@ -67,6 +70,7 @@ impl UnixDatagramSocket {
             options: RwLock::new(OptionSet::new()),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             is_write_shutdown: AtomicBool::new(false),
+            pseudo_inode: new_pseudo_inode(),
         }
     }
 
@@ -268,6 +272,10 @@ impl Socket for UnixDatagramSocket {
         let message_header = MessageHeader::new(Some(peer_addr.into()), control_messages);
 
         Ok((received_bytes, message_header))
+    }
+
+    fn pseudo_inode(&self) -> &Arc<dyn Inode> {
+        &self.pseudo_inode
     }
 }
 

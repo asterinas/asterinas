@@ -15,7 +15,8 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::{get_file_fast, FileDesc},
-        utils::{mkmod, IoctlCmd, Metadata},
+        pseudofs::anon_inodefs_shared_inode,
+        utils::{mkmod, Inode, IoctlCmd, Metadata},
     },
     prelude::*,
     process::{
@@ -270,6 +271,10 @@ impl FileLike for EpollFile {
         // This is a dummy implementation.
         // TODO: Add "anonymous inode fs" and link `EpollFile` to it.
         Metadata::new_file(0, mkmod!(u+rw), aster_block::BLOCK_SIZE)
+    }
+
+    fn inode(&self) -> &Arc<dyn Inode> {
+        anon_inodefs_shared_inode()
     }
 }
 

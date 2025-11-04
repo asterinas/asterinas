@@ -362,6 +362,10 @@ impl FileLike for MemfdFile {
     fn mappable(&self) -> Result<Mappable> {
         Ok(Mappable::Inode(self.memfd_inode.clone()))
     }
+
+    fn inode(&self) -> &Arc<dyn Inode> {
+        &self.memfd_inode
+    }
 }
 
 bitflags! {

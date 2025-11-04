@@ -7,7 +7,8 @@ use crate::{
     fs::{
         file_handle::FileLike,
         pipe::common::{PipeReader, PipeWriter},
-        utils::{mkmod, AccessMode, InodeType, Metadata, StatusFlags},
+        pseudofs::{pipefs_singleton, PseudoInode},
+        utils::{mkmod, AccessMode, Inode, InodeType, Metadata, StatusFlags},
     },
     prelude::*,
     process::{
@@ -29,9 +30,21 @@ fn new_file_pair_with_capacity(
 ) -> Result<(Arc<PipeReaderFile>, Arc<PipeWriterFile>)> {
     let (reader, writer) = super::common::new_pair_with_capacity(capacity);
 
+    let pseudo_inode = {
+        Arc::new(PseudoInode::new(
+            0,
+            InodeType::NamedPipe,
+            mkmod!(u+rw),
+            Uid::new_root(),
+            Gid::new_root(),
+            aster_block::BLOCK_SIZE,
+            Arc::downgrade(pipefs_singleton()),
+        ))
+    };
+
     Ok((
-        PipeReaderFile::new(reader, StatusFlags::empty())?,
-        PipeWriterFile::new(writer, StatusFlags::empty())?,
+        PipeReaderFile::new(reader, StatusFlags::empty(), pseudo_inode.clone())?,
+        PipeWriterFile::new(writer, StatusFlags::empty(), pseudo_inode)?,
     ))
 }
 
@@ -39,15 +52,21 @@ fn new_file_pair_with_capacity(
 pub struct PipeReaderFile {
     reader: PipeReader,
     status_flags: AtomicU32,
+    pseudo_inode: Arc<dyn Inode>,
 }
 
 impl PipeReaderFile {
-    fn new(reader: PipeReader, status_flags: StatusFlags) -> Result<Arc<Self>> {
+    fn new(
+        reader: PipeReader,
+        status_flags: StatusFlags,
+        pseudo_inode: Arc<PseudoInode>,
+    ) -> Result<Arc<Self>> {
         check_status_flags(status_flags)?;
 
         Ok(Arc::new(Self {
             reader,
             status_flags: AtomicU32::new(status_flags.bits()),
+            pseudo_inode,
         }))
     }
 }
@@ -109,6 +128,10 @@ impl FileLike for PipeReaderFile {
             rdev: 0,
         }
     }
+
+    fn inode(&self) -> &Arc<dyn Inode> {
+        &self.pseudo_inode
+    }
 }
 
 impl Drop for PipeReaderFile {
@@ -121,15 +144,21 @@ impl Drop for PipeReaderFile {
 pub struct PipeWriterFile {
     writer: PipeWriter,
     status_flags: AtomicU32,
+    pseudo_inode: Arc<dyn Inode>,
 }
 
 impl PipeWriterFile {
-    fn new(writer: PipeWriter, status_flags: StatusFlags) -> Result<Arc<Self>> {
+    fn new(
+        writer: PipeWriter,
+        status_flags: StatusFlags,
+        pseudo_inode: Arc<PseudoInode>,
+    ) -> Result<Arc<Self>> {
         check_status_flags(status_flags)?;
 
         Ok(Arc::new(Self {
             writer,
             status_flags: AtomicU32::new(status_flags.bits()),
+            pseudo_inode,
         }))
     }
 }
@@ -190,6 +219,10 @@ impl FileLike for PipeWriterFile {
             gid: Gid::new_root(),
             rdev: 0,
         }
+    }
+
+    fn inode(&self) -> &Arc<dyn Inode> {
+        &self.pseudo_inode
     }
 }
 

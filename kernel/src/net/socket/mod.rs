@@ -6,9 +6,11 @@ use util::{MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr};
 use crate::{
     fs::{
         file_handle::FileLike,
-        utils::{mkmod, Metadata, StatusFlags},
+        pseudofs::{sockfs_singleton, PseudoInode},
+        utils::{mkmod, Inode, InodeType, Metadata, StatusFlags},
     },
     prelude::*,
+    process::{Gid, Uid},
     util::{MultiRead, MultiWrite},
 };
 
@@ -121,6 +123,9 @@ pub trait Socket: private::SocketPrivate + Send + Sync {
         writer: &mut dyn MultiWrite,
         flags: SendRecvFlags,
     ) -> Result<(usize, MessageHeader)>;
+
+    /// Returns a reference to the pseudo inode associated with this socket.
+    fn pseudo_inode(&self) -> &Arc<dyn Inode>;
 }
 
 impl<T: Socket + 'static> FileLike for T {
@@ -172,4 +177,21 @@ impl<T: Socket + 'static> FileLike for T {
         // TODO: Add "SockFS" and link `Socket` to it.
         Metadata::new_socket(0, mkmod!(a+rwx), aster_block::BLOCK_SIZE)
     }
+
+    fn inode(&self) -> &Arc<dyn Inode> {
+        self.pseudo_inode()
+    }
+}
+
+/// Creates a new pseudo inode for a socket.
+fn new_pseudo_inode() -> Arc<dyn Inode> {
+    Arc::new(PseudoInode::new(
+        0,
+        InodeType::Socket,
+        mkmod!(a+rwx),
+        Uid::new_root(),
+        Gid::new_root(),
+        aster_block::BLOCK_SIZE,
+        Arc::downgrade(sockfs_singleton()),
+    ))
 }

@@ -7,7 +7,8 @@ use crate::{
     events::IoEvents,
     fs::{
         file_handle::FileLike,
-        utils::{mkmod, CreationFlags, InodeType, Metadata, StatusFlags},
+        pseudofs::anon_inodefs_shared_inode,
+        utils::{mkmod, CreationFlags, Inode, InodeType, Metadata, StatusFlags},
     },
     prelude::*,
     process::{
@@ -172,5 +173,9 @@ impl FileLike for TimerfdFile {
             gid: Gid::new_root(),
             rdev: 0,
         }
+    }
+
+    fn inode(&self) -> &Arc<dyn Inode> {
+        anon_inodefs_shared_inode()
     }
 }

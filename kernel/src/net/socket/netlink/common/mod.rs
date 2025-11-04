@@ -8,9 +8,11 @@ use unbound::UnboundNetlink;
 use super::{GroupIdSet, NetlinkSocketAddr};
 use crate::{
     events::IoEvents,
+    fs::utils::Inode,
     match_sock_option_ref,
     net::socket::{
         netlink::{table::SupportedNetlinkProtocol, AddMembership, DropMembership},
+        new_pseudo_inode,
         options::SocketOption,
         private::SocketPrivate,
         util::{
@@ -32,6 +34,7 @@ pub struct NetlinkSocket<P: SupportedNetlinkProtocol> {
 
     is_nonblocking: AtomicBool,
     pollee: Pollee,
+    pseudo_inode: Arc<dyn Inode>,
 }
 
 impl<P: SupportedNetlinkProtocol> NetlinkSocket<P>
@@ -44,6 +47,7 @@ where
             inner: RwMutex::new(Inner::Unbound(unbound)),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
+            pseudo_inode: new_pseudo_inode(),
         })
     }
 
@@ -176,6 +180,10 @@ where
                 Ok(())
             }
         }
+    }
+
+    fn pseudo_inode(&self) -> &Arc<dyn Inode> {
+        &self.pseudo_inode
     }
 }
 
