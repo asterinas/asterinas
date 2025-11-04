@@ -12,8 +12,8 @@ use crate::{
         file_handle::{FileLike, Mappable},
         path::Path,
         utils::{
-            AccessMode, DirentVisitor, FallocMode, FlockItem, InodeMode, InodeType, IoctlCmd,
-            Metadata, RangeLockItem, RangeLockType, SeekFrom, StatusFlags,
+            AccessMode, DirentVisitor, FallocMode, FlockItem, Inode, InodeMode, InodeType,
+            IoctlCmd, Metadata, RangeLockItem, RangeLockType, SeekFrom, StatusFlags,
         },
     },
     prelude::*,
@@ -211,6 +211,10 @@ impl FileLike for InodeHandle {
             return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
         }
         self.0.fallocate(mode, offset, len)
+    }
+
+    fn inode(&self) -> &Arc<dyn Inode> {
+        self.0.inode()
     }
 }
 

@@ -266,6 +266,7 @@ impl HandleInner {
     pub(self) fn set_owner(&self, uid: Uid) -> Result<()>;
     pub(self) fn group(&self) -> Result<Gid>;
     pub(self) fn set_group(&self, gid: Gid) -> Result<()>;
+    pub(self) fn inode(&self) -> &Arc<dyn Inode>;
 }
 
 impl Debug for HandleInner {

@@ -122,6 +122,8 @@ pub trait FileLike: Pollable + Send + Sync + Any {
     fn as_socket(&self) -> Option<&dyn Socket> {
         None
     }
+
+    fn inode(&self) -> &Arc<dyn Inode>;
 }
 
 impl dyn FileLike {

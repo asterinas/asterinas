@@ -9,8 +9,10 @@ use unbound::{BindOptions, UnboundDatagram};
 use super::addr::UNSPECIFIED_LOCAL_ENDPOINT;
 use crate::{
     events::IoEvents,
+    fs::utils::Inode,
     match_sock_option_mut,
     net::socket::{
+        new_pseudo_inode,
         options::{Error as SocketError, SocketOption},
         private::SocketPrivate,
         util::{
@@ -36,6 +38,7 @@ pub struct DatagramSocket {
 
     is_nonblocking: AtomicBool,
     pollee: Pollee,
+    pseudo_inode: Arc<dyn Inode>,
 }
 
 #[derive(Debug, Clone)]
@@ -59,6 +62,7 @@ impl DatagramSocket {
             options: RwLock::new(OptionSet::new()),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
+            pseudo_inode: new_pseudo_inode(),
         })
     }
 
@@ -251,6 +255,10 @@ impl Socket for DatagramSocket {
                 Ok(())
             }
         }
+    }
+
+    fn pseudo_inode(&self) -> &Arc<dyn Inode> {
+        &self.pseudo_inode
     }
 }
 

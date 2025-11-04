@@ -16,7 +16,8 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::{get_file_fast, FdFlags, FileDesc},
-        utils::{mkmod, CreationFlags, InodeType, Metadata, StatusFlags},
+        pseudofs::anon_inodefs_shared_inode,
+        utils::{mkmod, CreationFlags, Inode, InodeType, Metadata, StatusFlags},
     },
     prelude::*,
     process::{
@@ -277,6 +278,10 @@ impl FileLike for SignalFile {
             gid: Gid::new_root(),
             rdev: 0,
         }
+    }
+
+    fn inode(&self) -> &Arc<dyn Inode> {
+        anon_inodefs_shared_inode()
     }
 }
 

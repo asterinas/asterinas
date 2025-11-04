@@ -6,7 +6,8 @@ use crate::{
     events::IoEvents,
     fs::{
         file_handle::FileLike,
-        utils::{mkmod, InodeType, Metadata, StatusFlags},
+        pseudofs::anon_inodefs_shared_inode,
+        utils::{mkmod, Inode, InodeType, Metadata, StatusFlags},
     },
     prelude::*,
     process::{
@@ -108,6 +109,10 @@ impl FileLike for PidFile {
         } else {
             StatusFlags::empty()
         }
+    }
+
+    fn inode(&self) -> &Arc<dyn Inode> {
+        anon_inodefs_shared_inode()
     }
 }
 

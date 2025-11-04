@@ -5,8 +5,9 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use super::{connected::Connected, connecting::Connecting, init::Init, listen::Listen};
 use crate::{
     events::IoEvents,
-    fs::file_handle::FileLike,
+    fs::{file_handle::FileLike, utils::Inode},
     net::socket::{
+        new_pseudo_inode,
         private::SocketPrivate,
         util::{MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr},
         vsock::{addr::VsockSocketAddr, VSOCK_GLOBAL},
@@ -20,6 +21,7 @@ use crate::{
 pub struct VsockStreamSocket {
     status: RwLock<Status>,
     is_nonblocking: AtomicBool,
+    pseudo_inode: Arc<dyn Inode>,
 }
 
 pub enum Status {
@@ -41,6 +43,7 @@ impl VsockStreamSocket {
         Ok(Self {
             status: RwLock::new(Status::Init(init)),
             is_nonblocking: AtomicBool::new(nonblocking),
+            pseudo_inode: new_pseudo_inode(),
         })
     }
 
@@ -48,6 +51,7 @@ impl VsockStreamSocket {
         Self {
             status: RwLock::new(Status::Connected(connected)),
             is_nonblocking: AtomicBool::new(false),
+            pseudo_inode: new_pseudo_inode(),
         }
     }
 
@@ -305,6 +309,10 @@ impl Socket for VsockStreamSocket {
         } else {
             return_errno_with_message!(Errno::EINVAL, "the socket is not connected");
         }
+    }
+
+    fn pseudo_inode(&self) -> &Arc<dyn Inode> {
+        &self.pseudo_inode
     }
 }
 
