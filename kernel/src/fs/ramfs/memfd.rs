@@ -12,12 +12,13 @@ use aster_block::bio::BioWaiter;
 use inherit_methods_macro::inherit_methods;
 use spin::Once;
 
-use super::fs::{RamFs, RamInode};
+use super::fs::RamInode;
 use crate::{
     events::IoEvents,
     fs::{
         file_handle::{FileLike, Mappable},
         inode_handle::{do_fallocate_util, do_resize_util, do_seek_util},
+        tmpfs::TmpFs,
         utils::{
             chmod, mkmod, AccessMode, CachePage, Extension, FallocMode, FileSystem, Inode,
             InodeMode, InodeType, IoctlCmd, Metadata, PageCacheBackend, SeekFrom, StatusFlags,
@@ -196,9 +197,9 @@ impl Inode for MemfdInode {
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {
-        // FIXME: Implement `AnonInodeFs` properly and link memfd inodes to it.
-        static ANON_INODE_FS: Once<Arc<RamFs>> = Once::new();
-        ANON_INODE_FS.call_once(RamFs::new).clone()
+        // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/mm/shmem.c#L3828-L3850>
+        static MEMFD_TMPFS: Once<Arc<TmpFs>> = Once::new();
+        MEMFD_TMPFS.call_once(TmpFs::new).clone()
     }
 }
 

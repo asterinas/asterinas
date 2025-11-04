@@ -18,6 +18,14 @@ pub struct TmpFs {
     inner: Arc<RamFs>,
 }
 
+impl TmpFs {
+    pub fn new() -> Arc<Self> {
+        Arc::new(TmpFs {
+            inner: RamFs::new(),
+        })
+    }
+}
+
 impl FileSystem for TmpFs {
     fn name(&self) -> &'static str {
         "tmpfs"
@@ -54,9 +62,7 @@ impl FsType for TmpFsType {
         _args: Option<CString>,
         _disk: Option<Arc<dyn aster_block::BlockDevice>>,
     ) -> Result<Arc<dyn FileSystem>> {
-        Ok(Arc::new(TmpFs {
-            inner: RamFs::new(),
-        }))
+        Ok(TmpFs::new())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

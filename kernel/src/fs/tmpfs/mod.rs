@@ -2,6 +2,7 @@
 
 //! Temporary file system (tmpfs) based on RamFs.
 
+pub(super) use fs::TmpFs;
 use fs::TmpFsType;
 
 mod fs;
