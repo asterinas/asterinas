@@ -205,7 +205,7 @@ OSDK_CRATES := \
 	kernel/comps/console \
 	kernel/comps/framebuffer \
 	kernel/comps/input \
-	kernel/comps/keyboard \
+	kernel/comps/i8042 \
 	kernel/comps/network \
 	kernel/comps/softirq \
 	kernel/comps/systree \

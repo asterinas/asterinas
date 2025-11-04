@@ -3,16 +3,20 @@
 //! Handle keyboard input.
 #![no_std]
 #![deny(unsafe_code)]
+#![cfg(target_arch = "x86_64")]
 
 extern crate alloc;
 
 use component::{init_component, ComponentInitError};
-#[cfg(target_arch = "x86_64")]
-mod i8042_chip;
+
+mod controller;
+mod keyboard;
+mod mouse;
 
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {
-    #[cfg(target_arch = "x86_64")]
-    i8042_chip::init();
+    if let Err(err) = controller::init() {
+        log::warn!("i8042 controller initialization failed: {:?}", err);
+    }
     Ok(())
 }

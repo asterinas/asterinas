@@ -1,5 +1,5 @@
 [package]
-name = "aster-keyboard"
+name = "aster-i8042"
 version = "0.1.0"
 edition = "2021"
 
