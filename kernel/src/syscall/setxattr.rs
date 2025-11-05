@@ -146,7 +146,7 @@ pub(super) fn lookup_path_for_xattr<'a>(
         XattrFileCtx::Path(path) => lookup_path_from_fs(path, ctx, false),
         XattrFileCtx::PathNoFollow(path) => lookup_path_from_fs(path, ctx, true),
         XattrFileCtx::FileHandle(file) => {
-            let path = file.as_inode_or_err()?.path();
+            let path = file.as_inode_handle_or_err()?.path();
             Ok(Cow::Borrowed(path))
         }
     }

@@ -157,7 +157,7 @@ impl dyn FileLike {
             .ok_or_else(|| Error::with_message(Errno::ENOTSOCK, "the file is not a socket"))
     }
 
-    pub fn as_inode_or_err(&self) -> Result<&InodeHandle> {
+    pub fn as_inode_handle_or_err(&self) -> Result<&InodeHandle> {
         self.downcast_ref().ok_or_else(|| {
             Error::with_message(Errno::EINVAL, "the file is not related to an inode")
         })
