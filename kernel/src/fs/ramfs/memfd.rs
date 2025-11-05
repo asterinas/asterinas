@@ -8,6 +8,7 @@ use core::{
     time::Duration,
 };
 
+use align_ext::AlignExt;
 use aster_block::bio::BioWaiter;
 use inherit_methods_macro::inherit_methods;
 use spin::Once;
@@ -149,11 +150,25 @@ impl Inode for MemfdInode {
         }
 
         if seals.contains(FileSeals::F_SEAL_GROW) {
-            let file_size = self.inode.size();
-            if offset >= file_size {
-                return_errno_with_message!(Errno::EPERM, "the file is sealed against growing");
-            } else {
-                reader.limit(file_size - offset);
+            // For a memfd sealed with `F_SEAL_GROW`, if a write that would grow the file occurs,
+            // the entire write within the page containing the EOF is rejected. Writes before
+            // the EOF page are not affected.
+            //
+            // For detailed explanation, please see:
+            // <https://github.com/asterinas/asterinas/pull/2555#discussion_r2509179520>
+            //
+            // Reference:
+            // <https://elixir.bootlin.com/linux/v6.16.5/source/mm/shmem.c#L3309-L3310>
+            // <https://github.com/google/gvisor/blob/6db745970118635edec4c973f47df2363924d3a7/test/syscalls/linux/memfd.cc#L261-L280>
+            let old_size = self.inode.size();
+            let new_size = offset.checked_add(reader.remain()).unwrap_or(usize::MAX);
+            if new_size > old_size {
+                let eof_page = old_size.align_down(PAGE_SIZE);
+                if offset >= eof_page {
+                    return_errno_with_message!(Errno::EPERM, "the file is sealed against growing");
+                } else {
+                    reader.limit(eof_page - offset);
+                }
             }
         }
 
@@ -162,10 +177,11 @@ impl Inode for MemfdInode {
 
     fn resize(&self, new_size: usize) -> Result<()> {
         let seals = self.seals.lock();
-        if seals.contains(FileSeals::F_SEAL_SHRINK) && new_size < self.inode.size() {
+        let old_size = self.inode.size();
+        if seals.contains(FileSeals::F_SEAL_SHRINK) && new_size < old_size {
             return_errno_with_message!(Errno::EPERM, "the file is sealed against shrinking");
         }
-        if seals.contains(FileSeals::F_SEAL_GROW) && new_size > self.inode.size() {
+        if seals.contains(FileSeals::F_SEAL_GROW) && new_size > old_size {
             return_errno_with_message!(Errno::EPERM, "the file is sealed against growing");
         }
 
