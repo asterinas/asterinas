@@ -4,7 +4,7 @@ use super::TidDirOps;
 use crate::{
     fs::{
         procfs::{ProcSymBuilder, SymOps},
-        utils::{mkmod, Inode},
+        utils::{mkmod, Inode, SymbolicLink},
     },
     prelude::*,
     process::Process,
@@ -27,7 +27,7 @@ impl ExeSymOps {
 }
 
 impl SymOps for ExeSymOps {
-    fn read_link(&self) -> Result<String> {
-        Ok(self.0.executable_path())
+    fn read_link(&self) -> Result<SymbolicLink> {
+        Ok(SymbolicLink::Plain(self.0.executable_path()))
     }
 }

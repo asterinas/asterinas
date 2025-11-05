@@ -9,7 +9,11 @@ use super::{
     path::Path,
     utils::{InodeType, PATH_MAX, SYMLINKS_MAX},
 };
-use crate::{fs::path::MountNamespace, prelude::*, process::posix_thread::AsThreadLocal};
+use crate::{
+    fs::{path::MountNamespace, utils::SymbolicLink},
+    prelude::*,
+    process::posix_thread::AsThreadLocal,
+};
 
 /// The file descriptor of the current working directory.
 pub const AT_FDCWD: FileDesc = -100;
@@ -192,7 +196,7 @@ impl FsResolver {
             // Iterate next path
             let next_is_tail = path_remain.is_empty();
             let next_path = match current_path.lookup(next_name) {
-                Ok(current_dir) => current_dir,
+                Ok(child) => child,
                 Err(e) => {
                     if next_is_tail && e.error() == Errno::ENOENT {
                         return Ok(LookupResult::AtParent(LookupParentResult::new(
@@ -211,29 +215,54 @@ impl FsResolver {
                 if follows >= SYMLINKS_MAX {
                     return_errno_with_message!(Errno::ELOOP, "there are too many symlinks");
                 }
-                let link_path_remain = {
-                    let mut tmp_link_path = next_path.inode().read_link()?;
-                    if tmp_link_path.is_empty() {
-                        return_errno_with_message!(Errno::ENOENT, "the symlink path is empty");
-                    }
-                    if !path_remain.is_empty() {
-                        tmp_link_path += "/";
-                        tmp_link_path += path_remain;
-                    } else if target_is_dir {
-                        tmp_link_path += "/";
-                    }
-                    tmp_link_path
-                };
+                let read_link_res = next_path.inode().read_link()?;
+                match read_link_res {
+                    SymbolicLink::Plain(mut tmp_link_path) => {
+                        let link_path_remain = {
+                            if tmp_link_path.is_empty() {
+                                return_errno_with_message!(
+                                    Errno::ENOENT,
+                                    "the symlink path is empty"
+                                );
+                            }
+                            if !next_is_tail {
+                                tmp_link_path += "/";
+                                tmp_link_path += path_remain;
+                            } else if target_is_dir {
+                                tmp_link_path += "/";
+                            }
+                            tmp_link_path
+                        };
 
-                // Change the path and relative path according to symlink
-                if link_path_remain.starts_with('/') {
-                    current_path = self.root.clone();
+                        // Change the path and relative path according to symlink
+                        if link_path_remain.starts_with('/') {
+                            current_path = self.root.clone();
+                        }
+                        let link_path = link_path_opt.get_or_insert_with(|| String::new());
+                        link_path.clear();
+                        link_path.push_str(link_path_remain.trim_start_matches('/'));
+                        relative_path = link_path;
+                        follows += 1;
+                    }
+                    SymbolicLink::Path(path) => {
+                        current_path = path;
+                        relative_path = path_remain;
+                        follows += 1;
+                    }
+                    SymbolicLink::Inode(inode) => {
+                        debug_assert!(
+                            inode.type_() != InodeType::Dir && inode.type_() != InodeType::SymLink
+                        );
+                        if !next_is_tail {
+                            return_errno_with_message!(
+                                Errno::ENOTDIR,
+                                "the inode is not a directory"
+                            );
+                        }
+                        // FIXME: return Ok(LookupResult::Resolved(PathOrInode::Inode(inode)));
+                        return Ok(LookupResult::Resolved(current_path));
+                    }
                 }
-                let link_path = link_path_opt.get_or_insert_with(|| String::new());
-                link_path.clear();
-                link_path.push_str(link_path_remain.trim_start_matches('/'));
-                relative_path = link_path;
-                follows += 1;
             } else {
                 // If path ends with `/`, the inode must be a directory
                 if target_is_dir && next_type != InodeType::Dir {

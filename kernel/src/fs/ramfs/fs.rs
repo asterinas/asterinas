@@ -26,8 +26,8 @@ use crate::{
         utils::{
             mkmod, AccessMode, CStr256, CachePage, DirentVisitor, Extension, FallocMode,
             FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd, Metadata, MknodType,
-            PageCache, PageCacheBackend, Permission, StatusFlags, SuperBlock, XattrName,
-            XattrNamespace, XattrSetFlags,
+            PageCache, PageCacheBackend, Permission, StatusFlags, SuperBlock, SymbolicLink,
+            XattrName, XattrNamespace, XattrSetFlags,
         },
     },
     prelude::*,
@@ -1104,13 +1104,13 @@ impl Inode for RamInode {
         Ok(())
     }
 
-    fn read_link(&self) -> Result<String> {
+    fn read_link(&self) -> Result<SymbolicLink> {
         if self.typ != InodeType::SymLink {
             return_errno_with_message!(Errno::EINVAL, "self is not symlink");
         }
 
         let link = self.inner.as_symlink().unwrap().lock();
-        Ok(link.clone())
+        Ok(SymbolicLink::Plain(link.clone()))
     }
 
     fn write_link(&self, target: &str) -> Result<()> {

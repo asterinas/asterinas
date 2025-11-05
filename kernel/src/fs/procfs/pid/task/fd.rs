@@ -9,7 +9,7 @@ use crate::{
         file_table::FileDesc,
         inode_handle::InodeHandle,
         procfs::{template::ProcSym, DirOps, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps},
-        utils::{chmod, mkmod, AccessMode, DirEntryVecExt, Inode},
+        utils::{chmod, mkmod, AccessMode, DirEntryVecExt, Inode, SymbolicLink},
     },
     prelude::*,
     process::posix_thread::AsPosixThread,
@@ -175,7 +175,7 @@ impl FileSymOps {
 }
 
 impl SymOps for FileSymOps {
-    fn read_link(&self) -> Result<String> {
+    fn read_link(&self) -> Result<SymbolicLink> {
         let thread = self.tid_dir_ops.thread();
         let posix_thread = thread.as_posix_thread().unwrap();
 
@@ -188,13 +188,12 @@ impl SymOps for FileSymOps {
             .get_file(self.file_desc)
             .map_err(|_| Error::with_message(Errno::ENOENT, "the file does not exist"))?;
 
-        let path_name = if let Some(inode_handle) = file.downcast_ref::<InodeHandle>() {
-            inode_handle.path().abs_path()
+        let res = if let Some(inode_handle) = file.downcast_ref::<InodeHandle>() {
+            SymbolicLink::Path(inode_handle.path().clone())
         } else {
-            // TODO: Get the real path of other `FileLike` objects.
-            String::from("/dev/tty")
+            SymbolicLink::Inode(file.inode().clone())
         };
 
-        Ok(path_name)
+        Ok(res)
     }
 }
