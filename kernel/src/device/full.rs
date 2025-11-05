@@ -7,7 +7,7 @@ use crate::{
     fs::{
         device::{Device, DeviceType},
         inode_handle::FileIo,
-        utils::StatusFlags,
+        utils::{InodeIo, StatusFlags},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -37,14 +37,34 @@ impl Pollable for Full {
     }
 }
 
-impl FileIo for Full {
-    fn read(&self, writer: &mut VmWriter, _status_flags: StatusFlags) -> Result<usize> {
+impl InodeIo for Full {
+    fn read_at(
+        &self,
+        _offset: usize,
+        writer: &mut VmWriter,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
         let len = writer.avail();
         writer.fill_zeros(len)?;
         Ok(len)
     }
 
-    fn write(&self, _reader: &mut VmReader, _status_flags: StatusFlags) -> Result<usize> {
+    fn write_at(
+        &self,
+        _offset: usize,
+        _reader: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
         return_errno_with_message!(Errno::ENOSPC, "no space left on /dev/full")
+    }
+}
+
+impl FileIo for Full {
+    fn check_seekable(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn is_offset_aware(&self) -> bool {
+        false
     }
 }

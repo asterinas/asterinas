@@ -4,6 +4,7 @@ use core::time::Duration;
 
 use spin::Once;
 
+use super::utils::{InodeIo, StatusFlags};
 use crate::{
     fs::{
         registry::{FsProperties, FsType},
@@ -210,6 +211,32 @@ impl PseudoInode {
     }
 }
 
+impl InodeIo for PseudoInode {
+    fn read_at(
+        &self,
+        _offset: usize,
+        _writer: &mut VmWriter,
+        _status: StatusFlags,
+    ) -> Result<usize> {
+        return_errno_with_message!(
+            Errno::ESPIPE,
+            "pseudo inodes cannot be read at a specific offset"
+        );
+    }
+
+    fn write_at(
+        &self,
+        _offset: usize,
+        _reader: &mut VmReader,
+        _status: StatusFlags,
+    ) -> Result<usize> {
+        return_errno_with_message!(
+            Errno::ESPIPE,
+            "pseudo inodes cannot be written at a specific offset"
+        );
+    }
+}
+
 impl Inode for PseudoInode {
     fn size(&self) -> usize {
         self.metadata.lock().size
@@ -286,34 +313,6 @@ impl Inode for PseudoInode {
 
     fn set_ctime(&self, time: Duration) {
         self.metadata.lock().ctime = time;
-    }
-
-    fn read_at(&self, _offset: usize, _writer: &mut VmWriter) -> Result<usize> {
-        return_errno_with_message!(
-            Errno::ESPIPE,
-            "pseudo inodes cannot be read at a specific offset"
-        );
-    }
-
-    fn read_direct_at(&self, _offset: usize, _writer: &mut VmWriter) -> Result<usize> {
-        return_errno_with_message!(
-            Errno::ESPIPE,
-            "pseudo inodes cannot be read at a specific offset"
-        );
-    }
-
-    fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
-        return_errno_with_message!(
-            Errno::ESPIPE,
-            "pseudo inodes cannot be written at a specific offset"
-        );
-    }
-
-    fn write_direct_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
-        return_errno_with_message!(
-            Errno::ESPIPE,
-            "pseudo inodes cannot be written at a specific offset"
-        );
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {

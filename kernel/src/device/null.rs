@@ -7,7 +7,7 @@ use crate::{
     fs::{
         device::{Device, DeviceType},
         inode_handle::FileIo,
-        utils::StatusFlags,
+        utils::{InodeIo, StatusFlags},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -37,14 +37,34 @@ impl Pollable for Null {
     }
 }
 
-impl FileIo for Null {
-    fn read(&self, _writer: &mut VmWriter, _status_flags: StatusFlags) -> Result<usize> {
+impl InodeIo for Null {
+    fn read_at(
+        &self,
+        _offset: usize,
+        _writer: &mut VmWriter,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
         Ok(0)
     }
 
-    fn write(&self, reader: &mut VmReader, _status_flags: StatusFlags) -> Result<usize> {
+    fn write_at(
+        &self,
+        _offset: usize,
+        reader: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
         let len = reader.remain();
         reader.skip(len);
         Ok(len)
+    }
+}
+
+impl FileIo for Null {
+    fn check_seekable(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn is_offset_aware(&self) -> bool {
+        false
     }
 }

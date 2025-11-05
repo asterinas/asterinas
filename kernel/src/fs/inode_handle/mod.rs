@@ -8,6 +8,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 pub use dyn_cap::InodeHandle;
 
+use super::utils::InodeIo;
 use crate::{
     events::IoEvents,
     fs::{
@@ -34,71 +35,91 @@ struct HandleInner {
 
 impl HandleInner {
     pub(self) fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        if let Some(ref file_io) = self.file_io {
-            return file_io.read(writer, self.status_flags());
-        }
+        let (inode_io, is_offset_aware) = self.inode_io_and_is_offset_aware();
+        let status_flags = self.status_flags();
 
-        if !self.path.inode().is_seekable() {
-            return self.read_at(0, writer);
+        if !is_offset_aware {
+            return inode_io.read_at(0, writer, status_flags);
         }
 
         let mut offset = self.offset.lock();
 
-        let len = self.read_at(*offset, writer)?;
-
+        let len = inode_io.read_at(*offset, writer, status_flags)?;
         *offset += len;
+
         Ok(len)
     }
 
     pub(self) fn write(&self, reader: &mut VmReader) -> Result<usize> {
-        if let Some(ref file_io) = self.file_io {
-            return file_io.write(reader, self.status_flags());
-        }
+        let (inode_io, is_offset_aware) = self.inode_io_and_is_offset_aware();
+        let status_flags = self.status_flags();
 
-        if !self.path.inode().is_seekable() {
-            return self.write_at(0, reader);
+        if !is_offset_aware {
+            return inode_io.write_at(0, reader, status_flags);
         }
 
         let mut offset = self.offset.lock();
 
-        if self.status_flags().contains(StatusFlags::O_APPEND) {
+        // FIXME: How can we deal with the `O_APPEND` flag if `file_io` is set?
+        if status_flags.contains(StatusFlags::O_APPEND) && self.file_io.is_none() {
+            // FIXME: `O_APPEND` should ensure that new content is appended even if another process
+            // is writing to the file concurrently.
             *offset = self.path.size();
         }
 
-        let len = self.write_at(*offset, reader)?;
-
+        let len = inode_io.write_at(*offset, reader, status_flags)?;
         *offset += len;
+
         Ok(len)
     }
 
-    pub(self) fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        if let Some(ref _file_io) = self.file_io {
-            todo!("support read_at for FileIo");
+    fn inode_io_and_is_offset_aware(&self) -> (&dyn InodeIo, bool) {
+        if let Some(ref file_io) = self.file_io {
+            let is_offset_aware = file_io.is_offset_aware();
+            return (file_io.as_ref(), is_offset_aware);
         }
 
-        if self.status_flags().contains(StatusFlags::O_DIRECT) {
-            self.path.inode().read_direct_at(offset, writer)
-        } else {
-            self.path.inode().read_at(offset, writer)
-        }
+        let inode = self.path.inode();
+        let is_offset_aware = inode.type_().is_seekable();
+        (inode.as_ref(), is_offset_aware)
+    }
+
+    pub(self) fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let inode_io = self.inode_io_and_check_seekable()?;
+        let status_flags = self.status_flags();
+
+        inode_io.read_at(offset, writer, status_flags)
     }
 
     pub(self) fn write_at(&self, mut offset: usize, reader: &mut VmReader) -> Result<usize> {
-        if let Some(ref _file_io) = self.file_io {
-            todo!("support write_at for FileIo");
-        }
-
+        let inode_io = self.inode_io_and_check_seekable()?;
         let status_flags = self.status_flags();
-        if status_flags.contains(StatusFlags::O_APPEND) {
-            // If the file has the O_APPEND flag, the offset is ignored
+
+        // FIXME: How can we deal with the `O_APPEND` flag if `file_io` is set?
+        if status_flags.contains(StatusFlags::O_APPEND) && self.file_io.is_none() {
+            // If the file has the `O_APPEND` flag, the offset is ignored.
+            // FIXME: `O_APPEND` should ensure that new content is appended even if another process
+            // is writing to the file concurrently.
             offset = self.path.size();
         }
 
-        if status_flags.contains(StatusFlags::O_DIRECT) {
-            self.path.inode().write_direct_at(offset, reader)
-        } else {
-            self.path.inode().write_at(offset, reader)
+        inode_io.write_at(offset, reader, status_flags)
+    }
+
+    fn inode_io_and_check_seekable(&self) -> Result<&dyn InodeIo> {
+        if let Some(ref file_io) = self.file_io {
+            file_io.check_seekable()?;
+            return Ok(file_io.as_ref());
         }
+
+        let inode = self.path.inode();
+        if !inode.type_().is_seekable() {
+            return_errno_with_message!(
+                Errno::ESPIPE,
+                "the inode cannot be read or written at a specific offset"
+            );
+        }
+        Ok(inode.as_ref())
     }
 
     pub(self) fn seek(&self, pos: SeekFrom) -> Result<usize> {
@@ -136,7 +157,8 @@ impl HandleInner {
             return file_io.poll(mask, poller);
         }
 
-        self.path.inode().poll(mask, poller)
+        let events = IoEvents::IN | IoEvents::OUT;
+        events & mask
     }
 
     pub(self) fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
@@ -154,7 +176,7 @@ impl HandleInner {
             return file_io.ioctl(cmd, arg);
         }
 
-        self.path.inode().ioctl(cmd, arg)
+        return_errno_with_message!(Errno::ENOTTY, "ioctl is not supported");
     }
 
     pub(self) fn mappable(&self) -> Result<Mappable> {
@@ -265,16 +287,12 @@ impl Debug for HandleInner {
 ///
 /// This trait is typically implemented for special files like devices or
 /// named pipes (FIFOs), which have behaviors different from regular on-disk files.
-//
-// TODO: The `status_flags` parameter in `read` and `write` may need to be stored directly
-// in the `FileIo`. We need further refactoring to find an appropriate way to enable `FileIo`
-// to utilize the information in the `HandleInner`.
-pub trait FileIo: Pollable + Send + Sync + 'static {
-    /// Reads data from the file into the given `VmWriter`.
-    fn read(&self, writer: &mut VmWriter, status_flags: StatusFlags) -> Result<usize>;
+pub trait FileIo: Pollable + InodeIo + Send + Sync + 'static {
+    /// Checks whether the `seek()` operation should fail.
+    fn check_seekable(&self) -> Result<()>;
 
-    /// Writes data from the given `VmReader` into the file.
-    fn write(&self, reader: &mut VmReader, status_flags: StatusFlags) -> Result<usize>;
+    /// Returns whether the `read()`/`write()` operation should use and advance the offset.
+    fn is_offset_aware(&self) -> bool;
 
     // See `FileLike::mappable`.
     fn mappable(&self) -> Result<Mappable> {

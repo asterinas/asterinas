@@ -8,11 +8,10 @@ use core2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, 
 use ostd::task::Task;
 
 use super::{
-    AccessMode, DirentVisitor, FallocMode, FileSystem, InodeMode, IoctlCmd, XattrName,
-    XattrNamespace, XattrSetFlags,
+    AccessMode, DirentVisitor, FallocMode, FileSystem, InodeMode, XattrName, XattrNamespace,
+    XattrSetFlags,
 };
 use crate::{
-    events::IoEvents,
     fs::{
         device::{Device, DeviceType},
         inode_handle::FileIo,
@@ -21,10 +20,7 @@ use crate::{
         utils::StatusFlags,
     },
     prelude::*,
-    process::{
-        credentials::capabilities::CapSet, posix_thread::AsPosixThread, signal::PollHandle, Gid,
-        Uid,
-    },
+    process::{credentials::capabilities::CapSet, posix_thread::AsPosixThread, Gid, Uid},
     time::clocks::RealTimeCoarseClock,
     vm::vmo::Vmo,
 };
@@ -54,6 +50,10 @@ impl InodeType {
     #[expect(dead_code)]
     pub fn is_device(&self) -> bool {
         *self == InodeType::BlockDevice || *self == InodeType::CharDevice
+    }
+
+    pub fn is_seekable(&self) -> bool {
+        *self != InodeType::NamedPipe && *self != Self::Socket
     }
 
     /// Parse the inode type in the `mode` from syscall, and convert it into `InodeType`.
@@ -243,7 +243,29 @@ impl From<Arc<dyn Device>> for MknodType {
     }
 }
 
-pub trait Inode: Any + Sync + Send {
+/// I/O operations in an [`Inode`].
+///
+/// This abstracts the common I/O operations used by both [`Inode`] (for regular files) and
+/// [`FileIo`] (for special files).
+pub trait InodeIo {
+    /// Reads data from the file into the given `VmWriter`.
+    fn read_at(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        status_flags: StatusFlags,
+    ) -> Result<usize>;
+
+    /// Writes data from the given `VmReader` into the file.
+    fn write_at(
+        &self,
+        offset: usize,
+        reader: &mut VmReader,
+        status_flags: StatusFlags,
+    ) -> Result<usize>;
+}
+
+pub trait Inode: Any + InodeIo + Send + Sync {
     fn size(&self) -> usize;
 
     fn resize(&self, new_size: usize) -> Result<()>;
@@ -280,22 +302,6 @@ pub trait Inode: Any + Sync + Send {
 
     fn page_cache(&self) -> Option<Arc<Vmo>> {
         None
-    }
-
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        Err(Error::new(Errno::EISDIR))
-    }
-
-    fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        Err(Error::new(Errno::EISDIR))
-    }
-
-    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        Err(Error::new(Errno::EISDIR))
-    }
-
-    fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        Err(Error::new(Errno::EISDIR))
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
@@ -346,10 +352,6 @@ pub trait Inode: Any + Sync + Send {
         Err(Error::new(Errno::EISDIR))
     }
 
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        Err(Error::new(Errno::EISDIR))
-    }
-
     fn sync_all(&self) -> Result<()> {
         Ok(())
     }
@@ -362,11 +364,6 @@ pub trait Inode: Any + Sync + Send {
     /// the manipulated range starts at `offset` and continues for `len` bytes.
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
         return_errno!(Errno::EOPNOTSUPP);
-    }
-
-    fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
-        let events = IoEvents::IN | IoEvents::OUT;
-        events & mask
     }
 
     fn fs(&self) -> Arc<dyn FileSystem>;
@@ -389,10 +386,6 @@ pub trait Inode: Any + Sync + Send {
     /// this inode would not be cached by the dentry cache, even when the method of this
     /// inode returns `true`.
     fn is_dentry_cacheable(&self) -> bool {
-        true
-    }
-
-    fn is_seekable(&self) -> bool {
         true
     }
 
@@ -503,22 +496,22 @@ impl dyn Inode {
 
     pub fn read_bytes_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         let mut writer = VmWriter::from(buf).to_fallible();
-        self.read_at(offset, &mut writer)
+        self.read_at(offset, &mut writer, StatusFlags::empty())
     }
 
     pub fn write_bytes_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         let mut reader = VmReader::from(buf).to_fallible();
-        self.write_at(offset, &mut reader)
+        self.write_at(offset, &mut reader, StatusFlags::empty())
     }
 
     pub fn read_bytes_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         let mut writer = VmWriter::from(buf).to_fallible();
-        self.read_direct_at(offset, &mut writer)
+        self.read_at(offset, &mut writer, StatusFlags::O_DIRECT)
     }
 
     pub fn write_bytes_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         let mut reader = VmReader::from(buf).to_fallible();
-        self.write_direct_at(offset, &mut reader)
+        self.write_at(offset, &mut reader, StatusFlags::O_DIRECT)
     }
 }
 
@@ -533,7 +526,7 @@ impl Write for InodeWriter<'_> {
         let mut reader = VmReader::from(buf).to_fallible();
         let write_len = self
             .inner
-            .write_at(self.offset, &mut reader)
+            .write_at(self.offset, &mut reader, StatusFlags::empty())
             .map_err(|_| IoError::new(IoErrorKind::WriteZero, "failed to write buffer"))?;
         self.offset += write_len;
         Ok(write_len)

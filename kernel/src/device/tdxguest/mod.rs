@@ -26,7 +26,7 @@ use crate::{
     fs::{
         device::{Device, DeviceType},
         inode_handle::FileIo,
-        utils::{IoctlCmd, StatusFlags},
+        utils::{InodeIo, IoctlCmd, StatusFlags},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -99,19 +99,39 @@ impl Pollable for TdxGuest {
     }
 }
 
-impl FileIo for TdxGuest {
-    fn read(&self, _writer: &mut VmWriter, _status_flags: StatusFlags) -> Result<usize> {
-        return_errno_with_message!(Errno::EPERM, "Read operation not supported")
+impl InodeIo for TdxGuest {
+    fn read_at(
+        &self,
+        _offset: usize,
+        _writer: &mut VmWriter,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        return_errno_with_message!(Errno::EINVAL, "the file is not valid for reading")
     }
 
-    fn write(&self, _reader: &mut VmReader, _status_flags: StatusFlags) -> Result<usize> {
-        return_errno_with_message!(Errno::EPERM, "Write operation not supported")
+    fn write_at(
+        &self,
+        _offset: usize,
+        _reader: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        return_errno_with_message!(Errno::EINVAL, "the file not valid for writing")
+    }
+}
+
+impl FileIo for TdxGuest {
+    fn check_seekable(&self) -> Result<()> {
+        return_errno_with_message!(Errno::ESPIPE, "seek is not supported")
+    }
+
+    fn is_offset_aware(&self) -> bool {
+        false
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         match cmd {
             IoctlCmd::TDXGETREPORT => handle_get_report(arg),
-            _ => return_errno_with_message!(Errno::EPERM, "Unsupported ioctl"),
+            _ => return_errno_with_message!(Errno::ENOTTY, "ioctl is not supported"),
         }
     }
 }

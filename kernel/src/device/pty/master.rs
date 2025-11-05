@@ -14,7 +14,7 @@ use crate::{
         file_table::FdFlags,
         fs_resolver::FsPath,
         inode_handle::FileIo,
-        utils::{mkmod, AccessMode, IoctlCmd, OpenArgs, StatusFlags},
+        utils::{mkmod, AccessMode, InodeIo, IoctlCmd, OpenArgs, StatusFlags},
     },
     prelude::*,
     process::{
@@ -87,8 +87,13 @@ impl Pollable for PtyMaster {
     }
 }
 
-impl FileIo for PtyMaster {
-    fn read(&self, writer: &mut VmWriter, status_flags: StatusFlags) -> Result<usize> {
+impl InodeIo for PtyMaster {
+    fn read_at(
+        &self,
+        _offset: usize,
+        writer: &mut VmWriter,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
         // TODO: Add support for timeout.
         let mut buf = vec![0u8; writer.avail().min(IO_CAPACITY)];
         let is_nonblocking = status_flags.contains(StatusFlags::O_NONBLOCK);
@@ -107,7 +112,12 @@ impl FileIo for PtyMaster {
         Ok(read_len)
     }
 
-    fn write(&self, reader: &mut VmReader, status_flags: StatusFlags) -> Result<usize> {
+    fn write_at(
+        &self,
+        _offset: usize,
+        reader: &mut VmReader,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
         let mut buf = vec![0u8; reader.remain().min(IO_CAPACITY)];
         let write_len = reader.read_fallible(&mut buf.as_mut_slice().into())?;
 
@@ -122,6 +132,16 @@ impl FileIo for PtyMaster {
         };
         self.slave.driver().pollee().invalidate();
         Ok(len)
+    }
+}
+
+impl FileIo for PtyMaster {
+    fn check_seekable(&self) -> Result<()> {
+        return_errno_with_message!(Errno::ESPIPE, "the inode is a pty");
+    }
+
+    fn is_offset_aware(&self) -> bool {
+        false
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {

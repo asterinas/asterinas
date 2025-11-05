@@ -25,17 +25,16 @@ use super::{
     utils::{make_hash_index, DosTimestamp},
 };
 use crate::{
-    events::IoEvents,
     fs::{
         exfat::{dentry::ExfatDentryIterator, fat::ExfatChain, fs::ExfatFs},
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
         utils::{
-            mkmod, CachePage, DirentVisitor, Extension, Inode, InodeMode, InodeType, IoctlCmd,
-            Metadata, MknodType, PageCache, PageCacheBackend, SymbolicLink,
+            mkmod, CachePage, DirentVisitor, Extension, Inode, InodeIo, InodeMode, InodeType,
+            Metadata, MknodType, PageCache, PageCacheBackend, StatusFlags, SymbolicLink,
         },
     },
     prelude::*,
-    process::{signal::PollHandle, Gid, Uid},
+    process::{Gid, Uid},
     vm::vmo::Vmo,
 };
 
@@ -615,6 +614,193 @@ impl ExfatInodeInner {
 }
 
 impl ExfatInode {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let inner = self.inner.upread();
+        if inner.inode_type.is_directory() {
+            return_errno!(Errno::EISDIR)
+        }
+        let (read_off, read_len) = {
+            let file_size = inner.size;
+            let start = file_size.min(offset);
+            let end = file_size.min(offset + writer.avail());
+            (start, end - start)
+        };
+        inner.page_cache.pages().read(read_off, writer)?;
+
+        inner.upgrade().update_atime()?;
+        Ok(read_len)
+    }
+
+    // The offset and the length of buffer must be multiples of the block size.
+    fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let inner = self.inner.upread();
+        if inner.inode_type.is_directory() {
+            return_errno!(Errno::EISDIR)
+        }
+        if !is_block_aligned(offset) || !is_block_aligned(writer.avail()) {
+            return_errno_with_message!(Errno::EINVAL, "not block-aligned");
+        }
+
+        let sector_size = inner.fs().sector_size();
+
+        let (read_off, read_len) = {
+            let file_size = inner.size;
+            let start = file_size.min(offset).align_down(sector_size);
+            let end = file_size
+                .min(offset + writer.avail())
+                .align_down(sector_size);
+            (start, end - start)
+        };
+
+        inner
+            .page_cache
+            .discard_range(read_off..read_off + read_len);
+
+        let mut buf_offset = 0;
+        let bio_segment = BioSegment::alloc(1, BioDirection::FromDevice);
+
+        let start_pos = inner.start_chain.walk_to_cluster_at_offset(read_off)?;
+        let cluster_size = inner.fs().cluster_size();
+        let mut cur_cluster = start_pos.0.clone();
+        let mut cur_offset = start_pos.1;
+        for _ in Bid::from_offset(read_off)..Bid::from_offset(read_off + read_len) {
+            let physical_bid =
+                Bid::from_offset(cur_cluster.cluster_id() as usize * cluster_size + cur_offset);
+            inner
+                .fs()
+                .block_device()
+                .read_blocks(physical_bid, bio_segment.clone())?;
+            bio_segment.reader().unwrap().read_fallible(writer)?;
+            buf_offset += BLOCK_SIZE;
+
+            cur_offset += BLOCK_SIZE;
+            if cur_offset >= cluster_size {
+                cur_cluster = cur_cluster.walk(1)?;
+                cur_offset %= BLOCK_SIZE;
+            }
+        }
+
+        inner.upgrade().update_atime()?;
+        Ok(read_len)
+    }
+
+    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+        let write_len = reader.remain();
+        // We need to obtain the fs lock to resize the file.
+        let new_size = {
+            let mut inner = self.inner.write();
+            if inner.inode_type.is_directory() {
+                return_errno!(Errno::EISDIR)
+            }
+
+            let file_size = inner.size;
+            let file_allocated_size = inner.size_allocated;
+            let new_size = offset + write_len;
+            let fs = inner.fs();
+            let fs_guard = fs.lock();
+            if new_size > file_size {
+                if new_size > file_allocated_size {
+                    inner.resize(new_size, &fs_guard)?;
+                }
+                inner.page_cache.resize(new_size)?;
+            }
+            new_size.max(file_size)
+        };
+
+        // Locks released here, so that file write can be parallelized.
+        let inner = self.inner.upread();
+        inner.page_cache.pages().write(offset, reader)?;
+
+        // Update timestamps and size.
+        {
+            let mut inner = inner.upgrade();
+
+            inner.update_atime_and_mtime()?;
+            inner.size = new_size;
+        }
+
+        let inner = self.inner.read();
+
+        // Write data back.
+        if inner.is_sync() {
+            let fs = inner.fs();
+            let fs_guard = fs.lock();
+            inner.sync_all(&fs_guard)?;
+        }
+
+        Ok(write_len)
+    }
+
+    fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+        let write_len = reader.remain();
+        let inner = self.inner.upread();
+        if inner.inode_type.is_directory() {
+            return_errno!(Errno::EISDIR)
+        }
+        if !is_block_aligned(offset) || !is_block_aligned(write_len) {
+            return_errno_with_message!(Errno::EINVAL, "not block-aligned");
+        }
+
+        let file_size = inner.size;
+        let file_allocated_size = inner.size_allocated;
+        let end_offset = offset + write_len;
+
+        let start = offset.min(file_size);
+        let end = end_offset.min(file_size);
+        inner.page_cache.discard_range(start..end);
+
+        let new_size = {
+            let mut inner = inner.upgrade();
+            if end_offset > file_size {
+                let fs = inner.fs();
+                let fs_guard = fs.lock();
+                if end_offset > file_allocated_size {
+                    inner.resize(end_offset, &fs_guard)?;
+                }
+                inner.page_cache.resize(end_offset)?;
+            }
+            file_size.max(end_offset)
+        };
+
+        let inner = self.inner.upread();
+
+        let bio_segment = BioSegment::alloc(1, BioDirection::ToDevice);
+        let start_pos = inner.start_chain.walk_to_cluster_at_offset(offset)?;
+        let cluster_size = inner.fs().cluster_size();
+        let mut cur_cluster = start_pos.0.clone();
+        let mut cur_offset = start_pos.1;
+        for _ in Bid::from_offset(offset)..Bid::from_offset(end_offset) {
+            bio_segment.writer().unwrap().write_fallible(reader)?;
+            let physical_bid =
+                Bid::from_offset(cur_cluster.cluster_id() as usize * cluster_size + cur_offset);
+            let fs = inner.fs();
+            fs.block_device()
+                .write_blocks(physical_bid, bio_segment.clone())?;
+
+            cur_offset += BLOCK_SIZE;
+            if cur_offset >= cluster_size {
+                cur_cluster = cur_cluster.walk(1)?;
+                cur_offset %= BLOCK_SIZE;
+            }
+        }
+
+        {
+            let mut inner = inner.upgrade();
+            inner.update_atime_and_mtime()?;
+            inner.size = new_size;
+        }
+
+        let inner = self.inner.read();
+        // Sync this inode since size has changed.
+        if inner.is_sync() {
+            let fs = inner.fs();
+            let fs_guard = fs.lock();
+            inner.sync_metadata(&fs_guard)?;
+        }
+
+        Ok(write_len)
+    }
+
     // TODO: Should be called when inode is evicted from fs.
     pub(super) fn reclaim_space(&self) -> Result<()> {
         let inner = self.inner.write();
@@ -1093,6 +1279,34 @@ fn check_corner_cases_for_rename(
     Ok(())
 }
 
+impl InodeIo for ExfatInode {
+    fn read_at(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
+        if status_flags.contains(StatusFlags::O_DIRECT) {
+            self.read_direct_at(offset, writer)
+        } else {
+            self.read_at(offset, writer)
+        }
+    }
+
+    fn write_at(
+        &self,
+        offset: usize,
+        reader: &mut VmReader,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
+        if status_flags.contains(StatusFlags::O_DIRECT) {
+            self.write_direct_at(offset, reader)
+        } else {
+            self.write_at(offset, reader)
+        }
+    }
+}
+
 impl Inode for ExfatInode {
     fn ino(&self) -> u64 {
         self.inner.read().ino
@@ -1229,193 +1443,6 @@ impl Inode for ExfatInode {
 
     fn page_cache(&self) -> Option<Arc<Vmo>> {
         Some(self.inner.read().page_cache.pages().clone())
-    }
-
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let inner = self.inner.upread();
-        if inner.inode_type.is_directory() {
-            return_errno!(Errno::EISDIR)
-        }
-        let (read_off, read_len) = {
-            let file_size = inner.size;
-            let start = file_size.min(offset);
-            let end = file_size.min(offset + writer.avail());
-            (start, end - start)
-        };
-        inner.page_cache.pages().read(read_off, writer)?;
-
-        inner.upgrade().update_atime()?;
-        Ok(read_len)
-    }
-
-    // The offset and the length of buffer must be multiples of the block size.
-    fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let inner = self.inner.upread();
-        if inner.inode_type.is_directory() {
-            return_errno!(Errno::EISDIR)
-        }
-        if !is_block_aligned(offset) || !is_block_aligned(writer.avail()) {
-            return_errno_with_message!(Errno::EINVAL, "not block-aligned");
-        }
-
-        let sector_size = inner.fs().sector_size();
-
-        let (read_off, read_len) = {
-            let file_size = inner.size;
-            let start = file_size.min(offset).align_down(sector_size);
-            let end = file_size
-                .min(offset + writer.avail())
-                .align_down(sector_size);
-            (start, end - start)
-        };
-
-        inner
-            .page_cache
-            .discard_range(read_off..read_off + read_len);
-
-        let mut buf_offset = 0;
-        let bio_segment = BioSegment::alloc(1, BioDirection::FromDevice);
-
-        let start_pos = inner.start_chain.walk_to_cluster_at_offset(read_off)?;
-        let cluster_size = inner.fs().cluster_size();
-        let mut cur_cluster = start_pos.0.clone();
-        let mut cur_offset = start_pos.1;
-        for _ in Bid::from_offset(read_off)..Bid::from_offset(read_off + read_len) {
-            let physical_bid =
-                Bid::from_offset(cur_cluster.cluster_id() as usize * cluster_size + cur_offset);
-            inner
-                .fs()
-                .block_device()
-                .read_blocks(physical_bid, bio_segment.clone())?;
-            bio_segment.reader().unwrap().read_fallible(writer)?;
-            buf_offset += BLOCK_SIZE;
-
-            cur_offset += BLOCK_SIZE;
-            if cur_offset >= cluster_size {
-                cur_cluster = cur_cluster.walk(1)?;
-                cur_offset %= BLOCK_SIZE;
-            }
-        }
-
-        inner.upgrade().update_atime()?;
-        Ok(read_len)
-    }
-
-    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        let write_len = reader.remain();
-        // We need to obtain the fs lock to resize the file.
-        let new_size = {
-            let mut inner = self.inner.write();
-            if inner.inode_type.is_directory() {
-                return_errno!(Errno::EISDIR)
-            }
-
-            let file_size = inner.size;
-            let file_allocated_size = inner.size_allocated;
-            let new_size = offset + write_len;
-            let fs = inner.fs();
-            let fs_guard = fs.lock();
-            if new_size > file_size {
-                if new_size > file_allocated_size {
-                    inner.resize(new_size, &fs_guard)?;
-                }
-                inner.page_cache.resize(new_size)?;
-            }
-            new_size.max(file_size)
-        };
-
-        // Locks released here, so that file write can be parallelized.
-        let inner = self.inner.upread();
-        inner.page_cache.pages().write(offset, reader)?;
-
-        // Update timestamps and size.
-        {
-            let mut inner = inner.upgrade();
-
-            inner.update_atime_and_mtime()?;
-            inner.size = new_size;
-        }
-
-        let inner = self.inner.read();
-
-        // Write data back.
-        if inner.is_sync() {
-            let fs = inner.fs();
-            let fs_guard = fs.lock();
-            inner.sync_all(&fs_guard)?;
-        }
-
-        Ok(write_len)
-    }
-
-    fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        let write_len = reader.remain();
-        let inner = self.inner.upread();
-        if inner.inode_type.is_directory() {
-            return_errno!(Errno::EISDIR)
-        }
-        if !is_block_aligned(offset) || !is_block_aligned(write_len) {
-            return_errno_with_message!(Errno::EINVAL, "not block-aligned");
-        }
-
-        let file_size = inner.size;
-        let file_allocated_size = inner.size_allocated;
-        let end_offset = offset + write_len;
-
-        let start = offset.min(file_size);
-        let end = end_offset.min(file_size);
-        inner.page_cache.discard_range(start..end);
-
-        let new_size = {
-            let mut inner = inner.upgrade();
-            if end_offset > file_size {
-                let fs = inner.fs();
-                let fs_guard = fs.lock();
-                if end_offset > file_allocated_size {
-                    inner.resize(end_offset, &fs_guard)?;
-                }
-                inner.page_cache.resize(end_offset)?;
-            }
-            file_size.max(end_offset)
-        };
-
-        let inner = self.inner.upread();
-
-        let bio_segment = BioSegment::alloc(1, BioDirection::ToDevice);
-        let start_pos = inner.start_chain.walk_to_cluster_at_offset(offset)?;
-        let cluster_size = inner.fs().cluster_size();
-        let mut cur_cluster = start_pos.0.clone();
-        let mut cur_offset = start_pos.1;
-        for _ in Bid::from_offset(offset)..Bid::from_offset(end_offset) {
-            bio_segment.writer().unwrap().write_fallible(reader)?;
-            let physical_bid =
-                Bid::from_offset(cur_cluster.cluster_id() as usize * cluster_size + cur_offset);
-            let fs = inner.fs();
-            fs.block_device()
-                .write_blocks(physical_bid, bio_segment.clone())?;
-
-            cur_offset += BLOCK_SIZE;
-            if cur_offset >= cluster_size {
-                cur_cluster = cur_cluster.walk(1)?;
-                cur_offset %= BLOCK_SIZE;
-            }
-        }
-
-        {
-            let mut inner = inner.upgrade();
-            inner.update_atime_and_mtime()?;
-            inner.size = new_size;
-        }
-
-        let inner = self.inner.read();
-        // Sync this inode since size has changed.
-        if inner.is_sync() {
-            let fs = inner.fs();
-            let fs_guard = fs.lock();
-            inner.sync_metadata(&fs_guard)?;
-        }
-
-        Ok(write_len)
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
@@ -1679,10 +1706,6 @@ impl Inode for ExfatInode {
         return_errno_with_message!(Errno::EINVAL, "unsupported operation")
     }
 
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        return_errno_with_message!(Errno::EINVAL, "unsupported operation")
-    }
-
     fn sync_all(&self) -> Result<()> {
         let inner = self.inner.read();
         let fs = inner.fs();
@@ -1703,11 +1726,6 @@ impl Inode for ExfatInode {
         fs.block_device().sync()?;
 
         Ok(())
-    }
-
-    fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
-        let events = IoEvents::IN | IoEvents::OUT;
-        events & mask
     }
 
     fn is_dentry_cacheable(&self) -> bool {
