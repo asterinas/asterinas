@@ -6,12 +6,10 @@
 use super::*;
 use crate::{
     device::PtySlave,
-    events::IoEvents,
     fs::{
         inode_handle::FileIo,
         utils::{AccessMode, StatusFlags},
     },
-    process::signal::{PollHandle, Pollable},
 };
 
 /// Same major number with Linux, the minor number is the index of slave.
@@ -36,6 +34,26 @@ impl PtySlaveInode {
             device,
             fs,
         })
+    }
+}
+
+impl InodeIo for PtySlaveInode {
+    fn read_at(
+        &self,
+        _offset: usize,
+        writer: &mut VmWriter,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
+        self.device.read(writer, status_flags)
+    }
+
+    fn write_at(
+        &self,
+        _offset: usize,
+        reader: &mut VmReader,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
+        self.device.write(reader, status_flags)
     }
 }
 
@@ -117,30 +135,6 @@ impl Inode for PtySlaveInode {
 
     fn set_ctime(&self, time: Duration) {
         self.metadata.write().ctime = time;
-    }
-
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        self.device.read(writer, StatusFlags::empty())
-    }
-
-    fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        self.device.read(writer, StatusFlags::empty())
-    }
-
-    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        self.device.write(reader, StatusFlags::empty())
-    }
-
-    fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        self.device.write(reader, StatusFlags::empty())
-    }
-
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        self.device.ioctl(cmd, arg)
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        self.device.poll(mask, poller)
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {

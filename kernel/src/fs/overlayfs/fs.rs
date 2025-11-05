@@ -25,7 +25,7 @@ use crate::{
         registry::{FsProperties, FsType},
         utils::{
             mkmod, AccessMode, DirentCounter, DirentVisitor, FallocMode, FileSystem, FsFlags,
-            Inode, InodeMode, InodeType, IoctlCmd, Metadata, MknodType, StatusFlags, SuperBlock,
+            Inode, InodeIo, InodeMode, InodeType, Metadata, MknodType, StatusFlags, SuperBlock,
             SymbolicLink, XattrName, XattrNamespace, XattrSetFlags, NAME_MAX, XATTR_VALUE_MAX_LEN,
         },
     },
@@ -280,34 +280,30 @@ impl OverlayInode {
     /// Writes data to the target inode, if it resides in the lower layer,
     /// it will be copied up to the upper layer.
     /// The corresponding parent directories will be created also if they do not exist.
-    pub fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+    pub fn write_at(
+        &self,
+        offset: usize,
+        reader: &mut VmReader,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
         if self.type_ == InodeType::Dir {
             return_errno!(Errno::EISDIR);
         }
         let upper = self.build_upper_recursively_if_needed()?;
-        upper.write_at(offset, reader)
+        upper.write_at(offset, reader, status_flags)
     }
 
-    pub fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+    pub fn read_at(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
         if self.type_ == InodeType::Dir {
             return_errno!(Errno::EISDIR);
         }
-        let upper = self.build_upper_recursively_if_needed()?;
-        upper.write_direct_at(offset, reader)
-    }
-
-    pub fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        if self.type_ == InodeType::Dir {
-            return_errno!(Errno::EISDIR);
-        }
-        self.get_top_valid_inode().read_at(offset, writer)
-    }
-
-    pub fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        if self.type_ == InodeType::Dir {
-            return_errno!(Errno::EISDIR);
-        }
-        self.get_top_valid_inode().read_direct_at(offset, writer)
+        self.get_top_valid_inode()
+            .read_at(offset, writer, status_flags)
     }
 
     /// Returns the children objects in a unified view.
@@ -496,13 +492,6 @@ impl OverlayInode {
 
     pub fn sync_data(&self) -> Result<()> {
         self.upper().map_or(Ok(()), |upper| upper.sync_data())
-    }
-
-    pub fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        self.upper().map_or_else(
-            || Err(Error::with_message(Errno::ENOTTY, "ioctl is not supported")),
-            |upper| upper.ioctl(cmd, arg),
-        )
     }
 }
 
@@ -828,10 +817,10 @@ impl OverlayInode {
             .alloc_segment(lower_size.align_up(BLOCK_SIZE) / BLOCK_SIZE)?;
 
         let mut writer = data_buf.writer().to_fallible();
-        let read_len = lower.read_at(0, &mut writer)?;
+        let read_len = lower.read_at(0, &mut writer, StatusFlags::empty())?;
 
         let mut reader = data_buf.reader().to_fallible();
-        let _ = upper.write_at(0, reader.limit(read_len))?;
+        let _ = upper.write_at(0, reader.limit(read_len), StatusFlags::empty())?;
         Ok(())
     }
 
@@ -907,6 +896,22 @@ fn is_opaque_dir(inode: &Arc<dyn Inode>) -> Result<bool> {
 }
 
 #[inherit_methods(from = "self")]
+impl InodeIo for OverlayInode {
+    fn read_at(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        status_flags: StatusFlags,
+    ) -> Result<usize>;
+    fn write_at(
+        &self,
+        offset: usize,
+        reader: &mut VmReader,
+        status_flags: StatusFlags,
+    ) -> Result<usize>;
+}
+
+#[inherit_methods(from = "self")]
 impl Inode for OverlayInode {
     fn size(&self) -> usize;
     fn resize(&self, new_size: usize) -> Result<()>;
@@ -926,10 +931,6 @@ impl Inode for OverlayInode {
     fn ctime(&self) -> Duration;
     fn set_ctime(&self, time: Duration);
     fn page_cache(&self) -> Option<Arc<Vmo>>;
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize>;
-    fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize>;
-    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize>;
-    fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize>;
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>>;
     fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>>;
     fn open(
@@ -945,7 +946,6 @@ impl Inode for OverlayInode {
     fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()>;
     fn read_link(&self) -> Result<SymbolicLink>;
     fn write_link(&self, target: &str) -> Result<()>;
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32>;
     fn sync_all(&self) -> Result<()>;
     fn sync_data(&self) -> Result<()>;
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()>;
@@ -1219,7 +1219,11 @@ mod tests {
             let f2 = l2.new_fs_child("f2", InodeType::File, mode).unwrap();
             let f2_inode = f2.inode();
             f2_inode
-                .write_at(0, &mut VmReader::from([8u8; 4].as_slice()).to_fallible())
+                .write_at(
+                    0,
+                    &mut VmReader::from([8u8; 4].as_slice()).to_fallible(),
+                    StatusFlags::empty(),
+                )
                 .unwrap();
             f2_inode.set_group(Gid::new(77)).unwrap();
             f2_inode
@@ -1361,8 +1365,12 @@ mod tests {
 
         let mut data = [0u8; 4];
         let f2 = root.lookup("f2").unwrap();
-        f2.read_at(0, &mut VmWriter::from(data.as_mut_slice()).to_fallible())
-            .unwrap();
+        f2.read_at(
+            0,
+            &mut VmWriter::from(data.as_mut_slice()).to_fallible(),
+            StatusFlags::empty(),
+        )
+        .unwrap();
         assert_eq!(data, [8u8; 4]);
 
         let d1 = root.lookup("d1").unwrap();
@@ -1444,8 +1452,12 @@ mod tests {
         f1.set_atime(Duration::default());
         f1.sync_data().unwrap();
         let mut data = [0u8; 1];
-        f1.read_at(0, &mut VmWriter::from(data.as_mut_slice()).to_fallible())
-            .unwrap();
+        f1.read_at(
+            0,
+            &mut VmWriter::from(data.as_mut_slice()).to_fallible(),
+            StatusFlags::empty(),
+        )
+        .unwrap();
         assert_eq!(data, [3u8; 1]);
 
         let d1 = root.lookup("d1").unwrap();

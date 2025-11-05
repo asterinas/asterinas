@@ -9,7 +9,7 @@ use id_alloc::IdAlloc;
 
 pub use self::ptmx::Ptmx;
 use self::slave::PtySlaveInode;
-use super::utils::MknodType;
+use super::utils::{InodeIo, MknodType, StatusFlags};
 use crate::{
     device::PtyMaster,
     fs::{
@@ -17,7 +17,7 @@ use crate::{
         registry::{FsProperties, FsType},
         utils::{
             mkmod, DirEntryVecExt, DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType,
-            IoctlCmd, Metadata, SuperBlock, NAME_MAX,
+            Metadata, SuperBlock, NAME_MAX,
         },
     },
     prelude::*,
@@ -155,6 +155,26 @@ impl RootInode {
             metadata: RwLock::new(Metadata::new_dir(ROOT_INO, mkmod!(a+rx, u+w), BLOCK_SIZE)),
             fs,
         })
+    }
+}
+
+impl InodeIo for RootInode {
+    fn read_at(
+        &self,
+        _offset: usize,
+        _writer: &mut VmWriter,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        Err(Error::new(Errno::EISDIR))
+    }
+
+    fn write_at(
+        &self,
+        _offset: usize,
+        _reader: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        Err(Error::new(Errno::EISDIR))
     }
 }
 

@@ -24,8 +24,8 @@ use crate::{
         tmpfs::TmpFs,
         utils::{
             chmod, mkmod, AccessMode, CachePage, CreationFlags, Extension, FallocMode, FileSystem,
-            Inode, InodeMode, InodeType, IoctlCmd, Metadata, OpenArgs, PageCacheBackend, SeekFrom,
-            StatusFlags, XattrName, XattrNamespace, XattrSetFlags,
+            Inode, InodeIo, InodeMode, InodeType, IoctlCmd, Metadata, OpenArgs, PageCacheBackend,
+            SeekFrom, StatusFlags, XattrName, XattrNamespace, XattrSetFlags,
         },
     },
     prelude::*,
@@ -107,40 +107,20 @@ impl PageCacheBackend for MemfdInode {
 }
 
 #[inherit_methods(from = "self.inode")]
-impl Inode for MemfdInode {
-    fn metadata(&self) -> Metadata;
-    fn size(&self) -> usize;
-    fn atime(&self) -> Duration;
-    fn set_atime(&self, time: Duration);
-    fn mtime(&self) -> Duration;
-    fn set_mtime(&self, time: Duration);
-    fn ctime(&self) -> Duration;
-    fn set_ctime(&self, time: Duration);
-    fn ino(&self) -> u64;
-    fn type_(&self) -> InodeType;
-    fn mode(&self) -> Result<InodeMode>;
-    fn owner(&self) -> Result<Uid>;
-    fn set_owner(&self, uid: Uid) -> Result<()>;
-    fn group(&self) -> Result<Gid>;
-    fn set_group(&self, gid: Gid) -> Result<()>;
-    fn page_cache(&self) -> Option<Arc<Vmo>>;
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize>;
-    fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize>;
-    fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize>;
-    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents;
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32>;
-    fn extension(&self) -> Option<&Extension>;
-    fn set_xattr(
+impl InodeIo for MemfdInode {
+    fn read_at(
         &self,
-        name: XattrName,
-        value_reader: &mut VmReader,
-        flags: XattrSetFlags,
-    ) -> Result<()>;
-    fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize>;
-    fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize>;
-    fn remove_xattr(&self, name: XattrName) -> Result<()>;
+        offset: usize,
+        writer: &mut VmWriter,
+        status_flags: StatusFlags,
+    ) -> Result<usize>;
 
-    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+    fn write_at(
+        &self,
+        offset: usize,
+        reader: &mut VmReader,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
         if !reader.has_remain() {
             return Ok(0);
         }
@@ -173,8 +153,38 @@ impl Inode for MemfdInode {
             }
         }
 
-        self.inode.write_at(offset, reader)
+        self.inode.write_at(offset, reader, status_flags)
     }
+}
+
+#[inherit_methods(from = "self.inode")]
+impl Inode for MemfdInode {
+    fn metadata(&self) -> Metadata;
+    fn size(&self) -> usize;
+    fn atime(&self) -> Duration;
+    fn set_atime(&self, time: Duration);
+    fn mtime(&self) -> Duration;
+    fn set_mtime(&self, time: Duration);
+    fn ctime(&self) -> Duration;
+    fn set_ctime(&self, time: Duration);
+    fn ino(&self) -> u64;
+    fn type_(&self) -> InodeType;
+    fn mode(&self) -> Result<InodeMode>;
+    fn owner(&self) -> Result<Uid>;
+    fn set_owner(&self, uid: Uid) -> Result<()>;
+    fn group(&self) -> Result<Gid>;
+    fn set_group(&self, gid: Gid) -> Result<()>;
+    fn page_cache(&self) -> Option<Arc<Vmo>>;
+    fn extension(&self) -> Option<&Extension>;
+    fn set_xattr(
+        &self,
+        name: XattrName,
+        value_reader: &mut VmReader,
+        flags: XattrSetFlags,
+    ) -> Result<()>;
+    fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize>;
+    fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize>;
+    fn remove_xattr(&self, name: XattrName) -> Result<()>;
 
     fn resize(&self, new_size: usize) -> Result<()> {
         let seals = self.seals.lock();
@@ -337,8 +347,9 @@ impl MemfdFile {
 }
 
 impl Pollable for MemfdFile {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        self.memfd_inode.poll(mask, poller)
+    fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
+        let events = IoEvents::IN | IoEvents::OUT;
+        events & mask
     }
 }
 
@@ -357,13 +368,16 @@ impl FileLike for MemfdFile {
             return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
         }
 
-        self.memfd_inode.read_at(offset, writer)
+        self.memfd_inode
+            .read_at(offset, writer, self.status_flags())
     }
 
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
         let mut offset = self.offset.lock();
 
         if self.status_flags().contains(StatusFlags::O_APPEND) {
+            // FIXME: `O_APPEND` should ensure that new content is appended even if another process
+            // is writing to the file concurrently.
             *offset = self.memfd_inode.size();
         }
 
@@ -378,12 +392,14 @@ impl FileLike for MemfdFile {
             return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
         }
 
-        if self.status_flags().contains(StatusFlags::O_APPEND) {
-            // If the file has the O_APPEND flag, the offset is ignored
+        let status_flags = self.status_flags();
+        if status_flags.contains(StatusFlags::O_APPEND) {
+            // If the file has the `O_APPEND` flag, the offset is ignored.
+            // FIXME: `O_APPEND` should ensure that new content is appended even if another process
+            // is writing to the file concurrently.
             offset = self.memfd_inode.size();
         }
-
-        self.memfd_inode.write_at(offset, reader)
+        self.memfd_inode.write_at(offset, reader, status_flags)
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
@@ -442,12 +458,12 @@ impl FileLike for MemfdFile {
         Ok(Mappable::Inode(self.memfd_inode.clone()))
     }
 
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+    fn ioctl(&self, _cmd: IoctlCmd, _arg: usize) -> Result<i32> {
         if self.rights.is_empty() {
             return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
 
-        self.memfd_inode.ioctl(cmd, arg)
+        return_errno_with_message!(Errno::ENOTTY, "ioctl is not supported");
     }
 
     fn inode(&self) -> &Arc<dyn Inode> {

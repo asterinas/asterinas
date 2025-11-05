@@ -46,6 +46,26 @@ impl Ptmx {
 
 // Many methods are left to do nothing because every time the ptmx is being opened,
 // it returns the pty master. So the ptmx can not be used at upper layer.
+impl InodeIo for Ptmx {
+    fn read_at(
+        &self,
+        _offset: usize,
+        _writer: &mut VmWriter,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        Ok(0)
+    }
+
+    fn write_at(
+        &self,
+        _offset: usize,
+        _reader: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        Ok(0)
+    }
+}
+
 impl Inode for Ptmx {
     fn size(&self) -> usize {
         self.metadata.read().size
@@ -116,26 +136,6 @@ impl Inode for Ptmx {
 
     fn set_ctime(&self, time: Duration) {
         self.metadata.write().ctime = time;
-    }
-
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        Ok(0)
-    }
-
-    fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        Ok(0)
-    }
-
-    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        Ok(0)
-    }
-
-    fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        Ok(0)
-    }
-
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        Ok(0)
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {

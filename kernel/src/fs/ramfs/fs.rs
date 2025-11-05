@@ -16,7 +16,6 @@ use ostd::{
 
 use super::{memfd::MemfdInode, xattr::RamXattr, *};
 use crate::{
-    events::IoEvents,
     fs::{
         device::Device,
         inode_handle::FileIo,
@@ -25,13 +24,13 @@ use crate::{
         registry::{FsProperties, FsType},
         utils::{
             mkmod, AccessMode, CStr256, CachePage, DirentVisitor, Extension, FallocMode,
-            FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd, Metadata, MknodType,
+            FileSystem, FsFlags, Inode, InodeIo, InodeMode, InodeType, Metadata, MknodType,
             PageCache, PageCacheBackend, Permission, StatusFlags, SuperBlock, SymbolicLink,
             XattrName, XattrNamespace, XattrSetFlags,
         },
     },
     prelude::*,
-    process::{signal::PollHandle, Gid, Uid},
+    process::{Gid, Uid},
     time::clocks::RealTimeCoarseClock,
     vm::vmo::Vmo,
 };
@@ -539,14 +538,13 @@ impl PageCacheBackend for RamInode {
     }
 }
 
-impl Inode for RamInode {
-    fn page_cache(&self) -> Option<Arc<Vmo>> {
-        self.inner
-            .as_file()
-            .map(|page_cache| page_cache.pages().clone())
-    }
-
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+impl InodeIo for RamInode {
+    fn read_at(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
         let read_len = match &self.inner {
             Inner::File(page_cache) => {
                 let (offset, read_len) = {
@@ -567,11 +565,12 @@ impl Inode for RamInode {
         Ok(read_len)
     }
 
-    fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        self.read_at(offset, writer)
-    }
-
-    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+    fn write_at(
+        &self,
+        offset: usize,
+        reader: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
         let written_len = match self.typ {
             InodeType::File => {
                 let page_cache = self.inner.as_file().unwrap();
@@ -600,9 +599,13 @@ impl Inode for RamInode {
         };
         Ok(written_len)
     }
+}
 
-    fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        self.write_at(offset, reader)
+impl Inode for RamInode {
+    fn page_cache(&self) -> Option<Arc<Vmo>> {
+        self.inner
+            .as_file()
+            .map(|page_cache| page_cache.pages().clone())
     }
 
     fn size(&self) -> usize {
@@ -1139,11 +1142,6 @@ impl Inode for RamInode {
         }
     }
 
-    fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
-        let events = IoEvents::IN | IoEvents::OUT;
-        events & mask
-    }
-
     fn fs(&self) -> Arc<dyn FileSystem> {
         Weak::upgrade(&self.fs).unwrap()
     }
@@ -1178,17 +1176,6 @@ impl Inode for RamInode {
                 );
             }
         }
-    }
-
-    fn ioctl(&self, _cmd: IoctlCmd, _arg: usize) -> Result<i32> {
-        return_errno_with_message!(Errno::ENOTTY, "ioctl is not supported");
-    }
-
-    fn is_seekable(&self) -> bool {
-        !matches!(
-            self.typ,
-            InodeType::NamedPipe | InodeType::CharDevice | InodeType::Dir | InodeType::Socket
-        )
     }
 
     fn extension(&self) -> Option<&Extension> {
