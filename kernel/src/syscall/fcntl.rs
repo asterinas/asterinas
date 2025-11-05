@@ -263,7 +263,7 @@ fn from_c_flock_and_file(lock: &c_flock, file: &dyn FileLike) -> Result<FileRang
                 .checked_add(lock.l_start)
                 .ok_or(Error::with_message(Errno::EOVERFLOW, "start overflow"))?,
 
-            RangeLockWhence::SEEK_END => (file.metadata().size as off_t)
+            RangeLockWhence::SEEK_END => (file.inode().metadata().size as off_t)
                 .checked_add(lock.l_start)
                 .ok_or(Error::with_message(Errno::EOVERFLOW, "start overflow"))?,
         }

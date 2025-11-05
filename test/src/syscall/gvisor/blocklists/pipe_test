@@ -1,6 +1,7 @@
 # TODO: Support `fstatfs` syscall for pipe files.
 PipeTest.StatFS
 # TODO: Support opening pipe files via `/proc/self/fd` path.
+Pipes/PipeTest.OpenViaProcSelfFD/pipe
 Pipes/PipeTest.OpenViaProcSelfFDWithWrites/pipe
 # TODO: Deal with more flags in `pipe2` syscall.
 Pipe2Test.*

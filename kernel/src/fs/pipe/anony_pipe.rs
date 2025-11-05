@@ -8,14 +8,13 @@ use crate::{
         file_handle::FileLike,
         pipe::common::{PipeReader, PipeWriter},
         pseudofs::{pipefs_singleton, PseudoInode},
-        utils::{mkmod, AccessMode, Inode, InodeType, Metadata, StatusFlags},
+        utils::{mkmod, AccessMode, Inode, InodeType, StatusFlags},
     },
     prelude::*,
     process::{
         signal::{PollHandle, Pollable},
         Gid, Uid,
     },
-    time::clocks::RealTimeCoarseClock,
 };
 
 const DEFAULT_PIPE_BUF_SIZE: usize = 65536;
@@ -107,28 +106,6 @@ impl FileLike for PipeReaderFile {
         AccessMode::O_RDONLY
     }
 
-    fn metadata(&self) -> Metadata {
-        // This is a dummy implementation.
-        // TODO: Add "PipeFS" and link `PipeReader` to it.
-        let now = RealTimeCoarseClock::get().read_time();
-        Metadata {
-            dev: 0,
-            ino: 0,
-            size: 0,
-            blk_size: 0,
-            blocks: 0,
-            atime: now,
-            mtime: now,
-            ctime: now,
-            type_: InodeType::NamedPipe,
-            mode: mkmod!(u+r),
-            nlinks: 1,
-            uid: Uid::new_root(),
-            gid: Gid::new_root(),
-            rdev: 0,
-        }
-    }
-
     fn inode(&self) -> &Arc<dyn Inode> {
         &self.pseudo_inode
     }
@@ -197,28 +174,6 @@ impl FileLike for PipeWriterFile {
 
     fn access_mode(&self) -> AccessMode {
         AccessMode::O_WRONLY
-    }
-
-    fn metadata(&self) -> Metadata {
-        // This is a dummy implementation.
-        // TODO: Add "PipeFS" and link `PipeWriter` to it.
-        let now = RealTimeCoarseClock::get().read_time();
-        Metadata {
-            dev: 0,
-            ino: 0,
-            size: 0,
-            blk_size: 0,
-            blocks: 0,
-            atime: now,
-            mtime: now,
-            ctime: now,
-            type_: InodeType::NamedPipe,
-            mode: mkmod!(u+w),
-            nlinks: 1,
-            uid: Uid::new_root(),
-            gid: Gid::new_root(),
-            rdev: 0,
-        }
     }
 
     fn inode(&self) -> &Arc<dyn Inode> {

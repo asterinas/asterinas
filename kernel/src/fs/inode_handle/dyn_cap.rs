@@ -12,15 +12,12 @@ use crate::{
         file_handle::{FileLike, Mappable},
         path::Path,
         utils::{
-            AccessMode, DirentVisitor, FallocMode, FlockItem, Inode, InodeMode, InodeType,
-            IoctlCmd, Metadata, RangeLockItem, RangeLockType, SeekFrom, StatusFlags,
+            AccessMode, DirentVisitor, FallocMode, FlockItem, Inode, InodeType, IoctlCmd,
+            RangeLockItem, RangeLockType, SeekFrom, StatusFlags,
         },
     },
     prelude::*,
-    process::{
-        signal::{PollHandle, Pollable},
-        Gid, Uid,
-    },
+    process::signal::{PollHandle, Pollable},
 };
 
 pub struct InodeHandle(HandleInner, Rights);
@@ -130,13 +127,6 @@ impl Pollable for InodeHandle {
 #[inherit_methods(from = "self.0")]
 impl FileLike for InodeHandle {
     fn status_flags(&self) -> StatusFlags;
-    fn metadata(&self) -> Metadata;
-    fn mode(&self) -> Result<InodeMode>;
-    fn set_mode(&self, mode: InodeMode) -> Result<()>;
-    fn owner(&self) -> Result<Uid>;
-    fn set_owner(&self, uid: Uid) -> Result<()>;
-    fn group(&self) -> Result<Gid>;
-    fn set_group(&self, gid: Gid) -> Result<()>;
 
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         if !self.1.contains(Rights::READ) {

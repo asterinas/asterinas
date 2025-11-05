@@ -15,7 +15,7 @@ pub fn sys_fchmod(fd: FileDesc, mode: u16, ctx: &Context) -> Result<SyscallRetur
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
-    file.set_mode(InodeMode::from_bits_truncate(mode))?;
+    file.inode().set_mode(InodeMode::from_bits_truncate(mode))?;
     Ok(SyscallReturn::Return(0))
 }
 
@@ -37,16 +37,18 @@ pub fn sys_fchmodat(
         dirfd, path_name, mode,
     );
 
-    let path = {
+    let path_or_inode = {
         let path_name = path_name.to_string_lossy();
         let fs_path = FsPath::from_fd_and_path(dirfd, &path_name)?;
         ctx.thread_local
             .borrow_fs()
             .resolver()
             .read()
-            .lookup(&fs_path)?
+            .lookup_inode(&fs_path)?
     };
 
-    path.set_mode(InodeMode::from_bits_truncate(mode))?;
+    path_or_inode
+        .inode()
+        .set_mode(InodeMode::from_bits_truncate(mode))?;
     Ok(SyscallReturn::Return(0))
 }

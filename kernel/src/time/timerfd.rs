@@ -8,15 +8,12 @@ use crate::{
     fs::{
         file_handle::FileLike,
         pseudofs::anon_inodefs_shared_inode,
-        utils::{mkmod, CreationFlags, Inode, InodeType, Metadata, StatusFlags},
+        utils::{CreationFlags, Inode, StatusFlags},
     },
     prelude::*,
-    process::{
-        signal::{PollHandle, Pollable, Pollee},
-        Gid, Uid,
-    },
+    process::signal::{PollHandle, Pollable, Pollee},
     syscall::create_timer,
-    time::{clocks::RealTimeClock, Timer},
+    time::Timer,
 };
 
 /// A file-like object representing a timer that can be used with file descriptors.
@@ -151,28 +148,6 @@ impl FileLike for TimerfdFile {
         }
 
         Ok(())
-    }
-
-    fn metadata(&self) -> Metadata {
-        // This is a dummy implementation.
-        // TODO: Add "anonymous inode fs" and link the file to it.
-        let now = RealTimeClock::get().read_time();
-        Metadata {
-            dev: 0,
-            ino: 0,
-            size: 0,
-            blk_size: 0,
-            blocks: 0,
-            atime: now,
-            mtime: now,
-            ctime: now,
-            type_: InodeType::NamedPipe,
-            mode: mkmod!(u+w),
-            nlinks: 1,
-            uid: Uid::new_root(),
-            gid: Gid::new_root(),
-            rdev: 0,
-        }
     }
 
     fn inode(&self) -> &Arc<dyn Inode> {

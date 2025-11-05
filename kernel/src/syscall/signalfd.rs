@@ -17,7 +17,7 @@ use crate::{
         file_handle::FileLike,
         file_table::{get_file_fast, FdFlags, FileDesc},
         pseudofs::anon_inodefs_shared_inode,
-        utils::{mkmod, CreationFlags, Inode, InodeType, Metadata, StatusFlags},
+        utils::{CreationFlags, Inode, StatusFlags},
     },
     prelude::*,
     process::{
@@ -28,9 +28,7 @@ use crate::{
             signals::Signal,
             HandlePendingSignal, PollHandle, Pollable, Poller,
         },
-        Gid, Uid,
     },
-    time::clocks::RealTimeClock,
 };
 
 /// Creates a new signalfd or updates an existing one according to the given mask
@@ -258,26 +256,6 @@ impl FileLike for SignalFile {
     fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
         self.set_non_blocking(new_flags.contains(StatusFlags::O_NONBLOCK));
         Ok(())
-    }
-
-    fn metadata(&self) -> Metadata {
-        let now = RealTimeClock::get().read_time();
-        Metadata {
-            dev: 0,
-            ino: 0,
-            size: 0,
-            blk_size: 0,
-            blocks: 0,
-            atime: now,
-            mtime: now,
-            ctime: now,
-            type_: InodeType::NamedPipe,
-            mode: mkmod!(u+r),
-            nlinks: 1,
-            uid: Uid::new_root(),
-            gid: Gid::new_root(),
-            rdev: 0,
-        }
     }
 
     fn inode(&self) -> &Arc<dyn Inode> {

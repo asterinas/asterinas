@@ -308,13 +308,6 @@ impl Pollable for MemfdFile {
 impl FileLike for MemfdFile {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize>;
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32>;
-    fn metadata(&self) -> Metadata;
-    fn mode(&self) -> Result<InodeMode>;
-    fn set_mode(&self, mode: InodeMode) -> Result<()>;
-    fn owner(&self) -> Result<Uid>;
-    fn set_owner(&self, uid: Uid) -> Result<()>;
-    fn group(&self) -> Result<Gid>;
-    fn set_group(&self, gid: Gid) -> Result<()>;
 
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         let mut offset = self.offset.lock();

@@ -213,26 +213,6 @@ impl Metadata {
             rdev: device.id().as_encoded_u64(),
         }
     }
-
-    pub fn new_socket(ino: u64, mode: InodeMode, blk_size: usize) -> Metadata {
-        let now = RealTimeCoarseClock::get().read_time();
-        Self {
-            dev: 0,
-            ino,
-            size: 0,
-            blk_size,
-            blocks: 0,
-            atime: now,
-            mtime: now,
-            ctime: now,
-            type_: InodeType::Socket,
-            mode,
-            nlinks: 1,
-            uid: Uid::new_root(),
-            gid: Gid::new_root(),
-            rdev: 0,
-        }
-    }
 }
 
 pub enum MknodType {

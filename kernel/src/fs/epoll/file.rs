@@ -16,7 +16,7 @@ use crate::{
         file_handle::FileLike,
         file_table::{get_file_fast, FileDesc},
         pseudofs::anon_inodefs_shared_inode,
-        utils::{mkmod, Inode, IoctlCmd, Metadata},
+        utils::{Inode, IoctlCmd},
     },
     prelude::*,
     process::{
@@ -265,12 +265,6 @@ impl FileLike for EpollFile {
 
     fn ioctl(&self, _cmd: IoctlCmd, _arg: usize) -> Result<i32> {
         return_errno_with_message!(Errno::EINVAL, "epoll files do not support ioctl");
-    }
-
-    fn metadata(&self) -> Metadata {
-        // This is a dummy implementation.
-        // TODO: Add "anonymous inode fs" and link `EpollFile` to it.
-        Metadata::new_file(0, mkmod!(u+rw), aster_block::BLOCK_SIZE)
     }
 
     fn inode(&self) -> &Arc<dyn Inode> {

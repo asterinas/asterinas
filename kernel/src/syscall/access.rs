@@ -81,7 +81,7 @@ pub fn do_faccessat(
         dirfd, path_name, mode, flags
     );
 
-    let path = {
+    let path_or_inode = {
         let path_name = path_name.to_string_lossy();
         let fs_path = if flags.contains(FaccessatFlags::AT_EMPTY_PATH) && path_name.is_empty() {
             FsPath::from_fd(dirfd)?
@@ -92,9 +92,9 @@ pub fn do_faccessat(
         let fs_ref = ctx.thread_local.borrow_fs();
         let fs = fs_ref.resolver().read();
         if flags.contains(FaccessatFlags::AT_SYMLINK_NOFOLLOW) {
-            fs.lookup_no_follow(&fs_path)?
+            fs.lookup_inode_no_follow(&fs_path)?
         } else {
-            fs.lookup(&fs_path)?
+            fs.lookup_inode(&fs_path)?
         }
     };
 
@@ -103,7 +103,7 @@ pub fn do_faccessat(
         return Ok(SyscallReturn::Return(0));
     }
 
-    let inode = path.inode();
+    let inode = path_or_inode.inode();
 
     // FIXME: The current implementation is dummy
     if mode.contains(AccessMode::R_OK) {
