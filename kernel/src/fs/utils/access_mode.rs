@@ -8,11 +8,11 @@ use crate::prelude::*;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum AccessMode {
-    /// read only
+    /// Read only
     O_RDONLY = 0,
-    /// write only
+    /// Write only
     O_WRONLY = 1,
-    /// read write
+    /// Read write
     O_RDWR = 2,
 }
 
@@ -29,28 +29,11 @@ impl AccessMode {
 impl AccessMode {
     pub fn from_u32(flags: u32) -> Result<Self> {
         let bits = (flags & 0b11) as u8;
-        if bits > Self::O_RDWR as u8 {
-            return_errno_with_message!(Errno::EINVAL, "invalid bits for access mode");
-        }
-        Ok(match bits {
-            0 => Self::O_RDONLY,
-            1 => Self::O_WRONLY,
-            2 => Self::O_RDWR,
-            _ => unreachable!(),
-        })
-    }
-}
-
-impl From<Rights> for AccessMode {
-    fn from(rights: Rights) -> AccessMode {
-        if rights.contains(Rights::READ) && rights.contains(Rights::WRITE) {
-            AccessMode::O_RDWR
-        } else if rights.contains(Rights::READ) {
-            AccessMode::O_RDONLY
-        } else if rights.contains(Rights::WRITE) {
-            AccessMode::O_WRONLY
-        } else {
-            panic!("invalid rights");
+        match bits {
+            0 => Ok(Self::O_RDONLY),
+            1 => Ok(Self::O_WRONLY),
+            2 => Ok(Self::O_RDWR),
+            _ => return_errno_with_message!(Errno::EINVAL, "the bits are not a valid access mode"),
         }
     }
 }

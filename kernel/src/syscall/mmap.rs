@@ -108,7 +108,7 @@ fn do_sys_mmap(
             if offset != 0 {
                 return_errno_with_message!(
                     Errno::EINVAL,
-                    "offset must be zero for anonymous mapping"
+                    "the offset must be zero for anonymous mapping"
                 );
             }
 
@@ -126,11 +126,11 @@ fn do_sys_mmap(
 
             let access_mode = file.access_mode();
             if vm_perms.contains(VmPerms::READ) && !access_mode.is_readable() {
-                return_errno!(Errno::EACCES);
+                return_errno_with_message!(Errno::EACCES, "the file is not opened readable");
             }
             if option.typ() == MMapType::Shared && !access_mode.is_writable() {
                 if vm_perms.contains(VmPerms::WRITE) {
-                    return_errno!(Errno::EACCES);
+                    return_errno_with_message!(Errno::EACCES, "the file is not opened writable");
                 }
                 vm_may_perms.remove(VmPerms::MAY_WRITE);
             }
@@ -152,14 +152,14 @@ fn do_sys_mmap(
 
 fn check_option(addr: Vaddr, size: usize, option: &MMapOptions) -> Result<()> {
     if option.typ() == MMapType::File {
-        return_errno_with_message!(Errno::EINVAL, "Invalid mmap type");
+        return_errno_with_message!(Errno::EINVAL, "invalid mmap type");
     }
 
     let map_end = addr.checked_add(size).ok_or(Errno::EINVAL)?;
     if option.flags().contains(MMapFlags::MAP_FIXED)
         && !(is_userspace_vaddr(addr) && is_userspace_vaddr(map_end - 1))
     {
-        return_errno_with_message!(Errno::EINVAL, "Invalid mmap fixed addr");
+        return_errno_with_message!(Errno::EINVAL, "invalid mmap fixed address");
     }
 
     Ok(())
