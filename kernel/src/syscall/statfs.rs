@@ -38,7 +38,7 @@ pub fn sys_fstatfs(fd: FileDesc, statfs_buf_ptr: Vaddr, ctx: &Context) -> Result
     let fs = {
         let mut file_table = ctx.thread_local.borrow_file_table_mut();
         let file = get_file_fast!(&mut file_table, fd);
-        file.as_inode_or_err()?.path().fs()
+        file.as_inode_handle_or_err()?.path().fs()
     };
 
     let statfs = Statfs::from(fs.sb());

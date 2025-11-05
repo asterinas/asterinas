@@ -38,7 +38,7 @@ pub fn sys_fchdir(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     let path = {
         let mut file_table = ctx.thread_local.borrow_file_table_mut();
         let file = get_file_fast!(&mut file_table, fd);
-        file.as_inode_or_err()?.path().clone()
+        file.as_inode_handle_or_err()?.path().clone()
     };
     if path.type_() != InodeType::Dir {
         return_errno_with_message!(Errno::ENOTDIR, "must be directory");

@@ -14,7 +14,7 @@ pub fn sys_flock(fd: FileDesc, ops: i32, ctx: &Context) -> Result<SyscallReturn>
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
-    let inode_file = file.as_inode_or_err()?;
+    let inode_file = file.as_inode_handle_or_err()?;
     let ops: FlockOps = FlockOps::from_i32(ops)?;
     if ops.contains(FlockOps::LOCK_UN) {
         inode_file.unlock_flock()?;

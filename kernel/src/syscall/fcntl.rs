@@ -100,7 +100,7 @@ fn handle_getlk(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> 
         return_errno_with_message!(Errno::EINVAL, "invalid flock type for getlk");
     }
     let mut lock = RangeLockItem::new(lock_type, from_c_flock_and_file(&lock_mut_c, &**file)?);
-    let inode_file = file.as_inode_or_err()?;
+    let inode_file = file.as_inode_handle_or_err()?;
     lock = inode_file.test_range_lock(lock)?;
     lock_mut_c.copy_from_range_lock(&lock);
     ctx.user_space().write_val(lock_mut_ptr, &lock_mut_c)?;
@@ -119,7 +119,7 @@ fn handle_setlk(
     let lock_mut_c = ctx.user_space().read_val::<c_flock>(lock_mut_ptr)?;
     let lock_type = RangeLockType::try_from(lock_mut_c.l_type)?;
     let lock = RangeLockItem::new(lock_type, from_c_flock_and_file(&lock_mut_c, &**file)?);
-    let inode_file = file.as_inode_or_err()?;
+    let inode_file = file.as_inode_handle_or_err()?;
     inode_file.set_range_lock(&lock, is_nonblocking)?;
     Ok(SyscallReturn::Return(0))
 }
@@ -259,7 +259,7 @@ fn from_c_flock_and_file(lock: &c_flock, file: &dyn FileLike) -> Result<FileRang
         let whence = RangeLockWhence::try_from(lock.l_whence)?;
         match whence {
             RangeLockWhence::SEEK_SET => lock.l_start,
-            RangeLockWhence::SEEK_CUR => (file.as_inode_or_err()?.offset() as off_t)
+            RangeLockWhence::SEEK_CUR => (file.as_inode_handle_or_err()?.offset() as off_t)
                 .checked_add(lock.l_start)
                 .ok_or(Error::with_message(Errno::EOVERFLOW, "start overflow"))?,
 
