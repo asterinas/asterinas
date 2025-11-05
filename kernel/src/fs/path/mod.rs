@@ -424,36 +424,44 @@ impl Path {
     /// Returns an `InodeHandle` on success.
     pub fn open(&self, open_args: OpenArgs) -> Result<InodeHandle> {
         let inode = self.inode();
-        let inode_type = inode.type_();
-        let creation_flags = &open_args.creation_flags;
+        check_open_util(inode.as_ref(), &open_args)?;
 
-        if inode_type == InodeType::SymLink
-            && creation_flags.contains(CreationFlags::O_NOFOLLOW)
-            && !open_args.status_flags.contains(StatusFlags::O_PATH)
-        {
-            return_errno_with_message!(Errno::ELOOP, "the file is a symlink");
-        }
-
-        if creation_flags.contains(CreationFlags::O_CREAT)
-            && creation_flags.contains(CreationFlags::O_EXCL)
-        {
-            return_errno_with_message!(Errno::EEXIST, "the file already exists");
-        }
-        if creation_flags.contains(CreationFlags::O_DIRECTORY) && inode_type != InodeType::Dir {
-            return_errno_with_message!(
-                Errno::ENOTDIR,
-                "O_DIRECTORY is specified but the file is not a directory"
-            );
-        }
-
-        if inode_type.is_regular_file()
-            && creation_flags.contains(CreationFlags::O_TRUNC)
+        if inode.type_().is_regular_file()
+            && open_args.creation_flags.contains(CreationFlags::O_TRUNC)
             && !open_args.status_flags.contains(StatusFlags::O_PATH)
         {
             self.resize(0)?;
         }
+
         InodeHandle::new(self.clone(), open_args.access_mode, open_args.status_flags)
     }
+}
+
+/// Checks if the given `Inode` can be opened with the given `OpenArgs`.
+pub fn check_open_util(inode: &dyn Inode, open_args: &OpenArgs) -> Result<()> {
+    let inode_type = inode.type_();
+    let creation_flags = &open_args.creation_flags;
+
+    if inode_type == InodeType::SymLink
+        && creation_flags.contains(CreationFlags::O_NOFOLLOW)
+        && !open_args.status_flags.contains(StatusFlags::O_PATH)
+    {
+        return_errno_with_message!(Errno::ELOOP, "the file is a symlink");
+    }
+
+    if creation_flags.contains(CreationFlags::O_CREAT)
+        && creation_flags.contains(CreationFlags::O_EXCL)
+    {
+        return_errno_with_message!(Errno::EEXIST, "the file already exists");
+    }
+    if creation_flags.contains(CreationFlags::O_DIRECTORY) && inode_type != InodeType::Dir {
+        return_errno_with_message!(
+            Errno::ENOTDIR,
+            "O_DIRECTORY is specified but the file is not a directory"
+        );
+    }
+
+    Ok(())
 }
 
 #[inherit_methods(from = "self.dentry")]

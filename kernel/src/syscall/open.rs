@@ -3,9 +3,11 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
+        file_handle::FileLike,
         file_table::{FdFlags, FileDesc},
-        fs_resolver::{FsPath, FsResolver, LookupResult, AT_FDCWD},
+        fs_resolver::{FsPath, FsResolver, LookupResult, PathOrInode, AT_FDCWD},
         inode_handle::InodeHandle,
+        ramfs::memfd::{MemfdFile, MemfdInode},
         utils::{AccessMode, CreationFlags, InodeMode, InodeType, OpenArgs, StatusFlags},
     },
     prelude::*,
@@ -33,7 +35,7 @@ pub fn sys_openat(
         let mask_mode = mode & !fs_ref.umask().get();
 
         let fs_resolver = fs_ref.resolver().read();
-        let inode_handle = do_open(
+        do_open(
             &fs_resolver,
             &fs_path,
             flags,
@@ -42,9 +44,7 @@ pub fn sys_openat(
         .map_err(|err| match err.error() {
             Errno::EINTR => Error::new(Errno::ERESTARTSYS),
             _ => err,
-        })?;
-
-        Arc::new(inode_handle)
+        })?
     };
 
     let fd = {
@@ -74,20 +74,29 @@ pub fn sys_creat(path_addr: Vaddr, mode: u16, ctx: &Context) -> Result<SyscallRe
 
 fn do_open(
     fs_resolver: &FsResolver,
-    path: &FsPath,
+    fs_path: &FsPath,
     flags: u32,
     mode: InodeMode,
-) -> Result<InodeHandle> {
+) -> Result<Arc<dyn FileLike>> {
     let open_args = OpenArgs::from_flags_and_mode(flags, mode)?;
 
     let lookup_res = if open_args.follow_tail_link() {
-        fs_resolver.lookup_unresolved(path)?
+        fs_resolver.lookup_unresolved(fs_path)?
     } else {
-        fs_resolver.lookup_unresolved_no_follow(path)?
+        fs_resolver.lookup_unresolved_no_follow(fs_path)?
     };
 
-    let inode_handle = match lookup_res {
-        LookupResult::Resolved(target_path) => target_path.open(open_args)?,
+    let file_handle: Arc<dyn FileLike> = match lookup_res {
+        LookupResult::Resolved(target) => match target {
+            PathOrInode::Path(path) => Arc::new(path.open(open_args)?),
+            PathOrInode::Inode(inode) => {
+                // TODO: Support re-opening anonymous pipes.
+                let memfd_inode = Arc::downcast::<MemfdInode>(inode).map_err(|_| {
+                    Error::with_message(Errno::ENXIO, "the inode is not re-openable")
+                })?;
+                Arc::new(MemfdFile::open_from_inode(memfd_inode.clone(), open_args)?)
+            }
+        },
         LookupResult::AtParent(result) => {
             if !open_args.creation_flags.contains(CreationFlags::O_CREAT)
                 || open_args.status_flags.contains(StatusFlags::O_PATH)
@@ -115,13 +124,13 @@ fn do_open(
                 parent.new_fs_child(&tail_name, InodeType::File, open_args.inode_mode)?;
 
             // Don't check access mode for newly created file.
-            InodeHandle::new_unchecked_access(
+            Arc::new(InodeHandle::new_unchecked_access(
                 new_path,
                 open_args.access_mode,
                 open_args.status_flags,
-            )?
+            )?)
         }
     };
 
-    Ok(inode_handle)
+    Ok(file_handle)
 }

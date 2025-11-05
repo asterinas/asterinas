@@ -18,11 +18,12 @@ use crate::{
     fs::{
         file_handle::{FileLike, Mappable},
         inode_handle::{do_fallocate_util, do_resize_util, do_seek_util},
+        path::check_open_util,
         tmpfs::TmpFs,
         utils::{
-            chmod, mkmod, AccessMode, CachePage, Extension, FallocMode, FileSystem, Inode,
-            InodeMode, InodeType, IoctlCmd, Metadata, PageCacheBackend, SeekFrom, StatusFlags,
-            XattrName, XattrNamespace, XattrSetFlags,
+            chmod, mkmod, AccessMode, CachePage, CreationFlags, Extension, FallocMode, FileSystem,
+            Inode, InodeMode, InodeType, IoctlCmd, Metadata, OpenArgs, PageCacheBackend, SeekFrom,
+            StatusFlags, XattrName, XattrNamespace, XattrSetFlags,
         },
     },
     prelude::*,
@@ -261,6 +262,23 @@ impl MemfdFile {
             offset: Mutex::new(0),
             access_mode: AccessMode::O_RDWR,
             status_flags: AtomicU32::new(0),
+        })
+    }
+
+    pub fn open_from_inode(inode: Arc<MemfdInode>, open_args: OpenArgs) -> Result<Self> {
+        let inode: Arc<dyn Inode> = inode;
+        inode.check_permission(open_args.access_mode.into())?;
+        check_open_util(inode.as_ref(), &open_args)?;
+
+        if open_args.creation_flags.contains(CreationFlags::O_TRUNC) {
+            inode.resize(0)?;
+        }
+
+        Ok(Self {
+            memfd_inode: inode,
+            offset: Mutex::new(0),
+            access_mode: open_args.access_mode,
+            status_flags: AtomicU32::new(open_args.status_flags.bits()),
         })
     }
 
