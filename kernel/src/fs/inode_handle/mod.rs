@@ -188,21 +188,20 @@ impl InodeHandle_ {
         }
     }
 
-    fn test_range_lock(&self, lock: RangeLockItem) -> Result<RangeLockItem> {
-        let mut req_lock = lock.clone();
-        if let Some(extension) = self.path.inode().extension() {
-            if let Some(range_lock_list) = extension.get::<RangeLockList>() {
-                req_lock = range_lock_list.test_lock(lock);
-            } else {
-                // The range lock could be placed if there is no lock list
-                req_lock.set_type(RangeLockType::Unlock);
-            }
-        } else {
-            debug!("Inode extension is not supported, the lock could be placed");
-            // Some file systems may not support range lock like procfs and sysfs
-            // Returns Ok if extension is not supported.
-            req_lock.set_type(RangeLockType::Unlock);
-        }
+    fn test_range_lock(&self, mut lock: RangeLockItem) -> Result<RangeLockItem> {
+        let Some(extension) = self.path.inode().extension() else {
+            // Range locks are not supported. So nothing is locked.
+            lock.set_type(RangeLockType::Unlock);
+            return Ok(lock);
+        };
+
+        let Some(range_lock_list) = extension.get::<RangeLockList>() else {
+            // The lock list is not present. So nothing is locked.
+            lock.set_type(RangeLockType::Unlock);
+            return Ok(lock);
+        };
+
+        let req_lock = range_lock_list.test_lock(lock);
         Ok(req_lock)
     }
 
@@ -212,20 +211,17 @@ impl InodeHandle_ {
             return Ok(());
         }
 
-        self.check_range_lock_with_access_mode(lock)?;
-        if let Some(extension) = self.path.inode().extension() {
-            let range_lock_list = match extension.get::<RangeLockList>() {
-                Some(list) => list,
-                None => extension.get_or_put_default::<RangeLockList>(),
-            };
+        let Some(extension) = self.path.inode().extension() else {
+            // TODO: Figure out whether range locks are supported on all inodes.
+            warn!("the inode does not have support for range locks; this operation will fail");
+            return_errno_with_message!(Errno::ENOLCK, "range locks are not supported");
+        };
 
-            range_lock_list.set_lock(lock, is_nonblocking)
-        } else {
-            debug!("Inode extension is not supported, let the lock could be acquired");
-            // Some file systems may not support range lock like procfs and sysfs
-            // Returns Ok if extension is not supported.
-            Ok(())
-        }
+        let range_lock_list = match extension.get::<RangeLockList>() {
+            Some(list) => list,
+            None => extension.get_or_put_default::<RangeLockList>(),
+        };
+        range_lock_list.set_lock(lock, is_nonblocking)
     }
 
     fn release_range_locks(&self) {
@@ -241,51 +237,32 @@ impl InodeHandle_ {
     }
 
     fn unlock_range_lock(&self, lock: &RangeLockItem) {
-        if let Some(extension) = self.path.inode().extension() {
-            if let Some(range_lock_list) = extension.get::<RangeLockList>() {
-                range_lock_list.unlock(lock);
-            }
+        if let Some(extension) = self.path.inode().extension()
+            && let Some(range_lock_list) = extension.get::<RangeLockList>()
+        {
+            range_lock_list.unlock(lock);
         }
-    }
-
-    fn check_range_lock_with_access_mode(&self, lock: &RangeLockItem) -> Result<()> {
-        match lock.type_() {
-            RangeLockType::ReadLock => {
-                if !self.access_mode().is_readable() {
-                    return_errno_with_message!(Errno::EBADF, "file not readable");
-                }
-            }
-            RangeLockType::WriteLock => {
-                if !self.access_mode().is_writable() {
-                    return_errno_with_message!(Errno::EBADF, "file not writable");
-                }
-            }
-            _ => (),
-        }
-        Ok(())
     }
 
     fn set_flock(&self, lock: FlockItem, is_nonblocking: bool) -> Result<()> {
-        if let Some(extension) = self.path.inode().extension() {
-            let flock_list = match extension.get::<FlockList>() {
-                Some(list) => list,
-                None => extension.get_or_put_default::<FlockList>(),
-            };
+        let Some(extension) = self.path.inode().extension() else {
+            // TODO: Figure out whether flocks are supported on all inodes.
+            warn!("the inode does not have support for flocks; this operation will fail");
+            return_errno_with_message!(Errno::ENOLCK, "flocks are not supported");
+        };
 
-            flock_list.set_lock(lock, is_nonblocking)
-        } else {
-            debug!("Inode extension is not supported, let the lock could be acquired");
-            // Some file systems may not support flock like procfs and sysfs
-            // Returns Ok if extension is not supported.
-            Ok(())
-        }
+        let flock_list = match extension.get::<FlockList>() {
+            Some(list) => list,
+            None => extension.get_or_put_default::<FlockList>(),
+        };
+        flock_list.set_lock(lock, is_nonblocking)
     }
 
     fn unlock_flock<R>(&self, req_owner: &InodeHandle<R>) {
-        if let Some(extension) = self.path.inode().extension() {
-            if let Some(flock_list) = extension.get::<FlockList>() {
-                flock_list.unlock(req_owner);
-            }
+        if let Some(extension) = self.path.inode().extension()
+            && let Some(flock_list) = extension.get::<FlockList>()
+        {
+            flock_list.unlock(req_owner);
         }
     }
 }
@@ -309,7 +286,7 @@ impl Debug for InodeHandle_ {
             .field("offset", &self.offset())
             .field("access_mode", &self.access_mode())
             .field("status_flags", &self.status_flags())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -319,26 +296,6 @@ impl<R> InodeHandle<R> {
         &self.0.path
     }
 
-    pub fn test_range_lock(&self, lock: RangeLockItem) -> Result<RangeLockItem> {
-        self.0.test_range_lock(lock)
-    }
-
-    pub fn set_range_lock(&self, lock: &RangeLockItem, is_nonblocking: bool) -> Result<()> {
-        self.0.set_range_lock(lock, is_nonblocking)
-    }
-
-    pub fn release_range_locks(&self) {
-        self.0.release_range_locks()
-    }
-
-    pub fn set_flock(&self, lock: FlockItem, is_nonblocking: bool) -> Result<()> {
-        self.0.set_flock(lock, is_nonblocking)
-    }
-
-    pub fn unlock_flock(&self) {
-        self.0.unlock_flock(self);
-    }
-
     pub fn offset(&self) -> usize {
         self.0.offset()
     }
@@ -346,8 +303,8 @@ impl<R> InodeHandle<R> {
 
 impl<R> Drop for InodeHandle<R> {
     fn drop(&mut self) {
-        self.release_range_locks();
-        self.unlock_flock();
+        self.0.release_range_locks();
+        self.0.unlock_flock(self);
     }
 }
 

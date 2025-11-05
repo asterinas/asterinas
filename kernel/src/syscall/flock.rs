@@ -17,7 +17,7 @@ pub fn sys_flock(fd: FileDesc, ops: i32, ctx: &Context) -> Result<SyscallReturn>
     let inode_file = file.as_inode_or_err()?;
     let ops: FlockOps = FlockOps::from_i32(ops)?;
     if ops.contains(FlockOps::LOCK_UN) {
-        inode_file.unlock_flock();
+        inode_file.unlock_flock()?;
     } else {
         let is_nonblocking = ops.contains(FlockOps::LOCK_NB);
         let flock = {
