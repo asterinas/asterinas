@@ -7,7 +7,7 @@ use crate::{
     events::IoEvents,
     fs::{
         inode_handle::FileIo,
-        utils::{IoctlCmd, StatusFlags},
+        utils::{InodeIo, IoctlCmd, StatusFlags},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -55,13 +55,39 @@ impl Drop for PtySlaveFile {
 }
 
 #[inherit_methods(from = "self.0")]
-impl FileIo for PtySlaveFile {
-    fn read(&self, writer: &mut VmWriter, status_flags: StatusFlags) -> Result<usize>;
-    fn write(&self, reader: &mut VmReader, status_flags: StatusFlags) -> Result<usize>;
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32>;
+impl Pollable for PtySlaveFile {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents;
+}
+
+impl InodeIo for PtySlaveFile {
+    fn read_at(
+        &self,
+        _offset: usize,
+        writer: &mut VmWriter,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
+        self.0.read(writer, status_flags)
+    }
+
+    fn write_at(
+        &self,
+        _offset: usize,
+        reader: &mut VmReader,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
+        self.0.write(reader, status_flags)
+    }
 }
 
 #[inherit_methods(from = "self.0")]
-impl Pollable for PtySlaveFile {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents;
+impl FileIo for PtySlaveFile {
+    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32>;
+
+    fn check_seekable(&self) -> Result<()> {
+        return_errno_with_message!(Errno::ESPIPE, "the inode is a TTY");
+    }
+
+    fn is_offset_aware(&self) -> bool {
+        false
+    }
 }

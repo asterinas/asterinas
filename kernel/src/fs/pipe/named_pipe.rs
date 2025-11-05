@@ -12,7 +12,7 @@ use crate::{
     events::IoEvents,
     fs::{
         inode_handle::FileIo,
-        utils::{AccessMode, StatusFlags},
+        utils::{AccessMode, InodeIo, StatusFlags},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -81,8 +81,13 @@ impl Drop for NamedPipeHandle {
     }
 }
 
-impl FileIo for NamedPipeHandle {
-    fn read(&self, writer: &mut VmWriter, status_flags: StatusFlags) -> Result<usize> {
+impl InodeIo for NamedPipeHandle {
+    fn read_at(
+        &self,
+        _offset: usize,
+        writer: &mut VmWriter,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
         if status_flags.contains(StatusFlags::O_NONBLOCK) {
             self.try_read(writer)
         } else {
@@ -90,12 +95,27 @@ impl FileIo for NamedPipeHandle {
         }
     }
 
-    fn write(&self, reader: &mut VmReader, status_flags: StatusFlags) -> Result<usize> {
+    fn write_at(
+        &self,
+        _offset: usize,
+        reader: &mut VmReader,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
         if status_flags.contains(StatusFlags::O_NONBLOCK) {
             self.try_write(reader)
         } else {
             self.wait_events(IoEvents::OUT, None, || self.try_write(reader))
         }
+    }
+}
+
+impl FileIo for NamedPipeHandle {
+    fn check_seekable(&self) -> Result<()> {
+        return_errno_with_message!(Errno::ESPIPE, "the inode is a FIFO file")
+    }
+
+    fn is_offset_aware(&self) -> bool {
+        false
     }
 }
 

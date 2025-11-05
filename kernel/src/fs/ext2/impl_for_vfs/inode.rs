@@ -1,21 +1,48 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(unused_variables)]
-
 use core::time::Duration;
 
 use crate::{
     fs::{
         ext2::{FilePerm, Inode as Ext2Inode},
         utils::{
-            DirentVisitor, Extension, FallocMode, FileSystem, Inode, InodeMode, InodeType,
-            IoctlCmd, Metadata, MknodType, SymbolicLink, XattrName, XattrNamespace, XattrSetFlags,
+            DirentVisitor, Extension, FallocMode, FileSystem, Inode, InodeIo, InodeMode, InodeType,
+            Metadata, MknodType, StatusFlags, SymbolicLink, XattrName, XattrNamespace,
+            XattrSetFlags,
         },
     },
     prelude::*,
     process::{Gid, Uid},
     vm::vmo::Vmo,
 };
+
+impl InodeIo for Ext2Inode {
+    fn read_at(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
+        if status_flags.contains(StatusFlags::O_DIRECT) {
+            self.read_direct_at(offset, writer)
+        } else {
+            self.read_at(offset, writer)
+        }
+    }
+
+    fn write_at(
+        &self,
+        offset: usize,
+        reader: &mut VmReader,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
+        if status_flags.contains(StatusFlags::O_DIRECT) {
+            self.write_direct_at(offset, reader)
+        } else {
+            self.write_at(offset, reader)
+        }
+    }
+}
 
 impl Inode for Ext2Inode {
     fn size(&self) -> usize {
@@ -93,22 +120,6 @@ impl Inode for Ext2Inode {
         Some(self.page_cache())
     }
 
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        self.read_at(offset, writer)
-    }
-
-    fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        self.read_direct_at(offset, writer)
-    }
-
-    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        self.write_at(offset, reader)
-    }
-
-    fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        self.write_direct_at(offset, reader)
-    }
-
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
         Ok(self.create(name, type_, mode.into())?)
     }
@@ -167,10 +178,6 @@ impl Inode for Ext2Inode {
 
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
         self.fallocate(mode, offset, len)
-    }
-
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        Err(Error::new(Errno::EINVAL))
     }
 
     fn sync_all(&self) -> Result<()> {

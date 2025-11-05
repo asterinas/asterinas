@@ -6,7 +6,9 @@ use inherit_methods_macro::inherit_methods;
 
 use super::{Common, ProcFs};
 use crate::{
-    fs::utils::{FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata, SymbolicLink},
+    fs::utils::{
+        FileSystem, Inode, InodeIo, InodeMode, InodeType, Metadata, StatusFlags, SymbolicLink,
+    },
     prelude::*,
     process::{Gid, Uid},
 };
@@ -37,6 +39,26 @@ impl<S: SymOps> ProcSym<S> {
     }
 }
 
+impl<S: SymOps + 'static> InodeIo for ProcSym<S> {
+    fn read_at(
+        &self,
+        _offset: usize,
+        _writer: &mut VmWriter,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        Err(Error::new(Errno::EPERM))
+    }
+
+    fn write_at(
+        &self,
+        _offset: usize,
+        _reader: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        Err(Error::new(Errno::EPERM))
+    }
+}
+
 #[inherit_methods(from = "self.common")]
 impl<S: SymOps + 'static> Inode for ProcSym<S> {
     fn size(&self) -> usize;
@@ -64,31 +86,11 @@ impl<S: SymOps + 'static> Inode for ProcSym<S> {
         InodeType::SymLink
     }
 
-    fn read_at(&self, _offset: usize, _writer: &mut VmWriter) -> Result<usize> {
-        Err(Error::new(Errno::EPERM))
-    }
-
-    fn read_direct_at(&self, _offset: usize, _writer: &mut VmWriter) -> Result<usize> {
-        Err(Error::new(Errno::EPERM))
-    }
-
-    fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
-        Err(Error::new(Errno::EPERM))
-    }
-
-    fn write_direct_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
-        Err(Error::new(Errno::EPERM))
-    }
-
     fn read_link(&self) -> Result<SymbolicLink> {
         self.inner.read_link()
     }
 
     fn write_link(&self, _target: &str) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
-    }
-
-    fn ioctl(&self, _cmd: IoctlCmd, _arg: usize) -> Result<i32> {
         Err(Error::new(Errno::EPERM))
     }
 

@@ -13,18 +13,17 @@ use aster_systree::{
     SysAttr, SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj, SysStr, SysSymlink,
 };
 
+use super::InodeIo;
 use crate::{
-    events::IoEvents,
     fs::{
         inode_handle::FileIo,
         utils::{
             mkmod, AccessMode, DirentVisitor, FallocMode, FileSystem, Inode, InodeMode, InodeType,
-            IoctlCmd, Metadata, MknodType, StatusFlags, SymbolicLink,
+            Metadata, MknodType, StatusFlags, SymbolicLink,
         },
     },
     prelude::*,
-    process::{signal::PollHandle, Gid, Uid},
-    return_errno, return_errno_with_message,
+    process::{Gid, Uid},
     time::{clocks::RealTimeCoarseClock, Clock},
 };
 
@@ -279,6 +278,42 @@ pub(in crate::fs) enum SysTreeNodeKind {
     Symlink(Arc<dyn SysSymlink>),
 }
 
+impl<KInode: SysTreeInodeTy + Send + Sync + 'static> InodeIo for KInode {
+    default fn read_at(
+        &self,
+        offset: usize,
+        buf: &mut VmWriter,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        let SysTreeNodeKind::Attr(attr, leaf) = &self.node_kind() else {
+            return Err(Error::new(Errno::EINVAL));
+        };
+
+        let len = leaf.read_attr_at(attr.name(), offset, buf)?;
+
+        Ok(len)
+    }
+
+    default fn write_at(
+        &self,
+        offset: usize,
+        buf: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        let SysTreeNodeKind::Attr(attr, leaf) = &self.node_kind() else {
+            return Err(Error::new(Errno::EINVAL));
+        };
+
+        let len = if offset == 0 {
+            leaf.write_attr(attr.name(), buf)?
+        } else {
+            leaf.write_attr_at(attr.name(), offset, buf)?
+        };
+
+        Ok(len)
+    }
+}
+
 impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
     default fn type_(&self) -> InodeType {
         self.metadata().type_
@@ -352,38 +387,6 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
 
     default fn page_cache(&self) -> Option<Arc<crate::vm::vmo::Vmo>> {
         None
-    }
-
-    default fn read_at(&self, offset: usize, buf: &mut VmWriter) -> Result<usize> {
-        self.read_direct_at(offset, buf)
-    }
-
-    default fn read_direct_at(&self, offset: usize, buf: &mut VmWriter) -> Result<usize> {
-        let SysTreeNodeKind::Attr(attr, leaf) = &self.node_kind() else {
-            return Err(Error::new(Errno::EINVAL));
-        };
-
-        let len = leaf.read_attr_at(attr.name(), offset, buf)?;
-
-        Ok(len)
-    }
-
-    default fn write_at(&self, offset: usize, buf: &mut VmReader) -> Result<usize> {
-        self.write_direct_at(offset, buf)
-    }
-
-    default fn write_direct_at(&self, offset: usize, buf: &mut VmReader) -> Result<usize> {
-        let SysTreeNodeKind::Attr(attr, leaf) = &self.node_kind() else {
-            return Err(Error::new(Errno::EINVAL));
-        };
-
-        let len = if offset == 0 {
-            leaf.write_attr(attr.name(), buf)?
-        } else {
-            leaf.write_attr_at(attr.name(), offset, buf)?
-        };
-
-        Ok(len)
     }
 
     default fn create(
@@ -561,10 +564,6 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         None
     }
 
-    default fn ioctl(&self, _cmd: IoctlCmd, _arg: usize) -> Result<i32> {
-        Err(Error::new(Errno::ENOTTY))
-    }
-
     default fn sync_all(&self) -> Result<()> {
         Ok(())
     }
@@ -575,19 +574,6 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
 
     default fn fallocate(&self, _mode: FallocMode, _offset: usize, _len: usize) -> Result<()> {
         Err(Error::new(Errno::EOPNOTSUPP))
-    }
-
-    default fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
-        let mut events = IoEvents::empty();
-        if let SysTreeNodeKind::Attr(attr, _) = &self.node_kind() {
-            if attr.perms().can_read() {
-                events |= IoEvents::IN;
-            }
-            if attr.perms().can_write() {
-                events |= IoEvents::OUT;
-            }
-        }
-        events & mask
     }
 
     default fn is_dentry_cacheable(&self) -> bool {

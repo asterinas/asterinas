@@ -11,8 +11,8 @@ use crate::{
     fs::{
         path::{is_dot, is_dotdot},
         utils::{
-            DirEntryVecExt, DirentVisitor, FileSystem, Inode, InodeMode, InodeType, Metadata,
-            MknodType,
+            DirEntryVecExt, DirentVisitor, FileSystem, Inode, InodeIo, InodeMode, InodeType,
+            Metadata, MknodType, StatusFlags,
         },
     },
     prelude::*,
@@ -68,6 +68,26 @@ impl<D: DirOps> ProcDir<D> {
 
     pub fn cached_children(&self) -> &RwMutex<SlotVec<(String, Arc<dyn Inode>)>> {
         &self.cached_children
+    }
+}
+
+impl<D: DirOps + 'static> InodeIo for ProcDir<D> {
+    fn read_at(
+        &self,
+        _offset: usize,
+        _writer: &mut VmWriter,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        Err(Error::new(Errno::EISDIR))
+    }
+
+    fn write_at(
+        &self,
+        _offset: usize,
+        _reader: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        Err(Error::new(Errno::EISDIR))
     }
 }
 

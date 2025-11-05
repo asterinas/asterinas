@@ -6,7 +6,9 @@ use inherit_methods_macro::inherit_methods;
 
 use super::{Common, ProcFs};
 use crate::{
-    fs::utils::{FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata, SymbolicLink},
+    fs::utils::{
+        FileSystem, Inode, InodeIo, InodeMode, InodeType, Metadata, StatusFlags, SymbolicLink,
+    },
     prelude::*,
     process::{Gid, Uid},
 };
@@ -33,6 +35,26 @@ impl<F: FileOps> ProcFile<F> {
             inner: file,
             common,
         })
+    }
+}
+
+impl<F: FileOps + 'static> InodeIo for ProcFile<F> {
+    fn read_at(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        self.inner.read_at(offset, writer)
+    }
+
+    fn write_at(
+        &self,
+        offset: usize,
+        reader: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        self.inner.write_at(offset, reader)
     }
 }
 
@@ -63,32 +85,12 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
         InodeType::File
     }
 
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        self.inner.read_at(offset, writer)
-    }
-
-    fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        self.read_at(offset, writer)
-    }
-
-    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        self.inner.write_at(offset, reader)
-    }
-
-    fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        self.write_at(offset, reader)
-    }
-
     fn read_link(&self) -> Result<SymbolicLink> {
         Err(Error::new(Errno::EINVAL))
     }
 
     fn write_link(&self, _target: &str) -> Result<()> {
         Err(Error::new(Errno::EINVAL))
-    }
-
-    fn ioctl(&self, _cmd: IoctlCmd, _arg: usize) -> Result<i32> {
-        Err(Error::new(Errno::EPERM))
     }
 
     fn is_dentry_cacheable(&self) -> bool {
