@@ -10,7 +10,10 @@ use super::{
     utils::{InodeType, PATH_MAX, SYMLINKS_MAX},
 };
 use crate::{
-    fs::{path::MountNamespace, utils::SymbolicLink},
+    fs::{
+        path::MountNamespace,
+        utils::{Inode, SymbolicLink},
+    },
     prelude::*,
     process::posix_thread::AsThreadLocal,
 };
@@ -85,21 +88,39 @@ impl FsResolver {
         Ok(())
     }
 
-    /// Lookups the target path according to the `fs_path`.
+    /// Lookups the target `Path` according to the `fs_path`.
     ///
     /// Symlinks are always followed.
     pub fn lookup(&self, fs_path: &FsPath) -> Result<Path> {
-        self.lookup_inner(fs_path, true)?.into_path()
+        self.lookup_inode(fs_path)?
+            .into_path()
+            .ok_or_else(|| Error::with_message(Errno::EPERM, "the path refers to a pseudo file"))
     }
 
-    /// Lookups the target path according to the `fs_path`.
+    /// Lookups the target `Path` according to the `fs_path`.
     ///
     /// If the last component is a symlink, it will not be followed.
     pub fn lookup_no_follow(&self, fs_path: &FsPath) -> Result<Path> {
-        self.lookup_inner(fs_path, false)?.into_path()
+        self.lookup_inode_no_follow(fs_path)?
+            .into_path()
+            .ok_or_else(|| Error::with_message(Errno::EPERM, "the path refers to a pseudo file"))
     }
 
-    /// Lookups the target path according to the `fs_path` and leaves
+    /// Lookups the target `PathOrInode` according to the `fs_path`.
+    ///
+    /// Symlinks are always followed.
+    pub fn lookup_inode(&self, fs_path: &FsPath) -> Result<PathOrInode> {
+        self.lookup_inner(fs_path, true)?.into_path_or_inode()
+    }
+
+    /// Lookups the target `PathOrInode` according to the `fs_path`.
+    ///
+    /// If the last component is a symlink, it will not be followed.
+    pub fn lookup_inode_no_follow(&self, fs_path: &FsPath) -> Result<PathOrInode> {
+        self.lookup_inner(fs_path, false)?.into_path_or_inode()
+    }
+
+    /// Lookups the target `PathOrInode` according to the `fs_path` and leaves
     /// the result unresolved.
     ///
     /// An unresolved result may indicate either successful full-path resolution,
@@ -111,7 +132,7 @@ impl FsResolver {
         self.lookup_inner(fs_path, true)
     }
 
-    /// Lookups the target path according to the `fs_path` and leaves
+    /// Lookups the target `PathOrInode` according to the `fs_path` and leaves
     /// the result unresolved.
     ///
     /// An unresolved result may indicate either successful full-path resolution,
@@ -124,14 +145,14 @@ impl FsResolver {
     }
 
     fn lookup_inner(&self, fs_path: &FsPath, follow_tail_link: bool) -> Result<LookupResult> {
-        let path = match fs_path.inner {
+        let lookup_res = match fs_path.inner {
             FsPathInner::Absolute(path) => {
                 self.lookup_from_parent(&self.root, path.trim_start_matches('/'), follow_tail_link)?
             }
             FsPathInner::CwdRelative(path) => {
                 self.lookup_from_parent(&self.cwd, path, follow_tail_link)?
             }
-            FsPathInner::Cwd => LookupResult::Resolved(self.cwd.clone()),
+            FsPathInner::Cwd => LookupResult::Resolved(PathOrInode::Path(self.cwd.clone())),
             FsPathInner::FdRelative(fd, path) => {
                 let task = Task::current().unwrap();
                 let mut file_table = task.as_thread_local().unwrap().borrow_file_table_mut();
@@ -143,11 +164,16 @@ impl FsResolver {
                 let task = Task::current().unwrap();
                 let mut file_table = task.as_thread_local().unwrap().borrow_file_table_mut();
                 let file = get_file_fast!(&mut file_table, fd);
-                LookupResult::Resolved(file.as_inode_handle_or_err()?.path().clone())
+                let path_or_inode = if let Ok(inode_handle) = file.as_inode_handle_or_err() {
+                    PathOrInode::Path(inode_handle.path().clone())
+                } else {
+                    PathOrInode::Inode(file.inode().clone())
+                };
+                LookupResult::Resolved(path_or_inode)
             }
         };
 
-        Ok(path)
+        Ok(lookup_res)
     }
 
     /// Lookups the target path according to the parent directory path.
@@ -174,7 +200,7 @@ impl FsResolver {
             return_errno_with_message!(Errno::ENAMETOOLONG, "the path is too long");
         }
         if relative_path.is_empty() {
-            return Ok(LookupResult::Resolved(parent.clone()));
+            return Ok(LookupResult::Resolved(PathOrInode::Path(parent.clone())));
         }
 
         // To handle symlinks
@@ -259,8 +285,7 @@ impl FsResolver {
                                 "the inode is not a directory"
                             );
                         }
-                        // FIXME: return Ok(LookupResult::Resolved(PathOrInode::Inode(inode)));
-                        return Ok(LookupResult::Resolved(current_path));
+                        return Ok(LookupResult::Resolved(PathOrInode::Inode(inode)));
                     }
                 }
             } else {
@@ -273,7 +298,7 @@ impl FsResolver {
             }
         }
 
-        Ok(LookupResult::Resolved(current_path))
+        Ok(LookupResult::Resolved(PathOrInode::Path(current_path)))
     }
 }
 
@@ -352,18 +377,54 @@ impl<'a> TryFrom<&'a str> for FsPath<'a> {
     }
 }
 
+/// An item in the file system.
+// FIXME: Each item in the file system should have a `Path`. This struct exists
+// because not all `Arc<dyn FileLike>`s are associated with paths. We should
+// introduce `PipeFs`, `SocketFs`, and `AnonInodeFs`, add pseudo paths and dentries
+// for these pseudo inodes, and eventually remove this struct.
+#[derive(Clone)]
+pub enum PathOrInode {
+    Path(Path),
+    Inode(Arc<dyn Inode>),
+}
+
+impl PathOrInode {
+    pub fn into_path(self) -> Option<Path> {
+        match self {
+            PathOrInode::Path(path) => Some(path),
+            PathOrInode::Inode(_) => None,
+        }
+    }
+
+    pub fn inode(&self) -> &Arc<dyn Inode> {
+        match self {
+            PathOrInode::Path(path) => path.inode(),
+            PathOrInode::Inode(inode) => inode,
+        }
+    }
+}
+
+impl Debug for PathOrInode {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            PathOrInode::Path(path) => write!(f, "PathOrInode::Path({})", path.abs_path()),
+            PathOrInode::Inode(inode) => write!(f, "PathOrInode::Inode({:p})", inode.as_ref()),
+        }
+    }
+}
+
 // A result type for lookup operations.
 pub enum LookupResult {
-    /// The entire path was resolved to a final `Path`.
-    Resolved(Path),
+    /// The entire path was resolved to a final `PathOrInode`.
+    Resolved(PathOrInode),
     /// The path resolution stopped at a parent directory.
     AtParent(LookupParentResult),
 }
 
 impl LookupResult {
-    fn into_path(self) -> Result<Path> {
+    fn into_path_or_inode(self) -> Result<PathOrInode> {
         match self {
-            LookupResult::Resolved(path) => Ok(path),
+            LookupResult::Resolved(target) => Ok(target),
             LookupResult::AtParent(_) => Err(Error::with_message(
                 Errno::ENOENT,
                 "path resolution did not reach the final target",
