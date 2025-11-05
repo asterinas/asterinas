@@ -23,14 +23,10 @@ use crate::{
         file_handle::FileLike,
         file_table::{FdFlags, FileDesc},
         pseudofs::anon_inodefs_shared_inode,
-        utils::{mkmod, CreationFlags, Inode, InodeType, Metadata, StatusFlags},
+        utils::{CreationFlags, Inode, StatusFlags},
     },
     prelude::*,
-    process::{
-        signal::{PollHandle, Pollable, Pollee},
-        Gid, Uid,
-    },
-    time::clocks::RealTimeClock,
+    process::signal::{PollHandle, Pollable, Pollee},
 };
 
 pub fn sys_eventfd(init_val: u64, ctx: &Context) -> Result<SyscallReturn> {
@@ -233,28 +229,6 @@ impl FileLike for EventFile {
         // TODO: deal with other flags
 
         Ok(())
-    }
-
-    fn metadata(&self) -> Metadata {
-        // This is a dummy implementation.
-        // TODO: Add "anonymous inode fs" and link `EventFile` to it.
-        let now = RealTimeClock::get().read_time();
-        Metadata {
-            dev: 0,
-            ino: 0,
-            size: 0,
-            blk_size: 0,
-            blocks: 0,
-            atime: now,
-            mtime: now,
-            ctime: now,
-            type_: InodeType::NamedPipe,
-            mode: mkmod!(u+w),
-            nlinks: 1,
-            uid: Uid::new_root(),
-            gid: Gid::new_root(),
-            rdev: 0,
-        }
     }
 
     fn inode(&self) -> &Arc<dyn Inode> {

@@ -7,7 +7,7 @@ use crate::{
     fs::{
         file_handle::FileLike,
         pseudofs::{sockfs_singleton, PseudoInode},
-        utils::{mkmod, Inode, InodeType, Metadata, StatusFlags},
+        utils::{mkmod, Inode, InodeType, StatusFlags},
     },
     prelude::*,
     process::{Gid, Uid},
@@ -170,12 +170,6 @@ impl<T: Socket + 'static> FileLike for T {
 
     fn as_socket(&self) -> Option<&dyn Socket> {
         Some(self)
-    }
-
-    fn metadata(&self) -> Metadata {
-        // This is a dummy implementation.
-        // TODO: Add "SockFS" and link `Socket` to it.
-        Metadata::new_socket(0, mkmod!(a+rwx), aster_block::BLOCK_SIZE)
     }
 
     fn inode(&self) -> &Arc<dyn Inode> {

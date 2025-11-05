@@ -7,14 +7,13 @@ use crate::{
     fs::{
         file_handle::FileLike,
         pseudofs::anon_inodefs_shared_inode,
-        utils::{mkmod, Inode, InodeType, Metadata, StatusFlags},
+        utils::{Inode, StatusFlags},
     },
     prelude::*,
     process::{
         signal::{PollHandle, Pollable},
-        Gid, Process, Uid,
+        Process,
     },
-    time::clocks::RealTimeClock,
 };
 
 pub struct PidFile {
@@ -70,27 +69,6 @@ impl FileLike for PidFile {
 
     fn write(&self, _reader: &mut VmReader) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "PID file cannot be written");
-    }
-
-    fn metadata(&self) -> Metadata {
-        let now = RealTimeClock::get().read_time();
-        Metadata {
-            dev: 0,
-            ino: 0,
-            size: 0,
-            blk_size: 4096,
-            blocks: 0,
-            atime: now,
-            mtime: now,
-            ctime: now,
-            type_: InodeType::Unknown,
-            mode: mkmod!(u+rw),
-            nlinks: 1,
-            // FIXME: Should we use the process's UID and GID here?
-            uid: Uid::new_root(),
-            gid: Gid::new_root(),
-            rdev: 0,
-        }
     }
 
     fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {

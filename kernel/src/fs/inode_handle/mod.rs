@@ -15,16 +15,12 @@ use crate::{
         file_handle::Mappable,
         path::Path,
         utils::{
-            DirentVisitor, FallocMode, FileRange, FlockItem, FlockList, Inode, InodeMode,
-            InodeType, IoctlCmd, Metadata, RangeLockItem, RangeLockList, RangeLockType, SeekFrom,
-            StatusFlags, OFFSET_MAX,
+            DirentVisitor, FallocMode, FileRange, FlockItem, FlockList, Inode, InodeType, IoctlCmd,
+            RangeLockItem, RangeLockList, RangeLockType, SeekFrom, StatusFlags, OFFSET_MAX,
         },
     },
     prelude::*,
-    process::{
-        signal::{PollHandle, Pollable},
-        Gid, Uid,
-    },
+    process::signal::{PollHandle, Pollable},
 };
 
 struct HandleInner {
@@ -259,13 +255,6 @@ impl HandleInner {
 #[inherit_methods(from = "self.path")]
 impl HandleInner {
     pub(self) fn size(&self) -> usize;
-    pub(self) fn metadata(&self) -> Metadata;
-    pub(self) fn mode(&self) -> Result<InodeMode>;
-    pub(self) fn set_mode(&self, mode: InodeMode) -> Result<()>;
-    pub(self) fn owner(&self) -> Result<Uid>;
-    pub(self) fn set_owner(&self, uid: Uid) -> Result<()>;
-    pub(self) fn group(&self) -> Result<Gid>;
-    pub(self) fn set_group(&self, gid: Gid) -> Result<()>;
     pub(self) fn inode(&self) -> &Arc<dyn Inode>;
 }
 

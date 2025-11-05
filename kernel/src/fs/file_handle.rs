@@ -8,12 +8,10 @@ use ostd::io::IoMem;
 
 use super::inode_handle::InodeHandle;
 use crate::{
-    fs::utils::{
-        AccessMode, FallocMode, Inode, InodeMode, IoctlCmd, Metadata, SeekFrom, StatusFlags,
-    },
+    fs::utils::{AccessMode, FallocMode, Inode, IoctlCmd, SeekFrom, StatusFlags},
     net::socket::Socket,
     prelude::*,
-    process::{signal::Pollable, Gid, Uid},
+    process::signal::Pollable,
 };
 
 /// The basic operations defined on a file
@@ -67,36 +65,6 @@ pub trait FileLike: Pollable + Send + Sync + Any {
 
     fn resize(&self, new_size: usize) -> Result<()> {
         return_errno_with_message!(Errno::EINVAL, "resize is not supported");
-    }
-
-    /// Get the metadata that describes this file.
-    fn metadata(&self) -> Metadata;
-
-    #[expect(dead_code)]
-    fn mode(&self) -> Result<InodeMode> {
-        return_errno_with_message!(Errno::EINVAL, "mode is not supported");
-    }
-
-    fn set_mode(&self, mode: InodeMode) -> Result<()> {
-        return_errno_with_message!(Errno::EINVAL, "set_mode is not supported");
-    }
-
-    #[expect(dead_code)]
-    fn owner(&self) -> Result<Uid> {
-        return_errno_with_message!(Errno::EPERM, "owner is not supported");
-    }
-
-    fn set_owner(&self, uid: Uid) -> Result<()> {
-        return_errno_with_message!(Errno::EPERM, "set_owner is not supported");
-    }
-
-    #[expect(dead_code)]
-    fn group(&self) -> Result<Gid> {
-        return_errno_with_message!(Errno::EPERM, "group is not supported");
-    }
-
-    fn set_group(&self, gid: Gid) -> Result<()> {
-        return_errno_with_message!(Errno::EPERM, "set_group is not supported");
     }
 
     fn status_flags(&self) -> StatusFlags {
