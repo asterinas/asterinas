@@ -31,7 +31,7 @@ use crate::{
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
         utils::{
             mkmod, CachePage, DirentVisitor, Extension, Inode, InodeMode, InodeType, IoctlCmd,
-            Metadata, MknodType, PageCache, PageCacheBackend,
+            Metadata, MknodType, PageCache, PageCacheBackend, SymbolicLink,
         },
     },
     prelude::*,
@@ -1671,7 +1671,7 @@ impl Inode for ExfatInode {
         Ok(())
     }
 
-    fn read_link(&self) -> Result<String> {
+    fn read_link(&self) -> Result<SymbolicLink> {
         return_errno_with_message!(Errno::EINVAL, "unsupported operation")
     }
 

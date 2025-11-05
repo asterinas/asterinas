@@ -40,7 +40,6 @@ pub const MAX_MEMFD_NAME_LEN: usize = 249;
 
 pub struct MemfdInode {
     inode: RamInode,
-    #[expect(dead_code)]
     name: String,
     seals: Mutex<FileSeals>,
 }
@@ -90,6 +89,10 @@ impl MemfdInode {
             may_perms.remove(VmPerms::MAY_WRITE);
         }
         Ok(())
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 }
 

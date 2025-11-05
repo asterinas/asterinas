@@ -6,7 +6,7 @@ use inherit_methods_macro::inherit_methods;
 
 use super::{Common, ProcFs};
 use crate::{
-    fs::utils::{FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata},
+    fs::utils::{FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata, SymbolicLink},
     prelude::*,
     process::{Gid, Uid},
 };
@@ -80,7 +80,7 @@ impl<S: SymOps + 'static> Inode for ProcSym<S> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn read_link(&self) -> Result<String> {
+    fn read_link(&self) -> Result<SymbolicLink> {
         self.inner.read_link()
     }
 
@@ -98,5 +98,5 @@ impl<S: SymOps + 'static> Inode for ProcSym<S> {
 }
 
 pub trait SymOps: Sync + Send {
-    fn read_link(&self) -> Result<String>;
+    fn read_link(&self) -> Result<SymbolicLink>;
 }

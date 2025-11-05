@@ -16,6 +16,8 @@ use crate::{
     fs::{
         device::{Device, DeviceType},
         inode_handle::FileIo,
+        path::Path,
+        ramfs::memfd::MemfdInode,
         utils::StatusFlags,
     },
     prelude::*,
@@ -355,7 +357,7 @@ pub trait Inode: Any + Sync + Send {
         Err(Error::new(Errno::ENOTDIR))
     }
 
-    fn read_link(&self) -> Result<String> {
+    fn read_link(&self) -> Result<SymbolicLink> {
         Err(Error::new(Errno::EISDIR))
     }
 
@@ -641,5 +643,52 @@ impl Clone for Extension {
 impl Default for Extension {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// A symbolic link.
+pub enum SymbolicLink {
+    /// A plain text.
+    ///
+    /// This is the most common type of symbolic link.
+    /// Symbolic links on a normal FS are of this variant.
+    Plain(String),
+    /// An file object residing at a FS path.
+    ///
+    /// This variant is intended to support the special ProcFS symbolic links,
+    /// such as `/proc/[pid]/fd/[fd]` and `/proc/[pid]/exe`.
+    Path(Path),
+    /// An inode object without a FS path.
+    // FIXME:
+    // This variant exists because not all `Arc<dyn FileLike>`s are associated
+    // with paths. We should add pseudo paths and dentries for these inodes,
+    // and eventually remove this variant.
+    Inode(Arc<dyn Inode>),
+}
+
+impl SymbolicLink {
+    pub fn into_plain(self) -> Option<String> {
+        match self {
+            SymbolicLink::Plain(s) => Some(s),
+            _ => None,
+        }
+    }
+}
+
+#[expect(clippy::to_string_trait_impl)]
+impl ToString for SymbolicLink {
+    fn to_string(&self) -> String {
+        match self {
+            SymbolicLink::Plain(s) => s.clone(),
+            SymbolicLink::Path(path) => path.abs_path(),
+            SymbolicLink::Inode(inode) => {
+                // FIXME: Add pseudo dentries to store the correct name.
+                if let Some(memfd_inode) = inode.downcast_ref::<MemfdInode>() {
+                    memfd_inode.name().to_string()
+                } else {
+                    String::from("[pseudo inode]")
+                }
+            }
+        }
     }
 }
