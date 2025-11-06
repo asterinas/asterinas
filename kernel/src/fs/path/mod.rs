@@ -102,6 +102,8 @@ impl Path {
     /// Gets the absolute path.
     ///
     /// It will resolve the mountpoint automatically.
+    //
+    // FIXME: This method needs to be aware of the current process's root path.
     pub fn abs_path(&self) -> String {
         let mut path_name = self.effective_name();
         let mut current_dir = self.this();
@@ -126,6 +128,8 @@ impl Path {
     ///
     /// If it is the root of a mount, it will go up to the mountpoint
     /// to get the name of the mountpoint recursively.
+    //
+    // FIXME: This method needs to be aware of the current process's root path.
     fn effective_name(&self) -> String {
         if !self.is_mount_root() {
             return self.dentry.name();

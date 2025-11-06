@@ -332,6 +332,27 @@ impl Dentry {
         }
         Ok(())
     }
+
+    /// Gets the absolute path name of this `Dentry` within the filesystem.
+    pub(super) fn path_name(&self) -> String {
+        let mut path_name = self.name().to_string();
+        let mut current_dir = self.this();
+
+        while let Some(parent_dir) = current_dir.parent() {
+            path_name = {
+                let parent_name = parent_dir.name();
+                if parent_name != "/" {
+                    parent_name + "/" + &path_name
+                } else {
+                    parent_name + &path_name
+                }
+            };
+            current_dir = parent_dir;
+        }
+
+        debug_assert!(path_name.starts_with('/'));
+        path_name
+    }
 }
 
 #[inherit_methods(from = "self.inode")]
