@@ -19,7 +19,7 @@ pub trait TtyDriver: Send + Sync + 'static {
     /// Opens the TTY.
     ///
     /// This function will be called when opening `/dev/tty`.
-    fn open(tty: Arc<Tty<Self>>) -> Result<Arc<dyn FileIo>>
+    fn open(tty: Arc<Tty<Self>>) -> Result<Box<dyn FileIo>>
     where
         Self: Sized;
 

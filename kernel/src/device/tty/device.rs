@@ -3,14 +3,11 @@
 use device_id::DeviceId;
 
 use crate::{
-    events::IoEvents,
     fs::{
         device::{Device, DeviceType},
         inode_handle::FileIo,
-        utils::StatusFlags,
     },
     prelude::*,
-    process::signal::{PollHandle, Pollable},
 };
 
 /// Corresponds to `/dev/tty` in the file system. This device represents the controlling terminal
@@ -18,12 +15,12 @@ use crate::{
 pub struct TtyDevice;
 
 impl Device for TtyDevice {
-    fn open(&self) -> Option<Result<Arc<dyn FileIo>>> {
+    fn open(&self) -> Result<Box<dyn FileIo>> {
         let Some(terminal) = current!().terminal() else {
-            return Some(Err(Error::with_message(
+            return_errno_with_message!(
                 Errno::ENOTTY,
-                "the process does not have a controlling terminal",
-            )));
+                "the process does not have a controlling terminal"
+            );
         };
 
         terminal.open()
@@ -35,21 +32,5 @@ impl Device for TtyDevice {
 
     fn id(&self) -> DeviceId {
         DeviceId::new(5, 0)
-    }
-}
-
-impl Pollable for TtyDevice {
-    fn poll(&self, _mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
-        IoEvents::empty()
-    }
-}
-
-impl FileIo for TtyDevice {
-    fn read(&self, _writer: &mut VmWriter, _status_flags: StatusFlags) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "cannot read tty device");
-    }
-
-    fn write(&self, _reader: &mut VmReader, _status_flags: StatusFlags) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "cannot write tty device");
     }
 }

@@ -82,8 +82,8 @@ impl TtyDriver for PtyDriver {
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/major.h#L147>.
     const DEVICE_MAJOR_ID: u32 = 136;
 
-    fn open(tty: Arc<Tty<Self>>) -> Result<Arc<dyn FileIo>> {
-        Ok(Arc::new(PtySlaveFile::new(tty)?))
+    fn open(tty: Arc<Tty<Self>>) -> Result<Box<dyn FileIo>> {
+        Ok(Box::new(PtySlaveFile::new(tty)?))
     }
 
     fn push_output(&self, chs: &[u8]) -> Result<usize> {

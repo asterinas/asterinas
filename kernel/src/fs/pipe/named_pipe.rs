@@ -28,8 +28,8 @@ struct NamedPipeHandle {
 }
 
 impl NamedPipeHandle {
-    fn new(inner: Arc<PipeObj>, access_mode: AccessMode) -> Arc<Self> {
-        Arc::new(Self { inner, access_mode })
+    fn new(inner: Arc<PipeObj>, access_mode: AccessMode) -> Box<Self> {
+        Box::new(Self { inner, access_mode })
     }
 
     fn try_read(&self, writer: &mut VmWriter) -> Result<usize> {
@@ -136,11 +136,11 @@ impl NamedPipe {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Result<Arc<dyn FileIo>> {
+    ) -> Result<Box<dyn FileIo>> {
         let mut pipe = self.pipe.lock();
         let pipe_obj = pipe.get_or_create_pipe_obj();
 
-        let handle: Arc<dyn FileIo> = match access_mode {
+        let handle: Box<dyn FileIo> = match access_mode {
             AccessMode::O_RDONLY => {
                 pipe.read_count += 1;
 
