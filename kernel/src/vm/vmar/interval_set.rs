@@ -70,18 +70,11 @@ where
     /// that contains the point.
     pub fn find_one(&self, point: &K) -> Option<&V> {
         let cursor = self.btree.lower_bound(core::ops::Bound::Excluded(point));
-        // There's one previous element and one following element that may
-        // contain the point. If they don't, there's no other chances.
-        if let Some((_, v)) = cursor.peek_prev() {
-            if v.range().end > *point {
-                return Some(v);
-            }
-        } else if let Some((_, v)) = cursor.peek_next() {
-            if v.range().start <= *point {
-                return Some(v);
-            }
-        }
-        None
+        // There's only one previous element that may contain the point.
+        // If it doesn't, there's no other chances.
+        cursor
+            .peek_prev()
+            .and_then(|(_, v)| (v.range().end > *point).then_some(v))
     }
 
     /// Finds all interval items that intersect with the given range.
