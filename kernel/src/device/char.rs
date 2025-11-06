@@ -4,6 +4,7 @@
 
 #![expect(dead_code)]
 
+use alloc::format;
 use core::ops::Range;
 
 use device_id::{DeviceId, MajorId};
@@ -173,9 +174,14 @@ impl<'a> DevtmpfsName<'a> {
 
 pub(super) fn init_in_first_process(fs_resolver: &FsResolver) -> Result<()> {
     for device in collect_all() {
-        let name = device.devtmpfs_name().dev_name().to_string();
+        let devtmpfs_name = device.devtmpfs_name();
+        let path = if let Some(class_name) = devtmpfs_name.class_name() {
+            format!("{}/{}", class_name, devtmpfs_name.dev_name())
+        } else {
+            devtmpfs_name.dev_name().to_string()
+        };
         let device = Arc::new(CharFile::new(device));
-        add_node(device, &name, fs_resolver)?;
+        add_node(device, &path, fs_resolver)?;
     }
 
     Ok(())

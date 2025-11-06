@@ -1,0 +1,282 @@
+// SPDX-License-Identifier: MPL-2.0
+
+use alloc::sync::Weak;
+use core::{
+    fmt::Debug,
+    sync::atomic::{AtomicUsize, Ordering},
+    time::Duration,
+};
+
+use aster_input::{
+    event_type_codes::{EventTypes, SynEvent},
+    input_dev::InputEvent,
+};
+use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
+use ostd::{
+    mm::{VmReader, VmWriter},
+    sync::Mutex,
+    Pod,
+};
+
+use super::EvdevDevice;
+use crate::{
+    events::IoEvents,
+    fs::{
+        inode_handle::FileIo,
+        utils::{InodeIo, IoctlCmd, StatusFlags},
+    },
+    prelude::*,
+    process::signal::{PollHandle, Pollable, Pollee},
+    syscall::ClockId,
+    util::ring_buffer::{RbConsumer, RbProducer, RingBuffer},
+};
+
+pub(super) const EVDEV_BUFFER_SIZE: usize = 64;
+
+impl From<ClockId> for i32 {
+    fn from(clock_id: ClockId) -> Self {
+        clock_id as i32
+    }
+}
+
+define_atomic_version_of_integer_like_type!(ClockId, try_from = true, {
+    #[derive(Debug)]
+    pub(super) struct AtomicClockId(core::sync::atomic::AtomicI32);
+});
+
+// Compatible with Linux's event format.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub struct EvdevEvent {
+    pub sec: u64,
+    pub usec: u64,
+    pub type_: u16,
+    pub code: u16,
+    pub value: i32,
+}
+
+impl EvdevEvent {
+    pub fn from_event_and_time(event: &InputEvent, time: Duration) -> Self {
+        let (type_, code, value) = event.to_raw();
+        Self {
+            sec: time.as_secs(),
+            usec: time.subsec_micros() as u64,
+            type_,
+            code,
+            value,
+        }
+    }
+}
+
+/// An opened file from an evdev device (`EvdevDevice`).
+pub struct EvdevFile {
+    /// Consumer for reading events.
+    consumer: Mutex<RbConsumer<EvdevEvent>>,
+    /// Clock ID for this opened evdev file.
+    clock_id: AtomicClockId,
+    /// Number of events available.
+    event_count: AtomicUsize,
+    /// Number of complete event packets available (ended with SYN_REPORT).
+    packet_count: AtomicUsize,
+    /// Pollee for event notification.
+    pollee: Pollee,
+    /// Weak reference to the evdev device that owns this evdev file.
+    evdev: Weak<EvdevDevice>,
+}
+
+impl EvdevFile {
+    pub(super) fn new(
+        buffer_size: usize,
+        evdev: Weak<EvdevDevice>,
+    ) -> (Self, RbProducer<EvdevEvent>) {
+        let (producer, consumer) = RingBuffer::new(buffer_size).split();
+
+        let evdev_file = Self {
+            consumer: Mutex::new(consumer),
+            // Default to be CLOCK_MONOTONIC
+            clock_id: AtomicClockId::new(ClockId::CLOCK_MONOTONIC),
+            event_count: AtomicUsize::new(0),
+            packet_count: AtomicUsize::new(0),
+            pollee: Pollee::new(),
+            evdev,
+        };
+        (evdev_file, producer)
+    }
+
+    /// Returns the clock ID for this opened evdev file.
+    pub(super) fn clock_id(&self) -> ClockId {
+        self.clock_id.load(Ordering::Relaxed)
+    }
+
+    /// Checks if the EvdevEvent is a `SYN_REPORT` event.
+    fn is_syn_report_event(&self, event: &EvdevEvent) -> bool {
+        event.type_ == EventTypes::SYN.as_index() && event.code == SynEvent::Report as u16
+    }
+
+    /// Checks if the EvdevEvent is a `SYN_DROPPED` event.
+    fn is_syn_dropped_event(&self, event: &EvdevEvent) -> bool {
+        event.type_ == EventTypes::SYN.as_index() && event.code == SynEvent::Dropped as u16
+    }
+
+    /// Checks if buffer has complete event packets.
+    pub fn has_complete_packets(&self) -> bool {
+        self.packet_count.load(Ordering::Relaxed) > 0
+    }
+
+    /// Increments event count.
+    pub fn increment_event_count(&self) {
+        self.event_count.fetch_add(1, Ordering::Relaxed);
+        self.pollee.notify(IoEvents::IN);
+    }
+
+    /// Decrements event count.
+    pub fn decrement_event_count(&self) {
+        self.event_count.fetch_sub(1, Ordering::Relaxed);
+        if self.event_count.load(Ordering::Relaxed) == 0 {
+            self.pollee.invalidate();
+        }
+    }
+
+    /// Increments packet count.
+    pub fn increment_packet_count(&self) {
+        self.packet_count.fetch_add(1, Ordering::Relaxed);
+        self.pollee.notify(IoEvents::IN);
+    }
+
+    /// Decrements packet count.
+    pub fn decrement_packet_count(&self) {
+        self.packet_count.fetch_sub(1, Ordering::Relaxed);
+        if self.packet_count.load(Ordering::Relaxed) == 0 {
+            self.pollee.invalidate();
+        }
+    }
+
+    /// Processes events and writes them to the writer.
+    /// Returns the total number of bytes written, or EAGAIN if no events available.
+    fn process_events(&self, max_events: usize, writer: &mut VmWriter) -> Result<usize> {
+        const EVENT_SIZE: usize = core::mem::size_of::<EvdevEvent>();
+
+        let mut consumer = self.consumer.lock();
+        let mut event_count = 0;
+
+        for _ in 0..max_events {
+            let Some(event) = consumer.pop() else {
+                break;
+            };
+
+            // Check if this is a SYN_REPORT or SYN_DROPPED event.
+            let is_syn_report = self.is_syn_report_event(&event);
+            let is_syn_dropped = self.is_syn_dropped_event(&event);
+
+            // Write event directly to writer.
+            writer.write_val(&event)?;
+            event_count += 1;
+
+            self.decrement_event_count();
+
+            if is_syn_report || is_syn_dropped {
+                self.decrement_packet_count();
+            }
+        }
+
+        if event_count == 0 {
+            return Err(Error::with_message(Errno::EAGAIN, "No events available"));
+        }
+
+        Ok(event_count * EVENT_SIZE)
+    }
+}
+
+impl Pollable for EvdevFile {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
+        self.pollee.poll_with(mask, poller, || {
+            let has_complete_packets = self.has_complete_packets();
+
+            let mut events = IoEvents::empty();
+            if has_complete_packets && mask.contains(IoEvents::IN) {
+                events |= IoEvents::IN;
+            }
+
+            events
+        })
+    }
+}
+
+impl InodeIo for EvdevFile {
+    fn read_at(
+        &self,
+        _offset: usize,
+        writer: &mut VmWriter,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
+        let requested_bytes = writer.avail();
+        let max_events = requested_bytes / core::mem::size_of::<EvdevEvent>();
+
+        if max_events == 0 {
+            return Ok(0);
+        }
+
+        let is_nonblocking = status_flags.contains(StatusFlags::O_NONBLOCK);
+        match self.process_events(max_events, writer) {
+            Ok(bytes) => Ok(bytes),
+            Err(e) if e.error() == Errno::EAGAIN => {
+                if is_nonblocking {
+                    Err(e)
+                } else {
+                    self.wait_events(IoEvents::IN, None, || {
+                        self.process_events(max_events, writer)
+                    })
+                }
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    fn write_at(
+        &self,
+        _offset: usize,
+        _reader: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        // TODO: support write operation on evdev devices.
+        Err(Error::with_message(
+            Errno::ENOSYS,
+            "WRITE operation not supported on evdev devices",
+        ))
+    }
+}
+
+impl FileIo for EvdevFile {
+    fn check_seekable(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn is_offset_aware(&self) -> bool {
+        false
+    }
+
+    fn ioctl(&self, _cmd: IoctlCmd, _arg: usize) -> Result<i32> {
+        // TODO: support ioctl operation on evdev devices.
+        Err(Error::with_message(
+            Errno::EINVAL,
+            "IOCTL operation not supported on evdev devices",
+        ))
+    }
+}
+
+impl Debug for EvdevFile {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("EvdevFile")
+            .field("event_count", &self.event_count.load(Ordering::Relaxed))
+            .field("clock_id", &self.clock_id())
+            .finish()
+    }
+}
+
+impl Drop for EvdevFile {
+    fn drop(&mut self) {
+        if let Some(evdev) = self.evdev.upgrade() {
+            evdev.detach_closed_files();
+        }
+    }
+}
