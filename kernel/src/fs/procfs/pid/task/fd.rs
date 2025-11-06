@@ -179,13 +179,14 @@ impl SymOps for FileSymOps {
         let thread = self.tid_dir_ops.thread();
         let posix_thread = thread.as_posix_thread().unwrap();
 
-        let file = if let Some(file_table) = posix_thread.file_table().lock().as_ref()
-            && let Ok(file) = file_table.read().get_file(self.file_desc)
-        {
-            file.clone()
-        } else {
-            return_errno_with_message!(Errno::ENOENT, "the file does not exist");
+        let file_table = posix_thread.file_table().lock();
+        let Some(file_table) = file_table.as_ref() else {
+            return_errno_with_message!(Errno::ENOENT, "the thread has exited");
         };
+        let file_table = file_table.read();
+        let file = file_table
+            .get_file(self.file_desc)
+            .map_err(|_| Error::with_message(Errno::ENOENT, "the file does not exist"))?;
 
         let path_name = if let Some(inode_handle) = file.downcast_ref::<InodeHandle>() {
             inode_handle.path().abs_path()
@@ -193,9 +194,6 @@ impl SymOps for FileSymOps {
             // TODO: Get the real path of other `FileLike` objects.
             String::from("/dev/tty")
         };
-
-        // FIXME: This may not always be a suitable context to drop a `FileLike` object.
-        drop(file);
 
         Ok(path_name)
     }
