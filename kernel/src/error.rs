@@ -347,6 +347,7 @@ impl From<aster_systree::Error> for Error {
             AlreadyExists => Error::new(Errno::EEXIST),
             Overflow => Error::new(Errno::EOVERFLOW),
             PageFault => Error::new(Errno::EFAULT),
+            IsDead => Error::new(Errno::ENODEV),
         }
     }
 }
