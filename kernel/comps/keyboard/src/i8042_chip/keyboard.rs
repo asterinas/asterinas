@@ -18,7 +18,9 @@ use ostd::{
 };
 use spin::Once;
 
-use super::controller::{I8042Controller, I8042ControllerError, I8042_CONTROLLER};
+use super::controller::{
+    I8042Controller, I8042ControllerError, I8042_CONTROLLER, PS2_ACK, PS2_BAT_OK, PS2_CMD_RESET,
+};
 use crate::alloc::string::ToString;
 
 /// IRQ line for i8042 keyboard.
@@ -31,16 +33,16 @@ static REGISTERED_DEVICE: Once<RegisteredInputDevice> = Once::new();
 const ISA_INTR_NUM: u8 = 1;
 
 pub(super) fn init(controller: &mut I8042Controller) -> Result<(), I8042ControllerError> {
-    // Reset keyboard device by sending 0xFF (reset command, supported by all PS/2 devices) to port 1
+    // Reset keyboard device by sending `PS2_CMD_RESET` (reset command, supported by all PS/2 devices) to port 1
     // and waiting for a response.
-    controller.wait_and_send_data(0xFF)?;
+    controller.wait_and_send_data(PS2_CMD_RESET)?;
 
-    // The response should be 0xFA (ACK) and 0xAA (BAT successful), followed by the device PS/2 ID.
-    if controller.wait_and_recv_data()? != 0xFA {
+    // The response should be `PS2_ACK` and `PS2_BAT_OK`, followed by the device PS/2 ID.
+    if controller.wait_and_recv_data()? != PS2_ACK {
         return Err(I8042ControllerError::DeviceResetFailed);
     }
     // The reset command may take some time to finish. Try again a few times.
-    if (0..5).find_map(|_| controller.wait_and_recv_data().ok()) != Some(0xAA) {
+    if (0..5).find_map(|_| controller.wait_and_recv_data().ok()) != Some(PS2_BAT_OK) {
         return Err(I8042ControllerError::DeviceResetFailed);
     }
     // See <https://wiki.osdev.org/I8042_PS/2_Controller#Detecting_PS/2_Device_Types> for a list of IDs.
@@ -87,7 +89,7 @@ impl I8042Keyboard {
         capability.set_supported_event_type(aster_input::event_type_codes::EventTypes::KEY);
         capability.set_supported_event_type(aster_input::event_type_codes::EventTypes::SYN);
 
-        // Adds all standard keyboard keys.
+        // Add all standard keyboard keys.
         capability.add_standard_keyboard_keys();
 
         Self {
@@ -171,13 +173,17 @@ fn handle_keyboard_input(_trap_frame: &TrapFrame) {
 struct ScanCode(u8);
 
 impl ScanCode {
+    const CODE_ERROR: u8 = 0xFF;
+    const CODE_EXT_PREFIX: u8 = 0xE0;
+    const RELEASE_MASK: u8 = 0x80;
+
     fn has_error(&self) -> bool {
         // Key detection error or internal buffer overrun.
-        self.0 == 0xFF
+        self.0 == Self::CODE_ERROR
     }
 
     fn key_status(&self) -> KeyStatus {
-        if self.0 & 0x80 == 0 {
+        if self.0 & Self::RELEASE_MASK == 0 {
             KeyStatus::Pressed
         } else {
             KeyStatus::Released
@@ -185,7 +191,11 @@ impl ScanCode {
     }
 
     fn is_extension(&self) -> bool {
-        self.0 == 0xE0
+        self.0 == Self::CODE_EXT_PREFIX
+    }
+
+    fn key(&self) -> u8 {
+        self.0 & !Self::RELEASE_MASK
     }
 }
 
@@ -237,7 +247,7 @@ impl ScancodeInfo {
     /// Maps the keyboard [`ScanCode`] to a [`KeyCode`] in the input subsystem.
     fn to_key_code(&self) -> Option<KeyCode> {
         // Remove the release bit.
-        let code = self.scancode.0 & 0x7F;
+        let code = self.scancode.key();
 
         // Handle extended keys.
         if self.extended {
