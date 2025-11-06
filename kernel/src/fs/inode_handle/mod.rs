@@ -114,7 +114,7 @@ impl InodeHandle_ {
     }
 
     pub fn seek(&self, pos: SeekFrom) -> Result<usize> {
-        do_seek_util(self.path.inode(), &self.offset, pos)
+        do_seek_util(self.path.inode().as_ref(), &self.offset, pos)
     }
 
     pub fn offset(&self) -> usize {
@@ -123,7 +123,7 @@ impl InodeHandle_ {
     }
 
     pub fn resize(&self, new_size: usize) -> Result<()> {
-        do_resize_util(self.path.inode(), self.status_flags(), new_size)
+        do_resize_util(self.path.inode().as_ref(), self.status_flags(), new_size)
     }
 
     pub fn access_mode(&self) -> AccessMode {
@@ -156,7 +156,13 @@ impl InodeHandle_ {
     }
 
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
-        do_fallocate_util(self.path.inode(), self.status_flags(), mode, offset, len)
+        do_fallocate_util(
+            self.path.inode().as_ref(),
+            self.status_flags(),
+            mode,
+            offset,
+            len,
+        )
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
@@ -370,7 +376,11 @@ pub trait FileIo: Pollable + Send + Sync + 'static {
     }
 }
 
-pub fn do_seek_util(inode: &Arc<dyn Inode>, offset: &Mutex<usize>, pos: SeekFrom) -> Result<usize> {
+pub(super) fn do_seek_util(
+    inode: &dyn Inode,
+    offset: &Mutex<usize>,
+    pos: SeekFrom,
+) -> Result<usize> {
     let mut offset = offset.lock();
     let new_offset: isize = match pos {
         SeekFrom::Start(off /* as usize */) => {
@@ -399,8 +409,8 @@ pub fn do_seek_util(inode: &Arc<dyn Inode>, offset: &Mutex<usize>, pos: SeekFrom
     Ok(new_offset)
 }
 
-pub fn do_fallocate_util(
-    inode: &Arc<dyn Inode>,
+pub(super) fn do_fallocate_util(
+    inode: &dyn Inode,
     status_flags: StatusFlags,
     mode: FallocMode,
     offset: usize,
@@ -438,8 +448,8 @@ pub fn do_fallocate_util(
     inode.fallocate(mode, offset, len)
 }
 
-pub fn do_resize_util(
-    inode: &Arc<dyn Inode>,
+pub(super) fn do_resize_util(
+    inode: &dyn Inode,
     status_flags: StatusFlags,
     new_size: usize,
 ) -> Result<()> {

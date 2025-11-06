@@ -74,16 +74,20 @@ pub struct Vmo {
     /// `pages` will be the latest size.
     size: AtomicUsize,
     /// The status of writable mappings of the VMO.
-    /// This field is `None` if the VMO is not backed by a pager.
-    writable_mapping_status: Option<WritableMappingStatus>,
+    //
+    // TODO: This field is used only by VMOs belonging to memfd (i.e., `MemfdInode`). But VMOs do
+    // not have the knowledge to determine if they belong to memfd. We may want to enhance
+    // `VmoOptions` to make VMOs aware of whether its writable mappings should be tracked.
+    writable_mapping_status: WritableMappingStatus,
 }
 
 impl Debug for Vmo {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Vmo")
             .field("flags", &self.flags)
-            .field("size", &self.size())
-            .finish()
+            .field("size", &self.size)
+            .field("writable_mapping_status", &self.writable_mapping_status)
+            .finish_non_exhaustive()
     }
 }
 
@@ -453,7 +457,9 @@ impl Vmo {
     }
 
     /// Returns the status of writable mappings of the VMO.
-    pub fn writable_mapping_status(&self) -> &Option<WritableMappingStatus> {
+    pub fn writable_mapping_status(&self) -> &WritableMappingStatus {
+        // Only writable file-backed mappings may need to be tracked.
+        debug_assert!(self.pager.is_some());
         &self.writable_mapping_status
     }
 }

@@ -54,10 +54,7 @@ impl MemfdInode {
 
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/mm/memfd.c#L262-L266>
         if new_seals.contains(FileSeals::F_SEAL_EXEC)
-            && self
-                .mode()
-                .unwrap()
-                .intersects(InodeMode::from_bits_truncate(0o111))
+            && self.mode().unwrap().intersects(mkmod!(a+x))
         {
             new_seals |= FileSeals::F_SEAL_SHRINK
                 | FileSeals::F_SEAL_GROW
@@ -67,11 +64,7 @@ impl MemfdInode {
 
         if new_seals.contains(FileSeals::F_SEAL_WRITE) {
             let page_cache = self.page_cache().unwrap();
-            page_cache
-                .writable_mapping_status()
-                .as_ref()
-                .unwrap()
-                .deny()?;
+            page_cache.writable_mapping_status().deny()?;
         }
 
         *seals |= new_seals;
@@ -177,7 +170,7 @@ impl Inode for MemfdInode {
     fn set_mode(&self, mode: InodeMode) -> Result<()> {
         let seals = self.seals.lock();
         if seals.contains(FileSeals::F_SEAL_EXEC)
-            && (self.mode().unwrap() ^ mode).intersects(InodeMode::from_bits_truncate(0o111))
+            && (self.mode().unwrap() ^ mode).intersects(mkmod!(a+x))
         {
             return_errno_with_message!(
                 Errno::EPERM,
@@ -333,7 +326,7 @@ impl FileLike for MemfdFile {
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
-        do_resize_util(&self.memfd_inode, self.status_flags(), new_size)
+        do_resize_util(self.memfd_inode.as_ref(), self.status_flags(), new_size)
     }
 
     fn status_flags(&self) -> StatusFlags {
@@ -352,11 +345,17 @@ impl FileLike for MemfdFile {
     }
 
     fn seek(&self, pos: SeekFrom) -> Result<usize> {
-        do_seek_util(&self.memfd_inode, &self.offset, pos)
+        do_seek_util(self.memfd_inode.as_ref(), &self.offset, pos)
     }
 
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
-        do_fallocate_util(&self.memfd_inode, self.status_flags(), mode, offset, len)
+        do_fallocate_util(
+            self.memfd_inode.as_ref(),
+            self.status_flags(),
+            mode,
+            offset,
+            len,
+        )
     }
 
     fn mappable(&self) -> Result<Mappable> {

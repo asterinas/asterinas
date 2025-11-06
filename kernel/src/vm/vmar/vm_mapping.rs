@@ -705,7 +705,7 @@ impl MappedVmo {
     /// Creates a `MappedVmo` used for the mapping.
     pub(super) fn new(vmo: Arc<Vmo>, offset: usize, is_writable_tracked: bool) -> Result<Self> {
         if is_writable_tracked {
-            vmo.writable_mapping_status().as_ref().unwrap().map()?;
+            vmo.writable_mapping_status().map()?;
         }
 
         Ok(Self {
@@ -783,11 +783,7 @@ impl MappedVmo {
     /// Duplicates the capability at a specific offset.
     fn dup_at_offset(&self, offset: usize) -> Self {
         if self.is_writable_tracked {
-            self.vmo
-                .writable_mapping_status()
-                .as_ref()
-                .unwrap()
-                .increment();
+            self.vmo.writable_mapping_status().increment();
         }
 
         Self {
@@ -801,11 +797,7 @@ impl MappedVmo {
 impl Drop for MappedVmo {
     fn drop(&mut self) {
         if self.is_writable_tracked {
-            self.vmo
-                .writable_mapping_status()
-                .as_ref()
-                .unwrap()
-                .decrement();
+            self.vmo.writable_mapping_status().decrement();
         }
     }
 }
