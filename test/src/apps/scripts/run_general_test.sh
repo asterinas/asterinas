@@ -9,6 +9,7 @@ cd ${SCRIPT_DIR}
 
 ./shell_cmd.sh
 ./test_epoll_pwait.sh
+./cgroup.sh
 
 # TODO: Support the following tests with SMP
 if [ -z $BLOCK_UNSUPPORTED_SMP_TESTS ]; then
