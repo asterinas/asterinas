@@ -61,7 +61,7 @@ impl DevPts {
     }
 
     /// Create the master and slave pair.
-    fn create_master_slave_pair(&self) -> Result<(Arc<PtyMaster>, Arc<PtySlaveInode>)> {
+    fn create_master_slave_pair(&self) -> Result<(Box<PtyMaster>, Arc<PtySlaveInode>)> {
         let index = self
             .index_alloc
             .lock()

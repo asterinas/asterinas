@@ -12,18 +12,16 @@ use crate::{
     prelude::*,
 };
 
-/// The abstract of device
-pub trait Device: FileIo {
-    /// Return the device type.
+/// The abstraction of a device.
+pub trait Device: Send + Sync + 'static {
+    /// Returns the device type.
     fn type_(&self) -> DeviceType;
 
-    /// Return the device ID.
+    /// Returns the device ID.
     fn id(&self) -> DeviceId;
 
-    /// Open a device.
-    fn open(&self) -> Option<Result<Arc<dyn FileIo>>> {
-        None
-    }
+    /// Opens a device.
+    fn open(&self) -> Result<Box<dyn FileIo>>;
 }
 
 impl Debug for dyn Device {

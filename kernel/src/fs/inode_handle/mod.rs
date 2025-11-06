@@ -27,7 +27,7 @@ struct HandleInner {
     /// `file_io` is similar to the `file_private` field in Linux's `file` structure. If `file_io`
     /// is `Some(_)`, typical file operations including `read`, `write`, `poll`, and `ioctl` will
     /// be provided by `file_io`, instead of `path`.
-    file_io: Option<Arc<dyn FileIo>>,
+    file_io: Option<Box<dyn FileIo>>,
     offset: Mutex<usize>,
     status_flags: AtomicU32,
 }

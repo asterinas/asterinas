@@ -41,10 +41,10 @@ pub struct PtyMaster {
 }
 
 impl PtyMaster {
-    pub(super) fn new(ptmx: Arc<Ptmx>, index: u32) -> Arc<Self> {
+    pub(super) fn new(ptmx: Arc<Ptmx>, index: u32) -> Box<Self> {
         let slave = PtySlave::new(index, PtyDriver::new());
 
-        Arc::new(Self { ptmx, slave })
+        Box::new(Self { ptmx, slave })
     }
 
     pub(super) fn slave(&self) -> &Arc<PtySlave> {

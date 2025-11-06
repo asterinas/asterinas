@@ -1,11 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_console::AnyConsoleDevice;
+use inherit_methods_macro::inherit_methods;
 use ostd::mm::{Infallible, VmReader, VmWriter};
 use spin::Once;
 
 use super::{Tty, TtyDriver};
-use crate::{fs::inode_handle::FileIo, prelude::*};
+use crate::{
+    events::IoEvents,
+    fs::{
+        inode_handle::FileIo,
+        utils::{IoctlCmd, StatusFlags},
+    },
+    prelude::*,
+    process::signal::{PollHandle, Pollable},
+};
 
 pub struct ConsoleDriver {
     console: Arc<dyn AnyConsoleDevice>,
@@ -15,8 +24,8 @@ impl TtyDriver for ConsoleDriver {
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/major.h#L18>.
     const DEVICE_MAJOR_ID: u32 = 4;
 
-    fn open(tty: Arc<Tty<Self>>) -> Result<Arc<dyn FileIo>> {
-        Ok(tty)
+    fn open(tty: Arc<Tty<Self>>) -> Result<Box<dyn FileIo>> {
+        Ok(Box::new(ConsoleFile(tty)))
     }
 
     fn push_output(&self, chs: &[u8]) -> Result<usize> {
@@ -39,6 +48,20 @@ impl TtyDriver for ConsoleDriver {
     fn console(&self) -> Option<&dyn AnyConsoleDevice> {
         Some(&*self.console)
     }
+}
+
+struct ConsoleFile(Arc<Tty<ConsoleDriver>>);
+
+#[inherit_methods(from = "self.0")]
+impl Pollable for ConsoleFile {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents;
+}
+
+#[inherit_methods(from = "self.0")]
+impl FileIo for ConsoleFile {
+    fn read(&self, writer: &mut VmWriter, status_flags: StatusFlags) -> Result<usize>;
+    fn write(&self, reader: &mut VmReader, status_flags: StatusFlags) -> Result<usize>;
+    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32>;
 }
 
 static N_TTY: Once<Box<[Arc<Tty<ConsoleDriver>>]>> = Once::new();
