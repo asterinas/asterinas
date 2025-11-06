@@ -151,7 +151,7 @@ impl Inode for PtySlaveInode {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Option<Result<Arc<dyn FileIo>>> {
-        self.device.open()
+    ) -> Option<Result<Box<dyn FileIo>>> {
+        Some(self.device.open())
     }
 }

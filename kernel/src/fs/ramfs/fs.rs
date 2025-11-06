@@ -183,9 +183,9 @@ impl Inner {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Option<Result<Arc<dyn FileIo>>> {
+    ) -> Option<Result<Box<dyn FileIo>>> {
         match self {
-            Self::Device(device) => device.open(),
+            Self::Device(device) => Some(device.open()),
             Self::NamedPipe(pipe) => Some(pipe.open(access_mode, status_flags)),
             _ => None,
         }
@@ -547,25 +547,18 @@ impl Inode for RamInode {
     }
 
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let read_len = {
-            match &self.inner {
-                Inner::File(page_cache) => {
-                    let (offset, read_len) = {
-                        let file_size = self.size();
-                        let start = file_size.min(offset);
-                        let end = file_size.min(offset + writer.avail());
-                        (start, end - start)
-                    };
-                    page_cache.pages().read(offset, writer)?;
-                    read_len
-                }
-                Inner::Device(device) => {
-                    device.read(writer, StatusFlags::empty())?
-                    // Typically, devices like "/dev/zero" or "/dev/null" do not require modifying
-                    // timestamps here. Please adjust this behavior accordingly if there are special devices.
-                }
-                _ => return_errno_with_message!(Errno::EISDIR, "read is not supported"),
+        let read_len = match &self.inner {
+            Inner::File(page_cache) => {
+                let (offset, read_len) = {
+                    let file_size = self.size();
+                    let start = file_size.min(offset);
+                    let end = file_size.min(offset + writer.avail());
+                    (start, end - start)
+                };
+                page_cache.pages().read(offset, writer)?;
+                read_len
             }
+            _ => return_errno_with_message!(Errno::EISDIR, "read is not supported"),
         };
 
         if self.typ == InodeType::File {
@@ -602,12 +595,6 @@ impl Inode for RamInode {
                     inode_meta.blocks = new_size_aligned / BLOCK_SIZE;
                 }
                 write_len
-            }
-            InodeType::CharDevice | InodeType::BlockDevice => {
-                let device = self.inner.as_device().unwrap();
-                device.write(reader, StatusFlags::empty())?
-                // Typically, devices like "/dev/zero" or "/dev/null" do not require modifying
-                // timestamps here. Please adjust this behavior accordingly if there are special devices.
             }
             _ => return_errno_with_message!(Errno::EISDIR, "write is not supported"),
         };
@@ -752,7 +739,7 @@ impl Inode for RamInode {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Option<Result<Arc<dyn FileIo>>> {
+    ) -> Option<Result<Box<dyn FileIo>>> {
         self.inner.open(access_mode, status_flags)
     }
 
@@ -1152,16 +1139,9 @@ impl Inode for RamInode {
         }
     }
 
-    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        if !self.typ.is_device() {
-            return (IoEvents::IN | IoEvents::OUT) & mask;
-        }
-
-        let device = self
-            .inner
-            .as_device()
-            .expect("[Internal error] self.typ is device, while self.inner is not");
-        device.poll(mask, poller)
+    fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
+        let events = IoEvents::IN | IoEvents::OUT;
+        events & mask
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {
@@ -1200,10 +1180,7 @@ impl Inode for RamInode {
         }
     }
 
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        if let Some(device) = self.inner.as_device() {
-            return device.ioctl(cmd, arg);
-        }
+    fn ioctl(&self, _cmd: IoctlCmd, _arg: usize) -> Result<i32> {
         return_errno_with_message!(Errno::ENOTTY, "ioctl is not supported");
     }
 

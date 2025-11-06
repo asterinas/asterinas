@@ -51,6 +51,7 @@ impl InodeType {
         *self == InodeType::Dir
     }
 
+    #[expect(dead_code)]
     pub fn is_device(&self) -> bool {
         *self == InodeType::BlockDevice || *self == InodeType::CharDevice
     }
@@ -309,7 +310,7 @@ pub trait Inode: Any + Sync + Send {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Option<Result<Arc<dyn FileIo>>> {
+    ) -> Option<Result<Box<dyn FileIo>>> {
         None
     }
 

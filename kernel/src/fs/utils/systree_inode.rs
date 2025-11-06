@@ -2,6 +2,7 @@
 
 use alloc::{
     borrow::Cow,
+    boxed::Box,
     string::ToString,
     sync::{Arc, Weak},
     vec::Vec,
@@ -556,7 +557,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         &self,
         _access_mode: AccessMode,
         _status_flags: StatusFlags,
-    ) -> Option<Result<Arc<dyn FileIo>>> {
+    ) -> Option<Result<Box<dyn FileIo>>> {
         None
     }
 

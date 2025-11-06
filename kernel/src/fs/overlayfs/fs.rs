@@ -519,7 +519,7 @@ impl OverlayInode {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Option<Result<Arc<dyn FileIo>>>;
+    ) -> Option<Result<Box<dyn FileIo>>>;
     pub fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize>;
     pub fn list_xattr(
         &self,
@@ -936,7 +936,7 @@ impl Inode for OverlayInode {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Option<Result<Arc<dyn FileIo>>>;
+    ) -> Option<Result<Box<dyn FileIo>>>;
     fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize>;
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()>;
     fn unlink(&self, name: &str) -> Result<()>;

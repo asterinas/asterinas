@@ -46,6 +46,10 @@ impl Device for TdxGuest {
     fn id(&self) -> DeviceId {
         DeviceId::new(0xa, 0x7b)
     }
+
+    fn open(&self) -> Result<Box<dyn FileIo>> {
+        Ok(Box::new(Self))
+    }
 }
 
 impl From<TdCallError> for Error {
