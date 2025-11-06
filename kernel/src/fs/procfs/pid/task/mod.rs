@@ -9,10 +9,10 @@ use crate::{
     fs::{
         procfs::{
             pid::task::{
-                cmdline::CmdlineFileOps, comm::CommFileOps, environ::EnvironFileOps,
-                exe::ExeSymOps, fd::FdDirOps, gid_map::GidMapFileOps, mem::MemFileOps,
-                mountinfo::MountInfoFileOps, oom_score_adj::OomScoreAdjFileOps, stat::StatFileOps,
-                status::StatusFileOps, uid_map::UidMapFileOps,
+                cgroup::CgroupFileOps, cmdline::CmdlineFileOps, comm::CommFileOps,
+                environ::EnvironFileOps, exe::ExeSymOps, fd::FdDirOps, gid_map::GidMapFileOps,
+                mem::MemFileOps, mountinfo::MountInfoFileOps, oom_score_adj::OomScoreAdjFileOps,
+                stat::StatFileOps, status::StatusFileOps, uid_map::UidMapFileOps,
             },
             template::{
                 lookup_child_from_table, populate_children_from_table, DirOps, ProcDir,
@@ -27,6 +27,7 @@ use crate::{
     Process,
 };
 
+mod cgroup;
 mod cmdline;
 mod comm;
 mod environ;
@@ -98,6 +99,7 @@ impl TidDirOps {
         &'static str,
         fn(&TidDirOps, Weak<dyn Inode>) -> Arc<dyn Inode>,
     )] = &[
+        ("cgroup", CgroupFileOps::new_inode),
         ("cmdline", CmdlineFileOps::new_inode),
         ("comm", CommFileOps::new_inode),
         ("environ", EnvironFileOps::new_inode),
