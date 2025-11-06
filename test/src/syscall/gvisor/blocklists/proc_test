@@ -35,7 +35,6 @@ ProcSysVmMmapMinAddr.HasNumericValue
 ProcSysVmOvercommitMemory.HasNumericValue
 ProcFilesystems.PresenceOfShmMaxMniAll
 ProcMounts.IsSymlink
-ProcSelfMountinfo.RequiredFieldsArePresent
 ProcSelfMounts.RequiredFieldsArePresent
 Proc.GetdentsEnoent
 Proc.PidTidIOAccounting

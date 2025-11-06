@@ -534,7 +534,7 @@ impl Mount {
             let mount_id = mount.id();
             let parent = mount.parent().and_then(|parent| parent.upgrade());
             let parent_id = parent.as_ref().map_or(mount_id, |p| p.id());
-            let root = Path::new_fs_root(mount.clone()).abs_path();
+            let root = mount.root_dentry().path_name();
             let mount_point = if let Some(parent) = parent {
                 if let Some(mount_point_dentry) = mount.mountpoint() {
                     Path::new(parent, mount_point_dentry).abs_path()
