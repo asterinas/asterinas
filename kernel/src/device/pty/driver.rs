@@ -80,6 +80,9 @@ impl PtyDriver {
 }
 
 impl TtyDriver for PtyDriver {
+    // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/major.h#L147>.
+    const DEVICE_MAJOR_ID: u32 = 136;
+
     fn push_output(&self, chs: &[u8]) -> Result<usize> {
         if self.is_closed() {
             return_errno_with_message!(Errno::EIO, "the pty master has been closed");

@@ -13,6 +13,9 @@ use crate::prelude::*;
 ///
 /// [`Tty`]: super::Tty
 pub trait TtyDriver: Send + Sync + 'static {
+    /// The device major ID.
+    const DEVICE_MAJOR_ID: u32;
+
     /// Pushes characters into the output buffer.
     ///
     /// This method returns the number of bytes pushed or fails with an error if no bytes can be
