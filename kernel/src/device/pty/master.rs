@@ -80,12 +80,17 @@ impl Pollable for PtyMaster {
 }
 
 impl FileIo for PtyMaster {
-    fn read(&self, writer: &mut VmWriter, _status_flags: StatusFlags) -> Result<usize> {
-        // TODO: Add support for non-blocking mode and timeout
+    fn read(&self, writer: &mut VmWriter, status_flags: StatusFlags) -> Result<usize> {
+        // TODO: Add support for timeout.
         let mut buf = vec![0u8; writer.avail().min(IO_CAPACITY)];
-        let read_len = self.wait_events(IoEvents::IN, None, || {
-            self.slave.driver().try_read(&mut buf)
-        })?;
+        let is_nonblocking = status_flags.contains(StatusFlags::O_NONBLOCK);
+        let read_len = if is_nonblocking {
+            self.slave.driver().try_read(&mut buf)?
+        } else {
+            self.wait_events(IoEvents::IN, None, || {
+                self.slave.driver().try_read(&mut buf)
+            })?
+        };
         self.slave.driver().pollee().invalidate();
         self.slave.notify_output();
 
@@ -94,14 +99,19 @@ impl FileIo for PtyMaster {
         Ok(read_len)
     }
 
-    fn write(&self, reader: &mut VmReader, _status_flags: StatusFlags) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader, status_flags: StatusFlags) -> Result<usize> {
         let mut buf = vec![0u8; reader.remain().min(IO_CAPACITY)];
         let write_len = reader.read_fallible(&mut buf.as_mut_slice().into())?;
 
-        // TODO: Add support for non-blocking mode and timeout
-        let len = self.wait_events(IoEvents::OUT, None, || {
-            self.slave.push_input(&buf[..write_len])
-        })?;
+        // TODO: Add support for timeout.
+        let is_nonblocking = status_flags.contains(StatusFlags::O_NONBLOCK);
+        let len = if is_nonblocking {
+            self.slave.push_input(&buf[..write_len])?
+        } else {
+            self.wait_events(IoEvents::OUT, None, || {
+                self.slave.push_input(&buf[..write_len])
+            })?
+        };
         self.slave.driver().pollee().invalidate();
         Ok(len)
     }

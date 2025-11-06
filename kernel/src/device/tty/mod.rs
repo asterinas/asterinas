@@ -241,17 +241,21 @@ impl<D: TtyDriver> Pollable for Tty<D> {
 }
 
 impl<D: TtyDriver> FileIo for Tty<D> {
-    fn read(&self, writer: &mut VmWriter, _status_flags: StatusFlags) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter, status_flags: StatusFlags) -> Result<usize> {
         if self.driver.is_closed() {
             return Ok(0);
         }
 
         self.job_control.wait_until_in_foreground()?;
 
-        // TODO: Add support for non-blocking mode and timeout
+        // TODO: Add support for timeout.
         let mut buf = vec![0u8; writer.avail().min(IO_CAPACITY)];
-        let read_len =
-            self.wait_events(IoEvents::IN, None, || self.ldisc.lock().try_read(&mut buf))?;
+        let is_nonblocking = status_flags.contains(StatusFlags::O_NONBLOCK);
+        let read_len = if is_nonblocking {
+            self.ldisc.lock().try_read(&mut buf)?
+        } else {
+            self.wait_events(IoEvents::IN, None, || self.ldisc.lock().try_read(&mut buf))?
+        };
         self.pollee.invalidate();
         self.driver.notify_input();
 
@@ -260,14 +264,19 @@ impl<D: TtyDriver> FileIo for Tty<D> {
         Ok(read_len)
     }
 
-    fn write(&self, reader: &mut VmReader, _status_flags: StatusFlags) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader, status_flags: StatusFlags) -> Result<usize> {
         let mut buf = vec![0u8; reader.remain().min(IO_CAPACITY)];
         let write_len = reader.read_fallible(&mut buf.as_mut_slice().into())?;
 
-        // TODO: Add support for non-blocking mode and timeout
-        let len = self.wait_events(IoEvents::OUT, None, || {
-            self.driver.push_output(&buf[..write_len])
-        })?;
+        // TODO: Add support for timeout.
+        let is_nonblocking = status_flags.contains(StatusFlags::O_NONBLOCK);
+        let len = if is_nonblocking {
+            self.driver.push_output(&buf[..write_len])?
+        } else {
+            self.wait_events(IoEvents::OUT, None, || {
+                self.driver.push_output(&buf[..write_len])
+            })?
+        };
         self.pollee.invalidate();
         Ok(len)
     }
