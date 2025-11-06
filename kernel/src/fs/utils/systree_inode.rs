@@ -307,7 +307,9 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
     }
 
     default fn resize(&self, _new_size: usize) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        // The `resize` operation should be ignored by kernelfs inodes,
+        // and should not incur an error.
+        Ok(())
     }
 
     default fn atime(&self) -> Duration {
@@ -431,6 +433,10 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
     }
 
     default fn unlink(&self, _name: &str) -> Result<()> {
+        Err(Error::new(Errno::EPERM))
+    }
+
+    default fn rmdir(&self, _name: &str) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }
 

@@ -39,7 +39,9 @@ use spin::Once;
 
 pub use self::{
     attr::{SysAttr, SysAttrSet, SysAttrSetBuilder},
-    node::{SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj, SysPerms, SysSymlink},
+    node::{
+        SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj, SysPerms, SysSymlink, MAX_ATTR_SIZE,
+    },
     tree::SysTree,
     utils::{
         AttrLessBranchNodeFields, BranchNodeFields, EmptyNode, NormalNodeFields, ObjFields,
@@ -95,6 +97,8 @@ pub enum Error {
     Overflow,
     /// Page fault occurred during memory access
     PageFault,
+    /// The current systree item is dead
+    IsDead,
 }
 
 impl core::fmt::Display for Error {
@@ -108,6 +112,7 @@ impl core::fmt::Display for Error {
             Error::AlreadyExists => write!(f, "The systree item already exists"),
             Error::Overflow => write!(f, "Numerical overflow occurred"),
             Error::PageFault => write!(f, "Page fault occurred during memory access"),
+            Error::IsDead => write!(f, "The current systree item is dead"),
         }
     }
 }
