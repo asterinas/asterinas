@@ -48,7 +48,6 @@ fn create_init_process(
     envp: Vec<CString>,
 ) -> Result<Arc<Process>> {
     let pid = allocate_posix_tid();
-    let process_vm = new_vmar_and_map();
     let resource_limits = ResourceLimits::default();
     let nice = Nice::default();
     let oom_score_adj = 0;
@@ -62,9 +61,10 @@ fn create_init_process(
     let fs_path = FsPath::try_from(executable_path)?;
     let elf_path = fs.resolver().read().lookup(&fs_path)?;
 
+    let process_vm = new_vmar_and_map(PathOrInode::Path(elf_path.clone()));
+
     let init_proc = Process::new(
         pid,
-        PathOrInode::Path(elf_path.clone()),
         process_vm,
         resource_limits,
         nice,

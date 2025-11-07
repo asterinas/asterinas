@@ -27,7 +27,12 @@ impl CommFileOps {
 impl FileOps for CommFileOps {
     fn data(&self) -> Result<Vec<u8>> {
         let mut comm_output = {
-            let exe_path = self.0.executable_file().display_name();
+            let vmar_guard = self.0.lock_vmar();
+            let Some(vmar) = vmar_guard.as_ref() else {
+                return_errno_with_message!(Errno::ESRCH, "the process has exited");
+            };
+
+            let exe_path = vmar.process_vm().executable_file().display_name();
             let last_component = exe_path.rsplit('/').next().unwrap_or(&exe_path);
             let mut comm = last_component.as_bytes().to_vec();
             comm.push(b'\0');
