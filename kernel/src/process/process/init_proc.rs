@@ -47,14 +47,6 @@ fn create_init_process(
     argv: Vec<CString>,
     envp: Vec<CString>,
 ) -> Result<Arc<Process>> {
-    let pid = allocate_posix_tid();
-    let process_vm = new_vmar_and_map();
-    let resource_limits = ResourceLimits::default();
-    let nice = Nice::default();
-    let oom_score_adj = 0;
-    let sig_dispositions = Arc::new(Mutex::new(SigDispositions::default()));
-    let user_ns = UserNamespace::get_init_singleton().clone();
-
     let fs = {
         let fs_resolver = MountNamespace::get_init_singleton().new_fs_resolver();
         ThreadFsInfo::new(fs_resolver)
@@ -62,9 +54,16 @@ fn create_init_process(
     let fs_path = FsPath::try_from(executable_path)?;
     let elf_path = fs.resolver().read().lookup(&fs_path)?;
 
+    let pid = allocate_posix_tid();
+    let process_vm = new_vmar_and_map(PathOrInode::Path(elf_path.clone()));
+    let resource_limits = ResourceLimits::default();
+    let nice = Nice::default();
+    let oom_score_adj = 0;
+    let sig_dispositions = Arc::new(Mutex::new(SigDispositions::default()));
+    let user_ns = UserNamespace::get_init_singleton().clone();
+
     let init_proc = Process::new(
         pid,
-        PathOrInode::Path(elf_path.clone()),
         process_vm,
         resource_limits,
         nice,
@@ -114,11 +113,12 @@ fn create_init_task(
         let vmar = process.lock_vmar();
         program_to_load.load_to_vmar(vmar.unwrap(), &fs_resolver)?
     };
-
     let mut user_ctx = UserContext::default();
     user_ctx.set_instruction_pointer(elf_load_info.entry_point as _);
     user_ctx.set_stack_pointer(elf_load_info.user_stack_top as _);
+
     let thread_name = ThreadName::new_from_executable_path(&elf_path.abs_path());
+
     let thread_builder = PosixThreadBuilder::new(tid, thread_name, Box::new(user_ctx), credentials)
         .process(Arc::downgrade(process))
         .fs(Arc::new(fs))

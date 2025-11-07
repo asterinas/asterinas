@@ -26,7 +26,14 @@ impl CommFileOps {
 
 impl FileOps for CommFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let exe_path = self.0.executable_file().display_name();
+        let vmar_guard = self.0.lock_vmar();
+        let Some(vmar) = vmar_guard.as_ref() else {
+            // According to Linux behavior, return an empty string
+            // if the process is a zombie process.
+            return Ok(0);
+        };
+
+        let exe_path = vmar.process_vm().executable_file().display_name();
         let last_component = exe_path.rsplit('/').next().unwrap_or(&exe_path);
         let mut comm = last_component.as_bytes().to_vec();
         comm.truncate(TASK_COMM_LEN - 1);
