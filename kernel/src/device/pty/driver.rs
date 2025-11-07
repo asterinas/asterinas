@@ -5,10 +5,12 @@ use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use aster_console::AnyConsoleDevice;
 use ostd::sync::SpinLock;
 
+use super::file::PtySlaveFile;
 use crate::{
     device::tty::{Tty, TtyDriver},
     events::IoEvents,
-    prelude::{return_errno_with_message, Errno, Result},
+    fs::inode_handle::FileIo,
+    prelude::*,
     process::signal::Pollee,
     util::ring_buffer::RingBuffer,
 };
@@ -82,6 +84,10 @@ impl PtyDriver {
 impl TtyDriver for PtyDriver {
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/major.h#L147>.
     const DEVICE_MAJOR_ID: u32 = 136;
+
+    fn open(tty: Arc<Tty<Self>>) -> Arc<dyn FileIo> {
+        Arc::new(PtySlaveFile::new(tty))
+    }
 
     fn push_output(&self, chs: &[u8]) -> Result<usize> {
         if self.is_closed() {

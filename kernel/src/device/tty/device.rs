@@ -24,7 +24,7 @@ impl Device for TtyDevice {
             )));
         };
 
-        Some(Ok(terminal as Arc<dyn FileIo>))
+        terminal.open()
     }
 
     fn type_(&self) -> DeviceType {

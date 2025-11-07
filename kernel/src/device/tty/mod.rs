@@ -389,4 +389,8 @@ impl<D: TtyDriver> Device for Tty<D> {
     fn id(&self) -> DeviceId {
         DeviceId::new(D::DEVICE_MAJOR_ID, self.index)
     }
+
+    fn open(&self) -> Option<Result<Arc<dyn FileIo>>> {
+        Some(Ok(D::open(self.weak_self.upgrade().unwrap())))
+    }
 }

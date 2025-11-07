@@ -2,7 +2,7 @@
 
 use aster_console::AnyConsoleDevice;
 
-use crate::prelude::*;
+use crate::{device::tty::Tty, fs::inode_handle::FileIo, prelude::*};
 
 /// A TTY driver.
 ///
@@ -15,6 +15,13 @@ use crate::prelude::*;
 pub trait TtyDriver: Send + Sync + 'static {
     /// The device major ID.
     const DEVICE_MAJOR_ID: u32;
+
+    /// Opens the TTY.
+    ///
+    /// This function will be called when opening `/dev/tty`.
+    fn open(tty: Arc<Tty<Self>>) -> Arc<dyn FileIo>
+    where
+        Self: Sized;
 
     /// Pushes characters into the output buffer.
     ///
