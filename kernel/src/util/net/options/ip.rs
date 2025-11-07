@@ -5,7 +5,7 @@ use int_to_c_enum::TryFromInt;
 use super::RawSocketOption;
 use crate::{
     impl_raw_socket_option,
-    net::socket::ip::options::{Hdrincl, Tos, Ttl},
+    net::socket::ip::options::{Hdrincl, Recverr, Tos, Ttl},
     prelude::*,
     util::net::options::SocketOption,
 };
@@ -72,6 +72,7 @@ pub fn new_ip_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
         CIpOptionName::TOS => Ok(Box::new(Tos::new())),
         CIpOptionName::TTL => Ok(Box::new(Ttl::new())),
         CIpOptionName::HDRINCL => Ok(Box::new(Hdrincl::new())),
+        CIpOptionName::RECVERR => Ok(Box::new(Recverr::new())),
         _ => return_errno_with_message!(Errno::ENOPROTOOPT, "unsupported ip level option"),
     }
 }
@@ -79,3 +80,4 @@ pub fn new_ip_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
 impl_raw_socket_option!(Ttl);
 impl_raw_socket_option!(Tos);
 impl_raw_socket_option!(Hdrincl);
+impl_raw_socket_option!(Recverr);
