@@ -5,7 +5,7 @@ use ostd::mm::{Infallible, VmReader, VmWriter};
 use spin::Once;
 
 use super::{Tty, TtyDriver};
-use crate::prelude::*;
+use crate::{fs::inode_handle::FileIo, prelude::*};
 
 pub struct ConsoleDriver {
     console: Arc<dyn AnyConsoleDevice>,
@@ -14,6 +14,10 @@ pub struct ConsoleDriver {
 impl TtyDriver for ConsoleDriver {
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/major.h#L18>.
     const DEVICE_MAJOR_ID: u32 = 4;
+
+    fn open(tty: Arc<Tty<Self>>) -> Arc<dyn FileIo> {
+        tty
+    }
 
     fn push_output(&self, chs: &[u8]) -> Result<usize> {
         self.console.send(chs);

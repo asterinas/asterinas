@@ -16,10 +16,10 @@ use crate::{
 };
 
 /// The file for a pseudoterminal slave.
-pub struct PtySlaveFile(Arc<PtySlave>);
+pub(super) struct PtySlaveFile(Arc<PtySlave>);
 
 impl PtySlaveFile {
-    pub fn new(slave: Arc<PtySlave>) -> PtySlaveFile {
+    pub(super) fn new(slave: Arc<PtySlave>) -> PtySlaveFile {
         slave
             .driver()
             .opened_slaves()

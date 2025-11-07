@@ -14,7 +14,7 @@ pub mod tdxguest;
 
 use alloc::format;
 
-pub use pty::{new_pty_pair, PtyMaster, PtySlave, PtySlaveFile};
+pub use pty::{new_pty_pair, PtyMaster, PtySlave};
 pub use random::Random;
 pub use urandom::Urandom;
 
