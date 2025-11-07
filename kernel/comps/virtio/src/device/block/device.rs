@@ -304,21 +304,22 @@ impl DeviceInner {
         // so there is no need to call `disable_irq`.
         loop {
             // Pops the complete request
-            let complete_request = {
+            let (complete_request, id) = {
                 let mut queue = self.queue.lock();
                 let Ok((token, _)) = queue.pop_used() else {
                     return;
                 };
-                self.submitted_requests.lock().remove(&token).unwrap()
+                let complete_request = self.submitted_requests.lock().remove(&token).unwrap();
+                let id = complete_request.id as usize;
+                self.id_allocator.lock().free(id);
+                (complete_request, id)
             };
 
             // Handles the response
-            let id = complete_request.id as usize;
             let resp_slice =
                 Slice::new(&self.block_responses, id * RESP_SIZE..(id + 1) * RESP_SIZE);
             resp_slice.sync().unwrap();
             let resp: BlockResp = resp_slice.read_val(0).unwrap();
-            self.id_allocator.lock().free(id);
             match RespStatus::try_from(resp.status).unwrap() {
                 RespStatus::Ok => {}
                 // FIXME: Return an error instead of triggering a kernel panic
@@ -351,44 +352,7 @@ impl DeviceInner {
 
     /// Reads data from the device, this function is non-blocking.
     fn read(&self, bio_request: BioRequest) {
-        let id = self.id_allocator.disable_irq().lock().alloc().unwrap();
-        let req_slice = {
-            let req_slice = Slice::new(
-                self.block_requests.clone(),
-                id * REQ_SIZE..(id + 1) * REQ_SIZE,
-            );
-            let req = BlockReq {
-                type_: ReqType::In as _,
-                reserved: 0,
-                sector: bio_request.sid_range().start.to_raw(),
-            };
-            req_slice.write_val(0, &req).unwrap();
-            req_slice.sync().unwrap();
-            req_slice
-        };
-
-        let resp_slice = {
-            let resp_slice = Slice::new(
-                self.block_responses.clone(),
-                id * RESP_SIZE..(id + 1) * RESP_SIZE,
-            );
-            resp_slice.write_val(0, &BlockResp::default()).unwrap();
-            resp_slice
-        };
-
-        let outputs = {
-            let mut outputs: Vec<&Slice<_>> = Vec::with_capacity(bio_request.num_segments() + 1);
-            let dma_slices_iter = bio_request.bios().flat_map(|bio| {
-                bio.segments()
-                    .iter()
-                    .map(|segment| segment.inner_dma_slice())
-            });
-            outputs.extend(dma_slices_iter);
-            outputs.push(&resp_slice);
-            outputs
-        };
-
-        let num_used_descs = outputs.len() + 1;
+        let num_used_descs = bio_request.num_segments() + 2;
         // FIXME: Split the request if it is too big
         if num_used_descs > Self::QUEUE_SIZE as usize {
             panic!("The request size surpasses the queue size");
@@ -399,6 +363,48 @@ impl DeviceInner {
             if num_used_descs > queue.available_desc() {
                 continue;
             }
+
+            let Some(id) = self.id_allocator.disable_irq().lock().alloc() else {
+                continue;
+            };
+
+            let req_slice = {
+                let req_slice = Slice::new(
+                    self.block_requests.clone(),
+                    id * REQ_SIZE..(id + 1) * REQ_SIZE,
+                );
+                let req = BlockReq {
+                    type_: ReqType::In as _,
+                    reserved: 0,
+                    sector: bio_request.sid_range().start.to_raw(),
+                };
+                req_slice.write_val(0, &req).unwrap();
+                req_slice.sync().unwrap();
+                req_slice
+            };
+
+            let resp_slice = {
+                let resp_slice = Slice::new(
+                    self.block_responses.clone(),
+                    id * RESP_SIZE..(id + 1) * RESP_SIZE,
+                );
+                resp_slice.write_val(0, &BlockResp::default()).unwrap();
+                resp_slice
+            };
+
+            let outputs = {
+                let mut outputs: Vec<&Slice<_>> =
+                    Vec::with_capacity(bio_request.num_segments() + 1);
+                let dma_slices_iter = bio_request.bios().flat_map(|bio| {
+                    bio.segments()
+                        .iter()
+                        .map(|segment| segment.inner_dma_slice())
+                });
+                outputs.extend(dma_slices_iter);
+                outputs.push(&resp_slice);
+                outputs
+            };
+
             let token = queue
                 .add_dma_buf(&[&req_slice], outputs.as_slice())
                 .expect("add queue failed");
@@ -418,53 +424,58 @@ impl DeviceInner {
 
     /// Writes data to the device, this function is non-blocking.
     fn write(&self, bio_request: BioRequest) {
-        let id = self.id_allocator.disable_irq().lock().alloc().unwrap();
-        let req_slice = {
-            let req_slice = Slice::new(
-                self.block_requests.clone(),
-                id * REQ_SIZE..(id + 1) * REQ_SIZE,
-            );
-            let req = BlockReq {
-                type_: ReqType::Out as _,
-                reserved: 0,
-                sector: bio_request.sid_range().start.to_raw(),
-            };
-            req_slice.write_val(0, &req).unwrap();
-            req_slice.sync().unwrap();
-            req_slice
-        };
-
-        let resp_slice = {
-            let resp_slice = Slice::new(
-                self.block_responses.clone(),
-                id * RESP_SIZE..(id + 1) * RESP_SIZE,
-            );
-            resp_slice.write_val(0, &BlockResp::default()).unwrap();
-            resp_slice
-        };
-
-        let inputs = {
-            let mut inputs: Vec<&Slice<_>> = Vec::with_capacity(bio_request.num_segments() + 1);
-            inputs.push(&req_slice);
-            let dma_slices_iter = bio_request.bios().flat_map(|bio| {
-                bio.segments()
-                    .iter()
-                    .map(|segment| segment.inner_dma_slice())
-            });
-            inputs.extend(dma_slices_iter);
-            inputs
-        };
-
-        let num_used_descs = inputs.len() + 1;
+        let num_used_descs = bio_request.num_segments() + 2;
         // FIXME: Split the request if it is too big
         if num_used_descs > Self::QUEUE_SIZE as usize {
             panic!("The request size surpasses the queue size");
         }
+
         loop {
             let mut queue = self.queue.disable_irq().lock();
             if num_used_descs > queue.available_desc() {
                 continue;
             }
+
+            let Some(id) = self.id_allocator.disable_irq().lock().alloc() else {
+                continue;
+            };
+
+            let req_slice = {
+                let req_slice = Slice::new(
+                    self.block_requests.clone(),
+                    id * REQ_SIZE..(id + 1) * REQ_SIZE,
+                );
+                let req = BlockReq {
+                    type_: ReqType::Out as _,
+                    reserved: 0,
+                    sector: bio_request.sid_range().start.to_raw(),
+                };
+                req_slice.write_val(0, &req).unwrap();
+                req_slice.sync().unwrap();
+                req_slice
+            };
+
+            let resp_slice = {
+                let resp_slice = Slice::new(
+                    self.block_responses.clone(),
+                    id * RESP_SIZE..(id + 1) * RESP_SIZE,
+                );
+                resp_slice.write_val(0, &BlockResp::default()).unwrap();
+                resp_slice
+            };
+
+            let inputs = {
+                let mut inputs: Vec<&Slice<_>> = Vec::with_capacity(bio_request.num_segments() + 1);
+                inputs.push(&req_slice);
+                let dma_slices_iter = bio_request.bios().flat_map(|bio| {
+                    bio.segments()
+                        .iter()
+                        .map(|segment| segment.inner_dma_slice())
+                });
+                inputs.extend(dma_slices_iter);
+                inputs
+            };
+
             let token = queue
                 .add_dma_buf(inputs.as_slice(), &[&resp_slice])
                 .expect("add queue failed");
@@ -492,32 +503,37 @@ impl DeviceInner {
             return;
         }
 
-        let id = self.id_allocator.disable_irq().lock().alloc().unwrap();
-        let req_slice = {
-            let req_slice = Slice::new(&self.block_requests, id * REQ_SIZE..(id + 1) * REQ_SIZE);
-            let req = BlockReq {
-                type_: ReqType::Flush as _,
-                reserved: 0,
-                sector: bio_request.sid_range().start.to_raw(),
-            };
-            req_slice.write_val(0, &req).unwrap();
-            req_slice.sync().unwrap();
-            req_slice
-        };
-
-        let resp_slice = {
-            let resp_slice =
-                Slice::new(&self.block_responses, id * RESP_SIZE..(id + 1) * RESP_SIZE);
-            resp_slice.write_val(0, &BlockResp::default()).unwrap();
-            resp_slice
-        };
-
         let num_used_descs = 1;
         loop {
             let mut queue = self.queue.disable_irq().lock();
             if num_used_descs > queue.available_desc() {
                 continue;
             }
+
+            let Some(id) = self.id_allocator.disable_irq().lock().alloc() else {
+                continue;
+            };
+
+            let req_slice = {
+                let req_slice =
+                    Slice::new(&self.block_requests, id * REQ_SIZE..(id + 1) * REQ_SIZE);
+                let req = BlockReq {
+                    type_: ReqType::Flush as _,
+                    reserved: 0,
+                    sector: bio_request.sid_range().start.to_raw(),
+                };
+                req_slice.write_val(0, &req).unwrap();
+                req_slice.sync().unwrap();
+                req_slice
+            };
+
+            let resp_slice = {
+                let resp_slice =
+                    Slice::new(&self.block_responses, id * RESP_SIZE..(id + 1) * RESP_SIZE);
+                resp_slice.write_val(0, &BlockResp::default()).unwrap();
+                resp_slice
+            };
+
             let token = queue
                 .add_dma_buf(&[&req_slice], &[&resp_slice])
                 .expect("add queue failed");
