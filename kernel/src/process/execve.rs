@@ -142,7 +142,7 @@ fn do_execve_no_return(
     let elf_load_info = {
         let mut vmar = ctx.process.lock_vmar();
         // Reset the virtual memory state.
-        unshare_and_renew_vmar(ctx, &mut vmar);
+        unshare_and_renew_vmar(ctx, &mut vmar, elf_file.clone());
         // Load the binary into the process's address space
         program_to_load.load_to_vmar(vmar.unwrap(), fs_resolver)?
     };
@@ -166,7 +166,6 @@ fn do_execve_no_return(
     // Update the process's executable path and set the thread name
     let executable_path = elf_file.display_name();
     *posix_thread.thread_name().lock() = ThreadName::new_from_executable_path(&executable_path);
-    process.set_executable_file(elf_file);
 
     // Unshare and reset signal dispositions to their default actions.
     unshare_and_reset_sigdispositions(process);
