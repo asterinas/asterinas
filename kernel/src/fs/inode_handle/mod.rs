@@ -184,7 +184,7 @@ impl InodeHandle_ {
             // return the file-specific mappable object.
             file_io.mappable()
         } else {
-            return_errno_with_message!(Errno::EINVAL, "the file is not mappable");
+            return_errno_with_message!(Errno::ENODEV, "the file is not mappable");
         }
     }
 
@@ -329,7 +329,7 @@ pub trait FileIo: Pollable + Send + Sync + 'static {
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");
+        return_errno_with_message!(Errno::ENOTTY, "ioctl is not supported");
     }
 }
 

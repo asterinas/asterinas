@@ -48,7 +48,10 @@ pub trait FileLike: Pollable + Send + Sync + Any {
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");
+        // `ENOTTY` means that "The specified operation does not apply to the kind of object that
+        // the file descriptor references".
+        // Reference: <https://man7.org/linux/man-pages/man2/ioctl.2.html>.
+        return_errno_with_message!(Errno::ENOTTY, "ioctl is not supported");
     }
 
     /// Obtains the mappable object to map this file into the user address space.
@@ -56,7 +59,10 @@ pub trait FileLike: Pollable + Send + Sync + Any {
     /// If this file has a corresponding mappable object of [`Mappable`],
     /// then it can be either an inode or an MMIO region.
     fn mappable(&self) -> Result<Mappable> {
-        return_errno_with_message!(Errno::EINVAL, "the file is not mappable");
+        // `ENODEV` means that "The underlying filesystem of the specified file does not support
+        // memory mapping".
+        // Reference: <https://man7.org/linux/man-pages/man2/mmap.2.html>.
+        return_errno_with_message!(Errno::ENODEV, "the file is not mappable");
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
