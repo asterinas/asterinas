@@ -5,7 +5,7 @@ use aster_rights_proc::require;
 use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
 
 use super::{capabilities::CapSet, credentials_::Credentials_, Credentials, Gid, Uid};
-use crate::prelude::*;
+use crate::{prelude::*, process::credentials::Securebits};
 
 impl<R: TRights> Credentials<R> {
     /// Creates a root `Credentials`. This method can only be used when creating the first process
@@ -247,6 +247,24 @@ impl<R: TRights> Credentials<R> {
         self.0.set_sgid(egid);
     }
 
+    // *********** Securebits methods **********
+
+    /// Gets securebits.
+    ///
+    /// This method requires the `Read` right.
+    #[require(R > Read)]
+    pub fn securebits(&self) -> Securebits {
+        self.0.securebits()
+    }
+
+    /// Sets securebits.
+    ///
+    /// This method requires the `Write` right.
+    #[require(R > Write)]
+    pub fn set_securebits(&self, securebits: Securebits) {
+        self.0.set_securebits(securebits);
+    }
+
     // *********** Supplementary group methods **********
 
     /// Acquires the read lock of supplementary group ids.
@@ -291,6 +309,22 @@ impl<R: TRights> Credentials<R> {
         self.0.effective_capset()
     }
 
+    /// Gets the capabilities bounding set.
+    ///
+    /// This method requires the `Read` right.
+    #[require(R > Read)]
+    pub fn bounding_capset(&self) -> CapSet {
+        self.0.bounding_capset()
+    }
+
+    /// Gets the capabilities ambient set.
+    ///
+    /// This method requires the `Read` right.
+    #[require(R > Read)]
+    pub fn ambient_capset(&self) -> CapSet {
+        self.0.ambient_capset()
+    }
+
     /// Sets the capabilities that child process can inherit.
     ///
     /// This method requires the `Write` right.
@@ -313,5 +347,17 @@ impl<R: TRights> Credentials<R> {
     #[require(R > Write)]
     pub fn set_effective_capset(&self, effective_capset: CapSet) {
         self.0.set_effective_capset(effective_capset);
+    }
+
+    /// Sets the capabilities bounding set.
+    #[require(R > Write)]
+    pub fn set_bounding_capset(&self, bounding_capset: CapSet) {
+        self.0.set_bounding_capset(bounding_capset);
+    }
+
+    /// Sets the capabilities ambient set.
+    #[require(R > Write)]
+    pub fn set_ambient_capset(&self, ambient_capset: CapSet) {
+        self.0.set_ambient_capset(ambient_capset);
     }
 }
