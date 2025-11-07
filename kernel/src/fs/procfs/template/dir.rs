@@ -204,6 +204,11 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
     fn is_dentry_cacheable(&self) -> bool {
         !self.common.is_volatile()
     }
+
+    fn seek_end(&self) -> Option<usize> {
+        // Seeking directories under `/proc` with `SEEK_END` will start from zero.
+        Some(0)
+    }
 }
 
 pub trait DirOps: Sync + Send + Sized {

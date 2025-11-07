@@ -78,6 +78,7 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
     fn fs(&self) -> Arc<dyn FileSystem>;
 
     fn resize(&self, _new_size: usize) -> Result<()> {
+        // Resizing files under `/proc` will succeed, but will do nothing.
         Ok(())
     }
 
@@ -95,6 +96,11 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
 
     fn is_dentry_cacheable(&self) -> bool {
         !self.common.is_volatile()
+    }
+
+    fn seek_end(&self) -> Option<usize> {
+        // Seeking regular files under `/proc` with `SEEK_END` will fail.
+        None
     }
 }
 

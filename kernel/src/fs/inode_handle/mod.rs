@@ -115,7 +115,21 @@ impl HandleInner {
     }
 
     pub(self) fn seek(&self, pos: SeekFrom) -> Result<usize> {
-        do_seek_util(self.path.inode().as_ref(), &self.offset, pos)
+        if let Some(ref file_io) = self.file_io {
+            if file_io.is_seekable()? {
+                // TODO: Figure out whether we need to add support for seeking from the end of
+                // special files.
+                return do_seek_util(&self.offset, pos, None);
+            } else {
+                return Ok(0);
+            }
+        }
+
+        let inode = self.path.inode();
+        if !inode.type_().is_seekable() {
+            return_errno_with_message!(Errno::ESPIPE, "seek is not supported");
+        }
+        do_seek_util(&self.offset, pos, inode.seek_end())
     }
 
     pub(self) fn offset(&self) -> usize {
@@ -286,6 +300,15 @@ impl Debug for HandleInner {
 /// This trait is typically implemented for special files like devices or
 /// named pipes (FIFOs), which have behaviors different from regular on-disk files.
 pub trait FileIo: Pollable + InodeIo + Send + Sync + 'static {
+    /// Returns whether the file-like object is seekable.
+    ///
+    /// The concrete meanings of the return values are as follows:
+    ///  - `Ok(true)`: The `read()`/`write()` operation will use and advance the offset. The
+    ///    `seek()` operation is supported.
+    ///  - `Ok(false)`: The `read()`/`write()` operation will use a zero as the offset. The
+    ///    `seek()` operation is not supported but it will always succeed with zero.
+    ///  - `Err(_)`: The `read()`/`write()` operation will use a zero as the offset. The `seek()`
+    ///    operation is not supported and it will fail with the returned error.
     fn is_seekable(&self) -> Result<bool>;
 
     // See `FileLike::mappable`.
@@ -299,34 +322,33 @@ pub trait FileIo: Pollable + InodeIo + Send + Sync + 'static {
 }
 
 pub(super) fn do_seek_util(
-    inode: &dyn Inode,
     offset: &Mutex<usize>,
     pos: SeekFrom,
+    end: Option<usize>,
 ) -> Result<usize> {
     let mut offset = offset.lock();
-    let new_offset: isize = match pos {
-        SeekFrom::Start(off /* as usize */) => {
-            if off > isize::MAX as usize {
-                return_errno_with_message!(Errno::EINVAL, "file offset is too large");
+
+    let new_offset = match pos {
+        SeekFrom::Start(off) => off,
+        SeekFrom::End(diff) => {
+            if let Some(end) = end {
+                end.wrapping_add_signed(diff)
+            } else {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "seeking the file from the end is not supported"
+                );
             }
-            off as isize
         }
-        SeekFrom::End(off /* as isize */) => {
-            let file_size = inode.size() as isize;
-            assert!(file_size >= 0);
-            file_size
-                .checked_add(off)
-                .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "file offset overflow"))?
-        }
-        SeekFrom::Current(off /* as isize */) => (*offset as isize)
-            .checked_add(off)
-            .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "file offset overflow"))?,
+        SeekFrom::Current(diff) => offset.wrapping_add_signed(diff),
     };
-    if new_offset < 0 {
-        return_errno_with_message!(Errno::EINVAL, "file offset must not be negative");
+
+    // Invariant: `*offset <= isize::MAX as usize`.
+    // TODO: Investigate whether `read`/`write` can break this invariant.
+    if new_offset.cast_signed() < 0 {
+        return_errno_with_message!(Errno::EINVAL, "the file offset cannot be negative");
     }
-    // Invariant: 0 <= new_offset <= isize::MAX
-    let new_offset = new_offset as usize;
+
     *offset = new_offset;
     Ok(new_offset)
 }

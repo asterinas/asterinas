@@ -438,7 +438,7 @@ impl Path {
 }
 
 /// Checks if the given `Inode` can be opened with the given `OpenArgs`.
-pub fn check_open_util(inode: &dyn Inode, open_args: &OpenArgs) -> Result<()> {
+pub(super) fn check_open_util(inode: &dyn Inode, open_args: &OpenArgs) -> Result<()> {
     let inode_type = inode.type_();
     let creation_flags = &open_args.creation_flags;
 
