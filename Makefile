@@ -213,6 +213,7 @@ OSDK_CRATES := \
 	kernel/comps/time \
 	kernel/comps/virtio \
 	kernel/comps/pci \
+	kernel/comps/uart \
 	kernel/libs/aster-util \
 	kernel/libs/aster-bigtcp \
 	kernel/libs/xarray

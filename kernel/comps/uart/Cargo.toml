@@ -1,0 +1,15 @@
+[package]
+name = "aster-uart"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ostd = { path = "../../../ostd" }
+component = { path = "../../libs/comp-sys/component" }
+aster-console = { path = "../console" }
+spin = "0.10.0"
+
+[lints]
+workspace = true
