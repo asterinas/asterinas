@@ -379,3 +379,32 @@ FN_TEST(ip_hdrincl)
 		   ENOPROTOOPT);
 }
 END_TEST()
+
+FN_TEST(ip_recverr)
+{
+	int recverr;
+	socklen_t recverr_len = sizeof(recverr);
+
+	// 1. Check default value
+	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_RECVERR, &recverr,
+			    &recverr_len),
+		 recverr == 0 && recverr_len == 4);
+	TEST_RES(getsockopt(sk_udp, IPPROTO_IP, IP_RECVERR, &recverr,
+			    &recverr_len),
+		 recverr == 0 && recverr_len == 4);
+
+	// 2. Set and get value
+	recverr = 100;
+	TEST_SUCC(setsockopt(sk_unbound, IPPROTO_IP, IP_RECVERR, &recverr,
+			     recverr_len));
+	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_RECVERR, &recverr,
+			    &recverr_len),
+		 recverr == 1 && recverr_len == 4);
+	recverr = -1;
+	TEST_SUCC(setsockopt(sk_udp, IPPROTO_IP, IP_RECVERR, &recverr,
+			     recverr_len));
+	TEST_RES(getsockopt(sk_udp, IPPROTO_IP, IP_RECVERR, &recverr,
+			    &recverr_len),
+		 recverr == 1 && recverr_len == 4);
+}
+END_TEST()
