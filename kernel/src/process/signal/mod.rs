@@ -117,8 +117,8 @@ pub fn handle_pending_signal(
             match sig_default_action {
                 SigDefaultAction::Core | SigDefaultAction::Term => {
                     warn!(
-                        "{:?}: terminating on signal {}",
-                        ctx.process.executable_file().display_name(),
+                        "PID {}: terminating on signal {}",
+                        ctx.process.pid(),
                         sig_num.sig_name()
                     );
                     // We should exit current here, since we cannot restore a valid status from trap now.
