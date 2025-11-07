@@ -82,7 +82,7 @@ pub(in crate::mm) struct MetaSlot {
     ///  - the implementation can simply cast a `*const MetaSlot`
     ///    to a `*const AnyFrameMeta` for manipulation;
     ///  - if the metadata need special alignment, we can provide
-    ///    at most `PAGE_METADATA_ALIGN` bytes of alignment;
+    ///    at most [`FRAME_METADATA_MAX_ALIGN`] bytes of alignment;
     ///  - the subsequent fields can utilize the padding of the
     ///    reference count to save space.
     ///
@@ -161,6 +161,17 @@ pub unsafe trait AnyFrameMeta: Any + Send + Sync {
     }
 }
 
+/// Checks that a frame metadata type has valid size and alignment.
+#[macro_export]
+macro_rules! check_frame_meta_layout {
+    ($t:ty) => {
+        $crate::const_assert!(size_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_SIZE);
+        $crate::const_assert!(
+            $crate::mm::frame::meta::FRAME_METADATA_MAX_ALIGN % align_of::<$t>() == 0
+        );
+    };
+}
+
 /// Makes a structure usable as a frame metadata.
 #[macro_export]
 macro_rules! impl_frame_meta_for {
@@ -169,10 +180,7 @@ macro_rules! impl_frame_meta_for {
         // SAFETY: `on_drop` won't read the page.
         unsafe impl $crate::mm::frame::meta::AnyFrameMeta for $t {}
 
-        $crate::const_assert!(size_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_SIZE);
-        $crate::const_assert!(
-            $crate::mm::frame::meta::FRAME_METADATA_MAX_ALIGN % align_of::<$t>() == 0
-        );
+        $crate::check_frame_meta_layout!($t);
     };
 }
 
