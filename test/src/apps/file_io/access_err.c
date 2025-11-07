@@ -52,6 +52,7 @@ FN_TEST(readable)
 	TEST_SUCC(read(fd, buf, sizeof(buf)));
 	TEST_ERRNO(write(fd, buf, sizeof(buf)), EBADF);
 	TEST_SUCC(lseek(fd, 0, SEEK_SET));
+	TEST_SUCC(lseek(fd, 0, SEEK_END));
 	TEST_ERRNO(ioctl(fd, TCGETS), ENOTTY);
 	TEST_ERRNO(ftruncate(fd, 1), EINVAL);
 	TEST_ERRNO(fallocate(fd, FALLOC_FL_KEEP_SIZE, 0, 1), EBADF);
@@ -86,6 +87,7 @@ FN_TEST(readable)
 	TEST_ERRNO(read(fd, buf, sizeof(buf)), EISDIR);
 	TEST_ERRNO(write(fd, buf, sizeof(buf)), EBADF);
 	TEST_SUCC(lseek(fd, 0, SEEK_SET));
+	TEST_ERRNO(lseek(fd, 0, SEEK_END), EINVAL);
 	TEST_ERRNO(ioctl(fd, TCGETS), ENOTTY);
 	TEST_ERRNO(ftruncate(fd, 1), EINVAL);
 	TEST_ERRNO(fallocate(fd, FALLOC_FL_KEEP_SIZE, 0, 1), EBADF);
@@ -126,6 +128,7 @@ FN_TEST(writeable)
 	TEST_ERRNO(read(fd, buf, sizeof(buf)), EBADF);
 	TEST_SUCC(write(fd, buf, sizeof(buf)));
 	TEST_SUCC(lseek(fd, 0, SEEK_SET));
+	TEST_SUCC(lseek(fd, 0, SEEK_END));
 	TEST_ERRNO(ioctl(fd, TCGETS), ENOTTY);
 	TEST_SUCC(ftruncate(fd, 1));
 	TEST_SUCC(fallocate(fd, FALLOC_FL_KEEP_SIZE, 0, 1));
@@ -171,6 +174,7 @@ FN_TEST(path)
 	TEST_ERRNO(read(fd, buf, sizeof(buf)), EBADF);
 	TEST_ERRNO(write(fd, buf, sizeof(buf)), EBADF);
 	TEST_ERRNO(lseek(fd, 0, SEEK_SET), EBADF);
+	TEST_ERRNO(lseek(fd, 0, SEEK_END), EBADF);
 	TEST_ERRNO(ioctl(fd, TCGETS), EBADF);
 	TEST_ERRNO(ftruncate(fd, 1), EBADF);
 	TEST_ERRNO(fallocate(fd, FALLOC_FL_KEEP_SIZE, 0, 1), EBADF);
@@ -203,6 +207,7 @@ FN_TEST(path)
 	TEST_ERRNO(read(fd, buf, sizeof(buf)), EBADF);
 	TEST_ERRNO(write(fd, buf, sizeof(buf)), EBADF);
 	TEST_ERRNO(lseek(fd, 0, SEEK_SET), EBADF);
+	TEST_ERRNO(lseek(fd, 0, SEEK_END), EBADF);
 	TEST_ERRNO(ioctl(fd, TCGETS), EBADF);
 	TEST_ERRNO(ftruncate(fd, 1), EBADF);
 	TEST_ERRNO(fallocate(fd, FALLOC_FL_KEEP_SIZE, 0, 1), EBADF);

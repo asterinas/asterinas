@@ -9,6 +9,7 @@ TESTS ?= \
 	access_test \
 	chown_test \
 	creat_test \
+	dev_test \
 	dup_test \
 	epoll_test \
 	eventfd_test \

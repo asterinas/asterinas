@@ -389,7 +389,23 @@ pub trait Inode: Any + InodeIo + Send + Sync {
         true
     }
 
-    /// Get the extension of this inode
+    /// Returns the end position for [`SeekFrom::End`].
+    ///
+    /// [`SeekFrom::End`]: super::SeekFrom::End
+    fn seek_end(&self) -> Option<usize> {
+        if self.type_() == InodeType::File {
+            Some(self.size())
+        } else {
+            // This depends on the file system. For example, seeking directories from the end
+            // succeeds under procfs and btrfs but fails under tmpfs. Here, we just choose a
+            // safe default to reject it.
+            // TODO: Carefully check the Linux behavior of each file system and adjust ours
+            // accordingly.
+            None
+        }
+    }
+
+    /// Gets the extension of this inode.
     fn extension(&self) -> Option<&Extension> {
         None
     }
