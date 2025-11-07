@@ -1204,7 +1204,7 @@ impl Inode for RamInode {
         if let Some(device) = self.inner.as_device() {
             return device.ioctl(cmd, arg);
         }
-        return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");
+        return_errno_with_message!(Errno::ENOTTY, "ioctl is not supported");
     }
 
     fn is_seekable(&self) -> bool {

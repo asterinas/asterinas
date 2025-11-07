@@ -500,12 +500,7 @@ impl OverlayInode {
 
     pub fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         self.upper().map_or_else(
-            || {
-                Err(Error::with_message(
-                    Errno::EOPNOTSUPP,
-                    "ioctl is not supported",
-                ))
-            },
+            || Err(Error::with_message(Errno::ENOTTY, "ioctl is not supported")),
             |upper| upper.ioctl(cmd, arg),
         )
     }
