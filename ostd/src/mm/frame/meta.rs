@@ -82,7 +82,7 @@ pub(in crate::mm) struct MetaSlot {
     ///  - the implementation can simply cast a `*const MetaSlot`
     ///    to a `*const AnyFrameMeta` for manipulation;
     ///  - if the metadata need special alignment, we can provide
-    ///    at most `PAGE_METADATA_ALIGN` bytes of alignment;
+    ///    at most `FRAME_METADATA_MAX_ALIGN` bytes of alignment;
     ///  - the subsequent fields can utilize the padding of the
     ///    reference count to save space.
     ///
