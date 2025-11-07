@@ -1,6 +1,2 @@
-LseekTest.Overflow
-LseekTest.ProcFile
+# TODO: Add `/sys/devices` and support `lseek(SEEK_END)`.
 LseekTest.SysDir
-LseekTest.SeekCurrentDir
-LseekTest.ProcStatTwice
-LseekTest.EtcPasswdDup

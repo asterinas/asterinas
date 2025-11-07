@@ -433,7 +433,7 @@ impl FileLike for MemfdFile {
             return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
 
-        do_seek_util(self.memfd_inode.as_ref(), &self.offset, pos)
+        do_seek_util(&self.offset, pos, Some(self.memfd_inode.size()))
     }
 
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
