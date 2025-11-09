@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use ostd::const_assert;
+
 use super::{
     sched_get_priority_max::{rt_to_static, static_to_rt, SCHED_PRIORITY_RANGE},
     SyscallReturn,
@@ -14,11 +16,11 @@ use crate::{
 pub(super) const SCHED_NORMAL: u32 = 0;
 pub(super) const SCHED_FIFO: u32 = 1;
 pub(super) const SCHED_RR: u32 = 2;
-// pub(super) const SCHED_BATCH: u32 = 3; // not supported (never).
-// SCHED_ISO: reserved but not implemented yet on Linux.
+// pub(super) const SCHED_BATCH: u32 = 3; // Not supported.
+// SCHED_ISO: Reserved but not implemented yet on Linux.
 pub(super) const SCHED_IDLE: u32 = 5;
-// pub(super) const SCHED_DEADLINE: u32 = 6; // not supported yet.
-// pub(super) const SCHED_EXT: u32 = 7; // not supported (never).
+// pub(super) const SCHED_DEADLINE: u32 = 6; // Not supported.
+// pub(super) const SCHED_EXT: u32 = 7; // Not supported.
 
 #[derive(Default, Debug, Pod, Clone, Copy)]
 #[repr(C)]
@@ -46,6 +48,14 @@ pub(super) struct LinuxSchedAttr {
     pub(super) sched_util_min: u32,
     pub(super) sched_util_max: u32,
 }
+
+// Reference: <https://elixir.bootlin.com/linux/v6.17.7/source/include/uapi/linux/sched/types.h#L7>
+const SCHED_ATTR_SIZE_VER0: u32 = 48;
+// Reference: <https://elixir.bootlin.com/linux/v6.17.7/source/include/uapi/linux/sched/types.h#L8>
+#[cfg_attr(target_arch = "x86_64", expect(dead_code))]
+const SCHED_ATTR_SIZE_VER1: u32 = 56;
+
+const_assert!(size_of::<LinuxSchedAttr>() == SCHED_ATTR_SIZE_VER1 as usize);
 
 impl TryFrom<SchedPolicy> for LinuxSchedAttr {
     type Error = Error;
@@ -81,12 +91,10 @@ impl TryFrom<SchedPolicy> for LinuxSchedAttr {
                 ..Default::default()
             },
 
-            SchedPolicy::Idle => {
-                return Err(Error::with_message(
-                    Errno::EACCES,
-                    "attr for idle tasks are not accessible",
-                ))
-            }
+            SchedPolicy::Idle => return_errno_with_message!(
+                Errno::EACCES,
+                "scheduling attributes for idle tasks are not accessible"
+            ),
         })
     }
 }
@@ -108,16 +116,14 @@ impl TryFrom<LinuxSchedAttr> for SchedPolicy {
             },
 
             _ if value.sched_priority != 0 => {
-                return Err(Error::with_message(
-                    Errno::EINVAL,
-                    "Invalid scheduling priority",
-                ))
+                return_errno_with_message!(Errno::EINVAL, "invalid scheduling priority")
             }
 
             SCHED_NORMAL => SchedPolicy::Fair(Nice::new(
-                i8::try_from(value.sched_nice)?
-                    .try_into()
-                    .map_err(|msg| Error::with_message(Errno::EINVAL, msg))?,
+                i8::try_from(value.sched_nice)
+                    .ok()
+                    .and_then(|n| n.try_into().ok())
+                    .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid nice number"))?,
             )),
 
             // The SCHED_IDLE policy is mapped to the highest nice value of
@@ -125,12 +131,7 @@ impl TryFrom<LinuxSchedAttr> for SchedPolicy {
             // latter policy are invisible to the user API.
             SCHED_IDLE => SchedPolicy::Fair(Nice::MAX),
 
-            _ => {
-                return Err(Error::with_message(
-                    Errno::EINVAL,
-                    "Invalid scheduling policy",
-                ))
-            }
+            _ => return_errno_with_message!(Errno::EINVAL, "invalid scheduling policy"),
         })
     }
 }
@@ -139,28 +140,47 @@ pub(super) fn read_linux_sched_attr_from_user(
     addr: Vaddr,
     ctx: &Context,
 ) -> Result<LinuxSchedAttr> {
-    let type_size = size_of::<LinuxSchedAttr>();
+    // The code below is written according to the Linux implementation.
+    // Reference: <https://elixir.bootlin.com/linux/v6.17.7/source/kernel/sched/syscalls.c#L889>
 
-    let space = ctx.user_space();
+    let user_space = ctx.user_space();
 
-    let mut attr = LinuxSchedAttr::default();
+    let raw_size = user_space.read_val::<u32>(addr)?;
+    let size = if raw_size == 0 {
+        SCHED_ATTR_SIZE_VER0
+    } else {
+        raw_size
+    };
+    if size < SCHED_ATTR_SIZE_VER0 || size > PAGE_SIZE as u32 {
+        let _ = user_space.write_val(addr, &(size_of::<LinuxSchedAttr>() as u32));
+        return_errno_with_message!(Errno::E2BIG, "invalid scheduling attribute size");
+    }
 
-    space.read_bytes(
-        addr,
-        &mut VmWriter::from(&mut attr.as_bytes_mut()[..size_of::<u32>()]),
-    )?;
+    let mut attr = LinuxSchedAttr {
+        size,
+        ..Default::default()
+    };
 
-    let size = type_size.min(attr.size as usize);
-    space.read_bytes(addr, &mut VmWriter::from(&mut attr.as_bytes_mut()[..size]))?;
+    let mut reader = user_space.reader(addr, size as usize)?;
+    reader.skip(size_of::<u32>());
+    reader.read_fallible(&mut VmWriter::from(
+        &mut attr.as_bytes_mut()[size_of::<u32>()..],
+    ))?;
 
-    if let Some(additional_size) = attr.size.checked_sub(type_size as u32) {
-        let mut buf = vec![0; additional_size as usize];
-        space.read_bytes(addr + type_size, &mut VmWriter::from(&mut *buf))?;
-
-        if buf.iter().any(|&b| b != 0) {
-            return Err(Error::with_message(Errno::E2BIG, "too big sched_attr"));
+    while reader.remain() > size_of::<u64>() {
+        if reader.read_val::<u64>()? != 0 {
+            let _ = user_space.write_val(addr, &(size_of::<LinuxSchedAttr>() as u32));
+            return_errno_with_message!(Errno::E2BIG, "incompatible scheduling attributes");
         }
     }
+    while reader.has_remain() {
+        if reader.read_val::<u8>()? != 0 {
+            let _ = user_space.write_val(addr, &(size_of::<LinuxSchedAttr>() as u32));
+            return_errno_with_message!(Errno::E2BIG, "incompatible scheduling attributes");
+        }
+    }
+
+    // TODO: Check whether `sched_flags` is valid.
 
     Ok(attr)
 }
@@ -171,20 +191,22 @@ pub(super) fn write_linux_sched_attr_to_user(
     user_size: u32,
     ctx: &Context,
 ) -> Result<()> {
-    let space = ctx.user_space();
+    if user_size < SCHED_ATTR_SIZE_VER0 || user_size > PAGE_SIZE as u32 {
+        return_errno_with_message!(Errno::EINVAL, "invalid scheduling attribute size");
+    }
 
     attr.size = (size_of::<LinuxSchedAttr>() as u32).min(user_size);
 
-    let range = SCHED_PRIORITY_RANGE
-        .get(attr.sched_policy as usize)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid scheduling policy"))?;
+    let range = &SCHED_PRIORITY_RANGE[attr.sched_policy as usize];
     attr.sched_util_min = *range.start();
     attr.sched_util_max = *range.end();
 
-    space.write_bytes(
+    let user_space = ctx.user_space();
+    user_space.write_bytes(
         addr,
         &mut VmReader::from(&attr.as_bytes()[..attr.size as usize]),
     )?;
+
     Ok(())
 }
 
@@ -193,13 +215,18 @@ pub(super) fn access_sched_attr_with<T>(
     ctx: &Context,
     f: impl FnOnce(&SchedAttr) -> Result<T>,
 ) -> Result<T> {
-    match tid {
-        0 => f(ctx.thread.sched_attr()),
-        _ if tid > (i32::MAX as u32) => Err(Error::with_message(Errno::EINVAL, "invalid tid")),
-        _ => f(thread_table::get_thread(tid)
-            .ok_or_else(|| Error::with_message(Errno::ESRCH, "thread does not exist"))?
-            .sched_attr()),
+    if tid.cast_signed() < 0 {
+        return_errno_with_message!(Errno::EINVAL, "all negative TIDs are not valid");
     }
+
+    if tid == 0 {
+        return f(ctx.thread.sched_attr());
+    }
+
+    let Some(thread) = thread_table::get_thread(tid) else {
+        return_errno_with_message!(Errno::ESRCH, "the target thread does not exist");
+    };
+    f(thread.sched_attr())
 }
 
 pub fn sys_sched_getattr(
@@ -209,15 +236,19 @@ pub fn sys_sched_getattr(
     flags: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
+    if addr == 0 {
+        return_errno_with_message!(Errno::EINVAL, "invalid user space address");
+    }
     if flags != 0 {
-        // TODO: support flags soch as `RESET_ON_FORK`.
-        return Err(Error::with_message(Errno::EINVAL, "unsupported flags"));
+        // Linux also has no support for any flags yet.
+        return_errno_with_message!(Errno::EINVAL, "invalid flags");
     }
 
     let policy = access_sched_attr_with(tid, ctx, |attr| Ok(attr.policy()))?;
-    let attr: LinuxSchedAttr = policy.try_into()?;
-    write_linux_sched_attr_to_user(attr, addr, user_size, ctx)
-        .map_err(|_| Error::new(Errno::EINVAL))?;
+    let attr: LinuxSchedAttr = policy
+        .try_into()
+        .expect("all user-visible scheduling attributes should be valid");
+    write_linux_sched_attr_to_user(attr, addr, user_size, ctx)?;
 
     Ok(SyscallReturn::Return(0))
 }
