@@ -351,7 +351,7 @@ impl CgroupNode {
     /// This will succeed only if the cgroup node is empty and is alive.
     /// Here, a cgroup node is considered empty if it has no child nodes and no
     /// processes bound to it.
-    pub(super) fn mark_as_dead(&self) -> crate::Result<()> {
+    pub(super) fn mark_as_dead(&self) -> crate::prelude::Result<()> {
         let mut inner = self.inner.write();
         let Some(inner_ref) = inner.as_ref() else {
             return_errno_with_message!(Errno::ENOENT, "the cgroup node is already dead");

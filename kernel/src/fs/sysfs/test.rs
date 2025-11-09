@@ -28,8 +28,8 @@ use crate::{
         sysfs::{self, fs::SysFs},
         utils::{mkmod, DirentVisitor, FileSystem, InodeType},
     },
+    prelude::*,
     time::clocks::init_for_ktest as time_init_for_ktest,
-    Result,
 };
 
 // --- Mock SysTree Components ---

@@ -11,7 +11,6 @@ use crate::{
         FileSystem, Inode, InodeMode, InodeType, Metadata,
     },
     prelude::*,
-    Result,
 };
 
 /// An inode abstraction used in the sysfs file system.

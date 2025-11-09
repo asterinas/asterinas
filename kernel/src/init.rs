@@ -174,7 +174,7 @@ fn print_banner() {
     println!("{}", logo_ascii_art::get_gradient_color_version());
 }
 
-pub(super) fn init_in_first_process(ctx: &Context) {
+pub(crate) fn on_first_process_startup(ctx: &Context) {
     component::init_all(InitStage::Process, component::parse_metadata!()).unwrap();
     crate::device::init_in_first_process(ctx).unwrap();
     crate::fs::init_in_first_process(ctx);

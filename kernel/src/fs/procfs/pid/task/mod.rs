@@ -22,9 +22,8 @@ use crate::{
         utils::{mkmod, DirEntryVecExt, Inode},
     },
     prelude::*,
-    process::{posix_thread::AsPosixThread, task_set::TidEvent},
+    process::{posix_thread::AsPosixThread, task_set::TidEvent, Process},
     thread::{AsThread, Thread, Tid},
-    Process,
 };
 
 mod cgroup;

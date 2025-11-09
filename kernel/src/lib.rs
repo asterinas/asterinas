@@ -60,10 +60,6 @@ mod util;
 mod vdso;
 mod vm;
 
-use crate::{
-    init::init_in_first_process, prelude::*, process::Process, thread::kernel_thread::ThreadOptions,
-};
-
 #[ostd::main]
 #[controlled]
 fn main() {

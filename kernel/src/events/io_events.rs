@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{Events, EventsFilter};
+use crate::prelude::*;
 
-crate::bitflags! {
+bitflags! {
     pub struct IoEvents: u32 {
         const IN    = 0x0001;
         const PRI   = 0x0002;

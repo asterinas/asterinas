@@ -11,13 +11,13 @@ use ostd::mm::{VmReader, VmWriter};
 use spin::Once;
 
 /// Registers a new kernel `SysNode`.
-pub(super) fn register(config_obj: Arc<dyn SysNode>) -> crate::Result<()> {
+pub(super) fn register(config_obj: Arc<dyn SysNode>) -> crate::prelude::Result<()> {
     KERNEL_SYS_NODE_ROOT.get().unwrap().add_child(config_obj)?;
     Ok(())
 }
 
 /// Unregisters a kernel `SysNode`.
-pub(super) fn unregister(name: &str) -> crate::Result<()> {
+pub(super) fn unregister(name: &str) -> crate::prelude::Result<()> {
     let _ = KERNEL_SYS_NODE_ROOT.get().unwrap().remove_child(name)?;
     Ok(())
 }

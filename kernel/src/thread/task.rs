@@ -72,7 +72,7 @@ pub fn create_new_user_task(
         let has_kernel_event_fn = || ctx.has_pending();
 
         if is_init_process {
-            crate::init_in_first_process(&ctx);
+            crate::init::on_first_process_startup(&ctx);
         }
 
         while !current_thread.is_exited() {
