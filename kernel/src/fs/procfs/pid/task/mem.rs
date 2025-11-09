@@ -7,7 +7,7 @@ use crate::{
         utils::{mkmod, Inode},
     },
     prelude::*,
-    Process,
+    process::Process,
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/mem` (and also `/proc/[pid]/mem`).

@@ -127,7 +127,7 @@ impl FsRegistry {
     }
 
     /// Registers a file system control interface.
-    fn register(&self, new_type: &'static dyn FsType) -> crate::Result<()> {
+    fn register(&self, new_type: &'static dyn FsType) -> Result<()> {
         let mut fs_table = self.fs_table.lock();
         if fs_table.contains_key(new_type.name()) {
             return_errno_with_message!(Errno::EEXIST, "the file system type already exists");

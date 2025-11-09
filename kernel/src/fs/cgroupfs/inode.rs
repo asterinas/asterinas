@@ -15,7 +15,6 @@ use crate::{
         },
     },
     prelude::*,
-    Result,
 };
 
 /// An inode abstraction used in the cgroup file system.

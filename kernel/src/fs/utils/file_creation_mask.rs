@@ -4,7 +4,7 @@ use core::sync::atomic::AtomicU16;
 
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 
-use crate::error::Error;
+use crate::prelude::*;
 
 /// A mask for the file mode of a newly-created file or directory.
 ///
@@ -28,12 +28,12 @@ impl Default for FileCreationMask {
 }
 
 impl TryFrom<u16> for FileCreationMask {
-    type Error = crate::Error;
+    type Error = Error;
 
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
+    fn try_from(value: u16) -> Result<Self> {
         if value & !Self::MASK != 0 {
             Err(Error::with_message(
-                crate::Errno::EINVAL,
+                Errno::EINVAL,
                 "Invalid FileCreationMask.",
             ))
         } else {

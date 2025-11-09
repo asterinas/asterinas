@@ -10,7 +10,7 @@ use super::{iter_all_ifaces, Iface};
 use crate::{
     sched::{Nice, SchedPolicy},
     thread::kernel_thread::ThreadOptions,
-    WaitTimeout,
+    time::wait::WaitTimeout,
 };
 
 pub fn init_in_first_kthread() {

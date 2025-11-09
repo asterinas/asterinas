@@ -35,6 +35,7 @@ use crate::{
         utils::{mkmod, AccessMode, OpenArgs},
     },
     prelude::*,
+    thread::kernel_thread::ThreadOptions,
 };
 
 fn start_block_device(device_name: &str) -> Result<Arc<dyn BlockDevice>> {
@@ -47,7 +48,7 @@ fn start_block_device(device_name: &str) -> Result<Arc<dyn BlockDevice>> {
                 virtio_block_device.handle_requests();
             }
         };
-        crate::ThreadOptions::new(task_fn).spawn();
+        ThreadOptions::new(task_fn).spawn();
         Ok(device)
     } else {
         return_errno_with_message!(Errno::ENOENT, "Device does not exist")

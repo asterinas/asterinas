@@ -63,7 +63,7 @@ impl From<timeval_t> for timespec_t {
 }
 
 impl TryFrom<timespec_t> for Duration {
-    type Error = crate::Error;
+    type Error = Error;
 
     fn try_from(value: timespec_t) -> Result<Self> {
         if value.sec < 0 || value.nsec < 0 {
@@ -112,7 +112,7 @@ impl From<Duration> for timeval_t {
 }
 
 impl TryFrom<timeval_t> for Duration {
-    type Error = crate::Error;
+    type Error = Error;
 
     fn try_from(timeval: timeval_t) -> Result<Self> {
         if timeval.sec < 0 || timeval.usec < 0 {
