@@ -50,8 +50,9 @@ pthread/pthread_test
 pty/close_pty
 pty/open_pty
 pty/pty_blocking
-sched/sched_attr
-sched/sched_attr_idle
+sched/sched_attr_getset
+sched/sched_param_getset
+sched/sched_param_idle
 shm/posix_shm
 signal_c/kill
 signal_c/parent_death_signal

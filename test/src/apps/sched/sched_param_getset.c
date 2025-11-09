@@ -2,36 +2,32 @@
 
 #define _GNU_SOURCE
 
-#include "../test.h"
-#include <signal.h>
-#include <string.h>
-#include <sys/poll.h>
 #include <sched.h>
+#include <unistd.h>
 
-FN_SETUP()
-{
-}
-END_SETUP()
+#include "../test.h"
 
 FN_TEST(sched_param)
 {
+	struct sched_param param;
+
 	TEST_ERRNO(sched_getscheduler(-100), EINVAL);
 	TEST_ERRNO(sched_getscheduler(1234567890), ESRCH);
 	TEST_RES(sched_getscheduler(0), _ret == SCHED_OTHER);
 
-	struct sched_param param;
-
 	TEST_ERRNO(sched_getparam(0, NULL), EINVAL);
+	TEST_ERRNO(sched_getparam(0, (void *)1), EFAULT);
 	TEST_RES(sched_getparam(0, &param),
 		 _ret == 0 && param.sched_priority == 0);
 
 	param.sched_priority = 50;
 	TEST_ERRNO(sched_setscheduler(0, SCHED_FIFO, NULL), EINVAL);
+	TEST_ERRNO(sched_setscheduler(0, SCHED_FIFO, (void *)1), EFAULT);
 	TEST_ERRNO(sched_setscheduler(0, 1234567890, &param), EINVAL);
 	TEST_ERRNO(sched_setscheduler(-100, SCHED_FIFO, &param), EINVAL);
 	TEST_ERRNO(sched_setscheduler(1234567890, SCHED_FIFO, &param), ESRCH);
 	TEST_RES(sched_setscheduler(0, SCHED_FIFO, &param), _ret == 0);
-	sleep(1);
+	usleep(200 * 1000);
 
 	TEST_RES(sched_getscheduler(0), _ret == SCHED_FIFO);
 	TEST_RES(sched_getparam(0, &param),
@@ -39,12 +35,13 @@ FN_TEST(sched_param)
 
 	param.sched_priority = 1234567890;
 	TEST_ERRNO(sched_setparam(0, NULL), EINVAL);
+	TEST_ERRNO(sched_setparam(0, (void *)1), EFAULT);
 	TEST_ERRNO(sched_setparam(-100, &param), EINVAL);
 	TEST_ERRNO(sched_setparam(1234567890, &param), ESRCH);
 	TEST_ERRNO(sched_setparam(0, &param), EINVAL);
 	param.sched_priority = 51;
 	TEST_RES(sched_setparam(0, &param), _ret == 0);
-	sleep(1);
+	usleep(200 * 1000);
 
 	TEST_RES(sched_getparam(0, &param),
 		 _ret == 0 && param.sched_priority == 51);
