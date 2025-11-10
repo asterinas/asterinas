@@ -117,22 +117,22 @@ FN_TEST(nagle)
 		 nagle == 0);
 
 	// 2. Disable Nagle algorithm on unbound socket
-	CHECK(setsockopt(sk_unbound, IPPROTO_TCP, TCP_NODELAY, &option,
-			 sizeof(option)));
+	TEST_SUCC(setsockopt(sk_unbound, IPPROTO_TCP, TCP_NODELAY, &option,
+			     sizeof(option)));
 	TEST_RES(getsockopt(sk_unbound, IPPROTO_TCP, TCP_NODELAY, &nagle,
 			    &nagle_len),
 		 nagle == 1);
 
 	// 3. Disable Nagle algorithm on connected socket
-	CHECK(setsockopt(sk_connected, IPPROTO_TCP, TCP_NODELAY, &option,
-			 sizeof(option)));
+	TEST_SUCC(setsockopt(sk_connected, IPPROTO_TCP, TCP_NODELAY, &option,
+			     sizeof(option)));
 	TEST_RES(getsockopt(sk_connected, IPPROTO_TCP, TCP_NODELAY, &nagle,
 			    &nagle_len),
 		 nagle == 1);
 
 	// 4. Disable Nagle algorithm on listening socket before connection
-	CHECK(setsockopt(sk_listen, IPPROTO_TCP, TCP_NODELAY, &option,
-			 sizeof(option)));
+	TEST_SUCC(setsockopt(sk_listen, IPPROTO_TCP, TCP_NODELAY, &option,
+			     sizeof(option)));
 	TEST_RES(getsockopt(sk_listen, IPPROTO_TCP, TCP_NODELAY, &nagle,
 			    &nagle_len),
 		 nagle == 1);
@@ -147,21 +147,21 @@ FN_TEST(nagle)
 
 	// 5. Disable Nagle algorithm on listening socket after connection
 	option = 0;
-	CHECK(setsockopt(sk_listen, IPPROTO_TCP, TCP_NODELAY, &option,
-			 sizeof(option)));
+	TEST_SUCC(setsockopt(sk_listen, IPPROTO_TCP, TCP_NODELAY, &option,
+			     sizeof(option)));
 
 	close(sk_connected);
 	close(sk_accepted);
 
-	sk_connected = CHECK(socket(AF_INET, SOCK_STREAM, 0));
-	CHECK(connect(sk_connected, (struct sockaddr *)&listen_addr,
-		      sizeof(listen_addr)));
+	sk_connected = TEST_SUCC(socket(AF_INET, SOCK_STREAM, 0));
+	TEST_SUCC(connect(sk_connected, (struct sockaddr *)&listen_addr,
+			  sizeof(listen_addr)));
 
 	option = 1;
-	CHECK(setsockopt(sk_listen, IPPROTO_TCP, TCP_NODELAY, &option,
-			 sizeof(option)));
+	TEST_SUCC(setsockopt(sk_listen, IPPROTO_TCP, TCP_NODELAY, &option,
+			     sizeof(option)));
 
-	sk_accepted = CHECK(accept(sk_listen, NULL, NULL));
+	sk_accepted = TEST_SUCC(accept(sk_listen, NULL, NULL));
 
 	TEST_RES(getsockopt(sk_connected, IPPROTO_TCP, TCP_NODELAY, &nagle,
 			    &nagle_len),
@@ -175,8 +175,8 @@ END_TEST()
 FN_TEST(reuseaddr)
 {
 	int option = 1;
-	CHECK(setsockopt(sk_unbound, SOL_SOCKET, SO_REUSEADDR, &option,
-			 sizeof(option)));
+	TEST_SUCC(setsockopt(sk_unbound, SOL_SOCKET, SO_REUSEADDR, &option,
+			     sizeof(option)));
 
 	int reuseaddr;
 	socklen_t reuseaddr_len = sizeof(reuseaddr);
@@ -203,22 +203,22 @@ FN_TEST(keepalive)
 		 keepalive == 0);
 
 	// 2. Enable keepalive on unbound socket
-	CHECK(setsockopt(sk_unbound, SOL_SOCKET, SO_KEEPALIVE, &option,
-			 sizeof(option)));
+	TEST_SUCC(setsockopt(sk_unbound, SOL_SOCKET, SO_KEEPALIVE, &option,
+			     sizeof(option)));
 	TEST_RES(getsockopt(sk_unbound, SOL_SOCKET, SO_KEEPALIVE, &keepalive,
 			    &keepalive_len),
 		 keepalive == 1);
 
 	// 3. Enable keepalive on connected socket
-	CHECK(setsockopt(sk_connected, SOL_SOCKET, SO_KEEPALIVE, &option,
-			 sizeof(option)));
+	TEST_SUCC(setsockopt(sk_connected, SOL_SOCKET, SO_KEEPALIVE, &option,
+			     sizeof(option)));
 	TEST_RES(getsockopt(sk_connected, SOL_SOCKET, SO_KEEPALIVE, &keepalive,
 			    &keepalive_len),
 		 keepalive == 1);
 
 	// 4. Enable keepalive on listening socket
-	CHECK(setsockopt(sk_listen, SOL_SOCKET, SO_KEEPALIVE, &option,
-			 sizeof(option)));
+	TEST_SUCC(setsockopt(sk_listen, SOL_SOCKET, SO_KEEPALIVE, &option,
+			     sizeof(option)));
 	TEST_RES(getsockopt(sk_listen, SOL_SOCKET, SO_KEEPALIVE, &keepalive,
 			    &keepalive_len),
 		 keepalive == 1);
@@ -233,21 +233,21 @@ FN_TEST(keepalive)
 
 	// 5. Setting keepalive after connection comes
 	option = 0;
-	CHECK(setsockopt(sk_listen, SOL_SOCKET, SO_KEEPALIVE, &option,
-			 sizeof(option)));
+	TEST_SUCC(setsockopt(sk_listen, SOL_SOCKET, SO_KEEPALIVE, &option,
+			     sizeof(option)));
 
 	close(sk_connected);
 	close(sk_accepted);
 
-	sk_connected = CHECK(socket(AF_INET, SOCK_STREAM, 0));
-	CHECK(connect(sk_connected, (struct sockaddr *)&listen_addr,
-		      sizeof(listen_addr)));
+	sk_connected = TEST_SUCC(socket(AF_INET, SOCK_STREAM, 0));
+	TEST_SUCC(connect(sk_connected, (struct sockaddr *)&listen_addr,
+			  sizeof(listen_addr)));
 
 	option = 1;
-	CHECK(setsockopt(sk_listen, SOL_SOCKET, SO_KEEPALIVE, &option,
-			 sizeof(option)));
+	TEST_SUCC(setsockopt(sk_listen, SOL_SOCKET, SO_KEEPALIVE, &option,
+			     sizeof(option)));
 
-	sk_accepted = CHECK(accept(sk_listen, NULL, NULL));
+	sk_accepted = TEST_SUCC(accept(sk_listen, NULL, NULL));
 
 	TEST_RES(getsockopt(sk_connected, SOL_SOCKET, SO_KEEPALIVE, &keepalive,
 			    &keepalive_len),
@@ -274,8 +274,8 @@ FN_TEST(keepidle)
 
 	// 2. Set and Get value
 	int seconds = 200;
-	CHECK(setsockopt(sk_connected, IPPROTO_TCP, TCP_KEEPIDLE, &seconds,
-			 sizeof(seconds)));
+	TEST_SUCC(setsockopt(sk_connected, IPPROTO_TCP, TCP_KEEPIDLE, &seconds,
+			     sizeof(seconds)));
 	TEST_RES(getsockopt(sk_connected, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle,
 			    &keepidle_len),
 		 keepidle == 200);
@@ -295,8 +295,8 @@ FN_TEST(ip_tos)
 
 	// 2. Set and get value
 	tos = 0x10;
-	CHECK(setsockopt(sk_unbound, IPPROTO_IP, IP_TOS, &tos, tos_len));
-	CHECK(setsockopt(sk_udp, IPPROTO_IP, IP_TOS, &tos, tos_len));
+	TEST_SUCC(setsockopt(sk_unbound, IPPROTO_IP, IP_TOS, &tos, tos_len));
+	TEST_SUCC(setsockopt(sk_udp, IPPROTO_IP, IP_TOS, &tos, tos_len));
 	tos = 0;
 	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_TOS, &tos, &tos_len),
 		 tos == 0x10 && tos_len == 4);
@@ -304,13 +304,13 @@ FN_TEST(ip_tos)
 		 tos == 0x10 && tos_len == 4);
 
 	tos = 0x123;
-	CHECK(setsockopt(sk_unbound, IPPROTO_IP, IP_TOS, &tos, tos_len));
+	TEST_SUCC(setsockopt(sk_unbound, IPPROTO_IP, IP_TOS, &tos, tos_len));
 	tos = 0;
 	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_TOS, &tos, &tos_len),
 		 tos == 32 && tos_len == 4);
 
 	tos = 0x1111;
-	CHECK(setsockopt(sk_unbound, IPPROTO_IP, IP_TOS, &tos, tos_len));
+	TEST_SUCC(setsockopt(sk_unbound, IPPROTO_IP, IP_TOS, &tos, tos_len));
 	tos = 0;
 	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_TOS, &tos, &tos_len),
 		 tos == 16 && tos_len == 4);
@@ -338,8 +338,8 @@ FN_TEST(ip_ttl)
 		   EINVAL);
 
 	ttl = 0x10;
-	CHECK(setsockopt(sk_unbound, IPPROTO_IP, IP_TTL, &ttl, ttl_len));
-	CHECK(setsockopt(sk_udp, IPPROTO_IP, IP_TTL, &ttl, ttl_len));
+	TEST_SUCC(setsockopt(sk_unbound, IPPROTO_IP, IP_TTL, &ttl, ttl_len));
+	TEST_SUCC(setsockopt(sk_udp, IPPROTO_IP, IP_TTL, &ttl, ttl_len));
 
 	ttl = 0;
 	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_TTL, &ttl, &ttl_len),
@@ -348,7 +348,7 @@ FN_TEST(ip_ttl)
 		 ttl == 0x10 && ttl_len == 4);
 
 	ttl = -1;
-	CHECK(setsockopt(sk_unbound, IPPROTO_IP, IP_TTL, &ttl, ttl_len));
+	TEST_SUCC(setsockopt(sk_unbound, IPPROTO_IP, IP_TTL, &ttl, ttl_len));
 
 	ttl = 0;
 	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_TTL, &ttl, &ttl_len),
