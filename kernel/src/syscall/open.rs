@@ -6,7 +6,7 @@ use crate::{
         file_table::{FdFlags, FileDesc},
         fs_resolver::{FsPath, FsResolver, LookupResult, AT_FDCWD},
         inode_handle::InodeHandle,
-        utils::{AccessMode, CreationFlags, InodeMode, InodeType, OpenArgs},
+        utils::{AccessMode, CreationFlags, InodeMode, InodeType, OpenArgs, StatusFlags},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -89,7 +89,9 @@ fn do_open(
     let inode_handle = match lookup_res {
         LookupResult::Resolved(target_path) => target_path.open(open_args)?,
         LookupResult::AtParent(result) => {
-            if !open_args.creation_flags.contains(CreationFlags::O_CREAT) {
+            if !open_args.creation_flags.contains(CreationFlags::O_CREAT)
+                || open_args.status_flags.contains(StatusFlags::O_PATH)
+            {
                 return_errno_with_message!(Errno::ENOENT, "the file does not exist");
             }
             if open_args

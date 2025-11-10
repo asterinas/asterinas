@@ -446,7 +446,10 @@ impl Path {
             );
         }
 
-        if inode_type.is_regular_file() && creation_flags.contains(CreationFlags::O_TRUNC) {
+        if inode_type.is_regular_file()
+            && creation_flags.contains(CreationFlags::O_TRUNC)
+            && !open_args.status_flags.contains(StatusFlags::O_PATH)
+        {
             self.resize(0)?;
         }
         InodeHandle::new(self.clone(), open_args.access_mode, open_args.status_flags)
