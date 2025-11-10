@@ -34,6 +34,10 @@ impl<F: FileOps> ProcFile<F> {
             common,
         })
     }
+
+    pub fn inner(&self) -> &F {
+        &self.inner
+    }
 }
 
 #[inherit_methods(from = "self.common")]
