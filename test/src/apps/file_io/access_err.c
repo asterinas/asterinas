@@ -232,6 +232,34 @@ FN_TEST(path)
 }
 END_TEST()
 
+FN_TEST(flags)
+{
+	int fd;
+	char buf[5];
+
+	fd = TEST_SUCC(open(FILENAME, O_WRONLY));
+	TEST_RES(write(fd, "hello", 5), _ret == 5);
+	TEST_SUCC(close(fd));
+
+	// `O_PATH | O_TRUNC` has no effect.
+	fd = TEST_SUCC(open(FILENAME, O_WRONLY | O_PATH | O_TRUNC));
+	TEST_SUCC(close(fd));
+	fd = TEST_SUCC(open(FILENAME, O_RDONLY));
+	TEST_RES(read(fd, buf, sizeof(buf)),
+		 _ret == 5 && memcmp(buf, "hello", 5) == 0);
+	TEST_SUCC(close(fd));
+
+	// `O_RDONLY | O_TRUNC` will truncate the file.
+	fd = TEST_SUCC(open(FILENAME, O_RDONLY | O_TRUNC));
+	TEST_RES(read(fd, buf, sizeof(buf)), _ret == 0);
+	TEST_SUCC(close(fd));
+
+	// `O_PATH | O_CREAT` has no effect.
+	TEST_ERRNO(open("/tmp/file_does_not_exist", O_PATH | O_CREAT, 0644),
+		   ENOENT);
+}
+END_TEST()
+
 FN_SETUP(unlink)
 {
 	CHECK(unlink(FILENAME));
