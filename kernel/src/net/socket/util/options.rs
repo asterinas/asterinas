@@ -11,8 +11,8 @@ use crate::{
     match_sock_option_mut, match_sock_option_ref,
     net::socket::{
         options::{
-            AcceptConn, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority, RecvBuf,
-            RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
+            AcceptConn, Broadcast, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority,
+            RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
         },
         unix::{CUserCred, UNIX_DATAGRAM_DEFAULT_BUF_SIZE, UNIX_STREAM_DEFAULT_BUF_SIZE},
     },
@@ -25,6 +25,7 @@ use crate::{
 #[set = "pub"]
 pub struct SocketOptionSet {
     reuse_addr: bool,
+    broadcast: bool,
     send_buf: u32,
     recv_buf: u32,
     keep_alive: bool,
@@ -38,6 +39,7 @@ impl Default for SocketOptionSet {
     fn default() -> Self {
         Self {
             reuse_addr: false,
+            broadcast: false,
             send_buf: MIN_SENDBUF,
             recv_buf: MIN_RECVBUF,
             keep_alive: false,
@@ -100,6 +102,10 @@ impl SocketOptionSet {
             socket_reuse_addr: ReuseAddr => {
                 let reuse_addr = self.reuse_addr();
                 socket_reuse_addr.set(reuse_addr);
+            },
+            socket_broadcast: Broadcast => {
+                let broadcast = self.broadcast();
+                socket_broadcast.set(broadcast);
             },
             socket_send_buf: SendBuf => {
                 let send_buf = self.send_buf();
@@ -168,6 +174,10 @@ impl SocketOptionSet {
                 let reuse_addr = socket_reuse_addr.get().unwrap();
                 self.set_reuse_addr(*reuse_addr);
                 socket.set_reuse_addr(*reuse_addr);
+            },
+            socket_broadcast: Broadcast => {
+                let broadcast = socket_broadcast.get().unwrap();
+                self.set_broadcast(*broadcast);
             },
             socket_send_buf: SendBuf => {
                 let send_buf = socket_send_buf.get().unwrap();
