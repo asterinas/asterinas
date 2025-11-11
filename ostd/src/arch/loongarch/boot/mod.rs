@@ -19,7 +19,7 @@ use crate::{
     mm::paddr_to_vaddr,
 };
 
-global_asm!(include_str!("boot.S"));
+global_asm!(include_str!("bsp_boot.S"));
 
 static EFI_SYSTEM_TABLE: Once<&'static EfiSystemTable> = Once::new();
 

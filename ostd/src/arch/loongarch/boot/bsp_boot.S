@@ -34,6 +34,7 @@
 
 .section ".boot", "awx", @progbits
 
+# `_start` is also the entrypoint specified in the linker script.
 .global _start
 _start:
     # Set DMW0 (kernel)
