@@ -157,6 +157,7 @@ update_project_dependencies() {
     update_package_version ${OSDK_TEST_RUNNER_CARGO_TOML_PATH}
     update_package_version ${OSDK_FRAME_ALLOCATOR_CARGO_TOML_PATH}
     update_package_version ${OSDK_HEAP_ALLOCATOR_CARGO_TOML_PATH}
+    update_package_version ${SCTRACE_CARGO_TOML_PATH}
 
     update_dep_version ${OSDK_TEST_RUNNER_CARGO_TOML_PATH} ostd
     update_dep_version ${OSDK_FRAME_ALLOCATOR_CARGO_TOML_PATH} ostd
@@ -225,6 +226,7 @@ OSDK_CARGO_TOML_PATH=${OSDK_DIR}/Cargo.toml
 OSDK_TEST_RUNNER_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/deps/test-kernel/Cargo.toml
 OSDK_FRAME_ALLOCATOR_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/deps/frame-allocator/Cargo.toml
 OSDK_HEAP_ALLOCATOR_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/deps/heap-allocator/Cargo.toml
+SCTRACE_CARGO_TOML_PATH=${ASTER_SRC_DIR}/tools/sctrace/Cargo.toml
 VERSION_PATH=${ASTER_SRC_DIR}/VERSION
 DOCKER_IMAGE_VERSION_PATH=${ASTER_SRC_DIR}/DOCKER_IMAGE_VERSION
 
