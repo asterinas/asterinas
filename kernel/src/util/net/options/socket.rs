@@ -4,8 +4,8 @@ use super::RawSocketOption;
 use crate::{
     current_userspace, impl_raw_sock_option_get_only, impl_raw_socket_option,
     net::socket::options::{
-        AcceptConn, Error, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority, RecvBuf,
-        RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
+        AcceptConn, Broadcast, Error, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority,
+        RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
     },
     prelude::*,
     process::Gid,
@@ -52,6 +52,7 @@ pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
     match name {
         CSocketOptionName::REUSEADDR => Ok(Box::new(ReuseAddr::new())),
         CSocketOptionName::ERROR => Ok(Box::new(Error::new())),
+        CSocketOptionName::BROADCAST => Ok(Box::new(Broadcast::new())),
         CSocketOptionName::SNDBUF => Ok(Box::new(SendBuf::new())),
         CSocketOptionName::RCVBUF => Ok(Box::new(RecvBuf::new())),
         CSocketOptionName::KEEPALIVE => Ok(Box::new(KeepAlive::new())),
@@ -70,6 +71,7 @@ pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
 
 impl_raw_socket_option!(ReuseAddr);
 impl_raw_sock_option_get_only!(Error);
+impl_raw_socket_option!(Broadcast);
 impl_raw_socket_option!(SendBuf);
 impl_raw_socket_option!(RecvBuf);
 impl_raw_socket_option!(KeepAlive);
