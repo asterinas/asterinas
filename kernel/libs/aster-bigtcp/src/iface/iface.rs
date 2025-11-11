@@ -2,7 +2,7 @@
 
 use alloc::sync::Arc;
 
-use smoltcp::wire::Ipv4Address;
+use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
 
 use super::{port::BindPortConfig, BoundPort, InterfaceFlags, InterfaceType};
 use crate::{errors::BindError, ext::Ext};
@@ -76,6 +76,17 @@ impl<E: Ext> dyn Iface<E> {
     /// or both will return `None`.
     pub fn prefix_len(&self) -> Option<u8> {
         self.common().prefix_len()
+    }
+
+    /// Gets the broadcast address of the iface, if any.
+    pub fn broadcast_addr(&self) -> Option<Ipv4Address> {
+        let cidr = {
+            let common = self.common();
+            let ipv4_addr = common.ipv4_addr()?;
+            let prefix_len = common.prefix_len()?;
+            Ipv4Cidr::new(ipv4_addr, prefix_len)
+        };
+        cidr.broadcast()
     }
 
     /// Returns a reference to the associated [`ScheduleNextPoll`].

@@ -11,17 +11,20 @@ use crate::{
     events::IoEvents,
     fs::utils::Inode,
     match_sock_option_mut,
-    net::socket::{
-        ip::options::{IpOptionSet, SetIpLevelOption},
-        new_pseudo_inode,
-        options::{Error as SocketError, SocketOption},
-        private::SocketPrivate,
-        util::{
-            datagram_common::{select_remote_and_bind, Bound, Inner},
-            options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
-            MessageHeader, SendRecvFlags, SocketAddr,
+    net::{
+        iface::is_broadcast_endpoint,
+        socket::{
+            ip::options::{IpOptionSet, SetIpLevelOption},
+            new_pseudo_inode,
+            options::{Error as SocketError, SocketOption},
+            private::SocketPrivate,
+            util::{
+                datagram_common::{select_remote_and_bind, Bound, Inner},
+                options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
+                MessageHeader, SendRecvFlags, SocketAddr,
+            },
+            Socket,
         },
-        Socket,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
@@ -147,6 +150,13 @@ impl Socket for DatagramSocket {
 
     fn connect(&self, socket_addr: SocketAddr) -> Result<()> {
         let endpoint = socket_addr.try_into()?;
+        let can_broadcast = self.options.read().socket.broadcast();
+        if !can_broadcast && is_broadcast_endpoint(&endpoint) {
+            return_errno_with_message!(
+                Errno::EACCES,
+                "connecting to a broadcast address without SO_BROADCAST is not allowed"
+            );
+        }
 
         self.inner.write().connect(&endpoint, &self.pollee)
     }
@@ -190,6 +200,16 @@ impl Socket for DatagramSocket {
             Some(addr) => Some(addr.try_into()?),
             None => None,
         };
+
+        if let Some(endpoint) = endpoint.as_ref() {
+            let can_broadcast = self.options.read().socket.broadcast();
+            if !can_broadcast && is_broadcast_endpoint(endpoint) {
+                return_errno_with_message!(
+                    Errno::EACCES,
+                    "sending to a broadcast address without SO_BROADCAST is not allowed"
+                );
+            }
+        }
 
         if !control_messages.is_empty() {
             // TODO: Support sending control message
