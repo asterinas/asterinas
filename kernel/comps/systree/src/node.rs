@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{
-    borrow::ToOwned,
+    borrow::{Cow, ToOwned},
     string::String,
     sync::{Arc, Weak},
     vec,
@@ -17,6 +17,7 @@ use bitflags::bitflags;
 use ostd::mm::{VmReader, VmWriter};
 
 use super::{Error, Result, SysAttrSet, SysStr};
+use crate::SysAttr;
 
 pub const MAX_ATTR_SIZE: usize = 4096;
 
@@ -129,8 +130,13 @@ pub trait SysBranchNode: SysNode {
 /// This trait abstracts the common interface of "normal" nodes.
 /// In particular, every "normal" node may have associated attributes.
 pub trait SysNode: SysObj {
+    /// Returns the attribute with the given name.
+    ///
+    /// If the attribute does not exist, returns `None`.
+    fn attr(&self, name: &str) -> Option<SysAttr>;
+
     /// Returns the attribute set of a `SysNode`.
-    fn node_attrs(&self) -> &SysAttrSet;
+    fn node_attrs(&self) -> Cow<SysAttrSet>;
 
     /// Reads the value of an attribute.
     fn read_attr(&self, name: &str, writer: &mut VmWriter) -> Result<usize>;
