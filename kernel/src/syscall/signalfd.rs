@@ -6,7 +6,10 @@
 //! enabling better integration with event loops.
 //! See https://man7.org/linux/man-pages/man2/signalfd.2.html
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::{
+    fmt::Display,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use bitflags::bitflags;
 
@@ -16,6 +19,7 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::{get_file_fast, FdFlags, FileDesc},
+        path::RESERVED_MOUNT_ID,
         pseudofs::anon_inodefs_shared_inode,
         utils::{CreationFlags, Inode, StatusFlags},
     },
@@ -260,6 +264,36 @@ impl FileLike for SignalFile {
 
     fn inode(&self) -> &Arc<dyn Inode> {
         anon_inodefs_shared_inode()
+    }
+
+    fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
+        struct FdInfo {
+            flags: u32,
+            ino: u64,
+            sigmask: u64,
+        }
+
+        impl Display for FdInfo {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                writeln!(f, "pos:\t{}", 0)?;
+                writeln!(f, "flags:\t0{:o}", self.flags)?;
+                // TODO: This should be the mount ID of the pseudo filesystem.
+                writeln!(f, "mnt_id:\t{}", RESERVED_MOUNT_ID)?;
+                writeln!(f, "ino:\t{}", self.ino)?;
+                writeln!(f, "sigmask:\t{:016x}", self.sigmask)
+            }
+        }
+
+        let mut flags = self.status_flags().bits() | self.access_mode() as u32;
+        if fd_flags.contains(FdFlags::CLOEXEC) {
+            flags |= CreationFlags::O_CLOEXEC.bits();
+        }
+
+        Box::new(FdInfo {
+            flags,
+            ino: self.inode().ino(),
+            sigmask: self.mask().load(Ordering::Relaxed).into(),
+        })
     }
 }
 

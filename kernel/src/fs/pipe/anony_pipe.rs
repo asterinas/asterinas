@@ -1,14 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::{
+    fmt::Display,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 use crate::{
     events::IoEvents,
     fs::{
         file_handle::FileLike,
+        file_table::FdFlags,
+        path::RESERVED_MOUNT_ID,
         pipe::common::{PipeReader, PipeWriter},
         pseudofs::{pipefs_singleton, PseudoInode},
-        utils::{mkmod, AccessMode, Inode, InodeType, StatusFlags},
+        utils::{mkmod, AccessMode, CreationFlags, Inode, InodeType, StatusFlags},
     },
     prelude::*,
     process::{
@@ -76,6 +81,21 @@ impl Pollable for PipeReaderFile {
     }
 }
 
+struct FdInfo {
+    flags: u32,
+    ino: u64,
+}
+
+impl Display for FdInfo {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        writeln!(f, "pos:\t{}", 0)?;
+        writeln!(f, "flags:\t0{:o}", self.flags)?;
+        // TODO: This should be the mount ID of the pseudo filesystem.
+        writeln!(f, "mnt_id:\t{}", RESERVED_MOUNT_ID)?;
+        writeln!(f, "ino:\t{}", self.ino)
+    }
+}
+
 impl FileLike for PipeReaderFile {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         if !writer.has_avail() {
@@ -108,6 +128,18 @@ impl FileLike for PipeReaderFile {
 
     fn inode(&self) -> &Arc<dyn Inode> {
         &self.pseudo_inode
+    }
+
+    fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
+        let mut flags = self.status_flags().bits() | self.access_mode() as u32;
+        if fd_flags.contains(FdFlags::CLOEXEC) {
+            flags |= CreationFlags::O_CLOEXEC.bits();
+        }
+
+        Box::new(FdInfo {
+            flags,
+            ino: self.inode().ino(),
+        })
     }
 }
 
@@ -178,6 +210,18 @@ impl FileLike for PipeWriterFile {
 
     fn inode(&self) -> &Arc<dyn Inode> {
         &self.pseudo_inode
+    }
+
+    fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
+        let mut flags = self.status_flags().bits() | self.access_mode() as u32;
+        if fd_flags.contains(FdFlags::CLOEXEC) {
+            flags |= CreationFlags::O_CLOEXEC.bits();
+        }
+
+        Box::new(FdInfo {
+            flags,
+            ino: self.inode().ino(),
+        })
     }
 }
 
