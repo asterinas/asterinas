@@ -10,6 +10,8 @@ let
     path = "/lib/x86_64-linux-gnu";
   };
   resolv_conf = pkgs.callPackage ./resolv_conf.nix { dnsServer = dnsServer; };
+  # If you want to use evtest, replace line 15 with line 14 and uncomment line 30.
+  # all_pkgs = [ busybox pkgs.evtest etc resolv_conf ]
   all_pkgs = [ busybox etc resolv_conf ]
     ++ lib.optionals (apps != null) [ apps.package ]
     ++ lib.optionals (benchmark != null) [ benchmark.package ]
@@ -25,6 +27,7 @@ in stdenvNoCC.mkDerivation {
     ln -sfn usr/lib $out/lib
     ln -sfn usr/lib64 $out/lib64
     cp -r ${busybox}/bin/* $out/bin/
+    # cp -r ${pkgs.evtest}/bin/* $out/bin/
 
     cp -r ${etc}/* $out/etc/
 
