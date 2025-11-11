@@ -45,6 +45,7 @@ process/pidfd
 process/wait4
 procfs/pid_mem
 pseudofs/pseudo_inode
+pseudofs/memfd_access_err
 pthread/pthread_test
 pty/close_pty
 pty/open_pty

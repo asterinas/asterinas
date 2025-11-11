@@ -185,7 +185,7 @@ fn handle_getseal(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
         )
     })?;
 
-    let file_seals = memfd_file.get_seals();
+    let file_seals = memfd_file.get_seals()?;
 
     Ok(SyscallReturn::Return(file_seals.bits() as _))
 }

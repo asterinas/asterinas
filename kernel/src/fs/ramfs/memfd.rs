@@ -10,6 +10,7 @@ use core::{
 
 use align_ext::AlignExt;
 use aster_block::bio::BioWaiter;
+use aster_rights::Rights;
 use inherit_methods_macro::inherit_methods;
 use spin::Once;
 
@@ -226,8 +227,8 @@ impl Inode for MemfdInode {
 pub struct MemfdFile {
     memfd_inode: Arc<dyn Inode>,
     offset: Mutex<usize>,
-    access_mode: AccessMode,
     status_flags: AtomicU32,
+    rights: Rights,
 }
 
 impl MemfdFile {
@@ -276,37 +277,58 @@ impl MemfdFile {
         Ok(Self {
             memfd_inode,
             offset: Mutex::new(0),
-            access_mode: AccessMode::O_RDWR,
             status_flags: AtomicU32::new(0),
+            rights: Rights::READ | Rights::WRITE,
         })
     }
 
     pub fn open_from_inode(inode: Arc<MemfdInode>, open_args: OpenArgs) -> Result<Self> {
         let inode: Arc<dyn Inode> = inode;
-        inode.check_permission(open_args.access_mode.into())?;
+        let status_flags = open_args.status_flags;
+        let access_mode = open_args.access_mode;
+
+        if !status_flags.contains(StatusFlags::O_PATH) {
+            inode.check_permission(access_mode.into())?;
+        }
         check_open_util(inode.as_ref(), &open_args)?;
 
-        if open_args.creation_flags.contains(CreationFlags::O_TRUNC) {
+        if open_args.creation_flags.contains(CreationFlags::O_TRUNC)
+            && !status_flags.contains(StatusFlags::O_PATH)
+        {
             inode.resize(0)?;
         }
+
+        let rights = if status_flags.contains(StatusFlags::O_PATH) {
+            Rights::empty()
+        } else {
+            access_mode.into()
+        };
 
         Ok(Self {
             memfd_inode: inode,
             offset: Mutex::new(0),
-            access_mode: open_args.access_mode,
             status_flags: AtomicU32::new(open_args.status_flags.bits()),
+            rights,
         })
     }
 
     pub fn add_seals(&self, new_seals: FileSeals) -> Result<()> {
-        if !self.access_mode.is_writable() {
+        if self.rights.is_empty() {
+            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+        }
+        if !self.rights.contains(Rights::WRITE) {
             return_errno_with_message!(Errno::EPERM, "the file is not opened writable");
         }
+
         self.memfd_inode().add_seals(new_seals)
     }
 
-    pub fn get_seals(&self) -> FileSeals {
-        self.memfd_inode().get_seals()
+    pub fn get_seals(&self) -> Result<FileSeals> {
+        if self.rights.is_empty() {
+            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+        }
+
+        Ok(self.memfd_inode().get_seals())
     }
 
     fn memfd_inode(&self) -> &MemfdInode {
@@ -320,11 +342,7 @@ impl Pollable for MemfdFile {
     }
 }
 
-#[inherit_methods(from = "self.memfd_inode")]
 impl FileLike for MemfdFile {
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize>;
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32>;
-
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         let mut offset = self.offset.lock();
 
@@ -332,6 +350,14 @@ impl FileLike for MemfdFile {
         *offset += len;
 
         Ok(len)
+    }
+
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        if !self.rights.contains(Rights::READ) {
+            return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
+        }
+
+        self.memfd_inode.read_at(offset, writer)
     }
 
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
@@ -348,6 +374,10 @@ impl FileLike for MemfdFile {
     }
 
     fn write_at(&self, mut offset: usize, reader: &mut VmReader) -> Result<usize> {
+        if !self.rights.contains(Rights::WRITE) {
+            return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
+        }
+
         if self.status_flags().contains(StatusFlags::O_APPEND) {
             // If the file has the O_APPEND flag, the offset is ignored
             offset = self.memfd_inode.size();
@@ -357,6 +387,13 @@ impl FileLike for MemfdFile {
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
+        if self.rights.is_empty() {
+            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+        }
+        if !self.rights.contains(Rights::WRITE) {
+            return_errno_with_message!(Errno::EINVAL, "the file is not opened writable");
+        }
+
         do_resize_util(self.memfd_inode.as_ref(), self.status_flags(), new_size)
     }
 
@@ -372,14 +409,22 @@ impl FileLike for MemfdFile {
     }
 
     fn access_mode(&self) -> AccessMode {
-        self.access_mode
+        self.rights.into()
     }
 
     fn seek(&self, pos: SeekFrom) -> Result<usize> {
+        if self.rights.is_empty() {
+            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+        }
+
         do_seek_util(self.memfd_inode.as_ref(), &self.offset, pos)
     }
 
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
+        if !self.rights.contains(Rights::WRITE) {
+            return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
+        }
+
         do_fallocate_util(
             self.memfd_inode.as_ref(),
             self.status_flags(),
@@ -390,7 +435,19 @@ impl FileLike for MemfdFile {
     }
 
     fn mappable(&self) -> Result<Mappable> {
+        if self.rights.is_empty() {
+            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+        }
+
         Ok(Mappable::Inode(self.memfd_inode.clone()))
+    }
+
+    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+        if self.rights.is_empty() {
+            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+        }
+
+        self.memfd_inode.ioctl(cmd, arg)
     }
 
     fn inode(&self) -> &Arc<dyn Inode> {
