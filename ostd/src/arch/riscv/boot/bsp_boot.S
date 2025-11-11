@@ -19,6 +19,7 @@ KERNEL_VMA_OFFSET      = 0xffffffff00000000
 
 .section ".boot", "awx", @progbits
 
+# `_start` is also the entrypoint specified in the linker script.
 .global _start
 _start:
     # Arguments passed from SBI:
@@ -46,7 +47,7 @@ _start:
     # Check if the write to satp succeeds. If not, try Sv39.
     # Reference: <https://riscv.github.io/riscv-isa-manual/snapshot/privileged/#satp>.
     csrr   t1, satp
-    beq    t0, t1, flush_tlb_bsp
+    beq    t0, t1, bsp_flush_tlb
 
     # Try loading the Sv39 page table.
     lla     t0, sv39_boot_l3pt
@@ -57,20 +58,20 @@ _start:
 
     # Check again if the write to satp succeeds.
     csrr   t1, satp
-    beq    t0, t1, flush_tlb_bsp
+    beq    t0, t1, bsp_flush_tlb
 
     # If the CPU doesn't support either Sv48 or Sv39 this is actually reachable.
-unreachable_pa_bsp:
-    j      unreachable_pa_bsp
+bsp_unreachable_pa:
+    j      bsp_unreachable_pa
 
-flush_tlb_bsp:
+bsp_flush_tlb:
     sfence.vma
 
     # Update SP/PC to use the virtual address.
     li     t1, KERNEL_VMA_OFFSET
     lla    sp, boot_stack_top
     or     sp, sp, t1
-    lla    t0, _start_virt - KERNEL_VMA_OFFSET
+    lla    t0, bsp_boot_virt - KERNEL_VMA_OFFSET
     or     t0, t0, t1
     jr     t0
 
@@ -120,7 +121,7 @@ boot_stack_top:
 
 .text
 
-_start_virt:
+bsp_boot_virt:
     # Initialize GP to the CPU-local storage's base address.
 .extern __cpu_local_start
     lla    gp, __cpu_local_start
@@ -129,5 +130,5 @@ _start_virt:
     lla    t0, riscv_boot
     jr     t0
 
-unreachable_va_bsp:
-    j      unreachable_va_bsp
+bsp_unreachable_va:
+    j      bsp_unreachable_va

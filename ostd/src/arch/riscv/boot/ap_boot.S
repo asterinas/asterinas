@@ -35,7 +35,7 @@ ap_boot_start:
     # Check if the write to satp succeeds.
     # Reference: <https://riscv.github.io/riscv-isa-manual/snapshot/privileged/#satp>.
     csrr    t3, satp
-    beq     t3, t1, flush_tlb_ap
+    beq     t3, t1, ap_flush_tlb
 
     # This AP doesn't support Sv48. So the `__ap_boot_page_table_pointer` must
     # point to a Sv39 page table since we assume that all harts support a same
@@ -47,13 +47,13 @@ ap_boot_start:
 
     # Check again if the write to satp succeeds.
     csrr    t0, satp
-    beq     t0, t1, flush_tlb_ap
+    beq     t0, t1, ap_flush_tlb
 
     # If the CPU doesn't support either Sv48 or Sv39 this is actually reachable.
-unreachable_pa_ap:
-    j      unreachable_pa_ap
+ap_unreachable_pa:
+    j       ap_unreachable_pa
 
-flush_tlb_ap:
+ap_flush_tlb:
     sfence.vma                          # Flush TLB.
     
     # Now we need to switch to virtual addressing.
@@ -87,11 +87,11 @@ __ap_boot_cpu_id_tail:
 ap_boot_virtual:
     # Atomically update the CPU ID tail and load the previous value to t1.
     lla     t0, __ap_boot_cpu_id_tail
-cmpxchg_load:
+ap_cmpxchg_load:
     lr.d    t1, (t0)
     addi    t2, t1, 1
     sc.d    t2, t2, (t0)
-    bnez    t2, cmpxchg_load
+    bnez    t2, ap_cmpxchg_load
 
     # Get the AP boot info array pointer using absolute addressing.
     lla     t2, __ap_boot_info_array_pointer
@@ -118,5 +118,5 @@ cmpxchg_load:
     lla     t1, riscv_ap_early_entry
     jr      t1
 
-unreachable_va_ap:
-    j      unreachable_va_ap
+ap_unreachable_va:
+    j       ap_unreachable_va

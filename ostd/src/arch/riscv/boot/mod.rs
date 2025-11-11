@@ -18,7 +18,7 @@ use crate::{
     mm::paddr_to_vaddr,
 };
 
-global_asm!(include_str!("boot.S"));
+global_asm!(include_str!("bsp_boot.S"));
 
 /// The Flattened Device Tree of the platform.
 pub static DEVICE_TREE: Once<Fdt> = Once::new();

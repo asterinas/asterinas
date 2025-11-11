@@ -49,6 +49,13 @@ foo:
 The assembler treats the directives `.global` and `.globl` as the same.
 For clarity, however, `.global` is preferred.
 
+Note that a Rust crate is a single translation unit, so `global_asm!` labels in
+different modules within the same crate share the same global namespace. In RISC-V,
+we have experienced that defining two labels with the same name in different modules
+can nondeterministically cause duplicate symbol error. The `.L` prefix does not help.
+Therefore, add custom prefixes to your labels to avoid name clashes. Nevertheless,
+use `.global` to export symbols that need to be visible within the same crate.
+
 In x86-64, if an executable section contains a mix of 32-bit and 64-bit code,
 the `.code64` and `.code32` directives are treated as function attributes.
 ```asm
