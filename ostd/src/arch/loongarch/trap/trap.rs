@@ -14,7 +14,7 @@ global_asm!(include_str!("trap.S"));
 /// - Set `eentry` to `trap_entry`
 ///
 /// You **MUST NOT** modify these registers later.
-pub unsafe fn init() {
+pub(super) unsafe fn init() {
     // When VS=0, the entry address for all exceptions and interrupts is the same
     loongArch64::register::ecfg::set_vs(0);
     // Configure the entry address for normal exceptions and interrupts

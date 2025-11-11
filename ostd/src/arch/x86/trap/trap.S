@@ -60,9 +60,8 @@ trap_handler_table:
 .text
 .code64
 
-.global trap_common
 trap_common:
-    cld                     # clear DF before calling/returning to any C function to conform to x86-64 calling convention
+    cld                     # clear DF before going to Rust to conform to x86-64 calling convention
     push rax
     mov ax, [rsp + 4*8]     # load cs
     and ax, 0x3             # test
@@ -96,6 +95,7 @@ _trap_from_user:
     push [rax - 3*8]        # push rflags
     push [rax - 5*8]        # push rip
     mov rax, [rax - 8*8]    # pop rax
+.extern trap_syscall_entry
     jmp trap_syscall_entry
 
 _trap_from_kernel:
@@ -130,8 +130,6 @@ _trap_from_kernel:
     mov rdi, rsp
     call trap_handler
 
-.global trap_return
-trap_return:
     pop rax
     pop rbx
     pop rcx

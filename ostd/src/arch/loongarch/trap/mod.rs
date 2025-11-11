@@ -17,7 +17,7 @@ use crate::{
     mm::MAX_USERSPACE_VADDR,
 };
 
-/// Initialize trap handling on LoongArch.
+/// Initializes trap handling on LoongArch.
 pub(crate) unsafe fn init() {
     unsafe {
         self::trap::init();

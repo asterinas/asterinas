@@ -63,19 +63,19 @@ pub(crate) unsafe fn init_on_ap() {
     unimplemented!();
 }
 
-/// Return the frequency of TSC. The unit is Hz.
+/// Returns the frequency of TSC. The unit is Hz.
 pub fn tsc_freq() -> u64 {
     timer::get_timebase_freq()
 }
 
-/// Reads the current value of the processor’s time-stamp counter (TSC).
+/// Reads the current value of the processor's time-stamp counter (TSC).
 pub fn read_tsc() -> u64 {
     riscv::register::time::read64()
 }
 
 /// Reads a hardware generated 64-bit random value.
 ///
-/// Returns None if no random value was generated.
+/// Returns `None` if no random value was generated.
 pub fn read_random() -> Option<u64> {
     // FIXME: Implement a hardware random number generator on RISC-V platforms.
     None

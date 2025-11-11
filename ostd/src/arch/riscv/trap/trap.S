@@ -8,7 +8,8 @@
  * Copyright (c) 2020 - 2024 Runji Wang
  *
  * We make the following new changes:
- * * Add the `trap_handler_table`.
+ * * Adjust some symbol names.
+ * * Disable FPU and U-mode memory access on traps.
  *
  * These changes are released under the following license:
  *
@@ -29,12 +30,15 @@ trap_entry:
     # the kernel stack pointer. If we came from the kernel, sscratch
     # will contain 0, and we should continue on the current stack.
     csrrw sp, sscratch, sp
-    bnez sp, trap_from_user
-trap_from_kernel:
+    bnez sp, _trap_from_user
+
+_trap_from_kernel:
     csrr sp, sscratch
     addi sp, sp, -34 * XLENB
     # sscratch = previous-sp, sp = kernel-sp
-trap_from_user:
+    # fallthrough
+
+_trap_from_user:
     # save general registers except sp(x2)
     STORE_SP x1, 1
     STORE_SP x3, 3
@@ -78,14 +82,15 @@ trap_from_user:
     STORE_SP t2, 33                          # save sepc
 
     andi t1, t1, 1 << 8                      # sstatus.SPP == 1
-    beqz t1, end_trap_from_user
-end_trap_from_kernel:
+    beqz t1, _end_trap_from_user
+
+_end_trap_from_kernel:
     mv a0, sp                                # first arg is TrapFrame
-    lla ra, trap_return                      # set return address
+    lla ra, _trap_return                     # set return address
 .extern trap_handler
     j trap_handler
 
-end_trap_from_user:
+_end_trap_from_user:
     # load callee-saved registers
     LOAD_SP sp, 0
     LOAD_SP s0, 0
@@ -132,7 +137,7 @@ run_user: # (regs: &mut RawUserContext)
     STORE_SP t0, 0          # save kernel-sp
     csrw sscratch, sp       # sscratch = bottom of trap frame
 
-trap_return:
+_trap_return:
     LOAD_SP t0, 32          # t0 = sstatus
     LOAD_SP t1, 33          # t1 = sepc
     csrw sstatus, t0        # load sstatus
