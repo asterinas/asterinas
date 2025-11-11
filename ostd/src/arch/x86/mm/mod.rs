@@ -124,12 +124,13 @@ pub(crate) unsafe fn sync_dma_range(_range: Range<Vaddr>, _direction: DmaDirecti
 #[repr(C)]
 pub(crate) struct PageTableEntry(usize);
 
-/// Activates the given level 4 page table.
+/// Activates the given root-level page table.
+///
 /// The cache policy of the root page table node is controlled by `root_pt_cache`.
 ///
 /// # Safety
 ///
-/// Changing the level 4 page table is unsafe, because it's possible to violate memory safety by
+/// Changing the root-level page table is unsafe, because it's possible to violate memory safety by
 /// changing the page mapping.
 pub(crate) unsafe fn activate_page_table(root_paddr: Paddr, root_pt_cache: CachePolicy) {
     let addr = PhysFrame::from_start_address(x86_64::PhysAddr::new(root_paddr as u64)).unwrap();

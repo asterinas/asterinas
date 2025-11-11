@@ -64,7 +64,7 @@ global_asm!(include_str!("trap.S"), SSTATUS_FS_MASK = const SSTATUS_FS_MASK, SST
 /// - Set `stvec` to internal exception vector.
 ///
 /// You **MUST NOT** modify these registers later.
-pub unsafe fn init() {
+pub(super) unsafe fn init() {
     unsafe {
         // Set sscratch register to 0, indicating to exception vector that we are
         // presently executing in the kernel

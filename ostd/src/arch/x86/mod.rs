@@ -101,7 +101,7 @@ pub fn tsc_freq() -> u64 {
     kernel::tsc::TSC_FREQ.load(Ordering::Acquire)
 }
 
-/// Reads the current value of the processor’s time-stamp counter (TSC).
+/// Reads the current value of the processor's time-stamp counter (TSC).
 pub fn read_tsc() -> u64 {
     use core::arch::x86_64::_rdtsc;
 

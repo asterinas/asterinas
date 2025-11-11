@@ -21,13 +21,13 @@ trap_entry:
     # the kernel stack pointer. If we came from the kernel, SAVE_SCRATCH
     # will contain 0, and we should continue on the current stack.
     csrwr   $sp, SAVE_SCRATCH
-    bnez    $sp, trap_from_user
+    bnez    $sp, _trap_from_user
 
-trap_from_kernel:
+_trap_from_kernel:
     csrrd   $sp, SAVE_SCRATCH
     addi.d  $sp, $sp, -35 * XLENB
 
-trap_from_user:
+_trap_from_user:
     # save general registers except $sp($r3)
     STORE_SP $r1, 1
     STORE_SP $r2, 2
@@ -72,16 +72,16 @@ trap_from_user:
     STORE_SP $t3, 34         # save euen
 
     andi    $t1, $t1, 0x3
-    bnez    $t1, end_trap_from_user
+    bnez    $t1, _end_trap_from_user
 
-end_trap_from_kernel:
+_end_trap_from_kernel:
     move    $a0, $sp           # first arg is TrapFrame
-    la.local   $ra, trap_return
+    la.local   $ra, _trap_return
 .extern trap_handler
     la.local   $t0, trap_handler
     jr      $t0
 
-end_trap_from_user:
+_end_trap_from_user:
     # load kernel-sp in UserContext.general.zero
     LOAD_SP $sp, 0
     # load callee-saved registers
@@ -129,7 +129,7 @@ run_user: # (regs: &mut RawUserContext)
     move    $t0, $sp
     csrwr   $t0, SAVE_SCRATCH   # SAVE_SCRATCH = bottom of TrapFrame/UserContext       
 
-trap_return:
+_trap_return:
     LOAD_SP $t0, 32         # t0 = prmd
     LOAD_SP $t1, 33         # t1 = era
     LOAD_SP $t2, 34         # t2 = euen

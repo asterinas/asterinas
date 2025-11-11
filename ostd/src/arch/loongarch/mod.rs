@@ -60,14 +60,14 @@ pub fn tsc_freq() -> u64 {
     loongArch64::time::get_timer_freq() as _
 }
 
-/// Reads the current value of the processor’s time-stamp counter (TSC).
+/// Reads the current value of the processor's time-stamp counter (TSC).
 pub fn read_tsc() -> u64 {
     loongArch64::time::Time::read() as _
 }
 
 /// Reads a hardware generated 64-bit random value.
 ///
-/// Returns None if no random value was generated.
+/// Returns `None` if no random value was generated.
 pub fn read_random() -> Option<u64> {
     // FIXME: Implement a hardware random number generator on LoongArch platforms.
     None

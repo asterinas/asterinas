@@ -114,14 +114,14 @@ pub(crate) unsafe fn sync_dma_range(_range: Range<Vaddr>, _direction: DmaDirecti
 #[repr(C)]
 pub(crate) struct PageTableEntry(usize);
 
-/// Activates the given level 4 page table.
+/// Activates the given root-level page table.
 ///
 /// "pgdl" or "pgdh" register doesn't have a field that encodes the cache policy,
 /// so `_root_pt_cache` is ignored.
 ///
 /// # Safety
 ///
-/// Changing the level 4 page table is unsafe, because it's possible to violate memory safety by
+/// Changing the root-level page table is unsafe, because it's possible to violate memory safety by
 /// changing the page mapping.
 pub(crate) unsafe fn activate_page_table(root_paddr: Paddr, _root_pt_cache: CachePolicy) {
     assert!(root_paddr % PagingConsts::BASE_PAGE_SIZE == 0);
