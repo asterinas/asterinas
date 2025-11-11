@@ -37,6 +37,7 @@ TEST_APPS := \
 	prctl \
 	process \
 	procfs \
+	pseudofs \
 	pthread \
 	pty \
 	sched \

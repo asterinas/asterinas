@@ -44,6 +44,7 @@ process/job_control
 process/pidfd
 process/wait4
 procfs/pid_mem
+pseudofs/pseudo_inode
 pthread/pthread_test
 pty/close_pty
 pty/open_pty
