@@ -7,7 +7,7 @@ getpid, getppid, gettid, setuid, setgid, getuid, getgid, and prctl
 under this category.
 -->
 
-## `sched_getattr` and `sched_setattr`
+### `sched_getattr` and `sched_setattr`
 
 Supported functionality in SCML:
 
@@ -65,7 +65,7 @@ Unsupported scheduling flags:
 * `SCHED_FLAG_UTIL_CLAMP_MIN`
 * `SCHED_FLAG_UTIL_CLAMP_MAX`
 
-## `wait4`
+### `wait4`
 
 Supported functionality in SCML:
 
@@ -87,7 +87,7 @@ Ignored options:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/wait4.2.html).
 
-## `clone`
+### `clone`
 
 Supported functionality in SCML:
 

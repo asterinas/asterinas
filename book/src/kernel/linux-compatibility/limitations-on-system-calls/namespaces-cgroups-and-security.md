@@ -8,7 +8,7 @@ landlock_restrict_self, and bpf
 under this category.
 -->
 
-## `prctl`
+### `prctl`
 
 Supported functionality in SCML:
 
@@ -65,7 +65,7 @@ Unsupported operations:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/prctl.2.html).
 
-## `capget` and `capset`
+### `capget` and `capset`
 
 Supported functionality in SCML:
 

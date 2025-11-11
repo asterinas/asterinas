@@ -7,6 +7,70 @@ futex, set_robust_list, and get_robust_list
 under this category.
 -->
 
+### `futex`
+
+Supported functionality in SCML:
+
+```c
+opt_flags = FUTEX_PRIVATE_FLAG | FUTEX_CLOCK_REALTIME;
+
+// Block current thread if target value at `uaddr` matches `val`, and wait up to `timeout`.
+futex(
+    uaddr,
+    futex_op = FUTEX_WAIT | <opt_flags>,
+    val, timeout
+);
+
+// Block current thread with bitmask condition if target value at `uaddr` matches `val`,
+// and wait up to `timeout`.
+futex(
+    uaddr,
+    futex_op = FUTEX_WAIT_BITSET | <opt_flags>,
+    val, timeout, unused = NULL, bitmask
+);
+
+// Unblock up to `max_waiters` threads waiting on `uaddr`
+futex(
+    uaddr,
+    futex_op = FUTEX_WAKE | <opt_flags>,
+    max_waiters
+);
+
+// Unblock up to `max_waiters` threads on `uaddr`, if the value on `uaddr` matches `bitmask`
+futex(
+    uaddr,
+    futex_op = FUTEX_WAKE_BITSET | <opt_flags>,
+    max_waiters, unused0 = NULL, unused1 = NULL, bitmask
+);
+
+// Unblock up to `max_waiters` threads waiting on `uaddr`, and requeue up to
+// `max_requeue_waiters` of the remaining waiters to the target futex at `uaddr2`.
+futex(
+    uaddr,
+    futex_op = FUTEX_REQUEUE | <opt_flags>,
+    max_waiters, max_requeue_waiters, uaddr2
+);
+
+// Perform atomic operation encoded in `operation` on `uaddr2`. Unblock up to `max_waiters`
+// threads waiting on `uaddr`, and conditionally unblock up to `max_waiters2` threads
+// waiting on `uaddr2` based on the result of the atomic operation.
+futex(
+    uaddr,
+    futex_op = FUTEX_WAKE_OP | <opt_flags>,
+    max_waiters, max_waiters2, uaddr2, operation
+);
+```
+
+Unsupported operations:
+* `FUTEX_FD`
+* `FUTEX_CMP_REQUEUE`
+* `FUTEX_LOCK_PI`
+* `FUTEX_UNLOCK_PI`
+* `FUTEX_TRYLOCK_PI`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/futex.2.html).
+
 ## System V semaphore
 
 ### `semget`
@@ -100,67 +164,3 @@ Unsupported commands:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/semctl.2.html).
-
-### `futex`
-
-Supported functionality in SCML:
-
-```c
-opt_flags = FUTEX_PRIVATE_FLAG | FUTEX_CLOCK_REALTIME;
-
-// Block current thread if target value at `uaddr` matches `val`, and wait up to `timeout`.
-futex(
-    uaddr,
-    futex_op = FUTEX_WAIT | <opt_flags>,
-    val, timeout
-);
-
-// Block current thread with bitmask condition if target value at `uaddr` matches `val`,
-// and wait up to `timeout`.
-futex(
-    uaddr,
-    futex_op = FUTEX_WAIT_BITSET | <opt_flags>,
-    val, timeout, unused = NULL, bitmask
-);
-
-// Unblock up to `max_waiters` threads waiting on `uaddr`
-futex(
-    uaddr,
-    futex_op = FUTEX_WAKE | <opt_flags>,
-    max_waiters
-);
-
-// Unblock up to `max_waiters` threads on `uaddr`, if the value on `uaddr` matches `bitmask`
-futex(
-    uaddr,
-    futex_op = FUTEX_WAKE_BITSET | <opt_flags>,
-    max_waiters, unused0 = NULL, unused1 = NULL, bitmask
-);
-
-// Unblock up to `max_waiters` threads waiting on `uaddr`, and requeue up to
-// `max_requeue_waiters` of the remaining waiters to the target futex at `uaddr2`.
-futex(
-    uaddr,
-    futex_op = FUTEX_REQUEUE | <opt_flags>,
-    max_waiters, max_requeue_waiters, uaddr2
-);
-
-// Perform atomic operation encoded in `operation` on `uaddr2`. Unblock up to `max_waiters`
-// threads waiting on `uaddr`, and conditionally unblock up to `max_waiters2` threads
-// waiting on `uaddr2` based on the result of the atomic operation.
-futex(
-    uaddr,
-    futex_op = FUTEX_WAKE_OP | <opt_flags>,
-    max_waiters, max_waiters2, uaddr2, operation
-);
-```
-
-Unsupported operations:
-* `FUTEX_FD`
-* `FUTEX_CMP_REQUEUE`
-* `FUTEX_LOCK_PI`
-* `FUTEX_UNLOCK_PI`
-* `FUTEX_TRYLOCK_PI`
-
-For more information,
-see [the man page](https://man7.org/linux/man-pages/man2/futex.2.html).

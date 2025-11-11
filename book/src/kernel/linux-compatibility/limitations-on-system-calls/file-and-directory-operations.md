@@ -9,7 +9,7 @@ utime, and utimensat
 under this category.
 -->
 
-## `open` and `openat`
+### `open` and `openat`
 
 Supported functionality of `open` in SCML:
 
@@ -81,7 +81,7 @@ The SCML rules are omitted for brevity.
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/openat.2.html).
 
-## `renameat2`
+### `renameat2`
 
 Supported functionality in SCML:
 
@@ -98,7 +98,7 @@ Unsupported flags:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/rename.2.html).
 
-## `lseek`
+### `lseek`
 
 Supported functionality in SCML:
 
@@ -117,7 +117,7 @@ Unsupported flags:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/lseek.2.html).
 
-## `newfstatat`
+### `newfstatat`
 
 Supported functionality in SCML:
 
