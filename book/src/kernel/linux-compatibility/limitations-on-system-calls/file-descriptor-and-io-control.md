@@ -7,7 +7,7 @@ eventfd, eventfd2, inotify_init, inotify_init1, inotify_add_watch, and inotify_r
 under this category.
 -->
 
-## `fcntl`
+### `fcntl`
 
 Supported functionality in SCML:
 
@@ -49,7 +49,7 @@ Unsupported commands:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/fcntl.2.html).
 
-## `pipe` and `pipe2`
+### `pipe` and `pipe2`
 
 Supported functionality in SCML:
 
@@ -68,7 +68,7 @@ Silently-ignored flags:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/pipe.2.html).
 
-## `eventfd` and `eventfd2`
+### `eventfd` and `eventfd2`
 
 Supported functionality in SCML:
 

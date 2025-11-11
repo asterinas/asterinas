@@ -9,7 +9,9 @@ sendmmsg, recvmmsg, accept4, recvmsg, and socketcall
 under this category.
 -->
 
-## `socket`
+## Socket Creation
+
+### `socket`
 
 Supported functionality in SCML:
 
@@ -49,7 +51,7 @@ socket(
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/socket.2.html).
 
-## `socketpair`
+### `socketpair`
 
 Supported functionality in SCML:
 
@@ -66,7 +68,9 @@ socketpair(
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/socketpair.2.html).
 
-## `bind`
+## Socket Setup
+
+### `bind`
 
 Supported functionality in SCML:
 
@@ -85,7 +89,7 @@ bind(
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/bind.2.html).
 
-## `connect`
+### `connect`
 
 Supported functionality in SCML:
 
@@ -99,7 +103,9 @@ connect(
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/connect.2.html).
 
-## `sendto` and `sendmsg`
+## Socket Communication
+
+### `sendto` and `sendmsg`
 
 Supported functionality in SCML:
 
@@ -138,7 +144,7 @@ Unsupported flags:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/sendto.2.html).
 
-## `recvfrom` and `recvmsg`
+### `recvfrom` and `recvmsg`
 
 Supported functionality in SCML:
 
@@ -164,7 +170,9 @@ Partially-supported flags:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/recvfrom.2.html).
 
-## `getsockopt` and `setsockopt`
+## Socket Options
+
+### `getsockopt` and `setsockopt`
 
 Supported functionality in SCML:
 
