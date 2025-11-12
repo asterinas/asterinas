@@ -163,17 +163,14 @@ impl FlockList {
     /// If the owner is valid, the lock is removed from the list and all threads waiting for the lock are woken.
     /// The function does nothing if the owner is not found in the list.
     /// The function is called when the file is closed or the lock is released.
-    pub fn unlock<R>(&self, req_owner: &InodeHandle<R>) {
-        debug!(
-            "unlock with owner: {:?}",
-            req_owner as *const InodeHandle<R>
-        );
+    pub fn unlock(&self, req_owner: &InodeHandle) {
+        debug!("unlock with owner: {:?}", req_owner as *const InodeHandle);
         let mut list = self.inner.lock();
         list.retain(|lock| {
             if let Some(owner) = lock.owner() {
                 if ptr::eq(
-                    Arc::as_ptr(&owner) as *const InodeHandle<R>,
-                    req_owner as *const InodeHandle<R>,
+                    Arc::as_ptr(&owner) as *const InodeHandle,
+                    req_owner as *const InodeHandle,
                 ) {
                     lock.wake_all(); // Wake all threads waiting for this lock.
                     false // Remove lock from the list.
