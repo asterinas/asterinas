@@ -1,0 +1,61 @@
+access_mode =
+    O_RDONLY |
+    O_WRONLY |
+    O_RDWR;
+creation_flags =
+    O_CLOEXEC |
+    O_DIRECTORY |
+    O_EXCL |
+    O_NOCTTY |
+    O_NOFOLLOW |
+    O_TRUNC;
+status_flags =
+    O_APPEND |
+    O_ASYNC |
+    O_DIRECT |
+    O_LARGEFILE |
+    O_NOATIME |
+    O_NONBLOCK |
+    O_SYNC;
+
+// Open an existing file
+open(
+    path,
+    flags = <access_mode> | <creation_flags> | <status_flags>,
+);
+openat(
+    dirfd,
+    path,
+    flags = <access_mode> | <creation_flags> | <status_flags>,
+);
+
+// Create a new file
+open(
+    path,
+    flags = O_CREAT | <access_mode> | <creation_flags> | <status_flags>,
+    mode
+);
+openat(
+    dirfd,
+    path,
+    flags = O_CREAT | <access_mode> | <creation_flags> | <status_flags>,
+    mode
+);
+
+// Status flags that are meaningful with O_PATH
+opath_valid_flags = O_CLOEXEC | O_DIRECTORY | O_NOFOLLOW;
+// All other flags are ignored with O_PATH
+opath_ignored_flags = O_CREAT | <creation_flags> | <status_flags>;
+// Obtain a file descriptor to indicate a location in FS
+open(
+    path,
+    flags = O_PATH | <opath_valid_flags> | <opath_ignored_flags>
+);
+openat(
+    dirfd,
+    path,
+    flags = O_PATH | <opath_valid_flags> | <opath_ignored_flags>
+);
+
+// Create an unnamed file
+// open(path, flags = O_TMPFILE | <creation_flags> | <status_flags>)

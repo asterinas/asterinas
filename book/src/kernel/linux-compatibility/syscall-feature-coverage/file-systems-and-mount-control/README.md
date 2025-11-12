@@ -15,26 +15,7 @@ under this category.
 Supported functionality in SCML:
 
 ```c
-// Create a new mount
-mount(
-    source, target, filesystemtype,
-    mountflags = 0,
-    data
-);
-
-// Move the existing mount point
-mount(
-    source, target, filesystemtype,
-    mountflags = MS_MOVE,
-    data
-);
-
-// Create a bind mount
-mount(
-    source, target, filesystemtype,
-    mountflags = MS_BIND | MS_REC,
-    data
-);
+{{#include mount.scml}}
 ```
 
 Partially supported mount flags:
@@ -67,11 +48,7 @@ see [the man page](https://man7.org/linux/man-pages/man2/mount.2.html).
 Supported functionality in SCML:
 
 ```c
-// Unmount a mounted file system
-umount(target);
-
-// Unmount a mounted file system with enhanced behavior control
-umount2(target, flags = UMOUNT_NOFOLLOW);
+{{#include umount_and_umount2.scml}}
 ```
 
 Silently-ignored flags:

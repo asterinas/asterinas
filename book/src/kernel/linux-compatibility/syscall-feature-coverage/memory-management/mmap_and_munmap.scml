@@ -1,0 +1,34 @@
+prot = PROT_NONE |
+    PROT_EXEC |
+    PROT_READ |
+    PROT_WRITE;
+opt_flags =
+    MAP_ANONYMOUS |
+    MAP_FIXED |
+    MAP_FIXED_NOREPLACE |
+    MAP_GROWSDOWN |
+    MAP_HUGETLB |
+    MAP_LOCKED |
+    MAP_NONBLOCK |
+    MAP_NORESERVE |
+    MAP_POPULATE |
+    MAP_SYNC;
+
+// Create a private memory mapping
+mmap(
+    addr, length,
+    prot = <prot>,
+    flags = MAP_PRIVATE | <opt_flags>,
+    fd, offset
+);
+
+// Create a shared memory mapping
+mmap(
+    addr, length,
+    prot = <prot>,
+    flags = MAP_SHARED | MAP_SHARED_VALIDATE | <opt_flags>,
+    fd, offset
+);
+
+// Unmap a memory mapping
+munmap(addr, length);

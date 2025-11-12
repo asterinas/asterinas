@@ -14,51 +14,7 @@ under this category.
 Supported functionality of `open` in SCML:
 
 ```c
-access_mode =
-    O_RDONLY |
-    O_WRONLY |
-    O_RDWR;
-creation_flags =
-    O_CLOEXEC |
-    O_DIRECTORY |
-    O_EXCL |
-    O_NOCTTY |
-    O_NOFOLLOW |
-    O_TRUNC;
-status_flags =
-    O_APPEND |
-    O_ASYNC |
-    O_DIRECT |
-    O_LARGEFILE |
-    O_NOATIME |
-    O_NONBLOCK |
-    O_SYNC;
-
-// Open an existing file
-open(
-    path,
-    flags = <access_mode> | <creation_flags> | <status_flags>,
-);
-
-// Create a new file
-open(
-    path,
-    flags = O_CREAT | <access_mode> | <creation_flags> | <status_flags>,
-    mode
-);
-
-// Status flags that are meaningful with O_PATH
-opath_valid_flags = O_CLOEXEC | O_DIRECTORY | O_NOFOLLOW;
-// All other flags are ignored with O_PATH
-opath_ignored_flags = O_CREAT | <creation_flags> | <status_flags>;
-// Obtain a file descriptor to indicate a location in FS
-open(
-    path,
-    flags = O_PATH | <opath_valid_flags> | <opath_ignored_flags>
-);
-
-// Create an unnamed file 
-// open(path, flags = O_TMPFILE | <creation_flags> | <status_flags>) 
+{{#include open_and_openat.scml}}
 ```
 
 Silently-ignored flags:
@@ -86,8 +42,7 @@ see [the man page](https://man7.org/linux/man-pages/man2/openat.2.html).
 Supported functionality in SCML:
 
 ```c
-// Rename a file, moving it between directories if required.
-renameat2(olddirfd, oldpath, newdirfd, newpath, 0);
+{{#include renameat2.scml}}
 ```
 
 Unsupported flags:
@@ -103,11 +58,7 @@ see [the man page](https://man7.org/linux/man-pages/man2/rename.2.html).
 Supported functionality in SCML:
 
 ```c
-// Set file offset
-lseek(
-    fd, offset,
-    whence = SEEK_SET | SEEK_CUR | SEEK_END
-);
+{{#include lseek.scml}}
 ```
 
 Unsupported flags:
@@ -122,11 +73,7 @@ see [the man page](https://man7.org/linux/man-pages/man2/lseek.2.html).
 Supported functionality in SCML:
 
 ```c
-// Retrieve file status by file descriptor
-newfstatat(
-    dirfd, path, statbuf,
-    flags = AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW
-);
+{{#include newfstatat.scml}}
 ```
 
 Silently-ignored flags:

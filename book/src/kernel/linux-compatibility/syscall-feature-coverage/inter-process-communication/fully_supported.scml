@@ -1,0 +1,2 @@
+// Set list of robust futexes
+set_robust_list(head, len);

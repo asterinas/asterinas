@@ -1,0 +1,13 @@
+// Receive message from a socket
+recvfrom(
+    sockfd, buf, size,
+    flags = 0,
+    src_addr, addrlen
+);
+
+// Receive message using scatter-gather buffers and ancillary data
+recvmsg(
+    sockfd,
+    msg,
+    flags = 0
+);

@@ -1,0 +1,5 @@
+// Get or set the FS register
+arch_prctl(
+    code = ARCH_GET_FS | ARCH_SET_FS,
+    addr
+);

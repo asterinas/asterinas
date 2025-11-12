@@ -1,0 +1,6 @@
+// Creat or open a semaphore set
+semget(
+    key,
+    nsems,
+    semflg = IPC_CREAT | IPC_EXCL
+);

@@ -1,0 +1,5 @@
+// Unmount a mounted file system
+umount(target);
+
+// Unmount a mounted file system with enhanced behavior control
+umount2(target, flags = UMOUNT_NOFOLLOW);

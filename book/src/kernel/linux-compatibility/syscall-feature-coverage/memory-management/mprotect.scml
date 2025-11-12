@@ -1,0 +1,11 @@
+prot = PROT_NONE |
+    PROT_EXEC |
+    PROT_READ |
+    PROT_WRITE;
+
+// Set memory access permissions
+mprotect(
+    addr,
+    len,
+    prot = <prot>
+);
