@@ -30,7 +30,7 @@ use crate::cpu::local::{CpuLocal, StaticCpuLocal};
 ///
 /// The caller must ensure that no preemption can occur during the method, otherwise we may
 /// accidentally load a wrong GDT and TSS that actually belongs to another CPU.
-pub(super) unsafe fn init() {
+pub(super) unsafe fn init_on_cpu() {
     let tss_ptr = LOCAL_TSS.as_ptr();
 
     // FIXME: The segment limit in the descriptor created by `tss_segment_unchecked` does not

@@ -115,15 +115,17 @@ pub struct TrapFrame {
 ///
 /// # Safety
 ///
-/// This method must be called only in the boot context of each available processor.
-pub(crate) unsafe fn init() {
-    // SAFETY: We're in the boot context, so no preemption can occur.
-    unsafe { gdt::init() };
+/// On the current CPU, this function must be called
+/// - only once and
+/// - before any trap can occur.
+pub(crate) unsafe fn init_on_cpu() {
+    // SAFETY: Since there's no traps, no preemption can occur.
+    unsafe { gdt::init_on_cpu() };
 
-    idt::init();
+    idt::init_on_cpu();
 
-    // SAFETY: `gdt::init` has been called before.
-    unsafe { syscall::init() };
+    // SAFETY: `gdt::init_on_cpu` has been called before.
+    unsafe { syscall::init_on_cpu() };
 }
 
 /// Userspace context.

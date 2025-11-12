@@ -10,11 +10,10 @@ global_asm!(include_str!("trap.S"));
 ///
 /// # Safety
 ///
-/// This function will:
-/// - Set `eentry` to `trap_entry`
-///
-/// You **MUST NOT** modify these registers later.
-pub(super) unsafe fn init() {
+/// On the current CPU, this function must be called
+/// - only once and
+/// - before any trap can occur.
+pub(super) unsafe fn init_on_cpu() {
     // When VS=0, the entry address for all exceptions and interrupts is the same
     loongArch64::register::ecfg::set_vs(0);
     // Configure the entry address for normal exceptions and interrupts

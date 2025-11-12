@@ -51,8 +51,8 @@ pub(crate) fn init_cvm_guest() {
 /// 2. This function must be called after the kernel page table is activated on
 ///    the bootstrapping processor.
 pub(crate) unsafe fn late_init_on_bsp() {
-    // SAFETY: This function is only called once on BSP.
-    unsafe { trap::init() };
+    // SAFETY: This is only called once on this BSP in the boot context.
+    unsafe { trap::init_on_cpu() };
 
     // SAFETY: The caller ensures that this function is only called once on BSP,
     // after the kernel page table is activated.

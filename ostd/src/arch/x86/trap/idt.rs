@@ -28,7 +28,7 @@ static GLOBAL_IDT: Once<&'static [Entry<()>]> = Once::new();
 /// The caller should only call this method once in the boot context for each available processor.
 /// This is not a safety requirement, however, because calling this method again will do nothing
 /// more than load the same IDT.
-pub(super) fn init() {
+pub(super) fn init_on_cpu() {
     let idt = *GLOBAL_IDT.call_once(|| {
         let idt = Box::leak(Box::new([const { Entry::missing() }; NUM_INTERRUPTS]));
 

@@ -25,9 +25,16 @@ use crate::{
 };
 
 /// Initializes interrupt handling on RISC-V.
-pub(crate) unsafe fn init() {
+///
+/// # Safety
+///
+/// On the current CPU, this function must be called
+/// - only once and
+/// - before any trap can occur.
+pub(crate) unsafe fn init_on_cpu() {
+    // SAFETY: The caller ensures the safety conditions.
     unsafe {
-        self::trap::init();
+        self::trap::init_on_cpu();
     }
 }
 

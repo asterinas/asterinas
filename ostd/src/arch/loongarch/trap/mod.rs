@@ -18,9 +18,20 @@ use crate::{
 };
 
 /// Initializes trap handling on LoongArch.
-pub(crate) unsafe fn init() {
+///
+/// This function will:
+/// - Set `ecfg`'s VS bit to zero.
+/// - Set `eentry` to the trap entry.
+///
+/// # Safety
+///
+/// On the current CPU, this function must be called
+/// - only once and
+/// - before any trap can occur.
+pub(crate) unsafe fn init_on_cpu() {
+    // SAFETY: The caller ensures the safety conditions.
     unsafe {
-        self::trap::init();
+        self::trap::init_on_cpu();
     }
 }
 
