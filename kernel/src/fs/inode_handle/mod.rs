@@ -15,9 +15,9 @@ use crate::{
         file_handle::Mappable,
         path::Path,
         utils::{
-            AccessMode, DirentVisitor, FallocMode, FileRange, FlockItem, FlockList, Inode,
-            InodeMode, InodeType, IoctlCmd, Metadata, RangeLockItem, RangeLockList, RangeLockType,
-            SeekFrom, StatusFlags, OFFSET_MAX,
+            DirentVisitor, FallocMode, FileRange, FlockItem, FlockList, Inode, InodeMode,
+            InodeType, IoctlCmd, Metadata, RangeLockItem, RangeLockList, RangeLockType, SeekFrom,
+            StatusFlags, OFFSET_MAX,
         },
     },
     prelude::*,
@@ -29,12 +29,11 @@ use crate::{
 
 struct HandleInner {
     path: Path,
-    /// `file_io` is Similar to `file_private` field in `file` structure in linux. If
-    /// `file_io` is Some, typical file operations including `read`, `write`, `poll`,
-    /// `ioctl` will be provided by `file_io`, instead of `path`.
+    /// `file_io` is similar to the `file_private` field in Linux's `file` structure. If `file_io`
+    /// is `Some(_)`, typical file operations including `read`, `write`, `poll`, and `ioctl` will
+    /// be provided by `file_io`, instead of `path`.
     file_io: Option<Arc<dyn FileIo>>,
     offset: Mutex<usize>,
-    access_mode: AccessMode,
     status_flags: AtomicU32,
 }
 
@@ -118,10 +117,6 @@ impl HandleInner {
 
     pub(self) fn resize(&self, new_size: usize) -> Result<()> {
         do_resize_util(self.path.inode().as_ref(), self.status_flags(), new_size)
-    }
-
-    pub(self) fn access_mode(&self) -> AccessMode {
-        self.access_mode
     }
 
     pub(self) fn status_flags(&self) -> StatusFlags {
@@ -278,7 +273,6 @@ impl Debug for HandleInner {
         f.debug_struct("HandleInner")
             .field("path", &self.path)
             .field("offset", &self.offset())
-            .field("access_mode", &self.access_mode())
             .field("status_flags", &self.status_flags())
             .finish_non_exhaustive()
     }

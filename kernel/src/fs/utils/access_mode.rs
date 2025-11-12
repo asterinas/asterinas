@@ -38,6 +38,22 @@ impl AccessMode {
     }
 }
 
+impl From<Rights> for AccessMode {
+    fn from(rights: Rights) -> Self {
+        match (
+            rights.contains(Rights::READ),
+            rights.contains(Rights::WRITE),
+        ) {
+            (true, true) => AccessMode::O_RDWR,
+            (true, false) => AccessMode::O_RDONLY,
+            (false, true) => AccessMode::O_WRONLY,
+            // The file is opened with `O_PATH`. We follow Linux to report `O_RDONLY` here (e.g.,
+            // in `/proc/[pid]/fdinfo/[n]`).
+            (false, false) => AccessMode::O_RDONLY,
+        }
+    }
+}
+
 impl From<AccessMode> for Rights {
     fn from(access_mode: AccessMode) -> Rights {
         match access_mode {

@@ -40,13 +40,11 @@ impl InodeHandle {
 
     pub fn new_unchecked_access(
         path: Path,
-        mut access_mode: AccessMode,
+        access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Result<Self> {
         let inode = path.inode();
         let (file_io, rights) = if status_flags.contains(StatusFlags::O_PATH) {
-            // We follow Linux to report O_RDONLY later (e.g., in `/proc/[pid]/fdinfo/[n]`).
-            access_mode = AccessMode::O_RDONLY;
             (None, Rights::empty())
         } else if inode.type_() == InodeType::Dir && access_mode.is_writable() {
             return_errno_with_message!(Errno::EISDIR, "a directory cannot be opened writable");
@@ -60,7 +58,6 @@ impl InodeHandle {
             path,
             file_io,
             offset: Mutex::new(0),
-            access_mode,
             status_flags: AtomicU32::new(status_flags.bits()),
         };
         Ok(Self(inner, rights))
@@ -133,7 +130,6 @@ impl Pollable for InodeHandle {
 #[inherit_methods(from = "self.0")]
 impl FileLike for InodeHandle {
     fn status_flags(&self) -> StatusFlags;
-    fn access_mode(&self) -> AccessMode;
     fn metadata(&self) -> Metadata;
     fn mode(&self) -> Result<InodeMode>;
     fn set_mode(&self, mode: InodeMode) -> Result<()>;
@@ -197,6 +193,10 @@ impl FileLike for InodeHandle {
     fn set_status_flags(&self, new_status_flags: StatusFlags) -> Result<()> {
         self.0.set_status_flags(new_status_flags);
         Ok(())
+    }
+
+    fn access_mode(&self) -> AccessMode {
+        self.1.into()
     }
 
     fn seek(&self, seek_from: SeekFrom) -> Result<usize> {
