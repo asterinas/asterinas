@@ -8,9 +8,13 @@ mod trap;
 pub(super) use trap::RawUserContext;
 pub use trap::TrapFrame;
 
-use crate::arch::{
-    cpu::context::{CpuException, CpuTrap},
-    irq::{PSTATE_I, disable_local, enable_local},
+use crate::{
+    arch::{
+        cpu::context::{CpuException, CpuTrap},
+        irq::{IRQ_CHIP, PSTATE_I, disable_local, enable_local},
+    },
+    cpu::PrivilegeLevel,
+    irq::call_irq_callback_functions,
 };
 
 /// Initializes interrupt handling on ARM.
@@ -53,6 +57,12 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
             enable_local_if(was_irq_enabled);
             crate::mm::fault::handle_user_page_fault(f, &data_abort, address);
             disable_local_if(was_irq_enabled);
+        }
+        Some(CpuTrap::Interrupt) => {
+            let irq_chip = IRQ_CHIP.get().unwrap();
+            while let Some(hw_irq_line) = irq_chip.claim_interrupt() {
+                call_irq_callback_functions(f, &hw_irq_line, PrivilegeLevel::Kernel);
+            }
         }
         _ => panic!(
             "Cannot handle kernel CPU exception: {:?}; trapframe: {:#?}",
