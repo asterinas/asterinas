@@ -1,0 +1,59 @@
+socket_options = SO_SNDBUF | SO_RCVBUF | SO_REUSEADDR | SO_REUSEPORT |
+                 SO_PRIORITY | SO_LINGER | SO_PASSCRED | SO_KEEPALIVE |
+                 SO_SNDBUFFORCE | SO_RCVBUFFORCE | SO_ERROR |
+                 SO_PEERCRED | SO_ACCEPTCONN | SO_PEERGROUPS;
+
+ip_options = IP_TOS | IP_TTL | IP_HDRINCL;
+
+tcp_options = TCP_NODELAY | TCP_MAXSEG | TCP_KEEPIDLE | TCP_SYNCNT |
+              TCP_DEFER_ACCEPT | TCP_WINDOW_CLAMP | TCP_CONGESTION |
+              TCP_USER_TIMEOUT | TCP_INQ;
+
+// Get options at socket level
+getsockopt(
+    sockfd, level = SOL_SOCKET,
+    optname = <socket_options>,
+    optval, optlen
+);
+
+// Get options at IP level
+getsockopt(
+    sockfd, level = SOL_IP,
+    optname = <ip_options>,
+    optval, optlen
+);
+
+// Get options at TCP level
+getsockopt(
+    sockfd, level = SOL_TCP,
+    optname = <tcp_options>,
+    optval, optlen
+);
+
+// Set options at socket level
+setsockopt(
+    sockfd, level = SOL_SOCKET,
+    optname = <socket_options>,
+    optval, optlen
+);
+
+// Set options at IP level
+setsockopt(
+    sockfd, level = SOL_IP,
+    optname = <ip_options>,
+    optval, optlen
+);
+
+// Set options at TCP level
+setsockopt(
+    sockfd, level = SOL_TCP,
+    optname = <tcp_options>,
+    optval, optlen
+);
+
+// Set options at netlink level
+setsockopt(
+    sockfd, level = SOL_NETLINK,
+    optname = NETLINK_ADD_MEMBERSHIP | NETLINK_DROP_MEMBERSHIP,
+    optval, optlen
+);

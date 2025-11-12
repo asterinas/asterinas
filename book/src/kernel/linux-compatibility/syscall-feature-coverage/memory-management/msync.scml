@@ -1,0 +1,11 @@
+// Flush memory region to disk asynchronously
+msync(
+    addr, length,
+    flags = MS_ASYNC | MS_INVALIDATE
+);
+
+// Flush memory region to disk synchronously
+msync(
+    addr, length,
+    flags = MS_SYNC | MS_INVALIDATE
+);

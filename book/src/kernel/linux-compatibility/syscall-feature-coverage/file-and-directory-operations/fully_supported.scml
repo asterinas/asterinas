@@ -1,0 +1,22 @@
+// Close a file descriptor
+close(fd);
+
+// Get file status
+stat(pathname, statbuf);
+lstat(pathname, statbuf);
+fstat(fd, statbuf);
+
+// Read from a file descriptor
+read(fd, buf, count);
+
+// Write to a file descriptor
+write(fd, buf, count);
+
+// Create a directory
+mkdir(pathname, mode);
+
+// Read from a file descriptor at a given offset
+pread64(fd, buf, count, offset);
+
+// Check user's permissions for a file
+access(pathname, mode);

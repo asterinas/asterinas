@@ -1,0 +1,21 @@
+ignore_flags = O_RDONLY | O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_NOCTTY | O_TRUNC;
+can_change_flags = O_APPEND | O_ASYNC | O_DIRECT | O_NOATIME | O_NONBLOCK;
+
+// Duplicate a file descriptor
+fcntl(fd, cmd = F_DUPFD | F_DUPFD_CLOEXEC, arg);
+
+// Retrieve file descriptor flags (F_GETFD), file status flags (F_GETFL)
+// or SIGIO/SIGURG owner process (F_GETOWN)
+fcntl(fd, cmd = F_GETFD | F_GETFL | F_GETOWN);
+
+// Set file descriptor flags
+fcntl(fd, cmd = F_SETFD, arg = FD_CLOEXEC);
+
+// Set file status flags
+fcntl(fd, cmd = F_SETFL, arg = <ignore_flags> | <can_change_flags>);
+
+// Manage record locks: test (F_GETLK), non-blocking set (F_SETLK), blocking set (F_SETLKW)
+fcntl(fd, cmd = F_GETLK | F_SETLK | F_SETLKW, arg);
+
+// Assign SIGIO/SIGURG owner process
+fcntl(fd, cmd = F_SETOWN, arg);

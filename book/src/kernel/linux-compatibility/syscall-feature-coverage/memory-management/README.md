@@ -14,40 +14,7 @@ under this part.
 Supported functionality in SCML:
 
 ```c
-prot = PROT_NONE |
-    PROT_EXEC |
-    PROT_READ |
-    PROT_WRITE;
-opt_flags =
-    MAP_ANONYMOUS |
-    MAP_FIXED |
-    MAP_FIXED_NOREPLACE |
-    MAP_GROWSDOWN |
-    MAP_HUGETLB |
-    MAP_LOCKED |
-    MAP_NONBLOCK |
-    MAP_NORESERVE |
-    MAP_POPULATE |
-    MAP_SYNC;
-
-// Create a private memory mapping
-mmap(
-    addr, length,
-    prot = <prot>, 
-    flags = MAP_PRIVATE | <opt_flags>
-    fd, offset
-);
-    
-// Create a shared memory mapping
-mmap(
-    addr, length,
-    prot = <prot>, 
-    flags = MAP_SHARED | MAP_SHARED_VALIDATE | <opt_flags>
-    fd, offset
-);
-
-// Unmap a memory mapping
-munmap(addr, length);
+{{#include mmap_and_munmap.scml}}
 ```
 
 Silently-ignored flags:
@@ -76,17 +43,7 @@ see [the man page](https://man7.org/linux/man-pages/man2/mmap.2.html).
 Supported functionality in SCML:
 
 ```c
-// Flush memory region to disk asynchronously
-msync(
-    addr, length,
-    flags = MS_ASYNC | MS_INVALIDATE
-);
-
-// Flush memory region to disk synchronously
-msync(
-    addr, length,
-    flags = MS_SYNC | MS_INVALIDATE
-);
+{{#include msync.scml}}
 ```
 
 Silently-ignored flags:
@@ -100,22 +57,7 @@ see [the man page](https://man7.org/linux/man-pages/man2/msync.2.html).
 Supported functionality in SCML:
 
 ```c
-// Resize an existing memory mapping. Relocation is allowed if given `MREMAP_MAYMOVE`.
-mremap(
-    old_address,
-    old_size,
-    new_size,
-    flags = MREMAP_MAYMOVE
-);
-
-// Resize an existing memory mapping and force relocation to a specified location.
-mremap(
-    old_address,
-    old_size,
-    new_size,
-    flags = MREMAP_MAYMOVE | MREMAP_FIXED,
-    new_address
-);
+{{#include mremap.scml}}
 ```
 
 For more information,
@@ -126,12 +68,7 @@ see [the man page](https://man7.org/linux/man-pages/man2/mremap.2.html).
 Supported functionality in SCML:
 
 ```c
-// Set memory access permissions
-mprotect(
-    addr,
-    len,
-    prot = <prot>
-);
+{{#include mprotect.scml}}
 ```
 
 Silently-ignored protection flags:
@@ -148,14 +85,7 @@ see [the man page](https://man7.org/linux/man-pages/man2/mprotect.2.html).
 Supported functionality in SCML:
 
 ```c
-// Apply the default memory access pattern with no special optimizations
-madvise(addr, length, advice = MADV_NORMAL);
-
-// Indicate sequential access to enable aggressive read-ahead and immediate page release
-madvise(addr, length, advice = MADV_SEQUENTIAL);
-
-// Prefetch pages for near-future access to reduce latency
-madvise(addr, length, advice = MADV_WILLNEED);
+{{#include madvise.scml}}
 ```
 
 Silently-ignored advice:

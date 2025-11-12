@@ -1,0 +1,5 @@
+// Create pipe
+pipe(pipefd);
+
+// Create pipe with enhanced behavior control
+pipe2(pipefd, flags = O_CLOEXEC);

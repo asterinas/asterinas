@@ -1,0 +1,5 @@
+// Set an alarm clock for delivery of a signal
+alarm(seconds);
+
+// Return from signal handler and cleanup stack frame
+rt_sigreturn(arg);

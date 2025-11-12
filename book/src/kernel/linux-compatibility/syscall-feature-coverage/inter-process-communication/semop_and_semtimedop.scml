@@ -1,0 +1,11 @@
+struct sembuf = {
+    sem_flg = IPC_NOWAIT,
+    ..
+};
+
+// Semaphore operations without blocking
+semop(
+    semid,
+    sops = [ <sembuf> ],
+    nsops
+);

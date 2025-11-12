@@ -1,0 +1,54 @@
+# Process & Thread Management
+
+<!--
+Put system calls such as
+fork, vfork, clone, execve, exit, exit_group, wait4, waitid,
+getpid, getppid, gettid, setuid, setgid, getuid, getgid, and prctl
+under this category.
+-->
+
+### `sched_getattr` and `sched_setattr`
+
+Supported functionality in SCML:
+
+```c
+{{#include sched_getattr_and_sched_setattr.scml}}
+```
+
+Unsupported scheduling policies:
+* `SCHED_DEADLINE`
+
+Unsupported scheduling flags:
+* `SCHED_FLAG_RESET_ON_FORK`
+* `SCHED_FLAG_RECLAIM`
+* `SCHED_FLAG_DL_OVERRUN`
+* `SCHED_FLAG_UTIL_CLAMP_MIN`
+* `SCHED_FLAG_UTIL_CLAMP_MAX`
+
+### `wait4`
+
+Supported functionality in SCML:
+
+```c
+{{#include wait4.scml}}
+```
+
+Ignored options:
+* `WEXITED`
+* `WNOTHREAD`
+* `WALL`
+* `WCLONE`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/wait4.2.html).
+
+### `clone`
+
+Supported functionality in SCML:
+
+```c
+{{#include clone.scml}}
+```
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/clone.2.html).

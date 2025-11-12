@@ -1,0 +1,10 @@
+// Optional flags for socket type
+opt_type_flags = SOCK_NONBLOCK | SOCK_CLOEXEC;
+
+// Create a pair of connected UNIX sockets
+socketpair(
+    family = AF_UNIX,
+    type = SOCK_STREAM | SOCK_SEQPACKET | <opt_type_flags>,
+    protocol = 0,
+    sv
+);

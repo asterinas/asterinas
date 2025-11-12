@@ -1,0 +1,28 @@
+// Execute program
+execve(pathname, argv, envp);
+
+// Exit all threads in a process
+exit_group(status);
+
+// Get group identity
+getegid();
+
+// Get user identity
+getuid();
+geteuid();
+
+// Get group identity
+getgid();
+
+// Set user identity
+setuid(uid);
+
+// Get process identification
+getpid();
+getppid();
+
+// Set and get a thread's CPU affinity mask
+sched_getaffinity(pid, cpusetsize, mask);
+
+// Get or set resource limits
+prlimit64(pid, resource, new_limit, old_limit);

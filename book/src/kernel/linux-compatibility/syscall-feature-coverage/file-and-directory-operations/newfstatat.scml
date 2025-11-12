@@ -1,0 +1,5 @@
+// Retrieve file status by file descriptor
+newfstatat(
+    dirfd, path, statbuf,
+    flags = AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW
+);

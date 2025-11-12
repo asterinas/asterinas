@@ -1,0 +1,9 @@
+struct sockaddr = {
+    sa_family = AF_INET | AF_UNIX | AF_NETLINK | AF_VSOCK,
+    ..
+};
+
+// Bind a socket to an address
+bind(
+    sockfd, addr = <sockaddr>, addrlen
+);
