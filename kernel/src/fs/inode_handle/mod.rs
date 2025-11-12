@@ -1,21 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(unused_variables)]
-
 //! Opened Inode-backed File Handle
 
 mod dyn_cap;
-mod static_cap;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use aster_rights::Rights;
+pub use dyn_cap::InodeHandle;
 use inherit_methods_macro::inherit_methods;
 
 use crate::{
     events::IoEvents,
     fs::{
-        file_handle::{FileLike, Mappable},
+        file_handle::Mappable,
         path::Path,
         utils::{
             AccessMode, DirentVisitor, FallocMode, FileRange, FlockItem, FlockList, Inode,
@@ -30,10 +27,7 @@ use crate::{
     },
 };
 
-#[derive(Debug)]
-pub struct InodeHandle<R = Rights>(Arc<InodeHandle_>, R);
-
-struct InodeHandle_ {
+struct HandleInner {
     path: Path,
     /// `file_io` is Similar to `file_private` field in `file` structure in linux. If
     /// `file_io` is Some, typical file operations including `read`, `write`, `poll`,
@@ -44,8 +38,8 @@ struct InodeHandle_ {
     status_flags: AtomicU32,
 }
 
-impl InodeHandle_ {
-    pub fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+impl HandleInner {
+    pub(self) fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         if let Some(ref file_io) = self.file_io {
             return file_io.read(writer, self.status_flags());
         }
@@ -62,7 +56,7 @@ impl InodeHandle_ {
         Ok(len)
     }
 
-    pub fn write(&self, reader: &mut VmReader) -> Result<usize> {
+    pub(self) fn write(&self, reader: &mut VmReader) -> Result<usize> {
         if let Some(ref file_io) = self.file_io {
             return file_io.write(reader, self.status_flags());
         }
@@ -83,8 +77,8 @@ impl InodeHandle_ {
         Ok(len)
     }
 
-    pub fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        if let Some(ref file_io) = self.file_io {
+    pub(self) fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        if let Some(ref _file_io) = self.file_io {
             todo!("support read_at for FileIo");
         }
 
@@ -95,8 +89,8 @@ impl InodeHandle_ {
         }
     }
 
-    pub fn write_at(&self, mut offset: usize, reader: &mut VmReader) -> Result<usize> {
-        if let Some(ref file_io) = self.file_io {
+    pub(self) fn write_at(&self, mut offset: usize, reader: &mut VmReader) -> Result<usize> {
+        if let Some(ref _file_io) = self.file_io {
             todo!("support write_at for FileIo");
         }
 
@@ -113,41 +107,41 @@ impl InodeHandle_ {
         }
     }
 
-    pub fn seek(&self, pos: SeekFrom) -> Result<usize> {
+    pub(self) fn seek(&self, pos: SeekFrom) -> Result<usize> {
         do_seek_util(self.path.inode().as_ref(), &self.offset, pos)
     }
 
-    pub fn offset(&self) -> usize {
+    pub(self) fn offset(&self) -> usize {
         let offset = self.offset.lock();
         *offset
     }
 
-    pub fn resize(&self, new_size: usize) -> Result<()> {
+    pub(self) fn resize(&self, new_size: usize) -> Result<()> {
         do_resize_util(self.path.inode().as_ref(), self.status_flags(), new_size)
     }
 
-    pub fn access_mode(&self) -> AccessMode {
+    pub(self) fn access_mode(&self) -> AccessMode {
         self.access_mode
     }
 
-    pub fn status_flags(&self) -> StatusFlags {
+    pub(self) fn status_flags(&self) -> StatusFlags {
         let bits = self.status_flags.load(Ordering::Relaxed);
         StatusFlags::from_bits(bits).unwrap()
     }
 
-    pub fn set_status_flags(&self, new_status_flags: StatusFlags) {
+    pub(self) fn set_status_flags(&self, new_status_flags: StatusFlags) {
         self.status_flags
             .store(new_status_flags.bits(), Ordering::Relaxed);
     }
 
-    pub fn readdir(&self, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+    pub(self) fn readdir(&self, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         let mut offset = self.offset.lock();
         let read_cnt = self.path.inode().readdir_at(*offset, visitor)?;
         *offset += read_cnt;
         Ok(read_cnt)
     }
 
-    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
+    pub(self) fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         if let Some(ref file_io) = self.file_io {
             return file_io.poll(mask, poller);
         }
@@ -155,7 +149,7 @@ impl InodeHandle_ {
         self.path.inode().poll(mask, poller)
     }
 
-    fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
+    pub(self) fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
         do_fallocate_util(
             self.path.inode().as_ref(),
             self.status_flags(),
@@ -165,7 +159,7 @@ impl InodeHandle_ {
         )
     }
 
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+    pub(self) fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         if let Some(ref file_io) = self.file_io {
             return file_io.ioctl(cmd, arg);
         }
@@ -173,7 +167,7 @@ impl InodeHandle_ {
         self.path.inode().ioctl(cmd, arg)
     }
 
-    fn mappable(&self) -> Result<Mappable> {
+    pub(self) fn mappable(&self) -> Result<Mappable> {
         let inode = self.path.inode();
         if inode.page_cache().is_some() {
             // If the inode has a page cache, it is a file-backed mapping and
@@ -188,7 +182,7 @@ impl InodeHandle_ {
         }
     }
 
-    fn test_range_lock(&self, mut lock: RangeLockItem) -> Result<RangeLockItem> {
+    pub(self) fn test_range_lock(&self, mut lock: RangeLockItem) -> Result<RangeLockItem> {
         let Some(extension) = self.path.inode().extension() else {
             // Range locks are not supported. So nothing is locked.
             lock.set_type(RangeLockType::Unlock);
@@ -205,7 +199,7 @@ impl InodeHandle_ {
         Ok(req_lock)
     }
 
-    fn set_range_lock(&self, lock: &RangeLockItem, is_nonblocking: bool) -> Result<()> {
+    pub(self) fn set_range_lock(&self, lock: &RangeLockItem, is_nonblocking: bool) -> Result<()> {
         if RangeLockType::Unlock == lock.type_() {
             self.unlock_range_lock(lock);
             return Ok(());
@@ -224,7 +218,7 @@ impl InodeHandle_ {
         range_lock_list.set_lock(lock, is_nonblocking)
     }
 
-    fn release_range_locks(&self) {
+    pub(self) fn release_range_locks(&self) {
         if self.path.inode().extension().is_none() {
             return;
         }
@@ -236,7 +230,7 @@ impl InodeHandle_ {
         self.unlock_range_lock(&range_lock);
     }
 
-    fn unlock_range_lock(&self, lock: &RangeLockItem) {
+    pub(self) fn unlock_range_lock(&self, lock: &RangeLockItem) {
         if let Some(extension) = self.path.inode().extension()
             && let Some(range_lock_list) = extension.get::<RangeLockList>()
         {
@@ -244,7 +238,7 @@ impl InodeHandle_ {
         }
     }
 
-    fn set_flock(&self, lock: FlockItem, is_nonblocking: bool) -> Result<()> {
+    pub(self) fn set_flock(&self, lock: FlockItem, is_nonblocking: bool) -> Result<()> {
         let Some(extension) = self.path.inode().extension() else {
             // TODO: Figure out whether flocks are supported on all inodes.
             warn!("the inode does not have support for flocks; this operation will fail");
@@ -258,7 +252,7 @@ impl InodeHandle_ {
         flock_list.set_lock(lock, is_nonblocking)
     }
 
-    fn unlock_flock<R>(&self, req_owner: &InodeHandle<R>) {
+    pub(self) fn unlock_flock(&self, req_owner: &InodeHandle) {
         if let Some(extension) = self.path.inode().extension()
             && let Some(flock_list) = extension.get::<FlockList>()
         {
@@ -268,43 +262,25 @@ impl InodeHandle_ {
 }
 
 #[inherit_methods(from = "self.path")]
-impl InodeHandle_ {
-    pub fn size(&self) -> usize;
-    pub fn metadata(&self) -> Metadata;
-    pub fn mode(&self) -> Result<InodeMode>;
-    pub fn set_mode(&self, mode: InodeMode) -> Result<()>;
-    pub fn owner(&self) -> Result<Uid>;
-    pub fn set_owner(&self, uid: Uid) -> Result<()>;
-    pub fn group(&self) -> Result<Gid>;
-    pub fn set_group(&self, gid: Gid) -> Result<()>;
+impl HandleInner {
+    pub(self) fn size(&self) -> usize;
+    pub(self) fn metadata(&self) -> Metadata;
+    pub(self) fn mode(&self) -> Result<InodeMode>;
+    pub(self) fn set_mode(&self, mode: InodeMode) -> Result<()>;
+    pub(self) fn owner(&self) -> Result<Uid>;
+    pub(self) fn set_owner(&self, uid: Uid) -> Result<()>;
+    pub(self) fn group(&self) -> Result<Gid>;
+    pub(self) fn set_group(&self, gid: Gid) -> Result<()>;
 }
 
-impl Debug for InodeHandle_ {
+impl Debug for HandleInner {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("InodeHandle_")
+        f.debug_struct("HandleInner")
             .field("path", &self.path)
             .field("offset", &self.offset())
             .field("access_mode", &self.access_mode())
             .field("status_flags", &self.status_flags())
             .finish_non_exhaustive()
-    }
-}
-
-/// Methods for both dyn and static
-impl<R> InodeHandle<R> {
-    pub fn path(&self) -> &Path {
-        &self.0.path
-    }
-
-    pub fn offset(&self) -> usize {
-        self.0.offset()
-    }
-}
-
-impl<R> Drop for InodeHandle<R> {
-    fn drop(&mut self) {
-        self.0.release_range_locks();
-        self.0.unlock_flock(self);
     }
 }
 
@@ -315,7 +291,7 @@ impl<R> Drop for InodeHandle<R> {
 //
 // TODO: The `status_flags` parameter in `read` and `write` may need to be stored directly
 // in the `FileIo`. We need further refactoring to find an appropriate way to enable `FileIo`
-// to utilize the information in the `InodeHandle_`.
+// to utilize the information in the `HandleInner`.
 pub trait FileIo: Pollable + Send + Sync + 'static {
     /// Reads data from the file into the given `VmWriter`.
     fn read(&self, writer: &mut VmWriter, status_flags: StatusFlags) -> Result<usize>;
@@ -323,12 +299,12 @@ pub trait FileIo: Pollable + Send + Sync + 'static {
     /// Writes data from the given `VmReader` into the file.
     fn write(&self, reader: &mut VmReader, status_flags: StatusFlags) -> Result<usize>;
 
-    /// See [`FileLike::mappable`].
+    // See `FileLike::mappable`.
     fn mappable(&self) -> Result<Mappable> {
         return_errno_with_message!(Errno::EINVAL, "the file is not mappable");
     }
 
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+    fn ioctl(&self, _cmd: IoctlCmd, _arg: usize) -> Result<i32> {
         return_errno_with_message!(Errno::ENOTTY, "ioctl is not supported");
     }
 }

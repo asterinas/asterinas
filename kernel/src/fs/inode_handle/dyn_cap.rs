@@ -1,12 +1,31 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_rights::TRights;
+use core::sync::atomic::AtomicU32;
+
+use aster_rights::Rights;
 use inherit_methods_macro::inherit_methods;
 
-use super::*;
-use crate::{fs::file_handle::Mappable, prelude::*, process::signal::Pollable};
+use super::HandleInner;
+use crate::{
+    events::IoEvents,
+    fs::{
+        file_handle::{FileLike, Mappable},
+        path::Path,
+        utils::{
+            AccessMode, DirentVisitor, FallocMode, FlockItem, InodeMode, InodeType, IoctlCmd,
+            Metadata, RangeLockItem, RangeLockType, SeekFrom, StatusFlags,
+        },
+    },
+    prelude::*,
+    process::{
+        signal::{PollHandle, Pollable},
+        Gid, Uid,
+    },
+};
 
-impl InodeHandle<Rights> {
+pub struct InodeHandle(HandleInner, Rights);
+
+impl InodeHandle {
     pub fn new(path: Path, access_mode: AccessMode, status_flags: StatusFlags) -> Result<Self> {
         let inode = path.inode();
         if !status_flags.contains(StatusFlags::O_PATH) {
@@ -37,24 +56,14 @@ impl InodeHandle<Rights> {
             (file_io, rights)
         };
 
-        let inner = Arc::new(InodeHandle_ {
+        let inner = HandleInner {
             path,
             file_io,
             offset: Mutex::new(0),
             access_mode,
             status_flags: AtomicU32::new(status_flags.bits()),
-        });
+        };
         Ok(Self(inner, rights))
-    }
-
-    #[expect(dead_code)]
-    #[expect(clippy::wrong_self_convention)]
-    pub fn to_static<R1: TRights>(self) -> Result<InodeHandle<R1>> {
-        let rights = Rights::from_bits(R1::BITS).ok_or(Error::new(Errno::EBADF))?;
-        if !self.1.contains(rights) {
-            return_errno_with_message!(Errno::EBADF, "check rights failed");
-        }
-        Ok(InodeHandle(self.0.clone(), R1::new()))
     }
 
     pub fn readdir(&self, visitor: &mut dyn DirentVisitor) -> Result<usize> {
@@ -106,21 +115,23 @@ impl InodeHandle<Rights> {
         self.0.unlock_flock(self);
         Ok(())
     }
-}
 
-impl Clone for InodeHandle<Rights> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone(), self.1)
+    pub fn path(&self) -> &Path {
+        &self.0.path
+    }
+
+    pub fn offset(&self) -> usize {
+        self.0.offset()
     }
 }
 
 #[inherit_methods(from = "self.0")]
-impl Pollable for InodeHandle<Rights> {
+impl Pollable for InodeHandle {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents;
 }
 
 #[inherit_methods(from = "self.0")]
-impl FileLike for InodeHandle<Rights> {
+impl FileLike for InodeHandle {
     fn status_flags(&self) -> StatusFlags;
     fn access_mode(&self) -> AccessMode;
     fn metadata(&self) -> Metadata;
@@ -200,5 +211,12 @@ impl FileLike for InodeHandle<Rights> {
             return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
         }
         self.0.fallocate(mode, offset, len)
+    }
+}
+
+impl Drop for InodeHandle {
+    fn drop(&mut self) {
+        self.0.release_range_locks();
+        self.0.unlock_flock(self);
     }
 }
