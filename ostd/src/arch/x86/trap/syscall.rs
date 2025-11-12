@@ -38,9 +38,10 @@ global_asm!(
 
 /// # Safety
 ///
-/// The caller needs to ensure that `gdt::init` has been called before, so the segment selectors
-/// used in the `syscall` and `sysret` instructions have been properly initialized.
-pub(super) unsafe fn init() {
+/// The caller needs to ensure that `gdt::init_on_cpu` has been called before,
+/// so the segment selectors used in the `syscall` and `sysret` instructions
+/// have been properly initialized.
+pub(super) unsafe fn init_on_cpu() {
     // We now assume that all x86-64 CPUs should support the `syscall` and `sysret` instructions.
     // Otherwise, we should check `has_extensions(IsaExtensions::SYSCALL)` here.
 

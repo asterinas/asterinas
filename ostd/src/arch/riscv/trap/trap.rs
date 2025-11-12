@@ -57,19 +57,23 @@ global_asm!(include_str!("trap.S"), SSTATUS_FS_MASK = const SSTATUS_FS_MASK, SST
 
 /// Initialize interrupt handling for the current HART.
 ///
-/// # Safety
-///
 /// This function will:
 /// - Set `sscratch` to 0.
 /// - Set `stvec` to internal exception vector.
 ///
-/// You **MUST NOT** modify these registers later.
-pub(super) unsafe fn init() {
+/// # Safety
+///
+/// On the current CPU, this function must be called
+/// - only once and
+/// - before any trap can occur.
+pub(super) unsafe fn init_on_cpu() {
+    // SAFETY: We believe that these assembly instructions correctly set up
+    // the trap handling for the current CPU without side effects.
     unsafe {
-        // Set sscratch register to 0, indicating to exception vector that we are
-        // presently executing in the kernel
+        // Set sscratch register to 0, indicating to exception vector that we
+        // are presently executing in the kernel.
         asm!("csrw sscratch, zero");
-        // Set the exception vector address
+        // Set the exception vector address.
         asm!("csrw stvec, {}", in(reg) trap_entry as usize);
     }
 }
