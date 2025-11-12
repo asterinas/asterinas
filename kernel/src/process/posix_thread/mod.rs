@@ -3,7 +3,10 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use aster_rights::{ReadDupOp, ReadOp, WriteOp};
-use ostd::sync::{RoArc, RwMutexReadGuard, Waker};
+use ostd::{
+    sync::{RoArc, RwMutexReadGuard, Waker},
+    task::Task,
+};
 
 use super::{
     signal::{sig_mask::AtomicSigMask, sig_num::SigNum, sig_queues::SigQueues, signals::Signal},
@@ -38,6 +41,7 @@ pub use thread_local::{AsThreadLocal, FileTableRefMut, ThreadLocal};
 pub struct PosixThread {
     // Immutable part
     process: Weak<Process>,
+    task: Weak<Task>,
 
     // Mutable part
     tid: AtomicU32,

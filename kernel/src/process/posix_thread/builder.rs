@@ -163,6 +163,7 @@ impl PosixThreadBuilder {
 
                 PosixThread {
                     process,
+                    task: weak_task.clone(),
                     tid: AtomicU32::new(tid),
                     name: Mutex::new(thread_name),
                     credentials,
