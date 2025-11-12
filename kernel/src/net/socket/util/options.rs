@@ -11,8 +11,8 @@ use crate::{
     match_sock_option_mut, match_sock_option_ref,
     net::socket::{
         options::{
-            AcceptConn, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority, RecvBuf,
-            RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
+            AcceptConn, Broadcast, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority,
+            RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
         },
         unix::{CUserCred, UNIX_DATAGRAM_DEFAULT_BUF_SIZE, UNIX_STREAM_DEFAULT_BUF_SIZE},
     },
@@ -25,26 +25,28 @@ use crate::{
 #[set = "pub"]
 pub struct SocketOptionSet {
     reuse_addr: bool,
-    reuse_port: bool,
+    broadcast: bool,
     send_buf: u32,
     recv_buf: u32,
-    linger: LingerOption,
     keep_alive: bool,
-    pass_cred: bool,
     priority: i32,
+    linger: LingerOption,
+    reuse_port: bool,
+    pass_cred: bool,
 }
 
 impl Default for SocketOptionSet {
     fn default() -> Self {
         Self {
             reuse_addr: false,
-            reuse_port: false,
+            broadcast: false,
             send_buf: MIN_SENDBUF,
             recv_buf: MIN_RECVBUF,
-            linger: LingerOption::default(),
             keep_alive: false,
-            pass_cred: false,
             priority: 0,
+            linger: LingerOption::default(),
+            reuse_port: false,
+            pass_cred: false,
         }
     }
 }
@@ -101,6 +103,10 @@ impl SocketOptionSet {
                 let reuse_addr = self.reuse_addr();
                 socket_reuse_addr.set(reuse_addr);
             },
+            socket_broadcast: Broadcast => {
+                let broadcast = self.broadcast();
+                socket_broadcast.set(broadcast);
+            },
             socket_send_buf: SendBuf => {
                 let send_buf = self.send_buf();
                 socket_send_buf.set(send_buf);
@@ -109,21 +115,21 @@ impl SocketOptionSet {
                 let recv_buf = self.recv_buf();
                 socket_recv_buf.set(recv_buf);
             },
-            socket_reuse_port: ReusePort => {
-                let reuse_port = self.reuse_port();
-                socket_reuse_port.set(reuse_port);
-            },
-            socket_linger: Linger => {
-                let linger = self.linger();
-                socket_linger.set(linger);
+            socket_keepalive: KeepAlive => {
+                let keep_alive = self.keep_alive();
+                socket_keepalive.set(keep_alive);
             },
             socket_priority: Priority => {
                 let priority = self.priority();
                 socket_priority.set(priority);
             },
-            socket_keepalive: KeepAlive => {
-                let keep_alive = self.keep_alive();
-                socket_keepalive.set(keep_alive);
+            socket_linger: Linger => {
+                let linger = self.linger();
+                socket_linger.set(linger);
+            },
+            socket_reuse_port: ReusePort => {
+                let reuse_port = self.reuse_port();
+                socket_reuse_port.set(reuse_port);
             },
             socket_pass_cred: PassCred => {
                 // This option only affects UNIX sockets. However, it also works well with other
@@ -164,6 +170,15 @@ impl SocketOptionSet {
         socket: &dyn SetSocketLevelOption,
     ) -> Result<NeedIfacePoll> {
         match_sock_option_ref!(option, {
+            socket_reuse_addr: ReuseAddr => {
+                let reuse_addr = socket_reuse_addr.get().unwrap();
+                self.set_reuse_addr(*reuse_addr);
+                socket.set_reuse_addr(*reuse_addr);
+            },
+            socket_broadcast: Broadcast => {
+                let broadcast = socket_broadcast.get().unwrap();
+                self.set_broadcast(*broadcast);
+            },
             socket_send_buf: SendBuf => {
                 let send_buf = socket_send_buf.get().unwrap();
                 if *send_buf <= MIN_SENDBUF {
@@ -180,14 +195,10 @@ impl SocketOptionSet {
                     self.set_recv_buf(*recv_buf);
                 }
             },
-            socket_reuse_addr: ReuseAddr => {
-                let reuse_addr = socket_reuse_addr.get().unwrap();
-                self.set_reuse_addr(*reuse_addr);
-                socket.set_reuse_addr(*reuse_addr);
-            },
-            socket_reuse_port: ReusePort => {
-                let reuse_port = socket_reuse_port.get().unwrap();
-                self.set_reuse_port(*reuse_port);
+            socket_keepalive: KeepAlive => {
+                let keep_alive = socket_keepalive.get().unwrap();
+                self.set_keep_alive(*keep_alive);
+                return Ok(socket.set_keep_alive(*keep_alive));
             },
             socket_priority: Priority => {
                 let priority = socket_priority.get().unwrap();
@@ -198,10 +209,9 @@ impl SocketOptionSet {
                 let linger = socket_linger.get().unwrap();
                 self.set_linger(*linger);
             },
-            socket_keepalive: KeepAlive => {
-                let keep_alive = socket_keepalive.get().unwrap();
-                self.set_keep_alive(*keep_alive);
-                return Ok(socket.set_keep_alive(*keep_alive));
+            socket_reuse_port: ReusePort => {
+                let reuse_port = socket_reuse_port.get().unwrap();
+                self.set_reuse_port(*reuse_port);
             },
             socket_pass_cred: PassCred => {
                 // This option only affects UNIX sockets. However, it also works well with other

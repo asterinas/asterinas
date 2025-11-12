@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+mod broadcast;
 mod ext;
 mod init;
 mod poll;
 mod sched;
 
+pub use broadcast::is_broadcast_endpoint;
 pub use init::{init, iter_all_ifaces, loopback_iface, virtio_iface};
 pub(super) use poll::init_in_first_kthread;
 

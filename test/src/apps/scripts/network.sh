@@ -33,6 +33,7 @@ sleep 0.2
 ./tcp_err
 ./tcp_poll
 ./tcp_reuseaddr
+./udp_broadcast
 ./udp_err
 ./unix_stream_err
 ./unix_seqpacket_err

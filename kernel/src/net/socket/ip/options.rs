@@ -17,6 +17,7 @@ pub(super) struct IpOptionSet {
     tos: u8,
     ttl: IpTtl,
     hdrincl: bool,
+    recverr: bool,
 }
 
 const DEFAULT_TTL: u8 = 64;
@@ -28,6 +29,16 @@ impl IpOptionSet {
             tos: 0,
             ttl: IpTtl(None),
             hdrincl: false,
+            recverr: false,
+        }
+    }
+
+    pub(super) const fn new_udp() -> Self {
+        Self {
+            tos: 0,
+            ttl: IpTtl(None),
+            hdrincl: false,
+            recverr: false,
         }
     }
 
@@ -44,6 +55,10 @@ impl IpOptionSet {
             ip_hdrincl: Hdrincl => {
                 let hdrincl = self.hdrincl();
                 ip_hdrincl.set(hdrincl);
+            },
+            ip_recverr: Recverr => {
+                let recverr = self.recverr();
+                ip_recverr.set(recverr);
             },
             _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option is unknown")
         });
@@ -73,6 +88,10 @@ impl IpOptionSet {
                 socket.set_hdrincl(*hdrincl)?;
                 self.set_hdrincl(*hdrincl);
             },
+            ip_recverr: Recverr => {
+                let recverr = ip_recverr.get().unwrap();
+                self.set_recverr(*recverr);
+            },
             _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to be set is unknown")
         });
 
@@ -84,6 +103,7 @@ impl_socket_options!(
     pub struct Tos(i32);
     pub struct Ttl(IpTtl);
     pub struct Hdrincl(bool);
+    pub struct Recverr(bool);
 );
 
 #[derive(Debug, Clone, Copy)]
