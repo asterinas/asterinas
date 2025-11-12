@@ -9,7 +9,7 @@ use crate::{
         utils::{mkmod, Inode},
     },
     prelude::*,
-    process::posix_thread::AsPosixThread,
+    process::posix_thread::{AsPosixThread, SleepingState},
     vm::vmar::RssType,
 };
 
@@ -104,7 +104,15 @@ impl FileOps for StatFileOps {
             .name()
             .to_string_lossy()
             .into_owned();
-        let state = if thread.is_exited() { 'Z' } else { 'R' };
+        let state = if thread.is_exited() {
+            'Z'
+        } else {
+            match posix_thread.sleeping_state() {
+                SleepingState::Running => 'R',
+                SleepingState::Interruptible => 'S',
+                SleepingState::Uninterruptible => 'D',
+            }
+        };
         let ppid = process.parent().pid();
         let pgrp = process.pgid();
         let session = process.sid();
