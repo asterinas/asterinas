@@ -10,10 +10,7 @@
 pub(crate) mod io_mem;
 
 pub use self::io_mem::IoMem;
-#[cfg_attr(
-    any(target_arch = "loongarch64", target_arch = "aarch64"),
-    expect(unused_imports)
-)]
+#[cfg_attr(target_arch = "loongarch64", expect(unused_imports))]
 pub(crate) use self::io_mem::{IoMemAllocatorBuilder, Sensitive};
 
 cfg_select! {

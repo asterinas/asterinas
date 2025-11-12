@@ -2,10 +2,12 @@
 
 //! Interrupts.
 
+pub(super) mod chip;
 mod ipi;
 mod ops;
 mod remapping;
 
+pub use chip::{IRQ_CHIP, InterruptSourceInFdt, IrqChip, MappedIrqLine};
 pub(crate) use ipi::{HwCpuId, send_ipi};
 pub(super) use ops::PSTATE_I;
 pub(crate) use ops::{
@@ -14,7 +16,8 @@ pub(crate) use ops::{
 pub(crate) use remapping::IrqRemapping;
 
 pub(crate) const IRQ_NUM_MIN: u8 = 0;
-pub(crate) const IRQ_NUM_MAX: u8 = 255;
+pub(crate) const IRQ_NUM_MAX: u8 = 254;
+const IRQ_NUM_INVALID: u8 = 255;
 
 /// An IRQ line with additional information that helps acknowledge the interrupt
 /// on hardware.
@@ -25,6 +28,7 @@ pub(crate) const IRQ_NUM_MAX: u8 = 255;
 /// mechanism (e.g., GIC).
 pub(crate) struct HwIrqLine {
     irq_num: u8,
+    source: chip::InterruptSourceOnChip,
 }
 
 impl HwIrqLine {
@@ -33,6 +37,6 @@ impl HwIrqLine {
     }
 
     pub(crate) fn ack(&self) {
-        unimplemented!()
+        IRQ_CHIP.get().unwrap().complete_interrupt(self.source);
     }
 }

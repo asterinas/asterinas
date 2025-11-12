@@ -38,7 +38,9 @@ pub(crate) unsafe fn late_init_on_bsp() {
 
     // SAFETY: The caller ensures that this function is only called once on BSP,
     // after the kernel page table is activated.
-    let io_mem_builder = unsafe { io::construct_io_mem_allocator_builder() };
+    let mut io_mem_builder = unsafe { io::construct_io_mem_allocator_builder() };
+
+    irq::chip::init(&mut io_mem_builder);
 
     // SAFETY: We're on the BSP and we're ready to boot all APs.
     unsafe { crate::boot::smp::boot_all_aps() };

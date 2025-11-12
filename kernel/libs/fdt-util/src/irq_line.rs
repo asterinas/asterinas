@@ -2,7 +2,10 @@
 
 use fdt::node::FdtNode;
 use ostd::{
-    arch::irq::{IRQ_CHIP, InterruptSourceInFdt, MappedIrqLine},
+    arch::{
+        boot::DEVICE_TREE,
+        irq::{IRQ_CHIP, InterruptSourceInFdt, MappedIrqLine},
+    },
     irq::IrqLine,
 };
 
@@ -40,7 +43,18 @@ impl AcquireIrqLines for FdtNode<'_, '_> {
         }
         let mut interrupts = interrupts.iter().map(|chunk| u32::from_be_bytes(*chunk));
 
-        let Some(interrupt_parent) = self.property("interrupt-parent") else {
+        let interrupt_parent = if let Some(interrupt_parent) = self.property("interrupt-parent") {
+            interrupt_parent
+        } else if cfg!(target_arch = "aarch64")
+            // FIXME: We need to find the "interrupt-parent" property for the nearest ancestor.
+            // However, there are no APIs to iterate ancestors. This workaround uses the
+            // "interrupt-parent" property of the root node.
+            && let device_tree = DEVICE_TREE.get().unwrap()
+            && let Some(root_node) = device_tree.find_node("/")
+            && let Some(interrupt_parent) = root_node.property("interrupt-parent")
+        {
+            interrupt_parent
+        } else {
             warn_bad_property(self.name, "interrupt-parent", "missing");
             return None;
         };

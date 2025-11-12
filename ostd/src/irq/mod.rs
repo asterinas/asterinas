@@ -86,7 +86,6 @@ use crate::{
     cpu::PrivilegeLevel,
 };
 
-#[cfg_attr(target_arch = "aarch64", expect(dead_code))]
 pub(crate) fn call_irq_callback_functions(
     trap_frame: &TrapFrame,
     hw_irq_line: &HwIrqLine,
