@@ -13,7 +13,6 @@ ProcCpuinfo.RequiredFieldsArePresent
 ProcCpuinfo.DeniesWriteNonRoot
 ProcSelfStat.PopulateWriteRSS
 ProcPidStatusTest.HasBasicFields
-ProcPidStatusTest.StateSleeping_NoRandomSave
 ProcPidStatTest.VmStats
 ProcPidEnviron.MatchesEnviron
 ProcPidSymlink.SubprocessRunning

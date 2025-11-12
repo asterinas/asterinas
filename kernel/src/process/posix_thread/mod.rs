@@ -163,6 +163,54 @@ impl PosixThread {
         *self.signalled_waker.lock() = None;
     }
 
+    /// Returns the sleeping state of this thread.
+    pub fn sleeping_state(&self) -> SleepingState {
+        // This implementation prevents a thread (let's call it `threadA`) that is
+        // sleeping in an interruptible wait from being mistakenly reported as
+        // sleeping in an uninterruptible wait due to a race condition, where another
+        // thread (`threadB`) may observe that its `task.schedule_info().cpu` is
+        // `AtomicCpuId::NONE` and its `signalled_waker` is `None` (not set yet or
+        // already cleared).
+        //
+        // When `threadA` enters an interruptible wait, it executes the following steps:
+        // ```
+        // A1: Acquire signalled_waker.lock |
+        // A2: set signalled_waker to Some  |-- critical section #1
+        // A3: Release signalled_waker.lock |
+        // A4: cpu.set_to_none(Relaxed)
+        // A5: cpu.set_if_is_none(cpuid, Relaxed)
+        // A6: Acquire signalled_waker.lock |
+        // A7: set signalled_waker to None  |-- critical section #2
+        // A8: Release signalled_waker.lock |
+        // ```
+        //
+        // When `threadB` calls `threadA.sleeping_state()`, it executes the following steps:
+        // ```
+        // B1: Acquire threadA.signalled_waker.lock |
+        // B2: check threadA.signalled_waker        |-- critical section #3
+        // B3: check threadA.cpu.get(Relaxed)       |
+        // B4: Release threadA.signalled_waker.lock |
+        // ```
+        //
+        // We can see that:
+        //  - If #3 happens before #1, B3 can not observe the effect of A4 due to the
+        //    release-acquire pair B4-A1.
+        //  - If #3 happens between #1 and #2, B2 will always see a `Some`.
+        //  - If #3 happens after #2, B3 can observe the effect of A5 due to the
+        //    release-acquire pair A8-B1.
+        // Therefore, the condition where both B2 and B3 see `None` will never happen.
+        let signalled_waker = self.signalled_waker.lock();
+        let task = self.task.upgrade().unwrap();
+        match (
+            signalled_waker.is_some(),
+            task.schedule_info().cpu.get().is_none(),
+        ) {
+            (true, true) => SleepingState::Interruptible,
+            (false, true) => SleepingState::Uninterruptible,
+            (_, false) => SleepingState::Running,
+        }
+    }
+
     /// Wakes up the signalled waker.
     pub fn wake_signalled_waker(&self) {
         if let Some(waker) = &*self.signalled_waker.lock() {
@@ -276,3 +324,14 @@ pub fn last_tid() -> Tid {
 // FIXME: The current value is chosen arbitrarily.
 // This value can be modified by the user by writing to `/proc/sys/kernel/pid_max`.
 pub const PID_MAX: u32 = u32::MAX / 2;
+
+/// The sleeping state of a thread.
+#[derive(Debug, Clone, Copy)]
+pub enum SleepingState {
+    /// The thread is running.
+    Running,
+    /// The thread is sleeping in an interruptible wait.
+    Interruptible,
+    /// The thread is sleeping in an uninterruptible wait.
+    Uninterruptible,
+}

@@ -9,7 +9,7 @@ use crate::{
         utils::{mkmod, Inode},
     },
     prelude::*,
-    process::posix_thread::AsPosixThread,
+    process::posix_thread::{AsPosixThread, SleepingState},
     vm::vmar::RssType,
 };
 
@@ -96,7 +96,11 @@ impl FileOps for StatusFileOps {
         let state = if thread.is_exited() {
             "Z (zombie)"
         } else {
-            "R (running)"
+            match posix_thread.sleeping_state() {
+                SleepingState::Running => "R (running)",
+                SleepingState::Interruptible => "S (sleeping)",
+                SleepingState::Uninterruptible => "D (disk sleep)",
+            }
         };
         writeln!(status_output, "State:\t{}", state).unwrap();
 
