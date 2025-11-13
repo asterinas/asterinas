@@ -47,6 +47,10 @@ VHOST ?= off
 DNS_SERVER ?= none
 # End of network settings
 
+# Whether to include podman in initramfs
+BUILD_PODMAN ?= false
+INITRAMFS_SKIP_GZIP = 1
+
 # ========================= End of Makefile options. ==========================
 
 SHELL := /bin/bash
