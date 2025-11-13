@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use device_id::DeviceId;
+
 use super::SyscallReturn;
 use crate::{
     device::get_device,
     fs::{
-        device::DeviceId,
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         utils::{InodeMode, InodeType, MknodType},
