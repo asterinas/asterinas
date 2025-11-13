@@ -143,7 +143,6 @@ pub(crate) fn enable_cpu_features() {
     use cpu::extension::{has_extensions, IsaExtensions};
     use x86_64::registers::{
         control::{Cr0Flags, Cr4Flags},
-        model_specific::EferFlags,
         xcontrol::XCr0Flags,
     };
 
@@ -189,12 +188,7 @@ pub(crate) fn enable_cpu_features() {
 
     cpu::context::enable_essential_features();
 
-    unsafe {
-        // Enable non-executable page protection.
-        x86_64::registers::model_specific::Efer::update(|efer| {
-            *efer |= EferFlags::NO_EXECUTE_ENABLE;
-        });
-    }
+    mm::enable_essential_features();
 }
 
 /// Inserts a TDX-specific code block.
