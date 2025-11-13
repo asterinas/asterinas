@@ -42,6 +42,7 @@ pub struct IoMem<SecuritySensitivity = Insensitive> {
     offset: usize,
     limit: usize,
     pa: Paddr,
+    cache_policy: CachePolicy,
     phantom: PhantomData<SecuritySensitivity>,
 }
 
@@ -61,6 +62,7 @@ impl<SecuritySensitivity> IoMem<SecuritySensitivity> {
             offset: self.offset + range.start,
             limit: range.len(),
             pa: self.pa + range.start,
+            cache_policy: self.cache_policy,
             phantom: PhantomData,
         }
     }
@@ -125,8 +127,14 @@ impl<SecuritySensitivity> IoMem<SecuritySensitivity> {
             offset: range.start - first_page_start,
             limit: range.len(),
             pa: range.start,
+            cache_policy: cache,
             phantom: PhantomData,
         }
+    }
+
+    /// Returns the cache policy of this `IoMem`.
+    pub fn cache_policy(&self) -> CachePolicy {
+        self.cache_policy
     }
 }
 
@@ -173,11 +181,21 @@ impl IoMem<Sensitive> {
 
 impl IoMem<Insensitive> {
     /// Acquires an `IoMem` instance for the given range.
+    ///
+    /// The I/O memory cache policy is set to uncacheable by default.
     pub fn acquire(range: Range<Paddr>) -> Result<IoMem<Insensitive>> {
+        Self::acquire_with_cache_policy(range, CachePolicy::Uncacheable)
+    }
+
+    /// Acquires an `IoMem` instance for the given range with the specified cache policy.
+    pub fn acquire_with_cache_policy(
+        range: Range<Paddr>,
+        cache_policy: CachePolicy,
+    ) -> Result<IoMem<Insensitive>> {
         allocator::IO_MEM_ALLOCATOR
             .get()
             .unwrap()
-            .acquire(range)
+            .acquire(range, cache_policy)
             .ok_or(Error::AccessDenied)
     }
 }
