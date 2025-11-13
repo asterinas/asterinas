@@ -10,7 +10,6 @@ qemu.args = """
     -monitor pty \
     -nodefaults \
     -bios /root/ovmf/release/OVMF.fd \
-    -object tdx-guest,sept-ve-disable=on,id=tdx0 \
     -cpu host,-kvm-steal-time,pmu=off \
     -machine q35,kernel-irqchip=split,confidential-guest-support=tdx0 \
     -device virtio-keyboard-pci,disable-legacy=on,disable-modern=off \
