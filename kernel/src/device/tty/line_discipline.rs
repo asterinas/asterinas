@@ -144,9 +144,7 @@ impl LineDiscipline {
         if is_line_terminator(ch, &self.termios) {
             // A new line is met. Move all bytes in `current_line` to `read_buffer`.
             // Note that `unwrap()` below won't fail because we checked `is_full()` above.
-            for line_ch in self.current_line.drain() {
-                self.read_buffer.push(*line_ch).unwrap();
-            }
+            self.flush_line().unwrap();
             self.read_buffer.push(ch).unwrap();
         }
 
@@ -239,6 +237,19 @@ impl LineDiscipline {
 
     pub fn set_termios(&mut self, termios: CTermios) {
         self.termios = termios;
+
+        // When switching to raw mode, any pending input bytes should become immediately available.
+        // Note that `unwrap()` below won't fail because we checked `is_full()` in `push_char`.
+        // TODO: Define the correct behavior for pending bytes when switching back to canonical mode.
+        if !self.termios.is_canonical_mode() {
+            self.flush_line().unwrap();
+        }
+    }
+
+    /// Flushes the bytes in the current line into the read buffer.
+    fn flush_line(&mut self) -> Option<()> {
+        let bytes = self.current_line.drain();
+        self.read_buffer.push_slice(bytes)
     }
 
     pub fn window_size(&self) -> CWinSize {
