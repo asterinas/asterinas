@@ -190,7 +190,8 @@ NON_OSDK_CRATES := \
 	kernel/libs/keyable-arc \
 	kernel/libs/logo-ascii-art \
 	kernel/libs/typeflags \
-	kernel/libs/typeflags-util
+	kernel/libs/typeflags-util \
+	tools/sctrace
 
 # In contrast, OSDK crates depend on OSTD (or being `ostd` itself)
 # and need to be built or tested with OSDK.

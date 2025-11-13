@@ -41,6 +41,7 @@ members = [
     "kernel/libs/typeflags-util",
     "kernel/libs/atomic-integer-wrapper",
     "kernel/libs/xarray",
+    "tools/sctrace",
 ]
 exclude = [
     "kernel/libs/comp-sys/cargo-component",
@@ -48,6 +49,7 @@ exclude = [
     "kernel/libs/comp-sys/component-macro",
     "kernel/libs/comp-sys/controlled",
     "osdk",
+    "tools/sctrace",
 ]
 
 [workspace.lints.rust]

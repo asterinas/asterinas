@@ -72,6 +72,10 @@ RUN apt update && apt-get install -y --no-install-recommends \
 # Clean apt cache
 RUN apt clean && rm -rf /var/lib/apt/lists/*
 
+# Install cargo packages
+RUN cargo install \
+    sctrace
+
 # Copy the gvisor syscall test binaries
 COPY --from=build-gvisor /root/gvisor/build/syscall_test_bins /root/syscall_test_bins
 ENV GVISOR_PREBUILT_DIR=/root/syscall_test_bins
