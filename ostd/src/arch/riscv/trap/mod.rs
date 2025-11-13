@@ -5,8 +5,6 @@
 #[expect(clippy::module_inception)]
 mod trap;
 
-use core::sync::atomic::Ordering;
-
 use riscv::{
     interrupt::supervisor::{Exception, Interrupt},
     register::scause::Trap,
@@ -19,7 +17,7 @@ use crate::{
     arch::{
         cpu::context::CpuException,
         irq::{disable_local, enable_local, HwIrqLine, InterruptSource, IRQ_CHIP},
-        timer::TIMER_IRQ_NUM,
+        timer::TIMER_IRQ,
     },
     cpu::PrivilegeLevel,
     ex_table::ExTable,
@@ -107,10 +105,7 @@ pub(super) fn handle_irq(trap_frame: &TrapFrame, interrupt: Interrupt, priv_leve
         Interrupt::SupervisorTimer => {
             call_irq_callback_functions(
                 trap_frame,
-                &HwIrqLine::new(
-                    TIMER_IRQ_NUM.load(Ordering::Relaxed),
-                    InterruptSource::Timer,
-                ),
+                &HwIrqLine::new(TIMER_IRQ.get().unwrap().num(), InterruptSource::Timer),
                 priv_level,
             );
         }
