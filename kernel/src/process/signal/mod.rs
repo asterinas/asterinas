@@ -22,7 +22,7 @@ use ostd::{
     arch::cpu::context::{FpuContext, UserContext},
     user::UserContextApi,
 };
-pub use pause::{with_sigmask_changed, Pause};
+pub use pause::{with_sigmask_changed, Pause, PauseReason};
 pub use pending::HandlePendingSignal;
 pub use poll::{PollAdaptor, PollHandle, Pollable, Pollee, Poller};
 use sig_action::{SigAction, SigActionFlags, SigDefaultAction};

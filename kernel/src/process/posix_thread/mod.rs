@@ -16,7 +16,11 @@ use crate::{
     events::IoEvents,
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
-    process::{namespace::nsproxy::NsProxy, signal::PollHandle, Pid},
+    process::{
+        namespace::nsproxy::NsProxy,
+        signal::{PauseReason, PollHandle},
+        Pid,
+    },
     thread::{Thread, Tid},
     time::{clocks::ProfClock, Timer, TimerManager},
 };
@@ -64,8 +68,8 @@ pub struct PosixThread {
     /// Thread-directed sigqueue
     sig_queues: SigQueues,
     /// The per-thread signal [`Waker`], which will be used to wake up the thread
-    /// when enqueuing a signal.
-    signalled_waker: SpinLock<Option<Arc<Waker>>>,
+    /// when enqueuing a signal, along with the reason why the thread is paused.
+    signalled_waker: SpinLock<Option<(Arc<Waker>, PauseReason)>>,
 
     /// A profiling clock measures the user CPU time and kernel CPU time in the thread.
     prof_clock: Arc<ProfClock>,
@@ -143,7 +147,8 @@ impl PosixThread {
         self.sig_mask.contains(signum, Ordering::Relaxed)
     }
 
-    /// Sets the input [`Waker`] as the signalled waker of this thread.
+    /// Sets the input [`Waker`] as the signalled waker of this thread,
+    /// along with the reason why the thread is paused.
     ///
     /// This approach can collaborate with signal-aware wait methods.
     /// Once a signalled waker is set for a thread, it cannot be reset until it is cleared.
@@ -152,10 +157,10 @@ impl PosixThread {
     ///
     /// If setting a new waker before clearing the current thread's signalled waker
     /// this method will panic.
-    pub fn set_signalled_waker(&self, waker: Arc<Waker>) {
+    pub fn set_signalled_waker(&self, waker: Arc<Waker>, reason: PauseReason) {
         let mut signalled_waker = self.signalled_waker.lock();
         assert!(signalled_waker.is_none());
-        *signalled_waker = Some(waker);
+        *signalled_waker = Some((waker, reason));
     }
 
     /// Clears the signalled waker of this thread.
@@ -199,21 +204,34 @@ impl PosixThread {
         //  - If #3 happens after #2, B3 can observe the effect of A5 due to the
         //    release-acquire pair A8-B1.
         // Therefore, the condition where both B2 and B3 see `None` will never happen.
+        //
+        // Similarly, this implementation prevents a process that has been stopped by
+        // a signal or ptrace from being incorrectly reported as sleeping in an
+        // (un)interruptible wait.
+        //
+        // FIXME: This implementation cannot prevent a stopped process from being
+        // reported as running when `crate::process::signal::handle_pending_signal`
+        // is called, but the pending signal is not a `SIGCONT`. However, is this
+        // actually a problem? We considered an approach to fix this issue, but it
+        // does not fully resolve it and has some drawbacks. For more details, see
+        // <https://github.com/asterinas/asterinas/pull/2491#issuecomment-3527958970>.
         let signalled_waker = self.signalled_waker.lock();
         let task = self.task.upgrade().unwrap();
         match (
-            signalled_waker.is_some(),
+            signalled_waker.as_ref(),
             task.schedule_info().cpu.get().is_none(),
         ) {
-            (true, true) => SleepingState::Interruptible,
-            (false, true) => SleepingState::Uninterruptible,
+            (Some((_, PauseReason::Sleep)), true) => SleepingState::Interruptible,
+            (Some((_, PauseReason::StopBySignal)), true) => SleepingState::StopBySignal,
+            (Some((_, PauseReason::StopByPtrace)), true) => SleepingState::StopByPtrace,
+            (None, true) => SleepingState::Uninterruptible,
             (_, false) => SleepingState::Running,
         }
     }
 
     /// Wakes up the signalled waker.
     pub fn wake_signalled_waker(&self) {
-        if let Some(waker) = &*self.signalled_waker.lock() {
+        if let Some((waker, _)) = &*self.signalled_waker.lock() {
             waker.wake_up();
         }
     }
@@ -334,4 +352,8 @@ pub enum SleepingState {
     Interruptible,
     /// The thread is sleeping in an uninterruptible wait.
     Uninterruptible,
+    /// The thread is stopped by a signal.
+    StopBySignal,
+    /// The thread is stopped by ptrace.
+    StopByPtrace,
 }

@@ -37,7 +37,26 @@ pub trait Pause: WaitTimeout {
     where
         F: FnMut() -> Option<R>,
     {
-        self.pause_until_or_timeout_impl(cond, None)
+        self.pause_until_or_timeout_impl(cond, None, PauseReason::Sleep)
+    }
+
+    /// Pauses until the condition is met or a signal interrupts.
+    ///
+    /// This pause happens due to the reason specified. If the reason is `PauseReason::Sleep`,
+    /// the caller should use `pause_until` straightforwardly.
+    ///
+    /// # Errors
+    ///
+    /// This method will return an error with [`EINTR`] if a signal is received before the
+    /// condition is met.
+    ///
+    /// [`EINTR`]: crate::error::Errno::EINTR
+    #[track_caller]
+    fn pause_until_by<F, R>(&self, cond: F, reason: PauseReason) -> Result<R>
+    where
+        F: FnMut() -> Option<R>,
+    {
+        self.pause_until_or_timeout_impl(cond, None, reason)
     }
 
     /// Pauses until the condition is met, the timeout is reached, or a signal interrupts.
@@ -62,7 +81,7 @@ pub trait Pause: WaitTimeout {
             Err(err) => return cond().ok_or(err),
         };
 
-        self.pause_until_or_timeout_impl(cond, timeout_inner)
+        self.pause_until_or_timeout_impl(cond, timeout_inner, PauseReason::Sleep)
     }
 
     /// Pauses until the condition is met, the timeout is reached, or a signal interrupts.
@@ -81,6 +100,7 @@ pub trait Pause: WaitTimeout {
         &self,
         cond: F,
         timeout: Option<&ManagedTimeout>,
+        reason: PauseReason,
     ) -> Result<R>
     where
         F: FnMut() -> Option<R>;
@@ -104,6 +124,7 @@ impl Pause for Waiter {
         &self,
         cond: F,
         timeout: Option<&ManagedTimeout>,
+        reason: PauseReason,
     ) -> Result<R>
     where
         F: FnMut() -> Option<R>,
@@ -129,7 +150,7 @@ impl Pause for Waiter {
             Ok(())
         };
 
-        posix_thread.set_signalled_waker(self.waker());
+        posix_thread.set_signalled_waker(self.waker(), reason);
         let res = self.wait_until_or_timeout_cancelled(cond, cancel_cond, timeout);
         posix_thread.clear_signalled_waker();
 
@@ -150,7 +171,7 @@ impl Pause for Waiter {
             .and_then(|thread| thread.as_posix_thread());
 
         if let Some(posix_thread) = posix_thread_opt {
-            posix_thread.set_signalled_waker(self.waker());
+            posix_thread.set_signalled_waker(self.waker(), PauseReason::Sleep);
             // Check `has_pending` after `set_signalled_waker` to avoid race conditions.
             if posix_thread.has_pending() {
                 posix_thread.clear_signalled_waker();
@@ -194,6 +215,7 @@ impl Pause for WaitQueue {
         &self,
         mut cond: F,
         timeout: Option<&ManagedTimeout>,
+        reason: PauseReason,
     ) -> Result<R>
     where
         F: FnMut() -> Option<R>,
@@ -208,12 +230,20 @@ impl Pause for WaitQueue {
             self.enqueue(waiter.waker());
             cond()
         };
-        waiter.pause_until_or_timeout_impl(cond, timeout)
+        waiter.pause_until_or_timeout_impl(cond, timeout, reason)
     }
 
     fn pause_timeout(&self, _timeout: &TimeoutExt<'_>) -> Result<()> {
         panic!("`pause_timeout` can only be used on `Waiter`");
     }
+}
+
+/// The reason why a process is paused by a `pause`-family method.
+pub enum PauseReason {
+    Sleep,
+    StopBySignal,
+    #[expect(dead_code)]
+    StopByPtrace,
 }
 
 /// Executes a closure after temporarily adjusting the signal mask of the current POSIX thread.

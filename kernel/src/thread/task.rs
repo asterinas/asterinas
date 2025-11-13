@@ -14,7 +14,7 @@ use crate::{
     prelude::*,
     process::{
         posix_thread::{AsPosixThread, AsThreadLocal, ThreadLocal},
-        signal::{handle_pending_signal, HandlePendingSignal},
+        signal::{handle_pending_signal, HandlePendingSignal, PauseReason},
     },
     syscall::handle_syscall,
     thread::{exception::handle_exception, AsThread},
@@ -112,7 +112,11 @@ pub fn create_new_user_task(
             // We need to further investigate Linux behavior regarding which signals should be handled
             // when the thread is stopped.
             while !current_thread.is_exited() && ctx.process.is_stopped() {
-                let _ = stop_waiter.pause_until(|| (!ctx.process.is_stopped()).then_some(()));
+                let _ = stop_waiter.pause_until_by(
+                    || (!ctx.process.is_stopped()).then_some(()),
+                    // We currently do not support ptrace.
+                    PauseReason::StopBySignal,
+                );
                 handle_pending_signal(user_ctx, &ctx, None);
             }
         }

@@ -100,6 +100,8 @@ impl FileOps for StatusFileOps {
                 SleepingState::Running => "R (running)",
                 SleepingState::Interruptible => "S (sleeping)",
                 SleepingState::Uninterruptible => "D (disk sleep)",
+                SleepingState::StopBySignal => "T (stopped)",
+                SleepingState::StopByPtrace => "t (tracing stop)",
             }
         };
         writeln!(status_output, "State:\t{}", state).unwrap();
