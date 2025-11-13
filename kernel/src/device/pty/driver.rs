@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-
 use aster_console::AnyConsoleDevice;
 use ostd::sync::SpinLock;
 
 use super::file::PtySlaveFile;
 use crate::{
-    device::tty::{Tty, TtyDriver},
+    device::tty::{Tty, TtyDriver, TtyFlags},
     events::IoEvents,
     fs::inode_handle::FileIo,
     prelude::*,
@@ -25,8 +23,8 @@ const BUFFER_CAPACITY: usize = 8192;
 pub struct PtyDriver {
     output: SpinLock<RingBuffer<u8>>,
     pollee: Pollee,
-    is_master_closed: AtomicBool,
-    opened_slaves: AtomicUsize,
+    opened_slaves: SpinLock<usize>,
+    tty_flags: TtyFlags,
 }
 
 /// A pseudoterminal slave.
@@ -34,11 +32,13 @@ pub type PtySlave = Tty<PtyDriver>;
 
 impl PtyDriver {
     pub(super) fn new() -> Self {
+        let tty_flags = TtyFlags::new();
+        tty_flags.set_pty_locked();
         Self {
             output: SpinLock::new(RingBuffer::new(BUFFER_CAPACITY)),
             pollee: Pollee::new(),
-            is_master_closed: AtomicBool::new(false),
-            opened_slaves: AtomicUsize::new(0),
+            opened_slaves: SpinLock::new(0),
+            tty_flags,
         }
     }
 
@@ -49,11 +49,8 @@ impl PtyDriver {
 
         let mut output = self.output.lock();
         if output.is_empty() {
-            if self.opened_slaves.load(Ordering::Relaxed) == 0 {
-                return_errno_with_message!(
-                    Errno::EIO,
-                    "the pty master does not have opened slaves"
-                );
+            if self.tty_flags.is_other_closed() {
+                return_errno_with_message!(Errno::EIO, "the pty slave has been closed");
             }
             return_errno_with_message!(Errno::EAGAIN, "the buffer is empty");
         }
@@ -72,12 +69,12 @@ impl PtyDriver {
         self.output.lock().len()
     }
 
-    pub(super) fn set_master_closed(&self) {
-        self.is_master_closed.store(true, Ordering::Relaxed);
+    pub(super) fn opened_slaves(&self) -> &SpinLock<usize> {
+        &self.opened_slaves
     }
 
-    pub(super) fn opened_slaves(&self) -> &AtomicUsize {
-        &self.opened_slaves
+    pub(super) fn tty_flags(&self) -> &TtyFlags {
+        &self.tty_flags
     }
 }
 
@@ -85,15 +82,11 @@ impl TtyDriver for PtyDriver {
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/major.h#L147>.
     const DEVICE_MAJOR_ID: u32 = 136;
 
-    fn open(tty: Arc<Tty<Self>>) -> Arc<dyn FileIo> {
-        Arc::new(PtySlaveFile::new(tty))
+    fn open(tty: Arc<Tty<Self>>) -> Result<Arc<dyn FileIo>> {
+        Ok(Arc::new(PtySlaveFile::new(tty)?))
     }
 
     fn push_output(&self, chs: &[u8]) -> Result<usize> {
-        if self.is_closed() {
-            return_errno_with_message!(Errno::EIO, "the pty master has been closed");
-        }
-
         let mut output = self.output.lock();
 
         let mut len = 0;
@@ -141,10 +134,6 @@ impl TtyDriver for PtyDriver {
     fn can_push(&self) -> bool {
         let output = self.output.lock();
         output.capacity() - output.len() >= 2
-    }
-
-    fn is_closed(&self) -> bool {
-        self.is_master_closed.load(Ordering::Relaxed)
     }
 
     fn notify_input(&self) {

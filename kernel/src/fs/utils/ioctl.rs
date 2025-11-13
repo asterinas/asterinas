@@ -28,7 +28,7 @@ pub enum IoctlCmd {
     TIOCSWINSZ = 0x5414,
     /// Enable or disable non-blocking I/O mode.
     FIONBIO = 0x5421,
-    /// the calling process gives up this controlling terminal
+    /// The calling process gives up this controlling terminal
     TIOCNOTTY = 0x5422,
     /// Return the session ID of FD
     TIOCGSID = 0x5429,
@@ -36,14 +36,16 @@ pub enum IoctlCmd {
     FIONCLEX = 0x5450,
     /// Set the close on exec flag on a file descriptor
     FIOCLEX = 0x5451,
-    /// Enable or disable asynchronous I/O mode.
+    /// Enable or disable asynchronous I/O mode
     FIOASYNC = 0x5452,
-    /// Get Pty Number
+    /// Get pty index
     TIOCGPTN = 0x80045430,
-    /// Lock/unlock Pty
+    /// Lock/unlock pty
     TIOCSPTLCK = 0x40045431,
+    /// Get pty lock state
+    TIOCGPTLCK = 0x80045439,
     /// Safely open the slave
-    TIOCGPTPEER = 0x40045441,
+    TIOCGPTPEER = 0x5441,
     /// font operations
     KDFONTOP = 0x4B72,
     /// Get console mode
