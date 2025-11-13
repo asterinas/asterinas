@@ -48,6 +48,7 @@ pseudofs/pseudo_inode
 pseudofs/memfd_access_err
 pthread/pthread_test
 pty/close_pty
+pty/open_ptmx
 pty/open_pty
 pty/pty_blocking
 sched/sched_attr_getset
