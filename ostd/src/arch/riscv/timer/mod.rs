@@ -4,7 +4,7 @@
 
 use core::{
     arch::asm,
-    sync::atomic::{AtomicU64, AtomicU8, Ordering},
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 use spin::Once;
@@ -15,8 +15,7 @@ use crate::{
     timer::TIMER_FREQ,
 };
 
-static TIMER_IRQ: Once<IrqLine> = Once::new();
-pub(super) static TIMER_IRQ_NUM: AtomicU8 = AtomicU8::new(0);
+pub(super) static TIMER_IRQ: Once<IrqLine> = Once::new();
 
 static TIMEBASE_FREQ: AtomicU64 = AtomicU64::new(0);
 static TIMER_INTERVAL: AtomicU64 = AtomicU64::new(0);
@@ -54,7 +53,6 @@ pub(super) unsafe fn init() {
 
     TIMER_IRQ.call_once(|| {
         let mut timer_irq = IrqLine::alloc().unwrap();
-        TIMER_IRQ_NUM.store(timer_irq.num(), Ordering::Relaxed);
         timer_irq.on_active(timer_callback);
 
         timer_irq
