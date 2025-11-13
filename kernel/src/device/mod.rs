@@ -14,13 +14,14 @@ pub mod tdxguest;
 
 use alloc::format;
 
+use device_id::DeviceId;
 pub use pty::{new_pty_pair, PtyMaster, PtySlave};
 pub use random::Random;
 pub use urandom::Urandom;
 
 use crate::{
     fs::{
-        device::{add_node, Device, DeviceId},
+        device::{add_node, Device},
         fs_resolver::FsPath,
         path::PerMountFlags,
         ramfs::RamFs,

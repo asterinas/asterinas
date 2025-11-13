@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use device_id::DeviceId;
+
 use crate::{
     events::IoEvents,
     fs::{
-        device::{Device, DeviceId, DeviceType},
+        device::{Device, DeviceType},
         inode_handle::FileIo,
         utils::StatusFlags,
     },

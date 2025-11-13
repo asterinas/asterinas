@@ -33,6 +33,7 @@ members = [
     "kernel/libs/aster-rights-proc",
     "kernel/libs/aster-util",
     "kernel/libs/aster-bigtcp",
+    "kernel/libs/device-id",
     "kernel/libs/jhash",
     "kernel/libs/keyable-arc",
     "kernel/libs/logo-ascii-art",

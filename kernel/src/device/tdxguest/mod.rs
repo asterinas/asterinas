@@ -4,6 +4,7 @@ use core::{mem::size_of, time::Duration};
 
 use align_ext::AlignExt;
 use aster_util::{field_ptr, safe_ptr::SafePtr};
+use device_id::DeviceId;
 use ostd::{
     mm::{DmaCoherent, FrameAllocOptions, HasPaddr, HasSize, VmIo, PAGE_SIZE},
     sync::WaitQueue,
@@ -17,7 +18,7 @@ use tdx_guest::{
 use crate::{
     events::IoEvents,
     fs::{
-        device::{Device, DeviceId, DeviceType},
+        device::{Device, DeviceType},
         inode_handle::FileIo,
         utils::{IoctlCmd, StatusFlags},
     },

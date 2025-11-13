@@ -223,6 +223,7 @@ dependencies = [
  "controlled",
  "core2",
  "cpio-decoder",
+ "device-id",
  "getset",
  "hashbrown 0.14.5",
  "id-alloc",
@@ -664,6 +665,10 @@ checksum = "9c9e6a11ca8224451684bc0d7d5a7adbf8f2fd6887261a1cfc3c0432f9d4068e"
 dependencies = [
  "powerfmt",
 ]
+
+[[package]]
+name = "device-id"
+version = "0.1.0"
 
 [[package]]
 name = "either"

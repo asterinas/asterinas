@@ -32,6 +32,7 @@ aster-rights-proc = { path = "libs/aster-rights-proc" }
 aster-util = { path = "libs/aster-util" }
 aster-bigtcp = { path = "libs/aster-bigtcp" }
 atomic-integer-wrapper = { path = "libs/atomic-integer-wrapper" }
+device-id = { path = "libs/device-id" }
 id-alloc = { path = "../ostd/libs/id-alloc" }
 int-to-c-enum = { path = "libs/int-to-c-enum" }
 jhash = { path = "libs/jhash" }

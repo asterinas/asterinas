@@ -5,6 +5,7 @@ use aster_console::{
     mode::{ConsoleMode, KeyboardMode},
     AnyConsoleDevice,
 };
+use device_id::DeviceId;
 use ostd::sync::LocalIrqDisabled;
 
 use self::{line_discipline::LineDiscipline, termio::CFontOp};
@@ -12,7 +13,7 @@ use crate::{
     current_userspace,
     events::IoEvents,
     fs::{
-        device::{Device, DeviceId, DeviceType},
+        device::{Device, DeviceType},
         inode_handle::FileIo,
         utils::{IoctlCmd, StatusFlags},
     },
