@@ -7,6 +7,7 @@ use alloc::{
     vec::Vec,
 };
 use core::{
+    cmp,
     fmt::Debug,
     sync::atomic::{AtomicU32, AtomicUsize, Ordering},
     time::Duration,
@@ -24,6 +25,7 @@ use ostd::{
 };
 
 use crate::{
+    current_userspace,
     events::IoEvents,
     fs::{
         device::{add_node, Device, DeviceId, DeviceType},
@@ -45,6 +47,9 @@ use crate::{
 /// Maximum number of events in the evdev buffer.
 const EVDEV_BUFFER_SIZE: usize = 64;
 
+/// Linux evdev driver version returned by `EVIOCGVERSION`.
+const EVDEV_DRIVER_VERSION: i32 = 0x010001;
+
 /// Global minor number allocator for evdev devices.
 static EVDEV_MINOR_COUNTER: AtomicU32 = AtomicU32::new(0);
 
@@ -53,6 +58,30 @@ static EVDEV_DEVICES: SpinLock<Vec<(u32, Arc<Evdev>)>> = SpinLock::new(Vec::new(
 
 /// Global FsResolver for device node creation.
 static FS_RESOLVER: SpinLock<Option<Arc<FsResolver>>> = SpinLock::new(None);
+
+/// EVDEV ioctl variants.
+enum EvdevIoctl {
+    /// Get device name string (EVIOCGNAME).
+    GetName { len: u32 },
+    /// Get device physical path string (EVIOCGPHYS).
+    GetPhys { len: u32 },
+    /// Get device unique identifier string (EVIOCGUNIQ).
+    GetUniq { len: u32 },
+    /// Get device identification (bus/vendor/product/version) (EVIOCGID).
+    GetId,
+    /// Get evdev ABI version (EVIOCGVERSION).
+    GetVersion,
+    /// Get capability bitmap for a given event type, or supported types when type=0 (EVIOCGBIT).
+    GetBit { event_type: u32, len: u32 },
+    /// Get current key state bitmap (pressed keys) (EVIOCGKEY).
+    GetKey { len: u32 },
+    /// Get current LED state bitmap (EVIOCGLED).
+    GetLed { len: u32 },
+    /// Get current switch state bitmap (EVIOCGSW).
+    GetSw { len: u32 },
+    /// Set event timestamp clock id (EVIOCSCLOCKID).
+    SetClockId,
+}
 
 // Compatible with Linux's event format.
 #[repr(C)]
@@ -207,6 +236,195 @@ impl EvdevClient {
 
         Ok(total_bytes)
     }
+
+    fn upgrade_evdev(&self) -> Result<Arc<Evdev>> {
+        self.evdev
+            .upgrade()
+            .ok_or_else(|| Error::with_message(Errno::ENODEV, "evdev device is unavailable"))
+    }
+
+    fn write_string_to_userspace(&self, value: &str, len: u32, user_ptr: usize) -> Result<()> {
+        let len = len as usize;
+        if len == 0 {
+            return Ok(());
+        }
+
+        let mut buffer = vec![0u8; len];
+        let bytes = value.as_bytes();
+        let copy_len = cmp::min(bytes.len(), len - 1);
+        if copy_len > 0 {
+            buffer[..copy_len].copy_from_slice(&bytes[..copy_len]);
+        }
+
+        let mut reader = VmReader::from(buffer.as_slice());
+        current_userspace!().write_bytes(user_ptr, &mut reader)?;
+        Ok(())
+    }
+
+    fn write_bitmap_to_userspace(&self, bitmap: &[u8], len: u32, user_ptr: usize) -> Result<()> {
+        let len = len as usize;
+        if len == 0 {
+            return Ok(());
+        }
+
+        let mut buffer = vec![0u8; len];
+        let copy_len = cmp::min(bitmap.len(), len);
+        if copy_len > 0 {
+            buffer[..copy_len].copy_from_slice(&bitmap[..copy_len]);
+        }
+
+        let mut reader = VmReader::from(buffer.as_slice());
+        current_userspace!().write_bytes(user_ptr, &mut reader)?;
+        Ok(())
+    }
+
+    /// Parses raw EVDEV ioctl command into a local variant.
+    fn parse_evdev(raw: u32) -> Option<EvdevIoctl> {
+        const IOC_NRBITS: u32 = 8;
+        const IOC_TYPEBITS: u32 = 8;
+        const IOC_SIZEBITS: u32 = 14;
+        const IOC_DIRBITS: u32 = 2;
+
+        const IOC_NRMASK: u32 = (1 << IOC_NRBITS) - 1;
+        const IOC_TYPEMASK: u32 = (1 << IOC_TYPEBITS) - 1;
+        const IOC_SIZEMASK: u32 = (1 << IOC_SIZEBITS) - 1;
+        const IOC_DIRMASK: u32 = (1 << IOC_DIRBITS) - 1;
+
+        const IOC_NRSHIFT: u32 = 0;
+        const IOC_TYPESHIFT: u32 = IOC_NRSHIFT + IOC_NRBITS;
+        const IOC_SIZESHIFT: u32 = IOC_TYPESHIFT + IOC_TYPEBITS;
+        const IOC_DIRSHIFT: u32 = IOC_SIZESHIFT + IOC_SIZEBITS;
+
+        const IOC_READ: u32 = 2;
+        const IOC_WRITE: u32 = 1;
+        const EVDEV_IOCTL_TYPE: u32 = b'E' as u32;
+        const EVIOCGNAME_NR: u32 = 0x06;
+        const EVIOCGPHYS_NR: u32 = 0x07;
+        const EVIOCGUNIQ_NR: u32 = 0x08;
+        const EVIOCGID: u32 = 0x80084502;
+        const EVIOCGVERSION: u32 = 0x80044501;
+        const EVIOCGBIT_BASE_NR: u32 = 0x20;
+        const EVIOCGKEY_NR: u32 = 0x18;
+        const EVIOCGLED_NR: u32 = 0x19;
+        const EVIOCGSW_NR: u32 = 0x1b;
+        const EVIOCSCLOCKID_NR: u32 = 0xa0;
+
+        let dir = (raw >> IOC_DIRSHIFT) & IOC_DIRMASK;
+        let ty = (raw >> IOC_TYPESHIFT) & IOC_TYPEMASK;
+        let nr = (raw >> IOC_NRSHIFT) & IOC_NRMASK;
+        let len = (raw >> IOC_SIZESHIFT) & IOC_SIZEMASK;
+
+        if ty != EVDEV_IOCTL_TYPE {
+            return None;
+        }
+
+        if raw == EVIOCGVERSION {
+            return Some(EvdevIoctl::GetVersion);
+        }
+        if raw == EVIOCGID {
+            return Some(EvdevIoctl::GetId);
+        }
+
+        match dir {
+            IOC_READ => match nr {
+                EVIOCGNAME_NR => Some(EvdevIoctl::GetName { len }),
+                EVIOCGPHYS_NR => Some(EvdevIoctl::GetPhys { len }),
+                EVIOCGUNIQ_NR => Some(EvdevIoctl::GetUniq { len }),
+                EVIOCGKEY_NR => Some(EvdevIoctl::GetKey { len }),
+                EVIOCGLED_NR => Some(EvdevIoctl::GetLed { len }),
+                EVIOCGSW_NR => Some(EvdevIoctl::GetSw { len }),
+                n if n >= EVIOCGBIT_BASE_NR => Some(EvdevIoctl::GetBit {
+                    event_type: n - EVIOCGBIT_BASE_NR,
+                    len,
+                }),
+                _ => None,
+            },
+            IOC_WRITE => match nr {
+                EVIOCSCLOCKID_NR => Some(EvdevIoctl::SetClockId),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn handle_evdev_ioctl(&self, raw: u32, arg: usize) -> Result<()> {
+        match Self::parse_evdev(raw) {
+            Some(EvdevIoctl::GetName { len }) => {
+                let evdev = self.upgrade_evdev()?;
+                self.write_string_to_userspace(evdev.device.name(), len, arg)?;
+            }
+            Some(EvdevIoctl::GetPhys { len }) => {
+                let evdev = self.upgrade_evdev()?;
+                self.write_string_to_userspace(evdev.device.phys(), len, arg)?;
+            }
+            Some(EvdevIoctl::GetUniq { len }) => {
+                let evdev = self.upgrade_evdev()?;
+                self.write_string_to_userspace(evdev.device.uniq(), len, arg)?;
+            }
+            Some(EvdevIoctl::GetId) => {
+                let evdev = self.upgrade_evdev()?;
+                let id = evdev.device.id();
+                current_userspace!().write_val(arg, &id)?;
+            }
+            Some(EvdevIoctl::GetVersion) => {
+                current_userspace!().write_val(arg, &EVDEV_DRIVER_VERSION)?;
+            }
+            Some(EvdevIoctl::GetBit { event_type, len }) => {
+                let evdev = self.upgrade_evdev()?;
+                let capability = evdev.device.capability();
+                let event_types_bytes = capability.event_types_bits().to_le_bytes();
+                let bitmap = match event_type as u16 {
+                    0 => Some(&event_types_bytes[..]),
+                    t if t == EventTypes::KEY.as_index() => {
+                        Some(capability.supported_keys_bitmap())
+                    }
+                    t if t == EventTypes::REL.as_index() => {
+                        Some(capability.supported_relative_axes_bitmap())
+                    }
+                    _ => None,
+                };
+                let bitmap = bitmap.unwrap_or(&[]);
+                self.write_bitmap_to_userspace(bitmap, len, arg)?;
+            }
+            Some(EvdevIoctl::GetKey { len })
+            | Some(EvdevIoctl::GetLed { len })
+            | Some(EvdevIoctl::GetSw { len }) => {
+                // These states are not maintained yet, and libevdev only checks for a zero return value,
+                // so we provide a temporary dummy implementation.
+                let zero = vec![0u8; len as usize];
+                self.write_bitmap_to_userspace(&zero[..], len, arg)?;
+            }
+            Some(EvdevIoctl::SetClockId) => {
+                let clock_id_raw: i32 = current_userspace!().read_val(arg)?;
+                let clock_id = ClockId::try_from(clock_id_raw)
+                    .map_err(|_| Error::with_message(Errno::EINVAL, "invalid clock id"))?;
+                let supported = matches!(
+                    clock_id,
+                    ClockId::CLOCK_REALTIME
+                        | ClockId::CLOCK_MONOTONIC
+                        | ClockId::CLOCK_MONOTONIC_RAW
+                        | ClockId::CLOCK_REALTIME_COARSE
+                        | ClockId::CLOCK_MONOTONIC_COARSE
+                        | ClockId::CLOCK_BOOTTIME
+                        | ClockId::CLOCK_PROCESS_CPUTIME_ID
+                        | ClockId::CLOCK_THREAD_CPUTIME_ID
+                );
+                if !supported {
+                    return_errno_with_message!(Errno::EINVAL, "clock id not supported");
+                }
+                self.clock_type
+                    .store(clock_id_raw as u32, Ordering::Relaxed);
+            }
+            None => {
+                return Err(Error::with_message(
+                    Errno::EINVAL,
+                    "This IOCTL operation not supported on evdev devices",
+                ))
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl Pollable for EvdevClient {
@@ -250,12 +468,15 @@ impl FileIo for EvdevClient {
         ))
     }
 
-    fn ioctl(&self, _cmd: IoctlCmd, _arg: usize) -> Result<i32> {
-        // TODO: support ioctl operation on evdev devices.
-        Err(Error::with_message(
-            Errno::EINVAL,
-            "IOCTL operation not supported on evdev devices",
-        ))
+    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+        match cmd {
+            IoctlCmd::Others(raw) => self.handle_evdev_ioctl(raw, arg)?,
+            _ => {
+                return_errno!(Errno::EINVAL)
+            }
+        }
+
+        Ok(0)
     }
 }
 

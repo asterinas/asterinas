@@ -151,6 +151,11 @@ impl RelCodeSet {
         let index = rel_code as usize;
         self.0.get(index).map(|b| *b).unwrap()
     }
+
+    /// Returns the bitmap as a byte slice.
+    pub fn as_raw_slice(&self) -> &[u8] {
+        self.0.as_raw_slice()
+    }
 }
 
 /// A set of [`KeyCode`] represented as a bitmap.
@@ -195,6 +200,11 @@ impl KeyCodeSet {
     pub fn contain_any(&self, range: core::ops::Range<usize>) -> bool {
         assert!(range.is_empty() || range.end <= KEY_COUNT);
         range.into_iter().any(|i| *self.0.get(i).unwrap())
+    }
+
+    /// Returns the bitmap as a byte slice.
+    pub fn as_raw_slice(&self) -> &[u8] {
+        self.0.as_raw_slice()
     }
 }
 
