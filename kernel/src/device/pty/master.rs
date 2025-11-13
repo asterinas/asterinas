@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::format;
-use core::sync::atomic::Ordering;
 
 use ostd::task::Task;
 
 use super::{driver::PtyDriver, PtySlave};
 use crate::{
     current_userspace,
+    device::tty::TtyFlags,
     events::IoEvents,
     fs::{
         devpts::Ptmx,
@@ -51,6 +51,14 @@ impl PtyMaster {
         &self.slave
     }
 
+    fn master_flags(&self) -> &TtyFlags {
+        self.slave.driver().tty_flags()
+    }
+
+    fn slave_flags(&self) -> &TtyFlags {
+        self.slave.tty_flags()
+    }
+
     fn check_io_events(&self) -> IoEvents {
         let mut events = IoEvents::empty();
 
@@ -62,7 +70,7 @@ impl PtyMaster {
             events |= IoEvents::OUT;
         }
 
-        if self.slave.driver().opened_slaves().load(Ordering::Relaxed) == 0 {
+        if self.master_flags().is_other_closed() {
             events |= IoEvents::HUP;
         }
 
@@ -126,7 +134,21 @@ impl FileIo for PtyMaster {
             | IoctlCmd::TIOCSWINSZ
             | IoctlCmd::TIOCGPTN => return self.slave.ioctl(cmd, arg),
             IoctlCmd::TIOCSPTLCK => {
-                // TODO: Lock or unlock the pty.
+                let val = current_userspace!().read_val::<i32>(arg)?;
+                let flags = self.master_flags();
+                if val == 0 {
+                    flags.clear_pty_locked();
+                } else {
+                    flags.set_pty_locked();
+                }
+            }
+            IoctlCmd::TIOCGPTLCK => {
+                let val = if self.master_flags().is_pty_locked() {
+                    1
+                } else {
+                    0
+                };
+                current_userspace!().write_val(arg, &val)?;
             }
             IoctlCmd::TIOCGPTPEER => {
                 let current_task = Task::current().unwrap();
@@ -179,7 +201,7 @@ impl Drop for PtyMaster {
             devpts.remove_slave(index);
         }
 
-        self.slave.driver().set_master_closed();
+        self.slave_flags().set_other_closed();
         self.slave.notify_hup();
     }
 }

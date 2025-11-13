@@ -15,8 +15,8 @@ impl TtyDriver for ConsoleDriver {
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/major.h#L18>.
     const DEVICE_MAJOR_ID: u32 = 4;
 
-    fn open(tty: Arc<Tty<Self>>) -> Arc<dyn FileIo> {
-        tty
+    fn open(tty: Arc<Tty<Self>>) -> Result<Arc<dyn FileIo>> {
+        Ok(tty)
     }
 
     fn push_output(&self, chs: &[u8]) -> Result<usize> {
@@ -32,10 +32,6 @@ impl TtyDriver for ConsoleDriver {
 
     fn can_push(&self) -> bool {
         true
-    }
-
-    fn is_closed(&self) -> bool {
-        false
     }
 
     fn notify_input(&self) {}

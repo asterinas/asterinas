@@ -27,12 +27,14 @@ use crate::{
 
 mod device;
 mod driver;
+mod flags;
 mod line_discipline;
 mod n_tty;
 mod termio;
 
 pub use device::TtyDevice;
 pub use driver::TtyDriver;
+pub(super) use flags::TtyFlags;
 pub(super) use n_tty::init;
 pub use n_tty::{iter_n_tty, system_console};
 
@@ -64,17 +66,19 @@ pub struct Tty<D> {
     ldisc: SpinLock<LineDiscipline, LocalIrqDisabled>,
     job_control: JobControl,
     pollee: Pollee,
+    tty_flags: TtyFlags,
     weak_self: Weak<Self>,
 }
 
 impl<D> Tty<D> {
-    pub fn new(index: u32, driver: D) -> Arc<Self> {
+    pub(super) fn new(index: u32, driver: D) -> Arc<Self> {
         Arc::new_cyclic(move |weak_ref| Tty {
             index,
             driver,
             ldisc: SpinLock::new(LineDiscipline::new()),
             job_control: JobControl::new(),
             pollee: Pollee::new(),
+            tty_flags: TtyFlags::new(),
             weak_self: weak_ref.clone(),
         })
     }
@@ -83,14 +87,14 @@ impl<D> Tty<D> {
         self.index
     }
 
-    pub fn driver(&self) -> &D {
+    pub(super) fn driver(&self) -> &D {
         &self.driver
     }
 
     /// Returns whether new characters can be pushed into the input buffer.
     ///
     /// This method should return `false` if the input buffer is full.
-    pub fn can_push(&self) -> bool {
+    pub(super) fn can_push(&self) -> bool {
         !self.ldisc.lock().is_full()
     }
 
@@ -98,13 +102,18 @@ impl<D> Tty<D> {
     ///
     /// This method should be called when the state of [`TtyDriver::can_push`] changes from `false`
     /// to `true`.
-    pub fn notify_output(&self) {
+    pub(super) fn notify_output(&self) {
         self.pollee.notify(IoEvents::OUT);
     }
 
     /// Notifies that the other end has been closed.
-    pub fn notify_hup(&self) {
+    pub(super) fn notify_hup(&self) {
         self.pollee.notify(IoEvents::HUP);
+    }
+
+    /// Returns the TTY flags.
+    pub(super) fn tty_flags(&self) -> &TtyFlags {
+        &self.tty_flags
     }
 }
 
@@ -152,7 +161,7 @@ impl<D: TtyDriver> Tty<D> {
             events |= IoEvents::OUT;
         }
 
-        if self.driver.is_closed() {
+        if self.tty_flags.is_other_closed() {
             events |= IoEvents::HUP;
         }
 
@@ -243,7 +252,7 @@ impl<D: TtyDriver> Pollable for Tty<D> {
 
 impl<D: TtyDriver> FileIo for Tty<D> {
     fn read(&self, writer: &mut VmWriter, status_flags: StatusFlags) -> Result<usize> {
-        if self.driver.is_closed() {
+        if self.tty_flags.is_other_closed() {
             return Ok(0);
         }
 
@@ -266,6 +275,10 @@ impl<D: TtyDriver> FileIo for Tty<D> {
     }
 
     fn write(&self, reader: &mut VmReader, status_flags: StatusFlags) -> Result<usize> {
+        if self.tty_flags.is_other_closed() {
+            return_errno_with_message!(Errno::EIO, "the TTY is closed");
+        }
+
         let mut buf = vec![0u8; reader.remain().min(IO_CAPACITY)];
         let write_len = reader.read_fallible(&mut buf.as_mut_slice().into())?;
 
@@ -327,7 +340,7 @@ impl<D: TtyDriver> FileIo for Tty<D> {
                 current_userspace!().write_val(arg, &idx)?;
             }
             IoctlCmd::FIONREAD => {
-                if self.driver().is_closed() {
+                if self.tty_flags.is_other_closed() {
                     return_errno_with_message!(Errno::EIO, "the TTY is closed");
                 }
 
@@ -392,6 +405,6 @@ impl<D: TtyDriver> Device for Tty<D> {
     }
 
     fn open(&self) -> Option<Result<Arc<dyn FileIo>>> {
-        Some(Ok(D::open(self.weak_self.upgrade().unwrap())))
+        Some(D::open(self.weak_self.upgrade().unwrap()))
     }
 }
