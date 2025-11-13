@@ -8,10 +8,8 @@ use crate::{
         file_table::{FdFlags, FileDesc},
         fs_resolver::{FsPath, FsResolver, LookupResult, PathOrInode, AT_FDCWD},
         inode_handle::InodeHandle,
-        notify::fsnotify_open,
         ramfs::memfd::{MemfdFile, MemfdInode},
         utils::{AccessMode, CreationFlags, InodeMode, InodeType, OpenArgs, StatusFlags},
-        utils::{AccessMode, CreationFlags, InodeMode, InodeType, OpenArgs},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -61,7 +59,8 @@ pub fn sys_openat(
             };
         file_table_locked.insert(file_handle.clone(), fd_flags)
     };
-    fs::notify::on_open(file_handle.path())?;
+    let file_like: Arc<dyn FileLike> = file_handle;
+    fs::notify::on_open(&file_like);
     Ok(SyscallReturn::Return(fd as _))
 }
 
@@ -125,7 +124,7 @@ fn do_open(
             let (parent, tail_name) = result.into_parent_and_basename();
             let new_path =
                 parent.new_fs_child(&tail_name, InodeType::File, open_args.inode_mode)?;
-            fs::notify::on_create(&parent, tail_name.clone())?;
+            fs::notify::on_create(&parent, tail_name.clone());
 
             // Don't check access mode for newly created file.
             Arc::new(InodeHandle::new_unchecked_access(

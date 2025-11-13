@@ -17,6 +17,8 @@ use crate::{
         device::{Device, DeviceType},
         inode_handle::FileIo,
         notify::FsnotifyPublisher,
+        path::Path,
+        ramfs::memfd::MemfdInode,
         utils::StatusFlags,
     },
     prelude::*,
@@ -278,10 +280,6 @@ pub trait Inode: Any + Sync + Send {
 
     fn page_cache(&self) -> Option<Arc<Vmo>> {
         None
-    }
-
-    fn hard_links(&self) -> u16 {
-        0
     }
 
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {

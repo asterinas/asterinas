@@ -116,7 +116,7 @@ fn setxattr(
 
     let path = lookup_path_for_xattr(&file_ctx, ctx)?;
     path.set_xattr(xattr_name, &mut value_reader, flags)?;
-    fs::notify::on_attr_change(&path)?;
+    fs::notify::on_attr_change(&path);
     Ok(())
 }
 

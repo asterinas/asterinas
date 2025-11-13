@@ -20,9 +20,9 @@ use crate::{
     fs::{
         file_handle::{FileLike, Mappable},
         inode_handle::{do_fallocate_util, do_resize_util, do_seek_util},
+        notify::FsnotifyPublisher,
         path::check_open_util,
         tmpfs::TmpFs,
-        notify::FsnotifyPublisher,
         utils::{
             chmod, mkmod, AccessMode, CachePage, CreationFlags, Extension, FallocMode, FileSystem,
             Inode, InodeMode, InodeType, IoctlCmd, Metadata, OpenArgs, PageCacheBackend, SeekFrom,

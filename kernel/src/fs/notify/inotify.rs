@@ -21,7 +21,8 @@ use crate::{
         file_handle::FileLike,
         notify::{FsnotifyEvents, FsnotifySubscriber},
         path::Path,
-        utils::{AccessMode, Inode, InodeMode, IoctlCmd, Metadata, StatusFlags},
+        pseudofs::anon_inodefs_shared_inode,
+        utils::{AccessMode, Inode, IoctlCmd, StatusFlags},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
@@ -37,20 +38,20 @@ struct SubscriberEntry {
 /// A file-like object that provides inotify functionality.
 ///
 /// InotifyFile accepts events from multiple inotify subscribers (watches) on different inodes.
-/// Users should read events from this file to receive notifications about file system changes.
+/// Users should read events from this file to receive notifications about filesystem changes.
 pub struct InotifyFile {
-    // Lock to serialize subscriber updates and removals.
-    subscriber_lock: Mutex<()>,
-    // A subscriber descriptor allocator.
-    sd_allocator: AtomicU32,
-    // A map from subscriber descriptor to subscriber entry.
-    sd_map: RwLock<HashMap<u32, SubscriberEntry>>,
+    // Lock to serialize watch updates and removals.
+    watch_lock: Mutex<()>,
+    // Next watch descriptor to allocate.
+    next_wd: AtomicU32,
+    // A map from watch descriptor to subscriber entry.
+    watch_map: RwLock<HashMap<u32, SubscriberEntry>>,
     // Whether the file is opened in non-blocking mode.
     is_nonblocking: AtomicBool,
     // Bounded queue of inotify events.
-    notifications: RwLock<VecDeque<InotifyEvent>>,
-    // Maximum number of queued events.
-    queue_limit: usize,
+    event_queue: RwLock<VecDeque<InotifyEvent>>,
+    // Maximum capacity of the event queue.
+    queue_capacity: usize,
     // A weak reference to this inotify file.
     this: Weak<InotifyFile>,
     // A pollable object for this inotify file.
@@ -61,14 +62,17 @@ impl Drop for InotifyFile {
     /// Clean up all subscribers when the inotify file is dropped.
     /// This will remove all subscribers from their inodes.
     fn drop(&mut self) {
-        let sd_map = self.sd_map.write();
-        for (_, entry) in sd_map.iter() {
+        let watch_map = self.watch_map.write();
+        for (_, entry) in watch_map.iter() {
             // The weak refs may have already been dropped by concurrent activity.
             // If so, skip them rather than unwrapping.
             if let (Some(inode), Some(subscriber)) =
                 (entry.inode.upgrade(), entry.subscriber.upgrade())
             {
+                // Remove the subscriber from the inode's publisher.
                 inode.fsnotify_publisher().remove_subscriber(&subscriber);
+                // Remove the subscriber from the file system's fsnotify info.
+                inode.fs().fsnotify_info().remove_subscriber();
             }
         }
     }
@@ -76,92 +80,70 @@ impl Drop for InotifyFile {
 
 /// Default max queued events.
 ///
-/// Reference: <https://elixir.bootlin.com/linux/v6.14/source/fs/notify/inotify/inotify_user.c#L83>
-const DEFAULT_MAX_QUEUED_EVENTS: usize = i32::MAX as usize;
+/// Reference: <https://elixir.bootlin.com/linux/v6.14/source/fs/notify/inotify/inotify_user.c#L853>
+const DEFAULT_MAX_QUEUED_EVENTS: usize = 16384;
 
 impl InotifyFile {
-    /// Create a new inotify file.
-    ///
-    /// The inotify file is used to watch the changes of the files.
+    /// Creates a new inotify file.
     pub fn new(is_nonblocking: bool) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
-            sd_allocator: AtomicU32::new(1),
-            sd_map: RwLock::new(HashMap::new()),
-            subscriber_lock: Mutex::new(()),
+            next_wd: AtomicU32::new(1),
+            watch_map: RwLock::new(HashMap::new()),
+            watch_lock: Mutex::new(()),
             is_nonblocking: AtomicBool::new(is_nonblocking),
-            notifications: RwLock::new(VecDeque::new()),
-            queue_limit: DEFAULT_MAX_QUEUED_EVENTS,
+            event_queue: RwLock::new(VecDeque::new()),
+            queue_capacity: DEFAULT_MAX_QUEUED_EVENTS,
             this: weak_self.clone(),
             pollee: Pollee::new(),
         })
     }
 
-    /// Allocate a new subscriber descriptor.
-    fn alloc_subscriber_id(&self) -> Result<u32> {
-        if self.sd_allocator.load(Ordering::Relaxed) == u32::MAX {
-            return_errno_with_message!(Errno::ENOSPC, "Inotify watches was reached limit");
+    /// Allocates a new watch descriptor.
+    fn alloc_wd(&self) -> Result<u32> {
+        const MAX_VALID_WD: u32 = i32::MAX as u32;
+
+        let new_wd = self.next_wd.fetch_add(1, Ordering::Relaxed);
+        if new_wd > MAX_VALID_WD {
+            // Rollback the allocation if we exceeded the limit
+            self.next_wd.fetch_sub(1, Ordering::Relaxed);
+            return_errno_with_message!(Errno::ENOSPC, "Inotify watches limit reached");
         }
-        Ok(self.sd_allocator.fetch_add(1, Ordering::Relaxed))
+        Ok(new_wd)
     }
 
-    /// Find the subscriber entry by subscriber descriptor.
-    fn find_subscriber_entry(&self, sd: u32) -> Option<SubscriberEntry> {
-        let sd_map = self.sd_map.read();
-        sd_map.get(&sd).cloned()
-    }
-
-    /// Remove the subscriber entry by subscriber descriptor.
-    fn remove_subscriber_entry(&self, sd: u32) {
-        let mut sd_map = self.sd_map.write();
-        sd_map.remove(&sd);
-    }
-
-    /// Add the subscriber entry by subscriber descriptor.
-    fn add_subscriber_entry(
-        &self,
-        sd: u32,
-        inode: Weak<dyn Inode>,
-        subscriber: Weak<dyn FsnotifySubscriber>,
-    ) {
-        let mut sd_map = self.sd_map.write();
-        sd_map.insert(sd, SubscriberEntry { inode, subscriber });
-    }
-
-    /// Update fsnotify subscriber.
+    /// Adds or updates a watch on a path.
     ///
-    /// If the subscriber is not found, create a new subscriber.
-    /// If the subscriber is found, update the subscriber.
-    pub fn update_subscriber(
+    /// If a watch on the path is not found, creates a new watch.
+    /// If a watch on the path is found, updates it.
+    pub fn add_watch(
         &self,
         path: &Path,
         interesting: InotifyEvents,
         options: InotifyControls,
     ) -> Result<u32> {
-        // Serialize updates so concurrent callers do not create duplicate subscribers.
-        let _guard = self.subscriber_lock.lock();
-        // try to update subscriber with the new arg.
-        let ret = self.update_existing_subscriber(path, interesting, options);
-        match ret {
-            Ok(sd) => Ok(sd),
-            Err(e) => {
-                if e.error() == Errno::ENOENT {
-                    // if the subscriber is not found, create a new subscriber.
-                    let sd = self.create_new_subscriber(path, interesting, options)?;
-                    Ok(sd)
-                } else {
-                    Err(e)
-                }
+        // Serialize updates so concurrent callers do not create duplicate watches.
+        let _guard = self.watch_lock.lock();
+
+        // Try to update existing subscriber first
+        match self.update_existing_subscriber(path, interesting, options) {
+            Ok(wd) => Ok(wd),
+            Err(e) if e.error() == Errno::ENOENT => {
+                // Subscriber not found, create a new one
+                self.create_new_subscriber(path, interesting, options)
             }
+            Err(e) => Err(e),
         }
     }
 
-    /// Remove fsnotify subscriber by subscriber descriptor.
-    pub fn remove_subscriber(&self, sd: u32) -> Result<()> {
-        let _guard = self.subscriber_lock.lock();
-        // find the subscriber entry by the subscriber descriptor.
-        let Some(entry) = self.find_subscriber_entry(sd) else {
+    /// Removes a watch by watch descriptor.
+    pub fn remove_watch(&self, wd: u32) -> Result<()> {
+        let _guard = self.watch_lock.lock();
+
+        // Find the subscriber entry by the watch descriptor.
+        let Some(entry) = self.watch_map.read().get(&wd).cloned() else {
             return_errno_with_message!(Errno::EINVAL, "watch not found");
         };
+
         // When concurrent removal happens, the weak refs may have already been dropped.
         // Try to upgrade the weak refs; if either side is gone, treat as
         // already-removed and return EINVAL after cleaning mapping.
@@ -170,28 +152,20 @@ impl InotifyFile {
             _ => {
                 // Weak pointers could not be upgraded; remove stale mapping
                 // and return EINVAL to the caller (watch considered gone).
-                self.remove_subscriber_entry(sd);
+                self.watch_map.write().remove(&wd);
                 return_errno_with_message!(Errno::EINVAL, "watch not found");
             }
-        };
-        // Send the IN_IGNORED event before unlinking the subscriber so the
-        // inotify file definitely queues the notification.
-        let deliver_result = if let Some(inotify_subscriber) =
-            (subscriber.as_ref() as &dyn Any).downcast_ref::<InotifySubscriber>()
-        {
-            inotify_subscriber.deliver_event(FsnotifyEvents::IN_IGNORED, None)
-        } else {
-            Ok(())
         };
 
         // Remove the subscriber from the inode's publisher and internal map.
         inode.fsnotify_publisher().remove_subscriber(&subscriber);
-        self.remove_subscriber_entry(sd);
-
-        deliver_result
+        // Remove the subscriber from the file system's fsnotify info.
+        inode.fs().fsnotify_info().remove_subscriber();
+        self.watch_map.write().remove(&wd);
+        Ok(())
     }
 
-    /// Update existing fsnotify subscriber.
+    /// Updates an existing fsnotify subscriber.
     fn update_existing_subscriber(
         &self,
         path: &Path,
@@ -199,19 +173,32 @@ impl InotifyFile {
         options: InotifyControls,
     ) -> Result<u32> {
         let publisher = path.inode().fsnotify_publisher();
-        if let Some(subscriber) = publisher.find_inotify_subscriber(&self.this()) {
-            if options.contains(InotifyControls::MASK_CREATE) {
-                return_errno_with_message!(Errno::EEXIST, "watch already exists");
+        let inotify_file = self.this();
+
+        let result = publisher.find_subscriber_and_process(|subscriber| {
+            // Try to downcast to InotifySubscriber and check if it belongs to this InotifyFile.
+            let inotify_subscriber =
+                (subscriber.as_ref() as &dyn Any).downcast_ref::<InotifySubscriber>()?;
+
+            if Arc::ptr_eq(&inotify_subscriber.inotify_file(), &inotify_file) {
+                // Found the matching subscriber, perform the update in place.
+                Some(inotify_subscriber.update(interesting, options))
+            } else {
+                None
             }
-            let inotify_subscriber = (subscriber.as_ref() as &dyn Any)
-                .downcast_ref::<InotifySubscriber>()
-                .ok_or(Error::with_message(Errno::EINVAL, "invalid subscriber"))?;
-            return inotify_subscriber.update(interesting, options);
+        });
+
+        if let Some(result) = result {
+            // Notify publisher to recalculate aggregated events after subscriber update.
+            publisher.update_subscriber_events();
+            return result;
         }
+
+        // If the subscriber is not found, return ENOENT.
         return_errno_with_message!(Errno::ENOENT, "watch not found");
     }
 
-    /// Create a new fsnotify subscriber and activate it.
+    /// Creates a new fsnotify subscriber and activates it.
     fn create_new_subscriber(
         &self,
         path: &Path,
@@ -224,70 +211,77 @@ impl InotifyFile {
         path.inode()
             .fsnotify_publisher()
             .add_subscriber(subscriber.clone());
-        // Store the mapping between subscriber descriptor and subscriber entry.
-        let sd = inotify_subscriber.sd();
-        self.add_subscriber_entry(
-            sd,
-            Arc::downgrade(path.inode()),
-            Arc::downgrade(&subscriber),
+
+        // Store the mapping between watch descriptor and subscriber entry.
+        let wd = inotify_subscriber.wd();
+        self.watch_map.write().insert(
+            wd,
+            SubscriberEntry {
+                inode: Arc::downgrade(path.inode()),
+                subscriber: Arc::downgrade(&subscriber),
+            },
         );
-        Ok(sd)
+
+        // Add the subscriber to the file system's fsnotify info.
+        path.inode().fs().fsnotify_info().add_subscriber();
+        Ok(wd)
     }
 
-    /// Send inotify event to the inotify file.
+    /// Sends an inotify event to the inotify file.
     /// The event will be queued and can be read by users.
-    /// If the event can be merged with the last event, it will be merged.
-    /// The event is only sent if the subscriber is interested in the event.
+    /// If the event can be merged with the last event in the queue, it will be merged.
+    /// The event is only queued if it matches one of the subscriber's interested events.
     fn receive_event(
         &self,
         subscriber: &InotifySubscriber,
         event: FsnotifyEvents,
         name: Option<String>,
-    ) -> Result<()> {
-        let sd = subscriber.sd();
+    ) {
+        let wd = subscriber.wd();
         let interesting = subscriber.interesting();
         if !event.contains(FsnotifyEvents::IN_IGNORED) && !event_is_interested(event, interesting) {
-            return Ok(());
+            return;
         }
 
-        let new_event = InotifyEvent::new(sd, event, 0, name);
+        let new_event = InotifyEvent::new(wd, event, 0, name);
 
-        let mut notifications = self.notifications.write();
-        if let Some(last_event) = notifications.back() {
+        let mut event_queue = self.event_queue.write();
+        if let Some(last_event) = event_queue.back() {
             if can_merge_events(last_event, &new_event) {
-                notifications.pop_back();
-                notifications.push_back(new_event);
-                drop(notifications);
+                event_queue.pop_back();
+                event_queue.push_back(new_event);
+                drop(event_queue);
                 self.pollee.notify(IoEvents::IN);
-                return Ok(());
+                return;
             }
         }
 
-        if notifications.len() >= self.queue_limit {
-            return_errno_with_message!(Errno::ENOSPC, "inotify event queue is full");
+        // If the queue is full, drop the event.
+        // We do not return an error to the caller.
+        if event_queue.len() >= self.queue_capacity {
+            return;
         }
 
-        notifications.push_back(new_event);
-        drop(notifications);
+        event_queue.push_back(new_event);
+        drop(event_queue);
         // New or merged event makes the file readable
         self.pollee.notify(IoEvents::IN);
-        Ok(())
     }
 
-    /// Pop an event from the notification queue.
+    /// Pops an event from the notification queue.
     fn pop_event(&self) -> Option<InotifyEvent> {
-        let mut notifications = self.notifications.write();
-        notifications.pop_front()
+        let mut event_queue = self.event_queue.write();
+        event_queue.pop_front()
     }
 
-    /// Get the total size of all events in the notification queue.
+    /// Gets the total size of all events in the notification queue.
     fn get_all_event_size(&self) -> usize {
-        let guard = self.notifications.read();
+        let guard = self.event_queue.read();
 
         guard.iter().map(|event| event.get_size()).sum()
     }
 
-    /// Try to read events from the notification queue.
+    /// Tries to read events from the notification queue.
     fn try_read(&self, writer: &mut VmWriter) -> Result<usize> {
         let mut size = 0;
         let mut consumed_events = 0;
@@ -299,7 +293,7 @@ impl InotifyFile {
                     consumed_events += 1;
                 }
                 Err(e) => {
-                    self.notifications.write().push_front(event);
+                    self.event_queue.write().push_front(event);
                     if consumed_events == 0 {
                         return Err(e);
                     }
@@ -312,7 +306,11 @@ impl InotifyFile {
             return_errno_with_message!(Errno::EAGAIN, "no inotify events available");
         }
 
-        self.pollee.invalidate();
+        // Only invalidate if the queue is empty after reading
+        let queue_empty = self.event_queue.read().is_empty();
+        if queue_empty {
+            self.pollee.invalidate();
+        }
         Ok(size)
     }
 
@@ -324,7 +322,7 @@ impl InotifyFile {
 impl Pollable for InotifyFile {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         self.pollee.poll_with(mask, poller, || {
-            if self.get_all_event_size() > 0 {
+            if !self.event_queue.read().is_empty() {
                 IoEvents::IN
             } else {
                 IoEvents::empty()
@@ -335,7 +333,7 @@ impl Pollable for InotifyFile {
 
 impl FileLike for InotifyFile {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        if self.is_nonblocking.load(Ordering::SeqCst) {
+        if self.is_nonblocking.load(Ordering::Relaxed) {
             self.try_read(writer)
         } else {
             self.wait_events(IoEvents::IN, None, || self.try_read(writer))
@@ -346,25 +344,16 @@ impl FileLike for InotifyFile {
         match cmd {
             IoctlCmd::FIONREAD => {
                 let size = self.get_all_event_size();
-                current_userspace!().write_val(arg, &size)?;
+                let size_addr = arg;
+                current_userspace!().write_val(size_addr, &size)?;
                 Ok(0)
             }
             _ => return_errno_with_message!(Errno::EINVAL, "ioctl is not supported"),
         }
     }
 
-    fn metadata(&self) -> Metadata {
-        // This is a dummy implementation.
-        // TODO: Add "anonymous inode fs" and link `InotifyFile` to it.
-        Metadata::new_file(
-            0,
-            InodeMode::from_bits_truncate(0o600),
-            aster_block::BLOCK_SIZE,
-        )
-    }
-
     fn status_flags(&self) -> StatusFlags {
-        if self.is_nonblocking.load(Ordering::SeqCst) {
+        if self.is_nonblocking.load(Ordering::Relaxed) {
             StatusFlags::O_NONBLOCK
         } else {
             StatusFlags::empty()
@@ -374,7 +363,7 @@ impl FileLike for InotifyFile {
     fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
         self.is_nonblocking.store(
             new_flags.contains(StatusFlags::O_NONBLOCK),
-            Ordering::SeqCst,
+            Ordering::Relaxed,
         );
         Ok(())
     }
@@ -382,48 +371,53 @@ impl FileLike for InotifyFile {
     fn access_mode(&self) -> AccessMode {
         AccessMode::O_RDONLY
     }
+
+    fn inode(&self) -> &Arc<dyn Inode> {
+        anon_inodefs_shared_inode()
+    }
 }
 
-/// Check if the event type is mergeable.
+/// Checks if the event type is mergeable.
 fn is_mergeable_event_type(event: FsnotifyEvents) -> bool {
     event & (FsnotifyEvents::MODIFY | FsnotifyEvents::ATTRIB | FsnotifyEvents::ACCESS)
         != FsnotifyEvents::empty()
 }
 
-/// Check if two inotify events can be merged.
+/// Checks if two inotify events can be merged.
 fn can_merge_events(existing: &InotifyEvent, new_event: &InotifyEvent) -> bool {
-    existing.sd == new_event.sd
+    existing.wd == new_event.wd
         && existing.name == new_event.name
         && existing.event == new_event.event
         && is_mergeable_event_type(new_event.event)
 }
 
 /// Inotify subscriber is used to represent a watch on a file or directory.
-/// In inotify implementation, watch is equivalent to subscriber.
-/// interesting is the event that the subscriber is interested in.
-/// options is the control options for the subscriber.
-/// Both interesting and options are stored in a single AtomicU64 for atomic updates.
+/// In the inotify implementation, a watch is equivalent to a subscriber.
+/// The `interesting` field represents the set of events that the subscriber wants to monitor.
+/// The `options` field represents the control options for the subscriber.
+/// Both `interesting` and `options` are stored in a single AtomicU64 for atomic updates.
 pub struct InotifySubscriber {
     // interesting events and control options.
     interesting_and_controls: AtomicU64,
-    // subscriber descriptor.
-    sd: u32,
+    // Watch descriptor.
+    wd: u32,
     // reference to the owning inotify file.
     inotify_file: Arc<InotifyFile>,
 }
 
 impl InotifySubscriber {
-    /// Create a new InotifySubscriber with initial interesting events and options.
-    /// The interesting_and_controls is packed into a u64: high 32 bits for options, low 32 bits for interesting.
+    /// Creates a new InotifySubscriber with initial interesting events and options.
+    /// The `interesting_and_controls` field is packed into a u64: the high 32 bits store options,
+    /// and the low 32 bits store interesting events.
     pub fn new(
         inotify_file: Arc<InotifyFile>,
         interesting: InotifyEvents,
         options: InotifyControls,
     ) -> Result<Arc<Self>> {
-        let sd = inotify_file.alloc_subscriber_id()?;
+        let wd = inotify_file.alloc_wd()?;
         let this = Arc::new(Self {
             interesting_and_controls: AtomicU64::new(0),
-            sd,
+            wd,
             inotify_file,
         });
         // Initialize the interesting_and_controls atomically
@@ -431,17 +425,17 @@ impl InotifySubscriber {
         Ok(this)
     }
 
-    pub fn sd(&self) -> u32 {
-        self.sd
+    pub fn wd(&self) -> u32 {
+        self.wd
     }
 
     fn interesting(&self) -> InotifyEvents {
-        let flags = self.interesting_and_controls.load(Ordering::SeqCst);
+        let flags = self.interesting_and_controls.load(Ordering::Relaxed);
         InotifyEvents::from_bits_truncate((flags & 0xFFFFFFFF) as u32)
     }
 
     fn options(&self) -> InotifyControls {
-        let flags = self.interesting_and_controls.load(Ordering::SeqCst);
+        let flags = self.interesting_and_controls.load(Ordering::Relaxed);
         InotifyControls::from_bits_truncate((flags >> 32) as u32)
     }
 
@@ -449,7 +443,7 @@ impl InotifySubscriber {
         self.inotify_file.clone()
     }
 
-    /// Update the interesting events and options atomically using CAS loop.
+    /// Updates the interesting events and options atomically using a CAS (Compare-And-Swap) loop.
     fn update(&self, interesting: InotifyEvents, options: InotifyControls) -> Result<u32> {
         if options.contains(InotifyControls::MASK_CREATE) {
             return_errno_with_message!(Errno::EEXIST, "watch already exists");
@@ -465,46 +459,44 @@ impl InotifySubscriber {
         merged_options.remove(InotifyControls::MASK_ADD);
 
         self.update_interesting_and_controls(merged_interesting.bits(), merged_options.bits());
-        Ok(self.sd())
+        Ok(self.wd())
     }
 
-    /// Atomically update the interesting events and options using a CAS loop to ensure consistency.
+    /// Atomically updates the interesting events and options using a CAS loop to ensure consistency.
     fn update_interesting_and_controls(&self, new_interesting: u32, new_options: u32) {
         let new_flags = ((new_options as u64) << 32) | (new_interesting as u64);
-        loop {
-            let old_flags = self.interesting_and_controls.load(Ordering::SeqCst);
-            if self
-                .interesting_and_controls
-                .compare_exchange(old_flags, new_flags, Ordering::SeqCst, Ordering::SeqCst)
-                .is_ok()
-            {
-                break;
-            }
-        }
+        self.interesting_and_controls
+            .store(new_flags, Ordering::Relaxed);
     }
 }
 
 impl FsnotifySubscriber for InotifySubscriber {
-    /// Send fsnotify event to the inotify file.
-    fn deliver_event(&self, event: FsnotifyEvents, name: Option<String>) -> Result<()> {
+    /// Sends fsnotify events to the inotify file.
+    fn deliver_event(&self, event: FsnotifyEvents, name: Option<String>) {
         let inotify_file = self.inotify_file();
-        inotify_file.receive_event(self, event, name)?;
-        Ok(())
+        inotify_file.receive_event(self, event, name);
+    }
+
+    /// Returns the events that this subscriber is interested in.
+    fn interested_events(&self) -> FsnotifyEvents {
+        // Convert InotifyEvents to FsnotifyEvents
+        let inotify_events = self.interesting();
+        FsnotifyEvents::from_bits_truncate(inotify_events.bits())
     }
 }
 
 /// An inotify event structure.
 struct InotifyEvent {
-    sd: u32,
+    wd: u32,
     event: FsnotifyEvents,
     cookie: u32,
     name: Option<String>,
 }
 
 impl InotifyEvent {
-    fn new(sd: u32, event: FsnotifyEvents, cookie: u32, name: Option<String>) -> Self {
+    fn new(wd: u32, event: FsnotifyEvents, cookie: u32, name: Option<String>) -> Self {
         Self {
-            sd,
+            wd,
             event,
             cookie,
             name,
@@ -519,7 +511,7 @@ impl InotifyEvent {
         let name_len = self.name.as_ref().map_or(0, |name| (name.len() + 1) as u32);
 
         // Write the event header
-        writer.write_val(&self.sd)?;
+        writer.write_val(&self.wd)?;
         writer.write_val(&self.event.bits())?;
         writer.write_val(&self.cookie)?;
         writer.write_val(&name_len)?;
@@ -542,7 +534,7 @@ impl InotifyEvent {
 }
 
 bitflags! {
-    /// InotifyEvents represents the events that the subscriber is interested in.
+    /// InotifyEvents represents the set of events that a subscriber wants to monitor.
     /// These events are used to filter notifications sent to the subscriber.
     pub struct InotifyEvents: u32 {
         const ACCESS        = 1 << 0;  // File was accessed
@@ -581,7 +573,7 @@ bitflags! {
     }
 }
 
-/// Check if the event is of interest to the subscriber.
+/// Checks if the event matches the subscriber's interested events.
 fn event_is_interested(event: FsnotifyEvents, interesting: InotifyEvents) -> bool {
     event.bits() & interesting.bits() != 0
 }

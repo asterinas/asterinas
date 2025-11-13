@@ -26,9 +26,9 @@ use crate::{
         registry::{FsProperties, FsType},
         utils::{
             mkmod, AccessMode, CStr256, CachePage, DirentVisitor, Extension, FallocMode,
-            FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd, Metadata, MknodType,
-            PageCache, PageCacheBackend, Permission, StatusFlags, SuperBlock, SymbolicLink,
-            XattrName, XattrNamespace, XattrSetFlags,
+            FileSystem, FsFlags, FsnotifyInfo, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
+            MknodType, PageCache, PageCacheBackend, Permission, StatusFlags, SuperBlock,
+            SymbolicLink, XattrName, XattrNamespace, XattrSetFlags,
         },
     },
     prelude::*,
@@ -45,6 +45,8 @@ pub struct RamFs {
     root: Arc<RamInode>,
     /// An inode allocator
     inode_allocator: AtomicU64,
+    /// Fsnotify info for this file system
+    fsnotify_info: FsnotifyInfo,
 }
 
 impl RamFs {
@@ -67,6 +69,7 @@ impl RamFs {
                 fsnotify_publisher: FsnotifyPublisher::new(),
             }),
             inode_allocator: AtomicU64::new(ROOT_INO + 1),
+            fsnotify_info: FsnotifyInfo::new(),
         })
     }
 
@@ -91,6 +94,10 @@ impl FileSystem for RamFs {
 
     fn sb(&self) -> SuperBlock {
         self.sb.clone()
+    }
+
+    fn fsnotify_info(&self) -> &FsnotifyInfo {
+        &self.fsnotify_info
     }
 }
 
@@ -555,10 +562,6 @@ impl Inode for RamInode {
         self.inner
             .as_file()
             .map(|page_cache| page_cache.pages().clone())
-    }
-
-    fn hard_links(&self) -> u16 {
-        self.metadata.lock().nlinks as u16
     }
 
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {

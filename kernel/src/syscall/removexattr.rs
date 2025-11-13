@@ -55,6 +55,6 @@ fn removexattr(
 
     let path = lookup_path_for_xattr(&file_ctx, ctx)?;
     path.remove_xattr(xattr_name)?;
-    fs::notify::on_attr_change(&path)?;
+    fs::notify::on_attr_change(&path);
     Ok(())
 }

@@ -13,12 +13,12 @@ use super::utils::MknodType;
 use crate::{
     device::PtyMaster,
     fs::{
-        device::{Device, DeviceId, DeviceType},
+        device::{Device, DeviceType},
         notify::FsnotifyPublisher,
         registry::{FsProperties, FsType},
         utils::{
-            mkmod, DirEntryVecExt, DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType,
-            IoctlCmd, Metadata, SuperBlock, NAME_MAX,
+            mkmod, DirEntryVecExt, DirentVisitor, FileSystem, FsFlags, FsnotifyInfo, Inode,
+            InodeMode, InodeType, IoctlCmd, Metadata, SuperBlock, NAME_MAX,
         },
     },
     prelude::*,
@@ -48,6 +48,7 @@ pub struct DevPts {
     sb: SuperBlock,
     root: Arc<RootInode>,
     index_alloc: Mutex<IdAlloc>,
+    fsnotify_info: FsnotifyInfo,
     this: Weak<Self>,
 }
 
@@ -57,6 +58,7 @@ impl DevPts {
             sb: SuperBlock::new(DEVPTS_MAGIC, BLOCK_SIZE, NAME_MAX),
             root: RootInode::new(weak_self.clone()),
             index_alloc: Mutex::new(IdAlloc::with_capacity(MAX_PTY_NUM)),
+            fsnotify_info: FsnotifyInfo::new(),
             this: weak_self.clone(),
         })
     }
@@ -109,6 +111,10 @@ impl FileSystem for DevPts {
 
     fn sb(&self) -> SuperBlock {
         self.sb.clone()
+    }
+
+    fn fsnotify_info(&self) -> &FsnotifyInfo {
+        &self.fsnotify_info
     }
 }
 
@@ -330,10 +336,5 @@ impl Inode for RootInode {
 
     fn fsnotify_publisher(&self) -> &FsnotifyPublisher {
         &self.fsnotify_publisher
-    }
-
-    // devpts is not supported link and unlink, so the hard link count is dummy
-    fn hard_links(&self) -> u16 {
-        0
     }
 }

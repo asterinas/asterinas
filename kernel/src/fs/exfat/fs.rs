@@ -26,7 +26,10 @@ use crate::{
     fs::{
         exfat::{constants::*, inode::Ino},
         registry::{FsProperties, FsType},
-        utils::{CachePage, FileSystem, FsFlags, Inode, PageCache, PageCacheBackend, SuperBlock},
+        utils::{
+            CachePage, FileSystem, FsFlags, FsnotifyInfo, Inode, PageCache, PageCacheBackend,
+            SuperBlock,
+        },
     },
     prelude::*,
 };
@@ -53,6 +56,8 @@ pub struct ExfatFs {
 
     //A global lock, We need to hold the mutex before accessing bitmap or inode, otherwise there will be deadlocks.
     mutex: Mutex<()>,
+
+    fsnotify_info: FsnotifyInfo,
 }
 
 const FAT_LRU_CACHE_SIZE: usize = 1024;
@@ -80,6 +85,7 @@ impl ExfatFs {
             )),
             meta_cache: PageCache::with_capacity(fs_size, weak_self.clone() as _).unwrap(),
             mutex: Mutex::new(()),
+            fsnotify_info: FsnotifyInfo::new(),
         });
 
         // TODO: if the main superblock is corrupted, should we load the backup?
@@ -416,6 +422,10 @@ impl FileSystem for ExfatFs {
 
     fn sb(&self) -> SuperBlock {
         SuperBlock::new(BOOT_SIGNATURE as u64, self.sector_size(), MAX_NAME_LENGTH)
+    }
+
+    fn fsnotify_info(&self) -> &FsnotifyInfo {
+        &self.fsnotify_info
     }
 }
 

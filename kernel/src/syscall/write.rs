@@ -38,12 +38,8 @@ pub fn sys_write(
         _ => err,
     })?;
 
-    // Some file is not supported dentry, such as epoll file,
-    // TODO: Add anonymous inode support.
-    if let Some(path) = file.path()
-        && write_len > 0
-    {
-        fs::notify::on_modify(path)?;
+    if write_len > 0 {
+        fs::notify::on_modify(&file);
     }
     Ok(SyscallReturn::Return(write_len as _))
 }

@@ -91,7 +91,7 @@ pub fn sys_inotify_add_watch(
         return_errno_with_message!(Errno::ENOTDIR, "path is not a directory");
     }
 
-    let wd = inotify_file.update_subscriber(&dentry, interesting, options)?;
+    let wd = inotify_file.add_watch(&dentry, interesting, options)?;
     Ok(SyscallReturn::Return(wd as _))
 }
 
@@ -104,7 +104,7 @@ pub fn sys_inotify_rm_watch(fd: FileDesc, wd: u32, ctx: &Context) -> Result<Sysc
         Some(inotify_file) => inotify_file,
         None => return_errno_with_message!(Errno::EINVAL, "file is not an inotify file"),
     };
-    inotify_file.remove_subscriber(wd)?;
+    inotify_file.remove_watch(wd)?;
     Ok(SyscallReturn::Return(0))
 }
 

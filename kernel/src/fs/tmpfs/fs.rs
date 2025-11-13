@@ -4,7 +4,7 @@ use crate::{
     fs::{
         ramfs::RamFs,
         registry::{FsProperties, FsType},
-        utils::{FileSystem, FsFlags, Inode, SuperBlock},
+        utils::{FileSystem, FsFlags, FsnotifyInfo, Inode, SuperBlock},
     },
     prelude::*,
 };
@@ -42,6 +42,10 @@ impl FileSystem for TmpFs {
 
     fn sb(&self) -> SuperBlock {
         self.inner.sb()
+    }
+
+    fn fsnotify_info(&self) -> &FsnotifyInfo {
+        self.inner.fsnotify_info()
     }
 }
 

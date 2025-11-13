@@ -94,10 +94,6 @@ impl Inode for Ext2Inode {
         Some(self.page_cache())
     }
 
-    fn hard_links(&self) -> u16 {
-        self.hard_links()
-    }
-
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         self.read_at(offset, writer)
     }

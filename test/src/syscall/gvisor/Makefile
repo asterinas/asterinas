@@ -6,6 +6,18 @@
 #
 # Please keep the list sorted by name.
 TESTS ?= \
+	access_test \
+	chown_test \
+	creat_test \
+	dup_test \
+	epoll_test \
+	eventfd_test \
+	fallocate_test \
+	fcntl_test \
+	flock_test \
+	fsync_test \
+	futex_test \
+	getdents_test \
 	inotify_test \
 	ioctl_test \
 	link_test \

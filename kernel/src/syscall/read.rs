@@ -38,12 +38,8 @@ pub fn sys_read(
         _ => err,
     })?;
 
-    // Some file is not supported dentry, such as epoll file,
-    // TODO: Add anonymous inode support.
-    if let Some(path) = file.path()
-        && read_len > 0
-    {
-        fs::notify::on_access(path)?;
+    if read_len > 0 {
+        fs::notify::on_access(&file);
     }
     Ok(SyscallReturn::Return(read_len as _))
 }

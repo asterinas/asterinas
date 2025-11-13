@@ -27,7 +27,7 @@ pub fn sys_close(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
         file_table_locked.close_file(fd).unwrap()
     };
 
-    fs::notify::on_close(file.clone())?;
+    fs::notify::on_close(&file);
 
     // Cleanup work needs to be done in the `Drop` impl.
     //

@@ -26,8 +26,9 @@ use crate::{
         registry::{FsProperties, FsType},
         utils::{
             mkmod, AccessMode, DirentCounter, DirentVisitor, FallocMode, FileSystem, FsFlags,
-            Inode, InodeMode, InodeType, IoctlCmd, Metadata, MknodType, StatusFlags, SuperBlock,
-            SymbolicLink, XattrName, XattrNamespace, XattrSetFlags, NAME_MAX, XATTR_VALUE_MAX_LEN,
+            FsnotifyInfo, Inode, InodeMode, InodeType, IoctlCmd, Metadata, MknodType, StatusFlags,
+            SuperBlock, SymbolicLink, XattrName, XattrNamespace, XattrSetFlags, NAME_MAX,
+            XATTR_VALUE_MAX_LEN,
         },
     },
     prelude::*,
@@ -53,6 +54,8 @@ pub struct OverlayFs {
     sb: OverlaySB,
     /// Unique inode number generator.
     next_ino: AtomicU64,
+    /// Fsnotify info for this file system.
+    fsnotify_info: FsnotifyInfo,
     /// Weak self reference.
     self_: Weak<OverlayFs>,
 }
@@ -129,6 +132,7 @@ impl OverlayFs {
             config: OverlayConfig::default(),
             sb: OverlaySB,
             next_ino: AtomicU64::new(0),
+            fsnotify_info: FsnotifyInfo::new(),
             self_: weak.clone(),
         }))
     }
@@ -193,6 +197,10 @@ impl FileSystem for OverlayFs {
     fn sb(&self) -> SuperBlock {
         // TODO: Fill the super block with valid field values.
         SuperBlock::new(OVERLAY_FS_MAGIC, BLOCK_SIZE, NAME_MAX)
+    }
+
+    fn fsnotify_info(&self) -> &FsnotifyInfo {
+        &self.fsnotify_info
     }
 }
 

@@ -34,11 +34,7 @@ pub fn sys_fallocate(
     )?;
     file.fallocate(falloc_mode, offset as usize, len as usize)?;
 
-    // Some file is not supported dentry, such as epoll file,
-    // TODO: Add anonymous inode support.
-    if let Some(path) = file.path() {
-        fs::notify::on_modify(path)?;
-    }
+    fs::notify::on_modify(&file);
     Ok(SyscallReturn::Return(0))
 }
 

@@ -35,7 +35,7 @@ pub fn sys_getdents(
     let read_len = reader.read_len();
     ctx.user_space()
         .write_bytes(buf_addr, &mut VmReader::from(&buffer[..read_len]))?;
-    fs::notify::on_access(inode_handle.path())?;
+    fs::notify::on_access(&file);
     Ok(SyscallReturn::Return(read_len as _))
 }
 
@@ -62,7 +62,7 @@ pub fn sys_getdents64(
     let read_len = reader.read_len();
     ctx.user_space()
         .write_bytes(buf_addr, &mut VmReader::from(&buffer[..read_len]))?;
-    fs::notify::on_access(inode_handle.path())?;
+    fs::notify::on_access(&file);
     Ok(SyscallReturn::Return(read_len as _))
 }
 

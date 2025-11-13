@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::AtomicU32;
+use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 
@@ -103,6 +103,37 @@ define_atomic_version_of_integer_like_type!(FsFlags, {
     pub struct AtomicFsFlags(AtomicU32);
 });
 
+#[derive(Debug)]
+pub struct FsnotifyInfo {
+    // The number of subscribers to this file system.
+    num_subscribers: AtomicUsize,
+}
+
+impl FsnotifyInfo {
+    pub fn new() -> Self {
+        Self {
+            num_subscribers: AtomicUsize::new(0),
+        }
+    }
+
+    pub fn add_subscriber(&self) {
+        self.num_subscribers.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn remove_subscriber(&self) {
+        self.num_subscribers.fetch_sub(1, Ordering::Relaxed);
+    }
+
+    pub fn remove_subscribers(&self, num_subscribers: usize) {
+        self.num_subscribers
+            .fetch_sub(num_subscribers, Ordering::Relaxed);
+    }
+
+    pub fn is_subscribed(&self) -> bool {
+        self.num_subscribers.load(Ordering::Relaxed) != 0
+    }
+}
+
 pub trait FileSystem: Any + Sync + Send {
     /// Gets the name of this FS type such as `"ext4"` or `"sysfs"`.
     fn name(&self) -> &'static str;
@@ -129,6 +160,9 @@ pub trait FileSystem: Any + Sync + Send {
         warn!("setting file system flags is not implemented");
         Ok(())
     }
+
+    /// Returns the fsnotify info of this file system.
+    fn fsnotify_info(&self) -> &FsnotifyInfo;
 }
 
 impl dyn FileSystem {
