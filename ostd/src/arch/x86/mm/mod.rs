@@ -7,7 +7,12 @@ use cfg_if::cfg_if;
 pub(crate) use util::{
     __atomic_cmpxchg_fallible, __atomic_load_fallible, __memcpy_fallible, __memset_fallible,
 };
-use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
+use x86_64::{
+    instructions::tlb,
+    registers::model_specific::{Efer, EferFlags},
+    structures::paging::PhysFrame,
+    VirtAddr,
+};
 
 use crate::{
     mm::{
@@ -18,7 +23,10 @@ use crate::{
     Pod,
 };
 
+mod pat;
 mod util;
+
+use self::pat::{cache_policy_to_flags, configure_pat, flags_to_cache_policy};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PagingConsts {}
@@ -138,7 +146,11 @@ pub(crate) unsafe fn activate_page_table(root_paddr: Paddr, root_pt_cache: Cache
         CachePolicy::Writeback => x86_64::registers::control::Cr3Flags::empty(),
         CachePolicy::Writethrough => x86_64::registers::control::Cr3Flags::PAGE_LEVEL_WRITETHROUGH,
         CachePolicy::Uncacheable => x86_64::registers::control::Cr3Flags::PAGE_LEVEL_CACHE_DISABLE,
-        _ => panic!("unsupported cache policy for the root page table"),
+        // Write-combining and write-protected are not supported for root page table (CR3)
+        // as CR3 only supports WB, WT, and UC via PCD/PWT bits
+        _ => {
+            panic!("unsupported cache policy for the root page table (only WB, WT, and UC are allowed)")
+        }
     };
 
     // SAFETY: The safety is upheld by the caller.
@@ -215,13 +227,8 @@ impl PageTableEntryTrait for PageTableEntry {
         #[cfg(feature = "cvm_guest")]
         let priv_flags =
             priv_flags | (parse_flags!(self.0, PageTableFlags::SHARED, PrivFlags::SHARED));
-        let cache = if self.0 & PageTableFlags::NO_CACHE.bits() != 0 {
-            CachePolicy::Uncacheable
-        } else if self.0 & PageTableFlags::WRITE_THROUGH.bits() != 0 {
-            CachePolicy::Writethrough
-        } else {
-            CachePolicy::Writeback
-        };
+        // Determine cache policy from PCD, PWT bits.
+        let cache = flags_to_cache_policy(PageTableFlags::from_bits_truncate(self.0));
         PageProperty {
             flags: PageFlags::from_bits(flags as u8).unwrap(),
             cache,
@@ -271,16 +278,7 @@ impl PageTableEntryTrait for PageTableEntry {
                 PageTableFlags::SHARED
             );
         }
-        match prop.cache {
-            CachePolicy::Writeback => {}
-            CachePolicy::Writethrough => {
-                flags |= PageTableFlags::WRITE_THROUGH.bits();
-            }
-            CachePolicy::Uncacheable => {
-                flags |= PageTableFlags::NO_CACHE.bits();
-            }
-            _ => panic!("unsupported cache policy"),
-        }
+        flags |= cache_policy_to_flags(prop.cache).bits();
         self.0 = self.0 & !Self::PROP_MASK | flags;
     }
 
@@ -301,5 +299,21 @@ impl fmt::Debug for PageTableEntry {
             )
             .field("prop", &self.prop())
             .finish()
+    }
+}
+
+/// Enables memory-management essential features for the x86 MMU.
+pub(super) fn enable_essential_features() {
+    // Page Attribute Table (PAT) has been available since Pentium III (1999)
+    // and is ubiquitous in modern 64-bit CPUs. Therefore, we assume that all
+    // x86-64 CPUs should have PAT support. Otherwise, we should check
+    // `cpu::extension::has_extensions(IsaExtensions::PAT)` before programming it.
+    configure_pat();
+
+    unsafe {
+        // Enable non-executable page protection.
+        Efer::update(|efer| {
+            *efer |= EferFlags::NO_EXECUTE_ENABLE;
+        });
     }
 }
