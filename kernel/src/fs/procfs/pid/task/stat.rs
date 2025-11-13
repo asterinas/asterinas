@@ -111,6 +111,8 @@ impl FileOps for StatFileOps {
                 SleepingState::Running => 'R',
                 SleepingState::Interruptible => 'S',
                 SleepingState::Uninterruptible => 'D',
+                SleepingState::StopBySignal => 'T',
+                SleepingState::StopByPtrace => 't',
             }
         };
         let ppid = process.parent().pid();
