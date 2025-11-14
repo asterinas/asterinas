@@ -11,6 +11,7 @@ mod io;
 pub(crate) mod iommu;
 pub mod irq;
 pub(crate) mod mm;
+pub mod poweroff;
 pub mod qemu;
 pub(crate) mod serial;
 pub(crate) mod task;
