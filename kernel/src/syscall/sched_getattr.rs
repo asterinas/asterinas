@@ -11,6 +11,7 @@ use crate::{
     process::posix_thread::thread_table,
     sched::{Nice, RealTimePolicy, SchedAttr, SchedPolicy},
     thread::Tid,
+    util::CopyCompat,
 };
 
 pub(super) const SCHED_NORMAL: u32 = 0;
@@ -146,39 +147,25 @@ pub(super) fn read_linux_sched_attr_from_user(
     let user_space = ctx.user_space();
 
     let raw_size = user_space.read_val::<u32>(addr)?;
-    let size = if raw_size == 0 {
+    let user_size = if raw_size == 0 {
         SCHED_ATTR_SIZE_VER0
     } else {
         raw_size
     };
-    if size < SCHED_ATTR_SIZE_VER0 || size > PAGE_SIZE as u32 {
+    if user_size < SCHED_ATTR_SIZE_VER0 || user_size > PAGE_SIZE as u32 {
         let _ = user_space.write_val(addr, &(size_of::<LinuxSchedAttr>() as u32));
         return_errno_with_message!(Errno::E2BIG, "invalid scheduling attribute size");
     }
 
-    let mut attr = LinuxSchedAttr {
-        size,
-        ..Default::default()
-    };
-
-    let mut reader = user_space.reader(addr, size as usize)?;
-    reader.skip(size_of::<u32>());
-    reader.read_fallible(&mut VmWriter::from(
-        &mut attr.as_bytes_mut()[size_of::<u32>()..],
-    ))?;
-
-    while reader.remain() > size_of::<u64>() {
-        if reader.read_val::<u64>()? != 0 {
-            let _ = user_space.write_val(addr, &(size_of::<LinuxSchedAttr>() as u32));
-            return_errno_with_message!(Errno::E2BIG, "incompatible scheduling attributes");
-        }
-    }
-    while reader.has_remain() {
-        if reader.read_val::<u8>()? != 0 {
-            let _ = user_space.write_val(addr, &(size_of::<LinuxSchedAttr>() as u32));
-            return_errno_with_message!(Errno::E2BIG, "incompatible scheduling attributes");
-        }
-    }
+    let mut attr = user_space
+        .read_val_compat::<LinuxSchedAttr>(addr, user_size as usize)
+        .inspect_err(|err| {
+            if err.error() == Errno::E2BIG {
+                let _ = user_space.write_val(addr, &(size_of::<LinuxSchedAttr>() as u32));
+            }
+        })?;
+    // If `attr.size` is modified concurrently, we should use the original size.
+    attr.size = user_size;
 
     // TODO: Check whether `sched_flags` is valid.
 
@@ -201,11 +188,9 @@ pub(super) fn write_linux_sched_attr_to_user(
     attr.sched_util_min = *range.start();
     attr.sched_util_max = *range.end();
 
-    let user_space = ctx.user_space();
-    user_space.write_bytes(
-        addr,
-        &mut VmReader::from(&attr.as_bytes()[..attr.size as usize]),
-    )?;
+    ctx.user_space()
+        .write_val_compat(addr, user_size as usize, &attr)?
+        .ignore_trailing();
 
     Ok(())
 }

@@ -17,6 +17,14 @@ static int sched_getattr(pid_t pid, struct sched_attr *attr, unsigned int size,
 	return syscall(SYS_sched_getattr, pid, attr, size, flags);
 }
 
+static int check_zero(char *buf, size_t off, size_t len)
+{
+	for (size_t i = off; i < len; ++i)
+		if (buf[i] != 0)
+			return -1;
+	return 0;
+}
+
 FN_TEST(sched_attr)
 {
 #define PAGE_SIZE 4096
@@ -26,7 +34,7 @@ FN_TEST(sched_attr)
 		char buf[sizeof(struct sched_attr) + TAIL_LEN];
 	} attr;
 
-	memset(attr.buf, 0, sizeof(attr.buf));
+	memset(attr.buf, 0xff, sizeof(attr.buf));
 
 	// Test `sched_getattr` with invalid sizes.
 	TEST_ERRNO(sched_getattr(0, &attr.sched, SCHED_ATTR_SIZE_VER0 - 1, 0),
@@ -38,6 +46,10 @@ FN_TEST(sched_attr)
 		   attr.sched.size == SCHED_ATTR_SIZE_VER1);
 	TEST_RES(sched_getattr(0, &attr.sched, sizeof(attr.sched), 0),
 		 attr.sched.size == SCHED_ATTR_SIZE_VER1);
+	TEST_RES(sched_getattr(0, &attr.sched, sizeof(attr.buf), 0),
+		 attr.sched.size == SCHED_ATTR_SIZE_VER1 &&
+			 check_zero(attr.buf, SCHED_ATTR_SIZE_VER1,
+				    sizeof(attr.buf)) == 0);
 
 	// Test `sched_setattr` with invalid sizes.
 	attr.sched.size = SCHED_ATTR_SIZE_VER0 - 1;
