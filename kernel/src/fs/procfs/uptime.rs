@@ -5,7 +5,7 @@
 //!
 //! Reference: <https://man7.org/linux/man-pages/man5/proc_uptime.5.html>
 
-use alloc::format;
+use aster_util::printer::VmPrinter;
 
 use crate::{
     fs::{
@@ -16,7 +16,7 @@ use crate::{
     time::cpu_time_stats::CpuTimeStatsManager,
 };
 
-/// Represents the inode at `/proc/uptime`.  
+/// Represents the inode at `/proc/uptime`.
 pub struct UptimeFileOps;
 
 impl UptimeFileOps {
@@ -30,7 +30,7 @@ impl UptimeFileOps {
             .unwrap()
     }
 
-    fn collect_uptime() -> String {
+    fn print_uptime(printer: &mut VmPrinter) -> Result<()> {
         let uptime = aster_time::read_monotonic_time().as_secs_f32();
 
         let cpustat = CpuTimeStatsManager::singleton();
@@ -40,13 +40,17 @@ impl UptimeFileOps {
             .as_duration()
             .as_secs_f32();
 
-        format!("{:.2} {:.2}\n", uptime, idle_time)
+        writeln!(printer, "{:.2} {:.2}", uptime, idle_time)?;
+        Ok(())
     }
 }
 
 impl FileOps for UptimeFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
-        let output = Self::collect_uptime();
-        Ok(output.into_bytes())
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
+        Self::print_uptime(&mut printer)?;
+
+        Ok(printer.bytes_written())
     }
 }

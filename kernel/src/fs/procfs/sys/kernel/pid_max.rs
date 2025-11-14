@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::format;
+use aster_util::printer::VmPrinter;
 
 use crate::{
     fs::{
@@ -25,9 +25,12 @@ impl PidMaxFileOps {
 }
 
 impl FileOps for PidMaxFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
-        let output = format!("{}\n", PID_MAX);
-        Ok(output.into_bytes())
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
+        writeln!(printer, "{}", PID_MAX)?;
+
+        Ok(printer.bytes_written())
     }
 
     fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::format;
+use aster_util::printer::VmPrinter;
 
 use crate::{
     fs::{
@@ -25,9 +25,12 @@ impl CapLastCapFileOps {
 }
 
 impl FileOps for CapLastCapFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
         let cap_last_cap_value = CapSet::most_significant_bit();
-        let output = format!("{}\n", cap_last_cap_value);
-        Ok(output.into_bytes())
+        writeln!(printer, "{}", cap_last_cap_value)?;
+
+        Ok(printer.bytes_written())
     }
 }

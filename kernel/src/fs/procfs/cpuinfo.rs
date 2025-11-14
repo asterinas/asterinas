@@ -5,6 +5,7 @@
 //!
 //! Reference: <https://man7.org/linux/man-pages/man5/proc_cpuinfo.5.html>
 
+use aster_util::printer::VmPrinter;
 use ostd::{
     cpu::{all_cpus, PinCurrentCpu},
     cpu_local,
@@ -37,12 +38,15 @@ impl CpuInfoFileOps {
 }
 
 impl FileOps for CpuInfoFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
-        let output = all_cpus()
-            .map(|cpu| CPU_INFORMATION.get_on_cpu(cpu).get().unwrap().to_string())
-            .collect::<Vec<String>>()
-            .join("\n");
-        Ok(output.into_bytes())
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
+        for cpu in all_cpus() {
+            let cpu_info = CPU_INFORMATION.get_on_cpu(cpu).get().unwrap().to_string();
+            writeln!(printer, "{}", cpu_info)?;
+        }
+
+        Ok(printer.bytes_written())
     }
 }
 

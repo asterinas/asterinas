@@ -5,7 +5,7 @@
 //!
 //! Reference: <https://www.man7.org/linux/man-pages/man5/proc_loadavg.5.html>
 
-use alloc::format;
+use aster_util::printer::VmPrinter;
 
 use crate::{
     fs::{
@@ -33,20 +33,22 @@ impl LoadAvgFileOps {
 }
 
 impl FileOps for LoadAvgFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
         let avg = get_loadavg();
         let (nr_queued, nr_running) = sched::nr_queued_and_running();
-
-        let output = format!(
-            "{:.2} {:.2} {:.2} {}/{} {}\n",
+        writeln!(
+            printer,
+            "{:.2} {:.2} {:.2} {}/{} {}",
             avg[0],
             avg[1],
             avg[2],
             nr_running,
             nr_queued,
             posix_thread::last_tid(),
-        );
+        )?;
 
-        Ok(output.into_bytes())
+        Ok(printer.bytes_written())
     }
 }

@@ -97,17 +97,7 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
 }
 
 pub trait FileOps: Sync + Send {
-    fn data(&self) -> Result<Vec<u8>>;
-
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let data = self.data()?;
-        if offset >= data.len() {
-            return Ok(0);
-        }
-
-        let written_len = writer.write_fallible(&mut (&data[offset..]).into())?;
-        Ok(written_len)
-    }
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize>;
 
     fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
         return_errno_with_message!(Errno::EPERM, "the file is not writable");

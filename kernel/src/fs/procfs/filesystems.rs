@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::format;
+use aster_util::printer::{VmPrinter, VmPrinterError};
 
 use crate::{
     fs::{
@@ -27,20 +27,21 @@ impl FileSystemsFileOps {
 }
 
 impl FileOps for FileSystemsFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
-        let data = crate::fs::registry::with_iter(|iter| {
-            let mut result = String::new();
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
+        crate::fs::registry::with_iter(|iter| -> core::result::Result<(), VmPrinterError> {
             for (fs_name, fs_type) in iter {
                 if fs_type.properties().contains(FsProperties::NEED_DISK) {
-                    result.push_str(&format!("\t{}\n", fs_name));
+                    writeln!(printer, "\t{}", fs_name)?;
                 } else {
-                    result.push_str(&format!("nodev\t{}\n", fs_name));
+                    writeln!(printer, "nodev\t{}", fs_name)?;
                 }
             }
 
-            result.into_bytes()
-        });
+            Ok(())
+        })?;
 
-        Ok(data)
+        Ok(printer.bytes_written())
     }
 }

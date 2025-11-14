@@ -5,11 +5,10 @@
 //!
 //! Reference: <https://man7.org/linux/man-pages/man5/proc_stat.5.html>
 
-use core::fmt::Write;
-
 use aster_softirq::{
     iter_irq_counts_across_all_cpus, iter_softirq_counts_across_all_cpus, softirq_id::*,
 };
+use aster_util::printer::VmPrinter;
 use ostd::util::id_set::Id;
 
 use crate::{
@@ -24,7 +23,7 @@ use crate::{
     time::{cpu_time_stats::CpuTimeStatsManager, SystemTime, START_TIME},
 };
 
-/// Represents the inode at `/proc/stat`.  
+/// Represents the inode at `/proc/stat`.
 pub struct StatFileOps;
 
 impl StatFileOps {
@@ -38,16 +37,14 @@ impl StatFileOps {
             .unwrap()
     }
 
-    fn collect_stats() -> String {
-        let mut stat_output = String::new();
-
+    fn print_stats(printer: &mut VmPrinter) -> Result<()> {
         let stats_manager = CpuTimeStatsManager::singleton();
 
         // Global CPU statistics:
         // cpu <user> <nice> <system> <idle> <iowait> <irq> <softirq> <steal> <guest> <guest_nice>
         let global_stats = stats_manager.collect_stats_on_all_cpus();
         writeln!(
-            stat_output,
+            printer,
             "cpu {} {} {} {} {} {} {} {} {} {}",
             global_stats.user.as_u64(),
             global_stats.nice.as_u64(),
@@ -59,14 +56,13 @@ impl StatFileOps {
             global_stats.steal.as_u64(),
             global_stats.guest.as_u64(),
             global_stats.guest_nice.as_u64()
-        )
-        .unwrap();
+        )?;
 
         // Per-CPU statistics:
         for cpu_id in ostd::cpu::all_cpus() {
             let cpu_stats = stats_manager.collect_stats_on_cpu(cpu_id);
             writeln!(
-                stat_output,
+                printer,
                 "cpu{} {} {} {} {} {} {} {} {} {} {}",
                 cpu_id.as_usize(),
                 cpu_stats.user.as_u64(),
@@ -79,8 +75,7 @@ impl StatFileOps {
                 cpu_stats.steal.as_u64(),
                 cpu_stats.guest.as_u64(),
                 cpu_stats.guest_nice.as_u64()
-            )
-            .unwrap();
+            )?;
         }
 
         // IRQ statistics: the total count followed by per-IRQ counts
@@ -91,16 +86,16 @@ impl StatFileOps {
             total_irqs += count;
             irq_counts.push(count);
         }
-        write!(stat_output, "intr {}", total_irqs).unwrap();
+        write!(printer, "intr {}", total_irqs)?;
         for count in irq_counts {
-            write!(stat_output, " {}", count).unwrap();
+            write!(printer, " {}", count)?;
         }
 
-        writeln!(stat_output).unwrap();
+        writeln!(printer)?;
 
         // Context switch count
         let context_switches: usize = collect_context_switch_count();
-        writeln!(stat_output, "ctxt {}", context_switches).unwrap();
+        writeln!(printer, "ctxt {}", context_switches)?;
 
         // Boot time (seconds since UNIX epoch)
         if let Some(start_time) = START_TIME.get() {
@@ -108,25 +103,20 @@ impl StatFileOps {
                 .duration_since(&SystemTime::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
-            writeln!(stat_output, "btime {}", boot_time).unwrap();
+            writeln!(printer, "btime {}", boot_time)?;
         } else {
-            writeln!(stat_output, "btime {}", 0).unwrap();
+            writeln!(printer, "btime {}", 0)?;
         }
 
         // Process count (number of created processes since boot)
-        writeln!(
-            stat_output,
-            "processes {}",
-            collect_process_creation_count()
-        )
-        .unwrap();
+        writeln!(printer, "processes {}", collect_process_creation_count())?;
 
         // Running and blocked processes
         let (_, running_count) = nr_queued_and_running();
-        writeln!(stat_output, "procs_running {}", running_count).unwrap();
+        writeln!(printer, "procs_running {}", running_count)?;
 
         // TODO: Blocked processes
-        writeln!(stat_output, "procs_blocked {}", 0).unwrap();
+        writeln!(printer, "procs_blocked {}", 0)?;
 
         // Softirq statistics
         let softirq_stats = iter_softirq_counts_across_all_cpus();
@@ -136,7 +126,7 @@ impl StatFileOps {
         // We only have 5 defined softirq types; the rest are reserved.
         // Fill in zeros for the reserved types to match the expected output format.
         writeln!(
-            stat_output,
+            printer,
             "softirq {} {} {} {} {} {} {} {} {} {} {}",
             total_softirqs,
             softirq_stats[TASKLESS_URGENT_SOFTIRQ_ID as usize], // TASKLESS_URGENT
@@ -149,16 +139,18 @@ impl StatFileOps {
             0usize,                                             // Reserved
             0usize,                                             // Reserved
             0usize,                                             // Reserved
-        )
-        .unwrap();
+        )?;
 
-        stat_output
+        Ok(())
     }
 }
 
 impl FileOps for StatFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
-        let output = Self::collect_stats();
-        Ok(output.into_bytes())
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
+        Self::print_stats(&mut printer)?;
+
+        Ok(printer.bytes_written())
     }
 }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::fmt::Write;
+use aster_util::printer::VmPrinter;
 
 use super::TidDirOps;
 use crate::{
@@ -72,7 +72,9 @@ impl StatusFileOps {
 }
 
 impl FileOps for StatusFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
         let process = self.0.process_ref.as_ref();
         let thread = self.0.thread();
         let posix_thread = thread.as_posix_thread().unwrap();
@@ -84,28 +86,25 @@ impl FileOps for StatusFileOps {
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3326>
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3675>
 
-        let mut status_output = String::new();
-
         writeln!(
-            status_output,
+            printer,
             "Name:\t{}",
             posix_thread.thread_name().lock().name().to_string_lossy()
-        )
-        .unwrap();
+        )?;
 
         let state = if thread.is_exited() {
             "Z (zombie)"
         } else {
             "R (running)"
         };
-        writeln!(status_output, "State:\t{}", state).unwrap();
+        writeln!(printer, "State:\t{}", state)?;
 
-        writeln!(status_output, "Tgid:\t{}", process.pid()).unwrap();
-        writeln!(status_output, "Pid:\t{}", posix_thread.tid()).unwrap();
-        writeln!(status_output, "PPid:\t{}", process.parent().pid()).unwrap();
-        writeln!(status_output, "TracerPid:\t{}", 0).unwrap();
+        writeln!(printer, "Tgid:\t{}", process.pid())?;
+        writeln!(printer, "Pid:\t{}", posix_thread.tid())?;
+        writeln!(printer, "PPid:\t{}", process.parent().pid())?;
+        writeln!(printer, "TracerPid:\t{}", 0)?;
         writeln!(
-            status_output,
+            printer,
             "FDSize:\t{}",
             posix_thread
                 .file_table()
@@ -113,8 +112,7 @@ impl FileOps for StatusFileOps {
                 .as_ref()
                 .map(|file_table| file_table.read().len())
                 .unwrap_or(0)
-        )
-        .unwrap();
+        )?;
 
         if let Some(vmar_ref) = process.lock_vmar().as_ref() {
             let vsize = vmar_ref.get_mappings_total_size();
@@ -122,22 +120,20 @@ impl FileOps for StatusFileOps {
             let file = vmar_ref.get_rss_counter(RssType::RSS_FILEPAGES) * (PAGE_SIZE / 1024);
             let rss = anon + file;
             writeln!(
-                status_output,
+                printer,
                 "VmSize:\t{} kB\nVmRSS:\t{} kB\nRssAnon:\t{} kB\nRssFile:\t{} kB",
                 vsize, rss, anon, file
-            )
-            .unwrap();
+            )?;
         }
 
         if process.pid() == posix_thread.tid() {
             writeln!(
-                status_output,
+                printer,
                 "Threads:\t{}",
                 process.tasks().lock().as_slice().len()
-            )
-            .unwrap();
+            )?;
         }
 
-        Ok(status_output.into_bytes())
+        Ok(printer.bytes_written())
     }
 }

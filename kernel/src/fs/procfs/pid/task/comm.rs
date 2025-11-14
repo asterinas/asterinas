@@ -25,17 +25,17 @@ impl CommFileOps {
 }
 
 impl FileOps for CommFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
-        let mut comm_output = {
-            let exe_path = self.0.executable_path();
-            let last_component = exe_path.rsplit('/').next().unwrap_or(&exe_path);
-            let mut comm = last_component.as_bytes().to_vec();
-            comm.push(b'\0');
-            comm.truncate(TASK_COMM_LEN);
-            comm
-        };
-        comm_output.push(b'\n');
-        Ok(comm_output)
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let exe_path = self.0.executable_path();
+        let last_component = exe_path.rsplit('/').next().unwrap_or(&exe_path);
+        let mut comm = last_component.as_bytes().to_vec();
+        comm.truncate(TASK_COMM_LEN - 1);
+        comm.push(b'\n');
+
+        let mut vm_reader = VmReader::from(&comm[offset.min(comm.len())..]);
+        let bytes_read = writer.write_fallible(&mut vm_reader)?;
+
+        Ok(bytes_read)
     }
 
     fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
