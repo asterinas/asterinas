@@ -1,9 +1,9 @@
 # RFC-0001: RFC process
 
-* Status: Draft
+* Status: Implemented
 * Pull request: https://github.com/asterinas/asterinas/pull/2365/
 * Date submitted: 2025-08-24
-* Date approved: YYYY-MM-DD
+* Date approved: 2025-09-05
 
 ## Summary
 
