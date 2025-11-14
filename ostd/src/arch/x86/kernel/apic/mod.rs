@@ -359,7 +359,10 @@ pub fn init(io_mem_builder: &IoMemAllocatorBuilder) -> Result<(), ApicInitError>
         log::info!("xAPIC found!");
         // SAFETY: xAPIC is present.
         let base_address = unsafe { xapic::read_xapic_base_address() };
-        let io_mem = io_mem_builder.reserve(base_address..(base_address + xapic::XAPIC_MMIO_SIZE));
+        let io_mem = io_mem_builder.reserve(
+            base_address..(base_address + xapic::XAPIC_MMIO_SIZE),
+            crate::mm::CachePolicy::Uncacheable,
+        );
         APIC_TYPE.call_once(|| ApicType::XApic(io_mem));
         Ok(())
     } else {
