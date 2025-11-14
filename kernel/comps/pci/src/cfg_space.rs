@@ -229,6 +229,8 @@ impl MemoryBar {
     /// Grants I/O memory access
     pub fn io_mem(&self) -> &IoMem {
         self.io_memory.call_once(|| {
+            // Use the `Uncacheable` cache policy for PCI device BARs by default.
+            // Device-specific drivers may remap with different cache policies if needed.
             IoMem::acquire((self.base as usize)..((self.base + self.size) as usize)).unwrap()
         })
     }

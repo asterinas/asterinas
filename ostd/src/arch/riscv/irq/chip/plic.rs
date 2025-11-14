@@ -319,7 +319,7 @@ impl Plic {
 
                 Self {
                     phandle,
-                    io_mem: io_mem_builder.reserve(range),
+                    io_mem: io_mem_builder.reserve(range, crate::mm::CachePolicy::Uncacheable),
                     hart_to_target_mapping,
                     interrupt_number_mappings: (0..num_interrupt_sources)
                         .map(|_| None)

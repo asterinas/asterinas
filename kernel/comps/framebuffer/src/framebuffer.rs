@@ -5,7 +5,7 @@ use alloc::{sync::Arc, vec::Vec};
 use ostd::{
     boot::boot_info,
     io::IoMem,
-    mm::{HasSize, VmIo},
+    mm::{CachePolicy, HasSize, VmIo},
     sync::Mutex,
     Error, Result,
 };
@@ -96,7 +96,14 @@ pub(crate) fn init() {
         let fb_size = framebuffer_arg.height.checked_mul(line_size).unwrap();
 
         let fb_base = framebuffer_arg.address;
-        let io_mem = IoMem::acquire(fb_base..fb_base.checked_add(fb_size).unwrap()).unwrap();
+        // Use write-combining for framebuffer to enable faster write operations.
+        // Write-combining allows the CPU to combine multiple writes into fewer bus transactions,
+        // which is ideal for framebuffer access patterns (sequential writes).
+        let io_mem = IoMem::acquire_with_cache_policy(
+            fb_base..fb_base.checked_add(fb_size).unwrap(),
+            CachePolicy::WriteCombining,
+        )
+        .unwrap();
 
         let default_cmap = FbCmap {
             entries: Vec::new(),
