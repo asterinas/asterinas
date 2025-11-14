@@ -23,11 +23,10 @@ pub fn sys_timerfd_gettime(
         .downcast_ref::<TimerfdFile>()
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "the fd is not a timerfd"))?;
 
-    let interval = timespec_t::from(timerfd_file.timer().interval());
-    let remain = timespec_t::from(timerfd_file.timer().remain());
+    let (interval, remain) = timerfd_file.get_time();
     let itimerspec = itimerspec_t {
-        it_interval: interval,
-        it_value: remain,
+        it_interval: timespec_t::from(interval),
+        it_value: timespec_t::from(remain),
     };
     ctx.user_space().write_val(itimerspec_addr, &itimerspec)?;
 

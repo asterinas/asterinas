@@ -9,7 +9,10 @@ use crate::{
     prelude::*,
     process::{posix_thread::AsPosixThread, signal::HandlePendingSignal},
     thread::AsThread,
-    time::wait::{ManagedTimeout, TimeoutExt},
+    time::{
+        timer::TimerGuard,
+        wait::{ManagedTimeout, TimeoutExt},
+    },
 };
 
 /// `Pause` is an extension trait to make [`Waiter`] and [`WaitQueue`] signal aware.
@@ -139,7 +142,7 @@ impl Pause for Waiter {
     fn pause_timeout(&self, timeout: &TimeoutExt<'_>) -> Result<()> {
         let timer = timeout.check_expired()?.map(|timeout| {
             let waker = self.waker();
-            timeout.create_timer(move || {
+            timeout.create_timer(move |_guard: TimerGuard| {
                 waker.wake_up();
             })
         });
@@ -168,11 +171,12 @@ impl Pause for Waiter {
         }
 
         if let Some(timer) = timer {
-            if timer.remain().is_zero() {
+            let timer_lock = timer.lock();
+            if timer_lock.remain().is_zero() {
                 return_errno_with_message!(Errno::ETIME, "the time limit is reached");
             }
             // If the timeout is not expired, cancel the timer manually.
-            timer.cancel();
+            timer_lock.cancel();
         }
 
         if posix_thread_opt

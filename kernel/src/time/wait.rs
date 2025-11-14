@@ -5,7 +5,7 @@ use core::time::Duration;
 use ostd::sync::{WaitQueue, Waiter};
 
 use super::{clocks::JIFFIES_TIMER_MANAGER, timer::Timeout, Timer, TimerManager};
-use crate::prelude::*;
+use crate::{prelude::*, time::timer::TimerGuard};
 
 /// A trait that provide the timeout related function for [`Waiter`] and [`WaitQueue`]`.
 pub trait WaitTimeout {
@@ -159,10 +159,10 @@ impl<'a> ManagedTimeout<'a> {
     /// Creates a timer for the timeout.
     pub fn create_timer<F>(&self, callback: F) -> Arc<Timer>
     where
-        F: Fn() + Send + Sync + 'static,
+        F: Fn(TimerGuard) + Send + Sync + 'static,
     {
         let timer = self.manager.create_timer(callback);
-        timer.set_timeout(self.timeout.clone());
+        timer.lock().set_timeout(self.timeout.clone());
         timer
     }
 }
@@ -183,7 +183,7 @@ impl WaitTimeout for Waiter {
 
         let timer = timeout.map(|timeout| {
             let waker = self.waker();
-            timeout.create_timer(move || {
+            timeout.create_timer(move |_guard: TimerGuard| {
                 waker.wake_up();
             })
         });
@@ -194,7 +194,7 @@ impl WaitTimeout for Waiter {
             move || {
                 if timer
                     .as_ref()
-                    .is_some_and(|timer| timer.remain() == Duration::ZERO)
+                    .is_some_and(|timer| timer.lock().remain() == Duration::ZERO)
                 {
                     return_errno_with_message!(Errno::ETIME, "the time limit is reached");
                 }
@@ -212,7 +212,7 @@ impl WaitTimeout for Waiter {
                 .as_ref()
                 .is_err_and(|e: &Error| e.error() == Errno::ETIME)
         {
-            timer.cancel();
+            timer.lock().cancel();
         }
 
         res

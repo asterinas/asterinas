@@ -8,7 +8,6 @@ use crate::{
     prelude::*,
     time::{
         itimerspec_t,
-        timer::Timeout,
         timerfd::{TFDSetTimeFlags, TimerfdFile},
         timespec_t,
     },
@@ -35,34 +34,15 @@ pub fn sys_timerfd_settime(
     let interval = Duration::try_from(new_itimerspec.it_interval)?;
     let expire_time = Duration::try_from(new_itimerspec.it_value)?;
 
-    let timer = timerfd_file.timer();
+    let (old_interval, remain) = timerfd_file.set_time(expire_time, interval, flags);
     if old_itimerspec_addr > 0 {
-        let old_interval = timespec_t::from(timer.interval());
-        let remain = timespec_t::from(timer.remain());
+        let old_interval = timespec_t::from(old_interval);
+        let remain = timespec_t::from(remain);
         let old_itimerspec = itimerspec_t {
             it_interval: old_interval,
             it_value: remain,
         };
         user_space.write_val(old_itimerspec_addr, &old_itimerspec)?;
-    }
-
-    timer.set_interval(interval);
-    timer.cancel();
-    // Clear `ticks` after cancel the timer to ensure that `ticks` is zero
-    // when the timer is rearmed.
-    timerfd_file.clear_ticks();
-
-    if expire_time != Duration::ZERO {
-        if flags.contains(TFDSetTimeFlags::TFD_TIMER_CANCEL_ON_SET) {
-            unimplemented!()
-        }
-
-        let timeout = if flags.contains(TFDSetTimeFlags::TFD_TIMER_ABSTIME) {
-            Timeout::When(expire_time)
-        } else {
-            Timeout::After(expire_time)
-        };
-        timer.set_timeout(timeout);
     }
 
     Ok(SyscallReturn::Return(0))
