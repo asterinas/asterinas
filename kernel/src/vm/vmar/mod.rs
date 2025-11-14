@@ -27,7 +27,7 @@ use self::{
 };
 use super::page_fault_handler::PageFaultHandler;
 use crate::{
-    fs::{file_handle::Mappable, ramfs::memfd::MemfdInode},
+    fs::{file_handle::Mappable, fs_resolver::PathOrInode, ramfs::memfd::MemfdInode},
     prelude::*,
     process::{Process, ProcessVm, ResourceType},
     thread::exception::PageFaultInfo,
@@ -49,11 +49,11 @@ pub struct Vmar {
 
 impl Vmar {
     /// Creates a new VMAR.
-    pub fn new() -> Arc<Self> {
+    pub fn new(executable_file: PathOrInode) -> Arc<Self> {
         let inner = VmarInner::new();
         let vm_space = VmSpace::new();
         let rss_counters = array::from_fn(|_| PerCpuCounter::new());
-        let process_vm = ProcessVm::new();
+        let process_vm = ProcessVm::new(executable_file);
         Arc::new(Vmar {
             inner: RwMutex::new(inner),
             vm_space: Arc::new(vm_space),

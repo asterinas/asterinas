@@ -12,6 +12,7 @@ use super::{
 use crate::{
     fs::{
         path::MountNamespace,
+        ramfs::memfd::MemfdInode,
         utils::{Inode, SymbolicLink},
     },
     prelude::*,
@@ -400,6 +401,20 @@ impl PathOrInode {
         match self {
             PathOrInode::Path(path) => path.inode(),
             PathOrInode::Inode(inode) => inode,
+        }
+    }
+
+    pub fn display_name(&self) -> String {
+        match self {
+            PathOrInode::Path(path) => path.abs_path(),
+            PathOrInode::Inode(inode) => {
+                // FIXME: Add pseudo dentries to store the correct name.
+                if let Some(memfd_inode) = inode.downcast_ref::<MemfdInode>() {
+                    memfd_inode.name().to_string()
+                } else {
+                    String::from("[pseudo inode]")
+                }
+            }
         }
     }
 }
