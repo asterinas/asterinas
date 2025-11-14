@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{fmt::Write, sync::atomic::Ordering};
+use core::sync::atomic::Ordering;
+
+use aster_util::printer::VmPrinter;
 
 use super::TidDirOps;
 use crate::{
     fs::{
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{FileOps, FileOpsRead, ProcFileBuilder},
         utils::{mkmod, Inode},
     },
     prelude::*,
@@ -26,15 +28,18 @@ impl OomScoreAdjFileOps {
     }
 }
 
-impl FileOps for OomScoreAdjFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
+impl FileOpsRead for OomScoreAdjFileOps {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
         let oom_score_adj = self.0.oom_score_adj().load(Ordering::Relaxed);
+        writeln!(printer, "{}", oom_score_adj)?;
 
-        let mut output = String::new();
-        writeln!(output, "{}", oom_score_adj).unwrap();
-        Ok(output.into_bytes())
+        Ok(printer.bytes_written())
     }
+}
 
+impl FileOps for OomScoreAdjFileOps {
     fn write_at(&self, _offset: usize, reader: &mut VmReader) -> Result<usize> {
         let (cstr, read_bytes) = reader.read_cstring_until_end(BUF_SIZE_I32 - 1)?;
         let val = cstr

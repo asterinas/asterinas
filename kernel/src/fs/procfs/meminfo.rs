@@ -6,11 +6,11 @@
 //!
 //! Reference: <https://man7.org/linux/man-pages/man5/proc_meminfo.5.html>
 
-use alloc::format;
+use aster_util::printer::VmPrinter;
 
 use crate::{
     fs::{
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{FileOps, FileOpsRead, ProcFileBuilder},
         utils::{mkmod, Inode},
     },
     prelude::*,
@@ -31,8 +31,10 @@ impl MemInfoFileOps {
     }
 }
 
-impl FileOps for MemInfoFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
+impl FileOpsRead for MemInfoFileOps {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
         // The total amount of physical memory available to the system.
         let total = crate::vm::mem_total();
         // An estimation of how much memory is available for starting new
@@ -46,10 +48,12 @@ impl FileOps for MemInfoFileOps {
         // Available memory should include both free memory and cached pages that can be
         // immediately evicted from main memory. Currently, no pages can be evicted when memory is
         // allocated, resulting in the two values being reported as the same.
-        let output = format!(
-            "MemTotal:\t{} kB\nMemFree:\t{} kB\nMemAvailable:\t{} kB\n",
-            total, available, available
-        );
-        Ok(output.into_bytes())
+        writeln!(printer, "MemTotal:\t{} kB", total)?;
+        writeln!(printer, "MemFree:\t{} kB", available)?;
+        writeln!(printer, "MemAvailable:\t{} kB", available)?;
+
+        Ok(printer.bytes_written())
     }
 }
+
+impl FileOps for MemInfoFileOps {}

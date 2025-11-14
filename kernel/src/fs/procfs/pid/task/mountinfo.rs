@@ -3,7 +3,7 @@
 use super::TidDirOps;
 use crate::{
     fs::{
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{FileOps, FileOpsRead, ProcFileBuilder},
         utils::{mkmod, Inode},
     },
     prelude::*,
@@ -23,11 +23,7 @@ impl MountInfoFileOps {
     }
 }
 
-impl FileOps for MountInfoFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
-        unreachable!()
-    }
-
+impl FileOpsRead for MountInfoFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let thread = self.0.thread();
         let posix_thread = thread.as_posix_thread().unwrap();
@@ -39,3 +35,5 @@ impl FileOps for MountInfoFileOps {
         root_mount.read_mount_info(offset, writer)
     }
 }
+
+impl FileOps for MountInfoFileOps {}

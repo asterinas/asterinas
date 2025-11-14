@@ -7,7 +7,7 @@ use crate::{
     fs::{
         procfs::{
             pid::TidDirOps,
-            template::{FileOps, ProcFileBuilder},
+            template::{FileOps, FileOpsRead, ProcFileBuilder},
         },
         utils::{mkmod, Inode},
     },
@@ -27,11 +27,7 @@ impl CgroupFileOps {
     }
 }
 
-impl FileOps for CgroupFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
-        unreachable!()
-    }
-
+impl FileOpsRead for CgroupFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let path = self
             .0
@@ -47,3 +43,5 @@ impl FileOps for CgroupFileOps {
         Ok(printer.bytes_written())
     }
 }
+
+impl FileOps for CgroupFileOps {}

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::format;
+use aster_util::printer::VmPrinter;
 
 use super::TidDirOps;
 use crate::{
     fs::{
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{FileOps, FileOpsRead, ProcFileBuilder},
         utils::{mkmod, Inode},
     },
     prelude::*,
@@ -27,12 +27,23 @@ impl UidMapFileOps {
     }
 }
 
-impl FileOps for UidMapFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
+impl FileOpsRead for UidMapFileOps {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
         // This is the default UID map for the initial user namespace.
         // TODO: Retrieve the UID map from the user namespace of the current process
         // instead of returning this hard-coded value.
-        let output = format!("{:>10} {:>10} {:>10}\n", 0, 0, u32::from(Uid::INVALID));
-        Ok(output.into_bytes())
+        writeln!(
+            printer,
+            "{:>10} {:>10} {:>10}",
+            0,
+            0,
+            u32::from(Uid::INVALID)
+        )?;
+
+        Ok(printer.bytes_written())
     }
 }
+
+impl FileOps for UidMapFileOps {}

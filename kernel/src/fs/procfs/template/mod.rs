@@ -2,10 +2,10 @@
 
 use core::time::Duration;
 
-pub use self::{
+pub(super) use self::{
     builder::{ProcDirBuilder, ProcFileBuilder, ProcSymBuilder},
     dir::{lookup_child_from_table, populate_children_from_table, DirOps, ProcDir},
-    file::FileOps,
+    file::{FileOps, FileOpsData, FileOpsRead},
     sym::{ProcSym, SymOps},
 };
 use super::{ProcFs, BLOCK_SIZE};

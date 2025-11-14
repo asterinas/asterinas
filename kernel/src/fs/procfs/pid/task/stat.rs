@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{fmt::Write, sync::atomic::Ordering};
+use core::sync::atomic::Ordering;
+
+use aster_util::printer::VmPrinter;
 
 use super::TidDirOps;
 use crate::{
     fs::{
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{FileOps, FileOpsRead, ProcFileBuilder},
         utils::{mkmod, Inode},
     },
     prelude::*,
@@ -84,8 +86,8 @@ impl StatFileOps {
     }
 }
 
-impl FileOps for StatFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
+impl FileOpsRead for StatFileOps {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let process = self.0.process_ref.as_ref();
         let thread = self.0.thread();
         let posix_thread = thread.as_posix_thread().unwrap();
@@ -168,9 +170,9 @@ impl FileOps for StatFileOps {
             (0, 0)
         };
 
-        let mut stat_output = String::new();
+        let mut printer = VmPrinter::new_skip(writer, offset);
         writeln!(
-            stat_output,
+            printer,
             "{} ({}) {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}",
             pid,
             comm,
@@ -196,8 +198,10 @@ impl FileOps for StatFileOps {
             starttime,
             vsize,
             rss
-        )
-        .unwrap();
-        Ok(stat_output.into_bytes())
+        )?;
+
+        Ok(printer.bytes_written())
     }
 }
+
+impl FileOps for StatFileOps {}
