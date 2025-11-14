@@ -92,6 +92,38 @@ impl AnyConsoleDevice for FramebufferConsole {
     }
 }
 
+/// A dummy console device.
+///
+/// This is used when no framebuffer is available. All operations are no-ops.
+#[derive(Debug)]
+pub struct DummyFramebufferConsole;
+
+impl AnyConsoleDevice for DummyFramebufferConsole {
+    fn send(&self, _buf: &[u8]) {}
+
+    fn register_callback(&self, _callback: &'static ConsoleCallback) {}
+
+    fn set_font(&self, _font: BitmapFont) -> Result<(), ConsoleSetFontError> {
+        Ok(())
+    }
+
+    fn set_mode(&self, _mode: ConsoleMode) -> bool {
+        true
+    }
+
+    fn mode(&self) -> Option<ConsoleMode> {
+        None
+    }
+
+    fn set_keyboard_mode(&self, _mode: KeyboardMode) -> bool {
+        true
+    }
+
+    fn keyboard_mode(&self) -> Option<KeyboardMode> {
+        None
+    }
+}
+
 impl FramebufferConsole {
     /// Creates a new framebuffer console.
     pub(self) fn new(framebuffer: Arc<FrameBuffer>) -> Self {
