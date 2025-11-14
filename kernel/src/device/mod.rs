@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+mod evdev;
 mod full;
 mod null;
 mod pty;
@@ -37,6 +38,8 @@ pub fn init_in_first_process(ctx: &Context) -> Result<()> {
     // Mount DevFS
     let dev_path = fs_resolver.lookup(&FsPath::try_from("/dev")?)?;
     dev_path.mount(RamFs::new(), PerMountFlags::default(), ctx)?;
+
+    evdev::init(&fs_resolver)?;
 
     let null = Arc::new(null::Null);
     add_node(null, "null", &fs_resolver)?;
