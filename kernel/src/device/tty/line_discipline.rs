@@ -239,6 +239,14 @@ impl LineDiscipline {
 
     pub fn set_termios(&mut self, termios: CTermios) {
         self.termios = termios;
+
+        // When switching to raw mode, any pending input bytes should become immediately available.
+        // TODO: Define the correct behavior for pending bytes when switching back to canonical mode,
+        // and handle the case where the read buffer is full.
+        if !self.termios.is_canonical_mode() {
+            let bytes = self.current_line.drain();
+            self.read_buffer.push_slice(bytes);
+        }
     }
 
     pub fn window_size(&self) -> CWinSize {

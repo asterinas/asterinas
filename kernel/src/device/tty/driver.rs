@@ -19,7 +19,7 @@ pub trait TtyDriver: Send + Sync + 'static {
     /// Opens the TTY.
     ///
     /// This function will be called when opening `/dev/tty`.
-    fn open(tty: Arc<Tty<Self>>) -> Arc<dyn FileIo>
+    fn open(tty: Arc<Tty<Self>>) -> Result<Arc<dyn FileIo>>
     where
         Self: Sized;
 
@@ -42,12 +42,6 @@ pub trait TtyDriver: Send + Sync + 'static {
     ///
     /// This method should return `false` if the output buffer is full.
     fn can_push(&self) -> bool;
-
-    /// Returns whether the TTY is closed.
-    ///
-    /// For a pty slave, this method returns `true` only if its associated master has been closed.
-    /// For other TTY types, this method returns `false`.
-    fn is_closed(&self) -> bool;
 
     /// Notifies that the input buffer now has room for new characters.
     ///
