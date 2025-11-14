@@ -2,11 +2,12 @@
 
 //! CPU execution context control.
 
-use core::fmt::Debug;
+use alloc::boxed::Box;
+use core::{arch::asm, fmt::Debug};
 
 use crate::{
     arch::trap::{RawUserContext, TrapFrame},
-    user::{ReturnReason, UserContextApi, UserContextApiInternal},
+    user::{ReturnReason, UserContextApi, UserContextApiInternal, UserModeHooks},
 };
 
 /// Userspace CPU context, including general-purpose registers and exception information.
@@ -64,7 +65,113 @@ pub struct GeneralRegs {
 /// architecture.
 #[derive(Clone, Debug)]
 pub enum CpuException {
+    /// Unknown reason.
     Unknown,
+    /// 000001 - Trapped WFI or WFE instruction execution.
+    WfiInstruction,
+    /// 000111 - Access to Advanced SIMD or floating-point functionality.
+    FpuInstruction,
+    /// 001110 - Illegal Execution state.
+    IllegalState,
+    /// 010101 - SVC instruction execution in AArch64 state.
+    SvcInstruction,
+    /// 011000 - Trapped MSR, MRS, or System instruction execution.
+    SystemInstruction,
+    /// 10000x - Instruction Abort from a lower or the same Execution level.
+    InstructionAbort {
+        /// The fault address that caused the exception.
+        address: usize,
+    },
+    /// 100010 - PC alignment fault.
+    PcAlignmentFault,
+    /// 10010x - Data Abort from a lower or the same Exception level.
+    DataAbort {
+        /// Whether the exception was generated on a write instruction.
+        is_write: bool,
+        /// The fault address that caused the exception.
+        address: usize,
+    },
+    /// 100110 - SP alignment fault.
+    SpAlignmentFault,
+    /// 101100 - Trapped floating-point exception taken from AArch64 state.
+    FpuException,
+    /// 101111 - SError interrupt.
+    SErrorInterrupt,
+    /// 11000x - Breakpoint exception from a lower or the same Exception level.
+    Breakpoint,
+    /// 11001x - Software Step exception from a lower or the same Exception level.
+    SoftwareStep,
+    /// 11010x - Watchpoint exception from a lower or the same Exception level.
+    Watchpoint,
+    /// 111100 - BRK instruction execution in AArch64 state.
+    BrkInstruction,
+}
+
+#[derive(Clone, Debug)]
+pub(in crate::arch) enum CpuTrap {
+    Exception(CpuException),
+    Interrupt,
+    FastInterrupt,
+    SError,
+}
+
+impl CpuTrap {
+    pub(in crate::arch) fn new(trap_num: usize) -> Option<Self> {
+        match trap_num >> 16 {
+            // 0: Synchronous
+            0 => (),
+            // 1: IRQ or vIRQ
+            1 => return Some(Self::Interrupt),
+            // 2: FIQ or vFIQ
+            2 => return Some(Self::FastInterrupt),
+            // 3: SError or vSError
+            3 => return Some(Self::SError),
+
+            _ => return None,
+        }
+
+        let esr_el1: usize;
+        // SAFETY: It is safe to read the Exception Syndrome Register (ESR).
+        unsafe { asm!("mrs {}, esr_el1", out(reg) esr_el1) };
+
+        fn fault_address() -> usize {
+            let far_el1;
+            // SAFETY: It is safe to read the Fault Address Register (FAR).
+            unsafe { asm!("mrs {}, far_el1", out(reg) far_el1) };
+            far_el1
+        }
+
+        // WnR, bit [6]: Write not Read.
+        const ESR_WNR: usize = 1 << 6;
+
+        // EC, bits[31:26]: The Exception class field.
+        let exception = match esr_el1 >> 26 {
+            0b000001 => CpuException::WfiInstruction,
+            0b000111 => CpuException::FpuInstruction,
+            0b001110 => CpuException::IllegalState,
+            0b010101 => CpuException::SvcInstruction,
+            0b011000 => CpuException::SystemInstruction,
+            0b100000 | 0b100001 => CpuException::InstructionAbort {
+                address: fault_address(),
+            },
+            0b100010 => CpuException::PcAlignmentFault,
+            0b100100 | 0b100101 => CpuException::DataAbort {
+                is_write: esr_el1 & ESR_WNR != 0,
+                address: fault_address(),
+            },
+            0b100110 => CpuException::SpAlignmentFault,
+            0b101100 => CpuException::FpuException,
+            0b101111 => CpuException::SErrorInterrupt,
+            0b110000 | 0b110001 => CpuException::Breakpoint,
+            0b110010 | 0b110011 => CpuException::SoftwareStep,
+            0b110100 | 0b110101 => CpuException::Watchpoint,
+            0b111100 => CpuException::BrkInstruction,
+
+            0b000000 => CpuException::Unknown,
+            _ => CpuException::Unknown,
+        };
+        Some(Self::Exception(exception))
+    }
 }
 
 impl UserContext {
@@ -105,6 +212,40 @@ impl UserContext {
 }
 
 impl UserContextApiInternal for UserContext {
+    fn execute<T: UserModeHooks>(&mut self, hooks: &T) -> ReturnReason {
+        #[expect(clippy::never_loop)] // This will loop once we add support for IRQ handling.
+        loop {
+            crate::task::scheduler::might_preempt();
+
+            let guard = crate::irq::disable_local();
+            hooks.pre_user_run(&guard);
+            self.user_context.run(guard);
+
+            let trap = CpuTrap::new(self.user_context.trap_num);
+            match trap {
+                Some(CpuTrap::Exception(CpuException::SvcInstruction)) => {
+                    crate::arch::irq::enable_local();
+                    break ReturnReason::UserSyscall;
+                }
+                Some(CpuTrap::Exception(exception)) => {
+                    crate::arch::irq::enable_local();
+                    self.exception = Some(exception);
+                    break ReturnReason::UserException;
+                }
+                _ => panic!(
+                    "Cannot handle user CPU exception: {:?}; trapframe: {:#?}",
+                    trap,
+                    self.as_trap_frame()
+                ),
+            }
+
+            #[expect(unreachable_code)] // This can be reached once we add support for IRQ handling.
+            if hooks.has_kernel_event() {
+                break ReturnReason::KernelEvent;
+            }
+        }
+    }
+
     fn as_trap_frame(&self) -> TrapFrame {
         TrapFrame {
             trap_num: self.user_context.trap_num,
