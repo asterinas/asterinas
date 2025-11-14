@@ -7,6 +7,7 @@ use core::{
     sync::atomic::{AtomicU64, AtomicU8, Ordering::Relaxed},
 };
 
+use aster_util::ranged_integer::RangedU8;
 use bitvec::{bitarr, BitArr};
 use ostd::{
     cpu::CpuId,
@@ -17,7 +18,7 @@ use ostd::{
 };
 
 use super::{time::base_slice_clocks, CurrentRuntime, SchedAttr, SchedClassRq};
-use crate::{sched::nice::RangedU8, thread::AsThread};
+use crate::thread::AsThread;
 
 pub type RealTimePriority = RangedU8<1, 99>;
 

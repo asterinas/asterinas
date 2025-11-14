@@ -4,7 +4,7 @@ use core::{mem::size_of, time::Duration};
 
 use align_ext::AlignExt;
 use aster_util::{field_ptr, safe_ptr::SafePtr};
-use device_id::DeviceId;
+use device_id::{DeviceId, MajorId, MinorId};
 use ostd::{
     mm::{DmaCoherent, FrameAllocOptions, HasPaddr, HasSize, VmIo, PAGE_SIZE},
     sync::WaitQueue,
@@ -44,7 +44,7 @@ impl Device for TdxGuest {
     }
 
     fn id(&self) -> DeviceId {
-        DeviceId::new(0xa, 0x7b)
+        DeviceId::new(MajorId::new(0xa), MinorId::new(0x7b))
     }
 }
 
