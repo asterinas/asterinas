@@ -96,9 +96,15 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
     }
 }
 
-pub trait FileOps: Sync + Send {
+pub trait FileOpsData {
     fn data(&self) -> Result<Vec<u8>>;
+}
 
+pub trait FileOpsRead {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize>;
+}
+
+impl<T: FileOpsData> FileOpsRead for T {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let data = self.data()?;
         if offset >= data.len() {
@@ -108,7 +114,16 @@ pub trait FileOps: Sync + Send {
         let written_len = writer.write_fallible(&mut (&data[offset..]).into())?;
         Ok(written_len)
     }
+}
 
+/// File operations for a proc file.
+///
+/// To implement `FileOps` for a struct, you need to manually implement exactly one
+/// of `FileOpsData` or `FileOpsRead` first. Whenever possible, prefer implementing
+/// `FileOpsRead` (maybe with [`VmPrinter`]) to avoid unnecessary heap allocations.
+///
+/// [`VmPrinter`]: aster_util::printer::VmPrinter
+pub trait FileOps: FileOpsRead + Sync + Send {
     fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
         return_errno_with_message!(Errno::EPERM, "the file is not writable");
     }

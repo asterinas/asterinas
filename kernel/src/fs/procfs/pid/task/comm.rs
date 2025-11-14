@@ -3,7 +3,7 @@
 use super::TidDirOps;
 use crate::{
     fs::{
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{FileOps, FileOpsData, ProcFileBuilder},
         utils::{mkmod, Inode},
     },
     prelude::*,
@@ -24,7 +24,7 @@ impl CommFileOps {
     }
 }
 
-impl FileOps for CommFileOps {
+impl FileOpsData for CommFileOps {
     fn data(&self) -> Result<Vec<u8>> {
         let mut comm_output = {
             let exe_path = self.0.executable_path();
@@ -37,7 +37,9 @@ impl FileOps for CommFileOps {
         comm_output.push(b'\n');
         Ok(comm_output)
     }
+}
 
+impl FileOps for CommFileOps {
     fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
         warn!("writing to `/proc/[pid]/comm` is not supported");
         return_errno_with_message!(

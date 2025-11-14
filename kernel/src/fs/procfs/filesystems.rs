@@ -4,7 +4,7 @@ use aster_util::printer::{VmPrinter, VmPrinterError};
 
 use crate::{
     fs::{
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{FileOps, FileOpsRead, ProcFileBuilder},
         registry::FsProperties,
         utils::{mkmod, Inode},
     },
@@ -26,11 +26,7 @@ impl FileSystemsFileOps {
     }
 }
 
-impl FileOps for FileSystemsFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
-        unreachable!()
-    }
-
+impl FileOpsRead for FileSystemsFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
@@ -49,3 +45,5 @@ impl FileOps for FileSystemsFileOps {
         Ok(printer.bytes_written())
     }
 }
+
+impl FileOps for FileSystemsFileOps {}

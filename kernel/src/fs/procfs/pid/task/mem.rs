@@ -3,7 +3,7 @@
 use super::TidDirOps;
 use crate::{
     fs::{
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{FileOps, FileOpsRead, ProcFileBuilder},
         utils::{mkmod, Inode},
     },
     prelude::*,
@@ -24,11 +24,7 @@ impl MemFileOps {
     }
 }
 
-impl FileOps for MemFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
-        unreachable!()
-    }
-
+impl FileOpsRead for MemFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let vmar_guard = self.0.lock_vmar();
         let Some(vmar) = vmar_guard.as_ref() else {
@@ -40,7 +36,9 @@ impl FileOps for MemFileOps {
             Err((_, bytes)) => Ok(bytes),
         }
     }
+}
 
+impl FileOps for MemFileOps {
     fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         let vmar_guard = self.0.lock_vmar();
         let Some(vmar) = vmar_guard.as_ref() else {

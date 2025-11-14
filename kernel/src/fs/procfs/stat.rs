@@ -13,7 +13,7 @@ use ostd::util::id_set::Id;
 
 use crate::{
     fs::{
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{FileOps, FileOpsRead, ProcFileBuilder},
         utils::{mkmod, Inode},
     },
     prelude::*,
@@ -145,11 +145,7 @@ impl StatFileOps {
     }
 }
 
-impl FileOps for StatFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
-        unreachable!()
-    }
-
+impl FileOpsRead for StatFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
@@ -158,3 +154,5 @@ impl FileOps for StatFileOps {
         Ok(printer.bytes_written())
     }
 }
+
+impl FileOps for StatFileOps {}

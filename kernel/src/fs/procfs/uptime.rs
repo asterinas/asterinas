@@ -9,7 +9,7 @@ use aster_util::printer::VmPrinter;
 
 use crate::{
     fs::{
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{FileOps, FileOpsRead, ProcFileBuilder},
         utils::{mkmod, Inode},
     },
     prelude::*,
@@ -45,11 +45,7 @@ impl UptimeFileOps {
     }
 }
 
-impl FileOps for UptimeFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
-        unreachable!()
-    }
-
+impl FileOpsRead for UptimeFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
@@ -58,3 +54,5 @@ impl FileOps for UptimeFileOps {
         Ok(printer.bytes_written())
     }
 }
+
+impl FileOps for UptimeFileOps {}

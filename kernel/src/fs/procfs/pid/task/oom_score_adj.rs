@@ -7,7 +7,7 @@ use aster_util::printer::VmPrinter;
 use super::TidDirOps;
 use crate::{
     fs::{
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{FileOps, FileOpsRead, ProcFileBuilder},
         utils::{mkmod, Inode},
     },
     prelude::*,
@@ -28,11 +28,7 @@ impl OomScoreAdjFileOps {
     }
 }
 
-impl FileOps for OomScoreAdjFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
-        unreachable!()
-    }
-
+impl FileOpsRead for OomScoreAdjFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
@@ -41,7 +37,9 @@ impl FileOps for OomScoreAdjFileOps {
 
         Ok(printer.bytes_written())
     }
+}
 
+impl FileOps for OomScoreAdjFileOps {
     fn write_at(&self, _offset: usize, reader: &mut VmReader) -> Result<usize> {
         let (cstr, read_bytes) = reader.read_cstring_until_end(BUF_SIZE_I32 - 1)?;
         let val = cstr

@@ -3,7 +3,7 @@
 use super::TidDirOps;
 use crate::{
     fs::{
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{FileOps, FileOpsData, ProcFileBuilder},
         utils::{mkmod, Inode},
     },
     prelude::*,
@@ -24,7 +24,7 @@ impl EnvironFileOps {
     }
 }
 
-impl FileOps for EnvironFileOps {
+impl FileOpsData for EnvironFileOps {
     fn data(&self) -> Result<Vec<u8>> {
         let vmar_guard = self.0.lock_vmar();
         let Some(init_stack_reader) = vmar_guard.init_stack_reader() else {
@@ -38,3 +38,5 @@ impl FileOps for EnvironFileOps {
             .unwrap_or_else(|_| Vec::new()))
     }
 }
+
+impl FileOps for EnvironFileOps {}

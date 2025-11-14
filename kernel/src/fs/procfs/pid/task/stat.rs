@@ -7,7 +7,7 @@ use aster_util::printer::VmPrinter;
 use super::TidDirOps;
 use crate::{
     fs::{
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{FileOps, FileOpsRead, ProcFileBuilder},
         utils::{mkmod, Inode},
     },
     prelude::*,
@@ -86,11 +86,7 @@ impl StatFileOps {
     }
 }
 
-impl FileOps for StatFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
-        unreachable!()
-    }
-
+impl FileOpsRead for StatFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let process = self.0.process_ref.as_ref();
         let thread = self.0.thread();
@@ -197,3 +193,5 @@ impl FileOps for StatFileOps {
         Ok(printer.bytes_written())
     }
 }
+
+impl FileOps for StatFileOps {}

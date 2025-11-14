@@ -16,7 +16,7 @@ use spin::Once;
 use crate::{
     arch::cpu::CpuInformation,
     fs::{
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{FileOps, FileOpsRead, ProcFileBuilder},
         utils::{mkmod, Inode},
     },
     prelude::*,
@@ -37,11 +37,7 @@ impl CpuInfoFileOps {
     }
 }
 
-impl FileOps for CpuInfoFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
-        unreachable!()
-    }
-
+impl FileOpsRead for CpuInfoFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
@@ -53,6 +49,8 @@ impl FileOps for CpuInfoFileOps {
         Ok(printer.bytes_written())
     }
 }
+
+impl FileOps for CpuInfoFileOps {}
 
 cpu_local! {
     static CPU_INFORMATION: Once<CpuInformation> = Once::new();

@@ -5,7 +5,7 @@ use aster_util::printer::VmPrinter;
 use super::TidDirOps;
 use crate::{
     fs::{
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{FileOps, FileOpsRead, ProcFileBuilder},
         utils::{mkmod, Inode},
     },
     prelude::*,
@@ -27,11 +27,7 @@ impl GidMapFileOps {
     }
 }
 
-impl FileOps for GidMapFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
-        unreachable!()
-    }
-
+impl FileOpsRead for GidMapFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
@@ -49,3 +45,5 @@ impl FileOps for GidMapFileOps {
         Ok(printer.bytes_written())
     }
 }
+
+impl FileOps for GidMapFileOps {}
