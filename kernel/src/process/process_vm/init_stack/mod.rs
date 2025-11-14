@@ -421,28 +421,30 @@ impl InitStackReader<'_> {
         Ok(argc)
     }
 
-    /// Reads argv from the process init stack.
-    pub fn argv(&self) -> Result<Vec<u8>> {
-        let mut buffer = vec![0u8; self.argv_range.end - self.argv_range.start];
+    /// Reads argv at the `offset` from the process init stack.
+    pub fn argv(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        if offset >= self.argv_range.end - self.argv_range.start {
+            return Ok(0);
+        }
 
-        self.vmar.read_remote(
-            self.argv_range.start,
-            &mut VmWriter::from(&mut buffer[..]).to_fallible(),
-        )?;
+        let read_at = self.argv_range.start + offset;
+        writer.limit(self.argv_range.end - read_at);
+        let bytes_read = self.vmar.read_remote(read_at, writer)?;
 
-        Ok(buffer)
+        Ok(bytes_read)
     }
 
-    /// Reads envp from the process init stack.
-    pub fn envp(&self) -> Result<Vec<u8>> {
-        let mut buffer = vec![0u8; self.envp_range.end - self.envp_range.start];
+    /// Reads envp at the `offset` from the process init stack.
+    pub fn envp(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        if offset >= self.envp_range.end - self.envp_range.start {
+            return Ok(0);
+        }
 
-        self.vmar.read_remote(
-            self.envp_range.start,
-            &mut VmWriter::from(&mut buffer[..]).to_fallible(),
-        )?;
+        let read_at = self.envp_range.start + offset;
+        writer.limit(self.envp_range.end - read_at);
+        let bytes_read = self.vmar.read_remote(read_at, writer)?;
 
-        Ok(buffer)
+        Ok(bytes_read)
     }
 
     /// Returns the bottom address of the init stack (lowest address).

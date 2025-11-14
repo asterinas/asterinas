@@ -5,8 +5,7 @@
 //!
 //! Reference: <https://man7.org/linux/man-pages/man5/proc_cmdline.5.html>
 
-use alloc::format;
-
+use aster_util::printer::VmPrinter;
 use ostd::boot::boot_info;
 
 use crate::{
@@ -33,10 +32,13 @@ impl CmdLineFileOps {
 }
 
 impl FileOps for CmdLineFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
         // TODO: Parse additional kernel command line information with `bootconfig`.
         // See <https://docs.kernel.org/admin-guide/bootconfig.html> for details.
-        let cmdline = format!("{}\n", boot_info().kernel_cmdline);
-        Ok(cmdline.into_bytes())
+        writeln!(printer, "{}", boot_info().kernel_cmdline)?;
+
+        Ok(printer.bytes_written())
     }
 }

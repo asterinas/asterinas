@@ -28,10 +28,6 @@ impl CgroupFileOps {
 }
 
 impl FileOps for CgroupFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
-        unreachable!()
-    }
-
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let path = self
             .0

@@ -25,10 +25,6 @@ impl MemFileOps {
 }
 
 impl FileOps for MemFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
-        unreachable!()
-    }
-
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let vmar_guard = self.0.lock_vmar();
         let Some(vmar) = vmar_guard.as_ref() else {

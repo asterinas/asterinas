@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{fmt::Write, sync::atomic::Ordering};
+use core::sync::atomic::Ordering;
+
+use aster_util::printer::VmPrinter;
 
 use super::TidDirOps;
 use crate::{
@@ -27,12 +29,13 @@ impl OomScoreAdjFileOps {
 }
 
 impl FileOps for OomScoreAdjFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
-        let oom_score_adj = self.0.oom_score_adj().load(Ordering::Relaxed);
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
 
-        let mut output = String::new();
-        writeln!(output, "{}", oom_score_adj).unwrap();
-        Ok(output.into_bytes())
+        let oom_score_adj = self.0.oom_score_adj().load(Ordering::Relaxed);
+        writeln!(printer, "{}", oom_score_adj)?;
+
+        Ok(printer.bytes_written())
     }
 
     fn write_at(&self, _offset: usize, reader: &mut VmReader) -> Result<usize> {

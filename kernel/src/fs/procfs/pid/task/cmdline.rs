@@ -25,16 +25,14 @@ impl CmdlineFileOps {
 }
 
 impl FileOps for CmdlineFileOps {
-    fn data(&self) -> Result<Vec<u8>> {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let vmar_guard = self.0.lock_vmar();
         let Some(init_stack_reader) = vmar_guard.init_stack_reader() else {
             // According to Linux behavior, return an empty string
             // if the process is a zombie process.
-            return Ok(Vec::new());
+            return Ok(0);
         };
-        Ok(init_stack_reader
-            .argv()
-            // Should we return an empty string if an error occurs?
-            .unwrap_or_else(|_| Vec::new()))
+
+        init_stack_reader.argv(offset, writer)
     }
 }
