@@ -178,7 +178,10 @@ impl IoApicAccess {
     ///
     /// The caller must ensure that the base address is a valid I/O APIC base address.
     pub(self) unsafe fn new(base_address: usize, io_mem_builder: &IoMemAllocatorBuilder) -> Self {
-        let io_mem = io_mem_builder.reserve(base_address..(base_address + Self::MMIO_SIZE));
+        let io_mem = io_mem_builder.reserve(
+            base_address..(base_address + Self::MMIO_SIZE),
+            crate::mm::CachePolicy::Uncacheable,
+        );
 
         if_tdx_enabled!({
             assert_eq!(
