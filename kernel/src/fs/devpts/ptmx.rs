@@ -3,13 +3,9 @@
 use device_id::DeviceId;
 
 use super::*;
-use crate::{
-    events::IoEvents,
-    fs::{
-        inode_handle::FileIo,
-        utils::{AccessMode, StatusFlags},
-    },
-    process::signal::{PollHandle, Pollable},
+use crate::fs::{
+    inode_handle::FileIo,
+    utils::{AccessMode, StatusFlags},
 };
 
 /// Same major number with Linux.
@@ -50,6 +46,26 @@ impl Ptmx {
 
 // Many methods are left to do nothing because every time the ptmx is being opened,
 // it returns the pty master. So the ptmx can not be used at upper layer.
+impl InodeIo for Ptmx {
+    fn read_at(
+        &self,
+        _offset: usize,
+        _writer: &mut VmWriter,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        Ok(0)
+    }
+
+    fn write_at(
+        &self,
+        _offset: usize,
+        _reader: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        Ok(0)
+    }
+}
+
 impl Inode for Ptmx {
     fn size(&self) -> usize {
         self.metadata.read().size
@@ -122,26 +138,6 @@ impl Inode for Ptmx {
         self.metadata.write().ctime = time;
     }
 
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        Ok(0)
-    }
-
-    fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        Ok(0)
-    }
-
-    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        Ok(0)
-    }
-
-    fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        Ok(0)
-    }
-
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        Ok(0)
-    }
-
     fn fs(&self) -> Arc<dyn FileSystem> {
         // FIXME: The below code may panic if the devpts is dropped.
         self.devpts().unwrap()
@@ -151,8 +147,8 @@ impl Inode for Ptmx {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Option<Result<Arc<dyn FileIo>>> {
-        self.inner.open()
+    ) -> Option<Result<Box<dyn FileIo>>> {
+        Some(self.inner.open())
     }
 
     fn is_dentry_cacheable(&self) -> bool {
@@ -169,28 +165,8 @@ impl Device for Inner {
         DeviceId::new(PTMX_MAJOR_NUM, PTMX_MINOR_NUM)
     }
 
-    fn open(&self) -> Option<Result<Arc<dyn FileIo>>> {
+    fn open(&self) -> Result<Box<dyn FileIo>> {
         let devpts = self.0.upgrade().unwrap();
-        Some(
-            devpts
-                .create_master_slave_pair()
-                .map(|(master, _)| master as _),
-        )
-    }
-}
-
-impl Pollable for Inner {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        IoEvents::empty()
-    }
-}
-
-impl FileIo for Inner {
-    fn read(&self, writer: &mut VmWriter, _status_flags: StatusFlags) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "cannot read ptmx");
-    }
-
-    fn write(&self, reader: &mut VmReader, _status_flags: StatusFlags) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "cannot write ptmx");
+        Ok(devpts.create_master_slave_pair()?.0)
     }
 }

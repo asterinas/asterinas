@@ -6,7 +6,9 @@ use inherit_methods_macro::inherit_methods;
 
 use super::{Common, ProcFs};
 use crate::{
-    fs::utils::{FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata, SymbolicLink},
+    fs::utils::{
+        FileSystem, Inode, InodeIo, InodeMode, InodeType, Metadata, StatusFlags, SymbolicLink,
+    },
     prelude::*,
     process::{Gid, Uid},
 };
@@ -36,6 +38,26 @@ impl<F: FileOps> ProcFile<F> {
     }
 }
 
+impl<F: FileOps + 'static> InodeIo for ProcFile<F> {
+    fn read_at(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        self.inner.read_at(offset, writer)
+    }
+
+    fn write_at(
+        &self,
+        offset: usize,
+        reader: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        self.inner.write_at(offset, reader)
+    }
+}
+
 #[inherit_methods(from = "self.common")]
 impl<F: FileOps + 'static> Inode for ProcFile<F> {
     fn size(&self) -> usize;
@@ -56,27 +78,12 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
     fn fs(&self) -> Arc<dyn FileSystem>;
 
     fn resize(&self, _new_size: usize) -> Result<()> {
+        // Resizing files under `/proc` will succeed, but will do nothing.
         Ok(())
     }
 
     fn type_(&self) -> InodeType {
         InodeType::File
-    }
-
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        self.inner.read_at(offset, writer)
-    }
-
-    fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        self.read_at(offset, writer)
-    }
-
-    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        self.inner.write_at(offset, reader)
-    }
-
-    fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        self.write_at(offset, reader)
     }
 
     fn read_link(&self) -> Result<SymbolicLink> {
@@ -87,12 +94,13 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
         Err(Error::new(Errno::EINVAL))
     }
 
-    fn ioctl(&self, _cmd: IoctlCmd, _arg: usize) -> Result<i32> {
-        Err(Error::new(Errno::EPERM))
-    }
-
     fn is_dentry_cacheable(&self) -> bool {
         !self.common.is_volatile()
+    }
+
+    fn seek_end(&self) -> Option<usize> {
+        // Seeking regular files under `/proc` with `SEEK_END` will fail.
+        None
     }
 }
 

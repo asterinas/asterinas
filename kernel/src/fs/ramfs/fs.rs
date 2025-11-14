@@ -16,7 +16,6 @@ use ostd::{
 
 use super::{memfd::MemfdInode, xattr::RamXattr, *};
 use crate::{
-    events::IoEvents,
     fs::{
         device::Device,
         inode_handle::FileIo,
@@ -25,13 +24,13 @@ use crate::{
         registry::{FsProperties, FsType},
         utils::{
             mkmod, AccessMode, CStr256, CachePage, DirentVisitor, Extension, FallocMode,
-            FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd, Metadata, MknodType,
+            FileSystem, FsFlags, Inode, InodeIo, InodeMode, InodeType, Metadata, MknodType,
             PageCache, PageCacheBackend, Permission, StatusFlags, SuperBlock, SymbolicLink,
             XattrName, XattrNamespace, XattrSetFlags,
         },
     },
     prelude::*,
-    process::{signal::PollHandle, Gid, Uid},
+    process::{Gid, Uid},
     time::clocks::RealTimeCoarseClock,
     vm::vmo::Vmo,
 };
@@ -183,9 +182,9 @@ impl Inner {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Option<Result<Arc<dyn FileIo>>> {
+    ) -> Option<Result<Box<dyn FileIo>>> {
         match self {
-            Self::Device(device) => device.open(),
+            Self::Device(device) => Some(device.open()),
             Self::NamedPipe(pipe) => Some(pipe.open(access_mode, status_flags)),
             _ => None,
         }
@@ -539,33 +538,25 @@ impl PageCacheBackend for RamInode {
     }
 }
 
-impl Inode for RamInode {
-    fn page_cache(&self) -> Option<Arc<Vmo>> {
-        self.inner
-            .as_file()
-            .map(|page_cache| page_cache.pages().clone())
-    }
-
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let read_len = {
-            match &self.inner {
-                Inner::File(page_cache) => {
-                    let (offset, read_len) = {
-                        let file_size = self.size();
-                        let start = file_size.min(offset);
-                        let end = file_size.min(offset + writer.avail());
-                        (start, end - start)
-                    };
-                    page_cache.pages().read(offset, writer)?;
-                    read_len
-                }
-                Inner::Device(device) => {
-                    device.read(writer, StatusFlags::empty())?
-                    // Typically, devices like "/dev/zero" or "/dev/null" do not require modifying
-                    // timestamps here. Please adjust this behavior accordingly if there are special devices.
-                }
-                _ => return_errno_with_message!(Errno::EISDIR, "read is not supported"),
+impl InodeIo for RamInode {
+    fn read_at(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        let read_len = match &self.inner {
+            Inner::File(page_cache) => {
+                let (offset, read_len) = {
+                    let file_size = self.size();
+                    let start = file_size.min(offset);
+                    let end = file_size.min(offset + writer.avail());
+                    (start, end - start)
+                };
+                page_cache.pages().read(offset, writer)?;
+                read_len
             }
+            _ => return_errno_with_message!(Errno::EISDIR, "read is not supported"),
         };
 
         if self.typ == InodeType::File {
@@ -574,11 +565,12 @@ impl Inode for RamInode {
         Ok(read_len)
     }
 
-    fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        self.read_at(offset, writer)
-    }
-
-    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+    fn write_at(
+        &self,
+        offset: usize,
+        reader: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
         let written_len = match self.typ {
             InodeType::File => {
                 let page_cache = self.inner.as_file().unwrap();
@@ -603,19 +595,17 @@ impl Inode for RamInode {
                 }
                 write_len
             }
-            InodeType::CharDevice | InodeType::BlockDevice => {
-                let device = self.inner.as_device().unwrap();
-                device.write(reader, StatusFlags::empty())?
-                // Typically, devices like "/dev/zero" or "/dev/null" do not require modifying
-                // timestamps here. Please adjust this behavior accordingly if there are special devices.
-            }
             _ => return_errno_with_message!(Errno::EISDIR, "write is not supported"),
         };
         Ok(written_len)
     }
+}
 
-    fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        self.write_at(offset, reader)
+impl Inode for RamInode {
+    fn page_cache(&self) -> Option<Arc<Vmo>> {
+        self.inner
+            .as_file()
+            .map(|page_cache| page_cache.pages().clone())
     }
 
     fn size(&self) -> usize {
@@ -752,7 +742,7 @@ impl Inode for RamInode {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Option<Result<Arc<dyn FileIo>>> {
+    ) -> Option<Result<Box<dyn FileIo>>> {
         self.inner.open(access_mode, status_flags)
     }
 
@@ -1152,18 +1142,6 @@ impl Inode for RamInode {
         }
     }
 
-    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        if !self.typ.is_device() {
-            return (IoEvents::IN | IoEvents::OUT) & mask;
-        }
-
-        let device = self
-            .inner
-            .as_device()
-            .expect("[Internal error] self.typ is device, while self.inner is not");
-        device.poll(mask, poller)
-    }
-
     fn fs(&self) -> Arc<dyn FileSystem> {
         Weak::upgrade(&self.fs).unwrap()
     }
@@ -1198,20 +1176,6 @@ impl Inode for RamInode {
                 );
             }
         }
-    }
-
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        if let Some(device) = self.inner.as_device() {
-            return device.ioctl(cmd, arg);
-        }
-        return_errno_with_message!(Errno::ENOTTY, "ioctl is not supported");
-    }
-
-    fn is_seekable(&self) -> bool {
-        !matches!(
-            self.typ,
-            InodeType::NamedPipe | InodeType::CharDevice | InodeType::Dir | InodeType::Socket
-        )
     }
 
     fn extension(&self) -> Option<&Extension> {

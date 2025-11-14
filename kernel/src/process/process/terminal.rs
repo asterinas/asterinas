@@ -5,7 +5,7 @@ use alloc::sync::Arc;
 use super::{session::SessionGuard, JobControl, Pgid, Process, Session, Sid};
 use crate::{
     current_userspace,
-    fs::{device::Device, inode_handle::FileIo, utils::IoctlCmd},
+    fs::{device::Device, utils::IoctlCmd},
     prelude::{current, return_errno_with_message, warn, Errno, Error, Result},
     process::process_table,
 };
@@ -14,7 +14,7 @@ use crate::{
 ///
 /// We currently support two kinds of terminal, the TTY and pty. They're associated with a
 /// `JobControl` to track the session and the foreground process group.
-pub trait Terminal: FileIo + Device {
+pub trait Terminal: Device {
     /// Returns the job control of the terminal.
     fn job_control(&self) -> &JobControl;
 }

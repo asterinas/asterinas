@@ -241,8 +241,8 @@ impl<D: TtyDriver> Pollable for Tty<D> {
     }
 }
 
-impl<D: TtyDriver> FileIo for Tty<D> {
-    fn read(&self, writer: &mut VmWriter, status_flags: StatusFlags) -> Result<usize> {
+impl<D: TtyDriver> Tty<D> {
+    pub fn read(&self, writer: &mut VmWriter, status_flags: StatusFlags) -> Result<usize> {
         if self.driver.is_closed() {
             return Ok(0);
         }
@@ -265,7 +265,7 @@ impl<D: TtyDriver> FileIo for Tty<D> {
         Ok(read_len)
     }
 
-    fn write(&self, reader: &mut VmReader, status_flags: StatusFlags) -> Result<usize> {
+    pub fn write(&self, reader: &mut VmReader, status_flags: StatusFlags) -> Result<usize> {
         let mut buf = vec![0u8; reader.remain().min(IO_CAPACITY)];
         let write_len = reader.read_fallible(&mut buf.as_mut_slice().into())?;
 
@@ -282,7 +282,7 @@ impl<D: TtyDriver> FileIo for Tty<D> {
         Ok(len)
     }
 
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+    pub fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         match cmd {
             IoctlCmd::TCGETS => {
                 let termios = *self.ldisc.lock().termios();
@@ -391,7 +391,7 @@ impl<D: TtyDriver> Device for Tty<D> {
         DeviceId::new(D::DEVICE_MAJOR_ID, self.index)
     }
 
-    fn open(&self) -> Option<Result<Arc<dyn FileIo>>> {
-        Some(Ok(D::open(self.weak_self.upgrade().unwrap())))
+    fn open(&self) -> Result<Box<dyn FileIo>> {
+        Ok(D::open(self.weak_self.upgrade().unwrap()))
     }
 }

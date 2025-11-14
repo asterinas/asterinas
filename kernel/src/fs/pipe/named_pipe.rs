@@ -12,7 +12,7 @@ use crate::{
     events::IoEvents,
     fs::{
         inode_handle::FileIo,
-        utils::{AccessMode, StatusFlags},
+        utils::{AccessMode, InodeIo, StatusFlags},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -28,8 +28,8 @@ struct NamedPipeHandle {
 }
 
 impl NamedPipeHandle {
-    fn new(inner: Arc<PipeObj>, access_mode: AccessMode) -> Arc<Self> {
-        Arc::new(Self { inner, access_mode })
+    fn new(inner: Arc<PipeObj>, access_mode: AccessMode) -> Box<Self> {
+        Box::new(Self { inner, access_mode })
     }
 
     fn try_read(&self, writer: &mut VmWriter) -> Result<usize> {
@@ -81,8 +81,13 @@ impl Drop for NamedPipeHandle {
     }
 }
 
-impl FileIo for NamedPipeHandle {
-    fn read(&self, writer: &mut VmWriter, status_flags: StatusFlags) -> Result<usize> {
+impl InodeIo for NamedPipeHandle {
+    fn read_at(
+        &self,
+        _offset: usize,
+        writer: &mut VmWriter,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
         if status_flags.contains(StatusFlags::O_NONBLOCK) {
             self.try_read(writer)
         } else {
@@ -90,12 +95,23 @@ impl FileIo for NamedPipeHandle {
         }
     }
 
-    fn write(&self, reader: &mut VmReader, status_flags: StatusFlags) -> Result<usize> {
+    fn write_at(
+        &self,
+        _offset: usize,
+        reader: &mut VmReader,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
         if status_flags.contains(StatusFlags::O_NONBLOCK) {
             self.try_write(reader)
         } else {
             self.wait_events(IoEvents::OUT, None, || self.try_write(reader))
         }
+    }
+}
+
+impl FileIo for NamedPipeHandle {
+    fn is_seekable(&self) -> Result<bool> {
+        return_errno_with_message!(Errno::ESPIPE, "the inode is a FIFO file")
     }
 }
 
@@ -136,11 +152,11 @@ impl NamedPipe {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Result<Arc<dyn FileIo>> {
+    ) -> Result<Box<dyn FileIo>> {
         let mut pipe = self.pipe.lock();
         let pipe_obj = pipe.get_or_create_pipe_obj();
 
-        let handle: Arc<dyn FileIo> = match access_mode {
+        let handle: Box<dyn FileIo> = match access_mode {
             AccessMode::O_RDONLY => {
                 pipe.read_count += 1;
 

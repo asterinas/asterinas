@@ -20,7 +20,7 @@ use crate::{
     fs::{
         device::{Device, DeviceType},
         inode_handle::FileIo,
-        utils::{IoctlCmd, StatusFlags},
+        utils::{InodeIo, IoctlCmd, StatusFlags},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -45,6 +45,10 @@ impl Device for TdxGuest {
 
     fn id(&self) -> DeviceId {
         DeviceId::new(0xa, 0x7b)
+    }
+
+    fn open(&self) -> Result<Box<dyn FileIo>> {
+        Ok(Box::new(Self))
     }
 }
 
@@ -99,13 +103,29 @@ impl Pollable for TdxGuest {
     }
 }
 
-impl FileIo for TdxGuest {
-    fn read(&self, _writer: &mut VmWriter, _status_flags: StatusFlags) -> Result<usize> {
+impl InodeIo for TdxGuest {
+    fn read_at(
+        &self,
+        _offset: usize,
+        _writer: &mut VmWriter,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
         return_errno_with_message!(Errno::EPERM, "Read operation not supported")
     }
 
-    fn write(&self, _reader: &mut VmReader, _status_flags: StatusFlags) -> Result<usize> {
+    fn write_at(
+        &self,
+        _offset: usize,
+        _reader: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
         return_errno_with_message!(Errno::EPERM, "Write operation not supported")
+    }
+}
+
+impl FileIo for TdxGuest {
+    fn is_seekable(&self) -> Result<bool> {
+        Ok(false)
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {

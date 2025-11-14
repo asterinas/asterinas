@@ -7,7 +7,7 @@ use crate::{
     fs::{
         device::{Device, DeviceType},
         inode_handle::FileIo,
-        utils::StatusFlags,
+        utils::{InodeIo, StatusFlags},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -25,8 +25,8 @@ impl Device for Zero {
         DeviceId::new(1, 5)
     }
 
-    fn open(&self) -> Option<Result<Arc<dyn FileIo>>> {
-        Some(Ok(Arc::new(Zero)))
+    fn open(&self) -> Result<Box<dyn FileIo>> {
+        Ok(Box::new(Self))
     }
 }
 
@@ -37,13 +37,29 @@ impl Pollable for Zero {
     }
 }
 
-impl FileIo for Zero {
-    fn read(&self, writer: &mut VmWriter, _status_flags: StatusFlags) -> Result<usize> {
+impl InodeIo for Zero {
+    fn read_at(
+        &self,
+        _offset: usize,
+        writer: &mut VmWriter,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
         let read_len = writer.fill_zeros(writer.avail())?;
         Ok(read_len)
     }
 
-    fn write(&self, reader: &mut VmReader, _status_flags: StatusFlags) -> Result<usize> {
+    fn write_at(
+        &self,
+        _offset: usize,
+        reader: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
         Ok(reader.remain())
+    }
+}
+
+impl FileIo for Zero {
+    fn is_seekable(&self) -> Result<bool> {
+        Ok(false)
     }
 }
