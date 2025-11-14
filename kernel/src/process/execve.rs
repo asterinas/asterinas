@@ -243,7 +243,7 @@ fn apply_caps_from_exec(
     let credentials = posix_thread.credentials_mut();
     set_uid_from_elf(process, &credentials, elf_file)?;
     set_gid_from_elf(process, &credentials, elf_file)?;
-    credentials.set_keep_capabilities(false);
+    credentials.set_keep_capabilities(false)?;
 
     Ok(())
 }

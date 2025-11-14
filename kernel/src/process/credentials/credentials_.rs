@@ -4,7 +4,9 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
 
-use super::{group::AtomicGid, user::AtomicUid, Gid, Uid};
+use super::{
+    group::AtomicGid, secure_bits::AtomicSecureBits, user::AtomicUid, Gid, SecureBits, Uid,
+};
 use crate::{
     prelude::*,
     process::credentials::capabilities::{AtomicCapSet, CapSet},
@@ -49,6 +51,9 @@ pub(super) struct Credentials_ {
 
     /// Keep capabilities flag
     keep_capabilities: AtomicBool,
+
+    /// Secure bits flags
+    securebits: AtomicSecureBits,
 }
 
 impl Credentials_ {
@@ -71,6 +76,7 @@ impl Credentials_ {
             permitted_capset: AtomicCapSet::new(capset),
             effective_capset: AtomicCapSet::new(capset),
             keep_capabilities: AtomicBool::new(false),
+            securebits: AtomicSecureBits::new(SecureBits::new_empty()),
         }
     }
 
@@ -259,6 +265,13 @@ impl Credentials_ {
             old_suid
         };
 
+        // If the `SECBIT_NO_SETUID_FIXUP` bit is set, do not adjust capabilities.
+        // Reference: The "SECBIT_NO_SETUID_FIXUP" section in
+        // https://man7.org/linux/man-pages/man7/capabilities.7.html
+        if self.securebits().no_setuid_fixup() {
+            return;
+        }
+
         // Begin to adjust capabilities.
         // Reference: The "Effect of user ID changes on capabilities" section in
         // https://man7.org/linux/man-pages/man7/capabilities.7.html
@@ -266,7 +279,7 @@ impl Credentials_ {
         let all_nonroot = !new_ruid.is_root() && !new_euid.is_root() && !new_suid.is_root();
 
         if had_root && all_nonroot {
-            if !self.keep_capabilities() {
+            if !self.keep_capabilities() && !self.securebits().keep_capabilities() {
                 self.set_permitted_capset(CapSet::empty());
                 self.set_inheritable_capset(CapSet::empty());
                 // TODO: Also need to clear ambient capabilities when we support it
@@ -397,9 +410,22 @@ impl Credentials_ {
         self.sgid.store(sgid, Ordering::Relaxed);
     }
 
-    pub(super) fn set_keep_capabilities(&self, keep_capabilities: bool) {
+    pub(super) fn set_keep_capabilities(&self, keep_capabilities: bool) -> Result<()> {
+        if self
+            .securebits()
+            .locked_bits()
+            .intersects(SecureBits::KEEP_CAPS_LOCKED)
+        {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "cannot change keep_capabilities when KEEP_CAPS secure bit locked"
+            );
+        }
+
         self.keep_capabilities
             .store(keep_capabilities, Ordering::Relaxed);
+
+        Ok(())
     }
 
     // For `setregid`, rgid can *NOT* be set to old sgid,
@@ -503,6 +529,23 @@ impl Credentials_ {
         self.effective_capset
             .store(effective_capset, Ordering::Relaxed);
     }
+
+    //  ******* SecureBits methods *******
+
+    pub(super) fn securebits(&self) -> SecureBits {
+        self.securebits.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn set_securebits(&self, securebits: SecureBits) -> Result<()> {
+        if !self.effective_capset().contains(CapSet::SETPCAP) {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "only threads with CAP_SETPCAP can change securebits"
+            );
+        }
+
+        self.securebits.try_store(securebits, Ordering::Relaxed)
+    }
 }
 
 impl Clone for Credentials_ {
@@ -521,6 +564,7 @@ impl Clone for Credentials_ {
             permitted_capset: self.permitted_capset.clone(),
             effective_capset: self.effective_capset.clone(),
             keep_capabilities: AtomicBool::new(self.keep_capabilities.load(Ordering::Relaxed)),
+            securebits: self.securebits.clone(),
         }
     }
 }
