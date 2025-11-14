@@ -18,6 +18,7 @@ aster-bigtcp = { path = "../../libs/aster-bigtcp" }
 aster-pci = { path = "../pci" }
 aster-softirq = { path = "../softirq"}
 aster-systree = { path = "../systree" }
+device-id = { path = "../../libs/device-id" }
 id-alloc = { path = "../../../ostd/libs/id-alloc" }
 typeflags-util = { path = "../../libs/typeflags-util" }
 ostd = { path = "../../../ostd" }

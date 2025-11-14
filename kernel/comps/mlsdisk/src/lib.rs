@@ -5,7 +5,8 @@
 #![feature(let_chains)]
 #![feature(negative_impls)]
 #![feature(slice_as_chunks)]
-#![expect(dead_code, unused_imports)]
+#![allow(unfulfilled_lint_expectations)]
+#![expect(dead_code, deprecated, unused_imports)]
 
 mod error;
 mod layers;
@@ -25,6 +26,7 @@ use aster_block::{
     BlockDevice, SECTOR_SIZE,
 };
 use component::{init_component, ComponentInitError};
+use device_id::{DeviceId, MajorId, MinorId};
 use ostd::{
     mm::{io_util::HasVmReaderWriter, VmIo},
     prelude::*,
@@ -42,15 +44,16 @@ pub use self::{
 
 #[init_component]
 fn init() -> core::result::Result<(), ComponentInitError> {
-    // FIXME: add a virtio-blk-pci device in qemu and a image file.
-    let Some(device) = aster_block::get_device("raw_mlsdisk") else {
+    // FIXME: how to find a valid device used to format mlsdisk.
+    let id = DeviceId::new(MajorId::new(255), MinorId::new(0));
+    let Some(device) = aster_block::lookup(id) else {
         return Err(ComponentInitError::Unknown);
     };
     let raw_disk = RawDisk::new(device);
     let root_key = AeadKey::random();
     let device =
         MlsDisk::create(raw_disk, root_key, None).map_err(|_| ComponentInitError::Unknown)?;
-    aster_block::register_device("mlsdisk".to_string(), Arc::new(device));
+    let _ = aster_block::register(Arc::new(device));
     Ok(())
 }
 
@@ -134,6 +137,7 @@ mod test {
         bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio},
         BlockDevice, BlockDeviceMeta, SECTOR_SIZE,
     };
+    use device_id::DeviceId;
     use ostd::{
         mm::{FrameAllocOptions, Segment, VmIo},
         prelude::*,
@@ -189,6 +193,14 @@ mod test {
                 max_nr_segments_per_bio: usize::MAX,
                 nr_sectors: self.blocks.size() / SECTOR_SIZE,
             }
+        }
+
+        fn name(&self) -> &str {
+            todo!()
+        }
+
+        fn id(&self) -> DeviceId {
+            todo!()
         }
     }
 

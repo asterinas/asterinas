@@ -10,6 +10,7 @@ inherit-methods-macro = {git = "https://github.com/asterinas/inherit-methods-mac
 ostd-pod = { git = "https://github.com/asterinas/ostd-pod", rev = "c4644be", version = "0.1.1" }
 component = { path = "../../libs/comp-sys/component" }
 aster-block = { path = "../block" }
+device-id = { path = "../../libs/device-id" }
 ostd = { path = "../../../ostd" }
 # Enable `force-soft` feature to disable `AES-NI` and `CLMUL` intrinsics, ensuring that the implementation
 # relies solely on software, and in the software implementation, unsafe code is rarely used.
