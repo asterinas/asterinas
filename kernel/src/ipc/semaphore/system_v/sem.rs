@@ -14,7 +14,10 @@ use crate::{
     ipc::{key_t, semaphore::system_v::sem_set::sem_sets, IpcFlags},
     prelude::*,
     process::Pid,
-    time::{clocks::JIFFIES_TIMER_MANAGER, timer::Timeout},
+    time::{
+        clocks::JIFFIES_TIMER_MANAGER,
+        timer::{Timeout, TimerGuard},
+    },
 };
 
 #[derive(Clone, Copy, Debug, Pod)]
@@ -170,10 +173,14 @@ pub fn sem_op(
     if let Some(timeout) = timeout {
         pending_op.waker = Some(waker.clone());
 
-        let jiffies_timer = JIFFIES_TIMER_MANAGER.get().unwrap().create_timer(move || {
-            waker.wake_up();
-        });
-        jiffies_timer.set_timeout(Timeout::After(timeout));
+        let jiffies_timer =
+            JIFFIES_TIMER_MANAGER
+                .get()
+                .unwrap()
+                .create_timer(move |_guard: TimerGuard| {
+                    waker.wake_up();
+                });
+        jiffies_timer.lock().set_timeout(Timeout::After(timeout));
     } else {
         pending_op.waker = Some(waker);
     }

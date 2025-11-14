@@ -4,7 +4,10 @@ use alloc::{
     collections::vec_deque::VecDeque,
     sync::{Arc, Weak},
 };
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::{
+    fmt::Display,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use keyable_arc::{KeyableArc, KeyableWeak};
 use ostd::sync::{LocalIrqDisabled, Mutex, MutexGuard, SpinLock, SpinLockGuard};
@@ -29,6 +32,15 @@ pub(super) struct Entry {
     // Keep this in a separate `Arc` to avoid dropping `Entry` in the observer callback, which may
     // cause deadlocks.
     observer: Arc<Observer>,
+}
+
+impl Display for Entry {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let inner = self.inner.lock();
+        write!(f, "tfd:\t{} ", self.key.fd)?;
+        write!(f, "events:\t{:x} ", inner.event.events.bits())?;
+        write!(f, "data: {:x}", inner.event.user_data)
+    }
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]

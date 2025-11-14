@@ -20,5 +20,3 @@ Pipes/PipeTest.OffsetCalls/*
 Pipes/PipeTest.Flags/*
 # TODO: Support ioctl for pipe files.
 Pipes/PipeTest.FionRead/*
-# TODO: Support fdinfo in procfs.
-Pipes/PipeTest.ProcFDInfoReleasesFile/*
