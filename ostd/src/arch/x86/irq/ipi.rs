@@ -32,13 +32,7 @@ pub(in crate::arch) fn init() {
 }
 
 /// Sends a general inter-processor interrupt (IPI) to the specified CPU.
-///
-/// # Safety
-///
-/// The caller must ensure that the interrupt number is valid and that
-/// the corresponding handler is configured correctly on the remote CPU.
-/// Furthermore, invoking the interrupt handler must also be safe.
-pub(crate) unsafe fn send_ipi(hw_cpu_id: HwCpuId, guard: &dyn PinCurrentCpu) {
+pub(crate) fn send_ipi(hw_cpu_id: HwCpuId, guard: &dyn PinCurrentCpu) {
     use crate::arch::kernel::apic::{self, Icr};
 
     let irq_num = IPI_IRQ.get().unwrap().num();

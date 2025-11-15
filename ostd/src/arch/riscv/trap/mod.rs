@@ -110,6 +110,7 @@ pub(super) fn handle_irq(trap_frame: &TrapFrame, interrupt: Interrupt, priv_leve
             );
         }
         Interrupt::SupervisorExternal => {
+            // No races because we're in IRQs.
             let hart_id = crate::arch::boot::smp::get_current_hart_id();
             while let Some(hw_irq_line) = IRQ_CHIP.get().unwrap().claim_interrupt(hart_id) {
                 call_irq_callback_functions(trap_frame, &hw_irq_line, priv_level);
