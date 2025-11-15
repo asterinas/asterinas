@@ -79,6 +79,7 @@ build.strip_elf = false
 qemu.args = """\
     -machine sifive_u \
     -m 8G \
+    -smp 5 \
     -no-reboot \
     -nographic \
     -display none \
