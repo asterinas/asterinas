@@ -315,6 +315,7 @@ name = "aster-time"
 version = "0.1.0"
 dependencies = [
  "aster-util",
+ "bitflags 2.9.1",
  "chrono",
  "component",
  "log",
