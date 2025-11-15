@@ -64,7 +64,7 @@ pub(in crate::arch) unsafe fn init_current_hart() {
 /// An IRQ chip.
 ///
 /// This abstracts the hardware IRQ chips (or IRQ controllers), allowing the bus
-/// or device drivers to enable [`IrqLine`]s (via, e.g., [`map_interrupt_source_to`])
+/// or device drivers to enable [`IrqLine`]s (via, e.g., [`map_fdt_pin_to`])
 /// regardless of the specifics of the IRQ chip.
 ///
 /// In the RISC-V architecture, the underlying hardware is typically Platform-Level

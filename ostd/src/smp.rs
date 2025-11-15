@@ -50,11 +50,7 @@ pub fn inter_processor_call(targets: &CpuSet, f: fn()) {
             continue;
         }
         let hw_cpu_id = ipi_data.hw_cpu_ids[cpu_id.as_usize()];
-        // SAFETY: The value of `irq_num` corresponds to a valid IRQ line and
-        // triggering it will not cause any safety issues.
-        unsafe {
-            crate::arch::irq::send_ipi(hw_cpu_id, &irq_guard as _);
-        }
+        crate::arch::irq::send_ipi(hw_cpu_id, &irq_guard as _);
     }
     if call_on_self {
         // Execute the function synchronously.
@@ -76,7 +72,8 @@ cpu_local! {
 ///
 /// # Safety
 ///
-/// It should only be called upon the inter processor interrupt.
+/// This function must be called from an IRQ handler that can be triggered by
+/// inter-processor interrupts.
 pub(crate) unsafe fn do_inter_processor_call(_trapframe: &TrapFrame) {
     // No races because we are in IRQs.
     let this_cpu_id = crate::cpu::CpuId::current_racy();

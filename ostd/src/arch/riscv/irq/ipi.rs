@@ -11,8 +11,8 @@ use crate::{cpu::PinCurrentCpu, irq::IrqLine};
 pub(crate) struct HwCpuId(u32);
 
 impl HwCpuId {
-    #[expect(unused_variables)]
-    pub(crate) fn read_current(guard: &dyn PinCurrentCpu) -> Self {
+    pub(crate) fn read_current(_guard: &dyn PinCurrentCpu) -> Self {
+        // No races because of `_guard`.
         Self(crate::arch::boot::smp::get_current_hart_id())
     }
 }
@@ -49,14 +49,7 @@ pub(in crate::arch) unsafe fn init_current_hart() {
 }
 
 /// Sends a general inter-processor interrupt (IPI) to the specified CPU.
-///
-/// # Safety
-///
-/// The caller must ensure that the interrupt number is valid and that
-/// the corresponding handler is configured correctly on the remote CPU.
-/// Furthermore, invoking the interrupt handler must also be safe.
-#[expect(unused_variables)]
-pub(crate) unsafe fn send_ipi(hw_cpu_id: HwCpuId, guard: &dyn PinCurrentCpu) {
+pub(crate) fn send_ipi(hw_cpu_id: HwCpuId, _guard: &dyn PinCurrentCpu) {
     const XLEN: usize = core::mem::size_of::<usize>() * 8;
     const XLEN_MASK: usize = XLEN - 1;
 
