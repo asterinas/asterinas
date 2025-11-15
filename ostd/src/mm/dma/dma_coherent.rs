@@ -76,6 +76,27 @@ impl DmaCoherent {
                     //  - A `USegment` always points to normal physical memory, so all the pages
                     //    are contained in the linear mapping.
                     //  - The pages belong to a `USegment`, so they're all untyped memory.
+                    // TODO: Prevent Iago attack: DMA buffer unprotection creates VMM data access boundary:
+                    // unprotect_gpa_range() exposes DMA buffers to untrusted VMM as shared memory for IO.
+                    // Primary Security Risks (TDX threat model scope):
+                    // - **Kernel Data Integrity Violation**: VMM may modify DMA buffer contents,
+                    //    corrupting data that kernel expects to be authentic from devices. This affects:
+                    //    - VirtQueue descriptors, available/used rings (control flow corruption)
+                    //    - Network packet data (data integrity compromise)
+                    //    - Storage I/O buffers (file system data corruption)
+                    // - **Privilege Escalation Risk**: Malicious DMA buffer content may exploit
+                    //    kernel VirtIO driver vulnerabilities through:
+                    //    - Crafted VirtQueue ring entries causing buffer overflows
+                    //    - Invalid descriptor chains leading to memory corruption
+                    //    - Malformed device responses triggering driver parsing errors
+                    // VirtQueue-Specific Attack Vectors:
+                    // - **Descriptor manipulation**: VMM modifies buffer addresses/lengths in descriptors
+                    // - **Ring tampering**: VMM corrupts available/used ring indices and flags
+                    // - **Buffer content injection**: VMM injects malicious data in I/O buffers
+                    // Consider implementing:
+                    // - Validate VirtQueue ring structures before processing
+                    // - Bounds-check all buffer addresses and lengths from device
+                    // - Sanitize device-provided data before kernel processing
                     unsafe {
                         tdx_guest::unprotect_gpa_range(paddr, frame_count).unwrap();
                     }

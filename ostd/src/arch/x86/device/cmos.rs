@@ -27,6 +27,14 @@ sensitive_io_port!(unsafe {
 /// Gets the century register location. This function is used in RTC(Real Time Clock) module initialization.
 pub fn century_register() -> Option<u8> {
     let acpi_tables = get_acpi_tables()?;
+    // TODO: Prevent Iago attack: Validate FADT table integrity and century register value in Intel TDX environment.
+    // The untrusted input could provide a malicious ACPI table with:
+    // - Invalid century register address that could cause hardware access violations
+    // - Out-of-range century register indices/offsets
+    // - Corrupted FADT structure to trigger parsing vulnerabilities
+    // - Inconsistent century register values across multiple calls (TOCTOU attacks)
+    // Consider implementing: checksum verification, validate century register against
+    // known valid CMOS RTC century register addresses, and caching to detect modifications.
     match acpi_tables.find_table::<Fadt>() {
         Ok(a) => Some(a.century),
         Err(er) => None,
