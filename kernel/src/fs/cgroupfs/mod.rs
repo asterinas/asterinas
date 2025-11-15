@@ -3,6 +3,7 @@
 use fs::CgroupFsType;
 pub use systree_node::{CgroupMembership, CgroupNode};
 
+mod controller;
 mod fs;
 mod inode;
 mod systree_node;
