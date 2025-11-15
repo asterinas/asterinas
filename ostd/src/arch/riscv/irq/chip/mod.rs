@@ -26,14 +26,15 @@ use crate::{
 /// The [`IrqChip`] singleton.
 pub static IRQ_CHIP: Once<IrqChip> = Once::new();
 
-/// Initializes the Platform-Level Interrupt Controller (PLIC).
+/// Initializes the Platform-Level Interrupt Controller (PLIC) on the BSP.
 ///
 /// # Safety
 ///
 /// This function is safe to call on the following conditions:
-/// 1. It is called once and at most once at a proper timing in the boot context.
+/// 1. It is called once and at most once at a proper timing in the boot context
+///    of the BSP.
 /// 2. It is called before any other public functions of this module is called.
-pub(in crate::arch) unsafe fn init(io_mem_builder: &IoMemAllocatorBuilder) {
+pub(in crate::arch) unsafe fn init_on_bsp(io_mem_builder: &IoMemAllocatorBuilder) {
     let device_tree = DEVICE_TREE.get().unwrap();
     let mut plics = Plic::from_fdt(device_tree, io_mem_builder);
     plics.iter_mut().for_each(|plic| plic.init());
@@ -55,7 +56,7 @@ pub(in crate::arch) unsafe fn init(io_mem_builder: &IoMemAllocatorBuilder) {
 /// 1. It is called once and at most once on this AP.
 /// 2. It is called before any other public functions of this module is called
 ///    on this AP.
-pub(in crate::arch) unsafe fn init_current_hart() {
+pub(in crate::arch) unsafe fn init_on_ap() {
     // SAFETY: Accessing the `sie` CSR to enable the external interrupt is safe
     // here due to the same reasons mentioned in `init`.
     unsafe { riscv::register::sie::set_sext() };

@@ -51,6 +51,14 @@ pub(crate) unsafe fn late_init_on_bsp() {
     unsafe { crate::io::init(io_mem_builder) };
 }
 
+/// Initializes application-processor-specific state.
+///
+/// # Safety
+///
+/// 1. This function must be called only once on each application processor.
+/// 2. This function must be called after the BSP's call to [`late_init_on_bsp`]
+///    and before any other architecture-specific code in this module is called
+///    on this AP.
 pub(crate) unsafe fn init_on_ap() {
     unimplemented!()
 }
