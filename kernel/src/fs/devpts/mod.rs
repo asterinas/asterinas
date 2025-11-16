@@ -14,10 +14,11 @@ use crate::{
     device::PtyMaster,
     fs::{
         device::{Device, DeviceType},
+        notify::FsnotifyPublisher,
         registry::{FsProperties, FsType},
         utils::{
-            mkmod, DirEntryVecExt, DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType,
-            IoctlCmd, Metadata, SuperBlock, NAME_MAX,
+            mkmod, DirEntryVecExt, DirentVisitor, FileSystem, FsFlags, FsnotifyInfo, Inode,
+            InodeMode, InodeType, IoctlCmd, Metadata, SuperBlock, NAME_MAX,
         },
     },
     prelude::*,
@@ -47,6 +48,7 @@ pub struct DevPts {
     sb: SuperBlock,
     root: Arc<RootInode>,
     index_alloc: Mutex<IdAlloc>,
+    fsnotify_info: FsnotifyInfo,
     this: Weak<Self>,
 }
 
@@ -56,6 +58,7 @@ impl DevPts {
             sb: SuperBlock::new(DEVPTS_MAGIC, BLOCK_SIZE, NAME_MAX),
             root: RootInode::new(weak_self.clone()),
             index_alloc: Mutex::new(IdAlloc::with_capacity(MAX_PTY_NUM)),
+            fsnotify_info: FsnotifyInfo::new(),
             this: weak_self.clone(),
         })
     }
@@ -109,6 +112,10 @@ impl FileSystem for DevPts {
     fn sb(&self) -> SuperBlock {
         self.sb.clone()
     }
+
+    fn fsnotify_info(&self) -> &FsnotifyInfo {
+        &self.fsnotify_info
+    }
 }
 
 struct DevPtsType;
@@ -145,6 +152,7 @@ struct RootInode {
     slaves: RwLock<SlotVec<(String, Arc<dyn Inode>)>>,
     metadata: RwLock<Metadata>,
     fs: Weak<DevPts>,
+    fsnotify_publisher: FsnotifyPublisher,
 }
 
 impl RootInode {
@@ -154,6 +162,7 @@ impl RootInode {
             slaves: RwLock::new(SlotVec::new()),
             metadata: RwLock::new(Metadata::new_dir(ROOT_INO, mkmod!(a+rx, u+w), BLOCK_SIZE)),
             fs,
+            fsnotify_publisher: FsnotifyPublisher::new(),
         })
     }
 }
@@ -323,5 +332,9 @@ impl Inode for RootInode {
 
     fn is_dentry_cacheable(&self) -> bool {
         false
+    }
+
+    fn fsnotify_publisher(&self) -> &FsnotifyPublisher {
+        &self.fsnotify_publisher
     }
 }

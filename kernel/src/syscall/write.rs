@@ -2,6 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
+    fs,
     fs::file_table::{get_file_fast, FileDesc},
     prelude::*,
 };
@@ -37,5 +38,8 @@ pub fn sys_write(
         _ => err,
     })?;
 
+    if write_len > 0 {
+        fs::notify::on_modify(&file);
+    }
     Ok(SyscallReturn::Return(write_len as _))
 }

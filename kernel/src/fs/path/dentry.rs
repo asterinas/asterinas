@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #![expect(dead_code)]
-
 use core::{
     sync::atomic::{AtomicU32, Ordering},
     time::Duration,
@@ -11,11 +10,15 @@ use hashbrown::HashMap;
 use inherit_methods_macro::inherit_methods;
 use ostd::sync::RwMutexWriteGuard;
 
-use super::is_dot_or_dotdot;
+use super::{is_dot, is_dot_or_dotdot, is_dotdot};
 use crate::{
-    fs::utils::{
-        FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType, XattrName, XattrNamespace,
-        XattrSetFlags,
+    fs,
+    fs::{
+        notify::FsnotifyPublisher,
+        utils::{
+            FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType, XattrName,
+            XattrNamespace, XattrSetFlags,
+        },
     },
     prelude::*,
     process::{Gid, Uid},
@@ -238,8 +241,9 @@ impl Dentry {
         );
 
         if dentry.is_dentry_cacheable() {
-            children.upgrade().insert(name, dentry.clone());
+            children.upgrade().insert(name.clone(), dentry.clone());
         }
+        fs::notify::on_link(dentry.parent().unwrap().inode(), dentry.inode(), name);
         Ok(())
     }
 
@@ -249,13 +253,39 @@ impl Dentry {
             return_errno!(Errno::ENOTDIR);
         }
 
+        if is_dot_or_dotdot(name) {
+            return_errno_with_message!(Errno::EINVAL, "unlink on . or ..");
+        }
+
         let children = self.children.upread();
         children.check_mountpoint(name)?;
 
-        self.inode.unlink(name)?;
-
         let mut children = children.upgrade();
-        children.delete(name);
+        let cached_child = children.delete(name);
+
+        let child_inode = match cached_child {
+            Some(child) => {
+                // Cache hit: use the cached dentry
+                child.inode().clone()
+            }
+            None => {
+                // Cache miss: need to lookup from the underlying filesystem
+                drop(children);
+                self.inode.lookup(name)?
+            }
+        };
+
+        self.inode.unlink(name)?;
+        fs::notify::on_link_count(&child_inode);
+        if child_inode.metadata().nlinks == 0 {
+            fs::notify::on_inode_removed(&child_inode);
+            let deleted_watches = child_inode.fsnotify_publisher().remove_all_subscribers();
+            child_inode
+                .fs()
+                .fsnotify_info()
+                .remove_subscribers(deleted_watches);
+        }
+        fs::notify::on_delete(self.inode(), &child_inode, String::from(name));
         Ok(())
     }
 
@@ -265,13 +295,41 @@ impl Dentry {
             return_errno!(Errno::ENOTDIR);
         }
 
+        if is_dot(name) {
+            return_errno_with_message!(Errno::EINVAL, "rmdir on .");
+        }
+        if is_dotdot(name) {
+            return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..");
+        }
+
         let children = self.children.upread();
         children.check_mountpoint(name)?;
 
-        self.inode.rmdir(name)?;
-
         let mut children = children.upgrade();
-        children.delete(name);
+        let cached_child = children.delete(name);
+
+        let child_inode = match cached_child {
+            Some(child) => {
+                // Cache hit: use the cached dentry
+                child.inode().clone()
+            }
+            None => {
+                // Cache miss: need to lookup from the underlying filesystem
+                drop(children);
+                self.inode.lookup(name)?
+            }
+        };
+
+        self.inode.rmdir(name)?;
+        if child_inode.metadata().nlinks == 0 {
+            fs::notify::on_inode_removed(&child_inode);
+            let deleted_watches = child_inode.fsnotify_publisher().remove_all_subscribers();
+            child_inode
+                .fs()
+                .fsnotify_info()
+                .remove_subscribers(deleted_watches);
+        }
+        fs::notify::on_delete(self.inode(), &child_inode, String::from(name));
         Ok(())
     }
 
@@ -389,6 +447,7 @@ impl Dentry {
         list_writer: &mut VmWriter,
     ) -> Result<usize>;
     pub(super) fn remove_xattr(&self, name: XattrName) -> Result<()>;
+    pub(super) fn fsnotify_publisher(&self) -> &FsnotifyPublisher;
 }
 
 impl Debug for Dentry {

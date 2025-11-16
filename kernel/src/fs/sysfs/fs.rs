@@ -6,7 +6,9 @@ use crate::{
     fs::{
         registry::{FsProperties, FsType},
         sysfs::{self, inode::SysFsInode},
-        utils::{systree_inode::SysTreeInodeTy, FileSystem, FsFlags, Inode, SuperBlock},
+        utils::{
+            systree_inode::SysTreeInodeTy, FileSystem, FsFlags, FsnotifyInfo, Inode, SuperBlock,
+        },
         Result,
     },
     prelude::*,
@@ -17,6 +19,7 @@ use crate::{
 pub(super) struct SysFs {
     sb: SuperBlock,
     root: Arc<dyn Inode>,
+    fsnotify_info: FsnotifyInfo,
 }
 
 const MAGIC_NUMBER: u64 = 0x62656572; // SYSFS_MAGIC
@@ -44,6 +47,7 @@ impl SysFs {
         Arc::new(Self {
             sb,
             root: root_inode,
+            fsnotify_info: FsnotifyInfo::new(),
         })
     }
 }
@@ -64,6 +68,10 @@ impl FileSystem for SysFs {
 
     fn sb(&self) -> SuperBlock {
         self.sb.clone()
+    }
+
+    fn fsnotify_info(&self) -> &FsnotifyInfo {
+        &self.fsnotify_info
     }
 }
 

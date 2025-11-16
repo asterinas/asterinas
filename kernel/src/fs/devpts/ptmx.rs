@@ -7,6 +7,7 @@ use crate::{
     events::IoEvents,
     fs::{
         inode_handle::FileIo,
+        notify::FsnotifyPublisher,
         utils::{AccessMode, StatusFlags},
     },
     process::signal::{PollHandle, Pollable},
@@ -24,6 +25,7 @@ const PTMX_MINOR_NUM: u32 = 2;
 pub struct Ptmx {
     inner: Inner,
     metadata: RwLock<Metadata>,
+    fsnotify_publisher: FsnotifyPublisher,
 }
 
 #[derive(Clone)]
@@ -40,6 +42,7 @@ impl Ptmx {
                 &inner,
             )),
             inner,
+            fsnotify_publisher: FsnotifyPublisher::new(),
         })
     }
 
@@ -157,6 +160,10 @@ impl Inode for Ptmx {
 
     fn is_dentry_cacheable(&self) -> bool {
         false
+    }
+
+    fn fsnotify_publisher(&self) -> &FsnotifyPublisher {
+        &self.fsnotify_publisher
     }
 }
 

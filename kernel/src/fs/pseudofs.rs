@@ -6,9 +6,11 @@ use spin::Once;
 
 use crate::{
     fs::{
+        notify::FsnotifyPublisher,
         registry::{FsProperties, FsType},
         utils::{
-            mkmod, FileSystem, FsFlags, Inode, InodeMode, InodeType, Metadata, SuperBlock, NAME_MAX,
+            mkmod, FileSystem, FsFlags, FsnotifyInfo, Inode, InodeMode, InodeType, Metadata,
+            SuperBlock, NAME_MAX,
         },
     },
     prelude::*,
@@ -21,6 +23,7 @@ pub struct PseudoFs {
     name: &'static str,
     sb: SuperBlock,
     root: Arc<dyn Inode>,
+    fsnotify_info: FsnotifyInfo,
 }
 
 impl FileSystem for PseudoFs {
@@ -39,6 +42,10 @@ impl FileSystem for PseudoFs {
 
     fn sb(&self) -> SuperBlock {
         self.sb.clone()
+    }
+
+    fn fsnotify_info(&self) -> &FsnotifyInfo {
+        &self.fsnotify_info
     }
 }
 
@@ -62,6 +69,7 @@ impl PseudoFs {
                     aster_block::BLOCK_SIZE,
                     weak_fs.clone(),
                 )),
+                fsnotify_info: FsnotifyInfo::new(),
             })
         })
     }
@@ -174,6 +182,7 @@ const ANON_INODEFS_MAGIC: u64 = 0x09041934;
 pub struct PseudoInode {
     metadata: SpinLock<Metadata>,
     fs: Weak<PseudoFs>,
+    fsnotify_publisher: FsnotifyPublisher,
 }
 
 impl PseudoInode {
@@ -206,6 +215,7 @@ impl PseudoInode {
         PseudoInode {
             metadata: SpinLock::new(metadata),
             fs,
+            fsnotify_publisher: FsnotifyPublisher::new(),
         }
     }
 }
@@ -318,6 +328,10 @@ impl Inode for PseudoInode {
 
     fn fs(&self) -> Arc<dyn FileSystem> {
         self.fs.upgrade().unwrap()
+    }
+
+    fn fsnotify_publisher(&self) -> &FsnotifyPublisher {
+        &self.fsnotify_publisher
     }
 }
 
