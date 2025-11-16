@@ -46,6 +46,7 @@ macro_rules! impl_untyped_frame_meta_for {
             }
         }
         impl $crate::mm::frame::untyped::AnyUFrameMeta for $t {}
+        $crate::impl_untyped_frame_meta_for!(@check_constraints $t);
     };
     // Implement with a customized drop function.
     ($t:ty, $body:expr) => {
@@ -60,6 +61,14 @@ macro_rules! impl_untyped_frame_meta_for {
             }
         }
         impl $crate::mm::frame::untyped::AnyUFrameMeta for $t {}
+        $crate::impl_untyped_frame_meta_for!(@check_constraints $t);
+    };
+    // Check the size and alignment constraints of the metadata type.
+    (@check_constraints $t:ty) => {
+        $crate::const_assert!(size_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_SIZE);
+        $crate::const_assert!(
+            $crate::mm::frame::meta::FRAME_METADATA_MAX_ALIGN % align_of::<$t>() == 0
+        );
     };
 }
 
