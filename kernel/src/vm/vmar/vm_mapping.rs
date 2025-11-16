@@ -195,7 +195,7 @@ impl VmMapping {
         let map_range = self.map_to_addr..self.map_to_addr + self.map_size.get();
         let mut cursor = vm_space.cursor_mut(&preempt_guard, &map_range)?;
         let io_page_prop =
-            PageProperty::new_user(PageFlags::from(self.perms), CachePolicy::Uncacheable);
+            PageProperty::new_user(PageFlags::from(self.perms), io_mem.cache_policy());
         cursor.map_iomem(io_mem, io_page_prop, self.map_size.get(), vmo_offset);
 
         Ok(())

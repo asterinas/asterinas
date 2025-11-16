@@ -187,6 +187,12 @@ pub(crate) fn enable_cpu_features() {
 
     cpu::context::enable_essential_features();
 
+    // PAT has been available since Pentium III (1999) and is ubiquitous in
+    // modern 64-bit CPUs. Therefore, we assume that all x86-64 CPUs should
+    // have Page Attribute Table (PAT) support. Otherwise, we should check
+    // `x86::cpuid::FeatureInfo::has_pat()` here.
+    mm::configure_pat();
+
     unsafe {
         // Enable non-executable page protection.
         x86_64::registers::model_specific::Efer::update(|efer| {

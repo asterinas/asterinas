@@ -7,6 +7,7 @@ use cfg_if::cfg_if;
 pub(crate) use util::{
     __atomic_cmpxchg_fallible, __atomic_load_fallible, __memcpy_fallible, __memset_fallible,
 };
+use x86::msr::{wrmsr, IA32_PAT};
 use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
 
 use crate::{
@@ -19,6 +20,22 @@ use crate::{
 };
 
 mod util;
+
+/// Software-defined mapping from PAT bit combinations to cache policies.
+///
+/// Index encoding: `(PAT << 2) | (PCD << 1) | PWT`.
+/// Indices 4-7 are set to match 0-3, so level 1 pages can have PAT bit (bit 7) fixed to 1
+/// (using it as a validity marker) while still accessing all cache policies through indices 4-7.
+const IA32_PAT_MAPPINGS: [CachePolicy; 8] = [
+    CachePolicy::Writeback,      // Index 0: PAT=0, PCD=0, PWT=0
+    CachePolicy::Writethrough,   // Index 1: PAT=0, PCD=0, PWT=1
+    CachePolicy::WriteCombining, // Index 2: PAT=0, PCD=1, PWT=0 (replaces UC-)
+    CachePolicy::Uncacheable,    // Index 3: PAT=0, PCD=1, PWT=1
+    CachePolicy::Writeback,      // Index 4: PAT=1, PCD=0, PWT=0 (same as 0)
+    CachePolicy::Writethrough,   // Index 5: PAT=1, PCD=0, PWT=1 (same as 1)
+    CachePolicy::WriteCombining, // Index 6: PAT=1, PCD=1, PWT=0 (same as 2)
+    CachePolicy::Uncacheable,    // Index 7: PAT=1, PCD=1, PWT=1 (same as 3)
+];
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PagingConsts {}
@@ -138,7 +155,11 @@ pub(crate) unsafe fn activate_page_table(root_paddr: Paddr, root_pt_cache: Cache
         CachePolicy::Writeback => x86_64::registers::control::Cr3Flags::empty(),
         CachePolicy::Writethrough => x86_64::registers::control::Cr3Flags::PAGE_LEVEL_WRITETHROUGH,
         CachePolicy::Uncacheable => x86_64::registers::control::Cr3Flags::PAGE_LEVEL_CACHE_DISABLE,
-        _ => panic!("unsupported cache policy for the root page table"),
+        // Write-combining and write-protected are not supported for root page table (CR3)
+        // as CR3 only supports WB, WT, and UC via PCD/PWT bits
+        _ => {
+            panic!("unsupported cache policy for the root page table (only WB, WT, and UC are allowed)")
+        }
     };
 
     // SAFETY: The safety is upheld by the caller.
@@ -215,13 +236,17 @@ impl PageTableEntryTrait for PageTableEntry {
         #[cfg(feature = "cvm_guest")]
         let priv_flags =
             priv_flags | (parse_flags!(self.0, PageTableFlags::SHARED, PrivFlags::SHARED));
-        let cache = if self.0 & PageTableFlags::NO_CACHE.bits() != 0 {
-            CachePolicy::Uncacheable
-        } else if self.0 & PageTableFlags::WRITE_THROUGH.bits() != 0 {
-            CachePolicy::Writethrough
-        } else {
-            CachePolicy::Writeback
-        };
+
+        // Determine cache policy from PCD, PWT bits.
+        // Currently we only support 4 page cache policies. In our
+        // configuration in `IA32_PAT_MAPPINGS`, indices 4-7 mirror 0-3. Thus
+        // the values of PAT bit do not affect the cache policy selection. With
+        // PCD and PWT bits, we can determine the cache policy.
+        let pcd_bit = (self.0 & PageTableFlags::NO_CACHE.bits()) != 0;
+        let pwt_bit = (self.0 & PageTableFlags::WRITE_THROUGH.bits()) != 0;
+        let pat_index = ((pcd_bit as usize) << 1) | (pwt_bit as usize);
+        let cache = IA32_PAT_MAPPINGS[pat_index];
+
         PageProperty {
             flags: PageFlags::from_bits(flags as u8).unwrap(),
             cache,
@@ -276,16 +301,19 @@ impl PageTableEntryTrait for PageTableEntry {
             CachePolicy::Writethrough => {
                 flags |= PageTableFlags::WRITE_THROUGH.bits();
             }
-            CachePolicy::Uncacheable => {
+            CachePolicy::WriteCombining => {
                 flags |= PageTableFlags::NO_CACHE.bits();
+            }
+            CachePolicy::Uncacheable => {
+                flags |= PageTableFlags::NO_CACHE.bits() | PageTableFlags::WRITE_THROUGH.bits();
             }
             _ => panic!("unsupported cache policy"),
         }
         self.0 = self.0 & !Self::PROP_MASK | flags;
     }
 
-    fn is_last(&self, _level: PagingLevel) -> bool {
-        self.0 & PageTableFlags::HUGE.bits() != 0
+    fn is_last(&self, level: PagingLevel) -> bool {
+        level == 1 || self.0 & PageTableFlags::HUGE.bits() != 0
     }
 }
 
@@ -301,5 +329,22 @@ impl fmt::Debug for PageTableEntry {
             )
             .field("prop", &self.prop())
             .finish()
+    }
+}
+
+/// Programs the PAT MSR so that write-combining mappings use the correct memory type.
+pub(crate) fn configure_pat() {
+    let mut programmed_pat = 0u64;
+    for (idx, policy) in IA32_PAT_MAPPINGS.iter().copied().enumerate() {
+        programmed_pat |= (policy.to_ia32_pat_memory_type_entry() as u64) << (idx * 8);
+    }
+
+    // SAFETY: Writing `IA32_PAT` merely programs the page attribute table MSR.
+    // This code runs on the bootstrap processor before other CPUs depend on
+    // the PAT contents, so updating it cannot violate Rust's memory model; it
+    // only changes the cache policy encodings that hardware consults while
+    // translating future memory accesses.
+    unsafe {
+        wrmsr(IA32_PAT, programmed_pat);
     }
 }

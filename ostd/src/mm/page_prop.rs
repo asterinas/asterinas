@@ -96,6 +96,22 @@ pub enum CachePolicy {
     Writeback,
 }
 
+#[cfg(target_arch = "x86_64")]
+impl CachePolicy {
+    /// Returns the `IA32_PAT` memory type encoding for this cache policy.
+    ///
+    /// Reference: Intel 64 and IA-32 Architectures SDM Vol. 3A, Table 11-10.
+    pub(crate) const fn to_ia32_pat_memory_type_entry(self) -> u8 {
+        match self {
+            CachePolicy::Uncacheable => 0x00,
+            CachePolicy::WriteCombining => 0x01,
+            CachePolicy::WriteProtected => 0x05,
+            CachePolicy::Writethrough => 0x04,
+            CachePolicy::Writeback => 0x06,
+        }
+    }
+}
+
 bitflags! {
     /// Page protection permissions and access status.
     pub struct PageFlags: u8 {
