@@ -9,7 +9,7 @@ use ostd::{
     arch::device::io_port::{PortRead, PortWrite},
     io::IoMem,
     irq::IrqCallbackFunction,
-    mm::{DmaCoherent, PodOnce},
+    mm::{dma::DmaCoherent, PodOnce},
     Pod,
 };
 

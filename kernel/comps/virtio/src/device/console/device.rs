@@ -8,7 +8,7 @@ use aster_util::mem_obj_slice::Slice;
 use log::debug;
 use ostd::{
     arch::trap::TrapFrame,
-    mm::{io_util::HasVmReaderWriter, DmaDirection, DmaStream, FrameAllocOptions, VmReader},
+    mm::{dma::DmaStream, io_util::HasVmReaderWriter, FrameAllocOptions, VmReader},
     sync::{Rcu, SpinLock},
 };
 
@@ -99,12 +99,12 @@ impl ConsoleDevice {
 
         let send_buffer = {
             let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-            Arc::new(DmaStream::map(segment.into(), DmaDirection::ToDevice, false).unwrap())
+            Arc::new(DmaStream::map(segment.into(), false))
         };
 
         let receive_buffer = {
             let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-            Arc::new(DmaStream::map(segment.into(), DmaDirection::FromDevice, false).unwrap())
+            Arc::new(DmaStream::map(segment.into(), false))
         };
 
         let device = Arc::new(Self {
