@@ -1,0 +1,14 @@
+// Retrieve or set the parent-death signal
+prctl(op = PR_GET_PDEATHSIG | PR_SET_PDEATHSIG, sig);
+
+// Get or set the name of calling thread
+prctl(op = PR_GET_NAME | PR_SET_NAME, name);
+
+// Query whether process retains permitted capabilities after `UID` changes
+prctl(op = PR_GET_KEEPCAPS);
+
+// Configure permitted capabilities retention after `UID` changes
+prctl(op = PR_SET_KEEPCAPS, state);
+
+// Retrieve or set "child subreaper" attribute
+prctl(op = PR_GET_CHILD_SUBREAPER | PR_SET_CHILD_SUBREAPER, isset);

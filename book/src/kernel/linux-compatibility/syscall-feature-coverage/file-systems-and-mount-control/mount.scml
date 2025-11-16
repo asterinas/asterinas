@@ -1,0 +1,20 @@
+// Create a new mount
+mount(
+    source, target, filesystemtype,
+    mountflags = 0,
+    data
+);
+
+// Move the existing mount point
+mount(
+    source, target, filesystemtype,
+    mountflags = MS_MOVE,
+    data
+);
+
+// Create a bind mount
+mount(
+    source, target, filesystemtype,
+    mountflags = MS_BIND | MS_REC,
+    data
+);

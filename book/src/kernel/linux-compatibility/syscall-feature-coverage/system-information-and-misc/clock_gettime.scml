@@ -1,0 +1,9 @@
+predefined_clockid = CLOCK_REALTIME | CLOCK_MONOTONIC | CLOCK_MONOTONIC_RAW |
+                     CLOCK_REALTIME_COARSE | CLOCK_MONOTONIC_COARSE | CLOCK_BOOTTIME |
+                     CLOCK_PROCESS_CPUTIME_ID | CLOCK_THREAD_CPUTIME_ID;
+
+// Get the time of a clock specified by a static ID
+clock_gettime(clockid = <predefined_clockid>, tp);
+
+// Get the time of a clock specified by a dynamic ID
+clock_gettime(clockid = <INTEGER>, tp);

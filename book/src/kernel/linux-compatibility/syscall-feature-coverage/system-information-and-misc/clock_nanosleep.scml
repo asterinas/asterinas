@@ -1,0 +1,10 @@
+// Sleep with a specified clock
+clock_nanosleep(
+    clockid = CLOCK_REALTIME | CLOCK_MONOTONIC | CLOCK_BOOTTIME | CLOCK_PROCESS_CPUTIME_ID,
+    flags =
+        // Optional flags:
+        //
+        // Sleep until an absolute time point
+        TIMER_ABSTIME,
+    t, remain
+);

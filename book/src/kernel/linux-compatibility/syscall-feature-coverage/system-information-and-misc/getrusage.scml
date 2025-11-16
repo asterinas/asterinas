@@ -1,0 +1,11 @@
+// Return resource usage statistics for the calling process
+getrusage(
+    who = RUSAGE_SELF,
+    usage
+);
+
+// Return resource usage statistics for the calling thread
+getrusage(
+    who = RUSAGE_THREAD,
+    usage
+);

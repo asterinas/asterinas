@@ -13,20 +13,7 @@ under this category.
 Supported functionality in SCML:
 
 ```c
-// Retrieve or set the parent-death signal
-prctl(op = PR_GET_PDEATHSIG ｜ PR_SET_PDEATHSIG, sig);
-
-// Get or set the name of calling thread
-prctl(op = PR_GET_NAME ｜ PR_SET_NAME, name);
-
-// Query whether process retains permitted capabilities after `UID` changes
-prctl(op = PR_GET_KEEPCAPS);
-
-// Configure permitted capabilities retention after `UID` changes
-prctl(op = PR_SET_KEEPCAPS, state);
-
-// Retrieve or set "child subreaper" attribute
-prctl(op = PR_GET_CHILD_SUBREAPER | PR_SET_CHILD_SUBREAPER, isset);
+{{#include prctl.scml}}
 ```
 
 Partially-supported operations:
@@ -70,23 +57,7 @@ see [the man page](https://man7.org/linux/man-pages/man2/prctl.2.html).
 Supported functionality in SCML:
 
 ```c
-// Get capabilities of thread
-capget(
-    hdrp = {
-        version = _LINUX_CAPABILITY_VERSION_3,
-        ..
-    },
-    datap
-);
-
-// Set capabilities of thread
-capset(
-    hdrp = {
-        version = _LINUX_CAPABILITY_VERSION_3,
-        ..
-    },
-    datap
-);
+{{#include capget_and_capset.scml}}
 ```
 
 Unsupported versions:

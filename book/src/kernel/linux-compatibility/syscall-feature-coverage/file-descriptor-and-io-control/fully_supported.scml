@@ -1,0 +1,10 @@
+// Duplicate a file descriptor
+dup(oldfd);
+dup2(oldfd, newfd);
+dup3(oldfd, newfd, flags);
+
+// Monitor multiplexed I/O with signal safety and precise timeout handling
+pselect6(nfds, readfds, writefds, exceptfds, timeout, sigmask);
+
+// Wait for some event on a file descriptor
+poll(fds, nfds, timeout);

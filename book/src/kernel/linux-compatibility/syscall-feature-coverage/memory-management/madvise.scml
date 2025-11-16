@@ -1,0 +1,8 @@
+// Apply the default memory access pattern with no special optimizations
+madvise(addr, length, advice = MADV_NORMAL);
+
+// Indicate sequential access to enable aggressive read-ahead and immediate page release
+madvise(addr, length, advice = MADV_SEQUENTIAL);
+
+// Prefetch pages for near-future access to reduce latency
+madvise(addr, length, advice = MADV_WILLNEED);

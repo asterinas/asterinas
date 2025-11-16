@@ -1,0 +1,16 @@
+// Resize an existing memory mapping. Relocation is allowed if given `MREMAP_MAYMOVE`.
+mremap(
+    old_address,
+    old_size,
+    new_size,
+    flags = MREMAP_MAYMOVE
+);
+
+// Resize an existing memory mapping and force relocation to a specified location.
+mremap(
+    old_address,
+    old_size,
+    new_size,
+    flags = MREMAP_MAYMOVE | MREMAP_FIXED,
+    new_address
+);

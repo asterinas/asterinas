@@ -1,0 +1,41 @@
+// Get the scheduling policy of a "normal" thread
+sched_getattr(
+    pid,
+    attr = {
+        sched_policy = SCHED_OTHER | SCHED_BATCH | SCHED_IDLE,
+        sched_flags = 0,
+        ..
+    },
+    flags = 0,
+);
+// Set the scheduling policy of a "normal" thread
+sched_setattr(
+    pid,
+    attr = {
+        sched_policy = SCHED_OTHER | SCHED_BATCH | SCHED_IDLE,
+        sched_flags = 0,
+        ..
+    },
+    flags = 0,
+);
+
+// Get the scheduling policy of a real-time thread
+sched_getattr(
+    pid,
+    attr = {
+        sched_policy = SCHED_FIFO | SCHED_RR,
+        sched_flags = 0,
+        ..
+    },
+    flags = 0,
+);
+// Set the scheduling policy of a real-time thread
+sched_setattr(
+    pid,
+    attr = {
+        sched_policy = SCHED_FIFO | SCHED_RR,
+        sched_flags = 0,
+        ..
+    },
+    flags = 0,
+);

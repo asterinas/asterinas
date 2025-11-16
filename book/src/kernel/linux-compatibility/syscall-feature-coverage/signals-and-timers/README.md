@@ -16,15 +16,7 @@ under this category.
 Supported functionality in SCML:
 
 ```c
-// Change and/or retrieve a signal action
-rt_sigaction(
-    signum,
-    act = {
-        sa_flags = SA_ONSTACK | SA_RESTART | SA_NODEFER | SA_RESTORER | SA_SIGINFO | SA_RESETHAND,
-        ..
-    },
-    oldact, sigsetsize
-);
+{{#include rt_sigaction.scml}}
 ```
 
 Unsupported `sigaction` flags:
@@ -39,10 +31,7 @@ see [the man page](https://man7.org/linux/man-pages/man2/sigaction.2.html).
 Supported functionality in SCML:
 
 ```c
-// Change and/or retrieve blocked signals
-rt_sigprocmask(
-    how = SIG_BLOCK | SIG_UNBLOCK | SIG_SETMASK, set, oldset, sigsetsize
-);
+{{#include rt_sigprocmask.scml}}
 ```
 
 For more information,
@@ -55,21 +44,7 @@ see [the man page](https://man7.org/linux/man-pages/man2/sigprocmask.2.html).
 Supported functionality in SCML:
 
 ```c
-opt_notify_methods = SIGEV_NONE | SIGEV_SIGNAL | SIGEV_THREAD_ID;
-
-// Create a timer with predefined clock source
-timer_create(
-    clockid = CLOCK_PROCESS_CPUTIME_ID | CLOCK_THREAD_CPUTIME_ID | CLOCK_REALTIME | CLOCK_MONOTONIC | CLOCK_BOOTTIME,
-    sevp = <opt_notify_methods>,
-    timerid
-);
-
-// Create a timer based on a per-process or per-thread clock
-timer_create(
-    clockid = <INTEGER>,
-    sevp = <opt_notify_methods>,
-    timerid
-);
+{{#include timer_create.scml}}
 ```
 
 Unsupported predefined clock IDs:

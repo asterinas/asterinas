@@ -1,0 +1,6 @@
+// Wait until a specified child process undergoes a state change (termination, stopping and resumption)
+wait4(
+    pid, wstatus,
+    options = WNOHANG | WSTOPPED | WCONTINUED | WNOWAIT,
+    rusage
+);

@@ -1,0 +1,5 @@
+// Create event notification descriptor
+eventfd(initval);
+
+// Create event notification descriptor with enhanced behavior control
+eventfd2(initval, flags = EFD_CLOEXEC);

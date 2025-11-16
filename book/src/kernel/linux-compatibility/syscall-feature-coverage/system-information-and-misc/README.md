@@ -13,11 +13,7 @@ under this category.
 Supported functionality in SCML:
 
 ```c
-// Get or set the FS register
-arch_prctl(
-    code = ARCH_GET_FS | ARCH_SET_FS,
-    addr
-);
+{{#include arch_prctl.scml}}
 ```
 
 Unsupported codes:
@@ -32,17 +28,7 @@ see [the man page](https://man7.org/linux/man-pages/man2/arch_prctl.2.html).
 Supported functionality in SCML:
 
 ```c
-// Return resource usage statistics for the calling process
-getrusage(
-    who = RUSAGE_SELF,
-    usage
-);
-
-// Return resource usage statistics for the calling thread
-getrusage(
-    who = RUSAGE_THREAD,
-    usage
-);
+{{#include getrusage.scml}}
 ```
 
 Unsupported `who` flags:
@@ -56,15 +42,7 @@ see [the man page](https://man7.org/linux/man-pages/man2/getrusage.2.html).
 Supported functionality in SCML:
 
 ```c
-// Obtain random bytes
-getrandom(
-    buf, buflen,
-    flags =
-        // Optional flags:
-        //
-        // High-entropy pool
-        GRND_RANDOM
-);
+{{#include getrandom.scml}}
 ```
 
 Silently-ignored flags:
@@ -80,15 +58,7 @@ see [the man page](https://man7.org/linux/man-pages/man2/getrandom.2.html).
 Supported functionality in SCML:
 
 ```c
-predefined_clockid = CLOCK_REALTIME | CLOCK_MONOTONIC | CLOCK_MONOTONIC_RAW |
-                     CLOCK_REALTIME_COARSE | CLOCK_MONOTONIC_COARSE | CLOCK_BOOTTIME |
-                     CLOCK_PROCESS_CPUTIME_ID | CLOCK_THREAD_CPUTIME_ID;
-
-// Get the time of a clock specified by a static ID
-clock_gettime(clockid = <predefined_clockid>, tp);
-
-// Get the time of a clock specified by a dynamic ID
-clock_gettime(clockid = <INTEGER>, tp);
+{{#include clock_gettime.scml}}
 ```
 
 Unsupported predefined clock IDs:
@@ -104,16 +74,7 @@ see [the man page](https://man7.org/linux/man-pages/man2/clock_gettime.2.html).
 Supported functionality in SCML:
 
 ```c
-// Sleep with a specified clock
-clock_nanosleep(
-    clockid = CLOCK_REALTIME | CLOCK_MONOTONIC | CLOCK_BOOTTIME | CLOCK_PROCESS_CPUTIME_ID,
-    flags =
-        // Optional flags:
-        //
-        // Sleep until an absolute time point
-        TIMER_ABSTIME,
-    t, remain
-);
+{{#include clock_nanosleep.scml}}
 ```
 
 Unsupported clock IDs:

@@ -1,0 +1,31 @@
+// Remove the semaphore set
+semctl(
+    semid,
+    semnum,
+    cmd = IPC_RMID
+);
+
+// Initialize the value of the semnum-th semaphore
+semctl(
+    semid,
+    semnum,
+    cmd = SETVAL,
+    arg
+);
+
+// Return the current value (GETVAL), last operating process's PID (GETPID),
+// count of processes awaiting increment (GETNCNT) or count of processes awaiting
+// zero (GETZCNT) of the semnum-th semaphore
+semctl(
+    semid,
+    semnum,
+    cmd = GETVAL | GETPID | GETNCNT | GETZCNT
+);
+
+// Retrieve a copy of the `semid_ds` kernel structure for the specified semaphore set
+semctl(
+    semid,
+    semnum,
+    cmd = IPC_STAT,
+    arg
+);

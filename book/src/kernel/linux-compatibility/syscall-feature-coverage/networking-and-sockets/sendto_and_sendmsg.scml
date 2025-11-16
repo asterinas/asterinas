@@ -1,0 +1,23 @@
+struct sockaddr = {
+    sa_family = AF_INET | AF_UNIX | AF_NETLINK | AF_VSOCK,
+    ..
+};
+
+// Send message on a socket
+sendto(
+    sockfd, buf, len,
+    flags = 0,
+    dest_addr = <sockaddr>,
+    addrlen
+);
+
+// Send message using scatter-gather buffers and ancillary data
+sendmsg(
+    sockfd,
+    msg = {
+        msg_name = <sockaddr>,
+        msg_control = NULL,
+        ..
+    },
+    flags = 0
+);

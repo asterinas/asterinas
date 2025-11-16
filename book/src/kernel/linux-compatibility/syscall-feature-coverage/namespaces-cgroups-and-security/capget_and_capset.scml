@@ -1,0 +1,17 @@
+// Get capabilities of thread
+capget(
+    hdrp = {
+        version = _LINUX_CAPABILITY_VERSION_3,
+        ..
+    },
+    datap
+);
+
+// Set capabilities of thread
+capset(
+    hdrp = {
+        version = _LINUX_CAPABILITY_VERSION_3,
+        ..
+    },
+    datap
+);

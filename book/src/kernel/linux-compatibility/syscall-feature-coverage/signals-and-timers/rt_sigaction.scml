@@ -1,0 +1,9 @@
+// Change and/or retrieve a signal action
+rt_sigaction(
+    signum,
+    act = {
+        sa_flags = SA_ONSTACK | SA_RESTART | SA_NODEFER | SA_RESTORER | SA_SIGINFO | SA_RESETHAND,
+        ..
+    },
+    oldact, sigsetsize
+);

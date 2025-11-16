@@ -1,0 +1,2 @@
+// Change data segment size
+brk(addr);

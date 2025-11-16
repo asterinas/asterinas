@@ -1,0 +1,2 @@
+// Rename a file, moving it between directories if required.
+renameat2(olddirfd, oldpath, newdirfd, newpath, 0);
