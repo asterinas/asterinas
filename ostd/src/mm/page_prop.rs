@@ -25,15 +25,6 @@ impl PageProperty {
             priv_flags: PrivilegedPageFlags::USER,
         }
     }
-
-    /// Creates a page property that implies an invalid page without mappings.
-    pub fn new_absent() -> Self {
-        Self {
-            flags: PageFlags::empty(),
-            cache: CachePolicy::Writeback,
-            priv_flags: PrivilegedPageFlags::empty(),
-        }
-    }
 }
 
 // TODO: Make it more abstract when supporting other architectures.
