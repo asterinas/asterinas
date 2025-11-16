@@ -11,7 +11,7 @@ pub use mount_namespace::MountNamespace;
 use crate::{
     fs::{
         inode_handle::InodeHandle,
-        path::dentry::{Dentry, DentryKey},
+        path::dentry::Dentry,
         utils::{
             CreationFlags, FileSystem, FsFlags, Inode, InodeMode, InodeType, Metadata, MknodType,
             OpenArgs, Permission, StatusFlags, XattrName, XattrNamespace, XattrSetFlags, NAME_MAX,
@@ -97,6 +97,23 @@ impl Path {
         };
 
         Ok(target_path.get_top_path())
+    }
+
+    /// Opens the `Path` with the given `OpenArgs`.
+    ///
+    /// Returns an `InodeHandle` on success.
+    pub fn open(&self, open_args: OpenArgs) -> Result<InodeHandle> {
+        let inode = self.inode();
+        check_open_util(inode.as_ref(), &open_args)?;
+
+        if inode.type_().is_regular_file()
+            && open_args.creation_flags.contains(CreationFlags::O_TRUNC)
+            && !open_args.status_flags.contains(StatusFlags::O_PATH)
+        {
+            self.resize(0)?;
+        }
+
+        InodeHandle::new(self.clone(), open_args.access_mode, open_args.status_flags)
     }
 
     /// Gets the absolute path.
@@ -193,6 +210,33 @@ impl Path {
     fn this(&self) -> Self {
         self.clone()
     }
+}
+
+/// Checks if the given `Inode` can be opened with the given `OpenArgs`.
+pub(super) fn check_open_util(inode: &dyn Inode, open_args: &OpenArgs) -> Result<()> {
+    let inode_type = inode.type_();
+    let creation_flags = &open_args.creation_flags;
+
+    if inode_type == InodeType::SymLink
+        && creation_flags.contains(CreationFlags::O_NOFOLLOW)
+        && !open_args.status_flags.contains(StatusFlags::O_PATH)
+    {
+        return_errno_with_message!(Errno::ELOOP, "the file is a symlink");
+    }
+
+    if creation_flags.contains(CreationFlags::O_CREAT)
+        && creation_flags.contains(CreationFlags::O_EXCL)
+    {
+        return_errno_with_message!(Errno::EEXIST, "the file already exists");
+    }
+    if creation_flags.contains(CreationFlags::O_DIRECTORY) && inode_type != InodeType::Dir {
+        return_errno_with_message!(
+            Errno::ENOTDIR,
+            "O_DIRECTORY is specified but the file is not a directory"
+        );
+    }
+
+    Ok(())
 }
 
 impl Path {
@@ -394,6 +438,15 @@ impl Path {
 
         Ok(())
     }
+}
+
+// Methods inherited from `Dentry`.
+#[inherit_methods(from = "self.dentry")]
+impl Path {
+    pub fn inode(&self) -> &Arc<dyn Inode>;
+    pub fn type_(&self) -> InodeType;
+    pub fn unlink(&self, name: &str) -> Result<()>;
+    pub fn rmdir(&self, name: &str) -> Result<()>;
 
     /// Creates a `Path` by making an inode of the `type_` with the `mode`.
     pub fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Self> {
@@ -418,61 +471,15 @@ impl Path {
 
         self.dentry.rename(old_name, &new_dir.dentry, new_name)
     }
-
-    /// Opens the `Path` with the given `OpenArgs`.
-    ///
-    /// Returns an `InodeHandle` on success.
-    pub fn open(&self, open_args: OpenArgs) -> Result<InodeHandle> {
-        let inode = self.inode();
-        check_open_util(inode.as_ref(), &open_args)?;
-
-        if inode.type_().is_regular_file()
-            && open_args.creation_flags.contains(CreationFlags::O_TRUNC)
-            && !open_args.status_flags.contains(StatusFlags::O_PATH)
-        {
-            self.resize(0)?;
-        }
-
-        InodeHandle::new(self.clone(), open_args.access_mode, open_args.status_flags)
-    }
 }
 
-/// Checks if the given `Inode` can be opened with the given `OpenArgs`.
-pub fn check_open_util(inode: &dyn Inode, open_args: &OpenArgs) -> Result<()> {
-    let inode_type = inode.type_();
-    let creation_flags = &open_args.creation_flags;
-
-    if inode_type == InodeType::SymLink
-        && creation_flags.contains(CreationFlags::O_NOFOLLOW)
-        && !open_args.status_flags.contains(StatusFlags::O_PATH)
-    {
-        return_errno_with_message!(Errno::ELOOP, "the file is a symlink");
-    }
-
-    if creation_flags.contains(CreationFlags::O_CREAT)
-        && creation_flags.contains(CreationFlags::O_EXCL)
-    {
-        return_errno_with_message!(Errno::EEXIST, "the file already exists");
-    }
-    if creation_flags.contains(CreationFlags::O_DIRECTORY) && inode_type != InodeType::Dir {
-        return_errno_with_message!(
-            Errno::ENOTDIR,
-            "O_DIRECTORY is specified but the file is not a directory"
-        );
-    }
-
-    Ok(())
-}
-
-#[inherit_methods(from = "self.dentry")]
+// Methods inherited from `Inode`.
+#[inherit_methods(from = "self.inode()")]
 impl Path {
-    pub fn unlink(&self, name: &str) -> Result<()>;
-    pub fn rmdir(&self, name: &str) -> Result<()>;
     pub fn fs(&self) -> Arc<dyn FileSystem>;
     pub fn sync_all(&self) -> Result<()>;
     pub fn sync_data(&self) -> Result<()>;
     pub fn metadata(&self) -> Metadata;
-    pub fn type_(&self) -> InodeType;
     pub fn mode(&self) -> Result<InodeMode>;
     pub fn set_mode(&self, mode: InodeMode) -> Result<()>;
     pub fn size(&self) -> usize;
@@ -487,9 +494,6 @@ impl Path {
     pub fn set_mtime(&self, time: Duration);
     pub fn ctime(&self) -> Duration;
     pub fn set_ctime(&self, time: Duration);
-    pub fn key(&self) -> DentryKey;
-    pub fn inode(&self) -> &Arc<dyn Inode>;
-    pub fn is_mountpoint(&self) -> bool;
     pub fn set_xattr(
         &self,
         name: XattrName,

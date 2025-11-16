@@ -204,7 +204,7 @@ impl FileLike for InodeHandle {
     }
 
     fn inode(&self) -> &Arc<dyn Inode> {
-        self.0.inode()
+        self.0.path.inode()
     }
 }
 

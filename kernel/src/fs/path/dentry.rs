@@ -1,24 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(dead_code)]
-
-use core::{
-    sync::atomic::{AtomicU32, Ordering},
-    time::Duration,
-};
+use core::sync::atomic::{AtomicU32, Ordering};
 
 use hashbrown::HashMap;
-use inherit_methods_macro::inherit_methods;
 use ostd::sync::RwMutexWriteGuard;
 
 use super::is_dot_or_dotdot;
 use crate::{
-    fs::utils::{
-        FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType, XattrName, XattrNamespace,
-        XattrSetFlags,
-    },
+    fs::utils::{Inode, InodeMode, InodeType, MknodType},
     prelude::*,
-    process::{Gid, Uid},
 };
 
 /// A `Dentry` represents a cached filesystem node in the VFS tree.
@@ -98,6 +88,12 @@ impl Dentry {
     /// Gets the inner inode.
     pub(super) fn inode(&self) -> &Arc<dyn Inode> {
         &self.inode
+    }
+
+    /// Returns whether the dentry can be cached.
+    fn is_dentry_cacheable(&self) -> bool {
+        // Should we store it as a dentry flag?
+        self.inode.is_dentry_cacheable()
     }
 
     fn flags(&self) -> DentryFlags {
@@ -355,48 +351,14 @@ impl Dentry {
     }
 }
 
-#[inherit_methods(from = "self.inode")]
-impl Dentry {
-    pub(super) fn fs(&self) -> Arc<dyn FileSystem>;
-    pub(super) fn sync_all(&self) -> Result<()>;
-    pub(super) fn sync_data(&self) -> Result<()>;
-    pub(super) fn metadata(&self) -> Metadata;
-    pub(super) fn mode(&self) -> Result<InodeMode>;
-    pub(super) fn set_mode(&self, mode: InodeMode) -> Result<()>;
-    pub(super) fn size(&self) -> usize;
-    pub(super) fn resize(&self, size: usize) -> Result<()>;
-    pub(super) fn owner(&self) -> Result<Uid>;
-    pub(super) fn set_owner(&self, uid: Uid) -> Result<()>;
-    pub(super) fn group(&self) -> Result<Gid>;
-    pub(super) fn set_group(&self, gid: Gid) -> Result<()>;
-    pub(super) fn atime(&self) -> Duration;
-    pub(super) fn set_atime(&self, time: Duration);
-    pub(super) fn mtime(&self) -> Duration;
-    pub(super) fn set_mtime(&self, time: Duration);
-    pub(super) fn ctime(&self) -> Duration;
-    pub(super) fn set_ctime(&self, time: Duration);
-    pub(super) fn is_dentry_cacheable(&self) -> bool;
-    pub(super) fn set_xattr(
-        &self,
-        name: XattrName,
-        value_reader: &mut VmReader,
-        flags: XattrSetFlags,
-    ) -> Result<()>;
-    pub(super) fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize>;
-    pub(super) fn list_xattr(
-        &self,
-        namespace: XattrNamespace,
-        list_writer: &mut VmWriter,
-    ) -> Result<usize>;
-    pub(super) fn remove_xattr(&self, name: XattrName) -> Result<()>;
-}
-
 impl Debug for Dentry {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("Dentry")
             .field("inode", &self.inode)
-            .field("flags", &self.flags())
-            .finish()
+            .field("type_", &self.type_)
+            .field("flags", &self.flags)
+            .field("mount_count", &self.mount_count)
+            .finish_non_exhaustive()
     }
 }
 
@@ -459,6 +421,7 @@ impl DentryChildren {
     }
 
     /// Checks if a negative dentry with the given name exists.
+    #[expect(dead_code)]
     fn contains_negative(&self, name: &str) -> bool {
         self.dentries.get(name).is_some_and(|child| child.is_none())
     }

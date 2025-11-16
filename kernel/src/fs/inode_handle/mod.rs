@@ -7,7 +7,6 @@ mod dyn_cap;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 pub use dyn_cap::InodeHandle;
-use inherit_methods_macro::inherit_methods;
 
 use crate::{
     events::IoEvents,
@@ -250,12 +249,6 @@ impl HandleInner {
             flock_list.unlock(req_owner);
         }
     }
-}
-
-#[inherit_methods(from = "self.path")]
-impl HandleInner {
-    pub(self) fn size(&self) -> usize;
-    pub(self) fn inode(&self) -> &Arc<dyn Inode>;
 }
 
 impl Debug for HandleInner {
