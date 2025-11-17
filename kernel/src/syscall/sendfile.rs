@@ -2,6 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
+    fs,
     fs::file_table::{FileDesc, WithFileTable},
     prelude::*,
 };
@@ -116,6 +117,9 @@ pub fn sys_sendfile(
     if let Some(offset) = offset {
         ctx.user_space().write_val(offset_ptr, &(offset as isize))?;
     }
+
+    fs::notify::on_access(&in_file);
+    fs::notify::on_modify(&out_file);
 
     Ok(SyscallReturn::Return(total_len as _))
 }
