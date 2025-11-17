@@ -9,6 +9,7 @@ use ostd::sync::RwMutexUpgradeableGuard;
 use super::{Common, ProcFs};
 use crate::{
     fs::{
+        notify::FsEventPublisher,
         path::{is_dot, is_dotdot},
         utils::{
             DirEntryVecExt, DirentVisitor, FileSystem, Inode, InodeIo, InodeMode, InodeType,
@@ -95,6 +96,7 @@ impl<D: DirOps + 'static> InodeIo for ProcDir<D> {
 impl<D: DirOps + 'static> Inode for ProcDir<D> {
     fn size(&self) -> usize;
     fn metadata(&self) -> Metadata;
+    fn fs_event_publisher(&self) -> &FsEventPublisher;
     fn ino(&self) -> u64;
     fn mode(&self) -> Result<InodeMode>;
     fn set_mode(&self, mode: InodeMode) -> Result<()>;

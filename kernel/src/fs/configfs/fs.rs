@@ -11,7 +11,10 @@ use crate::{
     fs::{
         configfs::systree_node::ConfigRootNode,
         registry::{FsProperties, FsType},
-        utils::{systree_inode::SysTreeInodeTy, FileSystem, FsFlags, Inode, SuperBlock},
+        utils::{
+            systree_inode::SysTreeInodeTy, FileSystem, FsEventSubscriberStats, FsFlags, Inode,
+            SuperBlock,
+        },
         Result,
     },
     prelude::*,
@@ -26,6 +29,7 @@ use crate::{
 pub struct ConfigFs {
     sb: SuperBlock,
     root: Arc<dyn Inode>,
+    fs_event_subscriber_stats: FsEventSubscriberStats,
 }
 
 // Magic number for `ConfigFs` (taken from Linux).
@@ -48,6 +52,7 @@ impl ConfigFs {
         Arc::new(Self {
             sb,
             root: root_inode,
+            fs_event_subscriber_stats: FsEventSubscriberStats::new(),
         })
     }
 }
@@ -68,6 +73,10 @@ impl FileSystem for ConfigFs {
 
     fn sb(&self) -> SuperBlock {
         self.sb.clone()
+    }
+
+    fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
+        &self.fs_event_subscriber_stats
     }
 }
 

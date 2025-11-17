@@ -22,6 +22,7 @@ use crate::{
         file_handle::{FileLike, Mappable},
         file_table::FdFlags,
         inode_handle::{do_fallocate_util, do_resize_util, do_seek_util},
+        notify::FsEventPublisher,
         path::{check_open_util, RESERVED_MOUNT_ID},
         tmpfs::TmpFs,
         utils::{
@@ -178,6 +179,7 @@ impl Inode for MemfdInode {
     fn set_group(&self, gid: Gid) -> Result<()>;
     fn page_cache(&self) -> Option<Arc<Vmo>>;
     fn extension(&self) -> Option<&Extension>;
+    fn fs_event_publisher(&self) -> &FsEventPublisher;
     fn set_xattr(
         &self,
         name: XattrName,

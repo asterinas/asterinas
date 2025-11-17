@@ -7,9 +7,11 @@ use spin::Once;
 use super::utils::{InodeIo, StatusFlags};
 use crate::{
     fs::{
+        notify::FsEventPublisher,
         registry::{FsProperties, FsType},
         utils::{
-            mkmod, FileSystem, FsFlags, Inode, InodeMode, InodeType, Metadata, SuperBlock, NAME_MAX,
+            mkmod, FileSystem, FsEventSubscriberStats, FsFlags, Inode, InodeMode, InodeType,
+            Metadata, SuperBlock, NAME_MAX,
         },
     },
     prelude::*,
@@ -22,6 +24,7 @@ pub struct PseudoFs {
     name: &'static str,
     sb: SuperBlock,
     root: Arc<dyn Inode>,
+    fs_event_subscriber_stats: FsEventSubscriberStats,
 }
 
 impl FileSystem for PseudoFs {
@@ -40,6 +43,10 @@ impl FileSystem for PseudoFs {
 
     fn sb(&self) -> SuperBlock {
         self.sb.clone()
+    }
+
+    fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
+        &self.fs_event_subscriber_stats
     }
 }
 
@@ -63,6 +70,7 @@ impl PseudoFs {
                     aster_block::BLOCK_SIZE,
                     weak_fs.clone(),
                 )),
+                fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             })
         })
     }
@@ -174,6 +182,7 @@ const ANON_INODEFS_MAGIC: u64 = 0x09041934;
 /// A pseudo inode that does not correspond to any real path in the file system.
 pub struct PseudoInode {
     metadata: SpinLock<Metadata>,
+    fs_events_publisher: FsEventPublisher,
     fs: Weak<PseudoFs>,
 }
 
@@ -206,6 +215,7 @@ impl PseudoInode {
         };
         PseudoInode {
             metadata: SpinLock::new(metadata),
+            fs_events_publisher: FsEventPublisher::new(),
             fs,
         }
     }
@@ -248,6 +258,10 @@ impl Inode for PseudoInode {
 
     fn metadata(&self) -> Metadata {
         *self.metadata.lock()
+    }
+
+    fn fs_event_publisher(&self) -> &FsEventPublisher {
+        &self.fs_events_publisher
     }
 
     fn ino(&self) -> u64 {

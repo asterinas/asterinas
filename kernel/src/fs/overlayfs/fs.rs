@@ -21,12 +21,14 @@ use crate::{
     fs::{
         fs_resolver::FsPath,
         inode_handle::FileIo,
+        notify::FsEventPublisher,
         path::Path,
         registry::{FsProperties, FsType},
         utils::{
-            mkmod, AccessMode, DirentCounter, DirentVisitor, FallocMode, FileSystem, FsFlags,
-            Inode, InodeIo, InodeMode, InodeType, Metadata, MknodType, StatusFlags, SuperBlock,
-            SymbolicLink, XattrName, XattrNamespace, XattrSetFlags, NAME_MAX, XATTR_VALUE_MAX_LEN,
+            mkmod, AccessMode, DirentCounter, DirentVisitor, FallocMode, FileSystem,
+            FsEventSubscriberStats, FsFlags, Inode, InodeIo, InodeMode, InodeType, Metadata,
+            MknodType, StatusFlags, SuperBlock, SymbolicLink, XattrName, XattrNamespace,
+            XattrSetFlags, NAME_MAX, XATTR_VALUE_MAX_LEN,
         },
     },
     prelude::*,
@@ -52,6 +54,8 @@ pub struct OverlayFs {
     sb: OverlaySB,
     /// Unique inode number generator.
     next_ino: AtomicU64,
+    /// FS event subscriber stats for this file system.
+    fs_event_subscriber_stats: FsEventSubscriberStats,
     /// Weak self reference.
     self_: Weak<OverlayFs>,
 }
@@ -87,6 +91,8 @@ struct OverlayInode {
     /// This field is used to build hierarchical upper inodes.
     /// The lock is intended to implement `rename`.
     name_upon_creation: SpinLock<String>,
+    /// FS event publisher.
+    fs_event_publisher: FsEventPublisher,
     /// The parent inode. `None` for root inode.
     parent: Option<Arc<OverlayInode>>,
     /// The mutable upper regular inode.
@@ -126,6 +132,7 @@ impl OverlayFs {
             config: OverlayConfig::default(),
             sb: OverlaySB,
             next_ino: AtomicU64::new(0),
+            fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             self_: weak.clone(),
         }))
     }
@@ -166,6 +173,7 @@ impl FileSystem for OverlayFs {
             ino,
             type_: InodeType::Dir,
             name_upon_creation: SpinLock::new(String::from("")),
+            fs_event_publisher: FsEventPublisher::new(),
             parent: None,
             upper: Mutex::new(Some(upper_inode)),
             upper_is_opaque: false,
@@ -189,6 +197,10 @@ impl FileSystem for OverlayFs {
     fn sb(&self) -> SuperBlock {
         // TODO: Fill the super block with valid field values.
         SuperBlock::new(OVERLAY_FS_MAGIC, BLOCK_SIZE, NAME_MAX)
+    }
+
+    fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
+        &self.fs_event_subscriber_stats
     }
 }
 
@@ -267,6 +279,7 @@ impl OverlayInode {
             ino: new_upper.ino(),
             type_,
             name_upon_creation: SpinLock::new(String::from(name)),
+            fs_event_publisher: FsEventPublisher::new(),
             parent: Some(self.self_.upgrade().unwrap()),
             upper: Mutex::new(Some(new_upper)),
             upper_is_opaque,
@@ -437,6 +450,10 @@ impl OverlayInode {
 
     pub fn type_(&self) -> InodeType {
         self.type_
+    }
+
+    pub fn fs_event_publisher(&self) -> &FsEventPublisher {
+        &self.fs_event_publisher
     }
 
     pub fn page_cache(&self) -> Option<Arc<Vmo>> {
@@ -676,6 +693,7 @@ impl OverlayInode {
             ino,
             type_: type_.unwrap(),
             name_upon_creation: SpinLock::new(String::from(name)),
+            fs_event_publisher: FsEventPublisher::new(),
             parent: Some(self.self_.upgrade().unwrap()),
             upper: Mutex::new(upper_child),
             upper_is_opaque,
@@ -916,6 +934,7 @@ impl Inode for OverlayInode {
     fn size(&self) -> usize;
     fn resize(&self, new_size: usize) -> Result<()>;
     fn metadata(&self) -> Metadata;
+    fn fs_event_publisher(&self) -> &FsEventPublisher;
     fn ino(&self) -> u64;
     fn type_(&self) -> InodeType;
     fn mode(&self) -> Result<InodeMode>;
