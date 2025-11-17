@@ -54,6 +54,7 @@ use super::{
     getuid::sys_getuid,
     getxattr::{sys_fgetxattr, sys_getxattr, sys_lgetxattr},
     impl_syscall_nums_and_dispatch_fn,
+    inotify::{sys_inotify_add_watch, sys_inotify_init1, sys_inotify_rm_watch},
     ioctl::sys_ioctl,
     kill::sys_kill,
     link::sys_linkat,
@@ -181,6 +182,9 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_DUP = 23                     => sys_dup(args[..1]);
     SYS_DUP3 = 24                    => sys_dup3(args[..3]);
     SYS_FCNTL = 25                   => sys_fcntl(args[..3]);
+    SYS_INOTIFY_INIT1 = 26            => sys_inotify_init1(args[..1]);
+    SYS_INOTIFY_ADD_WATCH = 27       => sys_inotify_add_watch(args[..3]);
+    SYS_INOTIFY_RM_WATCH = 28        => sys_inotify_rm_watch(args[..2]);
     SYS_IOCTL = 29                   => sys_ioctl(args[..3]);
     SYS_IOPRIO_SET = 30              => sys_ioprio_set(args[..3]);
     SYS_IOPRIO_GET = 31              => sys_ioprio_get(args[..2]);
