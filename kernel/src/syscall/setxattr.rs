@@ -4,6 +4,7 @@ use alloc::borrow::Cow;
 
 use super::SyscallReturn;
 use crate::{
+    fs,
     fs::{
         file_handle::FileLike,
         file_table::{get_file_fast, FileDesc},
@@ -114,7 +115,9 @@ fn setxattr(
     let mut value_reader = user_space.reader(value_ptr, value_len)?;
 
     let path = lookup_path_for_xattr(&file_ctx, ctx)?;
-    path.set_xattr(xattr_name, &mut value_reader, flags)
+    path.set_xattr(xattr_name, &mut value_reader, flags)?;
+    fs::notify::on_attr_change(&path);
+    Ok(())
 }
 
 /// The context to describe the target file for xattr operations.

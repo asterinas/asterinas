@@ -2,6 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
+    fs,
     fs::file_table::{get_file_fast, FileDesc},
     prelude::*,
     util::VmReaderArray,
@@ -111,6 +112,10 @@ fn do_sys_pwritev(
             break;
         }
     }
+    if total_len > 0 {
+        fs::notify::on_modify(&file);
+    }
+
     Ok(total_len)
 }
 
@@ -151,6 +156,10 @@ fn do_sys_writev(
             break;
         }
     }
+    if total_len > 0 {
+        fs::notify::on_modify(&file);
+    }
+
     Ok(total_len)
 }
 

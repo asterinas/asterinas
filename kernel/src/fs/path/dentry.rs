@@ -272,16 +272,22 @@ impl Dentry {
         };
 
         self.inode.unlink(name)?;
+
+        let nlinks = child_inode.metadata().nlinks;
         fs::notify::on_link_count(&child_inode);
-        if child_inode.metadata().nlinks == 0 {
+        if nlinks == 0 {
             fs::notify::on_inode_removed(&child_inode);
-            let deleted_watches = child_inode.fsnotify_publisher().remove_all_subscribers();
+        }
+        fs::notify::on_delete(self.inode(), &child_inode, || name.to_string());
+        if nlinks == 0 {
+            let publisher = child_inode.fs_event_publisher();
+            publisher.disable_new_subscribers();
+            let removed_nr_subscribers = publisher.remove_all_subscribers();
             child_inode
                 .fs()
-                .fsnotify_info()
-                .remove_subscribers(deleted_watches);
+                .fs_event_subscriber_stats()
+                .remove_subscribers(removed_nr_subscribers);
         }
-        fs::notify::on_delete(self.inode(), &child_inode, String::from(name));
         Ok(())
     }
 
@@ -317,15 +323,21 @@ impl Dentry {
         };
 
         self.inode.rmdir(name)?;
-        if child_inode.metadata().nlinks == 0 {
+
+        let nlinks = child_inode.metadata().nlinks;
+        if nlinks == 0 {
             fs::notify::on_inode_removed(&child_inode);
-            let deleted_watches = child_inode.fsnotify_publisher().remove_all_subscribers();
+        }
+        fs::notify::on_delete(self.inode(), &child_inode, || name.to_string());
+        if nlinks == 0 {
+            let publisher = child_inode.fs_event_publisher();
+            publisher.disable_new_subscribers();
+            let removed_nr_subscribers = publisher.remove_all_subscribers();
             child_inode
                 .fs()
-                .fsnotify_info()
-                .remove_subscribers(deleted_watches);
+                .fs_event_subscriber_stats()
+                .remove_subscribers(removed_nr_subscribers);
         }
-        fs::notify::on_delete(self.inode(), &child_inode, String::from(name));
         Ok(())
     }
 
