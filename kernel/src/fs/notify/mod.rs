@@ -15,6 +15,8 @@ use crate::{
     prelude::*,
 };
 
+pub mod inotify;
+
 use super::utils::{Inode, InodeType};
 
 /// Publishes filesystem events to subscribers.
@@ -228,17 +230,19 @@ define_atomic_version_of_integer_like_type!(FsEvents, {
 /// Notifies that a file was accessed.
 pub fn on_access(file: &Arc<dyn FileLike>) {
     // TODO: Check fmode flags (FMODE_NONOTIFY, FMODE_NONOTIFY_PERM).
-    if let Some(path) = file.path() {
-        if !path
-            .inode()
-            .fs()
-            .fs_event_subscriber_stats()
-            .has_any_subscribers()
-        {
-            return;
-        }
-        notify_parent(path, FsEvents::ACCESS, path.effective_name());
+    let Some(path) = file.path() else {
+        return;
+    };
+
+    if !path
+        .inode()
+        .fs()
+        .fs_event_subscriber_stats()
+        .has_any_subscribers()
+    {
+        return;
     }
+    notify_parent(path, FsEvents::ACCESS, path.effective_name());
 }
 
 /// Notifies that a file was modified.
@@ -356,17 +360,19 @@ pub fn on_create(file_path: &Path, name: String) {
 /// Notifies that a file was opened.
 pub fn on_open(file: &Arc<dyn FileLike>) {
     // TODO: Check fmode flags (FMODE_NONOTIFY, FMODE_NONOTIFY_PERM).
-    if let Some(path) = file.path() {
-        if !path
-            .inode()
-            .fs()
-            .fs_event_subscriber_stats()
-            .has_any_subscribers()
-        {
-            return;
-        }
-        notify_parent(path, FsEvents::OPEN, path.effective_name());
+    let Some(path) = file.path() else {
+        return;
+    };
+
+    if !path
+        .inode()
+        .fs()
+        .fs_event_subscriber_stats()
+        .has_any_subscribers()
+    {
+        return;
     }
+    notify_parent(path, FsEvents::OPEN, path.effective_name());
 }
 
 /// Notifies that a file was closed.
@@ -422,7 +428,7 @@ fn notify_parent(path: &Path, mut events: FsEvents, name: String) {
 
 /// Sends a filesystem notification event to all subscribers of an inode.
 ///
-/// This is the main entry point for fsnotify. The VFS layer calls hook-specific
+/// This is the main entry point for FS event notification. The VFS layer calls hook-specific
 /// functions in `fs/notify/`, which then call this function to broadcast events
 /// to all registered subscribers through the inode's publisher.
 fn notify_inode(inode: &Arc<dyn Inode>, events: FsEvents, name: Option<String>) {
