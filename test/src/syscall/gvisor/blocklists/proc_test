@@ -6,8 +6,7 @@ ProcSelfMaps.Map1
 ProcSelfMaps.Map2
 ProcSelfMaps.MapUnmap
 ProcSelfMaps.SharedAnon
-ProcSelfFdInfo.GetdentsDuplicates
-ProcSelfFdInfo.CorrectFds
+# TODO: Support `O_LARGEFILE` flag.
 ProcSelfFdInfo.Flags
 ProcCpuinfo.RequiredFieldsArePresent
 ProcCpuinfo.DeniesWriteNonRoot
