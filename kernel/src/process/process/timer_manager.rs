@@ -21,6 +21,7 @@ use crate::{
     },
     time::{
         clocks::{ProfClock, RealTimeClock},
+        timer::TimerGuard,
         Timer, TimerManager,
     },
 };
@@ -99,7 +100,7 @@ pub struct PosixTimerManager {
     posix_timers: Mutex<Vec<Option<Arc<Timer>>>>,
 }
 
-fn create_process_timer_callback(process_ref: &Weak<Process>) -> impl Fn() + Clone {
+fn create_process_timer_callback(process_ref: &Weak<Process>) -> impl Fn(TimerGuard) + Clone {
     let current_process = process_ref.clone();
     let sent_signal = move || {
         let signal = KernelSignal::new(SIGALRM);
@@ -111,7 +112,7 @@ fn create_process_timer_callback(process_ref: &Weak<Process>) -> impl Fn() + Clo
     let work_func = Box::new(sent_signal);
     let work_item = WorkItem::new(work_func);
 
-    move || {
+    move |_guard: TimerGuard| {
         submit_work_item(
             work_item.clone(),
             crate::thread::work_queue::WorkPriority::High,
@@ -158,7 +159,7 @@ impl PosixTimerManager {
     /// Creates a timer based on the profiling CPU clock of the current process.
     pub fn create_prof_timer<F>(&self, func: F) -> Arc<Timer>
     where
-        F: Fn() + Send + Sync + 'static,
+        F: Fn(TimerGuard) + Send + Sync + 'static,
     {
         self.prof_timer.timer_manager().create_timer(func)
     }
@@ -166,7 +167,7 @@ impl PosixTimerManager {
     /// Creates a timer based on the user CPU clock of the current process.
     pub fn create_virtual_timer<F>(&self, func: F) -> Arc<Timer>
     where
-        F: Fn() + Send + Sync + 'static,
+        F: Fn(TimerGuard) + Send + Sync + 'static,
     {
         self.virtual_timer.timer_manager().create_timer(func)
     }

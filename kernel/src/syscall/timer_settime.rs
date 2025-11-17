@@ -28,27 +28,32 @@ pub fn sys_timer_settime(
         return_errno_with_message!(Errno::EINVAL, "invalid timer ID");
     };
 
-    if old_itimerspec_addr > 0 {
-        let old_interval = timespec_t::from(timer.interval());
-        let remain = timespec_t::from(timer.remain());
-        let old_itimerspec = itimerspec_t {
-            it_interval: old_interval,
-            it_value: remain,
-        };
-        user_space.write_val(old_itimerspec_addr, &old_itimerspec)?;
-    }
+    let mut timer_guard = timer.lock();
 
-    timer.set_interval(interval);
+    let (old_interval, remain) = (timer_guard.interval(), timer_guard.remain());
+
+    timer_guard.set_interval(interval);
     if expire_time == Duration::ZERO {
         // Clear previous timer
-        timer.cancel();
+        timer_guard.cancel();
     } else {
         let timeout = if (flags & TIMER_ABSTIME) == 0 {
             Timeout::After(expire_time)
         } else {
             Timeout::When(expire_time)
         };
-        timer.set_timeout(timeout);
+        timer_guard.set_timeout(timeout);
+    }
+
+    drop(timer_guard);
+    if old_itimerspec_addr > 0 {
+        let old_interval = timespec_t::from(old_interval);
+        let remain = timespec_t::from(remain);
+        let old_itimerspec = itimerspec_t {
+            it_interval: old_interval,
+            it_value: remain,
+        };
+        user_space.write_val(old_itimerspec_addr, &old_itimerspec)?;
     }
 
     Ok(SyscallReturn::Return(0))
@@ -66,8 +71,14 @@ pub fn sys_timer_gettime(
         return_errno_with_message!(Errno::EINVAL, "invalid timer ID");
     };
 
-    let interval = timespec_t::from(timer.interval());
-    let remain = timespec_t::from(timer.remain());
+    let (interval, remain) = {
+        let timer_guard = timer.lock();
+        (
+            timespec_t::from(timer_guard.interval()),
+            timespec_t::from(timer_guard.remain()),
+        )
+    };
+
     let itimerspec = itimerspec_t {
         it_interval: interval,
         it_value: remain,

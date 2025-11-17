@@ -22,7 +22,7 @@ use crate::{
         Pid,
     },
     thread::{Thread, Tid},
-    time::{clocks::ProfClock, Timer, TimerManager},
+    time::{clocks::ProfClock, timer::TimerGuard, Timer, TimerManager},
 };
 
 mod builder;
@@ -261,7 +261,7 @@ impl PosixThread {
     /// Creates a timer based on the profiling CPU clock of the current thread.
     pub fn create_prof_timer<F>(&self, func: F) -> Arc<Timer>
     where
-        F: Fn() + Send + Sync + 'static,
+        F: Fn(TimerGuard) + Send + Sync + 'static,
     {
         self.prof_timer_manager.create_timer(func)
     }
@@ -269,7 +269,7 @@ impl PosixThread {
     /// Creates a timer based on the user CPU clock of the current thread.
     pub fn create_virtual_timer<F>(&self, func: F) -> Arc<Timer>
     where
-        F: Fn() + Send + Sync + 'static,
+        F: Fn(TimerGuard) + Send + Sync + 'static,
     {
         self.virtual_timer_manager.create_timer(func)
     }

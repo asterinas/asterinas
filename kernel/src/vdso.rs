@@ -27,7 +27,11 @@ use spin::Once;
 
 use crate::{
     syscall::ClockId,
-    time::{clocks::MonotonicClock, timer::Timeout, SystemTime, START_TIME},
+    time::{
+        clocks::MonotonicClock,
+        timer::{Timeout, TimerGuard},
+        SystemTime, START_TIME,
+    },
     vm::vmo::{Vmo, VmoOptions},
 };
 
@@ -336,7 +340,7 @@ fn update_vdso_high_res_instant(instant: Instant, instant_cycles: u64) {
 }
 
 /// Updates instants with respect to coarse-resolution clocks in vDSO data.
-fn update_vdso_coarse_res_instant() {
+fn update_vdso_coarse_res_instant(_guard: TimerGuard) {
     let instant = Instant::from(read_monotonic_time());
     VDSO.get().unwrap().update_coarse_res_instant(instant);
 }
@@ -368,8 +372,9 @@ pub(super) fn init_in_first_kthread() {
     let coarse_instant_timer = ManuallyDrop::new(
         MonotonicClock::timer_manager().create_timer(update_vdso_coarse_res_instant),
     );
-    coarse_instant_timer.set_interval(Duration::from_millis(100));
-    coarse_instant_timer.set_timeout(Timeout::After(Duration::from_millis(100)));
+    let mut timer_guard = coarse_instant_timer.lock();
+    timer_guard.set_interval(Duration::from_millis(100));
+    timer_guard.set_timeout(Timeout::After(Duration::from_millis(100)));
 }
 
 /// Returns the vDSO VMO.

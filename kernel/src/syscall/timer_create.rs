@@ -21,6 +21,7 @@ use crate::{
     time::{
         clockid_t,
         clocks::{BootTimeClock, MonotonicClock, RealTimeClock},
+        timer::TimerGuard,
         Timer,
     },
 };
@@ -97,7 +98,7 @@ pub fn sys_timer_create(
 
     let work_func = sent_signal;
     let work_item = WorkItem::new(work_func);
-    let func = move || {
+    let func = move |_guard: TimerGuard| {
         submit_work_item(
             work_item.clone(),
             crate::thread::work_queue::WorkPriority::High,
@@ -117,7 +118,7 @@ pub fn sys_timer_delete(timer_id: usize, _ctx: &Context) -> Result<SyscallReturn
         return_errno_with_message!(Errno::EINVAL, "invalid timer ID");
     };
 
-    timer.cancel();
+    timer.lock().cancel();
     Ok(SyscallReturn::Return(0))
 }
 
@@ -126,7 +127,7 @@ pub fn sys_timer_delete(timer_id: usize, _ctx: &Context) -> Result<SyscallReturn
 /// This timer will invoke the given callback function (`func`) when it expires.
 pub fn create_timer<F>(clockid: clockid_t, func: F, ctx: &Context) -> Result<Arc<Timer>>
 where
-    F: Fn() + Send + Sync + 'static,
+    F: Fn(TimerGuard) + Send + Sync + 'static,
 {
     let process_timer_manager = ctx.process.timer_manager();
     let timer = if clockid >= 0 {
