@@ -9,15 +9,16 @@ use id_alloc::IdAlloc;
 
 pub use self::ptmx::Ptmx;
 use self::slave::PtySlaveInode;
-use super::utils::{InodeIo, MknodType, StatusFlags};
+use super::utils::{MknodType, StatusFlags};
 use crate::{
     device::PtyMaster,
     fs::{
         device::{Device, DeviceType},
+        notify::FsEventPublisher,
         registry::{FsProperties, FsType},
         utils::{
-            mkmod, DirEntryVecExt, DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType,
-            Metadata, SuperBlock, NAME_MAX,
+            mkmod, DirEntryVecExt, DirentVisitor, FileSystem, FsEventSubscriberStats, FsFlags,
+            Inode, InodeIo, InodeMode, InodeType, Metadata, SuperBlock, NAME_MAX,
         },
     },
     prelude::*,
@@ -47,6 +48,7 @@ pub struct DevPts {
     sb: SuperBlock,
     root: Arc<RootInode>,
     index_alloc: Mutex<IdAlloc>,
+    fs_event_subscriber_stats: FsEventSubscriberStats,
     this: Weak<Self>,
 }
 
@@ -56,6 +58,7 @@ impl DevPts {
             sb: SuperBlock::new(DEVPTS_MAGIC, BLOCK_SIZE, NAME_MAX),
             root: RootInode::new(weak_self.clone()),
             index_alloc: Mutex::new(IdAlloc::with_capacity(MAX_PTY_NUM)),
+            fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             this: weak_self.clone(),
         })
     }
@@ -109,6 +112,10 @@ impl FileSystem for DevPts {
     fn sb(&self) -> SuperBlock {
         self.sb.clone()
     }
+
+    fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
+        &self.fs_event_subscriber_stats
+    }
 }
 
 struct DevPtsType;
@@ -144,6 +151,7 @@ struct RootInode {
     ptmx: Arc<Ptmx>,
     slaves: RwLock<SlotVec<(String, Arc<dyn Inode>)>>,
     metadata: RwLock<Metadata>,
+    fs_event_publisher: FsEventPublisher,
     fs: Weak<DevPts>,
 }
 
@@ -153,6 +161,7 @@ impl RootInode {
             ptmx: Ptmx::new(fs.clone()),
             slaves: RwLock::new(SlotVec::new()),
             metadata: RwLock::new(Metadata::new_dir(ROOT_INO, mkmod!(a+rx, u+w), BLOCK_SIZE)),
+            fs_event_publisher: FsEventPublisher::new(),
             fs,
         })
     }
@@ -189,6 +198,10 @@ impl Inode for RootInode {
 
     fn metadata(&self) -> Metadata {
         *self.metadata.read()
+    }
+
+    fn fs_event_publisher(&self) -> &FsEventPublisher {
+        &self.fs_event_publisher
     }
 
     fn ino(&self) -> u64 {

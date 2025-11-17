@@ -16,6 +16,7 @@ use crate::{
         device::{Device, DeviceType},
         fs_resolver::PathOrInode,
         inode_handle::FileIo,
+        notify::FsEventPublisher,
         path::Path,
         utils::StatusFlags,
     },
@@ -408,6 +409,16 @@ pub trait Inode: Any + InodeIo + Send + Sync {
     fn extension(&self) -> Option<&Extension> {
         None
     }
+
+    // TODO: Add `FsEventPublisher` as an extension.
+    //
+    // Conceptually, an `FsEventPublisher` attached to an inode is also a kind of extension
+    // as this object is required by the VFS layer, not by FS implementations.
+    // But we do not add it to `Extension` because `FsEventPublisher` is used in the most time-critical path
+    // and looking up an extension object in an `Extension` incurs some extra overheads.
+    // If we could make `Extension` a zero-cost abstraction,
+    // then `FsEventPublisher` can be moved into `Extension`.
+    fn fs_event_publisher(&self) -> &FsEventPublisher;
 
     fn set_xattr(
         &self,

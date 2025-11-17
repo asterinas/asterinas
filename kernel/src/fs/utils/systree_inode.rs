@@ -13,13 +13,13 @@ use aster_systree::{
     SysAttr, SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj, SysStr, SysSymlink,
 };
 
-use super::InodeIo;
 use crate::{
     fs::{
         inode_handle::FileIo,
+        notify::FsEventPublisher,
         utils::{
-            mkmod, AccessMode, DirentVisitor, FallocMode, FileSystem, Inode, InodeMode, InodeType,
-            Metadata, MknodType, StatusFlags, SymbolicLink,
+            mkmod, AccessMode, DirentVisitor, FallocMode, FileSystem, Inode, InodeIo, InodeMode,
+            InodeType, Metadata, MknodType, StatusFlags, SymbolicLink,
         },
     },
     prelude::*,
@@ -53,6 +53,8 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
     fn mode(&self) -> Result<InodeMode>;
 
     fn set_mode(&self, mode: InodeMode) -> Result<()>;
+
+    fn fs_event_publisher(&self) -> &FsEventPublisher;
 
     fn parent(&self) -> &Weak<Self>;
 
@@ -578,6 +580,10 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
 
     default fn is_dentry_cacheable(&self) -> bool {
         true
+    }
+
+    default fn fs_event_publisher(&self) -> &FsEventPublisher {
+        self.fs_event_publisher()
     }
 }
 

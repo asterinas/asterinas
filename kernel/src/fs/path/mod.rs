@@ -145,9 +145,7 @@ impl Path {
     ///
     /// If it is the root of a mount, it will go up to the mountpoint
     /// to get the name of the mountpoint recursively.
-    //
-    // FIXME: This method needs to be aware of the current process's root path.
-    fn effective_name(&self) -> String {
+    pub fn effective_name(&self) -> String {
         if !self.is_mount_root() {
             return self.dentry.name();
         }
@@ -167,7 +165,7 @@ impl Path {
     ///
     /// If it is the root of a mount, it will go up to the mountpoint
     /// to get the parent of the mountpoint recursively.
-    fn effective_parent(&self) -> Option<Self> {
+    pub fn effective_parent(&self) -> Option<Self> {
         if !self.is_mount_root() {
             return Some(Self::new(self.mount.clone(), self.dentry.parent().unwrap()));
         }

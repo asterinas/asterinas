@@ -8,6 +8,7 @@ use super::fs::CgroupFs;
 use crate::{
     fs::{
         cgroupfs::CgroupNode,
+        notify::FsEventPublisher,
         path::{is_dot, is_dotdot},
         utils::{
             systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
@@ -23,6 +24,8 @@ pub(super) struct CgroupInode {
     node_kind: SysTreeNodeKind,
     /// The metadata of this inode.
     metadata: Metadata,
+    /// FS event publisher.
+    fs_event_publisher: FsEventPublisher,
     /// The file mode (permissions) of this inode, protected by a lock.
     mode: RwLock<InodeMode>,
     /// Weak reference to the parent inode.
@@ -44,6 +47,7 @@ impl SysTreeInodeTy for CgroupInode {
         Arc::new_cyclic(|this| Self {
             node_kind,
             metadata,
+            fs_event_publisher: FsEventPublisher::new(),
             mode: RwLock::new(mode),
             parent,
             this: this.clone(),
@@ -56,6 +60,10 @@ impl SysTreeInodeTy for CgroupInode {
 
     fn metadata(&self) -> &Metadata {
         &self.metadata
+    }
+
+    fn fs_event_publisher(&self) -> &FsEventPublisher {
+        &self.fs_event_publisher
     }
 
     fn mode(&self) -> Result<InodeMode> {

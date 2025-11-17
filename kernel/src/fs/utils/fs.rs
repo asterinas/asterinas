@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::AtomicU32;
+use core::sync::atomic::{AtomicI64, AtomicU32, Ordering};
 
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 
@@ -103,6 +103,57 @@ define_atomic_version_of_integer_like_type!(FsFlags, {
     pub struct AtomicFsFlags(AtomicU32);
 });
 
+#[derive(Debug)]
+pub struct FsEventSubscriberStats {
+    // The number of subscribers to this file system.
+    num_subscribers: AtomicI64,
+}
+
+impl FsEventSubscriberStats {
+    pub fn new() -> Self {
+        Self {
+            num_subscribers: AtomicI64::new(0),
+        }
+    }
+
+    pub fn add_subscriber(&self) {
+        self.num_subscribers.fetch_add(1, Ordering::Release);
+    }
+
+    pub fn remove_subscriber(&self) {
+        let subscribers = self.num_subscribers.fetch_sub(1, Ordering::Release);
+        debug_assert!(
+            subscribers >= 0,
+            "The number of subscribers is negative: {}",
+            subscribers
+        );
+    }
+
+    pub fn remove_subscribers(&self, num_subscribers: usize) {
+        let num_subscribers = num_subscribers as i64;
+        let old_value = self.num_subscribers.load(Ordering::Acquire);
+        debug_assert!(
+            old_value >= num_subscribers,
+            "integer overflow: attempting to remove {} subscribers when only {} exist",
+            num_subscribers,
+            old_value
+        );
+
+        let subscribers = self
+            .num_subscribers
+            .fetch_sub(num_subscribers, Ordering::Release);
+        debug_assert!(
+            subscribers >= 0,
+            "The number of subscribers is negative: {}",
+            subscribers
+        );
+    }
+
+    pub fn has_any_subscribers(&self) -> bool {
+        self.num_subscribers.load(Ordering::Acquire) > 0
+    }
+}
+
 pub trait FileSystem: Any + Sync + Send {
     /// Gets the name of this FS type such as `"ext4"` or `"sysfs"`.
     fn name(&self) -> &'static str;
@@ -129,6 +180,9 @@ pub trait FileSystem: Any + Sync + Send {
         warn!("setting file system flags is not implemented");
         Ok(())
     }
+
+    /// Returns the FS event subscriber stats of this file system.
+    fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats;
 }
 
 impl dyn FileSystem {

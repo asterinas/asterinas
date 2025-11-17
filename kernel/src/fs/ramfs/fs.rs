@@ -19,14 +19,15 @@ use crate::{
     fs::{
         device::Device,
         inode_handle::FileIo,
+        notify::FsEventPublisher,
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
         pipe::NamedPipe,
         registry::{FsProperties, FsType},
         utils::{
             mkmod, AccessMode, CStr256, CachePage, DirentVisitor, Extension, FallocMode,
-            FileSystem, FsFlags, Inode, InodeIo, InodeMode, InodeType, Metadata, MknodType,
-            PageCache, PageCacheBackend, Permission, StatusFlags, SuperBlock, SymbolicLink,
-            XattrName, XattrNamespace, XattrSetFlags,
+            FileSystem, FsEventSubscriberStats, FsFlags, Inode, InodeIo, InodeMode, InodeType,
+            Metadata, MknodType, PageCache, PageCacheBackend, Permission, StatusFlags, SuperBlock,
+            SymbolicLink, XattrName, XattrNamespace, XattrSetFlags,
         },
     },
     prelude::*,
@@ -43,6 +44,8 @@ pub struct RamFs {
     root: Arc<RamInode>,
     /// An inode allocator
     inode_allocator: AtomicU64,
+    /// FS event subscriber stats for this file system
+    fs_event_subscriber_stats: FsEventSubscriberStats,
 }
 
 impl RamFs {
@@ -62,8 +65,10 @@ impl RamFs {
                 fs: weak_fs.clone(),
                 extension: Extension::new(),
                 xattr: RamXattr::new(),
+                fs_event_publisher: FsEventPublisher::new(),
             }),
             inode_allocator: AtomicU64::new(ROOT_INO + 1),
+            fs_event_subscriber_stats: FsEventSubscriberStats::new(),
         })
     }
 
@@ -89,6 +94,10 @@ impl FileSystem for RamFs {
     fn sb(&self) -> SuperBlock {
         self.sb.clone()
     }
+
+    fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
+        &self.fs_event_subscriber_stats
+    }
 }
 
 /// An inode of `RamFs`.
@@ -107,6 +116,8 @@ pub(super) struct RamInode {
     fs: Weak<RamFs>,
     /// Extensions
     extension: Extension,
+    /// FS event publisher
+    fs_event_publisher: FsEventPublisher,
     /// Extended attributes
     xattr: RamXattr,
 }
@@ -411,6 +422,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            fs_event_publisher: FsEventPublisher::new(),
             xattr: RamXattr::new(),
         })
     }
@@ -424,6 +436,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            fs_event_publisher: FsEventPublisher::new(),
             xattr: RamXattr::new(),
         })
     }
@@ -443,6 +456,7 @@ impl RamInode {
             this: Weak::new(),
             fs: Weak::new(),
             extension: Extension::new(),
+            fs_event_publisher: FsEventPublisher::new(),
             xattr: RamXattr::new(),
         }
     }
@@ -456,6 +470,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            fs_event_publisher: FsEventPublisher::new(),
             xattr: RamXattr::new(),
         })
     }
@@ -475,6 +490,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            fs_event_publisher: FsEventPublisher::new(),
             xattr: RamXattr::new(),
         })
     }
@@ -488,6 +504,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            fs_event_publisher: FsEventPublisher::new(),
             xattr: RamXattr::new(),
         })
     }
@@ -501,6 +518,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            fs_event_publisher: FsEventPublisher::new(),
             xattr: RamXattr::new(),
         })
     }
@@ -1180,6 +1198,10 @@ impl Inode for RamInode {
 
     fn extension(&self) -> Option<&Extension> {
         Some(&self.extension)
+    }
+
+    fn fs_event_publisher(&self) -> &FsEventPublisher {
+        &self.fs_event_publisher
     }
 
     fn set_xattr(

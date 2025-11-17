@@ -10,7 +10,7 @@ pub use endpoint::{Endpoint, EndpointState};
 pub use falloc_mode::FallocMode;
 pub use file_creation_mask::{AtomicFileCreationMask, FileCreationMask};
 pub use flock::{FlockItem, FlockList, FlockType};
-pub use fs::{FileSystem, FsFlags, SuperBlock};
+pub use fs::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock};
 pub use id_bitmap::IdBitmap;
 pub use inode::{
     Extension, Inode, InodeIo, InodeType, Metadata, MknodType, Permission, SymbolicLink,

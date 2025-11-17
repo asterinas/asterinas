@@ -8,7 +8,8 @@ use crate::{
     device::PtySlave,
     fs::{
         inode_handle::FileIo,
-        utils::{AccessMode, StatusFlags},
+        notify::FsEventPublisher,
+        utils::{AccessMode, InodeIo, StatusFlags},
     },
 };
 
@@ -19,6 +20,7 @@ const SLAVE_MAJOR_NUM: u32 = 3;
 pub struct PtySlaveInode {
     device: Arc<PtySlave>,
     metadata: RwLock<Metadata>,
+    fs_event_publisher: FsEventPublisher,
     fs: Weak<DevPts>,
 }
 
@@ -32,6 +34,7 @@ impl PtySlaveInode {
                 device.as_ref(),
             )),
             device,
+            fs_event_publisher: FsEventPublisher::new(),
             fs,
         })
     }
@@ -76,6 +79,10 @@ impl Inode for PtySlaveInode {
 
     fn metadata(&self) -> Metadata {
         *self.metadata.read()
+    }
+
+    fn fs_event_publisher(&self) -> &FsEventPublisher {
+        &self.fs_event_publisher
     }
 
     fn ino(&self) -> u64 {

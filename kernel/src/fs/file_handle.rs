@@ -8,7 +8,7 @@ use core::fmt::Display;
 
 use ostd::io::IoMem;
 
-use super::inode_handle::InodeHandle;
+use super::{inode_handle::InodeHandle, path::Path};
 use crate::{
     fs::{
         file_table::FdFlags,
@@ -141,6 +141,12 @@ impl dyn FileLike {
     pub fn as_socket_or_err(&self) -> Result<&dyn Socket> {
         self.as_socket()
             .ok_or_else(|| Error::with_message(Errno::ENOTSOCK, "the file is not a socket"))
+    }
+
+    pub fn path(&self) -> Option<&Path> {
+        self.as_inode_handle_or_err()
+            .ok()
+            .map(|inode_handle| inode_handle.path())
     }
 
     pub fn as_inode_handle_or_err(&self) -> Result<&InodeHandle> {
