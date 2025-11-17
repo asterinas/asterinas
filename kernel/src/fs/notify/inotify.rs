@@ -568,7 +568,7 @@ impl InotifyEvent {
         let actual_name_len = name.as_ref().map_or(0, |name| name.len() + 1);
         // Calculate padded name length aligned to sizeof(struct inotify_event)
         let pad_name_len = Self::round_event_name_len(actual_name_len);
-        
+
         Self {
             header: InotifyEventHeader {
                 wd,
