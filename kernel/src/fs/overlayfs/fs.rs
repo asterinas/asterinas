@@ -21,12 +21,14 @@ use crate::{
     fs::{
         fs_resolver::FsPath,
         inode_handle::FileIo,
+        notify::FsEventPublisher,
         path::Path,
         registry::{FsProperties, FsType},
         utils::{
-            mkmod, AccessMode, DirentCounter, DirentVisitor, FallocMode, FileSystem, FsFlags,
-            Inode, InodeIo, InodeMode, InodeType, Metadata, MknodType, StatusFlags, SuperBlock,
-            SymbolicLink, XattrName, XattrNamespace, XattrSetFlags, NAME_MAX, XATTR_VALUE_MAX_LEN,
+            mkmod, AccessMode, DirentCounter, DirentVisitor, FallocMode, FileSystem,
+            FsEventSubscriberStats, FsFlags, Inode, InodeIo, InodeMode, InodeType, Metadata,
+            MknodType, StatusFlags, SuperBlock, SymbolicLink, XattrName, XattrNamespace,
+            XattrSetFlags, NAME_MAX, XATTR_VALUE_MAX_LEN,
         },
     },
     prelude::*,
@@ -52,6 +54,8 @@ pub struct OverlayFs {
     sb: OverlaySB,
     /// Unique inode number generator.
     next_ino: AtomicU64,
+    /// FS event subscriber stats for this file system.
+    fs_event_subscriber_stats: FsEventSubscriberStats,
     /// Weak self reference.
     self_: Weak<OverlayFs>,
 }
@@ -99,6 +103,8 @@ struct OverlayInode {
     fs: Weak<OverlayFs>,
     /// Weak self reference.
     self_: Weak<OverlayInode>,
+    /// FS event publisher.
+    fs_event_publisher: FsEventPublisher,
 }
 
 impl OverlayFs {
@@ -126,6 +132,7 @@ impl OverlayFs {
             config: OverlayConfig::default(),
             sb: OverlaySB,
             next_ino: AtomicU64::new(0),
+            fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             self_: weak.clone(),
         }))
     }
@@ -178,6 +185,7 @@ impl FileSystem for OverlayFs {
                 .collect(),
             fs: self.self_.clone(),
             self_: weak.clone(),
+            fs_event_publisher: FsEventPublisher::new(),
         })
     }
 
@@ -189,6 +197,10 @@ impl FileSystem for OverlayFs {
     fn sb(&self) -> SuperBlock {
         // TODO: Fill the super block with valid field values.
         SuperBlock::new(OVERLAY_FS_MAGIC, BLOCK_SIZE, NAME_MAX)
+    }
+
+    fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
+        &self.fs_event_subscriber_stats
     }
 }
 
@@ -273,6 +285,7 @@ impl OverlayInode {
             lowers: Vec::new(),
             fs: self.fs.clone(),
             self_: weak.clone(),
+            fs_event_publisher: FsEventPublisher::new(),
         });
         Ok(new_child)
     }
@@ -437,6 +450,10 @@ impl OverlayInode {
 
     pub fn type_(&self) -> InodeType {
         self.type_
+    }
+
+    pub fn fs_event_publisher(&self) -> &FsEventPublisher {
+        &self.fs_event_publisher
     }
 
     pub fn page_cache(&self) -> Option<Arc<Vmo>> {
@@ -682,6 +699,7 @@ impl OverlayInode {
             lowers: lower_children,
             fs: self.fs.clone(),
             self_: weak.clone(),
+            fs_event_publisher: FsEventPublisher::new(),
         });
 
         Ok(Some(child_ovl_inode))
@@ -959,6 +977,7 @@ impl Inode for OverlayInode {
     fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize>;
     fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize>;
     fn remove_xattr(&self, name: XattrName) -> Result<()>;
+    fn fs_event_publisher(&self) -> &FsEventPublisher;
 }
 
 /// The index of the layer of an `OverlayFs`.

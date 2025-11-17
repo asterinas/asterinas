@@ -11,7 +11,10 @@ use crate::{
     fs::{
         cgroupfs::systree_node::CgroupSystem,
         registry::{FsProperties, FsType},
-        utils::{systree_inode::SysTreeInodeTy, FileSystem, FsFlags, Inode, SuperBlock},
+        utils::{
+            systree_inode::SysTreeInodeTy, FileSystem, FsEventSubscriberStats, FsFlags, Inode,
+            SuperBlock,
+        },
         Result,
     },
     prelude::*,
@@ -21,6 +24,7 @@ use crate::{
 pub(super) struct CgroupFs {
     sb: SuperBlock,
     root: Arc<dyn Inode>,
+    fs_event_subscriber_stats: FsEventSubscriberStats,
 }
 
 // Magic number for cgroupfs v2 (taken from Linux)
@@ -43,6 +47,7 @@ impl CgroupFs {
         Arc::new(Self {
             sb,
             root: root_inode,
+            fs_event_subscriber_stats: FsEventSubscriberStats::new(),
         })
     }
 }
@@ -63,6 +68,10 @@ impl FileSystem for CgroupFs {
 
     fn sb(&self) -> SuperBlock {
         self.sb.clone()
+    }
+
+    fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
+        &self.fs_event_subscriber_stats
     }
 }
 

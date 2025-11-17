@@ -7,6 +7,7 @@ use ostd::sync::RwLock;
 use crate::{
     fs::{
         configfs::fs::ConfigFs,
+        notify::FsEventPublisher,
         utils::{
             systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
             FileSystem, Inode, InodeMode, Metadata,
@@ -25,6 +26,8 @@ pub struct ConfigInode {
     mode: RwLock<InodeMode>,
     /// Weak reference to the parent inode.
     parent: Weak<ConfigInode>,
+    /// FS event publisher.
+    fs_event_publisher: FsEventPublisher,
     /// Weak self-reference for cyclic data structures.
     this: Weak<ConfigInode>,
 }
@@ -44,6 +47,7 @@ impl SysTreeInodeTy for ConfigInode {
             metadata,
             mode: RwLock::new(mode),
             parent,
+            fs_event_publisher: FsEventPublisher::new(),
             this: this.clone(),
         })
     }
@@ -67,6 +71,10 @@ impl SysTreeInodeTy for ConfigInode {
 
     fn parent(&self) -> &Weak<Self> {
         &self.parent
+    }
+
+    fn fs_event_publisher(&self) -> &FsEventPublisher {
+        &self.fs_event_publisher
     }
 
     fn this(&self) -> Arc<Self> {

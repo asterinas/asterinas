@@ -19,14 +19,15 @@ use crate::{
     fs::{
         device::Device,
         inode_handle::FileIo,
+        notify::FsEventPublisher,
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
         pipe::NamedPipe,
         registry::{FsProperties, FsType},
         utils::{
             mkmod, AccessMode, CStr256, CachePage, DirentVisitor, Extension, FallocMode,
-            FileSystem, FsFlags, Inode, InodeIo, InodeMode, InodeType, Metadata, MknodType,
-            PageCache, PageCacheBackend, Permission, StatusFlags, SuperBlock, SymbolicLink,
-            XattrName, XattrNamespace, XattrSetFlags,
+            FileSystem, FsEventSubscriberStats, FsFlags, Inode, InodeIo, InodeMode, InodeType,
+            Metadata, MknodType, PageCache, PageCacheBackend, Permission, StatusFlags, SuperBlock,
+            SymbolicLink, XattrName, XattrNamespace, XattrSetFlags,
         },
     },
     prelude::*,
@@ -43,6 +44,8 @@ pub struct RamFs {
     root: Arc<RamInode>,
     /// An inode allocator
     inode_allocator: AtomicU64,
+    /// FS event subscriber stats for this file system
+    fs_event_subscriber_stats: FsEventSubscriberStats,
 }
 
 impl RamFs {
@@ -62,8 +65,10 @@ impl RamFs {
                 fs: weak_fs.clone(),
                 extension: Extension::new(),
                 xattr: RamXattr::new(),
+                fs_event_publisher: FsEventPublisher::new(),
             }),
             inode_allocator: AtomicU64::new(ROOT_INO + 1),
+            fs_event_subscriber_stats: FsEventSubscriberStats::new(),
         })
     }
 
@@ -89,6 +94,10 @@ impl FileSystem for RamFs {
     fn sb(&self) -> SuperBlock {
         self.sb.clone()
     }
+
+    fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
+        &self.fs_event_subscriber_stats
+    }
 }
 
 /// An inode of `RamFs`.
@@ -109,6 +118,8 @@ pub(super) struct RamInode {
     extension: Extension,
     /// Extended attributes
     xattr: RamXattr,
+    /// FS event publisher
+    fs_event_publisher: FsEventPublisher,
 }
 
 /// Inode inner specifics.
@@ -412,6 +423,7 @@ impl RamInode {
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
             xattr: RamXattr::new(),
+            fs_event_publisher: FsEventPublisher::new(),
         })
     }
 
@@ -425,6 +437,7 @@ impl RamInode {
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
             xattr: RamXattr::new(),
+            fs_event_publisher: FsEventPublisher::new(),
         })
     }
 
@@ -444,6 +457,7 @@ impl RamInode {
             fs: Weak::new(),
             extension: Extension::new(),
             xattr: RamXattr::new(),
+            fs_event_publisher: FsEventPublisher::new(),
         }
     }
 
@@ -457,6 +471,7 @@ impl RamInode {
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
             xattr: RamXattr::new(),
+            fs_event_publisher: FsEventPublisher::new(),
         })
     }
 
@@ -476,6 +491,7 @@ impl RamInode {
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
             xattr: RamXattr::new(),
+            fs_event_publisher: FsEventPublisher::new(),
         })
     }
 
@@ -489,6 +505,7 @@ impl RamInode {
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
             xattr: RamXattr::new(),
+            fs_event_publisher: FsEventPublisher::new(),
         })
     }
 
@@ -502,6 +519,7 @@ impl RamInode {
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
             xattr: RamXattr::new(),
+            fs_event_publisher: FsEventPublisher::new(),
         })
     }
 
@@ -1214,6 +1232,10 @@ impl Inode for RamInode {
         RamXattr::check_file_type_for_xattr(self.typ)?;
         self.check_permission(Permission::MAY_WRITE)?;
         self.xattr.remove(name)
+    }
+
+    fn fs_event_publisher(&self) -> &FsEventPublisher {
+        &self.fs_event_publisher
     }
 }
 

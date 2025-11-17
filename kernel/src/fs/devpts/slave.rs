@@ -8,7 +8,8 @@ use crate::{
     device::PtySlave,
     fs::{
         inode_handle::FileIo,
-        utils::{AccessMode, StatusFlags},
+        notify::FsEventPublisher,
+        utils::{AccessMode, InodeIo, StatusFlags},
     },
 };
 
@@ -20,6 +21,7 @@ pub struct PtySlaveInode {
     device: Arc<PtySlave>,
     metadata: RwLock<Metadata>,
     fs: Weak<DevPts>,
+    fs_event_publisher: FsEventPublisher,
 }
 
 impl PtySlaveInode {
@@ -33,6 +35,7 @@ impl PtySlaveInode {
             )),
             device,
             fs,
+            fs_event_publisher: FsEventPublisher::new(),
         })
     }
 }
@@ -147,5 +150,9 @@ impl Inode for PtySlaveInode {
         status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn FileIo>>> {
         Some(self.device.open())
+    }
+
+    fn fs_event_publisher(&self) -> &FsEventPublisher {
+        &self.fs_event_publisher
     }
 }

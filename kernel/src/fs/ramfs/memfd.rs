@@ -22,6 +22,7 @@ use crate::{
         file_handle::{FileLike, Mappable},
         file_table::FdFlags,
         inode_handle::{do_fallocate_util, do_resize_util, do_seek_util},
+        notify::FsEventPublisher,
         path::{check_open_util, RESERVED_MOUNT_ID},
         tmpfs::TmpFs,
         utils::{
@@ -234,6 +235,8 @@ impl Inode for MemfdInode {
         static MEMFD_TMPFS: Once<Arc<TmpFs>> = Once::new();
         MEMFD_TMPFS.call_once(TmpFs::new).clone()
     }
+
+    fn fs_event_publisher(&self) -> &FsEventPublisher {}
 }
 
 pub struct MemfdFile {
