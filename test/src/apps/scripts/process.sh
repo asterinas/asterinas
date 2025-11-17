@@ -28,6 +28,8 @@ getcpu/getcpu
 getpid/getpid
 hello_pie/hello
 hello_world/hello_world
+inotify/inotify_align
+inotify/inotify_poll
 itimer/setitimer
 itimer/timer_create
 mmap/mmap_and_fork

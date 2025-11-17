@@ -19,6 +19,7 @@ TESTS ?= \
 	fsync_test \
 	futex_test \
 	getdents_test \
+	inotify_test \
 	ioctl_test \
 	link_test \
 	lseek_test \
