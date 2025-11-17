@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_systree::{Error, Result, SysAttrSet, SysAttrSetBuilder, SysPerms, SysStr};
-use ostd::mm::{VmReader, VmWriter};
+use aster_util::printer::VmPrinter;
+use ostd::{
+    cpu::num_cpus,
+    mm::{VmReader, VmWriter},
+};
 
 use crate::fs::cgroupfs::controller::CgroupSysNode;
 
@@ -40,12 +44,27 @@ impl super::SubControl for CpuSetController {
 
     fn read_attr_at(
         &self,
-        _name: &str,
-        _offset: usize,
-        _writer: &mut VmWriter,
+        name: &str,
+        offset: usize,
+        writer: &mut VmWriter,
         _cgroup_node: &dyn CgroupSysNode,
     ) -> Result<usize> {
-        Err(Error::AttributeError)
+        let mut printer = VmPrinter::new_skip(writer, offset);
+        match name {
+            "cpuset.cpus.effective" => {
+                let num_cpus = num_cpus();
+                if num_cpus == 1 {
+                    writeln!(printer, "0")?;
+                } else {
+                    writeln!(printer, "0-{}", num_cpus - 1)?;
+                }
+            }
+            // Currently we only support a single memory node.
+            "cpuset.mems.effective" => writeln!(printer, "0")?,
+            _ => return Err(Error::AttributeError),
+        }
+
+        Ok(printer.bytes_written())
     }
 
     fn write_attr(
