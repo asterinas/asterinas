@@ -15,12 +15,14 @@ use crate::{
     prelude::*,
 };
 
+pub mod inotify;
+
 use super::utils::{Inode, InodeType};
 
 /// Publishes filesystem events to subscribers.
 ///
 /// Each inode has an associated `FsEventPublisher` that maintains a list of
-/// subscribers interested in filesystem events. When an event occurs, the publisher
+/// subscribers interesting in filesystem events. When an event occurs, the publisher
 /// notifies all subscribers whose interesting events match the event.
 pub struct FsEventPublisher {
     /// List of FS event subscribers.
@@ -145,7 +147,7 @@ impl FsEventPublisher {
 ///
 /// A subscriber receives notifications from a publisher when filesystem events occur
 /// that match the subscriber's interesting events. The subscriber specifies which events
-/// it is interested in using `FsEvents`, which define the types of events (e.g.,
+/// it is interesting in using `FsEvents`, which define the types of events (e.g.,
 /// read, write, modify, delete) the subscriber wants to be notified about. When an event
 /// occurs, the publisher (attached to an inode) broadcasts it to all subscribers whose
 /// interesting events match the event type.
@@ -155,7 +157,7 @@ pub trait FsEventSubscriber: Any + Send + Sync {
     /// Invariant: This method must not sleep or perform blocking operations. The publisher
     /// may hold a spin lock when calling this method.
     fn deliver_event(&self, events: FsEvents, name: Option<String>);
-    /// Returns the events that this subscriber is interested in.
+    /// Returns the events that this subscriber is interesting in.
     fn interesting_events(&self) -> FsEvents;
 }
 
@@ -163,7 +165,7 @@ bitflags! {
     /// Represents filesystem events that have occurred.
     ///
     /// These events are used to notify subscribers about specific filesystem actions.
-    /// Subscribers specify which events they are interested in to filter and receive
+    /// Subscribers specify which events they are interesting in to filter and receive
     /// only the events they care about.
     pub struct FsEvents: u32 {
         const ACCESS          = 0x00000001; // File was accessed
