@@ -5,7 +5,7 @@ use ostd::mm::{Infallible, VmReader, VmWriter};
 use spin::Once;
 
 use super::{Tty, TtyDriver};
-use crate::{fs::inode_handle::FileIo, prelude::*};
+use crate::{device::pty::PacketCtrl, events::IoEvents, fs::inode_handle::FileIo, prelude::*};
 
 pub struct ConsoleDriver {
     console: Arc<dyn AnyConsoleDevice>,
@@ -39,6 +39,12 @@ impl TtyDriver for ConsoleDriver {
     fn console(&self) -> Option<&dyn AnyConsoleDevice> {
         Some(&*self.console)
     }
+
+    fn packet_ctrl(&self) -> Option<&PacketCtrl> {
+        None
+    }
+
+    fn notify_events(&self, _events: IoEvents) {}
 }
 
 static N_TTY: Once<Box<[Arc<Tty<ConsoleDriver>>]>> = Once::new();

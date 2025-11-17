@@ -26,6 +26,10 @@ pub enum IoctlCmd {
     TIOCGWINSZ = 0x5413,
     /// Set window size
     TIOCSWINSZ = 0x5414,
+    /// Set pty packet mode
+    TIOCPKT = 0x5420,
+    /// Get pty packet mode state
+    TIOCGPKT = 0x80045438,
     /// Enable or disable non-blocking I/O mode.
     FIONBIO = 0x5421,
     /// The calling process gives up this controlling terminal
