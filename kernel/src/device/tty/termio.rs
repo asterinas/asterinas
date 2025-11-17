@@ -230,7 +230,7 @@ impl CCtrlCharId {
 /// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits.h#L30>.
 #[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
-pub(super) struct CTermios {
+pub struct CTermios {
     c_iflags: CInputFlags,
     c_oflags: COutputFlags,
     c_cflags: CCtrlFlags,
@@ -292,27 +292,14 @@ impl CTermios {
         self.c_lflags.contains(CLocalFlags::ICANON)
     }
 
-    /// Returns whether the input flags contain `ICRNL`.
-    ///
-    /// The `ICRNL` flag means the `\r` characters in the input should be mapped to `\n`.
-    pub(super) fn contains_icrnl(&self) -> bool {
-        self.c_iflags.contains(CInputFlags::ICRNL)
+    /// Returns the input flags.
+    pub(super) fn input_flags(&self) -> &CInputFlags {
+        &self.c_iflags
     }
 
-    pub(super) fn contains_isig(&self) -> bool {
-        self.c_lflags.contains(CLocalFlags::ISIG)
-    }
-
-    pub(super) fn contain_echo(&self) -> bool {
-        self.c_lflags.contains(CLocalFlags::ECHO)
-    }
-
-    pub(super) fn contains_echo_ctl(&self) -> bool {
-        self.c_lflags.contains(CLocalFlags::ECHOCTL)
-    }
-
-    pub(super) fn contains_iexten(&self) -> bool {
-        self.c_lflags.contains(CLocalFlags::IEXTEN)
+    /// Returns the local flags.
+    pub(super) fn local_flags(&self) -> &CLocalFlags {
+        &self.c_lflags
     }
 }
 

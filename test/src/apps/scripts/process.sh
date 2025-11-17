@@ -55,6 +55,7 @@ pty/close_pty
 pty/open_ptmx
 pty/open_pty
 pty/pty_blocking
+pty/pty_packet_mode
 sched/sched_attr_getset
 sched/sched_param_getset
 sched/sched_param_idle

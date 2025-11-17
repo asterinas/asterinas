@@ -7,7 +7,7 @@ use ostd::task::Task;
 use super::{driver::PtyDriver, PtySlave};
 use crate::{
     current_userspace,
-    device::tty::TtyFlags,
+    device::tty::{TtyDriver, TtyFlags},
     events::IoEvents,
     fs::{
         devpts::Ptmx,
@@ -72,6 +72,18 @@ impl PtyMaster {
 
         if self.master_flags().is_other_closed() {
             events |= IoEvents::HUP;
+        }
+
+        // Deal with packet mode
+        let Some(packet_ctrl) = self.slave.driver().packet_ctrl() else {
+            return events;
+        };
+        if !packet_ctrl.mode() {
+            return events;
+        }
+        let status = packet_ctrl.status().lock();
+        if !status.is_empty() {
+            events |= IoEvents::PRI | IoEvents::IN | IoEvents::RDNORM;
         }
 
         events
@@ -206,6 +218,23 @@ impl FileIo for PtyMaster {
             IoctlCmd::FIONREAD => {
                 let len = self.slave.driver().buffer_len() as i32;
                 current_userspace!().write_val(arg, &len)?;
+            }
+            IoctlCmd::TIOCGPKT => {
+                let val = if self.slave.driver().packet_ctrl().unwrap().mode() {
+                    1
+                } else {
+                    0
+                };
+                current_userspace!().write_val(arg, &val)?;
+            }
+            IoctlCmd::TIOCPKT => {
+                let val = current_userspace!().read_val::<i32>(arg)?;
+                let new_mode = val != 0;
+                self.slave
+                    .driver()
+                    .packet_ctrl()
+                    .unwrap()
+                    .set_mode(new_mode);
             }
             _ => (self.slave.clone() as Arc<dyn Terminal>).job_ioctl(cmd, arg, true)?,
         }
