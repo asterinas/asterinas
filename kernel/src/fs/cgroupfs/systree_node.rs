@@ -22,7 +22,7 @@ use spin::Once;
 use crate::{
     fs::cgroupfs::controller::{Controller, SubCtrlState},
     prelude::*,
-    process::{process_table, Pid, Process},
+    process::{process_table, signal::constants::SIGSTOP, Pid, Process},
 };
 
 /// A type that provides exclusive, synchronized access to modify cgroup membership.
@@ -75,9 +75,9 @@ impl CgroupMembership {
             }
 
             old_cgroup
-                .with_inner_mut(|old_cgroup_processes| {
-                    old_cgroup_processes.remove(&process.pid()).unwrap();
-                    if old_cgroup_processes.is_empty() {
+                .with_inner_mut(|inner| {
+                    inner.processes.remove(&process.pid()).unwrap();
+                    if inner.processes.is_empty() {
                         let old_count = old_cgroup.populated_count.fetch_sub(1, Ordering::Relaxed);
                         if old_count == 1 {
                             old_cgroup.propagate_sub_populated();
@@ -88,14 +88,16 @@ impl CgroupMembership {
         };
 
         new_cgroup
-            .with_inner_mut(|current_processes| {
-                if current_processes.is_empty() {
+            .with_inner_mut(|inner| {
+                if inner.processes.is_empty() {
                     let old_count = new_cgroup.populated_count.fetch_add(1, Ordering::Relaxed);
                     if old_count == 0 {
                         new_cgroup.propagate_add_populated();
                     }
                 }
-                current_processes.insert(process.pid(), Arc::downgrade(&process));
+                inner
+                    .processes
+                    .insert(process.pid(), Arc::downgrade(&process));
             })
             .ok_or(Error::IsDead)?;
 
@@ -112,9 +114,9 @@ impl CgroupMembership {
         };
 
         old_cgroup
-            .with_inner_mut(|old_cgroup_processes| {
-                old_cgroup_processes.remove(&process.pid()).unwrap();
-                if old_cgroup_processes.is_empty() {
+            .with_inner_mut(|inner| {
+                inner.processes.remove(&process.pid()).unwrap();
+                if inner.processes.is_empty() {
                     let old_count = old_cgroup.populated_count.fetch_sub(1, Ordering::Relaxed);
                     if old_count == 1 {
                         old_cgroup.propagate_sub_populated();
@@ -124,6 +126,29 @@ impl CgroupMembership {
             .unwrap();
 
         process.set_cgroup(None);
+    }
+
+    fn freeze_cgroup_node(&mut self, cgroup_node: &CgroupNode, freeze_op: FreezeOp) -> Result<()> {
+        let mut worklist: Vec<Arc<CgroupNode>> =
+            vec![cgroup_node.fields.weak_self().upgrade().unwrap()];
+        while let Some(node) = worklist.pop() {
+            let Some(has_changed) = node.with_inner_mut(|inner| inner.do_freeze(freeze_op)) else {
+                if node.depth == cgroup_node.depth {
+                    return Err(Error::IsDead);
+                }
+                continue;
+            };
+
+            if has_changed {
+                for child in node.fields.children_ref().read().values() {
+                    worklist.push(child.clone());
+                }
+            }
+
+            // TODO: Add the logics of upward propagation.
+        }
+
+        Ok(())
     }
 }
 
@@ -185,6 +210,49 @@ impl Debug for CgroupNode {
 struct Inner {
     /// Processes bound to the cgroup node.
     processes: BTreeMap<Pid, Weak<Process>>,
+    /// Whether the cgroup node is frozen.
+    is_frozen: bool,
+}
+
+impl Inner {
+    fn new(is_frozen: bool) -> Self {
+        Self {
+            processes: BTreeMap::new(),
+            is_frozen,
+        }
+    }
+
+    fn do_freeze(&mut self, freeze_op: FreezeOp) -> bool {
+        match freeze_op {
+            FreezeOp::Freeze => {
+                if self.is_frozen {
+                    return false;
+                }
+
+                for weak_process in self.processes.values() {
+                    if let Some(process) = weak_process.upgrade() {
+                        process.stop(SIGSTOP);
+                    }
+                }
+
+                self.is_frozen = true;
+                true
+            }
+            FreezeOp::Unfreeze => {
+                if !self.is_frozen {
+                    return false;
+                }
+
+                for weak_process in self.processes.values() {
+                    if let Some(process) = weak_process.upgrade() {
+                        process.resume();
+                    }
+                }
+                self.is_frozen = false;
+                true
+            }
+        }
+    }
 }
 
 #[inherit_methods(from = "self.fields")]
@@ -251,7 +319,12 @@ impl CgroupSysNode for CgroupSystem {
 }
 
 impl CgroupNode {
-    pub(self) fn new(name: SysStr, depth: usize, sub_ctrl_state: SubCtrlState) -> Arc<Self> {
+    pub(self) fn new(
+        name: SysStr,
+        depth: usize,
+        sub_ctrl_state: SubCtrlState,
+        is_frozen: bool,
+    ) -> Arc<Self> {
         let mut builder = SysAttrSetBuilder::new();
         // TODO: Add more attributes as needed. The normal cgroup node may have
         // more attributes than the unified one.
@@ -279,6 +352,10 @@ impl CgroupNode {
             SysStr::from("cgroup.events"),
             SysPerms::DEFAULT_RO_ATTR_PERMS,
         );
+        builder.add(
+            SysStr::from("cgroup.freeze"),
+            SysPerms::DEFAULT_RW_ATTR_PERMS,
+        );
 
         let attrs = builder.build().expect("Failed to build attribute set");
         Arc::new_cyclic(|weak_self| {
@@ -286,7 +363,7 @@ impl CgroupNode {
             CgroupNode {
                 fields,
                 controller: Controller::new(sub_ctrl_state, false),
-                inner: RwMutex::new(Some(Inner::default())),
+                inner: RwMutex::new(Some(Inner::new(is_frozen))),
                 depth,
                 populated_count: AtomicUsize::new(0),
             }
@@ -352,12 +429,12 @@ impl CgroupNode {
     #[must_use]
     fn with_inner<F, R>(&self, op: F) -> Option<R>
     where
-        F: FnOnce(&BTreeMap<Pid, Weak<Process>>) -> R,
+        F: FnOnce(&Inner) -> R,
     {
         let inner = self.inner.read();
         let inner_ref = inner.as_ref()?;
 
-        Some(op(&inner_ref.processes))
+        Some(op(inner_ref))
     }
 
     /// Performs a mutable operation on the inner data.
@@ -366,12 +443,12 @@ impl CgroupNode {
     #[must_use]
     fn with_inner_mut<F, R>(&self, op: F) -> Option<R>
     where
-        F: FnOnce(&mut BTreeMap<Pid, Weak<Process>>) -> R,
+        F: FnOnce(&mut Inner) -> R,
     {
         let mut inner = self.inner.write();
         let inner_ref = inner.as_mut()?;
 
-        Some(op(&mut inner_ref.processes))
+        Some(op(inner_ref))
     }
 
     /// Marks this cgroup node as dead.
@@ -506,7 +583,12 @@ inherit_sys_branch_node!(CgroupSystem, fields, {
 
     fn create_child(&self, name: &str) -> Result<Arc<dyn SysObj>> {
         let controller = self.controller.lock();
-        let new_child = CgroupNode::new(name.to_string().into(), 1, controller.sub_ctrl_state());
+        let new_child = CgroupNode::new(
+            name.to_string().into(),
+            1,
+            controller.sub_ctrl_state(),
+            false,
+        );
         self.add_child(new_child.clone())?;
         Ok(new_child)
     }
@@ -538,11 +620,11 @@ inherit_sys_branch_node!(CgroupNode, fields, {
     }
 
     fn read_attr_at(&self, name: &str, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        self.with_inner(|processes| {
+        self.with_inner(|inner| {
             let mut printer = VmPrinter::new_skip(writer, offset);
             match name {
                 "cgroup.procs" => {
-                    for pid in processes.keys() {
+                    for pid in inner.processes.keys() {
                         writeln!(printer, "{}", pid)?;
                     }
                 }
@@ -554,9 +636,7 @@ inherit_sys_branch_node!(CgroupNode, fields, {
                     };
 
                     writeln!(printer, "populated {}", res)?;
-                    // Currently we have not enabled the "frozen" attribute
-                    // so the "frozen" field is always zero.
-                    writeln!(printer, "frozen {}", 0)?;
+                    writeln!(printer, "frozen {}", if inner.is_frozen { 1 } else { 0 })?;
                 }
                 "cgroup.controllers" => {
                     let context = self.cgroup_parent().unwrap().controller().show_state();
@@ -565,6 +645,10 @@ inherit_sys_branch_node!(CgroupNode, fields, {
                 "cgroup.subtree_control" => {
                     let context = self.controller.show_state();
                     writeln!(printer, "{}", context)?;
+                }
+                "cgroup.freeze" => {
+                    let res = if inner.is_frozen { 1 } else { 0 };
+                    writeln!(printer, "{}", res)?;
                 }
                 // TODO: Add support for reading other attributes.
                 _ => {
@@ -616,12 +700,12 @@ inherit_sys_branch_node!(CgroupNode, fields, {
                 let parent_controller = parent_node.controller().lock();
                 let mut current_controller = self.controller.lock();
 
-                self.with_inner(|processes| {
+                self.with_inner(|inner| {
                     // According to "no internal processes" rule of cgroupv2, if a non-root
                     // cgroup node has bound processes, it cannot activate any sub-control.
                     //
                     // Ref: https://man7.org/linux/man-pages/man7/cgroups.7.html
-                    if !processes.is_empty() {
+                    if !inner.processes.is_empty() {
                         return Err(Error::ResourceUnavailable);
                     }
 
@@ -644,6 +728,23 @@ inherit_sys_branch_node!(CgroupNode, fields, {
                 })
                 .ok_or(Error::IsDead)?
             }
+            "cgroup.freeze" => {
+                let (content, len) = reader
+                    .read_cstring_until_end(MAX_ATTR_SIZE)
+                    .map_err(|_| Error::PageFault)?;
+                let freeze_op = content
+                    .to_str()
+                    .map_err(|_| Error::InvalidOperation)?
+                    .trim();
+                let freeze_op = match freeze_op {
+                    "0" => FreezeOp::Unfreeze,
+                    "1" => FreezeOp::Freeze,
+                    _ => return Err(Error::InvalidOperation),
+                };
+                CgroupMembership::lock().freeze_cgroup_node(self, freeze_op)?;
+
+                Ok(len)
+            }
             // TODO: Add support for writing other attributes.
             _ => {
                 let controller = self.controller.lock();
@@ -659,11 +760,12 @@ inherit_sys_branch_node!(CgroupNode, fields, {
 
     fn create_child(&self, name: &str) -> Result<Arc<dyn SysObj>> {
         let controller = self.controller.lock();
-        self.with_inner(|_| {
+        self.with_inner(|inner| {
             let new_child = CgroupNode::new(
                 name.to_string().into(),
                 self.depth + 1,
                 controller.sub_ctrl_state(),
+                inner.is_frozen,
             );
             self.add_child(new_child.clone())?;
             Ok(new_child as _)
@@ -759,4 +861,10 @@ pub(super) trait CgroupSysNode: SysBranchNode {
             Some(Arc::downcast::<CgroupNode>(parent).unwrap())
         }
     }
+}
+
+#[derive(Copy, Clone)]
+enum FreezeOp {
+    Freeze,
+    Unfreeze,
 }
