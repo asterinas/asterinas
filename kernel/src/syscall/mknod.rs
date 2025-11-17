@@ -5,6 +5,7 @@ use device_id::DeviceId;
 use super::SyscallReturn;
 use crate::{
     device::get_device,
+    fs,
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
@@ -59,7 +60,7 @@ pub fn sys_mknodat(
         }
         _ => return_errno_with_message!(Errno::EPERM, "unimplemented file types"),
     }
-
+    fs::notify::on_create(&dir_path, name);
     Ok(SyscallReturn::Return(0))
 }
 

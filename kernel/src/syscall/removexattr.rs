@@ -8,6 +8,7 @@ use super::{
     SyscallReturn,
 };
 use crate::{
+    fs,
     fs::file_table::{get_file_fast, FileDesc},
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -52,6 +53,12 @@ fn removexattr(
     let xattr_name = parse_xattr_name(name_str.as_ref())?;
     check_xattr_namespace(xattr_name.namespace(), ctx)?;
 
-    let path = lookup_path_for_xattr(&file_ctx, ctx)?;
-    path.remove_xattr(xattr_name)
+    match lookup_path_for_xattr(&file_ctx, ctx) {
+        Ok(path) => {
+            path.remove_xattr(xattr_name)?;
+            fs::notify::on_attr_change(&path);
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
 }

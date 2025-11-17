@@ -2,6 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
+    fs,
     fs::{
         file_handle::FileLike,
         file_table::{FdFlags, FileDesc},
@@ -56,9 +57,10 @@ pub fn sys_openat(
             } else {
                 FdFlags::empty()
             };
-        file_table_locked.insert(file_handle, fd_flags)
+        file_table_locked.insert(file_handle.clone(), fd_flags)
     };
-
+    let file_like: Arc<dyn FileLike> = file_handle;
+    fs::notify::on_open(&file_like);
     Ok(SyscallReturn::Return(fd as _))
 }
 
@@ -122,6 +124,7 @@ fn do_open(
             let (parent, tail_name) = result.into_parent_and_basename();
             let new_path =
                 parent.new_fs_child(&tail_name, InodeType::File, open_args.inode_mode)?;
+            fs::notify::on_create(&parent, tail_name.clone());
 
             // Don't check access mode for newly created file.
             Arc::new(InodeHandle::new_unchecked_access(

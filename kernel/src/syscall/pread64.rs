@@ -2,6 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
+    fs,
     fs::file_table::{get_file_fast, FileDesc},
     prelude::*,
 };
@@ -38,6 +39,10 @@ pub fn sys_pread64(
         let mut writer = user_space.writer(user_buf_ptr, user_buf_len)?;
         file.read_at(offset as usize, &mut writer)?
     };
+
+    if read_len > 0 {
+        fs::notify::on_access(&file);
+    }
 
     Ok(SyscallReturn::Return(read_len as _))
 }
