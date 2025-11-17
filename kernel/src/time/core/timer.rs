@@ -11,7 +11,7 @@ use core::{
     time::Duration,
 };
 
-use ostd::sync::SpinLock;
+use ostd::sync::{LocalIrqDisabled, SpinLock, SpinLockGuard};
 
 use super::Clock;
 
@@ -31,84 +31,79 @@ pub enum Timeout {
 /// its `interval` field with [`Timer::set_interval`]. By doing this,
 /// the timer will use the interval time to configure a new timing after expiration.
 pub struct Timer {
-    interval: SpinLock<Duration>,
+    inner: SpinLock<TimerInner>,
     timer_manager: Arc<TimerManager>,
-    registered_callback: Box<dyn Fn() + Send + Sync>,
-    timer_callback: SpinLock<Weak<TimerCallback>>,
+    registered_callback: Box<dyn Fn(TimerGuard) + Send + Sync>,
 }
 
-impl Timer {
-    /// Create a `Timer` instance from a [`TimerManager`].
-    /// This timer will be managed by the `TimerManager`.
+#[derive(Default)]
+struct TimerInner {
+    interval: Duration,
+    timer_callback: Weak<TimerCallback>,
+}
+
+/// A guard that provides exclusive access to a `Timer`.
+pub struct TimerGuard<'a> {
+    inner: SpinLockGuard<'a, TimerInner, LocalIrqDisabled>,
+    timer: &'a Arc<Timer>,
+}
+
+impl TimerGuard<'_> {
+    /// Sets the interval time for this timer.
     ///
-    /// Note that if the callback instructions involves sleep, users should put these instructions
-    /// into something like `WorkQueue` to avoid sleeping during system timer interruptions.
-    fn new<F>(registered_callback: F, timer_manager: Arc<TimerManager>) -> Arc<Self>
-    where
-        F: Fn() + Send + Sync + 'static,
-    {
-        Arc::new(Self {
-            interval: SpinLock::new(Duration::ZERO),
-            timer_manager,
-            registered_callback: Box::new(registered_callback),
-            timer_callback: SpinLock::new(Weak::default()),
-        })
-    }
-
-    /// Set the interval time for this timer.
     /// The timer will be reset with the interval time upon expiration.
-    pub fn set_interval(&self, interval: Duration) {
-        *self.interval.disable_irq().lock() = interval;
+    pub fn set_interval(&mut self, interval: Duration) {
+        self.inner.interval = interval;
     }
 
-    /// Cancel the current timer's set timeout callback.
-    pub fn cancel(&self) {
-        let timer_callback = self.timer_callback.disable_irq().lock();
-        if let Some(timer_callback) = timer_callback.upgrade() {
-            timer_callback.cancel();
-        }
-    }
-
-    /// Set the timer with a timeout.
+    /// Sets the timer with a timeout.
     ///
     /// The registered callback function of this timer will be invoked
     /// when reaching timeout. If the timer has a valid interval, this timer
     /// will be set again with the interval when reaching timeout.
-    pub fn set_timeout(self: &Arc<Self>, timeout: Timeout) {
+    pub fn set_timeout(&mut self, timeout: Timeout) {
         let expired_time = match timeout {
             Timeout::After(timeout) => {
-                let now = self.timer_manager.clock.read_time();
+                let now = self.timer.timer_manager.clock.read_time();
                 now + timeout
             }
             Timeout::When(timeout) => timeout,
         };
 
-        let timer_weak = Arc::downgrade(self);
-        let new_timer_callback = Arc::new(TimerCallback::new(
-            expired_time,
-            Box::new(move || interval_timer_callback(&timer_weak)),
-        ));
+        let timer_weak = Arc::downgrade(self.timer);
+        let new_timer_callback = Arc::new(TimerCallback::new(expired_time, timer_weak));
 
-        let mut timer_callback = self.timer_callback.disable_irq().lock();
-        if let Some(timer_callback) = timer_callback.upgrade() {
+        if let Some(timer_callback) = self.inner.timer_callback.upgrade() {
             timer_callback.cancel();
         }
-        *timer_callback = Arc::downgrade(&new_timer_callback);
-        self.timer_manager.insert(new_timer_callback);
+
+        self.inner.timer_callback = Arc::downgrade(&new_timer_callback);
+        self.timer.timer_manager.insert(new_timer_callback);
     }
 
-    /// Return the current expired time of this timer.
+    /// Cancels the currently set `TimerCallback`.
+    ///
+    /// Once cancelled, the current `TimerCallback` will not be triggered again.
+    pub fn cancel(&self) {
+        if let Some(timer_callback) = self.inner.timer_callback.upgrade() {
+            timer_callback.cancel();
+        }
+    }
+
+    /// Returns the current expired time of this timer.
     pub fn expired_time(&self) -> Duration {
-        let timer_callback = self.timer_callback.disable_irq().lock().upgrade();
-        timer_callback.map_or(Duration::ZERO, |timer_callback| timer_callback.expired_time)
+        let timer_callback = self.inner.timer_callback.upgrade();
+        timer_callback
+            .and_then(|callback| (!callback.is_cancelled()).then_some(callback.expired_time))
+            .unwrap_or(Duration::ZERO)
     }
 
-    /// Return the remain time to expiration of this timer.
+    /// Returns the remain time to expiration of this timer.
     ///
     /// If the timer has not been set, this method
     /// will return `Duration::ZERO`.
     pub fn remain(&self) -> Duration {
-        let now = self.timer_manager.clock.read_time();
+        let now = self.timer.timer_manager.clock.read_time();
         let expired_time = self.expired_time();
         if expired_time > now {
             expired_time - now
@@ -117,27 +112,41 @@ impl Timer {
         }
     }
 
-    /// Return a reference to the [`TimerManager`] which manages
-    /// the current timer.
-    pub fn timer_manager(&self) -> &Arc<TimerManager> {
-        &self.timer_manager
-    }
-
     /// Returns the interval time of the current timer.
     pub fn interval(&self) -> Duration {
-        *self.interval.disable_irq().lock()
+        self.inner.interval
     }
 }
 
-fn interval_timer_callback(timer: &Weak<Timer>) {
-    let Some(timer) = timer.upgrade() else {
-        return;
-    };
+impl Timer {
+    /// Creates a `Timer` instance from a [`TimerManager`].
+    /// This timer will be managed by the `TimerManager`.
+    ///
+    /// Note that if the callback instructions involves sleep, users should put these instructions
+    /// into something like `WorkQueue` to avoid sleeping during system timer interruptions.
+    fn new<F>(registered_callback: F, timer_manager: Arc<TimerManager>) -> Arc<Self>
+    where
+        F: Fn(TimerGuard) + Send + Sync + 'static,
+    {
+        Arc::new(Self {
+            inner: SpinLock::new(TimerInner::default()),
+            timer_manager,
+            registered_callback: Box::new(registered_callback),
+        })
+    }
 
-    (timer.registered_callback)();
-    let interval = timer.interval.disable_irq().lock();
-    if *interval != Duration::ZERO {
-        timer.set_timeout(Timeout::After(*interval));
+    /// Locks the timer and returns a [`TimerGuard`] for exclusive access.
+    pub fn lock(self: &Arc<Self>) -> TimerGuard<'_> {
+        TimerGuard {
+            inner: self.inner.disable_irq().lock(),
+            timer: self,
+        }
+    }
+
+    /// Returns a reference to the [`TimerManager`] which manages
+    /// the current timer.
+    pub fn timer_manager(&self) -> &Arc<TimerManager> {
+        &self.timer_manager
     }
 }
 
@@ -152,7 +161,7 @@ pub struct TimerManager {
 }
 
 impl TimerManager {
-    /// Create a `TimerManager` instance from a clock.
+    /// Creates a `TimerManager` instance from a clock.
     pub fn new(clock: Arc<dyn Clock>) -> Arc<Self> {
         Arc::new(Self {
             clock,
@@ -183,8 +192,9 @@ impl TimerManager {
             .push(timer_callback);
     }
 
-    /// Check the managed timers, and if any have timed out,
-    /// call the corresponding callback functions.
+    /// Checks and processes the managed timers.
+    ///
+    /// If any of the timers have timed out, call the corresponding callback functions.
     pub fn process_expired_timers(&self) {
         let callbacks = {
             let mut timeout_list = self.timer_callbacks.disable_irq().lock();
@@ -208,14 +218,14 @@ impl TimerManager {
         };
 
         for callback in callbacks {
-            (callback.callback)();
+            callback.call();
         }
     }
 
-    /// Create an [`Timer`], which will be managed by this `TimerManager`.
+    /// Creates an [`Timer`], which will be managed by this `TimerManager`.
     pub fn create_timer<F>(self: &Arc<Self>, function: F) -> Arc<Timer>
     where
-        F: Fn() + Send + Sync + 'static,
+        F: Fn(TimerGuard) + Send + Sync + 'static,
     {
         Timer::new(function, self.clone())
     }
@@ -224,29 +234,51 @@ impl TimerManager {
 /// A `TimerCallback` can be used to execute a timer callback function.
 struct TimerCallback {
     expired_time: Duration,
-    callback: Box<dyn Fn() + Send + Sync>,
+    timer: Weak<Timer>,
     is_cancelled: AtomicBool,
 }
 
 impl TimerCallback {
-    /// Create an instance of `TimerCallback`.
-    fn new(timeout: Duration, callback: Box<dyn Fn() + Send + Sync>) -> Self {
+    /// Creates an instance of `TimerCallback`.
+    fn new(timeout: Duration, timer: Weak<Timer>) -> Self {
         Self {
             expired_time: timeout,
-            callback,
+            timer,
             is_cancelled: AtomicBool::new(false),
         }
     }
 
-    /// Cancel a `TimerCallback`. If the callback function has not been called,
+    /// Cancels a `TimerCallback`. If the callback function has not been called,
     /// it will never be called again.
     fn cancel(&self) {
         self.is_cancelled.store(true, Ordering::Release);
     }
 
-    // Return whether the `TimerCallback` is cancelled.
+    // Returns whether the `TimerCallback` is cancelled.
     fn is_cancelled(&self) -> bool {
         self.is_cancelled.load(Ordering::Acquire)
+    }
+
+    fn call(&self) {
+        let Some(timer) = self.timer.upgrade() else {
+            return;
+        };
+
+        let mut timer_guard = timer.lock();
+
+        if self.is_cancelled() {
+            // The callback is cancelled.
+            return;
+        }
+
+        let interval = timer_guard.interval();
+        if interval != Duration::ZERO {
+            timer_guard.set_timeout(Timeout::After(interval));
+        }
+
+        // Pass the `timer_guard` guard to the callback, allowing it to prevent race conditions.
+        // The callback may choose to use the guard or drop it if not needed.
+        (timer.registered_callback)(timer_guard);
     }
 }
 

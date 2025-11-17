@@ -44,22 +44,27 @@ pub fn sys_setitimer(
         ItimerType::ITIMER_PROF => process_timer_manager.prof_timer(),
     };
 
+    let mut timer_guard = timer.lock();
+
+    let (old_interval, remain) = (timer_guard.interval(), timer_guard.remain());
+
+    timer_guard.set_interval(interval);
+    if expire_time == Duration::ZERO {
+        // Clear previous timer
+        timer_guard.cancel();
+    } else {
+        timer_guard.set_timeout(Timeout::After(expire_time));
+    }
+
+    drop(timer_guard);
     if old_itimerval_addr > 0 {
-        let old_interval = timeval_t::from(timer.interval());
-        let remain = timeval_t::from(timer.remain());
+        let old_interval = timeval_t::from(old_interval);
+        let remain = timeval_t::from(remain);
         let old_itimerval = itimerval_t {
             it_interval: old_interval,
             it_value: remain,
         };
         user_space.write_val(old_itimerval_addr, &old_itimerval)?;
-    }
-
-    timer.set_interval(interval);
-    if expire_time == Duration::ZERO {
-        // Clear previous timer
-        timer.cancel();
-    } else {
-        timer.set_timeout(Timeout::After(expire_time));
     }
 
     Ok(SyscallReturn::Return(0))
@@ -86,8 +91,14 @@ pub fn sys_getitimer(
         ItimerType::ITIMER_PROF => process_timer_manager.prof_timer(),
     };
 
-    let interval = timeval_t::from(timer.interval());
-    let remain = timeval_t::from(timer.remain());
+    let (interval, remain) = {
+        let timer_guard = timer.lock();
+        (
+            timeval_t::from(timer_guard.interval()),
+            timeval_t::from(timer_guard.remain()),
+        )
+    };
+
     let itimerval = itimerval_t {
         it_interval: interval,
         it_value: remain,
