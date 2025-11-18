@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::fmt;
 use core::ops::Range;
 
 use spin::Once;
@@ -17,8 +16,10 @@ use crate::{
     mm::{
         PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
         dma::DmaDirection,
-        page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
-        page_table::PageTableEntryTrait,
+        page_prop::{
+            CachePolicy, PageFlags, PageProperty, PageTableFlags, PrivilegedPageFlags as PrivFlags,
+        },
+        page_table::{PteScalar, PteTrait},
     },
 };
 
@@ -51,7 +52,7 @@ bitflags::bitflags! {
     #[derive(Pod)]
     #[repr(C)]
     /// Possible flags for a page table entry.
-    pub(crate) struct PageTableFlags: usize {
+    pub(crate) struct PteFlags: usize {
         /// Specifies whether the mapped frame or page table is valid.
         const VALID =           1 << 0;
         /// Controls whether reads to the mapped frames are allowed.
@@ -151,10 +152,6 @@ pub(crate) unsafe fn sync_dma_range<D: DmaDirection>(range: Range<Vaddr>) {
     unsafe { core::arch::asm!("fence rw, rw", options(nostack)) };
 }
 
-#[derive(Clone, Copy, Pod, Default)]
-#[repr(C)]
-pub(crate) struct PageTableEntry(usize);
-
 /// Activates the given root-level page table.
 ///
 /// "satp" register doesn't have a field that encodes the cache policy,
@@ -182,59 +179,47 @@ pub(crate) fn current_page_table_paddr() -> Paddr {
     riscv::register::satp::read().ppn() << 12
 }
 
-impl PageTableEntry {
-    const PHYS_ADDR_MASK: usize = 0x003F_FFFF_FFFF_FC00;
+#[derive(Debug, Clone, Copy, Pod, Default)]
+#[repr(C)]
+pub(crate) struct PageTableEntry(usize);
 
-    fn new_paddr(paddr: Paddr) -> Self {
-        let ppn = paddr >> 12;
-        Self(ppn << 10)
-    }
-}
-
-/// Parse a bit-flag bits `val` in the representation of `from` to `to` in bits.
+/// Parses a bit-flag bits `val` in the representation of `from` to `to` in bits.
 macro_rules! parse_flags {
     ($val:expr, $from:expr, $to:expr) => {
         (($val as usize & $from.bits() as usize) >> $from.bits().ilog2() << $to.bits().ilog2())
     };
 }
 
-impl PodOnce for PageTableEntry {}
+impl PageTableEntry {
+    const PHYS_ADDR_MASK: usize = 0x003f_ffff_ffff_fc00;
 
-impl PageTableEntryTrait for PageTableEntry {
-    fn is_present(&self) -> bool {
-        self.0 & PageTableFlags::VALID.bits() != 0
-    }
-
-    fn new_page(paddr: Paddr, _level: PagingLevel, prop: PageProperty) -> Self {
-        let mut pte = Self::new_paddr(paddr);
-        pte.set_prop(prop);
-        pte
-    }
-
-    fn new_pt(paddr: Paddr) -> Self {
-        // In RISC-V, non-leaf PTE should have RWX = 000,
-        // and D, A, and U are reserved for future standard use.
-        let pte = Self::new_paddr(paddr);
-        PageTableEntry(pte.0 | PageTableFlags::VALID.bits())
+    fn new_without_flags(paddr: Paddr) -> Self {
+        assert_eq!(paddr & !Self::PHYS_ADDR_MASK, 0);
+        Self(paddr >> 12 << 10)
     }
 
     fn paddr(&self) -> Paddr {
-        let ppn = (self.0 & Self::PHYS_ADDR_MASK) >> 10;
-        ppn << 12
+        (self.0 & Self::PHYS_ADDR_MASK) >> 10 << 12
+    }
+
+    fn is_last(&self, level: PagingLevel) -> bool {
+        let rwx = PteFlags::READABLE | PteFlags::WRITABLE | PteFlags::EXECUTABLE;
+        level == 1 || (self.0 & rwx.bits()) != 0
     }
 
     fn prop(&self) -> PageProperty {
-        let flags = (parse_flags!(self.0, PageTableFlags::READABLE, PageFlags::R))
-            | (parse_flags!(self.0, PageTableFlags::WRITABLE, PageFlags::W))
-            | (parse_flags!(self.0, PageTableFlags::EXECUTABLE, PageFlags::X))
-            | (parse_flags!(self.0, PageTableFlags::ACCESSED, PageFlags::ACCESSED))
-            | (parse_flags!(self.0, PageTableFlags::DIRTY, PageFlags::DIRTY))
-            | (parse_flags!(self.0, PageTableFlags::RSV2, PageFlags::AVAIL2));
-        let priv_flags = (parse_flags!(self.0, PageTableFlags::USER, PrivFlags::USER))
-            | (parse_flags!(self.0, PageTableFlags::GLOBAL, PrivFlags::GLOBAL))
-            | (parse_flags!(self.0, PageTableFlags::RSV1, PrivFlags::AVAIL1));
+        let flags = parse_flags!(self.0, PteFlags::READABLE, PageFlags::R)
+            | parse_flags!(self.0, PteFlags::WRITABLE, PageFlags::W)
+            | parse_flags!(self.0, PteFlags::EXECUTABLE, PageFlags::X)
+            | parse_flags!(self.0, PteFlags::ACCESSED, PageFlags::ACCESSED)
+            | parse_flags!(self.0, PteFlags::DIRTY, PageFlags::DIRTY)
+            | parse_flags!(self.0, PteFlags::RSV2, PageFlags::AVAIL2);
 
-        let cache = if self.0 & PageTableFlags::PBMT_IO.bits() != 0 {
+        let priv_flags = parse_flags!(self.0, PteFlags::USER, PrivFlags::USER)
+            | parse_flags!(self.0, PteFlags::GLOBAL, PrivFlags::GLOBAL)
+            | parse_flags!(self.0, PteFlags::RSV1, PrivFlags::AVAIL1);
+
+        let cache = if self.0 & PteFlags::PBMT_IO.bits() != 0 {
             CachePolicy::Uncacheable
         } else {
             CachePolicy::Writeback
@@ -247,33 +232,24 @@ impl PageTableEntryTrait for PageTableEntry {
         }
     }
 
-    fn set_prop(&mut self, prop: PageProperty) {
-        let mut flags = PageTableFlags::VALID.bits()
-            | parse_flags!(prop.flags.bits(), PageFlags::R, PageTableFlags::READABLE)
-            | parse_flags!(prop.flags.bits(), PageFlags::W, PageTableFlags::WRITABLE)
-            | parse_flags!(prop.flags.bits(), PageFlags::X, PageTableFlags::EXECUTABLE)
-            | parse_flags!(
-                prop.flags.bits(),
-                PageFlags::ACCESSED,
-                PageTableFlags::ACCESSED
-            )
-            | parse_flags!(prop.flags.bits(), PageFlags::DIRTY, PageTableFlags::DIRTY)
-            | parse_flags!(
-                prop.priv_flags.bits(),
-                PrivFlags::USER,
-                PageTableFlags::USER
-            )
-            | parse_flags!(
-                prop.priv_flags.bits(),
-                PrivFlags::GLOBAL,
-                PageTableFlags::GLOBAL
-            )
-            | parse_flags!(
-                prop.priv_flags.bits(),
-                PrivFlags::AVAIL1,
-                PageTableFlags::RSV1
-            )
-            | parse_flags!(prop.flags.bits(), PageFlags::AVAIL2, PageTableFlags::RSV2);
+    fn pt_flags(&self) -> PageTableFlags {
+        let bits = PageTableFlags::empty().bits() as usize
+            | parse_flags!(self.0, PteFlags::RSV1, PageTableFlags::AVAIL1)
+            | parse_flags!(self.0, PteFlags::RSV2, PageTableFlags::AVAIL2);
+        PageTableFlags::from_bits(bits as u8).unwrap()
+    }
+
+    fn new_page(paddr: Paddr, _level: PagingLevel, prop: PageProperty) -> Self {
+        let mut flags = PteFlags::VALID.bits()
+            | parse_flags!(prop.flags.bits(), PageFlags::R, PteFlags::READABLE)
+            | parse_flags!(prop.flags.bits(), PageFlags::W, PteFlags::WRITABLE)
+            | parse_flags!(prop.flags.bits(), PageFlags::X, PteFlags::EXECUTABLE)
+            | parse_flags!(prop.flags.bits(), PageFlags::ACCESSED, PteFlags::ACCESSED)
+            | parse_flags!(prop.flags.bits(), PageFlags::DIRTY, PteFlags::DIRTY)
+            | parse_flags!(prop.priv_flags.bits(), PrivFlags::USER, PteFlags::USER)
+            | parse_flags!(prop.priv_flags.bits(), PrivFlags::GLOBAL, PteFlags::GLOBAL)
+            | parse_flags!(prop.priv_flags.bits(), PrivFlags::AVAIL1, PteFlags::RSV1)
+            | parse_flags!(prop.flags.bits(), PageFlags::AVAIL2, PteFlags::RSV2);
 
         match prop.cache {
             CachePolicy::Writeback => (),
@@ -282,32 +258,52 @@ impl PageTableEntryTrait for PageTableEntry {
                 // memory. Normal memory can also be `Noncacheable`, where the
                 // PBMT should be set to `PBMT_NC`.
                 if has_extensions(IsaExtensions::SVPBMT) {
-                    flags |= PageTableFlags::PBMT_IO.bits()
+                    flags |= PteFlags::PBMT_IO.bits()
                 }
             }
             _ => panic!("unsupported cache policy"),
         }
 
-        self.0 = (self.0 & Self::PHYS_ADDR_MASK) | flags;
+        let res = Self::new_without_flags(paddr);
+        Self(res.0 | flags)
     }
 
-    fn is_last(&self, level: PagingLevel) -> bool {
-        let rwx = PageTableFlags::READABLE | PageTableFlags::WRITABLE | PageTableFlags::EXECUTABLE;
-        level == 1 || (self.0 & rwx.bits()) != 0
+    fn new_pt(paddr: Paddr, flags: PageTableFlags) -> Self {
+        // In RISC-V, non-leaf PTE should have RWX = 000,
+        // and D, A, and U are reserved for future standard use.
+        let flags = PteFlags::VALID.bits()
+            | parse_flags!(flags.bits(), PageTableFlags::AVAIL1, PteFlags::RSV1)
+            | parse_flags!(flags.bits(), PageTableFlags::AVAIL2, PteFlags::RSV2);
+
+        let res = Self::new_without_flags(paddr);
+        Self(res.0 | flags)
     }
 }
 
-impl fmt::Debug for PageTableEntry {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut f = f.debug_struct("PageTableEntry");
-        f.field("raw", &format_args!("{:#x}", self.0))
-            .field("paddr", &format_args!("{:#x}", self.paddr()))
-            .field("present", &self.is_present())
-            .field(
-                "flags",
-                &PageTableFlags::from_bits_truncate(self.0 & !Self::PHYS_ADDR_MASK),
-            )
-            .field("prop", &self.prop())
-            .finish()
+impl PodOnce for PageTableEntry {}
+
+/// SAFETY: The implementation is safe because:
+///  - `from_usize` and `into_usize` are not overridden;
+///  - `from_repr` and `repr` are correctly implemented;
+///  - a zeroed PTE represents an absent entry.
+unsafe impl PteTrait for PageTableEntry {
+    fn from_repr(repr: &PteScalar, level: PagingLevel) -> Self {
+        match repr {
+            PteScalar::Absent => PageTableEntry(0),
+            PteScalar::PageTable(paddr, flags) => Self::new_pt(*paddr, *flags),
+            PteScalar::Mapped(paddr, prop) => Self::new_page(*paddr, level, *prop),
+        }
+    }
+
+    fn to_repr(&self, level: PagingLevel) -> PteScalar {
+        if self.0 & PteFlags::VALID.bits() == 0 {
+            return PteScalar::Absent;
+        }
+
+        if self.is_last(level) {
+            PteScalar::Mapped(self.paddr(), self.prop())
+        } else {
+            PteScalar::PageTable(self.paddr(), self.pt_flags())
+        }
     }
 }

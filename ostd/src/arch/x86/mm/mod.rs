@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::fmt;
 use core::ops::Range;
 
 use cfg_if::cfg_if;
@@ -19,8 +18,10 @@ use crate::{
     mm::{
         PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
         dma::DmaDirection,
-        page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
-        page_table::PageTableEntryTrait,
+        page_prop::{
+            CachePolicy, PageFlags, PageProperty, PageTableFlags, PrivilegedPageFlags as PrivFlags,
+        },
+        page_table::{PteScalar, PteTrait},
     },
 };
 
@@ -45,7 +46,7 @@ bitflags::bitflags! {
     #[derive(Pod)]
     #[repr(C)]
     /// Possible flags for a page table entry.
-    pub(crate) struct PageTableFlags: usize {
+    pub(crate) struct PteFlags: usize {
         /// Specifies whether the mapped frame or page table is loaded in memory.
         const PRESENT =         1 << 0;
         /// Controls whether writes to the mapped frames are allowed.
@@ -135,10 +136,6 @@ pub(crate) unsafe fn sync_dma_range<D: DmaDirection>(_range: Range<Vaddr>) {
     // Reference: <https://lwn.net/Articles/855328/>, <https://lwn.net/Articles/2265/>.
 }
 
-#[derive(Clone, Copy, Pod, Default)]
-#[repr(C)]
-pub(crate) struct PageTableEntry(usize);
-
 /// Activates the given root-level page table.
 ///
 /// The cache policy of the root page table node is controlled by `root_pt_cache`.
@@ -173,71 +170,66 @@ pub(crate) fn current_page_table_paddr() -> Paddr {
         .as_u64() as Paddr
 }
 
-impl PageTableEntry {
-    cfg_if! {
-        if #[cfg(feature = "cvm_guest")] {
-            const PHYS_ADDR_MASK: usize = 0x7_FFFF_FFFF_F000;
-        } else {
-            const PHYS_ADDR_MASK: usize = 0xF_FFFF_FFFF_F000;
-        }
-    }
-    const PROP_MASK: usize = !Self::PHYS_ADDR_MASK & !PageTableFlags::HUGE.bits();
-}
+#[derive(Debug, Clone, Copy, Pod)]
+#[repr(C)]
+pub(crate) struct PageTableEntry(usize);
 
-/// Parse a bit-flag bits `val` in the representation of `from` to `to` in bits.
+/// Parses a bit-flag bits `val` in the representation of `from` to `to` in bits.
 macro_rules! parse_flags {
     ($val:expr, $from:expr, $to:expr) => {
-        ($val as usize & $from.bits() as usize) >> $from.bits().ilog2() << $to.bits().ilog2()
+        (($val as usize & $from.bits() as usize) >> $from.bits().ilog2() << $to.bits().ilog2())
     };
 }
 
-impl PodOnce for PageTableEntry {}
+impl PageTableEntry {
+    cfg_if! {
+        if #[cfg(feature = "cvm_guest")] {
+            const PHYS_ADDR_MASK_LVL1: usize = 0x7_ffff_ffff_f000;
+            const PHYS_ADDR_MASK_LVL2: usize = 0x7_ffff_ffe0_0000;
+            const PHYS_ADDR_MASK_LVL3: usize = 0x7_ffff_c000_0000;
+        } else {
+            const PHYS_ADDR_MASK_LVL1: usize = 0xf_ffff_ffff_f000;
+            const PHYS_ADDR_MASK_LVL2: usize = 0xf_ffff_ffe0_0000;
+            const PHYS_ADDR_MASK_LVL3: usize = 0xf_ffff_c000_0000;
+        }
+    }
 
-impl PageTableEntryTrait for PageTableEntry {
+    const CHILD_PT_ADDR_MASK: usize = Self::PHYS_ADDR_MASK_LVL1;
+
+    fn pa_mask_at_level(level: PagingLevel) -> usize {
+        match level {
+            1 => Self::PHYS_ADDR_MASK_LVL1,
+            2 => Self::PHYS_ADDR_MASK_LVL2,
+            3 => Self::PHYS_ADDR_MASK_LVL3,
+            _ => panic!("invalid level {} for page entry", level),
+        }
+    }
+
     fn is_present(&self) -> bool {
         // For PT child, `PRESENT` should be set; for huge page, `HUGE` should
         // be set; for the leaf child page, `PAT`, which is the same bit as
         // the `HUGE` bit in upper levels, should be set.
-        self.0 & PageTableFlags::PRESENT.bits() != 0 || self.0 & PageTableFlags::HUGE.bits() != 0
-    }
-
-    fn new_page(paddr: Paddr, _level: PagingLevel, prop: PageProperty) -> Self {
-        let flags = PageTableFlags::HUGE.bits();
-        let mut pte = Self(paddr & Self::PHYS_ADDR_MASK | flags);
-        pte.set_prop(prop);
-        pte
-    }
-
-    fn new_pt(paddr: Paddr) -> Self {
-        // In x86 if it's an intermediate PTE, it's better to have the same permissions
-        // as the most permissive child (to reduce hardware page walk accesses). But we
-        // don't have a mechanism to keep it generic across architectures, thus just
-        // setting it to be the most permissive.
-        let flags = PageTableFlags::PRESENT.bits()
-            | PageTableFlags::WRITABLE.bits()
-            | PageTableFlags::USER.bits();
-        Self(paddr & Self::PHYS_ADDR_MASK | flags)
-    }
-
-    fn paddr(&self) -> Paddr {
-        self.0 & Self::PHYS_ADDR_MASK
+        self.0 & PteFlags::PRESENT.bits() != 0 || self.0 & PteFlags::HUGE.bits() != 0
     }
 
     fn prop(&self) -> PageProperty {
-        let flags = (parse_flags!(self.0, PageTableFlags::PRESENT, PageFlags::R))
-            | (parse_flags!(self.0, PageTableFlags::WRITABLE, PageFlags::W))
-            | (parse_flags!(!self.0, PageTableFlags::NO_EXECUTE, PageFlags::X))
-            | (parse_flags!(self.0, PageTableFlags::ACCESSED, PageFlags::ACCESSED))
-            | (parse_flags!(self.0, PageTableFlags::DIRTY, PageFlags::DIRTY))
-            | (parse_flags!(self.0, PageTableFlags::HIGH_IGN2, PageFlags::AVAIL2));
-        let priv_flags = (parse_flags!(self.0, PageTableFlags::USER, PrivFlags::USER))
-            | (parse_flags!(self.0, PageTableFlags::GLOBAL, PrivFlags::GLOBAL))
-            | (parse_flags!(self.0, PageTableFlags::HIGH_IGN1, PrivFlags::AVAIL1));
+        let flags = parse_flags!(self.0, PteFlags::PRESENT, PageFlags::R)
+            | parse_flags!(self.0, PteFlags::WRITABLE, PageFlags::W)
+            | parse_flags!(!self.0, PteFlags::NO_EXECUTE, PageFlags::X)
+            | parse_flags!(self.0, PteFlags::ACCESSED, PageFlags::ACCESSED)
+            | parse_flags!(self.0, PteFlags::DIRTY, PageFlags::DIRTY)
+            | parse_flags!(self.0, PteFlags::HIGH_IGN2, PageFlags::AVAIL2);
+
+        let priv_flags = parse_flags!(self.0, PteFlags::USER, PrivFlags::USER)
+            | parse_flags!(self.0, PteFlags::GLOBAL, PrivFlags::GLOBAL)
+            | parse_flags!(self.0, PteFlags::HIGH_IGN1, PrivFlags::AVAIL1);
+
         #[cfg(feature = "cvm_guest")]
-        let priv_flags =
-            priv_flags | (parse_flags!(self.0, PageTableFlags::SHARED, PrivFlags::SHARED));
+        let priv_flags = priv_flags | parse_flags!(self.0, PteFlags::SHARED, PrivFlags::SHARED);
+
         // Determine cache policy from PCD, PWT bits.
-        let cache = flags_to_cache_policy(PageTableFlags::from_bits_truncate(self.0));
+        let cache = flags_to_cache_policy(PteFlags::from_bits_truncate(self.0));
+
         PageProperty {
             flags: PageFlags::from_bits(flags as u8).unwrap(),
             cache,
@@ -245,69 +237,91 @@ impl PageTableEntryTrait for PageTableEntry {
         }
     }
 
-    fn set_prop(&mut self, prop: PageProperty) {
-        if !self.is_present() {
-            return;
-        }
-        let mut flags = PageTableFlags::empty().bits();
-        flags |= (parse_flags!(prop.flags.bits(), PageFlags::R, PageTableFlags::PRESENT))
-            | (parse_flags!(prop.flags.bits(), PageFlags::W, PageTableFlags::WRITABLE))
-            | (parse_flags!(!prop.flags.bits(), PageFlags::X, PageTableFlags::NO_EXECUTE))
-            | (parse_flags!(
-                prop.flags.bits(),
-                PageFlags::ACCESSED,
-                PageTableFlags::ACCESSED
-            ))
-            | (parse_flags!(prop.flags.bits(), PageFlags::DIRTY, PageTableFlags::DIRTY))
-            | (parse_flags!(
-                prop.priv_flags.bits(),
-                PrivFlags::AVAIL1,
-                PageTableFlags::HIGH_IGN1
-            ))
-            | (parse_flags!(
-                prop.flags.bits(),
-                PageFlags::AVAIL2,
-                PageTableFlags::HIGH_IGN2
-            ))
-            | (parse_flags!(
-                prop.priv_flags.bits(),
-                PrivFlags::USER,
-                PageTableFlags::USER
-            ))
-            | (parse_flags!(
-                prop.priv_flags.bits(),
-                PrivFlags::GLOBAL,
-                PageTableFlags::GLOBAL
-            ));
-        #[cfg(feature = "cvm_guest")]
-        {
-            flags |= parse_flags!(
-                prop.priv_flags.bits(),
-                PrivFlags::SHARED,
-                PageTableFlags::SHARED
-            );
-        }
-        flags |= cache_policy_to_flags(prop.cache).bits();
-        self.0 = self.0 & !Self::PROP_MASK | flags;
+    fn pt_flags(&self) -> PageTableFlags {
+        let bits = PageTableFlags::empty().bits() as usize
+            | parse_flags!(self.0, PteFlags::HIGH_IGN1, PageTableFlags::AVAIL1)
+            | parse_flags!(self.0, PteFlags::HIGH_IGN2, PageTableFlags::AVAIL2);
+        PageTableFlags::from_bits(bits as u8).unwrap()
     }
 
-    fn is_last(&self, _level: PagingLevel) -> bool {
-        self.0 & PageTableFlags::HUGE.bits() != 0
+    fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self {
+        let mut flags = PteFlags::HUGE.bits();
+
+        flags |= parse_flags!(prop.flags.bits(), PageFlags::R, PteFlags::PRESENT)
+            | parse_flags!(prop.flags.bits(), PageFlags::W, PteFlags::WRITABLE)
+            | parse_flags!(!prop.flags.bits(), PageFlags::X, PteFlags::NO_EXECUTE)
+            | parse_flags!(prop.flags.bits(), PageFlags::ACCESSED, PteFlags::ACCESSED)
+            | parse_flags!(prop.flags.bits(), PageFlags::DIRTY, PteFlags::DIRTY)
+            | parse_flags!(
+                prop.priv_flags.bits(),
+                PrivFlags::AVAIL1,
+                PteFlags::HIGH_IGN1
+            )
+            | parse_flags!(prop.flags.bits(), PageFlags::AVAIL2, PteFlags::HIGH_IGN2)
+            | parse_flags!(prop.priv_flags.bits(), PrivFlags::USER, PteFlags::USER)
+            | parse_flags!(prop.priv_flags.bits(), PrivFlags::GLOBAL, PteFlags::GLOBAL);
+        #[cfg(feature = "cvm_guest")]
+        {
+            flags |= parse_flags!(prop.priv_flags.bits(), PrivFlags::SHARED, PteFlags::SHARED);
+        }
+
+        flags |= cache_policy_to_flags(prop.cache).bits();
+
+        assert_eq!(
+            paddr & !Self::pa_mask_at_level(level),
+            0,
+            "page physical address contains invalid bits"
+        );
+        Self(paddr | flags)
+    }
+
+    fn new_pt(paddr: Paddr, flags: PageTableFlags) -> Self {
+        // In x86 if it's an intermediate PTE, it's better to have the same permissions
+        // as the most permissive child (to reduce hardware page walk accesses). But we
+        // don't have a mechanism to keep it generic across architectures, thus just
+        // setting it to be the most permissive.
+        let flags = PteFlags::PRESENT.bits()
+            | PteFlags::WRITABLE.bits()
+            | PteFlags::USER.bits()
+            | parse_flags!(flags.bits(), PageTableFlags::AVAIL1, PteFlags::HIGH_IGN1)
+            | parse_flags!(flags.bits(), PageTableFlags::AVAIL2, PteFlags::HIGH_IGN2);
+
+        assert_eq!(
+            paddr & !Self::CHILD_PT_ADDR_MASK,
+            0,
+            "page table physical address contains invalid bits"
+        );
+        Self(paddr | flags)
     }
 }
 
-impl fmt::Debug for PageTableEntry {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut f = f.debug_struct("PageTableEntry");
-        f.field("raw", &format_args!("{:#x}", self.0))
-            .field("paddr", &format_args!("{:#x}", self.paddr()))
-            .field("present", &self.is_present())
-            .field(
-                "flags",
-                &PageTableFlags::from_bits_truncate(self.0 & !Self::PHYS_ADDR_MASK),
-            )
-            .field("prop", &self.prop())
-            .finish()
+impl PodOnce for PageTableEntry {}
+
+/// SAFETY: The implementation is safe because:
+///  - `from_usize` and `into_usize` are not overridden;
+///  - `from_repr` and `repr` are correctly implemented;
+///  - a zeroed PTE represents an absent entry.
+unsafe impl PteTrait for PageTableEntry {
+    fn from_repr(repr: &PteScalar, level: PagingLevel) -> Self {
+        match repr {
+            PteScalar::Absent => PageTableEntry(0),
+            PteScalar::PageTable(paddr, flags) => Self::new_pt(*paddr, *flags),
+            PteScalar::Mapped(paddr, prop) => Self::new_page(*paddr, level, *prop),
+        }
+    }
+
+    fn to_repr(&self, level: PagingLevel) -> PteScalar {
+        if !self.is_present() {
+            return PteScalar::Absent;
+        }
+
+        if self.0 & PteFlags::HUGE.bits() != 0 {
+            let paddr = self.0 & Self::pa_mask_at_level(level);
+            PteScalar::Mapped(paddr, self.prop())
+        } else {
+            let paddr = self.0 & Self::CHILD_PT_ADDR_MASK;
+            PteScalar::PageTable(paddr, self.pt_flags())
+        }
     }
 }
 

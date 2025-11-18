@@ -4,9 +4,15 @@
 
 use core::mem::ManuallyDrop;
 
-use super::{PageTableEntryTrait, PageTableNode, PageTableNodeRef};
+use ostd_pod::Pod;
+
+use super::{PageTableNode, PageTableNodeRef, PteTrait};
 use crate::{
-    mm::{HasPaddr, Paddr, PagingLevel, page_prop::PageProperty, page_table::PageTableConfig},
+    mm::{
+        HasPaddr, Paddr, PageTableFlags, PagingLevel,
+        page_prop::PageProperty,
+        page_table::{PageTableConfig, PteScalar},
+    },
     sync::RcuDrop,
 };
 
@@ -33,11 +39,14 @@ impl<C: PageTableConfig> Child<C> {
         match self {
             Child::PageTable(node) => {
                 let paddr = node.paddr();
+                let level = node.level();
                 let _ = ManuallyDrop::new(node);
-                C::E::new_pt(paddr)
+                C::E::from_repr(&PteScalar::PageTable(paddr, PageTableFlags::empty()), level)
             }
-            Child::Frame(paddr, level, prop) => C::E::new_page(paddr, level, prop),
-            Child::None => C::E::new_absent(),
+            Child::Frame(paddr, level, prop) => {
+                C::E::from_repr(&PteScalar::Mapped(paddr, prop), level)
+            }
+            Child::None => C::E::new_zeroed(),
         }
     }
 
@@ -49,21 +58,19 @@ impl<C: PageTableConfig> Child<C> {
     ///
     /// The level must match the original level of the child.
     pub(super) unsafe fn from_pte(pte: C::E, level: PagingLevel) -> Self {
-        if !pte.is_present() {
-            return Child::None;
+        let repr = pte.to_repr(level);
+
+        match repr {
+            PteScalar::Absent => Child::None,
+            PteScalar::PageTable(paddr, _) => {
+                // SAFETY: The caller ensures that this node was created by
+                // `into_pte`, so that restoring the forgotten reference is safe.
+                let node = unsafe { PageTableNode::from_raw(paddr) };
+                debug_assert_eq!(node.level(), level - 1);
+                Child::PageTable(RcuDrop::new(node))
+            }
+            PteScalar::Mapped(paddr, prop) => Child::Frame(paddr, level, prop),
         }
-
-        let paddr = pte.paddr();
-
-        if !pte.is_last(level) {
-            // SAFETY: The caller ensures that this node was created by
-            // `into_pte`, so that restoring the forgotten reference is safe.
-            let node = unsafe { PageTableNode::from_raw(paddr) };
-            debug_assert_eq!(node.level(), level - 1);
-            return Child::PageTable(RcuDrop::new(node));
-        }
-
-        Child::Frame(paddr, level, pte.prop())
     }
 }
 
@@ -91,21 +98,19 @@ impl<C: PageTableConfig> ChildRef<'_, C> {
     /// The provided level must be the same with the level of the page table
     /// node that contains this PTE.
     pub(super) unsafe fn from_pte(pte: &C::E, level: PagingLevel) -> Self {
-        if !pte.is_present() {
-            return ChildRef::None;
+        let repr = pte.to_repr(level);
+
+        match repr {
+            PteScalar::Absent => ChildRef::None,
+            PteScalar::PageTable(paddr, _) => {
+                // SAFETY: The caller ensures that the lifetime of the child is
+                // contained by the residing node, and the physical address is
+                // valid since the entry is present.
+                let node = unsafe { PageTableNodeRef::borrow_paddr(paddr) };
+                debug_assert_eq!(node.level(), level - 1);
+                ChildRef::PageTable(node)
+            }
+            PteScalar::Mapped(paddr, prop) => ChildRef::Frame(paddr, level, prop),
         }
-
-        let paddr = pte.paddr();
-
-        if !pte.is_last(level) {
-            // SAFETY: The caller ensures that the lifetime of the child is
-            // contained by the residing node, and the physical address is
-            // valid since the entry is present.
-            let node = unsafe { PageTableNodeRef::borrow_paddr(paddr) };
-            debug_assert_eq!(node.level(), level - 1);
-            return ChildRef::PageTable(node);
-        }
-
-        ChildRef::Frame(paddr, level, pte.prop())
     }
 }
