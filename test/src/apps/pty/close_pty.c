@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #define _GNU_SOURCE
-#include <stdio.h>
-#include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <termios.h>
@@ -70,11 +68,12 @@ FN_TEST(close_slave)
 
 	TEST_SUCC(close(slave));
 
-	TEST_RES(poll(&pfd, 1, -1), pfd.revents == POLLIN | POLLOUT | POLLHUP);
+	TEST_RES(poll(&pfd, 1, -1),
+		 pfd.revents == (POLLIN | POLLOUT | POLLHUP));
 	TEST_RES(ioctl(master, FIONREAD, &bytes), bytes == 1);
 	TEST_RES(read(master, buf, sizeof(buf)), _ret == 1 && buf[0] == 'b');
 
-	TEST_RES(poll(&pfd, 1, -1), pfd.revents == POLLOUT | POLLHUP);
+	TEST_RES(poll(&pfd, 1, -1), pfd.revents == (POLLOUT | POLLHUP));
 	TEST_RES(ioctl(master, FIONREAD, &bytes), bytes == 0);
 	TEST_ERRNO(read(master, buf, sizeof(buf)), EIO);
 	TEST_RES(read(master, buf, 0), _ret == 0);
@@ -108,15 +107,16 @@ FN_TEST(close_master)
 
 	TEST_SUCC(write(master, buf, sizeof(buf)));
 	struct pollfd in_pfd = { .fd = slave, .events = POLLIN };
-	TEST_RES(poll(&in_pfd, 1, -1), in_pfd.revents == POLLIN | POLLOUT);
+	TEST_RES(poll(&in_pfd, 1, -1), in_pfd.revents == POLLIN);
 
-	TEST_RES(poll(&pfd, 1, -1), pfd.revents == POLLIN | POLLOUT);
+	TEST_RES(poll(&pfd, 1, -1), pfd.revents == (POLLIN | POLLOUT));
 	TEST_RES(ioctl(slave, FIONREAD, &bytes), bytes == 1);
 
 	TEST_SUCC(close(master));
 	TEST_ERRNO(unlink(slave_name), ENOENT);
 
-	TEST_RES(poll(&pfd, 1, -1), pfd.revents == POLLOUT | POLLHUP);
+	TEST_RES(poll(&pfd, 1, -1),
+		 pfd.revents == (POLLIN | POLLOUT | POLLERR | POLLHUP));
 	TEST_ERRNO(ioctl(slave, FIONREAD, &bytes), EIO);
 	TEST_RES(read(slave, buf, sizeof(buf)), _ret == 0);
 	TEST_ERRNO(write(slave, buf, sizeof(buf)), EIO);
@@ -151,7 +151,7 @@ FN_TEST(reopen_slave_after_close)
 	TEST_SUCC(write(slave2, buf, sizeof(buf)));
 	in_pfd.fd = master;
 	TEST_RES(poll(&in_pfd, 1, -1), in_pfd.revents == POLLIN);
-	TEST_RES(poll(&pfd, 1, -1), pfd.revents == POLLIN | POLLOUT);
+	TEST_RES(poll(&pfd, 1, -1), pfd.revents == (POLLIN | POLLOUT));
 	TEST_RES(ioctl(master, FIONREAD, &bytes), bytes == 1);
 	TEST_RES(read(master, buf, sizeof(buf)), _ret == 1 && buf[0] == 'd');
 
