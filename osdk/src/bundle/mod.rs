@@ -21,6 +21,7 @@ use std::{
 };
 
 use crate::{
+    arch::Arch,
     config::{
         scheme::{ActionChoice, BootMethod},
         Config,
@@ -265,27 +266,17 @@ impl Bundle {
         }
 
         let exit_status = if action.qemu.with_monitor {
-            let qemu_socket = NamedTempFile::new().unwrap().into_temp_path();
+            let qemu_monitor_socket_path = NamedTempFile::new().unwrap().into_temp_path();
             qemu_cmd.arg("-monitor").arg(format!(
                 "unix:{},server,nowait",
-                qemu_socket.to_string_lossy()
+                qemu_monitor_socket_path.to_string_lossy()
             ));
 
             info!("Running QEMU: {qemu_cmd:#?}");
             let mut qemu_child = qemu_cmd.spawn().unwrap();
             std::thread::sleep(Duration::from_secs(1)); // Wait for QEMU to start
-            let mut qemu_monitor_stream = UnixStream::connect(qemu_socket).unwrap();
-
-            // Check VM status every 0.1 seconds and break the loop if the VM is stopped.
-            while qemu_monitor_stream.write_all(b"info status\n").is_ok() {
-                let status = BufReader::new(&qemu_monitor_stream)
-                    .lines()
-                    .find(|line| line.as_ref().is_ok_and(|s| s.starts_with("VM status:")));
-                if status.is_some_and(|msg| msg.unwrap() == "VM status: paused (shutdown)") {
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(100));
-            }
+            let mut qemu_monitor_stream = UnixStream::connect(&qemu_monitor_socket_path).unwrap();
+            wait_until_guest_kernel_shutdown(config, &mut qemu_monitor_stream);
             info!("VM is paused (shutdown)");
 
             self.post_run_action(config, Some(&mut qemu_monitor_stream));
@@ -308,6 +299,32 @@ impl Bundle {
                 0x10 /*ostd::QemuExitCode::Success*/ => { std::process::exit(0); },
                 0x20 /*ostd::QemuExitCode::Failed*/ => { std::process::exit(1); },
                 _ /* unknown, e.g., a triple fault */ => { std::process::exit(2) },
+            }
+        }
+
+        fn wait_until_guest_kernel_shutdown(config: &Config, qemu_monitor_stream: &mut UnixStream) {
+            let log_file = std::fs::File::open(config.work_dir.join("qemu.log")).unwrap();
+
+            // Check VM status every 0.1 seconds and break the loop if the VM is stopped or hanging.
+            while qemu_monitor_stream.write_all(b"info status\n").is_ok() {
+                let status = BufReader::new(&mut *qemu_monitor_stream)
+                    .lines()
+                    .find(|line| line.as_ref().is_ok_and(|s| s.starts_with("VM status:")));
+                if status.is_some_and(|msg| msg.unwrap() == "VM status: paused (shutdown)") {
+                    break;
+                }
+
+                if config.target_arch == Arch::RiscV64 {
+                    let log = rev_buf_reader::RevBufReader::new(&log_file);
+                    if log.lines().next().is_some_and(|line| {
+                        line.as_ref().is_ok_and(|s| {
+                            s.contains("SBI system_reset cannot shut down the underlying machine")
+                        })
+                    }) {
+                        break;
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(100));
             }
         }
     }
