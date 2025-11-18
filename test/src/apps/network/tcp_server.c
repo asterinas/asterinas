@@ -60,7 +60,7 @@ int main()
 	}
 
 	// Read the message from the client and reply
-	read(new_socket, buffer, 1024);
+	(void)!read(new_socket, buffer, 1024);
 	printf("Client: %s\n", buffer);
 	send(new_socket, hello, strlen(hello), 0);
 	printf("Hello message sent\n");

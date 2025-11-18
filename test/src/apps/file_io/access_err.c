@@ -118,7 +118,6 @@ FN_TEST(writeable)
 {
 	int fd;
 	char buf[1];
-	void *addr;
 
 	// Test 1: Normal file
 
@@ -164,7 +163,6 @@ FN_TEST(path)
 {
 	int fd;
 	char buf[1];
-	void *addr;
 
 	// Test 1: Normal file
 

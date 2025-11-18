@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #define _GNU_SOURCE
-#include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
 #include <ucontext.h>
@@ -18,7 +17,7 @@
 #define SS_AUTODISARM (1 << 31)
 #endif
 
-static volatile void *g_alt_stack_base = NULL;
+static void *volatile g_alt_stack_base = NULL;
 static volatile int recursion_level = 0;
 static volatile bool sigstack_enabled = false;
 static volatile int stack_flags = 0;
@@ -69,7 +68,9 @@ void signal_handler(int sig, siginfo_t *info, void *ucontext)
 	CHECK(on_sig_stack(uc));
 
 	if (recursion_level == 1) {
-		CHECK(sigaltstack(NULL, &old_stack));
+		stack_t old_stack_tmp;
+		CHECK(sigaltstack(NULL, &old_stack_tmp));
+		old_stack = old_stack_tmp;
 	}
 
 	if (recursion_level <= 3) {
@@ -214,12 +215,12 @@ FN_TEST(stack_flags_in_uc_context)
 	alt_stack.ss_flags = SS_ONSTACK | SS_AUTODISARM;
 	TEST_SUCC(sigaltstack(&alt_stack, NULL));
 	TEST_RES(raise(SIGUSR2),
-		 current_stack.ss_flags == SS_ONSTACK | SS_AUTODISARM);
+		 current_stack.ss_flags == (SS_ONSTACK | SS_AUTODISARM));
 
 	alt_stack.ss_flags = SS_DISABLE | SS_AUTODISARM;
 	TEST_SUCC(sigaltstack(&alt_stack, NULL));
 	TEST_RES(raise(SIGUSR2),
-		 current_stack.ss_flags == SS_DISABLE | SS_AUTODISARM);
+		 current_stack.ss_flags == (SS_DISABLE | SS_AUTODISARM));
 
 	alt_stack.ss_flags = 0;
 	TEST_SUCC(sigaltstack(&alt_stack, NULL));

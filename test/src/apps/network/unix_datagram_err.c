@@ -230,7 +230,6 @@ END_TEST()
 
 FN_TEST(blocking_recv)
 {
-	int i;
 	int sk1, sk2;
 	int pid;
 	char buf[20];
