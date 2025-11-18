@@ -17,30 +17,14 @@ mod dma_coherent {
 
     #[ktest]
     fn map_with_coherent_device() {
-        let segment = FrameAllocOptions::new()
-            .alloc_segment_with(1, |_| ())
-            .unwrap();
-        let dma_coherent = DmaCoherent::<Bidirectional>::map(segment.clone().into(), true);
-        assert_eq!(dma_coherent.paddr(), segment.paddr());
-        assert_eq!(dma_coherent.size(), PAGE_SIZE);
-    }
-
-    #[ktest]
-    fn map_with_incoherent_device() {
-        let segment = FrameAllocOptions::new()
-            .alloc_segment_with(1, |_| ())
-            .unwrap();
-        let dma_coherent = DmaCoherent::<Bidirectional>::map(segment.clone().into(), false);
-        assert_eq!(dma_coherent.paddr(), segment.paddr());
+        let dma_coherent = DmaCoherent::<Bidirectional>::alloc(1, true).unwrap();
         assert_eq!(dma_coherent.size(), PAGE_SIZE);
     }
 
     #[ktest]
     fn read_write() {
-        let segment = FrameAllocOptions::new()
-            .alloc_segment_with(2, |_| ())
-            .unwrap();
-        let dma_coherent = DmaCoherent::<Bidirectional>::map(segment.into(), false);
+        let dma_coherent = DmaCoherent::<Bidirectional>::alloc(2, false).unwrap();
+        assert_eq!(dma_coherent.size(), 2 * PAGE_SIZE);
 
         let buf_write = vec![1u8; 2 * PAGE_SIZE];
         dma_coherent.write_bytes(0, &buf_write).unwrap();
@@ -51,10 +35,7 @@ mod dma_coherent {
 
     #[ktest]
     fn read_write_once() {
-        let segment = FrameAllocOptions::new()
-            .alloc_segment_with(2, |_| ())
-            .unwrap();
-        let dma_coherent = DmaCoherent::<Bidirectional>::map(segment.into(), false);
+        let dma_coherent = DmaCoherent::<Bidirectional>::alloc(2, false).unwrap();
 
         let buf_write = 1u64;
         dma_coherent.write_once(0, &buf_write).unwrap();
@@ -64,10 +45,7 @@ mod dma_coherent {
 
     #[ktest]
     fn reader_writer() {
-        let segment = FrameAllocOptions::new()
-            .alloc_segment_with(2, |_| ())
-            .unwrap();
-        let dma_coherent = DmaCoherent::<Bidirectional>::map(segment.into(), false);
+        let dma_coherent = DmaCoherent::<Bidirectional>::alloc(2, false).unwrap();
 
         let buf_write = vec![1u8; PAGE_SIZE];
         let mut writer = dma_coherent.writer().unwrap();
@@ -83,10 +61,7 @@ mod dma_coherent {
 
     #[ktest]
     fn zero_length_operations() {
-        let segment = FrameAllocOptions::new()
-            .alloc_segment_with(1, |_| ())
-            .unwrap();
-        let dma_coherent = DmaCoherent::<Bidirectional>::map(segment.into(), false);
+        let dma_coherent = DmaCoherent::<Bidirectional>::alloc(1, false).unwrap();
 
         // Zero-length read/write should succeed
         let empty_buf = [];
@@ -97,10 +72,7 @@ mod dma_coherent {
 
     #[ktest]
     fn complex_read_write_patterns() {
-        let segment = FrameAllocOptions::new()
-            .alloc_segment_with(4, |_| ())
-            .unwrap();
-        let dma_coherent = DmaCoherent::<Bidirectional>::map(segment.into(), false);
+        let dma_coherent = DmaCoherent::<Bidirectional>::alloc(4, false).unwrap();
 
         // Test alternating pattern
         let pattern1 = vec![0xAAu8; PAGE_SIZE];

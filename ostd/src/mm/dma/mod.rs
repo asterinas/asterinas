@@ -9,7 +9,7 @@
 #[cfg(ktest)]
 mod test;
 
-use core::{any::TypeId, fmt::Debug, marker::PhantomData, ops::Range};
+use core::{any::TypeId, fmt::Debug, marker::PhantomData, mem::ManuallyDrop, ops::Range};
 
 use super::{Daddr, Paddr};
 use crate::{
@@ -22,8 +22,9 @@ use crate::{
         paddr_to_vaddr,
         page_table::vaddr_range,
         tlb::{TlbFlushOp, TlbFlusher},
-        CachePolicy, HasDaddr, HasPaddr, HasPaddrRange, HasSize, Infallible, PageFlags,
-        PageProperty, PrivilegedPageFlags, USegment, VmReader, VmWriter, PAGE_SIZE,
+        CachePolicy, FrameAllocOptions, HasDaddr, HasPaddr, HasPaddrRange, HasSize, Infallible,
+        PageFlags, PageProperty, PrivilegedPageFlags, Split, USegment, VmReader, VmWriter,
+        PAGE_SIZE,
     },
     task::disable_preempt,
     util::range_alloc::RangeAllocator,
@@ -71,7 +72,7 @@ pub type DmaStream<D = Bidirectional> = Dma<true, D>;
 /// A DMA mappped memory object.
 #[derive(Debug)]
 pub struct Dma<const SHOULD_SYNC: bool, D: DmaDirection> {
-    kernel_access: DmaKernelAccess,
+    kernel_access: ManuallyDrop<DmaKernelAccess>,
     is_cache_coherent: bool,
     /// If we had DMA remapping enabled, this is the start address of the
     /// DMA memory object in the device address space.
@@ -114,12 +115,27 @@ static DADDR_ALLOCATOR: RangeAllocator = RangeAllocator::new({
 #[cfg(any(debug_assertions, all(target_arch = "x86_64", feature = "cvm_guest")))]
 static PADDR_REF_CNTS: SpinLock<RangeCounter> = SpinLock::new(RangeCounter::new());
 
-impl<const SHOULD_SYNC: bool, D: DmaDirection> Dma<SHOULD_SYNC, D> {
+impl<D: DmaDirection> DmaCoherent<D> {
+    /// Allocates a region of physical memory for coherent DMA access.
+    pub fn alloc(nframes: usize, is_cache_coherent: bool) -> Result<Self, Error> {
+        let segment = FrameAllocOptions::new().alloc_segment(nframes)?.into();
+
+        Ok(Self::map_inner(segment, is_cache_coherent))
+    }
+}
+
+impl<D: DmaDirection> DmaStream<D> {
     /// Establishes DMA stream mapping for a given [`USegment`].
     ///
     /// If the device can access the memory with coherent access to the CPU
     /// cache, set `is_cache_coherent` to `true`.
     pub fn map(segment: USegment, is_cache_coherent: bool) -> Self {
+        Self::map_inner(segment, is_cache_coherent)
+    }
+}
+
+impl<const SHOULD_SYNC: bool, D: DmaDirection> Dma<SHOULD_SYNC, D> {
+    fn map_inner(segment: USegment, is_cache_coherent: bool) -> Self {
         let paddr = segment.paddr();
         let size = segment.size();
 
@@ -215,7 +231,7 @@ impl<const SHOULD_SYNC: bool, D: DmaDirection> Dma<SHOULD_SYNC, D> {
         };
 
         Self {
-            kernel_access,
+            kernel_access: ManuallyDrop::new(kernel_access),
             is_cache_coherent,
             map_daddr,
             _phantom: PhantomData,
@@ -246,7 +262,7 @@ impl<D: DmaDirection> Dma<true, D> {
             return Ok(());
         }
 
-        let va_range = match &self.kernel_access {
+        let va_range = match &*self.kernel_access {
             DmaKernelAccess::Cached(segment) => {
                 let pa_range = segment.paddr_range();
                 paddr_to_vaddr(pa_range.start)..paddr_to_vaddr(pa_range.end)
@@ -259,6 +275,58 @@ impl<D: DmaDirection> Dma<true, D> {
         unsafe { crate::arch::mm::sync_dma_range::<D>(va_range) };
 
         Ok(())
+    }
+}
+
+impl<const SHOULD_SYNC: bool, D: DmaDirection> Split for Dma<SHOULD_SYNC, D> {
+    fn split(self, offset: usize) -> (Self, Self) {
+        assert!(offset % PAGE_SIZE == 0);
+        assert!(0 < offset && offset < self.size());
+
+        let mut old = ManuallyDrop::new(self);
+
+        // SAFETY: The old value will never be used again.
+        let (a1, a2) = match unsafe { ManuallyDrop::take(&mut old.kernel_access) } {
+            DmaKernelAccess::Cached(segment) => {
+                let (s1, s2) = segment.split(offset);
+                (DmaKernelAccess::Cached(s1), DmaKernelAccess::Cached(s2))
+            }
+            DmaKernelAccess::Uncached(kva, paddr) => {
+                let (kva1, kva2) = kva.split(offset);
+                let paddr1 = paddr;
+                let paddr2 = paddr + offset;
+                (
+                    DmaKernelAccess::Uncached(kva1, paddr1),
+                    DmaKernelAccess::Uncached(kva2, paddr2),
+                )
+            }
+        };
+
+        let (daddr1, daddr2) = match old.map_daddr {
+            Some(daddr) => {
+                let daddr1 = daddr;
+                let daddr2 = daddr + offset;
+                (Some(daddr1), Some(daddr2))
+            }
+            None => (None, None),
+        };
+
+        let is_cache_coherent = old.is_cache_coherent;
+
+        (
+            Self {
+                kernel_access: ManuallyDrop::new(a1),
+                is_cache_coherent,
+                map_daddr: daddr1,
+                _phantom: PhantomData,
+            },
+            Self {
+                kernel_access: ManuallyDrop::new(a2),
+                is_cache_coherent,
+                map_daddr: daddr2,
+                _phantom: PhantomData,
+            },
+        )
     }
 }
 
@@ -297,6 +365,9 @@ impl<const SHOULD_SYNC: bool, D: DmaDirection> Drop for Dma<SHOULD_SYNC, D> {
                 }
             }
         }
+        // SAFETY: We're dropping the `Dma`, so the `kernel_access` will never
+        // be used again.
+        unsafe { ManuallyDrop::drop(&mut self.kernel_access) };
     }
 }
 
@@ -308,7 +379,7 @@ impl<const SHOULD_SYNC: bool, D: DmaDirection> HasDaddr for Dma<SHOULD_SYNC, D> 
 
 impl<const SHOULD_SYNC: bool, D: DmaDirection> HasPaddr for Dma<SHOULD_SYNC, D> {
     fn paddr(&self) -> Paddr {
-        match &self.kernel_access {
+        match &*self.kernel_access {
             DmaKernelAccess::Cached(segment) => segment.paddr(),
             DmaKernelAccess::Uncached(_, paddr) => *paddr,
         }
@@ -317,7 +388,7 @@ impl<const SHOULD_SYNC: bool, D: DmaDirection> HasPaddr for Dma<SHOULD_SYNC, D> 
 
 impl<const SHOULD_SYNC: bool, D: DmaDirection> HasSize for Dma<SHOULD_SYNC, D> {
     fn size(&self) -> usize {
-        match &self.kernel_access {
+        match &*self.kernel_access {
             DmaKernelAccess::Cached(segment) => segment.size(),
             DmaKernelAccess::Uncached(kva, _) => kva.size(),
         }
@@ -331,7 +402,7 @@ impl<const SHOULD_SYNC: bool, D: DmaDirection> HasVmReaderWriter for Dma<SHOULD_
         if TypeId::of::<D>() == TypeId::of::<ToDevice>() {
             return Err(Error::AccessDenied);
         }
-        match &self.kernel_access {
+        match &*self.kernel_access {
             DmaKernelAccess::Cached(segment) => Ok(segment.reader()),
             DmaKernelAccess::Uncached(kva, _) => Ok(
                 // SAFETY:
@@ -347,7 +418,7 @@ impl<const SHOULD_SYNC: bool, D: DmaDirection> HasVmReaderWriter for Dma<SHOULD_
         if TypeId::of::<D>() == TypeId::of::<FromDevice>() {
             return Err(Error::AccessDenied);
         }
-        match &self.kernel_access {
+        match &*self.kernel_access {
             DmaKernelAccess::Cached(segment) => Ok(segment.writer()),
             DmaKernelAccess::Uncached(kva, _) => Ok(
                 // SAFETY: We ensure that only untyped memory are mapped into the area.

@@ -11,7 +11,7 @@ use crate::{
         kspace::{KernelPtConfig, MappedItem},
         page_prop::PageProperty,
         page_table::largest_pages,
-        HasSize, Paddr, Vaddr, PAGE_SIZE,
+        HasSize, Paddr, Split, Vaddr, PAGE_SIZE,
     },
     task::disable_preempt,
     util::range_alloc::RangeAllocator,
@@ -40,6 +40,22 @@ pub struct KVirtArea {
 impl HasSize for KVirtArea {
     fn size(&self) -> usize {
         self.range.len()
+    }
+}
+
+impl Split for KVirtArea {
+    fn split(self, offset: usize) -> (Self, Self) {
+        assert!(offset % PAGE_SIZE == 0);
+        assert!(0 < offset && offset < self.size());
+
+        let old = core::mem::ManuallyDrop::new(self);
+
+        let left_range = old.start()..old.start() + offset;
+        let right_range = old.start() + offset..old.end();
+        (
+            KVirtArea { range: left_range },
+            KVirtArea { range: right_range },
+        )
     }
 }
 
