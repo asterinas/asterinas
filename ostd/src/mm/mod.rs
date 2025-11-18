@@ -42,7 +42,9 @@ pub use self::{
     vm_space::VmSpace,
 };
 pub(crate) use self::{
-    kspace::paddr_to_vaddr, page_prop::PrivilegedPageFlags, page_table::PageTable,
+    kspace::paddr_to_vaddr,
+    page_prop::{PageTableFlags, PrivilegedPageFlags},
+    page_table::PageTable,
 };
 use crate::arch::mm::PagingConsts;
 
