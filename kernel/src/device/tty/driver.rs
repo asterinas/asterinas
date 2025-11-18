@@ -2,7 +2,12 @@
 
 use aster_console::AnyConsoleDevice;
 
-use crate::{device::tty::Tty, fs::inode_handle::FileIo, prelude::*};
+use crate::{
+    device::{pty::PacketCtrl, tty::Tty},
+    events::IoEvents,
+    fs::inode_handle::FileIo,
+    prelude::*,
+};
 
 /// A TTY driver.
 ///
@@ -55,4 +60,8 @@ pub trait TtyDriver: Send + Sync + 'static {
     ///
     /// If the TTY is not associated with any console device, this method will return `None`.
     fn console(&self) -> Option<&dyn AnyConsoleDevice>;
+
+    fn packet_ctrl(&self) -> Option<&PacketCtrl>;
+
+    fn notify_events(&self, events: IoEvents);
 }

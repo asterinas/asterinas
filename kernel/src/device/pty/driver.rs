@@ -5,7 +5,10 @@ use ostd::sync::SpinLock;
 
 use super::file::PtySlaveFile;
 use crate::{
-    device::tty::{Tty, TtyDriver, TtyFlags},
+    device::{
+        pty::{packet::PacketCtrl, PacketStatus},
+        tty::{Tty, TtyDriver, TtyFlags},
+    },
     events::IoEvents,
     fs::inode_handle::FileIo,
     prelude::*,
@@ -25,6 +28,7 @@ pub struct PtyDriver {
     pollee: Pollee,
     opened_slaves: SpinLock<usize>,
     tty_flags: TtyFlags,
+    packet_ctrl: PacketCtrl,
 }
 
 /// A pseudoterminal slave.
@@ -39,6 +43,7 @@ impl PtyDriver {
             pollee: Pollee::new(),
             opened_slaves: SpinLock::new(0),
             tty_flags,
+            packet_ctrl: PacketCtrl::new(),
         }
     }
 
@@ -47,6 +52,29 @@ impl PtyDriver {
             return Ok(0);
         }
 
+        // Reference: <https://elixir.bootlin.com/linux/v6.17/source/drivers/tty/n_tty.c#L2245>
+        if self.packet_ctrl.mode() {
+            let mut packet_status = self.packet_ctrl.status().lock();
+            if !packet_status.is_empty() {
+                let status_byte = packet_status.bits();
+                *packet_status = PacketStatus::empty();
+                buf[0] = status_byte;
+                return Ok(1);
+            } else {
+                let read_len = if buf.len() > 1 {
+                    self.read_output(&mut buf[1..])?
+                } else {
+                    0
+                };
+                buf[0] = 0;
+                return Ok(read_len + 1);
+            }
+        }
+
+        self.read_output(buf)
+    }
+
+    fn read_output(&self, buf: &mut [u8]) -> Result<usize> {
         let mut output = self.output.lock();
         if output.is_empty() {
             if self.tty_flags.is_other_closed() {
@@ -57,7 +85,6 @@ impl PtyDriver {
 
         let read_len = output.len().min(buf.len());
         output.pop_slice(&mut buf[..read_len]).unwrap();
-
         Ok(read_len)
     }
 
@@ -142,5 +169,13 @@ impl TtyDriver for PtyDriver {
 
     fn console(&self) -> Option<&dyn AnyConsoleDevice> {
         None
+    }
+
+    fn packet_ctrl(&self) -> Option<&PacketCtrl> {
+        Some(&self.packet_ctrl)
+    }
+
+    fn notify_events(&self, events: IoEvents) {
+        self.pollee.notify(events);
     }
 }

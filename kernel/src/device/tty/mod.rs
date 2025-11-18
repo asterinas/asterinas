@@ -11,6 +11,10 @@ use ostd::sync::LocalIrqDisabled;
 use self::{line_discipline::LineDiscipline, termio::CFontOp};
 use crate::{
     current_userspace,
+    device::{
+        pty::PacketStatus,
+        tty::termio::{CCtrlCharId, CInputFlags, CLocalFlags, CTermios},
+    },
     events::IoEvents,
     fs::{
         device::{Device, DeviceType},
@@ -167,6 +171,48 @@ impl<D: TtyDriver> Tty<D> {
 
         events
     }
+
+    fn pty_set_termios(&self, old_termios: &CTermios, new_termios: &mut CTermios) {
+        // Reference: <https://elixir.bootlin.com/linux/v6.17/source/drivers/tty/pty.c#L246>.
+
+        let Some(packet_ctrl) = self.driver.packet_ctrl() else {
+            return;
+        };
+
+        if !packet_ctrl.mode() {
+            return;
+        }
+
+        let extproc = old_termios.local_flags().contains(CLocalFlags::EXTPROC)
+            || new_termios.local_flags().contains(CLocalFlags::EXTPROC);
+        let old_flow = old_termios.input_flags().contains(CInputFlags::IXON)
+            && old_termios.special_char(CCtrlCharId::VSTOP) == 0o23
+            && old_termios.special_char(CCtrlCharId::VSTART) == 0o21;
+        let new_flow = new_termios.input_flags().contains(CInputFlags::IXON)
+            && new_termios.special_char(CCtrlCharId::VSTOP) == 0o23
+            && new_termios.special_char(CCtrlCharId::VSTART) == 0o21;
+
+        if (old_flow != new_flow) || extproc {
+            let mut packet_status = packet_ctrl.status().lock();
+
+            if old_flow != new_flow {
+                *packet_status &= !(PacketStatus::DOSTOP | PacketStatus::NOSTOP);
+                if new_flow {
+                    *packet_status |= PacketStatus::DOSTOP;
+                } else {
+                    *packet_status |= PacketStatus::NOSTOP;
+                }
+            }
+
+            if extproc {
+                *packet_status |= PacketStatus::IOCTL;
+            }
+
+            drop(packet_status);
+            self.driver
+                .notify_events(IoEvents::PRI | IoEvents::IN | IoEvents::RDNORM);
+        }
+    }
 }
 
 impl<D: TtyDriver> Tty<D> {
@@ -305,20 +351,28 @@ impl<D: TtyDriver> FileIo for Tty<D> {
             IoctlCmd::TCSETS => {
                 let termios = current_userspace!().read_val(arg)?;
 
-                self.ldisc.lock().set_termios(termios);
+                self.ldisc
+                    .lock()
+                    .set_termios(termios, |old_termios, new_termios| {
+                        self.pty_set_termios(old_termios, new_termios)
+                    });
             }
             IoctlCmd::TCSETSW => {
                 let termios = current_userspace!().read_val(arg)?;
 
                 let mut ldisc = self.ldisc.lock();
-                ldisc.set_termios(termios);
+                ldisc.set_termios(termios, |old_termios, new_termios| {
+                    self.pty_set_termios(old_termios, new_termios)
+                });
                 self.driver.drain_output();
             }
             IoctlCmd::TCSETSF => {
                 let termios = current_userspace!().read_val(arg)?;
 
                 let mut ldisc = self.ldisc.lock();
-                ldisc.set_termios(termios);
+                ldisc.set_termios(termios, |old_termios, new_termios| {
+                    self.pty_set_termios(old_termios, new_termios)
+                });
                 ldisc.drain_input();
                 self.driver.drain_output();
 
