@@ -11,8 +11,8 @@ use crate::{
     mm::{
         HasPaddr, Vaddr, nr_subpage_per_huge, paddr_to_vaddr,
         page_table::{
-            ChildRef, PageTable, PageTableConfig, PageTableEntryTrait, PageTableGuard,
-            PageTableNodeRef, PagingConstsTrait, PagingLevel, load_pte, page_size, pte_index,
+            ChildRef, PageTable, PageTableConfig, PageTableGuard, PageTableNodeRef,
+            PagingConstsTrait, PagingLevel, PteScalar, PteTrait, load_pte, page_size, pte_index,
         },
     },
     task::atomic_mode::InAtomicMode,
@@ -112,13 +112,16 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig>(
         //  - All page table entries are aligned and accessed with atomic operations only.
         let cur_pte = unsafe { load_pte(cur_pt_ptr.add(start_idx), Ordering::Acquire) };
 
-        if cur_pte.is_present() {
-            if cur_pte.is_last(cur_level) {
+        match cur_pte.to_repr(cur_level) {
+            PteScalar::Mapped(_, _) => {
                 break;
             }
-            cur_pt_addr = cur_pte.paddr();
-            cur_node_guard = None;
-            continue;
+            PteScalar::Absent => {}
+            PteScalar::PageTable(child_pt_addr, _) => {
+                cur_pt_addr = child_pt_addr;
+                cur_node_guard = None;
+                continue;
+            }
         }
 
         // In case the child is absent, we should lock and allocate a new page table node.
@@ -133,18 +136,19 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig>(
         }
 
         let mut cur_entry = pt_guard.entry(start_idx);
-        if cur_entry.is_none() {
-            let allocated_guard = cur_entry.alloc_if_none(guard).unwrap();
-            cur_pt_addr = allocated_guard.paddr();
-            cur_node_guard = Some(allocated_guard);
-        } else if cur_entry.is_node() {
-            let ChildRef::PageTable(pt) = cur_entry.to_ref() else {
-                unreachable!();
-            };
-            cur_pt_addr = pt.paddr();
-            cur_node_guard = None;
-        } else {
-            break;
+        match cur_entry.to_ref() {
+            ChildRef::Frame(_, _, _) => {
+                break;
+            }
+            ChildRef::None => {
+                let allocated_guard = cur_entry.alloc_if_none(guard).unwrap();
+                cur_pt_addr = allocated_guard.paddr();
+                cur_node_guard = Some(allocated_guard);
+            }
+            ChildRef::PageTable(pt) => {
+                cur_pt_addr = pt.paddr();
+                cur_node_guard = None;
+            }
         }
     }
 
