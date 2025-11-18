@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #define _GNU_SOURCE
-#include <stdio.h>
-#include <stdlib.h>
 #include <unistd.h>
 #include <sched.h>
 #include <sys/stat.h>
-#include <errno.h>
 #include <pthread.h>
 #include <fcntl.h>
 
@@ -31,6 +28,8 @@ END_TEST()
 void *sleep_1s_thread(void *arg)
 {
 	sleep(1);
+
+	return NULL;
 }
 
 FN_TEST(single_thread_flags)
@@ -58,6 +57,8 @@ void *unshare_files_thread(void *arg)
 
 	CHECK(unshare(CLONE_FILES));
 	CHECK(close(test_fd));
+
+	return NULL;
 }
 
 FN_TEST(unshare_files)
@@ -106,6 +107,8 @@ void *unshare_fs_thread(void *arg)
 
 	CHECK(chdir(THREAD_CWD));
 	CHECK(getcwd((char *)arg, CWD_BUF_SIZE));
+
+	return NULL;
 }
 
 FN_TEST(unshare_fs)

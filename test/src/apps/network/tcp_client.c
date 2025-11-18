@@ -40,7 +40,7 @@ int main()
 	// Send message to the server and receive the reply
 	send(sock, hello, strlen(hello), 0);
 	printf("Hello message sent\n");
-	read(sock, buffer, 1024);
+	(void)!read(sock, buffer, 1024);
 	printf("Server: %s\n", buffer);
 	return 0;
 }

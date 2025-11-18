@@ -30,8 +30,8 @@ FN_TEST(path)
 {
 	int fd = TEST_SUCC(open(memfd_path, O_PATH | O_RDWR));
 	char buf[10];
-	int flags =
-		TEST_RES(fcntl(fd, F_GETFL), (_ret & O_ACCMODE) == O_RDONLY);
+
+	TEST_RES(fcntl(fd, F_GETFL), (_ret & O_ACCMODE) == O_RDONLY);
 
 	TEST_ERRNO(fcntl(fd, F_ADD_SEALS, F_SEAL_SEAL), EBADF);
 	TEST_ERRNO(fcntl(fd, F_GET_SEALS), EBADF);

@@ -187,6 +187,8 @@ void *thread_func(void *arg)
 	sleep(2);
 	pid_t pid = CHECK(getpid());
 	CHECK(tgkill(pid, pid, SIGUSR1));
+
+	return NULL;
 }
 
 FN_TEST(tgkill_other_thread)
@@ -216,6 +218,8 @@ void *thread_func2(void *arg)
 	CHECK_WITH(sigprocmask(SIG_BLOCK, NULL, &sigset),
 		   sigisemptyset(&sigset));
 	CHECK_WITH(sigpending(&sigset), sigisemptyset(&sigset));
+
+	return NULL;
 }
 
 FN_TEST(blocking_syscall_dequeue_ignored_signals)

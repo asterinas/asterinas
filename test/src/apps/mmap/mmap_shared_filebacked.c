@@ -39,7 +39,7 @@ void verify_file_contents(const char *path, const char *expected_content)
 	}
 
 	char buffer[FILE_SIZE] = { 0 };
-	fread(buffer, 1, FILE_SIZE, file);
+	(void)!fread(buffer, 1, FILE_SIZE, file);
 	fclose(file);
 
 	if (strstr(buffer, expected_content) != NULL) {

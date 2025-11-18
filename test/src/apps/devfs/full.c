@@ -37,8 +37,12 @@ FN_TEST(read)
 		 _ret == READ_SIZE &&
 			 memcmp(buffer, all_zeros, READ_SIZE) == 0);
 	TEST_RES(read(fd, buffer, 0), _ret == 0);
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnonnull"
 	TEST_ERRNO(read(fd, NULL, 1), EFAULT);
 	TEST_RES(read(fd, NULL, 0), _ret == 0);
+#pragma GCC diagnostic pop
 }
 END_TEST()
 
@@ -46,15 +50,19 @@ FN_TEST(write)
 {
 	TEST_ERRNO(write(fd, buffer, 1), ENOSPC);
 	TEST_ERRNO(write(fd, buffer, 0), ENOSPC);
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnonnull"
 	TEST_ERRNO(write(fd, NULL, 1), ENOSPC);
 	TEST_ERRNO(write(fd, NULL, 0), ENOSPC);
+#pragma GCC diagnostic pop
 }
 END_TEST()
 
 FN_TEST(poll)
 {
 	struct pollfd pfd = { .fd = fd, .events = POLLIN | POLLOUT };
-	TEST_RES(poll(&pfd, 1, 0), pfd.revents == POLLIN | POLLOUT);
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == (POLLIN | POLLOUT));
 }
 END_TEST()
 

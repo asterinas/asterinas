@@ -63,7 +63,7 @@ int main()
 
 	printf("Server is connected to client\n");
 	char *mesg = "Hello from unix socket server";
-	write(accepted_fd, mesg, strlen(mesg));
+	(void)!write(accepted_fd, mesg, strlen(mesg));
 
 	// Read data from the client
 	memset(buf, 0, BUFFER_SIZE);

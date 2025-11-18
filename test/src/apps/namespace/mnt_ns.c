@@ -29,7 +29,7 @@ static int unshare_child_fn(void)
 
 	CHECK(umount(UNSHARE_MNT));
 
-	CHECK_WITH(access(UNSHARE_FILE, F_OK), errno == ENOENT);
+	CHECK_WITH(access(UNSHARE_FILE, F_OK), _ret == -1 && errno == ENOENT);
 
 	return 0;
 }
@@ -37,8 +37,8 @@ static int unshare_child_fn(void)
 FN_TEST(unshare_newns)
 {
 	// Setup
-	CHECK_WITH(mkdir("/mnt", 0755), errno == 0 | errno == EEXIST);
-	CHECK_WITH(mkdir(UNSHARE_MNT, 0755), errno == 0 | errno == EEXIST);
+	CHECK_WITH(mkdir("/mnt", 0755), _ret >= 0 || errno == EEXIST);
+	CHECK_WITH(mkdir(UNSHARE_MNT, 0755), _ret >= 0 || errno == EEXIST);
 
 	TEST_ERRNO(access(UNSHARE_FILE, F_OK), ENOENT);
 
@@ -88,9 +88,9 @@ static int clone_child_fn(void *arg)
 FN_TEST(clone_newns)
 {
 	// Setup
-	CHECK_WITH(mkdir("/mnt", 0755), errno == 0 | errno == EEXIST);
-	CHECK_WITH(mkdir(CLONE_PARENT_MNT, 0755), errno == 0 | errno == EEXIST);
-	CHECK_WITH(mkdir(CLONE_CHILD_MNT, 0755), errno == 0 | errno == EEXIST);
+	CHECK_WITH(mkdir("/mnt", 0755), _ret >= 0 || errno == EEXIST);
+	CHECK_WITH(mkdir(CLONE_PARENT_MNT, 0755), _ret >= 0 || errno == EEXIST);
+	CHECK_WITH(mkdir(CLONE_CHILD_MNT, 0755), _ret >= 0 || errno == EEXIST);
 
 	TEST_SUCC(mount("ramfs_parent", CLONE_PARENT_MNT, "ramfs", 0, ""));
 	int fd = TEST_SUCC(open(PARENT_FILE, O_CREAT | O_WRONLY, 0644));
@@ -147,8 +147,8 @@ static int setns_target_fn(int pipe_write_fd)
 FN_TEST(setns_newns)
 {
 	// Setup
-	CHECK_WITH(mkdir("/mnt", 0755), errno == 0 | errno == EEXIST);
-	CHECK_WITH(mkdir(SETNS_MNT, 0755), errno == 0 | errno == EEXIST);
+	CHECK_WITH(mkdir("/mnt", 0755), _ret >= 0 || errno == EEXIST);
+	CHECK_WITH(mkdir(SETNS_MNT, 0755), _ret >= 0 || errno == EEXIST);
 
 	int pipefd[2];
 	TEST_SUCC(pipe(pipefd));
