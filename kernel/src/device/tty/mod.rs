@@ -108,7 +108,7 @@ impl<D> Tty<D> {
 
     /// Notifies that the other end has been closed.
     pub(super) fn notify_hup(&self) {
-        self.pollee.notify(IoEvents::HUP);
+        self.pollee.notify(IoEvents::ERR | IoEvents::HUP);
     }
 
     /// Returns the TTY flags.
@@ -162,7 +162,7 @@ impl<D: TtyDriver> Tty<D> {
         }
 
         if self.tty_flags.is_other_closed() {
-            events |= IoEvents::HUP;
+            events |= IoEvents::ERR | IoEvents::HUP;
         }
 
         events
