@@ -168,11 +168,14 @@ impl<E: PteTrait, C: PagingConstsTrait> BootPageTable<E, C> {
         // Walk to the last level of the page table.
         while level > 1 {
             let index = pte_index::<C>(from, level);
+            // SAFETY: The result pointer is within the PT frame.
             let pte_ptr = unsafe { (paddr_to_vaddr(pt) as *mut E).add(index) };
+            // SAFETY: The pointer to the entry is valid to read.
             let pte = unsafe { pte_ptr.read() };
             match pte.to_repr(level) {
                 PteScalar::Absent => {
                     let (pte, ch_pt_pa) = self.alloc_child(level);
+                    // SAFETY: The pointer to the entry is valid to write.
                     unsafe { pte_ptr.write(pte) };
                     pt = ch_pt_pa;
                 }
@@ -187,11 +190,14 @@ impl<E: PteTrait, C: PagingConstsTrait> BootPageTable<E, C> {
         }
         // Map the page in the last level page table.
         let index = pte_index::<C>(from, 1);
+        // SAFETY: The result pointer is within the PT frame.
         let pte_ptr = unsafe { (paddr_to_vaddr(pt) as *mut E).add(index) };
+        // SAFETY: The pointer to the entry is valid to read.
         let pte = unsafe { pte_ptr.read() };
         if matches!(pte.to_repr(1), PteScalar::Mapped(_, _, _)) {
             panic!("mapping an already mapped page in the boot page table");
         }
+        // SAFETY: The pointer to the entry is valid to write.
         unsafe { pte_ptr.write(E::from_repr(&PteScalar::Mapped(to, 1, prop))) };
     }
 
@@ -218,7 +224,9 @@ impl<E: PteTrait, C: PagingConstsTrait> BootPageTable<E, C> {
         // Walk to the last level of the page table.
         while level > 1 {
             let index = pte_index::<C>(virt_addr, level);
+            // SAFETY: The result pointer is within the PT frame.
             let pte_ptr = unsafe { (paddr_to_vaddr(pt) as *mut E).add(index) };
+            // SAFETY: The pointer to the entry is valid to read.
             let pte = unsafe { pte_ptr.read() };
             match pte.to_repr(level) {
                 PteScalar::Absent => {
@@ -231,7 +239,9 @@ impl<E: PteTrait, C: PagingConstsTrait> BootPageTable<E, C> {
                     // Split the huge page.
                     let (child_pte, child_frame_pa) = self.alloc_child(level);
                     for i in 0..nr_subpage_per_huge::<C>() {
+                        // SAFETY: The result pointer is within the new PT frame.
                         let nxt_ptr = unsafe { (paddr_to_vaddr(child_frame_pa) as *mut E).add(i) };
+                        // SAFETY: The pointer to the entry is valid to write.
                         unsafe {
                             nxt_ptr.write(E::from_repr(&PteScalar::Mapped(
                                 huge_pa + i * C::BASE_PAGE_SIZE,
@@ -240,6 +250,7 @@ impl<E: PteTrait, C: PagingConstsTrait> BootPageTable<E, C> {
                             )))
                         };
                     }
+                    // SAFETY: The pointer to the entry is valid to write.
                     unsafe { pte_ptr.write(child_pte) };
                     pt = child_frame_pa;
                 }
@@ -248,7 +259,9 @@ impl<E: PteTrait, C: PagingConstsTrait> BootPageTable<E, C> {
         }
         // Do protection in the last level page table.
         let index = pte_index::<C>(virt_addr, 1);
+        // SAFETY: The result pointer is within the PT frame.
         let pte_ptr = unsafe { (paddr_to_vaddr(pt) as *mut E).add(index) };
+        // SAFETY: The pointer to the entry is valid to read.
         let pte = unsafe { pte_ptr.read() };
         match pte.to_repr(1) {
             PteScalar::Absent => {
@@ -259,6 +272,7 @@ impl<E: PteTrait, C: PagingConstsTrait> BootPageTable<E, C> {
             }
             PteScalar::Mapped(pa, _, mut prop) => {
                 op(&mut prop);
+                // SAFETY: The pointer to the entry is valid to write.
                 unsafe { pte_ptr.write(E::from_repr(&PteScalar::Mapped(pa, 1, prop))) };
             }
         };
@@ -280,6 +294,7 @@ impl<E: PteTrait, C: PagingConstsTrait> BootPageTable<E, C> {
 
         // Zero it out.
         let vaddr = paddr_to_vaddr(frame_paddr) as *mut u8;
+        // SAFETY: The allocated frame is valid to write.
         unsafe { core::ptr::write_bytes(vaddr, 0, PAGE_SIZE) };
 
         (
@@ -312,6 +327,8 @@ fn dfs_walk_on_leave<E: PteTrait, C: PagingConstsTrait>(
 ) {
     if level >= 2 {
         let pt_vaddr = paddr_to_vaddr(pt) as *mut E;
+        // SAFETY: The pointer points to a valid page table frame with
+        // `nr_subpage_per_huge` entries.
         let pt = unsafe { core::slice::from_raw_parts_mut(pt_vaddr, nr_subpage_per_huge::<C>()) };
         for pte in pt {
             if let PteScalar::PageTable(child_pt, _, flags) = pte.to_repr(level) {
