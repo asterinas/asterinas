@@ -2,13 +2,13 @@
 
 //! This module provides accessors to the page table entries in a node.
 
-use super::{Child, ChildRef, PageTableEntryTrait, PageTableGuard, PageTableNode};
+use super::{Child, ChildRef, PageTableGuard, PageTableNode, PteTrait};
 use crate::{
     mm::{
         nr_subpage_per_huge,
         page_prop::PageProperty,
         page_size,
-        page_table::{PageTableConfig, PageTableNodeRef},
+        page_table::{PageTableConfig, PageTableNodeRef, PteScalar},
         HasPaddr,
     },
     sync::RcuDrop,
@@ -38,16 +38,6 @@ pub(in crate::mm) struct Entry<'a, 'rcu, C: PageTableConfig> {
 }
 
 impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
-    /// Returns if the entry does not map to anything.
-    pub(in crate::mm) fn is_none(&self) -> bool {
-        !self.pte.is_present()
-    }
-
-    /// Returns if the entry maps to a page table node.
-    pub(in crate::mm) fn is_node(&self) -> bool {
-        self.pte.is_present() && !self.pte.is_last(self.node.level())
-    }
-
     /// Gets a reference to the child.
     pub(in crate::mm) fn to_ref(&self) -> ChildRef<'rcu, C> {
         // SAFETY:
@@ -60,11 +50,11 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     ///
     /// It only modifies the properties if the entry is present.
     pub(in crate::mm) fn protect(&mut self, op: &mut impl FnMut(&mut PageProperty)) {
-        if !self.pte.is_present() {
+        let level = self.node.level();
+        let PteScalar::Mapped(pa, _, prop) = self.pte.to_repr(level) else {
             return;
-        }
+        };
 
-        let prop = self.pte.prop();
         let mut new_prop = prop;
         op(&mut new_prop);
 
@@ -72,7 +62,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             return;
         }
 
-        self.pte.set_prop(new_prop);
+        self.pte = C::E::from_repr(&PteScalar::Mapped(pa, level, new_prop));
 
         // SAFETY:
         //  1. The index is within the bounds.
@@ -131,7 +121,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         &mut self,
         guard: &'rcu dyn InAtomicMode,
     ) -> Option<PageTableGuard<'rcu, C>> {
-        if !(self.is_none() && self.node.level() > 1) {
+        if !matches!(self.to_ref(), ChildRef::None) || self.node.level() == 1 {
             return None;
         }
 
@@ -172,13 +162,9 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         guard: &'rcu dyn InAtomicMode,
     ) -> Option<PageTableGuard<'rcu, C>> {
         let level = self.node.level();
-
-        if !(self.pte.is_last(level) && level > 1) {
+        let PteScalar::Mapped(pa, _, prop) = self.pte.to_repr(level) else {
             return None;
-        }
-
-        let pa = self.pte.paddr();
-        let prop = self.pte.prop();
+        };
 
         let new_page = RcuDrop::new(PageTableNode::<C>::alloc(level - 1));
 
