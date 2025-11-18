@@ -39,7 +39,7 @@ pub use self::{
     },
     kspace::{KERNEL_VADDR_RANGE, MAX_USERSPACE_VADDR},
     mem_obj::{HasDaddr, HasPaddr, HasPaddrRange, HasSize},
-    page_prop::{CachePolicy, PageFlags, PageProperty},
+    page_prop::{CachePolicy, PageFlags, PageProperty, PageTableFlags},
     vm_space::VmSpace,
 };
 pub(crate) use self::{
