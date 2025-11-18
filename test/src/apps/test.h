@@ -46,15 +46,14 @@
 /** Ends the definition of a setup function. */
 #define END_SETUP() }
 
-#define __CHECK(func, cond)                                                   \
-	errno = 0;                                                            \
-	__auto_type _ret = (func);                                            \
-	if (!(cond)) {                                                        \
-		fprintf(stderr,                                               \
-			"fatal error: %s: `" #cond "` is false after `" #func \
-			"` [got %s]\n",                                       \
-			__func__, strerror(errno));                           \
-		exit(EXIT_FAILURE);                                           \
+#define __CHECK(func, cond)                                                     \
+	errno = 0;                                                              \
+	__auto_type _ret = (func);                                              \
+	if (!(cond)) {                                                          \
+		fprintf(stderr,                                                 \
+			"fatal error: %s: `%s` is false after `%s` [got %s]\n", \
+			__func__, #cond, #func, strerror(errno));               \
+		exit(EXIT_FAILURE);                                             \
 	}
 
 /**
@@ -105,18 +104,16 @@ static int __total_failures;
 	__auto_type _ret = (func);                                             \
 	if (errno != (err)) {                                                  \
 		__tests_failed++;                                              \
-		fprintf(stderr,                                                \
-			"%s: `" #func "` failed [got %s, but expected %s]\n",  \
-			__func__, strerror(errno), strerror(err));             \
+		fprintf(stderr, "%s: `%s` failed [got %s, but expected %s]\n", \
+			__func__, #func, strerror(errno), strerror(err));      \
 	} else if (!(cond)) {                                                  \
 		__tests_failed++;                                              \
 		fprintf(stderr,                                                \
-			"%s: `" #func "` failed [got %s, but `" #cond          \
-			"` is false]\n",                                       \
-			__func__, strerror(errno));                            \
+			"%s: `%s` failed [got %s, but `%s` is false]\n",       \
+			__func__, #func, strerror(errno), #cond);              \
 	} else {                                                               \
 		__tests_passed++;                                              \
-		fprintf(stderr, "%s: `" #func "` passed [got %s]\n", __func__, \
+		fprintf(stderr, "%s: `%s` passed [got %s]\n", __func__, #func, \
 			strerror(errno));                                      \
 	}
 

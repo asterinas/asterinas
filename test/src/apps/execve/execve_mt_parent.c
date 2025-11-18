@@ -47,13 +47,15 @@ int exec_child()
 
 	id = flag = -1;
 	CHECK_WITH(stat = fopen("/proc/self/stat", "r"), stat != NULL);
-	fscanf(stat, "%d (execve_mt_paren) %n", &id, &flag);
+	CHECK_WITH(fscanf(stat, "%d (execve_mt_paren) %n", &id, &flag),
+		   _ret == 1);
 	CHECK(fclose(stat));
 	CHECK_WITH(getpid(), _ret == id && flag != -1);
 
 	id = flag = -1;
 	CHECK_WITH(stat = fopen("/proc/thread-self/stat", "r"), stat != NULL);
-	fscanf(stat, "%d (execve_mt_paren) %n", &id, &flag);
+	CHECK_WITH(fscanf(stat, "%d (execve_mt_paren) %n", &id, &flag),
+		   _ret == 1);
 	CHECK(fclose(stat));
 	CHECK_WITH(syscall(SYS_gettid), _ret == id && flag != -1);
 
