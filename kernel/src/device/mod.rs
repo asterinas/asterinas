@@ -88,9 +88,16 @@ pub fn get_device(devid: DeviceId) -> Result<Arc<dyn Device>> {
     match (major, minor) {
         (1, 3) => Ok(Arc::new(null::Null)),
         (1, 5) => Ok(Arc::new(zero::Zero)),
-        (5, 0) => Ok(Arc::new(tty::TtyDevice)),
+        (1, 7) => Ok(Arc::new(full::Full)),
         (1, 8) => Ok(Arc::new(random::Random)),
         (1, 9) => Ok(Arc::new(urandom::Urandom)),
+        (4, minor) => {
+            let Some(tty) = tty::iter_n_tty().nth(minor as usize) else {
+                return_errno_with_message!(Errno::EINVAL, "the TTY minor ID is invalid");
+            };
+            Ok(tty.clone())
+        }
+        (5, 0) => Ok(Arc::new(tty::TtyDevice)),
         _ => return_errno_with_message!(Errno::EINVAL, "the device ID is invalid or unsupported"),
     }
 }
