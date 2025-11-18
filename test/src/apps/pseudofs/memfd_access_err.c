@@ -9,8 +9,6 @@
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <linux/memfd.h>
-#include <string.h>
-#include <errno.h>
 #include <sys/ioctl.h>
 #include <linux/fs.h>
 
@@ -21,8 +19,10 @@ char memfd_path[64];
 FN_SETUP(create)
 {
 	int fd = CHECK(memfd_create("test_memfd", MFD_ALLOW_SEALING));
-	ftruncate(fd, 4096);
-	CHECK(snprintf(memfd_path, sizeof(memfd_path), "/proc/self/fd/%d", fd));
+	CHECK(ftruncate(fd, 4096));
+	CHECK_WITH(snprintf(memfd_path, sizeof(memfd_path), "/proc/self/fd/%d",
+			    fd),
+		   _ret > 0 && _ret < sizeof(memfd_path));
 }
 END_SETUP()
 
@@ -42,6 +42,8 @@ FN_TEST(path)
 	TEST_ERRNO(fallocate(fd, 0, 0, 100), EBADF);
 	TEST_ERRNO(ioctl(fd, TCGETS), EBADF);
 	TEST_ERRNO(mmap(NULL, 4096, PROT_READ, MAP_PRIVATE, fd, 0), EBADF);
+
+	TEST_SUCC(close(fd));
 }
 END_TEST()
 
@@ -59,6 +61,8 @@ FN_TEST(readonly)
 	TEST_ERRNO(fallocate(fd, 0, 0, 100), EBADF);
 	TEST_ERRNO(ioctl(fd, TCGETS), ENOTTY);
 	TEST_SUCC(mmap(NULL, 4096, PROT_READ, MAP_PRIVATE, fd, 0));
+
+	TEST_SUCC(close(fd));
 }
 END_TEST()
 
@@ -76,5 +80,7 @@ FN_TEST(writeonly)
 	TEST_SUCC(fallocate(fd, 0, 0, 100));
 	TEST_ERRNO(ioctl(fd, TCGETS), ENOTTY);
 	TEST_ERRNO(mmap(NULL, 4096, PROT_READ, MAP_PRIVATE, fd, 0), EACCES);
+
+	TEST_SUCC(close(fd));
 }
 END_TEST()

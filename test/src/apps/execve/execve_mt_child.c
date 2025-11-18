@@ -16,7 +16,8 @@ FN_SETUP(check_child_stat)
 	int pipefd = -1;
 
 	FILE *file = CHECK_WITH(fopen(FILENAME, "r"), _ret != NULL);
-	fscanf(file, "%d %d %d", &pid, &exit_code, &pipefd);
+	CHECK_WITH(fscanf(file, "%d %d %d", &pid, &exit_code, &pipefd),
+		   _ret == 3);
 	CHECK(fclose(file));
 	CHECK(unlink(FILENAME));
 
@@ -36,13 +37,15 @@ FN_SETUP(check_child_stat)
 
 	id = flag = -1;
 	CHECK_WITH(stat = fopen("/proc/self/stat", "r"), stat != NULL);
-	fscanf(stat, "%d (execve_mt_child) %n", &id, &flag);
+	CHECK_WITH(fscanf(stat, "%d (execve_mt_child) %n", &id, &flag),
+		   _ret == 1);
 	CHECK(fclose(stat));
 	CHECK_WITH(getpid(), _ret == id && flag != -1);
 
 	id = flag = -1;
 	CHECK_WITH(stat = fopen("/proc/thread-self/stat", "r"), stat != NULL);
-	fscanf(stat, "%d (execve_mt_child) %n", &id, &flag);
+	CHECK_WITH(fscanf(stat, "%d (execve_mt_child) %n", &id, &flag),
+		   _ret == 1);
 	CHECK(fclose(stat));
 	CHECK_WITH(syscall(SYS_gettid), _ret == id && flag != -1);
 
