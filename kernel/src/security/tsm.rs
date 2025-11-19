@@ -216,7 +216,7 @@ inherit_sys_leaf_node!(ReportNode, fields, {
             "provider" => {
                 let data = self.data.read();
                 let mut printer = VmPrinter::new_skip(writer, offset);
-                write!(printer, "{}\n", data.provider)?;
+                writeln!(printer, "{}", data.provider)?;
                 Ok(printer.bytes_written())
             }
 
@@ -256,7 +256,7 @@ inherit_sys_leaf_node!(ReportNode, fields, {
                     TsmProviderState::InblobProvided { generation, .. } => generation,
                     TsmProviderState::OutblobGenerated { generation, .. } => generation,
                 };
-                write!(printer, "{}\n", generation)?;
+                writeln!(printer, "{}", generation)?;
                 Ok(printer.bytes_written())
             }
 
