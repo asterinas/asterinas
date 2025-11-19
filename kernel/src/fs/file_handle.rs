@@ -4,11 +4,16 @@
 
 //! Opened File Handle
 
+use core::fmt::Display;
+
 use ostd::io::IoMem;
 
 use super::inode_handle::InodeHandle;
 use crate::{
-    fs::utils::{AccessMode, FallocMode, Inode, IoctlCmd, SeekFrom, StatusFlags},
+    fs::{
+        file_table::FdFlags,
+        utils::{AccessMode, FallocMode, Inode, IoctlCmd, SeekFrom, StatusFlags},
+    },
     net::socket::Socket,
     prelude::*,
     process::signal::Pollable,
@@ -92,6 +97,19 @@ pub trait FileLike: Pollable + Send + Sync + Any {
     }
 
     fn inode(&self) -> &Arc<dyn Inode>;
+
+    /// Dumps information to appear in the `fdinfo` file under procfs.
+    ///
+    /// This method must not break atomic mode because it will be called with the file table's spin
+    /// lock held. There are two strategies for implementing this method:
+    ///  - If the necessary information can be obtained without breaking atomic mode, the method
+    ///    can collect and return the information directly. `Arc<Self>` should be dropped and
+    ///    should not appear in the returned `Box<dyn Display>`.
+    ///  - Otherwise, if the file can be dropped asynchronously in another process, the method can
+    ///    return a `Box<dyn Display>` containing the `Arc<Self>`, so that the information can be
+    ///    collected later in its `Display::display()` method, after dropping the file table's spin
+    ///    lock.
+    fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display>;
 }
 
 impl dyn FileLike {
