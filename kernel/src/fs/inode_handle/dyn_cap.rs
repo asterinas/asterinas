@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::AtomicU32;
+use core::{fmt::Display, sync::atomic::AtomicU32};
 
 use aster_rights::Rights;
 use inherit_methods_macro::inherit_methods;
@@ -10,10 +10,11 @@ use crate::{
     events::IoEvents,
     fs::{
         file_handle::{FileLike, Mappable},
+        file_table::FdFlags,
         path::Path,
         utils::{
-            AccessMode, DirentVisitor, FallocMode, FlockItem, Inode, InodeType, IoctlCmd,
-            RangeLockItem, RangeLockType, SeekFrom, StatusFlags,
+            AccessMode, CreationFlags, DirentVisitor, FallocMode, FlockItem, Inode, InodeType,
+            IoctlCmd, RangeLockItem, RangeLockType, SeekFrom, StatusFlags,
         },
     },
     prelude::*,
@@ -205,6 +206,32 @@ impl FileLike for InodeHandle {
 
     fn inode(&self) -> &Arc<dyn Inode> {
         self.0.path.inode()
+    }
+
+    fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
+        struct FdInfo {
+            inner: Arc<InodeHandle>,
+            fd_flags: FdFlags,
+        }
+
+        impl Display for FdInfo {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                let mut flags = self.inner.status_flags().bits() | self.inner.access_mode() as u32;
+                if self.fd_flags.contains(FdFlags::CLOEXEC) {
+                    flags |= CreationFlags::O_CLOEXEC.bits();
+                }
+
+                writeln!(f, "pos:\t{}", self.inner.offset())?;
+                writeln!(f, "flags:\t0{:o}", flags)?;
+                writeln!(f, "mnt_id:\t{}", self.inner.path().mount_node().id())?;
+                writeln!(f, "ino:\t{}", self.inner.inode().ino())
+            }
+        }
+
+        Box::new(FdInfo {
+            inner: self,
+            fd_flags,
+        })
     }
 }
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{collections::btree_set::BTreeSet, sync::Arc};
-use core::{borrow::Borrow, time::Duration};
+use core::{borrow::Borrow, fmt::Display, time::Duration};
 
 use keyable_arc::KeyableWeak;
 use ostd::sync::Mutex;
@@ -14,9 +14,10 @@ use crate::{
     events::IoEvents,
     fs::{
         file_handle::FileLike,
-        file_table::{get_file_fast, FileDesc},
+        file_table::{get_file_fast, FdFlags, FileDesc},
+        path::RESERVED_MOUNT_ID,
         pseudofs::anon_inodefs_shared_inode,
-        utils::{Inode, IoctlCmd},
+        utils::{CreationFlags, Inode, IoctlCmd},
     },
     prelude::*,
     process::{
@@ -269,6 +270,38 @@ impl FileLike for EpollFile {
 
     fn inode(&self) -> &Arc<dyn Inode> {
         anon_inodefs_shared_inode()
+    }
+
+    fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
+        struct FdInfo {
+            inner: Arc<EpollFile>,
+            fd_flags: FdFlags,
+        }
+
+        impl Display for FdInfo {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                let mut flags = self.inner.status_flags().bits() | self.inner.access_mode() as u32;
+                if self.fd_flags.contains(FdFlags::CLOEXEC) {
+                    flags |= CreationFlags::O_CLOEXEC.bits();
+                }
+
+                writeln!(f, "pos:\t{}", 0)?;
+                writeln!(f, "flags:\t0{:o}", flags)?;
+                // TODO: This should be the mount ID of the pseudo filesystem.
+                writeln!(f, "mnt_id:\t{}", RESERVED_MOUNT_ID)?;
+                writeln!(f, "ino:\t{}", self.inner.inode().ino())?;
+                for entry in self.inner.interest.lock().iter() {
+                    writeln!(f, "{}", entry.0)?;
+                }
+
+                Ok(())
+            }
+        }
+
+        Box::new(FdInfo {
+            inner: self,
+            fd_flags,
+        })
     }
 }
 

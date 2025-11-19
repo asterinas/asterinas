@@ -14,6 +14,8 @@
 //! refer to the man 2 eventfd documentation.
 //!
 
+use core::fmt::Display;
+
 use ostd::sync::WaitQueue;
 
 use super::SyscallReturn;
@@ -22,6 +24,7 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::{FdFlags, FileDesc},
+        path::RESERVED_MOUNT_ID,
         pseudofs::anon_inodefs_shared_inode,
         utils::{CreationFlags, Inode, StatusFlags},
     },
@@ -233,5 +236,33 @@ impl FileLike for EventFile {
 
     fn inode(&self) -> &Arc<dyn Inode> {
         anon_inodefs_shared_inode()
+    }
+
+    fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
+        struct FdInfo {
+            inner: Arc<EventFile>,
+            fd_flags: FdFlags,
+        }
+
+        impl Display for FdInfo {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                let mut flags = self.inner.status_flags().bits() | self.inner.access_mode() as u32;
+                if self.fd_flags.contains(FdFlags::CLOEXEC) {
+                    flags |= CreationFlags::O_CLOEXEC.bits();
+                }
+
+                writeln!(f, "pos:\t{}", 0)?;
+                writeln!(f, "flags:\t0{:o}", flags)?;
+                // TODO: This should be the mount ID of the pseudo filesystem.
+                writeln!(f, "mnt_id:\t{}", RESERVED_MOUNT_ID)?;
+                writeln!(f, "ino:\t{}", self.inner.inode().ino())?;
+                writeln!(f, "eventfd-count: {:16x}", *self.inner.counter.lock())
+            }
+        }
+
+        Box::new(FdInfo {
+            inner: self,
+            fd_flags,
+        })
     }
 }

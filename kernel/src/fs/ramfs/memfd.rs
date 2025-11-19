@@ -4,6 +4,7 @@
 
 use alloc::format;
 use core::{
+    fmt::Display,
     sync::atomic::{AtomicU32, Ordering},
     time::Duration,
 };
@@ -19,8 +20,9 @@ use crate::{
     events::IoEvents,
     fs::{
         file_handle::{FileLike, Mappable},
+        file_table::FdFlags,
         inode_handle::{do_fallocate_util, do_resize_util, do_seek_util},
-        path::check_open_util,
+        path::{check_open_util, RESERVED_MOUNT_ID},
         tmpfs::TmpFs,
         utils::{
             chmod, mkmod, AccessMode, CachePage, CreationFlags, Extension, FallocMode, FileSystem,
@@ -468,6 +470,32 @@ impl FileLike for MemfdFile {
 
     fn inode(&self) -> &Arc<dyn Inode> {
         &self.memfd_inode
+    }
+
+    fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
+        struct FdInfo {
+            inner: Arc<MemfdFile>,
+            fd_flags: FdFlags,
+        }
+
+        impl Display for FdInfo {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                let mut flags = self.inner.status_flags().bits() | self.inner.access_mode() as u32;
+                if self.fd_flags.contains(FdFlags::CLOEXEC) {
+                    flags |= CreationFlags::O_CLOEXEC.bits();
+                }
+
+                writeln!(f, "pos:\t{}", *self.inner.offset.lock())?;
+                writeln!(f, "flags:\t0{:o}", flags)?;
+                writeln!(f, "mnt_id:\t{}", RESERVED_MOUNT_ID)?;
+                writeln!(f, "ino:\t{}", self.inner.inode().ino())
+            }
+        }
+
+        Box::new(FdInfo {
+            inner: self,
+            fd_flags,
+        })
     }
 }
 

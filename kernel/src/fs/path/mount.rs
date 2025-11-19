@@ -40,11 +40,17 @@ impl Default for MountPropType {
 
 static ID_ALLOCATOR: Once<SpinLock<IdAlloc>> = Once::new();
 
+/// The reserved mount ID, which represents an invalid mount.
+pub static RESERVED_MOUNT_ID: usize = 0;
+
 pub(super) fn init() {
     // TODO: Make it configurable.
     const MAX_MOUNT_NUM: usize = 10000;
 
-    ID_ALLOCATOR.call_once(|| SpinLock::new(IdAlloc::with_capacity(MAX_MOUNT_NUM)));
+    let mut id_allocator = IdAlloc::with_capacity(MAX_MOUNT_NUM);
+    let _ = id_allocator.alloc_specific(RESERVED_MOUNT_ID).unwrap(); // Reserve mount ID 0.
+
+    ID_ALLOCATOR.call_once(|| SpinLock::new(id_allocator));
 }
 
 bitflags! {

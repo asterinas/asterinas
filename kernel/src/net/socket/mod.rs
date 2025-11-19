@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::fmt::Display;
+
 use options::SocketOption;
 use util::{MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr};
 
 use crate::{
     fs::{
         file_handle::FileLike,
+        file_table::FdFlags,
+        path::RESERVED_MOUNT_ID,
         pseudofs::{sockfs_singleton, PseudoInode},
-        utils::{mkmod, Inode, InodeType, StatusFlags},
+        utils::{mkmod, CreationFlags, Inode, InodeType, StatusFlags},
     },
     prelude::*,
     process::{Gid, Uid},
@@ -174,6 +178,33 @@ impl<T: Socket + 'static> FileLike for T {
 
     fn inode(&self) -> &Arc<dyn Inode> {
         self.pseudo_inode()
+    }
+
+    fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
+        struct FdInfo {
+            flags: u32,
+            ino: u64,
+        }
+
+        impl Display for FdInfo {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                writeln!(f, "pos:\t{}", 0)?;
+                writeln!(f, "flags:\t0{:o}", self.flags)?;
+                // TODO: This should be the mount ID of the pseudo filesystem.
+                writeln!(f, "mnt_id:\t{}", RESERVED_MOUNT_ID)?;
+                writeln!(f, "ino:\t{}", self.ino)
+            }
+        }
+
+        let mut flags = self.status_flags().bits() | self.access_mode() as u32;
+        if fd_flags.contains(FdFlags::CLOEXEC) {
+            flags |= CreationFlags::O_CLOEXEC.bits();
+        }
+
+        Box::new(FdInfo {
+            flags,
+            ino: self.inode().ino(),
+        })
     }
 }
 
