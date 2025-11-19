@@ -130,16 +130,24 @@ impl Debug for BioRequestSingleQueue {
     }
 }
 
-/// The block I/O request.
+/// A block I/O request dequeued from [`BioRequestSingleQueue`].
 ///
-/// The advantage of this data structure is to merge several `SubmittedBio`s that are
-/// contiguous on the target device's sector address, allowing them to be collectively
-/// processed in a queue.
+/// This `BioRequest` type is more friendly to storage medium than `SubmittedBio` for two reasons.
+///
+/// First, a `BioRequest` can represent a merged request over multiple `SubmittedBio`s
+/// that (1) are of the same request type and (2) are contiguous in terms of target sectors.
+/// This helps reduce the number of I/O requests submitted to the underlying storage medium.
+///
+/// Second, a `BioRequest` provides the physical sector addresses suitable for storage medium.
+/// The sector addresses returned from `SubmittedBio::sid_range()` are logical ones:
+/// they need to be adjusted with `SubmittedBio::sid_offset()` to calculate the physical ones.
+/// This calculation is handled internally by `BioRequest`.
+/// One can simply call `BioRequest::sid_range()` to obtain the physical sector addresses.
 #[derive(Debug)]
 pub struct BioRequest {
     /// The type of the I/O
     type_: BioType,
-    /// The range of target sectors on the device
+    /// The physical range of target sectors on the device
     sid_range: Range<Sid>,
     /// The number of segments
     num_segments: usize,
@@ -181,8 +189,10 @@ impl BioRequest {
             return false;
         }
 
-        rq_bio.sid_range().start == self.sid_range.end
-            || rq_bio.sid_range().end == self.sid_range.start
+        let sid_offset = rq_bio.sid_offset();
+
+        rq_bio.sid_range().start + sid_offset == self.sid_range.end
+            || rq_bio.sid_range().end + sid_offset == self.sid_range.start
     }
 
     /// Merges the `SubmittedBio` into this request.
@@ -196,12 +206,13 @@ impl BioRequest {
         assert!(self.can_merge(&rq_bio));
 
         let rq_bio_nr_segments = rq_bio.segments().len();
+        let sid_offset = rq_bio.sid_offset();
 
-        if rq_bio.sid_range().start == self.sid_range.end {
-            self.sid_range.end = rq_bio.sid_range().end;
+        if rq_bio.sid_range().start + sid_offset == self.sid_range.end {
+            self.sid_range.end = rq_bio.sid_range().end + sid_offset;
             self.bios.push_back(rq_bio);
         } else {
-            self.sid_range.start = rq_bio.sid_range().start;
+            self.sid_range.start = rq_bio.sid_range().start + sid_offset;
             self.bios.push_front(rq_bio);
         }
 
@@ -211,9 +222,13 @@ impl BioRequest {
 
 impl From<SubmittedBio> for BioRequest {
     fn from(bio: SubmittedBio) -> Self {
+        let mut sid_range = bio.sid_range().clone();
+        sid_range.start = sid_range.start + bio.sid_offset();
+        sid_range.end = sid_range.start + bio.sid_offset();
+
         Self {
             type_: bio.type_(),
-            sid_range: bio.sid_range().clone(),
+            sid_range,
             num_segments: bio.segments().len(),
             bios: {
                 let mut bios = VecDeque::with_capacity(1);

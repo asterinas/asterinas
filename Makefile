@@ -183,7 +183,6 @@ NON_OSDK_CRATES := \
 	kernel/libs/aster-rights-proc \
 	kernel/libs/atomic-integer-wrapper \
 	kernel/libs/cpio-decoder \
-	kernel/libs/device-id \
 	kernel/libs/int-to-c-enum \
 	kernel/libs/int-to-c-enum/derive \
 	kernel/libs/jhash \
@@ -216,6 +215,7 @@ OSDK_CRATES := \
 	kernel/comps/pci \
 	kernel/libs/aster-util \
 	kernel/libs/aster-bigtcp \
+	kernel/libs/device-id \
 	kernel/libs/xarray
 
 # OSDK dependencies

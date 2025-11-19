@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::AtomicU64;
+
 use align_ext::AlignExt;
 use aster_util::mem_obj_slice::Slice;
 use bitvec::array::BitArray;
@@ -49,6 +51,7 @@ impl Bio {
         let inner = Arc::new(BioInner {
             type_,
             sid_range: start_sid..start_sid + nsectors,
+            sid_offset: AtomicU64::new(0),
             segments,
             complete_fn,
             status: AtomicU32::new(BioStatus::Init as u32),
@@ -258,6 +261,16 @@ impl SubmittedBio {
         self.0.sid_range()
     }
 
+    /// Returns the offset of the first sector id.
+    pub fn sid_offset(&self) -> u64 {
+        self.0.sid_offset.load(Ordering::Relaxed)
+    }
+
+    /// Sets the offset of the first sector id.
+    pub fn set_sid_offset(&self, offset: u64) {
+        self.0.sid_offset.store(offset, Ordering::Relaxed);
+    }
+
     /// Returns the slice to the memory segments.
     pub fn segments(&self) -> &[BioSegment] {
         self.0.segments()
@@ -294,8 +307,10 @@ impl SubmittedBio {
 struct BioInner {
     /// The type of the I/O
     type_: BioType,
-    /// The range of the sector id on device
+    /// The logical range of target sectors on device
     sid_range: Range<Sid>,
+    /// The offset of the first sector id, used to adjust the `sid_range` for partition devices
+    sid_offset: AtomicU64,
     /// The memory segments in this `Bio`
     segments: Vec<BioSegment>,
     /// The I/O completion method

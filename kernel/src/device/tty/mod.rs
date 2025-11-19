@@ -5,7 +5,7 @@ use aster_console::{
     mode::{ConsoleMode, KeyboardMode},
     AnyConsoleDevice,
 };
-use device_id::DeviceId;
+use device_id::{DeviceId, MajorId, MinorId};
 use ostd::sync::LocalIrqDisabled;
 
 use self::{line_discipline::LineDiscipline, termio::CFontOp};
@@ -401,7 +401,10 @@ impl<D: TtyDriver> Device for Tty<D> {
     }
 
     fn id(&self) -> DeviceId {
-        DeviceId::new(D::DEVICE_MAJOR_ID, self.index)
+        DeviceId::new(
+            MajorId::new(D::DEVICE_MAJOR_ID as u16),
+            MinorId::new(self.index),
+        )
     }
 
     fn open(&self) -> Result<Box<dyn FileIo>> {

@@ -6,7 +6,7 @@ use core::{
 };
 
 use aster_util::{field_ptr, safe_ptr::SafePtr};
-use device_id::DeviceId;
+use device_id::{DeviceId, MajorId, MinorId};
 use ostd::{
     const_assert,
     mm::{
@@ -40,7 +40,7 @@ impl Device for TdxGuest {
     }
 
     fn id(&self) -> DeviceId {
-        DeviceId::new(0xa, 0x7b)
+        DeviceId::new(MajorId::new(0xa), MinorId::new(0x7b))
     }
 
     fn open(&self) -> Result<Box<dyn FileIo>> {

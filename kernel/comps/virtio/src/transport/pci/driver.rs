@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, collections::vec_deque::VecDeque, sync::Arc};
 
 use aster_pci::{
     bus::{PciDevice, PciDriver},
@@ -17,17 +17,17 @@ use crate::transport::{
 
 #[derive(Debug)]
 pub struct VirtioPciDriver {
-    devices: SpinLock<Vec<Box<dyn VirtioTransport>>>,
+    devices: SpinLock<VecDeque<Box<dyn VirtioTransport>>>,
 }
 
 impl VirtioPciDriver {
     pub fn pop_device_transport(&self) -> Option<Box<dyn VirtioTransport>> {
-        self.devices.lock().pop()
+        self.devices.lock().pop_front()
     }
 
     pub(super) fn new() -> Self {
         VirtioPciDriver {
-            devices: SpinLock::new(Vec::new()),
+            devices: SpinLock::new(VecDeque::new()),
         }
     }
 }
@@ -66,7 +66,7 @@ impl PciDriver for VirtioPciDriver {
             }
             _ => return Err((BusProbeError::DeviceNotMatch, device)),
         };
-        self.devices.lock().push(transport);
+        self.devices.lock().push_back(transport);
 
         Ok(Arc::new(VirtioPciDevice::new(device_id)))
     }
