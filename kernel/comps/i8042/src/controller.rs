@@ -13,10 +13,17 @@ use ostd::{
 };
 use spin::Once;
 
+pub(super) const PS2_CMD_RESET: u8 = 0xFF;
+pub(super) const PS2_ACK: u8 = 0xFA;
+pub(super) const PS2_BAT_OK: u8 = 0xAA;
+
 /// The `I8042Controller` singleton.
 pub(super) static I8042_CONTROLLER: Once<SpinLock<I8042Controller, LocalIrqDisabled>> = Once::new();
 
 pub(super) fn init() -> Result<(), I8042ControllerError> {
+    const SELF_TEST_OK: u8 = 0x55;
+    const PORT_TEST_OK: u8 = 0x00;
+
     let mut controller = I8042Controller::new()?;
 
     // The steps to initialize the i8042 controller are from:
@@ -41,8 +48,8 @@ pub(super) fn init() -> Result<(), I8042ControllerError> {
     // Perform controller self-test.
     controller.wait_and_send_command(Command::TestController)?;
     let result = controller.wait_and_recv_data()?;
-    if result != 0x55 {
-        // Any value other than 0x55 indicates a self-test fail.
+    if result != SELF_TEST_OK {
+        // Any value other than `SELF_TEST_OK` indicates a self-test fail.
         return Err(I8042ControllerError::ControllerTestFailed);
     }
     // The self-test may reset the controller. Restore the original configuration.
@@ -63,7 +70,7 @@ pub(super) fn init() -> Result<(), I8042ControllerError> {
     // Perform interface tests to the first PS/2 port.
     controller.wait_and_send_command(Command::TestFirstPort)?;
     let result = controller.wait_and_recv_data()?;
-    if result != 0x00 {
+    if result != PORT_TEST_OK {
         return Err(I8042ControllerError::FirstPortTestFailed);
     }
 
@@ -71,7 +78,7 @@ pub(super) fn init() -> Result<(), I8042ControllerError> {
     if has_second_port {
         controller.wait_and_send_command(Command::TestSecondPort)?;
         let result = controller.wait_and_recv_data()?;
-        if result != 0x00 {
+        if result != PORT_TEST_OK {
             return Err(I8042ControllerError::SecondPortTestFailed);
         }
     }
@@ -89,7 +96,17 @@ pub(super) fn init() -> Result<(), I8042ControllerError> {
         );
     }
 
-    // TODO: Add a mouse driver and enable the second PS/2 port (if it exists).
+    // Enable the second PS/2 port (mouse) if it exists.
+    if has_second_port {
+        controller.wait_and_send_command(Command::EnableSecondPort)?;
+        if let Err(err) = super::mouse::init(&mut controller) {
+            log::warn!("i8042 mouse initialization failed: {:?}", err);
+            controller.wait_and_send_command(Command::DisableSecondPort)?;
+        } else {
+            config.remove(Configuration::SECOND_PORT_CLOCK_DISABLED);
+            config.insert(Configuration::SECOND_PORT_INTERRUPT_ENABLED);
+        }
+    }
 
     I8042_CONTROLLER.call_once(|| SpinLock::new(controller));
     let mut controller = I8042_CONTROLLER.get().unwrap().lock();
@@ -112,11 +129,14 @@ const MAX_WAITING_COUNT: usize = 64;
 
 impl I8042Controller {
     fn new() -> Result<Self, I8042ControllerError> {
+        const DATA_PORT_ADDR: u16 = 0x60;
+        const STATUS_OR_COMMAND_PORT_ADDR: u16 = 0x64;
+
         // TODO: Check the flags in the ACPI table to determine if the PS/2 controller exists. See:
         // <https://uefi.org/specs/ACPI/6.5/05_ACPI_Software_Programming_Model.html#ia-pc-boot-architecture-flags>.
         let controller = Self {
-            data_port: IoPort::acquire(0x60).unwrap(),
-            status_or_command_port: IoPort::acquire(0x64).unwrap(),
+            data_port: IoPort::acquire(DATA_PORT_ADDR).unwrap(),
+            status_or_command_port: IoPort::acquire(STATUS_OR_COMMAND_PORT_ADDR).unwrap(),
         };
         Ok(controller)
     }
@@ -167,6 +187,11 @@ impl I8042Controller {
             core::hint::spin_loop();
         }
         Err(I8042ControllerError::OutputBusy)
+    }
+
+    pub(super) fn write_to_second_port(&mut self, data: u8) -> Result<(), I8042ControllerError> {
+        self.wait_and_send_command(Command::WriteToSecondPort)?;
+        self.wait_and_send_data(data)
     }
 
     pub(super) fn send_data(&mut self, data: u8) -> Result<(), I8042ControllerError> {
@@ -237,6 +262,7 @@ enum Command {
     TestFirstPort = 0xAB,
     DisableFirstPort = 0xAD,
     EnableFirstPort = 0xAE,
+    WriteToSecondPort = 0xD4,
 }
 
 bitflags! {
