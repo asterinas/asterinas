@@ -34,14 +34,18 @@
 extern crate alloc;
 
 pub mod bio;
+mod device_id;
 pub mod id;
 mod impl_block_device;
+mod partition;
 mod prelude;
 pub mod request_queue;
 
+use ::device_id::DeviceId;
 use component::{init_component, ComponentInitError};
-use ostd::sync::SpinLock;
-use spin::Once;
+pub use device_id::{acquire_major, allocate_major, MajorIdOwner, EXTENDED_DEVICE_ID_ALLOCATOR};
+use ostd::sync::Mutex;
+pub use partition::{PartitionInfo, PartitionNode};
 
 use self::{
     bio::{BioEnqueueError, SubmittedBio},
@@ -57,10 +61,29 @@ pub trait BlockDevice: Send + Sync + Any + Debug {
 
     /// Returns the metadata of the block device.
     fn metadata(&self) -> BlockDeviceMeta;
+
+    /// Returns the name of the block device.
+    fn name(&self) -> &str;
+
+    /// Returns the device ID of the block device.
+    fn id(&self) -> DeviceId;
+
+    /// Returns whether the block device is a partition.
+    fn is_partition(&self) -> bool {
+        false
+    }
+
+    /// Sets the partitions of the block device.
+    fn set_partitions(&self, _infos: Vec<Option<PartitionInfo>>) {}
+
+    /// Returns the partitions of the block device.
+    fn partitions(&self) -> Option<Vec<Arc<dyn BlockDevice>>> {
+        None
+    }
 }
 
 /// Metadata for a block device.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct BlockDeviceMeta {
     /// The upper limit for the number of segments per bio.
     pub max_nr_segments_per_bio: usize,
@@ -75,51 +98,70 @@ impl dyn BlockDevice {
     }
 }
 
-pub fn register_device(name: String, device: Arc<dyn BlockDevice>) {
-    COMPONENT
-        .get()
-        .unwrap()
-        .block_device_table
-        .lock()
-        .insert(name, device);
+/// The error type which is returned from the APIs of this crate.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Error {
+    /// Device registered
+    Registered,
+    /// Device not found
+    NotFound,
+    /// Invalid arguments
+    InvalidArgs,
+    /// Id Acquired
+    IdAcquired,
+    /// Id Exhausted
+    IdExhausted,
 }
 
-pub fn get_device(str: &str) -> Option<Arc<dyn BlockDevice>> {
-    COMPONENT
-        .get()
-        .unwrap()
-        .block_device_table
-        .lock()
-        .get(str)
-        .cloned()
-}
+/// Registers a new block device.
+pub fn register(device: Arc<dyn BlockDevice>) -> Result<(), Error> {
+    let mut registry = DEVICE_REGISTRY.lock();
+    let id = device.id().to_raw();
+    if registry.contains_key(&id) {
+        return Err(Error::Registered);
+    }
+    registry.insert(id, device);
 
-pub fn all_devices() -> Vec<(String, Arc<dyn BlockDevice>)> {
-    let block_devs = COMPONENT.get().unwrap().block_device_table.lock();
-    block_devs
-        .iter()
-        .map(|(name, device)| (name.clone(), device.clone()))
-        .collect()
-}
-
-static COMPONENT: Once<Component> = Once::new();
-
-#[init_component]
-fn component_init() -> Result<(), ComponentInitError> {
-    let a = Component::init()?;
-    COMPONENT.call_once(|| a);
     Ok(())
 }
 
-#[derive(Debug)]
-struct Component {
-    block_device_table: SpinLock<BTreeMap<String, Arc<dyn BlockDevice>>>,
+/// Unregisters an existing block device, returning the device if found.
+pub fn unregister(id: DeviceId) -> Result<Arc<dyn BlockDevice>, Error> {
+    DEVICE_REGISTRY
+        .lock()
+        .remove(&id.to_raw())
+        .ok_or(Error::NotFound)
 }
 
-impl Component {
-    pub fn init() -> Result<Self, ComponentInitError> {
-        Ok(Self {
-            block_device_table: SpinLock::new(BTreeMap::new()),
-        })
+/// Collects all block devices.
+pub fn collect_all() -> Vec<Arc<dyn BlockDevice>> {
+    DEVICE_REGISTRY.lock().values().cloned().collect()
+}
+
+/// Looks up a block device of a given device ID.
+pub fn lookup(id: DeviceId) -> Option<Arc<dyn BlockDevice>> {
+    DEVICE_REGISTRY.lock().get(&id.to_raw()).cloned()
+}
+
+static DEVICE_REGISTRY: Mutex<BTreeMap<u32, Arc<dyn BlockDevice>>> = Mutex::new(BTreeMap::new());
+
+#[init_component]
+fn init() -> Result<(), ComponentInitError> {
+    device_id::init();
+
+    Ok(())
+}
+
+#[init_component(process)]
+fn init_in_first_process() -> Result<(), component::ComponentInitError> {
+    let devices = collect_all();
+    for device in devices {
+        let Some(partition_info) = partition::parse(&device) else {
+            continue;
+        };
+
+        device.set_partitions(partition_info);
     }
+
+    Ok(())
 }

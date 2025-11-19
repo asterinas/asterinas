@@ -15,6 +15,7 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
+use device_id::DeviceId;
 use ostd::mm::{HasSize, VmIo};
 use ostd_pod::Pod;
 
@@ -162,6 +163,14 @@ impl<D: BlockSet + 'static> aster_block::BlockDevice for MlsDisk<D> {
             max_nr_segments_per_bio: usize::MAX,
             nr_sectors: (BLOCK_SIZE / SECTOR_SIZE) * self.total_blocks(),
         }
+    }
+
+    fn name(&self) -> &str {
+        todo!()
+    }
+
+    fn id(&self) -> DeviceId {
+        todo!()
     }
 }
 

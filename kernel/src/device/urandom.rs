@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use device_id::DeviceId;
+use device_id::{DeviceId, MajorId, MinorId};
 
 use crate::{
     events::IoEvents,
@@ -47,7 +47,7 @@ impl Device for Urandom {
 
     fn id(&self) -> DeviceId {
         // The same value as Linux
-        DeviceId::new(1, 9)
+        DeviceId::new(MajorId::new(1), MinorId::new(9))
     }
 
     fn open(&self) -> Result<Box<dyn FileIo>> {

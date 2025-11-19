@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+mod disk;
 mod full;
 mod null;
 mod pty;
@@ -28,6 +29,10 @@ use crate::{
     },
     prelude::*,
 };
+
+pub fn init_in_first_kthread() {
+    disk::init_in_first_kthread();
+}
 
 /// Init the device node in fs, must be called after mounting rootfs.
 pub fn init_in_first_process(ctx: &Context) -> Result<()> {
@@ -74,6 +79,8 @@ pub fn init_in_first_process(ctx: &Context) -> Result<()> {
 
     shm::init_in_first_process(&fs_resolver, ctx)?;
 
+    disk::init_in_first_process(&fs_resolver)?;
+
     Ok(())
 }
 
@@ -82,8 +89,8 @@ pub fn init_in_first_process(ctx: &Context) -> Result<()> {
 // a registration mechanism should be used to allow each driver to
 // allocate device IDs either statically or dynamically.
 pub fn get_device(devid: DeviceId) -> Result<Arc<dyn Device>> {
-    let major = devid.major();
-    let minor = devid.minor();
+    let major = devid.major().get();
+    let minor = devid.minor().get();
 
     match (major, minor) {
         (1, 3) => Ok(Arc::new(null::Null)),

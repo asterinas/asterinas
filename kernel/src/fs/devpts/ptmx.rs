@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use device_id::DeviceId;
+use device_id::{DeviceId, MajorId, MinorId};
 
 use super::*;
 use crate::fs::{
@@ -9,7 +9,7 @@ use crate::fs::{
 };
 
 /// Same major number with Linux.
-const PTMX_MAJOR_NUM: u32 = 5;
+const PTMX_MAJOR_NUM: u16 = 5;
 /// Same minor number with Linux.
 const PTMX_MINOR_NUM: u32 = 2;
 
@@ -162,7 +162,7 @@ impl Device for Inner {
     }
 
     fn id(&self) -> DeviceId {
-        DeviceId::new(PTMX_MAJOR_NUM, PTMX_MINOR_NUM)
+        DeviceId::new(MajorId::new(PTMX_MAJOR_NUM), MinorId::new(PTMX_MINOR_NUM))
     }
 
     fn open(&self) -> Result<Box<dyn FileIo>> {

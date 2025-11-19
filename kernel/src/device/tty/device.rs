@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use device_id::DeviceId;
+use device_id::{DeviceId, MajorId, MinorId};
 
 use crate::{
     fs::{
@@ -31,6 +31,6 @@ impl Device for TtyDevice {
     }
 
     fn id(&self) -> DeviceId {
-        DeviceId::new(5, 0)
+        DeviceId::new(MajorId::new(5), MinorId::new(0))
     }
 }

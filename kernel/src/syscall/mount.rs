@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use device_id::DeviceId;
+
 use super::SyscallReturn;
 use crate::{
     fs::{
@@ -227,10 +229,25 @@ fn get_fs(
 
     let disk = if fs_type.properties().contains(FsProperties::NEED_DISK) {
         let devname = user_space.read_cstring(src_name_addr, MAX_FILENAME_LEN)?;
-        Some(
-            aster_block::get_device(devname.to_str().unwrap())
-                .ok_or(Error::with_message(Errno::ENOENT, "device does not exist"))?,
-        )
+        let path = devname.to_string_lossy();
+        let fs_path = FsPath::from_fd_and_path(AT_FDCWD, path.as_ref())?;
+        let path = ctx
+            .thread_local
+            .borrow_fs()
+            .resolver()
+            .read()
+            .lookup_no_follow(&fs_path)?;
+        if !path.type_().is_device() {
+            return_errno_with_message!(Errno::ENODEV, "the path is not a device file");
+        }
+
+        let id = DeviceId::from_encoded_u64(path.metadata().rdev);
+        let device = aster_block::lookup(id);
+        if device.is_none() {
+            return_errno_with_message!(Errno::ENODEV, "the device is not found");
+        }
+
+        device
     } else {
         None
     };

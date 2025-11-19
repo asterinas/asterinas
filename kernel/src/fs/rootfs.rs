@@ -8,12 +8,9 @@ use ostd::boot::boot_info;
 
 use super::{
     fs_resolver::{FsPath, FsResolver},
-    utils::{FileSystem, InodeMode, InodeType},
+    utils::{InodeMode, InodeType},
 };
-use crate::{
-    fs::path::{is_dot, PerMountFlags},
-    prelude::*,
-};
+use crate::{fs::path::is_dot, prelude::*};
 
 struct BoxedReader<'a>(Box<dyn Read + 'a>);
 
@@ -107,16 +104,5 @@ pub fn init_in_first_kthread(fs_resolver: &FsResolver) -> Result<()> {
     }
 
     println!("[kernel] rootfs is ready");
-    Ok(())
-}
-
-pub fn mount_fs_at(
-    fs: Arc<dyn FileSystem>,
-    fs_path: &FsPath,
-    fs_resolver: &FsResolver,
-    ctx: &Context,
-) -> Result<()> {
-    let target_path = fs_resolver.lookup(fs_path)?;
-    target_path.mount(fs, PerMountFlags::default(), ctx)?;
     Ok(())
 }

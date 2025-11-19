@@ -47,7 +47,6 @@ impl InodeType {
         *self == InodeType::Dir
     }
 
-    #[expect(dead_code)]
     pub fn is_device(&self) -> bool {
         *self == InodeType::BlockDevice || *self == InodeType::CharDevice
     }

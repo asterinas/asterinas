@@ -2,8 +2,6 @@
 
 use core::time::Duration;
 
-use device_id::DeviceId;
-
 use super::SyscallReturn;
 use crate::{
     fs::{file_table::FileDesc, fs_resolver::FsPath, utils::Metadata},
@@ -123,8 +121,8 @@ pub struct Statx {
 
 impl From<Metadata> for Statx {
     fn from(info: Metadata) -> Self {
-        let devid = DeviceId::from_encoded_u64(info.dev);
-        let rdevid = DeviceId::from_encoded_u64(info.rdev);
+        let (stx_dev_major, stx_dev_minor) = device_id::decode_device_numbers(info.dev);
+        let (stx_rdev_major, stx_rdev_minor) = device_id::decode_device_numbers(info.rdev);
 
         // FIXME: We assume it is always not mount_root.
         let stx_attributes = 0;
@@ -162,10 +160,10 @@ impl From<Metadata> for Statx {
             stx_btime: StatxTimestamp::from(info.atime),
             stx_ctime: StatxTimestamp::from(info.ctime),
             stx_mtime: StatxTimestamp::from(info.ctime),
-            stx_rdev_major: rdevid.major(),
-            stx_rdev_minor: rdevid.minor(),
-            stx_dev_major: devid.major(),
-            stx_dev_minor: devid.minor(),
+            stx_rdev_major,
+            stx_rdev_minor,
+            stx_dev_major,
+            stx_dev_minor,
             stx_mnt_id: 0,
             stx_dio_mem_align: 0,
             stx_dio_offset_align: 0,

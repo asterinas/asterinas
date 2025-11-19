@@ -10,8 +10,6 @@ mod super_block;
 mod upcase_table;
 mod utils;
 
-pub use fs::{ExfatFs, ExfatMountOptions};
-
 use crate::fs::exfat::fs::ExfatType;
 
 pub(super) fn init() {
@@ -26,18 +24,17 @@ mod test {
         bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio},
         BlockDevice, BlockDeviceMeta,
     };
+    use device_id::DeviceId;
     use ostd::{
         mm::{io_util::HasVmReaderWriter, FrameAllocOptions, Segment, VmIo, PAGE_SIZE},
         prelude::*,
     };
     use rand::{rngs::SmallRng, RngCore, SeedableRng};
 
+    use super::fs::{ExfatFs, ExfatMountOptions};
     use crate::{
         fs::{
-            exfat::{
-                constants::{EXFAT_RESERVED_CLUSTERS, MAX_NAME_LENGTH},
-                ExfatFs, ExfatMountOptions,
-            },
+            exfat::constants::{EXFAT_RESERVED_CLUSTERS, MAX_NAME_LENGTH},
             utils::{generate_random_operation, new_fs_in_memory, Inode, InodeMode, InodeType},
         },
         prelude::*,
@@ -110,6 +107,14 @@ mod test {
                 max_nr_segments_per_bio: usize::MAX,
                 nr_sectors: self.sectors_count(),
             }
+        }
+
+        fn name(&self) -> &str {
+            todo!()
+        }
+
+        fn id(&self) -> DeviceId {
+            todo!()
         }
     }
     /// Exfat disk image
