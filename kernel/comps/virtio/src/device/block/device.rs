@@ -20,7 +20,6 @@ use aster_block::{
 };
 use aster_util::mem_obj_slice::Slice;
 use device_id::{DeviceId, MinorId};
-use id_alloc::IdAlloc;
 use log::{debug, info};
 use ostd::{
     arch::trap::TrapFrame,
@@ -35,6 +34,7 @@ use crate::{
         block::{ReqType, RespStatus},
         VirtioDeviceError,
     },
+    id_alloc::SyncIdAlloc,
     queue::VirtQueue,
     transport::{ConfigManager, VirtioTransport},
     VIRTIO_BLOCK_MAJOR_ID,
@@ -206,7 +206,7 @@ struct DeviceInner {
     transport: SpinLock<Box<dyn VirtioTransport>>,
     block_requests: Arc<DmaStream>,
     block_responses: Arc<DmaStream>,
-    id_allocator: SpinLock<IdAlloc>,
+    id_allocator: SyncIdAlloc,
     submitted_requests: SpinLock<BTreeMap<u16, SubmittedRequest>>,
 }
 
@@ -254,7 +254,7 @@ impl DeviceInner {
             transport: SpinLock::new(transport),
             block_requests,
             block_responses,
-            id_allocator: SpinLock::new(IdAlloc::with_capacity(Self::QUEUE_SIZE as usize)),
+            id_allocator: SyncIdAlloc::with_capacity(Self::QUEUE_SIZE as usize),
             submitted_requests: SpinLock::new(BTreeMap::new()),
         });
 
@@ -304,7 +304,7 @@ impl DeviceInner {
                 Slice::new(&self.block_responses, id * RESP_SIZE..(id + 1) * RESP_SIZE);
             resp_slice.sync().unwrap();
             let resp: BlockResp = resp_slice.read_val(0).unwrap();
-            self.id_allocator.lock().free(id);
+            self.id_allocator.dealloc(id);
             match RespStatus::try_from(resp.status).unwrap() {
                 RespStatus::Ok => {}
                 // FIXME: Return an error instead of triggering a kernel panic
@@ -337,7 +337,7 @@ impl DeviceInner {
 
     /// Reads data from the device, this function is non-blocking.
     fn read(&self, bio_request: BioRequest) {
-        let id = self.id_allocator.disable_irq().lock().alloc().unwrap();
+        let id = self.id_allocator.alloc();
         let req_slice = {
             let req_slice = Slice::new(
                 self.block_requests.clone(),
@@ -404,7 +404,7 @@ impl DeviceInner {
 
     /// Writes data to the device, this function is non-blocking.
     fn write(&self, bio_request: BioRequest) {
-        let id = self.id_allocator.disable_irq().lock().alloc().unwrap();
+        let id = self.id_allocator.alloc();
         let req_slice = {
             let req_slice = Slice::new(
                 self.block_requests.clone(),
@@ -478,7 +478,7 @@ impl DeviceInner {
             return;
         }
 
-        let id = self.id_allocator.disable_irq().lock().alloc().unwrap();
+        let id = self.id_allocator.alloc();
         let req_slice = {
             let req_slice = Slice::new(&self.block_requests, id * REQ_SIZE..(id + 1) * REQ_SIZE);
             let req = BlockReq {
