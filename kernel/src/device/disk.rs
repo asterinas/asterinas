@@ -45,8 +45,11 @@ pub(super) fn init_in_first_process(fs_resolver: &FsResolver) -> Result<()> {
     Ok(())
 }
 
+/// Represents a block device inode in the filesystem.
+///
+/// Only implements the `Device` trait.
 #[derive(Debug)]
-struct BlockFile(Arc<dyn BlockDevice>);
+pub struct BlockFile(Arc<dyn BlockDevice>);
 
 impl BlockFile {
     fn new(device: Arc<dyn BlockDevice>) -> Self {
@@ -54,7 +57,27 @@ impl BlockFile {
     }
 }
 
-impl InodeIo for BlockFile {
+impl Device for BlockFile {
+    fn type_(&self) -> DeviceType {
+        DeviceType::Block
+    }
+
+    fn id(&self) -> DeviceId {
+        self.0.id()
+    }
+
+    fn open(&self) -> Result<Box<dyn FileIo>> {
+        Ok(Box::new(OpenBlockFile(self.0.clone())))
+    }
+}
+
+/// Represents an opened block device file ready for I/O operations.
+///
+/// Does not implement the `Device` trait but provides full implementations
+/// for I/O related traits.
+pub struct OpenBlockFile(Arc<dyn BlockDevice>);
+
+impl InodeIo for OpenBlockFile {
     fn read_at(
         &self,
         offset: usize,
@@ -80,33 +103,19 @@ impl InodeIo for BlockFile {
     }
 }
 
-impl Pollable for BlockFile {
+impl Pollable for OpenBlockFile {
     fn poll(&self, mask: IoEvents, _: Option<&mut PollHandle>) -> IoEvents {
         let events = IoEvents::IN | IoEvents::OUT;
         events & mask
     }
 }
 
-impl FileIo for BlockFile {
+impl FileIo for OpenBlockFile {
     fn check_seekable(&self) -> Result<()> {
         Ok(())
     }
 
     fn is_offset_aware(&self) -> bool {
         true
-    }
-}
-
-impl Device for BlockFile {
-    fn type_(&self) -> DeviceType {
-        DeviceType::Block
-    }
-
-    fn id(&self) -> DeviceId {
-        self.0.id()
-    }
-
-    fn open(&self) -> Result<Box<dyn FileIo>> {
-        Ok(Box::new(BlockFile(self.0.clone())))
     }
 }
