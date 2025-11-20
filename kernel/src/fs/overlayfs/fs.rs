@@ -21,11 +21,10 @@ use crate::{
     fs::{
         fs_resolver::FsPath,
         inode_handle::FileIo,
-        notify::FsEventPublisher,
         path::Path,
         registry::{FsProperties, FsType},
         utils::{
-            AccessMode, DirentCounter, DirentVisitor, FallocMode, FileSystem,
+            AccessMode, DirentCounter, DirentVisitor, Extension, FallocMode, FileSystem,
             FsEventSubscriberStats, FsFlags, Inode, InodeIo, InodeMode, InodeType, Metadata,
             MknodType, NAME_MAX, StatusFlags, SuperBlock, SymbolicLink, XATTR_VALUE_MAX_LEN,
             XattrName, XattrNamespace, XattrSetFlags, mkmod,
@@ -91,8 +90,8 @@ struct OverlayInode {
     /// This field is used to build hierarchical upper inodes.
     /// The lock is intended to implement `rename`.
     name_upon_creation: SpinLock<String>,
-    /// FS event publisher.
-    fs_event_publisher: FsEventPublisher,
+    /// The extension of this inode.
+    extension: Extension,
     /// The parent inode. `None` for root inode.
     parent: Option<Arc<OverlayInode>>,
     /// The mutable upper regular inode.
@@ -173,7 +172,7 @@ impl FileSystem for OverlayFs {
             ino,
             type_: InodeType::Dir,
             name_upon_creation: SpinLock::new(String::from("")),
-            fs_event_publisher: FsEventPublisher::new(),
+            extension: Extension::new(),
             parent: None,
             upper: Mutex::new(Some(upper_inode)),
             upper_is_opaque: false,
@@ -279,7 +278,7 @@ impl OverlayInode {
             ino: new_upper.ino(),
             type_,
             name_upon_creation: SpinLock::new(String::from(name)),
-            fs_event_publisher: FsEventPublisher::new(),
+            extension: Extension::new(),
             parent: Some(self.self_.upgrade().unwrap()),
             upper: Mutex::new(Some(new_upper)),
             upper_is_opaque,
@@ -452,8 +451,8 @@ impl OverlayInode {
         self.type_
     }
 
-    pub fn fs_event_publisher(&self) -> &FsEventPublisher {
-        &self.fs_event_publisher
+    pub fn extension(&self) -> &Extension {
+        &self.extension
     }
 
     pub fn page_cache(&self) -> Option<Arc<Vmo>> {
@@ -693,7 +692,7 @@ impl OverlayInode {
             ino,
             type_: type_.unwrap(),
             name_upon_creation: SpinLock::new(String::from(name)),
-            fs_event_publisher: FsEventPublisher::new(),
+            extension: Extension::new(),
             parent: Some(self.self_.upgrade().unwrap()),
             upper: Mutex::new(upper_child),
             upper_is_opaque,
@@ -934,7 +933,7 @@ impl Inode for OverlayInode {
     fn size(&self) -> usize;
     fn resize(&self, new_size: usize) -> Result<()>;
     fn metadata(&self) -> Metadata;
-    fn fs_event_publisher(&self) -> &FsEventPublisher;
+    fn extension(&self) -> &Extension;
     fn ino(&self) -> u64;
     fn type_(&self) -> InodeType;
     fn mode(&self) -> Result<InodeMode>;

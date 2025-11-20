@@ -2,10 +2,12 @@
 
 #![expect(unused_variables)]
 
-use core::{any::TypeId, time::Duration};
+use alloc::boxed::ThinBox;
+use core::time::Duration;
 
 use core2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
 use ostd::task::Task;
+use spin::Once;
 
 use super::{
     AccessMode, DirentVisitor, FallocMode, FileSystem, InodeMode, XattrName, XattrNamespace,
@@ -16,7 +18,6 @@ use crate::{
         device::{Device, DeviceType},
         fs_resolver::PathOrInode,
         inode_handle::FileIo,
-        notify::FsEventPublisher,
         path::Path,
         utils::StatusFlags,
     },
@@ -402,19 +403,7 @@ pub trait Inode: Any + InodeIo + Send + Sync {
     }
 
     /// Gets the extension of this inode.
-    fn extension(&self) -> Option<&Extension> {
-        None
-    }
-
-    // TODO: Add `FsEventPublisher` as an extension.
-    //
-    // Conceptually, an `FsEventPublisher` attached to an inode is also a kind of extension
-    // as this object is required by the VFS layer, not by FS implementations.
-    // But we do not add it to `Extension` because `FsEventPublisher` is used in the most time-critical path
-    // and looking up an extension object in an `Extension` incurs some extra overheads.
-    // If we could make `Extension` a zero-cost abstraction,
-    // then `FsEventPublisher` can be moved into `Extension`.
-    fn fs_event_publisher(&self) -> &FsEventPublisher;
+    fn extension(&self) -> &Extension;
 
     fn set_xattr(
         &self,
@@ -569,76 +558,34 @@ impl Debug for dyn Inode {
     }
 }
 
-/// An extension is a set of objects that is attached to
-/// an inode.
+/// An extension is a set of object groups that is attached to an inode.
 ///
-/// Each objects of an extension is of different types.
-/// In other words, types are used as the keys to get and
-/// set the objects in an extension.
+/// In this structure, we do not specify the exact type, but instead use [`Any`], which makes the
+/// FS types (e.g., [`Inode`]) independent of the kernel types. This allows the file system
+/// implementation to exist outside the kernel.
 #[derive(Debug)]
 pub struct Extension {
-    data: RwLock<BTreeMap<TypeId, Arc<dyn Any + Send + Sync>>>,
+    group1: Once<ThinBox<dyn Any + Send + Sync>>,
+    group2: Once<ThinBox<dyn Any + Send + Sync>>,
 }
 
 impl Extension {
+    /// Creates a new, empty extension.
     pub fn new() -> Self {
         Self {
-            data: RwLock::new(BTreeMap::new()),
+            group1: Once::new(),
+            group2: Once::new(),
         }
     }
 
-    /// Get an object of `Arc<T>`.
-    pub fn get<T: Any + Send + Sync>(&self) -> Option<Arc<T>> {
-        let read_guard = self.data.read();
-        read_guard
-            .get(&TypeId::of::<T>())
-            .and_then(|arc_any| Arc::downcast::<T>(arc_any.clone()).ok())
+    /// Gets the first extension group.
+    pub fn group1(&self) -> &Once<ThinBox<dyn Any + Send + Sync>> {
+        &self.group1
     }
 
-    /// Try to get an object of `Arc<T>`. If no object of the type exists,
-    /// put the default value for the type, then return it.
-    pub fn get_or_put_default<T: Any + Send + Sync + Default>(&self) -> Arc<T> {
-        let mut write_guard = self.data.write();
-        let type_id = TypeId::of::<T>();
-        let arc_any = write_guard.entry(type_id).or_insert_with(|| {
-            let obj = T::default();
-            Arc::new(obj) as Arc<dyn Any + Send + Sync>
-        });
-        Arc::downcast::<T>(arc_any.clone()).unwrap()
-    }
-
-    /// Put an object of `Arc<T>`. If there exists one object of the type,
-    /// then the old one is returned.
-    #[expect(dead_code)]
-    pub fn put<T: Any + Send + Sync>(&self, obj: Arc<T>) -> Option<Arc<T>> {
-        let mut write_guard = self.data.write();
-        write_guard
-            .insert(TypeId::of::<T>(), obj as Arc<dyn Any + Send + Sync>)
-            .and_then(|arc_any| Arc::downcast::<T>(arc_any).ok())
-    }
-
-    /// Delete an object of `Arc<T>`. If there exists one object of the type,
-    /// then the old one is returned.
-    #[expect(dead_code)]
-    pub fn del<T: Any + Send + Sync>(&self) -> Option<Arc<T>> {
-        let mut write_guard = self.data.write();
-        write_guard
-            .remove(&TypeId::of::<T>())
-            .and_then(|arc_any| Arc::downcast::<T>(arc_any).ok())
-    }
-}
-
-impl Clone for Extension {
-    fn clone(&self) -> Self {
-        Self {
-            data: RwLock::new(self.data.read().clone()),
-        }
-    }
-}
-
-impl Default for Extension {
-    fn default() -> Self {
-        Self::new()
+    /// Gets the second extension group.
+    pub fn group2(&self) -> &Once<ThinBox<dyn Any + Send + Sync>> {
+        &self.group2
     }
 }
 

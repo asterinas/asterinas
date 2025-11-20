@@ -9,7 +9,6 @@ use crate::{
     fs::{
         ext2::{FilePerm, Inode as Ext2Inode},
         inode_handle::FileIo,
-        notify::FsEventPublisher,
         utils::{
             AccessMode, DirentVisitor, Extension, FallocMode, FileSystem, Inode, InodeIo,
             InodeMode, InodeType, Metadata, MknodType, StatusFlags, SymbolicLink, XattrName,
@@ -234,12 +233,8 @@ impl Inode for Ext2Inode {
         self.fs()
     }
 
-    fn extension(&self) -> Option<&Extension> {
-        Some(self.extension())
-    }
-
-    fn fs_event_publisher(&self) -> &FsEventPublisher {
-        self.fs_event_publisher()
+    fn extension(&self) -> &Extension {
+        self.extension()
     }
 
     fn set_xattr(

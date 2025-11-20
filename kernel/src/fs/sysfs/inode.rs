@@ -6,12 +6,9 @@ use ostd::sync::RwLock;
 
 use super::fs::SysFs;
 use crate::{
-    fs::{
-        notify::FsEventPublisher,
-        utils::{
-            FileSystem, Inode, InodeMode, InodeType, Metadata,
-            systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
-        },
+    fs::utils::{
+        Extension, FileSystem, Inode, InodeMode, InodeType, Metadata,
+        systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
     },
     prelude::*,
 };
@@ -28,8 +25,8 @@ pub(super) struct SysFsInode {
     /// Currently, the only mutable metadata is `mode`,
     /// which allows user space to `chmod` an inode on sysfs.
     metadata: Metadata,
-    /// FS event publisher.
-    fs_event_publisher: FsEventPublisher,
+    /// The extension of this inode.
+    extension: Extension,
     /// The file mode (permissions) of this inode, protected by a lock.
     mode: RwLock<InodeMode>,
     /// Weak reference to the parent inode.
@@ -51,7 +48,7 @@ impl SysTreeInodeTy for SysFsInode {
         Arc::new_cyclic(|this| Self {
             node_kind,
             metadata,
-            fs_event_publisher: FsEventPublisher::new(),
+            extension: Extension::new(),
             mode: RwLock::new(mode),
             parent,
             this: this.clone(),
@@ -85,8 +82,8 @@ impl SysTreeInodeTy for SysFsInode {
             .expect("invalid weak reference to `self`")
     }
 
-    fn fs_event_publisher(&self) -> &FsEventPublisher {
-        &self.fs_event_publisher
+    fn extension(&self) -> &Extension {
+        &self.extension
     }
 }
 

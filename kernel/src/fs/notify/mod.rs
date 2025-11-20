@@ -17,7 +17,7 @@ use crate::{
 
 pub mod inotify;
 
-use super::utils::{Inode, InodeType};
+use super::utils::{Inode, InodeExt, InodeType};
 
 /// Publishes filesystem events to subscribers.
 ///
@@ -432,5 +432,7 @@ fn notify_parent(path: &Path, mut events: FsEvents, name: String) {
 /// functions in `fs/notify/`, which then call this function to broadcast events
 /// to all registered subscribers through the inode's publisher.
 fn notify_inode(inode: &Arc<dyn Inode>, events: FsEvents, name: Option<String>) {
-    inode.fs_event_publisher().publish_event(events, name);
+    if let Some(publisher) = inode.fs_event_publisher() {
+        publisher.publish_event(events, name);
+    }
 }

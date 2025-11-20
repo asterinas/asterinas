@@ -15,6 +15,7 @@
 #![feature(panic_can_unwind)]
 #![feature(register_tool)]
 #![feature(min_specialization)]
+#![feature(thin_box)]
 #![feature(trait_alias)]
 #![feature(associated_type_defaults)]
 #![feature(try_with_capacity)]
