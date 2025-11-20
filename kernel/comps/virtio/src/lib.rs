@@ -30,6 +30,7 @@ use crate::transport::VirtioTransport;
 
 pub mod device;
 mod dma_buf;
+mod id_alloc;
 pub mod queue;
 mod transport;
 
