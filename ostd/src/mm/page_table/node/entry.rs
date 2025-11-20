@@ -2,7 +2,7 @@
 
 //! This module provides accessors to the page table entries in a node.
 
-use super::{Child, ChildRef, PageTableGuard, PageTableNode, PteTrait};
+use super::{PageTableGuard, PageTableNode, PteState, PteStateRef, PteTrait};
 use crate::{
     mm::{
         HasPaddr, nr_subpage_per_huge,
@@ -20,7 +20,7 @@ use crate::{
 ///
 /// This is a static reference to an entry in a node that does not account for
 /// a dynamic reference count to the child. It can be used to create a owned
-/// handle, which is a [`Child`].
+/// handle, which is a [`PteState`].
 pub(in crate::mm) struct Entry<'a, 'rcu, C: PageTableConfig> {
     /// The page table entry.
     ///
@@ -38,11 +38,11 @@ pub(in crate::mm) struct Entry<'a, 'rcu, C: PageTableConfig> {
 
 impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     /// Gets a reference to the child.
-    pub(in crate::mm) fn to_ref(&self) -> ChildRef<'rcu, C> {
+    pub(in crate::mm) fn to_ref(&self) -> PteStateRef<'rcu, C> {
         // SAFETY:
         //  - The PTE outlives the reference (since we have `&self`).
         //  - The level matches the current node.
-        unsafe { ChildRef::from_pte(&self.pte, self.node.level()) }
+        unsafe { PteStateRef::from_pte(&self.pte, self.node.level()) }
     }
 
     /// Operates on the mapping properties of the entry.
@@ -79,25 +79,25 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     ///
     /// The method panics if the level of the new child does not match the
     /// current node.
-    pub(in crate::mm) fn replace(&mut self, new_child: Child<C>) -> Child<C> {
+    pub(in crate::mm) fn replace(&mut self, new_child: PteState<C>) -> PteState<C> {
         match &new_child {
-            Child::PageTable(node) => {
+            PteState::PageTable(node) => {
                 assert_eq!(node.level(), self.node.level() - 1);
             }
-            Child::Frame(_, level, _) => {
+            PteState::Mapped(_, level, _) => {
                 assert_eq!(*level, self.node.level());
             }
-            Child::None => {}
+            PteState::Absent => {}
         }
 
         // SAFETY:
-        //  - The PTE is not referenced by other `ChildRef`s (since we have `&mut self`).
+        //  - The PTE is not referenced by other `PteStateRef`s (since we have `&mut self`).
         //  - The level matches the current node.
-        let old_child = unsafe { Child::from_pte(self.pte, self.node.level()) };
+        let old_child = unsafe { PteState::from_pte(self.pte, self.node.level()) };
 
-        if old_child.is_none() && !new_child.is_none() {
+        if old_child.is_absent() && !new_child.is_absent() {
             *self.node.nr_children_mut() += 1;
-        } else if !old_child.is_none() && new_child.is_none() {
+        } else if !old_child.is_absent() && new_child.is_absent() {
             *self.node.nr_children_mut() -= 1;
         }
 
@@ -120,7 +120,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         &mut self,
         guard: &'rcu dyn InAtomicMode,
     ) -> Option<PageTableGuard<'rcu, C>> {
-        if !matches!(self.to_ref(), ChildRef::None) || self.node.level() == 1 {
+        if !matches!(self.to_ref(), PteStateRef::Absent) || self.node.level() == 1 {
             return None;
         }
 
@@ -135,7 +135,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         // Lock before writing the PTE, so no one else can operate on it.
         let pt_lock_guard = pt_ref.lock(guard);
 
-        self.pte = Child::PageTable(new_page).into_pte();
+        self.pte = PteState::PageTable(new_page).into_pte();
 
         // SAFETY:
         //  1. The index is within the bounds.
@@ -178,11 +178,11 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         for i in 0..nr_subpage_per_huge::<C>() {
             let small_pa = pa + i * page_size::<C>(level - 1);
             let mut entry = pt_lock_guard.entry(i);
-            let old = entry.replace(Child::Frame(small_pa, level - 1, prop));
-            debug_assert!(old.is_none());
+            let old = entry.replace(PteState::Mapped(small_pa, level - 1, prop));
+            debug_assert!(old.is_absent());
         }
 
-        self.pte = Child::PageTable(new_page).into_pte();
+        self.pte = PteState::PageTable(new_page).into_pte();
 
         // SAFETY:
         //  1. The index is within the bounds.

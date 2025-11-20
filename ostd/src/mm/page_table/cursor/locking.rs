@@ -11,8 +11,8 @@ use crate::{
     mm::{
         HasPaddr, Vaddr, nr_subpage_per_huge, paddr_to_vaddr,
         page_table::{
-            ChildRef, PageTable, PageTableConfig, PageTableGuard, PageTableNodeRef,
-            PagingConstsTrait, PagingLevel, PteScalar, PteTrait, load_pte, page_size, pte_index,
+            PageTable, PageTableConfig, PageTableGuard, PageTableNodeRef, PagingConstsTrait,
+            PagingLevel, PteScalar, PteStateRef, PteTrait, load_pte, page_size, pte_index,
         },
     },
     task::atomic_mode::InAtomicMode,
@@ -137,15 +137,15 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig>(
 
         let mut cur_entry = pt_guard.entry(start_idx);
         match cur_entry.to_ref() {
-            ChildRef::Frame(_, _, _) => {
+            PteStateRef::Mapped(_, _, _) => {
                 break;
             }
-            ChildRef::None => {
+            PteStateRef::Absent => {
                 let allocated_guard = cur_entry.alloc_if_none(guard).unwrap();
                 cur_pt_addr = allocated_guard.paddr();
                 cur_node_guard = Some(allocated_guard);
             }
-            ChildRef::PageTable(pt) => {
+            PteStateRef::PageTable(pt) => {
                 cur_pt_addr = pt.paddr();
                 cur_node_guard = None;
             }
@@ -188,7 +188,7 @@ fn dfs_acquire_lock<C: PageTableConfig>(
     for i in idx_range {
         let child = cur_node.entry(i);
         match child.to_ref() {
-            ChildRef::PageTable(pt) => {
+            PteStateRef::PageTable(pt) => {
                 let mut pt_guard = pt.lock(guard);
                 let child_node_va = cur_node_va + i * page_size::<C>(cur_level);
                 let child_node_va_end = child_node_va + page_size::<C>(cur_level);
@@ -197,7 +197,7 @@ fn dfs_acquire_lock<C: PageTableConfig>(
                 dfs_acquire_lock(guard, &mut pt_guard, child_node_va, va_start..va_end);
                 let _ = ManuallyDrop::new(pt_guard);
             }
-            ChildRef::None | ChildRef::Frame(_, _, _) => {}
+            PteStateRef::Absent | PteStateRef::Mapped(_, _, _) => {}
         }
     }
 }
@@ -223,7 +223,7 @@ unsafe fn dfs_release_lock<'rcu, C: PageTableConfig>(
     for i in idx_range.rev() {
         let child = cur_node.entry(i);
         match child.to_ref() {
-            ChildRef::PageTable(pt) => {
+            PteStateRef::PageTable(pt) => {
                 // SAFETY: The caller ensures that the node is locked and the new guard is unique.
                 let child_node = unsafe { pt.make_guard_unchecked(guard) };
                 let child_node_va = cur_node_va + i * page_size::<C>(cur_level);
@@ -234,7 +234,7 @@ unsafe fn dfs_release_lock<'rcu, C: PageTableConfig>(
                 // guards are forgotten.
                 unsafe { dfs_release_lock(guard, child_node, child_node_va, va_start..va_end) };
             }
-            ChildRef::None | ChildRef::Frame(_, _, _) => {}
+            PteStateRef::Absent | PteStateRef::Mapped(_, _, _) => {}
         }
     }
 }
@@ -269,14 +269,14 @@ pub(super) unsafe fn dfs_mark_stray_and_unlock<C: PageTableConfig>(
     for i in (0..nr_subpage_per_huge::<C>()).rev() {
         let child = sub_tree.entry(i);
         match child.to_ref() {
-            ChildRef::PageTable(pt) => {
+            PteStateRef::PageTable(pt) => {
                 // SAFETY: The caller ensures that the node is locked and the new guard is unique.
                 let locked_pt = unsafe { pt.make_guard_unchecked(rcu_guard) };
                 // SAFETY: The caller ensures that all the nodes in the sub-tree are locked and all
                 // guards are forgotten.
                 num_frames += unsafe { dfs_mark_stray_and_unlock(rcu_guard, locked_pt) };
             }
-            ChildRef::None | ChildRef::Frame(_, _, _) => {}
+            PteStateRef::Absent | PteStateRef::Mapped(_, _, _) => {}
         }
     }
 
