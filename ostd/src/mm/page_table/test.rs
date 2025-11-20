@@ -209,12 +209,12 @@ mod create_page_table {
             let kernel_entry = kernel_root.entry(i);
             let user_entry = user_root.entry(i);
 
-            let ChildRef::PageTable(kernel_node) = kernel_entry.to_ref() else {
+            let PteStateRef::PageTable(kernel_node) = kernel_entry.to_ref() else {
                 panic!("Expected a node reference at {} of kernel root PT", i);
             };
             assert_eq!(kernel_node.level(), PagingConsts::NR_LEVELS - 1);
 
-            let ChildRef::PageTable(user_node) = user_entry.to_ref() else {
+            let PteStateRef::PageTable(user_node) = user_entry.to_ref() else {
                 panic!("Expected a node reference at {} of user root PT", i);
             };
             assert_eq!(user_node.level(), PagingConsts::NR_LEVELS - 1);
@@ -237,7 +237,7 @@ mod create_page_table {
         for i in shared_range {
             assert!(matches!(
                 root_node.entry(i).to_ref(),
-                ChildRef::PageTable(_)
+                PteStateRef::PageTable(_)
             ));
         }
     }

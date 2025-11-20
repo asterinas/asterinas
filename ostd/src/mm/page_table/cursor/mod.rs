@@ -34,8 +34,8 @@ use core::{fmt::Debug, marker::PhantomData, mem::ManuallyDrop, ops::Range};
 use align_ext::AlignExt;
 
 use super::{
-    Child, ChildRef, Entry, PageTable, PageTableConfig, PageTableError, PageTableGuard,
-    PagingConstsTrait, PagingLevel, page_size, pte_index,
+    Entry, PageTable, PageTableConfig, PageTableError, PageTableGuard, PagingConstsTrait,
+    PagingLevel, PteState, PteStateRef, page_size, pte_index,
 };
 use crate::{
     mm::{
@@ -156,14 +156,14 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
 
             let cur_entry = self.cur_entry();
             let item = match cur_entry.to_ref() {
-                ChildRef::PageTable(pt) => {
+                PteStateRef::PageTable(pt) => {
                     // SAFETY: The `pt` must be locked and no other guards exist.
                     let guard = unsafe { pt.make_guard_unchecked(rcu_guard) };
                     self.push_level(guard);
                     continue;
                 }
-                ChildRef::None => None,
-                ChildRef::Frame(pa, ch_level, prop) => {
+                PteStateRef::Absent => None,
+                PteStateRef::Mapped(pa, ch_level, prop) => {
                     debug_assert_eq!(ch_level, level);
 
                     // SAFETY:
@@ -233,7 +233,7 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
 
             let mut cur_entry = self.cur_entry();
             match cur_entry.to_ref() {
-                ChildRef::PageTable(pt) => {
+                PteStateRef::PageTable(pt) => {
                     if find_unmap_subtree
                         && cur_entry_fits_range
                         && (C::TOP_LEVEL_CAN_UNMAP || self.level != C::NR_LEVELS)
@@ -253,11 +253,11 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
                     }
                     continue;
                 }
-                ChildRef::None => {
+                PteStateRef::Absent => {
                     self.move_forward();
                     continue;
                 }
-                ChildRef::Frame(_, _, _) => {
+                PteStateRef::Mapped(_, _, _) => {
                     if cur_entry_fits_range || !split_huge {
                         return Some(cur_va);
                     }
@@ -476,23 +476,23 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
             // We are at a higher level, go down.
             let mut cur_entry = self.0.cur_entry();
             match cur_entry.to_ref() {
-                ChildRef::PageTable(pt) => {
+                PteStateRef::PageTable(pt) => {
                     // SAFETY: The `pt` must be locked and no other guards exist.
                     let pt_guard = unsafe { pt.make_guard_unchecked(rcu_guard) };
                     self.0.push_level(pt_guard);
                 }
-                ChildRef::None => {
+                PteStateRef::Absent => {
                     let child_guard = cur_entry.alloc_if_none(rcu_guard).unwrap();
                     self.0.push_level(child_guard);
                 }
-                ChildRef::Frame(_, _, _) => {
+                PteStateRef::Mapped(_, _, _) => {
                     let split_child = cur_entry.split_if_mapped_huge(rcu_guard).unwrap();
                     self.0.push_level(split_child);
                 }
             }
         }
 
-        let frag = self.replace_cur_entry(Child::Frame(pa, level, prop));
+        let frag = self.replace_cur_entry(PteState::Mapped(pa, level, prop));
 
         self.0.move_forward();
 
@@ -534,7 +534,7 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     pub unsafe fn take_next(&mut self, len: usize) -> Option<PageTableFrag<C>> {
         self.0.find_next_impl(len, true, true)?;
 
-        let frag = self.replace_cur_entry(Child::None);
+        let frag = self.replace_cur_entry(PteState::Absent);
 
         self.0.move_forward();
 
@@ -583,7 +583,7 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
         Some(protected_va)
     }
 
-    fn replace_cur_entry(&mut self, new_child: Child<C>) -> Option<PageTableFrag<C>> {
+    fn replace_cur_entry(&mut self, new_child: PteState<C>) -> Option<PageTableFrag<C>> {
         let rcu_guard = self.0.rcu_guard;
 
         let va = self.0.va;
@@ -591,8 +591,8 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
 
         let old = self.0.cur_entry().replace(new_child);
         match old {
-            Child::None => None,
-            Child::Frame(pa, ch_level, prop) => {
+            PteState::Absent => None,
+            PteState::Mapped(pa, ch_level, prop) => {
                 debug_assert_eq!(ch_level, level);
 
                 // SAFETY:
@@ -605,7 +605,7 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
                 let item = unsafe { C::item_from_raw(pa, level, prop) };
                 Some(PageTableFrag::Mapped { va, item })
             }
-            Child::PageTable(pt) => {
+            PteState::PageTable(pt) => {
                 debug_assert_eq!(pt.level(), level - 1);
 
                 if !C::TOP_LEVEL_CAN_UNMAP && level == C::NR_LEVELS {
