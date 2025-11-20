@@ -38,7 +38,6 @@ impl Debug for dyn Device {
 pub enum DeviceType {
     Char,
     Block,
-    #[expect(dead_code)]
     Misc,
 }
 
