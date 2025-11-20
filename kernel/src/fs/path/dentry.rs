@@ -101,16 +101,18 @@ impl Dentry {
         DentryFlags::from_bits(flags).unwrap()
     }
 
-    /// Checks if this dentry is a descendant (child, grandchild, or
-    /// great-grandchild, etc.) of another dentry.
-    pub(super) fn is_descendant_of(&self, ancestor: &Arc<Self>) -> bool {
-        let mut parent = self.parent();
-        while let Some(p) = parent {
-            if Arc::ptr_eq(&p, ancestor) {
+    /// Checks if this dentry is a descendant of or the same as the given
+    /// ancestor dentry.
+    pub(super) fn is_equal_or_descendant_of(&self, ancestor: &Arc<Self>) -> bool {
+        let mut current = Some(self.this());
+
+        while let Some(node) = current {
+            if Arc::ptr_eq(&node, ancestor) {
                 return true;
             }
-            parent = p.parent();
+            current = node.parent();
         }
+
         false
     }
 
