@@ -175,15 +175,8 @@ impl Dentry {
     pub(super) fn lookup_via_fs(&self, name: &str) -> Result<Arc<Dentry>> {
         let children = self.children.upread();
 
-        let inode = match self.inode.lookup(name) {
-            Ok(inode) => inode,
-            Err(e) => {
-                if e.error() == Errno::ENOENT && self.is_dentry_cacheable() {
-                    children.upgrade().insert_negative(String::from(name));
-                }
-                return Err(e);
-            }
-        };
+        // TODO: Add a right implementation to cache negative dentry.
+        let inode = self.inode.lookup(name)?;
         let name = String::from(name);
         let target = Self::new(inode, DentryOptions::Leaf((name.clone(), self.this())));
 
@@ -446,6 +439,7 @@ impl DentryChildren {
     }
 
     /// Inserts a negative dentry.
+    #[expect(dead_code)]
     fn insert_negative(&mut self, name: String) {
         let _ = self.dentries.insert(name, None);
     }
