@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::sync::{Arc, Weak};
 use core::{
     mem::{offset_of, size_of},
     time::Duration,
 };
 
 use aster_util::{field_ptr, safe_ptr::SafePtr};
-use device_id::{DeviceId, MajorId, MinorId};
+use device_id::{DeviceId, MinorId};
 use ostd::{
     const_assert,
     mm::{
@@ -22,9 +23,9 @@ use tdx_guest::{
 };
 
 use crate::{
+    device::char::{CharDevice, DevtmpfsName},
     events::IoEvents,
     fs::{
-        device::{Device, DeviceType},
         inode_handle::FileIo,
         utils::{InodeIo, IoctlCmd, StatusFlags},
     },
@@ -32,19 +33,38 @@ use crate::{
     process::signal::{PollHandle, Pollable},
 };
 
-pub struct TdxGuest;
+const TDX_GUEST_MINOR: u32 = 0x7b;
 
-impl Device for TdxGuest {
-    fn type_(&self) -> DeviceType {
-        DeviceType::Misc
+/// The `/dev/tdx_guest` device.
+#[derive(Debug)]
+pub struct TdxGuest {
+    id: DeviceId,
+    weak_self: Weak<Self>,
+}
+
+impl TdxGuest {
+    pub fn new() -> Arc<Self> {
+        let major = super::MISC_MAJOR.get().unwrap().get();
+        let minor = MinorId::new(TDX_GUEST_MINOR);
+
+        Arc::new_cyclic(|weak| Self {
+            id: DeviceId::new(major, minor),
+            weak_self: weak.clone(),
+        })
+    }
+}
+
+impl CharDevice for TdxGuest {
+    fn devtmpfs_name(&self) -> DevtmpfsName {
+        DevtmpfsName::new("tdx_guest", None)
     }
 
     fn id(&self) -> DeviceId {
-        DeviceId::new(MajorId::new(0xa), MinorId::new(0x7b))
+        self.id
     }
 
-    fn open(&self) -> Result<Box<dyn FileIo>> {
-        Ok(Box::new(Self))
+    fn open(&self) -> Result<Arc<dyn FileIo>> {
+        Ok(self.weak_self.upgrade().unwrap())
     }
 }
 
