@@ -8,9 +8,15 @@
 use alloc::vec::Vec;
 use core::mem::ManuallyDrop;
 
+use crate::sync::SpinLock;
+
 /// A hook to be invoked on QEMU exit for dumping the code coverage data.
 pub(crate) fn on_qemu_exit() {
     let mut coverage = ManuallyDrop::new(Vec::new());
+    static COV_LOCK: SpinLock<()> = SpinLock::new(());
+    let _guard = COV_LOCK.disable_irq().lock();
+    // SAFETY: The above lock ensures that this function is not called
+    // concurrently by multiple threads.
     unsafe {
         minicov::capture_coverage(&mut *coverage).unwrap();
     }
