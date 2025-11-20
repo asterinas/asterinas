@@ -25,7 +25,7 @@ use ostd::{
     sync::RwMutex,
 };
 
-use crate::{device::tdxguest::tdx_get_quote, fs::configfs};
+use crate::{device::misc::tdxguest::tdx_get_quote, fs::configfs};
 
 #[derive(Debug)]
 struct Tsm {

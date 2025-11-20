@@ -1,24 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
+mod char;
 mod disk;
-mod full;
-mod null;
+mod mem;
+pub mod misc;
 mod pty;
-mod random;
 mod shm;
 pub mod tty;
-mod urandom;
-mod zero;
-
-#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
-pub mod tdxguest;
 
 use alloc::format;
 
 use device_id::DeviceId;
+pub use mem::{getrandom, geturandom};
 pub use pty::{new_pty_pair, PtyMaster, PtySlave};
-pub use random::Random;
-pub use urandom::Urandom;
 
 use crate::{
     fs::{
@@ -32,6 +26,8 @@ use crate::{
 
 pub fn init_in_first_kthread() {
     disk::init_in_first_kthread();
+    mem::init_in_first_kthread();
+    misc::init_in_first_kthread();
 }
 
 /// Init the device node in fs, must be called after mounting rootfs.
@@ -42,12 +38,6 @@ pub fn init_in_first_process(ctx: &Context) -> Result<()> {
     // Mount DevFS
     let dev_path = fs_resolver.lookup(&FsPath::try_from("/dev")?)?;
     dev_path.mount(RamFs::new(), PerMountFlags::default(), ctx)?;
-
-    let null = Arc::new(null::Null);
-    add_node(null, "null", &fs_resolver)?;
-
-    let zero = Arc::new(zero::Zero);
-    add_node(zero, "zero", &fs_resolver)?;
 
     tty::init();
 
@@ -61,23 +51,11 @@ pub fn init_in_first_process(ctx: &Context) -> Result<()> {
         add_node(tty.clone(), &format!("tty{}", index), &fs_resolver)?;
     }
 
-    #[cfg(target_arch = "x86_64")]
-    ostd::if_tdx_enabled!({
-        add_node(Arc::new(tdxguest::TdxGuest), "tdx_guest", &fs_resolver)?;
-    });
-
-    let random = Arc::new(random::Random);
-    add_node(random, "random", &fs_resolver)?;
-
-    let urandom = Arc::new(urandom::Urandom);
-    add_node(urandom, "urandom", &fs_resolver)?;
-
-    let full = Arc::new(full::Full);
-    add_node(full, "full", &fs_resolver)?;
-
     pty::init_in_first_process(&fs_resolver, ctx)?;
 
     shm::init_in_first_process(&fs_resolver, ctx)?;
+
+    char::init_in_first_process(&fs_resolver)?;
 
     disk::init_in_first_process(&fs_resolver)?;
 
@@ -93,11 +71,6 @@ pub fn get_device(devid: DeviceId) -> Result<Arc<dyn Device>> {
     let minor = devid.minor().get();
 
     match (major, minor) {
-        (1, 3) => Ok(Arc::new(null::Null)),
-        (1, 5) => Ok(Arc::new(zero::Zero)),
-        (1, 7) => Ok(Arc::new(full::Full)),
-        (1, 8) => Ok(Arc::new(random::Random)),
-        (1, 9) => Ok(Arc::new(urandom::Urandom)),
         (4, minor) => {
             let Some(tty) = tty::iter_n_tty().nth(minor as usize) else {
                 return_errno_with_message!(Errno::EINVAL, "the TTY minor ID is invalid");
@@ -105,6 +78,11 @@ pub fn get_device(devid: DeviceId) -> Result<Arc<dyn Device>> {
             Ok(tty.clone())
         }
         (5, 0) => Ok(Arc::new(tty::TtyDevice)),
-        _ => return_errno_with_message!(Errno::EINVAL, "the device ID is invalid or unsupported"),
+        _ => char::lookup(devid)
+            .map(|device| Arc::new(char::CharFile::new(device)) as Arc<dyn Device>)
+            .ok_or(Error::with_message(
+                Errno::EINVAL,
+                "the device ID is invalid or unsupported",
+            )),
     }
 }
