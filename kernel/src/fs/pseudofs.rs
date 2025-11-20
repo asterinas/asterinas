@@ -4,10 +4,9 @@ use core::time::Duration;
 
 use spin::Once;
 
-use super::utils::{InodeIo, StatusFlags};
+use super::utils::{Extension, InodeIo, StatusFlags};
 use crate::{
     fs::{
-        notify::FsEventPublisher,
         registry::{FsProperties, FsType},
         utils::{
             FileSystem, FsEventSubscriberStats, FsFlags, Inode, InodeMode, InodeType, Metadata,
@@ -182,7 +181,7 @@ const ANON_INODEFS_MAGIC: u64 = 0x09041934;
 /// A pseudo inode that does not correspond to any real path in the file system.
 pub struct PseudoInode {
     metadata: SpinLock<Metadata>,
-    fs_events_publisher: FsEventPublisher,
+    extension: Extension,
     fs: Weak<PseudoFs>,
 }
 
@@ -215,7 +214,7 @@ impl PseudoInode {
         };
         PseudoInode {
             metadata: SpinLock::new(metadata),
-            fs_events_publisher: FsEventPublisher::new(),
+            extension: Extension::new(),
             fs,
         }
     }
@@ -260,8 +259,8 @@ impl Inode for PseudoInode {
         *self.metadata.lock()
     }
 
-    fn fs_event_publisher(&self) -> &FsEventPublisher {
-        &self.fs_events_publisher
+    fn extension(&self) -> &Extension {
+        &self.extension
     }
 
     fn ino(&self) -> u64 {
