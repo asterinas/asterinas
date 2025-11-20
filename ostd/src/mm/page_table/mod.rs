@@ -334,7 +334,7 @@ impl PageTable<KernelPtConfig> {
         for i in KernelPtConfig::TOP_LEVEL_INDEX_RANGE {
             let root_entry = root_node.entry(i);
             let child = root_entry.to_ref();
-            let ChildRef::PageTable(pt) = child else {
+            let PteStateRef::PageTable(pt) = child else {
                 panic!("The kernel page table doesn't contain shared nodes");
             };
 
