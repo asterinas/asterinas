@@ -26,7 +26,7 @@ use crate::{
         notify::{FsEventSubscriber, FsEvents},
         path::{Path, RESERVED_MOUNT_ID},
         pseudofs::anon_inodefs_shared_inode,
-        utils::{AccessMode, CreationFlags, Inode, StatusFlags},
+        utils::{AccessMode, CreationFlags, Inode, InodeExt, StatusFlags},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
@@ -75,7 +75,11 @@ impl Drop for InotifyFile {
                 continue;
             };
 
-            if inode.fs_event_publisher().remove_subscriber(&subscriber) {
+            if inode
+                .fs_event_publisher()
+                .unwrap()
+                .remove_subscriber(&subscriber)
+            {
                 inode.fs().fs_event_subscriber_stats().remove_subscriber();
             }
         }
@@ -163,7 +167,11 @@ impl InotifyFile {
             _ => return_errno_with_message!(Errno::EINVAL, "watch not found"),
         };
 
-        if inode.fs_event_publisher().remove_subscriber(&subscriber) {
+        if inode
+            .fs_event_publisher()
+            .unwrap()
+            .remove_subscriber(&subscriber)
+        {
             inode.fs().fs_event_subscriber_stats().remove_subscriber();
         }
         Ok(())
@@ -176,7 +184,9 @@ impl InotifyFile {
         interesting: InotifyEvents,
         options: InotifyControls,
     ) -> Result<u32> {
-        let publisher = path.inode().fs_event_publisher();
+        let Some(publisher) = path.inode().fs_event_publisher() else {
+            return_errno_with_message!(Errno::ENOENT, "watch not found");
+        };
         let inotify_file = self.this();
 
         let result = publisher.find_subscriber_and_process(|subscriber| {
@@ -214,7 +224,7 @@ impl InotifyFile {
 
         if path
             .inode()
-            .fs_event_publisher()
+            .fs_event_publisher_or_init()
             .add_subscriber(subscriber.clone())
         {
             path.inode()

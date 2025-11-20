@@ -8,15 +8,15 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 pub use dyn_cap::InodeHandle;
 
-use super::utils::InodeIo;
+use super::utils::{InodeExt, InodeIo};
 use crate::{
     events::IoEvents,
     fs::{
         file_handle::Mappable,
         path::Path,
         utils::{
-            DirentVisitor, FallocMode, FileRange, FlockItem, FlockList, Inode, InodeType,
-            OFFSET_MAX, RangeLockItem, RangeLockList, RangeLockType, SeekFrom, StatusFlags,
+            DirentVisitor, FallocMode, FileRange, FlockItem, Inode, InodeType, OFFSET_MAX,
+            RangeLockItem, RangeLockType, SeekFrom, StatusFlags,
         },
     },
     prelude::*,
@@ -211,13 +211,12 @@ impl HandleInner {
     }
 
     pub(self) fn test_range_lock(&self, mut lock: RangeLockItem) -> Result<RangeLockItem> {
-        let Some(extension) = self.path.inode().extension() else {
-            // Range locks are not supported. So nothing is locked.
-            lock.set_type(RangeLockType::Unlock);
-            return Ok(lock);
-        };
-
-        let Some(range_lock_list) = extension.get::<RangeLockList>() else {
+        let Some(range_lock_list) = self
+            .path
+            .inode()
+            .fs_lock_context()
+            .map(|c| c.range_lock_list())
+        else {
             // The lock list is not present. So nothing is locked.
             lock.set_type(RangeLockType::Unlock);
             return Ok(lock);
@@ -233,24 +232,15 @@ impl HandleInner {
             return Ok(());
         }
 
-        let Some(extension) = self.path.inode().extension() else {
-            // TODO: Figure out whether range locks are supported on all inodes.
-            warn!("the inode does not have support for range locks; this operation will fail");
-            return_errno_with_message!(Errno::ENOLCK, "range locks are not supported");
-        };
-
-        let range_lock_list = match extension.get::<RangeLockList>() {
-            Some(list) => list,
-            None => extension.get_or_put_default::<RangeLockList>(),
-        };
+        let range_lock_list = self
+            .path
+            .inode()
+            .fs_lock_context_or_init()
+            .range_lock_list();
         range_lock_list.set_lock(lock, is_nonblocking)
     }
 
     pub(self) fn release_range_locks(&self) {
-        if self.path.inode().extension().is_none() {
-            return;
-        }
-
         let range_lock = RangeLockItem::new(
             RangeLockType::Unlock,
             FileRange::new(0, OFFSET_MAX).unwrap(),
@@ -259,31 +249,23 @@ impl HandleInner {
     }
 
     pub(self) fn unlock_range_lock(&self, lock: &RangeLockItem) {
-        if let Some(extension) = self.path.inode().extension()
-            && let Some(range_lock_list) = extension.get::<RangeLockList>()
+        if let Some(range_lock_list) = self
+            .path
+            .inode()
+            .fs_lock_context()
+            .map(|c| c.range_lock_list())
         {
             range_lock_list.unlock(lock);
         }
     }
 
     pub(self) fn set_flock(&self, lock: FlockItem, is_nonblocking: bool) -> Result<()> {
-        let Some(extension) = self.path.inode().extension() else {
-            // TODO: Figure out whether flocks are supported on all inodes.
-            warn!("the inode does not have support for flocks; this operation will fail");
-            return_errno_with_message!(Errno::ENOLCK, "flocks are not supported");
-        };
-
-        let flock_list = match extension.get::<FlockList>() {
-            Some(list) => list,
-            None => extension.get_or_put_default::<FlockList>(),
-        };
+        let flock_list = self.path.inode().fs_lock_context_or_init().flock_list();
         flock_list.set_lock(lock, is_nonblocking)
     }
 
     pub(self) fn unlock_flock(&self, req_owner: &InodeHandle) {
-        if let Some(extension) = self.path.inode().extension()
-            && let Some(flock_list) = extension.get::<FlockList>()
-        {
+        if let Some(flock_list) = self.path.inode().fs_lock_context().map(|c| c.flock_list()) {
             flock_list.unlock(req_owner);
         }
     }

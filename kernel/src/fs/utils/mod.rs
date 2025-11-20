@@ -15,6 +15,7 @@ pub use id_bitmap::IdBitmap;
 pub use inode::{
     Extension, Inode, InodeIo, InodeType, Metadata, MknodType, Permission, SymbolicLink,
 };
+pub use inode_ext::InodeExt;
 pub use inode_mode::InodeMode;
 pub(crate) use inode_mode::{chmod, mkmod, perms_to_mask, who_and_perms_to_mask, who_to_mask};
 pub use open_args::OpenArgs;
@@ -38,6 +39,7 @@ mod flock;
 mod fs;
 mod id_bitmap;
 mod inode;
+mod inode_ext;
 mod inode_mode;
 pub mod ioctl_defs;
 mod open_args;

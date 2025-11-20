@@ -13,13 +13,12 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::FdFlags,
-        notify::FsEventPublisher,
         path::RESERVED_MOUNT_ID,
         pipe::{Pipe, common::PipeHandle},
         pseudofs::{PseudoInode, pipefs_singleton},
         utils::{
-            AccessMode, CreationFlags, FileSystem, Inode, InodeIo, InodeMode, InodeType, Metadata,
-            StatusFlags, mkmod,
+            AccessMode, CreationFlags, Extension, FileSystem, Inode, InodeIo, InodeMode, InodeType,
+            Metadata, StatusFlags, mkmod,
         },
     },
     prelude::*,
@@ -221,7 +220,7 @@ impl Inode for AnonPipeInode {
     fn size(&self) -> usize;
     fn resize(&self, _new_size: usize) -> Result<()>;
     fn metadata(&self) -> Metadata;
-    fn fs_event_publisher(&self) -> &FsEventPublisher;
+    fn extension(&self) -> &Extension;
     fn ino(&self) -> u64;
     fn type_(&self) -> InodeType;
     fn mode(&self) -> Result<InodeMode>;
