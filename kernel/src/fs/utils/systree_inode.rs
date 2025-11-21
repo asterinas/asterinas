@@ -13,7 +13,7 @@ use aster_systree::{
     SysAttr, SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj, SysStr, SysSymlink,
 };
 
-use super::InodeIo;
+use super::{Extension, InodeIo};
 use crate::{
     fs::{
         inode_handle::FileIo,
@@ -578,6 +578,10 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
 
     default fn is_dentry_cacheable(&self) -> bool {
         true
+    }
+
+    default fn extension(&self) -> Option<&Extension> {
+        None
     }
 }
 

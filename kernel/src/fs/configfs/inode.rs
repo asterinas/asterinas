@@ -9,7 +9,7 @@ use crate::{
         configfs::fs::ConfigFs,
         utils::{
             systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
-            FileSystem, Inode, InodeMode, Metadata,
+            Extension, FileSystem, Inode, InodeMode, Metadata,
         },
     },
     prelude::*,
@@ -23,6 +23,8 @@ pub struct ConfigInode {
     metadata: Metadata,
     /// The file mode (permissions) of this inode, protected by a lock.
     mode: RwLock<InodeMode>,
+    /// The inode extension.
+    extension: Extension,
     /// Weak reference to the parent inode.
     parent: Weak<ConfigInode>,
     /// Weak self-reference for cyclic data structures.
@@ -43,6 +45,7 @@ impl SysTreeInodeTy for ConfigInode {
             node_kind,
             metadata,
             mode: RwLock::new(mode),
+            extension: Extension::new(),
             parent,
             this: this.clone(),
         })
@@ -77,5 +80,9 @@ impl SysTreeInodeTy for ConfigInode {
 impl Inode for ConfigInode {
     fn fs(&self) -> Arc<dyn FileSystem> {
         ConfigFs::singleton().clone()
+    }
+
+    fn extension(&self) -> Option<&Extension> {
+        Some(&self.extension)
     }
 }
