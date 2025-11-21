@@ -31,6 +31,15 @@ extern crate controlled;
 #[macro_use]
 extern crate getset;
 
+// We should declare components that are not explicitly used by others here to
+// ensure they are linked into the final binary. Otherwise,
+// `inventory::submit`ted `init` functions in those components will be discarded
+// by the linker.
+//
+// See <https://github.com/dtolnay/inventory/issues/50>.
+extern crate aster_mlsdisk;
+extern crate aster_uart;
+
 #[cfg_attr(target_arch = "x86_64", path = "arch/x86/mod.rs")]
 #[cfg_attr(target_arch = "riscv64", path = "arch/riscv/mod.rs")]
 #[cfg_attr(target_arch = "loongarch64", path = "arch/loongarch/mod.rs")]

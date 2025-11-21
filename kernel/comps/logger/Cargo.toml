@@ -8,6 +8,9 @@ edition = "2021"
 [dependencies]
 component = { path = "../../libs/comp-sys/component" }
 aster-console = { path = "../console" }
+aster-framebuffer = { path = "../framebuffer" }
+aster-uart = { path = "../uart" }
+aster-virtio = { path = "../virtio" }
 log = "0.4"
 ostd = { path = "../../../ostd" }
 owo-colors = { version = "3", optional = true }

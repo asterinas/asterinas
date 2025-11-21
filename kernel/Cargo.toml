@@ -20,6 +20,7 @@ aster-virtio = { path = "comps/virtio" }
 aster-rights = { path = "libs/aster-rights" }
 aster-systree = { path = "comps/systree" }
 aster-keyboard = { path = "comps/keyboard" }
+aster-uart = { path = "comps/uart" }
 component = { path = "libs/comp-sys/component" }
 controlled = { path = "libs/comp-sys/controlled" }
 logo-ascii-art = { path = "libs/logo-ascii-art" }
