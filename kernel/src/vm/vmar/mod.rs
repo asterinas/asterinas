@@ -15,7 +15,7 @@ use ostd::{
         io_util::HasVmReaderWriter,
         tlb::TlbFlushOp,
         vm_space::{CursorMut, VmQueriedItem},
-        CachePolicy, PageFlags, PageProperty, UFrame, VmSpace, MAX_USERSPACE_VADDR,
+        CachePolicy, PageFlags, UFrame, VmSpace, MAX_USERSPACE_VADDR,
     },
     sync::RwMutexReadGuard,
     task::disable_preempt,
@@ -1355,7 +1355,7 @@ impl Drop for RssDelta<'_> {
 mod test {
     use ostd::{
         io::IoMem,
-        mm::{CachePolicy, FrameAllocOptions},
+        mm::{CachePolicy, FrameAllocOptions, PageProperty},
         prelude::*,
     };
 

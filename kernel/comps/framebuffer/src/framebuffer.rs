@@ -1,16 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
+use alloc::{sync::Arc, vec::Vec};
 
 use ostd::{
     boot::boot_info,
     io::IoMem,
     mm::{HasSize, VmIo},
-    Result,
+    sync::Mutex,
+    Error, Result,
 };
 use spin::Once;
 
 use crate::{Pixel, PixelFormat, RenderedPixel};
+
+/// Maximum number of colormap entries (standard 8-bit palette)
+pub const MAX_CMAP_SIZE: usize = 256;
 
 /// The framebuffer used for text or graphical output.
 ///
@@ -27,6 +31,30 @@ pub struct FrameBuffer {
     height: usize,
     line_size: usize,
     pixel_format: PixelFormat,
+    cmap: Mutex<FbCmap>,
+}
+
+/// A single entry in the color map with 16-bit color values.
+///
+/// Linux framebuffer colormap uses 16-bit values (0-65535) for each color channel
+/// to support high precision color mapping.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ColorMapEntry {
+    /// Red color value (16-bit)
+    pub red: u16,
+    /// Green color value (16-bit)
+    pub green: u16,
+    /// Blue color value (16-bit)
+    pub blue: u16,
+    /// Transparency value (16-bit)
+    pub transp: u16,
+}
+
+/// Internal framebuffer colormap structure.
+#[derive(Debug, Clone)]
+struct FbCmap {
+    /// Color map entries
+    entries: Vec<ColorMapEntry>,
 }
 
 pub static FRAMEBUFFER: Once<Arc<FrameBuffer>> = Once::new();
@@ -70,12 +98,17 @@ pub(crate) fn init() {
         let fb_base = framebuffer_arg.address;
         let io_mem = IoMem::acquire(fb_base..fb_base.checked_add(fb_size).unwrap()).unwrap();
 
+        let default_cmap = FbCmap {
+            entries: Vec::new(),
+        };
+
         FrameBuffer {
             io_mem,
             width: framebuffer_arg.width,
             height: framebuffer_arg.height,
             line_size,
             pixel_format,
+            cmap: Mutex::new(default_cmap),
         }
     };
 
@@ -136,6 +169,48 @@ impl FrameBuffer {
     pub fn clear(&self) {
         let frame = alloc::vec![0u8; self.io_mem().size()];
         self.write_bytes_at(0, &frame).unwrap();
+    }
+
+    /// Sets color map entries starting from the given index.
+    ///
+    /// For efifb devices, hardware color map is not supported, so we maintain
+    /// an in-memory map for software emulation.
+    pub fn set_color_map(&self, start: usize, entries: &[ColorMapEntry]) -> Result<()> {
+        if start > MAX_CMAP_SIZE || entries.len() > MAX_CMAP_SIZE - start {
+            return Err(Error::InvalidArgs);
+        }
+
+        let mut cmap = self.cmap.lock();
+        let required_len = start + entries.len();
+
+        // Ensure the colormap has enough space
+        if cmap.entries.len() < required_len {
+            cmap.entries.resize(
+                required_len,
+                ColorMapEntry {
+                    red: 0,
+                    green: 0,
+                    blue: 0,
+                    transp: 0,
+                },
+            );
+        }
+
+        // Copy the entries
+        cmap.entries[start..start + entries.len()].copy_from_slice(entries);
+
+        Ok(())
+    }
+
+    /// Gets color map entries from the given range.
+    pub fn get_color_map(&self, start: usize, len: usize) -> Option<Vec<ColorMapEntry>> {
+        let cmap = self.cmap.lock();
+
+        if start >= cmap.entries.len() || len > cmap.entries.len() - start {
+            return None;
+        }
+
+        Some(cmap.entries[start..start + len].to_vec())
     }
 }
 
