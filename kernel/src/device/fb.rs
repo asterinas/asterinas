@@ -482,6 +482,14 @@ impl FileIo for FbHandle {
             }
             IoctlCmd::GETCMAP => self.handle_get_cmap(arg),
             IoctlCmd::PUTCMAP => self.handle_set_cmap(arg),
+            IoctlCmd::PANDISPLAY | IoctlCmd::FBIOBLANK => {
+                // These commands are not supported by efifb.
+                // We return errors according to the Linux behavior.
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "the ioctl command is not supported by efifb devices"
+                )
+            }
             _ => {
                 log::debug!(
                     "the ioctl command {:?} is not supported by framebuffer devices",
