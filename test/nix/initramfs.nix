@@ -10,10 +10,13 @@ let
     path = "/lib/x86_64-linux-gnu";
   };
   resolv_conf = pkgs.callPackage ./resolv_conf.nix { dnsServer = dnsServer; };
+  # Whether the initramfs should include evtest, a common tool to debug input devices (`/dev/input/eventX`)
+  is_evtest_included = false;
   all_pkgs = [ busybox etc resolv_conf ]
     ++ lib.optionals (apps != null) [ apps.package ]
     ++ lib.optionals (benchmark != null) [ benchmark.package ]
-    ++ lib.optionals (syscall != null) [ syscall.package ];
+    ++ lib.optionals (syscall != null) [ syscall.package ]
+    ++ lib.optionals is_evtest_included [ pkgs.evtest ];
 in stdenvNoCC.mkDerivation {
   name = "initramfs";
   buildCommand = ''
@@ -25,6 +28,9 @@ in stdenvNoCC.mkDerivation {
     ln -sfn usr/lib $out/lib
     ln -sfn usr/lib64 $out/lib64
     cp -r ${busybox}/bin/* $out/bin/
+    ${lib.optionalString is_evtest_included ''
+      cp -r ${pkgs.evtest}/bin/* $out/bin/
+    ''}
 
     cp -r ${etc}/* $out/etc/
 
