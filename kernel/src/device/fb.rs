@@ -223,6 +223,86 @@ impl CharDevice for Fb {
     }
 }
 
+impl FbHandle {
+    /// Reads an array of `u16` color map values from userspace.
+    fn read_color_maps_from_user(addr: usize, data: &mut [u16]) -> Result<()> {
+        for (i, item) in data.iter_mut().enumerate() {
+            let user_addr = addr + i * size_of::<u16>();
+            *item = current_userspace!().read_val(user_addr)?;
+        }
+        Ok(())
+    }
+
+    /// Writes an array of `u16` color map values to userspace.
+    fn write_color_maps_to_user(addr: usize, data: &[u16]) -> Result<()> {
+        for (i, &value) in data.iter().enumerate() {
+            let user_addr = addr + i * size_of::<u16>();
+            current_userspace!().write_val(user_addr, &value)?;
+        }
+        Ok(())
+    }
+
+    /// Handles the [`IoctlCmd::GETVSCREENINFO`] ioctl command.
+    ///
+    /// Arguments:
+    ///  - Input: None.
+    ///  - Output: [`FbVarScreenInfo`].
+    fn handle_get_var_screen_info(&self, arg: usize) -> Result<i32> {
+        /// Default pixel clock calculation for efifb compatibility
+        const DEFAULT_PIXEL_CLOCK_DIVISOR: u32 = 10_000_000;
+
+        /// Default timing parameters for efifb compatibility
+        const DEFAULT_RIGHT_MARGIN: u32 = 32;
+        const DEFAULT_UPPER_MARGIN: u32 = 16;
+        const DEFAULT_LOWER_MARGIN: u32 = 4;
+        const DEFAULT_VSYNC_LEN: u32 = 4;
+
+        let pixel_format = self.framebuffer.pixel_format();
+        let (red, green, blue, transp) = FbBitfield::from_pixel_format(pixel_format);
+
+        let screen_info = FbVarScreenInfo {
+            xres: self.framebuffer.width() as u32,
+            yres: self.framebuffer.height() as u32,
+            xres_virtual: self.framebuffer.width() as u32,
+            yres_virtual: self.framebuffer.height() as u32,
+            bits_per_pixel: (8 * pixel_format.nbytes()) as u32,
+            red,
+            green,
+            blue,
+            transp,
+            pixclock: DEFAULT_PIXEL_CLOCK_DIVISOR / self.framebuffer.width() as u32 * 1000
+                / self.framebuffer.height() as u32,
+            left_margin: (self.framebuffer.width() as u32 / 8) & 0xf8,
+            right_margin: DEFAULT_RIGHT_MARGIN,
+            upper_margin: DEFAULT_UPPER_MARGIN,
+            lower_margin: DEFAULT_LOWER_MARGIN,
+            vsync_len: DEFAULT_VSYNC_LEN,
+            hsync_len: (self.framebuffer.width() as u32 / 8) & 0xf8,
+            ..Default::default()
+        };
+
+        current_userspace!().write_val(arg, &screen_info)?;
+        Ok(0)
+    }
+
+    /// Handles the [`IoctlCmd::GETFSCREENINFO`] ioctl command.
+    ///
+    /// Arguments:
+    ///  - Input: None.
+    ///  - Output: [`FbFixScreenInfo`].
+    fn handle_get_fix_screen_info(&self, arg: usize) -> Result<i32> {
+        let screen_info = FbFixScreenInfo {
+            smem_start: self.framebuffer.io_mem().paddr() as u64,
+            smem_len: self.framebuffer.io_mem().size() as u32,
+            line_length: self.framebuffer.line_size() as u32,
+            ..Default::default()
+        };
+
+        current_userspace!().write_val(arg, &screen_info)?;
+        Ok(0)
+    }
+}
+
 impl Pollable for FbHandle {
     fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
         let events = IoEvents::IN | IoEvents::OUT;
@@ -304,6 +384,14 @@ impl FileIo for FbHandle {
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         match cmd {
+            IoctlCmd::GETVSCREENINFO => self.handle_get_var_screen_info(arg),
+            IoctlCmd::GETFSCREENINFO => self.handle_get_fix_screen_info(arg),
+            IoctlCmd::PUTVSCREENINFO => {
+                // EFI framebuffers do not support changing settings. Linux
+                // will return the old settings to user space and succeed.
+                // Reference: <https://elixir.bootlin.com/linux/v6.17/source/drivers/video/fbdev/core/fbmem.c#L276-L279>.
+                self.handle_get_var_screen_info(arg)
+            }
             _ => {
                 log::debug!(
                     "the ioctl command {:?} is not supported by framebuffer devices",
