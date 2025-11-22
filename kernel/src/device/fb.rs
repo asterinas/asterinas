@@ -30,6 +30,28 @@ struct FbHandle {
     framebuffer: Arc<FrameBuffer>,
 }
 
+impl CharDevice for Fb {
+    fn devtmpfs_name(&self) -> DevtmpfsName<'_> {
+        DevtmpfsName::new("fb0", None)
+    }
+
+    fn id(&self) -> DeviceId {
+        // Same value with Linux: major 29, minor 0
+        DeviceId::new(MajorId::new(29), MinorId::new(0))
+    }
+
+    fn open(&self) -> Result<Arc<dyn FileIo>> {
+        let Some(framebuffer) = FRAMEBUFFER.get() else {
+            return Err(Error::with_message(
+                Errno::ENODEV,
+                "the framebuffer device is not present",
+            ));
+        };
+        let framebuffer = framebuffer.clone();
+        Ok(Arc::new(FbHandle { framebuffer }))
+    }
+}
+
 impl Pollable for FbHandle {
     fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
         let events = IoEvents::IN | IoEvents::OUT;
@@ -83,4 +105,12 @@ impl FileIo for FbHandle {
             }
         }
     }
+}
+
+pub(super) fn init_in_first_kthread() {
+    if FRAMEBUFFER.get().is_none() {
+        return;
+    }
+
+    char::register(Arc::new(Fb)).expect("failed to register framebuffer char device");
 }

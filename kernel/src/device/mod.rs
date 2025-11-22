@@ -3,6 +3,7 @@
 mod char;
 mod disk;
 mod evdev;
+mod fb;
 mod mem;
 pub mod misc;
 mod pty;
@@ -30,6 +31,7 @@ pub fn init_in_first_kthread() {
     mem::init_in_first_kthread();
     misc::init_in_first_kthread();
     evdev::init_in_first_kthread();
+    fb::init_in_first_kthread();
 }
 
 /// Init the device node in fs, must be called after mounting rootfs.
