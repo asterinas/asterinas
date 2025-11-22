@@ -21,7 +21,7 @@ use log::{debug, info};
 use ostd::{
     arch::trap::TrapFrame,
     io::IoMem,
-    mm::{DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, PAGE_SIZE},
+    mm::{dma::DmaStream, FrameAllocOptions, HasDaddr, PAGE_SIZE},
     sync::SpinLock,
     Pod,
 };
@@ -550,8 +550,7 @@ impl EventTable {
             .iter()
             .all(|b| *b == 0));
 
-        let stream =
-            Arc::new(DmaStream::map(segment.into(), DmaDirection::FromDevice, false).unwrap());
+        let stream = Arc::new(DmaStream::map(segment.into(), false));
         Self { stream, num_events }
     }
 
