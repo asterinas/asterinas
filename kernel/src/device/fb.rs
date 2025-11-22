@@ -66,6 +66,25 @@ impl InodeIo for FbHandle {
         writer: &mut VmWriter,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
+        if !writer.has_avail() {
+            return Ok(0);
+        }
+
+        let mut reader = self.framebuffer.io_mem().reader();
+
+        if offset >= reader.remain() {
+            return Ok(0);
+        }
+        reader.skip(offset);
+
+        let mut reader = reader.to_fallible();
+        let len = match reader.read_fallible(writer) {
+            Ok(len) => len,
+            Err((err, 0)) => return Err(err.into()),
+            Err((_err, len)) => len,
+        };
+
+        Ok(len)
     }
 
     fn write_at(
@@ -74,6 +93,27 @@ impl InodeIo for FbHandle {
         reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
+        if !reader.has_remain() {
+            return Ok(0);
+        }
+
+        let mut writer = self.framebuffer.io_mem().writer();
+        if offset >= writer.avail() {
+            return_errno_with_message!(
+                Errno::ENOSPC,
+                "the write offset is beyond the framebuffer size"
+            );
+        }
+        writer.skip(offset);
+
+        let mut writer = writer.to_fallible();
+        let len = match writer.write_fallible(reader) {
+            Ok(len) => len,
+            Err((err, 0)) => return Err(err.into()),
+            Err((_err, len)) => len,
+        };
+
+        Ok(len)
     }
 }
 
