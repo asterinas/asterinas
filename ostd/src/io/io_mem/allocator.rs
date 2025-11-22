@@ -20,13 +20,17 @@ pub(super) struct IoMemAllocator {
 }
 
 impl IoMemAllocator {
-    /// Acquires `range` for insensitive MMIO.
+    /// Acquires `range` for insensitive MMIO with the specified cache policy.
     ///
     /// If the range is not available, then the return value will be `None`.
-    pub(super) fn acquire(&self, range: Range<usize>) -> Option<IoMem<Insensitive>> {
+    pub(super) fn acquire(
+        &self,
+        range: Range<usize>,
+        cache_policy: CachePolicy,
+    ) -> Option<IoMem<Insensitive>> {
         debug!(
-            "Try to acquire security-insensitive MMIO range: {:#x?}",
-            range
+            "Try to acquire security-insensitive MMIO range: {:#x?} with cache policy: {:?}",
+            range, cache_policy
         );
 
         find_allocator(&self.allocators, &range)?
@@ -39,7 +43,7 @@ impl IoMemAllocator {
         //    kernel page table is activated.
         // 2. The created `IoMem` is guaranteed not to access physical memory or
         //    system device I/O.
-        unsafe { Some(IoMem::new(range, PageFlags::RW, CachePolicy::Uncacheable)) }
+        unsafe { Some(IoMem::new(range, PageFlags::RW, cache_policy)) }
     }
 
     /// Recycles an MMIO range.
@@ -95,16 +99,20 @@ impl IoMemAllocatorBuilder {
         Self { allocators }
     }
 
-    /// Reserves `range` from the allocator for sensitive MMIO.
+    /// Reserves `range` from the allocator for sensitive MMIO with the specified cache policy.
     ///
     /// # Panics
     ///
     /// This function will panic if the specified range is not available.
     #[cfg_attr(target_arch = "loongarch64", expect(unused))]
-    pub(crate) fn reserve(&self, range: Range<usize>) -> IoMem<Sensitive> {
+    pub(crate) fn reserve(
+        &self,
+        range: Range<usize>,
+        cache_policy: CachePolicy,
+    ) -> IoMem<Sensitive> {
         debug!(
-            "Try to reserve security-sensitive MMIO range: {:#x?}",
-            range
+            "Try to reserve security-sensitive MMIO range: {:#x?} with cache policy: {:?}",
+            range, cache_policy
         );
 
         self.remove(range.start..range.end);
@@ -114,7 +122,7 @@ impl IoMemAllocatorBuilder {
         //    kernel page table is activated.
         // 2. The range falls within I/O memory area and does not overlap
         //    with other system devices' I/O memory.
-        unsafe { IoMem::new(range, PageFlags::RW, CachePolicy::Uncacheable) }
+        unsafe { IoMem::new(range, PageFlags::RW, cache_policy) }
     }
 
     /// Removes access to a specific memory I/O range.
@@ -171,7 +179,10 @@ mod test {
     use alloc::vec;
 
     use super::{IoMemAllocator, IoMemAllocatorBuilder};
-    use crate::{mm::PAGE_SIZE, prelude::ktest};
+    use crate::{
+        mm::{CachePolicy, PAGE_SIZE},
+        prelude::ktest,
+    };
 
     #[expect(clippy::reversed_empty_ranges)]
     #[expect(clippy::single_range_in_vec_init)]
@@ -181,18 +192,36 @@ mod test {
         let allocator =
             unsafe { IoMemAllocator::new(IoMemAllocatorBuilder::new(range).allocators) };
 
-        assert!(allocator.acquire(0..0).is_none());
-        assert!(allocator.acquire(usize::MAX..0).is_none());
+        assert!(allocator.acquire(0..0, CachePolicy::Uncacheable).is_none());
+        assert!(allocator
+            .acquire(usize::MAX..0, CachePolicy::Uncacheable)
+            .is_none());
 
-        assert!(allocator.acquire(0x4000_0000..0x4000_0000).is_none());
-        assert!(allocator.acquire(0x4000_1000..0x4000_1000).is_none());
-        assert!(allocator.acquire(0x41ff_0000..0x41ff_0000).is_none());
-        assert!(allocator.acquire(0x4200_0000..0x4200_0000).is_none());
+        assert!(allocator
+            .acquire(0x4000_0000..0x4000_0000, CachePolicy::Uncacheable)
+            .is_none());
+        assert!(allocator
+            .acquire(0x4000_1000..0x4000_1000, CachePolicy::Uncacheable)
+            .is_none());
+        assert!(allocator
+            .acquire(0x41ff_0000..0x41ff_0000, CachePolicy::Uncacheable)
+            .is_none());
+        assert!(allocator
+            .acquire(0x4200_0000..0x4200_0000, CachePolicy::Uncacheable)
+            .is_none());
 
-        assert!(allocator.acquire(0x4000_1000..0x4000_0000).is_none());
-        assert!(allocator.acquire(0x4000_2000..0x4000_1000).is_none());
-        assert!(allocator.acquire(0x41ff_f000..0x41ff_e000).is_none());
-        assert!(allocator.acquire(0x4200_0000..0x41ff_f000).is_none());
+        assert!(allocator
+            .acquire(0x4000_1000..0x4000_0000, CachePolicy::Uncacheable)
+            .is_none());
+        assert!(allocator
+            .acquire(0x4000_2000..0x4000_1000, CachePolicy::Uncacheable)
+            .is_none());
+        assert!(allocator
+            .acquire(0x41ff_f000..0x41ff_e000, CachePolicy::Uncacheable)
+            .is_none());
+        assert!(allocator
+            .acquire(0x4200_0000..0x41ff_f000, CachePolicy::Uncacheable)
+            .is_none());
     }
 
     #[ktest]
@@ -208,24 +237,42 @@ mod test {
             unsafe { IoMemAllocator::new(IoMemAllocatorBuilder::new(range).allocators) };
 
         assert!(allocator
-            .acquire((io_mem_region_a.start - 1)..io_mem_region_a.start)
+            .acquire(
+                (io_mem_region_a.start - 1)..io_mem_region_a.start,
+                CachePolicy::Uncacheable
+            )
             .is_none());
         assert!(allocator
-            .acquire(io_mem_region_a.start..(io_mem_region_a.start + 1))
+            .acquire(
+                io_mem_region_a.start..(io_mem_region_a.start + 1),
+                CachePolicy::Uncacheable
+            )
             .is_some());
 
         assert!(allocator
-            .acquire((io_mem_region_a.end + 1)..(io_mem_region_b.start - 1))
+            .acquire(
+                (io_mem_region_a.end + 1)..(io_mem_region_b.start - 1),
+                CachePolicy::Uncacheable
+            )
             .is_none());
         assert!(allocator
-            .acquire((io_mem_region_a.end - 1)..(io_mem_region_b.start + 1))
+            .acquire(
+                (io_mem_region_a.end - 1)..(io_mem_region_b.start + 1),
+                CachePolicy::Uncacheable
+            )
             .is_none());
 
         assert!(allocator
-            .acquire((io_mem_region_a.end - 1)..io_mem_region_a.end)
+            .acquire(
+                (io_mem_region_a.end - 1)..io_mem_region_a.end,
+                CachePolicy::Uncacheable
+            )
             .is_some());
         assert!(allocator
-            .acquire(io_mem_region_a.end..(io_mem_region_a.end + 1))
+            .acquire(
+                io_mem_region_a.end..(io_mem_region_a.end + 1),
+                CachePolicy::Uncacheable
+            )
             .is_none());
     }
 }
