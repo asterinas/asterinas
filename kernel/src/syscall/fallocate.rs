@@ -2,6 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
+    fs,
     fs::{
         file_table::{get_file_fast, FileDesc},
         utils::FallocMode,
@@ -33,6 +34,7 @@ pub fn sys_fallocate(
     )?;
     file.fallocate(falloc_mode, offset as usize, len as usize)?;
 
+    fs::notify::on_modify(&file);
     Ok(SyscallReturn::Return(0))
 }
 

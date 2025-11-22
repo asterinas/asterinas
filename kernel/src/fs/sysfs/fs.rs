@@ -6,7 +6,10 @@ use crate::{
     fs::{
         registry::{FsProperties, FsType},
         sysfs::{self, inode::SysFsInode},
-        utils::{systree_inode::SysTreeInodeTy, FileSystem, FsFlags, Inode, SuperBlock},
+        utils::{
+            systree_inode::SysTreeInodeTy, FileSystem, FsEventSubscriberStats, FsFlags, Inode,
+            SuperBlock,
+        },
         Result,
     },
     prelude::*,
@@ -17,6 +20,7 @@ use crate::{
 pub(super) struct SysFs {
     sb: SuperBlock,
     root: Arc<dyn Inode>,
+    fs_event_subscriber_stats: FsEventSubscriberStats,
 }
 
 const MAGIC_NUMBER: u64 = 0x62656572; // SYSFS_MAGIC
@@ -44,6 +48,7 @@ impl SysFs {
         Arc::new(Self {
             sb,
             root: root_inode,
+            fs_event_subscriber_stats: FsEventSubscriberStats::new(),
         })
     }
 }
@@ -64,6 +69,10 @@ impl FileSystem for SysFs {
 
     fn sb(&self) -> SuperBlock {
         self.sb.clone()
+    }
+
+    fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
+        &self.fs_event_subscriber_stats
     }
 }
 

@@ -10,7 +10,10 @@ pub(super) use self::{
 };
 use super::{ProcFs, BLOCK_SIZE};
 use crate::{
-    fs::utils::{FileSystem, InodeMode, InodeType, Metadata},
+    fs::{
+        notify::FsEventPublisher,
+        utils::{FileSystem, InodeMode, InodeType, Metadata},
+    },
     prelude::*,
     process::{Gid, Uid},
 };
@@ -24,6 +27,7 @@ struct Common {
     metadata: RwLock<Metadata>,
     fs: Weak<dyn FileSystem>,
     is_volatile: bool,
+    fs_event_publisher: FsEventPublisher,
 }
 
 impl Common {
@@ -32,6 +36,7 @@ impl Common {
             metadata: RwLock::new(metadata),
             fs,
             is_volatile,
+            fs_event_publisher: FsEventPublisher::new(),
         }
     }
 
@@ -108,5 +113,9 @@ impl Common {
 
     pub fn is_volatile(&self) -> bool {
         self.is_volatile
+    }
+
+    pub fn fs_event_publisher(&self) -> &FsEventPublisher {
+        &self.fs_event_publisher
     }
 }

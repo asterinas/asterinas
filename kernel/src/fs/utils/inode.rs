@@ -15,6 +15,7 @@ use crate::{
     fs::{
         device::{Device, DeviceType},
         inode_handle::FileIo,
+        notify::FsEventPublisher,
         path::Path,
         ramfs::memfd::MemfdInode,
         utils::StatusFlags,
@@ -408,6 +409,13 @@ pub trait Inode: Any + InodeIo + Send + Sync {
     fn extension(&self) -> Option<&Extension> {
         None
     }
+
+    /// Returns a reference to the `FsEventPublisher` structure associated with this inode.
+    ///
+    /// This method provides access to the notification framework for this inode,
+    /// allowing the addition and removal of notification subscribers and the delivery
+    /// of filesystem events to interested parties.
+    fn fs_event_publisher(&self) -> &FsEventPublisher;
 
     fn set_xattr(
         &self,

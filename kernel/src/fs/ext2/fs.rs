@@ -11,7 +11,7 @@ use super::{
 };
 use crate::fs::{
     registry::{FsProperties, FsType},
-    utils::{FileSystem, FsFlags},
+    utils::{FileSystem, FsEventSubscriberStats, FsFlags},
 };
 
 /// The root inode number.
@@ -28,6 +28,7 @@ pub struct Ext2 {
     inode_size: usize,
     block_size: usize,
     group_descriptors_segment: USegment,
+    fs_event_subscriber_stats: FsEventSubscriberStats,
     self_ref: Weak<Self>,
 }
 
@@ -98,6 +99,7 @@ impl Ext2 {
             block_device,
             super_block: RwMutex::new(Dirty::new(super_block)),
             group_descriptors_segment,
+            fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             self_ref: weak_ref.clone(),
         });
         Ok(ext2)
@@ -131,6 +133,10 @@ impl Ext2 {
     /// Returns the super block.
     pub fn super_block(&self) -> RwMutexReadGuard<Dirty<SuperBlock>> {
         self.super_block.read()
+    }
+
+    pub fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
+        &self.fs_event_subscriber_stats
     }
 
     /// Returns the root inode.

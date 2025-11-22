@@ -4,7 +4,8 @@
 Put system calls such as
 mount, umount2, pivot_root, statfs, fstatfs, truncate, ftruncate, fsync, 
 fdatasync, sync, syncfs, sync_file_range, open_tree, move_mount, fsopen,
-fsconfig, fsmount, and fspick
+fsconfig, fsmount, fspick, inotify_init, inotify_init1, inotify_add_watch,
+inotify_rm_watch
 under this category.
 -->
 
@@ -58,3 +59,49 @@ Silently-ignored flags:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/umount.2.html).
+
+## Event Notifications
+
+### `inotify_init` and `inotify_init1`
+
+Supported functionality in SCML:
+
+```c
+{{#include inotify_init_and_init1.scml}}
+```
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/inotify_init.2.html).
+
+### `inotify_add_watch`
+
+Supported functionality in SCML:
+
+```c
+{{#include inotify_add_watch.scml}}
+```
+
+Unsupported event flags:
+* `IN_MOVED_FROM` and `IN_MOVED_TO` - Move events are not generated
+* `IN_MOVE_SELF` - Self move events are not generated
+* `IN_UNMOUNT` - Unmount events are not generated
+* `IN_Q_OVERFLOW` - Queue overflow events are not generated (events are silently dropped when queue is full)
+* `IN_ALL_EVENTS` - Only includes actually supported events
+
+Unsupported control flags:
+* `IN_EXCL_UNLINK` - Events on unlinked files are not excluded
+* `IN_ONESHOT` - Watches are not automatically removed after the first event
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man7/inotify.7.html).
+
+### `inotify_rm_watch`
+
+Supported functionality in SCML:
+
+```c
+{{#include inotify_rm_watch.scml}}
+```
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/inotify_rm_watch.2.html).

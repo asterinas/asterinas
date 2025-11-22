@@ -23,7 +23,10 @@ use crate::{
     fs::{
         procfs::{filesystems::FileSystemsFileOps, stat::StatFileOps},
         registry::{FsProperties, FsType},
-        utils::{mkmod, DirEntryVecExt, FileSystem, FsFlags, Inode, SuperBlock, NAME_MAX},
+        utils::{
+            mkmod, DirEntryVecExt, FileSystem, FsEventSubscriberStats, FsFlags, Inode, SuperBlock,
+            NAME_MAX,
+        },
     },
     prelude::*,
     process::{
@@ -64,6 +67,7 @@ struct ProcFs {
     sb: SuperBlock,
     root: Arc<dyn Inode>,
     inode_allocator: AtomicU64,
+    fs_event_subscriber_stats: FsEventSubscriberStats,
 }
 
 impl ProcFs {
@@ -72,6 +76,7 @@ impl ProcFs {
             sb: SuperBlock::new(PROC_MAGIC, BLOCK_SIZE, NAME_MAX),
             root: RootDirOps::new_inode(weak_fs.clone()),
             inode_allocator: AtomicU64::new(PROC_ROOT_INO + 1),
+            fs_event_subscriber_stats: FsEventSubscriberStats::new(),
         })
     }
 
@@ -95,6 +100,10 @@ impl FileSystem for ProcFs {
 
     fn sb(&self) -> SuperBlock {
         self.sb.clone()
+    }
+
+    fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
+        &self.fs_event_subscriber_stats
     }
 }
 

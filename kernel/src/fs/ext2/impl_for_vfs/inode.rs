@@ -5,6 +5,7 @@ use core::time::Duration;
 use crate::{
     fs::{
         ext2::{FilePerm, Inode as Ext2Inode},
+        notify::FsEventPublisher,
         utils::{
             DirentVisitor, Extension, FallocMode, FileSystem, Inode, InodeIo, InodeMode, InodeType,
             Metadata, MknodType, StatusFlags, SymbolicLink, XattrName, XattrNamespace,
@@ -219,6 +220,10 @@ impl Inode for Ext2Inode {
 
     fn remove_xattr(&self, name: XattrName) -> Result<()> {
         self.remove_xattr(name)
+    }
+
+    fn fs_event_publisher(&self) -> &FsEventPublisher {
+        self.fs_event_publisher()
     }
 }
 

@@ -5,7 +5,8 @@ use device_id::{DeviceId, MajorId, MinorId};
 use super::*;
 use crate::fs::{
     inode_handle::FileIo,
-    utils::{AccessMode, StatusFlags},
+    notify::FsEventPublisher,
+    utils::{AccessMode, InodeIo, StatusFlags},
 };
 
 /// Same major number with Linux.
@@ -20,6 +21,7 @@ const PTMX_MINOR_NUM: u32 = 2;
 pub struct Ptmx {
     inner: Inner,
     metadata: RwLock<Metadata>,
+    fs_event_publisher: FsEventPublisher,
 }
 
 #[derive(Clone)]
@@ -36,6 +38,7 @@ impl Ptmx {
                 &inner,
             )),
             inner,
+            fs_event_publisher: FsEventPublisher::new(),
         })
     }
 
@@ -153,6 +156,10 @@ impl Inode for Ptmx {
 
     fn is_dentry_cacheable(&self) -> bool {
         false
+    }
+
+    fn fs_event_publisher(&self) -> &FsEventPublisher {
+        &self.fs_event_publisher
     }
 }
 

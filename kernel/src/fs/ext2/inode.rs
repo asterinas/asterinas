@@ -20,6 +20,7 @@ use super::{
 };
 use crate::{
     fs::{
+        notify::FsEventPublisher,
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
         utils::{
             Extension, FallocMode, Inode as _, InodeMode, Metadata, Permission, XattrName,
@@ -44,6 +45,7 @@ pub struct Inode {
     fs: Weak<Ext2>,
     extension: Extension,
     xattr: Option<Xattr>,
+    fs_event_publisher: FsEventPublisher,
 }
 
 impl Inode {
@@ -63,6 +65,7 @@ impl Inode {
             inner: RwMutex::new(InodeInner::new(desc, weak_self.clone(), fs.clone())),
             fs,
             extension: Extension::new(),
+            fs_event_publisher: FsEventPublisher::new(),
         })
     }
 
@@ -104,6 +107,10 @@ impl Inode {
             gid: Gid::new(inner.gid()),
             rdev: self.device_id(),
         }
+    }
+
+    pub fn fs_event_publisher(&self) -> &FsEventPublisher {
+        &self.fs_event_publisher
     }
 
     pub fn resize(&self, new_size: usize) -> Result<()> {

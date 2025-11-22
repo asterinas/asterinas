@@ -2,6 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
+    fs,
     fs::file_table::{get_file_fast, FileDesc},
     prelude::*,
     util::VmWriterArray,
@@ -110,6 +111,10 @@ fn do_sys_preadv(
         }
     }
 
+    if total_len > 0 {
+        fs::notify::on_access(&file);
+    }
+
     Ok(total_len)
 }
 
@@ -153,6 +158,10 @@ fn do_sys_readv(
             // End of file reached or no more data to read
             break;
         }
+    }
+
+    if total_len > 0 {
+        fs::notify::on_access(&file);
     }
 
     Ok(total_len)
