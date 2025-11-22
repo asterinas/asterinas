@@ -24,7 +24,7 @@ pub use self::{
         InitStack, InitStackReader, INIT_STACK_SIZE, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS,
     },
 };
-use crate::{prelude::*, vm::vmar::Vmar};
+use crate::{fs::fs_resolver::PathOrInode, prelude::*, vm::vmar::Vmar};
 
 /*
  * The user's virtual memory space layout looks like below.
@@ -68,6 +68,8 @@ pub struct ProcessVm {
     init_stack: InitStack,
     /// The user heap
     heap: Heap,
+    /// The executable `PathOrInode`.
+    executable_file: PathOrInode,
     /// The base address for vDSO segment
     #[cfg(target_arch = "riscv64")]
     vdso_base: AtomicUsize,
@@ -75,10 +77,11 @@ pub struct ProcessVm {
 
 impl ProcessVm {
     /// Creates a new `ProcessVm` without mapping anything.
-    pub fn new() -> Self {
+    fn new(executable_file: PathOrInode) -> Self {
         Self {
             init_stack: InitStack::new(),
             heap: Heap::new(),
+            executable_file,
             #[cfg(target_arch = "riscv64")]
             vdso_base: AtomicUsize::new(0),
         }
@@ -89,6 +92,7 @@ impl ProcessVm {
         Self {
             init_stack: process_vm.init_stack.clone(),
             heap: process_vm.heap.clone(),
+            executable_file: process_vm.executable_file.clone(),
             #[cfg(target_arch = "riscv64")]
             vdso_base: AtomicUsize::new(process_vm.vdso_base.load(Ordering::Relaxed)),
         }
@@ -102,6 +106,11 @@ impl ProcessVm {
     /// Returns the user heap.
     pub fn heap(&self) -> &Heap {
         &self.heap
+    }
+
+    /// Returns a reference to the executable `PathOrInode`.
+    pub fn executable_file(&self) -> &PathOrInode {
+        &self.executable_file
     }
 
     /// Maps and writes the initial portion of the main stack of a process.
@@ -194,8 +203,8 @@ impl<'a> ProcessVmarGuard<'a> {
 /// Creates a new VMAR and map the heap.
 ///
 /// This method should only be used to create a VMAR for the init process.
-pub(super) fn new_vmar_and_map() -> Arc<Vmar> {
-    let new_vmar = Vmar::new();
+pub(super) fn new_vmar_and_map(executable_file: PathOrInode) -> Arc<Vmar> {
+    let new_vmar = Vmar::new(ProcessVm::new(executable_file));
     new_vmar
         .process_vm()
         .heap()
@@ -205,8 +214,12 @@ pub(super) fn new_vmar_and_map() -> Arc<Vmar> {
 }
 
 /// Unshares and renews the [`Vmar`] of the current process.
-pub(super) fn unshare_and_renew_vmar(ctx: &Context, vmar: &mut ProcessVmarGuard) {
-    let new_vmar = Vmar::new();
+pub(super) fn unshare_and_renew_vmar(
+    ctx: &Context,
+    vmar: &mut ProcessVmarGuard,
+    executable_file: PathOrInode,
+) {
+    let new_vmar = Vmar::new(ProcessVm::new(executable_file));
     let guard = disable_preempt();
     *ctx.thread_local.vmar().borrow_mut() = Some(new_vmar.clone());
     new_vmar.vm_space().activate();

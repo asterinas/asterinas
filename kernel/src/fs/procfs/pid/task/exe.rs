@@ -3,6 +3,7 @@
 use super::TidDirOps;
 use crate::{
     fs::{
+        fs_resolver::PathOrInode,
         procfs::{ProcSymBuilder, SymOps},
         utils::{mkmod, Inode, SymbolicLink},
     },
@@ -28,6 +29,15 @@ impl ExeSymOps {
 
 impl SymOps for ExeSymOps {
     fn read_link(&self) -> Result<SymbolicLink> {
-        Ok(SymbolicLink::Plain(self.0.executable_path()))
+        let vmar_guard = self.0.lock_vmar();
+        let Some(vmar) = vmar_guard.as_ref() else {
+            return_errno_with_message!(Errno::ENOENT, "the process has exited");
+        };
+
+        let res = match vmar.process_vm().executable_file().clone() {
+            PathOrInode::Path(path) => SymbolicLink::Path(path),
+            PathOrInode::Inode(inode) => SymbolicLink::Inode(inode),
+        };
+        Ok(res)
     }
 }

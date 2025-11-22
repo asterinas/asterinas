@@ -14,9 +14,9 @@ use super::{
 use crate::{
     fs::{
         device::{Device, DeviceType},
+        fs_resolver::PathOrInode,
         inode_handle::FileIo,
         path::Path,
-        ramfs::memfd::MemfdInode,
         utils::StatusFlags,
     },
     prelude::*,
@@ -636,6 +636,7 @@ impl Default for Extension {
 }
 
 /// A symbolic link.
+#[derive(Debug, Clone)]
 pub enum SymbolicLink {
     /// A plain text.
     ///
@@ -667,17 +668,12 @@ impl SymbolicLink {
 #[expect(clippy::to_string_trait_impl)]
 impl ToString for SymbolicLink {
     fn to_string(&self) -> String {
-        match self {
-            SymbolicLink::Plain(s) => s.clone(),
-            SymbolicLink::Path(path) => path.abs_path(),
-            SymbolicLink::Inode(inode) => {
-                // FIXME: Add pseudo dentries to store the correct name.
-                if let Some(memfd_inode) = inode.downcast_ref::<MemfdInode>() {
-                    memfd_inode.name().to_string()
-                } else {
-                    String::from("[pseudo inode]")
-                }
-            }
-        }
+        let path_or_inode = match self.clone() {
+            SymbolicLink::Plain(s) => return s,
+            SymbolicLink::Path(path) => PathOrInode::Path(path),
+            SymbolicLink::Inode(inode) => PathOrInode::Inode(inode),
+        };
+
+        path_or_inode.display_name()
     }
 }
