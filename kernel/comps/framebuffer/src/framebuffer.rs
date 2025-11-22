@@ -94,6 +94,11 @@ impl FrameBuffer {
         self.height
     }
 
+    /// Returns the line size of the framebuffer in bytes.
+    pub fn line_size(&self) -> usize {
+        self.line_size
+    }
+
     /// Returns a reference to the `IoMem` instance of the framebuffer.
     pub fn io_mem(&self) -> &IoMem {
         &self.io_mem
