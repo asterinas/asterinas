@@ -25,8 +25,8 @@
 //! the initialization of the entity that the PTE points to. This is taken care in this module.
 //!
 
-mod pte_state;
 mod entry;
+mod pte_state;
 
 use core::{
     cell::SyncUnsafeCell,
@@ -36,8 +36,8 @@ use core::{
 };
 
 pub(in crate::mm) use self::{
-    pte_state::{PteState, PteStateRef},
     entry::Entry,
+    pte_state::{PteState, PteStateRef},
 };
 use super::{nr_subpage_per_huge, PageTableConfig, PteTrait};
 use crate::{

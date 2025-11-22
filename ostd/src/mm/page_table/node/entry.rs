@@ -2,7 +2,7 @@
 
 //! This module provides accessors to the page table entries in a node.
 
-use super::{PteState, PteStateRef, PageTableGuard, PageTableNode, PteTrait};
+use super::{PageTableGuard, PageTableNode, PteState, PteStateRef, PteTrait};
 use crate::{
     mm::{
         nr_subpage_per_huge,
@@ -85,8 +85,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             PteState::PageTable(node) => {
                 assert_eq!(node.level(), self.node.level() - 1);
             }
-            PteState::Mapped(_, level, _) => {
-                assert_eq!(*level, self.node.level());
+            PteState::Mapped(item) => {
+                assert_eq!(C::item_raw_info(item).1, self.node.level());
             }
             PteState::Absent => {}
         }
@@ -179,7 +179,10 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         for i in 0..nr_subpage_per_huge::<C>() {
             let small_pa = pa + i * page_size::<C>(level - 1);
             let mut entry = pt_lock_guard.entry(i);
-            let old = entry.replace(PteState::Mapped(small_pa, level - 1, prop));
+            // SAFETY: It's a part of the mapped item, and the ownership is
+            // properly transferred to the new sub-entry.
+            let small_item = unsafe { C::item_from_raw(small_pa, level - 1, prop) };
+            let old = entry.replace(PteState::Mapped(small_item));
             debug_assert!(old.is_absent());
         }
 

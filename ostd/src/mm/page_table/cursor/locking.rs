@@ -11,8 +11,8 @@ use crate::{
     mm::{
         nr_subpage_per_huge, paddr_to_vaddr,
         page_table::{
-            load_pte, page_size, pte_index, PteStateRef, PageTable, PageTableConfig, PageTableGuard,
-            PageTableNodeRef, PagingConstsTrait, PagingLevel, PteScalar, PteTrait,
+            load_pte, page_size, pte_index, PageTable, PageTableConfig, PageTableGuard,
+            PageTableNodeRef, PagingConstsTrait, PagingLevel, PteScalar, PteStateRef, PteTrait,
         },
         HasPaddr, Vaddr,
     },
@@ -138,7 +138,7 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig>(
 
         let mut cur_entry = pt_guard.entry(start_idx);
         match cur_entry.to_ref() {
-            PteStateRef::Mapped(_, _, _) => {
+            PteStateRef::Mapped(_) => {
                 break;
             }
             PteStateRef::Absent => {
@@ -198,7 +198,7 @@ fn dfs_acquire_lock<C: PageTableConfig>(
                 dfs_acquire_lock(guard, &mut pt_guard, child_node_va, va_start..va_end);
                 let _ = ManuallyDrop::new(pt_guard);
             }
-            PteStateRef::Absent | PteStateRef::Mapped(_, _, _) => {}
+            PteStateRef::Absent | PteStateRef::Mapped(_) => {}
         }
     }
 }
@@ -235,7 +235,7 @@ unsafe fn dfs_release_lock<'rcu, C: PageTableConfig>(
                 // guards are forgotten.
                 unsafe { dfs_release_lock(guard, child_node, child_node_va, va_start..va_end) };
             }
-            PteStateRef::Absent | PteStateRef::Mapped(_, _, _) => {}
+            PteStateRef::Absent | PteStateRef::Mapped(_) => {}
         }
     }
 }
@@ -277,7 +277,7 @@ pub(super) unsafe fn dfs_mark_stray_and_unlock<C: PageTableConfig>(
                 // guards are forgotten.
                 num_frames += unsafe { dfs_mark_stray_and_unlock(rcu_guard, locked_pt) };
             }
-            PteStateRef::Absent | PteStateRef::Mapped(_, _, _) => {}
+            PteStateRef::Absent | PteStateRef::Mapped(_) => {}
         }
     }
 
