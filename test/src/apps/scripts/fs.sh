@@ -106,4 +106,5 @@ file_io/access_err
 file_io/iovec_err
 devfs/full
 devfs/random
+devfs/framebuffer
 devfs/evdev
