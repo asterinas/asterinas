@@ -156,6 +156,5 @@ pub enum Mappable {
     /// An inode object.
     Inode(Arc<dyn Inode>),
     /// An MMIO region.
-    #[expect(dead_code)]
     IoMem(IoMem),
 }
