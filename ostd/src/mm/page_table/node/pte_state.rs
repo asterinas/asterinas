@@ -9,9 +9,8 @@ use ostd_pod::Pod;
 use super::{PageTableNode, PageTableNodeRef, PteTrait};
 use crate::{
     mm::{
-        page_prop::PageProperty,
         page_table::{PageTableConfig, PteScalar},
-        HasPaddr, Paddr, PageTableFlags, PagingLevel,
+        HasPaddr, PageTableFlags, PagingLevel,
     },
     sync::RcuDrop,
 };
@@ -21,11 +20,9 @@ use crate::{
 pub(in crate::mm) enum PteState<C: PageTableConfig> {
     /// A child page table node.
     PageTable(RcuDrop<PageTableNode<C>>),
-    /// Physical address of a mapped physical frame.
-    ///
-    /// It is associated with the virtual page property and the level of the
-    /// mapping node, which decides the size of the frame.
-    Mapped(Paddr, PagingLevel, PageProperty),
+    /// A mapped item, often a mapped physical frame. The actual type is
+    /// defined by the page table configuration.
+    Mapped(C::Item),
     Absent,
 }
 
@@ -43,7 +40,8 @@ impl<C: PageTableConfig> PteState<C> {
                 let _ = ManuallyDrop::new(node);
                 C::E::from_repr(&PteScalar::PageTable(paddr, level, PageTableFlags::empty()))
             }
-            PteState::Mapped(paddr, level, prop) => {
+            PteState::Mapped(item) => {
+                let (paddr, level, prop) = C::item_into_raw(item);
                 C::E::from_repr(&PteScalar::Mapped(paddr, level, prop))
             }
             PteState::Absent => C::E::new_zeroed(),
@@ -69,7 +67,12 @@ impl<C: PageTableConfig> PteState<C> {
                 debug_assert_eq!(node.level(), level - 1);
                 PteState::PageTable(RcuDrop::new(node))
             }
-            PteScalar::Mapped(paddr, _, prop) => PteState::Mapped(paddr, level, prop),
+            PteScalar::Mapped(paddr, _, prop) => {
+                // SAFETY: The caller ensures that this item was created by
+                // `into_pte`, so that restoring the forgotten item is safe.
+                let item = unsafe { C::item_from_raw(paddr, level, prop) };
+                PteState::Mapped(item)
+            }
         }
     }
 }
@@ -79,11 +82,9 @@ impl<C: PageTableConfig> PteState<C> {
 pub(in crate::mm) enum PteStateRef<'a, C: PageTableConfig> {
     /// A child page table node.
     PageTable(PageTableNodeRef<'a, C>),
-    /// Physical address of a mapped physical frame.
-    ///
-    /// It is associated with the virtual page property and the level of the
-    /// mapping node, which decides the size of the frame.
-    Mapped(Paddr, PagingLevel, PageProperty),
+    /// A reference to a mapped item, often a mapped physical frame. The actual
+    /// reference type is defined by the page table configuration.
+    Mapped(C::ItemRef<'a>),
     Absent,
 }
 
@@ -108,7 +109,13 @@ impl<C: PageTableConfig> PteStateRef<'_, C> {
                 debug_assert_eq!(node.level(), level - 1);
                 PteStateRef::PageTable(node)
             }
-            PteScalar::Mapped(paddr, _, prop) => PteStateRef::Mapped(paddr, level, prop),
+            PteScalar::Mapped(paddr, _, prop) => {
+                // SAFETY: The caller ensures that the lifetime of the item is
+                // contained by the residing node, and the physical address is
+                // valid since the entry is present.
+                let item = unsafe { C::item_ref_from_raw(paddr, level, prop) };
+                PteStateRef::Mapped(item)
+            }
         }
     }
 }

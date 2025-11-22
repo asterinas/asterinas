@@ -429,16 +429,23 @@ impl Vmar {
                 panic!("Found mapped page but query failed");
             };
             debug_assert_eq!(mapped_va, va.start);
-            cursor.unmap(PAGE_SIZE);
 
             let offset = mapped_va - old_range.start;
-            cursor.jump(new_range.start + offset).unwrap();
+            let new_map_va = new_range.start + offset;
 
             match item {
                 VmQueriedItem::MappedRam { frame, prop } => {
+                    let frame = (*frame).clone();
+
+                    cursor.unmap(PAGE_SIZE);
+                    cursor.jump(new_map_va).unwrap();
+
                     cursor.map(frame, prop);
                 }
                 VmQueriedItem::MappedIoMem { paddr, prop } => {
+                    cursor.unmap(PAGE_SIZE);
+                    cursor.jump(new_map_va).unwrap();
+
                     // For MMIO pages, find the corresponding `IoMem` and map it
                     // at the new location
                     let (iomem, offset) = cursor.find_iomem_by_paddr(paddr).unwrap();
@@ -582,15 +589,31 @@ impl Vmar {
         vaddr: Vaddr,
         required_page_flags: PageFlags,
     ) -> Result<UFrame> {
-        let mut item = self.query_page(vaddr)?;
+        debug_assert!(is_userspace_vaddr(vaddr) && vaddr % PAGE_SIZE == 0);
 
-        let vm_item = loop {
-            match item {
+        let vmspace = self.vm_space();
+
+        loop {
+            let preempt_guard = disable_preempt();
+            let mut cursor = vmspace.cursor(&preempt_guard, &(vaddr..vaddr + PAGE_SIZE))?;
+
+            match cursor.query()?.1 {
                 Some(vm_item) if vm_item.prop().flags.contains(required_page_flags) => {
-                    break vm_item;
+                    match vm_item {
+                        VmQueriedItem::MappedRam { frame, .. } => return Ok((*frame).clone()),
+                        VmQueriedItem::MappedIoMem { .. } => {
+                            return_errno_with_message!(
+                                Errno::EOPNOTSUPP,
+                                "accessing remote MMIO memory is not supported currently"
+                            );
+                        }
+                    }
                 }
                 Some(_) | None => (),
             }
+
+            drop(cursor);
+            drop(preempt_guard);
 
             let page_fault_info = PageFaultInfo {
                 address: vaddr,
@@ -598,33 +621,10 @@ impl Vmar {
             };
             self.handle_page_fault(&page_fault_info)?;
 
-            item = self.query_page(vaddr)?;
-
             // Note that we are not holding `self.inner.lock()` here. Therefore, in race conditions
             // (e.g., if the mapping is removed concurrently), we will need to try again. The same
             // is true for real page faults; they may occur more than once at the same address.
-        };
-
-        match vm_item {
-            VmQueriedItem::MappedRam { frame, .. } => Ok(frame),
-            VmQueriedItem::MappedIoMem { .. } => {
-                return_errno_with_message!(
-                    Errno::EOPNOTSUPP,
-                    "accessing remote MMIO memory is not supported currently"
-                );
-            }
         }
-    }
-
-    fn query_page(&self, vaddr: Vaddr) -> Result<Option<VmQueriedItem>> {
-        debug_assert!(is_userspace_vaddr(vaddr) && vaddr % PAGE_SIZE == 0);
-
-        let preempt_guard = disable_preempt();
-        let vmspace = self.vm_space();
-        let mut cursor = vmspace.cursor(&preempt_guard, &(vaddr..vaddr + PAGE_SIZE))?;
-        let (_, item) = cursor.query()?;
-
-        Ok(item)
     }
 }
 
@@ -943,6 +943,8 @@ fn cow_copy_pt(src: &mut CursorMut<'_>, dst: &mut CursorMut<'_>, size: usize) ->
 
         match item {
             VmQueriedItem::MappedRam { frame, mut prop } => {
+                let frame = (*frame).clone();
+
                 src.protect_next(end_va - mapped_va, op).unwrap();
 
                 dst.jump(mapped_va).unwrap();
@@ -1423,22 +1425,16 @@ mod test {
         // Confirms that parent and child VAs map to the same physical address.
         {
             let child_map_frame_addr = {
-                let (_, Some(VmQueriedItem::MappedRam { frame, .. })) = child_space
-                    .cursor(&preempt_guard, &map_range)
-                    .unwrap()
-                    .query()
-                    .unwrap()
+                let mut cursor = child_space.cursor(&preempt_guard, &map_range).unwrap();
+                let (_, Some(VmQueriedItem::MappedRam { frame, .. })) = cursor.query().unwrap()
                 else {
                     panic!("Child mapping query failed");
                 };
                 frame.paddr()
             };
             let parent_map_frame_addr = {
-                let (_, Some(VmQueriedItem::MappedRam { frame, .. })) = vm_space
-                    .cursor(&preempt_guard, &map_range)
-                    .unwrap()
-                    .query()
-                    .unwrap()
+                let mut cursor = vm_space.cursor(&preempt_guard, &map_range).unwrap();
+                let (_, Some(VmQueriedItem::MappedRam { frame, .. })) = cursor.query().unwrap()
                 else {
                     panic!("Parent mapping query failed");
                 };
