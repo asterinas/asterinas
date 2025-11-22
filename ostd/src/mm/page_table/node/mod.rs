@@ -59,7 +59,7 @@ use crate::{
 ///
 /// [`PageTableNode`] is read-only. To modify the page table node, lock and use
 /// [`PageTableGuard`].
-pub(super) type PageTableNode<C> = Frame<PageTablePageMeta<C>>;
+pub(crate) type PageTableNode<C> = Frame<PageTablePageMeta<C>>;
 
 impl<C: PageTableConfig> PageTableNode<C> {
     pub(super) fn level(&self) -> PagingLevel {
@@ -262,7 +262,7 @@ impl<C: PageTableConfig> Drop for PageTableGuard<'_, C> {
 /// The metadata of any kinds of page table pages.
 /// Make sure the the generic parameters don't effect the memory layout.
 #[derive(Debug)]
-pub(in crate::mm) struct PageTablePageMeta<C: PageTableConfig> {
+pub(crate) struct PageTablePageMeta<C: PageTableConfig> {
     /// The number of valid PTEs. It is mutable if the lock is held.
     pub nr_children: SyncUnsafeCell<u16>,
     /// If the page table is detached from its parent.
