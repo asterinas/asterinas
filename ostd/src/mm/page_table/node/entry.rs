@@ -41,7 +41,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     /// Gets a reference to the child.
     pub(in crate::mm) fn to_ref(&self) -> PteStateRef<'rcu, C> {
         // SAFETY:
-        //  - The PTE outlives the reference (since we have `&self`).
+        //  - The child pointed to by the PTE outlives the reference, since
+        //    either PTs and mapped items outlive `'rcu`.
         //  - The level matches the current node.
         unsafe { PteStateRef::from_pte(&self.pte, self.node.level()) }
     }
@@ -85,8 +86,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             PteState::PageTable(node) => {
                 assert_eq!(node.level(), self.node.level() - 1);
             }
-            PteState::Mapped(_, level, _) => {
-                assert_eq!(*level, self.node.level());
+            PteState::Mapped(item) => {
+                assert_eq!(C::item_raw_info(&**item).1, self.node.level());
             }
             PteState::Absent => {}
         }
@@ -182,7 +183,10 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         for i in 0..nr_subpage_per_huge::<C>() {
             let small_pa = pa + i * page_size::<C>(level - 1);
             let mut entry = pt_lock_guard.entry(i);
-            let old = entry.replace(PteState::Mapped(small_pa, level - 1, prop));
+            // SAFETY: It's a part of the mapped item, and the ownership is
+            // properly transferred to the new sub-entry.
+            let small_item = unsafe { C::item_from_raw(small_pa, level - 1, prop) };
+            let old = entry.replace(PteState::Mapped(RcuDrop::new(small_item)));
             debug_assert!(old.is_absent());
         }
 
