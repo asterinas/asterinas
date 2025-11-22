@@ -58,4 +58,18 @@ pub enum IoctlCmd {
     KDSKBMODE = 0x4B45,
     /// Get tdx report using TDCALL
     TDXGETREPORT = 0xc4405401,
+    /// Get variable screen information (resolution, color depth, etc.)
+    GETVSCREENINFO = 0x4600,
+    /// Set variable screen information
+    PUTVSCREENINFO = 0x4601,
+    /// Get fixed screen information (memory layout, line length, etc.)
+    GETFSCREENINFO = 0x4602,
+    /// Get framebuffer color map
+    GETCMAP = 0x4604,
+    /// Set framebuffer color map
+    PUTCMAP = 0x4605,
+    /// Pan display to show different part of virtual screen
+    PANDISPLAY = 0x4606,
+    /// Blank or unblank the framebuffer display
+    FBIOBLANK = 0x4611,
 }

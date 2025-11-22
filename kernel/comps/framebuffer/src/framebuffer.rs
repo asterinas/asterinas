@@ -84,11 +84,6 @@ pub(crate) fn init() {
 }
 
 impl FrameBuffer {
-    /// Returns the size of the framebuffer in bytes.
-    pub fn size(&self) -> usize {
-        self.io_mem.size()
-    }
-
     /// Returns the width of the framebuffer in pixels.
     pub fn width(&self) -> usize {
         self.width
@@ -97,6 +92,11 @@ impl FrameBuffer {
     /// Returns the height of the framebuffer in pixels.
     pub fn height(&self) -> usize {
         self.height
+    }
+
+    /// Returns a reference to the `IoMem` instance of the framebuffer.
+    pub fn io_mem(&self) -> &IoMem {
+        &self.io_mem
     }
 
     /// Returns the pixel format of the framebuffer.
@@ -129,7 +129,7 @@ impl FrameBuffer {
 
     /// Clears the framebuffer with default color (black).
     pub fn clear(&self) {
-        let frame = alloc::vec![0u8; self.size()];
+        let frame = alloc::vec![0u8; self.io_mem().size()];
         self.write_bytes_at(0, &frame).unwrap();
     }
 }
