@@ -15,6 +15,8 @@ use crate::{
 };
 
 mod test_utils {
+    use core::marker::PhantomData;
+
     use super::*;
     use crate::mm::PrivilegedPageFlags;
 
@@ -70,14 +72,6 @@ mod test_utils {
         }
     }
 
-    /// Gets the physical range and page property from an item.
-    pub fn pa_prop_from_item<C: PageTableConfig>(item: C::Item) -> (Range<Paddr>, PageProperty) {
-        let (pa, level, prop) = C::item_into_raw(item);
-        let res = (pa..pa + page_size::<C>(level), prop);
-        drop(unsafe { C::item_from_raw(pa, level, prop) });
-        res
-    }
-
     #[derive(Clone, Debug, Default)]
     pub struct VeryHugePagingConsts;
 
@@ -93,17 +87,21 @@ mod test_utils {
     #[derive(Clone, Debug)]
     pub struct TestPtConfig;
 
-    // SAFETY: `item_into_raw` and `item_from_raw` are implemented correctly,
+    // SAFETY: `item_raw_info`, `item_into_raw`, `item_from_raw`, and
+    // `item_ref_from_raw` are correctly implemented with respect to the `Item`
+    // and `ItemRef` types.
     unsafe impl PageTableConfig for TestPtConfig {
         const TOP_LEVEL_INDEX_RANGE: Range<usize> = 0..256;
 
         type E = PageTableEntry;
         type C = VeryHugePagingConsts;
 
-        type Item = (Paddr, PagingLevel, PageProperty);
+        /// All mappings are untracked.
+        type Item = TestPtItem;
+        type ItemRef<'a> = TestPtItemRef<'a>;
 
-        fn item_into_raw(item: Self::Item) -> (Paddr, PagingLevel, PageProperty) {
-            item
+        fn item_raw_info(item: &Self::Item) -> (Paddr, PagingLevel, PageProperty) {
+            *item
         }
 
         unsafe fn item_from_raw(
@@ -113,7 +111,18 @@ mod test_utils {
         ) -> Self::Item {
             (paddr, level, prop)
         }
+
+        unsafe fn item_ref_from_raw<'a>(
+            paddr: Paddr,
+            level: PagingLevel,
+            prop: PageProperty,
+        ) -> Self::ItemRef<'a> {
+            TestPtItemRef((paddr, level, prop), PhantomData)
+        }
     }
+
+    pub type TestPtItem = (Paddr, PagingLevel, PageProperty);
+    pub struct TestPtItemRef<'a>(pub TestPtItem, pub PhantomData<&'a ()>);
 
     /// A subset iterator for bitflags.
     ///
@@ -490,19 +499,17 @@ mod overlapping_mappings {
 
 mod navigation {
     use super::{test_utils::*, *};
-    use crate::mm::Frame;
 
     const FIRST_MAP_ADDR: Vaddr = PAGE_SIZE * 7;
     const SECOND_MAP_ADDR: Vaddr = PAGE_SIZE * 512 * 512;
 
-    fn setup_page_table_with_two_frames() -> (PageTable<UserPtConfig>, Frame<()>, Frame<()>) {
-        let page_table = PageTable::<UserPtConfig>::empty();
+    fn setup_pt_with_two_mappings() -> (PageTable<TestPtConfig>, Paddr, Paddr) {
+        let page_table = PageTable::<TestPtConfig>::empty();
         let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
         let preempt_guard = disable_preempt();
 
-        // Allocates and maps two frames.
-        let frame1 = FrameAllocOptions::new().alloc_frame().unwrap();
-        let frame2 = FrameAllocOptions::new().alloc_frame().unwrap();
+        let pa1 = 0x1000_0000;
+        let pa2 = 0x20_0000;
 
         unsafe {
             page_table
@@ -511,7 +518,7 @@ mod navigation {
                     &(FIRST_MAP_ADDR..FIRST_MAP_ADDR + PAGE_SIZE),
                 )
                 .unwrap()
-                .map(VmItem::new_tracked(frame1.clone().into(), page_property))
+                .map((pa1, 1, page_property))
                 .unwrap();
         }
 
@@ -522,16 +529,16 @@ mod navigation {
                     &(SECOND_MAP_ADDR..SECOND_MAP_ADDR + PAGE_SIZE),
                 )
                 .unwrap()
-                .map(VmItem::new_tracked(frame2.clone().into(), page_property))
+                .map((pa2, 1, page_property))
                 .unwrap();
         }
 
-        (page_table, frame1, frame2)
+        (page_table, pa1, pa2)
     }
 
     #[ktest]
     fn jump() {
-        let (page_table, first_frame, _second_frame) = setup_page_table_with_two_frames();
+        let (page_table, first_frame, _second_frame) = setup_pt_with_two_mappings();
         let preempt_guard = disable_preempt();
 
         let mut cursor = page_table
@@ -547,8 +554,8 @@ mod navigation {
             panic!("Expected a mapped item at the first address");
         };
         assert_eq!(queried_va, FIRST_MAP_ADDR..FIRST_MAP_ADDR + PAGE_SIZE);
-        let (pa, prop) = pa_prop_from_item::<UserPtConfig>(queried_item);
-        assert_eq!(pa, first_frame.paddr()..first_frame.paddr() + PAGE_SIZE);
+        let TestPtItemRef((pa, _, prop), _) = queried_item;
+        assert_eq!(pa, first_frame);
         assert_eq!(
             prop,
             PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback)
@@ -617,7 +624,7 @@ mod navigation {
 
     #[ktest]
     fn find_next() {
-        let (page_table, _, _) = setup_page_table_with_two_frames();
+        let (page_table, _, _) = setup_pt_with_two_mappings();
         let preempt_guard = disable_preempt();
 
         let mut cursor = page_table
@@ -779,10 +786,8 @@ mod mapping {
             assert_eq!(cursor.virt_addr(), unmap_va_range.start);
 
             // Unmaps the single page.
-            let Some(PageTableFrag::Mapped {
-                va: frag_va,
-                item: (frag_pa, frag_level, frag_prop),
-            }) = (unsafe { cursor.take_next(unmap_len) })
+            let Some(PageTableFrag::Mapped { va: frag_va, item }) =
+                (unsafe { cursor.take_next(unmap_len) })
             else {
                 panic!("Expected to unmap a page, but got `None`");
             };
@@ -791,9 +796,9 @@ mod mapping {
             let expected_pa_start = physical_range.start + PAGE_SIZE * (13456 - from_ppn.start);
 
             assert_eq!(frag_va, unmap_va_range.start);
-            assert_eq!(frag_pa, expected_pa_start);
-            assert_eq!(frag_level, 1);
-            assert_eq!(frag_prop, page_property);
+            assert_eq!(item.0, expected_pa_start);
+            assert_eq!(item.1, 1);
+            assert_eq!(item.2, page_property);
         }
 
         // Confirms that the specific page is unmapped.
@@ -834,36 +839,45 @@ mod mapping {
 
         map_untracked(&pt, from.start, to.clone(), prop);
 
-        // Should be mapped at 2MB granularity (512 + 2) plus two 4KB pages
-        let ppn_granularity_split = 512 + 2;
-
-        for ((va, item), i) in pt
-            .cursor(&preempt_guard, &from)
-            .unwrap()
-            .zip(0..ppn_granularity_split + 2)
+        // Should be mapped at 2MB granularity (x514) plus two 4KB pages (x2).
         {
-            let Some((pa, level, prop)) = item else {
-                panic!("Expected mapped untracked physical address, got `None`");
-            };
+            let mut cursor = pt.cursor(&preempt_guard, &from).unwrap();
+            let mut frame_i = 0;
+            loop {
+                let (va, item) = cursor.query().unwrap();
 
-            assert_eq!(pa, mapped_pa_of_va(va.start));
-            assert_eq!(level, if i < ppn_granularity_split { 2 } else { 1 });
-            assert_eq!(prop.flags, PageFlags::RW);
-            assert_eq!(prop.cache, CachePolicy::Writeback);
+                let Some(TestPtItemRef((pa, level, prop), _)) = item else {
+                    panic!("Expected mapped untracked physical address, got `None`");
+                };
 
-            if i < ppn_granularity_split {
-                assert_eq!(va.start, from.start + i * PAGE_SIZE * two_mb_ppn);
-                assert_eq!(va.len(), PAGE_SIZE * two_mb_ppn);
-            } else {
-                assert_eq!(
-                    va.start,
-                    from.start
-                        + ppn_granularity_split * PAGE_SIZE * two_mb_ppn
-                        + (i - ppn_granularity_split) * PAGE_SIZE
-                );
-                assert_eq!(va.len(), PAGE_SIZE);
+                assert_eq!(pa, mapped_pa_of_va(va.start));
+                if frame_i < 514 {
+                    assert_eq!(level, 2);
+                } else {
+                    assert_eq!(level, 1);
+                }
+                assert_eq!(prop.flags, PageFlags::RW);
+                assert_eq!(prop.cache, CachePolicy::Writeback);
+
+                if frame_i < 514 {
+                    assert_eq!(va.start, from.start + frame_i * PAGE_SIZE * two_mb_ppn);
+                    assert_eq!(va.len(), PAGE_SIZE * two_mb_ppn);
+                } else {
+                    assert_eq!(
+                        va.start,
+                        from.start + 514 * PAGE_SIZE * two_mb_ppn + (frame_i - 514) * PAGE_SIZE
+                    );
+                    assert_eq!(va.len(), PAGE_SIZE);
+                }
+
+                let Ok(()) = cursor.jump(va.end) else {
+                    break;
+                };
+                assert!(frame_i < 516);
+                frame_i += 1;
             }
         }
+
         let protect_ppn_range = from_ppn.start + 18..from_ppn.start + 20;
         let protect_va_range =
             PAGE_SIZE * protect_ppn_range.start..PAGE_SIZE * protect_ppn_range.end;
@@ -884,15 +898,24 @@ mod mapping {
         }
 
         // Checks pages within the protection range.
-        for (va, item) in pt.cursor(&preempt_guard, &protect_va_range).unwrap() {
-            let Some((pa, level, prop)) = item else {
-                panic!("Expected mapped untracked physical address, got `None`");
-            };
+        {
+            let mut cursor = pt.cursor(&preempt_guard, &protect_va_range).unwrap();
+            loop {
+                let (va, item) = cursor.query().unwrap();
 
-            assert_eq!(pa, mapped_pa_of_va(va.start));
-            assert_eq!(level, 1);
-            assert_eq!(prop.flags, PageFlags::R);
-            assert_eq!(prop.cache, CachePolicy::Writeback);
+                let Some(TestPtItemRef((pa, level, prop), _)) = item else {
+                    panic!("Expected mapped untracked physical address, got `None`");
+                };
+
+                assert_eq!(pa, mapped_pa_of_va(va.start));
+                assert_eq!(level, 1);
+                assert_eq!(prop.flags, PageFlags::R);
+                assert_eq!(prop.cache, CachePolicy::Writeback);
+
+                let Ok(()) = cursor.jump(va.end) else {
+                    break;
+                };
+            }
         }
 
         // Checks the page after the protection range.

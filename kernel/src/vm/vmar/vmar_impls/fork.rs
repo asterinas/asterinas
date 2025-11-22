@@ -94,6 +94,8 @@ fn cow_copy_pt(src: &mut CursorMut<'_>, dst: &mut CursorMut<'_>, size: usize) ->
 
         match item {
             VmQueriedItem::MappedRam { frame, mut prop } => {
+                let frame = (*frame).clone();
+
                 src.protect_next(end_va - mapped_va, op).unwrap();
 
                 dst.jump(mapped_va).unwrap();
@@ -167,22 +169,16 @@ mod test {
         // Confirms that parent and child VAs map to the same physical address.
         {
             let child_map_frame_addr = {
-                let (_, Some(VmQueriedItem::MappedRam { frame, .. })) = child_space
-                    .cursor(&preempt_guard, &map_range)
-                    .unwrap()
-                    .query()
-                    .unwrap()
+                let mut cursor = child_space.cursor(&preempt_guard, &map_range).unwrap();
+                let (_, Some(VmQueriedItem::MappedRam { frame, .. })) = cursor.query().unwrap()
                 else {
                     panic!("Child mapping query failed");
                 };
                 frame.paddr()
             };
             let parent_map_frame_addr = {
-                let (_, Some(VmQueriedItem::MappedRam { frame, .. })) = vm_space
-                    .cursor(&preempt_guard, &map_range)
-                    .unwrap()
-                    .query()
-                    .unwrap()
+                let mut cursor = vm_space.cursor(&preempt_guard, &map_range).unwrap();
+                let (_, Some(VmQueriedItem::MappedRam { frame, .. })) = cursor.query().unwrap()
                 else {
                     panic!("Parent mapping query failed");
                 };

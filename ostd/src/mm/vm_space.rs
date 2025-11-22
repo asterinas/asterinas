@@ -18,8 +18,9 @@ use crate::{
     cpu_local_cell,
     io::IoMem,
     mm::{
-        Frame, MAX_USERSPACE_VADDR, PAGE_SIZE, PageProperty, PrivilegedPageFlags, UFrame, VmReader,
-        VmWriter,
+        Frame, HasPaddr, MAX_USERSPACE_VADDR, PAGE_SIZE, PageProperty, PrivilegedPageFlags, UFrame,
+        VmReader, VmWriter,
+        frame::FrameRef,
         io::Fallible,
         kspace::KERNEL_PAGE_TABLE,
         page_prop::{CachePolicy, PageFlags},
@@ -27,7 +28,7 @@ use crate::{
         tlb::{TlbFlushOp, TlbFlusher},
     },
     prelude::*,
-    sync::SpinLock,
+    sync::{RcuDrop, SpinLock},
     task::{DisabledPreemptGuard, atomic_mode::AsAtomicModeGuard, disable_preempt},
 };
 
@@ -263,22 +264,12 @@ impl VmSpace {
 /// created from the same virtual address range either.
 pub struct Cursor<'a>(page_table::Cursor<'a, UserPtConfig>);
 
-impl Iterator for Cursor<'_> {
-    type Item = (Range<Vaddr>, Option<VmQueriedItem>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0
-            .next()
-            .map(|(range, item)| (range, item.map(VmQueriedItem::from)))
-    }
-}
-
 impl Cursor<'_> {
     /// Queries the mapping at the current virtual address.
     ///
     /// If the cursor is pointing to a valid virtual address that is locked,
     /// it will return the virtual address range and the mapped item.
-    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<VmQueriedItem>)> {
+    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<VmQueriedItem<'_>>)> {
         let (range, item) = self.0.query()?;
         Ok((range, item.map(VmQueriedItem::from)))
     }
@@ -331,7 +322,7 @@ impl<'a> CursorMut<'a> {
     ///
     /// If the cursor is pointing to a valid virtual address that is locked,
     /// it will return the virtual address range and the mapped item.
-    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<VmQueriedItem>)> {
+    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<VmQueriedItem<'_>>)> {
         let (range, item) = self.pt_cursor.query()?;
         Ok((range, item.map(VmQueriedItem::from)))
     }
@@ -460,14 +451,21 @@ impl<'a> CursorMut<'a> {
         match frag {
             PageTableFrag::Mapped { va, item } => {
                 debug_assert_eq!(va, start_va);
+                // SAFETY: If the item is not a scalar (e.g., a frame
+                // pointer), we will drop it after the RCU grace period
+                // (see `issue_tlb_flush_with`).
+                let (item, panic_guard) = unsafe { RcuDrop::into_inner(item) };
+
                 match item.mapped_item {
                     MappedItem::TrackedFrame(old_frame) => {
-                        self.flusher.issue_tlb_flush_with(
-                            TlbFlushOp::for_single(start_va),
-                            old_frame.into(),
-                        );
+                        let rcu_frame = RcuDrop::new(old_frame);
+                        panic_guard.forget();
+                        let rcu_frame = Frame::rcu_from_unsized(rcu_frame);
+                        self.flusher
+                            .issue_tlb_flush_with(TlbFlushOp::for_single(start_va), rcu_frame);
                     }
                     MappedItem::UntrackedIoMem { .. } => {
+                        panic_guard.forget();
                         // Flush the TLB entry for the current address, but in
                         // the current design, we cannot drop the corresponding
                         // `IoMem`. This is because we manage the range of I/O
@@ -477,6 +475,7 @@ impl<'a> CursorMut<'a> {
                             .issue_tlb_flush(TlbFlushOp::for_single(start_va));
                     }
                 }
+
                 self.flusher.dispatch_tlb_flush();
             }
             PageTableFrag::StrayPageTable { .. } => {
@@ -507,7 +506,8 @@ impl<'a> CursorMut<'a> {
         let end_va = self.virt_addr() + len;
         let mut num_unmapped: usize = 0;
         loop {
-            // SAFETY: It is safe to un-map memory in the userspace.
+            // SAFETY: It is safe to un-map memory in the userspace. And the
+            // un-mapped items are dropped after TLB flushes.
             let Some(frag) = (unsafe { self.pt_cursor.take_next(end_va - self.virt_addr()) })
             else {
                 break; // No more mappings in the range.
@@ -515,19 +515,30 @@ impl<'a> CursorMut<'a> {
 
             match frag {
                 PageTableFrag::Mapped { va, item, .. } => {
+                    // SAFETY: If the item is not a scalar (e.g., a frame
+                    // pointer), we will drop it after the RCU grace period
+                    // (see `issue_tlb_flush_with`).
+                    let (item, panic_guard) = unsafe { RcuDrop::into_inner(item) };
+
                     match item {
                         VmItem {
                             mapped_item: MappedItem::TrackedFrame(old_frame),
                             ..
                         } => {
                             num_unmapped += 1;
+
+                            let rcu_frame = RcuDrop::new(old_frame);
+                            panic_guard.forget();
+                            let rcu_frame = Frame::rcu_from_unsized(rcu_frame);
                             self.flusher
-                                .issue_tlb_flush_with(TlbFlushOp::for_single(va), old_frame.into());
+                                .issue_tlb_flush_with(TlbFlushOp::for_single(va), rcu_frame);
                         }
                         VmItem {
                             mapped_item: MappedItem::UntrackedIoMem { .. },
                             ..
                         } => {
+                            panic_guard.forget();
+
                             // Flush the TLB entry for the current address, but
                             // in the current design, we cannot drop the
                             // corresponding `IoMem`. This is because we manage
@@ -544,8 +555,11 @@ impl<'a> CursorMut<'a> {
                     num_frames,
                 } => {
                     num_unmapped += num_frames;
-                    self.flusher
-                        .issue_tlb_flush_with(TlbFlushOp::for_range(va..va + len), pt);
+
+                    self.flusher.issue_tlb_flush_with(
+                        TlbFlushOp::for_range(va..va + len),
+                        Frame::rcu_from_unsized(pt),
+                    );
                 }
             }
         }
@@ -606,13 +620,12 @@ pub(super) fn get_activated_vm_space() -> *const VmSpace {
 }
 
 /// The result of a query over the VM space.
-#[derive(Debug, Clone, PartialEq)]
-pub enum VmQueriedItem {
+pub enum VmQueriedItem<'a> {
     /// The current slot is mapped, the frame within is allocated from the
     /// physical memory.
     MappedRam {
         /// The mapped frame.
-        frame: UFrame,
+        frame: FrameRef<'a, dyn AnyUFrameMeta>,
         /// The property of the slot.
         prop: PageProperty,
     },
@@ -626,7 +639,7 @@ pub enum VmQueriedItem {
     },
 }
 
-impl VmQueriedItem {
+impl VmQueriedItem<'_> {
     /// Returns the page property of the mapped item.
     pub fn prop(&self) -> &PageProperty {
         match self {
@@ -646,9 +659,22 @@ pub(crate) struct VmItem {
     mapped_item: MappedItem,
 }
 
+/// A reference to a VM item.
+#[derive(Debug)]
+pub(crate) struct VmItemRef<'a> {
+    prop: PageProperty,
+    mapped_item: MappedItemRef<'a>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 enum MappedItem {
     TrackedFrame(UFrame),
+    UntrackedIoMem { paddr: Paddr, level: PagingLevel },
+}
+
+#[derive(Debug)]
+enum MappedItemRef<'a> {
+    TrackedFrame(FrameRef<'a, dyn AnyUFrameMeta>),
     UntrackedIoMem { paddr: Paddr, level: PagingLevel },
 }
 
@@ -670,14 +696,14 @@ impl VmItem {
     }
 }
 
-impl From<VmItem> for VmQueriedItem {
-    fn from(item: VmItem) -> Self {
+impl<'a> From<VmItemRef<'a>> for VmQueriedItem<'a> {
+    fn from(item: VmItemRef<'a>) -> Self {
         match item.mapped_item {
-            MappedItem::TrackedFrame(frame) => VmQueriedItem::MappedRam {
+            MappedItemRef::TrackedFrame(frame) => VmQueriedItem::MappedRam {
                 frame,
                 prop: item.prop,
             },
-            MappedItem::UntrackedIoMem { paddr, level } => {
+            MappedItemRef::UntrackedIoMem { paddr, level } => {
                 debug_assert_eq!(level, 1);
                 VmQueriedItem::MappedIoMem {
                     paddr,
@@ -691,7 +717,9 @@ impl From<VmItem> for VmQueriedItem {
 #[derive(Clone, Debug)]
 pub(crate) struct UserPtConfig {}
 
-// SAFETY: `item_into_raw` and `item_from_raw` are implemented correctly,
+// SAFETY: `item_raw_info`, `item_into_raw`, `item_from_raw`, and
+// `item_ref_from_raw` are correctly implemented with respect to the `Item` and
+// `ItemRef` types.
 unsafe impl PageTableConfig for UserPtConfig {
     const TOP_LEVEL_INDEX_RANGE: Range<usize> = 0..256;
 
@@ -699,20 +727,21 @@ unsafe impl PageTableConfig for UserPtConfig {
     type C = PagingConsts;
 
     type Item = VmItem;
+    type ItemRef<'a> = VmItemRef<'a>;
 
-    fn item_into_raw(item: Self::Item) -> (Paddr, PagingLevel, PageProperty) {
-        match item.mapped_item {
+    fn item_raw_info(item: &Self::Item) -> (Paddr, PagingLevel, PageProperty) {
+        match &item.mapped_item {
             MappedItem::TrackedFrame(frame) => {
                 let mut prop = item.prop;
                 prop.priv_flags -= PrivilegedPageFlags::AVAIL1; // Clear AVAIL1 for tracked frames
                 let level = frame.map_level();
-                let paddr = frame.into_raw();
+                let paddr = frame.paddr();
                 (paddr, level, prop)
             }
             MappedItem::UntrackedIoMem { paddr, level } => {
                 let mut prop = item.prop;
                 prop.priv_flags |= PrivilegedPageFlags::AVAIL1; // Set AVAIL1 for I/O memory
-                (paddr, level, prop)
+                (*paddr, *level, prop)
             }
         }
     }
@@ -720,13 +749,37 @@ unsafe impl PageTableConfig for UserPtConfig {
     unsafe fn item_from_raw(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self::Item {
         debug_assert_eq!(level, 1);
         if prop.priv_flags.contains(PrivilegedPageFlags::AVAIL1) {
-            // AVAIL1 is set, this is I/O memory.
+            // `AVAIL1` is set, this is I/O memory.
             VmItem::new_untracked_io(paddr, prop)
         } else {
-            // AVAIL1 is clear, this is tracked memory.
+            // `AVAIL1` is clear, this is tracked memory.
             // SAFETY: The caller ensures safety.
             let frame = unsafe { Frame::<dyn AnyUFrameMeta>::from_raw(paddr) };
             VmItem::new_tracked(frame, prop)
+        }
+    }
+
+    unsafe fn item_ref_from_raw<'a>(
+        paddr: Paddr,
+        level: PagingLevel,
+        prop: PageProperty,
+    ) -> Self::ItemRef<'a> {
+        debug_assert_eq!(level, 1);
+        if prop.priv_flags.contains(PrivilegedPageFlags::AVAIL1) {
+            // `AVAIL1` is set, this is I/O memory.
+            VmItemRef {
+                prop,
+                mapped_item: MappedItemRef::UntrackedIoMem { paddr, level },
+            }
+        } else {
+            // `AVAIL1` is clear, this is tracked memory.
+            // SAFETY: The caller ensures that the frame outlives `'a` and that
+            // the type matches the frame.
+            let frame_ref = unsafe { FrameRef::<dyn AnyUFrameMeta>::borrow_paddr(paddr) };
+            VmItemRef {
+                prop,
+                mapped_item: MappedItemRef::TrackedFrame(frame_ref),
+            }
         }
     }
 }

@@ -59,7 +59,7 @@ use crate::{
 ///
 /// [`PageTableNode`] is read-only. To modify the page table node, lock and use
 /// [`PageTableGuard`].
-pub(super) type PageTableNode<C> = Frame<PageTablePageMeta<C>>;
+pub(crate) type PageTableNode<C> = Frame<PageTablePageMeta<C>>;
 
 impl<C: PageTableConfig> PageTableNode<C> {
     pub(super) fn level(&self) -> PagingLevel {
@@ -91,7 +91,7 @@ impl<C: PageTableConfig> PageTableNode<C> {
     /// # Panics
     ///
     /// Only top-level page tables can be activated using this function.
-    pub(crate) unsafe fn activate(&self) {
+    pub(super) unsafe fn activate(&self) {
         use crate::{
             arch::mm::{activate_page_table, current_page_table_paddr},
             mm::CachePolicy,
@@ -262,25 +262,25 @@ impl<C: PageTableConfig> Drop for PageTableGuard<'_, C> {
 /// The metadata of any kinds of page table pages.
 /// Make sure the the generic parameters don't effect the memory layout.
 #[derive(Debug)]
-pub(in crate::mm) struct PageTablePageMeta<C: PageTableConfig> {
+pub(crate) struct PageTablePageMeta<C: PageTableConfig> {
     /// The number of valid PTEs. It is mutable if the lock is held.
-    pub nr_children: SyncUnsafeCell<u16>,
+    nr_children: SyncUnsafeCell<u16>,
     /// If the page table is detached from its parent.
     ///
     /// A page table can be detached from its parent while still being accessed,
     /// since we use a RCU scheme to recycle page tables. If this flag is set,
     /// it means that the parent is recycling the page table.
-    pub stray: SyncUnsafeCell<bool>,
+    stray: SyncUnsafeCell<bool>,
     /// The level of the page table page. A page table page cannot be
     /// referenced by page tables of different levels.
-    pub level: PagingLevel,
+    level: PagingLevel,
     /// The lock for the page table page.
-    pub lock: AtomicU8,
+    lock: AtomicU8,
     _phantom: core::marker::PhantomData<C>,
 }
 
 impl<C: PageTableConfig> PageTablePageMeta<C> {
-    pub fn new(level: PagingLevel) -> Self {
+    fn new(level: PagingLevel) -> Self {
         Self {
             nr_children: SyncUnsafeCell::new(0),
             stray: SyncUnsafeCell::new(false),
