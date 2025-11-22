@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{borrow::ToOwned, sync::Arc};
+use alloc::borrow::ToOwned;
 use core::slice::Iter;
 
 use aster_bigtcp::{
@@ -11,7 +11,10 @@ use aster_softirq::BottomHalfDisabled;
 use spin::Once;
 
 use super::{poll::poll_ifaces, Iface};
-use crate::{net::iface::sched::PollScheduler, prelude::*};
+use crate::{
+    net::iface::{broadcast, sched::PollScheduler},
+    prelude::*,
+};
 
 static IFACES: Once<Vec<Arc<Iface>>> = Once::new();
 
@@ -50,6 +53,8 @@ pub fn init() {
         aster_network::register_recv_callback(VIRTIO_DEVICE_NAME, callback);
         aster_network::register_send_callback(VIRTIO_DEVICE_NAME, callback);
     }
+
+    broadcast::init();
 
     poll_ifaces();
 }
