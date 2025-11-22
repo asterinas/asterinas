@@ -18,7 +18,7 @@ use crate::{
     const_assert,
     cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu},
     cpu_local,
-    sync::{LocalIrqDisabled, SpinLock},
+    sync::{LocalIrqDisabled, RcuDrop, SpinLock},
 };
 
 /// A TLB flusher that is aware of which CPUs are needed to be flushed.
@@ -64,6 +64,9 @@ impl<'a, G: PinCurrentCpu> TlbFlusher<'a, G> {
     /// flushed. Otherwise if the page is recycled for other purposes, the user
     /// space program can still access the page through the TLB entries. This
     /// method is designed to be used in such cases.
+    ///
+    /// Furthermore, the frames will be dropped after the RCU grace period to
+    /// ensure that no RCU references are held to the frames.
     pub fn issue_tlb_flush_with(
         &mut self,
         op: TlbFlushOp,
@@ -292,7 +295,11 @@ struct OpsStack {
     ///
     /// Otherwise, it counts the number of pages to flush in `ops`.
     num_pages_to_flush: u32,
-    page_keeper: Vec<Frame<dyn AnyFrameMeta>>,
+    /// Keeps all the to-be-dropped frames.
+    ///
+    /// The elements cannot be modified after being pushed. And they must be
+    /// dropped after the RCU grace period and the TLB flushes.
+    frame_keeper: Vec<Frame<dyn AnyFrameMeta>>,
 }
 
 impl OpsStack {
@@ -301,7 +308,7 @@ impl OpsStack {
             ops: [const { MaybeUninit::uninit() }; FLUSH_ALL_PAGES_THRESHOLD],
             num_ops: 0,
             num_pages_to_flush: 0,
-            page_keeper: Vec::new(),
+            frame_keeper: Vec::new(),
         }
     }
 
@@ -315,7 +322,7 @@ impl OpsStack {
 
     fn push(&mut self, op: TlbFlushOp, drop_after_flush: Option<Frame<dyn AnyFrameMeta>>) {
         if let Some(frame) = drop_after_flush {
-            self.page_keeper.push(frame);
+            self.frame_keeper.push(frame);
         }
 
         if self.need_flush_all() {
@@ -336,7 +343,7 @@ impl OpsStack {
     }
 
     fn push_from(&mut self, other: &OpsStack) {
-        self.page_keeper.extend(other.page_keeper.iter().cloned());
+        self.frame_keeper.extend(other.frame_keeper.iter().cloned());
 
         if self.need_flush_all() {
             return;
@@ -372,7 +379,7 @@ impl OpsStack {
     fn clear_without_flush(&mut self) {
         self.num_pages_to_flush = 0;
         self.num_ops = 0;
-        self.page_keeper.clear();
+        let _ = RcuDrop::new(core::mem::take(&mut self.frame_keeper));
     }
 
     fn ops_iter(&self) -> impl Iterator<Item = &TlbFlushOp> {
