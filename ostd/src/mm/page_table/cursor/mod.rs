@@ -95,19 +95,6 @@ pub(crate) enum PageTableFrag<C: PageTableConfig> {
     },
 }
 
-#[cfg(ktest)]
-impl<C: PageTableConfig> PageTableFrag<C> {
-    pub(crate) fn va_range(&self) -> Range<Vaddr> {
-        match self {
-            PageTableFrag::Mapped { va, item } => {
-                let (_pa, level, _prop) = C::item_raw_info(item);
-                *va..*va + page_size::<C>(level)
-            }
-            PageTableFrag::StrayPageTable { va, len, .. } => *va..*va + *len,
-        }
-    }
-}
-
 impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
     /// Creates a cursor claiming exclusive access over the given range.
     ///
@@ -406,13 +393,7 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
 
     /// Maps the item starting from the current address to a physical address range.
     ///
-    /// If the current address has already mapped pages, it will do a re-map,
-    /// taking out the old physical address and replacing it with the new one.
-    /// This function will return [`Err`] with a [`PageTableFrag`], the not
-    /// mapped item. The caller should drop it after TLB coherence.
-    ///
-    /// If there is no mapped pages in the specified virtual address range,
-    /// the function will return [`None`].
+    /// The current virtual address should not be mapped.
     ///
     /// # Panics
     ///
@@ -420,13 +401,14 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     ///  - the virtual address range to be mapped is out of the locked range;
     ///  - the current virtual address is not aligned to the page size of the
     ///    item to be mapped;
+    ///  - the virtual address range contains mappings that conflicts with the item.
     ///
     /// # Safety
     ///
     /// The caller should ensure that
     ///  - the range being mapped does not affect kernel's memory safety;
     ///  - the physical address to be mapped is valid and safe to use.
-    pub unsafe fn map(&mut self, item: C::Item) -> Result<(), PageTableFrag<C>> {
+    pub unsafe fn map(&mut self, item: C::Item) {
         assert!(self.0.va < self.0.barrier_va.end);
         let (_, level, _) = C::item_raw_info(&item);
         assert!(level <= C::HIGHEST_TRANSLATION_LEVEL);
@@ -462,15 +444,13 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
             }
         }
 
-        let frag = self.replace_cur_entry(PteState::Mapped(RcuDrop::new(item)));
+        if !matches!(self.0.cur_entry().to_ref(), PteStateRef::Absent) {
+            panic!("Mapping over an already mapped page at {:#x}", self.0.va);
+        }
+
+        let _ = self.replace_cur_entry(PteState::Mapped(RcuDrop::new(item)));
 
         self.0.move_forward();
-
-        if let Some(frag) = frag {
-            Err(frag)
-        } else {
-            Ok(())
-        }
     }
 
     /// Finds and removes the first page table fragment in the following range.
