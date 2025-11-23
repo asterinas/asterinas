@@ -581,6 +581,7 @@ mod vmspace {
 
     /// Maps a page twice and unmaps twice using `CursorMut`.
     #[ktest]
+    #[should_panic = "Mapping over an already mapped page at 0x1000"]
     fn vmspace_map_twice() {
         let vmspace = VmSpace::default();
         let range = 0x1000..0x2000;
@@ -608,28 +609,6 @@ mod vmspace {
                 .expect("Failed to create mutable cursor");
             cursor_mut.map(frame.clone(), prop);
         }
-
-        {
-            let mut cursor = vmspace
-                .cursor(&preempt_guard, &range)
-                .expect("Failed to create cursor");
-            assert_matches_mapped!(cursor, range.clone(), frame, prop);
-        }
-
-        {
-            let mut cursor_mut = vmspace
-                .cursor_mut(&preempt_guard, &range)
-                .expect("Failed to create mutable cursor");
-            cursor_mut.unmap(range.start);
-        }
-
-        let mut cursor = vmspace
-            .cursor(&preempt_guard, &range)
-            .expect("Failed to create cursor");
-        assert!(matches!(
-            cursor.query().unwrap(),
-            (r, None) if r == range
-        ));
     }
 
     /// Unmaps twice using `CursorMut`.
