@@ -35,8 +35,7 @@ mod test_utils {
                 .cursor_mut(&preempt_guard, &virt_range)
                 .unwrap()
                 .map(VmItem::new_tracked(frame.into(), page_property))
-        }
-        .expect("First map found an unexpected item");
+        };
 
         page_table
     }
@@ -52,7 +51,7 @@ mod test_utils {
         let preempt_guard = disable_preempt();
         let mut cursor = pt.cursor_mut(&preempt_guard, &(va..va + pa.len())).unwrap();
         for (paddr, level) in largest_pages::<TestPtConfig>(va, pa.start, pa.len()) {
-            let _ = unsafe { cursor.map((paddr, level, prop)) };
+            unsafe { cursor.map((paddr, level, prop)) };
         }
     }
 
@@ -342,7 +341,7 @@ mod page_properties {
         let preempt_guard = disable_preempt();
         let virtual_range = PAGE_SIZE..(PAGE_SIZE * 2);
         let frame = FrameAllocOptions::new().alloc_frame().unwrap();
-        let _ = unsafe {
+        unsafe {
             page_table
                 .cursor_mut(&preempt_guard, &virtual_range)
                 .unwrap()
@@ -440,6 +439,7 @@ mod overlapping_mappings {
     use super::{test_utils::*, *};
 
     #[ktest]
+    #[should_panic]
     fn overlapping_mappings() {
         let page_table = PageTable::<TestPtConfig>::empty();
         let vrange1 = PAGE_SIZE..(PAGE_SIZE * 2);
@@ -454,28 +454,15 @@ mod overlapping_mappings {
             page_table
                 .cursor_mut(&preempt_guard, &vrange1)
                 .unwrap()
-                .map((prange1.start, 1, page_property))
-                .expect("Mapping to empty range failed");
+                .map((prange1.start, 1, page_property));
         }
         // Maps the second range, overlapping with the first.
-        let res2 = unsafe {
+        unsafe {
             page_table
                 .cursor_mut(&preempt_guard, &vrange2)
                 .unwrap()
                 .map((prange2.start, 1, page_property))
         };
-        let Err(frag) = res2 else {
-            panic!(
-                "Expected an error due to overlapping mapping, got {:#x?}",
-                res2
-            );
-        };
-        assert_eq!(frag.va_range(), vrange1);
-
-        // Verifies that the overlapping address maps to the latest physical address.
-        assert!(page_table.page_walk(vrange2.start + 10).is_some());
-        let mapped_pa = page_table.page_walk(vrange2.start + 10).unwrap().0;
-        assert_eq!(mapped_pa, prange2.start + 10);
     }
 
     #[ktest]
@@ -489,7 +476,7 @@ mod overlapping_mappings {
 
         // Attempts to map an unaligned virtual address range (expected to panic).
         unsafe {
-            let _ = page_table
+            page_table
                 .cursor_mut(&preempt_guard, &virt_range)
                 .unwrap()
                 .map((phys_range.start, 1, page_property));
@@ -518,8 +505,7 @@ mod navigation {
                     &(FIRST_MAP_ADDR..FIRST_MAP_ADDR + PAGE_SIZE),
                 )
                 .unwrap()
-                .map((pa1, 1, page_property))
-                .unwrap();
+                .map((pa1, 1, page_property));
         }
 
         unsafe {
@@ -529,8 +515,7 @@ mod navigation {
                     &(SECOND_MAP_ADDR..SECOND_MAP_ADDR + PAGE_SIZE),
                 )
                 .unwrap()
-                .map((pa2, 1, page_property))
-                .unwrap();
+                .map((pa2, 1, page_property));
         }
 
         (page_table, pa1, pa2)
@@ -580,7 +565,7 @@ mod navigation {
         let mut cursor = page_table.cursor_mut(&preempt_guard, &virt_range).unwrap();
 
         cursor.jump(map_va).unwrap();
-        unsafe { cursor.map(map_item).unwrap() };
+        unsafe { cursor.map(map_item) };
 
         // Now the cursor is at the end of the range with level 2.
         assert!(cursor.query().is_err());
@@ -608,13 +593,11 @@ mod navigation {
         let mut cursor = page_table.cursor_mut(&preempt_guard, &virt_range).unwrap();
 
         unsafe {
-            cursor
-                .map((
-                    0,
-                    1,
-                    PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback),
-                ))
-                .unwrap()
+            cursor.map((
+                0,
+                1,
+                PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback),
+            ))
         };
 
         assert_eq!(cursor.virt_addr(), virt_range.end);
@@ -664,7 +647,7 @@ mod unmap {
         {
             let mut cursor = page_table.cursor_mut(&preempt_guard, &virt_range).unwrap();
             unsafe {
-                cursor.map((phys_addr, 1, page_property)).unwrap();
+                cursor.map((phys_addr, 1, page_property));
             }
         }
 
@@ -693,7 +676,7 @@ mod unmap {
         {
             let mut cursor = page_table.cursor_mut(&preempt_guard, &virt_range).unwrap();
             unsafe {
-                cursor.map((PAGE_SIZE, 1, page_property)).unwrap();
+                cursor.map((PAGE_SIZE, 1, page_property));
             }
         }
 
@@ -719,35 +702,6 @@ mod unmap {
 
 mod mapping {
     use super::{test_utils::*, *};
-    use crate::mm::vm_space::UserPtConfig;
-
-    #[ktest]
-    fn remap_yields_original() {
-        let pt = PageTable::<UserPtConfig>::empty();
-        let preempt_guard = disable_preempt();
-
-        let virt_range = PAGE_SIZE..(PAGE_SIZE * 2);
-        let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
-
-        let frame = FrameAllocOptions::new().alloc_frame().unwrap();
-        unsafe {
-            pt.cursor_mut(&preempt_guard, &virt_range)
-                .unwrap()
-                .map(VmItem::new_tracked(frame.into(), page_property))
-                .unwrap()
-        }
-
-        let frame2 = FrameAllocOptions::new().alloc_frame().unwrap();
-        let Err(frag) = (unsafe {
-            pt.cursor_mut(&preempt_guard, &virt_range)
-                .unwrap()
-                .map(VmItem::new_tracked(frame2.into(), page_property))
-        }) else {
-            panic!("Expected to get error on remapping, got `Ok`");
-        };
-
-        assert_eq!(frag.va_range(), virt_range);
-    }
 
     #[ktest]
     fn mixed_granularity_map_unmap() {
@@ -1015,8 +969,7 @@ mod protection_and_query {
             page_table
                 .cursor_mut(&preempt_guard, &sub_range)
                 .unwrap()
-                .map((frame_range.start, 1, prop))
-                .unwrap();
+                .map((frame_range.start, 1, prop));
         }
 
         // Attempts to protect the larger range. `protect_next` should traverse.

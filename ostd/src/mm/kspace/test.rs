@@ -40,7 +40,8 @@ fn kvirt_area_tracked_map_pages() {
             panic!("Expected a tracked page");
         };
         assert_eq!(page.paddr(), paddr + (i * PAGE_SIZE));
-        assert_eq!(prop, default_prop());
+        assert_eq!(prop.flags, default_prop().flags);
+        assert_eq!(prop.cache, default_prop().cache);
     }
 }
 

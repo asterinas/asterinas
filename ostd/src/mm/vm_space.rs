@@ -355,16 +355,15 @@ impl<'a> CursorMut<'a> {
     /// Maps a frame into the current slot.
     ///
     /// This method will bring the cursor to the next slot after the modification.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the current virtual address is already mapped.
     pub fn map(&mut self, frame: UFrame, prop: PageProperty) {
-        let start_va = self.virt_addr();
         let item = VmItem::new_tracked(frame, prop);
 
         // SAFETY: It is safe to map untyped memory into the userspace.
-        let Err(frag) = (unsafe { self.pt_cursor.map(item) }) else {
-            return; // No mapping exists at the current address.
-        };
-
-        self.handle_remapped_frag(frag, start_va);
+        unsafe { self.pt_cursor.map(item) };
     }
 
     /// Maps a range of [`IoMem`] into the current slot.
@@ -383,7 +382,9 @@ impl<'a> CursorMut<'a> {
     ///
     /// # Panics
     ///
-    /// Panics if `len` or `offset` is not aligned to the page size.
+    /// Panics if
+    ///  - `len` or `offset` is not aligned to the page size;
+    ///  - the current virtual address is already mapped.
     pub fn map_iomem(&mut self, io_mem: IoMem, prop: PageProperty, len: usize, offset: usize) {
         assert_eq!(len % PAGE_SIZE, 0);
         assert_eq!(offset % PAGE_SIZE, 0);
@@ -400,21 +401,11 @@ impl<'a> CursorMut<'a> {
         };
 
         for current_paddr in (paddr_begin..paddr_end).step_by(PAGE_SIZE) {
-            // Save the current virtual address before mapping, since map() will advance the cursor
-            let current_va = self.virt_addr();
-
             // SAFETY: It is safe to map I/O memory into the userspace.
-            let map_result = unsafe {
+            unsafe {
                 self.pt_cursor
                     .map(VmItem::new_untracked_io(current_paddr, prop))
             };
-
-            let Err(frag) = map_result else {
-                // No mapping exists at the current address.
-                continue;
-            };
-
-            self.handle_remapped_frag(frag, current_va);
         }
 
         // If the `iomems` list in `VmSpace` does not contain the current I/O
@@ -441,47 +432,6 @@ impl<'a> CursorMut<'a> {
     /// given physical address. Otherwise, this method returns `None`.
     pub fn find_iomem_by_paddr(&self, paddr: Paddr) -> Option<(IoMem, usize)> {
         self.vmspace.find_iomem_by_paddr(paddr)
-    }
-
-    /// Handles a page table fragment that was remapped.
-    ///
-    /// This method handles the TLB flushing and other cleanup when a mapping
-    /// operation results in a fragment being replaced.
-    fn handle_remapped_frag(&mut self, frag: PageTableFrag<UserPtConfig>, start_va: Vaddr) {
-        match frag {
-            PageTableFrag::Mapped { va, item } => {
-                debug_assert_eq!(va, start_va);
-                // SAFETY: If the item is not a scalar (e.g., a frame
-                // pointer), we will drop it after the RCU grace period
-                // (see `issue_tlb_flush_with`).
-                let (item, panic_guard) = unsafe { RcuDrop::into_inner(item) };
-
-                match item.mapped_item {
-                    MappedItem::TrackedFrame(old_frame) => {
-                        let rcu_frame = RcuDrop::new(old_frame);
-                        panic_guard.forget();
-                        let rcu_frame = Frame::rcu_from_unsized(rcu_frame);
-                        self.flusher
-                            .issue_tlb_flush_with(TlbFlushOp::for_single(start_va), rcu_frame);
-                    }
-                    MappedItem::UntrackedIoMem { .. } => {
-                        panic_guard.forget();
-                        // Flush the TLB entry for the current address, but in
-                        // the current design, we cannot drop the corresponding
-                        // `IoMem`. This is because we manage the range of I/O
-                        // as a whole, but the frames handled here might be one
-                        // segment of it.
-                        self.flusher
-                            .issue_tlb_flush(TlbFlushOp::for_single(start_va));
-                    }
-                }
-
-                self.flusher.dispatch_tlb_flush();
-            }
-            PageTableFrag::StrayPageTable { .. } => {
-                panic!("`UFrame` is base page sized but re-mapping out a child PT");
-            }
-        }
     }
 
     /// Clears the mapping starting from the current slot,
