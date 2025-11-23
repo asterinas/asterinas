@@ -294,5 +294,5 @@ fn handle_kernel_page_fault(info: RawPageFaultInfo) {
     //    mapping of physical memory.
     // 2. We map the address to the correct physical page with the correct flags, where the
     //    correctness follows the semantics of the direct mapping of physical memory.
-    unsafe { cursor.map(crate::mm::kspace::MappedItem::Untracked(paddr, 1, prop)) }.unwrap();
+    unsafe { cursor.map(crate::mm::kspace::MappedItem::Untracked(paddr, 1, prop)) };
 }
