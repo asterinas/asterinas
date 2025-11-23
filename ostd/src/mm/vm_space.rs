@@ -17,13 +17,14 @@ use crate::{
     cpu_local_cell,
     io::IoMem,
     mm::{
+        frame::FrameRef,
         io::Fallible,
         kspace::KERNEL_PAGE_TABLE,
         page_prop::{CachePolicy, PageFlags},
         page_table::{self, PageTable, PageTableFrag},
         tlb::{TlbFlushOp, TlbFlusher},
-        Frame, PageProperty, PrivilegedPageFlags, UFrame, VmReader, VmWriter, MAX_USERSPACE_VADDR,
-        PAGE_SIZE,
+        Frame, HasPaddr, PageProperty, PrivilegedPageFlags, UFrame, VmReader, VmWriter,
+        MAX_USERSPACE_VADDR, PAGE_SIZE,
     },
     prelude::*,
     sync::SpinLock,
@@ -263,22 +264,12 @@ impl VmSpace {
 /// created from the same virtual address range either.
 pub struct Cursor<'a>(page_table::Cursor<'a, UserPtConfig>);
 
-impl Iterator for Cursor<'_> {
-    type Item = (Range<Vaddr>, Option<VmQueriedItem>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0
-            .next()
-            .map(|(range, item)| (range, item.map(VmQueriedItem::from)))
-    }
-}
-
 impl Cursor<'_> {
     /// Queries the mapping at the current virtual address.
     ///
     /// If the cursor is pointing to a valid virtual address that is locked,
     /// it will return the virtual address range and the mapped item.
-    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<VmQueriedItem>)> {
+    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<VmQueriedItem<'_>>)> {
         let (range, item) = self.0.query()?;
         Ok((range, item.map(VmQueriedItem::from)))
     }
@@ -331,7 +322,7 @@ impl<'a> CursorMut<'a> {
     ///
     /// If the cursor is pointing to a valid virtual address that is locked,
     /// it will return the virtual address range and the mapped item.
-    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<VmQueriedItem>)> {
+    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<VmQueriedItem<'_>>)> {
         let (range, item) = self.pt_cursor.query()?;
         Ok((range, item.map(VmQueriedItem::from)))
     }
@@ -606,13 +597,12 @@ pub(super) fn get_activated_vm_space() -> *const VmSpace {
 }
 
 /// The result of a query over the VM space.
-#[derive(Debug, Clone, PartialEq)]
-pub enum VmQueriedItem {
+pub enum VmQueriedItem<'a> {
     /// The current slot is mapped, the frame within is allocated from the
     /// physical memory.
     MappedRam {
         /// The mapped frame.
-        frame: UFrame,
+        frame: FrameRef<'a, dyn AnyUFrameMeta>,
         /// The property of the slot.
         prop: PageProperty,
     },
@@ -626,7 +616,7 @@ pub enum VmQueriedItem {
     },
 }
 
-impl VmQueriedItem {
+impl VmQueriedItem<'_> {
     /// Returns the page property of the mapped item.
     pub fn prop(&self) -> &PageProperty {
         match self {
@@ -646,9 +636,20 @@ pub(crate) struct VmItem {
     mapped_item: MappedItem,
 }
 
+/// A reference to a VM item.
+pub(crate) struct VmItemRef<'a> {
+    prop: PageProperty,
+    mapped_item: MappedItemRef<'a>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 enum MappedItem {
     TrackedFrame(UFrame),
+    UntrackedIoMem { paddr: Paddr, level: PagingLevel },
+}
+
+enum MappedItemRef<'a> {
+    TrackedFrame(FrameRef<'a, dyn AnyUFrameMeta>),
     UntrackedIoMem { paddr: Paddr, level: PagingLevel },
 }
 
@@ -670,14 +671,14 @@ impl VmItem {
     }
 }
 
-impl From<VmItem> for VmQueriedItem {
-    fn from(item: VmItem) -> Self {
+impl<'a> From<VmItemRef<'a>> for VmQueriedItem<'a> {
+    fn from(item: VmItemRef<'a>) -> Self {
         match item.mapped_item {
-            MappedItem::TrackedFrame(frame) => VmQueriedItem::MappedRam {
+            MappedItemRef::TrackedFrame(frame) => VmQueriedItem::MappedRam {
                 frame,
                 prop: item.prop,
             },
-            MappedItem::UntrackedIoMem { paddr, level } => {
+            MappedItemRef::UntrackedIoMem { paddr, level } => {
                 debug_assert_eq!(level, 1);
                 VmQueriedItem::MappedIoMem {
                     paddr,
@@ -691,7 +692,9 @@ impl From<VmItem> for VmQueriedItem {
 #[derive(Clone, Debug)]
 pub(crate) struct UserPtConfig {}
 
-// SAFETY: `item_into_raw` and `item_from_raw` are implemented correctly,
+// SAFETY: `item_raw_info`, `item_into_raw`, `item_from_raw` and
+// `item_ref_from_raw` are correctly implemented with respect to the `Item` and
+// `ItemRef` types.
 unsafe impl PageTableConfig for UserPtConfig {
     const TOP_LEVEL_INDEX_RANGE: Range<usize> = 0..256;
 
@@ -699,20 +702,21 @@ unsafe impl PageTableConfig for UserPtConfig {
     type C = PagingConsts;
 
     type Item = VmItem;
+    type ItemRef<'a> = VmItemRef<'a>;
 
-    fn item_into_raw(item: Self::Item) -> (Paddr, PagingLevel, PageProperty) {
-        match item.mapped_item {
+    fn item_raw_info(item: &Self::Item) -> (Paddr, PagingLevel, PageProperty) {
+        match &item.mapped_item {
             MappedItem::TrackedFrame(frame) => {
                 let mut prop = item.prop;
                 prop.priv_flags -= PrivilegedPageFlags::AVAIL1; // Clear AVAIL1 for tracked frames
                 let level = frame.map_level();
-                let paddr = frame.into_raw();
+                let paddr = frame.paddr();
                 (paddr, level, prop)
             }
             MappedItem::UntrackedIoMem { paddr, level } => {
                 let mut prop = item.prop;
                 prop.priv_flags |= PrivilegedPageFlags::AVAIL1; // Set AVAIL1 for I/O memory
-                (paddr, level, prop)
+                (*paddr, *level, prop)
             }
         }
     }
@@ -727,6 +731,27 @@ unsafe impl PageTableConfig for UserPtConfig {
             // SAFETY: The caller ensures safety.
             let frame = unsafe { Frame::<dyn AnyUFrameMeta>::from_raw(paddr) };
             VmItem::new_tracked(frame, prop)
+        }
+    }
+
+    unsafe fn item_ref_from_raw<'a>(
+        paddr: Paddr,
+        level: PagingLevel,
+        prop: PageProperty,
+    ) -> Self::ItemRef<'a> {
+        debug_assert_eq!(level, 1);
+        if prop.priv_flags.contains(PrivilegedPageFlags::AVAIL1) {
+            VmItemRef {
+                prop,
+                mapped_item: MappedItemRef::UntrackedIoMem { paddr, level },
+            }
+        } else {
+            // SAFETY: The caller ensures that the lifetime is valid.
+            let frame_ref = unsafe { FrameRef::<dyn AnyUFrameMeta>::borrow_paddr(paddr) };
+            VmItemRef {
+                prop,
+                mapped_item: MappedItemRef::TrackedFrame(frame_ref),
+            }
         }
     }
 }

@@ -58,7 +58,7 @@ use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     boot::memory_region::MemoryRegionType,
     const_assert,
-    mm::{page_table::largest_pages, PagingLevel, PAGE_SIZE},
+    mm::{frame::FrameRef, page_table::largest_pages, HasPaddr, PagingLevel, PAGE_SIZE},
     task::disable_preempt,
 };
 
@@ -141,7 +141,9 @@ pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelPtConfig>> = Once::new();
 pub(crate) struct KernelPtConfig {}
 
 // We use the first available PTE bit to mark the frame as tracked.
-// SAFETY: `item_into_raw` and `item_from_raw` are implemented correctly,
+// SAFETY: `item_raw_info`, `item_into_raw`, `item_from_raw` and
+// `item_ref_from_raw` are correctly implemented with respect to the `Item` and
+// `ItemRef` types.
 unsafe impl PageTableConfig for KernelPtConfig {
     const TOP_LEVEL_INDEX_RANGE: Range<usize> = 256..512;
     const TOP_LEVEL_CAN_UNMAP: bool = false;
@@ -150,20 +152,21 @@ unsafe impl PageTableConfig for KernelPtConfig {
     type C = PagingConsts;
 
     type Item = MappedItem;
+    type ItemRef<'a> = MappedItemRef<'a>;
 
-    fn item_into_raw(item: Self::Item) -> (Paddr, PagingLevel, PageProperty) {
+    fn item_raw_info(item: &Self::Item) -> (Paddr, PagingLevel, PageProperty) {
         match item {
             MappedItem::Tracked(frame, mut prop) => {
                 debug_assert!(!prop.priv_flags.contains(PrivilegedPageFlags::AVAIL1));
                 prop.priv_flags |= PrivilegedPageFlags::AVAIL1;
                 let level = frame.map_level();
-                let paddr = frame.into_raw();
+                let paddr = frame.paddr();
                 (paddr, level, prop)
             }
             MappedItem::Untracked(pa, level, mut prop) => {
                 debug_assert!(!prop.priv_flags.contains(PrivilegedPageFlags::AVAIL1));
                 prop.priv_flags -= PrivilegedPageFlags::AVAIL1;
-                (pa, level, prop)
+                (*pa, *level, prop)
             }
         }
     }
@@ -178,11 +181,34 @@ unsafe impl PageTableConfig for KernelPtConfig {
             MappedItem::Untracked(paddr, level, prop)
         }
     }
+
+    unsafe fn item_ref_from_raw<'a>(
+        paddr: Paddr,
+        level: PagingLevel,
+        prop: PageProperty,
+    ) -> Self::ItemRef<'a> {
+        if prop.priv_flags.contains(PrivilegedPageFlags::AVAIL1) {
+            debug_assert_eq!(level, 1);
+            // SAFETY: The caller ensures that the lifetime is valid.
+            let frame = unsafe { FrameRef::<dyn AnyFrameMeta>::borrow_paddr(paddr) };
+            MappedItemRef::Tracked(frame, prop)
+        } else {
+            MappedItemRef::Untracked(paddr, level, prop)
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum MappedItem {
     Tracked(Frame<dyn AnyFrameMeta>, PageProperty),
+    Untracked(Paddr, PagingLevel, PageProperty),
+}
+
+#[derive(Debug)]
+pub(crate) enum MappedItemRef<'a> {
+    #[expect(dead_code)]
+    Tracked(FrameRef<'a, dyn AnyFrameMeta>, PageProperty),
+    #[expect(dead_code)]
     Untracked(Paddr, PagingLevel, PageProperty),
 }
 
