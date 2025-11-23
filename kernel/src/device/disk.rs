@@ -37,9 +37,10 @@ pub(super) fn init_in_first_kthread() {
 
 pub(super) fn init_in_first_process(fs_resolver: &FsResolver) -> Result<()> {
     for device in aster_block::collect_all() {
-        let name = device.name().to_string();
         let device = Arc::new(BlockFile::new(device));
-        add_node(device, &name, fs_resolver)?;
+        if let Some(devtmpfs_path) = device.devtmpfs_path() {
+            add_node(device, &devtmpfs_path, fs_resolver)?;
+        }
     }
 
     Ok(())
@@ -66,6 +67,10 @@ impl Device for BlockFile {
 
     fn id(&self) -> DeviceId {
         self.0.id()
+    }
+
+    fn devtmpfs_path(&self) -> Option<String> {
+        Some(self.0.name().into())
     }
 
     fn open(&self) -> Result<Box<dyn FileIo>> {

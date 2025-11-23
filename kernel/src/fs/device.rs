@@ -20,7 +20,11 @@ pub trait Device: Send + Sync + 'static {
     /// Returns the device ID.
     fn id(&self) -> DeviceId;
 
-    /// Opens a device.
+    /// Returns the path where the device should appear in devtmpfs (usually under `/dev`), if any.
+    fn devtmpfs_path(&self) -> Option<String>;
+
+    /// Opens the device, returning a file-like object that the userspace can interact with by
+    /// doing I/O.
     fn open(&self) -> Result<Box<dyn FileIo>>;
 }
 
@@ -29,7 +33,8 @@ impl Debug for dyn Device {
         f.debug_struct("Device")
             .field("type", &self.type_())
             .field("id", &self.id())
-            .finish()
+            .field("devtmpfs_path", &self.devtmpfs_path())
+            .finish_non_exhaustive()
     }
 }
 

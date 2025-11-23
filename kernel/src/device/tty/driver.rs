@@ -16,6 +16,9 @@ pub trait TtyDriver: Send + Sync + 'static {
     /// The device major ID.
     const DEVICE_MAJOR_ID: u32;
 
+    /// Returns the path where the TTY should appear under devtmpfs, if any.
+    fn devtmpfs_path(&self, index: u32) -> Option<String>;
+
     /// Opens the TTY.
     ///
     /// This function will be called when opening `/dev/tty`.

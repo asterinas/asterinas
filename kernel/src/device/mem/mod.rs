@@ -27,8 +27,14 @@ use file::MemFile;
 pub use file::{getrandom, geturandom};
 use spin::Once;
 
-use super::char::{acquire_major, register, CharDevice, MajorIdOwner};
-use crate::{device::char::DevtmpfsName, fs::inode_handle::FileIo, prelude::*};
+use super::char::{acquire_major, register, MajorIdOwner};
+use crate::{
+    fs::{
+        device::{Device, DeviceType},
+        inode_handle::FileIo,
+    },
+    prelude::*,
+};
 
 /// A memory device.
 #[derive(Debug)]
@@ -49,13 +55,17 @@ impl MemDevice {
     }
 }
 
-impl CharDevice for MemDevice {
-    fn devtmpfs_name(&self) -> DevtmpfsName {
-        DevtmpfsName::new(self.file.name(), None)
+impl Device for MemDevice {
+    fn type_(&self) -> DeviceType {
+        DeviceType::Char
     }
 
     fn id(&self) -> DeviceId {
         self.id
+    }
+
+    fn devtmpfs_path(&self) -> Option<String> {
+        Some(self.file.name().into())
     }
 
     fn open(&self) -> Result<Box<dyn FileIo>> {

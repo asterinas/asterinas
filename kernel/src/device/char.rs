@@ -2,37 +2,22 @@
 
 //! A subsystem for character devices (or char devices for short).
 
-use alloc::format;
 use core::ops::Range;
 
 use device_id::{DeviceId, MajorId};
 
 use crate::{
     fs::{
-        device::{add_node, Device, DeviceType},
+        device::{add_node, Device},
         fs_resolver::FsResolver,
-        inode_handle::FileIo,
     },
     prelude::*,
 };
 
-/// A character device.
-pub trait CharDevice: Send + Sync + Debug {
-    /// Returns the name of this char device that should appear in devtmpfs (usually under `/dev`).
-    fn devtmpfs_name(&self) -> DevtmpfsName<'_>;
-
-    /// Returns the device ID.
-    fn id(&self) -> DeviceId;
-
-    /// Opens the char device, returning a file-like object that the userspace can interact with by
-    /// doing I/O.
-    fn open(&self) -> Result<Box<dyn FileIo>>;
-}
-
-static DEVICE_REGISTRY: Mutex<BTreeMap<u32, Arc<dyn CharDevice>>> = Mutex::new(BTreeMap::new());
+static DEVICE_REGISTRY: Mutex<BTreeMap<u32, Arc<dyn Device>>> = Mutex::new(BTreeMap::new());
 
 /// Registers a new char device.
-pub fn register(device: Arc<dyn CharDevice>) -> Result<()> {
+pub fn register(device: Arc<dyn Device>) -> Result<()> {
     let mut registry = DEVICE_REGISTRY.lock();
     let id = device.id().to_raw();
     if registry.contains_key(&id) {
@@ -44,7 +29,7 @@ pub fn register(device: Arc<dyn CharDevice>) -> Result<()> {
 }
 
 /// Unregisters an existing char device, returning the device if found.
-pub fn unregister(id: DeviceId) -> Result<Arc<dyn CharDevice>> {
+pub fn unregister(id: DeviceId) -> Result<Arc<dyn Device>> {
     DEVICE_REGISTRY
         .lock()
         .remove(&id.to_raw())
@@ -55,12 +40,12 @@ pub fn unregister(id: DeviceId) -> Result<Arc<dyn CharDevice>> {
 }
 
 /// Collects all char devices.
-pub fn collect_all() -> Vec<Arc<dyn CharDevice>> {
+pub fn collect_all() -> Vec<Arc<dyn Device>> {
     DEVICE_REGISTRY.lock().values().cloned().collect()
 }
 
 /// Looks up a char device of a given device ID.
-pub fn lookup(id: DeviceId) -> Option<Arc<dyn CharDevice>> {
+pub fn lookup(id: DeviceId) -> Option<Arc<dyn Device>> {
     DEVICE_REGISTRY.lock().get(&id.to_raw()).cloned()
 }
 
@@ -130,80 +115,12 @@ impl Drop for MajorIdOwner {
     }
 }
 
-/// A device's name under devtmpfs.
-///
-/// A `DevtmpfsName` consists of two parts:
-/// 1. The device name;
-/// 2. The class name.
-///
-/// # Examples
-///
-/// If you want a device to appear as `/dev/zero`,
-/// then assign it a name of `DevtmpfsName::new("zero", None)`.
-///
-/// If you want to a device to appear as `/dev/input/event0`,
-/// then assign it a name of `DevtmpfsName::new("event0", Some("input"))`.
-pub struct DevtmpfsName<'a> {
-    dev_name: &'a str,
-    class_name: Option<&'a str>,
-}
-
-impl<'a> DevtmpfsName<'a> {
-    pub fn new(dev_name: &'a str, class_name: Option<&'a str>) -> Self {
-        Self {
-            dev_name,
-            class_name,
+pub(super) fn init_in_first_process(fs_resolver: &FsResolver) -> Result<()> {
+    for device in collect_all() {
+        if let Some(devtmpfs_path) = device.devtmpfs_path() {
+            add_node(device, &devtmpfs_path, fs_resolver)?;
         }
     }
 
-    pub fn dev_name(&self) -> &'a str {
-        self.dev_name
-    }
-
-    pub fn class_name(&self) -> Option<&'a str> {
-        self.class_name
-    }
-}
-
-pub(super) fn init_in_first_process(fs_resolver: &FsResolver) -> Result<()> {
-    for device in collect_all() {
-        let devtmpfs_name = device.devtmpfs_name();
-        let path = if let Some(class_name) = devtmpfs_name.class_name() {
-            format!("{}/{}", class_name, devtmpfs_name.dev_name())
-        } else {
-            devtmpfs_name.dev_name().to_string()
-        };
-        let device = Arc::new(CharFile::new(device));
-        add_node(device, &path, fs_resolver)?;
-    }
-
     Ok(())
-}
-
-/// Represents a character device inode in the filesystem.
-//
-// TODO: This type wraps an `Arc<dyn CharDevice>` in another `Arc` just to implement the `Device`
-// trait. It leads to redundant vtable dispatch, reference counting, and heap allocation. We should
-// devise a better strategy to eliminate the unnecessary intermediate `Arc`.
-#[derive(Debug)]
-pub struct CharFile(Arc<dyn CharDevice>);
-
-impl CharFile {
-    pub fn new(device: Arc<dyn CharDevice>) -> Self {
-        Self(device)
-    }
-}
-
-impl Device for CharFile {
-    fn type_(&self) -> DeviceType {
-        DeviceType::Char
-    }
-
-    fn id(&self) -> DeviceId {
-        self.0.id()
-    }
-
-    fn open(&self) -> Result<Box<dyn FileIo>> {
-        self.0.open()
-    }
 }

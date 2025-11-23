@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, sync::Arc};
+use alloc::{boxed::Box, format, sync::Arc};
 
 use aster_console::AnyConsoleDevice;
 use aster_framebuffer::DummyFramebufferConsole;
@@ -10,6 +10,7 @@ use spin::Once;
 
 use super::{Tty, TtyDriver};
 use crate::{
+    device::char,
     events::IoEvents,
     fs::{
         inode_handle::FileIo,
@@ -30,6 +31,10 @@ pub struct VtDriver {
 impl TtyDriver for VtDriver {
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/major.h#L18>.
     const DEVICE_MAJOR_ID: u32 = 4;
+
+    fn devtmpfs_path(&self, index: u32) -> Option<String> {
+        Some(format!("tty{}", index))
+    }
 
     fn open(tty: Arc<Tty<Self>>) -> Result<Box<dyn FileIo>> {
         Ok(Box::new(TtyFile(tty)))
@@ -66,6 +71,10 @@ pub struct HvcDriver {
 impl TtyDriver for HvcDriver {
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/Documentation/admin-guide/devices.txt#L2936>.
     const DEVICE_MAJOR_ID: u32 = 229;
+
+    fn devtmpfs_path(&self, index: u32) -> Option<String> {
+        Some(format!("hvc{}", index))
+    }
 
     fn open(tty: Arc<Tty<Self>>) -> Result<Box<dyn FileIo>> {
         Ok(Box::new(TtyFile(tty)))
@@ -153,7 +162,7 @@ pub fn hvc0_device() -> Option<&'static Arc<Tty<HvcDriver>>> {
     HVC0.get()
 }
 
-pub(in crate::device) fn init_in_first_process() {
+pub(super) fn init_in_first_process() -> Result<()> {
     let devices = aster_console::all_devices();
 
     // Initialize the `tty1` device.
@@ -168,7 +177,9 @@ pub(in crate::device) fn init_in_first_process() {
         console: fb_console.clone(),
     };
     let tty1 = Tty::new(1, driver);
+
     TTY1.call_once(|| tty1.clone());
+    char::register(tty1.clone())?;
 
     fb_console.register_callback(Box::leak(Box::new(
         move |mut reader: VmReader<Infallible>| {
@@ -190,7 +201,9 @@ pub(in crate::device) fn init_in_first_process() {
             console: virtio_console.clone(),
         };
         let hvc0 = Tty::new(0, driver);
+
         HVC0.call_once(|| hvc0.clone());
+        char::register(hvc0.clone())?;
 
         virtio_console.register_callback(Box::leak(Box::new(
             move |mut reader: VmReader<Infallible>| {
@@ -200,4 +213,6 @@ pub(in crate::device) fn init_in_first_process() {
             },
         )));
     }
+
+    Ok(())
 }
