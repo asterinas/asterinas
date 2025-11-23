@@ -120,8 +120,7 @@ impl KVirtArea {
         for frame in frames.into_iter() {
             // SAFETY: The constructor of the `KVirtArea` has already ensured
             // that this mapping does not affect kernel's memory safety.
-            unsafe { cursor.map(MappedItem::Tracked(Frame::from_unsized(frame), prop)) }
-                .expect("Failed to map frame in a new `KVirtArea`");
+            unsafe { cursor.map(MappedItem::Tracked(Frame::from_unsized(frame), prop)) };
         }
 
         Self { range }
@@ -170,7 +169,7 @@ impl KVirtArea {
             for (pa, level) in largest_pages::<KernelPtConfig>(va_range.start, pa_range.start, len)
             {
                 // SAFETY: The caller of `map_untracked_frames` has ensured the safety of this mapping.
-                let _ = unsafe { cursor.map(MappedItem::Untracked(pa, level, prop)) };
+                unsafe { cursor.map(MappedItem::Untracked(pa, level, prop)) };
             }
         }
 
