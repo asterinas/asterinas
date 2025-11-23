@@ -427,6 +427,8 @@ impl VmMapping {
                     } else {
                         let new_frame = duplicate_frame(&frame)?;
                         prop.flags |= new_flags;
+                        cursor.unmap(PAGE_SIZE);
+                        cursor.jump(va.start).unwrap();
                         cursor.map(new_frame.into(), prop);
                         rss_delta.add(self.rss_type(), 1);
                     }
