@@ -28,9 +28,14 @@ use file::{
 use ostd::sync::SpinLock;
 use spin::Once;
 
-use super::char::{acquire_major, register, unregister, CharDevice, MajorIdOwner};
+use super::char::{acquire_major, register, unregister, MajorIdOwner};
 use crate::{
-    device::char::DevtmpfsName, fs::inode_handle::FileIo, prelude::*, util::ring_buffer::RbProducer,
+    fs::{
+        device::{Device, DeviceType},
+        inode_handle::FileIo,
+    },
+    prelude::*,
+    util::ring_buffer::RbProducer,
 };
 
 /// Major device number for evdev devices.
@@ -53,8 +58,6 @@ struct EvdevDevice {
     /// We must make sure that this lock is taken with the local IRQs disabled.
     /// Otherwise, we would be vulnerable to deadlock.
     opened_files: SpinLock<Vec<(Arc<EvdevFileInner>, RbProducer<EvdevEvent>)>>,
-    /// Device node name (e.g., "event0").
-    node_name: String,
     /// Device ID.
     id: DeviceId,
 }
@@ -74,14 +77,12 @@ impl Debug for EvdevDevice {
 
 impl EvdevDevice {
     pub(self) fn new(minor: u32, device: Arc<dyn InputDevice>) -> Self {
-        let node_name = format!("event{}", minor);
         let major = MajorId::new(EVDEV_MAJOR_ID);
         let minor_id = MinorId::new(minor);
 
         Self {
             device,
             opened_files: SpinLock::new(Vec::new()),
-            node_name,
             id: DeviceId::new(major, minor_id),
         }
     }
@@ -179,13 +180,17 @@ impl InputHandler for EvdevDevice {
     }
 }
 
-impl CharDevice for EvdevDevice {
-    fn devtmpfs_name(&self) -> DevtmpfsName<'_> {
-        DevtmpfsName::new(&self.node_name, Some("input"))
+impl Device for EvdevDevice {
+    fn type_(&self) -> DeviceType {
+        DeviceType::Char
     }
 
     fn id(&self) -> DeviceId {
         self.id
+    }
+
+    fn devtmpfs_path(&self) -> Option<String> {
+        Some(format!("input/event{}", self.id.minor().get()))
     }
 
     fn open(&self) -> Result<Box<dyn FileIo>> {

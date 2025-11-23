@@ -23,9 +23,9 @@ use tdx_guest::{
 };
 
 use crate::{
-    device::char::{CharDevice, DevtmpfsName},
     events::IoEvents,
     fs::{
+        device::{Device, DeviceType},
         inode_handle::FileIo,
         utils::{InodeIo, IoctlCmd, StatusFlags},
     },
@@ -51,13 +51,17 @@ impl TdxGuest {
     }
 }
 
-impl CharDevice for TdxGuest {
-    fn devtmpfs_name(&self) -> DevtmpfsName {
-        DevtmpfsName::new("tdx_guest", None)
+impl Device for TdxGuest {
+    fn type_(&self) -> DeviceType {
+        DeviceType::Char
     }
 
     fn id(&self) -> DeviceId {
         self.id
+    }
+
+    fn devtmpfs_path(&self) -> Option<String> {
+        Some("tdx_guest".into())
     }
 
     fn open(&self) -> Result<Box<dyn FileIo>> {

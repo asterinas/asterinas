@@ -165,6 +165,10 @@ impl Device for Inner {
         DeviceId::new(MajorId::new(PTMX_MAJOR_NUM), MinorId::new(PTMX_MINOR_NUM))
     }
 
+    fn devtmpfs_path(&self) -> Option<String> {
+        None
+    }
+
     fn open(&self) -> Result<Box<dyn FileIo>> {
         let devpts = self.0.upgrade().unwrap();
         Ok(devpts.create_master_slave_pair()?.0)

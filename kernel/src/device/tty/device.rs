@@ -9,8 +9,15 @@
 use device_id::{DeviceId, MajorId, MinorId};
 use spin::Once;
 
+use super::n_tty::tty1_device;
 use crate::{
-    device::tty::{hvc0_device, n_tty::VtDriver, tty1_device, Tty},
+    device::{
+        char,
+        tty::{
+            n_tty::{hvc0_device, VtDriver},
+            Tty,
+        },
+    },
     fs::{
         device::{Device, DeviceType},
         inode_handle::FileIo,
@@ -40,6 +47,10 @@ impl Device for Tty0Device {
         DeviceId::new(MajorId::new(4), MinorId::new(0))
     }
 
+    fn devtmpfs_path(&self) -> Option<String> {
+        Some("tty0".into())
+    }
+
     fn open(&self) -> Result<Box<dyn FileIo>> {
         self.active_vt().open()
     }
@@ -62,6 +73,10 @@ impl Device for TtyDevice {
 
     fn id(&self) -> DeviceId {
         DeviceId::new(MajorId::new(5), MinorId::new(0))
+    }
+
+    fn devtmpfs_path(&self) -> Option<String> {
+        Some("tty".into())
     }
 
     fn open(&self) -> Result<Box<dyn FileIo>> {
@@ -127,7 +142,19 @@ impl Device for SystemConsole {
         DeviceId::new(MajorId::new(5), MinorId::new(1))
     }
 
+    fn devtmpfs_path(&self) -> Option<String> {
+        Some("console".into())
+    }
+
     fn open(&self) -> Result<Box<dyn FileIo>> {
         self.inner.open()
     }
+}
+
+pub(super) fn init_in_first_process() -> Result<()> {
+    char::register(Arc::new(Tty0Device))?;
+    char::register(Arc::new(TtyDevice))?;
+    char::register(SystemConsole::singleton().clone())?;
+
+    Ok(())
 }

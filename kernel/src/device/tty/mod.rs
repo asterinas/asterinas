@@ -32,11 +32,16 @@ mod line_discipline;
 mod n_tty;
 mod termio;
 
-pub use device::{SystemConsole, Tty0Device, TtyDevice};
+pub use device::SystemConsole;
 pub use driver::TtyDriver;
 pub(super) use flags::TtyFlags;
-pub(super) use n_tty::init_in_first_process;
-pub use n_tty::{hvc0_device, tty1_device};
+
+pub(super) fn init_in_first_process() -> Result<()> {
+    n_tty::init_in_first_process()?;
+    device::init_in_first_process()?;
+
+    Ok(())
+}
 
 const IO_CAPACITY: usize = 4096;
 
@@ -405,6 +410,10 @@ impl<D: TtyDriver> Device for Tty<D> {
             MajorId::new(D::DEVICE_MAJOR_ID as u16),
             MinorId::new(self.index),
         )
+    }
+
+    fn devtmpfs_path(&self) -> Option<String> {
+        self.driver.devtmpfs_path(self.index)
     }
 
     fn open(&self) -> Result<Box<dyn FileIo>> {
