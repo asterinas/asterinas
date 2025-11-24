@@ -51,7 +51,7 @@ pub(in crate::arch) unsafe fn init_on_ap() {
 
 /// Sends a general inter-processor interrupt (IPI) to the specified CPU.
 pub(crate) fn send_ipi(hw_cpu_id: HwCpuId, _guard: &dyn PinCurrentCpu) {
-    const XLEN: usize = core::mem::size_of::<usize>() * 8;
+    const XLEN: usize = usize::BITS as usize;
     const XLEN_MASK: usize = XLEN - 1;
 
     let hart_id = hw_cpu_id.0 as usize;
