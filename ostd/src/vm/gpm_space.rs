@@ -186,8 +186,8 @@ impl<'a> CursorMut<'a> {
     ///
     /// This is the same as [`Cursor::find_next`].
     pub fn find_next(&mut self, len: usize) -> Option<Gpaddr> {
-        self.pt_cursor
-            .find_next(self.gpa().checked_add(len).unwrap())
+        let end = self.gpa().checked_add(len).unwrap();
+        self.pt_cursor.find_next(end)
     }
 
     /// Jumps to the guest physical address.
