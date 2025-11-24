@@ -39,7 +39,6 @@ const TDX_GUEST_MINOR: u32 = 0x7b;
 #[derive(Debug)]
 pub struct TdxGuest {
     id: DeviceId,
-    weak_self: Weak<Self>,
 }
 
 impl TdxGuest {
@@ -47,10 +46,8 @@ impl TdxGuest {
         let major = super::MISC_MAJOR.get().unwrap().get();
         let minor = MinorId::new(TDX_GUEST_MINOR);
 
-        Arc::new_cyclic(|weak| Self {
-            id: DeviceId::new(major, minor),
-            weak_self: weak.clone(),
-        })
+        let id = DeviceId::new(major, minor);
+        Arc::new(Self { id })
     }
 }
 
@@ -63,8 +60,8 @@ impl CharDevice for TdxGuest {
         self.id
     }
 
-    fn open(&self) -> Result<Arc<dyn FileIo>> {
-        Ok(self.weak_self.upgrade().unwrap())
+    fn open(&self) -> Result<Box<dyn FileIo>> {
+        Ok(Box::new(TdxGuestFile))
     }
 }
 
@@ -112,14 +109,16 @@ impl From<TdVmcallError> for Error {
     }
 }
 
-impl Pollable for TdxGuest {
+struct TdxGuestFile;
+
+impl Pollable for TdxGuestFile {
     fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
         let events = IoEvents::IN | IoEvents::OUT;
         events & mask
     }
 }
 
-impl InodeIo for TdxGuest {
+impl InodeIo for TdxGuestFile {
     fn read_at(
         &self,
         _offset: usize,
@@ -139,7 +138,7 @@ impl InodeIo for TdxGuest {
     }
 }
 
-impl FileIo for TdxGuest {
+impl FileIo for TdxGuestFile {
     fn check_seekable(&self) -> Result<()> {
         return_errno_with_message!(Errno::ESPIPE, "seek is not supported")
     }

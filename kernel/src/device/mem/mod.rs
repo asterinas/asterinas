@@ -58,8 +58,8 @@ impl CharDevice for MemDevice {
         self.id
     }
 
-    fn open(&self) -> Result<Arc<dyn FileIo>> {
-        Ok(Arc::new(self.file))
+    fn open(&self) -> Result<Box<dyn FileIo>> {
+        Ok(Box::new(self.file))
     }
 }
 

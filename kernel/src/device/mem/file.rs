@@ -137,7 +137,7 @@ impl InodeIo for MemFile {
             MemFile::Full => {
                 return_errno_with_message!(Errno::ENOSPC, "no space left on /dev/full")
             }
-            _ => return_errno_with_message!(Errno::ENAVAIL, "write is not supported yet"),
+            _ => return_errno_with_message!(Errno::EINVAL, "write is not supported yet"),
         }
     }
 }
