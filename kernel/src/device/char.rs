@@ -2,25 +2,18 @@
 
 //! A subsystem for character devices (or char devices for short).
 
-#![expect(dead_code)]
-
 use alloc::format;
 use core::ops::Range;
 
 use device_id::{DeviceId, MajorId};
-use inherit_methods_macro::inherit_methods;
 
 use crate::{
-    events::IoEvents,
     fs::{
         device::{add_node, Device, DeviceType},
-        file_handle::Mappable,
         fs_resolver::FsResolver,
         inode_handle::FileIo,
-        utils::{InodeIo, IoctlCmd, StatusFlags},
     },
     prelude::*,
-    process::signal::{PollHandle, Pollable},
 };
 
 /// A character device.
@@ -31,10 +24,9 @@ pub trait CharDevice: Send + Sync + Debug {
     /// Returns the device ID.
     fn id(&self) -> DeviceId;
 
-    /// Opens the char device, returning a file-like object that the userspace can interact with by doing I/O.
-    ///
-    /// Multiple calls to this method return the same object (at least logically).
-    fn open(&self) -> Result<Arc<dyn FileIo>>;
+    /// Opens the char device, returning a file-like object that the userspace can interact with by
+    /// doing I/O.
+    fn open(&self) -> Result<Box<dyn FileIo>>;
 }
 
 static DEVICE_REGISTRY: Mutex<BTreeMap<u32, Arc<dyn CharDevice>>> = Mutex::new(BTreeMap::new());
@@ -104,6 +96,7 @@ pub fn acquire_major(major: MajorId) -> Result<MajorIdOwner> {
 ///
 /// The returned `MajorIdOwner` object represents the ownership to the major ID.
 /// Until the object is dropped, this major ID cannot be acquired via `acquire_major` or `allocate_major` again.
+#[expect(dead_code)]
 pub fn allocate_major() -> Result<MajorIdOwner> {
     let mut majors = MAJORS.lock();
 
@@ -188,8 +181,10 @@ pub(super) fn init_in_first_process(fs_resolver: &FsResolver) -> Result<()> {
 }
 
 /// Represents a character device inode in the filesystem.
-///
-/// Only implements the `Device` trait.
+//
+// TODO: This type wraps an `Arc<dyn CharDevice>` in another `Arc` just to implement the `Device`
+// trait. It leads to redundant vtable dispatch, reference counting, and heap allocation. We should
+// devise a better strategy to eliminate the unnecessary intermediate `Arc`.
 #[derive(Debug)]
 pub struct CharFile(Arc<dyn CharDevice>);
 
@@ -209,41 +204,6 @@ impl Device for CharFile {
     }
 
     fn open(&self) -> Result<Box<dyn FileIo>> {
-        Ok(Box::new(OpenCharFile(self.0.open()?)))
+        self.0.open()
     }
-}
-
-/// Represents an opened character device file ready for I/O operations.
-///
-/// Does not implement the `Device` trait but provides full implementations
-/// for I/O related traits.
-pub struct OpenCharFile(Arc<dyn FileIo>);
-
-#[inherit_methods(from = "self.0")]
-impl InodeIo for OpenCharFile {
-    fn read_at(
-        &self,
-        offset: usize,
-        writer: &mut VmWriter,
-        status_flags: StatusFlags,
-    ) -> Result<usize>;
-    fn write_at(
-        &self,
-        offset: usize,
-        reader: &mut VmReader,
-        status_flags: StatusFlags,
-    ) -> Result<usize>;
-}
-
-#[inherit_methods(from = "self.0")]
-impl Pollable for OpenCharFile {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents;
-}
-
-#[inherit_methods(from = "self.0")]
-impl FileIo for OpenCharFile {
-    fn check_seekable(&self) -> Result<()>;
-    fn is_offset_aware(&self) -> bool;
-    fn mappable(&self) -> Result<Mappable>;
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32>;
 }

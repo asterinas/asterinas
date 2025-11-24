@@ -162,15 +162,14 @@ impl EvdevDevice {
     }
 
     /// Creates a new opened evdev file for this evdev device.
-    fn create_file(self: &Arc<Self>, buffer_size: usize) -> Result<Arc<EvdevFile>> {
+    fn create_file(self: &Arc<Self>, buffer_size: usize) -> Result<Box<EvdevFile>> {
         // Create the evdev file and get the producer.
         let (file, producer) = EvdevFile::new(buffer_size, Arc::downgrade(self));
 
         // Attach the opened evdev file to this device.
         self.attach_file(file.inner().clone(), producer);
 
-        // Note that this can and should be a `Box` after fixing the char device subsystem.
-        Ok(Arc::new(file))
+        Ok(Box::new(file))
     }
 }
 
@@ -189,7 +188,7 @@ impl CharDevice for EvdevDevice {
         self.id
     }
 
-    fn open(&self) -> Result<Arc<dyn FileIo>> {
+    fn open(&self) -> Result<Box<dyn FileIo>> {
         // Get the device from the registry.
         let devices = EVDEV_DEVICES.lock();
         let Some(evdev) = devices.get(&self.id.minor()) else {
@@ -201,7 +200,7 @@ impl CharDevice for EvdevDevice {
 
         // Create a new opened evdev file for this evdev device.
         let file = evdev.create_file(EVDEV_BUFFER_SIZE)?;
-        Ok(file as Arc<dyn FileIo>)
+        Ok(file as Box<dyn FileIo>)
     }
 }
 

@@ -211,7 +211,7 @@ impl CharDevice for Fb {
         DeviceId::new(MajorId::new(29), MinorId::new(0))
     }
 
-    fn open(&self) -> Result<Arc<dyn FileIo>> {
+    fn open(&self) -> Result<Box<dyn FileIo>> {
         let Some(framebuffer) = FRAMEBUFFER.get() else {
             return Err(Error::with_message(
                 Errno::ENODEV,
@@ -219,7 +219,7 @@ impl CharDevice for Fb {
             ));
         };
         let framebuffer = framebuffer.clone();
-        Ok(Arc::new(FbHandle { framebuffer }))
+        Ok(Box::new(FbHandle { framebuffer }))
     }
 }
 
