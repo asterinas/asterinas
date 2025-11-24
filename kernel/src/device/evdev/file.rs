@@ -3,7 +3,7 @@
 use alloc::sync::Weak;
 use core::{
     fmt::Debug,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::atomic::{AtomicU8, AtomicUsize, Ordering},
     time::Duration,
 };
 
@@ -27,22 +27,10 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
-    syscall::ClockId,
     util::ring_buffer::{RbConsumer, RbProducer, RingBuffer},
 };
 
 pub(super) const EVDEV_BUFFER_SIZE: usize = 64;
-
-impl From<ClockId> for i32 {
-    fn from(clock_id: ClockId) -> Self {
-        clock_id as i32
-    }
-}
-
-define_atomic_version_of_integer_like_type!(ClockId, try_from = true, {
-    #[derive(Debug)]
-    pub(super) struct AtomicClockId(core::sync::atomic::AtomicI32);
-});
 
 // Compatible with Linux's event format.
 #[repr(C)]
@@ -68,12 +56,32 @@ impl EvdevEvent {
     }
 }
 
+// Reference: <https://elixir.bootlin.com/linux/v6.17.9/source/drivers/input/evdev.c#L181-L189>
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, TryFromInt)]
+enum EvdevClock {
+    Realtime = 0,
+    Monotonic = 1,
+    Boottime = 2,
+}
+
+impl From<EvdevClock> for u8 {
+    fn from(value: EvdevClock) -> Self {
+        value as _
+    }
+}
+
+define_atomic_version_of_integer_like_type!(EvdevClock, try_from = true, {
+    #[derive(Debug)]
+    struct AtomicEvdevClock(AtomicU8);
+});
+
 /// An opened file from an evdev device (`EvdevDevice`).
 pub struct EvdevFile {
     /// Consumer for reading events.
     consumer: Mutex<RbConsumer<EvdevEvent>>,
     /// Clock ID for this opened evdev file.
-    clock_id: AtomicClockId,
+    clock_id: AtomicEvdevClock,
     /// Number of complete event packets available (ended with SYN_REPORT).
     packet_count: AtomicUsize,
     /// Pollee for event notification.
@@ -100,8 +108,7 @@ impl EvdevFile {
 
         let evdev_file = Self {
             consumer: Mutex::new(consumer),
-            // Default to be CLOCK_MONOTONIC
-            clock_id: AtomicClockId::new(ClockId::CLOCK_MONOTONIC),
+            clock_id: AtomicEvdevClock::new(EvdevClock::Monotonic),
             packet_count: AtomicUsize::new(0),
             pollee: Pollee::new(),
             evdev,
@@ -109,9 +116,15 @@ impl EvdevFile {
         (evdev_file, producer)
     }
 
-    /// Returns the clock ID for this opened evdev file.
-    pub(super) fn clock_id(&self) -> ClockId {
-        self.clock_id.load(Ordering::Relaxed)
+    pub(super) fn read_clock(&self) -> Duration {
+        use crate::time::clocks::{BootTimeClock, MonotonicClock, RealTimeClock};
+
+        let clock_id = self.clock_id.load(Ordering::Relaxed);
+        match clock_id {
+            EvdevClock::Realtime => RealTimeClock::get().read_time(),
+            EvdevClock::Monotonic => MonotonicClock::get().read_time(),
+            EvdevClock::Boottime => BootTimeClock::get().read_time(),
+        }
     }
 
     /// Checks if buffer has complete event packets.
