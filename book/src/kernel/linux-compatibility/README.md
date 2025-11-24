@@ -38,13 +38,13 @@ which are summarized in the table below.
 | 15      | rt_sigreturn           | ✅             | 💯 |
 | 16      | ioctl                  | ✅             | ❓ |
 | 17      | pread64                | ✅             | 💯 |
-| 18      | pwrite64               | ✅             | ❓ |
-| 19      | readv                  | ✅             | ❓ |
-| 20      | writev                 | ✅             | ❓ |
+| 18      | pwrite64               | ✅             | 💯 |
+| 19      | readv                  | ✅             | 💯 |
+| 20      | writev                 | ✅             | 💯 |
 | 21      | access                 | ✅             | 💯 |
 | 22      | pipe                   | ✅             | 💯 |
 | 23      | select                 | ✅             | ❓ |
-| 24      | sched_yield            | ✅             | ❓ |
+| 24      | sched_yield            | ✅             | 💯 |
 | 25      | mremap                 | ✅             | [⚠️](syscall-feature-coverage/memory-management/#mremap) |
 | 26      | msync                  | ✅             | [⚠️](syscall-feature-coverage/memory-management/#msync) |
 | 27      | mincore                | ❌             | N/A |
@@ -54,13 +54,13 @@ which are summarized in the table below.
 | 31      | shmctl                 | ❌             | N/A |
 | 32      | dup                    | ✅             | 💯 |
 | 33      | dup2                   | ✅             | 💯 |
-| 34      | pause                  | ✅             | ❓ |
+| 34      | pause                  | ✅             | 💯 |
 | 35      | nanosleep              | ✅             | ❓ |
 | 36      | getitimer              | ✅             | ❓ |
 | 37      | alarm                  | ✅             | 💯 |
 | 38      | setitimer              | ✅             | ❓ |
 | 39      | getpid                 | ✅             | 💯 |
-| 40      | sendfile               | ✅             | ❓ |
+| 40      | sendfile               | ✅             | 💯 |
 | 41      | socket                 | ✅             | [⚠️](syscall-feature-coverage/networking-and-sockets/#socket) |
 | 42      | connect                | ✅             | [⚠️](syscall-feature-coverage/networking-and-sockets/#connect) |
 | 43      | accept                 | ✅             | ❓ |
@@ -77,13 +77,13 @@ which are summarized in the table below.
 | 54      | setsockopt             | ✅             | [⚠️](syscall-feature-coverage/networking-and-sockets/#getsockopt-and-setsockopt) |
 | 55      | getsockopt             | ✅             | [⚠️](syscall-feature-coverage/networking-and-sockets/#getsockopt-and-setsockopt) |
 | 56      | clone                  | ✅             | [⚠️](syscall-feature-coverage/process-and-thread-management/#clone) |
-| 57      | fork                   | ✅             | ❓ |
+| 57      | fork                   | ✅             | 💯 |
 | 58      | vfork                  | ❌             | N/A |
 | 59      | execve                 | ✅             | 💯 |
-| 60      | exit                   | ✅             | ❓ |
+| 60      | exit                   | ✅             | 💯 |
 | 61      | wait4                  | ✅             | [⚠️](syscall-feature-coverage/process-and-thread-management/#wait4) |
-| 62      | kill                   | ✅             | ❓ |
-| 63      | uname                  | ✅             | ❓ |
+| 62      | kill                   | ✅             | 💯 |
+| 63      | uname                  | ✅             | 💯 |
 | 64      | semget                 | ✅             | [⚠️](syscall-feature-coverage/inter-process-communication/#semget) |
 | 65      | semop                  | ✅             | [⚠️](syscall-feature-coverage/inter-process-communication/#semop-and-semtimedop) |
 | 66      | semctl                 | ✅             | [⚠️](syscall-feature-coverage/inter-process-communication/#semctl) |
@@ -94,29 +94,29 @@ which are summarized in the table below.
 | 71      | msgctl                 | ❌             | N/A |
 | 72      | fcntl                  | ✅             | [⚠️](syscall-feature-coverage/file-descriptor-and-io-control/#fcntl) |
 | 73      | flock                  | ✅             | ❓ |
-| 74      | fsync                  | ✅             | ❓ |
-| 75      | fdatasync              | ✅             | ❓ |
-| 76      | truncate               | ✅             | ❓ |
-| 77      | ftruncate              | ✅             | ❓ |
-| 78      | getdents               | ✅             | ❓ |
-| 79      | getcwd                 | ✅             | ❓ |
-| 80      | chdir                  | ✅             | ❓ |
-| 81      | fchdir                 | ✅             | ❓ |
-| 82      | rename                 | ✅             | ❓ |
+| 74      | fsync                  | ✅             | 💯 |
+| 75      | fdatasync              | ✅             | 💯 |
+| 76      | truncate               | ✅             | 💯 |
+| 77      | ftruncate              | ✅             | 💯 |
+| 78      | getdents               | ✅             | 💯 |
+| 79      | getcwd                 | ✅             | 💯 |
+| 80      | chdir                  | ✅             | 💯 |
+| 81      | fchdir                 | ✅             | 💯 |
+| 82      | rename                 | ✅             | 💯 |
 | 83      | mkdir                  | ✅             | 💯 |
-| 84      | rmdir                  | ✅             | ❓ |
-| 85      | creat                  | ✅             | ❓ |
-| 86      | link                   | ✅             | ❓ |
-| 87      | unlink                 | ✅             | ❓ |
-| 88      | symlink                | ✅             | ❓ |
-| 89      | readlink               | ✅             | ❓ |
-| 90      | chmod                  | ✅             | ❓ |
-| 91      | fchmod                 | ✅             | ❓ |
-| 92      | chown                  | ✅             | ❓ |
-| 93      | fchown                 | ✅             | ❓ |
-| 94      | lchown                 | ✅             | ❓ |
-| 95      | umask                  | ✅             | ❓ |
-| 96      | gettimeofday           | ✅             | ❓ |
+| 84      | rmdir                  | ✅             | 💯 |
+| 85      | creat                  | ✅             | 💯 |
+| 86      | link                   | ✅             | 💯 |
+| 87      | unlink                 | ✅             | 💯 |
+| 88      | symlink                | ✅             | 💯 |
+| 89      | readlink               | ✅             | 💯 |
+| 90      | chmod                  | ✅             | 💯 |
+| 91      | fchmod                 | ✅             | 💯 |
+| 92      | chown                  | ✅             | 💯 |
+| 93      | fchown                 | ✅             | 💯 |
+| 94      | lchown                 | ✅             | 💯 |
+| 95      | umask                  | ✅             | 💯 |
+| 96      | gettimeofday           | ✅             | 💯 |
 | 97      | getrlimit              | ✅             | ❓ |
 | 98      | getrusage              | ✅             | [⚠️](syscall-feature-coverage/system-information-and-misc/#getrusage) |
 | 99      | sysinfo                | ✅             | 💯 |
@@ -126,39 +126,39 @@ which are summarized in the table below.
 | 103     | syslog                 | ❌             | N/A |
 | 104     | getgid                 | ✅             | 💯 |
 | 105     | setuid                 | ✅             | 💯 |
-| 106     | setgid                 | ✅             | ❓ |
+| 106     | setgid                 | ✅             | 💯 |
 | 107     | geteuid                | ✅             | 💯 |
 | 108     | getegid                | ✅             | 💯 |
-| 109     | setpgid                | ✅             | ❓ |
+| 109     | setpgid                | ✅             | 💯 |
 | 110     | getppid                | ✅             | 💯 |
-| 111     | getpgrp                | ✅             | ❓ |
-| 112     | setsid                 | ✅             | ❓ |
-| 113     | setreuid               | ✅             | ❓ |
-| 114     | setregid               | ✅             | ❓ |
-| 115     | getgroups              | ✅             | ❓ |
-| 116     | setgroups              | ✅             | ❓ |
-| 117     | setresuid              | ✅             | ❓ |
-| 118     | getresuid              | ✅             | ❓ |
-| 119     | setresgid              | ✅             | ❓ |
-| 120     | getresgid              | ✅             | ❓ |
-| 121     | getpgid                | ✅             | ❓ |
-| 122     | setfsuid               | ✅             | ❓ |
-| 123     | setfsgid               | ✅             | ❓ |
-| 124     | getsid                 | ✅             | ❓ |
+| 111     | getpgrp                | ✅             | 💯 |
+| 112     | setsid                 | ✅             | 💯 |
+| 113     | setreuid               | ✅             | 💯 |
+| 114     | setregid               | ✅             | 💯 |
+| 115     | getgroups              | ✅             | 💯 |
+| 116     | setgroups              | ✅             | 💯 |
+| 117     | setresuid              | ✅             | 💯 |
+| 118     | getresuid              | ✅             | 💯 |
+| 119     | setresgid              | ✅             | 💯 |
+| 120     | getresgid              | ✅             | 💯 |
+| 121     | getpgid                | ✅             | 💯 |
+| 122     | setfsuid               | ✅             | 💯 |
+| 123     | setfsgid               | ✅             | 💯 |
+| 124     | getsid                 | ✅             | 💯 |
 | 125     | capget                 | ✅             | [⚠️](syscall-feature-coverage/namespaces-cgroups-and-security/#capget-and-capset) |
 | 126     | capset                 | ✅             | [⚠️](syscall-feature-coverage/namespaces-cgroups-and-security/#capget-and-capset) |
-| 127     | rt_sigpending          | ✅             | ❓ |
+| 127     | rt_sigpending          | ✅             | 💯 |
 | 128     | rt_sigtimedwait        | ❌             | N/A |
 | 129     | rt_sigqueueinfo        | ❌             | N/A |
-| 130     | rt_sigsuspend          | ✅             | ❓ |
+| 130     | rt_sigsuspend          | ✅             | 💯 |
 | 131     | sigaltstack            | ✅             | ❓ |
-| 132     | utime                  | ✅             | ❓ |
-| 133     | mknod                  | ✅             | ❓ |
+| 132     | utime                  | ✅             | 💯 |
+| 133     | mknod                  | ✅             | 💯 |
 | 134     | uselib                 | ❌             | N/A |
 | 135     | personality            | ❌             | N/A |
 | 136     | ustat                  | ❌             | N/A |
-| 137     | statfs                 | ✅             | ❓ |
-| 138     | fstatfs                | ✅             | ❓ |
+| 137     | statfs                 | ✅             | 💯 |
+| 138     | fstatfs                | ✅             | 💯 |
 | 139     | sysfs                  | ❌             | N/A |
 | 140     | getpriority            | ✅             | ❓ |
 | 141     | setpriority            | ✅             | ❓ |
@@ -181,8 +181,8 @@ which are summarized in the table below.
 | 158     | arch_prctl             | ✅             | [⚠️](syscall-feature-coverage/system-information-and-misc/#arch_prctl) |
 | 159     | adjtimex               | ❌             | N/A |
 | 160     | setrlimit              | ✅             | ❓ |
-| 161     | chroot                 | ✅             | ❓ |
-| 162     | sync                   | ✅             | ❓ |
+| 161     | chroot                 | ✅             | 💯 |
+| 162     | sync                   | ✅             | 💯 |
 | 163     | acct                   | ❌             | N/A |
 | 164     | settimeofday           | ❌             | N/A |
 | 165     | mount                  | ✅             | [⚠️](syscall-feature-coverage/file-systems-and-mount-control/#mount) |
@@ -190,8 +190,8 @@ which are summarized in the table below.
 | 167     | swapon                 | ❌             | N/A |
 | 168     | swapoff                | ❌             | N/A |
 | 169     | reboot                 | ❌             | N/A |
-| 170     | sethostname            | ✅             | ❓ |
-| 171     | setdomainname          | ✅             | ❓ |
+| 170     | sethostname            | ✅             | 💯 |
+| 171     | setdomainname          | ✅             | 💯 |
 | 172     | iopl                   | ❌             | N/A |
 | 173     | ioperm                 | ❌             | N/A |
 | 174     | create_module          | ❌             | N/A |
@@ -206,24 +206,24 @@ which are summarized in the table below.
 | 183     | afs_syscall            | ❌             | N/A |
 | 184     | tuxcall                | ❌             | N/A |
 | 185     | security               | ❌             | N/A |
-| 186     | gettid                 | ✅             | ❓ |
+| 186     | gettid                 | ✅             | 💯 |
 | 187     | readahead              | ❌             | N/A |
 | 188     | setxattr               | ✅             | ❓ |
 | 189     | lsetxattr              | ✅             | ❓ |
 | 190     | fsetxattr              | ✅             | ❓ |
-| 191     | getxattr               | ✅             | ❓ |
-| 192     | lgetxattr              | ✅             | ❓ |
-| 193     | fgetxattr              | ✅             | ❓ |
-| 194     | listxattr              | ✅             | ❓ |
-| 195     | llistxattr             | ✅             | ❓ |
-| 196     | flistxattr             | ✅             | ❓ |
-| 197     | removexattr            | ✅             | ❓ |
-| 198     | lremovexattr           | ✅             | ❓ |
-| 199     | fremovexattr           | ✅             | ❓ |
+| 191     | getxattr               | ✅             | 💯 |
+| 192     | lgetxattr              | ✅             | 💯 |
+| 193     | fgetxattr              | ✅             | 💯 |
+| 194     | listxattr              | ✅             | 💯 |
+| 195     | llistxattr             | ✅             | 💯 |
+| 196     | flistxattr             | ✅             | 💯 |
+| 197     | removexattr            | ✅             | 💯 |
+| 198     | lremovexattr           | ✅             | 💯 |
+| 199     | fremovexattr           | ✅             | 💯 |
 | 200     | tkill                  | ❌             | N/A |
-| 201     | time                   | ✅             | ❓ |
+| 201     | time                   | ✅             | 💯 |
 | 202     | futex                  | ✅             | [⚠️](syscall-feature-coverage/inter-process-communication/#futex) |
-| 203     | sched_setaffinity      | ✅             | ❓ |
+| 203     | sched_setaffinity      | ✅             | 💯 |
 | 204     | sched_getaffinity      | ✅             | 💯 |
 | 205     | set_thread_area        | ❌             | N/A |
 | 206     | io_setup               | ❌             | N/A |
@@ -233,7 +233,7 @@ which are summarized in the table below.
 | 210     | io_cancel              | ❌             | N/A |
 | 211     | get_thread_area        | ❌             | N/A |
 | 212     | lookup_dcookie         | ❌             | N/A |
-| 213     | epoll_create           | ✅             | ❓ |
+| 213     | epoll_create           | ✅             | 💯 |
 | 214     | epoll_ctl_old          | ❌             | N/A |
 | 215     | epoll_wait_old         | ❌             | N/A |
 | 216     | remap_file_pages       | ❌             | N/A |
@@ -244,9 +244,9 @@ which are summarized in the table below.
 | 221     | fadvise64              | ✅             | ❓ |
 | 222     | timer_create           | ✅             | [⚠️](syscall-feature-coverage/signals-and-timers/#timer_create) |
 | 223     | timer_settime          | ✅             | ❓ |
-| 224     | timer_gettime          | ✅             | ❓ |
+| 224     | timer_gettime          | ✅             | 💯 |
 | 225     | timer_getoverrun       | ❌             | N/A |
-| 226     | timer_delete           | ✅             | ❓ |
+| 226     | timer_delete           | ✅             | 💯 |
 | 227     | clock_settime          | ❌             | N/A |
 | 228     | clock_gettime          | ✅             | [⚠️](syscall-feature-coverage/system-information-and-misc/#clock_gettime) |
 | 229     | clock_getres           | ❌             | N/A |
@@ -254,8 +254,8 @@ which are summarized in the table below.
 | 231     | exit_group             | ✅             | 💯 |
 | 232     | epoll_wait             | ✅             | ❓ |
 | 233     | epoll_ctl              | ✅             | ❓ |
-| 234     | tgkill                 | ✅             | ❓ |
-| 235     | utimes                 | ✅             | ❓ |
+| 234     | tgkill                 | ✅             | 💯 |
+| 235     | utimes                 | ✅             | 💯 |
 | 236     | vserver                | ❌             | N/A |
 | 237     | mbind                  | ❌             | N/A |
 | 238     | set_mempolicy          | ❌             | N/A |
@@ -278,16 +278,16 @@ which are summarized in the table below.
 | 255     | inotify_rm_watch       | ❌             | N/A |
 | 256     | migrate_pages          | ❌             | N/A |
 | 257     | openat                 | ✅             | [⚠️](syscall-feature-coverage/file-and-directory-operations/#open-and-openat) |
-| 258     | mkdirat                | ✅             | ❓ |
-| 259     | mknodat                | ✅             | ❓ |
+| 258     | mkdirat                | ✅             | 💯 |
+| 259     | mknodat                | ✅             | 💯 |
 | 260     | fchownat               | ✅             | ❓ |
-| 261     | futimesat              | ✅             | ❓ |
+| 261     | futimesat              | ✅             | 💯 |
 | 262     | newfstatat             | ✅             | [⚠️](syscall-feature-coverage/file-and-directory-operations/#newfstatat) |
 | 263     | unlinkat               | ✅             | ❓ |
 | 264     | renameat               | ✅             | ❓ |
 | 265     | linkat                 | ✅             | ❓ |
-| 266     | symlinkat              | ✅             | ❓ |
-| 267     | readlinkat             | ✅             | ❓ |
+| 266     | symlinkat              | ✅             | 💯 |
+| 267     | readlinkat             | ✅             | 💯 |
 | 268     | fchmodat               | ✅             | ❓ |
 | 269     | faccessat              | ✅             | ❓ |
 | 270     | pselect6               | ✅             | 💯 |
@@ -307,7 +307,7 @@ which are summarized in the table below.
 | 284     | eventfd                | ✅             | 💯 |
 | 285     | fallocate              | ✅             | ❓ |
 | 286     | timerfd_settime        | ✅             | ❓ |
-| 287     | timerfd_gettime        | ✅             | ❓ |
+| 287     | timerfd_gettime        | ✅             | 💯 |
 | 288     | accept4                | ✅             | ❓ |
 | 289     | signalfd4              | ✅             | ❓ |
 | 290     | eventfd2               | ✅             | [⚠️](syscall-feature-coverage/file-descriptor-and-io-control/#eventfd-and-eventfd2) |
@@ -315,8 +315,8 @@ which are summarized in the table below.
 | 292     | dup3                   | ✅             | 💯 |
 | 293     | pipe2                  | ✅             | [⚠️](syscall-feature-coverage/file-descriptor-and-io-control/#pipe-and-pipe2) |
 | 294     | inotify_init1          | ❌             | N/A |
-| 295     | preadv                 | ✅             | ❓ |
-| 296     | pwritev                | ✅             | ❓ |
+| 295     | preadv                 | ✅             | 💯 |
+| 296     | pwritev                | ✅             | 💯 |
 | 297     | rt_tgsigqueueinfo      | ❌             | N/A |
 | 298     | perf_event_open        | ❌             | N/A |
 | 299     | recvmmsg               | ❌             | N/A |
@@ -329,7 +329,7 @@ which are summarized in the table below.
 | 306     | syncfs                 | ❌             | N/A |
 | 307     | sendmmsg               | ❌             | N/A |
 | 308     | setns                  | ✅             | ❓ |
-| 309     | getcpu                 | ✅             | ❓ |
+| 309     | getcpu                 | ✅             | 💯 |
 | 310     | process_vm_readv       | ❌             | N/A |
 | 311     | process_vm_writev      | ❌             | N/A |
 | 312     | kcmp                   | ❌             | N/A |

@@ -8,3 +8,13 @@ pselect6(nfds, readfds, writefds, exceptfds, timeout, sigmask);
 
 // Wait for some event on a file descriptor
 poll(fds, nfds, timeout);
+
+// Transfer data between file descriptors
+sendfile(out_fd, in_fd, offset, count);
+
+// Synchronize a file's in-core state with storage device
+fsync(fd);
+fdatasync(fd);
+
+// Open an epoll file descriptor
+epoll_create(size);

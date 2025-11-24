@@ -14,9 +14,91 @@ write(fd, buf, count);
 
 // Create a directory
 mkdir(pathname, mode);
+mkdirat(dirfd, path, mode);
 
 // Read from a file descriptor at a given offset
 pread64(fd, buf, count, offset);
 
 // Check user's permissions for a file
 access(pathname, mode);
+
+// Write to a file descriptor at a given offset
+pwrite64(fd, buf, count, offset);
+
+// Read/write data into multiple buffers
+readv(fd, iov, iovcnt);
+preadv(fd, iov, iovcnt, offset);
+writev(fd, iov, iovcnt);
+pwritev(fd, iov, iovcnt, offset);
+
+// Truncate a file to a specified length
+truncate(path, length);
+ftruncate(fd, length);
+
+// Get current working directory
+getcwd(buf, size);
+
+// Change working directory
+chdir(path);
+fchdir(fd);
+
+// Change the name or location of a file
+rename(oldpath, newpath);
+
+// Delete a directory
+rmdir(path);
+
+// Create a file
+creat(path, mode);
+
+// Make a new name for a file
+link(oldpath, newpath);
+
+// Delete a name and possibly the file it refers to
+unlink(path);
+
+// Make a new name for a file
+symlink(target, linkpath);
+symlinkat(target, newdirfd, linkpath);
+
+// Read value of a symbolic link
+readlink(path, buf, bufsiz);
+readlinkat(dirfd, path, buf, bufsiz);
+
+// Change permissions of a file
+chmod(path, mode);
+fchmod(fd, mode);
+
+// Change ownership of a file
+chown(path, owner, group);
+fchown(fd, owner, group);
+lchown(path, owner, group);
+
+// Set file mode creation mask
+umask(mask);
+
+// Change file last access and modification times
+utime(path, times);
+utimes(path, times);
+
+// Create a filesystem node
+mknod(path, mode, dev);
+mknodat(dirfd, path, mode, dev);
+
+// Change timestamps of a file relative to a directory file descriptor
+futimesat(dirfd, path, times);
+
+// Retrieve an extended attribute value
+getxattr(path, name, value, size);
+lgetxattr(path, name, value, size);
+fgetxattr(fd, name, value, size);
+
+// List extended attribute names
+listxattr(path, list, size);
+llistxattr(path, list, size);
+flistxattr(fd, list, size);
+
+// Remove an extended attribute
+removexattr(path, name);
+lremovexattr(path, name);
+fremovexattr(fd, name);
