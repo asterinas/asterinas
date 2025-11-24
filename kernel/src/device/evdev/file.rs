@@ -114,16 +114,6 @@ impl EvdevFile {
         self.clock_id.load(Ordering::Relaxed)
     }
 
-    /// Checks if the EvdevEvent is a `SYN_REPORT` event.
-    fn is_syn_report_event(&self, event: &EvdevEvent) -> bool {
-        event.type_ == EventTypes::SYN.as_index() && event.code == SynEvent::Report as u16
-    }
-
-    /// Checks if the EvdevEvent is a `SYN_DROPPED` event.
-    fn is_syn_dropped_event(&self, event: &EvdevEvent) -> bool {
-        event.type_ == EventTypes::SYN.as_index() && event.code == SynEvent::Dropped as u16
-    }
-
     /// Checks if buffer has complete event packets.
     pub fn has_complete_packets(&self) -> bool {
         self.packet_count.load(Ordering::Relaxed) > 0
@@ -143,7 +133,8 @@ impl EvdevFile {
     }
 
     /// Processes events and writes them to the writer.
-    /// Returns the total number of bytes written, or EAGAIN if no events available.
+    ///
+    /// Returns the total number of bytes written, or [`Errno::EAGAIN`] if no events are available.
     fn process_events(&self, max_events: usize, writer: &mut VmWriter) -> Result<usize> {
         const EVENT_SIZE: usize = size_of::<EvdevEvent>();
 
@@ -155,17 +146,14 @@ impl EvdevFile {
                 break;
             };
 
-            // Check if this is a SYN_REPORT or SYN_DROPPED event.
-            let is_syn_report = self.is_syn_report_event(&event);
-            let is_syn_dropped = self.is_syn_dropped_event(&event);
-
-            // Write event directly to writer.
-            writer.write_val(&event)?;
-            event_count += 1;
-
-            if is_syn_report || is_syn_dropped {
+            // Update the counter since the event has been consumed.
+            if is_syn_report_event(&event) || is_syn_dropped_event(&event) {
                 self.decrement_packet_count();
             }
+
+            // Write the event to the writer.
+            writer.write_val(&event)?;
+            event_count += 1;
         }
 
         if event_count == 0 {
@@ -186,6 +174,16 @@ impl EvdevFile {
     }
 }
 
+/// Checks if the event is a `SYN_REPORT` event.
+fn is_syn_report_event(event: &EvdevEvent) -> bool {
+    event.type_ == EventTypes::SYN.as_index() && event.code == SynEvent::Report as u16
+}
+
+/// Checks if the event is a `SYN_DROPPED` event.
+fn is_syn_dropped_event(event: &EvdevEvent) -> bool {
+    event.type_ == EventTypes::SYN.as_index() && event.code == SynEvent::Dropped as u16
+}
+
 impl Pollable for EvdevFile {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         self.pollee
@@ -203,11 +201,25 @@ impl InodeIo for EvdevFile {
         let requested_bytes = writer.avail();
         let max_events = requested_bytes / size_of::<EvdevEvent>();
 
+        if max_events == 0 && requested_bytes != 0 {
+            return_errno_with_message!(Errno::EINVAL, "the buffer is too short");
+        }
+
+        // TODO: Return `ENODEV` if the device has been disconnected.
+
+        let is_nonblocking = status_flags.contains(StatusFlags::O_NONBLOCK);
+
+        // If we're in non-blocking mode, we won't bother the user space with an incomplete packet.
+        // Note that this aligns to the behavior of `check_io_events`.
+        if is_nonblocking && !self.has_complete_packets() {
+            return_errno_with_message!(Errno::EAGAIN, "the evdev file has no packets");
+        }
+
+        // Even if `max_events` is zero, the above checks are still needed.
         if max_events == 0 {
             return Ok(0);
         }
 
-        let is_nonblocking = status_flags.contains(StatusFlags::O_NONBLOCK);
         if is_nonblocking {
             self.process_events(max_events, writer)
         } else {
