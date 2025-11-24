@@ -88,8 +88,9 @@ impl Inode {
 
     pub fn metadata(&self) -> Metadata {
         let inner = self.inner.read();
+        let id = self.fs.upgrade().unwrap().block_device().id();
         Metadata {
-            dev: 0, // TODO: ID of block device
+            dev: id.as_encoded_u64(),
             ino: self.ino() as _,
             size: inner.file_size() as _,
             blk_size: BLOCK_SIZE,
