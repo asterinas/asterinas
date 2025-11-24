@@ -6,7 +6,7 @@ use core::{marker::PhantomData, mem::ManuallyDrop, ops::Range, sync::atomic::Ord
 
 use align_ext::AlignExt;
 
-use super::Cursor;
+use super::Cursor_;
 use crate::{
     mm::{
         HasPaddr, Vaddr, nr_subpage_per_huge, paddr_to_vaddr,
@@ -18,11 +18,11 @@ use crate::{
     task::atomic_mode::InAtomicMode,
 };
 
-pub(super) fn lock_range<'rcu, C: PageTableConfig>(
+pub(super) fn lock_range<'rcu, C: PageTableConfig, const MUTABLE: bool>(
     pt: &'rcu PageTable<C>,
     guard: &'rcu dyn InAtomicMode,
     va: &Range<Vaddr>,
-) -> Cursor<'rcu, C> {
+) -> Cursor_<'rcu, C, MUTABLE> {
     // The re-try loop of finding the sub-tree root.
     //
     // If we locked a stray node, we need to re-try. Otherwise, although
@@ -44,7 +44,7 @@ pub(super) fn lock_range<'rcu, C: PageTableConfig>(
     let mut path = core::array::from_fn(|_| None);
     path[guard_level as usize - 1] = Some(subtree_root);
 
-    Cursor::<'rcu, C> {
+    Cursor_::<'rcu, C, MUTABLE> {
         path,
         rcu_guard: guard,
         level: guard_level,
@@ -55,7 +55,9 @@ pub(super) fn lock_range<'rcu, C: PageTableConfig>(
     }
 }
 
-pub(super) fn unlock_range<C: PageTableConfig>(cursor: &mut Cursor<'_, C>) {
+pub(super) fn unlock_range<C: PageTableConfig, const MUTABLE: bool>(
+    cursor: &mut Cursor_<'_, C, MUTABLE>,
+) {
     for i in (0..cursor.guard_level as usize - 1).rev() {
         if let Some(guard) = cursor.path[i].take() {
             let _ = ManuallyDrop::new(guard);
