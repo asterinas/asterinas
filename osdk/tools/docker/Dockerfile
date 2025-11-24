@@ -105,6 +105,10 @@ RUN wget -O unifont.pcf.gz https://ftp.gnu.org/gnu/unifont/unifont-15.1.04/unifo
     && rm unifont.pcf.gz
 WORKDIR /root/grub
 
+# Use GitHub mirror for `gnulib` to improve connection stability because `git.savannah.gnu.org`
+# repository may have unstable connections.
+RUN git config --global url."https://github.com/coreutils/gnulib".insteadOf "https://git.savannah.gnu.org/git/gnulib"
+
 RUN echo depends bli part_gpt > grub-core/extra_deps.lst \
     && ./bootstrap \
     && ./configure \
