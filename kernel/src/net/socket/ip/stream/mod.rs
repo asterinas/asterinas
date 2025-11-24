@@ -269,6 +269,7 @@ impl StreamSocket {
         });
 
         drop(state);
+        drop(options);
         self.pollee.invalidate();
         if let Some(iface) = iface_to_poll {
             iface.poll();
