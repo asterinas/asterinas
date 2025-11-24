@@ -4,7 +4,7 @@ use core::time::Duration;
 
 use super::SyscallReturn;
 use crate::{
-    fs::{file_table::FileDesc, fs_resolver::FsPath, utils::Metadata},
+    fs::{file_table::FileDesc, fs_resolver::FsPath, path::Path},
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
 };
@@ -60,7 +60,7 @@ pub fn sys_statx(
         }
     };
 
-    let statx = Statx::from(path.metadata());
+    let statx = Statx::new(&path);
 
     user_space.write_val(statx_buf_ptr, &statx)?;
     Ok(SyscallReturn::Return(0))
@@ -119,28 +119,24 @@ pub struct Statx {
     __spare3: [u64; 12],
 }
 
-impl From<Metadata> for Statx {
-    fn from(info: Metadata) -> Self {
+impl Statx {
+    fn new(path: &Path) -> Self {
+        let info = path.metadata();
+
         let (stx_dev_major, stx_dev_minor) = device_id::decode_device_numbers(info.dev);
         let (stx_rdev_major, stx_rdev_minor) = device_id::decode_device_numbers(info.rdev);
 
-        // FIXME: We assume it is always not mount_root.
-        let stx_attributes = 0;
-
+        // TODO: Support more `stx_attributes` flags.
         let stx_attributes_mask = STATX_ATTR_MOUNT_ROOT;
 
-        let stx_mask = StatxMask::STATX_TYPE.bits()
-            | StatxMask::STATX_MODE.bits()
-            | StatxMask::STATX_NLINK.bits()
-            | StatxMask::STATX_UID.bits()
-            | StatxMask::STATX_GID.bits()
-            | StatxMask::STATX_ATIME.bits()
-            | StatxMask::STATX_MTIME.bits()
-            | StatxMask::STATX_CTIME.bits()
-            | StatxMask::STATX_INO.bits()
-            | StatxMask::STATX_SIZE.bits()
-            | StatxMask::STATX_BLOCKS.bits()
-            | StatxMask::STATX_BTIME.bits();
+        let mut stx_attributes = 0;
+        if path.is_mount_root() {
+            stx_attributes |= STATX_ATTR_MOUNT_ROOT;
+        }
+
+        let stx_mask = StatxMask::STATX_BASIC_STATS.bits()
+            | StatxMask::STATX_BTIME.bits()
+            | StatxMask::STATX_MNT_ID.bits();
 
         Self {
             // FIXME: All zero fields below are dummy implementations that need to be improved in the future.
@@ -164,7 +160,7 @@ impl From<Metadata> for Statx {
             stx_rdev_minor,
             stx_dev_major,
             stx_dev_minor,
-            stx_mnt_id: 0,
+            stx_mnt_id: path.mount_node().id() as u64,
             stx_dio_mem_align: 0,
             stx_dio_offset_align: 0,
             __spare3: [0; 12],

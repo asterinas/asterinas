@@ -65,7 +65,7 @@ impl Path {
     }
 
     /// Returns true if the current `Path` is the root of its mount.
-    pub(super) fn is_mount_root(&self) -> bool {
+    pub fn is_mount_root(&self) -> bool {
         Arc::ptr_eq(&self.dentry, self.mount.root_dentry())
     }
 
