@@ -18,7 +18,6 @@ use alloc::{
 use core::{
     fmt::Debug,
     sync::atomic::{AtomicU32, Ordering},
-    time::Duration,
 };
 
 use aster_input::{
@@ -26,7 +25,6 @@ use aster_input::{
     input_dev::{InputDevice, InputEvent},
     input_handler::{ConnectError, InputHandler, InputHandlerClass},
 };
-use aster_time::read_monotonic_time;
 use device_id::{DeviceId, MajorId, MinorId};
 use file::{EvdevEvent, EvdevFile, EVDEV_BUFFER_SIZE};
 use ostd::sync::SpinLock;
@@ -34,15 +32,7 @@ use spin::Once;
 
 use super::char::{acquire_major, register, unregister, CharDevice, MajorIdOwner};
 use crate::{
-    device::char::DevtmpfsName,
-    fs::inode_handle::FileIo,
-    prelude::*,
-    syscall::ClockId,
-    time::clocks::{
-        BootTimeClock, MonotonicClock, MonotonicCoarseClock, MonotonicRawClock, RealTimeClock,
-        RealTimeCoarseClock,
-    },
-    util::ring_buffer::RbProducer,
+    device::char::DevtmpfsName, fs::inode_handle::FileIo, prelude::*, util::ring_buffer::RbProducer,
 };
 
 /// Major device number for evdev devices.
@@ -130,8 +120,8 @@ impl EvdevDevice {
             };
 
             for event in events {
-                // Get time according to the opened evdev file's clock type.
-                let time = self.get_time_for_file(&file);
+                // Read the current time according to the opened evdev file's clock type.
+                let time = file.read_clock();
                 let timed_event = EvdevEvent::from_event_and_time(event, time);
 
                 // Try to push event to the buffer.
@@ -178,24 +168,6 @@ impl EvdevDevice {
     fn is_syn_report_event(&self, event: &InputEvent) -> bool {
         let (type_, code, _) = event.to_raw();
         type_ == EventTypes::SYN.as_index() && code == SynEvent::Report as u16
-    }
-
-    /// Gets time according to the opened evdev file's clock ID.
-    fn get_time_for_file(&self, file: &EvdevFile) -> Duration {
-        let clock_id = file.clock_id();
-
-        match clock_id {
-            ClockId::CLOCK_REALTIME => RealTimeClock::get().read_time(),
-            ClockId::CLOCK_MONOTONIC => MonotonicClock::get().read_time(),
-            ClockId::CLOCK_MONOTONIC_RAW => MonotonicRawClock::get().read_time(),
-            ClockId::CLOCK_REALTIME_COARSE => RealTimeCoarseClock::get().read_time(),
-            ClockId::CLOCK_MONOTONIC_COARSE => MonotonicCoarseClock::get().read_time(),
-            ClockId::CLOCK_BOOTTIME => BootTimeClock::get().read_time(),
-            // For process/thread clocks, fallback to monotonic time.
-            ClockId::CLOCK_PROCESS_CPUTIME_ID | ClockId::CLOCK_THREAD_CPUTIME_ID => {
-                read_monotonic_time()
-            }
-        }
     }
 
     /// Creates a new opened evdev file for this evdev device.
