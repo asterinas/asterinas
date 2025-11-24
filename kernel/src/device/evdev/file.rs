@@ -180,7 +180,7 @@ impl EvdevFile {
         }
 
         if event_count == 0 {
-            return Err(Error::with_message(Errno::EAGAIN, "No events available"));
+            return_errno_with_message!(Errno::EAGAIN, "the evdev file has no events");
         }
 
         Ok(event_count * EVENT_SIZE)
@@ -238,17 +238,14 @@ impl InodeIo for EvdevFile {
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        // TODO: support write operation on evdev devices.
-        Err(Error::with_message(
-            Errno::ENOSYS,
-            "WRITE operation not supported on evdev devices",
-        ))
+        // TODO: In Linux, writing to evdev files is permitted and will inject input events.
+        return_errno_with_message!(Errno::ENOSYS, "writing to evdev files is not supported yet");
     }
 }
 
 impl FileIo for EvdevFile {
     fn check_seekable(&self) -> Result<()> {
-        Ok(())
+        return_errno_with_message!(Errno::ESPIPE, "the inode is an evdev file");
     }
 
     fn is_offset_aware(&self) -> bool {
@@ -256,11 +253,16 @@ impl FileIo for EvdevFile {
     }
 
     fn ioctl(&self, _cmd: IoctlCmd, _arg: usize) -> Result<i32> {
-        // TODO: support ioctl operation on evdev devices.
-        Err(Error::with_message(
+        // TODO: Support ioctl operations for evdev files.
+
+        // Most ioctl implementations return `ENOTTY` for invalid ioctl commands, representing "The
+        // specified operation does not apply". However, according to the Linux implementation,
+        // evdev files return `EINVAL` in this case.
+        // Reference: <https://elixir.bootlin.com/linux/v6.17.8/source/drivers/input/evdev.c#L1251>
+        return_errno_with_message!(
             Errno::EINVAL,
-            "IOCTL operation not supported on evdev devices",
-        ))
+            "the ioctl command is not supported by evdev files"
+        );
     }
 }
 

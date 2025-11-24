@@ -227,13 +227,13 @@ impl CharDevice for EvdevDevice {
     }
 
     fn open(&self) -> Result<Arc<dyn FileIo>> {
-        // Get the Arc<EvdevDevice> from the registry.
+        // Get the device from the registry.
         let devices = EVDEV_DEVICES.lock();
         let Some(evdev) = devices.get(&self.id.minor()) else {
-            return Err(Error::with_message(
+            return_errno_with_message!(
                 Errno::ENODEV,
-                "evdev device not found in registry",
-            ));
+                "the evdev device does not exist in the registry"
+            );
         };
 
         // Create a new opened evdev file for this evdev device.
