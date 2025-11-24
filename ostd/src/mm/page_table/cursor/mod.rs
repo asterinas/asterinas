@@ -29,7 +29,12 @@
 
 mod locking;
 
-use core::{fmt::Debug, marker::PhantomData, mem::ManuallyDrop, ops::Range};
+use core::{
+    fmt::Debug,
+    marker::PhantomData,
+    mem::ManuallyDrop,
+    ops::{Deref, DerefMut, Range},
+};
 
 use align_ext::AlignExt;
 
@@ -48,11 +53,12 @@ use crate::{
 
 /// The cursor for traversal over the page table.
 ///
-/// A slot is a PTE at any levels, which correspond to a certain virtual
-/// memory range sized by the "page size" of the current level.
+/// At any time, the cursor points to a page table entry in a certain level of
+/// the page table hierarchy. And the entry have a corresponding virtual
+/// address range, which covers the current virtual address of the cursor.
 ///
-/// A cursor is able to move to the next slot, to read page properties,
-/// and even to jump to a virtual address directly.
+/// The current virtual address and level must be within the locked range of
+/// the cursor.
 #[derive(Debug)]
 pub(crate) struct Cursor<'rcu, C: PageTableConfig> {
     /// The current path of the cursor.
@@ -75,6 +81,30 @@ pub(crate) struct Cursor<'rcu, C: PageTableConfig> {
     _phantom: PhantomData<&'rcu PageTable<C>>,
 }
 
+/// The cursor of a page table that is capable of map, unmap or protect pages.
+///
+/// It has all the capabilities of a [`Cursor`], which can navigate over the
+/// page table corresponding to the address range. A virtual address range
+/// in a page table can only be accessed by one cursor, regardless of the
+/// mutability of the cursor.
+#[derive(Debug)]
+pub(crate) struct CursorMut<'rcu, C: PageTableConfig>(Cursor<'rcu, C>);
+
+// Inherit all immutable methods from `Cursor`.
+impl<'rcu, C: PageTableConfig> Deref for CursorMut<'rcu, C> {
+    type Target = Cursor<'rcu, C>;
+
+    fn deref(&self) -> &Cursor<'rcu, C> {
+        &self.0
+    }
+}
+
+impl<'rcu, C: PageTableConfig> DerefMut for CursorMut<'rcu, C> {
+    fn deref_mut(&mut self) -> &mut Cursor<'rcu, C> {
+        &mut self.0
+    }
+}
+
 /// The maximum value of `PagingConstsTrait::NR_LEVELS`.
 const MAX_NR_LEVELS: usize = 4;
 
@@ -95,12 +125,17 @@ pub(crate) enum PageTableFrag<C: PageTableConfig> {
     },
 }
 
+/// The state of virtual pages represented by a page table.
+///
+/// This is the return type of the [`Cursor::query`] method.
+pub type PagesState<'a, C> = (Range<Vaddr>, Option<<C as PageTableConfig>::ItemRef<'a>>);
+
 impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
     /// Creates a cursor claiming exclusive access over the given range.
     ///
     /// The cursor created will only be able to query or jump within the given
-    /// range. Out-of-bound accesses will result in panics or errors as return values,
-    /// depending on the access method.
+    /// range. Out-of-bound accesses will result in panics or errors as return
+    /// values, depending on the access method.
     pub fn new(
         pt: &'rcu PageTable<C>,
         guard: &'rcu dyn InAtomicMode,
@@ -340,63 +375,18 @@ impl<C: PageTableConfig> Drop for Cursor<'_, C> {
     }
 }
 
-/// The state of virtual pages represented by a page table.
-///
-/// This is the return type of the [`Cursor::query`] method.
-pub type PagesState<'a, C> = (Range<Vaddr>, Option<<C as PageTableConfig>::ItemRef<'a>>);
-
-/// The cursor of a page table that is capable of map, unmap or protect pages.
-///
-/// It has all the capabilities of a [`Cursor`], which can navigate over the
-/// page table corresponding to the address range. A virtual address range
-/// in a page table can only be accessed by one cursor, regardless of the
-/// mutability of the cursor.
-#[derive(Debug)]
-pub(crate) struct CursorMut<'rcu, C: PageTableConfig>(Cursor<'rcu, C>);
-
 impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     /// Creates a cursor claiming exclusive access over the given range.
     ///
-    /// The cursor created will only be able to map, query or jump within the given
-    /// range. Out-of-bound accesses will result in panics or errors as return values,
-    /// depending on the access method.
-    pub(super) fn new(
+    /// The cursor created will be able to query, jump, or modify the page
+    /// table within the given range. Out-of-bound accesses will result in
+    /// panics or errors as return values, depending on the access method.
+    pub fn new(
         pt: &'rcu PageTable<C>,
         guard: &'rcu dyn InAtomicMode,
         va: &Range<Vaddr>,
     ) -> Result<Self, PageTableError> {
-        Cursor::new(pt, guard, va).map(|inner| Self(inner))
-    }
-
-    /// Moves the cursor forward to the next mapped virtual address.
-    ///
-    /// This is the same as [`Cursor::find_next`].
-    pub fn find_next(&mut self, end: Vaddr) -> Option<Vaddr> {
-        self.0.find_next(end)
-    }
-
-    /// Jumps to the given virtual address.
-    ///
-    /// This is the same as [`Cursor::jump`].
-    ///
-    /// # Panics
-    ///
-    /// This method panics if the address has bad alignment.
-    pub fn jump(&mut self, va: Vaddr) -> Result<(), PageTableError> {
-        self.0.jump(va)
-    }
-
-    /// Gets the current virtual address.
-    pub fn virt_addr(&self) -> Vaddr {
-        self.0.virt_addr()
-    }
-
-    /// Queries the mapping at the current virtual address.
-    ///
-    /// If the cursor is pointing to a valid virtual address that is locked,
-    /// it will return the virtual address range and the item at that slot.
-    pub fn query(&mut self) -> Result<PagesState<'rcu, C>, PageTableError> {
-        self.0.query()
+        Ok(Self(Cursor::<'rcu, C>::new(pt, guard, va)?))
     }
 
     /// Maps the item starting from the current address to a physical address range.
@@ -417,7 +407,7 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     ///  - the range being mapped does not affect kernel's memory safety;
     ///  - the physical address to be mapped is valid and safe to use.
     pub unsafe fn map(&mut self, item: C::Item) {
-        assert!(self.0.va < self.0.barrier_va.end);
+        assert!(self.va < self.barrier_va.end);
 
         let (_, level, _) = C::item_raw_info(&item);
         assert!(
@@ -426,49 +416,49 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
         );
         let size = page_size::<C>(level);
         assert_eq!(
-            self.0.va % size,
+            self.va % size,
             0,
             "cursor virtual address not aligned for mapping"
         );
         assert!(
-            size <= self.0.barrier_va.end - self.0.va,
+            size <= self.barrier_va.end - self.va,
             "cursor virtual address out-of-bound for mapping"
         );
 
-        let rcu_guard = self.0.rcu_guard;
+        let rcu_guard = self.rcu_guard;
 
         // Adjust ourselves to the level of the item.
-        while self.0.level != level {
-            if self.0.level < level {
-                self.0.pop_level();
+        while self.level != level {
+            if self.level < level {
+                self.pop_level();
                 continue;
             }
             // We are at a higher level, go down.
-            let mut cur_entry = self.0.cur_entry();
+            let mut cur_entry = self.cur_entry();
             match cur_entry.to_ref() {
                 PteStateRef::PageTable(pt) => {
                     // SAFETY: The `pt` must be locked and no other guards exist.
                     let pt_guard = unsafe { pt.make_guard_unchecked(rcu_guard) };
-                    self.0.push_level(pt_guard);
+                    self.push_level(pt_guard);
                 }
                 PteStateRef::Absent => {
                     let child_guard = cur_entry.alloc_if_none(rcu_guard).unwrap();
-                    self.0.push_level(child_guard);
+                    self.push_level(child_guard);
                 }
                 PteStateRef::Mapped(_) => {
                     let split_child = cur_entry.split_if_mapped_huge(rcu_guard).unwrap();
-                    self.0.push_level(split_child);
+                    self.push_level(split_child);
                 }
             }
         }
 
-        if !matches!(self.0.cur_entry().to_ref(), PteStateRef::Absent) {
+        if !matches!(self.cur_entry().to_ref(), PteStateRef::Absent) {
             panic!("mapping over an already mapped page");
         }
 
         let _ = self.replace_cur_entry(PteState::Mapped(RcuDrop::new(item)));
 
-        self.0.move_forward();
+        self.move_forward();
     }
 
     /// Finds and removes the first page table fragment in the range.
@@ -503,11 +493,11 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     ///  - `end` exceeds the cursor's range;
     ///  - `end` is not page-aligned.
     pub unsafe fn take_next(&mut self, end: Vaddr) -> Option<PageTableFrag<C>> {
-        self.0.find_next_impl(end, true, true)?;
+        self.find_next_impl(end, true, true)?;
 
         let frag = self.replace_cur_entry(PteState::Absent);
 
-        self.0.move_forward();
+        self.move_forward();
 
         frag
     }
@@ -543,24 +533,24 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
         end: Vaddr,
         op: &mut impl FnMut(&mut PageProperty),
     ) -> Option<Range<Vaddr>> {
-        self.0.find_next_impl(end, false, true)?;
+        self.find_next_impl(end, false, true)?;
 
-        self.0.cur_entry().protect(op);
+        self.cur_entry().protect(op);
 
-        let protected_va = self.0.cur_va_range();
+        let protected_va = self.cur_va_range();
 
-        self.0.move_forward();
+        self.move_forward();
 
         Some(protected_va)
     }
 
     fn replace_cur_entry(&mut self, new_child: PteState<C>) -> Option<PageTableFrag<C>> {
-        let rcu_guard = self.0.rcu_guard;
+        let rcu_guard = self.rcu_guard;
 
-        let va = self.0.va;
-        let level = self.0.level;
+        let va = self.va;
+        let level = self.level;
 
-        let old = self.0.cur_entry().replace(new_child);
+        let old = self.cur_entry().replace(new_child);
         match old {
             PteState::Absent => None,
             PteState::Mapped(item) => Some(PageTableFrag::Mapped { va, item }),
@@ -583,7 +573,7 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
                 Some(PageTableFrag::StrayPageTable {
                     pt,
                     va,
-                    len: page_size::<C>(self.0.level),
+                    len: page_size::<C>(self.level),
                     num_frames,
                 })
             }
