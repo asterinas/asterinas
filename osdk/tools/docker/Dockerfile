@@ -157,10 +157,10 @@ RUN mkdir -p /github/home \
     && ln -s /root/.rustup /github/home/.rustup
 
 # Install cargo tools
-RUN cargo install \
+RUN cargo install --locked \
     cargo-binutils \
-    mdbook \
-    typos-cli
+    mdbook@0.4.52 \
+    typos-cli@1.39.0
 
 # Install QEMU built from the previous stages
 COPY --from=qemu /usr/local/qemu /usr/local/qemu
