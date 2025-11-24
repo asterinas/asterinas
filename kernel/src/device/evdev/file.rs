@@ -129,16 +129,15 @@ impl EvdevFile {
         self.packet_count.load(Ordering::Relaxed) > 0
     }
 
-    /// Increments packet count.
+    /// Increments the packet count.
     pub fn increment_packet_count(&self) {
         self.packet_count.fetch_add(1, Ordering::Relaxed);
         self.pollee.notify(IoEvents::IN);
     }
 
-    /// Decrements packet count.
+    /// Decrements the packet count.
     pub fn decrement_packet_count(&self) {
-        self.packet_count.fetch_sub(1, Ordering::Relaxed);
-        if self.packet_count.load(Ordering::Relaxed) == 0 {
+        if self.packet_count.fetch_sub(1, Ordering::Relaxed) == 1 {
             self.pollee.invalidate();
         }
     }
@@ -175,20 +174,22 @@ impl EvdevFile {
 
         Ok(event_count * EVENT_SIZE)
     }
+
+    fn check_io_events(&self) -> IoEvents {
+        // TODO: Report `IoEvents::HUP` if the device has been disconnected.
+
+        if self.has_complete_packets() {
+            IoEvents::IN
+        } else {
+            IoEvents::empty()
+        }
+    }
 }
 
 impl Pollable for EvdevFile {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        self.pollee.poll_with(mask, poller, || {
-            let has_complete_packets = self.has_complete_packets();
-
-            let mut events = IoEvents::empty();
-            if has_complete_packets && mask.contains(IoEvents::IN) {
-                events |= IoEvents::IN;
-            }
-
-            events
-        })
+        self.pollee
+            .poll_with(mask, poller, || self.check_io_events())
     }
 }
 
@@ -207,18 +208,12 @@ impl InodeIo for EvdevFile {
         }
 
         let is_nonblocking = status_flags.contains(StatusFlags::O_NONBLOCK);
-        match self.process_events(max_events, writer) {
-            Ok(bytes) => Ok(bytes),
-            Err(e) if e.error() == Errno::EAGAIN => {
-                if is_nonblocking {
-                    Err(e)
-                } else {
-                    self.wait_events(IoEvents::IN, None, || {
-                        self.process_events(max_events, writer)
-                    })
-                }
-            }
-            Err(e) => Err(e),
+        if is_nonblocking {
+            self.process_events(max_events, writer)
+        } else {
+            self.wait_events(IoEvents::IN, None, || {
+                self.process_events(max_events, writer)
+            })
         }
     }
 
