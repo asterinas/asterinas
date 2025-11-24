@@ -154,7 +154,7 @@ impl EvdevFile {
     /// Processes events and writes them to the writer.
     /// Returns the total number of bytes written, or EAGAIN if no events available.
     fn process_events(&self, max_events: usize, writer: &mut VmWriter) -> Result<usize> {
-        const EVENT_SIZE: usize = core::mem::size_of::<EvdevEvent>();
+        const EVENT_SIZE: usize = size_of::<EvdevEvent>();
 
         let mut consumer = self.consumer.lock();
         let mut event_count = 0;
@@ -210,7 +210,7 @@ impl InodeIo for EvdevFile {
         status_flags: StatusFlags,
     ) -> Result<usize> {
         let requested_bytes = writer.avail();
-        let max_events = requested_bytes / core::mem::size_of::<EvdevEvent>();
+        let max_events = requested_bytes / size_of::<EvdevEvent>();
 
         if max_events == 0 {
             return Ok(0);
