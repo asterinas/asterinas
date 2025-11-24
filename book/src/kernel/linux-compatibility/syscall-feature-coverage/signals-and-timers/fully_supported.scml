@@ -3,3 +3,33 @@ alarm(seconds);
 
 // Return from signal handler and cleanup stack frame
 rt_sigreturn(arg);
+
+// Send signal to a process
+kill(pid, sig);
+
+// Send signal to a thread
+tgkill(tgid, tid, sig);
+
+// Wait for signal
+pause();
+
+// Examine pending signals
+sigpending(set);
+
+// Replace the signal mask and wait for a signal
+sigsuspend(mask);
+
+// Fetch state of POSIX per-process timer
+timer_gettime(timerid, curr_value);
+
+// Delete a POSIX per-process timer
+timer_delete(timerid);
+
+// Get current setting of timerfd timer
+timerfd_gettime(fd, curr_value);
+
+// Get the time and timezone
+gettimeofday(tv, tz);
+
+// Get time in seconds
+time(tloc);

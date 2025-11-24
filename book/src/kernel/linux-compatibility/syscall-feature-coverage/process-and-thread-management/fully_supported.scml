@@ -11,18 +11,64 @@ getegid();
 getuid();
 geteuid();
 
-// Get group identity
+// Set/get group identity
+setgid(gid);
 getgid();
 
 // Set user identity
 setuid(uid);
+
+// Set real and/or effective user or group ID
+setreuid(ruid, euid);
+setregid(rgid, egid);
+
+// Set real, effective, and saved user or group ID
+setresuid(ruid, euid, suid);
+setresgid(rgid, egid, sgid);
+
+// Get real, effective, and saved user/group ID
+getresuid(ruid, euid, suid);
+getresgid(rgid, egid, sgid);
 
 // Get process identification
 getpid();
 getppid();
 
 // Set and get a thread's CPU affinity mask
+sched_setaffinity(pid, cpusetsize, mask);
 sched_getaffinity(pid, cpusetsize, mask);
 
 // Get or set resource limits
 prlimit64(pid, resource, new_limit, old_limit);
+
+// Yield the processor
+sched_yield();
+
+// Create a child process
+fork();
+
+// Terminate the calling process
+exit(status);
+
+// Set/get process group
+setpgid(pid, pgid);
+getpgid(pid);
+getpgrp();
+
+// Create a session and set the process group ID
+setsid();
+
+// Get session ID
+getsid(pid);
+
+// Get thread ID
+gettid();
+
+// Set user identity used for filesystem checks
+setfsuid(fsuid);
+
+// Set group identity used for filesystem checks
+setfsgid(fsgid);
+
+// Determine CPU and NUMA node on which the calling thread is running
+getcpu(cpu, node);

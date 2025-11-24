@@ -1,0 +1,9 @@
+// Get filesystem statistics
+statfs(path, buf);
+fstatfs(fd, buf);
+
+// Commit filesystem caches to disk
+sync();
+
+// Change root directory
+chroot(path);

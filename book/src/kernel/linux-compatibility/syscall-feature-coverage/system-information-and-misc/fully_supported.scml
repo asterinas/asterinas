@@ -5,4 +5,14 @@ set_tid_address(tidptr);
 sysinfo(info);
 
 // Get directory entries
+getdents(fd, dirp, count);
 getdents64(fd, dirp, count);
+
+// Get name and information about current kernel
+uname(buf);
+
+// Set hostname
+sethostname(name, size);
+
+// Set Network Information Service (NIS) domain name
+setdomainname(name, size);
