@@ -98,6 +98,7 @@ mod test_utils {
 
         type E = PageTableEntry;
         type C = VeryHugePagingConsts;
+        type Aux = ();
 
         /// All mappings are untracked.
         type Item = TestPtItem;
@@ -212,7 +213,7 @@ mod create_page_table {
         MOCK_KERNEL_PT.call_once(PageTable::<KernelPtConfig>::new_kernel_page_table);
         let kernel_pt = MOCK_KERNEL_PT.get().unwrap();
 
-        let user_pt = kernel_pt.create_user_page_table();
+        let user_pt = kernel_pt.create_user_page_table::<()>();
         let guard = disable_preempt();
 
         let mut kernel_root = kernel_pt.root.borrow().lock(&guard);
@@ -220,16 +221,17 @@ mod create_page_table {
 
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
         for i in NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE {
-            let kernel_entry = kernel_root.entry(i);
-            let user_entry = user_root.entry(i);
+            let pte_va = i * page_size::<PagingConsts>(PagingConsts::NR_LEVELS);
+            let kernel_entry = kernel_root.entry(pte_va);
+            let user_entry = user_root.entry(pte_va);
 
             let PteStateRef::PageTable(kernel_node) = kernel_entry.to_ref() else {
-                panic!("Expected a node reference at {} of kernel root PT", i);
+                panic!("expected a node reference at {} of kernel root PT", i);
             };
             assert_eq!(kernel_node.level(), PagingConsts::NR_LEVELS - 1);
 
             let PteStateRef::PageTable(user_node) = user_entry.to_ref() else {
-                panic!("Expected a node reference at {} of user root PT", i);
+                panic!("expected a node reference at {} of user root PT", i);
             };
             assert_eq!(user_node.level(), PagingConsts::NR_LEVELS - 1);
 
@@ -249,8 +251,9 @@ mod create_page_table {
         let preempt_guard = disable_preempt();
         let mut root_node = kernel_pt.root.borrow().lock(&preempt_guard);
         for i in shared_range {
+            let pte_va = i * page_size::<PagingConsts>(PagingConsts::NR_LEVELS);
             assert!(matches!(
-                root_node.entry(i).to_ref(),
+                root_node.entry(pte_va).to_ref(),
                 PteStateRef::PageTable(_)
             ));
         }
@@ -542,7 +545,7 @@ mod navigation {
         assert_eq!(cursor.virt_addr(), FIRST_MAP_ADDR);
         while cursor.push_level_if_exists().is_some() {}
         let PteStateRef::Mapped(queried_item) = cursor.query() else {
-            panic!("Expected a mapped item at the first address");
+            panic!("expected a mapped item at the first address");
         };
         let queried_va = cursor.cur_va_range();
         assert_eq!(queried_va, FIRST_MAP_ADDR..FIRST_MAP_ADDR + PAGE_SIZE);
@@ -566,7 +569,7 @@ mod navigation {
         assert_eq!(cursor.virt_addr(), 0);
 
         let Some(va) = cursor.find_next(FIRST_MAP_ADDR + PAGE_SIZE) else {
-            panic!("Expected to find the next mapping");
+            panic!("expected to find the next mapping");
         };
         assert_eq!(va, FIRST_MAP_ADDR);
         assert_eq!(cursor.virt_addr(), FIRST_MAP_ADDR);
@@ -574,7 +577,7 @@ mod navigation {
         cursor.jump(FIRST_MAP_ADDR + PAGE_SIZE).unwrap();
 
         let Some(va) = cursor.find_next(SECOND_MAP_ADDR - FIRST_MAP_ADDR) else {
-            panic!("Expected to find the next mapping");
+            panic!("expected to find the next mapping");
         };
         assert_eq!(va, SECOND_MAP_ADDR);
         assert_eq!(cursor.virt_addr(), SECOND_MAP_ADDR);
@@ -592,7 +595,7 @@ mod navigation {
 
         // Should find the leaf mapping.
         let Some(va) = cursor.find_next_unmappable_subtree(PAGE_SIZE * 511) else {
-            panic!("Expected to find the next mapped subtree");
+            panic!("expected to find the next mapped subtree");
         };
         assert_eq!(va, FIRST_MAP_ADDR);
         assert_eq!(cursor.virt_addr(), FIRST_MAP_ADDR);
@@ -602,7 +605,7 @@ mod navigation {
 
         // Should find the level-2 page table mapping.
         let Some(va) = cursor.find_next_unmappable_subtree(PAGE_SIZE * 512) else {
-            panic!("Expected to find the next mapped subtree");
+            panic!("expected to find the next mapped subtree");
         };
         assert_eq!(va, 0);
         assert_eq!(cursor.virt_addr(), 0);
@@ -610,7 +613,7 @@ mod navigation {
 
         // Should find the level-3 page table mapping.
         let Some(va) = cursor.find_next_unmappable_subtree(PAGE_SIZE * 512 * 512) else {
-            panic!("Expected to find the next mapped subtree");
+            panic!("expected to find the next mapped subtree");
         };
         assert_eq!(va, 0);
         assert_eq!(cursor.virt_addr(), 0);
@@ -619,7 +622,7 @@ mod navigation {
         // Should still find the level-3 page table mapping since top level
         // cannot unmap.
         let Some(va) = cursor.find_next_unmappable_subtree(PAGE_SIZE * 512 * 512 * 512) else {
-            panic!("Expected to find the next mapped subtree");
+            panic!("expected to find the next mapped subtree");
         };
         assert_eq!(va, 0);
         assert_eq!(cursor.virt_addr(), 0);
@@ -631,7 +634,7 @@ mod navigation {
         let Some(va) =
             cursor.find_next_unmappable_subtree(full_locked_range.end - cursor.virt_addr())
         else {
-            panic!("Expected to find the next mapped subtree");
+            panic!("expected to find the next mapped subtree");
         };
         assert_eq!(va, SECOND_MAP_ADDR);
         assert_eq!(cursor.virt_addr(), SECOND_MAP_ADDR);
@@ -661,7 +664,7 @@ mod unmap {
         // Unmaps the range and checks the result.
         let mut cursor = page_table.cursor_mut(&preempt_guard, &virt_range).unwrap();
         let Some(PageTableFrag::Mapped { va, item }) = (unsafe { cursor.unmap() }) else {
-            panic!("Expected to take a mapped item");
+            panic!("expected to take a mapped item");
         };
 
         assert_eq!(va, virt_range.start);
@@ -713,7 +716,7 @@ mod mapping {
             // Unmaps the single page.
             let Some(PageTableFrag::Mapped { va: frag_va, item }) = (unsafe { cursor.unmap() })
             else {
-                panic!("Expected to unmap a page, but got `None`");
+                panic!("expected to unmap a page, but got `None`");
             };
 
             // Calculates the expected PA for the unmapped item.
@@ -773,7 +776,7 @@ mod mapping {
                 let va = cursor.cur_va_range();
 
                 let PteStateRef::Mapped(TestPtItemRef((pa, level, prop), _)) = item else {
-                    panic!("Expected mapped untracked physical address, got `None`");
+                    panic!("expected mapped untracked physical address, got `None`");
                 };
 
                 assert_eq!(pa, mapped_pa_of_va(va.start));
@@ -815,7 +818,7 @@ mod mapping {
             let va_low = protect_va_range.start - PAGE_SIZE;
             let (va_low_pa, prop_low) = pt
                 .page_walk(va_low)
-                .expect("Page should be mapped before protection");
+                .expect("page should be mapped before protection");
             assert_eq!(va_low_pa, mapped_pa_of_va(va_low));
             assert_eq!(
                 prop_low,
@@ -832,7 +835,7 @@ mod mapping {
                 let va = cursor.cur_va_range();
 
                 let PteStateRef::Mapped(TestPtItemRef((pa, level, prop), _)) = item else {
-                    panic!("Expected mapped untracked physical address, got `None`");
+                    panic!("expected mapped untracked physical address, got `None`");
                 };
 
                 assert_eq!(pa, mapped_pa_of_va(va.start));
@@ -851,7 +854,7 @@ mod mapping {
             let va_high = protect_va_range.end;
             let (va_high_pa, prop_high) = pt
                 .page_walk(va_high)
-                .expect("Page should be mapped after protection");
+                .expect("page should be mapped after protection");
             assert_eq!(va_high_pa, mapped_pa_of_va(va_high));
             assert_eq!(
                 prop_high,
@@ -902,7 +905,7 @@ mod protection_and_query {
             let va_to_check = PAGE_SIZE * i;
             let (_, prop) = page_table
                 .page_walk(va_to_check)
-                .expect("Mapping should exist");
+                .expect("mapping should exist");
             assert_eq!(prop.flags, PageFlags::R);
             assert_eq!(prop.cache, CachePolicy::Writeback);
         }

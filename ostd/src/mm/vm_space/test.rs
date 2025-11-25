@@ -1,24 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::*;
-use crate::mm::FrameAllocOptions;
 
 macro_rules! assert_matches_mapped {
-    ($cursor:expr, $frame:expr, $prop:expr) => {
-        assert!(matches!(
-            $cursor.query(),
-            VmQueriedItem::MappedRam {
-                frame: __frame__,
-                prop: __prop__,
-                ..
-            } if __frame__.paddr() == $frame.paddr() && __prop__ == $prop
-        ));
-    };
-}
+        ($cursor:expr, $frame:expr, $prop:expr) => {
+            assert!(matches!(
+                $cursor.query(),
+                VmQueriedItem::MappedRam {
+                    frame: __frame__,
+                    prop: __prop__,
+                    ..
+                } if __frame__.paddr() == $frame.paddr() && __prop__ == $prop
+            ));
+        };
+    }
 
 /// Helper function to create a dummy `UFrame`.
 fn create_dummy_frame() -> UFrame {
-    let frame = FrameAllocOptions::new().alloc_frame().unwrap();
+    let frame = crate::mm::FrameAllocOptions::new().alloc_frame().unwrap();
     let uframe: UFrame = frame.into();
     uframe
 }
@@ -26,7 +25,7 @@ fn create_dummy_frame() -> UFrame {
 /// Creates a new `VmSpace` and verifies its initial state.
 #[ktest]
 fn vmspace_creation() {
-    let vmspace = VmSpace::new();
+    let vmspace = VmSpace::<()>::new();
     let range = 0x0..0x1000;
     let preempt_guard = disable_preempt();
     let mut cursor = vmspace
@@ -40,7 +39,7 @@ fn vmspace_creation() {
 /// Maps and unmaps a single page using `CursorMut`.
 #[ktest]
 fn vmspace_map_unmap() {
-    let vmspace = VmSpace::default();
+    let vmspace = VmSpace::<()>::new();
     let range = 0x1000..0x2000;
     let frame = create_dummy_frame();
     let prop = PageProperty::new_user(PageFlags::R, CachePolicy::Writeback);
@@ -88,7 +87,7 @@ fn vmspace_map_unmap() {
 #[ktest]
 #[should_panic = "mapping over an already mapped page"]
 fn vmspace_map_twice() {
-    let vmspace = VmSpace::default();
+    let vmspace = VmSpace::<()>::new();
     let range = 0x1000..0x2000;
     let frame = create_dummy_frame();
     let prop = PageProperty::new_user(PageFlags::R, CachePolicy::Writeback);
@@ -119,7 +118,7 @@ fn vmspace_map_twice() {
 /// Unmaps twice using `CursorMut`.
 #[ktest]
 fn vmspace_unmap_twice() {
-    let vmspace = VmSpace::default();
+    let vmspace = VmSpace::<()>::new();
     let range = 0x1000..0x2000;
     let frame = create_dummy_frame();
     let prop = PageProperty::new_user(PageFlags::R, CachePolicy::Writeback);
@@ -157,22 +156,25 @@ fn vmspace_unmap_twice() {
 /// Activates and deactivates the `VmSpace` in single-CPU scenarios.
 #[ktest]
 fn vmspace_activate() {
-    let vmspace = Arc::new(VmSpace::new());
+    let vmspace = Arc::new(VmSpace::<()>::new());
 
     // Activates the VmSpace.
     vmspace.activate();
-    assert_eq!(get_activated_vm_space(), Arc::as_ptr(&vmspace));
+    assert_eq!(ACTIVATED_VM_SPACE_CPUSET.load(), Arc::as_ptr(&vmspace.cpus));
 
     // Deactivates the VmSpace.
-    let vmspace2 = Arc::new(VmSpace::new());
+    let vmspace2 = Arc::new(VmSpace::<()>::new());
     vmspace2.activate();
-    assert_eq!(get_activated_vm_space(), Arc::as_ptr(&vmspace2));
+    assert_eq!(
+        ACTIVATED_VM_SPACE_CPUSET.load(),
+        Arc::as_ptr(&vmspace2.cpus)
+    );
 }
 
 /// Tests the `flusher` method of `CursorMut`.
 #[ktest]
 fn cursor_mut_flusher() {
-    let vmspace = VmSpace::new();
+    let vmspace = VmSpace::<()>::new();
     let range = 0x4000..0x5000;
     let frame = create_dummy_frame();
     let prop = PageProperty::new_user(PageFlags::R, CachePolicy::Writeback);
@@ -214,7 +216,7 @@ fn cursor_mut_flusher() {
 /// Verifies the `VmReader` and `VmWriter` interfaces.
 #[ktest]
 fn vmspace_reader_writer() {
-    let vmspace = Arc::new(VmSpace::new());
+    let vmspace = Arc::new(VmSpace::<()>::new());
     let range = 0x4000..0x5000;
     let preempt_guard = disable_preempt();
     {
@@ -259,7 +261,7 @@ fn vmspace_reader_writer() {
 /// Creates overlapping cursors and verifies handling.
 #[ktest]
 fn overlapping_cursors() {
-    let vmspace = VmSpace::new();
+    let vmspace = VmSpace::<()>::new();
     let range1 = 0x5000..0x6000;
     let range2 = 0x5800..0x6800; // Overlaps with range1.
     let preempt_guard = disable_preempt();
@@ -277,7 +279,7 @@ fn overlapping_cursors() {
 /// Protects a range of pages.
 #[ktest]
 fn protect() {
-    let vmspace = VmSpace::new();
+    let vmspace = VmSpace::<()>::new();
     let range = 0x7000..0x8000;
     let frame = create_dummy_frame();
     let preempt_guard = disable_preempt();
@@ -309,7 +311,7 @@ const IOMEM_PADDR: usize = 0x100_000_000_000;
 /// Maps and queries an `IoMem` using `CursorMut`.
 #[ktest]
 fn vmspace_map_query_iomem() {
-    let vmspace = VmSpace::new();
+    let vmspace = VmSpace::<()>::new();
     let range = 0x1000..0x2000;
     let iomem = IoMem::acquire(IOMEM_PADDR..IOMEM_PADDR + 0x1000).unwrap();
     let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Uncacheable);
@@ -374,7 +376,7 @@ fn vmspace_map_query_iomem() {
 /// Maps and queries an `IoMem` with an offset using `CursorMut`.
 #[ktest]
 fn vmspace_map_iomem_with_offset() {
-    let vmspace = VmSpace::new();
+    let vmspace = VmSpace::<()>::new();
     let range = 0x2000..0x3000;
     let iomem = IoMem::acquire(IOMEM_PADDR + 0x1000..IOMEM_PADDR + 0x3000).unwrap();
     let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Uncacheable);
@@ -423,7 +425,7 @@ fn vmspace_map_iomem_with_offset() {
 /// Tests that the `IoMem` is not removed from the `VmSpace` when unmapped.
 #[ktest]
 fn vmspace_iomem_persistence() {
-    let vmspace = VmSpace::new();
+    let vmspace = VmSpace::<()>::new();
     let range = 0x3000..0x4000;
     let iomem = IoMem::acquire(IOMEM_PADDR + 0x3000..IOMEM_PADDR + 0x4000).unwrap();
     let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Uncacheable);
