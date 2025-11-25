@@ -40,8 +40,7 @@ const EVDEV_MAJOR_ID: u16 = 13;
 static EVDEV_MINOR_COUNTER: AtomicU32 = AtomicU32::new(0);
 
 /// Global registry of evdev devices.
-static EVDEV_DEVICES: SpinLock<BTreeMap<MinorId, Arc<EvdevDevice>>> =
-    SpinLock::new(BTreeMap::new());
+static EVDEV_DEVICES: Mutex<BTreeMap<MinorId, Arc<EvdevDevice>>> = Mutex::new(BTreeMap::new());
 
 pub struct EvdevDevice {
     /// Input device associated with this evdev.
