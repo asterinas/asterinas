@@ -30,7 +30,6 @@ mod pte_state;
 
 use core::{
     cell::SyncUnsafeCell,
-    marker::PhantomData,
     ops::Deref,
     sync::atomic::{AtomicU8, Ordering},
 };
@@ -42,9 +41,9 @@ pub(in crate::mm) use self::{
 use super::{PageTableConfig, PteTrait, nr_subpage_per_huge};
 use crate::{
     mm::{
-        FrameAllocOptions, HasPaddr, Infallible, PagingConstsTrait, PagingLevel, VmReader,
+        FrameAllocOptions, HasPaddr, Infallible, PagingConstsTrait, PagingLevel, Vaddr, VmReader,
         frame::{Frame, FrameRef, meta::AnyFrameMeta},
-        paddr_to_vaddr,
+        paddr_to_vaddr, page_size,
         page_table::{PteScalar, load_pte, store_pte},
     },
     task::atomic_mode::InAtomicMode,
@@ -59,16 +58,17 @@ use crate::{
 ///
 /// [`PageTableNode`] is read-only. To modify the page table node, lock and use
 /// [`PageTableGuard`].
-pub(crate) type PageTableNode<C> = Frame<PageTablePageMeta<C>>;
+pub(crate) type PageTableNode<C> = Frame<PageTableFrameMeta<C>>;
 
+#[expect(private_bounds)]
 impl<C: PageTableConfig> PageTableNode<C> {
     pub(super) fn level(&self) -> PagingLevel {
         self.meta().level
     }
 
     /// Allocates a new empty page table node.
-    pub(super) fn alloc(level: PagingLevel) -> Self {
-        let meta = PageTablePageMeta::new(level);
+    pub(super) fn alloc(level: PagingLevel, aux: C::Aux) -> Self {
+        let meta = PageTableFrameMeta::new(level, aux);
         FrameAllocOptions::new()
             .zeroed(true)
             .alloc_frame_with(meta)
@@ -125,8 +125,9 @@ impl<C: PageTableConfig> PageTableNode<C> {
 }
 
 /// A reference to a page table node.
-pub(in crate::mm) type PageTableNodeRef<'a, C> = FrameRef<'a, PageTablePageMeta<C>>;
+pub(in crate::mm) type PageTableNodeRef<'a, C> = FrameRef<'a, PageTableFrameMeta<C>>;
 
+#[expect(private_bounds)]
 impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
     /// Locks the page table node.
     ///
@@ -175,16 +176,20 @@ pub(super) struct PageTableGuard<'rcu, C: PageTableConfig> {
 }
 
 impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
-    /// Borrows an entry in the node at a given index.
+    /// Borrows an entry in the node.
     ///
-    /// # Panics
+    /// The page table entry is specified by its corresponding virtual address.
+    /// The virtual address must be aligned to the page size at the current
+    /// level.
     ///
-    /// Panics if the index is not within the bound of
-    /// [`nr_subpage_per_huge<C>`].
-    pub(super) fn entry(&mut self, idx: usize) -> Entry<'_, 'rcu, C> {
-        assert!(idx < nr_subpage_per_huge::<C>());
-        // SAFETY: The index is within the bound.
-        unsafe { Entry::new_at(self, idx) }
+    /// # Safety
+    ///
+    /// The caller must ensure that the virtual address corresponds to a PTE
+    /// in this node.
+    pub(super) fn entry(&mut self, pte_vaddr: Vaddr) -> Entry<'_, 'rcu, C> {
+        assert_eq!(pte_vaddr % page_size::<C>(self.level()), 0);
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { Entry::new_at(self, pte_vaddr) }
     }
 
     /// Gets the state of the entry at a given index.
@@ -201,13 +206,19 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     /// Gets the number of valid PTEs in the node.
     pub(super) fn nr_children(&self) -> u16 {
         // SAFETY: The lock is held so we have an exclusive access.
-        unsafe { *self.meta().nr_children.get() }
+        unsafe { (*self.meta().inner.get()).nr_children }
     }
 
     /// Returns if the page table node is detached from its parent.
     pub(super) fn stray_mut(&mut self) -> &mut bool {
         // SAFETY: The lock is held so we have an exclusive access.
-        unsafe { &mut *self.meta().stray.get() }
+        unsafe { &mut (*self.meta().inner.get()).stray }
+    }
+
+    /// Returns a reference to the auxiliary data of the page table node.
+    pub(super) fn aux_mut(&mut self) -> &mut C::Aux {
+        // SAFETY: The lock is held so we have an exclusive access.
+        unsafe { &mut (*self.meta().inner.get()).aux }
     }
 
     /// Reads a non-owning PTE at the given index.
@@ -248,7 +259,7 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     /// Gets the mutable reference to the number of valid PTEs in the node.
     fn nr_children_mut(&mut self) -> &mut u16 {
         // SAFETY: The lock is held so we have an exclusive access.
-        unsafe { &mut *self.meta().nr_children.get() }
+        unsafe { &mut (*self.meta().inner.get()).nr_children }
     }
 }
 
@@ -267,33 +278,48 @@ impl<C: PageTableConfig> Drop for PageTableGuard<'_, C> {
 }
 
 /// The metadata of any kinds of page table pages.
-/// Make sure the the generic parameters don't effect the memory layout.
+///
+/// The private bond is cause by private [`PageTableConfig`], and the frame
+/// meta is used by [`crate::check_aux_pt_meta_layout`] so it needs to be
+/// public. It is not intended to be constructed outside OSTD.
 #[derive(Debug)]
-pub(crate) struct PageTablePageMeta<C: PageTableConfig> {
-    /// The number of valid PTEs. It is mutable if the lock is held.
-    nr_children: SyncUnsafeCell<u16>,
+#[expect(private_bounds)]
+#[expect(rustdoc::private_intra_doc_links)]
+pub struct PageTableFrameMeta<C: PageTableConfig> {
+    /// Mutable parts if the [`Self::lock`] is held.
+    inner: SyncUnsafeCell<PageTableFrameMetaInner<C>>,
+    /// The level of the page table frame. A page table frame cannot be
+    /// referenced by page tables of different levels.
+    level: PagingLevel,
+    /// The lock for the page table frame.
+    lock: AtomicU8,
+}
+
+struct PageTableFrameMetaInner<C: PageTableConfig> {
+    /// The auxiliary metadata associated with the page table frame.
+    aux: C::Aux,
+    /// The number of valid PTEs.
+    nr_children: u16,
     /// If the page table is detached from its parent.
     ///
     /// A page table can be detached from its parent while still being accessed,
     /// since we use a RCU scheme to recycle page tables. If this flag is set,
     /// it means that the parent is recycling the page table.
-    stray: SyncUnsafeCell<bool>,
-    /// The level of the page table page. A page table page cannot be
-    /// referenced by page tables of different levels.
-    level: PagingLevel,
-    /// The lock for the page table page.
-    lock: AtomicU8,
-    _phantom: core::marker::PhantomData<C>,
+    stray: bool,
 }
 
-impl<C: PageTableConfig> PageTablePageMeta<C> {
-    fn new(level: PagingLevel) -> Self {
+#[expect(private_bounds)]
+impl<C: PageTableConfig> PageTableFrameMeta<C> {
+    /// Creates a new page table frame metadata.
+    fn new(level: PagingLevel, aux: C::Aux) -> Self {
         Self {
-            nr_children: SyncUnsafeCell::new(0),
-            stray: SyncUnsafeCell::new(false),
+            inner: SyncUnsafeCell::new(PageTableFrameMetaInner {
+                aux,
+                nr_children: 0,
+                stray: false,
+            }),
             level,
             lock: AtomicU8::new(0),
-            _phantom: PhantomData,
         }
     }
 }
@@ -302,10 +328,10 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
 // arbitrary addresses to be stored in the page table nodes. Therefore, they may not
 // be valid `C::Item`s. The soundness of the following `on_drop` implementation must
 // be reasoned in conjunction with the `page_table/cursor` implementation.
-unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
+unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTableFrameMeta<C> {
     fn on_drop(&mut self, reader: &mut VmReader<Infallible>) {
-        let nr_children = self.nr_children.get_mut();
-        if *nr_children == 0 {
+        let nr_children = self.inner.get_mut().nr_children;
+        if nr_children == 0 {
             return;
         }
 
