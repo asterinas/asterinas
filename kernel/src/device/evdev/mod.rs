@@ -9,12 +9,7 @@
 
 mod file;
 
-use alloc::{
-    format,
-    string::String,
-    sync::{Arc, Weak},
-    vec::Vec,
-};
+use alloc::{format, string::String, sync::Arc, vec::Vec};
 use core::{
     fmt::Debug,
     sync::atomic::{AtomicU32, Ordering},
@@ -26,7 +21,7 @@ use aster_input::{
     input_handler::{ConnectError, InputHandler, InputHandlerClass},
 };
 use device_id::{DeviceId, MajorId, MinorId};
-use file::{EvdevEvent, EvdevFile, EVDEV_BUFFER_SIZE};
+use file::{EvdevEvent, EvdevFile, EvdevFileInner, EVDEV_BUFFER_SIZE};
 use ostd::sync::SpinLock;
 use spin::Once;
 
@@ -55,7 +50,7 @@ pub struct EvdevDevice {
     /// This lock is acquired in both the task and interrupt contexts.
     /// We must make sure that this lock is taken with the local IRQs disabled.
     /// Otherwise, we would be vulnerable to deadlock.
-    opened_files: SpinLock<Vec<(Weak<EvdevFile>, RbProducer<EvdevEvent>)>>,
+    opened_files: SpinLock<Vec<(Arc<EvdevFileInner>, RbProducer<EvdevEvent>)>>,
     /// Device node name (e.g., "event0").
     node_name: String,
     /// Device ID.
@@ -64,17 +59,14 @@ pub struct EvdevDevice {
 
 impl Debug for EvdevDevice {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        let opened_count = self
-            .opened_files
-            .lock()
-            .iter()
-            .filter(|(file, _)| file.strong_count() > 0)
-            .count();
+        let device_name = self.device.name();
+        let opened_count = self.opened_files.disable_irq().lock().len();
+        let id_minor = self.id.minor();
         f.debug_struct("EvdevDevice")
-            .field("minor", &self.id.minor())
-            .field("device_name", &self.device.name())
-            .field("opened_files", &opened_count)
-            .finish()
+            .field("device_name", &device_name)
+            .field("opened_count", &opened_count)
+            .field("id_minor", &id_minor)
+            .finish_non_exhaustive()
     }
 }
 
@@ -98,15 +90,19 @@ impl EvdevDevice {
     }
 
     /// Adds an opened evdev file to this evdev device.
-    fn attach_file(&self, file: Weak<EvdevFile>, producer: RbProducer<EvdevEvent>) {
+    fn attach_file(&self, file: Arc<EvdevFileInner>, producer: RbProducer<EvdevEvent>) {
         let mut opened_files = self.opened_files.disable_irq().lock();
         opened_files.push((file, producer));
     }
 
-    /// Removes closed evdev files from this evdev device.
-    pub(self) fn detach_closed_files(&self) {
+    /// Removes the closed evdev file from this evdev device.
+    pub(self) fn detach_closed_file(&self, file: &Arc<EvdevFileInner>) {
         let mut opened_files = self.opened_files.disable_irq().lock();
-        opened_files.retain(|(file, _)| file.strong_count() > 0);
+        let pos = opened_files
+            .iter()
+            .position(|(f, _)| Arc::ptr_eq(f, file))
+            .unwrap();
+        opened_files.swap_remove(pos);
     }
 
     /// Distributes events to all opened evdev files.
@@ -114,11 +110,7 @@ impl EvdevDevice {
         let mut opened_files = self.opened_files.lock();
 
         // Send events to all opened evdev files using their producers.
-        for (file_weak, producer) in opened_files.iter_mut() {
-            let Some(file) = file_weak.upgrade() else {
-                continue;
-            };
-
+        for (file, producer) in opened_files.iter_mut() {
             for event in events {
                 // Read the current time according to the opened evdev file's clock type.
                 let time = file.read_clock();
@@ -174,13 +166,12 @@ impl EvdevDevice {
     pub(self) fn create_file(self: &Arc<Self>, buffer_size: usize) -> Result<Arc<EvdevFile>> {
         // Create the evdev file and get the producer.
         let (file, producer) = EvdevFile::new(buffer_size, Arc::downgrade(self));
-        let file = Arc::new(file);
-        let file_weak = Arc::downgrade(&file);
 
         // Attach the opened evdev file to this device.
-        self.attach_file(file_weak, producer);
+        self.attach_file(file.inner().clone(), producer);
 
-        Ok(file)
+        // Note that this can and should be a `Box` after fixing the char device subsystem.
+        Ok(Arc::new(file))
     }
 }
 
