@@ -24,7 +24,7 @@ xmas-elf = "0.10.0"
 log = "0.4.20"
 uefi = { version = "0.32.0", features = ["global_allocator", "panic_handler", "logger", "qemu"]}
 uefi-raw = "0.8.0"
-tdx-guest = { version = "0.2.1", optional = true }
+tdx-guest = { version = "0.2.2", optional = true }
 
 [features]
 default = ["cvm_guest"]

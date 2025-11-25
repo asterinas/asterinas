@@ -21,15 +21,24 @@ pub(crate) mod tdx_guest;
 
 #[cfg(feature = "cvm_guest")]
 pub(crate) fn init_cvm_guest() {
-    match ::tdx_guest::init_tdx() {
+    use ::tdx_guest::{
+        disable_sept_ve, init_tdx, metadata, reduce_unnecessary_ve,
+        tdcall::{write_td_metadata, InitError},
+    };
+    match init_tdx() {
         Ok(td_info) => {
+            reduce_unnecessary_ve().unwrap();
+            disable_sept_ve(td_info.attributes).unwrap();
+            // Enable notification for zero step attack detection.
+            write_td_metadata(metadata::NOTIFY_ENABLES, 1, 1).unwrap();
+
             crate::early_println!(
                 "[kernel] Intel TDX initialized\n[kernel] td gpaw: {}, td attributes: {:?}",
                 td_info.gpaw,
                 td_info.attributes
             );
         }
-        Err(::tdx_guest::tdcall::InitError::TdxGetVpInfoError(td_call_error)) => {
+        Err(InitError::TdxGetVpInfoError(td_call_error)) => {
             panic!(
                 "[kernel] Intel TDX not initialized, Failed to get TD info: {:?}",
                 td_call_error
