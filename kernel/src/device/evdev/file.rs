@@ -32,19 +32,19 @@ use crate::{
 
 pub(super) const EVDEV_BUFFER_SIZE: usize = 64;
 
-// Compatible with Linux's event format.
+// Reference: <https://elixir.bootlin.com/linux/v6.17.9/source/include/uapi/linux/input.h#L28>
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod)]
-pub struct EvdevEvent {
-    pub sec: u64,
-    pub usec: u64,
-    pub type_: u16,
-    pub code: u16,
-    pub value: i32,
+pub(super) struct EvdevEvent {
+    sec: u64,
+    usec: u64,
+    type_: u16,
+    code: u16,
+    value: i32,
 }
 
 impl EvdevEvent {
-    pub fn from_event_and_time(event: &InputEvent, time: Duration) -> Self {
+    pub(super) fn from_event_and_time(event: &InputEvent, time: Duration) -> Self {
         let (type_, code, value) = event.to_raw();
         Self {
             sec: time.as_secs(),

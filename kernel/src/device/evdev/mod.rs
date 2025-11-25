@@ -42,7 +42,7 @@ static EVDEV_MINOR_COUNTER: AtomicU32 = AtomicU32::new(0);
 /// Global registry of evdev devices.
 static EVDEV_DEVICES: Mutex<BTreeMap<MinorId, Arc<EvdevDevice>>> = Mutex::new(BTreeMap::new());
 
-pub struct EvdevDevice {
+struct EvdevDevice {
     /// Input device associated with this evdev.
     device: Arc<dyn InputDevice>,
     /// List of opened evdev files with their producers.
@@ -75,7 +75,7 @@ impl Debug for EvdevDevice {
 impl EvdevDevice {
     pub(self) fn new(minor: u32, device: Arc<dyn InputDevice>) -> Self {
         let node_name = format!("event{}", minor);
-        let major = EVDEV_MAJOR.get().unwrap().get();
+        let major = MajorId::new(EVDEV_MAJOR_ID);
         let minor_id = MinorId::new(minor);
 
         Self {
@@ -108,7 +108,7 @@ impl EvdevDevice {
     }
 
     /// Distributes events to all opened evdev files.
-    pub(self) fn pass_events(&self, events: &[InputEvent]) {
+    fn pass_events(&self, events: &[InputEvent]) {
         // No need to disable IRQs because this method can only be called in the interrupt context.
         let mut opened_files = self.opened_files.lock();
 
@@ -162,7 +162,7 @@ impl EvdevDevice {
     }
 
     /// Creates a new opened evdev file for this evdev device.
-    pub(self) fn create_file(self: &Arc<Self>, buffer_size: usize) -> Result<Arc<EvdevFile>> {
+    fn create_file(self: &Arc<Self>, buffer_size: usize) -> Result<Arc<EvdevFile>> {
         // Create the evdev file and get the producer.
         let (file, producer) = EvdevFile::new(buffer_size, Arc::downgrade(self));
 
@@ -171,6 +171,12 @@ impl EvdevDevice {
 
         // Note that this can and should be a `Box` after fixing the char device subsystem.
         Ok(Arc::new(file))
+    }
+}
+
+impl InputHandler for EvdevDevice {
+    fn handle_events(&self, events: &[InputEvent]) {
+        self.pass_events(events);
     }
 }
 
@@ -199,7 +205,7 @@ impl CharDevice for EvdevDevice {
     }
 }
 
-/// Evdev handler class that creates device nodes for input devices.
+/// The evdev handler class that creates device nodes for input devices.
 #[derive(Debug)]
 struct EvdevHandlerClass;
 
@@ -216,18 +222,17 @@ impl InputHandlerClass for EvdevHandlerClass {
         let minor = EVDEV_MINOR_COUNTER.fetch_add(1, Ordering::Relaxed);
         let minor_id = MinorId::new(minor);
 
-        // Create evdev device.
+        // Create an evdev device.
         let evdev = Arc::new(EvdevDevice::new(minor, dev.clone()));
 
         // Register the device with the char device subsystem.
         register(evdev.clone()).map_err(|_| ConnectError::InternalError)?;
 
-        // Add to our registry for lookup during disconnect.
+        // Add to our registry for looking up during disconnection.
         EVDEV_DEVICES.lock().insert(minor_id, evdev.clone());
 
-        // Create handler instance for this device.
-        let handler = EvdevHandler::new(evdev);
-        Ok(Arc::new(handler))
+        // Return the device as a handler instance.
+        Ok(evdev as _)
     }
 
     fn disconnect(&self, dev: &Arc<dyn InputDevice>) {
@@ -243,63 +248,44 @@ impl InputHandlerClass for EvdevHandlerClass {
             }
         }
 
-        if let Some(minor) = found_minor {
-            let evdev = devices.remove(&minor).unwrap();
-            let device_id = evdev.id();
-
-            // Unregister from the char device subsystem.
-            if let Err(e) = unregister(device_id) {
-                log::warn!(
-                    "Failed to unregister evdev device '{}' (minor: {}): {:?}",
-                    device_name,
-                    minor.get(),
-                    e
-                );
-            }
-
-            // TODO: Implement device node deletion when the functionality is available.
-            log::info!(
-                "Disconnected evdev device '{}' (minor: {}), device node /dev/input/event{} still exists",
-                device_name,
-                minor.get(),
-                minor.get()
-            );
-        } else {
+        let Some(minor) = found_minor else {
             log::warn!(
                 "Attempted to disconnect device '{}' but it did not connect to evdev",
                 device_name
             );
+            return;
+        };
+
+        let evdev = devices.remove(&minor).unwrap();
+        let device_id = evdev.id();
+
+        // Unregister from the char device subsystem.
+        if let Err(err) = unregister(device_id) {
+            log::warn!(
+                "Failed to unregister evdev device '{}' (minor: {}): {:?}",
+                device_name,
+                minor.get(),
+                err
+            );
         }
+
+        // TODO: Implement device node deletion when the functionality is available.
+        log::info!(
+            "Disconnected evdev device '{}' (minor: {}), device node /dev/input/event{} still exists",
+            device_name,
+            minor.get(),
+            minor.get()
+        );
     }
 }
-
-/// Evdev handler instance for a specific device.
-#[derive(Debug)]
-pub struct EvdevHandler {
-    evdev: Arc<EvdevDevice>,
-}
-
-impl EvdevHandler {
-    fn new(evdev: Arc<EvdevDevice>) -> Self {
-        Self { evdev }
-    }
-}
-
-impl InputHandler for EvdevHandler {
-    fn handle_events(&self, events: &[InputEvent]) {
-        self.evdev.pass_events(events);
-    }
-}
-
-static EVDEV_MAJOR: Once<MajorIdOwner> = Once::new();
 
 pub(super) fn init_in_first_kthread() {
+    use aster_input::input_handler::RegisteredInputHandlerClass;
+
+    static EVDEV_MAJOR: Once<MajorIdOwner> = Once::new();
     EVDEV_MAJOR.call_once(|| acquire_major(MajorId::new(EVDEV_MAJOR_ID)).unwrap());
 
-    static REGISTERED_EVDDEV_CLASS: spin::Once<
-        aster_input::input_handler::RegisteredInputHandlerClass,
-    > = spin::Once::new();
-
+    static REGISTERED_EVDDEV_CLASS: Once<RegisteredInputHandlerClass> = Once::new();
     let handler_class = Arc::new(EvdevHandlerClass);
     let handle = aster_input::register_handler_class(handler_class);
     REGISTERED_EVDDEV_CLASS.call_once(|| handle);
