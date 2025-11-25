@@ -76,46 +76,36 @@ define_atomic_version_of_integer_like_type!(EvdevClock, try_from = true, {
     struct AtomicEvdevClock(AtomicU8);
 });
 
-/// An opened file from an evdev device (`EvdevDevice`).
-pub struct EvdevFile {
+/// An opened file from an evdev device ([`EvdevDevice`]).
+pub(super) struct EvdevFile {
     /// Consumer for reading events.
     consumer: Mutex<RbConsumer<EvdevEvent>>,
+    /// Inner data (shared with the device).
+    inner: Arc<EvdevFileInner>,
+    /// Weak reference to the evdev device that owns this evdev file.
+    evdev: Weak<EvdevDevice>,
+}
+
+/// An opened evdev file's inner data (shared with its [`EvdevDevice`]).
+pub(super) struct EvdevFileInner {
     /// Clock ID for this opened evdev file.
     clock_id: AtomicEvdevClock,
-    /// Number of complete event packets available (ended with SYN_REPORT).
+    /// Number of complete event packets available (ended with `SYN_REPORT`).
     packet_count: AtomicUsize,
     /// Pollee for event notification.
     pollee: Pollee,
-    /// Weak reference to the evdev device that owns this evdev file.
-    evdev: Weak<EvdevDevice>,
 }
 
 impl Debug for EvdevFile {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("EvdevFile")
-            .field("clock_id", &self.clock_id)
-            .field("packet_count", &self.packet_count)
+            .field("clock_id", &self.inner.clock_id)
+            .field("packet_count", &self.inner.packet_count)
             .finish_non_exhaustive()
     }
 }
 
-impl EvdevFile {
-    pub(super) fn new(
-        buffer_size: usize,
-        evdev: Weak<EvdevDevice>,
-    ) -> (Self, RbProducer<EvdevEvent>) {
-        let (producer, consumer) = RingBuffer::new(buffer_size).split();
-
-        let evdev_file = Self {
-            consumer: Mutex::new(consumer),
-            clock_id: AtomicEvdevClock::new(EvdevClock::Monotonic),
-            packet_count: AtomicUsize::new(0),
-            pollee: Pollee::new(),
-            evdev,
-        };
-        (evdev_file, producer)
-    }
-
+impl EvdevFileInner {
     pub(super) fn read_clock(&self) -> Duration {
         use crate::time::clocks::{BootTimeClock, MonotonicClock, RealTimeClock};
 
@@ -128,21 +118,46 @@ impl EvdevFile {
     }
 
     /// Checks if buffer has complete event packets.
-    pub fn has_complete_packets(&self) -> bool {
+    pub(self) fn has_complete_packets(&self) -> bool {
         self.packet_count.load(Ordering::Relaxed) > 0
     }
 
     /// Increments the packet count.
-    pub fn increment_packet_count(&self) {
+    pub(super) fn increment_packet_count(&self) {
         self.packet_count.fetch_add(1, Ordering::Relaxed);
         self.pollee.notify(IoEvents::IN);
     }
 
     /// Decrements the packet count.
-    pub fn decrement_packet_count(&self) {
+    pub(self) fn decrement_packet_count(&self) {
         if self.packet_count.fetch_sub(1, Ordering::Relaxed) == 1 {
             self.pollee.invalidate();
         }
+    }
+}
+
+impl EvdevFile {
+    pub(super) fn new(
+        buffer_size: usize,
+        evdev: Weak<EvdevDevice>,
+    ) -> (Self, RbProducer<EvdevEvent>) {
+        let (producer, consumer) = RingBuffer::new(buffer_size).split();
+
+        let inner = EvdevFileInner {
+            clock_id: AtomicEvdevClock::new(EvdevClock::Monotonic),
+            packet_count: AtomicUsize::new(0),
+            pollee: Pollee::new(),
+        };
+        let evdev_file = Self {
+            consumer: Mutex::new(consumer),
+            inner: Arc::new(inner),
+            evdev,
+        };
+        (evdev_file, producer)
+    }
+
+    pub(super) fn inner(&self) -> &Arc<EvdevFileInner> {
+        &self.inner
     }
 
     /// Processes events and writes them to the writer.
@@ -161,7 +176,7 @@ impl EvdevFile {
 
             // Update the counter since the event has been consumed.
             if is_syn_report_event(&event) || is_syn_dropped_event(&event) {
-                self.decrement_packet_count();
+                self.inner.decrement_packet_count();
             }
 
             // Write the event to the writer.
@@ -179,7 +194,7 @@ impl EvdevFile {
     fn check_io_events(&self) -> IoEvents {
         // TODO: Report `IoEvents::HUP` if the device has been disconnected.
 
-        if self.has_complete_packets() {
+        if self.inner.has_complete_packets() {
             IoEvents::IN
         } else {
             IoEvents::empty()
@@ -199,7 +214,8 @@ fn is_syn_dropped_event(event: &EvdevEvent) -> bool {
 
 impl Pollable for EvdevFile {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        self.pollee
+        self.inner
+            .pollee
             .poll_with(mask, poller, || self.check_io_events())
     }
 }
@@ -224,7 +240,7 @@ impl InodeIo for EvdevFile {
 
         // If we're in non-blocking mode, we won't bother the user space with an incomplete packet.
         // Note that this aligns to the behavior of `check_io_events`.
-        if is_nonblocking && !self.has_complete_packets() {
+        if is_nonblocking && !self.inner.has_complete_packets() {
             return_errno_with_message!(Errno::EAGAIN, "the evdev file has no packets");
         }
 
@@ -279,7 +295,7 @@ impl FileIo for EvdevFile {
 impl Drop for EvdevFile {
     fn drop(&mut self) {
         if let Some(evdev) = self.evdev.upgrade() {
-            evdev.detach_closed_files();
+            evdev.detach_closed_file(&self.inner);
         }
     }
 }
