@@ -23,7 +23,17 @@ impl Vmar {
             .vm_space
             .cursor_mut(&preempt_guard, &full_range)
             .unwrap();
-        cursor.unmap(full_range.len());
+
+        while cursor
+            .find_next_unmappable_subtree(full_range.end - cursor.virt_addr())
+            .is_some()
+        {
+            while cursor.cur_va_range().end > full_range.end {
+                cursor.adjust_level(cursor.level() - 1);
+            }
+            cursor.unmap();
+        }
+
         cursor.flusher().sync_tlb_flush();
     }
 

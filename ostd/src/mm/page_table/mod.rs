@@ -201,7 +201,7 @@ pub(crate) fn largest_pages<C: PageTableConfig>(
     mut va: Vaddr,
     mut pa: Paddr,
     mut len: usize,
-) -> impl Iterator<Item = (Paddr, PagingLevel)> {
+) -> impl Iterator<Item = (Vaddr, Paddr, PagingLevel)> {
     assert_eq!(va % C::BASE_PAGE_SIZE, 0);
     assert_eq!(pa % C::BASE_PAGE_SIZE, 0);
     assert_eq!(len % C::BASE_PAGE_SIZE, 0);
@@ -220,12 +220,13 @@ pub(crate) fn largest_pages<C: PageTableConfig>(
             level -= 1;
         }
 
+        let va_start = va;
         let item_start = pa;
         va += page_size::<C>(level);
         pa += page_size::<C>(level);
         len -= page_size::<C>(level);
 
-        Some((item_start, level))
+        Some((va_start, item_start, level))
     })
 }
 
@@ -406,11 +407,19 @@ impl PageTable<KernelPtConfig> {
     ) -> Result<(), PageTableError> {
         let preempt_guard = disable_preempt();
         let mut cursor = CursorMut::new(self, &preempt_guard, vaddr)?;
-        // SAFETY: The safety is upheld by the caller.
-        while let Some(range) =
-            unsafe { cursor.protect_next(vaddr.end - cursor.virt_addr(), &mut op) }
-        {
-            crate::arch::mm::tlb_flush_addr(range.start);
+        while cursor.find_next(vaddr.end - cursor.virt_addr()).is_some() {
+            while cursor.cur_va_range().end > vaddr.end {
+                assert!(cursor.level() > 1);
+                cursor.adjust_level(cursor.level() - 1);
+            }
+            // SAFETY: The safety is upheld by the caller.
+            unsafe { cursor.protect(&mut op) };
+
+            let va_range = cursor.cur_va_range();
+            crate::arch::mm::tlb_flush_addr_range(&va_range);
+            if cursor.jump(va_range.end).is_err() {
+                break;
+            }
         }
         Ok(())
     }
