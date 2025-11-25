@@ -59,7 +59,7 @@ impl Vmar {
     /// This method should only be invoked by [`super::VmarHandle`].
     pub(super) fn new(process_vm: ProcessVm) -> Arc<Self> {
         let inner = VmarInner::new();
-        let vm_space = VmSpace::new();
+        let vm_space = VmSpace::<()>::new();
         let rss_counters = array::from_fn(|_| PerCpuCounter::new());
         Arc::new(Vmar {
             inner: RwMutex::new(inner),

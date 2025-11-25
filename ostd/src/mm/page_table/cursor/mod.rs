@@ -360,7 +360,8 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
 
     fn cur_entry(&mut self) -> Entry<'_, 'rcu, C> {
         let node = self.path[self.level as usize - 1].as_mut().unwrap();
-        node.entry(pte_index::<C>(self.va, self.level))
+        let pte_va = self.va.align_down(page_size::<C>(self.level));
+        node.entry(pte_va)
     }
 }
 
@@ -542,6 +543,7 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
         let rcu_guard = self.rcu_guard;
 
         let va = self.va;
+        debug_assert_eq!(va % page_size::<C>(self.level), 0);
         let level = self.level;
 
         let old = self.cur_entry().replace(new_child);
@@ -562,7 +564,7 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
                 //  - We checked that we are not unmapping shared kernel page table nodes.
                 //  - We must have locked the entire sub-tree since the range is locked.
                 let num_frames =
-                    unsafe { locking::dfs_mark_stray_and_unlock(rcu_guard, locked_pt) };
+                    unsafe { locking::dfs_mark_stray_and_unlock(rcu_guard, locked_pt, va) };
 
                 Some(PageTableFrag::StrayPageTable {
                     pt,
