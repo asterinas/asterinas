@@ -150,6 +150,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
 
     type E = PageTableEntry;
     type C = PagingConsts;
+    type Aux = ();
 
     type Item = MappedItem;
     type ItemRef<'a> = MappedItemRef<'a>;
