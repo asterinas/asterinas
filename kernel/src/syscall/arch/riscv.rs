@@ -84,6 +84,7 @@ use super::{
     pwritev::{sys_pwritev, sys_pwritev2, sys_writev},
     read::sys_read,
     readlink::sys_readlinkat,
+    reboot::sys_reboot,
     recvfrom::sys_recvfrom,
     recvmsg::sys_recvmsg,
     removexattr::{sys_fremovexattr, sys_lremovexattr, sys_removexattr},
@@ -268,6 +269,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_RT_SIGRETURN = 139           => sys_rt_sigreturn(args[..0], &mut user_ctx);
     SYS_SET_PRIORITY = 140           => sys_set_priority(args[..3]);
     SYS_GET_PRIORITY = 141           => sys_get_priority(args[..2]);
+    SYS_REBOOT = 142                 => sys_reboot(args[..4]);
     SYS_SETREGID = 143               => sys_setregid(args[..2]);
     SYS_SETGID = 144                 => sys_setgid(args[..1]);
     SYS_SETREUID = 145               => sys_setreuid(args[..2]);

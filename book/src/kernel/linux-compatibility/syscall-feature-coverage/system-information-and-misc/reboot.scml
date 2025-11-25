@@ -1,0 +1,9 @@
+reboot_magic2 = LINUX_REBOOT_MAGIC2 | LINUX_REBOOT_MAGIC2A | LINUX_REBOOT_MAGIC2B | LINUX_REBOOT_MAGIC2C;
+
+// Stop the current system
+reboot(
+    magic  = LINUX_REBOOT_MAGIC1,
+    magic2 = <reboot_magic2>,
+    op     = LINUX_REBOOT_CMD_HALT | LINUX_REBOOT_CMD_POWER_OFF,
+    arg
+);
