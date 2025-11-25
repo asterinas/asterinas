@@ -16,12 +16,15 @@ use core::{
 };
 
 use aster_input::{
-    event_type_codes::{EventTypes, SynEvent},
+    event_type_codes::SynEvent,
     input_dev::{InputDevice, InputEvent},
     input_handler::{ConnectError, InputHandler, InputHandlerClass},
 };
 use device_id::{DeviceId, MajorId, MinorId};
-use file::{EvdevEvent, EvdevFile, EvdevFileInner, EVDEV_BUFFER_SIZE};
+use file::{
+    is_syn_dropped_event, is_syn_report_event, EvdevEvent, EvdevFile, EvdevFileInner,
+    EVDEV_BUFFER_SIZE,
+};
 use ostd::sync::SpinLock;
 use spin::Once;
 
@@ -107,6 +110,7 @@ impl EvdevDevice {
 
     /// Distributes events to all opened evdev files.
     pub(self) fn pass_events(&self, events: &[InputEvent]) {
+        // No need to disable IRQs because this method can only be called in the interrupt context.
         let mut opened_files = self.opened_files.lock();
 
         // Send events to all opened evdev files using their producers.
@@ -114,52 +118,48 @@ impl EvdevDevice {
             for event in events {
                 // Read the current time according to the opened evdev file's clock type.
                 let time = file.read_clock();
-                let timed_event = EvdevEvent::from_event_and_time(event, time);
 
-                // Try to push event to the buffer.
-                if let Some(()) = producer.push(timed_event) {
-                    // Check if this is a SYN_REPORT event
-                    if self.is_syn_report_event(event) {
-                        file.increment_packet_count();
-                    }
-                } else {
-                    // TODO: In Linux's implementation, when the buffer is full, evdev will pop the two
-                    // oldest events to ensure that both the SYN_DROPPED event and the current event can
-                    // be pushed into the buffer. However, since we are using `RingBuffer`, evdev cannot
-                    // pop events. Considering the convenience of lock-free programming with `RingBuffer`
-                    // and the rarity of this error condition, we choose to retain the use of `RingBuffer`
-                    // and instead attempt to push both the SYN_DROPPED event and the current event.
+                // When the buffer is full and a new event arrives, Linux drops all unconsumed
+                // events and queues a `SYN_DROPPED` event with the new one [1].
+                //
+                // We follow the Linux implementation to try to drop unconsumed events. However, if
+                // there is a concurrent consumer, `try_clear_with_producer_locked` may not be able
+                // to make progress because we're in the interrupt context. So we will always push
+                // a `SYN_DROPPED` event when the buffer is almost full to indicate that events are
+                // about to be dropped. This should match the correct semantics of the
+                // `SYN_DROPPED` event [2].
+                //
+                // [1]: https://elixir.bootlin.com/linux/v6.17.9/source/drivers/input/evdev.c#L221-L225
+                // [2]: https://elixir.bootlin.com/linux/v6.17.9/source/Documentation/input/event-codes.rst#L113-L118
+                if producer.free_len() <= 1 {
+                    file.try_clear_with_producer_locked();
+
                     let dropped_event = EvdevEvent::from_event_and_time(
                         &InputEvent::from_sync_event(SynEvent::Dropped),
                         time,
                     );
-
-                    // Try to push SYN_DROPPED event.
-                    if let Some(()) = producer.push(dropped_event) {
+                    // This fails if the buffer is full and `try_clear_with_producer_locked` cannot
+                    // make progress. A `SYN_DROPPED` event must have already been pushed.
+                    if producer.push(dropped_event).is_some() {
                         file.increment_packet_count();
-
-                        // Try to push the original event.
-                        if let Some(()) = producer.push(timed_event) {
-                            // Check if this is a SYN_REPORT event.
-                            if self.is_syn_report_event(event) {
-                                file.increment_packet_count();
-                            }
-                        }
-                    } else {
-                        // Failed to push SYN_DROPPED event, emit a warning.
-                        log::warn!(
-                            "Failed to push SYN_DROPPED event to evdev file buffer (buffer full)"
-                        );
                     }
+                }
+
+                let timed_event = EvdevEvent::from_event_and_time(event, time);
+                if is_syn_dropped_event(&timed_event) {
+                    // This is a bug in the device driver. We ignore the event to prevent bugs in
+                    // the device drivers from breaking the invariant of the packet count.
+                    log::warn!(
+                        "Received dropped event from evdev device '{}'",
+                        self.device.name()
+                    );
+                    continue;
+                }
+                if producer.push(timed_event).is_some() && is_syn_report_event(&timed_event) {
+                    file.increment_packet_count();
                 }
             }
         }
-    }
-
-    /// Checks if the event is a SYN_REPORT event (marks end of packet).
-    fn is_syn_report_event(&self, event: &InputEvent) -> bool {
-        let (type_, code, _) = event.to_raw();
-        type_ == EventTypes::SYN.as_index() && code == SynEvent::Report as u16
     }
 
     /// Creates a new opened evdev file for this evdev device.

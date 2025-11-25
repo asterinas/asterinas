@@ -218,6 +218,11 @@ impl<T: Pod> RingBuffer<T> {
         head += len;
         self.head.store(head.0, Ordering::Release);
     }
+
+    pub(self) fn reset_head(&self) {
+        let new_head = self.tail();
+        self.head.store(new_head.0, Ordering::Release);
+    }
 }
 
 impl RingBuffer<u8> {
@@ -300,6 +305,9 @@ impl<T: Pod, R: Deref<Target = RingBuffer<T>>> Producer<T, R> {
         rb.advance_tail(tail, nitems);
         Some(())
     }
+
+    // There is no counterpart to `Consumer::skip` and `Consumer::clear`. They do not make sense
+    // for the producer.
 }
 
 impl<R: Deref<Target = RingBuffer<u8>>> Producer<u8, R> {
@@ -346,8 +354,6 @@ impl<R: Deref<Target = RingBuffer<u8>>> Producer<u8, R> {
         rb.advance_tail(tail, write_len);
         Ok(write_len)
     }
-
-    // There is no counterpart to `Consumer::skip`. It does not make sense for the producer.
 }
 
 #[inherit_methods(from = "self.rb")]
@@ -416,6 +422,29 @@ impl<T: Pod, R: Deref<Target = RingBuffer<T>>> Consumer<T, R> {
         rb.advance_head(head, nitems);
         Some(())
     }
+
+    /// Skips `count` items in the `RingBuffer`.
+    ///
+    /// In other words, `count` items are popped from the `RingBuffer` and discarded.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the number of the available items to pop is less than `count`.
+    pub fn skip(&mut self, count: usize) {
+        let rb = &self.rb;
+        let len = rb.len();
+        assert!(len >= count);
+
+        let head = rb.head();
+        rb.advance_head(head, count);
+    }
+
+    /// Clears the `RingBuffer`.
+    ///
+    /// In other words, all items are popped from the `RingBuffer` and discarded.
+    pub fn clear(&mut self) {
+        self.rb.reset_head();
+    }
 }
 
 impl<R: Deref<Target = RingBuffer<u8>>> Consumer<u8, R> {
@@ -461,22 +490,6 @@ impl<R: Deref<Target = RingBuffer<u8>>> Consumer<u8, R> {
 
         rb.advance_head(head, read_len);
         Ok(read_len)
-    }
-
-    /// Skips `count` bytes in the `RingBuffer`.
-    ///
-    /// In other words, `count` bytes are read from the `RingBuffer` and discarded.
-    ///
-    /// # Panics
-    ///
-    /// This method will panic if the number of the available bytes to read is less than `count`.
-    pub fn skip(&mut self, count: usize) {
-        let rb = &self.rb;
-        let len = rb.len();
-        assert!(len >= count);
-
-        let head = rb.head();
-        rb.advance_head(head, count);
     }
 }
 
