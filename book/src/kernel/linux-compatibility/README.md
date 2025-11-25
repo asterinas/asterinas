@@ -15,7 +15,7 @@ support the loading of Linux kernel modules.
 ## System Calls
 
 At the time of writing,
-Asterinas supports over 220 Linux system calls for the x86-64 architecture,
+Asterinas supports over 225 Linux system calls for the x86-64 architecture,
 which are summarized in the table below.
 
 | Numbers | Names                  | Supported      | Feature Coverage |
@@ -189,7 +189,7 @@ which are summarized in the table below.
 | 166     | umount2                | ✅             | [⚠️](syscall-feature-coverage/file-systems-and-mount-control/#umount-and-umount2) |
 | 167     | swapon                 | ❌             | N/A |
 | 168     | swapoff                | ❌             | N/A |
-| 169     | reboot                 | ❌             | N/A |
+| 169     | reboot                 | ✅             | [⚠️](syscall-feature-coverage/system-information-and-misc/#reboot) |
 | 170     | sethostname            | ✅             | 💯 |
 | 171     | setdomainname          | ✅             | 💯 |
 | 172     | iopl                   | ❌             | N/A |

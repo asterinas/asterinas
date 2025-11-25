@@ -2,7 +2,7 @@
 
 <!--
 Put system calls such as
-uname, getrlimit, setrlimit, sysinfo, times, gettimeofday, clock_gettime,
+uname, getrlimit, reboot, setrlimit, sysinfo, times, gettimeofday, clock_gettime,
 clock_settime, getrusage, getdents, getdents64, personality, syslog,
 arch_prctl, set_tid_address, and getrandom
 under this category.
@@ -50,6 +50,25 @@ Silently-ignored flags:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/getrandom.2.html).
+
+### `reboot`
+
+Supported functionality in SCML:
+
+```c
+{{#include reboot.scml}}
+```
+
+Unsupported `op` flags:
+* `LINUX_REBOOT_CMD_CAD_OFF`
+* `LINUX_REBOOT_CMD_CAD_ON`
+* `LINUX_REBOOT_CMD_KEXEC`
+* `LINUX_REBOOT_CMD_RESTART`
+* `LINUX_REBOOT_CMD_RESTART2`
+* `LINUX_REBOOT_CMD_SW_SUSPEND`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/reboot.2.html).
 
 ## POSIX Clocks
 

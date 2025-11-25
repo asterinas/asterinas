@@ -101,3 +101,21 @@ pub(in crate::arch) fn query_xstate_max_features() -> Option<u64> {
 pub(in crate::arch) fn query_xsave_area_size() -> Option<u32> {
     cpuid(Leaf::Xstate as u32, 1).map(|res| res.ebx)
 }
+
+/// Queries if the system is running in QEMU.
+///
+/// This function uses CPUID to detect QEMU hypervisor signature.
+pub(in crate::arch) fn query_is_running_in_qemu() -> bool {
+    let Some(result) = cpuid(Leaf::HypervisorBase as u32, 0) else {
+        return false;
+    };
+
+    let mut signature = [0u8; 12];
+    signature[0..4].copy_from_slice(&result.ebx.to_ne_bytes());
+    signature[4..8].copy_from_slice(&result.ecx.to_ne_bytes());
+    signature[8..12].copy_from_slice(&result.edx.to_ne_bytes());
+
+    // Check for QEMU hypervisor signature: "TCGTCGTCGTCG" or "KVMKVMKVM"
+    // Reference: https://wiki.osdev.org/QEMU_fw_cfg
+    signature == *b"TCGTCGTCGTCG" || signature.starts_with(b"KVMKVMKVM")
+}
