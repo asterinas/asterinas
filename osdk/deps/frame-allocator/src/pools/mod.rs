@@ -89,8 +89,6 @@ pub(super) fn alloc(guard: &DisabledLocalIrqGuard, layout: Layout) -> Option<Pad
 
     balancing::balance(local_pool.deref_mut(), &mut global_pool);
 
-    global_pool.update_global_size_if_locked();
-
     chunk_addr
 }
 
@@ -105,8 +103,6 @@ pub(super) fn dealloc(
     do_dealloc(&mut local_pool, &mut global_pool, segments);
 
     balancing::balance(local_pool.deref_mut(), &mut global_pool);
-
-    global_pool.update_global_size_if_locked();
 }
 
 pub(super) fn add_free_memory(_guard: &DisabledLocalIrqGuard, addr: Paddr, size: usize) {
@@ -115,8 +111,6 @@ pub(super) fn add_free_memory(_guard: &DisabledLocalIrqGuard, addr: Paddr, size:
     split_to_chunks(addr, size).for_each(|(addr, order)| {
         global_pool.get().insert_chunk(addr, order);
     });
-
-    global_pool.update_global_size_if_locked();
 }
 
 fn do_dealloc(
@@ -154,13 +148,6 @@ impl OnDemandGlobalLock {
         self.guard.get_or_insert_with(|| GLOBAL_POOL.lock())
     }
 
-    /// Updates [`GLOBAL_POOL_SIZE`] if the global pool is locked.
-    fn update_global_size_if_locked(&self) {
-        if let Some(guard) = self.guard.as_ref() {
-            GLOBAL_POOL_SIZE.store(guard.total_size(), Ordering::Relaxed);
-        }
-    }
-
     /// Returns the size of the global pool.
     ///
     /// If the global pool is locked, returns the actual size of the global pool.
@@ -171,6 +158,15 @@ impl OnDemandGlobalLock {
             guard.total_size()
         } else {
             GLOBAL_POOL_SIZE.load(Ordering::Relaxed)
+        }
+    }
+}
+
+impl Drop for OnDemandGlobalLock {
+    fn drop(&mut self) {
+        // Updates [`GLOBAL_POOL_SIZE`] if the global pool is locked.
+        if let Some(guard) = self.guard.as_ref() {
+            GLOBAL_POOL_SIZE.store(guard.total_size(), Ordering::Relaxed);
         }
     }
 }
