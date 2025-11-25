@@ -341,7 +341,8 @@ impl<'rcu, C: PageTableConfig, const MUTABLE: bool> Cursor_<'rcu, C, MUTABLE> {
 
     fn cur_entry(&mut self) -> Entry<'_, 'rcu, C> {
         let node = self.path[self.level as usize - 1].as_mut().unwrap();
-        node.entry(pte_index::<C>(self.va, self.level))
+        let pte_va = self.va.align_down(page_size::<C>(self.level));
+        node.entry(pte_va)
     }
 }
 
@@ -448,12 +449,16 @@ impl<C: PageTableConfig> CursorMut<'_, C> {
     ///
     /// # Panics
     ///
-    /// Panics if the current level is at the top level and the corresponding
-    /// [`PageTableConfig::TOP_LEVEL_CAN_UNMAP`] is false.
+    /// Panics if
+    ///  - the current level is at the top level and the corresponding
+    ///    [`PageTableConfig::TOP_LEVEL_CAN_UNMAP`] is false.
+    ///  - the current virtual address is not aligned to the page size of the
+    ///    current level.
     pub unsafe fn unmap(&mut self) -> Option<PageTableFrag<C>> {
         if !C::TOP_LEVEL_CAN_UNMAP && self.level == C::NR_LEVELS {
-            panic!("Unmapping top-level page table nodes");
+            panic!("unmapping top-level page table nodes");
         }
+        assert_eq!(self.va % page_size::<C>(self.level), 0);
         self.replace_cur_entry(PteState::Absent)
     }
 
@@ -481,6 +486,7 @@ impl<C: PageTableConfig> CursorMut<'_, C> {
         let rcu_guard = self.rcu_guard;
 
         let va = self.va;
+        debug_assert_eq!(va % page_size::<C>(self.level), 0);
         let level = self.level;
 
         let old = self.cur_entry().replace(new_child);
@@ -501,7 +507,7 @@ impl<C: PageTableConfig> CursorMut<'_, C> {
                 //  - We checked that we are not unmapping shared kernel page table nodes.
                 //  - We must have locked the entire sub-tree since the range is locked.
                 let num_frames =
-                    unsafe { locking::dfs_mark_stray_and_unlock(rcu_guard, locked_pt) };
+                    unsafe { locking::dfs_mark_stray_and_unlock(rcu_guard, locked_pt, va) };
 
                 Some(PageTableFrag::StrayPageTable {
                     pt,

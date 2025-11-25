@@ -28,10 +28,8 @@ use crate::{
     vm::vmar::is_userspace_vaddr_range,
 };
 
-/// The VMAR (used to be Virtual Memory Address Region, but now an orphan
-/// initialism).
-///
-/// A VMAR is the address space of a process.
+/// Virtual Memory Address Regions (VMARs) are a type of capability that manages
+/// user address spaces.
 pub struct Vmar {
     /// VMAR inner
     inner: RwMutex<VmarInner>,
@@ -47,7 +45,7 @@ impl Vmar {
     /// Creates a new VMAR.
     pub fn new(process_vm: ProcessVm) -> Arc<Self> {
         let inner = VmarInner::new();
-        let vm_space = VmSpace::new();
+        let vm_space = VmSpace::<()>::new();
         let rss_counters = array::from_fn(|_| PerCpuCounter::new());
         Arc::new(Vmar {
             inner: RwMutex::new(inner),

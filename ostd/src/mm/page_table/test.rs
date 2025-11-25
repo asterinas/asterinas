@@ -98,6 +98,7 @@ mod test_utils {
 
         type E = PageTableEntry;
         type C = VeryHugePagingConsts;
+        type Aux = ();
 
         /// All mappings are untracked.
         type Item = TestPtItem;
@@ -212,7 +213,7 @@ mod create_page_table {
         MOCK_KERNEL_PT.call_once(PageTable::<KernelPtConfig>::new_kernel_page_table);
         let kernel_pt = MOCK_KERNEL_PT.get().unwrap();
 
-        let user_pt = kernel_pt.create_user_page_table();
+        let user_pt = kernel_pt.create_user_page_table::<()>();
         let guard = disable_preempt();
 
         let mut kernel_root = kernel_pt.root.borrow().lock(&guard);
@@ -220,8 +221,9 @@ mod create_page_table {
 
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
         for i in NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE {
-            let kernel_entry = kernel_root.entry(i);
-            let user_entry = user_root.entry(i);
+            let pte_va = i * page_size::<PagingConsts>(PagingConsts::NR_LEVELS);
+            let kernel_entry = kernel_root.entry(pte_va);
+            let user_entry = user_root.entry(pte_va);
 
             let PteStateRef::PageTable(kernel_node) = kernel_entry.to_ref() else {
                 panic!("expected a node reference at {} of kernel root PT", i);
@@ -249,8 +251,9 @@ mod create_page_table {
         let preempt_guard = disable_preempt();
         let mut root_node = kernel_pt.root.borrow().lock(&preempt_guard);
         for i in shared_range {
+            let pte_va = i * page_size::<PagingConsts>(PagingConsts::NR_LEVELS);
             assert!(matches!(
-                root_node.entry(i).to_ref(),
+                root_node.entry(pte_va).to_ref(),
                 PteStateRef::PageTable(_)
             ));
         }
@@ -592,7 +595,7 @@ mod navigation {
 
         // Should find the leaf mapping.
         let Some(va) = cursor.find_next_unmappable_subtree(PAGE_SIZE * 511) else {
-            panic!("Expected to find the next mapped subtree");
+            panic!("expected to find the next mapped subtree");
         };
         assert_eq!(va, FIRST_MAP_ADDR);
         assert_eq!(cursor.virt_addr(), FIRST_MAP_ADDR);
@@ -602,7 +605,7 @@ mod navigation {
 
         // Should find the level-2 page table mapping.
         let Some(va) = cursor.find_next_unmappable_subtree(PAGE_SIZE * 512) else {
-            panic!("Expected to find the next mapped subtree");
+            panic!("expected to find the next mapped subtree");
         };
         assert_eq!(va, 0);
         assert_eq!(cursor.virt_addr(), 0);
@@ -610,7 +613,7 @@ mod navigation {
 
         // Should find the level-3 page table mapping.
         let Some(va) = cursor.find_next_unmappable_subtree(PAGE_SIZE * 512 * 512) else {
-            panic!("Expected to find the next mapped subtree");
+            panic!("expected to find the next mapped subtree");
         };
         assert_eq!(va, 0);
         assert_eq!(cursor.virt_addr(), 0);
@@ -619,7 +622,7 @@ mod navigation {
         // Should still find the level-3 page table mapping since top level
         // cannot unmap.
         let Some(va) = cursor.find_next_unmappable_subtree(PAGE_SIZE * 512 * 512 * 512) else {
-            panic!("Expected to find the next mapped subtree");
+            panic!("expected to find the next mapped subtree");
         };
         assert_eq!(va, 0);
         assert_eq!(cursor.virt_addr(), 0);
@@ -631,7 +634,7 @@ mod navigation {
         let Some(va) =
             cursor.find_next_unmappable_subtree(full_locked_range.end - cursor.virt_addr())
         else {
-            panic!("Expected to find the next mapped subtree");
+            panic!("expected to find the next mapped subtree");
         };
         assert_eq!(va, SECOND_MAP_ADDR);
         assert_eq!(cursor.virt_addr(), SECOND_MAP_ADDR);

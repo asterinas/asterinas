@@ -26,6 +26,7 @@ unsafe impl PageTableConfig for IommuPtConfig {
 
     type E = PageTableEntry;
     type C = PagingConsts;
+    type Aux = ();
 
     /// All mappings are untracked.
     type Item = PtItem;
