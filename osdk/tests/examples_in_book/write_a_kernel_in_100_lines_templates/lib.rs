@@ -49,7 +49,7 @@ fn create_vm_space(program: &[u8]) -> VmSpace {
     // The page table of the user space can be
     // created and manipulated safely through
     // the `VmSpace` abstraction.
-    let vm_space = VmSpace::new();
+    let vm_space = VmSpace::<()>::new();
     const MAP_ADDR: Vaddr = 0x0040_0000; // The map addr for statically-linked executable
     let map_range = MAP_ADDR..MAP_ADDR + nbytes;
     let preempt_guard = disable_preempt();
