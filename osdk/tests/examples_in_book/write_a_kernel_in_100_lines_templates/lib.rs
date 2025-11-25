@@ -48,7 +48,7 @@ fn create_vm_space(program: &[u8]) -> VmSpace {
     // The page table of the user space can be
     // created and manipulated safely through
     // the `VmSpace` abstraction.
-    let vm_space = VmSpace::new();
+    let vm_space = VmSpace::<()>::new();
     let map_range = MAP_ADDR..MAP_ADDR + nbytes;
     let preempt_guard = disable_preempt();
     let mut cursor = vm_space.cursor_mut(&preempt_guard, &map_range).unwrap();
