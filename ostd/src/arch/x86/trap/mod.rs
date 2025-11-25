@@ -20,27 +20,19 @@ pub(super) mod gdt;
 mod idt;
 mod syscall;
 
-use align_ext::AlignExt;
 use cfg_if::cfg_if;
-use log::debug;
 use spin::Once;
 
 use super::cpu::context::GeneralRegs;
 use crate::{
     arch::{
-        cpu::context::{CpuException, PageFaultErrorCode, RawPageFaultInfo},
-        if_tdx_enabled,
+        cpu::context::CpuException,
         irq::{disable_local, enable_local, HwIrqLine},
     },
     cpu::PrivilegeLevel,
     ex_table::ExTable,
     irq::call_irq_callback_functions,
-    mm::{
-        kspace::{KERNEL_PAGE_TABLE, LINEAR_MAPPING_BASE_VADDR, LINEAR_MAPPING_VADDR_RANGE},
-        page_prop::{CachePolicy, PageProperty},
-        PageFlags, PrivilegedPageFlags as PrivFlags, MAX_USERSPACE_VADDR, PAGE_SIZE,
-    },
-    task::disable_preempt,
+    mm::MAX_USERSPACE_VADDR,
 };
 
 cfg_if! {
@@ -177,14 +169,17 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
             if (0..MAX_USERSPACE_VADDR).contains(&raw_page_fault_info.addr) {
                 handle_user_page_fault(f, cpu_exception.as_ref().unwrap());
             } else {
-                handle_kernel_page_fault(raw_page_fault_info);
+                panic!(
+                    "Cannot handle kernel page fault: {:#x?}; trapframe: {:#x?}",
+                    raw_page_fault_info, f
+                );
             }
             disable_local_if(was_irq_enabled);
         }
         Some(exception) => {
             enable_local_if(was_irq_enabled);
             panic!(
-                "cannot handle kernel CPU exception: {:?}, trapframe: {:?}",
+                "Cannot handle kernel CPU exception: {:#x?}; trapframe: {:#x?}",
                 exception, f
             );
         }
@@ -227,72 +222,6 @@ fn handle_user_page_fault(f: &mut TrapFrame, exception: &CpuException) {
     if let Some(addr) = ExTable::find_recovery_inst_addr(f.rip) {
         f.rip = addr;
     } else {
-        panic!("Cannot handle user page fault; Trapframe:{:#x?}.", f);
+        panic!("Cannot handle user page fault; trapframe: {:#x?}", f);
     }
-}
-
-/// FIXME: this is a hack because we don't allocate kernel space for IO memory. We are currently
-/// using the linear mapping for IO memory. This is not a good practice.
-fn handle_kernel_page_fault(info: RawPageFaultInfo) {
-    let preempt_guard = disable_preempt();
-
-    let RawPageFaultInfo {
-        error_code,
-        addr: page_fault_vaddr,
-    } = info;
-    debug!(
-        "kernel page fault: address {:?}, error code {:?}",
-        page_fault_vaddr as *const (), error_code
-    );
-
-    assert!(
-        LINEAR_MAPPING_VADDR_RANGE.contains(&page_fault_vaddr),
-        "kernel page fault: the address is outside the range of the linear mapping",
-    );
-
-    const SUPPORTED_ERROR_CODES: PageFaultErrorCode = PageFaultErrorCode::PRESENT
-        .union(PageFaultErrorCode::WRITE)
-        .union(PageFaultErrorCode::INSTRUCTION);
-    assert!(
-        SUPPORTED_ERROR_CODES.contains(error_code),
-        "kernel page fault: the error code is not supported",
-    );
-
-    assert!(
-        !error_code.contains(PageFaultErrorCode::INSTRUCTION),
-        "kernel page fault: the direct mapping cannot be executed",
-    );
-    assert!(
-        !error_code.contains(PageFaultErrorCode::PRESENT),
-        "kernel page fault: the direct mapping already exists",
-    );
-
-    // Do the mapping
-    let page_table = KERNEL_PAGE_TABLE
-        .get()
-        .expect("kernel page fault: the kernel page table is not initialized");
-    let vaddr = page_fault_vaddr.align_down(PAGE_SIZE);
-    let paddr = vaddr - LINEAR_MAPPING_BASE_VADDR;
-
-    let priv_flags = if_tdx_enabled!({
-        PrivFlags::SHARED | PrivFlags::GLOBAL
-    } else {
-        PrivFlags::GLOBAL
-    });
-    let prop = PageProperty {
-        flags: PageFlags::RW,
-        cache: CachePolicy::Uncacheable,
-        priv_flags,
-    };
-
-    let mut cursor = page_table
-        .cursor_mut(&preempt_guard, &(vaddr..vaddr + PAGE_SIZE))
-        .unwrap();
-
-    // SAFETY:
-    // 1. We have checked that the page fault address falls within the address range of the direct
-    //    mapping of physical memory.
-    // 2. We map the address to the correct physical page with the correct flags, where the
-    //    correctness follows the semantics of the direct mapping of physical memory.
-    unsafe { cursor.map(crate::mm::kspace::MappedItem::Untracked(paddr, 1, prop)) }.unwrap();
 }
