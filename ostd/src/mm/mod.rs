@@ -113,7 +113,6 @@ pub(crate) const fn nr_subpage_per_huge<C: PagingConstsTrait>() -> usize {
 }
 
 /// The number of base pages in a huge page at a given level.
-#[expect(dead_code)]
 pub(crate) const fn nr_base_per_page<C: PagingConstsTrait>(level: PagingLevel) -> usize {
     page_size::<C>(level) / C::BASE_PAGE_SIZE
 }

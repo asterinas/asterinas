@@ -326,15 +326,16 @@ impl ContextTable {
         }
 
         trace!("Unmapping Daddr: {:x?} for device: {:x?}", daddr, device);
+        let dva_range = daddr..daddr + PAGE_SIZE;
 
         let pt = self.get_or_create_page_table(device);
         let preempt_guard = disable_preempt();
-        let mut cursor = pt
-            .cursor_mut(&preempt_guard, &(daddr..daddr + PAGE_SIZE))
-            .unwrap();
+        let mut cursor = pt.cursor_mut(&preempt_guard, &dva_range).unwrap();
+        cursor.adjust_level(1);
 
+        debug_assert_eq!(cursor.cur_va_range(), dva_range);
         // SAFETY: This unmaps a page from the context table, which is always safe.
-        let frag = unsafe { cursor.take_next(PAGE_SIZE) };
+        let frag = unsafe { cursor.unmap() };
         debug_assert!(frag.is_some());
 
         Ok(())
