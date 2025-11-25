@@ -7,6 +7,7 @@ use core::arch::x86_64::CpuidResult;
 use spin::Once;
 
 static MAX_LEAF: Once<u32> = Once::new();
+static MAX_HYPERVISOR_LEAF: Once<u32> = Once::new();
 static MAX_EXTENDED_LEAF: Once<u32> = Once::new();
 
 #[repr(u32)]
@@ -15,6 +16,7 @@ enum Leaf {
     Xstate = 0x0d,
     Tsc = 0x15,
 
+    HypervisorBase = 0x40000000,
     ExtBase = 0x80000000,
 }
 
@@ -27,9 +29,14 @@ pub fn cpuid(leaf: u32, subleaf: u32) -> Option<CpuidResult> {
         unsafe { core::arch::x86_64::__cpuid_count(leaf, subleaf) }
     }
 
-    let max_leaf = if leaf < Leaf::ExtBase as u32 {
+    let max_leaf = if leaf < Leaf::HypervisorBase as u32 {
+        // Standard leaves (0x0000_0000 - 0x3FFF_FFFF)
         *MAX_LEAF.call_once(|| raw_cpuid(Leaf::Base as u32, 0).eax)
+    } else if leaf < Leaf::ExtBase as u32 {
+        // Hypervisor leaves (0x4000_0000 - 0x7FFF_FFFF)
+        *MAX_HYPERVISOR_LEAF.call_once(|| raw_cpuid(Leaf::HypervisorBase as u32, 0).eax)
     } else {
+        // Extended leaves (0x8000_0000 - 0xFFFF_FFFF)
         *MAX_EXTENDED_LEAF.call_once(|| raw_cpuid(Leaf::ExtBase as u32, 0).eax)
     };
 
