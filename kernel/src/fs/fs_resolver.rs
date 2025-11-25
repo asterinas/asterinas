@@ -2,6 +2,8 @@
 
 use alloc::str;
 
+use crate::fs::utils::Permission;
+
 use ostd::task::Task;
 
 use super::{
@@ -176,6 +178,13 @@ impl FsResolver {
 
         Ok(lookup_res)
     }
+        fn check_dir_search_permission(path: &Path) -> Result<()> {
+        let inode = path.inode();
+        if inode.type_() == InodeType::Dir {
+            inode.check_permission(Permission::MAY_EXEC)?;
+        }
+        Ok(())
+    }
 
     /// Lookups the target path according to the parent directory path.
     ///
@@ -212,6 +221,7 @@ impl FsResolver {
         let (mut current_path, mut relative_path) = (parent.clone(), relative_path);
 
         while !relative_path.is_empty() {
+            FsResolver::check_dir_search_permission(&current_path)?;
             let (next_name, path_remain, target_is_dir) =
                 if let Some((prefix, suffix)) = relative_path.split_once('/') {
                     let suffix = suffix.trim_start_matches('/');
