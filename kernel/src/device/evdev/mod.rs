@@ -136,8 +136,6 @@ impl EvdevDevice {
 
                 // Try to push event to the buffer.
                 if let Some(()) = producer.push(timed_event) {
-                    file.increment_event_count();
-
                     // Check if this is a SYN_REPORT event
                     if self.is_syn_report_event(event) {
                         file.increment_packet_count();
@@ -156,13 +154,10 @@ impl EvdevDevice {
 
                     // Try to push SYN_DROPPED event.
                     if let Some(()) = producer.push(dropped_event) {
-                        file.increment_event_count();
                         file.increment_packet_count();
 
                         // Try to push the original event.
                         if let Some(()) = producer.push(timed_event) {
-                            file.increment_event_count();
-
                             // Check if this is a SYN_REPORT event.
                             if self.is_syn_report_event(event) {
                                 file.increment_packet_count();

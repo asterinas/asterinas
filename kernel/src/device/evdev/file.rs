@@ -74,14 +74,21 @@ pub struct EvdevFile {
     consumer: Mutex<RbConsumer<EvdevEvent>>,
     /// Clock ID for this opened evdev file.
     clock_id: AtomicClockId,
-    /// Number of events available.
-    event_count: AtomicUsize,
     /// Number of complete event packets available (ended with SYN_REPORT).
     packet_count: AtomicUsize,
     /// Pollee for event notification.
     pollee: Pollee,
     /// Weak reference to the evdev device that owns this evdev file.
     evdev: Weak<EvdevDevice>,
+}
+
+impl Debug for EvdevFile {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("EvdevFile")
+            .field("clock_id", &self.clock_id)
+            .field("packet_count", &self.packet_count)
+            .finish_non_exhaustive()
+    }
 }
 
 impl EvdevFile {
@@ -95,7 +102,6 @@ impl EvdevFile {
             consumer: Mutex::new(consumer),
             // Default to be CLOCK_MONOTONIC
             clock_id: AtomicClockId::new(ClockId::CLOCK_MONOTONIC),
-            event_count: AtomicUsize::new(0),
             packet_count: AtomicUsize::new(0),
             pollee: Pollee::new(),
             evdev,
@@ -121,20 +127,6 @@ impl EvdevFile {
     /// Checks if buffer has complete event packets.
     pub fn has_complete_packets(&self) -> bool {
         self.packet_count.load(Ordering::Relaxed) > 0
-    }
-
-    /// Increments event count.
-    pub fn increment_event_count(&self) {
-        self.event_count.fetch_add(1, Ordering::Relaxed);
-        self.pollee.notify(IoEvents::IN);
-    }
-
-    /// Decrements event count.
-    pub fn decrement_event_count(&self) {
-        self.event_count.fetch_sub(1, Ordering::Relaxed);
-        if self.event_count.load(Ordering::Relaxed) == 0 {
-            self.pollee.invalidate();
-        }
     }
 
     /// Increments packet count.
@@ -171,8 +163,6 @@ impl EvdevFile {
             // Write event directly to writer.
             writer.write_val(&event)?;
             event_count += 1;
-
-            self.decrement_event_count();
 
             if is_syn_report || is_syn_dropped {
                 self.decrement_packet_count();
@@ -263,15 +253,6 @@ impl FileIo for EvdevFile {
             Errno::EINVAL,
             "the ioctl command is not supported by evdev files"
         );
-    }
-}
-
-impl Debug for EvdevFile {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("EvdevFile")
-            .field("event_count", &self.event_count.load(Ordering::Relaxed))
-            .field("clock_id", &self.clock_id())
-            .finish()
     }
 }
 
