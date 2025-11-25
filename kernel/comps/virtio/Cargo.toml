@@ -27,7 +27,7 @@ log = "0.4"
 int-to-c-enum = { path = "../../libs/int-to-c-enum" }
 
 [target.x86_64-unknown-none.dependencies]
-tdx-guest = { version = "0.2.1", optional = true }
+tdx-guest = { version = "0.2.2", optional = true }
 
 [features]
 all = ["cvm_guest"]
