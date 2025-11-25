@@ -27,6 +27,10 @@ fn get_random_seed() -> <StdRng as SeedableRng>::Seed {
 
     let mut seed = <StdRng as SeedableRng>::Seed::default();
 
+    // Notes for future refactorings: If hardware randomness cannot be generated (i.e., if
+    // `read_random` fails), we can usually continue with pseudorandomness. However, we should stop
+    // if we are TD guests. For more details, see
+    // <https://intel.github.io/ccc-linux-guest-hardening-docs/security-spec.html#randomness-inside-tdx-guest>.
     let mut chunks = seed.as_mut().chunks_exact_mut(size_of::<u64>());
     for chunk in chunks.by_ref() {
         let src = read_random().expect("`read_random` failed").to_ne_bytes();
