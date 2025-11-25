@@ -51,7 +51,7 @@ impl Vmar {
     /// Creates a new VMAR.
     pub fn new(process_vm: ProcessVm) -> Arc<Self> {
         let inner = VmarInner::new();
-        let vm_space = VmSpace::new();
+        let vm_space = VmSpace::<()>::new();
         let rss_counters = array::from_fn(|_| PerCpuCounter::new());
         Arc::new(Vmar {
             inner: RwMutex::new(inner),
@@ -201,7 +201,7 @@ impl Vmar {
     pub fn fork_from(vmar: &Self) -> Result<Arc<Self>> {
         let new_vmar = Arc::new(Vmar {
             inner: RwMutex::new(VmarInner::new()),
-            vm_space: Arc::new(VmSpace::new()),
+            vm_space: Arc::new(VmSpace::<()>::new()),
             rss_counters: array::from_fn(|_| PerCpuCounter::new()),
             // FIXME: There are race conditions because `process_vm` is not operating under the
             // `vmar.inner` lock.
@@ -1372,7 +1372,7 @@ mod test {
 
     #[ktest]
     fn test_cow_copy_pt() {
-        let vm_space = VmSpace::new();
+        let vm_space = VmSpace::<()>::new();
         let map_range = PAGE_SIZE..(PAGE_SIZE * 2);
         let cow_range = 0..PAGE_SIZE * 512 * 512;
         let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
@@ -1395,7 +1395,7 @@ mod test {
         ));
 
         // Creates a child page table with copy-on-write protection.
-        let child_space = VmSpace::new();
+        let child_space = VmSpace::<()>::new();
         {
             let mut child_cursor = child_space.cursor_mut(&preempt_guard, &cow_range).unwrap();
             let mut parent_cursor = vm_space.cursor_mut(&preempt_guard, &cow_range).unwrap();
@@ -1436,7 +1436,7 @@ mod test {
         ));
 
         // Creates a sibling page table (from the now-modified parent).
-        let sibling_space = VmSpace::new();
+        let sibling_space = VmSpace::<()>::new();
         {
             let mut sibling_cursor = sibling_space
                 .cursor_mut(&preempt_guard, &cow_range)
@@ -1493,7 +1493,7 @@ mod test {
         /// A very large address (1TiB) beyond typical physical memory for testing.
         const IOMEM_PADDR: usize = 0x100_000_000_000;
 
-        let vm_space = VmSpace::new();
+        let vm_space = VmSpace::<()>::new();
         let map_range = PAGE_SIZE..(PAGE_SIZE * 2);
         let cow_range = 0..PAGE_SIZE * 512 * 512;
         let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Uncacheable);
@@ -1516,7 +1516,7 @@ mod test {
         ));
 
         // Creates a child page table with copy-on-write protection.
-        let child_space = VmSpace::new();
+        let child_space = VmSpace::<()>::new();
         {
             let mut child_cursor = child_space.cursor_mut(&preempt_guard, &cow_range).unwrap();
             let mut parent_cursor = vm_space.cursor_mut(&preempt_guard, &cow_range).unwrap();
@@ -1561,7 +1561,7 @@ mod test {
         ));
 
         // Creates a sibling page table (from the now-modified parent).
-        let sibling_space = VmSpace::new();
+        let sibling_space = VmSpace::<()>::new();
         {
             let mut sibling_cursor = sibling_space
                 .cursor_mut(&preempt_guard, &cow_range)
