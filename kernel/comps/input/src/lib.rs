@@ -44,7 +44,7 @@ pub mod input_handler;
 use alloc::{sync::Arc, vec::Vec};
 
 use component::{init_component, ComponentInitError};
-use ostd::sync::SpinLock;
+use ostd::sync::Mutex;
 use spin::Once;
 
 use self::input_core::InputCore;
@@ -117,13 +117,13 @@ fn component_init() -> Result<(), ComponentInitError> {
 
 #[derive(Debug)]
 struct Component {
-    input_core: SpinLock<InputCore>,
+    input_core: Mutex<InputCore>,
 }
 
 impl Component {
     pub fn init() -> Result<Self, ComponentInitError> {
         Ok(Self {
-            input_core: SpinLock::new(InputCore::new()),
+            input_core: Mutex::new(InputCore::new()),
         })
     }
 }
