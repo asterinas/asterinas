@@ -39,6 +39,7 @@ pub use self::{
     kspace::{KERNEL_VADDR_RANGE, MAX_USERSPACE_VADDR},
     mem_obj::{HasDaddr, HasPaddr, HasPaddrRange, HasSize, Split},
     page_prop::{CachePolicy, PageFlags, PageProperty},
+    page_table::{AuxPageTableMeta, AuxPtMetaLayoutChecked, PageTableFrameMeta},
     vm_space::VmSpace,
 };
 pub(crate) use self::{
@@ -62,7 +63,7 @@ pub type PagingLevel = u8;
 
 /// A minimal set of constants that determines the paging system.
 /// This provides an abstraction over most paging modes in common architectures.
-pub(crate) trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
+pub(crate) trait PagingConstsTrait: Debug + Send + Sync + 'static {
     /// The smallest page size.
     /// This is also the page size at level 1 page tables.
     const BASE_PAGE_SIZE: usize;

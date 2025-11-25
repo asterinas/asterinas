@@ -27,7 +27,9 @@ use crate::{
         io::Fallible,
         kspace::KERNEL_PAGE_TABLE,
         page_prop::{CachePolicy, PageFlags},
-        page_table::{self, PageTable, PageTableFrag, PteStateRef, largest_pages},
+        page_table::{
+            self, AuxPageTableMeta, PageTable, PageTableFrag, PteStateRef, largest_pages,
+        },
         tlb::{TlbFlushOp, TlbFlusher},
     },
     prelude::*,
@@ -71,18 +73,21 @@ use crate::{
 /// [`inject_post_schedule_handler`]: crate::task::inject_post_schedule_handler
 /// [`UserMode::execute`]: crate::user::UserMode::execute
 #[derive(Debug)]
-pub struct VmSpace {
-    pt: PageTable<UserPtConfig>,
-    cpus: AtomicCpuSet,
+pub struct VmSpace<A: AuxPageTableMeta = ()> {
+    pt: PageTable<UserPtConfig<A>>,
+    cpus: Arc<AtomicCpuSet>,
     iomems: SpinLock<Vec<IoMem>>,
 }
 
-impl VmSpace {
+impl<A: AuxPageTableMeta> VmSpace<A> {
     /// Creates a new VM address space.
     pub fn new() -> Self {
         Self {
-            pt: KERNEL_PAGE_TABLE.get().unwrap().create_user_page_table(),
-            cpus: AtomicCpuSet::new(CpuSet::new_empty()),
+            pt: KERNEL_PAGE_TABLE
+                .get()
+                .unwrap()
+                .create_user_page_table::<A>(),
+            cpus: Arc::new(AtomicCpuSet::new(CpuSet::new_empty())),
             iomems: SpinLock::new(Vec::new()),
         }
     }
@@ -99,7 +104,7 @@ impl VmSpace {
         &'a self,
         guard: &'a G,
         va: &Range<Vaddr>,
-    ) -> Result<Cursor<'a>> {
+    ) -> Result<Cursor<'a, A>> {
         Ok(Cursor(self.pt.cursor(guard, va)?))
     }
 
@@ -117,7 +122,7 @@ impl VmSpace {
         &'a self,
         guard: &'a G,
         va: &Range<Vaddr>,
-    ) -> Result<CursorMut<'a>> {
+    ) -> Result<CursorMut<'a, A>> {
         Ok(CursorMut {
             pt_cursor: self.pt.cursor_mut(guard, va)?,
             flusher: TlbFlusher::new(&self.cpus, disable_preempt()),
@@ -126,13 +131,13 @@ impl VmSpace {
     }
 
     /// Activates the page table on the current CPU.
-    pub fn activate(self: &Arc<Self>) {
+    pub fn activate(&self) {
         let preempt_guard = disable_preempt();
         let cpu = preempt_guard.current_cpu();
 
-        let last_ptr = ACTIVATED_VM_SPACE.load();
+        let last_cpus_ptr = ACTIVATED_VM_SPACE_CPUSET.load();
 
-        if last_ptr == Arc::as_ptr(self) {
+        if last_cpus_ptr == Arc::as_ptr(&self.cpus) {
             return;
         }
 
@@ -140,14 +145,14 @@ impl VmSpace {
         // `Acquire` to ensure the modification to the PT is visible by this CPU.
         self.cpus.add(cpu, Ordering::Acquire);
 
-        let self_ptr = Arc::into_raw(Arc::clone(self)) as *mut VmSpace;
-        ACTIVATED_VM_SPACE.store(self_ptr);
+        let self_cpus_ptr = Arc::into_raw(Arc::clone(&self.cpus)) as *mut AtomicCpuSet;
+        ACTIVATED_VM_SPACE_CPUSET.store(self_cpus_ptr);
 
-        if !last_ptr.is_null() {
+        if !last_cpus_ptr.is_null() {
             // SAFETY: The pointer is cast from an `Arc` when it's activated
             // the last time, so it can be restored and only restored once.
-            let last = unsafe { Arc::from_raw(last_ptr) };
-            last.cpus.remove(cpu, Ordering::Relaxed);
+            let last = unsafe { Arc::from_raw(last_cpus_ptr) };
+            last.remove(cpu, Ordering::Relaxed);
         }
 
         self.pt.activate();
@@ -235,13 +240,13 @@ impl VmSpace {
     }
 }
 
-impl Default for VmSpace {
+impl<A: AuxPageTableMeta> Default for VmSpace<A> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl VmSpace {
+impl<A: AuxPageTableMeta> VmSpace<A> {
     /// Finds the [`IoMem`] that contains the given physical address.
     ///
     /// It is a private method for internal use only. Please refer to
@@ -265,9 +270,9 @@ impl VmSpace {
 /// It exclusively owns a sub-tree of the page table, preventing others from
 /// reading or modifying the same sub-tree. Two read-only cursors can not be
 /// created from the same virtual address range either.
-pub struct Cursor<'a>(page_table::Cursor<'a, UserPtConfig>);
+pub struct Cursor<'a, A: AuxPageTableMeta = ()>(page_table::Cursor<'a, UserPtConfig<A>>);
 
-impl Cursor<'_> {
+impl<A: AuxPageTableMeta> Cursor<'_, A> {
     /// Queries the mapping at the current virtual address.
     pub fn query(&mut self) -> VmQueriedItem<'_> {
         self.0.query().into()
@@ -322,16 +327,16 @@ impl Cursor<'_> {
 ///
 /// It exclusively owns a sub-tree of the page table, preventing others from
 /// reading or modifying the same sub-tree.
-pub struct CursorMut<'a> {
-    pt_cursor: page_table::CursorMut<'a, UserPtConfig>,
+pub struct CursorMut<'a, A: AuxPageTableMeta = ()> {
+    pt_cursor: page_table::CursorMut<'a, UserPtConfig<A>>,
     // We have a read lock so the CPU set in the flusher is always a superset
     // of actual activated CPUs.
     flusher: TlbFlusher<'a, DisabledPreemptGuard>,
     // References to the `VmSpace`
-    vmspace: &'a VmSpace,
+    vmspace: &'a VmSpace<A>,
 }
 
-impl<'a> CursorMut<'a> {
+impl<'a, A: AuxPageTableMeta> CursorMut<'a, A> {
     /// Queries the mapping at the current virtual address.
     ///
     /// This is the same as [`Cursor::query`].
@@ -580,18 +585,13 @@ impl<'a> CursorMut<'a> {
 }
 
 cpu_local_cell! {
-    /// The `Arc` pointer to the activated VM space on this CPU. If the pointer
-    /// is NULL, it means that the activated page table is merely the kernel
-    /// page table.
+    /// The `Arc` pointer to the activated VM space's `cpus` field on this CPU.
+    /// If the pointer is NULL, it means that the activated page table is the
+    /// kernel page table.
     // TODO: If we are enabling ASID, we need to maintain the TLB state of each
     // CPU, rather than merely the activated `VmSpace`. When ASID is enabled,
     // the non-active `VmSpace`s can still have their TLB entries in the CPU!
-    static ACTIVATED_VM_SPACE: *const VmSpace = core::ptr::null();
-}
-
-#[cfg(ktest)]
-pub(super) fn get_activated_vm_space() -> *const VmSpace {
-    ACTIVATED_VM_SPACE.load()
+    static ACTIVATED_VM_SPACE_CPUSET: *const AtomicCpuSet = core::ptr::null();
 }
 
 /// The result of a query over the VM space.
@@ -677,8 +677,8 @@ impl VmItem {
     }
 }
 
-impl<'a> From<PteStateRef<'a, UserPtConfig>> for VmQueriedItem<'a> {
-    fn from(state: PteStateRef<'a, UserPtConfig>) -> Self {
+impl<'a, A: AuxPageTableMeta> From<PteStateRef<'a, UserPtConfig<A>>> for VmQueriedItem<'a> {
+    fn from(state: PteStateRef<'a, UserPtConfig<A>>) -> Self {
         match state {
             PteStateRef::Absent => VmQueriedItem::None,
             PteStateRef::PageTable { .. } => VmQueriedItem::PageTable,
@@ -699,17 +699,21 @@ impl<'a> From<PteStateRef<'a, UserPtConfig>> for VmQueriedItem<'a> {
     }
 }
 
+/// The page table configuration for user space page tables.
 #[derive(Clone, Debug)]
-pub(crate) struct UserPtConfig {}
+pub struct UserPtConfig<A: AuxPageTableMeta = ()> {
+    _phantom: core::marker::PhantomData<A>,
+}
 
 // SAFETY: `item_raw_info`, `item_into_raw`, `item_from_raw`, and
 // `item_ref_from_raw` are correctly implemented with respect to the `Item` and
 // `ItemRef` types.
-unsafe impl PageTableConfig for UserPtConfig {
+unsafe impl<A: AuxPageTableMeta> PageTableConfig for UserPtConfig<A> {
     const TOP_LEVEL_INDEX_RANGE: Range<usize> = 0..256;
 
     type E = PageTableEntry;
     type C = PagingConsts;
+    type Aux = A;
 
     type Item = VmItem;
     type ItemRef<'a> = VmItemRef<'a>;

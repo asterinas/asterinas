@@ -27,10 +27,10 @@ use crate::{
 mod cursor;
 mod node;
 
-pub(in crate::mm) use cursor::PageTableFrag;
-pub(crate) use cursor::{Cursor, CursorMut};
+pub(crate) use cursor::{Cursor, CursorMut, PageTableFrag};
+pub use node::PageTableFrameMeta;
 pub(in crate::mm) use node::PteStateRef;
-use node::*; // FIXME: Remove glob imports.
+use node::{Entry, PageTableGuard, PageTableNode, PageTableNodeRef, PteState};
 
 #[cfg(ktest)]
 mod test;
@@ -65,12 +65,10 @@ pub enum PageTableError {
 ///    `item_into_raw`;
 ///  - if the provided raw form matches the item that was consumed by
 ///    `item_into_raw`, `item_from_raw` restores the exact item that was
-///    consumed by `item_into_raw`;
+///    consumed by `item_into_raw`.
 ///  - `item_ref_from_raw`, if called with the same argument, returns the same
 ///    value.
-pub(crate) unsafe trait PageTableConfig:
-    Clone + Debug + Send + Sync + 'static
-{
+pub(crate) unsafe trait PageTableConfig: Debug + Send + Sync + 'static {
     /// The index range at the top level (`C::NR_LEVELS`) page table.
     ///
     /// When configured with this value, the [`PageTable`] instance will only
@@ -91,6 +89,9 @@ pub(crate) unsafe trait PageTableConfig:
 
     /// The paging constants.
     type C: PagingConstsTrait;
+
+    /// The auxiliary metadata associated with each page table frame.
+    type Aux: AuxPageTableMeta;
 
     /// The item that can be mapped into the virtual memory space using the
     /// page table.
@@ -162,6 +163,59 @@ pub(crate) unsafe trait PageTableConfig:
         level: PagingLevel,
         prop: PageProperty,
     ) -> Self::ItemRef<'a>;
+}
+
+/// Auxiliary metadata for user page tables.
+///
+/// Besides the frame metadata, the users can specify additional metadata
+/// for page table state. The auxiliary metadata will be stored in each page
+/// table frame's metadata.
+pub trait AuxPageTableMeta: AuxPtMetaLayoutChecked + Debug + Send + Sync + 'static {
+    /// The callback to allocate a new root page table.
+    fn new_root_page_table() -> Self;
+
+    /// The callback to allocate a child page table.
+    ///
+    /// It is called when a new page table is allocated under the page table
+    /// entry at virtual address `va` and at level `level`. A new page table
+    /// will be allocated when:
+    ///  - preparing a new page table for mapping in lower levels;
+    ///  - splitting a huge mapping into smaller mappings.
+    ///
+    /// The receiver [`AuxPageTableMeta`] is the metadata of the parent page
+    /// table and the returned [`AuxPageTableMeta`] will be the metadata of
+    /// the allocated child page table.
+    fn alloc_child_page_table(&mut self, va: Vaddr, level: PagingLevel) -> Self;
+}
+
+/// A marker trait for the layout of the auxiliary page table metadata.
+///
+/// Use [`crate::check_aux_pt_meta_layout!`] to safely implement this trait
+/// for your type.
+///
+/// # Safety
+///
+/// The implementor must ensure that the size of the type is small enough
+/// so that the containing [`PageTableFrameMeta`] satisfies
+/// [`crate::check_frame_meta_layout`].
+pub unsafe trait AuxPtMetaLayoutChecked: Sized {}
+
+/// A macro to check and safely implement the [`AuxPtMetaLayoutChecked`] trait.
+#[macro_export]
+macro_rules! check_aux_pt_meta_layout {
+    ($t:ty) => {
+        $crate::check_frame_meta_layout!(
+            $crate::mm::PageTableFrameMeta<$crate::mm::vm_space::UserPtConfig<$t>>
+        );
+        // SAFETY: The size check is done above.
+        unsafe impl $crate::mm::AuxPtMetaLayoutChecked for $t {}
+    };
+}
+
+check_aux_pt_meta_layout!(());
+impl AuxPageTableMeta for () {
+    fn new_root_page_table() -> Self {}
+    fn alloc_child_page_table(&mut self, _va: Vaddr, _level: PagingLevel) -> Self {}
 }
 
 // Implement it so that we can comfortably use low level functions
@@ -317,7 +371,7 @@ pub struct PageTable<C: PageTableConfig> {
     root: PageTableNode<C>,
 }
 
-impl PageTable<UserPtConfig> {
+impl<A: AuxPageTableMeta> PageTable<UserPtConfig<A>> {
     pub fn activate(&self) {
         // SAFETY: The user mode page table is safe to activate since the kernel
         // mappings are shared.
@@ -338,7 +392,8 @@ impl PageTable<KernelPtConfig> {
             let mut root_node = kpt.root.borrow().lock(&preempt_guard);
 
             for i in KernelPtConfig::TOP_LEVEL_INDEX_RANGE {
-                let mut root_entry = root_node.entry(i);
+                let pte_vaddr = i * page_size::<KernelPtConfig>(KernelPtConfig::NR_LEVELS);
+                let mut root_entry = root_node.entry(pte_vaddr);
                 let _ = root_entry.alloc_if_none(&preempt_guard).unwrap();
             }
         }
@@ -350,8 +405,10 @@ impl PageTable<KernelPtConfig> {
     ///
     /// This should be the only way to create the user page table, that is to
     /// duplicate the kernel page table with all the kernel mappings shared.
-    pub(in crate::mm) fn create_user_page_table(&'static self) -> PageTable<UserPtConfig> {
-        let new_root = PageTableNode::alloc(PagingConsts::NR_LEVELS);
+    pub(in crate::mm) fn create_user_page_table<A: AuxPageTableMeta>(
+        &'static self,
+    ) -> PageTable<UserPtConfig<A>> {
+        let new_root = PageTableNode::alloc(PagingConsts::NR_LEVELS, A::new_root_page_table());
 
         let preempt_guard = disable_preempt();
         let mut root_node = self.root.borrow().lock(&preempt_guard);
@@ -360,13 +417,14 @@ impl PageTable<KernelPtConfig> {
         const {
             assert!(!KernelPtConfig::TOP_LEVEL_CAN_UNMAP);
             assert!(
-                UserPtConfig::TOP_LEVEL_INDEX_RANGE.end
+                UserPtConfig::<()>::TOP_LEVEL_INDEX_RANGE.end
                     <= KernelPtConfig::TOP_LEVEL_INDEX_RANGE.start
             );
         }
 
         for i in KernelPtConfig::TOP_LEVEL_INDEX_RANGE {
-            let root_entry = root_node.entry(i);
+            let pte_vaddr = i * page_size::<KernelPtConfig>(KernelPtConfig::NR_LEVELS);
+            let root_entry = root_node.entry(pte_vaddr);
             let child = root_entry.to_ref();
             let PteStateRef::PageTable(pt) = child else {
                 panic!("The kernel page table doesn't contain shared nodes");
@@ -375,11 +433,11 @@ impl PageTable<KernelPtConfig> {
             // We do not add additional reference count specifically for the
             // shared kernel page tables. It requires user page tables to
             // outlive the kernel page table, which is trivially true.
-            // See also `<PageTablePageMeta as AnyFrameMeta>::on_drop`.
+            // See also `<PageTableFrameMeta as AnyFrameMeta>::on_drop`.
             let pt_addr = pt.paddr();
             let pte = PageTableEntry::from_repr(
                 &PteScalar::PageTable(pt_addr, PageTableFlags::empty()),
-                UserPtConfig::NR_LEVELS,
+                UserPtConfig::<A>::NR_LEVELS,
             );
             // SAFETY: The index is within the bounds and the PTE is at the
             // correct paging level. However, neither it's a `UserPtConfig`
@@ -390,7 +448,7 @@ impl PageTable<KernelPtConfig> {
         }
         drop(new_node);
 
-        PageTable::<UserPtConfig> { root: new_root }
+        PageTable::<UserPtConfig<A>> { root: new_root }
     }
 }
 
@@ -400,7 +458,7 @@ impl<C: PageTableConfig> PageTable<C> {
     /// Useful for the IOMMU page tables only.
     pub fn empty() -> Self {
         PageTable {
-            root: PageTableNode::<C>::alloc(C::NR_LEVELS),
+            root: PageTableNode::<C>::alloc(C::NR_LEVELS, C::Aux::new_root_page_table()),
         }
     }
 
