@@ -78,8 +78,6 @@ define_atomic_version_of_integer_like_type!(EvdevClock, try_from = true, {
 
 /// An opened file from an evdev device ([`EvdevDevice`]).
 pub(super) struct EvdevFile {
-    /// Consumer for reading events.
-    consumer: Mutex<RbConsumer<EvdevEvent>>,
     /// Inner data (shared with the device).
     inner: Arc<EvdevFileInner>,
     /// Weak reference to the evdev device that owns this evdev file.
@@ -88,6 +86,8 @@ pub(super) struct EvdevFile {
 
 /// An opened evdev file's inner data (shared with its [`EvdevDevice`]).
 pub(super) struct EvdevFileInner {
+    /// Consumer for reading events.
+    consumer: Mutex<RbConsumer<EvdevEvent>>,
     /// Clock ID for this opened evdev file.
     clock_id: AtomicEvdevClock,
     /// Number of complete event packets available (ended with `SYN_REPORT`).
@@ -117,6 +117,17 @@ impl EvdevFileInner {
         }
     }
 
+    pub(super) fn try_clear_with_producer_locked(&self) {
+        let Some(mut consumer) = self.consumer.try_lock() else {
+            return;
+        };
+
+        // Note that the following two operations are racy unless we hold the producer's lock.
+        consumer.clear();
+        self.packet_count.store(0, Ordering::Relaxed);
+        self.pollee.invalidate();
+    }
+
     /// Checks if buffer has complete event packets.
     pub(self) fn has_complete_packets(&self) -> bool {
         self.packet_count.load(Ordering::Relaxed) > 0
@@ -144,12 +155,12 @@ impl EvdevFile {
         let (producer, consumer) = RingBuffer::new(buffer_size).split();
 
         let inner = EvdevFileInner {
+            consumer: Mutex::new(consumer),
             clock_id: AtomicEvdevClock::new(EvdevClock::Monotonic),
             packet_count: AtomicUsize::new(0),
             pollee: Pollee::new(),
         };
         let evdev_file = Self {
-            consumer: Mutex::new(consumer),
             inner: Arc::new(inner),
             evdev,
         };
@@ -166,7 +177,7 @@ impl EvdevFile {
     fn process_events(&self, max_events: usize, writer: &mut VmWriter) -> Result<usize> {
         const EVENT_SIZE: usize = size_of::<EvdevEvent>();
 
-        let mut consumer = self.consumer.lock();
+        let mut consumer = self.inner.consumer.lock();
         let mut event_count = 0;
 
         for _ in 0..max_events {
@@ -203,12 +214,12 @@ impl EvdevFile {
 }
 
 /// Checks if the event is a `SYN_REPORT` event.
-fn is_syn_report_event(event: &EvdevEvent) -> bool {
+pub(super) fn is_syn_report_event(event: &EvdevEvent) -> bool {
     event.type_ == EventTypes::SYN.as_index() && event.code == SynEvent::Report as u16
 }
 
 /// Checks if the event is a `SYN_DROPPED` event.
-fn is_syn_dropped_event(event: &EvdevEvent) -> bool {
+pub(super) fn is_syn_dropped_event(event: &EvdevEvent) -> bool {
     event.type_ == EventTypes::SYN.as_index() && event.code == SynEvent::Dropped as u16
 }
 
