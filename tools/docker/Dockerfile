@@ -53,6 +53,7 @@ RUN apt update && apt-get install -y --no-install-recommends \
     clang-format       `# formatting general tests` \
     cpio \
     cpuid \
+    dosfstools \
     exfatprogs \
     file \
     grub-efi-amd64-bin \
@@ -62,6 +63,7 @@ RUN apt update && apt-get install -y --no-install-recommends \
     jq \
     net-tools \
     openssh-server \
+    parted \
     pkg-config \
     socat \
     strace \

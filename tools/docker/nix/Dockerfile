@@ -14,6 +14,7 @@ RUN sh <(curl -L https://nixos.org/nix/install) --daemon --yes \
     && nix-channel --add https://nixos.org/channels/nixos-25.05 nixpkgs \
     && nix-channel --update \
     && nix-env -iA nixpkgs.nixfmt \
+    && nix-env -iA nixpkgs.nixos-install-tools \
     && rm /nix/var/nix/gcroots/auto/* \
     && nix-collect-garbage -d
 
