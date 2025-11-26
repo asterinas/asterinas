@@ -157,11 +157,9 @@ impl<const ITEM_SIZE: usize> DynCpuLocalChunk<ITEM_SIZE> {
         &mut self,
         init_values: &mut impl FnMut(CpuId) -> T,
     ) -> Option<CpuLocal<T, DynamicStorage<T>>> {
-        const {
-            assert!(ITEM_SIZE.is_power_of_two());
-            assert!(size_of::<T>() <= ITEM_SIZE);
-            assert!(align_of::<T>() <= ITEM_SIZE);
-        }
+        assert!(ITEM_SIZE.is_power_of_two());
+        assert!(size_of::<T>() <= ITEM_SIZE);
+        assert!(align_of::<T>() <= ITEM_SIZE);
 
         let index = self.bitmap.first_zero()?;
         self.bitmap.set(index, true);

@@ -2,7 +2,7 @@
 
 use crate::allocator::CommonSizeClass;
 use alloc::vec::Vec;
-use core::ops::Deref;
+use core::{alloc::Layout, ops::Deref};
 use ostd::{
     cpu::{
         local::{DynCpuLocalChunk, DynamicCpuLocal},
@@ -98,8 +98,8 @@ static ALLOCATOR_32: CpuLocalAllocator<32> = CpuLocalAllocator::new();
 ///
 /// Currently, the size of `T` must be no larger than 32 bytes.
 pub fn alloc_cpu_local<T>(mut init_values: impl FnMut(CpuId) -> T) -> Result<CpuLocalBox<T>> {
-    let size = size_of::<T>();
-    let class = CommonSizeClass::from_size(size).ok_or(Error::InvalidArgs)?;
+    let layout = Layout::from_size_align(size_of::<T>(), align_of::<T>()).unwrap();
+    let class = CommonSizeClass::from_layout(layout).ok_or(Error::InvalidArgs)?;
     let cpu_local = match class {
         CommonSizeClass::Bytes8 => ALLOCATOR_8.alloc::<T>(&mut init_values),
         CommonSizeClass::Bytes16 => ALLOCATOR_16.alloc::<T>(&mut init_values),
@@ -115,12 +115,60 @@ pub fn alloc_cpu_local<T>(mut init_values: impl FnMut(CpuId) -> T) -> Result<Cpu
 
 /// Deallocates a dynamically-allocated CPU-local object of type `T`.
 fn dealloc_cpu_local<T>(cpu_local: DynamicCpuLocal<T>) {
-    let size = size_of::<T>();
-    let class = CommonSizeClass::from_size(size).unwrap();
+    let layout = Layout::from_size_align(size_of::<T>(), align_of::<T>()).unwrap();
+    let class = CommonSizeClass::from_layout(layout).unwrap();
     match class {
         CommonSizeClass::Bytes8 => ALLOCATOR_8.dealloc(cpu_local),
         CommonSizeClass::Bytes16 => ALLOCATOR_16.dealloc(cpu_local),
         CommonSizeClass::Bytes32 => ALLOCATOR_32.dealloc(cpu_local),
         _ => todo!(),
+    }
+}
+
+#[cfg(ktest)]
+mod test {
+    use super::*;
+    use core::{cmp::PartialEq, fmt::Debug};
+    use ostd::{cpu::CpuId, util::id_set::Id};
+
+    #[derive(Debug, PartialEq)]
+    #[repr(align(2))]
+    struct Aligned2(u8);
+    #[derive(Debug, PartialEq)]
+    #[repr(align(4))]
+    struct Aligned4(u8);
+    #[derive(Debug, PartialEq)]
+    #[repr(align(8))]
+    struct Aligned8(u8);
+    #[derive(Debug, PartialEq)]
+    #[repr(align(16))]
+    struct Aligned16(u8);
+    #[derive(Debug, PartialEq)]
+    #[repr(align(32))]
+    struct Aligned32(u8);
+
+    #[track_caller]
+    fn alloc_dealloc_cpu_local<T: 'static + Debug + PartialEq + Sync>(init_values: fn(CpuId) -> T) {
+        let values = ostd::cpu::all_cpus().map(init_values).collect::<Vec<_>>();
+        let cpu_local = alloc_cpu_local(init_values).expect("Failed to allocate CPU-local object");
+        for (cpu, value) in ostd::cpu::all_cpus().zip(values.iter()) {
+            let allocated = cpu_local.get_on_cpu(cpu);
+            assert_eq!(*allocated, *value);
+        }
+        // Dropping `cpu_local` should deallocate the object.
+    }
+
+    #[ktest]
+    fn alloc_dealloc_cpu_local_various_types() {
+        alloc_dealloc_cpu_local(|cpu| cpu.as_usize() as u8);
+        alloc_dealloc_cpu_local(|cpu| cpu.as_usize() as u16);
+        alloc_dealloc_cpu_local(|cpu| cpu.as_usize() as u32);
+        alloc_dealloc_cpu_local(|cpu| cpu.as_usize() as u64);
+        alloc_dealloc_cpu_local(|cpu| cpu.as_usize());
+        alloc_dealloc_cpu_local(|cpu| Aligned2(cpu.as_usize() as u8));
+        alloc_dealloc_cpu_local(|cpu| Aligned4(cpu.as_usize() as u8));
+        alloc_dealloc_cpu_local(|cpu| Aligned8(cpu.as_usize() as u8));
+        alloc_dealloc_cpu_local(|cpu| Aligned16(cpu.as_usize() as u8));
+        alloc_dealloc_cpu_local(|cpu| Aligned32(cpu.as_usize() as u8));
     }
 }
