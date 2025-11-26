@@ -14,6 +14,7 @@ mlsdisk = { name = "aster-mlsdisk" }
 systree = { name = "aster-systree" }
 keyboard = { name = "aster-keyboard" }
 pci = { name = "aster-pci" }
+uart = { name = "aster-uart" }
 
 [whitelist]
 [whitelist.nix.main]
