@@ -224,7 +224,7 @@ impl From<SubmittedBio> for BioRequest {
     fn from(bio: SubmittedBio) -> Self {
         let mut sid_range = bio.sid_range().clone();
         sid_range.start = sid_range.start + bio.sid_offset();
-        sid_range.end = sid_range.start + bio.sid_offset();
+        sid_range.end = sid_range.end + bio.sid_offset();
 
         Self {
             type_: bio.type_(),
