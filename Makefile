@@ -268,10 +268,6 @@ initramfs: check_vdso
 build: initramfs $(CARGO_OSDK)
 	@cd kernel && cargo osdk build $(CARGO_OSDK_BUILD_ARGS)
 
-.PHONY: tools
-tools:
-	@cd kernel/libs/comp-sys && cargo install --path cargo-component
-
 .PHONY: run
 run: initramfs $(CARGO_OSDK)
 	@cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS)
