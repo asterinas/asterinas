@@ -76,6 +76,7 @@ default = ["cvm_guest"]
 cvm_guest = ["dep:tdx-guest", "dep:iced-x86"]
 coverage = ["minicov"]
 riscv_sv39_mode = []
+numa = []
 
 [lints]
 workspace = true
