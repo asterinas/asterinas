@@ -5,7 +5,6 @@
 use component::InitStage;
 use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
-    boot::boot_info,
     cpu::CpuId,
     util::id_set::Id,
 };
@@ -145,7 +144,7 @@ fn first_kthread() {
     print_banner();
 
     INIT_PROCESS.call_once(|| {
-        let karg: KCmdlineArg = boot_info().kernel_cmdline.as_str().into();
+        let karg = KCmdlineArg::singleton();
         spawn_init_process(
             karg.get_initproc_path().unwrap(),
             karg.get_initproc_argv().to_vec(),
