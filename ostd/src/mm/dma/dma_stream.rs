@@ -14,7 +14,9 @@ use crate::{
     mm::{
         dma::{dma_type, Daddr, DmaType},
         io_util::{HasVmReaderWriter, VmReaderWriterResult},
-        HasDaddr, HasPaddr, HasSize, Infallible, Paddr, USegment, VmReader, VmWriter, PAGE_SIZE,
+        kspace::KERNEL_PAGE_TABLE,
+        paddr_to_vaddr, HasDaddr, HasPaddr, HasSize, Infallible, Paddr, PrivilegedPageFlags,
+        USegment, VmReader, VmWriter, PAGE_SIZE,
     },
 };
 
@@ -58,16 +60,29 @@ impl DmaStream {
             return Err(DmaError::AlreadyMapped);
         }
 
+        #[cfg(target_arch = "x86_64")]
+        crate::arch::if_tdx_enabled!({
+            let page_table = KERNEL_PAGE_TABLE.get().unwrap();
+            let vaddr = paddr_to_vaddr(paddr);
+            let va_range = vaddr..vaddr + (frame_count * PAGE_SIZE);
+            // SAFETY: The range is in linear mapping, so the pages can be mapped as shared.
+            unsafe {
+                page_table
+                    .protect_flush_tlb(&va_range, |p| {
+                        p.priv_flags |= PrivilegedPageFlags::SHARED;
+                    })
+                    .unwrap();
+            }
+        });
+
         let start_daddr = match dma_type() {
             DmaType::Direct => {
                 #[cfg(target_arch = "x86_64")]
                 crate::arch::if_tdx_enabled!({
                     // SAFETY:
-                    //  - The address of a `USegment` is always page aligned.
                     //  - A `USegment` always points to normal physical memory, so the address
                     //    range falls in the GPA limit.
                     //  - A `USegment` always points to normal physical memory, so all the pages
-                    //    are contained in the linear mapping.
                     //  - The pages belong to a `USegment`, so they're all untyped memory.
                     unsafe {
                         crate::arch::tdx_guest::unprotect_gpa_range(paddr, frame_count).unwrap();
@@ -176,6 +191,21 @@ impl Drop for DmaStream {
                 }
             }
         }
+
+        #[cfg(target_arch = "x86_64")]
+        crate::arch::if_tdx_enabled!({
+            let page_table = KERNEL_PAGE_TABLE.get().unwrap();
+            let vaddr = paddr_to_vaddr(paddr);
+            let va_range = vaddr..vaddr + (frame_count * PAGE_SIZE);
+            // SAFETY: The range is in linear mapping, so the pages can be mapped as private.
+            unsafe {
+                page_table
+                    .protect_flush_tlb(&va_range, |p| {
+                        p.priv_flags -= PrivilegedPageFlags::SHARED;
+                    })
+                    .unwrap();
+            }
+        });
 
         remove_dma_mapping(paddr, frame_count);
     }

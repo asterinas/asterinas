@@ -86,25 +86,6 @@ impl<SecuritySensitivity> IoMem<SecuritySensitivity> {
 
         #[cfg(target_arch = "x86_64")]
         let priv_flags = crate::arch::if_tdx_enabled!({
-            assert!(
-                first_page_start == range.start && last_page_end == range.end,
-                "I/O memory is not page aligned, which cannot be unprotected in TDX: {:#x?}..{:#x?}",
-                range.start,
-                range.end,
-            );
-
-            let num_pages = area_size / PAGE_SIZE;
-            // SAFETY:
-            //  - The range `first_page_start..last_page_end` is always page aligned.
-            //  - FIXME: We currently do not limit the I/O memory allocator with the maximum GPA,
-            //    so the address range may not fall in the GPA limit.
-            //  - FIXME: The I/O memory can be at a high address, so it may not be contained in the
-            //    linear mapping.
-            //  - The caller guarantees that operations on the I/O memory do not have any side
-            //    effects that may cause soundness problems, so the pages can safely be viewed as
-            //    untyped memory.
-            unsafe { crate::arch::tdx_guest::unprotect_gpa_range(first_page_start, num_pages).unwrap() };
-
             PrivilegedPageFlags::SHARED
         } else {
             PrivilegedPageFlags::empty()
@@ -121,6 +102,31 @@ impl<SecuritySensitivity> IoMem<SecuritySensitivity> {
         // SAFETY: The caller of `IoMem::new()` ensures that the given
         // physical address range is I/O memory, so it is safe to map.
         let kva = unsafe { KVirtArea::map_untracked_frames(area_size, 0, frames_range, prop) };
+        crate::arch::mm::tlb_flush_addr_range(&kva.range());
+
+        #[cfg(target_arch = "x86_64")]
+        crate::arch::if_tdx_enabled!({
+            assert!(
+                first_page_start == range.start && last_page_end == range.end,
+                "I/O memory is not page aligned, which cannot be unprotected in TDX: {:#x?}..{:#x?}",
+                range.start,
+                range.end,
+            );
+
+            let num_pages = area_size / PAGE_SIZE;
+            // Per linux implementation: https://github.com/torvalds/linux/blob/e538109a/arch/x86/coco/tdx/tdx.c#L1155-L1156
+            // `private -> shared` mapping in guest should be done before unprotecting the GPA range.
+            //
+            // SAFETY:
+            //  - FIXME: We currently do not limit the I/O memory allocator with the maximum GPA,
+            //    so the address range may not fall in the GPA limit.
+            //  - The caller guarantees that operations on the I/O memory do not have any side
+            //    effects that may cause soundness problems, so the pages can safely be viewed as
+            //    untyped memory.
+            unsafe {
+                crate::arch::tdx_guest::unprotect_gpa_range(first_page_start, num_pages).unwrap()
+            };
+        });
 
         Self {
             kvirt_area: Arc::new(kva),

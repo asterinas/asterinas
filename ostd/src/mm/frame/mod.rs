@@ -60,7 +60,7 @@ use crate::mm::{HasPaddr, HasSize, Paddr, PagingConsts, PagingLevel, Vaddr, PAGE
 static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
 
 /// Returns the maximum physical address that is tracked by frame metadata.
-pub(in crate::mm) fn max_paddr() -> Paddr {
+pub(crate) fn max_paddr() -> Paddr {
     let max_paddr = MAX_PADDR.load(Ordering::Relaxed) as Paddr;
     debug_assert_ne!(max_paddr, 0);
     max_paddr

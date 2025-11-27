@@ -12,7 +12,8 @@ use crate::{
         io_util::{HasVmReaderWriter, VmReaderWriterIdentity},
         kspace::{paddr_to_vaddr, KERNEL_PAGE_TABLE},
         page_prop::CachePolicy,
-        HasDaddr, HasPaddr, HasSize, Infallible, Paddr, USegment, VmReader, VmWriter, PAGE_SIZE,
+        HasDaddr, HasPaddr, HasSize, Infallible, Paddr, PrivilegedPageFlags, USegment, VmReader,
+        VmWriter, PAGE_SIZE,
     },
 };
 
@@ -53,14 +54,28 @@ impl DmaCoherent {
             return Err(DmaError::AlreadyMapped);
         }
 
-        if !is_cache_coherent {
+        #[cfg(target_arch = "x86_64")]
+        let add_prop_bits = crate::arch::if_tdx_enabled!({
+            PrivilegedPageFlags::SHARED
+        } else {
+            PrivilegedPageFlags::empty()
+        });
+        #[cfg(not(target_arch = "x86_64"))]
+        let add_prop_bits = PrivilegedPageFlags::empty();
+
+        if !is_cache_coherent || !add_prop_bits.is_empty() {
             let page_table = KERNEL_PAGE_TABLE.get().unwrap();
             let vaddr = paddr_to_vaddr(paddr);
             let va_range = vaddr..vaddr + (frame_count * PAGE_SIZE);
             // SAFETY: the physical mappings is only used by DMA so protecting it is safe.
             unsafe {
                 page_table
-                    .protect_flush_tlb(&va_range, |p| p.cache = CachePolicy::Uncacheable)
+                    .protect_flush_tlb(&va_range, |p| {
+                        if !is_cache_coherent {
+                            p.cache = CachePolicy::Uncacheable;
+                        }
+                        p.priv_flags |= add_prop_bits;
+                    })
                     .unwrap();
             }
         }
@@ -70,11 +85,8 @@ impl DmaCoherent {
                 #[cfg(target_arch = "x86_64")]
                 crate::arch::if_tdx_enabled!({
                     // SAFETY:
-                    //  - The address of a `USegment` is always page aligned.
                     //  - A `USegment` always points to normal physical memory, so the address
                     //    range falls in the GPA limit.
-                    //  - A `USegment` always points to normal physical memory, so all the pages
-                    //    are contained in the linear mapping.
                     //  - The pages belong to a `USegment`, so they're all untyped memory.
                     unsafe {
                         tdx_guest::unprotect_gpa_range(paddr, frame_count).unwrap();
@@ -119,11 +131,8 @@ impl Drop for DmaCoherent {
                 #[cfg(target_arch = "x86_64")]
                 crate::arch::if_tdx_enabled!({
                     // SAFETY:
-                    //  - The address of a `USegment` is always page aligned.
                     //  - A `USegment` always points to normal physical memory, so the address
                     //    range falls in the GPA limit.
-                    //  - A `USegment` always points to normal physical memory, so all the pages
-                    //    are contained in the linear mapping.
                     //  - The pages belong to a `USegment`, so they're all untyped memory.
                     unsafe {
                         tdx_guest::protect_gpa_range(paddr, frame_count).unwrap();
@@ -139,14 +148,28 @@ impl Drop for DmaCoherent {
             }
         }
 
-        if !self.is_cache_coherent {
+        #[cfg(target_arch = "x86_64")]
+        let minus_prop_bits = crate::arch::if_tdx_enabled!({
+            PrivilegedPageFlags::SHARED
+        } else {
+            PrivilegedPageFlags::empty()
+        });
+        #[cfg(not(target_arch = "x86_64"))]
+        let minus_prop_bits = PrivilegedPageFlags::empty();
+
+        if !self.is_cache_coherent || !minus_prop_bits.is_empty() {
             let page_table = KERNEL_PAGE_TABLE.get().unwrap();
             let vaddr = paddr_to_vaddr(paddr);
             let va_range = vaddr..vaddr + (frame_count * PAGE_SIZE);
             // SAFETY: the physical mappings is only used by DMA so protecting it is safe.
             unsafe {
                 page_table
-                    .protect_flush_tlb(&va_range, |p| p.cache = CachePolicy::Writeback)
+                    .protect_flush_tlb(&va_range, |p| {
+                        if !self.is_cache_coherent {
+                            p.cache = CachePolicy::Writeback;
+                        }
+                        p.priv_flags -= minus_prop_bits;
+                    })
                     .unwrap();
             }
         }
