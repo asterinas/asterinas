@@ -58,7 +58,7 @@ impl DirEntry {
 
     /// Returns the inode type of the entry.
     pub fn type_(&self) -> InodeType {
-        InodeType::from(DirEntryFileType::try_from(self.header.inode_type).unwrap())
+        InodeType::from(DirEntryFileType::from(self.header.inode_type))
     }
 
     /// Returns the distance to the next entry.
@@ -108,7 +108,7 @@ impl DirEntryHeader {
 
 /// The type indicator in the `DirEntry`.
 #[repr(u8)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, TryFromInt)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 enum DirEntryFileType {
     Unknown = 0,
     File = 1,
@@ -118,6 +118,23 @@ enum DirEntryFileType {
     Fifo = 5,
     Socket = 6,
     Symlink = 7,
+}
+
+impl From<u8> for DirEntryFileType {
+    fn from(value: u8) -> Self {
+        // If the file type is an undefined value, set it to `Unknown`.
+        // See <https://elixir.bootlin.com/linux/v6.13/source/fs/fs_types.c#L37>.
+        match value {
+            1 => Self::File,
+            2 => Self::Dir,
+            3 => Self::Char,
+            4 => Self::Block,
+            5 => Self::Fifo,
+            6 => Self::Socket,
+            7 => Self::Symlink,
+            _ => Self::Unknown,
+        }
+    }
 }
 
 impl From<InodeType> for DirEntryFileType {
@@ -145,7 +162,7 @@ impl From<DirEntryFileType> for InodeType {
             DirEntryFileType::File => Self::File,
             DirEntryFileType::Symlink => Self::SymLink,
             DirEntryFileType::Socket => Self::Socket,
-            DirEntryFileType::Unknown => panic!("unknown file type"),
+            DirEntryFileType::Unknown => Self::Unknown,
         }
     }
 }
@@ -247,32 +264,28 @@ impl<'a> DirEntryReader<'a> {
 
 impl DirEntryIter<'_> {
     /// Reads a `DirEntryItem` at the current offset.
-    fn read_entry_item(&mut self) -> Result<DirEntryItem> {
+    fn read_next_dir_entry(&mut self) -> Option<DirEntryItem> {
         if self.offset >= self.page_cache.pages().size() {
-            return_errno!(Errno::ENOENT);
+            return None;
+        };
+
+        let header = self
+            .page_cache
+            .pages()
+            .read_val::<DirEntryHeader>(self.offset)
+            .ok()?;
+
+        if header.record_len == 0 {
+            return None;
         }
 
-        let header = self.read_header()?;
-        let record_len = header.record_len as usize;
-        let item = DirEntryItem {
+        let next_dir_entry = DirEntryItem {
             header,
             offset: self.offset,
         };
 
-        self.offset += record_len;
-        Ok(item)
-    }
-
-    /// Reads the header of the entry from the page cache.
-    fn read_header(&mut self) -> Result<DirEntryHeader> {
-        let header = self
-            .page_cache
-            .pages()
-            .read_val::<DirEntryHeader>(self.offset)?;
-        if header.ino == 0 {
-            return_errno!(Errno::ENOENT);
-        }
-        Ok(header)
+        self.offset += next_dir_entry.header.record_len as usize;
+        Some(next_dir_entry)
     }
 }
 
@@ -280,7 +293,20 @@ impl Iterator for DirEntryIter<'_> {
     type Item = DirEntryItem;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.read_entry_item().ok()
+        loop {
+            let next_item = self.read_next_dir_entry()?;
+
+            // Skip an entry if it is not used (ino == 0, see [1]) or its file type is unknown.
+            //
+            // [1]: <https://www.nongnu.org/ext2-doc/ext2.html#linked-directory-entry-structure>.
+            if next_item.header.ino == 0
+                || DirEntryFileType::from(next_item.header.inode_type) == DirEntryFileType::Unknown
+            {
+                continue;
+            }
+
+            return Some(next_item);
+        }
     }
 }
 
@@ -321,7 +347,7 @@ impl DirEntryItem {
 
     /// Returns the inode type of the entry.
     pub fn type_(&self) -> InodeType {
-        InodeType::from(DirEntryFileType::try_from(self.header.inode_type).unwrap())
+        InodeType::from(DirEntryFileType::from(self.header.inode_type))
     }
 
     /// Returns the distance to the next entry.
