@@ -18,6 +18,9 @@ use alloc::{
     vec::Vec,
 };
 
+use ostd::boot::boot_info;
+use spin::Once;
+
 #[derive(PartialEq, Debug)]
 struct InitprocArgs {
     path: Option<String>,
@@ -38,23 +41,39 @@ pub enum ModuleArg {
 #[derive(Debug)]
 pub struct KCmdlineArg {
     initproc: InitprocArgs,
+    console_names: Vec<String>,
     module_args: BTreeMap<String, Vec<ModuleArg>>,
 }
 
 // Define get APIs.
 impl KCmdlineArg {
+    /// Gets the singleton instance of `KCmdlineArg`.
+    pub fn singleton() -> &'static KCmdlineArg {
+        static INSTANCE: Once<KCmdlineArg> = Once::new();
+
+        INSTANCE.call_once(|| KCmdlineArg::from(boot_info().kernel_cmdline.as_str()))
+    }
+
     /// Gets the path of the initprocess.
     pub fn get_initproc_path(&self) -> Option<&str> {
         self.initproc.path.as_deref()
     }
+
     /// Gets the argument vector(argv) of the initprocess.
     pub fn get_initproc_argv(&self) -> &Vec<CString> {
         &self.initproc.argv
     }
+
     /// Gets the environment vector(envp) of the initprocess.
     pub fn get_initproc_envp(&self) -> &Vec<CString> {
         &self.initproc.envp
     }
+
+    /// Gets the vector of system console names specified in the command line.
+    pub fn get_console_names(&self) -> &Vec<String> {
+        &self.console_names
+    }
+
     /// Gets the argument vector of a kernel module.
     #[expect(dead_code)]
     pub fn get_module_args(&self, module: &str) -> Option<&Vec<ModuleArg>> {
@@ -86,6 +105,7 @@ impl From<&str> for KCmdlineArg {
                 argv: Vec::new(),
                 envp: Vec::new(),
             },
+            console_names: Vec::new(),
             module_args: BTreeMap::new(),
         };
 
@@ -161,6 +181,9 @@ impl From<&str> for KCmdlineArg {
                             panic!("Initproc assigned twice in the command line!");
                         }
                         result.initproc.path = Some(value.to_string());
+                    }
+                    "console" => {
+                        result.console_names.push(value.to_string());
                     }
                     _ => {
                         // If the option is not recognized, it is passed to the initproc.
