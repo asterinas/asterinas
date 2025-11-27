@@ -28,6 +28,7 @@
 #=============================================================================
 
 /book/                          @tatetian
+/book/src/kernel/linux-compatibility/syscall-feature-coverage/ @tatetian @taosue
 
 #=============================================================================
 # The Asterinas kernel
@@ -84,6 +85,7 @@
 /osdk/tools/docker/             @grief8
 /test/                          @cqs21
 /tools/                         @grief8
+/tools/sctrace/                 @tatetian @taosue
 /triagebot.toml                 @grief8
 
 /Makefile                       @junyang-zh
