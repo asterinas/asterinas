@@ -4,6 +4,7 @@
 
 mod interval_set;
 mod util;
+mod vm_allocator;
 mod vm_mapping;
 
 mod vmar_impls;

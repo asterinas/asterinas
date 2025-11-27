@@ -17,7 +17,7 @@ pub trait Interval<K: Clone> {
 ///
 /// In particular, the collection allows one to retrieve interval items that
 /// intersect with a point of value or range of values.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntervalSet<K, V>
 where
     K: Clone + Ord,
@@ -137,7 +137,6 @@ where
     ///
     /// This method returns a draining iterator that removes the items from the
     /// interval set.
-    #[cfg(ktest)]
     pub fn take<'a>(&'a mut self, range: &Range<K>) -> IntervalDrain<'a, K, V> {
         let cursor = self
             .btree
