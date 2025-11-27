@@ -3,6 +3,7 @@
 //! Virtual Memory Address Regions (VMARs).
 
 mod interval_set;
+mod vm_allocator;
 mod vm_mapping;
 
 use core::{array, num::NonZeroUsize, ops::Range};

@@ -136,7 +136,6 @@ where
     ///
     /// This method returns a draining iterator that removes the items from the
     /// interval set.
-    #[cfg(ktest)]
     pub fn take<'a>(&'a mut self, range: &Range<K>) -> IntervalDrain<'a, K, V> {
         let cursor = self
             .btree
