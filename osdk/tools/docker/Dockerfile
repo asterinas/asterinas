@@ -23,6 +23,7 @@ RUN apt update && apt-get install -y --no-install-recommends \
     libglib2.0-dev  `# build dependency` \
     libpixman-1-dev `# build dependency` \
     libusb-dev      `# optional build dependency` \
+    libnuma-dev     `# optional build dependency` \
     meson \
     ninja-build
 RUN apt clean && rm -rf /var/lib/apt/lists/*
@@ -41,7 +42,7 @@ RUN wget -O qemu.tar.xz https://download.qemu.org/qemu-10.1.0-rc2.tar.xz \
     && tar xf qemu.tar.xz --strip-components=1 -C /root/qemu \
     && rm qemu.tar.xz
 WORKDIR /root/qemu
-RUN ./configure --target-list=x86_64-softmmu,riscv64-softmmu,loongarch64-softmmu --prefix=/usr/local/qemu --enable-slirp \
+RUN ./configure --target-list=x86_64-softmmu,riscv64-softmmu,loongarch64-softmmu --prefix=/usr/local/qemu --enable-slirp --enable-numa \
     && make -j \
     && make install
 WORKDIR /root
