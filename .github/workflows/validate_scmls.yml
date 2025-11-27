@@ -14,11 +14,11 @@ on:
       - book/src/kernel/linux-compatibility/syscall-feature-coverage/**
 
 jobs:
-  test_scmls:
+  validate_scmls:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container: asterinas/asterinas:0.16.1-20250922
     steps:
       - uses: actions/checkout@v4
-      - name: Test SCML files with sctrace
+      - name: Validate SCML files with sctrace
         run: ./tools/sctrace.sh -- echo "Asterinas"
