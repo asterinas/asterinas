@@ -6,6 +6,7 @@ mod vm_mapping;
 
 // Utility modules.
 mod interval_set;
+mod vm_allocator;
 
 // Implementation modules.
 mod access_remote;
