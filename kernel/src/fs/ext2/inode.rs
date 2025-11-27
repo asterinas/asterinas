@@ -2026,7 +2026,7 @@ impl<'a> DeviceRangeReader<'a> {
 
         // Updates the range
         self.range.start += device_range.len() as Ext2Bid;
-        if device_range.len() == max_cnt {
+        if device_range.len() == max_cnt && !self.range.is_empty() {
             // Updates the indirect block
             self.update_indirect_block()?;
         }
