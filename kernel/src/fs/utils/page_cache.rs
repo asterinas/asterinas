@@ -128,7 +128,7 @@ impl Debug for PageCache {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("PageCache")
             .field("size", &self.pages.size())
-            .field("mamager", &self.manager)
+            .field("manager", &self.manager)
             .finish()
     }
 }

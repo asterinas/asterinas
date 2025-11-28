@@ -10,7 +10,7 @@
 void signal_handler(int signum)
 {
 	if (signum == SIGTERM) {
-		printf("child process reveives SIGTERM\n");
+		printf("child process receives SIGTERM\n");
 		exit(EXIT_SUCCESS);
 	}
 }

@@ -28,7 +28,7 @@ use crate::arch;
 /// fn not_an_atomic_function() {
 ///     let bar_var: usize = 1;
 ///     BAR.store(&bar_var as *const _);
-///     // Note that the value of `BAR` here doesn't nessarily equal to the address
+///     // Note that the value of `BAR` here doesn't necessarily equal to the address
 ///     // of `bar_var`, since the task may be preempted and moved to another CPU.
 ///     // You can avoid this by disabling interrupts (and preemption, if needed).
 ///     println!("BAR VAL: {:?}", BAR.load());

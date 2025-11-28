@@ -1,7 +1,7 @@
 # Commands
 
 OSDK provides similar subcommands as Cargo,
-and these subcommands have simalar meanings
+and these subcommands have similar meanings
 as corresponding Cargo subcommands.
 
 Currently, OSDK supports the following subcommands:
