@@ -349,7 +349,7 @@ pub trait Pollable {
     ///
     /// The user must ensure that a call to `try_op()` does not fail with `EAGAIN` when the
     /// interesting events occur. However, it is allowed to have spurious `EAGAIN` failures due to
-    /// race opitions where the events are consumed by another thread.
+    /// race options where the events are consumed by another thread.
     #[track_caller]
     fn wait_events<F, R>(
         &self,

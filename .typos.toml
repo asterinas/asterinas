@@ -1,5 +1,9 @@
 # This file is to help typos avoid false-positives.
 
+# The regexes below are considered valid and should not be flagged as typos.
+[default]
+extend-ignore-re = [ "sha256 = \"([a-zA-Z0-9]+)\";" ]
+
 # Words listed below are marked as valid, not mistakes. 
 [default.extend-words]
 rela = "rela"
@@ -21,6 +25,7 @@ wrk = "wrk"
 rto = "rto"
 typ = "typ"
 sigfault = "sigfault"
+sems = "sems"
 
 # Files with svg suffix are ignored to check. 
 [type.svg]

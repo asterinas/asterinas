@@ -91,7 +91,7 @@ impl ThreadLocal {
         &self.vmar
     }
 
-    /// Executes the closure with the page fault handler diasabled.
+    /// Executes the closure with the page fault handler disabled.
     ///
     /// When page faults occur, the handler may attempt to load the page from the disk, which can break
     /// the atomic mode. By using this method, the page fault handler will fail immediately, so
