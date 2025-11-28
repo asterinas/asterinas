@@ -3,7 +3,7 @@
 <!--
 Put system calls such as
 dup, dup2, dup3, fcntl, ioctl, pipe, pipe2, splice, tee, vmsplice, sendfile,
-eventfd, and eventfd2
+eventfd, eventfd2 and memfd_create
 under this category.
 -->
 
@@ -22,7 +22,6 @@ Unsupported commands:
 * `F_GETSIG` and `F_SETSIG`
 * `F_SETLEASE` and `F_GETLEASE`
 * `F_SETPIPE_SZ` and `F_GETPIPE_SZ`
-* `F_ADD_SEALS` and `F_GET_SEALS`
 * `F_GET_RW_HINT` and `F_SET_RW_HINT`
 * `F_GET_FILE_RW_HINT` and `F_SET_FILE_RW_HINT`
 
@@ -58,3 +57,31 @@ Silently-ignored flags:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/eventfd.2.html).
+
+### `memfd_create`
+
+Supported functionality in SCML:
+
+```c
+{{#include memfd_create.scml}}
+```
+
+Silently-ignored flags:
+* `MFD_HUGETLB`
+
+Unsupported flags:
+* `MFD_HUGE_64KB`
+* `MFD_HUGE_512KB`
+* `MFD_HUGE_1MB`
+* `MFD_HUGE_2MB`
+* `MFD_HUGE_8MB`
+* `MFD_HUGE_16MB`
+* `MFD_HUGE_32MB`
+* `MFD_HUGE_256MB`
+* `MFD_HUGE_512MB`
+* `MFD_HUGE_1GB`
+* `MFD_HUGE_2GB`
+* `MFD_HUGE_16GB`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/memfd_create.2.html).

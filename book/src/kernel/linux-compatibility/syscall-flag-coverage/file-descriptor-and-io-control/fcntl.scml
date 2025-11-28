@@ -19,3 +19,9 @@ fcntl(fd, cmd = F_GETLK | F_SETLK | F_SETLKW, arg);
 
 // Assign SIGIO/SIGURG owner process
 fcntl(fd, cmd = F_SETOWN, arg);
+
+// Add seals to the inode referred to
+fcntl(fd, cmd = F_ADD_SEALS, arg = F_SEAL_SEAL | F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_WRITE | F_SEAL_FUTURE_WRITE);
+
+// Get seals from the inode referred to
+fcntl(fd, cmd = F_GET_SEALS);

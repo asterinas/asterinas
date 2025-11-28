@@ -1,0 +1,2 @@
+// Create an anonymous file and return a file descriptor that refers to it
+memfd_create(name, flags = MFD_CLOEXEC | MFD_ALLOW_SEALING);

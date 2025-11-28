@@ -338,7 +338,7 @@ which are summarized in the table below.
 | 315     | sched_getattr          | ✅             | [⚠️](syscall-flag-coverage/process-and-thread-management/#sched_getattr-and-sched_setattr) |
 | 316     | renameat2              | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#renameat2) |
 | 318     | getrandom              | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#getrandom) |
-| 319     | memfd_create           | ✅             | ❓ |
+| 319     | memfd_create           | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#memfd_create) |
 | 322     | execveat               | ✅             | ❓ |
 | 327     | preadv2                | ✅             | ❓ |
 | 328     | pwritev2               | ✅             | ❓ |
