@@ -23,7 +23,7 @@ pub enum QemuExitCode {
 /// This function assumes that the kernel is run in QEMU with the following
 /// QEMU command line arguments that specifies the ISA debug exit device:
 /// `-device isa-debug-exit,iobase=0xf4,iosize=0x04`.
-pub fn exit_qemu(exit_code: QemuExitCode) -> ! {
+pub fn exit_qemu(exit_code: QemuExitCode) {
     #[cfg(feature = "coverage")]
     crate::coverage::on_qemu_exit();
 
@@ -35,5 +35,4 @@ pub fn exit_qemu(exit_code: QemuExitCode) -> ! {
     unsafe {
         port.write(exit_code as u32);
     }
-    unreachable!()
 }

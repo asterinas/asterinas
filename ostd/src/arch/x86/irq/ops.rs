@@ -41,6 +41,14 @@ pub(crate) fn disable_local() {
     x86_64::instructions::interrupts::disable();
 }
 
+/// Disables local IRQs and halts the CPU forever.
+pub(crate) fn disable_local_and_halt() -> ! {
+    x86_64::instructions::interrupts::disable();
+    loop {
+        x86_64::instructions::hlt();
+    }
+}
+
 pub(crate) fn is_local_enabled() -> bool {
     (rflags::read_raw() & RFlags::INTERRUPT_FLAG.bits()) != 0
 }
