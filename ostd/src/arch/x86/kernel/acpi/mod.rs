@@ -6,6 +6,7 @@ pub(in crate::arch) mod remapping;
 use core::{num::NonZeroU8, ptr::NonNull};
 
 use acpi::{
+    address::AddressSpace,
     fadt::{Fadt, IaPcBootArchFlags},
     rsdp::Rsdp,
     AcpiHandler, AcpiTables,
@@ -82,6 +83,8 @@ pub struct AcpiInfo {
     pub century_register: Option<NonZeroU8>,
     /// IA-PC Boot Architecture Flags; the "IAPC_BOOT_ARCH" field in the FADT.
     pub boot_flags: Option<IaPcBootArchFlags>,
+    /// An I/O port to reset the machine by writing the specified value.
+    pub reset_port_and_val: Option<(u16, u8)>,
 }
 
 /// The [`AcpiInfo`] singleton.
@@ -91,6 +94,7 @@ pub(in crate::arch) fn init() {
     let mut acpi_info = AcpiInfo {
         century_register: None,
         boot_flags: None,
+        reset_port_and_val: None,
     };
 
     if let Some(acpi_tables) = get_acpi_tables()
@@ -99,6 +103,12 @@ pub(in crate::arch) fn init() {
         // A zero means that the century register does not exist.
         acpi_info.century_register = NonZeroU8::new(fadt.century);
         acpi_info.boot_flags = Some(fadt.iapc_boot_arch);
+        if let Ok(reset_reg) = fadt.reset_register()
+            && reset_reg.address_space == AddressSpace::SystemIo
+            && let Ok(reset_port) = reset_reg.address.try_into()
+        {
+            acpi_info.reset_port_and_val = Some((reset_port, fadt.reset_value));
+        }
     };
 
     log::info!("[ACPI]: Collected information {:?}", acpi_info);
