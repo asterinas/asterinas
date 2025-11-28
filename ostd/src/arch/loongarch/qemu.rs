@@ -15,7 +15,7 @@ pub enum QemuExitCode {
 
 /// Exits QEMU with the given exit code.
 //  FIXME: Support the transfer of the exit code to QEMU and multiple platforms.
-pub fn exit_qemu(_exit_code: QemuExitCode) -> ! {
+pub fn exit_qemu(_exit_code: QemuExitCode) {
     let (poweroff_addr, poweroff_value) = lookup_poweroff_paddr_value().unwrap();
     let poweroff_daddr = paddr_to_daddr(poweroff_addr) as *mut u8;
 
@@ -24,7 +24,6 @@ pub fn exit_qemu(_exit_code: QemuExitCode) -> ! {
     unsafe {
         core::ptr::write_volatile(poweroff_daddr, poweroff_value);
     }
-    unreachable!("Qemu does not exit");
 }
 
 // FIXME: We should reserve the address region in `io_mem_allocator`.
