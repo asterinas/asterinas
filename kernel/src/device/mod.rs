@@ -10,8 +10,6 @@ mod pty;
 mod shm;
 pub mod tty;
 
-use alloc::format;
-
 use device_id::DeviceId;
 pub use mem::{getrandom, geturandom};
 pub use pty::{new_pty_pair, PtyMaster, PtySlave};
@@ -43,16 +41,22 @@ pub fn init_in_first_process(ctx: &Context) -> Result<()> {
     let dev_path = fs_resolver.lookup(&FsPath::try_from("/dev")?)?;
     dev_path.mount(RamFs::new(), PerMountFlags::default(), ctx)?;
 
-    tty::init();
+    tty::init_in_first_process();
+
+    let tty0 = Arc::new(tty::Tty0Device);
+    add_node(tty0, "tty0", &fs_resolver)?;
+
+    let tty1 = tty::tty1_device().clone();
+    add_node(tty1, "tty1", &fs_resolver)?;
 
     let tty = Arc::new(tty::TtyDevice);
     add_node(tty, "tty", &fs_resolver)?;
 
-    let console = tty::system_console().clone();
+    let console = tty::SystemConsole::singleton().clone();
     add_node(console, "console", &fs_resolver)?;
 
-    for (index, tty) in tty::iter_n_tty().enumerate() {
-        add_node(tty.clone(), &format!("tty{}", index), &fs_resolver)?;
+    if let Some(hvc0) = tty::hvc0_device() {
+        add_node(hvc0.clone(), "hvc0", &fs_resolver)?;
     }
 
     pty::init_in_first_process(&fs_resolver, ctx)?;
@@ -75,18 +79,18 @@ pub fn get_device(devid: DeviceId) -> Result<Arc<dyn Device>> {
     let minor = devid.minor().get();
 
     match (major, minor) {
-        (4, minor) => {
-            let Some(tty) = tty::iter_n_tty().nth(minor as usize) else {
-                return_errno_with_message!(Errno::EINVAL, "the TTY minor ID is invalid");
-            };
-            Ok(tty.clone())
-        }
+        (4, 0) => Ok(Arc::new(tty::Tty0Device)),
+        (4, 1) => Ok(tty::tty1_device().clone()),
         (5, 0) => Ok(Arc::new(tty::TtyDevice)),
+        (5, 1) => Ok(tty::SystemConsole::singleton().clone()),
+        (229, 0) => tty::hvc0_device()
+            .cloned()
+            .map(|device| device as _)
+            .ok_or_else(|| Error::with_message(Errno::ENODEV, "the hvc0 device is not available")),
         _ => char::lookup(devid)
             .map(|device| Arc::new(char::CharFile::new(device)) as Arc<dyn Device>)
-            .ok_or(Error::with_message(
-                Errno::EINVAL,
-                "the device ID is invalid or unsupported",
-            )),
+            .ok_or_else(|| {
+                Error::with_message(Errno::EINVAL, "the device ID is invalid or unsupported")
+            }),
     }
 }

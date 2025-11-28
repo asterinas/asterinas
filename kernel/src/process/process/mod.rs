@@ -70,7 +70,9 @@ pub(super) fn init_on_each_cpu() {
 
 pub(super) fn init_in_first_process(ctx: &Context) {
     // FIXME: This should be done by the userspace init process.
-    (crate::device::tty::system_console().clone() as Arc<dyn Terminal>)
+    (crate::device::tty::SystemConsole::singleton()
+        .terminal()
+        .clone() as Arc<dyn Terminal>)
         .set_control(ctx.process.as_ref())
         .unwrap();
 }

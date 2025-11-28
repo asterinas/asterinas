@@ -32,11 +32,11 @@ mod line_discipline;
 mod n_tty;
 mod termio;
 
-pub use device::TtyDevice;
+pub use device::{SystemConsole, Tty0Device, TtyDevice};
 pub use driver::TtyDriver;
 pub(super) use flags::TtyFlags;
-pub(super) use n_tty::init;
-pub use n_tty::{iter_n_tty, system_console};
+pub(super) use n_tty::init_in_first_process;
+pub use n_tty::{hvc0_device, tty1_device};
 
 const IO_CAPACITY: usize = 4096;
 
