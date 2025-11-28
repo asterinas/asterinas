@@ -38,14 +38,14 @@ fn main() {
     let test_task = move || {
         use alloc::string::ToString;
 
-        use ostd::arch::qemu::{exit_qemu, QemuExitCode};
+        use ostd::power::{poweroff, ExitCode};
 
         match run_ktests(
             get_ktest_test_whitelist().map(|s| s.iter().map(|s| s.to_string())),
             get_ktest_crate_whitelist(),
         ) {
-            KtestResult::Ok => exit_qemu(QemuExitCode::Success),
-            KtestResult::Failed => exit_qemu(QemuExitCode::Failed),
+            KtestResult::Ok => poweroff(ExitCode::Success),
+            KtestResult::Failed => poweroff(ExitCode::Failure),
         };
     };
 

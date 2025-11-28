@@ -11,7 +11,7 @@ mod io;
 pub(crate) mod iommu;
 pub mod irq;
 pub(crate) mod mm;
-pub mod qemu;
+mod power;
 pub(crate) mod serial;
 pub(crate) mod task;
 mod timer;
@@ -61,6 +61,8 @@ pub(crate) unsafe fn late_init_on_bsp() {
     // 1. All the system device memory have been removed from the builder.
     // 2. RISC-V platforms do not have port I/O.
     unsafe { crate::io::init(io_mem_builder) };
+
+    power::init();
 }
 
 /// Initializes application-processor-specific state.

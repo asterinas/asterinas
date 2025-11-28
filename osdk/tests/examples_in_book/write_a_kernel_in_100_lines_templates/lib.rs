@@ -12,11 +12,11 @@ use alloc::sync::Arc;
 use alloc::vec;
 
 use ostd::arch::cpu::context::UserContext;
-use ostd::arch::qemu::{exit_qemu, QemuExitCode};
 use ostd::mm::{
     CachePolicy, FallibleVmRead, FrameAllocOptions, PageFlags, PageProperty, Vaddr, VmIo, VmSpace,
     VmWriter, PAGE_SIZE,
 };
+use ostd::power::{poweroff, ExitCode};
 use ostd::prelude::*;
 use ostd::task::{disable_preempt, Task, TaskOptions};
 use ostd::user::{ReturnReason, UserMode};
@@ -130,7 +130,7 @@ fn handle_syscall(user_context: &mut UserContext, vm_space: &VmSpace) {
             // Manipulate the user-space CPU registers safely.
             user_context.set_rax(buf_len);
         }
-        SYS_EXIT => exit_qemu(QemuExitCode::Success),
+        SYS_EXIT => poweroff(ExitCode::Success),
         _ => unimplemented!(),
     }
 }

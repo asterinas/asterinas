@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use ostd::power::{poweroff, restart, ExitCode};
+
 use super::SyscallReturn;
-use crate::{prelude::*, process::credentials::capabilities::CapSet};
+use crate::{
+    prelude::*,
+    process::{credentials::capabilities::CapSet, posix_thread::do_exit_group, TermStatus},
+};
 
 // Linux reboot magic constants.
 const LINUX_REBOOT_MAGIC1: u32 = 0xfee1dead;
@@ -55,14 +60,13 @@ pub fn sys_reboot(
 
     let cmd = RebootCmd::try_from(op)?;
 
+    // TODO: Perform any necessary cleanup before powering off or restarting.
     match cmd {
-        RebootCmd::Restart => {
-            // TODO: Implement restart functionality.
-            return_errno_with_message!(Errno::ENOSYS, "restart is not implemented yet");
-        }
-        RebootCmd::Halt | RebootCmd::PowerOff => {
-            // TODO: Perform any necessary cleanup before powering off.
-            ostd::arch::cpu::poweroff::poweroff();
-        }
+        RebootCmd::Restart => restart(ExitCode::Success),
+        RebootCmd::Halt | RebootCmd::PowerOff => poweroff(ExitCode::Success),
     }
+
+    // Terminate the current process if powering off fails. This follows the behavior of Linux.
+    do_exit_group(TermStatus::Exited(0));
+    Ok(SyscallReturn::Return(0))
 }

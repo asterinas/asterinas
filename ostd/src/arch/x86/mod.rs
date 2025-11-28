@@ -10,7 +10,7 @@ pub(crate) mod iommu;
 pub mod irq;
 pub mod kernel;
 pub(crate) mod mm;
-pub mod qemu;
+mod power;
 pub(crate) mod serial;
 pub(crate) mod task;
 mod timer;
@@ -65,8 +65,6 @@ pub(crate) unsafe fn late_init_on_bsp() {
     kernel::tsc::init_tsc_freq();
     timer::init_on_bsp();
 
-    kernel::acpi::init();
-
     // SAFETY: We're on the BSP and we're ready to boot all APs.
     unsafe { crate::boot::smp::boot_all_aps() };
 
@@ -83,6 +81,9 @@ pub(crate) unsafe fn late_init_on_bsp() {
     // 2. All the port I/O regions belonging to the system device are defined using the macros.
     // 3. `MAX_IO_PORT` defined in `crate::arch::io` is the maximum value specified by x86-64.
     unsafe { crate::io::init(io_mem_builder) };
+
+    kernel::acpi::init();
+    power::init();
 }
 
 /// Initializes application-processor-specific state.
