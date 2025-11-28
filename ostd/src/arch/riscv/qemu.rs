@@ -12,7 +12,7 @@ pub enum QemuExitCode {
 }
 
 /// Exit QEMU with the given exit code.
-pub fn exit_qemu(exit_code: QemuExitCode) -> ! {
+pub fn exit_qemu(exit_code: QemuExitCode) {
     log::debug!("exit qemu with exit code {exit_code:?}");
     let error_code = match exit_code {
         QemuExitCode::Success => sbi_rt::system_reset(sbi_rt::Shutdown, sbi_rt::NoReason),
@@ -23,8 +23,4 @@ pub fn exit_qemu(exit_code: QemuExitCode) -> ! {
         "SBI system_reset cannot shut down the underlying machine, error code: {:#?}",
         error_code
     );
-
-    loop {
-        riscv::asm::wfi();
-    }
 }

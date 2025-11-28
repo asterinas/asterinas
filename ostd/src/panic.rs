@@ -2,6 +2,8 @@
 
 //! Panic support.
 
+use core::sync::atomic::Ordering;
+
 use crate::{
     arch::qemu::{exit_qemu, QemuExitCode},
     early_println,
@@ -38,7 +40,16 @@ pub fn __ostd_panic_handler(info: &core::panic::PanicInfo) -> ! {
 
 /// Aborts the QEMU
 pub fn abort() -> ! {
+    use crate::{arch::irq::disable_local_and_halt, cpu::CpuSet, smp::inter_processor_call};
+
     exit_qemu(QemuExitCode::Failed);
+
+    // TODO: `inter_processor_call` may panic again (e.g., if IPIs have not been initialized or if
+    // there is an out-of-memory error). We should find a way to make it panic-free.
+    if !crate::IN_BOOTSTRAP_CONTEXT.load(Ordering::Relaxed) {
+        inter_processor_call(&CpuSet::new_full(), || disable_local_and_halt());
+    }
+    disable_local_and_halt();
 }
 
 #[cfg(not(target_arch = "loongarch64"))]
