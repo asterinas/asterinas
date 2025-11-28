@@ -12,6 +12,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN sh <(curl -L https://nixos.org/nix/install) --daemon --yes \
     && . /etc/profile.d/nix.sh \
     && nix-channel --add https://nixos.org/channels/nixos-25.05 nixpkgs \
+    && nix-channel --add https://nixos.org/channels/nixos-25.05 nixos \
     && nix-channel --update \
     && nix-env -iA nixpkgs.nixfmt \
     && nix-env -iA nixpkgs.nixos-install-tools \
