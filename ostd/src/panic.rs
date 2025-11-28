@@ -2,12 +2,7 @@
 
 //! Panic support.
 
-use core::sync::atomic::Ordering;
-
-use crate::{
-    arch::qemu::{exit_qemu, QemuExitCode},
-    early_println,
-};
+use crate::early_println;
 
 extern crate cfg_if;
 extern crate gimli;
@@ -38,18 +33,14 @@ pub fn __ostd_panic_handler(info: &core::panic::PanicInfo) -> ! {
     abort();
 }
 
-/// Aborts the QEMU
+/// Aborts the system.
+///
+/// This function will first attempt to power off the system. If that fails, it will halt all CPUs.
 pub fn abort() -> ! {
-    use crate::{arch::irq::disable_local_and_halt, cpu::CpuSet, smp::inter_processor_call};
-
-    exit_qemu(QemuExitCode::Failed);
-
-    // TODO: `inter_processor_call` may panic again (e.g., if IPIs have not been initialized or if
-    // there is an out-of-memory error). We should find a way to make it panic-free.
-    if !crate::IN_BOOTSTRAP_CONTEXT.load(Ordering::Relaxed) {
-        inter_processor_call(&CpuSet::new_full(), || disable_local_and_halt());
-    }
-    disable_local_and_halt();
+    // TODO: The main purpose of powering off here is to allow QEMU to exit. Otherwise, the CI may
+    // freeze after panicking. However, this is unnecessary and may prevent debugging on a real
+    // machine (i.e., the message will disappear afterward).
+    crate::power::poweroff(crate::power::ExitCode::Failure);
 }
 
 #[cfg(not(target_arch = "loongarch64"))]

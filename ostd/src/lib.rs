@@ -38,6 +38,7 @@ pub mod irq;
 pub mod logger;
 pub mod mm;
 pub mod panic;
+pub mod power;
 pub mod prelude;
 pub mod smp;
 pub mod sync;

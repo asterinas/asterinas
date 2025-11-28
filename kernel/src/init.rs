@@ -4,11 +4,7 @@
 
 use aster_cmdline::KCMDLINE;
 use component::InitStage;
-use ostd::{
-    arch::qemu::{exit_qemu, QemuExitCode},
-    cpu::CpuId,
-    util::id_set::Id,
-};
+use ostd::{cpu::CpuId, util::id_set::Id};
 use spin::once::Once;
 
 use crate::{
@@ -39,6 +35,7 @@ pub(super) fn main() {
 }
 
 fn init() {
+    crate::arch::init();
     crate::thread::init();
     crate::util::random::init();
     crate::driver::init();
@@ -108,13 +105,15 @@ fn bsp_idle_loop() {
         ostd::task::halt_cpu();
     }
 
-    // TODO: exit via qemu isa debug device should not be the only way.
-    let exit_code = if init_process.status().exit_code() == 0 {
-        QemuExitCode::Success
+    // According to the Linux implementation, we should panic once the init process exits.
+    // Currently, we choose to power off the machine for more flexibility in testing with QEMU.
+    let raw_exit_code = init_process.status().exit_code();
+    let exit_code = if raw_exit_code == 0 {
+        ostd::power::ExitCode::Success
     } else {
-        QemuExitCode::Failed
+        ostd::power::ExitCode::Failure
     };
-    exit_qemu(exit_code);
+    ostd::power::poweroff(exit_code);
 }
 
 fn ap_idle_loop() {
