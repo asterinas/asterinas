@@ -9,11 +9,13 @@ extern crate alloc;
 mod ansi_escape;
 mod console;
 mod console_input;
+mod dummy_console;
 mod framebuffer;
 mod pixel;
 
 use component::{init_component, ComponentInitError};
 pub use console::{FramebufferConsole, CONSOLE_NAME, FRAMEBUFFER_CONSOLE};
+pub use dummy_console::DummyFramebufferConsole;
 pub use framebuffer::{ColorMapEntry, FrameBuffer, FRAMEBUFFER, MAX_CMAP_SIZE};
 pub use pixel::{Pixel, PixelFormat, RenderedPixel};
 

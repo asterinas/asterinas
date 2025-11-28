@@ -22,6 +22,13 @@ FEATURES ?=
 NO_DEFAULT_FEATURES ?= 0
 COVERAGE ?= 0
 ENABLE_BASIC_TEST ?= false
+# Specify the primary system console (supported: hvc0, tty0).
+# - hvc0: The virtio-console terminal.
+# - tty0: The active virtual terminal (VT).
+# Asterinas will automatically fall back to tty0 if hvc0 is not available.
+# Note that currently the virtual terminal (tty0) can only work with
+# linux-efi-handover64 and linux-efi-pe64 boot protocol.
+CONSOLE ?= hvc0
 # End of global build options.
 
 # GDB debugging and profiling options.
@@ -57,6 +64,7 @@ CARGO_OSDK := ~/.cargo/bin/cargo-osdk
 CARGO_OSDK_COMMON_ARGS := --target-arch=$(OSDK_TARGET_ARCH)
 # The build arguments also apply to the `cargo osdk run` command.
 CARGO_OSDK_BUILD_ARGS := --kcmd-args="ostd.log_level=$(LOG_LEVEL)"
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="console=$(CONSOLE)"
 CARGO_OSDK_TEST_ARGS :=
 
 ifeq ($(AUTO_TEST), syscall)
