@@ -7,7 +7,7 @@
 use device_id::MajorId;
 use spin::Once;
 
-use super::char::{acquire_major, MajorIdOwner};
+use super::registry::char::{acquire_major, MajorIdOwner};
 
 #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
 pub mod tdxguest;
@@ -19,6 +19,6 @@ pub(super) fn init_in_first_kthread() {
 
     #[cfg(target_arch = "x86_64")]
     ostd::if_tdx_enabled!({
-        super::char::register(tdxguest::TdxGuest::new()).unwrap();
+        super::registry::char::register(tdxguest::TdxGuest::new()).unwrap();
     });
 }

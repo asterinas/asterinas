@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-mod char;
-mod disk;
 mod evdev;
 mod fb;
 mod mem;
 pub mod misc;
 mod pty;
+mod registry;
 mod shm;
 pub mod tty;
 
@@ -20,7 +19,7 @@ use crate::{
 };
 
 pub fn init_in_first_kthread() {
-    disk::init_in_first_kthread();
+    registry::init_in_first_kthread();
     mem::init_in_first_kthread();
     misc::init_in_first_kthread();
     evdev::init_in_first_kthread();
@@ -39,8 +38,7 @@ pub fn init_in_first_process(ctx: &Context) -> Result<()> {
     tty::init_in_first_process()?;
     pty::init_in_first_process(&fs_resolver, ctx)?;
     shm::init_in_first_process(&fs_resolver, ctx)?;
-    char::init_in_first_process(&fs_resolver)?;
-    disk::init_in_first_process(&fs_resolver)?;
+    registry::init_in_first_process(&fs_resolver)?;
 
     Ok(())
 }
@@ -48,7 +46,7 @@ pub fn init_in_first_process(ctx: &Context) -> Result<()> {
 /// Looks up a device according to the device ID.
 pub fn get_device(devid: DeviceId) -> Result<Arc<dyn Device>> {
     // TODO: Add support for looking up block devices.
-    char::lookup(devid).ok_or_else(|| {
+    registry::char::lookup(devid).ok_or_else(|| {
         Error::with_message(Errno::EINVAL, "the device ID is invalid or unsupported")
     })
 }
