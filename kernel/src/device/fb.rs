@@ -9,7 +9,7 @@ use ostd::{
     Pod,
 };
 
-use super::char;
+use super::registry::char;
 use crate::{
     current_userspace,
     events::IoEvents,

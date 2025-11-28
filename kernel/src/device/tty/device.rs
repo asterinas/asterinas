@@ -12,7 +12,7 @@ use spin::Once;
 use super::n_tty::tty1_device;
 use crate::{
     device::{
-        char,
+        registry::char,
         tty::{
             n_tty::{hvc0_device, VtDriver},
             Tty,

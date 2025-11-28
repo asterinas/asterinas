@@ -28,7 +28,7 @@ use file::{
 use ostd::sync::SpinLock;
 use spin::Once;
 
-use super::char::{acquire_major, register, unregister, MajorIdOwner};
+use super::registry::char::{acquire_major, register, unregister, MajorIdOwner};
 use crate::{
     fs::{
         device::{Device, DeviceType},

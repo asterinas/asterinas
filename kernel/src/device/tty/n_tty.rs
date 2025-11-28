@@ -10,7 +10,7 @@ use spin::Once;
 
 use super::{Tty, TtyDriver};
 use crate::{
-    device::char,
+    device::registry::char,
     events::IoEvents,
     fs::{
         inode_handle::FileIo,
