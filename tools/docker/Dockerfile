@@ -61,7 +61,6 @@ RUN apt update && apt-get install -y --no-install-recommends \
     iptables \
     iproute2 \
     jq \
-    libnuma1 \
     net-tools \
     openssh-server \
     parted \
