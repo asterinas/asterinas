@@ -21,9 +21,9 @@ FROM build-base AS build-qemu
 RUN apt update && apt-get install -y --no-install-recommends \
     libgcrypt-dev   `# optional build dependency` \
     libglib2.0-dev  `# build dependency` \
+    libnuma-dev     `# optional build dependency` \
     libpixman-1-dev `# build dependency` \
     libusb-dev      `# optional build dependency` \
-    libnuma-dev     `# optional build dependency` \
     meson \
     ninja-build
 RUN apt clean && rm -rf /var/lib/apt/lists/*
@@ -136,6 +136,7 @@ RUN apt update \
     gdb \
     grub-efi-amd64 \
     grub2-common \
+    libnuma1            `# running dependency for QEMU` \
     libpixman-1-dev     `# running dependency for QEMU` \
     mtools              `# used by grub-mkrescue` \
     xorriso \
