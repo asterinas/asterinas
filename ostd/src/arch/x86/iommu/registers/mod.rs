@@ -141,32 +141,6 @@ impl IommuRegisters {
         self.write_global_command(GlobalCommand::IRE, true);
         while !self.read_global_status().contains(GlobalStatus::IRES) {}
 
-        // Invalidate interrupt cache
-        if self.read_global_status().contains(GlobalStatus::QIES) {
-            let mut queue = QUEUE.get().unwrap().lock();
-
-            // Construct global invalidation of interrupt cache and invalidation wait.
-            queue.append_descriptor(InterruptEntryCache::global_invalidation().0);
-            let tail = queue.tail();
-            self.invalidate
-                .queue_tail
-                .as_mut_ptr()
-                .write((tail << 4) as u64);
-            while (self.invalidate.queue_head.as_ptr().read() >> 4) + 1 == tail as u64 {}
-
-            // We need to set the interrupt flag so that the `Invalidation Completion Status Register` can report the completion status.
-            queue.append_descriptor(InvalidationWait::with_interrupt_flag().0);
-            self.invalidate
-                .queue_tail
-                .as_mut_ptr()
-                .write((queue.tail() << 4) as u64);
-
-            // Wait for completion
-            while self.invalidate.completion_status.as_ptr().read() == 0 {}
-        } else {
-            self.global_invalidation()
-        }
-
         // Disable Compatibility format interrupts
         if self.read_global_status().contains(GlobalStatus::CFIS) {
             self.write_global_command(GlobalCommand::CFI, false);
@@ -213,9 +187,44 @@ impl IommuRegisters {
 
         self.invalidate.queue_addr.as_mut_ptr().write(write_value);
 
-        // Enable Queued invalidation
+        // Enable queued invalidation
         self.write_global_command(GlobalCommand::QIE, true);
         while !self.read_global_status().contains(GlobalStatus::QIES) {}
+
+        // Clear the Invalidation Completion Status Register
+        self.invalidate.completion_status.as_mut_ptr().write(1);
+    }
+
+    // Invalidates Interrupt-remapping cache.
+    pub(super) fn invalidate_interrupt_cache(&mut self) {
+        if !self.read_global_status().contains(GlobalStatus::QIES) {
+            self.global_invalidation();
+            return;
+        }
+
+        let mut queue = QUEUE.get().unwrap().lock();
+
+        // Currently, we don't support asynchronous processing in the queue. Therefore, when we
+        // lock the queue, we know that it is empty and that the Invalidation Completion Status
+        // Register has been cleared.
+
+        // Construct an Interrupt Entry Cache Invalidate Descriptor.
+        queue.append_descriptor(InterruptEntryCache::global_invalidation().0);
+        // Construct an Invalidation Wait Descriptor. We need to set the interrupt flag so that the
+        // Invalidation Completion Status Register can report the completion status.
+        queue.append_descriptor(InvalidationWait::with_interrupt_flag().0);
+
+        // Update the queue tail.
+        let tail = queue.tail();
+        self.invalidate
+            .queue_tail
+            .as_mut_ptr()
+            .write((tail << 4) as u64);
+
+        // Wait for completion.
+        while self.invalidate.completion_status.as_ptr().read() == 0 {}
+        // Clear the Invalidation Completion Status Register.
+        self.invalidate.completion_status.as_mut_ptr().write(1);
     }
 
     fn global_invalidation(&mut self) {

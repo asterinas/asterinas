@@ -13,7 +13,7 @@ use super::ExtendedCapability;
 
 #[derive(Debug)]
 pub struct InvalidationRegisters {
-    pub(super) queue_head: VolatileRef<'static, u64, ReadOnly>,
+    pub(super) _queue_head: VolatileRef<'static, u64, ReadOnly>,
     pub(super) queue_tail: VolatileRef<'static, u64, ReadWrite>,
     pub(super) queue_addr: VolatileRef<'static, u64, ReadWrite>,
 
@@ -51,7 +51,7 @@ impl InvalidationRegisters {
         // SAFETY: The safety is upheld by the caller and the correctness of the capability value.
         unsafe {
             Self {
-                queue_head: VolatileRef::new_read_only(base.add(0x80).cast::<u64>()),
+                _queue_head: VolatileRef::new_read_only(base.add(0x80).cast::<u64>()),
                 queue_tail: VolatileRef::new(base.add(0x88).cast::<u64>()),
                 queue_addr: VolatileRef::new(base.add(0x90).cast::<u64>()),
                 completion_status: VolatileRef::new(base.add(0x9C).cast::<u32>()),
