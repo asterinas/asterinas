@@ -83,7 +83,6 @@ pub(super) fn init() -> Result<(), I8042ControllerError> {
     controller.wait_and_send_command(Command::EnableFirstPort)?;
     if let Err(err) = super::keyboard::init(&mut controller) {
         log::warn!("i8042 keyboard initialization failed: {:?}", err);
-        controller.wait_and_send_command(Command::DisableFirstPort)?;
     } else {
         config.remove(Configuration::FIRST_PORT_CLOCK_DISABLED);
         config.insert(
@@ -91,17 +90,22 @@ pub(super) fn init() -> Result<(), I8042ControllerError> {
                 | Configuration::FIRST_PORT_TRANSLATION_ENABLED,
         );
     }
+    // Temporarily disable the first PS/2 port to avoid interference.
+    controller.wait_and_send_command(Command::DisableFirstPort)?;
+    controller.flush_output_buffer();
 
     // Enable the second PS/2 port (mouse) if it exists.
     if has_second_port {
         controller.wait_and_send_command(Command::EnableSecondPort)?;
         if let Err(err) = super::mouse::init(&mut controller) {
             log::warn!("i8042 mouse initialization failed: {:?}", err);
-            controller.wait_and_send_command(Command::DisableSecondPort)?;
         } else {
             config.remove(Configuration::SECOND_PORT_CLOCK_DISABLED);
             config.insert(Configuration::SECOND_PORT_INTERRUPT_ENABLED);
         }
+        // Temporarily disable the second PS/2 port to avoid interference.
+        controller.wait_and_send_command(Command::DisableFirstPort)?;
+        controller.flush_output_buffer();
     }
 
     I8042_CONTROLLER.call_once(|| SpinLock::new(controller));
