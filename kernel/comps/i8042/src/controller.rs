@@ -13,14 +13,6 @@ use ostd::{
 };
 use spin::Once;
 
-pub(super) const PS2_CMD_RESET: u8 = 0xFF;
-pub(super) const PS2_BAT_OK: u8 = 0xAA;
-
-pub(super) const PS2_ACK: u8 = 0xFA;
-pub(super) const PS2_NAK: u8 = 0xFE;
-pub(super) const PS2_ERR: u8 = 0xFC;
-pub(super) const PS2_RESULTS: &[u8] = &[PS2_ACK, PS2_NAK, PS2_ERR];
-
 /// The `I8042Controller` singleton.
 pub(super) static I8042_CONTROLLER: Once<SpinLock<I8042Controller, LocalIrqDisabled>> = Once::new();
 

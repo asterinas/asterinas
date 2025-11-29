@@ -2,7 +2,11 @@
 
 //! The i8042 mouse driver.
 
-use alloc::{string::String, sync::Arc, vec::Vec};
+use alloc::{
+    string::{String, ToString},
+    sync::Arc,
+    vec::Vec,
+};
 
 use aster_input::{
     event_type_codes::{KeyCode, KeyStatus, RelCode, SynEvent},
@@ -18,10 +22,10 @@ use ostd::{
 };
 use spin::Once;
 
-use super::controller::{
-    I8042Controller, I8042ControllerError, I8042_CONTROLLER, PS2_ACK, PS2_BAT_OK, PS2_CMD_RESET,
+use crate::{
+    controller::{I8042Controller, I8042ControllerError, I8042_CONTROLLER},
+    ps2::{Command, CommandCtx},
 };
-use crate::{alloc::string::ToString, controller::PS2_RESULTS};
 
 /// IRQ line for i8042 mouse.
 static IRQ_LINE: Once<MappedIrqLine> = Once::new();
@@ -36,26 +40,14 @@ const ISA_INTR_NUM: u8 = 12;
 static PACKET_STATE: SpinLock<PacketState, LocalIrqDisabled> = SpinLock::new(PacketState::new());
 
 pub(super) fn init(controller: &mut I8042Controller) -> Result<(), I8042ControllerError> {
-    // Reset the mouse device by sending `PS2_CMD_RESET` (reset command, supported by all PS/2
-    // devices) to port 2 and waiting for a response.
-    controller.write_to_second_port(PS2_CMD_RESET)?;
-
-    // The response should be `PS2_ACK` and `PS2_BAT_OK`, followed by the device PS/2 ID.
-    if controller.wait_for_specific_data(PS2_RESULTS)? != PS2_ACK {
-        return Err(I8042ControllerError::DeviceResetFailed);
-    }
-    // The reset command may take some time to finish.
-    if controller.wait_long_and_recv_data()? != PS2_BAT_OK {
-        return Err(I8042ControllerError::DeviceResetFailed);
-    }
-    // See <https://wiki.osdev.org/I8042_PS/2_Controller#Detecting_PS/2_Device_Types> for a list of IDs.
-    let device_id = controller.wait_and_recv_data()?;
-    log::info!("PS/2 mouse device ID: 0x{:02X}", device_id);
-
     let mut init_ctx = InitCtx(controller);
 
+    let device_id = init_ctx
+        .reset()?
+        .ok_or(I8042ControllerError::DeviceUnknown)?;
+    log::info!("PS/2 mouse device ID: 0x{:02X}", device_id);
+
     // Determine the mouse's type.
-    // Reference: <https://wiki.osdev.org/Mouse_Input>
     let mut mouse_type =
         MouseType::from_device_id(device_id).ok_or(I8042ControllerError::DeviceUnknown)?;
     if mouse_type == MouseType::Standard && init_ctx.enable_intellimouse().is_ok() {
@@ -125,60 +117,20 @@ impl InitCtx<'_> {
         self.command::<cmd::EnableDataReporting>(&[], &mut buf)?;
         Ok(())
     }
-
-    fn command<C: MouseCommand>(
-        &mut self,
-        args: &[u8],
-        out: &mut [u8],
-    ) -> Result<(), I8042ControllerError> {
-        assert_eq!(args.len(), C::DATA_LEN);
-        assert_eq!(out.len(), C::RES_LEN);
-
-        self.0.write_to_second_port(C::CMD_BYTE)?;
-        if self.0.wait_for_specific_data(PS2_RESULTS)? != PS2_ACK {
-            return Err(I8042ControllerError::DeviceResetFailed);
-        }
-
-        for &arg in args {
-            self.0.write_to_second_port(arg)?;
-            if self.0.wait_for_specific_data(PS2_RESULTS)? != PS2_ACK {
-                return Err(I8042ControllerError::DeviceResetFailed);
-            }
-        }
-
-        for slot in out.iter_mut() {
-            *slot = self.0.wait_and_recv_data()?;
-        }
-
-        Ok(())
-    }
 }
 
-trait MouseCommand {
-    const CMD_BYTE: u8;
-    const DATA_LEN: usize;
-    const RES_LEN: usize;
+impl CommandCtx for InitCtx<'_> {
+    fn controller(&mut self) -> &mut I8042Controller {
+        self.0
+    }
+
+    fn write_to_port(&mut self, data: u8) -> Result<(), I8042ControllerError> {
+        self.0.write_to_second_port(data)
+    }
 }
 
 mod cmd {
-    use super::MouseCommand;
-
-    macro_rules! define_commands {
-        (
-            $(
-                $name:ident, $cmd:literal, fn([u8; $dlen:literal]) -> [u8; $rlen:literal];
-            )*
-        ) => {
-            $(
-                pub(super) struct $name;
-                impl MouseCommand for $name {
-                    const CMD_BYTE: u8 = $cmd;
-                    const DATA_LEN: usize = $dlen;
-                    const RES_LEN: usize = $rlen;
-                }
-            )*
-        };
-    }
+    use crate::ps2::{define_commands, Command};
 
     define_commands! {
         GetDeviceId, 0xF2, fn([u8; 0]) -> [u8; 1];
@@ -292,6 +244,7 @@ impl MouseType {
     const PACKET_LEN_MAX: usize = 4;
 
     fn from_device_id(device_id: u8) -> Option<Self> {
+        // Reference: <https://wiki.osdev.org/Mouse_Input#MouseID_Byte>
         const DEVICE_ID_STANDARD_MOUSE: u8 = 0x00;
         const DEVICE_ID_INTELLIMOUSE: u8 = 0x03;
         const DEVICE_ID_INTELLIMOUSE_EXPLORER: u8 = 0x04;

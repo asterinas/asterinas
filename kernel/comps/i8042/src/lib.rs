@@ -12,6 +12,7 @@ use component::{init_component, ComponentInitError};
 mod controller;
 mod keyboard;
 mod mouse;
+mod ps2;
 
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {
