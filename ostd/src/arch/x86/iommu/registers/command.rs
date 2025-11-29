@@ -7,7 +7,7 @@ bitflags! {
     pub struct GlobalCommand: u32{
         /// Compatibility Format Interrupt, only valid if interrupt-remapping is supported.
         ///
-        /// Interrupt remapping will block compatibility format interrupts if set to 0.
+        /// Interrupt remapping will block Compatibility format interrupts if set to 0.
         /// Otherwise these interrupts will bypass interrupt remapping.
         const CFI =         1 << 23;
         /// Set Interrupt Remap Table Pointer, only valid if interrupt-remapping is supported.
