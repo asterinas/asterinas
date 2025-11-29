@@ -2,7 +2,10 @@
 
 //! The i8042 keyboard driver.
 
-use alloc::{string::String, sync::Arc};
+use alloc::{
+    string::{String, ToString},
+    sync::Arc,
+};
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use aster_input::{
@@ -18,10 +21,10 @@ use ostd::{
 };
 use spin::Once;
 
-use super::controller::{
-    I8042Controller, I8042ControllerError, I8042_CONTROLLER, PS2_ACK, PS2_BAT_OK, PS2_CMD_RESET,
+use crate::{
+    controller::{I8042Controller, I8042ControllerError, I8042_CONTROLLER},
+    ps2::{Command, CommandCtx},
 };
-use crate::{alloc::string::ToString, controller::PS2_RESULTS};
 
 /// IRQ line for i8042 keyboard.
 static IRQ_LINE: Once<MappedIrqLine> = Once::new();
@@ -33,25 +36,19 @@ static REGISTERED_DEVICE: Once<RegisteredInputDevice> = Once::new();
 const ISA_INTR_NUM: u8 = 1;
 
 pub(super) fn init(controller: &mut I8042Controller) -> Result<(), I8042ControllerError> {
-    // Reset the keyboard device by sending `PS2_CMD_RESET` (reset command, supported by all PS/2
-    // devices) to port 1 and waiting for a response.
-    controller.wait_and_send_data(PS2_CMD_RESET)?;
+    // Reference: <https://elixir.bootlin.com/linux/v6.17.9/source/drivers/input/serio/libps2.c#L184>
+    const DEVICE_ID_REGULAR_KEYBOARD: u8 = 0xAB;
 
-    // The response should be `PS2_ACK` and `PS2_BAT_OK`, followed by the device PS/2 ID.
-    if controller.wait_for_specific_data(PS2_RESULTS)? != PS2_ACK {
-        return Err(I8042ControllerError::DeviceResetFailed);
-    }
-    // The reset command may take some time to finish.
-    if controller.wait_long_and_recv_data()? != PS2_BAT_OK {
-        return Err(I8042ControllerError::DeviceResetFailed);
-    }
-    // See <https://wiki.osdev.org/I8042_PS/2_Controller#Detecting_PS/2_Device_Types> for a list of IDs.
-    let mut iter = core::iter::from_fn(|| controller.wait_and_recv_data().ok());
-    match (iter.next(), iter.next()) {
-        // Ancient AT keyboard
-        (None, None) => (),
-        // Other devices, including other kinds of keyboards (TODO: Support other kinds of keyboards)
-        _ => return Err(I8042ControllerError::DeviceUnknown),
+    let mut init_ctx = InitCtx(controller);
+
+    init_ctx.reset()?;
+
+    // Determine the keyboard's type.
+    let (device_id, _) = init_ctx.get_device_id()?;
+    log::info!("PS/2 keyboard device ID: 0x{:02X}", device_id);
+    if device_id != DEVICE_ID_REGULAR_KEYBOARD {
+        // TODO: Support other kinds of keyboards.
+        return Err(I8042ControllerError::DeviceUnknown);
     }
 
     let mut irq_line = IrqLine::alloc()
@@ -71,6 +68,34 @@ pub(super) fn init(controller: &mut I8042Controller) -> Result<(), I8042Controll
     REGISTERED_DEVICE.call_once(|| registered_device);
 
     Ok(())
+}
+
+struct InitCtx<'a>(&'a mut I8042Controller);
+
+impl InitCtx<'_> {
+    fn get_device_id(&mut self) -> Result<(u8, u8), I8042ControllerError> {
+        let mut buf = [0u8; cmd::GetDeviceId::RES_LEN];
+        self.command::<cmd::GetDeviceId>(&[], &mut buf)?;
+        Ok((buf[0], buf[1]))
+    }
+}
+
+impl CommandCtx for InitCtx<'_> {
+    fn controller(&mut self) -> &mut I8042Controller {
+        self.0
+    }
+
+    fn write_to_port(&mut self, data: u8) -> Result<(), I8042ControllerError> {
+        self.0.wait_and_send_data(data)
+    }
+}
+
+mod cmd {
+    use crate::ps2::{define_commands, Command};
+
+    define_commands! {
+        GetDeviceId, 0xF2, fn([u8; 0]) -> [u8; 2];
+    }
 }
 
 #[derive(Debug)]
@@ -141,10 +166,6 @@ impl InputDevice for I8042Keyboard {
 }
 
 fn handle_keyboard_input(_trap_frame: &TrapFrame) {
-    if !I8042_CONTROLLER.is_completed() {
-        return;
-    }
-
     let Some(scancode_event) = ScancodeInfo::read() else {
         return;
     };
@@ -212,14 +233,14 @@ impl ScancodeInfo {
     fn read() -> Option<Self> {
         static EXTENDED_KEY: AtomicBool = AtomicBool::new(false);
 
-        let Some(data) = I8042_CONTROLLER.get().unwrap().lock().receive_data() else {
-            log::warn!("i8042 keyboard has no input data");
+        let Some(data) = I8042_CONTROLLER.get()?.lock().receive_data() else {
+            log::warn!("PS/2 keyboard has no input data");
             return None;
         };
 
         let code = ScanCode(data);
         if code.has_error() {
-            log::warn!("i8042 keyboard key detection error or internal buffer overrun");
+            log::warn!("PS/2 keyboard key detection error or internal buffer overrun");
             return None;
         }
 
