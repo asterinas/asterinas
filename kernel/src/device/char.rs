@@ -21,7 +21,7 @@ pub fn register(device: Arc<dyn Device>) -> Result<()> {
     let mut registry = DEVICE_REGISTRY.lock();
     let id = device.id().to_raw();
     if registry.contains_key(&id) {
-        return_errno_with_message!(Errno::EEXIST, "char device already exists");
+        return_errno_with_message!(Errno::EEXIST, "the char device already exists");
     }
     registry.insert(id, device);
 
@@ -33,10 +33,7 @@ pub fn unregister(id: DeviceId) -> Result<Arc<dyn Device>> {
     DEVICE_REGISTRY
         .lock()
         .remove(&id.to_raw())
-        .ok_or(Error::with_message(
-            Errno::ENOENT,
-            "char device does not exist",
-        ))
+        .ok_or_else(|| Error::with_message(Errno::ENOENT, "the char device does not exist"))
 }
 
 /// Collects all char devices.
@@ -67,13 +64,13 @@ static MAJORS: Mutex<BTreeSet<u16>> = Mutex::new(BTreeSet::new());
 /// Until the object is dropped, this major ID cannot be acquired via `acquire_major` or `allocate_major` again.
 pub fn acquire_major(major: MajorId) -> Result<MajorIdOwner> {
     if major.get() > MAX_MAJOR {
-        return_errno_with_message!(Errno::EINVAL, "invalid major ID");
+        return_errno_with_message!(Errno::EINVAL, "the major ID is invalid");
     }
 
     if MAJORS.lock().insert(major.get()) {
         Ok(MajorIdOwner(major))
     } else {
-        return_errno_with_message!(Errno::EEXIST, "major ID already acquired")
+        return_errno_with_message!(Errno::EEXIST, "the major ID has already been acquired")
     }
 }
 
@@ -94,7 +91,7 @@ pub fn allocate_major() -> Result<MajorIdOwner> {
         }
     }
 
-    return_errno_with_message!(Errno::ENOSPC, "no more major IDs available");
+    return_errno_with_message!(Errno::ENOSPC, "no more major IDs are available");
 }
 
 /// An owned major ID.
