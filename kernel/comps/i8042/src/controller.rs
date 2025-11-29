@@ -14,8 +14,12 @@ use ostd::{
 use spin::Once;
 
 pub(super) const PS2_CMD_RESET: u8 = 0xFF;
-pub(super) const PS2_ACK: u8 = 0xFA;
 pub(super) const PS2_BAT_OK: u8 = 0xAA;
+
+pub(super) const PS2_ACK: u8 = 0xFA;
+pub(super) const PS2_NAK: u8 = 0xFE;
+pub(super) const PS2_ERR: u8 = 0xFC;
+pub(super) const PS2_RESULTS: &[u8] = &[PS2_ACK, PS2_NAK, PS2_ERR];
 
 /// The `I8042Controller` singleton.
 pub(super) static I8042_CONTROLLER: Once<SpinLock<I8042Controller, LocalIrqDisabled>> = Once::new();
@@ -124,9 +128,6 @@ pub(super) struct I8042Controller {
     status_or_command_port: IoPort<u8, ReadWriteAccess>,
 }
 
-/// The maximum number of times to wait for the i8042 controller to be ready.
-const MAX_WAITING_COUNT: usize = 64;
-
 impl I8042Controller {
     fn new() -> Result<Self, I8042ControllerError> {
         const DATA_PORT_ADDR: u16 = 0x60;
@@ -162,13 +163,8 @@ impl I8042Controller {
     }
 
     fn wait_and_send_command(&mut self, command: Command) -> Result<(), I8042ControllerError> {
-        for _ in 0..MAX_WAITING_COUNT {
-            if self.send_command(command).is_ok() {
-                return Ok(());
-            }
-            core::hint::spin_loop();
-        }
-        Err(I8042ControllerError::OutputBusy)
+        spin_wait_until(Timeout::Short, || self.send_command(command).ok())
+            .ok_or(I8042ControllerError::OutputBusy)
     }
 
     fn send_command(&mut self, command: Command) -> Result<(), I8042ControllerError> {
@@ -189,13 +185,8 @@ impl I8042Controller {
     }
 
     pub(super) fn wait_and_send_data(&mut self, data: u8) -> Result<(), I8042ControllerError> {
-        for _ in 0..MAX_WAITING_COUNT {
-            if self.send_data(data).is_ok() {
-                return Ok(());
-            }
-            core::hint::spin_loop();
-        }
-        Err(I8042ControllerError::OutputBusy)
+        spin_wait_until(Timeout::Short, || self.send_data(data).ok())
+            .ok_or(I8042ControllerError::OutputBusy)
     }
 
     pub(super) fn write_to_second_port(&mut self, data: u8) -> Result<(), I8042ControllerError> {
@@ -217,13 +208,28 @@ impl I8042Controller {
     }
 
     pub(super) fn wait_and_recv_data(&mut self) -> Result<u8, I8042ControllerError> {
-        for _ in 0..MAX_WAITING_COUNT {
-            if let Some(data) = self.receive_data() {
-                return Ok(data);
-            }
-            core::hint::spin_loop();
-        }
-        Err(I8042ControllerError::NoInput)
+        spin_wait_until(Timeout::Short, || self.receive_data()).ok_or(I8042ControllerError::NoInput)
+    }
+
+    /// Waits a long time for the data to be received.
+    ///
+    /// This is usually used when performing a reset that takes a long time to complete.
+    pub(super) fn wait_long_and_recv_data(&mut self) -> Result<u8, I8042ControllerError> {
+        spin_wait_until(Timeout::Long, || self.receive_data()).ok_or(I8042ControllerError::NoInput)
+    }
+
+    /// Waits for the specified data to be received.
+    ///
+    /// This is typically used when waiting for an acknowledgment of a command. Any garbage data
+    /// before the acknowledgment is ignored.
+    pub(super) fn wait_for_specific_data(
+        &mut self,
+        data: &[u8],
+    ) -> Result<u8, I8042ControllerError> {
+        spin_wait_until(Timeout::Short, || {
+            self.receive_data().filter(|val| data.contains(val))
+        })
+        .ok_or(I8042ControllerError::NoInput)
     }
 
     pub(super) fn receive_data(&mut self) -> Option<u8> {
@@ -240,6 +246,47 @@ impl I8042Controller {
 
     fn flush_output_buffer(&mut self) {
         while self.receive_data().is_some() {}
+    }
+}
+
+/// Timeout in milliseconds for sending commands or receiving data.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.17.9/source/drivers/input/serio/libps2.c#L344>
+#[repr(u16)]
+#[derive(Debug, Clone, Copy)]
+enum Timeout {
+    /// Short timeout for normal commands (500 ms).
+    Short = 500,
+    /// Long timeout for the reset command (4000 ms).
+    Long = 4000,
+}
+
+/// Spins and waits until the timeout occurs or `f` returns `Some(_)`.
+//
+// TODO: The timeout is relatively large, up to several seconds. Therefore, spinning here is not
+// appropriate. The code needs to be refactored to use asynchronous interrupts.
+fn spin_wait_until<F, R>(timeout: Timeout, mut f: F) -> Option<R>
+where
+    F: FnMut() -> Option<R>,
+{
+    use ostd::arch::{read_tsc, tsc_freq};
+
+    const MSEC_PER_SEC: u64 = 1000;
+
+    if let Some(res) = f() {
+        return Some(res);
+    }
+
+    let current = read_tsc();
+    let distance = tsc_freq() / MSEC_PER_SEC * (timeout as u16 as u64);
+    loop {
+        if let Some(res) = f() {
+            return Some(res);
+        }
+        if read_tsc().wrapping_sub(current) >= distance {
+            return None;
+        }
+        core::hint::spin_loop();
     }
 }
 
