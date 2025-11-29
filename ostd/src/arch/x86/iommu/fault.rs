@@ -120,11 +120,13 @@ impl FaultRecording {
         }
     }
 
-    pub fn address_type(&self) -> FaultAddressType {
-        match self.0 & (3 << 124) {
-            0 => FaultAddressType::UntranslatedRequest,
-            1 => FaultAddressType::TranslationRequest,
-            2 => FaultAddressType::TranslatedRequest,
+    pub fn address_type(&self) -> Option<FaultAddressType> {
+        // bit 125:124
+        match (self.0 >> 124) & 3 {
+            0 => Some(FaultAddressType::UntranslatedRequest),
+            1 => Some(FaultAddressType::TranslationRequest),
+            2 => Some(FaultAddressType::TranslatedRequest),
+            3 => None,
             _ => unreachable!(),
         }
     }
@@ -134,14 +136,17 @@ impl FaultRecording {
         ((self.0 & 0xFFFF_0000_0000_0000_0000) >> 64) as u16
     }
 
-    /// If fault reason is one of the address translation fault conditions, this field contains bits 63:12
-    /// of the page address in the faulted request.
+    /// Returns the fault information, the meaning of which depends on the fault reason.
     ///
-    /// If fault reason is interrupt-remapping fault conditions other than fault reash 0x25, bits 63:48
-    /// indicate the interrupt index computed for the faulted interrupt request, and bits 47:12 are cleared.
+    /// If the fault reason is one of the address translation fault conditions, this field contains
+    /// bits 63:12 of the page address of the fault request.
     ///
-    /// If fault reason is interrupt-remapping fault conditions of blocked compatibility mode interrupt (fault reason 0x25),
-    /// this field is undefined.
+    /// If the fault reason is one of the interrupt-remapping fault conditions other than fault
+    /// reason 0x25, bits 63:48 indicate the interrupt index of the fault request and bits 47:12
+    /// are cleared.
+    ///
+    /// If the fault reason is the interrupt-remapping fault condition caused by a blocked
+    /// Compatibility format interrupt (fault reason 0x25), this field is undefined.
     pub fn fault_info(&self) -> u64 {
         // bit 63:12
         ((self.0 & 0xFFFF_FFFF_FFFF_F000) >> 12) as u64
@@ -155,7 +160,7 @@ impl FaultRecording {
 
     pub fn fault_reason(&self) -> u8 {
         // bit 103:96
-        ((self.0 & 0xF_0000_0000_0000_0000_0000_0000) >> 96) as u8
+        ((self.0 & 0xFF_0000_0000_0000_0000_0000_0000) >> 96) as u8
     }
 
     #[expect(dead_code)]
