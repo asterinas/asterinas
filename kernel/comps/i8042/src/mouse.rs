@@ -21,7 +21,7 @@ use spin::Once;
 use super::controller::{
     I8042Controller, I8042ControllerError, I8042_CONTROLLER, PS2_ACK, PS2_BAT_OK, PS2_CMD_RESET,
 };
-use crate::alloc::string::ToString;
+use crate::{alloc::string::ToString, controller::PS2_RESULTS};
 
 /// IRQ line for i8042 mouse.
 static IRQ_LINE: Once<MappedIrqLine> = Once::new();
@@ -36,18 +36,19 @@ const ISA_INTR_NUM: u8 = 12;
 static PACKET_STATE: SpinLock<PacketState, LocalIrqDisabled> = SpinLock::new(PacketState::new());
 
 pub(super) fn init(controller: &mut I8042Controller) -> Result<(), I8042ControllerError> {
-    // Reset mouse device by sending `PS2_CMD_RESET` to the second PS/2 port.
+    // Reset the mouse device by sending `PS2_CMD_RESET` (reset command, supported by all PS/2
+    // devices) to port 2 and waiting for a response.
     controller.write_to_second_port(PS2_CMD_RESET)?;
 
     // The response should be `PS2_ACK` and `PS2_BAT_OK`, followed by the device PS/2 ID.
-    if controller.wait_and_recv_data()? != PS2_ACK {
+    if controller.wait_for_specific_data(PS2_RESULTS)? != PS2_ACK {
         return Err(I8042ControllerError::DeviceResetFailed);
     }
-    // The reset command may take some time to finish. Try again a few times.
-    if (0..5).find_map(|_| controller.wait_and_recv_data().ok()) != Some(PS2_BAT_OK) {
+    // The reset command may take some time to finish.
+    if controller.wait_long_and_recv_data()? != PS2_BAT_OK {
         return Err(I8042ControllerError::DeviceResetFailed);
     }
-
+    // See <https://wiki.osdev.org/I8042_PS/2_Controller#Detecting_PS/2_Device_Types> for a list of IDs.
     let device_id = controller.wait_and_recv_data()?;
     log::info!("PS/2 mouse device ID: 0x{:02X}", device_id);
 
@@ -134,13 +135,13 @@ impl InitCtx<'_> {
         assert_eq!(out.len(), C::RES_LEN);
 
         self.0.write_to_second_port(C::CMD_BYTE)?;
-        if self.0.wait_and_recv_data()? != PS2_ACK {
+        if self.0.wait_for_specific_data(PS2_RESULTS)? != PS2_ACK {
             return Err(I8042ControllerError::DeviceResetFailed);
         }
 
         for &arg in args {
             self.0.write_to_second_port(arg)?;
-            if self.0.wait_and_recv_data()? != PS2_ACK {
+            if self.0.wait_for_specific_data(PS2_RESULTS)? != PS2_ACK {
                 return Err(I8042ControllerError::DeviceResetFailed);
             }
         }
