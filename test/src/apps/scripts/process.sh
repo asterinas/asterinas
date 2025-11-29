@@ -44,6 +44,7 @@ process/group_session
 process/job_control
 process/pidfd
 process/wait4
+procfs/dentry_cache
 procfs/pid_mem
 pseudofs/pseudo_inode
 pseudofs/memfd_access_err
