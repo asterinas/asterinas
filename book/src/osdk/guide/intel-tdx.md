@@ -50,7 +50,7 @@ For example, you can append the following TDX-specific scheme to your `OSDK.toml
 supported_archs = ["x86_64"]
 boot.method = "grub-qcow2"
 grub.mkrescue_path = "~/tdx-tools/grub"
-grub.protocol = "linux"
+grub.boot_protocol = "linux"
 qemu.args = """\
     -accel kvm \
     -m 8G \

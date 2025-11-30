@@ -44,7 +44,7 @@ init_args = ["sh", "-l"]                    # <11>
 initramfs = "path/to/it"                    # <12>
 [grub]                                      # <13>  
 mkrescue_path = "path/to/it"                # <14>
-protocol = "multiboot2"                     # <15> 
+boot_protocol = "multiboot2"                # <15> 
 display_grub_menu = false                   # <16>
 [qemu]                                      # <17>
 path = "path/to/it"                         # <18>
