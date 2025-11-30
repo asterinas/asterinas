@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use id_alloc::IdAlloc;
 use ostd::{const_assert, mm::io_util::HasVmReaderWriter};
 
 use super::{
@@ -10,6 +9,7 @@ use super::{
     prelude::*,
     super_block::SuperBlock,
 };
+use crate::fs::utils::IdBitmap;
 
 /// Blocks are clustered into block groups in order to reduce fragmentation and minimise
 /// the amount of head seeking when reading a large amount of consecutive data.
@@ -49,13 +49,13 @@ impl BlockGroup {
                     GroupDescriptor::from(raw_descriptor)
                 };
 
-                let get_bitmap = |bid: Ext2Bid, capacity: usize| -> Result<IdAlloc> {
+                let get_bitmap = |bid: Ext2Bid, capacity: usize| -> Result<IdBitmap> {
                     if capacity > BLOCK_SIZE * 8 {
                         return_errno_with_message!(Errno::EINVAL, "bad bitmap");
                     }
                     let mut buf = vec![0u8; BLOCK_SIZE];
                     block_device.read_bytes(bid as usize * BLOCK_SIZE, &mut buf)?;
-                    Ok(IdAlloc::from_bytes_with_capacity(&buf, capacity))
+                    Ok(IdBitmap::from_buf(buf.into_boxed_slice(), capacity as u16))
                 };
 
                 let block_bitmap = {
@@ -366,13 +366,13 @@ struct Inner {
 #[derive(Clone, Debug)]
 struct GroupMetadata {
     descriptor: GroupDescriptor,
-    block_bitmap: IdAlloc,
-    inode_bitmap: IdAlloc,
+    block_bitmap: IdBitmap,
+    inode_bitmap: IdBitmap,
 }
 
 impl GroupMetadata {
     pub fn is_inode_allocated(&self, inode_idx: u32) -> bool {
-        self.inode_bitmap.is_allocated(inode_idx as usize)
+        self.inode_bitmap.is_allocated(inode_idx as u16)
     }
 
     pub fn alloc_inode(&mut self, is_dir: bool) -> Option<u32> {
@@ -385,7 +385,7 @@ impl GroupMetadata {
     }
 
     pub fn free_inode(&mut self, inode_idx: u32, is_dir: bool) {
-        self.inode_bitmap.free(inode_idx as usize);
+        self.inode_bitmap.free(inode_idx as u16);
         self.inc_free_inodes();
         if is_dir {
             self.dec_dirs();
@@ -393,18 +393,18 @@ impl GroupMetadata {
     }
 
     pub fn is_block_allocated(&self, block_idx: Ext2Bid) -> bool {
-        self.block_bitmap.is_allocated(block_idx as usize)
+        self.block_bitmap.is_allocated(block_idx as u16)
     }
 
     pub fn alloc_blocks(&mut self, count: Ext2Bid) -> Option<Range<Ext2Bid>> {
-        let mut current_count = count.min(self.free_blocks_count() as Ext2Bid) as usize;
+        let mut current_count = count.min(self.free_blocks_count() as Ext2Bid) as u16;
         while current_count > 0 {
             let Some(range) = self.block_bitmap.alloc_consecutive(current_count) else {
                 // It is efficient to halve the value
                 current_count /= 2;
                 continue;
             };
-            self.dec_free_blocks(current_count as u16);
+            self.dec_free_blocks(current_count);
             return Some((range.start as Ext2Bid)..(range.end as Ext2Bid));
         }
         None
@@ -412,7 +412,7 @@ impl GroupMetadata {
 
     pub fn free_blocks(&mut self, range: Range<Ext2Bid>) {
         self.block_bitmap
-            .free_consecutive((range.start as usize)..(range.end as usize));
+            .free_consecutive((range.start as u16)..(range.end as u16));
         self.inc_free_blocks(range.len() as u16);
     }
 
