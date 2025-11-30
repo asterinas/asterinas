@@ -11,6 +11,7 @@ pub use falloc_mode::FallocMode;
 pub use file_creation_mask::{AtomicFileCreationMask, FileCreationMask};
 pub use flock::{FlockItem, FlockList, FlockType};
 pub use fs::{FileSystem, FsFlags, SuperBlock};
+pub use id_bitmap::IdBitmap;
 pub use inode::{
     Extension, Inode, InodeIo, InodeType, Metadata, MknodType, Permission, SymbolicLink,
 };
@@ -36,6 +37,7 @@ mod falloc_mode;
 mod file_creation_mask;
 mod flock;
 mod fs;
+mod id_bitmap;
 mod inode;
 mod inode_mode;
 mod ioctl;
