@@ -6,7 +6,7 @@
 method = "grub-rescue-iso"
 
 [grub]
-protocol = "multiboot2"
+boot_protocol = "multiboot2"
 
 [qemu]
 args = "$(./tools/qemu_args.sh normal)"

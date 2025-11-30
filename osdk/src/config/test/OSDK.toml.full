@@ -21,7 +21,7 @@ boot.initramfs = "/tmp/osdk_test_file"
 boot.method = "qemu-direct"
 
 [grub]
-protocol = "multiboot2"
+boot_protocol = "multiboot2"
 display_grub_menu = true
 
 [qemu]
