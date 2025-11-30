@@ -26,30 +26,6 @@ impl IdAlloc {
         }
     }
 
-    /// Constructs a new id allocator from a slice of `u8` bytes and a maximum capacity.
-    ///
-    /// The slice of `u8` bytes is the raw data of a bitmap.
-    pub fn from_bytes_with_capacity(slice: &[u8], capacity: usize) -> Self {
-        let bitset = if capacity > slice.len() * 8 {
-            let mut bitset = BitVec::from_slice(slice);
-            bitset.resize(capacity, false);
-            bitset
-        } else {
-            let mut bitset = BitVec::from_slice(&slice[..capacity.div_ceil(8)]);
-            bitset.truncate(capacity);
-            bitset
-        };
-
-        let first_available_id = (0..bitset.len())
-            .find(|&i| !bitset[i])
-            .map_or(bitset.len(), |i| i);
-
-        Self {
-            bitset,
-            first_available_id,
-        }
-    }
-
     /// Allocates and returns a new `id`.
     ///
     /// If allocation is not possible, it returns `None`.
@@ -176,11 +152,6 @@ impl IdAlloc {
     /// If the `id` is out of bounds, this method will panic.
     pub fn is_allocated(&self, id: usize) -> bool {
         self.bitset[id]
-    }
-
-    /// Views the id allocator as a slice of `u8` bytes.
-    pub fn as_bytes(&self) -> &[u8] {
-        self.bitset.as_raw_slice()
     }
 }
 
