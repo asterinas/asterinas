@@ -6,9 +6,10 @@ use super::message::{MessageQueue, MessageReceiver};
 use crate::{
     events::IoEvents,
     fs::utils::Inode,
+    match_sock_option_mut,
     net::socket::{
         new_pseudo_inode,
-        options::SocketOption,
+        options::{Error as SocketError, SocketOption},
         private::SocketPrivate,
         unix::{ctrl_msg::AuxiliaryData, UnixSocketAddr},
         util::{
@@ -199,6 +200,15 @@ impl Socket for UnixDatagramSocket {
     }
 
     fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
+        match_sock_option_mut!(option, {
+            socket_errors: SocketError => {
+                // TODO: Support socket errors for UNIX sockets
+                socket_errors.set(None);
+                return Ok(());
+            },
+            _ => ()
+        });
+
         let options = self.options.read();
 
         // Deal with socket-level options
@@ -217,7 +227,6 @@ impl Socket for UnixDatagramSocket {
         let mut options = self.options.write();
 
         match options.socket.set_option(option, &self.local_receiver) {
-            Ok(_) => Ok(()),
             Err(err) if err.error() == Errno::ENOPROTOOPT => {
                 // TODO: Deal with socket options from other levels
                 warn!("only socket-level options are supported");
@@ -226,7 +235,7 @@ impl Socket for UnixDatagramSocket {
                     "the socket option to get is unknown"
                 )
             }
-            Err(e) => Err(e),
+            res => res.map(|_need_iface_poll| ()),
         }
     }
 

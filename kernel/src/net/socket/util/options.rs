@@ -10,6 +10,7 @@ use super::LingerOption;
 use crate::{
     match_sock_option_mut, match_sock_option_ref,
     net::socket::{
+        netlink::NETLINK_DEFAULT_BUF_SIZE,
         options::{
             AcceptConn, Broadcast, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority,
             RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
@@ -88,11 +89,19 @@ impl SocketOptionSet {
         }
     }
 
+    /// Returns the default socket level options for netlink socket.
+    pub(in crate::net) fn new_netlink() -> Self {
+        Self {
+            send_buf: NETLINK_DEFAULT_BUF_SIZE as u32,
+            recv_buf: NETLINK_DEFAULT_BUF_SIZE as u32,
+            ..Default::default()
+        }
+    }
+
     /// Gets socket-level options.
     ///
-    /// Note that the socket error has to be handled separately, because it is automatically
-    /// cleared after reading. This method does not handle it. Instead,
-    /// [`Self::get_and_clear_socket_errors`] should be used.
+    /// Note that the socket error has to be handled separately. This method does not handle it
+    /// because it is automatically cleared after reading.
     pub fn get_option(
         &self,
         option: &mut dyn SocketOption,

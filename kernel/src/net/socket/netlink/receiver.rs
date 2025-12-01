@@ -112,4 +112,4 @@ impl<Message: QueueableMessage> MessageReceiver<Message> {
     }
 }
 
-const NETLINK_DEFAULT_BUF_SIZE: usize = 65536;
+pub(in crate::net) const NETLINK_DEFAULT_BUF_SIZE: usize = 65536;

@@ -257,3 +257,39 @@ FN_TEST(add_and_drop_membership)
 	TEST_SUCC(close(sk_new));
 }
 END_TEST()
+
+FN_TEST(getsockopt_membership)
+{
+	int group;
+	socklen_t group_size = sizeof(group);
+
+	TEST_ERRNO(getsockopt(sk_unbound, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP,
+			      &group, &group_size),
+		   ENOPROTOOPT);
+	TEST_ERRNO(getsockopt(sk_unbound, SOL_NETLINK, NETLINK_DROP_MEMBERSHIP,
+			      &group, &group_size),
+		   ENOPROTOOPT);
+
+	TEST_ERRNO(getsockopt(sk_bound, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP,
+			      &group, &group_size),
+		   ENOPROTOOPT);
+	TEST_ERRNO(getsockopt(sk_bound, SOL_NETLINK, NETLINK_DROP_MEMBERSHIP,
+			      &group, &group_size),
+		   ENOPROTOOPT);
+
+	TEST_ERRNO(getsockopt(sk_connected, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP,
+			      &group, &group_size),
+		   ENOPROTOOPT);
+	TEST_ERRNO(getsockopt(sk_connected, SOL_NETLINK,
+			      NETLINK_DROP_MEMBERSHIP, &group, &group_size),
+		   ENOPROTOOPT);
+}
+END_TEST()
+
+FN_SETUP(cleanup)
+{
+	CHECK(close(sk_unbound));
+	CHECK(close(sk_bound));
+	CHECK(close(sk_connected));
+}
+END_SETUP()
