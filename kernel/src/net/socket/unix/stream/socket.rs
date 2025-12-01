@@ -19,7 +19,7 @@ use crate::{
     match_sock_option_mut,
     net::socket::{
         new_pseudo_inode,
-        options::{PeerCred, PeerGroups, SocketOption},
+        options::{Error as SocketError, PeerCred, PeerGroups, SocketOption},
         private::SocketPrivate,
         unix::{cred::SocketCred, ctrl_msg::AuxiliaryData, CUserCred, UnixSocketAddr},
         util::{
@@ -387,6 +387,15 @@ impl Socket for UnixStreamSocket {
     }
 
     fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
+        match_sock_option_mut!(option, {
+            socket_errors: SocketError => {
+                // TODO: Support socket errors for UNIX sockets
+                socket_errors.set(None);
+                return Ok(());
+            },
+            _ => ()
+        });
+
         let state = self.state.read();
         let options = self.options.read();
 
@@ -413,7 +422,6 @@ impl Socket for UnixStreamSocket {
         let mut options = self.options.write();
 
         match options.socket.set_option(option, state.as_ref()) {
-            Ok(_) => Ok(()),
             Err(err) if err.error() == Errno::ENOPROTOOPT => {
                 // TODO: Deal with socket options from other levels
                 warn!("only socket-level options are supported");
@@ -422,7 +430,7 @@ impl Socket for UnixStreamSocket {
                     "the socket option to get is unknown"
                 )
             }
-            Err(e) => Err(e),
+            res => res.map(|_need_iface_poll| ()),
         }
     }
 

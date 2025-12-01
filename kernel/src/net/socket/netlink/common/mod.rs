@@ -9,14 +9,15 @@ use super::{GroupIdSet, NetlinkSocketAddr};
 use crate::{
     events::IoEvents,
     fs::utils::Inode,
-    match_sock_option_ref,
+    match_sock_option_mut, match_sock_option_ref,
     net::socket::{
         netlink::{table::SupportedNetlinkProtocol, AddMembership, DropMembership},
         new_pseudo_inode,
-        options::SocketOption,
+        options::{Error as SocketError, SocketOption},
         private::SocketPrivate,
         util::{
             datagram_common::{select_remote_and_bind, Bound, Inner},
+            options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
             MessageHeader, SendRecvFlags, SocketAddr,
         },
         Socket,
@@ -31,10 +32,24 @@ mod unbound;
 
 pub struct NetlinkSocket<P: SupportedNetlinkProtocol> {
     inner: RwMutex<Inner<UnboundNetlink<P>, BoundNetlink<P::Message>>>,
+    options: RwLock<OptionSet>,
 
     is_nonblocking: AtomicBool,
     pollee: Pollee,
     pseudo_inode: Arc<dyn Inode>,
+}
+
+#[derive(Debug, Clone)]
+struct OptionSet {
+    socket: SocketOptionSet,
+}
+
+impl OptionSet {
+    pub(self) fn new() -> Self {
+        Self {
+            socket: SocketOptionSet::new_netlink(),
+        }
+    }
 }
 
 impl<P: SupportedNetlinkProtocol> NetlinkSocket<P>
@@ -45,6 +60,7 @@ where
         let unbound = UnboundNetlink::new();
         Arc::new(Self {
             inner: RwMutex::new(Inner::Unbound(unbound)),
+            options: RwLock::new(OptionSet::new()),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
             pseudo_inode: new_pseudo_inode(),
@@ -169,17 +185,39 @@ where
         Ok((received_len, message_header))
     }
 
+    fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
+        match_sock_option_mut!(option, {
+            socket_errors: SocketError => {
+                // TODO: Support socket errors for netlink sockets
+                socket_errors.set(None);
+                return Ok(());
+            },
+            _ => ()
+        });
+
+        let inner = self.inner.read();
+        let options = self.options.read();
+
+        // Deal with socket-level options
+        options.socket.get_option(option, &*inner)
+
+        // TODO: Deal with netlink-level options
+    }
+
     fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
-        match do_set_netlink_option(&self.inner, option) {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                warn!(
-                    "We currently ignore set option errors to pass libnl test: {:?}",
-                    e
-                );
-                Ok(())
-            }
+        let mut inner = self.inner.write();
+
+        // Deal with socket-level options
+        let mut options = self.options.write();
+        match options.socket.set_option(option, &*inner) {
+            Err(err) if err.error() == Errno::ENOPROTOOPT => (),
+            res => return res.map(|_need_iface_poll| ()),
         }
+        // `options` must be dropped here because `do_netlink_setsockopt` may lock other mutexes.
+        drop(options);
+
+        // Deal with netlink-level options
+        do_netlink_setsockopt(option, &mut inner)
     }
 
     fn pseudo_inode(&self) -> &Arc<dyn Inode> {
@@ -210,6 +248,19 @@ where
     }
 }
 
+impl<P: SupportedNetlinkProtocol> GetSocketLevelOption
+    for Inner<UnboundNetlink<P>, BoundNetlink<P::Message>>
+{
+    fn is_listening(&self) -> bool {
+        false
+    }
+}
+
+impl<P: SupportedNetlinkProtocol> SetSocketLevelOption
+    for Inner<UnboundNetlink<P>, BoundNetlink<P::Message>>
+{
+}
+
 impl<P: SupportedNetlinkProtocol> Inner<UnboundNetlink<P>, BoundNetlink<P::Message>> {
     fn add_groups(&mut self, groups: GroupIdSet) {
         match self {
@@ -226,18 +277,18 @@ impl<P: SupportedNetlinkProtocol> Inner<UnboundNetlink<P>, BoundNetlink<P::Messa
     }
 }
 
-fn do_set_netlink_option<P: SupportedNetlinkProtocol>(
-    inner: &RwMutex<Inner<UnboundNetlink<P>, BoundNetlink<P::Message>>>,
+fn do_netlink_setsockopt<P: SupportedNetlinkProtocol>(
     option: &dyn SocketOption,
+    inner: &mut Inner<UnboundNetlink<P>, BoundNetlink<P::Message>>,
 ) -> Result<()> {
     match_sock_option_ref!(option, {
         add_membership: AddMembership => {
             let groups = add_membership.get().unwrap();
-            inner.write().add_groups(GroupIdSet::new(*groups));
+            inner.add_groups(GroupIdSet::new(*groups));
         },
         drop_membership: DropMembership => {
             let groups = drop_membership.get().unwrap();
-            inner.write().drop_groups(GroupIdSet::new(*groups));
+            inner.drop_groups(GroupIdSet::new(*groups));
         },
         _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to be set is unknown")
     });
