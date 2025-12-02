@@ -6,5 +6,4 @@ inotify_controls = IN_ONLYDIR | IN_DONT_FOLLOW | IN_MASK_CREATE |
                    IN_MASK_ADD | IN_ISDIR;
 
 // Add a watch to an initialized inotify instance
-inotify_add_watch(fd, pathname = <PATH>, mask = <inotify_events> | <inotify_controls>);
-
+inotify_add_watch(fd, pathname, mask = <inotify_events> | <inotify_controls>);
