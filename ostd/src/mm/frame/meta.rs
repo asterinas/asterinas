@@ -458,7 +458,12 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
         let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
         regions
             .iter()
-            .filter(|r| r.typ() == MemoryRegionType::Usable)
+            .filter(|r| {
+                matches!(
+                    r.typ(),
+                    MemoryRegionType::Usable | MemoryRegionType::Reclaimable
+                )
+            })
             .map(|r| r.base() + r.len())
             .max()
             .unwrap()
