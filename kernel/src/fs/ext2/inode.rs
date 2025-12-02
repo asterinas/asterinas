@@ -20,11 +20,13 @@ use super::{
 };
 use crate::{
     fs::{
+        inode_handle::FileIo,
         notify::FsEventPublisher,
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
+        pipe::NamedPipe,
         utils::{
-            Extension, FallocMode, Inode as _, InodeMode, Metadata, Permission, XattrName,
-            XattrNamespace, XattrSetFlags,
+            AccessMode, Extension, FallocMode, Inode as _, InodeMode, Metadata, Permission,
+            StatusFlags, XattrName, XattrNamespace, XattrSetFlags,
         },
     },
     process::{posix_thread::AsPosixThread, Gid, Uid},
@@ -688,6 +690,16 @@ impl Inode {
         inner.device_id()
     }
 
+    pub(super) fn open_named_pipe(
+        &self,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Result<Box<dyn FileIo>> {
+        let inner = self.inner.read();
+        let named_pipe = inner.named_pipe.as_ref().unwrap();
+        named_pipe.open(access_mode, status_flags)
+    }
+
     pub fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         if self.type_ != InodeType::File {
             return_errno!(Errno::EISDIR);
@@ -960,11 +972,19 @@ fn write_lock_multiple_inodes(inodes: Vec<&Inode>) -> Vec<RwMutexWriteGuard<'_, 
 struct InodeInner {
     inode_impl: InodeImpl,
     page_cache: PageCache,
+    // This corresponds to the `i_pipe` field in `struct inode` in Linux.
+    // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/linux/fs.h#L771>.
+    named_pipe: Option<NamedPipe>,
 }
 
 impl InodeInner {
     pub fn new(desc: Dirty<InodeDesc>, weak_self: Weak<Inode>, fs: Weak<Ext2>) -> Self {
         let num_page_bytes = desc.num_page_bytes();
+        let named_pipe = if desc.type_ == InodeType::NamedPipe {
+            Some(NamedPipe::new())
+        } else {
+            None
+        };
         let inode_impl = InodeImpl::new(desc, weak_self, fs);
         Self {
             page_cache: PageCache::with_capacity(
@@ -973,6 +993,7 @@ impl InodeInner {
             )
             .unwrap(),
             inode_impl,
+            named_pipe,
         }
     }
 

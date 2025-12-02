@@ -2,14 +2,18 @@
 
 use core::time::Duration;
 
+use device_id::DeviceId;
+
 use crate::{
+    device::get_device,
     fs::{
         ext2::{FilePerm, Inode as Ext2Inode},
+        inode_handle::FileIo,
         notify::FsEventPublisher,
         utils::{
-            DirentVisitor, Extension, FallocMode, FileSystem, Inode, InodeIo, InodeMode, InodeType,
-            Metadata, MknodType, StatusFlags, SymbolicLink, XattrName, XattrNamespace,
-            XattrSetFlags,
+            AccessMode, DirentVisitor, Extension, FallocMode, FileSystem, Inode, InodeIo,
+            InodeMode, InodeType, Metadata, MknodType, StatusFlags, SymbolicLink, XattrName,
+            XattrNamespace, XattrSetFlags,
         },
     },
     prelude::*,
@@ -121,6 +125,25 @@ impl Inode for Ext2Inode {
         Some(self.page_cache())
     }
 
+    fn open(
+        &self,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Option<Result<Box<dyn FileIo>>> {
+        match self.inode_type() {
+            InodeType::BlockDevice | InodeType::CharDevice => {
+                let device_id = self.device_id();
+                let device = match get_device(DeviceId::from_encoded_u64(device_id)) {
+                    Ok(device) => device,
+                    Err(e) => return Some(Err(e)),
+                };
+                Some(device.open())
+            }
+            InodeType::NamedPipe => Some(self.open_named_pipe(access_mode, status_flags)),
+            _ => None,
+        }
+    }
+
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
         Ok(self.create(name, type_, mode.into())?)
     }
@@ -133,7 +156,7 @@ impl Inode for Ext2Inode {
                 inode.set_device_id(dev.id().as_encoded_u64()).unwrap();
                 inode
             }
-            _ => todo!(),
+            MknodType::NamedPipe => self.create(name, inode_type, mode.into())?,
         };
 
         Ok(inode)
