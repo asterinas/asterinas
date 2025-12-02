@@ -84,7 +84,7 @@ CARGO_OSDK_BUILD_ARGS += --init-args="/opt/syscall_test/run_syscall_test.sh"
 else ifeq ($(AUTO_TEST), test)
 ENABLE_BASIC_TEST := true
 	ifneq ($(SMP), 1)
-		CARGO_OSDK_BUILD_ARGS += --kcmd-args="BLOCK_UNSUPPORTED_SMP_TESTS=1"
+	CARGO_OSDK_BUILD_ARGS += --kcmd-args="BLOCK_UNSUPPORTED_SMP_TESTS=1"
 	endif
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="INTEL_TDX=$(INTEL_TDX)"
 CARGO_OSDK_BUILD_ARGS += --init-args="/test/run_general_test.sh"
@@ -175,7 +175,7 @@ endif
 
 ifeq ($(ENABLE_KVM), 1)
 	ifeq ($(OSDK_TARGET_ARCH), x86_64)
-		CARGO_OSDK_COMMON_ARGS += --qemu-args="-accel kvm"
+	CARGO_OSDK_COMMON_ARGS += --qemu-args="-accel kvm"
 	endif
 endif
 
