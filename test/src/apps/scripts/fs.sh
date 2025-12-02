@@ -88,6 +88,8 @@ test_mount_bind_file() {
 
 echo "Start ext2 fs test......"
 test_ext2 "/ext2" "test_file.txt"
+ext2/mknod
+ext2/unix_socket
 echo "All ext2 fs test passed."
 
 echo "Start fdatasync test......"
