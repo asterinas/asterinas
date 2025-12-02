@@ -59,7 +59,8 @@ NIXOS ?= 0
 NIXOS_DISK_SIZE_IN_MB ?= 8196
 NIXOS_DISABLE_SYSTEMD ?= true
 # The following option is only effective when NIXOS_DISABLE_SYSTEMD is set to 'true'.
-NIXOS_STAGE_2_INIT ?= /bin/sh
+# Use a login shell to ensure that environment variables are initialized correctly.
+NIXOS_STAGE_2_INIT ?= /bin/sh -l
 # End of NixOS settings
 
 # ========================= End of Makefile options. ==========================
