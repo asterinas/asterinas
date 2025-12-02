@@ -54,17 +54,17 @@ impl KCmdlineArg {
         INSTANCE.call_once(|| KCmdlineArg::from(boot_info().kernel_cmdline.as_str()))
     }
 
-    /// Gets the path of the initprocess.
+    /// Gets the path of the init process.
     pub fn get_initproc_path(&self) -> Option<&str> {
         self.initproc.path.as_deref()
     }
 
-    /// Gets the argument vector(argv) of the initprocess.
+    /// Gets the argument vector (`argv`) of the init process.
     pub fn get_initproc_argv(&self) -> &Vec<CString> {
         &self.initproc.argv
     }
 
-    /// Gets the environment vector(envp) of the initprocess.
+    /// Gets the environment vector (`envp`) of the init process.
     pub fn get_initproc_envp(&self) -> &Vec<CString> {
         &self.initproc.envp
     }
@@ -109,7 +109,7 @@ impl From<&str> for KCmdlineArg {
             module_args: BTreeMap::new(),
         };
 
-        // Every thing after the "--" mark is the initproc arguments.
+        // Every thing after the "--" mark is the init arguments.
         let mut kcmdline_end = false;
 
         // The main parse loop. The processing steps are arranged (not very strictly)
@@ -120,7 +120,7 @@ impl From<&str> for KCmdlineArg {
             // InitArg => Arg "\s+" InitArg | %empty
             if kcmdline_end {
                 if result.initproc.path.is_none() {
-                    panic!("Initproc arguments provided but no initproc path specified!");
+                    panic!("[KCmdline] Init arguments specified without init process");
                 }
                 result.initproc.argv.push(CString::new(arg).unwrap());
                 continue;
@@ -178,7 +178,7 @@ impl From<&str> for KCmdlineArg {
                 match option {
                     "init" => {
                         if let Some(v) = &result.initproc.path {
-                            panic!("Initproc assigned twice in the command line!");
+                            panic!("[KCmdline] Init process specified twice");
                         }
                         result.initproc.path = Some(value.to_string());
                     }
@@ -186,7 +186,7 @@ impl From<&str> for KCmdlineArg {
                         result.console_names.push(value.to_string());
                     }
                     _ => {
-                        // If the option is not recognized, it is passed to the initproc.
+                        // If the option is not recognized, it is passed to the init process.
                         // Pattern 'option=value' is treated as the init environment.
                         let envp_entry = CString::new(option.to_string() + "=" + value).unwrap();
                         result.initproc.envp.push(envp_entry);
@@ -195,7 +195,7 @@ impl From<&str> for KCmdlineArg {
             } else {
                 // There is no value, the entry is only a option.
 
-                // If the option is not recognized, it is passed to the initproc.
+                // If the option is not recognized, it is passed to the init process.
                 // Pattern 'option' without value is treated as the init argument.
                 let argv_entry = CString::new(option.to_string()).unwrap();
                 result.initproc.argv.push(argv_entry);
