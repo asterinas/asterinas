@@ -32,6 +32,21 @@ pub enum MemoryRegionType {
     Usable = 8,
 }
 
+impl MemoryRegionType {
+    /// Returns whether the memory region corresponds to physical memory.
+    ///
+    /// The linear mapping will cover memory addresses up to the top of the physical memory.
+    /// Therefore, if this method returns `false`, the memory region may not be included in the
+    /// linear mapping.
+    pub fn is_physical(self) -> bool {
+        // Bad memory or I/O memory is not physical. All other memory should be physical.
+        !matches!(
+            self,
+            Self::BadMemory | Self::Unknown | Self::Reserved | Self::Framebuffer
+        )
+    }
+}
+
 /// The information of initial memory regions that are needed by the kernel.
 /// The sections are **not** guaranteed to not overlap. The region must be page aligned.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
