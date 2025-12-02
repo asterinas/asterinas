@@ -166,6 +166,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "aster-cmdline"
+version = "0.1.0"
+dependencies = [
+ "component",
+ "log",
+ "ostd",
+ "spin",
+]
+
+[[package]]
 name = "aster-console"
 version = "0.1.0"
 dependencies = [
@@ -192,6 +202,7 @@ dependencies = [
 name = "aster-i8042"
 version = "0.1.0"
 dependencies = [
+ "aster-cmdline",
  "aster-input",
  "bitflags 2.9.1",
  "component",
@@ -263,6 +274,7 @@ dependencies = [
  "align_ext",
  "aster-bigtcp",
  "aster-block",
+ "aster-cmdline",
  "aster-console",
  "aster-framebuffer",
  "aster-i8042",

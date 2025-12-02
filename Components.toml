@@ -14,6 +14,7 @@ mlsdisk = { name = "aster-mlsdisk" }
 systree = { name = "aster-systree" }
 i8042 = { name = "aster-i8042" }
 pci = { name = "aster-pci" }
+cmdline = { name = "aster-cmdline" }
 
 [whitelist]
 [whitelist.nix.main]

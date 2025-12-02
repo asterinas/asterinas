@@ -14,6 +14,7 @@ members = [
     "ostd/libs/ostd-test",
     "kernel",
     "kernel/comps/block",
+    "kernel/comps/cmdline",
     "kernel/comps/console",
     "kernel/comps/framebuffer",
     "kernel/comps/input",

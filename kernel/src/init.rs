@@ -2,6 +2,7 @@
 
 //! Kernel initialization.
 
+use aster_cmdline::KCMDLINE;
 use component::InitStage;
 use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
@@ -12,7 +13,6 @@ use spin::once::Once;
 
 use crate::{
     fs::{fs_resolver::FsResolver, path::MountNamespace},
-    kcmdline::KCmdlineArg,
     prelude::*,
     process::{spawn_init_process, Process},
     sched::SchedPolicy,
@@ -144,7 +144,7 @@ fn first_kthread() {
     print_banner();
 
     INIT_PROCESS.call_once(|| {
-        let karg = KCmdlineArg::singleton();
+        let karg = KCMDLINE.get().unwrap();
         spawn_init_process(
             karg.get_initproc_path().unwrap(),
             karg.get_initproc_argv().to_vec(),
