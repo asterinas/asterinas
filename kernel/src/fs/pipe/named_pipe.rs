@@ -134,11 +134,11 @@ pub struct NamedPipe {
 
 impl NamedPipe {
     /// Creates a new named pipe.
-    pub fn new() -> Result<Self> {
-        Ok(Self {
+    pub fn new() -> Self {
+        Self {
             pipe: Mutex::new(NamedPipeInner::default()),
             wait_queue: WaitQueue::new(),
-        })
+        }
     }
 
     /// Opens the named pipe with the specified access mode and status flags.

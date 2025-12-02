@@ -154,7 +154,7 @@ impl Inner {
     }
 
     pub(self) fn new_named_pipe() -> Self {
-        Self::NamedPipe(NamedPipe::new().unwrap())
+        Self::NamedPipe(NamedPipe::new())
     }
 
     pub(self) fn new_file_in_memfd(this: Weak<MemfdInode>) -> Self {
