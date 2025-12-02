@@ -458,12 +458,7 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
         let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
         regions
             .iter()
-            .filter(|r| {
-                matches!(
-                    r.typ(),
-                    MemoryRegionType::Usable | MemoryRegionType::Reclaimable
-                )
-            })
+            .filter(|r| r.typ().is_physical())
             .map(|r| r.base() + r.len())
             .max()
             .unwrap()
@@ -592,11 +587,7 @@ macro_rules! mark_ranges {
 fn mark_unusable_ranges() {
     let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
 
-    for region in regions
-        .iter()
-        .rev()
-        .skip_while(|r| r.typ() != MemoryRegionType::Usable)
-    {
+    for region in regions.iter().rev().skip_while(|r| !r.typ().is_physical()) {
         match region.typ() {
             MemoryRegionType::BadMemory => mark_ranges!(region, UnusableMemoryMeta),
             MemoryRegionType::Unknown => mark_ranges!(region, ReservedMemoryMeta),
