@@ -10,7 +10,7 @@ use super::{
     capget::sys_capget,
     capset::sys_capset,
     chdir::{sys_chdir, sys_fchdir},
-    chmod::{sys_fchmod, sys_fchmodat},
+    chmod::{sys_fchmod, sys_fchmodat, sys_fchmodat2},
     chown::{sys_fchown, sys_fchownat},
     chroot::sys_chroot,
     clock_gettime::sys_clock_gettime,
@@ -353,4 +353,5 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_CLOSE_RANGE = 436            => sys_close_range(args[..3]);
     SYS_FACCESSAT2 = 439             => sys_faccessat2(args[..4]);
     SYS_EPOLL_PWAIT2 = 441           => sys_epoll_pwait2(args[..5]);
+    SYS_FCHMODAT2 = 452              => sys_fchmodat2(args[..4]);
 }

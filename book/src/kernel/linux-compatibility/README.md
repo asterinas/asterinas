@@ -288,7 +288,7 @@ which are summarized in the table below.
 | 265     | linkat                 | ✅             | ❓ |
 | 266     | symlinkat              | ✅             | 💯 |
 | 267     | readlinkat             | ✅             | 💯 |
-| 268     | fchmodat               | ✅             | ❓ |
+| 268     | fchmodat               | ✅             | 💯 |
 | 269     | faccessat              | ✅             | ❓ |
 | 270     | pselect6               | ✅             | 💯 |
 | 271     | ppoll                  | ✅             | ❓ |
@@ -348,6 +348,7 @@ which are summarized in the table below.
 | 436     | close_range            | ✅             | ❓ |
 | 439     | faccessat2             | ✅             | ❓ |
 | 441     | epoll_pwait2           | ✅             | ❓ |
+| 452     | fchmodat2              | ✅             | 💯 |
 
 - Supported:
     - ✅ = syscall supported

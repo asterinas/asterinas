@@ -68,6 +68,8 @@ readlinkat(dirfd, path, buf, bufsiz);
 // Change permissions of a file
 chmod(path, mode);
 fchmod(fd, mode);
+fchmodat(dirfd, path_ptr, mode);
+fchmodat2(dirfd, path_ptr, mode, flags = AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW);
 
 // Change ownership of a file
 chown(path, owner, group);
