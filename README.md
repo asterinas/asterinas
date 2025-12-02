@@ -51,8 +51,11 @@ we are steadfastly progressing towards this goal.
 Over the course of 2024,
 we significantly enhanced Asterinas's maturity,
 as detailed in [our end-year report](https://asterinas.github.io/2025/01/20/asterinas-in-2024.html).
-In 2025, our primary goal is to make Asterinas production-ready on x86-64 virtual machines
-and attract real users!
+By the end of 2025,
+we plan to launch [Asterinas NixOS](https://asterinas.github.io/book/rfcs/0002-asterinas-nixos.html),
+the first distribution for Asterinas.
+This release will mark Asterinas reaching the Minimum Viable Product (MVP) milestone.
+In 2026, we aim to make Asterinas production-ready on x86-64 virtual machines and attract real users.
 
 ## Getting Started
 
