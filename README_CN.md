@@ -36,7 +36,11 @@
 但我们坚信正朝着正确的方向迈进。
 在2024年期间，我们大幅提升了Asterinas的成熟度，
 详细内容请参阅我们的[年终报告](https://asterinas.github.io/2025/01/20/asterinas-in-2024.html)。
-2025年，我们的主要目标是让Asterinas在x86-64虚拟机上达到生产级水平，并吸引真正的用户！
+到2025年底，
+我们计划发布[Asterinas NixOS](https://asterinas.github.io/book/rfcs/0002-asterinas-nixos.html)，
+这是Asterinas的首个发行版。
+这一版本的发布将标志着Asterinas达到最小可行产品（MVP）的里程碑。
+在2026年，我们的目标是在x86-64虚拟机环境中将Asterinas打造成可用于生产的系统，并吸引真实用户使用。
 
 ## 快速上手
 
