@@ -22,6 +22,7 @@ TEST_APPS := \
 	eventfd2 \
 	execve \
 	exit \
+	ext2 \
 	fdatasync \
 	file_io \
 	fork_c \
