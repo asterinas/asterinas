@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(unused_variables)]
-
 //! The module to parse kernel command-line arguments.
 //!
 //! The format of the Asterinas command line string conforms
@@ -9,6 +7,10 @@
 //!
 //! <https://www.kernel.org/doc/html/v6.4/admin-guide/kernel-parameters.html>
 //!
+#![no_std]
+#![deny(unsafe_code)]
+
+extern crate alloc;
 
 use alloc::{
     collections::BTreeMap,
@@ -18,7 +20,7 @@ use alloc::{
     vec::Vec,
 };
 
-use ostd::boot::boot_info;
+use component::{init_component, ComponentInitError};
 use spin::Once;
 
 #[derive(PartialEq, Debug)]
@@ -47,13 +49,6 @@ pub struct KCmdlineArg {
 
 // Define get APIs.
 impl KCmdlineArg {
-    /// Gets the singleton instance of `KCmdlineArg`.
-    pub fn singleton() -> &'static KCmdlineArg {
-        static INSTANCE: Once<KCmdlineArg> = Once::new();
-
-        INSTANCE.call_once(|| KCmdlineArg::from(boot_info().kernel_cmdline.as_str()))
-    }
-
     /// Gets the path of the init process.
     pub fn get_initproc_path(&self) -> Option<&str> {
         self.initproc.path.as_deref()
@@ -75,7 +70,6 @@ impl KCmdlineArg {
     }
 
     /// Gets the argument vector of a kernel module.
-    #[expect(dead_code)]
     pub fn get_module_args(&self, module: &str) -> Option<&Vec<ModuleArg>> {
         self.module_args.get(module)
     }
@@ -177,7 +171,7 @@ impl From<&str> for KCmdlineArg {
                 // The option has a value.
                 match option {
                     "init" => {
-                        if let Some(v) = &result.initproc.path {
+                        if result.initproc.path.is_some() {
                             panic!("[KCmdline] Init process specified twice");
                         }
                         result.initproc.path = Some(value.to_string());
@@ -204,4 +198,14 @@ impl From<&str> for KCmdlineArg {
 
         result
     }
+}
+
+/// The [`KCmdlineArg`] singleton.
+pub static KCMDLINE: Once<KCmdlineArg> = Once::new();
+
+#[init_component]
+fn init() -> Result<(), ComponentInitError> {
+    KCMDLINE.call_once(|| KCmdlineArg::from(ostd::boot::boot_info().kernel_cmdline.as_str()));
+
+    Ok(())
 }

@@ -1,5 +1,5 @@
 [package]
-name = "aster-i8042"
+name = "aster-cmdline"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,11 +8,8 @@ edition = "2021"
 [dependencies]
 component = { path = "../../libs/comp-sys/component" }
 ostd = { path = "../../../ostd" }
-bitflags = "2.5"
 log = "0.4"
 spin = "0.9.4"
-aster-input = { path = "../input" }
-aster-cmdline = { path = "../cmdline" }
 
 [lints]
 workspace = true

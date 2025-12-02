@@ -223,6 +223,7 @@ OSDK_CRATES := \
 	ostd/libs/linux-bzimage/setup \
 	kernel \
 	kernel/comps/block \
+	kernel/comps/cmdline \
 	kernel/comps/console \
 	kernel/comps/framebuffer \
 	kernel/comps/input \
