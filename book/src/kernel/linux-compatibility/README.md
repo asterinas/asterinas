@@ -273,9 +273,9 @@ which are summarized in the table below.
 | 250     | keyctl                 | ❌             | N/A |
 | 251     | ioprio_set             | ✅             | ❓ |
 | 252     | ioprio_get             | ✅             | ❓ |
-| 253     | inotify_init           | ❌             | N/A |
-| 254     | inotify_add_watch      | ❌             | N/A |
-| 255     | inotify_rm_watch       | ❌             | N/A |
+| 253     | inotify_init           | ✅             | 💯 |
+| 254     | inotify_add_watch      | ✅             | [⚠️](syscall-feature-coverage/file-systems-and-mount-control/#inotify_add_watch) |
+| 255     | inotify_rm_watch       | ✅             | 💯 |
 | 256     | migrate_pages          | ❌             | N/A |
 | 257     | openat                 | ✅             | [⚠️](syscall-feature-coverage/file-and-directory-operations/#open-and-openat) |
 | 258     | mkdirat                | ✅             | 💯 |
@@ -314,7 +314,7 @@ which are summarized in the table below.
 | 291     | epoll_create1          | ✅             | ❓ |
 | 292     | dup3                   | ✅             | 💯 |
 | 293     | pipe2                  | ✅             | [⚠️](syscall-feature-coverage/file-descriptor-and-io-control/#pipe-and-pipe2) |
-| 294     | inotify_init1          | ❌             | N/A |
+| 294     | inotify_init1          | ✅             | [⚠️](syscall-feature-coverage/file-systems-and-mount-control/#inotify_init-and-inotify_init1) |
 | 295     | preadv                 | ✅             | 💯 |
 | 296     | pwritev                | ✅             | 💯 |
 | 297     | rt_tgsigqueueinfo      | ❌             | N/A |

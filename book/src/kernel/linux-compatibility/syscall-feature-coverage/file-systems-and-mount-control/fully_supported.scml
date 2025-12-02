@@ -7,3 +7,6 @@ sync();
 
 // Change root directory
 chroot(path);
+
+// Remove a watch from an inotify instance
+inotify_rm_watch(fd, wd);

@@ -1,3 +1,0 @@
-// Remove a watch from an inotify instance
-inotify_rm_watch(fd, wd);
-

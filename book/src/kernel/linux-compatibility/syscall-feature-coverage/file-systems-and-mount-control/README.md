@@ -94,14 +94,3 @@ Unsupported control flags:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man7/inotify.7.html).
-
-### `inotify_rm_watch`
-
-Supported functionality in SCML:
-
-```c
-{{#include inotify_rm_watch.scml}}
-```
-
-For more information,
-see [the man page](https://man7.org/linux/man-pages/man2/inotify_rm_watch.2.html).
