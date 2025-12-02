@@ -48,6 +48,7 @@ impl MemoryRegionType {
 }
 
 /// The information of initial memory regions that are needed by the kernel.
+///
 /// The sections are **not** guaranteed to not overlap. The region must be page aligned.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct MemoryRegion {
@@ -113,17 +114,17 @@ impl MemoryRegion {
         }
     }
 
-    /// The physical address of the base of the region.
+    /// Returns the physical address of the base of the region.
     pub fn base(&self) -> Paddr {
         self.base
     }
 
-    /// The length in bytes of the region.
+    /// Returns the length in bytes of the region.
     pub fn len(&self) -> usize {
         self.len
     }
 
-    /// The physical address of the end of the region.
+    /// Returns the physical address of the end of the region.
     pub fn end(&self) -> Paddr {
         self.base + self.len
     }
@@ -133,7 +134,7 @@ impl MemoryRegion {
         self.len == 0
     }
 
-    /// The type of the region.
+    /// Returns the type of the region.
     pub fn typ(&self) -> MemoryRegionType {
         self.typ
     }
@@ -163,12 +164,12 @@ impl MemoryRegion {
 /// allows 128 regions.
 //
 // TODO: confirm the number or make it configurable.
-pub const MAX_REGIONS: usize = 512;
+const MAX_REGIONS: usize = 512;
 
 /// A heapless set of memory regions.
 ///
 /// The set cannot contain more than `LEN` regions.
-pub struct MemoryRegionArray<const LEN: usize = MAX_REGIONS> {
+pub(crate) struct MemoryRegionArray<const LEN: usize = MAX_REGIONS> {
     regions: [MemoryRegion; LEN],
     count: usize,
 }
@@ -187,9 +188,13 @@ impl<const LEN: usize> Deref for MemoryRegionArray<LEN> {
     }
 }
 
+/// An error returned by [`MemoryRegionArray::push`] when the array is full.
+#[derive(Debug)]
+pub(crate) struct ArrayFullError;
+
 impl<const LEN: usize> MemoryRegionArray<LEN> {
     /// Constructs an empty set.
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             regions: [MemoryRegion::bad(); LEN],
             count: 0,
@@ -199,14 +204,15 @@ impl<const LEN: usize> MemoryRegionArray<LEN> {
     /// Appends a region to the set.
     ///
     /// If the set is full, an error is returned.
-    pub fn push(&mut self, region: MemoryRegion) -> Result<(), &'static str> {
-        if self.count < self.regions.len() {
-            self.regions[self.count] = region;
-            self.count += 1;
-            Ok(())
-        } else {
-            Err("MemoryRegionArray is full")
+    pub(crate) fn push(&mut self, region: MemoryRegion) -> Result<(), ArrayFullError> {
+        if self.count >= self.regions.len() {
+            return Err(ArrayFullError);
         }
+
+        self.regions[self.count] = region;
+        self.count += 1;
+
+        Ok(())
     }
 
     /// Sorts the regions and returns a full set of non-overlapping regions.
@@ -224,7 +230,7 @@ impl<const LEN: usize> MemoryRegionArray<LEN> {
     /// # Panics
     ///
     /// This method will panic if the number of output regions is greater than `LEN`.
-    pub fn into_non_overlapping(mut self) -> Self {
+    pub(crate) fn into_non_overlapping(mut self) -> Self {
         let max_addr = self
             .iter()
             .map(|r| r.end())
@@ -294,7 +300,7 @@ mod test {
     use crate::prelude::ktest;
 
     #[ktest]
-    fn test_sort_full_non_overlapping() {
+    fn sort_full_non_overlapping() {
         let mut regions = MemoryRegionArray::<64>::new();
         // Regions that can be combined.
         regions
