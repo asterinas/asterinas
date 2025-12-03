@@ -1,0 +1,44 @@
+# A basic CI test for NixOS.
+#
+# This workflow is intended to include the most basic test for AsterNixOS.
+# It requires only a minimal amount of disk space
+# and thus can be run on standard Github runners _for free_.
+name: Test AsterNixOS (minimal)
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  minimal-nixos-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+    steps:
+      # In the subsequent tests, a relatively large disk (4GB) will be created to install AsterNixOS.
+      # Standard GitHub runners may encounter "insufficient disk space" errors.
+      # Therefore, we first execute the following action to free up
+      # some disk space. The amount of space saved can be referenced in
+      # https://github.com/endersonmenezes/free-disk-space?tab=readme-ov-file#size-savings,
+      # currently amounting to approximately 24GB.
+      - uses: endersonmenezes/free-disk-space@v3
+        with:
+          rm_cmd: "rmz"
+          remove_android: true
+          remove_dotnet: true
+          remove_haskell: true
+          remove_tool_cache: true
+      - uses: actions/checkout@v4
+      - name: Run a Hello World program on AsterNixOS
+        uses: addnab/docker-run-action@v3
+        with:
+          image: asterinas/asterinas:0.16.1-20251130
+          options: --privileged -v /dev:/dev -v ${{ github.workspace }}:/root/asterinas
+          run: make run NIXOS=1 NIXOS_DISK_SIZE_IN_MB=4096 NIXOS_STAGE_2_INIT="hello-asterinas" || true
+      - name: Check results
+        run: |
+          tail --lines 10 ${{ github.workspace }}/qemu.log | grep -q "^Hello Asterinas!" || (echo "Test NixOS failed" && exit 1)
+          echo "Test NixOS succeeds!"
