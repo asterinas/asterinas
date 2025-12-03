@@ -6,10 +6,9 @@ use super::message::{MessageQueue, MessageReceiver};
 use crate::{
     events::IoEvents,
     fs::utils::Inode,
-    match_sock_option_mut,
     net::socket::{
         new_pseudo_inode,
-        options::{Error as SocketError, SocketOption},
+        options::{macros::sock_option_mut, Error as SocketError, SocketOption},
         private::SocketPrivate,
         unix::{ctrl_msg::AuxiliaryData, UnixSocketAddr},
         util::{
@@ -200,13 +199,13 @@ impl Socket for UnixDatagramSocket {
     }
 
     fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
-        match_sock_option_mut!(option, {
-            socket_errors: SocketError => {
+        sock_option_mut!(match option {
+            socket_errors @ SocketError => {
                 // TODO: Support socket errors for UNIX sockets
                 socket_errors.set(None);
                 return Ok(());
-            },
-            _ => ()
+            }
+            _ => (),
         });
 
         let options = self.options.read();

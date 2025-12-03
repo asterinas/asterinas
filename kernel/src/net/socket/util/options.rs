@@ -8,10 +8,10 @@ use aster_bigtcp::socket::{
 
 use super::LingerOption;
 use crate::{
-    match_sock_option_mut, match_sock_option_ref,
     net::socket::{
         netlink::NETLINK_DEFAULT_BUF_SIZE,
         options::{
+            macros::{sock_option_mut, sock_option_ref},
             AcceptConn, Broadcast, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority,
             RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
         },
@@ -107,67 +107,70 @@ impl SocketOptionSet {
         option: &mut dyn SocketOption,
         socket: &dyn GetSocketLevelOption,
     ) -> Result<()> {
-        match_sock_option_mut!(option, {
-            socket_reuse_addr: ReuseAddr => {
+        sock_option_mut!(match option {
+            socket_reuse_addr @ ReuseAddr => {
                 let reuse_addr = self.reuse_addr();
                 socket_reuse_addr.set(reuse_addr);
-            },
-            socket_broadcast: Broadcast => {
+            }
+            socket_broadcast @ Broadcast => {
                 let broadcast = self.broadcast();
                 socket_broadcast.set(broadcast);
-            },
-            socket_send_buf: SendBuf => {
+            }
+            socket_send_buf @ SendBuf => {
                 let send_buf = self.send_buf();
                 socket_send_buf.set(send_buf);
-            },
-            socket_recv_buf: RecvBuf => {
+            }
+            socket_recv_buf @ RecvBuf => {
                 let recv_buf = self.recv_buf();
                 socket_recv_buf.set(recv_buf);
-            },
-            socket_keepalive: KeepAlive => {
+            }
+            socket_keepalive @ KeepAlive => {
                 let keep_alive = self.keep_alive();
                 socket_keepalive.set(keep_alive);
-            },
-            socket_priority: Priority => {
+            }
+            socket_priority @ Priority => {
                 let priority = self.priority();
                 socket_priority.set(priority);
-            },
-            socket_linger: Linger => {
+            }
+            socket_linger @ Linger => {
                 let linger = self.linger();
                 socket_linger.set(linger);
-            },
-            socket_reuse_port: ReusePort => {
+            }
+            socket_reuse_port @ ReusePort => {
                 let reuse_port = self.reuse_port();
                 socket_reuse_port.set(reuse_port);
-            },
-            socket_pass_cred: PassCred => {
+            }
+            socket_pass_cred @ PassCred => {
                 // This option only affects UNIX sockets. However, it also works well with other
                 // sockets for setting and getting.
                 let pass_cred = self.pass_cred();
                 socket_pass_cred.set(pass_cred);
-            },
-            socket_peer_cred: PeerCred => {
+            }
+            socket_peer_cred @ PeerCred => {
                 let peer_cred = CUserCred::new_invalid();
                 socket_peer_cred.set(peer_cred);
-            },
-            socket_accept_conn: AcceptConn => {
+            }
+            socket_accept_conn @ AcceptConn => {
                 let is_listening = socket.is_listening();
                 socket_accept_conn.set(is_listening);
-            },
-            socket_sendbuf_force: SendBufForce => {
+            }
+            socket_sendbuf_force @ SendBufForce => {
                 check_current_privileged()?;
                 let send_buf = self.send_buf();
                 socket_sendbuf_force.set(send_buf);
-            },
-            socket_recvbuf_force: RecvBufForce => {
+            }
+            socket_recvbuf_force @ RecvBufForce => {
                 check_current_privileged()?;
                 let recv_buf = self.recv_buf();
                 socket_recvbuf_force.set(recv_buf);
-            },
-            _socket_peer_groups: PeerGroups => {
+            }
+            _socket_peer_groups @ PeerGroups => {
                 return_errno_with_message!(Errno::ENODATA, "the socket does not have peer groups");
-            },
-            _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to get is unknown")
+            }
+            _ => return_errno_with_message!(
+                Errno::ENOPROTOOPT,
+                "the socket option to get is unknown"
+            ),
         });
         Ok(())
     }
@@ -178,58 +181,58 @@ impl SocketOptionSet {
         option: &dyn SocketOption,
         socket: &dyn SetSocketLevelOption,
     ) -> Result<NeedIfacePoll> {
-        match_sock_option_ref!(option, {
-            socket_reuse_addr: ReuseAddr => {
+        sock_option_ref!(match option {
+            socket_reuse_addr @ ReuseAddr => {
                 let reuse_addr = socket_reuse_addr.get().unwrap();
                 self.set_reuse_addr(*reuse_addr);
                 socket.set_reuse_addr(*reuse_addr);
-            },
-            socket_broadcast: Broadcast => {
+            }
+            socket_broadcast @ Broadcast => {
                 let broadcast = socket_broadcast.get().unwrap();
                 self.set_broadcast(*broadcast);
-            },
-            socket_send_buf: SendBuf => {
+            }
+            socket_send_buf @ SendBuf => {
                 let send_buf = socket_send_buf.get().unwrap();
                 if *send_buf <= MIN_SENDBUF {
                     self.set_send_buf(MIN_SENDBUF);
                 } else {
                     self.set_send_buf(*send_buf);
                 }
-            },
-            socket_recv_buf: RecvBuf => {
+            }
+            socket_recv_buf @ RecvBuf => {
                 let recv_buf = socket_recv_buf.get().unwrap();
                 if *recv_buf <= MIN_RECVBUF {
                     self.set_recv_buf(MIN_RECVBUF);
                 } else {
                     self.set_recv_buf(*recv_buf);
                 }
-            },
-            socket_keepalive: KeepAlive => {
+            }
+            socket_keepalive @ KeepAlive => {
                 let keep_alive = socket_keepalive.get().unwrap();
                 self.set_keep_alive(*keep_alive);
                 return Ok(socket.set_keep_alive(*keep_alive));
-            },
-            socket_priority: Priority => {
+            }
+            socket_priority @ Priority => {
                 let priority = socket_priority.get().unwrap();
                 check_priority(*priority)?;
                 self.set_priority(*priority);
-            },
-            socket_linger: Linger => {
+            }
+            socket_linger @ Linger => {
                 let linger = socket_linger.get().unwrap();
                 self.set_linger(*linger);
-            },
-            socket_reuse_port: ReusePort => {
+            }
+            socket_reuse_port @ ReusePort => {
                 let reuse_port = socket_reuse_port.get().unwrap();
                 self.set_reuse_port(*reuse_port);
-            },
-            socket_pass_cred: PassCred => {
+            }
+            socket_pass_cred @ PassCred => {
                 // This option only affects UNIX sockets. However, it also works well with other
                 // sockets for setting and getting.
                 let pass_cred = socket_pass_cred.get().unwrap();
                 self.set_pass_cred(*pass_cred);
                 socket.set_pass_cred(*pass_cred);
-            },
-            socket_sendbuf_force: SendBufForce => {
+            }
+            socket_sendbuf_force @ SendBufForce => {
                 check_current_privileged()?;
                 let send_buf = socket_sendbuf_force.get().unwrap();
                 if *send_buf <= MIN_SENDBUF {
@@ -237,8 +240,8 @@ impl SocketOptionSet {
                 } else {
                     self.set_send_buf(*send_buf);
                 }
-            },
-            socket_recvbuf_force: RecvBufForce => {
+            }
+            socket_recvbuf_force @ RecvBufForce => {
                 check_current_privileged()?;
                 let recv_buf = socket_recvbuf_force.get().unwrap();
                 if *recv_buf <= MIN_RECVBUF {
@@ -246,8 +249,11 @@ impl SocketOptionSet {
                 } else {
                     self.set_recv_buf(*recv_buf);
                 }
-            },
-            _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to be set is unknown")
+            }
+            _ => return_errno_with_message!(
+                Errno::ENOPROTOOPT,
+                "the socket option to be set is unknown"
+            ),
         });
 
         Ok(NeedIfacePoll::FALSE)

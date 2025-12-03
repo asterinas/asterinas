@@ -10,13 +10,12 @@ use super::addr::UNSPECIFIED_LOCAL_ENDPOINT;
 use crate::{
     events::IoEvents,
     fs::utils::Inode,
-    match_sock_option_mut,
     net::{
         iface::is_broadcast_endpoint,
         socket::{
             ip::options::{IpOptionSet, SetIpLevelOption},
             new_pseudo_inode,
-            options::{Error as SocketError, SocketOption},
+            options::{macros::sock_option_mut, Error as SocketError, SocketOption},
             private::SocketPrivate,
             util::{
                 datagram_common::{select_remote_and_bind, Bound, Inner},
@@ -241,13 +240,13 @@ impl Socket for DatagramSocket {
     }
 
     fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
-        match_sock_option_mut!(option, {
-            socket_errors: SocketError => {
+        sock_option_mut!(match option {
+            socket_errors @ SocketError => {
                 // TODO: Support socket errors for UDP sockets
                 socket_errors.set(None);
                 return Ok(());
-            },
-            _ => ()
+            }
+            _ => (),
         });
 
         let inner = self.inner.read();

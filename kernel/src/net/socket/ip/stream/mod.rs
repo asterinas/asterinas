@@ -26,12 +26,14 @@ use super::{
 use crate::{
     events::IoEvents,
     fs::{file_handle::FileLike, utils::Inode},
-    match_sock_option_mut, match_sock_option_ref,
     net::{
         iface::Iface,
         socket::{
             new_pseudo_inode,
-            options::{Error as SocketError, SocketOption},
+            options::{
+                macros::{sock_option_mut, sock_option_ref},
+                Error as SocketError, SocketOption,
+            },
             private::SocketPrivate,
             util::{
                 options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
@@ -588,12 +590,12 @@ impl Socket for StreamSocket {
     }
 
     fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
-        match_sock_option_mut!(option, {
-            socket_errors: SocketError => {
+        sock_option_mut!(match option {
+            socket_errors @ SocketError => {
                 socket_errors.set(self.test_and_clear_error());
                 return Ok(());
-            },
-            _ => ()
+            }
+            _ => (),
         });
 
         let state = self.read_updated_state();
@@ -614,12 +616,12 @@ impl Socket for StreamSocket {
         // Deal with TCP-level options
         // FIXME: Here we only return the previously set values, without actually
         // asking the underlying sockets for the real, effective values.
-        match_sock_option_mut!(option, {
-            tcp_no_delay: NoDelay => {
+        sock_option_mut!(match option {
+            tcp_no_delay @ NoDelay => {
                 let no_delay = options.tcp.no_delay();
                 tcp_no_delay.set(no_delay);
-            },
-            tcp_maxseg: MaxSegment => {
+            }
+            tcp_maxseg @ MaxSegment => {
                 const DEFAULT_MAX_SEGMEMT: u32 = 536;
                 // For an unconnected socket,
                 // older Linux versions (e.g., v6.0) return
@@ -633,37 +635,40 @@ impl Socket for StreamSocket {
                 } else {
                     tcp_maxseg.set(maxseg);
                 }
-            },
-            tcp_keep_idle: KeepIdle => {
+            }
+            tcp_keep_idle @ KeepIdle => {
                 let keep_idle = options.tcp.keep_idle();
                 tcp_keep_idle.set(keep_idle);
-            },
-            tcp_syn_cnt: SynCnt => {
+            }
+            tcp_syn_cnt @ SynCnt => {
                 let syn_cnt = options.tcp.syn_cnt();
                 tcp_syn_cnt.set(syn_cnt);
-            },
-            tcp_defer_accept: DeferAccept => {
+            }
+            tcp_defer_accept @ DeferAccept => {
                 let defer_accept = options.tcp.defer_accept();
                 let seconds = defer_accept.to_secs();
                 tcp_defer_accept.set(seconds);
-            },
-            tcp_window_clamp: WindowClamp => {
+            }
+            tcp_window_clamp @ WindowClamp => {
                 let window_clamp = options.tcp.window_clamp();
                 tcp_window_clamp.set(window_clamp);
-            },
-            tcp_congestion: Congestion => {
+            }
+            tcp_congestion @ Congestion => {
                 let congestion = options.tcp.congestion();
                 tcp_congestion.set(congestion);
-            },
-            tcp_user_timeout: UserTimeout => {
+            }
+            tcp_user_timeout @ UserTimeout => {
                 let user_timeout = options.tcp.user_timeout();
                 tcp_user_timeout.set(user_timeout);
-            },
-            tcp_inq: Inq => {
+            }
+            tcp_inq @ Inq => {
                 let inq = options.tcp.receive_inq();
                 tcp_inq.set(inq);
-            },
-            _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to get is unknown")
+            }
+            _ => return_errno_with_message!(
+                Errno::ENOPROTOOPT,
+                "the socket option to get is unknown"
+            ),
         });
 
         Ok(())
@@ -712,23 +717,28 @@ fn do_tcp_setsockopt(
     options: &mut OptionSet,
     state: &mut State,
 ) -> Result<NeedIfacePoll> {
-    match_sock_option_ref!(option, {
-        tcp_no_delay: NoDelay => {
+    sock_option_ref!(match option {
+        tcp_no_delay @ NoDelay => {
             let no_delay = tcp_no_delay.get().unwrap();
             options.tcp.set_no_delay(*no_delay);
-            state.set_raw_option(|raw_socket: &dyn RawTcpSetOption| raw_socket.set_nagle_enabled(!no_delay));
-        },
-        tcp_maxseg: MaxSegment => {
+            state.set_raw_option(|raw_socket: &dyn RawTcpSetOption| {
+                raw_socket.set_nagle_enabled(!no_delay)
+            });
+        }
+        tcp_maxseg @ MaxSegment => {
             const MIN_MAXSEG: u32 = 536;
             const MAX_MAXSEG: u32 = 65535;
 
             let maxseg = tcp_maxseg.get().unwrap();
             if *maxseg < MIN_MAXSEG || *maxseg > MAX_MAXSEG {
-                return_errno_with_message!(Errno::EINVAL, "the maximum segment size is out of bounds");
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "the maximum segment size is out of bounds"
+                );
             }
             options.tcp.set_maxseg(*maxseg);
-        },
-        tcp_keep_idle: KeepIdle => {
+        }
+        tcp_keep_idle @ KeepIdle => {
             const MIN_KEEP_IDLE: u32 = 1;
             const MAX_KEEP_IDLE: u32 = 32767;
 
@@ -739,8 +749,8 @@ fn do_tcp_setsockopt(
             options.tcp.set_keep_idle(*keepidle);
 
             // TODO: Track when the socket becomes idle to actually support keep idle.
-        },
-        tcp_syn_cnt: SynCnt => {
+        }
+        tcp_syn_cnt @ SynCnt => {
             const MAX_TCP_SYN_CNT: u8 = 127;
 
             let syncnt = tcp_syn_cnt.get().unwrap();
@@ -748,16 +758,16 @@ fn do_tcp_setsockopt(
                 return_errno_with_message!(Errno::EINVAL, "the SYN count is out of bounds");
             }
             options.tcp.set_syn_cnt(*syncnt);
-        },
-        tcp_defer_accept: DeferAccept => {
+        }
+        tcp_defer_accept @ DeferAccept => {
             let mut seconds = *(tcp_defer_accept.get().unwrap());
             if (seconds as i32) < 0 {
                 seconds = 0;
             }
             let retrans = Retrans::from_secs(seconds);
             options.tcp.set_defer_accept(retrans);
-        },
-        tcp_window_clamp: WindowClamp => {
+        }
+        tcp_window_clamp @ WindowClamp => {
             let window_clamp = tcp_window_clamp.get().unwrap();
             let half_recv_buf = options.socket.recv_buf() / 2;
             if *window_clamp <= half_recv_buf {
@@ -765,23 +775,24 @@ fn do_tcp_setsockopt(
             } else {
                 options.tcp.set_window_clamp(*window_clamp);
             }
-        },
-        tcp_congestion: Congestion => {
+        }
+        tcp_congestion @ Congestion => {
             let congestion = tcp_congestion.get().unwrap();
             options.tcp.set_congestion(*congestion);
-        },
-        tcp_user_timeout: UserTimeout => {
+        }
+        tcp_user_timeout @ UserTimeout => {
             let user_timeout = tcp_user_timeout.get().unwrap();
             if (*user_timeout as i32) < 0 {
                 return_errno_with_message!(Errno::EINVAL, "the user timeout cannot be negative");
             }
             options.tcp.set_user_timeout(*user_timeout);
-        },
-        tcp_inq: Inq => {
+        }
+        tcp_inq @ Inq => {
             let inq = tcp_inq.get().unwrap();
             options.tcp.set_receive_inq(*inq);
-        },
-        _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to be set is unknown")
+        }
+        _ =>
+            return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to be set is unknown"),
     });
 
     Ok(NeedIfacePoll::FALSE)
