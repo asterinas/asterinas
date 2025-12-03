@@ -130,7 +130,18 @@ pub trait SysBranchNode: SysNode {
 /// In particular, every "normal" node may have associated attributes.
 pub trait SysNode: SysObj {
     /// Returns the attribute set of a `SysNode`.
+    ///
+    /// The attribute set returned by this method contains all possible attributes
+    /// that this node may have. For nodes with dynamically changing attributes, it is
+    /// necessary to additionally use the [`SysNode::is_attr_absent`] method to confirm
+    /// whether an attribute is currently present.
     fn node_attrs(&self) -> &SysAttrSet;
+
+    /// Returns whether an attribute with the given name is absent.
+    ///
+    /// If the node does not have the attribute with the given name,
+    /// the return value is unspecified.
+    fn is_attr_absent(&self, _name: &str) -> bool;
 
     /// Reads the value of an attribute.
     fn read_attr(&self, name: &str, writer: &mut VmWriter) -> Result<usize>;
