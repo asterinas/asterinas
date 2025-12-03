@@ -277,6 +277,10 @@ macro_rules! _inner_impl_sys_node {
                 self.$field.attr_set()
             }
 
+            fn is_attr_absent(&self, name: &str) -> bool {
+                <_ as $helper_trait>::is_attr_absent(self, name)
+            }
+
             fn read_attr(
                 &self,
                 name: &str,
@@ -331,6 +335,10 @@ pub trait _InheritSysLeafNode<T: SysNode> {
         self.field().init_parent(parent);
     }
 
+    fn is_attr_absent(&self, _name: &str) -> bool {
+        false
+    }
+
     fn read_attr(&self, name: &str, writer: &mut VmWriter) -> Result<usize> {
         self.read_attr_at(name, 0, writer)
     }
@@ -371,6 +379,7 @@ pub trait _InheritSysLeafNode<T: SysNode> {
 /// - Methods with default implementations that users can override:
 ///   - [`SysObj::is_root`]
 ///   - [`SysObj::init_parent`]
+///   - [`SysNode::is_attr_absent`]
 ///   - [`SysNode::read_attr`]
 ///   - [`SysNode::write_attr`]
 ///   - [`SysNode::read_attr_at`]
@@ -469,6 +478,10 @@ pub trait _InheritSysBranchNode<T: SysBranchNode> {
 
     fn init_parent(&self, parent: alloc::sync::Weak<dyn SysBranchNode>) {
         self.field().init_parent(parent);
+    }
+
+    fn is_attr_absent(&self, _name: &str) -> bool {
+        false
     }
 
     fn read_attr(&self, name: &str, writer: &mut VmWriter) -> Result<usize> {

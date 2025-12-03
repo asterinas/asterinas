@@ -190,6 +190,9 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
             }
         } else {
             // If no child node found, try finding an attribute of the current branch node
+            if sysnode.is_attr_absent(name) {
+                return_errno_with_message!(Errno::ENOENT, "attribute is not present");
+            }
             let Some(attr) = sysnode.node_attrs().get(name) else {
                 return_errno_with_message!(Errno::ENOENT, "child node or attribute not found");
             };
@@ -198,10 +201,10 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
                 SysTreeNodeKind::Branch(branch_arc) => branch_arc.clone(),
                 // This case shouldn't happen if lookup_node_or_attr is called correctly
                 _ => {
-                    return Err(Error::with_message(
+                    return_errno_with_message!(
                         Errno::EIO,
-                        "lookup_node_or_attr called on non-branch inode",
-                    ))
+                        "lookup_node_or_attr called on non-branch inode"
+                    );
                 }
             };
 
@@ -215,18 +218,18 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
         Self: Sized + 'static,
     {
         // This function is called when the current inode is a Leaf directory
+        if sysnode.is_attr_absent(name) {
+            return_errno_with_message!(Errno::ENOENT, "attribute is not present");
+        }
         let Some(attr) = sysnode.node_attrs().get(name) else {
-            return Err(Error::new(Errno::ENOENT));
+            return_errno_with_message!(Errno::ENOENT, "child node or attribute not found");
         };
 
         let leaf_node_arc: Arc<dyn SysNode> = match &self.node_kind() {
             SysTreeNodeKind::Leaf(leaf_arc) => leaf_arc.clone(),
             // This case shouldn't happen if lookup_attr is called correctly
             _ => {
-                return Err(Error::with_message(
-                    Errno::EIO,
-                    "lookup_attr called on non-leaf inode",
-                ))
+                return_errno_with_message!(Errno::EIO, "lookup_attr called on non-leaf inode");
             }
         };
 
@@ -240,22 +243,30 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
     {
         match &self.node_kind() {
             SysTreeNodeKind::Branch(branch_node) => {
-                let attrs = branch_node.node_attrs().iter().cloned().collect();
-                let attr_iter = AttrDentryIter::new(attrs, self.metadata().ino, min_ino);
+                let attrs = branch_node.node_attrs();
+                let attr_iter = AttrDentryIter::new(
+                    Some((attrs.iter(), branch_node.as_ref())),
+                    self.metadata().ino,
+                    min_ino,
+                );
                 let child_objs = branch_node.children();
                 let node_iter = NodeDentryIter::new(child_objs, min_ino);
                 let special_iter = ThisAndParentDentryIter::new(self, min_ino);
                 attr_iter.chain(node_iter).chain(special_iter)
             }
             SysTreeNodeKind::Leaf(leaf_node) => {
-                let attrs = leaf_node.node_attrs().iter().cloned().collect();
-                let attr_iter = AttrDentryIter::new(attrs, self.metadata().ino, min_ino);
+                let attrs = leaf_node.node_attrs();
+                let attr_iter = AttrDentryIter::new(
+                    Some((attrs.iter(), leaf_node.as_ref())),
+                    self.metadata().ino,
+                    min_ino,
+                );
                 let node_iter = NodeDentryIter::new(Vec::new(), min_ino);
                 let special_iter = ThisAndParentDentryIter::new(self, min_ino);
                 attr_iter.chain(node_iter).chain(special_iter)
             }
             SysTreeNodeKind::Attr(_, _) | SysTreeNodeKind::Symlink(_) => {
-                let attr_iter = AttrDentryIter::new(Vec::new(), self.metadata().ino, min_ino);
+                let attr_iter = AttrDentryIter::new(None, self.metadata().ino, min_ino);
                 let node_iter = NodeDentryIter::new(Vec::new(), min_ino);
                 let special_iter = ThisAndParentDentryIter::new(self, min_ino);
                 attr_iter.chain(node_iter).chain(special_iter)
@@ -456,7 +467,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
 
     default fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
         if self.type_() != InodeType::Dir {
-            return Err(Error::new(Errno::ENOTDIR));
+            return_errno_with_message!(Errno::ENOTDIR, "not a directory inode");
         }
 
         if name == "." {
@@ -530,7 +541,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
 
             if res.is_err() {
                 if count == 0 {
-                    return Err(Error::new(Errno::EINVAL));
+                    return_errno_with_message!(Errno::EINVAL, "dirent visitor error");
                 } else {
                     break;
                 }
@@ -588,31 +599,33 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
 }
 
 // Update AttrDentryIter to filter by min_ino
-struct AttrDentryIter {
-    attrs: Vec<SysAttr>,
+struct AttrDentryIter<'a, I: Iterator<Item = &'a SysAttr>> {
+    attrs_and_node: Option<(I, &'a dyn SysNode)>,
     dir_ino: Ino,
     min_ino: Ino,
-    index: usize,
 }
 
-impl AttrDentryIter {
-    fn new(attrs: Vec<SysAttr>, dir_ino: Ino, min_ino: Ino) -> Self {
+impl<'a, I: Iterator<Item = &'a SysAttr>> AttrDentryIter<'a, I> {
+    fn new(attrs_and_node: Option<(I, &'a dyn SysNode)>, dir_ino: Ino, min_ino: Ino) -> Self {
         Self {
-            attrs,
+            attrs_and_node,
             dir_ino,
             min_ino,
-            index: 0,
         }
     }
 }
 
-impl Iterator for AttrDentryIter {
+impl<'a, I: Iterator<Item = &'a SysAttr>> Iterator for AttrDentryIter<'a, I> {
     type Item = Dentry;
 
     fn next(&mut self) -> Option<Dentry> {
-        while self.index < self.attrs.len() {
-            let attr = &self.attrs[self.index];
-            self.index += 1;
+        let (iter, sys_node) = self.attrs_and_node.as_mut()?;
+
+        for attr in iter {
+            if sys_node.is_attr_absent(attr.name()) {
+                continue; // Skip hidden attributes
+            }
+
             let attr_ino = ino::from_dir_ino_and_attr_id(self.dir_ino, attr.id());
 
             if attr_ino >= self.min_ino {
