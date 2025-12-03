@@ -1,0 +1,38 @@
+From 6e3a7b461bbf96d0e81ec36981b34605dbf4d8d7 Mon Sep 17 00:00:00 2001
+From: Wei Zhang <ruoyuan.zw@antgroup.com>
+Date: Wed, 7 May 2025 05:34:47 +0000
+Subject: [PATCH] Skip checking graphics under sys
+
+The sys filesystem support is on the way. Right now, we skip the checking
+to avoid fbdev driver failing to work.
+
+Signed-off-by: Wei Zhang <ruoyuan.zw@antgroup.com>
+---
+ hw/xfree86/fbdevhw/fbdevhw.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/hw/xfree86/fbdevhw/fbdevhw.c b/hw/xfree86/fbdevhw/fbdevhw.c
+index 9c30f00..27253a7 100644
+--- a/hw/xfree86/fbdevhw/fbdevhw.c
++++ b/hw/xfree86/fbdevhw/fbdevhw.c
+@@ -328,7 +328,7 @@ fbdev_open(int scrnIndex, const char *dev, char **namep)
+         xf86DrvMsg(scrnIndex, X_ERROR, "open %s: %s\n", dev, strerror(errno));
+         return -1;
+     }
+-
++#if 0
+     /* only touch non-PCI devices on this path */
+     {
+         char buf[PATH_MAX] = {0};
+@@ -344,7 +344,7 @@ fbdev_open(int scrnIndex, const char *dev, char **namep)
+         }
+         free(sysfs_path);
+     }
+-
++#endif
+     if (namep) {
+         if (-1 == ioctl(fd, FBIOGET_FSCREENINFO, (void *) (&fix))) {
+             *namep = NULL;
+--
+2.43.0
+

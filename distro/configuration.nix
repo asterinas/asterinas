@@ -11,6 +11,10 @@
 
   networking.hostName = "asterinas"; # Define your hostname.
 
+  # Uncomment the two options below to enable the X11 (X.Org) desktop (XFCE).
+  # services.xserver.enable = true;
+  # services.xserver.desktopManager.xfce.enable = true;
+
   # List packages installed in system profile.
   # You can use https://search.nixos.org/ to find more packages (and options).
   environment.systemPackages = with pkgs; [ hello-asterinas ];
