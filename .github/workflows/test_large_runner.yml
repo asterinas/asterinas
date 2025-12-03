@@ -1,0 +1,17 @@
+name: "Test Large Runner"
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  nixos-install-test:
+    runs-on: ubuntu-2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Echo hello
+        run: |
+          echo "hello"
