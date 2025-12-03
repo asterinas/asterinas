@@ -80,6 +80,7 @@ cvm_guest = ["dep:tdx-guest", "ostd/cvm_guest", "aster-virtio/cvm_guest"]
 coverage = ["ostd/coverage"]
 # By default we use the Sv48 address translation mode.
 riscv_sv39_mode = ["ostd/riscv_sv39_mode"]
+numa = ["ostd/numa"]
 
 [lints]
 workspace = true

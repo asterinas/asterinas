@@ -2,6 +2,7 @@
 
 #![no_std]
 #![deny(unsafe_code)]
+#![feature(let_chains)]
 
 //! An implementation of the global physical memory frame allocator for
 //! [OSTD](https://crates.io/crates/ostd) based kernels.
@@ -34,6 +35,7 @@ use ostd::{
     cpu::PinCurrentCpu,
     irq,
     mm::{frame::GlobalFrameAllocator, Paddr},
+    numa::NodeId,
 };
 
 mod cache;
@@ -72,10 +74,10 @@ impl GlobalFrameAllocator for FrameAllocator {
         res
     }
 
-    fn dealloc(&self, addr: Paddr, size: usize) {
+    fn dealloc(&self, addr: Paddr, size: usize, node_id: NodeId) {
         let guard = irq::disable_local();
         TOTAL_FREE_SIZE.add(guard.current_cpu(), size);
-        cache::dealloc(&guard, addr, size);
+        cache::dealloc(&guard, addr, size, node_id);
     }
 
     fn add_free_memory(&self, addr: Paddr, size: usize) {

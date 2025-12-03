@@ -1,24 +1,22 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Controlling the balancing between CPU-local free pools and the global free pool.
+//! Controlling the balancing between CPU-local free pools and the NUMA node free pool.
 
-use ostd::cpu::num_cpus;
-
-use super::{lesser_order_of, BuddyOrder, BuddySet, OnDemandGlobalLock, MAX_LOCAL_BUDDY_ORDER};
+use super::{lesser_order_of, BuddyOrder, BuddySet, OnDemandNodeLock, MAX_LOCAL_BUDDY_ORDER};
 
 use crate::chunk::split_to_order;
 
 /// Controls the expected size of cache for each CPU-local free pool.
 ///
-/// The expected size will be the size of `GLOBAL_POOL` divided by the number
-/// of the CPUs, and then divided by this constant.
+/// The expected size will be the size of the NUMA node free pool divided by
+/// the number of the CPUs in the node, and then divided by this constant.
 const CACHE_EXPECTED_PORTION: usize = 2;
 
 /// Returns the expected size of cache for each CPU-local free pool.
 ///
-/// It depends on the size of the global free pool.
-fn cache_expected_size(global_size: usize) -> usize {
-    global_size / num_cpus() / CACHE_EXPECTED_PORTION
+/// It depends on the size of the NUMA node free pool.
+fn cache_expected_size(node_size: usize, num_cpus_in_node: usize) -> usize {
+    node_size / num_cpus_in_node / CACHE_EXPECTED_PORTION
 }
 
 /// Controls the minimal size of cache for each CPU-local free pool.
@@ -28,9 +26,9 @@ const CACHE_MINIMAL_PORTION: usize = 8;
 
 /// Returns the minimal size of cache for each CPU-local free pool.
 ///
-/// It depends on the size of the global free pool.
-fn cache_minimal_size(global_size: usize) -> usize {
-    cache_expected_size(global_size) / CACHE_MINIMAL_PORTION
+/// It depends on the size of the NUMA node free pool.
+fn cache_minimal_size(node_size: usize, num_cpus_in_node: usize) -> usize {
+    cache_expected_size(node_size, num_cpus_in_node) / CACHE_MINIMAL_PORTION
 }
 
 /// Controls the maximal size of cache for each CPU-local free pool.
@@ -40,23 +38,24 @@ const CACHE_MAXIMAL_MULTIPLIER: usize = 2;
 
 /// Returns the maximal size of cache for each CPU-local free pool.
 ///
-/// It depends on the size of the global free pool.
-fn cache_maximal_size(global_size: usize) -> usize {
-    cache_expected_size(global_size) * CACHE_MAXIMAL_MULTIPLIER
+/// It depends on the size of the NUMA node free pool.
+fn cache_maximal_size(node_size: usize, num_cpus_in_node: usize) -> usize {
+    cache_expected_size(node_size, num_cpus_in_node) * CACHE_MAXIMAL_MULTIPLIER
 }
 
-/// Balances a local cache and the global free pool.
-pub fn balance(local: &mut BuddySet<MAX_LOCAL_BUDDY_ORDER>, global: &mut OnDemandGlobalLock) {
-    let global_size = global.get_global_size();
+/// Balances a local cache and the NUMA node free pool.
+pub fn balance(local: &mut BuddySet<MAX_LOCAL_BUDDY_ORDER>, node: &mut OnDemandNodeLock) {
+    let node_size = node.get_node_size();
+    let num_cpus_in_node = node.get_num_cpus_in_node();
 
-    let minimal_local_size = cache_minimal_size(global_size);
-    let expected_local_size = cache_expected_size(global_size);
-    let maximal_local_size = cache_maximal_size(global_size);
+    let minimal_local_size = cache_minimal_size(node_size, num_cpus_in_node);
+    let expected_local_size = cache_expected_size(node_size, num_cpus_in_node);
+    let maximal_local_size = cache_maximal_size(node_size, num_cpus_in_node);
 
     let local_size = local.total_size();
 
     if local_size >= maximal_local_size {
-        // Move local frames to the global pool.
+        // Move local frames to the node pool.
         if local_size == 0 {
             return;
         }
@@ -64,17 +63,17 @@ pub fn balance(local: &mut BuddySet<MAX_LOCAL_BUDDY_ORDER>, global: &mut OnDeman
         let expected_removal = local_size - expected_local_size;
         let lesser_order = lesser_order_of(expected_removal);
 
-        balance_to(local, &mut *global.get(), lesser_order);
+        balance_to(local, &mut *node.get(), lesser_order);
     } else if local_size < minimal_local_size {
-        // Move global frames to the local pool.
-        if global_size == 0 {
+        // Move node frames to the local pool.
+        if node_size == 0 {
             return;
         }
 
         let expected_allocation = expected_local_size - local_size;
         let lesser_order = lesser_order_of(expected_allocation);
 
-        balance_to(&mut *global.get(), local, lesser_order);
+        balance_to(&mut *node.get(), local, lesser_order);
     }
 }
 

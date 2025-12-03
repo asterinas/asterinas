@@ -41,7 +41,7 @@ elif [ "$NETDEV" = "tap" ]; then
     QEMU_IFDOWN_SCRIPT_PATH=$THIS_SCRIPT_DIR/net/qemu-ifdown.sh
     NETDEV_ARGS="-netdev tap,id=net01,script=$QEMU_IFUP_SCRIPT_PATH,downscript=$QEMU_IFDOWN_SCRIPT_PATH,vhost=$VHOST"
     VIRTIO_NET_FEATURES=",csum=off,guest_csum=off,ctrl_guest_offloads=off,guest_tso4=off,guest_tso6=off,guest_ecn=off,guest_ufo=off,host_tso4=off,host_tso6=off,host_ecn=off,host_ufo=off,mrg_rxbuf=off,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,ctrl_rx_extra=off,guest_announce=off,ctrl_mac_addr=off,host_ufo=off,guest_uso4=off,guest_uso6=off,host_uso=off"
-else 
+else
     echo "Invalid netdev" 1>&2
     NETDEV_ARGS="-nic none"
 fi
@@ -102,6 +102,40 @@ if [ "$1" = "iommu" ]; then
     # TODO: Add support for enabling IOMMU on AMD platforms
 fi
 
+if [ "${NUMA}" = "true" ]; then
+    SMP=${SMP:-1}
+    if [ "$((SMP))" -eq 1 ]; then
+        echo "Warning: NUMA configuration skipped because SMP=1" 1>&2
+    else
+        HALF_SMP=$((SMP / 2))
+        NODE0_CPU_START=0
+        NODE0_CPU_END=$((HALF_SMP - 1))
+        NODE1_CPU_START=$HALF_SMP
+        NODE1_CPU_END=$((SMP - 1))
+
+        MEM_NUM=$(echo "${MEM:-8G}" | sed -E 's/([0-9]+).*/\1/')
+        MEM_UNIT=$(echo "${MEM:-8G}" | sed -E 's/[0-9]+(.*)/\1/')
+        NODE0_MEM_NUM=$((MEM_NUM / 2))
+        NODE1_MEM_NUM=$((MEM_NUM - NODE0_MEM_NUM))
+        NODE0_MEM="${NODE0_MEM_NUM}${MEM_UNIT}"
+        NODE1_MEM="${NODE1_MEM_NUM}${MEM_UNIT}"
+
+        HOST_NUMA_NODES=$(lscpu | awk -F: '/NUMA node\(s\)/ {gsub(/ /,"",$2); print $2}')
+        HOST_NODE1=$((HOST_NUMA_NODES<2?0:1))
+
+        NUMA_EXTRA_ARGS="\
+            -object memory-backend-ram,size=${NODE0_MEM},id=mem0,host-nodes=0,policy=bind \
+            -object memory-backend-ram,size=${NODE1_MEM},id=mem1,host-nodes=${HOST_NODE1},policy=bind \
+            -numa node,memdev=mem0,cpus=${NODE0_CPU_START}-${NODE0_CPU_END},nodeid=0 \
+            -numa node,memdev=mem1,cpus=${NODE1_CPU_START}-${NODE1_CPU_END},nodeid=1 \
+            -numa dist,src=0,dst=0,val=10 \
+            -numa dist,src=0,dst=1,val=20 \
+            -numa dist,src=1,dst=0,val=20 \
+            -numa dist,src=1,dst=1,val=10 \
+        "
+    fi
+fi
+
 QEMU_ARGS="\
     $COMMON_QEMU_ARGS \
     -machine q35,kernel-irqchip=split \
@@ -111,6 +145,7 @@ QEMU_ARGS="\
     -device virtio-serial-pci,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
     -device virtconsole,chardev=mux \
     $IOMMU_EXTRA_ARGS \
+    $NUMA_EXTRA_ARGS \
 "
 
 MICROVM_QEMU_ARGS="\

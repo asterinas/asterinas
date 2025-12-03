@@ -223,7 +223,7 @@ pub(crate) unsafe fn copy_bsp_for_ap(num_cpus: usize) {
             core::ptr::write_bytes(ptr as *mut u8, 0, size);
         }
         // SAFETY: The memory is properly allocated and initialized. We exclusively own it. We
-        // never deallocate it so it lives for '`static'. So we can create a mutable slice on it.
+        // never deallocate it so it lives for `'static`. So we can create a mutable slice on it.
         unsafe { core::slice::from_raw_parts_mut(ptr, num_aps) }
     };
 
