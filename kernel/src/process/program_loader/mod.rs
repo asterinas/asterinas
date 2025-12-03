@@ -22,7 +22,7 @@ use crate::{
 /// the `argv` and the `envp` which is required for the program execution.
 pub struct ProgramToLoad {
     elf_inode: Arc<dyn Inode>,
-    file_first_page: Box<[u8; PAGE_SIZE]>,
+    elf_headers: ElfHeaders,
     argv: Vec<CString>,
     envp: Vec<CString>,
 }
@@ -68,9 +68,11 @@ impl ProgramToLoad {
             );
         }
 
+        let elf_headers = ElfHeaders::parse_elf(&*file_first_page)?;
+
         Ok(Self {
             elf_inode: elf_inode.clone(),
-            file_first_page,
+            elf_headers,
             argv,
             envp,
         })
@@ -80,12 +82,11 @@ impl ProgramToLoad {
     ///
     /// Returns the information about the ELF loading process.
     pub fn load_to_vmar(self, vmar: &Vmar, fs_resolver: &FsResolver) -> Result<ElfLoadInfo> {
-        let elf_headers = ElfHeaders::parse_elf(&*self.file_first_page)?;
         let elf_load_info = load_elf_to_vmar(
             vmar,
             &self.elf_inode,
             fs_resolver,
-            elf_headers,
+            self.elf_headers,
             self.argv,
             self.envp,
         )?;
