@@ -1,0 +1,33 @@
+name: "Test Large Runner"
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test-normal-runner:
+    runs-on: ubuntu-latest
+    container: 
+      image: asterinas/asterinas:0.16.1-20251130
+      options: --device=/dev/kvm --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Echo hello
+        run: |
+          echo "test normal runner"
+          df -h
+
+  test-large-runner:
+    runs-on: ubuntu-2-cores-75GB-ssd
+    container: 
+      image: asterinas/asterinas:0.16.1-20251130
+      options: --device=/dev/kvm --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Echo hello
+        run: |
+          echo "test large runner"
+          df -h
