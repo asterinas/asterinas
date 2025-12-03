@@ -1,0 +1,101 @@
+From 16f92eda2d20d675fd5bab24771e78350fc75b8e Mon Sep 17 00:00:00 2001
+From: Wei Zhang <ruoyuan.zw@antgroup.com>
+Date: Wed, 17 Sep 2025 16:05:54 +0800
+Subject: [PATCH] hardcode tty1 usage due to Asterinas limitations
+
+Asterinas currently only supports /dev/tty1 and lacks multi-tty device
+support. This patch:
+
+- Forces Xorg to use exclusively /dev/tty1
+- Skips ioctl calls intended for tty device switching
+- Maintains functionality while avoiding unsupported operations
+
+The changes ensure Xorg remains operational on Asterinas without
+attempting to access non-existent tty devices or perform unsupported
+tty switching operations.
+
+Signed-off-by: Wei Zhang <ruoyuan.zw@antgroup.com>
+---
+ hw/xfree86/os-support/linux/lnx_init.c | 26 ++++++++++++++++++++++----
+ 1 file changed, 22 insertions(+), 4 deletions(-)
+
+diff --git a/hw/xfree86/os-support/linux/lnx_init.c b/hw/xfree86/os-support/linux/lnx_init.c
+index 111b3b4..22163ce 100644
+--- a/hw/xfree86/os-support/linux/lnx_init.c
++++ b/hw/xfree86/os-support/linux/lnx_init.c
+@@ -106,6 +106,15 @@ linux_parse_vt_settings(int may_fail)
+         from = X_CMDLINE;
+     }
+     else {
++        /*
++         * NOTE: In Asterinas, the number of TTYs is hardcoded, because the
++	 * current implementation of Asterinas does not support multiple TTYs.
++	 * Currently, only /dev/tty1 is supported.
++	 *
++	 * Todo: Update this logic if multi-TTY support is added in the future.
++         */
++        xf86Info.vtno = 1;
++#if 0
+         fd = open("/dev/tty0", O_WRONLY, 0);
+         if (fd < 0) {
+             if (may_fail)
+@@ -139,6 +148,7 @@ linux_parse_vt_settings(int may_fail)
+             }
+         }
+         close(fd);
++#endif
+     }
+
+     xf86Msg(from, "using VT number %d\n\n", xf86Info.vtno);
+@@ -204,15 +214,13 @@ xf86OpenConsole(void)
+         i = 0;
+         while (vcs[i] != NULL) {
+             snprintf(vtname, sizeof(vtname), vcs[i], xf86Info.vtno);    /* /dev/tty1-64 */
++            xf86Msg(X_WARNING, "[DEBUG]xf86OpenConsole: trying to open %s\n", vtname);
+             if ((xf86Info.consoleFd = open(vtname, O_RDWR | O_NDELAY, 0)) >= 0)
+                 break;
+             i++;
+         }
+
+-        if (xf86Info.consoleFd < 0)
+-            FatalError("xf86OpenConsole: Cannot open virtual console"
+-                       " %d (%s)\n", xf86Info.vtno, strerror(errno));
+-
++#if 0
+         /*
+          * Linux doesn't switch to an active vt after the last close of a vt,
+          * so we do this ourselves by remembering which is active now.
+@@ -223,10 +231,17 @@ xf86OpenConsole(void)
+                     strerror(errno));
+         else
+             activeVT = vts.v_active;
++#endif
+
+         if (!xf86Info.ShareVTs) {
+             struct termios nTty;
+
++	    SYSCALL(ret = ioctl(xf86Info.consoleFd, KDSETMODE, KD_GRAPHICS));
++            if (ret < 0)
++                FatalError("xf86OpenConsole: KDSETMODE KD_GRAPHICS failed %s\n",
++                           strerror(errno));
++	    xf86Msg(X_WARNING, "[DEBUG] xf86OpenConsole: KDSETMODE to KD_GRAPHICS\n");
++#if 0
+             /*
+              * now get the VT.  This _must_ succeed, or else fail completely.
+              */
+@@ -282,9 +297,12 @@ xf86OpenConsole(void)
+             cfsetispeed(&nTty, 9600);
+             cfsetospeed(&nTty, 9600);
+             tcsetattr(xf86Info.consoleFd, TCSANOW, &nTty);
++#endif
+         }
+     }
+     else {                      /* serverGeneration != 1 */
++        xf86Msg(X_WARNING, "[DEBUG] xf86Info.ShareVTs %d, xf86Info.autoVTSwitch %d\n",
++                xf86Info.ShareVTs, xf86Info.autoVTSwitch);
+         if (!xf86Info.ShareVTs && xf86Info.autoVTSwitch) {
+             /* now get the VT */
+             if (!switch_to(xf86Info.vtno, "xf86OpenConsole"))
+--
+2.43.0
+
