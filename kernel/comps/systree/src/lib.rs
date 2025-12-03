@@ -85,6 +85,8 @@ pub enum Error {
     NotFound,
     /// Invalid operation occurred
     InvalidOperation,
+    /// Resource is unavailable
+    ResourceUnavailable,
     /// Attribute operation failed
     AttributeError,
     /// Permission denied for operation
@@ -106,6 +108,7 @@ impl core::fmt::Display for Error {
         match self {
             Error::NotFound => write!(f, "Attempted to access a non-existent systree item"),
             Error::InvalidOperation => write!(f, "Invalid operation occurred"),
+            Error::ResourceUnavailable => write!(f, "Resource is unavailable"),
             Error::AttributeError => write!(f, "Attribute error"),
             Error::PermissionDenied => write!(f, "Permission denied for operation"),
             Error::InternalError(msg) => write!(f, "Internal error: {}", msg),
