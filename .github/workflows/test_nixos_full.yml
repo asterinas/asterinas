@@ -1,0 +1,39 @@
+# A comprehensive test for NixOS.
+#
+# This test suite is designed to run on GitHub's larger runners,
+# leveraging their extended storage capacity. 
+# Here, we can thoroughly test a wider range of NixOS commands and various applications.
+# As GitHub charges more for these premium runners,
+# these tests will only run when changes are detected in AsterNixOS-specific content.
+name: Test AsterNixOS (full)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - distro/**
+      - .github/workflows/test_nixos_full.yml
+      - tools/nixos/**
+  push:
+    branches:
+      - main
+    paths:
+      - distro/**
+      - .github/workflows/test_nixos_full.yml
+      - tools/nixos/**
+
+jobs:
+  full-nixos-test:
+    runs-on: ubuntu-4-cores-150GB-ssd
+    container:
+      image: asterinas/asterinas:0.16.1-20251130
+      options: -v /dev:/dev --privileged
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use nix-env to install and run the hello package
+        run: |
+          make run NIXOS=1 NIXOS_DISK_SIZE_IN_MB=4096 NIXOS_STAGE_2_INIT="nix-env -iA nixos.hello && hello && sync" || true
+          tail --lines 10 qemu.log | grep -q "^Hello, world!" || (echo "Test nix-env failed" && exit 1)
+          echo "Test nix-env succeeds!"
+
