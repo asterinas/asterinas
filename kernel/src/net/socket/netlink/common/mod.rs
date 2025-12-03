@@ -9,11 +9,13 @@ use super::{GroupIdSet, NetlinkSocketAddr};
 use crate::{
     events::IoEvents,
     fs::utils::Inode,
-    match_sock_option_mut, match_sock_option_ref,
     net::socket::{
         netlink::{table::SupportedNetlinkProtocol, AddMembership, DropMembership},
         new_pseudo_inode,
-        options::{Error as SocketError, SocketOption},
+        options::{
+            macros::{sock_option_mut, sock_option_ref},
+            Error as SocketError, SocketOption,
+        },
         private::SocketPrivate,
         util::{
             datagram_common::{select_remote_and_bind, Bound, Inner},
@@ -186,13 +188,13 @@ where
     }
 
     fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
-        match_sock_option_mut!(option, {
-            socket_errors: SocketError => {
+        sock_option_mut!(match option {
+            socket_errors @ SocketError => {
                 // TODO: Support socket errors for netlink sockets
                 socket_errors.set(None);
                 return Ok(());
-            },
-            _ => ()
+            }
+            _ => (),
         });
 
         let inner = self.inner.read();
@@ -281,16 +283,17 @@ fn do_netlink_setsockopt<P: SupportedNetlinkProtocol>(
     option: &dyn SocketOption,
     inner: &mut Inner<UnboundNetlink<P>, BoundNetlink<P::Message>>,
 ) -> Result<()> {
-    match_sock_option_ref!(option, {
-        add_membership: AddMembership => {
+    sock_option_ref!(match option {
+        add_membership @ AddMembership => {
             let groups = add_membership.get().unwrap();
             inner.add_groups(GroupIdSet::new(*groups));
-        },
-        drop_membership: DropMembership => {
+        }
+        drop_membership @ DropMembership => {
             let groups = drop_membership.get().unwrap();
             inner.drop_groups(GroupIdSet::new(*groups));
-        },
-        _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to be set is unknown")
+        }
+        _ =>
+            return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to be set is unknown"),
     });
 
     Ok(())

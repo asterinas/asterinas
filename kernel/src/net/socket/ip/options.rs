@@ -5,8 +5,11 @@ use core::num::NonZeroU8;
 use aster_bigtcp::socket::NeedIfacePoll;
 
 use crate::{
-    impl_socket_options, match_sock_option_mut, match_sock_option_ref,
-    net::socket::options::SocketOption, prelude::*,
+    net::socket::options::{
+        macros::{impl_socket_options, sock_option_mut, sock_option_ref},
+        SocketOption,
+    },
+    prelude::*,
 };
 
 /// IP-level socket options.
@@ -43,24 +46,24 @@ impl IpOptionSet {
     }
 
     pub(super) fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
-        match_sock_option_mut!(option, {
-            ip_tos: Tos => {
+        sock_option_mut!(match option {
+            ip_tos @ Tos => {
                 let tos = self.tos();
                 ip_tos.set(tos as _);
-            },
-            ip_ttl: Ttl => {
+            }
+            ip_ttl @ Ttl => {
                 let ttl = self.ttl();
                 ip_ttl.set(ttl);
-            },
-            ip_hdrincl: Hdrincl => {
+            }
+            ip_hdrincl @ Hdrincl => {
                 let hdrincl = self.hdrincl();
                 ip_hdrincl.set(hdrincl);
-            },
-            ip_recverr: Recverr => {
+            }
+            ip_recverr @ Recverr => {
                 let recverr = self.recverr();
                 ip_recverr.set(recverr);
-            },
-            _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option is unknown")
+            }
+            _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option is unknown"),
         });
 
         Ok(())
@@ -71,28 +74,31 @@ impl IpOptionSet {
         option: &dyn SocketOption,
         socket: &dyn SetIpLevelOption,
     ) -> Result<NeedIfacePoll> {
-        match_sock_option_ref!(option, {
-            ip_tos: Tos => {
+        sock_option_ref!(match option {
+            ip_tos @ Tos => {
                 let old_value = self.tos();
                 let mut val = *ip_tos.get().unwrap() as u8;
                 val &= !INET_ECN_MASK;
                 val |= old_value & INET_ECN_MASK;
                 self.set_tos(val);
-            },
-            ip_ttl: Ttl => {
+            }
+            ip_ttl @ Ttl => {
                 let ttl = ip_ttl.get().unwrap();
                 self.set_ttl(*ttl);
-            },
-            ip_hdrincl: Hdrincl => {
+            }
+            ip_hdrincl @ Hdrincl => {
                 let hdrincl = ip_hdrincl.get().unwrap();
                 socket.set_hdrincl(*hdrincl)?;
                 self.set_hdrincl(*hdrincl);
-            },
-            ip_recverr: Recverr => {
+            }
+            ip_recverr @ Recverr => {
                 let recverr = ip_recverr.get().unwrap();
                 self.set_recverr(*recverr);
-            },
-            _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to be set is unknown")
+            }
+            _ => return_errno_with_message!(
+                Errno::ENOPROTOOPT,
+                "the socket option to be set is unknown"
+            ),
         });
 
         Ok(NeedIfacePoll::FALSE)

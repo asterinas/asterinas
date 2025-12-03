@@ -16,10 +16,11 @@ use crate::{
         file_handle::FileLike,
         utils::{EndpointState, Inode},
     },
-    match_sock_option_mut,
     net::socket::{
         new_pseudo_inode,
-        options::{Error as SocketError, PeerCred, PeerGroups, SocketOption},
+        options::{
+            macros::sock_option_mut, Error as SocketError, PeerCred, PeerGroups, SocketOption,
+        },
         private::SocketPrivate,
         unix::{cred::SocketCred, ctrl_msg::AuxiliaryData, CUserCred, UnixSocketAddr},
         util::{
@@ -387,13 +388,13 @@ impl Socket for UnixStreamSocket {
     }
 
     fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
-        match_sock_option_mut!(option, {
-            socket_errors: SocketError => {
+        sock_option_mut!(match option {
+            socket_errors @ SocketError => {
                 // TODO: Support socket errors for UNIX sockets
                 socket_errors.set(None);
                 return Ok(());
-            },
-            _ => ()
+            }
+            _ => (),
         });
 
         let state = self.state.read();
@@ -496,19 +497,19 @@ impl Socket for UnixStreamSocket {
 }
 
 fn do_unix_getsockopt(option: &mut dyn SocketOption, state: &State) -> Result<()> {
-    match_sock_option_mut!(option, {
-        socket_peer_cred: PeerCred => {
+    sock_option_mut!(match option {
+        socket_peer_cred @ PeerCred => {
             let peer_cred = state.peer_cred().unwrap_or_else(CUserCred::new_invalid);
             socket_peer_cred.set(peer_cred);
-        },
-        socket_peer_groups: PeerGroups => {
+        }
+        socket_peer_groups @ PeerGroups => {
             let groups = state.peer_groups()?;
             socket_peer_groups.set(groups);
-        },
+        }
         _ => return_errno_with_message!(
             Errno::ENOPROTOOPT,
             "the socket option to get is not UNIX-socket-specific"
-        )
+        ),
     });
 
     Ok(())

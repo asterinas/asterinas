@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#[macro_export]
 macro_rules! impl_socket_options {
     ($(
         $(#[$outer:meta])*
@@ -43,13 +42,13 @@ macro_rules! impl_socket_options {
         )*
     };
 }
+pub(in crate::net) use impl_socket_options;
 
-#[macro_export]
-macro_rules! match_sock_option_ref {
+macro_rules! sock_option_ref {
     (
-        $option:expr, {
-            $( $bind: ident : $ty:ty => $arm:expr ),*,
-            _ => $default:expr
+        match $option:ident {
+            $( $bind:ident @ $ty:ty => $arm:block $(,)? )*
+            _ => $default:expr $(,)?
         }
     ) => {{
         let __option : &dyn SocketOption = $option;
@@ -63,13 +62,13 @@ macro_rules! match_sock_option_ref {
         }
     }};
 }
+pub(in crate::net) use sock_option_ref;
 
-#[macro_export]
-macro_rules! match_sock_option_mut {
+macro_rules! sock_option_mut {
     (
-        $option:expr, {
-            $( $bind: ident : $ty:ty => $arm:expr ),*,
-            _ => $default:expr
+        match $option:ident {
+            $( $bind:ident @ $ty:ty => $arm:block $(,)? )*
+            _ => $default:expr $(,)?
         }
     ) => {{
         let __option : &mut dyn SocketOption = $option;
@@ -83,3 +82,4 @@ macro_rules! match_sock_option_mut {
         }
     }};
 }
+pub(in crate::net) use sock_option_mut;
