@@ -1,11 +1,57 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! Implements the cgroup nodes for the unified cgroup hierarchy (cgroup v2).
+//!
+//! This module defines the structures for cgroup nodes ([`CgroupNode`]) and the cgroup
+//! root ([`CgroupSystem`]), integrating them into the `systree`. It handles process
+//! management within cgroups and the logic for reading and writing cgroup attributes.
+//!
+//! ## Locks and Lock Ordering
+//!
+//! To ensure thread safety during concurrent operations, this module uses several
+//! locks within the cgroup nodes. Adhering to the correct lock ordering is crucial
+//! to prevent deadlocks.
+//!
+//! ### Lock Types
+//!
+//! 1. **Controller Lock**: Each cgroup node (including the root) has a [`Controller`]
+//!    that contains a `Mutex`. This lock protects the activation state of the sub-controllers
+//!    for its children (e.g., `memory`, `pids`).
+//!
+//! 2. **Inner Lock**: Each non-root [`CgroupNode`] has an `RwMutex` that protects its
+//!    `inner` data.
+//!
+//! 3. **Children Lock**: Each cgroup node ([`CgroupNode`] and [`CgroupSystem`]) inherits
+//!    an `RwLock` from `BranchNodeFields`. This lock protects access to and
+//!    modification of the list of child cgroup nodes.
+//!
+//! 4. **Cgroup Membership Lock**: A global `Mutex` managed by [`CgroupMembership`] that
+//!    serializes modifications to process cgroup memberships across the entire system.
+//!
+//! ### Locking Rules
+//!
+//! To avoid deadlocks, the following lock ordering must be strictly followed:
+//!
+//! 1. **Parent Before Child**:
+//!    When operating on both a parent and a child node, the lock on the parent
+//!    node must be acquired before the lock on the child node.
+//!
+//! 2. **Order Within a Single Node**:
+//!    When multiple locks are needed on the same cgroup node, they must be
+//!    acquired in this specific order:
+//!    `Controller Lock` -> `Inner Lock` -> `Children Lock`
+//!
+//! 3. **Global Lock First**:
+//!    When acquiring the `Cgroup Membership Lock` along with any other cgroup locks,
+//!    the `Cgroup Membership Lock` must be acquired first.
+
 use alloc::{
     string::ToString,
     sync::{Arc, Weak},
 };
 use core::{
     fmt::Debug,
+    str::FromStr,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -19,6 +65,7 @@ use ostd::mm::{VmReader, VmWriter};
 use spin::Once;
 
 use crate::{
+    fs::cgroupfs::controller::{Controller, LockedController, SubCtrlSet, SubCtrlType},
     prelude::*,
     process::{process_table, Pid, Process},
 };
@@ -66,12 +113,44 @@ impl CgroupMembership {
         process: Arc<Process>,
         new_cgroup: &CgroupNode,
     ) -> Result<()> {
-        if let Some(old_cgroup) = process.cgroup().get() {
+        let old_cgroup = if let Some(old_cgroup) = process.cgroup().get() {
             // Fast path: If the process is already in this cgroup, do nothing.
             if new_cgroup.id() == old_cgroup.id() {
                 return Ok(());
             }
 
+            Some(old_cgroup.clone())
+        } else {
+            None
+        };
+
+        // Try to add the process to the new cgroup first.
+
+        let controller = new_cgroup.controller.lock();
+        // According to "no internal processes" rule of cgroupv2, if a non-root
+        // cgroup node has activated some sub-controls, it cannot bind any process.
+        //
+        // Reference: <https://man7.org/linux/man-pages/man7/cgroups.7.html>
+        if !controller.active_set().is_empty() {
+            return Err(Error::ResourceUnavailable);
+        }
+        new_cgroup
+            .with_inner_mut(|current_processes| {
+                if current_processes.is_empty() {
+                    let old_count = new_cgroup.populated_count.fetch_add(1, Ordering::Relaxed);
+                    if old_count == 0 {
+                        new_cgroup.propagate_add_populated();
+                    }
+                }
+
+                current_processes.insert(process.pid(), Arc::downgrade(&process));
+                process.set_cgroup(Some(new_cgroup.fields.weak_self().upgrade().unwrap()));
+            })
+            .ok_or(Error::IsDead)?;
+        drop(controller);
+
+        // Remove the process from the old cgroup second.
+        if let Some(old_cgroup) = old_cgroup {
             old_cgroup
                 .with_inner_mut(|old_cgroup_processes| {
                     old_cgroup_processes.remove(&process.pid()).unwrap();
@@ -83,31 +162,21 @@ impl CgroupMembership {
                     }
                 })
                 .unwrap();
-        };
-
-        new_cgroup
-            .with_inner_mut(|current_processes| {
-                if current_processes.is_empty() {
-                    let old_count = new_cgroup.populated_count.fetch_add(1, Ordering::Relaxed);
-                    if old_count == 0 {
-                        new_cgroup.propagate_add_populated();
-                    }
-                }
-                current_processes.insert(process.pid(), Arc::downgrade(&process));
-            })
-            .ok_or(Error::IsDead)?;
-
-        process.set_cgroup(Some(new_cgroup.fields.weak_self().upgrade().unwrap()));
+        }
 
         Ok(())
     }
 
     /// Moves a process to the root cgroup.
     pub fn move_process_to_root(&mut self, process: &Process) {
-        let process_cgroup = process.cgroup();
-        let Some(old_cgroup) = process_cgroup.get() else {
+        let old_cgroup = if let Some(old_cgroup) = process.cgroup().get() {
+            old_cgroup.clone()
+        } else {
+            // The process is already in the root cgroup. Do nothing.
             return;
         };
+
+        process.set_cgroup(None);
 
         old_cgroup
             .with_inner_mut(|old_cgroup_processes| {
@@ -120,8 +189,6 @@ impl CgroupMembership {
                 }
             })
             .unwrap();
-
-        process.set_cgroup(None);
     }
 }
 
@@ -130,9 +197,17 @@ impl CgroupMembership {
 ///
 /// The cgroup system provides v2 unified hierarchy, and is also used as a root
 /// node in the cgroup systree.
-#[derive(Debug)]
 pub(super) struct CgroupSystem {
     fields: BranchNodeFields<CgroupNode, Self>,
+    controller: Controller,
+}
+
+impl Debug for CgroupSystem {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("CgroupSystem")
+            .field("fields", &self.fields)
+            .finish_non_exhaustive()
+    }
 }
 
 /// A control group node in the cgroup systree.
@@ -142,6 +217,8 @@ pub(super) struct CgroupSystem {
 /// this type.
 pub struct CgroupNode {
     fields: BranchNodeFields<CgroupNode, Self>,
+    /// The controller of this cgroup node.
+    controller: Controller,
     /// The inner data. If it is `None`, then the cgroup node is dead.
     inner: RwMutex<Option<Inner>>,
     /// The depth of the node in the cgroupfs [`SysTree`], where the child of
@@ -205,6 +282,10 @@ impl CgroupSystem {
             SysPerms::DEFAULT_RO_ATTR_PERMS,
         );
         builder.add(
+            SysStr::from("cgroup.subtree_control"),
+            SysPerms::DEFAULT_RW_ATTR_PERMS,
+        );
+        builder.add(
             SysStr::from("cgroup.max.depth"),
             SysPerms::DEFAULT_RW_ATTR_PERMS,
         );
@@ -216,22 +297,32 @@ impl CgroupSystem {
             SysStr::from("cgroup.threads"),
             SysPerms::DEFAULT_RW_ATTR_PERMS,
         );
-        builder.add(
-            SysStr::from("cpu.pressure"),
-            SysPerms::DEFAULT_RW_ATTR_PERMS,
-        );
-        builder.add(SysStr::from("cpu.stat"), SysPerms::DEFAULT_RO_ATTR_PERMS);
+
+        Controller::init_attr_set(&mut builder, true);
 
         let attrs = builder.build().expect("Failed to build attribute set");
         Arc::new_cyclic(|weak_self| {
             let fields = BranchNodeFields::new(name, attrs, weak_self.clone());
-            CgroupSystem { fields }
+            CgroupSystem {
+                fields,
+                controller: Controller::new(None),
+            }
         })
     }
 }
 
+impl CgroupSysNode for CgroupSystem {
+    fn controller(&self) -> &Controller {
+        &self.controller
+    }
+}
+
 impl CgroupNode {
-    pub(self) fn new(name: SysStr, depth: usize) -> Arc<Self> {
+    pub(self) fn new(
+        name: SysStr,
+        depth: usize,
+        locked_parent_controller: &LockedController,
+    ) -> Arc<Self> {
         let mut builder = SysAttrSetBuilder::new();
         // TODO: Add more attributes as needed. The normal cgroup node may have
         // more attributes than the unified one.
@@ -240,6 +331,10 @@ impl CgroupNode {
             SysPerms::DEFAULT_RO_ATTR_PERMS,
         );
         builder.add(
+            SysStr::from("cgroup.subtree_control"),
+            SysPerms::DEFAULT_RW_ATTR_PERMS,
+        );
+        builder.add(
             SysStr::from("cgroup.max.depth"),
             SysPerms::DEFAULT_RW_ATTR_PERMS,
         );
@@ -252,25 +347,29 @@ impl CgroupNode {
             SysPerms::DEFAULT_RW_ATTR_PERMS,
         );
         builder.add(
-            SysStr::from("cpu.pressure"),
-            SysPerms::DEFAULT_RW_ATTR_PERMS,
-        );
-        builder.add(SysStr::from("cpu.stat"), SysPerms::DEFAULT_RO_ATTR_PERMS);
-        builder.add(
             SysStr::from("cgroup.events"),
             SysPerms::DEFAULT_RO_ATTR_PERMS,
         );
+
+        Controller::init_attr_set(&mut builder, false);
 
         let attrs = builder.build().expect("Failed to build attribute set");
         Arc::new_cyclic(|weak_self| {
             let fields = BranchNodeFields::new(name, attrs, weak_self.clone());
             CgroupNode {
                 fields,
+                controller: Controller::new(Some(locked_parent_controller)),
                 inner: RwMutex::new(Some(Inner::default())),
                 depth,
                 populated_count: AtomicUsize::new(0),
             }
         })
+    }
+}
+
+impl CgroupSysNode for CgroupNode {
+    fn controller(&self) -> &Controller {
+        &self.controller
     }
 }
 
@@ -323,6 +422,7 @@ impl CgroupNode {
     /// Performs a read-only operation on the inner data.
     ///
     /// If the cgroup node is dead, returns `None`.
+    #[must_use]
     fn with_inner<F, R>(&self, op: F) -> Option<R>
     where
         F: FnOnce(&BTreeMap<Pid, Weak<Process>>) -> R,
@@ -336,6 +436,7 @@ impl CgroupNode {
     /// Performs a mutable operation on the inner data.
     ///
     /// If the cgroup node is dead, returns `None`.
+    #[must_use]
     fn with_inner_mut<F, R>(&self, op: F) -> Option<R>
     where
         F: FnOnce(&mut BTreeMap<Pid, Weak<Process>>) -> R,
@@ -384,6 +485,14 @@ inherit_sys_branch_node!(CgroupSystem, fields, {
         // This method should be a no-op for `RootNode`.
     }
 
+    fn is_attr_absent(&self, name: &str) -> bool {
+        if name.starts_with("cgroup.") {
+            false
+        } else {
+            self.controller.is_attr_absent(name)
+        }
+    }
+
     fn read_attr_at(&self, name: &str, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
         match name {
@@ -395,10 +504,15 @@ inherit_sys_branch_node!(CgroupSystem, fields, {
                     }
                 }
             }
-            _ => {
-                // TODO: Add support for reading other attributes.
-                return Err(Error::AttributeError);
+            "cgroup.controllers" => {
+                writeln!(printer, "{}", SubCtrlSet::all())?;
             }
+            "cgroup.subtree_control" => {
+                let active_set = self.controller.lock().active_set();
+                writeln!(printer, "{}", active_set)?;
+            }
+            // TODO: Add support for reading other attributes.
+            _ => return self.controller.read_attr_at(name, offset, writer),
         }
 
         Ok(printer.bytes_written())
@@ -423,10 +537,21 @@ inherit_sys_branch_node!(CgroupSystem, fields, {
 
                 Ok(len)
             }
-            _ => {
-                // TODO: Add support for writing other attributes.
-                Err(Error::AttributeError)
+            "cgroup.subtree_control" => {
+                let (activate_set, deactivate_set, len) = read_subtree_control_from_reader(reader)?;
+
+                let mut controller = self.controller.lock();
+                for ctrl_type in activate_set.iter_types() {
+                    controller.activate(ctrl_type, self, None)?;
+                }
+                for ctrl_type in deactivate_set.iter_types() {
+                    controller.deactivate(ctrl_type, self)?;
+                }
+
+                Ok(len)
             }
+            // TODO: Add support for writing other attributes.
+            _ => self.controller.write_attr(name, reader),
         }
     }
 
@@ -435,23 +560,36 @@ inherit_sys_branch_node!(CgroupSystem, fields, {
     }
 
     fn create_child(&self, name: &str) -> Result<Arc<dyn SysObj>> {
-        let new_child = CgroupNode::new(name.to_string().into(), 1);
+        let controller = self.controller.lock();
+        let new_child = CgroupNode::new(name.to_string().into(), 1, &controller);
         self.add_child(new_child.clone())?;
         Ok(new_child)
     }
 });
 
 inherit_sys_branch_node!(CgroupNode, fields, {
+    fn is_attr_absent(&self, name: &str) -> bool {
+        if name.starts_with("cgroup.") {
+            false
+        } else {
+            self.controller.is_attr_absent(name)
+        }
+    }
+
     fn read_attr_at(&self, name: &str, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        self.with_inner(|processes| {
-            let mut printer = VmPrinter::new_skip(writer, offset);
-            match name {
-                "cgroup.procs" => {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+        match name {
+            "cgroup.procs" => self
+                .with_inner(|processes| {
                     for pid in processes.keys() {
                         writeln!(printer, "{}", pid)?;
                     }
-                }
-                "cgroup.events" => {
+
+                    Ok::<usize, Error>(printer.bytes_written())
+                })
+                .ok_or(Error::IsDead)?,
+            "cgroup.events" => self
+                .with_inner(|_| {
                     let res = if self.populated_count.load(Ordering::Relaxed) > 0 {
                         1
                     } else {
@@ -462,16 +600,41 @@ inherit_sys_branch_node!(CgroupNode, fields, {
                     // Currently we have not enabled the "frozen" attribute
                     // so the "frozen" field is always zero.
                     writeln!(printer, "frozen {}", 0)?;
-                }
-                _ => {
-                    // TODO: Add support for reading other attributes.
-                    return Err(Error::AttributeError);
-                }
-            }
 
-            Ok(printer.bytes_written())
-        })
-        .ok_or(Error::IsDead)?
+                    Ok::<usize, Error>(printer.bytes_written())
+                })
+                .ok_or(Error::IsDead)?,
+            "cgroup.controllers" => {
+                let active_set = self
+                    .cgroup_parent()
+                    .ok_or(Error::IsDead)?
+                    .controller()
+                    .lock()
+                    .active_set();
+                self.with_inner(|_| {
+                    writeln!(printer, "{}", active_set)?;
+
+                    Ok::<usize, Error>(printer.bytes_written())
+                })
+                .ok_or(Error::IsDead)?
+            }
+            "cgroup.subtree_control" => {
+                let active_set = self.controller.lock().active_set();
+                self.with_inner(|_| {
+                    writeln!(printer, "{}", active_set)?;
+
+                    Ok::<usize, Error>(printer.bytes_written())
+                })
+                .ok_or(Error::IsDead)?
+            }
+            // TODO: Add support for reading other attributes.
+            _ => self
+                // This read may target a stale controller if the cgroup's sub-controllers
+                // are being concurrently updated. It is the duty of user-space programs
+                // to use proper synchronization to avoid such races.
+                .with_inner(|_| self.controller.read_attr_at(name, offset, writer))
+                .ok_or(Error::IsDead)?,
+        }
     }
 
     fn write_attr(&self, name: &str, reader: &mut VmReader) -> Result<usize> {
@@ -487,19 +650,45 @@ inherit_sys_branch_node!(CgroupNode, fields, {
                     .ok_or(Error::InvalidOperation)?;
 
                 with_process_cgroup_locked(pid, |target_process, cgroup_membership| {
-                    // TODO: According to the "no internal processes" rule of cgroupv2
-                    // (Ref: https://man7.org/linux/man-pages/man7/cgroups.7.html),
-                    // if the cgroup node has enabled some controllers like "memory", "io",
-                    // it is forbidden to bind a process to an internal cgroup node.
                     cgroup_membership.move_process_to_node(target_process, self)
                 })?;
 
                 Ok(len)
             }
-            _ => {
-                // TODO: Add support for writing other attributes.
-                Err(Error::AttributeError)
+            "cgroup.subtree_control" => {
+                let (activate_set, deactivate_set, len) = read_subtree_control_from_reader(reader)?;
+
+                let parent_node = self.cgroup_parent().ok_or(Error::IsDead)?;
+                let parent_controller = parent_node.controller().lock();
+                let mut current_controller = self.controller.lock();
+
+                self.with_inner(|processes| {
+                    // According to "no internal processes" rule of cgroupv2, if a non-root
+                    // cgroup node has bound processes, it cannot activate any sub-control.
+                    //
+                    // Reference: <https://man7.org/linux/man-pages/man7/cgroups.7.html>
+                    if !processes.is_empty() {
+                        return Err(Error::ResourceUnavailable);
+                    }
+
+                    for ctrl_type in activate_set.iter_types() {
+                        current_controller.activate(ctrl_type, self, Some(&parent_controller))?;
+                    }
+                    for ctrl_type in deactivate_set.iter_types() {
+                        current_controller.deactivate(ctrl_type, self)?;
+                    }
+
+                    Ok(len)
+                })
+                .ok_or(Error::IsDead)?
             }
+            // TODO: Add support for writing other attributes.
+            _ => self
+                // This write may target a stale controller if the cgroup's sub-controllers
+                // are being concurrently updated. It is the duty of user-space programs
+                // to use proper synchronization to avoid such races.
+                .with_inner(|_| self.controller.write_attr(name, reader))
+                .ok_or(Error::IsDead)?,
         }
     }
 
@@ -508,8 +697,9 @@ inherit_sys_branch_node!(CgroupNode, fields, {
     }
 
     fn create_child(&self, name: &str) -> Result<Arc<dyn SysObj>> {
+        let controller = self.controller.lock();
         self.with_inner(|_| {
-            let new_child = CgroupNode::new(name.to_string().into(), self.depth + 1);
+            let new_child = CgroupNode::new(name.to_string().into(), self.depth + 1, &controller);
             self.add_child(new_child.clone())?;
             Ok(new_child as _)
         })
@@ -541,4 +731,58 @@ where
     }
 
     op(process, &mut cgroup_guard)
+}
+
+/// Reads the actions for sub-control from the given reader.
+///
+/// Returns the sets of controllers to be activated and deactivated,
+/// along with the number of bytes read. The two sets will not overlap.
+fn read_subtree_control_from_reader(
+    reader: &mut VmReader,
+) -> Result<(SubCtrlSet, SubCtrlSet, usize)> {
+    let (content, len) = reader
+        .read_cstring_until_end(MAX_ATTR_SIZE)
+        .map_err(|_| Error::PageFault)?;
+    let content = content.to_str().map_err(|_| Error::InvalidOperation)?;
+
+    let mut activate_set = SubCtrlSet::empty();
+    let mut deactivate_set = SubCtrlSet::empty();
+
+    let actions = content.split_whitespace();
+    for action in actions {
+        if action.len() < 2 {
+            return Err(Error::InvalidOperation);
+        }
+
+        match action.chars().next() {
+            Some('+') => {
+                let ctrl_type = SubCtrlType::from_str(&action[1..])?;
+                activate_set.add_type(ctrl_type);
+                deactivate_set.remove_type(ctrl_type);
+            }
+            Some('-') => {
+                let ctrl_type = SubCtrlType::from_str(&action[1..])?;
+                deactivate_set.add_type(ctrl_type);
+                activate_set.remove_type(ctrl_type);
+            }
+            _ => return Err(Error::InvalidOperation),
+        };
+    }
+
+    Ok((activate_set, deactivate_set, len))
+}
+
+/// A trait that abstracts over different types of cgroup nodes (`CgroupNode`, `CgroupSystem`)
+/// to provide a common API for controller logics.
+pub(super) trait CgroupSysNode: SysBranchNode {
+    fn controller(&self) -> &Controller;
+
+    fn cgroup_parent(&self) -> Option<Arc<dyn CgroupSysNode>> {
+        let parent = self.parent()?;
+        if parent.is_root() {
+            Some(Arc::downcast::<CgroupSystem>(parent).unwrap())
+        } else {
+            Some(Arc::downcast::<CgroupNode>(parent).unwrap())
+        }
+    }
 }

@@ -119,4 +119,11 @@ impl Inode for CgroupInode {
 
         Ok(())
     }
+
+    fn is_dentry_cacheable(&self) -> bool {
+        // Attribute nodes should not be cached because they may be dynamically
+        // created or removed based on the state of the cgroup controller.
+        // Caching them could result in stale or incorrect entries.
+        !matches!(self.node_kind, SysTreeNodeKind::Attr(..))
+    }
 }
