@@ -66,7 +66,7 @@ use crate::{
 ///
 /// [`USegment`]: crate::mm::USegment
 /// [`UFrame`]: crate::mm::UFrame
-pub trait VmIo: Send + Sync {
+pub trait VmIo {
     /// Reads requested data at a specified offset into a given `VmWriter`.
     ///
     /// # No short reads
