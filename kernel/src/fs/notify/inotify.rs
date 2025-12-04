@@ -14,12 +14,11 @@ use core::{
 use bitflags::bitflags;
 use hashbrown::HashMap;
 use ostd::{
-    mm::{VmIo, VmWriter},
+    mm::VmWriter,
     sync::{Mutex, SpinLock},
 };
 
 use crate::{
-    current_userspace,
     events::IoEvents,
     fs::{
         file_handle::FileLike,
@@ -27,11 +26,12 @@ use crate::{
         notify::{FsEventSubscriber, FsEvents},
         path::{Path, RESERVED_MOUNT_ID},
         pseudofs::anon_inodefs_shared_inode,
-        utils::{AccessMode, CreationFlags, Inode, IoctlCmd, StatusFlags},
+        utils::{AccessMode, CreationFlags, Inode, StatusFlags},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
     return_errno_with_message,
+    util::ioctl::{dispatch_ioctl, RawIoctl},
 };
 
 #[derive(Clone)]
@@ -347,16 +347,18 @@ impl FileLike for InotifyFile {
         }
     }
 
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        match cmd {
-            IoctlCmd::FIONREAD => {
-                let size = self.get_all_event_size();
-                let size_addr = arg;
-                current_userspace!().write_val(size_addr, &size)?;
+    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+        use crate::fs::utils::ioctl_defs::GetNumBytesToRead;
+
+        dispatch_ioctl!(match raw_ioctl {
+            cmd @ GetNumBytesToRead => {
+                let size = self.get_all_event_size() as i32;
+
+                cmd.write(&size)?;
                 Ok(0)
             }
-            _ => return_errno_with_message!(Errno::EINVAL, "ioctl is not supported"),
-        }
+            _ => return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown"),
+        })
     }
 
     fn status_flags(&self) -> StatusFlags {

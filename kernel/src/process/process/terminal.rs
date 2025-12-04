@@ -2,14 +2,12 @@
 
 use alloc::sync::Arc;
 
-use ostd::mm::VmIo;
-
-use super::{session::SessionGuard, JobControl, Pgid, Process, Session, Sid};
+use super::{session::SessionGuard, JobControl, Pgid, Process, Session};
 use crate::{
-    current_userspace,
-    fs::{device::Device, utils::IoctlCmd},
+    fs::device::Device,
     prelude::{current, return_errno_with_message, warn, Errno, Error, Result},
     process::process_table,
+    util::ioctl::{dispatch_ioctl, RawIoctl},
 };
 
 /// A terminal.
@@ -21,19 +19,29 @@ pub trait Terminal: Device {
     fn job_control(&self) -> &JobControl;
 }
 
-impl dyn Terminal {
-    pub fn job_ioctl(self: Arc<Self>, cmd: IoctlCmd, arg: usize, via_master: bool) -> Result<()> {
-        match cmd {
-            // Commands about foreground process groups
-            IoctlCmd::TIOCSPGRP => {
-                let pgid = current_userspace!().read_val::<Pgid>(arg)?;
-                if pgid.cast_signed() < 0 {
-                    return_errno_with_message!(Errno::EINVAL, "negative PGIDs are not valid");
-                }
+mod ioctl_defs {
+    use crate::{
+        process::{Pgid, Sid},
+        util::ioctl::{ioc, InData, NoData, OutData, PassByVal},
+    };
 
-                self.set_foreground(pgid, &current!())
-            }
-            IoctlCmd::TIOCGPGRP => {
+    // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/asm-generic/ioctls.h>
+
+    pub(super) type GetForegroundPgid = ioc!(TIOCGPGRP, 0x540F, OutData<Pgid>);
+    pub(super) type SetForegroundPgid = ioc!(TIOCSPGRP, 0x5410, InData<Pgid>);
+
+    pub(super) type SetControlTty     = ioc!(TIOCSCTTY, 0x540E, InData<i32, PassByVal>);
+    pub(super) type SetControlNoTty   = ioc!(TIOCNOTTY, 0x5422, NoData);
+    pub(super) type GetControlSid     = ioc!(TIOCGSID,  0x5429, OutData<Sid>);
+}
+
+impl dyn Terminal {
+    pub fn job_ioctl(self: Arc<Self>, raw_ioctl: RawIoctl, via_master: bool) -> Result<()> {
+        use ioctl_defs::*;
+
+        dispatch_ioctl!(match raw_ioctl {
+            // Commands about foreground process groups
+            cmd @ GetForegroundPgid => {
                 let operate = || {
                     self.job_control()
                         .foreground()
@@ -46,18 +54,26 @@ impl dyn Terminal {
                     self.is_control_and(&current!(), |_, _| Ok(operate()))?
                 };
 
-                Ok(current_userspace!().write_val::<Pgid>(arg, &pgid)?)
+                cmd.write(&pgid)
+            }
+            cmd @ SetForegroundPgid => {
+                let pgid = cmd.read()?;
+                if pgid.cast_signed() < 0 {
+                    return_errno_with_message!(Errno::EINVAL, "negative PGIDs are not valid");
+                }
+
+                self.set_foreground(pgid, &current!())
             }
 
             // Commands about sessions
-            IoctlCmd::TIOCSCTTY => {
-                if arg == 1 {
+            cmd @ SetControlTty => {
+                if cmd.get() == 1 {
                     warn!("stealing TTY from another session is not supported");
                 }
 
                 self.set_control(&current!())
             }
-            IoctlCmd::TIOCNOTTY => {
+            _cmd @ SetControlNoTty => {
                 if via_master {
                     return_errno_with_message!(
                         Errno::ENOTTY,
@@ -67,7 +83,7 @@ impl dyn Terminal {
 
                 self.unset_control(&current!())
             }
-            IoctlCmd::TIOCGSID => {
+            cmd @ GetControlSid => {
                 let sid = if via_master {
                     self.job_control()
                         .session()
@@ -82,14 +98,14 @@ impl dyn Terminal {
                     self.is_control_and(&current!(), |session, _| Ok(session.sid()))?
                 };
 
-                Ok(current_userspace!().write_val::<Sid>(arg, &sid)?)
+                cmd.write(&sid)
             }
 
             // Commands that are invalid or not supported
             _ => {
-                return_errno_with_message!(Errno::EINVAL, "the `ioctl` command is invalid")
+                return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown")
             }
-        }
+        })
     }
 
     /// Sets the terminal to be the controlling terminal of the process.

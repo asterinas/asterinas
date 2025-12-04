@@ -2,11 +2,10 @@
 
 use alloc::format;
 
-use ostd::{mm::VmIo, task::Task};
+use ostd::task::Task;
 
 use super::{driver::PtyDriver, PtySlave};
 use crate::{
-    current_userspace,
     device::tty::TtyFlags,
     events::IoEvents,
     fs::{
@@ -14,7 +13,7 @@ use crate::{
         file_table::FdFlags,
         fs_resolver::FsPath,
         inode_handle::FileIo,
-        utils::{mkmod, AccessMode, InodeIo, IoctlCmd, OpenArgs, StatusFlags},
+        utils::{mkmod, AccessMode, InodeIo, OpenArgs, StatusFlags},
     },
     prelude::*,
     process::{
@@ -22,6 +21,7 @@ use crate::{
         signal::{PollHandle, Pollable},
         Terminal,
     },
+    util::ioctl::{dispatch_ioctl, RawIoctl},
 };
 
 const IO_CAPACITY: usize = 4096;
@@ -135,6 +135,17 @@ impl InodeIo for PtyMaster {
     }
 }
 
+mod ioctl_defs {
+    use crate::util::ioctl::{ioc, InData, NoData, OutData};
+
+    // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/asm-generic/ioctls.h>
+
+    pub(super) type SetPtyLock   = ioc!(TIOCSPTLCK,  b'T', 0x31, InData<i32>);
+    pub(super) type GetPtyLock   = ioc!(TIOCGPTLCK,  b'T', 0x39, OutData<i32>);
+
+    pub(super) type OpenPtySlave = ioc!(TIOCGPTPEER, b'T', 0x41, NoData);
+}
+
 impl FileIo for PtyMaster {
     fn check_seekable(&self) -> Result<()> {
         return_errno_with_message!(Errno::ESPIPE, "the inode is a pty");
@@ -144,33 +155,37 @@ impl FileIo for PtyMaster {
         false
     }
 
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        match cmd {
-            IoctlCmd::TCGETS
-            | IoctlCmd::TCSETS
-            | IoctlCmd::TCSETSW
-            | IoctlCmd::TCSETSF
-            | IoctlCmd::TIOCGWINSZ
-            | IoctlCmd::TIOCSWINSZ
-            | IoctlCmd::TIOCGPTN => return self.slave.ioctl(cmd, arg),
-            IoctlCmd::TIOCSPTLCK => {
-                let val = current_userspace!().read_val::<i32>(arg)?;
+    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+        use ioctl_defs::*;
+
+        use crate::{device::tty::ioctl_defs::*, fs::utils::ioctl_defs::GetNumBytesToRead};
+
+        dispatch_ioctl!(match raw_ioctl {
+            GetTermios | SetTermios | SetTermiosDrain | SetTermiosFlush | GetWinSize
+            | SetWinSize | GetPtyNumber => {
+                return self.slave.ioctl(raw_ioctl);
+            }
+
+            cmd @ SetPtyLock => {
+                let should_lock = cmd.read()? != 0;
+
                 let flags = self.master_flags();
-                if val == 0 {
-                    flags.clear_pty_locked();
-                } else {
+                if should_lock {
                     flags.set_pty_locked();
+                } else {
+                    flags.clear_pty_locked();
                 }
             }
-            IoctlCmd::TIOCGPTLCK => {
-                let val = if self.master_flags().is_pty_locked() {
+            cmd @ GetPtyLock => {
+                let is_locked = if self.master_flags().is_pty_locked() {
                     1
                 } else {
                     0
                 };
-                current_userspace!().write_val(arg, &val)?;
+
+                cmd.write(&is_locked)?;
             }
-            IoctlCmd::TIOCGPTPEER => {
+            _cmd @ OpenPtySlave => {
                 let current_task = Task::current().unwrap();
                 let thread_local = current_task.as_thread_local().unwrap();
 
@@ -203,12 +218,14 @@ impl FileIo for PtyMaster {
                 };
                 return Ok(fd);
             }
-            IoctlCmd::FIONREAD => {
+            cmd @ GetNumBytesToRead => {
                 let len = self.slave.driver().buffer_len() as i32;
-                current_userspace!().write_val(arg, &len)?;
+
+                cmd.write(&len)?;
             }
-            _ => (self.slave.clone() as Arc<dyn Terminal>).job_ioctl(cmd, arg, true)?,
-        }
+
+            _ => (self.slave.clone() as Arc<dyn Terminal>).job_ioctl(raw_ioctl, true)?,
+        });
 
         Ok(0)
     }

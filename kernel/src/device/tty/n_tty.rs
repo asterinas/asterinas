@@ -14,10 +14,11 @@ use crate::{
     events::IoEvents,
     fs::{
         inode_handle::FileIo,
-        utils::{InodeIo, IoctlCmd, StatusFlags},
+        utils::{InodeIo, StatusFlags},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
+    util::ioctl::RawIoctl,
 };
 
 /// The driver for VT (virtual terminal) devices.
@@ -131,7 +132,7 @@ impl<D: TtyDriver> InodeIo for TtyFile<D> {
 
 #[inherit_methods(from = "self.0")]
 impl<D: TtyDriver> FileIo for TtyFile<D> {
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32>;
+    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32>;
 
     fn check_seekable(&self) -> Result<()> {
         return_errno_with_message!(Errno::ESPIPE, "the inode is a TTY");

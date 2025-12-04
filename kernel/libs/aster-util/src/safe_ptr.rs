@@ -6,8 +6,11 @@ use aster_rights::{Dup, Exec, Full, Read, Signal, TRightSet, TRights, Write};
 use aster_rights_proc::require;
 use inherit_methods_macro::inherit_methods;
 use ostd::{
-    mm::{Daddr, DmaStream, HasDaddr, HasPaddr, Paddr, PodOnce, VmIo, VmIoOnce},
-    Pod, Result,
+    mm::{
+        io_util::{HasVmReaderWriter, VmReaderWriterTypes},
+        Daddr, DmaStream, HasDaddr, HasPaddr, Paddr, PodOnce, VmIo, VmIoOnce,
+    },
+    Error, Pod, Result,
 };
 
 /// Safe pointers.
@@ -180,7 +183,7 @@ impl<T, M: HasPaddr, R> HasPaddr for SafePtr<T, M, R> {
 
 // =============== Read and write methods ==============
 impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, TRightSet<R>> {
-    /// Read the value from the pointer.
+    /// Reads the value from the pointer.
     ///
     /// # Access rights
     ///
@@ -190,7 +193,7 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, TRightSet<R>> {
         self.vm_obj.read_val(self.offset)
     }
 
-    /// Read a slice of values from the pointer.
+    /// Reads a slice of values from the pointer.
     ///
     /// # Access rights
     ///
@@ -200,7 +203,7 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, TRightSet<R>> {
         self.vm_obj.read_slice(self.offset, slice)
     }
 
-    /// Overwrite the value at the pointer.
+    /// Overwrites the value at the pointer.
     ///
     /// # Access rights
     ///
@@ -210,7 +213,7 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, TRightSet<R>> {
         self.vm_obj.write_val(self.offset, val)
     }
 
-    /// Overwrite a slice of values at the pointer.
+    /// Overwrites a slice of values at the pointer.
     ///
     /// # Access rights
     ///
@@ -218,6 +221,35 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, TRightSet<R>> {
     #[require(R > Write)]
     pub fn write_slice(&self, slice: &[T]) -> Result<()> {
         self.vm_obj.write_slice(self.offset, slice)
+    }
+
+    /// Copies the value from another pointer.
+    ///
+    /// # Errors
+    ///
+    /// This method will fail if
+    ///  - either pointer's underlying VM object is too short to hold `T` or
+    ///  - the memory copy between two pointers fails.
+    ///
+    /// # Access rights
+    ///
+    /// This method requires
+    ///  - the Write right for this pointer and
+    ///  - the Read right for another pointer.
+    #[require(R > Write)]
+    #[require(R1 > Read)]
+    pub fn copy_from<M1: HasVmReaderWriter, R1: TRights>(
+        &self,
+        ptr: &SafePtr<T, M1, TRightSet<R1>>,
+    ) -> Result<()> {
+        let mut reader = M1::Types::to_reader_result(ptr.vm_obj.reader())?.to_fallible();
+
+        if reader.remain() < size_of::<T>() {
+            return Err(Error::InvalidArgs);
+        }
+        reader.limit(size_of::<T>());
+
+        self.vm_obj.write(self.offset, &mut reader)
     }
 }
 
