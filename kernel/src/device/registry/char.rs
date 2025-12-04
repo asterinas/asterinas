@@ -42,7 +42,7 @@ pub fn collect_all() -> Vec<Arc<dyn Device>> {
 }
 
 /// Looks up a char device of a given device ID.
-pub fn lookup(id: DeviceId) -> Option<Arc<dyn Device>> {
+pub(super) fn lookup(id: DeviceId) -> Option<Arc<dyn Device>> {
     DEVICE_REGISTRY.lock().get(&id.to_raw()).cloned()
 }
 
