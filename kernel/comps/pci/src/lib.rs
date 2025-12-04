@@ -96,10 +96,34 @@ fn init() {
     }
 
     let mut lock = PCI_BUS.lock();
-    for location in PciDeviceLocation::all() {
-        let Some(device) = PciCommonDevice::new(location) else {
-            continue;
-        };
-        lock.register_common_device(device);
+
+    let all_bus = PciDeviceLocation::MIN_BUS..=PciDeviceLocation::MAX_BUS;
+    let all_dev = PciDeviceLocation::MIN_DEVICE..=PciDeviceLocation::MAX_DEVICE;
+    let all_func = PciDeviceLocation::MIN_FUNCTION..=PciDeviceLocation::MAX_FUNCTION;
+
+    for bus in all_bus {
+        for device in all_dev.clone() {
+            let mut device_location = PciDeviceLocation {
+                bus,
+                device,
+                function: PciDeviceLocation::MIN_FUNCTION,
+            };
+
+            let Some(first_function_device) = PciCommonDevice::new(device_location) else {
+                continue;
+            };
+            let has_multi_function = first_function_device.has_multi_funcs();
+            // Register function 0 in advance
+            lock.register_common_device(first_function_device);
+
+            if has_multi_function {
+                for function in all_func.clone().skip(1) {
+                    device_location.function = function;
+                    if let Some(common_device) = PciCommonDevice::new(device_location) {
+                        lock.register_common_device(common_device);
+                    }
+                }
+            }
+        }
     }
 }
