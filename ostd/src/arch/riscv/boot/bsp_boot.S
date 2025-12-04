@@ -25,7 +25,7 @@ _start:
     # Arguments passed from SBI:
     #   a0 = hart id
     #   a1 = device tree paddr
-    # We do not touch them here. They are passed to the Rust entrypoint.
+    # We do not touch them here. They are passed to the Rust entrypoint `riscv_boot`.
 
     # Set up the Sv48 page table.
     #   sv48_boot_l4pt[511] = (PPN(sv48_boot_l3pt) << PTE_PPN_SHIFT) | PTE_V

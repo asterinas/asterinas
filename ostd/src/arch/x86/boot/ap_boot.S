@@ -152,6 +152,7 @@ __ap_boot_cpu_id_tail:
 .code64
 
 ap_long_mode:
+    // Argument passed to ap_early_entry: rdi = cpu_id
     mov rdi, 1
     lock xadd [__ap_boot_cpu_id_tail], rdi
 

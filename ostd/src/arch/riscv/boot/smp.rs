@@ -5,7 +5,7 @@
 use core::arch::global_asm;
 
 use crate::{
-    boot::smp::PerApRawInfo,
+    boot::smp::{ap_early_entry, PerApRawInfo},
     cpu_local_cell,
     mm::{Paddr, Vaddr},
 };
@@ -187,16 +187,19 @@ cpu_local_cell! {
 // Since in RISC-V we cannot read the hart ID in S mode, the hart ID is
 // delivered from the bootloader. We need to record the hart ID with another
 // layer of entry point.
+//
+/// # Safety
+///
+/// - This function must be called only once on each AP through assembly code.
+/// - The caller must follow C calling conventions and put the right arguments in registers.
 #[no_mangle]
 unsafe extern "C" fn riscv_ap_early_entry(cpu_id: u32, hart_id: u32) -> ! {
-    unsafe extern "C" {
-        fn ap_early_entry(cpu_id: u32) -> !;
-    }
-
     // CPU local memory could be accessed here since we are the AP and the BSP
     // must have initialized it.
     AP_CURRENT_HART_ID.store(hart_id);
 
-    // SAFETY: This is valid to call and only called once.
-    unsafe { ap_early_entry(cpu_id) };
+    // SAFETY: This is valid to call, because
+    // - the caller guarantees being called only once on each AP.
+    // - the compiler guarantees the C calling conventions on this call.
+    unsafe { ap_early_entry(cpu_id) }
 }
