@@ -10,7 +10,7 @@ use ostd::{
     arch::device::io_port::{PortRead, PortWrite},
     io::IoMem,
     irq::IrqCallbackFunction,
-    mm::{DmaCoherent, PodOnce},
+    mm::{PodOnce, dma::DmaCoherent},
 };
 
 use self::{mmio::virtio_mmio_init, pci::virtio_pci_init};

@@ -4,12 +4,10 @@ use alloc::vec;
 
 use crate::{
     mm::{
-        CachePolicy, FrameAllocOptions, HasDaddr, HasPaddr, PAGE_SIZE, VmReader, VmWriter,
+        FrameAllocOptions, HasPaddr, PAGE_SIZE, VmReader, VmWriter,
         dma::*,
         io::{VmIo, VmIoOnce},
         io_util::HasVmReaderWriter,
-        kspace::KERNEL_PAGE_TABLE,
-        paddr_to_vaddr,
     },
     prelude::*,
 };
@@ -19,44 +17,14 @@ mod dma_coherent {
 
     #[ktest]
     fn map_with_coherent_device() {
-        let segment = FrameAllocOptions::new()
-            .alloc_segment_with(1, |_| ())
-            .unwrap();
-        let dma_coherent = DmaCoherent::map(segment.clone().into(), true).unwrap();
-        assert_eq!(dma_coherent.paddr(), segment.paddr());
+        let dma_coherent = DmaCoherent::alloc(1, true).unwrap();
         assert_eq!(dma_coherent.size(), PAGE_SIZE);
-    }
-
-    #[ktest]
-    fn map_with_incoherent_device() {
-        let segment = FrameAllocOptions::new()
-            .alloc_segment_with(1, |_| ())
-            .unwrap();
-        let dma_coherent = DmaCoherent::map(segment.clone().into(), false).unwrap();
-        assert_eq!(dma_coherent.paddr(), segment.paddr());
-        assert_eq!(dma_coherent.size(), PAGE_SIZE);
-        let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-        let vaddr = paddr_to_vaddr(segment.paddr());
-        assert!(page_table.page_walk(vaddr).unwrap().1.cache == CachePolicy::Uncacheable);
-    }
-
-    #[ktest]
-    fn duplicate_map() {
-        let segment = FrameAllocOptions::new()
-            .alloc_segment_with(2, |_| ())
-            .unwrap();
-        let segment_child = segment.slice(&(0..PAGE_SIZE));
-        let _dma_coherent_parent = DmaCoherent::map(segment.into(), false).unwrap();
-        let err = DmaCoherent::map(segment_child.into(), false).unwrap_err();
-        assert_eq!(err, DmaError::AlreadyMapped);
     }
 
     #[ktest]
     fn read_write() {
-        let segment = FrameAllocOptions::new()
-            .alloc_segment_with(2, |_| ())
-            .unwrap();
-        let dma_coherent = DmaCoherent::map(segment.into(), false).unwrap();
+        let dma_coherent = DmaCoherent::alloc(2, false).unwrap();
+        assert_eq!(dma_coherent.size(), 2 * PAGE_SIZE);
 
         let buf_write = vec![1u8; 2 * PAGE_SIZE];
         dma_coherent.write_bytes(0, &buf_write).unwrap();
@@ -67,10 +35,7 @@ mod dma_coherent {
 
     #[ktest]
     fn read_write_once() {
-        let segment = FrameAllocOptions::new()
-            .alloc_segment_with(2, |_| ())
-            .unwrap();
-        let dma_coherent = DmaCoherent::map(segment.into(), false).unwrap();
+        let dma_coherent = DmaCoherent::alloc(2, false).unwrap();
 
         let buf_write = 1u64;
         dma_coherent.write_once(0, &buf_write).unwrap();
@@ -80,10 +45,7 @@ mod dma_coherent {
 
     #[ktest]
     fn reader_writer() {
-        let segment = FrameAllocOptions::new()
-            .alloc_segment_with(2, |_| ())
-            .unwrap();
-        let dma_coherent = DmaCoherent::map(segment.into(), false).unwrap();
+        let dma_coherent = DmaCoherent::alloc(2, false).unwrap();
 
         let buf_write = vec![1u8; PAGE_SIZE];
         let mut writer = dma_coherent.writer();
@@ -98,20 +60,8 @@ mod dma_coherent {
     }
 
     #[ktest]
-    fn daddr() {
-        let segment = FrameAllocOptions::new()
-            .alloc_segment_with(1, |_| ())
-            .unwrap();
-        let dma_coherent = DmaCoherent::map(segment.into(), false).unwrap();
-        assert_eq!(dma_coherent.daddr(), dma_coherent.paddr());
-    }
-
-    #[ktest]
     fn zero_length_operations() {
-        let segment = FrameAllocOptions::new()
-            .alloc_segment_with(1, |_| ())
-            .unwrap();
-        let dma_coherent = DmaCoherent::map(segment.into(), false).unwrap();
+        let dma_coherent = DmaCoherent::alloc(1, false).unwrap();
 
         // Zero-length read/write should succeed
         let empty_buf = [];
@@ -122,10 +72,7 @@ mod dma_coherent {
 
     #[ktest]
     fn complex_read_write_patterns() {
-        let segment = FrameAllocOptions::new()
-            .alloc_segment_with(4, |_| ())
-            .unwrap();
-        let dma_coherent = DmaCoherent::map(segment.into(), false).unwrap();
+        let dma_coherent = DmaCoherent::alloc(4, false).unwrap();
 
         // Test alternating pattern
         let pattern1 = vec![0xAAu8; PAGE_SIZE];
@@ -152,27 +99,9 @@ mod dma_stream {
         let segment = FrameAllocOptions::new()
             .alloc_segment_with(1, |_| ())
             .unwrap();
-        let dma_stream =
-            DmaStream::map(segment.clone().into(), DmaDirection::Bidirectional, true).unwrap();
+        let dma_stream = DmaStream::<FromAndToDevice>::map(segment.clone().into(), true).unwrap();
         assert_eq!(dma_stream.paddr(), segment.paddr());
         assert_eq!(dma_stream.size(), PAGE_SIZE);
-        assert_eq!(dma_stream.direction(), DmaDirection::Bidirectional);
-
-        let underlying_segment = dma_stream.segment();
-        assert_eq!(underlying_segment.paddr(), segment.paddr());
-    }
-
-    #[ktest]
-    fn duplicate_map() {
-        let segment_parent = FrameAllocOptions::new()
-            .alloc_segment_with(2, |_| ())
-            .unwrap();
-        let segment_child = segment_parent.slice(&(0..PAGE_SIZE));
-        let _dma_stream_parent =
-            DmaStream::map(segment_parent.into(), DmaDirection::Bidirectional, false).unwrap();
-        let dma_stream_child =
-            DmaStream::map(segment_child.into(), DmaDirection::Bidirectional, false);
-        assert!(dma_stream_child.is_err());
     }
 
     #[ktest]
@@ -180,12 +109,11 @@ mod dma_stream {
         let segment = FrameAllocOptions::new()
             .alloc_segment_with(2, |_| ())
             .unwrap();
-        let dma_stream =
-            DmaStream::map(segment.into(), DmaDirection::Bidirectional, false).unwrap();
+        let dma_stream = DmaStream::<FromAndToDevice>::map(segment.into(), false).unwrap();
 
         let buf_write = vec![1u8; 2 * PAGE_SIZE];
         dma_stream.write_bytes(0, &buf_write).unwrap();
-        dma_stream.sync(0..2 * PAGE_SIZE).unwrap();
+        dma_stream.sync_to_device(0..2 * PAGE_SIZE).unwrap();
         let mut buf_read = vec![0u8; 2 * PAGE_SIZE];
         dma_stream.read_bytes(0, &mut buf_read).unwrap();
         assert_eq!(buf_write, buf_read);
@@ -196,14 +124,13 @@ mod dma_stream {
         let segment = FrameAllocOptions::new()
             .alloc_segment_with(2, |_| ())
             .unwrap();
-        let dma_stream =
-            DmaStream::map(segment.into(), DmaDirection::Bidirectional, false).unwrap();
+        let dma_stream = DmaStream::<FromAndToDevice>::map(segment.into(), false).unwrap();
 
         let buf_write = vec![1u8; PAGE_SIZE];
         let mut writer = dma_stream.writer().unwrap();
         writer.write(&mut buf_write.as_slice().into());
         writer.write(&mut buf_write.as_slice().into());
-        dma_stream.sync(0..2 * PAGE_SIZE).unwrap();
+        dma_stream.sync_to_device(0..2 * PAGE_SIZE).unwrap();
         let mut buf_read = vec![0u8; 2 * PAGE_SIZE];
         let buf_write = vec![1u8; 2 * PAGE_SIZE];
         let mut reader = dma_stream.reader().unwrap();
@@ -216,11 +143,9 @@ mod dma_stream {
         let segment = FrameAllocOptions::new()
             .alloc_segment_with(1, |_| ())
             .unwrap();
-        let dma_stream =
-            DmaStream::map(segment.clone().into(), DmaDirection::ToDevice, false).unwrap();
+        let dma_stream = DmaStream::<ToDevice>::map(segment.clone().into(), false).unwrap();
         assert_eq!(dma_stream.paddr(), segment.paddr());
         assert_eq!(dma_stream.size(), PAGE_SIZE);
-        assert_eq!(dma_stream.direction(), DmaDirection::ToDevice);
 
         let mut buffer = [0u8; 8];
         let mut writer_fallible = VmWriter::from(&mut buffer[..]).to_fallible();
@@ -241,11 +166,9 @@ mod dma_stream {
         let segment = FrameAllocOptions::new()
             .alloc_segment_with(1, |_| ())
             .unwrap();
-        let dma_stream =
-            DmaStream::map(segment.clone().into(), DmaDirection::FromDevice, false).unwrap();
+        let dma_stream = DmaStream::<FromDevice>::map(segment.clone().into(), false).unwrap();
         assert_eq!(dma_stream.paddr(), segment.paddr());
         assert_eq!(dma_stream.size(), PAGE_SIZE);
-        assert_eq!(dma_stream.direction(), DmaDirection::FromDevice);
 
         let mut buffer = [0u8; 8];
         let mut writer_fallible = VmWriter::from(&mut buffer[..]).to_fallible();
@@ -266,13 +189,14 @@ mod dma_stream {
         let segment = FrameAllocOptions::new()
             .alloc_segment_with(2, |_| ())
             .unwrap();
-        let dma_stream =
-            DmaStream::map(segment.into(), DmaDirection::Bidirectional, false).unwrap();
+        let dma_stream = DmaStream::<FromAndToDevice>::map(segment.into(), false).unwrap();
 
         // Test partial page operations
         let small_buf = [0xAAu8; 128];
         dma_stream.write_bytes(PAGE_SIZE - 64, &small_buf).unwrap();
-        dma_stream.sync(PAGE_SIZE - 64..PAGE_SIZE + 64).unwrap();
+        dma_stream
+            .sync_to_device(PAGE_SIZE - 64..PAGE_SIZE + 64)
+            .unwrap();
         let mut read_buf = [0u8; 128];
         dma_stream
             .read_bytes(PAGE_SIZE - 64, &mut read_buf)

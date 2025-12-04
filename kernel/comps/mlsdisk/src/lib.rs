@@ -170,14 +170,15 @@ mod test {
             for segment in bio.segments() {
                 let size = match bio_type {
                     BioType::Read => segment
-                        .inner_segment()
+                        .inner_dma()
                         .writer()
+                        .unwrap()
                         .write(self.blocks.reader().skip(current_offset)),
                     BioType::Write => self
                         .blocks
                         .writer()
                         .skip(current_offset)
-                        .write(&mut segment.inner_segment().reader()),
+                        .write(&mut segment.inner_dma().reader().unwrap()),
                     _ => 0,
                 };
                 current_offset += size;
