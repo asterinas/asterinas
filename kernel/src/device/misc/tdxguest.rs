@@ -11,8 +11,8 @@ use device_id::{DeviceId, MinorId};
 use ostd::{
     const_assert,
     mm::{
-        io_util::HasVmReaderWriter, DmaCoherent, FrameAllocOptions, HasPaddr, HasSize, USegment,
-        VmIo, PAGE_SIZE,
+        dma::DmaCoherent, io_util::HasVmReaderWriter, FrameAllocOptions, HasPaddr, HasSize,
+        USegment, VmIo, PAGE_SIZE,
     },
     sync::WaitQueue,
 };
@@ -325,7 +325,6 @@ fn tdx_get_report(inblob: &[u8]) -> Result<USegment> {
 }
 
 fn alloc_dma_buf(buf_len: usize) -> Result<DmaCoherent> {
-    let segment = FrameAllocOptions::new().alloc_segment(buf_len.div_ceil(PAGE_SIZE))?;
-    let dma_buf = DmaCoherent::map(segment.into(), false).unwrap();
+    let dma_buf = DmaCoherent::alloc(buf_len.div_ceil(PAGE_SIZE), false)?;
     Ok(dma_buf)
 }
