@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 
 use super::{
     capability::Capability,
-    cfg_space::{AddrLen, Bar, Command, PciDeviceCommonCfgOffset, Status},
+    cfg_space::{AddrLen, Bar, Command, PciCommonCfgOffset, Status},
     device_info::PciDeviceId,
 };
 use crate::device_info::PciDeviceLocation;
@@ -45,24 +45,18 @@ impl PciCommonDevice {
 
     /// Gets the PCI Command
     pub fn command(&self) -> Command {
-        Command::from_bits_truncate(
-            self.location
-                .read16(PciDeviceCommonCfgOffset::Command as u16),
-        )
+        Command::from_bits_truncate(self.location.read16(PciCommonCfgOffset::Command as u16))
     }
 
     /// Sets the PCI Command
     pub fn set_command(&self, command: Command) {
         self.location
-            .write16(PciDeviceCommonCfgOffset::Command as u16, command.bits())
+            .write16(PciCommonCfgOffset::Command as u16, command.bits())
     }
 
     /// Gets the PCI status
     pub fn status(&self) -> Status {
-        Status::from_bits_truncate(
-            self.location
-                .read16(PciDeviceCommonCfgOffset::Status as u16),
-        )
+        Status::from_bits_truncate(self.location.read16(PciCommonCfgOffset::Status as u16))
     }
 
     pub(super) fn new(location: PciDeviceLocation) -> Option<Self> {
@@ -114,7 +108,7 @@ impl BarManager {
 
     /// Parse the BAR space by PCI device location.
     fn new(location: PciDeviceLocation) -> Self {
-        let header_type = location.read8(PciDeviceCommonCfgOffset::HeaderType as u16) & !(1 << 7);
+        let header_type = location.read8(PciCommonCfgOffset::HeaderType as u16) & !(1 << 7);
         // Get the max bar amount, header type=0 => end device; header type=1 => PCI bridge.
         let max = match header_type {
             0 => 6,

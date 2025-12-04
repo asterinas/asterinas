@@ -17,9 +17,9 @@ use spin::Once;
 
 use super::PciDeviceLocation;
 
-/// Offset in PCI device's common configuration space(Not the PCI bridge).
+/// Offset in PCI device's common configuration space.
 #[repr(u16)]
-pub enum PciDeviceCommonCfgOffset {
+pub enum PciCommonCfgOffset {
     /// Vendor ID
     VendorId = 0x00,
     /// Device ID
@@ -30,8 +30,12 @@ pub enum PciDeviceCommonCfgOffset {
     Status = 0x06,
     /// Revision ID
     RevisionId = 0x08,
-    /// Class code
-    ClassCode = 0x09,
+    /// Programming Interface
+    ProgIf = 0x09,
+    /// Subclass code
+    SubclassCode = 0x0A,
+    /// Base class code
+    BaseClassCode = 0x0B,
     /// Cache Line Size
     CacheLineSize = 0x0C,
     /// Latency Timer
@@ -40,6 +44,15 @@ pub enum PciDeviceCommonCfgOffset {
     HeaderType = 0x0E,
     /// BIST: Represents the status and allows control of a devices BIST(built-in self test).
     Bist = 0x0F,
+    /// Interrupt Line
+    InterruptLine = 0x3C,
+    /// Interrupt Pin
+    InterruptPin = 0x3D,
+}
+
+/// Offset in PCI general device's configuration space (Not the PCI bridge or Cardbus bridge).
+#[repr(u16)]
+pub enum PciGeneralDeviceCfgOffset {
     /// Base Address Register #0
     Bar0 = 0x10,
     /// Base Address Register #1
@@ -62,14 +75,90 @@ pub enum PciDeviceCommonCfgOffset {
     XromBar = 0x30,
     /// Capabilities pointer
     CapabilitiesPointer = 0x34,
-    /// Interrupt Line
-    InterruptLine = 0x3C,
-    /// INterrupt PIN
-    InterruptPin = 0x3D,
     /// Min Grant
     MinGrant = 0x3E,
     /// Max latency
     MaxLatency = 0x3F,
+}
+
+/// Offset in PCI-to-PCI bridge's configuration space.
+#[repr(u16)]
+pub enum PciBridgeCfgOffset {
+    /// Base Address Register #0
+    Bar0 = 0x10,
+    /// Base Address Register #1
+    Bar1 = 0x14,
+    /// Primary bus number
+    PrimaryBusNumber = 0x18,
+    /// Secondary bus number
+    SecondaryBusNumber = 0x19,
+    /// Subordinate bus number
+    SubordinateBusNumber = 0x1A,
+    /// Secondary latency timer
+    SecondaryLatencyTimer = 0x1B,
+    /// I/O base
+    IoBase = 0x1C,
+    /// I/O limit
+    IoLimit = 0x1D,
+    /// Secondary status
+    SecondaryStatus = 0x1E,
+    /// Memory base
+    MemoryBase = 0x20,
+    /// Memory limit
+    MemoryLimit = 0x22,
+    /// Prefetchable memory base
+    PrefetchableMemoryBase = 0x24,
+    /// Prefetchable memory limit
+    PrefetchableMemoryLimit = 0x26,
+    /// Prefetchable memory base upper 32 bits
+    PrefetchableMemoryBaseUpper32 = 0x28,
+    /// Prefetchable memory limit upper 32 bits
+    PrefetchableMemoryLimitUpper32 = 0x2C,
+    /// I/O base upper 16 bits
+    IoBaseUpper16 = 0x30,
+    /// I/O limit upper 16 bits
+    IoLimitUpper16 = 0x32,
+    /// Capabilities pointer
+    CapabilitiesPointer = 0x34,
+    /// Bridge control
+    BridgeControl = 0x3E,
+}
+
+/// Offset in PCI-to-Cardbus bridge's configuration space.
+#[repr(u16)]
+pub enum PciCardbusBridgeCfgOffset {
+    /// Cardbus socket/ExCA base address
+    CardbusSocketExcaBaseAddress = 0x10,
+    /// Capabilities pointer
+    CapabilitiesPointer = 0x14,
+    /// Secondary status
+    SecondaryStatus = 0x16,
+    /// Cardbus latency timer
+    CardbusLatencyTimer = 0x17,
+    /// Memory base 0
+    MemoryBase0 = 0x18,
+    /// Memory limit 0
+    MemoryLimit0 = 0x1C,
+    /// Memory base 1
+    MemoryBase1 = 0x20,
+    /// Memory limit 1
+    MemoryLimit1 = 0x24,
+    /// I/O base 0
+    IoBase0 = 0x28,
+    /// I/O limit 0
+    IoLimit0 = 0x2C,
+    /// I/O base 1
+    IoBase1 = 0x30,
+    /// I/O limit 1
+    IoLimit1 = 0x34,
+    /// Bridge control
+    BridgeControl = 0x3E,
+    /// Subsystem device ID
+    SubsystemDeviceId = 0x40,
+    /// Subsystem Vendor ID
+    SubsystemVendorId = 0x42,
+    /// Legacy mode base address
+    LegacyModeBaseAddress = 0x44,
 }
 
 bitflags! {
@@ -163,7 +252,7 @@ impl Bar {
             return Err(Error::InvalidArgs);
         }
 
-        let offset = index as u16 * 4 + PciDeviceCommonCfgOffset::Bar0 as u16;
+        let offset = index as u16 * 4 + PciGeneralDeviceCfgOffset::Bar0 as u16;
         let raw = location.read32(offset);
 
         // Check the "Space Indicator" bit.
@@ -254,7 +343,7 @@ impl MemoryBar {
             _ => return Err(Error::InvalidArgs),
         };
 
-        let offset = index as u16 * 4 + PciDeviceCommonCfgOffset::Bar0 as u16;
+        let offset = index as u16 * 4 + PciGeneralDeviceCfgOffset::Bar0 as u16;
 
         // "Software saves the original value of the Base Address register, writes a value of all
         // 1's to the register, then reads it back."
@@ -396,7 +485,7 @@ impl IoBar {
     fn new(location: &PciDeviceLocation, index: u8, raw: u32) -> Result<Self> {
         debug_assert_eq!(raw & 1, 1);
 
-        let offset = index as u16 * 4 + PciDeviceCommonCfgOffset::Bar0 as u16;
+        let offset = index as u16 * 4 + PciGeneralDeviceCfgOffset::Bar0 as u16;
 
         // "Software saves the original value of the Base Address register, writes a value of all
         // 1's to the register, then reads it back."
