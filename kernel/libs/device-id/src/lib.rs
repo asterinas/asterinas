@@ -43,10 +43,12 @@ impl DeviceId {
 impl DeviceId {
     /// Creates a device ID from the encoded `u64` value.
     ///
-    /// Panics if the major or minor device number is not falling in the valid range.
-    pub fn from_encoded_u64(raw: u64) -> Self {
+    /// Returns `None` if the major or minor device number is not falling in the valid range.
+    pub fn from_encoded_u64(raw: u64) -> Option<Self> {
         let (major, minor) = decode_device_numbers(raw);
-        Self::new(MajorId::new(major as u16), MinorId::new(minor))
+        let major = MajorId::try_from(major as u16).ok()?;
+        let minor = MinorId::try_from(minor).ok()?;
+        Some(Self::new(major, minor))
     }
 
     /// Encodes the device ID as a `u64` value.

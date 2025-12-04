@@ -211,17 +211,15 @@ impl Inner {
     ) -> Option<Result<Box<dyn FileIo>>> {
         match self {
             Self::BlockDevice(device_id) | Self::CharDevice(device_id) => {
-                if *device_id == 0 {
+                let Some(device_id) = DeviceId::from_encoded_u64(*device_id) else {
                     return Some(Err(Error::with_message(
                         Errno::ENODEV,
-                        "the device of ID 0 does not exist",
+                        "the device ID is invalid",
                     )));
-                }
+                };
 
                 let device_type = self.device_type().unwrap();
-                let Some(device) =
-                    device::lookup(device_type, DeviceId::from_encoded_u64(*device_id))
-                else {
+                let Some(device) = device::lookup(device_type, device_id) else {
                     return Some(Err(Error::with_message(
                         Errno::ENODEV,
                         "the required device ID does not exist",
