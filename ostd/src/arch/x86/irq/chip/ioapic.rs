@@ -206,6 +206,16 @@ impl IoApicAccess {
         Self { io_mem }
     }
 
+    /// # Safety
+    ///
+    /// 1. ValidReg: The value of `register` should be a valid IOAPIC readable register index.
+    ///    Valid registers include:
+    ///    - ID register (0x00)
+    ///    - Version register (0x01)
+    ///    - Redirection table entries:
+    ///      * Low 32 bits:  0x10 + 2*n
+    ///      * High 32 bits: 0x10 + 2*n + 1
+    ///    Where 0 <= n <= max redirection entry (obtained from the version register)
     pub(self) unsafe fn read(&mut self, register: u8) -> u32 {
         // SAFETY: This reads data from an I/O APIC register. The safety is upheld by the caller.
         unsafe {
@@ -215,6 +225,19 @@ impl IoApicAccess {
         }
     }
 
+    /// # Safety
+    ///
+    /// 1. ValidReg: The value of `register` should be a valid IOAPIC writable register index.
+    ///    Valid registers include:
+    ///    - Redirection table entries:
+    ///      * Low 32 bits:  0x10 + 2*n
+    ///      * High 32 bits: 0x10 + 2*n + 1
+    ///    Where 0 <= n <= max redirection entry (obtained from the version register)
+    /// 
+    /// 2. ValidRegValue: data must be a valid value for register to ensure correct APIC operation and system safety.
+    ///    See the following links for valid bit configurations:
+    ///    - IOREDTBL structure: https://wiki.osdev.org/IOAPIC#IOREDTBL
+    ///    - Full specification: https://pdos.csail.mit.edu/6.828/2016/readings/ia32/ioapic.pdf
     pub(self) unsafe fn write(&mut self, register: u8, data: u32) {
         // SAFETY: This writes data to an I/O APIC register. The safety is upheld by the caller.
         unsafe {
