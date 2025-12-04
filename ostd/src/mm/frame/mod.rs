@@ -278,10 +278,26 @@ impl<M: AnyFrameMeta> TryFrom<Frame<dyn AnyFrameMeta>> for Frame<M> {
     }
 }
 
-impl<M: AnyFrameMeta> From<Frame<M>> for Frame<dyn AnyFrameMeta> {
-    fn from(frame: Frame<M>) -> Self {
+impl Frame<dyn AnyFrameMeta> {
+    /// Converts a [`Frame`] with a specific metadata type into a
+    /// [`Frame<dyn AnyFrameMeta>`].
+    ///
+    /// This exists because:
+    ///
+    /// ```ignore
+    /// impl<M: AnyFrameMeta + ?Sized> From<Frame<M>> for Frame<dyn AnyFrameMeta>
+    /// ```
+    ///
+    /// will conflict with `impl<T> core::convert::From<T> for T` in crate `core`.
+    pub fn from_unsized<M: AnyFrameMeta + ?Sized>(frame: Frame<M>) -> Frame<dyn AnyFrameMeta> {
         // SAFETY: The metadata is coerceable and the struct is transmutable.
         unsafe { core::mem::transmute(frame) }
+    }
+}
+
+impl<M: AnyFrameMeta> From<Frame<M>> for Frame<dyn AnyFrameMeta> {
+    fn from(frame: Frame<M>) -> Self {
+        Self::from_unsized(frame)
     }
 }
 

@@ -14,7 +14,7 @@ use bitflags::bitflags;
 use log::debug;
 use ostd::{
     Pod,
-    mm::{DmaCoherent, FrameAllocOptions, HasPaddr, PodOnce},
+    mm::{DmaCoherent, FrameAllocOptions, HasPaddr, PodOnce, Split},
 };
 
 use crate::{

@@ -3,7 +3,7 @@
 use super::{allocator::FrameAllocOptions, *};
 use crate::{
     impl_frame_meta_for, impl_untyped_frame_meta_for,
-    mm::{HasPaddrRange, io_util::HasVmReaderWriter},
+    mm::{HasPaddrRange, Split, io_util::HasVmReaderWriter},
     prelude::*,
 };
 
