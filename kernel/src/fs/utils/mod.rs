@@ -17,7 +17,6 @@ pub use inode::{
 };
 pub use inode_mode::InodeMode;
 pub(crate) use inode_mode::{chmod, mkmod, perms_to_mask, who_and_perms_to_mask, who_to_mask};
-pub use ioctl::IoctlCmd;
 pub use open_args::OpenArgs;
 pub use page_cache::{CachePage, PageCache, PageCacheBackend};
 pub use random_test::{generate_random_operation, new_fs_in_memory};
@@ -40,7 +39,6 @@ mod fs;
 mod id_bitmap;
 mod inode;
 mod inode_mode;
-mod ioctl;
 mod open_args;
 mod page_cache;
 mod random_test;
