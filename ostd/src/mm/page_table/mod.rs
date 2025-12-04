@@ -196,7 +196,7 @@ pub trait AuxPageTableMeta: AuxPtMetaLayoutChecked + Debug + Send + Sync + 'stat
 ///
 /// The implementor must ensure that the size of the type is small enough
 /// so that the containing [`PageTableFrameMeta`] satisfies
-/// [`check_frame_meta_layout`].
+/// [`crate::check_frame_meta_layout`].
 pub unsafe trait AuxPtMetaLayoutChecked: Sized {}
 
 /// A macro to check and safely implement the [`AuxPtMetaLayoutChecked`] trait.
@@ -204,10 +204,10 @@ pub unsafe trait AuxPtMetaLayoutChecked: Sized {}
 macro_rules! check_aux_pt_meta_layout {
     ($t:ty) => {
         $crate::check_frame_meta_layout!(
-            $crate::mm::page_table::PageTableFrameMeta<$crate::mm::vm_space::UserPtConfig<$t>>
+            $crate::mm::PageTableFrameMeta<$crate::mm::vm_space::UserPtConfig<$t>>
         );
         // SAFETY: The size check is done above.
-        unsafe impl AuxPtMetaLayoutChecked for $t {}
+        unsafe impl $crate::mm::AuxPtMetaLayoutChecked for $t {}
     };
 }
 
