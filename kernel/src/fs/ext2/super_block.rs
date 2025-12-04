@@ -87,12 +87,29 @@ pub struct SuperBlock {
     /// Directory where last mounted.
     last_mounted_dir: Str64,
     ///
-    /// This fields are valid if the FeatureCompatSet::DIR_PREALLOC is set.
+    /// These fields are valid if the FeatureCompatSet::DIR_PREALLOC is set.
     ///
     /// Number of blocks to preallocate for files.
     prealloc_file_blocks: u8,
     /// Number of blocks to preallocate for directories.
     prealloc_dir_blocks: u8,
+    ///
+    /// These fields are reserved and currently serve no purpose.
+    ///
+    min_rev_level: u16,
+    algorithm_usage_bitmap: u32,
+    padding1: u16,
+    journal_uuid: [u8; 16],
+    journal_ino: u32,
+    journal_dev: u32,
+    last_orphan: u32,
+    hash_seed: [u32; 4],
+    def_hash_version: u8,
+    reserved_char_pad: u8,
+    reserved_word_pad: u16,
+    default_mount_opts: u32,
+    first_meta_bg: u32,
+    reserved: Reserved,
 }
 
 impl TryFrom<RawSuperBlock> for SuperBlock {
@@ -174,6 +191,20 @@ impl TryFrom<RawSuperBlock> for SuperBlock {
             last_mounted_dir: sb.last_mounted_dir,
             prealloc_file_blocks: sb.prealloc_file_blocks,
             prealloc_dir_blocks: sb.prealloc_dir_blocks,
+            min_rev_level: sb.min_rev_level,
+            algorithm_usage_bitmap: sb.algorithm_usage_bitmap,
+            padding1: sb.padding1,
+            journal_uuid: sb.journal_uuid,
+            journal_ino: sb.journal_ino,
+            journal_dev: sb.journal_dev,
+            last_orphan: sb.last_orphan,
+            hash_seed: sb.hash_seed,
+            def_hash_version: sb.def_hash_version,
+            reserved_char_pad: sb.reserved_char_pad,
+            reserved_word_pad: sb.reserved_word_pad,
+            default_mount_opts: sb.default_mount_opts,
+            first_meta_bg: sb.first_meta_bg,
+            reserved: sb.reserved,
         })
     }
 }
@@ -424,7 +455,11 @@ pub enum RevLevel {
 
 const_assert!(size_of::<RawSuperBlock>() == SUPER_BLOCK_SIZE);
 
-/// The raw superblock, it must be exactly 1024 bytes in length.
+/// The on-disk superblock structure.
+///
+/// This structure represents the raw layout of the Ext2 superblock as it appears
+/// on disk. It must be exactly 1024 bytes in length to match the Ext2 specification.
+/// The in-memory representation is provided by [`SuperBlock`].
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Default)]
 pub(super) struct RawSuperBlock {
@@ -472,7 +507,7 @@ pub(super) struct RawSuperBlock {
     pub prealloc_dir_blocks: u8,
     padding1: u16,
     ///
-    /// This fields are for journaling support in Ext3.
+    /// These fields are for journaling support in Ext3.
     ///
     /// Uuid of journal superblock.
     pub journal_uuid: [u8; 16],
@@ -516,6 +551,7 @@ impl From<&SuperBlock> for RawSuperBlock {
             magic: sb.magic,
             state: sb.state as u16,
             errors: sb.errors_behaviour as u16,
+            min_rev_level: sb.min_rev_level,
             last_check_time: sb.last_check_time,
             check_interval: sb.check_interval.as_secs() as u32,
             creator_os: sb.creator_os as u32,
@@ -531,9 +567,21 @@ impl From<&SuperBlock> for RawSuperBlock {
             uuid: sb.uuid,
             volume_name: sb.volume_name,
             last_mounted_dir: sb.last_mounted_dir,
+            algorithm_usage_bitmap: sb.algorithm_usage_bitmap,
             prealloc_file_blocks: sb.prealloc_file_blocks,
             prealloc_dir_blocks: sb.prealloc_dir_blocks,
-            ..Default::default()
+            padding1: sb.padding1,
+            journal_uuid: sb.journal_uuid,
+            journal_ino: sb.journal_ino,
+            journal_dev: sb.journal_dev,
+            last_orphan: sb.last_orphan,
+            hash_seed: sb.hash_seed,
+            def_hash_version: sb.def_hash_version,
+            reserved_char_pad: sb.reserved_char_pad,
+            reserved_word_pad: sb.reserved_word_pad,
+            default_mount_opts: sb.default_mount_opts,
+            first_meta_bg: sb.first_meta_bg,
+            reserved: sb.reserved,
         }
     }
 }
