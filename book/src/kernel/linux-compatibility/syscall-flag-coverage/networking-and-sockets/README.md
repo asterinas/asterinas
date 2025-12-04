@@ -59,7 +59,7 @@ see [the man page](https://man7.org/linux/man-pages/man2/connect.2.html).
 
 ## Socket Communication
 
-### `sendto` and `sendmsg`
+### `sendto`, `sendmsg` and `sendmmsg`
 
 Supported functionality in SCML:
 

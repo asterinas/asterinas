@@ -87,11 +87,11 @@ pub struct CUserMsgHdr {
     /// Scatter/Gather iov array
     pub msg_iov: Vaddr,
     /// The # of elements in msg_iov
-    pub msg_iovlen: u32,
+    pub msg_iovlen: usize,
     /// Ancillary data
     pub msg_control: Vaddr,
     /// Ancillary data buffer length
-    pub msg_controllen: u32,
+    pub msg_controllen: usize,
     /// Flags on received message
     pub msg_flags: u32,
 }
@@ -129,7 +129,7 @@ impl CUserMsgHdr {
             return Ok(Vec::new());
         }
 
-        let mut reader = user_space.reader(self.msg_control, self.msg_controllen as usize)?;
+        let mut reader = user_space.reader(self.msg_control, self.msg_controllen)?;
         let control_messages = ControlMessage::read_all_from(&mut reader)?;
         Ok(control_messages)
     }
@@ -148,7 +148,7 @@ impl CUserMsgHdr {
             return Ok(0);
         }
 
-        let mut writer = user_space.writer(self.msg_control, self.msg_controllen as usize)?;
+        let mut writer = user_space.writer(self.msg_control, self.msg_controllen)?;
         let write_len = ControlMessage::write_all_to(control_messages, &mut writer) as u32;
         Ok(write_len)
     }
@@ -157,21 +157,21 @@ impl CUserMsgHdr {
         &self,
         user_space: &'a CurrentUserSpace<'a>,
     ) -> Result<VmReaderArray<'a>> {
-        if self.msg_iovlen as usize > MAX_IO_VECTOR_LENGTH {
+        if self.msg_iovlen > MAX_IO_VECTOR_LENGTH {
             return_errno_with_message!(Errno::EMSGSIZE, "the I/O vector contains too many buffers");
         }
 
-        VmReaderArray::from_user_io_vecs(user_space, self.msg_iov, self.msg_iovlen as usize)
+        VmReaderArray::from_user_io_vecs(user_space, self.msg_iov, self.msg_iovlen)
     }
 
     pub fn copy_writer_array_from_user<'a>(
         &self,
         user_space: &'a CurrentUserSpace<'a>,
     ) -> Result<VmWriterArray<'a>> {
-        if self.msg_iovlen as usize > MAX_IO_VECTOR_LENGTH {
+        if self.msg_iovlen > MAX_IO_VECTOR_LENGTH {
             return_errno_with_message!(Errno::EMSGSIZE, "the I/O vector contains too many buffers");
         }
 
-        VmWriterArray::from_user_io_vecs(user_space, self.msg_iov, self.msg_iovlen as usize)
+        VmWriterArray::from_user_io_vecs(user_space, self.msg_iov, self.msg_iovlen)
     }
 }
