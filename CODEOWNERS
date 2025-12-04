@@ -28,7 +28,7 @@
 #=============================================================================
 
 /book/                          @tatetian
-/book/src/kernel/linux-compatibility/syscall-feature-coverage/ @tatetian @taosue
+/book/src/kernel/linux-compatibility/syscall-flag-coverage/ @tatetian @taosue
 
 #=============================================================================
 # The Asterinas kernel

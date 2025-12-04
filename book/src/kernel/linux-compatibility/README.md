@@ -18,23 +18,23 @@ At the time of writing,
 Asterinas supports over 225 Linux system calls for the x86-64 architecture,
 which are summarized in the table below.
 
-| Numbers | Names                  | Supported      | Feature Coverage |
+| Numbers | Names                  | Supported      | Flag Coverage |
 | ------- | ---------------------- | -------------- | --- |
 | 0       | read                   | ✅             | 💯 |
 | 1       | write                  | ✅             | 💯 |
-| 2       | open                   | ✅             | [⚠️](syscall-feature-coverage/file-and-directory-operations/#open-and-openat) |
+| 2       | open                   | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#open-and-openat) |
 | 3       | close                  | ✅             | 💯 |
 | 4       | stat                   | ✅             | 💯 |
 | 5       | fstat                  | ✅             | 💯 |
 | 6       | lstat                  | ✅             | 💯 |
 | 7       | poll                   | ✅             | 💯 |
-| 8       | lseek                  | ✅             | [⚠️](syscall-feature-coverage/file-and-directory-operations/#lseek) |
-| 9       | mmap                   | ✅             | [⚠️](syscall-feature-coverage/memory-management/#mmap-and-munmap) |
-| 10      | mprotect               | ✅             | [⚠️](syscall-feature-coverage/memory-management/#mprotect) |
+| 8       | lseek                  | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#lseek) |
+| 9       | mmap                   | ✅             | [⚠️](syscall-flag-coverage/memory-management/#mmap-and-munmap) |
+| 10      | mprotect               | ✅             | [⚠️](syscall-flag-coverage/memory-management/#mprotect) |
 | 11      | munmap                 | ✅             | 💯 |
 | 12      | brk                    | ✅             | 💯 |
-| 13      | rt_sigaction           | ✅             | [⚠️](syscall-feature-coverage/signals-and-timers/#rt_sigaction) |
-| 14      | rt_sigprocmask         | ✅             | [⚠️](syscall-feature-coverage/signals-and-timers/#rt_sigprocmask) |
+| 13      | rt_sigaction           | ✅             | [⚠️](syscall-flag-coverage/signals-and-timers/#rt_sigaction) |
+| 14      | rt_sigprocmask         | ✅             | [⚠️](syscall-flag-coverage/signals-and-timers/#rt_sigprocmask) |
 | 15      | rt_sigreturn           | ✅             | 💯 |
 | 16      | ioctl                  | ✅             | ❓ |
 | 17      | pread64                | ✅             | 💯 |
@@ -45,10 +45,10 @@ which are summarized in the table below.
 | 22      | pipe                   | ✅             | 💯 |
 | 23      | select                 | ✅             | ❓ |
 | 24      | sched_yield            | ✅             | 💯 |
-| 25      | mremap                 | ✅             | [⚠️](syscall-feature-coverage/memory-management/#mremap) |
-| 26      | msync                  | ✅             | [⚠️](syscall-feature-coverage/memory-management/#msync) |
+| 25      | mremap                 | ✅             | [⚠️](syscall-flag-coverage/memory-management/#mremap) |
+| 26      | msync                  | ✅             | [⚠️](syscall-flag-coverage/memory-management/#msync) |
 | 27      | mincore                | ❌             | N/A |
-| 28      | madvise                | ✅             | [⚠️](syscall-feature-coverage/memory-management/#madvise) |
+| 28      | madvise                | ✅             | [⚠️](syscall-flag-coverage/memory-management/#madvise) |
 | 29      | shmget                 | ❌             | N/A |
 | 30      | shmat                  | ❌             | N/A |
 | 31      | shmctl                 | ❌             | N/A |
@@ -61,38 +61,38 @@ which are summarized in the table below.
 | 38      | setitimer              | ✅             | ❓ |
 | 39      | getpid                 | ✅             | 💯 |
 | 40      | sendfile               | ✅             | 💯 |
-| 41      | socket                 | ✅             | [⚠️](syscall-feature-coverage/networking-and-sockets/#socket) |
-| 42      | connect                | ✅             | [⚠️](syscall-feature-coverage/networking-and-sockets/#connect) |
+| 41      | socket                 | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#socket) |
+| 42      | connect                | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#connect) |
 | 43      | accept                 | ✅             | ❓ |
-| 44      | sendto                 | ✅             | [⚠️](syscall-feature-coverage/networking-and-sockets/#sendto-and-sendmsg) |
-| 45      | recvfrom               | ✅             | [⚠️](syscall-feature-coverage/networking-and-sockets/#recvfrom-and-recvmsg) |
-| 46      | sendmsg                | ✅             | [⚠️](syscall-feature-coverage/networking-and-sockets/#sendto-and-sendmsg) |
-| 47      | recvmsg                | ✅             | [⚠️](syscall-feature-coverage/networking-and-sockets/#recvfrom-and-recvmsg) |
+| 44      | sendto                 | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#sendto-and-sendmsg) |
+| 45      | recvfrom               | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#recvfrom-and-recvmsg) |
+| 46      | sendmsg                | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#sendto-and-sendmsg) |
+| 47      | recvmsg                | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#recvfrom-and-recvmsg) |
 | 48      | shutdown               | ✅             | ❓ |
-| 49      | bind                   | ✅             | [⚠️](syscall-feature-coverage/networking-and-sockets/#bind) |
+| 49      | bind                   | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#bind) |
 | 50      | listen                 | ✅             | ❓ |
 | 51      | getsockname            | ✅             | 💯 |
 | 52      | getpeername            | ✅             | ❓ |
-| 53      | socketpair             | ✅             | [⚠️](syscall-feature-coverage/networking-and-sockets/#socketpair) |
-| 54      | setsockopt             | ✅             | [⚠️](syscall-feature-coverage/networking-and-sockets/#getsockopt-and-setsockopt) |
-| 55      | getsockopt             | ✅             | [⚠️](syscall-feature-coverage/networking-and-sockets/#getsockopt-and-setsockopt) |
-| 56      | clone                  | ✅             | [⚠️](syscall-feature-coverage/process-and-thread-management/#clone) |
+| 53      | socketpair             | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#socketpair) |
+| 54      | setsockopt             | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#getsockopt-and-setsockopt) |
+| 55      | getsockopt             | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#getsockopt-and-setsockopt) |
+| 56      | clone                  | ✅             | [⚠️](syscall-flag-coverage/process-and-thread-management/#clone) |
 | 57      | fork                   | ✅             | 💯 |
 | 58      | vfork                  | ❌             | N/A |
 | 59      | execve                 | ✅             | 💯 |
 | 60      | exit                   | ✅             | 💯 |
-| 61      | wait4                  | ✅             | [⚠️](syscall-feature-coverage/process-and-thread-management/#wait4) |
+| 61      | wait4                  | ✅             | [⚠️](syscall-flag-coverage/process-and-thread-management/#wait4) |
 | 62      | kill                   | ✅             | 💯 |
 | 63      | uname                  | ✅             | 💯 |
-| 64      | semget                 | ✅             | [⚠️](syscall-feature-coverage/inter-process-communication/#semget) |
-| 65      | semop                  | ✅             | [⚠️](syscall-feature-coverage/inter-process-communication/#semop-and-semtimedop) |
-| 66      | semctl                 | ✅             | [⚠️](syscall-feature-coverage/inter-process-communication/#semctl) |
+| 64      | semget                 | ✅             | [⚠️](syscall-flag-coverage/inter-process-communication/#semget) |
+| 65      | semop                  | ✅             | [⚠️](syscall-flag-coverage/inter-process-communication/#semop-and-semtimedop) |
+| 66      | semctl                 | ✅             | [⚠️](syscall-flag-coverage/inter-process-communication/#semctl) |
 | 67      | shmdt                  | ❌             | N/A |
 | 68      | msgget                 | ❌             | N/A |
 | 69      | msgsnd                 | ❌             | N/A |
 | 70      | msgrcv                 | ❌             | N/A |
 | 71      | msgctl                 | ❌             | N/A |
-| 72      | fcntl                  | ✅             | [⚠️](syscall-feature-coverage/file-descriptor-and-io-control/#fcntl) |
+| 72      | fcntl                  | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#fcntl) |
 | 73      | flock                  | ✅             | ❓ |
 | 74      | fsync                  | ✅             | 💯 |
 | 75      | fdatasync              | ✅             | 💯 |
@@ -118,7 +118,7 @@ which are summarized in the table below.
 | 95      | umask                  | ✅             | 💯 |
 | 96      | gettimeofday           | ✅             | 💯 |
 | 97      | getrlimit              | ✅             | ❓ |
-| 98      | getrusage              | ✅             | [⚠️](syscall-feature-coverage/system-information-and-misc/#getrusage) |
+| 98      | getrusage              | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#getrusage) |
 | 99      | sysinfo                | ✅             | 💯 |
 | 100     | times                  | ❌             | N/A |
 | 101     | ptrace                 | ❌             | N/A |
@@ -145,8 +145,8 @@ which are summarized in the table below.
 | 122     | setfsuid               | ✅             | 💯 |
 | 123     | setfsgid               | ✅             | 💯 |
 | 124     | getsid                 | ✅             | 💯 |
-| 125     | capget                 | ✅             | [⚠️](syscall-feature-coverage/namespaces-cgroups-and-security/#capget-and-capset) |
-| 126     | capset                 | ✅             | [⚠️](syscall-feature-coverage/namespaces-cgroups-and-security/#capget-and-capset) |
+| 125     | capget                 | ✅             | [⚠️](syscall-flag-coverage/namespaces-cgroups-and-security/#capget-and-capset) |
+| 126     | capset                 | ✅             | [⚠️](syscall-flag-coverage/namespaces-cgroups-and-security/#capget-and-capset) |
 | 127     | rt_sigpending          | ✅             | 💯 |
 | 128     | rt_sigtimedwait        | ❌             | N/A |
 | 129     | rt_sigqueueinfo        | ❌             | N/A |
@@ -177,19 +177,19 @@ which are summarized in the table below.
 | 154     | modify_ldt             | ❌             | N/A |
 | 155     | pivot_root             | ❌             | N/A |
 | 156     | _sysctl                | ❌             | N/A |
-| 157     | prctl                  | ✅             | [⚠️](syscall-feature-coverage/namespaces-cgroups-and-security/#prctl) |
-| 158     | arch_prctl             | ✅             | [⚠️](syscall-feature-coverage/system-information-and-misc/#arch_prctl) |
+| 157     | prctl                  | ✅             | [⚠️](syscall-flag-coverage/namespaces-cgroups-and-security/#prctl) |
+| 158     | arch_prctl             | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#arch_prctl) |
 | 159     | adjtimex               | ❌             | N/A |
 | 160     | setrlimit              | ✅             | ❓ |
 | 161     | chroot                 | ✅             | 💯 |
 | 162     | sync                   | ✅             | 💯 |
 | 163     | acct                   | ❌             | N/A |
 | 164     | settimeofday           | ❌             | N/A |
-| 165     | mount                  | ✅             | [⚠️](syscall-feature-coverage/file-systems-and-mount-control/#mount) |
-| 166     | umount2                | ✅             | [⚠️](syscall-feature-coverage/file-systems-and-mount-control/#umount-and-umount2) |
+| 165     | mount                  | ✅             | [⚠️](syscall-flag-coverage/file-systems-and-mount-control/#mount) |
+| 166     | umount2                | ✅             | [⚠️](syscall-flag-coverage/file-systems-and-mount-control/#umount-and-umount2) |
 | 167     | swapon                 | ❌             | N/A |
 | 168     | swapoff                | ❌             | N/A |
-| 169     | reboot                 | ✅             | [⚠️](syscall-feature-coverage/system-information-and-misc/#reboot) |
+| 169     | reboot                 | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#reboot) |
 | 170     | sethostname            | ✅             | 💯 |
 | 171     | setdomainname          | ✅             | 💯 |
 | 172     | iopl                   | ❌             | N/A |
@@ -222,7 +222,7 @@ which are summarized in the table below.
 | 199     | fremovexattr           | ✅             | 💯 |
 | 200     | tkill                  | ❌             | N/A |
 | 201     | time                   | ✅             | 💯 |
-| 202     | futex                  | ✅             | [⚠️](syscall-feature-coverage/inter-process-communication/#futex) |
+| 202     | futex                  | ✅             | [⚠️](syscall-flag-coverage/inter-process-communication/#futex) |
 | 203     | sched_setaffinity      | ✅             | 💯 |
 | 204     | sched_getaffinity      | ✅             | 💯 |
 | 205     | set_thread_area        | ❌             | N/A |
@@ -240,17 +240,17 @@ which are summarized in the table below.
 | 217     | getdents64             | ✅             | 💯 |
 | 218     | set_tid_address        | ✅             | 💯 |
 | 219     | restart_syscall        | ❌             | N/A |
-| 220     | semtimedop             | ✅             | [⚠️](syscall-feature-coverage/inter-process-communication/#semop-and-semtimedop) |
+| 220     | semtimedop             | ✅             | [⚠️](syscall-flag-coverage/inter-process-communication/#semop-and-semtimedop) |
 | 221     | fadvise64              | ✅             | ❓ |
-| 222     | timer_create           | ✅             | [⚠️](syscall-feature-coverage/signals-and-timers/#timer_create) |
+| 222     | timer_create           | ✅             | [⚠️](syscall-flag-coverage/signals-and-timers/#timer_create) |
 | 223     | timer_settime          | ✅             | ❓ |
 | 224     | timer_gettime          | ✅             | 💯 |
 | 225     | timer_getoverrun       | ❌             | N/A |
 | 226     | timer_delete           | ✅             | 💯 |
 | 227     | clock_settime          | ❌             | N/A |
-| 228     | clock_gettime          | ✅             | [⚠️](syscall-feature-coverage/system-information-and-misc/#clock_gettime) |
+| 228     | clock_gettime          | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#clock_gettime) |
 | 229     | clock_getres           | ❌             | N/A |
-| 230     | clock_nanosleep        | ✅             | [⚠️](syscall-feature-coverage/system-information-and-misc/#clock_nanosleep) |
+| 230     | clock_nanosleep        | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#clock_nanosleep) |
 | 231     | exit_group             | ✅             | 💯 |
 | 232     | epoll_wait             | ✅             | ❓ |
 | 233     | epoll_ctl              | ✅             | ❓ |
@@ -274,15 +274,15 @@ which are summarized in the table below.
 | 251     | ioprio_set             | ✅             | ❓ |
 | 252     | ioprio_get             | ✅             | ❓ |
 | 253     | inotify_init           | ✅             | 💯 |
-| 254     | inotify_add_watch      | ✅             | [⚠️](syscall-feature-coverage/file-systems-and-mount-control/#inotify_add_watch) |
+| 254     | inotify_add_watch      | ✅             | [⚠️](syscall-flag-coverage/file-systems-and-mount-control/#inotify_add_watch) |
 | 255     | inotify_rm_watch       | ✅             | 💯 |
 | 256     | migrate_pages          | ❌             | N/A |
-| 257     | openat                 | ✅             | [⚠️](syscall-feature-coverage/file-and-directory-operations/#open-and-openat) |
+| 257     | openat                 | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#open-and-openat) |
 | 258     | mkdirat                | ✅             | 💯 |
 | 259     | mknodat                | ✅             | 💯 |
 | 260     | fchownat               | ✅             | ❓ |
 | 261     | futimesat              | ✅             | 💯 |
-| 262     | newfstatat             | ✅             | [⚠️](syscall-feature-coverage/file-and-directory-operations/#newfstatat) |
+| 262     | newfstatat             | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#newfstatat) |
 | 263     | unlinkat               | ✅             | ❓ |
 | 264     | renameat               | ✅             | ❓ |
 | 265     | linkat                 | ✅             | ❓ |
@@ -310,11 +310,11 @@ which are summarized in the table below.
 | 287     | timerfd_gettime        | ✅             | 💯 |
 | 288     | accept4                | ✅             | ❓ |
 | 289     | signalfd4              | ✅             | ❓ |
-| 290     | eventfd2               | ✅             | [⚠️](syscall-feature-coverage/file-descriptor-and-io-control/#eventfd-and-eventfd2) |
+| 290     | eventfd2               | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#eventfd-and-eventfd2) |
 | 291     | epoll_create1          | ✅             | ❓ |
 | 292     | dup3                   | ✅             | 💯 |
-| 293     | pipe2                  | ✅             | [⚠️](syscall-feature-coverage/file-descriptor-and-io-control/#pipe-and-pipe2) |
-| 294     | inotify_init1          | ✅             | [⚠️](syscall-feature-coverage/file-systems-and-mount-control/#inotify_init-and-inotify_init1) |
+| 293     | pipe2                  | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#pipe-and-pipe2) |
+| 294     | inotify_init1          | ✅             | [⚠️](syscall-flag-coverage/file-systems-and-mount-control/#inotify_init-and-inotify_init1) |
 | 295     | preadv                 | ✅             | 💯 |
 | 296     | pwritev                | ✅             | 💯 |
 | 297     | rt_tgsigqueueinfo      | ❌             | N/A |
@@ -334,10 +334,10 @@ which are summarized in the table below.
 | 311     | process_vm_writev      | ❌             | N/A |
 | 312     | kcmp                   | ❌             | N/A |
 | 313     | finit_module           | ❌             | N/A |
-| 314     | sched_setattr          | ✅             | [⚠️](syscall-feature-coverage/process-and-thread-management/#sched_getattr-and-sched_setattr) |
-| 315     | sched_getattr          | ✅             | [⚠️](syscall-feature-coverage/process-and-thread-management/#sched_getattr-and-sched_setattr) |
-| 316     | renameat2              | ✅             | [⚠️](syscall-feature-coverage/file-and-directory-operations/#renameat2) |
-| 318     | getrandom              | ✅             | [⚠️](syscall-feature-coverage/system-information-and-misc/#getrandom) |
+| 314     | sched_setattr          | ✅             | [⚠️](syscall-flag-coverage/process-and-thread-management/#sched_getattr-and-sched_setattr) |
+| 315     | sched_getattr          | ✅             | [⚠️](syscall-flag-coverage/process-and-thread-management/#sched_getattr-and-sched_setattr) |
+| 316     | renameat2              | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#renameat2) |
+| 318     | getrandom              | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#getrandom) |
 | 319     | memfd_create           | ✅             | ❓ |
 | 322     | execveat               | ✅             | ❓ |
 | 327     | preadv2                | ✅             | ❓ |
@@ -353,7 +353,7 @@ which are summarized in the table below.
     - ✅ = syscall supported
     - ❌ = not supported
 
-- Feature Coverage:
+- Flag Coverage:
     - 💯 = all flags/commands/modes are supported
     - ⚠️ = syscall works, but some flags/modes are not implemented
     - ❓ = implementation exists, but we have not audited its coverage yet

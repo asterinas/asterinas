@@ -5,13 +5,13 @@ on:
   pull_request:
     paths:
       - tools/sctrace/**
-      - book/src/kernel/linux-compatibility/syscall-feature-coverage/**
+      - book/src/kernel/linux-compatibility/syscall-flag-coverage/**
   push:
     branches:
       - main
     paths:
       - tools/sctrace/**
-      - book/src/kernel/linux-compatibility/syscall-feature-coverage/**
+      - book/src/kernel/linux-compatibility/syscall-flag-coverage/**
 
 jobs:
   validate_scmls:
