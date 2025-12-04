@@ -75,7 +75,6 @@ impl From<DeviceType> for InodeType {
         match type_ {
             DeviceType::Char => InodeType::CharDevice,
             DeviceType::Block => InodeType::BlockDevice,
-            DeviceType::Misc => InodeType::CharDevice,
         }
     }
 }
