@@ -138,14 +138,8 @@ impl TryFrom<RawSuperBlock> for SuperBlock {
                 }
                 MAGIC_NUM
             },
-            state: {
-                let state = FsState::try_from(sb.state)
-                    .map_err(|_| Error::with_message(Errno::EINVAL, "invalid fs state"))?;
-                if state == FsState::Corrupted {
-                    return_errno_with_message!(Errno::EUCLEAN, "fs is corrupted");
-                }
-                state
-            },
+            state: FsState::from_bits(sb.state)
+                .ok_or(Error::with_message(Errno::EINVAL, "invalid fs state"))?,
             errors_behaviour: ErrorsBehaviour::try_from(sb.errors)
                 .map_err(|_| Error::with_message(Errno::EINVAL, "invalid errors behaviour"))?,
             last_check_time: sb.last_check_time,
@@ -406,15 +400,16 @@ bitflags! {
     }
 }
 
-#[repr(u16)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, TryFromInt)]
-pub enum FsState {
-    /// Unmounted cleanly
-    Valid = 1,
-    /// Errors detected
-    Err = 2,
-    /// Filesystem is corrupted (EUCLEAN)
-    Corrupted = 117,
+bitflags! {
+    /// Filesystem state.
+    ///
+    /// Reference: <https://www.nongnu.org/ext2-doc/ext2.html#s-state>
+    pub struct FsState: u16 {
+        /// Unmounted cleanly
+        const VALID = 1 << 0;
+        /// Errors detected
+        const ERROR = 1 << 1;
+    }
 }
 
 #[repr(u16)]
@@ -549,7 +544,7 @@ impl From<&SuperBlock> for RawSuperBlock {
             mnt_count: sb.mnt_count,
             max_mnt_count: sb.max_mnt_count,
             magic: sb.magic,
-            state: sb.state as u16,
+            state: sb.state.bits(),
             errors: sb.errors_behaviour as u16,
             min_rev_level: sb.min_rev_level,
             last_check_time: sb.last_check_time,
