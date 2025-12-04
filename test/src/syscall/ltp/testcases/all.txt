@@ -1324,8 +1324,8 @@ sendfile08_64
 # sendmsg02
 # sendmsg03
 
-# sendmmsg01
-# sendmmsg02
+sendmmsg01
+sendmmsg02
 
 # sendto01
 # sendto02
