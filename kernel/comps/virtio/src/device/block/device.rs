@@ -24,7 +24,7 @@ use log::{debug, info};
 use ostd::{
     Pod,
     arch::trap::TrapFrame,
-    mm::{DmaDirection, DmaStream, FrameAllocOptions, HasSize, VmIo},
+    mm::{FrameAllocOptions, HasSize, VmIo, dma::DmaStream},
     sync::SpinLock,
 };
 
@@ -238,12 +238,12 @@ impl DeviceInner {
             .expect("create virtqueue failed");
         let block_requests = {
             let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-            Arc::new(DmaStream::map(segment.into(), DmaDirection::Bidirectional, false).unwrap())
+            Arc::new(DmaStream::map(segment.into(), false).unwrap())
         };
         assert!(Self::QUEUE_SIZE as usize * REQ_SIZE <= block_requests.size());
         let block_responses = {
             let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-            Arc::new(DmaStream::map(segment.into(), DmaDirection::Bidirectional, false).unwrap())
+            Arc::new(DmaStream::map(segment.into(), false).unwrap())
         };
         assert!(Self::QUEUE_SIZE as usize * RESP_SIZE <= block_responses.size());
 
@@ -302,7 +302,7 @@ impl DeviceInner {
             let id = complete_request.id as usize;
             let resp_slice =
                 Slice::new(&self.block_responses, id * RESP_SIZE..(id + 1) * RESP_SIZE);
-            resp_slice.sync().unwrap();
+            resp_slice.sync_from_device().unwrap();
             let resp: BlockResp = resp_slice.read_val(0).unwrap();
             self.id_allocator.dealloc(id);
             match RespStatus::try_from(resp.status).unwrap() {
@@ -321,7 +321,7 @@ impl DeviceInner {
                             .iter()
                             .map(|segment| segment.inner_dma_slice())
                     })
-                    .for_each(|dma_slice| dma_slice.sync().unwrap());
+                    .for_each(|dma_slice| dma_slice.sync_from_device().unwrap());
             }
 
             // Completes the bio request
@@ -349,7 +349,7 @@ impl DeviceInner {
                 sector: bio_request.sid_range().start.to_raw(),
             };
             req_slice.write_val(0, &req).unwrap();
-            req_slice.sync().unwrap();
+            req_slice.sync_to_device().unwrap();
             req_slice
         };
 
@@ -359,6 +359,7 @@ impl DeviceInner {
                 id * RESP_SIZE..(id + 1) * RESP_SIZE,
             );
             resp_slice.write_val(0, &BlockResp::default()).unwrap();
+            resp_slice.sync_to_device().unwrap();
             resp_slice
         };
 
@@ -416,7 +417,7 @@ impl DeviceInner {
                 sector: bio_request.sid_range().start.to_raw(),
             };
             req_slice.write_val(0, &req).unwrap();
-            req_slice.sync().unwrap();
+            req_slice.sync_to_device().unwrap();
             req_slice
         };
 
@@ -426,6 +427,7 @@ impl DeviceInner {
                 id * RESP_SIZE..(id + 1) * RESP_SIZE,
             );
             resp_slice.write_val(0, &BlockResp::default()).unwrap();
+            resp_slice.sync_to_device().unwrap();
             resp_slice
         };
 
@@ -487,7 +489,7 @@ impl DeviceInner {
                 sector: bio_request.sid_range().start.to_raw(),
             };
             req_slice.write_val(0, &req).unwrap();
-            req_slice.sync().unwrap();
+            req_slice.sync_to_device().unwrap();
             req_slice
         };
 
@@ -495,6 +497,7 @@ impl DeviceInner {
             let resp_slice =
                 Slice::new(&self.block_responses, id * RESP_SIZE..(id + 1) * RESP_SIZE);
             resp_slice.write_val(0, &BlockResp::default()).unwrap();
+            resp_slice.sync_to_device().unwrap();
             resp_slice
         };
 

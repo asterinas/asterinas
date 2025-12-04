@@ -182,6 +182,30 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
     }
 }
 
+impl Segment<dyn AnyFrameMeta> {
+    /// Converts a [`Segment`] with a specific metadata type into a
+    /// [`Segment<dyn AnyFrameMeta>`].
+    ///
+    /// This exists because:
+    ///
+    /// ```ignore
+    /// impl<M: AnyFrameMeta + ?Sized> From<Segment<M>> for Segment<dyn AnyFrameMeta>
+    /// ```
+    ///
+    /// will conflict with `impl<T> core::convert::From<T> for T` in crate `core`.
+    ///
+    /// See also [`Frame::from_unsized`].
+    pub fn from_unsized<M: AnyFrameMeta + ?Sized>(
+        segment: Segment<M>,
+    ) -> Segment<dyn AnyFrameMeta> {
+        let seg = ManuallyDrop::new(segment);
+        Self {
+            range: seg.range.clone(),
+            _marker: core::marker::PhantomData,
+        }
+    }
+}
+
 impl<M: AnyFrameMeta + ?Sized> HasPaddr for Segment<M> {
     fn paddr(&self) -> Paddr {
         self.range.start
@@ -225,11 +249,7 @@ impl<M: AnyFrameMeta + ?Sized> Iterator for Segment<M> {
 
 impl<M: AnyFrameMeta> From<Segment<M>> for Segment<dyn AnyFrameMeta> {
     fn from(seg: Segment<M>) -> Self {
-        let seg = ManuallyDrop::new(seg);
-        Self {
-            range: seg.range.clone(),
-            _marker: core::marker::PhantomData,
-        }
+        Self::from_unsized(seg)
     }
 }
 

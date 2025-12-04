@@ -14,7 +14,8 @@ use alloc::sync::Arc;
 use core::{borrow::Borrow, fmt::Debug, ops::Range};
 
 use ostd::mm::{
-    DmaStream, HasDaddr, HasPaddr, HasSize, Infallible, VmReader, VmWriter,
+    HasDaddr, HasPaddr, HasSize, Infallible, VmReader, VmWriter,
+    dma::DmaStream,
     io_util::{HasVmReaderWriter, VmReaderWriterResult},
 };
 
@@ -116,12 +117,26 @@ impl<MemObj: HasSize + HasVmReaderWriter<Types = VmReaderWriterResult>> HasVmRea
 }
 
 // A handy implementation for streaming DMA slice.
-// TODO: Implement the `sync()` method also for `Slice<DmaStream>`/`Slice<&DmaStream>`.
+// TODO: Implement the `sync()` method also for `Slice<DmaStream>`/`Slice<&DmaStream>`,
+// and for single-sided ones.
 impl<MemObj: HasSize + Borrow<Arc<DmaStream>>> Slice<MemObj> {
-    /// Synchronizes the slice of streaming DMA mapping with the device.
+    /// Synchronizes the slice of streaming DMA mapping from the device.
     ///
-    /// The method will call [`DmaStream::sync`] with the offset range of this slice.
-    pub fn sync(&self) -> ostd::prelude::Result<()> {
-        self.mem_obj().borrow().sync(self.offset().clone())
+    /// The method will call [`DmaStream::sync_from_device`] with the offset
+    /// range of this slice.
+    pub fn sync_from_device(&self) -> ostd::prelude::Result<()> {
+        self.mem_obj()
+            .borrow()
+            .sync_from_device(self.offset().clone())
+    }
+
+    /// Synchronizes the slice of streaming DMA mapping to the device.
+    ///
+    /// The method will call [`DmaStream::sync_to_device`] with the offset
+    /// range of this slice.
+    pub fn sync_to_device(&self) -> ostd::prelude::Result<()> {
+        self.mem_obj()
+            .borrow()
+            .sync_to_device(self.offset().clone())
     }
 }

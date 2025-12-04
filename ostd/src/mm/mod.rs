@@ -7,7 +7,7 @@
     expect(unused_imports)
 )]
 
-pub(crate) mod dma;
+pub mod dma;
 pub mod frame;
 pub mod heap;
 pub mod io;
@@ -25,7 +25,6 @@ mod test;
 use core::fmt::Debug;
 
 pub use self::{
-    dma::{DmaCoherent, DmaDirection, DmaStream},
     frame::{
         Frame,
         allocator::FrameAllocOptions,

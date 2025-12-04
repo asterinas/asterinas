@@ -8,7 +8,7 @@ use aster_util::mem_obj_slice::Slice;
 use log::debug;
 use ostd::{
     arch::trap::TrapFrame,
-    mm::{DmaDirection, DmaStream, FrameAllocOptions, VmReader, io_util::HasVmReaderWriter},
+    mm::{FrameAllocOptions, VmReader, dma::DmaStream, io_util::HasVmReaderWriter},
     sync::{Rcu, SpinLock},
 };
 
@@ -38,7 +38,7 @@ impl AnyConsoleDevice for ConsoleDevice {
         while reader.remain() > 0 {
             let mut writer = self.send_buffer.writer().unwrap();
             let len = writer.write(&mut reader);
-            self.send_buffer.sync(0..len).unwrap();
+            self.send_buffer.sync_to_device(0..len).unwrap();
 
             let slice = Slice::new(&self.send_buffer, 0..len);
             transmit_queue.add_dma_buf(&[&slice], &[]).unwrap();
@@ -99,12 +99,12 @@ impl ConsoleDevice {
 
         let send_buffer = {
             let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-            Arc::new(DmaStream::map(segment.into(), DmaDirection::ToDevice, false).unwrap())
+            Arc::new(DmaStream::map(segment.into(), false).unwrap())
         };
 
         let receive_buffer = {
             let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-            Arc::new(DmaStream::map(segment.into(), DmaDirection::FromDevice, false).unwrap())
+            Arc::new(DmaStream::map(segment.into(), false).unwrap())
         };
 
         let device = Arc::new(Self {
@@ -145,7 +145,9 @@ impl ConsoleDevice {
         let Ok((_, len)) = receive_queue.pop_used() else {
             return;
         };
-        self.receive_buffer.sync(0..len as usize).unwrap();
+        self.receive_buffer
+            .sync_from_device(0..len as usize)
+            .unwrap();
 
         let callbacks = self.callbacks.read();
         for callback in callbacks.get().iter() {

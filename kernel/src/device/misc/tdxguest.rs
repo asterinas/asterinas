@@ -10,7 +10,10 @@ use aster_util::{field_ptr, safe_ptr::SafePtr};
 use device_id::{DeviceId, MinorId};
 use ostd::{
     const_assert,
-    mm::{DmaCoherent, FrameAllocOptions, HasPaddr, HasSize, PAGE_SIZE, USegment, VmIo},
+    mm::{
+        FrameAllocOptions, HasPaddr, HasSize, PAGE_SIZE, USegment, VmIo, dma::DmaCoherent,
+        io_util::HasVmReaderWriter,
+    },
     sync::WaitQueue,
 };
 use tdx_guest::{
@@ -323,7 +326,6 @@ fn tdx_get_report(inblob: &[u8]) -> Result<SafePtr<TdReport, USegment>> {
 }
 
 fn alloc_dma_buf(buf_len: usize) -> Result<DmaCoherent> {
-    let segment = FrameAllocOptions::new().alloc_segment(buf_len.div_ceil(PAGE_SIZE))?;
-    let dma_buf = DmaCoherent::map(segment.into(), false).unwrap();
+    let dma_buf = DmaCoherent::alloc(buf_len.div_ceil(PAGE_SIZE), false)?;
     Ok(dma_buf)
 }

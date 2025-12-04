@@ -17,7 +17,8 @@ use x86_64::{
 use crate::{
     Pod,
     mm::{
-        DmaDirection, PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
+        PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
+        dma::DmaDirection,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
         page_table::PageTableEntryTrait,
     },
@@ -118,11 +119,17 @@ pub(crate) fn tlb_flush_all_including_global() {
     }
 }
 
+pub(crate) fn can_sync_dma() -> bool {
+    true
+}
+
 /// # Safety
 ///
-/// The caller must ensure that the virtual address range and DMA direction correspond correctly to
-/// a DMA region.
-pub(crate) unsafe fn sync_dma_range(_range: Range<Vaddr>, _direction: DmaDirection) {
+/// The caller must ensure that
+///  - the virtual address range and DMA direction correspond correctly to a
+///    DMA region;
+///  - `can_sync_dma()` is `true`.
+pub(crate) unsafe fn sync_dma_range<D: DmaDirection>(_range: Range<Vaddr>) {
     // The streaming DMA mapping in x86_64 is cache coherent, and does not
     // require synchronization.
     // Reference: <https://lwn.net/Articles/855328/>, <https://lwn.net/Articles/2265/>.
