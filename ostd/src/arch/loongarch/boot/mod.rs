@@ -99,8 +99,17 @@ fn check_cpu_config() {
 /// The entry point of the Rust code portion of Asterinas.
 ///
 /// Reference: <https://docs.kernel.org/arch/loongarch/booting.html#information-passed-from-bootloader-to-kernel>
+///
+/// # Safety
+///
+/// - This function must be called only once through assembly code.
+/// - The caller must follow C calling conventions and put the right arguments in registers.
 #[no_mangle]
-pub extern "C" fn loongarch_boot(_efi_boot: usize, cmdline_paddr: usize, systab_paddr: usize) -> ! {
+unsafe extern "C" fn loongarch_boot(
+    _efi_boot: usize,
+    cmdline_paddr: usize,
+    systab_paddr: usize,
+) -> ! {
     check_cpu_config();
 
     let systab_ptr = paddr_to_vaddr(systab_paddr) as *const EfiSystemTable;

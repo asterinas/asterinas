@@ -107,8 +107,15 @@ fn parse_initramfs_range() -> Option<(usize, usize)> {
 static mut BOOTSTRAP_HART_ID: u32 = u32::MAX;
 
 /// The entry point of the Rust code portion of Asterinas.
+///
+/// `BOOTSTRAP_HART_ID` is initialized to be `hart_id` and accessible after calling this.
+///
+/// # Safety
+///
+/// - This function must be called only once through assembly code.
+/// - The caller must follow C calling conventions and put the right arguments in registers.
 #[no_mangle]
-pub extern "C" fn riscv_boot(hart_id: usize, device_tree_paddr: usize) -> ! {
+unsafe extern "C" fn riscv_boot(hart_id: usize, device_tree_paddr: usize) -> ! {
     early_println!("Enter riscv_boot");
 
     // SAFETY: We only write it once this time. Other processors will only read

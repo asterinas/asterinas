@@ -124,8 +124,14 @@ pub fn register_ap_entry(entry: fn()) {
     AP_LATE_ENTRY.call_once(|| entry);
 }
 
+/// Early boot entry of an AP.
+///
+/// # Safety
+///
+/// - This function must be called only once on each AP.
+/// - The caller must follow C calling conventions and put the right arguments in registers.
 #[no_mangle]
-fn ap_early_entry(cpu_id: u32) -> ! {
+pub(crate) unsafe extern "C" fn ap_early_entry(cpu_id: u32) -> ! {
     // SAFETY:
     // 1. We're in the boot context of an AP.
     // 2. The CPU ID of the AP is correct.
