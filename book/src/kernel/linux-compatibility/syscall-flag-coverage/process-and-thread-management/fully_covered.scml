@@ -38,8 +38,15 @@ getppid();
 sched_setaffinity(pid, cpusetsize, mask);
 sched_getaffinity(pid, cpusetsize, mask);
 
+limit_resources = RLIMIT_AS | RLIMIT_CORE | RLIMIT_CPU | RLIMIT_DATA | RLIMIT_FSIZE |
+                  RLIMIT_LOCKS | RLIMIT_MEMLOCK | RLIMIT_MSGQUEUE | RLIMIT_NICE |
+                  RLIMIT_NOFILE | RLIMIT_NPROC | RLIMIT_RSS | RLIMIT_RTPRIO |
+                  RLIMIT_RTTIME | RLIMIT_SIGPENDING | RLIMIT_STACK;
+
 // Get or set resource limits
-prlimit64(pid, resource, new_limit, old_limit);
+prlimit64(pid, resource = <limit_resources>, new_limit, old_limit);
+getrlimit(resource = <limit_resources>, rlim);
+setrlimit(resource = <limit_resources>, rlim);
 
 // Yield the processor
 sched_yield();
