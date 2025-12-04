@@ -79,3 +79,21 @@ setfsgid(fsgid);
 
 // Determine CPU and NUMA node on which the calling thread is running
 getcpu(cpu, node);
+
+// Get/set program scheduling priority
+getpriority(which = PRIO_PROCESS | PRIO_PGRP | PRIO_USER, who);
+setpriority(which = PRIO_PROCESS | PRIO_PGRP | PRIO_USER, who, prio);
+
+sched_policies = SCHED_FIFO | SCHED_RR | SCHED_OTHER | SCHED_BATCH |
+                 SCHED_IDLE | SCHED_DEADLINE;
+
+// Get static priority range
+sched_get_priority_max(policy = <sched_policies>);
+sched_get_priority_min(policy = <sched_policies>);
+
+// Get/set scheduling parameters
+sched_setparam(pid, param);
+sched_getparam(pid, param);
+
+// Get scheduling policy
+sched_getscheduler(pid);

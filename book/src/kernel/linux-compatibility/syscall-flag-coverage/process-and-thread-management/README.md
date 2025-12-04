@@ -52,3 +52,17 @@ Supported functionality in SCML:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/clone.2.html).
+
+### `sched_setscheduler`
+
+Supported functionality in SCML:
+
+```c
+{{#include sched_setscheduler.scml}}
+```
+
+Unsupported policies or flags:
+* `SCHED_RESET_ON_FORK`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/sched_setscheduler.2.html).

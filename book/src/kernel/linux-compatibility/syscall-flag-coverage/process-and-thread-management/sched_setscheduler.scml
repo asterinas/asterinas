@@ -1,0 +1,2 @@
+// Set scheduling policy
+sched_setscheduler(pid, policy = SCHED_OTHER | SCHED_BATCH | SCHED_IDLE | SCHED_FIFO | SCHED_RR, param);
