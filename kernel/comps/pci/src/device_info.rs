@@ -19,33 +19,17 @@ impl PciDeviceLocation {
     // TODO: Find a proper way to obtain the bus range. For example, if the PCI bus is identified
     // from a device tree, this information can be obtained from the `bus-range` field (e.g.,
     // `bus-range = <0x00 0x7f>`).
-    const MIN_BUS: u8 = 0;
+    pub const MIN_BUS: u8 = 0;
     #[cfg(not(target_arch = "loongarch64"))]
-    const MAX_BUS: u8 = 255;
+    pub const MAX_BUS: u8 = 255;
     #[cfg(target_arch = "loongarch64")]
-    const MAX_BUS: u8 = 127;
+    pub const MAX_BUS: u8 = 127;
 
-    const MIN_DEVICE: u8 = 0;
-    const MAX_DEVICE: u8 = 31;
+    pub const MIN_DEVICE: u8 = 0;
+    pub const MAX_DEVICE: u8 = 31;
 
-    const MIN_FUNCTION: u8 = 0;
-    const MAX_FUNCTION: u8 = 7;
-
-    /// Returns an iterator that enumerates all possible PCI device locations.
-    pub fn all() -> impl Iterator<Item = PciDeviceLocation> {
-        let all_bus = Self::MIN_BUS..=Self::MAX_BUS;
-        let all_dev = Self::MIN_DEVICE..=Self::MAX_DEVICE;
-        let all_func = Self::MIN_FUNCTION..=Self::MAX_FUNCTION;
-
-        all_bus
-            .flat_map(move |bus| all_dev.clone().map(move |dev| (bus, dev)))
-            .flat_map(move |(bus, dev)| all_func.clone().map(move |func| (bus, dev, func)))
-            .map(|(bus, dev, func)| PciDeviceLocation {
-                bus,
-                device: dev,
-                function: func,
-            })
-    }
+    pub const MIN_FUNCTION: u8 = 0;
+    pub const MAX_FUNCTION: u8 = 7;
 }
 
 impl PciDeviceLocation {
