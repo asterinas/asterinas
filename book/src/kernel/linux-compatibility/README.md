@@ -117,7 +117,7 @@ which are summarized in the table below.
 | 94      | lchown                 | ✅             | 💯 |
 | 95      | umask                  | ✅             | 💯 |
 | 96      | gettimeofday           | ✅             | 💯 |
-| 97      | getrlimit              | ✅             | ❓ |
+| 97      | getrlimit              | ✅             | 💯 |
 | 98      | getrusage              | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#getrusage) |
 | 99      | sysinfo                | ✅             | 💯 |
 | 100     | times                  | ❌             | N/A |
@@ -180,7 +180,7 @@ which are summarized in the table below.
 | 157     | prctl                  | ✅             | [⚠️](syscall-flag-coverage/namespaces-cgroups-and-security/#prctl) |
 | 158     | arch_prctl             | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#arch_prctl) |
 | 159     | adjtimex               | ❌             | N/A |
-| 160     | setrlimit              | ✅             | ❓ |
+| 160     | setrlimit              | ✅             | 💯 |
 | 161     | chroot                 | ✅             | 💯 |
 | 162     | sync                   | ✅             | 💯 |
 | 163     | acct                   | ❌             | N/A |
