@@ -38,6 +38,7 @@ sleep 0.2
 ./unix_stream_err
 ./unix_seqpacket_err
 ./unix_datagram_err
+./sendmmsg
 
 ./netlink_route
 ./rtnl_err
