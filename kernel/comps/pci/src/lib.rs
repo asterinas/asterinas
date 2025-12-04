@@ -54,6 +54,7 @@
 
 #![no_std]
 #![deny(unsafe_code)]
+#![feature(let_chains)]
 
 #[cfg_attr(target_arch = "x86_64", path = "arch/x86/mod.rs")]
 #[cfg_attr(target_arch = "riscv64", path = "arch/riscv/mod.rs")]
