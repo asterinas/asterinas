@@ -52,6 +52,11 @@ impl PciCommonDevice {
         self.header_type.device_type()
     }
 
+    /// Checks whether the device is a multi-function device
+    pub fn has_multi_funcs(&self) -> bool {
+        self.header_type.has_multi_funcs()
+    }
+
     /// Gets the PCI Command
     pub fn command(&self) -> Command {
         Command::from_bits_truncate(self.location.read16(PciCommonCfgOffset::Command as u16))
