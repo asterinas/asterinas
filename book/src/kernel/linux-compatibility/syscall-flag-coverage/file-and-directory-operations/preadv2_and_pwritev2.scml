@@ -1,0 +1,5 @@
+// Read data from multiple buffers
+preadv2(fd, iov, iovcnt, offset, flags = 0);
+
+// Write data to multiple buffers
+pwritev2(fd, iov, iovcnt, offset, flags = 0);

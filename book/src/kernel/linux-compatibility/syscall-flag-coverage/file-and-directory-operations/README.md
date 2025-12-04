@@ -81,3 +81,25 @@ Silently-ignored flags:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/newfstatat.2.html).
+
+### `preadv2` and `pwritev2`
+
+Supported functionality in SCML:
+
+```c
+{{#include preadv2_and_pwritev2.scml}}
+```
+
+Silently-ignored flags:
+* `RWF_DSYNC`
+* `RWF_HIPRI`
+* `RWF_SYNC`
+* `RWF_NOWAIT`
+
+Unsupported flags:
+* `RWF_APPEND`
+* `RWF_NOAPPEND`
+* `RWF_ATOMIC`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/preadv2.2.html).
