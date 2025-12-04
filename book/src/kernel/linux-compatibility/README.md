@@ -15,7 +15,7 @@ support the loading of Linux kernel modules.
 ## System Calls
 
 At the time of writing,
-Asterinas supports over 225 Linux system calls for the x86-64 architecture,
+Asterinas supports over 226 Linux system calls for the x86-64 architecture,
 which are summarized in the table below.
 
 | Numbers | Names                  | Supported      | Flag Coverage |
@@ -327,7 +327,7 @@ which are summarized in the table below.
 | 304     | open_by_handle_at      | ❌             | N/A |
 | 305     | clock_adjtime          | ❌             | N/A |
 | 306     | syncfs                 | ❌             | N/A |
-| 307     | sendmmsg               | ❌             | N/A |
+| 307     | sendmmsg               | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#sendto-and-sendmsg) |
 | 308     | setns                  | ✅             | ❓ |
 | 309     | getcpu                 | ✅             | 💯 |
 | 310     | process_vm_readv       | ❌             | N/A |

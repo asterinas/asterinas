@@ -120,6 +120,7 @@ use super::{
     semget::sys_semget,
     semop::{sys_semop, sys_semtimedop},
     sendfile::sys_sendfile,
+    sendmmsg::sys_sendmmsg,
     sendmsg::sys_sendmsg,
     sendto::sys_sendto,
     set_ioprio::sys_ioprio_set,
@@ -388,6 +389,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_PREADV = 295           => sys_preadv(args[..5]);
     SYS_PWRITEV = 296          => sys_pwritev(args[..5]);
     SYS_PRLIMIT64 = 302        => sys_prlimit64(args[..4]);
+    SYS_SENDMMSG = 307         => sys_sendmmsg(args[..4]);
     SYS_SETNS = 308            => sys_setns(args[..2]);
     SYS_GETCPU = 309           => sys_getcpu(args[..3]);
     SYS_SCHED_SETATTR = 314    => sys_sched_setattr(args[..3]);

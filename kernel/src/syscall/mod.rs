@@ -132,6 +132,7 @@ mod semctl;
 mod semget;
 mod semop;
 mod sendfile;
+mod sendmmsg;
 mod sendmsg;
 mod sendto;
 mod set_ioprio;

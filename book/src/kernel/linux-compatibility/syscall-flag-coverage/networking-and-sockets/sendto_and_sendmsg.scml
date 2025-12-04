@@ -3,6 +3,17 @@ struct sockaddr = {
     ..
 };
 
+struct msg_hdr = {
+    msg_name = <sockaddr>,
+    msg_control = NULL,
+    ..
+};
+
+struct mmsg_hdr = {
+    hdr = <msg_hdr>,
+    msg_len
+};
+
 // Send message on a socket
 sendto(
     sockfd, buf, len,
@@ -14,10 +25,15 @@ sendto(
 // Send message using scatter-gather buffers and ancillary data
 sendmsg(
     sockfd,
-    msg = {
-        msg_name = <sockaddr>,
-        msg_control = NULL,
-        ..
-    },
+    msg = <msg_hdr>,
+    flags = 0
+);
+
+
+// Send multiple messages on a socket
+sendmmsg(
+    sockfd,
+    mmsgs = [ <mmsg_hdr> ],
+    mmsg_count,
     flags = 0
 );

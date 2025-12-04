@@ -47,7 +47,7 @@ pub fn sys_recvmsg(
 
     let control_messages = message_header.control_messages();
     c_user_msghdr.msg_controllen =
-        c_user_msghdr.write_control_messages_to_user(control_messages, &user_space)?;
+        c_user_msghdr.write_control_messages_to_user(control_messages, &user_space)? as _;
 
     user_space.write_val(user_msghdr_ptr, &c_user_msghdr)?;
 
