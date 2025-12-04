@@ -39,7 +39,8 @@ pub(super) fn init_in_first_process(fs_resolver: &FsResolver) -> Result<()> {
     for device in aster_block::collect_all() {
         let device = Arc::new(BlockFile::new(device));
         if let Some(devtmpfs_path) = device.devtmpfs_path() {
-            add_node(device, &devtmpfs_path, fs_resolver)?;
+            let dev_id = device.id().as_encoded_u64();
+            add_node(DeviceType::Block, dev_id, &devtmpfs_path, fs_resolver)?;
         }
     }
 
