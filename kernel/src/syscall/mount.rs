@@ -242,7 +242,7 @@ fn get_fs(
         }
 
         let id = DeviceId::from_encoded_u64(path.metadata().rdev);
-        let device = aster_block::lookup(id);
+        let device = id.and_then(aster_block::lookup);
         if device.is_none() {
             return_errno_with_message!(Errno::ENODEV, "the device is not found");
         }
