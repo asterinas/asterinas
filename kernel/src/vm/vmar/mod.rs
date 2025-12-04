@@ -15,7 +15,7 @@ use ostd::{
         io_util::HasVmReaderWriter,
         tlb::TlbFlushOp,
         vm_space::{CursorMut, VmQueriedItem},
-        CachePolicy, PageFlags, UFrame, VmSpace, MAX_USERSPACE_VADDR,
+        CachePolicy, HasSize, PageFlags, UFrame, VmSpace, MAX_USERSPACE_VADDR,
     },
     sync::RwMutexReadGuard,
     task::disable_preempt,
@@ -464,7 +464,7 @@ impl Vmar {
     /// On success, the number of bytes read is returned;
     /// On error, both the error and the number of bytes read so far are returned.
     ///
-    /// The `VmSpace` of the process is not required be activated on the current CPU.
+    /// The `VmSpace` of the process is not required to be activated on the current CPU.
     pub fn read_remote(
         &self,
         vaddr: Vaddr,
@@ -489,7 +489,7 @@ impl Vmar {
     /// On success, the number of bytes written is returned;
     /// On error, both the error and the number of bytes written so far are returned.
     ///
-    /// The `VmSpace` of the process is not required be activated on the current CPU.
+    /// The `VmSpace` of the process is not required to be activated on the current CPU.
     pub fn write_remote(
         &self,
         vaddr: Vaddr,
@@ -505,9 +505,36 @@ impl Vmar {
         self.access_remote(vaddr, len, PageFlags::W, write)
     }
 
+    /// Writes zeros to the process user space.
+    ///
+    /// This method writes at most `len` bytes of zeros to the process user space.
+    /// On success, the number of bytes written is returned; on error, both the
+    /// error and the number of bytes written so far are returned.
+    ///
+    /// The `VmSpace` of the process is not required to be activated on the current CPU.
+    pub fn fill_zeros_remote(
+        &self,
+        vaddr: Vaddr,
+        len: usize,
+    ) -> core::result::Result<usize, (Error, usize)> {
+        let mut remain = len;
+        let write = |frame: UFrame, skip_offset: usize| {
+            let frame_size = frame.size();
+            let mut writer = frame.writer().to_fallible();
+            writer.skip(skip_offset);
+            let to_write = remain.min(frame_size - skip_offset);
+            let res = writer.fill_zeros(to_write);
+            let (Ok(n) | Err((_, n))) = &res;
+            remain -= *n;
+            res
+        };
+
+        self.access_remote(vaddr, len, PageFlags::W, write)
+    }
+
     /// Accesses memory at `vaddr..vaddr+len` within the process user space using `op`.
     ///
-    /// The `VmSpace` of the process is not required be activated on the current CPU.
+    /// The `VmSpace` of the process is not required to be activated on the current CPU.
     /// If any page in the range is not mapped or does not have the required page
     /// flags, a page fault will be handled to try to make the page accessible.
     fn access_remote<F>(
@@ -569,8 +596,7 @@ impl Vmar {
                 address: vaddr,
                 required_perms: required_page_flags.into(),
             };
-            self.handle_page_fault(&page_fault_info)
-                .map_err(|_| Error::with_message(Errno::EIO, "the page is not accessible"))?;
+            self.handle_page_fault(&page_fault_info)?;
 
             item = self.query_page(vaddr)?;
 
