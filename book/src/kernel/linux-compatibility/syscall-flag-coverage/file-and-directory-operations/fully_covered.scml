@@ -44,6 +44,7 @@ fchdir(fd);
 
 // Change the name or location of a file
 rename(oldpath, newpath);
+renameat(olddirfd, oldpath, newdirfd, newpath);
 
 // Delete a directory
 rmdir(path);
@@ -53,9 +54,11 @@ creat(path, mode);
 
 // Make a new name for a file
 link(oldpath, newpath);
+linkat(olddirfd, oldpath, newdirfd, newpath, flags = AT_EMPTY_PATH | AT_SYMLINK_FOLLOW);
 
 // Delete a name and possibly the file it refers to
 unlink(path);
+unlinkat(dirfd, path, flags = AT_REMOVEDIR);
 
 // Make a new name for a file
 symlink(target, linkpath);
@@ -75,6 +78,7 @@ fchmodat2(dirfd, path_ptr, mode, flags = AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW);
 chown(path, owner, group);
 fchown(fd, owner, group);
 lchown(path, owner, group);
+fchownat(dirfd, path, owner, group, flags = AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW);
 
 // Set file mode creation mask
 umask(mask);
@@ -111,3 +115,6 @@ flistxattr(fd, list, size);
 removexattr(path, name);
 lremovexattr(path, name);
 fremovexattr(fd, name);
+
+// Check user's permissions for a file
+faccessat(dirfd, path, mode);

@@ -280,16 +280,16 @@ which are summarized in the table below.
 | 257     | openat                 | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#open-and-openat) |
 | 258     | mkdirat                | ✅             | 💯 |
 | 259     | mknodat                | ✅             | 💯 |
-| 260     | fchownat               | ✅             | ❓ |
+| 260     | fchownat               | ✅             | 💯 |
 | 261     | futimesat              | ✅             | 💯 |
 | 262     | newfstatat             | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#newfstatat) |
-| 263     | unlinkat               | ✅             | ❓ |
-| 264     | renameat               | ✅             | ❓ |
-| 265     | linkat                 | ✅             | ❓ |
+| 263     | unlinkat               | ✅             | 💯 |
+| 264     | renameat               | ✅             | 💯 |
+| 265     | linkat                 | ✅             | 💯 |
 | 266     | symlinkat              | ✅             | 💯 |
 | 267     | readlinkat             | ✅             | 💯 |
 | 268     | fchmodat               | ✅             | 💯 |
-| 269     | faccessat              | ✅             | ❓ |
+| 269     | faccessat              | ✅             | 💯 |
 | 270     | pselect6               | ✅             | 💯 |
 | 271     | ppoll                  | ✅             | ❓ |
 | 272     | unshare                | ✅             | ❓ |
@@ -340,8 +340,8 @@ which are summarized in the table below.
 | 318     | getrandom              | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#getrandom) |
 | 319     | memfd_create           | ✅             | ❓ |
 | 322     | execveat               | ✅             | ❓ |
-| 327     | preadv2                | ✅             | ❓ |
-| 328     | pwritev2               | ✅             | ❓ |
+| 327     | preadv2                | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#preadv2-and-pwritev2) |
+| 328     | pwritev2               | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#preadv2-and-pwritev2) |
 | 332     | statx                  | ✅             | ❓ |
 | 434     | pidfd_open             | ✅             | ❓ |
 | 435     | clone3                 | ✅             | ❓ |
