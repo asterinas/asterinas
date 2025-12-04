@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::fmt;
-use core::ops::Range;
+use core::{any::TypeId, ops::Range};
 
 use spin::Once;
 pub(crate) use util::{
@@ -15,7 +15,8 @@ use crate::{
         cpu::extension::{IsaExtensions, has_extensions},
     },
     mm::{
-        DmaDirection, PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
+        PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
+        dma::{Bidirectional, DmaDirection, FromDevice, ToDevice},
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
         page_table::PageTableEntryTrait,
     },
@@ -102,13 +103,17 @@ pub(crate) fn tlb_flush_all_including_global() {
     riscv::asm::sfence_vma_all()
 }
 
+pub(crate) fn can_sync_dma() -> bool {
+    has_extensions(IsaExtensions::ZICBOM)
+}
+
 /// # Safety
 ///
-/// The caller must ensure that the virtual address range and DMA direction correspond correctly to
-/// a DMA region.
-pub(crate) unsafe fn sync_dma_range(range: Range<Vaddr>, direction: DmaDirection) {
-    if !has_extensions(IsaExtensions::ZICBOM) {
-        unimplemented!("DMA synchronization is unimplemented without ZICBOM extension")
+/// The caller must ensure that the virtual address range and DMA direction
+/// correspond correctly to a DMA region.
+pub(crate) unsafe fn sync_dma_range<D: DmaDirection>(range: Range<Vaddr>) {
+    if !can_sync_dma() {
+        panic!("DMA synchronization is unimplemented without ZICBOM extension");
     }
 
     static CMO_MANAGEMENT_BLOCK_SIZE: Once<usize> = Once::new();
@@ -126,24 +131,24 @@ pub(crate) unsafe fn sync_dma_range(range: Range<Vaddr>, direction: DmaDirection
     });
 
     for addr in range.step_by(cmo_management_block_size) {
-        // Performing cache maintenance operations is required for correctness on systems with
-        // non-coherent DMA.
-        // SAFETY: The caller ensures that the virtual address range corresponds to a DMA region.
-        // So the underlying memory is untyped and the operations are safe to perform.
+        // Performing cache maintenance operations is required for correctness
+        // on systems with non-coherent DMA.
+        // SAFETY: The caller ensures that the virtual address range corresponds
+        // to a DMA region. So the underlying memory is untyped and the operations
+        // are safe to perform.
         unsafe {
-            match direction {
-                DmaDirection::ToDevice => {
-                    core::arch::asm!("cbo.clean ({})", in(reg) addr, options(nostack));
-                }
-                DmaDirection::FromDevice => {
-                    core::arch::asm!("cbo.inval ({})", in(reg) addr, options(nostack));
-                }
-                DmaDirection::Bidirectional => {
-                    core::arch::asm!("cbo.flush ({})", in(reg) addr, options(nostack));
-                }
+            if TypeId::of::<D>() == TypeId::of::<ToDevice>() {
+                core::arch::asm!("cbo.clean ({})", in(reg) addr, options(nostack));
+            } else if TypeId::of::<D>() == TypeId::of::<FromDevice>() {
+                core::arch::asm!("cbo.inval ({})", in(reg) addr, options(nostack));
+            } else if TypeId::of::<D>() == TypeId::of::<Bidirectional>() {
+                core::arch::asm!("cbo.flush ({})", in(reg) addr, options(nostack));
+            } else {
+                unreachable!();
             }
         }
     }
+
     // Ensure that all cache operations have completed before proceeding.
     // SAFETY: Performing a memory fence is always safe.
     unsafe { core::arch::asm!("fence rw, rw", options(nostack)) };
