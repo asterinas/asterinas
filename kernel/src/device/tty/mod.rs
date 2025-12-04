@@ -15,7 +15,7 @@ use crate::{
     fs::{
         device::{Device, DeviceType},
         inode_handle::FileIo,
-        utils::{IoctlCmd, StatusFlags},
+        utils::StatusFlags,
     },
     prelude::*,
     process::{
@@ -23,11 +23,13 @@ use crate::{
         signal::{PollHandle, Pollable, Pollee},
         JobControl, Terminal,
     },
+    util::ioctl::{dispatch_ioctl, RawIoctl},
 };
 
 mod device;
 mod driver;
 mod flags;
+pub(super) mod ioctl_defs;
 mod line_discipline;
 mod n_tty;
 mod termio;
@@ -300,27 +302,31 @@ impl<D: TtyDriver> Tty<D> {
         Ok(len)
     }
 
-    pub fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        match cmd {
-            IoctlCmd::TCGETS => {
+    pub fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+        use ioctl_defs::*;
+
+        use crate::fs::utils::ioctl_defs::GetNumBytesToRead;
+
+        dispatch_ioctl!(match raw_ioctl {
+            cmd @ GetTermios => {
                 let termios = *self.ldisc.lock().termios();
 
-                current_userspace!().write_val(arg, &termios)?;
+                cmd.write(&termios)?;
             }
-            IoctlCmd::TCSETS => {
-                let termios = current_userspace!().read_val(arg)?;
+            cmd @ SetTermios => {
+                let termios = cmd.read()?;
 
                 self.ldisc.lock().set_termios(termios);
             }
-            IoctlCmd::TCSETSW => {
-                let termios = current_userspace!().read_val(arg)?;
+            cmd @ SetTermiosDrain => {
+                let termios = cmd.read()?;
 
                 let mut ldisc = self.ldisc.lock();
                 ldisc.set_termios(termios);
                 self.driver.drain_output();
             }
-            IoctlCmd::TCSETSF => {
-                let termios = current_userspace!().read_val(arg)?;
+            cmd @ SetTermiosFlush => {
+                let termios = cmd.read()?;
 
                 let mut ldisc = self.ldisc.lock();
                 ldisc.set_termios(termios);
@@ -329,66 +335,67 @@ impl<D: TtyDriver> Tty<D> {
 
                 self.pollee.invalidate();
             }
-            IoctlCmd::TIOCGWINSZ => {
+            cmd @ GetWinSize => {
                 let winsize = self.ldisc.lock().window_size();
 
-                current_userspace!().write_val(arg, &winsize)?;
+                cmd.write(&winsize)?;
             }
-            IoctlCmd::TIOCSWINSZ => {
-                let winsize = current_userspace!().read_val(arg)?;
+            cmd @ SetWinSize => {
+                let winsize = cmd.read()?;
 
                 self.ldisc.lock().set_window_size(winsize);
             }
-            IoctlCmd::TIOCGPTN => {
+            cmd @ GetPtyNumber => {
                 let idx = self.index;
 
-                current_userspace!().write_val(arg, &idx)?;
+                cmd.write(&idx)?;
             }
-            IoctlCmd::FIONREAD => {
+            cmd @ GetNumBytesToRead => {
                 if self.tty_flags.is_other_closed() {
                     return_errno_with_message!(Errno::EIO, "the TTY is closed");
                 }
 
-                let buffer_len = self.ldisc.lock().buffer_len() as u32;
+                let buffer_len = self.ldisc.lock().buffer_len() as i32;
 
-                current_userspace!().write_val(arg, &buffer_len)?;
+                cmd.write(&buffer_len)?;
             }
-            IoctlCmd::KDFONTOP => {
-                let font_op = current_userspace!().read_val(arg)?;
+            cmd @ SetOrGetFont => {
+                let font_op = cmd.read()?;
 
                 self.handle_set_font(&font_op)?;
             }
-            IoctlCmd::KDSETMODE => {
+            cmd @ SetGraphicsMode => {
                 let console = self.console()?;
 
-                let mode = ConsoleMode::try_from(arg as i32)?;
+                let mode = ConsoleMode::try_from(cmd.get())?;
                 if !console.set_mode(mode) {
                     return_errno_with_message!(Errno::EINVAL, "the console mode is not supported");
                 }
             }
-            IoctlCmd::KDGETMODE => {
+            cmd @ GetGraphicsMode => {
                 let console = self.console()?;
 
                 let mode = console.mode().unwrap_or(ConsoleMode::Text);
-                current_userspace!().write_val(arg, &(mode as i32))?;
+                cmd.write(&(mode as i32))?;
             }
-            IoctlCmd::KDSKBMODE => {
+            cmd @ SetKeyboardMode => {
                 let console = self.console()?;
 
-                let mode = KeyboardMode::try_from(arg as i32)?;
+                let mode = KeyboardMode::try_from(cmd.get())?;
                 if !console.set_keyboard_mode(mode) {
                     return_errno_with_message!(Errno::EINVAL, "the keyboard mode is not supported");
                 }
             }
-            IoctlCmd::KDGKBMODE => {
+            cmd @ GetKeyboardMode => {
                 let console = self.console()?;
 
                 let mode = console.keyboard_mode().unwrap_or(KeyboardMode::Xlate);
-                current_userspace!().write_val(arg, &(mode as i32))?;
+                cmd.write(&(mode as i32))?;
             }
+
             _ => (self.weak_self.upgrade().unwrap() as Arc<dyn Terminal>)
-                .job_ioctl(cmd, arg, false)?,
-        }
+                .job_ioctl(raw_ioctl, false)?,
+        });
 
         Ok(0)
     }

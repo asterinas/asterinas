@@ -39,6 +39,7 @@ mod fs;
 mod id_bitmap;
 mod inode;
 mod inode_mode;
+pub mod ioctl_defs;
 mod open_args;
 mod page_cache;
 mod random_test;
