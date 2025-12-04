@@ -4,11 +4,11 @@ use core::{fmt::Debug, marker::PhantomData};
 
 use aster_rights::{Dup, Exec, Full, Read, Signal, TRightSet, TRights, Write};
 use aster_rights_proc::require;
-use inherit_methods_macro::inherit_methods;
 use ostd::{
     Error, Pod, Result,
     mm::{
-        Daddr, DmaStream, HasDaddr, HasPaddr, Paddr, PodOnce, VmIo, VmIoOnce,
+        Daddr, HasDaddr, HasPaddr, Paddr, PodOnce, VmIo, VmIoOnce,
+        dma::DmaDirection,
         io_util::{HasVmReaderWriter, VmReaderWriterTypes},
     },
 };
@@ -391,16 +391,24 @@ impl<T, M: HasDaddr, R> HasDaddr for SafePtr<T, M, R> {
     }
 }
 
-impl<T, R> SafePtr<T, DmaStream, R> {
-    /// Synchronize the object in the streaming DMA mapping
-    pub fn sync(&self) -> Result<()> {
-        self.vm_obj.sync(self.offset..self.offset + size_of::<T>())
+impl<T, R, D: DmaDirection> SafePtr<T, ostd::mm::dma::DmaStream<D>, R> {
+    /// Synchronizes the slice of streaming DMA mapping from the device.
+    ///
+    /// The method will call [`ostd::mm::dma::DmaStream::sync_from_device`]
+    /// with the offset range of this pointer.
+    pub fn sync_from_device(&self) -> Result<()> {
+        self.vm_obj
+            .sync_from_device(self.offset..self.offset + size_of::<T>())
     }
-}
 
-#[inherit_methods(from = "(*self)")]
-impl<T, R> SafePtr<T, &DmaStream, R> {
-    pub fn sync(&self) -> Result<()>;
+    /// Synchronizes the slice of streaming DMA mapping to the device.
+    ///
+    /// The method will call [`ostd::mm::dma::DmaStream::sync_to_device`]
+    /// with the offset range of this pointer.
+    pub fn sync_to_device(&self) -> Result<()> {
+        self.vm_obj
+            .sync_to_device(self.offset..self.offset + size_of::<T>())
+    }
 }
 
 #[require(R > Dup)]

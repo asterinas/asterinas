@@ -13,7 +13,7 @@ use ostd::{
     bus::BusProbeError,
     io::IoMem,
     irq::IrqCallbackFunction,
-    mm::{DmaCoherent, HasDaddr},
+    mm::{HasDaddr, dma::DmaCoherent},
 };
 
 use super::{common_cfg::VirtioPciCommonCfg, msix::VirtioMsixManager};

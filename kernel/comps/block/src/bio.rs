@@ -9,8 +9,8 @@ use int_to_c_enum::TryFromInt;
 use ostd::{
     Error,
     mm::{
-        DmaDirection, DmaStream, FrameAllocOptions, HasSize, Infallible, USegment, VmReader,
-        VmWriter,
+        FrameAllocOptions, HasSize, Infallible, USegment, VmReader, VmWriter,
+        dma::DmaStream,
         io_util::{HasVmReaderWriter, VmReaderWriterResult},
     },
     sync::{SpinLock, WaitQueue},
@@ -394,7 +394,9 @@ pub struct BioSegment {
 #[derive(Debug)]
 struct BioSegmentInner {
     /// Internal DMA slice.
+    // TODO: The direction is currently `FromAndToDevice`. Implement compile-time checking.
     dma_slice: Slice<Arc<DmaStream>>,
+    direction: BioDirection,
     /// Whether the segment is allocated from the pool.
     from_pool: bool,
 }
@@ -448,9 +450,10 @@ impl BioSegment {
                     .zeroed(false)
                     .alloc_segment(nblocks)
                     .unwrap();
-                let dma_stream = DmaStream::map(segment.into(), direction.into(), false).unwrap();
+                let dma_stream = DmaStream::map(segment.into(), false).unwrap();
                 BioSegmentInner {
                     dma_slice: Slice::new(Arc::new(dma_stream), offset..offset + len),
+                    direction,
                     from_pool: false,
                 }
             });
@@ -463,10 +466,11 @@ impl BioSegment {
     /// Constructs a new `BioSegment` with a given `USegment` and the bio direction.
     pub fn new_from_segment(segment: USegment, direction: BioDirection) -> Self {
         let len = segment.size();
-        let dma_stream = DmaStream::map(segment, direction.into(), false).unwrap();
+        let dma_stream = DmaStream::map(segment, false).unwrap();
         Self {
             inner: Arc::new(BioSegmentInner {
                 dma_slice: Slice::new(Arc::new(dma_stream), 0..len),
+                direction,
                 from_pool: false,
             }),
         }
@@ -497,10 +501,12 @@ impl BioSegment {
         &self.inner.dma_slice
     }
 
-    /// Returns the inner VM segment.
+    /// Returns the inner DMA object.
+    ///
+    /// Note that the slicing will be ignored. This is only for testing.
     #[cfg(ktest)]
-    pub fn inner_segment(&self) -> &USegment {
-        self.inner.dma_slice.mem_obj().segment()
+    pub fn inner_dma(&self) -> &Arc<DmaStream> {
+        self.inner.dma_slice.mem_obj()
     }
 }
 
@@ -531,11 +537,7 @@ impl Drop for BioSegmentInner {
 impl BioSegmentInner {
     /// Returns the bio direction.
     fn direction(&self) -> BioDirection {
-        match self.dma_slice.mem_obj().direction() {
-            DmaDirection::FromDevice => BioDirection::FromDevice,
-            DmaDirection::ToDevice => BioDirection::ToDevice,
-            _ => unreachable!(),
-        }
+        self.direction
     }
 }
 
@@ -574,7 +576,7 @@ impl BioSegmentPool {
                 .zeroed(false)
                 .alloc_segment(total_blocks)
                 .unwrap();
-            DmaStream::map(segment.into(), direction.into(), false).unwrap()
+            DmaStream::map(segment.into(), false).unwrap()
         };
         let manager = SpinLock::new(PoolSlotManager {
             occupied: BitArray::ZERO,
@@ -650,6 +652,7 @@ impl BioSegmentPool {
         };
         let bio_segment = BioSegmentInner {
             dma_slice,
+            direction: self.direction,
             from_pool: true,
         };
         Some(bio_segment)
@@ -703,15 +706,6 @@ fn target_pool(direction: BioDirection) -> Option<&'static Arc<BioSegmentPool>> 
     match direction {
         BioDirection::FromDevice => BIO_SEGMENT_RPOOL.get(),
         BioDirection::ToDevice => BIO_SEGMENT_WPOOL.get(),
-    }
-}
-
-impl From<BioDirection> for DmaDirection {
-    fn from(direction: BioDirection) -> Self {
-        match direction {
-            BioDirection::FromDevice => DmaDirection::FromDevice,
-            BioDirection::ToDevice => DmaDirection::ToDevice,
-        }
     }
 }
 

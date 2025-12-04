@@ -2,7 +2,7 @@
 
 pub use context_table::RootTable;
 use log::{info, warn};
-use second_stage::IommuPtConfig;
+pub use second_stage::IommuPtConfig;
 use spin::Once;
 
 use super::IommuError;

@@ -1,175 +1,142 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::ops::Deref;
+use core::{fmt::Debug, mem::ManuallyDrop};
 
-use cfg_if::cfg_if;
-
-use super::{DmaError, check_and_insert_dma_mapping, remove_dma_mapping};
+use super::util::{
+    alloc_kva, cvm_need_private_protection, prepare_dma, split_daddr, unprepare_dma,
+};
 use crate::{
-    arch::iommu,
+    error::Error,
     mm::{
-        HasDaddr, HasPaddr, HasSize, Infallible, PAGE_SIZE, Paddr, USegment, VmReader, VmWriter,
-        dma::{Daddr, DmaType, dma_type},
+        Daddr, FrameAllocOptions, HasDaddr, HasPaddr, HasPaddrRange, HasSize, Infallible,
+        PAGE_SIZE, Paddr, Segment, Split, VmReader, VmWriter,
         io_util::{HasVmReaderWriter, VmReaderWriterIdentity},
-        kspace::{KERNEL_PAGE_TABLE, paddr_to_vaddr},
-        page_prop::CachePolicy,
+        kspace::kvirt_area::KVirtArea,
     },
 };
 
-cfg_if! {
-    if #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))] {
-        use crate::arch::tdx_guest;
-    }
-}
-
-/// A coherent (or consistent) DMA mapping,
-/// which guarantees that the device and the CPU can
-/// access the data in parallel.
+/// A DMA memory object that can be accessed in a cache-coherent manner.
 ///
-/// The mapping will be destroyed automatically when
-/// the object is dropped.
+/// The users need not manually synchronize the CPU cache and the device when
+/// accessing the memory region with [`VmReader`] and [`VmWriter`]. If the
+/// device doesn't not support cache-coherent access, the memory region will be
+/// mapped without caching enabled.
 #[derive(Debug)]
 pub struct DmaCoherent {
-    segment: USegment,
-    start_daddr: Daddr,
+    inner: Inner,
+    map_daddr: Option<Daddr>,
     is_cache_coherent: bool,
 }
 
+#[derive(Debug)]
+enum Inner {
+    Segment(Segment<()>),
+    Kva(KVirtArea, Paddr),
+}
+
 impl DmaCoherent {
-    /// Creates a coherent DMA mapping backed by `segment`.
+    /// Allocates a region of physical memory for coherent DMA access.
     ///
-    /// The `is_cache_coherent` argument specifies whether
-    /// the target device that the DMA mapping is prepared for
-    /// can access the main memory in a CPU cache coherent way
-    /// or not.
-    ///
-    /// The method fails if any part of the given `segment`
-    /// already belongs to a DMA mapping.
-    pub fn map(segment: USegment, is_cache_coherent: bool) -> core::result::Result<Self, DmaError> {
-        let paddr = segment.paddr();
-        let frame_count = segment.size() / PAGE_SIZE;
+    /// The `is_cache_coherent` argument specifies whether the target device
+    /// that the DMA mapping is prepared for can access the main memory in a
+    /// CPU cache coherent way or not.
+    pub fn alloc(nframes: usize, is_cache_coherent: bool) -> Result<Self, Error> {
+        let cvm = cvm_need_private_protection();
 
-        if !check_and_insert_dma_mapping(paddr, frame_count) {
-            return Err(DmaError::AlreadyMapped);
-        }
+        let (inner, paddr_range) = if is_cache_coherent && !cvm {
+            let segment = FrameAllocOptions::new().alloc_segment(nframes)?;
+            let paddr_range = segment.paddr_range();
 
-        if !is_cache_coherent {
-            let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-            let vaddr = paddr_to_vaddr(paddr);
-            let va_range = vaddr..vaddr + (frame_count * PAGE_SIZE);
-            // SAFETY: the physical mappings is only used by DMA so protecting it is safe.
-            unsafe {
-                page_table
-                    .protect_flush_tlb(&va_range, |p| p.cache = CachePolicy::Uncacheable)
-                    .unwrap();
-            }
-        }
+            (Inner::Segment(segment), paddr_range)
+        } else {
+            let (kva, paddr) = alloc_kva(nframes, is_cache_coherent)?;
 
-        let start_daddr = match dma_type() {
-            DmaType::Direct => {
-                #[cfg(target_arch = "x86_64")]
-                crate::arch::if_tdx_enabled!({
-                    // SAFETY:
-                    //  - The address of a `USegment` is always page aligned.
-                    //  - A `USegment` always points to normal physical memory, so the address
-                    //    range falls in the GPA limit.
-                    //  - A `USegment` always points to normal physical memory, so all the pages
-                    //    are contained in the linear mapping.
-                    //  - The pages belong to a `USegment`, so they're all untyped memory.
-                    unsafe {
-                        tdx_guest::unprotect_gpa_range(paddr, frame_count).unwrap();
-                    }
-                });
-                paddr as Daddr
-            }
-            DmaType::Iommu => {
-                for i in 0..frame_count {
-                    let paddr = paddr + (i * PAGE_SIZE);
-                    // SAFETY: the `paddr` is restricted by the `paddr` and `frame_count` of the `segment`.
-                    unsafe {
-                        iommu::map(paddr as Daddr, paddr).unwrap();
-                    }
-                }
-                paddr as Daddr
-            }
+            (Inner::Kva(kva, paddr), paddr..paddr + nframes * PAGE_SIZE)
         };
 
+        // SAFETY: The physical address range is untyped DMA memory before `drop`.
+        let map_daddr = unsafe { prepare_dma(&paddr_range) };
+
         Ok(Self {
-            segment,
-            start_daddr,
+            inner,
+            map_daddr,
             is_cache_coherent,
         })
     }
 }
 
-impl Deref for DmaCoherent {
-    type Target = USegment;
-    fn deref(&self) -> &Self::Target {
-        &self.segment
+impl Split for DmaCoherent {
+    fn split(self, offset: usize) -> (Self, Self) {
+        assert!(offset.is_multiple_of(PAGE_SIZE));
+        assert!(0 < offset && offset < self.size());
+
+        let (inner, map_daddr, is_cache_coherent) = {
+            let this = ManuallyDrop::new(self);
+            (
+                // SAFETY: `this.inner` will never be used or dropped later.
+                unsafe { core::ptr::read(&this.inner as *const Inner) },
+                this.map_daddr,
+                this.is_cache_coherent,
+            )
+        };
+
+        let (inner1, inner2) = match inner {
+            Inner::Segment(segment) => {
+                let (s1, s2) = segment.split(offset);
+                (Inner::Segment(s1), Inner::Segment(s2))
+            }
+            Inner::Kva(kva, paddr) => {
+                let (kva1, kva2) = kva.split(offset);
+                let (paddr1, paddr2) = (paddr, paddr + offset);
+                (Inner::Kva(kva1, paddr1), Inner::Kva(kva2, paddr2))
+            }
+        };
+
+        let (daddr1, daddr2) = split_daddr(map_daddr, offset);
+
+        (
+            Self {
+                inner: inner1,
+                map_daddr: daddr1,
+                is_cache_coherent,
+            },
+            Self {
+                inner: inner2,
+                map_daddr: daddr2,
+                is_cache_coherent,
+            },
+        )
     }
 }
 
 impl Drop for DmaCoherent {
     fn drop(&mut self) {
-        let paddr = self.segment.paddr();
-        let frame_count = self.segment.size() / PAGE_SIZE;
-
-        match dma_type() {
-            DmaType::Direct => {
-                #[cfg(target_arch = "x86_64")]
-                crate::arch::if_tdx_enabled!({
-                    // SAFETY:
-                    //  - The address of a `USegment` is always page aligned.
-                    //  - A `USegment` always points to normal physical memory, so the address
-                    //    range falls in the GPA limit.
-                    //  - A `USegment` always points to normal physical memory, so all the pages
-                    //    are contained in the linear mapping.
-                    //  - The pages belong to a `USegment`, so they're all untyped memory.
-                    unsafe {
-                        tdx_guest::protect_gpa_range(paddr, frame_count).unwrap();
-                    }
-                });
-            }
-            DmaType::Iommu => {
-                for i in 0..frame_count {
-                    let paddr = paddr + (i * PAGE_SIZE);
-                    iommu::unmap(paddr as Daddr).unwrap();
-                    // FIXME: After dropping it could be reused. IOTLB needs to be flushed.
-                }
-            }
-        }
-
-        if !self.is_cache_coherent {
-            let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-            let vaddr = paddr_to_vaddr(paddr);
-            let va_range = vaddr..vaddr + (frame_count * PAGE_SIZE);
-            // SAFETY: the physical mappings is only used by DMA so protecting it is safe.
-            unsafe {
-                page_table
-                    .protect_flush_tlb(&va_range, |p| p.cache = CachePolicy::Writeback)
-                    .unwrap();
-            }
-        }
-
-        remove_dma_mapping(paddr, frame_count);
+        // SAFETY: The physical address range was prepeared in `alloc`.
+        unsafe { unprepare_dma(&self.paddr_range(), self.map_daddr) };
     }
 }
 
 impl HasPaddr for DmaCoherent {
     fn paddr(&self) -> Paddr {
-        self.segment.paddr()
-    }
-}
-
-impl HasSize for DmaCoherent {
-    fn size(&self) -> usize {
-        self.segment.size()
+        match &self.inner {
+            Inner::Segment(segment) => segment.paddr(),
+            Inner::Kva(_, paddr) => *paddr,
+        }
     }
 }
 
 impl HasDaddr for DmaCoherent {
     fn daddr(&self) -> Daddr {
-        self.start_daddr
+        self.map_daddr.unwrap_or_else(|| self.paddr() as Daddr)
+    }
+}
+
+impl HasSize for DmaCoherent {
+    fn size(&self) -> usize {
+        match &self.inner {
+            Inner::Segment(segment) => segment.size(),
+            Inner::Kva(kva, _) => kva.size(),
+        }
     }
 }
 
@@ -177,10 +144,28 @@ impl HasVmReaderWriter for DmaCoherent {
     type Types = VmReaderWriterIdentity;
 
     fn reader(&self) -> VmReader<'_, Infallible> {
-        self.segment.reader()
+        match &self.inner {
+            Inner::Segment(seg) => seg.reader(),
+            Inner::Kva(kva, _) => {
+                // SAFETY:
+                //  - The memory range points to untyped memory.
+                //  - The KVA is alive during the lifetime `'_`.
+                //  - Using `VmReader` and `VmWriter` is the only way to access the KVA.
+                unsafe { VmReader::from_kernel_space(kva.start() as *const u8, kva.size()) }
+            }
+        }
     }
 
     fn writer(&self) -> VmWriter<'_, Infallible> {
-        self.segment.writer()
+        match &self.inner {
+            Inner::Segment(seg) => seg.writer(),
+            Inner::Kva(kva, _) => {
+                // SAFETY:
+                //  - The memory range points to untyped memory.
+                //  - The KVA is alive during the lifetime `'_`.
+                //  - Using `VmReader` and `VmWriter` is the only way to access the KVA.
+                unsafe { VmWriter::from_kernel_space(kva.start() as *mut u8, kva.size()) }
+            }
+        }
     }
 }

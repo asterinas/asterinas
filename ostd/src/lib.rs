@@ -108,8 +108,6 @@ unsafe fn init() {
 
     boot::init_after_heap();
 
-    mm::dma::init();
-
     // SAFETY: This function is called only once on the BSP.
     unsafe { arch::late_init_on_bsp() };
 
