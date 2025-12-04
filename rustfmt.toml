@@ -1,4 +1,4 @@
 imports_granularity="Crate"
 group_imports="StdExternalCrate"
 reorder_imports=true
-skip_macro_invocations = ["chmod", "mkmod"]
+skip_macro_invocations = ["chmod", "mkmod", "ioc"]
