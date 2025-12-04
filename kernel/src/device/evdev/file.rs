@@ -23,11 +23,14 @@ use crate::{
     events::IoEvents,
     fs::{
         inode_handle::FileIo,
-        utils::{InodeIo, IoctlCmd, StatusFlags},
+        utils::{InodeIo, StatusFlags},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
-    util::ring_buffer::{RbConsumer, RbProducer, RingBuffer},
+    util::{
+        ioctl::RawIoctl,
+        ring_buffer::{RbConsumer, RbProducer, RingBuffer},
+    },
 };
 
 pub(super) const EVDEV_BUFFER_SIZE: usize = 64;
@@ -289,7 +292,7 @@ impl FileIo for EvdevFile {
         false
     }
 
-    fn ioctl(&self, _cmd: IoctlCmd, _arg: usize) -> Result<i32> {
+    fn ioctl(&self, _raw_ioctl: RawIoctl) -> Result<i32> {
         // TODO: Support ioctl operations for evdev files.
 
         // Most ioctl implementations return `ENOTTY` for invalid ioctl commands, representing "The

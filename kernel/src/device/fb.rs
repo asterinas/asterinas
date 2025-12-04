@@ -17,10 +17,11 @@ use crate::{
         device::{Device, DeviceType},
         file_handle::Mappable,
         inode_handle::FileIo,
-        utils::{InodeIo, IoctlCmd, StatusFlags},
+        utils::{InodeIo, StatusFlags},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
+    util::ioctl::{dispatch_ioctl, RawIoctl},
 };
 
 #[derive(Debug)]
@@ -202,6 +203,23 @@ struct FbCmapUser {
     pub transp: usize,
 }
 
+mod ioctl_defs {
+    use super::{FbCmapUser, FbFixScreenInfo, FbVarScreenInfo};
+    use crate::util::ioctl::{ioc, InData, InOutData, NoData, OutData};
+
+    // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/fb.h#L13-L38>
+
+    pub(super) type GetVarScreenInfo = ioc!(FBIOGET_VSCREENINFO, 0x4600, OutData<FbVarScreenInfo>);
+    pub(super) type PutVarScreenInfo = ioc!(FBIOPUT_VSCREENINFO, 0x4601, InOutData<FbVarScreenInfo>);
+    pub(super) type GetFixScreenInfo = ioc!(FBIOGET_FSCREENINFO, 0x4602, OutData<FbFixScreenInfo>);
+    pub(super) type GetColorMap      = ioc!(FBIOGETCMAP,         0x4604, InData<FbCmapUser>);
+    pub(super) type PutColorMap      = ioc!(FBIOPUTCMAP,         0x4605, InData<FbCmapUser>);
+
+    // `NoData` is used below because they're not supported by efifb.
+    pub(super) type PanDisplay       = ioc!(FBIOPAN_DISPLAY,     0x4606, NoData);
+    pub(super) type Blank            = ioc!(FBIOBLANK,           0x4611, NoData);
+}
+
 impl Device for Fb {
     fn type_(&self) -> DeviceType {
         DeviceType::Char
@@ -247,12 +265,8 @@ impl FbHandle {
         Ok(())
     }
 
-    /// Handles the [`IoctlCmd::GETVSCREENINFO`] ioctl command.
-    ///
-    /// Arguments:
-    ///  - Input: None.
-    ///  - Output: [`FbVarScreenInfo`].
-    fn handle_get_var_screen_info(&self, arg: usize) -> Result<i32> {
+    /// Collects the information in the [`FbVarScreenInfo`].
+    fn collect_var_screen_info(&self) -> FbVarScreenInfo {
         /// Default pixel clock calculation for efifb compatibility
         const DEFAULT_PIXEL_CLOCK_DIVISOR: u32 = 10_000_000;
 
@@ -265,7 +279,7 @@ impl FbHandle {
         let pixel_format = self.framebuffer.pixel_format();
         let (red, green, blue, transp) = FbBitfield::from_pixel_format(pixel_format);
 
-        let screen_info = FbVarScreenInfo {
+        FbVarScreenInfo {
             xres: self.framebuffer.width() as u32,
             yres: self.framebuffer.height() as u32,
             xres_virtual: self.framebuffer.width() as u32,
@@ -284,39 +298,27 @@ impl FbHandle {
             vsync_len: DEFAULT_VSYNC_LEN,
             hsync_len: (self.framebuffer.width() as u32 / 8) & 0xf8,
             ..Default::default()
-        };
-
-        current_userspace!().write_val(arg, &screen_info)?;
-        Ok(0)
+        }
     }
 
-    /// Handles the [`IoctlCmd::GETFSCREENINFO`] ioctl command.
-    ///
-    /// Arguments:
-    ///  - Input: None.
-    ///  - Output: [`FbFixScreenInfo`].
-    fn handle_get_fix_screen_info(&self, arg: usize) -> Result<i32> {
-        let screen_info = FbFixScreenInfo {
+    /// Collects the information in the [`FbFixScreenInfo`].
+    fn collect_fix_screen_info(&self) -> FbFixScreenInfo {
+        FbFixScreenInfo {
             smem_start: self.framebuffer.io_mem().paddr() as u64,
             smem_len: self.framebuffer.io_mem().size() as u32,
             line_length: self.framebuffer.line_size() as u32,
             ..Default::default()
-        };
-
-        current_userspace!().write_val(arg, &screen_info)?;
-        Ok(0)
+        }
     }
 
-    /// Handles the [`IoctlCmd::GETCMAP`] ioctl command.
+    /// Handles the [`ioctl_defs::GetColorMap`] ioctl command.
     ///
     /// Arguments:
     ///  - Input: [`FbCmapUser`] (specifying the range).
     ///  - Output: [`FbCmapUser`] (filled with color palette data).
-    fn handle_get_cmap(&self, arg: usize) -> Result<i32> {
-        let cmap_user: FbCmapUser = current_userspace!().read_val(arg)?;
-
+    fn handle_get_cmap(&self, cmap_user: &FbCmapUser) -> Result<()> {
         if cmap_user.len == 0 {
-            return Ok(0);
+            return Ok(());
         }
 
         let start = cmap_user.start as usize;
@@ -340,19 +342,17 @@ impl FbHandle {
             Self::write_color_maps_to_user(cmap_user.transp, &transp)?;
         }
 
-        Ok(0)
+        Ok(())
     }
 
-    /// Handles the [`IoctlCmd::PUTCMAP`] ioctl command.
+    /// Handles the [`ioctl_defs::PutColorMap`] ioctl command.
     ///
     /// Arguments:
     ///  - Input: [`FbCmapUser`] (with color palette data).
     ///  - Output: None.
-    fn handle_set_cmap(&self, arg: usize) -> Result<i32> {
-        let cmap_user: FbCmapUser = current_userspace!().read_val(arg)?;
-
+    fn handle_set_cmap(&self, cmap_user: &FbCmapUser) -> Result<()> {
         if cmap_user.len == 0 {
-            return Ok(0);
+            return Ok(());
         }
 
         let start = cmap_user.start as usize;
@@ -392,7 +392,7 @@ impl FbHandle {
         // Set color map entries in framebuffer
         self.framebuffer.set_color_map(start, &entries)?;
 
-        Ok(0)
+        Ok(())
     }
 }
 
@@ -475,19 +475,34 @@ impl FileIo for FbHandle {
         Ok(Mappable::IoMem(iomem.clone()))
     }
 
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        match cmd {
-            IoctlCmd::GETVSCREENINFO => self.handle_get_var_screen_info(arg),
-            IoctlCmd::GETFSCREENINFO => self.handle_get_fix_screen_info(arg),
-            IoctlCmd::PUTVSCREENINFO => {
+    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+        use ioctl_defs::*;
+
+        dispatch_ioctl!(match raw_ioctl {
+            cmd @ GetVarScreenInfo => {
+                cmd.write(&self.collect_var_screen_info())?;
+                Ok(0)
+            }
+            cmd @ PutVarScreenInfo => {
                 // EFI framebuffers do not support changing settings. Linux
                 // will return the old settings to user space and succeed.
                 // Reference: <https://elixir.bootlin.com/linux/v6.17/source/drivers/video/fbdev/core/fbmem.c#L276-L279>.
-                self.handle_get_var_screen_info(arg)
+                cmd.write(&self.collect_var_screen_info())?;
+                Ok(0)
             }
-            IoctlCmd::GETCMAP => self.handle_get_cmap(arg),
-            IoctlCmd::PUTCMAP => self.handle_set_cmap(arg),
-            IoctlCmd::PANDISPLAY | IoctlCmd::FBIOBLANK => {
+            cmd @ GetFixScreenInfo => {
+                cmd.write(&self.collect_fix_screen_info())?;
+                Ok(0)
+            }
+            cmd @ GetColorMap => {
+                self.handle_get_cmap(&cmd.read()?)?;
+                Ok(0)
+            }
+            cmd @ PutColorMap => {
+                self.handle_set_cmap(&cmd.read()?)?;
+                Ok(0)
+            }
+            PanDisplay | Blank => {
                 // These commands are not supported by efifb.
                 // We return errors according to the Linux behavior.
                 return_errno_with_message!(
@@ -497,15 +512,12 @@ impl FileIo for FbHandle {
             }
             _ => {
                 log::debug!(
-                    "the ioctl command {:?} is not supported by framebuffer devices",
-                    cmd
+                    "the ioctl command {:#x} is unknown for framebuffer devices",
+                    raw_ioctl.cmd()
                 );
-                return_errno_with_message!(
-                    Errno::ENOTTY,
-                    "the ioctl command is not supported by framebuffer devices"
-                )
+                return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown");
             }
-        }
+        })
     }
 }
 

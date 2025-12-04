@@ -15,12 +15,13 @@ use crate::{
         file_handle::Mappable,
         path::Path,
         utils::{
-            DirentVisitor, FallocMode, FileRange, FlockItem, FlockList, Inode, InodeType, IoctlCmd,
+            DirentVisitor, FallocMode, FileRange, FlockItem, FlockList, Inode, InodeType,
             RangeLockItem, RangeLockList, RangeLockType, SeekFrom, StatusFlags, OFFSET_MAX,
         },
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
+    util::ioctl::RawIoctl,
 };
 
 struct HandleInner {
@@ -186,9 +187,9 @@ impl HandleInner {
         )
     }
 
-    pub(self) fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+    pub(self) fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
         if let Some(ref file_io) = self.file_io {
-            return file_io.ioctl(cmd, arg);
+            return file_io.ioctl(raw_ioctl);
         }
 
         return_errno_with_message!(Errno::ENOTTY, "ioctl is not supported");
@@ -318,7 +319,7 @@ pub trait FileIo: Pollable + InodeIo + Send + Sync + 'static {
         return_errno_with_message!(Errno::EINVAL, "the file is not mappable");
     }
 
-    fn ioctl(&self, _cmd: IoctlCmd, _arg: usize) -> Result<i32> {
+    fn ioctl(&self, _raw_ioctl: RawIoctl) -> Result<i32> {
         return_errno_with_message!(Errno::ENOTTY, "ioctl is not supported");
     }
 }

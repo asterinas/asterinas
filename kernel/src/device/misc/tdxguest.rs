@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::{Arc, Weak};
+use alloc::sync::Arc;
 use core::{
     mem::{offset_of, size_of},
     time::Duration,
@@ -10,10 +10,7 @@ use aster_util::{field_ptr, safe_ptr::SafePtr};
 use device_id::{DeviceId, MinorId};
 use ostd::{
     const_assert,
-    mm::{
-        io_util::HasVmReaderWriter, DmaCoherent, FrameAllocOptions, HasPaddr, HasSize, USegment,
-        VmIo, PAGE_SIZE,
-    },
+    mm::{DmaCoherent, FrameAllocOptions, HasPaddr, HasSize, USegment, VmIo, PAGE_SIZE},
     sync::WaitQueue,
 };
 use tdx_guest::{
@@ -27,10 +24,11 @@ use crate::{
     fs::{
         device::{Device, DeviceType},
         inode_handle::FileIo,
-        utils::{InodeIo, IoctlCmd, StatusFlags},
+        utils::{InodeIo, StatusFlags},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
+    util::ioctl::{dispatch_ioctl, RawIoctl},
 };
 
 const TDX_GUEST_MINOR: u32 = 0x7b;
@@ -151,11 +149,26 @@ impl FileIo for TdxGuestFile {
         false
     }
 
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        match cmd {
-            IoctlCmd::TDXGETREPORT => handle_get_report(arg),
-            _ => return_errno_with_message!(Errno::ENOTTY, "ioctl is not supported"),
-        }
+    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+        use ioctl_defs::*;
+
+        dispatch_ioctl!(match raw_ioctl {
+            cmd @ GetTdxReport => {
+                cmd.with_data_ptr(|data_ptr| {
+                    let inblob = {
+                        let inblob_ptr = field_ptr!(&data_ptr, TdxReportRequest, report_data);
+                        inblob_ptr.read()?
+                    };
+
+                    let outblob = tdx_get_report(inblob.as_bytes())?;
+                    let outblob_ptr = field_ptr!(&data_ptr, TdxReportRequest, tdx_report);
+                    outblob_ptr.copy_from(&outblob)?;
+
+                    Ok(0)
+                })
+            }
+            _ => return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown"),
+        })
     }
 }
 
@@ -164,17 +177,16 @@ pub fn tdx_get_quote(inblob: &[u8]) -> Result<Box<[u8]>> {
     const GET_QUOTE_BUF_SIZE: usize = 8 * 1024;
 
     let report = tdx_get_report(inblob)?;
+
     let buf = alloc_dma_buf(GET_QUOTE_BUF_SIZE)?;
     let report_ptr: SafePtr<TdxQuoteHdr, _, _> = SafePtr::new(&buf, 0);
+    let payload_ptr: SafePtr<TdReport, _, _> = SafePtr::new(&buf, size_of::<TdxQuoteHdr>());
 
     field_ptr!(&report_ptr, TdxQuoteHdr, version).write(&1u64)?;
     field_ptr!(&report_ptr, TdxQuoteHdr, status).write(&0u64)?;
     field_ptr!(&report_ptr, TdxQuoteHdr, in_len).write(&(size_of::<TdReport>() as u32))?;
     field_ptr!(&report_ptr, TdxQuoteHdr, out_len).write(&0u32)?;
-    buf.write(
-        size_of::<TdxQuoteHdr>(),
-        report.reader().to_fallible().limit(size_of::<TdReport>()),
-    )?;
+    payload_ptr.copy_from(&report)?;
 
     // FIXME: The `get_quote` API from the `tdx_guest` crate should have been marked `unsafe`
     // because it has no way to determine if the input physical address is safe or not.
@@ -198,7 +210,7 @@ pub fn tdx_get_quote(inblob: &[u8]) -> Result<Box<[u8]>> {
     // "Accept a pending private page and initialize it to all-0 using the TD ephemeral private key."
     let out_len = field_ptr!(&report_ptr, TdxQuoteHdr, out_len).read()?;
     let mut outblob = vec![0u8; out_len as usize].into_boxed_slice();
-    buf.read_bytes(size_of::<TdxQuoteHdr>(), outblob.as_mut())?;
+    payload_ptr.cast().read_slice(outblob.as_mut())?;
     Ok(outblob)
 }
 
@@ -221,10 +233,10 @@ struct TdxReportRequest {
     tdx_report: TdReport,
 }
 
-impl TdxReportRequest {
-    fn report_inblob(&self) -> &[u8] {
-        self.report_data.as_bytes()
-    }
+#[derive(Debug, Clone, Copy, Pod)]
+#[repr(C)]
+struct ReportData {
+    data: [u8; 64],
 }
 
 /// TDX Report structure (`TDREPORT_STRUCT`) as defined in the Intel TDX Module Specification.
@@ -262,38 +274,24 @@ struct TdInfo {
     extension: [u8; 64],
 }
 
-#[derive(Debug, Clone, Copy, Pod)]
-#[repr(C)]
-struct ReportData {
-    data: [u8; 64],
-}
-
 impl TdReport {
     const fn report_data_offset() -> usize {
         offset_of!(TdReport, report_mac) + offset_of!(ReportMac, report_data)
     }
 }
 
-fn handle_get_report(arg: usize) -> Result<i32> {
-    let current_task = ostd::task::Task::current().unwrap();
-    let user_space = CurrentUserSpace::new(current_task.as_thread_local().unwrap());
-    let user_request: TdxReportRequest = user_space.read_val(arg)?;
+mod ioctl_defs {
+    use super::TdxReportRequest;
+    use crate::util::ioctl::{ioc, InOutData};
 
-    let report = tdx_get_report(&user_request.report_inblob())?;
+    // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/tdx-guest.h#L40>
 
-    let tdx_report_vaddr = arg + offset_of!(TdxReportRequest, tdx_report);
-    user_space.write_bytes(
-        tdx_report_vaddr,
-        report.reader().limit(size_of::<TdReport>()),
-    )?;
-    Ok(0)
+    pub(super) type GetTdxReport =
+        ioc!(TDX_CMD_GET_REPORT0, b'T', 0x01, InOutData<TdxReportRequest>);
 }
 
 /// Gets the TDX report given the specified data in `inblob`.
-///
-/// The first `size_of::<TdReport>()` bytes of data in the returned `USegment` is the report.
-/// The rest in `USegment` should be ignored.
-fn tdx_get_report(inblob: &[u8]) -> Result<USegment> {
+fn tdx_get_report(inblob: &[u8]) -> Result<SafePtr<TdReport, USegment>> {
     if inblob.len() != size_of::<ReportData>() {
         return_errno_with_message!(Errno::EINVAL, "Invalid inblob length");
     }
@@ -321,7 +319,7 @@ fn tdx_get_report(inblob: &[u8]) -> Result<USegment> {
     // FIXME: The `get_report` API from the `tdx_guest` crate should have been marked `unsafe`
     // because it has no way to determine if the input physical address is safe or not.
     get_report(report.paddr() as u64, report_data_paddr as u64)?;
-    Ok(report)
+    Ok(SafePtr::new(report, 0))
 }
 
 fn alloc_dma_buf(buf_len: usize) -> Result<DmaCoherent> {

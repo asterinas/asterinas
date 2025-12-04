@@ -230,7 +230,7 @@ impl CCtrlCharId {
 /// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits.h#L30>.
 #[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
-pub(super) struct CTermios {
+pub struct CTermios {
     c_iflags: CInputFlags,
     c_oflags: COutputFlags,
     c_cflags: CCtrlFlags,
@@ -321,7 +321,7 @@ impl CTermios {
 /// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termios.h#L15>.
 #[derive(Debug, Clone, Copy, Default, Pod)]
 #[repr(C)]
-pub(super) struct CWinSize {
+pub struct CWinSize {
     ws_row: u16,
     ws_col: u16,
     ws_xpixel: u16,
@@ -333,7 +333,7 @@ pub(super) struct CWinSize {
 /// Reference: <https://elixir.bootlin.com/linux/v6.15/source/include/uapi/linux/kd.h#L159>.
 #[derive(Debug, Clone, Copy, Default, Pod)]
 #[repr(C)]
-pub(super) struct CFontOp {
+pub struct CFontOp {
     pub(super) op: u32,
     pub(super) flags: u32,
     pub(super) width: u32,

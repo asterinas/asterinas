@@ -27,8 +27,8 @@ use crate::{
         tmpfs::TmpFs,
         utils::{
             chmod, mkmod, AccessMode, CachePage, CreationFlags, Extension, FallocMode, FileSystem,
-            Inode, InodeIo, InodeMode, InodeType, IoctlCmd, Metadata, OpenArgs, PageCacheBackend,
-            SeekFrom, StatusFlags, XattrName, XattrNamespace, XattrSetFlags,
+            Inode, InodeIo, InodeMode, InodeType, Metadata, OpenArgs, PageCacheBackend, SeekFrom,
+            StatusFlags, XattrName, XattrNamespace, XattrSetFlags,
         },
     },
     prelude::*,
@@ -36,6 +36,7 @@ use crate::{
         signal::{PollHandle, Pollable},
         Gid, Uid,
     },
+    util::ioctl::RawIoctl,
     vm::{perms::VmPerms, vmo::Vmo},
 };
 
@@ -462,7 +463,7 @@ impl FileLike for MemfdFile {
         Ok(Mappable::Inode(self.memfd_inode.clone()))
     }
 
-    fn ioctl(&self, _cmd: IoctlCmd, _arg: usize) -> Result<i32> {
+    fn ioctl(&self, _raw_ioctl: RawIoctl) -> Result<i32> {
         if self.rights.is_empty() {
             return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
