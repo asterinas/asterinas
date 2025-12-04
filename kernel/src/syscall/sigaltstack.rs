@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::{arch::cpu::context::UserContext, user::UserContextApi};
+use ostd::{arch::cpu::context::UserContext, mm::VmIo, user::UserContextApi};
 
 use super::SyscallReturn;
 use crate::{

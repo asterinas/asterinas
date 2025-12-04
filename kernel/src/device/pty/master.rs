@@ -2,7 +2,7 @@
 
 use alloc::format;
 
-use ostd::task::Task;
+use ostd::{mm::VmIo, task::Task};
 
 use super::{driver::PtyDriver, PtySlave};
 use crate::{

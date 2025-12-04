@@ -6,7 +6,7 @@ use aster_console::{
     AnyConsoleDevice,
 };
 use device_id::{DeviceId, MajorId, MinorId};
-use ostd::sync::LocalIrqDisabled;
+use ostd::{mm::VmIo, sync::LocalIrqDisabled};
 
 use self::{line_discipline::LineDiscipline, termio::CFontOp};
 use crate::{
@@ -214,7 +214,7 @@ impl<D: TtyDriver> Tty<D> {
 
         let font_size = width.div_ceil(u8::BITS) * vpitch * charcount;
         let mut font_data = vec![0; font_size as usize];
-        current_userspace!().read_bytes(*data as Vaddr, &mut (&mut font_data[..]).into())?;
+        current_userspace!().read_bytes(*data as Vaddr, &mut font_data[..])?;
 
         // In Linux, the most significant bit represents the first pixel, but `BitmapFont` requires
         // the least significant bit to represent the first pixel. So now we reverse the bits.

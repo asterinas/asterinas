@@ -2,6 +2,8 @@
 
 use alloc::sync::Arc;
 
+use ostd::mm::VmIo;
+
 use super::{session::SessionGuard, JobControl, Pgid, Process, Session, Sid};
 use crate::{
     current_userspace,
@@ -44,7 +46,7 @@ impl dyn Terminal {
                     self.is_control_and(&current!(), |_, _| Ok(operate()))?
                 };
 
-                current_userspace!().write_val::<Pgid>(arg, &pgid)
+                Ok(current_userspace!().write_val::<Pgid>(arg, &pgid)?)
             }
 
             // Commands about sessions
@@ -80,7 +82,7 @@ impl dyn Terminal {
                     self.is_control_and(&current!(), |session, _| Ok(session.sid()))?
                 };
 
-                current_userspace!().write_val::<Sid>(arg, &sid)
+                Ok(current_userspace!().write_val::<Sid>(arg, &sid)?)
             }
 
             // Commands that are invalid or not supported

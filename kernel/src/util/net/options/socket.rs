@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use ostd::mm::VmIo;
+
 use super::RawSocketOption;
 use crate::{
     current_userspace, impl_raw_sock_option_get_only, impl_raw_socket_option,

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::cpu::CpuId;
+use ostd::{cpu::CpuId, mm::VmIo};
 
 use super::SyscallReturn;
 use crate::prelude::*;

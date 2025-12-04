@@ -2,6 +2,7 @@
 
 use ostd::{
     arch::cpu::context::UserContext,
+    mm::VmIo,
     sync::Waiter,
     task::{Task, TaskOptions},
     user::{ReturnReason, UserContextApi, UserMode},

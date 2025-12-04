@@ -2,6 +2,8 @@
 
 use core::time::Duration;
 
+use ostd::mm::VmIo;
+
 use super::SyscallReturn;
 use crate::{
     ipc::semaphore::system_v::{

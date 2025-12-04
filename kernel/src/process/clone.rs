@@ -4,7 +4,8 @@ use alloc::borrow::Cow;
 use core::{num::NonZeroU64, sync::atomic::Ordering};
 
 use ostd::{
-    arch::cpu::context::UserContext, cpu::CpuId, sync::RwArc, task::Task, user::UserContextApi,
+    arch::cpu::context::UserContext, cpu::CpuId, mm::VmIo, sync::RwArc, task::Task,
+    user::UserContextApi,
 };
 
 use super::{
@@ -677,11 +678,11 @@ fn clone_pidfd(
     // FIXME: Should we remove the file from the file table if the write operation fails?
     match ctx.user_space().write_val(pidfd_addr, &fd) {
         Ok(()) => Ok(()),
-        Err(e) => {
+        Err(err) => {
             let file_table = ctx.thread_local.borrow_file_table();
             let mut file_table_locked = file_table.unwrap().write();
             file_table_locked.close_file(fd);
-            Err(e)
+            Err(err.into())
         }
     }
 }
