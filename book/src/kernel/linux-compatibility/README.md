@@ -160,14 +160,14 @@ which are summarized in the table below.
 | 137     | statfs                 | ✅             | 💯 |
 | 138     | fstatfs                | ✅             | 💯 |
 | 139     | sysfs                  | ❌             | N/A |
-| 140     | getpriority            | ✅             | ❓ |
-| 141     | setpriority            | ✅             | ❓ |
-| 142     | sched_setparam         | ✅             | ❓ |
-| 143     | sched_getparam         | ✅             | ❓ |
-| 144     | sched_setscheduler     | ✅             | ❓ |
-| 145     | sched_getscheduler     | ✅             | ❓ |
-| 146     | sched_get_priority_max | ✅             | ❓ |
-| 147     | sched_get_priority_min | ✅             | ❓ |
+| 140     | getpriority            | ✅             | 💯 |
+| 141     | setpriority            | ✅             | 💯 |
+| 142     | sched_setparam         | ✅             | 💯 |
+| 143     | sched_getparam         | ✅             | 💯 |
+| 144     | sched_setscheduler     | ✅             | [⚠️](syscall-flag-coverage/process-and-thread-management/#sched_setscheduler) |
+| 145     | sched_getscheduler     | ✅             | 💯 |
+| 146     | sched_get_priority_max | ✅             | 💯 |
+| 147     | sched_get_priority_min | ✅             | 💯 |
 | 148     | sched_rr_get_interval  | ❌             | N/A |
 | 149     | mlock                  | ❌             | N/A |
 | 150     | munlock                | ❌             | N/A |
