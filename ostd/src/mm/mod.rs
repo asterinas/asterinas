@@ -38,7 +38,7 @@ pub use self::{
         VmIoOnce, VmReader, VmWriter,
     },
     kspace::{KERNEL_VADDR_RANGE, MAX_USERSPACE_VADDR},
-    mem_obj::{HasDaddr, HasPaddr, HasPaddrRange, HasSize},
+    mem_obj::{HasDaddr, HasPaddr, HasPaddrRange, HasSize, Split},
     page_prop::{CachePolicy, PageFlags, PageProperty},
     vm_space::VmSpace,
 };

@@ -63,3 +63,18 @@ macro_rules! impl_has_traits_for_ref_type {
 }
 
 impl_has_traits_for_ref_type!(&T, &mut T, Rc<T>, Arc<T>, Box<T>);
+
+/// Memory objects that can be split into smaller parts.
+pub trait Split: Sized + HasSize {
+    /// Splits the memory object into two at the given byte offset from the
+    /// start.
+    ///
+    /// The resulting memory object cannot be empty. So the offset cannot be
+    /// neither zero nor the length of the memory object.
+    ///
+    /// # Panics
+    ///
+    /// The function panics if the offset is out of bounds, at either ends, or
+    /// not base-page-aligned.
+    fn split(self, offset: usize) -> (Self, Self);
+}
