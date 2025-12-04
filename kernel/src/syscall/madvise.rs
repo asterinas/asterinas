@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use align_ext::AlignExt;
+use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::prelude::*;
@@ -38,8 +39,7 @@ pub fn sys_madvise(
         | MadviseBehavior::MADV_WILLNEED => {
             // perform a read at first
             let mut buffer = vec![0u8; len];
-            ctx.user_space()
-                .read_bytes(start, &mut VmWriter::from(buffer.as_mut_slice()))?;
+            ctx.user_space().read_bytes(start, buffer.as_mut_slice())?;
         }
         MadviseBehavior::MADV_DONTNEED => {
             warn!("MADV_DONTNEED isn't implemented, do nothing for now.");

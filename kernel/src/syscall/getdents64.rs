@@ -2,6 +2,8 @@
 
 use core::marker::PhantomData;
 
+use ostd::mm::VmIo;
+
 use super::SyscallReturn;
 use crate::{
     fs,
@@ -34,7 +36,7 @@ pub fn sys_getdents(
     let _ = inode_handle.readdir(&mut reader)?;
     let read_len = reader.read_len();
     ctx.user_space()
-        .write_bytes(buf_addr, &mut VmReader::from(&buffer[..read_len]))?;
+        .write_bytes(buf_addr, &buffer[..read_len])?;
     fs::notify::on_access(&file);
     Ok(SyscallReturn::Return(read_len as _))
 }
@@ -61,7 +63,7 @@ pub fn sys_getdents64(
     let _ = inode_handle.readdir(&mut reader)?;
     let read_len = reader.read_len();
     ctx.user_space()
-        .write_bytes(buf_addr, &mut VmReader::from(&buffer[..read_len]))?;
+        .write_bytes(buf_addr, &buffer[..read_len])?;
     fs::notify::on_access(&file);
     Ok(SyscallReturn::Return(read_len as _))
 }

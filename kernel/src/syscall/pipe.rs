@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use ostd::mm::VmIo;
+
 use super::SyscallReturn;
 use crate::{
     fs::{
@@ -33,7 +35,7 @@ pub fn sys_pipe2(fds: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn>
     if let Err(err) = ctx.user_space().write_val(fds, &pipe_fds) {
         file_table_locked.close_file(pipe_fds.reader_fd).unwrap();
         file_table_locked.close_file(pipe_fds.writer_fd).unwrap();
-        return Err(err);
+        return Err(err.into());
     }
 
     Ok(SyscallReturn::Return(0))

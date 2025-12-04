@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use ostd::mm::VmIo;
+
 use super::{getrusage::rusage_t, SyscallReturn};
 use crate::{
     prelude::*,

@@ -20,6 +20,7 @@ use c_types::{siginfo_t, ucontext_t};
 use constants::SIGSEGV;
 use ostd::{
     arch::cpu::context::{FpuContext, UserContext},
+    mm::VmIo,
     user::UserContextApi,
 };
 pub use pause::{with_sigmask_changed, Pause, PauseReason};
@@ -300,8 +301,7 @@ pub fn handle_user_signal(
         }
     }
 
-    let mut fpu_context_reader = VmReader::from(fpu_context_bytes);
-    user_space.write_bytes(fpu_context_addr as _, &mut fpu_context_reader)?;
+    user_space.write_bytes(fpu_context_addr as _, fpu_context_bytes)?;
 
     user_space.write_val(ucontext_addr as _, &ucontext)?;
     // Store the ucontext addr in sig context of current thread.

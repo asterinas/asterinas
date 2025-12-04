@@ -5,7 +5,7 @@ use alloc::sync::Arc;
 use aster_framebuffer::{ColorMapEntry, FrameBuffer, PixelFormat, FRAMEBUFFER, MAX_CMAP_SIZE};
 use device_id::{DeviceId, MajorId, MinorId};
 use ostd::{
-    mm::{io_util::HasVmReaderWriter, HasPaddr, HasSize},
+    mm::{io_util::HasVmReaderWriter, HasPaddr, HasSize, VmIo},
     Pod,
 };
 

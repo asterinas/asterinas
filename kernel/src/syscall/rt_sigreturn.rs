@@ -4,6 +4,7 @@ use core::sync::atomic::Ordering;
 
 use ostd::{
     arch::cpu::context::{FpuContext, UserContext},
+    mm::VmIo,
     user::UserContextApi,
 };
 
@@ -59,9 +60,8 @@ pub fn sys_rt_sigreturn(ctx: &Context, user_ctx: &mut UserContext) -> Result<Sys
         }
     }
     let mut fpu_context = FpuContext::new();
-    let mut fpu_context_writer = VmWriter::from(fpu_context.as_bytes_mut());
     ctx.user_space()
-        .read_bytes(fpu_context_addr, &mut fpu_context_writer)?;
+        .read_bytes(fpu_context_addr, fpu_context.as_bytes_mut())?;
     ctx.thread_local.fpu().set_context(fpu_context);
 
     // unblock sig mask

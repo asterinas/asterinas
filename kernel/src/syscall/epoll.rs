@@ -2,6 +2,8 @@
 
 use core::{sync::atomic::Ordering, time::Duration};
 
+use ostd::mm::VmIo;
+
 use super::SyscallReturn;
 use crate::{
     events::IoEvents,

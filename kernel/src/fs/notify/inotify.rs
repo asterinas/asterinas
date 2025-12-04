@@ -14,7 +14,7 @@ use core::{
 use bitflags::bitflags;
 use hashbrown::HashMap;
 use ostd::{
-    mm::VmWriter,
+    mm::{VmIo, VmWriter},
     sync::{Mutex, SpinLock},
 };
 

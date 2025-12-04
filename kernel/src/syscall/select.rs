@@ -2,6 +2,8 @@
 
 use core::time::Duration;
 
+use ostd::mm::VmIo;
+
 use super::{
     poll::{do_poll, PollFd},
     SyscallReturn,
