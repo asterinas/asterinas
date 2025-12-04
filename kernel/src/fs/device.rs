@@ -7,7 +7,7 @@ use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver},
         path::Path,
-        utils::{mkmod, InodeType},
+        utils::{mkmod, InodeType, MknodType},
     },
     prelude::*,
 };
@@ -51,7 +51,12 @@ pub enum DeviceType {
 /// This function should be called when registering a device.
 //
 // TODO: Figure out what should happen when unregistering the device.
-pub fn add_node(device: Arc<dyn Device>, path: &str, fs_resolver: &FsResolver) -> Result<Path> {
+pub fn add_node(
+    dev_type: DeviceType,
+    dev_id: u64,
+    path: &str,
+    fs_resolver: &FsResolver,
+) -> Result<Path> {
     let mut dev_path = fs_resolver.lookup(&FsPath::try_from("/dev").unwrap())?;
     let mut relative_path = {
         let relative_path = path.trim_start_matches('/');
@@ -79,7 +84,11 @@ pub fn add_node(device: Arc<dyn Device>, path: &str, fs_resolver: &FsResolver) -
             Err(_) => {
                 if path_remain.is_empty() {
                     // Create the device node
-                    dev_path = dev_path.mknod(next_name, mkmod!(a+rw), device.clone().into())?;
+                    let mknod_type = match dev_type {
+                        DeviceType::Block => MknodType::BlockDevice(dev_id),
+                        DeviceType::Char => MknodType::CharDevice(dev_id),
+                    };
+                    dev_path = dev_path.mknod(next_name, mkmod!(a+rw), mknod_type)?;
                 } else {
                     // Create the parent directory
                     dev_path =

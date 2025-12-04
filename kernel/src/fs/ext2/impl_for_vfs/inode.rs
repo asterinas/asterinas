@@ -139,7 +139,7 @@ impl Inode for Ext2Inode {
                         "the device of ID 0 does not exist",
                     )));
                 }
-                let device_type = inode_type.as_device_type().unwrap();
+                let device_type = inode_type.device_type().unwrap();
                 let Some(device) =
                     device::lookup(device_type, DeviceId::from_encoded_u64(device_id))
                 else {
@@ -161,14 +161,18 @@ impl Inode for Ext2Inode {
     }
 
     fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
-        let inode_type = type_.inode_type();
         let inode = match type_ {
-            MknodType::CharDevice(dev) | MknodType::BlockDevice(dev) => {
-                let inode = self.create(name, inode_type, mode.into())?;
-                inode.set_device_id(dev.id().as_encoded_u64()).unwrap();
+            MknodType::CharDevice(dev) => {
+                let inode = self.create(name, InodeType::CharDevice, mode.into())?;
+                inode.set_device_id(dev).unwrap();
                 inode
             }
-            MknodType::NamedPipe => self.create(name, inode_type, mode.into())?,
+            MknodType::BlockDevice(dev) => {
+                let inode = self.create(name, InodeType::BlockDevice, mode.into())?;
+                inode.set_device_id(dev).unwrap();
+                inode
+            }
+            MknodType::NamedPipe => self.create(name, InodeType::NamedPipe, mode.into())?,
         };
 
         Ok(inode)

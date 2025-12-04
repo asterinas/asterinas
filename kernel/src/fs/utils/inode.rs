@@ -69,7 +69,7 @@ impl InodeType {
             .map_err(|_| Error::with_message(Errno::EINVAL, "invalid file type"))
     }
 
-    pub fn as_device_type(&self) -> Option<DeviceType> {
+    pub fn device_type(&self) -> Option<DeviceType> {
         match self {
             InodeType::BlockDevice => Some(DeviceType::Block),
             InodeType::CharDevice => Some(DeviceType::Char),
@@ -225,27 +225,16 @@ impl Metadata {
 
 pub enum MknodType {
     NamedPipe,
-    CharDevice(Arc<dyn Device>),
-    BlockDevice(Arc<dyn Device>),
+    CharDevice(u64),
+    BlockDevice(u64),
 }
 
 impl MknodType {
-    pub fn inode_type(&self) -> InodeType {
+    pub fn device_type(&self) -> Option<DeviceType> {
         match self {
-            MknodType::NamedPipe => InodeType::NamedPipe,
-            MknodType::CharDevice(_) => InodeType::CharDevice,
-            MknodType::BlockDevice(_) => InodeType::BlockDevice,
-        }
-    }
-}
-
-impl From<Arc<dyn Device>> for MknodType {
-    fn from(device: Arc<dyn Device>) -> Self {
-        let inode_type: InodeType = device.type_().into();
-        match inode_type {
-            InodeType::CharDevice => Self::CharDevice(device),
-            InodeType::BlockDevice => Self::BlockDevice(device),
-            _ => unreachable!(),
+            MknodType::NamedPipe => None,
+            MknodType::CharDevice(_) => Some(DeviceType::Char),
+            MknodType::BlockDevice(_) => Some(DeviceType::Block),
         }
     }
 }

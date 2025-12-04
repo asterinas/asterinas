@@ -8,6 +8,7 @@ use core::{
 use align_ext::AlignExt;
 use aster_block::bio::BioWaiter;
 use aster_util::slot_vec::SlotVec;
+use device_id::DeviceId;
 use hashbrown::HashMap;
 use ostd::{
     mm::{io_util::HasVmReaderWriter, HasSize},
@@ -16,8 +17,9 @@ use ostd::{
 
 use super::{memfd::MemfdInode, xattr::RamXattr, *};
 use crate::{
+    device,
     fs::{
-        device::Device,
+        device::DeviceType,
         inode_handle::FileIo,
         notify::FsEventPublisher,
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
@@ -127,7 +129,8 @@ enum Inner {
     Dir(RwLock<DirEntry>),
     File(PageCache),
     SymLink(SpinLock<String>),
-    Device(Arc<dyn Device>),
+    BlockDevice(u64),
+    CharDevice(u64),
     Socket,
     NamedPipe(NamedPipe),
 }
@@ -145,8 +148,12 @@ impl Inner {
         Self::SymLink(SpinLock::new(String::from("")))
     }
 
-    pub(self) fn new_device(device: Arc<dyn Device>) -> Self {
-        Self::Device(device)
+    pub(self) fn new_block_device(dev_id: u64) -> Self {
+        Self::BlockDevice(dev_id)
+    }
+
+    pub(self) fn new_char_device(dev_id: u64) -> Self {
+        Self::CharDevice(dev_id)
     }
 
     pub(self) fn new_socket() -> Self {
@@ -182,9 +189,17 @@ impl Inner {
         }
     }
 
-    fn as_device(&self) -> Option<&Arc<dyn Device>> {
+    fn device_id(&self) -> Option<u64> {
         match self {
-            Self::Device(device) => Some(device),
+            Self::BlockDevice(dev_id) | Self::CharDevice(dev_id) => Some(*dev_id),
+            _ => None,
+        }
+    }
+
+    fn device_type(&self) -> Option<DeviceType> {
+        match self {
+            Self::BlockDevice(_) => Some(DeviceType::Block),
+            Self::CharDevice(_) => Some(DeviceType::Char),
             _ => None,
         }
     }
@@ -195,7 +210,26 @@ impl Inner {
         status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn FileIo>>> {
         match self {
-            Self::Device(device) => Some(device.open()),
+            Self::BlockDevice(device_id) | Self::CharDevice(device_id) => {
+                if *device_id == 0 {
+                    return Some(Err(Error::with_message(
+                        Errno::ENODEV,
+                        "the device of ID 0 does not exist",
+                    )));
+                }
+
+                let device_type = self.device_type().unwrap();
+                let Some(device) =
+                    device::lookup(device_type, DeviceId::from_encoded_u64(*device_id))
+                else {
+                    return Some(Err(Error::with_message(
+                        Errno::ENODEV,
+                        "the required device ID does not exist",
+                    )));
+                };
+
+                Some(device.open())
+            }
             Self::NamedPipe(pipe) => Some(pipe.open(access_mode, status_flags)),
             _ => None,
         }
@@ -480,13 +514,19 @@ impl RamInode {
         mode: InodeMode,
         uid: Uid,
         gid: Gid,
-        device: Arc<dyn Device>,
+        dev_type: DeviceType,
+        dev_id: u64,
     ) -> Arc<Self> {
+        let inner = match dev_type {
+            DeviceType::Block => Inner::new_block_device(dev_id),
+            DeviceType::Char => Inner::new_char_device(dev_id),
+        };
+
         Arc::new_cyclic(|weak_self| RamInode {
-            inner: Inner::new_device(device.clone()),
+            inner,
             metadata: SpinLock::new(InodeMeta::new(mode, uid, gid)),
             ino: fs.alloc_id(),
-            typ: InodeType::from(device.type_()),
+            typ: dev_type.into(),
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
@@ -733,13 +773,17 @@ impl Inode for RamInode {
         }
 
         let new_inode = match type_ {
-            MknodType::CharDevice(device) | MknodType::BlockDevice(device) => RamInode::new_device(
-                &self.fs.upgrade().unwrap(),
-                mode,
-                Uid::new_root(),
-                Gid::new_root(),
-                device,
-            ),
+            MknodType::CharDevice(dev_id) | MknodType::BlockDevice(dev_id) => {
+                let dev_type = type_.device_type().unwrap();
+                RamInode::new_device(
+                    &self.fs.upgrade().unwrap(),
+                    mode,
+                    Uid::new_root(),
+                    Gid::new_root(),
+                    dev_type,
+                    dev_id,
+                )
+            }
             MknodType::NamedPipe => RamInode::new_named_pipe(
                 &self.fs.upgrade().unwrap(),
                 mode,
@@ -1136,11 +1180,7 @@ impl Inode for RamInode {
     }
 
     fn metadata(&self) -> Metadata {
-        let rdev = self
-            .inner
-            .as_device()
-            .map(|device| device.id().as_encoded_u64())
-            .unwrap_or(0);
+        let rdev = self.inner.device_id().unwrap_or(0);
         let inode_metadata = self.metadata.lock();
         Metadata {
             dev: 0,
