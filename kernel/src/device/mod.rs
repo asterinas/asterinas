@@ -9,12 +9,12 @@ mod registry;
 mod shm;
 pub mod tty;
 
-use device_id::DeviceId;
 pub use mem::{getrandom, geturandom};
 pub use pty::{new_pty_pair, PtyMaster, PtySlave};
+pub use registry::lookup;
 
 use crate::{
-    fs::{device::Device, fs_resolver::FsPath, path::PerMountFlags, ramfs::RamFs},
+    fs::{fs_resolver::FsPath, path::PerMountFlags, ramfs::RamFs},
     prelude::*,
 };
 
@@ -41,12 +41,4 @@ pub fn init_in_first_process(ctx: &Context) -> Result<()> {
     registry::init_in_first_process(&fs_resolver)?;
 
     Ok(())
-}
-
-/// Looks up a device according to the device ID.
-pub fn get_device(devid: DeviceId) -> Result<Arc<dyn Device>> {
-    // TODO: Add support for looking up block devices.
-    registry::char::lookup(devid).ok_or_else(|| {
-        Error::with_message(Errno::EINVAL, "the device ID is invalid or unsupported")
-    })
 }

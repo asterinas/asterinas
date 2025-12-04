@@ -68,6 +68,14 @@ impl InodeType {
         Self::try_from(mode & TYPE_MASK)
             .map_err(|_| Error::with_message(Errno::EINVAL, "invalid file type"))
     }
+
+    pub fn as_device_type(&self) -> Option<DeviceType> {
+        match self {
+            InodeType::BlockDevice => Some(DeviceType::Block),
+            InodeType::CharDevice => Some(DeviceType::Char),
+            _ => None,
+        }
+    }
 }
 
 impl From<DeviceType> for InodeType {

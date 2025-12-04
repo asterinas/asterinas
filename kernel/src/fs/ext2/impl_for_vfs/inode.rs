@@ -5,7 +5,7 @@ use core::time::Duration;
 use device_id::DeviceId;
 
 use crate::{
-    device::get_device,
+    device,
     fs::{
         ext2::{FilePerm, Inode as Ext2Inode},
         inode_handle::FileIo,
@@ -131,12 +131,24 @@ impl Inode for Ext2Inode {
         status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn FileIo>>> {
         match self.inode_type() {
-            InodeType::BlockDevice | InodeType::CharDevice => {
+            inode_type @ (InodeType::BlockDevice | InodeType::CharDevice) => {
                 let device_id = self.device_id();
-                let device = match get_device(DeviceId::from_encoded_u64(device_id)) {
-                    Ok(device) => device,
-                    Err(e) => return Some(Err(e)),
+                if device_id == 0 {
+                    return Some(Err(Error::with_message(
+                        Errno::ENODEV,
+                        "the device of ID 0 does not exist",
+                    )));
+                }
+                let device_type = inode_type.as_device_type().unwrap();
+                let Some(device) =
+                    device::lookup(device_type, DeviceId::from_encoded_u64(device_id))
+                else {
+                    return Some(Err(Error::with_message(
+                        Errno::ENODEV,
+                        "the required device ID does not exist",
+                    )));
                 };
+
                 Some(device.open())
             }
             InodeType::NamedPipe => Some(self.open_named_pipe(access_mode, status_flags)),
