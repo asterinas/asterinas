@@ -3,7 +3,7 @@
 Syscall Compatibility Tracer (`sctrace`) is a powerful system call compatibility
 verification tool that analyzes and validates system call against user-defined
 patterns. Written in
-[SCML (System Call Matching Language)](https://asterinas.github.io/book/kernel/linux-compatibility/syscall-feature-coverage/system-call-matching-language.html),
+[SCML (System Call Matching Language)](https://asterinas.github.io/book/kernel/linux-compatibility/syscall-flag-coverage/system-call-matching-language.html),
 these patterns describe supported functionality of system calls.
 `sctrace` supports both real-time monitoring of running programs and post-analysis of
 existing trace logs, providing comprehensive insights into system call compatibility
@@ -131,7 +131,7 @@ sctrace network.scml -- curl http://example.com
 
 ### Example 3: Using Asterinas Compatibility Patterns
 
-Use the provided directory [syscall-feature-coverage](../../book/src/kernel/linux-compatibility/syscall-feature-coverage) (work in progress) and
+Use the provided directory [syscall-flag-coverage](../../book/src/kernel/linux-compatibility/syscall-flag-coverage) (work in progress) and
 test with various commands:
 
 ```bash

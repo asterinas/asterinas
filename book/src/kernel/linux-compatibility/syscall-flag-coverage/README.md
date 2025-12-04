@@ -1,7 +1,7 @@
-# Syscall Feature Coverage
+# Syscall Flag Coverage
 
-This section documents the feature coverage of Asterinas's implementation of Linux system calls.
-It introduce [**System Call Matching Language (SCML)**](system-call-matching-language.md),
+This section documents the flag coverage of Asterinas's implementation of Linux system calls.
+It introduces [**System Call Matching Language (SCML)**](system-call-matching-language.md),
 a lightweight domain‑specific language for
 specifying allowed and disallowed patterns of system‑call invocations.
 
