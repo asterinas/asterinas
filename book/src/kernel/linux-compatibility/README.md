@@ -64,9 +64,9 @@ which are summarized in the table below.
 | 41      | socket                 | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#socket) |
 | 42      | connect                | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#connect) |
 | 43      | accept                 | ✅             | ❓ |
-| 44      | sendto                 | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#sendto-and-sendmsg) |
+| 44      | sendto                 | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#sendto-sendmsg-and-sendmmsg) |
 | 45      | recvfrom               | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#recvfrom-and-recvmsg) |
-| 46      | sendmsg                | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#sendto-and-sendmsg) |
+| 46      | sendmsg                | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#sendto-sendmsg-and-sendmmsg) |
 | 47      | recvmsg                | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#recvfrom-and-recvmsg) |
 | 48      | shutdown               | ✅             | ❓ |
 | 49      | bind                   | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#bind) |
@@ -327,7 +327,7 @@ which are summarized in the table below.
 | 304     | open_by_handle_at      | ❌             | N/A |
 | 305     | clock_adjtime          | ❌             | N/A |
 | 306     | syncfs                 | ✅             | 💯 |
-| 307     | sendmmsg               | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#sendto-and-sendmsg) |
+| 307     | sendmmsg               | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#sendto-sendmsg-and-sendmmsg) |
 | 308     | setns                  | ✅             | ❓ |
 | 309     | getcpu                 | ✅             | 💯 |
 | 310     | process_vm_readv       | ❌             | N/A |
