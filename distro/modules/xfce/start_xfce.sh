@@ -2,6 +2,8 @@
 
 # SPDX-License-Identifier: MPL-2.0
 
+source /etc/profile
+
 # Step 1: run dbus
 mkdir -p /var/lib/dbus /usr/share/X11/xorg.conf.d
 [ -f /var/lib/dbus/machine-id ] || dbus-uuidgen --ensure=/var/lib/dbus/machine-id

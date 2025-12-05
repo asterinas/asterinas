@@ -8,11 +8,13 @@ in {
     ++ (lib.optionals config.services.xserver.enable
       [ pkgs.xorg.xf86videofbdev ]);
 
+  services.displayManager.autoLogin.enable = false;
+  services.xserver.displayManager.lightdm.enable = false;
   systemd.services."xfce-desktop" = lib.mkIf (config.services.xserver.enable
     && config.services.xserver.desktopManager.xfce.enable) {
       description = "XFCE Desktop Environment";
-      after = [ "multi-user.target" ];
-      wantedBy = [ "graphical.target" ];
+      after = [ "getty.target" ];
+      wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         Environment = "DISPLAY=:0";
         ExecStart = "${startXfce}/bin/start_xfce";
