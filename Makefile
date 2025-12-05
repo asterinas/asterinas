@@ -56,27 +56,19 @@ DNS_SERVER ?= none
 
 # ISO installer settings
 ISO ?= 0
-ifeq ($(ISO), 1)
-BOOT_PROTOCOL = linux-efi-handover64
 DISTRO_PATH ?= $(abspath distro)
 KERNEL_PATH ?= $(abspath target/osdk/iso_root/boot/aster-nix-osdk-bin)
 NIXOS_TOOLS_PATH ?= $(abspath tools/nixos)
 AUTO_INSTALL ?= 0
-endif
 # End of ISO installer settings
 
 # NixOS settings
-NIXOS ?= 0
-ifeq ($(NIXOS), 1)
-OVMF = off
-BOOT_PROTOCOL = linux-efi-handover64
 NIXOS_DISK_SIZE_IN_MB ?= 8196
 NIXOS_RESOLV_CONF ?= $(abspath test/build/initramfs/etc/resolv.conf)
 NIXOS_DISABLE_SYSTEMD ?= true
 # The following option is only effective when NIXOS_DISABLE_SYSTEMD is set to 'true'.
 # Use a login shell to ensure that environment variables are initialized correctly.
 NIXOS_STAGE_2_INIT ?= /bin/sh -l
-endif
 # End of NixOS settings
 
 # ========================= End of Makefile options. ==========================
@@ -257,7 +249,7 @@ OSDK_SRC_FILES := \
 	$(shell find osdk/Cargo.toml osdk/Cargo.lock osdk/src -type f)
 
 .PHONY: all
-all: build
+all: kernel
 
 # Install or update OSDK from source
 # To uninstall, do `cargo uninstall cargo-osdk`
@@ -297,37 +289,15 @@ check_vdso:
 initramfs: check_vdso
 	@$(MAKE) --no-print-directory -C test
 
-.PHONY: build
-build: initramfs $(CARGO_OSDK)
+# Build the kernel with an initramfs
+.PHONY: kernel
+kernel: initramfs $(CARGO_OSDK)
 	@cd kernel && cargo osdk build $(CARGO_OSDK_BUILD_ARGS)
-ifeq ($(ISO),1)
-	@nix-build \
-		distro/iso-image.nix \
-		--arg distro $(DISTRO_PATH) \
-		--arg kernel $(KERNEL_PATH) \
-		--arg tools $(NIXOS_TOOLS_PATH) \
-		--arg autoInstall $(AUTO_INSTALL) \
-		--out-link target/nixos/iso_image
-else ifeq ($(NIXOS),1)
-	@./tools/nixos/install_asterinas.sh target/nixos
-endif
 
-.PHONY: run
-run: initramfs $(CARGO_OSDK)
-ifeq ($(ISO), 1)
-ifeq ($(NIXOS), 1)
-	@./tools/nixos/run_nixos.sh target/nixos
-else
-	@make build
-	@./tools/nixos/run_iso.sh target/nixos
-endif
-else ifeq ($(NIXOS),1)
-	@cd kernel && cargo osdk build $(CARGO_OSDK_BUILD_ARGS)
-	@./tools/nixos/install_asterinas.sh target/nixos
-	@./tools/nixos/run_nixos.sh target/nixos
-else
+# Build the kernel with an initramfs and then run it
+.PHONY: run_kernel
+run_kernel: initramfs $(CARGO_OSDK)
 	@cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS)
-endif
 # Check the running status of auto tests from the QEMU log
 ifeq ($(AUTO_TEST), syscall)
 	@tail --lines 100 qemu.log | grep -q "^All syscall tests passed." \
@@ -342,6 +312,48 @@ else ifeq ($(AUTO_TEST), vsock)
 	@tail --lines 100 qemu.log | grep -q "^Vsock test passed." \
 		|| (echo "Vsock test failed" && exit 1)
 endif
+
+ASTERINAS_DISK ?= $(abspath target/nixos/asterinas.img)
+
+# Build the Asterinas NixOS ISO installer image
+.PHONY: iso
+iso: BOOT_PROTOCOL = linux-efi-handover64
+iso:
+	@make kernel
+	@nix-build \
+		distro/iso-image.nix \
+		--arg distro $(DISTRO_PATH) \
+		--arg kernel $(KERNEL_PATH) \
+		--arg tools $(NIXOS_TOOLS_PATH) \
+		--arg autoInstall $(AUTO_INSTALL) \
+		--out-link target/nixos/iso_image
+
+# Build the Asterinas NixOS ISO installer image and then do installation
+.PHONY: run_iso
+run_iso: OVMF = off
+run_iso: iso
+	@./tools/nixos/run_iso.sh target/nixos
+
+# Create an Asterinas NixOS installation on host
+.PHONY: nixos
+nixos: BOOT_PROTOCOL = linux-efi-handover64
+nixos:
+	@make kernel
+	@./tools/nixos/install_asterinas.sh target/nixos
+
+$(ASTERINAS_DISK):
+ifeq ($(ISO), 1)
+	@make run_iso AUTO_INSTALL=1
+else
+	@make nixos
+endif
+
+# After creating a Asterinas NixOS installation (via either the `run_iso` or `nixos` target),
+# run the NixOS
+.PHONY: run_nixos
+run_nixos: OVMF = off
+run_nixos: $(ASTERINAS_DISK)
+	@./tools/nixos/run_nixos.sh target/nixos
 
 .PHONY: gdb_server
 gdb_server: initramfs $(CARGO_OSDK)
