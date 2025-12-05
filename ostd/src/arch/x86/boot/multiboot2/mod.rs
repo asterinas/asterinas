@@ -137,7 +137,12 @@ fn parse_memory_regions(mb2_info: &BootInformation) -> MemoryRegionArray {
     regions.into_non_overlapping()
 }
 
-/// The entry point of Rust code called by inline asm.
+/// The entry point of the Rust code portion of Asterinas (with multiboot2 parameters).
+///
+/// # Safety
+///
+/// - This function must be called only once at a proper timing in the BSP's boot assembly code.
+/// - The caller must follow C calling conventions and put the right arguments in registers.
 #[no_mangle]
 unsafe extern "sysv64" fn __multiboot2_entry(boot_magic: u32, boot_params: u64) -> ! {
     assert_eq!(boot_magic, multiboot2::MAGIC);

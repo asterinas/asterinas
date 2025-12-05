@@ -102,7 +102,7 @@ fn check_cpu_config() {
 ///
 /// # Safety
 ///
-/// - This function must be called only once through assembly code.
+/// - This function must be called only once at a proper timing in the BSP's boot assembly code.
 /// - The caller must follow C calling conventions and put the right arguments in registers.
 #[no_mangle]
 unsafe extern "C" fn loongarch_boot(

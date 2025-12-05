@@ -112,14 +112,15 @@ static mut BOOTSTRAP_HART_ID: u32 = u32::MAX;
 ///
 /// # Safety
 ///
-/// - This function must be called only once through assembly code.
+/// - This function must be called only once at a proper timing in the BSP's boot assembly code.
 /// - The caller must follow C calling conventions and put the right arguments in registers.
 #[no_mangle]
 unsafe extern "C" fn riscv_boot(hart_id: usize, device_tree_paddr: usize) -> ! {
     early_println!("Enter riscv_boot");
 
-    // SAFETY: We only write it once this time. Other processors will only read
-    // it. And other processors are not booted yet so there's no races.
+    // We will only write it once. Other processors will only read it.
+    // SAFETY: We don't create Rust references, so there are no aliasing problems. Other processors
+    // have not been booted yet, so there are no data races.
     unsafe { BOOTSTRAP_HART_ID = hart_id as u32 };
 
     let device_tree_ptr = paddr_to_vaddr(device_tree_paddr) as *const u8;
