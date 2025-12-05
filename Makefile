@@ -71,6 +71,11 @@ NIXOS_DISABLE_SYSTEMD ?= true
 NIXOS_STAGE_2_INIT ?= /bin/sh -l
 # End of NixOS settings
 
+# Cachix binary cache settings
+CACHIX_NAME ?= "test-21"
+CACHIX_AUTH_TOKEN ?=
+# End of Cachix binary cache settings
+
 # ========================= End of Makefile options. ==========================
 
 SHELL := /bin/bash
@@ -354,6 +359,10 @@ endif
 run_nixos: OVMF = off
 run_nixos: $(ASTERINAS_DISK)
 	@./tools/nixos/run_nixos.sh target/nixos
+
+cachix:
+	@nix-build distro/cachix.nix --out-link cachix.list
+	@cachix push $(CACHIX_NAME) < cachix.list
 
 .PHONY: gdb_server
 gdb_server: initramfs $(CARGO_OSDK)

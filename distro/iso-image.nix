@@ -25,5 +25,10 @@ let
 
     services.getty.autologinUser = pkgs.lib.mkForce "root";
     environment.loginShellInit = "${installer}";
+    nix.settings = {
+      substituters = [ "https://test-21.cachix.org" ];
+      trusted-public-keys =
+        [ "test-21.cachix.org-1:RpzafHw7UMo9MI1R0CKxeGq9zuc23NbgVBg7QzY5u60=" ];
+    };
   };
 in (pkgs.nixos configuration).config.system.build.isoImage

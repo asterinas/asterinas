@@ -56,7 +56,9 @@ in {
 
   nix.settings = {
     filter-syscalls = false;
-    require-sigs = false;
     sandbox = false;
+    substituters = [ "https://test-21.cachix.org" ];
+    trusted-public-keys =
+      [ "test-21.cachix.org-1:RpzafHw7UMo9MI1R0CKxeGq9zuc23NbgVBg7QzY5u60=" ];
   };
 }
