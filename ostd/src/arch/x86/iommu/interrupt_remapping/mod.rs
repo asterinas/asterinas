@@ -23,6 +23,12 @@ impl IrtEntryHandle {
     pub fn enable(&self, vector: u32) {
         self.table
             .set_entry(self.index, table::IrtEntry::new_enabled(vector));
+
+        IOMMU_REGS
+            .get()
+            .unwrap()
+            .lock()
+            .invalidate_interrupt_cache();
     }
 }
 
