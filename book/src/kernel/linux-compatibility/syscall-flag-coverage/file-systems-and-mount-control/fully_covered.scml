@@ -5,6 +5,10 @@ fstatfs(fd, buf);
 // Commit filesystem caches to disk
 sync();
 
+// Commit caches of the filesystem containing the file referred to
+// by the file descriptor `fd` to disk
+syncfs(fd);
+
 // Change root directory
 chroot(path);
 
