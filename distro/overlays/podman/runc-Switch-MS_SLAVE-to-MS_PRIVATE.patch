@@ -1,0 +1,42 @@
+From a4e533f9fee4e3ae57c802ffd7073026a8417b84 Mon Sep 17 00:00:00 2001
+From: jiangjianfeng <jiangjianfeng.jjf@antgroup.com>
+Date: Fri, 5 Dec 2025 08:07:46 +0000
+Subject: [PATCH] runc: Switch MS_SLAVE to MS_PRIVATE.
+
+---
+ libcontainer/rootfs_linux.go | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/libcontainer/rootfs_linux.go b/libcontainer/rootfs_linux.go
+index 1c2ea07a..18f8b7d1 100644
+--- a/libcontainer/rootfs_linux.go
++++ b/libcontainer/rootfs_linux.go
+@@ -832,7 +832,7 @@ func rootfsParentMountPrivate(path string) error {
+ }
+ 
+ func prepareRoot(config *configs.Config) error {
+-	flag := unix.MS_SLAVE | unix.MS_REC
++	flag := unix.MS_PRIVATE | unix.MS_REC
+ 	if config.RootPropagation != 0 {
+ 		flag = config.RootPropagation
+ 	}
+@@ -917,7 +917,7 @@ func pivotRoot(rootfs string) error {
+ 	// known to cause issues due to races where we still have a reference to a
+ 	// mount while a process in the host namespace are trying to operate on
+ 	// something they think has no mounts (devicemapper in particular).
+-	if err := mount("", ".", "", "", unix.MS_SLAVE|unix.MS_REC, ""); err != nil {
++	if err := mount("", ".", "", "", unix.MS_PRIVATE|unix.MS_REC, ""); err != nil {
+ 		return err
+ 	}
+ 	// Perform the unmount. MNT_DETACH allows us to unmount /proc/self/cwd.
+@@ -966,7 +966,7 @@ func msMoveRoot(rootfs string) error {
+ 	for _, info := range mountinfos {
+ 		p := info.Mountpoint
+ 		// Be sure umount events are not propagated to the host.
+-		if err := mount("", p, "", "", unix.MS_SLAVE|unix.MS_REC, ""); err != nil {
++		if err := mount("", p, "", "", unix.MS_PRIVATE|unix.MS_REC, ""); err != nil {
+ 			if errors.Is(err, unix.ENOENT) {
+ 				// If the mountpoint doesn't exist that means that we've
+ 				// already blasted away some parent directory of the mountpoint
+-- 
+2.34.1

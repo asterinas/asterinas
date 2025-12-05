@@ -1,0 +1,24 @@
+From 1eedcce83f03e0627411f082340f776781a27628 Mon Sep 17 00:00:00 2001
+From: jiangjianfeng <jiangjianfeng.jjf@antgroup.com>
+Date: Fri, 5 Dec 2025 09:09:14 +0000
+Subject: [PATCH] runc: Disable container state check
+
+---
+ libcontainer/state_linux.go | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/libcontainer/state_linux.go b/libcontainer/state_linux.go
+index aa6259b1..52615b93 100644
+--- a/libcontainer/state_linux.go
++++ b/libcontainer/state_linux.go
+@@ -94,6 +94,8 @@ func (b *stoppedState) transition(s containerState) error {
+ 		return nil
+ 	case *stoppedState:
+ 		return nil
++	case *createdState:
++		return nil
+ 	}
+ 	return newStateTransitionError(b, s)
+ }
+-- 
+2.34.1

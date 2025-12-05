@@ -1,0 +1,33 @@
+From cac64a82434caaf91df7cbc3d567442ee5e27fec Mon Sep 17 00:00:00 2001
+From: jiangjianfeng <jiangjianfeng.jjf@antgroup.com>
+Date: Fri, 5 Dec 2025 09:18:05 +0000
+Subject: [PATCH] runc: Disable user and capability setup checks
+
+---
+ libcontainer/init_linux.go | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/libcontainer/init_linux.go b/libcontainer/init_linux.go
+index c849ec6b..9de25d5c 100644
+--- a/libcontainer/init_linux.go
++++ b/libcontainer/init_linux.go
+@@ -218,7 +218,7 @@ func finalizeNamespace(config *initConfig) error {
+ 		return fmt.Errorf("unable to set keep caps: %w", err)
+ 	}
+ 	if err := setupUser(config); err != nil {
+-		return fmt.Errorf("unable to setup user: %w", err)
++		// return fmt.Errorf("unable to setup user: %w", err)
+ 	}
+ 	// Change working directory AFTER the user has been set up, if we haven't done it yet.
+ 	if doChdir {
+@@ -234,7 +234,7 @@ func finalizeNamespace(config *initConfig) error {
+ 		return fmt.Errorf("unable to clear keep caps: %w", err)
+ 	}
+ 	if err := w.ApplyCaps(); err != nil {
+-		return fmt.Errorf("unable to apply caps: %w", err)
++		// return fmt.Errorf("unable to apply caps: %w", err)
+ 	}
+ 	return nil
+ }
+-- 
+2.34.1
