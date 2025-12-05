@@ -35,7 +35,7 @@ in {
       ${builtins.getEnv "NIXOS_STAGE_2_INIT"}
     fi
   '';
-  # Execute test-command on hvc0 console after boot if the test-command is 
+  # Execute test-command on hvc0 console after boot if the test-command is
   # not empty (for CI testing).
   environment.loginShellInit =
     lib.mkIf ("${builtins.getEnv "NIXOS_TEST_COMMAND"}" != "") ''
@@ -67,5 +67,8 @@ in {
     filter-syscalls = false;
     require-sigs = false;
     sandbox = false;
+    # FIXME: Support Nix build users (nixbld*) and remove this setting. For detailed gaps, see
+    # <https://github.com/asterinas/asterinas/issues/2672>.
+    build-users-group = [ ];
   };
 }
