@@ -88,6 +88,12 @@ impl InodeIo for NamedPipeHandle {
         writer: &mut VmWriter,
         status_flags: StatusFlags,
     ) -> Result<usize> {
+        if !writer.has_avail() {
+            // Even the peer endpoint has been closed, reading an empty buffer is
+            // still fine.
+            return Ok(0);
+        }
+
         if status_flags.contains(StatusFlags::O_NONBLOCK) {
             self.try_read(writer)
         } else {
@@ -101,6 +107,12 @@ impl InodeIo for NamedPipeHandle {
         reader: &mut VmReader,
         status_flags: StatusFlags,
     ) -> Result<usize> {
+        if !reader.has_remain() {
+            // Even the peer endpoint has been closed, writing an empty buffer is
+            // still fine.
+            return Ok(0);
+        }
+
         if status_flags.contains(StatusFlags::O_NONBLOCK) {
             self.try_write(reader)
         } else {
