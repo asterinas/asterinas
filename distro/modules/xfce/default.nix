@@ -1,18 +1,15 @@
 { config, lib, pkgs, ... }:
 let
-  startXfce = pkgs.writeScriptBin "start_xfce" (builtins.readFile ./start_xfce.sh);
-in
-{
-  environment.systemPackages =
-    (lib.optionals (config.services.xserver.enable &&
-      config.services.xserver.desktopManager.xfce.enable)
-      [ startXfce ])
+  startXfce =
+    pkgs.writeScriptBin "start_xfce" (builtins.readFile ./start_xfce.sh);
+in {
+  environment.systemPackages = (lib.optionals (config.services.xserver.enable
+    && config.services.xserver.desktopManager.xfce.enable) [ startXfce ])
     ++ (lib.optionals config.services.xserver.enable
       [ pkgs.xorg.xf86videofbdev ]);
 
-  systemd.services."xfce-desktop" = lib.mkIf
-    (config.services.xserver.enable && config.services.xserver.desktopManager.xfce.enable)
-    {
+  systemd.services."xfce-desktop" = lib.mkIf (config.services.xserver.enable
+    && config.services.xserver.desktopManager.xfce.enable) {
       description = "XFCE Desktop Environment";
       after = [ "multi-user.target" ];
       wantedBy = [ "graphical.target" ];

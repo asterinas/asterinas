@@ -17,10 +17,7 @@
   # The content defined in these module files must adhere to the options permissible within 'configuration.nix'. 
   # For a comprehensive list of available options,
   # please refer to https://search.nixos.org/options.
-  imports = [
-    ./modules/core.nix
-    ./modules/xfce/default.nix
-  ];
+  imports = [ ./modules/core.nix ./modules/xfce/default.nix ];
 
   # Overlays provide patches to 'nixpkgs' that enable these packages to run effectively on AsterNixOS.
   # For details on the overlay file definition format, 
