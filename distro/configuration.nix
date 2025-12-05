@@ -19,6 +19,10 @@
   # You can use https://search.nixos.org/ to find more packages (and options).
   environment.systemPackages = with pkgs; [ hello-asterinas ];
 
+  # Uncomment the following two lines to enable Podman.
+  # virtualisation.podman.enable = true;
+  # virtualisation.containers.enable = true;
+
   system.nixos.distroName = "Asterinas NixOS";
 
   # This option defines the first version of NixOS you have installed on this particular machine,

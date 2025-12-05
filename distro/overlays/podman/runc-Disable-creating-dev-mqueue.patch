@@ -1,0 +1,40 @@
+From fd4389860594a0bab956a5a51647f3818a279c69 Mon Sep 17 00:00:00 2001
+From: jiangjianfeng <jiangjianfeng.jjf@antgroup.com>
+Date: Fri, 5 Dec 2025 09:14:57 +0000
+Subject: [PATCH] runc: Disable creating /dev/mqueue
+
+---
+ libcontainer/rootfs_linux.go | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/libcontainer/rootfs_linux.go b/libcontainer/rootfs_linux.go
+index 930bc34f..18f8b7d1 100644
+--- a/libcontainer/rootfs_linux.go
++++ b/libcontainer/rootfs_linux.go
+@@ -482,7 +482,7 @@ func mountToRootfs(m *configs.Mount, c *mountConfig) error {
+ 	}
+ 
+ 	mountFd := c.fd
+-	dest, err := createMountpoint(rootfs, m, mountFd, m.Source)
++	_, err := createMountpoint(rootfs, m, mountFd, m.Source)
+ 	if err != nil {
+ 		return fmt.Errorf("create mount destination for %s mount: %w", m.Destination, err)
+ 	}
+@@ -490,10 +490,11 @@ func mountToRootfs(m *configs.Mount, c *mountConfig) error {
+ 
+ 	switch m.Device {
+ 	case "mqueue":
+-		if err := mountPropagate(m, rootfs, "", nil); err != nil {
+-			return err
+-		}
+-		return label.SetFileLabel(dest, mountLabel)
++		// if err := mountPropagate(m, rootfs, "", nil); err != nil {
++		// 	return err
++		// }
++		// return label.SetFileLabel(dest, mountLabel)
++		return nil
+ 	case "tmpfs":
+ 		if m.Extensions&configs.EXT_COPYUP == configs.EXT_COPYUP {
+ 			err = doTmpfsCopyUp(m, rootfs, mountLabel)
+-- 
+2.34.1

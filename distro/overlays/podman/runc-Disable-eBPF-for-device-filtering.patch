@@ -1,0 +1,48 @@
+From f988afe0f4440ee4195c7aa7d968fcc3f397d55f Mon Sep 17 00:00:00 2001
+From: jiangjianfeng <jiangjianfeng.jjf@antgroup.com>
+Date: Fri, 5 Dec 2025 09:07:15 +0000
+Subject: [PATCH] runc: Disable eBPF for device filtering
+
+---
+ libcontainer/cgroups/fs2/devices.go | 13 ++++++-------
+ 1 file changed, 6 insertions(+), 7 deletions(-)
+
+diff --git a/libcontainer/cgroups/fs2/devices.go b/libcontainer/cgroups/fs2/devices.go
+index 0d234560..5b16fb9b 100644
+--- a/libcontainer/cgroups/fs2/devices.go
++++ b/libcontainer/cgroups/fs2/devices.go
+@@ -5,7 +5,6 @@ import (
+ 
+ 	"golang.org/x/sys/unix"
+ 
+-	"github.com/opencontainers/runc/libcontainer/cgroups/ebpf"
+ 	"github.com/opencontainers/runc/libcontainer/cgroups/ebpf/devicefilter"
+ 	"github.com/opencontainers/runc/libcontainer/configs"
+ 	"github.com/opencontainers/runc/libcontainer/devices"
+@@ -57,7 +56,7 @@ func setDevices(dirPath string, r *configs.Resources) error {
+ 	if r.SkipDevices {
+ 		return nil
+ 	}
+-	insts, license, err := devicefilter.DeviceFilter(r.Devices)
++	_, _, err := devicefilter.DeviceFilter(r.Devices)
+ 	if err != nil {
+ 		return err
+ 	}
+@@ -66,10 +65,10 @@ func setDevices(dirPath string, r *configs.Resources) error {
+ 		return fmt.Errorf("cannot get dir FD for %s", dirPath)
+ 	}
+ 	defer unix.Close(dirFD)
+-	if _, err := ebpf.LoadAttachCgroupDeviceFilter(insts, license, dirFD); err != nil {
+-		if !canSkipEBPFError(r) {
+-			return err
+-		}
+-	}
++	// if _, err := ebpf.LoadAttachCgroupDeviceFilter(insts, license, dirFD); err != nil {
++	// 	if !canSkipEBPFError(r) {
++	// 		return err
++	// 	}
++	// }
+ 	return nil
+ }
+-- 
+2.34.1
