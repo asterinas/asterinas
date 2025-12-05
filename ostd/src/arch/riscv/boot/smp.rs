@@ -190,7 +190,8 @@ cpu_local_cell! {
 //
 /// # Safety
 ///
-/// - This function must be called only once on each AP through assembly code.
+/// - This function must be called only once on each AP at a proper timing in the AP's boot
+///   assembly code.
 /// - The caller must follow C calling conventions and put the right arguments in registers.
 #[no_mangle]
 unsafe extern "C" fn riscv_ap_early_entry(cpu_id: u32, hart_id: u32) -> ! {
@@ -199,7 +200,9 @@ unsafe extern "C" fn riscv_ap_early_entry(cpu_id: u32, hart_id: u32) -> ! {
     AP_CURRENT_HART_ID.store(hart_id);
 
     // SAFETY: This is valid to call, because
-    // - the caller guarantees being called only once on each AP.
-    // - the compiler guarantees the C calling conventions on this call.
+    // - The caller is the AP's boot assembly code. It also guarantees that this method will be
+    //   called only once on each AP. No uninitialized AP states are accessed by the code above.
+    // - The compiler guarantees the C calling conventions for this call, and the caller guarantees
+    //   the correctness of the arguments.
     unsafe { ap_early_entry(cpu_id) }
 }
