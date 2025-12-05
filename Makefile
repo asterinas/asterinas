@@ -54,13 +54,29 @@ VHOST ?= off
 DNS_SERVER ?= none
 # End of network settings
 
+# ISO installer settings
+ISO ?= 0
+ifeq ($(ISO), 1)
+BOOT_PROTOCOL = linux-efi-handover64
+DISTRO_PATH ?= $(abspath distro)
+KERNEL_PATH ?= $(abspath target/osdk/iso_root/boot/aster-nix-osdk-bin)
+NIXOS_TOOLS_PATH ?= $(abspath tools/nixos)
+AUTO_INSTALL ?= 0
+endif
+# End of ISO installer settings
+
 # NixOS settings
 NIXOS ?= 0
+ifeq ($(NIXOS), 1)
+OVMF = off
+BOOT_PROTOCOL = linux-efi-handover64
 NIXOS_DISK_SIZE_IN_MB ?= 8196
+NIXOS_RESOLV_CONF ?= $(abspath test/build/initramfs/etc/resolv.conf)
 NIXOS_DISABLE_SYSTEMD ?= true
 # The following option is only effective when NIXOS_DISABLE_SYSTEMD is set to 'true'.
 # Use a login shell to ensure that environment variables are initialized correctly.
 NIXOS_STAGE_2_INIT ?= /bin/sh -l
+endif
 # End of NixOS settings
 
 # ========================= End of Makefile options. ==========================
@@ -155,11 +171,6 @@ CARGO_OSDK_COMMON_ARGS += --features="$(FEATURES)"
 endif
 ifeq ($(NO_DEFAULT_FEATURES), 1)
 CARGO_OSDK_COMMON_ARGS += --no-default-features
-endif
-
-ifeq ($(NIXOS), 1)
-BOOT_PROTOCOL = linux-efi-handover64
-OVMF=off
 endif
 
 # To test the linux-efi-handover64 boot protocol, we need to use Debian's
@@ -289,13 +300,28 @@ initramfs: check_vdso
 .PHONY: build
 build: initramfs $(CARGO_OSDK)
 	@cd kernel && cargo osdk build $(CARGO_OSDK_BUILD_ARGS)
-ifeq ($(NIXOS),1)
+ifeq ($(ISO),1)
+	@nix-build \
+		distro/iso-image.nix \
+		--arg distro $(DISTRO_PATH) \
+		--arg kernel $(KERNEL_PATH) \
+		--arg tools $(NIXOS_TOOLS_PATH) \
+		--arg autoInstall $(AUTO_INSTALL) \
+		--out-link target/nixos/iso_image
+else ifeq ($(NIXOS),1)
 	@./tools/nixos/install_asterinas.sh target/nixos
 endif
 
 .PHONY: run
 run: initramfs $(CARGO_OSDK)
-ifeq ($(NIXOS),1)
+ifeq ($(ISO), 1)
+ifeq ($(NIXOS), 1)
+	@./tools/nixos/run_nixos.sh target/nixos
+else
+	@make build
+	@./tools/nixos/run_iso.sh target/nixos
+endif
+else ifeq ($(NIXOS),1)
 	@cd kernel && cargo osdk build $(CARGO_OSDK_BUILD_ARGS)
 	@./tools/nixos/install_asterinas.sh target/nixos
 	@./tools/nixos/run_nixos.sh target/nixos
