@@ -8,6 +8,7 @@ use crate::{
         file_table::{FdFlags, FileDesc},
         fs_resolver::{AT_FDCWD, FsPath, FsResolver, LookupResult, PathOrInode},
         inode_handle::InodeHandle,
+        pipe::{AnonPipeFile, AnonPipeInode},
         ramfs::memfd::{MemfdFile, MemfdInode},
         utils::{AccessMode, CreationFlags, InodeMode, InodeType, OpenArgs, StatusFlags},
     },
@@ -92,11 +93,17 @@ fn do_open(
         LookupResult::Resolved(target) => match target {
             PathOrInode::Path(path) => Arc::new(path.open(open_args)?),
             PathOrInode::Inode(inode) => {
-                // TODO: Support re-opening anonymous pipes.
-                let memfd_inode = Arc::downcast::<MemfdInode>(inode).map_err(|_| {
-                    Error::with_message(Errno::ENXIO, "the inode is not re-openable")
-                })?;
-                Arc::new(MemfdFile::open_from_inode(memfd_inode.clone(), open_args)?)
+                if let Ok(memfd_inode) = Arc::downcast::<MemfdInode>(inode.clone()) {
+                    Arc::new(MemfdFile::open(memfd_inode, open_args)?)
+                } else if let Ok(pipe_inode) = Arc::downcast::<AnonPipeInode>(inode) {
+                    Arc::new(AnonPipeFile::open(
+                        pipe_inode,
+                        open_args.access_mode,
+                        open_args.status_flags,
+                    )?)
+                } else {
+                    return_errno_with_message!(Errno::ENXIO, "the inode is not re-openable")
+                }
             }
         },
         LookupResult::AtParent(result) => {

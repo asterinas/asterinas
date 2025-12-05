@@ -297,7 +297,7 @@ impl MemfdFile {
         })
     }
 
-    pub fn open_from_inode(inode: Arc<MemfdInode>, open_args: OpenArgs) -> Result<Self> {
+    pub fn open(inode: Arc<MemfdInode>, open_args: OpenArgs) -> Result<Self> {
         let inode: Arc<dyn Inode> = inode;
         let status_flags = open_args.status_flags;
         let access_mode = open_args.access_mode;

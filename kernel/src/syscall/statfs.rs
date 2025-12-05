@@ -20,16 +20,19 @@ pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr, ctx: &Context) -> Resu
         path_name, statfs_buf_ptr,
     );
 
-    let path = {
+    let fs = {
         let path_name = path_name.to_string_lossy();
         let fs_path = FsPath::try_from(path_name.as_ref())?;
-        ctx.thread_local
+        let path_or_inode = ctx
+            .thread_local
             .borrow_fs()
             .resolver()
             .read()
-            .lookup(&fs_path)?
+            .lookup_inode(&fs_path)?;
+        path_or_inode.inode().fs()
     };
-    let statfs = Statfs::from(path.fs().sb());
+
+    let statfs = Statfs::from(fs.sb());
     user_space.write_val(statfs_buf_ptr, &statfs)?;
     Ok(SyscallReturn::Return(0))
 }
@@ -40,7 +43,7 @@ pub fn sys_fstatfs(fd: FileDesc, statfs_buf_ptr: Vaddr, ctx: &Context) -> Result
     let fs = {
         let mut file_table = ctx.thread_local.borrow_file_table_mut();
         let file = get_file_fast!(&mut file_table, fd);
-        file.as_inode_handle_or_err()?.path().fs()
+        file.inode().fs()
     };
 
     let statfs = Statfs::from(fs.sb());

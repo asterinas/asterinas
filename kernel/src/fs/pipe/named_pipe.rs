@@ -22,12 +22,16 @@ use crate::{
 ///
 /// Once a handle for a `NamedPipe` exists, the corresponding pipe object will
 /// not be dropped.
-struct NamedPipeHandle {
+pub(super) struct NamedPipeHandle {
     inner: Arc<PipeObj>,
     access_mode: AccessMode,
 }
 
 impl NamedPipeHandle {
+    pub(super) fn access_mode(&self) -> AccessMode {
+        self.access_mode
+    }
+
     fn new(inner: Arc<PipeObj>, access_mode: AccessMode) -> Box<Self> {
         Box::new(Self { inner, access_mode })
     }
@@ -169,10 +173,20 @@ impl NamedPipe {
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Result<Box<dyn FileIo>> {
+        Ok(self.open_handle(access_mode, status_flags, true)?)
+    }
+
+    /// Opens the pipe and returns a `NamedPipeHandle`.
+    pub(super) fn open_handle(
+        &self,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+        is_named_pipe: bool,
+    ) -> Result<Box<NamedPipeHandle>> {
         let mut pipe = self.pipe.lock();
         let pipe_obj = pipe.get_or_create_pipe_obj();
 
-        let handle: Box<dyn FileIo> = match access_mode {
+        let handle = match access_mode {
             AccessMode::O_RDONLY => {
                 pipe.read_count += 1;
 
@@ -185,7 +199,8 @@ impl NamedPipe {
                 let has_writer = pipe_obj.num_writer.load(Ordering::Relaxed) > 0;
                 let handle = NamedPipeHandle::new(pipe_obj, access_mode);
 
-                if !status_flags.contains(StatusFlags::O_NONBLOCK) && !has_writer {
+                // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/pipe.c#L1166-L1175>
+                if is_named_pipe && !status_flags.contains(StatusFlags::O_NONBLOCK) && !has_writer {
                     let old_write_count = pipe.write_count;
                     drop(pipe);
                     self.wait_queue.pause_until(|| {
@@ -207,7 +222,8 @@ impl NamedPipe {
                 let has_reader = pipe_obj.num_reader.load(Ordering::Relaxed) > 0;
                 let handle = NamedPipeHandle::new(pipe_obj, access_mode);
 
-                if !has_reader {
+                // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/pipe.c#L1184-L1195>
+                if is_named_pipe && !has_reader {
                     if status_flags.contains(StatusFlags::O_NONBLOCK) {
                         return_errno_with_message!(Errno::ENXIO, "no reader is present");
                     }
