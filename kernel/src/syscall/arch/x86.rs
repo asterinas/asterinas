@@ -153,7 +153,7 @@ use super::{
     statfs::{sys_fstatfs, sys_statfs},
     statx::sys_statx,
     symlink::{sys_symlink, sys_symlinkat},
-    sync::sys_sync,
+    sync::{sys_sync, sys_syncfs},
     sysinfo::sys_sysinfo,
     tgkill::sys_tgkill,
     time::sys_time,
@@ -389,6 +389,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_PREADV = 295           => sys_preadv(args[..5]);
     SYS_PWRITEV = 296          => sys_pwritev(args[..5]);
     SYS_PRLIMIT64 = 302        => sys_prlimit64(args[..4]);
+    SYS_SYNCFS = 306           => sys_syncfs(args[..1]);
     SYS_SENDMMSG = 307         => sys_sendmmsg(args[..4]);
     SYS_SETNS = 308            => sys_setns(args[..2]);
     SYS_GETCPU = 309           => sys_getcpu(args[..3]);

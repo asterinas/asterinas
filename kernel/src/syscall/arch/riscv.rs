@@ -142,7 +142,7 @@ use super::{
     statfs::{sys_fstatfs, sys_statfs},
     statx::sys_statx,
     symlink::sys_symlinkat,
-    sync::sys_sync,
+    sync::{sys_sync, sys_syncfs},
     sysinfo::sys_sysinfo,
     tgkill::sys_tgkill,
     timer_create::{sys_timer_create, sys_timer_delete},
@@ -341,6 +341,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_ACCEPT4 = 242                => sys_accept4(args[..4]);
     SYS_WAIT4 = 260                  => sys_wait4(args[..4]);
     SYS_PRLIMIT64 = 261              => sys_prlimit64(args[..4]);
+    SYS_SYNCFS = 267                 => sys_syncfs(args[..1]);
     SYS_SETNS = 268                  => sys_setns(args[..2]);
     SYS_SENDMMSG = 269               => sys_sendmmsg(args[..4]);
     SYS_SCHED_SETATTR = 274          => sys_sched_setattr(args[..3]);
