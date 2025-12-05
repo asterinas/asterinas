@@ -16,6 +16,25 @@ pub struct UtsNamespace {
 }
 
 impl UtsNamespace {
+    /// Returns the Linux machine name for the current architecture.
+    const fn machine_name() -> &'static [u8] {
+        #[cfg(target_arch = "x86_64")]
+        return b"x86_64";
+        #[cfg(target_arch = "riscv64")]
+        return b"riscv64";
+        #[cfg(target_arch = "loongarch64")]
+        return b"loongarch64";
+        #[cfg(target_arch = "aarch64")]
+        return b"aarch64";
+        #[cfg(not(any(
+            target_arch = "x86_64",
+            target_arch = "riscv64",
+            target_arch = "loongarch64",
+            target_arch = "aarch64"
+        )))]
+        compile_error!("Unsupported architecture for UTS namespace machine name");
+    }
+
     /// Returns a reference to the singleton initial UTS namespace.
     pub fn get_init_singleton() -> &'static Arc<UtsNamespace> {
         static INIT: Once<Arc<UtsNamespace>> = Once::new();
@@ -24,12 +43,13 @@ impl UtsNamespace {
             // We intentionally report Linux-like UTS values instead of Asterinas' real
             // name and version. These spoofed values satisfy glibc, which inspects
             // uname fields (sysname, release, version, etc.) and expects Linux-compatible data.
+            let version_str = option_env!("OSDK_BUILD_TIMESTAMP").unwrap_or("unknown");
             let uts_name = UtsName {
                 sysname: padded(b"Linux"),
                 nodename: padded(b"WHITLEY"),
                 release: padded(b"5.13.0"),
-                version: padded(b"5.13.0"),
-                machine: padded(b"x86_64"),
+                version: padded(version_str.as_bytes()),
+                machine: padded(Self::machine_name()),
                 // Reference: <https://elixir.bootlin.com/linux/v6.16/source/include/linux/uts.h#L17>.
                 domainname: padded(b"(none)"),
             };
@@ -110,6 +130,33 @@ pub struct UtsName {
     version: [u8; UTS_FIELD_LEN],
     machine: [u8; UTS_FIELD_LEN],
     domainname: [u8; UTS_FIELD_LEN],
+}
+
+impl UtsName {
+    /// Returns the system name as UTF-8 string.
+    pub fn sysname(&self) -> Result<&str> {
+        Self::cstr_bytes_to_str(&self.sysname)
+    }
+
+    /// Returns the release name as UTF-8 string.
+    pub fn release(&self) -> Result<&str> {
+        Self::cstr_bytes_to_str(&self.release)
+    }
+
+    /// Returns the version name as UTF-8 string.
+    pub fn version(&self) -> Result<&str> {
+        Self::cstr_bytes_to_str(&self.version)
+    }
+
+    /// Converts a C string bytes to a UTF-8 string.
+    fn cstr_bytes_to_str(cstr_bytes: &[u8]) -> Result<&str> {
+        CStr::from_bytes_until_nul(cstr_bytes)
+            .map_err(|_| Error::with_message(Errno::EINVAL, "not a null-terminated C string"))
+            .and_then(|cstr| {
+                cstr.to_str()
+                    .map_err(|_| Error::with_message(Errno::EINVAL, "not a UTF-8 string"))
+            })
+    }
 }
 
 fn copy_uts_field_from_user(addr: Vaddr, len: u32, ctx: &Context) -> Result<[u8; UTS_FIELD_LEN]> {
