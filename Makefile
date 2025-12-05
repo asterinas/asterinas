@@ -407,11 +407,13 @@ check: initramfs $(CARGO_OSDK)
 		(cd $$dir && cargo osdk clippy -- -- -D warnings) || exit 1; \
 	done
 	@
-	@# Check formatting issues of the C code (regression tests)
+	@# Check formatting issues of the C code and Nix files (regression tests)
 	@$(MAKE) --no-print-directory -C test check
 	@
 	@# Check typos
 	@typos
+	@# Check formatting issues of Nix files under distro directory
+	@nixfmt --check ./distro
 
 .PHONY: clean
 clean:

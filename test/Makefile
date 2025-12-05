@@ -188,6 +188,7 @@ format:
 .PHONY: check
 check:
 	@$(MAKE) --no-print-directory -C src/apps check
+	@nixfmt --check nix
 
 .PHONY: clean
 clean:
