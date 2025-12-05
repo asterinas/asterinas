@@ -3,17 +3,24 @@
 use core::{
     fmt::Display,
     sync::atomic::{AtomicU32, Ordering},
+    time::Duration,
 };
+
+use inherit_methods_macro::inherit_methods;
 
 use crate::{
     events::IoEvents,
     fs::{
         file_handle::FileLike,
         file_table::FdFlags,
+        notify::FsEventPublisher,
         path::RESERVED_MOUNT_ID,
-        pipe::common::{PipeReader, PipeWriter},
-        pseudofs::{PseudoInode, pipefs_singleton},
-        utils::{AccessMode, CreationFlags, Inode, InodeType, StatusFlags, mkmod},
+        pipe::{named_pipe::NamedPipeHandle, NamedPipe},
+        pseudofs::{pipefs_singleton, PseudoInode},
+        utils::{
+            mkmod, AccessMode, CreationFlags, FileSystem, Inode, InodeIo, InodeMode, InodeType,
+            Metadata, StatusFlags,
+        },
     },
     prelude::*,
     process::{
@@ -22,62 +29,121 @@ use crate::{
     },
 };
 
-const DEFAULT_PIPE_BUF_SIZE: usize = 65536;
-
 /// Creates a pair of connected pipe file handles with the default capacity.
-pub fn new_file_pair() -> Result<(Arc<PipeReaderFile>, Arc<PipeWriterFile>)> {
-    new_file_pair_with_capacity(DEFAULT_PIPE_BUF_SIZE)
+pub fn new_file_pair() -> Result<(Arc<AnonPipeFile>, Arc<AnonPipeFile>)> {
+    let pipe_inode = Arc::new(AnonPipeInode::new());
+    let reader = AnonPipeFile::open(
+        pipe_inode.clone(),
+        AccessMode::O_RDONLY,
+        StatusFlags::empty(),
+    )?;
+    let writer = AnonPipeFile::open(pipe_inode, AccessMode::O_WRONLY, StatusFlags::empty())?;
+
+    Ok((Arc::new(reader), Arc::new(writer)))
 }
 
-fn new_file_pair_with_capacity(
-    capacity: usize,
-) -> Result<(Arc<PipeReaderFile>, Arc<PipeWriterFile>)> {
-    let (reader, writer) = super::common::new_pair_with_capacity(capacity);
-
-    let pseudo_inode = {
-        Arc::new(PseudoInode::new(
-            0,
-            InodeType::NamedPipe,
-            mkmod!(u+rw),
-            Uid::new_root(),
-            Gid::new_root(),
-            aster_block::BLOCK_SIZE,
-            Arc::downgrade(pipefs_singleton()),
-        ))
-    };
-
-    Ok((
-        PipeReaderFile::new(reader, StatusFlags::empty(), pseudo_inode.clone())?,
-        PipeWriterFile::new(writer, StatusFlags::empty(), pseudo_inode)?,
-    ))
-}
-
-/// A file handle for reading from a pipe.
-pub struct PipeReaderFile {
-    reader: PipeReader,
+/// An anonymous pipe file.
+pub struct AnonPipeFile {
+    /// The opened pipe handle. `None` if the file is opened as a path.
+    handle: Option<Box<NamedPipeHandle>>,
+    pipe_inode: Arc<dyn Inode>,
     status_flags: AtomicU32,
-    pseudo_inode: Arc<dyn Inode>,
 }
 
-impl PipeReaderFile {
-    fn new(
-        reader: PipeReader,
+impl AnonPipeFile {
+    pub fn open(
+        pipe_inode: Arc<AnonPipeInode>,
+        access_mode: AccessMode,
         status_flags: StatusFlags,
-        pseudo_inode: Arc<PseudoInode>,
-    ) -> Result<Arc<Self>> {
+    ) -> Result<Self> {
         check_status_flags(status_flags)?;
 
-        Ok(Arc::new(Self {
-            reader,
+        let handle = if !status_flags.contains(StatusFlags::O_PATH) {
+            let handle = pipe_inode
+                .pipe
+                .open_handle(access_mode, status_flags, false)?;
+            Some(handle)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            handle,
+            pipe_inode,
             status_flags: AtomicU32::new(status_flags.bits()),
-            pseudo_inode,
-        }))
+        })
     }
 }
 
-impl Pollable for PipeReaderFile {
+impl Pollable for AnonPipeFile {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        self.reader.poll(mask, poller)
+        if let Some(handle) = &self.handle {
+            handle.poll(mask, poller)
+        } else {
+            IoEvents::NVAL
+        }
+    }
+}
+
+impl FileLike for AnonPipeFile {
+    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+        let Some(handle) = &self.handle else {
+            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+        };
+
+        if !handle.access_mode().is_readable() {
+            return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
+        }
+
+        handle.read_at(0, writer, self.status_flags())
+    }
+
+    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+        let Some(handle) = &self.handle else {
+            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+        };
+
+        if !handle.access_mode().is_writable() {
+            return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
+        }
+
+        handle.write_at(0, reader, self.status_flags())
+    }
+
+    fn status_flags(&self) -> StatusFlags {
+        StatusFlags::from_bits_truncate(self.status_flags.load(Ordering::Relaxed))
+    }
+
+    fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
+        check_status_flags(new_flags)?;
+
+        self.status_flags.store(new_flags.bits(), Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn access_mode(&self) -> AccessMode {
+        if let Some(handle) = &self.handle {
+            handle.access_mode()
+        } else {
+            // The file is opened with `O_PATH`. We follow Linux to report `O_RDONLY` here.
+            AccessMode::O_RDONLY
+        }
+    }
+
+    fn inode(&self) -> &Arc<dyn Inode> {
+        &self.pipe_inode
+    }
+
+    fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
+        let mut flags = self.status_flags().bits() | self.access_mode() as u32;
+        if fd_flags.contains(FdFlags::CLOEXEC) {
+            flags |= CreationFlags::O_CLOEXEC.bits();
+        }
+
+        Box::new(FdInfo {
+            flags,
+            ino: self.inode().ino(),
+        })
     }
 }
 
@@ -96,135 +162,6 @@ impl Display for FdInfo {
     }
 }
 
-impl FileLike for PipeReaderFile {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        if !writer.has_avail() {
-            // Even the peer endpoint (`PipeWriter`) has been closed, reading an empty buffer is
-            // still fine.
-            return Ok(0);
-        }
-
-        if self.status_flags().contains(StatusFlags::O_NONBLOCK) {
-            self.reader.try_read(writer)
-        } else {
-            self.wait_events(IoEvents::IN, None, || self.reader.try_read(writer))
-        }
-    }
-
-    fn status_flags(&self) -> StatusFlags {
-        StatusFlags::from_bits_truncate(self.status_flags.load(Ordering::Relaxed))
-    }
-
-    fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
-        check_status_flags(new_flags)?;
-
-        self.status_flags.store(new_flags.bits(), Ordering::Relaxed);
-        Ok(())
-    }
-
-    fn access_mode(&self) -> AccessMode {
-        AccessMode::O_RDONLY
-    }
-
-    fn inode(&self) -> &Arc<dyn Inode> {
-        &self.pseudo_inode
-    }
-
-    fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
-        let mut flags = self.status_flags().bits() | self.access_mode() as u32;
-        if fd_flags.contains(FdFlags::CLOEXEC) {
-            flags |= CreationFlags::O_CLOEXEC.bits();
-        }
-
-        Box::new(FdInfo {
-            flags,
-            ino: self.inode().ino(),
-        })
-    }
-}
-
-impl Drop for PipeReaderFile {
-    fn drop(&mut self) {
-        self.reader.peer_shutdown();
-    }
-}
-
-/// A file handle for writing to a pipe.
-pub struct PipeWriterFile {
-    writer: PipeWriter,
-    status_flags: AtomicU32,
-    pseudo_inode: Arc<dyn Inode>,
-}
-
-impl PipeWriterFile {
-    fn new(
-        writer: PipeWriter,
-        status_flags: StatusFlags,
-        pseudo_inode: Arc<PseudoInode>,
-    ) -> Result<Arc<Self>> {
-        check_status_flags(status_flags)?;
-
-        Ok(Arc::new(Self {
-            writer,
-            status_flags: AtomicU32::new(status_flags.bits()),
-            pseudo_inode,
-        }))
-    }
-}
-
-impl Pollable for PipeWriterFile {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        self.writer.poll(mask, poller)
-    }
-}
-
-impl FileLike for PipeWriterFile {
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
-        if !reader.has_remain() {
-            // Even the peer endpoint (`PipeReader`) has been closed, writing an empty buffer is
-            // still fine.
-            return Ok(0);
-        }
-
-        if self.status_flags().contains(StatusFlags::O_NONBLOCK) {
-            self.writer.try_write(reader)
-        } else {
-            self.wait_events(IoEvents::OUT, None, || self.writer.try_write(reader))
-        }
-    }
-
-    fn status_flags(&self) -> StatusFlags {
-        StatusFlags::from_bits_truncate(self.status_flags.load(Ordering::Relaxed))
-    }
-
-    fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
-        check_status_flags(new_flags)?;
-
-        self.status_flags.store(new_flags.bits(), Ordering::Relaxed);
-        Ok(())
-    }
-
-    fn access_mode(&self) -> AccessMode {
-        AccessMode::O_WRONLY
-    }
-
-    fn inode(&self) -> &Arc<dyn Inode> {
-        &self.pseudo_inode
-    }
-
-    fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
-        let mut flags = self.status_flags().bits() | self.access_mode() as u32;
-        if fd_flags.contains(FdFlags::CLOEXEC) {
-            flags |= CreationFlags::O_CLOEXEC.bits();
-        }
-
-        Box::new(FdInfo {
-            flags,
-            ino: self.inode().ino(),
-        })
-    }
-}
-
 fn check_status_flags(status_flags: StatusFlags) -> Result<()> {
     if status_flags.contains(StatusFlags::O_DIRECT) {
         // "O_DIRECT .. Older kernels that do not support this flag will indicate this via an
@@ -240,10 +177,68 @@ fn check_status_flags(status_flags: StatusFlags) -> Result<()> {
     Ok(())
 }
 
-impl Drop for PipeWriterFile {
-    fn drop(&mut self) {
-        self.writer.shutdown();
+/// An anonymous pipe inode.
+pub struct AnonPipeInode {
+    /// The underlying named pipe backend.
+    pipe: NamedPipe,
+    pseudo_inode: PseudoInode,
+}
+
+impl AnonPipeInode {
+    fn new() -> Self {
+        let pipe = NamedPipe::new();
+
+        let pseudo_inode = PseudoInode::new(
+            0,
+            InodeType::NamedPipe,
+            mkmod!(u+rw),
+            Uid::new_root(),
+            Gid::new_root(),
+            aster_block::BLOCK_SIZE,
+            Arc::downgrade(pipefs_singleton()),
+        );
+
+        Self { pipe, pseudo_inode }
     }
+}
+
+#[inherit_methods(from = "self.pseudo_inode")]
+impl InodeIo for AnonPipeInode {
+    fn read_at(
+        &self,
+        _offset: usize,
+        _writer: &mut VmWriter,
+        _status: StatusFlags,
+    ) -> Result<usize>;
+    fn write_at(
+        &self,
+        _offset: usize,
+        _reader: &mut VmReader,
+        _status: StatusFlags,
+    ) -> Result<usize>;
+}
+
+#[inherit_methods(from = "self.pseudo_inode")]
+impl Inode for AnonPipeInode {
+    fn size(&self) -> usize;
+    fn resize(&self, _new_size: usize) -> Result<()>;
+    fn metadata(&self) -> Metadata;
+    fn fs_event_publisher(&self) -> &FsEventPublisher;
+    fn ino(&self) -> u64;
+    fn type_(&self) -> InodeType;
+    fn mode(&self) -> Result<InodeMode>;
+    fn set_mode(&self, mode: InodeMode) -> Result<()>;
+    fn owner(&self) -> Result<Uid>;
+    fn set_owner(&self, uid: Uid) -> Result<()>;
+    fn group(&self) -> Result<Gid>;
+    fn set_group(&self, gid: Gid) -> Result<()>;
+    fn atime(&self) -> Duration;
+    fn set_atime(&self, time: Duration);
+    fn mtime(&self) -> Duration;
+    fn set_mtime(&self, time: Duration);
+    fn ctime(&self) -> Duration;
+    fn set_ctime(&self, time: Duration);
+    fn fs(&self) -> Arc<dyn FileSystem>;
 }
 
 #[cfg(ktest)]
@@ -264,10 +259,10 @@ mod test {
 
     fn test_blocking<W, R>(write: W, read: R, ordering: Ordering)
     where
-        W: FnOnce(Arc<PipeWriterFile>) + Send + 'static,
-        R: FnOnce(Arc<PipeReaderFile>) + Send + 'static,
+        W: FnOnce(Arc<AnonPipeFile>) + Send + 'static,
+        R: FnOnce(Arc<AnonPipeFile>) + Send + 'static,
     {
-        let (reader, writer) = new_file_pair_with_capacity(2).unwrap();
+        let (reader, writer) = new_file_pair().unwrap();
 
         let signal_writer = Arc::new(AtomicBool::new(false));
         let signal_reader = signal_writer.clone();
