@@ -2,3 +2,5 @@
 
 pub mod cpu;
 pub mod signal;
+
+pub fn init() {}

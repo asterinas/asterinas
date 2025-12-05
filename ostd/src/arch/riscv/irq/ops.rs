@@ -25,13 +25,20 @@ pub(crate) fn enable_local_and_halt() {
     // So we can use `wfi` even if IRQs are disabled. Pending IRQs can still wake up the CPU, but
     // they will only occur later when we enable local IRQs.
     riscv::asm::wfi();
-
     // SAFETY: The safety is upheld by the caller.
     unsafe { riscv::interrupt::enable() }
 }
 
 pub(crate) fn disable_local() {
     riscv::interrupt::disable();
+}
+
+/// Disables local IRQs and halts the CPU forever.
+pub(crate) fn disable_local_and_halt() -> ! {
+    riscv::interrupt::disable();
+    loop {
+        riscv::asm::wfi();
+    }
 }
 
 pub(crate) fn is_local_enabled() -> bool {

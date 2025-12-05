@@ -2,20 +2,12 @@
 
 //! Panic support.
 
-#![cfg_attr(target_arch = "loongarch64", expect(unused_imports))]
+use core::sync::atomic::Ordering;
 
-use core::ffi::c_void;
-
-use crate::{
-    arch::qemu::{exit_qemu, QemuExitCode},
-    early_print, early_println,
-    sync::SpinLock,
-};
+use crate::early_println;
 
 extern crate cfg_if;
 extern crate gimli;
-
-use gimli::Register;
 
 /// The default panic handler for OSTD based kernels.
 ///
@@ -43,9 +35,28 @@ pub fn __ostd_panic_handler(info: &core::panic::PanicInfo) -> ! {
     abort();
 }
 
-/// Aborts the QEMU
+/// Aborts the system.
+///
+/// This function will first attempt to power off the system. If that fails, it will halt all CPUs.
 pub fn abort() -> ! {
-    exit_qemu(QemuExitCode::Failed);
+    use crate::{
+        arch::irq::disable_local_and_halt,
+        cpu::CpuSet,
+        power::{poweroff, ExitCode},
+        smp::inter_processor_call,
+    };
+
+    // TODO: The main purpose of powering off here is to allow QEMU to exit. Otherwise, the CI may
+    // freeze after panicking. However, this is unnecessary and may prevent debugging on a real
+    // machine (i.e., the message will disappear afterward).
+    poweroff(ExitCode::Failure);
+
+    // TODO: `inter_processor_call` may panic again (e.g., if IPIs have not been initialized or if
+    // there is an out-of-memory error). We should find a way to make it panic-free.
+    if !crate::IN_BOOTSTRAP_CONTEXT.load(Ordering::Relaxed) {
+        inter_processor_call(&CpuSet::new_full(), || disable_local_and_halt());
+    }
+    disable_local_and_halt();
 }
 
 #[cfg(not(target_arch = "loongarch64"))]
@@ -56,10 +67,15 @@ pub use unwinding::panic::{begin_panic, catch_unwind};
 /// The printing procedure is protected by a spin lock to prevent interleaving.
 #[cfg(not(target_arch = "loongarch64"))]
 pub fn print_stack_trace() {
+    use core::ffi::c_void;
+
+    use gimli::Register;
     use unwinding::abi::{
         UnwindContext, UnwindReasonCode, _Unwind_Backtrace, _Unwind_FindEnclosingFunction,
         _Unwind_GetGR, _Unwind_GetIP,
     };
+
+    use crate::{early_print, sync::SpinLock};
 
     /// We acquire a global lock to prevent the frames in the stack trace from
     /// interleaving. The spin lock is used merely for its simplicity.
