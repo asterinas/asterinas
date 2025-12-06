@@ -2,6 +2,7 @@
 
 use alloc::sync::Weak;
 use core::{
+    cmp,
     fmt::Debug,
     sync::atomic::{AtomicU8, AtomicUsize, Ordering},
     time::Duration,
@@ -20,17 +21,131 @@ use ostd::{
 
 use super::EvdevDevice;
 use crate::{
+    current_userspace,
     events::IoEvents,
     fs::{
         inode_handle::FileIo,
-        utils::{InodeIo, IoctlCmd, StatusFlags},
+        utils::{InodeIo, IoctlCmd, IoctlDir, IoctlRequest, StatusFlags},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
+    syscall::ClockId,
     util::ring_buffer::{RbConsumer, RbProducer, RingBuffer},
 };
 
 pub(super) const EVDEV_BUFFER_SIZE: usize = 64;
+
+const EVDEV_IOCTL_TYPE: u8 = b'E';
+
+crate::define_ioctl_cmd!(
+    GetVersion,
+    EVDEV_IOCTL_TYPE,
+    0x01,
+    crate::fs::utils::IoctlDir::Read,
+    i32
+);
+
+crate::define_ioctl_cmd!(
+    GetId,
+    EVDEV_IOCTL_TYPE,
+    0x02,
+    crate::fs::utils::IoctlDir::Read,
+    aster_input::input_dev::InputId
+);
+
+crate::define_ioctl_cmd!(
+    SetClockId,
+    EVDEV_IOCTL_TYPE,
+    0xa0,
+    crate::fs::utils::IoctlDir::Write,
+    i32
+);
+
+crate::define_ioctl_cmd!(
+    GetDeviceName,
+    EVDEV_IOCTL_TYPE,
+    0x06,
+    crate::fs::utils::IoctlDir::Read,
+    [u8]
+);
+
+crate::define_ioctl_cmd!(
+    GetPhys,
+    EVDEV_IOCTL_TYPE,
+    0x07,
+    crate::fs::utils::IoctlDir::Read,
+    [u8]
+);
+
+crate::define_ioctl_cmd!(
+    GetUniq,
+    EVDEV_IOCTL_TYPE,
+    0x08,
+    crate::fs::utils::IoctlDir::Read,
+    [u8]
+);
+
+crate::define_ioctl_cmd!(
+    GetKeyState,
+    EVDEV_IOCTL_TYPE,
+    0x18,
+    crate::fs::utils::IoctlDir::Read,
+    [u8]
+);
+
+crate::define_ioctl_cmd!(
+    GetLedState,
+    EVDEV_IOCTL_TYPE,
+    0x19,
+    crate::fs::utils::IoctlDir::Read,
+    [u8]
+);
+
+crate::define_ioctl_cmd!(
+    GetSwState,
+    EVDEV_IOCTL_TYPE,
+    0x1B,
+    crate::fs::utils::IoctlDir::Read,
+    [u8]
+);
+
+struct GetBit {
+    event_type: u16,
+    request: IoctlRequest,
+}
+
+impl GetBit {
+    const BASE_NR: u8 = 0x20;
+
+    fn event_type(&self) -> u16 {
+        self.event_type
+    }
+
+    fn buffer_len(&self) -> usize {
+        self.request.buffer_len()
+    }
+
+    fn user_ptr(&self) -> usize {
+        self.request.user_ptr()
+    }
+}
+
+impl TryFrom<IoctlRequest> for GetBit {
+    type Error = Error;
+
+    fn try_from(request: IoctlRequest) -> Result<Self> {
+        if request.direction() != IoctlDir::Read
+            || request.type_id() != EVDEV_IOCTL_TYPE
+            || request.number() < Self::BASE_NR
+        {
+            return Err(Error::with_message(Errno::EINVAL, "ioctl command mismatch"));
+        }
+        Ok(Self {
+            event_type: (request.number() - Self::BASE_NR) as u16,
+            request,
+        })
+    }
+}
 
 // Reference: <https://elixir.bootlin.com/linux/v6.17.9/source/include/uapi/linux/input.h#L28>
 #[repr(C)]
@@ -211,6 +326,91 @@ impl EvdevFile {
             IoEvents::empty()
         }
     }
+
+    fn upgrade_evdev_device(&self) -> Result<Arc<EvdevDevice>> {
+        self.evdev
+            .upgrade()
+            .ok_or_else(|| Error::with_message(Errno::ENODEV, "evdev device is unavailable"))
+    }
+
+    fn handle_evdev_ioctl(&self, raw: u32, arg: usize) -> Result<()> {
+        let request = IoctlRequest::decode(raw, arg)?;
+
+        if let Ok(ioctl) = GetVersion::try_from(request) {
+            const EVDEV_DRIVER_VERSION: i32 = 0x010001;
+            write_val_to_userspace(ioctl.user_ptr(), EVDEV_DRIVER_VERSION)?;
+            Ok(())
+        } else if let Ok(ioctl) = GetId::try_from(request) {
+            let evdev = self.upgrade_evdev_device()?;
+            let input_id = evdev.device.id();
+            write_val_to_userspace(ioctl.user_ptr(), input_id)?;
+            Ok(())
+        } else if let Ok(ioctl) = SetClockId::try_from(request) {
+            let clock_id_raw: i32 = read_val_from_userspace(ioctl.user_ptr())?;
+            let clock_id = ClockId::try_from(clock_id_raw)
+                .map_err(|_| Error::with_message(Errno::EINVAL, "invalid clock id"))?;
+            let evdev_clock = match clock_id {
+                ClockId::CLOCK_REALTIME => EvdevClock::Realtime,
+                ClockId::CLOCK_MONOTONIC => EvdevClock::Monotonic,
+                ClockId::CLOCK_BOOTTIME => EvdevClock::Boottime,
+                _ => {
+                    return_errno_with_message!(Errno::EINVAL, "unsupported clock id");
+                }
+            };
+            self.inner.clock_id.store(evdev_clock, Ordering::Relaxed);
+            Ok(())
+        } else if let Ok(ioctl) = GetDeviceName::try_from(request) {
+            let evdev = self.upgrade_evdev_device()?;
+            write_string_to_userspace(ioctl.user_ptr(), evdev.device.name(), ioctl.buffer_len())?;
+            Ok(())
+        } else if let Ok(ioctl) = GetPhys::try_from(request) {
+            let evdev = self.upgrade_evdev_device()?;
+            write_string_to_userspace(ioctl.user_ptr(), evdev.device.phys(), ioctl.buffer_len())?;
+            Ok(())
+        } else if let Ok(ioctl) = GetUniq::try_from(request) {
+            let evdev = self.upgrade_evdev_device()?;
+            write_string_to_userspace(ioctl.user_ptr(), evdev.device.uniq(), ioctl.buffer_len())?;
+            Ok(())
+        } else if let Ok(ioctl) = GetBit::try_from(request) {
+            let evdev = self.upgrade_evdev_device()?;
+            let capability = evdev.device.capability();
+            let bitmap: &[u8] = match ioctl.event_type() {
+                0 => {
+                    let event_types_bytes = capability.event_types_bits().to_le_bytes();
+                    write_bitmap_to_userspace(
+                        ioctl.user_ptr(),
+                        &event_types_bytes,
+                        ioctl.buffer_len(),
+                    )?;
+                    return Ok(());
+                }
+                t if t == EventTypes::KEY.as_index() => capability.supported_keys_bitmap(),
+                t if t == EventTypes::REL.as_index() => capability.supported_relative_axes_bitmap(),
+                _ => {
+                    return_errno_with_message!(Errno::EINVAL, "unsupported event type");
+                }
+            };
+            write_bitmap_to_userspace(ioctl.user_ptr(), bitmap, ioctl.buffer_len())?;
+            Ok(())
+        } else if let Ok(ioctl) = GetKeyState::try_from(request) {
+            let zero = vec![0u8; ioctl.buffer_len()];
+            write_bitmap_to_userspace(ioctl.user_ptr(), &zero[..], ioctl.buffer_len())?;
+            Ok(())
+        } else if let Ok(ioctl) = GetLedState::try_from(request) {
+            let zero = vec![0u8; ioctl.buffer_len()];
+            write_bitmap_to_userspace(ioctl.user_ptr(), &zero[..], ioctl.buffer_len())?;
+            Ok(())
+        } else if let Ok(ioctl) = GetSwState::try_from(request) {
+            let zero = vec![0u8; ioctl.buffer_len()];
+            write_bitmap_to_userspace(ioctl.user_ptr(), &zero[..], ioctl.buffer_len())?;
+            Ok(())
+        } else {
+            Err(Error::with_message(
+                Errno::EINVAL,
+                "This IOCTL operation not supported on evdev devices",
+            ))
+        }
+    }
 }
 
 /// Checks if the event is a `SYN_REPORT` event.
@@ -221,6 +421,57 @@ pub(super) fn is_syn_report_event(event: &EvdevEvent) -> bool {
 /// Checks if the event is a `SYN_DROPPED` event.
 pub(super) fn is_syn_dropped_event(event: &EvdevEvent) -> bool {
     event.type_ == EventTypes::SYN.as_index() && event.code == SynEvent::Dropped as u16
+}
+
+fn read_val_from_userspace<T: Pod>(user_ptr: usize) -> Result<T> {
+    current_userspace!().read_val(user_ptr)
+}
+
+fn write_val_to_userspace<T: Pod>(user_ptr: usize, value: T) -> Result<()> {
+    current_userspace!().write_val(user_ptr, &value)
+}
+
+fn write_string_to_userspace(user_ptr: usize, value: &str, len: usize) -> Result<()> {
+    if len == 0 {
+        return Ok(());
+    }
+
+    let bytes = value.as_bytes();
+    let copy_len = cmp::min(bytes.len(), len - 1);
+    if copy_len > 0 {
+        let mut reader = VmReader::from(&bytes[..copy_len]);
+        current_userspace!().write_bytes(user_ptr, &mut reader)?;
+    }
+
+    let remaining = len - copy_len;
+    if remaining > 0 {
+        current_userspace!()
+            .writer(user_ptr + copy_len, remaining)?
+            .fill_zeros(remaining)?;
+    }
+
+    Ok(())
+}
+
+fn write_bitmap_to_userspace(user_ptr: usize, bitmap: &[u8], len: usize) -> Result<()> {
+    if len == 0 {
+        return Ok(());
+    }
+
+    let copy_len = cmp::min(bitmap.len(), len);
+    if copy_len > 0 {
+        let mut reader = VmReader::from(&bitmap[..copy_len]);
+        current_userspace!().write_bytes(user_ptr, &mut reader)?;
+    }
+
+    let remaining = len - copy_len;
+    if remaining > 0 {
+        current_userspace!()
+            .writer(user_ptr + copy_len, remaining)?
+            .fill_zeros(remaining)?;
+    }
+
+    Ok(())
 }
 
 impl Pollable for EvdevFile {
@@ -289,17 +540,15 @@ impl FileIo for EvdevFile {
         false
     }
 
-    fn ioctl(&self, _cmd: IoctlCmd, _arg: usize) -> Result<i32> {
-        // TODO: Support ioctl operations for evdev files.
+    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+        match cmd {
+            IoctlCmd::Others(raw) => self.handle_evdev_ioctl(raw, arg)?,
+            _ => {
+                return_errno!(Errno::EINVAL)
+            }
+        }
 
-        // Most ioctl implementations return `ENOTTY` for invalid ioctl commands, representing "The
-        // specified operation does not apply". However, according to the Linux implementation,
-        // evdev files return `EINVAL` in this case.
-        // Reference: <https://elixir.bootlin.com/linux/v6.17.8/source/drivers/input/evdev.c#L1251>
-        return_errno_with_message!(
-            Errno::EINVAL,
-            "the ioctl command is not supported by evdev files"
-        );
+        Ok(0)
     }
 }
 

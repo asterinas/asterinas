@@ -225,6 +225,21 @@ impl InputCapability {
     pub fn clear_supported_relative_axis(&mut self, rel_code: RelCode) {
         self.supported_relative_axes.clear(rel_code);
     }
+
+    /// Returns the supported event types as a bitmap.
+    pub fn event_types_bits(&self) -> u32 {
+        self.supported_event_types.bits()
+    }
+
+    /// Returns the supported key codes bitmap.
+    pub fn supported_keys_bitmap(&self) -> &[u8] {
+        self.supported_keys.as_raw_slice()
+    }
+
+    /// Returns the supported relative axis bitmap.
+    pub fn supported_relative_axes_bitmap(&self) -> &[u8] {
+        self.supported_relative_axes.as_raw_slice()
+    }
 }
 
 pub trait InputDevice: Send + Sync + Any + Debug {
