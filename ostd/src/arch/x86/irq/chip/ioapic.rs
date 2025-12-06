@@ -1,21 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use bit_field::BitField;
-use cfg_if::cfg_if;
 use log::info;
 
 use crate::{
     Error, Result,
-    arch::if_tdx_enabled,
     io::{IoMem, IoMemAllocatorBuilder, Sensitive},
     irq::IrqLine,
 };
-
-cfg_if! {
-    if #[cfg(feature = "cvm_guest")] {
-        use crate::arch::tdx_guest;
-    }
-}
 
 /// I/O Advanced Programmable Interrupt Controller (APIC).
 ///
@@ -182,26 +174,6 @@ impl IoApicAccess {
             base_address..(base_address + Self::MMIO_SIZE),
             crate::mm::CachePolicy::Uncacheable,
         );
-
-        if_tdx_enabled!({
-            assert_eq!(
-                base_address % crate::mm::PAGE_SIZE,
-                0,
-                "[IOAPIC]: I/O memory is not page aligned, which cannot be unprotected in TDX: {:#x}",
-                base_address,
-            );
-            // SAFETY:
-            //  - The address range is page aligned, as we've checked above.
-            //  - The caller guarantees that the address range represents the MMIO region for I/O
-            //    APICs, so the address range must fall in the GPA limit.
-            //  - FIXME: The I/O memory can be at a high address, so it may not be contained in the
-            //    linear mapping.
-            //  - Operations on the I/O memory can have side effects that may cause soundness
-            //    problems, so the pages are not trivially untyped memory. However, since
-            //    `io_mem_builder.remove()` ensures exclusive ownership, it's still fine to
-            //    unprotect only once, before the I/O memory is used.
-            unsafe { tdx_guest::unprotect_gpa_range(base_address, 1).unwrap() };
-        });
 
         Self { io_mem }
     }
