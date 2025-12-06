@@ -103,12 +103,15 @@ impl Vmar {
                 .cursor_mut(&preempt_guard, &intersected_range)
                 .unwrap();
 
-            for va in intersected_range.step_by(PAGE_SIZE) {
-                cursor.jump(va).unwrap();
-                if cursor.query().is_none() {
-                    continue;
+            while cursor
+                .find_next_unmappable_subtree(intersected_range.end - cursor.virt_addr())
+                .is_some()
+            {
+                while cursor.cur_va_range().start < intersected_range.start
+                    || cursor.cur_va_range().end > intersected_range.end
+                {
+                    cursor.adjust_level(cursor.level() - 1);
                 }
-
                 rss_delta.add(vm_mapping.rss_type(), -(cursor.unmap() as isize));
             }
             cursor.flusher().dispatch_tlb_flush();
