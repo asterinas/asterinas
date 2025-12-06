@@ -496,11 +496,11 @@ mod vmspace {
         ($cursor:expr, $frame:expr, $prop:expr) => {
             assert!(matches!(
                 $cursor.query(),
-                Some(VmQueriedItem::MappedRam {
+                VmQueriedItem::MappedRam {
                     frame: __frame__,
                     prop: __prop__,
                     ..
-                }) if __frame__.paddr() == $frame.paddr() && __prop__ == $prop
+                } if __frame__.paddr() == $frame.paddr() && __prop__ == $prop
             ));
         };
     }
@@ -521,6 +521,7 @@ mod vmspace {
         let mut cursor = vmspace
             .cursor(&preempt_guard, &range)
             .expect("failed to create the cursor");
+        while cursor.push_level_if_exists().is_some() {}
         assert!(cursor.query().is_none());
         assert!(cursor.cur_va_range() == range);
     }
@@ -539,6 +540,7 @@ mod vmspace {
                 .cursor_mut(&preempt_guard, &range)
                 .expect("failed to create the mutable cursor");
             // Initially, the page should not be mapped.
+            while cursor_mut.push_level_if_exists().is_some() {}
             assert!(cursor_mut.query().is_none());
             assert!(cursor_mut.cur_va_range() == range);
             // Maps a frame.
@@ -566,6 +568,7 @@ mod vmspace {
         let mut cursor = vmspace
             .cursor(&preempt_guard, &range)
             .expect("failed to create the cursor");
+        while cursor.push_level_if_exists().is_some() {}
         assert!(cursor.query().is_none());
         assert!(cursor.cur_va_range() == range);
     }
@@ -635,6 +638,7 @@ mod vmspace {
         let mut cursor = vmspace
             .cursor(&preempt_guard, &range)
             .expect("failed to create the cursor");
+        while cursor.push_level_if_exists().is_some() {}
         assert!(cursor.query().is_none());
         assert!(cursor.cur_va_range() == range);
     }
@@ -805,6 +809,7 @@ mod vmspace {
                 .cursor_mut(&preempt_guard, &range)
                 .expect("failed to create the mutable cursor");
             // Initially, the page should not be mapped.
+            while cursor_mut.push_level_if_exists().is_some() {}
             assert!(cursor_mut.query().is_none());
             assert!(cursor_mut.cur_va_range() == range);
             // Maps the `IoMem`.
@@ -817,7 +822,8 @@ mod vmspace {
                 .cursor(&preempt_guard, &range)
                 .expect("failed to create the cursor");
             assert_eq!(cursor.virt_addr(), range.start);
-            let query_item = cursor.query().unwrap();
+            while cursor.push_level_if_exists().is_some() {}
+            let query_item = cursor.query();
             // The query result should be `VmQueriedItem::MappedIoMem`.
             assert!(matches!(
                 query_item,
@@ -876,7 +882,8 @@ mod vmspace {
             let mut cursor = vmspace
                 .cursor(&preempt_guard, &range)
                 .expect("failed to create the cursor");
-            let query_item = cursor.query().unwrap();
+            while cursor.push_level_if_exists().is_some() {}
+            let query_item = cursor.query();
             // The query result should be `VmQueriedItem::MappedIoMem`.
             assert!(matches!(
                 query_item,
