@@ -1,0 +1,36 @@
+name: Push packages to Cachix
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/push_cachix_pkgs.yml
+      - distro/cachix.nix
+      - distro/overlays/**
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/push_cachix_pkgs.yml
+      - distro/cachix.nix
+      - distro/overlays/**
+
+jobs:
+  push-pkgs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nix and Cachix
+        run: |
+          sh <(curl -L https://nixos.org/nix/install) --daemon --yes
+          . /etc/profile.d/nix.sh
+          nix-env -iA cachix -f https://cachix.org/api/v1/install
+      - name: Build Asterinas NixOS patched packages and push to cachix
+        run: |
+          # use ${{ secrets.CACHIX_AUTH_TOKEN }}
+          export CACHIX_AUTH_TOKEN=eyJhbGciOiJIUzI1NiJ9.eyJqdGkiOiJlMmQzMjBkYS0wZDlhLTRlZjUtOGIwMi0yMDUxMjcwOGEzNGUiLCJzY29wZXMiOiJjYWNoZSJ9.GdXWy_j8SUGBM3gE8iDDPtUbgu6Gr_v8LRFGX_K9-FA
+          . /etc/profile.d/nix.sh
+          make cachix 2>&1 | tee cachix.log || true
+          tail --lines 10 cachix.log | grep -q -E "^(All done|Nothing to push)" || (echo "Push cachix failed" && exit 1)
+          echo "Push cachix succeeds!"
