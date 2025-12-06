@@ -1,0 +1,28 @@
+From 44a4dcc8e703f6dea45868bfd9615e0709f094f9 Mon Sep 17 00:00:00 2001
+From: Chen Chengjun <chenchengjun.ccj@antgroup.com>
+Date: Sat, 6 Dec 2025 04:20:37 +0000
+Subject: [PATCH] Disable loop too fast warning
+
+Disable the warning about "looping too fast", as this warning affects 
+usability when systemd logging is enabled.
+
+---
+ src/core/manager.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/core/manager.c b/src/core/manager.c
+index 9308b730e1..37df4f2a04 100644
+--- a/src/core/manager.c
++++ b/src/core/manager.c
+@@ -3456,7 +3456,7 @@ int manager_loop(Manager *m) {
+ 
+                 if (!ratelimit_below(&rl)) {
+                         /* Yay, something is going seriously wrong, pause a little */
+-                        log_warning("Looping too fast. Throttling execution a little.");
++                        //log_warning("Looping too fast. Throttling execution a little.");
+                         sleep(1);
+                 }
+ 
+-- 
+2.34.1
+
