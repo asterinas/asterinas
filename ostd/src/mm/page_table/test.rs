@@ -52,6 +52,7 @@ mod test_utils {
         let mut cursor = pt.cursor_mut(&preempt_guard, &va).unwrap();
         for (vaddr, paddr, level) in largest_pages::<TestPtConfig>(va.start, pa, va.len()) {
             cursor.jump(vaddr).unwrap();
+            cursor.adjust_level(level);
             unsafe { cursor.map((paddr, level, prop)) };
         }
     }
@@ -470,7 +471,7 @@ mod overlapping_mappings {
     }
 
     #[ktest]
-    #[should_panic(expected = "cursor virtual address not aligned for mapping")]
+    #[should_panic(expected = "current virtual address is not aligned to the current entry range")]
     fn unaligned_map() {
         const HUGE_PAGE_SIZE: usize = PAGE_SIZE * 512;
 
@@ -486,6 +487,103 @@ mod overlapping_mappings {
         unsafe {
             cursor.map((phys_range.start, 2, page_property));
         }
+    }
+
+    #[ktest]
+    #[should_panic(expected = "cursor level do not match the item mapping level")]
+    fn mismatched_level_map() {
+        const HUGE_PAGE_SIZE: usize = PAGE_SIZE * 512;
+
+        let page_table = PageTable::<TestPtConfig>::empty();
+        let virt_range = 0..HUGE_PAGE_SIZE * 2;
+        let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let preempt_guard = disable_preempt();
+
+        let mut cursor = page_table.cursor_mut(&preempt_guard, &virt_range).unwrap();
+        assert_eq!(cursor.level(), 2);
+
+        unsafe {
+            cursor.map((0, 1, page_property));
+        }
+    }
+}
+
+mod cursor_range_checks {
+    use super::{test_utils::*, *};
+
+    const HUGE_PAGE_SIZE: usize = PAGE_SIZE * 512;
+    const ALIGNED_CURSOR_RANGE: Range<Vaddr> = 0..PAGE_SIZE;
+    const UNALIGNED_CURSOR_RANGE: Range<Vaddr> = PAGE_SIZE..PAGE_SIZE * 2;
+
+    fn page_table_with_huge_mapping() -> PageTable<TestPtConfig> {
+        let page_table = PageTable::<TestPtConfig>::empty();
+        let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        map_untracked(&page_table, 0..HUGE_PAGE_SIZE * 2, 0, prop);
+        page_table
+    }
+
+    #[ktest]
+    fn query_allows_range_outside_cursor() {
+        let page_table = page_table_with_huge_mapping();
+        let preempt_guard = disable_preempt();
+        let cursor = page_table
+            .cursor(&preempt_guard, &UNALIGNED_CURSOR_RANGE)
+            .unwrap();
+
+        assert_eq!(cursor.level(), 2);
+        assert!(matches!(cursor.query(), PteStateRef::Mapped(_)));
+    }
+
+    #[ktest]
+    #[should_panic(expected = "current virtual address range exceeds cursor range")]
+    fn protect_rejects_range_outside_cursor() {
+        let page_table = page_table_with_huge_mapping();
+        let preempt_guard = disable_preempt();
+        let mut cursor = page_table
+            .cursor_mut(&preempt_guard, &ALIGNED_CURSOR_RANGE)
+            .unwrap();
+
+        assert_eq!(cursor.level(), 2);
+        unsafe { cursor.protect(&mut |_| {}) };
+    }
+
+    #[ktest]
+    #[should_panic(expected = "current virtual address range exceeds cursor range")]
+    fn unmap_rejects_range_outside_cursor() {
+        let page_table = page_table_with_huge_mapping();
+        let preempt_guard = disable_preempt();
+        let mut cursor = page_table
+            .cursor_mut(&preempt_guard, &ALIGNED_CURSOR_RANGE)
+            .unwrap();
+
+        assert_eq!(cursor.level(), 2);
+        let _ = unsafe { cursor.unmap() };
+    }
+
+    #[ktest]
+    #[should_panic(expected = "current virtual address is not aligned to the current entry range")]
+    fn protect_rejects_unaligned_current_address() {
+        let page_table = page_table_with_huge_mapping();
+        let preempt_guard = disable_preempt();
+        let mut cursor = page_table
+            .cursor_mut(&preempt_guard, &UNALIGNED_CURSOR_RANGE)
+            .unwrap();
+
+        assert_eq!(cursor.level(), 2);
+        unsafe { cursor.protect(&mut |_| {}) };
+    }
+
+    #[ktest]
+    #[should_panic(expected = "current virtual address is not aligned to the current entry range")]
+    fn unmap_rejects_unaligned_current_address() {
+        let page_table = page_table_with_huge_mapping();
+        let preempt_guard = disable_preempt();
+        let mut cursor = page_table
+            .cursor_mut(&preempt_guard, &UNALIGNED_CURSOR_RANGE)
+            .unwrap();
+
+        assert_eq!(cursor.level(), 2);
+        let _ = unsafe { cursor.unmap() };
     }
 }
 
@@ -528,11 +626,13 @@ mod navigation {
             .unwrap();
 
         assert_eq!(cursor.virt_addr(), 0);
-        assert!(cursor.query().is_none());
+        while cursor.push_level_if_exists().is_some() {}
+        assert!(matches!(cursor.query(), PteStateRef::Absent));
 
         cursor.jump(FIRST_MAP_ADDR).unwrap();
         assert_eq!(cursor.virt_addr(), FIRST_MAP_ADDR);
-        let Some(queried_item) = cursor.query() else {
+        while cursor.push_level_if_exists().is_some() {}
+        let PteStateRef::Mapped(queried_item) = cursor.query() else {
             panic!("expected a mapped item at the first address");
         };
         let queried_va = cursor.cur_va_range();
@@ -824,10 +924,11 @@ mod mapping {
             let mut cursor = pt.cursor(&preempt_guard, &from).unwrap();
             let mut frame_i = 0;
             loop {
+                while cursor.push_level_if_exists().is_some() {}
                 let item = cursor.query();
                 let va = cursor.cur_va_range();
 
-                let Some(TestPtItemRef((pa, level, prop), _)) = item else {
+                let PteStateRef::Mapped(TestPtItemRef((pa, level, prop), _)) = item else {
                     panic!("expected mapped untracked physical address, got `None`");
                 };
 
@@ -882,10 +983,11 @@ mod mapping {
         {
             let mut cursor = pt.cursor(&preempt_guard, &protect_va_range).unwrap();
             loop {
+                while cursor.push_level_if_exists().is_some() {}
                 let item = cursor.query();
                 let va = cursor.cur_va_range();
 
-                let Some(TestPtItemRef((pa, level, prop), _)) = item else {
+                let PteStateRef::Mapped(TestPtItemRef((pa, level, prop), _)) = item else {
                     panic!("expected mapped untracked physical address, got `None`");
                 };
 

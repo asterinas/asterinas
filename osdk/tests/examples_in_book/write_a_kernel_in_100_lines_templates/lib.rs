@@ -57,6 +57,7 @@ fn create_vm_space(program: &[u8]) -> VmSpace {
     let map_prop = PageProperty::new_user(PageFlags::RWX, CachePolicy::Writeback);
     for (va, frame) in map_range.step_by(PAGE_SIZE).zip(user_pages) {
         cursor.jump(va).unwrap();
+        cursor.adjust_level(1);
         cursor.map(frame.into(), map_prop);
     }
     drop(cursor);
