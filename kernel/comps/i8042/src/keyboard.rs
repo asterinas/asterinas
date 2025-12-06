@@ -181,7 +181,7 @@ fn handle_keyboard_input(_trap_frame: &TrapFrame) {
         }
     } else {
         log::debug!(
-            "i8042 keyboard unmapped scancode {:?} dropped",
+            "PS/2 keyboard unmapped scancode {:?} dropped",
             scancode_event.scancode
         );
     }

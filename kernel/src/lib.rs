@@ -46,7 +46,6 @@ mod events;
 mod fs;
 mod init;
 mod ipc;
-mod kcmdline;
 mod net;
 mod prelude;
 mod process;

@@ -6,6 +6,7 @@
 //!
 //! Reference: <https://www.kernel.org/doc/html/latest/admin-guide/devices.html>
 
+use aster_cmdline::KCMDLINE;
 use device_id::{DeviceId, MajorId, MinorId};
 use spin::Once;
 
@@ -22,7 +23,6 @@ use crate::{
         device::{Device, DeviceType},
         inode_handle::FileIo,
     },
-    kcmdline::KCmdlineArg,
     prelude::*,
     process::{JobControl, Terminal},
 };
@@ -104,7 +104,9 @@ impl SystemConsole {
 
         INSTANCE.call_once(|| {
             // TODO: Support specifying multiple TTY devices, e.g., "console=hvc0 console=tty0".
-            let console_name = KCmdlineArg::singleton()
+            let console_name = KCMDLINE
+                .get()
+                .unwrap()
                 .get_console_names()
                 .first()
                 .map(String::as_str)

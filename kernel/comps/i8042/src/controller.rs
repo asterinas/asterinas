@@ -5,6 +5,7 @@
 //! Reference: <https://wiki.osdev.org/I8042_PS/2_Controller>
 //!
 
+use aster_cmdline::{ModuleArg, KCMDLINE};
 use bitflags::bitflags;
 use ostd::{
     arch::{device::io_port::ReadWriteAccess, kernel::ACPI_INFO},
@@ -129,15 +130,32 @@ impl I8042Controller {
         const DATA_PORT_ADDR: u16 = 0x60;
         const STATUS_OR_COMMAND_PORT_ADDR: u16 = 0x64;
 
-        if ACPI_INFO
-            .get()
-            .unwrap()
-            .boot_flags
-            .is_some_and(|flags| !flags.motherboard_implements_8042())
-        {
+        if !Self::is_present_acpi() {
             // The PS/2 controller does not exist. See:
             // <https://uefi.org/specs/ACPI/6.5/05_ACPI_Software_Programming_Model.html#ia-pc-boot-architecture-flags>.
-            return Err(I8042ControllerError::NotPresent);
+            //
+            // However, it may actually be present and enumerable from other sources, such as PnP
+            // devices. See:
+            // <https://elixir.bootlin.com/linux/v6.18/source/drivers/input/serio/i8042-acpipnpio.h#L1578>.
+            //
+            // Currently, we lack the necessary support, so we allow the user to manually override
+            // the ACPI flag by appending "i8042.exist" to the kernel command line.
+            //
+            // TODO: Add support for enumerating PnP devices and remove the command line option.
+            if !Self::is_present_cmdline() {
+                log::info!(
+                    "ACPI says i8042 controller is absent; \
+                    if it is incorrect, append 'i8042.exist' in cmdline to override it"
+                );
+                return Err(I8042ControllerError::NotPresent);
+            } else {
+                log::info!(
+                    "ACPI says i8042 controller is absent; \
+                    however, it is overridden by 'i8042.exist' in cmdline"
+                );
+            }
+        } else {
+            log::info!("ACPI says i8042 controller is present");
         }
 
         let controller = Self {
@@ -145,6 +163,26 @@ impl I8042Controller {
             status_or_command_port: IoPort::acquire(STATUS_OR_COMMAND_PORT_ADDR).unwrap(),
         };
         Ok(controller)
+    }
+
+    fn is_present_acpi() -> bool {
+        ACPI_INFO
+            .get()
+            .unwrap()
+            .boot_flags
+            .is_some_and(|flags| !flags.motherboard_implements_8042())
+    }
+
+    /// Checks if the kernel command line contains the "i8042.exist" option.
+    fn is_present_cmdline() -> bool {
+        !KCMDLINE
+            .get()
+            .unwrap()
+            .get_module_args("i8042")
+            .is_some_and(|args| {
+                args.iter()
+                    .any(|arg| matches!(arg, ModuleArg::Arg(s) if s.as_bytes() == b"exist"))
+            })
     }
 
     fn read_configuration(&mut self) -> Result<Configuration, I8042ControllerError> {

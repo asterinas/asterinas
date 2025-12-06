@@ -10,6 +10,7 @@ align_ext = { path = "../ostd/libs/align_ext" }
 aster-input = { path = "comps/input" }
 aster-block = { path = "comps/block" }
 aster-network = { path = "comps/network" }
+aster-cmdline = { path = "comps/cmdline" }
 aster-console = { path = "comps/console" }
 aster-framebuffer = { path = "comps/framebuffer" }
 aster-softirq = { path = "comps/softirq" }
