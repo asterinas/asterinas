@@ -29,6 +29,7 @@ use node::*;
 mod cursor;
 
 pub(crate) use cursor::{Cursor, CursorMut, PageTableFrag};
+pub(in crate::mm) use node::PteStateRef;
 
 #[cfg(ktest)]
 mod test;

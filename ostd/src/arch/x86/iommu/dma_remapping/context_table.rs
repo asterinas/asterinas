@@ -313,6 +313,7 @@ impl ContextTable {
         let pt = self.get_or_create_page_table(device);
         let preempt_guard = disable_preempt();
         let mut cursor = pt.cursor_mut(&preempt_guard, &from).unwrap();
+        cursor.adjust_level(1);
 
         // SAFETY: The safety is upheld by the caller.
         unsafe { cursor.map((paddr, 1, prop)) };
