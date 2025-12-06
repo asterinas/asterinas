@@ -1024,18 +1024,18 @@ pidfd_open04
 # pidfd_send_signal03
 
 pipe01
-# pipe02
+pipe02
 pipe03
 pipe04
 pipe05
 # pipe06
 # pipe07
-# pipe08
+pipe08
 pipe09
 pipe10
 pipe11
 # pipe12
-# pipe13
+pipe13
 pipe14
 # pipe15
 
@@ -1382,7 +1382,7 @@ setgroups02
 
 sethostname01
 sethostname02
-# TODO: Drop capabilities on UID changes, so that sethostname() will fail with EPERM. 
+# TODO: Drop capabilities on UID changes, so that sethostname() will fail with EPERM.
 # sethostname03
 
 # setitimer01
