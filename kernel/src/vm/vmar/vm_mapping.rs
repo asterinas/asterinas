@@ -10,8 +10,8 @@ use align_ext::AlignExt;
 use ostd::{
     io::IoMem,
     mm::{
-        tlb::TlbFlushOp, vm_space::VmQueriedItem, CachePolicy, FrameAllocOptions, PageFlags,
-        PageProperty, UFrame, VmSpace,
+        io_util::HasVmReaderWriter, tlb::TlbFlushOp, vm_space::VmQueriedItem, CachePolicy, Frame,
+        FrameAllocOptions, PageFlags, PageProperty, UFrame, VmSpace,
     },
     task::disable_preempt,
 };
@@ -23,7 +23,6 @@ use crate::{
     thread::exception::PageFaultInfo,
     vm::{
         perms::VmPerms,
-        util::duplicate_frame,
         vmar::is_intersected,
         vmo::{CommitFlags, Vmo, VmoCommitError},
     },
@@ -851,4 +850,10 @@ fn try_merge(left: &VmMapping, right: &VmMapping) -> Option<VmMapping> {
         inode: left.inode.clone(),
         ..*left
     })
+}
+
+fn duplicate_frame(src: &UFrame) -> Result<Frame<()>> {
+    let new_frame = FrameAllocOptions::new().zeroed(false).alloc_frame()?;
+    new_frame.writer().write(&mut src.reader());
+    Ok(new_frame)
 }

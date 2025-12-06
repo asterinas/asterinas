@@ -32,7 +32,7 @@ impl FileOps for MemFileOps {
         };
         match vmar.read_remote(offset, writer) {
             Ok(bytes) => Ok(bytes),
-            Err((err, 0)) => Err(err),
+            Err((_, 0)) => Err(Error::new(Errno::EIO)),
             Err((_, bytes)) => Ok(bytes),
         }
     }
@@ -44,7 +44,7 @@ impl FileOps for MemFileOps {
         };
         match vmar.write_remote(offset, reader) {
             Ok(bytes) => Ok(bytes),
-            Err((err, 0)) => Err(err),
+            Err((_, 0)) => Err(Error::new(Errno::EIO)),
             Err((_, bytes)) => Ok(bytes),
         }
     }
