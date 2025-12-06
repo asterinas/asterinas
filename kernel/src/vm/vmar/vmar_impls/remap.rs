@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::{mm::vm_space::VmQueriedItem, task::disable_preempt};
+use ostd::{
+    mm::{page_size_at, vm_space::VmQueriedItem},
+    task::disable_preempt,
+};
 
 use super::{RssDelta, Vmar, util::is_intersected};
 use crate::{prelude::*, vm::vmar::is_userspace_vaddr_range};
@@ -178,14 +181,11 @@ impl Vmar {
             let Some(mapped_va) = cursor.find_next(old_size - current_offset) else {
                 break;
             };
-            let Some(item) = cursor.query() else {
-                panic!("Found mapped page but query failed");
-            };
 
             let offset = mapped_va - old_range.start;
             let new_map_va = new_range.start + offset;
 
-            match item {
+            match cursor.query() {
                 VmQueriedItem::MappedRam { frame, prop } => {
                     let frame = (*frame).clone();
 
@@ -194,14 +194,17 @@ impl Vmar {
 
                     cursor.map(frame, prop);
                 }
-                VmQueriedItem::MappedIoMem { paddr, prop } => {
+                VmQueriedItem::MappedIoMem { paddr, prop, level } => {
                     cursor.unmap();
                     cursor.jump(new_map_va).unwrap();
 
                     // For MMIO pages, find the corresponding `IoMem` and map it
                     // at the new location
                     let (iomem, offset) = cursor.find_iomem_by_paddr(paddr).unwrap();
-                    cursor.map_iomem(iomem, prop, PAGE_SIZE, offset);
+                    cursor.map_iomem(iomem, prop, page_size_at(level), offset);
+                }
+                _ => {
+                    unreachable!("mapped item found but query failed")
                 }
             }
 
