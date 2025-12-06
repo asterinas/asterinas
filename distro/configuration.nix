@@ -26,7 +26,6 @@
 
   system.nixos.distroName = "Asterinas NixOS";
 
-  asterinas.disable-systemd = "true"; # Remove this when systemd is supported.
   # asterinas.log-level = "debug"; # Uncomment this to enable debug logging.
 
   # This option defines the first version of NixOS you have installed on this particular machine,

@@ -85,6 +85,18 @@
         description =
           "If set to true, the system will not proceed to switch to the root filesystem after initial boot. Instead, it will drop into an initramfs shell. This is primarily intended for debugging purposes.";
       };
+
+      run-test = lib.mkOption {
+        type = lib.types.bool;
+        default = lib.maybeEnv "NIXOS_RUN_TEST" "false" == "true";
+        description = "Whether to automatically run tests after boot.";
+      };
+
+      test-command = lib.mkOption {
+        type = lib.types.str;
+        default = lib.maybeEnv "NIXOS_TEST_COMMAND" "hello-asterinas";
+        description = "The command(s) to execute when run-test is enabled.";
+      };
     };
   };
 }

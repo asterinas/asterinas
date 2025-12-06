@@ -36,6 +36,22 @@ in {
     if [ "${config.asterinas.disable-systemd}" = "true" ]; then
       ${config.asterinas.stage-2-hook}
     fi
+    ${lib.optionalString config.asterinas.run-test ''
+      cp /etc/profile /etc/profile.bak
+      echo '
+      # --- Run tests in the hvc0 terminal ---
+      if [ "$(tty)" = "/dev/hvc0" ]; then
+        # Resume /etc/profile
+        cp /etc/profile.bak /etc/profile
+        rm /etc/profile.bak
+        # Execute specified tests
+        ${config.asterinas.test-command}
+        # Wait and poweroff 
+        sleep 2
+        poweroff
+      fi
+      ' >> /etc/profile
+    ''}
   '';
   system.systemBuilderCommands = ''
     echo "PATH=/bin:/nix/var/nix/profiles/system/sw/bin ostd.log_level=${config.asterinas.log-level} console=${config.asterinas.console} -- sh /init root=/dev/vda2 init=/nix/var/nix/profiles/system/stage-2-init rd.break=${

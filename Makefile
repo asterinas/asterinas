@@ -65,7 +65,9 @@ AUTO_INSTALL ?= 0
 # NixOS settings
 NIXOS_DISK_SIZE_IN_MB ?= 8196
 NIXOS_RESOLV_CONF ?= $(abspath test/build/initramfs/etc/resolv.conf)
-NIXOS_DISABLE_SYSTEMD ?= true
+NIXOS_DISABLE_SYSTEMD ?= false
+NIXOS_RUN_TEST ?= false
+NIXOS_TEST_COMMAND ?= hello-asterinas
 # The following option is only effective when NIXOS_DISABLE_SYSTEMD is set to 'true'.
 # Use a login shell to ensure that environment variables are initialized correctly.
 NIXOS_STAGE_2_INIT ?= /bin/sh -l
