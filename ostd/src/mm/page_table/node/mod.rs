@@ -125,7 +125,7 @@ impl<C: PageTableConfig> PageTableNode<C> {
 }
 
 /// A reference to a page table node.
-pub(super) type PageTableNodeRef<'a, C> = FrameRef<'a, PageTablePageMeta<C>>;
+pub(in crate::mm) type PageTableNodeRef<'a, C> = FrameRef<'a, PageTablePageMeta<C>>;
 
 impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
     /// Locks the page table node.
@@ -187,6 +187,17 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         unsafe { Entry::new_at(self, idx) }
     }
 
+    /// Gets the state of the entry at a given index.
+    pub(super) fn entry_state(&self, idx: usize) -> PteStateRef<'rcu, C> {
+        let pte = self.read_pte(idx);
+        // SAFETY:
+        //  - The PTE must be the result of `PteState::into_pte` since it was
+        //    written into the node;
+        //  - the child outlives `'rcu`;
+        //  - the level matches the residing node.
+        unsafe { PteStateRef::from_pte(&pte, self.level()) }
+    }
+
     /// Gets the number of valid PTEs in the node.
     pub(super) fn nr_children(&self) -> u16 {
         // SAFETY: The lock is held so we have an exclusive access.
@@ -204,12 +215,8 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     /// A non-owning PTE means that it does not account for a reference count
     /// of the a page if the PTE points to a page. The original PTE still owns
     /// the child page.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that the index is within the bound.
-    pub(super) unsafe fn read_pte(&self, idx: usize) -> C::E {
-        debug_assert!(idx < nr_subpage_per_huge::<C>());
+    pub(super) fn read_pte(&self, idx: usize) -> C::E {
+        assert!(idx < nr_subpage_per_huge::<C>());
         let ptr = paddr_to_vaddr(self.paddr()) as *mut C::E;
         // SAFETY:
         // - The page table node is alive. The index is inside the bound, so the page table entry is valid.

@@ -50,6 +50,7 @@ mod test_utils {
         let mut cursor = pt.cursor_mut(&preempt_guard, &(va..va + pa.len())).unwrap();
         for (vaddr, paddr, level) in largest_pages::<TestPtConfig>(va, pa.start, pa.len()) {
             cursor.jump(vaddr).unwrap();
+            cursor.adjust_level(level);
             unsafe { cursor.map((paddr, level, prop)) };
         }
     }
@@ -534,11 +535,13 @@ mod navigation {
             .unwrap();
 
         assert_eq!(cursor.virt_addr(), 0);
-        assert!(cursor.query().is_none());
+        while cursor.push_level_if_exists().is_some() {}
+        assert!(matches!(cursor.query(), PteStateRef::Absent));
 
         cursor.jump(FIRST_MAP_ADDR).unwrap();
         assert_eq!(cursor.virt_addr(), FIRST_MAP_ADDR);
-        let Some(queried_item) = cursor.query() else {
+        while cursor.push_level_if_exists().is_some() {}
+        let PteStateRef::Mapped(queried_item) = cursor.query() else {
             panic!("expected a mapped item at the first address");
         };
         let queried_va = cursor.cur_va_range();
@@ -765,10 +768,11 @@ mod mapping {
             let mut cursor = pt.cursor(&preempt_guard, &from).unwrap();
             let mut frame_i = 0;
             loop {
+                while cursor.push_level_if_exists().is_some() {}
                 let item = cursor.query();
                 let va = cursor.cur_va_range();
 
-                let Some(TestPtItemRef((pa, level, prop), _)) = item else {
+                let PteStateRef::Mapped(TestPtItemRef((pa, level, prop), _)) = item else {
                     panic!("expected mapped untracked physical address, got `None`");
                 };
 
@@ -823,10 +827,11 @@ mod mapping {
         {
             let mut cursor = pt.cursor(&preempt_guard, &protect_va_range).unwrap();
             loop {
+                while cursor.push_level_if_exists().is_some() {}
                 let item = cursor.query();
                 let va = cursor.cur_va_range();
 
-                let Some(TestPtItemRef((pa, level, prop), _)) = item else {
+                let PteStateRef::Mapped(TestPtItemRef((pa, level, prop), _)) = item else {
                     panic!("expected mapped untracked physical address, got `None`");
                 };
 

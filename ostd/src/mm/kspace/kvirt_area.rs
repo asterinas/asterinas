@@ -80,12 +80,18 @@ impl KVirtArea {
     ) -> Option<super::MappedItemRef<'a>> {
         use align_ext::AlignExt;
 
+        use crate::mm::page_table::PteStateRef;
+
         assert!(self.start() <= addr && self.end() >= addr);
         let start = addr.align_down(PAGE_SIZE);
         let vaddr = start..start + PAGE_SIZE;
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let mut cursor = page_table.cursor(guard, &vaddr).unwrap();
-        cursor.query()
+        while cursor.push_level_if_exists().is_some() {}
+        match cursor.query() {
+            PteStateRef::Mapped(item_ref) => Some(item_ref),
+            _ => None,
+        }
     }
 
     /// Create a kernel virtual area and map tracked pages into it.
@@ -121,6 +127,7 @@ impl KVirtArea {
 
         for (va, frame) in cursor_range.step_by(PAGE_SIZE).zip(frames.into_iter()) {
             cursor.jump(va).unwrap();
+            cursor.adjust_level(1);
             // SAFETY: The constructor of the `KVirtArea` has already ensured
             // that this mapping does not affect kernel's memory safety.
             unsafe { cursor.map(MappedItem::Tracked(Frame::from_unsized(frame), prop)) };
@@ -173,6 +180,7 @@ impl KVirtArea {
                 largest_pages::<KernelPtConfig>(va_range.start, pa_range.start, len)
             {
                 cursor.jump(va).unwrap();
+                cursor.adjust_level(level);
                 // SAFETY: The caller of `map_untracked_frames` has ensured the safety of this mapping.
                 unsafe { cursor.map(MappedItem::Untracked(pa, level, prop)) };
             }

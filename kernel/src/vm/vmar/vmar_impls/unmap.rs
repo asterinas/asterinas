@@ -107,7 +107,7 @@ impl Vmar {
                 if cursor.query().is_none() {
                     continue;
                 }
-
+                cursor.adjust_level(1);
                 rss_delta.add(vm_mapping.rss_type(), -(cursor.unmap() as isize));
             }
             cursor.flusher().dispatch_tlb_flush();

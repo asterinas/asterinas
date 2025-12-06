@@ -178,14 +178,11 @@ impl Vmar {
             let Some(mapped_va) = cursor.find_next(old_size - current_offset) else {
                 break;
             };
-            let Some(item) = cursor.query() else {
-                panic!("Found mapped page but query failed");
-            };
 
             let offset = mapped_va - old_range.start;
             let new_map_va = new_range.start + offset;
 
-            match item {
+            match cursor.query() {
                 VmQueriedItem::MappedRam { frame, prop } => {
                     let frame = (*frame).clone();
 
@@ -202,6 +199,9 @@ impl Vmar {
                     // at the new location
                     let (iomem, offset) = cursor.find_iomem_by_paddr(paddr).unwrap();
                     cursor.map_iomem(iomem, prop, PAGE_SIZE, offset);
+                }
+                _ => {
+                    unreachable!("mapped item found but query failed")
                 }
             }
 
