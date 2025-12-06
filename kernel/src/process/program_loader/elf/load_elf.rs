@@ -6,10 +6,6 @@
 use core::ops::Range;
 
 use align_ext::AlignExt;
-use ostd::{
-    mm::{CachePolicy, PageFlags, PageProperty, VmIo},
-    task::disable_preempt,
-};
 use xmas_elf::program::{self, ProgramHeader64};
 
 use super::elf_file::ElfHeaders;
@@ -21,7 +17,7 @@ use crate::{
     },
     prelude::*,
     process::process_vm::{AuxKey, AuxVec},
-    vm::{perms::VmPerms, util::duplicate_frame, vmar::Vmar, vmo::CommitFlags},
+    vm::{perms::VmPerms, vmar::Vmar},
 };
 
 /// Loads elf to the process VMAR.
@@ -353,65 +349,23 @@ fn map_segment_vmo(
         vm_map_options = vm_map_options.offset(offset).handle_page_faults_around();
         let map_addr = vm_map_options.build()?;
 
-        // Write zero as paddings. There are head padding and tail padding.
-        // Head padding: if the segment's virtual address is not page-aligned,
-        // then the bytes in first page from start to virtual address should be padded zeros.
-        // Tail padding: If the segment's mem_size is larger than file size,
-        // then the bytes that are not backed up by file content should be zeros.(usually .data/.bss sections).
-
-        // Head padding.
-        let page_offset = file_offset % PAGE_SIZE;
-        let head_frame = if page_offset != 0 {
-            let head_frame =
-                segment_vmo.commit_on(segment_offset / PAGE_SIZE, CommitFlags::empty())?;
-            let new_frame = duplicate_frame(&head_frame)?;
-
-            let buffer = vec![0u8; page_offset];
-            new_frame.write_bytes(0, &buffer).unwrap();
-            Some(new_frame)
-        } else {
-            None
-        };
-
-        // Tail padding.
-        let tail_padding_offset = program_header.file_size as usize + page_offset;
-        let tail_frame_and_addr = if segment_size > tail_padding_offset {
-            let tail_frame = {
-                let offset_index = (segment_offset + tail_padding_offset) / PAGE_SIZE;
-                segment_vmo.commit_on(offset_index, CommitFlags::empty())?
+        // Write zero as paddings if the tail is not page-aligned and map size
+        // is larger than file size (e.g., `.bss`). The mapping is by default
+        // private so the writes will trigger copy-on-write. Ignore errors if
+        // the permissions do not allow writing.
+        // Reference: <https://elixir.bootlin.com/linux/v6.17/source/fs/binfmt_elf.c#L410-L422>
+        if program_header.file_size < program_header.mem_size {
+            let tail_start_vaddr =
+                map_addr + virtual_addr % PAGE_SIZE + program_header.file_size as usize;
+            if tail_start_vaddr < map_addr + segment_size {
+                let zero_size = PAGE_SIZE - tail_start_vaddr % PAGE_SIZE;
+                let res = vmar.fill_zeros_remote(tail_start_vaddr, zero_size);
+                if let Err((e, _)) = res
+                    && perms.contains(VmPerms::WRITE)
+                {
+                    return Err(e);
+                }
             };
-            let new_frame = duplicate_frame(&tail_frame)?;
-
-            let buffer = vec![0u8; (segment_size - tail_padding_offset) % PAGE_SIZE];
-            new_frame
-                .write_bytes(tail_padding_offset % PAGE_SIZE, &buffer)
-                .unwrap();
-
-            let tail_page_addr = map_addr + tail_padding_offset.align_down(PAGE_SIZE);
-            Some((new_frame, tail_page_addr))
-        } else {
-            None
-        };
-
-        let preempt_guard = disable_preempt();
-        let mut cursor = vmar
-            .vm_space()
-            .cursor_mut(&preempt_guard, &(map_addr..map_addr + segment_size))?;
-        let page_flags = PageFlags::from(perms) | PageFlags::ACCESSED;
-
-        if let Some(head_frame) = head_frame {
-            cursor.map(
-                head_frame.into(),
-                PageProperty::new_user(page_flags, CachePolicy::Writeback),
-            );
-        }
-
-        if let Some((tail_frame, tail_page_addr)) = tail_frame_and_addr {
-            cursor.jump(tail_page_addr)?;
-            cursor.map(
-                tail_frame.into(),
-                PageProperty::new_user(page_flags, CachePolicy::Writeback),
-            );
         }
     }
 
