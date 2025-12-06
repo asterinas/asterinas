@@ -12,7 +12,7 @@ use crate::{
 
 pub fn execute_new_command(args: &NewArgs) {
     cargo_new_lib(&args.crate_name);
-    
+
     // Extract the actual crate name from the path if a full path was provided.
     // `cargo new` accepts both "my-crate" and "/path/to/my-crate", and in the
     // latter case, it uses the last path component as the crate name.
@@ -21,7 +21,7 @@ pub fn execute_new_command(args: &NewArgs) {
         .and_then(|name| name.to_str())
         .map(|name| name.to_string())
         .unwrap_or_else(|| args.crate_name.clone());
-    
+
     let cargo_metadata = get_cargo_metadata(Some(&args.crate_name), None::<&[&str]>).unwrap();
     add_manifest_dependencies(&cargo_metadata, &crate_name);
     create_osdk_manifest(&cargo_metadata, &args.project_type());
