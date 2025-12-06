@@ -1,0 +1,56 @@
+From 848ea732d0a5184326643f0e6d6f0a280b173d8f Mon Sep 17 00:00:00 2001
+From: Chen Chengjun <chenchengjun.ccj@antgroup.com>
+Date: Sat, 6 Dec 2025 04:21:07 +0000
+Subject: [PATCH] Switch MS_SLAVE to MS_PRIVATE
+
+Replace the use of MS_SLAVE with MS_PRIVATE, as Asterinas currently does
+not support the MS_SLAVE flag.
+
+---
+ src/basic/process-util.c   | 2 +-
+ src/core/exec-credential.c | 2 +-
+ src/shared/mount-util.c    | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/src/basic/process-util.c b/src/basic/process-util.c
+index 18fbadf175..0aa68a1162 100644
+--- a/src/basic/process-util.c
++++ b/src/basic/process-util.c
+@@ -1652,7 +1652,7 @@ int safe_fork_full(
+ 
+         if (FLAGS_SET(flags, FORK_NEW_MOUNTNS | FORK_MOUNTNS_SLAVE)) {
+                 /* Optionally, make sure we never propagate mounts to the host. */
+-                if (mount(NULL, "/", NULL, MS_SLAVE | MS_REC, NULL) < 0) {
++                if (mount(NULL, "/", NULL, MS_PRIVATE | MS_REC, NULL) < 0) {
+                         log_full_errno(prio, errno, "Failed to remount root directory as MS_SLAVE: %m");
+                         _exit(EXIT_FAILURE);
+                 }
+diff --git a/src/core/exec-credential.c b/src/core/exec-credential.c
+index 6ab3edbb54..dd40cdf081 100644
+--- a/src/core/exec-credential.c
++++ b/src/core/exec-credential.c
+@@ -1119,7 +1119,7 @@ int exec_setup_credentials(
+                  * no one else sees this should be OK to do. */
+ 
+                 /* Turn off propagation from our namespace to host */
+-                r = mount_nofollow_verbose(LOG_DEBUG, NULL, "/dev", NULL, MS_SLAVE|MS_REC, NULL);
++                r = mount_nofollow_verbose(LOG_DEBUG, NULL, "/dev", NULL, MS_PRIVATE|MS_REC, NULL);
+                 if (r < 0)
+                         goto child_fail;
+ 
+diff --git a/src/shared/mount-util.c b/src/shared/mount-util.c
+index 35b1049531..e2f611e07a 100644
+--- a/src/shared/mount-util.c
++++ b/src/shared/mount-util.c
+@@ -904,7 +904,7 @@ static int mount_in_namespace_legacy(
+ 
+         mount_slave_mounted = true;
+ 
+-        r = mount_nofollow_verbose(LOG_DEBUG, NULL, mount_slave, NULL, MS_SLAVE, NULL);
++        r = mount_nofollow_verbose(LOG_DEBUG, NULL, mount_slave, NULL, MS_PRIVATE, NULL);
+         if (r < 0)
+                 goto finish;
+ 
+-- 
+2.34.1
+
