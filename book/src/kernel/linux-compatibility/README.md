@@ -15,7 +15,7 @@ support the loading of Linux kernel modules.
 ## System Calls
 
 At the time of writing,
-Asterinas supports over 226 Linux system calls for the x86-64 architecture,
+Asterinas supports over 230 Linux system calls for the x86-64 architecture,
 which are summarized in the table below.
 
 | Numbers | Names                  | Supported      | Flag Coverage |
