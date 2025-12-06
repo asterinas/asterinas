@@ -92,6 +92,11 @@
 //!    [`Ioctl::with_reader`]), which allows for the writing (or reading) of variable-length data.
 //!    `EVIOCGNAME` is such an example.
 //!
+//!  - For an ioctl family composed of multiple ioctl commands, the [`Ioctl`] type allows to
+//!    specify a range as its `NR_RANGE_INCLUSIVE` generic argument. In this case, the type alias
+//!    has to be defined manually, rather than using the [`ioc`] macro. `EVIOCGBIT` is such an
+//!    example.
+//!
 
 use core::marker::PhantomData;
 
@@ -129,9 +134,14 @@ impl RawIoctl {
 
 /// An ioctl command and its argument in strongly typed form.
 ///
-/// `MAGIC` and `NR` are the Linux "magic" and "number" fields.
+/// `MAGIC` corresponds to the Linux "magic" field. `NR_RANGE_INCLUSIVE`
+/// specifies the start and the inclusive end of the Linux "number" field.
 /// For legacy commands defined as raw constants, we may set them to the values
 /// decoded from the raw number.
+///
+/// If `NR_RANGE_INCLUSIVE` contains multiple elements,
+/// the type can represent multiple ioctl commands that form an *ioctl family*.
+/// These commands can be distinguished via [`Self::family_index`].
 ///
 /// `IS_MODERN` indicates whether the ioctl is a modern or legacy one.
 /// An legacy ioctl uses an arbitrary `u16` value as its number,
@@ -139,7 +149,7 @@ impl RawIoctl {
 ///
 /// `D` is one of [`NoData`], [`InData`], [`OutData`], or [`InOutData`].
 /// It specifies key aspects about the input/output data in the ioctl argument.
-pub struct Ioctl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, D> {
+pub struct Ioctl<const MAGIC: u8, const NR_RANGE_INCLUSIVE: (u8, u8), const IS_MODERN: bool, D> {
     cmd: IoctlCmd,
     arg: usize,
     _phantom: PhantomData<D>,
@@ -157,7 +167,7 @@ pub struct Ioctl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, D> {
 /// ```
 /// It is equivalent to:
 /// ```
-/// type NoTty = Ioctl<{0x54}, {0x0E}, {/* IS_MODERN= */false}, NoData>;
+/// type NoTty = Ioctl<{0x54}, {(0x0E, 0x0E)}, {/* IS_MODERN= */false}, NoData>;
 /// ```
 ///
 /// # Modern encoding
@@ -171,7 +181,7 @@ pub struct Ioctl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, D> {
 /// ```
 /// It is equivalent to:
 /// ```
-/// type SetPtyLock = Ioctl<{b'T'}, {0x31}, {/* IS_MODERN= */true}, InData<i32>>;
+/// type SetPtyLock = Ioctl<{b'T'}, {(0x31, 0x31)}, {/* IS_MODERN= */true}, InData<i32>>;
 /// ```
 macro_rules! ioc {
     // Legacy encoding.
@@ -179,11 +189,11 @@ macro_rules! ioc {
         $crate::util::ioctl::Ioctl::<
             {
                 // MAGIC
-                $crate::util::ioctl::magic_and_nr_from_cmd($raw).0
+                $crate::util::ioctl::magic_and_nr_range_from_cmd($raw).0
             },
             {
                 // NR
-                $crate::util::ioctl::magic_and_nr_from_cmd($raw).1
+                $crate::util::ioctl::magic_and_nr_range_from_cmd($raw).1
             },
             {
                 // IS_MODERN
@@ -194,20 +204,20 @@ macro_rules! ioc {
     };
     // Modern encoding.
     ($linux_name:ident, $magic:literal, $nr:literal, $data:ty) => {
-        $crate::util::ioctl::Ioctl::<{ $magic }, { $nr }, { true }, $data>
+        $crate::util::ioctl::Ioctl::<{ $magic }, { ($nr, $nr) }, { true }, $data>
     };
 }
 pub(crate) use ioc;
 
-/// Extracts the "magic" and "number" fields from an ioctl command.
+/// Extracts the "magic" field and an inclusive range for the "number" field from an ioctl command.
 #[doc(hidden)]
-pub const fn magic_and_nr_from_cmd(raw_cmd: u16) -> (u8, u8) {
+pub const fn magic_and_nr_range_from_cmd(raw_cmd: u16) -> (u8, (u8, u8)) {
     let cmd = IoctlCmd::new(raw_cmd as u32);
-    (cmd.magic(), cmd.nr())
+    (cmd.magic(), (cmd.nr(), cmd.nr()))
 }
 
-impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, D: DataSpec>
-    Ioctl<MAGIC, NR, IS_MODERN, D>
+impl<const MAGIC: u8, const NR_RANGE_INCLUSIVE: (u8, u8), const IS_MODERN: bool, D: DataSpec>
+    Ioctl<MAGIC, NR_RANGE_INCLUSIVE, IS_MODERN, D>
 {
     /// Tries to interpret a [`RawIoctl`] as this particular ioctl command.
     ///
@@ -219,7 +229,7 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, D: DataSpec>
         if cmd.magic() != MAGIC {
             return None;
         }
-        if cmd.nr() != NR {
+        if cmd.nr() < NR_RANGE_INCLUSIVE.0 || cmd.nr() > NR_RANGE_INCLUSIVE.1 {
             return None;
         }
 
@@ -246,10 +256,24 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, D: DataSpec>
             _phantom: PhantomData,
         })
     }
+
+    /// Returns the index within the ioctl family.
+    ///
+    /// If `NR_RANGE_INCLUSIVE` contains only one element, this method will always return zero.
+    /// Otherwise, it returns the index of the corresponding element in `NR_RANGE_INCLUSIVE` for
+    /// the ioctl command, starting from zero.
+    #[expect(dead_code)]
+    pub const fn family_index(&self) -> u8 {
+        self.cmd.nr() - NR_RANGE_INCLUSIVE.0
+    }
 }
 
-impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, D: PtrDataSpec>
-    Ioctl<MAGIC, NR, IS_MODERN, D>
+impl<
+        const MAGIC: u8,
+        const NR_RANGE_INCLUSIVE: (u8, u8),
+        const IS_MODERN: bool,
+        D: PtrDataSpec,
+    > Ioctl<MAGIC, NR_RANGE_INCLUSIVE, IS_MODERN, D>
 {
     fn with_data_ptr_unchecked_access<F, R>(&self, f: F) -> R
     where
@@ -282,8 +306,8 @@ impl<T> PtrDataSpec for InData<T, PassByPtr> {
     type Pointee = T;
 }
 
-impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, T: Pod>
-    Ioctl<MAGIC, NR, IS_MODERN, InData<T, PassByPtr>>
+impl<const MAGIC: u8, const NR_RANGE_INCLUSIVE: (u8, u8), const IS_MODERN: bool, T: Pod>
+    Ioctl<MAGIC, NR_RANGE_INCLUSIVE, IS_MODERN, InData<T, PassByPtr>>
 {
     /// Reads the ioctl argument from userspace.
     pub fn read(&self) -> Result<T> {
@@ -294,8 +318,8 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, T: Pod>
 macro_rules! impl_get_by_val_for {
     { $( $ty:ident )* } => {
         $(
-            impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool>
-                Ioctl<MAGIC, NR, IS_MODERN, InData<$ty, PassByVal>>
+            impl<const MAGIC: u8, const NR_RANGE_INCLUSIVE: (u8, u8), const IS_MODERN: bool>
+                Ioctl<MAGIC, NR_RANGE_INCLUSIVE, IS_MODERN, InData<$ty, PassByVal>>
             {
                 /// Gets the ioctl argument.
                 pub fn get(&self) -> $ty {
@@ -314,8 +338,8 @@ impl DataSpec for InData<[u8]> {
     const DIR: IoctlDir = IoctlDir::Write;
 }
 
-impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool>
-    Ioctl<MAGIC, NR, IS_MODERN, InData<[u8]>>
+impl<const MAGIC: u8, const NR_RANGE_INCLUSIVE: (u8, u8), const IS_MODERN: bool>
+    Ioctl<MAGIC, NR_RANGE_INCLUSIVE, IS_MODERN, InData<[u8]>>
 {
     /// Obtains a [`VmReader`] that can read the dynamically-sized ioctl argument from userspace.
     ///
@@ -341,8 +365,8 @@ impl<T> PtrDataSpec for OutData<T> {
     type Pointee = T;
 }
 
-impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, T: Pod>
-    Ioctl<MAGIC, NR, IS_MODERN, OutData<T>>
+impl<const MAGIC: u8, const NR_RANGE_INCLUSIVE: (u8, u8), const IS_MODERN: bool, T: Pod>
+    Ioctl<MAGIC, NR_RANGE_INCLUSIVE, IS_MODERN, OutData<T>>
 {
     /// Writes the ioctl argument to userspace.
     pub fn write(&self, val: &T) -> Result<()> {
@@ -356,8 +380,8 @@ impl DataSpec for OutData<[u8]> {
     const DIR: IoctlDir = IoctlDir::Read;
 }
 
-impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool>
-    Ioctl<MAGIC, NR, IS_MODERN, OutData<[u8]>>
+impl<const MAGIC: u8, const NR_RANGE_INCLUSIVE: (u8, u8), const IS_MODERN: bool>
+    Ioctl<MAGIC, NR_RANGE_INCLUSIVE, IS_MODERN, OutData<[u8]>>
 {
     /// Obtains a [`VmWriter`] that can write the dynamically-sized ioctl argument to userspace.
     ///
@@ -383,8 +407,8 @@ impl<T> PtrDataSpec for InOutData<T> {
     type Pointee = T;
 }
 
-impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, T: Pod>
-    Ioctl<MAGIC, NR, IS_MODERN, InOutData<T>>
+impl<const MAGIC: u8, const NR_RANGE_INCLUSIVE: (u8, u8), const IS_MODERN: bool, T: Pod>
+    Ioctl<MAGIC, NR_RANGE_INCLUSIVE, IS_MODERN, InOutData<T>>
 {
     /// Reads the ioctl argument from userspace.
     #[expect(dead_code)]
