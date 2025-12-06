@@ -73,7 +73,7 @@ impl KVirtArea {
     }
 
     #[cfg(ktest)]
-    pub fn query(&self, addr: Vaddr) -> Option<super::MappedItem> {
+    pub(in crate::mm) fn query(&self, addr: Vaddr) -> Option<super::MappedItem> {
         use align_ext::AlignExt;
 
         assert!(self.start() <= addr && self.end() >= addr);
