@@ -38,9 +38,18 @@ impl IoctlCmd {
         Self(cmd)
     }
 
+    pub(super) const fn as_u32(self) -> u32 {
+        self.0
+    }
+
     pub(super) const fn nr(self) -> u8 {
         // Bits 0..=7
         self.0 as u8
+    }
+
+    pub(super) const fn set_nr(&mut self, nr: u8) {
+        // Bits 0..=7
+        self.0 = (self.0 & !0xFF) | (nr as u32);
     }
 
     pub(super) const fn magic(self) -> u8 {

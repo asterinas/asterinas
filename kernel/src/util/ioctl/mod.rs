@@ -92,6 +92,9 @@
 //!    [`Ioctl::with_reader`]), which allows for the writing (or reading) of variable-length data.
 //!    `EVIOCGNAME` is such an example.
 //!
+//!  - For a group of ioctls that serve similar purposes, the [`IoctlEnum`] type allows to
+//!    represent them all with a single type (just like an enum). `EVIOCGBIT` is such an example.
+//!
 
 use core::marker::PhantomData;
 
@@ -471,3 +474,250 @@ macro_rules! dispatch_ioctl {
     };
 }
 pub(crate) use dispatch_ioctl;
+
+/// An ioctl enum that represents one of a possible set of almost identical [`Ioctl`]s.
+///
+/// # Motivation
+///
+/// Sometimes, we want to define a group of ioctls that serve similar purposes.
+/// Their magic numbers, data directions, and data types are exactly the same.
+/// The only difference is the NR byte (see [`IoctlCmd::nr`]).
+///
+/// Let's take `EVIOCGBIT` as an example.
+/// It is an ioctl of input devices (`/dev/input/eventX`),
+/// whose definition in C is shown below:
+///
+/// ```c
+/// #define EVIOCGBIT(ev,len)   _IOC(_IOC_READ, 'E', 0x20 + (ev), len)  /* get event bits */
+/// ```
+///
+/// The valid range of `ev` is `0..0x1F`.
+/// Each possible value of `ev` results in an ioctl command with a different NR.
+/// This is like an ioctl number having an enum embedded in its NR byte!
+///
+/// # Example
+///
+/// To handle ioctl enums,
+/// we introduce `IoctlEnum<const MAGIC: u8, const BASE_NR: u8, const ENUM_MASK: u8, D>`.
+/// Using this type, we can represent the `EVIOCGBIT` ioctl enum readily in Rust:
+///
+/// ```
+/// /// The `EVIOCGBIT` ioctl enum.
+/// type GetEventBits = IoctlEnum<b'E', 0x20, 0x1F, OutData<[u8]>>;
+/// ```
+///
+/// The first (`{b'E'}`) and last (`OutData<[u8]>`) generic parameters
+/// have the same semantics of the ones in `Ioctl`.
+/// The second (`{0x20}`) and third (`{0x1F}`) ones together
+/// dictate the bit patterns for the NR byte.
+/// Assuming the NR byte has a value of `nr`,
+/// `nr` is valid if and only if `(nr & !0x1F) == 0x20`.
+///
+/// Given an ioctl enum `IoctlEnum<_, BASE_NR: u8, ENUM_MASK: u8, _>`,
+/// we say an ioctl _belongs_ to the ioctl enum
+/// if the NR byte of the ioctl, `nr`, satisfies `(nr & !ENUM_MASK) == BASE_NR`.
+/// A `RawIoctl` instance can be fed to `IoctlEnum::try_from_raw`
+/// to check if it belongs to the ioctl enum.
+///
+/// ```
+/// let raw_ioctl = RawIoctl::new(0x80004520, 0);
+/// let ioctl_enum = GetEventBits::try_from_raw(raw_ioctl);
+/// assert!(ioctl_enum.is_some());
+/// assert_eq!(ioctl_enum.unwrap().discriminant(), 0);
+/// ```
+///
+/// Regardless of the NR byte of `raw_ioctl` (say, `nr`),
+/// the `try_from_raw` constructor will mask out the enum bits (`nr & !ENUM_MASK`)
+/// to create a _base_ ioctl whose NR byte equals to `BASE_NR & !ENUM_MASK`.
+/// For simplicity, we require that `(BASE_NR & !ENUM_MASK) == BASE_NR`;
+/// otherwise, a compile-time constant assertion will fail.
+/// The [`IoctlEnum::base_ioctl`] method returns this base ioctl represented as an `Ioctl` instance,
+/// which is useful to handle the ioctl.
+///
+/// The enum variant of the ioctl can be obtained by calling [`IoctlEnum::discriminant`],
+/// whose value is equal to `nr & ENUM_MASK`.
+pub struct IoctlEnum<const MAGIC: u8, const BASE_NR: u8, const ENUM_MASK: u8, D> {
+    base_ioctl: Ioctl<MAGIC, BASE_NR, /* IS_MODERN = */ true, D>,
+    discriminant: u8,
+}
+
+impl<const MAGIC: u8, const BASE_NR: u8, const ENUM_MASK: u8, D: DataSpec>
+    IoctlEnum<MAGIC, BASE_NR, ENUM_MASK, D>
+{
+    /// Tries to interpret a [`RawIoctl`] as an ioctl command that belongs to the ioctl enum.
+    ///
+    /// This method succeeds only if the ioctl command belongs to the ioctl enum. Otherwise, this
+    /// method returns `None`.
+    pub fn try_from_raw(raw_ioctl: RawIoctl) -> Option<Self> {
+        const {
+            assert!(
+                (BASE_NR & ENUM_MASK) == 0,
+                "the base NR must not have the mask bits set"
+            )
+        };
+
+        let (discriminant, raw_base_ioctl) = {
+            let mut cmd = IoctlCmd::new(raw_ioctl.cmd);
+
+            let discriminant = cmd.nr() & ENUM_MASK;
+            cmd.set_nr(cmd.nr() & !ENUM_MASK);
+
+            (discriminant, RawIoctl::new(cmd.as_u32(), raw_ioctl.arg()))
+        };
+
+        let base_ioctl = Ioctl::try_from_raw(raw_base_ioctl)?;
+
+        Some(Self {
+            base_ioctl,
+            discriminant,
+        })
+    }
+}
+
+impl<const MAGIC: u8, const BASE_NR: u8, const ENUM_MASK: u8, D>
+    IoctlEnum<MAGIC, BASE_NR, ENUM_MASK, D>
+{
+    /// Returns a reference to the base ioctl.
+    ///
+    /// See the type-level documentations for the definition of the base ioctl.
+    pub const fn base_ioctl(&self) -> &Ioctl<MAGIC, BASE_NR, /* IS_MODERN = */ true, D> {
+        &self.base_ioctl
+    }
+
+    /// Returns the discriminant of the ioctl enum variant.
+    ///
+    /// See the type-level documentations for the definition of the enum discriminant.
+    pub const fn discriminant(&self) -> u8 {
+        self.discriminant
+    }
+}
+
+#[cfg(ktest)]
+mod test {
+    use ostd::prelude::ktest;
+
+    use super::*;
+
+    type SetControlTty = ioc!(TIOCSCTTY, 0x540E, InData<i32, PassByVal>);
+
+    /// The `EVIOCGBIT` ioctl enum.
+    type GetEventBits = IoctlEnum<b'E', 0x20, 0x1F, OutData<[u8]>>;
+
+    #[derive(Debug, PartialEq, Eq)]
+    enum Action {
+        SetControlTty { should_steal_tty: bool },
+        GetEventBits { event_type: u8, buffer_length: u16 },
+    }
+
+    impl Action {
+        fn parse(cmd: u32, arg: usize) -> Option<Self> {
+            let raw_ioctl = RawIoctl::new(cmd, arg);
+
+            dispatch_ioctl!(match raw_ioctl {
+                cmd @ SetControlTty => {
+                    let should_steal_tty = cmd.get() == 1;
+                    Some(Self::SetControlTty { should_steal_tty })
+                }
+                cmd @ GetEventBits => {
+                    let event_type = cmd.discriminant();
+                    // Ideally, we can use
+                    // `cmd.base_ioctl().with_writer(|writer| Ok(writer.avail()))`.
+                    // But it panics because there is no userspace when performing unit tests.
+                    let buffer_length = cmd.base_ioctl().cmd.size();
+                    Some(Self::GetEventBits {
+                        event_type,
+                        buffer_length,
+                    })
+                }
+                _ => None,
+            })
+        }
+    }
+
+    #[ktest]
+    fn invalid() {
+        let action = Action::parse(0xFFFF, 1234);
+        assert!(action.is_none());
+
+        // Similar to `TIOCSCTTY`, but not quite.
+        let action = Action::parse(0x540F, 4567);
+        assert!(action.is_none());
+
+        // `TIOCSCTTY` with an unexpected data direction.
+        let action = Action::parse(0x8000540E, 1234);
+        assert!(action.is_none());
+
+        // `TIOCSCTTY` with an unexpected data size.
+        let action = Action::parse(0x0001540E, 4567);
+        assert!(action.is_none());
+
+        // `EVIOCGBIT` with an unexpected data direction.
+        let action = Action::parse(0x40004520, 1234);
+        assert!(action.is_none());
+
+        // `EVIOCGBIT` with an underflowed event type.
+        let action = Action::parse(0x4000451F, 4567);
+        assert!(action.is_none());
+
+        // `EVIOCGBIT` with an overflowed event type.
+        let action = Action::parse(0x40004540, 4567);
+        assert!(action.is_none());
+    }
+
+    #[ktest]
+    fn tiocsctty() {
+        let action = Action::parse(0x540E, 0);
+        assert_eq!(
+            action,
+            Some(Action::SetControlTty {
+                should_steal_tty: false
+            })
+        );
+
+        let action = Action::parse(0x540E, 1);
+        assert_eq!(
+            action,
+            Some(Action::SetControlTty {
+                should_steal_tty: true
+            })
+        );
+
+        let action = Action::parse(0x540E, 1 << 63);
+        assert_eq!(
+            action,
+            Some(Action::SetControlTty {
+                should_steal_tty: false
+            })
+        );
+    }
+
+    #[ktest]
+    fn eviocgbit() {
+        let action = Action::parse(0x80004520, 0);
+        assert_eq!(
+            action,
+            Some(Action::GetEventBits {
+                event_type: 0,
+                buffer_length: 0
+            })
+        );
+
+        let action = Action::parse(0x80104528, 1234);
+        assert_eq!(
+            action,
+            Some(Action::GetEventBits {
+                event_type: 8,
+                buffer_length: 16
+            })
+        );
+
+        let action = Action::parse(0xBFFF453F, 4567);
+        assert_eq!(
+            action,
+            Some(Action::GetEventBits {
+                event_type: 0x1F,
+                buffer_length: 0x3FFF
+            })
+        );
+    }
+}
