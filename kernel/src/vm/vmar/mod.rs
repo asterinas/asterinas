@@ -15,7 +15,7 @@ use ostd::{
         io_util::HasVmReaderWriter,
         tlb::TlbFlushOp,
         vm_space::{CursorMut, VmQueriedItem},
-        CachePolicy, PageFlags, UFrame, VmSpace, MAX_USERSPACE_VADDR,
+        CachePolicy, HasSize, PageFlags, UFrame, VmSpace, MAX_USERSPACE_VADDR,
     },
     sync::RwMutexReadGuard,
     task::disable_preempt,
@@ -429,16 +429,23 @@ impl Vmar {
                 panic!("Found mapped page but query failed");
             };
             debug_assert_eq!(mapped_va, va.start);
-            cursor.unmap(PAGE_SIZE);
 
             let offset = mapped_va - old_range.start;
-            cursor.jump(new_range.start + offset).unwrap();
+            let new_map_va = new_range.start + offset;
 
             match item {
                 VmQueriedItem::MappedRam { frame, prop } => {
+                    let frame = (*frame).clone();
+
+                    cursor.unmap(PAGE_SIZE);
+                    cursor.jump(new_map_va).unwrap();
+
                     cursor.map(frame, prop);
                 }
                 VmQueriedItem::MappedIoMem { paddr, prop } => {
+                    cursor.unmap(PAGE_SIZE);
+                    cursor.jump(new_map_va).unwrap();
+
                     // For MMIO pages, find the corresponding `IoMem` and map it
                     // at the new location
                     let (iomem, offset) = cursor.find_iomem_by_paddr(paddr).unwrap();
@@ -464,7 +471,7 @@ impl Vmar {
     /// On success, the number of bytes read is returned;
     /// On error, both the error and the number of bytes read so far are returned.
     ///
-    /// The `VmSpace` of the process is not required be activated on the current CPU.
+    /// The `VmSpace` of the process is not required to be activated on the current CPU.
     pub fn read_remote(
         &self,
         vaddr: Vaddr,
@@ -489,7 +496,7 @@ impl Vmar {
     /// On success, the number of bytes written is returned;
     /// On error, both the error and the number of bytes written so far are returned.
     ///
-    /// The `VmSpace` of the process is not required be activated on the current CPU.
+    /// The `VmSpace` of the process is not required to be activated on the current CPU.
     pub fn write_remote(
         &self,
         vaddr: Vaddr,
@@ -505,9 +512,36 @@ impl Vmar {
         self.access_remote(vaddr, len, PageFlags::W, write)
     }
 
+    /// Writes zeros to the process user space.
+    ///
+    /// This method writes at most `len` bytes of zeros to the process user space.
+    /// On success, the number of bytes written is returned; on error, both the
+    /// error and the number of bytes written so far are returned.
+    ///
+    /// The `VmSpace` of the process is not required to be activated on the current CPU.
+    pub fn fill_zeros_remote(
+        &self,
+        vaddr: Vaddr,
+        len: usize,
+    ) -> core::result::Result<usize, (Error, usize)> {
+        let mut remain = len;
+        let write = |frame: UFrame, skip_offset: usize| {
+            let frame_size = frame.size();
+            let mut writer = frame.writer().to_fallible();
+            writer.skip(skip_offset);
+            let to_write = remain.min(frame_size - skip_offset);
+            let res = writer.fill_zeros(to_write);
+            let (Ok(n) | Err((_, n))) = &res;
+            remain -= *n;
+            res
+        };
+
+        self.access_remote(vaddr, len, PageFlags::W, write)
+    }
+
     /// Accesses memory at `vaddr..vaddr+len` within the process user space using `op`.
     ///
-    /// The `VmSpace` of the process is not required be activated on the current CPU.
+    /// The `VmSpace` of the process is not required to be activated on the current CPU.
     /// If any page in the range is not mapped or does not have the required page
     /// flags, a page fault will be handled to try to make the page accessible.
     fn access_remote<F>(
@@ -555,50 +589,42 @@ impl Vmar {
         vaddr: Vaddr,
         required_page_flags: PageFlags,
     ) -> Result<UFrame> {
-        let mut item = self.query_page(vaddr)?;
+        debug_assert!(is_userspace_vaddr(vaddr) && vaddr % PAGE_SIZE == 0);
 
-        let vm_item = loop {
-            match item {
+        let vmspace = self.vm_space();
+
+        loop {
+            let preempt_guard = disable_preempt();
+            let mut cursor = vmspace.cursor(&preempt_guard, &(vaddr..vaddr + PAGE_SIZE))?;
+
+            match cursor.query()?.1 {
                 Some(vm_item) if vm_item.prop().flags.contains(required_page_flags) => {
-                    break vm_item;
+                    match vm_item {
+                        VmQueriedItem::MappedRam { frame, .. } => return Ok((*frame).clone()),
+                        VmQueriedItem::MappedIoMem { .. } => {
+                            return_errno_with_message!(
+                                Errno::EOPNOTSUPP,
+                                "accessing remote MMIO memory is not supported currently"
+                            );
+                        }
+                    }
                 }
                 Some(_) | None => (),
             }
+
+            drop(cursor);
+            drop(preempt_guard);
 
             let page_fault_info = PageFaultInfo {
                 address: vaddr,
                 required_perms: required_page_flags.into(),
             };
-            self.handle_page_fault(&page_fault_info)
-                .map_err(|_| Error::with_message(Errno::EIO, "the page is not accessible"))?;
-
-            item = self.query_page(vaddr)?;
+            self.handle_page_fault(&page_fault_info)?;
 
             // Note that we are not holding `self.inner.lock()` here. Therefore, in race conditions
             // (e.g., if the mapping is removed concurrently), we will need to try again. The same
             // is true for real page faults; they may occur more than once at the same address.
-        };
-
-        match vm_item {
-            VmQueriedItem::MappedRam { frame, .. } => Ok(frame),
-            VmQueriedItem::MappedIoMem { .. } => {
-                return_errno_with_message!(
-                    Errno::EOPNOTSUPP,
-                    "accessing remote MMIO memory is not supported currently"
-                );
-            }
         }
-    }
-
-    fn query_page(&self, vaddr: Vaddr) -> Result<Option<VmQueriedItem>> {
-        debug_assert!(is_userspace_vaddr(vaddr) && vaddr % PAGE_SIZE == 0);
-
-        let preempt_guard = disable_preempt();
-        let vmspace = self.vm_space();
-        let mut cursor = vmspace.cursor(&preempt_guard, &(vaddr..vaddr + PAGE_SIZE))?;
-        let (_, item) = cursor.query()?;
-
-        Ok(item)
     }
 }
 
@@ -917,6 +943,8 @@ fn cow_copy_pt(src: &mut CursorMut<'_>, dst: &mut CursorMut<'_>, size: usize) ->
 
         match item {
             VmQueriedItem::MappedRam { frame, mut prop } => {
+                let frame = (*frame).clone();
+
                 src.protect_next(end_va - mapped_va, op).unwrap();
 
                 dst.jump(mapped_va).unwrap();
@@ -1397,22 +1425,16 @@ mod test {
         // Confirms that parent and child VAs map to the same physical address.
         {
             let child_map_frame_addr = {
-                let (_, Some(VmQueriedItem::MappedRam { frame, .. })) = child_space
-                    .cursor(&preempt_guard, &map_range)
-                    .unwrap()
-                    .query()
-                    .unwrap()
+                let mut cursor = child_space.cursor(&preempt_guard, &map_range).unwrap();
+                let (_, Some(VmQueriedItem::MappedRam { frame, .. })) = cursor.query().unwrap()
                 else {
                     panic!("Child mapping query failed");
                 };
                 frame.paddr()
             };
             let parent_map_frame_addr = {
-                let (_, Some(VmQueriedItem::MappedRam { frame, .. })) = vm_space
-                    .cursor(&preempt_guard, &map_range)
-                    .unwrap()
-                    .query()
-                    .unwrap()
+                let mut cursor = vm_space.cursor(&preempt_guard, &map_range).unwrap();
+                let (_, Some(VmQueriedItem::MappedRam { frame, .. })) = cursor.query().unwrap()
                 else {
                     panic!("Parent mapping query failed");
                 };
