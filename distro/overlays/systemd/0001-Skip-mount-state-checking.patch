@@ -1,0 +1,32 @@
+From 3590c030252b0a7bae7749e65e4d0b4d34dbb055 Mon Sep 17 00:00:00 2001
+From: Chen Chengjun <chenchengjun.ccj@antgroup.com>
+Date: Sat, 6 Dec 2025 04:19:38 +0000
+Subject: [PATCH] Skip mount state checking
+
+Systemd uses epoll on /proc/mountinfo to detect whether the mount service 
+has succeeded. Currently, Asterinas does not support this operation.
+
+---
+ src/core/mount.c | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/src/core/mount.c b/src/core/mount.c
+index 689ef5672d..1e99afc7ed 100644
+--- a/src/core/mount.c
++++ b/src/core/mount.c
+@@ -1533,10 +1533,8 @@ static void mount_sigchld_event(Unit *u, pid_t pid, int code, int status) {
+                 /* Our mount point has not appeared in mountinfo. Something went wrong. */
+ 
+                 if (f == MOUNT_SUCCESS) {
+-                        /* Either /bin/mount has an unexpected definition of success, or someone raced us
+-                         * and we lost. */
+-                        log_unit_warning(UNIT(m), "Mount process finished, but there is no mount.");
+-                        f = MOUNT_FAILURE_PROTOCOL;
++                        mount_enter_mounted(m, f);
++                        break;
+                 }
+                 mount_enter_dead(m, f, /* flush_result = */ false);
+                 break;
+-- 
+2.34.1
+

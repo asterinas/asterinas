@@ -10,6 +10,7 @@
   imports = [ ./aster_configuration.nix ];
 
   networking.hostName = "asterinas"; # Define your hostname.
+  networking.nameservers = [ "8.8.8.8" ]; # Define your DNS servers.
 
   # Uncomment the two options below to enable the X11 (X.Org) desktop (XFCE).
   # services.xserver.enable = true;
@@ -24,6 +25,8 @@
   # virtualisation.containers.enable = true;
 
   system.nixos.distroName = "Asterinas NixOS";
+
+  # asterinas.log-level = "debug"; # Uncomment this to enable debug logging.
 
   # This option defines the first version of NixOS you have installed on this particular machine,
   # and is used to maintain compatibility with application data (e.g. databases) created on older NixOS versions.
