@@ -354,30 +354,6 @@ impl PageTable<KernelPtConfig> {
 
         PageTable::<UserPtConfig> { root: new_root }
     }
-
-    /// Protect the given virtual address range in the kernel page table.
-    ///
-    /// This method flushes the TLB entries when doing protection.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that the protection operation does not affect
-    /// the memory safety of the kernel.
-    pub unsafe fn protect_flush_tlb(
-        &self,
-        vaddr: &Range<Vaddr>,
-        mut op: impl FnMut(&mut PageProperty),
-    ) -> Result<(), PageTableError> {
-        let preempt_guard = disable_preempt();
-        let mut cursor = CursorMut::new(self, &preempt_guard, vaddr)?;
-        // SAFETY: The safety is upheld by the caller.
-        while let Some(range) =
-            unsafe { cursor.protect_next(vaddr.end - cursor.virt_addr(), &mut op) }
-        {
-            crate::arch::mm::tlb_flush_addr(range.start);
-        }
-        Ok(())
-    }
 }
 
 impl<C: PageTableConfig> PageTable<C> {
