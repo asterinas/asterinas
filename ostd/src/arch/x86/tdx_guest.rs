@@ -3,74 +3,15 @@
 use tdx_guest::{TdxTrapFrame, tdcall::accept_page, tdvmcall::map_gpa};
 
 use super::trap::TrapFrame;
-use crate::{
-    mm::{
-        PAGE_SIZE,
-        kspace::KERNEL_PAGE_TABLE,
-        paddr_to_vaddr,
-        page_prop::{PageProperty, PrivilegedPageFlags as PrivFlags},
-        page_table::boot_pt,
-    },
-    prelude::Paddr,
-};
+use crate::{mm::PAGE_SIZE, prelude::Paddr};
 
 const SHARED_BIT: u8 = 51;
 const SHARED_MASK: u64 = 1u64 << SHARED_BIT;
 
 #[derive(Debug)]
 pub enum PageConvertError {
-    PageTable,
     TdCall,
     TdVmcall,
-}
-
-/// Converts physical pages to Intel TDX shared pages.
-///
-/// This function sets the [`PrivFlags::SHARED`] bit in the linear mapping of
-/// physical pages. Then, it invokes the [`map_gpa`] TDVMCALL to convert those
-/// pages into Intel TDX shared pages. Due to the conversion, any existing data
-/// on the pages will be erased.
-///
-/// # Safety
-///
-/// The caller must ensure that:
-///  - The provided physical address is page aligned.
-///  - The provided physical address range is in bounds, i.e., it should fall
-///    within the maximum Guest Physical Address (GPA) limit.
-///  - All of the physical pages are untyped memory. Therefore, converting and
-///    erasing the data will not cause memory safety issues.
-///  - The provided physical address range is part of the linear mapping.
-pub unsafe fn unprotect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), PageConvertError> {
-    const PAGE_MASK: usize = PAGE_SIZE - 1;
-    debug_assert_eq!(gpa & PAGE_MASK, 0);
-
-    // Protect the page in the boot page table if in the boot phase.
-    let protect_op = |prop: &mut PageProperty| {
-        *prop = PageProperty {
-            flags: prop.flags,
-            cache: prop.cache,
-            priv_flags: prop.priv_flags | PrivFlags::SHARED,
-        }
-    };
-    let _ = boot_pt::with_borrow(|boot_pt| {
-        for i in 0..page_num {
-            let vaddr = paddr_to_vaddr(gpa + i * PAGE_SIZE);
-            // SAFETY: The caller ensures that the address range exists in the linear mapping and
-            // can be mapped as shared pages.
-            unsafe { boot_pt.protect_base_page(vaddr, protect_op) };
-        }
-    });
-
-    // Protect the page in the kernel page table.
-    let pt = KERNEL_PAGE_TABLE.get().unwrap();
-    let vaddr = paddr_to_vaddr(gpa);
-    // SAFETY: The caller ensures that the address range exists in the linear mapping and can be
-    // mapped as shared pages.
-    unsafe { pt.protect_flush_tlb(&(vaddr..vaddr + page_num * PAGE_SIZE), protect_op) }
-        .map_err(|_| PageConvertError::PageTable)?;
-
-    // SAFETY: The safety condition is upheld by the caller.
-    unsafe { unprotect_gpa_tdvm_call(gpa, page_num * PAGE_SIZE) }
 }
 
 /// Converts physical pages to Intel TDX shared pages.
