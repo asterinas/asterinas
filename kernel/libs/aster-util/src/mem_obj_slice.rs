@@ -14,8 +14,9 @@ use alloc::sync::Arc;
 use core::{borrow::Borrow, fmt::Debug, ops::Range};
 
 use ostd::mm::{
+    dma::DmaStream,
     io_util::{HasVmReaderWriter, VmReaderWriterResult},
-    DmaStream, HasDaddr, HasPaddr, HasSize, Infallible, VmReader, VmWriter,
+    HasDaddr, HasPaddr, HasSize, Infallible, VmReader, VmWriter,
 };
 
 macro_rules! assert_in_range {

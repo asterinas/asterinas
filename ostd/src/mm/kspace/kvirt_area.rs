@@ -11,7 +11,7 @@ use crate::{
         kspace::{KernelPtConfig, MappedItem},
         page_prop::PageProperty,
         page_table::largest_pages,
-        Paddr, Vaddr, PAGE_SIZE,
+        HasSize, Paddr, Split, Vaddr, PAGE_SIZE,
     },
     task::disable_preempt,
     util::range_alloc::RangeAllocator,
@@ -37,6 +37,28 @@ pub struct KVirtArea {
     range: Range<Vaddr>,
 }
 
+impl HasSize for KVirtArea {
+    fn size(&self) -> usize {
+        self.range.len()
+    }
+}
+
+impl Split for KVirtArea {
+    fn split(self, offset: usize) -> (Self, Self) {
+        assert!(offset % PAGE_SIZE == 0);
+        assert!(0 < offset && offset < self.size());
+
+        let old = core::mem::ManuallyDrop::new(self);
+
+        let left_range = old.start()..old.start() + offset;
+        let right_range = old.start() + offset..old.end();
+        (
+            KVirtArea { range: left_range },
+            KVirtArea { range: right_range },
+        )
+    }
+}
+
 impl KVirtArea {
     pub fn start(&self) -> Vaddr {
         self.range.start
@@ -51,12 +73,7 @@ impl KVirtArea {
     }
 
     #[cfg(ktest)]
-    pub fn len(&self) -> usize {
-        self.range.len()
-    }
-
-    #[cfg(ktest)]
-    pub fn query(&self, addr: Vaddr) -> Option<super::MappedItem> {
+    pub(in crate::mm) fn query(&self, addr: Vaddr) -> Option<super::MappedItem> {
         use align_ext::AlignExt;
 
         assert!(self.start() <= addr && self.end() >= addr);
@@ -79,7 +96,7 @@ impl KVirtArea {
     ///  - the area size is not a multiple of [`PAGE_SIZE`];
     ///  - the map offset is not aligned to [`PAGE_SIZE`];
     ///  - the map offset plus the size of the pages exceeds the area size.
-    pub fn map_frames<T: AnyFrameMeta>(
+    pub fn map_frames<T: AnyFrameMeta + ?Sized>(
         area_size: usize,
         map_offset: usize,
         frames: impl Iterator<Item = Frame<T>>,
@@ -100,7 +117,7 @@ impl KVirtArea {
         for frame in frames.into_iter() {
             // SAFETY: The constructor of the `KVirtArea` has already ensured
             // that this mapping does not affect kernel's memory safety.
-            unsafe { cursor.map(MappedItem::Tracked(frame.into(), prop)) }
+            unsafe { cursor.map(MappedItem::Tracked(Frame::from_anysized(frame), prop)) }
                 .expect("Failed to map frame in a new `KVirtArea`");
         }
 

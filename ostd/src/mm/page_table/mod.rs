@@ -201,7 +201,7 @@ pub(crate) fn largest_pages<C: PageTableConfig>(
 ///
 /// It returns a [`RangeInclusive`] because the end address, if being
 /// [`Vaddr::MAX`], overflows [`Range<Vaddr>`].
-const fn vaddr_range<C: PageTableConfig>() -> RangeInclusive<Vaddr> {
+pub(super) const fn vaddr_range<C: PageTableConfig>() -> RangeInclusive<Vaddr> {
     const fn top_level_index_width<C: PageTableConfig>() -> usize {
         C::ADDRESS_WIDTH - pte_index_bit_offset::<C>(C::NR_LEVELS)
     }
