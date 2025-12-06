@@ -2,6 +2,8 @@
 
 use core::time::Duration;
 
+use ostd::mm::VmIo;
+
 use crate::{
     current_userspace,
     prelude::*,

@@ -17,13 +17,14 @@ use crate::{
         file_table::{get_file_fast, FdFlags, FileDesc},
         path::RESERVED_MOUNT_ID,
         pseudofs::anon_inodefs_shared_inode,
-        utils::{CreationFlags, Inode, IoctlCmd},
+        utils::{CreationFlags, Inode},
     },
     prelude::*,
     process::{
         posix_thread::ThreadLocal,
         signal::{PollHandle, Pollable},
     },
+    util::ioctl::RawIoctl,
 };
 
 /// A file-like object that provides epoll API.
@@ -264,8 +265,8 @@ impl FileLike for EpollFile {
         return_errno_with_message!(Errno::EINVAL, "epoll files do not support write");
     }
 
-    fn ioctl(&self, _cmd: IoctlCmd, _arg: usize) -> Result<i32> {
-        return_errno_with_message!(Errno::EINVAL, "epoll files do not support ioctl");
+    fn ioctl(&self, _raw_ioctl: RawIoctl) -> Result<i32> {
+        return_errno_with_message!(Errno::ENOTTY, "epoll files do not support ioctl");
     }
 
     fn inode(&self) -> &Arc<dyn Inode> {

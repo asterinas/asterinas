@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use ostd::mm::VmIo;
+
 use super::SyscallReturn;
 use crate::{
     fs::{
@@ -37,7 +39,7 @@ pub fn sys_readlinkat(
     let linkpath = path.inode().read_link()?.to_string();
     let bytes = linkpath.as_bytes();
     let write_len = bytes.len().min(usr_buf_len);
-    user_space.write_bytes(usr_buf_addr, &mut VmReader::from(&bytes[..write_len]))?;
+    user_space.write_bytes(usr_buf_addr, &bytes[..write_len])?;
     Ok(SyscallReturn::Return(write_len as _))
 }
 

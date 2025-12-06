@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::const_assert;
+use ostd::{const_assert, mm::VmIo};
 
 use super::{
     sched_get_priority_max::{rt_to_static, static_to_rt, SCHED_PRIORITY_RANGE},

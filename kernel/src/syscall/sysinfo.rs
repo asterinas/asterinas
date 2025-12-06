@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_time::read_monotonic_time;
+use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{prelude::*, process::process_table};

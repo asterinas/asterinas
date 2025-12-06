@@ -12,11 +12,12 @@ use super::{inode_handle::InodeHandle, path::Path};
 use crate::{
     fs::{
         file_table::FdFlags,
-        utils::{AccessMode, FallocMode, Inode, IoctlCmd, SeekFrom, StatusFlags},
+        utils::{AccessMode, FallocMode, Inode, SeekFrom, StatusFlags},
     },
     net::socket::Socket,
     prelude::*,
     process::signal::Pollable,
+    util::ioctl::RawIoctl,
 };
 
 /// The basic operations defined on a file
@@ -50,7 +51,7 @@ pub trait FileLike: Pollable + Send + Sync + Any {
         return_errno_with_message!(Errno::ESPIPE, "write_at is not supported");
     }
 
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
         // `ENOTTY` means that "The specified operation does not apply to the kind of object that
         // the file descriptor references".
         // Reference: <https://man7.org/linux/man-pages/man2/ioctl.2.html>.

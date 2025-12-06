@@ -12,6 +12,7 @@ use core::{
 };
 
 use bitflags::bitflags;
+use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{

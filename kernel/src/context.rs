@@ -4,8 +4,9 @@
 
 use core::cell::Ref;
 
+use inherit_methods_macro::inherit_methods;
 use ostd::{
-    mm::{Fallible, Infallible, PodAtomic, VmReader, VmWriter, MAX_USERSPACE_VADDR},
+    mm::{Fallible, PodAtomic, VmIo, VmReader, VmWriter, MAX_USERSPACE_VADDR},
     task::Task,
 };
 
@@ -39,7 +40,14 @@ impl Context<'_> {
 /// The user's memory space of the current task.
 ///
 /// It provides methods to read from or write to the user space efficiently.
-pub struct CurrentUserSpace<'a>(Ref<'a, Option<Arc<Vmar>>>);
+//
+// FIXME: With `impl VmIo for &CurrentUserSpace<'_>`, the Rust compiler seems to think that
+// `CurrentUserSpace` is a publicly exposed type, despite the fact that it is contained in a
+// private module and is never actually exposed. Consequently, it incorrectly suppresses many dead
+// code lints (for *lots of* types that are recursively reached via `CurrentUserSpace`'s APIs). As
+// a workaround, we mark the type as `pub(crate)`. We can restore it to `pub` once the compiler bug
+// is resolved.
+pub(crate) struct CurrentUserSpace<'a>(Ref<'a, Option<Arc<Vmar>>>);
 
 /// Gets the [`CurrentUserSpace`] from the current task.
 ///
@@ -134,68 +142,6 @@ impl<'a> CurrentUserSpace<'a> {
         Ok(self.vmar().vm_space().reader_writer(vaddr, len)?)
     }
 
-    /// Reads bytes into the destination `VmWriter` from the user space of the
-    /// current process.
-    ///
-    /// If the reading is completely successful, returns `Ok`. Otherwise, it
-    /// returns `Err`.
-    ///
-    /// If the destination `VmWriter` (`dest`) is empty, this function still
-    /// checks if the current task and user space are available. If they are,
-    /// it returns `Ok`.
-    pub fn read_bytes(&self, src: Vaddr, dest: &mut VmWriter<'_, Infallible>) -> Result<()> {
-        let copy_len = dest.avail();
-
-        if copy_len > 0 {
-            check_vaddr_lowerbound(src)?;
-        }
-
-        let mut user_reader = self.reader(src, copy_len)?;
-        user_reader.read_fallible(dest).map_err(|err| err.0)?;
-        Ok(())
-    }
-
-    /// Reads a POD value from the user space of the current process.
-    pub fn read_val<T: Pod>(&self, src: Vaddr) -> Result<T> {
-        if size_of::<T>() > 0 {
-            check_vaddr_lowerbound(src)?;
-        }
-
-        let mut user_reader = self.reader(src, size_of::<T>())?;
-        Ok(user_reader.read_val()?)
-    }
-
-    /// Writes bytes from the source `VmReader` to the user space of the current
-    /// process.
-    ///
-    /// If the writing is completely successful, returns `Ok`. Otherwise, it
-    /// returns `Err`.
-    ///
-    /// If the source `VmReader` (`src`) is empty, this function still checks if
-    /// the current task and user space are available. If they are, it returns
-    /// `Ok`.
-    pub fn write_bytes(&self, dest: Vaddr, src: &mut VmReader<'_, Infallible>) -> Result<()> {
-        let copy_len = src.remain();
-
-        if copy_len > 0 {
-            check_vaddr_lowerbound(dest)?;
-        }
-
-        let mut user_writer = self.writer(dest, copy_len)?;
-        user_writer.write_fallible(src).map_err(|err| err.0)?;
-        Ok(())
-    }
-
-    /// Writes a POD value to the user space of the current process.
-    pub fn write_val<T: Pod>(&self, dest: Vaddr, val: &T) -> Result<()> {
-        if size_of::<T>() > 0 {
-            check_vaddr_lowerbound(dest)?;
-        }
-
-        let mut user_writer = self.writer(dest, size_of::<T>())?;
-        Ok(user_writer.write_val(val)?)
-    }
-
     /// Atomically loads a `PodAtomic` value with [`Ordering::Relaxed`] semantics.
     ///
     /// # Panics
@@ -284,6 +230,38 @@ impl<'a> CurrentUserSpace<'a> {
     }
 }
 
+impl VmIo for CurrentUserSpace<'_> {
+    fn read(&self, offset: usize, writer: &mut VmWriter) -> ostd::Result<()> {
+        let copy_len = writer.avail();
+
+        if copy_len > 0 {
+            check_vaddr_lowerbound(offset)?;
+        }
+
+        let mut user_reader = self.vmar().vm_space().reader(offset, copy_len)?;
+        user_reader.read_fallible(writer).map_err(|err| err.0)?;
+        Ok(())
+    }
+
+    fn write(&self, offset: usize, reader: &mut VmReader) -> ostd::Result<()> {
+        let copy_len = reader.remain();
+
+        if copy_len > 0 {
+            check_vaddr_lowerbound(offset)?;
+        }
+
+        let mut user_writer = self.vmar().vm_space().writer(offset, copy_len)?;
+        user_writer.write_fallible(reader).map_err(|err| err.0)?;
+        Ok(())
+    }
+}
+
+#[inherit_methods(from = "(**self)")]
+impl VmIo for &CurrentUserSpace<'_> {
+    fn read(&self, offset: usize, writer: &mut VmWriter) -> ostd::Result<()>;
+    fn write(&self, offset: usize, reader: &mut VmReader) -> ostd::Result<()>;
+}
+
 /// Checks if the user space pointer is below the lowest userspace address.
 ///
 /// If a pointer is below the lowest userspace address, it is likely to be a
@@ -294,9 +272,9 @@ impl<'a> CurrentUserSpace<'a> {
 /// deny the access in the page fault handler anyway. It may save a page fault
 /// in some occasions. More importantly, double page faults may not be handled
 /// quite well on some platforms.
-fn check_vaddr_lowerbound(va: Vaddr) -> Result<()> {
+fn check_vaddr_lowerbound(va: Vaddr) -> ostd::Result<()> {
     if va < VMAR_LOWEST_ADDR {
-        return_errno_with_message!(Errno::EFAULT, "the userspace address is too small");
+        return Err(ostd::Error::PageFault);
     }
     Ok(())
 }

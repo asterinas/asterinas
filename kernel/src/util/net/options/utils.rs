@@ -2,6 +2,8 @@
 
 use core::{num::NonZeroU8, time::Duration};
 
+use ostd::mm::VmIo;
+
 use crate::{
     current_userspace,
     net::socket::{
@@ -44,7 +46,7 @@ macro_rules! impl_read_write_for_32bit_type {
                 if (max_len as usize) < size_of::<$pod_ty>() {
                     return_errno_with_message!(Errno::EINVAL, "max_len is too short");
                 }
-                crate::current_userspace!().read_val::<$pod_ty>(addr)
+                Ok(crate::current_userspace!().read_val::<$pod_ty>(addr)?)
             }
         }
 
@@ -174,11 +176,7 @@ impl ReadFromUser for CongestionControl {
             &mut bytes[..read_len]
         };
 
-        // Clippy warns that `dst.as_mut` is redundant. However, using `dst` directly
-        // instead of `dst.as_mut` would take the ownership of `dst`. Consequently,
-        // the subsequent code that constructs `name` from `dst` would fail to compile.
-        #[expect(clippy::useless_asref)]
-        current_userspace!().read_bytes(addr, &mut VmWriter::from(dst.as_mut()))?;
+        current_userspace!().read_bytes(addr, dst.as_mut())?;
 
         let name = core::str::from_utf8(dst)
             .map_err(|_| Error::with_message(Errno::ENOENT, "non-UTF8 congestion name"))?;
@@ -196,7 +194,7 @@ impl WriteToUser for CongestionControl {
 
         let write_len = TCP_CONGESTION_NAME_MAX.min(max_len) as usize;
 
-        current_userspace!().write_bytes(addr, &mut VmReader::from(&bytes[..write_len]))?;
+        current_userspace!().write_bytes(addr, &bytes[..write_len])?;
 
         Ok(write_len)
     }

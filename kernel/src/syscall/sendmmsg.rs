@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use ostd::mm::VmIo;
+
 use crate::{
     fs::file_table::FileDesc,
     net::socket::{util::SendRecvFlags, Socket},

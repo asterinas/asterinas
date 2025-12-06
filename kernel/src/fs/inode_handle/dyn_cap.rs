@@ -14,11 +14,12 @@ use crate::{
         path::Path,
         utils::{
             AccessMode, CreationFlags, DirentVisitor, FallocMode, FlockItem, Inode, InodeType,
-            IoctlCmd, RangeLockItem, RangeLockType, SeekFrom, StatusFlags,
+            RangeLockItem, RangeLockType, SeekFrom, StatusFlags,
         },
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
+    util::ioctl::RawIoctl,
 };
 
 pub struct InodeHandle(HandleInner, Rights);
@@ -157,11 +158,11 @@ impl FileLike for InodeHandle {
         self.0.write_at(offset, reader)
     }
 
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
         if self.1.is_empty() {
             return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
-        self.0.ioctl(cmd, arg)
+        self.0.ioctl(raw_ioctl)
     }
 
     fn mappable(&self) -> Result<Mappable> {

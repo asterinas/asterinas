@@ -2,6 +2,8 @@
 
 use core::time::Duration;
 
+use ostd::mm::VmIo;
+
 use super::{constants::MAX_FILENAME_LEN, SyscallReturn};
 use crate::{
     fs,

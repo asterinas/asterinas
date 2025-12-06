@@ -2,7 +2,7 @@
 
 use core::cmp::min;
 
-use ostd::task::Task;
+use ostd::{mm::VmIo, task::Task};
 
 use super::{ip::CSocketAddrInet, netlink::CSocketAddrNetlink, unix, vsock::CSocketAddrVm};
 use crate::{current_userspace, net::socket::util::SocketAddr, prelude::*};
@@ -145,10 +145,7 @@ pub fn read_socket_addr_from_user(addr: Vaddr, addr_len: usize) -> Result<Socket
     }
 
     let mut storage = Storage::new_zeroed();
-    current_userspace!().read_bytes(
-        addr,
-        &mut VmWriter::from(&mut storage.as_bytes_mut()[..addr_len]),
-    )?;
+    current_userspace!().read_bytes(addr, &mut storage.as_bytes_mut()[..addr_len])?;
 
     let result = match CSocketAddrFamily::try_from(storage.sa_family as i32) {
         Ok(CSocketAddrFamily::AF_INET) => {
@@ -215,7 +212,7 @@ pub fn write_socket_addr_to_user(
 
     let actual_len = write_socket_addr_with_max_len(socket_addr, dest, max_len)?;
 
-    user_space.write_val(max_len_ptr, &actual_len)
+    Ok(user_space.write_val(max_len_ptr, &actual_len)?)
 }
 
 /// Writes a socket address to the user space.
@@ -253,7 +250,7 @@ pub fn write_socket_addr_with_max_len(
         )?,
         SocketAddr::Unix(addr) => unix::into_c_bytes_and(addr, |bytes| {
             let written_len = min(bytes.len(), max_len as _);
-            current_userspace!().write_bytes(dest, &mut VmReader::from(&bytes[..written_len]))?;
+            current_userspace!().write_bytes(dest, &bytes[..written_len])?;
             Ok::<usize, Error>(bytes.len())
         })?,
         SocketAddr::Netlink(addr) => {
@@ -280,10 +277,7 @@ where
     let actual_len = size_of::<TCSockAddr>();
     let written_len = min(actual_len, max_len);
 
-    current_userspace!().write_bytes(
-        dest,
-        &mut VmReader::from(&c_socket_addr.as_bytes()[..written_len]),
-    )?;
+    current_userspace!().write_bytes(dest, &c_socket_addr.as_bytes()[..written_len])?;
 
     Ok(actual_len)
 }

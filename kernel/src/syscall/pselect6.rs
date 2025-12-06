@@ -2,6 +2,8 @@
 
 use core::time::Duration;
 
+use ostd::mm::VmIo;
+
 use super::{select::do_sys_select, SyscallReturn};
 use crate::{
     fs::file_table::FileDesc,

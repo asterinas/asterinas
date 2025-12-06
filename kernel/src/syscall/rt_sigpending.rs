@@ -2,6 +2,8 @@
 
 use core::sync::atomic::Ordering;
 
+use ostd::mm::VmIo;
+
 use super::SyscallReturn;
 use crate::{prelude::*, process::signal::HandlePendingSignal};
 

@@ -2,7 +2,7 @@
 
 //! The implementation of robust list is from occlum.
 
-use ostd::task::Task;
+use ostd::{mm::VmIo, task::Task};
 
 use crate::{current_userspace, prelude::*, process::posix_thread::futex::futex_wake, thread::Tid};
 

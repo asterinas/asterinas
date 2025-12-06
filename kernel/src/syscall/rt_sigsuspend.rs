@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::sync::Waiter;
+use ostd::{mm::VmIo, sync::Waiter};
 
 use super::SyscallReturn;
 use crate::{

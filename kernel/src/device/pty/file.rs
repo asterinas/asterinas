@@ -7,10 +7,11 @@ use crate::{
     events::IoEvents,
     fs::{
         inode_handle::FileIo,
-        utils::{InodeIo, IoctlCmd, StatusFlags},
+        utils::{InodeIo, StatusFlags},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
+    util::ioctl::RawIoctl,
 };
 
 /// The file for a pseudoterminal slave.
@@ -81,7 +82,7 @@ impl InodeIo for PtySlaveFile {
 
 #[inherit_methods(from = "self.0")]
 impl FileIo for PtySlaveFile {
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32>;
+    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32>;
 
     fn check_seekable(&self) -> Result<()> {
         return_errno_with_message!(Errno::ESPIPE, "the inode is a TTY");

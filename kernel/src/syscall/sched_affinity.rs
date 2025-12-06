@@ -4,6 +4,7 @@ use core::{cmp, sync::atomic::Ordering};
 
 use ostd::{
     cpu::{num_cpus, CpuId, CpuSet},
+    mm::VmIo,
     util::id_set::Id,
 };
 

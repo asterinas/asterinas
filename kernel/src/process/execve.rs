@@ -3,6 +3,7 @@
 use aster_rights::WriteOp;
 use ostd::{
     arch::cpu::context::{FpuContext, GeneralRegs, UserContext},
+    mm::VmIo,
     sync::Waiter,
     user::UserContextApi,
 };

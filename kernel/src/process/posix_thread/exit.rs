@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::task::Task;
+use ostd::{mm::VmIo, task::Task};
 
 use super::{
     futex::futex_wake, robust_list::wake_robust_futex, thread_table, AsPosixThread, AsThreadLocal,
