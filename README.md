@@ -77,8 +77,8 @@ docker run -it --privileged --network=host -v /dev:/dev -v $(pwd)/asterinas:/roo
 3. Inside the container, go to the project folder to build and run Asterinas.
 
 ```bash
-make build
-make run
+make kernel
+make run_kernel
 ```
 
 If everything goes well, Asterinas is now up and running inside a VM.
