@@ -152,26 +152,12 @@ impl<'rcu, C: PageTableConfig, const MUTABLE: bool> Cursor_<'rcu, C, MUTABLE> {
     }
 
     /// Queries the mapping at the current virtual address.
-    pub fn query(&mut self) -> Option<C::ItemRef<'rcu>> {
+    pub(in crate::mm) fn query(&self) -> PteStateRef<'rcu, C> {
         debug_assert!(self.barrier_va.contains(&self.va));
-
-        let rcu_guard = self.rcu_guard;
-
-        loop {
-            let cur_entry = self.cur_entry();
-            let item = match cur_entry.to_ref() {
-                PteStateRef::PageTable(pt) => {
-                    // SAFETY: The `pt` must be locked and no other guards exist.
-                    let guard = unsafe { pt.make_guard_unchecked(rcu_guard) };
-                    self.push_level(guard);
-                    continue;
-                }
-                PteStateRef::Absent => None,
-                PteStateRef::Mapped(item) => Some(item),
-            };
-
-            return item;
-        }
+        self.path[self.level as usize - 1]
+            .as_ref()
+            .unwrap()
+            .entry_state(pte_index::<C>(self.va, self.level))
     }
 
     /// Moves the cursor forward to the next mapped virtual address.
@@ -316,14 +302,35 @@ impl<'rcu, C: PageTableConfig, const MUTABLE: bool> Cursor_<'rcu, C, MUTABLE> {
     }
 
     /// Goes up a level.
-    fn pop_level(&mut self) {
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cursor is already at the highest locked level (guard level).
+    pub fn pop_level(&mut self) {
+        assert!(self.level < self.guard_level);
+
         let taken = self.path[self.level as usize - 1]
             .take()
             .expect("Popping a level without a lock");
         let _ = ManuallyDrop::new(taken);
 
-        debug_assert!(self.level < self.guard_level);
         self.level += 1;
+    }
+
+    /// Goes down a level if a child page table exists.
+    ///
+    /// Returns the lower level if the cursor successfully goes down a level.
+    pub fn push_level_if_exists(&mut self) -> Option<PagingLevel> {
+        let cur_entry = self.cur_entry();
+        match cur_entry.to_ref() {
+            PteStateRef::PageTable(pt) => {
+                // SAFETY: The `pt` must be locked and no other guards exist.
+                let pt_guard = unsafe { pt.make_guard_unchecked(self.rcu_guard) };
+                self.push_level(pt_guard);
+                Some(self.level)
+            }
+            _ => None,
+        }
     }
 
     /// Goes down a level to a child page table.
@@ -407,8 +414,6 @@ impl<C: PageTableConfig> CursorMut<'_, C> {
         assert_eq!(self.va % size, 0);
         let end = self.va + size;
         assert!(end <= self.barrier_va.end);
-
-        self.adjust_level(level);
 
         if !matches!(self.cur_entry().to_ref(), PteStateRef::Absent) {
             panic!("Mapping over an already mapped page at {:#x}", self.va);

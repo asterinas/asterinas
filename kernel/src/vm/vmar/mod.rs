@@ -435,14 +435,11 @@ impl Vmar {
             let Some(mapped_va) = cursor.find_next(old_size - current_offset) else {
                 break;
             };
-            let Some(item) = cursor.query() else {
-                panic!("Found mapped page but query failed");
-            };
 
             let offset = mapped_va - old_range.start;
             let new_map_va = new_range.start + offset;
 
-            match item {
+            match cursor.query() {
                 VmQueriedItem::MappedRam { frame, prop } => {
                     let frame = (*frame).clone();
 
@@ -459,6 +456,9 @@ impl Vmar {
                     // at the new location
                     let (iomem, offset) = cursor.find_iomem_by_paddr(paddr).unwrap();
                     cursor.map_iomem(iomem, prop, PAGE_SIZE, offset);
+                }
+                _ => {
+                    unreachable!("mapped item found but query failed")
                 }
             }
 
@@ -607,18 +607,18 @@ impl Vmar {
             let mut cursor = vmspace.cursor(&preempt_guard, &(vaddr..vaddr + PAGE_SIZE))?;
 
             match cursor.query() {
-                Some(vm_item) if vm_item.prop().flags.contains(required_page_flags) => {
-                    match vm_item {
-                        VmQueriedItem::MappedRam { frame, .. } => return Ok((*frame).clone()),
-                        VmQueriedItem::MappedIoMem { .. } => {
-                            return_errno_with_message!(
-                                Errno::EOPNOTSUPP,
-                                "accessing remote MMIO memory is not supported currently"
-                            );
-                        }
-                    }
+                VmQueriedItem::MappedRam { frame, prop }
+                    if prop.flags.contains(required_page_flags) =>
+                {
+                    return Ok((*frame).clone())
                 }
-                Some(_) | None => (),
+                VmQueriedItem::MappedIoMem { .. } => {
+                    return_errno_with_message!(
+                        Errno::EOPNOTSUPP,
+                        "accessing remote MMIO memory is not supported currently"
+                    );
+                }
+                _ => {}
             }
 
             drop(cursor);
@@ -945,17 +945,14 @@ fn cow_copy_pt(src: &mut CursorMut<'_>, dst: &mut CursorMut<'_>, size: usize) ->
     };
 
     while let Some(mapped_va) = src.find_next(remain_size) {
-        let Some(item) = src.query() else {
-            panic!("Found mapped page but query failed");
-        };
-
-        match item {
+        match src.query() {
             VmQueriedItem::MappedRam { frame, mut prop } => {
                 let frame = (*frame).clone();
 
                 src.protect(op);
 
                 dst.jump(mapped_va).unwrap();
+                dst.adjust_level(frame.map_level());
                 op(&mut prop.flags, &mut prop.cache);
                 dst.map(frame, prop);
 
@@ -966,6 +963,9 @@ fn cow_copy_pt(src: &mut CursorMut<'_>, dst: &mut CursorMut<'_>, size: usize) ->
                 let (iomem, offset) = src.find_iomem_by_paddr(paddr).unwrap();
                 dst.jump(mapped_va).unwrap();
                 dst.map_iomem(iomem, prop, PAGE_SIZE, offset);
+            }
+            _ => {
+                unreachable!("mapped item found but query failed")
             }
         }
 
@@ -1417,7 +1417,7 @@ mod test {
         // Confirms the initial mapping.
         assert!(matches!(
             vm_space.cursor(&preempt_guard, &map_range).unwrap().query(),
-            Some(VmQueriedItem::MappedRam { frame, prop }) if frame.paddr() == paddr && prop.flags == PageFlags::RW
+            VmQueriedItem::MappedRam { frame, prop } if frame.paddr() == paddr && prop.flags == PageFlags::RW
         ));
 
         // Creates a child page table with copy-on-write protection.
@@ -1433,14 +1433,14 @@ mod test {
         {
             let child_map_frame_addr = {
                 let mut cursor = child_space.cursor(&preempt_guard, &map_range).unwrap();
-                let Some(VmQueriedItem::MappedRam { frame, .. }) = cursor.query() else {
+                let VmQueriedItem::MappedRam { frame, .. } = cursor.query() else {
                     panic!("Child mapping query failed");
                 };
                 frame.paddr()
             };
             let parent_map_frame_addr = {
                 let mut cursor = vm_space.cursor(&preempt_guard, &map_range).unwrap();
-                let Some(VmQueriedItem::MappedRam { frame, .. }) = cursor.query() else {
+                let VmQueriedItem::MappedRam { frame, .. } = cursor.query() else {
                     panic!("Parent mapping query failed");
                 };
                 frame.paddr()
@@ -1458,7 +1458,7 @@ mod test {
         // Confirms that the child VA remains mapped.
         assert!(matches!(
             child_space.cursor(&preempt_guard, &map_range).unwrap().query(),
-            Some(VmQueriedItem::MappedRam { frame, prop }) if frame.paddr() == paddr && prop.flags == PageFlags::R
+            VmQueriedItem::MappedRam { frame, prop } if frame.paddr() == paddr && prop.flags == PageFlags::R
         ));
 
         // Creates a sibling page table (from the now-modified parent).
@@ -1485,7 +1485,7 @@ mod test {
         // Confirms that the child VA remains mapped after the parent is dropped.
         assert!(matches!(
             child_space.cursor(&preempt_guard, &map_range).unwrap().query(),
-            Some(VmQueriedItem::MappedRam { frame, prop }) if frame.paddr() == paddr && prop.flags == PageFlags::R
+            VmQueriedItem::MappedRam { frame, prop } if frame.paddr() == paddr && prop.flags == PageFlags::R
         ));
 
         // Unmaps the page from the child.
@@ -1503,7 +1503,7 @@ mod test {
         // Confirms that the sibling mapping points back to the original frame's physical address.
         assert!(matches!(
             sibling_space.cursor(&preempt_guard, &map_range).unwrap().query(),
-            Some(VmQueriedItem::MappedRam { frame, prop }) if frame.paddr() == paddr && prop.flags == PageFlags::RW
+            VmQueriedItem::MappedRam { frame, prop } if frame.paddr() == paddr && prop.flags == PageFlags::RW
         ));
 
         // Confirms that the child remains unmapped.
@@ -1538,7 +1538,7 @@ mod test {
         // Confirms the initial mapping.
         assert!(matches!(
             vm_space.cursor(&preempt_guard, &map_range).unwrap().query(),
-            Some(VmQueriedItem::MappedIoMem { paddr, prop })  if paddr == IOMEM_PADDR && prop.flags == PageFlags::RW
+            VmQueriedItem::MappedIoMem { paddr, prop }  if paddr == IOMEM_PADDR && prop.flags == PageFlags::RW
         ));
 
         // Creates a child page table with copy-on-write protection.
@@ -1553,7 +1553,7 @@ mod test {
         // Confirms that parent and child VAs map to the same physical address.
         {
             let child_map_paddr = {
-                let Some(VmQueriedItem::MappedIoMem { paddr, .. }) = child_space
+                let VmQueriedItem::MappedIoMem { paddr, .. } = child_space
                     .cursor(&preempt_guard, &map_range)
                     .unwrap()
                     .query()
@@ -1563,7 +1563,7 @@ mod test {
                 paddr
             };
             let parent_map_paddr = {
-                let Some(VmQueriedItem::MappedIoMem { paddr, .. }) =
+                let VmQueriedItem::MappedIoMem { paddr, .. } =
                     vm_space.cursor(&preempt_guard, &map_range).unwrap().query()
                 else {
                     panic!("Parent mapping query failed");
@@ -1583,7 +1583,7 @@ mod test {
         // Confirms that the child VA remains mapped.
         assert!(matches!(
             child_space.cursor(&preempt_guard, &map_range).unwrap().query(),
-            Some(VmQueriedItem::MappedIoMem { paddr, prop })  if paddr == IOMEM_PADDR && prop.flags == PageFlags::RW
+            VmQueriedItem::MappedIoMem { paddr, prop }  if paddr == IOMEM_PADDR && prop.flags == PageFlags::RW
         ));
 
         // Creates a sibling page table (from the now-modified parent).
@@ -1610,7 +1610,7 @@ mod test {
         // Confirms that the child VA remains mapped after the parent is dropped.
         assert!(matches!(
             child_space.cursor(&preempt_guard, &map_range).unwrap().query(),
-            Some(VmQueriedItem::MappedIoMem { paddr, prop })  if paddr == IOMEM_PADDR && prop.flags == PageFlags::RW
+            VmQueriedItem::MappedIoMem { paddr, prop }  if paddr == IOMEM_PADDR && prop.flags == PageFlags::RW
         ));
 
         // Unmaps the range from the child.
@@ -1628,7 +1628,7 @@ mod test {
         // Confirms that the sibling mapping points back to the original `IoMem`'s physical address.
         assert!(matches!(
             sibling_space.cursor(&preempt_guard, &map_range).unwrap().query(),
-            Some(VmQueriedItem::MappedIoMem { paddr, prop })  if paddr == IOMEM_PADDR && prop.flags == PageFlags::RW
+            VmQueriedItem::MappedIoMem { paddr, prop }  if paddr == IOMEM_PADDR && prop.flags == PageFlags::RW
         ));
 
         // Confirms that the child remains unmapped.
