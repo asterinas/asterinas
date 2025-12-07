@@ -364,7 +364,6 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool>
     /// Obtains a [`VmWriter`] that can write the dynamically-sized ioctl argument to userspace.
     ///
     /// The size of the ioctl argument is specified in [`VmWriter::avail`].
-    #[expect(dead_code)]
     pub fn with_writer<F, R>(&self, f: F) -> Result<R>
     where
         F: for<'a> FnOnce(VmWriter<'a>) -> Result<R>,

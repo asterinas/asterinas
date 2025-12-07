@@ -27,13 +27,35 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
+    syscall::ClockId,
     util::{
-        ioctl::RawIoctl,
+        ioctl::{dispatch_ioctl, RawIoctl},
         ring_buffer::{RbConsumer, RbProducer, RingBuffer},
     },
 };
 
 pub(super) const EVDEV_BUFFER_SIZE: usize = 64;
+
+mod ioctl_defs {
+    use aster_input::input_dev::InputId;
+
+    use crate::util::ioctl::{ioc, InData, IoctlEnum, OutData};
+
+    // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/input.h>
+
+    pub(super) type GetDriverVer  = ioc!(EVIOCGVERSION, b'E', 0x01, OutData<i32>);
+    pub(super) type GetInputId    = ioc!(EVIOCGID,      b'E', 0x02, OutData<InputId>);
+    pub(super) type GetDeviceName = ioc!(EVIOCGNAME,    b'E', 0x06, OutData<[u8]>);
+    pub(super) type GetDevicePhys = ioc!(EVIOCGPHYS,    b'E', 0x07, OutData<[u8]>);
+    pub(super) type GetDeviceUniq = ioc!(EVIOCGUNIQ,    b'E', 0x08, OutData<[u8]>);
+    pub(super) type GetKeyState   = ioc!(EVIOCGKEY,     b'E', 0x18, OutData<[u8]>);
+    pub(super) type GetLedState   = ioc!(EVIOCGLED,     b'E', 0x19, OutData<[u8]>);
+    pub(super) type GetSwState    = ioc!(EVIOCGSW,      b'E', 0x1B, OutData<[u8]>);
+    pub(super) type SetClockId    = ioc!(EVIOCSCLOCKID, b'E', 0xA0, InData<i32>);
+
+    /// The `EVIOCGBIT` ioctl enum.
+    pub(super) type GetEventBits = IoctlEnum<b'E', 0x20, 0x1F, OutData<[u8]>>;
+}
 
 // Reference: <https://elixir.bootlin.com/linux/v6.17.9/source/include/uapi/linux/input.h#L28>
 #[repr(C)]
@@ -61,7 +83,7 @@ impl EvdevEvent {
 
 // Reference: <https://elixir.bootlin.com/linux/v6.17.9/source/drivers/input/evdev.c#L181-L189>
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, TryFromInt)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
 enum EvdevClock {
     Realtime = 0,
     Monotonic = 1,
@@ -78,6 +100,22 @@ define_atomic_version_of_integer_like_type!(EvdevClock, try_from = true, {
     #[derive(Debug)]
     struct AtomicEvdevClock(AtomicU8);
 });
+
+impl TryFrom<ClockId> for EvdevClock {
+    type Error = Error;
+
+    fn try_from(clock_id: ClockId) -> Result<Self> {
+        match clock_id {
+            ClockId::CLOCK_REALTIME => Ok(EvdevClock::Realtime),
+            ClockId::CLOCK_MONOTONIC => Ok(EvdevClock::Monotonic),
+            ClockId::CLOCK_BOOTTIME => Ok(EvdevClock::Boottime),
+            _ => return_errno_with_message!(
+                Errno::EINVAL,
+                "the clock is not a valid clock for evdev files"
+            ),
+        }
+    }
+}
 
 /// An opened file from an evdev device ([`EvdevDevice`]).
 pub(super) struct EvdevFile {
@@ -129,6 +167,29 @@ impl EvdevFileInner {
         consumer.clear();
         self.packet_count.store(0, Ordering::Relaxed);
         self.pollee.invalidate();
+    }
+
+    pub(self) fn clear_with_consumer_producer_locked(
+        &self,
+        consumer: &mut RbConsumer<EvdevEvent>,
+        producer: &mut RbProducer<EvdevEvent>,
+    ) {
+        // Note that the following operations are race-free because both the consumer and the
+        // producer locks have been held.
+
+        if consumer.is_empty() {
+            return;
+        }
+
+        consumer.clear();
+
+        let time = self.read_clock();
+        let dropped_event =
+            EvdevEvent::from_event_and_time(&InputEvent::from_sync_event(SynEvent::Dropped), time);
+        producer.push(dropped_event).unwrap();
+
+        self.packet_count.store(1, Ordering::Relaxed);
+        self.pollee.notify(IoEvents::IN);
     }
 
     /// Checks if buffer has complete event packets.
@@ -214,6 +275,30 @@ impl EvdevFile {
             IoEvents::empty()
         }
     }
+
+    fn upgrade_device(&self) -> Result<Arc<EvdevDevice>> {
+        self.evdev.upgrade().ok_or_else(|| {
+            Error::with_message(Errno::ENODEV, "the evdev device has been disconnected")
+        })
+    }
+
+    fn set_clock(&self, clock: EvdevClock) -> Result<()> {
+        // Lock the mutex in advance to avoid race conditions.
+        let mut consumer = self.inner.consumer.lock();
+
+        if self.inner.clock_id.load(Ordering::Relaxed) == clock {
+            return Ok(());
+        }
+
+        let device = self.upgrade_device()?;
+        device.with_producer_locked(&self.inner, |producer| {
+            self.inner.clock_id.store(clock, Ordering::Relaxed);
+            self.inner
+                .clear_with_consumer_producer_locked(&mut consumer, producer);
+        });
+
+        Ok(())
+    }
 }
 
 /// Checks if the event is a `SYN_REPORT` event.
@@ -224,6 +309,36 @@ pub(super) fn is_syn_report_event(event: &EvdevEvent) -> bool {
 /// Checks if the event is a `SYN_DROPPED` event.
 pub(super) fn is_syn_dropped_event(event: &EvdevEvent) -> bool {
     event.type_ == EventTypes::SYN.as_index() && event.code == SynEvent::Dropped as u16
+}
+
+fn write_bytes_and_zeros_to_userspace(writer: &mut VmWriter, bytes: &[u8]) -> Result<()> {
+    let mut reader = VmReader::from(bytes);
+    writer.write_fallible(&mut reader)?;
+    writer.fill_zeros(writer.avail())?;
+    Ok(())
+}
+
+fn handle_get_bit(evdev: &Arc<EvdevDevice>, event_type: u8, writer: &mut VmWriter) -> Result<()> {
+    let capability = evdev.device.capability();
+
+    match event_type as u16 {
+        0 => {
+            let event_types_bytes = capability.event_types_bits().to_ne_bytes();
+            write_bytes_and_zeros_to_userspace(writer, &event_types_bytes)?;
+        }
+        t if t == EventTypes::KEY.as_index() => {
+            let bitmap = capability.supported_keys_bitmap();
+            write_bytes_and_zeros_to_userspace(writer, bitmap)?;
+        }
+        t if t == EventTypes::REL.as_index() => {
+            let bitmap = capability.supported_relative_axes_bitmap();
+            write_bytes_and_zeros_to_userspace(writer, bitmap)?;
+        }
+        _ => {
+            return_errno_with_message!(Errno::EINVAL, "the event type is not supported yet");
+        }
+    }
+    Ok(())
 }
 
 impl Pollable for EvdevFile {
@@ -292,17 +407,88 @@ impl FileIo for EvdevFile {
         false
     }
 
-    fn ioctl(&self, _raw_ioctl: RawIoctl) -> Result<i32> {
-        // TODO: Support ioctl operations for evdev files.
+    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+        use ioctl_defs::*;
 
-        // Most ioctl implementations return `ENOTTY` for invalid ioctl commands, representing "The
-        // specified operation does not apply". However, according to the Linux implementation,
-        // evdev files return `EINVAL` in this case.
-        // Reference: <https://elixir.bootlin.com/linux/v6.17.8/source/drivers/input/evdev.c#L1251>
-        return_errno_with_message!(
-            Errno::EINVAL,
-            "the ioctl command is not supported by evdev files"
-        );
+        dispatch_ioctl!(match raw_ioctl {
+            cmd @ GetDriverVer => {
+                const EVDEV_DRIVER_VERSION: i32 = 0x010001;
+                cmd.write(&EVDEV_DRIVER_VERSION)?;
+            }
+            cmd @ GetInputId => {
+                let evdev = self.upgrade_device()?;
+                let input_id = evdev.device.id();
+                cmd.write(&input_id)?;
+            }
+            cmd @ SetClockId => {
+                let clock_id_raw: i32 = cmd.read()?;
+                let clock_id = ClockId::try_from(clock_id_raw)?;
+                let evdev_clock = EvdevClock::try_from(clock_id)?;
+                self.set_clock(evdev_clock)?;
+            }
+            cmd @ GetDeviceName => {
+                let evdev = self.upgrade_device()?;
+                cmd.with_writer(|mut writer| {
+                    write_bytes_and_zeros_to_userspace(&mut writer, evdev.device.name().as_bytes())
+                })?;
+            }
+            cmd @ GetDevicePhys => {
+                let evdev = self.upgrade_device()?;
+                cmd.with_writer(|mut writer| {
+                    write_bytes_and_zeros_to_userspace(&mut writer, evdev.device.phys().as_bytes())
+                })?;
+            }
+            cmd @ GetDeviceUniq => {
+                let evdev = self.upgrade_device()?;
+                cmd.with_writer(|mut writer| {
+                    write_bytes_and_zeros_to_userspace(&mut writer, evdev.device.uniq().as_bytes())
+                })?;
+            }
+            cmd @ GetEventBits => {
+                let evdev = self.upgrade_device()?;
+                let event_type = cmd.discriminant();
+                cmd.base_ioctl()
+                    .with_writer(|mut writer| handle_get_bit(&evdev, event_type, &mut writer))?;
+            }
+            cmd @ GetKeyState => {
+                // TODO: We need to track whether the key is currently pressed and report that state
+                // here. If we report states, we need to flush the queue to avoid interfering with the
+                // user space's state tracking. See the Linux implementation at:
+                // <https://elixir.bootlin.com/linux/v6.15/source/drivers/input/evdev.c#L872-L876>.
+                //
+                // Currently, no key state tracking is supported. So we report zeros as key states here.
+                cmd.with_writer(|mut writer| {
+                    writer.fill_zeros(writer.avail())?;
+                    Ok(())
+                })?;
+            }
+            cmd @ GetLedState => {
+                // No LED events are supported. So we can report zeros as LED states here.
+                cmd.with_writer(|mut writer| {
+                    writer.fill_zeros(writer.avail())?;
+                    Ok(())
+                })?;
+            }
+            cmd @ GetSwState => {
+                // No switch events are supported. So we can report zeros as switch states here.
+                cmd.with_writer(|mut writer| {
+                    writer.fill_zeros(writer.avail())?;
+                    Ok(())
+                })?;
+            }
+            _ => {
+                // Most ioctl implementations return `ENOTTY` for invalid ioctl commands, representing "The
+                // specified operation does not apply". However, according to the Linux implementation,
+                // evdev files return `EINVAL` in this case.
+                // Reference: <https://elixir.bootlin.com/linux/v6.17.8/source/drivers/input/evdev.c#L1251>
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "the ioctl command is not supported by evdev files"
+                );
+            }
+        });
+
+        Ok(0)
     }
 }
 
