@@ -108,6 +108,18 @@ impl EvdevDevice {
         opened_files.swap_remove(pos);
     }
 
+    pub(self) fn with_producer_locked<F>(&self, file: &Arc<EvdevFileInner>, f: F)
+    where
+        F: FnOnce(&mut RbProducer<EvdevEvent>),
+    {
+        let mut opened_files = self.opened_files.disable_irq().lock();
+        let pos = opened_files
+            .iter()
+            .position(|(f, _)| Arc::ptr_eq(f, file))
+            .unwrap();
+        f(&mut opened_files[pos].1)
+    }
+
     /// Distributes events to all opened evdev files.
     fn pass_events(&self, events: &[InputEvent]) {
         // No need to disable IRQs because this method can only be called in the interrupt context.
