@@ -3,6 +3,7 @@
 FROM ubuntu:24.04 AS build-base
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH
 
 RUN apt update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -14,6 +15,16 @@ RUN apt update && apt-get install -y --no-install-recommends \
 
 RUN pipx install yq
 ENV PATH="/root/.local/bin:${PATH}"
+
+#= Install Cross Compilation Tools ============================================
+
+FROM build-base AS build-cross-tools
+
+# If we are on ARM64, we need to cross compile to x86_64 for x86 development.
+RUN if [ "${TARGETARCH}" = "arm64" ]; then \
+        apt-get install -y --no-install-recommends \
+            gcc-multilib-x86-64-linux-gnu; \
+    fi
 
 #= Build QEMU =================================================================
 
@@ -50,7 +61,7 @@ RUN rm -rf /root/qemu
 
 #= Build OVMF =================================================================
 
-FROM build-base AS build-ovmf
+FROM build-cross-tools AS build-ovmf
 
 RUN apt update && apt-get install -y --no-install-recommends \
     bison \
@@ -59,7 +70,6 @@ RUN apt update && apt-get install -y --no-install-recommends \
     nasm \
     uuid-dev
 RUN apt clean && rm -rf /var/lib/apt/lists/*
-RUN git --version
 
 FROM build-ovmf AS ovmf
 
@@ -67,14 +77,17 @@ FROM build-ovmf AS ovmf
 WORKDIR /root
 RUN git clone --depth 1 --branch stable/202508 --recurse-submodules --shallow-submodules https://github.com/tianocore/edk2.git
 WORKDIR /root/edk2
-RUN /bin/bash -c "source ./edksetup.sh \
+RUN if [ "${TARGETARCH}" = "arm64" ]; then \
+        export GCC5_BIN=x86_64-linux-gnu-; \
+    fi \
+    && /bin/bash -c "source ./edksetup.sh \
     && make -C BaseTools \
     && build -a X64 -t GCC5 -b DEBUG -p OvmfPkg/OvmfPkgX64.dsc -D DEBUG_ON_SERIAL_PORT \
     && build -a X64 -t GCC5 -b RELEASE -p OvmfPkg/OvmfPkgX64.dsc"
 
 #= Build GRUB =================================================================
 
-FROM build-base AS build-grub
+FROM build-cross-tools AS build-grub
 
 RUN apt update && apt-get install -y --no-install-recommends \
     autoconf \
@@ -92,9 +105,10 @@ FROM build-grub AS grub
 
 # Fetch and install GRUB from the GNU official source
 #
-# We have installed grub-efi-amd64-bin just for the unicode.pf2 file, which is not included
-# in the GRUB release. The Ubuntu release notoriously modifies the GRUB source code and enforce
-# EFI handover boot, which is deprecated. So we have to build GRUB from source.
+# We have installed grub-efi-amd64-bin for the unicode.pf2 file, which is not
+# included in the GRUB release. The Ubuntu release modifies the GRUB source
+# code and enforces EFI handover boot, which is deprecated. To test general EFI
+# boot we have to build GRUB from source.
 WORKDIR /root
 # See also: https://github.com/asterinas/asterinas/pull/1710
 RUN git clone --single-branch -b asterinas/2.12 https://github.com/asterinas/grub.git \
@@ -106,11 +120,18 @@ RUN wget -O unifont.pcf.gz https://ftp.gnu.org/gnu/unifont/unifont-15.1.04/unifo
     && rm unifont.pcf.gz
 WORKDIR /root/grub
 
-# Use GitHub mirror for `gnulib` to improve connection stability because `git.savannah.gnu.org`
-# repository may have unstable connections.
+# Use GitHub mirror for `gnulib` to improve connection stability because
+# `git.savannah.gnu.org` repository may have unstable connections.
 RUN git config --global url."https://github.com/coreutils/gnulib".insteadOf "https://git.savannah.gnu.org/git/gnulib"
 
-RUN echo depends bli part_gpt > grub-core/extra_deps.lst \
+RUN if [ "${TARGETARCH}" = "arm64" ]; then \
+        export TARGET_CC=x86_64-linux-gnu-gcc; \
+        export TARGET_OBJCOPY=x86_64-linux-gnu-objcopy; \
+        export TARGET_STRIP=x86_64-linux-gnu-strip; \
+        export TARGET_NM=x86_64-linux-gnu-nm; \
+        export TARGET_RANLIB=x86_64-linux-gnu-ranlib; \
+    fi \
+    && echo depends bli part_gpt > grub-core/extra_deps.lst \
     && ./bootstrap \
     && ./configure \
         --target=x86_64 \
@@ -126,11 +147,35 @@ RUN rm -rf /root/grub
 
 #= The final stages to produce the OSDK development image ====================
 
-FROM build-base AS rust
+FROM build-base AS osdk-final
+
+# For x86 kernel development on ARM, we need to add the sources. So that we can
+# install x86 grub binaries from the Ubuntu repository.
+RUN <<EOF
+    if [ "${TARGETARCH}" = "arm64" ]; then
+        dpkg --add-architecture 'amd64';
+        sed -i '/^Components:/a Architectures: arm64' /etc/apt/sources.list.d/ubuntu.sources;
+        cat >> /etc/apt/sources.list.d/ubuntu-amd64.sources <<EOF_SOURCES
+Types: deb
+URIs: http://archive.ubuntu.com/ubuntu/
+Suites: noble noble-updates noble-backports
+Components: main restricted universe multiverse
+Architectures: amd64
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+Types: deb
+URIs: http://security.ubuntu.com/ubuntu/
+Suites: noble-security
+Components: main restricted universe multiverse
+Architectures: amd64
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+EOF_SOURCES
+    fi
+EOF
 
 # Install all OSDK dependent packages
 RUN apt update \
-    && apt install -y \
+    && apt install -y --no-install-recommends \
     clang \
     curl \
     gdb \
@@ -167,7 +212,15 @@ RUN cargo install --locked \
 # Install QEMU built from the previous stages
 COPY --from=qemu /usr/local/qemu /usr/local/qemu
 ENV PATH="/usr/local/qemu/bin:${PATH}"
-ENV LD_LIBRARY_PATH="/usr/local/qemu/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
+# Buildx `TARGETARCH` (amd64 and arm64) is different from QEMU's target (x86_64
+# and aarch64). Create aliases so the lib path always exists.
+RUN if [ -d /usr/local/qemu/lib/aarch64-linux-gnu ] && [ ! -e /usr/local/qemu/lib/arm64-linux-gnu ]; then \
+        ln -s /usr/local/qemu/lib/aarch64-linux-gnu /usr/local/qemu/lib/arm64-linux-gnu; \
+    fi \
+    && if [ -d /usr/local/qemu/lib/x86_64-linux-gnu ] && [ ! -e /usr/local/qemu/lib/amd64-linux-gnu ]; then \
+        ln -s /usr/local/qemu/lib/x86_64-linux-gnu /usr/local/qemu/lib/amd64-linux-gnu; \
+    fi
+ENV LD_LIBRARY_PATH="/usr/local/qemu/lib/${TARGETARCH}-linux-gnu:${LD_LIBRARY_PATH:-''}"
 
 # Install OVMF built from the previous stages
 COPY --from=ovmf /root/edk2/Build/OvmfX64/RELEASE_GCC5/FV/ /root/ovmf/release
