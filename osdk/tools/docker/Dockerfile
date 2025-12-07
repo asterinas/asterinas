@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
-FROM ubuntu:22.04 AS build-base
+FROM ubuntu:24.04 AS build-base
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -8,11 +8,13 @@ RUN apt update && apt-get install -y --no-install-recommends \
     build-essential \
     ca-certificates \
     git \
-    python3-pip \
-    python-is-python3 \
+    python3 \
+    pipx \
     wget
 
-RUN pip3 install yq tomli
+RUN PIP_NO_CACHE_DIR=1 pipx install yq==3.4.3 \
+    && rm -rf /root/.cache/pip /root/.cache/pipx
+ENV PATH="/root/.local/bin:${PATH}"
 
 #= Build QEMU =================================================================
 
@@ -30,9 +32,9 @@ RUN apt clean && rm -rf /var/lib/apt/lists/*
 
 FROM build-qemu AS qemu
 
-# Fetch and install QEMU from the official source
+# Fetch and install a later version of QEMU from the official source.
 #
-# The QEMU version in the Ubuntu 22.04 repository is 6.*, which has a bug to cause OVMF debug to fail.
+# The QEMU version in the Ubuntu 24.04 repository is 8.*, which has known problems.
 # The libslirp dependency is for QEMU's network backend.
 WORKDIR /root
 
@@ -174,7 +176,7 @@ COPY --from=ovmf /root/edk2/Build/OvmfX64/RELEASE_GCC5/FV/ /root/ovmf/release
 # Install GRUB built from the previous stages
 COPY --from=grub /usr/local/grub /usr/local/grub
 ENV PATH="/usr/local/grub/bin:${PATH}"
-# Make a symbolic link for `unicode.pf2` from Ubuntu 22.04 package
+# Make a symbolic link for `unicode.pf2` from the APT package
 RUN ln -sf /usr/share/grub/unicode.pf2 /usr/local/grub/share/grub/unicode.pf2
 
 VOLUME [ "/root/asterinas" ]
