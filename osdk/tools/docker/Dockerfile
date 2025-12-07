@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
-FROM ubuntu:22.04 AS build-base
+FROM ubuntu:24.04 AS build-base
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -8,11 +8,12 @@ RUN apt update && apt-get install -y --no-install-recommends \
     build-essential \
     ca-certificates \
     git \
-    python3-pip \
-    python-is-python3 \
+    python3 \
+    pipx \
     wget
 
-RUN pip3 install yq tomli
+RUN pipx install yq
+ENV PATH="/root/.local/bin:${PATH}"
 
 #= Build QEMU =================================================================
 
