@@ -11,6 +11,7 @@ cd <asterinas dir>
 # Build Docker image
 docker buildx build \
     -f osdk/tools/docker/Dockerfile \
+    --platform linux/amd64,linux/arm64 \
     --build-arg ASTER_RUST_VERSION=$(grep "channel" rust-toolchain.toml | awk -F '"' '{print $2}') \
     -t asterinas/osdk:$(cat DOCKER_IMAGE_VERSION) \
     .
