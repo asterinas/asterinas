@@ -50,7 +50,11 @@ pub(crate) fn has_pci_bus() -> bool {
 }
 
 pub(crate) fn init() {
-    PCI_ADDRESS_PORT.call_once(|| IoPort::acquire(0xCF8).unwrap());
+    // We use `acquire_overlapping` to acquire the port at 0xCF8 because 0xCF9 may be used as a
+    // reset control register in the PIIX4. Although the two ports overlap in their I/O range, they
+    // serve completely different purposes. See
+    // <https://www.intel.com/Assets/PDF/datasheet/290562.pdf>.
+    PCI_ADDRESS_PORT.call_once(|| IoPort::acquire_overlapping(0xCF8).unwrap());
     PCI_DATA_PORT.call_once(|| IoPort::acquire(0xCFC).unwrap());
 }
 

@@ -24,17 +24,31 @@ use crate::{prelude::*, Error};
 ///
 pub struct IoPort<T, A> {
     port: u16,
+    is_overlapping: bool,
     value_marker: PhantomData<T>,
     access_marker: PhantomData<A>,
 }
 
 impl<T, A> IoPort<T, A> {
     /// Acquires an `IoPort` instance for the given range.
+    ///
+    /// This method will mark all ports in the PIO range as occupied.
     pub fn acquire(port: u16) -> Result<IoPort<T, A>> {
         allocator::IO_PORT_ALLOCATOR
             .get()
             .unwrap()
-            .acquire(port)
+            .acquire(port, false)
+            .ok_or(Error::AccessDenied)
+    }
+
+    /// Acquires an `IoPort` instance that may overlap with other `IoPort`s.
+    ///
+    /// This method will only mark the first port in the PIO range as occupied.
+    pub fn acquire_overlapping(port: u16) -> Result<IoPort<T, A>> {
+        allocator::IO_PORT_ALLOCATOR
+            .get()
+            .unwrap()
+            .acquire(port, true)
             .ok_or(Error::AccessDenied)
     }
 
@@ -54,9 +68,25 @@ impl<T, A> IoPort<T, A> {
     ///
     /// Reading from or writing to the I/O port may have side effects. Those side effects must not
     /// cause soundness problems (e.g., they must not corrupt the kernel memory).
-    pub const unsafe fn new(port: u16) -> Self {
+    pub(crate) const unsafe fn new(port: u16) -> Self {
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { Self::new_overlapping(port, false) }
+    }
+
+    /// Creates an I/O port.
+    ///
+    /// See [`IoPortAllocator::acquire`] for an explanation of the `is_overlapping` argument.
+    ///
+    /// [`IoPortAllocator::acquire`]: allocator::IoPortAllocator::acquire
+    ///
+    /// # Safety
+    ///
+    /// Reading from or writing to the I/O port may have side effects. Those side effects must not
+    /// cause soundness problems (e.g., they must not corrupt the kernel memory).
+    const unsafe fn new_overlapping(port: u16, is_overlapping: bool) -> Self {
         Self {
             port,
+            is_overlapping,
             value_marker: PhantomData,
             access_marker: PhantomData,
         }
@@ -79,13 +109,14 @@ impl<T: PortWrite, A: IoPortWriteAccess> IoPort<T, A> {
 
 impl<T, A> Drop for IoPort<T, A> {
     fn drop(&mut self) {
-        // SAFETY: The caller have ownership of the PIO region.
-        unsafe {
-            allocator::IO_PORT_ALLOCATOR
-                .get()
-                .unwrap()
-                .recycle(self.port..(self.port + size_of::<T>() as u16));
-        }
+        let range = if !self.is_overlapping {
+            self.port..(self.port + size_of::<T>() as u16)
+        } else {
+            self.port..(self.port + 1)
+        };
+
+        // SAFETY: We have ownership of the PIO region.
+        unsafe { allocator::IO_PORT_ALLOCATOR.get().unwrap().recycle(range) };
     }
 }
 

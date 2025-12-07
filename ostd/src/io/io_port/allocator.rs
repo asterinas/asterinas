@@ -23,9 +23,17 @@ pub(super) struct IoPortAllocator {
 }
 
 impl IoPortAllocator {
-    /// Acquires the `IoPort`. Return None if any region in `port` cannot be allocated.
-    pub(super) fn acquire<T, A>(&self, port: u16) -> Option<IoPort<T, A>> {
-        let range = port..port.checked_add(size_of::<T>().try_into().ok()?)?;
+    /// Acquires an `IoPort`. Returns `None` if the PIO range is unavailable.
+    ///
+    /// `is_overlapping` indicates whether another `IoPort` can have a PIO range that overlaps with
+    /// this one. If it is true, only the first port in the PIO range will be marked as occupied;
+    /// otherwise, all ports in the PIO range will be marked as occupied.
+    pub(super) fn acquire<T, A>(&self, port: u16, is_overlapping: bool) -> Option<IoPort<T, A>> {
+        let range = if !is_overlapping {
+            port..port.checked_add(size_of::<T>().try_into().ok()?)?
+        } else {
+            port..port.checked_add(1)?
+        };
         debug!("Try to acquire PIO range: {:#x?}", range);
 
         let mut allocator = self.allocator.lock();
@@ -38,7 +46,7 @@ impl IoPortAllocator {
         }
 
         // SAFETY: The created `IoPort` is guaranteed not to access system device I/O.
-        unsafe { Some(IoPort::new(port)) }
+        unsafe { Some(IoPort::new_overlapping(port, is_overlapping)) }
     }
 
     /// Recycles an PIO range.
@@ -105,6 +113,7 @@ mod test {
     use crate::{arch::device::io_port::ReadWriteAccess, prelude::*};
 
     type IoPort = crate::io::IoPort<u32, ReadWriteAccess>;
+    type ByteIoPort = crate::io::IoPort<u8, ReadWriteAccess>;
 
     #[ktest]
     fn illegal_region() {
@@ -130,5 +139,29 @@ mod test {
         // After dropping `io_port_a`, conflicts no longer exist so the allocation will succeed.
         let io_port_b = IoPort::acquire(0x62);
         assert!(io_port_b.is_ok());
+    }
+
+    #[ktest]
+    fn overlapping_region() {
+        // Reference: <https://wiki.osdev.org/PCI#Configuration_Space_Access_Mechanism_#1>
+        let pci_data = IoPort::acquire_overlapping(0xcf8);
+        // Reference: <https://www.intel.com/Assets/PDF/datasheet/290562.pdf>
+        let rst_ctrl = ByteIoPort::acquire(0xcf9);
+        assert!(pci_data.is_ok());
+        assert!(rst_ctrl.is_ok());
+
+        let pci_data2 = IoPort::acquire_overlapping(0xcf8);
+        let rst_ctrl2 = ByteIoPort::acquire(0xcf9);
+        assert!(pci_data2.is_err());
+        assert!(rst_ctrl2.is_err());
+
+        drop(pci_data);
+        drop(rst_ctrl);
+
+        let rst_ctrl3 = ByteIoPort::acquire(0xcf9);
+        assert!(rst_ctrl3.is_ok());
+
+        let pci_data3 = IoPort::acquire_overlapping(0xcf8);
+        assert!(pci_data3.is_ok());
     }
 }
