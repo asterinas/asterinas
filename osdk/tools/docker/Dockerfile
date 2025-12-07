@@ -65,7 +65,7 @@ FROM build-ovmf AS ovmf
 
 # Fetch and build OVMF from the EDK2 official source
 WORKDIR /root
-RUN git clone --depth 1 --branch stable/202408 --recurse-submodules --shallow-submodules https://github.com/tianocore/edk2.git
+RUN git clone --depth 1 --branch stable/202508 --recurse-submodules --shallow-submodules https://github.com/tianocore/edk2.git
 WORKDIR /root/edk2
 RUN /bin/bash -c "source ./edksetup.sh \
     && make -C BaseTools \
