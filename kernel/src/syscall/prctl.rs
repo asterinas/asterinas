@@ -98,7 +98,23 @@ pub fn sys_prctl(
             let credentials = ctx.posix_thread.credentials_mut();
             credentials.set_securebits(securebits)?;
         }
-        _ => todo!(),
+        PrctlCmd::PR_GET_TIMERSLACK => {
+            let slack_ns = ctx.posix_thread.timer_slack_ns();
+            return Ok(SyscallReturn::Return(slack_ns as _));
+        }
+        PrctlCmd::PR_SET_TIMERSLACK(slack_ns) => {
+            // Negative values are invalid
+            if (slack_ns as i64) < 0 {
+                return_errno!(Errno::EINVAL);
+            }
+
+            // In Linux, a value of 0 means "use default slack"
+            if slack_ns == 0 {
+                ctx.posix_thread.reset_timer_slack_to_default();
+            } else {
+                ctx.posix_thread.set_timer_slack_ns(slack_ns);
+            }
+        }
     }
     Ok(SyscallReturn::Return(0))
 }
@@ -127,9 +143,7 @@ pub enum PrctlCmd {
     PR_GET_NAME(Vaddr),
     PR_GET_KEEPCAPS,
     PR_SET_KEEPCAPS(u32),
-    #[expect(dead_code)]
     PR_SET_TIMERSLACK(u64),
-    #[expect(dead_code)]
     PR_GET_TIMERSLACK,
     PR_SET_DUMPABLE(Dumpable),
     PR_GET_DUMPABLE,
@@ -159,8 +173,8 @@ impl PrctlCmd {
             PR_SET_DUMPABLE => Ok(PrctlCmd::PR_SET_DUMPABLE(Dumpable::try_from(arg2)?)),
             PR_SET_NAME => Ok(PrctlCmd::PR_SET_NAME(arg2 as _)),
             PR_GET_NAME => Ok(PrctlCmd::PR_GET_NAME(arg2 as _)),
-            PR_GET_TIMERSLACK => todo!(),
-            PR_SET_TIMERSLACK => todo!(),
+            PR_GET_TIMERSLACK => Ok(PrctlCmd::PR_GET_TIMERSLACK),
+            PR_SET_TIMERSLACK => Ok(PrctlCmd::PR_SET_TIMERSLACK(arg2)),
             PR_GET_KEEPCAPS => Ok(PrctlCmd::PR_GET_KEEPCAPS),
             PR_SET_KEEPCAPS => Ok(PrctlCmd::PR_SET_KEEPCAPS(arg2 as _)),
             PR_SET_CHILD_SUBREAPER => Ok(PrctlCmd::PR_SET_CHILD_SUBREAPER(arg2 > 0)),
