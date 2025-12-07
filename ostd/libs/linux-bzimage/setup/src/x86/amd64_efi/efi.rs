@@ -245,14 +245,36 @@ fn find_rsdp_addr() -> Option<*const ()> {
 }
 
 fn fill_screen_info(screen_info: &mut linux_boot_params::ScreenInfo) {
-    use uefi::proto::console::gop::{GraphicsOutput, PixelFormat};
+    use uefi::{
+        boot::{open_protocol, OpenProtocolAttributes, OpenProtocolParams},
+        proto::console::gop::{GraphicsOutput, PixelFormat},
+    };
 
     let Ok(handle) = uefi::boot::get_handle_for_protocol::<GraphicsOutput>() else {
         uefi::println!("[EFI stub] Warning: Failed to locate the graphics handle!");
         return;
     };
 
-    let Ok(mut protocol) = open_protocol_exclusive::<GraphicsOutput>(handle) else {
+    // We don't use `open_protocol_exclusive` here for `GraphicsOutput` because it may disconnect
+    // the console.
+    //
+    // UEFI Specification, 7.3.9 EFI_BOOT_SERVICES.OpenProtocol():
+    //   EXCLUSIVE [..] If any drivers have the protocol interface opened with an attribute of
+    //   BY_DRIVER, then an attempt will be made to remove them by calling the driver's Stop()
+    //   function.
+    //
+    // SAFETY: No one will change the graphics mode at this point. It is safe to query it through
+    // shared access.
+    let Ok(mut protocol) = (unsafe {
+        open_protocol::<GraphicsOutput>(
+            OpenProtocolParams {
+                handle,
+                agent: uefi::boot::image_handle(),
+                controller: None,
+            },
+            OpenProtocolAttributes::GetProtocol,
+        )
+    }) else {
         uefi::println!("[EFI stub] Warning: Failed to open the graphics protocol!");
         return;
     };
