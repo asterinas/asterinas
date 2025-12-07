@@ -12,3 +12,6 @@ prctl(op = PR_SET_KEEPCAPS, state);
 
 // Retrieve or set "child subreaper" attribute
 prctl(op = PR_GET_CHILD_SUBREAPER | PR_SET_CHILD_SUBREAPER, isset);
+
+// Retrieve or set the timer slack value (nanoseconds)
+prctl(op = PR_GET_TIMERSLACK | PR_SET_TIMERSLACK, slack_ns);

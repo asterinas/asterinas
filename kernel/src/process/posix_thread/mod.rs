@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use aster_rights::{ReadDupOp, ReadOp, WriteOp};
 use ostd::{
@@ -85,6 +85,11 @@ pub struct PosixThread {
 
     /// The namespaces that the thread belongs to.
     ns_proxy: Mutex<Option<Arc<NsProxy>>>,
+
+    /// The current timer slack value for this thread.
+    timer_slack_ns: AtomicU64,
+    /// The default timer slack value for this thread.
+    default_timer_slack_ns: AtomicU64,
 }
 
 impl PosixThread {
@@ -311,6 +316,22 @@ impl PosixThread {
     /// Returns the namespaces which the thread belongs to.
     pub fn ns_proxy(&self) -> &Mutex<Option<Arc<NsProxy>>> {
         &self.ns_proxy
+    }
+
+    /// Returns the current timer slack value in nanoseconds.
+    pub fn timer_slack_ns(&self) -> u64 {
+        self.timer_slack_ns.load(Ordering::Relaxed)
+    }
+
+    /// Sets the current timer slack value in nanoseconds.
+    pub fn set_timer_slack_ns(&self, slack_ns: u64) {
+        self.timer_slack_ns.store(slack_ns, Ordering::Relaxed);
+    }
+
+    /// Resets the current timer slack to the default value.
+    pub fn reset_timer_slack_to_default(&self) {
+        let default = self.default_timer_slack_ns.load(Ordering::Relaxed);
+        self.timer_slack_ns.store(default, Ordering::Relaxed);
     }
 }
 

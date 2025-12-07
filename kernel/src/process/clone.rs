@@ -357,6 +357,9 @@ fn clone_child_task(
         posix_thread,
     )?;
 
+    // Clone default timer slack
+    let default_timer_slack_ns = posix_thread.timer_slack_ns();
+
     if clone_flags.contains(CloneFlags::CLONE_NEWNS) {
         child_fs
             .resolver()
@@ -393,7 +396,8 @@ fn clone_child_task(
                 .fs(child_fs)
                 .fpu_context(child_fpu_context)
                 .user_ns(child_user_ns)
-                .ns_proxy(child_ns_proxy);
+                .ns_proxy(child_ns_proxy)
+                .default_timer_slack_ns(default_timer_slack_ns);
 
         // Deal with SETTID/CLEARTID flags
         clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
@@ -467,6 +471,9 @@ fn clone_child_process(
         posix_thread,
     )?;
 
+    // Clone default timer slack
+    let default_timer_slack_ns = posix_thread.timer_slack_ns();
+
     if clone_flags.contains(CloneFlags::CLONE_NEWNS) {
         child_fs
             .resolver()
@@ -506,6 +513,7 @@ fn clone_child_process(
                 .fpu_context(child_fpu_context)
                 .user_ns(child_user_ns.clone())
                 .ns_proxy(child_ns_proxy)
+                .default_timer_slack_ns(default_timer_slack_ns)
         };
 
         // Deal with SETTID/CLEARTID flags
