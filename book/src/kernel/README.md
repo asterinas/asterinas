@@ -60,7 +60,7 @@ that Asterinas can run on as an OS kernel.
 
 ## Getting Started
 
-Get yourself an x86-64 Linux machine with Docker installed.
+Get yourself an x86-64/ARM64 Linux machine with Docker installed.
 Follow the three simple steps below to get Asterinas up and running.
 
 <!-- REMINDER: Be careful when editing the first two steps
@@ -89,3 +89,28 @@ since `distro/README.md` references them -->
     ```
 
 If everything goes well, Asterinas is now up and running inside a VM.
+
+### Supported CPU Architectures
+
+Asterinas distinguishes between _development platforms_ and _deployment platforms_:
+- A **development platform** is where you build and test Asterinas
+  (i.e., the host machine running the Docker-based development environment).
+- A **deployment platform** is a CPU architecture that Asterinas can run on as an OS kernel.
+
+| CPU Architecture | As Development Platform | As Deployment Platform |
+| ---------------- | ----------------------- | ---------------------- |
+| x86-64           | Yes                     | Yes (Tier-1)           |
+| ARM64            | Yes                     | No                     |
+| RISC-V           | No                      | Yes (Tier-2)           |
+| LoongArch        | No                      | Yes (Tier-3)           |
+
+The deployment platform tiers are defined as follows:
+- **Tier-1**: Fully supported and tested.
+  CI pipelines run the full test suite on every PR.
+  This is the recommended platform for production use.
+- **Tier-2**: Actively developed with basic functionality working.
+  CI pipelines run build checks and basic tests on every PR,
+  but the full test suite is not yet covered.
+- **Tier-3**: Early-stage or experimental support.
+  The kernel can boot and perform basic operations,
+  but the architecture is not regularly tested in CI.
