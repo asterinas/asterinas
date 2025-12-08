@@ -485,10 +485,10 @@ impl InputDevice {
         // Set key capabilities.
         if let Some(key_bits) = &ev_key {
             for bit in 0..key_bits.len() * 8 {
-                if key_bits[bit / 8] & (1 << (bit % 8)) != 0 {
-                    if let Some(key_code) = map_to_key_code(bit as u16) {
-                        capability.set_supported_key(key_code);
-                    }
+                if key_bits[bit / 8] & (1 << (bit % 8)) != 0
+                    && let Some(key_code) = map_to_key_code(bit as u16)
+                {
+                    capability.set_supported_key(key_code);
                 }
             }
         }
@@ -496,10 +496,10 @@ impl InputDevice {
         // Set relative axis capabilities.
         if let Some(rel_bits) = &ev_rel {
             for bit in 0..rel_bits.len() * 8 {
-                if rel_bits[bit / 8] & (1 << (bit % 8)) != 0 {
-                    if let Some(rel_code) = map_to_rel_code(bit as u16) {
-                        capability.set_supported_relative_axis(rel_code);
-                    }
+                if rel_bits[bit / 8] & (1 << (bit % 8)) != 0
+                    && let Some(rel_code) = map_to_rel_code(bit as u16)
+                {
+                    capability.set_supported_relative_axis(rel_code);
                 }
             }
         }

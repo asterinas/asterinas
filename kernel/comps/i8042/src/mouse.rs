@@ -225,10 +225,10 @@ fn handle_mouse_input(_trap_frame: &TrapFrame) {
     };
 
     let mut packet_state = PACKET_STATE.lock();
-    if let Some(events) = packet_state.process_byte(data) {
-        if let Some(registered_device) = REGISTERED_DEVICE.get() {
-            registered_device.submit_events(&events);
-        }
+    if let Some(events) = packet_state.process_byte(data)
+        && let Some(registered_device) = REGISTERED_DEVICE.get()
+    {
+        registered_device.submit_events(&events);
     }
 }
 

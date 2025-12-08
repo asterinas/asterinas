@@ -147,16 +147,16 @@ impl StopStatus {
     pub(super) fn wait(&self, options: WaitOptions) -> Option<StopWaitStatus> {
         let mut wait_status = self.wait_status.lock();
 
-        if options.contains(WaitOptions::WSTOPPED) {
-            if let Some(StopWaitStatus::Stopped(_)) = wait_status.as_ref() {
-                return wait_status.take();
-            }
+        if options.contains(WaitOptions::WSTOPPED)
+            && let Some(StopWaitStatus::Stopped(_)) = wait_status.as_ref()
+        {
+            return wait_status.take();
         }
 
-        if options.contains(WaitOptions::WCONTINUED) {
-            if let Some(StopWaitStatus::Continue) = wait_status.as_ref() {
-                return wait_status.take();
-            }
+        if options.contains(WaitOptions::WCONTINUED)
+            && let Some(StopWaitStatus::Continue) = wait_status.as_ref()
+        {
+            return wait_status.take();
         }
 
         None

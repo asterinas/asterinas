@@ -538,14 +538,14 @@ impl<E: Ext> PollContext<'_, E> {
                 }));
             });
 
-            if let Some((ip_repr, ip_payload)) = deferred {
-                if let Some(reply) = self.parse_and_process_udp(
+            if let Some((ip_repr, ip_payload)) = deferred
+                && let Some(reply) = self.parse_and_process_udp(
                     &ip_repr,
                     &ip_payload,
                     &ChecksumCapabilities::ignored(),
-                ) {
-                    dispatch_phy(&reply, self.iface.context_mut(), tx_token.take().unwrap());
-                }
+                )
+            {
+                dispatch_phy(&reply, self.iface.context_mut(), tx_token.take().unwrap());
             }
 
             if tx_token.is_none() {

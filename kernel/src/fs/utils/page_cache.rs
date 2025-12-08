@@ -359,11 +359,12 @@ impl PageCacheManager {
         let backend = self.backend();
         let backend_npages = backend.npages();
         for idx in page_idx_range.start..page_idx_range.end {
-            if let Some(page) = pages.peek(&idx) {
-                if page.load_state() == PageState::Dirty && idx < backend_npages {
-                    let waiter = backend.write_page_async(idx, page)?;
-                    bio_waiter.concat(waiter);
-                }
+            if let Some(page) = pages.peek(&idx)
+                && page.load_state() == PageState::Dirty
+                && idx < backend_npages
+            {
+                let waiter = backend.write_page_async(idx, page)?;
+                bio_waiter.concat(waiter);
             }
         }
 
@@ -455,14 +456,14 @@ impl Pager for PageCacheManager {
 
     fn decommit_page(&self, idx: usize) -> Result<()> {
         let page_result = self.pages.lock().pop(&idx);
-        if let Some(page) = page_result {
-            if let PageState::Dirty = page.load_state() {
-                let Some(backend) = self.backend.upgrade() else {
-                    return Ok(());
-                };
-                if idx < backend.npages() {
-                    backend.write_page(idx, &page)?;
-                }
+        if let Some(page) = page_result
+            && let PageState::Dirty = page.load_state()
+        {
+            let Some(backend) = self.backend.upgrade() else {
+                return Ok(());
+            };
+            if idx < backend.npages() {
+                backend.write_page(idx, &page)?;
             }
         }
 

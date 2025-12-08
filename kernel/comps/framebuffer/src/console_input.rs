@@ -225,10 +225,10 @@ impl FbConsoleHandler {
             return;
         }
 
-        if let Some(bytes) = self.keycode_to_ascii(keycode) {
-            if let Some(console) = FRAMEBUFFER_CONSOLE.get() {
-                console.trigger_input_callbacks(bytes);
-            }
+        if let Some(bytes) = self.keycode_to_ascii(keycode)
+            && let Some(console) = FRAMEBUFFER_CONSOLE.get()
+        {
+            console.trigger_input_callbacks(bytes);
         }
     }
 }

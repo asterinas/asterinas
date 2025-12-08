@@ -77,14 +77,14 @@ pub(super) fn alloc(guard: &DisabledLocalIrqGuard, layout: Layout) -> Option<Pad
     // If the alignment order is larger than the size order, we need to split
     // the chunk and return the rest part back to the free lists.
     let allocated_size = size_of_order(order);
-    if allocated_size > layout.size() {
-        if let Some(chunk_addr) = chunk_addr {
-            do_dealloc(
-                &mut local_pool,
-                &mut global_pool,
-                [(chunk_addr + layout.size(), allocated_size - layout.size())].into_iter(),
-            );
-        }
+    if allocated_size > layout.size()
+        && let Some(chunk_addr) = chunk_addr
+    {
+        do_dealloc(
+            &mut local_pool,
+            &mut global_pool,
+            [(chunk_addr + layout.size(), allocated_size - layout.size())].into_iter(),
+        );
     }
 
     balancing::balance(local_pool.deref_mut(), &mut global_pool);

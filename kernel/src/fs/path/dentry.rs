@@ -519,11 +519,12 @@ impl DentryChildren {
 
     /// Checks whether the dentry is a mount point. Returns an error if it is.
     fn check_mountpoint(&self, name: &str) -> Result<()> {
-        if let Some(Some(dentry)) = self.dentries.get(name) {
-            if dentry.is_mountpoint() {
-                return_errno_with_message!(Errno::EBUSY, "dentry is mountpint");
-            }
+        if let Some(Some(dentry)) = self.dentries.get(name)
+            && dentry.is_mountpoint()
+        {
+            return_errno_with_message!(Errno::EBUSY, "dentry is mountpint");
         }
+
         Ok(())
     }
 
