@@ -67,7 +67,7 @@ The following result is an example:
 
     ```bash
     docker run -it --privileged --network=host --device=/dev/kvm -v $(pwd)/asterinas:/root/asterinas asterinas/asterinas:0.17.1-20260317
-    ```
+    ```-v /dev:/dev
     
 3. Inside the container,
 go to the project folder to build and run Asterinas.
