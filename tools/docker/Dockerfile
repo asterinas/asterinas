@@ -37,11 +37,19 @@ RUN rm -rf bazel
 
 FROM build-bazel AS build-gvisor
 
+ARG TARGETARCH
+
 # Build the gvisor syscall test binaries
 COPY test/src/syscall/gvisor /root/gvisor
 WORKDIR /root/gvisor
 RUN export BUILD_DIR=build && \
-    make ${BUILD_DIR}/syscall_test_bins
+    if [ "${TARGETARCH}" = "amd64" ]; then \
+        make ${BUILD_DIR}/syscall_test_bins; \
+    else \
+        echo "Skipping gvisor build on non-amd64 architecture" ; \
+        mkdir -p ${BUILD_DIR}/syscall_test_bins; \
+    fi
+# FIXME: Support cross-compilation on arm64 when gvisor is built by Nix.
 
 #= The final stages to produce the Asterinas development image ====================
 
