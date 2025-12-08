@@ -13,13 +13,13 @@ use core::{
 };
 
 use super::{
-    kspace::KernelPtConfig, nr_subpage_per_huge, page_prop::PageProperty, page_size,
-    vm_space::UserPtConfig, HasPaddr, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
+    HasPaddr, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr, kspace::KernelPtConfig,
+    nr_subpage_per_huge, page_prop::PageProperty, page_size, vm_space::UserPtConfig,
 };
 use crate::{
+    Pod,
     arch::mm::{PageTableEntry, PagingConsts},
     task::{atomic_mode::AsAtomicModeGuard, disable_preempt},
-    Pod,
 };
 
 mod node;

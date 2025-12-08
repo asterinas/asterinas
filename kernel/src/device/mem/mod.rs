@@ -27,7 +27,7 @@ use file::MemFile;
 pub use file::{getrandom, geturandom};
 use spin::Once;
 
-use super::registry::char::{acquire_major, register, MajorIdOwner};
+use super::registry::char::{MajorIdOwner, acquire_major, register};
 use crate::{
     fs::{
         device::{Device, DeviceType},

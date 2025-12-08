@@ -648,7 +648,7 @@ static XSAVE_AREA_SIZE: Once<usize> = Once::new();
 const MAX_XSAVE_AREA_SIZE: usize = 4096;
 
 pub(in crate::arch) fn enable_essential_features() {
-    use super::extension::{has_extensions, IsaExtensions};
+    use super::extension::{IsaExtensions, has_extensions};
 
     if has_extensions(IsaExtensions::XSAVE) {
         XSTATE_MAX_FEATURES.call_once(|| super::cpuid::query_xstate_max_features().unwrap());

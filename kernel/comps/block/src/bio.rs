@@ -7,18 +7,18 @@ use aster_util::mem_obj_slice::Slice;
 use bitvec::array::BitArray;
 use int_to_c_enum::TryFromInt;
 use ostd::{
+    Error,
     mm::{
-        io_util::{HasVmReaderWriter, VmReaderWriterResult},
         DmaDirection, DmaStream, FrameAllocOptions, HasSize, Infallible, USegment, VmReader,
         VmWriter,
+        io_util::{HasVmReaderWriter, VmReaderWriterResult},
     },
     sync::{SpinLock, WaitQueue},
-    Error,
 };
 use spin::Once;
 
-use super::{id::Sid, BlockDevice};
-use crate::{prelude::*, BLOCK_SIZE, SECTOR_SIZE};
+use super::{BlockDevice, id::Sid};
+use crate::{BLOCK_SIZE, SECTOR_SIZE, prelude::*};
 
 /// The unit for block I/O.
 ///

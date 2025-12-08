@@ -5,8 +5,8 @@ use crate::{
     fs,
     fs::{
         file_table::FileDesc,
-        fs_resolver::{FsPath, AT_FDCWD},
-        utils::{mkmod, InodeType},
+        fs_resolver::{AT_FDCWD, FsPath},
+        utils::{InodeType, mkmod},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,

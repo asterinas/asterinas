@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_console::{
+    AnyConsoleDevice, ConsoleCallback, ConsoleSetFontError,
     font::BitmapFont,
     mode::{ConsoleMode, KeyboardMode},
-    AnyConsoleDevice, ConsoleCallback, ConsoleSetFontError,
 };
 
 /// A dummy console device.

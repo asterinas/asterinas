@@ -18,7 +18,7 @@ use core::{any::Any, format_args};
 use ostd::{
     early_print, early_println,
     ktest::{
-        get_ktest_crate_whitelist, get_ktest_test_whitelist, KtestError, KtestItem, KtestIter,
+        KtestError, KtestItem, KtestIter, get_ktest_crate_whitelist, get_ktest_test_whitelist,
     },
 };
 use owo_colors::OwoColorize;
@@ -38,7 +38,7 @@ fn main() {
     let test_task = move || {
         use alloc::string::ToString;
 
-        use ostd::power::{poweroff, ExitCode};
+        use ostd::power::{ExitCode, poweroff};
 
         match run_ktests(
             get_ktest_test_whitelist().map(|s| s.iter().map(|s| s.to_string())),
@@ -198,7 +198,9 @@ fn run_crate_ktests(crate_: &KtestCrate, whitelist: &Option<SuffixTrie>) -> Ktes
                     early_print!("caught: {}\n", s);
                 }
                 KtestError::Unknown => {
-                    early_print!("[caught panic] unknown panic payload! (fatal panic handling error in ktest)\n");
+                    early_print!(
+                        "[caught panic] unknown panic payload! (fatal panic handling error in ktest)\n"
+                    );
                 }
             }
         }

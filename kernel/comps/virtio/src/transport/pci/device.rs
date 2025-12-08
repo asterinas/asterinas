@@ -4,8 +4,8 @@ use alloc::{boxed::Box, sync::Arc};
 use core::fmt::Debug;
 
 use aster_pci::{
-    bus::PciDevice, capability::CapabilityData, cfg_space::Bar, common_device::PciCommonDevice,
-    PciDeviceId,
+    PciDeviceId, bus::PciDevice, capability::CapabilityData, cfg_space::Bar,
+    common_device::PciCommonDevice,
 };
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use log::{info, warn};
@@ -18,12 +18,12 @@ use ostd::{
 
 use super::{common_cfg::VirtioPciCommonCfg, msix::VirtioMsixManager};
 use crate::{
+    VirtioDeviceType,
     queue::{AvailRing, Descriptor, UsedRing},
     transport::{
-        pci::capability::{VirtioPciCapabilityData, VirtioPciCpabilityType},
         ConfigManager, DeviceStatus, VirtioTransport, VirtioTransportError,
+        pci::capability::{VirtioPciCapabilityData, VirtioPciCpabilityType},
     },
-    VirtioDeviceType,
 };
 
 pub struct VirtioPciNotify {

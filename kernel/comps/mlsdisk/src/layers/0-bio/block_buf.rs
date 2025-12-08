@@ -211,7 +211,7 @@ impl LendingIterator for BufIterMut<'_> {
 mod tests {
     use lending_iterator::LendingIterator;
 
-    use super::{Buf, BufMut, BufRef, BLOCK_SIZE};
+    use super::{BLOCK_SIZE, Buf, BufMut, BufRef};
 
     fn iterate_buf_ref<'a>(buf: BufRef<'a>) {
         for block in buf.iter() {

@@ -27,7 +27,7 @@ use super::cpu::context::GeneralRegs;
 use crate::{
     arch::{
         cpu::context::CpuException,
-        irq::{disable_local, enable_local, HwIrqLine},
+        irq::{HwIrqLine, disable_local, enable_local},
     },
     cpu::PrivilegeLevel,
     ex_table::ExTable,

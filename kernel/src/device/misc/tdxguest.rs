@@ -10,13 +10,13 @@ use aster_util::{field_ptr, safe_ptr::SafePtr};
 use device_id::{DeviceId, MinorId};
 use ostd::{
     const_assert,
-    mm::{DmaCoherent, FrameAllocOptions, HasPaddr, HasSize, USegment, VmIo, PAGE_SIZE},
+    mm::{DmaCoherent, FrameAllocOptions, HasPaddr, HasSize, PAGE_SIZE, USegment, VmIo},
     sync::WaitQueue,
 };
 use tdx_guest::{
-    tdcall::{get_report, TdCallError},
-    tdvmcall::{get_quote, TdVmcallError},
     SHARED_MASK,
+    tdcall::{TdCallError, get_report},
+    tdvmcall::{TdVmcallError, get_quote},
 };
 
 use crate::{
@@ -28,7 +28,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
-    util::ioctl::{dispatch_ioctl, RawIoctl},
+    util::ioctl::{RawIoctl, dispatch_ioctl},
 };
 
 const TDX_GUEST_MINOR: u32 = 0x7b;
@@ -282,7 +282,7 @@ impl TdReport {
 
 mod ioctl_defs {
     use super::TdxReportRequest;
-    use crate::util::ioctl::{ioc, InOutData};
+    use crate::util::ioctl::{InOutData, ioc};
 
     // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/tdx-guest.h#L40>
 

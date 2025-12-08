@@ -8,9 +8,9 @@ use bit_field::BitField;
 use fdt::Fdt;
 
 use crate::{
+    Error, Result,
     io::{IoMem, IoMemAllocatorBuilder, Sensitive},
     irq::IrqLine,
-    Error, Result,
 };
 
 /// The Platform-Level Interrupt Controller (PLIC) for RISC-V.

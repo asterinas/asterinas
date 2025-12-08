@@ -23,7 +23,7 @@ use ostd::{
     mm::VmIo,
     user::UserContextApi,
 };
-pub use pause::{with_sigmask_changed, Pause, PauseReason};
+pub use pause::{Pause, PauseReason, with_sigmask_changed};
 pub use pending::HandlePendingSignal;
 pub use poll::{PollAdaptor, PollHandle, Pollable, Pollee, Poller};
 use sig_action::{SigAction, SigActionFlags, SigDefaultAction};
@@ -37,9 +37,9 @@ use crate::{
     current_userspace,
     prelude::*,
     process::{
+        TermStatus,
         posix_thread::do_exit_group,
         signal::{c_types::stack_t, signals::Signal},
-        TermStatus,
     },
 };
 

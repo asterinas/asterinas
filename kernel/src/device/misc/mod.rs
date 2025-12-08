@@ -7,7 +7,7 @@
 use device_id::MajorId;
 use spin::Once;
 
-use super::registry::char::{acquire_major, MajorIdOwner};
+use super::registry::char::{MajorIdOwner, acquire_major};
 
 #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
 pub mod tdxguest;

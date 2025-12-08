@@ -12,8 +12,8 @@ use ostd::{
 use spin::Once;
 
 use crate::{
-    clocksource::{ClockSource, Instant},
     START_TIME, VDSO_DATA_HIGH_RES_UPDATE_FN,
+    clocksource::{ClockSource, Instant},
 };
 
 /// An instance of the TSC clocksource.

@@ -4,4 +4,4 @@ mod elf_file;
 mod load_elf;
 
 pub use elf_file::ElfHeaders;
-pub use load_elf::{load_elf_to_vmar, ElfLoadInfo};
+pub use load_elf::{ElfLoadInfo, load_elf_to_vmar};

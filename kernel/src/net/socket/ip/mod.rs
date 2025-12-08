@@ -6,7 +6,7 @@ mod datagram;
 pub mod options;
 mod stream;
 
-pub(in crate::net) use datagram::observer::DatagramObserver;
 pub use datagram::DatagramSocket;
+pub(in crate::net) use datagram::observer::DatagramObserver;
 pub(in crate::net) use stream::observer::StreamObserver;
-pub use stream::{options as stream_options, StreamSocket};
+pub use stream::{StreamSocket, options as stream_options};

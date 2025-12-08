@@ -4,12 +4,12 @@ use core::time::Duration;
 
 use ostd::mm::VmIo;
 
-use super::{constants::MAX_FILENAME_LEN, SyscallReturn};
+use super::{SyscallReturn, constants::MAX_FILENAME_LEN};
 use crate::{
     fs,
     fs::{
         file_table::FileDesc,
-        fs_resolver::{FsPath, AT_FDCWD},
+        fs_resolver::{AT_FDCWD, FsPath},
         path::Path,
     },
     prelude::*,

@@ -5,7 +5,7 @@
 use std::{path::PathBuf, process};
 
 use crate::{
-    arch::{get_default_arch, Arch},
+    arch::{Arch, get_default_arch},
     config::unix_args::{apply_kv_array, get_key, split_to_kv_array},
     error::Errno,
     error_msg,

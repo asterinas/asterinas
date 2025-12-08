@@ -18,7 +18,7 @@ pub use self::{
 use crate::{
     arch::get_default_arch,
     error_msg,
-    util::{get_current_crates, DirGuard},
+    util::{DirGuard, get_current_crates},
 };
 
 /// Execute the forwarded cargo command with arguments.

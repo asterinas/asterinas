@@ -7,7 +7,7 @@ use core::num::NonZeroU32;
 use super::util::finish_response;
 use crate::{
     net::{
-        iface::{iter_all_ifaces, Iface},
+        iface::{Iface, iter_all_ifaces},
         socket::netlink::{
             message::{CMsgSegHdr, CSegmentType, GetRequestFlags, SegHdrCommonFlags},
             route::message::{

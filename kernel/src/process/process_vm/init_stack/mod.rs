@@ -19,7 +19,7 @@ use core::{
 };
 
 use align_ext::AlignExt;
-use ostd::mm::{VmIo, MAX_USERSPACE_VADDR};
+use ostd::mm::{MAX_USERSPACE_VADDR, VmIo};
 
 use self::aux_vec::{AuxKey, AuxVec};
 use crate::{

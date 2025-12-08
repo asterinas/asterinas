@@ -6,8 +6,9 @@ use core::{alloc::AllocError, ptr::NonNull};
 
 use super::{slot::HeapSlot, slot_list::SlabSlotList};
 use crate::mm::{
+    FrameAllocOptions, HasPaddr, HasSize, PAGE_SIZE, UniqueFrame,
     frame::{linked_list::Link, meta::AnyFrameMeta},
-    paddr_to_vaddr, FrameAllocOptions, HasPaddr, HasSize, UniqueFrame, PAGE_SIZE,
+    paddr_to_vaddr,
 };
 
 /// A slab.

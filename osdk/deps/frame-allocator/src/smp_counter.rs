@@ -2,7 +2,7 @@
 
 //! A fast and scalable SMP counter.
 
-use ostd::cpu::{all_cpus, local::StaticCpuLocal, CpuId};
+use ostd::cpu::{CpuId, all_cpus, local::StaticCpuLocal};
 
 use core::sync::atomic::{AtomicIsize, Ordering};
 
@@ -79,11 +79,7 @@ impl FastSmpCounter {
             total =
                 total.wrapping_add(self.per_cpu_counter.get_on_cpu(cpu).load(Ordering::Relaxed));
         }
-        if total < 0 {
-            0
-        } else {
-            total as usize
-        }
+        if total < 0 { 0 } else { total as usize }
     }
 }
 

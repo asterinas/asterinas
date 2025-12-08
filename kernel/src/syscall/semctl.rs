@@ -5,12 +5,12 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     ipc::{
-        semaphore::system_v::{
-            sem::Semaphore,
-            sem_set::{check_sem, sem_sets, sem_sets_mut, SemaphoreSet},
-            PermissionMode,
-        },
         IpcControlCmd,
+        semaphore::system_v::{
+            PermissionMode,
+            sem::Semaphore,
+            sem_set::{SemaphoreSet, check_sem, sem_sets, sem_sets_mut},
+        },
     },
     prelude::*,
     process::Pid,

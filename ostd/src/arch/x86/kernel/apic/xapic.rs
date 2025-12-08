@@ -2,7 +2,7 @@
 
 use x86::{
     apic::xapic,
-    msr::{rdmsr, wrmsr, IA32_APIC_BASE},
+    msr::{IA32_APIC_BASE, rdmsr, wrmsr},
 };
 
 use super::ApicTimer;
@@ -36,7 +36,7 @@ impl XApic {
     }
 
     pub(super) fn has_xapic() -> bool {
-        use crate::arch::cpu::extension::{has_extensions, IsaExtensions};
+        use crate::arch::cpu::extension::{IsaExtensions, has_extensions};
 
         has_extensions(IsaExtensions::XAPIC)
     }

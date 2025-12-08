@@ -13,8 +13,8 @@ use spin::Once;
 use crate::{
     arch::boot::efi::EfiSystemTable,
     boot::{
-        memory_region::{MemoryRegion, MemoryRegionArray, MemoryRegionType},
         BootloaderAcpiArg, BootloaderFramebufferArg,
+        memory_region::{MemoryRegion, MemoryRegionArray, MemoryRegionType},
     },
     mm::paddr_to_vaddr,
 };
@@ -124,7 +124,7 @@ unsafe extern "C" fn loongarch_boot(
     let cmdline_ptr = paddr_to_vaddr(cmdline_paddr) as *const i8;
     let cmdline = unsafe { CStr::from_ptr(cmdline_ptr) }.to_str();
 
-    use crate::boot::{call_ostd_main, EarlyBootInfo, EARLY_INFO};
+    use crate::boot::{EARLY_INFO, EarlyBootInfo, call_ostd_main};
 
     EARLY_INFO.call_once(|| EarlyBootInfo {
         bootloader_name: parse_bootloader_name(),

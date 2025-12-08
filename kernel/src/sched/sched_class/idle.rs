@@ -3,8 +3,8 @@
 use alloc::sync::Arc;
 
 use ostd::task::{
-    scheduler::{EnqueueFlags, UpdateFlags},
     Task,
+    scheduler::{EnqueueFlags, UpdateFlags},
 };
 
 use super::{CurrentRuntime, SchedAttr, SchedClassRq};

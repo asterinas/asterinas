@@ -6,13 +6,13 @@ use crate::{
     net::socket::{
         ip::{DatagramSocket, StreamSocket},
         netlink::{
-            is_valid_protocol, NetlinkRouteSocket, NetlinkUeventSocket, StandardNetlinkProtocol,
+            NetlinkRouteSocket, NetlinkUeventSocket, StandardNetlinkProtocol, is_valid_protocol,
         },
         unix::{UnixDatagramSocket, UnixStreamSocket},
         vsock::VsockStreamSocket,
     },
     prelude::*,
-    util::net::{CSocketAddrFamily, Protocol, SockFlags, SockType, SOCK_TYPE_MASK},
+    util::net::{CSocketAddrFamily, Protocol, SOCK_TYPE_MASK, SockFlags, SockType},
 };
 
 pub fn sys_socket(domain: i32, type_: i32, protocol: i32, ctx: &Context) -> Result<SyscallReturn> {

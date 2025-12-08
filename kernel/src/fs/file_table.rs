@@ -10,9 +10,9 @@ use crate::{
     fs::utils::StatusFlags,
     prelude::*,
     process::{
-        posix_thread::FileTableRefMut,
-        signal::{constants::SIGIO, PollAdaptor},
         Pid, Process,
+        posix_thread::FileTableRefMut,
+        signal::{PollAdaptor, constants::SIGIO},
     },
 };
 

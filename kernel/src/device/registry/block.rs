@@ -8,7 +8,7 @@ use ostd::mm::VmIo;
 use crate::{
     events::IoEvents,
     fs::{
-        device::{add_node, Device, DeviceType},
+        device::{Device, DeviceType, add_node},
         fs_resolver::FsResolver,
         inode_handle::FileIo,
         utils::{InodeIo, StatusFlags},

@@ -17,7 +17,7 @@
 //! as zero-cost capabilities.
 
 use osdk_frame_allocator::FrameAllocator;
-use osdk_heap_allocator::{type_from_layout, HeapAllocator};
+use osdk_heap_allocator::{HeapAllocator, type_from_layout};
 
 pub mod page_fault_handler;
 pub mod perms;

@@ -2,11 +2,11 @@
 
 use alloc::sync::Arc;
 
-use aster_framebuffer::{ColorMapEntry, FrameBuffer, PixelFormat, FRAMEBUFFER, MAX_CMAP_SIZE};
+use aster_framebuffer::{ColorMapEntry, FRAMEBUFFER, FrameBuffer, MAX_CMAP_SIZE, PixelFormat};
 use device_id::{DeviceId, MajorId, MinorId};
 use ostd::{
-    mm::{io_util::HasVmReaderWriter, HasPaddr, HasSize, VmIo},
     Pod,
+    mm::{HasPaddr, HasSize, VmIo, io_util::HasVmReaderWriter},
 };
 
 use super::registry::char;
@@ -21,7 +21,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
-    util::ioctl::{dispatch_ioctl, RawIoctl},
+    util::ioctl::{RawIoctl, dispatch_ioctl},
 };
 
 #[derive(Debug)]
@@ -205,7 +205,7 @@ struct FbCmapUser {
 
 mod ioctl_defs {
     use super::{FbCmapUser, FbFixScreenInfo, FbVarScreenInfo};
-    use crate::util::ioctl::{ioc, InData, InOutData, NoData, OutData};
+    use crate::util::ioctl::{InData, InOutData, NoData, OutData, ioc};
 
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/fb.h#L13-L38>
 

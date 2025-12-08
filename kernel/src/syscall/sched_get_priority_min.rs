@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{sched_get_priority_max::SCHED_PRIORITY_RANGE, SyscallReturn};
+use super::{SyscallReturn, sched_get_priority_max::SCHED_PRIORITY_RANGE};
 use crate::prelude::*;
 
 pub fn sys_sched_get_priority_min(policy: u32, _: &Context) -> Result<SyscallReturn> {

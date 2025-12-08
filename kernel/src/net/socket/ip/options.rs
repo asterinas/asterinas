@@ -6,8 +6,8 @@ use aster_bigtcp::socket::NeedIfacePoll;
 
 use crate::{
     net::socket::options::{
-        macros::{impl_socket_options, sock_option_mut, sock_option_ref},
         SocketOption,
+        macros::{impl_socket_options, sock_option_mut, sock_option_ref},
     },
     prelude::*,
 };

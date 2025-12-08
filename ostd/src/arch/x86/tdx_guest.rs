@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use log::warn;
-use tdx_guest::{tdcall::accept_page, tdvmcall::map_gpa, TdxTrapFrame};
+use tdx_guest::{TdxTrapFrame, tdcall::accept_page, tdvmcall::map_gpa};
 
 use super::trap::TrapFrame;
 use crate::{
     mm::{
+        PAGE_SIZE,
         kspace::KERNEL_PAGE_TABLE,
         paddr_to_vaddr,
         page_prop::{PageProperty, PrivilegedPageFlags as PrivFlags},
         page_table::boot_pt,
-        PAGE_SIZE,
     },
     prelude::Paddr,
 };

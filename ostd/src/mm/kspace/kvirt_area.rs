@@ -7,11 +7,11 @@ use core::ops::Range;
 use super::{KERNEL_PAGE_TABLE, VMALLOC_VADDR_RANGE};
 use crate::{
     mm::{
-        frame::{meta::AnyFrameMeta, Frame},
+        PAGE_SIZE, Paddr, Vaddr,
+        frame::{Frame, meta::AnyFrameMeta},
         kspace::{KernelPtConfig, MappedItem},
         page_prop::PageProperty,
         page_table::largest_pages,
-        Paddr, Vaddr, PAGE_SIZE,
     },
     task::disable_preempt,
     util::range_alloc::RangeAllocator,

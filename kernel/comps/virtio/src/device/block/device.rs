@@ -14,30 +14,30 @@ use core::{
 };
 
 use aster_block::{
-    bio::{bio_segment_pool_init, BioEnqueueError, BioStatus, BioType, SubmittedBio},
+    BlockDeviceMeta, EXTENDED_DEVICE_ID_ALLOCATOR, PartitionInfo, PartitionNode,
+    bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio, bio_segment_pool_init},
     request_queue::{BioRequest, BioRequestSingleQueue},
-    BlockDeviceMeta, PartitionInfo, PartitionNode, EXTENDED_DEVICE_ID_ALLOCATOR,
 };
 use aster_util::mem_obj_slice::Slice;
 use device_id::{DeviceId, MinorId};
 use log::{debug, info};
 use ostd::{
+    Pod,
     arch::trap::TrapFrame,
     mm::{DmaDirection, DmaStream, FrameAllocOptions, HasSize, VmIo},
     sync::SpinLock,
-    Pod,
 };
 
 use super::{BlockFeatures, VirtioBlockConfig, VirtioBlockFeature};
 use crate::{
+    VIRTIO_BLOCK_MAJOR_ID,
     device::{
-        block::{ReqType, RespStatus},
         VirtioDeviceError,
+        block::{ReqType, RespStatus},
     },
     id_alloc::SyncIdAlloc,
     queue::VirtQueue,
     transport::{ConfigManager, VirtioTransport},
-    VIRTIO_BLOCK_MAJOR_ID,
 };
 
 /// The number of minor device numbers allocated for each virtio disk,

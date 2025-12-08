@@ -22,13 +22,13 @@ use aster_input::{
 };
 use device_id::{DeviceId, MajorId, MinorId};
 use file::{
-    is_syn_dropped_event, is_syn_report_event, EvdevEvent, EvdevFile, EvdevFileInner,
-    EVDEV_BUFFER_SIZE,
+    EVDEV_BUFFER_SIZE, EvdevEvent, EvdevFile, EvdevFileInner, is_syn_dropped_event,
+    is_syn_report_event,
 };
 use ostd::sync::SpinLock;
 use spin::Once;
 
-use super::registry::char::{acquire_major, register, unregister, MajorIdOwner};
+use super::registry::char::{MajorIdOwner, acquire_major, register, unregister};
 use crate::{
     fs::{
         device::{Device, DeviceType},

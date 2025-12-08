@@ -15,13 +15,13 @@ use core::{any::Any, fmt::Debug};
 
 use aster_bigtcp::device::DeviceCapabilities;
 use aster_softirq::{
-    softirq_id::{NETWORK_RX_SOFTIRQ_ID, NETWORK_TX_SOFTIRQ_ID},
     BottomHalfDisabled, SoftIrqLine,
+    softirq_id::{NETWORK_RX_SOFTIRQ_ID, NETWORK_TX_SOFTIRQ_ID},
 };
-pub use buffer::{RxBuffer, TxBuffer, RX_BUFFER_POOL, TX_BUFFER_LEN};
-use component::{init_component, ComponentInitError};
+pub use buffer::{RX_BUFFER_POOL, RxBuffer, TX_BUFFER_LEN, TxBuffer};
+use component::{ComponentInitError, init_component};
 pub use dma_pool::DmaSegment;
-use ostd::{sync::SpinLock, Pod};
+use ostd::{Pod, sync::SpinLock};
 use spin::Once;
 
 #[derive(Debug, Clone, Copy, Pod)]

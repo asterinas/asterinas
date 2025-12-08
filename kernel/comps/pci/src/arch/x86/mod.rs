@@ -3,9 +3,9 @@
 //! PCI bus access
 
 use ostd::{
+    Error,
     arch::device::io_port::{ReadWriteAccess, WriteOnlyAccess},
     io::IoPort,
-    Error,
 };
 use spin::Once;
 

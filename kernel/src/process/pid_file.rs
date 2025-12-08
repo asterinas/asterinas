@@ -16,8 +16,8 @@ use crate::{
     },
     prelude::*,
     process::{
-        signal::{PollHandle, Pollable},
         Process,
+        signal::{PollHandle, Pollable},
     },
 };
 

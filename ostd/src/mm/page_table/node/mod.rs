@@ -39,13 +39,13 @@ pub(in crate::mm) use self::{
     child::{Child, ChildRef},
     entry::Entry,
 };
-use super::{nr_subpage_per_huge, PageTableConfig, PageTableEntryTrait};
+use super::{PageTableConfig, PageTableEntryTrait, nr_subpage_per_huge};
 use crate::{
     mm::{
-        frame::{meta::AnyFrameMeta, Frame, FrameRef},
+        FrameAllocOptions, HasPaddr, Infallible, PagingConstsTrait, PagingLevel, VmReader,
+        frame::{Frame, FrameRef, meta::AnyFrameMeta},
         paddr_to_vaddr,
         page_table::{load_pte, store_pte},
-        FrameAllocOptions, HasPaddr, Infallible, PagingConstsTrait, PagingLevel, VmReader,
     },
     task::atomic_mode::InAtomicMode,
 };

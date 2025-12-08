@@ -9,16 +9,16 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::{
-        posix_thread::{thread_table, AsPosixThread},
+        posix_thread::{AsPosixThread, thread_table},
         process_table,
     },
     time::{
-        clockid_t,
+        Clock, clockid_t,
         clocks::{
             BootTimeClock, MonotonicClock, MonotonicCoarseClock, MonotonicRawClock, RealTimeClock,
             RealTimeCoarseClock,
         },
-        timespec_t, Clock,
+        timespec_t,
     },
 };
 

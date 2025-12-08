@@ -20,7 +20,7 @@ use crate::{
     iface::{BindPortConfig, BoundPort, PollableIfaceMut},
     socket::{
         option::{RawTcpOption, RawTcpSetOption},
-        unbound::{new_tcp_socket, RawTcpSocket},
+        unbound::{RawTcpSocket, new_tcp_socket},
     },
     socket_table::{ConnectionKey, ListenerKey},
 };

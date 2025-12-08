@@ -7,12 +7,12 @@ use crate::{
     events::IoEvents,
     net::socket::{
         netlink::{
+            NetlinkSocketAddr,
             common::BoundNetlink,
             message::{ContinueRead, ProtocolSegment},
             route::kernel::get_netlink_route_kernel,
-            NetlinkSocketAddr,
         },
-        util::{datagram_common, SendRecvFlags},
+        util::{SendRecvFlags, datagram_common},
     },
     prelude::*,
     util::{MultiRead, MultiWrite},

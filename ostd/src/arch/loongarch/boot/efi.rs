@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::mm::{paddr_to_vaddr, Paddr};
+use crate::mm::{Paddr, paddr_to_vaddr};
 
 macro_rules! efi_guid {
     ($a:expr, $b:expr, $c:expr, $d:expr) => {{

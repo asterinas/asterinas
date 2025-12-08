@@ -11,17 +11,17 @@ use core::{
 
 use align_ext::AlignExt;
 
-pub(super) use self::allocator::init;
 pub(crate) use self::allocator::IoMemAllocatorBuilder;
+pub(super) use self::allocator::init;
 use crate::{
+    Error,
     mm::{
+        HasPaddr, HasSize, Infallible, PAGE_SIZE, Paddr, PodOnce, VmReader, VmWriter,
         io_util::{HasVmReaderWriter, VmReaderWriterIdentity},
         kspace::kvirt_area::KVirtArea,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
-        HasPaddr, HasSize, Infallible, Paddr, PodOnce, VmReader, VmWriter, PAGE_SIZE,
     },
     prelude::*,
-    Error,
 };
 
 /// A marker type used for [`IoMem`],

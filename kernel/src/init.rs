@@ -10,7 +10,7 @@ use spin::once::Once;
 use crate::{
     fs::{fs_resolver::FsResolver, path::MountNamespace},
     prelude::*,
-    process::{spawn_init_process, Process},
+    process::{Process, spawn_init_process},
     sched::SchedPolicy,
     thread::kernel_thread::ThreadOptions,
 };

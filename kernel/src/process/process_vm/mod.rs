@@ -20,8 +20,8 @@ use ostd::{sync::MutexGuard, task::disable_preempt};
 pub use self::{
     heap::{Heap, USER_HEAP_SIZE_LIMIT},
     init_stack::{
+        INIT_STACK_SIZE, InitStack, InitStackReader, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS,
         aux_vec::{AuxKey, AuxVec},
-        InitStack, InitStackReader, INIT_STACK_SIZE, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS,
     },
 };
 use crate::{fs::fs_resolver::PathOrInode, prelude::*, vm::vmar::Vmar};

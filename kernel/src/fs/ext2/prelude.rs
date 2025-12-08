@@ -7,9 +7,9 @@ pub(super) use core::{
 
 pub(super) use align_ext::AlignExt;
 pub(super) use aster_block::{
+    BLOCK_SIZE, BlockDevice,
     bio::{BioDirection, BioSegment, BioStatus, BioWaiter},
     id::Bid,
-    BlockDevice, BLOCK_SIZE,
 };
 pub(super) use ostd::{
     mm::{Frame, FrameAllocOptions, Segment, USegment, VmIo},

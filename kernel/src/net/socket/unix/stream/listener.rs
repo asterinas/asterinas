@@ -6,10 +6,10 @@ use aster_rights::ReadDupOp;
 use ostd::sync::WaitQueue;
 
 use super::{
+    UnixStreamSocket,
     connected::Connected,
     init::Init,
     socket::{SHUT_READ_EVENTS, SHUT_WRITE_EVENTS},
-    UnixStreamSocket,
 };
 use crate::{
     events::IoEvents,
@@ -20,7 +20,7 @@ use crate::{
             cred::SocketCred,
             stream::socket::OptionSet,
         },
-        util::{options::SocketOptionSet, SockShutdownCmd, SocketAddr},
+        util::{SockShutdownCmd, SocketAddr, options::SocketOptionSet},
     },
     prelude::*,
     process::signal::Pollee,

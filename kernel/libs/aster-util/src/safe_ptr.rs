@@ -6,11 +6,11 @@ use aster_rights::{Dup, Exec, Full, Read, Signal, TRightSet, TRights, Write};
 use aster_rights_proc::require;
 use inherit_methods_macro::inherit_methods;
 use ostd::{
-    mm::{
-        io_util::{HasVmReaderWriter, VmReaderWriterTypes},
-        Daddr, DmaStream, HasDaddr, HasPaddr, Paddr, PodOnce, VmIo, VmIoOnce,
-    },
     Error, Pod, Result,
+    mm::{
+        Daddr, DmaStream, HasDaddr, HasPaddr, Paddr, PodOnce, VmIo, VmIoOnce,
+        io_util::{HasVmReaderWriter, VmReaderWriterTypes},
+    },
 };
 
 /// Safe pointers.

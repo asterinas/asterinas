@@ -5,7 +5,7 @@ use alloc::format;
 use crate::{
     fs::{
         procfs::{ProcSymBuilder, SymOps},
-        utils::{mkmod, Inode, SymbolicLink},
+        utils::{Inode, SymbolicLink, mkmod},
     },
     prelude::*,
     process::posix_thread::AsPosixThread,

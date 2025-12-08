@@ -21,21 +21,21 @@ use alloc::{string::ToString, sync::Arc, vec};
 use core::ops::Range;
 
 use aster_block::{
+    BlockDevice, SECTOR_SIZE,
     bio::{Bio, BioDirection, BioSegment, BioStatus, BioType},
     id::Sid,
-    BlockDevice, SECTOR_SIZE,
 };
-use component::{init_component, ComponentInitError};
+use component::{ComponentInitError, init_component};
 use device_id::{DeviceId, MajorId, MinorId};
 use ostd::{
-    mm::{io_util::HasVmReaderWriter, VmIo},
+    mm::{VmIo, io_util::HasVmReaderWriter},
     prelude::*,
 };
 
 pub use self::{
     error::{Errno, Error},
     layers::{
-        bio::{BlockId, BlockSet, Buf, BufMut, BufRef, BLOCK_SIZE},
+        bio::{BLOCK_SIZE, BlockId, BlockSet, Buf, BufMut, BufRef},
         disk::MlsDisk,
     },
     os::{Aead, AeadIv, AeadKey, AeadMac, Rng},
@@ -134,8 +134,8 @@ impl BlockSet for RawDisk {
 #[cfg(ktest)]
 mod test {
     use aster_block::{
-        bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio},
         BlockDevice, BlockDeviceMeta, SECTOR_SIZE,
+        bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio},
     };
     use device_id::DeviceId;
     use ostd::{

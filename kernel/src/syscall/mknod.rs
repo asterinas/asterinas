@@ -5,7 +5,7 @@ use crate::{
     fs::{
         self,
         file_table::FileDesc,
-        fs_resolver::{FsPath, AT_FDCWD},
+        fs_resolver::{AT_FDCWD, FsPath},
         utils::{InodeMode, InodeType, MknodType},
     },
     prelude::*,

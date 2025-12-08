@@ -4,12 +4,12 @@ use aster_util::slot_vec::SlotVec;
 use ostd::sync::RwMutexUpgradeableGuard;
 
 use super::template::{
-    lookup_child_from_table, populate_children_from_table, DirOps, ProcDir, ProcDirBuilder,
+    DirOps, ProcDir, ProcDirBuilder, lookup_child_from_table, populate_children_from_table,
 };
 use crate::{
     fs::{
         procfs::pid::task::{TaskDirOps, TidDirOps},
-        utils::{mkmod, Inode},
+        utils::{Inode, mkmod},
     },
     prelude::*,
     process::Process,

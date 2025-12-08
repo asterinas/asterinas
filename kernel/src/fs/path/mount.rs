@@ -11,9 +11,9 @@ use spin::Once;
 use crate::{
     fs::{
         path::{
+            Path,
             dentry::{Dentry, DentryKey},
             mount_namespace::MountNamespace,
-            Path,
         },
         utils::{FileSystem, FsFlags, InodeType},
     },

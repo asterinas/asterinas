@@ -6,8 +6,8 @@ use super::message::UeventMessage;
 use crate::{
     events::IoEvents,
     net::socket::{
-        netlink::{common::BoundNetlink, NetlinkSocketAddr},
-        util::{datagram_common, SendRecvFlags},
+        netlink::{NetlinkSocketAddr, common::BoundNetlink},
+        util::{SendRecvFlags, datagram_common},
     },
     prelude::*,
     util::{MultiRead, MultiWrite},

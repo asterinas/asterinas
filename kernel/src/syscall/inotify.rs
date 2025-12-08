@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::{get_file_fast, FdFlags, FileDesc},
+        file_table::{FdFlags, FileDesc, get_file_fast},
         fs_resolver::FsPath,
         notify::inotify::{InotifyControls, InotifyEvents, InotifyFile},
         utils::{InodeType, Permission},

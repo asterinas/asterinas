@@ -16,7 +16,7 @@
 
 extern crate alloc;
 
-use component::{init_component, ComponentInitError};
+use component::{ComponentInitError, init_component};
 
 mod aster_logger;
 mod console;

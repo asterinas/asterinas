@@ -19,7 +19,7 @@ use crate::{
     events::IoEvents,
     fs::{
         file_handle::FileLike,
-        file_table::{get_file_fast, FdFlags, FileDesc},
+        file_table::{FdFlags, FileDesc, get_file_fast},
         path::RESERVED_MOUNT_ID,
         pseudofs::anon_inodefs_shared_inode,
         utils::{CreationFlags, Inode, StatusFlags},
@@ -28,10 +28,10 @@ use crate::{
     process::{
         posix_thread::{AsPosixThread, PosixThread},
         signal::{
+            HandlePendingSignal, PollHandle, Pollable, Poller,
             constants::{SIGKILL, SIGSTOP},
             sig_mask::{AtomicSigMask, SigMask},
             signals::Signal,
-            HandlePendingSignal, PollHandle, Pollable, Poller,
         },
     },
 };

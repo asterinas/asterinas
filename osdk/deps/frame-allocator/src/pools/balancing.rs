@@ -4,7 +4,7 @@
 
 use ostd::cpu::num_cpus;
 
-use super::{lesser_order_of, BuddyOrder, BuddySet, OnDemandGlobalLock, MAX_LOCAL_BUDDY_ORDER};
+use super::{BuddyOrder, BuddySet, MAX_LOCAL_BUDDY_ORDER, OnDemandGlobalLock, lesser_order_of};
 
 use crate::chunk::split_to_order;
 

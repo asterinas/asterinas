@@ -8,7 +8,7 @@ use aster_bigtcp::{
 };
 use ostd::mm::VmWriter;
 
-use crate::{buffer::RxBuffer, AnyNetworkDevice};
+use crate::{AnyNetworkDevice, buffer::RxBuffer};
 
 impl device::Device for dyn AnyNetworkDevice {
     type RxToken<'a> = RxToken;

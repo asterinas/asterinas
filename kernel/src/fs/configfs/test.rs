@@ -25,19 +25,19 @@ use core::{
 };
 
 use aster_systree::{
-    inherit_sys_branch_node, inherit_sys_leaf_node, BranchNodeFields, Error, NormalNodeFields,
-    Result, SysAttrSet, SysAttrSetBuilder, SysObj, SysPerms, SysStr,
+    BranchNodeFields, Error, NormalNodeFields, Result, SysAttrSet, SysAttrSetBuilder, SysObj,
+    SysPerms, SysStr, inherit_sys_branch_node, inherit_sys_leaf_node,
 };
 use inherit_methods_macro::inherit_methods;
 use ostd::{
+    Pod,
     mm::{VmReader, VmWriter},
     prelude::ktest,
-    Pod,
 };
 use spin::Once;
 
 use crate::{
-    fs::utils::{mkmod, FileSystem, InodeType},
+    fs::utils::{FileSystem, InodeType, mkmod},
     time::clocks::init_for_ktest as time_init_for_ktest,
 };
 
@@ -190,56 +190,76 @@ fn test_config_fs() {
     let mut read_buffer: u32 = 0;
 
     // Test attr_a read/write on demo_foo
-    assert!(attr_a_foo
-        .read_bytes_at(0, read_buffer.as_bytes_mut())
-        .is_ok());
+    assert!(
+        attr_a_foo
+            .read_bytes_at(0, read_buffer.as_bytes_mut())
+            .is_ok()
+    );
     assert_eq!(read_buffer, 0);
 
     let write_value_a: u32 = 42;
-    assert!(attr_a_foo
-        .write_bytes_at(0, write_value_a.as_bytes())
-        .is_ok());
-    assert!(attr_a_foo
-        .read_bytes_at(0, read_buffer.as_bytes_mut())
-        .is_ok());
+    assert!(
+        attr_a_foo
+            .write_bytes_at(0, write_value_a.as_bytes())
+            .is_ok()
+    );
+    assert!(
+        attr_a_foo
+            .read_bytes_at(0, read_buffer.as_bytes_mut())
+            .is_ok()
+    );
     assert_eq!(read_buffer, 42);
 
     // Test attr_b read/write on demo_foo
-    assert!(attr_b_foo
-        .read_bytes_at(0, read_buffer.as_bytes_mut())
-        .is_ok());
+    assert!(
+        attr_b_foo
+            .read_bytes_at(0, read_buffer.as_bytes_mut())
+            .is_ok()
+    );
     assert_eq!(read_buffer, 0);
 
     let write_value_b: u32 = 100;
-    assert!(attr_b_foo
-        .write_bytes_at(0, write_value_b.as_bytes())
-        .is_ok());
-    assert!(attr_b_foo
-        .read_bytes_at(0, read_buffer.as_bytes_mut())
-        .is_ok());
+    assert!(
+        attr_b_foo
+            .write_bytes_at(0, write_value_b.as_bytes())
+            .is_ok()
+    );
+    assert!(
+        attr_b_foo
+            .read_bytes_at(0, read_buffer.as_bytes_mut())
+            .is_ok()
+    );
     assert_eq!(read_buffer, 100);
 
     // --- Test attribute access for demo_bar ---
     let attr_a_bar = demo_bar.lookup("attr_a").expect("lookup attr_a failed");
 
     // Verify that demo_bar has independent state from demo_foo
-    assert!(attr_a_bar
-        .read_bytes_at(0, read_buffer.as_bytes_mut())
-        .is_ok());
+    assert!(
+        attr_a_bar
+            .read_bytes_at(0, read_buffer.as_bytes_mut())
+            .is_ok()
+    );
     assert_eq!(read_buffer, 0); // Should be 0, not 42 like demo_foo
 
     let write_value_bar: u32 = 200;
-    assert!(attr_a_bar
-        .write_bytes_at(0, write_value_bar.as_bytes())
-        .is_ok());
-    assert!(attr_a_bar
-        .read_bytes_at(0, read_buffer.as_bytes_mut())
-        .is_ok());
+    assert!(
+        attr_a_bar
+            .write_bytes_at(0, write_value_bar.as_bytes())
+            .is_ok()
+    );
+    assert!(
+        attr_a_bar
+            .read_bytes_at(0, read_buffer.as_bytes_mut())
+            .is_ok()
+    );
     assert_eq!(read_buffer, 200);
 
     // Verify demo_foo's attr_a is still 42
-    assert!(attr_a_foo
-        .read_bytes_at(0, read_buffer.as_bytes_mut())
-        .is_ok());
+    assert!(
+        attr_a_foo
+            .read_bytes_at(0, read_buffer.as_bytes_mut())
+            .is_ok()
+    );
     assert_eq!(read_buffer, 42);
 }

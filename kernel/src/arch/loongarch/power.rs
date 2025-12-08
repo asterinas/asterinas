@@ -4,7 +4,7 @@ use ostd::{
     arch::boot::DEVICE_TREE,
     io::IoMem,
     mm::VmIoOnce,
-    power::{inject_poweroff_handler, ExitCode},
+    power::{ExitCode, inject_poweroff_handler},
 };
 use spin::Once;
 

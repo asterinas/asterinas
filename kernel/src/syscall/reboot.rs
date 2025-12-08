@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::power::{poweroff, restart, ExitCode};
+use ostd::power::{ExitCode, poweroff, restart};
 
 use super::SyscallReturn;
 use crate::{prelude::*, process::credentials::capabilities::CapSet};

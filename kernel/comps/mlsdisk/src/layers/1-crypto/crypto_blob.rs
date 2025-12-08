@@ -4,7 +4,7 @@ use ostd_pod::Pod;
 
 use super::{Iv, Key, Mac, VersionId};
 use crate::{
-    layers::bio::{BlockSet, Buf, BLOCK_SIZE},
+    layers::bio::{BLOCK_SIZE, BlockSet, Buf},
     os::{Aead, Mutex},
     prelude::*,
 };
@@ -286,7 +286,7 @@ impl<B: BlockSet> CryptoBlob<B> {
 #[cfg(test)]
 mod tests {
     use super::CryptoBlob;
-    use crate::layers::bio::{BlockSet, MemDisk, BLOCK_SIZE};
+    use crate::layers::bio::{BLOCK_SIZE, BlockSet, MemDisk};
 
     #[test]
     fn create() {

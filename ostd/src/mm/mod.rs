@@ -27,11 +27,11 @@ use core::fmt::Debug;
 pub use self::{
     dma::{DmaCoherent, DmaDirection, DmaStream},
     frame::{
+        Frame,
         allocator::FrameAllocOptions,
         segment::{Segment, USegment},
         unique::UniqueFrame,
         untyped::{AnyUFrameMeta, UFrame},
-        Frame,
     },
     io::{
         Fallible, FallibleVmRead, FallibleVmWrite, Infallible, PodAtomic, PodOnce, VmIo, VmIoFill,

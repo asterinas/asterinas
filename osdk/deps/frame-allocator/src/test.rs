@@ -6,8 +6,8 @@ use core::alloc::Layout;
 
 use ostd::{
     mm::{
-        frame::GlobalFrameAllocator, FrameAllocOptions, HasPaddr, Paddr, Segment, UniqueFrame,
-        PAGE_SIZE,
+        FrameAllocOptions, HasPaddr, PAGE_SIZE, Paddr, Segment, UniqueFrame,
+        frame::GlobalFrameAllocator,
     },
     prelude::ktest,
 };

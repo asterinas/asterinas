@@ -10,7 +10,7 @@ use inherit_methods_macro::inherit_methods;
 use ostd::{const_assert, mm::io_util::HasVmReaderWriter};
 
 use super::{
-    block_ptr::{BidPath, BlockPtrs, Ext2Bid, BID_SIZE, MAX_BLOCK_PTRS},
+    block_ptr::{BID_SIZE, BidPath, BlockPtrs, Ext2Bid, MAX_BLOCK_PTRS},
     dir::{DirEntryHeader, DirEntryItem, DirEntryReader, DirEntryWriter},
     fs::Ext2,
     indirect_block_cache::{IndirectBlock, IndirectBlockCache},
@@ -29,7 +29,7 @@ use crate::{
             StatusFlags, XattrName, XattrNamespace, XattrSetFlags,
         },
     },
-    process::{posix_thread::AsPosixThread, Gid, Uid},
+    process::{Gid, Uid, posix_thread::AsPosixThread},
 };
 
 /// Max length of file name.

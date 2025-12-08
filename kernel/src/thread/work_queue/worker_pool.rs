@@ -13,11 +13,11 @@ use ostd::{
     task::Task,
 };
 
-use super::{simple_scheduler::SimpleScheduler, worker::Worker, WorkItem, WorkPriority, WorkQueue};
+use super::{WorkItem, WorkPriority, WorkQueue, simple_scheduler::SimpleScheduler, worker::Worker};
 use crate::{
     prelude::*,
     sched::{Nice, SchedPolicy},
-    thread::{kernel_thread::ThreadOptions, AsThread},
+    thread::{AsThread, kernel_thread::ThreadOptions},
 };
 
 /// A pool of workers.

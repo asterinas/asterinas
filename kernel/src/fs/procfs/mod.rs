@@ -25,14 +25,14 @@ use crate::{
         procfs::{filesystems::FileSystemsFileOps, stat::StatFileOps},
         registry::{FsProperties, FsType},
         utils::{
-            mkmod, DirEntryVecExt, FileSystem, FsEventSubscriberStats, FsFlags, Inode, SuperBlock,
-            NAME_MAX,
+            DirEntryVecExt, FileSystem, FsEventSubscriberStats, FsFlags, Inode, NAME_MAX,
+            SuperBlock, mkmod,
         },
     },
     prelude::*,
     process::{
-        process_table::{self, PidEvent},
         Pid,
+        process_table::{self, PidEvent},
     },
 };
 

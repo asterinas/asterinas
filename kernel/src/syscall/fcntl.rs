@@ -6,12 +6,12 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file_handle::FileLike,
-        file_table::{get_file_fast, FdFlags, FileDesc, WithFileTable},
+        file_table::{FdFlags, FileDesc, WithFileTable, get_file_fast},
         ramfs::memfd::{FileSeals, MemfdFile},
-        utils::{FileRange, RangeLockItem, RangeLockType, StatusFlags, OFFSET_MAX},
+        utils::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockType, StatusFlags},
     },
     prelude::*,
-    process::{process_table, Pid},
+    process::{Pid, process_table},
 };
 
 pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64, ctx: &Context) -> Result<SyscallReturn> {

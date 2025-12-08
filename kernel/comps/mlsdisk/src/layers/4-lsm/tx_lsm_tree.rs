@@ -21,14 +21,14 @@ use super::{
     mem_table::{MemTableManager, ValueEx},
     range_query_ctx::RangeQueryCtx,
     sstable::SSTable,
-    wal::{WalAppendTx, BUCKET_WAL},
+    wal::{BUCKET_WAL, WalAppendTx},
 };
 use crate::{
     layers::{
         bio::BlockSet,
         log::{TxLogId, TxLogStore},
     },
-    os::{spawn, BTreeMap, RwLock},
+    os::{BTreeMap, RwLock, spawn},
     prelude::*,
     tx::CurrentTx,
 };

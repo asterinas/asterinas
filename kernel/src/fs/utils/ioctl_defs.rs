@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::util::ioctl::{ioc, OutData};
+use crate::util::ioctl::{OutData, ioc};
 
 // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/asm-generic/ioctls.h>
 

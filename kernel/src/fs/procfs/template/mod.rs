@@ -4,11 +4,11 @@ use core::time::Duration;
 
 pub(super) use self::{
     builder::{ProcDirBuilder, ProcFileBuilder, ProcSymBuilder},
-    dir::{lookup_child_from_table, populate_children_from_table, DirOps, ProcDir},
+    dir::{DirOps, ProcDir, lookup_child_from_table, populate_children_from_table},
     file::{FileOps, ProcFile},
     sym::{ProcSym, SymOps},
 };
-use super::{ProcFs, BLOCK_SIZE};
+use super::{BLOCK_SIZE, ProcFs};
 use crate::{
     fs::{
         notify::FsEventPublisher,

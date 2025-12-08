@@ -88,7 +88,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 use serde::{Deserialize, Serialize};
 
-use super::chunk::{ChunkAlloc, ChunkId, CHUNK_NBLOCKS};
+use super::chunk::{CHUNK_NBLOCKS, ChunkAlloc, ChunkId};
 use crate::{
     layers::{
         bio::{BlockLog, BlockSet, BufMut, BufRef},

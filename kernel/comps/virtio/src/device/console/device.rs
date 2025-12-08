@@ -8,13 +8,13 @@ use aster_util::mem_obj_slice::Slice;
 use log::debug;
 use ostd::{
     arch::trap::TrapFrame,
-    mm::{io_util::HasVmReaderWriter, DmaDirection, DmaStream, FrameAllocOptions, VmReader},
+    mm::{DmaDirection, DmaStream, FrameAllocOptions, VmReader, io_util::HasVmReaderWriter},
     sync::{Rcu, SpinLock},
 };
 
-use super::{config::VirtioConsoleConfig, DEVICE_NAME};
+use super::{DEVICE_NAME, config::VirtioConsoleConfig};
 use crate::{
-    device::{console::config::ConsoleFeatures, VirtioDeviceError},
+    device::{VirtioDeviceError, console::config::ConsoleFeatures},
     queue::VirtQueue,
     transport::{ConfigManager, VirtioTransport},
 };

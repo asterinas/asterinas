@@ -9,9 +9,9 @@ use core::{
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use ostd::sync::{PreemptDisabled, Waiter, Waker};
 
-use super::sem_set::{SemSetInner, SEMVMX};
+use super::sem_set::{SEMVMX, SemSetInner};
 use crate::{
-    ipc::{key_t, semaphore::system_v::sem_set::sem_sets, IpcFlags},
+    ipc::{IpcFlags, key_t, semaphore::system_v::sem_set::sem_sets},
     prelude::*,
     process::Pid,
     time::{

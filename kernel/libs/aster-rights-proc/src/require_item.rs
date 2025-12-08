@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use syn::{parse::Parse, ItemFn, ItemImpl, Token};
+use syn::{ItemFn, ItemImpl, Token, parse::Parse};
 
 pub enum RequireItem {
     Impl(ItemImpl),

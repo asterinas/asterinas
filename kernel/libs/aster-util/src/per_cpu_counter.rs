@@ -4,8 +4,8 @@
 
 use core::sync::atomic::{AtomicIsize, Ordering};
 
-use osdk_heap_allocator::{alloc_cpu_local, CpuLocalBox};
-use ostd::cpu::{all_cpus, CpuId};
+use osdk_heap_allocator::{CpuLocalBox, alloc_cpu_local};
+use ostd::cpu::{CpuId, all_cpus};
 
 /// A fast, SMP-friendly, dynamically allocated, per-CPU counter.
 ///

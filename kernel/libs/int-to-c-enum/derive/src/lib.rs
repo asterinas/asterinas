@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use proc_macro2::{Ident, TokenStream};
-use quote::{format_ident, quote, TokenStreamExt};
-use syn::{parse_macro_input, Attribute, Data, DataEnum, DeriveInput, Generics};
+use quote::{TokenStreamExt, format_ident, quote};
+use syn::{Attribute, Data, DataEnum, DeriveInput, Generics, parse_macro_input};
 
 const ALLOWED_REPRS: &[&str] = &[
     "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64", "usize", "isize",

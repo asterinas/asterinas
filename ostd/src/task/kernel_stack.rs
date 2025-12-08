@@ -8,9 +8,9 @@ use crate::{
     impl_frame_meta_for,
     irq::DisabledLocalIrqGuard,
     mm::{
+        FrameAllocOptions, PAGE_SIZE,
         kspace::kvirt_area::KVirtArea,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
-        FrameAllocOptions, PAGE_SIZE,
     },
     prelude::*,
 };

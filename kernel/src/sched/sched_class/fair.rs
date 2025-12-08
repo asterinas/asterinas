@@ -7,16 +7,16 @@ use core::{
 };
 
 use ostd::{
-    cpu::{num_cpus, CpuId},
+    cpu::{CpuId, num_cpus},
     task::{
-        scheduler::{EnqueueFlags, UpdateFlags},
         Task,
+        scheduler::{EnqueueFlags, UpdateFlags},
     },
 };
 
 use super::{
-    time::{base_slice_clocks, min_period_clocks},
     CurrentRuntime, SchedAttr, SchedClassRq,
+    time::{base_slice_clocks, min_period_clocks},
 };
 use crate::{
     sched::nice::{Nice, NiceValue},

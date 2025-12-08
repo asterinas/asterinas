@@ -3,11 +3,11 @@
 use core::fmt;
 
 use ostd::{
+    Pod,
     arch::cpu::context::{CpuExceptionInfo, UserContext},
     cpu::PinCurrentCpu,
     task::DisabledPreemptGuard,
     user::UserContextApi,
-    Pod,
 };
 
 use crate::{cpu::LinuxAbi, thread::exception::PageFaultInfo, vm::perms::VmPerms};

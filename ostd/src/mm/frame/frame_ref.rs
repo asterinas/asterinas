@@ -3,8 +3,8 @@
 use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref, ptr::NonNull};
 
 use super::{
-    meta::{AnyFrameMeta, MetaSlot},
     Frame,
+    meta::{AnyFrameMeta, MetaSlot},
 };
 use crate::{mm::Paddr, sync::non_null::NonNullPtr};
 

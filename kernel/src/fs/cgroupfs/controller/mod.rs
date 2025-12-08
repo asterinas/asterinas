@@ -11,9 +11,9 @@ use ostd::{
 };
 
 use crate::fs::cgroupfs::{
+    CgroupNode,
     controller::{cpuset::CpuSetController, memory::MemoryController, pids::PidsController},
     systree_node::CgroupSysNode,
-    CgroupNode,
 };
 
 mod cpuset;

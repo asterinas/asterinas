@@ -2,10 +2,10 @@
 
 pub(crate) use crate::{
     error::{Errno::*, Error},
-    layers::bio::{BlockId, BLOCK_SIZE},
+    layers::bio::{BLOCK_SIZE, BlockId},
     os::{Arc, Box, String, ToString, Vec, Weak},
     return_errno, return_errno_with_msg,
-    util::{align_down, align_up, Aead as _, RandomInit, Rng as _, Skcipher as _},
+    util::{Aead as _, RandomInit, Rng as _, Skcipher as _, align_down, align_up},
 };
 
 pub(crate) type Result<T> = core::result::Result<T, Error>;

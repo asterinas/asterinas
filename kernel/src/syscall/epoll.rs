@@ -9,7 +9,7 @@ use crate::{
     events::IoEvents,
     fs::{
         epoll::{EpollCtl, EpollEvent, EpollFile, EpollFlags},
-        file_table::{get_file_fast, FdFlags, FileDesc},
+        file_table::{FdFlags, FileDesc, get_file_fast},
         utils::CreationFlags,
     },
     prelude::*,

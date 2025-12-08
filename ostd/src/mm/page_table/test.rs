@@ -3,10 +3,10 @@
 use super::*;
 use crate::{
     mm::{
+        FrameAllocOptions, MAX_USERSPACE_VADDR, PAGE_SIZE,
         kspace::{KernelPtConfig, LINEAR_MAPPING_BASE_VADDR},
         page_prop::{CachePolicy, PageFlags},
         vm_space::VmItem,
-        FrameAllocOptions, MAX_USERSPACE_VADDR, PAGE_SIZE,
     },
     prelude::*,
     task::disable_preempt,
@@ -197,15 +197,19 @@ mod range_checks {
 
         // Tests an out-of-range virtual address.
         let out_of_range = 0xffff_8000_0000_0000..0xffff_8000_0001_0000;
-        assert!(page_table
-            .cursor_mut(&preempt_guard, &out_of_range)
-            .is_err());
+        assert!(
+            page_table
+                .cursor_mut(&preempt_guard, &out_of_range)
+                .is_err()
+        );
 
         // Tests misaligned addresses.
         let unaligned_range = 1..(PAGE_SIZE + 1);
-        assert!(page_table
-            .cursor_mut(&preempt_guard, &unaligned_range)
-            .is_err());
+        assert!(
+            page_table
+                .cursor_mut(&preempt_guard, &unaligned_range)
+                .is_err()
+        );
     }
 
     #[ktest]
@@ -223,9 +227,11 @@ mod range_checks {
             create_user_pt_mapped_at((MAX_USERSPACE_VADDR - PAGE_SIZE)..MAX_USERSPACE_VADDR);
 
         // Confirms the start and end of the range are mapped.
-        assert!(page_table
-            .page_walk(MAX_USERSPACE_VADDR - PAGE_SIZE)
-            .is_some());
+        assert!(
+            page_table
+                .page_walk(MAX_USERSPACE_VADDR - PAGE_SIZE)
+                .is_some()
+        );
         assert!(page_table.page_walk(MAX_USERSPACE_VADDR - 1).is_some());
     }
 

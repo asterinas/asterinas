@@ -6,7 +6,7 @@ use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
         registry::FsProperties,
-        utils::{mkmod, Inode},
+        utils::{Inode, mkmod},
     },
     prelude::*,
 };

@@ -9,7 +9,7 @@ use crate::{
             pid::TidDirOps,
             template::{FileOps, ProcFileBuilder},
         },
-        utils::{mkmod, Inode},
+        utils::{Inode, mkmod},
     },
     prelude::*,
 };

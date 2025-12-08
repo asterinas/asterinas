@@ -5,7 +5,7 @@ use alloc::str;
 use ostd::task::Task;
 
 use super::{
-    file_table::{get_file_fast, FileDesc},
+    file_table::{FileDesc, get_file_fast},
     path::Path,
     utils::{InodeType, PATH_MAX, SYMLINKS_MAX},
 };

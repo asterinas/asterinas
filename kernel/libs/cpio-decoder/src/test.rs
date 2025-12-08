@@ -2,7 +2,7 @@
 
 use lending_iterator::LendingIterator;
 
-use super::{error::*, CpioDecoder, FileType};
+use super::{CpioDecoder, FileType, error::*};
 
 #[test]
 fn test_decoder() {

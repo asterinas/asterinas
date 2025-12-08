@@ -6,7 +6,7 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::credentials::{
-        c_types::{cap_user_data_t, cap_user_header_t, LINUX_CAPABILITY_VERSION_3},
+        c_types::{LINUX_CAPABILITY_VERSION_3, cap_user_data_t, cap_user_header_t},
         capabilities::CapSet,
     },
 };

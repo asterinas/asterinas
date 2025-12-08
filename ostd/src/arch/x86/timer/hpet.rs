@@ -6,13 +6,13 @@ use core::ptr::NonNull;
 use acpi::{AcpiError, HpetInfo};
 use spin::Once;
 use volatile::{
-    access::{ReadOnly, ReadWrite},
     VolatileRef,
+    access::{ReadOnly, ReadWrite},
 };
 
 use crate::{
     arch::{
-        irq::{MappedIrqLine, IRQ_CHIP},
+        irq::{IRQ_CHIP, MappedIrqLine},
         kernel::acpi::get_acpi_tables,
     },
     irq::IrqLine,

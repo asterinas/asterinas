@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::mm::{io_util::HasVmReaderWriter, HasSize};
+use ostd::mm::{HasSize, io_util::HasVmReaderWriter};
 
-use super::{block_ptr::Ext2Bid, prelude::*, Ext2, Inode};
-use crate::fs::utils::{XattrName, XattrNamespace, XattrSetFlags, XATTR_NAME_MAX_LEN};
+use super::{Ext2, Inode, block_ptr::Ext2Bid, prelude::*};
+use crate::fs::utils::{XATTR_NAME_MAX_LEN, XattrName, XattrNamespace, XattrSetFlags};
 
 const EXT2_XATTR_MAGIC: u32 = 0xEA020000;
 

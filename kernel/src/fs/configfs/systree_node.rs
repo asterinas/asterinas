@@ -4,8 +4,8 @@ use alloc::sync::{Arc, Weak};
 use core::fmt::Debug;
 
 use aster_systree::{
-    inherit_sys_branch_node, BranchNodeFields, Result, SysAttrSet, SysBranchNode, SysObj, SysPerms,
-    SysStr,
+    BranchNodeFields, Result, SysAttrSet, SysBranchNode, SysObj, SysPerms, SysStr,
+    inherit_sys_branch_node,
 };
 use inherit_methods_macro::inherit_methods;
 use spin::Once;

@@ -20,11 +20,11 @@ pub(crate) use inode_mode::{chmod, mkmod, perms_to_mask, who_and_perms_to_mask, 
 pub use open_args::OpenArgs;
 pub use page_cache::{CachePage, PageCache, PageCacheBackend};
 pub use random_test::{generate_random_operation, new_fs_in_memory};
-pub use range_lock::{FileRange, RangeLockItem, RangeLockList, RangeLockType, OFFSET_MAX};
+pub use range_lock::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockList, RangeLockType};
 pub use status_flags::StatusFlags;
 pub use xattr::{
-    XattrName, XattrNamespace, XattrSetFlags, XATTR_LIST_MAX_LEN, XATTR_NAME_MAX_LEN,
-    XATTR_VALUE_MAX_LEN,
+    XATTR_LIST_MAX_LEN, XATTR_NAME_MAX_LEN, XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace,
+    XattrSetFlags,
 };
 
 mod access_mode;

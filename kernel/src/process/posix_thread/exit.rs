@@ -3,17 +3,17 @@
 use ostd::{mm::VmIo, task::Task};
 
 use super::{
-    futex::futex_wake, robust_list::wake_robust_futex, thread_table, AsPosixThread, AsThreadLocal,
-    ThreadLocal,
+    AsPosixThread, AsThreadLocal, ThreadLocal, futex::futex_wake, robust_list::wake_robust_futex,
+    thread_table,
 };
 use crate::{
     current_userspace,
     prelude::*,
     process::{
+        TermStatus,
         exit::exit_process,
         signal::{constants::SIGKILL, signals::kernel::KernelSignal},
         task_set::TaskSet,
-        TermStatus,
     },
     thread::{AsThread, Tid},
 };
@@ -96,10 +96,12 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
 
 /// Sends `SIGKILL` to all other threads in the current process.
 pub(in crate::process) fn sigkill_other_threads(current_task: &Task, task_set: &TaskSet) {
-    debug_assert!(task_set
-        .as_slice()
-        .iter()
-        .any(|task| core::ptr::eq(current_task, task.as_ref())));
+    debug_assert!(
+        task_set
+            .as_slice()
+            .iter()
+            .any(|task| core::ptr::eq(current_task, task.as_ref()))
+    );
 
     for task in task_set.as_slice() {
         if core::ptr::eq(current_task, task.as_ref()) {

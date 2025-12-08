@@ -10,14 +10,14 @@ use alloc::boxed::Box;
 use core::sync::atomic::{AtomicU8, Ordering};
 
 use aster_util::per_cpu_counter::PerCpuCounter;
-use component::{init_component, ComponentInitError};
+use component::{ComponentInitError, init_component};
 use lock::is_softirq_enabled;
 use ostd::{
     cpu::CpuId,
     cpu_local_cell,
     irq::{
-        disable_local, register_bottom_half_handler_l1, register_bottom_half_handler_l2,
-        DisabledLocalIrqGuard,
+        DisabledLocalIrqGuard, disable_local, register_bottom_half_handler_l1,
+        register_bottom_half_handler_l2,
     },
 };
 use spin::Once;
@@ -33,7 +33,7 @@ mod taskless;
 pub use lock::{BottomHalfDisabled, DisableLocalBottomHalfGuard};
 pub use taskless::Taskless;
 
-use crate::stats::{process_statistic, NR_IRQ_LINES};
+use crate::stats::{NR_IRQ_LINES, process_statistic};
 
 /// A representation of a software interrupt (softirq) line.
 ///

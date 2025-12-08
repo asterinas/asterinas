@@ -8,7 +8,7 @@ mod allocator;
 use core::marker::PhantomData;
 
 pub(super) use self::allocator::init;
-use crate::{prelude::*, Error};
+use crate::{Error, prelude::*};
 
 /// An I/O port, representing a specific address in the I/O address of x86.
 ///

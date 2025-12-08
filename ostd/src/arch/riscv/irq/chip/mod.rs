@@ -13,14 +13,14 @@ use core::{
 use spin::Once;
 
 use crate::{
+    Result,
     arch::{
         boot::DEVICE_TREE,
-        irq::{chip::plic::Plic, HwIrqLine, InterruptSource},
+        irq::{HwIrqLine, InterruptSource, chip::plic::Plic},
     },
     io::IoMemAllocatorBuilder,
     irq::IrqLine,
     sync::{LocalIrqDisabled, SpinLock},
-    Result,
 };
 
 /// The [`IrqChip`] singleton.

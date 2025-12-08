@@ -2,7 +2,7 @@
 
 use ostd::arch::cpu::context::{CpuExceptionInfo, UserContext};
 
-use crate::process::signal::{sig_num::SigNum, signals::fault::FaultSignal, SignalContext};
+use crate::process::signal::{SignalContext, sig_num::SigNum, signals::fault::FaultSignal};
 
 impl SignalContext for UserContext {
     fn set_arguments(&mut self, sig_num: SigNum, siginfo_addr: usize, ucontext_addr: usize) {

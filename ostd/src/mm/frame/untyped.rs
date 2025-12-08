@@ -9,11 +9,12 @@
 //!
 //! [`VmIo`]: crate::mm::VmIo
 
-use super::{meta::AnyFrameMeta, Frame, Segment};
+use super::{Frame, Segment, meta::AnyFrameMeta};
 use crate::mm::{
+    HasPaddr, HasSize, Infallible,
     io::{VmReader, VmWriter},
     io_util::{HasVmReaderWriter, VmReaderWriterIdentity},
-    paddr_to_vaddr, HasPaddr, HasSize, Infallible,
+    paddr_to_vaddr,
 };
 
 /// The metadata of untyped frame.

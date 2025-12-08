@@ -10,18 +10,19 @@ use core::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
-use super::{pte_index, PageTableEntryTrait};
+use super::{PageTableEntryTrait, pte_index};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     cpu::num_cpus,
     cpu_local_cell,
     mm::{
+        Frame, FrameAllocOptions, PAGE_SIZE, Paddr, PageProperty, PagingConstsTrait, PagingLevel,
+        PrivilegedPageFlags, Vaddr,
         frame::{
             self,
             allocator::{self, EarlyAllocatedFrameMeta},
         },
-        nr_subpage_per_huge, paddr_to_vaddr, Frame, FrameAllocOptions, Paddr, PageProperty,
-        PagingConstsTrait, PagingLevel, PrivilegedPageFlags, Vaddr, PAGE_SIZE,
+        nr_subpage_per_huge, paddr_to_vaddr,
     },
     sync::SpinLock,
 };

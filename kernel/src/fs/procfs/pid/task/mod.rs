@@ -15,14 +15,14 @@ use crate::{
                 stat::StatFileOps, status::StatusFileOps, uid_map::UidMapFileOps,
             },
             template::{
-                lookup_child_from_table, populate_children_from_table, DirOps, ProcDir,
-                ProcDirBuilder,
+                DirOps, ProcDir, ProcDirBuilder, lookup_child_from_table,
+                populate_children_from_table,
             },
         },
-        utils::{mkmod, DirEntryVecExt, Inode},
+        utils::{DirEntryVecExt, Inode, mkmod},
     },
     prelude::*,
-    process::{posix_thread::AsPosixThread, task_set::TidEvent, Process},
+    process::{Process, posix_thread::AsPosixThread, task_set::TidEvent},
     thread::{AsThread, Thread, Tid},
 };
 

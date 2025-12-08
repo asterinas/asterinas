@@ -5,7 +5,7 @@ use core::sync::atomic::Ordering;
 use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
 
 use super::{
-    group::AtomicGid, secure_bits::AtomicSecureBits, user::AtomicUid, Gid, SecureBits, Uid,
+    Gid, SecureBits, Uid, group::AtomicGid, secure_bits::AtomicSecureBits, user::AtomicUid,
 };
 use crate::{
     prelude::*,

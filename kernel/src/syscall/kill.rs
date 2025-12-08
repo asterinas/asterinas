@@ -4,12 +4,11 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::{
-        kill, kill_all, kill_group,
+        ProcessFilter, kill, kill_all, kill_group,
         signal::{
             sig_num::SigNum,
             signals::user::{UserSignal, UserSignalKind},
         },
-        ProcessFilter,
     },
 };
 

@@ -2,7 +2,7 @@
 
 use itertools::Itertools;
 use proc_macro2::{Ident, TokenStream};
-use quote::{quote, TokenStreamExt};
+use quote::{TokenStreamExt, quote};
 use syn::Expr;
 
 use crate::type_flag::TypeFlagDef;

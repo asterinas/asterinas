@@ -5,8 +5,8 @@ use core::marker::PhantomData;
 use lending_iterator::LendingIterator;
 use ostd_pod::Pod;
 use serde::{
-    de::{VariantAccess, Visitor},
     Deserialize, Serialize,
+    de::{VariantAccess, Visitor},
 };
 
 use super::{Edit, EditGroup};
@@ -816,7 +816,7 @@ mod tests {
     };
     use crate::{
         layers::{
-            bio::{BlockSet, MemDisk, BLOCK_SIZE},
+            bio::{BLOCK_SIZE, BlockSet, MemDisk},
             crypto::Mac,
         },
         prelude::*,

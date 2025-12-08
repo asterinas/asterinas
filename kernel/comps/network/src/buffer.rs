@@ -4,12 +4,12 @@ use alloc::{collections::linked_list::LinkedList, sync::Arc};
 
 use aster_softirq::BottomHalfDisabled;
 use ostd::{
+    Pod,
     mm::{
-        io_util::HasVmReaderWriter, Daddr, DmaDirection, DmaStream, FrameAllocOptions, HasDaddr,
-        HasSize, Infallible, VmReader, VmWriter, PAGE_SIZE,
+        Daddr, DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, HasSize, Infallible,
+        PAGE_SIZE, VmReader, VmWriter, io_util::HasVmReaderWriter,
     },
     sync::SpinLock,
-    Pod,
 };
 use spin::Once;
 

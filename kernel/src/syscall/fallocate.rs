@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs,
     fs::{
-        file_table::{get_file_fast, FileDesc},
+        file_table::{FileDesc, get_file_fast},
         utils::FallocMode,
     },
     prelude::*,

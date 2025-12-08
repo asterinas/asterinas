@@ -11,8 +11,8 @@ use ostd::{bus::BusProbeError, sync::SpinLock};
 
 use super::device::VirtioPciModernTransport;
 use crate::transport::{
-    pci::{device::VirtioPciDevice, legacy::VirtioPciLegacyTransport},
     VirtioTransport,
+    pci::{device::VirtioPciDevice, legacy::VirtioPciLegacyTransport},
 };
 
 #[derive(Debug)]

@@ -11,9 +11,9 @@ use crate::{
     net::socket::{
         netlink::NETLINK_DEFAULT_BUF_SIZE,
         options::{
-            macros::{sock_option_mut, sock_option_ref},
             AcceptConn, Broadcast, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority,
             RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
+            macros::{sock_option_mut, sock_option_ref},
         },
         unix::{CUserCred, UNIX_DATAGRAM_DEFAULT_BUF_SIZE, UNIX_STREAM_DEFAULT_BUF_SIZE},
     },

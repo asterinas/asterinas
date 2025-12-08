@@ -20,7 +20,7 @@ use alloc::{
     vec::Vec,
 };
 
-use component::{init_component, ComponentInitError};
+use component::{ComponentInitError, init_component};
 use spin::Once;
 
 #[derive(PartialEq, Debug)]

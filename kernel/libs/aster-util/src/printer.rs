@@ -112,7 +112,7 @@ pub enum VmPrinterError {
 
 #[cfg(ktest)]
 mod test {
-    use ostd::{mm::VmWriter, prelude::*, Pod};
+    use ostd::{Pod, mm::VmWriter, prelude::*};
 
     use super::*;
 

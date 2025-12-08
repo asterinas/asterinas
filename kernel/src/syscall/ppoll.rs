@@ -4,7 +4,7 @@ use core::time::Duration;
 
 use ostd::mm::VmIo;
 
-use super::{poll::do_sys_poll, SyscallReturn};
+use super::{SyscallReturn, poll::do_sys_poll};
 use crate::{
     prelude::*,
     process::signal::{sig_mask::SigMask, with_sigmask_changed},

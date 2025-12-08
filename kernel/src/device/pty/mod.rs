@@ -5,7 +5,7 @@ use crate::{
         devpts::{DevPts, Ptmx},
         fs_resolver::{FsPath, FsResolver},
         path::{Path, PerMountFlags},
-        utils::{mkmod, InodeType},
+        utils::{InodeType, mkmod},
     },
     prelude::*,
 };

@@ -12,10 +12,9 @@ use core::{
 };
 
 use super::{
-    mapping,
-    meta::{get_slot, AnyFrameMeta},
+    MetaSlot, mapping,
+    meta::{AnyFrameMeta, get_slot},
     unique::UniqueFrame,
-    MetaSlot,
 };
 use crate::{
     arch::mm::PagingConsts,

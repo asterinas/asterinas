@@ -2,7 +2,7 @@
 
 use spin::once::Once;
 
-use crate::arch::iommu::{alloc_irt_entry, has_interrupt_remapping, IrtEntryHandle};
+use crate::arch::iommu::{IrtEntryHandle, alloc_irt_entry, has_interrupt_remapping};
 
 pub(crate) struct IrqRemapping {
     entry: Once<IrtEntryHandle>,

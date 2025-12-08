@@ -4,9 +4,9 @@ use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::{get_file_fast, FileDesc},
+    fs::file_table::{FileDesc, get_file_fast},
     prelude::*,
-    util::net::{new_raw_socket_option, CSocketOptionLevel},
+    util::net::{CSocketOptionLevel, new_raw_socket_option},
 };
 
 pub fn sys_getsockopt(

@@ -10,7 +10,7 @@ use core::fmt::Debug;
 use log::{debug, error};
 use ostd::bus::BusProbeError;
 
-use super::{device_info::PciDeviceId, PciCommonDevice};
+use super::{PciCommonDevice, device_info::PciDeviceId};
 
 /// PciDevice trait.
 pub trait PciDevice: Sync + Send + Debug {

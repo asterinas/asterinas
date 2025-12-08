@@ -8,10 +8,10 @@ use alloc::sync::Arc;
 
 use bitflags::bitflags;
 use ostd::{
+    Error, Result,
     arch::device::io_port::{PortRead, PortWrite},
     io::IoMem,
     mm::{PodOnce, VmIoOnce},
-    Error, Result,
 };
 use spin::Once;
 

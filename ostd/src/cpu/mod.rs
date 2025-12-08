@@ -5,7 +5,7 @@
 mod id;
 pub mod local;
 
-pub use id::{all_cpus, num_cpus, AtomicCpuSet, CpuId, CpuIdFromIntError, CpuSet, PinCurrentCpu};
+pub use id::{AtomicCpuSet, CpuId, CpuIdFromIntError, CpuSet, PinCurrentCpu, all_cpus, num_cpus};
 
 /// The CPU privilege level: user mode or kernel mode.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]

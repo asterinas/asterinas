@@ -5,7 +5,7 @@ use core::sync::atomic::Ordering;
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{posix_thread::AsPosixThread, process_table, Pgid, Pid, Process, Uid},
+    process::{Pgid, Pid, Process, Uid, posix_thread::AsPosixThread, process_table},
     sched::Nice,
 };
 

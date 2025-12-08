@@ -157,7 +157,7 @@ impl<D: BlockSet + 'static> aster_block::BlockDevice for MlsDisk<D> {
     }
 
     fn metadata(&self) -> aster_block::BlockDeviceMeta {
-        use aster_block::{BlockDeviceMeta, BLOCK_SIZE, SECTOR_SIZE};
+        use aster_block::{BLOCK_SIZE, BlockDeviceMeta, SECTOR_SIZE};
 
         BlockDeviceMeta {
             max_nr_segments_per_bio: usize::MAX,

@@ -13,7 +13,7 @@ pub mod mode;
 use alloc::{collections::BTreeMap, fmt::Debug, string::String, sync::Arc, vec::Vec};
 use core::any::Any;
 
-use component::{init_component, ComponentInitError};
+use component::{ComponentInitError, init_component};
 use ostd::{
     mm::{Infallible, VmReader},
     sync::{LocalIrqDisabled, SpinLock, SpinLockGuard},
@@ -93,8 +93,8 @@ pub fn all_devices() -> Vec<(String, Arc<dyn AnyConsoleDevice>)> {
         .collect()
 }
 
-pub fn all_devices_lock<'a>(
-) -> SpinLockGuard<'a, BTreeMap<String, Arc<dyn AnyConsoleDevice>>, LocalIrqDisabled> {
+pub fn all_devices_lock<'a>()
+-> SpinLockGuard<'a, BTreeMap<String, Arc<dyn AnyConsoleDevice>>, LocalIrqDisabled> {
     COMPONENT.get().unwrap().console_device_table.lock()
 }
 

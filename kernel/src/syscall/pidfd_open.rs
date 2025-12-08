@@ -3,7 +3,7 @@
 use crate::{
     fs::{file_table::FdFlags, utils::StatusFlags},
     prelude::*,
-    process::{process_table, Pid, PidFile},
+    process::{Pid, PidFile, process_table},
     syscall::SyscallReturn,
 };
 

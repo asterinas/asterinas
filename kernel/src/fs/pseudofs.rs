@@ -10,8 +10,8 @@ use crate::{
         notify::FsEventPublisher,
         registry::{FsProperties, FsType},
         utils::{
-            mkmod, FileSystem, FsEventSubscriberStats, FsFlags, Inode, InodeMode, InodeType,
-            Metadata, SuperBlock, NAME_MAX,
+            FileSystem, FsEventSubscriberStats, FsFlags, Inode, InodeMode, InodeType, Metadata,
+            NAME_MAX, SuperBlock, mkmod,
         },
     },
     prelude::*,

@@ -15,9 +15,9 @@ use core::{
 };
 
 use aes_gcm::{
+    Aes128Gcm,
     aead::{AeadInPlace, Key, NewAead, Nonce, Tag},
     aes::Aes128,
-    Aes128Gcm,
 };
 use ctr::cipher::{NewCipher, StreamCipher};
 pub use hashbrown::{HashMap, HashSet};

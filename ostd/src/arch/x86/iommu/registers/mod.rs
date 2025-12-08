@@ -20,27 +20,27 @@ use log::debug;
 use spin::Once;
 use status::GlobalStatus;
 use volatile::{
-    access::{ReadOnly, ReadWrite, WriteOnly},
     VolatileRef,
+    access::{ReadOnly, ReadWrite, WriteOnly},
 };
 
 use super::{
-    dma_remapping::RootTable, interrupt_remapping::IntRemappingTable, invalidate::queue::Queue,
-    IommuError,
+    IommuError, dma_remapping::RootTable, interrupt_remapping::IntRemappingTable,
+    invalidate::queue::Queue,
 };
 use crate::{
     arch::{
         iommu::{
             fault,
             invalidate::{
-                descriptor::{InterruptEntryCache, InvalidationWait},
                 QUEUE,
+                descriptor::{InterruptEntryCache, InvalidationWait},
             },
         },
         kernel::acpi::dmar::{Dmar, Remapping},
     },
     io::IoMemAllocatorBuilder,
-    mm::{paddr_to_vaddr, PAGE_SIZE},
+    mm::{PAGE_SIZE, paddr_to_vaddr},
     sync::{LocalIrqDisabled, SpinLock},
 };
 
@@ -125,10 +125,11 @@ impl IommuRegisters {
 
     /// Enables Interrupt Remapping with IntRemappingTable
     pub(super) fn enable_interrupt_remapping(&mut self, table: &'static IntRemappingTable) {
-        assert!(self
-            .read_extended_capability()
-            .flags()
-            .contains(ExtendedCapabilityFlags::IR));
+        assert!(
+            self.read_extended_capability()
+                .flags()
+                .contains(ExtendedCapabilityFlags::IR)
+        );
         // Set interrupt remapping table address
         self.interrupt_remapping_table_addr
             .as_mut_ptr()
@@ -174,10 +175,11 @@ impl IommuRegisters {
     }
 
     pub(super) fn enable_queued_invalidation(&mut self, queue: &Queue) {
-        assert!(self
-            .read_extended_capability()
-            .flags()
-            .contains(ExtendedCapabilityFlags::QI));
+        assert!(
+            self.read_extended_capability()
+                .flags()
+                .contains(ExtendedCapabilityFlags::QI)
+        );
         self.invalidate.queue_tail.as_mut_ptr().write(0);
 
         let mut write_value = queue.base_paddr() as u64;

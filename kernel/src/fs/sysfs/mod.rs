@@ -6,8 +6,8 @@ mod kernel;
 #[cfg(ktest)]
 mod test;
 
-pub use aster_systree::primary_tree as systree_singleton;
 use aster_systree::SysNode;
+pub use aster_systree::primary_tree as systree_singleton;
 use fs::SysFsType;
 
 use crate::prelude::*;

@@ -4,9 +4,9 @@ use ostd::mm::VmIo;
 
 use crate::{
     fs::file_table::FileDesc,
-    net::socket::{util::SendRecvFlags, Socket},
+    net::socket::{Socket, util::SendRecvFlags},
     prelude::*,
-    syscall::{sendmsg::send_one_message, SyscallReturn},
+    syscall::{SyscallReturn, sendmsg::send_one_message},
     util::net::CUserMsgHdr,
 };
 

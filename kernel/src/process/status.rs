@@ -7,7 +7,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use ostd::sync::SpinLock;
 
 use super::ExitCode;
-use crate::process::{signal::sig_num::SigNum, WaitOptions};
+use crate::process::{WaitOptions, signal::sig_num::SigNum};
 
 /// The status of a process.
 ///

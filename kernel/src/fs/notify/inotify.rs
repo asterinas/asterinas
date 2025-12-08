@@ -31,7 +31,7 @@ use crate::{
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
     return_errno_with_message,
-    util::ioctl::{dispatch_ioctl, RawIoctl},
+    util::ioctl::{RawIoctl, dispatch_ioctl},
 };
 
 #[derive(Clone)]

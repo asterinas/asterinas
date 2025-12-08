@@ -7,14 +7,14 @@
 
 use core::ops::Range;
 
-use super::{check_and_insert_dma_mapping, remove_dma_mapping, DmaError};
+use super::{DmaError, check_and_insert_dma_mapping, remove_dma_mapping};
 use crate::{
     arch::iommu,
     error::Error,
     mm::{
-        dma::{dma_type, Daddr, DmaType},
+        HasDaddr, HasPaddr, HasSize, Infallible, PAGE_SIZE, Paddr, USegment, VmReader, VmWriter,
+        dma::{Daddr, DmaType, dma_type},
         io_util::{HasVmReaderWriter, VmReaderWriterResult},
-        HasDaddr, HasPaddr, HasSize, Infallible, Paddr, USegment, VmReader, VmWriter, PAGE_SIZE,
     },
 };
 

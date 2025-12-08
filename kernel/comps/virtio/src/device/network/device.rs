@@ -6,7 +6,7 @@ use alloc::{
 use core::fmt::Debug;
 
 use aster_bigtcp::device::{Checksum, DeviceCapabilities, Medium};
-use aster_network::{AnyNetworkDevice, EthernetAddr, NetError, RxBuffer, TxBuffer, RX_BUFFER_POOL};
+use aster_network::{AnyNetworkDevice, EthernetAddr, NetError, RX_BUFFER_POOL, RxBuffer, TxBuffer};
 use aster_softirq::BottomHalfDisabled;
 use aster_util::slot_vec::SlotVec;
 use log::{debug, warn};
@@ -14,7 +14,7 @@ use ostd::{arch::trap::TrapFrame, mm::DmaStream, sync::SpinLock};
 
 use super::{config::VirtioNetConfig, header::VirtioNetHdr};
 use crate::{
-    device::{network::config::NetworkFeatures, VirtioDeviceError},
+    device::{VirtioDeviceError, network::config::NetworkFeatures},
     queue::{QueueError, VirtQueue},
     transport::{ConfigManager, VirtioTransport},
 };

@@ -11,8 +11,8 @@ use log::info;
 use spin::Once;
 
 use crate::{
-    arch::kernel::acpi::get_acpi_tables, io::IoMemAllocatorBuilder, irq::IrqLine, sync::SpinLock,
-    Error, Result,
+    Error, Result, arch::kernel::acpi::get_acpi_tables, io::IoMemAllocatorBuilder, irq::IrqLine,
+    sync::SpinLock,
 };
 
 mod ioapic;

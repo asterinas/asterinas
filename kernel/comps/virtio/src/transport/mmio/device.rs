@@ -22,9 +22,9 @@ use super::{
     multiplex::MultiplexIrq,
 };
 use crate::{
+    VirtioDeviceType,
     queue::{AvailRing, Descriptor, UsedRing},
     transport::{ConfigManager, DeviceStatus, VirtioTransport, VirtioTransportError},
-    VirtioDeviceType,
 };
 
 #[derive(Debug)]

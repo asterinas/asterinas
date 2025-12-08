@@ -56,8 +56,8 @@ use core::{
 };
 
 use aster_systree::{
-    inherit_sys_branch_node, BranchNodeFields, Error, Result, SysAttrSetBuilder, SysBranchNode,
-    SysObj, SysPerms, SysStr, MAX_ATTR_SIZE,
+    BranchNodeFields, Error, MAX_ATTR_SIZE, Result, SysAttrSetBuilder, SysBranchNode, SysObj,
+    SysPerms, SysStr, inherit_sys_branch_node,
 };
 use aster_util::printer::VmPrinter;
 use inherit_methods_macro::inherit_methods;
@@ -67,7 +67,7 @@ use spin::Once;
 use crate::{
     fs::cgroupfs::controller::{Controller, LockedController, SubCtrlSet, SubCtrlType},
     prelude::*,
-    process::{process_table, Pid, Process},
+    process::{Pid, Process, process_table},
 };
 
 /// A type that provides exclusive, synchronized access to modify cgroup membership.

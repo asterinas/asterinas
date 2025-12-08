@@ -7,12 +7,12 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListAtomicLink};
+use intrusive_collections::{LinkedList, LinkedListAtomicLink, intrusive_adapter};
 use ostd::{cpu::local::StaticCpuLocal, cpu_local, irq, sync::SpinLock};
 
 use super::{
-    softirq_id::{TASKLESS_SOFTIRQ_ID, TASKLESS_URGENT_SOFTIRQ_ID},
     SoftIrqLine,
+    softirq_id::{TASKLESS_SOFTIRQ_ID, TASKLESS_URGENT_SOFTIRQ_ID},
 };
 
 /// `Taskless` represents a _taskless_ job whose execution is deferred to a later time.

@@ -4,8 +4,8 @@
 use core::marker::PhantomData;
 
 use super::{
-    mem_table::ValueEx, sstable::SSTable, tx_lsm_tree::SSTABLE_CAPACITY, LsmLevel, RecordKey,
-    RecordValue, SyncId, TxEventListener,
+    LsmLevel, RecordKey, RecordValue, SyncId, TxEventListener, mem_table::ValueEx,
+    sstable::SSTable, tx_lsm_tree::SSTABLE_CAPACITY,
 };
 use crate::{
     layers::{bio::BlockSet, log::TxLogStore},

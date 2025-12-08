@@ -227,10 +227,12 @@ impl<E: Ext> SocketTable<E> {
     }
 
     pub(crate) fn insert_udp_socket(&mut self, udp_socket: Arc<UdpSocketBg<E>>) {
-        debug_assert!(!self
-            .udp_sockets
-            .iter()
-            .any(|socket| Arc::ptr_eq(socket, &udp_socket)));
+        debug_assert!(
+            !self
+                .udp_sockets
+                .iter()
+                .any(|socket| Arc::ptr_eq(socket, &udp_socket))
+        );
         self.udp_sockets.push(udp_socket);
     }
 

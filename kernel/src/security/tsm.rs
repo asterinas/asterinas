@@ -15,8 +15,8 @@ use alloc::{boxed::Box, string::ToString, sync::Arc};
 use core::fmt::Debug;
 
 use aster_systree::{
-    inherit_sys_branch_node, inherit_sys_leaf_node, BranchNodeFields, Error, NormalNodeFields,
-    Result, SysAttrSetBuilder, SysObj, SysPerms, SysStr,
+    BranchNodeFields, Error, NormalNodeFields, Result, SysAttrSetBuilder, SysObj, SysPerms, SysStr,
+    inherit_sys_branch_node, inherit_sys_leaf_node,
 };
 use aster_util::printer::VmPrinter;
 use inherit_methods_macro::inherit_methods;

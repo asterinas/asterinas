@@ -7,19 +7,19 @@ use ostd::{mm::VmWriter, prelude::*};
 
 use crate::{
     net::socket::{
+        Socket,
         netlink::{
+            GroupIdSet, NetlinkSocketAddr, NetlinkUeventSocket,
             kobject_uevent::{
+                UeventMessage,
                 message::{
                     syn_uevent::{SyntheticUevent, Uuid},
                     uevent::Uevent,
                 },
-                UeventMessage,
             },
             table::{NetlinkUeventProtocol, SupportedNetlinkProtocol},
-            GroupIdSet, NetlinkSocketAddr, NetlinkUeventSocket,
         },
         util::{SendRecvFlags, SocketAddr},
-        Socket,
     },
     prelude::*,
 };
@@ -86,5 +86,8 @@ fn multicast_synthetic_uevent() {
         .unwrap();
     let s = core::str::from_utf8(&buffer[..len]).unwrap();
 
-    assert_eq!(s, "add@/devices/virtual/net/lo\0ACTION=add\0DEVPATH=/devices/virtual/net/lo\0SUBSYSTEM=net\0SYNTH_UUID=0\0INTERFACE=lo\0IFINDEX=1\0SEQNUM=1\0");
+    assert_eq!(
+        s,
+        "add@/devices/virtual/net/lo\0ACTION=add\0DEVPATH=/devices/virtual/net/lo\0SUBSYSTEM=net\0SYNTH_UUID=0\0INTERFACE=lo\0IFINDEX=1\0SEQNUM=1\0"
+    );
 }

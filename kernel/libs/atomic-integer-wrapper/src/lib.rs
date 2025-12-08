@@ -52,11 +52,10 @@ use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::{quote, quote_spanned};
 use syn::{
-    braced,
+    Error, Fields, Ident, ItemStruct, LitBool, Result, Token, Type, braced,
     parse::{Parse, ParseStream},
     parse_macro_input,
     spanned::Spanned,
-    Error, Fields, Ident, ItemStruct, LitBool, Result, Token, Type,
 };
 
 struct Input {

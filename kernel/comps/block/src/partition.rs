@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use device_id::DeviceId;
-use ostd::{mm::VmIo, Pod};
+use ostd::{Pod, mm::VmIo};
 
 use crate::{
+    BlockDevice, BlockDeviceMeta, SECTOR_SIZE,
     bio::{BioEnqueueError, SubmittedBio},
     prelude::*,
-    BlockDevice, BlockDeviceMeta, SECTOR_SIZE,
 };
 
 /// Represents a partition entry.

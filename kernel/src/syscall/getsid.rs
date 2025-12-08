@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{process_table, Pid},
+    process::{Pid, process_table},
 };
 
 pub fn sys_getsid(pid: Pid, ctx: &Context) -> Result<SyscallReturn> {

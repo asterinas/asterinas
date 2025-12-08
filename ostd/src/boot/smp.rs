@@ -9,8 +9,9 @@ use spin::Once;
 use crate::{
     arch::irq::HwCpuId,
     mm::{
-        frame::{meta::KernelMeta, Segment},
-        paddr_to_vaddr, FrameAllocOptions, HasPaddrRange, PAGE_SIZE,
+        FrameAllocOptions, HasPaddrRange, PAGE_SIZE,
+        frame::{Segment, meta::KernelMeta},
+        paddr_to_vaddr,
     },
     sync::SpinLock,
     task::Task,

@@ -22,8 +22,8 @@ use crate::{
     process::signal::{PollHandle, Pollable, Pollee},
     syscall::create_timer,
     time::{
-        timer::{Timeout, TimerGuard},
         Timer,
+        timer::{Timeout, TimerGuard},
     },
 };
 

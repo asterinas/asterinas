@@ -4,7 +4,7 @@ use core::time::Duration;
 
 use ostd::sync::{WaitQueue, Waiter};
 
-use super::{clocks::JIFFIES_TIMER_MANAGER, timer::Timeout, Timer, TimerManager};
+use super::{Timer, TimerManager, clocks::JIFFIES_TIMER_MANAGER, timer::Timeout};
 use crate::{prelude::*, time::timer::TimerGuard};
 
 /// A trait that provide the timeout related function for [`Waiter`] and [`WaitQueue`]`.

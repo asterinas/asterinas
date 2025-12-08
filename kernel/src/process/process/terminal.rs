@@ -2,12 +2,12 @@
 
 use alloc::sync::Arc;
 
-use super::{session::SessionGuard, JobControl, Pgid, Process, Session};
+use super::{JobControl, Pgid, Process, Session, session::SessionGuard};
 use crate::{
     fs::device::Device,
-    prelude::{current, return_errno_with_message, warn, Errno, Error, Result},
+    prelude::{Errno, Error, Result, current, return_errno_with_message, warn},
     process::process_table,
-    util::ioctl::{dispatch_ioctl, RawIoctl},
+    util::ioctl::{RawIoctl, dispatch_ioctl},
 };
 
 /// A terminal.
@@ -22,7 +22,7 @@ pub trait Terminal: Device {
 mod ioctl_defs {
     use crate::{
         process::{Pgid, Sid},
-        util::ioctl::{ioc, InData, NoData, OutData, PassByVal},
+        util::ioctl::{InData, NoData, OutData, PassByVal, ioc},
     };
 
     // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/asm-generic/ioctls.h>

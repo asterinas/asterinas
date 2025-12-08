@@ -19,11 +19,11 @@
 use core::arch::global_asm;
 
 use x86_64::{
+    VirtAddr,
     registers::{
         model_specific::{Efer, EferFlags, LStar, SFMask},
         rflags::RFlags,
     },
-    VirtAddr,
 };
 
 use super::RawUserContext;

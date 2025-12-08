@@ -13,7 +13,7 @@ use aster_block::BLOCK_SIZE;
 use hashbrown::HashSet;
 use inherit_methods_macro::inherit_methods;
 use ostd::{
-    mm::{io_util::HasVmReaderWriter, FrameAllocOptions},
+    mm::{FrameAllocOptions, io_util::HasVmReaderWriter},
     task::Task,
 };
 
@@ -25,10 +25,10 @@ use crate::{
         path::Path,
         registry::{FsProperties, FsType},
         utils::{
-            mkmod, AccessMode, DirentCounter, DirentVisitor, FallocMode, FileSystem,
+            AccessMode, DirentCounter, DirentVisitor, FallocMode, FileSystem,
             FsEventSubscriberStats, FsFlags, Inode, InodeIo, InodeMode, InodeType, Metadata,
-            MknodType, StatusFlags, SuperBlock, SymbolicLink, XattrName, XattrNamespace,
-            XattrSetFlags, NAME_MAX, XATTR_VALUE_MAX_LEN,
+            MknodType, NAME_MAX, StatusFlags, SuperBlock, SymbolicLink, XATTR_VALUE_MAX_LEN,
+            XattrName, XattrNamespace, XattrSetFlags, mkmod,
         },
     },
     prelude::*,

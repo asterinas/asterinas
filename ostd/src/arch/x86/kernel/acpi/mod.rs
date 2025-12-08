@@ -6,10 +6,10 @@ pub(in crate::arch) mod remapping;
 use core::{num::NonZeroU8, ptr::NonNull};
 
 use acpi::{
+    AcpiHandler, AcpiTables,
     address::AddressSpace,
     fadt::{Fadt, IaPcBootArchFlags},
     rsdp::Rsdp,
-    AcpiHandler, AcpiTables,
 };
 use log::warn;
 use spin::Once;

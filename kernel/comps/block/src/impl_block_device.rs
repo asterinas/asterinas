@@ -3,12 +3,12 @@
 use ostd::mm::{VmIo, VmReader, VmWriter};
 
 use super::{
+    BLOCK_SIZE, BlockDevice,
     bio::{Bio, BioEnqueueError, BioSegment, BioStatus, BioType, BioWaiter, SubmittedBio},
     id::{Bid, Sid},
-    BlockDevice, BLOCK_SIZE,
 };
 use crate::{
-    bio::{is_sector_aligned, BioDirection},
+    bio::{BioDirection, is_sector_aligned},
     prelude::*,
 };
 

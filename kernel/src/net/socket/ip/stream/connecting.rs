@@ -38,7 +38,7 @@ impl ConnectingStream {
                     return Err((
                         Error::with_message(Errno::EADDRNOTAVAIL, "connection key conflicts"),
                         bound_port,
-                    ))
+                    ));
                 }
                 Err((bound_port, _)) => {
                     // The only reason this method might go to this branch is because

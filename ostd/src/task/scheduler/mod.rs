@@ -70,7 +70,7 @@ pub mod info;
 
 use spin::Once;
 
-use super::{preempt::cpu_local, processor, Task};
+use super::{Task, preempt::cpu_local, processor};
 use crate::{
     cpu::{CpuId, CpuSet, PinCurrentCpu},
     prelude::*,

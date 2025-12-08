@@ -12,13 +12,13 @@ use crate::{
         file_table::FdFlags,
         path::RESERVED_MOUNT_ID,
         pipe::common::{PipeReader, PipeWriter},
-        pseudofs::{pipefs_singleton, PseudoInode},
-        utils::{mkmod, AccessMode, CreationFlags, Inode, InodeType, StatusFlags},
+        pseudofs::{PseudoInode, pipefs_singleton},
+        utils::{AccessMode, CreationFlags, Inode, InodeType, StatusFlags, mkmod},
     },
     prelude::*,
     process::{
-        signal::{PollHandle, Pollable},
         Gid, Uid,
+        signal::{PollHandle, Pollable},
     },
 };
 
@@ -254,7 +254,7 @@ mod test {
     use ostd::prelude::*;
 
     use super::*;
-    use crate::thread::{kernel_thread::ThreadOptions, Thread};
+    use crate::thread::{Thread, kernel_thread::ThreadOptions};
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     enum Ordering {

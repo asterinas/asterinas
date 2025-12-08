@@ -40,7 +40,7 @@ pub(super) fn init_on_ap(timer_irq: &IrqLine) {
 
 /// A callback that needs to be called on timer interrupt.
 pub(super) fn timer_callback() {
-    use x86::msr::{wrmsr, IA32_TSC_DEADLINE};
+    use x86::msr::{IA32_TSC_DEADLINE, wrmsr};
 
     match CONFIG.get().expect("ACPI timer config is not initialized") {
         Config::DeadlineMode { tsc_interval } => {
@@ -54,7 +54,7 @@ pub(super) fn timer_callback() {
 
 /// Determines if the current system supports tsc_deadline mode APIC timer
 fn is_tsc_deadline_mode_supported() -> bool {
-    use crate::arch::cpu::extension::{has_extensions, IsaExtensions};
+    use crate::arch::cpu::extension::{IsaExtensions, has_extensions};
 
     has_extensions(IsaExtensions::TSC_DEADLINE)
 }

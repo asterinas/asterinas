@@ -8,7 +8,7 @@ use align_ext::AlignExt;
 use fdt::node::FdtNode;
 use log::warn;
 use ostd::{
-    arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce, prelude::Paddr, sync::SpinLock, Error,
+    Error, arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce, prelude::Paddr, sync::SpinLock,
 };
 use spin::Once;
 

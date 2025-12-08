@@ -4,7 +4,7 @@ use alloc::format;
 
 use ostd::task::Task;
 
-use super::{driver::PtyDriver, PtySlave};
+use super::{PtySlave, driver::PtyDriver};
 use crate::{
     device::tty::TtyFlags,
     events::IoEvents,
@@ -13,15 +13,15 @@ use crate::{
         file_table::FdFlags,
         fs_resolver::FsPath,
         inode_handle::FileIo,
-        utils::{mkmod, AccessMode, InodeIo, OpenArgs, StatusFlags},
+        utils::{AccessMode, InodeIo, OpenArgs, StatusFlags, mkmod},
     },
     prelude::*,
     process::{
+        Terminal,
         posix_thread::AsThreadLocal,
         signal::{PollHandle, Pollable},
-        Terminal,
     },
-    util::ioctl::{dispatch_ioctl, RawIoctl},
+    util::ioctl::{RawIoctl, dispatch_ioctl},
 };
 
 const IO_CAPACITY: usize = 4096;
@@ -136,7 +136,7 @@ impl InodeIo for PtyMaster {
 }
 
 mod ioctl_defs {
-    use crate::util::ioctl::{ioc, InData, NoData, OutData};
+    use crate::util::ioctl::{InData, NoData, OutData, ioc};
 
     // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/asm-generic/ioctls.h>
 

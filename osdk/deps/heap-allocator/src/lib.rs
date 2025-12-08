@@ -10,5 +10,5 @@ mod allocator;
 mod cpu_local_allocator;
 mod slab_cache;
 
-pub use allocator::{type_from_layout, HeapAllocator};
-pub use cpu_local_allocator::{alloc_cpu_local, CpuLocalBox};
+pub use allocator::{HeapAllocator, type_from_layout};
+pub use cpu_local_allocator::{CpuLocalBox, alloc_cpu_local};

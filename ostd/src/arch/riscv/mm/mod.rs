@@ -9,16 +9,16 @@ pub(crate) use util::{
 };
 
 use crate::{
+    Pod,
     arch::{
         boot::DEVICE_TREE,
-        cpu::extension::{has_extensions, IsaExtensions},
+        cpu::extension::{IsaExtensions, has_extensions},
     },
     mm::{
+        DmaDirection, PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
         page_table::PageTableEntryTrait,
-        DmaDirection, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr, PAGE_SIZE,
     },
-    Pod,
 };
 
 mod util;

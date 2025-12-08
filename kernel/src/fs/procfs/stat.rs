@@ -14,13 +14,13 @@ use ostd::util::id_set::Id;
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::{mkmod, Inode},
+        utils::{Inode, mkmod},
     },
     prelude::*,
     process::collect_process_creation_count,
     sched::nr_queued_and_running,
     thread::collect_context_switch_count,
-    time::{cpu_time_stats::CpuTimeStatsManager, SystemTime, START_TIME},
+    time::{START_TIME, SystemTime, cpu_time_stats::CpuTimeStatsManager},
 };
 
 /// Represents the inode at `/proc/stat`.

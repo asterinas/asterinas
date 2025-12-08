@@ -5,8 +5,8 @@ use core::time::Duration;
 use ostd::mm::VmIo;
 
 use super::{
-    poll::{do_poll, PollFd},
     SyscallReturn,
+    poll::{PollFd, do_poll},
 };
 use crate::{events::IoEvents, fs::file_table::FileDesc, prelude::*, time::timeval_t};
 

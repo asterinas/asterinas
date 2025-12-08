@@ -16,13 +16,13 @@ use crate::{
         signal::{constants::SIGALRM, signals::kernel::KernelSignal},
     },
     thread::{
-        work_queue::{submit_work_item, work_item::WorkItem},
         Thread,
+        work_queue::{submit_work_item, work_item::WorkItem},
     },
     time::{
+        Timer, TimerManager,
         clocks::{ProfClock, RealTimeClock},
         timer::TimerGuard,
-        Timer, TimerManager,
     },
 };
 

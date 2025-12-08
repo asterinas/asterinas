@@ -7,11 +7,11 @@ use alloc::sync::{Arc, Weak};
 use inherit_methods_macro::inherit_methods;
 
 use super::{
+    Result, SysStr,
     attr::SysAttrSet,
     node::{SysBranchNode, SysObj},
-    Result, SysStr,
 };
-use crate::{inherit_sys_branch_node, BranchNodeFields, SysPerms};
+use crate::{BranchNodeFields, SysPerms, inherit_sys_branch_node};
 
 #[derive(Debug)]
 pub struct SysTree<Root: SysBranchNode> {

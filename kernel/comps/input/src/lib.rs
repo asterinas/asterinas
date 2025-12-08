@@ -43,7 +43,7 @@ pub mod input_handler;
 
 use alloc::{sync::Arc, vec::Vec};
 
-use component::{init_component, ComponentInitError};
+use component::{ComponentInitError, init_component};
 use ostd::sync::Mutex;
 use spin::Once;
 

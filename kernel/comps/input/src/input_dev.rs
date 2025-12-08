@@ -4,8 +4,8 @@ use alloc::{sync::Arc, vec::Vec};
 use core::{any::Any, fmt::Debug};
 
 use ostd::{
-    sync::{RwLock, WriteIrqDisabled},
     Pod,
+    sync::{RwLock, WriteIrqDisabled},
 };
 
 use crate::{

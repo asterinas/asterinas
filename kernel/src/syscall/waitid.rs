@@ -6,12 +6,11 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::{
-        do_wait,
+        ProcessFilter, WaitOptions, WaitStatus, do_wait,
         signal::{
             c_types::siginfo_t,
             constants::{CLD_CONTINUED, CLD_EXITED, CLD_KILLED, CLD_STOPPED, SIGCHLD, SIGCONT},
         },
-        ProcessFilter, WaitOptions, WaitStatus,
     },
 };
 

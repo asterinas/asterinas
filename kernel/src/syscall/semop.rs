@@ -7,7 +7,7 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     ipc::semaphore::system_v::{
-        sem::{sem_op, SemBuf},
+        sem::{SemBuf, sem_op},
         sem_set::SEMOPM,
     },
     prelude::*,

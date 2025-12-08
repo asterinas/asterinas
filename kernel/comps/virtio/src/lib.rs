@@ -13,18 +13,18 @@ use core::hint::spin_loop;
 
 use aster_block::MajorIdOwner;
 use bitflags::bitflags;
-use component::{init_component, ComponentInitError};
+use component::{ComponentInitError, init_component};
 use device::{
+    VirtioDeviceType,
     block::device::BlockDevice,
     console::device::ConsoleDevice,
     input::device::InputDevice,
     network::device::NetworkDevice,
     socket::{self, device::SocketDevice},
-    VirtioDeviceType,
 };
 use log::{error, warn};
 use spin::Once;
-use transport::{mmio::VIRTIO_MMIO_DRIVER, pci::VIRTIO_PCI_DRIVER, DeviceStatus};
+use transport::{DeviceStatus, mmio::VIRTIO_MMIO_DRIVER, pci::VIRTIO_PCI_DRIVER};
 
 use crate::transport::VirtioTransport;
 

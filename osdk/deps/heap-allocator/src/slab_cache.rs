@@ -5,9 +5,9 @@
 use core::alloc::AllocError;
 
 use ostd::mm::{
+    PAGE_SIZE, Paddr,
     frame::linked_list::LinkedList,
     heap::{HeapSlot, Slab, SlabMeta},
-    Paddr, PAGE_SIZE,
 };
 
 const EXPECTED_EMPTY_SLABS: usize = 4;

@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::{get_file_fast, FdFlags, FileDesc},
+        file_table::{FdFlags, FileDesc, get_file_fast},
         utils::{CreationFlags, StatusFlags},
     },
     prelude::*,

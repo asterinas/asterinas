@@ -6,10 +6,10 @@ use vsc::VscLaunchConfig;
 
 use super::{
     build::create_base_and_cached_build,
-    util::{is_tdx_enabled, DEFAULT_TARGET_RELPATH},
+    util::{DEFAULT_TARGET_RELPATH, is_tdx_enabled},
 };
 use crate::{
-    config::{scheme::ActionChoice, Config},
+    config::{Config, scheme::ActionChoice},
     error::Errno,
     error_msg,
     util::{get_kernel_crate, get_target_directory},
@@ -177,13 +177,13 @@ mod vsc {
         commands::util::bin_file_name,
         util::{get_cargo_metadata, get_kernel_crate},
     };
-    use serde_json::{from_str, Value};
+    use serde_json::{Value, from_str};
     use std::{
         fs::{read_to_string, write as write_file},
         path::Path,
     };
 
-    use super::{gdb, GdbServerArgs};
+    use super::{GdbServerArgs, gdb};
 
     const VSC_DIR: &str = ".vscode";
 

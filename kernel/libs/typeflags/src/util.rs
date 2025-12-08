@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use proc_macro2::{Ident, TokenStream};
-use quote::{quote, TokenStreamExt};
+use quote::{TokenStreamExt, quote};
 
 use crate::{
-    flag_set::{generate_flag_sets, FlagSet},
+    flag_set::{FlagSet, generate_flag_sets},
     type_flag::TypeFlagDef,
 };
 

@@ -21,7 +21,7 @@ use crate::{
         utils::StatusFlags,
     },
     prelude::*,
-    process::{credentials::capabilities::CapSet, posix_thread::AsPosixThread, Gid, Uid},
+    process::{Gid, Uid, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
     time::clocks::RealTimeCoarseClock,
     vm::vmo::Vmo,
 };

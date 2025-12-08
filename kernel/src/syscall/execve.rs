@@ -2,11 +2,11 @@
 
 use ostd::arch::cpu::context::UserContext;
 
-use super::{constants::*, SyscallReturn};
+use super::{SyscallReturn, constants::*};
 use crate::{
     fs::{
         file_table::FileDesc,
-        fs_resolver::{FsPath, PathOrInode, AT_FDCWD},
+        fs_resolver::{AT_FDCWD, FsPath, PathOrInode},
     },
     prelude::*,
     process::{check_executable_inode, do_execve},

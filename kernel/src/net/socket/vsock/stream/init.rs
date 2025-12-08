@@ -3,8 +3,8 @@
 use crate::{
     events::IoEvents,
     net::socket::vsock::{
-        addr::{VsockSocketAddr, VMADDR_CID_ANY, VMADDR_PORT_ANY},
         VSOCK_GLOBAL,
+        addr::{VMADDR_CID_ANY, VMADDR_PORT_ANY, VsockSocketAddr},
     },
     prelude::*,
     process::signal::PollHandle,

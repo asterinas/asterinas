@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use clap::{crate_version, Args, Parser, ValueEnum};
+use clap::{Args, Parser, ValueEnum, crate_version};
 
 use crate::{
     arch::Arch,
@@ -12,9 +12,9 @@ use crate::{
         execute_run_command, execute_test_command,
     },
     config::{
+        Config,
         manifest::{ProjectType, TomlManifest},
         scheme::{BootMethod, BootProtocol},
-        Config,
     },
 };
 
@@ -302,7 +302,7 @@ impl DebugProfileOutArgs {
     /// output path to the file to override the file name.
     pub fn output_path(&self, hint: Option<&PathBuf>) -> PathBuf {
         self.output.clone().unwrap_or_else(|| {
-            use chrono::{offset::Local, DateTime};
+            use chrono::{DateTime, offset::Local};
             let file_stem = if let Some(hint) = hint {
                 format!(
                     "{}",

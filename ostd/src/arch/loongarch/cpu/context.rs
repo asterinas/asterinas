@@ -222,7 +222,11 @@ impl UserContextApiInternal for UserContext {
                         log::debug!("Handling hardware interrupt: {:?}", interrupt);
                         while let Some(irq_num) = crate::arch::irq::chip::claim() {
                             // Call the IRQ callback functions for the claimed interrupt
-                            call_irq_callback_functions(&self.as_trap_frame(), &HwIrqLine::new(irq_num), PrivilegeLevel::User);
+                            call_irq_callback_functions(
+                                &self.as_trap_frame(),
+                                &HwIrqLine::new(irq_num),
+                                PrivilegeLevel::User,
+                            );
                         }
                     }
                     Interrupt::PMI => todo!(),
@@ -232,9 +236,9 @@ impl UserContextApiInternal for UserContext {
                 Trap::MachineError(machine_error) => panic!(
                     "Machine error: {machine_error:?}, badv: {badv:#x?}, badi: {badi:#x?}, era: {era:#x?}"
                 ),
-                Trap::Unknown => panic!(
-                    "Unknown trap, badv: {badv:#x?}, badi: {badi:#x?}, era: {era:#x?}"
-                ),
+                Trap::Unknown => {
+                    panic!("Unknown trap, badv: {badv:#x?}, badi: {badi:#x?}, era: {era:#x?}")
+                }
             }
 
             if has_kernel_event() {

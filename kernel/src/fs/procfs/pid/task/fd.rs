@@ -12,10 +12,10 @@ use crate::{
         file_table::FileDesc,
         inode_handle::InodeHandle,
         procfs::{
-            template::{FileOps, ProcFile, ProcFileBuilder, ProcSym},
             DirOps, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps,
+            template::{FileOps, ProcFile, ProcFileBuilder, ProcSym},
         },
-        utils::{chmod, mkmod, AccessMode, DirEntryVecExt, Inode, SymbolicLink},
+        utils::{AccessMode, DirEntryVecExt, Inode, SymbolicLink, chmod, mkmod},
     },
     prelude::*,
     process::posix_thread::AsPosixThread,

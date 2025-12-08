@@ -6,7 +6,7 @@ use core::sync::atomic::Ordering;
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{posix_thread::AsPosixThread, ProcessGroup},
+    process::{ProcessGroup, posix_thread::AsPosixThread},
     thread::Thread,
 };
 

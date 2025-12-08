@@ -3,10 +3,9 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
-    braced,
+    Attribute, Expr, Ident, Token, Type, Visibility, braced,
     parse::{Parse, ParseStream},
     punctuated::Punctuated,
-    Attribute, Expr, Ident, Token, Type, Visibility,
 };
 
 /// The content inside typeflag macro

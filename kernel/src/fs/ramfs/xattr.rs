@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use hashbrown::{hash_map::Entry, Equivalent, HashMap};
+use hashbrown::{Equivalent, HashMap, hash_map::Entry};
 use spin::Once;
 
 use crate::{

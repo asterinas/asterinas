@@ -3,7 +3,7 @@
 use alloc::sync::Arc;
 use core::{any::Any, fmt::Debug};
 
-use crate::{input_dev::InputEvent, unregister_handler_class, InputDevice};
+use crate::{InputDevice, input_dev::InputEvent, unregister_handler_class};
 
 /// Errors that can occur when connecting to an input device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
