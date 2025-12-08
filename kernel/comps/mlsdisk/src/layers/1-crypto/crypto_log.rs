@@ -263,12 +263,9 @@ impl<L: BlockLog> CryptoLog<L> {
         let data_nodes: Vec<Arc<DataNode>> = buf
             .iter()
             .map(|block_buf| {
-                let data_node = {
-                    let mut node = DataNode::new_uninit();
-                    node.0.copy_from_slice(block_buf.as_slice());
-                    Arc::new(node)
-                };
-                data_node
+                let mut node = DataNode::new_uninit();
+                node.0.copy_from_slice(block_buf.as_slice());
+                Arc::new(node)
             })
             .collect();
 

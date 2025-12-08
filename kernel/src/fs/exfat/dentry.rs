@@ -493,8 +493,8 @@ impl Iterator for ExfatDentryIterator<'_> {
         let dentry_result = ExfatDentry::try_from(RawExfatDentry::from_bytes(&dentry_buf)).unwrap();
 
         self.entry += 1;
-        if self.size.is_some() {
-            self.size = Some(self.size.unwrap() - DENTRY_SIZE);
+        if let Some(s) = self.size {
+            self.size = Some(s - DENTRY_SIZE);
         }
 
         Some(Ok(dentry_result))

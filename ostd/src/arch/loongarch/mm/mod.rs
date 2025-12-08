@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::fmt;
-use core::{arch::asm, ops::Range};
+use core::{arch::asm, intrinsics::AtomicOrdering::Relaxed, ops::Range};
 
 use crate::{
     Pod,
@@ -166,7 +166,7 @@ impl PageTableEntry {
 /// Parse a bit-flag bits `val` in the representation of `from` to `to` in bits.
 macro_rules! parse_flags {
     ($val:expr, $from:expr, $to:expr) => {
-        ($val as usize & $from.bits() as usize) >> $from.bits().ilog2() << $to.bits().ilog2()
+        (($val as usize & $from.bits() as usize) >> $from.bits().ilog2() << $to.bits().ilog2())
     };
 }
 
@@ -235,7 +235,6 @@ impl PageTableEntryTrait for PageTableEntry {
         }
     }
 
-    #[expect(clippy::precedence)]
     fn set_prop(&mut self, prop: PageProperty) {
         let mut flags = PageTableFlags::VALID.bits()
             // FIXME: To avoid the PageModifyFault exception,
@@ -325,10 +324,13 @@ pub(crate) unsafe fn __memset_fallible(dst: *mut u8, value: u8, size: usize) -> 
 
 pub(crate) unsafe fn __atomic_load_fallible(ptr: *const u32) -> u64 {
     // TODO: Implement this fallible operation.
-    unsafe { core::intrinsics::atomic_load_relaxed(ptr) as u64 }
+    unsafe { core::intrinsics::atomic_load::<_, { Relaxed }>(ptr) as u64 }
 }
 
 pub(crate) unsafe fn __atomic_cmpxchg_fallible(ptr: *mut u32, old_val: u32, new_val: u32) -> u64 {
     // TODO: Implement this fallible operation.
-    unsafe { core::intrinsics::atomic_cxchg_relaxed_relaxed(ptr, old_val, new_val).0 as u64 }
+    unsafe {
+        core::intrinsics::atomic_cxchg::<_, { Relaxed }, { Relaxed }>(ptr, old_val, new_val).0
+            as u64
+    }
 }

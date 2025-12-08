@@ -281,7 +281,7 @@ impl FileMetadata {
 
 /// The type of the file.
 #[repr(u32)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, TryFromInt)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, TryFromInt)]
 pub enum FileType {
     /// FIFO special file
     FiFo = 0o010000,
@@ -292,17 +292,12 @@ pub enum FileType {
     /// Block device
     Block = 0o060000,
     /// Regular file
+    #[default]
     File = 0o100000,
     /// Symbolic link
     Link = 0o120000,
     /// Socket
     Socket = 0o140000,
-}
-
-impl Default for FileType {
-    fn default() -> Self {
-        Self::File
-    }
 }
 
 const MAGIC: &[u8] = b"070701";

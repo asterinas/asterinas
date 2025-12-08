@@ -153,10 +153,7 @@ impl<E: Ext> UdpSocket<E> {
             return Err(SendError::TooLarge);
         }
 
-        let buffer = match socket.send(size, meta) {
-            Ok(data) => data,
-            Err(err) => return Err(err.into()),
-        };
+        let buffer = socket.send(size, meta)?;
         let result = f(buffer);
 
         self.0

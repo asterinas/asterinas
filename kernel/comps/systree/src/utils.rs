@@ -615,7 +615,7 @@ macro_rules! inherit_sys_branch_node {
             fn visit_children_with(
                 &self,
                 min_id: u64,
-                f: &mut dyn for<'a> FnMut(&'a alloc::sync::Arc<(dyn $crate::SysObj)>) -> Option<()>,
+                f: &mut dyn for<'a> FnMut(&'a alloc::sync::Arc<dyn $crate::SysObj>) -> Option<()>,
             ) {
                 let children_guard = self.$field.children_ref().read();
                 for child_arc in children_guard.values() {

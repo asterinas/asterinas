@@ -83,7 +83,7 @@ pub trait SysBranchNode: SysNode {
     fn visit_children_with(
         &self,
         min_id: u64,
-        f: &mut dyn for<'a> FnMut(&'a Arc<(dyn SysObj)>) -> Option<()>,
+        f: &mut dyn for<'a> FnMut(&'a Arc<dyn SysObj>) -> Option<()>,
     );
 
     /// Returns a child with a specified name.

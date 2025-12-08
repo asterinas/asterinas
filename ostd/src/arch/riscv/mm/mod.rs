@@ -192,7 +192,7 @@ impl PageTableEntry {
 /// Parse a bit-flag bits `val` in the representation of `from` to `to` in bits.
 macro_rules! parse_flags {
     ($val:expr, $from:expr, $to:expr) => {
-        ($val as usize & $from.bits() as usize) >> $from.bits().ilog2() << $to.bits().ilog2()
+        (($val as usize & $from.bits() as usize) >> $from.bits().ilog2() << $to.bits().ilog2())
     };
 }
 
@@ -245,7 +245,6 @@ impl PageTableEntryTrait for PageTableEntry {
         }
     }
 
-    #[expect(clippy::precedence)]
     fn set_prop(&mut self, prop: PageProperty) {
         let mut flags = PageTableFlags::VALID.bits()
             | parse_flags!(prop.flags.bits(), PageFlags::R, PageTableFlags::READABLE)

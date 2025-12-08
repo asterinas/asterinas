@@ -47,7 +47,7 @@ unsafe extern "sysv64" fn main_efi_common64(
 fn allocate_boot_params() -> &'static mut BootParams {
     let boot_params = {
         let bytes = alloc_pages(AllocateType::AnyPages, size_of::<BootParams>());
-        MaybeUninit::fill(bytes, 0);
+        bytes.write_filled(0);
         // SAFETY: Zero initialization gives a valid representation for `BootParams`.
         unsafe { &mut *bytes.as_mut_ptr().cast::<BootParams>() }
     };
@@ -64,22 +64,24 @@ fn efi_phase_boot(boot_params: &mut BootParams) {
     );
 
     // Load the command line if it is not loaded.
-    if boot_params.hdr.cmd_line_ptr == 0 && boot_params.ext_cmd_line_ptr == 0 {
-        if let Some(cmdline) = load_cmdline() {
-            boot_params.hdr.cmd_line_ptr = cmdline.as_ptr().addr().try_into().unwrap();
-            boot_params.ext_cmd_line_ptr = 0;
-            boot_params.hdr.cmdline_size = (cmdline.count_bytes() + 1).try_into().unwrap();
-        }
+    if boot_params.hdr.cmd_line_ptr == 0
+        && boot_params.ext_cmd_line_ptr == 0
+        && let Some(cmdline) = load_cmdline()
+    {
+        boot_params.hdr.cmd_line_ptr = cmdline.as_ptr().addr().try_into().unwrap();
+        boot_params.ext_cmd_line_ptr = 0;
+        boot_params.hdr.cmdline_size = (cmdline.count_bytes() + 1).try_into().unwrap();
     }
 
     // Load the init ramdisk if it is not loaded.
-    if boot_params.hdr.ramdisk_image == 0 && boot_params.ext_ramdisk_image == 0 {
-        if let Some(initrd) = load_initrd() {
-            boot_params.hdr.ramdisk_image = initrd.as_ptr().addr().try_into().unwrap();
-            boot_params.ext_ramdisk_image = 0;
-            boot_params.hdr.ramdisk_size = initrd.len().try_into().unwrap();
-            boot_params.ext_ramdisk_size = 0;
-        }
+    if boot_params.hdr.ramdisk_image == 0
+        && boot_params.ext_ramdisk_image == 0
+        && let Some(initrd) = load_initrd()
+    {
+        boot_params.hdr.ramdisk_image = initrd.as_ptr().addr().try_into().unwrap();
+        boot_params.ext_ramdisk_image = 0;
+        boot_params.hdr.ramdisk_size = initrd.len().try_into().unwrap();
+        boot_params.ext_ramdisk_size = 0;
     }
 
     // Fill the boot params with the RSDP address if it is not provided.

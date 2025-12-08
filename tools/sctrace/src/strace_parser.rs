@@ -599,14 +599,11 @@ impl Syscall<'_> {
 
     /// Handles special cases for certain syscalls whose strace output is non-standard.
     fn handle_special_cases(mut syscall: Syscall) -> Syscall {
-        match syscall.name {
+        if syscall.name == "clone" {
             // For `clone`, strace removes the first and fourth arguments, just insert
             // ignored args.
-            "clone" => {
-                syscall.args.insert(0, SyscallArg::Ignored);
-                syscall.args.insert(3, SyscallArg::Ignored);
-            }
-            _ => {}
+            syscall.args.insert(0, SyscallArg::Ignored);
+            syscall.args.insert(3, SyscallArg::Ignored);
         }
 
         syscall

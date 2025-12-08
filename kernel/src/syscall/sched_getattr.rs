@@ -53,7 +53,6 @@ pub(super) struct LinuxSchedAttr {
 // Reference: <https://elixir.bootlin.com/linux/v6.17.7/source/include/uapi/linux/sched/types.h#L7>
 const SCHED_ATTR_SIZE_VER0: u32 = 48;
 // Reference: <https://elixir.bootlin.com/linux/v6.17.7/source/include/uapi/linux/sched/types.h#L8>
-#[cfg_attr(target_arch = "x86_64", expect(dead_code))]
 const SCHED_ATTR_SIZE_VER1: u32 = 56;
 
 const_assert!(size_of::<LinuxSchedAttr>() == SCHED_ATTR_SIZE_VER1 as usize);

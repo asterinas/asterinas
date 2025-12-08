@@ -2,9 +2,7 @@
 
 #![no_std]
 #![deny(unsafe_code)]
-#![feature(let_chains)]
 #![feature(negative_impls)]
-#![feature(slice_as_chunks)]
 #![allow(unfulfilled_lint_expectations)]
 #![expect(dead_code, deprecated, unused_imports)]
 

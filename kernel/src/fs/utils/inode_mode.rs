@@ -160,15 +160,14 @@ macro_rules! chmod {
     };
 
     (@apply $mode:expr, $who:ident, $op:expr, $perms:ident $(, $($rest:tt)*)?) => {{
-        use $crate::fs::utils::{InodeMode, chmod, who_and_perms_to_mask, who_to_mask, perms_to_mask};
-        let mask = who_and_perms_to_mask!($who, $perms);
+        let mask = $crate::fs::utils::who_and_perms_to_mask!($who, $perms);
         let new_mode = match $op {
             '+' => $mode | mask,
             '-' => $mode & !mask,
-            '=' => ($mode & !who_and_perms_to_mask!($who, rwx)) | mask,
+            '=' => ($mode & !$crate::fs::utils::who_and_perms_to_mask!($who, rwx)) | mask,
             _ => unreachable!(),
         };
-        chmod!(new_mode $(, $($rest)*)?)
+        $crate::fs::utils::chmod!(new_mode $(, $($rest)*)?)
     }};
 }
 
@@ -178,13 +177,15 @@ macro_rules! chmod {
 /// `InodeMode::empty()`. See [`chmod`] for details.
 macro_rules! mkmod {
     ($($args:tt)*) => {
-        $crate::fs::utils::chmod!(InodeMode::empty(), $($args)*)
+        $crate::fs::utils::chmod!($crate::fs::utils::InodeMode::empty(), $($args)*)
     };
 }
 
 macro_rules! who_and_perms_to_mask {
     ($who:ident, $perms:ident) => {
-        InodeMode::from_bits_truncate(who_to_mask!($who) & perms_to_mask!($perms))
+        $crate::fs::utils::InodeMode::from_bits_truncate(
+            $crate::fs::utils::who_to_mask!($who) & $crate::fs::utils::perms_to_mask!($perms),
+        )
     };
 }
 
@@ -251,8 +252,6 @@ pub(crate) use who_to_mask;
 #[cfg(ktest)]
 mod test {
     use ostd::prelude::*;
-
-    use super::*;
 
     #[ktest]
     fn test_mkmod_and_chmod() {

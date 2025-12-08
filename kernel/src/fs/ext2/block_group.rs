@@ -270,7 +270,7 @@ impl BlockGroup {
             .inner
             .write()
             .inode_cache
-            .extract_if(|_, inode| Arc::strong_count(inode) == 1)
+            .extract_if(.., |_, inode| Arc::strong_count(inode) == 1)
             .map(|(_, inode)| inode)
             .collect();
 
