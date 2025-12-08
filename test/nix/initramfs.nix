@@ -5,10 +5,13 @@ let
     root = ./../src/etc;
     fileset = ./../src/etc;
   };
-  gvisor_libs = builtins.path {
-    name = "gvisor-libs";
-    path = "/lib/x86_64-linux-gnu";
-  };
+  gvisor_libs = if syscall != null && syscall.testSuite == "gvisor" then
+    builtins.path {
+      name = "gvisor-libs";
+      path = "/lib/x86_64-linux-gnu";
+    }
+  else
+    null;
   resolv_conf = pkgs.callPackage ./resolv_conf.nix { dnsServer = dnsServer; };
   # Whether the initramfs should include evtest, a common tool to debug input devices (`/dev/input/eventX`)
   is_evtest_included = false;
@@ -46,16 +49,16 @@ in stdenvNoCC.mkDerivation {
 
     ${lib.optionalString (syscall != null) ''
       cp -r "${syscall.package}"/opt/* $out/opt/
+    ''}
 
+    ${lib.optionalString (syscall != null && syscall.testSuite == "gvisor") ''
       # FIXME: Build gvisor syscall test with nix to avoid manual library copying.
-      if [ "${syscall.testSuite}" == "gvisor" ]; then
-        mkdir -p $out/lib/x86_64-linux-gnu
-        cp -L ${gvisor_libs}/ld-linux-x86-64.so.2 $out/lib64/ld-linux-x86-64.so.2
-        cp -L ${gvisor_libs}/libstdc++.so.6 $out/lib/x86_64-linux-gnu/libstdc++.so.6
-        cp -L ${gvisor_libs}/libgcc_s.so.1 $out/lib/x86_64-linux-gnu/libgcc_s.so.1
-        cp -L ${gvisor_libs}/libc.so.6 $out/lib/x86_64-linux-gnu/libc.so.6
-        cp -L ${gvisor_libs}/libm.so.6 $out/lib/x86_64-linux-gnu/libm.so.6
-      fi
+      mkdir -p $out/lib/x86_64-linux-gnu
+      cp -L ${gvisor_libs}/ld-linux-x86-64.so.2 $out/lib64/ld-linux-x86-64.so.2
+      cp -L ${gvisor_libs}/libstdc++.so.6 $out/lib/x86_64-linux-gnu/libstdc++.so.6
+      cp -L ${gvisor_libs}/libgcc_s.so.1 $out/lib/x86_64-linux-gnu/libgcc_s.so.1
+      cp -L ${gvisor_libs}/libc.so.6 $out/lib/x86_64-linux-gnu/libc.so.6
+      cp -L ${gvisor_libs}/libm.so.6 $out/lib/x86_64-linux-gnu/libm.so.6
     ''}
 
     # Use `writeClosure` to retrieve all dependencies of the specified packages.
