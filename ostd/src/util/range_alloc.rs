@@ -142,7 +142,7 @@ impl RangeAllocator {
 
     fn get_freelist_guard(
         &self,
-    ) -> SpinLockGuard<Option<BTreeMap<usize, FreeRange>>, PreemptDisabled> {
+    ) -> SpinLockGuard<'_, Option<BTreeMap<usize, FreeRange>>, PreemptDisabled> {
         let mut lock_guard = self.freelist.lock();
         if lock_guard.is_none() {
             let mut freelist: BTreeMap<usize, FreeRange> = BTreeMap::new();

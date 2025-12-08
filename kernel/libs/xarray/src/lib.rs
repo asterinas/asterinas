@@ -133,7 +133,7 @@ impl<P: NonNullPtr + Send + Sync, M> XArray<P, M> {
     }
 
     /// Acquires the lock to perform mutable operations.
-    pub fn lock(&self) -> LockedXArray<P, M> {
+    pub fn lock(&self) -> LockedXArray<'_, P, M> {
         LockedXArray {
             xa: self,
             guard: self.xlock.lock(),
@@ -142,7 +142,7 @@ impl<P: NonNullPtr + Send + Sync, M> XArray<P, M> {
     }
 
     /// Acquires the lock with local IRQs disabled to perform mutable operations.
-    pub fn lock_irq_disabled(&self) -> LockedXArray<P, M, LocalIrqDisabled> {
+    pub fn lock_irq_disabled(&self) -> LockedXArray<'_, P, M, LocalIrqDisabled> {
         LockedXArray {
             xa: self,
             guard: self.xlock.disable_irq().lock(),

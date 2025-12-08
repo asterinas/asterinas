@@ -271,7 +271,7 @@ impl<'a, P: NonNullPtr + Send + Sync, M> CursorMut<'a, P, M> {
     }
 
     /// Returns an `XLockGuard` that marks the `XArray` is locked.
-    fn lock_guard(&self) -> XLockGuard {
+    fn lock_guard(&self) -> XLockGuard<'_> {
         // Having a `CursorMut` means that the `XArray` is locked.
         XLockGuard(self.guard)
     }

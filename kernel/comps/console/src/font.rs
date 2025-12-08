@@ -127,7 +127,7 @@ impl BitmapFont {
     ///
     /// This method will return [`None`] if the font does not contain a bitmap for the specified
     /// character.
-    pub fn char(&self, ch: u8) -> Option<BitmapChar> {
+    pub fn char(&self, ch: u8) -> Option<BitmapChar<'_>> {
         let pos = (ch as usize) * self.char_size;
         let data = self.bitmap.get(pos..pos + self.char_size)?;
 

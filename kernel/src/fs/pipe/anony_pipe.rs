@@ -380,11 +380,11 @@ mod test {
         );
     }
 
-    fn reader_from(buf: &[u8]) -> VmReader {
+    fn reader_from(buf: &[u8]) -> VmReader<'_> {
         VmReader::from(buf).to_fallible()
     }
 
-    fn writer_from(buf: &mut [u8]) -> VmWriter {
+    fn writer_from(buf: &mut [u8]) -> VmWriter<'_> {
         VmWriter::from(buf).to_fallible()
     }
 }

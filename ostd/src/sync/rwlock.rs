@@ -130,7 +130,7 @@ impl<T: ?Sized, G: SpinGuardian> RwLock<T, G> {
     /// upgrading upreaders present. There is no guarantee for the order
     /// in which other readers or writers waiting simultaneously will
     /// obtain the lock.
-    pub fn read(&self) -> RwLockReadGuard<T, G> {
+    pub fn read(&self) -> RwLockReadGuard<'_, T, G> {
         loop {
             if let Some(readguard) = self.try_read() {
                 return readguard;
@@ -146,7 +146,7 @@ impl<T: ?Sized, G: SpinGuardian> RwLock<T, G> {
     /// upreaders or readers present. There is no guarantee for the order
     /// in which other readers or writers waiting simultaneously will
     /// obtain the lock.
-    pub fn write(&self) -> RwLockWriteGuard<T, G> {
+    pub fn write(&self) -> RwLockWriteGuard<'_, T, G> {
         loop {
             if let Some(writeguard) = self.try_write() {
                 return writeguard;
@@ -166,7 +166,7 @@ impl<T: ?Sized, G: SpinGuardian> RwLock<T, G> {
     /// and reader do not differ before invoking the upgread method. However,
     /// only one upreader can exist at any time to avoid deadlock in the
     /// upgread method.
-    pub fn upread(&self) -> RwLockUpgradeableGuard<T, G> {
+    pub fn upread(&self) -> RwLockUpgradeableGuard<'_, T, G> {
         loop {
             if let Some(guard) = self.try_upread() {
                 return guard;
@@ -179,7 +179,7 @@ impl<T: ?Sized, G: SpinGuardian> RwLock<T, G> {
     /// Attempts to acquire a read lock.
     ///
     /// This function will never spin-wait and will return immediately.
-    pub fn try_read(&self) -> Option<RwLockReadGuard<T, G>> {
+    pub fn try_read(&self) -> Option<RwLockReadGuard<'_, T, G>> {
         let guard = G::read_guard();
         let lock = self.lock.fetch_add(READER, Acquire);
         if lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
@@ -193,7 +193,7 @@ impl<T: ?Sized, G: SpinGuardian> RwLock<T, G> {
     /// Attempts to acquire a write lock.
     ///
     /// This function will never spin-wait and will return immediately.
-    pub fn try_write(&self) -> Option<RwLockWriteGuard<T, G>> {
+    pub fn try_write(&self) -> Option<RwLockWriteGuard<'_, T, G>> {
         let guard = G::guard();
         if self
             .lock
@@ -209,7 +209,7 @@ impl<T: ?Sized, G: SpinGuardian> RwLock<T, G> {
     /// Attempts to acquire an upread lock.
     ///
     /// This function will never spin-wait and will return immediately.
-    pub fn try_upread(&self) -> Option<RwLockUpgradeableGuard<T, G>> {
+    pub fn try_upread(&self) -> Option<RwLockUpgradeableGuard<'_, T, G>> {
         let guard = G::guard();
         let lock = self.lock.fetch_or(UPGRADEABLE_READER, Acquire) & (WRITER | UPGRADEABLE_READER);
         if lock == 0 {

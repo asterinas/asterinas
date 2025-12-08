@@ -194,7 +194,7 @@ impl<'a> ProcessVmarGuard<'a> {
     /// the initial portion of the main stack of a process.
     ///
     /// Returns `None` if the process has exited and its VMAR has been dropped.
-    pub fn init_stack_reader(&self) -> Option<InitStackReader> {
+    pub fn init_stack_reader(&self) -> Option<InitStackReader<'_>> {
         self.as_ref()
             .map(|vmar| vmar.process_vm().init_stack.reader(vmar))
     }

@@ -208,7 +208,7 @@ impl Controller {
         PidsController::init_attr_set(builder, is_root);
     }
 
-    pub(super) fn lock(&self) -> LockedController {
+    pub(super) fn lock(&self) -> LockedController<'_> {
         LockedController {
             active_set: self.active_set.lock(),
             controller: self,

@@ -170,7 +170,7 @@ pub(super) fn read_xattr_name_cstr_from_user(
         })
 }
 
-pub(super) fn parse_xattr_name(name_str: &str) -> Result<XattrName> {
+pub(super) fn parse_xattr_name(name_str: &str) -> Result<XattrName<'_>> {
     if name_str.is_empty() || name_str.len() > XATTR_NAME_MAX_LEN {
         return_errno_with_message!(Errno::ERANGE, "xattr name empty or too long");
     }

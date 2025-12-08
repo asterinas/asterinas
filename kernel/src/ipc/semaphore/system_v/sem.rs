@@ -61,7 +61,7 @@ pub(super) struct PendingOp {
 }
 
 impl PendingOp {
-    pub(super) fn sops_iter(&self) -> Iter<SemBuf> {
+    pub(super) fn sops_iter(&self) -> Iter<'_, SemBuf> {
         self.sops.iter()
     }
 

@@ -244,7 +244,7 @@ impl<E: Ext> TcpConnectionInner<E> {
         }
     }
 
-    pub(super) fn lock(&self) -> SpinLockGuard<RawTcpSocketExt<E>, BottomHalfDisabled> {
+    pub(super) fn lock(&self) -> SpinLockGuard<'_, RawTcpSocketExt<E>, BottomHalfDisabled> {
         self.socket.lock()
     }
 }

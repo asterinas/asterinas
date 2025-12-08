@@ -136,7 +136,7 @@ impl<K: RecordKey<K>, V: RecordValue> MemTableManager<K, V> {
     }
 
     /// Gets the immutable `MemTable` instance (read-only).
-    pub fn immutable_memtable(&self) -> RwLockReadGuard<MemTable<K, V>> {
+    pub fn immutable_memtable(&self) -> RwLockReadGuard<'_, MemTable<K, V>> {
         self.immutable.read()
     }
 }

@@ -32,12 +32,12 @@ impl<T: ?Sized> Mutex<T> {
     ///
     /// This method runs in a block way until the mutex can be acquired.
     #[track_caller]
-    pub fn lock(&self) -> MutexGuard<T> {
+    pub fn lock(&self) -> MutexGuard<'_, T> {
         self.queue.wait_until(|| self.try_lock())
     }
 
     /// Tries Acquire the mutex immedidately.
-    pub fn try_lock(&self) -> Option<MutexGuard<T>> {
+    pub fn try_lock(&self) -> Option<MutexGuard<'_, T>> {
         // Cannot be reduced to `then_some`, or the possible dropping of the temporary
         // guard will cause an unexpected unlock.
         // SAFETY: The lock is successfully acquired when creating the guard.

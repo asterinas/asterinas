@@ -330,7 +330,7 @@ impl ReadySet {
         self.pollee.notify(IoEvents::IN);
     }
 
-    pub(super) fn lock_pop(&self) -> ReadySetPopIter {
+    pub(super) fn lock_pop(&self) -> ReadySetPopIter<'_> {
         ReadySetPopIter {
             ready_set: self,
             _pop_guard: self.pop_guard.lock(),

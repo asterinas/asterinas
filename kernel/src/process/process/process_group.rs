@@ -53,7 +53,7 @@ impl ProcessGroup {
     }
 
     /// Acquires a lock on the process group.
-    pub fn lock(&self) -> ProcessGroupGuard {
+    pub fn lock(&self) -> ProcessGroupGuard<'_> {
         ProcessGroupGuard {
             inner: self.inner.lock(),
         }
@@ -82,7 +82,7 @@ pub struct ProcessGroupGuard<'a> {
 
 impl ProcessGroupGuard<'_> {
     /// Returns an iterator over the processes in the process group.
-    pub fn iter(&self) -> ProcessGroupIter {
+    pub fn iter(&self) -> ProcessGroupIter<'_> {
         ProcessGroupIter {
             inner: self.inner.processes.values(),
         }
