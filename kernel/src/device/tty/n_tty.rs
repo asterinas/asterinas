@@ -10,7 +10,7 @@ use spin::Once;
 
 use super::{Tty, TtyDriver};
 use crate::{
-    device::registry::char,
+    device::{registry::char, tty::termio::CTermios},
     events::IoEvents,
     fs::{
         inode_handle::FileIo,
@@ -61,6 +61,8 @@ impl TtyDriver for VtDriver {
     fn console(&self) -> Option<&dyn AnyConsoleDevice> {
         Some(&*self.console)
     }
+
+    fn on_termios_change(&self, _old_termios: &CTermios, _new_termios: &CTermios) {}
 }
 
 /// The driver for hypervisor console devices.
@@ -101,6 +103,8 @@ impl TtyDriver for HvcDriver {
     fn console(&self) -> Option<&dyn AnyConsoleDevice> {
         Some(&*self.console)
     }
+
+    fn on_termios_change(&self, _old_termios: &CTermios, _new_termios: &CTermios) {}
 }
 
 struct TtyFile<D>(Arc<Tty<D>>);

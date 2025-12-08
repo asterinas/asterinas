@@ -4,6 +4,7 @@ use ostd::const_assert;
 
 use super::termio::{CCtrlCharId, CTermios, CWinSize};
 use crate::{
+    device::tty::termio::{CInputFlags, CLocalFlags},
     prelude::*,
     process::signal::{
         constants::{SIGINT, SIGQUIT},
@@ -98,7 +99,7 @@ impl LineDiscipline {
         mut signal_callback: F1,
         echo_callback: F2,
     ) -> Result<()> {
-        let ch = if self.termios.contains_icrnl() && ch == b'\r' {
+        let ch = if self.termios.input_flags().contains(CInputFlags::ICRNL) && ch == b'\r' {
             b'\n'
         } else {
             ch
@@ -111,7 +112,7 @@ impl LineDiscipline {
 
         // Typically, a TTY in raw mode does not echo. But the TTY can also be in a CBREAK mode,
         // with ICANON closed and ECHO opened.
-        if self.termios.contain_echo() {
+        if self.termios.local_flags().contains(CLocalFlags::ECHO) {
             self.output_char(ch, echo_callback);
         }
 
@@ -166,7 +167,7 @@ impl LineDiscipline {
                 echo_callback(b"\x08");
             }
             ch if is_printable_char(ch) => echo_callback(&[ch]),
-            ch if is_ctrl_char(ch) && self.termios.contains_echo_ctl() => {
+            ch if is_ctrl_char(ch) && self.termios.local_flags().contains(CLocalFlags::ECHOCTL) => {
                 echo_callback(&[b'^', ctrl_char_to_printable(ch)]);
             }
             _ => {}
@@ -269,7 +270,9 @@ fn is_line_terminator(ch: u8, termios: &CTermios) -> bool {
         return true;
     }
 
-    if termios.contains_iexten() && ch == termios.special_char(CCtrlCharId::VEOL2) {
+    if termios.local_flags().contains(CLocalFlags::IEXTEN)
+        && ch == termios.special_char(CCtrlCharId::VEOL2)
+    {
         return true;
     }
 
@@ -293,7 +296,7 @@ fn is_ctrl_char(ch: u8) -> bool {
 }
 
 fn char_to_signal(ch: u8, termios: &CTermios) -> Option<SigNum> {
-    if !termios.is_canonical_mode() || !termios.contains_isig() {
+    if !termios.is_canonical_mode() || !termios.local_flags().contains(CLocalFlags::ISIG) {
         return None;
     }
 

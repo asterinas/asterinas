@@ -11,7 +11,7 @@ bitflags! {
     /// The input flags; `c_iflags` bits in Linux.
     #[derive(Pod)]
     #[repr(C)]
-    pub(super) struct CInputFlags: u32 {
+    pub struct CInputFlags: u32 {
         // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits-common.h
         const IGNBRK  = 0x001;			/* Ignore break condition */
         const BRKINT  = 0x002;			/* Signal interrupt on break */
@@ -136,7 +136,7 @@ bitflags! {
     /// The local flags; `c_lflags` bits in Linux.
     #[repr(C)]
     #[derive(Pod)]
-    pub(super) struct CLocalFlags: u32 {
+    pub struct CLocalFlags: u32 {
         // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits.h#L127
         const ISIG    = 0x00001;
         const ICANON  = 0x00002;
@@ -174,7 +174,7 @@ impl Default for CLocalFlags {
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
 #[expect(clippy::upper_case_acronyms)]
-pub(super) enum CCtrlCharId {
+pub enum CCtrlCharId {
     // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits.h#L42
     VINTR = 0,
     VQUIT = 1,
@@ -276,7 +276,7 @@ impl CTermios {
     /// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits.h#L9>.
     const NUM_CTRL_CHARS: usize = 19;
 
-    pub(super) fn special_char(&self, id: CCtrlCharId) -> CCtrlChar {
+    pub fn special_char(&self, id: CCtrlCharId) -> CCtrlChar {
         self.c_cc[id as usize]
     }
 
@@ -292,27 +292,14 @@ impl CTermios {
         self.c_lflags.contains(CLocalFlags::ICANON)
     }
 
-    /// Returns whether the input flags contain `ICRNL`.
-    ///
-    /// The `ICRNL` flag means the `\r` characters in the input should be mapped to `\n`.
-    pub(super) fn contains_icrnl(&self) -> bool {
-        self.c_iflags.contains(CInputFlags::ICRNL)
+    /// Returns the input flags.
+    pub fn input_flags(&self) -> &CInputFlags {
+        &self.c_iflags
     }
 
-    pub(super) fn contains_isig(&self) -> bool {
-        self.c_lflags.contains(CLocalFlags::ISIG)
-    }
-
-    pub(super) fn contain_echo(&self) -> bool {
-        self.c_lflags.contains(CLocalFlags::ECHO)
-    }
-
-    pub(super) fn contains_echo_ctl(&self) -> bool {
-        self.c_lflags.contains(CLocalFlags::ECHOCTL)
-    }
-
-    pub(super) fn contains_iexten(&self) -> bool {
-        self.c_lflags.contains(CLocalFlags::IEXTEN)
+    /// Returns the local flags.
+    pub fn local_flags(&self) -> &CLocalFlags {
+        &self.c_lflags
     }
 }
 

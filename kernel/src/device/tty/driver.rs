@@ -2,7 +2,11 @@
 
 use aster_console::AnyConsoleDevice;
 
-use crate::{device::tty::Tty, fs::inode_handle::FileIo, prelude::*};
+use crate::{
+    device::tty::{termio::CTermios, Tty},
+    fs::inode_handle::FileIo,
+    prelude::*,
+};
 
 /// A TTY driver.
 ///
@@ -58,4 +62,9 @@ pub trait TtyDriver: Send + Sync + 'static {
     ///
     /// If the TTY is not associated with any console device, this method will return `None`.
     fn console(&self) -> Option<&dyn AnyConsoleDevice>;
+
+    /// Notifies that the TTY termios is changed.
+    ///
+    /// This method will be called with a spin lock held, so it cannot break atomic mode.
+    fn on_termios_change(&self, old_termios: &CTermios, new_termios: &CTermios);
 }
