@@ -41,12 +41,12 @@ impl<T> RwArc<T> {
     }
 
     /// Acquires the read lock for immutable access.
-    pub fn read(&self) -> RwLockReadGuard<T, PreemptDisabled> {
+    pub fn read(&self) -> RwLockReadGuard<'_, T, PreemptDisabled> {
         self.0.data.read()
     }
 
     /// Acquires the write lock for mutable access.
-    pub fn write(&self) -> RwLockWriteGuard<T, PreemptDisabled> {
+    pub fn write(&self) -> RwLockWriteGuard<'_, T, PreemptDisabled> {
         self.0.data.write()
     }
 
@@ -108,7 +108,7 @@ impl<T: Clone> RwArc<T> {
 
 impl<T> RoArc<T> {
     /// Acquires the read lock for immutable access.
-    pub fn read(&self) -> RwLockReadGuard<T, PreemptDisabled> {
+    pub fn read(&self) -> RwLockReadGuard<'_, T, PreemptDisabled> {
         self.0.data.read()
     }
 }

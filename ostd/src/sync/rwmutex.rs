@@ -121,7 +121,7 @@ impl<T: ?Sized> RwMutex<T> {
     /// order in which other concurrent readers or writers waiting simultaneously
     /// will acquire the mutex.
     #[track_caller]
-    pub fn read(&self) -> RwMutexReadGuard<T> {
+    pub fn read(&self) -> RwMutexReadGuard<'_, T> {
         self.queue.wait_until(|| self.try_read())
     }
 
@@ -132,7 +132,7 @@ impl<T: ?Sized> RwMutex<T> {
     /// order in which other concurrent readers or writers waiting simultaneously
     /// will acquire the mutex.
     #[track_caller]
-    pub fn write(&self) -> RwMutexWriteGuard<T> {
+    pub fn write(&self) -> RwMutexWriteGuard<'_, T> {
         self.queue.wait_until(|| self.try_write())
     }
 
@@ -147,14 +147,14 @@ impl<T: ?Sized> RwMutex<T> {
     /// only one upreader can exist at any time to avoid deadlock in the
     /// upgread method.
     #[track_caller]
-    pub fn upread(&self) -> RwMutexUpgradeableGuard<T> {
+    pub fn upread(&self) -> RwMutexUpgradeableGuard<'_, T> {
         self.queue.wait_until(|| self.try_upread())
     }
 
     /// Attempts to acquire a read mutex.
     ///
     /// This function will never sleep and will return immediately.
-    pub fn try_read(&self) -> Option<RwMutexReadGuard<T>> {
+    pub fn try_read(&self) -> Option<RwMutexReadGuard<'_, T>> {
         let lock = self.lock.fetch_add(READER, Acquire);
         if lock & (WRITER | BEING_UPGRADED | MAX_READER) == 0 {
             Some(RwMutexReadGuard { inner: self })
@@ -167,7 +167,7 @@ impl<T: ?Sized> RwMutex<T> {
     /// Attempts to acquire a write mutex.
     ///
     /// This function will never sleep and will return immediately.
-    pub fn try_write(&self) -> Option<RwMutexWriteGuard<T>> {
+    pub fn try_write(&self) -> Option<RwMutexWriteGuard<'_, T>> {
         if self
             .lock
             .compare_exchange(0, WRITER, Acquire, Relaxed)
@@ -182,7 +182,7 @@ impl<T: ?Sized> RwMutex<T> {
     /// Attempts to acquire a upread mutex.
     ///
     /// This function will never sleep and will return immediately.
-    pub fn try_upread(&self) -> Option<RwMutexUpgradeableGuard<T>> {
+    pub fn try_upread(&self) -> Option<RwMutexUpgradeableGuard<'_, T>> {
         let lock = self.lock.fetch_or(UPGRADEABLE_READER, Acquire) & (WRITER | UPGRADEABLE_READER);
         if lock == 0 {
             return Some(RwMutexUpgradeableGuard { inner: self });

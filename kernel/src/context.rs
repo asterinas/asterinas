@@ -32,7 +32,7 @@ pub struct Context<'a> {
 
 impl Context<'_> {
     /// Gets the userspace of the current task.
-    pub fn user_space(&self) -> CurrentUserSpace {
+    pub fn user_space(&self) -> CurrentUserSpace<'_> {
         CurrentUserSpace(self.thread_local.vmar().borrow())
     }
 }

@@ -21,7 +21,7 @@ impl<T> Mutex<T> {
     }
 
     /// Locks the mutex.
-    pub fn lock(&self) -> MutexGuard<T> {
+    pub fn lock(&self) -> MutexGuard<'_, T> {
         self.0.borrow_mut()
     }
 }

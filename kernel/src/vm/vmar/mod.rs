@@ -89,7 +89,7 @@ impl Vmar {
     /// ```
     ///
     /// For more details on the available options, see `VmarMapOptions`.
-    pub fn new_map(&self, size: usize, perms: VmPerms) -> Result<VmarMapOptions> {
+    pub fn new_map(&self, size: usize, perms: VmPerms) -> Result<VmarMapOptions<'_>> {
         Ok(VmarMapOptions::new(self, size, perms))
     }
 

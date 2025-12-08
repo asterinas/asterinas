@@ -114,7 +114,7 @@ impl PosixThread {
     }
 
     /// Returns a read guard to the filesystem information of the thread.
-    pub fn read_fs(&self) -> RwMutexReadGuard<Arc<ThreadFsInfo>> {
+    pub fn read_fs(&self) -> RwMutexReadGuard<'_, Arc<ThreadFsInfo>> {
         self.fs.read()
     }
 

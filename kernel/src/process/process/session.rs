@@ -70,7 +70,7 @@ impl Session {
     }
 
     /// Acquires a lock on the session.
-    pub fn lock(&self) -> SessionGuard {
+    pub fn lock(&self) -> SessionGuard<'_> {
         SessionGuard {
             inner: self.inner.lock(),
         }

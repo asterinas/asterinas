@@ -509,7 +509,7 @@ impl dyn Inode {
         (self as &dyn Any).downcast_ref::<T>()
     }
 
-    pub fn writer(&self, from_offset: usize) -> InodeWriter {
+    pub fn writer(&self, from_offset: usize) -> InodeWriter<'_> {
         InodeWriter {
             inner: self,
             offset: from_offset,

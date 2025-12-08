@@ -28,7 +28,7 @@ impl<E: Ext> PollableIface<E> {
         }
     }
 
-    pub(super) fn as_mut(&mut self) -> PollableIfaceMut<E> {
+    pub(super) fn as_mut(&mut self) -> PollableIfaceMut<'_, E> {
         PollableIfaceMut {
             context: self.interface.context(),
             pending_conns: &mut self.pending_conns,

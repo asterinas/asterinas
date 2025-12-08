@@ -144,7 +144,7 @@ impl StreamSocket {
     /// Ensures that the socket state is up to date and obtains a read lock on it.
     ///
     /// For a description of what "up-to-date" means, see [`Self::write_updated_state`].
-    fn read_updated_state(&self) -> RwLockReadGuard<Takeable<State>, PreemptDisabled> {
+    fn read_updated_state(&self) -> RwLockReadGuard<'_, Takeable<State>, PreemptDisabled> {
         loop {
             let state = self.state.read();
             match state.as_ref() {
@@ -166,7 +166,7 @@ impl StreamSocket {
     ///
     /// This method performs the delayed state transition to ensure that the state is up to date
     /// and returns the guard of the write-locked state.
-    fn write_updated_state(&self) -> RwLockWriteGuard<Takeable<State>, PreemptDisabled> {
+    fn write_updated_state(&self) -> RwLockWriteGuard<'_, Takeable<State>, PreemptDisabled> {
         let mut state = self.state.write();
 
         match state.as_ref() {

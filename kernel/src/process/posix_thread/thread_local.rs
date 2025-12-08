@@ -134,11 +134,11 @@ impl ThreadLocal {
         &self.robust_list
     }
 
-    pub fn borrow_file_table(&self) -> FileTableRef {
+    pub fn borrow_file_table(&self) -> FileTableRef<'_> {
         ThreadLocalOptionRef(self.file_table.borrow())
     }
 
-    pub fn borrow_file_table_mut(&self) -> FileTableRefMut {
+    pub fn borrow_file_table_mut(&self) -> FileTableRefMut<'_> {
         ThreadLocalOptionRefMut(self.file_table.borrow_mut())
     }
 
@@ -172,11 +172,11 @@ impl ThreadLocal {
         self.user_ns.borrow()
     }
 
-    pub fn borrow_ns_proxy(&self) -> NsProxyRef {
+    pub fn borrow_ns_proxy(&self) -> NsProxyRef<'_> {
         ThreadLocalOptionRef(self.ns_proxy.borrow())
     }
 
-    pub(in crate::process) fn borrow_ns_proxy_mut(&self) -> NsProxyRefMut {
+    pub(in crate::process) fn borrow_ns_proxy_mut(&self) -> NsProxyRefMut<'_> {
         ThreadLocalOptionRefMut(self.ns_proxy.borrow_mut())
     }
 }

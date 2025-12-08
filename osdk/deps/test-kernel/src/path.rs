@@ -88,7 +88,7 @@ impl KtestPath {
         true
     }
 
-    pub fn iter(&self) -> KtestPathIter {
+    pub fn iter(&self) -> KtestPathIter<'_> {
         self.path.iter()
     }
 }

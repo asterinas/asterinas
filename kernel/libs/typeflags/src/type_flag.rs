@@ -96,7 +96,7 @@ impl TypeFlagDef {
     }
 
     /// return the items iter
-    pub fn items_iter(&self) -> syn::punctuated::Iter<TypeFlagItem> {
+    pub fn items_iter(&self) -> syn::punctuated::Iter<'_, TypeFlagItem> {
         self.items.iter()
     }
 

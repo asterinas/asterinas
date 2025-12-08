@@ -131,7 +131,7 @@ impl Ext2 {
     }
 
     /// Returns the super block.
-    pub fn super_block(&self) -> RwMutexReadGuard<Dirty<SuperBlock>> {
+    pub fn super_block(&self) -> RwMutexReadGuard<'_, Dirty<SuperBlock>> {
         self.super_block.read()
     }
 

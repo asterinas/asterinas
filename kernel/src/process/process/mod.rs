@@ -615,7 +615,7 @@ impl Process {
 
     // ************** Virtual Memory *************
 
-    pub fn lock_vmar(&self) -> ProcessVmarGuard {
+    pub fn lock_vmar(&self) -> ProcessVmarGuard<'_> {
         ProcessVmarGuard::new(self.vmar.lock())
     }
 
@@ -794,7 +794,7 @@ impl Process {
     /// a lock to prevent the cgroup from being changed.
     ///
     /// [`lock_cgroup_membership`]: crate::fs::cgroupfs::lock_cgroup_membership
-    pub fn cgroup(&self) -> RcuOptionReadGuard<Arc<CgroupNode>> {
+    pub fn cgroup(&self) -> RcuOptionReadGuard<'_, Arc<CgroupNode>> {
         self.cgroup.read()
     }
 
