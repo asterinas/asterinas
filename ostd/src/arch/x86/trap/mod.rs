@@ -133,7 +133,7 @@ pub(super) struct RawUserContext {
 /// Handle traps (only from kernel).
 // SAFETY: The name does not collide with other symbols.
 #[unsafe(no_mangle)]
-extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
+unsafe extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
     fn enable_local_if(cond: bool) {
         if cond {
             enable_local();

@@ -8,7 +8,7 @@ struct ExTableItem {
     recovery_inst_addr: Vaddr,
 }
 
-extern "C" {
+unsafe extern "C" {
     fn __ex_table();
     fn __ex_table_end();
 }

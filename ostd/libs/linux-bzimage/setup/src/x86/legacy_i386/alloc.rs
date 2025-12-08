@@ -24,7 +24,7 @@ pub(super) unsafe fn init(boot_params: &'static linux_boot_params::BootParams) {
 
     let mut used = core::array::from_fn(|_| 0..0);
 
-    extern "C" {
+    unsafe extern "C" {
         fn __executable_start();
         fn __executable_end();
     }
