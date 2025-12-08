@@ -48,6 +48,15 @@ pub fn sys_madvise(
         MadviseBehavior::MADV_NOHUGEPAGE => {
             warn!("MADV_NOHUGEPAGE isn't implemented, do nothing for now");
         }
+        MadviseBehavior::MADV_HUGEPAGE => {
+            warn!("MADV_HUGEPAGE isn't implemented, do nothing for now");
+        }
+        MadviseBehavior::MADV_MERGEABLE => {
+            warn!("MADV_MERGEABLE isn't implemented, do nothing for now");
+        }
+        MadviseBehavior::MADV_DONTFORK => {
+            warn!("MADV_DONTFORK isn't implemented, do nothing for now");
+        }
         _ => todo!(),
     }
     Ok(SyscallReturn::Return(0))
