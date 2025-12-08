@@ -13,7 +13,7 @@ jobs:
     container:
       image: asterinas/asterinas:0.17.0-20260114
       options: --device=/dev/kvm --privileged
-      volumes:
+      volumes:-v /dev:/dev
         # Map the following directories on the host into the container so that
         # the container can remove them to save some precious disk space (~16GB),
         # which is quite limited on free-tier Github runners.
@@ -45,7 +45,7 @@ jobs:
         # the container can remove them to save some precious disk space (~16GB),
         # which is quite limited on free-tier Github runners.
         - /usr/lib/google-cloud-sdk:/usr/lib/google-cloud-sdk
-        - /usr/local/lib/android:/usr/local/lib/android
+        - /usr/-v /dev:/dev:/usr/local/lib/android
         - /usr/share/dotnet:/usr/share/dotnet
     strategy:
       matrix:
