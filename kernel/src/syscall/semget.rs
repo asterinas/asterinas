@@ -3,11 +3,11 @@
 use super::SyscallReturn;
 use crate::{
     ipc::{
-        semaphore::system_v::{
-            sem_set::{check_sem, create_sem_set, create_sem_set_with_id, SEMMNI, SEMMSL},
-            PermissionMode,
-        },
         IpcFlags,
+        semaphore::system_v::{
+            PermissionMode,
+            sem_set::{SEMMNI, SEMMSL, check_sem, create_sem_set, create_sem_set_with_id},
+        },
     },
     prelude::*,
 };

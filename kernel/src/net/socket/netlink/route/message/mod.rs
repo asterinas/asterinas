@@ -10,9 +10,9 @@ mod segment;
 
 pub(super) use attr::{addr::AddrAttr, link::LinkAttr};
 pub(super) use segment::{
+    RtnlSegment,
     addr::{AddrMessageFlags, AddrSegment, AddrSegmentBody, RtScope},
     link::{LinkSegment, LinkSegmentBody},
-    RtnlSegment,
 };
 
 use crate::net::socket::netlink::message::Message;

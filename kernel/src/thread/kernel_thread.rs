@@ -5,7 +5,7 @@ use ostd::{
     task::{Task, TaskOptions},
 };
 
-use super::{oops, AsThread, Thread};
+use super::{AsThread, Thread, oops};
 use crate::{
     prelude::*,
     sched::{Nice, SchedPolicy},

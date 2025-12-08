@@ -5,8 +5,8 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::{get_file_fast, FileDesc},
-        fs_resolver::{FsPath, AT_FDCWD},
+        file_table::{FileDesc, get_file_fast},
+        fs_resolver::{AT_FDCWD, FsPath},
         utils::Metadata,
     },
     prelude::*,

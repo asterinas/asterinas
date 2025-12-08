@@ -4,14 +4,14 @@ use alloc::{sync::Arc, vec, vec::Vec};
 
 use smoltcp::{
     iface::{
-        packet::{icmp_reply_payload_len, IpPayload, Packet},
         Context,
+        packet::{IpPayload, Packet, icmp_reply_payload_len},
     },
     phy::{ChecksumCapabilities, Device, RxToken, TxToken},
     wire::{
-        Icmpv4DstUnreachable, Icmpv4Repr, IpAddress, IpProtocol, IpRepr, Ipv4Address, Ipv4Packet,
-        Ipv4Repr, TcpControl, TcpPacket, TcpRepr, UdpPacket, UdpRepr, IPV4_HEADER_LEN,
-        IPV4_MIN_MTU,
+        IPV4_HEADER_LEN, IPV4_MIN_MTU, Icmpv4DstUnreachable, Icmpv4Repr, IpAddress, IpProtocol,
+        IpRepr, Ipv4Address, Ipv4Packet, Ipv4Repr, TcpControl, TcpPacket, TcpRepr, UdpPacket,
+        UdpRepr,
     },
 };
 
@@ -65,11 +65,11 @@ impl<E: Ext> PollContext<'_, E> {
     ) where
         D: Device + ?Sized,
         P: for<'pkt, 'cx, 'tx> FnHelper<
-            &'pkt [u8],
-            &'cx mut Context,
-            D::TxToken<'tx>,
-            Option<(Ipv4Packet<&'pkt [u8]>, D::TxToken<'tx>)>,
-        >,
+                &'pkt [u8],
+                &'cx mut Context,
+                D::TxToken<'tx>,
+                Option<(Ipv4Packet<&'pkt [u8]>, D::TxToken<'tx>)>,
+            >,
         Q: FnMut(&Packet, &mut Context, D::TxToken<'_>),
     {
         while let Some((rx_token, tx_token)) = device.receive(self.iface.context().now()) {
@@ -208,7 +208,7 @@ impl<E: Ext> PollContext<'_, E> {
                     TcpProcessResult::NotProcessed => {}
                     TcpProcessResult::Processed => return None,
                     TcpProcessResult::ProcessedWithReply(ip_repr, tcp_repr) => {
-                        return Some((ip_repr, tcp_repr))
+                        return Some((ip_repr, tcp_repr));
                     }
                 }
             }
@@ -233,7 +233,7 @@ impl<E: Ext> PollContext<'_, E> {
                     TcpProcessResult::NotProcessed => {}
                     TcpProcessResult::Processed => return None,
                     TcpProcessResult::ProcessedWithReply(ip_repr, tcp_repr) => {
-                        return Some((ip_repr, tcp_repr))
+                        return Some((ip_repr, tcp_repr));
                     }
                 }
             }

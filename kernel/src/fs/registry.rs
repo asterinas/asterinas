@@ -2,7 +2,7 @@
 
 use aster_block::BlockDevice;
 use aster_systree::{
-    inherit_sys_branch_node, AttrLessBranchNodeFields, SysNode, SysObj, SysPerms, SysStr,
+    AttrLessBranchNodeFields, SysNode, SysObj, SysPerms, SysStr, inherit_sys_branch_node,
 };
 use spin::Once;
 

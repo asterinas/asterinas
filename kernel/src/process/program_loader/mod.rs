@@ -4,7 +4,7 @@ pub mod elf;
 mod shebang;
 
 use self::{
-    elf::{load_elf_to_vmar, ElfHeaders, ElfLoadInfo},
+    elf::{ElfHeaders, ElfLoadInfo, load_elf_to_vmar},
     shebang::parse_shebang_line,
 };
 use crate::{

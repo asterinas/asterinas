@@ -6,7 +6,7 @@ use align_ext::AlignExt;
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::{get_file_fast, FileDesc},
+    fs::file_table::{FileDesc, get_file_fast},
     prelude::*,
     vm::{perms::VmPerms, vmar::is_userspace_vaddr, vmo::VmoOptions},
 };

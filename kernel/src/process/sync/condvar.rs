@@ -199,7 +199,7 @@ impl Condvar {
             guard = match self.wait_timeout(guard, timeout) {
                 Ok((guard, timeout_flag)) => guard,
                 Err(LockErr::Timeout((guard, timeout_flag))) => {
-                    return Err(LockErr::Timeout((guard, timeout_flag)))
+                    return Err(LockErr::Timeout((guard, timeout_flag)));
                 }
                 Err(LockErr::Unknown(guard)) => return Err(LockErr::Unknown(guard)),
             }
@@ -268,7 +268,7 @@ mod test {
     use ostd::{prelude::*, sync::Mutex};
 
     use super::*;
-    use crate::thread::{kernel_thread::ThreadOptions, Thread};
+    use crate::thread::{Thread, kernel_thread::ThreadOptions};
 
     #[ktest]
     fn test_condvar_wait() {

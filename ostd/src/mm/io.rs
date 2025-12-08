@@ -43,15 +43,15 @@
 use core::{marker::PhantomData, mem::MaybeUninit};
 
 use crate::{
+    Error, Pod,
     arch::mm::{
         __atomic_cmpxchg_fallible, __atomic_load_fallible, __memcpy_fallible, __memset_fallible,
     },
     mm::{
-        kspace::{KERNEL_BASE_VADDR, KERNEL_END_VADDR},
         MAX_USERSPACE_VADDR,
+        kspace::{KERNEL_BASE_VADDR, KERNEL_END_VADDR},
     },
     prelude::*,
-    Error, Pod,
 };
 
 /// A trait that enables reading/writing data from/to a VM object,
@@ -1066,7 +1066,7 @@ pub trait PodAtomic: Pod {
     /// [valid]: crate::mm::io#safety
     #[doc(hidden)]
     unsafe fn atomic_cmpxchg_fallible(ptr: *mut Self, old_val: Self, new_val: Self)
-        -> Result<Self>;
+    -> Result<Self>;
 }
 
 impl PodAtomic for u32 {

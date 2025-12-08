@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use x86::msr::{
-    rdmsr, wrmsr, IA32_APIC_BASE, IA32_X2APIC_APICID, IA32_X2APIC_CUR_COUNT, IA32_X2APIC_DIV_CONF,
+    IA32_APIC_BASE, IA32_X2APIC_APICID, IA32_X2APIC_CUR_COUNT, IA32_X2APIC_DIV_CONF,
     IA32_X2APIC_EOI, IA32_X2APIC_ESR, IA32_X2APIC_ICR, IA32_X2APIC_INIT_COUNT,
-    IA32_X2APIC_LVT_TIMER, IA32_X2APIC_SIVR, IA32_X2APIC_VERSION,
+    IA32_X2APIC_LVT_TIMER, IA32_X2APIC_SIVR, IA32_X2APIC_VERSION, rdmsr, wrmsr,
 };
 
 use super::ApicTimer;
@@ -28,7 +28,7 @@ impl X2Apic {
     }
 
     pub(super) fn has_x2apic() -> bool {
-        use crate::arch::cpu::extension::{has_extensions, IsaExtensions};
+        use crate::arch::cpu::extension::{IsaExtensions, has_extensions};
 
         has_extensions(IsaExtensions::X2APIC)
     }

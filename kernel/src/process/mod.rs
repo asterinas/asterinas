@@ -23,27 +23,27 @@ pub mod task_set;
 mod term_status;
 mod wait;
 
-pub use clone::{clone_child, CloneArgs, CloneFlags};
+pub use clone::{CloneArgs, CloneFlags, clone_child};
 pub use credentials::{Credentials, Gid, Uid};
 pub use execve::do_execve;
 pub use kill::{kill, kill_all, kill_group, tgkill};
 pub use namespace::{
-    nsproxy::{check_unsupported_ns_flags, ContextSetNsAdminApi, NsProxy, NsProxyBuilder},
+    nsproxy::{ContextSetNsAdminApi, NsProxy, NsProxyBuilder, check_unsupported_ns_flags},
     unshare::ContextUnshareAdminApi,
     user_ns::UserNamespace,
 };
 pub use pid_file::PidFile;
 pub use process::{
-    broadcast_signal_async, enqueue_signal_async, spawn_init_process, ExitCode, JobControl, Pgid,
-    Pid, Process, ProcessGroup, ReapedChildrenStats, Session, Sid, Terminal,
+    ExitCode, JobControl, Pgid, Pid, Process, ProcessGroup, ReapedChildrenStats, Session, Sid,
+    Terminal, broadcast_signal_async, enqueue_signal_async, spawn_init_process,
 };
 pub use process_filter::ProcessFilter;
 pub use process_vm::ProcessVm;
-pub use program_loader::{check_executable_inode, ProgramToLoad};
+pub use program_loader::{ProgramToLoad, check_executable_inode};
 pub use rlimit::ResourceType;
 pub use stats::collect_process_creation_count;
 pub use term_status::TermStatus;
-pub use wait::{do_wait, WaitOptions, WaitStatus};
+pub use wait::{WaitOptions, WaitStatus, do_wait};
 
 use crate::context::Context;
 

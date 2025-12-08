@@ -17,9 +17,9 @@ pub(crate) use bitflags::bitflags;
 pub(crate) use int_to_c_enum::TryFromInt;
 pub(crate) use log::{debug, error, info, log_enabled, trace, warn};
 pub(crate) use ostd::{
-    mm::{FallibleVmRead, FallibleVmWrite, Vaddr, VmReader, VmWriter, PAGE_SIZE},
-    sync::{Mutex, MutexGuard, RwLock, RwMutex, SpinLock, SpinLockGuard},
     Pod,
+    mm::{FallibleVmRead, FallibleVmWrite, PAGE_SIZE, Vaddr, VmReader, VmWriter},
+    sync::{Mutex, MutexGuard, RwLock, RwMutex, SpinLock, SpinLockGuard},
 };
 
 /// return current process
@@ -54,7 +54,7 @@ pub(crate) use crate::{
     current, current_thread,
     error::{Errno, Error},
     process::{posix_thread::AsThreadLocal, signal::Pause},
-    time::{wait::WaitTimeout, Clock},
+    time::{Clock, wait::WaitTimeout},
     util::ReadCString,
 };
 pub(crate) type Result<T> = core::result::Result<T, Error>;

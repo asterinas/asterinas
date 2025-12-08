@@ -7,7 +7,7 @@ use super::{
     block_ptr::Ext2Bid,
     inode::{FilePerm, Inode, InodeDesc, RawInode},
     prelude::*,
-    super_block::{RawSuperBlock, SuperBlock, SUPER_BLOCK_OFFSET},
+    super_block::{RawSuperBlock, SUPER_BLOCK_OFFSET, SuperBlock},
 };
 use crate::fs::{
     registry::{FsProperties, FsType},

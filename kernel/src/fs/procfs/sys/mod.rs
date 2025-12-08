@@ -7,8 +7,8 @@ use self::kernel::KernelDirOps;
 use super::template::populate_children_from_table;
 use crate::{
     fs::{
-        procfs::template::{lookup_child_from_table, DirOps, ProcDir, ProcDirBuilder},
-        utils::{mkmod, Inode},
+        procfs::template::{DirOps, ProcDir, ProcDirBuilder, lookup_child_from_table},
+        utils::{Inode, mkmod},
     },
     prelude::*,
 };

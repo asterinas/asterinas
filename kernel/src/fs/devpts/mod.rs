@@ -17,8 +17,8 @@ use crate::{
         notify::FsEventPublisher,
         registry::{FsProperties, FsType},
         utils::{
-            mkmod, DirEntryVecExt, DirentVisitor, FileSystem, FsEventSubscriberStats, FsFlags,
-            Inode, InodeIo, InodeMode, InodeType, Metadata, SuperBlock, NAME_MAX,
+            DirEntryVecExt, DirentVisitor, FileSystem, FsEventSubscriberStats, FsFlags, Inode,
+            InodeIo, InodeMode, InodeType, Metadata, NAME_MAX, SuperBlock, mkmod,
         },
     },
     prelude::*,

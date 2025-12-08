@@ -9,8 +9,8 @@ use crate::{
     fs::{
         notify::FsEventPublisher,
         utils::{
-            systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
             FileSystem, Inode, InodeMode, InodeType, Metadata,
+            systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
         },
     },
     prelude::*,

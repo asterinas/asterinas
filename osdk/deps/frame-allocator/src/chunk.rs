@@ -2,7 +2,7 @@
 
 use ostd::{
     impl_frame_meta_for,
-    mm::{frame::linked_list::Link, HasPaddr, Paddr, UniqueFrame, PAGE_SIZE},
+    mm::{HasPaddr, PAGE_SIZE, Paddr, UniqueFrame, frame::linked_list::Link},
 };
 
 /// The order of a buddy chunk.
@@ -159,8 +159,8 @@ impl FreeChunk {
         #[cfg(debug_assertions)]
         {
             use ostd::mm::{
-                frame::meta::{AnyFrameMeta, GetFrameError},
                 Frame,
+                frame::meta::{AnyFrameMeta, GetFrameError},
             };
 
             let end = addr + size_of_order(order);

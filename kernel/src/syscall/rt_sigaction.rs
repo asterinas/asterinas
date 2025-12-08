@@ -8,12 +8,12 @@ use crate::{
     process::{
         posix_thread::AsPosixThread,
         signal::{
+            HandlePendingSignal,
             c_types::sigaction_t,
             constants::{SIGKILL, SIGSTOP},
             sig_action::SigAction,
             sig_mask::SigSet,
             sig_num::SigNum,
-            HandlePendingSignal,
         },
     },
 };

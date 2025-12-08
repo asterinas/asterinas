@@ -13,9 +13,9 @@ use aster_input::{
 };
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use ostd::{
+    Pod,
     mm::{VmReader, VmWriter},
     sync::Mutex,
-    Pod,
 };
 
 use super::EvdevDevice;
@@ -29,7 +29,7 @@ use crate::{
     process::signal::{PollHandle, Pollable, Pollee},
     syscall::ClockId,
     util::{
-        ioctl::{dispatch_ioctl, RawIoctl},
+        ioctl::{RawIoctl, dispatch_ioctl},
         ring_buffer::{RbConsumer, RbProducer, RingBuffer},
     },
 };
@@ -39,7 +39,7 @@ pub(super) const EVDEV_BUFFER_SIZE: usize = 64;
 mod ioctl_defs {
     use aster_input::input_dev::InputId;
 
-    use crate::util::ioctl::{ioc, InData, IoctlEnum, OutData};
+    use crate::util::ioctl::{InData, IoctlEnum, OutData, ioc};
 
     // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/input.h>
 

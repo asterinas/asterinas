@@ -12,8 +12,8 @@ use aster_softirq::BottomHalfDisabled;
 use bitvec::{array::BitArray, prelude::Lsb0};
 use ostd::{
     mm::{
-        io_util::HasVmReaderWriter, Daddr, DmaDirection, DmaStream, FrameAllocOptions, HasDaddr,
-        Infallible, VmReader, VmWriter, PAGE_SIZE,
+        Daddr, DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, Infallible, PAGE_SIZE,
+        VmReader, VmWriter, io_util::HasVmReaderWriter,
     },
     sync::{RwLock, SpinLock},
 };

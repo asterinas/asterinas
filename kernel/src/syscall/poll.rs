@@ -12,7 +12,7 @@ use crate::{
         file_table::{FileDesc, FileTable},
     },
     prelude::*,
-    process::{signal::Poller, ResourceType},
+    process::{ResourceType, signal::Poller},
 };
 
 pub fn sys_poll(fds: Vaddr, nfds: u32, timeout: i32, ctx: &Context) -> Result<SyscallReturn> {

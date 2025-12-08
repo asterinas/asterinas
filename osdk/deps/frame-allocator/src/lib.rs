@@ -33,7 +33,7 @@ use core::alloc::Layout;
 use ostd::{
     cpu::PinCurrentCpu,
     irq,
-    mm::{frame::GlobalFrameAllocator, Paddr},
+    mm::{Paddr, frame::GlobalFrameAllocator},
 };
 
 mod cache;

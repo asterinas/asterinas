@@ -15,8 +15,8 @@ use crate::{
     net::UtsNamespace,
     prelude::*,
     process::{
-        check_unsupported_ns_flags, credentials::capabilities::CapSet, posix_thread::AsPosixThread,
         CloneFlags, ContextSetNsAdminApi, NsProxy, NsProxyBuilder, PidFile,
+        check_unsupported_ns_flags, credentials::capabilities::CapSet, posix_thread::AsPosixThread,
     },
     syscall::SyscallReturn,
 };

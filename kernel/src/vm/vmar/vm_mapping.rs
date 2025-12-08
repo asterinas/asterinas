@@ -10,13 +10,13 @@ use align_ext::AlignExt;
 use ostd::{
     io::IoMem,
     mm::{
-        io_util::HasVmReaderWriter, tlb::TlbFlushOp, vm_space::VmQueriedItem, CachePolicy, Frame,
-        FrameAllocOptions, PageFlags, PageProperty, UFrame, VmSpace,
+        CachePolicy, Frame, FrameAllocOptions, PageFlags, PageProperty, UFrame, VmSpace,
+        io_util::HasVmReaderWriter, tlb::TlbFlushOp, vm_space::VmQueriedItem,
     },
     task::disable_preempt,
 };
 
-use super::{interval_set::Interval, RssDelta, RssType};
+use super::{RssDelta, RssType, interval_set::Interval};
 use crate::{
     fs::utils::Inode,
     prelude::*,

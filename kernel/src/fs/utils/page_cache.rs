@@ -17,7 +17,7 @@ use ostd::{
 
 use crate::{
     prelude::*,
-    vm::vmo::{get_page_idx_range, Pager, Vmo, VmoFlags, VmoOptions},
+    vm::vmo::{Pager, Vmo, VmoFlags, VmoOptions, get_page_idx_range},
 };
 
 pub struct PageCache {

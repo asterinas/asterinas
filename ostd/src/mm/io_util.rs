@@ -7,9 +7,9 @@ use ostd_pod::Pod;
 
 use super::{Infallible, PodOnce, VmIo, VmIoFill, VmIoOnce, VmReader, VmWriter};
 use crate::{
+    Error,
     mm::{FallibleVmRead, FallibleVmWrite},
     prelude::*,
-    Error,
 };
 
 /// A helper trait that denotes types that can provide [`VmReader`]s and [`VmWriter`]s.

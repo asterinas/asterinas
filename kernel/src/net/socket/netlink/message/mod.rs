@@ -9,13 +9,13 @@ mod attr;
 mod result;
 mod segment;
 
-pub(super) use attr::{noattr::NoAttr, Attribute, CAttrHeader};
+pub(super) use attr::{Attribute, CAttrHeader, noattr::NoAttr};
 pub(super) use result::ContinueRead;
 pub(super) use segment::{
+    CSegmentType, SegmentBody,
     ack::{DoneSegment, ErrorSegment},
     common::SegmentCommon,
     header::{CMsgSegHdr, GetRequestFlags, SegHdrCommonFlags},
-    CSegmentType, SegmentBody,
 };
 
 use super::receiver::QueueableMessage;

@@ -2,11 +2,12 @@
 
 use ostd::{
     cpu_local_cell,
-    irq::{disable_local, InterruptLevel},
+    irq::{InterruptLevel, disable_local},
     sync::{GuardTransfer, SpinGuardian},
     task::{
+        DisabledPreemptGuard,
         atomic_mode::{AsAtomicModeGuard, InAtomicMode},
-        disable_preempt, DisabledPreemptGuard,
+        disable_preempt,
     },
 };
 

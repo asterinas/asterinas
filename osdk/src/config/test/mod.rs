@@ -27,25 +27,29 @@ fn conditional_manifest() {
 
     // Default scheme
     let scheme = toml_manifest.get_scheme(None::<String>);
-    assert!(scheme
-        .qemu
-        .as_ref()
-        .unwrap()
-        .args
-        .as_ref()
-        .unwrap()
-        .contains(&String::from("-machine q35",)));
+    assert!(
+        scheme
+            .qemu
+            .as_ref()
+            .unwrap()
+            .args
+            .as_ref()
+            .unwrap()
+            .contains(&String::from("-machine q35",))
+    );
 
     // Iommu
     let scheme = toml_manifest.get_scheme(Some("iommu".to_owned()));
-    assert!(scheme
-        .qemu
-        .as_ref()
-        .unwrap()
-        .args
-        .as_ref()
-        .unwrap()
-        .contains(&String::from("-device ioh3420,id=pcie.0,chassis=1",)));
+    assert!(
+        scheme
+            .qemu
+            .as_ref()
+            .unwrap()
+            .args
+            .as_ref()
+            .unwrap()
+            .contains(&String::from("-device ioh3420,id=pcie.0,chassis=1",))
+    );
 
     // Tdx
     let scheme = toml_manifest.get_scheme(Some("tdx".to_owned()));

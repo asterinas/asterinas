@@ -11,8 +11,8 @@ use crate::{
         notify::FsEventPublisher,
         path::{is_dot, is_dotdot},
         utils::{
-            systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
             FileSystem, Inode, InodeMode, Metadata,
+            systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
         },
     },
     prelude::*,

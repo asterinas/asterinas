@@ -6,9 +6,9 @@
 use core::{num::NonZeroUsize, ops::Range, sync::atomic::AtomicU64};
 
 use aster_block::{
+    BlockDevice,
     bio::{BioDirection, BioSegment, BioWaiter},
     id::BlockId,
-    BlockDevice,
 };
 use hashbrown::HashMap;
 use lru::LruCache;
@@ -17,7 +17,7 @@ pub(super) use ostd::mm::VmIo;
 
 use super::{
     bitmap::ExfatBitmap,
-    fat::{ClusterID, ExfatChain, FatChainFlags, FatValue, FAT_ENTRY_SIZE},
+    fat::{ClusterID, ExfatChain, FAT_ENTRY_SIZE, FatChainFlags, FatValue},
     inode::ExfatInode,
     super_block::{ExfatBootSector, ExfatSuperBlock},
     upcase_table::ExfatUpcaseTable,

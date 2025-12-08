@@ -16,7 +16,7 @@ use crate::{
     errors::udp::SendError,
     ext::Ext,
     iface::BoundPort,
-    socket::{event::SocketEvents, unbound::new_udp_socket, RawUdpSocket},
+    socket::{RawUdpSocket, event::SocketEvents, unbound::new_udp_socket},
 };
 
 pub type UdpSocket<E> = Socket<UdpSocketInner, E>;

@@ -193,35 +193,53 @@ mod test {
             unsafe { IoMemAllocator::new(IoMemAllocatorBuilder::new(range).allocators) };
 
         assert!(allocator.acquire(0..0, CachePolicy::Uncacheable).is_none());
-        assert!(allocator
-            .acquire(usize::MAX..0, CachePolicy::Uncacheable)
-            .is_none());
+        assert!(
+            allocator
+                .acquire(usize::MAX..0, CachePolicy::Uncacheable)
+                .is_none()
+        );
 
-        assert!(allocator
-            .acquire(0x4000_0000..0x4000_0000, CachePolicy::Uncacheable)
-            .is_none());
-        assert!(allocator
-            .acquire(0x4000_1000..0x4000_1000, CachePolicy::Uncacheable)
-            .is_none());
-        assert!(allocator
-            .acquire(0x41ff_0000..0x41ff_0000, CachePolicy::Uncacheable)
-            .is_none());
-        assert!(allocator
-            .acquire(0x4200_0000..0x4200_0000, CachePolicy::Uncacheable)
-            .is_none());
+        assert!(
+            allocator
+                .acquire(0x4000_0000..0x4000_0000, CachePolicy::Uncacheable)
+                .is_none()
+        );
+        assert!(
+            allocator
+                .acquire(0x4000_1000..0x4000_1000, CachePolicy::Uncacheable)
+                .is_none()
+        );
+        assert!(
+            allocator
+                .acquire(0x41ff_0000..0x41ff_0000, CachePolicy::Uncacheable)
+                .is_none()
+        );
+        assert!(
+            allocator
+                .acquire(0x4200_0000..0x4200_0000, CachePolicy::Uncacheable)
+                .is_none()
+        );
 
-        assert!(allocator
-            .acquire(0x4000_1000..0x4000_0000, CachePolicy::Uncacheable)
-            .is_none());
-        assert!(allocator
-            .acquire(0x4000_2000..0x4000_1000, CachePolicy::Uncacheable)
-            .is_none());
-        assert!(allocator
-            .acquire(0x41ff_f000..0x41ff_e000, CachePolicy::Uncacheable)
-            .is_none());
-        assert!(allocator
-            .acquire(0x4200_0000..0x41ff_f000, CachePolicy::Uncacheable)
-            .is_none());
+        assert!(
+            allocator
+                .acquire(0x4000_1000..0x4000_0000, CachePolicy::Uncacheable)
+                .is_none()
+        );
+        assert!(
+            allocator
+                .acquire(0x4000_2000..0x4000_1000, CachePolicy::Uncacheable)
+                .is_none()
+        );
+        assert!(
+            allocator
+                .acquire(0x41ff_f000..0x41ff_e000, CachePolicy::Uncacheable)
+                .is_none()
+        );
+        assert!(
+            allocator
+                .acquire(0x4200_0000..0x41ff_f000, CachePolicy::Uncacheable)
+                .is_none()
+        );
     }
 
     #[ktest]
@@ -236,43 +254,55 @@ mod test {
         let allocator =
             unsafe { IoMemAllocator::new(IoMemAllocatorBuilder::new(range).allocators) };
 
-        assert!(allocator
-            .acquire(
-                (io_mem_region_a.start - 1)..io_mem_region_a.start,
-                CachePolicy::Uncacheable
-            )
-            .is_none());
-        assert!(allocator
-            .acquire(
-                io_mem_region_a.start..(io_mem_region_a.start + 1),
-                CachePolicy::Uncacheable
-            )
-            .is_some());
+        assert!(
+            allocator
+                .acquire(
+                    (io_mem_region_a.start - 1)..io_mem_region_a.start,
+                    CachePolicy::Uncacheable
+                )
+                .is_none()
+        );
+        assert!(
+            allocator
+                .acquire(
+                    io_mem_region_a.start..(io_mem_region_a.start + 1),
+                    CachePolicy::Uncacheable
+                )
+                .is_some()
+        );
 
-        assert!(allocator
-            .acquire(
-                (io_mem_region_a.end + 1)..(io_mem_region_b.start - 1),
-                CachePolicy::Uncacheable
-            )
-            .is_none());
-        assert!(allocator
-            .acquire(
-                (io_mem_region_a.end - 1)..(io_mem_region_b.start + 1),
-                CachePolicy::Uncacheable
-            )
-            .is_none());
+        assert!(
+            allocator
+                .acquire(
+                    (io_mem_region_a.end + 1)..(io_mem_region_b.start - 1),
+                    CachePolicy::Uncacheable
+                )
+                .is_none()
+        );
+        assert!(
+            allocator
+                .acquire(
+                    (io_mem_region_a.end - 1)..(io_mem_region_b.start + 1),
+                    CachePolicy::Uncacheable
+                )
+                .is_none()
+        );
 
-        assert!(allocator
-            .acquire(
-                (io_mem_region_a.end - 1)..io_mem_region_a.end,
-                CachePolicy::Uncacheable
-            )
-            .is_some());
-        assert!(allocator
-            .acquire(
-                io_mem_region_a.end..(io_mem_region_a.end + 1),
-                CachePolicy::Uncacheable
-            )
-            .is_none());
+        assert!(
+            allocator
+                .acquire(
+                    (io_mem_region_a.end - 1)..io_mem_region_a.end,
+                    CachePolicy::Uncacheable
+                )
+                .is_some()
+        );
+        assert!(
+            allocator
+                .acquire(
+                    io_mem_region_a.end..(io_mem_region_a.end + 1),
+                    CachePolicy::Uncacheable
+                )
+                .is_none()
+        );
     }
 }

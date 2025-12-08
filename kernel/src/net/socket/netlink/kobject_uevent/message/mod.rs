@@ -6,7 +6,7 @@ use uevent::Uevent;
 
 use crate::{
     net::socket::netlink::{
-        receiver::QueueableMessage, table::MulticastMessage, NetlinkSocketAddr,
+        NetlinkSocketAddr, receiver::QueueableMessage, table::MulticastMessage,
     },
     prelude::*,
     util::MultiWrite,

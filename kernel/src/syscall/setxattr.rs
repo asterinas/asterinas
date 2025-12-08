@@ -7,11 +7,11 @@ use crate::{
     fs,
     fs::{
         file_handle::FileLike,
-        file_table::{get_file_fast, FileDesc},
-        fs_resolver::{FsPath, AT_FDCWD},
+        file_table::{FileDesc, get_file_fast},
+        fs_resolver::{AT_FDCWD, FsPath},
         path::Path,
         utils::{
-            XattrName, XattrNamespace, XattrSetFlags, XATTR_NAME_MAX_LEN, XATTR_VALUE_MAX_LEN,
+            XATTR_NAME_MAX_LEN, XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace, XattrSetFlags,
         },
     },
     prelude::*,

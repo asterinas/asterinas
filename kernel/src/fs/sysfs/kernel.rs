@@ -3,8 +3,8 @@
 use alloc::sync::Arc;
 
 use aster_systree::{
-    inherit_sys_branch_node, BranchNodeFields, Error, Result, SysAttrSetBuilder, SysBranchNode,
-    SysNode, SysPerms, SysStr,
+    BranchNodeFields, Error, Result, SysAttrSetBuilder, SysBranchNode, SysNode, SysPerms, SysStr,
+    inherit_sys_branch_node,
 };
 use inherit_methods_macro::inherit_methods;
 use ostd::mm::{VmReader, VmWriter};

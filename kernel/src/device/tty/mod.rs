@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_console::{
+    AnyConsoleDevice,
     font::BitmapFont,
     mode::{ConsoleMode, KeyboardMode},
-    AnyConsoleDevice,
 };
 use device_id::{DeviceId, MajorId, MinorId};
 use ostd::{mm::VmIo, sync::LocalIrqDisabled};
@@ -19,11 +19,10 @@ use crate::{
     },
     prelude::*,
     process::{
-        broadcast_signal_async,
+        JobControl, Terminal, broadcast_signal_async,
         signal::{PollHandle, Pollable, Pollee},
-        JobControl, Terminal,
     },
-    util::ioctl::{dispatch_ioctl, RawIoctl},
+    util::ioctl::{RawIoctl, dispatch_ioctl},
 };
 
 mod device;

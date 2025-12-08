@@ -5,7 +5,7 @@ use spin::Once;
 
 use crate::{
     prelude::*,
-    process::{credentials::capabilities::CapSet, posix_thread::PosixThread, UserNamespace},
+    process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::PosixThread},
     util::padded,
 };
 

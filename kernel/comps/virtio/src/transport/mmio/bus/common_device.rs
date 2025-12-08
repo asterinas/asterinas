@@ -5,10 +5,10 @@
 use int_to_c_enum::TryFromInt;
 use log::info;
 use ostd::{
+    Error, Result,
     io::IoMem,
     irq::IrqLine,
     mm::{HasPaddr, VmIoOnce},
-    Error, Result,
 };
 
 use super::arch::MappedIrqLine;

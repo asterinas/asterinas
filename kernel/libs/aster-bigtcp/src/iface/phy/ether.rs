@@ -5,7 +5,7 @@ use alloc::{collections::btree_map::BTreeMap, string::String, sync::Arc};
 use aster_softirq::BottomHalfDisabled;
 use ostd::sync::SpinLock;
 use smoltcp::{
-    iface::{packet::Packet, Config, Context},
+    iface::{Config, Context, packet::Packet},
     phy::{Device, DeviceCapabilities, TxToken},
     wire::{
         self, ArpOperation, ArpPacket, ArpRepr, EthernetAddress, EthernetFrame, EthernetProtocol,
@@ -17,10 +17,10 @@ use crate::{
     device::{NotifyDevice, WithDevice},
     ext::Ext,
     iface::{
+        Iface, InterfaceFlags, ScheduleNextPoll,
         common::{IfaceCommon, InterfaceType},
         iface::internal::IfaceInternal,
         time::get_network_timestamp,
-        Iface, InterfaceFlags, ScheduleNextPoll,
     },
 };
 

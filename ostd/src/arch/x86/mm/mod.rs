@@ -8,19 +8,19 @@ pub(crate) use util::{
     __atomic_cmpxchg_fallible, __atomic_load_fallible, __memcpy_fallible, __memset_fallible,
 };
 use x86_64::{
+    VirtAddr,
     instructions::tlb,
     registers::model_specific::{Efer, EferFlags},
     structures::paging::PhysFrame,
-    VirtAddr,
 };
 
 use crate::{
+    Pod,
     mm::{
+        DmaDirection, PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
         page_table::PageTableEntryTrait,
-        DmaDirection, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr, PAGE_SIZE,
     },
-    Pod,
 };
 
 mod pat;
@@ -149,7 +149,9 @@ pub(crate) unsafe fn activate_page_table(root_paddr: Paddr, root_pt_cache: Cache
         // Write-combining and write-protected are not supported for root page table (CR3)
         // as CR3 only supports WB, WT, and UC via PCD/PWT bits
         _ => {
-            panic!("unsupported cache policy for the root page table (only WB, WT, and UC are allowed)")
+            panic!(
+                "unsupported cache policy for the root page table (only WB, WT, and UC are allowed)"
+            )
         }
     };
 

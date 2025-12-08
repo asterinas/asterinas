@@ -9,22 +9,22 @@ use core::{fmt, ops::Bound, sync::atomic::Ordering};
 
 use ostd::{
     arch::read_tsc as sched_clock,
-    cpu::{all_cpus, CpuId, CpuSet, PinCurrentCpu},
+    cpu::{CpuId, CpuSet, PinCurrentCpu, all_cpus},
     irq::disable_local,
     sync::{LocalIrqDisabled, SpinLock},
     task::{
-        scheduler::{
-            enable_preemption_on_cpu, info::CommonSchedInfo, inject_scheduler, EnqueueFlags,
-            LocalRunQueue, Scheduler, UpdateFlags,
-        },
         AtomicCpuId, Task,
+        scheduler::{
+            EnqueueFlags, LocalRunQueue, Scheduler, UpdateFlags, enable_preemption_on_cpu,
+            info::CommonSchedInfo, inject_scheduler,
+        },
     },
     util::id_set::Id,
 };
 
 use super::{
     nice::Nice,
-    stats::{set_stats_from_scheduler, SchedulerStats},
+    stats::{SchedulerStats, set_stats_from_scheduler},
 };
 use crate::thread::{AsThread, Thread};
 
@@ -135,7 +135,7 @@ trait SchedClassRq: Send + fmt::Debug {
     /// The return value of this method indicates whether there is another task
     /// **in this run queue** to replace the current one.
     fn update_current(&mut self, rt: &CurrentRuntime, attr: &SchedAttr, flags: UpdateFlags)
-        -> bool;
+    -> bool;
 }
 
 /// The scheduling attribute for a thread.

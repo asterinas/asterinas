@@ -2,7 +2,7 @@
 
 use linux_bzimage_builder::PayloadEncoding;
 
-use super::{inherit_optional, Boot, BootScheme, Grub, GrubScheme, Qemu, QemuScheme};
+use super::{Boot, BootScheme, Grub, GrubScheme, Qemu, QemuScheme, inherit_optional};
 
 use crate::{cli::CommonArgs, config::Arch};
 

@@ -5,13 +5,13 @@ use core::sync::atomic::Ordering;
 use crate::{
     prelude::*,
     process::{
+        Process,
         posix_thread::PosixThread,
         signal::{
             constants::SIGKILL,
             sig_mask::{SigMask, SigSet},
             signals::Signal,
         },
-        Process,
     },
 };
 

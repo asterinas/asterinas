@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{
-    setxattr::{lookup_path_for_xattr, XattrFileCtx},
     SyscallReturn,
+    setxattr::{XattrFileCtx, lookup_path_for_xattr},
 };
 use crate::{
     fs::{
-        file_table::{get_file_fast, FileDesc},
-        utils::{XattrNamespace, XATTR_LIST_MAX_LEN},
+        file_table::{FileDesc, get_file_fast},
+        utils::{XATTR_LIST_MAX_LEN, XattrNamespace},
     },
     prelude::*,
     process::credentials::capabilities::CapSet,

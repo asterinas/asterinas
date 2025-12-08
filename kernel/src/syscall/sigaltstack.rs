@@ -5,7 +5,7 @@ use ostd::{arch::cpu::context::UserContext, mm::VmIo, user::UserContextApi};
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::signal::{c_types::stack_t, SigStack, SigStackFlags, SigStackStatus},
+    process::signal::{SigStack, SigStackFlags, SigStackStatus, c_types::stack_t},
 };
 
 pub fn sys_sigaltstack(

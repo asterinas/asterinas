@@ -59,8 +59,8 @@ use mark::NoneMark;
 pub use mark::XMark;
 use ostd::{
     sync::{
-        non_null::NonNullPtr, LocalIrqDisabled, PreemptDisabled, RcuOption, SpinGuardian, SpinLock,
-        SpinLockGuard,
+        LocalIrqDisabled, PreemptDisabled, RcuOption, SpinGuardian, SpinLock, SpinLockGuard,
+        non_null::NonNullPtr,
     },
     task::atomic_mode::{AsAtomicModeGuard, InAtomicMode},
 };

@@ -9,7 +9,7 @@ use crate::{
         ramfs::RamFs,
     },
     prelude::*,
-    process::{credentials::capabilities::CapSet, posix_thread::PosixThread, UserNamespace},
+    process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::PosixThread},
 };
 
 /// Represents a mount namespace, which encapsulates a mount tree and provides

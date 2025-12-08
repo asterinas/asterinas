@@ -15,8 +15,8 @@ use crate::{
     sched::{SchedAttr, SchedPolicy},
 };
 mod stats;
-pub use stats::collect_context_switch_count;
 use stats::CONTEXT_SWITCH_COUNTER;
+pub use stats::collect_context_switch_count;
 pub mod exception;
 pub mod kernel_thread;
 pub mod oops;

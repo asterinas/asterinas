@@ -11,9 +11,9 @@ use core::{
 use hashbrown::HashMap;
 
 use crate::{
+    Buf,
     os::{Mutex, MutexGuard},
     prelude::*,
-    Buf,
 };
 
 /// A queue for managing block I/O requests (`BioReq`).

@@ -2,7 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::{get_file_fast, FdFlags, FileDesc},
+    fs::file_table::{FdFlags, FileDesc, get_file_fast},
     prelude::*,
     process::ResourceType,
 };

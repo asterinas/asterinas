@@ -4,12 +4,12 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file_handle::FileLike,
-        file_table::{get_file_fast, FdFlags, FileDesc, WithFileTable},
+        file_table::{FdFlags, FileDesc, WithFileTable, get_file_fast},
         utils::StatusFlags,
     },
     prelude::*,
     process::posix_thread::FileTableRefMut,
-    util::ioctl::{dispatch_ioctl, RawIoctl},
+    util::ioctl::{RawIoctl, dispatch_ioctl},
 };
 
 pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
@@ -42,7 +42,7 @@ pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr, ctx: &Context) -> Result<Sy
 }
 
 mod ioctl_defs {
-    use crate::util::ioctl::{ioc, InData, NoData};
+    use crate::util::ioctl::{InData, NoData, ioc};
 
     // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/asm-generic/ioctls.h>
 

@@ -3,8 +3,8 @@
 use ostd::mm::VmIo;
 
 use super::{
-    sched_getattr::{access_sched_attr_with, LinuxSchedAttr},
     SyscallReturn,
+    sched_getattr::{LinuxSchedAttr, access_sched_attr_with},
 };
 use crate::{prelude::*, thread::Tid};
 

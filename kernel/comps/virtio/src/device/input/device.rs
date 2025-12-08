@@ -19,14 +19,14 @@ use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
 use log::{debug, info};
 use ostd::{
+    Pod,
     arch::trap::TrapFrame,
     io::IoMem,
     mm::{DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, PAGE_SIZE},
     sync::SpinLock,
-    Pod,
 };
 
-use super::{InputConfigSelect, VirtioInputConfig, VirtioInputEvent, QUEUE_EVENT, QUEUE_STATUS};
+use super::{InputConfigSelect, QUEUE_EVENT, QUEUE_STATUS, VirtioInputConfig, VirtioInputEvent};
 use crate::{
     device::VirtioDeviceError, dma_buf::DmaBuf, queue::VirtQueue, transport::VirtioTransport,
 };
@@ -545,10 +545,12 @@ impl EventTable {
             .zeroed(true)
             .alloc_segment(1)
             .unwrap();
-        debug_assert!(VirtioInputEvent::default()
-            .as_bytes()
-            .iter()
-            .all(|b| *b == 0));
+        debug_assert!(
+            VirtioInputEvent::default()
+                .as_bytes()
+                .iter()
+                .all(|b| *b == 0)
+        );
 
         let stream =
             Arc::new(DmaStream::map(segment.into(), DmaDirection::FromDevice, false).unwrap());

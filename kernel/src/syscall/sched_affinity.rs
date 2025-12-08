@@ -3,7 +3,7 @@
 use core::{cmp, sync::atomic::Ordering};
 
 use ostd::{
-    cpu::{num_cpus, CpuId, CpuSet},
+    cpu::{CpuId, CpuSet, num_cpus},
     mm::VmIo,
     util::id_set::Id,
 };

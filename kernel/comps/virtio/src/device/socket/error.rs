@@ -81,19 +81,30 @@ impl fmt::Display for SocketError {
         match self {
             Self::ConnectionExists => write!(
                 f,
-                "There is an existing connection. Please close the current connection before attempting to connect again."),
-            Self::ConnectionFailed => write!(
-                f, "Failed to establish the connection. The packet sent may have an unknown type value"
+                "There is an existing connection. Please close the current connection before attempting to connect again."
             ),
-            Self::NotConnected => write!(f, "The device is not connected to any peer. Please connect it to a peer first."),
+            Self::ConnectionFailed => write!(
+                f,
+                "Failed to establish the connection. The packet sent may have an unknown type value"
+            ),
+            Self::NotConnected => write!(
+                f,
+                "The device is not connected to any peer. Please connect it to a peer first."
+            ),
             Self::PeerSocketShutdown => write!(f, "The peer socket is shutdown."),
             Self::NoResponseReceived => write!(f, "No response received"),
             Self::BufferTooShort => write!(f, "The given buffer is shorter than expected"),
             Self::BufferTooLong(actual, max) => {
-                write!(f, "The given buffer length '{actual}' has exceeded the maximum allowed buffer length '{max}'")
+                write!(
+                    f,
+                    "The given buffer length '{actual}' has exceeded the maximum allowed buffer length '{max}'"
+                )
             }
             Self::OutputBufferTooShort(expected) => {
-                write!(f, "The given output buffer is too short. '{expected}' bytes is needed for the output buffer.")
+                write!(
+                    f,
+                    "The given output buffer is too short. '{expected}' bytes is needed for the output buffer."
+                )
             }
             Self::UnknownOperation(op) => {
                 write!(f, "The operation code '{op}' is unknown")
@@ -101,9 +112,11 @@ impl fmt::Display for SocketError {
             Self::InvalidOperation => write!(f, "Invalid operation"),
             Self::InvalidNumber => write!(f, "Invalid number"),
             Self::UnexpectedDataInPacket => write!(f, "No data is expected in the packet"),
-            Self::InsufficientBufferSpaceInPeer => write!(f, "Peer has insufficient buffer space, try again later"),
+            Self::InsufficientBufferSpaceInPeer => {
+                write!(f, "Peer has insufficient buffer space, try again later")
+            }
             Self::RecycledWrongBuffer => write!(f, "Recycled a wrong buffer"),
-            Self::QueueError(_) => write!(f,"Error encountered out of vsock itself!"),
+            Self::QueueError(_) => write!(f, "Error encountered out of vsock itself!"),
         }
     }
 }

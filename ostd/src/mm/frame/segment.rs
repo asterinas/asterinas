@@ -5,11 +5,10 @@
 use core::{fmt::Debug, mem::ManuallyDrop, ops::Range};
 
 use super::{
-    inc_frame_ref_count,
+    Frame, inc_frame_ref_count,
     meta::{AnyFrameMeta, GetFrameError},
-    Frame,
 };
-use crate::mm::{AnyUFrameMeta, HasPaddr, HasSize, Paddr, PAGE_SIZE};
+use crate::mm::{AnyUFrameMeta, HasPaddr, HasSize, PAGE_SIZE, Paddr};
 
 /// A contiguous range of homogeneous physical memory frames.
 ///

@@ -2,10 +2,10 @@
 
 #![expect(non_camel_case_types)]
 
-pub use core::{timer, Clock};
+pub use core::{Clock, timer};
 
 use ::core::time::Duration;
-pub use system_time::{SystemTime, START_TIME};
+pub use system_time::{START_TIME, SystemTime};
 pub use timer::{Timer, TimerManager};
 
 use crate::prelude::*;

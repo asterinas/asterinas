@@ -18,13 +18,13 @@ use crate::{
         inode_handle::FileIo,
         notify::FsEventPublisher,
         utils::{
-            mkmod, AccessMode, DirentVisitor, FallocMode, FileSystem, Inode, InodeIo, InodeMode,
-            InodeType, Metadata, MknodType, StatusFlags, SymbolicLink,
+            AccessMode, DirentVisitor, FallocMode, FileSystem, Inode, InodeIo, InodeMode,
+            InodeType, Metadata, MknodType, StatusFlags, SymbolicLink, mkmod,
         },
     },
     prelude::*,
     process::{Gid, Uid},
-    time::{clocks::RealTimeCoarseClock, Clock},
+    time::{Clock, clocks::RealTimeCoarseClock},
 };
 
 type Ino = u64;

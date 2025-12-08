@@ -7,7 +7,7 @@ use aster_virtio::device::socket::connect::{ConnectionInfo, VsockEvent};
 use super::connected::ConnectionID;
 use crate::{
     events::IoEvents,
-    net::socket::vsock::{addr::VsockSocketAddr, VSOCK_GLOBAL},
+    net::socket::vsock::{VSOCK_GLOBAL, addr::VsockSocketAddr},
     prelude::*,
     process::signal::{PollHandle, Pollee},
 };

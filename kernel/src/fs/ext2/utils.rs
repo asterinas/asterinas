@@ -29,7 +29,9 @@ macro_rules! impl_ipo_for {
     };
 }
 
-impl_ipo_for!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, isize, usize);
+impl_ipo_for!(
+    u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, isize, usize
+);
 
 /// The `Dirty` wraps a value of type `T` with functions similar to that of a rw-lock,
 /// but simply sets a dirty flag on `write()`.

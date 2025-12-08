@@ -3,9 +3,9 @@
 use alloc::{sync::Arc, vec::Vec};
 
 use aster_console::{
+    AnyConsoleDevice, ConsoleCallback, ConsoleSetFontError,
     font::BitmapFont,
     mode::{ConsoleMode, KeyboardMode},
-    AnyConsoleDevice, ConsoleCallback, ConsoleSetFontError,
 };
 use ostd::{
     mm::{HasSize, VmReader},
@@ -14,8 +14,8 @@ use ostd::{
 use spin::Once;
 
 use crate::{
+    FRAMEBUFFER, FrameBuffer, Pixel,
     ansi_escape::{EscapeFsm, EscapeOp},
-    FrameBuffer, Pixel, FRAMEBUFFER,
 };
 
 /// A text console rendered onto the framebuffer.

@@ -5,11 +5,10 @@
 use super::{Child, ChildRef, PageTableEntryTrait, PageTableGuard, PageTableNode};
 use crate::{
     mm::{
-        nr_subpage_per_huge,
+        HasPaddr, nr_subpage_per_huge,
         page_prop::PageProperty,
         page_size,
         page_table::{PageTableConfig, PageTableNodeRef},
-        HasPaddr,
     },
     sync::RcuDrop,
     task::atomic_mode::InAtomicMode,

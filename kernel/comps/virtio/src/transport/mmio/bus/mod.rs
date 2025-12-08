@@ -9,7 +9,7 @@ use log::debug;
 use ostd::{io::IoMem, irq::IrqLine, sync::SpinLock};
 
 use crate::transport::mmio::bus::common_device::{
-    mmio_check_magic, mmio_read_device_id, MmioCommonDevice,
+    MmioCommonDevice, mmio_check_magic, mmio_read_device_id,
 };
 
 #[cfg_attr(target_arch = "x86_64", path = "arch/x86.rs")]

@@ -2,7 +2,7 @@
 
 use core::sync::atomic::Ordering;
 
-use super::{get_ioprio::IoPrioWho, SyscallReturn};
+use super::{SyscallReturn, get_ioprio::IoPrioWho};
 use crate::{prelude::*, process::posix_thread::AsPosixThread};
 
 pub fn sys_ioprio_set(which: u32, who: u32, ioprio: u32, ctx: &Context) -> Result<SyscallReturn> {

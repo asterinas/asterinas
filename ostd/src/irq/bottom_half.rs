@@ -4,7 +4,7 @@
 
 use spin::Once;
 
-use super::{disable_local, DisabledLocalIrqGuard, InterruptLevel};
+use super::{DisabledLocalIrqGuard, InterruptLevel, disable_local};
 use crate::task::disable_preempt;
 
 /// Registers a bottom half callback to be executed at interrupt level 1.

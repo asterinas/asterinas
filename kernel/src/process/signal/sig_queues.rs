@@ -11,7 +11,7 @@ use super::{
 use crate::{
     events::IoEvents,
     prelude::*,
-    process::signal::{sig_disposition::SigDispositions, PollHandle, Pollee},
+    process::signal::{PollHandle, Pollee, sig_disposition::SigDispositions},
 };
 
 pub struct SigQueues {

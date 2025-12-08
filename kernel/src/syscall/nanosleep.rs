@@ -4,16 +4,15 @@ use core::time::Duration;
 
 use ostd::{mm::VmIo, sync::Waiter};
 
-use super::{clock_gettime::read_clock, ClockId, SyscallReturn};
+use super::{ClockId, SyscallReturn, clock_gettime::read_clock};
 use crate::{
     prelude::*,
     time::{
-        clockid_t,
+        TIMER_ABSTIME, clockid_t,
         clocks::{BootTimeClock, MonotonicClock, RealTimeClock},
         timer::Timeout,
         timespec_t,
         wait::ManagedTimeout,
-        TIMER_ABSTIME,
     },
 };
 

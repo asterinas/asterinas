@@ -13,10 +13,10 @@ mod dummy_console;
 mod framebuffer;
 mod pixel;
 
-use component::{init_component, ComponentInitError};
-pub use console::{FramebufferConsole, CONSOLE_NAME, FRAMEBUFFER_CONSOLE};
+use component::{ComponentInitError, init_component};
+pub use console::{CONSOLE_NAME, FRAMEBUFFER_CONSOLE, FramebufferConsole};
 pub use dummy_console::DummyFramebufferConsole;
-pub use framebuffer::{ColorMapEntry, FrameBuffer, FRAMEBUFFER, MAX_CMAP_SIZE};
+pub use framebuffer::{ColorMapEntry, FRAMEBUFFER, FrameBuffer, MAX_CMAP_SIZE};
 pub use pixel::{Pixel, PixelFormat, RenderedPixel};
 
 #[init_component]

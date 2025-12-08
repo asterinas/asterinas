@@ -24,7 +24,7 @@ use std::{
 };
 
 use align_ext::AlignExt;
-pub use encoder::{encode_kernel, PayloadEncoding};
+pub use encoder::{PayloadEncoding, encode_kernel};
 use mapping::{SetupFileOffset, SetupVA};
 use xmas_elf::{program::SegmentData, sections::SectionData};
 

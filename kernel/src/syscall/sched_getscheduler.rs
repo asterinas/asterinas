@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{
-    sched_getattr::{access_sched_attr_with, LinuxSchedAttr},
     SyscallReturn,
+    sched_getattr::{LinuxSchedAttr, access_sched_attr_with},
 };
 use crate::{prelude::*, thread::Tid};
 

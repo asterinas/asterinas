@@ -21,21 +21,21 @@ mod test {
     use alloc::fmt::Debug;
 
     use aster_block::{
-        bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio},
         BlockDevice, BlockDeviceMeta,
+        bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio},
     };
     use device_id::DeviceId;
     use ostd::{
-        mm::{io_util::HasVmReaderWriter, FrameAllocOptions, Segment, VmIo, PAGE_SIZE},
+        mm::{FrameAllocOptions, PAGE_SIZE, Segment, VmIo, io_util::HasVmReaderWriter},
         prelude::*,
     };
-    use rand::{rngs::SmallRng, RngCore, SeedableRng};
+    use rand::{RngCore, SeedableRng, rngs::SmallRng};
 
     use super::fs::{ExfatFs, ExfatMountOptions};
     use crate::{
         fs::{
             exfat::constants::{EXFAT_RESERVED_CLUSTERS, MAX_NAME_LENGTH},
-            utils::{generate_random_operation, new_fs_in_memory, Inode, InodeMode, InodeType},
+            utils::{Inode, InodeMode, InodeType, generate_random_operation, new_fs_in_memory},
         },
         prelude::*,
     };

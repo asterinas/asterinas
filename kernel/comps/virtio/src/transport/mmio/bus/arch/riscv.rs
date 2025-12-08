@@ -3,7 +3,7 @@
 pub(super) use ostd::arch::irq::MappedIrqLine;
 use ostd::arch::{
     boot::DEVICE_TREE,
-    irq::{InterruptSourceInFdt, IRQ_CHIP},
+    irq::{IRQ_CHIP, InterruptSourceInFdt},
 };
 
 pub(super) fn probe_for_device() {

@@ -12,10 +12,10 @@ use crate::{
     device::WithDevice,
     ext::Ext,
     iface::{
+        Iface, ScheduleNextPoll,
         common::{IfaceCommon, InterfaceFlags, InterfaceType},
         iface::internal::IfaceInternal,
         time::get_network_timestamp,
-        Iface, ScheduleNextPoll,
     },
 };
 

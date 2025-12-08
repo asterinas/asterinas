@@ -3,7 +3,7 @@
 use ostd::{
     arch::{device::io_port::WriteOnlyAccess, kernel::ACPI_INFO},
     io::IoPort,
-    power::{inject_restart_handler, ExitCode},
+    power::{ExitCode, inject_restart_handler},
 };
 use spin::Once;
 

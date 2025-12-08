@@ -3,7 +3,7 @@
 use super::{allocator::FrameAllocOptions, *};
 use crate::{
     impl_frame_meta_for, impl_untyped_frame_meta_for,
-    mm::{io_util::HasVmReaderWriter, HasPaddrRange},
+    mm::{HasPaddrRange, io_util::HasVmReaderWriter},
     prelude::*,
 };
 
@@ -294,7 +294,7 @@ mod linked_list {
 // Segment tests
 mod segment {
     use super::*;
-    use crate::{mm::USegment, Error};
+    use crate::{Error, mm::USegment};
 
     #[ktest]
     fn segment_creation() {

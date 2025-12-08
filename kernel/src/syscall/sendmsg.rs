@@ -6,8 +6,8 @@ use super::SyscallReturn;
 use crate::{
     fs::file_table::FileDesc,
     net::socket::{
-        util::{MessageHeader, SendRecvFlags},
         Socket,
+        util::{MessageHeader, SendRecvFlags},
     },
     prelude::*,
     util::net::CUserMsgHdr,

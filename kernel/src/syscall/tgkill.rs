@@ -4,11 +4,12 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::{
+        Pid,
         signal::{
             sig_num::SigNum,
             signals::user::{UserSignal, UserSignalKind},
         },
-        tgkill, Pid,
+        tgkill,
     },
     thread::Tid,
 };

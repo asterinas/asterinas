@@ -4,7 +4,7 @@ use aster_rights::{Dup, Read, TRights, Write};
 use aster_rights_proc::require;
 use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
 
-use super::{capabilities::CapSet, credentials_::Credentials_, Credentials, Gid, SecureBits, Uid};
+use super::{Credentials, Gid, SecureBits, Uid, capabilities::CapSet, credentials_::Credentials_};
 use crate::prelude::*;
 
 impl<R: TRights> Credentials<R> {

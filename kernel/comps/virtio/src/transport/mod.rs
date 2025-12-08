@@ -6,17 +6,17 @@ use core::fmt::Debug;
 use aster_pci::cfg_space::Bar;
 use aster_util::safe_ptr::SafePtr;
 use ostd::{
+    Pod,
     arch::device::io_port::{PortRead, PortWrite},
     io::IoMem,
     irq::IrqCallbackFunction,
     mm::{DmaCoherent, PodOnce},
-    Pod,
 };
 
 use self::{mmio::virtio_mmio_init, pci::virtio_pci_init};
 use crate::{
-    queue::{AvailRing, Descriptor, UsedRing},
     VirtioDeviceType,
+    queue::{AvailRing, Descriptor, UsedRing},
 };
 
 pub mod mmio;

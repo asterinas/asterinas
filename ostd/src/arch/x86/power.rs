@@ -12,7 +12,7 @@ mod qemu_isa_debug {
     use crate::{
         arch::device::io_port::WriteOnlyAccess,
         io::IoPort,
-        power::{inject_poweroff_handler, ExitCode},
+        power::{ExitCode, inject_poweroff_handler},
     };
 
     // For `qemu-system-x86_64`, the exit code will be `(code << 1) | 1`. So it is not possible to

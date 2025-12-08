@@ -2,7 +2,7 @@
 
 //! Architecture dependent CPU-local information utilities.
 
-use x86_64::registers::segmentation::{Segment64, GS};
+use x86_64::registers::segmentation::{GS, Segment64};
 
 /// Gets the base address for the CPU local storage by reading the GS base model-specific register.
 pub(crate) fn get_base() -> u64 {

@@ -2,7 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::{get_file_fast, FileDesc},
+    fs::file_table::{FileDesc, get_file_fast},
     net::socket::util::{MessageHeader, SendRecvFlags},
     prelude::*,
     util::net::read_socket_addr_from_user,
@@ -24,7 +24,9 @@ pub fn sys_sendto(
         let socket_addr = read_socket_addr_from_user(dest_addr, addrlen)?;
         Some(socket_addr)
     };
-    debug!("sockfd = {sockfd}, buf = 0x{buf:x}, len = 0x{len:x}, flags = {flags:?}, socket_addr = {socket_addr:?}");
+    debug!(
+        "sockfd = {sockfd}, buf = 0x{buf:x}, len = 0x{len:x}, flags = {flags:?}, socket_addr = {socket_addr:?}"
+    );
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, sockfd);

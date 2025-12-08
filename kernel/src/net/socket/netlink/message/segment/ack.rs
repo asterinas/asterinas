@@ -9,9 +9,9 @@
 //!
 
 use super::{
+    CSegmentType, SegmentBody,
     common::SegmentCommon,
     header::{CMsgSegHdr, SegHdrCommonFlags},
-    CSegmentType, SegmentBody,
 };
 use crate::{net::socket::netlink::message::NoAttr, prelude::*};
 

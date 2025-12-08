@@ -8,7 +8,7 @@ use takeable::Takeable;
 use super::{
     connected::Connected,
     init::Init,
-    listener::{get_backlog, Backlog, Listener},
+    listener::{Backlog, Listener, get_backlog},
 };
 use crate::{
     events::IoEvents,
@@ -17,22 +17,21 @@ use crate::{
         utils::{EndpointState, Inode},
     },
     net::socket::{
-        new_pseudo_inode,
+        Socket, new_pseudo_inode,
         options::{
-            macros::sock_option_mut, Error as SocketError, PeerCred, PeerGroups, SocketOption,
+            Error as SocketError, PeerCred, PeerGroups, SocketOption, macros::sock_option_mut,
         },
         private::SocketPrivate,
-        unix::{cred::SocketCred, ctrl_msg::AuxiliaryData, CUserCred, UnixSocketAddr},
+        unix::{CUserCred, UnixSocketAddr, cred::SocketCred, ctrl_msg::AuxiliaryData},
         util::{
-            options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
             ControlMessage, MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr,
+            options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
         },
-        Socket,
     },
     prelude::*,
     process::{
-        signal::{PollHandle, Pollable, Pollee},
         Gid,
+        signal::{PollHandle, Pollable, Pollee},
     },
     util::{MultiRead, MultiWrite},
 };

@@ -12,9 +12,9 @@ use alloc::{
 use core::fmt::Debug;
 
 use aster_systree::{
-    inherit_sys_branch_node, inherit_sys_leaf_node, inherit_sys_symlink_node, init_for_ktest,
     BranchNodeFields, Error as SysTreeError, NormalNodeFields, Result as SysTreeResult,
-    SymlinkNodeFields, SysAttrSetBuilder, SysObj, SysPerms, SysStr,
+    SymlinkNodeFields, SysAttrSetBuilder, SysObj, SysPerms, SysStr, inherit_sys_branch_node,
+    inherit_sys_leaf_node, inherit_sys_symlink_node, init_for_ktest,
 };
 use aster_util::printer::VmPrinter;
 use ostd::{
@@ -26,7 +26,7 @@ use ostd::{
 use crate::{
     fs::{
         sysfs::{self, fs::SysFs},
-        utils::{mkmod, DirentVisitor, FileSystem, InodeType, StatusFlags},
+        utils::{DirentVisitor, FileSystem, InodeType, StatusFlags, mkmod},
     },
     prelude::*,
     time::clocks::init_for_ktest as time_init_for_ktest,

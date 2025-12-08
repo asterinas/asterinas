@@ -4,7 +4,7 @@ use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::{get_file_fast, FileDesc},
+    fs::file_table::{FileDesc, get_file_fast},
     net::socket::util::SendRecvFlags,
     prelude::*,
     util::net::CUserMsgHdr,

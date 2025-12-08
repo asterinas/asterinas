@@ -16,9 +16,9 @@ use ostd::{
 use spin::Once;
 
 use super::{
+    Error, Result, SysStr,
     attr::SysAttrSet,
     node::{SysNodeId, SysObj},
-    Error, Result, SysStr,
 };
 use crate::{SysBranchNode, SysNode, SysSymlink};
 

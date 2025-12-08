@@ -3,7 +3,7 @@
 use lru::LruCache;
 
 use super::{
-    block_ptr::{Ext2Bid, BID_SIZE},
+    block_ptr::{BID_SIZE, Ext2Bid},
     fs::Ext2,
     prelude::*,
 };

@@ -14,7 +14,7 @@ use crate::{
         path::dentry::Dentry,
         utils::{
             CreationFlags, FileSystem, FsFlags, Inode, InodeMode, InodeType, Metadata, MknodType,
-            OpenArgs, Permission, StatusFlags, XattrName, XattrNamespace, XattrSetFlags, NAME_MAX,
+            NAME_MAX, OpenArgs, Permission, StatusFlags, XattrName, XattrNamespace, XattrSetFlags,
         },
     },
     prelude::*,

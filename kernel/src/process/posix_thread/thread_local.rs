@@ -8,7 +8,7 @@ use super::RobustListHead;
 use crate::{
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
-    process::{signal::SigStack, NsProxy, UserNamespace},
+    process::{NsProxy, UserNamespace, signal::SigStack},
     vm::vmar::Vmar,
 };
 

@@ -278,7 +278,7 @@ mod test {
     use ostd::prelude::*;
 
     use super::*;
-    use crate::thread::{kernel_thread::ThreadOptions, Thread};
+    use crate::thread::{Thread, kernel_thread::ThreadOptions};
 
     #[ktest]
     fn test_waiter_pause() {

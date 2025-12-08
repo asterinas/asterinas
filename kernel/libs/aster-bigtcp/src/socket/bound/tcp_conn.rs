@@ -9,7 +9,7 @@ use core::ops::{Deref, DerefMut};
 use aster_softirq::BottomHalfDisabled;
 use ostd::sync::{SpinLock, SpinLockGuard};
 use smoltcp::{
-    socket::{tcp::State, PollAt},
+    socket::{PollAt, tcp::State},
     time::Duration,
     wire::{IpEndpoint, IpRepr, TcpControl, TcpRepr},
 };
@@ -26,7 +26,7 @@ use crate::{
     socket::{
         event::SocketEvents,
         option::{RawTcpOption, RawTcpSetOption},
-        unbound::{new_tcp_socket, RawTcpSocket},
+        unbound::{RawTcpSocket, new_tcp_socket},
     },
     socket_table::ConnectionKey,
 };

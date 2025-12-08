@@ -5,7 +5,7 @@ use crate::{
         fs_resolver::{FsPath, FsResolver},
         path::PerMountFlags,
         ramfs::RamFs,
-        utils::{chmod, InodeType},
+        utils::{InodeType, chmod},
     },
     prelude::*,
 };

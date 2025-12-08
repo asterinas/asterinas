@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::{
-    mm::{FrameAllocOptions, Segment, VmIo, PAGE_SIZE},
+    mm::{FrameAllocOptions, PAGE_SIZE, Segment, VmIo},
     prelude::*,
 };
 

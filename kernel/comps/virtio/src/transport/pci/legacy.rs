@@ -14,12 +14,12 @@ use ostd::{
 };
 
 use crate::{
+    DeviceStatus, VirtioDeviceType,
     queue::UsedElem,
     transport::{
-        pci::msix::VirtioMsixManager, AvailRing, ConfigManager, Descriptor, UsedRing,
-        VirtioTransport, VirtioTransportError,
+        AvailRing, ConfigManager, Descriptor, UsedRing, VirtioTransport, VirtioTransportError,
+        pci::msix::VirtioMsixManager,
     },
-    DeviceStatus, VirtioDeviceType,
 };
 
 // When used through the legacy interface, the virtio common configuration structure looks as follows:

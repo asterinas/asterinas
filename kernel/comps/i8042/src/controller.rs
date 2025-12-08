@@ -5,7 +5,7 @@
 //! Reference: <https://wiki.osdev.org/I8042_PS/2_Controller>
 //!
 
-use aster_cmdline::{ModuleArg, KCMDLINE};
+use aster_cmdline::{KCMDLINE, ModuleArg};
 use bitflags::bitflags;
 use ostd::{
     arch::{device::io_port::ReadWriteAccess, kernel::ACPI_INFO},

@@ -14,7 +14,7 @@ use aster_input::{
 };
 use ostd::{
     arch::{
-        irq::{MappedIrqLine, IRQ_CHIP},
+        irq::{IRQ_CHIP, MappedIrqLine},
         trap::TrapFrame,
     },
     irq::IrqLine,
@@ -23,7 +23,7 @@ use ostd::{
 use spin::Once;
 
 use crate::{
-    controller::{I8042Controller, I8042ControllerError, I8042_CONTROLLER},
+    controller::{I8042_CONTROLLER, I8042Controller, I8042ControllerError},
     ps2::{Command, CommandCtx},
 };
 
@@ -130,7 +130,7 @@ impl CommandCtx for InitCtx<'_> {
 }
 
 mod cmd {
-    use crate::ps2::{define_commands, Command};
+    use crate::ps2::{Command, define_commands};
 
     define_commands! {
         GetDeviceId, 0xF2, fn([u8; 0]) -> [u8; 1];

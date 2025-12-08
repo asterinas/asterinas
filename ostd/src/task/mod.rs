@@ -24,7 +24,7 @@ use spin::Once;
 use utils::ForceSync;
 
 pub use self::{
-    preempt::{disable_preempt, halt_cpu, DisabledPreemptGuard},
+    preempt::{DisabledPreemptGuard, disable_preempt, halt_cpu},
     scheduler::info::{AtomicCpuId, TaskScheduleInfo},
 };
 use crate::{arch::task::TaskContext, irq::InterruptLevel, prelude::*};

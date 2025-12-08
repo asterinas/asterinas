@@ -7,7 +7,7 @@ use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver},
         path::Path,
-        utils::{mkmod, InodeType, MknodType},
+        utils::{InodeType, MknodType, mkmod},
     },
     prelude::*,
 };

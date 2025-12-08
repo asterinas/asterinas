@@ -12,9 +12,9 @@
 use crate::{
     arch::{
         device::io_port::WriteOnlyAccess,
-        irq::{MappedIrqLine, IRQ_CHIP},
+        irq::{IRQ_CHIP, MappedIrqLine},
     },
-    io::{sensitive_io_port, IoPort},
+    io::{IoPort, sensitive_io_port},
     irq::IrqLine,
     timer::TIMER_FREQ,
 };

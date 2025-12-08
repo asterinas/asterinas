@@ -9,20 +9,20 @@ use ostd::{
 };
 
 use super::{
-    signal::{sig_mask::AtomicSigMask, sig_num::SigNum, sig_queues::SigQueues, signals::Signal},
     Credentials, Process,
+    signal::{sig_mask::AtomicSigMask, sig_num::SigNum, sig_queues::SigQueues, signals::Signal},
 };
 use crate::{
     events::IoEvents,
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
     process::{
+        Pid,
         namespace::nsproxy::NsProxy,
         signal::{PauseReason, PollHandle},
-        Pid,
     },
     thread::{Thread, Tid},
-    time::{clocks::ProfClock, timer::TimerGuard, Timer, TimerManager},
+    time::{Timer, TimerManager, clocks::ProfClock, timer::TimerGuard},
 };
 
 mod builder;
@@ -37,7 +37,7 @@ pub mod thread_table;
 pub use builder::PosixThreadBuilder;
 pub(super) use exit::sigkill_other_threads;
 pub use exit::{do_exit, do_exit_group};
-pub use name::{ThreadName, MAX_THREAD_NAME_LEN};
+pub use name::{MAX_THREAD_NAME_LEN, ThreadName};
 pub use posix_thread_ext::AsPosixThread;
 pub use robust_list::RobustListHead;
 pub use thread_local::{AsThreadLocal, FileTableRefMut, ThreadLocal};

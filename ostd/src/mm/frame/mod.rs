@@ -51,11 +51,11 @@ use core::{
 };
 
 pub use allocator::GlobalFrameAllocator;
-use meta::{mapping, AnyFrameMeta, GetFrameError, MetaSlot, REF_COUNT_UNUSED};
+use meta::{AnyFrameMeta, GetFrameError, MetaSlot, REF_COUNT_UNUSED, mapping};
 pub use segment::Segment;
 use untyped::{AnyUFrameMeta, UFrame};
 
-use crate::mm::{HasPaddr, HasSize, Paddr, PagingConsts, PagingLevel, Vaddr, PAGE_SIZE};
+use crate::mm::{HasPaddr, HasSize, PAGE_SIZE, Paddr, PagingConsts, PagingLevel, Vaddr};
 
 static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
 

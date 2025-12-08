@@ -8,7 +8,7 @@ use std::{
 };
 
 use clap::ValueEnum;
-use serde::{de, Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de};
 
 use super::scheme::Scheme;
 

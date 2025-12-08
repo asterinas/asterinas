@@ -6,7 +6,7 @@ use crate::{
     fs::{
         fs_resolver::{FsPath, SplitPath},
         path::Path,
-        utils::{mkmod, InodeType, Permission},
+        utils::{InodeType, Permission, mkmod},
     },
     prelude::*,
 };

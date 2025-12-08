@@ -7,8 +7,8 @@ pub(super) mod ipi;
 mod ops;
 mod remapping;
 
-pub use chip::{IrqChip, MappedIrqLine, IRQ_CHIP};
-pub(crate) use ipi::{send_ipi, HwCpuId};
+pub use chip::{IRQ_CHIP, IrqChip, MappedIrqLine};
+pub(crate) use ipi::{HwCpuId, send_ipi};
 pub(crate) use ops::{
     disable_local, disable_local_and_halt, enable_local, enable_local_and_halt, is_local_enabled,
 };

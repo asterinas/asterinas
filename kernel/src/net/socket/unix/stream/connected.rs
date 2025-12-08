@@ -12,15 +12,15 @@ use crate::{
     fs::utils::{Endpoint, EndpointState},
     net::socket::{
         unix::{
-            addr::UnixSocketAddrBound, cred::SocketCred, ctrl_msg::AuxiliaryData, UnixSocketAddr,
+            UnixSocketAddr, addr::UnixSocketAddrBound, cred::SocketCred, ctrl_msg::AuxiliaryData,
         },
-        util::{options::SocketOptionSet, ControlMessage, SockShutdownCmd},
+        util::{ControlMessage, SockShutdownCmd, options::SocketOptionSet},
     },
     prelude::*,
     process::signal::Pollee,
     util::{
-        ring_buffer::{RbConsumer, RbProducer, RingBuffer},
         MultiRead, MultiWrite,
+        ring_buffer::{RbConsumer, RbProducer, RingBuffer},
     },
 };
 

@@ -13,7 +13,7 @@ use core::{
 use align_ext::AlignExt;
 use ostd::{
     mm::{
-        io_util::HasVmReaderWriter, FrameAllocOptions, UFrame, VmIo, VmIoFill, VmReader, VmWriter,
+        FrameAllocOptions, UFrame, VmIo, VmIoFill, VmReader, VmWriter, io_util::HasVmReaderWriter,
     },
     task::disable_preempt,
 };

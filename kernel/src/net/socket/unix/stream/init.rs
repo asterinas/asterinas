@@ -17,7 +17,7 @@ use crate::{
             addr::{UnixSocketAddr, UnixSocketAddrBound},
             cred::SocketCred,
         },
-        util::{options::SocketOptionSet, SockShutdownCmd},
+        util::{SockShutdownCmd, options::SocketOptionSet},
     },
     prelude::*,
     process::signal::Pollee,

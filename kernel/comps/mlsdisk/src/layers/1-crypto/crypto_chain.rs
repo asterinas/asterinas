@@ -7,7 +7,7 @@ use ostd_pod::Pod;
 
 use super::{Iv, Key, Mac};
 use crate::{
-    layers::bio::{BlockId, BlockLog, Buf, BLOCK_SIZE},
+    layers::bio::{BLOCK_SIZE, BlockId, BlockLog, Buf},
     os::Aead,
     prelude::*,
 };

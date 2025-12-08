@@ -3,16 +3,16 @@
 use ostd::mm::VmIo;
 
 use super::{
-    clock_gettime::{DynamicClockIdInfo, DynamicClockType},
     SyscallReturn,
+    clock_gettime::{DynamicClockIdInfo, DynamicClockType},
 };
 use crate::{
     prelude::*,
     process::{
-        posix_thread::{thread_table, AsPosixThread},
+        posix_thread::{AsPosixThread, thread_table},
         process_table,
         signal::{
-            c_types::{sigevent_t, SigNotify},
+            c_types::{SigNotify, sigevent_t},
             constants::SIGALRM,
             sig_num::SigNum,
             signals::kernel::KernelSignal,
@@ -21,10 +21,9 @@ use crate::{
     syscall::ClockId,
     thread::work_queue::{submit_work_item, work_item::WorkItem},
     time::{
-        clockid_t,
+        Timer, clockid_t,
         clocks::{BootTimeClock, MonotonicClock, RealTimeClock},
         timer::TimerGuard,
-        Timer,
     },
 };
 

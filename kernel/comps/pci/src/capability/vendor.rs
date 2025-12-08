@@ -4,7 +4,7 @@
 
 use ostd::{Error, Result};
 
-use crate::{common_device::PciCommonDevice, PciDeviceLocation};
+use crate::{PciDeviceLocation, common_device::PciCommonDevice};
 
 /// Vendor specific capability. Users can access this capability area at will,
 /// except for the PCI configuration space which cannot be accessed at will through this structure.

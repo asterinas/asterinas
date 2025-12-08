@@ -23,9 +23,9 @@ use crate::{
     fs::cgroupfs::CgroupNode,
     prelude::*,
     process::{
-        signal::{sig_queues::SigQueues, Pollee},
-        status::StopWaitStatus,
         UserNamespace, WaitOptions,
+        signal::{Pollee, sig_queues::SigQueues},
+        status::StopWaitStatus,
     },
     sched::{AtomicNice, Nice},
     thread::{AsThread, Thread},

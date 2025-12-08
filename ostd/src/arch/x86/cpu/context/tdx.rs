@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use tdx_guest::{
-    handle_virtual_exception as do_handle_virtual_exception, tdcall, TdgVeInfo, TdxTrapFrame,
+    TdgVeInfo, TdxTrapFrame, handle_virtual_exception as do_handle_virtual_exception, tdcall,
 };
 
 use super::{GeneralRegs, UserContext};

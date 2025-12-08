@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FdFlags,
-        ramfs::memfd::{MemfdFile, MemfdFlags, MAX_MEMFD_NAME_LEN},
+        ramfs::memfd::{MAX_MEMFD_NAME_LEN, MemfdFile, MemfdFlags},
     },
     prelude::*,
 };

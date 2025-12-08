@@ -7,7 +7,7 @@ use aster_bigtcp::{
 };
 
 use crate::{
-    net::iface::{iter_all_ifaces, loopback_iface, virtio_iface, BoundPort, Iface},
+    net::iface::{BoundPort, Iface, iter_all_ifaces, loopback_iface, virtio_iface},
     prelude::*,
 };
 

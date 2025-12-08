@@ -4,13 +4,13 @@ use spin::Once;
 
 use crate::{
     fs::{
+        Result,
         registry::{FsProperties, FsType},
         sysfs::{self, inode::SysFsInode},
         utils::{
-            systree_inode::SysTreeInodeTy, FileSystem, FsEventSubscriberStats, FsFlags, Inode,
-            SuperBlock,
+            FileSystem, FsEventSubscriberStats, FsFlags, Inode, SuperBlock,
+            systree_inode::SysTreeInodeTy,
         },
-        Result,
     },
     prelude::*,
 };

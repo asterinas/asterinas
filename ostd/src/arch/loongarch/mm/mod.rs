@@ -4,12 +4,12 @@ use alloc::fmt;
 use core::{arch::asm, ops::Range};
 
 use crate::{
+    Pod,
     mm::{
+        DmaDirection, PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
         page_table::PageTableEntryTrait,
-        DmaDirection, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr, PAGE_SIZE,
     },
-    Pod,
 };
 
 #[derive(Clone, Debug, Default)]

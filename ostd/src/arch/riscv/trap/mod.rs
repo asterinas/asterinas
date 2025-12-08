@@ -16,7 +16,7 @@ pub(super) use trap::{RawUserContext, SSTATUS_FS_MASK, SSTATUS_SUM};
 use crate::{
     arch::{
         cpu::context::CpuException,
-        irq::{disable_local, enable_local, HwIrqLine, InterruptSource, IRQ_CHIP},
+        irq::{HwIrqLine, IRQ_CHIP, InterruptSource, disable_local, enable_local},
         timer::TIMER_IRQ,
     },
     cpu::PrivilegeLevel,
@@ -87,7 +87,10 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
             if (0..MAX_USERSPACE_VADDR).contains(&fault_addr) {
                 handle_user_page_fault(f, &exception);
             } else {
-                panic!("Cannot handle page fault in kernel space, exception: {:#x?}, trapframe: {:#x?}.", exception, f);
+                panic!(
+                    "Cannot handle page fault in kernel space, exception: {:#x?}, trapframe: {:#x?}.",
+                    exception, f
+                );
             }
         }
         _ => {

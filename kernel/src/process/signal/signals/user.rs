@@ -4,12 +4,12 @@
 
 use super::Signal;
 use crate::process::{
+    Pid, Uid,
     signal::{
         c_types::siginfo_t,
         constants::{SI_QUEUE, SI_TKILL, SI_USER},
         sig_num::SigNum,
     },
-    Pid, Uid,
 };
 
 #[derive(Debug, Clone, Copy)]

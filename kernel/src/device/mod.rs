@@ -10,7 +10,7 @@ mod shm;
 pub mod tty;
 
 pub use mem::{getrandom, geturandom};
-pub use pty::{new_pty_pair, PtyMaster, PtySlave};
+pub use pty::{PtyMaster, PtySlave, new_pty_pair};
 pub use registry::lookup;
 
 use crate::{

@@ -6,7 +6,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FileDesc,
-        fs_resolver::{FsPath, AT_FDCWD},
+        fs_resolver::{AT_FDCWD, FsPath},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,

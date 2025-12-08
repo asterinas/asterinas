@@ -6,9 +6,9 @@ use core::fmt::Debug;
 use ostd::sync::{RwLock, WriteIrqDisabled};
 
 use crate::{
+    InputDevice,
     input_dev::RegisteredInputDevice,
     input_handler::{BoundInputHandler, InputHandlerClass},
-    InputDevice,
 };
 
 /// Registry entry for each registered device.

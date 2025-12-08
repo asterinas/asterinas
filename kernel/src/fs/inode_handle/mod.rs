@@ -16,7 +16,7 @@ use crate::{
         path::Path,
         utils::{
             DirentVisitor, FallocMode, FileRange, FlockItem, FlockList, Inode, InodeType,
-            RangeLockItem, RangeLockList, RangeLockType, SeekFrom, StatusFlags, OFFSET_MAX,
+            OFFSET_MAX, RangeLockItem, RangeLockList, RangeLockType, SeekFrom, StatusFlags,
         },
     },
     prelude::*,

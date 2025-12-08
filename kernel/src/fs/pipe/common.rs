@@ -7,9 +7,9 @@ use crate::{
     process::{
         posix_thread::AsPosixThread,
         signal::{
+            PollHandle, Pollable,
             constants::SIGPIPE,
             signals::user::{UserSignal, UserSignalKind},
-            PollHandle, Pollable,
         },
     },
     util::ring_buffer::{RbConsumer, RbProducer, RingBuffer},

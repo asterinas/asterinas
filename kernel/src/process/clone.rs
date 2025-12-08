@@ -9,11 +9,11 @@ use ostd::{
 };
 
 use super::{
+    Credentials, Pid, Process,
     posix_thread::{AsPosixThread, PosixThreadBuilder, ThreadName},
     process_table,
     rlimit::ResourceLimits,
     signal::{constants::SIGCHLD, sig_disposition::SigDispositions, sig_num::SigNum},
-    Credentials, Pid, Process,
 };
 use crate::{
     cpu::LinuxAbi,
@@ -25,10 +25,10 @@ use crate::{
     },
     prelude::*,
     process::{
-        pid_file::PidFile,
-        posix_thread::{allocate_posix_tid, PosixThread, ThreadLocal},
-        stats::PROCESS_CREATION_COUNTER,
         NsProxy, UserNamespace,
+        pid_file::PidFile,
+        posix_thread::{PosixThread, ThreadLocal, allocate_posix_tid},
+        stats::PROCESS_CREATION_COUNTER,
     },
     sched::Nice,
     thread::{AsThread, Tid},

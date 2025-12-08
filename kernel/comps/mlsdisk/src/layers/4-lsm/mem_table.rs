@@ -3,7 +3,7 @@
 //! MemTable.
 use core::ops::Range;
 
-use super::{tx_lsm_tree::OnDropRecodeFn, AsKV, RangeQueryCtx, RecordKey, RecordValue, SyncId};
+use super::{AsKV, RangeQueryCtx, RecordKey, RecordValue, SyncId, tx_lsm_tree::OnDropRecodeFn};
 use crate::{
     os::{BTreeMap, Condvar, CvarMutex, Mutex, RwLock, RwLockReadGuard},
     prelude::*,

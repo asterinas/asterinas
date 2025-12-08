@@ -2,7 +2,7 @@
 
 use alloc::{boxed::Box, vec, vec::Vec};
 
-use aster_softirq::{softirq_id::TIMER_SOFTIRQ_ID, SoftIrqLine};
+use aster_softirq::{SoftIrqLine, softirq_id::TIMER_SOFTIRQ_ID};
 use ostd::{sync::RcuOption, timer};
 
 #[expect(clippy::type_complexity)]

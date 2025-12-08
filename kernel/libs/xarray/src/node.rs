@@ -7,15 +7,15 @@ use core::{
 };
 
 use ostd::{
-    sync::{non_null::NonNullPtr, RcuOption},
+    sync::{RcuOption, non_null::NonNullPtr},
     task::atomic_mode::InAtomicMode,
     util::Either,
 };
 
 use crate::{
+    BITS_PER_LAYER, SLOT_MASK, SLOT_SIZE, XLockGuard,
     entry::{NodeEntry, NodeEntryRef, XEntry, XEntryRef},
     mark::{Mark, NUM_MARKS},
-    XLockGuard, BITS_PER_LAYER, SLOT_MASK, SLOT_SIZE,
 };
 
 /// The height of an `XNode` within an `XArray`.

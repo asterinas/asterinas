@@ -23,11 +23,7 @@ impl PollScheduler {
 
     pub(super) fn next_poll_at_ms(&self) -> Option<u64> {
         let millis = self.next_poll_at_ms.load(Ordering::Relaxed);
-        if millis == 0 {
-            None
-        } else {
-            Some(millis)
-        }
+        if millis == 0 { None } else { Some(millis) }
     }
 
     pub(super) fn polling_wait_queue(&self) -> &WaitQueue {

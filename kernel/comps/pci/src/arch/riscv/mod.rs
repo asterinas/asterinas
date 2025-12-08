@@ -3,7 +3,7 @@
 //! PCI bus access
 
 use log::warn;
-use ostd::{arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce, Error};
+use ostd::{Error, arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce};
 use spin::Once;
 
 use crate::PciDeviceLocation;

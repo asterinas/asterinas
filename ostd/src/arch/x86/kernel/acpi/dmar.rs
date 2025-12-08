@@ -6,8 +6,8 @@ use alloc::vec::Vec;
 use core::{fmt::Debug, slice::Iter};
 
 use acpi::{
-    sdt::{SdtHeader, Signature},
     AcpiTable,
+    sdt::{SdtHeader, Signature},
 };
 
 use super::remapping::{Andd, Atsr, Drhd, Rhsa, Rmrr, Satc, Sidp};

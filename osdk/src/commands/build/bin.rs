@@ -7,7 +7,7 @@ use std::{
 };
 
 use linux_bzimage_builder::{
-    encode_kernel, legacy32_rust_target_json, make_bzimage, BzImageType, PayloadEncoding,
+    BzImageType, PayloadEncoding, encode_kernel, legacy32_rust_target_json, make_bzimage,
 };
 
 use crate::{

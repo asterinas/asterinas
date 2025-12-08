@@ -5,7 +5,7 @@ use aster_rights_proc::require;
 
 use crate::{
     prelude::*,
-    process::{posix_thread::AsPosixThread, Credentials, Gid, Pid, Uid},
+    process::{Credentials, Gid, Pid, Uid, posix_thread::AsPosixThread},
 };
 
 pub(super) struct SocketCred<R = ReadOp> {

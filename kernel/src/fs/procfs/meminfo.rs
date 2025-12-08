@@ -11,7 +11,7 @@ use aster_util::printer::VmPrinter;
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::{mkmod, Inode},
+        utils::{Inode, mkmod},
     },
     prelude::*,
 };

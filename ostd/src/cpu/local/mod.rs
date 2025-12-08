@@ -56,7 +56,7 @@ use static_cpu_local::StaticStorage;
 use super::CpuId;
 use crate::{
     irq::DisabledLocalIrqGuard,
-    mm::{frame::allocator, paddr_to_vaddr, Paddr, PAGE_SIZE},
+    mm::{PAGE_SIZE, Paddr, frame::allocator, paddr_to_vaddr},
     util::id_set::Id,
 };
 

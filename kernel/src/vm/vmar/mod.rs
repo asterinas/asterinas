@@ -12,10 +12,10 @@ use aster_util::per_cpu_counter::PerCpuCounter;
 use ostd::{
     cpu::CpuId,
     mm::{
+        CachePolicy, HasSize, MAX_USERSPACE_VADDR, PageFlags, UFrame, VmSpace,
         io_util::HasVmReaderWriter,
         tlb::TlbFlushOp,
         vm_space::{CursorMut, VmQueriedItem},
-        CachePolicy, HasSize, PageFlags, UFrame, VmSpace, MAX_USERSPACE_VADDR,
     },
     sync::RwMutexReadGuard,
     task::disable_preempt,
@@ -1180,7 +1180,10 @@ impl<'a> VmarMapOptions<'a> {
         })?;
 
         // Allocates a free region.
-        trace!("allocate free region, map_size = 0x{:x}, offset = {:x?}, align = 0x{:x}, can_overwrite = {}", map_size, offset, align, can_overwrite);
+        trace!(
+            "allocate free region, map_size = 0x{:x}, offset = {:x?}, align = 0x{:x}, can_overwrite = {}",
+            map_size, offset, align, can_overwrite
+        );
         let map_to_addr = if can_overwrite {
             // If can overwrite, the offset is ensured not to be `None`.
             let offset = offset.ok_or(Error::with_message(

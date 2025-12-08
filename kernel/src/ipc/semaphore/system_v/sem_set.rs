@@ -9,11 +9,11 @@ use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
 use spin::Once;
 
 use super::{
-    sem::{update_pending_alter, wake_const_ops, PendingOp, Status},
     PermissionMode,
+    sem::{PendingOp, Status, update_pending_alter, wake_const_ops},
 };
 use crate::{
-    ipc::{key_t, semaphore::system_v::sem::Semaphore, IpcPermission},
+    ipc::{IpcPermission, key_t, semaphore::system_v::sem::Semaphore},
     prelude::*,
     process::{Credentials, Pid},
     time::clocks::RealTimeCoarseClock,

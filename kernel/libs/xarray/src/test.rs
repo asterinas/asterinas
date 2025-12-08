@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use ostd::{
     prelude::ktest,
-    task::{disable_preempt, Task},
+    task::{Task, disable_preempt},
 };
 
 use super::*;

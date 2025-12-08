@@ -6,7 +6,7 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::{FdFlags, FileDesc},
-        fs_resolver::{FsPath, FsResolver, LookupResult, PathOrInode, AT_FDCWD},
+        fs_resolver::{AT_FDCWD, FsPath, FsResolver, LookupResult, PathOrInode},
         inode_handle::InodeHandle,
         ramfs::memfd::{MemfdFile, MemfdInode},
         utils::{AccessMode, CreationFlags, InodeMode, InodeType, OpenArgs, StatusFlags},

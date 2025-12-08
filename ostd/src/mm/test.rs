@@ -5,18 +5,18 @@ use alloc::vec;
 use ostd_pod::Pod;
 
 use crate::{
+    Error,
     io::IoMem,
     mm::{
+        CachePolicy, FallibleVmRead, FallibleVmWrite, FrameAllocOptions, PageFlags, PageProperty,
+        UFrame, VmSpace,
         io::{VmIo, VmIoFill, VmReader, VmWriter},
         io_util::HasVmReaderWriter,
         tlb::TlbFlushOp,
-        vm_space::{get_activated_vm_space, VmQueriedItem},
-        CachePolicy, FallibleVmRead, FallibleVmWrite, FrameAllocOptions, PageFlags, PageProperty,
-        UFrame, VmSpace,
+        vm_space::{VmQueriedItem, get_activated_vm_space},
     },
     prelude::*,
     task::disable_preempt,
-    Error,
 };
 
 mod io {
@@ -957,9 +957,11 @@ mod vmspace {
             assert_eq!(offset, 0x80);
 
             // Tests finding non-existent address.
-            assert!(cursor_mut
-                .find_iomem_by_paddr(IOMEM_PADDR + 0x1000)
-                .is_none());
+            assert!(
+                cursor_mut
+                    .find_iomem_by_paddr(IOMEM_PADDR + 0x1000)
+                    .is_none()
+            );
         }
     }
 
@@ -1031,9 +1033,11 @@ mod vmspace {
             let cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
                 .expect("Failed to create mutable cursor");
-            assert!(cursor_mut
-                .find_iomem_by_paddr(IOMEM_PADDR + 0x3000)
-                .is_some());
+            assert!(
+                cursor_mut
+                    .find_iomem_by_paddr(IOMEM_PADDR + 0x3000)
+                    .is_some()
+            );
         }
 
         // Unmaps the `IoMem`.
@@ -1049,9 +1053,11 @@ mod vmspace {
             let cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
                 .expect("Failed to create mutable cursor");
-            assert!(cursor_mut
-                .find_iomem_by_paddr(IOMEM_PADDR + 0x3000)
-                .is_some());
+            assert!(
+                cursor_mut
+                    .find_iomem_by_paddr(IOMEM_PADDR + 0x3000)
+                    .is_some()
+            );
         }
     }
 }

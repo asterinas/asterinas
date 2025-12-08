@@ -13,25 +13,25 @@ use std::{
 
 use bin::make_elf_for_qemu;
 
-use super::util::{cargo, profile_name_adapter, COMMON_CARGO_ARGS, DEFAULT_TARGET_RELPATH};
+use super::util::{COMMON_CARGO_ARGS, DEFAULT_TARGET_RELPATH, cargo, profile_name_adapter};
 use crate::{
     arch::Arch,
-    base_crate::{new_base_crate, BaseCrateType},
+    base_crate::{BaseCrateType, new_base_crate},
     bundle::{
+        Bundle,
         bin::{AsterBin, AsterBinType, AsterElfMeta},
         file::BundleFile,
-        Bundle,
     },
     cli::BuildArgs,
     config::{
-        scheme::{ActionChoice, BootMethod},
         Config,
+        scheme::{ActionChoice, BootMethod},
     },
     error::Errno,
     error_msg,
     util::{
-        get_cargo_metadata, get_current_crates, get_kernel_crate, get_target_directory, CrateInfo,
-        DirGuard,
+        CrateInfo, DirGuard, get_cargo_metadata, get_current_crates, get_kernel_crate,
+        get_target_directory,
     },
 };
 
@@ -103,7 +103,9 @@ fn get_reusable_existing_bundle(
 ) -> Option<Bundle> {
     let existing_bundle = Bundle::load(&bundle_path);
     let Some(existing_bundle) = existing_bundle else {
-        info!("Building a new bundle: No cached bundle found or validation of the existing bundle failed");
+        info!(
+            "Building a new bundle: No cached bundle found or validation of the existing bundle failed"
+        );
         return None;
     };
     if let Err(e) = existing_bundle.can_run_with_config(config, action) {

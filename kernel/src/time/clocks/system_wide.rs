@@ -9,7 +9,7 @@ use paste::paste;
 use spin::Once;
 
 use crate::time::{
-    self, system_time::START_TIME_AS_DURATION, timer::TimerManager, Clock, SystemTime,
+    self, Clock, SystemTime, system_time::START_TIME_AS_DURATION, timer::TimerManager,
 };
 
 /// The Clock that reads the jiffies, and turn the counter into `Duration`.

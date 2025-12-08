@@ -5,11 +5,11 @@ use core::fmt;
 use aster_rights::ReadOp;
 use ostd::task::Task;
 
-use super::{cred::SocketCred, CUserCred, UnixStreamSocket};
+use super::{CUserCred, UnixStreamSocket, cred::SocketCred};
 use crate::{
     fs::{
         file_handle::FileLike,
-        file_table::{get_file_fast, FdFlags},
+        file_table::{FdFlags, get_file_fast},
     },
     net::socket::util::{CControlHeader, ControlMessage},
     prelude::*,

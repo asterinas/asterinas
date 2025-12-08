@@ -5,8 +5,8 @@
 use core::{marker::PhantomData, ops::BitOr as Or};
 
 use crate::{
-    if_::{If, IfOp},
     And, AndOp, False, OrOp, SameAs, SameAsOp, True,
+    if_::{If, IfOp},
 };
 
 /// A marker trait for type-level sets.
@@ -76,9 +76,9 @@ where
     SuperT: SameAs<SubT>,
     SetContainOp<SuperS, SubT>: And<SetIncludeOp<SuperS, SubS>>,
     SameAsOp<SuperT, SubT>: If<
-        SetIncludeOp<SuperS, SubS>,
-        AndOp<SetContainOp<SuperS, SubT>, SetIncludeOp<SuperS, SubS>>,
-    >,
+            SetIncludeOp<SuperS, SubS>,
+            AndOp<SetContainOp<SuperS, SubT>, SetIncludeOp<SuperS, SubS>>,
+        >,
 {
     type Output = IfOp<
         SameAsOp<SuperT, SubT>,

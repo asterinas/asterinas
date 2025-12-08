@@ -7,7 +7,7 @@ use crate::{
     prelude::*,
     process::ResourceType::RLIMIT_NICE,
     sched::Nice,
-    syscall::get_priority::{get_processes, PriorityTarget},
+    syscall::get_priority::{PriorityTarget, get_processes},
 };
 
 pub fn sys_set_priority(which: i32, who: u32, prio: i32, ctx: &Context) -> Result<SyscallReturn> {

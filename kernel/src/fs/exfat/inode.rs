@@ -8,21 +8,21 @@ use core::{cmp::Ordering, time::Duration};
 
 pub(super) use align_ext::AlignExt;
 use aster_block::{
+    BLOCK_SIZE,
     bio::{BioDirection, BioSegment, BioWaiter},
     id::{Bid, BlockId},
-    BLOCK_SIZE,
 };
-use ostd::mm::{io_util::HasVmReaderWriter, Segment, VmIo};
+use ostd::mm::{Segment, VmIo, io_util::HasVmReaderWriter};
 
 use super::{
     constants::*,
     dentry::{
-        Checksum, ExfatDentry, ExfatDentrySet, ExfatFileDentry, ExfatName, RawExfatDentry,
-        DENTRY_SIZE,
+        Checksum, DENTRY_SIZE, ExfatDentry, ExfatDentrySet, ExfatFileDentry, ExfatName,
+        RawExfatDentry,
     },
     fat::{ClusterAllocator, ClusterID, ExfatChainPosition, FatChainFlags},
-    fs::{ExfatMountOptions, EXFAT_ROOT_INO},
-    utils::{make_hash_index, DosTimestamp},
+    fs::{EXFAT_ROOT_INO, ExfatMountOptions},
+    utils::{DosTimestamp, make_hash_index},
 };
 use crate::{
     fs::{
@@ -30,8 +30,8 @@ use crate::{
         notify::FsEventPublisher,
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
         utils::{
-            mkmod, CachePage, DirentVisitor, Extension, Inode, InodeIo, InodeMode, InodeType,
-            Metadata, MknodType, PageCache, PageCacheBackend, StatusFlags, SymbolicLink,
+            CachePage, DirentVisitor, Extension, Inode, InodeIo, InodeMode, InodeType, Metadata,
+            MknodType, PageCache, PageCacheBackend, StatusFlags, SymbolicLink, mkmod,
         },
     },
     prelude::*,

@@ -3,7 +3,7 @@
 use crate::{
     events::IoEvents,
     net::socket::netlink::{
-        receiver::MessageQueue, table::BoundHandle, GroupIdSet, NetlinkSocketAddr,
+        GroupIdSet, NetlinkSocketAddr, receiver::MessageQueue, table::BoundHandle,
     },
     prelude::*,
 };

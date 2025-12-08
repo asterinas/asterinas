@@ -13,8 +13,8 @@ use crate::{
         vm_image::{AsterGrubIsoImageMeta, AsterVmImage, AsterVmImageType},
     },
     config::{
-        scheme::{ActionChoice, BootProtocol},
         Config,
+        scheme::{ActionChoice, BootProtocol},
     },
     util::{get_current_crates, hard_link_or_copy, new_command_checked_exists},
 };

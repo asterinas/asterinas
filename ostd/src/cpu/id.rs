@@ -80,7 +80,7 @@ pub fn all_cpus() -> impl Iterator<Item = CpuId> {
 }
 
 mod set {
-    use super::{num_cpus, CpuId};
+    use super::{CpuId, num_cpus};
     use crate::util::id_set::{AtomicIdSet, Id, IdSet};
 
     /// A set of CPU IDs.

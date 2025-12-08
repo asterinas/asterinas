@@ -11,7 +11,7 @@ use aster_util::slot_vec::SlotVec;
 use device_id::DeviceId;
 use hashbrown::HashMap;
 use ostd::{
-    mm::{io_util::HasVmReaderWriter, HasSize},
+    mm::{HasSize, io_util::HasVmReaderWriter},
     sync::{PreemptDisabled, RwLockWriteGuard},
 };
 
@@ -26,10 +26,10 @@ use crate::{
         pipe::NamedPipe,
         registry::{FsProperties, FsType},
         utils::{
-            mkmod, AccessMode, CStr256, CachePage, DirentVisitor, Extension, FallocMode,
-            FileSystem, FsEventSubscriberStats, FsFlags, Inode, InodeIo, InodeMode, InodeType,
-            Metadata, MknodType, PageCache, PageCacheBackend, Permission, StatusFlags, SuperBlock,
-            SymbolicLink, XattrName, XattrNamespace, XattrSetFlags,
+            AccessMode, CStr256, CachePage, DirentVisitor, Extension, FallocMode, FileSystem,
+            FsEventSubscriberStats, FsFlags, Inode, InodeIo, InodeMode, InodeType, Metadata,
+            MknodType, PageCache, PageCacheBackend, Permission, StatusFlags, SuperBlock,
+            SymbolicLink, XattrName, XattrNamespace, XattrSetFlags, mkmod,
         },
     },
     prelude::*,

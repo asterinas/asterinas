@@ -12,7 +12,7 @@ use alloc::sync::Arc;
 use core::time::Duration;
 
 pub use clocksource::{ClockSource, Instant};
-use component::{init_component, ComponentInitError};
+use component::{ComponentInitError, init_component};
 use rtc::Driver;
 use spin::Once;
 

@@ -13,16 +13,16 @@ use crate::{
     net::{
         iface::is_broadcast_endpoint,
         socket::{
+            Socket,
             ip::options::{IpOptionSet, SetIpLevelOption},
             new_pseudo_inode,
-            options::{macros::sock_option_mut, Error as SocketError, SocketOption},
+            options::{Error as SocketError, SocketOption, macros::sock_option_mut},
             private::SocketPrivate,
             util::{
-                datagram_common::{select_remote_and_bind, Bound, Inner},
-                options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
                 MessageHeader, SendRecvFlags, SocketAddr,
+                datagram_common::{Bound, Inner, select_remote_and_bind},
+                options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
             },
-            Socket,
         },
     },
     prelude::*,

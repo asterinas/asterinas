@@ -29,7 +29,7 @@ use crate::{
     fs::{
         file_table::FdFlags,
         fs_resolver::{FsPath, FsResolver},
-        utils::{mkmod, AccessMode, OpenArgs},
+        utils::{AccessMode, OpenArgs, mkmod},
     },
     prelude::*,
 };

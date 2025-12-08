@@ -5,7 +5,7 @@ use ostd::arch::cpu::context::UserContext;
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{clone_child, CloneArgs},
+    process::{CloneArgs, clone_child},
 };
 
 pub fn sys_fork(ctx: &Context, parent_context: &UserContext) -> Result<SyscallReturn> {

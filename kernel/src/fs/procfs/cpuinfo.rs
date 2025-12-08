@@ -7,7 +7,7 @@
 
 use aster_util::printer::VmPrinter;
 use ostd::{
-    cpu::{all_cpus, PinCurrentCpu},
+    cpu::{PinCurrentCpu, all_cpus},
     cpu_local,
     task::disable_preempt,
 };
@@ -17,7 +17,7 @@ use crate::{
     arch::cpu::CpuInformation,
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::{mkmod, Inode},
+        utils::{Inode, mkmod},
     },
     prelude::*,
 };

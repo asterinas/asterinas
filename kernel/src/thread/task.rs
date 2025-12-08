@@ -8,17 +8,17 @@ use ostd::{
     user::{ReturnReason, UserContextApi, UserMode},
 };
 
-use super::{oops, Thread};
+use super::{Thread, oops};
 use crate::{
     cpu::LinuxAbi,
     current_userspace,
     prelude::*,
     process::{
         posix_thread::{AsPosixThread, AsThreadLocal, ThreadLocal},
-        signal::{handle_pending_signal, HandlePendingSignal, PauseReason},
+        signal::{HandlePendingSignal, PauseReason, handle_pending_signal},
     },
     syscall::handle_syscall,
-    thread::{exception::handle_exception, AsThread},
+    thread::{AsThread, exception::handle_exception},
     vm::vmar::is_userspace_vaddr,
 };
 

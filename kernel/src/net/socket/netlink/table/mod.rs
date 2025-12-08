@@ -5,7 +5,7 @@ pub(super) use multicast::MulticastMessage;
 use spin::Once;
 
 use super::{
-    addr::{GroupIdSet, NetlinkProtocolId, NetlinkSocketAddr, PortNum, MAX_GROUPS},
+    addr::{GroupIdSet, MAX_GROUPS, NetlinkProtocolId, NetlinkSocketAddr, PortNum},
     receiver::QueueableMessage,
 };
 use crate::{

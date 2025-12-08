@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use super::mlsdisk::Hba;
 use crate::{
     layers::{
-        bio::{BlockSet, Buf, BufRef, BID_SIZE},
+        bio::{BID_SIZE, BlockSet, Buf, BufRef},
         log::{TxLog, TxLogStore},
     },
     os::{BTreeMap, Condvar, CvarMutex, Mutex},

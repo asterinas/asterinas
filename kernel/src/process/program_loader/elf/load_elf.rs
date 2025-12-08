@@ -440,7 +440,7 @@ pub fn init_aux_vec(
 /// Maps the vDSO VMO to the corresponding virtual memory address.
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 fn map_vdso_to_vmar(vmar: &Vmar) -> Option<Vaddr> {
-    use crate::vdso::{vdso_vmo, VDSO_VMO_LAYOUT};
+    use crate::vdso::{VDSO_VMO_LAYOUT, vdso_vmo};
 
     let vdso_vmo = vdso_vmo()?;
 

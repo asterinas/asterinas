@@ -2,7 +2,7 @@
 
 use alloc::sync::Arc;
 
-use aster_virtio::device::socket::{get_device, register_recv_callback, DEVICE_NAME};
+use aster_virtio::device::socket::{DEVICE_NAME, get_device, register_recv_callback};
 use common::VsockSpace;
 use spin::Once;
 

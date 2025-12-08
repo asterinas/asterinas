@@ -16,7 +16,7 @@ use ostd::{
     sync::{LocalIrqDisabled, SpinLock, SpinLockGuard},
 };
 
-use crate::chunk::{greater_order_of, lesser_order_of, size_of_order, split_to_chunks, BuddyOrder};
+use crate::chunk::{BuddyOrder, greater_order_of, lesser_order_of, size_of_order, split_to_chunks};
 
 use super::set::BuddySet;
 

@@ -2,7 +2,7 @@
 
 use crate::{
     prelude::*,
-    process::{posix_thread::do_exit_group, TermStatus},
+    process::{TermStatus, posix_thread::do_exit_group},
     syscall::SyscallReturn,
 };
 

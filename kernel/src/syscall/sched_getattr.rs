@@ -3,8 +3,8 @@
 use ostd::{const_assert, mm::VmIo};
 
 use super::{
-    sched_get_priority_max::{rt_to_static, static_to_rt, SCHED_PRIORITY_RANGE},
     SyscallReturn,
+    sched_get_priority_max::{SCHED_PRIORITY_RANGE, rt_to_static, static_to_rt},
 };
 use crate::{
     prelude::*,

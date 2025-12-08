@@ -6,7 +6,7 @@ use crate::{
     fs::path::MountNamespace,
     net::UtsNamespace,
     prelude::*,
-    process::{posix_thread::PosixThread, CloneFlags, UserNamespace},
+    process::{CloneFlags, UserNamespace, posix_thread::PosixThread},
 };
 
 /// A struct that acts as a per-thread proxy to give access to most namespaces.

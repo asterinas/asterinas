@@ -23,7 +23,7 @@ pub(crate) mod tdx_guest;
 pub(crate) fn init_cvm_guest() {
     use ::tdx_guest::{
         disable_sept_ve, init_tdx, metadata, reduce_unnecessary_ve,
-        tdcall::{write_td_metadata, InitError},
+        tdcall::{InitError, write_td_metadata},
     };
     match init_tdx() {
         Ok(td_info) => {
@@ -128,7 +128,7 @@ pub fn read_tsc() -> u64 {
 pub fn read_random() -> Option<u64> {
     use core::arch::x86_64::_rdrand64_step;
 
-    use cpu::extension::{has_extensions, IsaExtensions};
+    use cpu::extension::{IsaExtensions, has_extensions};
 
     if !has_extensions(IsaExtensions::RDRAND) {
         return None;
@@ -150,7 +150,7 @@ pub fn read_random() -> Option<u64> {
 }
 
 pub(crate) fn enable_cpu_features() {
-    use cpu::extension::{has_extensions, IsaExtensions};
+    use cpu::extension::{IsaExtensions, has_extensions};
     use x86_64::registers::{
         control::{Cr0Flags, Cr4Flags},
         xcontrol::XCr0Flags,

@@ -5,7 +5,7 @@ use crate::{
     fs::{
         fs_resolver::PathOrInode,
         procfs::{ProcSymBuilder, SymOps},
-        utils::{mkmod, Inode, SymbolicLink},
+        utils::{Inode, SymbolicLink, mkmod},
     },
     prelude::*,
     process::Process,

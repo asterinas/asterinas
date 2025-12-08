@@ -2,7 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::{get_file_fast, FileDesc},
+    fs::file_table::{FileDesc, get_file_fast},
     net::socket::util::SendRecvFlags,
     prelude::*,
     util::net::write_socket_addr_to_user,
@@ -18,7 +18,9 @@ pub fn sys_recvfrom(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let flags = SendRecvFlags::from_bits_truncate(flags);
-    debug!("sockfd = {sockfd}, buf = 0x{buf:x}, len = {len}, flags = {flags:?}, src_addr = 0x{src_addr:x}, addrlen_ptr = 0x{addrlen_ptr:x}");
+    debug!(
+        "sockfd = {sockfd}, buf = 0x{buf:x}, len = {len}, flags = {flags:?}, src_addr = 0x{src_addr:x}, addrlen_ptr = 0x{addrlen_ptr:x}"
+    );
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, sockfd);

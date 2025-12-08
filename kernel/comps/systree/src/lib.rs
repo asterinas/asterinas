@@ -34,18 +34,19 @@ mod utils;
 use alloc::{borrow::Cow, sync::Arc};
 
 use aster_util::printer::VmPrinterError;
-use component::{init_component, ComponentInitError};
+use component::{ComponentInitError, init_component};
 use spin::Once;
 
 pub use self::{
     attr::{SysAttr, SysAttrSet, SysAttrSetBuilder},
     node::{
-        SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj, SysPerms, SysSymlink, MAX_ATTR_SIZE,
+        MAX_ATTR_SIZE, SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj, SysPerms, SysSymlink,
     },
     tree::SysTree,
     utils::{
+        _InheritSysBranchNode, _InheritSysLeafNode, _InheritSysSymlinkNode,
         AttrLessBranchNodeFields, BranchNodeFields, EmptyNode, NormalNodeFields, ObjFields,
-        SymlinkNodeFields, _InheritSysBranchNode, _InheritSysLeafNode, _InheritSysSymlinkNode,
+        SymlinkNodeFields,
     },
 };
 use crate::tree::RootNode;

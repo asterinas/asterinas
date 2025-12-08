@@ -55,8 +55,8 @@ pub fn print_stack_trace() {
 
     use gimli::Register;
     use unwinding::abi::{
-        UnwindContext, UnwindReasonCode, _Unwind_Backtrace, _Unwind_FindEnclosingFunction,
-        _Unwind_GetGR, _Unwind_GetIP,
+        _Unwind_Backtrace, _Unwind_FindEnclosingFunction, _Unwind_GetGR, _Unwind_GetIP,
+        UnwindContext, UnwindReasonCode,
     };
 
     use crate::{early_print, sync::SpinLock};

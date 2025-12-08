@@ -15,22 +15,21 @@
 use alloc::sync::Arc;
 use core::{mem::ManuallyDrop, time::Duration};
 
-use aster_time::{read_monotonic_time, Instant};
+use aster_time::{Instant, read_monotonic_time};
 use aster_util::coeff::Coeff;
 use ostd::{
-    const_assert,
-    mm::{UFrame, VmIo, VmIoOnce, PAGE_SIZE},
+    Pod, const_assert,
+    mm::{PAGE_SIZE, UFrame, VmIo, VmIoOnce},
     sync::SpinLock,
-    Pod,
 };
 use spin::Once;
 
 use crate::{
     syscall::ClockId,
     time::{
+        START_TIME, SystemTime,
         clocks::MonotonicClock,
         timer::{Timeout, TimerGuard},
-        SystemTime, START_TIME,
     },
     vm::vmo::{Vmo, VmoOptions},
 };

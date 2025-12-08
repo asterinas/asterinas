@@ -68,7 +68,7 @@ mod device_info;
 
 extern crate alloc;
 
-use component::{init_component, ComponentInitError};
+use component::{ComponentInitError, init_component};
 pub use device_info::{PciDeviceId, PciDeviceLocation};
 use ostd::sync::Mutex;
 

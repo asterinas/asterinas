@@ -7,7 +7,7 @@ mod ipi;
 mod ops;
 mod remapping;
 
-pub(crate) use ipi::{send_ipi, HwCpuId};
+pub(crate) use ipi::{HwCpuId, send_ipi};
 pub(crate) use ops::{
     disable_local, disable_local_and_halt, enable_local, enable_local_and_halt, is_local_enabled,
 };

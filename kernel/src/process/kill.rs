@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{
-    posix_thread::{thread_table, AsPosixThread},
+    Pgid, Pid, Process,
+    posix_thread::{AsPosixThread, thread_table},
     process_table,
     signal::{
         constants::SIGCONT,
         sig_num::SigNum,
-        signals::{user::UserSignal, Signal},
+        signals::{Signal, user::UserSignal},
     },
-    Pgid, Pid, Process,
 };
 use crate::{
     prelude::*,

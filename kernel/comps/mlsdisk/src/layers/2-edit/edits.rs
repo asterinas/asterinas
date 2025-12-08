@@ -2,7 +2,7 @@
 
 use core::marker::PhantomData;
 
-use serde::{ser::SerializeSeq, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, ser::SerializeSeq};
 
 use crate::prelude::*;
 

@@ -5,8 +5,8 @@ use crate::{
     net::socket::util::{ControlMessage, SocketAddr},
     prelude::*,
     util::{
-        iovec::MAX_IO_VECTOR_LENGTH, net::write_socket_addr_with_max_len, VmReaderArray,
-        VmWriterArray,
+        VmReaderArray, VmWriterArray, iovec::MAX_IO_VECTOR_LENGTH,
+        net::write_socket_addr_with_max_len,
     },
 };
 

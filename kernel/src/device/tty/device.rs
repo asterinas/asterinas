@@ -15,8 +15,8 @@ use crate::{
     device::{
         registry::char,
         tty::{
-            n_tty::{hvc0_device, VtDriver},
             Tty,
+            n_tty::{VtDriver, hvc0_device},
         },
     },
     fs::{

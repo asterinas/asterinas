@@ -7,11 +7,11 @@ use crate::{
     events::IoEvents,
     net::socket::{
         util::{SendRecvFlags, SockShutdownCmd},
-        vsock::{addr::VsockSocketAddr, VSOCK_GLOBAL},
+        vsock::{VSOCK_GLOBAL, addr::VsockSocketAddr},
     },
     prelude::*,
     process::signal::{PollHandle, Pollee},
-    util::{ring_buffer::RingBuffer, MultiRead, MultiWrite},
+    util::{MultiRead, MultiWrite, ring_buffer::RingBuffer},
 };
 
 const PER_CONNECTION_BUFFER_CAPACITY: usize = 4096;

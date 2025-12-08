@@ -3,12 +3,12 @@
 use alloc::{boxed::Box, collections::VecDeque, sync::Arc, vec::Vec};
 
 use super::{
-    info::CommonSchedInfo, inject_scheduler, EnqueueFlags, LocalRunQueue, Scheduler, UpdateFlags,
+    EnqueueFlags, LocalRunQueue, Scheduler, UpdateFlags, info::CommonSchedInfo, inject_scheduler,
 };
 use crate::{
-    cpu::{num_cpus, CpuId, PinCurrentCpu},
+    cpu::{CpuId, PinCurrentCpu, num_cpus},
     sync::SpinLock,
-    task::{disable_preempt, Task},
+    task::{Task, disable_preempt},
     util::id_set::Id,
 };
 

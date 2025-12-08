@@ -7,7 +7,7 @@ use ostd::{arch::cpu::context::UserContext, mm::VmIo};
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{clone_child, signal::sig_num::SigNum, CloneArgs, CloneFlags},
+    process::{CloneArgs, CloneFlags, clone_child, signal::sig_num::SigNum},
     vm::vmar::is_userspace_vaddr,
 };
 
@@ -37,8 +37,7 @@ pub fn sys_clone3(
 ) -> Result<SyscallReturn> {
     trace!(
         "clone args addr = 0x{:x}, size = 0x{:x}",
-        clong_args_addr,
-        size
+        clong_args_addr, size
     );
     if size != size_of::<Clone3Args>() {
         return_errno_with_message!(Errno::EINVAL, "invalid size");

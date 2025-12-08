@@ -6,8 +6,8 @@ use crate::{
     events::IoEvents,
     net::socket::{
         netlink::{
-            common::bound::BoundNetlink, receiver::MessageQueue, table::SupportedNetlinkProtocol,
-            GroupIdSet, NetlinkSocketAddr,
+            GroupIdSet, NetlinkSocketAddr, common::bound::BoundNetlink, receiver::MessageQueue,
+            table::SupportedNetlinkProtocol,
         },
         util::datagram_common,
     },

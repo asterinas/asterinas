@@ -5,10 +5,10 @@ use cfg_if::cfg_if;
 use log::info;
 
 use crate::{
+    Error, Result,
     arch::if_tdx_enabled,
     io::{IoMem, IoMemAllocatorBuilder, Sensitive},
     irq::IrqLine,
-    Error, Result,
 };
 
 cfg_if! {

@@ -5,8 +5,8 @@
 use proc_macro2::{Ident, TokenStream};
 use quote::quote;
 use syn::{
-    fold::Fold, parse::Parse, parse_quote, punctuated::Punctuated, token::Comma, GenericParam,
-    Generics, Token, Type, WhereClause,
+    GenericParam, Generics, Token, Type, WhereClause, fold::Fold, parse::Parse, parse_quote,
+    punctuated::Punctuated, token::Comma,
 };
 
 use super::require_item::RequireItem;

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::mm::{frame::linked_list::LinkedList, HasPaddr, Paddr};
+use ostd::mm::{HasPaddr, Paddr, frame::linked_list::LinkedList};
 
-use crate::chunk::{size_of_order, BuddyOrder, FreeChunk, FreeHeadMeta};
+use crate::chunk::{BuddyOrder, FreeChunk, FreeHeadMeta, size_of_order};
 
 /// A set of free buddy chunks.
 pub(crate) struct BuddySet<const MAX_ORDER: BuddyOrder> {

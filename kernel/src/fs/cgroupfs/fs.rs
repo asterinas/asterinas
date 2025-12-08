@@ -9,13 +9,13 @@ use spin::Once;
 use super::inode::CgroupInode;
 use crate::{
     fs::{
+        Result,
         cgroupfs::systree_node::CgroupSystem,
         registry::{FsProperties, FsType},
         utils::{
-            systree_inode::SysTreeInodeTy, FileSystem, FsEventSubscriberStats, FsFlags, Inode,
-            SuperBlock,
+            FileSystem, FsEventSubscriberStats, FsFlags, Inode, SuperBlock,
+            systree_inode::SysTreeInodeTy,
         },
-        Result,
     },
     prelude::*,
 };

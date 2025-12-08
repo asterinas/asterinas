@@ -10,8 +10,8 @@ use core::{
 use ostd::{
     cpu_local, irq,
     mm::{
-        heap::{GlobalHeapAllocator, HeapSlot, SlabSlotList, SlotInfo},
         PAGE_SIZE,
+        heap::{GlobalHeapAllocator, HeapSlot, SlabSlotList, SlotInfo},
     },
     sync::{LocalIrqDisabled, SpinLock},
 };

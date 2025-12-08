@@ -4,7 +4,7 @@ use alloc::sync::Arc;
 
 use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
 
-use super::{port::BindPortConfig, BoundPort, InterfaceFlags, InterfaceType};
+use super::{BoundPort, InterfaceFlags, InterfaceType, port::BindPortConfig};
 use crate::{errors::BindError, ext::Ext};
 
 /// A network interface.

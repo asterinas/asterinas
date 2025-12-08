@@ -24,7 +24,7 @@ use scheme::{
 };
 
 use crate::{
-    arch::{get_default_arch, Arch},
+    arch::{Arch, get_default_arch},
     cli::CommonArgs,
     config::unix_args::apply_kv_array,
     error::Errno,
@@ -71,7 +71,9 @@ fn apply_args_before_finalize(
         }
         if let Some(initramfs) = &args.initramfs {
             let Ok(initramfs) = initramfs.canonicalize() else {
-                error_msg!("The initramfs path provided with argument `--initramfs` does not match any files.");
+                error_msg!(
+                    "The initramfs path provided with argument `--initramfs` does not match any files."
+                );
                 process::exit(Errno::GetMetadata as _);
             };
             boot.initramfs = Some(initramfs);
@@ -195,7 +197,10 @@ impl Config {
     pub fn new(scheme: &Scheme, common_args: &CommonArgs) -> Self {
         let check_compatibility = |protocol: BootProtocol, encoding: PayloadEncoding| {
             if protocol != BootProtocol::Linux && encoding != PayloadEncoding::Raw {
-                panic!("The encoding format is not allowed to be specified if the boot protocol is not {:#?}", BootProtocol::Linux);
+                panic!(
+                    "The encoding format is not allowed to be specified if the boot protocol is not {:#?}",
+                    BootProtocol::Linux
+                );
             }
         };
         let target_arch = common_args.target_arch.unwrap_or(get_default_arch());

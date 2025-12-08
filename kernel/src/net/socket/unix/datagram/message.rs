@@ -13,9 +13,9 @@ use crate::{
     events::IoEvents,
     net::socket::{
         unix::{
+            UnixSocketAddr,
             addr::{UnixSocketAddrBound, UnixSocketAddrKey},
             ctrl_msg::AuxiliaryData,
-            UnixSocketAddr,
         },
         util::ControlMessage,
     },

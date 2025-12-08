@@ -8,7 +8,7 @@ use device_id::{DeviceId, MajorId};
 
 use crate::{
     fs::{
-        device::{add_node, Device, DeviceType},
+        device::{Device, DeviceType, add_node},
         fs_resolver::FsResolver,
     },
     prelude::*,

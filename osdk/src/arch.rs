@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use clap::{builder::PossibleValue, ValueEnum};
+use clap::{ValueEnum, builder::PossibleValue};
 use std::fmt::{self, Display, Formatter};
 
 /// Supported architectures.

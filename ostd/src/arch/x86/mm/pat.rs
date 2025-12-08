@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use x86::msr::{wrmsr, IA32_PAT};
+use x86::msr::{IA32_PAT, wrmsr};
 
 use super::PageTableFlags;
 use crate::{const_assert, mm::page_prop::CachePolicy};

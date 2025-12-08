@@ -6,18 +6,18 @@ use core::cell::Ref;
 
 use inherit_methods_macro::inherit_methods;
 use ostd::{
-    mm::{Fallible, PodAtomic, VmIo, VmReader, VmWriter, MAX_USERSPACE_VADDR},
+    mm::{Fallible, MAX_USERSPACE_VADDR, PodAtomic, VmIo, VmReader, VmWriter},
     task::Task,
 };
 
 use crate::{
     prelude::*,
     process::{
-        posix_thread::{PosixThread, ThreadLocal},
         Process,
+        posix_thread::{PosixThread, ThreadLocal},
     },
     thread::Thread,
-    vm::vmar::{Vmar, VMAR_LOWEST_ADDR},
+    vm::vmar::{VMAR_LOWEST_ADDR, Vmar},
 };
 
 /// The context that can be accessed from the current POSIX thread.

@@ -5,17 +5,17 @@
 use alloc::boxed::Box;
 
 use x86_64::{
+    PrivilegeLevel, VirtAddr,
     instructions::tables::{lgdt, load_tss},
     registers::{
         model_specific::Star,
-        segmentation::{Segment, CS},
+        segmentation::{CS, Segment},
     },
     structures::{
+        DescriptorTablePointer,
         gdt::{Descriptor, SegmentSelector},
         tss::TaskStateSegment,
-        DescriptorTablePointer,
     },
-    PrivilegeLevel, VirtAddr,
 };
 
 use crate::cpu::local::{CpuLocal, StaticCpuLocal};

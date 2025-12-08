@@ -8,8 +8,8 @@ use crate::{
     current_userspace,
     prelude::*,
     process::posix_thread::futex::{
-        futex_op_and_flags_from_u32, futex_requeue, futex_wait, futex_wait_bitset, futex_wake,
-        futex_wake_bitset, futex_wake_op, FutexFlags, FutexOp,
+        FutexFlags, FutexOp, futex_op_and_flags_from_u32, futex_requeue, futex_wait,
+        futex_wait_bitset, futex_wake, futex_wake_bitset, futex_wake_op,
     },
     syscall::SyscallReturn,
     time::{
