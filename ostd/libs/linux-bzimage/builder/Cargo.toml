@@ -1,7 +1,7 @@
 [package]
 name = "linux-bzimage-builder"
 version = "0.16.1"
-edition = "2021"
+edition = "2024"
 description = "Linux boot compatibility for modern OSes"
 license = "MPL-2.0"
 repository = "https://github.com/asterinas/asterinas"
