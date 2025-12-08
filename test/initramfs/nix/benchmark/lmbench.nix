@@ -10,7 +10,8 @@ stdenv.mkDerivation {
   };
 
   dontPatchShebangs = true;
-  makeFlags = [ "CC=${stdenv.cc.targetPrefix}cc" ];
+  makeFlags =
+    [ "CC=${stdenv.cc.targetPrefix}cc OS=${stdenv.targetPlatform.config}" ];
   patchPhase = ''
     runHook prePatch
 
@@ -28,7 +29,7 @@ stdenv.mkDerivation {
     runHook preInstall
 
     mkdir -p $out/bin
-    mv bin/x86_64-linux-gnu/* $out/bin/
+    mv bin/${stdenv.targetPlatform.config}/* $out/bin/
 
     runHook postInstall
   '';
