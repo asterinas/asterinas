@@ -334,6 +334,19 @@ fn handle_get_bit(evdev: &Arc<EvdevDevice>, event_type: u8, writer: &mut VmWrite
             let bitmap = capability.supported_relative_axes_bitmap();
             write_bytes_and_zeros_to_userspace(writer, bitmap)?;
         }
+        t if t == EventTypes::ABS.as_index()
+            || t == EventTypes::LED.as_index()
+            || t == EventTypes::SW.as_index()
+            || t == EventTypes::MSC.as_index()
+            || t == EventTypes::FF.as_index()
+            || t == EventTypes::SND.as_index() =>
+        {
+            // TODO: We do not support these uncommon event types yet, but
+            // returning an error would cause `libevdev` to crash. So we report
+            // a zeroed bitmap here. See
+            // <https://cgit.freedesktop.org/libevdev/tree/libevdev/libevdev.c?h=libevdev-1.13.6#n459>.
+            writer.fill_zeros(writer.avail())?;
+        }
         _ => {
             return_errno_with_message!(Errno::EINVAL, "the event type is not supported yet");
         }
