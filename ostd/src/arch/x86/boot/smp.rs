@@ -174,7 +174,7 @@ unsafe fn copy_ap_boot_code() {
 ///
 /// The caller must ensure the pointer to be filled is valid to write.
 unsafe fn fill_boot_info_ptr(info_ptr: *const PerApRawInfo) {
-    extern "C" {
+    unsafe extern "C" {
         static mut __ap_boot_info_array_pointer: *const PerApRawInfo;
     }
 
@@ -188,7 +188,7 @@ unsafe fn fill_boot_info_ptr(info_ptr: *const PerApRawInfo) {
 ///
 /// The caller must ensure the pointer to be filled is valid to write.
 unsafe fn fill_boot_pt_ptr(pt_ptr: Paddr) {
-    extern "C" {
+    unsafe extern "C" {
         static mut __boot_page_table_pointer: u32;
     }
 
@@ -201,7 +201,7 @@ unsafe fn fill_boot_pt_ptr(pt_ptr: Paddr) {
 }
 
 // The symbols are defined in the linker script.
-extern "C" {
+unsafe extern "C" {
     fn __ap_boot_start();
     fn __ap_boot_end();
 }
@@ -218,7 +218,7 @@ unsafe fn wake_up_aps_via_mailbox(num_cpus: u32) {
     use crate::arch::kernel::acpi::AcpiMemoryHandler;
 
     // The symbols are defined in `ap_boot.S`.
-    extern "C" {
+    unsafe extern "C" {
         fn ap_boot_from_real_mode();
         fn ap_boot_from_long_mode();
     }

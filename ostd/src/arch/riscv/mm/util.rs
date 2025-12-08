@@ -8,7 +8,7 @@ core::arch::global_asm!(include_str!("memset_fallible.S"), SSTATUS_SUM = const S
 core::arch::global_asm!(include_str!("atomic_load_fallible.S"), SSTATUS_SUM = const SSTATUS_SUM);
 core::arch::global_asm!(include_str!("atomic_cmpxchg_fallible.S"), SSTATUS_SUM = const SSTATUS_SUM);
 
-extern "C" {
+unsafe extern "C" {
     /// Copies `size` bytes from `src` to `dst`. This function works with exception handling
     /// and can recover from page fault.
     /// Returns number of bytes that failed to copy.

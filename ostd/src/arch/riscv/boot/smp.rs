@@ -116,7 +116,7 @@ unsafe fn bringup_ap(hart_id: u32) {
 ///
 /// The caller must ensure that `__ap_boot_info_array_pointer` is safe to write.
 unsafe fn fill_boot_info_ptr(info_ptr: *const PerApRawInfo) {
-    extern "C" {
+    unsafe extern "C" {
         static mut __ap_boot_info_array_pointer: *const PerApRawInfo;
     }
 
@@ -132,7 +132,7 @@ unsafe fn fill_boot_info_ptr(info_ptr: *const PerApRawInfo) {
 ///
 /// The caller must ensure that `__ap_boot_page_table_pointer` is safe to write.
 unsafe fn fill_boot_page_table_ptr(pt_ptr: Paddr) {
-    extern "C" {
+    unsafe extern "C" {
         static mut __ap_boot_page_table_pointer: Paddr;
     }
 

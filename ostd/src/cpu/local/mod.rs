@@ -67,7 +67,7 @@ pub type DynamicCpuLocal<T> = CpuLocal<T, DynamicStorage<T>>;
 pub type StaticCpuLocal<T> = CpuLocal<T, static_cpu_local::StaticStorage<T>>;
 
 // These symbols are provided by the linker script.
-extern "C" {
+unsafe extern "C" {
     fn __cpu_local_start();
     fn __cpu_local_end();
 }

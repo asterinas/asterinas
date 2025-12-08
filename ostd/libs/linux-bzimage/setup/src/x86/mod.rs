@@ -30,7 +30,7 @@ pub fn image_load_offset() -> isize {
     /// The load address of the `entry_legacy32` symbol specified in the linker script.
     const CODE32_START: isize = 0x100000;
 
-    extern "C" {
+    unsafe extern "C" {
         fn entry_legacy32();
     }
 
@@ -44,7 +44,7 @@ global_asm!(
 
 /// Returns an immutable slice containing the payload (i.e., the kernel).
 fn payload() -> &'static [u8] {
-    extern "C" {
+    unsafe extern "C" {
         fn __payload_start();
         fn __payload_end();
     }

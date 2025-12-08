@@ -14,7 +14,7 @@ pub(super) const PAGE_SIZE: u64 = 4096;
 
 /// SAFETY: The name does not collide with other symbols.
 #[unsafe(no_mangle)]
-extern "sysv64" fn main_efi_common64(
+unsafe extern "sysv64" fn main_efi_common64(
     handle: Handle,
     system_table: *const SystemTable,
     boot_params_ptr: *mut BootParams,

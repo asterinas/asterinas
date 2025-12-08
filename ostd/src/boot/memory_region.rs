@@ -78,7 +78,7 @@ impl MemoryRegion {
     /// we need to explicitly construct and append this memory region.
     pub fn kernel() -> Self {
         // These are physical addresses provided by the linker script.
-        extern "C" {
+        unsafe extern "C" {
             fn __kernel_start();
             fn __kernel_end();
         }
