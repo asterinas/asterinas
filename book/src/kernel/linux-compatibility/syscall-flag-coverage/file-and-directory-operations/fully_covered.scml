@@ -95,6 +95,13 @@ getxattr(path, name, value, size);
 lgetxattr(path, name, value, size);
 fgetxattr(fd, name, value, size);
 
+xattr_flags = XATTR_CREATE | XATTR_REPLACE;
+
+// Set an extended attribute value
+setxattr(path, name, value, size, flags = <xattr_flags>);
+lsetxattr(path, name, value, size, flags = <xattr_flags>);
+fsetxattr(fd, name, value, size, flags = <xattr_flags>);
+
 // List extended attribute names
 listxattr(path, list, size);
 llistxattr(path, list, size);
