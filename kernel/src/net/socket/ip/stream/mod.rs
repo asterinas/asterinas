@@ -816,9 +816,9 @@ impl State {
     fn iface(&self) -> Option<&Arc<Iface>> {
         match self {
             State::Init(_) => None,
-            State::Connecting(ref connecting_stream) => Some(connecting_stream.iface()),
-            State::Connected(ref connected_stream) => Some(connected_stream.iface()),
-            State::Listen(ref listen_stream) => Some(listen_stream.iface()),
+            State::Connecting(connecting_stream) => Some(connecting_stream.iface()),
+            State::Connected(connected_stream) => Some(connected_stream.iface()),
+            State::Listen(listen_stream) => Some(listen_stream.iface()),
         }
     }
 }
