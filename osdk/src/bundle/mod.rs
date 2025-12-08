@@ -93,20 +93,20 @@ impl Bundle {
 
         let _dir_guard = DirGuard::change_dir(&path);
 
-        if let Some(aster_bin) = &manifest.aster_bin {
-            if !aster_bin.validate() {
-                return None;
-            }
+        if let Some(aster_bin) = &manifest.aster_bin
+            && !aster_bin.validate()
+        {
+            return None;
         }
-        if let Some(vm_image) = &manifest.vm_image {
-            if !vm_image.validate() {
-                return None;
-            }
+        if let Some(vm_image) = &manifest.vm_image
+            && !vm_image.validate()
+        {
+            return None;
         }
-        if let Some(initramfs) = &manifest.initramfs {
-            if !initramfs.validate() {
-                return None;
-            }
+        if let Some(initramfs) = &manifest.initramfs
+            && !initramfs.validate()
+        {
+            return None;
         }
 
         Some(Self {
@@ -359,17 +359,17 @@ impl Bundle {
         // Setting a QEMU log is required for source line stack trace because piping the output
         // is less desirable when running QEMU with serial redirected to standard I/O.
         let qemu_log_path = config.work_dir.join("qemu.log");
-        if let Ok(file) = std::fs::File::open(&qemu_log_path) {
-            if let Some(aster_bin) = &self.manifest.aster_bin {
-                crate::util::trace_panic_from_log(file, self.path.join(aster_bin.path()));
-            }
+        if let Ok(file) = std::fs::File::open(&qemu_log_path)
+            && let Some(aster_bin) = &self.manifest.aster_bin
+        {
+            crate::util::trace_panic_from_log(file, self.path.join(aster_bin.path()));
         }
 
         // Find the coverage data information in "qemu.log", and dump it if found.
-        if let Some(qemu_monitor_stream) = qemu_monitor_stream {
-            if let Ok(file) = std::fs::File::open(&qemu_log_path) {
-                crate::util::dump_coverage_from_qemu(file, qemu_monitor_stream);
-            }
+        if let Some(qemu_monitor_stream) = qemu_monitor_stream
+            && let Ok(file) = std::fs::File::open(&qemu_log_path)
+        {
+            crate::util::dump_coverage_from_qemu(file, qemu_monitor_stream);
         }
     }
 }
