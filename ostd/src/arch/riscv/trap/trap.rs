@@ -85,7 +85,8 @@ pub(super) unsafe fn init_on_cpu() {
 /// You need to define a handler function like this:
 ///
 /// ```no_run
-/// #[no_mangle]
+/// // SAFETY: The name does not collide with other symbols.
+/// #[unsafe(no_mangle)]
 /// pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
 ///     println!("TRAP! tf: {:#x?}", tf);
 /// }

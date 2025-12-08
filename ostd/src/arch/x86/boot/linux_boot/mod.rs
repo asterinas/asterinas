@@ -198,7 +198,8 @@ fn parse_memory_regions(boot_params: &BootParams) -> MemoryRegionArray {
 ///
 /// - This function must be called only once at a proper timing in the BSP's boot assembly code.
 /// - The caller must follow C calling conventions and put the right arguments in registers.
-#[no_mangle]
+// SAFETY: The name does not collide with other symbols.
+#[unsafe(no_mangle)]
 unsafe extern "sysv64" fn __linux_boot(params_ptr: *const BootParams) -> ! {
     let params = unsafe { &*params_ptr };
     assert_eq!({ params.hdr.header }, LINUX_BOOT_HEADER_MAGIC);

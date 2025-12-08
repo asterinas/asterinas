@@ -136,7 +136,8 @@ macro_rules! reserve_io_port_range {
 
         const _: () = {
             #[used]
-            #[link_section = ".sensitive_io_ports"]
+            // SAFETY: This is properly handled in the linker script.
+            #[unsafe(link_section = ".sensitive_io_ports")]
             static _RANGE: crate::io::RawIoPortRange = crate::io::RawIoPortRange {
                 begin: $range.start,
                 end: $range.end,
@@ -173,7 +174,8 @@ macro_rules! sensitive_io_port {
             $(#[$meta])*
             $vis static $name: IoPort<$size, $access> = {
                 #[used]
-                #[link_section = ".sensitive_io_ports"]
+                // SAFETY: This is properly handled in the linker script.
+                #[unsafe(link_section = ".sensitive_io_ports")]
                 static _RESERVED_IO_PORT_RANGE: crate::io::RawIoPortRange = crate::io::RawIoPortRange {
                     begin: $name.port(),
                     end: $name.port() + $name.size(),

@@ -193,7 +193,8 @@ cpu_local_cell! {
 /// - This function must be called only once on each AP at a proper timing in the AP's boot
 ///   assembly code.
 /// - The caller must follow C calling conventions and put the right arguments in registers.
-#[no_mangle]
+// SAFETY: The name does not collide with other symbols.
+#[unsafe(no_mangle)]
 unsafe extern "C" fn riscv_ap_early_entry(cpu_id: u32, hart_id: u32) -> ! {
     // CPU local memory could be accessed here since we are the AP and the BSP
     // must have initialized it.

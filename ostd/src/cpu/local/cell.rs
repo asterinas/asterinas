@@ -43,7 +43,8 @@ use crate::arch;
 macro_rules! cpu_local_cell {
     ($( $(#[$attr:meta])* $vis:vis static $name:ident: $t:ty = $init:expr; )*) => {
         $(
-            #[link_section = ".cpu_local"]
+            // SAFETY: This is properly handled in the linker script.
+            #[unsafe(link_section = ".cpu_local")]
             $(#[$attr])* $vis static $name: $crate::cpu::local::CpuLocalCell<$t> = {
                 let val = $init;
                 // SAFETY: The CPU local variable instantiated is statically

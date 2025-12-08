@@ -40,7 +40,8 @@ pub(crate) unsafe fn init_on_cpu() {
 }
 
 /// Handle traps (only from kernel).
-#[no_mangle]
+// SAFETY: The name does not collide with other symbols.
+#[unsafe(no_mangle)]
 extern "C" fn trap_handler(f: &mut TrapFrame) {
     fn enable_local_if(cond: bool) {
         if cond {
