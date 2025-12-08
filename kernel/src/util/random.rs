@@ -51,11 +51,10 @@ fn get_random_seed() -> <StdRng as SeedableRng>::Seed {
     use ostd::arch::boot::DEVICE_TREE;
 
     let chosen = DEVICE_TREE.get().unwrap().find_node("/chosen").unwrap();
-    let seed = chosen
+    chosen
         .property("rng-seed")
         .unwrap()
         .value
         .try_into()
-        .unwrap();
-    seed
+        .unwrap()
 }

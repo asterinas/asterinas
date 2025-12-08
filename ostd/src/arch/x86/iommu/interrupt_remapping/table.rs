@@ -149,6 +149,7 @@ pub enum SourceIdQualifier {
 
 #[derive(Debug, TryFromInt)]
 #[repr(u32)]
+#[expect(dead_code)]
 enum DeliveryMode {
     FixedMode = 0b000,
     LowestPriority = 0b001,

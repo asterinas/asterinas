@@ -29,7 +29,6 @@
 #![no_std]
 #![deny(unsafe_code)]
 #![feature(step_trait)]
-#![feature(trait_upcasting)]
 
 extern crate alloc;
 

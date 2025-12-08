@@ -2,7 +2,6 @@
 
 //! The system time of Asterinas.
 
-#![feature(let_chains)]
 #![no_std]
 #![deny(unsafe_code)]
 

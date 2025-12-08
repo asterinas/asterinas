@@ -64,7 +64,7 @@ use crate::{
 pub type DynamicCpuLocal<T> = CpuLocal<T, DynamicStorage<T>>;
 
 /// Statically-allocated CPU-local objects.
-pub type StaticCpuLocal<T> = CpuLocal<T, static_cpu_local::StaticStorage<T>>;
+pub type StaticCpuLocal<T> = CpuLocal<T, StaticStorage<T>>;
 
 // These symbols are provided by the linker script.
 unsafe extern "C" {
@@ -180,10 +180,6 @@ unsafe impl<T: Send + 'static> Send for CpuLocal<T, DynamicStorage<T>> {}
 impl<T: 'static, S: AnyStorage<T>> !Copy for CpuLocal<T, S> {}
 impl<T: 'static, S: AnyStorage<T>> !Clone for CpuLocal<T, S> {}
 
-// In general, it does not make any sense to send instances of static `CpuLocal`
-// to other tasks as they should live on other CPUs to make sending useful.
-impl<T: 'static> !Send for CpuLocal<T, StaticStorage<T>> {}
-
 /// The static CPU-local areas for APs.
 static CPU_LOCAL_STORAGES: Once<&'static [Paddr]> = Once::new();
 
@@ -227,8 +223,8 @@ pub(crate) unsafe fn copy_bsp_for_ap(num_cpus: usize) {
         unsafe { core::slice::from_raw_parts_mut(ptr, num_aps) }
     };
 
-    let bsp_base_va = __cpu_local_start as usize;
-    let bsp_end_va = __cpu_local_end as usize;
+    let bsp_base_va = __cpu_local_start as *const () as usize;
+    let bsp_end_va = __cpu_local_end as *const () as usize;
 
     // Allocate the CPU-local storage segments for APs.
     for res_addr_mut in res.iter_mut() {

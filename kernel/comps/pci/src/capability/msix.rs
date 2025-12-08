@@ -166,7 +166,7 @@ impl CapabilityMsixData {
                 .unwrap();
         }
 
-        let _old_irq = core::mem::replace(&mut self.irqs[index as usize], Some(irq));
+        let _old_irq = self.irqs[index as usize].replace(irq);
         // Enable this msix vector
         self.table_bar
             .io_mem()

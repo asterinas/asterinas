@@ -28,7 +28,7 @@ use crate::{
         utils::{
             AccessMode, CachePage, CreationFlags, Extension, FallocMode, FileSystem, Inode,
             InodeIo, InodeMode, InodeType, Metadata, OpenArgs, PageCacheBackend, SeekFrom,
-            StatusFlags, XattrName, XattrNamespace, XattrSetFlags, chmod, mkmod,
+            StatusFlags, XattrName, XattrNamespace, XattrSetFlags, mkmod,
         },
     },
     prelude::*,
@@ -146,7 +146,7 @@ impl InodeIo for MemfdInode {
             // <https://elixir.bootlin.com/linux/v6.16.5/source/mm/shmem.c#L3309-L3310>
             // <https://github.com/google/gvisor/blob/6db745970118635edec4c973f47df2363924d3a7/test/syscalls/linux/memfd.cc#L261-L280>
             let old_size = self.inode.size();
-            let new_size = offset.checked_add(reader.remain()).unwrap_or(usize::MAX);
+            let new_size = offset.saturating_add(reader.remain());
             if new_size > old_size {
                 let eof_page = old_size.align_down(PAGE_SIZE);
                 if offset >= eof_page {

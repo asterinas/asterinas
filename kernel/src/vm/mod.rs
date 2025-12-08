@@ -40,11 +40,9 @@ pub fn mem_total() -> usize {
     use ostd::boot::{boot_info, memory_region::MemoryRegionType};
 
     let regions = &boot_info().memory_regions;
-    let total = regions
+    regions
         .iter()
         .filter(|region| region.typ() == MemoryRegionType::Usable)
         .map(|region| region.len())
-        .sum::<usize>();
-
-    total
+        .sum::<usize>()
 }

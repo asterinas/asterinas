@@ -658,7 +658,6 @@ impl ExfatInode {
             .page_cache
             .discard_range(read_off..read_off + read_len);
 
-        let mut buf_offset = 0;
         let bio_segment = BioSegment::alloc(1, BioDirection::FromDevice);
 
         let start_pos = inner.start_chain.walk_to_cluster_at_offset(read_off)?;
@@ -673,7 +672,6 @@ impl ExfatInode {
                 .block_device()
                 .read_blocks(physical_bid, bio_segment.clone())?;
             bio_segment.reader().unwrap().read_fallible(writer)?;
-            buf_offset += BLOCK_SIZE;
 
             cur_offset += BLOCK_SIZE;
             if cur_offset >= cluster_size {
@@ -1521,7 +1519,7 @@ impl Inode for ExfatInode {
             }
 
             // Skip . and ..
-            let dir_to_skip = if dir_cnt >= 2 { dir_cnt - 2 } else { 0 };
+            let dir_to_skip = dir_cnt.saturating_sub(2);
 
             // Skip previous directories.
             let (off, _) = inner.visit_sub_inodes(0, dir_to_skip, &mut empty_visitor, &fs_guard)?;

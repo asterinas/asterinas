@@ -24,18 +24,13 @@ use crate::{
 ///
 /// This type defines how mount and unmount events are propagated
 /// from this mount to other mounts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Copy, PartialEq, Eq)]
 pub enum MountPropType {
     /// A private type is the default mount type. Mount and unmount events
     /// do not propagate to or from the private mounts.
+    #[default]
     Private,
     // TODO: Implement other propagation types.
-}
-
-impl Default for MountPropType {
-    fn default() -> Self {
-        Self::Private
-    }
 }
 
 static ID_ALLOCATOR: Once<SpinLock<IdAlloc>> = Once::new();

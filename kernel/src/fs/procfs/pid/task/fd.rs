@@ -138,15 +138,13 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
         let thread = self.dir.thread();
         let posix_thread = thread.as_posix_thread().unwrap();
 
-        let is_valid = if let Some(file_table) = posix_thread.file_table().lock().as_ref()
+        if let Some(file_table) = posix_thread.file_table().lock().as_ref()
             && let Ok(file) = file_table.read().get_file(child_ops.file_desc())
         {
             child_ops.is_valid(file)
         } else {
             false
-        };
-
-        is_valid
+        }
     }
 }
 
