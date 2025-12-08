@@ -20,8 +20,7 @@ impl Vmar {
     /// using copy-on-write (COW) technique.
     pub fn fork_from(vmar: &Self) -> Result<Arc<Self>> {
         let new_vmar = Arc::new(Vmar {
-            inner: RwMutex::new(VmarInner::new()),
-            vm_space: Arc::new(VmSpace::<()>::new()),
+            vm_space: Arc::new(VmSpace::<PerPtMeta>::new()),
             rss_counters: array::from_fn(|_| PerCpuCounter::new()),
             // FIXME: There are race conditions because `process_vm` is not operating under the
             // `vmar.inner` lock.

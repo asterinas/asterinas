@@ -8,47 +8,71 @@ use crate::{prelude::*, vm::perms::VmPerms};
 impl Vmar {
     /// Change the permissions of the memory mappings in the specified range.
     ///
-    /// The range's start and end addresses must be page-aligned.
-    /// Also, the range must be completely mapped.
-    pub fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
+    /// # Errors
+    ///
+    /// Returns [`Errno::ENOMEM`] if the range covers pages that are not mapped.
+    /// Note that on returning, virtual addresses before the unmapped page are
+    /// already protected. This is bug-to-bug compatible with Linux 6.17.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the range's start and end addresses are not page-aligned.
+    pub fn protect(&self, perms: VmPerms, range: Range<Vaddr>) -> Result<()> {
         assert!(range.start.is_multiple_of(PAGE_SIZE));
         assert!(range.end.is_multiple_of(PAGE_SIZE));
 
-        let mut inner = self.inner.write();
+        // To check if any pages are not mapped.
+        let mut last_protected_addr = range.start;
+
+        let preempt_guard = disable_preempt();
         let vm_space = self.vm_space();
+        let mut cursor = vm_space.cursor_mut(&preempt_guard, &range).unwrap();
 
-        let mut protect_mappings = Vec::new();
+        while let Some(vm_mapping) = find_next_mapped(&mut cursor, range.end - cursor.virt_addr()) {
+            let vm_mapping_range = vm_mapping.range();
 
-        for vm_mapping in inner.vm_mappings.find(&range) {
-            protect_mappings.push((vm_mapping.map_to_addr(), vm_mapping.perms()));
-        }
-
-        for (vm_mapping_addr, vm_mapping_perms) in protect_mappings {
-            if perms == vm_mapping_perms & VmPerms::ALL_PERMS {
-                continue;
+            if last_protected_addr < vm_mapping_range.start {
+                return_errno_with_message!(
+                    Errno::ENOMEM,
+                    "protect: the range covers unmapped pages"
+                );
             }
-            let new_perms = perms | (vm_mapping_perms & VmPerms::ALL_MAY_PERMS);
+
+            // Skip if no actions needed.
+            if perms == vm_mapping.perms() & VmPerms::ALL_PERMS {
+                if vm_mapping_range.end >= range.end {
+                    break;
+                } else {
+                    cursor.jump(vm_mapping_range.end).unwrap();
+                    last_protected_addr = vm_mapping_range.end;
+                    continue;
+                }
+            }
+
+            let intersected_range = get_intersected_range(&range, &vm_mapping_range);
+            cursor.jump(intersected_range.start).unwrap();
+            cursor.propagate_if_needed(intersected_range.len());
+
+            let Some(PteRangeMeta::VmMapping(vm_mapping)) = cursor.aux_meta().inner.remove(va)
+            else {
+                panic!("`find_next_mapped` does not stop at mapped `VmMapping`");
+            };
+
+            let new_perms = perms | (vm_mapping.perms() & VmPerms::ALL_MAY_PERMS);
             new_perms.check()?;
 
-            let vm_mapping = inner.remove(&vm_mapping_addr).unwrap();
-            let vm_mapping_range = vm_mapping.range();
-            let intersected_range = get_intersected_range(&range, &vm_mapping_range);
+            let taken = split_and_insert_rest(&mut cursor, vm_mapping, intersected_range.clone());
+            let next_address = taken.range().end;
 
-            // Protects part of the taken `VmMapping`.
-            let (left, taken, right) = vm_mapping.split_range(&intersected_range);
+            let taken = taken.protect(cursor, new_perms);
+            cursor.aux_meta().insert_try_merge(taken);
 
-            // Puts the rest back.
-            if let Some(left) = left {
-                inner.insert_without_try_merge(left);
-            }
-            if let Some(right) = right {
-                inner.insert_without_try_merge(right);
-            }
-
-            // Protects part of the `VmMapping`.
-            let taken = taken.protect(vm_space.as_ref(), new_perms);
-            inner.insert_try_merge(taken);
+            cursor.jump(next_address).unwrap();
+            last_protected_addr = next_address;
         }
+
+        cursor.flusher().dispatch_tlb_flush();
+        cursor.flusher().sync_tlb_flush();
 
         Ok(())
     }

@@ -387,6 +387,18 @@ impl<'a, A: AuxPageTableMeta> CursorMut<'a, A> {
         self.pt_cursor.adjust_level(level);
     }
 
+    /// Gets the guard level of the cursor.
+    ///
+    /// The guard level is the maximum level that the cursor can pop to.
+    pub fn guard_level(&self) -> PagingLevel {
+        self.pt_cursor.guard_level()
+    }
+
+    /// Gets the auxiliary metadata associated with the current page table.
+    pub fn aux_meta(&mut self) -> &mut A {
+        self.pt_cursor.aux_meta()
+    }
+
     /// Get the virtual address of the current slot.
     pub fn virt_addr(&self) -> Vaddr {
         self.pt_cursor.virt_addr()
@@ -402,6 +414,15 @@ impl<'a, A: AuxPageTableMeta> CursorMut<'a, A> {
     /// Returns the new level if the next level page table exists, or `None` otherwise.
     pub fn push_level_if_exists(&mut self) -> Option<PagingLevel> {
         self.pt_cursor.push_level_if_exists()
+    }
+
+    /// Pops the cursor up to the previous level.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the current level is at the guard level.
+    pub fn pop_level(&mut self) {
+        self.pt_cursor.pop_level();
     }
 
     /// Get the current virtual address range of the cursor.
@@ -509,10 +530,14 @@ impl<'a, A: AuxPageTableMeta> CursorMut<'a, A> {
     ///
     /// Panics if the current level is at the top level.
     pub fn unmap(&mut self) -> usize {
+        self.unmap_with_callback(|_| {})
+    }
+
+    pub fn unmap_with_callback(&mut self, sub_pt_unmap_cb: impl FnMut(&mut A)) -> usize {
         // SAFETY: It is safe to un-map memory in the userspace. And the
         // un-mapped items are dropped after TLB flushes. So they outlive
         // the current RCU lifetime `'a`.
-        let Some(frag) = (unsafe { self.pt_cursor.unmap() }) else {
+        let Some(frag) = (unsafe { self.pt_cursor.unmap_with_callback(sub_pt_unmap_cb) }) else {
             return 0;
         };
 

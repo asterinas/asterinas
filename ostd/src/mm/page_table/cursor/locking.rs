@@ -258,7 +258,10 @@ pub(super) unsafe fn dfs_mark_stray_and_unlock<C: PageTableConfig>(
     rcu_guard: &dyn InAtomicMode,
     mut sub_tree: PageTableGuard<C>,
     subtree_va: Vaddr,
+    mut sub_pt_unmap_cb: impl FnMut(&mut C::Aux),
 ) -> usize {
+    sub_pt_unmap_cb(sub_tree.aux_mut());
+
     *sub_tree.stray_mut() = true;
     let level = sub_tree.level();
 

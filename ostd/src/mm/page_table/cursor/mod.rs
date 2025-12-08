@@ -152,6 +152,11 @@ impl<'rcu, C: PageTableConfig, const MUTABLE: bool> Cursor_<'rcu, C, MUTABLE> {
         self.level
     }
 
+    /// Gets the guard level of the cursor.
+    pub fn guard_level(&self) -> PagingLevel {
+        self.guard_level
+    }
+
     /// Queries the mapping at the current virtual address.
     pub(in crate::mm) fn query(&self) -> PteStateRef<'rcu, C> {
         debug_assert!(self.barrier_va.contains(&self.va));
@@ -387,6 +392,14 @@ impl<C: PageTableConfig> CursorMut<'_, C> {
         }
     }
 
+    /// Gets the auxiliary metadata associated with the current page table.
+    pub fn aux_meta(&mut self) -> &mut C::Aux {
+        self.path[self.level as usize - 1]
+            .as_mut()
+            .unwrap()
+            .aux_mut()
+    }
+
     /// Maps the item starting from the current address to a physical address range.
     ///
     /// The current virtual address must not be mapped.
@@ -444,11 +457,18 @@ impl<C: PageTableConfig> CursorMut<'_, C> {
     ///  - the current virtual address is not aligned to the page size of the
     ///    current level.
     pub unsafe fn unmap(&mut self) -> Option<PageTableFrag<C>> {
+        unsafe { self.unmap_with_callback(|_| {}) }
+    }
+
+    pub unsafe fn unmap_with_callback(
+        &mut self,
+        sub_pt_unmap_cb: impl FnMut(&mut C::Aux),
+    ) -> Option<PageTableFrag<C>> {
         if !C::TOP_LEVEL_CAN_UNMAP && self.level == C::NR_LEVELS {
             panic!("Unmapping top-level page table nodes");
         }
         assert_eq!(self.va % page_size::<C>(self.level), 0);
-        self.replace_cur_entry(PteState::Absent)
+        self.replace_cur_entry(PteState::Absent, sub_pt_unmap_cb)
     }
 
     /// Applies the operation to the current PTE.
@@ -471,7 +491,11 @@ impl<C: PageTableConfig> CursorMut<'_, C> {
         self.cur_entry().protect(op);
     }
 
-    fn replace_cur_entry(&mut self, new_child: PteState<C>) -> Option<PageTableFrag<C>> {
+    fn replace_cur_entry(
+        &mut self,
+        new_child: PteState<C>,
+        sub_pt_unmap_cb: impl FnMut(&mut C::Aux),
+    ) -> Option<PageTableFrag<C>> {
         let rcu_guard = self.rcu_guard;
 
         let va = self.va;
@@ -495,8 +519,9 @@ impl<C: PageTableConfig> CursorMut<'_, C> {
                 // SAFETY:
                 //  - We checked that we are not unmapping shared kernel page table nodes.
                 //  - We must have locked the entire sub-tree since the range is locked.
-                let num_frames =
-                    unsafe { locking::dfs_mark_stray_and_unlock(rcu_guard, locked_pt, va) };
+                let num_frames = unsafe {
+                    locking::dfs_mark_stray_and_unlock(rcu_guard, locked_pt, va, sub_pt_unmap_cb)
+                };
 
                 Some(PageTableFrag::StrayPageTable {
                     pt: (*pt).clone().into(),
