@@ -10,7 +10,8 @@ global_asm!(include_str!("setup.S"));
 
 const ASTER_ENTRY_POINT: *const () = 0x8001000 as _;
 
-#[export_name = "main_legacy32"]
+/// SAFETY: The name does not collide with other symbols.
+#[unsafe(export_name = "main_legacy32")]
 extern "cdecl" fn main_legacy32(boot_params_ptr: *mut BootParams) -> ! {
     crate::println!(
         "[setup] Loaded with offset {:#x}",

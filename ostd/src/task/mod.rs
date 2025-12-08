@@ -169,7 +169,8 @@ impl TaskOptions {
         // # Safety
         //
         // This function must be called from `switch.S` when the context is prepared correctly.
-        #[no_mangle]
+        // SAFETY: The name does not collide with other symbols.
+        #[unsafe(no_mangle)]
         unsafe extern "C" fn kernel_task_entry() -> ! {
             // SAFETY: The new task is switched on a CPU for the first time, `after_switching_to`
             // hasn't been called yet.

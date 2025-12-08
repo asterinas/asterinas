@@ -143,7 +143,8 @@ fn parse_memory_regions(mb2_info: &BootInformation) -> MemoryRegionArray {
 ///
 /// - This function must be called only once at a proper timing in the BSP's boot assembly code.
 /// - The caller must follow C calling conventions and put the right arguments in registers.
-#[no_mangle]
+// SAFETY: The name does not collide with other symbols.
+#[unsafe(no_mangle)]
 unsafe extern "sysv64" fn __multiboot2_entry(boot_magic: u32, boot_params: u64) -> ! {
     assert_eq!(boot_magic, multiboot2::MAGIC);
     let mb2_info =

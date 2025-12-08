@@ -132,7 +132,8 @@ pub fn register_ap_entry(entry: fn()) {
 /// - This function must be called only once on each AP at a proper timing in the AP's boot
 ///   assembly code, or via a thin Rust wrapper that does not access uninitialized AP states.
 /// - The caller must follow C calling conventions and put the right arguments in registers.
-#[no_mangle]
+// SAFETY: The name does not collide with other symbols.
+#[unsafe(no_mangle)]
 pub(crate) unsafe extern "C" fn ap_early_entry(cpu_id: u32) -> ! {
     // SAFETY:
     // 1. We're in the boot context of an AP.

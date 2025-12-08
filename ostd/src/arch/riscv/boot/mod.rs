@@ -114,7 +114,8 @@ static mut BOOTSTRAP_HART_ID: u32 = u32::MAX;
 ///
 /// - This function must be called only once at a proper timing in the BSP's boot assembly code.
 /// - The caller must follow C calling conventions and put the right arguments in registers.
-#[no_mangle]
+// SAFETY: The name does not collide with other symbols.
+#[unsafe(no_mangle)]
 unsafe extern "C" fn riscv_boot(hart_id: usize, device_tree_paddr: usize) -> ! {
     early_println!("Enter riscv_boot");
 

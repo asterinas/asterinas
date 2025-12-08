@@ -36,7 +36,8 @@ pub(crate) unsafe fn init_on_cpu() {
 }
 
 /// Handle traps (only from kernel).
-#[no_mangle]
+// SAFETY: The name does not collide with other symbols.
+#[unsafe(no_mangle)]
 extern "C" fn trap_handler(f: &mut TrapFrame) {
     let cause = estat::read().cause();
     let badi = loongArch64::register::badi::read().raw();

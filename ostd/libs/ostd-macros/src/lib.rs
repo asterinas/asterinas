@@ -28,7 +28,8 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     quote!(
         #[cfg(not(ktest))]
-        #[no_mangle]
+        // SAFETY: The name does not collide with other symbols.
+    #[unsafe(no_mangle)]
         extern "Rust" fn __ostd_main() -> ! {
             let _: () = #main_fn_name();
 
@@ -52,7 +53,8 @@ pub fn test_main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let main_fn_name = &main_fn.sig.ident;
 
     quote!(
-        #[no_mangle]
+        // SAFETY: The name does not collide with other symbols.
+    #[unsafe(no_mangle)]
         extern "Rust" fn __ostd_main() -> ! {
             let _: () = #main_fn_name();
 
@@ -96,7 +98,8 @@ pub fn global_frame_allocator(_attr: TokenStream, item: TokenStream) -> TokenStr
     let static_name = &item.ident;
 
     quote!(
-        #[no_mangle]
+        // SAFETY: The name does not collide with other symbols.
+    #[unsafe(no_mangle)]
         static __GLOBAL_FRAME_ALLOCATOR_REF: &'static dyn ostd::mm::frame::GlobalFrameAllocator = &#static_name;
         #item
     )
@@ -141,7 +144,8 @@ pub fn global_heap_allocator(_attr: TokenStream, item: TokenStream) -> TokenStre
     let static_name = &item.ident;
 
     quote!(
-        #[no_mangle]
+        // SAFETY: The name does not collide with other symbols.
+    #[unsafe(no_mangle)]
         static __GLOBAL_HEAP_ALLOCATOR_REF: &'static dyn ostd::mm::heap::GlobalHeapAllocator = &#static_name;
         #item
     )
@@ -175,7 +179,8 @@ pub fn global_heap_allocator_slot_map(_attr: TokenStream, item: TokenStream) -> 
     );
 
     quote!(
-        #[export_name = "__GLOBAL_HEAP_SLOT_INFO_FROM_LAYOUT"]
+        /// SAFETY: The name does not collide with other symbols.
+        #[unsafe(export_name = "__GLOBAL_HEAP_SLOT_INFO_FROM_LAYOUT")]
         #item
     )
     .into()
@@ -193,7 +198,8 @@ pub fn panic_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     quote!(
         #[cfg(not(ktest))]
-        #[no_mangle]
+        // SAFETY: The name does not collide with other symbols.
+    #[unsafe(no_mangle)]
         extern "Rust" fn __ostd_panic_handler(info: &core::panic::PanicInfo) -> ! {
             #handler_fn_name(info);
         }
@@ -214,7 +220,8 @@ pub fn test_panic_handler(_attr: TokenStream, item: TokenStream) -> TokenStream 
     let handler_fn_name = &handler_fn.sig.ident;
 
     quote!(
-        #[no_mangle]
+        // SAFETY: The name does not collide with other symbols.
+    #[unsafe(no_mangle)]
         extern "Rust" fn __ostd_panic_handler(info: &core::panic::PanicInfo) -> ! {
             #handler_fn_name(info);
         }
@@ -328,7 +335,8 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
         quote! {
             #[cfg(ktest)]
             #[used]
-            #[link_section = ".ktest_array"]
+            // SAFETY: This is properly handled in the linker script.
+            #[unsafe(link_section = ".ktest_array")]
             static #fn_ktest_item_name: ostd_test::KtestItem = ostd_test::KtestItem::new(
                 #fn_name,
                 (#should_panic, #expectation_tokens),
@@ -346,7 +354,8 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
         quote! {
             #[cfg(ktest)]
             #[used]
-            #[link_section = ".ktest_array"]
+            // SAFETY: This is properly handled in the linker script.
+            #[unsafe(link_section = ".ktest_array")]
             static #fn_ktest_item_name: ostd::ktest::KtestItem = ostd::ktest::KtestItem::new(
                 #fn_name,
                 (#should_panic, #expectation_tokens),
