@@ -6,3 +6,6 @@ madvise(addr, length, advice = MADV_SEQUENTIAL);
 
 // Prefetch pages for near-future access to reduce latency
 madvise(addr, length, advice = MADV_WILLNEED);
+
+// Mark pages for lazy reclamation to allow the kernel to free them under memory pressure
+madvise(addr, length, advice = MADV_FREE);
