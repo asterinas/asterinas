@@ -100,7 +100,7 @@ pub fn print_stack_trace() {
                     let reg_name = "unknown";
                 }
             }
-            if i % 4 == 0 {
+            if i.is_multiple_of(4) {
                 early_print!("\n    ");
             }
             early_print!(" {} {:#18x};", reg_name, reg_i);

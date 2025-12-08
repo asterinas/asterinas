@@ -145,7 +145,7 @@ impl<D: BlockSet + 'static> WalAppendTx<D> {
         wal_tx: &CurrentTx<'_>,
         log: &Arc<TxLog<D>>,
     ) -> Result<()> {
-        debug_assert!(!record_buf.is_empty() && record_buf.len() % BLOCK_SIZE == 0);
+        debug_assert!(!record_buf.is_empty() && record_buf.len().is_multiple_of(BLOCK_SIZE));
         let res = wal_tx.context(|| {
             let buf = BufRef::try_from(record_buf).unwrap();
             log.append(buf)

@@ -62,7 +62,7 @@ pub trait BlockSet: Sync + Send {
         blocks.as_mut_slice()[start_offset..end_offset].copy_from_slice(buf);
 
         // Maybe we should read the last block partially.
-        if end_offset % BLOCK_SIZE != 0 {
+        if !end_offset.is_multiple_of(BLOCK_SIZE) {
             let mut end_block = Buf::alloc(1)?;
             self.read(end_pos, end_block.as_mut())?;
             blocks.as_mut_slice()[end_offset..]

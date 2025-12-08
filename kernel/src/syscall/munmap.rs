@@ -8,7 +8,7 @@ use crate::prelude::*;
 pub fn sys_munmap(addr: Vaddr, len: usize, ctx: &Context) -> Result<SyscallReturn> {
     debug!("addr = 0x{:x}, len = {}", addr, len);
 
-    if addr % PAGE_SIZE != 0 {
+    if !addr.is_multiple_of(PAGE_SIZE) {
         return_errno_with_message!(Errno::EINVAL, "munmap addr must be page-aligned");
     }
     if len == 0 {

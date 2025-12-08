@@ -85,8 +85,8 @@ impl KVirtArea {
         frames: impl Iterator<Item = Frame<T>>,
         prop: PageProperty,
     ) -> Self {
-        assert!(area_size % PAGE_SIZE == 0);
-        assert!(map_offset % PAGE_SIZE == 0);
+        assert!(area_size.is_multiple_of(PAGE_SIZE));
+        assert!(map_offset.is_multiple_of(PAGE_SIZE));
 
         let range = KVIRT_AREA_ALLOCATOR.alloc(area_size).unwrap();
         let cursor_range = range.start + map_offset..range.end;
@@ -131,10 +131,10 @@ impl KVirtArea {
         pa_range: Range<Paddr>,
         prop: PageProperty,
     ) -> Self {
-        assert!(pa_range.start % PAGE_SIZE == 0);
-        assert!(pa_range.end % PAGE_SIZE == 0);
-        assert!(area_size % PAGE_SIZE == 0);
-        assert!(map_offset % PAGE_SIZE == 0);
+        assert!(pa_range.start.is_multiple_of(PAGE_SIZE));
+        assert!(pa_range.end.is_multiple_of(PAGE_SIZE));
+        assert!(area_size.is_multiple_of(PAGE_SIZE));
+        assert!(map_offset.is_multiple_of(PAGE_SIZE));
         assert!(map_offset + pa_range.len() <= area_size);
 
         let range = KVIRT_AREA_ALLOCATOR.alloc(area_size).unwrap();

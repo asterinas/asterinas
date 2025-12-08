@@ -2407,5 +2407,5 @@ pub(super) struct Osd2 {
 }
 
 fn is_block_aligned(offset: usize) -> bool {
-    offset % BLOCK_SIZE == 0
+    offset.is_multiple_of(BLOCK_SIZE)
 }

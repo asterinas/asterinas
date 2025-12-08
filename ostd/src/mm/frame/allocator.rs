@@ -205,8 +205,8 @@ pub(crate) unsafe fn init() {
 
     for region in regions.iter() {
         if region.typ() == MemoryRegionType::Usable {
-            debug_assert!(region.base() % PAGE_SIZE == 0);
-            debug_assert!(region.len() % PAGE_SIZE == 0);
+            debug_assert!(region.base().is_multiple_of(PAGE_SIZE));
+            debug_assert!(region.len().is_multiple_of(PAGE_SIZE));
 
             // Add global free pages to the frame allocator.
             // Truncate the early allocated frames if there is an overlap.

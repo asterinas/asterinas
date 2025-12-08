@@ -136,7 +136,7 @@ impl<const ITEM_SIZE: usize> DynCpuLocalChunk<ITEM_SIZE> {
             .alloc_segment_with(total_chunk_size.div_ceil(PAGE_SIZE), |_| DynCpuLocalMeta)?;
 
         let num_items = CHUNK_SIZE / ITEM_SIZE;
-        const { assert!(CHUNK_SIZE % ITEM_SIZE == 0) };
+        const { assert!(CHUNK_SIZE.is_multiple_of(ITEM_SIZE)) };
 
         Ok(Self {
             segment: ManuallyDrop::new(segment),

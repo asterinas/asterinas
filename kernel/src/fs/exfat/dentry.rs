@@ -449,11 +449,11 @@ pub(super) struct ExfatDentryIterator<'a> {
 
 impl<'a> ExfatDentryIterator<'a> {
     pub fn new(page_cache: &'a Vmo, offset: usize, size: Option<usize>) -> Result<Self> {
-        if size.is_some() && size.unwrap() % DENTRY_SIZE != 0 {
+        if size.is_some() && !size.unwrap().is_multiple_of(DENTRY_SIZE) {
             return_errno_with_message!(Errno::EINVAL, "remaining size unaligned to dentry size")
         }
 
-        if offset % DENTRY_SIZE != 0 {
+        if !offset.is_multiple_of(DENTRY_SIZE) {
             return_errno_with_message!(Errno::EINVAL, "dentry offset unaligned to dentry size")
         }
 

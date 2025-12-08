@@ -163,7 +163,7 @@ pub(crate) struct PageTableEntry(usize);
 /// Changing the root-level page table is unsafe, because it's possible to violate memory safety by
 /// changing the page mapping.
 pub(crate) unsafe fn activate_page_table(root_paddr: Paddr, _root_pt_cache: CachePolicy) {
-    assert!(root_paddr % PagingConsts::BASE_PAGE_SIZE == 0);
+    assert!(root_paddr.is_multiple_of(PagingConsts::BASE_PAGE_SIZE));
     let ppn = root_paddr >> 12;
 
     #[cfg(not(feature = "riscv_sv39_mode"))]

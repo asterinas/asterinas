@@ -33,7 +33,9 @@ pub fn sys_msync(start: Vaddr, size: usize, flag: i32, ctx: &Context) -> Result<
 
     debug!("msync: start = {start:#x}, size = {size}, flags = {flags:?}");
 
-    if start % PAGE_SIZE != 0 || flags.contains(MsyncFlags::MS_ASYNC | MsyncFlags::MS_SYNC) {
+    if !start.is_multiple_of(PAGE_SIZE)
+        || flags.contains(MsyncFlags::MS_ASYNC | MsyncFlags::MS_SYNC)
+    {
         return_errno!(Errno::EINVAL);
     }
 

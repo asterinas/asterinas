@@ -279,7 +279,7 @@ impl<T: PodOnce, M: VmIoOnce, R: TRights> SafePtr<T, M, TRightSet<R>> {
 // =============== Address-related methods ==============
 impl<T, M, R> SafePtr<T, M, R> {
     pub const fn is_aligned(&self) -> bool {
-        self.offset % align_of::<T>() == 0
+        self.offset.is_multiple_of(align_of::<T>())
     }
 
     /// Increase the address in units of bytes occupied by the generic T.

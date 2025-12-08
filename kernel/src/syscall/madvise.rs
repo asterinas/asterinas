@@ -18,7 +18,7 @@ pub fn sys_madvise(
         start, len, behavior
     );
 
-    if start % PAGE_SIZE != 0 {
+    if !start.is_multiple_of(PAGE_SIZE) {
         return_errno_with_message!(Errno::EINVAL, "the start address should be page aligned");
     }
     if len > isize::MAX as usize {

@@ -113,7 +113,9 @@ fn load_cmdline() -> Option<&'static CStr> {
         return None;
     };
 
-    if load_options.len() % 2 != 0 || load_options.iter().skip(1).step_by(2).any(|c| *c != 0) {
+    if !load_options.len().is_multiple_of(2)
+        || load_options.iter().skip(1).step_by(2).any(|c| *c != 0)
+    {
         uefi::println!("[EFI stub] Warning: The cmdline contains non-ASCII characters!");
         return None;
     }

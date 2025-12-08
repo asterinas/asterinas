@@ -607,7 +607,9 @@ impl MhtNode {
     }
 
     pub fn num_complete_children(&self) -> usize {
-        if self.num_data_nodes() % MHT_NBRANCHES == 0 || Self::is_lowest_level(self.height()) {
+        if self.num_data_nodes().is_multiple_of(MHT_NBRANCHES)
+            || Self::is_lowest_level(self.height())
+        {
             self.num_valid_entries()
         } else {
             self.num_valid_entries() - 1
@@ -1176,7 +1178,7 @@ mod tests {
         for i in 0..append_cnt {
             buf.as_mut_slice().fill(i as _);
             log.append(buf.as_ref())?;
-            if i % flush_freq == 0 {
+            if i.is_multiple_of(flush_freq) {
                 log.flush()?;
             }
         }
