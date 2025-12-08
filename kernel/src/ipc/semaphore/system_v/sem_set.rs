@@ -254,7 +254,7 @@ impl Drop for SemaphoreSet {
         let pending_alter = &mut inner.pending_alter;
         for pending_alter in pending_alter.iter_mut() {
             pending_alter.set_status(Status::Removed);
-            if let Some(ref waker) = pending_alter.waker() {
+            if let Some(waker) = pending_alter.waker() {
                 waker.wake_up();
             }
         }
@@ -263,7 +263,7 @@ impl Drop for SemaphoreSet {
         let pending_const = &mut inner.pending_const;
         for pending_const in pending_const.iter_mut() {
             pending_const.set_status(Status::Removed);
-            if let Some(ref waker) = pending_const.waker() {
+            if let Some(waker) = pending_const.waker() {
                 waker.wake_up();
             }
         }
