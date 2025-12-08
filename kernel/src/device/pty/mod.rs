@@ -13,6 +13,7 @@ use crate::{
 mod driver;
 mod file;
 mod master;
+mod packet;
 
 pub use driver::PtySlave;
 pub use master::PtyMaster;

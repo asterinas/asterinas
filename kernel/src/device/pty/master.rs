@@ -63,7 +63,7 @@ impl PtyMaster {
         let mut events = IoEvents::empty();
 
         if self.slave().driver().buffer_len() > 0 {
-            events |= IoEvents::IN;
+            events |= IoEvents::IN | IoEvents::RDNORM;
         }
 
         if self.slave().can_push() {
@@ -72,6 +72,12 @@ impl PtyMaster {
 
         if self.master_flags().is_other_closed() {
             events |= IoEvents::HUP;
+        }
+
+        // Deal with packet mode.
+        let packet_ctrl = self.slave.driver().packet_ctrl();
+        if packet_ctrl.has_status() {
+            events |= IoEvents::PRI | IoEvents::IN | IoEvents::RDNORM;
         }
 
         events
@@ -144,6 +150,9 @@ mod ioctl_defs {
     pub(super) type GetPtyLock   = ioc!(TIOCGPTLCK,  b'T', 0x39, OutData<i32>);
 
     pub(super) type OpenPtySlave = ioc!(TIOCGPTPEER, b'T', 0x41, NoData);
+
+    pub(super) type SetPktMode   = ioc!(TIOCPKT,     0x5420,     InData<i32>);
+    pub(super) type GetPktMode   = ioc!(TIOCGPKT,    b'T', 0x38, OutData<i32>);
 }
 
 impl FileIo for PtyMaster {
@@ -222,6 +231,20 @@ impl FileIo for PtyMaster {
                 let len = self.slave.driver().buffer_len() as i32;
 
                 cmd.write(&len)?;
+            }
+            cmd @ SetPktMode => {
+                let new_mode = cmd.read()? != 0;
+
+                self.slave.driver().packet_ctrl().set_mode(new_mode);
+            }
+            cmd @ GetPktMode => {
+                let packet_mode = if self.slave.driver().packet_ctrl().mode() {
+                    1
+                } else {
+                    0
+                };
+
+                cmd.write(&packet_mode)?;
             }
 
             _ => (self.slave.clone() as Arc<dyn Terminal>).job_ioctl(raw_ioctl, true)?,

@@ -31,7 +31,7 @@ mod flags;
 pub(super) mod ioctl_defs;
 mod line_discipline;
 mod n_tty;
-mod termio;
+pub(super) mod termio;
 
 pub use device::SystemConsole;
 pub use driver::TtyDriver;
@@ -152,7 +152,7 @@ impl<D: TtyDriver> Tty<D> {
             }
         }
 
-        self.pollee.notify(IoEvents::IN);
+        self.pollee.notify(IoEvents::IN | IoEvents::RDNORM);
         Ok(len)
     }
 
@@ -160,7 +160,7 @@ impl<D: TtyDriver> Tty<D> {
         let mut events = IoEvents::empty();
 
         if self.ldisc.lock().buffer_len() > 0 {
-            events |= IoEvents::IN;
+            events |= IoEvents::IN | IoEvents::RDNORM;
         }
 
         if self.driver.can_push() {
@@ -315,12 +315,17 @@ impl<D: TtyDriver> Tty<D> {
             cmd @ SetTermios => {
                 let termios = cmd.read()?;
 
-                self.ldisc.lock().set_termios(termios);
+                let mut ldisc = self.ldisc.lock();
+                let old_termios = ldisc.termios();
+                self.driver().on_termios_change(old_termios, &termios);
+                ldisc.set_termios(termios);
             }
             cmd @ SetTermiosDrain => {
                 let termios = cmd.read()?;
 
                 let mut ldisc = self.ldisc.lock();
+                let old_termios = ldisc.termios();
+                self.driver().on_termios_change(old_termios, &termios);
                 ldisc.set_termios(termios);
                 self.driver.drain_output();
             }
@@ -328,6 +333,8 @@ impl<D: TtyDriver> Tty<D> {
                 let termios = cmd.read()?;
 
                 let mut ldisc = self.ldisc.lock();
+                let old_termios = ldisc.termios();
+                self.driver().on_termios_change(old_termios, &termios);
                 ldisc.set_termios(termios);
                 ldisc.drain_input();
                 self.driver.drain_output();
