@@ -77,7 +77,7 @@ impl PageCache {
         // first zero the gap between the new size and the
         // next page boundary (or the old size), if such a gap exists.
         let old_size = self.pages.size();
-        if old_size > new_size && new_size % PAGE_SIZE != 0 {
+        if old_size > new_size && !new_size.is_multiple_of(PAGE_SIZE) {
             let gap_size = old_size.min(new_size.align_up(PAGE_SIZE)) - new_size;
             if gap_size > 0 {
                 self.fill_zeros(new_size..new_size + gap_size)?;

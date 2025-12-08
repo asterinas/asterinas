@@ -178,7 +178,7 @@ impl InitStack {
         let vmar_map_options = {
             let perms = VmPerms::READ | VmPerms::WRITE;
             let map_addr = self.initial_top - self.max_size;
-            debug_assert!(map_addr % PAGE_SIZE == 0);
+            debug_assert!(map_addr.is_multiple_of(PAGE_SIZE));
             vmar.new_map(self.max_size, perms)?
                 .offset(map_addr)
                 .vmo(vmo.clone())
@@ -310,7 +310,7 @@ impl InitStackWriter<'_> {
         let argv_pointers_size = (argv_pointers.len() + 1) * size_of::<u64>();
         let argc_size = size_of::<u64>();
         let to_write_size = auxvec_size + envp_pointers_size + argv_pointers_size + argc_size;
-        if (self.pos() - to_write_size) % 16 != 0 {
+        if !(self.pos() - to_write_size).is_multiple_of(16) {
             self.write_u64(0)?;
         }
         Ok(())

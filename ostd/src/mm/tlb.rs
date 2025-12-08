@@ -220,10 +220,13 @@ impl TlbFlushOp {
     /// Panics if the range is not page-aligned or if the range is empty.
     pub const fn for_range(range: Range<Vaddr>) -> Self {
         assert!(
-            range.start % PAGE_SIZE == 0,
+            range.start.is_multiple_of(PAGE_SIZE),
             "Range start must be page-aligned"
         );
-        assert!(range.end % PAGE_SIZE == 0, "Range end must be page-aligned");
+        assert!(
+            range.end.is_multiple_of(PAGE_SIZE),
+            "Range end must be page-aligned"
+        );
         assert!(range.start < range.end, "Range must not be empty");
         let num_pages = (range.end - range.start) / PAGE_SIZE;
         if num_pages >= FLUSH_ALL_PAGES_THRESHOLD {

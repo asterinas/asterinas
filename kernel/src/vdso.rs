@@ -420,11 +420,19 @@ pub struct VdsoVmoLayout {
     pub size: usize,
 }
 
-const_assert!(VDSO_VMO_LAYOUT.data_segment_offset % PAGE_SIZE == 0);
-const_assert!(VDSO_VMO_LAYOUT.data_segment_size % PAGE_SIZE == 0);
-const_assert!(VDSO_VMO_LAYOUT.text_segment_offset % PAGE_SIZE == 0);
-const_assert!(VDSO_VMO_LAYOUT.text_segment_size % PAGE_SIZE == 0);
-const_assert!(VDSO_VMO_LAYOUT.size % PAGE_SIZE == 0);
+const_assert!(
+    VDSO_VMO_LAYOUT
+        .data_segment_offset
+        .is_multiple_of(PAGE_SIZE)
+);
+const_assert!(VDSO_VMO_LAYOUT.data_segment_size.is_multiple_of(PAGE_SIZE));
+const_assert!(
+    VDSO_VMO_LAYOUT
+        .text_segment_offset
+        .is_multiple_of(PAGE_SIZE)
+);
+const_assert!(VDSO_VMO_LAYOUT.text_segment_size.is_multiple_of(PAGE_SIZE));
+const_assert!(VDSO_VMO_LAYOUT.size.is_multiple_of(PAGE_SIZE));
 
 // Ensure that the vDSO data at `VDSO_VMO_LAYOUT.data_offset` is in the data segment.
 //

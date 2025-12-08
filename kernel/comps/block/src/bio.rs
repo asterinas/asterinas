@@ -717,7 +717,7 @@ impl From<BioDirection> for DmaDirection {
 
 /// Checks if the given offset is aligned to sector.
 pub fn is_sector_aligned(offset: usize) -> bool {
-    offset % SECTOR_SIZE == 0
+    offset.is_multiple_of(SECTOR_SIZE)
 }
 
 /// An aligned unsigned integer number.
@@ -737,7 +737,7 @@ pub fn is_sector_aligned(offset: usize) -> bool {
 ///     let sector_offset = sector_num * (SECTOR_SIZE as usize);
 ///     AlignedUsize::<SECTOR_SIZE>::new(sector_offset).unwrap()
 /// };
-/// assert!(sector_offset.value() % sector_offset.align() == 0);
+/// assert!(sector_offset.value().is_multiple_of(sector_offset.align()));
 /// ```
 ///
 /// # Limitation
@@ -754,7 +754,7 @@ pub struct AlignedUsize<const N: u16>(usize);
 impl<const N: u16> AlignedUsize<N> {
     /// Constructs a new instance of aligned integer if the given value is aligned.
     pub fn new(val: usize) -> Option<Self> {
-        if val % (N as usize) == 0 {
+        if val.is_multiple_of(N as usize) {
             Some(Self(val))
         } else {
             None

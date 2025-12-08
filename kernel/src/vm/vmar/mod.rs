@@ -98,8 +98,8 @@ impl Vmar {
     /// The range's start and end addresses must be page-aligned.
     /// Also, the range must be completely mapped.
     pub fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
-        assert!(range.start % PAGE_SIZE == 0);
-        assert!(range.end % PAGE_SIZE == 0);
+        assert!(range.start.is_multiple_of(PAGE_SIZE));
+        assert!(range.end.is_multiple_of(PAGE_SIZE));
 
         let mut inner = self.inner.write();
         let vm_space = self.vm_space();
@@ -374,7 +374,7 @@ impl Vmar {
         // Allocate a new free region that does not overlap with the old range.
         let new_range = if let Some(new_addr) = new_addr {
             let new_range = new_addr..new_addr.checked_add(new_size).ok_or(Errno::EINVAL)?;
-            if new_addr % PAGE_SIZE != 0
+            if !new_addr.is_multiple_of(PAGE_SIZE)
                 || !is_userspace_vaddr(new_addr)
                 || !is_userspace_vaddr(new_range.end - 1)
             {
@@ -617,7 +617,7 @@ impl Vmar {
     }
 
     fn query_page(&self, vaddr: Vaddr) -> Result<Option<VmQueriedItem>> {
-        debug_assert!(is_userspace_vaddr(vaddr) && vaddr % PAGE_SIZE == 0);
+        debug_assert!(is_userspace_vaddr(vaddr) && vaddr.is_multiple_of(PAGE_SIZE));
 
         let preempt_guard = disable_preempt();
         let vmspace = self.vm_space();
@@ -1273,22 +1273,22 @@ impl<'a> VmarMapOptions<'a> {
     /// Checks whether all options are valid.
     fn check_options(&self) -> Result<()> {
         // Check align.
-        debug_assert!(self.align % PAGE_SIZE == 0);
+        debug_assert!(self.align.is_multiple_of(PAGE_SIZE));
         debug_assert!(self.align.is_power_of_two());
-        if self.align % PAGE_SIZE != 0 || !self.align.is_power_of_two() {
+        if !self.align.is_multiple_of(PAGE_SIZE) || !self.align.is_power_of_two() {
             return_errno_with_message!(Errno::EINVAL, "invalid align");
         }
-        debug_assert!(self.size % self.align == 0);
-        if self.size % self.align != 0 {
+        debug_assert!(self.size.is_multiple_of(self.align));
+        if !self.size.is_multiple_of(self.align) {
             return_errno_with_message!(Errno::EINVAL, "invalid mapping size");
         }
-        debug_assert!(self.vmo_offset % self.align == 0);
-        if self.vmo_offset % self.align != 0 {
+        debug_assert!(self.vmo_offset.is_multiple_of(self.align));
+        if !self.vmo_offset.is_multiple_of(self.align) {
             return_errno_with_message!(Errno::EINVAL, "invalid vmo offset");
         }
         if let Some(offset) = self.offset {
-            debug_assert!(offset % self.align == 0);
-            if offset % self.align != 0 {
+            debug_assert!(offset.is_multiple_of(self.align));
+            if !offset.is_multiple_of(self.align) {
                 return_errno_with_message!(Errno::EINVAL, "invalid offset");
             }
         }

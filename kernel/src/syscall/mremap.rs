@@ -31,7 +31,7 @@ fn do_sys_mremap(
         old_addr, old_size, new_size, flags, new_addr,
     );
 
-    if old_addr % PAGE_SIZE != 0 {
+    if !old_addr.is_multiple_of(PAGE_SIZE) {
         return_errno_with_message!(Errno::EINVAL, "mremap: `old_addr` must be page-aligned");
     }
     if new_size == 0 {

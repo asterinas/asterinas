@@ -125,7 +125,8 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
         if !is_valid_range::<C>(va) || va.is_empty() {
             return Err(PageTableError::InvalidVaddrRange(va.start, va.end));
         }
-        if va.start % C::BASE_PAGE_SIZE != 0 || va.end % C::BASE_PAGE_SIZE != 0 {
+        if !va.start.is_multiple_of(C::BASE_PAGE_SIZE) || !va.end.is_multiple_of(C::BASE_PAGE_SIZE)
+        {
             return Err(PageTableError::UnalignedVaddr);
         }
 
@@ -280,7 +281,7 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
     ///
     /// This method panics if the address has bad alignment.
     pub fn jump(&mut self, va: Vaddr) -> Result<(), PageTableError> {
-        assert!(va % C::BASE_PAGE_SIZE == 0);
+        assert!(va.is_multiple_of(C::BASE_PAGE_SIZE));
         if !self.barrier_va.contains(&va) {
             return Err(PageTableError::InvalidVaddr(va));
         }

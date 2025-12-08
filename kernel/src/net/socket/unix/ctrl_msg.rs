@@ -81,7 +81,7 @@ const MAX_NR_FILES: usize = 253;
 impl FileMessage {
     fn read_from(header: &CControlHeader, reader: &mut VmReader) -> Result<Self> {
         let payload_len = header.payload_len();
-        if payload_len % size_of::<i32>() != 0 {
+        if !payload_len.is_multiple_of(size_of::<i32>()) {
             return_errno_with_message!(Errno::EINVAL, "the SCM_RIGHTS message is invalid");
         }
         let nfiles = payload_len / size_of::<i32>();

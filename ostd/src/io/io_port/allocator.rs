@@ -86,7 +86,7 @@ pub(in crate::io) unsafe fn init() {
     }
     let start = __sensitive_io_ports_start as *const () as usize;
     let end = __sensitive_io_ports_end as *const () as usize;
-    assert!((end - start) % size_of::<RawIoPortRange>() == 0);
+    assert!((end - start).is_multiple_of(size_of::<RawIoPortRange>()));
 
     // Iterate through the sensitive I/O port ranges and remove them from the allocator.
     let io_port_range_count = (end - start) / size_of::<RawIoPortRange>();

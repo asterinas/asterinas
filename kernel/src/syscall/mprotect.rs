@@ -17,7 +17,7 @@ pub fn sys_mprotect(addr: Vaddr, len: usize, perms: u64, ctx: &Context) -> Resul
     // According to linux behavior,
     // <https://elixir.bootlin.com/linux/v6.0.9/source/mm/mprotect.c#L681>,
     // the addr is checked even if len is 0.
-    if addr % PAGE_SIZE != 0 {
+    if !addr.is_multiple_of(PAGE_SIZE) {
         return_errno_with_message!(Errno::EINVAL, "the start address should be page aligned");
     }
     if len == 0 {

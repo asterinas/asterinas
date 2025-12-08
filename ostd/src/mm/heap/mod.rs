@@ -110,7 +110,7 @@ unsafe impl GlobalAlloc for AllocDispatch {
 
         if required_slot.size() != slot.size()
             || slot.size() < layout.size()
-            || slot.as_ptr() as Vaddr % layout.align() != 0
+            || !(slot.as_ptr() as Vaddr).is_multiple_of(layout.align())
         {
             abort_with_message!(
                 "Heap allocation mismatch: slot ptr = {:p}, size = {:x}; layout = {:#x?}; required_slot = {:#x?}",

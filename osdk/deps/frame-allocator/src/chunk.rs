@@ -46,8 +46,8 @@ pub(crate) fn split_to_chunks(
     addr: Paddr,
     size: usize,
 ) -> impl Iterator<Item = (Paddr, BuddyOrder)> {
-    assert!(addr % PAGE_SIZE == 0);
-    assert!(size % PAGE_SIZE == 0);
+    assert!(addr.is_multiple_of(PAGE_SIZE));
+    assert!(size.is_multiple_of(PAGE_SIZE));
 
     struct SplitChunks {
         addr: Paddr,

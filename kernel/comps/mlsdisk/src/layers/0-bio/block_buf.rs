@@ -99,7 +99,7 @@ impl<'a> TryFrom<&'a [u8]> for BufRef<'a> {
         if buf.is_empty() {
             return_errno_with_msg!(InvalidArgs, "empty buf in `BufRef::try_from`");
         }
-        if buf.len() % BLOCK_SIZE != 0 {
+        if !buf.len().is_multiple_of(BLOCK_SIZE) {
             return_errno_with_msg!(
                 NotBlockSizeAligned,
                 "buf not block size aligned `BufRef::try_from`"
@@ -154,7 +154,7 @@ impl<'a> TryFrom<&'a mut [u8]> for BufMut<'a> {
         if buf.is_empty() {
             return_errno_with_msg!(InvalidArgs, "empty buf in `BufMut::try_from`");
         }
-        if buf.len() % BLOCK_SIZE != 0 {
+        if !buf.len().is_multiple_of(BLOCK_SIZE) {
             return_errno_with_msg!(
                 NotBlockSizeAligned,
                 "buf not block size aligned `BufMut::try_from`"

@@ -1263,7 +1263,7 @@ impl DirentVisitor for EmptyVisitor {
     }
 }
 fn is_block_aligned(off: usize) -> bool {
-    off % PAGE_SIZE == 0
+    off.is_multiple_of(PAGE_SIZE)
 }
 
 fn check_corner_cases_for_rename(

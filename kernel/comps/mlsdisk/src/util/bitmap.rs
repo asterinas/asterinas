@@ -32,7 +32,7 @@ impl BitMap {
         }
 
         // Set the unused bits in the last u64 with zero.
-        if nbits % 64 != 0 {
+        if !nbits.is_multiple_of(64) {
             bits[vec_len - 1]
                 .iter_ones()
                 .filter(|index| (*index as usize) >= nbits % 64)

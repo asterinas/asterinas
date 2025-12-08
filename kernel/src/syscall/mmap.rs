@@ -63,7 +63,7 @@ fn do_sys_mmap(
 
     let len = len.align_up(PAGE_SIZE);
 
-    if offset % PAGE_SIZE != 0 {
+    if !offset.is_multiple_of(PAGE_SIZE) {
         return_errno_with_message!(Errno::EINVAL, "mmap only support page-aligned offset");
     }
     offset.checked_add(len).ok_or(Error::with_message(

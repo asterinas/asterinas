@@ -86,7 +86,7 @@ impl<M: AnyFrameMeta> Segment<M> {
     where
         F: FnMut(Paddr) -> M,
     {
-        if range.start % PAGE_SIZE != 0 || range.end % PAGE_SIZE != 0 {
+        if !range.start.is_multiple_of(PAGE_SIZE) || !range.end.is_multiple_of(PAGE_SIZE) {
             return Err(GetFrameError::NotAligned);
         }
         if range.end > super::max_paddr() {
@@ -135,7 +135,7 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
     /// The function panics if the offset is out of bounds, at either ends, or
     /// not base-page-aligned.
     pub fn split(self, offset: usize) -> (Self, Self) {
-        assert!(offset % PAGE_SIZE == 0);
+        assert!(offset.is_multiple_of(PAGE_SIZE));
         assert!(0 < offset && offset < self.size());
 
         let old = ManuallyDrop::new(self);
@@ -163,7 +163,7 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
     /// The function panics if the byte offset range is out of bounds, or if
     /// any of the ends of the byte offset range is not base-page aligned.
     pub fn slice(&self, range: &Range<usize>) -> Self {
-        assert!(range.start % PAGE_SIZE == 0 && range.end % PAGE_SIZE == 0);
+        assert!(range.start.is_multiple_of(PAGE_SIZE) && range.end.is_multiple_of(PAGE_SIZE));
         let start = self.range.start + range.start;
         let end = self.range.start + range.end;
         assert!(start <= end && end <= self.range.end);

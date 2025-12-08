@@ -182,8 +182,8 @@ pub(crate) fn largest_pages<C: PageTableConfig>(
 
         let mut level = C::HIGHEST_TRANSLATION_LEVEL;
         while page_size::<C>(level) > len
-            || va % page_size::<C>(level) != 0
-            || pa % page_size::<C>(level) != 0
+            || !va.is_multiple_of(page_size::<C>(level))
+            || !pa.is_multiple_of(page_size::<C>(level))
         {
             level -= 1;
         }

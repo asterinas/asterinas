@@ -127,7 +127,7 @@ impl<D: BlockSet + 'static> aster_block::BlockDevice for MlsDisk<D> {
             }
 
             // Read the last unaligned block.
-            if end_offset % BLOCK_SIZE != 0 {
+            if !end_offset.is_multiple_of(BLOCK_SIZE) {
                 let offset = buf.as_slice().len() - BLOCK_SIZE;
                 let buf_mut = BufMut::try_from(&mut buf.as_mut_slice()[offset..]).unwrap();
                 if self.read(end_lba - 1, buf_mut).is_err() {

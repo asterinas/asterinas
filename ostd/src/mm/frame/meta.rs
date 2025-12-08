@@ -127,7 +127,7 @@ pub(super) const REF_COUNT_MAX: u64 = i64::MAX as u64;
 
 type FrameMetaVtablePtr = core::ptr::DynMetadata<dyn AnyFrameMeta>;
 
-const_assert!(PAGE_SIZE % META_SLOT_SIZE == 0);
+const_assert!(PAGE_SIZE.is_multiple_of(META_SLOT_SIZE));
 const_assert!(size_of::<MetaSlot>() == META_SLOT_SIZE);
 
 /// All frame metadata types must implement this trait.
@@ -207,7 +207,7 @@ pub enum GetFrameError {
 
 /// Gets the reference to a metadata slot.
 pub(super) fn get_slot(paddr: Paddr) -> Result<&'static MetaSlot, GetFrameError> {
-    if paddr % PAGE_SIZE != 0 {
+    if !paddr.is_multiple_of(PAGE_SIZE) {
         return Err(GetFrameError::NotAligned);
     }
     if paddr >= super::max_paddr() {
@@ -576,8 +576,8 @@ impl_frame_meta_for!(KernelMeta);
 
 macro_rules! mark_ranges {
     ($region: expr, $typ: expr) => {{
-        debug_assert!($region.base() % PAGE_SIZE == 0);
-        debug_assert!($region.len() % PAGE_SIZE == 0);
+        debug_assert!($region.base().is_multiple_of(PAGE_SIZE));
+        debug_assert!($region.len().is_multiple_of(PAGE_SIZE));
 
         let seg = Segment::from_unused($region.base()..$region.end(), |_| $typ).unwrap();
         let _ = ManuallyDrop::new(seg);

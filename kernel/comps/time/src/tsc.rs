@@ -78,7 +78,7 @@ fn init_timer() {
     let update = move || {
         let counter = TSC_UPDATE_COUNTER.fetch_add(1, Ordering::Relaxed);
 
-        if counter % delay_counts == 0 {
+        if counter.is_multiple_of(delay_counts) {
             update_clocksource();
         }
     };
