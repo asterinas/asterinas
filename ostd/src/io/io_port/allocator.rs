@@ -84,14 +84,15 @@ pub(in crate::io) unsafe fn init() {
         fn __sensitive_io_ports_start();
         fn __sensitive_io_ports_end();
     }
-    let start = __sensitive_io_ports_start as usize;
-    let end = __sensitive_io_ports_end as usize;
+    let start = __sensitive_io_ports_start as *const () as usize;
+    let end = __sensitive_io_ports_end as *const () as usize;
     assert!((end - start) % size_of::<RawIoPortRange>() == 0);
 
     // Iterate through the sensitive I/O port ranges and remove them from the allocator.
     let io_port_range_count = (end - start) / size_of::<RawIoPortRange>();
     for i in 0..io_port_range_count {
-        let range_base_addr = __sensitive_io_ports_start as usize + i * size_of::<RawIoPortRange>();
+        let range_base_addr =
+            __sensitive_io_ports_start as *const () as usize + i * size_of::<RawIoPortRange>();
         // SAFETY: The range is guaranteed to be valid as it is defined in the `.sensitive_io_ports` section.
         let port_range = unsafe { *(range_base_addr as *const RawIoPortRange) };
 

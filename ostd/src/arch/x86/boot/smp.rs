@@ -137,7 +137,7 @@ const AP_BOOT_START_PA: usize = 0x8000;
 
 /// The size of the AP boot code (the `.ap_boot` section).
 fn ap_boot_code_size() -> usize {
-    __ap_boot_end as usize - __ap_boot_start as usize
+    __ap_boot_end as *const () as usize - __ap_boot_start as *const () as usize
 }
 
 pub(super) fn reclaimable_memory_region() -> MemoryRegion {
@@ -152,8 +152,8 @@ pub(super) fn reclaimable_memory_region() -> MemoryRegion {
 ///
 /// The caller must ensure the memory region to be filled with AP boot code is valid to write.
 unsafe fn copy_ap_boot_code() {
-    let ap_boot_start = __ap_boot_start as usize as *const u8;
-    let len = __ap_boot_end as usize - __ap_boot_start as usize;
+    let ap_boot_start = __ap_boot_start as *const () as *const u8;
+    let len = __ap_boot_end as *const () as usize - __ap_boot_start as *const () as usize;
 
     // SAFETY:
     // 1. The source memory region is valid for reading because it's inside the kernel text.
@@ -223,7 +223,8 @@ unsafe fn wake_up_aps_via_mailbox(num_cpus: u32) {
         fn ap_boot_from_long_mode();
     }
 
-    let offset = ap_boot_from_long_mode as usize - ap_boot_from_real_mode as usize;
+    let offset =
+        ap_boot_from_long_mode as *const () as usize - ap_boot_from_real_mode as *const () as usize;
 
     let acpi_tables = get_acpi_tables().unwrap();
     for ap_num in 1..num_cpus {
