@@ -108,11 +108,12 @@ impl VsockStreamSocket {
         let peer_addr = self.peer_addr()?;
         // If buffer is now empty and the peer requested shutdown, finish shutting down the
         // connection.
-        if connected.should_close() {
-            if let Err(e) = self.shutdown(SockShutdownCmd::SHUT_RDWR) {
-                debug!("The error is {:?}", e);
-            }
+        if connected.should_close()
+            && let Err(e) = self.shutdown(SockShutdownCmd::SHUT_RDWR)
+        {
+            debug!("The error is {:?}", e);
         }
+
         Ok((read_size, peer_addr))
     }
 }
@@ -186,13 +187,12 @@ impl Socket for VsockStreamSocket {
         if !connecting
             .poll(IoEvents::IN, Some(poller.as_handle_mut()))
             .contains(IoEvents::IN)
+            && let Err(e) = poller.wait()
         {
-            if let Err(e) = poller.wait() {
-                vsockspace
-                    .remove_connecting_socket(&connecting.local_addr())
-                    .unwrap();
-                return Err(e);
-            }
+            vsockspace
+                .remove_connecting_socket(&connecting.local_addr())
+                .unwrap();
+            return Err(e);
         }
 
         vsockspace

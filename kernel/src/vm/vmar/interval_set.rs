@@ -124,11 +124,12 @@ where
             if v.range().end > *point {
                 return Some(cursor.remove_prev().unwrap().1);
             }
-        } else if let Some((_, v)) = cursor.peek_next() {
-            if v.range().start <= *point {
-                return Some(cursor.remove_next().unwrap().1);
-            }
+        } else if let Some((_, v)) = cursor.peek_next()
+            && v.range().start <= *point
+        {
+            return Some(cursor.remove_next().unwrap().1);
         }
+
         None
     }
 
@@ -177,10 +178,10 @@ where
         // There's one previous element that may intersect with the range.
         if !self.peeked_prev {
             self.peeked_prev = true;
-            if let Some((_, v)) = self.cursor.peek_prev() {
-                if v.range().end > self.range.start {
-                    return Some(v);
-                }
+            if let Some((_, v)) = self.cursor.peek_prev()
+                && v.range().end > self.range.start
+            {
+                return Some(v);
             }
         }
 
@@ -219,10 +220,10 @@ where
         // There's one previous element that may intersect with the range.
         if !self.drained_prev {
             self.drained_prev = true;
-            if let Some((_, v)) = self.cursor.peek_prev() {
-                if v.range().end > self.range.start {
-                    return Some(self.cursor.remove_prev().unwrap().1);
-                }
+            if let Some((_, v)) = self.cursor.peek_prev()
+                && v.range().end > self.range.start
+            {
+                return Some(self.cursor.remove_prev().unwrap().1);
             }
         }
 

@@ -206,11 +206,12 @@ impl OptionalBuilder {
         // The volatile property is inherited from parent.
         let is_volatile = {
             let mut is_volatile = self.is_volatile;
-            if let Some(parent) = self.parent.as_ref() {
-                if !parent.upgrade().unwrap().is_dentry_cacheable() {
-                    is_volatile = true;
-                }
+            if let Some(parent) = self.parent.as_ref()
+                && !parent.upgrade().unwrap().is_dentry_cacheable()
+            {
+                is_volatile = true;
             }
+
             is_volatile
         };
 

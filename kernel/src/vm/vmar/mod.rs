@@ -816,10 +816,10 @@ impl VmarInner {
             .map_or(VMAR_LOWEST_ADDR, |vm_mapping| vm_mapping.range().end);
         // FIXME: The up-align may overflow.
         let last_occupied_aligned = highest_occupied.align_up(align);
-        if let Some(last) = last_occupied_aligned.checked_add(size) {
-            if last <= VMAR_CAP_ADDR {
-                return Ok(last_occupied_aligned..last);
-            }
+        if let Some(last) = last_occupied_aligned.checked_add(size)
+            && last <= VMAR_CAP_ADDR
+        {
+            return Ok(last_occupied_aligned..last);
         }
 
         // Slow path that we need to search for a free region.

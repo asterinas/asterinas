@@ -73,10 +73,11 @@ fn for_each_hart_id(mut f: impl FnMut(u32)) {
             // FIXME: We should find a robust method to identify the management
             // harts. Here we simply skip those harts without MMU, which is
             // supposed to work in most cases.
-            if device_type.as_str() == Some("cpu") && cpu_node.property("mmu-type").is_some() {
-                if let Some(reg) = cpu_node.property("reg") {
-                    f(reg.as_usize().unwrap() as u32);
-                }
+            if device_type.as_str() == Some("cpu")
+                && cpu_node.property("mmu-type").is_some()
+                && let Some(reg) = cpu_node.property("reg")
+            {
+                f(reg.as_usize().unwrap() as u32);
             }
         }
     })

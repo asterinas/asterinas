@@ -96,10 +96,10 @@ fn parse_isa_extensions_list(isa_extensions: &fdt::node::NodeProperty) -> IsaExt
         if str.is_empty() {
             continue;
         }
-        if let Ok(ext_name) = core::str::from_utf8(str) {
-            if let Some(ext_data) = EXTENSION_TABLE.iter().find(|e| e.name == ext_name) {
-                extensions |= ext_data.flag;
-            }
+        if let Ok(ext_name) = core::str::from_utf8(str)
+            && let Some(ext_data) = EXTENSION_TABLE.iter().find(|e| e.name == ext_name)
+        {
+            extensions |= ext_data.flag;
         }
     }
 

@@ -86,13 +86,13 @@ impl RangeAllocator {
             }
         }
 
-        if let Some(key) = to_remove {
-            if let Some(freenode) = freelist.get_mut(&key) {
-                if freenode.block.end - size == freenode.block.start {
-                    freelist.remove(&key);
-                } else {
-                    freenode.block.end -= size;
-                }
+        if let Some(key) = to_remove
+            && let Some(freenode) = freelist.get_mut(&key)
+        {
+            if freenode.block.end - size == freenode.block.start {
+                freelist.remove(&key);
+            } else {
+                freenode.block.end -= size;
             }
         }
 
@@ -117,26 +117,25 @@ impl RangeAllocator {
         if let Some((prev_va, prev_node)) = freelist
             .upper_bound_mut(core::ops::Bound::Excluded(&free_range.start))
             .peek_prev()
+            && prev_node.block.end == free_range.start
         {
-            if prev_node.block.end == free_range.start {
-                let prev_va = *prev_va;
-                free_range.start = prev_node.block.start;
-                freelist.remove(&prev_va);
-            }
+            let prev_va = *prev_va;
+            free_range.start = prev_node.block.start;
+            freelist.remove(&prev_va);
         }
+
         freelist.insert(free_range.start, FreeRange::new(free_range.clone()));
 
         // 2. check if we can merge the current block with the next block, if we can, do so.
         if let Some((next_va, next_node)) = freelist
             .lower_bound_mut(core::ops::Bound::Excluded(&free_range.start))
             .peek_next()
+            && free_range.end == next_node.block.start
         {
-            if free_range.end == next_node.block.start {
-                let next_va = *next_va;
-                free_range.end = next_node.block.end;
-                freelist.remove(&next_va);
-                freelist.get_mut(&free_range.start).unwrap().block.end = free_range.end;
-            }
+            let next_va = *next_va;
+            free_range.end = next_node.block.end;
+            freelist.remove(&next_va);
+            freelist.get_mut(&free_range.start).unwrap().block.end = free_range.end;
         }
     }
 

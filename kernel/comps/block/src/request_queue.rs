@@ -62,13 +62,12 @@ impl BioRequestSingleQueue {
         }
 
         let mut queue = self.queue.lock();
-        if let Some(request) = queue.front_mut() {
-            if request.can_merge(&bio)
-                && request.num_segments() + bio.segments().len() <= self.max_nr_segments_per_bio
-            {
-                request.merge_bio(bio);
-                return Ok(());
-            }
+        if let Some(request) = queue.front_mut()
+            && request.can_merge(&bio)
+            && request.num_segments() + bio.segments().len() <= self.max_nr_segments_per_bio
+        {
+            request.merge_bio(bio);
+            return Ok(());
         }
 
         let new_request = BioRequest::from(bio);

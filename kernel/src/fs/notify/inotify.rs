@@ -249,14 +249,14 @@ impl InotifyFile {
 
         {
             let mut event_queue = self.event_queue.lock();
-            if let Some(last_event) = event_queue.back() {
-                if can_merge_events(last_event, &new_event) {
-                    event_queue.pop_back();
-                    event_queue.push_back(new_event);
-                    // New or merged event makes the file readable
-                    self.pollee.notify(IoEvents::IN);
-                    return;
-                }
+            if let Some(last_event) = event_queue.back()
+                && can_merge_events(last_event, &new_event)
+            {
+                event_queue.pop_back();
+                event_queue.push_back(new_event);
+                // New or merged event makes the file readable
+                self.pollee.notify(IoEvents::IN);
+                return;
             }
 
             // If the queue is full, drop the event.
