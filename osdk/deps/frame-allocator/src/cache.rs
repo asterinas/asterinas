@@ -5,9 +5,11 @@
 use core::{alloc::Layout, cell::RefCell};
 
 use ostd::{
+    cpu::PinCurrentCpu,
     cpu_local,
     irq::DisabledLocalIrqGuard,
     mm::{Paddr, PAGE_SIZE},
+    numa::{node_id_of_cpu, NodeId},
 };
 
 cpu_local! {
@@ -68,7 +70,7 @@ impl<const NR_CONT_FRAMES: usize, const COUNT: usize> CacheArray<NR_CONT_FRAMES,
     /// Deallocates a segment of frames.
     ///
     /// It may deallocate directly to this cache. If the cache is full, it will
-    /// deallocate to the global pool.
+    /// deallocate to the pools.
     fn dealloc(&mut self, guard: &DisabledLocalIrqGuard, addr: Paddr) {
         if self.push_front(addr).is_none() {
             let nr_to_dealloc = COUNT * 2 / 3 + 1;
@@ -81,7 +83,7 @@ impl<const NR_CONT_FRAMES: usize, const COUNT: usize> CacheArray<NR_CONT_FRAMES,
                 }
             });
 
-            super::pools::dealloc(guard, segments);
+            super::pools::dealloc_to_local(guard, segments);
         };
     }
 
@@ -135,10 +137,15 @@ pub(super) fn alloc(guard: &DisabledLocalIrqGuard, layout: Layout) -> Option<Pad
     }
 }
 
-pub(super) fn dealloc(guard: &DisabledLocalIrqGuard, addr: Paddr, size: usize) {
+pub(super) fn dealloc(guard: &DisabledLocalIrqGuard, addr: Paddr, size: usize, node_id: NodeId) {
+    if node_id_of_cpu(guard.current_cpu()) != node_id {
+        super::pools::dealloc_to_remote([(addr, size)].into_iter(), node_id);
+        return;
+    }
+
     let nr_frames = size / PAGE_SIZE;
     if nr_frames > 4 {
-        super::pools::dealloc(guard, [(addr, size)].into_iter());
+        super::pools::dealloc_to_local(guard, [(addr, size)].into_iter());
         return;
     }
 
@@ -150,6 +157,6 @@ pub(super) fn dealloc(guard: &DisabledLocalIrqGuard, addr: Paddr, size: usize) {
         2 => cache.cache2.dealloc(guard, addr),
         3 => cache.cache3.dealloc(guard, addr),
         4 => cache.cache4.dealloc(guard, addr),
-        _ => super::pools::dealloc(guard, [(addr, size)].into_iter()),
+        _ => unreachable!(),
     }
 }

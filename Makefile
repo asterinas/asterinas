@@ -17,6 +17,7 @@ RELEASE_LTO ?= 0
 LOG_LEVEL ?= error
 SCHEME ?= ""
 SMP ?= 1
+NUMA ?= false
 OSTD_TASK_STACK_SIZE_IN_PAGES ?= 64
 FEATURES ?=
 NO_DEFAULT_FEATURES ?= 0
@@ -148,6 +149,10 @@ endif
 
 ifeq ($(COVERAGE), 1)
 CARGO_OSDK_COMMON_ARGS += --coverage
+endif
+
+ifeq ($(NUMA), true)
+override FEATURES := $(FEATURES) numa
 endif
 
 ifdef FEATURES

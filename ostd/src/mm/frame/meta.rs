@@ -60,15 +60,26 @@ use crate::{
         CachePolicy, Infallible, Paddr, PageFlags, PageProperty, PrivilegedPageFlags, Segment,
         Vaddr, VmReader, PAGE_SIZE,
     },
+    numa::{memory_ranges, num_nodes, NodeId},
     panic::abort,
     util::ops::range_difference,
 };
 
 /// The maximum number of bytes of the metadata of a frame.
 pub const FRAME_METADATA_MAX_SIZE: usize = META_SLOT_SIZE
+    - maybe_node_id_size()
     - size_of::<AtomicU64>()
     - size_of::<FrameMetaVtablePtr>()
     - size_of::<AtomicU64>();
+
+const fn maybe_node_id_size() -> usize {
+    if cfg!(feature = "numa") {
+        size_of::<u8>()
+    } else {
+        0
+    }
+}
+
 /// The maximum alignment in bytes of the metadata of a frame.
 pub const FRAME_METADATA_MAX_ALIGN: usize = META_SLOT_SIZE;
 
@@ -89,6 +100,9 @@ pub(in crate::mm) struct MetaSlot {
     /// Don't interpret this field as an array of bytes. It is a
     /// placeholder for the metadata of a frame.
     storage: UnsafeCell<[u8; FRAME_METADATA_MAX_SIZE]>,
+    /// The NUMA node ID that this frame belongs to.
+    #[cfg(feature = "numa")]
+    node_id: u8,
     /// The reference count of the page.
     ///
     /// Specifically, the reference count has the following meaning:
@@ -324,6 +338,19 @@ impl MetaSlot {
         mapping::meta_to_frame::<PagingConsts>(self as *const MetaSlot as Vaddr)
     }
 
+    /// Gets the NUMA node ID that this frame belongs to.
+    pub(super) fn node_id(&self) -> NodeId {
+        #[cfg(feature = "numa")]
+        {
+            NodeId::new(self.node_id as u32)
+        }
+
+        #[cfg(not(feature = "numa"))]
+        {
+            NodeId::new(0)
+        }
+    }
+
     /// Gets a dynamically typed pointer to the stored metadata.
     ///
     /// # Safety
@@ -539,8 +566,35 @@ fn alloc_meta_frames(tot_nr_frames: usize) -> (usize, Paddr) {
 
     let slots = paddr_to_vaddr(paddr) as *mut MetaSlot;
 
+    let mut memory_ranges = memory_ranges()
+        .iter()
+        .filter(|mem_range| mem_range.is_enabled && mem_range.proximity_domain.is_some())
+        .peekable();
+
     // Initialize the metadata slots.
     for i in 0..tot_nr_frames {
+        let paddr = (i * page_size::<PagingConsts>(1)) as u64;
+        while let Some(mem_range) = memory_ranges.peek() {
+            if mem_range.base_address + mem_range.length <= paddr {
+                memory_ranges.next();
+            } else {
+                break;
+            }
+        }
+
+        let node_id = memory_ranges
+            .peek()
+            .filter(|mem_range| mem_range.base_address <= paddr)
+            .and_then(|mem_range| mem_range.proximity_domain)
+            // If the frame does not belong to any NUMA node, assign it to the
+            // default NUMA node (node 0).
+            .unwrap_or(0);
+        assert!(node_id < num_nodes() as u32);
+        assert!(
+            node_id < u8::MAX as u32,
+            "the number of NUMA nodes exceeds 255"
+        );
+
         // SAFETY: The memory is successfully allocated with `tot_nr_frames`
         // slots so the index must be within the range.
         let slot = unsafe { slots.add(i) };
@@ -549,6 +603,8 @@ fn alloc_meta_frames(tot_nr_frames: usize) -> (usize, Paddr) {
         unsafe {
             slot.write(MetaSlot {
                 storage: UnsafeCell::new([0; FRAME_METADATA_MAX_SIZE]),
+                #[cfg(feature = "numa")]
+                node_id: node_id as u8,
                 ref_count: AtomicU64::new(REF_COUNT_UNUSED),
                 vtable_ptr: UnsafeCell::new(MaybeUninit::uninit()),
                 in_list: AtomicU64::new(0),

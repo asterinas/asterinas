@@ -12,6 +12,7 @@ use crate::{
     error::Error,
     impl_frame_meta_for,
     mm::{paddr_to_vaddr, Paddr, PAGE_SIZE},
+    numa::NodeId,
     prelude::*,
     util::ops::range_difference,
 };
@@ -153,7 +154,7 @@ pub trait GlobalFrameAllocator: Sync {
     /// allocated, they may be returned in any order with any number of calls.
     fn alloc(&self, layout: Layout) -> Option<Paddr>;
 
-    /// Deallocates a contiguous range of frames.
+    /// Deallocates a contiguous range of frames in the given NUMA node.
     ///
     /// The caller guarantees that `addr` and `size` are both aligned to
     /// [`PAGE_SIZE`]. The deallocated memory should always be allocated by
@@ -164,7 +165,7 @@ pub trait GlobalFrameAllocator: Sync {
     /// added, without being allocated in between.
     ///
     /// The deallocated memory can be uninitialized.
-    fn dealloc(&self, addr: Paddr, size: usize);
+    fn dealloc(&self, addr: Paddr, size: usize, node_id: NodeId);
 
     /// Adds a contiguous range of frames to the allocator.
     ///
