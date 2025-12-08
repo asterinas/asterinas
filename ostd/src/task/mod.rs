@@ -199,7 +199,9 @@ impl TaskOptions {
         let kstack = KernelStack::new_with_guard_page()?;
 
         let mut ctx = TaskContext::new();
-        ctx.set_instruction_pointer(crate::arch::task::kernel_task_entry_wrapper as usize);
+        ctx.set_instruction_pointer(
+            crate::arch::task::kernel_task_entry_wrapper as *const () as usize,
+        );
         // We should reserve space for the return address in the stack, otherwise
         // we will write across the page boundary due to the implementation of
         // the context switch.

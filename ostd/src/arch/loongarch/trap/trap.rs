@@ -17,7 +17,7 @@ pub(super) unsafe fn init_on_cpu() {
     // When VS=0, the entry address for all exceptions and interrupts is the same
     loongArch64::register::ecfg::set_vs(0);
     // Configure the entry address for normal exceptions and interrupts
-    loongArch64::register::eentry::set_eentry(trap_entry as usize);
+    loongArch64::register::eentry::set_eentry(trap_entry as *const () as usize);
 }
 
 /// Trap frame of kernel interrupt

@@ -34,7 +34,7 @@ pub fn image_load_offset() -> isize {
         fn entry_legacy32();
     }
 
-    (entry_legacy32 as usize as isize) - CODE32_START
+    (entry_legacy32 as *const () as usize as isize) - CODE32_START
 }
 
 global_asm!(
@@ -54,7 +54,7 @@ fn payload() -> &'static [u8] {
     unsafe {
         core::slice::from_raw_parts(
             __payload_start as *const u8,
-            __payload_end as usize - __payload_start as usize,
+            __payload_end as *const () as usize - __payload_start as *const () as usize,
         )
     }
 }

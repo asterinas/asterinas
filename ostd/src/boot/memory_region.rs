@@ -83,8 +83,8 @@ impl MemoryRegion {
             fn __kernel_end();
         }
         MemoryRegion {
-            base: __kernel_start as usize - kernel_loaded_offset(),
-            len: __kernel_end as usize - __kernel_start as usize,
+            base: __kernel_start as *const () as usize - kernel_loaded_offset(),
+            len: __kernel_end as *const () as usize - __kernel_start as *const () as usize,
             typ: MemoryRegionType::Kernel,
         }
     }

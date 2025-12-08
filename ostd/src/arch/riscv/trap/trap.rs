@@ -74,7 +74,7 @@ pub(super) unsafe fn init_on_cpu() {
         // are presently executing in the kernel.
         asm!("csrw sscratch, zero");
         // Set the exception vector address.
-        asm!("csrw stvec, {}", in(reg) trap_entry as usize);
+        asm!("csrw stvec, {}", in(reg) trap_entry as *const () as usize);
     }
 }
 
