@@ -14,6 +14,7 @@ use super::scheme::Scheme;
 
 use crate::{error::Errno, error_msg, util::get_cargo_metadata};
 
+#[expect(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OsdkMeta {
     #[serde(rename(serialize = "type", deserialize = "type"))]

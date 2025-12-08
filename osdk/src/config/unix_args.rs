@@ -23,14 +23,16 @@ pub fn split_to_kv_array(args: &str) -> Vec<String> {
     let mut joined = Vec::<String>::new();
     let mut last_has_value = false;
     for elem in target {
-        if !elem.starts_with('-') && !last_has_value {
-            if let Some(last) = joined.last_mut() {
-                last.push(' ');
-                last.push_str(&elem);
-                last_has_value = true;
-                continue;
-            }
+        if !elem.starts_with('-')
+            && !last_has_value
+            && let Some(last) = joined.last_mut()
+        {
+            last.push(' ');
+            last.push_str(&elem);
+            last_has_value = true;
+            continue;
         }
+
         joined.push(elem);
         last_has_value = false;
     }

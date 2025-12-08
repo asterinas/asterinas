@@ -52,12 +52,12 @@ pub struct Scheme {
 
 macro_rules! inherit_optional {
     ($from:ident, $to:ident, .$field:ident) => {
-        if $to.$field.is_none() {
-            $to.$field = $from.$field.clone();
-        } else {
-            if let Some($field) = &$from.$field {
-                $to.$field.as_mut().unwrap().inherit($field);
+        if let Some(ref mut to_field) = $to.$field {
+            if let Some(from_field) = &$from.$field {
+                to_field.inherit(from_field);
             }
+        } else {
+            $to.$field = $from.$field.clone();
         }
     };
 }

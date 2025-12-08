@@ -282,8 +282,8 @@ impl DebugProfileOutArgs {
     /// the default format is flame graph.
     pub fn format(&self) -> ProfileFormat {
         self.format.unwrap_or_else(|| {
-            if self.output.is_some() {
-                match self.output.as_ref().unwrap().extension() {
+            if let Some(output) = &self.output {
+                match output.extension() {
                     Some(ext) if ext == "folded" => ProfileFormat::Folded,
                     Some(ext) if ext == "json" => ProfileFormat::Json,
                     Some(ext) if ext == "svg" => ProfileFormat::FlameGraph,

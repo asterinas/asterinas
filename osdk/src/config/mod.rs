@@ -126,30 +126,30 @@ fn canonicalize_and_eval(action_scheme: &mut ActionScheme, workdir: &PathBuf) {
             canonicalize(initramfs);
         }
 
-        if let Some(ref mut qemu) = action_scheme.qemu {
-            if let Some(ref mut qemu_path) = qemu.path {
-                canonicalize(qemu_path);
-            }
+        if let Some(ref mut qemu) = action_scheme.qemu
+            && let Some(ref mut qemu_path) = qemu.path
+        {
+            canonicalize(qemu_path);
         }
 
-        if let Some(ref mut grub) = action_scheme.grub {
-            if let Some(ref mut grub_mkrescue_path) = grub.grub_mkrescue {
-                canonicalize(grub_mkrescue_path);
-            }
+        if let Some(ref mut grub) = action_scheme.grub
+            && let Some(ref mut grub_mkrescue_path) = grub.grub_mkrescue
+        {
+            canonicalize(grub_mkrescue_path);
         }
     }
 
     // Do evaluations on the need to be evaluated string field, namely,
     // QEMU arguments.
 
-    if let Some(ref mut qemu) = action_scheme.qemu {
-        if let Some(ref mut args) = qemu.args {
-            *args = match eval(workdir, args) {
-                Ok(v) => v,
-                Err(e) => {
-                    error_msg!("Failed to evaluate qemu args: {:#?}", e);
-                    process::exit(Errno::ParseMetadata as _);
-                }
+    if let Some(ref mut qemu) = action_scheme.qemu
+        && let Some(ref mut args) = qemu.args
+    {
+        *args = match eval(workdir, args) {
+            Ok(v) => v,
+            Err(e) => {
+                error_msg!("Failed to evaluate qemu args: {:#?}", e);
+                process::exit(Errno::ParseMetadata as _);
             }
         }
     }
