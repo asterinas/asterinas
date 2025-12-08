@@ -1,7 +1,7 @@
 [package]
 name = "ostd"
 version = "0.16.1"
-edition = "2021"
+edition = "2024"
 description = "Rust OS framework that facilitates the development of and innovation in OS kernels"
 license = "MPL-2.0"
 readme = "README.md"

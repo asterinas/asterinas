@@ -1,7 +1,7 @@
 [package]
 name = "osdk-test-kernel"
 version = "0.16.1"
-edition = "2021"
+edition = "2024"
 description = "The OSTD-based kernel for running unit tests with OSDK."
 license = "MPL-2.0"
 repository ="https://github.com/asterinas/asterinas"

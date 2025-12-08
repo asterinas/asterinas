@@ -1,7 +1,7 @@
 [package]
 name = "osdk-heap-allocator"
 version = "0.16.1"
-edition = "2021"
+edition = "2024"
 description = "The default slab-based heap allocator shipped with OSDK."
 license = "MPL-2.0"
 repository ="https://github.com/asterinas/asterinas"
