@@ -69,6 +69,6 @@ in {
     sandbox = false;
     # FIXME: Support Nix build users (nixbld*) and remove this setting. For detailed gaps, see
     # <https://github.com/asterinas/asterinas/issues/2672>.
-    build-users-group = [ ];
+    build-users-group = "";
   };
 }
