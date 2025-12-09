@@ -54,6 +54,7 @@ TESTS ?= \
 	sigaction_test \
 	sigaltstack_test \
 	signalfd_test \
+	sigtimedwait_test \
 	socket_netlink_route_test \
 	socket_unix_dgram_local_test \
 	socket_unix_dgram_non_blocking_test \
