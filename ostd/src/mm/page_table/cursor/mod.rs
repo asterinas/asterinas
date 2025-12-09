@@ -286,6 +286,18 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
             return Err(PageTableError::InvalidVaddr(va));
         }
 
+        // FIXME: Maintain the `self.barrier_va.contains(self.va)` invariant:
+        // <https://github.com/asterinas/asterinas/pull/2613>.
+        if self.va == self.barrier_va.end {
+            while self.level < self.guard_level {
+                self.pop_level();
+            }
+            self.va = va;
+            return Ok(());
+        }
+
+        debug_assert!(self.barrier_va.contains(&self.va));
+
         loop {
             let node_size = page_size::<C>(self.level + 1);
             let node_start = self.va.align_down(node_size);
