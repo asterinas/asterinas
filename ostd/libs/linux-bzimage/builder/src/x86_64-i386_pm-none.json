@@ -10,11 +10,12 @@
     "max-atomic-width": 64,
     "position-independent-executables": false,
     "disable-redzone": true,
-    "target-c-int-width": "32",
-    "target-pointer-width": "32",
+    "target-c-int-width": 32,
+    "target-pointer-width": 32,
     "target-endian": "little",
     "panic-strategy": "abort",
     "os": "none",
     "relocation-model": "static",
-    "features": "+soft-float,-sse,-mmx"
+    "features": "+soft-float,-sse,-mmx",
+    "rustc-abi": "x86-softfloat"
 }

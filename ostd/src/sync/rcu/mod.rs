@@ -304,7 +304,7 @@ impl<P: NonNullPtr + Send> RcuOption<P> {
 
     /// Creates a new RCU primitive that contains nothing.
     ///
-    /// This is a constant equivalence to [`RcuOption::new(None)`].
+    /// This is a constant equivalence to [`RcuOption::new`] with parameter `None`.
     pub const fn new_none() -> Self {
         Self(RcuInner::new_none())
     }
