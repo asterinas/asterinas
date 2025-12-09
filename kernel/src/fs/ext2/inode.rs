@@ -23,7 +23,7 @@ use crate::{
         inode_handle::FileIo,
         notify::FsEventPublisher,
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
-        pipe::NamedPipe,
+        pipe::Pipe,
         utils::{
             AccessMode, Extension, FallocMode, Inode as _, InodeMode, Metadata, Permission,
             StatusFlags, XattrName, XattrNamespace, XattrSetFlags,
@@ -697,7 +697,7 @@ impl Inode {
     ) -> Result<Box<dyn FileIo>> {
         let inner = self.inner.read();
         let named_pipe = inner.named_pipe.as_ref().unwrap();
-        named_pipe.open(access_mode, status_flags)
+        named_pipe.open_named(access_mode, status_flags)
     }
 
     pub fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
@@ -974,14 +974,14 @@ struct InodeInner {
     page_cache: PageCache,
     // This corresponds to the `i_pipe` field in `struct inode` in Linux.
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/linux/fs.h#L771>.
-    named_pipe: Option<NamedPipe>,
+    named_pipe: Option<Pipe>,
 }
 
 impl InodeInner {
     pub fn new(desc: Dirty<InodeDesc>, weak_self: Weak<Inode>, fs: Weak<Ext2>) -> Self {
         let num_page_bytes = desc.num_page_bytes();
         let named_pipe = if desc.type_ == InodeType::NamedPipe {
-            Some(NamedPipe::new())
+            Some(Pipe::new())
         } else {
             None
         };
