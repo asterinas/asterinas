@@ -36,6 +36,7 @@ impl super::SubControl for PidsController {
                     writeln!(printer, "{}", max_pid)?;
                 }
             }
+            // TODO: Add support for reading other attributes.
             _ => return Err(Error::AttributeError),
         }
 
@@ -58,6 +59,7 @@ impl super::SubControl for PidsController {
                     if value >= PID_MAX {
                         return Err(Error::InvalidOperation);
                     }
+                    // TODO: Implement the logic to enforce the PID limit.
                     log::warn!("The cgroup's PID limit '{}' will not be enforced", value);
                     value
                 } else {
@@ -68,6 +70,7 @@ impl super::SubControl for PidsController {
 
                 Ok(len)
             }
+            // TODO: Add support for writing other attributes.
             _ => Err(Error::AttributeError),
         }
     }
