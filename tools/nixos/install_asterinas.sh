@@ -85,6 +85,7 @@ cp ${DISTRO_DIR}/aster_configuration.nix ${BUILD_DIR}/etc/nixos
 cp -r ${DISTRO_DIR}/modules ${BUILD_DIR}/etc/nixos
 cp -r ${DISTRO_DIR}/overlays ${BUILD_DIR}/etc/nixos
 
+export PATH=${PATH}:/run/current-system/sw/bin
 nixos-install --root ${BUILD_DIR} --no-root-passwd
 
 echo "Congratulations! Asterinas NixOS has been installed successfully!"
