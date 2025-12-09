@@ -33,12 +33,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Use nix-env to install and run the hello package
         run: |
-          make run NIXOS=1 NIXOS_DISK_SIZE_IN_MB=4096 NIXOS_STAGE_2_INIT='/bin/sh -l -c "nix-env -iA nixos.hello && hello && sync"' || true
+          make run NIXOS=1 NIXOS_DISK_SIZE_IN_MB=4096 NIXOS_TEST_COMMAND='nix-env -iA nixos.hello && hello' || true
           tail --lines 10 qemu.log | grep -q "^Hello, world!" || (echo "Test nix-env failed" && exit 1)
           echo "Test nix-env succeeds!"
       - name: Use nix-shell to install and run the hello package
         run: |
-          make run NIXOS=1 NIXOS_DISK_SIZE_IN_MB=4096 NIXOS_STAGE_2_INIT='/bin/sh -l -c "nix-shell -p hello --command hello && sync"' || true
+          make run NIXOS=1 NIXOS_DISK_SIZE_IN_MB=4096 NIXOS_TEST_COMMAND='nix-shell -p hello --command hello' || true
           tail --lines 10 qemu.log | grep -q "^Hello, world!" || (echo "Test nix-shell failed" && exit 1)
           echo "Test nix-shell succeeds!"
 
