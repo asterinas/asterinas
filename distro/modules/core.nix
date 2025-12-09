@@ -35,6 +35,15 @@ in {
       ${builtins.getEnv "NIXOS_STAGE_2_INIT"}
     fi
   '';
+  # Execute test-command on hvc0 console after boot if the test-command is 
+  # not empty (for CI testing).
+  environment.loginShellInit =
+    lib.mkIf ("${builtins.getEnv "NIXOS_TEST_COMMAND"}" != "") ''
+      if [ "$(tty)" = "/dev/hvc0" ]; then
+        ${builtins.getEnv "NIXOS_TEST_COMMAND"}
+        poweroff
+      fi
+    '';
   system.systemBuilderCommands = ''
     echo "PATH=/bin:/nix/var/nix/profiles/system/sw/bin ostd.log_level=${
       builtins.getEnv "LOG_LEVEL"
