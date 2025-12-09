@@ -148,7 +148,7 @@ which are summarized in the table below.
 | 125     | capget                 | ✅             | [⚠️](syscall-flag-coverage/namespaces-cgroups-and-security/#capget-and-capset) |
 | 126     | capset                 | ✅             | [⚠️](syscall-flag-coverage/namespaces-cgroups-and-security/#capget-and-capset) |
 | 127     | rt_sigpending          | ✅             | 💯 |
-| 128     | rt_sigtimedwait        | ❌             | N/A |
+| 128     | rt_sigtimedwait        | ✅             | 💯 |
 | 129     | rt_sigqueueinfo        | ❌             | N/A |
 | 130     | rt_sigsuspend          | ✅             | 💯 |
 | 131     | sigaltstack            | ✅             | ❓ |
