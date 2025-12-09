@@ -292,7 +292,8 @@ pub fn clone_child(
         let child_process = clone_child_process(ctx, parent_context, clone_args)?;
 
         let mut cgroup_guard = CgroupMembership::lock();
-        if let Some(cgroup) = ctx.process.cgroup().get() {
+        let cgroup = ctx.process.cgroup().get().map(|cgroup| cgroup.clone());
+        if let Some(cgroup) = cgroup {
             cgroup_guard
                 .move_process_to_node(child_process.clone(), &cgroup)
                 .unwrap();
