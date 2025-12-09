@@ -15,11 +15,11 @@ use crate::{
         file_table::FdFlags,
         notify::FsEventPublisher,
         path::RESERVED_MOUNT_ID,
-        pipe::{named_pipe::NamedPipeHandle, NamedPipe},
-        pseudofs::{pipefs_singleton, PseudoInode},
+        pipe::{Pipe, common::PipeHandle},
+        pseudofs::{PseudoInode, pipefs_singleton},
         utils::{
-            mkmod, AccessMode, CreationFlags, FileSystem, Inode, InodeIo, InodeMode, InodeType,
-            Metadata, StatusFlags,
+            AccessMode, CreationFlags, FileSystem, Inode, InodeIo, InodeMode, InodeType, Metadata,
+            StatusFlags, mkmod,
         },
     },
     prelude::*,
@@ -45,7 +45,7 @@ pub fn new_file_pair() -> Result<(Arc<AnonPipeFile>, Arc<AnonPipeFile>)> {
 /// An anonymous pipe file.
 pub struct AnonPipeFile {
     /// The opened pipe handle. `None` if the file is opened as a path.
-    handle: Option<Box<NamedPipeHandle>>,
+    handle: Option<Box<PipeHandle>>,
     pipe_inode: Arc<dyn Inode>,
     status_flags: AtomicU32,
 }
@@ -59,9 +59,7 @@ impl AnonPipeFile {
         check_status_flags(status_flags)?;
 
         let handle = if !status_flags.contains(StatusFlags::O_PATH) {
-            let handle = pipe_inode
-                .pipe
-                .open_handle(access_mode, status_flags, false)?;
+            let handle = pipe_inode.pipe.open_anon(access_mode, status_flags)?;
             Some(handle)
         } else {
             None
@@ -179,14 +177,14 @@ fn check_status_flags(status_flags: StatusFlags) -> Result<()> {
 
 /// An anonymous pipe inode.
 pub struct AnonPipeInode {
-    /// The underlying named pipe backend.
-    pipe: NamedPipe,
+    /// The underlying pipe backend.
+    pipe: Pipe,
     pseudo_inode: PseudoInode,
 }
 
 impl AnonPipeInode {
     fn new() -> Self {
-        let pipe = NamedPipe::new();
+        let pipe = Pipe::new();
 
         let pseudo_inode = PseudoInode::new(
             0,

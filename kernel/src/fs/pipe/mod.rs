@@ -4,9 +4,8 @@
 //!
 //! This module provides both anonymous and named pipes for inter-process communication.
 
-pub use anony_pipe::{new_file_pair, AnonPipeFile, AnonPipeInode};
-pub use named_pipe::NamedPipe;
+pub use anon_pipe::{AnonPipeFile, AnonPipeInode, new_file_pair};
+pub use common::Pipe;
 
-mod anony_pipe;
+mod anon_pipe;
 mod common;
-mod named_pipe;

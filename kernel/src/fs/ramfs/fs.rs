@@ -23,7 +23,7 @@ use crate::{
         inode_handle::FileIo,
         notify::FsEventPublisher,
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
-        pipe::NamedPipe,
+        pipe::Pipe,
         registry::{FsProperties, FsType},
         utils::{
             AccessMode, CStr256, CachePage, DirentVisitor, Extension, FallocMode, FileSystem,
@@ -132,7 +132,7 @@ enum Inner {
     BlockDevice(u64),
     CharDevice(u64),
     Socket,
-    NamedPipe(NamedPipe),
+    NamedPipe(Pipe),
 }
 
 impl Inner {
@@ -161,7 +161,7 @@ impl Inner {
     }
 
     pub(self) fn new_named_pipe() -> Self {
-        Self::NamedPipe(NamedPipe::new())
+        Self::NamedPipe(Pipe::new())
     }
 
     pub(self) fn new_file_in_memfd(this: Weak<MemfdInode>) -> Self {
@@ -228,7 +228,7 @@ impl Inner {
 
                 Some(device.open())
             }
-            Self::NamedPipe(pipe) => Some(pipe.open(access_mode, status_flags)),
+            Self::NamedPipe(pipe) => Some(pipe.open_named(access_mode, status_flags)),
             _ => None,
         }
     }
