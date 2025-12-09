@@ -26,7 +26,7 @@ jobs:
   full-nixos-test:
     runs-on: ubuntu-4-cores-150GB-ssd
     container:
-      image: asterinas/asterinas:0.16.1-20251130
+      image: asterinas/asterinas:0.16.2-20251209
       options: -v /dev:/dev --privileged
     timeout-minutes: 20
     steps:
