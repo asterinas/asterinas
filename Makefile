@@ -345,13 +345,31 @@ test:
 .PHONY: ktest
 ktest: initramfs $(CARGO_OSDK)
 	@# Exclude linux-bzimage-setup from ktest since it's hard to be unit tested
+	@echo "[ktest] Starting kernel tests" | tee -a ktest.log
+	@df -h . | tee -a ktest.log
+	@du -sh . | tee -a ktest.log
+	@echo "[ktest] Initial disk usage summary:" | tee -a ktest.log
+	@du -sh target/osdk target/x86_64-unknown-none target/release 2>/dev/null | tee -a ktest.log
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "ostd/libs/linux-bzimage/setup" ] && continue; \
-		echo "[make] Testing $$dir"; \
+		echo "[ktest] $(shell date '+%Y-%m-%d %H:%M:%S') Testing $$dir" | tee -a ktest.log; \
+		echo "[ktest]   Before test - Available space:" | tee -a ktest.log; \
+		df -h . | tail -1 | tee -a ktest.log; \
 		(cd $$dir && cargo osdk test $(CARGO_OSDK_TEST_ARGS)) || exit 1; \
+		echo "[ktest]   After test - Available space:" | tee -a ktest.log; \
+		df -h . | tail -1 | tee -a ktest.log; \
+		echo "[ktest]   Target directories size:" | tee -a ktest.log; \
+		du -sh target/osdk target/x86_64-unknown-none target/release 2>/dev/null | tee -a ktest.log; \
 		tail --lines 10 qemu.log | grep -q "^\\[ktest runner\\] All crates tested." \
 			|| (echo "Test failed" && exit 1); \
 	done
+	@echo "[ktest] All tests completed" | tee -a ktest.log
+	@echo "[ktest] Final disk usage summary:" | tee -a ktest.log
+	@df -h . | tee -a ktest.log
+	@du -sh . | tee -a ktest.log
+	@echo "[ktest] Final target directories breakdown:" | tee -a ktest.log
+	@du -sh target/osdk target/x86_64-unknown-none target/release 2>/dev/null | tee -a ktest.log
+	@cat ktest.log
 
 .PHONY: docs
 docs: $(CARGO_OSDK)
