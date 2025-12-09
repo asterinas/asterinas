@@ -187,13 +187,13 @@ macro_rules! ktest_array {
             fn __ktest_array();
             fn __ktest_array_end();
         }
-        let item_size = size_of::<KtestItem>();
         let array_ptr = __ktest_array as *const () as *const KtestItem;
         let array_end_ptr = __ktest_array_end as *const () as *const KtestItem;
         // SAFETY: The pointer arithmetic is valid since both pointers point to
         // the same section.
-        let l = unsafe { array_end_ptr.offset_from(array_ptr) as usize } / item_size;
-        // SAFETY: `__ktest_array` is a static section consisting of `KtestItem`s.
+        let l = unsafe { array_end_ptr.offset_from(array_ptr) as usize };
+        // SAFETY: `array_ptr` points to a valid static section with `l`
+        // `KtestItem` elements, and there are no write accesses.
         unsafe { core::slice::from_raw_parts(array_ptr, l) }
     }};
 }
