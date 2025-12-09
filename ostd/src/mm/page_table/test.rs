@@ -478,6 +478,31 @@ mod navigation {
     }
 
     #[ktest]
+    fn jump_from_guard_level_end() {
+        let page_table = PageTable::<TestPtConfig>::empty();
+
+        const HUGE_PAGE_SIZE: usize = PAGE_SIZE * 512; // 2M
+        let virt_range = HUGE_PAGE_SIZE - PAGE_SIZE..HUGE_PAGE_SIZE;
+
+        let preempt_guard = disable_preempt();
+        let mut cursor = page_table.cursor_mut(&preempt_guard, &virt_range).unwrap();
+
+        unsafe {
+            cursor
+                .map((
+                    0,
+                    1,
+                    PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback),
+                ))
+                .unwrap()
+        };
+
+        assert_eq!(cursor.virt_addr(), virt_range.end);
+        cursor.jump(virt_range.start).unwrap();
+        assert_eq!(cursor.virt_addr(), virt_range.start);
+    }
+
+    #[ktest]
     fn find_next() {
         let (page_table, _, _) = setup_page_table_with_two_frames();
         let preempt_guard = disable_preempt();
