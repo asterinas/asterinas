@@ -21,22 +21,24 @@ impl MemoryController {
         //
         // Reference: <https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html#memory-interface-files>
         if !is_root {
-            builder.add(SysStr::from("memory.stat"), SysPerms::DEFAULT_RO_ATTR_PERMS);
-            builder.add(SysStr::from("memory.max"), SysPerms::DEFAULT_RO_ATTR_PERMS);
             builder.add(
                 SysStr::from("memory.events"),
                 SysPerms::DEFAULT_RO_ATTR_PERMS,
             );
+            builder.add(SysStr::from("memory.max"), SysPerms::DEFAULT_RO_ATTR_PERMS);
+            builder.add(SysStr::from("memory.stat"), SysPerms::DEFAULT_RO_ATTR_PERMS);
         }
     }
 }
 
 impl super::SubControl for MemoryController {
     fn read_attr_at(&self, _name: &str, _offset: usize, _writer: &mut VmWriter) -> Result<usize> {
+        // TODO: Add support for reading attributes.
         Err(Error::AttributeError)
     }
 
     fn write_attr(&self, _name: &str, _reader: &mut VmReader) -> Result<usize> {
+        // TODO: Add support for writing attributes.
         Err(Error::AttributeError)
     }
 }

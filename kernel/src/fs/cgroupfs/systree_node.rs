@@ -282,15 +282,15 @@ impl CgroupSystem {
             SysPerms::DEFAULT_RO_ATTR_PERMS,
         );
         builder.add(
-            SysStr::from("cgroup.subtree_control"),
-            SysPerms::DEFAULT_RW_ATTR_PERMS,
-        );
-        builder.add(
             SysStr::from("cgroup.max.depth"),
             SysPerms::DEFAULT_RW_ATTR_PERMS,
         );
         builder.add(
             SysStr::from("cgroup.procs"),
+            SysPerms::DEFAULT_RW_ATTR_PERMS,
+        );
+        builder.add(
+            SysStr::from("cgroup.subtree_control"),
             SysPerms::DEFAULT_RW_ATTR_PERMS,
         );
         builder.add(
@@ -331,7 +331,11 @@ impl CgroupNode {
             SysPerms::DEFAULT_RO_ATTR_PERMS,
         );
         builder.add(
-            SysStr::from("cgroup.subtree_control"),
+            SysStr::from("cgroup.events"),
+            SysPerms::DEFAULT_RO_ATTR_PERMS,
+        );
+        builder.add(
+            SysStr::from("cgroup.freeze"),
             SysPerms::DEFAULT_RW_ATTR_PERMS,
         );
         builder.add(
@@ -343,15 +347,11 @@ impl CgroupNode {
             SysPerms::DEFAULT_RW_ATTR_PERMS,
         );
         builder.add(
-            SysStr::from("cgroup.threads"),
+            SysStr::from("cgroup.subtree_control"),
             SysPerms::DEFAULT_RW_ATTR_PERMS,
         );
         builder.add(
-            SysStr::from("cgroup.events"),
-            SysPerms::DEFAULT_RO_ATTR_PERMS,
-        );
-        builder.add(
-            SysStr::from("cgroup.freeze"),
+            SysStr::from("cgroup.threads"),
             SysPerms::DEFAULT_RW_ATTR_PERMS,
         );
 
@@ -500,6 +500,9 @@ inherit_sys_branch_node!(CgroupSystem, fields, {
     fn read_attr_at(&self, name: &str, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
         match name {
+            "cgroup.controllers" => {
+                writeln!(printer, "{}", SubCtrlSet::all())?;
+            }
             "cgroup.procs" => {
                 let process_table = process_table::process_table_mut();
                 for process in process_table.iter() {
@@ -507,9 +510,6 @@ inherit_sys_branch_node!(CgroupSystem, fields, {
                         writeln!(printer, "{}", process.pid())?;
                     }
                 }
-            }
-            "cgroup.controllers" => {
-                writeln!(printer, "{}", SubCtrlSet::all())?;
             }
             "cgroup.subtree_control" => {
                 let active_set = self.controller.lock().active_set();
@@ -583,15 +583,20 @@ inherit_sys_branch_node!(CgroupNode, fields, {
     fn read_attr_at(&self, name: &str, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
         match name {
-            "cgroup.procs" => self
-                .with_inner(|processes| {
-                    for pid in processes.keys() {
-                        writeln!(printer, "{}", pid)?;
-                    }
+            "cgroup.controllers" => {
+                let active_set = self
+                    .cgroup_parent()
+                    .ok_or(Error::IsDead)?
+                    .controller()
+                    .lock()
+                    .active_set();
+                self.with_inner(|_| {
+                    writeln!(printer, "{}", active_set)?;
 
                     Ok::<usize, Error>(printer.bytes_written())
                 })
-                .ok_or(Error::IsDead)?,
+                .ok_or(Error::IsDead)?
+            }
             "cgroup.events" => self
                 .with_inner(|_| {
                     let res = if self.populated_count.load(Ordering::Relaxed) > 0 {
@@ -608,20 +613,22 @@ inherit_sys_branch_node!(CgroupNode, fields, {
                     Ok::<usize, Error>(printer.bytes_written())
                 })
                 .ok_or(Error::IsDead)?,
-            "cgroup.controllers" => {
-                let active_set = self
-                    .cgroup_parent()
-                    .ok_or(Error::IsDead)?
-                    .controller()
-                    .lock()
-                    .active_set();
-                self.with_inner(|_| {
-                    writeln!(printer, "{}", active_set)?;
+            "cgroup.freeze" => self
+                .with_inner(|_| {
+                    writeln!(printer, "0")?;
 
                     Ok::<usize, Error>(printer.bytes_written())
                 })
-                .ok_or(Error::IsDead)?
-            }
+                .ok_or(Error::IsDead)?,
+            "cgroup.procs" => self
+                .with_inner(|processes| {
+                    for pid in processes.keys() {
+                        writeln!(printer, "{}", pid)?;
+                    }
+
+                    Ok::<usize, Error>(printer.bytes_written())
+                })
+                .ok_or(Error::IsDead)?,
             "cgroup.subtree_control" => {
                 let active_set = self.controller.lock().active_set();
                 self.with_inner(|_| {
@@ -631,13 +638,6 @@ inherit_sys_branch_node!(CgroupNode, fields, {
                 })
                 .ok_or(Error::IsDead)?
             }
-            "cgroup.freeze" => self
-                .with_inner(|_| {
-                    writeln!(printer, "0")?;
-
-                    Ok::<usize, Error>(printer.bytes_written())
-                })
-                .ok_or(Error::IsDead)?,
             // TODO: Add support for reading other attributes.
             _ => self
                 // This read may target a stale controller if the cgroup's sub-controllers

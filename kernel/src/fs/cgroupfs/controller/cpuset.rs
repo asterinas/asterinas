@@ -46,6 +46,7 @@ impl super::SubControl for CpuSetController {
             }
             // Currently we only support a single memory node.
             "cpuset.mems.effective" => writeln!(printer, "0")?,
+            // TODO: Add support for reading other attributes.
             _ => return Err(Error::AttributeError),
         }
 
@@ -53,6 +54,7 @@ impl super::SubControl for CpuSetController {
     }
 
     fn write_attr(&self, _name: &str, _reader: &mut VmReader) -> Result<usize> {
+        // TODO: Add support for writing attributes.
         Err(Error::AttributeError)
     }
 }
