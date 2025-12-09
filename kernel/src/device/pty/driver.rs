@@ -8,8 +8,8 @@ use crate::{
     device::{
         pty::packet::{PacketCtrl, PacketStatus},
         tty::{
-            termio::{CCtrlCharId, CInputFlags, CLocalFlags, CTermios},
             Tty, TtyDriver, TtyFlags,
+            termio::{CCtrlCharId, CInputFlags, CLocalFlags, CTermios},
         },
     },
     events::IoEvents,

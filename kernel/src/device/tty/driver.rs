@@ -3,7 +3,7 @@
 use aster_console::AnyConsoleDevice;
 
 use crate::{
-    device::tty::{termio::CTermios, Tty},
+    device::tty::{Tty, termio::CTermios},
     fs::inode_handle::FileIo,
     prelude::*,
 };
