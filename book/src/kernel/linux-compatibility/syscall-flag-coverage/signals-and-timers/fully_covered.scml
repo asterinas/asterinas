@@ -33,3 +33,6 @@ gettimeofday(tv, tz);
 
 // Get time in seconds
 time(tloc);
+
+// Synchronously wait for a signal with a timeout
+rt_sigtimedwait(set, info, timeout, sigsetsize);

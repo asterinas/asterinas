@@ -95,6 +95,7 @@ use super::{
     rt_sigprocmask::sys_rt_sigprocmask,
     rt_sigreturn::sys_rt_sigreturn,
     rt_sigsuspend::sys_rt_sigsuspend,
+    rt_sigtimedwait::sys_rt_sigtimedwait,
     sched_affinity::{sys_sched_getaffinity, sys_sched_setaffinity},
     sched_get_priority_max::sys_sched_get_priority_max,
     sched_get_priority_min::sys_sched_get_priority_min,
@@ -271,6 +272,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_RT_SIGACTION = 134           => sys_rt_sigaction(args[..4]);
     SYS_RT_SIGPROCMASK = 135         => sys_rt_sigprocmask(args[..4]);
     SYS_RT_SIGPENDING = 136          => sys_rt_sigpending(args[..2]);
+    SYS_RT_SIGTIMEDWAIT = 137        => sys_rt_sigtimedwait(args[..4]);
     SYS_RT_SIGRETURN = 139           => sys_rt_sigreturn(args[..0], &mut user_ctx);
     SYS_SET_PRIORITY = 140           => sys_set_priority(args[..3]);
     SYS_GET_PRIORITY = 141           => sys_get_priority(args[..2]);

@@ -105,6 +105,7 @@ use super::{
     rt_sigprocmask::sys_rt_sigprocmask,
     rt_sigreturn::sys_rt_sigreturn,
     rt_sigsuspend::sys_rt_sigsuspend,
+    rt_sigtimedwait::sys_rt_sigtimedwait,
     sched_affinity::{sys_sched_getaffinity, sys_sched_setaffinity},
     sched_get_priority_max::sys_sched_get_priority_max,
     sched_get_priority_min::sys_sched_get_priority_min,
@@ -291,6 +292,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_CAPGET = 125           => sys_capget(args[..2]);
     SYS_CAPSET = 126           => sys_capset(args[..2]);
     SYS_RT_SIGPENDING = 127    => sys_rt_sigpending(args[..2]);
+    SYS_RT_SIGTIMEDWAIT = 128  => sys_rt_sigtimedwait(args[..4]);
     SYS_RT_SIGSUSPEND = 130    => sys_rt_sigsuspend(args[..2]);
     SYS_SIGALTSTACK = 131      => sys_sigaltstack(args[..2], &user_ctx);
     SYS_UTIME = 132            => sys_utime(args[..2]);

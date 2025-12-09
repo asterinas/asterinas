@@ -117,6 +117,7 @@ mod rt_sigpending;
 mod rt_sigprocmask;
 mod rt_sigreturn;
 mod rt_sigsuspend;
+mod rt_sigtimedwait;
 mod sched_affinity;
 mod sched_get_priority_max;
 mod sched_get_priority_min;
