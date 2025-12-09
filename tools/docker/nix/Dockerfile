@@ -7,15 +7,18 @@ SHELL ["/bin/bash", "-c"]
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Install Nix package manager
+# Install Nix package manager and other Nix tools
+#
+# The nixpkgs and nixos channels are pinned to a particular commit (NixOS 25.05, 2025-07-01) for reproducibility.
 # FIXME: Installing Nix as root is not supported in single-user mode.
 RUN sh <(curl -L https://nixos.org/nix/install) --daemon --yes \
     && . /etc/profile.d/nix.sh \
-    && nix-channel --add https://nixos.org/channels/nixos-25.05 nixpkgs \
-    && nix-channel --add https://nixos.org/channels/nixos-25.05 nixos \
+    && nix-channel --add https://github.com/NixOS/nixpkgs/archive/c0bebd16e69e631ac6e52d6eb439daba28ac50cd.tar.gz nixpkgs \
+    && nix-channel --add https://github.com/NixOS/nixpkgs/archive/c0bebd16e69e631ac6e52d6eb439daba28ac50cd.tar.gz nixos \
     && nix-channel --update \
     && nix-env -iA nixpkgs.nixfmt \
     && nix-env -iA nixpkgs.nixos-install-tools \
+    && nix-env -iA cachix -f https://cachix.org/api/v1/install \
     && rm /nix/var/nix/gcroots/auto/* \
     && nix-collect-garbage -d
 
