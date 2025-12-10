@@ -41,4 +41,21 @@ jobs:
           make run NIXOS=1 NIXOS_DISK_SIZE_IN_MB=6144 NIXOS_TEST_COMMAND='nix-shell -p hello --command hello' || true
           tail --lines 10 qemu.log | grep -q "^Hello, world!" || (echo "Test nix-shell failed" && exit 1)
           echo "Test nix-shell succeeds!"
-
+  
+  podman-test:
+    runs-on: ubuntu-4-cores-150GB-ssd
+    container:
+      image: asterinas/asterinas:0.16.2-20251209
+      options: -v /dev:/dev --privileged
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Modify configuration.nix to include podman
+        run: |
+          sed -i 's/^[[:space:]]*# virtualisation\.podman\.enable = true;/  virtualisation.podman.enable = true;/' \
+          distro/configuration.nix
+      - name: Run podman commands
+        run: |
+          make run NIXOS=1 NIXOS_DISK_SIZE_IN_MB=8192 NIXOS_TEST_COMMAND='podman run docker.io/library/alpine:latest ls /etc' || true
+          tail --lines 50 qemu.log | grep -q "alpine-release" || (echo "Test podman failed" && exit 1)
+          echo "Test podman succeeds!"
