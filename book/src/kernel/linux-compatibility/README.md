@@ -252,8 +252,8 @@ which are summarized in the table below.
 | 229     | clock_getres           | ❌             | N/A |
 | 230     | clock_nanosleep        | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#clock_nanosleep) |
 | 231     | exit_group             | ✅             | 💯 |
-| 232     | epoll_wait             | ✅             | ❓ |
-| 233     | epoll_ctl              | ✅             | ❓ |
+| 232     | epoll_wait             | ✅             | 💯 |
+| 233     | epoll_ctl              | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#epoll_ctl) |
 | 234     | tgkill                 | ✅             | 💯 |
 | 235     | utimes                 | ✅             | 💯 |
 | 236     | vserver                | ❌             | N/A |
@@ -301,7 +301,7 @@ which are summarized in the table below.
 | 278     | vmsplice               | ❌             | N/A |
 | 279     | move_pages             | ❌             | N/A |
 | 280     | utimensat              | ✅             | ❓ |
-| 281     | epoll_pwait            | ✅             | ❓ |
+| 281     | epoll_pwait            | ✅             | 💯 |
 | 282     | signalfd               | ✅             | 💯 |
 | 283     | timerfd_create         | ✅             | ❓ |
 | 284     | eventfd                | ✅             | 💯 |
@@ -311,7 +311,7 @@ which are summarized in the table below.
 | 288     | accept4                | ✅             | ❓ |
 | 289     | signalfd4              | ✅             | 💯 |
 | 290     | eventfd2               | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#eventfd-and-eventfd2) |
-| 291     | epoll_create1          | ✅             | ❓ |
+| 291     | epoll_create1          | ✅             | 💯 |
 | 292     | dup3                   | ✅             | 💯 |
 | 293     | pipe2                  | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#pipe-and-pipe2) |
 | 294     | inotify_init1          | ✅             | [⚠️](syscall-flag-coverage/file-systems-and-mount-control/#inotify_init-and-inotify_init1) |
@@ -347,7 +347,7 @@ which are summarized in the table below.
 | 435     | clone3                 | ✅             | ❓ |
 | 436     | close_range            | ✅             | ❓ |
 | 439     | faccessat2             | ✅             | ❓ |
-| 441     | epoll_pwait2           | ✅             | ❓ |
+| 441     | epoll_pwait2           | ✅             | 💯 |
 | 452     | fchmodat2              | ✅             | 💯 |
 
 - Supported:

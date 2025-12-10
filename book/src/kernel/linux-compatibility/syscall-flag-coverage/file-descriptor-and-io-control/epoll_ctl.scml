@@ -1,0 +1,12 @@
+struct epoll_event = {
+    events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLPRI | EPOLLERR | EPOLLHUP |
+             EPOLLET | EPOLLONESHOT,
+    ..
+};
+
+// Add, modify, or delete entries in the interest list of an epoll file descriptor
+epoll_ctl(
+    epfd,
+    op = EPOLL_CTL_ADD | EPOLL_CTL_MOD | EPOLL_CTL_DEL,
+    fd, event = <epoll_event>
+);
