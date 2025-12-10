@@ -100,3 +100,19 @@ Unsupported flags in events:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/epoll_ctl.2.html).
+
+### `poll`
+
+Supported functionality in SCML:
+
+```c
+{{#include poll.scml}}
+```
+
+Unsupported events:
+* `POLLRDBAND`
+* `POLLWRNORM`
+* `POLLWRBAND`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/poll.2.html).

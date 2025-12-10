@@ -27,7 +27,7 @@ which are summarized in the table below.
 | 4       | stat                   | ✅             | 💯 |
 | 5       | fstat                  | ✅             | 💯 |
 | 6       | lstat                  | ✅             | 💯 |
-| 7       | poll                   | ✅             | 💯 |
+| 7       | poll                   | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#poll) |
 | 8       | lseek                  | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#lseek) |
 | 9       | mmap                   | ✅             | [⚠️](syscall-flag-coverage/memory-management/#mmap-and-munmap) |
 | 10      | mprotect               | ✅             | [⚠️](syscall-flag-coverage/memory-management/#mprotect) |
@@ -43,7 +43,7 @@ which are summarized in the table below.
 | 20      | writev                 | ✅             | 💯 |
 | 21      | access                 | ✅             | 💯 |
 | 22      | pipe                   | ✅             | 💯 |
-| 23      | select                 | ✅             | ❓ |
+| 23      | select                 | ✅             | 💯 |
 | 24      | sched_yield            | ✅             | 💯 |
 | 25      | mremap                 | ✅             | [⚠️](syscall-flag-coverage/memory-management/#mremap) |
 | 26      | msync                  | ✅             | [⚠️](syscall-flag-coverage/memory-management/#msync) |
