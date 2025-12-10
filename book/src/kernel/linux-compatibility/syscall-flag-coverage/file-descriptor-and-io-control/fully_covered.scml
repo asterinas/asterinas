@@ -6,9 +6,6 @@ dup3(oldfd, newfd, flags);
 // Monitor multiplexed I/O with signal safety and precise timeout handling
 pselect6(nfds, readfds, writefds, exceptfds, timeout, sigmask);
 
-// Wait for some event on a file descriptor
-poll(fds, nfds, timeout);
-
 // Transfer data between file descriptors
 sendfile(out_fd, in_fd, offset, count);
 
@@ -28,3 +25,6 @@ signalfd4(fd, mask, sizemask, flags = SFD_NONBLOCK | SFD_CLOEXEC);
 epoll_wait(epfd, events, maxevents, timeout);
 epoll_pwait(epfd, events, maxevents, timeout, sigmask);
 epoll_pwait2(epfd, events, maxevents, timeout, sigmask);
+
+// Wait for I/O event on the file descriptors set in read, write or except bitmaps
+select(nfds, readfds, writefds, exceptfds, timeout);
