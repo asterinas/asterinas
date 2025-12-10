@@ -10,6 +10,10 @@
   imports = [ ./aster_configuration.nix ];
 
   networking.hostName = "asterinas"; # Define your hostname.
+  # The DNS server.
+  environment.etc."resolv.conf".text = ''
+    nameserver 8.8.8.8
+  '';
 
   # Uncomment the two options below to enable the X11 (X.Org) desktop (XFCE).
   # services.xserver.enable = true;

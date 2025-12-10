@@ -1,7 +1,53 @@
 { config, lib, pkgs, ... }:
 let
-  kernel = builtins.path { path = builtins.getEnv "NIXOS_KERNEL"; };
-  stage-1-init = builtins.path { path = builtins.getEnv "NIXOS_STAGE_1_INIT"; };
+  kernel = builtins.path {
+    name = "aster-nix-osdk-bin";
+    path = config.aster_nixos.kernel;
+  };
+  stage-1-init = pkgs.writeShellScript "stage-1-init" ''
+    #!/bin/sh
+    # SPDX-License-Identifier: MPL-2.0
+
+    NEW_ROOT=""
+    NEW_INIT=""
+    BREAK=""
+    ARGS=""
+
+    for arg in "$@"; do
+      case "$arg" in
+        root=*)
+          NEW_ROOT=''${arg#root=}
+          ;;
+        init=*)
+          NEW_INIT=''${arg#init=}
+          ;;
+        rd.break=*)
+          BREAK=''${arg#rd.break=}
+          ;;
+        *)
+          ARGS="$ARGS $arg"
+          ;;
+      esac
+    done
+
+    if [ "$BREAK" = "1" ]; then
+      echo "Breaking into initramfs shell..."
+      exec /bin/sh
+    fi
+
+    if [ -z "$NEW_ROOT" ] || [ -z "$NEW_INIT" ]; then
+      echo "Error: 'root=' and 'init=' parameters are required."
+      exit 1
+    fi
+
+    mkdir /sysroot
+    mount -t ext2 "$NEW_ROOT" /sysroot
+    mount -t proc none /sysroot/proc
+    mount --move /dev /sysroot/dev
+
+    exec switch_root /sysroot "$NEW_INIT" "$ARGS"
+  '';
+
   initramfs = pkgs.makeInitrd {
     contents = [
       {
@@ -14,11 +60,6 @@ let
       }
     ];
   };
-  resolv-conf = builtins.path { path = builtins.getEnv "NIXOS_RESOLV_CONF"; };
-  # If set to "1", the system will not proceed to switch to the root filesystem after
-  # initial boot. Instead, it will drop into an initramfs shell. This is primarily
-  # intended for debugging purposes.
-  break-into-stage1-shell = "0";
 in {
   boot.loader.grub.enable = true;
   boot.loader.grub.efiSupport = true;
@@ -29,30 +70,26 @@ in {
   # Hook function will be called in stage-2-init and before running systemd.
   boot.postBootCommands = ''
     echo "Executing postBootCommands..."
-    rm -rf /etc/resolv.conf
-    ln -s ${resolv-conf} /etc/resolv.conf
-    if [ "${builtins.getEnv "NIXOS_DISABLE_SYSTEMD"}" = "true" ]; then
-      ${builtins.getEnv "NIXOS_STAGE_2_INIT"}
+    if [ "${config.aster_nixos.disable-systemd}" = "true" ]; then
+      ${config.aster_nixos.stage-2-hook}
     fi
   '';
   # Execute test-command on hvc0 console after boot if the test-command is
   # not empty (for CI testing).
   environment.loginShellInit =
-    lib.mkIf ("${builtins.getEnv "NIXOS_TEST_COMMAND"}" != "") ''
+    lib.mkIf ("${config.aster_nixos.test-command}" != "") ''
       if [ "$(tty)" = "/dev/hvc0" ]; then
-        ${builtins.getEnv "NIXOS_TEST_COMMAND"}
+        ${config.aster_nixos.test-command}
         poweroff
       fi
     '';
   system.systemBuilderCommands = ''
-    echo "PATH=/bin:/nix/var/nix/profiles/system/sw/bin ostd.log_level=${
-      builtins.getEnv "LOG_LEVEL"
-    } console=${
-      builtins.getEnv "CONSOLE"
-    } -- sh /init root=/dev/vda2 init=/nix/var/nix/profiles/system/stage-2-init rd.break=${break-into-stage1-shell}"  > $out/kernel-params
+    echo "PATH=/bin:/nix/var/nix/profiles/system/sw/bin ostd.log_level=${config.aster_nixos.log-level} console=${config.aster_nixos.console} -- sh /init root=/dev/vda2 init=/nix/var/nix/profiles/system/stage-2-init rd.break=${
+      if config.aster_nixos.break-into-stage-1-shell then "1" else "0"
+    }"  > $out/kernel-params
     mv $out/init $out/stage-2-init
     sed -i 's_^\([[:space:]]*\)\(exec > >(tee -i /run/log/stage-2-init.log) 2>&1\)$_\1# \2_' $out/stage-2-init
-    if [ "${builtins.getEnv "NIXOS_DISABLE_SYSTEMD"}" = "true" ]; then
+    if [ "${config.aster_nixos.disable-systemd}" = "true" ]; then
       sed -i 's/^[[:space:]]*echo "starting systemd..."$/# &/' $out/stage-2-init
       sed -i 's/^[[:space:]]*exec \/run\/current-system\/systemd\/lib\/systemd\/systemd "$@"$/# &/' $out/stage-2-init
     fi

@@ -53,7 +53,7 @@ jobs:
       - name: Modify configuration.nix to include podman
         run: |
           sed -i 's/^[[:space:]]*# virtualisation\.podman\.enable = true;/  virtualisation.podman.enable = true;/' \
-          distro/configuration.nix
+          distro/etc_nixos/configuration.nix
       - name: Run podman commands
         run: |
           make run NIXOS=1 NIXOS_DISK_SIZE_IN_MB=8192 NIXOS_TEST_COMMAND='podman run docker.io/library/alpine:latest ls /etc' || true
