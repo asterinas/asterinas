@@ -115,7 +115,8 @@ unsafe fn bringup_ap(hart_id: u32) {
 ///
 /// # Safety
 ///
-/// The caller must ensure that `__ap_boot_info_array_pointer` is safe to write.
+/// This function writes to the static mutable variable `__ap_boot_info_array_pointer`.
+/// The caller must ensure exclusive access to this variable.
 unsafe fn fill_boot_info_ptr(info_ptr: *const PerApRawInfo) {
     unsafe extern "C" {
         static mut __ap_boot_info_array_pointer: *const PerApRawInfo;
@@ -131,7 +132,8 @@ unsafe fn fill_boot_info_ptr(info_ptr: *const PerApRawInfo) {
 ///
 /// # Safety
 ///
-/// The caller must ensure that `__ap_boot_page_table_pointer` is safe to write.
+/// This function writes to the static mutable variable `__ap_boot_page_table_pointer`.
+/// The caller must ensure exclusive access to this variable.
 unsafe fn fill_boot_page_table_ptr(pt_ptr: Paddr) {
     unsafe extern "C" {
         static mut __ap_boot_page_table_pointer: Paddr;
