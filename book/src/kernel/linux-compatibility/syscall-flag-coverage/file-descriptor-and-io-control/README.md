@@ -85,3 +85,18 @@ Unsupported flags:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/memfd_create.2.html).
+
+### `epoll_ctl`
+
+Supported functionality in SCML:
+
+```c
+{{#include epoll_ctl.scml}}
+```
+
+Unsupported flags in events:
+* `EPOLLEXCLUSIVE`
+* `EPOLLWAKEUP`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/epoll_ctl.2.html).

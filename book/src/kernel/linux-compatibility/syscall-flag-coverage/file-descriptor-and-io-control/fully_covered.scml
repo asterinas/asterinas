@@ -18,7 +18,13 @@ fdatasync(fd);
 
 // Open an epoll file descriptor
 epoll_create(size);
+epoll_create1(flags = EPOLL_CLOEXEC);
 
 // Create a file descriptor for accepting signals
 signalfd(fd, mask, sizemask);
 signalfd4(fd, mask, sizemask, flags = SFD_NONBLOCK | SFD_CLOEXEC);
+
+// Wait for I/O event on an epoll file descriptor
+epoll_wait(epfd, events, maxevents, timeout);
+epoll_pwait(epfd, events, maxevents, timeout, sigmask);
+epoll_pwait2(epfd, events, maxevents, timeout, sigmask);
