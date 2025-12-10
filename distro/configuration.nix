@@ -15,13 +15,12 @@
   # services.xserver.enable = true;
   # services.xserver.desktopManager.xfce.enable = true;
 
+  # Uncomment the following line to enable Podman.
+  # virtualisation.podman.enable = true;
+
   # List packages installed in system profile.
   # You can use https://search.nixos.org/ to find more packages (and options).
   environment.systemPackages = with pkgs; [ hello-asterinas ];
-
-  # Uncomment the following two lines to enable Podman.
-  # virtualisation.podman.enable = true;
-  # virtualisation.containers.enable = true;
 
   system.nixos.distroName = "Asterinas NixOS";
 
