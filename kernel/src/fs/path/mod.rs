@@ -246,13 +246,16 @@ impl Path {
     ///
     /// Returns the newly created child mount on success.
     ///
+    /// This method consumes the `Path`. Use `Path::new_fs_root` to create a new one
+    /// if needed after mounting.
+    ///
     /// # Errors
     ///
     /// Returns `ENOTDIR` if the path is not a directory.
     /// Returns `EINVAL` if attempting to mount on root or if the path is not
     /// in the current mount namespace.
     pub fn mount(
-        &self,
+        self,
         fs: Arc<dyn FileSystem>,
         flags: PerMountFlags,
         ctx: &Context,

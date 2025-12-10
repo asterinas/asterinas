@@ -71,6 +71,7 @@ in {
   boot.postBootCommands = ''
     echo "Executing postBootCommands..."
     if [ "${config.aster_nixos.disable-systemd}" = "true" ]; then
+      ln -s /proc/self/fd /dev/fd
       ${config.aster_nixos.stage-2-hook}
     fi
   '';
