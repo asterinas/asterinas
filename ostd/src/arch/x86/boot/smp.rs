@@ -172,7 +172,8 @@ unsafe fn copy_ap_boot_code() {
 
 /// # Safety
 ///
-/// The caller must ensure the pointer to be filled is valid to write.
+/// This function writes to the static mutable variable `__ap_boot_info_array_pointer`.
+/// The caller must ensure exclusive access to this variable.
 unsafe fn fill_boot_info_ptr(info_ptr: *const PerApRawInfo) {
     unsafe extern "C" {
         static mut __ap_boot_info_array_pointer: *const PerApRawInfo;
@@ -186,7 +187,8 @@ unsafe fn fill_boot_info_ptr(info_ptr: *const PerApRawInfo) {
 
 /// # Safety
 ///
-/// The caller must ensure the pointer to be filled is valid to write.
+/// This function writes to the static mutable variable `__boot_page_table_pointer`.
+/// The caller must ensure exclusive access to this variable.
 unsafe fn fill_boot_pt_ptr(pt_ptr: Paddr) {
     unsafe extern "C" {
         static mut __boot_page_table_pointer: u32;
