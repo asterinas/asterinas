@@ -333,6 +333,11 @@ impl Vmar {
     ///   they will be unmapped before the move.
     /// - If `new_addr` is `None`, a new range of size `new_size` will be
     ///   allocated, and the original mapping will be moved there.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if `new_addr` is `None` and `new_size <= old_size`.
+    /// Use `resize_mapping` instead in this case.
     pub fn remap(
         &self,
         old_addr: Vaddr,
@@ -353,8 +358,14 @@ impl Vmar {
                 "remap: there is no mapping at the old address"
             )
         };
-        if new_size > old_size && !old_mapping.can_expand() {
-            return_errno_with_message!(Errno::EFAULT, "remap: device mappings cannot be expanded");
+        if new_size > old_size {
+            if !old_mapping.can_expand() {
+                return_errno_with_message!(
+                    Errno::EFAULT,
+                    "remap: device mappings cannot be expanded"
+                );
+            }
+            inner.check_extra_size_fits_rlimit(new_size - old_size)?;
         }
 
         // Shrink the old mapping first.
@@ -393,6 +404,20 @@ impl Vmar {
                 &mut rss_delta,
             )?
         } else {
+            debug_assert!(new_size > old_size);
+
+            // Fast path: expand the old mapping in place to the new size
+            if inner
+                .alloc_free_region_exact(old_range.end, new_size - old_size)
+                .is_ok()
+            {
+                let old_mapping_addr = inner.check_lies_in_single_mapping(old_addr, old_size)?;
+                let old_mapping = inner.remove(&old_mapping_addr).unwrap();
+                let new_mapping = old_mapping.enlarge(new_size - old_size);
+                inner.insert_try_merge(new_mapping);
+                return Ok(old_range.start);
+            }
+
             inner.alloc_free_region(new_size, PAGE_SIZE)?
         };
 
