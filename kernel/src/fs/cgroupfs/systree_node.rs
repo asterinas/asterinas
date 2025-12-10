@@ -350,6 +350,10 @@ impl CgroupNode {
             SysStr::from("cgroup.events"),
             SysPerms::DEFAULT_RO_ATTR_PERMS,
         );
+        builder.add(
+            SysStr::from("cgroup.freeze"),
+            SysPerms::DEFAULT_RW_ATTR_PERMS,
+        );
 
         Controller::init_attr_set(&mut builder, false);
 
@@ -597,8 +601,8 @@ inherit_sys_branch_node!(CgroupNode, fields, {
                     };
 
                     writeln!(printer, "populated {}", res)?;
-                    // Currently we have not enabled the "frozen" attribute
-                    // so the "frozen" field is always zero.
+                    // Currently we have not enabled writing to the "cgroup.freeze"
+                    // attribute so the "frozen" field is always zero.
                     writeln!(printer, "frozen {}", 0)?;
 
                     Ok::<usize, Error>(printer.bytes_written())
@@ -627,6 +631,13 @@ inherit_sys_branch_node!(CgroupNode, fields, {
                 })
                 .ok_or(Error::IsDead)?
             }
+            "cgroup.freeze" => self
+                .with_inner(|_| {
+                    writeln!(printer, "0")?;
+
+                    Ok::<usize, Error>(printer.bytes_written())
+                })
+                .ok_or(Error::IsDead)?,
             // TODO: Add support for reading other attributes.
             _ => self
                 // This read may target a stale controller if the cgroup's sub-controllers
