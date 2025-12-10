@@ -56,7 +56,7 @@ DNS_SERVER ?= none
 
 # NixOS settings
 NIXOS ?= 0
-NIXOS_DISK_SIZE_IN_MB ?= 8196
+NIXOS_DISK_SIZE_IN_MB ?= 8192
 NIXOS_DISABLE_SYSTEMD ?= false
 NIXOS_TEST_COMMAND ?=
 # The following option is only effective when NIXOS_DISABLE_SYSTEMD is set to 'true'.
@@ -292,14 +292,14 @@ initramfs: check_vdso
 build: initramfs $(CARGO_OSDK)
 	@cd kernel && cargo osdk build $(CARGO_OSDK_BUILD_ARGS)
 ifeq ($(NIXOS),1)
-	@./tools/nixos/install_asterinas.sh target/nixos
+	@./tools/nixos/build_nixos.sh
 endif
 
 .PHONY: run
 run: initramfs $(CARGO_OSDK)
 ifeq ($(NIXOS),1)
 	@cd kernel && cargo osdk build $(CARGO_OSDK_BUILD_ARGS)
-	@./tools/nixos/install_asterinas.sh target/nixos
+	@./tools/nixos/build_nixos.sh
 	@./tools/nixos/run_nixos.sh target/nixos
 else
 	@cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS)
