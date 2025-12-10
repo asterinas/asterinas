@@ -932,6 +932,11 @@ pub fn is_userspace_vaddr(vaddr: Vaddr) -> bool {
     (VMAR_LOWEST_ADDR..VMAR_CAP_ADDR).contains(&vaddr)
 }
 
+/// Returns the full user space virtual address range.
+pub fn userspace_range() -> Range<Vaddr> {
+    VMAR_LOWEST_ADDR..VMAR_CAP_ADDR
+}
+
 fn check_userspace_page_range(vaddr: Vaddr, len: usize) -> Result<Range<Vaddr>> {
     let Some(end) = vaddr.checked_add(len) else {
         return_errno_with_message!(Errno::EINVAL, "address overflow");

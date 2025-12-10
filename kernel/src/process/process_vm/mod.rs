@@ -99,7 +99,7 @@ impl ProcessVm {
     }
 
     /// Returns the initial portion of the main stack of a process.
-    pub(super) fn init_stack(&self) -> &InitStack {
+    pub fn init_stack(&self) -> &InitStack {
         &self.init_stack
     }
 
