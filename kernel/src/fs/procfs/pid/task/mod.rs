@@ -11,8 +11,9 @@ use crate::{
             pid::task::{
                 cgroup::CgroupFileOps, cmdline::CmdlineFileOps, comm::CommFileOps,
                 environ::EnvironFileOps, exe::ExeSymOps, fd::FdDirOps, gid_map::GidMapFileOps,
-                mem::MemFileOps, mountinfo::MountInfoFileOps, oom_score_adj::OomScoreAdjFileOps,
-                stat::StatFileOps, status::StatusFileOps, uid_map::UidMapFileOps,
+                maps::MapsFileOps, mem::MemFileOps, mountinfo::MountInfoFileOps,
+                oom_score_adj::OomScoreAdjFileOps, stat::StatFileOps, status::StatusFileOps,
+                uid_map::UidMapFileOps,
             },
             template::{
                 DirOps, ProcDir, ProcDirBuilder, lookup_child_from_table,
@@ -33,6 +34,7 @@ mod environ;
 mod exe;
 mod fd;
 mod gid_map;
+mod maps;
 mod mem;
 mod mountinfo;
 mod oom_score_adj;
@@ -112,6 +114,7 @@ impl TidDirOps {
         ("stat", StatFileOps::new_inode),
         ("status", StatusFileOps::new_inode),
         ("uid_map", UidMapFileOps::new_inode),
+        ("maps", MapsFileOps::new_inode),
     ];
 }
 

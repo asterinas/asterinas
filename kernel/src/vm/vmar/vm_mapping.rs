@@ -7,6 +7,7 @@ use core::{
 };
 
 use align_ext::AlignExt;
+use aster_util::printer::VmPrinter;
 use ostd::{
     io::IoMem,
     mm::{
@@ -196,6 +197,54 @@ impl VmMapping {
         let io_page_prop =
             PageProperty::new_user(PageFlags::from(self.perms), io_mem.cache_policy());
         cursor.map_iomem(io_mem, io_page_prop, self.map_size.get(), vmo_offset);
+
+        Ok(())
+    }
+
+    /// Prints the mapping information in the format of `/proc/[pid]/maps`.
+    ///
+    /// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/task_mmu.c#L304-L359>
+    pub fn print_to_maps(&self, printer: &mut VmPrinter, name: &str) -> Result<()> {
+        let start = self.map_to_addr;
+        let end = self.map_end();
+        let read_char = if self.perms.contains(VmPerms::READ) {
+            'r'
+        } else {
+            '-'
+        };
+        let write_char = if self.perms.contains(VmPerms::WRITE) {
+            'w'
+        } else {
+            '-'
+        };
+        let exec_char = if self.perms.contains(VmPerms::EXEC) {
+            'x'
+        } else {
+            '-'
+        };
+        let shared_char = if self.is_shared { 's' } else { 'p' };
+        let offset = self.vmo().map(|vmo| vmo.offset).unwrap_or(0);
+        let (dev_major, dev_minor) = self
+            .inode()
+            .map(|inode| device_id::decode_device_numbers(inode.metadata().dev))
+            .unwrap_or((0, 0));
+        let ino = self.inode().map(|inode| inode.ino()).unwrap_or(0);
+
+        writeln!(
+            printer,
+            "{:x}-{:x} {}{}{}{} {:08x} {:02x}:{:02x} {:<26} {}",
+            start,
+            end,
+            read_char,
+            write_char,
+            exec_char,
+            shared_char,
+            offset,
+            dev_major,
+            dev_minor,
+            ino,
+            name
+        )?;
 
         Ok(())
     }
