@@ -344,13 +344,17 @@ test:
 
 .PHONY: ktest
 ktest: initramfs $(CARGO_OSDK)
-	@# Exclude linux-bzimage-setup from ktest since it's hard to be unit tested
+	@# Notes:
+	@# 1. linux-bzimage-setup is excluded from ktest since it's hard to be unit tested;
+	@# 2. Artifacts are removed after testing each crate to save the limited disk space
+	@#    available to free-tier Github runners.
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "ostd/libs/linux-bzimage/setup" ] && continue; \
 		echo "[make] Testing $$dir"; \
 		(cd $$dir && cargo osdk test $(CARGO_OSDK_TEST_ARGS)) || exit 1; \
 		tail --lines 10 qemu.log | grep -q "^\\[ktest runner\\] All crates tested." \
 			|| (echo "Test failed" && exit 1); \
+		rm -r target/osdk/*; \
 	done
 
 .PHONY: docs
