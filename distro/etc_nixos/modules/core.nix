@@ -108,4 +108,7 @@ in {
     # <https://github.com/asterinas/asterinas/issues/2672>.
     build-users-group = "";
   };
+
+  # FIXME: Currently, during `nixos-rebuild`, `texinfo/install-info` encounters a `SIGBUS`.
+  documentation.info.enable = false;
 }
