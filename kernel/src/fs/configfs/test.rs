@@ -20,7 +20,6 @@
 use alloc::{string::ToString, sync::Arc};
 use core::{
     fmt::Debug,
-    mem::size_of,
     sync::atomic::{AtomicU32, Ordering},
 };
 

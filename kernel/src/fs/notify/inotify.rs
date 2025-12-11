@@ -285,7 +285,7 @@ impl InotifyFile {
 
     /// Tries to read events from the notification queue.
     fn try_read(&self, writer: &mut VmWriter) -> Result<usize> {
-        const HEADER_SIZE: usize = core::mem::size_of::<InotifyEventHeader>();
+        const HEADER_SIZE: usize = size_of::<InotifyEventHeader>();
         if writer.avail() < HEADER_SIZE {
             return_errno_with_message!(Errno::EINVAL, "buffer is too small");
         }
@@ -602,7 +602,7 @@ impl InotifyEvent {
 impl InotifyEvent {
     /// Rounds up the name length to align with sizeof(struct inotify_event).
     fn round_event_name_len(name_len: usize) -> usize {
-        const INOTIFY_EVENT_SIZE: usize = core::mem::size_of::<InotifyEventHeader>();
+        const INOTIFY_EVENT_SIZE: usize = size_of::<InotifyEventHeader>();
         (name_len + INOTIFY_EVENT_SIZE - 1) & !(INOTIFY_EVENT_SIZE - 1)
     }
 
@@ -619,7 +619,7 @@ impl InotifyEvent {
         writer.write_val(&self.event().bits())?;
         writer.write_val(&self.cookie())?;
         writer.write_val(&self.name_len())?;
-        total_size += core::mem::size_of::<InotifyEventHeader>();
+        total_size += size_of::<InotifyEventHeader>();
 
         if let Some(name) = self.name.as_ref() {
             // Write the actual name bytes
@@ -642,7 +642,7 @@ impl InotifyEvent {
     }
 
     fn get_size(&self) -> usize {
-        const HEADER_SIZE: usize = core::mem::size_of::<InotifyEventHeader>(); // 16 bytes
+        const HEADER_SIZE: usize = size_of::<InotifyEventHeader>(); // 16 bytes
         let actual_name_len = self.name.as_ref().map_or(0, |name| name.len() + 1);
         let pad_name_len = Self::round_event_name_len(actual_name_len);
         HEADER_SIZE + pad_name_len
