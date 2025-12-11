@@ -12,7 +12,13 @@ pub fn sys_brk(heap_end: u64, ctx: &Context) -> Result<SyscallReturn> {
     debug!("new heap end = {:x?}", heap_end);
     let user_space = ctx.user_space();
     let user_heap = user_space.vmar().process_vm().heap();
-    let new_heap_end = user_heap.brk(new_heap_end, ctx)?;
 
-    Ok(SyscallReturn::Return(new_heap_end as _))
+    let syscall_ret = match new_heap_end {
+        Some(addr) => user_heap
+            .set_program_break(addr, ctx)
+            .unwrap_or_else(|current_break| current_break),
+        None => user_heap.program_break(),
+    };
+
+    Ok(SyscallReturn::Return(syscall_ret as _))
 }
