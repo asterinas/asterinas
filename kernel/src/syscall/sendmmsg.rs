@@ -64,7 +64,7 @@ fn send_mmsg_hdrs(
     let user_space = ctx.user_space();
 
     for i in 0..count {
-        let addr = mmsghdrs_addr + core::mem::size_of::<CMmsgHdr>() * i;
+        let addr = mmsghdrs_addr + size_of::<CMmsgHdr>() * i;
         let mut mmsghdr = user_space.read_val::<CMmsgHdr>(addr)?;
 
         let sent_bytes = send_one_message(socket, &mmsghdr.msg_hdr, &user_space, flags)?;
