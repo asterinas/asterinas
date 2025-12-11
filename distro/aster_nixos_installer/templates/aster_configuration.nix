@@ -74,6 +74,16 @@
         description =
           "If set to true, the system will not proceed to switch to the root filesystem after initial boot. Instead, it will drop into an initramfs shell. This is primarily intended for debugging purposes.";
       };
+      substituters = lib.mkOption {
+        type = lib.types.str;
+        default = "@aster-substituters@";
+        description = "The substituters fo Asterinas NixOS.";
+      };
+      trusted-public-keys = lib.mkOption {
+        type = lib.types.str;
+        default = "@aster-trusted-public-keys@";
+        description = "The trusted public keys of Asterinas NixOS.";
+      };
     };
   };
 }

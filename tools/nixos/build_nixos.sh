@@ -16,7 +16,9 @@ nix-build aster_nixos_installer/default.nix \
     --argstr stage-2-hook "${NIXOS_STAGE_2_INIT}" \
     --argstr log-level "${LOG_LEVEL}" \
     --argstr console "${CONSOLE}" \
-    --argstr test-command "${NIXOS_TEST_COMMAND}"
+    --argstr test-command "${NIXOS_TEST_COMMAND}" \
+    --argstr extra-substituters "${RELEASE_SUBSTITUTER} ${DEV_SUBSTITUTER}" \
+    --argstr extra-trusted-public-keys "${RELEASE_TRUSTED_PUBLIC_KEY} ${DEV_TRUSTED_PUBLIC_KEY}"
 popd
 
 mkdir -p ${ASTERINAS_DIR}/target/nixos

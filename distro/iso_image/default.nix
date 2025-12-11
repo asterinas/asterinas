@@ -1,7 +1,9 @@
-{ pkgs ? import <nixpkgs> { }, autoInstall ? false, test-command ? "", ... }:
+{ pkgs ? import <nixpkgs> { }, autoInstall ? false, test-command ? ""
+, extra-substituters ? "", extra-trusted-public-keys ? "", ... }:
 let
-  installer =
-    pkgs.callPackage ../aster_nixos_installer { inherit test-command; };
+  installer = pkgs.callPackage ../aster_nixos_installer {
+    inherit test-command extra-substituters extra-trusted-public-keys;
+  };
   configuration = {
     imports = [
       "${pkgs.path}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
