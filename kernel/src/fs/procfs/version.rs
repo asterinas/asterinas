@@ -12,7 +12,7 @@ use crate::{
         procfs::template::{FileOps, ProcFileBuilder},
         utils::{Inode, mkmod},
     },
-    net::UtsNamespace,
+    net::uts_ns::UtsName,
     prelude::*,
 };
 
@@ -35,14 +35,12 @@ impl FileOps for VersionFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
-        // Get UTS namespace information from the init namespace
-        let uts_name = UtsNamespace::get_init_singleton().uts_name();
+        // Get information from `UtsName`.
+        let sysname = UtsName::SYSNAME;
+        let release = UtsName::RELEASE;
+        let version = UtsName::VERSION;
 
-        let sysname = uts_name.sysname()?;
-        let release = uts_name.release()?;
-        let version = uts_name.version()?;
-
-        // Get info from compile environment variables
+        // Get information from compile-time environment variables.
         let compile_by = option_env!("OSDK_BUILD_USERNAME").unwrap_or("unknown");
         let compile_host = option_env!("OSDK_BUILD_HOSTNAME").unwrap_or("unknown");
         let compiler = option_env!("OSDK_BUILD_RUSTC").unwrap_or("unknown");

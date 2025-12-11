@@ -2,9 +2,7 @@
 
 pub mod iface;
 pub mod socket;
-mod uts_ns;
-
-pub use uts_ns::UtsNamespace;
+pub mod uts_ns;
 
 pub fn init() {
     iface::init();

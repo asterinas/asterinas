@@ -4,7 +4,7 @@ use spin::Once;
 
 use crate::{
     fs::path::MountNamespace,
-    net::UtsNamespace,
+    net::uts_ns::UtsNamespace,
     prelude::*,
     process::{CloneFlags, UserNamespace, posix_thread::PosixThread},
 };
