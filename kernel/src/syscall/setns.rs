@@ -12,7 +12,7 @@
 
 use crate::{
     fs::{file_table::FileDesc, path::MountNamespace},
-    net::UtsNamespace,
+    net::uts_ns::UtsNamespace,
     prelude::*,
     process::{
         CloneFlags, ContextSetNsAdminApi, NsProxy, NsProxyBuilder, PidFile,
