@@ -60,7 +60,7 @@ In 2026, we aim to make Asterinas production-ready on x86-64 virtual machines an
 
 ## Getting Started
 
-Get yourself an x86-64 Linux machine with Docker installed.
+Get yourself an x86-64/ARM64 Linux machine with Docker installed.
 Follow the three simple steps below to get Asterinas up and running.
 
 1. Download the latest source code.
