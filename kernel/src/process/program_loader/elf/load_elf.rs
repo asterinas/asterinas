@@ -3,7 +3,7 @@
 //! This module is used to parse elf file content to get elf_load_info.
 //! When create a process from elf file, we will use the elf_load_info to construct the VmSpace
 
-use core::ops::Range;
+use core::{ops::Range, panic};
 
 use align_ext::AlignExt;
 use xmas_elf::program::{self, ProgramHeader64};
@@ -23,7 +23,7 @@ use crate::{
 /// Loads elf to the process VMAR.
 ///
 /// This function will map elf segments and
-/// initialize process init stack.
+/// initialize process init stack and heap.
 pub fn load_elf_to_vmar(
     vmar: &Vmar,
     elf_inode: &Arc<dyn Inode>,
@@ -38,8 +38,7 @@ pub fn load_elf_to_vmar(
         not(any(target_arch = "x86_64", target_arch = "riscv64")),
         expect(unused_mut)
     )]
-    let (_range, entry_point, mut aux_vec) =
-        init_and_map_vmos(vmar, ldso, &elf_headers, elf_inode)?;
+    let (range, entry_point, mut aux_vec) = init_and_map_vmos(vmar, ldso, &elf_headers, elf_inode)?;
 
     // Map the vDSO and set the entry.
     // Since the vDSO does not require being mapped to any specific address,
@@ -55,6 +54,8 @@ pub fn load_elf_to_vmar(
 
     vmar.process_vm()
         .map_and_write_init_stack(vmar, argv, envp, aux_vec)?;
+    vmar.process_vm()
+        .initialize_heap(vmar, range.relocated_data_range(), range.relocated_brk())?;
 
     let user_stack_top = vmar.process_vm().init_stack().user_stack_top();
     Ok(ElfLoadInfo {
@@ -212,8 +213,10 @@ pub fn map_segment_vmos(
         elf_va_range.clone()
     };
 
-    let relocated_range =
-        RelocatedRange::new(elf_va_range, map_range.start).expect("Mapped range overflows");
+    let mut start_code = !0;
+    let mut end_code = 0;
+    let mut start_data = 0;
+    let mut end_data = 0;
 
     for program_header in &elf.program_headers {
         let type_ = program_header.get_type().map_err(|_| {
@@ -222,13 +225,41 @@ pub fn map_segment_vmos(
         if type_ == program::Type::Load {
             check_segment_align(program_header)?;
 
-            let map_at = relocated_range
-                .relocated_addr_of(program_header.virtual_addr as Vaddr)
-                .expect("Address not covered by `get_range_for_all_segments`");
+            // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/fs/binfmt_elf.c#L1200>
+            if program_header.flags.is_execute() {
+                // Update code segment range.
+                if program_header.virtual_addr < start_code {
+                    start_code = program_header.virtual_addr;
+                }
+                if end_code < program_header.virtual_addr + program_header.file_size {
+                    end_code = program_header.virtual_addr + program_header.file_size;
+                }
+            }
+            // Update data segment range.
+            if start_data < program_header.virtual_addr {
+                start_data = program_header.virtual_addr;
+            }
+            if end_data < program_header.virtual_addr + program_header.file_size {
+                end_data = program_header.virtual_addr + program_header.file_size;
+            }
+
+            let map_at = if elf_va_range.contains(&(program_header.virtual_addr as Vaddr)) {
+                map_range.start + (program_header.virtual_addr as Vaddr - elf_va_range.start)
+            } else {
+                panic!("Address not covered by `get_range_for_all_segments`");
+            };
 
             map_segment_vmo(program_header, elf_inode, vmar, map_at)?;
         }
     }
+
+    let relocated_range = RelocatedRange::new(
+        elf_va_range,
+        start_code as Vaddr..end_code as Vaddr,
+        start_data as Vaddr..end_data as Vaddr,
+        map_range.start,
+    )
+    .expect("Mapped range overflows");
 
     Ok(relocated_range)
 }
@@ -236,6 +267,8 @@ pub fn map_segment_vmos(
 /// A virtual range and its relocated address.
 pub struct RelocatedRange {
     original_range: Range<Vaddr>,
+    original_code_range: Range<Vaddr>,
+    original_data_range: Range<Vaddr>,
     relocated_start: Vaddr,
 }
 
@@ -243,10 +276,28 @@ impl RelocatedRange {
     /// Creates a new `RelocatedRange`.
     ///
     /// If the relocated address overflows, it will return `None`.
-    pub fn new(original_range: Range<Vaddr>, relocated_start: Vaddr) -> Option<Self> {
+    pub fn new(
+        original_range: Range<Vaddr>,
+        original_code_range: Range<Vaddr>,
+        original_data_range: Range<Vaddr>,
+        relocated_start: Vaddr,
+    ) -> Option<Self> {
         relocated_start.checked_add(original_range.len())?;
+        // Ensure code range and data range are within original range.
+        if !original_range.contains(&original_code_range.start)
+            || !original_range.contains(&(original_code_range.end - 1))
+        {
+            return None;
+        }
+        if !original_range.contains(&original_data_range.start)
+            || !original_range.contains(&(original_data_range.end - 1))
+        {
+            return None;
+        }
         Some(Self {
             original_range,
+            original_code_range,
+            original_data_range,
             relocated_start,
         })
     }
@@ -260,6 +311,28 @@ impl RelocatedRange {
         } else {
             None
         }
+    }
+
+    /// Returns the relocated range that covers all code segments.
+    #[expect(dead_code)]
+    pub fn relocated_code_range(&self) -> Range<Vaddr> {
+        let start =
+            self.relocated_start + (self.original_code_range.start - self.original_range.start);
+        let end = self.relocated_start + (self.original_code_range.end - self.original_range.start);
+        start..end
+    }
+
+    /// Returns the relocated range that covers all data segments.
+    pub fn relocated_data_range(&self) -> Range<Vaddr> {
+        let start =
+            self.relocated_start + (self.original_data_range.start - self.original_range.start);
+        let end = self.relocated_start + (self.original_data_range.end - self.original_range.start);
+        start..end
+    }
+
+    /// Returns the relocated address of the program break.
+    pub fn relocated_brk(&self) -> Vaddr {
+        self.relocated_start + self.original_range.len()
     }
 }
 
