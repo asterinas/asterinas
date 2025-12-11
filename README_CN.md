@@ -62,8 +62,8 @@ docker run -it --privileged --network=host --device=/dev/kvm -v $(pwd)/asterinas
 3. 在容器内，进入项目文件夹构建并运行星绽。
 
 ```bash
-make build
-make run
+make kernel
+make run_kernel
 ```
 
 如果一切顺利，星绽现在应该在一个虚拟机内运行起来了。

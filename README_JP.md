@@ -57,8 +57,8 @@ docker run -it --privileged --network=host --device=/dev/kvm -v $(pwd)/asterinas
 3. コンテナ内でプロジェクトフォルダに移動し、Asterinasをビルドして実行します。
 
 ```bash
-make build
-make run
+make kernel
+make run_kernel
 ```
 
 すべてが順調に進めば、Asterinasは仮想マシン内で実行されます。

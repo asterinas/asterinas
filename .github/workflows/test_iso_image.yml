@@ -1,0 +1,39 @@
+name: Test ISO image
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - distro/**
+      - .github/workflows/test_iso_image.yml
+      - tools/nixos/**
+  push:
+    branches:
+      - main
+    paths:
+      - distro/**
+      - .github/workflows/test_iso_image.yml
+      - tools/nixos/**
+
+jobs:
+  iso-test:
+    runs-on: ubuntu-4-cores-150GB-ssd
+    container:
+      image: asterinas/asterinas:0.16.2-20251209
+      options: -v /dev:/dev --privileged
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Asterinas NixOS ISO installer image
+        run: |
+          make iso NIXOS_TEST_COMMAND='hello-asterinas'
+      - name: Run ISO image and install Asterinas NixOS
+        run: |
+          make run_iso || true
+          tail --lines 10 qemu.log | grep -q "^Installation finished" || (echo "Test ISO failed" && exit 1)
+          echo "Test ISO succeeds!"
+      - name : Run Asterinas NixOS
+        run: |
+          make run_nixos || true
+          tail --lines 10 qemu.log | grep -q "^Hello Asterinas!" || (echo "Test NixOS failed" && exit 1)
+          echo "Test NixOS succeeds!"

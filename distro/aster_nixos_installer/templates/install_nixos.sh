@@ -82,8 +82,13 @@ fi
 
 BUILD_DIR=$(mktemp -d -p /mnt)
 
-BOOT_DEVICE=${DISK}p1
-ROOT_DEVICE=${DISK}p2
+if [ "${DISK#/dev/loop}" != "$DISK" ]; then
+    BOOT_DEVICE="${DISK}p1"
+    ROOT_DEVICE="${DISK}p2"
+else
+    BOOT_DEVICE="${DISK}1"
+    ROOT_DEVICE="${DISK}2"
+fi
 if [ ! -b "${BOOT_DEVICE}" ] && [ ! -b "${ROOT_DEVICE}" ]; then
     parted ${DISK} -- mklabel gpt
     parted ${DISK} -- mkpart ESP fat32 1MB 512MB

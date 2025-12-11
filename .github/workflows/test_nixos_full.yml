@@ -33,12 +33,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Use nix-env to install and run the hello package
         run: |
-          make run NIXOS=1 NIXOS_DISK_SIZE_IN_MB=6144 NIXOS_TEST_COMMAND='nix-env -iA nixos.hello && hello' || true
+          make nixos NIXOS_DISK_SIZE_IN_MB=6144 NIXOS_TEST_COMMAND='nix-env -iA nixos.hello && hello' || true
+          make run_nixos || true
           tail --lines 10 qemu.log | grep -q "^Hello, world!" || (echo "Test nix-env failed" && exit 1)
           echo "Test nix-env succeeds!"
       - name: Use nix-shell to install and run the hello package
         run: |
-          make run NIXOS=1 NIXOS_DISK_SIZE_IN_MB=6144 NIXOS_TEST_COMMAND='nix-shell -p hello --command hello' || true
+          make nixos NIXOS_DISK_SIZE_IN_MB=6144 NIXOS_TEST_COMMAND='nix-shell -p hello --command hello' || true
+          make run_nixos || true
           tail --lines 10 qemu.log | grep -q "^Hello, world!" || (echo "Test nix-shell failed" && exit 1)
           echo "Test nix-shell succeeds!"
   
@@ -56,6 +58,7 @@ jobs:
           distro/etc_nixos/configuration.nix
       - name: Run podman commands
         run: |
-          make run NIXOS=1 NIXOS_DISK_SIZE_IN_MB=8192 NIXOS_TEST_COMMAND='podman run docker.io/library/alpine:latest ls /etc' || true
+          make nixos NIXOS_DISK_SIZE_IN_MB=8192 NIXOS_TEST_COMMAND='podman run docker.io/library/alpine:latest ls /etc' || true
+          make run_nixos || true
           tail --lines 50 qemu.log | grep -q "alpine-release" || (echo "Test podman failed" && exit 1)
           echo "Test podman succeeds!"

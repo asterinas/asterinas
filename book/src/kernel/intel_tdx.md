@@ -73,7 +73,7 @@ docker run -it --privileged --network=host --device=/dev/kvm -v $(pwd)/asterinas
 go to the project folder to build and run Asterinas.
 
 ```bash
-make run INTEL_TDX=1
+make run_kernel INTEL_TDX=1
 ```
 
 If everything goes well,
