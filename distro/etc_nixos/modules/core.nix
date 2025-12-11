@@ -83,6 +83,9 @@ in {
         poweroff
       fi
     '';
+  # Suppress error and warning messages of systemd.
+  # TODO: Fix errors and warnings from systemd and remove this setting.
+  environment.sessionVariables = { SYSTEMD_LOG_LEVEL = "crit"; };
   system.systemBuilderCommands = ''
     echo "PATH=/bin:/nix/var/nix/profiles/system/sw/bin ostd.log_level=${config.aster_nixos.log-level} console=${config.aster_nixos.console} -- sh /init root=/dev/vda2 init=/nix/var/nix/profiles/system/stage-2-init rd.break=${
       if config.aster_nixos.break-into-stage-1-shell then "1" else "0"
