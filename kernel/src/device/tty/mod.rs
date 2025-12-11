@@ -320,24 +320,29 @@ impl<D: TtyDriver> Tty<D> {
                 self.driver().on_termios_change(old_termios, &termios);
                 ldisc.set_termios(termios);
             }
-            cmd @ SetTermiosDrain => {
+            cmd @ SetTermiosWait => {
                 let termios = cmd.read()?;
 
+                // TODO: If applicable, wait for the output buffer to drain. For now, we don't need
+                // to do anything here because:
+                //  - Linux does not consider a pty to have an output buffer, so it does not drain
+                //    it. See
+                //    <https://elixir.bootlin.com/linux/v5.10.247/source/drivers/tty/pty.c#L137-L148>.
+                //  - We don't currently have an output buffer for other TTYs.
                 let mut ldisc = self.ldisc.lock();
                 let old_termios = ldisc.termios();
                 self.driver().on_termios_change(old_termios, &termios);
                 ldisc.set_termios(termios);
-                self.driver.drain_output();
             }
             cmd @ SetTermiosFlush => {
                 let termios = cmd.read()?;
 
+                // TODO: If applicable, wait for the output buffer to drain. (See comments above.)
                 let mut ldisc = self.ldisc.lock();
                 let old_termios = ldisc.termios();
                 self.driver().on_termios_change(old_termios, &termios);
                 ldisc.set_termios(termios);
                 ldisc.drain_input();
-                self.driver.drain_output();
 
                 self.pollee.invalidate();
             }

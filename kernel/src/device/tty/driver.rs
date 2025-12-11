@@ -36,9 +36,6 @@ pub trait TtyDriver: Send + Sync + 'static {
     /// pushed.
     fn push_output(&self, chs: &[u8]) -> Result<usize>;
 
-    /// Drains the output buffer.
-    fn drain_output(&self);
-
     /// Returns a callback function that echoes input characters to the output buffer.
     ///
     /// Note that the implementation may choose to hold a lock during the life of the callback.

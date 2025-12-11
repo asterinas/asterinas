@@ -46,8 +46,6 @@ impl TtyDriver for VtDriver {
         Ok(chs.len())
     }
 
-    fn drain_output(&self) {}
-
     fn echo_callback(&self) -> impl FnMut(&[u8]) + '_ {
         |chs| self.console.send(chs)
     }
@@ -87,8 +85,6 @@ impl TtyDriver for HvcDriver {
         self.console.send(chs);
         Ok(chs.len())
     }
-
-    fn drain_output(&self) {}
 
     fn echo_callback(&self) -> impl FnMut(&[u8]) + '_ {
         |chs| self.console.send(chs)
