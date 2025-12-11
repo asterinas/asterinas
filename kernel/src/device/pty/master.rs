@@ -170,7 +170,7 @@ impl FileIo for PtyMaster {
         use crate::{device::tty::ioctl_defs::*, fs::utils::ioctl_defs::GetNumBytesToRead};
 
         dispatch_ioctl!(match raw_ioctl {
-            GetTermios | SetTermios | SetTermiosDrain | SetTermiosFlush | GetWinSize
+            GetTermios | SetTermios | SetTermiosWait | SetTermiosFlush | GetWinSize
             | SetWinSize | GetPtyNumber => {
                 return self.slave.ioctl(raw_ioctl);
             }

@@ -146,11 +146,6 @@ impl TtyDriver for PtyDriver {
         Ok(len)
     }
 
-    fn drain_output(&self) {
-        self.output.lock().clear();
-        self.pollee.invalidate();
-    }
-
     fn echo_callback(&self) -> impl FnMut(&[u8]) + '_ {
         let mut output = self.output.lock();
         let mut has_notified = false;
