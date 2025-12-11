@@ -7,6 +7,7 @@
 # Please keep the list sorted by name.
 TESTS ?= \
 	access_test \
+	brk_test \
 	chown_test \
 	creat_test \
 	dev_test \
