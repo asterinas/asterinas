@@ -17,7 +17,7 @@ use crate::{
         posix_thread::{PosixThreadBuilder, ThreadName, allocate_posix_tid},
         process_table,
         process_vm::new_vmar_and_map,
-        rlimit::ResourceLimits,
+        rlimit::new_resource_limits_for_init,
         signal::sig_disposition::SigDispositions,
     },
     sched::Nice,
@@ -56,7 +56,7 @@ fn create_init_process(
 
     let pid = allocate_posix_tid();
     let process_vm = new_vmar_and_map(PathOrInode::Path(elf_path.clone()));
-    let resource_limits = ResourceLimits::default();
+    let resource_limits = new_resource_limits_for_init();
     let nice = Nice::default();
     let oom_score_adj = 0;
     let sig_dispositions = Arc::new(Mutex::new(SigDispositions::default()));
