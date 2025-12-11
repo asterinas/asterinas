@@ -32,3 +32,6 @@ aster-nix-profile-*.svg
 
 # distro results
 distro/result
+
+# cachix package list
+cachix.list

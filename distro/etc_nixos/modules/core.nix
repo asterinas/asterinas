@@ -1,4 +1,4 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, options, ... }:
 let
   kernel = builtins.path {
     name = "aster-nix-osdk-bin";
@@ -100,6 +100,8 @@ in {
   '';
   system.activationScripts.modprobe = lib.mkForce "";
 
+  nix.nixPath = options.nix.nixPath.default
+    ++ [ "nixpkgs-overlays=/etc/nixos/overlays" ];
   nix.settings = {
     filter-syscalls = false;
     require-sigs = false;
@@ -107,6 +109,8 @@ in {
     # FIXME: Support Nix build users (nixbld*) and remove this setting. For detailed gaps, see
     # <https://github.com/asterinas/asterinas/issues/2672>.
     build-users-group = "";
+    substituters = [ "${config.aster_nixos.substituters}" ];
+    trusted-public-keys = [ "${config.aster_nixos.trusted-public-keys}" ];
   };
 
   # FIXME: Currently, during `nixos-rebuild`, `texinfo/install-info` encounters a `SIGBUS`.

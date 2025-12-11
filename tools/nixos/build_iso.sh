@@ -14,4 +14,6 @@ mkdir -p ${TARGET_DIR}
 nix-build ${DISTRO_DIR}/iso_image \
     --arg autoInstall ${AUTO_INSTALL} \
     --argstr test-command "${NIXOS_TEST_COMMAND}" \
+    --argstr extra-substituters "${RELEASE_SUBSTITUTER} ${DEV_SUBSTITUTER}" \
+    --argstr extra-trusted-public-keys "${RELEASE_TRUSTED_PUBLIC_KEY} ${DEV_TRUSTED_PUBLIC_KEY}" \
     --out-link ${TARGET_DIR}/iso_image
