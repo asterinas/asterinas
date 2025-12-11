@@ -149,7 +149,8 @@ impl RLimit64 {
 
     /// Sets the rlimit with synchronization.
     ///
-    /// Only called when handling the `setrlimit` or `prlimit` syscall.
+    /// Only called when handling the `setrlimit` or `prlimit` syscall
+    /// or during init process creation.
     pub fn set_cur_and_max(&self, new_cur: u64, new_max: u64) -> Result<()> {
         if new_cur > new_max {
             return_errno_with_message!(Errno::EINVAL, "invalid rlimit");
@@ -180,4 +181,26 @@ impl Clone for RLimit64 {
             lock: SpinLock::new(()),
         }
     }
+}
+
+/// Creates resource limits for the init process.
+///
+/// This function should be used when creating the init process to ensure it has
+/// appropriate resource limits.
+pub(super) fn new_resource_limits_for_init() -> ResourceLimits {
+    let resource_limits = ResourceLimits::default();
+    // FIXME: The value should be calculated based on the system capacity. For now, we set a
+    // fixed value. In Linux, this value is determined by the kernel based on the available memory
+    // and other factors.
+    // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/kernel/fork.c#L761>
+    let max_threads: u64 = 100000;
+    resource_limits
+        .get_rlimit(ResourceType::RLIMIT_NPROC)
+        .set_cur_and_max(max_threads / 2, max_threads / 2)
+        .unwrap();
+    resource_limits
+        .get_rlimit(ResourceType::RLIMIT_SIGPENDING)
+        .set_cur_and_max(max_threads / 2, max_threads / 2)
+        .unwrap();
+    resource_limits
 }
