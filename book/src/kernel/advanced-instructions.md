@@ -37,7 +37,7 @@ cargo osdk test
 The following command builds and runs the test binaries in `test/src/apps` directory on Asterinas.
 
 ```bash
-make run AUTO_TEST=test
+make run_kernel AUTO_TEST=test
 ```
 
 ### Syscall Test
@@ -45,13 +45,13 @@ make run AUTO_TEST=test
 The following command builds and runs the syscall test binaries on Asterinas.
 
 ```bash
-make run AUTO_TEST=syscall
+make run_kernel AUTO_TEST=syscall
 ```
 
 To run system call tests interactively, start an instance of Asterinas with the system call tests built and installed.
 
 ```bash
-make run BUILD_SYSCALL_TEST=1
+make run_kernel BUILD_SYSCALL_TEST=1
 ```
 
 Then, in the interactive shell, run the following script to start the syscall tests.

@@ -38,9 +38,9 @@ While most tests rely on `Nix` for compilation, the `gvisor` syscall test suite 
 The test suite supports building for multiple architectures, including `x86_64` and `riscv64`. You can specify the desired architecture by running:
 
 ```bash
-make build OSDK_TARGET_ARCH=x86_64
+make kernel OSDK_TARGET_ARCH=x86_64
 # or
-make build OSDK_TARGET_ARCH=riscv64
+make kernel OSDK_TARGET_ARCH=riscv64
 ```
 
 The build artifacts (initramfs) can be found in the `test/build` directory after the compilation.
