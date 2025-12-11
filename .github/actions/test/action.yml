@@ -67,7 +67,7 @@ runs:
       run: |
         CMD=""
         [[ "${{ matrix.id }}" == "lint" ]] && CMD+="make check"
-        [[ "${{ matrix.id }}" == "compile" ]] && CMD+="make build FEATURES=all"
+        [[ "${{ matrix.id }}" == "compile" ]] && CMD+="make kernel FEATURES=all"
         [[ "${{ matrix.id }}" == "usermode_test" ]] && CMD+="make test"
         [[ "${{ matrix.id }}" == "ktest" ]] && CMD+="make ktest NETDEV=tap"
         [[ -n "${{ inputs.arch }}" ]] && CMD+=" OSDK_TARGET_ARCH=${{ inputs.arch }}"
@@ -79,7 +79,7 @@ runs:
       if: ${{ !(inputs.auto_test == 'general' || inputs.auto_test == 'osdk') }}
       shell: bash
       run: |
-        CMD="make run AUTO_TEST=${{ inputs.auto_test }}"
+        CMD="make run_kernel AUTO_TEST=${{ inputs.auto_test }}"
         [[ "${{ inputs.intel_tdx }}" == "true" ]] && CMD+=" INTEL_TDX=1"
         [[ "${{ inputs.release }}" == "true" ]] && CMD+=" RELEASE=1"
         [[ "${{ inputs.enable_kvm }}" == "false" ]] && CMD+=" ENABLE_KVM=0"

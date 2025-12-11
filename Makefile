@@ -55,7 +55,6 @@ DNS_SERVER ?= none
 # End of network settings
 
 # NixOS settings
-NIXOS ?= 0
 NIXOS_DISK_SIZE_IN_MB ?= 8192
 NIXOS_DISABLE_SYSTEMD ?= false
 NIXOS_TEST_COMMAND ?=
@@ -63,6 +62,10 @@ NIXOS_TEST_COMMAND ?=
 # Use a login shell to ensure that environment variables are initialized correctly.
 NIXOS_STAGE_2_INIT ?= /bin/sh -l
 # End of NixOS settings
+
+# ISO installer settings
+AUTO_INSTALL ?= true
+# End of ISO installer settings
 
 # ========================= End of Makefile options. ==========================
 
@@ -158,11 +161,6 @@ ifeq ($(NO_DEFAULT_FEATURES), 1)
 CARGO_OSDK_COMMON_ARGS += --no-default-features
 endif
 
-ifeq ($(NIXOS), 1)
-BOOT_PROTOCOL = linux-efi-handover64
-OVMF=off
-endif
-
 # To test the linux-efi-handover64 boot protocol, we need to use Debian's
 # GRUB release, which is installed in /usr/bin in our Docker image.
 ifeq ($(BOOT_PROTOCOL), linux-efi-handover64)
@@ -248,7 +246,7 @@ OSDK_SRC_FILES := \
 	$(shell find osdk/Cargo.toml osdk/Cargo.lock osdk/src -type f)
 
 .PHONY: all
-all: build
+all: kernel
 
 # Install or update OSDK from source
 # To uninstall, do `cargo uninstall cargo-osdk`
@@ -288,22 +286,15 @@ check_vdso:
 initramfs: check_vdso
 	@$(MAKE) --no-print-directory -C test
 
-.PHONY: build
-build: initramfs $(CARGO_OSDK)
+# Build the kernel with an initramfs
+.PHONY: kernel
+kernel: initramfs $(CARGO_OSDK)
 	@cd kernel && cargo osdk build $(CARGO_OSDK_BUILD_ARGS)
-ifeq ($(NIXOS),1)
-	@./tools/nixos/build_nixos.sh
-endif
 
-.PHONY: run
-run: initramfs $(CARGO_OSDK)
-ifeq ($(NIXOS),1)
-	@cd kernel && cargo osdk build $(CARGO_OSDK_BUILD_ARGS)
-	@./tools/nixos/build_nixos.sh
-	@./tools/nixos/run_nixos.sh target/nixos
-else
+# Build the kernel with an initramfs and then run it
+.PHONY: run_kernel
+run_kernel: initramfs $(CARGO_OSDK)
 	@cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS)
-endif
 # Check the running status of auto tests from the QEMU log
 ifeq ($(AUTO_TEST), syscall)
 	@tail --lines 100 qemu.log | grep -q "^All syscall tests passed." \
@@ -318,6 +309,29 @@ else ifeq ($(AUTO_TEST), vsock)
 	@tail --lines 100 qemu.log | grep -q "^Vsock test passed." \
 		|| (echo "Vsock test failed" && exit 1)
 endif
+
+# Build the Asterinas NixOS ISO installer image
+iso: BOOT_PROTOCOL = linux-efi-handover64
+iso:
+	@make kernel
+	@./tools/nixos/build_iso.sh
+
+# Build the Asterinas NixOS ISO installer image and then do installation
+run_iso: OVMF = off
+run_iso:
+	@./tools/nixos/run_iso.sh
+
+# Create an Asterinas NixOS installation on host
+nixos: BOOT_PROTOCOL = linux-efi-handover64
+nixos:
+	@make kernel
+	@./tools/nixos/build_nixos.sh
+
+# After creating a Asterinas NixOS installation (via either the `run_iso` or `nixos` target),
+# run the NixOS
+run_nixos: OVMF = off
+run_nixos:
+	@./tools/nixos/run_nixos.sh target/nixos
 
 .PHONY: gdb_server
 gdb_server: initramfs $(CARGO_OSDK)

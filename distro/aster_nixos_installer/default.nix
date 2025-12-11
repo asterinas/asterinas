@@ -33,6 +33,7 @@ in pkgs.stdenv.mkDerivation {
     mkdir -p $out/{bin,etc_nixos}
     cp ${install_aster_nixos} $out/bin/install_aster_nixos.sh
     ln -s ${aster_configuration} $out/etc_nixos/aster_configuration.nix
+    ln -s ${etc-nixos}/configuration.nix $out/etc_nixos/configuration.nix
     ln -s ${etc-nixos}/modules $out/etc_nixos/modules
     ln -s ${etc-nixos}/overlays $out/etc_nixos/overlays
     ln -s ${aster-kernel} $out/kernel
