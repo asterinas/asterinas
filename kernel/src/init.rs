@@ -108,10 +108,27 @@ fn bsp_idle_loop() {
     // According to the Linux implementation, we should panic once the init process exits.
     // Currently, we choose to power off the machine for more flexibility in testing with QEMU.
     let raw_exit_code = init_process.status().exit_code();
+
+    // Determine if this is a normal shutdown
+    // Exit code 0 means normal exit
+    // Exit codes 1-31 are signal numbers
     let exit_code = if raw_exit_code == 0 {
         ostd::power::ExitCode::Success
     } else {
-        ostd::power::ExitCode::Failure
+        // Some signals indicate normal shutdown requests:
+        // - SIGUSR2 (12): Used by busybox poweroff
+        // - SIGTERM (15): Standard termination signal
+        const NORMAL_SHUTDOWN_SIGNALS: [u32; 2] = [
+            12, 15,
+        ];
+
+        if NORMAL_SHUTDOWN_SIGNALS.contains(&raw_exit_code) {
+            log::info!("Init process terminated by normal shutdown signal {}", raw_exit_code);
+            ostd::power::ExitCode::Success
+        } else {
+            log::warn!("Init process terminated with abnormal exit code {}", raw_exit_code);
+            ostd::power::ExitCode::Failure
+        }
     };
     ostd::power::poweroff(exit_code);
 }
