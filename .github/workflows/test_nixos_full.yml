@@ -26,7 +26,7 @@ jobs:
   full-nixos-test:
     runs-on: ubuntu-4-cores-150GB-ssd
     container:
-      image: asterinas/asterinas:0.16.2-20251209
+      image: asterinas/asterinas:0.16.2-20251211
       options: -v /dev:/dev --privileged
     timeout-minutes: 20
     steps:
@@ -47,7 +47,7 @@ jobs:
   podman-test:
     runs-on: ubuntu-4-cores-150GB-ssd
     container:
-      image: asterinas/asterinas:0.16.2-20251209
+      image: asterinas/asterinas:0.16.2-20251211
       options: -v /dev:/dev --privileged
     timeout-minutes: 20
     steps:
