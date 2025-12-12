@@ -187,6 +187,237 @@ FN_TEST(interp_too_long)
 }
 END_TEST()
 
+FN_TEST(interp_missing_nul)
+{
+	unsigned int i;
+
+	i = push_interp("/dev/zero");
+	--elf.phdr[i].p_filesz;
+	TEST_ERRNO(do_execve(), ENOEXEC);
+	pop_interp();
+}
+END_TEST()
+
+FN_TEST(interp_trunc_eof)
+{
+	unsigned int i;
+
+	i = push_interp("/dev/zero");
+	elf.phdr[i].p_offset = sizeof(elf) - 1;
+	TEST_ERRNO(do_execve(), EIO);
+	pop_interp();
+}
+END_TEST()
+
+FN_TEST(interp_overflow_end)
+{
+	unsigned int i;
+	int j;
+
+	i = push_interp("/dev/zero");
+	elf.phdr[i].p_offset = ~(Elf64_Off)0 - 10;
+
+	for (j = 9; j <= 12; ++j) {
+		elf.phdr[i].p_filesz = j;
+		TEST_ERRNO(do_execve(), EINVAL);
+	}
+
+	pop_interp();
+}
+END_TEST()
+
+FN_TEST(interp_doesnt_exist)
+{
+	push_interp("/tmp/file_doesnt_exist");
+	TEST_ERRNO(do_execve(), ENOENT);
+	pop_interp();
+}
+END_TEST()
+
+FN_TEST(interp_bad_perm)
+{
+	push_interp("/dev/zero");
+	TEST_ERRNO(do_execve(), EACCES);
+	pop_interp();
+}
+END_TEST()
+
+FN_TEST(interp_bad_format)
+{
+	int fd;
+
+	push_interp("/tmp/my_lib");
+
+	fd = TEST_SUCC(open("/tmp/my_lib", O_WRONLY | O_CREAT | O_TRUNC, 0755));
+	TEST_RES(write(fd, "#!", 2), _ret == 2);
+	TEST_SUCC(close(fd));
+
+	TEST_ERRNO(do_execve(), EIO);
+
+	TEST_SUCC(truncate("/tmp/my_lib", PAGE_SIZE));
+	TEST_ERRNO(do_execve(), ELIBBAD);
+
+	push_interp("/tmp/my_lib");
+	TEST_ERRNO(do_execve(), ELIBBAD);
+	pop_interp();
+
+	TEST_SUCC(unlink("/tmp/my_lib"));
+
+	pop_interp();
+}
+END_TEST()
+
+// FIXME: Linux drops the old MM before creating new mappings. Any failures
+// during the creation of new mappings result in a fatal signal, causing the
+// error code to be lost. Asterinas now attempts to return these error codes
+// to the user space.
+#ifdef __asterinas__
+
+static int do_execve_fatal(void)
+{
+	return do_execve();
+}
+
+#else /* __asterinas__ */
+
+#include <sys/ptrace.h>
+#include <sys/user.h>
+#include <sys/syscall.h>
+
+static int do_execve_fatal(void)
+{
+	pid_t pid;
+	int status;
+	struct user_regs_struct regs;
+
+	write_all(EXE_PATH, &elf, sizeof(elf));
+
+	pid = CHECK(fork());
+	if (pid == 0) {
+		CHECK(ptrace(PTRACE_TRACEME));
+		CHECK(raise(SIGSTOP));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnonnull"
+		CHECK(execve(EXE_PATH, NULL, NULL));
+#pragma GCC diagnostic pop
+		exit(EXIT_FAILURE);
+	}
+
+	CHECK_WITH(wait(&status), _ret == pid && WIFSTOPPED(status) &&
+					  WSTOPSIG(status) == SIGSTOP);
+
+	// Wait until `execve` starts.
+	CHECK(ptrace(PTRACE_SYSCALL, pid, NULL, NULL));
+	CHECK_WITH(wait(&status), _ret == pid && WIFSTOPPED(status) &&
+					  WSTOPSIG(status) == SIGTRAP);
+
+	// Wait until `execve` completes.
+	CHECK(ptrace(PTRACE_SYSCALL, pid, NULL, NULL));
+	CHECK_WITH(wait(&status), _ret == pid && WIFSTOPPED(status) &&
+					  WSTOPSIG(status) == SIGTRAP);
+
+	// Get `execve` results.
+	CHECK_WITH(ptrace(PTRACE_GETREGS, pid, NULL, &regs),
+		   _ret >= 0 && regs.orig_rax == __NR_execve);
+
+	CHECK(ptrace(PTRACE_DETACH, pid, NULL, NULL));
+	CHECK_WITH(wait(&status), _ret == pid && WIFSIGNALED(status) &&
+					  WTERMSIG(status) == SIGSEGV);
+
+	errno = -regs.rax;
+	return errno == 0 ? 0 : -1;
+}
+
+#endif /* __asterinas__ */
+
+FN_TEST(unaglined_offset)
+{
+	++elf.phdr[0].p_offset;
+	TEST_ERRNO(do_execve_fatal(), EINVAL);
+	--elf.phdr[0].p_offset;
+}
+END_TEST()
+
+FN_TEST(unaligned_vaddr)
+{
+	++elf.phdr[0].p_vaddr;
+	TEST_ERRNO(do_execve_fatal(), EINVAL);
+	--elf.phdr[0].p_vaddr;
+}
+END_TEST()
+
+FN_TEST(overflow_offset_plus_filesz)
+{
+	long old;
+
+	old = elf.phdr[0].p_offset;
+
+	elf.phdr[0].p_offset = (~(Elf64_Off)0 & ~(PAGE_SIZE - 1)) +
+			       (elf.phdr[0].p_offset & (PAGE_SIZE - 1));
+	TEST_ERRNO(do_execve_fatal(), EINVAL);
+
+	elf.phdr[0].p_offset -= PAGE_SIZE;
+	TEST_ERRNO(do_execve_fatal(), EOVERFLOW);
+
+	elf.phdr[0].p_offset = old;
+}
+END_TEST()
+
+FN_TEST(overflow_vaddr_plus_memsz)
+{
+	int i;
+	long old;
+
+	old = elf.phdr[0].p_memsz;
+
+	elf.phdr[0].p_memsz = ~(Elf64_Xword)0 - elf.phdr[0].p_vaddr;
+	for (i = 0; i < 3; ++i) {
+		TEST_ERRNO(do_execve_fatal(), ENOMEM);
+		++elf.phdr[0].p_memsz;
+	}
+
+	elf.phdr[0].p_memsz = old;
+}
+END_TEST()
+
+FN_TEST(underflow_vaddr)
+{
+	long old;
+
+	old = elf.phdr[0].p_vaddr;
+	elf.phdr[0].p_vaddr = PAGE_SIZE;
+	TEST_ERRNO(do_execve_fatal(), EPERM);
+	elf.phdr[0].p_vaddr = old;
+}
+END_TEST()
+
+FN_TEST(memsz_larger_than_filesz)
+{
+	// It's okay for `p_memsz` to be larger than `p_filesz`.
+	// However, the trailing part must be zeroed out. This is
+	// an example of when zeroing fails.
+	elf.phdr[0].p_filesz += PAGE_SIZE - 1;
+	elf.phdr[0].p_memsz += PAGE_SIZE;
+	// FIXME: This fails in Linux. However, Asterinas inserts
+	// zero pages at the end of private mappings, so it will
+	// succeed. See
+	// <https://github.com/asterinas/asterinas/blob/9c4f644bd9287da1815a13115fbdfa914d8426f0/kernel/src/vm/vmar/vm_mapping.rs#L443-L447>.
+#ifndef __asterinas__
+	TEST_ERRNO(do_execve_fatal(), EFAULT);
+#endif
+	elf.phdr[0].p_memsz -= PAGE_SIZE;
+	elf.phdr[0].p_filesz -= PAGE_SIZE - 1;
+}
+END_TEST()
+
+FN_TEST(filesz_larger_than_memsz)
+{
+	--elf.phdr[0].p_memsz;
+	TEST_ERRNO(do_execve_fatal(), EINVAL);
+	++elf.phdr[0].p_memsz;
+}
+END_TEST()
+
 FN_SETUP(cleanup)
 {
 	CHECK(unlink(EXE_PATH));
