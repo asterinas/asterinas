@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::ops::Range;
-
 use align_ext::AlignExt;
 use ostd::{
     mm::{
@@ -11,7 +9,7 @@ use ostd::{
 };
 
 use super::{Vmar, is_userspace_vaddr};
-use crate::{prelude::*, thread::exception::PageFaultInfo};
+use crate::{prelude::*, thread::exception::PageFaultInfo, vm::vmar::is_userspace_vaddr_range};
 
 impl Vmar {
     /// Reads memory from the process user space.
@@ -110,7 +108,13 @@ impl Vmar {
             return Ok(0);
         }
 
-        let range = check_userspace_page_range(vaddr, len).map_err(|err| (err, 0))?;
+        if !is_userspace_vaddr_range(vaddr, len) {
+            return Err((
+                Error::with_message(Errno::EINVAL, "the address range is not in userspace"),
+                0,
+            ));
+        }
+        let range = vaddr.align_down(PAGE_SIZE)..(vaddr + len).align_up(PAGE_SIZE);
 
         let mut current_va = range.start;
         let mut bytes = 0;
@@ -185,14 +189,4 @@ impl Vmar {
 
         Ok(item)
     }
-}
-
-fn check_userspace_page_range(vaddr: Vaddr, len: usize) -> Result<Range<Vaddr>> {
-    let Some(end) = vaddr.checked_add(len) else {
-        return_errno_with_message!(Errno::EINVAL, "address overflow");
-    };
-    if !is_userspace_vaddr(vaddr) || !is_userspace_vaddr(end - 1) {
-        return_errno_with_message!(Errno::EINVAL, "invalid user space address");
-    }
-    Ok(vaddr.align_down(PAGE_SIZE)..end.align_up(PAGE_SIZE))
 }
