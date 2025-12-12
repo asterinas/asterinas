@@ -68,7 +68,7 @@ impl ProgramToLoad {
             );
         }
 
-        let elf_headers = ElfHeaders::parse_elf(&*file_first_page)?;
+        let elf_headers = ElfHeaders::parse(&*file_first_page)?;
 
         Ok(Self {
             elf_inode: elf_inode.clone(),

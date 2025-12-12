@@ -17,6 +17,7 @@ clone3/clone_parent
 clone3/clone_process
 cpu_affinity/cpu_affinity
 execve/execve
+execve/execve_err
 execve/execve_mt_parent
 execve/execve_memfd
 exit/exit_code
