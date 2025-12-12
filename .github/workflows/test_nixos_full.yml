@@ -38,7 +38,7 @@ jobs:
 
       - name: Test nix commands
         run: |
-          make nixos NIXOS_DISK_SIZE_IN_MB=6144 NIXOS_TEST_COMMAND='test-nix-commands' || true
+          make nixos NIXOS_DISK_SIZE_IN_MB=6144 NIXOS_TEST_COMMAND='test-nix-commands'
           make run_nixos || true
 
       - name: Check results
@@ -58,7 +58,7 @@ jobs:
     container:
       image: asterinas/asterinas:0.16.2-20251211
       options: -v /dev:/dev --privileged
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Modify configuration.nix to include test-asterinas and podman
@@ -70,10 +70,10 @@ jobs:
 
       - name: Run podman commands
         run: |
-          make nixos NIXOS_DISK_SIZE_IN_MB=8192 NIXOS_TEST_COMMAND='test-podman' || true
+          make nixos NIXOS_DISK_SIZE_IN_MB=8192 NIXOS_TEST_COMMAND='test-podman'
           make run_nixos || true
 
       - name: Check results
         run: |
-          tail --lines 50 qemu.log | grep -q "alpine-release" || (echo "Test podman failed" && exit 1)
+          tail --lines 50 qemu.log | grep -q "^Test podman succeeds" || (echo "Test podman failed" && exit 1)
           echo "Test podman succeeds!"
