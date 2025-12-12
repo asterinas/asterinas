@@ -213,23 +213,14 @@ pub(super) fn new_vmar_and_map(executable_file: PathOrInode) -> Arc<Vmar> {
     new_vmar
 }
 
-/// Unshares and renews the [`Vmar`] of the current process.
-pub(super) fn unshare_and_renew_vmar(
-    ctx: &Context,
-    vmar: &mut ProcessVmarGuard,
-    executable_file: PathOrInode,
-) {
-    let new_vmar = Vmar::new(ProcessVm::new(executable_file));
-    let guard = disable_preempt();
+/// Activates the [`Vmar`] in the current process's context.
+pub(super) fn activate_vmar(ctx: &Context, new_vmar: Arc<Vmar>) {
+    let mut vmar_guard = ctx.process.lock_vmar();
+    // Disable preemption because `thread_local::vmar()` will be borrowed during a context switch.
+    let _preempt_guard = disable_preempt();
+
     *ctx.thread_local.vmar().borrow_mut() = Some(new_vmar.clone());
     new_vmar.vm_space().activate();
-    vmar.set_vmar(Some(new_vmar));
-    drop(guard);
 
-    let new_vmar = vmar.unwrap();
-    new_vmar
-        .process_vm()
-        .heap()
-        .alloc_and_map(new_vmar)
-        .unwrap();
+    vmar_guard.set_vmar(Some(new_vmar));
 }

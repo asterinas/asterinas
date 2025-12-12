@@ -8,16 +8,14 @@ use ostd::{
     user::UserContextApi,
 };
 
+use super::process_vm::activate_vmar;
 use crate::{
-    fs::{
-        fs_resolver::{FsResolver, PathOrInode},
-        utils::Inode,
-    },
+    fs::{fs_resolver::PathOrInode, utils::Inode},
     prelude::*,
     process::{
         ContextUnshareAdminApi, Credentials, Process,
         posix_thread::{PosixThread, ThreadLocal, ThreadName, sigkill_other_threads, thread_table},
-        process_vm::{MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS, unshare_and_renew_vmar},
+        process_vm::{MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS, new_vmar_and_map},
         program_loader::{ProgramToLoad, elf::ElfLoadInfo},
         signal::{
             HandlePendingSignal, PauseReason, SigStack,
@@ -25,6 +23,7 @@ use crate::{
             signals::kernel::KernelSignal,
         },
     },
+    vm::vmar::Vmar,
 };
 
 pub fn do_execve(
@@ -55,6 +54,9 @@ pub fn do_execve(
     let program_to_load =
         ProgramToLoad::build_from_inode(elf_inode.clone(), &fs_resolver, argv, envp)?;
 
+    let new_vmar = new_vmar_and_map(elf_file.clone());
+    let elf_load_info = program_to_load.load_to_vmar(new_vmar.as_ref(), &fs_resolver)?;
+
     // Ensure no other thread is concurrently performing exit_group or execve.
     // If such an operation is in progress, return EAGAIN.
     let mut task_set = ctx.process.tasks().lock();
@@ -73,7 +75,7 @@ pub fn do_execve(
     // After this point, failures in subsequent operations are fatal: the process
     // state may be left inconsistent and it can never return to user mode.
 
-    let res = do_execve_no_return(ctx, user_context, elf_file, &fs_resolver, program_to_load);
+    let res = do_execve_no_return(ctx, user_context, elf_file, new_vmar, &elf_load_info);
 
     if res.is_err() {
         ctx.posix_thread
@@ -127,8 +129,8 @@ fn do_execve_no_return(
     ctx: &Context,
     user_context: &mut UserContext,
     elf_file: PathOrInode,
-    fs_resolver: &FsResolver,
-    program_to_load: ProgramToLoad,
+    new_vmar: Arc<Vmar>,
+    elf_load_info: &ElfLoadInfo,
 ) -> Result<()> {
     let Context {
         process,
@@ -142,20 +144,16 @@ fn do_execve_no_return(
     wait_other_threads_exit(ctx)?;
     thread_table::make_current_main_thread(ctx);
 
-    let elf_load_info = {
-        let mut vmar = ctx.process.lock_vmar();
-        // Reset the virtual memory state.
-        unshare_and_renew_vmar(ctx, &mut vmar, elf_file.clone());
-        // Load the binary into the process's address space
-        program_to_load.load_to_vmar(vmar.unwrap(), fs_resolver)?
-    };
+    // Activate the new VMAR, where the ELF has been loaded, in the current context.
+    activate_vmar(ctx, new_vmar);
+
     // After the program has been successfully loaded, the virtual memory of the current process
     // is initialized. Hence, it is necessary to clear the previously recorded robust list.
     *thread_local.robust_list().borrow_mut() = None;
     thread_local.clear_child_tid().set(0);
 
     // Set up the CPU context.
-    set_cpu_context(thread_local, user_context, &elf_load_info);
+    set_cpu_context(thread_local, user_context, elf_load_info);
 
     // Apply file-capability changes.
     apply_caps_from_exec(process, posix_thread, elf_file.inode())?;
