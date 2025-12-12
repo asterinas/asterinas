@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! This module is used to parse elf file content to get elf_load_info.
-//! When create a process from elf file, we will use the elf_load_info to construct the VmSpace
-
-use core::ops::Range;
+//! ELF file parser.
 
 use align_ext::AlignExt;
-use xmas_elf::program::{self, ProgramHeader64};
 
-use super::elf_file::ElfHeaders;
+use super::{
+    elf_file::{ElfHeaders, LoadablePhdr},
+    relocate::RelocatedRange,
+};
 use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver},
@@ -16,14 +15,28 @@ use crate::{
         utils::Inode,
     },
     prelude::*,
-    process::process_vm::{AuxKey, AuxVec},
-    vm::{perms::VmPerms, vmar::Vmar},
+    process::{
+        check_executable_inode,
+        process_vm::{AuxKey, AuxVec},
+    },
+    vm::{
+        perms::VmPerms,
+        vmar::{VMAR_LOWEST_ADDR, Vmar},
+        vmo::Vmo,
+    },
 };
 
-/// Loads elf to the process VMAR.
+pub struct ElfLoadInfo {
+    /// The relocated entry point.
+    pub entry_point: Vaddr,
+    /// The top address of the user stack.
+    pub user_stack_top: Vaddr,
+}
+
+/// Loads an ELF file to the process VMAR.
 ///
-/// This function will map elf segments and
-/// initialize process init stack.
+/// This function will map ELF segments and
+/// initialize the init stack and heap.
 pub fn load_elf_to_vmar(
     vmar: &Vmar,
     elf_inode: &Arc<dyn Inode>,
@@ -39,7 +52,7 @@ pub fn load_elf_to_vmar(
         expect(unused_mut)
     )]
     let (_range, entry_point, mut aux_vec) =
-        init_and_map_vmos(vmar, ldso, &elf_headers, elf_inode)?;
+        map_vmos_and_build_aux_vec(vmar, ldso, &elf_headers, elf_inode)?;
 
     // Map the vDSO and set the entry.
     // Since the vDSO does not require being mapped to any specific address,
@@ -60,7 +73,6 @@ pub fn load_elf_to_vmar(
     Ok(ElfLoadInfo {
         entry_point,
         user_stack_top,
-        _private: (),
     })
 }
 
@@ -70,52 +82,50 @@ fn lookup_and_parse_ldso(
     fs_resolver: &FsResolver,
 ) -> Result<Option<(Path, ElfHeaders)>> {
     let ldso_file = {
-        let Some(ldso_path) = headers.read_ldso_path(elf_inode)? else {
+        let ldso_path = if let Some(interp_phdr) = headers.interp_phdr() {
+            interp_phdr.read_ldso_path(elf_inode)?
+        } else {
             return Ok(None);
         };
+
         // Our FS requires the path to be valid UTF-8. This may be too restrictive.
         let ldso_path = ldso_path.into_string().map_err(|_| {
             Error::with_message(
                 Errno::ENOEXEC,
-                "The interpreter path specified in ELF is not a valid UTF-8 string",
+                "the interpreter path is not a valid UTF-8 string",
             )
         })?;
+
         let fs_path = FsPath::try_from(ldso_path.as_str())?;
         fs_resolver.lookup(&fs_path)?
     };
+
     let ldso_elf = {
-        let mut buf = Box::new([0u8; PAGE_SIZE]);
         let inode = ldso_file.inode();
-        inode.read_bytes_at(0, &mut *buf)?;
-        ElfHeaders::parse(&*buf)?
+        check_executable_inode(inode)?;
+
+        let mut buf = Box::new([0u8; PAGE_SIZE]);
+        let len = inode.read_bytes_at(0, &mut *buf)?;
+        if len < ElfHeaders::LEN {
+            return_errno_with_message!(Errno::EIO, "the interpreter format is invalid");
+        }
+
+        ElfHeaders::parse(&buf[..len])
+            .map_err(|_| Error::with_message(Errno::ELIBBAD, "the interpreter format is invalid"))?
     };
+
     Ok(Some((ldso_file, ldso_elf)))
 }
 
-fn load_ldso(vmar: &Vmar, ldso_file: &Path, ldso_elf: &ElfHeaders) -> Result<LdsoLoadInfo> {
-    let range = map_segment_vmos(ldso_elf, vmar, ldso_file.inode())?;
-    Ok(LdsoLoadInfo {
-        entry_point: range
-            .relocated_addr_of(ldso_elf.entry_point())
-            .ok_or(Error::with_message(
-                Errno::ENOEXEC,
-                "The entry point is not in the mapped range",
-            ))?,
-        range,
-        _private: (),
-    })
-}
-
-/// Initializes the VM space and maps the VMO to the corresponding virtual memory address.
+/// Maps the VMOs to the corresponding virtual memory addresses and builds the auxiliary vector.
 ///
-/// Returns the mapped range, the entry point and the auxiliary vector.
-fn init_and_map_vmos(
+/// Returns the mapped range, the entry point, and the auxiliary vector.
+fn map_vmos_and_build_aux_vec(
     vmar: &Vmar,
     ldso: Option<(Path, ElfHeaders)>,
     parsed_elf: &ElfHeaders,
     elf_inode: &Arc<dyn Inode>,
 ) -> Result<(RelocatedRange, Vaddr, AuxVec)> {
-    // After we clear process vm, if any error happens, we must call exit_group instead of return to user space.
     let ldso_load_info = if let Some((ldso_file, ldso_elf)) = ldso {
         Some(load_ldso(vmar, &ldso_file, &ldso_elf)?)
     } else {
@@ -127,7 +137,7 @@ fn init_and_map_vmos(
     let mut aux_vec = {
         let ldso_base = ldso_load_info
             .as_ref()
-            .map(|load_info| load_info.range.relocated_start);
+            .map(|load_info| load_info.range.relocated_start());
         init_aux_vec(parsed_elf, &elf_map_range, ldso_base)?
     };
 
@@ -141,36 +151,41 @@ fn init_and_map_vmos(
     aux_vec.set(AuxKey::AT_SECURE, secure)?;
 
     let entry_point = if let Some(ldso_load_info) = ldso_load_info {
-        // Normal shared object
         ldso_load_info.entry_point
     } else {
         elf_map_range
             .relocated_addr_of(parsed_elf.entry_point())
-            .ok_or(Error::with_message(
-                Errno::ENOEXEC,
-                "The entry point is not in the mapped range",
-            ))?
+            .ok_or_else(|| {
+                Error::with_message(
+                    Errno::ENOEXEC,
+                    "the entry point is not located in any segments",
+                )
+            })?
     };
 
     Ok((elf_map_range, entry_point, aux_vec))
 }
 
-pub struct LdsoLoadInfo {
-    /// Relocated entry point.
-    pub entry_point: Vaddr,
+struct LdsoLoadInfo {
+    /// The relocated entry point.
+    entry_point: Vaddr,
     /// The range covering all the mapped segments.
     ///
-    /// May not be page-aligned.
-    pub range: RelocatedRange,
-    _private: (),
+    /// Note that the range may not be page-aligned.
+    range: RelocatedRange,
 }
 
-pub struct ElfLoadInfo {
-    /// Relocated entry point.
-    pub entry_point: Vaddr,
-    /// Address of the user stack top.
-    pub user_stack_top: Vaddr,
-    _private: (),
+fn load_ldso(vmar: &Vmar, ldso_file: &Path, ldso_elf: &ElfHeaders) -> Result<LdsoLoadInfo> {
+    let range = map_segment_vmos(ldso_elf, vmar, ldso_file.inode())?;
+    let entry_point = range
+        .relocated_addr_of(ldso_elf.entry_point())
+        .ok_or_else(|| {
+            Error::with_message(
+                Errno::ENOEXEC,
+                "the entry point is not located in any segments",
+            )
+        })?;
+    Ok(LdsoLoadInfo { entry_point, range })
 }
 
 /// Initializes a [`Vmo`] for each segment and then map to the [`Vmar`].
@@ -180,12 +195,12 @@ pub struct ElfLoadInfo {
 /// boundaries may not be page-aligned.
 ///
 /// [`Vmo`]: crate::vm::vmo::Vmo
-pub fn map_segment_vmos(
+fn map_segment_vmos(
     elf: &ElfHeaders,
     vmar: &Vmar,
     elf_inode: &Arc<dyn Inode>,
 ) -> Result<RelocatedRange> {
-    let elf_va_range = get_range_for_all_segments(elf)?;
+    let elf_va_range = elf.calc_total_vaddr_bounds();
 
     let map_range = if elf.is_shared_object() {
         // Relocatable object.
@@ -200,6 +215,7 @@ pub fn map_segment_vmos(
 
         let vmar_map_options = vmar
             .new_map(map_size, VmPerms::empty())?
+            .align(elf.max_load_align())
             .handle_page_faults_around();
         let aligned_range = vmar_map_options.build().map(|addr| addr..addr + map_size)?;
 
@@ -209,141 +225,66 @@ pub fn map_segment_vmos(
         aligned_range.start + start_in_page_offset..aligned_range.end - end_in_page_offset
     } else {
         // Not relocatable object. Map as-is.
+
+        if elf_va_range.start < VMAR_LOWEST_ADDR {
+            return_errno_with_message!(Errno::EPERM, "the mapping address is too small");
+        }
+
         elf_va_range.clone()
     };
 
-    let relocated_range =
-        RelocatedRange::new(elf_va_range, map_range.start).expect("Mapped range overflows");
+    let relocated_range = RelocatedRange::new(elf_va_range, map_range.start)
+        .expect("`map_range` should not overflow");
 
-    for program_header in elf.program_headers() {
-        let type_ = program_header.get_type().map_err(|_| {
-            Error::with_message(Errno::ENOEXEC, "Failed to parse the program header")
-        })?;
-        if type_ == program::Type::Load {
-            check_segment_align(program_header)?;
-
-            let map_at = relocated_range
-                .relocated_addr_of(program_header.virtual_addr as Vaddr)
-                .expect("Address not covered by `get_range_for_all_segments`");
-
-            map_segment_vmo(program_header, elf_inode, vmar, map_at)?;
-        }
+    let Some(elf_vmo) = elf_inode.page_cache() else {
+        return_errno_with_message!(Errno::ENOEXEC, "the executable has no page cache");
+    };
+    for loadable_phdr in elf.loadable_phdrs() {
+        let map_at = relocated_range
+            .relocated_addr_of(loadable_phdr.virt_range().start)
+            .expect("`calc_total_vaddr_bounds()` should cover all segments");
+        map_segment_vmo(loadable_phdr, &elf_vmo, vmar, map_at)?;
     }
 
     Ok(relocated_range)
 }
 
-/// A virtual range and its relocated address.
-pub struct RelocatedRange {
-    original_range: Range<Vaddr>,
-    relocated_start: Vaddr,
-}
-
-impl RelocatedRange {
-    /// Creates a new `RelocatedRange`.
-    ///
-    /// If the relocated address overflows, it will return `None`.
-    pub fn new(original_range: Range<Vaddr>, relocated_start: Vaddr) -> Option<Self> {
-        relocated_start.checked_add(original_range.len())?;
-        Some(Self {
-            original_range,
-            relocated_start,
-        })
-    }
-
-    /// Gets the relocated address of an address in the original range.
-    ///
-    /// If the provided address is not in the original range, it will return `None`.
-    pub fn relocated_addr_of(&self, addr: Vaddr) -> Option<Vaddr> {
-        if self.original_range.contains(&addr) {
-            Some(addr - self.original_range.start + self.relocated_start)
-        } else {
-            None
-        }
-    }
-}
-
-/// Returns the range that covers all segments in the ELF file.
+/// Creates and maps the segment VMO to the VMAR.
 ///
-/// The range must be tight, i.e., will not include any padding bytes. So the
-/// boundaries may not be page-aligned.
-fn get_range_for_all_segments(elf: &ElfHeaders) -> Result<Range<Vaddr>> {
-    let loadable_ranges_iter = elf.program_headers().iter().filter_map(|ph| {
-        if let Ok(program::Type::Load) = ph.get_type() {
-            Some((ph.virtual_addr as Vaddr)..((ph.virtual_addr + ph.mem_size) as Vaddr))
-        } else {
-            None
-        }
-    });
-
-    let min_addr =
-        loadable_ranges_iter
-            .clone()
-            .map(|r| r.start)
-            .min()
-            .ok_or(Error::with_message(
-                Errno::ENOEXEC,
-                "Executable file does not has loadable sections",
-            ))?;
-
-    let max_addr = loadable_ranges_iter
-        .map(|r| r.end)
-        .max()
-        .expect("The range set contains minimum but no maximum");
-
-    Ok(min_addr..max_addr)
-}
-
-/// Creates and map the corresponding segment VMO to `vmar`.
-/// If needed, create additional anonymous mapping to represents .bss segment.
+/// Additional anonymous mappings will be created to represent trailing bytes, if any. For example,
+/// this applies to the `.bss` segment.
 fn map_segment_vmo(
-    program_header: &ProgramHeader64,
-    elf_inode: &Arc<dyn Inode>,
+    loadable_phdr: &LoadablePhdr,
+    elf_vmo: &Arc<Vmo>,
     vmar: &Vmar,
     map_at: Vaddr,
 ) -> Result<()> {
+    let virt_range = loadable_phdr.virt_range();
+    let file_range = loadable_phdr.file_range();
     trace!(
-        "mem range = 0x{:x} - 0x{:x}, mem_size = 0x{:x}",
-        program_header.virtual_addr,
-        program_header.virtual_addr + program_header.mem_size,
-        program_header.mem_size
+        "ELF segment: virt_range = {:#x?}, file_range = {:#x?}",
+        virt_range, file_range,
     );
-    trace!(
-        "file range = 0x{:x} - 0x{:x}, file_size = 0x{:x}",
-        program_header.offset,
-        program_header.offset + program_header.file_size,
-        program_header.file_size
-    );
-
-    let file_offset = program_header.offset as usize;
-    let virtual_addr = program_header.virtual_addr as usize;
-    debug_assert!(file_offset % PAGE_SIZE == virtual_addr % PAGE_SIZE);
-    let segment_vmo = {
-        elf_inode.page_cache().ok_or(Error::with_message(
-            Errno::ENOENT,
-            "executable has no page cache",
-        ))?
-    };
 
     let total_map_size = {
-        let vmap_start = virtual_addr.align_down(PAGE_SIZE);
-        let vmap_end = (virtual_addr + program_header.mem_size as usize).align_up(PAGE_SIZE);
+        let vmap_start = virt_range.start.align_down(PAGE_SIZE);
+        let vmap_end = virt_range.end.align_up(PAGE_SIZE);
         vmap_end - vmap_start
     };
 
     let (segment_offset, segment_size) = {
-        let start = file_offset.align_down(PAGE_SIZE);
-        let end = (file_offset + program_header.file_size as usize).align_up(PAGE_SIZE);
-        debug_assert!(total_map_size >= (program_header.file_size as usize).align_up(PAGE_SIZE));
+        let start = file_range.start.align_down(PAGE_SIZE);
+        let end = file_range.end.align_up(PAGE_SIZE);
         (start, end - start)
     };
 
-    let perms = parse_segment_perm(program_header.flags);
+    let perms = loadable_phdr.vm_perms();
     let offset = map_at.align_down(PAGE_SIZE);
+
     if segment_size != 0 {
         let mut vm_map_options = vmar
             .new_map(segment_size, perms)?
-            .vmo(segment_vmo.clone())
+            .vmo(elf_vmo.clone())
             .vmo_offset(segment_offset)
             .can_overwrite(true);
         vm_map_options = vm_map_options.offset(offset).handle_page_faults_around();
@@ -354,57 +295,26 @@ fn map_segment_vmo(
         // private so the writes will trigger copy-on-write. Ignore errors if
         // the permissions do not allow writing.
         // Reference: <https://elixir.bootlin.com/linux/v6.17/source/fs/binfmt_elf.c#L410-L422>
-        if program_header.file_size < program_header.mem_size {
-            let tail_start_vaddr =
-                map_addr + virtual_addr % PAGE_SIZE + program_header.file_size as usize;
-            if tail_start_vaddr < map_addr + segment_size {
-                let zero_size = PAGE_SIZE - tail_start_vaddr % PAGE_SIZE;
-                let res = vmar.fill_zeros_remote(tail_start_vaddr, zero_size);
-                if let Err((e, _)) = res
-                    && perms.contains(VmPerms::WRITE)
-                {
-                    return Err(e);
-                }
-            };
+        let vaddr_to_zero = map_addr + (file_range.end - segment_offset);
+        let size_to_zero = map_addr + segment_size - vaddr_to_zero;
+        if size_to_zero != 0 {
+            let res = vmar.fill_zeros_remote(vaddr_to_zero, size_to_zero);
+            if let Err((err, _)) = res
+                && perms.contains(VmPerms::WRITE)
+            {
+                return Err(err);
+            }
         }
     }
 
-    let anonymous_map_size: usize = total_map_size.saturating_sub(segment_size);
+    let anonymous_map_size = total_map_size - segment_size;
     if anonymous_map_size > 0 {
         let mut anonymous_map_options =
             vmar.new_map(anonymous_map_size, perms)?.can_overwrite(true);
         anonymous_map_options = anonymous_map_options.offset(offset + segment_size);
         anonymous_map_options.build()?;
     }
-    Ok(())
-}
 
-fn parse_segment_perm(flags: xmas_elf::program::Flags) -> VmPerms {
-    let mut vm_perm = VmPerms::empty();
-    if flags.is_read() {
-        vm_perm |= VmPerms::READ;
-    }
-    if flags.is_write() {
-        vm_perm |= VmPerms::WRITE;
-    }
-    if flags.is_execute() {
-        vm_perm |= VmPerms::EXEC;
-    }
-    vm_perm
-}
-
-fn check_segment_align(program_header: &ProgramHeader64) -> Result<()> {
-    let align = program_header.align;
-    if align == 0 || align == 1 {
-        // no align requirement
-        return Ok(());
-    }
-    if !align.is_power_of_two() {
-        return_errno_with_message!(Errno::ENOEXEC, "segment align is invalid.");
-    }
-    if program_header.offset % align != program_header.virtual_addr % align {
-        return_errno_with_message!(Errno::ENOEXEC, "segment align is not satisfied.");
-    }
     Ok(())
 }
 

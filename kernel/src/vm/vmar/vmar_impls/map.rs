@@ -141,7 +141,6 @@ impl<'a> VmarMapOptions<'a> {
     ///
     /// The provided alignment must be a power of two and a multiple of the
     /// page size.
-    #[expect(dead_code)]
     pub fn align(mut self, align: usize) -> Self {
         self.align = align;
         self

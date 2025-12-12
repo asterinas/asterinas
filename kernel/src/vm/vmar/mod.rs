@@ -14,7 +14,7 @@ use ostd::mm::Vaddr;
 pub use vmar_impls::{RssType, Vmar};
 
 pub const VMAR_LOWEST_ADDR: Vaddr = 0x001_0000; // 64 KiB is the Linux configurable default
-const VMAR_CAP_ADDR: Vaddr = ostd::mm::MAX_USERSPACE_VADDR;
+pub const VMAR_CAP_ADDR: Vaddr = ostd::mm::MAX_USERSPACE_VADDR;
 
 /// Returns whether the input `vaddr` is a legal user space virtual address.
 pub fn is_userspace_vaddr(vaddr: Vaddr) -> bool {
