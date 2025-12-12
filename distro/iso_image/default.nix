@@ -1,5 +1,5 @@
 { pkgs ? import <nixpkgs> { }, autoInstall ? false, test-command ? ""
-, extra-substituters ? "", extra-trusted-public-keys ? "", ... }:
+, extra-substituters ? "", extra-trusted-public-keys ? "", version ? "", ... }:
 let
   installer = pkgs.callPackage ../aster_nixos_installer {
     inherit test-command extra-substituters extra-trusted-public-keys;
@@ -9,6 +9,10 @@ let
       "${pkgs.path}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
       "${pkgs.path}/nixos/modules/installer/cd-dvd/channel.nix"
     ];
+
+    system.nixos.distroName = "Asterinas NixOS";
+    system.nixos.label = "${version}";
+    isoImage.appendToMenuLabel = " Installer";
 
     services.getty.autologinUser = pkgs.lib.mkForce "root";
     environment.systemPackages = [ installer ];
