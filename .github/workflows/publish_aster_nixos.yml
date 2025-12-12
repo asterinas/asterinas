@@ -16,6 +16,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Modify configuration.nix to include xfce and podman
+        run: |
+          sed -i \
+            -e 's/^[[:space:]]*# services\.xserver\.enable = true;/  services.xserver.enable = true;/' \
+            -e 's/^[[:space:]]*# services\.xserver\.desktopManager\.xfce\.enable = true;/  services.xserver.desktopManager.xfce.enable = true;/' \
+            -e 's/^[[:space:]]*# virtualisation\.podman\.enable = true;/  virtualisation.podman.enable = true;/' \
+            distro/etc_nixos/configuration.nix
+
       - name: Build Asterinas NixOS patched packages and push to release cache
         run: |
           make kernel BOOT_PROTOCOL=linux-efi-handover64
