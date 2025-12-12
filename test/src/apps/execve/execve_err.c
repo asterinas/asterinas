@@ -10,7 +10,7 @@
 
 struct custom_elf {
 	Elf64_Ehdr ehdr;
-	Elf64_Phdr phdr[1];
+	Elf64_Phdr phdr[3]; // See `push_interp` and `pop_interp` below.
 	char buf[128];
 };
 
@@ -142,6 +142,48 @@ FN_TEST(bad_phentsize)
 	--elf.ehdr.e_phentsize;
 	TEST_ERRNO(do_execve(), ENOEXEC);
 	++elf.ehdr.e_phentsize;
+}
+END_TEST()
+
+FN_TEST(bad_phnum)
+{
+	long old;
+
+	old = elf.ehdr.e_phnum;
+	elf.ehdr.e_phnum = 0;
+	TEST_ERRNO(do_execve(), ENOEXEC);
+	elf.ehdr.e_phnum = old;
+}
+END_TEST()
+
+static unsigned int push_interp(const char *interpreter_path)
+{
+	unsigned int i;
+
+	i = CHECK_WITH(elf.ehdr.e_phnum++,
+		       _ret < sizeof(elf.phdr) / sizeof(elf.phdr[0]));
+	elf.phdr[i].p_type = PT_INTERP;
+	elf.phdr[i].p_offset = offsetof(struct custom_elf, buf);
+	elf.phdr[i].p_filesz = strlen(interpreter_path) + 1;
+
+	strncpy(elf.buf, interpreter_path, sizeof(elf.buf) - 1);
+
+	return i;
+}
+
+static void pop_interp(void)
+{
+	CHECK_WITH(--elf.ehdr.e_phnum, _ret >= 1);
+}
+
+FN_TEST(interp_too_long)
+{
+	unsigned int i;
+
+	i = push_interp("/dev/zero");
+	elf.phdr[i].p_filesz = 0x1000000;
+	TEST_ERRNO(do_execve(), ENOEXEC);
+	pop_interp();
 }
 END_TEST()
 

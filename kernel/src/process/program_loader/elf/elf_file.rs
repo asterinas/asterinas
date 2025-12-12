@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::ops::Range;
+
 use xmas_elf::{
     header::{self, Header, HeaderPt1, HeaderPt2, HeaderPt2_, Machine_, Type_},
     program::{self, ProgramHeader64},
@@ -8,15 +10,26 @@ use xmas_elf::{
 use crate::{
     fs::utils::{Inode, PATH_MAX},
     prelude::*,
+    vm::{perms::VmPerms, vmar::VMAR_CAP_ADDR},
 };
 
 /// A wrapper for the [`xmas_elf`] ELF parser.
 pub struct ElfHeaders {
     elf_header: ElfHeader,
-    program_headers: Vec<ProgramHeader64>,
+    loadable_phdrs: Vec<LoadablePhdr>,
+    max_load_align: usize,
+    interp_phdr: Option<InterpPhdr>,
 }
 
 impl ElfHeaders {
+    /// The minimized length of a valid ELF header.
+    ///
+    /// [`Self::parse`] will fail with [`ENOEXEC`] if the slice is shorter than this constant. This
+    /// can also be checked manually if a different error code is expected.
+    ///
+    /// [`ENOEXEC`]: Errno::ENOEXEC
+    pub(super) const LEN: usize = size_of::<HeaderPt1>() + size_of::<HeaderPt2_64>();
+
     pub fn parse(input: &[u8]) -> Result<Self> {
         // Parse the ELF header.
         let header = xmas_elf::header::parse_header(input)
@@ -47,7 +60,9 @@ impl ElfHeaders {
         }
 
         // Parse the ELF program headers.
-        let mut program_headers = Vec::with_capacity(ph_count as usize);
+        let mut loadable_phdrs = Vec::with_capacity(ph_count as usize);
+        let mut max_load_align = PAGE_SIZE;
+        let mut interp_phdr = None;
         for index in 0..ph_count {
             let program_header = xmas_elf::program::parse_program_header(input, header, index)
                 .map_err(|_| {
@@ -62,23 +77,42 @@ impl ElfHeaders {
                     )
                 }
             };
-            program_headers.push(ph64);
+            match ph64.get_type() {
+                Ok(program::Type::Load) => {
+                    loadable_phdrs.push(LoadablePhdr::parse(&ph64)?);
+                    // Like Linux, we ignore any invalid alignment requirements that are not a
+                    // power of two.
+                    if ph64.align.is_power_of_two() {
+                        max_load_align = max_load_align.max(ph64.align as usize);
+                    }
+                }
+                Ok(program::Type::Interp) if interp_phdr.is_none() => {
+                    // Like Linux, we only handle the first interpreter program header.
+                    interp_phdr = Some(InterpPhdr::parse(&ph64)?);
+                }
+                _ => (),
+            }
+        }
+        if loadable_phdrs.is_empty() {
+            return_errno_with_message!(Errno::ENOEXEC, "there are no loadable ELF program headers");
         }
 
         Ok(Self {
             elf_header,
-            program_headers,
+            loadable_phdrs,
+            max_load_align,
+            interp_phdr,
         })
+    }
+
+    /// Returns whether the ELF is a shared object.
+    pub(super) fn is_shared_object(&self) -> bool {
+        self.elf_header.pt2.type_.as_type() == header::Type::SharedObject
     }
 
     /// Returns the address of the entry point.
     pub(super) fn entry_point(&self) -> Vaddr {
         self.elf_header.pt2.entry_point as Vaddr
-    }
-
-    /// Returns a reference to the program headers.
-    pub(super) fn program_headers(&self) -> &[ProgramHeader64] {
-        self.program_headers.as_slice()
     }
 
     /// Returns the number of the program headers.
@@ -91,14 +125,32 @@ impl ElfHeaders {
         self.elf_header.pt2.ph_entry_size
     }
 
+    /// Returns a reference to the loadable program headers.
+    ///
+    /// It is guaranteed that there is at least one loadable program header.
+    pub(super) fn loadable_phdrs(&self) -> &[LoadablePhdr] {
+        self.loadable_phdrs.as_slice()
+    }
+
+    /// Returns the maximum alignment of the loadable program headers.
+    ///
+    /// It is guaranteed that the alignment is a power of two and is at least [`PAGE_SIZE`].
+    pub(super) fn max_load_align(&self) -> usize {
+        self.max_load_align
+    }
+
+    /// Returns a reference to the interpreter program header.
+    pub(super) fn interp_phdr(&self) -> Option<&InterpPhdr> {
+        self.interp_phdr.as_ref()
+    }
+
     /// Finds the virtual address of the program headers.
     pub(super) fn find_vaddr_of_phdrs(&self) -> Result<Vaddr> {
-        let ph_offset = self.elf_header.pt2.ph_offset;
-        for program_header in &self.program_headers {
-            if let Some(offset_in_ph) = ph_offset.checked_sub(program_header.offset)
-                && offset_in_ph <= program_header.file_size
-            {
-                return Ok((offset_in_ph + program_header.virtual_addr) as Vaddr);
+        let ph_offset = self.elf_header.pt2.ph_offset as usize;
+        for loadable_phdrs in self.loadable_phdrs.iter() {
+            if loadable_phdrs.file_range().contains(&ph_offset) {
+                return Ok(loadable_phdrs.virt_range().start
+                    + (ph_offset - loadable_phdrs.file_range().start));
             }
         }
         return_errno_with_message!(
@@ -107,37 +159,14 @@ impl ElfHeaders {
         );
     }
 
-    /// Returns whether the ELF is a shared object.
-    pub(super) fn is_shared_object(&self) -> bool {
-        self.elf_header.pt2.type_.as_type() == header::Type::SharedObject
-    }
-
-    /// Reads the LDSO path from the ELF inode.
-    pub(super) fn read_ldso_path(&self, elf_inode: &Arc<dyn Inode>) -> Result<Option<CString>> {
-        for program_header in &self.program_headers {
-            if let Ok(program::Type::Interp) = program_header.get_type() {
-                let file_size = program_header.file_size as usize;
-                let file_offset = program_header.offset as usize;
-
-                if file_size > PATH_MAX {
-                    return_errno_with_message!(Errno::ENOEXEC, "the interpreter path is too long");
-                }
-
-                let mut buffer = vec![0; file_size];
-                elf_inode.read_bytes_at(file_offset, &mut buffer)?;
-
-                let ldso_path = CString::from_vec_with_nul(buffer).map_err(|_| {
-                    Error::with_message(
-                        Errno::ENOEXEC,
-                        "the interpreter path is not a valid C string",
-                    )
-                })?;
-
-                return Ok(Some(ldso_path));
-            }
-        }
-
-        Ok(None)
+    /// Calculates the virtual address bounds of all segments as a range.
+    pub(super) fn calc_total_vaddr_bounds(&self) -> Range<Vaddr> {
+        self.loadable_phdrs
+            .iter()
+            .map(LoadablePhdr::virt_range)
+            .cloned()
+            .reduce(|r1, r2| r1.start.min(r2.start)..r1.end.max(r2.end))
+            .unwrap()
     }
 }
 
@@ -243,4 +272,136 @@ fn check_elf_header(elf_header: &ElfHeader) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// A ELF program header of the type [`program::Type::Load`].
+pub(super) struct LoadablePhdr {
+    virt_range: Range<Vaddr>,
+    file_range: Range<usize>,
+    vm_perms: VmPerms,
+}
+
+impl LoadablePhdr {
+    pub(self) fn parse(phdr: &ProgramHeader64) -> Result<Self> {
+        debug_assert_eq!(phdr.get_type(), Ok(program::Type::Load));
+
+        let virt_start = phdr.virtual_addr;
+        let virt_end = if let Some(virt_end) = virt_start.checked_add(phdr.mem_size)
+            && virt_end <= VMAR_CAP_ADDR as u64
+        {
+            virt_end
+        } else {
+            return_errno_with_message!(Errno::ENOMEM, "the mapping address is too large");
+        };
+
+        let file_start = phdr.offset;
+        let Some(file_end) = file_start.checked_add(phdr.file_size) else {
+            return_errno_with_message!(Errno::EINVAL, "the mapping offset overflows");
+        };
+        if file_end >= isize::MAX as u64 {
+            return_errno_with_message!(Errno::EOVERFLOW, "the mapping offset overflows");
+        }
+
+        if phdr.mem_size == 0 {
+            return_errno_with_message!(Errno::EINVAL, "the mapping length is zero");
+        }
+        if phdr.mem_size < phdr.file_size {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the mapping length is smaller than the file length"
+            );
+        }
+        if virt_start % (PAGE_SIZE as u64) != file_start % (PAGE_SIZE as u64) {
+            return_errno_with_message!(Errno::EINVAL, "the mapping address is not aligned");
+        }
+
+        Ok(Self {
+            virt_range: (virt_start as Vaddr)..(virt_end as Vaddr),
+            file_range: (file_start as usize)..(file_end as usize),
+            vm_perms: parse_segment_perm(phdr.flags),
+        })
+    }
+
+    /// Returns the virtual address range.
+    ///
+    /// The range is guaranteed to be below [`VMAR_CAP_ADDR`] and non-empty.
+    pub(super) fn virt_range(&self) -> &Range<Vaddr> {
+        &self.virt_range
+    }
+
+    /// Returns the file offset range.
+    ///
+    /// The range is guaranteed to be below [`i64::MAX`]. It will also be shorter than the virtual
+    /// address range ([`Self::virt_range`]) and have the same offset within a page as that range.
+    pub(super) fn file_range(&self) -> &Range<usize> {
+        &self.file_range
+    }
+
+    /// Returns the permission to map the virtual memory.
+    pub(super) fn vm_perms(&self) -> VmPerms {
+        self.vm_perms
+    }
+}
+
+fn parse_segment_perm(flags: xmas_elf::program::Flags) -> VmPerms {
+    let mut vm_perm = VmPerms::empty();
+    if flags.is_read() {
+        vm_perm |= VmPerms::READ;
+    }
+    if flags.is_write() {
+        vm_perm |= VmPerms::WRITE;
+    }
+    if flags.is_execute() {
+        vm_perm |= VmPerms::EXEC;
+    }
+    vm_perm
+}
+
+/// A ELF program header of the type [`program::Type::Interp`].
+pub(super) struct InterpPhdr {
+    file_offset: usize,
+    file_size: u16,
+}
+
+impl InterpPhdr {
+    pub(self) fn parse(phdr: &ProgramHeader64) -> Result<Self> {
+        debug_assert_eq!(phdr.get_type(), Ok(program::Type::Interp));
+
+        if phdr
+            .offset
+            .checked_add(phdr.file_size)
+            .is_none_or(|file_end| file_end > isize::MAX as u64)
+        {
+            return_errno_with_message!(Errno::EINVAL, "the interpreter offset overflows");
+        }
+
+        if phdr.file_size >= PATH_MAX as u64 {
+            return_errno_with_message!(Errno::ENOEXEC, "the interpreter path is too long");
+        }
+
+        const { assert!(PATH_MAX as u64 <= u16::MAX as u64) };
+
+        Ok(Self {
+            file_offset: phdr.offset as usize,
+            file_size: phdr.file_size as u16,
+        })
+    }
+
+    /// Reads the LDSO path from the ELF inode.
+    pub(super) fn read_ldso_path(&self, elf_inode: &Arc<dyn Inode>) -> Result<CString> {
+        // Note that `self.file_size` is at most `PATH_SIZE`.
+        let file_size = self.file_size as usize;
+        let mut buffer = vec![0; file_size];
+        if elf_inode.read_bytes_at(self.file_offset, &mut buffer)? != file_size {
+            return_errno_with_message!(Errno::EIO, "the interpreter path cannot be fully read");
+        }
+
+        let ldso_path = CString::from_vec_with_nul(buffer).map_err(|_| {
+            Error::with_message(
+                Errno::ENOEXEC,
+                "the interpreter path is not a valid C string",
+            )
+        })?;
+        Ok(ldso_path)
+    }
 }
