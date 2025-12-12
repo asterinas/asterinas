@@ -13,7 +13,7 @@ use ostd::{arch::cpu::context::UserContext, task::Task};
 use crate::{
     prelude::*,
     process::signal::signals::fault::FaultSignal,
-    vm::{page_fault_handler::PageFaultHandler, perms::VmPerms, vmar::Vmar},
+    vm::{perms::VmPerms, vmar::Vmar},
 };
 
 /// Page fault information converted from [`CpuExceptionInfo`].

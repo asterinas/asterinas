@@ -17,14 +17,13 @@ use ostd::{
     task::disable_preempt,
 };
 
-use super::{RssDelta, RssType, interval_set::Interval};
+use super::{RssType, interval_set::Interval, util::is_intersected, vmar_impls::RssDelta};
 use crate::{
     fs::utils::Inode,
     prelude::*,
     thread::exception::PageFaultInfo,
     vm::{
         perms::VmPerms,
-        vmar::is_intersected,
         vmo::{CommitFlags, Vmo, VmoCommitError},
     },
 };
