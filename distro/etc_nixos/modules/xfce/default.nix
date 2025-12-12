@@ -3,6 +3,8 @@ let
   startXfce =
     pkgs.writeScriptBin "start_xfce" (builtins.readFile ./start_xfce.sh);
 in {
+  imports = [ ./wallpaper.nix ];
+
   environment.systemPackages = (lib.optionals (config.services.xserver.enable
     && config.services.xserver.desktopManager.xfce.enable) [ startXfce ])
     ++ (lib.optionals config.services.xserver.enable
@@ -10,6 +12,7 @@ in {
 
   services.displayManager.autoLogin.enable = false;
   services.xserver.displayManager.lightdm.enable = false;
+
   systemd.services."xfce-desktop" = lib.mkIf (config.services.xserver.enable
     && config.services.xserver.desktopManager.xfce.enable) {
       description = "XFCE Desktop Environment";
