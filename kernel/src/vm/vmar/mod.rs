@@ -18,3 +18,11 @@ pub const VMAR_CAP_ADDR: Vaddr = ostd::mm::MAX_USERSPACE_VADDR;
 pub fn is_userspace_vaddr(vaddr: Vaddr) -> bool {
     (VMAR_LOWEST_ADDR..VMAR_CAP_ADDR).contains(&vaddr)
 }
+
+/// Returns whether `vaddr` and `len` specify a legal user space virtual address range.
+fn is_userspace_vaddr_range(vaddr: Vaddr, len: usize) -> bool {
+    vaddr >= VMAR_LOWEST_ADDR
+        && VMAR_CAP_ADDR
+            .checked_sub(vaddr)
+            .is_some_and(|gap| gap >= len)
+}
