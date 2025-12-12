@@ -87,7 +87,7 @@ fn lookup_and_parse_ldso(
         let mut buf = Box::new([0u8; PAGE_SIZE]);
         let inode = ldso_file.inode();
         inode.read_bytes_at(0, &mut *buf)?;
-        ElfHeaders::parse_elf(&*buf)?
+        ElfHeaders::parse(&*buf)?
     };
     Ok(Some((ldso_file, ldso_elf)))
 }
@@ -128,7 +128,7 @@ fn init_and_map_vmos(
         let ldso_base = ldso_load_info
             .as_ref()
             .map(|load_info| load_info.range.relocated_start);
-        init_aux_vec(parsed_elf, elf_map_range.relocated_start, ldso_base)?
+        init_aux_vec(parsed_elf, &elf_map_range, ldso_base)?
     };
 
     // Set AT_SECURE based on setuid/setgid bits of the executable file.
@@ -215,7 +215,7 @@ pub fn map_segment_vmos(
     let relocated_range =
         RelocatedRange::new(elf_va_range, map_range.start).expect("Mapped range overflows");
 
-    for program_header in &elf.program_headers {
+    for program_header in elf.program_headers() {
         let type_ = program_header.get_type().map_err(|_| {
             Error::with_message(Errno::ENOEXEC, "Failed to parse the program header")
         })?;
@@ -268,7 +268,7 @@ impl RelocatedRange {
 /// The range must be tight, i.e., will not include any padding bytes. So the
 /// boundaries may not be page-aligned.
 fn get_range_for_all_segments(elf: &ElfHeaders) -> Result<Range<Vaddr>> {
-    let loadable_ranges_iter = elf.program_headers.iter().filter_map(|ph| {
+    let loadable_ranges_iter = elf.program_headers().iter().filter_map(|ph| {
         if let Ok(program::Type::Load) = ph.get_type() {
             Some((ph.virtual_addr as Vaddr)..((ph.virtual_addr + ph.mem_size) as Vaddr))
         } else {
@@ -408,32 +408,37 @@ fn check_segment_align(program_header: &ProgramHeader64) -> Result<()> {
     Ok(())
 }
 
-pub fn init_aux_vec(
+fn init_aux_vec(
     elf: &ElfHeaders,
-    elf_map_addr: Vaddr,
+    elf_map_range: &RelocatedRange,
     ldso_base: Option<Vaddr>,
 ) -> Result<AuxVec> {
     let mut aux_vec = AuxVec::new();
+
     aux_vec.set(AuxKey::AT_PAGESZ, PAGE_SIZE as _)?;
-    let ph_addr = if elf.is_shared_object() {
-        elf.ph_addr()? + elf_map_addr
-    } else {
-        elf.ph_addr()?
+
+    let Some(ph_vaddr) = elf_map_range.relocated_addr_of(elf.find_vaddr_of_phdrs()?) else {
+        return_errno_with_message!(
+            Errno::ENOEXEC,
+            "the ELF program headers are not located in any segments"
+        );
     };
-    aux_vec.set(AuxKey::AT_PHDR, ph_addr as u64)?;
+    aux_vec.set(AuxKey::AT_PHDR, ph_vaddr as u64)?;
     aux_vec.set(AuxKey::AT_PHNUM, elf.ph_count() as u64)?;
     aux_vec.set(AuxKey::AT_PHENT, elf.ph_ent() as u64)?;
-    let elf_entry = if elf.is_shared_object() {
-        let base_load_offset = elf.base_load_address_offset();
-        elf.entry_point() + elf_map_addr - base_load_offset as usize
-    } else {
-        elf.entry_point()
+
+    let Some(entry_vaddr) = elf_map_range.relocated_addr_of(elf.entry_point()) else {
+        return_errno_with_message!(
+            Errno::ENOEXEC,
+            "the entry point is not located in any segments"
+        );
     };
-    aux_vec.set(AuxKey::AT_ENTRY, elf_entry as u64)?;
+    aux_vec.set(AuxKey::AT_ENTRY, entry_vaddr as u64)?;
 
     if let Some(ldso_base) = ldso_base {
         aux_vec.set(AuxKey::AT_BASE, ldso_base as u64)?;
     }
+
     Ok(aux_vec)
 }
 
