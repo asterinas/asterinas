@@ -157,17 +157,13 @@ impl VmarInner {
             return Ok(());
         };
 
-        let rlimt_as = process
+        let rlimit_as = process
             .resource_limits()
             .get_rlimit(ResourceType::RLIMIT_AS)
             .get_cur();
 
-        let new_total_vm = self
-            .total_vm
-            .checked_add(expand_size)
-            .ok_or(Errno::ENOMEM)?;
-        if new_total_vm > rlimt_as as usize {
-            return_errno_with_message!(Errno::ENOMEM, "address space limit overflow");
+        if rlimit_as.saturating_sub(self.total_vm as u64) < expand_size as u64 {
+            return_errno_with_message!(Errno::ENOMEM, "the address space size limit is reached");
         }
         Ok(())
     }

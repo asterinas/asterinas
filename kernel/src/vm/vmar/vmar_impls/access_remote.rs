@@ -2,9 +2,7 @@
 
 use align_ext::AlignExt;
 use ostd::{
-    mm::{
-        HasSize, PAGE_SIZE, PageFlags, UFrame, io_util::HasVmReaderWriter, vm_space::VmQueriedItem,
-    },
+    mm::{PAGE_SIZE, PageFlags, UFrame, io_util::HasVmReaderWriter, vm_space::VmQueriedItem},
     task::disable_preempt,
 };
 
@@ -76,14 +74,11 @@ impl Vmar {
     ) -> core::result::Result<usize, (Error, usize)> {
         let mut remain = len;
         let write = |frame: UFrame, skip_offset: usize| {
-            let frame_size = frame.size();
-            let mut writer = frame.writer().to_fallible();
+            let mut writer = frame.writer();
             writer.skip(skip_offset);
-            let to_write = remain.min(frame_size - skip_offset);
-            let res = writer.fill_zeros(to_write);
-            let (Ok(n) | Err((_, n))) = &res;
-            remain -= *n;
-            res
+            let res = writer.fill_zeros(remain);
+            remain -= res;
+            Ok(res)
         };
 
         self.access_remote(vaddr, len, PageFlags::W, write)
