@@ -31,19 +31,28 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Use nix-env to install and run the hello package
+      - name: Modify configuration.nix to include test-asterinas
         run: |
-          make nixos NIXOS_DISK_SIZE_IN_MB=6144 NIXOS_TEST_COMMAND='nix-env -iA nixos.hello && hello' || true
-          make run_nixos || true
-          tail --lines 10 qemu.log | grep -q "^Hello, world!" || (echo "Test nix-env failed" && exit 1)
-          echo "Test nix-env succeeds!"
-      - name: Use nix-shell to install and run the hello package
+          sed -i "s/environment.systemPackages = with pkgs; \[ hello-asterinas \];/environment.systemPackages = with pkgs; \[ test-asterinas \];/" \
+            distro/etc_nixos/configuration.nix
+
+      - name: Test nix commands
         run: |
-          make nixos NIXOS_DISK_SIZE_IN_MB=6144 NIXOS_TEST_COMMAND='nix-shell -p hello --command hello' || true
+          make nixos NIXOS_DISK_SIZE_IN_MB=6144 NIXOS_TEST_COMMAND='test-nix-commands' || true
           make run_nixos || true
-          tail --lines 10 qemu.log | grep -q "^Hello, world!" || (echo "Test nix-shell failed" && exit 1)
-          echo "Test nix-shell succeeds!"
-  
+
+      - name: Check results
+        run: |
+          tail --lines 50 qemu.log | awk '
+          BEGIN { hello_count=0 } {
+            if ($0 ~ /^Hello, world!/) hello_count++
+          }
+          END {
+            if (hello_count == 4) exit 0
+            else exit 1
+          }' || (echo "Test nix commands failed" && exit 1)
+          echo "Test nix commands succeeds!"
+
   podman-test:
     runs-on: ubuntu-4-cores-150GB-ssd
     container:
@@ -52,13 +61,19 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Modify configuration.nix to include podman
+      - name: Modify configuration.nix to include test-asterinas and podman
         run: |
+          sed -i "s/environment.systemPackages = with pkgs; \[ hello-asterinas \];/environment.systemPackages = with pkgs; \[ test-asterinas \];/" \
+            distro/etc_nixos/configuration.nix
           sed -i 's/^[[:space:]]*# virtualisation\.podman\.enable = true;/  virtualisation.podman.enable = true;/' \
-          distro/etc_nixos/configuration.nix
+            distro/etc_nixos/configuration.nix
+
       - name: Run podman commands
         run: |
-          make nixos NIXOS_DISK_SIZE_IN_MB=8192 NIXOS_TEST_COMMAND='podman run docker.io/library/alpine:latest ls /etc' || true
+          make nixos NIXOS_DISK_SIZE_IN_MB=8192 NIXOS_TEST_COMMAND='test-podman' || true
           make run_nixos || true
+
+      - name: Check results
+        run: |
           tail --lines 50 qemu.log | grep -q "alpine-release" || (echo "Test podman failed" && exit 1)
           echo "Test podman succeeds!"
