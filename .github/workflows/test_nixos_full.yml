@@ -33,7 +33,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Modify configuration.nix to include test-asterinas
         run: |
-          sed -i "s/environment.systemPackages = with pkgs; \[ hello-asterinas \];/environment.systemPackages = with pkgs; \[ test-asterinas \];/" \
+          sed -i 's/environment.systemPackages = with pkgs; \[ hello-asterinas \];/environment.systemPackages = with pkgs; \[ test-asterinas \];/' \
             distro/etc_nixos/configuration.nix
 
       - name: Test nix commands
@@ -63,9 +63,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Modify configuration.nix to include test-asterinas and podman
         run: |
-          sed -i "s/environment.systemPackages = with pkgs; \[ hello-asterinas \];/environment.systemPackages = with pkgs; \[ test-asterinas \];/" \
-            distro/etc_nixos/configuration.nix
-          sed -i 's/^[[:space:]]*# virtualisation\.podman\.enable = true;/  virtualisation.podman.enable = true;/' \
+          sed -i \
+            -e 's/environment.systemPackages = with pkgs; \[ hello-asterinas \];/environment.systemPackages = with pkgs; \[ test-asterinas \];/' \
+            -e 's/^[[:space:]]*# virtualisation\.podman\.enable = true;/  virtualisation.podman.enable = true;/' \
             distro/etc_nixos/configuration.nix
 
       - name: Run podman commands
