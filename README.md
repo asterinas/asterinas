@@ -20,8 +20,6 @@ https://github.com/user-attachments/assets/26be2d18-994d-4658-a1b8-f8959bd88b75
     <br/>
 </p>
 
-English | [中文版](README_CN.md) | [日本語](README_JP.md)
-
 **News:**
 * 2025-12-08: **FAST 2026** accepted a paper on a novel secure storage solution having been integrated into Asterinas: _MlsDisk: Trusted Block Storage for TEEs Based on Layered Secure Logging_.
 * 2025-10-17: **ICSE 2026** accepted yet another paper about Asterinas: _RusyFuzz: Unhandled Exception Guided Fuzzing for Rust OS Kernel_.
