@@ -16,8 +16,8 @@ use crate::{
     },
     prelude::*,
     process::{
-        check_executable_inode,
         process_vm::{AuxKey, AuxVec},
+        program_loader::check_executable_inode,
     },
     vm::{
         perms::VmPerms,
@@ -102,7 +102,7 @@ fn lookup_and_parse_ldso(
 
     let ldso_elf = {
         let inode = ldso_file.inode();
-        check_executable_inode(inode)?;
+        check_executable_inode(inode.as_ref())?;
 
         let mut buf = Box::new([0u8; PAGE_SIZE]);
         let len = inode.read_bytes_at(0, &mut *buf)?;

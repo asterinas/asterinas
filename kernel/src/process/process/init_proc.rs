@@ -13,10 +13,11 @@ use crate::{
     },
     prelude::*,
     process::{
-        Credentials, ProgramToLoad, UserNamespace,
+        Credentials, UserNamespace,
         posix_thread::{PosixThreadBuilder, ThreadName, allocate_posix_tid},
         process_table,
         process_vm::new_vmar_and_map,
+        program_loader::ProgramToLoad,
         rlimit::new_resource_limits_for_init,
         signal::sig_disposition::SigDispositions,
     },
@@ -109,7 +110,7 @@ fn create_init_task(
     let elf_load_info = {
         let fs_resolver = fs.resolver().read();
         let program_to_load =
-            ProgramToLoad::build_from_inode(elf_path.inode(), &fs_resolver, argv, envp, 1)?;
+            ProgramToLoad::build_from_inode(elf_path.inode().clone(), &fs_resolver, argv, envp)?;
         let vmar = process.lock_vmar();
         program_to_load.load_to_vmar(vmar.unwrap(), &fs_resolver)?
     };

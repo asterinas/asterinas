@@ -9,7 +9,7 @@ use crate::{
         fs_resolver::{AT_FDCWD, FsPath, PathOrInode},
     },
     prelude::*,
-    process::{check_executable_inode, do_execve},
+    process::do_execve,
 };
 
 pub fn sys_execve(
@@ -73,9 +73,6 @@ fn lookup_executable_file(
             fs_resolver.lookup_inode(&fs_path)?
         }
     };
-
-    let inode = path_or_inode.inode();
-    check_executable_inode(inode)?;
 
     Ok(path_or_inode)
 }
