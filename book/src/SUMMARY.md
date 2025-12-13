@@ -5,6 +5,10 @@
 # Asterinas NixOS
 
 * [Getting Started](distro/README.md)
+* [Popular Applications](distro/popular-applications/README.md)
+    * [Package Management](distro/popular-applications/package-management.md)
+    * [Desktop Environment](distro/popular-applications/desktop-environment.md)
+    * [Containerization](distro/popular-applications/containerization.md)
 
 # Asterinas Kernel
 
