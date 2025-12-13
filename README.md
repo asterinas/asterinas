@@ -1,6 +1,16 @@
 <p align="center">
     <img src="book/src/images/logo_en.svg" alt="asterinas-logo" width="620"><br>
     A secure, fast, and general-purpose OS kernel written in Rust and compatible with Linux<br/>
+</p>
+
+<!-- Asterinas NixOS 0.17.0 demo. It is uploaded as a Github attachment
+so that GitHub will render that URL as a video player in Markdown.
+The original file name will be displayed up in the top bar of the video player.
+So make sure you give the video file a cool name before uploading it.
+-->
+https://github.com/user-attachments/assets/26be2d18-994d-4658-a1b8-f8959bd88b75
+
+<p align="center">
     <a href="https://github.com/asterinas/asterinas/actions/workflows/test_x86.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_x86.yml/badge.svg?event=push" alt="Test x86-64" style="max-width: 100%;"></a>
     <a href="https://github.com/asterinas/asterinas/actions/workflows/test_riscv.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_riscv.yml/badge.svg?event=push" alt="Test riscv64" style="max-width: 100%;"></a>
     <a href="https://github.com/asterinas/asterinas/actions/workflows/test_loongarch.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_loongarch.yml/badge.svg?event=push" alt="Test loongarch64" style="max-width: 100%;"></a>
