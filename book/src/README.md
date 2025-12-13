@@ -10,9 +10,17 @@ focused on developing cutting-edge Rust OS kernels.
 
 ## Book Structure
 
-This book is divided into five distinct parts:
+This book is divided into six distinct parts:
 
-#### [Part 1: Asterinas Kernel](kernel/)
+#### [Part 1: Asterinas NixOS](distro/)
+
+Asterinas NixOS is the first distribution built on top of the Asterinas kernel.
+It is based on NixOS,
+leveraging its powerful configuration model
+and rich package ecosystem,
+while swapping out the Linux kernel for Asterinas.
+
+#### [Part 2: Asterinas Kernel](kernel/)
 
 Explore the modern OS kernel at the heart of Asterinas.
 Designed to realize the full potential of Rust,
@@ -20,7 +28,7 @@ Asterinas Kernel implements the Linux ABI in a safe and efficient way.
 This means it can seamlessly replace Linux,
 offering enhanced safety and security.
 
-#### [Part 2: Asterinas OSTD](ostd/)
+#### [Part 3: Asterinas OSTD](ostd/)
 
 The Asterinas OSTD lays down a minimalistic, powerful, and solid foundation
 for OS development.
@@ -28,7 +36,7 @@ It's akin to Rust's `std` crate
 but crafted for the demands of _safe_ Rust OS development.
 The Asterinas Kernel is built on this very OSTD.
 
-#### [Part 3: Asterinas OSDK](osdk/guide/)
+#### [Part 4: Asterinas OSDK](osdk/guide/)
 
 The OSDK is a command-line tool
 that streamlines the workflow to 
@@ -38,14 +46,14 @@ Developed specifically for OS developers,
 it extends Rust's Cargo tool to better suite their specific needs.
 OSDK is instrumental in the development of Asterinas Kernel.
 
-#### [Part 4: Contributing to Asterinas](to-contribute/)
+#### [Part 5: Contributing to Asterinas](to-contribute/)
 
 Asterinas is in its early stage
 and welcomes your contributions!
 This part provides guidance
 on how you can become an integral part of the Asterinas project.
 
-#### [Part 5: Requests for Comments (RFCs)](rfcs/)
+#### [Part 6: Requests for Comments (RFCs)](rfcs/)
 
 Significant decisions in Asterinas are made through a transparent RFC process.
 This part describes the RFC process

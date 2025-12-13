@@ -2,6 +2,10 @@
 
 [Introduction](README.md)
 
+# Asterinas NixOS
+
+* [Getting Started](distro/README.md)
+
 # Asterinas Kernel
 
 * [Getting Started](kernel/README.md)
