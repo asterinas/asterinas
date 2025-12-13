@@ -73,36 +73,36 @@ Follow the steps below to get Asterinas up and running.
 
 1. Download the latest source code on an x86-64 Linux machine:
 
-```bash
-git clone https://github.com/asterinas/asterinas
-```
+    ```bash
+    git clone https://github.com/asterinas/asterinas
+    ```
 
 2. Run a Docker container as the development environment:
 
-```bash
-docker run -it --privileged --network=host -v /dev:/dev -v $(pwd)/asterinas:/root/asterinas asterinas/asterinas:0.16.2-20251211
-```
+    ```bash
+    docker run -it --privileged --network=host -v /dev:/dev -v $(pwd)/asterinas:/root/asterinas asterinas/asterinas:0.16.2-20251211
+    ```
 
 3. Inside the container,
 go to the project folder (`/root/asterinas`) and run:
 
-```bash
-make kernel
-make run_kernel
-```
+    ```bash
+    make kernel
+    make run_kernel
+    ```
 
-This results in a VM running the Asterinas kernel with a small initramfs.
+    This results in a VM running the Asterinas kernel with a small initramfs.
 
 4. To install and test real-world applications on Asterinas,
 build and run Asterinas NixOS in a VM:
 
-```bash
-make nixos
-make run_nixos
-```
-
-This boots into an interactive shell in Asterinas NixOS,
-where you can use Nix to install and try more packages.
+    ```bash
+    make nixos
+    make run_nixos
+    ```
+    
+    This boots into an interactive shell in Asterinas NixOS,
+    where you can use Nix to install and try more packages.
 
 ## The Book
 

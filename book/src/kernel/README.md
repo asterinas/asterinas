@@ -37,25 +37,25 @@ Follow the three simple steps below to get Asterinas up and running.
 
 1. Download the latest source code.
 
-```bash
-git clone https://github.com/asterinas/asterinas
-```
+    ```bash
+    git clone https://github.com/asterinas/asterinas
+    ```
 
 2. Run a Docker container as the development environment.
 
-```bash
-docker run -it --privileged \
-               --network=host \
-               --device=/dev/kvm \
-               -v $(pwd)/asterinas:/root/asterinas \
-               asterinas/asterinas:0.16.2-20251211
-```
+    ```bash
+    docker run -it --privileged \
+                --network=host \
+                --device=/dev/kvm \
+                -v $(pwd)/asterinas:/root/asterinas \
+                asterinas/asterinas:0.16.2-20251211
+    ```
 
 3. Inside the container, go to the project folder to build and run Asterinas.
 
-```bash
-make kernel
-make run_kernel
-```
+    ```bash
+    make kernel
+    make run_kernel
+    ```
 
 If everything goes well, Asterinas is now up and running inside a VM.
