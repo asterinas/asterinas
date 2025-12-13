@@ -15,10 +15,10 @@ use crate::{
     },
     prelude::*,
     process::{
-        ContextUnshareAdminApi, Credentials, Process, ProgramToLoad,
+        ContextUnshareAdminApi, Credentials, Process,
         posix_thread::{PosixThread, ThreadLocal, ThreadName, sigkill_other_threads, thread_table},
         process_vm::{MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS, unshare_and_renew_vmar},
-        program_loader::elf::ElfLoadInfo,
+        program_loader::{ProgramToLoad, elf::ElfLoadInfo},
         signal::{
             HandlePendingSignal, PauseReason, SigStack,
             constants::{SIGCHLD, SIGKILL},
@@ -50,8 +50,10 @@ pub fn do_execve(
 
     let fs_ref = ctx.thread_local.borrow_fs();
     let fs_resolver = fs_ref.resolver().read();
+
     let elf_inode = elf_file.inode();
-    let program_to_load = ProgramToLoad::build_from_inode(elf_inode, &fs_resolver, argv, envp, 1)?;
+    let program_to_load =
+        ProgramToLoad::build_from_inode(elf_inode.clone(), &fs_resolver, argv, envp)?;
 
     // Ensure no other thread is concurrently performing exit_group or execve.
     // If such an operation is in progress, return EAGAIN.
