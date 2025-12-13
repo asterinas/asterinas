@@ -76,6 +76,19 @@ impl Dmar {
     pub fn new() -> Option<Self> {
         let acpi_table = super::get_acpi_tables()?;
 
+        // TODO: Prevent Iago attack: Validate DMAR table integrity and remapping structure data in Intel TDX environment.
+        // The untrusted input could provide a malicious ACPI table with:
+        // - Corrupted DMAR table structure or invalid checksum
+        // - Invalid remapping structure types (>6) causing panic in match statement
+        // - Malicious length fields causing buffer overflows or infinite loops in parsing
+        // - Out-of-bounds memory access through crafted structure lengths
+        // - Invalid IOMMU base addresses in DRHD structures pointing to critical memory regions
+        // - Excessive number of remapping structures causing memory exhaustion
+        // - Reserved memory regions (RMRR) overlapping with critical system memory
+        // - Inconsistent table length vs actual structure data causing parsing errors
+        // Consider implementing: checksum verification, bounds checking on structure lengths,
+        // validation of remapping structure types before match, IOMMU address range validation,
+        // reasonable limits on structure counts, and safe parsing with error handling instead of panic.
         let dmar_mapping = acpi_table.find_table::<DmarHeader>().ok()?;
 
         let header = *dmar_mapping;

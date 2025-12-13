@@ -200,6 +200,10 @@ impl IoApicAccess {
             //    problems, so the pages are not trivially untyped memory. However, since
             //    `io_mem_builder.remove()` ensures exclusive ownership, it's still fine to
             //    unprotect only once, before the I/O memory is used.
+            // TODO: Prevent Iago attack: unprotect_gpa_range() exposes I/O APIC registers to untrusted VMM manipulation.
+            // Critical risks: interrupt routing tampering, register access monitoring, and
+            // side-channel attacks through MMIO access patterns. All subsequent MMIO operations
+            // (read/write) are vulnerable to VMM interference and require validation.
             unsafe { tdx_guest::unprotect_gpa_range(base_address, 1).unwrap() };
         });
 
