@@ -48,7 +48,7 @@ Follow the three simple steps below to get Asterinas up and running.
                 --network=host \
                 --device=/dev/kvm \
                 -v $(pwd)/asterinas:/root/asterinas \
-                asterinas/asterinas:0.16.2-20251211
+                asterinas/asterinas:0.17.0-20251213
     ```
 
 3. Inside the container, go to the project folder to build and run Asterinas.

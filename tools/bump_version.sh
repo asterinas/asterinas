@@ -124,7 +124,7 @@ update_all_docker_version_refs() {
 
     # Update Docker image versions in the Book
     update_image_versions ${BOOK_DIR}/src/kernel/README.md
-    update_image_versions ${BOOK_DIR}/src/kernel/intel_tdx.md
+    update_image_versions ${BOOK_DIR}/src/kernel/intel-tdx.md
     update_image_versions ${BOOK_DIR}/src/osdk/guide/intel-tdx.md
 
     # Update Docker image versions in workflows
