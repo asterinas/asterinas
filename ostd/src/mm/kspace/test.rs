@@ -27,7 +27,7 @@ fn kvirt_area_tracked_map_pages() {
 
     let kvirt_area = KVirtArea::map_frames(size, 0, frames.into_iter(), default_prop());
 
-    assert_eq!(kvirt_area.len(), size);
+    assert_eq!(kvirt_area.size(), size);
     assert!(kvirt_area.start() >= VMALLOC_VADDR_RANGE.start);
     assert!(kvirt_area.end() <= VMALLOC_VADDR_RANGE.end);
 
@@ -50,7 +50,7 @@ fn kvirt_area_untracked_map_pages() {
     let kvirt_area =
         unsafe { KVirtArea::map_untracked_frames(size, 0, pa_range.clone(), default_prop()) };
 
-    assert_eq!(kvirt_area.len(), size);
+    assert_eq!(kvirt_area.size(), size);
     assert!(kvirt_area.start() >= VMALLOC_VADDR_RANGE.start);
     assert!(kvirt_area.end() <= VMALLOC_VADDR_RANGE.end);
 

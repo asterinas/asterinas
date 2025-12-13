@@ -135,10 +135,10 @@ pub fn paddr_to_vaddr(pa: Paddr) -> usize {
 ///
 /// It manages the kernel mapping of all address spaces by sharing the kernel part. And it
 /// is unlikely to be activated.
-pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelPtConfig>> = Once::new();
+pub(super) static KERNEL_PAGE_TABLE: Once<PageTable<KernelPtConfig>> = Once::new();
 
 #[derive(Clone, Debug)]
-pub(crate) struct KernelPtConfig {}
+pub(super) struct KernelPtConfig {}
 
 // We use the first available PTE bit to mark the frame as tracked.
 // SAFETY: `item_into_raw` and `item_from_raw` are implemented correctly,
@@ -181,7 +181,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum MappedItem {
+pub(super) enum MappedItem {
     Tracked(Frame<dyn AnyFrameMeta>, PageProperty),
     Untracked(Paddr, PagingLevel, PageProperty),
 }

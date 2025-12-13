@@ -24,7 +24,7 @@ use log::{debug, info};
 use ostd::{
     Pod,
     arch::trap::TrapFrame,
-    mm::{DmaDirection, DmaStream, FrameAllocOptions, HasSize, VmIo},
+    mm::{FrameAllocOptions, HasSize, VmIo, dma::DmaStream},
     sync::SpinLock,
 };
 
@@ -238,12 +238,12 @@ impl DeviceInner {
             .expect("create virtqueue failed");
         let block_requests = {
             let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-            Arc::new(DmaStream::map(segment.into(), DmaDirection::Bidirectional, false).unwrap())
+            Arc::new(DmaStream::map(segment.into(), false))
         };
         assert!(Self::QUEUE_SIZE as usize * REQ_SIZE <= block_requests.size());
         let block_responses = {
             let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-            Arc::new(DmaStream::map(segment.into(), DmaDirection::Bidirectional, false).unwrap())
+            Arc::new(DmaStream::map(segment.into(), false))
         };
         assert!(Self::QUEUE_SIZE as usize * RESP_SIZE <= block_responses.size());
 
