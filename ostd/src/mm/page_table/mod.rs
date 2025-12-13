@@ -19,10 +19,12 @@ use super::{
 use crate::{
     Pod,
     arch::mm::{PageTableEntry, PagingConsts},
+    mm::page_prop::PageTableFlags,
     task::{atomic_mode::AsAtomicModeGuard, disable_preempt},
 };
 
 mod node;
+
 use node::*;
 mod cursor;
 
@@ -54,12 +56,16 @@ pub enum PageTableError {
 ///
 /// # Safety
 ///
-/// The implementor must ensure that the `item_into_raw` and `item_from_raw`
-/// are implemented correctly so that:
-///  - `item_into_raw` consumes the ownership of the item;
+/// The implementor must ensure that `item_raw_info`, `item_into_raw`,
+/// `item_from_raw` and `item_ref_from_raw` are implemented correctly so that:
+///  - `item_into_raw` is not overridden;
+///  - `item_raw_info` returns the exact same values as if called with
+///    `item_into_raw`;
 ///  - if the provided raw form matches the item that was consumed by
 ///    `item_into_raw`, `item_from_raw` restores the exact item that was
 ///    consumed by `item_into_raw`.
+///  - `Item` and `ItemRef` can be converted to each other (by either borrowing
+///    or cloning) without changing the raw form.
 pub(crate) unsafe trait PageTableConfig:
     Clone + Debug + Send + Sync + 'static
 {
@@ -79,7 +85,7 @@ pub(crate) unsafe trait PageTableConfig:
     const TOP_LEVEL_CAN_UNMAP: bool = true;
 
     /// The type of the page table entry.
-    type E: PageTableEntryTrait;
+    type E: PteTrait;
 
     /// The paging constants.
     type C: PagingConstsTrait;
@@ -96,14 +102,23 @@ pub(crate) unsafe trait PageTableConfig:
     ///
     /// [`item_from_raw`]: PageTableConfig::item_from_raw
     /// [`item_into_raw`]: PageTableConfig::item_into_raw
-    type Item: Clone;
+    type Item;
+    /// The reference type of the [`PageTableConfig::Item`].
+    type ItemRef<'a>;
+
+    /// Gets the physical address, the paging level, and the page property of
+    /// the item.
+    fn item_raw_info(item: &Self::Item) -> (Paddr, PagingLevel, PageProperty);
 
     /// Consumes the item and returns the physical address, the paging level,
     /// and the page property.
     ///
     /// The ownership of the item will be consumed, i.e., the item will be
     /// forgotten after this function is called.
-    fn item_into_raw(item: Self::Item) -> (Paddr, PagingLevel, PageProperty);
+    fn item_into_raw(item: Self::Item) -> (Paddr, PagingLevel, PageProperty) {
+        let item = core::mem::ManuallyDrop::new(item);
+        Self::item_raw_info(&*item)
+    }
 
     /// Restores the item from the physical address and the paging level.
     ///
@@ -123,11 +138,28 @@ pub(crate) unsafe trait PageTableConfig:
     ///  - the physical address and the paging level represent a page table
     ///    item or part of it (as described above);
     ///  - either the ownership of the item is properly transferred to the
-    ///    return value, or the return value is wrapped in a
-    ///    [`core::mem::ManuallyDrop`] that won't outlive the original item;
-    ///  - the [`super::PageFlags::AVAIL1`] flag is preserved, i.e., it is
-    ///    the same as that returned from [`PageTableConfig::item_into_raw`].
+    ///    return value;
+    ///  - the [`super::PrivilegedPageFlags::AVAIL1`] flag is preserved, i.e.,
+    ///    it is the same as that returned from
+    ///    [`PageTableConfig::item_into_raw`].
     unsafe fn item_from_raw(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self::Item;
+
+    /// Restores a reference to the item from the physical address and the
+    /// paging level.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    ///  - the physical address and the paging level represent a page table
+    ///    item or part of it (as described in [`item_from_raw`]);
+    ///  - the returned reference `'a` does not outlive the original item;
+    ///  - the [`super::PrivilegedPageFlags::AVAIL1`] flag is preserved, as
+    ///    described in [`PageTableConfig::item_from_raw`].
+    unsafe fn item_ref_from_raw<'a>(
+        paddr: Paddr,
+        level: PagingLevel,
+        prop: PageProperty,
+    ) -> Self::ItemRef<'a>;
 }
 
 // Implement it so that we can comfortably use low level functions
@@ -333,7 +365,7 @@ impl PageTable<KernelPtConfig> {
         for i in KernelPtConfig::TOP_LEVEL_INDEX_RANGE {
             let root_entry = root_node.entry(i);
             let child = root_entry.to_ref();
-            let ChildRef::PageTable(pt) = child else {
+            let PteStateRef::PageTable(pt) = child else {
                 panic!("The kernel page table doesn't contain shared nodes");
             };
 
@@ -342,7 +374,11 @@ impl PageTable<KernelPtConfig> {
             // outlive the kernel page table, which is trivially true.
             // See also `<PageTablePageMeta as AnyFrameMeta>::on_drop`.
             let pt_addr = pt.paddr();
-            let pte = PageTableEntry::new_pt(pt_addr);
+            let pte = PageTableEntry::from_repr(&PteScalar::PageTable(
+                pt_addr,
+                UserPtConfig::NR_LEVELS,
+                PageTableFlags::empty(),
+            ));
             // SAFETY: The index is within the bounds and the PTE is at the
             // correct paging level. However, neither it's a `UserPtConfig`
             // child nor the node has the ownership of the child. It is
@@ -491,71 +527,70 @@ pub(super) unsafe fn page_walk<C: PageTableConfig>(
         //  - All page table entries are aligned and accessed with atomic operations only.
         let cur_pte = unsafe { load_pte((pt_addr as *mut C::E).add(offset), Ordering::Acquire) };
 
-        if !cur_pte.is_present() {
-            return None;
+        match cur_pte.to_repr(cur_level) {
+            PteScalar::Absent => return None,
+            PteScalar::PageTable(next_pt_addr, _, _) => {
+                pt_addr = paddr_to_vaddr(next_pt_addr);
+                continue;
+            }
+            PteScalar::Mapped(frame_paddr, _, prop) => {
+                debug_assert!(cur_level <= C::HIGHEST_TRANSLATION_LEVEL);
+                return Some((
+                    frame_paddr + (vaddr & (page_size::<C>(cur_level) - 1)),
+                    prop,
+                ));
+            }
         }
-
-        if cur_pte.is_last(cur_level) {
-            debug_assert!(cur_level <= C::HIGHEST_TRANSLATION_LEVEL);
-            return Some((
-                cur_pte.paddr() + (vaddr & (page_size::<C>(cur_level) - 1)),
-                cur_pte.prop(),
-            ));
-        }
-
-        pt_addr = paddr_to_vaddr(cur_pte.paddr());
     }
 
     unreachable!("All present PTEs at the level 1 must be last-level PTEs");
 }
 
+/// The scalar representation of a page table entry (PTE).
+///
+/// This is an architecture-agnostic representation that can be converted
+/// to/from architecture-specific PTEs via the [`PteTrait`]. This is a scalar
+/// value that can be cloned or compared, and does not own the underlying page
+/// table node or mapped item if present.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PteScalar {
+    /// A PTE that is considered absent by the MMU.
+    Absent,
+    /// A PTE that points to the next-level page table.
+    ///
+    /// The level is the level of the current page table entry.
+    PageTable(Paddr, PagingLevel, PageTableFlags),
+    /// A PTE that establishes the mapping to a physical frame.
+    ///
+    /// The level is the level of the current page table entry.
+    Mapped(Paddr, PagingLevel, PageProperty),
+}
+
 /// A trait that abstracts architecture-specific page table entries (PTEs).
 ///
-/// Note that a default PTE should be a PTE that points to nothing.
-pub trait PageTableEntryTrait:
-    Clone + Copy + Debug + Default + Pod + PodOnce + Sized + Send + Sync + 'static
+/// A PTE refers to an entry in any level of a page table. This trait requires
+/// that any architecture-specific PTEs are scalar types that essentially
+/// encodes [`PteScalar`].
+///
+/// # Safety
+///
+/// An implementor must ensure that:
+///  - the methods `as_usize` and `from_usize` are not overridden;
+///  - a zeroed PTE represents an absent entry;
+///  - the return value of `from_repr`, when called with `repr`, should return
+///    the same [`PteScalar`] that is passed to `from_repr`, if the
+///    level passed to `repr` is the same as that passed to `from_repr`.
+pub(crate) unsafe trait PteTrait:
+    Clone + Copy + Debug + Pod + PodOnce + Sized + Send + Sync + 'static
 {
-    /// Creates a PTE that points to nothing.
+    /// Returns architecture-specific representation of the PTE.
+    fn from_repr(repr: &PteScalar) -> Self;
+
+    /// Returns the representation of the PTE.
     ///
-    /// Note that currently the implementation requires a zeroed PTE to be an absent PTE.
-    fn new_absent() -> Self {
-        Self::default()
-    }
-
-    /// Returns if the PTE points to something.
-    ///
-    /// For PTEs created by [`Self::new_absent`], this method should return
-    /// false. For PTEs created by [`Self::new_page`] or [`Self::new_pt`]
-    /// and modified with [`Self::set_prop`], this method should return true.
-    fn is_present(&self) -> bool;
-
-    /// Creates a new PTE that maps to a page.
-    fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self;
-
-    /// Creates a new PTE that maps to a child page table.
-    fn new_pt(paddr: Paddr) -> Self;
-
-    /// Returns the physical address from the PTE.
-    ///
-    /// The physical address recorded in the PTE is either:
-    /// - the physical address of the next-level page table, or
-    /// - the physical address of the page that the PTE maps to.
-    fn paddr(&self) -> Paddr;
-
-    /// Returns the page property of the PTE.
-    fn prop(&self) -> PageProperty;
-
-    /// Sets the page property of the PTE.
-    ///
-    /// This methold has an impact only if the PTE is present. If not, this
-    /// method will do nothing.
-    fn set_prop(&mut self, prop: PageProperty);
-
-    /// Returns if the PTE maps a page rather than a child page table.
-    ///
-    /// The method needs to know the level of the page table where the PTE resides,
-    /// since architectures like x86-64 have a huge bit only in intermediate levels.
-    fn is_last(&self, level: PagingLevel) -> bool;
+    /// The caller must ensure that the level is the correct level of the PTE,
+    /// otherwise the implementation can return arbitrary value.
+    fn to_repr(&self, level: PagingLevel) -> PteScalar;
 
     /// Converts the PTE into a raw `usize` value.
     fn as_usize(self) -> usize {
@@ -579,7 +614,7 @@ pub trait PageTableEntryTrait:
 /// # Safety
 ///
 /// The safety preconditions are same as those of [`AtomicUsize::from_ptr`].
-pub unsafe fn load_pte<E: PageTableEntryTrait>(ptr: *mut E, ordering: Ordering) -> E {
+pub unsafe fn load_pte<E: PteTrait>(ptr: *mut E, ordering: Ordering) -> E {
     // SAFETY: The safety is upheld by the caller.
     let atomic = unsafe { AtomicUsize::from_ptr(ptr.cast()) };
     let pte_raw = atomic.load(ordering);
@@ -591,7 +626,7 @@ pub unsafe fn load_pte<E: PageTableEntryTrait>(ptr: *mut E, ordering: Ordering) 
 /// # Safety
 ///
 /// The safety preconditions are same as those of [`AtomicUsize::from_ptr`].
-pub unsafe fn store_pte<E: PageTableEntryTrait>(ptr: *mut E, new_val: E, ordering: Ordering) {
+pub unsafe fn store_pte<E: PteTrait>(ptr: *mut E, new_val: E, ordering: Ordering) {
     let new_raw = new_val.as_usize();
     // SAFETY: The safety is upheld by the caller.
     let atomic = unsafe { AtomicUsize::from_ptr(ptr.cast()) };
