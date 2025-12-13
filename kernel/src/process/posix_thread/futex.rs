@@ -8,11 +8,8 @@ use ostd::{
 use spin::Once;
 
 use crate::{
-    prelude::*,
-    process::Pid,
-    thread::exception::PageFaultInfo,
-    time::wait::ManagedTimeout,
-    vm::{page_fault_handler::PageFaultHandler, perms::VmPerms},
+    prelude::*, process::Pid, thread::exception::PageFaultInfo, time::wait::ManagedTimeout,
+    vm::perms::VmPerms,
 };
 
 type FutexBitSet = u32;
