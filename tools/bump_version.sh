@@ -14,7 +14,7 @@ set -e
 # Options:
 #   major, minor, patch, date                        The version part to increment when bumping the Docker image version
 
-# TODO: we may remove the VERSION file in the future, 
+# TODO: we may remove the VERSION file in the future,
 # and retrieve the current version from git tag.
 
 # Update the package version (`version = "{version}"`) in file $1
@@ -120,8 +120,6 @@ update_all_docker_version_refs() {
 
     # Update Docker image versions in README files
     update_image_versions ${ASTER_SRC_DIR}/README.md
-    update_image_versions ${ASTER_SRC_DIR}/README_CN.md
-    update_image_versions ${ASTER_SRC_DIR}/README_JP.md
     update_image_versions ${SCRIPT_DIR}/docker/README.md
 
     # Update Docker image versions in the Book
