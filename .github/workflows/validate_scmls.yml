@@ -6,12 +6,14 @@ on:
     paths:
       - tools/sctrace/**
       - book/src/kernel/linux-compatibility/syscall-flag-coverage/**
+      - .github/workflows/validate_scmls.yml
   push:
     branches:
       - main
     paths:
       - tools/sctrace/**
       - book/src/kernel/linux-compatibility/syscall-flag-coverage/**
+      - .github/workflows/validate_scmls.yml
 
 jobs:
   validate_scmls:
@@ -21,4 +23,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate SCML files with sctrace
-        run: ./tools/sctrace.sh $ASTER_SCML -- echo "Asterinas"
+        run: |
+          export ASTER_SCML=$(find ./book/src/kernel/linux-compatibility/ -name "*.scml")
+          ./tools/sctrace.sh $ASTER_SCML -- echo "Asterinas"
