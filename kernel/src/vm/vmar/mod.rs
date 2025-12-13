@@ -29,7 +29,7 @@ use super::page_fault_handler::PageFaultHandler;
 use crate::{
     fs::{file_handle::Mappable, ramfs::memfd::MemfdInode},
     prelude::*,
-    process::{Process, ProcessVm, ResourceType},
+    process::{INIT_STACK_SIZE, Process, ProcessVm, ResourceType},
     thread::exception::PageFaultInfo,
     vm::{perms::VmPerms, vmo::Vmo},
 };
@@ -418,7 +418,7 @@ impl Vmar {
                 return Ok(old_range.start);
             }
 
-            inner.alloc_free_region(new_size, PAGE_SIZE)?
+            inner.alloc_free_region_topdown(new_size, PAGE_SIZE)?
         };
 
         // Create a new `VmMapping`.
@@ -872,6 +872,67 @@ impl VmarInner {
         return_errno_with_message!(Errno::ENOMEM, "Cannot find free region for mapping");
     }
 
+    /// Allocates a free region for mapping, searching from high address to low address.
+    ///
+    /// If no such region is found, return an error.
+    fn alloc_free_region_topdown(&mut self, size: usize, align: usize) -> Result<Range<Vaddr>> {
+        // This value represents the highest possible address for a new mapping.
+        // For simplicity, we use a fixed value `512` here. The value contains the following considerations:
+        // - The stack fixed padding size.
+        // - The stack random padding size.
+        // - The future growth of the stack.
+        // FIXME: This value should consider the process's actual stack configuration, which may
+        // exist in ResourceLimits.
+        let high_limit = VMAR_CAP_ADDR - INIT_STACK_SIZE - PAGE_SIZE * 512;
+
+        let low_limit = VMAR_LOWEST_ADDR;
+        let try_alloc_in_hole_topdown = |hole_start: Vaddr,
+                                         hole_end: Vaddr,
+                                         size: usize,
+                                         align: usize|
+         -> Option<Range<Vaddr>> {
+            if hole_start < hole_end {
+                let max_start = hole_end.checked_sub(size)?;
+                let max_start_aligned = max_start.align_down(align);
+                let max_end = max_start_aligned.checked_add(size)?;
+
+                if max_start_aligned >= hole_start && max_end <= hole_end {
+                    return Some(max_start_aligned..max_end);
+                }
+            }
+            None
+        };
+
+        let mut prev_vm_mapping_start = high_limit;
+        for vm_mapping in self.vm_mappings.iter().rev() {
+            let hole_start = vm_mapping.range().end.max(low_limit);
+            let hole_end = prev_vm_mapping_start.min(high_limit);
+
+            if let Some(region) = try_alloc_in_hole_topdown(hole_start, hole_end, size, align) {
+                return Ok(region);
+            }
+
+            prev_vm_mapping_start = vm_mapping.range().start;
+            if prev_vm_mapping_start <= low_limit {
+                break;
+            }
+        }
+
+        // Check the hole between `low_limit` and the lowest mapping.
+        if prev_vm_mapping_start > low_limit {
+            let hole_start = low_limit;
+            let hole_end = prev_vm_mapping_start.min(high_limit);
+            if let Some(region) = try_alloc_in_hole_topdown(hole_start, hole_end, size, align) {
+                return Ok(region);
+            }
+        }
+
+        return_errno_with_message!(
+            Errno::ENOMEM,
+            "Cannot find free region for mapping (topdown)"
+        );
+    }
+
     /// Splits and unmaps the found mapping if the new size is smaller.
     /// Enlarges the last mapping if the new size is larger.
     fn resize_mapping(
@@ -1018,6 +1079,8 @@ pub struct VmarMapOptions<'a> {
     is_shared: bool,
     // Whether the mapping needs to handle surrounding pages when handling page fault.
     handle_page_faults_around: bool,
+    // Whether to allocate the mapping from high address to low address.
+    topdown: bool,
 }
 
 impl<'a> VmarMapOptions<'a> {
@@ -1037,6 +1100,7 @@ impl<'a> VmarMapOptions<'a> {
             can_overwrite: false,
             is_shared: false,
             handle_page_faults_around: false,
+            topdown: true,
         }
     }
 
@@ -1171,6 +1235,15 @@ impl<'a> VmarMapOptions<'a> {
         self
     }
 
+    /// Sets whether to allocate the mapping from high address to low address.
+    ///
+    /// The default value is true.
+    #[expect(dead_code)]
+    pub fn topdown(mut self, topdown: bool) -> Self {
+        self.topdown = topdown;
+        self
+    }
+
     /// Creates the mapping and adds it to the parent VMAR.
     ///
     /// All options will be checked at this point.
@@ -1191,6 +1264,7 @@ impl<'a> VmarMapOptions<'a> {
             can_overwrite,
             is_shared,
             handle_page_faults_around,
+            topdown,
         } = self;
 
         let mut inner = parent.inner.write();
@@ -1232,7 +1306,11 @@ impl<'a> VmarMapOptions<'a> {
             inner.alloc_free_region_exact(offset, map_size)?;
             offset
         } else {
-            let free_region = inner.alloc_free_region(map_size, align)?;
+            let free_region = if !topdown {
+                inner.alloc_free_region(map_size, align)?
+            } else {
+                inner.alloc_free_region_topdown(map_size, align)?
+            };
             free_region.start
         };
 

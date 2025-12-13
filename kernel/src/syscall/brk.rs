@@ -15,9 +15,9 @@ pub fn sys_brk(heap_end: u64, ctx: &Context) -> Result<SyscallReturn> {
 
     let syscall_ret = match new_heap_end {
         Some(addr) => user_heap
-            .set_program_break(addr, ctx)
+            .modify_heap_end(addr, ctx)
             .unwrap_or_else(|current_break| current_break),
-        None => user_heap.program_break(),
+        None => user_heap.heap_end(),
     };
 
     Ok(SyscallReturn::Return(syscall_ret as _))
