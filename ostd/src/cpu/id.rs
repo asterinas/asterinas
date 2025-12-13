@@ -72,7 +72,7 @@ pub fn num_cpus() -> usize {
 static mut NUM_CPUS: u32 = 1;
 
 /// Returns an iterator over all CPUs.
-pub fn all_cpus() -> impl Iterator<Item = CpuId> {
+pub fn all_cpus() -> impl ExactSizeIterator<Item = CpuId> + Clone {
     (0..num_cpus()).map(|raw_id| {
         // SAFETY: The raw ID is smaller than `num_cpus()`.
         unsafe { CpuId::new_unchecked(raw_id as u32) }

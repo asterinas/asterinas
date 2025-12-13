@@ -39,7 +39,8 @@ pub use self::{
     },
     kspace::{KERNEL_VADDR_RANGE, MAX_USERSPACE_VADDR},
     mem_obj::{HasDaddr, HasPaddr, HasPaddrRange, HasSize},
-    page_prop::{CachePolicy, PageFlags, PageProperty},
+    page_prop::{CachePolicy, PageFlags, PageProperty, PageTableFlags},
+    page_table::{AuxPageTableMeta, AuxPtMetaLayoutChecked, PageTableFrameMeta},
     vm_space::VmSpace,
 };
 pub(crate) use self::{
@@ -61,7 +62,7 @@ pub type PagingLevel = u8;
 
 /// A minimal set of constants that determines the paging system.
 /// This provides an abstraction over most paging modes in common architectures.
-pub(crate) trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
+pub(crate) trait PagingConstsTrait: Debug + Send + Sync + 'static {
     /// The smallest page size.
     /// This is also the page size at level 1 page tables.
     const BASE_PAGE_SIZE: usize;
@@ -99,7 +100,12 @@ pub(crate) trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
 }
 
 /// The page size
-pub const PAGE_SIZE: usize = page_size::<PagingConsts>(1);
+pub const PAGE_SIZE: usize = page_size_at(1);
+
+/// The page size at a given level.
+pub const fn page_size_at(level: PagingLevel) -> usize {
+    page_size::<PagingConsts>(level)
+}
 
 /// The page size at a given level.
 pub(crate) const fn page_size<C: PagingConstsTrait>(level: PagingLevel) -> usize {
