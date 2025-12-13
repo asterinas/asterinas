@@ -12,13 +12,13 @@ use crate::prelude::*;
 /// file, then `Err(_)` is returned. If the buffer does not start with `#!`,
 /// then `Ok(None)` is returned.
 pub fn parse_shebang_line(file_first_page: &[u8]) -> Result<Option<Vec<CString>>> {
-    if !file_first_page.starts_with(b"#!") || !file_first_page.contains(&b'\n') {
+    if !file_first_page.starts_with(b"#!") {
         // The file is not a shebang.
         return Ok(None);
     }
 
     let Some(first_line_len) = file_first_page.iter().position(|&c| c == b'\n') else {
-        return_errno_with_message!(Errno::ENAMETOOLONG, "the shebang line is too long");
+        return_errno_with_message!(Errno::ENOEXEC, "the shebang line is too long");
     };
 
     // Skip `#!`.
