@@ -1,6 +1,6 @@
 [package]
 name = "ostd-test"
-version = "0.16.2"
+version = "0.17.0"
 edition = "2024"
 description = "The kernel mode unit testing framework of OSTD"
 license = "MPL-2.0"

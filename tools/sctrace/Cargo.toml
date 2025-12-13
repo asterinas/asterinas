@@ -1,6 +1,6 @@
 [package]
 name = "sctrace"
-version = "0.16.2"
+version = "0.17.0"
 edition = "2024"
 description = "Syscall Compatibility Tracer (sctrace) that analyzes and validates system call against System Call Matching Language (SCML)"
 license = "MPL-2.0"
