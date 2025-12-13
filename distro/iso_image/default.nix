@@ -18,8 +18,8 @@ let
     environment.systemPackages = [ installer ];
     environment.loginShellInit = ''
       if [ ! -e "$HOME/configuration.nix" ]; then
-        # Copy the default configuration.nix to user's home directory.
-        cp -L ${installer}/etc_nixos/configuration.nix $HOME
+        # Create an editable copy of configuration.nix in user's home.
+        cp -L ${installer}/etc_nixos/configuration.nix $HOME && chmod u+w $HOME/configuration.nix
       fi
 
       ${pkgs.lib.optionalString autoInstall ''
