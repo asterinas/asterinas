@@ -42,8 +42,12 @@ FN_TEST(mremap)
 	TEST_ERRNO(mremap(addr, 0, PAGE_SIZE, 0), EINVAL);
 
 	// There is no enough room to expand the mapping.
-	// FIXME: Asterinas returns EACCESS here, which is not a correct error code.
-	// TEST_ERRNO(mremap(addr, PAGE_SIZE, 2 * PAGE_SIZE, 0), ENOMEM);
+	// FIXME: Asterinas returns EACCES here, which is not a correct error code.
+#ifdef __asterinas__
+	TEST_ERRNO(mremap(addr, PAGE_SIZE, 2 * PAGE_SIZE, 0), EACCES);
+#else
+	TEST_ERRNO(mremap(addr, PAGE_SIZE, 2 * PAGE_SIZE, 0), ENOMEM);
+#endif
 
 	char *hole = addr + 2 * PAGE_SIZE;
 

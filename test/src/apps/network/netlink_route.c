@@ -224,7 +224,11 @@ FN_TEST(get_link_error)
 	// Invalid name attribute (too short) with index
 	req.ifi.ifi_index = 1234;
 	// FIXME: Asterinas will report `EINVAL` because it performs strict validation.
-	// TEST_ERROR_SEGMENT(ENODEV);
+#ifdef __asterinas__
+	TEST_ERROR_SEGMENT(EINVAL);
+#else
+	TEST_ERROR_SEGMENT(ENODEV);
+#endif
 
 	// Invalid name attribute (too long) with index
 	req.hdr.nlmsg_len = sizeof(struct nl_req) + 1;
