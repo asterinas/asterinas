@@ -243,14 +243,15 @@ FN_TEST(bind_reuseaddr)
 
 	TEST_ERRNO(bind(sk2, psaddr, addrlen), EADDRINUSE);
 
+	TEST_SUCC(setsockopt(sk1, SOL_SOCKET, SO_REUSEADDR, &disable,
+			     sizeof(disable)));
+	TEST_SUCC(setsockopt(sk2, SOL_SOCKET, SO_REUSEADDR, &enable,
+			     sizeof(enable)));
 	// FIXME: The test will fail in Asterinas since it doesn't check
-	// if the previous socket was bound with `SO_REUSEADDR`
-	//
-	// TEST_SUCC(setsockopt(sk1, SOL_SOCKET, SO_REUSEADDR, &disable,
-	// 		     sizeof(disable)));
-	// TEST_SUCC(setsockopt(sk2, SOL_SOCKET, SO_REUSEADDR, &enable,
-	// 		     sizeof(enable)));
-	// TEST_ERRNO(bind(sk2, psaddr, addrlen), EADDRINUSE);
+	// if the previous socket was bound with `SO_REUSEADDR`.
+#ifndef __asterinas__
+	TEST_ERRNO(bind(sk2, psaddr, addrlen), EADDRINUSE);
+#endif
 
 	TEST_SUCC(setsockopt(sk1, SOL_SOCKET, SO_REUSEADDR, &enable,
 			     sizeof(enable)));

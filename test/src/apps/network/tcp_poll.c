@@ -246,11 +246,13 @@ FN_TEST(poll_shutdown_readwrite)
 	// FIXME: This socket error should be `EPIPE`, but in Asterinas it is
 	// `ECONNRESET`. See the Linux implementation for details:
 	// <https://github.com/torvalds/linux/blob/848e076317446f9c663771ddec142d7c2eb4cb43/net/ipv4/tcp_input.c#L4553-L4555>.
-	//
-	// TEST_RES(getsockopt(sk_connect, SOL_SOCKET, SO_ERROR, &err, &errlen),
-	// 	 errlen == sizeof(err) && err == EPIPE);
+#ifdef __asterinas__
 	TEST_RES(getsockopt(sk_accept, SOL_SOCKET, SO_ERROR, &err, &errlen),
 		 errlen == sizeof(err) && err == ECONNRESET);
+#else
+	TEST_RES(getsockopt(sk_connect, SOL_SOCKET, SO_ERROR, &err, &errlen),
+		 errlen == sizeof(err) && err == EPIPE);
+#endif
 }
 END_TEST()
 

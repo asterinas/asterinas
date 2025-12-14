@@ -33,14 +33,7 @@ FN_TEST(kill_blocked_and_ignored)
 
 	signal(SIGCHLD, &signal_handler);
 
-	// FIXME: Currently, Asterinas never queues an ignored signal, so this test
-	// will fail. See the comments at `PosixThread::enqueue_signal_locked` for
-	// more details.
-	//
-	// received_signals = 0;
-	// TEST_RES(sigprocmask(SIG_UNBLOCK, &sigs, NULL), received_signals == 1);
-	//
-	sigprocmask(SIG_UNBLOCK, &sigs, NULL);
+	TEST_RES(sigprocmask(SIG_UNBLOCK, &sigs, NULL), received_signals == 1);
 }
 END_TEST()
 
