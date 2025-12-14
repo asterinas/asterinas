@@ -3,10 +3,7 @@
 #define _GNU_SOURCE
 #include <sched.h>
 #include <unistd.h>
-#include <stdlib.h>
-#include <stdio.h>
 #include <fcntl.h>
-#include <errno.h>
 #include <sys/syscall.h>
 
 #include "../test.h"
@@ -15,10 +12,12 @@ FN_TEST(set_ns_empty_flags)
 {
 	// FIXME: The following test will fail on Asterinas
 	// because it currently does not support ns file.
-	// const char *ns_path = "/proc/self/ns/user";
-	// int fd_ns = TEST_SUCC(open(ns_path, O_RDONLY));
-	// TEST_ERRNO(setns(fd_ns, 0), EINVAL);
-	// TEST_SUCC(close(fd_ns));
+#ifndef __asterinas__
+	const char *ns_path = "/proc/self/ns/user";
+	int fd_ns = TEST_SUCC(open(ns_path, O_RDONLY));
+	TEST_ERRNO(setns(fd_ns, 0), EINVAL);
+	TEST_SUCC(close(fd_ns));
+#endif
 
 	pid_t pid = getpid();
 	int pidfd = TEST_SUCC(syscall(SYS_pidfd_open, pid, 0));
@@ -33,10 +32,12 @@ FN_TEST(set_self_ns)
 	// current user namespace. This is different from other namespaces.
 	// FIXME: The following test will fail on Asterinas
 	// because it currently does not support ns file.
-	// const char *ns_path = "/proc/self/ns/user";
-	// int fd_ns = TEST_SUCC(open(ns_path, O_RDONLY));
-	// TEST_ERRNO(setns(fd_ns, CLONE_NEWUSER), EINVAL);
-	// TEST_SUCC(close(fd_ns));
+#ifndef __asterinas__
+	const char *ns_path = "/proc/self/ns/user";
+	int fd_ns = TEST_SUCC(open(ns_path, O_RDONLY));
+	TEST_ERRNO(setns(fd_ns, CLONE_NEWUSER), EINVAL);
+	TEST_SUCC(close(fd_ns));
+#endif
 
 	pid_t pid = getpid();
 	int pidfd = TEST_SUCC(syscall(SYS_pidfd_open, pid, 0));

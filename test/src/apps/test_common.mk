@@ -13,7 +13,7 @@ C_DEPS := $(addprefix $(DEP_OUTPUT_DIR)/,$(C_SRCS:%.c=%.d))
 ASM_SRCS := $(wildcard *.S)
 ASM_OBJS := $(addprefix $(OBJ_OUTPUT_DIR)/,$(ASM_SRCS:%.S=%))
 CC ?= gcc
-C_FLAGS += -Wall -Werror
+C_FLAGS += -Wall -Werror -D__asterinas__
 
 .PHONY: all
 all: $(C_OBJS) $(ASM_OBJS)

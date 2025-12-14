@@ -2,7 +2,6 @@
 
 #include "../test.h"
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -300,11 +299,15 @@ FN_TEST(nested_signals)
 	// when the thread is stopped, while Linux does not.
 	TEST_SUCC(kill(child_pid, SIGINT));
 	sleep(1);
-	// TEST_ERRNO(read(pipe_fds[0], buf, 1), EAGAIN);
+#ifndef __asterinas__
+	TEST_ERRNO(read(pipe_fds[0], buf, 1), EAGAIN);
+#endif
 
 	TEST_SUCC(kill(child_pid, SIGTRAP));
 	sleep(1);
-	// TEST_ERRNO(read(pipe_fds[0], buf, 1), EAGAIN);
+#ifndef __asterinas__
+	TEST_ERRNO(read(pipe_fds[0], buf, 1), EAGAIN);
+#endif
 
 	TEST_RES(wait4(child_pid, &status, WSTOPPED, NULL),
 		 _ret == child_pid && WIFSTOPPED(status) &&

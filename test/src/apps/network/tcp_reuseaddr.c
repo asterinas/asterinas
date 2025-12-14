@@ -77,7 +77,9 @@ FN_TEST(bind_to_listening_port)
 
 	// Currently, Asterinas does not check whether the port is already in use
 	// by a listening socket when binding, so this test will fail.
-	// TEST_ERRNO(bind(sock2, (struct sockaddr *)&addr, addrlen), EADDRINUSE);
+#ifndef __asterinas__
+	TEST_ERRNO(bind(sock2, (struct sockaddr *)&addr, addrlen), EADDRINUSE);
+#endif
 }
 END_TEST()
 
@@ -105,7 +107,9 @@ FN_TEST(listen_on_the_same_port)
 
 	// Currently, Asterinas does not check whether the port is already in use
 	// by a listening socket when binding, so this test will fail.
-	// TEST_ERRNO(bind(sock3, (struct sockaddr *)&addr, addrlen), EADDRINUSE);
+#ifndef __asterinas__
+	TEST_ERRNO(bind(sock3, (struct sockaddr *)&addr, addrlen), EADDRINUSE);
+#endif
 }
 END_TEST()
 
@@ -188,16 +192,17 @@ FN_TEST(disable_reuse_after_bound)
 
 	TEST_SUCC(getsockname(sock1, (struct sockaddr *)&addr, &addrlen));
 
+	option = 1;
+	TEST_SUCC(setsockopt(sock2, SOL_SOCKET, SO_REUSEADDR, &option,
+			     sizeof(option)));
 	// The following test succeeds on Linux because Linux does not allow disabling
 	// SO_REUSEADDR for TCP sockets once the socket is bound. In contrast, Asterinas
 	// enforces a stricter rule: the port can be reused only if all sockets bound to it
 	// have port reuse enabled.
 	// See the discussion at <https://github.com/asterinas/asterinas/pull/2277#discussion_r2230139244>.
-	//
-	// option = 1;
-	// TEST_SUCC(setsockopt(sock2, SOL_SOCKET, SO_REUSEADDR, &option,
-	// 		     sizeof(option)));
-	// TEST_SUCC(bind(sock2, (struct sockaddr *)&addr, addrlen));
+#ifndef __asterinas__
+	TEST_SUCC(bind(sock2, (struct sockaddr *)&addr, addrlen));
+#endif
 }
 END_TEST()
 
