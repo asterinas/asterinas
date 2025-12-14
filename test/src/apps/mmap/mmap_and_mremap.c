@@ -65,23 +65,21 @@ END_TEST()
 
 const char *content = "kjfkljk*wigo&h";
 
-#define CHECK_MM(func) CHECK_WITH(func, _ret != MAP_FAILED)
-
 FN_TEST(mmap_and_mremap)
 {
-	char *addr = CHECK_MM(mmap(NULL, 3 * PAGE_SIZE, PROT_READ | PROT_WRITE,
-				   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+	char *addr = TEST_SUCC(mmap(NULL, 3 * PAGE_SIZE, PROT_READ | PROT_WRITE,
+				    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
 	TEST_SUCC(munmap(addr, 3 * PAGE_SIZE));
 
-	addr = CHECK_MM(mmap(addr, PAGE_SIZE, PROT_READ | PROT_WRITE,
-			     MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0));
+	addr = TEST_SUCC(mmap(addr, PAGE_SIZE, PROT_READ | PROT_WRITE,
+			      MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0));
 	strcpy(addr, content);
 
-	char *addr2 = CHECK_MM(
+	char *addr2 = TEST_SUCC(
 		mmap(addr + 2 * PAGE_SIZE, PAGE_SIZE, PROT_READ | PROT_WRITE,
 		     MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0));
 
-	char *new_addr = CHECK_MM(
+	char *new_addr = TEST_SUCC(
 		mremap(addr, PAGE_SIZE, 3 * PAGE_SIZE, MREMAP_MAYMOVE));
 
 	// Ensure that the mapping at the old address does not exist any more.
@@ -100,8 +98,9 @@ END_TEST()
 
 FN_TEST(mmap_and_mremap_fixed)
 {
-	char *addr1 = CHECK_MM(mmap(NULL, PAGE_SIZE * 2, PROT_READ | PROT_WRITE,
-				    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+	char *addr1 =
+		TEST_SUCC(mmap(NULL, PAGE_SIZE * 2, PROT_READ | PROT_WRITE,
+			       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
 	strcpy(addr1, content);
 
 	// Unmap a target region to ensure we know it's free
@@ -126,21 +125,21 @@ END_TEST()
 
 FN_TEST(mmap_and_mremap_auto_merge_anon)
 {
-	char *addr = CHECK_MM(mmap(NULL, 6 * PAGE_SIZE, PROT_READ | PROT_WRITE,
-				   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+	char *addr = TEST_SUCC(mmap(NULL, 6 * PAGE_SIZE, PROT_READ | PROT_WRITE,
+				    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
 	TEST_SUCC(munmap(addr, 6 * PAGE_SIZE));
 
-	CHECK_MM(mmap(addr, PAGE_SIZE, PROT_READ | PROT_WRITE,
-		      MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0));
+	TEST_SUCC(mmap(addr, PAGE_SIZE, PROT_READ | PROT_WRITE,
+		       MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0));
 	strcpy(addr, content);
-	CHECK_MM(mmap(addr + 2 * PAGE_SIZE, PAGE_SIZE, PROT_READ | PROT_WRITE,
-		      MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0));
-	CHECK_MM(mmap(addr + PAGE_SIZE, PAGE_SIZE, PROT_READ | PROT_WRITE,
-		      MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0));
+	TEST_SUCC(mmap(addr + 2 * PAGE_SIZE, PAGE_SIZE, PROT_READ | PROT_WRITE,
+		       MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0));
+	TEST_SUCC(mmap(addr + PAGE_SIZE, PAGE_SIZE, PROT_READ | PROT_WRITE,
+		       MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0));
 
-	char *new_addr = CHECK_MM(mremap(addr, 3 * PAGE_SIZE, 3 * PAGE_SIZE,
-					 MREMAP_MAYMOVE | MREMAP_FIXED,
-					 addr + 3 * PAGE_SIZE));
+	char *new_addr = TEST_SUCC(mremap(addr, 3 * PAGE_SIZE, 3 * PAGE_SIZE,
+					  MREMAP_MAYMOVE | MREMAP_FIXED,
+					  addr + 3 * PAGE_SIZE));
 	TEST_RES(strcmp(new_addr, content), _ret == 0);
 	TEST_SUCC(munmap(new_addr, 3 * PAGE_SIZE));
 }
@@ -152,21 +151,21 @@ FN_TEST(mmap_and_mremap_auto_merge_file)
 	int fd = TEST_SUCC(open(filename, O_CREAT | O_RDWR, 0600));
 	TEST_SUCC(ftruncate(fd, 6 * PAGE_SIZE));
 
-	char *addr = CHECK_MM(mmap(NULL, 6 * PAGE_SIZE, PROT_READ | PROT_WRITE,
-				   MAP_PRIVATE, fd, 0));
+	char *addr = TEST_SUCC(mmap(NULL, 6 * PAGE_SIZE, PROT_READ | PROT_WRITE,
+				    MAP_PRIVATE, fd, 0));
 	TEST_SUCC(munmap(addr, 6 * PAGE_SIZE));
 
-	CHECK_MM(mmap(addr, PAGE_SIZE, PROT_READ | PROT_WRITE,
-		      MAP_PRIVATE | MAP_FIXED, fd, 0));
+	TEST_SUCC(mmap(addr, PAGE_SIZE, PROT_READ | PROT_WRITE,
+		       MAP_PRIVATE | MAP_FIXED, fd, 0));
 	strcpy(addr, content);
-	CHECK_MM(mmap(addr + 2 * PAGE_SIZE, PAGE_SIZE, PROT_READ | PROT_WRITE,
-		      MAP_PRIVATE | MAP_FIXED, fd, 2 * PAGE_SIZE));
-	CHECK_MM(mmap(addr + PAGE_SIZE, PAGE_SIZE, PROT_READ | PROT_WRITE,
-		      MAP_PRIVATE | MAP_FIXED, fd, PAGE_SIZE));
+	TEST_SUCC(mmap(addr + 2 * PAGE_SIZE, PAGE_SIZE, PROT_READ | PROT_WRITE,
+		       MAP_PRIVATE | MAP_FIXED, fd, 2 * PAGE_SIZE));
+	TEST_SUCC(mmap(addr + PAGE_SIZE, PAGE_SIZE, PROT_READ | PROT_WRITE,
+		       MAP_PRIVATE | MAP_FIXED, fd, PAGE_SIZE));
 
-	char *new_addr = CHECK_MM(mremap(addr, 3 * PAGE_SIZE, 3 * PAGE_SIZE,
-					 MREMAP_MAYMOVE | MREMAP_FIXED,
-					 addr + 3 * PAGE_SIZE));
+	char *new_addr = TEST_SUCC(mremap(addr, 3 * PAGE_SIZE, 3 * PAGE_SIZE,
+					  MREMAP_MAYMOVE | MREMAP_FIXED,
+					  addr + 3 * PAGE_SIZE));
 	TEST_RES(strcmp(new_addr, content), _ret == 0);
 	TEST_SUCC(munmap(new_addr, 3 * PAGE_SIZE));
 
