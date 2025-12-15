@@ -262,7 +262,10 @@ impl VmarInner {
             .next()
             .is_some()
         {
-            return_errno_with_message!(Errno::EACCES, "Requested region is already occupied");
+            return_errno_with_message!(
+                Errno::EEXIST,
+                "the range contains pages that are already mapped"
+            );
         }
 
         Ok(offset..(offset + size))
@@ -385,7 +388,13 @@ impl VmarInner {
             return Ok(());
         }
 
-        self.alloc_free_region_exact(old_map_end, new_map_end - old_map_end)?;
+        self.alloc_free_region_exact(old_map_end, new_map_end - old_map_end)
+            .map_err(|_| {
+                Error::with_message(
+                    Errno::ENOMEM,
+                    "the range contains pages that are already mapped",
+                )
+            })?;
 
         let last_mapping = self.vm_mappings.find_one(&(old_map_end - 1)).unwrap();
         let last_mapping_addr = last_mapping.map_to_addr();
