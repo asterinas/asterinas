@@ -4,47 +4,41 @@ use align_ext::AlignExt;
 use ostd::mm::VmIo;
 
 use super::SyscallReturn;
-use crate::prelude::*;
+use crate::{prelude::*, vm::vmar::VMAR_CAP_ADDR};
 
-pub fn sys_madvise(
-    start: Vaddr,
-    len: usize,
-    behavior: i32,
-    ctx: &Context,
-) -> Result<SyscallReturn> {
+pub fn sys_madvise(addr: Vaddr, len: usize, behavior: i32, ctx: &Context) -> Result<SyscallReturn> {
     let behavior = MadviseBehavior::try_from(behavior)?;
     debug!(
-        "start = 0x{:x}, len = 0x{:x}, behavior = {:?}",
-        start, len, behavior
+        "addr = 0x{:x}, len = 0x{:x}, behavior = {:?}",
+        addr, len, behavior
     );
 
-    if !start.is_multiple_of(PAGE_SIZE) {
-        return_errno_with_message!(Errno::EINVAL, "the start address should be page aligned");
-    }
-    if len > isize::MAX as usize {
-        return_errno_with_message!(Errno::EINVAL, "len align overflow");
+    if !addr.is_multiple_of(PAGE_SIZE) {
+        return_errno_with_message!(Errno::EINVAL, "the mapping address is not aligned");
     }
     if len == 0 {
         return Ok(SyscallReturn::Return(0));
     }
+    if VMAR_CAP_ADDR.checked_sub(addr).is_none_or(|gap| gap < len) {
+        // FIXME: Linux returns `EINVAL` if `(addr + len).align_up(PAGE_SIZE)` overflows. Here, we
+        // perform a stricter validation.
+        return_errno_with_message!(Errno::EINVAL, "the mapping range is not in userspace");
+    }
+    let addr_range = addr..(addr + len).align_up(PAGE_SIZE);
 
-    let len = len.align_up(PAGE_SIZE);
-    let end = start.checked_add(len).ok_or(Error::with_message(
-        Errno::EINVAL,
-        "integer overflow when (start + len)",
-    ))?;
     match behavior {
         MadviseBehavior::MADV_NORMAL
         | MadviseBehavior::MADV_SEQUENTIAL
         | MadviseBehavior::MADV_WILLNEED => {
             // perform a read at first
-            let mut buffer = vec![0u8; len];
-            ctx.user_space().read_bytes(start, buffer.as_mut_slice())?;
+            let mut buffer = vec![0u8; addr_range.len()];
+            ctx.user_space()
+                .read_bytes(addr_range.start, buffer.as_mut_slice())?;
         }
         MadviseBehavior::MADV_DONTNEED => {
             warn!("MADV_DONTNEED isn't implemented, do nothing for now.");
         }
-        MadviseBehavior::MADV_FREE => madv_free(start, end, ctx)?,
+        MadviseBehavior::MADV_FREE => madv_free(addr_range.start, addr_range.end, ctx)?,
         MadviseBehavior::MADV_NOHUGEPAGE => {
             warn!("MADV_NOHUGEPAGE isn't implemented, do nothing for now");
         }
