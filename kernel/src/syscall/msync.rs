@@ -3,7 +3,7 @@
 use align_ext::AlignExt;
 
 use super::SyscallReturn;
-use crate::{prelude::*, thread::kernel_thread::ThreadOptions};
+use crate::{prelude::*, thread::kernel_thread::ThreadOptions, vm::vmar::VMAR_CAP_ADDR};
 
 bitflags! {
     /// Flags for `msync`.
@@ -28,42 +28,41 @@ macro_rules! return_partially_mapped {
     };
 }
 
-pub fn sys_msync(start: Vaddr, size: usize, flag: i32, ctx: &Context) -> Result<SyscallReturn> {
-    let flags = MsyncFlags::from_bits(flag).ok_or_else(|| Error::new(Errno::EINVAL))?;
+pub fn sys_msync(addr: Vaddr, len: usize, flag: i32, ctx: &Context) -> Result<SyscallReturn> {
+    let flags = MsyncFlags::from_bits(flag)
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
+    debug!("addr = 0x{:x}, len = {}, flags = {:?}", addr, len, flags);
 
-    debug!("msync: start = {start:#x}, size = {size}, flags = {flags:?}");
-
-    if !start.is_multiple_of(PAGE_SIZE)
-        || flags.contains(MsyncFlags::MS_ASYNC | MsyncFlags::MS_SYNC)
-    {
-        return_errno!(Errno::EINVAL);
+    if flags.contains(MsyncFlags::MS_ASYNC | MsyncFlags::MS_SYNC) {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "MS_ASYNC and MS_SYNC cannot be specified together"
+        );
     }
 
-    if size == 0 {
+    if !addr.is_multiple_of(PAGE_SIZE) {
+        return_errno_with_message!(Errno::EINVAL, "the mapping address is not aligned");
+    }
+    if len == 0 {
         return Ok(SyscallReturn::Return(0));
     }
-
-    let range = {
-        let end = start
-            .checked_add(size)
-            .ok_or(Error::with_message(
-                Errno::EINVAL,
-                "`msync` `size` overflows",
-            ))?
-            .align_up(PAGE_SIZE);
-        start..end
-    };
+    if VMAR_CAP_ADDR.checked_sub(addr).is_none_or(|gap| gap < len) {
+        // FIXME: Linux returns `ENOMEM` if `(addr + len).align_up(PAGE_SIZE)` overflows. Here, we
+        // perform a stricter validation.
+        return_errno_with_message!(Errno::ENOMEM, "the mapping range is not in userspace");
+    }
+    let addr_range = addr..(addr + len).align_up(PAGE_SIZE);
 
     let user_space = ctx.user_space();
     let vmar = user_space.vmar();
-    let guard = vmar.query(range.clone());
-    let mut mappings_iter = guard.iter();
+    let query_guard = vmar.query(addr_range.clone());
 
     // Check if the range is fully mapped.
+    let mut mappings_iter = query_guard.iter();
     let Some(first) = mappings_iter.next() else {
         return_errno_with_message!(Errno::ENOMEM, "`msync` called on a not mapped range");
     };
-    if first.map_to_addr() > range.start {
+    if first.map_to_addr() > addr_range.start {
         return_partially_mapped!();
     }
     let mut last_end = first.map_end();
@@ -74,12 +73,12 @@ pub fn sys_msync(start: Vaddr, size: usize, flag: i32, ctx: &Context) -> Result<
         }
         last_end = mapping.map_end();
     }
-    if last_end < range.end {
+    if last_end < addr_range.end {
         return_partially_mapped!();
     }
 
     // Do nothing if not file-backed, as <https://pubs.opengroup.org/onlinepubs/9699919799/> says.
-    let inodes = guard
+    let inodes = query_guard
         .iter()
         .filter_map(|m| m.inode().cloned())
         .collect::<Vec<_>>();

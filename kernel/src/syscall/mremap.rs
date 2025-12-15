@@ -13,7 +13,8 @@ pub fn sys_mremap(
     new_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let flags = MremapFlags::from_bits(flags).ok_or(Errno::EINVAL)?;
+    let flags = MremapFlags::from_bits(flags)
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
     let new_addr = do_sys_mremap(old_addr, old_size, new_size, flags, new_addr, ctx)?;
     Ok(SyscallReturn::Return(new_addr as _))
 }
@@ -44,6 +45,9 @@ fn do_sys_mremap(
         );
     }
 
+    if old_size.checked_add(PAGE_SIZE).is_none() || new_size.checked_add(PAGE_SIZE).is_none() {
+        return_errno_with_message!(Errno::EINVAL, "mremap: the size overflows")
+    }
     let old_size = old_size.align_up(PAGE_SIZE);
     let new_size = new_size.align_up(PAGE_SIZE);
 
