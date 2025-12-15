@@ -5,29 +5,6 @@ use align_ext::AlignExt;
 use super::SyscallReturn;
 use crate::{prelude::*, thread::kernel_thread::ThreadOptions, vm::vmar::VMAR_CAP_ADDR};
 
-bitflags! {
-    /// Flags for `msync`.
-    ///
-    /// See <https://elixir.bootlin.com/linux/v6.15.1/source/include/uapi/asm-generic/mman-common.h#L42>.
-    pub struct MsyncFlags: i32 {
-        /// Performs `msync` asynchronously.
-        const MS_ASYNC      = 0x01;
-        /// Invalidates cache so that other processes mapping the same file
-        /// will immediately see the changes after this `msync` call.
-        ///
-        /// Should be a no-op since we use the same page cache for all processes.
-        const MS_INVALIDATE = 0x02;
-        /// Performs `msync` synchronously.
-        const MS_SYNC       = 0x04;
-    }
-}
-
-macro_rules! return_partially_mapped {
-    () => {
-        return_errno_with_message!(Errno::ENOMEM, "`msync` called on a partially mapped range")
-    };
-}
-
 pub fn sys_msync(addr: Vaddr, len: usize, flag: i32, ctx: &Context) -> Result<SyscallReturn> {
     let flags = MsyncFlags::from_bits(flag)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
@@ -58,23 +35,11 @@ pub fn sys_msync(addr: Vaddr, len: usize, flag: i32, ctx: &Context) -> Result<Sy
     let query_guard = vmar.query(addr_range.clone());
 
     // Check if the range is fully mapped.
-    let mut mappings_iter = query_guard.iter();
-    let Some(first) = mappings_iter.next() else {
-        return_errno_with_message!(Errno::ENOMEM, "`msync` called on a not mapped range");
-    };
-    if first.map_to_addr() > addr_range.start {
-        return_partially_mapped!();
-    }
-    let mut last_end = first.map_end();
-    for mapping in mappings_iter {
-        let start = mapping.map_to_addr();
-        if start != last_end {
-            return_partially_mapped!();
-        }
-        last_end = mapping.map_end();
-    }
-    if last_end < addr_range.end {
-        return_partially_mapped!();
+    if !query_guard.is_fully_mapped() {
+        return_errno_with_message!(
+            Errno::ENOMEM,
+            "the range contains pages that are not mapped"
+        );
     }
 
     // Do nothing if not file-backed, as <https://pubs.opengroup.org/onlinepubs/9699919799/> says.
@@ -82,7 +47,6 @@ pub fn sys_msync(addr: Vaddr, len: usize, flag: i32, ctx: &Context) -> Result<Sy
         .iter()
         .filter_map(|m| m.inode().cloned())
         .collect::<Vec<_>>();
-
     let task_fn = move || {
         for inode in inodes {
             // TODO: Sync a necessary range instead of syncing the whole inode.
@@ -98,4 +62,21 @@ pub fn sys_msync(addr: Vaddr, len: usize, flag: i32, ctx: &Context) -> Result<Sy
     }
 
     Ok(SyscallReturn::Return(0))
+}
+
+bitflags! {
+    /// Flags for `msync`.
+    ///
+    /// Reference: <https://elixir.bootlin.com/linux/v6.15.1/source/include/uapi/asm-generic/mman-common.h#L42>.
+    struct MsyncFlags: i32 {
+        /// Performs `msync` asynchronously.
+        const MS_ASYNC      = 0x01;
+        /// Invalidates cache so that other processes mapping the same file
+        /// will immediately see the changes after this `msync` call.
+        ///
+        /// Should be a no-op since we use the same page cache for all processes.
+        const MS_INVALIDATE = 0x02;
+        /// Performs `msync` synchronously.
+        const MS_SYNC       = 0x04;
+    }
 }
