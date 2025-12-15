@@ -1,11 +1,2 @@
-// Apply the default memory access pattern with no special optimizations
-madvise(addr, length, advice = MADV_NORMAL);
-
-// Indicate sequential access to enable aggressive read-ahead and immediate page release
-madvise(addr, length, advice = MADV_SEQUENTIAL);
-
-// Prefetch pages for near-future access to reduce latency
-madvise(addr, length, advice = MADV_WILLNEED);
-
-// Mark pages for lazy reclamation to allow the kernel to free them under memory pressure
-madvise(addr, length, advice = MADV_FREE);
+// Do not expect access in the near future and free associated resources
+madvise(addr, length, advice = MADV_DONTNEED);

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use align_ext::AlignExt;
-use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{prelude::*, vm::vmar::VMAR_CAP_ADDR};
@@ -26,50 +25,34 @@ pub fn sys_madvise(addr: Vaddr, len: usize, behavior: i32, ctx: &Context) -> Res
     }
     let addr_range = addr..(addr + len).align_up(PAGE_SIZE);
 
+    let user_space = ctx.user_space();
+    let vmar = user_space.vmar();
+
     match behavior {
-        MadviseBehavior::MADV_NORMAL
-        | MadviseBehavior::MADV_SEQUENTIAL
-        | MadviseBehavior::MADV_WILLNEED => {
-            // perform a read at first
-            let mut buffer = vec![0u8; addr_range.len()];
-            ctx.user_space()
-                .read_bytes(addr_range.start, buffer.as_mut_slice())?;
-        }
         MadviseBehavior::MADV_DONTNEED => {
-            warn!("MADV_DONTNEED isn't implemented, do nothing for now.");
+            vmar.discard_pages(addr_range)?;
         }
-        MadviseBehavior::MADV_FREE => madv_free(addr_range.start, addr_range.end, ctx)?,
-        MadviseBehavior::MADV_NOHUGEPAGE => {
-            warn!("MADV_NOHUGEPAGE isn't implemented, do nothing for now");
+        _ if DUMMY_MADVISE.contains(&behavior) => {
+            let query_guard = vmar.query(addr_range);
+            if !query_guard.is_fully_mapped() {
+                return_errno_with_message!(
+                    Errno::ENOMEM,
+                    "the range contains pages that are not mapped"
+                );
+            }
+            // For `DUMMY_MADVISE`, doing nothing is correct, though it may not be efficient.
         }
-        MadviseBehavior::MADV_HUGEPAGE => {
-            warn!("MADV_HUGEPAGE isn't implemented, do nothing for now");
-        }
-        MadviseBehavior::MADV_MERGEABLE => {
-            warn!("MADV_MERGEABLE isn't implemented, do nothing for now");
-        }
-        MadviseBehavior::MADV_DONTFORK => {
-            warn!("MADV_DONTFORK isn't implemented, do nothing for now");
-        }
-        _ => todo!(),
+        _ => return_errno_with_message!(Errno::EINVAL, "the madvise behavior is not supported yet"),
     }
+
     Ok(SyscallReturn::Return(0))
 }
 
-fn madv_free(start: Vaddr, end: Vaddr, ctx: &Context) -> Result<()> {
-    let user_space = ctx.user_space();
-    let vmar = user_space.vmar();
-    let advised_range = start..end;
-    let _ = vmar.remove_mapping(advised_range);
-
-    Ok(())
-}
-
+// Reference: <https://elixir.bootlin.com/linux/v4.8/source/include/uapi/asm-generic/mman-common.h#L37>
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, TryFromInt)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
 #[expect(non_camel_case_types)]
-/// This definition is the same from linux
-pub enum MadviseBehavior {
+enum MadviseBehavior {
     MADV_NORMAL = 0,     /* no further special treatment */
     MADV_RANDOM = 1,     /* expect random page references */
     MADV_SEQUENTIAL = 2, /* expect sequential page references */
@@ -105,3 +88,23 @@ pub enum MadviseBehavior {
 
     MADV_DONTNEED_LOCKED = 24, /* like DONTNEED, but drop locked pages too */
 }
+
+/// Madvise that a dummy implementation is also correct.
+///
+/// This list can only contain madvise behaviors that do not alter the semantics of the user
+/// program. In other words, they are intended solely for performance optimization and can safely
+/// be ignored by the kernel.
+///
+/// **Please think twice before adding a new behavior to this list. Not all madvise behaviors can
+/// be no-ops.**
+const DUMMY_MADVISE: &[MadviseBehavior] = &[
+    MadviseBehavior::MADV_NORMAL,
+    MadviseBehavior::MADV_RANDOM,
+    MadviseBehavior::MADV_SEQUENTIAL,
+    MadviseBehavior::MADV_WILLNEED,
+    MadviseBehavior::MADV_FREE,
+    MadviseBehavior::MADV_MERGEABLE,
+    MadviseBehavior::MADV_UNMERGEABLE,
+    MadviseBehavior::MADV_HUGEPAGE,
+    MadviseBehavior::MADV_NOHUGEPAGE,
+];
