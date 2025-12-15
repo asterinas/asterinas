@@ -28,4 +28,25 @@ impl VmarQueryGuard<'_> {
     pub fn iter(&self) -> impl Iterator<Item = &VmMapping> {
         self.vmar.query(&self.range)
     }
+
+    /// Returns whether the range is fully mapped.
+    ///
+    /// In other words, this method will return `false` if and only if the
+    /// range contains pages that are not mapped.
+    pub fn is_fully_mapped(&self) -> bool {
+        let mut last_mapping_end = self.range.start;
+
+        for mapping in self.iter() {
+            if last_mapping_end < mapping.map_to_addr() {
+                return false;
+            }
+            last_mapping_end = mapping.map_end();
+        }
+
+        if last_mapping_end < self.range.end {
+            return false;
+        }
+
+        true
+    }
 }

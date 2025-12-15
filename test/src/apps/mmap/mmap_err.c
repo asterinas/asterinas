@@ -91,6 +91,7 @@ FN_TEST(underflow_addr)
 	TEST_ERRNO(mremap(valid_addr, PAGE_SIZE, PAGE_SIZE, MREMAP_FIXED, addr),
 		   EINVAL);
 	TEST_SUCC(munmap(addr, PAGE_SIZE));
+	TEST_ERRNO(mprotect(addr, PAGE_SIZE, PROT_READ), ENOMEM);
 	TEST_ERRNO(msync(addr, PAGE_SIZE, 0), ENOMEM);
 }
 END_TEST()
