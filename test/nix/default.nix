@@ -1,5 +1,5 @@
-{ target ? "x86_64", enableBasicTest ? false, enableBenchmark ? false
-, enableSyscallTest ? false, syscallTestSuite ? "ltp"
+{ target ? "x86_64", enableBasicTest ? false, basicTestPlatform ? "asterinas"
+, enableBenchmark ? false, enableSyscallTest ? false, syscallTestSuite ? "ltp"
 , syscallTestWorkDir ? "/tmp", dnsServer ? "none", smp ? 1
 , initramfsCompressed ? true, }:
 let
@@ -23,7 +23,7 @@ let
   };
 in rec {
   # Packages needed by initramfs
-  apps = pkgs.callPackage ./apps.nix { };
+  apps = pkgs.callPackage ./apps.nix { testPlatform = basicTestPlatform; };
   busybox = pkgs.busybox;
   benchmark = pkgs.callPackage ./benchmark { };
   syscall = pkgs.callPackage ./syscall {

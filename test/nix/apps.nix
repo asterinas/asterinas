@@ -1,5 +1,5 @@
-{ lib, stdenv, fetchFromGitHub, hostPlatform, glibc, libnl, callPackage,
-}: rec {
+{ lib, stdenv, fetchFromGitHub, hostPlatform, glibc, libnl, callPackage
+, testPlatform, }: rec {
 
   tdxAttest = lib.optionalAttrs (builtins.getEnv "INTEL_TDX" == "1")
     (callPackage ./tdx-attest.nix { });
@@ -27,7 +27,8 @@
 
     HOST_PLATFORM = "${hostPlatform.system}";
     CC = "${stdenv.cc.targetPrefix}cc";
-    C_FLAGS = "-I${libnl.dev}/include/libnl3";
+    C_FLAGS = "-I${libnl.dev}/include/libnl3"
+      + (if testPlatform == "asterinas" then " -D__asterinas__" else "");
     # FIXME: Excluding `glibc` allows the build to succeed, but causes some tests to fail.
     buildInputs = [ glibc glibc.static libnl ];
     buildCommand = ''

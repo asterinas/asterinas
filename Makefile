@@ -21,6 +21,7 @@ OSTD_TASK_STACK_SIZE_IN_PAGES ?= 64
 FEATURES ?=
 NO_DEFAULT_FEATURES ?= 0
 COVERAGE ?= 0
+# Specify whether to build regression tests under `test/src/apps`.
 ENABLE_BASIC_TEST ?= false
 # Specify the primary system console (supported: hvc0, tty0).
 # - hvc0: The virtio-console terminal.
