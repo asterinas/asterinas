@@ -36,6 +36,18 @@ FN_TEST(mprotect)
 }
 END_TEST()
 
+FN_TEST(madvise)
+{
+	// `madvise` takes effect for pages before and after the hole.
+	TEST_ERRNO(madvise(start_addr + PAGE_SIZE, PAGE_SIZE * 3,
+			   MADV_DONTNEED),
+		   ENOMEM);
+
+	TEST_RES(start_addr[PAGE_SIZE], _ret == 0);
+	TEST_RES(start_addr[PAGE_SIZE * 3], _ret == 0);
+}
+END_TEST()
+
 FN_TEST(msync)
 {
 	TEST_ERRNO(msync(start_addr + PAGE_SIZE, PAGE_SIZE * 3, 0), ENOMEM);
