@@ -10,7 +10,7 @@ use crate::{
     },
     prelude::*,
     process::Process,
-    vm::vmar::userspace_range,
+    vm::vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR},
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/maps` (and also `/proc/[pid]/maps`).
@@ -38,7 +38,7 @@ impl FileOps for MapsFileOps {
 
         let user_stack_top = vmar.process_vm().init_stack().user_stack_top();
 
-        let guard = vmar.query(userspace_range());
+        let guard = vmar.query(VMAR_LOWEST_ADDR..VMAR_CAP_ADDR);
         for vm_mapping in guard.iter() {
             if vm_mapping.map_to_addr() <= user_stack_top && vm_mapping.map_end() > user_stack_top {
                 vm_mapping.print_to_maps(&mut printer, "[stack]")?;
