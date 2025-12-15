@@ -168,6 +168,14 @@ impl ElfHeaders {
             .reduce(|r1, r2| r1.start.min(r2.start)..r1.end.max(r2.end))
             .unwrap()
     }
+
+    /// Gets the virtual address bounds of the last loadable segment.
+    pub(super) fn last_loadable_vaddr_bound(&self) -> Option<Range<Vaddr>> {
+        self.loadable_phdrs
+            .iter()
+            .max_by_key(|phdr| phdr.virt_range().end)
+            .map(|phdr| phdr.virt_range().clone())
+    }
 }
 
 struct ElfHeader {

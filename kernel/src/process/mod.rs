@@ -38,7 +38,7 @@ pub use process::{
     Terminal, broadcast_signal_async, enqueue_signal_async, spawn_init_process,
 };
 pub use process_filter::ProcessFilter;
-pub use process_vm::ProcessVm;
+pub use process_vm::{INIT_STACK_SIZE, ProcessVm};
 pub use rlimit::ResourceType;
 pub use stats::collect_process_creation_count;
 pub use term_status::TermStatus;
