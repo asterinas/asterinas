@@ -3,8 +3,10 @@ name: Publish AsterNixOS
 on:
   workflow_dispatch:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
+    paths: 
+      - VERSION
 
 jobs:
   push-cachix:
