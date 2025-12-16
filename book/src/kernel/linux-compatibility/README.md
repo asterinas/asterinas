@@ -267,7 +267,7 @@ which are summarized in the table below.
 | 244     | mq_notify              | ❌             | N/A |
 | 245     | mq_getsetattr          | ❌             | N/A |
 | 246     | kexec_load             | ❌             | N/A |
-| 247     | waitid                 | ✅             | ❓ |
+| 247     | waitid                 | ✅             | [⚠️](syscall-flag-coverage/process-and-thread-management/#waitid) |
 | 248     | add_key                | ❌             | N/A |
 | 249     | request_key            | ❌             | N/A |
 | 250     | keyctl                 | ❌             | N/A |
