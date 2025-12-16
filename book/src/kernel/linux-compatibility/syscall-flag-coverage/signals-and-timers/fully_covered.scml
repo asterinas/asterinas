@@ -1,5 +1,11 @@
+// Get value of an interval timer
+getitimer(which, value);
+
 // Set an alarm clock for delivery of a signal
 alarm(seconds);
+
+// Set value of an interval timer
+setitimer(which, value, ovalue);
 
 // Return from signal handler and cleanup stack frame
 rt_sigreturn(arg);
@@ -36,3 +42,6 @@ time(tloc);
 
 // Synchronously wait for a signal with a timeout
 rt_sigtimedwait(set, info, timeout, sigsetsize);
+
+// Arm or disarm a POSIX per-process timer
+timer_settime(timer_id, flags, new_setting, old_setting);

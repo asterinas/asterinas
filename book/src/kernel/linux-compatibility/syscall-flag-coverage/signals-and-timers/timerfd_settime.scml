@@ -1,0 +1,7 @@
+// Arm or disarm a timer file descriptor
+timerfd_settime(
+    ufd,
+    flags = TFD_TIMER_ABSTIME,
+    utmr,
+    otmr
+);

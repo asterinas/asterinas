@@ -47,6 +47,9 @@ Supported functionality in SCML:
 {{#include timer_create.scml}}
 ```
 
+Partially-supported clock IDs:
+* `CLOCK_BOOTTIME` is treated as `CLOCK_MONOTONIC`
+
 Unsupported predefined clock IDs:
 * `CLOCK_REALTIME_ALARM`
 * `CLOCK_BOOTTIME_ALARM`
@@ -57,3 +60,35 @@ Unsupported notification methods:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/timer_create.2.html).
+
+### `timerfd_create`
+
+Supported functionality in SCML:
+
+```c
+{{#include timerfd_create.scml}}
+```
+
+Partially-supported clock IDs:
+* `CLOCK_BOOTTIME` is treated as `CLOCK_MONOTONIC`
+
+Unsupported predefined clock IDs:
+* `CLOCK_REALTIME_ALARM`
+* `CLOCK_BOOTTIME_ALARM`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/timerfd_create.2.html).
+
+### `timerfd_settime`
+
+Supported functionality in SCML:
+
+```c
+{{#include timerfd_settime.scml}}
+```
+
+Ignored flags:
+* `TFD_TIMER_CANCEL_ON_SET`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/timerfd_create.2.html).
