@@ -215,7 +215,6 @@ bitflags! {
         const MAP_NONBLOCK        = 0x10000;
         const MAP_STACK           = 0x20000;
         const MAP_HUGETLB         = 0x40000;
-        const MAP_SYNC            = 0x80000;
         const MAP_FIXED_NOREPLACE = 0x100000;
     }
 }

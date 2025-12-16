@@ -24,7 +24,6 @@ Silently-ignored flags:
 * `MAP_NONBLOCK`
 * `MAP_NORESERVE`
 * `MAP_POPULATE`
-* `MAP_SYNC`
 
 Partially supported flags:
 * `MAP_FIXED_NOREPLACE` is treated as `MAP_FIXED`
