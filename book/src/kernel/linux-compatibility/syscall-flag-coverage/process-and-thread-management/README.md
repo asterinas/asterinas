@@ -66,3 +66,17 @@ Unsupported policies or flags:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/sched_setscheduler.2.html).
+
+### `waitid`
+
+Supported functionality in SCML:
+
+```c
+{{#include waitid.scml}}
+```
+
+Ignored options:
+* `WEXITED`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/waitid.2.html).

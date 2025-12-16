@@ -1,0 +1,7 @@
+// Wait for a child process to change state
+waitid(
+    which = P_PID | P_PIDFD | P_PGID | P_ALL,
+    pid, infop,
+    options = WNOHANG | WSTOPPED | WCONTINUED | WNOWAIT,
+    ru
+);
