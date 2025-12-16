@@ -8,6 +8,7 @@ final: prev: {
     installPhase = ''
       install -m755 -D $src/test-nix-commands.sh $out/bin/test-nix-commands
       install -m755 -D $src/test-podman.sh $out/bin/test-podman
+      install -m755 -D $src/test-xfce.sh $out/bin/test-xfce
     '';
   };
 }
