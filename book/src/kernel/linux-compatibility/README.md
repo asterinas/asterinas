@@ -93,7 +93,7 @@ which are summarized in the table below.
 | 70      | msgrcv                 | ❌             | N/A |
 | 71      | msgctl                 | ❌             | N/A |
 | 72      | fcntl                  | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#fcntl) |
-| 73      | flock                  | ✅             | ❓ |
+| 73      | flock                  | ✅             | 💯 |
 | 74      | fsync                  | ✅             | 💯 |
 | 75      | fdatasync              | ✅             | 💯 |
 | 76      | truncate               | ✅             | 💯 |
@@ -305,7 +305,7 @@ which are summarized in the table below.
 | 282     | signalfd               | ✅             | 💯 |
 | 283     | timerfd_create         | ✅             | [⚠️](syscall-flag-coverage/signals-and-timers/#timerfd_create) |
 | 284     | eventfd                | ✅             | 💯 |
-| 285     | fallocate              | ✅             | ❓ |
+| 285     | fallocate              | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#fallocate) |
 | 286     | timerfd_settime        | ✅             | [⚠️](syscall-flag-coverage/signals-and-timers/#timerfd_settime) |
 | 287     | timerfd_gettime        | ✅             | 💯 |
 | 288     | accept4                | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#accept-and-accept4) |
