@@ -23,7 +23,7 @@ use crate::prelude::*;
 /// raw pointers.
 ///
 /// [`Rcu`]: super::Rcu
-pub unsafe trait NonNullPtr: 'static {
+pub unsafe trait NonNullPtr: Sized + 'static {
     /// The target type that this pointer refers to.
     // TODO: Support `Target: ?Sized`.
     type Target;
