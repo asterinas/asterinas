@@ -1,0 +1,5 @@
+// Create a timer file descriptor with a predefined clock source
+timerfd_create(
+    clockid = CLOCK_REALTIME | CLOCK_MONOTONIC,
+    flags = TFD_CLOEXEC | TFD_NONBLOCK
+);

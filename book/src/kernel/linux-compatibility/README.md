@@ -56,9 +56,9 @@ which are summarized in the table below.
 | 33      | dup2                   | ✅             | 💯 |
 | 34      | pause                  | ✅             | 💯 |
 | 35      | nanosleep              | ✅             | ❓ |
-| 36      | getitimer              | ✅             | ❓ |
+| 36      | getitimer              | ✅             | 💯 |
 | 37      | alarm                  | ✅             | 💯 |
-| 38      | setitimer              | ✅             | ❓ |
+| 38      | setitimer              | ✅             | 💯 |
 | 39      | getpid                 | ✅             | 💯 |
 | 40      | sendfile               | ✅             | 💯 |
 | 41      | socket                 | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#socket) |
@@ -243,7 +243,7 @@ which are summarized in the table below.
 | 220     | semtimedop             | ✅             | [⚠️](syscall-flag-coverage/inter-process-communication/#semop-and-semtimedop) |
 | 221     | fadvise64              | ✅             | ❓ |
 | 222     | timer_create           | ✅             | [⚠️](syscall-flag-coverage/signals-and-timers/#timer_create) |
-| 223     | timer_settime          | ✅             | ❓ |
+| 223     | timer_settime          | ✅             | 💯 |
 | 224     | timer_gettime          | ✅             | 💯 |
 | 225     | timer_getoverrun       | ❌             | N/A |
 | 226     | timer_delete           | ✅             | 💯 |
@@ -303,10 +303,10 @@ which are summarized in the table below.
 | 280     | utimensat              | ✅             | ❓ |
 | 281     | epoll_pwait            | ✅             | 💯 |
 | 282     | signalfd               | ✅             | 💯 |
-| 283     | timerfd_create         | ✅             | ❓ |
+| 283     | timerfd_create         | ✅             | [⚠️](syscall-flag-coverage/signals-and-timers/#timerfd_create) |
 | 284     | eventfd                | ✅             | 💯 |
 | 285     | fallocate              | ✅             | ❓ |
-| 286     | timerfd_settime        | ✅             | ❓ |
+| 286     | timerfd_settime        | ✅             | [⚠️](syscall-flag-coverage/signals-and-timers/#timerfd_settime) |
 | 287     | timerfd_gettime        | ✅             | 💯 |
 | 288     | accept4                | ✅             | ❓ |
 | 289     | signalfd4              | ✅             | 💯 |
