@@ -76,7 +76,7 @@ which are summarized in the table below.
 | 53      | socketpair             | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#socketpair) |
 | 54      | setsockopt             | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#getsockopt-and-setsockopt) |
 | 55      | getsockopt             | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#getsockopt-and-setsockopt) |
-| 56      | clone                  | ✅             | [⚠️](syscall-flag-coverage/process-and-thread-management/#clone) |
+| 56      | clone                  | ✅             | [⚠️](syscall-flag-coverage/process-and-thread-management/#clone-and-clone3) |
 | 57      | fork                   | ✅             | 💯 |
 | 58      | vfork                  | ❌             | N/A |
 | 59      | execve                 | ✅             | 💯 |
@@ -344,7 +344,7 @@ which are summarized in the table below.
 | 328     | pwritev2               | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#preadv2-and-pwritev2) |
 | 332     | statx                  | ✅             | ❓ |
 | 434     | pidfd_open             | ✅             | 💯 |
-| 435     | clone3                 | ✅             | ❓ |
+| 435     | clone3                 | ✅             | [⚠️](syscall-flag-coverage/process-and-thread-management/#clone-and-clone3) |
 | 436     | close_range            | ✅             | ❓ |
 | 439     | faccessat2             | ✅             | ❓ |
 | 441     | epoll_pwait2           | ✅             | 💯 |

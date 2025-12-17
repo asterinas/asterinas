@@ -45,3 +45,12 @@ clone(
     flags = <opt_flags> | <signal_flags>,
     func_arg, ..
 );
+
+// Create a thread or process with enhanced control by providing structured arguments
+clone3(
+    clone_args = {
+        flags = <opt_flags>,
+        ..
+    },
+    size
+);

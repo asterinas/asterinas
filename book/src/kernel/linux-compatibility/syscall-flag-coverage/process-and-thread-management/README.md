@@ -42,12 +42,12 @@ Ignored options:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/wait4.2.html).
 
-### `clone`
+### `clone` and `clone3`
 
 Supported functionality in SCML:
 
 ```c
-{{#include clone.scml}}
+{{#include clone_and_clone3.scml}}
 ```
 
 For more information,
