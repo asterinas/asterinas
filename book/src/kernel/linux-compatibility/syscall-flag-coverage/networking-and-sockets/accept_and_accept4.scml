@@ -1,0 +1,15 @@
+struct sockaddr = {
+    sa_family = AF_INET | AF_UNIX | AF_VSOCK,
+    ..
+};
+
+// Accept an incoming connection
+accept(
+    sockfd, addr = <sockaddr>, addrlen
+);
+
+// Accept an incoming connection and set flags for the new socket
+accept4(
+    sockfd, addr = <sockaddr>, addrlen,
+    flags = SOCK_NONBLOCK | SOCK_CLOEXEC
+);

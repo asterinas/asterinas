@@ -57,6 +57,17 @@ Supported functionality in SCML:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/connect.2.html).
 
+### `accept` and `accept4`
+
+Supported functionality in SCML:
+
+```c
+{{#include accept_and_accept4.scml}}
+```
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/accept.2.html).
+
 ## Socket Communication
 
 ### `sendto`, `sendmsg` and `sendmmsg`
