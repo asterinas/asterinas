@@ -1,6 +1,9 @@
 // Execute program
 execve(pathname, argv, envp);
 
+// Execute program relative to a directory file descriptor
+execveat(dirfd, path, argv, envp, flags = AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW);
+
 // Exit all threads in a process
 exit_group(status);
 

@@ -55,7 +55,7 @@ which are summarized in the table below.
 | 32      | dup                    | ✅             | 💯 |
 | 33      | dup2                   | ✅             | 💯 |
 | 34      | pause                  | ✅             | 💯 |
-| 35      | nanosleep              | ✅             | ❓ |
+| 35      | nanosleep              | ✅             | 💯 |
 | 36      | getitimer              | ✅             | 💯 |
 | 37      | alarm                  | ✅             | 💯 |
 | 38      | setitimer              | ✅             | 💯 |
@@ -151,7 +151,7 @@ which are summarized in the table below.
 | 128     | rt_sigtimedwait        | ✅             | 💯 |
 | 129     | rt_sigqueueinfo        | ❌             | N/A |
 | 130     | rt_sigsuspend          | ✅             | 💯 |
-| 131     | sigaltstack            | ✅             | ❓ |
+| 131     | sigaltstack            | ✅             | 💯 |
 | 132     | utime                  | ✅             | 💯 |
 | 133     | mknod                  | ✅             | 💯 |
 | 134     | uselib                 | ❌             | N/A |
@@ -339,11 +339,11 @@ which are summarized in the table below.
 | 316     | renameat2              | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#renameat2) |
 | 318     | getrandom              | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#getrandom) |
 | 319     | memfd_create           | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#memfd_create) |
-| 322     | execveat               | ✅             | ❓ |
+| 322     | execveat               | ✅             | 💯 |
 | 327     | preadv2                | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#preadv2-and-pwritev2) |
 | 328     | pwritev2               | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#preadv2-and-pwritev2) |
 | 332     | statx                  | ✅             | ❓ |
-| 434     | pidfd_open             | ✅             | ❓ |
+| 434     | pidfd_open             | ✅             | 💯 |
 | 435     | clone3                 | ✅             | ❓ |
 | 436     | close_range            | ✅             | ❓ |
 | 439     | faccessat2             | ✅             | ❓ |

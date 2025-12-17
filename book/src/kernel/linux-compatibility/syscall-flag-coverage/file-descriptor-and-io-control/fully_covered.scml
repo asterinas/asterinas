@@ -28,3 +28,6 @@ epoll_pwait2(epfd, events, maxevents, timeout, sigmask);
 
 // Wait for I/O event on the file descriptors set in read, write or except bitmaps
 select(nfds, readfds, writefds, exceptfds, timeout);
+
+// Obtain a file descriptor that refers to a process
+pidfd_open(pid, flags = PIDFD_NONBLOCK);
