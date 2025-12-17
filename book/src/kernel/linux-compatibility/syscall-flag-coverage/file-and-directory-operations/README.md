@@ -103,3 +103,17 @@ Unsupported flags:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/preadv2.2.html).
+
+### `faccessat2`
+
+Supported functionality in SCML:
+
+```c
+{{#include faccessat2.scml}}
+```
+
+Silently-ignored flags:
+* `AT_EACCESS`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/faccessat2.2.html).
