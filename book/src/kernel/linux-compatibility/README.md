@@ -292,7 +292,7 @@ which are summarized in the table below.
 | 269     | faccessat              | ✅             | 💯 |
 | 270     | pselect6               | ✅             | 💯 |
 | 271     | ppoll                  | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#poll-and-ppoll) |
-| 272     | unshare                | ✅             | ❓ |
+| 272     | unshare                | ✅             | [⚠️](syscall-flag-coverage/namespaces-cgroups-and-security/#unshare) |
 | 273     | set_robust_list        | ✅             | 💯 |
 | 274     | get_robust_list        | ❌             | N/A |
 | 275     | splice                 | ❌             | N/A |

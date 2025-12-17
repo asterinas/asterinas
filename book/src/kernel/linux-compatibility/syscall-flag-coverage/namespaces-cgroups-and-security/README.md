@@ -64,3 +64,25 @@ Unsupported versions:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/capget.2.html).
+
+### `unshare`
+
+Supported functionality in SCML:
+
+```c
+{{#include unshare.scml}}
+```
+
+Unsupported flags:
+* `CLONE_NEWCGROUP`
+* `CLONE_NEWIPC`
+* `CLONE_NEWNET`
+* `CLONE_NEWPID`
+* `CLONE_NEWTIME`
+* `CLONE_NEWUSER`
+
+Silently-ignored flags:
+* `CLONE_SYSVSEM`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/unshare.2.html).
