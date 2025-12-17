@@ -10,7 +10,7 @@ jobs:
   push-cachix:
     runs-on: ubuntu-4-cores-150GB-ssd
     container:
-      image: asterinas/asterinas:0.17.0-20251213
+      image: asterinas/asterinas:0.17.0-20251217
       options: -v /dev:/dev --privileged
     timeout-minutes: 60
     steps:
@@ -83,7 +83,7 @@ jobs:
       - name: Build ISO
         uses: addnab/docker-run-action@v3
         with:
-          image: asterinas/asterinas:0.17.0-20251213
+          image: asterinas/asterinas:0.17.0-20251217
           options: --privileged -v /dev:/dev -v ${{ github.workspace }}:/root/asterinas
           run: |
             make iso RELEASE=1 AUTO_INSTALL=false ARCH=${{ matrix.arch }}
