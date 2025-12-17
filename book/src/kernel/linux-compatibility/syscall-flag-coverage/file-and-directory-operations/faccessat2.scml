@@ -1,0 +1,5 @@
+// Check user's permissions for a file
+faccessat2(
+    dirfd, path, mode,
+    flags = AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW
+);
