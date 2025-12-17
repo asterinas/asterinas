@@ -37,6 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ push-cachix ]
     outputs:
+      kernel_version: ${{ steps.tag.outputs.kernel_version }}
       tag: ${{ steps.tag.outputs.tag }}
     strategy:
       fail-fast: false
@@ -46,9 +47,12 @@ jobs:
       - name: Get Asterinas version
         id: tag
         run: |
-          ASTER_VERSION=$(cat ./VERSION)
-          echo "ASTER_VERSION=${ASTER_VERSION}"
-          echo "tag=${ASTER_VERSION}" >> $GITHUB_OUTPUT
+          kernel_version=$(cat ./VERSION)
+          echo "kernel_version=${kernel_version}"
+          echo "kernel_version=${kernel_version}" >> $GITHUB_OUTPUT
+          tag="v${kernel_version}"
+          echo "tag=$tag"
+          echo "tag=$tag" >> $GITHUB_OUTPUT
 
       - name: Create release
         env:
@@ -98,11 +102,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          kernel_version="${{ needs.create-github-release.outputs.kernel_version }}"
           tag="${{ needs.create-github-release.outputs.tag }}"
-          echo "upload asterinas-nixos-$tag-${{ matrix.arch }}.iso"
+          echo "upload asterinas-nixos-$kernel_version-${{ matrix.arch }}.iso"
           cd ${{ github.workspace }}
-          mv ./asterinas-nixos.iso asterinas-nixos-$tag-${{ matrix.arch }}.iso
-          gh release upload "$tag" "asterinas-nixos-$tag-${{ matrix.arch }}.iso"
+          mv ./asterinas-nixos.iso asterinas-nixos-$kernel_version-${{ matrix.arch }}.iso
+          gh release upload "$tag" "asterinas-nixos-$kernel_version-${{ matrix.arch }}.iso"
 
   publish-github-release:
     runs-on: ubuntu-latest
