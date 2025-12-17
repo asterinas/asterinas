@@ -1,0 +1,2 @@
+// Disassociate parts of the process execution context
+unshare(flags = CLONE_FILES | CLONE_FS | CLONE_NEWNS | CLONE_NEWUTS | CLONE_THREAD | CLONE_SIGHAND | CLONE_VM);
