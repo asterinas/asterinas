@@ -53,6 +53,12 @@ jobs:
           }' || (echo "Test nix commands failed" && exit 1)
           echo "Test nix commands succeeds!"
 
+      - name: Restore configuration.nix
+        if: always()
+        run: |
+          sed -i 's/environment.systemPackages = with pkgs; \[ test-asterinas \];/environment.systemPackages = with pkgs; \[ hello-asterinas \];/' \
+            distro/etc_nixos/configuration.nix
+
   podman-test:
     runs-on: ubuntu-4-cores-150GB-ssd
     container:
@@ -77,3 +83,11 @@ jobs:
         run: |
           tail --lines 50 qemu.log | grep -q "^Test podman succeeds" || (echo "Test podman failed" && exit 1)
           echo "Test podman succeeds!"
+
+      - name: Restore configuration.nix
+        if: always()
+        run: |
+          sed -i \
+            -e 's/environment.systemPackages = with pkgs; \[ test-asterinas \];/environment.systemPackages = with pkgs; \[ hello-asterinas \];/' \
+            -e 's/^[[:space:]]*virtualisation\.podman\.enable = true;/  # virtualisation.podman.enable = true;/' \
+            distro/etc_nixos/configuration.nix
