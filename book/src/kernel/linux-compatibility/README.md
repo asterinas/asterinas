@@ -63,7 +63,7 @@ which are summarized in the table below.
 | 40      | sendfile               | ✅             | 💯 |
 | 41      | socket                 | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#socket) |
 | 42      | connect                | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#connect) |
-| 43      | accept                 | ✅             | ❓ |
+| 43      | accept                 | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#accept-and-accept4) |
 | 44      | sendto                 | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#sendto-sendmsg-and-sendmmsg) |
 | 45      | recvfrom               | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#recvfrom-and-recvmsg) |
 | 46      | sendmsg                | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#sendto-sendmsg-and-sendmmsg) |
@@ -308,7 +308,7 @@ which are summarized in the table below.
 | 285     | fallocate              | ✅             | ❓ |
 | 286     | timerfd_settime        | ✅             | [⚠️](syscall-flag-coverage/signals-and-timers/#timerfd_settime) |
 | 287     | timerfd_gettime        | ✅             | 💯 |
-| 288     | accept4                | ✅             | ❓ |
+| 288     | accept4                | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#accept-and-accept4) |
 | 289     | signalfd4              | ✅             | 💯 |
 | 290     | eventfd2               | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#eventfd-and-eventfd2) |
 | 291     | epoll_create1          | ✅             | 💯 |
