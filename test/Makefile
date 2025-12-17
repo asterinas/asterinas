@@ -126,20 +126,11 @@ riscv64_pkgs:
 		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
 		$(NIX_QUIET) \
 		--argstr target riscv64 \
-		--arg enableBenchmark true \
+		--arg enableBenchmark false \
 		--arg enableSyscallTest true \
 		--out-link /nix/var/nix/gcroots/auto/riscv64-pkgs \
 		-A busybox \
 		-A apps.package \
-		-A benchmark.fio \
-		-A benchmark.hackbench \
-		-A benchmark.iperf3 \
-		-A benchmark.lmbench \
-		-A benchmark.memcached \
-		-A benchmark.nginx \
-		-A benchmark.redis \
-		-A benchmark.schbench \
-		-A benchmark.sqlite-speedtest1 \
 		-A syscall.ltp
 
 general_pkgs:
@@ -163,7 +154,6 @@ install_host_pkgs:
 
 nix_gc:
 	@nix-collect-garbage -d
-	@nix-store --optimise
 
 # This target is used to accelerate CI workflows, e.g., `benchmark_x86` and `benchmark_x86_tdx`.
 initramfs_pkgs:

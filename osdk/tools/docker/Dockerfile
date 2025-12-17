@@ -170,7 +170,6 @@ ENV PATH="/usr/local/qemu/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/usr/local/qemu/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
 
 # Install OVMF built from the previous stages
-COPY --from=ovmf /root/edk2/Build/OvmfX64/DEBUG_GCC5/FV/ /root/ovmf/debug
 COPY --from=ovmf /root/edk2/Build/OvmfX64/RELEASE_GCC5/FV/ /root/ovmf/release
 
 # Install GRUB built from the previous stages
