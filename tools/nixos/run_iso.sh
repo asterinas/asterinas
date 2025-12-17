@@ -37,4 +37,4 @@ QEMU_ARGS="
 	${COMMON_QEMU_ARGS} \
 "
 
-${QEMU_ARGS}
+${SCRIPT_DIR}/run_common.sh ${QEMU_ARGS}
