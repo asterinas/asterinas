@@ -45,3 +45,10 @@ rt_sigtimedwait(set, info, timeout, sigsetsize);
 
 // Arm or disarm a POSIX per-process timer
 timer_settime(timer_id, flags, new_setting, old_setting);
+
+struct stack_t = {
+    sp, flags = SS_AUTODISARM | SS_ONSTACK | SS_DISABLE, size
+};
+
+// Set and/or get signal stack context
+sigaltstack(stack = <stack_t>, old_stack = <stack_t>);
