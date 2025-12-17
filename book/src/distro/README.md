@@ -8,6 +8,9 @@ except that it replaces Linux with Asterinas as its kernel.
 For more rationale about choosing NixOS,
 see [the RFC](https://asterinas.github.io/book/rfcs/0002-asterinas-nixos.html).
 
+**Disclaimer: Asterinas is an independent, community-led project.
+Asterinas NixOS is _not_ an official NixOS project and has _no_ affiliation with the NixOS Foundation. _No_ sponsorship or endorsement is implied.**
+
 Asterinas NixOS is not ready for production use.
 We provide Asterinas NixOS to make the Asterinas kernel more accessible,
 allowing early adopters and enthusiasts to try it out and provide feedback.
