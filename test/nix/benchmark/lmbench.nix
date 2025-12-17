@@ -5,8 +5,8 @@ stdenv.mkDerivation {
   src = fetchFromGitHub {
     owner = "asterinas";
     repo = "lmbench";
-    rev = "25a43f544af396b81c7a378c83d33f2cbab10fcc";
-    hash = "sha256-HGhBNuR5rrSAsk6c2bD0YuVV+5w7itCNVVxFRD522Rw";
+    rev = "afb47eddaf10a411c1ea3cb64965461f1308a6ea";
+    hash = "sha256-XFcvWwqOci1jdNaBGj7/svCT49JAppYvN+ABeO9rqbw";
   };
 
   dontPatchShebangs = true;
