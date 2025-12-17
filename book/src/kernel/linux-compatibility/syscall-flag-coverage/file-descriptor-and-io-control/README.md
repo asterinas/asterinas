@@ -101,12 +101,12 @@ Unsupported flags in events:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/epoll_ctl.2.html).
 
-### `poll`
+### `poll` and `ppoll`
 
 Supported functionality in SCML:
 
 ```c
-{{#include poll.scml}}
+{{#include poll_and_ppoll.scml}}
 ```
 
 Unsupported events:

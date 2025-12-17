@@ -27,7 +27,7 @@ which are summarized in the table below.
 | 4       | stat                   | ✅             | 💯 |
 | 5       | fstat                  | ✅             | 💯 |
 | 6       | lstat                  | ✅             | 💯 |
-| 7       | poll                   | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#poll) |
+| 7       | poll                   | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#poll-and-ppoll) |
 | 8       | lseek                  | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#lseek) |
 | 9       | mmap                   | ✅             | [⚠️](syscall-flag-coverage/memory-management/#mmap-and-munmap) |
 | 10      | mprotect               | ✅             | [⚠️](syscall-flag-coverage/memory-management/#mprotect) |
@@ -291,7 +291,7 @@ which are summarized in the table below.
 | 268     | fchmodat               | ✅             | 💯 |
 | 269     | faccessat              | ✅             | 💯 |
 | 270     | pselect6               | ✅             | 💯 |
-| 271     | ppoll                  | ✅             | ❓ |
+| 271     | ppoll                  | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#poll-and-ppoll) |
 | 272     | unshare                | ✅             | ❓ |
 | 273     | set_robust_list        | ✅             | 💯 |
 | 274     | get_robust_list        | ❌             | N/A |
