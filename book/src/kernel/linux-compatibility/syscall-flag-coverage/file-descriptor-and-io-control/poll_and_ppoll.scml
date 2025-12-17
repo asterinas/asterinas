@@ -6,3 +6,6 @@ struct pollfd = {
 
 // Wait for I/O event on a set of file descriptors
 poll(fds = [ <pollfd> ], nfds, timeout);
+
+// Wait for I/O event on a set of file descriptors with specified signals temporarily blocked
+ppoll(fds = [ <pollfd> ], nfds, timeout, sigset, sigset_size);
