@@ -1,0 +1,2 @@
+// Reassociate thread with a namespace
+setns(fd, ns_type = CLONE_NEWNS | CLONE_NEWUTS);
