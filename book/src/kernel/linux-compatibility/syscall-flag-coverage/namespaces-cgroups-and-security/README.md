@@ -86,3 +86,22 @@ Silently-ignored flags:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/unshare.2.html).
+
+### `setns`
+
+Supported functionality in SCML:
+
+```c
+{{#include setns.scml}}
+```
+
+Unsupported flags:
+* `CLONE_NEWCGROUP`
+* `CLONE_NEWIPC`
+* `CLONE_NEWNET`
+* `CLONE_NEWPID`
+* `CLONE_NEWTIME`
+* `CLONE_NEWUSER`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/setns.2.html).
