@@ -1,0 +1,15 @@
+statx_flags = AT_EMPTY_PATH | AT_NO_AUTOMOUNT | AT_STATX_FORCE_SYNC |
+              AT_STATX_DONT_SYNC | AT_STATX_SYNC_AS_STAT | AT_SYMLINK_NOFOLLOW;
+statx_mask = STATX_TYPE | STATX_MODE | STATX_NLINK | STATX_UID | STATX_GID |
+             STATX_ATIME | STATX_MTIME | STATX_CTIME | STATX_INO | STATX_SIZE |
+             STATX_BLOCKS | STATX_BASIC_STATS | STATX_BTIME | STATX_ALL |
+             STATX_MNT_ID | STATX_DIOALIGN | STATX_MNT_ID_UNIQUE | STATX_SUBVOL |
+             STATX_WRITE_ATOMIC | STATX_DIO_READ_ALIGN;
+
+// Get file status (extended)
+statx(
+    dirfd, pathname,
+    flags = <statx_flags>,
+    mask = <statx_mask>,
+    statxbuf
+);

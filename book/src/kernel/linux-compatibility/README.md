@@ -342,7 +342,7 @@ which are summarized in the table below.
 | 322     | execveat               | ✅             | 💯 |
 | 327     | preadv2                | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#preadv2-and-pwritev2) |
 | 328     | pwritev2               | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#preadv2-and-pwritev2) |
-| 332     | statx                  | ✅             | ❓ |
+| 332     | statx                  | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#statx) |
 | 434     | pidfd_open             | ✅             | 💯 |
 | 435     | clone3                 | ✅             | [⚠️](syscall-flag-coverage/process-and-thread-management/#clone-and-clone3) |
 | 436     | close_range            | ✅             | ❓ |
