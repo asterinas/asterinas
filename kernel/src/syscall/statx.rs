@@ -243,15 +243,21 @@ bitflags! {
         const STATX_BASIC_STATS     = 0x000007ff;
         /// Want stx_btime
         const STATX_BTIME           = 0x00000800;
-        /// Deprecated: The same as STATX_BASIC_STATS | STATX_BTIME
-        const STATX_ALL             = 0x00000fff;
         /// Want stx_mnt_id
         const STATX_MNT_ID          = 0x00001000;
         /// Want stx_dio_mem_align and stx_dio_offset_align
         const STATX_DIOALIGN        = 0x00002000;
+        /// Want extended stx_mount_id
+        const STATX_MNT_ID_UNIQUE   = 0x00004000;
+        /// Want stx_subvol
+        const STATX_SUBVOL          = 0x00008000;
+        /// Want stx_write_atomic
+        const STATX_WRITE_ATOMIC    = 0x00010000;
+        /// Wand dio read alignment info
+        const STATX_DIO_READ_ALIGN  = 0x00020000;
         /// Reserved for future struct statx expansion
         const STATX_RESERVED		= 0x80000000;
-        /// Want/got stx_change_attr
-        const STATX_CHANGE_COOKIE   = 0x40000000;
+        /// Deprecated: The same as STATX_BASIC_STATS | STATX_BTIME
+        const STATX_ALL             = 0x00000fff;
     }
 }

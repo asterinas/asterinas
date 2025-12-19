@@ -117,3 +117,26 @@ Silently-ignored flags:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/faccessat2.2.html).
+
+### `statx`
+
+Supported functionality in SCML:
+
+```c
+{{#include statx.scml}}
+```
+
+Silently-ignored flags:
+* `AT_NO_AUTOMOUNT`
+* `AT_STATX_FORCE_SYNC`
+* `AT_STATX_DONT_SYNC`
+
+Silently-ignored masks:
+* `STATX_DIOALIGN`
+* `STATX_MNT_ID_UNIQUE`
+* `STATX_SUBVOL`
+* `STATX_WRITE_ATOMIC`
+* `STATX_DIO_READ_ALIGN`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/statx.2.html).
