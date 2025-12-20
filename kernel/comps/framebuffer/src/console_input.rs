@@ -213,8 +213,7 @@ impl FbConsoleHandler {
             }
             KeyCode::CapsLock => {
                 if key_status == KeyStatus::Pressed {
-                    let new_caps = !self.caps_lock.load(Ordering::Relaxed);
-                    self.caps_lock.store(new_caps, Ordering::Relaxed);
+                    self.caps_lock.fetch_xor(true, Ordering::Relaxed);
                 }
                 return;
             }
