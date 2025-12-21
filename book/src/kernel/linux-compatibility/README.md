@@ -68,11 +68,11 @@ which are summarized in the table below.
 | 45      | recvfrom               | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#recvfrom-and-recvmsg) |
 | 46      | sendmsg                | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#sendto-sendmsg-and-sendmmsg) |
 | 47      | recvmsg                | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#recvfrom-and-recvmsg) |
-| 48      | shutdown               | ✅             | ❓ |
+| 48      | shutdown               | ✅             | 💯 |
 | 49      | bind                   | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#bind) |
-| 50      | listen                 | ✅             | ❓ |
+| 50      | listen                 | ✅             | 💯 |
 | 51      | getsockname            | ✅             | 💯 |
-| 52      | getpeername            | ✅             | ❓ |
+| 52      | getpeername            | ✅             | 💯 |
 | 53      | socketpair             | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#socketpair) |
 | 54      | setsockopt             | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#getsockopt-and-setsockopt) |
 | 55      | getsockopt             | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#getsockopt-and-setsockopt) |

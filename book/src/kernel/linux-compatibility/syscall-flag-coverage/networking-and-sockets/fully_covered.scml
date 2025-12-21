@@ -1,2 +1,11 @@
 // Get socket name
 getsockname(sockfd, addr, addrlen);
+
+// Get name of connected peer socket
+getpeername(sockfd, addr, addrlen);
+
+// Listen for connections on a socket
+listen(sockfd, backlog);
+
+// Shut down part of a full-duplex connection
+shutdown(sockfd, how = SHUT_RD | SHUT_WR | SHUT_RDWR);
