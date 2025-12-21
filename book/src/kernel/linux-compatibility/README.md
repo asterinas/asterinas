@@ -78,7 +78,7 @@ which are summarized in the table below.
 | 55      | getsockopt             | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#getsockopt-and-setsockopt) |
 | 56      | clone                  | ✅             | [⚠️](syscall-flag-coverage/process-and-thread-management/#clone-and-clone3) |
 | 57      | fork                   | ✅             | 💯 |
-| 58      | vfork                  | ❌             | N/A |
+| 58      | vfork                  | ✅             | 💯 |
 | 59      | execve                 | ✅             | 💯 |
 | 60      | exit                   | ✅             | 💯 |
 | 61      | wait4                  | ✅             | [⚠️](syscall-flag-coverage/process-and-thread-management/#wait4) |

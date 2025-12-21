@@ -57,6 +57,9 @@ sched_yield();
 // Create a child process
 fork();
 
+// Create a child process and block parent
+vfork();
+
 // Terminate the calling process
 exit(status);
 
