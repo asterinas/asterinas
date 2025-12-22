@@ -244,6 +244,7 @@ OSDK_CRATES := \
 	kernel/comps/logger \
 	kernel/comps/mlsdisk \
 	kernel/comps/time \
+	kernel/comps/uart \
 	kernel/comps/virtio \
 	kernel/comps/pci \
 	kernel/libs/aster-util \

@@ -22,6 +22,7 @@ aster-rights-proc.workspace = true
 aster-softirq.workspace = true
 aster-systree.workspace = true
 aster-time.workspace = true
+aster-uart.workspace = true
 aster-util.workspace = true
 aster-virtio.workspace = true
 atomic-integer-wrapper.workspace = true

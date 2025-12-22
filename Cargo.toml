@@ -34,6 +34,7 @@ members = [
     "kernel/comps/logger",
     "kernel/comps/mlsdisk",
     "kernel/comps/time",
+    "kernel/comps/uart",
     "kernel/comps/virtio",
     "kernel/comps/pci",
     "kernel/libs/cpio-decoder",
@@ -103,6 +104,7 @@ aster-pci = { path = "kernel/comps/pci" }
 aster-softirq = { path = "kernel/comps/softirq" }
 aster-systree = { path = "kernel/comps/systree" }
 aster-time = { path = "kernel/comps/time" }
+aster-uart = { path = "kernel/comps/uart" }
 aster-virtio = { path = "kernel/comps/virtio" }
 
 # Crates under kernel/libs
