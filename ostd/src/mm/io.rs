@@ -42,6 +42,8 @@
 
 use core::{marker::PhantomData, mem::MaybeUninit};
 
+#[cfg(target_arch = "x86_64")]
+use crate::if_tdx_enabled;
 use crate::{
     Error, Pod,
     arch::mm::{
@@ -509,6 +511,27 @@ impl<'a> VmReader<'a, Infallible> {
     /// This method will panic if the current position of the reader does not meet the alignment
     /// requirements of type `T`.
     pub fn read_once<T: PodOnce>(&mut self) -> Result<T> {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if_tdx_enabled!({
+                self.read_once_noinline::<T>()
+            } else {
+                self.read_once_impl::<T>()
+            })
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            self.read_once_impl::<T>()
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[inline(never)]
+    fn read_once_noinline<T: PodOnce>(&mut self) -> Result<T> {
+        self.read_once_impl::<T>()
+    }
+
+    fn read_once_impl<T: PodOnce>(&mut self) -> Result<T> {
         if self.remain() < size_of::<T>() {
             return Err(Error::InvalidArgs);
         }
@@ -760,6 +783,27 @@ impl<'a> VmWriter<'a, Infallible> {
     /// This method will panic if the current position of the writer does not meet the alignment
     /// requirements of type `T`.
     pub fn write_once<T: PodOnce>(&mut self, new_val: &T) -> Result<()> {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if_tdx_enabled!({
+                self.write_once_noinline::<T>(new_val)
+            } else {
+                self.write_once_impl::<T>(new_val)
+            })
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            self.write_once_impl::<T>(new_val)
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[inline(never)]
+    fn write_once_noinline<T: PodOnce>(&mut self, new_val: &T) -> Result<()> {
+        self.write_once_impl::<T>(new_val)
+    }
+
+    fn write_once_impl<T: PodOnce>(&mut self, new_val: &T) -> Result<()> {
         if self.avail() < size_of::<T>() {
             return Err(Error::InvalidArgs);
         }
