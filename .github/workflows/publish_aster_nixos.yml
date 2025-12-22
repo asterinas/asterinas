@@ -54,6 +54,12 @@ jobs:
           echo "tag=$tag"
           echo "tag=$tag" >> $GITHUB_OUTPUT
 
+      - name: Add Git tag
+        uses: pxpm/github-tag-action@1.0.1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.tag.outputs.tag }}
+
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -66,7 +72,7 @@ jobs:
           if gh release view "$tag" > /dev/null 2>&1; then
             echo "Release with tag $tag already exists. Skipping creation."
           else
-            gh release create --draft "$tag" --title "$tag" --notes "$body"
+            gh release create --draft "$tag" --title "$tag" --notes "$body" --verify-tag
           fi
 
   build-iso:
