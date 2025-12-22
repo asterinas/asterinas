@@ -26,6 +26,7 @@ rto = "rto"
 typ = "typ"
 sigfault = "sigfault"
 sems = "sems"
+THRE = "THRE"
 
 # Files with svg suffix are ignored to check. 
 [type.svg]
