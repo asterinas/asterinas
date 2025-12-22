@@ -244,6 +244,7 @@ OSDK_CRATES := \
 	kernel/comps/softirq \
 	kernel/comps/systree \
 	kernel/comps/time \
+	kernel/comps/uart \
 	kernel/comps/virtio \
 	kernel/libs/aster-bigtcp \
 	kernel/libs/aster-util \

@@ -14,6 +14,7 @@ pci = { name = "aster-pci" }
 softirq = { name = "aster-softirq" }
 systree = { name = "aster-systree" }
 time = { name = "aster-time" }
+uart = { name = "aster-uart" }
 virtio = { name = "aster-virtio" }
 
 [whitelist]
