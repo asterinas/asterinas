@@ -26,7 +26,7 @@ pub fn sys_arch_prctl(
         "arch_prctl_code: {:?}, addr = 0x{:x}",
         arch_prctl_code, addr
     );
-    let res = do_arch_prctl(arch_prctl_code, addr, user_ctx).unwrap();
+    let res = do_arch_prctl(arch_prctl_code, addr, user_ctx)?;
     Ok(SyscallReturn::Return(res as _))
 }
 
