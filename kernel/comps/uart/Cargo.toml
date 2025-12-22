@@ -1,0 +1,20 @@
+[package]
+name = "aster-uart"
+version = "0.1.0"
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+aster-console.workspace = true
+component.workspace = true
+inherit-methods-macro.workspace = true
+log.workspace = true
+ostd.workspace = true
+spin.workspace = true
+
+[target.riscv64imac-unknown-none-elf.dependencies]
+fdt = { version = "0.1.5", features = ["pretty-printing"] }
+
+[lints]
+workspace = true
