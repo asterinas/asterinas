@@ -31,3 +31,6 @@ select(nfds, readfds, writefds, exceptfds, timeout);
 
 // Obtain a file descriptor that refers to a process
 pidfd_open(pid, flags = PIDFD_NONBLOCK);
+
+// Close all file descriptors in the inclusive range [first, last]
+close_range(first, last, flags = CLOSE_RANGE_UNSHARE | CLOSE_RANGE_CLOEXEC);
