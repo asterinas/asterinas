@@ -1,0 +1,5 @@
+// Set the I/O priority for a single thread
+ioprio_set(which = IOPRIO_WHO_PROCESS, who, ioprio);
+
+// Get the I/O priority for a single thread
+ioprio_get(which = IOPRIO_WHO_PROCESS, who);
