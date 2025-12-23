@@ -1,0 +1,30 @@
+tty_ops = TCGETS | TCSETS | TCSETSW | TCSETSF | TIOCGWINSZ | TIOCSWINSZ |
+          TIOCGPTN | FIONREAD | KDFONTOP | KDSETMODE | KDGETMODE |
+          KDSKBMODE | KDGKBMODE;
+term_ops = TIOCGPGRP | TIOCSPGRP | TIOCSCTTY | TIOCNOTTY | TIOCGSID;
+pty_master_ops = TIOCSPTLCK | TIOCGPTLCK | TIOCGPTPEER | TIOCPKT | TIOCGPKT;
+
+// Control file descriptor flags and I/O modes
+ioctl(fd, op = FIONCLEX | FIOCLEX | FIONBIO | FIOASYNC, ..);
+
+// Control terminal devices
+ioctl(fd, op = <pty_master_ops> | <tty_ops> | <term_ops>, ..);
+
+// Control framebuffer display
+ioctl(
+    fd,
+    op = FBIOGET_VSCREENINFO | FBIOPUT_VSCREENINFO | FBIOGET_FSCREENINFO |
+         FBIOGETCMAP | FBIOPUTCMAP | FBIOPAN_DISPLAY | FBIOBLANK,
+    ..
+);
+
+// Control Event devices (evdev)
+ioctl(
+    fd,
+    op = EVIOCGVERSION | EVIOCGID | EVIOCGNAME | EVIOCGPHYS | EVIOCGUNIQ |
+         EVIOCGKEY | EVIOCGLED | EVIOCGSW | EVIOCSCLOCKID | EVIOCGBIT,
+    ..
+);
+
+// Control Trust Domain Extensions (TDX) guest devices
+ioctl(fd, op = TDX_CMD_GET_REPORT0, ..);

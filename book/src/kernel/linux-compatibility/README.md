@@ -36,7 +36,7 @@ which are summarized in the table below.
 | 13      | rt_sigaction           | ✅             | [⚠️](syscall-flag-coverage/signals-and-timers/#rt_sigaction) |
 | 14      | rt_sigprocmask         | ✅             | [⚠️](syscall-flag-coverage/signals-and-timers/#rt_sigprocmask) |
 | 15      | rt_sigreturn           | ✅             | 💯 |
-| 16      | ioctl                  | ✅             | ❓ |
+| 16      | ioctl                  | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#ioctl) |
 | 17      | pread64                | ✅             | 💯 |
 | 18      | pwrite64               | ✅             | 💯 |
 | 19      | readv                  | ✅             | 💯 |
