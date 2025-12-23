@@ -25,6 +25,8 @@ const INIT_RLIMIT_NOFILE_MAX: u64 = 4096;
 const INIT_RLIMIT_MEMLOCK: u64 = 8 * 1024 * 1024;
 // https://github.com/torvalds/linux/blob/fac04efc5c793dccbd07e2d59af9f90b7fc0dca4/include/uapi/linux/mqueue.h#L26
 const INIT_RLIMIT_MSGQUEUE: u64 = 819200;
+// https://github.com/torvalds/linux/blob/fac04efc5c793dccbd07e2d59af9f90b7fc0dca4/fs/file.c#L90
+pub const SYSCTL_NR_OPEN: u64 = 1024 * 1024;
 
 #[derive(Clone)]
 pub struct ResourceLimits {
@@ -80,7 +82,7 @@ impl Default for ResourceLimits {
 }
 
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, TryFromInt)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
 pub enum ResourceType {
     RLIMIT_CPU = 0,
     RLIMIT_FSIZE = 1,
