@@ -18,7 +18,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use ostd::{sync::MutexGuard, task::disable_preempt};
 
 pub use self::{
-    heap::{Heap, USER_HEAP_SIZE_LIMIT},
+    heap::Heap,
     init_stack::{
         INIT_STACK_SIZE, InitStack, InitStackReader, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS,
         aux_vec::{AuxKey, AuxVec},
@@ -28,8 +28,6 @@ use crate::{fs::fs_resolver::PathOrInode, prelude::*, vm::vmar::Vmar};
 
 /*
  * The user's virtual memory space layout looks like below.
- * TODO: The layout of the userheap does not match the current implementation,
- * And currently the initial program break is a fixed value.
  *
  *  (high address)
  *  +---------------------+ <------+ The top of Vmar, which is the highest address usable
@@ -80,7 +78,7 @@ impl ProcessVm {
     fn new(executable_file: PathOrInode) -> Self {
         Self {
             init_stack: InitStack::new(),
-            heap: Heap::new(),
+            heap: Heap::new_uninitialized(),
             executable_file,
             #[cfg(target_arch = "riscv64")]
             vdso_base: AtomicUsize::new(0),
@@ -122,6 +120,16 @@ impl ProcessVm {
         aux_vec: AuxVec,
     ) -> Result<()> {
         self.init_stack().map_and_write(vmar, argv, envp, aux_vec)
+    }
+
+    /// Initializes the user heap.
+    pub(super) fn initialize_heap(
+        &self,
+        vmar: &Vmar,
+        data_segment_size: usize,
+        elf_brk: Vaddr,
+    ) -> Result<()> {
+        self.heap().initialize(vmar, data_segment_size, elf_brk)
     }
 
     /// Returns the base address for vDSO segment.
@@ -200,17 +208,11 @@ impl<'a> ProcessVmarGuard<'a> {
     }
 }
 
-/// Creates a new VMAR and map the heap.
+/// Creates a new VMAR for the init process.
 ///
 /// This method should only be used to create a VMAR for the init process.
-pub(super) fn new_vmar_and_map(executable_file: PathOrInode) -> Arc<Vmar> {
-    let new_vmar = Vmar::new(ProcessVm::new(executable_file));
-    new_vmar
-        .process_vm()
-        .heap()
-        .alloc_and_map(new_vmar.as_ref())
-        .unwrap();
-    new_vmar
+pub(super) fn new_vmar_for_init(executable_file: PathOrInode) -> Arc<Vmar> {
+    Vmar::new(ProcessVm::new(executable_file))
 }
 
 /// Unshares and renews the [`Vmar`] of the current process.
@@ -225,11 +227,4 @@ pub(super) fn unshare_and_renew_vmar(
     new_vmar.vm_space().activate();
     vmar.set_vmar(Some(new_vmar));
     drop(guard);
-
-    let new_vmar = vmar.unwrap();
-    new_vmar
-        .process_vm()
-        .heap()
-        .alloc_and_map(new_vmar)
-        .unwrap();
 }

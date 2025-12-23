@@ -23,7 +23,7 @@ use crate::{
 /// Loads elf to the process VMAR.
 ///
 /// This function will map elf segments and
-/// initialize process init stack.
+/// initialize process init stack and heap.
 pub fn load_elf_to_vmar(
     vmar: &Vmar,
     elf_inode: &Arc<dyn Inode>,
@@ -38,7 +38,7 @@ pub fn load_elf_to_vmar(
         not(any(target_arch = "x86_64", target_arch = "riscv64")),
         expect(unused_mut)
     )]
-    let (_range, entry_point, mut aux_vec) =
+    let (elf_mapped_info, entry_point, mut aux_vec) =
         init_and_map_vmos(vmar, ldso, &elf_headers, elf_inode)?;
 
     // Map the vDSO and set the entry.
@@ -55,6 +55,11 @@ pub fn load_elf_to_vmar(
 
     vmar.process_vm()
         .map_and_write_init_stack(vmar, argv, envp, aux_vec)?;
+    vmar.process_vm().initialize_heap(
+        vmar,
+        elf_mapped_info.data_segment_size,
+        elf_mapped_info.relocated_brk(),
+    )?;
 
     let user_stack_top = vmar.process_vm().init_stack().user_stack_top();
     Ok(ElfLoadInfo {
@@ -93,15 +98,13 @@ fn lookup_and_parse_ldso(
 }
 
 fn load_ldso(vmar: &Vmar, ldso_file: &Path, ldso_elf: &ElfHeaders) -> Result<LdsoLoadInfo> {
-    let range = map_segment_vmos(ldso_elf, vmar, ldso_file.inode())?;
+    let elf_mapped_info = map_segment_vmos(ldso_elf, vmar, ldso_file.inode())?;
+    let full_range = elf_mapped_info.full_range;
     Ok(LdsoLoadInfo {
-        entry_point: range
-            .relocated_addr_of(ldso_elf.entry_point())
-            .ok_or(Error::with_message(
-                Errno::ENOEXEC,
-                "The entry point is not in the mapped range",
-            ))?,
-        range,
+        entry_point: full_range.relocated_addr_of(ldso_elf.entry_point()).ok_or(
+            Error::with_message(Errno::ENOEXEC, "The entry point is not in the mapped range"),
+        )?,
+        range: full_range,
         _private: (),
     })
 }
@@ -114,7 +117,7 @@ fn init_and_map_vmos(
     ldso: Option<(Path, ElfHeaders)>,
     parsed_elf: &ElfHeaders,
     elf_inode: &Arc<dyn Inode>,
-) -> Result<(RelocatedRange, Vaddr, AuxVec)> {
+) -> Result<(ElfMappedInfo, Vaddr, AuxVec)> {
     // After we clear process vm, if any error happens, we must call exit_group instead of return to user space.
     let ldso_load_info = if let Some((ldso_file, ldso_elf)) = ldso {
         Some(load_ldso(vmar, &ldso_file, &ldso_elf)?)
@@ -122,13 +125,17 @@ fn init_and_map_vmos(
         None
     };
 
-    let elf_map_range = map_segment_vmos(parsed_elf, vmar, elf_inode)?;
+    let elf_mapped_info = map_segment_vmos(parsed_elf, vmar, elf_inode)?;
 
     let mut aux_vec = {
         let ldso_base = ldso_load_info
             .as_ref()
             .map(|load_info| load_info.range.relocated_start);
-        init_aux_vec(parsed_elf, elf_map_range.relocated_start, ldso_base)?
+        init_aux_vec(
+            parsed_elf,
+            elf_mapped_info.full_range.relocated_start,
+            ldso_base,
+        )?
     };
 
     // Set AT_SECURE based on setuid/setgid bits of the executable file.
@@ -144,7 +151,8 @@ fn init_and_map_vmos(
         // Normal shared object
         ldso_load_info.entry_point
     } else {
-        elf_map_range
+        elf_mapped_info
+            .full_range
             .relocated_addr_of(parsed_elf.entry_point())
             .ok_or(Error::with_message(
                 Errno::ENOEXEC,
@@ -152,7 +160,7 @@ fn init_and_map_vmos(
             ))?
     };
 
-    Ok((elf_map_range, entry_point, aux_vec))
+    Ok((elf_mapped_info, entry_point, aux_vec))
 }
 
 pub struct LdsoLoadInfo {
@@ -180,11 +188,11 @@ pub struct ElfLoadInfo {
 /// boundaries may not be page-aligned.
 ///
 /// [`Vmo`]: crate::vm::vmo::Vmo
-pub fn map_segment_vmos(
+fn map_segment_vmos(
     elf: &ElfHeaders,
     vmar: &Vmar,
     elf_inode: &Arc<dyn Inode>,
-) -> Result<RelocatedRange> {
+) -> Result<ElfMappedInfo> {
     let elf_va_range = get_range_for_all_segments(elf)?;
 
     let map_range = if elf.is_shared_object() {
@@ -215,12 +223,25 @@ pub fn map_segment_vmos(
     let relocated_range =
         RelocatedRange::new(elf_va_range, map_range.start).expect("Mapped range overflows");
 
+    let mut start_data = !0;
+    let mut end_data = 0;
+
     for program_header in &elf.program_headers {
         let type_ = program_header.get_type().map_err(|_| {
             Error::with_message(Errno::ENOEXEC, "Failed to parse the program header")
         })?;
         if type_ == program::Type::Load {
             check_segment_align(program_header)?;
+
+            // Update data segment range, not including .bss part.
+            if program_header.flags.is_write() {
+                if program_header.virtual_addr < start_data {
+                    start_data = program_header.virtual_addr;
+                }
+                if end_data < program_header.virtual_addr + program_header.file_size {
+                    end_data = program_header.virtual_addr + program_header.file_size;
+                }
+            }
 
             let map_at = relocated_range
                 .relocated_addr_of(program_header.virtual_addr as Vaddr)
@@ -230,7 +251,10 @@ pub fn map_segment_vmos(
         }
     }
 
-    Ok(relocated_range)
+    Ok(ElfMappedInfo {
+        full_range: relocated_range,
+        data_segment_size: end_data.saturating_sub(start_data) as usize,
+    })
 }
 
 /// A virtual range and its relocated address.
@@ -260,6 +284,21 @@ impl RelocatedRange {
         } else {
             None
         }
+    }
+}
+
+/// The information of mapped ELF segments.
+struct ElfMappedInfo {
+    /// The range covering all the mapped segments.
+    full_range: RelocatedRange,
+    /// The size of data segment.
+    data_segment_size: usize,
+}
+
+impl ElfMappedInfo {
+    /// Returns the relocated break address.
+    fn relocated_brk(&self) -> Vaddr {
+        self.full_range.relocated_start + self.full_range.original_range.len()
     }
 }
 
