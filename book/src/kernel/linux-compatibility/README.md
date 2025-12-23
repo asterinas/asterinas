@@ -271,8 +271,8 @@ which are summarized in the table below.
 | 248     | add_key                | ❌             | N/A |
 | 249     | request_key            | ❌             | N/A |
 | 250     | keyctl                 | ❌             | N/A |
-| 251     | ioprio_set             | ✅             | ❓ |
-| 252     | ioprio_get             | ✅             | ❓ |
+| 251     | ioprio_set             | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#ioprio_set-and-ioprio_get) |
+| 252     | ioprio_get             | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#ioprio_set-and-ioprio_get) |
 | 253     | inotify_init           | ✅             | 💯 |
 | 254     | inotify_add_watch      | ✅             | [⚠️](syscall-flag-coverage/file-systems-and-mount-control/#inotify_add_watch) |
 | 255     | inotify_rm_watch       | ✅             | 💯 |
