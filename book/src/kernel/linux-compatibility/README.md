@@ -241,7 +241,7 @@ which are summarized in the table below.
 | 218     | set_tid_address        | ✅             | 💯 |
 | 219     | restart_syscall        | ❌             | N/A |
 | 220     | semtimedop             | ✅             | [⚠️](syscall-flag-coverage/inter-process-communication/#semop-and-semtimedop) |
-| 221     | fadvise64              | ✅             | ❓ |
+| 221     | fadvise64              | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#fadvise64) |
 | 222     | timer_create           | ✅             | [⚠️](syscall-flag-coverage/signals-and-timers/#timer_create) |
 | 223     | timer_settime          | ✅             | 💯 |
 | 224     | timer_gettime          | ✅             | 💯 |

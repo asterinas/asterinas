@@ -1,0 +1,2 @@
+// Announce an intention to access file data in a specific pattern in the future
+fadvise64(fd, offset, len, advice = 0);
