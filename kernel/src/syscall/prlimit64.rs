@@ -10,7 +10,7 @@ use crate::{
         credentials::capabilities::CapSet,
         posix_thread::{AsPosixThread, PosixThread},
         process_table,
-        rlimit::RawRLimit64,
+        rlimit::{RawRLimit64, SYSCTL_NR_OPEN},
     },
 };
 
@@ -33,6 +33,11 @@ pub fn sys_setrlimit(resource: u32, new_rlim_addr: Vaddr, ctx: &Context) -> Resu
     );
     let new_raw: RawRLimit64 = ctx.user_space().read_val(new_rlim_addr)?;
     let resource_limits = ctx.process.resource_limits();
+
+    if resource == ResourceType::RLIMIT_NOFILE && new_raw.max > SYSCTL_NR_OPEN {
+        return_errno_with_message!(Errno::EPERM, "the new limit exceeds the system limit");
+    }
+
     resource_limits
         .get_rlimit(resource)
         .set_cur_and_max(new_raw.cur, new_raw.max)?;
@@ -64,6 +69,10 @@ pub fn sys_prlimit64(
         if new_rlim_addr != 0 {
             let new_raw: RawRLimit64 = ctx.user_space().read_val(new_rlim_addr)?;
             debug!("new_rlimit = {:?}", new_raw);
+            if resource == ResourceType::RLIMIT_NOFILE && new_raw.max > SYSCTL_NR_OPEN {
+                return_errno_with_message!(Errno::EPERM, "the new limit exceeds the system limit");
+            }
+
             resource_limits
                 .get_rlimit(resource)
                 .set_cur_and_max(new_raw.cur, new_raw.max)?;
