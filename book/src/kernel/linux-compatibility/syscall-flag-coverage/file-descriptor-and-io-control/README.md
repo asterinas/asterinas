@@ -146,3 +146,18 @@ Supported functionality in SCML:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/ioctl.2.html).
+
+### `ioprio_set` and `ioprio_get`
+
+Supported functionality in SCML:
+
+```c
+{{#include ioprio_get_and_set.scml}}
+```
+
+Unsupported selectors:
+* `IOPRIO_WHO_PGRP`
+* `IOPRIO_WHO_USER`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/ioprio_set.2.html).
