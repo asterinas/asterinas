@@ -300,7 +300,7 @@ which are summarized in the table below.
 | 277     | sync_file_range        | ❌             | N/A |
 | 278     | vmsplice               | ❌             | N/A |
 | 279     | move_pages             | ❌             | N/A |
-| 280     | utimensat              | ✅             | ❓ |
+| 280     | utimensat              | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#utimensat) |
 | 281     | epoll_pwait            | ✅             | 💯 |
 | 282     | signalfd               | ✅             | 💯 |
 | 283     | timerfd_create         | ✅             | [⚠️](syscall-flag-coverage/signals-and-timers/#timerfd_create) |

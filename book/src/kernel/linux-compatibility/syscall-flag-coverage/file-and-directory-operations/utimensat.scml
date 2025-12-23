@@ -1,0 +1,2 @@
+// Change file timestamps with nanosecond precision
+utimensat(dirfd, path, times, flags = AT_SYMLINK_NOFOLLOW);
