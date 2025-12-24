@@ -83,7 +83,7 @@ impl ProcFs {
     }
 
     pub(self) fn alloc_id(&self) -> u64 {
-        self.inode_allocator.fetch_add(1, Ordering::SeqCst)
+        self.inode_allocator.fetch_add(1, Ordering::Relaxed)
     }
 }
 

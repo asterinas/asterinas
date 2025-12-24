@@ -15,7 +15,7 @@ use crate::{
         file_table::FdFlags,
         path::RESERVED_MOUNT_ID,
         pipe::{Pipe, common::PipeHandle},
-        pseudofs::{PseudoInode, pipefs_singleton},
+        pseudofs::{PipeFs, PseudoInode},
         utils::{
             AccessMode, CreationFlags, Extension, FileSystem, Inode, InodeIo, InodeMode, InodeType,
             Metadata, StatusFlags, mkmod,
@@ -185,14 +185,11 @@ impl AnonPipeInode {
     fn new() -> Self {
         let pipe = Pipe::new();
 
-        let pseudo_inode = PseudoInode::new(
-            0,
+        let pseudo_inode = PipeFs::singleton().alloc_inode(
             InodeType::NamedPipe,
             mkmod!(u+rw),
             Uid::new_root(),
             Gid::new_root(),
-            aster_block::BLOCK_SIZE,
-            Arc::downgrade(pipefs_singleton()),
         );
 
         Self { pipe, pseudo_inode }

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::time::Duration;
+use core::{
+    sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
+};
 
 use spin::Once;
 
@@ -23,6 +26,7 @@ pub struct PseudoFs {
     name: &'static str,
     sb: SuperBlock,
     root: Arc<dyn Inode>,
+    inode_allocator: AtomicU64,
     fs_event_subscriber_stats: FsEventSubscriberStats,
 }
 
@@ -56,62 +60,106 @@ impl PseudoFs {
         name: &'static str,
         magic: u64,
     ) -> &'static Arc<Self> {
+        // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/libfs.c#L659-L689>
         fs.call_once(|| {
             Arc::new_cyclic(|weak_fs: &Weak<Self>| Self {
                 name,
                 sb: SuperBlock::new(magic, aster_block::BLOCK_SIZE, NAME_MAX),
                 root: Arc::new(PseudoInode::new(
-                    0,
-                    InodeType::Unknown,
+                    ROOT_INO,
+                    InodeType::Dir,
                     mkmod!(u+rw),
                     Uid::new_root(),
                     Gid::new_root(),
-                    aster_block::BLOCK_SIZE,
                     weak_fs.clone(),
                 )),
+                inode_allocator: AtomicU64::new(ROOT_INO + 1),
                 fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             })
         })
     }
+
+    pub fn alloc_inode(
+        self: &Arc<Self>,
+        type_: InodeType,
+        mode: InodeMode,
+        uid: Uid,
+        gid: Gid,
+    ) -> PseudoInode {
+        PseudoInode::new(self.alloc_id(), type_, mode, uid, gid, Arc::downgrade(self))
+    }
+
+    fn alloc_id(&self) -> u64 {
+        self.inode_allocator.fetch_add(1, Ordering::Relaxed)
+    }
 }
 
-/// Returns the singleton instance of the anonymous pipe file system.
-pub fn pipefs_singleton() -> &'static Arc<PseudoFs> {
-    static PIPEFS: Once<Arc<PseudoFs>> = Once::new();
-
-    PseudoFs::singleton(&PIPEFS, "pipefs", PIPEFS_MAGIC)
+pub(super) struct PipeFs {
+    _private: (),
 }
 
-/// Returns the singleton instance of the socket file system.
-pub fn sockfs_singleton() -> &'static Arc<PseudoFs> {
-    static SOCKFS: Once<Arc<PseudoFs>> = Once::new();
+impl PipeFs {
+    /// Returns the singleton instance of the anonymous pipe file system.
+    pub(super) fn singleton() -> &'static Arc<PseudoFs> {
+        static PIPEFS: Once<Arc<PseudoFs>> = Once::new();
 
-    PseudoFs::singleton(&SOCKFS, "sockfs", SOCKFS_MAGIC)
+        PseudoFs::singleton(&PIPEFS, "pipefs", PIPEFS_MAGIC)
+    }
 }
 
-/// Returns the singleton instance of the anonymous inode file system.
-fn anon_inodefs_singleton() -> &'static Arc<PseudoFs> {
-    static ANON_INODEFS: Once<Arc<PseudoFs>> = Once::new();
-
-    PseudoFs::singleton(&ANON_INODEFS, "anon_inodefs", ANON_INODEFS_MAGIC)
+pub struct SockFs {
+    _private: (),
 }
 
-/// Returns the shared inode of the anonymous inode file system singleton.
-//
-// Some members of anon_inodefs (such as epollfd, eventfd, timerfd, etc.) share
-// the same inode. The sharing is not only within the same category (e.g., two
-// epollfds share the same inode) but also across different categories (e.g.,
-// an epollfd and a timerfd share the same inode). Even across namespaces, this
-// inode is still shared. Although this Linux behavior is a bit odd, we keep it
-// for compatibility.
-//
-// A small subset of members in anon_inodefs (i.e., userfaultfd, io_uring, and
-// kvm_guest_memfd) have their own dedicated inodes. We need to support creating
-// independent inodes within anon_inodefs for them in the future.
-//
-// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/anon_inodes.c#L153-L164>
-pub fn anon_inodefs_shared_inode() -> &'static Arc<dyn Inode> {
-    &anon_inodefs_singleton().root
+impl SockFs {
+    /// Returns the singleton instance of the socket file system.
+    pub fn singleton() -> &'static Arc<PseudoFs> {
+        static SOCKFS: Once<Arc<PseudoFs>> = Once::new();
+
+        PseudoFs::singleton(&SOCKFS, "sockfs", SOCKFS_MAGIC)
+    }
+}
+
+pub struct AnonInodeFs {
+    _private: (),
+}
+
+impl AnonInodeFs {
+    /// Returns the singleton instance of the anonymous inode file system.
+    fn singleton() -> &'static Arc<PseudoFs> {
+        static ANON_INODEFS: Once<Arc<PseudoFs>> = Once::new();
+
+        PseudoFs::singleton(&ANON_INODEFS, "anon_inodefs", ANON_INODEFS_MAGIC)
+    }
+
+    /// Returns the shared inode of the anonymous inode file system singleton.
+    //
+    // Some members of anon_inodefs (such as epollfd, eventfd, timerfd, etc.) share
+    // the same inode. The sharing is not only within the same category (e.g., two
+    // epollfds share the same inode) but also across different categories (e.g.,
+    // an epollfd and a timerfd share the same inode). Even across namespaces, this
+    // inode is still shared. Although this Linux behavior is a bit odd, we keep it
+    // for compatibility.
+    //
+    // A small subset of members in anon_inodefs (i.e., userfaultfd, io_uring, and
+    // kvm_guest_memfd) have their own dedicated inodes. We need to support creating
+    // independent inodes within anon_inodefs for them in the future.
+    //
+    // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/anon_inodes.c#L153-L164>
+    pub fn shared_inode() -> &'static Arc<dyn Inode> {
+        static SHARED_INODE: Once<Arc<dyn Inode>> = Once::new();
+
+        SHARED_INODE.call_once(|| {
+            let shared_inode = Self::singleton().alloc_inode(
+                InodeType::Unknown,
+                mkmod!(u+rw),
+                Uid::new_root(),
+                Gid::new_root(),
+            );
+
+            Arc::new(shared_inode)
+        })
+    }
 }
 
 pub(super) fn init() {
@@ -171,6 +219,8 @@ impl FsType for SockFsType {
     }
 }
 
+/// Root Inode ID.
+const ROOT_INO: u64 = 1;
 // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/include/uapi/linux/magic.h#L87>
 const PIPEFS_MAGIC: u64 = 0x50495045;
 // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/include/uapi/linux/magic.h#L89>
@@ -186,13 +236,12 @@ pub struct PseudoInode {
 }
 
 impl PseudoInode {
-    pub fn new(
+    fn new(
         ino: u64,
         type_: InodeType,
         mode: InodeMode,
         uid: Uid,
         gid: Gid,
-        blk_size: usize,
         fs: Weak<PseudoFs>,
     ) -> Self {
         let now = now();
@@ -200,7 +249,7 @@ impl PseudoInode {
             dev: 0,
             ino,
             size: 0,
-            blk_size,
+            blk_size: aster_block::BLOCK_SIZE,
             blocks: 0,
             atime: now,
             mtime: now,

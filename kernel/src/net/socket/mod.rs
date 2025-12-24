@@ -10,7 +10,7 @@ use crate::{
         file_handle::FileLike,
         file_table::FdFlags,
         path::RESERVED_MOUNT_ID,
-        pseudofs::{PseudoInode, sockfs_singleton},
+        pseudofs::SockFs,
         utils::{CreationFlags, Inode, InodeType, StatusFlags, mkmod},
     },
     prelude::*,
@@ -210,13 +210,12 @@ impl<T: Socket + 'static> FileLike for T {
 
 /// Creates a new pseudo inode for a socket.
 fn new_pseudo_inode() -> Arc<dyn Inode> {
-    Arc::new(PseudoInode::new(
-        0,
+    let pseudo_inode = SockFs::singleton().alloc_inode(
         InodeType::Socket,
         mkmod!(a+rwx),
         Uid::new_root(),
         Gid::new_root(),
-        aster_block::BLOCK_SIZE,
-        Arc::downgrade(sockfs_singleton()),
-    ))
+    );
+
+    Arc::new(pseudo_inode)
 }
