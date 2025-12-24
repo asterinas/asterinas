@@ -22,7 +22,7 @@ use crate::{
         file_handle::{FileLike, Mappable},
         file_table::FdFlags,
         inode_handle::{do_fallocate_util, do_resize_util, do_seek_util},
-        path::{RESERVED_MOUNT_ID, check_open_util},
+        path::{Mount, RESERVED_MOUNT_ID, check_open_util},
         tmpfs::TmpFs,
         utils::{
             AccessMode, CachePage, CreationFlags, Extension, FallocMode, FileSystem, Inode,
@@ -231,9 +231,26 @@ impl Inode for MemfdInode {
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {
-        // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/mm/shmem.c#L3828-L3850>
+        MemfdTmpFs::singleton().clone()
+    }
+}
+
+struct MemfdTmpFs {
+    _private: (),
+}
+
+impl MemfdTmpFs {
+    // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/mm/shmem.c#L3828-L3850>
+    fn singleton() -> &'static Arc<TmpFs> {
         static MEMFD_TMPFS: Once<Arc<TmpFs>> = Once::new();
-        MEMFD_TMPFS.call_once(TmpFs::new).clone()
+
+        MEMFD_TMPFS.call_once(TmpFs::new)
+    }
+
+    fn mount_node() -> &'static Arc<Mount> {
+        static MEMFD_TMPFS_MOUNT: Once<Arc<Mount>> = Once::new();
+
+        MEMFD_TMPFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()))
     }
 }
 
