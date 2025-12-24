@@ -10,6 +10,7 @@ use spin::Once;
 use super::utils::{Extension, InodeIo, StatusFlags};
 use crate::{
     fs::{
+        path::Mount,
         registry::{FsProperties, FsType},
         utils::{
             FileSystem, FsEventSubscriberStats, FsFlags, Inode, InodeMode, InodeType, Metadata,
@@ -105,6 +106,13 @@ impl PipeFs {
 
         PseudoFs::singleton(&PIPEFS, "pipefs", PIPEFS_MAGIC)
     }
+
+    /// Returns the pseudo mount node of the pipe file system.
+    fn mount_node() -> &'static Arc<Mount> {
+        static PIPEFS_MOUNT: Once<Arc<Mount>> = Once::new();
+
+        PIPEFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()))
+    }
 }
 
 pub struct SockFs {
@@ -118,6 +126,13 @@ impl SockFs {
 
         PseudoFs::singleton(&SOCKFS, "sockfs", SOCKFS_MAGIC)
     }
+
+    /// Returns the pseudo mount node of the socket file system.
+    pub fn mount_node() -> &'static Arc<Mount> {
+        static SOCKFS_MOUNT: Once<Arc<Mount>> = Once::new();
+
+        SOCKFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()))
+    }
 }
 
 pub struct AnonInodeFs {
@@ -130,6 +145,13 @@ impl AnonInodeFs {
         static ANON_INODEFS: Once<Arc<PseudoFs>> = Once::new();
 
         PseudoFs::singleton(&ANON_INODEFS, "anon_inodefs", ANON_INODEFS_MAGIC)
+    }
+
+    /// Returns the pseudo mount node of the anonymous inode file system.
+    pub fn mount_node() -> &'static Arc<Mount> {
+        static ANON_INODEFS_MOUNT: Once<Arc<Mount>> = Once::new();
+
+        ANON_INODEFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()))
     }
 
     /// Returns the shared inode of the anonymous inode file system singleton.
