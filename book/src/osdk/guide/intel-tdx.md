@@ -51,7 +51,7 @@ supported_archs = ["x86_64"]
 boot.method = "grub-qcow2"
 grub.mkrescue_path = "~/tdx-tools/grub"
 grub.boot_protocol = "linux"
-qemu.args = """\
+qemu.args = '''\
     -accel kvm \
     -m 8G \
     -vga none \
@@ -60,11 +60,12 @@ qemu.args = """\
     -drive file=target/osdk/asterinas/asterinas.qcow2,if=virtio,format=qcow2 \
     -monitor telnet:127.0.0.1:9001,server,nowait \
     -bios /root/ovmf/release/OVMF.fd \
+    -object '{ \"qom-type\": \"tdx-guest\", \"id\": \"tdx0\", \"sept-ve-disable\": true, \"quote-generation-socket\": { \"type\": \"vsock\", \"cid\": \"2\", \"port\": \"4050\" } }' \
     -cpu host,-kvm-steal-time,pmu=off \
     -machine q35,kernel-irqchip=split,confidential-guest-support=tdx0 \
     -smp 1 \
     -nographic \
-"""
+'''
 ```
 
 To choose the configurations specified by the TDX scheme over the default ones,
