@@ -47,6 +47,8 @@ else
 fi
 
 if [ "$1" = "tdx" ]; then
+    TDX_OBJECT='{ "qom-type": "tdx-guest", "id": "tdx0", "sept-ve-disable": true, "quote-generation-socket": { "type": "vsock", "cid": "2", "port": "4050" } }'
+
     QEMU_ARGS="\
         -m ${MEM:-8G} \
         -smp ${SMP:-1} \
@@ -57,6 +59,7 @@ if [ "$1" = "tdx" ]; then
         -bios /root/ovmf/release/OVMF.fd \
         -cpu host,-kvm-steal-time,pmu=off \
         -machine q35,kernel-irqchip=split,confidential-guest-support=tdx0 \
+        -object '$TDX_OBJECT' \
         -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES \
         -device virtio-keyboard-pci,disable-legacy=on,disable-modern=off \
         $NETDEV_ARGS \
