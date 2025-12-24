@@ -11,6 +11,7 @@ use super::utils::{InodeIo, StatusFlags};
 use crate::{
     fs::{
         notify::FsEventPublisher,
+        path::Mount,
         registry::{FsProperties, FsType},
         utils::{
             FileSystem, FsEventSubscriberStats, FsFlags, Inode, InodeMode, InodeType, Metadata,
@@ -143,6 +144,27 @@ pub fn anon_inodefs_shared_inode() -> &'static Arc<dyn Inode> {
 
         Arc::new(shared_inode)
     })
+}
+
+/// Returns the pseudo mount of the pipe file system.
+pub fn pipefs_mount() -> &'static Arc<Mount> {
+    static PIPEFS_MOUNT: Once<Arc<Mount>> = Once::new();
+
+    PIPEFS_MOUNT.call_once(|| Mount::new_pseudo(pipefs_singleton().clone()))
+}
+
+/// Returns the pseudo mount of the socket file system.
+pub fn sockfs_mount() -> &'static Arc<Mount> {
+    static SOCKFS_MOUNT: Once<Arc<Mount>> = Once::new();
+
+    SOCKFS_MOUNT.call_once(|| Mount::new_pseudo(sockfs_singleton().clone()))
+}
+
+/// Returns the pseudo mount of the anonymous inode file system.
+pub fn anon_inodefs_mount() -> &'static Arc<Mount> {
+    static ANON_INODEFS_MOUNT: Once<Arc<Mount>> = Once::new();
+
+    ANON_INODEFS_MOUNT.call_once(|| Mount::new_pseudo(anon_inodefs_singleton().clone()))
 }
 
 pub(super) fn init() {
