@@ -1,7 +1,7 @@
 [scheme."tdx"]
 boot.method = "grub-qcow2"
 grub.boot_protocol = "linux"
-qemu.args = """
+qemu.args = '''
     -accel kvm \
     -m 8G \
     -smp 1 \
@@ -10,6 +10,7 @@ qemu.args = """
     -monitor pty \
     -nodefaults \
     -bios /root/ovmf/release/OVMF.fd \
+    -object '{ \"qom-type\": \"tdx-guest\", \"id\": \"tdx0\", \"sept-ve-disable\": true, \"quote-generation-socket\": { \"type\": \"vsock\", \"cid\": \"2\", \"port\": \"4050\" } }' \
     -cpu host,-kvm-steal-time,pmu=off \
     -machine q35,kernel-irqchip=split,confidential-guest-support=tdx0 \
     -device virtio-keyboard-pci,disable-legacy=on,disable-modern=off \
@@ -19,4 +20,4 @@ qemu.args = """
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
     -monitor chardev:mux \
     -serial chardev:mux \
-"""
+'''
