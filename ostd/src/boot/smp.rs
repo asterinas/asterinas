@@ -160,12 +160,18 @@ pub(crate) unsafe extern "C" fn ap_early_entry(cpu_id: u32) -> ! {
     // 3. No remaining `with_borrow` invocations on this CPU from now on.
     unsafe { crate::mm::page_table::boot_pt::dismiss() };
 
-    // Mark the AP as started.
-    report_online_and_hw_cpu_id(cpu_id);
-
     log::info!("Processor {} started. Spinning for tasks.", cpu_id);
 
+    // Mark the AP as started. The BSP will resume execution once all the APs
+    // have been marked as such.
+    //
+    // From here to the following `tlb_flush_all_excluding_global`, there is no
+    // TLB coherence because the BSP may not be able to send IPIs to flush the
+    // TLBs. Do not perform complex operations during this period.
+    report_online_and_hw_cpu_id(cpu_id);
     let ap_late_entry = AP_LATE_ENTRY.wait();
+    crate::arch::mm::tlb_flush_all_excluding_global();
+
     ap_late_entry();
 
     Task::yield_now();

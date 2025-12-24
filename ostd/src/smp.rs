@@ -32,37 +32,52 @@ use crate::{
 /// The function `f` will be executed asynchronously on the target processors.
 /// However if called on the current processor, it will be synchronous.
 pub fn inter_processor_call(targets: &CpuSet, f: fn()) {
-    let irq_guard = irq::disable_local();
-    let this_cpu_id = irq_guard.current_cpu();
-
-    let ipi_data = IPI_GLOBAL_DATA.get().unwrap();
-
-    let mut call_on_self = false;
-    for cpu_id in targets.iter() {
-        if cpu_id == this_cpu_id {
-            call_on_self = true;
-            continue;
-        }
-        CALL_QUEUES.get_on_cpu(cpu_id).lock().push_back(f);
-    }
-    for cpu_id in targets.iter() {
-        if cpu_id == this_cpu_id {
-            continue;
-        }
-        let hw_cpu_id = ipi_data.hw_cpu_ids[cpu_id.as_usize()];
-        crate::arch::irq::send_ipi(hw_cpu_id, &irq_guard as _);
-    }
-    if call_on_self {
-        // Execute the function synchronously.
-        f();
-    }
+    let ipi_sender = IPI_SENDER.get().unwrap();
+    ipi_sender.inter_processor_call(targets, f);
 }
 
-struct IpiGlobalData {
+/// A sender that carries necessary information to send inter-processor interrupts.
+///
+/// The purpose of exporting this type is to enable the users to check whether
+/// [`IPI_SENDER`] has been initialized.
+pub(crate) struct IpiSender {
     hw_cpu_ids: Box<[HwCpuId]>,
 }
 
-static IPI_GLOBAL_DATA: Once<IpiGlobalData> = Once::new();
+/// The [`IpiSender`] singleton.
+pub(crate) static IPI_SENDER: Once<IpiSender> = Once::new();
+
+impl IpiSender {
+    /// Executes a function on other processors.
+    ///
+    /// See [`inter_processor_call`] for details. The purpose of exporting this
+    /// method is to enable callers to check whether [`IPI_SENDER`] has been
+    /// initialized.
+    pub(crate) fn inter_processor_call(&self, targets: &CpuSet, f: fn()) {
+        let irq_guard = irq::disable_local();
+        let this_cpu_id = irq_guard.current_cpu();
+
+        let mut call_on_self = false;
+        for cpu_id in targets.iter() {
+            if cpu_id == this_cpu_id {
+                call_on_self = true;
+                continue;
+            }
+            CALL_QUEUES.get_on_cpu(cpu_id).lock().push_back(f);
+        }
+        for cpu_id in targets.iter() {
+            if cpu_id == this_cpu_id {
+                continue;
+            }
+            let hw_cpu_id = self.hw_cpu_ids[cpu_id.as_usize()];
+            crate::arch::irq::send_ipi(hw_cpu_id, &irq_guard as _);
+        }
+        if call_on_self {
+            // Execute the function synchronously.
+            f();
+        }
+    }
+}
 
 cpu_local! {
     static CALL_QUEUES: SpinLock<VecDeque<fn()>> = SpinLock::new(VecDeque::new());
@@ -90,9 +105,8 @@ pub(crate) unsafe fn do_inter_processor_call(_trapframe: &TrapFrame) {
 }
 
 pub(super) fn init() {
-    IPI_GLOBAL_DATA.call_once(|| {
+    IPI_SENDER.call_once(|| {
         let hw_cpu_ids = crate::boot::smp::construct_hw_cpu_id_mapping();
-
-        IpiGlobalData { hw_cpu_ids }
+        IpiSender { hw_cpu_ids }
     });
 }

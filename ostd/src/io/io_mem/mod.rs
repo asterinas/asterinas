@@ -15,13 +15,16 @@ pub(crate) use self::allocator::IoMemAllocatorBuilder;
 pub(super) use self::allocator::init;
 use crate::{
     Error,
+    cpu::{AtomicCpuSet, CpuSet},
     mm::{
         HasPaddr, HasSize, Infallible, PAGE_SIZE, Paddr, PodOnce, VmReader, VmWriter,
         io_util::{HasVmReaderWriter, VmReaderWriterIdentity},
         kspace::kvirt_area::KVirtArea,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
+        tlb::{TlbFlushOp, TlbFlusher},
     },
     prelude::*,
+    task::disable_preempt,
 };
 
 /// A marker type used for [`IoMem`],
@@ -118,9 +121,19 @@ impl<SecuritySensitivity> IoMem<SecuritySensitivity> {
             priv_flags,
         };
 
-        // SAFETY: The caller of `IoMem::new()` ensures that the given
-        // physical address range is I/O memory, so it is safe to map.
-        let kva = unsafe { KVirtArea::map_untracked_frames(area_size, 0, frames_range, prop) };
+        let kva = {
+            // SAFETY: The caller of `IoMem::new()` ensures that the given
+            // physical address range is I/O memory, so it is safe to map.
+            let kva = unsafe { KVirtArea::map_untracked_frames(area_size, 0, frames_range, prop) };
+
+            let target_cpus = AtomicCpuSet::new(CpuSet::new_full());
+            let mut flusher = TlbFlusher::new(&target_cpus, disable_preempt());
+            flusher.issue_tlb_flush(TlbFlushOp::for_range(kva.range()));
+            flusher.dispatch_tlb_flush();
+            flusher.sync_tlb_flush();
+
+            kva
+        };
 
         Self {
             kvirt_area: Arc::new(kva),

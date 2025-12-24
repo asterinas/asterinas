@@ -2,11 +2,9 @@
 
 //! Power management.
 
-use core::sync::atomic::Ordering;
-
 use spin::Once;
 
-use crate::{arch::irq::disable_local_and_halt, cpu::CpuSet, smp::inter_processor_call};
+use crate::{arch::irq::disable_local_and_halt, cpu::CpuSet};
 
 /// An exit code that denotes the reason for restarting or powering off.
 ///
@@ -87,10 +85,10 @@ pub fn poweroff(code: ExitCode) -> ! {
 fn machine_halt() -> ! {
     log::error!("Halting the machine...");
 
-    // TODO: `inter_processor_call` may panic again (e.g., if IPIs have not been initialized or if
-    // there is an out-of-memory error). We should find a way to make it panic-free.
-    if !crate::IN_BOOTSTRAP_CONTEXT.load(Ordering::Relaxed) {
-        inter_processor_call(&CpuSet::new_full(), || disable_local_and_halt());
+    // TODO: `inter_processor_call` may panic again (e.g., if there is an out-of-memory error). We
+    // should find a way to make it panic-free.
+    if let Some(ipi_sender) = crate::smp::IPI_SENDER.get() {
+        ipi_sender.inter_processor_call(&CpuSet::new_full(), || disable_local_and_halt());
     }
     disable_local_and_halt();
 }
