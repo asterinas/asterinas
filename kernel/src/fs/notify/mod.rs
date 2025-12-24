@@ -419,7 +419,7 @@ fn notify_parent(path: &Path, mut events: FsEvents, name: String) {
         events |= FsEvents::ISDIR;
     }
 
-    let parent = path.effective_parent();
+    let parent = path.parent_within_mount();
     if let Some(parent) = parent {
         notify_inode(parent.inode(), events, Some(name));
     }
