@@ -165,7 +165,7 @@ impl Path {
     ///
     /// If it is the root of a mount, it will go up to the mountpoint
     /// to get the parent of the mountpoint recursively.
-    pub fn effective_parent(&self) -> Option<Self> {
+    fn effective_parent(&self) -> Option<Self> {
         if !self.is_mount_root() {
             return Some(Self::new(self.mount.clone(), self.dentry.parent().unwrap()));
         }
@@ -175,6 +175,18 @@ impl Path {
 
         let mount_parent = Self::new(parent.upgrade().unwrap(), mountpoint);
         mount_parent.effective_parent()
+    }
+
+    /// Gets the parent `Path` within the same mount.
+    ///
+    /// This method returns the parent path within the same filesystem/mount.
+    /// It does NOT cross mount boundaries. If the current path is the root of a mount,
+    /// it will return `None`.
+    ///
+    /// For cross-filesystem parent lookup, use `effective_parent()` instead.
+    pub(super) fn parent_within_mount(&self) -> Option<Self> {
+        let parent = self.dentry.parent()?;
+        Some(Self::new(self.mount.clone(), parent))
     }
 
     /// Gets the top `Path` of the current.
