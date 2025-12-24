@@ -186,14 +186,11 @@ impl AnonPipeInode {
     fn new() -> Self {
         let pipe = Pipe::new();
 
-        let pseudo_inode = PseudoInode::new(
-            0,
+        let pseudo_inode = pipefs_singleton().alloc_inode(
             InodeType::NamedPipe,
             mkmod!(u+rw),
             Uid::new_root(),
             Gid::new_root(),
-            aster_block::BLOCK_SIZE,
-            Arc::downgrade(pipefs_singleton()),
         );
 
         Self { pipe, pseudo_inode }

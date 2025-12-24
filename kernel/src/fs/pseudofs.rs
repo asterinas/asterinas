@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::time::Duration;
+use core::{
+    sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
+};
 
 use spin::Once;
 
@@ -24,6 +27,7 @@ pub struct PseudoFs {
     name: &'static str,
     sb: SuperBlock,
     root: Arc<dyn Inode>,
+    inode_allocator: AtomicU64,
     fs_event_subscriber_stats: FsEventSubscriberStats,
 }
 
@@ -57,22 +61,37 @@ impl PseudoFs {
         name: &'static str,
         magic: u64,
     ) -> &'static Arc<Self> {
+        // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/libfs.c#L659-L689>
         fs.call_once(|| {
             Arc::new_cyclic(|weak_fs: &Weak<Self>| Self {
                 name,
                 sb: SuperBlock::new(magic, aster_block::BLOCK_SIZE, NAME_MAX),
                 root: Arc::new(PseudoInode::new(
-                    0,
-                    InodeType::Unknown,
+                    ROOT_INO,
+                    InodeType::Dir,
                     mkmod!(u+rw),
                     Uid::new_root(),
                     Gid::new_root(),
-                    aster_block::BLOCK_SIZE,
                     weak_fs.clone(),
                 )),
+                inode_allocator: AtomicU64::new(ROOT_INO + 1),
                 fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             })
         })
+    }
+
+    pub fn alloc_inode(
+        self: &Arc<Self>,
+        type_: InodeType,
+        mode: InodeMode,
+        uid: Uid,
+        gid: Gid,
+    ) -> PseudoInode {
+        PseudoInode::new(self.alloc_id(), type_, mode, uid, gid, Arc::downgrade(self))
+    }
+
+    fn alloc_id(&self) -> u64 {
+        self.inode_allocator.fetch_add(1, Ordering::Relaxed)
     }
 }
 
@@ -112,7 +131,18 @@ fn anon_inodefs_singleton() -> &'static Arc<PseudoFs> {
 //
 // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/anon_inodes.c#L153-L164>
 pub fn anon_inodefs_shared_inode() -> &'static Arc<dyn Inode> {
-    &anon_inodefs_singleton().root
+    static SHARED_INODE: Once<Arc<dyn Inode>> = Once::new();
+
+    SHARED_INODE.call_once(|| {
+        let shared_inode = anon_inodefs_singleton().alloc_inode(
+            InodeType::Unknown,
+            mkmod!(u+rw),
+            Uid::new_root(),
+            Gid::new_root(),
+        );
+
+        Arc::new(shared_inode)
+    })
 }
 
 pub(super) fn init() {
@@ -172,6 +202,8 @@ impl FsType for SockFsType {
     }
 }
 
+/// Root Inode ID.
+const ROOT_INO: u64 = 1;
 // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/include/uapi/linux/magic.h#L87>
 const PIPEFS_MAGIC: u64 = 0x50495045;
 // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/include/uapi/linux/magic.h#L89>
@@ -187,13 +219,12 @@ pub struct PseudoInode {
 }
 
 impl PseudoInode {
-    pub fn new(
+    fn new(
         ino: u64,
         type_: InodeType,
         mode: InodeMode,
         uid: Uid,
         gid: Gid,
-        blk_size: usize,
         fs: Weak<PseudoFs>,
     ) -> Self {
         let now = now();
@@ -201,7 +232,7 @@ impl PseudoInode {
             dev: 0,
             ino,
             size: 0,
-            blk_size,
+            blk_size: aster_block::BLOCK_SIZE,
             blocks: 0,
             atime: now,
             mtime: now,
