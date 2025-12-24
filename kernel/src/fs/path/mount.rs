@@ -64,6 +64,8 @@ bitflags! {
         const NODIRATIME     = 1 << 11;
         /// Update atime relative to mtime/ctime.
         const RELATIME       = 1 << 21;
+        /// Kernel (pseudo) mount.
+        const KERNMOUNT      = 1 << 22;
         /// Always perform atime updates.
         const STRICTATIME    = 1 << 24;
     }
@@ -188,11 +190,19 @@ impl Mount {
         Self::new(fs, PerMountFlags::default(), None, mnt_ns)
     }
 
+    /// Creates a pseudo mount node with an associated FS.
+    ///
+    /// This pseudo mount is not mounted on other mount nodes, has no parent, and does not
+    /// belong to any mount namespace.
+    pub(in crate::fs) fn new_pseudo(fs: Arc<dyn FileSystem>) -> Arc<Self> {
+        Self::new(fs, PerMountFlags::KERNMOUNT, None, Weak::new())
+    }
+
     /// The internal constructor.
     ///
-    /// Root mount node has no mountpoint which other mount nodes must have mountpoint.
+    /// A root mount node has no mountpoint, while other mount nodes must have one.
     ///
-    /// Here, a Mount is instantiated without an initial mountpoint,
+    /// Here, a `Mount` is instantiated without an initial mountpoint,
     /// avoiding fixed mountpoint limitations. This allows the root mount node to
     /// exist without a mountpoint, ensuring uniformity and security, while all other
     /// mount nodes must be explicitly assigned a mountpoint to maintain structural integrity.
@@ -203,6 +213,7 @@ impl Mount {
         mnt_ns: Weak<MountNamespace>,
     ) -> Arc<Self> {
         let id = ID_ALLOCATOR.get().unwrap().lock().alloc().unwrap();
+
         Arc::new_cyclic(|weak_self| Self {
             id,
             root_dentry: Dentry::new_root(fs.root_inode()),
