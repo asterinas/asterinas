@@ -18,6 +18,7 @@ use crate::{
     const_assert,
     cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu},
     cpu_local,
+    smp::IpiSender,
     sync::{LocalIrqDisabled, SpinLock},
 };
 
@@ -28,6 +29,7 @@ pub struct TlbFlusher<'a, G: PinCurrentCpu> {
     target_cpus: &'a AtomicCpuSet,
     have_unsynced_flush: CpuSet,
     ops_stack: OpsStack,
+    ipi_sender: Option<&'static IpiSender>,
     _pin_current: G,
 }
 
@@ -44,6 +46,7 @@ impl<'a, G: PinCurrentCpu> TlbFlusher<'a, G> {
             target_cpus,
             have_unsynced_flush: CpuSet::new_empty(),
             ops_stack: OpsStack::new(),
+            ipi_sender: crate::smp::IPI_SENDER.get(),
             _pin_current: pin_current_guard,
         }
     }
@@ -97,20 +100,20 @@ impl<'a, G: PinCurrentCpu> TlbFlusher<'a, G> {
             need_flush_on_self = true;
         }
 
-        for cpu in target_cpus.iter() {
-            {
+        if let Some(ipi_sender) = self.ipi_sender {
+            for cpu in target_cpus.iter() {
+                self.have_unsynced_flush.add(cpu);
+
                 let mut flush_ops = FLUSH_OPS.get_on_cpu(cpu).lock();
                 flush_ops.push_from(&self.ops_stack);
-
                 // Clear ACK before dropping the lock to avoid false ACKs.
                 ACK_REMOTE_FLUSH
                     .get_on_cpu(cpu)
                     .store(false, Ordering::Relaxed);
             }
-            self.have_unsynced_flush.add(cpu);
-        }
 
-        crate::smp::inter_processor_call(&target_cpus, do_remote_flush);
+            ipi_sender.inter_processor_call(&target_cpus, do_remote_flush);
+        }
 
         // Flush ourselves after sending all IPIs to save some time.
         if need_flush_on_self {
@@ -136,6 +139,12 @@ impl<'a, G: PinCurrentCpu> TlbFlusher<'a, G> {
     /// processed in IRQs, two CPUs may deadlock if they are waiting for each
     /// other's TLB coherence.
     pub fn sync_tlb_flush(&mut self) {
+        if self.ipi_sender.is_none() {
+            // We performed some TLB flushes in the boot context. The AP's boot
+            // process should take care of them.
+            return;
+        }
+
         assert!(
             irq::is_local_enabled(),
             "Waiting for remote flush with IRQs disabled"
