@@ -11,7 +11,7 @@ use crate::{
         file_handle::FileLike,
         file_table::FdFlags,
         path::RESERVED_MOUNT_ID,
-        pseudofs::anon_inodefs_shared_inode,
+        pseudofs::AnonInodeFs,
         utils::{CreationFlags, Inode, StatusFlags},
     },
     prelude::*,
@@ -95,7 +95,7 @@ impl FileLike for PidFile {
     }
 
     fn inode(&self) -> &Arc<dyn Inode> {
-        anon_inodefs_shared_inode()
+        AnonInodeFs::shared_inode()
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
