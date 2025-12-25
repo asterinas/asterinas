@@ -1488,7 +1488,7 @@ impl InodeImpl {
                 self.fs().free_blocks(device_range).unwrap();
                 return Err(e);
             }
-            self.desc.blocks_count = range.start + device_range.len() as Ext2Bid;
+            self.desc.sector_count = blocks_to_sectors(range.start + device_range.len() as u32);
             self.last_alloc_device_bid = Some(device_range.end - 1);
             return Ok(device_range.len() as Ext2Bid);
         }
@@ -1534,7 +1534,7 @@ impl InodeImpl {
             return Err(e);
         }
 
-        self.desc.blocks_count = range.start + device_range.len() as Ext2Bid;
+        self.desc.sector_count = blocks_to_sectors(range.start + device_range.len() as u32);
         self.last_alloc_device_bid = Some(device_range.end - 1);
         Ok(device_range.len() as Ext2Bid)
     }
@@ -1696,7 +1696,7 @@ impl InodeImpl {
             current_range.end -= free_cnt;
         }
 
-        self.desc.blocks_count = range.start;
+        self.desc.sector_count = blocks_to_sectors(range.start);
         self.last_alloc_device_bid = if range.start == 0 {
             None
         } else {
@@ -2143,8 +2143,8 @@ pub(super) struct InodeDesc {
     dtime: Duration,
     /// Hard links count.
     hard_links: u16,
-    /// Number of blocks.
-    blocks_count: Ext2Bid,
+    /// Number of sectors.
+    sector_count: u32,
     /// File flags.
     flags: FileFlags,
     /// Pointers to blocks.
@@ -2173,7 +2173,7 @@ impl TryFrom<RawInode> for InodeDesc {
             mtime: Duration::from(inode.mtime),
             dtime: Duration::from(inode.dtime),
             hard_links: inode.hard_links,
-            blocks_count: inode.blocks_count,
+            sector_count: inode.sector_count,
             flags: FileFlags::from_bits(inode.flags)
                 .ok_or(Error::with_message(Errno::EINVAL, "invalid file flags"))?,
             block_ptrs: inode.block_ptrs,
@@ -2201,7 +2201,7 @@ impl InodeDesc {
             mtime: now,
             dtime: Duration::ZERO,
             hard_links: 1,
-            blocks_count: 0,
+            sector_count: 0,
             flags: FileFlags::empty(),
             block_ptrs: BlockPtrs::default(),
             acl: match type_ {
@@ -2220,7 +2220,7 @@ impl InodeDesc {
     /// Ext2 allows the `block_count` to exceed the actual number of blocks utilized.
     pub fn blocks_count(&self) -> Ext2Bid {
         let blocks = self.size_to_blocks(self.size);
-        assert!(blocks <= self.blocks_count);
+        debug_assert!(blocks <= sectors_to_blocks(self.sector_count));
         blocks
     }
 
@@ -2230,6 +2230,17 @@ impl InodeDesc {
         }
         size.div_ceil(BLOCK_SIZE) as Ext2Bid
     }
+}
+
+fn sectors_to_blocks(sector_count: u32) -> Ext2Bid {
+    sector_count.div_ceil((BLOCK_SIZE / SECTOR_SIZE) as u32)
+}
+
+fn blocks_to_sectors(block_count: u32) -> u32 {
+    const SECTORS_PER_BLOCK: u32 = (BLOCK_SIZE / SECTOR_SIZE) as u32;
+    block_count
+        .checked_mul(SECTORS_PER_BLOCK)
+        .expect("sector count overflow in blocks_to_sectors conversion")
 }
 
 bitflags! {
@@ -2335,7 +2346,7 @@ pub(super) struct RawInode {
     /// Low 16 bits of Group Id.
     pub gid: u16,
     pub hard_links: u16,
-    pub blocks_count: u32,
+    pub sector_count: u32,
     /// File flags.
     pub flags: u32,
     /// OS dependent Value 1.
@@ -2369,7 +2380,7 @@ impl From<&InodeDesc> for RawInode {
             dtime: UnixTime::from(inode.dtime),
             gid: inode.gid as u16,
             hard_links: inode.hard_links,
-            blocks_count: inode.blocks_count,
+            sector_count: inode.sector_count,
             flags: inode.flags.bits(),
             block_ptrs: inode.block_ptrs,
             file_acl: match inode.acl {
