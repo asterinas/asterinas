@@ -5,7 +5,7 @@ use alloc::vec;
 use core::{marker::PhantomData, num::NonZeroUsize, ops::RangeInclusive};
 
 use lru::LruCache;
-use ostd_pod::Pod;
+use ostd::Pod;
 
 use super::{
     RangeQueryCtx, RecordKey, RecordValue, SyncId, TxEventListener, mem_table::ValueEx,
