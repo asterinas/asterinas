@@ -1,3 +1,10 @@
+# The Cargo workspace configurations shared by all in-kernel crates.
+#
+# As a kernel project, most crates in Asterinas are written and built for the kernel space.
+# But there are also a few userspace crates
+# whose crate-level `Cargo.toml` files are not affected by this workspace-level `Cargo.toml`.
+# The complete list can be found in the `workspace.exclude` field.
+
 [workspace]
 resolver = "2"
 members = [
@@ -42,7 +49,6 @@ members = [
     "kernel/libs/typeflags-util",
     "kernel/libs/atomic-integer-wrapper",
     "kernel/libs/xarray",
-    "tools/sctrace",
 ]
 exclude = [
     "kernel/libs/comp-sys/cargo-component",
@@ -59,6 +65,18 @@ unexpected_cfgs = { level = "allow", check-cfg = ['cfg(ktest)'] }
 
 [workspace.lints.clippy]
 allow_attributes = "warn"
+
+# Keys under `workspace.package` and the `package` section of each crate 
+# follow the ordering suggested at: 
+# https://github.com/crate-ci/cargo-cargofmt/issues/29#issuecomment-3647516745
+# 
+# FIXME: The current key order is not yet finalized.
+# Once `cargo-cargofmt` becomes stable, we will use it to enforce a consistent key order.
+[workspace.package]
+version = "0.17.0"
+repository = "https://github.com/asterinas/asterinas"
+license = "MPL-2.0"
+edition = "2024"
 
 # Cargo only looks at the profile settings 
 # in the Cargo.toml manifest at the root of the workspace
