@@ -15,6 +15,8 @@ members = [
     "ostd/libs/align_ext",
     "ostd/libs/ostd-macros",
     "ostd/libs/id-alloc",
+    "ostd/libs/int-to-c-enum",
+    "ostd/libs/int-to-c-enum/derive",
     "ostd/libs/linux-bzimage/builder",
     "ostd/libs/linux-bzimage/boot-params",
     "ostd/libs/linux-bzimage/setup",
@@ -35,8 +37,6 @@ members = [
     "kernel/comps/virtio",
     "kernel/comps/pci",
     "kernel/libs/cpio-decoder",
-    "kernel/libs/int-to-c-enum",
-    "kernel/libs/int-to-c-enum/derive",
     "kernel/libs/aster-rights",
     "kernel/libs/aster-rights-proc",
     "kernel/libs/aster-util",
@@ -84,6 +84,7 @@ ostd = { version = "0.17.0", path = "ostd" }
 # Crates under ostd/libs
 align_ext = { path = "ostd/libs/align_ext", version = "0.1.0" }
 id-alloc = { path = "ostd/libs/id-alloc", version = "0.1.0" }
+int-to-c-enum = { path = "ostd/libs/int-to-c-enum", version = "0.1.0" }
 linux-boot-params = { version = "0.17.0", path = "ostd/libs/linux-bzimage/boot-params" }
 ostd-macros = { version = "0.17.0", path = "ostd/libs/ostd-macros" }
 ostd-test = { version = "0.17.0", path = "ostd/libs/ostd-test" }
@@ -112,7 +113,6 @@ aster-util = { path = "kernel/libs/aster-util" }
 atomic-integer-wrapper = { path = "kernel/libs/atomic-integer-wrapper" }
 cpio-decoder = { path = "kernel/libs/cpio-decoder" }
 device-id = { path = "kernel/libs/device-id" }
-int-to-c-enum = { path = "kernel/libs/int-to-c-enum", version = "0.1.0" }
 jhash = { path = "kernel/libs/jhash" }
 keyable-arc = { path = "kernel/libs/keyable-arc" }
 logo-ascii-art = { path = "kernel/libs/logo-ascii-art" }
