@@ -3,11 +3,7 @@
 //! Memfd Implementation.
 
 use alloc::format;
-use core::{
-    fmt::Display,
-    sync::atomic::{AtomicU32, Ordering},
-    time::Duration,
-};
+use core::time::Duration;
 
 use align_ext::AlignExt;
 use aster_block::bio::BioWaiter;
@@ -17,25 +13,18 @@ use spin::Once;
 
 use super::fs::RamInode;
 use crate::{
-    events::IoEvents,
     fs::{
-        file_handle::{FileLike, Mappable},
-        file_table::FdFlags,
-        inode_handle::{do_fallocate_util, do_resize_util, do_seek_util},
-        path::{Mount, RESERVED_MOUNT_ID, check_open_util},
+        inode_handle::InodeHandle,
+        path::{Mount, Path},
         tmpfs::TmpFs,
         utils::{
-            AccessMode, CachePage, CreationFlags, Extension, FallocMode, FileSystem, Inode,
-            InodeIo, InodeMode, InodeType, Metadata, OpenArgs, PageCacheBackend, SeekFrom,
-            StatusFlags, XattrName, XattrNamespace, XattrSetFlags, mkmod,
+            AccessMode, CachePage, Extension, FallocMode, FileSystem, Inode, InodeIo, InodeMode,
+            InodeType, Metadata, PageCacheBackend, StatusFlags, XattrName, XattrNamespace,
+            XattrSetFlags, mkmod,
         },
     },
     prelude::*,
-    process::{
-        Gid, Uid,
-        signal::{PollHandle, Pollable},
-    },
-    util::ioctl::RawIoctl,
+    process::{Gid, Uid},
     vm::{perms::VmPerms, vmo::Vmo},
 };
 
@@ -97,7 +86,7 @@ impl MemfdInode {
         Ok(())
     }
 
-    pub fn name(&self) -> &str {
+    pub(self) fn name(&self) -> &str {
         &self.name
     }
 }
@@ -235,53 +224,31 @@ impl Inode for MemfdInode {
     }
 }
 
-struct MemfdTmpFs {
-    _private: (),
+pub trait MemfdInodeHandle: Sized {
+    fn new_memfd(name: String, memfd_flags: MemfdFlags) -> Result<Self>;
+    fn add_seals(&self, new_seals: FileSeals) -> Result<()>;
+    fn get_seals(&self) -> Result<FileSeals>;
 }
 
-impl MemfdTmpFs {
-    // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/mm/shmem.c#L3828-L3850>
-    fn singleton() -> &'static Arc<TmpFs> {
-        static MEMFD_TMPFS: Once<Arc<TmpFs>> = Once::new();
-
-        MEMFD_TMPFS.call_once(TmpFs::new)
-    }
-
-    fn mount_node() -> &'static Arc<Mount> {
-        static MEMFD_TMPFS_MOUNT: Once<Arc<Mount>> = Once::new();
-
-        MEMFD_TMPFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()))
-    }
-}
-
-pub struct MemfdFile {
-    memfd_inode: Arc<dyn Inode>,
-    offset: Mutex<usize>,
-    status_flags: AtomicU32,
-    rights: Rights,
-}
-
-impl MemfdFile {
-    pub fn new(name: &str, memfd_flags: MemfdFlags) -> Result<Self> {
+impl MemfdInodeHandle for InodeHandle {
+    fn new_memfd(name: String, memfd_flags: MemfdFlags) -> Result<Self> {
         if name.len() > MAX_MEMFD_NAME_LEN {
-            return_errno_with_message!(Errno::EINVAL, "MemfdManager: `name` is too long.");
+            return_errno_with_message!(Errno::EINVAL, "the memfd name is too long");
         }
 
-        let name = format!("/memfd:{}", name);
-
-        let (allow_sealing, executable) = if memfd_flags.contains(MemfdFlags::MFD_NOEXEC_SEAL) {
-            (true, false)
-        } else {
-            (memfd_flags.contains(MemfdFlags::MFD_ALLOW_SEALING), true)
-        };
-
-        let mode = if executable {
-            mkmod!(a+rwx)
-        } else {
-            mkmod!(a+rw)
-        };
-
         let memfd_inode = Arc::new_cyclic(|weak_self| {
+            let (allow_sealing, executable) = if memfd_flags.contains(MemfdFlags::MFD_NOEXEC_SEAL) {
+                (true, false)
+            } else {
+                (memfd_flags.contains(MemfdFlags::MFD_ALLOW_SEALING), true)
+            };
+
+            let mode = if executable {
+                mkmod!(a+rwx)
+            } else {
+                mkmod!(a+rw)
+            };
+
             let ram_inode = RamInode::new_file_detached_in_memfd(
                 weak_self,
                 mode,
@@ -304,216 +271,68 @@ impl MemfdFile {
             }
         });
 
-        Ok(Self {
-            memfd_inode,
-            offset: Mutex::new(0),
-            status_flags: AtomicU32::new(0),
-            rights: Rights::READ | Rights::WRITE,
-        })
+        let path = MemfdTmpFs::new_path(memfd_inode);
+
+        InodeHandle::new_unchecked_access(path, AccessMode::O_RDWR, StatusFlags::empty())
     }
 
-    pub fn open(inode: Arc<MemfdInode>, open_args: OpenArgs) -> Result<Self> {
-        let inode: Arc<dyn Inode> = inode;
-        let status_flags = open_args.status_flags;
-        let access_mode = open_args.access_mode;
-
-        if !status_flags.contains(StatusFlags::O_PATH) {
-            inode.check_permission(access_mode.into())?;
-        }
-        check_open_util(inode.as_ref(), &open_args)?;
-
-        if open_args.creation_flags.contains(CreationFlags::O_TRUNC)
-            && !status_flags.contains(StatusFlags::O_PATH)
-        {
-            inode.resize(0)?;
-        }
-
-        let rights = if status_flags.contains(StatusFlags::O_PATH) {
-            Rights::empty()
-        } else {
-            access_mode.into()
-        };
-
-        Ok(Self {
-            memfd_inode: inode,
-            offset: Mutex::new(0),
-            status_flags: AtomicU32::new(open_args.status_flags.bits()),
-            rights,
-        })
-    }
-
-    pub fn add_seals(&self, new_seals: FileSeals) -> Result<()> {
-        if self.rights.is_empty() {
+    fn add_seals(&self, new_seals: FileSeals) -> Result<()> {
+        let rights = self.rights();
+        if rights.is_empty() {
             return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
-        if !self.rights.contains(Rights::WRITE) {
+        if !rights.contains(Rights::WRITE) {
             return_errno_with_message!(Errno::EPERM, "the file is not opened writable");
         }
 
-        self.memfd_inode().add_seals(new_seals)
+        memfd_inode_or_err(self)?.add_seals(new_seals)
     }
 
-    pub fn get_seals(&self) -> Result<FileSeals> {
-        if self.rights.is_empty() {
+    fn get_seals(&self) -> Result<FileSeals> {
+        let rights = self.rights();
+        if rights.is_empty() {
             return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
 
-        Ok(self.memfd_inode().get_seals())
-    }
-
-    fn memfd_inode(&self) -> &MemfdInode {
-        self.memfd_inode.downcast_ref::<MemfdInode>().unwrap()
+        Ok(memfd_inode_or_err(self)?.get_seals())
     }
 }
 
-impl Pollable for MemfdFile {
-    fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
-        let events = IoEvents::IN | IoEvents::OUT;
-        events & mask
-    }
-}
-
-impl FileLike for MemfdFile {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        let mut offset = self.offset.lock();
-
-        let len = self.read_at(*offset, writer)?;
-        *offset += len;
-
-        Ok(len)
-    }
-
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        if !self.rights.contains(Rights::READ) {
-            return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
-        }
-
-        self.memfd_inode
-            .read_at(offset, writer, self.status_flags())
-    }
-
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
-        let mut offset = self.offset.lock();
-
-        if self.status_flags().contains(StatusFlags::O_APPEND) {
-            // FIXME: `O_APPEND` should ensure that new content is appended even if another process
-            // is writing to the file concurrently.
-            *offset = self.memfd_inode.size();
-        }
-
-        let len = self.write_at(*offset, reader)?;
-        *offset += len;
-
-        Ok(len)
-    }
-
-    fn write_at(&self, mut offset: usize, reader: &mut VmReader) -> Result<usize> {
-        if !self.rights.contains(Rights::WRITE) {
-            return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
-        }
-
-        let status_flags = self.status_flags();
-        if status_flags.contains(StatusFlags::O_APPEND) {
-            // If the file has the `O_APPEND` flag, the offset is ignored.
-            // FIXME: `O_APPEND` should ensure that new content is appended even if another process
-            // is writing to the file concurrently.
-            offset = self.memfd_inode.size();
-        }
-        self.memfd_inode.write_at(offset, reader, status_flags)
-    }
-
-    fn resize(&self, new_size: usize) -> Result<()> {
-        if self.rights.is_empty() {
-            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
-        }
-        if !self.rights.contains(Rights::WRITE) {
-            return_errno_with_message!(Errno::EINVAL, "the file is not opened writable");
-        }
-
-        do_resize_util(self.memfd_inode.as_ref(), self.status_flags(), new_size)
-    }
-
-    fn status_flags(&self) -> StatusFlags {
-        let bits = self.status_flags.load(Ordering::Relaxed);
-        StatusFlags::from_bits(bits).unwrap()
-    }
-
-    fn set_status_flags(&self, new_status_flags: StatusFlags) -> Result<()> {
-        self.status_flags
-            .store(new_status_flags.bits(), Ordering::Relaxed);
-        Ok(())
-    }
-
-    fn access_mode(&self) -> AccessMode {
-        self.rights.into()
-    }
-
-    fn seek(&self, pos: SeekFrom) -> Result<usize> {
-        if self.rights.is_empty() {
-            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
-        }
-
-        do_seek_util(&self.offset, pos, Some(self.memfd_inode.size()))
-    }
-
-    fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
-        if !self.rights.contains(Rights::WRITE) {
-            return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
-        }
-
-        do_fallocate_util(
-            self.memfd_inode.as_ref(),
-            self.status_flags(),
-            mode,
-            offset,
-            len,
-        )
-    }
-
-    fn mappable(&self) -> Result<Mappable> {
-        if self.rights.is_empty() {
-            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
-        }
-
-        Ok(Mappable::Inode(self.memfd_inode.clone()))
-    }
-
-    fn ioctl(&self, _raw_ioctl: RawIoctl) -> Result<i32> {
-        if self.rights.is_empty() {
-            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
-        }
-
-        return_errno_with_message!(Errno::ENOTTY, "ioctl is not supported");
-    }
-
-    fn inode(&self) -> &Arc<dyn Inode> {
-        &self.memfd_inode
-    }
-
-    fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
-        struct FdInfo {
-            inner: Arc<MemfdFile>,
-            fd_flags: FdFlags,
-        }
-
-        impl Display for FdInfo {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                let mut flags = self.inner.status_flags().bits() | self.inner.access_mode() as u32;
-                if self.fd_flags.contains(FdFlags::CLOEXEC) {
-                    flags |= CreationFlags::O_CLOEXEC.bits();
-                }
-
-                writeln!(f, "pos:\t{}", *self.inner.offset.lock())?;
-                writeln!(f, "flags:\t0{:o}", flags)?;
-                writeln!(f, "mnt_id:\t{}", RESERVED_MOUNT_ID)?;
-                writeln!(f, "ino:\t{}", self.inner.inode().ino())
-            }
-        }
-
-        Box::new(FdInfo {
-            inner: self,
-            fd_flags,
+fn memfd_inode_or_err(file: &InodeHandle) -> Result<&MemfdInode> {
+    file.path()
+        .inode()
+        .downcast_ref::<MemfdInode>()
+        .ok_or_else(|| {
+            Error::with_message(
+                Errno::EINVAL,
+                "file seals can only be applied to memfd files",
+            )
         })
+}
+
+struct MemfdTmpFs {
+    _private: (),
+}
+
+impl MemfdTmpFs {
+    // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/mm/shmem.c#L3828-L3850>
+    pub(self) fn singleton() -> &'static Arc<TmpFs> {
+        static MEMFD_TMPFS: Once<Arc<TmpFs>> = Once::new();
+
+        MEMFD_TMPFS.call_once(TmpFs::new)
+    }
+
+    pub(self) fn new_path(memfd_inode: Arc<MemfdInode>) -> Path {
+        Path::new_pseudo(Self::mount_node().clone(), memfd_inode, |inode| {
+            let memfd_inode = inode.downcast_ref::<MemfdInode>().unwrap();
+            format!("/memfd:{}", memfd_inode.name())
+        })
+    }
+
+    fn mount_node() -> &'static Arc<Mount> {
+        static MEMFD_TMPFS_MOUNT: Once<Arc<Mount>> = Once::new();
+
+        MEMFD_TMPFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()))
     }
 }
 
