@@ -55,6 +55,16 @@ impl Path {
         Ok(Self::new(self.mount.clone(), new_child_dentry))
     }
 
+    /// Creates a new pseudo `Path`.
+    pub(super) fn new_pseudo(
+        mount: Arc<Mount>,
+        inode: Arc<dyn Inode>,
+        name_fn: fn(&dyn Inode) -> String,
+    ) -> Self {
+        let dentry = Dentry::new_pseudo(inode, name_fn);
+        Self::new(mount, dentry)
+    }
+
     fn new(mount: Arc<Mount>, dentry: Arc<Dentry>) -> Self {
         Self { mount, dentry }
     }
@@ -137,7 +147,7 @@ impl Path {
             current_dir = parent_dir;
         }
 
-        debug_assert!(path_name.starts_with('/'));
+        debug_assert!(path_name.starts_with('/') || self.dentry.is_pseudo());
         path_name
     }
 
@@ -172,7 +182,12 @@ impl Path {
     /// to get the parent of the mountpoint recursively.
     fn effective_parent(&self) -> Option<Self> {
         if !self.is_mount_root() {
-            return Some(Self::new(self.mount.clone(), self.dentry.parent().unwrap()));
+            if let Some(parent) = self.dentry.parent() {
+                return Some(Self::new(self.mount.clone(), parent));
+            } else {
+                debug_assert!(self.dentry.is_pseudo());
+                return None;
+            }
         }
 
         let parent = self.mount.parent()?;
