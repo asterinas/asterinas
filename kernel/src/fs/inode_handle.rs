@@ -2,21 +2,23 @@
 
 //! Opened Inode-backed File Handle
 
-mod dyn_cap;
+use core::{
+    fmt::Display,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
-use core::sync::atomic::{AtomicU32, Ordering};
-
-pub use dyn_cap::InodeHandle;
+use aster_rights::Rights;
 
 use super::utils::{InodeExt, InodeIo};
 use crate::{
     events::IoEvents,
     fs::{
-        file_handle::Mappable,
+        file_handle::{FileLike, Mappable},
+        file_table::FdFlags,
         path::Path,
         utils::{
-            DirentVisitor, FallocMode, FileRange, FlockItem, Inode, InodeType, OFFSET_MAX,
-            RangeLockItem, RangeLockType, SeekFrom, StatusFlags,
+            AccessMode, CreationFlags, DirentVisitor, FallocMode, FileRange, FlockItem, Inode,
+            InodeType, OFFSET_MAX, RangeLockItem, RangeLockType, SeekFrom, StatusFlags,
         },
     },
     prelude::*,
@@ -24,7 +26,7 @@ use crate::{
     util::ioctl::RawIoctl,
 };
 
-struct HandleInner {
+pub struct InodeHandle {
     path: Path,
     /// `file_io` is similar to the `file_private` field in Linux's `file` structure. If `file_io`
     /// is `Some(_)`, typical file operations including `read`, `write`, `poll`, and `ioctl` will
@@ -32,10 +34,52 @@ struct HandleInner {
     file_io: Option<Box<dyn FileIo>>,
     offset: Mutex<usize>,
     status_flags: AtomicU32,
+    rights: Rights,
 }
 
-impl HandleInner {
-    pub(self) fn offset(&self) -> usize {
+impl InodeHandle {
+    pub fn new(path: Path, access_mode: AccessMode, status_flags: StatusFlags) -> Result<Self> {
+        let inode = path.inode();
+        if !status_flags.contains(StatusFlags::O_PATH) {
+            // "Opening a file or directory with the O_PATH flag requires no permissions on the
+            // object itself".
+            // Reference: <https://man7.org/linux/man-pages/man2/openat.2.html>
+            inode.check_permission(access_mode.into())?;
+        }
+
+        Self::new_unchecked_access(path, access_mode, status_flags)
+    }
+
+    pub fn new_unchecked_access(
+        path: Path,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Result<Self> {
+        let inode = path.inode();
+        let (file_io, rights) = if status_flags.contains(StatusFlags::O_PATH) {
+            (None, Rights::empty())
+        } else if inode.type_() == InodeType::Dir && access_mode.is_writable() {
+            return_errno_with_message!(Errno::EISDIR, "a directory cannot be opened writable");
+        } else {
+            let file_io = inode.open(access_mode, status_flags).transpose()?;
+            let rights = Rights::from(access_mode);
+            (file_io, rights)
+        };
+
+        Ok(Self {
+            path,
+            file_io,
+            offset: Mutex::new(0),
+            status_flags: AtomicU32::new(status_flags.bits()),
+            rights,
+        })
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn offset(&self) -> usize {
         let offset = self.offset.lock();
         *offset
     }
@@ -67,14 +111,22 @@ impl HandleInner {
         Ok(inode.as_ref())
     }
 
-    pub(self) fn readdir(&self, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+    pub fn readdir(&self, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+        if !self.rights.contains(Rights::READ) {
+            return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
+        }
+
         let mut offset = self.offset.lock();
         let read_cnt = self.path.inode().readdir_at(*offset, visitor)?;
         *offset += read_cnt;
         Ok(read_cnt)
     }
 
-    pub(self) fn test_range_lock(&self, mut lock: RangeLockItem) -> Result<RangeLockItem> {
+    pub fn test_range_lock(&self, mut lock: RangeLockItem) -> Result<RangeLockItem> {
+        if self.rights.is_empty() {
+            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+        }
+
         let Some(range_lock_list) = self
             .path
             .inode()
@@ -90,7 +142,25 @@ impl HandleInner {
         Ok(req_lock)
     }
 
-    pub(self) fn set_range_lock(&self, lock: &RangeLockItem, is_nonblocking: bool) -> Result<()> {
+    pub fn set_range_lock(&self, lock: &RangeLockItem, is_nonblocking: bool) -> Result<()> {
+        match lock.type_() {
+            RangeLockType::ReadLock => {
+                if !self.rights.contains(Rights::READ) {
+                    return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
+                }
+            }
+            RangeLockType::WriteLock => {
+                if !self.rights.contains(Rights::WRITE) {
+                    return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
+                }
+            }
+            RangeLockType::Unlock => {
+                if self.rights.is_empty() {
+                    return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+                }
+            }
+        }
+
         if RangeLockType::Unlock == lock.type_() {
             self.unlock_range_lock(lock);
             return Ok(());
@@ -104,7 +174,7 @@ impl HandleInner {
         range_lock_list.set_lock(lock, is_nonblocking)
     }
 
-    pub(self) fn release_range_locks(&self) {
+    fn release_range_locks(&self) {
         let range_lock = RangeLockItem::new(
             RangeLockType::Unlock,
             FileRange::new(0, OFFSET_MAX).unwrap(),
@@ -112,7 +182,7 @@ impl HandleInner {
         self.unlock_range_lock(&range_lock);
     }
 
-    pub(self) fn unlock_range_lock(&self, lock: &RangeLockItem) {
+    fn unlock_range_lock(&self, lock: &RangeLockItem) {
         if let Some(range_lock_list) = self
             .path
             .inode()
@@ -123,20 +193,30 @@ impl HandleInner {
         }
     }
 
-    pub(self) fn set_flock(&self, lock: FlockItem, is_nonblocking: bool) -> Result<()> {
+    pub fn set_flock(&self, lock: FlockItem, is_nonblocking: bool) -> Result<()> {
+        if self.rights.is_empty() {
+            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+        }
+
         let flock_list = self.path.inode().fs_lock_context_or_init().flock_list();
         flock_list.set_lock(lock, is_nonblocking)
     }
 
-    pub(self) fn unlock_flock(&self, req_owner: &InodeHandle) {
-        if let Some(flock_list) = self.path.inode().fs_lock_context().map(|c| c.flock_list()) {
-            flock_list.unlock(req_owner);
+    pub fn unlock_flock(&self) -> Result<()> {
+        if self.rights.is_empty() {
+            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
+
+        if let Some(flock_list) = self.path.inode().fs_lock_context().map(|c| c.flock_list()) {
+            flock_list.unlock(self);
+        }
+
+        Ok(())
     }
 }
 
-impl HandleInner {
-    pub(self) fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
+impl Pollable for InodeHandle {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         if let Some(ref file_io) = self.file_io {
             return file_io.poll(mask, poller);
         }
@@ -146,8 +226,12 @@ impl HandleInner {
     }
 }
 
-impl HandleInner {
-    pub(self) fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+impl FileLike for InodeHandle {
+    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+        if !self.rights.contains(Rights::READ) {
+            return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
+        }
+
         let (inode_io, is_offset_aware) = self.inode_io_and_is_offset_aware();
         let status_flags = self.status_flags();
 
@@ -163,7 +247,11 @@ impl HandleInner {
         Ok(len)
     }
 
-    pub(self) fn write(&self, reader: &mut VmReader) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+        if !self.rights.contains(Rights::WRITE) {
+            return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
+        }
+
         let (inode_io, is_offset_aware) = self.inode_io_and_is_offset_aware();
         let status_flags = self.status_flags();
 
@@ -186,14 +274,22 @@ impl HandleInner {
         Ok(len)
     }
 
-    pub(self) fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        if !self.rights.contains(Rights::READ) {
+            return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
+        }
+
         let inode_io = self.inode_io_and_check_seekable()?;
         let status_flags = self.status_flags();
 
         inode_io.read_at(offset, writer, status_flags)
     }
 
-    pub(self) fn write_at(&self, mut offset: usize, reader: &mut VmReader) -> Result<usize> {
+    fn write_at(&self, mut offset: usize, reader: &mut VmReader) -> Result<usize> {
+        if !self.rights.contains(Rights::WRITE) {
+            return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
+        }
+
         let inode_io = self.inode_io_and_check_seekable()?;
         let status_flags = self.status_flags();
 
@@ -208,7 +304,11 @@ impl HandleInner {
         inode_io.write_at(offset, reader, status_flags)
     }
 
-    pub(self) fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+        if self.rights.is_empty() {
+            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+        }
+
         if let Some(ref file_io) = self.file_io {
             return file_io.ioctl(raw_ioctl);
         }
@@ -216,7 +316,11 @@ impl HandleInner {
         return_errno_with_message!(Errno::ENOTTY, "ioctl is not supported");
     }
 
-    pub(self) fn mappable(&self) -> Result<Mappable> {
+    fn mappable(&self) -> Result<Mappable> {
+        if self.rights.is_empty() {
+            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+        }
+
         let inode = self.path.inode();
         if inode.page_cache().is_some() {
             // If the inode has a page cache, it is a file-backed mapping and
@@ -231,21 +335,38 @@ impl HandleInner {
         }
     }
 
-    pub(self) fn resize(&self, new_size: usize) -> Result<()> {
+    fn resize(&self, new_size: usize) -> Result<()> {
+        if self.rights.is_empty() {
+            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+        }
+        if !self.rights.contains(Rights::WRITE) {
+            return_errno_with_message!(Errno::EINVAL, "the file is not opened writable");
+        }
+
         do_resize_util(self.path.inode().as_ref(), self.status_flags(), new_size)
     }
 
-    pub(self) fn status_flags(&self) -> StatusFlags {
+    fn status_flags(&self) -> StatusFlags {
         let bits = self.status_flags.load(Ordering::Relaxed);
         StatusFlags::from_bits(bits).unwrap()
     }
 
-    pub(self) fn set_status_flags(&self, new_status_flags: StatusFlags) {
+    fn set_status_flags(&self, new_status_flags: StatusFlags) -> Result<()> {
         self.status_flags
             .store(new_status_flags.bits(), Ordering::Relaxed);
+
+        Ok(())
     }
 
-    pub(self) fn seek(&self, pos: SeekFrom) -> Result<usize> {
+    fn access_mode(&self) -> AccessMode {
+        self.rights.into()
+    }
+
+    fn seek(&self, pos: SeekFrom) -> Result<usize> {
+        if self.rights.is_empty() {
+            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+        }
+
         if let Some(ref file_io) = self.file_io {
             file_io.check_seekable()?;
             if file_io.is_offset_aware() {
@@ -264,7 +385,11 @@ impl HandleInner {
         do_seek_util(&self.offset, pos, inode.seek_end())
     }
 
-    pub(self) fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
+    fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
+        if !self.rights.contains(Rights::WRITE) {
+            return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
+        }
+
         do_fallocate_util(
             self.path.inode().as_ref(),
             self.status_flags(),
@@ -273,14 +398,52 @@ impl HandleInner {
             len,
         )
     }
+
+    fn inode(&self) -> &Arc<dyn Inode> {
+        self.path.inode()
+    }
+
+    fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
+        struct FdInfo {
+            inner: Arc<InodeHandle>,
+            fd_flags: FdFlags,
+        }
+
+        impl Display for FdInfo {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                let mut flags = self.inner.status_flags().bits() | self.inner.access_mode() as u32;
+                if self.fd_flags.contains(FdFlags::CLOEXEC) {
+                    flags |= CreationFlags::O_CLOEXEC.bits();
+                }
+
+                writeln!(f, "pos:\t{}", self.inner.offset())?;
+                writeln!(f, "flags:\t0{:o}", flags)?;
+                writeln!(f, "mnt_id:\t{}", self.inner.path().mount_node().id())?;
+                writeln!(f, "ino:\t{}", self.inner.inode().ino())
+            }
+        }
+
+        Box::new(FdInfo {
+            inner: self,
+            fd_flags,
+        })
+    }
 }
 
-impl Debug for HandleInner {
+impl Drop for InodeHandle {
+    fn drop(&mut self) {
+        self.release_range_locks();
+        let _ = self.unlock_flock();
+    }
+}
+
+impl Debug for InodeHandle {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("HandleInner")
+        f.debug_struct("InodeHandle")
             .field("path", &self.path)
             .field("offset", &self.offset())
             .field("status_flags", &self.status_flags())
+            .field("rights", &self.rights)
             .finish_non_exhaustive()
     }
 }
