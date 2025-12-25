@@ -6,13 +6,13 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ostd = { path = "../../../ostd" }
-component = { path = "../../libs/comp-sys/component" }
-align_ext = { path = "../../../ostd/libs/align_ext" }
-log = "0.4"
-spin = "0.9.4"
-cfg-if = "1.0"
-bitflags = "1.3"
+align_ext.workspace = true
+bitflags.workspace = true
+cfg-if.workspace = true
+component.workspace = true
+log.workspace = true
+ostd.workspace = true
+spin.workspace = true
 
 [target.loongarch64-unknown-none-softfloat.dependencies]
 fdt = { version = "0.1.5", features = ["pretty-printing"] }

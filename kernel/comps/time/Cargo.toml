@@ -6,12 +6,12 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ostd = { path = "../../../ostd" }
-aster-util = { path = "../../libs/aster-util" }
-component = { path = "../../libs/comp-sys/component" }
-log = "0.4"
-spin = "0.9.4"
-bitflags = "2.5"
+aster-util.workspace = true
+bitflags.workspace = true
+component.workspace = true
+log.workspace = true
+ostd.workspace = true
+spin.workspace = true
 
 [target.riscv64imac-unknown-none-elf.dependencies]
 chrono = { version = "0.4.38", default-features = false }

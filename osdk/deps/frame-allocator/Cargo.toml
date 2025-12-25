@@ -8,9 +8,9 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
-log = "0.4"
-ostd = { version = "0.17.0", path = "../../../ostd" }
-paste = "1.0.15"
+log.workspace = true
+ostd.workspace = true
+paste.workspace = true
 
 [lints]
 workspace = true

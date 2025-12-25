@@ -6,12 +6,12 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-aster-bigtcp = { path = "../../libs/aster-bigtcp" }
-aster-softirq = { path = "../softirq" }
-bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
-component = { path = "../../libs/comp-sys/component" }
-ostd = { path = "../../../ostd" }
-spin = "0.9.4"
+aster-bigtcp.workspace = true
+aster-softirq.workspace = true
+bitvec.workspace = true
+component.workspace = true
+ostd.workspace = true
+spin.workspace = true
 
 [lints]
 workspace = true

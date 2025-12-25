@@ -6,11 +6,11 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-aster-util = { path = "../../libs/aster-util" }
-ostd = { path = "../../../ostd" }
-component = { path = "../../libs/comp-sys/component" }
-intrusive-collections = "0.9.5"
-spin = "0.9.4"
+aster-util.workspace = true
+component.workspace = true
+intrusive-collections.workspace = true
+ostd.workspace = true
+spin.workspace = true
 
 [lints]
 workspace = true

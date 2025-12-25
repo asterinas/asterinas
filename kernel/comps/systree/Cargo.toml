@@ -6,12 +6,12 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+aster-util.workspace = true
 bitflags = "2.5"
-ostd = { path = "../../../ostd" }
-component = { path = "../../libs/comp-sys/component" }
-aster-util = { path = "../../libs/aster-util" }
-inherit-methods-macro = { git = "https://github.com/asterinas/inherit-methods-macro", rev = "98f7e3e"}
-spin = "0.9"
+component.workspace = true
+inherit-methods-macro.workspace = true
+ostd.workspace = true
+spin.workspace = true
 
 [lints]
 workspace = true

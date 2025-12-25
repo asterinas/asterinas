@@ -6,11 +6,11 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-component = { path = "../../libs/comp-sys/component" }
-aster-console = { path = "../console" }
-log = "0.4"
-ostd = { path = "../../../ostd" }
-owo-colors = { version = "3", optional = true }
+aster-console.workspace = true
+component.workspace = true
+log.workspace = true
+ostd.workspace = true
+owo-colors = { workspace = true, optional = true }
 
 [features]
 default = ["log_color"]

@@ -6,12 +6,12 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ostd = { path = "../../../ostd" }
-component = { path = "../../libs/comp-sys/component" }
-aster-console = { path = "../console" }
-aster-input = { path = "../input" }
-log = "0.4"
-spin = "0.9.4"
+aster-console.workspace = true
+aster-input.workspace = true
+component.workspace = true
+log.workspace = true
+ostd.workspace = true
+spin.workspace = true
 
 [lints]
 workspace = true
