@@ -13,15 +13,15 @@ path = "src/main.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cfg-if = "1.0.0"
-core2 = { version = "0.4.0", default-features = false, features = ["nightly"] }
-libflate = { version = "2.1.0", default-features = false }
-linux-boot-params = { version = "0.17.0", path = "../boot-params" }
-uart_16550 = "0.3.0"
-xmas-elf = "0.10.0"
+cfg-if.workspace = true
+core2.workspace = true
+libflate.workspace = true
+linux-boot-params.workspace = true
+log.workspace = true
+uart_16550.workspace = true
+xmas-elf.workspace = true
 
 [target.x86_64-unknown-none.dependencies]
-log = "0.4.20"
 uefi = { version = "0.32.0", features = ["global_allocator", "panic_handler", "logger", "qemu"]}
 uefi-raw = "0.8.0"
 tdx-guest = { version = "0.2.2", optional = true }

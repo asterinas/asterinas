@@ -172,7 +172,7 @@ dependencies = [
  "component",
  "log",
  "ostd",
- "owo-colors 3.5.0",
+ "owo-colors",
 ]
 
 [[package]]
@@ -299,7 +299,7 @@ version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.101",
 ]
 
 [[package]]
@@ -330,7 +330,7 @@ name = "aster-time"
 version = "0.1.0"
 dependencies = [
  "aster-util",
- "bitflags 2.9.1",
+ "bitflags 1.3.2",
  "chrono",
  "component",
  "log",
@@ -779,14 +779,14 @@ dependencies = [
 
 [[package]]
 name = "getrandom"
-version = "0.3.3"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26145e563e54f2cadc477553f1ec5ee650b00862f0a58bcd12cbdc5f0ea2d2f4"
+checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
 dependencies = [
  "cfg-if",
  "libc",
  "r-efi",
- "wasi",
+ "wasip2",
 ]
 
 [[package]]
@@ -1114,7 +1114,7 @@ checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
 name = "logo-ascii-art"
 version = "0.1.0"
 dependencies = [
- "owo-colors 4.2.2",
+ "owo-colors",
 ]
 
 [[package]]
@@ -1283,7 +1283,7 @@ name = "osdk-test-kernel"
 version = "0.17.0"
 dependencies = [
  "ostd",
- "owo-colors 4.2.2",
+ "owo-colors",
 ]
 
 [[package]]
@@ -1354,12 +1354,6 @@ dependencies = [
 [[package]]
 name = "ostd-test"
 version = "0.17.0"
-
-[[package]]
-name = "owo-colors"
-version = "3.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1b04fb49957986fdce4d6ee7a65027d55d4b6d2265e5848bbb507b58ccfdb6f"
 
 [[package]]
 name = "owo-colors"
@@ -1848,7 +1842,7 @@ dependencies = [
  "itertools",
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.101",
  "typeflags-util",
 ]
 
@@ -1978,15 +1972,6 @@ checksum = "29790946404f91d9c5d06f9874efddea1dc06c5efe94541a7d6863108e3a5e4b"
 dependencies = [
  "same-file",
  "winapi-util",
-]
-
-[[package]]
-name = "wasi"
-version = "0.14.7+wasi-0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "883478de20367e224c0090af9cf5f9fa85bed63a95c1abf3afc5c083ebc06e8c"
-dependencies = [
- "wasip2",
 ]
 
 [[package]]

@@ -37,7 +37,7 @@ impl Parse for TypeFlagDef {
         // read content inside brace
         let content;
         let _ = braced!(content in input);
-        let items = content.parse_terminated(TypeFlagItem::parse)?;
+        let items = Punctuated::parse_terminated_with(&content, TypeFlagItem::parse)?;
 
         let res = TypeFlagDef {
             attributes,

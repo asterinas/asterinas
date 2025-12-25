@@ -8,8 +8,8 @@ description = "The default slab-based heap allocator shipped with OSDK."
 readme = "README.md"
 
 [dependencies]
-log = "0.4"
-ostd = { version = "0.17.0", path = "../../../ostd" }
+log.workspace = true
+ostd.workspace = true
 
 [lints]
 workspace = true
