@@ -1,10 +1,10 @@
 [package]
 name = "ostd-test"
-version = "0.17.0"
-edition = "2024"
 description = "The kernel mode unit testing framework of OSTD"
-license = "MPL-2.0"
-repository ="https://github.com/asterinas/asterinas"
+version.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

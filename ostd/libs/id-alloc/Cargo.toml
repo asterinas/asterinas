@@ -1,10 +1,10 @@
 [package]
 name = "id-alloc"
 version = "0.1.0"
-edition = "2024"
-license = "MPL-2.0"
 description = "An id allocator implemented by the bitmap"
-repository = "https://github.com/asterinas/asterinas"
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

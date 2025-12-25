@@ -1,11 +1,11 @@
 [package]
 name = "osdk-test-kernel"
-version = "0.17.0"
-edition = "2024"
 description = "The OSTD-based kernel for running unit tests with OSDK."
-license = "MPL-2.0"
-repository ="https://github.com/asterinas/asterinas"
 readme = "README.md"
+version.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
