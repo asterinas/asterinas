@@ -18,12 +18,55 @@ use crate::{
 pub(super) struct Dentry {
     inode: Arc<dyn Inode>,
     type_: InodeType,
-    name_and_parent: RwLock<Option<(String, Arc<Dentry>)>>,
+    name_and_parent: NameAndParent,
+    // FIXME: Only maintain children for directory dentries.
     children: RwMutex<DentryChildren>,
     flags: AtomicU32,
     mount_count: AtomicU32,
     this: Weak<Dentry>,
 }
+
+enum NameAndParent {
+    Real(Option<RwLock<(String, Arc<Dentry>)>>),
+    Pseudo(fn(&dyn Inode) -> String),
+}
+
+impl NameAndParent {
+    fn name(&self, inode: &dyn Inode) -> String {
+        match self {
+            NameAndParent::Real(name_and_parent) => match name_and_parent {
+                Some(name_and_parent) => name_and_parent.read().0.clone(),
+                None => String::from("/"),
+            },
+            NameAndParent::Pseudo(name_fn) => (name_fn)(inode),
+        }
+    }
+
+    fn parent(&self) -> Option<Arc<Dentry>> {
+        match self {
+            NameAndParent::Real(Some(name_and_parent)) => Some(name_and_parent.read().1.clone()),
+            _ => None,
+        }
+    }
+
+    fn set(
+        &self,
+        name: &str,
+        parent: Arc<Dentry>,
+    ) -> core::result::Result<(), SetNameAndParentError> {
+        match self {
+            NameAndParent::Real(Some(name_and_parent)) => {
+                let mut name_and_parent = name_and_parent.write();
+                *name_and_parent = (String::from(name), parent);
+                Ok(())
+            }
+            _ => Err(SetNameAndParentError),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct SetNameAndParentError;
 
 impl Dentry {
     /// Creates a new root `Dentry` with the given inode.
@@ -34,19 +77,36 @@ impl Dentry {
         Self::new(inode, DentryOptions::Root)
     }
 
+    /// Creates a new pseudo `Dentry` with the given inode and name function.
+    pub(super) fn new_pseudo(
+        inode: Arc<dyn Inode>,
+        name_fn: fn(&dyn Inode) -> String,
+    ) -> Arc<Self> {
+        Self::new(inode, DentryOptions::Pseudo(name_fn))
+    }
+
     fn new(inode: Arc<dyn Inode>, options: DentryOptions) -> Arc<Self> {
+        let name_and_parent = match options {
+            DentryOptions::Root => NameAndParent::Real(None),
+            DentryOptions::Leaf(name_and_parent) => {
+                NameAndParent::Real(Some(RwLock::new(name_and_parent)))
+            }
+            DentryOptions::Pseudo(name_fn) => NameAndParent::Pseudo(name_fn),
+        };
+
         Arc::new_cyclic(|weak_self| Self {
             type_: inode.type_(),
             inode,
-            name_and_parent: match options {
-                DentryOptions::Leaf(name_and_parent) => RwLock::new(Some(name_and_parent)),
-                _ => RwLock::new(None),
-            },
+            name_and_parent,
             children: RwMutex::new(DentryChildren::new()),
             flags: AtomicU32::new(DentryFlags::empty().bits()),
             mount_count: AtomicU32::new(0),
             this: weak_self.clone(),
         })
+    }
+
+    pub(super) fn is_pseudo(&self) -> bool {
+        matches!(self.name_and_parent, NameAndParent::Pseudo(_))
     }
 
     /// Gets the type of the `Dentry`.
@@ -58,25 +118,27 @@ impl Dentry {
     ///
     /// Returns "/" if it is a root `Dentry`.
     pub(super) fn name(&self) -> String {
-        match self.name_and_parent.read().as_ref() {
-            Some(name_and_parent) => name_and_parent.0.clone(),
-            None => String::from("/"),
-        }
+        self.name_and_parent.name(self.inode.as_ref())
     }
 
     /// Gets the parent `Dentry`.
     ///
-    /// Returns `None` if it is a root `Dentry`.
+    /// Returns `None` if it is a root or pseudo `Dentry`.
     pub(super) fn parent(&self) -> Option<Arc<Self>> {
-        self.name_and_parent
-            .read()
-            .as_ref()
-            .map(|name_and_parent| name_and_parent.1.clone())
+        self.name_and_parent.parent()
     }
 
-    fn set_name_and_parent(&self, name: &str, parent: Arc<Self>) {
-        let mut name_and_parent = self.name_and_parent.write();
-        *name_and_parent = Some((String::from(name), parent));
+    /// Sets the name and parent of the `Dentry`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SetNameAndParentError` if the `Dentry` is a root or pseudo `Dentry`.
+    fn set_name_and_parent(
+        &self,
+        name: &str,
+        parent: Arc<Self>,
+    ) -> core::result::Result<(), SetNameAndParentError> {
+        self.name_and_parent.set(name, parent)
     }
 
     fn this(&self) -> Arc<Self> {
@@ -365,7 +427,7 @@ impl Dentry {
             match old_dentry.as_ref() {
                 Some(dentry) => {
                     children.delete(old_name);
-                    dentry.set_name_and_parent(new_name, self.this());
+                    dentry.set_name_and_parent(new_name, self.this()).unwrap();
                     if dentry.is_dentry_cacheable() {
                         children.insert(String::from(new_name), dentry.clone());
                     }
@@ -385,7 +447,9 @@ impl Dentry {
             match old_dentry.as_ref() {
                 Some(dentry) => {
                     self_children.delete(old_name);
-                    dentry.set_name_and_parent(new_name, new_dir.this());
+                    dentry
+                        .set_name_and_parent(new_name, new_dir.this())
+                        .unwrap();
                     if dentry.is_dentry_cacheable() {
                         new_dir_children.insert(String::from(new_name), dentry.clone());
                     }
@@ -415,7 +479,6 @@ impl Dentry {
             current_dir = parent_dir;
         }
 
-        debug_assert!(path_name.starts_with('/'));
         path_name
     }
 }
@@ -433,8 +496,9 @@ impl Debug for Dentry {
 
 /// `DentryKey` is the unique identifier for the corresponding `Dentry`.
 ///
-/// For none-root dentries, it uses self's name and parent's pointer to form the key,
-/// meanwhile, the root `Dentry` uses "/" and self's pointer to form the key.
+/// - For non-root dentries, it uses self's name and parent's pointer to form the key,
+/// - For the root dentry, it uses "/" and self's pointer to form the key.
+/// - For pseudo dentries, it uses self's name and self's pointer to form the key.
 #[derive(Debug, Clone, Hash, PartialOrd, Ord, Eq, PartialEq)]
 pub(super) struct DentryKey {
     name: String,
@@ -443,11 +507,10 @@ pub(super) struct DentryKey {
 
 impl DentryKey {
     /// Forms a `DentryKey` from the corresponding `Dentry`.
-    pub(super) fn new(dentry: &Dentry) -> Self {
-        let (name, parent) = match dentry.name_and_parent.read().as_ref() {
-            Some(name_and_parent) => name_and_parent.clone(),
-            None => (String::from("/"), dentry.this()),
-        };
+    fn new(dentry: &Dentry) -> Self {
+        let name = dentry.name();
+        let parent = dentry.parent().unwrap_or_else(|| dentry.this());
+
         Self {
             name,
             parent_ptr: Arc::as_ptr(&parent) as usize,
@@ -464,6 +527,7 @@ bitflags! {
 enum DentryOptions {
     Root,
     Leaf((String, Arc<Dentry>)),
+    Pseudo(fn(&dyn Inode) -> String),
 }
 
 /// Manages child dentries, including both valid and negative entries.
