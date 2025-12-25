@@ -9,7 +9,7 @@ use align_ext::AlignExt;
 use super::Cursor_;
 use crate::{
     mm::{
-        HasPaddr, Vaddr, nr_subpage_per_huge, paddr_to_vaddr,
+        HasPaddr, Vaddr, nr_base_per_page, nr_subpage_per_huge, paddr_to_vaddr,
         page_table::{
             PageTable, PageTableConfig, PageTableGuard, PageTableNodeRef, PagingConstsTrait,
             PagingLevel, PteScalar, PteStateRef, PteTrait, load_pte, page_size, pte_index,
@@ -279,7 +279,10 @@ pub(super) unsafe fn dfs_mark_stray_and_unlock<C: PageTableConfig>(
                 // guards are forgotten.
                 num_frames += unsafe { dfs_mark_stray_and_unlock(rcu_guard, locked_pt, pte_va) };
             }
-            PteStateRef::Absent | PteStateRef::Mapped(_) => {}
+            PteStateRef::Absent => {}
+            PteStateRef::Mapped(_) => {
+                num_frames += nr_base_per_page::<C>(level);
+            }
         }
     }
 

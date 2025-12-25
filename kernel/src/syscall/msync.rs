@@ -22,12 +22,6 @@ bitflags! {
     }
 }
 
-macro_rules! return_partially_mapped {
-    () => {
-        return_errno_with_message!(Errno::ENOMEM, "`msync` called on a partially mapped range")
-    };
-}
-
 pub fn sys_msync(start: Vaddr, size: usize, flag: i32, ctx: &Context) -> Result<SyscallReturn> {
     let flags = MsyncFlags::from_bits(flag).ok_or_else(|| Error::new(Errno::EINVAL))?;
 
@@ -56,33 +50,16 @@ pub fn sys_msync(start: Vaddr, size: usize, flag: i32, ctx: &Context) -> Result<
 
     let user_space = ctx.user_space();
     let vmar = user_space.vmar();
-    let guard = vmar.query(range.clone());
-    let mut mappings_iter = guard.iter();
 
-    // Check if the range is fully mapped.
-    let Some(first) = mappings_iter.next() else {
-        return_errno_with_message!(Errno::ENOMEM, "`msync` called on a not mapped range");
-    };
-    if first.map_to_addr() > range.start {
-        return_partially_mapped!();
-    }
-    let mut last_end = first.map_end();
-    for mapping in mappings_iter {
-        let start = mapping.map_to_addr();
-        if start != last_end {
-            return_partially_mapped!();
+    let mut inodes = Vec::new();
+
+    vmar.for_each_mapping(range.clone(), true, |mapping| {
+        // Do nothing if not file-backed, as <https://pubs.opengroup.org/onlinepubs/9699919799/> says.
+        if let Some(inode) = mapping.inode() {
+            inodes.push(inode.clone());
         }
-        last_end = mapping.map_end();
-    }
-    if last_end < range.end {
-        return_partially_mapped!();
-    }
-
-    // Do nothing if not file-backed, as <https://pubs.opengroup.org/onlinepubs/9699919799/> says.
-    let inodes = guard
-        .iter()
-        .filter_map(|m| m.inode().cloned())
-        .collect::<Vec<_>>();
+    })
+    .map_err(|_| Error::with_message(Errno::ENOMEM, "msync on unmapped memory range"))?;
 
     let task_fn = move || {
         for inode in inodes {

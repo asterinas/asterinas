@@ -23,7 +23,6 @@ Silently-ignored flags:
 * `MAP_LOCKED`
 * `MAP_NONBLOCK`
 * `MAP_NORESERVE`
-* `MAP_POPULATE`
 * `MAP_SYNC`
 
 Partially supported flags:

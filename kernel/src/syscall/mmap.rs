@@ -2,13 +2,19 @@
 
 //! This mod defines mmap flags and the handler to syscall mmap
 
+use core::num::NonZeroUsize;
+
 use align_ext::AlignExt;
 
 use super::SyscallReturn;
 use crate::{
     fs::file_table::{FileDesc, get_file_fast},
     prelude::*,
-    vm::{perms::VmPerms, vmar::is_userspace_vaddr, vmo::VmoOptions},
+    vm::{
+        perms::VmPerms,
+        vmar::{OffsetType, is_userspace_vaddr},
+        vmo::VmoOptions,
+    },
 };
 
 pub fn sys_mmap(
@@ -38,7 +44,7 @@ fn do_sys_mmap(
     addr: Vaddr,
     len: usize,
     vm_perms: VmPerms,
-    mut option: MMapOptions,
+    option: MMapOptions,
     fd: FileDesc,
     offset: usize,
     ctx: &Context,
@@ -48,31 +54,15 @@ fn do_sys_mmap(
         addr, len, vm_perms, option, fd, offset
     );
 
-    if option.flags.contains(MMapFlags::MAP_FIXED_NOREPLACE) {
-        option.flags.insert(MMapFlags::MAP_FIXED);
+    if option.typ == MMapType::File {
+        return_errno_with_message!(Errno::EINVAL, "invalid mmap type");
     }
 
-    check_option(addr, len, &option)?;
+    let MMapAddrSizeOptions { addr_options, size } = get_addr_options(addr, len, option.flags)?;
 
-    if len == 0 {
-        return_errno_with_message!(Errno::EINVAL, "mmap len cannot be zero");
-    }
-    if len > isize::MAX as usize {
-        return_errno_with_message!(Errno::ENOMEM, "mmap len too large");
-    }
-
-    let len = len.align_up(PAGE_SIZE);
-
-    if !offset.is_multiple_of(PAGE_SIZE) {
-        return_errno_with_message!(Errno::EINVAL, "mmap only support page-aligned offset");
-    }
-    offset.checked_add(len).ok_or(Error::with_message(
-        Errno::EOVERFLOW,
-        "integer overflow when (offset + len)",
-    ))?;
-    if addr > isize::MAX as usize - len {
-        return_errno_with_message!(Errno::ENOMEM, "mmap (addr + len) too large");
-    }
+    // `PROT_NONE` mappings are not populated.
+    let populate =
+        option.flags.contains(MMapFlags::MAP_POPULATE) && vm_perms.contains(VmPerms::READ);
 
     // On x86_64 and riscv64, `PROT_WRITE` implies `PROT_READ`.
     // Reference:
@@ -91,16 +81,23 @@ fn do_sys_mmap(
     let user_space = ctx.user_space();
     let vmar = user_space.vmar();
     let vm_map_options = {
-        let mut options = vmar.new_map(len, vm_perms)?;
+        let mut options = vmar.new_map(size, vm_perms)?;
         let flags = option.flags;
-        if flags.contains(MMapFlags::MAP_FIXED) {
-            options = options.offset(addr).can_overwrite(true);
-        } else if flags.contains(MMapFlags::MAP_32BIT) {
+
+        if let Some((addr, typ)) = addr_options {
+            options = options.offset(addr, typ);
+        }
+
+        if populate {
+            options = options.populate();
+        }
+
+        if flags.contains(MMapFlags::MAP_32BIT) {
             // TODO: support MAP_32BIT. MAP_32BIT requires the map range to be below 2GB
             warn!("MAP_32BIT is not supported");
         }
 
-        if option.typ() == MMapType::Shared {
+        if option.typ == MMapType::Shared {
             options = options.is_shared(true);
         }
 
@@ -113,7 +110,7 @@ fn do_sys_mmap(
             }
 
             // Anonymous shared mapping should share the same memory pages.
-            if option.typ() == MMapType::Shared {
+            if option.typ == MMapType::Shared {
                 let shared_vmo = {
                     let vmo_options = VmoOptions::new(len);
                     vmo_options.alloc()?
@@ -128,7 +125,7 @@ fn do_sys_mmap(
             if vm_perms.contains(VmPerms::READ) && !access_mode.is_readable() {
                 return_errno_with_message!(Errno::EACCES, "the file is not opened readable");
             }
-            if option.typ() == MMapType::Shared && !access_mode.is_writable() {
+            if option.typ == MMapType::Shared && !access_mode.is_writable() {
                 if vm_perms.contains(VmPerms::WRITE) {
                     return_errno_with_message!(Errno::EACCES, "the file is not opened writable");
                 }
@@ -148,21 +145,6 @@ fn do_sys_mmap(
     let map_addr = vm_map_options.build()?;
 
     Ok(map_addr)
-}
-
-fn check_option(addr: Vaddr, size: usize, option: &MMapOptions) -> Result<()> {
-    if option.typ() == MMapType::File {
-        return_errno_with_message!(Errno::EINVAL, "invalid mmap type");
-    }
-
-    let map_end = addr.checked_add(size).ok_or(Errno::EINVAL)?;
-    if option.flags().contains(MMapFlags::MAP_FIXED)
-        && !(is_userspace_vaddr(addr) && is_userspace_vaddr(map_end - 1))
-    {
-        return_errno_with_message!(Errno::EINVAL, "invalid mmap fixed address");
-    }
-
-    Ok(())
 }
 
 // Definition of MMap flags, conforming to the linux mmap interface:
@@ -223,12 +205,62 @@ impl TryFrom<u32> for MMapOptions {
     }
 }
 
-impl MMapOptions {
-    pub fn typ(&self) -> MMapType {
-        self.typ
+#[derive(Debug)]
+struct MMapAddrSizeOptions {
+    addr_options: Option<(Vaddr, OffsetType)>,
+    size: NonZeroUsize,
+}
+
+fn get_addr_options(offset: Vaddr, size: usize, flags: MMapFlags) -> Result<MMapAddrSizeOptions> {
+    if size > isize::MAX as usize {
+        return_errno_with_message!(Errno::ENOMEM, "mmap: size too large");
+    }
+    if size == 0 {
+        return_errno_with_message!(Errno::EINVAL, "mmap: size is zero");
+    }
+    let size_aligned = NonZeroUsize::new(size.align_up(PAGE_SIZE)).unwrap();
+
+    let end = offset
+        .checked_add(size_aligned.get())
+        .ok_or(Error::with_message(
+            Errno::EINVAL,
+            "mmap: integer overflow when calculating offset + size",
+        ))?;
+    if end > isize::MAX as usize {
+        return_errno_with_message!(Errno::ENOMEM, "mmap: offset + size too large");
     }
 
-    pub fn flags(&self) -> MMapFlags {
-        self.flags
+    let offset_aligned = offset.align_down(PAGE_SIZE);
+
+    let range_in_userspace = is_userspace_vaddr(offset_aligned) && is_userspace_vaddr(end - 1);
+
+    if flags.contains(MMapFlags::MAP_FIXED) | flags.contains(MMapFlags::MAP_FIXED_NOREPLACE) {
+        if !offset.is_multiple_of(PAGE_SIZE) {
+            return_errno_with_message!(Errno::EINVAL, "mmap: offset not page-aligned");
+        }
+        if !range_in_userspace {
+            return_errno_with_message!(Errno::EINVAL, "mmap: fixed address not in userspace");
+        }
+
+        let typ = if flags.contains(MMapFlags::MAP_FIXED_NOREPLACE) {
+            OffsetType::FixedNoReplace
+        } else {
+            OffsetType::Fixed
+        };
+
+        Ok(MMapAddrSizeOptions {
+            addr_options: Some((offset_aligned, typ)),
+            size: size_aligned,
+        })
+    } else if range_in_userspace {
+        Ok(MMapAddrSizeOptions {
+            addr_options: Some((offset_aligned, OffsetType::Hint)),
+            size: size_aligned,
+        })
+    } else {
+        Ok(MMapAddrSizeOptions {
+            addr_options: None,
+            size: size_aligned,
+        })
     }
 }

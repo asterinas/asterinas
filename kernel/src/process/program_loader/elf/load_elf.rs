@@ -2,6 +2,8 @@
 
 //! ELF file parser.
 
+use core::num::NonZeroUsize;
+
 use align_ext::AlignExt;
 
 use super::{
@@ -21,7 +23,7 @@ use crate::{
     },
     vm::{
         perms::VmPerms,
-        vmar::{VMAR_LOWEST_ADDR, Vmar},
+        vmar::{OffsetType, VMAR_LOWEST_ADDR, Vmar},
         vmo::Vmo,
     },
 };
@@ -214,7 +216,7 @@ fn map_segment_vmos(
         let map_size = elf_va_range_aligned.len();
 
         let vmar_map_options = vmar
-            .new_map(map_size, VmPerms::empty())?
+            .new_map(NonZeroUsize::new(map_size).unwrap(), VmPerms::empty())?
             .align(elf.max_load_align())
             .handle_page_faults_around();
         let aligned_range = vmar_map_options.build().map(|addr| addr..addr + map_size)?;
@@ -283,11 +285,12 @@ fn map_segment_vmo(
 
     if segment_size != 0 {
         let mut vm_map_options = vmar
-            .new_map(segment_size, perms)?
+            .new_map(NonZeroUsize::new(segment_size).unwrap(), perms)?
             .vmo(elf_vmo.clone())
-            .vmo_offset(segment_offset)
-            .can_overwrite(true);
-        vm_map_options = vm_map_options.offset(offset).handle_page_faults_around();
+            .vmo_offset(segment_offset);
+        vm_map_options = vm_map_options
+            .offset(offset, OffsetType::Fixed)
+            .handle_page_faults_around();
         let map_addr = vm_map_options.build()?;
 
         // Write zero as paddings if the tail is not page-aligned and map size
@@ -310,8 +313,9 @@ fn map_segment_vmo(
     let anonymous_map_size = total_map_size - segment_size;
     if anonymous_map_size > 0 {
         let mut anonymous_map_options =
-            vmar.new_map(anonymous_map_size, perms)?.can_overwrite(true);
-        anonymous_map_options = anonymous_map_options.offset(offset + segment_size);
+            vmar.new_map(NonZeroUsize::new(anonymous_map_size).unwrap(), perms)?;
+        anonymous_map_options =
+            anonymous_map_options.offset(offset + segment_size, OffsetType::Fixed);
         anonymous_map_options.build()?;
     }
 
@@ -360,7 +364,10 @@ fn map_vdso_to_vmar(vmar: &Vmar) -> Option<Vaddr> {
     let vdso_vmo = vdso_vmo()?;
 
     let options = vmar
-        .new_map(VDSO_VMO_LAYOUT.size, VmPerms::empty())
+        .new_map(
+            NonZeroUsize::new(VDSO_VMO_LAYOUT.size).unwrap(),
+            VmPerms::empty(),
+        )
         .unwrap()
         .vmo(vdso_vmo);
 

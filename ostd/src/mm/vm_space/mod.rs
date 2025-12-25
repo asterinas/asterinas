@@ -343,7 +343,7 @@ impl<'a, A: AuxPageTableMeta> CursorMut<'a, A> {
     ///
     /// If the cursor is pointing to a valid virtual address that is locked,
     /// it will return the virtual address range and the mapped item.
-    pub fn query(&mut self) -> VmQueriedItem<'_> {
+    pub fn query(&self) -> VmQueriedItem<'_> {
         self.pt_cursor.query().into()
     }
 
@@ -387,6 +387,23 @@ impl<'a, A: AuxPageTableMeta> CursorMut<'a, A> {
         self.pt_cursor.adjust_level(level);
     }
 
+    /// Gets the guard level of the cursor.
+    ///
+    /// The guard level is the maximum level that the cursor can pop to.
+    pub fn guard_level(&self) -> PagingLevel {
+        self.pt_cursor.guard_level()
+    }
+
+    /// Gets the mutable auxiliary metadata associated with the current page table.
+    pub fn aux_meta_mut(&mut self) -> &mut A {
+        self.pt_cursor.aux_meta_mut()
+    }
+
+    /// Gets the auxiliary metadata associated with the current page table.
+    pub fn aux_meta(&self) -> &A {
+        self.pt_cursor.aux_meta()
+    }
+
     /// Get the virtual address of the current slot.
     pub fn virt_addr(&self) -> Vaddr {
         self.pt_cursor.virt_addr()
@@ -402,6 +419,15 @@ impl<'a, A: AuxPageTableMeta> CursorMut<'a, A> {
     /// Returns the new level if the next level page table exists, or `None` otherwise.
     pub fn push_level_if_exists(&mut self) -> Option<PagingLevel> {
         self.pt_cursor.push_level_if_exists()
+    }
+
+    /// Pops the cursor up to the previous level.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the current level is at the guard level.
+    pub fn pop_level(&mut self) {
+        self.pt_cursor.pop_level();
     }
 
     /// Get the current virtual address range of the cursor.
@@ -509,6 +535,8 @@ impl<'a, A: AuxPageTableMeta> CursorMut<'a, A> {
     ///
     /// Panics if the current level is at the top level.
     pub fn unmap(&mut self) -> usize {
+        let cur_range = self.pt_cursor.cur_va_range();
+
         // SAFETY: It is safe to un-map memory in the userspace. And the
         // un-mapped items are dropped after TLB flushes. So they outlive
         // the current RCU lifetime `'a`.
@@ -536,8 +564,9 @@ impl<'a, A: AuxPageTableMeta> CursorMut<'a, A> {
                         // corresponding `IoMem`. This is because we manage
                         // the range of I/O as a whole, but the frames
                         // handled here might be one segment of it.
-                        self.flusher.issue_tlb_flush(TlbFlushOp::for_single(va));
-                        1
+                        self.flusher
+                            .issue_tlb_flush(TlbFlushOp::for_range(cur_range.clone()));
+                        cur_range.len() / PAGE_SIZE
                     }
                 }
             }

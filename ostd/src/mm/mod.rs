@@ -40,6 +40,7 @@ pub use self::{
     kspace::{KERNEL_VADDR_RANGE, MAX_USERSPACE_VADDR},
     mem_obj::{HasDaddr, HasPaddr, HasPaddrRange, HasSize, Split},
     page_prop::{CachePolicy, PageFlags, PageProperty, PageTableFlags},
+    page_table::{AuxPageTableMeta, AuxPtMetaLayoutChecked, PageTableFrameMeta},
     vm_space::VmSpace,
 };
 pub(crate) use self::{
@@ -99,7 +100,18 @@ pub(crate) trait PagingConstsTrait: Debug + Send + Sync + 'static {
 }
 
 /// The page size
-pub const PAGE_SIZE: usize = page_size::<PagingConsts>(1);
+pub const PAGE_SIZE: usize = page_size_at(1);
+
+/// The highest [`PagingLevel`].
+pub const HIGHEST_PAGING_LEVEL: PagingLevel = PagingConsts::NR_LEVELS;
+
+/// The highest [`PagingLevel`] that can be used for translation.
+pub const HIGHEST_TRANSLATION_LEVEL: PagingLevel = PagingConsts::HIGHEST_TRANSLATION_LEVEL;
+
+/// The page size at a given level.
+pub const fn page_size_at(level: PagingLevel) -> usize {
+    page_size::<PagingConsts>(level)
+}
 
 /// The page size at a given level.
 pub(crate) const fn page_size<C: PagingConstsTrait>(level: PagingLevel) -> usize {
@@ -112,7 +124,6 @@ pub(crate) const fn nr_subpage_per_huge<C: PagingConstsTrait>() -> usize {
 }
 
 /// The number of base pages in a huge page at a given level.
-#[expect(dead_code)]
 pub(crate) const fn nr_base_per_page<C: PagingConstsTrait>(level: PagingLevel) -> usize {
     page_size::<C>(level) / C::BASE_PAGE_SIZE
 }
