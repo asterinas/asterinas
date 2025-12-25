@@ -18,7 +18,7 @@ use crate::{
         },
     },
     prelude::*,
-    process::{Gid, Uid},
+    process::{Gid, Uid, posix_thread::AsPosixThread},
 };
 
 mod dentry;
@@ -34,6 +34,14 @@ pub struct Path {
     mount: Arc<Mount>,
     dentry: Arc<Dentry>,
 }
+
+impl PartialEq for Path {
+    fn eq(&self, other: &Self) -> bool {
+        self.mount.id() == other.mount.id() && Arc::ptr_eq(&self.dentry, &other.dentry)
+    }
+}
+
+impl Eq for Path {}
 
 impl Path {
     /// Creates a new `Path` to represent the root directory of a file system.
@@ -119,8 +127,6 @@ impl Path {
     /// Gets the absolute path.
     ///
     /// It will resolve the mountpoint automatically.
-    //
-    // FIXME: This method needs to be aware of the current process's root path.
     pub fn abs_path(&self) -> String {
         let mut path_name = self.effective_name();
         let mut current_dir = self.this();
@@ -168,6 +174,13 @@ impl Path {
     pub fn effective_parent(&self) -> Option<Self> {
         if !self.is_mount_root() {
             return Some(Self::new(self.mount.clone(), self.dentry.parent().unwrap()));
+        }
+        
+        let current_thread = current_thread!();
+        let current_fsinfo = current_thread.as_posix_thread()?.read_fs();
+        let current_resolver = current_fsinfo.resolver().read();
+        if self == current_resolver.root() {
+            return None;
         }
 
         let parent = self.mount.parent()?;
