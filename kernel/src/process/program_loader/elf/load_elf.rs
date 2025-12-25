@@ -234,6 +234,18 @@ fn map_segment_vmos(
             return_errno_with_message!(Errno::EPERM, "the mapping address is too small");
         }
 
+        // Allocate a continuous range of virtual memory for all segments in advance.
+        //
+        // This is to ensure that the range does not conflict with other objects, such
+        // as the interpreter.
+        let elf_va_range_aligned =
+            elf_va_range.start.align_down(PAGE_SIZE)..elf_va_range.end.align_up(PAGE_SIZE);
+        let map_size = elf_va_range_aligned.len();
+
+        vmar.new_map(map_size, VmPerms::empty())?
+            .offset(elf_va_range_aligned.start)
+            .build()?;
+
         elf_va_range.clone()
     };
 
