@@ -7,7 +7,7 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::{FdFlags, FileDesc, WithFileTable, get_file_fast},
-        ramfs::memfd::{FileSeals, MemfdFile},
+        ramfs::memfd::{FileSeals, MemfdInodeHandle},
         utils::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockType, StatusFlags},
     },
     prelude::*,
@@ -165,14 +165,8 @@ fn handle_addseal(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
-    let memfd_file = file.downcast_ref::<MemfdFile>().ok_or_else(|| {
-        Error::with_message(
-            Errno::EINVAL,
-            "file seals can only be applied to memfd files",
-        )
-    })?;
 
-    memfd_file.add_seals(new_seals)?;
+    file.as_inode_handle_or_err()?.add_seals(new_seals)?;
 
     Ok(SyscallReturn::Return(0))
 }
@@ -180,14 +174,8 @@ fn handle_addseal(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn
 fn handle_getseal(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
-    let memfd_file = file.downcast_ref::<MemfdFile>().ok_or_else(|| {
-        Error::with_message(
-            Errno::EINVAL,
-            "file seals can only be applied to memfd files",
-        )
-    })?;
 
-    let file_seals = memfd_file.get_seals()?;
+    let file_seals = file.as_inode_handle_or_err()?.get_seals()?;
 
     Ok(SyscallReturn::Return(file_seals.bits() as _))
 }
