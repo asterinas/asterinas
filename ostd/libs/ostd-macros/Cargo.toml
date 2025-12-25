@@ -12,10 +12,10 @@ edition.workspace = true
 proc-macro = true
 
 [dependencies]
-proc-macro2 = { version = "1.0.95", features = ["span-locations"] }
-quote = "1.0.35"
-rand = "0.9.2"
-syn = { version = "2.0.48", features = ["full"] }
+proc-macro2.workspace = true
+quote.workspace = true
+rand = { workspace = true, features = [ "thread_rng" ] }
+syn.workspace = true
 
 [lints]
 workspace = true

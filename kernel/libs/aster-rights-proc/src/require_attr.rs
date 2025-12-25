@@ -20,7 +20,7 @@ impl Parse for RequireAttr {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let type_set: Type = input.parse()?;
         let _: Token![>] = input.parse()?;
-        let required_types = input.parse_terminated(Ident::parse)?;
+        let required_types = Punctuated::parse_terminated_with(input, Ident::parse)?;
         Ok(RequireAttr {
             type_set,
             required_types,
