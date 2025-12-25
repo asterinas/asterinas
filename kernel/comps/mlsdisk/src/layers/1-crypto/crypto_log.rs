@@ -3,8 +3,7 @@
 use alloc::vec;
 use core::any::Any;
 
-use ostd::const_assert;
-use ostd_pod::Pod;
+use ostd::{Pod, const_assert};
 use serde::{Deserialize, Serialize};
 
 use super::{Iv, Key, Mac};

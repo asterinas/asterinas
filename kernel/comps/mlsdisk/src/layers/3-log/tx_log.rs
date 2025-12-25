@@ -66,7 +66,7 @@ use core::{
 };
 
 use lru::LruCache;
-use ostd_pod::Pod;
+use ostd::Pod;
 use serde::{Deserialize, Serialize};
 
 use self::journaling::{AllEdit, AllState, Journal, JournalCompactPolicy};

@@ -191,7 +191,6 @@ dependencies = [
  "log",
  "lru",
  "ostd",
- "ostd-pod",
  "postcard",
  "serde",
 ]

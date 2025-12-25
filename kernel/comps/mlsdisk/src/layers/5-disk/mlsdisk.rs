@@ -16,8 +16,10 @@ use core::{
 };
 
 use device_id::DeviceId;
-use ostd::mm::{HasSize, VmIo};
-use ostd_pod::Pod;
+use ostd::{
+    Pod,
+    mm::{HasSize, VmIo},
+};
 
 use super::{
     bio::{BioReq, BioReqQueue, BioResp, BioType},
