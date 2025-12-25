@@ -228,7 +228,7 @@ impl Mount {
     /// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/namespace.c#L6301-L6314>
     pub(in crate::fs) fn new_pseudo(fs: Arc<dyn FileSystem>) -> Arc<Self> {
         let id = ID_ALLOCATOR.get().unwrap().lock().alloc().unwrap();
-        let root_dentry = Dentry::new_root(fs.root_inode());
+        let root_dentry = Dentry::new_pseudo(fs.root_inode(), |_| unreachable!());
         root_dentry.inc_mount_count();
 
         Arc::new_cyclic(|weak_self| Self {

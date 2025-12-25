@@ -16,11 +16,24 @@ use crate::{
 pub(super) struct Dentry {
     inode: Arc<dyn Inode>,
     type_: InodeType,
-    name_and_parent: RwLock<Option<(String, Arc<Dentry>)>>,
-    children: RwMutex<DentryChildren>,
+    inner: DentryInner,
     flags: AtomicU32,
     mount_count: AtomicU32,
     this: Weak<Dentry>,
+}
+
+enum DentryInner {
+    Real(RealDentryInner),
+    Pseudo(PseudoDentryInner),
+}
+
+struct RealDentryInner {
+    name_and_parent: RwLock<Option<(String, Arc<Dentry>)>>,
+    children: RwMutex<DentryChildren>,
+}
+
+struct PseudoDentryInner {
+    name_fn: fn(&dyn Inode) -> String,
 }
 
 impl Dentry {
@@ -33,18 +46,40 @@ impl Dentry {
     }
 
     fn new(inode: Arc<dyn Inode>, options: DentryOptions) -> Arc<Self> {
-        Arc::new_cyclic(|weak_self| Self {
-            type_: inode.type_(),
-            inode,
+        let inner = RealDentryInner {
             name_and_parent: match options {
                 DentryOptions::Leaf(name_and_parent) => RwLock::new(Some(name_and_parent)),
                 _ => RwLock::new(None),
             },
             children: RwMutex::new(DentryChildren::new()),
+        };
+
+        Arc::new_cyclic(|weak_self| Self {
+            type_: inode.type_(),
+            inode,
+            inner: DentryInner::Real(inner),
             flags: AtomicU32::new(DentryFlags::empty().bits()),
             mount_count: AtomicU32::new(0),
             this: weak_self.clone(),
         })
+    }
+
+    pub(super) fn new_pseudo(
+        inode: Arc<dyn Inode>,
+        name_fn: fn(&dyn Inode) -> String,
+    ) -> Arc<Self> {
+        Arc::new_cyclic(|weak_self| Self {
+            type_: inode.type_(),
+            inode,
+            inner: DentryInner::Pseudo(PseudoDentryInner { name_fn }),
+            flags: AtomicU32::new(DentryFlags::empty().bits()),
+            mount_count: AtomicU32::new(0),
+            this: weak_self.clone(),
+        })
+    }
+
+    pub(super) fn is_pseudo(&self) -> bool {
+        matches!(self.inner, DentryInner::Pseudo(_))
     }
 
     /// Gets the type of the `Dentry`.
@@ -56,9 +91,12 @@ impl Dentry {
     ///
     /// Returns "/" if it is a root `Dentry`.
     pub(super) fn name(&self) -> String {
-        match self.name_and_parent.read().as_ref() {
-            Some(name_and_parent) => name_and_parent.0.clone(),
-            None => String::from("/"),
+        match &self.inner {
+            DentryInner::Real(inner) => match inner.name_and_parent.read().as_ref() {
+                Some(name_and_parent) => name_and_parent.0.clone(),
+                None => String::from("/"),
+            },
+            DentryInner::Pseudo(inner) => (inner.name_fn)(self.inode.as_ref()),
         }
     }
 
@@ -66,15 +104,25 @@ impl Dentry {
     ///
     /// Returns `None` if it is a root `Dentry`.
     pub(super) fn parent(&self) -> Option<Arc<Self>> {
-        self.name_and_parent
-            .read()
-            .as_ref()
-            .map(|name_and_parent| name_and_parent.1.clone())
+        self.real_inner().and_then(|inner| {
+            inner
+                .name_and_parent
+                .read()
+                .as_ref()
+                .map(|name_and_parent| name_and_parent.1.clone())
+        })
     }
 
     fn set_name_and_parent(&self, name: &str, parent: Arc<Self>) {
-        let mut name_and_parent = self.name_and_parent.write();
+        let mut name_and_parent = self.real_inner().unwrap().name_and_parent.write();
         *name_and_parent = Some((String::from(name), parent));
+    }
+
+    fn real_inner(&self) -> Option<&RealDentryInner> {
+        match &self.inner {
+            DentryInner::Real(inner) => Some(inner),
+            DentryInner::Pseudo(_) => None,
+        }
     }
 
     fn this(&self) -> Arc<Self> {
@@ -150,7 +198,7 @@ impl Dentry {
             return_errno!(Errno::ENOTDIR);
         }
 
-        let children = self.children.upread();
+        let children = self.real_inner().unwrap().children.upread();
         if children.contains_valid(name) {
             return_errno!(Errno::EEXIST);
         }
@@ -168,13 +216,13 @@ impl Dentry {
 
     /// Lookups a target `Dentry` from the cache in children.
     pub(super) fn lookup_via_cache(&self, name: &str) -> Result<Option<Arc<Dentry>>> {
-        let children = self.children.read();
+        let children = self.real_inner().unwrap().children.read();
         children.find(name)
     }
 
     /// Lookups a target `Dentry` from the file system.
     pub(super) fn lookup_via_fs(&self, name: &str) -> Result<Arc<Dentry>> {
-        let children = self.children.upread();
+        let children = self.real_inner().unwrap().children.upread();
 
         // TODO: Add a right implementation to cache negative dentry.
         let inode = self.inode.lookup(name)?;
@@ -194,7 +242,7 @@ impl Dentry {
             return_errno!(Errno::ENOTDIR);
         }
 
-        let children = self.children.upread();
+        let children = self.real_inner().unwrap().children.upread();
         if children.contains_valid(name) {
             return_errno!(Errno::EEXIST);
         }
@@ -216,7 +264,7 @@ impl Dentry {
             return_errno!(Errno::ENOTDIR);
         }
 
-        let children = self.children.upread();
+        let children = self.real_inner().unwrap().children.upread();
         if children.contains_valid(name) {
             return_errno!(Errno::EEXIST);
         }
@@ -246,7 +294,7 @@ impl Dentry {
             return_errno_with_message!(Errno::EINVAL, "unlink on . or ..");
         }
 
-        let children = self.children.upread();
+        let children = self.real_inner().unwrap().children.upread();
         children.check_mountpoint(name)?;
 
         let mut children = children.upgrade();
@@ -297,7 +345,7 @@ impl Dentry {
             return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..");
         }
 
-        let children = self.children.upread();
+        let children = self.real_inner().unwrap().children.upread();
         children.check_mountpoint(name)?;
 
         let mut children = children.upgrade();
@@ -349,7 +397,7 @@ impl Dentry {
                 return Ok(());
             }
 
-            let children = self.children.upread();
+            let children = self.real_inner().unwrap().children.upread();
             let old_dentry = children.check_mountpoint_then_find(old_name)?;
             children.check_mountpoint(new_name)?;
 
@@ -409,7 +457,6 @@ impl Dentry {
             current_dir = parent_dir;
         }
 
-        debug_assert!(path_name.starts_with('/'));
         path_name
     }
 }
@@ -427,8 +474,9 @@ impl Debug for Dentry {
 
 /// `DentryKey` is the unique identifier for the corresponding `Dentry`.
 ///
-/// For none-root dentries, it uses self's name and parent's pointer to form the key,
-/// meanwhile, the root `Dentry` uses "/" and self's pointer to form the key.
+/// - For non-root dentries, it uses self's name and parent's pointer to form the key,
+/// - For the root dentry, it uses "/" and self's pointer to form the key.
+/// - For pseudo dentries, it uses self's name and self's pointer to form the key.
 #[derive(Debug, Clone, Hash, PartialOrd, Ord, Eq, PartialEq)]
 pub(super) struct DentryKey {
     name: String,
@@ -437,11 +485,15 @@ pub(super) struct DentryKey {
 
 impl DentryKey {
     /// Forms a `DentryKey` from the corresponding `Dentry`.
-    pub(super) fn new(dentry: &Dentry) -> Self {
-        let (name, parent) = match dentry.name_and_parent.read().as_ref() {
-            Some(name_and_parent) => name_and_parent.clone(),
-            None => (String::from("/"), dentry.this()),
+    fn new(dentry: &Dentry) -> Self {
+        let (name, parent) = match &dentry.inner {
+            DentryInner::Real(inner) => match inner.name_and_parent.read().as_ref() {
+                Some(name_and_parent) => name_and_parent.clone(),
+                None => (String::from("/"), dentry.this()),
+            },
+            DentryInner::Pseudo(_) => (dentry.name(), dentry.this()),
         };
+
         Self {
             name,
             parent_ptr: Arc::as_ptr(&parent) as usize,
@@ -552,13 +604,16 @@ fn write_lock_children_on_two_dentries<'a>(
 ) {
     let this_key = this.key();
     let other_key = other.key();
+    let this_children = &this.real_inner().unwrap().children;
+    let other_children = &other.real_inner().unwrap().children;
+
     if this_key < other_key {
-        let this = this.children.write();
-        let other = other.children.write();
+        let this = this_children.write();
+        let other = other_children.write();
         (this, other)
     } else {
-        let other = other.children.write();
-        let this = this.children.write();
+        let other = other_children.write();
+        let this = this_children.write();
         (this, other)
     }
 }
