@@ -1,11 +1,11 @@
 [package]
 name = "ostd"
-version = "0.17.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 description = "Rust OS framework that facilitates the development of and innovation in OS kernels"
-license = "MPL-2.0"
 readme = "README.md"
-repository = "https://github.com/asterinas/asterinas"
 documentation = "https://asterinas.github.io/api-docs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
