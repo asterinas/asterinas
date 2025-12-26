@@ -23,6 +23,8 @@ impl Vmar {
     ///   mapping does not have to solely map to a whole [`VmMapping`], but it
     ///   must ensure that all existing ranges have a mapping. Otherwise, this
     ///   method will return an `Err`.
+    ///
+    /// [`VmMapping`]: crate::vm::vmar::vm_mapping::VmMapping
     pub fn resize_mapping(
         &self,
         map_addr: Vaddr,

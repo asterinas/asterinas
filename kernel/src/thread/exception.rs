@@ -16,10 +16,10 @@ use crate::{
     vm::{perms::VmPerms, vmar::Vmar},
 };
 
-/// Page fault information converted from [`CpuExceptionInfo`].
+/// Page fault information converted from [`CpuException`].
 ///
-/// `From<CpuExceptionInfo>` should be implemented for this struct.
-/// If `CpuExceptionInfo` is a page fault, `try_from` should return `Ok(PageFaultInfo)`,
+/// `From<CpuException>` should be implemented for this struct.
+/// If [`CpuException`] is a page fault, `try_from` should return `Ok(PageFaultInfo)`,
 /// or `Err(())` (no error information) otherwise.
 pub struct PageFaultInfo {
     /// The virtual address where a page fault occurred.

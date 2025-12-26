@@ -62,6 +62,8 @@ impl RealTimePolicy {
 /// - If the time slice is set, the thread is considered to be an RR
 ///   (round-robin) thread, and will be executed for the time slice, and
 ///   then it will be put back to the inactive array.
+///
+/// [`sched_clock`]: super::sched_clock
 #[derive(Debug)]
 pub struct RealTimeAttr {
     prio: AtomicU8,

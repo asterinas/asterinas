@@ -19,6 +19,7 @@
 #![feature(associated_type_defaults)]
 #![feature(try_with_capacity)]
 #![register_tool(component_access_control)]
+#![allow(rustdoc::private_intra_doc_links)]
 
 extern crate alloc;
 extern crate lru;

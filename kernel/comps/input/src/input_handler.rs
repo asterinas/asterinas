@@ -27,7 +27,6 @@ pub enum ConnectError {
 ///
 /// [`register_handler_class`]: crate::register_handler_class
 /// [`connect`]: Self::connect
-/// [`InputHandler`]: crate::InputHandler
 pub trait InputHandlerClass: Send + Sync + Any + Debug {
     /// Returns the class name of the handler class.
     fn name(&self) -> &str;

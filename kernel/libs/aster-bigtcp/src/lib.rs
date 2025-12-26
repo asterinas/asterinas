@@ -12,6 +12,7 @@
 
 #![no_std]
 #![deny(unsafe_code)]
+#![allow(rustdoc::private_intra_doc_links)]
 
 pub mod boolean_value;
 pub mod device;

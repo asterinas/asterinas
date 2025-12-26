@@ -2,13 +2,13 @@
 
 // SPDX-License-Identifier: MPL-2.0
 
-//! Provides [`MemObjSlice`] for quick duplication and slicing over memory
+//! Provides [`Slice`] for quick duplication and slicing over memory
 //! objects, such as [`UFrame`], [`USegment`], [`IoMem`], [`DmaStream`], etc.
 //!
 //! [`UFrame`]: ostd::mm::UFrame
 //! [`USegment`]: ostd::mm::USegment
 //! [`IoMem`]: ostd::io::IoMem
-//! [`DmaStream`]: ostd::mm::dma::DmaStream
+//! [`DmaStream`]: ostd::mm::DmaStream
 
 use alloc::sync::Arc;
 use core::{borrow::Borrow, fmt::Debug, ops::Range};

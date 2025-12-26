@@ -45,6 +45,8 @@ use crate::{
 ///
 /// This type controls the actual mapping in the [`VmSpace`]. It is a linear
 /// type and cannot be [`Drop`]. To remove a mapping, use [`Self::unmap`].
+///
+/// [`Vmar`]: crate::vm::vmar::Vmar
 #[derive(Debug)]
 pub struct VmMapping {
     /// The size of mapping, in bytes. The map size can even be larger than the
@@ -856,6 +858,8 @@ impl Drop for MappedVmo {
 ///   remove the original mappings before inserting the merged mapping
 ///   into the [`Vmar`].
 /// - Returns `None` otherwise.
+///
+/// [`Vmar`]: crate::vm::vmar::Vmar
 fn try_merge(left: &VmMapping, right: &VmMapping) -> Option<VmMapping> {
     let is_adjacent = left.map_end() == right.map_to_addr();
     let is_type_equal = left.is_shared == right.is_shared
