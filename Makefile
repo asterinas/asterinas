@@ -286,7 +286,7 @@ test_osdk:
 check_vdso:
 	@# Checking `VDSO_LIBRARY_DIR` environment variable
 	@if [ -z "$(VDSO_LIBRARY_DIR)" ]; then \
-		echo "Error: the \$(VDSO_LIBRARY_DIR) environment variable must be given."; \
+		echo "Error: the VDSO_LIBRARY_DIR environment variable must be given."; \
 		echo "    This variable points to a directory that provides Linux's vDSO files,"; \
 		echo "    which is required to build Asterinas. Search for VDSO_LIBRARY_DIR"; \
 		echo "    in Asterinas's Dockerfile for more information."; \
