@@ -18,7 +18,6 @@
 #![feature(thin_box)]
 #![feature(trait_alias)]
 #![feature(associated_type_defaults)]
-#![feature(try_with_capacity)]
 #![register_tool(component_access_control)]
 
 extern crate alloc;
