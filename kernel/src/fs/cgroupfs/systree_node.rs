@@ -22,7 +22,7 @@
 //!    `inner` data.
 //!
 //! 3. **Children Lock**: Each cgroup node ([`CgroupNode`] and [`CgroupSystem`]) inherits
-//!    an `RwLock` from `BranchNodeFields`. This lock protects access to and
+//!    an `RwMutex` from `BranchNodeFields`. This lock protects access to and
 //!    modification of the list of child cgroup nodes.
 //!
 //! 4. **Cgroup Membership Lock**: A global `Mutex` managed by [`CgroupMembership`] that
