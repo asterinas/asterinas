@@ -24,7 +24,7 @@ jobs:
         with:
           context: .
           file: ./osdk/tools/docker/Dockerfile
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: asterinas/osdk:${{ steps.prepare-for-docker-build-and-push.outputs.image_version }}
           build-args: |
@@ -46,7 +46,7 @@ jobs:
         with:
           context: .
           file: ./tools/docker/nix/Dockerfile
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: asterinas/nix:${{ steps.prepare-for-docker-build-and-push.outputs.image_version }}
           build-args: |
@@ -68,7 +68,7 @@ jobs:
         with:
           context: .
           file: ./tools/docker/Dockerfile
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: asterinas/asterinas:${{ steps.prepare-for-docker-build-and-push.outputs.image_version }}
           build-args: |
