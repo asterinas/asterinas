@@ -7,7 +7,7 @@
     expect(unused_imports)
 )]
 
-pub(crate) mod dma;
+pub mod dma;
 pub mod frame;
 pub mod heap;
 pub mod io;
@@ -25,7 +25,6 @@ mod test;
 use core::fmt::Debug;
 
 pub use self::{
-    dma::{DmaCoherent, DmaDirection, DmaStream},
     frame::{
         Frame,
         allocator::FrameAllocOptions,
@@ -38,7 +37,7 @@ pub use self::{
         VmIoOnce, VmReader, VmWriter,
     },
     kspace::{KERNEL_VADDR_RANGE, MAX_USERSPACE_VADDR},
-    mem_obj::{HasDaddr, HasPaddr, HasPaddrRange, HasSize},
+    mem_obj::{HasDaddr, HasPaddr, HasPaddrRange, HasSize, Split},
     page_prop::{CachePolicy, PageFlags, PageProperty},
     vm_space::VmSpace,
 };

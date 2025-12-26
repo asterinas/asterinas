@@ -6,7 +6,8 @@ use core::{arch::asm, intrinsics::AtomicOrdering::Relaxed, ops::Range};
 use crate::{
     Pod,
     mm::{
-        DmaDirection, PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
+        PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
+        dma::DmaDirection,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
         page_table::PageTableEntryTrait,
     },
@@ -102,12 +103,20 @@ pub(crate) fn tlb_flush_all_including_global() {
     }
 }
 
+pub(crate) fn can_sync_dma() -> bool {
+    // TODO: Implement DMA synchronization for LoongArch64 architecture.
+    false
+}
+
 /// # Safety
 ///
-/// The caller must ensure that the virtual address range and DMA direction correspond correctly to
-/// a DMA region.
-pub(crate) unsafe fn sync_dma_range(_range: Range<Vaddr>, _direction: DmaDirection) {
-    unimplemented!("DMA synchronization is unimplemented in LoongArch64")
+/// The caller must ensure that
+///  - the virtual address range and DMA direction correspond correctly to a
+///    DMA region;
+///  - `can_sync_dma()` is `true`.
+#[expect(clippy::extra_unused_type_parameters)]
+pub(crate) unsafe fn sync_dma_range<D: DmaDirection>(_range: Range<Vaddr>) {
+    unreachable!("`can_sync_dma()` never returns `true`");
 }
 
 #[derive(Clone, Copy, Pod, Default)]

@@ -16,7 +16,7 @@ use crate::{
 /// The page table used by iommu maps the device address
 /// space to the physical address space.
 #[derive(Clone, Debug)]
-pub(crate) struct IommuPtConfig {}
+pub struct IommuPtConfig {}
 
 // SAFETY: `item_into_raw` and `item_from_raw` are implemented correctly,
 unsafe impl PageTableConfig for IommuPtConfig {

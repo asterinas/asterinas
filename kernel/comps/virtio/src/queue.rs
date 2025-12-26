@@ -14,7 +14,7 @@ use bitflags::bitflags;
 use log::debug;
 use ostd::{
     Pod,
-    mm::{DmaCoherent, FrameAllocOptions, HasPaddr, PodOnce},
+    mm::{HasPaddr, PodOnce, Split, dma::DmaCoherent},
 };
 
 use crate::{
@@ -85,62 +85,33 @@ impl VirtQueue {
             let desc_size = size_of::<Descriptor>() * queue_size;
             size = queue_size as u16;
 
-            let (seg1, seg2) = {
+            let (dma1, dma2) = {
                 let align_size = VirtioPciLegacyTransport::QUEUE_ALIGN_SIZE;
                 let total_frames =
                     VirtioPciLegacyTransport::calc_virtqueue_size_aligned(queue_size) / align_size;
-                let continue_segment = FrameAllocOptions::new()
-                    .alloc_segment(total_frames)
-                    .unwrap();
+                let dma = DmaCoherent::alloc(total_frames, true).unwrap();
 
                 let avial_size = size_of::<u16>() * (3 + queue_size);
                 let seg1_frames = (desc_size + avial_size).div_ceil(align_size);
 
-                continue_segment.split(seg1_frames * align_size)
+                dma.split(seg1_frames * align_size)
             };
             let desc_frame_ptr: SafePtr<Descriptor, Arc<DmaCoherent>> =
-                SafePtr::new(Arc::new(DmaCoherent::map(seg1.into(), true).unwrap()), 0);
+                SafePtr::new(Arc::new(dma1), 0);
             let mut avail_frame_ptr: SafePtr<AvailRing, Arc<DmaCoherent>> =
                 desc_frame_ptr.clone().cast();
             avail_frame_ptr.byte_add(desc_size);
             let used_frame_ptr: SafePtr<UsedRing, Arc<DmaCoherent>> =
-                SafePtr::new(Arc::new(DmaCoherent::map(seg2.into(), true).unwrap()), 0);
+                SafePtr::new(Arc::new(dma2), 0);
             (desc_frame_ptr, avail_frame_ptr, used_frame_ptr)
         } else {
             if size > 256 {
                 return Err(QueueError::InvalidArgs);
             }
             (
-                SafePtr::new(
-                    Arc::new(
-                        DmaCoherent::map(
-                            FrameAllocOptions::new().alloc_segment(1).unwrap().into(),
-                            true,
-                        )
-                        .unwrap(),
-                    ),
-                    0,
-                ),
-                SafePtr::new(
-                    Arc::new(
-                        DmaCoherent::map(
-                            FrameAllocOptions::new().alloc_segment(1).unwrap().into(),
-                            true,
-                        )
-                        .unwrap(),
-                    ),
-                    0,
-                ),
-                SafePtr::new(
-                    Arc::new(
-                        DmaCoherent::map(
-                            FrameAllocOptions::new().alloc_segment(1).unwrap().into(),
-                            true,
-                        )
-                        .unwrap(),
-                    ),
-                    0,
-                ),
+                SafePtr::new(Arc::new(DmaCoherent::alloc(1, true).unwrap()), 0),
+                SafePtr::new(Arc::new(DmaCoherent::alloc(1, true).unwrap()), 0),
+                SafePtr::new(Arc::new(DmaCoherent::alloc(1, true).unwrap()), 0),
             )
         };
         debug!("queue_desc start paddr:{:x?}", descriptor_ptr.paddr());
