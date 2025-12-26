@@ -98,16 +98,12 @@ impl InotifyFile {
     /// Watch Description starts from 1.
     /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/fs/notify/inotify/inotify_user.c#L402>
     pub fn new(is_nonblocking: bool) -> Result<Arc<Self>> {
-        let event_queue = VecDeque::try_with_capacity(DEFAULT_MAX_QUEUED_EVENTS).map_err(|_| {
-            Error::with_message(Errno::ENOMEM, "Insufficient kernel memory is available")
-        })?;
-
         Ok(Arc::new_cyclic(|weak_self| Self {
             watch_lock: Mutex::new(()),
             next_wd: AtomicU32::new(1),
             watch_map: RwLock::new(HashMap::new()),
             is_nonblocking: AtomicBool::new(is_nonblocking),
-            event_queue: SpinLock::new(event_queue),
+            event_queue: SpinLock::new(VecDeque::new()),
             queue_capacity: DEFAULT_MAX_QUEUED_EVENTS,
             pollee: Pollee::new(),
             this: weak_self.clone(),
