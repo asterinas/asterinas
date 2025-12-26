@@ -241,7 +241,7 @@ which are summarized in the table below.
 | 218     | set_tid_address        | ✅             | 💯 |
 | 219     | restart_syscall        | ❌             | N/A |
 | 220     | semtimedop             | ✅             | [⚠️](syscall-flag-coverage/inter-process-communication/#semop-and-semtimedop) |
-| 221     | fadvise64              | ✅             | ❓ |
+| 221     | fadvise64              | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#fadvise64) |
 | 222     | timer_create           | ✅             | [⚠️](syscall-flag-coverage/signals-and-timers/#timer_create) |
 | 223     | timer_settime          | ✅             | 💯 |
 | 224     | timer_gettime          | ✅             | 💯 |
@@ -271,8 +271,8 @@ which are summarized in the table below.
 | 248     | add_key                | ❌             | N/A |
 | 249     | request_key            | ❌             | N/A |
 | 250     | keyctl                 | ❌             | N/A |
-| 251     | ioprio_set             | ✅             | ❓ |
-| 252     | ioprio_get             | ✅             | ❓ |
+| 251     | ioprio_set             | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#ioprio_set-and-ioprio_get) |
+| 252     | ioprio_get             | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#ioprio_set-and-ioprio_get) |
 | 253     | inotify_init           | ✅             | 💯 |
 | 254     | inotify_add_watch      | ✅             | [⚠️](syscall-flag-coverage/file-systems-and-mount-control/#inotify_add_watch) |
 | 255     | inotify_rm_watch       | ✅             | 💯 |
@@ -345,7 +345,7 @@ which are summarized in the table below.
 | 332     | statx                  | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#statx) |
 | 434     | pidfd_open             | ✅             | 💯 |
 | 435     | clone3                 | ✅             | [⚠️](syscall-flag-coverage/process-and-thread-management/#clone-and-clone3) |
-| 436     | close_range            | ✅             | ❓ |
+| 436     | close_range            | ✅             | 💯 |
 | 439     | faccessat2             | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#faccessat2) |
 | 441     | epoll_pwait2           | ✅             | 💯 |
 | 452     | fchmodat2              | ✅             | 💯 |

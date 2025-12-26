@@ -3,7 +3,7 @@
 <!--
 Put system calls such as
 dup, dup2, dup3, fcntl, ioctl, pipe, pipe2, splice, tee, vmsplice, sendfile,
-eventfd, eventfd2 and memfd_create
+eventfd, eventfd2, memfd_create and fadvise64
 under this category.
 -->
 
@@ -86,6 +86,25 @@ Unsupported flags:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/memfd_create.2.html).
 
+### `fadvise64`
+
+Supported functionality in SCML:
+
+```c
+{{#include fadvise64.scml}}
+```
+
+Silently-ignored flags:
+* `POSIX_FADV_NORMAL`
+* `POSIX_FADV_RANDOM`
+* `POSIX_FADV_SEQUENTIAL`
+* `POSIX_FADV_WILLNEED`
+* `POSIX_FADV_DONTNEED`
+* `POSIX_FADV_NOREUSE`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/posix_fadvise.2.html).
+
 ### `epoll_ctl`
 
 Supported functionality in SCML:
@@ -116,3 +135,18 @@ Unsupported events:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/poll.2.html).
+
+### `ioprio_set` and `ioprio_get`
+
+Supported functionality in SCML:
+
+```c
+{{#include ioprio_get_and_set.scml}}
+```
+
+Unsupported selectors:
+* `IOPRIO_WHO_PGRP`
+* `IOPRIO_WHO_USER`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/ioprio_set.2.html).
