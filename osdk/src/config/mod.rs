@@ -184,13 +184,6 @@ fn apply_args_after_finalize(action: &mut Action, args: &CommonArgs) {
         action.qemu.args += " --no-shutdown";
         action.qemu.with_monitor = true;
     }
-
-    // Since current QEMU argument parsing does not support QOM format, hardcode the argument here.
-    // The argument configures a TDX guest object with a vsock-based communication channel to the
-    // Quote Generation Service running on the host machine.
-    if std::env::var("INTEL_TDX").is_ok_and(|s| s == "1") {
-        action.qemu.args += " -object '{ \"qom-type\": \"tdx-guest\", \"id\": \"tdx0\", \"sept-ve-disable\": true, \"quote-generation-socket\": { \"type\": \"vsock\", \"cid\": \"2\", \"port\": \"4050\" } }'";
-    }
 }
 
 impl Config {
