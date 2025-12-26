@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::format;
 use core::fmt::Display;
 
 use options::SocketOption;
@@ -9,8 +10,8 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::FdFlags,
-        path::RESERVED_MOUNT_ID,
-        pseudofs::sockfs_singleton,
+        path::Path,
+        pseudofs::{sockfs_mount, sockfs_singleton},
         utils::{CreationFlags, Inode, InodeType, StatusFlags, mkmod},
     },
     prelude::*,
@@ -128,8 +129,8 @@ pub trait Socket: private::SocketPrivate + Send + Sync {
         flags: SendRecvFlags,
     ) -> Result<(usize, MessageHeader)>;
 
-    /// Returns a reference to the pseudo inode associated with this socket.
-    fn pseudo_inode(&self) -> &Arc<dyn Inode>;
+    /// Returns a reference to the pseudo path associated with this socket.
+    fn pseudo_path(&self) -> &Path;
 }
 
 impl<T: Socket + 'static> FileLike for T {
@@ -177,7 +178,7 @@ impl<T: Socket + 'static> FileLike for T {
     }
 
     fn inode(&self) -> &Arc<dyn Inode> {
-        self.pseudo_inode()
+        self.pseudo_path().inode()
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
@@ -190,8 +191,7 @@ impl<T: Socket + 'static> FileLike for T {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 writeln!(f, "pos:\t{}", 0)?;
                 writeln!(f, "flags:\t0{:o}", self.flags)?;
-                // TODO: This should be the mount ID of the pseudo filesystem.
-                writeln!(f, "mnt_id:\t{}", RESERVED_MOUNT_ID)?;
+                writeln!(f, "mnt_id:\t{}", sockfs_mount().id())?;
                 writeln!(f, "ino:\t{}", self.ino)
             }
         }
@@ -208,14 +208,16 @@ impl<T: Socket + 'static> FileLike for T {
     }
 }
 
-/// Creates a new pseudo inode for a socket.
-fn new_pseudo_inode() -> Arc<dyn Inode> {
-    let pseudo_inode = sockfs_singleton().alloc_inode(
+/// Creates a pseudo `Path` for a socket.
+fn new_pseudo_path() -> Path {
+    let pseudo_inode = Arc::new(sockfs_singleton().alloc_inode(
         InodeType::Socket,
         mkmod!(a+rwx),
         Uid::new_root(),
         Gid::new_root(),
-    );
+    ));
 
-    Arc::new(pseudo_inode)
+    Path::new_pseudo(sockfs_mount().clone(), pseudo_inode, |inode| {
+        format!("socket:[{}]", inode.ino())
+    })
 }
