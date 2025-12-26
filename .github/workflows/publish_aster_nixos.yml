@@ -18,11 +18,8 @@ jobs:
 
       - name: Modify configuration.nix to include xfce and podman
         run: |
-          sed -i \
-            -e 's/^[[:space:]]*# services\.xserver\.enable = true;/  services.xserver.enable = true;/' \
-            -e 's/^[[:space:]]*# services\.xserver\.desktopManager\.xfce\.enable = true;/  services.xserver.desktopManager.xfce.enable = true;/' \
-            -e 's/^[[:space:]]*# virtualisation\.podman\.enable = true;/  virtualisation.podman.enable = true;/' \
-            distro/etc_nixos/configuration.nix
+          nix-build ./distro/etc_nixos/generate_config.nix --argstr configName enable-all -o configuration.nix
+          cp -L configuration.nix distro/etc_nixos/configuration.nix
 
       - name: Build Asterinas NixOS patched packages and push to release cache
         run: |
