@@ -790,10 +790,10 @@ impl Process {
     /// Returns a RCU read guard to the cgroup of the process.
     ///
     /// The returned cgroup is not a stable snapshot. It may be changed by other threads
-    /// and encounter race conditions. Users can use [`lock_cgroup_membership`] to obtain
+    /// and encounter race conditions. Users can use [`CgroupMembership`] to obtain
     /// a lock to prevent the cgroup from being changed.
     ///
-    /// [`lock_cgroup_membership`]: crate::fs::cgroupfs::lock_cgroup_membership
+    /// [`CgroupMembership`]: crate::fs::cgroupfs::CgroupMembership
     pub fn cgroup(&self) -> RcuOptionReadGuard<'_, Arc<CgroupNode>> {
         self.cgroup.read()
     }

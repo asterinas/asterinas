@@ -64,15 +64,15 @@ impl<E: Ext> dyn Iface<E> {
     }
 
     /// Gets the IPv4 address of the iface, if any.
-    ///
-    /// FIXME: One iface may have multiple IPv4 addresses.
+    //
+    // FIXME: One iface may have multiple IPv4 addresses.
     pub fn ipv4_addr(&self) -> Option<Ipv4Address> {
         self.common().ipv4_addr()
     }
 
     /// Retrieves the prefix length of the interface's IPv4 address.
     ///
-    /// Both [`Self::ipv4_addr`] and this method will either return `Some(_)`
+    /// Both `Self::ipv4_addr` and this method will either return `Some(_)`
     /// or both will return `None`.
     pub fn prefix_len(&self) -> Option<u8> {
         self.common().prefix_len()
@@ -90,6 +90,8 @@ impl<E: Ext> dyn Iface<E> {
     }
 
     /// Returns a reference to the associated [`ScheduleNextPoll`].
+    ///
+    /// [`ScheduleNextPoll`]: crate::iface::sched::ScheduleNextPoll
     pub fn sched_poll(&self) -> &E::ScheduleNextPoll {
         self.common().sched_poll()
     }

@@ -39,7 +39,7 @@ impl TaskSet {
 
     /// Inserts a new task to the task set.
     ///
-    /// This method will fail if [`Self::set_exited_group`] or [`Self::set_in_execve`]
+    /// This method will fail if [`Self::set_exited_group`] or [`Self::start_execve`]
     /// has been called before.
     pub(super) fn insert(&mut self, task: Arc<Task>) -> core::result::Result<(), Arc<Task>> {
         if self.has_exited_group || self.in_execve {

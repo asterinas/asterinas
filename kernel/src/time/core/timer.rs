@@ -28,7 +28,7 @@ pub enum Timeout {
 ///
 /// Setting the timer will trigger a callback function upon expiration of
 /// the set time. To enable its periodic functionality, users should set
-/// its `interval` field with [`Timer::set_interval`]. By doing this,
+/// its `interval` field with [`TimerGuard::set_interval`]. By doing this,
 /// the timer will use the interval time to configure a new timing after expiration.
 pub struct Timer {
     inner: SpinLock<TimerInner>,

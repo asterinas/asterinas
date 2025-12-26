@@ -173,6 +173,7 @@ impl WithFileTable for FileTableRefMut<'_> {
 ///
 /// [`RefCell`]: core::cell::RefCell
 /// [`ThreadLocal`]: crate::process::posix_thread::ThreadLocal
+/// [`RwArc::read`]: ostd::sync::RwArc::read
 macro_rules! get_file_fast {
     ($file_table:expr, $file_desc:expr) => {{
         use alloc::borrow::Cow;

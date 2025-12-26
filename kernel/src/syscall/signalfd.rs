@@ -4,7 +4,7 @@
 //!
 //! The signalfd mechanism allows receiving signals via file descriptor,
 //! enabling better integration with event loops.
-//! See https://man7.org/linux/man-pages/man2/signalfd.2.html
+//! See <https://man7.org/linux/man-pages/man2/signalfd.2.html>.
 
 use core::{
     fmt::Display,

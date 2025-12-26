@@ -223,6 +223,8 @@ pub struct CgroupNode {
     inner: RwMutex<Option<Inner>>,
     /// The depth of the node in the cgroupfs [`SysTree`], where the child of
     /// the root node has a depth of 1.
+    ///
+    /// [`SysTree`]: aster_systree::SysTree
     depth: usize,
     /// Tracks the "populated" status of this node and its direct children.
     ///

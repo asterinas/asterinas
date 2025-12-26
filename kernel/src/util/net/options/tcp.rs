@@ -13,7 +13,7 @@ use crate::{
 
 /// Sock options for tcp socket.
 ///
-/// The raw definition is from https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/linux/tcp.h#L92
+/// The raw definition is from <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/linux/tcp.h#L92>.
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
 #[expect(non_camel_case_types)]
