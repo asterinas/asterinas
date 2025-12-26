@@ -65,7 +65,7 @@ pub enum ClockId {
 /// - Bits 1 and 0 give the type: PROF=0, VIRT=1, SCHED=2, or FD=3.
 /// - A clock ID is invalid if bits 2, 1, and 0 are all set.
 ///
-/// Ref: https://github.com/torvalds/linux/blob/master/include/linux/posix-timers_types.h
+/// Ref: <https://github.com/torvalds/linux/blob/master/include/linux/posix-timers_types.h>.
 pub enum DynamicClockIdInfo {
     Pid(u32, DynamicClockType),
     Tid(u32, DynamicClockType),

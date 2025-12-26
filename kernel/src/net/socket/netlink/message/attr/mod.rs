@@ -4,7 +4,7 @@
 //!
 //! Netlink attributes provide additional information for each [`segment`].
 //! Each netlink attribute consists of two components:
-//! 1. Header: The attribute header is of type [`CNlAttrHeader`],
+//! 1. Header: The attribute header is of type [`CAttrHeader`],
 //!    which specifies the type and length of the attribute. The attribute
 //!    type belongs to different classes, which rely on the segment type.
 //! 2. Payload: The attribute's payload, which can vary in type.
@@ -12,7 +12,7 @@
 //!    The payload can also include one or multiple other attributes,
 //!    known as nested attributes.
 //!
-//! Similar to [`super::segment::NlSegment`], attributes have alignment requirements;
+//! Similar to [`super::segment::common::SegmentCommon`], attributes have alignment requirements;
 //! both the header and payload must be aligned to [`super::NLMSG_ALIGN`]
 //! when being transferred to and from user space.
 //!

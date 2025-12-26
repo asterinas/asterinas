@@ -17,8 +17,8 @@ use crate::{
 };
 
 /// The 'sys_utimensat' system call sets the access and modification times of a file.
-/// The times are defined by an array of two timespec structures, where times[0] represents the access time,
-/// and times[1] represents the modification time.
+/// The times are defined by an array of two timespec structures, where `times[0]` represents the access time,
+/// and `times[1]` represents the modification time.
 /// The `flags` argument is a bit mask that can include the following values:
 /// - `AT_SYMLINK_NOFOLLOW`: If set, the file is not dereferenced if it is a symbolic link.
 pub fn sys_utimensat(

@@ -34,7 +34,7 @@ use crate::transport::VirtioTransport;
 
 pub const DEVICE_NAME: &str = "Virtio-Input";
 
-/// Select value used for [`device::InputDevice::query_config_select()`].
+/// Select value used for `device::InputDevice::select_config`.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
 pub enum InputConfigSelect {

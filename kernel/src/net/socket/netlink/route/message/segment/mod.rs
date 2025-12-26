@@ -5,7 +5,7 @@
 //!
 //! Typically, a segment will consist of three parts:
 //!
-//! 1. Header: The headers of all segments are of type [`CMegSegHdr`],
+//! 1. Header: The headers of all segments are of type [`CMsgSegHdr`],
 //!    which indicate the type and total length of the segment.
 //!
 //! 2. Body: The body is the main component of a segment.
@@ -19,7 +19,7 @@
 //!    The total number of attributes is controlled by the `len` field of the header.
 //!
 //! Note that all headers, bodies, and attributes require
-//! their starting address in memory to be aligned to [`super::NLMSG_ALIGN`]
+//! their starting address in memory to be aligned to [`NLMSG_ALIGN`]
 //! when copying to and from user space.
 //! Therefore, necessary padding must be added to ensure alignment.
 //!
@@ -28,6 +28,8 @@
 //! ┌────────┬─────────┬──────┬─────────┬──────┬──────┬──────┐
 //! │ Header │ Padding │ Body │ Padding │ Attr │ Attr │ Attr │
 //! └────────┴─────────┴──────┴─────────┴──────┴──────┴──────┘
+//!
+//! [`NLMSG_ALIGN`]: crate::net::socket::netlink::message::NLMSG_ALIGN
 
 pub mod addr;
 mod legacy;
