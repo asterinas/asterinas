@@ -14,7 +14,7 @@ use core::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use ostd_pod::Pod;
+use ostd::Pod;
 
 use super::{
     compaction::Compactor,

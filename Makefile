@@ -207,6 +207,8 @@ export
 NON_OSDK_CRATES := \
 	ostd/libs/align_ext \
 	ostd/libs/id-alloc \
+	ostd/libs/int-to-c-enum \
+	ostd/libs/int-to-c-enum/derive \
 	ostd/libs/linux-bzimage/builder \
 	ostd/libs/linux-bzimage/boot-params \
 	ostd/libs/ostd-macros \
@@ -215,14 +217,11 @@ NON_OSDK_CRATES := \
 	kernel/libs/aster-rights-proc \
 	kernel/libs/atomic-integer-wrapper \
 	kernel/libs/cpio-decoder \
-	kernel/libs/int-to-c-enum \
-	kernel/libs/int-to-c-enum/derive \
 	kernel/libs/jhash \
 	kernel/libs/keyable-arc \
 	kernel/libs/logo-ascii-art \
 	kernel/libs/typeflags \
-	kernel/libs/typeflags-util \
-	tools/sctrace
+	kernel/libs/typeflags-util
 
 # In contrast, OSDK crates depend on OSTD (or being `ostd` itself)
 # and need to be built or tested with OSDK.

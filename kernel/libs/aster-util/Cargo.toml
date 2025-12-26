@@ -1,17 +1,17 @@
 [package]
 name = "aster-util"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ostd = { path = "../../../ostd" }
-typeflags-util = { path = "../typeflags-util" }
-aster-rights-proc = { path = "../aster-rights-proc" }
-aster-rights = { path = "../aster-rights" }
-inherit-methods-macro = { git = "https://github.com/asterinas/inherit-methods-macro", rev = "98f7e3e" }
-osdk-heap-allocator = { path = "../../../osdk/deps/heap-allocator" }
+aster-rights.workspace = true
+aster-rights-proc.workspace = true
+inherit-methods-macro.workspace = true
+osdk-heap-allocator.workspace = true
+ostd.workspace = true
+typeflags-util.workspace = true
 
 [lints]
 workspace = true
