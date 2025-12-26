@@ -3,7 +3,10 @@
 use align_ext::AlignExt;
 
 use super::SyscallReturn;
-use crate::{prelude::*, vm::perms::VmPerms};
+use crate::{
+    prelude::*,
+    vm::{perms::VmPerms, vmar::VMAR_CAP_ADDR},
+};
 
 pub fn sys_mprotect(addr: Vaddr, len: usize, perms: u64, ctx: &Context) -> Result<SyscallReturn> {
     let vm_perms = VmPerms::from_bits_truncate(perms as u32);
@@ -11,28 +14,22 @@ pub fn sys_mprotect(addr: Vaddr, len: usize, perms: u64, ctx: &Context) -> Resul
         "addr = 0x{:x}, len = 0x{:x}, perms = {:?}",
         addr, len, vm_perms
     );
-    let user_space = ctx.user_space();
-    let vmar = user_space.vmar();
 
-    // According to linux behavior,
+    // According to Linux behavior,
     // <https://elixir.bootlin.com/linux/v6.0.9/source/mm/mprotect.c#L681>,
-    // the addr is checked even if len is 0.
+    // `addr` is checked even if `len` is 0.
     if !addr.is_multiple_of(PAGE_SIZE) {
-        return_errno_with_message!(Errno::EINVAL, "the start address should be page aligned");
+        return_errno_with_message!(Errno::EINVAL, "the mapping address is not aligned");
     }
     if len == 0 {
         return Ok(SyscallReturn::Return(0));
     }
-    if len > isize::MAX as usize {
-        return_errno_with_message!(Errno::ENOMEM, "len align overflow");
+    if VMAR_CAP_ADDR.checked_sub(addr).is_none_or(|gap| gap < len) {
+        // FIXME: Linux returns `ENOMEM` if `(addr + len).align_up(PAGE_SIZE)` overflows. Here, we
+        // perform a stricter validation.
+        return_errno_with_message!(Errno::ENOMEM, "the mapping range is not in userspace");
     }
-
-    let len = len.align_up(PAGE_SIZE);
-    let end = addr.checked_add(len).ok_or(Error::with_message(
-        Errno::ENOMEM,
-        "integer overflow when (addr + len)",
-    ))?;
-    let range = addr..end;
+    let addr_range = addr..(addr + len).align_up(PAGE_SIZE);
 
     // On x86_64 and riscv64, `PROT_WRITE` implies `PROT_READ`.
     // Reference:
@@ -46,6 +43,9 @@ pub fn sys_mprotect(addr: Vaddr, len: usize, perms: u64, ctx: &Context) -> Resul
         vm_perms
     };
 
-    vmar.protect(vm_perms, range)?;
+    let user_space = ctx.user_space();
+    let vmar = user_space.vmar();
+    vmar.protect(vm_perms, addr_range)?;
+
     Ok(SyscallReturn::Return(0))
 }

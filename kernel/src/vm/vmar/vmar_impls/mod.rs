@@ -25,6 +25,7 @@ use super::{
 use crate::{
     prelude::*,
     process::{Process, ProcessVm, ResourceType},
+    vm::vmar::is_userspace_vaddr_range,
 };
 
 /// The VMAR (used to be Virtual Memory Address Region, but now an orphan
@@ -262,7 +263,10 @@ impl VmarInner {
             .next()
             .is_some()
         {
-            return_errno_with_message!(Errno::EACCES, "Requested region is already occupied");
+            return_errno_with_message!(
+                Errno::EEXIST,
+                "the range contains pages that are already mapped"
+            );
         }
 
         Ok(offset..(offset + size))
@@ -362,38 +366,52 @@ impl VmarInner {
         debug_assert_eq!(new_size % PAGE_SIZE, 0);
 
         if new_size == 0 {
-            return_errno_with_message!(Errno::EINVAL, "cannot resize a mapping to 0 size");
+            return_errno_with_message!(Errno::EINVAL, "resizing a mapping to zero is invalid");
         }
 
         if new_size == old_size {
             return Ok(());
         }
 
-        let old_map_end = map_addr.checked_add(old_size).ok_or(Errno::EINVAL)?;
-        let new_map_end = map_addr.checked_add(new_size).ok_or(Errno::EINVAL)?;
-        if !is_userspace_vaddr(new_map_end - 1) {
-            return_errno_with_message!(Errno::EINVAL, "resize to an invalid new size");
+        if !is_userspace_vaddr_range(map_addr, new_size) {
+            return_errno_with_message!(Errno::EINVAL, "the address range is not in userspace");
         }
 
         if new_size < old_size {
+            // Shrink the mapping. The old mapping is larger.
+            if map_addr.checked_add(old_size).is_none() {
+                return_errno_with_message!(Errno::EINVAL, "the address range overflows");
+            }
             self.alloc_free_region_exact_truncate(
                 vm_space,
-                new_map_end,
-                old_map_end - new_map_end,
+                map_addr + new_size,
+                old_size - new_size,
                 rss_delta,
             )?;
             return Ok(());
         }
 
-        self.alloc_free_region_exact(old_map_end, new_map_end - old_map_end)?;
+        // Expand the mapping. The old mapping is smaller.
+        let old_map_end = map_addr + old_size;
+        self.alloc_free_region_exact(old_map_end, new_size - old_size)
+            .map_err(|_| {
+                Error::with_message(
+                    Errno::ENOMEM,
+                    "the range contains pages that are already mapped",
+                )
+            })?;
 
         let last_mapping = self.vm_mappings.find_one(&(old_map_end - 1)).unwrap();
         let last_mapping_addr = last_mapping.map_to_addr();
         debug_assert_eq!(last_mapping.map_end(), old_map_end);
 
-        self.check_extra_size_fits_rlimit(new_map_end - old_map_end)?;
+        if !last_mapping.can_expand() {
+            return_errno_with_message!(Errno::EFAULT, "device mappings cannot be expanded");
+        }
+
+        self.check_extra_size_fits_rlimit(new_size - old_size)?;
         let last_mapping = self.remove(&last_mapping_addr).unwrap();
-        let last_mapping = last_mapping.enlarge(new_map_end - old_map_end);
+        let last_mapping = last_mapping.enlarge(new_size - old_size);
         self.insert_try_merge(last_mapping);
         Ok(())
     }

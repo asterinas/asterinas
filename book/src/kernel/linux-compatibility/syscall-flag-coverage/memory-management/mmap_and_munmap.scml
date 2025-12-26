@@ -11,8 +11,7 @@ opt_flags =
     MAP_LOCKED |
     MAP_NONBLOCK |
     MAP_NORESERVE |
-    MAP_POPULATE |
-    MAP_SYNC;
+    MAP_POPULATE;
 
 // Create a private memory mapping
 mmap(

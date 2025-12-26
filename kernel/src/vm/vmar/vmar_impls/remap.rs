@@ -2,8 +2,8 @@
 
 use ostd::{mm::vm_space::VmQueriedItem, task::disable_preempt};
 
-use super::{RssDelta, Vmar, is_userspace_vaddr, util::is_intersected};
-use crate::prelude::*;
+use super::{RssDelta, Vmar, util::is_intersected};
+use crate::{prelude::*, vm::vmar::is_userspace_vaddr_range};
 
 impl Vmar {
     /// Resizes the original mapping.
@@ -92,7 +92,9 @@ impl Vmar {
         }
 
         // Shrink the old mapping first.
-        old_addr.checked_add(old_size).ok_or(Errno::EINVAL)?;
+        if old_addr.checked_add(old_size).is_none() {
+            return_errno_with_message!(Errno::EINVAL, "remap: the address range overflows");
+        }
         let (old_size, old_range) = if new_size < old_size {
             inner.alloc_free_region_exact_truncate(
                 &self.vm_space,
@@ -107,14 +109,14 @@ impl Vmar {
 
         // Allocate a new free region that does not overlap with the old range.
         let new_range = if let Some(new_addr) = new_addr {
-            let new_range = new_addr..new_addr.checked_add(new_size).ok_or(Errno::EINVAL)?;
-            if !new_addr.is_multiple_of(PAGE_SIZE)
-                || !is_userspace_vaddr(new_addr)
-                || !is_userspace_vaddr(new_range.end - 1)
+            if !new_addr.is_multiple_of(PAGE_SIZE) || !is_userspace_vaddr_range(new_addr, new_size)
             {
-                return_errno_with_message!(Errno::EINVAL, "remap: invalid fixed new address");
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "remap: the new range is not aligned or not in userspace"
+                );
             }
-            if is_intersected(&old_range, &new_range) {
+            if is_intersected(&old_range, &(new_addr..new_addr + new_size)) {
                 return_errno_with_message!(
                     Errno::EINVAL,
                     "remap: the new range overlaps with the old one"

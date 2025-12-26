@@ -9,10 +9,14 @@ impl Vmar {
     /// Change the permissions of the memory mappings in the specified range.
     ///
     /// The range's start and end addresses must be page-aligned.
-    /// Also, the range must be completely mapped.
+    ///
+    /// If the range contains unmapped pages, an [`ENOMEM`] error will be returned.
+    /// Note that pages before the unmapped hole are still protected.
+    ///
+    /// [`ENOMEM`]: Errno::ENOMEM
     pub fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
-        assert!(range.start.is_multiple_of(PAGE_SIZE));
-        assert!(range.end.is_multiple_of(PAGE_SIZE));
+        debug_assert!(range.start.is_multiple_of(PAGE_SIZE));
+        debug_assert!(range.end.is_multiple_of(PAGE_SIZE));
 
         let mut inner = self.inner.write();
         let vm_space = self.vm_space();
@@ -20,17 +24,26 @@ impl Vmar {
         let mut protect_mappings = Vec::new();
 
         for vm_mapping in inner.vm_mappings.find(&range) {
-            protect_mappings.push((vm_mapping.map_to_addr(), vm_mapping.perms()));
+            protect_mappings.push((vm_mapping.range(), vm_mapping.perms()))
         }
 
-        for (vm_mapping_addr, vm_mapping_perms) in protect_mappings {
+        let mut last_mapping_end = range.start;
+        for (vm_mapping_range, vm_mapping_perms) in protect_mappings {
+            if last_mapping_end < vm_mapping_range.start {
+                return_errno_with_message!(
+                    Errno::ENOMEM,
+                    "the range contains pages that are not mapped"
+                );
+            }
+            last_mapping_end = vm_mapping_range.end;
+
             if perms == vm_mapping_perms & VmPerms::ALL_PERMS {
                 continue;
             }
             let new_perms = perms | (vm_mapping_perms & VmPerms::ALL_MAY_PERMS);
             new_perms.check()?;
 
-            let vm_mapping = inner.remove(&vm_mapping_addr).unwrap();
+            let vm_mapping = inner.remove(&vm_mapping_range.start).unwrap();
             let vm_mapping_range = vm_mapping.range();
             let intersected_range = get_intersected_range(&range, &vm_mapping_range);
 
@@ -48,6 +61,13 @@ impl Vmar {
             // Protects part of the `VmMapping`.
             let taken = taken.protect(vm_space.as_ref(), new_perms);
             inner.insert_try_merge(taken);
+        }
+
+        if last_mapping_end < range.end {
+            return_errno_with_message!(
+                Errno::ENOMEM,
+                "the range contains pages that are not mapped"
+            );
         }
 
         Ok(())

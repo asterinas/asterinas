@@ -8,8 +8,6 @@ mod vm_mapping;
 
 mod vmar_impls;
 
-use core::ops::Range;
-
 use ostd::mm::Vaddr;
 pub use vmar_impls::{RssType, Vmar};
 
@@ -21,7 +19,10 @@ pub fn is_userspace_vaddr(vaddr: Vaddr) -> bool {
     (VMAR_LOWEST_ADDR..VMAR_CAP_ADDR).contains(&vaddr)
 }
 
-/// Returns the full user space virtual address range.
-pub fn userspace_range() -> Range<Vaddr> {
-    VMAR_LOWEST_ADDR..VMAR_CAP_ADDR
+/// Returns whether `vaddr` and `len` specify a legal user space virtual address range.
+fn is_userspace_vaddr_range(vaddr: Vaddr, len: usize) -> bool {
+    vaddr >= VMAR_LOWEST_ADDR
+        && VMAR_CAP_ADDR
+            .checked_sub(vaddr)
+            .is_some_and(|gap| gap >= len)
 }

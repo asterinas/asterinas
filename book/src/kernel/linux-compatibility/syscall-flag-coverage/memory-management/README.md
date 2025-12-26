@@ -24,7 +24,6 @@ Silently-ignored flags:
 * `MAP_NONBLOCK`
 * `MAP_NORESERVE`
 * `MAP_POPULATE`
-* `MAP_SYNC`
 
 Partially supported flags:
 * `MAP_FIXED_NOREPLACE` is treated as `MAP_FIXED`
@@ -89,15 +88,20 @@ Supported functionality in SCML:
 ```
 
 Silently-ignored advice:
-* `MADV_DONTNEED`
-* `MADV_NOHUGEPAGE`
-* `MADV_HUGEPAGE`
+* `MADV_NORMAL`
+* `MADV_RANDOM`
+* `MADV_SEQUENTIAL`
+* `MADV_WILLNEED`
+* `MADV_FREE`
 * `MADV_MERGEABLE`
-* `MADV_DONTFORK`
+* `MADV_UNMERGEABLE`
+* `MADV_HUGEPAGE`
+* `MADV_NOHUGEPAGE`
 
 Unsupported advice:
 * `MADV_RANDOM`
 * `MADV_REMOVE`
+* `MADV_DONTFORK`
 * `MADV_DOFORK`
 * `MADV_HWPOISON`
 * `MADV_UNMERGEABLE`
