@@ -24,7 +24,7 @@ static struct custom_elf elf;
 #define UD2_INSTR \
 	"\x0f\x0b" // "ud2" in x86-64. TODO: Support other architectures.
 
-FN_SETUP(init)
+FN_SETUP(init_exec)
 {
 	elf.ehdr.e_ident[EI_MAG0] = ELFMAG0;
 	elf.ehdr.e_ident[EI_MAG1] = ELFMAG1;
@@ -71,23 +71,30 @@ static int do_execve(void)
 #pragma GCC diagnostic pop
 }
 
-FN_TEST(good)
+static int do_execve_good(void)
 {
 	pid_t pid;
 	int status;
 
-	// First of all, verify that `elf` is a good ELF.
-
 	memcpy(elf.buf, UD2_INSTR, sizeof(UD2_INSTR));
 
-	pid = TEST_SUCC(fork());
+	pid = CHECK(fork());
 	if (pid == 0) {
 		CHECK(do_execve());
 		exit(EXIT_FAILURE);
 	}
 
-	TEST_RES(wait(&status), _ret == pid && WIFSIGNALED(status) &&
-					WTERMSIG(status) == SIGILL);
+	CHECK_WITH(wait(&status), _ret == pid);
+	if (!WIFSIGNALED(status) || WTERMSIG(status) != SIGILL)
+		return -1;
+
+	return 0;
+}
+
+FN_TEST(good_exec)
+{
+	// First of all, verify that `elf` is a good ELF.
+	TEST_RES(do_execve_good(), _ret == 0);
 }
 END_TEST()
 
@@ -415,6 +422,71 @@ FN_TEST(filesz_larger_than_memsz)
 	--elf.phdr[0].p_memsz;
 	TEST_ERRNO(do_execve_fatal(), EINVAL);
 	++elf.phdr[0].p_memsz;
+}
+END_TEST()
+
+// ==========================
+// Below are tests for ET_DYN
+// ==========================
+
+FN_SETUP(init_dyn)
+{
+	elf.ehdr.e_type = ET_DYN;
+}
+END_SETUP()
+
+FN_TEST(good_dyn)
+{
+	// First of all, verify that `elf` is a good ELF.
+	TEST_RES(do_execve_good(), _ret == 0);
+}
+END_TEST()
+
+FN_TEST(bad_align)
+{
+	long old;
+
+	old = elf.phdr[0].p_align;
+
+	// 2048 is smaller than PAGE_SIZE.
+	elf.phdr[0].p_align = 2048;
+	TEST_RES(do_execve_good(), _ret == 0);
+
+	// 2047 is not a power of two.
+	elf.phdr[0].p_align = 2047;
+	TEST_RES(do_execve_good(), _ret == 0);
+
+	elf.phdr[0].p_align = old;
+}
+END_TEST()
+
+FN_TEST(large_align)
+{
+	long old;
+
+	old = elf.phdr[0].p_align;
+
+	elf.phdr[0].p_align = 1ul << 21;
+	TEST_RES(do_execve_good(), _ret == 0);
+
+	elf.phdr[0].p_align = 1ul << 42;
+	TEST_RES(do_execve_good(), _ret == 0);
+
+	elf.phdr[0].p_align = 1ul << 63;
+	// FIXME: p_align exceeds the size of the user address space.
+	// What does this mean? As far as Linux is concerned, it tries
+	// to map to a zero address due to [1], [2], and [3]. This
+	// does not seem to make much sense.
+	// [1]: https://elixir.bootlin.com/linux/v6.19-rc2/source/fs/binfmt_elf.c#L1172
+	// [2]: https://elixir.bootlin.com/linux/v6.19-rc2/source/fs/binfmt_elf.c#L1185
+	// [3]: https://elixir.bootlin.com/linux/v6.19-rc2/source/fs/binfmt_elf.c#L1188
+#ifdef __asterinas__
+	TEST_ERRNO(do_execve_fatal(), ENOMEM);
+#else
+	TEST_ERRNO(do_execve_fatal(), EPERM);
+#endif
+
+	elf.phdr[0].p_align = old;
 }
 END_TEST()
 

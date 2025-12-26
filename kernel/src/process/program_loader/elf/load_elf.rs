@@ -21,7 +21,7 @@ use crate::{
     },
     vm::{
         perms::VmPerms,
-        vmar::{VMAR_LOWEST_ADDR, Vmar},
+        vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR, Vmar},
         vmo::Vmo,
     },
 };
@@ -205,30 +205,46 @@ fn map_segment_vmos(
     let map_range = if elf.is_shared_object() {
         // Relocatable object.
 
+        let align = elf.max_load_align();
+
+        // Given that `elf_va_range` is guaranteed to be below `VMAR_CAP_ADDR`, as long as
+        // `VMAR_CAP_ADDR * 2` does not overflow, the following `align_up(align)` cannot overflow
+        // either.
+        const { assert!(VMAR_CAP_ADDR.checked_mul(2).is_some()) };
+
         // Allocate a continuous range of virtual memory for all segments in advance.
         //
         // All segments in the ELF program must be mapped to a continuous VM range to
         // ensure the relative offset of each segment not changed.
         let elf_va_range_aligned =
-            elf_va_range.start.align_down(PAGE_SIZE)..elf_va_range.end.align_up(PAGE_SIZE);
+            elf_va_range.start.align_down(align)..elf_va_range.end.align_up(align);
         let map_size = elf_va_range_aligned.len();
 
-        let vmar_map_options = vmar
-            .new_map(map_size, VmPerms::empty())?
-            .align(elf.max_load_align())
-            .handle_page_faults_around();
+        let vmar_map_options = vmar.new_map(map_size, VmPerms::empty())?.align(align);
         let aligned_range = vmar_map_options.build().map(|addr| addr..addr + map_size)?;
 
-        let start_in_page_offset = elf_va_range.start - elf_va_range_aligned.start;
-        let end_in_page_offset = elf_va_range_aligned.end - elf_va_range.end;
+        let start_offset = elf_va_range.start - elf_va_range_aligned.start;
+        let end_offset = elf_va_range_aligned.end - elf_va_range.end;
 
-        aligned_range.start + start_in_page_offset..aligned_range.end - end_in_page_offset
+        aligned_range.start + start_offset..aligned_range.end - end_offset
     } else {
         // Not relocatable object. Map as-is.
 
         if elf_va_range.start < VMAR_LOWEST_ADDR {
             return_errno_with_message!(Errno::EPERM, "the mapping address is too small");
         }
+
+        // Allocate a continuous range of virtual memory for all segments in advance.
+        //
+        // This is to ensure that the range does not conflict with other objects, such
+        // as the interpreter.
+        let elf_va_range_aligned =
+            elf_va_range.start.align_down(PAGE_SIZE)..elf_va_range.end.align_up(PAGE_SIZE);
+        let map_size = elf_va_range_aligned.len();
+
+        vmar.new_map(map_size, VmPerms::empty())?
+            .offset(elf_va_range_aligned.start)
+            .build()?;
 
         elf_va_range.clone()
     };
