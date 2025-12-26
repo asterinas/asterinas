@@ -10,7 +10,7 @@ use crate::{
     },
     prelude::*,
     process::Process,
-    vm::vmar::userspace_range,
+    vm::vmar::{VmMapping, userspace_range},
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/maps` (and also `/proc/[pid]/maps`).
@@ -38,14 +38,24 @@ impl FileOps for MapsFileOps {
 
         let user_stack_top = vmar.process_vm().init_stack().user_stack_top();
 
-        let guard = vmar.query(userspace_range());
-        for vm_mapping in guard.iter() {
-            if vm_mapping.map_to_addr() <= user_stack_top && vm_mapping.map_end() > user_stack_top {
-                vm_mapping.print_to_maps(&mut printer, "[stack]")?;
+        let mut mappings: Vec<VmMapping> = Vec::new();
+
+        let _ = vmar.for_each_mapping(userspace_range(), false, |vm_mapping| {
+            if let Some(last) = mappings.last_mut()
+                && last.can_merge_with(vm_mapping)
+            {
+                let merged = mappings.pop().unwrap().try_merge_with(vm_mapping).0;
+                mappings.push(merged);
             } else {
-                // TODO: Print the status of mappings other than the stack.
-                continue;
+                mappings.push(vm_mapping.clone_for_check());
             }
+        });
+
+        for mapping in mappings {
+            if mapping.map_to_addr() <= user_stack_top && mapping.map_end() > user_stack_top {
+                mapping.print_to_maps(&mut printer, "[stack]")?;
+            }
+            // TODO: Print the status of mappings other than the stack.
         }
 
         Ok(printer.bytes_written())

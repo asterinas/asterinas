@@ -8,7 +8,7 @@ use super::{
     Frame, inc_frame_ref_count,
     meta::{AnyFrameMeta, GetFrameError},
 };
-use crate::mm::{AnyUFrameMeta, HasPaddr, HasSize, PAGE_SIZE, Paddr};
+use crate::mm::{AnyUFrameMeta, HasPaddr, HasSize, PAGE_SIZE, Paddr, Split};
 
 /// A contiguous range of homogeneous physical memory frames.
 ///
@@ -124,17 +124,8 @@ impl<M: AnyFrameMeta> Segment<M> {
     }
 }
 
-impl<M: AnyFrameMeta + ?Sized> Segment<M> {
-    /// Splits the frames into two at the given byte offset from the start.
-    ///
-    /// The resulting frames cannot be empty. So the offset cannot be neither
-    /// zero nor the length of the frames.
-    ///
-    /// # Panics
-    ///
-    /// The function panics if the offset is out of bounds, at either ends, or
-    /// not base-page-aligned.
-    pub fn split(self, offset: usize) -> (Self, Self) {
+impl<M: AnyFrameMeta + ?Sized> Split for Segment<M> {
+    fn split(self, offset: usize) -> (Self, Self) {
         assert!(offset.is_multiple_of(PAGE_SIZE));
         assert!(0 < offset && offset < self.size());
 
@@ -152,7 +143,9 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
             },
         )
     }
+}
 
+impl<M: AnyFrameMeta + ?Sized> Segment<M> {
     /// Gets an extra handle to the frames in the byte offset range.
     ///
     /// The sliced byte offset range in indexed by the offset from the start of

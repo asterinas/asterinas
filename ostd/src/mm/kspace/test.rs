@@ -5,12 +5,13 @@ use crate::{
         Frame, FrameAllocOptions, PAGE_SIZE, Paddr,
         frame::max_paddr,
         kspace::{
-            LINEAR_MAPPING_BASE_VADDR, MappedItem, VMALLOC_VADDR_RANGE, kvirt_area::KVirtArea,
+            LINEAR_MAPPING_BASE_VADDR, MappedItemRef, VMALLOC_VADDR_RANGE, kvirt_area::KVirtArea,
             paddr_to_vaddr,
         },
         page_prop::{CachePolicy, PageFlags, PageProperty},
     },
     prelude::*,
+    task::disable_preempt,
 };
 
 fn default_prop() -> PageProperty {
@@ -27,13 +28,15 @@ fn kvirt_area_tracked_map_pages() {
 
     let kvirt_area = KVirtArea::map_frames(size, 0, frames.into_iter(), default_prop());
 
-    assert_eq!(kvirt_area.len(), size);
+    assert_eq!(kvirt_area.size(), size);
     assert!(kvirt_area.start() >= VMALLOC_VADDR_RANGE.start);
     assert!(kvirt_area.end() <= VMALLOC_VADDR_RANGE.end);
 
+    let guard = disable_preempt();
+
     for i in 0..2 {
         let addr = kvirt_area.start() + i * PAGE_SIZE;
-        let MappedItem::Tracked(page, _) = kvirt_area.query(addr).unwrap() else {
+        let MappedItemRef::Tracked(page, _) = kvirt_area.query(&guard, addr).unwrap() else {
             panic!("Expected a tracked page");
         };
         assert_eq!(page.paddr(), paddr + (i * PAGE_SIZE));
@@ -50,14 +53,16 @@ fn kvirt_area_untracked_map_pages() {
     let kvirt_area =
         unsafe { KVirtArea::map_untracked_frames(size, 0, pa_range.clone(), default_prop()) };
 
-    assert_eq!(kvirt_area.len(), size);
+    assert_eq!(kvirt_area.size(), size);
     assert!(kvirt_area.start() >= VMALLOC_VADDR_RANGE.start);
     assert!(kvirt_area.end() <= VMALLOC_VADDR_RANGE.end);
+
+    let guard = disable_preempt();
 
     for i in 0..2 {
         let addr = kvirt_area.start() + i * PAGE_SIZE;
 
-        let MappedItem::Untracked(pa, level, _) = kvirt_area.query(addr).unwrap() else {
+        let MappedItemRef::Untracked(pa, level, _) = kvirt_area.query(&guard, addr).unwrap() else {
             panic!("Expected a untracked page");
         };
         assert_eq!(pa, pa_range.start + (i * PAGE_SIZE) as Paddr);
@@ -79,7 +84,8 @@ fn kvirt_area_tracked_drop() {
     // After dropping, the virtual address range should be freed and no longer mapped.
     let kvirt_area =
         KVirtArea::map_frames(size, 0, core::iter::empty::<Frame<()>>(), default_prop());
-    assert_eq!(kvirt_area.query(kvirt_area.start()), None);
+    let guard = disable_preempt();
+    assert!(kvirt_area.query(&guard, kvirt_area.start()).is_none());
 }
 
 #[ktest]
@@ -95,7 +101,8 @@ fn kvirt_area_untracked_drop() {
 
     // After dropping, the virtual address range should be freed and no longer mapped.
     let kvirt_area = unsafe { KVirtArea::map_untracked_frames(size, 0, 0..0, default_prop()) };
-    assert!(kvirt_area.query(kvirt_area.start()).is_none());
+    let guard = disable_preempt();
+    assert!(kvirt_area.query(&guard, kvirt_area.start()).is_none());
 }
 
 #[ktest]

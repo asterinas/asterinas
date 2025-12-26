@@ -2,7 +2,7 @@
 
 use crate::allocator::CommonSizeClass;
 use alloc::vec::Vec;
-use core::{alloc::Layout, ops::Deref};
+use core::{alloc::Layout, fmt::Debug, ops::Deref};
 use ostd::{
     Error,
     cpu::{
@@ -85,6 +85,12 @@ impl<T> Drop for CpuLocalBox<T> {
     fn drop(&mut self) {
         let cpu_local = self.0.take().unwrap();
         dealloc_cpu_local(cpu_local);
+    }
+}
+
+impl<T: Sync + Debug + 'static> Debug for CpuLocalBox<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("CpuLocalBox").field(&self.0).finish()
     }
 }
 
