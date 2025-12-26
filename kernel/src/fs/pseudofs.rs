@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::format;
 use core::{
     sync::atomic::{AtomicU64, Ordering},
     time::Duration,
@@ -10,7 +11,8 @@ use spin::Once;
 use super::utils::{Extension, InodeIo, StatusFlags};
 use crate::{
     fs::{
-        path::Mount,
+        path::{Mount, Path},
+        pipe::AnonPipeInode,
         registry::{FsProperties, FsType},
         utils::{
             FileSystem, FsEventSubscriberStats, FsFlags, Inode, InodeMode, InodeType, Metadata,
@@ -105,6 +107,13 @@ impl PipeFs {
         static PIPEFS: Once<Arc<PseudoFs>> = Once::new();
 
         PseudoFs::singleton(&PIPEFS, "pipefs", PIPEFS_MAGIC)
+    }
+
+    /// Creates a pseudo `Path` for an anonymous pipe.
+    pub(super) fn new_path(pipe_inode: Arc<AnonPipeInode>) -> Path {
+        Path::new_pseudo(Self::mount_node().clone(), pipe_inode, |inode| {
+            format!("pipe:[{}]", inode.ino())
+        })
     }
 
     /// Returns the pseudo mount node of the pipe file system.
