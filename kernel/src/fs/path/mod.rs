@@ -5,7 +5,7 @@
 use core::time::Duration;
 
 use inherit_methods_macro::inherit_methods;
-pub use mount::{Mount, MountPropType, PerMountFlags, RESERVED_MOUNT_ID};
+pub use mount::{Mount, MountPropType, PerMountFlags};
 pub use mount_namespace::MountNamespace;
 
 use crate::{

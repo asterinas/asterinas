@@ -131,8 +131,8 @@ fn anon_inodefs_singleton() -> &'static Arc<PseudoFs> {
 // independent inodes within anon_inodefs for them in the future.
 //
 // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/anon_inodes.c#L153-L164>
-pub fn anon_inodefs_shared_inode() -> &'static Arc<dyn Inode> {
-    static SHARED_INODE: Once<Arc<dyn Inode>> = Once::new();
+pub fn anon_inodefs_shared_inode() -> &'static Arc<PseudoInode> {
+    static SHARED_INODE: Once<Arc<PseudoInode>> = Once::new();
 
     SHARED_INODE.call_once(|| {
         let shared_inode = anon_inodefs_singleton().alloc_inode(
