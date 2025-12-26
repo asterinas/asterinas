@@ -59,37 +59,46 @@ impl FsEventPublisher {
     /// Adds a subscriber to this publisher.
     pub fn add_subscriber(&self, subscriber: Arc<dyn FsEventSubscriber>) -> bool {
         let mut subscribers = self.subscribers.write();
+
         // This check must be done after locking `self.subscribers.write()` to avoid race
         // conditions.
         if !self.accepts_new_subscribers.load(Ordering::Relaxed) {
             return false;
         }
+
         let current = self.all_interesting_events.load(Ordering::Relaxed);
         self.all_interesting_events
             .store(current | subscriber.interesting_events(), Ordering::Relaxed);
+
         subscribers.push(subscriber);
+
         true
     }
 
     /// Removes a subscriber from this publisher.
     pub fn remove_subscriber(&self, subscriber: &Arc<dyn FsEventSubscriber>) -> bool {
         let mut subscribers = self.subscribers.write();
+
         let orig_len = subscribers.len();
         subscribers.retain(|m| !Arc::ptr_eq(m, subscriber));
+
         let removed = subscribers.len() != orig_len;
         if removed {
             subscriber.deliver_event(FsEvents::IN_IGNORED, None);
             self.recalc_interesting_events(&subscribers);
         }
+
         removed
     }
 
     /// Removes all subscribers from this publisher.
     pub fn remove_all_subscribers(&self) -> usize {
         let mut subscribers = self.subscribers.write();
+
         for subscriber in subscribers.iter() {
             subscriber.deliver_event(FsEvents::IN_IGNORED, None);
         }
+
         let num_subscribers = subscribers.len();
         subscribers.clear();
 
@@ -122,19 +131,14 @@ impl FsEventPublisher {
         }
     }
 
-    /// Recalculates the aggregated interesting events from all subscribers.
-    fn recalc_interesting_events(&self, subscribers: &[Arc<dyn FsEventSubscriber>]) {
-        let mut new_events = FsEvents::empty();
-        for subscriber in subscribers.iter() {
-            new_events |= subscriber.interesting_events();
-        }
-        self.all_interesting_events
-            .store(new_events, Ordering::Relaxed);
-    }
-
     /// Updates the aggregated events when a subscriber's interesting events change.
     pub fn update_subscriber_events(&self) {
         let subscribers = self.subscribers.read();
+        self.recalc_interesting_events(&subscribers);
+    }
+
+    /// Recalculates the aggregated interesting events from all subscribers.
+    fn recalc_interesting_events(&self, subscribers: &[Arc<dyn FsEventSubscriber>]) {
         let mut new_events = FsEvents::empty();
         for subscriber in subscribers.iter() {
             new_events |= subscriber.interesting_events();
