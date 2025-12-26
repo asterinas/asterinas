@@ -9,13 +9,13 @@ use unbound::{BindOptions, UnboundDatagram};
 use super::addr::UNSPECIFIED_LOCAL_ENDPOINT;
 use crate::{
     events::IoEvents,
-    fs::utils::Inode,
+    fs::path::Path,
     net::{
         iface::is_broadcast_endpoint,
         socket::{
             Socket,
             ip::options::{IpOptionSet, SetIpLevelOption},
-            new_pseudo_inode,
+            new_pseudo_path,
             options::{Error as SocketError, SocketOption, macros::sock_option_mut},
             private::SocketPrivate,
             util::{
@@ -41,7 +41,7 @@ pub struct DatagramSocket {
 
     is_nonblocking: AtomicBool,
     pollee: Pollee,
-    pseudo_inode: Arc<dyn Inode>,
+    pseudo_path: Path,
 }
 
 #[derive(Debug, Clone)]
@@ -67,7 +67,7 @@ impl DatagramSocket {
             options: RwLock::new(OptionSet::new()),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
-            pseudo_inode: new_pseudo_inode(),
+            pseudo_path: new_pseudo_path(),
         })
     }
 
@@ -293,8 +293,8 @@ impl Socket for DatagramSocket {
         Ok(())
     }
 
-    fn pseudo_inode(&self) -> &Arc<dyn Inode> {
-        &self.pseudo_inode
+    fn pseudo_path(&self) -> &Path {
+        &self.pseudo_path
     }
 }
 
