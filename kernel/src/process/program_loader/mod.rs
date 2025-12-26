@@ -64,7 +64,7 @@ impl ProgramToLoad {
             let interpreter = {
                 let filename = new_argv[0].to_str()?.to_string();
                 let fs_path = FsPath::try_from(filename.as_str())?;
-                fs_resolver.lookup_inode(&fs_path)?
+                fs_resolver.lookup(&fs_path)?
             };
             check_executable_inode(interpreter.inode().as_ref())?;
 

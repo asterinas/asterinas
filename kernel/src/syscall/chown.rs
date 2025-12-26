@@ -22,11 +22,12 @@ pub fn sys_fchown(fd: FileDesc, uid: i32, gid: i32, ctx: &Context) -> Result<Sys
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
+    let path = file.path();
     if let Some(uid) = uid {
-        file.inode().set_owner(uid)?;
+        path.set_owner(uid)?;
     }
     if let Some(gid) = gid {
-        file.inode().set_group(gid)?;
+        path.set_group(gid)?;
     }
     Ok(SyscallReturn::Return(0))
 }
@@ -72,26 +73,24 @@ pub fn sys_fchownat(
         return Ok(SyscallReturn::Return(0));
     }
 
-    let path_or_inode = {
+    let path = {
         let path_name = path_name.to_string_lossy();
         let fs_path = FsPath::from_fd_and_path(dirfd, &path_name)?;
 
         let fs_ref = ctx.thread_local.borrow_fs();
         let fs = fs_ref.resolver().read();
         if flags.contains(ChownFlags::AT_SYMLINK_NOFOLLOW) {
-            fs.lookup_inode_no_follow(&fs_path)?
+            fs.lookup_no_follow(&fs_path)?
         } else {
-            fs.lookup_inode(&fs_path)?
+            fs.lookup(&fs_path)?
         }
     };
 
-    let inode = path_or_inode.inode();
-
     if let Some(uid) = uid {
-        inode.set_owner(uid)?;
+        path.set_owner(uid)?;
     }
     if let Some(gid) = gid {
-        inode.set_group(gid)?;
+        path.set_group(gid)?;
     }
     Ok(SyscallReturn::Return(0))
 }

@@ -499,7 +499,7 @@ fn clone_child_process(
     let child = {
         let mut child_thread_builder = {
             let child_thread_name = ThreadName::new_from_executable_path(
-                &child_vmar.process_vm().executable_file().display_name(),
+                &child_vmar.process_vm().executable_file().abs_path(),
             );
 
             let credentials = {
