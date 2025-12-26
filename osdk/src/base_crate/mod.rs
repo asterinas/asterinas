@@ -127,24 +127,25 @@ fn do_new_base_crate(
         std::fs::remove_dir_all(&base_crate_path).unwrap();
     }
 
+    let dep_meta = get_cargo_metadata(Some(dep_crate_path.as_ref()), None::<&[&str]>).unwrap();
     let (dep_crate_version, dep_crate_features) = {
-        let cargo_toml = dep_crate_path.as_ref().join("Cargo.toml");
-        let cargo_toml = fs::read_to_string(cargo_toml).unwrap();
-        let cargo_toml: toml::Value = toml::from_str(&cargo_toml).unwrap();
-        let dep_version = cargo_toml
-            .get("package")
-            .unwrap()
-            .as_table()
-            .unwrap()
-            .get("version")
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_string();
-        let dep_features = cargo_toml
-            .get("features")
-            .map(|f| f.as_table().unwrap().clone())
-            .unwrap_or_default();
+        let dep_meta = dep_meta.as_object().unwrap();
+
+        let dep_package = {
+            let packages = dep_meta.get("packages").unwrap().as_array().unwrap();
+            packages
+                .iter()
+                .find(|package| {
+                    let package = package.as_object().unwrap();
+                    let name = package.get("name").unwrap().as_str().unwrap();
+                    name == dep_crate_name
+                })
+                .unwrap()
+                .as_object()
+                .unwrap()
+        };
+        let dep_version = dep_package.get("version").unwrap().as_str().unwrap();
+        let dep_features = dep_package.get("features").unwrap().as_object().unwrap();
         (dep_version, dep_features)
     };
 
@@ -156,7 +157,7 @@ fn do_new_base_crate(
     // Write Cargo.toml
     let cargo_toml = include_str!("Cargo.toml.template");
     let cargo_toml = cargo_toml.replace("#NAME#", &(dep_crate_name.to_string() + "-osdk-bin"));
-    let cargo_toml = cargo_toml.replace("#VERSION#", &dep_crate_version);
+    let cargo_toml = cargo_toml.replace("#VERSION#", dep_crate_version);
     fs::write(base_crate_path.as_ref().join("Cargo.toml"), cargo_toml).unwrap();
 
     // Set the current directory to the target osdk directory
@@ -189,7 +190,17 @@ fn do_new_base_crate(
     copy_profile_configurations(workspace_root);
 
     // Generate the features by copying the features from the target crate
-    add_feature_entries(dep_crate_name, &dep_crate_features);
+    let dep_crate_features = dep_crate_features.iter().map(|(feature, value)| {
+        let array = value
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str().unwrap().to_string())
+            .map(toml::Value::String)
+            .collect();
+        (feature.clone(), toml::Value::Array(array))
+    });
+    add_feature_entries(dep_crate_name, dep_crate_features);
 
     // Get back to the original directory
     std::env::set_current_dir(original_dir).unwrap();
@@ -303,7 +314,10 @@ fn copy_profile_configurations(workspace_root: impl AsRef<Path>) {
     fs::write(manifest_path, content).unwrap();
 }
 
-fn add_feature_entries(dep_crate_name: &str, features: &toml::Table) {
+fn add_feature_entries(
+    dep_crate_name: &str,
+    features: impl Iterator<Item = (String, toml::Value)>,
+) {
     let manifest_path = "Cargo.toml";
     let mut manifest: toml::Table = {
         let content = fs::read_to_string(manifest_path).unwrap();
@@ -311,8 +325,8 @@ fn add_feature_entries(dep_crate_name: &str, features: &toml::Table) {
     };
 
     let mut table = toml::Table::new();
-    for (feature, value) in features.iter() {
-        let value = if feature != &"default".to_string() {
+    for (feature, value) in features {
+        let value = if feature != "default" {
             vec![toml::Value::String(format!(
                 "{}/{}",
                 dep_crate_name, feature
