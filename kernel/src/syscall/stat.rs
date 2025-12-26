@@ -20,7 +20,7 @@ pub fn sys_fstat(fd: FileDesc, stat_buf_ptr: Vaddr, ctx: &Context) -> Result<Sys
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
 
-    let stat = Stat::from(file.inode().metadata());
+    let stat = Stat::from(file.path().metadata());
     ctx.user_space().write_val(stat_buf_ptr, &stat)?;
 
     Ok(SyscallReturn::Return(0))
@@ -60,20 +60,20 @@ pub fn sys_fstatat(
         return self::sys_fstat(dirfd, stat_buf_ptr, ctx);
     }
 
-    let path_or_inode = {
+    let path = {
         let filename = filename.to_string_lossy();
         let fs_path = FsPath::from_fd_and_path(dirfd, &filename)?;
 
         let fs_ref = ctx.thread_local.borrow_fs();
         let fs = fs_ref.resolver().read();
         if flags.contains(StatFlags::AT_SYMLINK_NOFOLLOW) {
-            fs.lookup_inode_no_follow(&fs_path)?
+            fs.lookup_no_follow(&fs_path)?
         } else {
-            fs.lookup_inode(&fs_path)?
+            fs.lookup(&fs_path)?
         }
     };
 
-    let stat = Stat::from(path_or_inode.inode().metadata());
+    let stat = Stat::from(path.metadata());
     user_space.write_val(stat_buf_ptr, &stat)?;
     Ok(SyscallReturn::Return(0))
 }

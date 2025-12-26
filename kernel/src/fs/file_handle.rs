@@ -97,7 +97,7 @@ pub trait FileLike: Pollable + Send + Sync + Any {
         None
     }
 
-    fn inode(&self) -> &Arc<dyn Inode>;
+    fn path(&self) -> &Path;
 
     /// Dumps information to appear in the `fdinfo` file under procfs.
     ///
@@ -142,12 +142,6 @@ impl dyn FileLike {
     pub fn as_socket_or_err(&self) -> Result<&dyn Socket> {
         self.as_socket()
             .ok_or_else(|| Error::with_message(Errno::ENOTSOCK, "the file is not a socket"))
-    }
-
-    pub fn path(&self) -> Option<&Path> {
-        self.as_inode_handle_or_err()
-            .ok()
-            .map(|inode_handle| inode_handle.path())
     }
 
     pub fn as_inode_handle_or_err(&self) -> Result<&InodeHandle> {

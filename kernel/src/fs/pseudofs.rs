@@ -11,12 +11,13 @@ use spin::Once;
 use super::utils::{Extension, InodeIo, StatusFlags};
 use crate::{
     fs::{
+        inode_handle::FileIo,
         path::{Mount, Path},
         pipe::AnonPipeInode,
         registry::{FsProperties, FsType},
         utils::{
-            FileSystem, FsEventSubscriberStats, FsFlags, Inode, InodeMode, InodeType, Metadata,
-            NAME_MAX, SuperBlock, mkmod,
+            AccessMode, FileSystem, FsEventSubscriberStats, FsFlags, Inode, InodeMode, InodeType,
+            Metadata, NAME_MAX, SuperBlock, mkmod,
         },
     },
     prelude::*,
@@ -429,6 +430,17 @@ impl Inode for PseudoInode {
 
     fn set_ctime(&self, time: Duration) {
         self.metadata.lock().ctime = time;
+    }
+
+    fn open(
+        &self,
+        _access_mode: AccessMode,
+        _status_flags: StatusFlags,
+    ) -> Option<Result<Box<dyn FileIo>>> {
+        Some(Err(Error::with_message(
+            Errno::ENXIO,
+            "the pseudo inode is not re-openable",
+        )))
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {

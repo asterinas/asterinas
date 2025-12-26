@@ -23,13 +23,13 @@ pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr, ctx: &Context) -> Resu
     let fs = {
         let path_name = path_name.to_string_lossy();
         let fs_path = FsPath::try_from(path_name.as_ref())?;
-        let path_or_inode = ctx
+        let path = ctx
             .thread_local
             .borrow_fs()
             .resolver()
             .read()
-            .lookup_inode(&fs_path)?;
-        path_or_inode.inode().fs()
+            .lookup(&fs_path)?;
+        path.fs()
     };
 
     let statfs = Statfs::from(fs.sb());
@@ -43,7 +43,7 @@ pub fn sys_fstatfs(fd: FileDesc, statfs_buf_ptr: Vaddr, ctx: &Context) -> Result
     let fs = {
         let mut file_table = ctx.thread_local.borrow_file_table_mut();
         let file = get_file_fast!(&mut file_table, fd);
-        file.inode().fs()
+        file.path().fs()
     };
 
     let statfs = Statfs::from(fs.sb());

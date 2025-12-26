@@ -17,7 +17,7 @@ use crate::{
         file_table::{FdFlags, FileDesc, get_file_fast},
         path::Path,
         pseudofs::AnonInodeFs,
-        utils::{CreationFlags, Inode},
+        utils::CreationFlags,
     },
     prelude::*,
     process::{
@@ -274,8 +274,8 @@ impl FileLike for EpollFile {
         return_errno_with_message!(Errno::ENOTTY, "epoll files do not support ioctl");
     }
 
-    fn inode(&self) -> &Arc<dyn Inode> {
-        self.pseudo_path.inode()
+    fn path(&self) -> &Path {
+        &self.pseudo_path
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
