@@ -116,3 +116,14 @@ Unsupported events:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/poll.2.html).
+
+### `ioctl`
+
+Supported functionality in SCML:
+
+```c
+{{#include ioctl.scml}}
+```
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/ioctl.2.html).

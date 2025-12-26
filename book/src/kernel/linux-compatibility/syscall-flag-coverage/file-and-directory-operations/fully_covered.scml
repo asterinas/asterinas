@@ -118,3 +118,6 @@ fremovexattr(fd, name);
 
 // Check user's permissions for a file
 faccessat(dirfd, path, mode);
+
+// Apply or remove an advisory lock on an open file
+flock(fd, op = LOCK_SH | LOCK_EX | LOCK_UN | LOCK_NB);

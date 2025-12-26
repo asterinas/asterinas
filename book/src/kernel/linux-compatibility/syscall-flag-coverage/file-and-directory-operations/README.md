@@ -140,3 +140,34 @@ Silently-ignored masks:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/statx.2.html).
+
+### `fallocate`
+
+Supported functionality in SCML:
+
+```c
+{{#include fallocate.scml}}
+```
+
+Unsupported modes:
+* `FALLOC_FL_UNSHARE_RANGE`
+* `FALLOC_FL_COLLAPSE_RANGE`
+* `FALLOC_FL_ZERO_RANGE`
+* `FALLOC_FL_INSERT_RANGE`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/fallocate.2.html).
+
+### `utimensat`
+
+Supported functionality in SCML:
+
+```c
+{{#include utimensat.scml}}
+```
+
+Unsupported flags:
+* `AT_EMPTY_PATH`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/utimensat.2.html).

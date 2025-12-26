@@ -36,7 +36,7 @@ which are summarized in the table below.
 | 13      | rt_sigaction           | ✅             | [⚠️](syscall-flag-coverage/signals-and-timers/#rt_sigaction) |
 | 14      | rt_sigprocmask         | ✅             | [⚠️](syscall-flag-coverage/signals-and-timers/#rt_sigprocmask) |
 | 15      | rt_sigreturn           | ✅             | 💯 |
-| 16      | ioctl                  | ✅             | ❓ |
+| 16      | ioctl                  | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#ioctl) |
 | 17      | pread64                | ✅             | 💯 |
 | 18      | pwrite64               | ✅             | 💯 |
 | 19      | readv                  | ✅             | 💯 |
@@ -93,7 +93,7 @@ which are summarized in the table below.
 | 70      | msgrcv                 | ❌             | N/A |
 | 71      | msgctl                 | ❌             | N/A |
 | 72      | fcntl                  | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#fcntl) |
-| 73      | flock                  | ✅             | ❓ |
+| 73      | flock                  | ✅             | 💯 |
 | 74      | fsync                  | ✅             | 💯 |
 | 75      | fdatasync              | ✅             | 💯 |
 | 76      | truncate               | ✅             | 💯 |
@@ -300,12 +300,12 @@ which are summarized in the table below.
 | 277     | sync_file_range        | ❌             | N/A |
 | 278     | vmsplice               | ❌             | N/A |
 | 279     | move_pages             | ❌             | N/A |
-| 280     | utimensat              | ✅             | ❓ |
+| 280     | utimensat              | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#utimensat) |
 | 281     | epoll_pwait            | ✅             | 💯 |
 | 282     | signalfd               | ✅             | 💯 |
 | 283     | timerfd_create         | ✅             | [⚠️](syscall-flag-coverage/signals-and-timers/#timerfd_create) |
 | 284     | eventfd                | ✅             | 💯 |
-| 285     | fallocate              | ✅             | ❓ |
+| 285     | fallocate              | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#fallocate) |
 | 286     | timerfd_settime        | ✅             | [⚠️](syscall-flag-coverage/signals-and-timers/#timerfd_settime) |
 | 287     | timerfd_gettime        | ✅             | 💯 |
 | 288     | accept4                | ✅             | [⚠️](syscall-flag-coverage/networking-and-sockets/#accept-and-accept4) |
