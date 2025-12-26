@@ -279,8 +279,7 @@ impl Dentry {
             // `FsEventPublisher` instance on a dying inode. However, it isn't possible because we
             // need to disable new subscribers.
             let publisher = child_inode.fs_event_publisher_or_init();
-            publisher.disable_new_subscribers();
-            let removed_nr_subscribers = publisher.remove_all_subscribers();
+            let removed_nr_subscribers = publisher.disable_new_and_remove_subscribers();
             child_inode
                 .fs()
                 .fs_event_subscriber_stats()
@@ -332,8 +331,7 @@ impl Dentry {
             // `FsEventPublisher` on a dying inode. However, it isn't possible because we need to
             // disable new subscribers.
             let publisher = child_inode.fs_event_publisher_or_init();
-            publisher.disable_new_subscribers();
-            let removed_nr_subscribers = publisher.remove_all_subscribers();
+            let removed_nr_subscribers = publisher.disable_new_and_remove_subscribers();
             child_inode
                 .fs()
                 .fs_event_subscriber_stats()
