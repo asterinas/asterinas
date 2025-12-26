@@ -7,6 +7,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/file.h>
+#include <poll.h>
 
 #include "../test.h"
 
@@ -77,6 +78,11 @@ FN_TEST(readable)
 	TEST_RES(fcntl(fd, F_GETLK, &f_wrlck), f_wrlck.l_type == F_UNLCK);
 	f_rdlck.l_type = F_RDLCK;
 	f_wrlck.l_type = F_WRLCK;
+
+	struct pollfd pfd;
+	pfd.fd = fd;
+	pfd.events = POLLIN | POLLOUT;
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == (POLLIN | POLLOUT));
 
 	TEST_SUCC(close(fd));
 
@@ -153,6 +159,11 @@ FN_TEST(writeable)
 	f_rdlck.l_type = F_RDLCK;
 	f_wrlck.l_type = F_WRLCK;
 
+	struct pollfd pfd;
+	pfd.fd = fd;
+	pfd.events = POLLIN | POLLOUT;
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == (POLLIN | POLLOUT));
+
 	TEST_SUCC(close(fd));
 
 	// Test 2: Directory
@@ -203,6 +214,11 @@ FN_TEST(path)
 
 	TEST_ERRNO(fcntl(fd, F_GETLK, &f_rdlck), EBADF);
 	TEST_ERRNO(fcntl(fd, F_GETLK, &f_wrlck), EBADF);
+
+	struct pollfd pfd;
+	pfd.fd = fd;
+	pfd.events = POLLIN | POLLOUT;
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == POLLNVAL);
 
 	TEST_SUCC(close(fd));
 
