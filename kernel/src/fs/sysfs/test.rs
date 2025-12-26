@@ -436,7 +436,7 @@ fn test_sysfs_read_link() {
     // the path provided by the underlying mock systree symlink node's target_path method.
 
     let target = link1_inode.read_link().expect("read_link failed");
-    assert_eq!(target.into_plain().unwrap(), "../branch1/leaf1");
+    assert_eq!(target.to_string(), "../branch1/leaf1");
 
     // read_link on non-symlink should fail (expect EINVAL as per inode.rs)
     let branch1_inode = root_inode.lookup("branch1").unwrap();

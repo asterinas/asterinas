@@ -19,7 +19,7 @@ use crate::{
         pipe::PipeHandle,
         utils::{
             AccessMode, CreationFlags, DirentVisitor, FallocMode, FileRange, FlockItem, FlockList,
-            Inode, InodeType, OFFSET_MAX, RangeLockItem, RangeLockList, RangeLockType, SeekFrom,
+            InodeType, OFFSET_MAX, RangeLockItem, RangeLockList, RangeLockType, SeekFrom,
             StatusFlags,
         },
     },
@@ -469,8 +469,8 @@ impl FileLike for InodeHandle {
         inode.fallocate(mode, offset, len)
     }
 
-    fn inode(&self) -> &Arc<dyn Inode> {
-        self.path.inode()
+    fn path(&self) -> &Path {
+        &self.path
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
@@ -488,8 +488,8 @@ impl FileLike for InodeHandle {
 
                 writeln!(f, "pos:\t{}", self.inner.offset())?;
                 writeln!(f, "flags:\t0{:o}", flags)?;
-                writeln!(f, "mnt_id:\t{}", self.inner.path().mount_node().id())?;
-                writeln!(f, "ino:\t{}", self.inner.inode().ino())
+                writeln!(f, "mnt_id:\t{}", self.inner.path.mount_node().id())?;
+                writeln!(f, "ino:\t{}", self.inner.path.inode().ino())
             }
         }
 

@@ -6,7 +6,7 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::{FdFlags, FileDesc},
-        fs_resolver::{AT_FDCWD, FsPath, FsResolver, LookupResult, PathOrInode},
+        fs_resolver::{AT_FDCWD, FsPath, FsResolver, LookupResult},
         inode_handle::InodeHandle,
         utils::{AccessMode, CreationFlags, InodeMode, InodeType, OpenArgs, StatusFlags},
     },
@@ -88,12 +88,7 @@ fn do_open(
     };
 
     let file_handle: Arc<dyn FileLike> = match lookup_res {
-        LookupResult::Resolved(target) => match target {
-            PathOrInode::Path(path) => Arc::new(path.open(open_args)?),
-            PathOrInode::Inode(_) => {
-                return_errno_with_message!(Errno::ENXIO, "the inode is not re-openable")
-            }
-        },
+        LookupResult::Resolved(path) => Arc::new(path.open(open_args)?),
         LookupResult::AtParent(result) => {
             if !open_args.creation_flags.contains(CreationFlags::O_CREAT)
                 || open_args.status_flags.contains(StatusFlags::O_PATH)

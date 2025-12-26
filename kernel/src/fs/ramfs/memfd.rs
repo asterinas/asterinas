@@ -14,7 +14,6 @@ use spin::Once;
 use super::fs::RamInode;
 use crate::{
     fs::{
-        file_handle::FileLike,
         inode_handle::InodeHandle,
         notify::FsEventPublisher,
         path::{Mount, Path},
@@ -302,12 +301,15 @@ fn memfd_tmpfs_mount() -> &'static Arc<Mount> {
 }
 
 fn memfd_inode_or_err(file: &InodeHandle) -> Result<&MemfdInode> {
-    file.inode().downcast_ref::<MemfdInode>().ok_or_else(|| {
-        Error::with_message(
-            Errno::EINVAL,
-            "file seals can only be applied to memfd files",
-        )
-    })
+    file.path()
+        .inode()
+        .downcast_ref::<MemfdInode>()
+        .ok_or_else(|| {
+            Error::with_message(
+                Errno::EINVAL,
+                "file seals can only be applied to memfd files",
+            )
+        })
 }
 
 bitflags! {

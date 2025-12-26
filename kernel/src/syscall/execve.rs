@@ -6,7 +6,8 @@ use super::{SyscallReturn, constants::*};
 use crate::{
     fs::{
         file_table::FileDesc,
-        fs_resolver::{AT_FDCWD, FsPath, PathOrInode},
+        fs_resolver::{AT_FDCWD, FsPath},
+        path::Path,
     },
     prelude::*,
     process::do_execve,
@@ -52,12 +53,12 @@ fn lookup_executable_file(
     filename_ptr: Vaddr,
     flags: OpenFlags,
     ctx: &Context,
-) -> Result<PathOrInode> {
+) -> Result<Path> {
     let filename = ctx
         .user_space()
         .read_cstring(filename_ptr, MAX_FILENAME_LEN)?;
 
-    let path_or_inode = {
+    let path = {
         let filename = filename.to_string_lossy();
         let fs_path = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {
             FsPath::from_fd(dfd)?
@@ -68,13 +69,13 @@ fn lookup_executable_file(
         let fs_ref = ctx.thread_local.borrow_fs();
         let fs_resolver = fs_ref.resolver().read();
         if flags.contains(OpenFlags::AT_SYMLINK_NOFOLLOW) {
-            fs_resolver.lookup_inode_no_follow(&fs_path)?
+            fs_resolver.lookup_no_follow(&fs_path)?
         } else {
-            fs_resolver.lookup_inode(&fs_path)?
+            fs_resolver.lookup(&fs_path)?
         }
     };
 
-    Ok(path_or_inode)
+    Ok(path)
 }
 
 bitflags::bitflags! {
