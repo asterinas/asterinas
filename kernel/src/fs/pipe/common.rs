@@ -29,16 +29,12 @@ use crate::{
 ///
 /// Once a handle for a `Pipe` exists, the corresponding pipe object will
 /// not be dropped.
-pub(super) struct PipeHandle {
+pub(in crate::fs) struct PipeHandle {
     inner: Arc<PipeObj>,
     access_mode: AccessMode,
 }
 
 impl PipeHandle {
-    pub(super) fn access_mode(&self) -> AccessMode {
-        self.access_mode
-    }
-
     fn new(inner: Arc<PipeObj>, access_mode: AccessMode) -> Box<Self> {
         Box::new(Self { inner, access_mode })
     }
@@ -150,7 +146,7 @@ impl FileIo for PipeHandle {
 ///
 /// A `Pipe` will maintain exactly one **pipe object** that provides actual pipe
 /// functionalities when there is at least one handle opened on it.
-pub struct Pipe {
+pub(in crate::fs) struct Pipe {
     pipe: Mutex<PipeInner>,
     wait_queue: WaitQueue,
 }
@@ -180,7 +176,7 @@ impl Pipe {
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Result<Box<dyn FileIo>> {
-        Ok(self.open_handle(access_mode, status_flags, true)?)
+        self.open_handle(access_mode, status_flags, true)
     }
 
     /// Opens the anonymous pipe with the specified access mode and status flags.
@@ -188,7 +184,7 @@ impl Pipe {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Result<Box<PipeHandle>> {
+    ) -> Result<Box<dyn FileIo>> {
         self.open_handle(access_mode, status_flags, false)
     }
 
@@ -198,7 +194,9 @@ impl Pipe {
         access_mode: AccessMode,
         status_flags: StatusFlags,
         is_named_pipe: bool,
-    ) -> Result<Box<PipeHandle>> {
+    ) -> Result<Box<dyn FileIo>> {
+        check_status_flags(status_flags)?;
+
         let mut pipe = self.pipe.lock();
         let pipe_obj = pipe.get_or_create_pipe_obj();
 
@@ -270,6 +268,24 @@ impl Pipe {
 
         Ok(handle)
     }
+}
+
+pub(in crate::fs) fn check_status_flags(status_flags: StatusFlags) -> Result<()> {
+    if status_flags.contains(StatusFlags::O_DIRECT) {
+        // TODO: Support "packet" mode for pipes.
+        //
+        // The `O_DIRECT` flag indicates that the pipe should operate in "packet" mode.
+        // "O_DIRECT .. Older kernels that do not support this flag will indicate this via an
+        // EINVAL error."
+        //
+        // See <https://man7.org/linux/man-pages/man2/pipe.2.html>.
+        return_errno_with_message!(Errno::EINVAL, "the `O_DIRECT` flag is not supported");
+    }
+
+    // TODO: Setting most of the other flags will succeed on Linux, but their effects need to be
+    // validated.
+
+    Ok(())
 }
 
 struct PipeObj {

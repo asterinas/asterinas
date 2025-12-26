@@ -16,6 +16,7 @@ use crate::{
         file_handle::{FileLike, Mappable},
         file_table::FdFlags,
         path::Path,
+        pipe::PipeHandle,
         utils::{
             AccessMode, CreationFlags, DirentVisitor, FallocMode, FileRange, FlockItem, Inode,
             InodeType, OFFSET_MAX, RangeLockItem, RangeLockType, SeekFrom, StatusFlags,
@@ -364,6 +365,18 @@ impl FileLike for InodeHandle {
     }
 
     fn set_status_flags(&self, new_status_flags: StatusFlags) -> Result<()> {
+        // TODO: Pipes currently require a special status flag check because
+        // "packet" mode is not yet supported. Remove this check once "packet"
+        // mode is implemented.
+        if self
+            .file_io
+            .as_ref()
+            .and_then(|file_io| (file_io.as_ref() as &dyn Any).downcast_ref::<PipeHandle>())
+            .is_some()
+        {
+            crate::fs::pipe::check_status_flags(new_status_flags)?;
+        }
+
         self.status_flags
             .store(new_status_flags.bits(), Ordering::Relaxed);
 
@@ -492,7 +505,7 @@ impl Debug for InodeHandle {
 ///
 /// This trait is typically implemented for special files like devices or
 /// named pipes (FIFOs), which have behaviors different from regular on-disk files.
-pub trait FileIo: Pollable + InodeIo + Send + Sync + 'static {
+pub trait FileIo: Pollable + InodeIo + Any + Send + Sync + 'static {
     /// Checks whether the `seek()` operation should fail.
     fn check_seekable(&self) -> Result<()>;
 
