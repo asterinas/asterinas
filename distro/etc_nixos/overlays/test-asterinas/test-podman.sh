@@ -2,20 +2,20 @@
 
 # SPDX-License-Identifier: MPL-2.0
 
-set -e
+. test-framework.sh
 
-CONTAINER_NAME=c1
-IMAGE_NAME=docker.io/library/alpine
+start_test "podman"
 
-podman run --name=${CONTAINER_NAME} ${IMAGE_NAME} ls /etc \
-    | grep -q "^alpine-release" \
-    || (echo "Test 'podman run' failed" && exit 1)
-podman image ls \
-    | grep -q ${IMAGE_NAME} \
-    || (echo "Test 'podman image ls' failed" && exit 1)
-podman ps -a \
-    | grep -q "Exited (0)" \
-    || (echo "Test 'podman ps -a' failed" && exit 1)
-podman rm ${CONTAINER_NAME} || (echo "Test 'podman rm' failed" && exit 1)
+test_step "Run alpine container"
+run_and_expect "podman run --name=c1 docker.io/library/alpine ls /etc" "alpine-release"
 
-echo "Test podman succeeds"
+test_step "List images"
+run_and_expect "podman image ls" "docker.io/library/alpine"
+
+test_step "List containers"
+run_and_expect "podman ps -a" "Exited (0)"
+
+test_step "Remove container"
+run_command "podman rm c1"
+
+finish_test

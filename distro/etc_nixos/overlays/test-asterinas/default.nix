@@ -6,8 +6,9 @@ final: prev: {
     src = ./.;
 
     installPhase = ''
-      install -m755 -D $src/test-nix-commands.sh $out/bin/test-nix-commands
-      install -m755 -D $src/test-podman.sh $out/bin/test-podman
+      mkdir -p $out/bin
+      cp $src/*.sh $out/bin/
+      chmod +x $out/bin/*.sh
     '';
   };
 }
