@@ -35,13 +35,9 @@ pub struct FsEventPublisher {
 
 impl Debug for FsEventPublisher {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let subscribers = self.subscribers.read();
-        write!(
-            f,
-            "FsEventPublisher: num_subscribers: {}",
-            subscribers.len()
-        )?;
-        Ok(())
+        f.debug_struct("FsEventPublisher")
+            .field("num_subscribers", &self.subscribers.read().len())
+            .finish_non_exhaustive()
     }
 }
 
@@ -62,10 +58,12 @@ impl FsEventPublisher {
 
     /// Adds a subscriber to this publisher.
     pub fn add_subscriber(&self, subscriber: Arc<dyn FsEventSubscriber>) -> bool {
-        if !self.accepts_new_subscribers.load(Ordering::Acquire) {
+        let mut subscribers = self.subscribers.write();
+        // This check must be done after locking `self.subscribers.write()` to avoid race
+        // conditions.
+        if !self.accepts_new_subscribers.load(Ordering::Relaxed) {
             return false;
         }
-        let mut subscribers = self.subscribers.write();
         let current = self.all_interesting_events.load(Ordering::Relaxed);
         self.all_interesting_events
             .store(current | subscriber.interesting_events(), Ordering::Relaxed);
@@ -101,9 +99,14 @@ impl FsEventPublisher {
         num_subscribers
     }
 
-    /// Forbids new subscribers from attaching to this publisher.
-    pub fn disable_new_subscribers(&self) {
-        self.accepts_new_subscribers.store(false, Ordering::Release);
+    /// Forbids new subscribers from attaching to this publisher and removes all existing
+    /// subscribers.
+    pub fn disable_new_and_remove_subscribers(&self) -> usize {
+        // Do this before calling `remove_all_subscribers` so that the `self.subscribers.write()`
+        // lock will synchronize this variable.
+        self.accepts_new_subscribers.store(false, Ordering::Relaxed);
+
+        self.remove_all_subscribers()
     }
 
     /// Broadcasts an event to all the subscribers of this publisher.
