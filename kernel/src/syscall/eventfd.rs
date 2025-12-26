@@ -24,7 +24,7 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::{FdFlags, FileDesc},
-        path::RESERVED_MOUNT_ID,
+        path::Path,
         pseudofs::AnonInodeFs,
         utils::{CreationFlags, Inode, StatusFlags},
     },
@@ -76,6 +76,8 @@ struct EventFile {
     pollee: Pollee,
     flags: Mutex<Flags>,
     write_wait_queue: WaitQueue,
+    /// The pseudo path associated with this eventfd file.
+    pseudo_path: Path,
 }
 
 impl EventFile {
@@ -85,11 +87,13 @@ impl EventFile {
         let counter = Mutex::new(init_val);
         let pollee = Pollee::new();
         let write_wait_queue = WaitQueue::new();
+        let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:[eventfd]".to_string());
         Self {
             counter,
             pollee,
             flags: Mutex::new(flags),
             write_wait_queue,
+            pseudo_path,
         }
     }
 
@@ -232,7 +236,7 @@ impl FileLike for EventFile {
     }
 
     fn inode(&self) -> &Arc<dyn Inode> {
-        AnonInodeFs::shared_inode()
+        self.pseudo_path.inode()
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
@@ -250,9 +254,8 @@ impl FileLike for EventFile {
 
                 writeln!(f, "pos:\t{}", 0)?;
                 writeln!(f, "flags:\t0{:o}", flags)?;
-                // TODO: This should be the mount ID of the pseudo filesystem.
-                writeln!(f, "mnt_id:\t{}", RESERVED_MOUNT_ID)?;
-                writeln!(f, "ino:\t{}", self.inner.inode().ino())?;
+                writeln!(f, "mnt_id:\t{}", AnonInodeFs::mount_node().id())?;
+                writeln!(f, "ino:\t{}", AnonInodeFs::shared_inode().ino())?;
                 writeln!(f, "eventfd-count: {:16x}", *self.inner.counter.lock())
             }
         }
