@@ -25,9 +25,12 @@ jobs:
     steps: 
       - uses: actions/checkout@v4
 
-      - name: Check API docs
+      - name: Check API docs of crates to publish
         if: github.event_name == 'pull_request'
         run: ./tools/github_workflows/publish_api_docs.sh --dry-run
+
+      - name: Check API docs of all crates
+        run: make docs
 
       - name: Build & Upload Nightly API Docs
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

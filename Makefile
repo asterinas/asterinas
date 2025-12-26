@@ -403,10 +403,17 @@ ktest: initramfs $(CARGO_OSDK)
 .PHONY: docs
 docs: $(CARGO_OSDK)
 	@for dir in $(NON_OSDK_CRATES); do \
-		(cd $$dir && cargo doc --no-deps) || exit 1; \
+		(cd $$dir && RUSTDOCFLAGS="-Dwarnings" cargo doc --no-deps) || exit 1; \
 	done
 	@for dir in $(OSDK_CRATES); do \
-		(cd $$dir && cargo osdk doc --no-deps) || exit 1; \
+		EXTRA_DOC_FLAGS=""; \
+		# The kernel crate is primarily composed of private items. \
+		# We include the --document-private-items flag \
+		# to ensure documentation of the internal items is fully checked. \
+		if [ "$$dir" = "kernel" ]; then \
+			EXTRA_DOC_FLAGS="--document-private-items -Arustdoc::private_intra_doc_links"; \
+		fi; \
+		(cd $$dir && RUSTDOCFLAGS="-Dwarnings $$EXTRA_DOC_FLAGS" cargo osdk doc --no-deps) || exit 1; \
 	done
 
 .PHONY: book
