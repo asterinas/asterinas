@@ -36,7 +36,7 @@ pub enum MountPropType {
 static ID_ALLOCATOR: Once<SpinLock<IdAlloc>> = Once::new();
 
 /// The reserved mount ID, which represents an invalid mount.
-pub static RESERVED_MOUNT_ID: usize = 0;
+static RESERVED_MOUNT_ID: usize = 0;
 
 pub(super) fn init() {
     // TODO: Make it configurable.

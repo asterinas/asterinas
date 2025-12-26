@@ -15,8 +15,8 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::{FdFlags, FileDesc, get_file_fast},
-        path::RESERVED_MOUNT_ID,
-        pseudofs::anon_inodefs_shared_inode,
+        path::Path,
+        pseudofs::{anon_inodefs_mount, anon_inodefs_shared_inode},
         utils::{CreationFlags, Inode},
     },
     prelude::*,
@@ -47,14 +47,23 @@ pub struct EpollFile {
     // Keep this in a separate `Arc` to avoid dropping `EpollFile` in the observer callback, which
     // may cause deadlocks.
     ready: Arc<ReadySet>,
+    /// The pseudo path associated with this epoll file.
+    pseudo_path: Path,
 }
 
 impl EpollFile {
     /// Creates a new epoll file.
     pub fn new() -> Arc<Self> {
+        let pseudo_path = Path::new_pseudo(
+            anon_inodefs_mount().clone(),
+            anon_inodefs_shared_inode().clone(),
+            |_| "anon_inode:[eventpoll]".to_string(),
+        );
+
         Arc::new(Self {
             interest: Mutex::new(BTreeSet::new()),
             ready: Arc::new(ReadySet::new()),
+            pseudo_path,
         })
     }
 
@@ -270,7 +279,7 @@ impl FileLike for EpollFile {
     }
 
     fn inode(&self) -> &Arc<dyn Inode> {
-        anon_inodefs_shared_inode()
+        self.pseudo_path.inode()
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
@@ -288,9 +297,8 @@ impl FileLike for EpollFile {
 
                 writeln!(f, "pos:\t{}", 0)?;
                 writeln!(f, "flags:\t0{:o}", flags)?;
-                // TODO: This should be the mount ID of the pseudo filesystem.
-                writeln!(f, "mnt_id:\t{}", RESERVED_MOUNT_ID)?;
-                writeln!(f, "ino:\t{}", self.inner.inode().ino())?;
+                writeln!(f, "mnt_id:\t{}", anon_inodefs_mount().id())?;
+                writeln!(f, "ino:\t{}", anon_inodefs_shared_inode().ino())?;
                 for entry in self.inner.interest.lock().iter() {
                     writeln!(f, "{}", entry.0)?;
                 }
