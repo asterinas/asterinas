@@ -5,9 +5,9 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use super::message::{MessageQueue, MessageReceiver};
 use crate::{
     events::IoEvents,
-    fs::utils::Inode,
+    fs::{path::Path, pseudofs::SockFs},
     net::socket::{
-        Socket, new_pseudo_inode,
+        Socket,
         options::{Error as SocketError, SocketOption, macros::sock_option_mut},
         private::SocketPrivate,
         unix::{UnixSocketAddr, ctrl_msg::AuxiliaryData},
@@ -28,7 +28,7 @@ pub struct UnixDatagramSocket {
 
     is_nonblocking: AtomicBool,
     is_write_shutdown: AtomicBool,
-    pseudo_inode: Arc<dyn Inode>,
+    pseudo_path: Path,
 }
 
 #[derive(Clone, Debug)]
@@ -69,7 +69,7 @@ impl UnixDatagramSocket {
             options: RwLock::new(OptionSet::new()),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             is_write_shutdown: AtomicBool::new(false),
-            pseudo_inode: new_pseudo_inode(),
+            pseudo_path: SockFs::new_path(),
         }
     }
 
@@ -281,8 +281,8 @@ impl Socket for UnixDatagramSocket {
         Ok((received_bytes, message_header))
     }
 
-    fn pseudo_inode(&self) -> &Arc<dyn Inode> {
-        &self.pseudo_inode
+    fn pseudo_path(&self) -> &Path {
+        &self.pseudo_path
     }
 }
 
