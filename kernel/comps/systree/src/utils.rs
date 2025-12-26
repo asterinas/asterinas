@@ -11,7 +11,7 @@ use alloc::{
 use inherit_methods_macro::inherit_methods;
 use ostd::{
     mm::{VmReader, VmWriter},
-    sync::RwLock,
+    sync::RwMutex,
 };
 use spin::Once;
 
@@ -108,7 +108,7 @@ impl<T: SysNode> NormalNodeFields<T> {
 #[derive(Debug)]
 pub struct AttrLessBranchNodeFields<C: SysObj + ?Sized, T: SysBranchNode> {
     base: ObjFields<T>,
-    pub children: RwLock<BTreeMap<SysStr, Arc<C>>>,
+    pub children: RwMutex<BTreeMap<SysStr, Arc<C>>>,
 }
 
 #[inherit_methods(from = "self.base")]
@@ -116,7 +116,7 @@ impl<C: SysObj + ?Sized, T: SysBranchNode> AttrLessBranchNodeFields<C, T> {
     pub fn new(name: SysStr, weak_self: Weak<T>) -> Self {
         Self {
             base: ObjFields::new(name, weak_self),
-            children: RwLock::new(BTreeMap::new()),
+            children: RwMutex::new(BTreeMap::new()),
         }
     }
 
@@ -178,7 +178,7 @@ impl<C: SysObj + ?Sized, T: SysBranchNode> AttrLessBranchNodeFields<C, T> {
         children.get(name).cloned()
     }
 
-    pub fn children_ref(&self) -> &RwLock<BTreeMap<SysStr, Arc<C>>> {
+    pub fn children_ref(&self) -> &RwMutex<BTreeMap<SysStr, Arc<C>>> {
         &self.children
     }
 
@@ -228,7 +228,7 @@ impl<C: SysObj + ?Sized, T: SysBranchNode> BranchNodeFields<C, T> {
 
     pub fn child(&self, name: &str) -> Option<Arc<C>>;
 
-    pub fn children_ref(&self) -> &RwLock<BTreeMap<SysStr, Arc<C>>>;
+    pub fn children_ref(&self) -> &RwMutex<BTreeMap<SysStr, Arc<C>>>;
 
     pub fn attr_set(&self) -> &SysAttrSet {
         &self.attr_set
