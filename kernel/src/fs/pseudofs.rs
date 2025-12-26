@@ -170,6 +170,15 @@ impl AnonInodeFs {
         PseudoFs::singleton(&ANON_INODEFS, "anon_inodefs", ANON_INODEFS_MAGIC)
     }
 
+    /// Creates a pseudo `Path` for the shared inode.
+    pub fn new_path(name_fn: fn(&dyn Inode) -> String) -> Path {
+        Path::new_pseudo(
+            Self::mount_node().clone(),
+            Self::shared_inode().clone(),
+            name_fn,
+        )
+    }
+
     /// Returns the pseudo mount node of the anonymous inode file system.
     pub fn mount_node() -> &'static Arc<Mount> {
         static ANON_INODEFS_MOUNT: Once<Arc<Mount>> = Once::new();
