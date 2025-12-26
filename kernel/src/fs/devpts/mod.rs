@@ -9,12 +9,11 @@ use id_alloc::IdAlloc;
 
 pub use self::ptmx::Ptmx;
 use self::slave::PtySlaveInode;
-use super::utils::{MknodType, StatusFlags};
+use super::utils::{Extension, MknodType, StatusFlags};
 use crate::{
     device::PtyMaster,
     fs::{
         device::{Device, DeviceType},
-        notify::FsEventPublisher,
         registry::{FsProperties, FsType},
         utils::{
             DirEntryVecExt, DirentVisitor, FileSystem, FsEventSubscriberStats, FsFlags, Inode,
@@ -151,7 +150,7 @@ struct RootInode {
     ptmx: Arc<Ptmx>,
     slaves: RwLock<SlotVec<(String, Arc<dyn Inode>)>>,
     metadata: RwLock<Metadata>,
-    fs_event_publisher: FsEventPublisher,
+    extension: Extension,
     fs: Weak<DevPts>,
 }
 
@@ -161,7 +160,7 @@ impl RootInode {
             ptmx: Ptmx::new(fs.clone()),
             slaves: RwLock::new(SlotVec::new()),
             metadata: RwLock::new(Metadata::new_dir(ROOT_INO, mkmod!(a+rx, u+w), BLOCK_SIZE)),
-            fs_event_publisher: FsEventPublisher::new(),
+            extension: Extension::new(),
             fs,
         })
     }
@@ -200,8 +199,8 @@ impl Inode for RootInode {
         *self.metadata.read()
     }
 
-    fn fs_event_publisher(&self) -> &FsEventPublisher {
-        &self.fs_event_publisher
+    fn extension(&self) -> &Extension {
+        &self.extension
     }
 
     fn ino(&self) -> u64 {

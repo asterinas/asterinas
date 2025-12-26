@@ -26,7 +26,7 @@ use crate::{
         notify::{FsEventSubscriber, FsEvents},
         path::{Path, RESERVED_MOUNT_ID},
         pseudofs::anon_inodefs_shared_inode,
-        utils::{AccessMode, CreationFlags, Inode, StatusFlags},
+        utils::{AccessMode, CreationFlags, Inode, InodeExt, StatusFlags},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
@@ -75,7 +75,11 @@ impl Drop for InotifyFile {
                 continue;
             };
 
-            if inode.fs_event_publisher().remove_subscriber(&subscriber) {
+            if inode
+                .fs_event_publisher()
+                .unwrap()
+                .remove_subscriber(&subscriber)
+            {
                 inode.fs().fs_event_subscriber_stats().remove_subscriber();
             }
         }
@@ -94,16 +98,12 @@ impl InotifyFile {
     /// Watch Description starts from 1.
     /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/fs/notify/inotify/inotify_user.c#L402>
     pub fn new(is_nonblocking: bool) -> Result<Arc<Self>> {
-        let event_queue = VecDeque::try_with_capacity(DEFAULT_MAX_QUEUED_EVENTS).map_err(|_| {
-            Error::with_message(Errno::ENOMEM, "Insufficient kernel memory is available")
-        })?;
-
         Ok(Arc::new_cyclic(|weak_self| Self {
             watch_lock: Mutex::new(()),
             next_wd: AtomicU32::new(1),
             watch_map: RwLock::new(HashMap::new()),
             is_nonblocking: AtomicBool::new(is_nonblocking),
-            event_queue: SpinLock::new(event_queue),
+            event_queue: SpinLock::new(VecDeque::new()),
             queue_capacity: DEFAULT_MAX_QUEUED_EVENTS,
             pollee: Pollee::new(),
             this: weak_self.clone(),
@@ -163,7 +163,11 @@ impl InotifyFile {
             _ => return_errno_with_message!(Errno::EINVAL, "watch not found"),
         };
 
-        if inode.fs_event_publisher().remove_subscriber(&subscriber) {
+        if inode
+            .fs_event_publisher()
+            .unwrap()
+            .remove_subscriber(&subscriber)
+        {
             inode.fs().fs_event_subscriber_stats().remove_subscriber();
         }
         Ok(())
@@ -176,7 +180,9 @@ impl InotifyFile {
         interesting: InotifyEvents,
         options: InotifyControls,
     ) -> Result<u32> {
-        let publisher = path.inode().fs_event_publisher();
+        let Some(publisher) = path.inode().fs_event_publisher() else {
+            return_errno_with_message!(Errno::ENOENT, "watch not found");
+        };
         let inotify_file = self.this();
 
         let result = publisher.find_subscriber_and_process(|subscriber| {
@@ -214,7 +220,7 @@ impl InotifyFile {
 
         if path
             .inode()
-            .fs_event_publisher()
+            .fs_event_publisher_or_init()
             .add_subscriber(subscriber.clone())
         {
             path.inode()

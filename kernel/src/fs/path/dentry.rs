@@ -7,8 +7,10 @@ use ostd::sync::RwMutexWriteGuard;
 
 use super::{is_dot, is_dot_or_dotdot, is_dotdot};
 use crate::{
-    fs,
-    fs::utils::{Inode, InodeMode, InodeType, MknodType},
+    fs::{
+        self,
+        utils::{Inode, InodeExt, InodeMode, InodeType, MknodType},
+    },
     prelude::*,
 };
 
@@ -273,9 +275,11 @@ impl Dentry {
         }
         fs::notify::on_delete(self.inode(), &child_inode, || name.to_string());
         if nlinks == 0 {
-            let publisher = child_inode.fs_event_publisher();
-            publisher.disable_new_subscribers();
-            let removed_nr_subscribers = publisher.remove_all_subscribers();
+            // Ideally, we would use `fs_event_publisher()` here to avoid creating a
+            // `FsEventPublisher` instance on a dying inode. However, it isn't possible because we
+            // need to disable new subscribers.
+            let publisher = child_inode.fs_event_publisher_or_init();
+            let removed_nr_subscribers = publisher.disable_new_and_remove_subscribers();
             child_inode
                 .fs()
                 .fs_event_subscriber_stats()
@@ -323,9 +327,11 @@ impl Dentry {
         }
         fs::notify::on_delete(self.inode(), &child_inode, || name.to_string());
         if nlinks == 0 {
-            let publisher = child_inode.fs_event_publisher();
-            publisher.disable_new_subscribers();
-            let removed_nr_subscribers = publisher.remove_all_subscribers();
+            // Ideally, we would use `fs_event_publisher()` here to avoid creating a
+            // `FsEventPublisher` on a dying inode. However, it isn't possible because we need to
+            // disable new subscribers.
+            let publisher = child_inode.fs_event_publisher_or_init();
+            let removed_nr_subscribers = publisher.disable_new_and_remove_subscribers();
             child_inode
                 .fs()
                 .fs_event_subscriber_stats()

@@ -27,7 +27,6 @@ use super::{
 use crate::{
     fs::{
         exfat::{dentry::ExfatDentryIterator, fat::ExfatChain, fs::ExfatFs},
-        notify::FsEventPublisher,
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
         utils::{
             CachePage, DirentVisitor, Extension, Inode, InodeIo, InodeMode, InodeType, Metadata,
@@ -79,7 +78,6 @@ impl FatAttr {
 pub struct ExfatInode {
     inner: RwMutex<ExfatInodeInner>,
     extension: Extension,
-    fs_event_publisher: FsEventPublisher,
 }
 
 #[derive(Debug)]
@@ -862,7 +860,6 @@ impl ExfatInode {
                 page_cache: PageCache::with_capacity(size, weak_self.clone() as _).unwrap(),
             }),
             extension: Extension::new(),
-            fs_event_publisher: FsEventPublisher::new(),
         });
 
         let inner = inode.inner.upread();
@@ -973,7 +970,6 @@ impl ExfatInode {
                 page_cache: PageCache::with_capacity(size, weak_self.clone() as _).unwrap(),
             }),
             extension: Extension::new(),
-            fs_event_publisher: FsEventPublisher::new(),
         });
 
         if matches!(inode_type, InodeType::Dir) {
@@ -1734,11 +1730,7 @@ impl Inode for ExfatInode {
         true
     }
 
-    fn extension(&self) -> Option<&Extension> {
-        Some(&self.extension)
-    }
-
-    fn fs_event_publisher(&self) -> &FsEventPublisher {
-        &self.fs_event_publisher
+    fn extension(&self) -> &Extension {
+        &self.extension
     }
 }
