@@ -221,8 +221,12 @@ impl Pollable for InodeHandle {
             return file_io.poll(mask, poller);
         }
 
-        let events = IoEvents::IN | IoEvents::OUT;
-        events & mask
+        if self.rights.is_empty() {
+            IoEvents::NVAL
+        } else {
+            let events = IoEvents::IN | IoEvents::OUT;
+            events & mask
+        }
     }
 }
 

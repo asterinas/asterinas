@@ -7,6 +7,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/file.h>
+#include <poll.h>
 
 #include "../test.h"
 
@@ -44,6 +45,7 @@ FN_TEST(readable)
 	int fd;
 	char buf[1];
 	void *addr;
+	struct pollfd pfd;
 
 	// Test 1: Normal file
 
@@ -77,6 +79,10 @@ FN_TEST(readable)
 	TEST_RES(fcntl(fd, F_GETLK, &f_wrlck), f_wrlck.l_type == F_UNLCK);
 	f_rdlck.l_type = F_RDLCK;
 	f_wrlck.l_type = F_WRLCK;
+
+	pfd.fd = fd;
+	pfd.events = POLLIN | POLLOUT;
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == (POLLIN | POLLOUT));
 
 	TEST_SUCC(close(fd));
 
@@ -120,6 +126,7 @@ FN_TEST(writeable)
 {
 	int fd;
 	char buf[1];
+	struct pollfd pfd;
 
 	// Test 1: Normal file
 
@@ -153,6 +160,10 @@ FN_TEST(writeable)
 	f_rdlck.l_type = F_RDLCK;
 	f_wrlck.l_type = F_WRLCK;
 
+	pfd.fd = fd;
+	pfd.events = POLLIN | POLLOUT;
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == (POLLIN | POLLOUT));
+
 	TEST_SUCC(close(fd));
 
 	// Test 2: Directory
@@ -166,6 +177,7 @@ FN_TEST(path)
 {
 	int fd;
 	char buf[1];
+	struct pollfd pfd;
 
 	// Test 1: Normal file
 
@@ -203,6 +215,10 @@ FN_TEST(path)
 
 	TEST_ERRNO(fcntl(fd, F_GETLK, &f_rdlck), EBADF);
 	TEST_ERRNO(fcntl(fd, F_GETLK, &f_wrlck), EBADF);
+
+	pfd.fd = fd;
+	pfd.events = POLLIN | POLLOUT;
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == POLLNVAL);
 
 	TEST_SUCC(close(fd));
 
