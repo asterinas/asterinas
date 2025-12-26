@@ -97,6 +97,14 @@ pub(in crate::arch) fn init() {
         reset_port_and_val: None,
     };
 
+    // TODO: Prevent Iago attack: Validate FADT table integrity and century register value in Intel TDX environment.
+    // The untrusted input could provide a malicious ACPI table with:
+    // - Invalid century register address that could cause hardware access violations
+    // - Out-of-range century register indices/offsets
+    // - Corrupted FADT structure to trigger parsing vulnerabilities
+    // - Inconsistent century register values across multiple calls (TOCTOU attacks)
+    // Consider implementing: checksum verification, validate century register against
+    // known valid CMOS RTC century register addresses, and caching to detect modifications.
     if let Some(acpi_tables) = get_acpi_tables()
         && let Ok(fadt) = acpi_tables.find_table::<Fadt>()
     {

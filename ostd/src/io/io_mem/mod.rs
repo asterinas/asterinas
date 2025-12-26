@@ -103,6 +103,26 @@ impl<SecuritySensitivity> IoMem<SecuritySensitivity> {
             //  - The caller guarantees that operations on the I/O memory do not have any side
             //    effects that may cause soundness problems, so the pages can safely be viewed as
             //    untyped memory.
+            // TODO: Prevent Iago attack: Device MMIO unprotection exposes kernel data to VMM manipulation:
+            // unprotect_gpa_range() creates shared memory interface with untrusted VMM for device MMIO.
+            // Primary Security Risks (within TDX threat model):
+            // - **Kernel Data Confidentiality Violation**: VMM may monitor MMIO access patterns
+            //   to infer kernel behavior, device usage, and system state information.
+            // - **Kernel Data Integrity Violation**: VMM may tamper with device register values
+            //   that kernel uses for critical decisions, potentially corrupting kernel data structures
+            //   or control flow that depend on device state.
+            // - **Privilege Escalation Risk**: Malicious device register values may exploit
+            //   kernel driver vulnerabilities, potentially leading to code execution or privilege
+            //   boundary violations within the kernel.
+            // Specific Attack Vectors:
+            // - **PCI BAR tampering**: Corrupt device capability/configuration data used by kernel
+            // - **VirtIO register manipulation**: Exploit kernel VirtIO driver parsing logic
+            // - **Framebuffer data injection**: Exploit kernel graphics driver buffer management
+            // Consider implementing:
+            // - Validate device register values to prevent kernel driver exploitation
+            // - Sanitize device-provided data before using in kernel data structures
+            // - Implement bounds checking to prevent buffer overflows from device data
+            // - Use defensive programming to handle unexpected device register values
             unsafe { crate::arch::tdx_guest::unprotect_gpa_range(first_page_start, num_pages).unwrap() };
 
             PrivilegedPageFlags::SHARED
