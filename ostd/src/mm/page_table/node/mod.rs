@@ -25,8 +25,8 @@
 //! the initialization of the entity that the PTE points to. This is taken care in this module.
 //!
 
-mod child;
 mod entry;
+mod pte_state;
 
 use core::{
     cell::SyncUnsafeCell,
@@ -36,16 +36,16 @@ use core::{
 };
 
 pub(in crate::mm) use self::{
-    child::{Child, ChildRef},
     entry::Entry,
+    pte_state::{PteState, PteStateRef},
 };
-use super::{PageTableConfig, PageTableEntryTrait, nr_subpage_per_huge};
+use super::{PageTableConfig, PteTrait, nr_subpage_per_huge};
 use crate::{
     mm::{
         FrameAllocOptions, HasPaddr, Infallible, PagingConstsTrait, PagingLevel, VmReader,
         frame::{Frame, FrameRef, meta::AnyFrameMeta},
         paddr_to_vaddr,
-        page_table::{load_pte, store_pte},
+        page_table::{PteScalar, load_pte, store_pte},
     },
     task::atomic_mode::InAtomicMode,
 };
@@ -69,14 +69,10 @@ impl<C: PageTableConfig> PageTableNode<C> {
     /// Allocates a new empty page table node.
     pub(super) fn alloc(level: PagingLevel) -> Self {
         let meta = PageTablePageMeta::new(level);
-        let frame = FrameAllocOptions::new()
+        FrameAllocOptions::new()
             .zeroed(true)
             .alloc_frame_with(meta)
-            .expect("Failed to allocate a page table node");
-        // The allocated frame is zeroed. Make sure zero is absent PTE.
-        debug_assert_eq!(C::E::new_absent().as_usize(), 0);
-
-        frame
+            .expect("Failed to allocate a page table node")
     }
 
     /// Activates the page table assuming it is a root page table.
@@ -229,9 +225,9 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     ///
     /// The caller must ensure that:
     ///  1. The index must be within the bound;
-    ///  2. The PTE must represent a [`Child`] in the same [`PageTableConfig`]
+    ///  2. The PTE must represent a [`PteState`] in the same [`PageTableConfig`]
     ///     and at the right paging level (`self.level() - 1`).
-    ///  3. The page table node will have the ownership of the [`Child`]
+    ///  3. The page table node will have the ownership of the [`PteState`]
     ///     after this method.
     pub(super) unsafe fn write_pte(&mut self, idx: usize, pte: C::E) {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
@@ -295,7 +291,7 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
     }
 }
 
-// FIXME: The safe APIs in the `page_table/node` module allow `Child::Frame`s with
+// FIXME: The safe APIs in the `page_table/node` module allow `PteState::Frame`s with
 // arbitrary addresses to be stored in the page table nodes. Therefore, they may not
 // be valid `C::Item`s. The soundness of the following `on_drop` implementation must
 // be reasoned in conjunction with the `page_table/cursor` implementation.
@@ -318,20 +314,18 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
         for _ in range {
             // Non-atomic read is OK because we have mutable access.
             let pte = reader.read_once::<C::E>().unwrap();
-            if pte.is_present() {
-                let paddr = pte.paddr();
-                // As a fast path, we can ensure that the type of the child frame
-                // is `Self` if the PTE points to a child page table. Then we don't
-                // need to check the vtable for the drop method.
-                if !pte.is_last(level) {
+            match pte.to_repr(level) {
+                PteScalar::PageTable(child_pt_addr, _, _) => {
                     // SAFETY: The PTE points to a page table node. The ownership
                     // of the child is transferred to the child then dropped.
-                    drop(unsafe { Frame::<Self>::from_raw(paddr) });
-                } else {
+                    drop(unsafe { PageTableNode::<C>::from_raw(child_pt_addr) });
+                }
+                PteScalar::Mapped(pa, _, prop) => {
                     // SAFETY: The PTE points to a mapped item. The ownership
                     // of the item is transferred here then dropped.
-                    drop(unsafe { C::item_from_raw(paddr, level, pte.prop()) });
+                    drop(unsafe { C::item_from_raw(pa, level, prop) });
                 }
+                PteScalar::Absent => {}
             }
         }
     }

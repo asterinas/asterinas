@@ -315,7 +315,7 @@ impl ContextTable {
         let mut cursor = pt.cursor_mut(&preempt_guard, &from).unwrap();
 
         // SAFETY: The safety is upheld by the caller.
-        unsafe { cursor.map((paddr, 1, prop)).unwrap() };
+        unsafe { cursor.map((paddr, 1, prop)) };
 
         Ok(())
     }
