@@ -4,6 +4,7 @@
 
 set -e
 
+SCRIPT_DIR=$(dirname "$0")
 NIXOS_DIR=$(realpath $1)
 QEMU_ARGS="qemu-system-x86_64 \
 	-bios /root/ovmf/release/OVMF.fd \
@@ -21,4 +22,4 @@ QEMU_ARGS="
 	${COMMON_QEMU_ARGS} \
 "
 
-${QEMU_ARGS}
+${SCRIPT_DIR}/run_common.sh ${QEMU_ARGS}
