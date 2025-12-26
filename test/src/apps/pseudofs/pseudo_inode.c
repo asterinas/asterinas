@@ -1,28 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#define _GNU_SOURCE
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <fcntl.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <sys/eventfd.h>
-#include <sys/timerfd.h>
-#include <sys/signalfd.h>
-#include <sys/epoll.h>
-#include <signal.h>
-
-#include "../test.h"
-
-static void fd_path(int fd, char *buf, size_t buflen)
-{
-	CHECK_WITH(snprintf(buf, buflen, "/proc/self/fd/%d", fd),
-		   _ret > 0 && _ret < buflen);
-}
+#include "pseudo_file_create.h"
 
 static int get_mode(int fd)
 {
@@ -46,29 +24,22 @@ static int set_mode(int fd, int mode)
 
 FN_TEST(pipe_ends_share_inode)
 {
-	int pipe1[2], pipe2[2];
-	TEST_SUCC(pipe(pipe1));
-	TEST_SUCC(pipe(pipe2));
+	TEST_RES(get_mode(pipe_1[0]), _ret == 0600);
+	TEST_RES(get_mode(pipe_1[1]), _ret == 0600);
+	TEST_RES(get_mode(pipe_2[0]), _ret == 0600);
+	TEST_RES(get_mode(pipe_2[1]), _ret == 0600);
 
-	TEST_RES(get_mode(pipe1[0]), _ret == 0600);
-	TEST_RES(get_mode(pipe1[1]), _ret == 0600);
-	TEST_RES(get_mode(pipe2[0]), _ret == 0600);
-	TEST_RES(get_mode(pipe2[1]), _ret == 0600);
+	TEST_SUCC(set_mode(pipe_1[0], 0000));
 
-	TEST_SUCC(set_mode(pipe1[0], 0000));
-
-	TEST_RES(get_mode(pipe1[0]), _ret == 0000);
-	TEST_RES(get_mode(pipe1[1]), _ret == 0000);
-	TEST_RES(get_mode(pipe2[0]), _ret == 0600);
-	TEST_RES(get_mode(pipe2[1]), _ret == 0600);
+	TEST_RES(get_mode(pipe_1[0]), _ret == 0000);
+	TEST_RES(get_mode(pipe_1[1]), _ret == 0000);
+	TEST_RES(get_mode(pipe_2[0]), _ret == 0600);
+	TEST_RES(get_mode(pipe_2[1]), _ret == 0600);
 }
 END_TEST()
 
 FN_TEST(sockets_do_not_share_inode)
 {
-	int sock[2];
-	TEST_SUCC(socketpair(AF_UNIX, SOCK_STREAM, 0, sock));
-
 	TEST_RES(get_mode(sock[0]), _ret == 0777);
 	TEST_RES(get_mode(sock[1]), _ret == 0777);
 
@@ -81,37 +52,23 @@ END_TEST()
 
 FN_TEST(anon_inodefs_share_inode)
 {
-	int fd;
+	struct fd_mode {
+		int fd;
+		mode_t modes[2];
+	};
 
-	// eventfd
-	fd = TEST_SUCC(eventfd(0, EFD_CLOEXEC));
-	TEST_RES(get_mode(fd), _ret == 0600);
-	TEST_SUCC(set_mode(fd, 0000));
-	TEST_RES(get_mode(fd), _ret == 0000);
-	TEST_SUCC(close(fd));
+	struct fd_mode fds[] = {
+		{ epoll_fd, { 0600, 0000 } },	{ event_fd, { 0000, 0111 } },
+		{ timer_fd, { 0111, 0222 } },	{ signal_fd, { 0222, 0333 } },
+		{ inotify_fd, { 0333, 0444 } }, { pid_fd, { 0444, 0600 } },
+	};
 
-	// timerfd
-	fd = TEST_SUCC(timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC));
-	TEST_RES(get_mode(fd), _ret == 0000);
-	TEST_SUCC(set_mode(fd, 0111));
-	TEST_RES(get_mode(fd), _ret == 0111);
-	TEST_SUCC(close(fd));
-
-	// signalfd
-	sigset_t mask;
-	TEST_SUCC(sigemptyset(&mask));
-	TEST_SUCC(sigaddset(&mask, SIGUSR1));
-	fd = TEST_SUCC(signalfd(-1, &mask, SFD_CLOEXEC));
-	TEST_RES(get_mode(fd), _ret == 0111);
-	TEST_SUCC(set_mode(fd, 0222));
-	TEST_RES(get_mode(fd), _ret == 0222);
-	TEST_SUCC(close(fd));
-
-	// epollfd
-	fd = TEST_SUCC(epoll_create1(EPOLL_CLOEXEC));
-	TEST_RES(get_mode(fd), _ret == 0222);
-	TEST_SUCC(set_mode(fd, 0600));
-	TEST_RES(get_mode(fd), _ret == 0600);
-	TEST_SUCC(close(fd));
+	for (size_t i = 0; i < sizeof(fds) / sizeof(fds[0]); i++) {
+		TEST_RES(get_mode(fds[i].fd), _ret == fds[i].modes[0]);
+		TEST_SUCC(set_mode(fds[i].fd, fds[i].modes[1]));
+		TEST_RES(get_mode(fds[i].fd), _ret == fds[i].modes[1]);
+	}
 }
 END_TEST()
+
+#include "pseudo_file_cleanup.h"
