@@ -260,8 +260,8 @@ impl FileLike for TimerfdFile {
         Ok(())
     }
 
-    fn inode(&self) -> &Arc<dyn Inode> {
-        self.pseudo_path.inode()
+    fn path(&self) -> &Path {
+        &self.pseudo_path
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
