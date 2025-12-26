@@ -15,7 +15,7 @@ use crate::{
 
 /// Socket level options.
 ///
-/// The definition is from https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/socket.h.
+/// The definition is from <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/socket.h>.
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, TryFromInt, PartialEq, Eq, PartialOrd, Ord)]
 #[expect(non_camel_case_types)]

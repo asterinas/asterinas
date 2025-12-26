@@ -12,6 +12,10 @@
 
 #![no_std]
 #![deny(unsafe_code)]
+// Rustdoc does not render methods of public type aliases that reference private types,
+// so links pointing to them cannot be resolved.
+// See <https://github.com/rust-lang/rust/issues/132952>.
+#![expect(rustdoc::private_intra_doc_links)]
 
 pub mod boolean_value;
 pub mod device;

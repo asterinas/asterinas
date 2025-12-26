@@ -156,7 +156,7 @@ pub fn futex_wake_bitset(
 /// +---+---+-----------+-----------+
 ///   4   4       12          12    <== # of bits
 ///
-/// Reference: https://man7.org/linux/man-pages/man2/futex.2.html.
+/// Reference: <https://man7.org/linux/man-pages/man2/futex.2.html>.
 struct FutexWakeOpEncode {
     op: FutexWakeOp,
     /// A flag indicating that the operation will use `1 << oparg`

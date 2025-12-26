@@ -8,10 +8,7 @@ use font8x8::UnicodeFonts;
 
 /// A bitmap font.
 ///
-/// Currently it's mainly used to draw texts on the framebuffer console. See
-/// [`FramebufferConsole::set_font`].
-///
-/// [`FramebufferConsole::set_font`]: crate::FramebufferConsole::set_font
+/// Currently it's mainly used to draw texts on the framebuffer console.
 #[derive(Debug)]
 pub struct BitmapFont {
     width: usize,

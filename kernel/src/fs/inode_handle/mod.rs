@@ -309,9 +309,9 @@ pub trait FileIo: Pollable + InodeIo + Send + Sync + 'static {
 
     /// Returns whether the `read()`/`write()` operation should use and advance the offset.
     ///
-    /// If [`is_seekable`] succeeds but this method returns `false`, the offset in the `seek()`
-    /// operation will be ignored. In that case, the `seek()` operation will do nothing but
-    /// succeed.
+    /// If [`FileIo::check_seekable`] succeeds but this method returns `false`,
+    /// the offset in the `seek()` operation will be ignored.
+    /// In that case, the `seek()` operation will do nothing but succeed.
     fn is_offset_aware(&self) -> bool;
 
     // See `FileLike::mappable`.
