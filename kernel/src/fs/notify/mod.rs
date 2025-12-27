@@ -230,9 +230,7 @@ define_atomic_version_of_integer_like_type!(FsEvents, {
 /// Notifies that a file was accessed.
 pub fn on_access(file: &Arc<dyn FileLike>) {
     // TODO: Check fmode flags (FMODE_NONOTIFY, FMODE_NONOTIFY_PERM).
-    let Some(path) = file.path() else {
-        return;
-    };
+    let path = file.path();
 
     if !path
         .inode()
@@ -248,9 +246,7 @@ pub fn on_access(file: &Arc<dyn FileLike>) {
 /// Notifies that a file was modified.
 pub fn on_modify(file: &Arc<dyn FileLike>) {
     // TODO: Check fmode flags (FMODE_NONOTIFY, FMODE_NONOTIFY_PERM).
-    let Some(path) = file.path() else {
-        return;
-    };
+    let path = file.path();
 
     if !path
         .inode()
@@ -360,9 +356,7 @@ pub fn on_create(file_path: &Path, name: String) {
 /// Notifies that a file was opened.
 pub fn on_open(file: &Arc<dyn FileLike>) {
     // TODO: Check fmode flags (FMODE_NONOTIFY, FMODE_NONOTIFY_PERM).
-    let Some(path) = file.path() else {
-        return;
-    };
+    let path = file.path();
 
     if !path
         .inode()
@@ -378,21 +372,21 @@ pub fn on_open(file: &Arc<dyn FileLike>) {
 /// Notifies that a file was closed.
 pub fn on_close(file: &Arc<dyn FileLike>) {
     // TODO: Check fmode flags (FMODE_NONOTIFY, FMODE_NONOTIFY_PERM).
-    if let Some(path) = file.path() {
-        if !path
-            .inode()
-            .fs()
-            .fs_event_subscriber_stats()
-            .has_any_subscribers()
-        {
-            return;
-        }
-        let events = match file.access_mode() {
-            AccessMode::O_RDONLY => FsEvents::CLOSE_NOWRITE,
-            _ => FsEvents::CLOSE_WRITE,
-        };
-        notify_parent(path, events, path.effective_name());
+    let path = file.path();
+
+    if !path
+        .inode()
+        .fs()
+        .fs_event_subscriber_stats()
+        .has_any_subscribers()
+    {
+        return;
     }
+    let events = match file.access_mode() {
+        AccessMode::O_RDONLY => FsEvents::CLOSE_NOWRITE,
+        _ => FsEvents::CLOSE_WRITE,
+    };
+    notify_parent(path, events, path.effective_name());
 }
 
 /// Notifies that a file's attributes changed.

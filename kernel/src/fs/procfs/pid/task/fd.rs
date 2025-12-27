@@ -10,7 +10,6 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::FileDesc,
-        inode_handle::InodeHandle,
         procfs::{
             DirOps, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps,
             template::{FileOps, ProcFile, ProcFileBuilder, ProcSym},
@@ -232,13 +231,7 @@ impl SymOps for FileSymOps {
             .get_file(self.file_desc)
             .map_err(|_| Error::with_message(Errno::ENOENT, "the file does not exist"))?;
 
-        let res = if let Some(inode_handle) = file.downcast_ref::<InodeHandle>() {
-            SymbolicLink::Path(inode_handle.path().clone())
-        } else {
-            SymbolicLink::Inode(file.inode().clone())
-        };
-
-        Ok(res)
+        Ok(SymbolicLink::Path(file.path().clone()))
     }
 }
 

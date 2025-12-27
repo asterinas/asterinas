@@ -20,9 +20,7 @@ pub fn sys_ftruncate(fd: FileDesc, len: isize, ctx: &Context) -> Result<SyscallR
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
     file.resize(len as usize)?;
-    if let Some(path) = file.path() {
-        fs::notify::on_change(path);
-    }
+    fs::notify::on_change(file.path());
     Ok(SyscallReturn::Return(0))
 }
 

@@ -36,7 +36,7 @@ pub enum MountPropType {
 static ID_ALLOCATOR: Once<SpinLock<IdAlloc>> = Once::new();
 
 /// The reserved mount ID, which represents an invalid mount.
-pub static RESERVED_MOUNT_ID: usize = 0;
+static RESERVED_MOUNT_ID: usize = 0;
 
 pub(super) fn init() {
     // TODO: Make it configurable.
@@ -64,6 +64,8 @@ bitflags! {
         const NODIRATIME     = 1 << 11;
         /// Update atime relative to mtime/ctime.
         const RELATIME       = 1 << 21;
+        /// Kernel (pseudo) mount.
+        const KERNMOUNT      = 1 << 22;
         /// Always perform atime updates.
         const STRICTATIME    = 1 << 24;
     }
@@ -190,7 +192,7 @@ impl Mount {
 
     /// The internal constructor.
     ///
-    /// Root mount node has no mountpoint which other mount nodes must have mountpoint.
+    /// Root mount node has no mountpoint, while other mount nodes must have one.
     ///
     /// Here, a Mount is instantiated without an initial mountpoint,
     /// avoiding fixed mountpoint limitations. This allows the root mount node to
@@ -203,6 +205,7 @@ impl Mount {
         mnt_ns: Weak<MountNamespace>,
     ) -> Arc<Self> {
         let id = ID_ALLOCATOR.get().unwrap().lock().alloc().unwrap();
+
         Arc::new_cyclic(|weak_self| Self {
             id,
             root_dentry: Dentry::new_root(fs.root_inode()),
@@ -213,6 +216,31 @@ impl Mount {
             fs,
             mnt_ns,
             flags: AtomicPerMountFlags::new(flags),
+            this: weak_self.clone(),
+        })
+    }
+
+    /// Creates a pseudo mount node with an associated FS.
+    ///
+    /// This pseudo mount is not mounted on other mount nodes, has no parent, and does not
+    /// belong to any mount namespace.
+    ///
+    /// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/namespace.c#L6301-L6314>
+    pub(in crate::fs) fn new_pseudo(fs: Arc<dyn FileSystem>) -> Arc<Self> {
+        let id = ID_ALLOCATOR.get().unwrap().lock().alloc().unwrap();
+        let root_dentry = Dentry::new_pseudo(fs.root_inode(), |_| unreachable!());
+        root_dentry.inc_mount_count();
+
+        Arc::new_cyclic(|weak_self| Self {
+            id,
+            root_dentry: root_dentry.clone(),
+            mountpoint: RwLock::new(Some(root_dentry)),
+            parent: RwLock::new(Some(weak_self.clone())),
+            children: RwLock::new(HashMap::new()),
+            propagation: RwLock::new(MountPropType::default()),
+            fs,
+            mnt_ns: Weak::new(),
+            flags: AtomicPerMountFlags::new(PerMountFlags::KERNMOUNT),
             this: weak_self.clone(),
         })
     }
