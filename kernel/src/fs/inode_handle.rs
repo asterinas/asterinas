@@ -2,10 +2,7 @@
 
 //! Opened Inode-backed File Handle
 
-use core::{
-    fmt::Display,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use core::{fmt::Display, sync::atomic::Ordering};
 
 use aster_rights::Rights;
 
@@ -18,8 +15,8 @@ use crate::{
         path::Path,
         pipe::PipeHandle,
         utils::{
-            AccessMode, CreationFlags, DirentVisitor, FallocMode, FileRange, FlockItem, InodeType,
-            OFFSET_MAX, RangeLockItem, RangeLockType, SeekFrom, StatusFlags,
+            AccessMode, AtomicStatusFlags, CreationFlags, DirentVisitor, FallocMode, FileRange,
+            FlockItem, InodeType, OFFSET_MAX, RangeLockItem, RangeLockType, SeekFrom, StatusFlags,
         },
     },
     prelude::*,
@@ -34,7 +31,7 @@ pub struct InodeHandle {
     /// be provided by `file_io`, instead of `path`.
     file_io: Option<Box<dyn FileIo>>,
     offset: Mutex<usize>,
-    status_flags: AtomicU32,
+    status_flags: AtomicStatusFlags,
     rights: Rights,
 }
 
@@ -71,7 +68,7 @@ impl InodeHandle {
             path,
             file_io,
             offset: Mutex::new(0),
-            status_flags: AtomicU32::new(status_flags.bits()),
+            status_flags: AtomicStatusFlags::new(status_flags),
             rights,
         })
     }
@@ -360,8 +357,7 @@ impl FileLike for InodeHandle {
     }
 
     fn status_flags(&self) -> StatusFlags {
-        let bits = self.status_flags.load(Ordering::Relaxed);
-        StatusFlags::from_bits(bits).unwrap()
+        self.status_flags.load(Ordering::Relaxed)
     }
 
     fn set_status_flags(&self, new_status_flags: StatusFlags) -> Result<()> {
@@ -377,8 +373,7 @@ impl FileLike for InodeHandle {
             crate::fs::pipe::check_status_flags(new_status_flags)?;
         }
 
-        self.status_flags
-            .store(new_status_flags.bits(), Ordering::Relaxed);
+        self.status_flags.store(new_status_flags, Ordering::Relaxed);
 
         Ok(())
     }
