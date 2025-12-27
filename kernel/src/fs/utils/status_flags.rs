@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::AtomicU32;
+
+use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use bitflags::bitflags;
 
 bitflags! {
@@ -23,3 +26,21 @@ bitflags! {
         const O_PATH = 1 << 21;
     }
 }
+
+impl From<u32> for StatusFlags {
+    fn from(value: u32) -> Self {
+        Self::from_bits_truncate(value)
+    }
+}
+
+impl From<StatusFlags> for u32 {
+    fn from(value: StatusFlags) -> Self {
+        value.bits()
+    }
+}
+
+define_atomic_version_of_integer_like_type!(StatusFlags, {
+    /// An atomic version of `StatusFlags`.
+    #[derive(Debug)]
+    pub struct AtomicStatusFlags(AtomicU32);
+});
