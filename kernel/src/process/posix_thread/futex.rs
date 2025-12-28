@@ -540,7 +540,7 @@ impl FutexKey {
         if !addr.is_multiple_of(align_of::<u32>()) {
             return_errno_with_message!(
                 Errno::EINVAL,
-                "the futex word is not aligend on a four-byte boundary"
+                "the futex word is not aligned on a four-byte boundary"
             );
         }
 
