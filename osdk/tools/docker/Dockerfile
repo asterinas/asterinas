@@ -161,7 +161,7 @@ RUN mkdir -p /github/home \
 # Install cargo tools
 RUN cargo install --locked \
     cargo-binutils \
-    mdbook@0.4.52 \
+    mdbook@0.5.2 \
     typos-cli@1.39.0
 
 # Install QEMU built from the previous stages
