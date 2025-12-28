@@ -61,7 +61,7 @@
 
 # How to Contribute
 
-* [Before You Contribute]()
+* [Before You Contribute](to-contribute/README.md)
 * [Code Organization]()
 * [Style Guidelines]()
     * [General Guidelines]()
