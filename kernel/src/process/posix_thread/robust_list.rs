@@ -130,8 +130,11 @@ const FUTEX_TID_MASK: u32 = 0x3FFF_FFFF;
 /// `FUTEX_OWNER_DIED` and one waiter (if any) is woken.  
 /// If the futex is owned by another thread, the operation is canceled.
 pub fn wake_robust_futex(futex_addr: Vaddr, tid: Tid) -> Result<()> {
-    if futex_addr == 0 {
-        return_errno_with_message!(Errno::EINVAL, "invalid futext addr");
+    if !futex_addr.is_multiple_of(align_of::<u32>()) {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "the futex word is not aligned on a four-byte boundary"
+        );
     }
 
     let task = Task::current().unwrap();

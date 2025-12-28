@@ -134,18 +134,19 @@ fn wake_clear_ctid(thread_local: &ThreadLocal) {
 ///
 /// This corresponds to Linux's `exit_robust_list`. Errors are silently ignored.
 fn wake_robust_list(thread_local: &ThreadLocal, tid: Tid) {
-    let mut robust_list = thread_local.robust_list().borrow_mut();
-
-    let list_head = match *robust_list {
+    let list_head = match thread_local.robust_list().borrow_mut().take() {
         Some(robust_list_head) => robust_list_head,
         None => return,
     };
 
-    trace!("exit: wake up the rubust list: {:?}", list_head);
+    trace!("exit: wake up the robust list: {:?}", list_head);
     for futex_addr in list_head.futexes() {
-        let _ = wake_robust_futex(futex_addr, tid)
-            .inspect_err(|err| debug!("exit: cannot wake up the robust futex: {:?}", err));
+        if let Err(err) = wake_robust_futex(futex_addr, tid) {
+            debug!(
+                "exit: cannot wake robust futex at {:?}: {:?}",
+                futex_addr, err
+            );
+            return;
+        }
     }
-
-    *robust_list = None;
 }
