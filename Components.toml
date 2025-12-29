@@ -16,6 +16,7 @@ systree = { name = "aster-systree" }
 time = { name = "aster-time" }
 uart = { name = "aster-uart" }
 virtio = { name = "aster-virtio" }
+nvme = { name = "aster-nvme" }
 
 [whitelist]
 [whitelist.nix.main]
