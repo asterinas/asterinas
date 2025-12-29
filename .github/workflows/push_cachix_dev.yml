@@ -24,12 +24,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Modify configuration.nix to include xfce and podman
+        working-directory: distro/etc_nixos
         run: |
-          sed -i \
-            -e 's/^[[:space:]]*# services\.xserver\.enable = true;/  services.xserver.enable = true;/' \
-            -e 's/^[[:space:]]*# services\.xserver\.desktopManager\.xfce\.enable = true;/  services.xserver.desktopManager.xfce.enable = true;/' \
-            -e 's/^[[:space:]]*# virtualisation\.podman\.enable = true;/  virtualisation.podman.enable = true;/' \
-            distro/etc_nixos/configuration.nix
+          ./merge_nixos_config.sh configuration.nix config_for_publish_cachix.nix merged_configuration.nix
+          mv merged_configuration.nix configuration.nix
 
       - name: Build Asterinas NixOS patched packages (dry run)
         if: github.event_name == 'pull_request'
