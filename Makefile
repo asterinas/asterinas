@@ -240,6 +240,7 @@ OSDK_CRATES := \
 	kernel/comps/logger \
 	kernel/comps/mlsdisk \
 	kernel/comps/network \
+	kernel/comps/nvme \
 	kernel/comps/pci \
 	kernel/comps/softirq \
 	kernel/comps/systree \
