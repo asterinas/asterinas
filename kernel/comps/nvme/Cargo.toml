@@ -1,0 +1,27 @@
+[package]
+name = "aster-nvme"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+align_ext.workspace = true
+aster-bigtcp.workspace = true
+aster-block.workspace = true
+aster-pci.workspace = true
+aster-rights.workspace = true
+aster-util.workspace = true
+bit_field.workspace = true
+bitflags.workspace = true
+component.workspace = true
+device-id.workspace = true
+id-alloc.workspace = true
+int-to-c-enum.workspace = true
+log.workspace = true
+ostd.workspace = true
+ostd-pod.workspace = true
+spin.workspace = true
+typeflags-util.workspace = true
+zerocopy.workspace = true
+
+[lints]
+workspace = true
