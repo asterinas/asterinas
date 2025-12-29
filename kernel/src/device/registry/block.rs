@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_block::{BlockDevice, SECTOR_SIZE};
+use aster_nvme::device::block_device::NvmeBlockDevice;
 use aster_virtio::device::block::device::BlockDevice as VirtIoBlockDevice;
 use device_id::DeviceId;
 use ostd::mm::VmIo;
@@ -25,14 +26,30 @@ pub(super) fn init_in_first_kthread() {
             continue;
         }
 
-        let task_fn = move || {
-            info!("spawn the virt-io-block thread");
-            let virtio_block_device = device.downcast_ref::<VirtIoBlockDevice>().unwrap();
-            loop {
-                virtio_block_device.handle_requests();
-            }
-        };
-        ThreadOptions::new(task_fn).spawn();
+        // Spawn threads for virtio block devices
+        if device.downcast_ref::<VirtIoBlockDevice>().is_some() {
+            let device_clone = device.clone();
+            let task_fn = move || {
+                info!("spawn the virt-io-block thread");
+                let virtio_block_device = device_clone.downcast_ref::<VirtIoBlockDevice>().unwrap();
+                loop {
+                    virtio_block_device.handle_requests();
+                }
+            };
+            ThreadOptions::new(task_fn).spawn();
+        }
+        // Spawn threads for NVMe block devices
+        else if device.downcast_ref::<NvmeBlockDevice>().is_some() {
+            let device_clone = device.clone();
+            let task_fn = move || {
+                info!("spawn the nvme-block thread");
+                let nvme_block_device = device_clone.downcast_ref::<NvmeBlockDevice>().unwrap();
+                loop {
+                    nvme_block_device.handle_requests();
+                }
+            };
+            ThreadOptions::new(task_fn).spawn();
+        }
     }
 }
 
