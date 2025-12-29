@@ -18,7 +18,7 @@ use crate::{
         },
     },
     prelude::*,
-    process::{Gid, Uid},
+    process::{Gid, Uid, posix_thread::AsPosixThread},
 };
 
 mod dentry;
@@ -34,6 +34,14 @@ pub struct Path {
     mount: Arc<Mount>,
     dentry: Arc<Dentry>,
 }
+
+impl PartialEq for Path {
+    fn eq(&self, other: &Self) -> bool {
+        self.mount.id() == other.mount.id() && Arc::ptr_eq(&self.dentry, &other.dentry)
+    }
+}
+
+impl Eq for Path {}
 
 impl Path {
     /// Creates a new `Path` to represent the root directory of a file system.
@@ -119,8 +127,6 @@ impl Path {
     /// Gets the absolute path.
     ///
     /// It will resolve the mountpoint automatically.
-    //
-    // FIXME: This method needs to be aware of the current process's root path.
     pub fn abs_path(&self) -> String {
         let mut path_name = self.effective_name();
         let mut current_dir = self.this();
@@ -146,19 +152,24 @@ impl Path {
     /// If it is the root of a mount, it will go up to the mountpoint
     /// to get the name of the mountpoint recursively.
     pub fn effective_name(&self) -> String {
-        if !self.is_mount_root() {
-            return self.dentry.name();
+        let mut owned;
+        let mut current = self;
+
+        loop {
+            if !current.is_mount_root() {
+                return current.dentry.name();
+            }
+
+            let Some(parent) = current.mount.parent() else {
+                return current.dentry.name();
+            };
+            let Some(mountpoint) = current.mount.mountpoint() else {
+                return current.dentry.name();
+            };
+
+            owned = Some(Self::new(parent.upgrade().unwrap(), mountpoint));
+            current = owned.as_ref().unwrap();
         }
-
-        let Some(parent) = self.mount.parent() else {
-            return self.dentry.name();
-        };
-        let Some(mountpoint) = self.mount.mountpoint() else {
-            return self.dentry.name();
-        };
-
-        let mount_parent = Self::new(parent.upgrade().unwrap(), mountpoint);
-        mount_parent.effective_name()
     }
 
     /// Gets the effective parent of the `Path`.
@@ -170,11 +181,32 @@ impl Path {
             return Some(Self::new(self.mount.clone(), self.dentry.parent().unwrap()));
         }
 
-        let parent = self.mount.parent()?;
-        let mountpoint = self.mount.mountpoint()?;
+        let current_thread = current_thread!();
+        let current_fsinfo = current_thread.as_posix_thread()?.read_fs();
+        let current_resolver = current_fsinfo.resolver().read();
+        let root = current_resolver.root();
 
-        let mount_parent = Self::new(parent.upgrade().unwrap(), mountpoint);
-        mount_parent.effective_parent()
+        let mut owned;
+        let mut current: &Self = self;
+
+        loop {
+            if current == root {
+                return None;
+            }
+
+            let parent = current.mount.parent()?;
+            let mountpoint = current.mount.mountpoint()?;
+
+            owned = Some(Self::new(parent.upgrade().unwrap(), mountpoint));
+            current = owned.as_ref().unwrap();
+
+            if !current.is_mount_root() {
+                return Some(Self::new(
+                    current.mount.clone(),
+                    current.dentry.parent().unwrap(),
+                ));
+            }
+        }
     }
 
     /// Gets the parent `Path` within the same mount.
