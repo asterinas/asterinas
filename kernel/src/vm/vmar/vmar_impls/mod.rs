@@ -309,15 +309,15 @@ impl VmarInner {
     /// If no such region is found, return an error.
     fn alloc_free_region(&mut self, size: usize, align: usize) -> Result<Range<Vaddr>> {
         // Fast path that there's still room to the end.
-        let highest_occupied = self
-            .vm_mappings
-            .iter()
+        let mut vm_mappings_iter = self.vm_mappings.iter();
+        let stack_mapping = vm_mappings_iter.next_back().unwrap();
+        let highest_occupied = vm_mappings_iter
             .next_back()
             .map_or(VMAR_LOWEST_ADDR, |vm_mapping| vm_mapping.range().end);
         // FIXME: The up-align may overflow.
         let last_occupied_aligned = highest_occupied.align_up(align);
         if let Some(last) = last_occupied_aligned.checked_add(size)
-            && last <= VMAR_CAP_ADDR
+            && last <= stack_mapping.range().start
         {
             return Ok(last_occupied_aligned..last);
         }
