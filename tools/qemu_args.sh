@@ -178,6 +178,8 @@ else
         -device virtio-rng-pci,bus=pcie.0,addr=0x8,disable-legacy=on,disable-modern=off,rng=rng0,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
         -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES$IOMMU_DEV_EXTRA \
         -device virtio-serial-pci,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
+        -drive if=none,format=raw,id=nvme0n1,file=./test/initramfs/build/nvme0n1.img \
+        -device nvme,drive=nvme0n1,serial=nvme0n1 \
         $CONSOLE_ARGS \
         $IOMMU_EXTRA_ARGS \
     "

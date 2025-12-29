@@ -1,0 +1,19 @@
+[package]
+name = "aster-nvme"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+aster-block.workspace = true
+aster-pci.workspace = true
+aster-util.workspace = true
+component.workspace = true
+device-id.workspace = true
+io-util.workspace = true
+ostd.workspace = true
+ostd-pod.workspace = true
+spin.workspace = true
+zerocopy.workspace = true
+
+[lints]
+workspace = true
