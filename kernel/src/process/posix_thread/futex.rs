@@ -14,8 +14,6 @@ use crate::{
 
 type FutexBitSet = u32;
 
-const FUTEX_OP_MASK: u32 = 0x0000_000F;
-const FUTEX_FLAGS_MASK: u32 = 0xFFFF_FFF0;
 const FUTEX_BITSET_MATCH_ANY: FutexBitSet = 0xFFFF_FFFF;
 
 pub fn futex_wait(
@@ -44,7 +42,7 @@ pub fn futex_wait_bitset(
     pid: Option<Pid>,
 ) -> Result<()> {
     debug!(
-        "futex_wait_bitset addr: {:#x}, val: {}, bitset: {:#x}",
+        "futex_wait_bitset: addr = {:#x}, val = {}, bitset = {:#x}",
         futex_addr, futex_val, bitset
     );
 
@@ -132,7 +130,7 @@ pub fn futex_wake_bitset(
     pid: Option<Pid>,
 ) -> Result<usize> {
     debug!(
-        "futex_wake_bitset addr: {:#x}, max_count: {}, bitset: {:#x}",
+        "futex_wake_bitset: addr = {:#x}, max_count = {}, bitset = {:#x}",
         futex_addr, max_count, bitset
     );
 
@@ -325,22 +323,21 @@ pub fn futex_requeue(
     let futex_key = FutexKey::new(futex_addr, FUTEX_BITSET_MATCH_ANY, pid)?;
     let futex_new_key = FutexKey::new(futex_new_addr, FUTEX_BITSET_MATCH_ANY, pid)?;
 
-    let nwakes = {
-        let (mut futex_bucket, futex_new_bucket) = lock_bucket_pairs(&futex_key, &futex_new_key);
-        let nwakes = futex_bucket.remove_and_wake_items(&futex_key, max_nwakes);
+    let (mut futex_bucket, futex_new_bucket) = lock_bucket_pairs(&futex_key, &futex_new_key);
 
-        if let Some(mut futex_new_bucket) = futex_new_bucket {
-            futex_bucket.requeue_items_to_another_bucket(
-                &futex_key,
-                &mut futex_new_bucket,
-                &futex_new_key,
-                max_nrequeues,
-            );
-        } else {
-            futex_bucket.update_item_keys(&futex_key, &futex_new_key, max_nrequeues);
-        }
-        nwakes
-    };
+    let nwakes = futex_bucket.remove_and_wake_items(&futex_key, max_nwakes);
+
+    if let Some(mut futex_new_bucket) = futex_new_bucket {
+        futex_bucket.requeue_items_to_another_bucket(
+            &futex_key,
+            &mut futex_new_bucket,
+            &futex_new_key,
+            max_nrequeues,
+        );
+    } else {
+        futex_bucket.update_item_keys(&futex_key, &futex_new_key, max_nrequeues);
+    }
+
     Ok(nwakes)
 }
 
@@ -562,9 +559,9 @@ impl FutexKey {
     }
 }
 
-// The implementation is from occlum
-
-#[derive(PartialEq, Debug, Clone, Copy)]
+// Reference: <https://elixir.bootlin.com/linux/v6.18.2/source/include/uapi/linux/futex.h#L11>
+#[derive(PartialEq, Debug, Clone, Copy, TryFromInt)]
+#[repr(u32)]
 #[expect(non_camel_case_types)]
 pub enum FutexOp {
     FUTEX_WAIT = 0,
@@ -580,47 +577,28 @@ pub enum FutexOp {
     FUTEX_WAKE_BITSET = 10,
 }
 
-impl FutexOp {
-    pub fn from_u32(bits: u32) -> Result<FutexOp> {
-        match bits {
-            0 => Ok(FutexOp::FUTEX_WAIT),
-            1 => Ok(FutexOp::FUTEX_WAKE),
-            2 => Ok(FutexOp::FUTEX_FD),
-            3 => Ok(FutexOp::FUTEX_REQUEUE),
-            4 => Ok(FutexOp::FUTEX_CMP_REQUEUE),
-            5 => Ok(FutexOp::FUTEX_WAKE_OP),
-            6 => Ok(FutexOp::FUTEX_LOCK_PI),
-            7 => Ok(FutexOp::FUTEX_UNLOCK_PI),
-            8 => Ok(FutexOp::FUTEX_TRYLOCK_PI),
-            9 => Ok(FutexOp::FUTEX_WAIT_BITSET),
-            10 => Ok(FutexOp::FUTEX_WAKE_BITSET),
-            _ => return_errno_with_message!(Errno::EINVAL, "Unknown futex op"),
-        }
-    }
-}
-
 bitflags! {
+    // Reference: <https://elixir.bootlin.com/linux/v6.18.2/source/include/uapi/linux/futex.h#L26>
     pub struct FutexFlags : u32 {
         const FUTEX_PRIVATE         = 128;
         const FUTEX_CLOCK_REALTIME  = 256;
     }
 }
 
-impl FutexFlags {
-    pub fn from_u32(bits: u32) -> Result<FutexFlags> {
-        FutexFlags::from_bits(bits)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown futex flags"))
-    }
-}
-
 pub fn futex_op_and_flags_from_u32(bits: u32) -> Result<(FutexOp, FutexFlags)> {
+    const FUTEX_OP_MASK: u32 = 0x0000_000F;
+    const FUTEX_FLAGS_MASK: u32 = 0xFFFF_FFF0;
+
     let op = {
         let op_bits = bits & FUTEX_OP_MASK;
-        FutexOp::from_u32(op_bits)?
+        FutexOp::try_from(op_bits)?
     };
+
     let flags = {
         let flags_bits = bits & FUTEX_FLAGS_MASK;
-        FutexFlags::from_u32(flags_bits)?
+        FutexFlags::from_bits(flags_bits)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid futex flags"))?
     };
+
     Ok((op, flags))
 }
