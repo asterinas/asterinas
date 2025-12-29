@@ -143,7 +143,7 @@ fn wake_robust_list(thread_local: &ThreadLocal, tid: Tid) {
     for futex_addr in list_head.futexes() {
         if let Err(err) = wake_robust_futex(futex_addr, tid) {
             debug!(
-                "exit: cannot wake robust futex at {:?}: {:?}",
+                "exit: cannot wake the robust futex at {:#x}: {:?}",
                 futex_addr, err
             );
             return;

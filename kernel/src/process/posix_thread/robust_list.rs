@@ -140,7 +140,7 @@ pub fn wake_robust_futex(futex_addr: Vaddr, tid: Tid) -> Result<()> {
     let task = Task::current().unwrap();
     let user_space = CurrentUserSpace::new(task.as_thread_local().unwrap());
 
-    // Instantiate reader and writer pointing at the same `futex_addr`, set up
+    // Instantiate a reader and a writer pointing at the same `futex_addr`, set up
     // for the same length: the length of an `u32`.
     let (reader, writer) = user_space.reader_writer(futex_addr, size_of::<u32>())?;
 
@@ -157,12 +157,13 @@ pub fn wake_robust_futex(futex_addr: Vaddr, tid: Tid) -> Result<()> {
             (_, true) => {
                 // Wake up one waiter and break out from the loop.
                 if new_val & FUTEX_WAITERS != 0 {
-                    debug!("wake robust futex addr: {:?}", futex_addr);
+                    debug!("wake the robust futex at {:#x}", futex_addr);
                     futex_wake(futex_addr, 1, None)?;
                 }
                 break;
             }
         }
     }
+
     Ok(())
 }
