@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: asterinas/asterinas:0.17.0-20251217
-      options: --device=/dev/kvm --privileged
+      options: -v /dev:/dev --privileged
     strategy:
       matrix:
         id: ['lint', 'compile']

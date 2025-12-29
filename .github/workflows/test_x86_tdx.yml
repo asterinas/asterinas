@@ -11,7 +11,7 @@ jobs:
     runs-on: self-hosted
     container:
       image: asterinas/asterinas:0.17.0-20251217
-      options: --device=/dev/kvm --privileged
+      options: -v /dev:/dev --privileged
     strategy:
       matrix:
         include:
@@ -62,7 +62,7 @@ jobs:
       fail-fast: false
     container:
       image: ${{ matrix.image }}
-      options: --device=/dev/kvm --privileged
+      options: -v /dev:/dev --privileged
     steps:
       - uses: actions/checkout@v4
       - name: Run TDX OSDK tests
