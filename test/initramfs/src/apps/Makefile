@@ -35,6 +35,7 @@ TEST_APPS := \
 	mongoose \
 	namespace \
 	network \
+	nvme \
 	pipe \
 	prctl \
 	process \

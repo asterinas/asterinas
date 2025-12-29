@@ -36,6 +36,7 @@ members = [
     "kernel/comps/systree",
     "kernel/comps/time",
     "kernel/comps/virtio",
+    "kernel/comps/nvme",
     "kernel/libs/aster-bigtcp",
     "kernel/libs/aster-rights",
     "kernel/libs/aster-rights-proc",
@@ -94,6 +95,7 @@ aster-block = { path = "kernel/comps/block" }
 aster-cmdline = { path = "kernel/comps/cmdline" }
 aster-console = { path = "kernel/comps/console" }
 aster-framebuffer = { path = "kernel/comps/framebuffer" }
+aster-nvme = { path = "kernel/comps/nvme" }
 aster-i8042 = { path = "kernel/comps/i8042" }
 aster-input = { path = "kernel/comps/input" }
 aster-logger = { path = "kernel/comps/logger" }
