@@ -35,7 +35,7 @@ jobs:
       - name: Run a Hello World program on AsterNixOS
         uses: addnab/docker-run-action@v3
         with:
-          image: asterinas/asterinas:0.17.0-20251217
+          image: asterinas/asterinas:0.17.0-20251228
           options: --privileged -v /dev:/dev -v ${{ github.workspace }}:/root/asterinas
           run: |
             make nixos NIXOS_DISK_SIZE_IN_MB=6144 NIXOS_TEST_COMMAND='hello-asterinas' || true

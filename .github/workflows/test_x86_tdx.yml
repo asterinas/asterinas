@@ -10,7 +10,7 @@ jobs:
   integration-test:
     runs-on: self-hosted
     container:
-      image: asterinas/asterinas:0.17.0-20251217
+      image: asterinas/asterinas:0.17.0-20251228
       options: --device=/dev/kvm --privileged
     strategy:
       matrix:
@@ -58,7 +58,7 @@ jobs:
     runs-on: self-hosted
     strategy:
       matrix:
-        image: ['asterinas/asterinas:0.17.0-20251217', 'asterinas/osdk:0.17.0-20251217']
+        image: ['asterinas/asterinas:0.17.0-20251228', 'asterinas/osdk:0.17.0-20251228']
       fail-fast: false
     container:
       image: ${{ matrix.image }}
