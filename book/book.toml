@@ -1,7 +1,6 @@
 [book]
 authors = ["The Asterinas authors"]
 language = "en"
-multilingual = false
 src = "src"
 title = "The Asterinas Book"
 
