@@ -20,8 +20,13 @@ use component::{ComponentInitError, init_component};
 
 mod aster_logger;
 mod console;
+mod klog;
 
 pub use console::_print;
+pub use klog::{
+    append_log, console_level, console_off, console_on, console_set_level, init_klog, klog_capacity,
+    klog_read, klog_read_all, klog_size_unread, mark_clear, read_all_requires_cap,
+};
 
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {

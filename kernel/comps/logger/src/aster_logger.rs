@@ -17,7 +17,10 @@ impl log::Log for AsterLogger {
 
     fn log(&self, record: &Record) {
         let timestamp = Jiffies::elapsed().as_duration();
-        print_logs(record, &timestamp);
+        super::append_log(record, &timestamp);
+        if super::klog::should_print(record.level()) {
+            print_logs(record, &timestamp);
+        }
     }
 
     fn flush(&self) {}
@@ -62,5 +65,6 @@ fn print_logs(record: &Record, timestamp: &Duration) {
 }
 
 pub(super) fn init() {
+    super::klog::init_klog();
     ostd::logger::inject_logger(&LOGGER);
 }
