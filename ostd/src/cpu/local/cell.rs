@@ -160,7 +160,7 @@ impl<T: 'static + SingleInstructionAddAssign<T>> CpuLocalCell<T> {
         // SAFETY: The CPU-local object is defined in the `.cpu_local` section,
         // so the pointer to the object is valid. And the reference is never shared.
         unsafe {
-            T::add_assign(offset as *mut T, rhs);
+            T::add_assign(offset, rhs);
         }
     }
 }
@@ -177,7 +177,7 @@ impl<T: 'static + SingleInstructionSubAssign<T>> CpuLocalCell<T> {
         // SAFETY: The CPU-local object is defined in the `.cpu_local` section,
         // so the pointer to the object is valid. And the reference is never shared.
         unsafe {
-            T::sub_assign(offset as *mut T, rhs);
+            T::sub_assign(offset, rhs);
         }
     }
 }
@@ -192,7 +192,7 @@ impl<T: 'static + SingleInstructionBitAndAssign<T>> CpuLocalCell<T> {
         // SAFETY: The CPU-local object is defined in the `.cpu_local` section,
         // so the pointer to the object is valid. And the reference is never shared.
         unsafe {
-            T::bitand_assign(offset as *mut T, rhs);
+            T::bitand_assign(offset, rhs);
         }
     }
 }
@@ -207,7 +207,7 @@ impl<T: 'static + SingleInstructionBitOrAssign<T>> CpuLocalCell<T> {
         // SAFETY: The CPU-local object is defined in the `.cpu_local` section,
         // so the pointer to the object is valid. And the reference is never shared.
         unsafe {
-            T::bitor_assign(offset as *mut T, rhs);
+            T::bitor_assign(offset, rhs);
         }
     }
 }
@@ -222,7 +222,7 @@ impl<T: 'static + SingleInstructionBitXorAssign<T>> CpuLocalCell<T> {
         // SAFETY: The CPU-local object is defined in the `.cpu_local` section,
         // so the pointer to the object is valid. And the reference is never shared.
         unsafe {
-            T::bitxor_assign(offset as *mut T, rhs);
+            T::bitxor_assign(offset, rhs);
         }
     }
 }
@@ -236,7 +236,7 @@ impl<T: 'static + SingleInstructionLoad> CpuLocalCell<T> {
         let offset = self as *const _ as usize - __cpu_local_start as *const () as usize;
         // SAFETY: The CPU-local object is defined in the `.cpu_local` section,
         // so the pointer to the object is valid.
-        unsafe { T::load(offset as *const T) }
+        unsafe { T::load(offset) }
     }
 }
 
@@ -250,7 +250,7 @@ impl<T: 'static + SingleInstructionStore> CpuLocalCell<T> {
         // SAFETY: The CPU-local object is defined in the `.cpu_local` section,
         // so the pointer to the object is valid. And the reference is never shared.
         unsafe {
-            T::store(offset as *mut T, val);
+            T::store(offset, val);
         }
     }
 }

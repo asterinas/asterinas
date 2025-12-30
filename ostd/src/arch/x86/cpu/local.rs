@@ -19,7 +19,7 @@ macro_rules! impl_numeric_single_instruction_for {
     ($([$typ: ty, $inout_type: ident, $register_format: expr])*) => {$(
 
         impl SingleInstructionAddAssign<$typ> for $typ {
-            unsafe fn add_assign(offset: *mut Self, val: Self) {
+            unsafe fn add_assign(offset: usize, val: Self) {
                 // SAFETY:
                 // 1. `gs` points to the CPU-local region (global invariant).
                 // 2. `offset` represents the offset of a CPU-local variable
@@ -40,7 +40,7 @@ macro_rules! impl_numeric_single_instruction_for {
         }
 
         impl SingleInstructionSubAssign<$typ> for $typ {
-            unsafe fn sub_assign(offset: *mut Self, val: Self) {
+            unsafe fn sub_assign(offset: usize, val: Self) {
                 // SAFETY: Same as `add_assign`.
                 unsafe {
                     core::arch::asm!(
@@ -54,7 +54,7 @@ macro_rules! impl_numeric_single_instruction_for {
         }
 
         impl SingleInstructionBitAndAssign<$typ> for $typ {
-            unsafe fn bitand_assign(offset: *mut Self, val: Self) {
+            unsafe fn bitand_assign(offset: usize, val: Self) {
                 // SAFETY: Same as `add_assign`.
                 unsafe {
                     core::arch::asm!(
@@ -68,7 +68,7 @@ macro_rules! impl_numeric_single_instruction_for {
         }
 
         impl SingleInstructionBitOrAssign<$typ> for $typ {
-            unsafe fn bitor_assign(offset: *mut Self, val: Self) {
+            unsafe fn bitor_assign(offset: usize, val: Self) {
                 // SAFETY: Same as `add_assign`.
                 unsafe {
                     core::arch::asm!(
@@ -82,7 +82,7 @@ macro_rules! impl_numeric_single_instruction_for {
         }
 
         impl SingleInstructionBitXorAssign<$typ> for $typ {
-            unsafe fn bitxor_assign(offset: *mut Self, val: Self) {
+            unsafe fn bitxor_assign(offset: usize, val: Self) {
                 // SAFETY: Same as `add_assign`.
                 unsafe {
                     core::arch::asm!(
@@ -96,7 +96,7 @@ macro_rules! impl_numeric_single_instruction_for {
         }
 
         impl SingleInstructionLoad for $typ {
-            unsafe fn load(offset: *const Self) -> Self {
+            unsafe fn load(offset: usize) -> Self {
                 let val: Self;
                 // SAFETY: Same as `add_assign`.
                 unsafe {
@@ -112,7 +112,7 @@ macro_rules! impl_numeric_single_instruction_for {
         }
 
         impl SingleInstructionStore for $typ {
-            unsafe fn store(offset: *mut Self, val: Self) {
+            unsafe fn store(offset: usize, val: Self) {
                 // SAFETY: Same as `add_assign`.
                 unsafe {
                     core::arch::asm!(
@@ -145,7 +145,7 @@ macro_rules! impl_generic_single_instruction_for {
     ($([<$gen_type:ident $(, $more_gen_type:ident)*>, $typ:ty])*) => {$(
 
         impl<$gen_type $(, $more_gen_type)*> SingleInstructionLoad for $typ {
-            unsafe fn load(offset: *const Self) -> Self {
+            unsafe fn load(offset: usize) -> Self {
                 let val: Self;
                 // SAFETY: Same as `add_assign`.
                 unsafe {
@@ -161,7 +161,7 @@ macro_rules! impl_generic_single_instruction_for {
         }
 
         impl<$gen_type $(, $more_gen_type)*> SingleInstructionStore for $typ {
-            unsafe fn store(offset: *mut Self, val: Self) {
+            unsafe fn store(offset: usize, val: Self) {
                 // SAFETY: Same as `add_assign`.
                 unsafe {
                     core::arch::asm!(
@@ -187,7 +187,7 @@ impl_generic_single_instruction_for!(
 // Rust reference: <https://doc.rust-lang.org/reference/types/boolean.html>.
 
 impl SingleInstructionLoad for bool {
-    unsafe fn load(offset: *const Self) -> Self {
+    unsafe fn load(offset: usize) -> Self {
         let val: u8;
         // SAFETY: Same as `add_assign`.
         unsafe {
@@ -204,7 +204,7 @@ impl SingleInstructionLoad for bool {
 }
 
 impl SingleInstructionStore for bool {
-    unsafe fn store(offset: *mut Self, val: Self) {
+    unsafe fn store(offset: usize, val: Self) {
         let val: u8 = if val { 1 } else { 0 };
         // SAFETY: Same as `add_assign`.
         unsafe {
