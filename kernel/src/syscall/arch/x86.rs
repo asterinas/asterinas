@@ -146,6 +146,10 @@ use super::{
     setsockopt::sys_setsockopt,
     setuid::sys_setuid,
     setxattr::{sys_fsetxattr, sys_lsetxattr, sys_setxattr},
+    shmat::sys_shmat,
+    shmctl::sys_shmctl,
+    shmdt::sys_shmdt,
+    shmget::sys_shmget,
     shutdown::sys_shutdown,
     sigaltstack::sys_sigaltstack,
     signalfd::{sys_signalfd, sys_signalfd4},
@@ -205,6 +209,9 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_MSYNC = 26             => sys_msync(args[..3]);
     SYS_SCHED_YIELD = 24       => sys_sched_yield(args[..0]);
     SYS_MADVISE = 28           => sys_madvise(args[..3]);
+    SYS_SHMGET = 29            => sys_shmget(args[..3]);
+    SYS_SHMAT = 30             => sys_shmat(args[..3]);
+    SHM_SHMCTL = 31             => sys_shmctl(args[..3]);
     SYS_DUP = 32               => sys_dup(args[..1]);
     SYS_DUP2 = 33              => sys_dup2(args[..2]);
     SYS_PAUSE = 34             => sys_pause(args[..0]);
@@ -240,6 +247,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SEMGET = 64            => sys_semget(args[..3]);
     SYS_SEMOP = 65             => sys_semop(args[..3]);
     SYS_SEMCTL = 66            => sys_semctl(args[..4]);
+    SYS_SHMDT = 67             => sys_shmdt(args[..1]);
     SYS_FCNTL = 72             => sys_fcntl(args[..3]);
     SYS_FLOCK = 73             => sys_flock(args[..2]);
     SYS_FSYNC = 74             => sys_fsync(args[..1]);
