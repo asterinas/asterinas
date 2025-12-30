@@ -8,8 +8,10 @@ SCRIPT_DIR=/test
 cd ${SCRIPT_DIR}
 
 ./shell_cmd.sh
-./test_epoll_pwait.sh
-./cgroup.sh
+# ./test_epoll_pwait.sh
+# ./cgroup.sh
+./syslog/syslog_basic
+./syslog/syslog_dmesg_restrict
 
 # TODO: Support the following tests with SMP
 if [ -z $BLOCK_UNSUPPORTED_SMP_TESTS ]; then

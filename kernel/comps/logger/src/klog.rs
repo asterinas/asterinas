@@ -1,15 +1,16 @@
+use alloc::sync::Arc;
 use core::{
     fmt::{self, Write},
     sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
 
-use alloc::sync::Arc;
-
 use log::{Level, LevelFilter, Record};
+use ostd::{
+    mm::VmIo,
+    sync::{SpinLock, WaitQueue},
+};
 use ring_buffer::RingBuffer;
-use ostd::mm::VmIo;
-use ostd::sync::{SpinLock, WaitQueue};
 
 const LOG_BUFFER_CAPACITY: usize = 64 * 1024;
 const FORMAT_BUF_CAPACITY: usize = 512;
@@ -142,7 +143,8 @@ impl KernelLog {
                 self.bump_clear_tail(&mut buf);
             }
 
-            buf.push_slice(bytes).expect("push_slice must succeed after drop");
+            buf.push_slice(bytes)
+                .expect("push_slice must succeed after drop");
         }
 
         // Wake up blocked readers once new data arrives.
@@ -166,10 +168,8 @@ impl KernelLog {
                 if available == 0 {
                     break;
                 }
-                let take = core::cmp::min(
-                    core::cmp::min(dst.len() - copied, COPY_CHUNK),
-                    available,
-                );
+                let take =
+                    core::cmp::min(core::cmp::min(dst.len() - copied, COPY_CHUNK), available);
                 copy_from(&buf, buf.head().0, &mut dst[copied..copied + take]);
                 let head = buf.head();
                 buf.advance_head(head, take);
@@ -273,12 +273,8 @@ fn copy_from(rb: &RingBuffer<u8>, start: usize, dst: &mut [u8]) {
     let offset = start & (cap - 1);
     if offset + dst.len() > cap {
         let first = cap - offset;
-        rb.segment()
-            .read_slice(offset, &mut dst[..first])
-            .unwrap();
-        rb.segment()
-            .read_slice(0, &mut dst[first..])
-            .unwrap();
+        rb.segment().read_slice(offset, &mut dst[..first]).unwrap();
+        rb.segment().read_slice(0, &mut dst[first..]).unwrap();
     } else {
         rb.segment().read_slice(offset, dst).unwrap();
     }
@@ -317,4 +313,3 @@ impl Write for FixedBuf<'_> {
         Ok(())
     }
 }
-

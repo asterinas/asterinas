@@ -8,11 +8,7 @@ use log::LevelFilter;
 use ostd::mm::VmReader;
 
 use super::SyscallReturn;
-use crate::{
-    prelude::*,
-    process::credentials::capabilities::CapSet,
-    util::MultiWrite,
-};
+use crate::{prelude::*, process::credentials::capabilities::CapSet, util::MultiWrite};
 
 const SYSLOG_ACTION_CLOSE: i32 = 0;
 const SYSLOG_ACTION_OPEN: i32 = 1;
@@ -33,13 +29,17 @@ pub fn sys_syslog(action: i32, buf: Vaddr, len: usize, ctx: &Context) -> Result<
         SYSLOG_ACTION_CLOSE | SYSLOG_ACTION_OPEN => Ok(SyscallReturn::Return(0)),
         SYSLOG_ACTION_READ => {
             ensure_cap(ctx)?;
-            Ok(SyscallReturn::Return(read_destructive(buf, len, ctx)? as isize))
+            Ok(SyscallReturn::Return(
+                read_destructive(buf, len, ctx)? as isize
+            ))
         }
         SYSLOG_ACTION_READ_ALL => {
             if read_all_requires_cap() {
                 ensure_cap(ctx)?;
             }
-            Ok(SyscallReturn::Return(read_all(buf, len, ctx, false)? as isize))
+            Ok(SyscallReturn::Return(
+                read_all(buf, len, ctx, false)? as isize
+            ))
         }
         SYSLOG_ACTION_READ_CLEAR => {
             ensure_cap(ctx)?;
@@ -175,4 +175,3 @@ fn level_to_raw(level: LevelFilter) -> u8 {
         LevelFilter::Trace => 8,
     }
 }
-

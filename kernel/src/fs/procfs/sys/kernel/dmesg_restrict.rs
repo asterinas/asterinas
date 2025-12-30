@@ -67,4 +67,3 @@ impl FileOps for DmesgRestrictFileOps {
 }
 
 const DMESG_RESTRICT_MAX_INPUT: usize = 16;
-
