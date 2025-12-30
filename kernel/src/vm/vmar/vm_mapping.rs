@@ -21,9 +21,11 @@ use super::{RssType, interval_set::Interval, util::is_intersected, vmar_impls::R
 use crate::{
     fs::utils::Inode,
     prelude::*,
+    process::Process,
     thread::exception::PageFaultInfo,
     vm::{
         perms::VmPerms,
+        shared_mem::SHM_OBJ_MANAGER,
         vmo::{CommitFlags, Vmo, VmoCommitError},
     },
 };
@@ -67,6 +69,8 @@ pub struct VmMapping {
     /// And the `mapped_mem` field must be the page cache of the inode, i.e.
     /// [`MappedMemory::Vmo`].
     inode: Option<Arc<dyn Inode>>,
+    /// The shared memory ID if the mapping is a shared memory mapping.
+    shared_mem_id: Option<u64>,
     /// Whether the mapping is shared.
     ///
     /// The updates to a shared mapping are visible among processes, or carried
@@ -104,6 +108,7 @@ impl VmMapping {
             map_to_addr,
             mapped_mem,
             inode,
+            shared_mem_id: None,
             is_shared,
             handle_page_faults_around,
             perms,
@@ -142,6 +147,16 @@ impl VmMapping {
     /// Returns the permissions of pages in the mapping.
     pub fn perms(&self) -> VmPerms {
         self.perms
+    }
+
+    /// Sets the shared memory ID if the mapping is a shared memory mapping.
+    pub fn set_shared_mem(&mut self, shmid: Option<u64>) {
+        self.shared_mem_id = shmid;
+    }
+
+    /// Returns the shared memory ID if the mapping is a shared memory mapping.
+    pub fn shared_mem_id(&self) -> Option<u64> {
+        self.shared_mem_id
     }
 
     /// Returns the inode of the file that backs the mapping.
@@ -714,9 +729,9 @@ pub(super) enum MappedMemory {
     Anonymous,
     /// Memory in a [`Vmo`].
     ///
-    /// These pages are associated with regular files that are backed by the page cache. On-demand
-    /// population is possible by enabling page fault handlers to allocate pages and read the page
-    /// content from the disk.
+    /// These pages are associated with regular files or shared memory objects that are backed by
+    /// kernel-managed memory such as the page cache. On-demand population is possible by enabling
+    /// handlers to allocate pages and read the page content from the disk or shared memory.
     Vmo(MappedVmo),
     /// Device memory.
     ///
@@ -746,11 +761,18 @@ pub(super) struct MappedVmo {
     /// Whether the VMO's writable mappings need to be tracked, and the
     /// mapping is writable to the VMO.
     is_writable_tracked: bool,
+    /// Shared memory ID if this mapping comes from shmat.
+    shared_mem_id: Option<u64>,
 }
 
 impl MappedVmo {
     /// Creates a `MappedVmo` used for the mapping.
-    pub(super) fn new(vmo: Arc<Vmo>, offset: usize, is_writable_tracked: bool) -> Result<Self> {
+    pub(super) fn new(
+        vmo: Arc<Vmo>,
+        offset: usize,
+        is_writable_tracked: bool,
+        shared_mem_id: Option<u64>,
+    ) -> Result<Self> {
         if is_writable_tracked {
             vmo.writable_mapping_status().map()?;
         }
@@ -759,6 +781,7 @@ impl MappedVmo {
             vmo,
             offset,
             is_writable_tracked,
+            shared_mem_id,
         })
     }
 
@@ -833,11 +856,51 @@ impl MappedVmo {
             self.vmo.writable_mapping_status().increment();
         }
 
+        if let Some(shmid) = self.shared_mem_id
+            && let Err(err) = Self::attach_shared(shmid)
+        {
+            warn!("failed to attach shared mapping on dup: {:?}", err);
+        }
+
         Self {
             vmo: self.vmo.clone(),
             offset,
             is_writable_tracked: self.is_writable_tracked,
+            shared_mem_id: self.shared_mem_id,
         }
+    }
+
+    /// Detaches from the underlying shared memory object if needed.
+    pub fn detach_shared_mapping(&self) -> Result<()> {
+        let Some(shmid) = self.shared_mem_id else {
+            return Ok(());
+        };
+        let manager = SHM_OBJ_MANAGER.get().ok_or(Error::new(Errno::EINVAL))?;
+        let shm_obj = {
+            let guard = manager.read();
+            guard
+                .get_shm_obj(shmid)
+                .ok_or_else(|| Error::new(Errno::EINVAL))?
+        };
+        let pid = Process::current().map(|p| p.pid()).unwrap_or(0);
+        shm_obj.set_detached(pid);
+        if shm_obj.should_be_deleted() {
+            manager.write().try_delete_shm_obj(shmid)?;
+        }
+        Ok(())
+    }
+
+    fn attach_shared(shmid: u64) -> Result<()> {
+        let manager = SHM_OBJ_MANAGER.get().ok_or(Error::new(Errno::EINVAL))?;
+        let shm_obj = {
+            let guard = manager.read();
+            guard
+                .get_shm_obj(shmid)
+                .ok_or_else(|| Error::new(Errno::EINVAL))?
+        };
+        let pid: u32 = Process::current().map(|p| p.pid()).unwrap_or(0);
+        shm_obj.set_attached(pid);
+        Ok(())
     }
 }
 
@@ -846,6 +909,8 @@ impl Drop for MappedVmo {
         if self.is_writable_tracked {
             self.vmo.writable_mapping_status().decrement();
         }
+        // Best-effort detach; ignore errors to avoid panics in Drop.
+        let _ = self.detach_shared_mapping();
     }
 }
 
