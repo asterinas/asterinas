@@ -6,7 +6,7 @@ use super::{MappedMemory, MappedVmo, RssDelta, VmMapping, Vmar};
 use crate::{
     fs::{file_handle::Mappable, ramfs::memfd::MemfdInode},
     prelude::*,
-    vm::{perms::VmPerms, vmo::Vmo},
+    vm::{perms::VmPerms, shared_mem::AttachedShm, vmo::Vmo},
 };
 
 impl Vmar {
@@ -59,6 +59,8 @@ pub struct VmarMapOptions<'a> {
     can_overwrite: bool,
     // Whether the mapping is mapped with `MAP_SHARED`
     is_shared: bool,
+    // Optional shared memory attachment identifier for `shmat` segments.
+    attached_shm: Option<AttachedShm>,
     // Whether the mapping needs to handle surrounding pages when handling page fault.
     handle_page_faults_around: bool,
 }
@@ -79,6 +81,7 @@ impl<'a> VmarMapOptions<'a> {
             align: PAGE_SIZE,
             can_overwrite: false,
             is_shared: false,
+            attached_shm: None,
             handle_page_faults_around: false,
         }
     }
@@ -181,6 +184,12 @@ impl<'a> VmarMapOptions<'a> {
         self
     }
 
+    /// Sets the shared memory attachment identifier for `shmat` mappings.
+    pub fn attached_shm(mut self, attached_shm: AttachedShm) -> Self {
+        self.attached_shm = Some(attached_shm);
+        self
+    }
+
     /// Sets the mapping to handle surrounding pages when handling page fault.
     pub fn handle_page_faults_around(mut self) -> Self {
         self.handle_page_faults_around = true;
@@ -232,6 +241,7 @@ impl<'a> VmarMapOptions<'a> {
             align,
             can_overwrite,
             is_shared,
+            attached_shm,
             handle_page_faults_around,
         } = self;
 
@@ -300,6 +310,7 @@ impl<'a> VmarMapOptions<'a> {
                         vmo.unwrap(),
                         vmo_offset,
                         is_writable_tracked,
+                        attached_shm,
                     )?);
                     (mapped_mem, Some(inode), None)
                 }
@@ -307,7 +318,7 @@ impl<'a> VmarMapOptions<'a> {
             }
         } else if let Some(vmo) = vmo {
             (
-                MappedMemory::Vmo(MappedVmo::new(vmo, vmo_offset, false)?),
+                MappedMemory::Vmo(MappedVmo::new(vmo, vmo_offset, false, attached_shm)?),
                 None,
                 None,
             )
