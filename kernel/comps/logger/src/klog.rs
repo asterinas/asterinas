@@ -93,6 +93,14 @@ pub fn read_all_requires_cap() -> bool {
     klog().dmesg_restrict()
 }
 
+pub fn dmesg_restrict_get() -> bool {
+    klog().dmesg_restrict.load(Ordering::Relaxed)
+}
+
+pub fn dmesg_restrict_set(val: bool) {
+    klog().dmesg_restrict.store(val, Ordering::Relaxed);
+}
+
 struct KernelLog {
     buffer: SpinLock<RingBuffer<u8>>,
     clear_tail: SpinLock<usize>,
