@@ -2,7 +2,7 @@
 
 use aster_logger::{
     console_off, console_on, console_set_level, klog_capacity, klog_read, klog_read_all,
-    klog_size_unread, mark_clear, read_all_requires_cap,
+    klog_size_unread, klog_wait_nonempty, mark_clear, read_all_requires_cap,
 };
 use log::LevelFilter;
 use ostd::mm::VmReader;
@@ -11,6 +11,7 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::credentials::capabilities::CapSet,
+    util::MultiWrite,
 };
 
 const SYSLOG_ACTION_CLOSE: i32 = 0;
@@ -103,9 +104,18 @@ fn read_destructive(buf: Vaddr, len: usize, ctx: &Context) -> Result<usize> {
     let mut writer = user_space.writer(buf, len)?;
 
     while copied < len {
+        // Block until at least one byte is available, then drain non-blocking.
+        if copied == 0 {
+            klog_wait_nonempty();
+        }
         let to_take = core::cmp::min(len - copied, tmp.len());
         let n = klog_read(&mut tmp[..to_take]);
         if n == 0 {
+            // If we raced with another reader after waiting, wait again for the first byte.
+            if copied == 0 {
+                // Retry waiting for data.
+                continue;
+            }
             break;
         }
         let mut reader = VmReader::from(&tmp[..n]);

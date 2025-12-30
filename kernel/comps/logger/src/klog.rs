@@ -8,8 +8,8 @@ use alloc::sync::Arc;
 
 use log::{Level, LevelFilter, Record};
 use ring_buffer::RingBuffer;
-use ostd::sync::SpinLock;
 use ostd::mm::VmIo;
+use ostd::sync::{SpinLock, WaitQueue};
 
 const LOG_BUFFER_CAPACITY: usize = 64 * 1024;
 const FORMAT_BUF_CAPACITY: usize = 512;
@@ -99,6 +99,7 @@ struct KernelLog {
     dmesg_restrict: AtomicBool,
     console_level: SpinLock<LevelFilter>,
     saved_console_level: SpinLock<Option<LevelFilter>>,
+    waitq: WaitQueue,
 }
 
 impl KernelLog {
@@ -110,28 +111,34 @@ impl KernelLog {
             dmesg_restrict: AtomicBool::new(false),
             console_level: SpinLock::new(LevelFilter::Info),
             saved_console_level: SpinLock::new(None),
+            waitq: WaitQueue::new(),
         }
     }
 
     fn append(&self, mut bytes: &[u8]) {
-        let mut buf = self.buffer.lock();
-        let cap = buf.capacity();
+        {
+            let mut buf = self.buffer.lock();
+            let cap = buf.capacity();
 
-        if bytes.len() > cap {
-            bytes = &bytes[bytes.len() - cap..];
-            buf.reset_head();
+            if bytes.len() > cap {
+                bytes = &bytes[bytes.len() - cap..];
+                buf.reset_head();
+            }
+
+            // Drop oldest data if needed.
+            let free = buf.free_len();
+            let need_drop = bytes.len().saturating_sub(free);
+            if need_drop > 0 {
+                let head = buf.head();
+                buf.advance_head(head, need_drop);
+                self.bump_clear_tail(&mut buf);
+            }
+
+            buf.push_slice(bytes).expect("push_slice must succeed after drop");
         }
 
-        // Drop oldest data if needed.
-        let free = buf.free_len();
-        let need_drop = bytes.len().saturating_sub(free);
-        if need_drop > 0 {
-            let head = buf.head();
-            buf.advance_head(head, need_drop);
-            self.bump_clear_tail(&mut buf);
-        }
-
-        buf.push_slice(bytes).expect("push_slice must succeed after drop");
+        // Wake up blocked readers once new data arrives.
+        self.waitq.wake_all();
     }
 
     fn bump_clear_tail(&self, buf: &mut RingBuffer<u8>) {
@@ -242,6 +249,15 @@ impl KernelLog {
             LevelFilter::Trace => true,
         }
     }
+
+    fn wait_nonempty(&self) {
+        self.waitq
+            .wait_until(|| (self.buffer.lock().len() > 0).then_some(()));
+    }
+}
+
+pub fn klog_wait_nonempty() {
+    klog().wait_nonempty();
 }
 
 fn copy_from(rb: &RingBuffer<u8>, start: usize, dst: &mut [u8]) {
