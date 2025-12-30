@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 // FIXME: The resource limits should be respected by the corresponding subsystems of the kernel.
 
-#![expect(non_camel_case_types)]
-
 use core::{
     array,
     sync::atomic::{AtomicU64, Ordering},
 };
 
 use super::process_vm::{INIT_STACK_SIZE, USER_HEAP_SIZE_LIMIT};
-use crate::prelude::*;
+use crate::{
+    prelude::*,
+    process::{UserNamespace, credentials::capabilities::CapSet},
+};
 
 // Constants for the boot-time rlimit defaults
 // See https://github.com/torvalds/linux/blob/fac04efc5c793dccbd07e2d59af9f90b7fc0dca4/include/asm-generic/resource.h#L11
@@ -34,7 +35,7 @@ pub struct ResourceLimits {
 }
 
 impl ResourceLimits {
-    // Get a reference to a specific resource limit
+    /// Returns a reference to a specific resource limit.
     pub fn get_rlimit(&self, resource: ResourceType) -> &RLimit64 {
         &self.rlimits[resource as usize]
     }
@@ -44,38 +45,32 @@ impl Default for ResourceLimits {
     fn default() -> Self {
         let mut rlimits: [RLimit64; RLIMIT_COUNT] = array::from_fn(|_| RLimit64::default());
 
-        // Setting the resource limits with predefined values
-        rlimits[ResourceType::RLIMIT_CPU as usize] =
-            RLimit64::new(RLIM_INFINITY, RLIM_INFINITY).unwrap();
-        rlimits[ResourceType::RLIMIT_FSIZE as usize] =
-            RLimit64::new(RLIM_INFINITY, RLIM_INFINITY).unwrap();
+        // Sets the resource limits with predefined values
+        rlimits[ResourceType::RLIMIT_CPU as usize] = RLimit64::new(RLIM_INFINITY, RLIM_INFINITY);
+        rlimits[ResourceType::RLIMIT_FSIZE as usize] = RLimit64::new(RLIM_INFINITY, RLIM_INFINITY);
         rlimits[ResourceType::RLIMIT_DATA as usize] =
-            RLimit64::new(USER_HEAP_SIZE_LIMIT as u64, RLIM_INFINITY).unwrap();
+            RLimit64::new(USER_HEAP_SIZE_LIMIT as u64, RLIM_INFINITY);
         rlimits[ResourceType::RLIMIT_STACK as usize] =
-            RLimit64::new(INIT_STACK_SIZE as u64, RLIM_INFINITY).unwrap();
-        rlimits[ResourceType::RLIMIT_CORE as usize] = RLimit64::new(0, RLIM_INFINITY).unwrap();
-        rlimits[ResourceType::RLIMIT_RSS as usize] =
-            RLimit64::new(RLIM_INFINITY, RLIM_INFINITY).unwrap();
+            RLimit64::new(INIT_STACK_SIZE as u64, RLIM_INFINITY);
+        rlimits[ResourceType::RLIMIT_CORE as usize] = RLimit64::new(0, RLIM_INFINITY);
+        rlimits[ResourceType::RLIMIT_RSS as usize] = RLimit64::new(RLIM_INFINITY, RLIM_INFINITY);
         rlimits[ResourceType::RLIMIT_NPROC as usize] =
-            RLimit64::new(INIT_RLIMIT_NPROC, INIT_RLIMIT_NPROC).unwrap();
+            RLimit64::new(INIT_RLIMIT_NPROC, INIT_RLIMIT_NPROC);
         rlimits[ResourceType::RLIMIT_NOFILE as usize] =
-            RLimit64::new(INIT_RLIMIT_NOFILE_CUR, INIT_RLIMIT_NOFILE_MAX).unwrap();
+            RLimit64::new(INIT_RLIMIT_NOFILE_CUR, INIT_RLIMIT_NOFILE_MAX);
         rlimits[ResourceType::RLIMIT_MEMLOCK as usize] =
-            RLimit64::new(INIT_RLIMIT_MEMLOCK, INIT_RLIMIT_MEMLOCK).unwrap();
-        rlimits[ResourceType::RLIMIT_AS as usize] =
-            RLimit64::new(RLIM_INFINITY, RLIM_INFINITY).unwrap();
-        rlimits[ResourceType::RLIMIT_LOCKS as usize] =
-            RLimit64::new(RLIM_INFINITY, RLIM_INFINITY).unwrap();
+            RLimit64::new(INIT_RLIMIT_MEMLOCK, INIT_RLIMIT_MEMLOCK);
+        rlimits[ResourceType::RLIMIT_AS as usize] = RLimit64::new(RLIM_INFINITY, RLIM_INFINITY);
+        rlimits[ResourceType::RLIMIT_LOCKS as usize] = RLimit64::new(RLIM_INFINITY, RLIM_INFINITY);
         rlimits[ResourceType::RLIMIT_SIGPENDING as usize] =
-            RLimit64::new(INIT_RLIMIT_SIGPENDING, INIT_RLIMIT_SIGPENDING).unwrap();
+            RLimit64::new(INIT_RLIMIT_SIGPENDING, INIT_RLIMIT_SIGPENDING);
         rlimits[ResourceType::RLIMIT_MSGQUEUE as usize] =
-            RLimit64::new(INIT_RLIMIT_MSGQUEUE, INIT_RLIMIT_MSGQUEUE).unwrap();
+            RLimit64::new(INIT_RLIMIT_MSGQUEUE, INIT_RLIMIT_MSGQUEUE);
         rlimits[ResourceType::RLIMIT_NICE as usize] =
-            RLimit64::new(INIT_RLIMIT_NICE, INIT_RLIMIT_NICE).unwrap();
+            RLimit64::new(INIT_RLIMIT_NICE, INIT_RLIMIT_NICE);
         rlimits[ResourceType::RLIMIT_RTPRIO as usize] =
-            RLimit64::new(INIT_RLIMIT_RTPRIO, INIT_RLIMIT_RTPRIO).unwrap();
-        rlimits[ResourceType::RLIMIT_RTTIME as usize] =
-            RLimit64::new(RLIM_INFINITY, RLIM_INFINITY).unwrap();
+            RLimit64::new(INIT_RLIMIT_RTPRIO, INIT_RLIMIT_RTPRIO);
+        rlimits[ResourceType::RLIMIT_RTTIME as usize] = RLimit64::new(RLIM_INFINITY, RLIM_INFINITY);
 
         ResourceLimits { rlimits }
     }
@@ -83,6 +78,7 @@ impl Default for ResourceLimits {
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
+#[expect(non_camel_case_types)]
 pub enum ResourceType {
     RLIMIT_CPU = 0,
     RLIMIT_FSIZE = 1,
@@ -102,7 +98,7 @@ pub enum ResourceType {
     RLIMIT_RTTIME = 15,
 }
 
-pub const RLIMIT_COUNT: usize = 16;
+const RLIMIT_COUNT: usize = 16;
 
 #[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
@@ -112,7 +108,6 @@ pub struct RawRLimit64 {
 }
 
 #[derive(Debug)]
-#[repr(C)]
 pub struct RLimit64 {
     cur: AtomicU64,
     max: AtomicU64,
@@ -120,47 +115,68 @@ pub struct RLimit64 {
 }
 
 impl RLimit64 {
-    pub fn new(cur_: u64, max_: u64) -> Result<Self> {
-        if cur_ > max_ {
-            return_errno_with_message!(Errno::EINVAL, "invalid rlimit");
-        }
-        Ok(Self {
-            cur: AtomicU64::new(cur_),
-            max: AtomicU64::new(max_),
+    #[track_caller]
+    pub(self) const fn new(cur: u64, max: u64) -> Self {
+        assert!(cur <= max, "the current rlimit exceeds the max rlimit");
+        Self {
+            cur: AtomicU64::new(cur),
+            max: AtomicU64::new(max),
             lock: SpinLock::new(()),
-        })
+        }
     }
 
-    /// Gets the current rlimit without synchronization.
+    /// Returns the current rlimit without synchronization.
     pub fn get_cur(&self) -> u64 {
         self.cur.load(Ordering::Relaxed)
     }
 
-    /// Gets the max rlimit without synchronization.
-    pub fn get_max(&self) -> u64 {
+    /// Returns the max rlimit without synchronization.
+    fn get_max(&self) -> u64 {
         self.max.load(Ordering::Relaxed)
     }
 
     /// Gets the rlimit with synchronization.
     ///
     /// Only called when handling the `getrlimit` or `prlimit` syscall.
-    pub fn get_cur_and_max(&self) -> (u64, u64) {
+    pub fn get_raw_rlimit(&self) -> RawRLimit64 {
         let _guard = self.lock.lock();
-        (self.get_cur(), self.get_max())
+        RawRLimit64 {
+            cur: self.cur.load(Ordering::Relaxed),
+            max: self.max.load(Ordering::Relaxed),
+        }
     }
 
-    /// Sets the rlimit with synchronization.
+    /// Sets the rlimit with synchronization and returns the old value.
     ///
-    /// Only called when handling the `setrlimit` or `prlimit` syscall
-    /// or during init process creation.
-    pub fn set_cur_and_max(&self, new_cur: u64, new_max: u64) -> Result<()> {
-        if new_cur > new_max {
-            return_errno_with_message!(Errno::EINVAL, "invalid rlimit");
+    /// Only called when handling the `setrlimit` or `prlimit` syscall.
+    pub fn set_raw_rlimit(&self, new: RawRLimit64, ctx: &Context) -> Result<RawRLimit64> {
+        if new.cur > new.max {
+            return_errno_with_message!(Errno::EINVAL, "the current rlimit exceeds the max rlimit");
         }
         let _guard = self.lock.lock();
-        self.cur.store(new_cur, Ordering::Relaxed);
-        self.max.store(new_max, Ordering::Relaxed);
-        Ok(())
+        if new.max > self.get_max() {
+            let init_user_ns = UserNamespace::get_init_singleton();
+            init_user_ns.check_cap(CapSet::SYS_RESOURCE, ctx.posix_thread)?;
+        }
+        let old = RawRLimit64 {
+            cur: self.cur.load(Ordering::Relaxed),
+            max: self.max.load(Ordering::Relaxed),
+        };
+        self.set_raw_rlimit_unchecked(new);
+        Ok(old)
+    }
+
+    /// Sets the rlimit _without_ synchronization and permission check.
+    ///
+    /// Only called during init process creation.
+    #[track_caller]
+    pub(self) fn set_raw_rlimit_unchecked(&self, new: RawRLimit64) {
+        assert!(
+            new.cur <= new.max,
+            "the current rlimit exceeds the max rlimit"
+        );
+        self.cur.store(new.cur, Ordering::Relaxed);
+        self.max.store(new.max, Ordering::Relaxed);
     }
 }
 
@@ -176,10 +192,10 @@ impl Default for RLimit64 {
 
 impl Clone for RLimit64 {
     fn clone(&self) -> Self {
-        let (cur, max) = self.get_cur_and_max();
+        let raw_limit = self.get_raw_rlimit();
         Self {
-            cur: AtomicU64::new(cur),
-            max: AtomicU64::new(max),
+            cur: AtomicU64::new(raw_limit.cur),
+            max: AtomicU64::new(raw_limit.max),
             lock: SpinLock::new(()),
         }
     }
@@ -196,13 +212,15 @@ pub(super) fn new_resource_limits_for_init() -> ResourceLimits {
     // and other factors.
     // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/kernel/fork.c#L761>
     let max_threads: u64 = 100000;
+    let raw_rlimit = RawRLimit64 {
+        cur: max_threads / 2,
+        max: max_threads / 2,
+    };
     resource_limits
         .get_rlimit(ResourceType::RLIMIT_NPROC)
-        .set_cur_and_max(max_threads / 2, max_threads / 2)
-        .unwrap();
+        .set_raw_rlimit_unchecked(raw_rlimit);
     resource_limits
         .get_rlimit(ResourceType::RLIMIT_SIGPENDING)
-        .set_cur_and_max(max_threads / 2, max_threads / 2)
-        .unwrap();
+        .set_raw_rlimit_unchecked(raw_rlimit);
     resource_limits
 }
