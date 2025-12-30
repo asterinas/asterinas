@@ -18,6 +18,7 @@ use crate::{
 };
 
 mod cap_last_cap;
+mod dmesg_restrict;
 mod pid_max;
 
 /// Represents the inode at `/proc/sys/kernel`.
@@ -37,6 +38,7 @@ impl KernelDirOps {
     #[expect(clippy::type_complexity)]
     const STATIC_ENTRIES: &'static [(&'static str, fn(Weak<dyn Inode>) -> Arc<dyn Inode>)] = &[
         ("cap_last_cap", CapLastCapFileOps::new_inode),
+        ("dmesg_restrict", dmesg_restrict::DmesgRestrictFileOps::new_inode),
         ("pid_max", PidMaxFileOps::new_inode),
     ];
 }
