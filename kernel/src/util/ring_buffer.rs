@@ -2,11 +2,11 @@
 
 use core::ops::Deref;
 
+use ostd::mm::io_util::HasVmReaderWriter;
+pub use ring_buffer::{Consumer, Producer, RbConsumer, RbProducer, RingBuffer};
+
 use super::{MultiRead, MultiWrite};
 use crate::prelude::*;
-use ostd::mm::io_util::HasVmReaderWriter;
-
-pub use ring_buffer::{Consumer, Producer, RingBuffer, RbConsumer, RbProducer};
 
 pub trait RingBufferU8Ext {
     fn read_fallible(&mut self, writer: &mut dyn MultiWrite) -> Result<usize>;
@@ -142,8 +142,11 @@ impl<R: Deref<Target = RingBuffer<u8>>> ConsumerU8Ext for Consumer<u8, R> {
 #[cfg(ktest)]
 mod test {
     use alloc::vec;
-    use ostd::mm::{VmReader, VmWriter, PAGE_SIZE};
-    use ostd::prelude::*;
+
+    use ostd::{
+        mm::{PAGE_SIZE, VmReader, VmWriter},
+        prelude::*,
+    };
 
     use super::*;
 

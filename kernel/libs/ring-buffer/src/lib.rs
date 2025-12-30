@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 #![no_std]
 
 extern crate alloc;
@@ -14,16 +16,14 @@ use core::{
 use inherit_methods_macro::inherit_methods;
 use ostd::{
     Pod,
-    mm::{FrameAllocOptions, Segment, VmIo, PAGE_SIZE, io_util::HasVmReaderWriter},
+    mm::{FrameAllocOptions, PAGE_SIZE, Segment, VmIo, io_util::HasVmReaderWriter},
 };
 
 /// A lock-free SPSC FIFO ring buffer backed by a [`Segment<()>`].
 ///
-/// The ring buffer supports `push`/`pop` any `T: Pod` items, also
-/// supports `write`/`read` any bytes data based on [`VmReader`]/[`VmWriter`].
-///
-/// The ring buffer returns immediately after processing without any blocking.
-/// The ring buffer can be shared between threads.
+/// Provides `push`/`pop` and `push_slice`/`pop_slice` for `T: Pod` items.
+/// The ring buffer returns immediately after processing without any blocking and
+/// can be shared between threads.
 ///
 /// # Example
 ///
@@ -37,7 +37,7 @@ use ostd::{
 ///     b: u32,
 /// }
 ///
-/// let rb = RingBuffer::<Item>::new(10);
+/// let rb = RingBuffer::<Item>::new(16); // RingBuffer Capacity must be a power of two
 /// let (producer, consumer) = rb.split();
 ///
 /// for i in 0..10 {
@@ -162,16 +162,28 @@ impl<T> RingBuffer<T> {
         Wrapping(self.tail.load(Ordering::Acquire))
     }
 
+    /// Advances the tail by `len` items starting from `tail`.
+    ///
+    /// Caller must ensure `len` does not exceed the available free space and
+    /// that only the producer side updates the tail to preserve SPSC semantics.
     pub fn advance_tail(&self, mut tail: Wrapping<usize>, len: usize) {
         tail += len;
         self.tail.store(tail.0, Ordering::Release);
     }
 
+    /// Advances the head by `len` items starting from `head`.
+    ///
+    /// Caller must ensure `len` does not exceed the available items and that
+    /// only the consumer side updates the head to preserve SPSC semantics.
     pub fn advance_head(&self, mut head: Wrapping<usize>, len: usize) {
         head += len;
         self.head.store(head.0, Ordering::Release);
     }
 
+    /// Resets the head to the current tail, effectively draining the buffer.
+    ///
+    /// Only the consumer side should call this, after ensuring the producer is
+    /// not concurrently writing to the buffer.
     pub fn reset_head(&self) {
         let new_head = self.tail();
         self.head.store(new_head.0, Ordering::Release);
@@ -305,8 +317,6 @@ impl<T, R: Deref<Target = RingBuffer<T>>> Producer<T, R> {
     pub fn tail(&self) -> Wrapping<usize>;
     pub fn segment(&self) -> &Segment<()>;
     pub fn advance_tail(&self, tail: Wrapping<usize>, len: usize);
-    pub fn advance_head(&self, head: Wrapping<usize>, len: usize);
-    pub fn reset_head(&self);
 }
 
 impl<T: Pod, R: Deref<Target = RingBuffer<T>>> Consumer<T, R> {
@@ -399,8 +409,6 @@ impl<T, R: Deref<Target = RingBuffer<T>>> Consumer<T, R> {
     pub fn head(&self) -> Wrapping<usize>;
     pub fn tail(&self) -> Wrapping<usize>;
     pub fn segment(&self) -> &Segment<()>;
-    pub fn advance_tail(&self, tail: Wrapping<usize>, len: usize);
     pub fn advance_head(&self, head: Wrapping<usize>, len: usize);
     pub fn reset_head(&self);
 }
-
