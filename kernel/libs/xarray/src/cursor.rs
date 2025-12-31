@@ -10,7 +10,7 @@ use ostd::{
 };
 
 use crate::{
-    SLOT_SIZE, XArray, XLockGuard,
+    BITS_PER_LAYER, SLOT_SIZE, XArray, XLockGuard,
     entry::NodeEntryRef,
     mark::{NoneMark, XMark},
     node::{Height, XNode},
@@ -225,6 +225,114 @@ impl<'a, P: NonNullPtr + Send + Sync, M> Cursor<'a, P, M> {
 
         self.state.move_to(current_node, self.index);
         self.continue_traverse_to_target();
+    }
+
+    /// Moves the cursor to the first present item at or after the current index.
+    /// If found, updates the cursor's index and state, and returns the index.
+    /// If not found, returns None.
+    pub fn next_present(&mut self) -> Option<u64> {
+        loop {
+            self.traverse_to_target();
+
+            let state = core::mem::take(&mut self.state);
+            if let CursorState::AtNode {
+                node,
+                operation_offset,
+            } = state
+            {
+                if node.is_leaf() {
+                    // Check current slot
+                    if node.entry_with(self.guard, operation_offset).is_some() {
+                        self.state = CursorState::AtNode {
+                            node,
+                            operation_offset,
+                        };
+                        return Some(self.index);
+                    }
+
+                    // Check subsequent slots in this leaf
+                    let mut off = operation_offset + 1;
+                    while off < SLOT_SIZE as u8 {
+                        if node.entry_with(self.guard, off).is_some() {
+                            self.index += (off - operation_offset) as u64;
+                            self.state = CursorState::AtNode {
+                                node,
+                                operation_offset: off,
+                            };
+                            return Some(self.index);
+                        }
+                        off += 1;
+                    }
+
+                    // Move to next leaf
+                    let remaining_in_leaf = SLOT_SIZE as u64 - operation_offset as u64;
+                    self.index = self.index.checked_add(remaining_in_leaf)?;
+                    self.reset();
+                } else {
+                    // Should not happen if traverse_to_target works as expected (it stops at leaf or inactive).
+                    // But if it stops at internal node, it means missing child.
+                    // We should treat it as Inactive logic.
+                    self.reset();
+                }
+            } else {
+                // Inactive. Current index is empty.
+                // Find next present from root.
+                let head = self.xa.head.read_with(self.guard)?;
+                let max_index = head.height().max_index();
+                if self.index > max_index {
+                    return None;
+                }
+
+                if let Some(next_idx) = self.find_next_from_root(self.index) {
+                    self.index = next_idx;
+                    // Loop will continue and traverse_to_target will succeed
+                } else {
+                    return None;
+                }
+            }
+        }
+    }
+
+    fn find_next_from_root(&self, target: u64) -> Option<u64> {
+        let head = self.xa.head.read_with(self.guard)?;
+        self.find_next_in_node(&head, 0, target)
+    }
+
+    fn find_next_in_node(&self, node: &XNode<P>, node_base: u64, target: u64) -> Option<u64> {
+        let height = node.height();
+        let shift = (*height - 1) * BITS_PER_LAYER as u8;
+
+        let start_offset = if target > node_base {
+            ((target - node_base) >> shift) as u8
+        } else {
+            0
+        };
+
+        for off in start_offset..SLOT_SIZE as u8 {
+            let child_base = node_base + ((off as u64) << shift);
+
+            if let Some(entry) = node.entry_with(self.guard, off) {
+                if *height == 1 {
+                    // Leaf node.
+                    if child_base >= target {
+                        return Some(child_base);
+                    }
+                } else {
+                    // Internal node.
+                    let child = entry.left().unwrap();
+                    let search_start = if off == start_offset {
+                        target
+                    } else {
+                        child_base
+                    };
+
+                    if let Some(found) = self.find_next_in_node(&child, child_base, search_start) {
+                        return Some(found);
+                    }
+                }
+            }
+        }
+        None
     }
 }
 
