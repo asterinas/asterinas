@@ -10,7 +10,7 @@ use crate::{
     },
     prelude::*,
     process::{Process, posix_thread::AsPosixThread},
-    vm::vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR},
+    vm::vmar::{VmMapping, userspace_range},
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/maps` (and also `/proc/[pid]/maps`).
@@ -43,9 +43,22 @@ impl FileOps for MapsFileOps {
         // To maintain a consistent lock order and avoid race conditions, we must lock the heap
         // before querying the VMAR.
         let heap_guard = vmar.process_vm().heap().lock();
-        let guard = vmar.query(VMAR_LOWEST_ADDR..VMAR_CAP_ADDR);
-        for vm_mapping in guard.iter() {
-            vm_mapping.print_to_maps(&mut printer, vmar, &heap_guard, &path_resolver)?;
+
+        let mut mappings: Vec<VmMapping> = Vec::new();
+
+        let _ = vmar.for_each_mapping(userspace_range(), false, |vm_mapping| {
+            if let Some(last) = mappings.last_mut()
+                && last.can_merge_with(vm_mapping)
+            {
+                let merged = mappings.pop().unwrap().try_merge_with(vm_mapping).0;
+                mappings.push(merged);
+            } else {
+                mappings.push(vm_mapping.clone_for_check());
+            }
+        });
+
+        for mapping in mappings {
+            mapping.print_to_maps(&mut printer, vmar, &heap_guard, &path_resolver)?;
         }
 
         Ok(printer.bytes_written())

@@ -7,52 +7,67 @@ mod page_fault;
 mod protect;
 mod query;
 mod remap;
+mod rs_as_delta;
 mod unmap;
 
-use core::{array, ops::Range};
+use core::{
+    array,
+    ops::Range,
+    sync::atomic::{AtomicIsize, Ordering},
+};
 
-use align_ext::AlignExt;
 use aster_util::per_cpu_counter::PerCpuCounter;
-use ostd::{cpu::CpuId, mm::VmSpace};
+pub use map::OffsetType;
+use osdk_heap_allocator::{CpuLocalBox, alloc_cpu_local};
+use ostd::{
+    cpu::{CpuId, all_cpus},
+    mm::{AuxPageTableMeta, PagingLevel, Vaddr, VmSpace, page_size_at, vm_space::CursorMut},
+};
+pub(super) use rs_as_delta::RsAsDelta;
+pub use rs_as_delta::RssType;
 
 use super::{
-    VMAR_CAP_ADDR, VMAR_LOWEST_ADDR,
     interval_set::{Interval, IntervalSet},
-    is_userspace_vaddr,
-    util::{self, get_intersected_range},
     vm_mapping::{MappedMemory, MappedVmo, VmMapping},
 };
-use crate::{
-    prelude::*,
-    process::{INIT_STACK_SIZE, Process, ProcessVm, ResourceType},
-    vm::vmar::is_userspace_vaddr_range,
-};
+use crate::{prelude::*, process::ProcessVm, vm::vmar::vm_allocator::VirtualAddressAllocator};
 
 /// Virtual Memory Address Regions (VMARs) are a type of capability that manages
 /// user address spaces.
 pub struct Vmar {
-    /// VMAR inner
-    inner: RwMutex<VmarInner>,
-    /// The attached `VmSpace`
-    vm_space: Arc<VmSpace>,
+    /// The attached `VmSpace`.
+    vm_space: Arc<VmarSpace>,
+    /// The allocator for virtual address ranges.
+    allocator: VirtualAddressAllocator,
+    /// The used quota of address space size on each CPU.
+    ///
+    /// The sum of the values on each CPU is the total number of virtual memory
+    /// bytes mapped. Values on each CPU does not have a specific meaning, but
+    /// it must not exceed the resource limit divided by the number of CPUs.
+    mapped_vm_size: CpuLocalBox<AtomicIsize>,
     /// The RSS counters.
-    rss_counters: [PerCpuCounter; NUM_RSS_COUNTERS],
-    /// The process VM
+    rss_counters: [PerCpuCounter; rs_as_delta::NUM_RSS_COUNTERS],
+    /// The process VM.
     process_vm: ProcessVm,
 }
 
 impl Vmar {
     /// Creates a new VMAR.
-    pub fn new(process_vm: ProcessVm) -> Arc<Self> {
-        let inner = VmarInner::new();
-        let vm_space = VmSpace::<()>::new();
+    pub fn new(process_vm: ProcessVm) -> Result<Arc<Self>> {
+        let vm_space = VmSpace::<PerPtMeta>::new();
         let rss_counters = array::from_fn(|_| PerCpuCounter::new());
-        Arc::new(Vmar {
-            inner: RwMutex::new(inner),
+        let vmar = Vmar {
             vm_space: Arc::new(vm_space),
+            allocator: VirtualAddressAllocator::new()?,
             rss_counters,
+            mapped_vm_size: alloc_cpu_local(|_| AtomicIsize::new(0))?,
             process_vm,
-        })
+        };
+
+        let stack_region = vmar.process_vm.init_stack().reserved_region();
+        vmar.reserve_specific(stack_region).unwrap();
+
+        Ok(Arc::new(vmar))
     }
 
     /// Returns the current RSS count for the given RSS type.
@@ -62,11 +77,13 @@ impl Vmar {
 
     /// Returns the total size of the mappings in bytes.
     pub fn get_mappings_total_size(&self) -> usize {
-        self.inner.read().total_vm
+        all_cpus()
+            .map(|cpu| self.mapped_vm_size.get_on_cpu(cpu).load(Ordering::Relaxed))
+            .sum::<isize>() as usize
     }
 
     /// Returns the attached `VmSpace`.
-    pub fn vm_space(&self) -> &Arc<VmSpace> {
+    pub fn vm_space(&self) -> &Arc<VmarSpace> {
         &self.vm_space
     }
 
@@ -82,101 +99,88 @@ impl Vmar {
     }
 }
 
-/// The type representing categories of Resident Set Size (RSS).
-///
-/// See <https://github.com/torvalds/linux/blob/fac04efc5c793dccbd07e2d59af9f90b7fc0dca4/include/linux/mm_types_task.h#L26..L32>
-#[repr(u32)]
-#[expect(non_camel_case_types)]
-#[derive(Debug, Clone, Copy, TryFromInt)]
-pub enum RssType {
-    RSS_FILEPAGES = 0,
-    RSS_ANONPAGES = 1,
+#[derive(Debug)]
+pub struct PerPtMeta {
+    pub inner: IntervalSet<Vaddr, PteRangeMeta>,
 }
 
-const NUM_RSS_COUNTERS: usize = 2;
+pub type VmarCursorMut<'a> = CursorMut<'a, PerPtMeta>;
+pub type VmarSpace = VmSpace<PerPtMeta>;
 
-pub(super) struct RssDelta<'a> {
-    delta: [isize; NUM_RSS_COUNTERS],
-    operated_vmar: &'a Vmar,
+#[derive(Debug)]
+pub enum PteRangeMeta {
+    ChildPt(Range<Vaddr>),
+    VmMapping(VmMapping),
 }
 
-impl<'a> RssDelta<'a> {
-    pub(super) fn new(operated_vmar: &'a Vmar) -> Self {
-        Self {
-            delta: [0; NUM_RSS_COUNTERS],
-            operated_vmar,
-        }
-    }
-
-    pub(super) fn add(&mut self, rss_type: RssType, increment: isize) {
-        self.delta[rss_type as usize] += increment;
-    }
-
-    fn get(&self, rss_type: RssType) -> isize {
-        self.delta[rss_type as usize]
-    }
-}
-
-impl Drop for RssDelta<'_> {
-    fn drop(&mut self) {
-        for i in 0..NUM_RSS_COUNTERS {
-            let rss_type = RssType::try_from(i as u32).unwrap();
-            let delta = self.get(rss_type);
-            self.operated_vmar.add_rss_counter(rss_type, delta);
+impl PteRangeMeta {
+    #[track_caller]
+    pub fn unwrap_mapping(self) -> VmMapping {
+        match self {
+            PteRangeMeta::VmMapping(vm_mapping) => vm_mapping,
+            PteRangeMeta::ChildPt(_) => panic!("called `unwrap_mapping` on a `ChildPt`"),
         }
     }
 }
 
-struct VmarInner {
-    /// The mapped pages and associated metadata.
-    ///
-    /// When inserting a `VmMapping` into this set, use `insert_try_merge` to
-    /// auto-merge adjacent and compatible mappings, or `insert_without_try_merge`
-    /// if the mapping is known not mergeable with any neighboring mappings.
-    vm_mappings: IntervalSet<Vaddr, VmMapping>,
-    /// The total mapped memory in bytes.
-    total_vm: usize,
+impl Interval<Vaddr> for PteRangeMeta {
+    fn range(&self) -> Range<Vaddr> {
+        match self {
+            PteRangeMeta::ChildPt(range) => range.clone(),
+            PteRangeMeta::VmMapping(vm_mapping) => vm_mapping.range(),
+        }
+    }
 }
 
-impl VmarInner {
-    const fn new() -> Self {
-        Self {
-            vm_mappings: IntervalSet::new(),
-            total_vm: 0,
+ostd::check_aux_pt_meta_layout!(PerPtMeta);
+impl AuxPageTableMeta for PerPtMeta {
+    fn new_root_page_table() -> Self {
+        PerPtMeta {
+            inner: IntervalSet::new(),
         }
     }
 
-    /// Returns `Ok` if the calling process may expand its mapped
-    /// memory by the passed size.
-    fn check_extra_size_fits_rlimit(&self, expand_size: usize) -> Result<()> {
-        let Some(process) = Process::current() else {
-            // When building a `Process`, the kernel task needs to build
-            // some `VmMapping`s, in which case this branch is reachable.
-            return Ok(());
+    fn alloc_child_page_table(&mut self, va: Vaddr, level: PagingLevel) -> Self {
+        let page_size = page_size_at(level);
+        let range = va..va + page_size;
+
+        let old = self.inner.take_one(&va);
+        let child_meta = match old {
+            Some(PteRangeMeta::ChildPt(_)) => {
+                unreachable!("should not allocate child PT for existing child PT")
+            }
+            Some(PteRangeMeta::VmMapping(mapping)) => {
+                let (left, mid, right) = mapping.split_range(&range);
+
+                if let Some(left) = left {
+                    self.inner.insert(PteRangeMeta::VmMapping(left));
+                }
+                if let Some(right) = right {
+                    self.inner.insert(PteRangeMeta::VmMapping(right));
+                }
+
+                let child_meta_val = PteRangeMeta::VmMapping(mid);
+                let mut child_meta = PerPtMeta::new();
+                child_meta.inner.insert(child_meta_val);
+
+                child_meta
+            }
+            None => {
+                // No existing mapping, just insert a new child PT meta.
+                Self::new()
+            }
         };
 
-        let rlimit_as = process
-            .resource_limits()
-            .get_rlimit(ResourceType::RLIMIT_AS)
-            .get_cur();
+        self.inner.insert(PteRangeMeta::ChildPt(range));
 
-        if rlimit_as.saturating_sub(self.total_vm as u64) < expand_size as u64 {
-            return_errno_with_message!(Errno::ENOMEM, "the address space size limit is reached");
-        }
-        Ok(())
+        child_meta
     }
+}
 
-    /// Checks whether `addr..addr + size` is covered by a single `VmMapping`,
-    /// and returns the address of the single `VmMapping` if successful.
-    fn check_lies_in_single_mapping(&self, addr: Vaddr, size: usize) -> Result<Vaddr> {
-        if let Some(vm_mapping) = self
-            .vm_mappings
-            .find_one(&addr)
-            .filter(|vm_mapping| vm_mapping.map_end() - addr >= size)
-        {
-            Ok(vm_mapping.map_to_addr())
-        } else {
-            return_errno_with_message!(Errno::EFAULT, "the range must lie in a single mapping");
+impl PerPtMeta {
+    const fn new() -> Self {
+        Self {
+            inner: IntervalSet::new(),
         }
     }
 
@@ -187,9 +191,8 @@ impl VmarInner {
     /// any neighboring mappings.
     ///
     /// Make sure the insertion doesn't exceed address space limit.
-    fn insert_without_try_merge(&mut self, vm_mapping: VmMapping) {
-        self.total_vm += vm_mapping.map_size();
-        self.vm_mappings.insert(vm_mapping);
+    pub(super) fn insert_without_try_merge(&mut self, vm_mapping: VmMapping) {
+        self.inner.insert(PteRangeMeta::VmMapping(vm_mapping));
     }
 
     /// Inserts a `VmMapping` into the `Vmar`, and attempts to merge it with
@@ -200,225 +203,25 @@ impl VmarInner {
     ///
     /// Make sure the insertion doesn't exceed address space limit.
     fn insert_try_merge(&mut self, vm_mapping: VmMapping) {
-        self.total_vm += vm_mapping.map_size();
         let mut vm_mapping = vm_mapping;
         let addr = vm_mapping.map_to_addr();
 
-        if let Some(prev) = self.vm_mappings.find_prev(&addr) {
+        if let Some(PteRangeMeta::VmMapping(prev)) = self.inner.find_prev(&addr) {
             let (new_mapping, to_remove) = vm_mapping.try_merge_with(prev);
             vm_mapping = new_mapping;
             if let Some(addr) = to_remove {
-                self.vm_mappings.remove(&addr);
+                self.inner.remove(&addr);
             }
         }
 
-        if let Some(next) = self.vm_mappings.find_next(&addr) {
+        if let Some(PteRangeMeta::VmMapping(next)) = self.inner.find_next(&addr) {
             let (new_mapping, to_remove) = vm_mapping.try_merge_with(next);
             vm_mapping = new_mapping;
             if let Some(addr) = to_remove {
-                self.vm_mappings.remove(&addr);
+                self.inner.remove(&addr);
             }
         }
 
-        self.vm_mappings.insert(vm_mapping);
-    }
-
-    /// Removes a `VmMapping` based on the provided key from the `Vmar`.
-    fn remove(&mut self, key: &Vaddr) -> Option<VmMapping> {
-        let vm_mapping = self.vm_mappings.remove(key)?;
-        self.total_vm -= vm_mapping.map_size();
-        Some(vm_mapping)
-    }
-
-    /// Finds a set of [`VmMapping`]s that intersect with the provided range.
-    fn query(&self, range: &Range<Vaddr>) -> impl Iterator<Item = &VmMapping> {
-        self.vm_mappings.find(range)
-    }
-
-    /// Calculates the total amount of overlap between `VmMapping`s
-    /// and the provided range.
-    fn count_overlap_size(&self, range: Range<Vaddr>) -> usize {
-        let mut sum_overlap_size = 0;
-        for vm_mapping in self.vm_mappings.find(&range) {
-            let vm_mapping_range = vm_mapping.range();
-            let intersected_range = get_intersected_range(&range, &vm_mapping_range);
-            sum_overlap_size += intersected_range.end - intersected_range.start;
-        }
-        sum_overlap_size
-    }
-
-    /// Allocates a free region for mapping with a specific offset and size.
-    ///
-    /// If the provided range is already occupied, return an error.
-    fn alloc_free_region_exact(&mut self, offset: Vaddr, size: usize) -> Result<Range<Vaddr>> {
-        if self
-            .vm_mappings
-            .find(&(offset..offset + size))
-            .next()
-            .is_some()
-        {
-            return_errno_with_message!(
-                Errno::EEXIST,
-                "the range contains pages that are already mapped"
-            );
-        }
-
-        Ok(offset..(offset + size))
-    }
-
-    /// Allocates a free region for mapping with a specific offset and size.
-    ///
-    /// If the provided range is already occupied, this function truncates all
-    /// the mappings that intersect with the range.
-    fn alloc_free_region_exact_truncate(
-        &mut self,
-        vm_space: &VmSpace,
-        offset: Vaddr,
-        size: usize,
-        rss_delta: &mut RssDelta,
-    ) -> Result<Range<Vaddr>> {
-        let range = offset..offset + size;
-        let mut mappings_to_remove = Vec::new();
-        for vm_mapping in self.vm_mappings.find(&range) {
-            mappings_to_remove.push(vm_mapping.map_to_addr());
-        }
-
-        for vm_mapping_addr in mappings_to_remove {
-            let vm_mapping = self.remove(&vm_mapping_addr).unwrap();
-            let vm_mapping_range = vm_mapping.range();
-            let intersected_range = get_intersected_range(&range, &vm_mapping_range);
-
-            let (left, taken, right) = vm_mapping.split_range(&intersected_range);
-            if let Some(left) = left {
-                self.insert_without_try_merge(left);
-            }
-            if let Some(right) = right {
-                self.insert_without_try_merge(right);
-            }
-
-            rss_delta.add(taken.rss_type(), -(taken.unmap(vm_space) as isize));
-        }
-
-        Ok(offset..(offset + size))
-    }
-
-    /// Allocates a free region for mapping, searching from high address to low address.
-    ///
-    /// If no such region is found, return an error.
-    fn alloc_free_region(&mut self, size: usize, align: usize) -> Result<Range<Vaddr>> {
-        // This value represents the highest possible address for a new mapping.
-        // For simplicity, we use a fixed value `2048` here. The value contains the following considerations:
-        // - The stack fixed padding size.
-        // - The stack random padding size.
-        // - The future growth of the stack.
-        // FIXME: This value should consider the process's actual stack configuration, which may
-        // exist in `ResourceLimits`.
-        let high_limit = VMAR_CAP_ADDR - INIT_STACK_SIZE - PAGE_SIZE * 2048;
-        let low_limit = VMAR_LOWEST_ADDR;
-
-        fn try_alloc_in_hole(
-            hole_start: Vaddr,
-            hole_end: Vaddr,
-            size: usize,
-            align: usize,
-        ) -> Option<Range<Vaddr>> {
-            let start = hole_end.checked_sub(size)?.align_down(align);
-            if start >= hole_start {
-                Some(start..start + size)
-            } else {
-                None
-            }
-        }
-
-        let mut prev_vm_mapping_start = high_limit;
-        for vm_mapping in self.vm_mappings.iter().rev() {
-            let hole_start = vm_mapping.range().end.max(low_limit);
-            let hole_end = prev_vm_mapping_start.min(high_limit);
-
-            if let Some(region) = try_alloc_in_hole(hole_start, hole_end, size, align) {
-                return Ok(region);
-            }
-
-            prev_vm_mapping_start = vm_mapping.range().start;
-            if prev_vm_mapping_start <= low_limit {
-                break;
-            }
-        }
-
-        // Check the hole between `low_limit` and the lowest mapping.
-        if prev_vm_mapping_start > low_limit {
-            let hole_start = low_limit;
-            let hole_end = prev_vm_mapping_start.min(high_limit);
-            if let Some(region) = try_alloc_in_hole(hole_start, hole_end, size, align) {
-                return Ok(region);
-            }
-        }
-
-        return_errno_with_message!(Errno::ENOMEM, "no free region for mapping can be found");
-    }
-
-    /// Splits and unmaps the found mapping if the new size is smaller.
-    /// Enlarges the last mapping if the new size is larger.
-    fn resize_mapping(
-        &mut self,
-        vm_space: &VmSpace,
-        map_addr: Vaddr,
-        old_size: usize,
-        new_size: usize,
-        rss_delta: &mut RssDelta,
-    ) -> Result<()> {
-        debug_assert_eq!(map_addr % PAGE_SIZE, 0);
-        debug_assert_eq!(old_size % PAGE_SIZE, 0);
-        debug_assert_eq!(new_size % PAGE_SIZE, 0);
-
-        if new_size == 0 {
-            return_errno_with_message!(Errno::EINVAL, "resizing a mapping to zero is invalid");
-        }
-
-        if new_size == old_size {
-            return Ok(());
-        }
-
-        if !is_userspace_vaddr_range(map_addr, new_size) {
-            return_errno_with_message!(Errno::EINVAL, "the address range is not in userspace");
-        }
-
-        if new_size < old_size {
-            // Shrink the mapping. The old mapping is larger.
-            if map_addr.checked_add(old_size).is_none() {
-                return_errno_with_message!(Errno::EINVAL, "the address range overflows");
-            }
-            self.alloc_free_region_exact_truncate(
-                vm_space,
-                map_addr + new_size,
-                old_size - new_size,
-                rss_delta,
-            )?;
-            return Ok(());
-        }
-
-        // Expand the mapping. The old mapping is smaller.
-        let old_map_end = map_addr + old_size;
-        self.alloc_free_region_exact(old_map_end, new_size - old_size)
-            .map_err(|_| {
-                Error::with_message(
-                    Errno::ENOMEM,
-                    "the range contains pages that are already mapped",
-                )
-            })?;
-
-        let last_mapping = self.vm_mappings.find_one(&(old_map_end - 1)).unwrap();
-        let last_mapping_addr = last_mapping.map_to_addr();
-        debug_assert_eq!(last_mapping.map_end(), old_map_end);
-
-        if !last_mapping.can_expand() {
-            return_errno_with_message!(Errno::EFAULT, "device mappings cannot be expanded");
-        }
-
-        self.check_extra_size_fits_rlimit(new_size - old_size)?;
-        let last_mapping = self.remove(&last_mapping_addr).unwrap();
-        let last_mapping = last_mapping.enlarge(new_size - old_size);
-        self.insert_try_merge(last_mapping);
-        Ok(())
+        self.inner.insert(PteRangeMeta::VmMapping(vm_mapping));
     }
 }
