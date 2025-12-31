@@ -6,8 +6,12 @@ use ostd::{
     task::disable_preempt,
 };
 
-use super::{Vmar, is_userspace_vaddr};
-use crate::{prelude::*, thread::exception::PageFaultInfo, vm::vmar::is_userspace_vaddr_range};
+use super::Vmar;
+use crate::{
+    prelude::*,
+    thread::exception::PageFaultInfo,
+    vm::vmar::{is_userspace_vaddr, is_userspace_vaddr_range},
+};
 
 impl Vmar {
     /// Reads memory from the process user space.
