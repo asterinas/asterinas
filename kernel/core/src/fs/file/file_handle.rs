@@ -6,8 +6,6 @@
 
 use core::fmt::Display;
 
-use ostd::io::IoMem;
-
 use super::{
     AccessMode, FileCommon, InodeHandle, SettableStatusFlags, StatusFlags, file_table::FdFlags,
     inode_handle::SeekFrom,
@@ -18,7 +16,7 @@ use crate::{
     prelude::*,
     process::{Process, signal::Pollable},
     util::ioctl::RawIoctl,
-    vm::page_cache::Vmo,
+    vm::{dmo::DeviceMappable, page_cache::Vmo},
 };
 
 /// The basic operations defined on a file
@@ -346,8 +344,8 @@ impl StatusFlagsUpdate {
 pub(crate) enum Mappable {
     /// A VMO (i.e., page cache).
     Vmo(Arc<Vmo>),
-    /// An MMIO region.
-    IoMem(IoMem),
+    /// A device that prepares pending RAM/MMIO mapping operations.
+    Dmo(Arc<dyn DeviceMappable>),
 }
 
 /// Specifies the extent of a file synchronization operation.

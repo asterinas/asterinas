@@ -83,6 +83,44 @@ fn vmspace_map_unmap() {
     assert!(cursor.cur_va_range() == range);
 }
 
+/// A nonblocking cursor attempt reports overlap and releases partial locks.
+#[ktest]
+fn try_cursor_mut_reports_contention_without_leaking_locks() {
+    let vmspace = VmSpace::<()>::new();
+    let preempt_guard = disable_preempt();
+    let rollback_probe = 0x20_0000..0x40_0000;
+    let locked_range = 0x40_0000..0x60_0000;
+    let spanning_range = rollback_probe.start..locked_range.end;
+
+    // Materialize the first child page table so that the spanning attempt
+    // locks it before encountering contention in the second child.
+    drop(vmspace.cursor_mut(&preempt_guard, &rollback_probe).unwrap());
+
+    let cursor = vmspace.cursor_mut(&preempt_guard, &locked_range).unwrap();
+    assert!(
+        vmspace
+            .try_cursor_mut(&preempt_guard, &spanning_range)
+            .unwrap()
+            .is_none()
+    );
+
+    // The failed spanning attempt must have rolled back its first-child lock.
+    assert!(
+        vmspace
+            .try_cursor_mut(&preempt_guard, &rollback_probe)
+            .unwrap()
+            .is_some()
+    );
+
+    drop(cursor);
+    assert!(
+        vmspace
+            .try_cursor_mut(&preempt_guard, &spanning_range)
+            .unwrap()
+            .is_some()
+    );
+}
+
 /// Maps a page twice and unmaps twice using `CursorMut`.
 #[ktest]
 #[should_panic(expected = "mapping over an already mapped page")]

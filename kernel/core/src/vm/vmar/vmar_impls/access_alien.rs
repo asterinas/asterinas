@@ -10,10 +10,10 @@ use ostd::{
     task::disable_preempt,
 };
 
-use super::{Vmar, is_userspace_vaddr};
+use super::Vmar;
 use crate::{
     prelude::*,
-    vm::vmar::{PageFaultInfo, is_userspace_vaddr_range},
+    vm::vmar::{PageFaultInfo, is_userspace_vaddr, is_userspace_vaddr_range},
 };
 
 impl Vmar {

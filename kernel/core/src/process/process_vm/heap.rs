@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::ops::Range;
+use core::{num::NonZeroUsize, ops::Range};
 
 use align_ext::AlignExt;
 
@@ -10,7 +10,7 @@ use crate::{
     util::random::getrandom,
     vm::{
         perms::VmPerms,
-        vmar::{VMAR_CAP_ADDR, Vmar, VmarMapOffset},
+        vmar::{OffsetType, VMAR_CAP_ADDR, Vmar},
     },
 };
 
@@ -76,8 +76,8 @@ impl Heap {
 
         let vmar_map_options = {
             let perms = VmPerms::READ | VmPerms::WRITE;
-            vmar.new_map(PAGE_SIZE, perms)
-                .offset(VmarMapOffset::FixedNoReplace(heap_start))
+            vmar.new_map(NonZeroUsize::new(PAGE_SIZE).unwrap(), perms)
+                .offset(heap_start, OffsetType::FixedNoReplace)
         };
         vmar_map_options.build()?;
 
@@ -153,8 +153,8 @@ impl Heap {
             // References: <https://elixir.bootlin.com/linux/v6.16.9/source/mm/vma.c#L2723-L2748>
             let vmar_map_options = {
                 let perms = VmPerms::READ | VmPerms::WRITE;
-                vmar.new_map(expansion_size, perms)
-                    .offset(VmarMapOffset::FixedNoReplace(expansion_start))
+                vmar.new_map(NonZeroUsize::new(expansion_size).unwrap(), perms)
+                    .offset(expansion_start, OffsetType::FixedNoReplace)
             };
             vmar_map_options.build().map_err(|_| current_heap_end)?;
         }

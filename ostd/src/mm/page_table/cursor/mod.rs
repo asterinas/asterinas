@@ -152,6 +152,28 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
         Ok(locking::lock_range(pt, guard, va))
     }
 
+    /// Tries to create a cursor without waiting for an overlapping cursor.
+    ///
+    /// Returns `Ok(None)` when any part of the requested range is currently
+    /// locked. No page-table locks remain held in that case.
+    pub fn try_new(
+        pt: &'rcu PageTable<C>,
+        guard: &'rcu dyn InAtomicMode,
+        va: &Range<Vaddr>,
+    ) -> Result<Option<Self>, PageTableError> {
+        if !is_valid_range::<C>(va) {
+            return Err(PageTableError::InvalidVaddrRange(va.start, va.end));
+        }
+        if !va.start.is_multiple_of(C::BASE_PAGE_SIZE) || !va.end.is_multiple_of(C::BASE_PAGE_SIZE)
+        {
+            return Err(PageTableError::UnalignedVaddr);
+        }
+
+        const { assert!(C::NR_LEVELS as usize <= MAX_NR_LEVELS) };
+
+        Ok(locking::try_lock_range(pt, guard, va))
+    }
+
     /// Gets the current virtual address.
     pub fn virt_addr(&self) -> Vaddr {
         self.va
@@ -167,6 +189,21 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
     /// Gets the current level of the cursor.
     pub fn level(&self) -> PagingLevel {
         self.level
+    }
+
+    /// Gets the guard level of the cursor.
+    pub fn guard_level(&self) -> PagingLevel {
+        self.guard_level
+    }
+
+    /// Gets the guard virtual address range of the cursor.
+    pub fn guard_va_range(&self) -> Range<Vaddr> {
+        self.barrier_va.clone()
+    }
+
+    /// Gets the auxiliary metadata associated with the current page table.
+    pub fn aux_meta(&self) -> &C::Aux {
+        self.path[self.level as usize - 1].as_ref().unwrap().aux()
     }
 
     /// Queries the mapping at the current virtual address.
@@ -413,6 +450,15 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
         Ok(Self(Cursor::<'rcu, C>::new(pt, guard, va)?))
     }
 
+    /// Tries to create a mutable cursor without waiting.
+    pub(super) fn try_new(
+        pt: &'rcu PageTable<C>,
+        guard: &'rcu dyn InAtomicMode,
+        va: &Range<Vaddr>,
+    ) -> Result<Option<Self>, PageTableError> {
+        Ok(Cursor::<'rcu, C>::try_new(pt, guard, va)?.map(Self))
+    }
+
     /// Adjusts to the given level.
     ///
     /// When the specified level page table is not allocated, it will allocate
@@ -451,6 +497,12 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
                 }
             }
         }
+    }
+
+    /// Gets the auxiliary metadata associated with the current page table.
+    pub fn aux_meta_mut(&mut self) -> &mut C::Aux {
+        let level = self.level as usize;
+        self.path[level - 1].as_mut().unwrap().aux_mut()
     }
 
     /// Maps the item starting from the current address to a physical address range.

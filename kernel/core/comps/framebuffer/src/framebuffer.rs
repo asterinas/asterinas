@@ -6,7 +6,7 @@ use ostd::{
     Error, Result,
     boot::boot_info,
     io::IoMem,
-    mm::{CachePolicy, HasSize, VmIo},
+    mm::{CachePolicy, HasSize, PAGE_SIZE, VmIo},
     sync::Mutex,
 };
 use spin::Once;
@@ -27,6 +27,7 @@ pub const MAX_CMAP_SIZE: usize = 256;
 #[derive(Debug)]
 pub struct FrameBuffer {
     io_mem: IoMem,
+    mapping_io_mem: IoMem,
     width: usize,
     height: usize,
     line_size: usize,
@@ -99,11 +100,21 @@ pub(crate) fn init() {
         // Use write-combining for framebuffer to enable faster write operations.
         // Write-combining allows the CPU to combine multiple writes into fewer bus transactions,
         // which is ideal for framebuffer access patterns (sequential writes).
-        let io_mem = IoMem::acquire_with_cache_policy(
-            fb_base..fb_base.checked_add(fb_size).unwrap(),
+        // mmap exposes whole pages, including a possibly partial final scanline
+        // page. Keep the byte-precise capability for rendering and file I/O.
+        let mapping_start = fb_base & !(PAGE_SIZE - 1);
+        let mapping_end = fb_base
+            .checked_add(fb_size)
+            .unwrap()
+            .checked_next_multiple_of(PAGE_SIZE)
+            .unwrap();
+        let mapping_io_mem = IoMem::acquire_with_cache_policy(
+            mapping_start..mapping_end,
             CachePolicy::WriteCombining,
         )
         .unwrap();
+        let offset = fb_base - mapping_start;
+        let io_mem = mapping_io_mem.slice(offset..offset + fb_size);
 
         let default_cmap = FbCmap {
             entries: Vec::new(),
@@ -111,6 +122,7 @@ pub(crate) fn init() {
 
         FrameBuffer {
             io_mem,
+            mapping_io_mem,
             width: framebuffer_arg.width,
             height: framebuffer_arg.height,
             line_size,
@@ -142,6 +154,13 @@ impl FrameBuffer {
     /// Returns a reference to the `IoMem` instance of the framebuffer.
     pub fn io_mem(&self) -> &IoMem {
         &self.io_mem
+    }
+
+    /// Returns the page-aligned memory capability for userspace mmap.
+    ///
+    /// This includes padding around a framebuffer that does not fill whole pages.
+    pub fn mapping_io_mem(&self) -> &IoMem {
+        &self.mapping_io_mem
     }
 
     /// Returns the pixel format of the framebuffer.

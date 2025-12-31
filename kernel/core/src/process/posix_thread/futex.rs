@@ -593,14 +593,14 @@ impl FutexKey {
                 addr,
             },
             FutexVisibility::Shared => {
-                let backing = user_space
+                let mut backing = None;
+                let _ = user_space
                     .vmar()
-                    .query(addr..addr + 1)
-                    .iter()
-                    .next()
-                    .map(|mapping| mapping.futex_backing(addr))
-                    .transpose()?
-                    .flatten();
+                    .for_each_mapping(addr..addr + 1, false, |mapping| {
+                        if backing.is_none() {
+                            backing = mapping.futex_backing(addr).ok().flatten();
+                        }
+                    });
 
                 backing.map_or(
                     FutexIdentity::SharedLocal {
