@@ -42,6 +42,7 @@ impl KtestPath {
         self.path.push_back(PathElement::from(s));
     }
 
+    #[cfg_attr(not(ktest), expect(dead_code))]
     pub fn pop_back(&mut self) -> Option<PathElement> {
         self.path.pop_back()
     }
@@ -64,6 +65,7 @@ impl KtestPath {
         self.path.is_empty()
     }
 
+    #[cfg_attr(not(ktest), expect(dead_code))]
     pub fn starts_with(&self, other: &Self) -> bool {
         if self.path.len() < other.path.len() {
             return false;
@@ -76,6 +78,7 @@ impl KtestPath {
         true
     }
 
+    #[cfg_attr(not(ktest), expect(dead_code))]
     pub fn ends_with(&self, other: &Self) -> bool {
         if self.path.len() < other.path.len() {
             return false;
@@ -199,6 +202,7 @@ impl SuffixTrie {
     }
 
     /// Find if there is a perfect match in this suffix trie.
+    #[cfg_attr(not(ktest), expect(dead_code))]
     pub fn matches<I, P>(&self, path: I) -> bool
     where
         I: DoubleEndedIterator<Item = P>,
