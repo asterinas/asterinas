@@ -14,6 +14,7 @@
 //!
 
 use core::{
+    num::NonZeroUsize,
     ops::Range,
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -27,7 +28,7 @@ use crate::{
     util::random::getrandom,
     vm::{
         perms::VmPerms,
-        vmar::Vmar,
+        vmar::{OffsetType, Vmar},
         vmo::{Vmo, VmoOptions},
     },
 };
@@ -125,7 +126,7 @@ impl Clone for InitStack {
 }
 
 impl InitStack {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         let nr_pages_padding = {
             // We do not want the stack top too close to MAX_USERSPACE_VADDR.
             // So we add this fixed padding. Any small value greater than zero will do.
@@ -149,6 +150,11 @@ impl InitStack {
             argv_range: SpinLock::new(0..0),
             envp_range: SpinLock::new(0..0),
         }
+    }
+
+    pub(super) fn reserve_region_in_vmar(&self, vmar: &Vmar) -> Result<()> {
+        let stack_base = self.initial_top - self.max_size;
+        vmar.reserve_specific(stack_base..self.initial_top)
     }
 
     /// Returns the user stack top(highest address), used to setup rsp.
@@ -179,8 +185,8 @@ impl InitStack {
             let perms = VmPerms::READ | VmPerms::WRITE;
             let map_addr = self.initial_top - self.max_size;
             debug_assert!(map_addr.is_multiple_of(PAGE_SIZE));
-            vmar.new_map(self.max_size, perms)?
-                .offset(map_addr)
+            vmar.new_map(NonZeroUsize::new(self.max_size).unwrap(), perms)?
+                .offset(map_addr, OffsetType::Fixed)
                 .vmo(vmo.clone())
         };
         vmar_map_options.build()?;

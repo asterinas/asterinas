@@ -9,7 +9,7 @@ use crate::prelude::*;
 bitflags! {
     /// The memory access permissions of memory mappings.
     // NOTE: `check` hardcodes `MAY_READ >> 3 == READ`, and so for r/w/x bits.
-    pub struct VmPerms: u32 {
+    pub struct VmPerms: u8 {
         /// Readable.
         const READ    = 1 << 0;
         /// Writable.

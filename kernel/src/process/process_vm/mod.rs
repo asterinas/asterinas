@@ -211,6 +211,11 @@ pub(super) fn new_vmar_and_map(executable_file: PathOrInode) -> Arc<Vmar> {
         .alloc_and_map(new_vmar.as_ref())
         .unwrap();
     new_vmar
+        .process_vm()
+        .init_stack()
+        .reserve_region_in_vmar(new_vmar.as_ref())
+        .unwrap();
+    new_vmar
 }
 
 /// Activates the [`Vmar`] in the current process's context.

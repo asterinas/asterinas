@@ -221,6 +221,12 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         unsafe { &mut (*self.meta().inner.get()).aux }
     }
 
+    /// Returns a reference to the auxiliary data of the page table node.
+    pub(super) fn aux(&self) -> &C::Aux {
+        // SAFETY: The lock is held so we have an exclusive access.
+        unsafe { &(*self.meta().inner.get()).aux }
+    }
+
     /// Reads a non-owning PTE at the given index.
     ///
     /// A non-owning PTE means that it does not account for a reference count
@@ -284,6 +290,7 @@ impl<C: PageTableConfig> Drop for PageTableGuard<'_, C> {
 /// public. It is not intended to be constructed outside OSTD.
 #[derive(Debug)]
 #[expect(private_bounds)]
+#[expect(rustdoc::private_intra_doc_links)]
 pub struct PageTableFrameMeta<C: PageTableConfig> {
     /// Mutable parts if the [`Self::lock`] is held.
     inner: SyncUnsafeCell<PageTableFrameMetaInner<C>>,
