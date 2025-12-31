@@ -63,6 +63,12 @@ fn do_sys_mremap(
 
     if flags.contains(MremapFlags::MREMAP_MAYMOVE) {
         if flags.contains(MremapFlags::MREMAP_FIXED) {
+            if !new_addr.is_multiple_of(PAGE_SIZE) {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "mremap: `new_addr` must be page-aligned when `MREMAP_FIXED` is specified"
+                );
+            }
             vmar.remap(old_addr, old_size, Some(new_addr), new_size)
         } else {
             vmar.remap(old_addr, old_size, None, new_size)
@@ -77,11 +83,6 @@ fn do_sys_mremap(
         // We can ensure that `new_size > old_size` here. Since we are enlarging
         // the old mapping, it is necessary to check whether the old range lies
         // in a single mapping.
-        //
-        // FIXME: According to <https://man7.org/linux/man-pages/man2/mremap.2.html>,
-        // if the `MREMAP_MAYMOVE` flag is not set, and the mapping cannot
-        // be expanded at the current `Vaddr`, we should return an `ENOMEM`.
-        // However, `resize_mapping` returns a `EACCES` in this case.
         vmar.resize_mapping(old_addr, old_size, new_size, true)?;
         Ok(old_addr)
     }
