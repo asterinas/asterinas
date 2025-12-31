@@ -61,10 +61,10 @@ pub fn main() {
             execute_test_command(&load_config(&test_args.common_args), test_args);
         }
         OsdkSubcommand::Check(args) => {
-            execute_forwarded_command_on_each_crate("check", &args.args, true)
+            execute_forwarded_command_on_each_crate("check", &args.args, args.ktest)
         }
         OsdkSubcommand::Clippy(args) => {
-            execute_forwarded_command_on_each_crate("clippy", &args.args, true)
+            execute_forwarded_command_on_each_crate("clippy", &args.args, args.ktest)
         }
         OsdkSubcommand::Doc(args) => execute_forwarded_command("doc", &args.args, false),
     }
@@ -99,11 +99,23 @@ pub enum OsdkSubcommand {
     #[command(about = "Execute kernel mode unit test by starting a VMM")]
     Test(TestArgs),
     #[command(about = "Check a local package and all of its dependencies for errors")]
-    Check(ForwardedArguments),
+    Check(KtestWithForwardedArguments),
     #[command(about = "Checks a package to catch common mistakes and improve your Rust code")]
-    Clippy(ForwardedArguments),
+    Clippy(KtestWithForwardedArguments),
     #[command(about = "Build a package's documentation")]
     Doc(ForwardedArguments),
+}
+
+#[derive(Debug, Parser)]
+pub struct KtestWithForwardedArguments {
+    #[arg(long, help = "Check all targets that have `ktest = true` set")]
+    pub ktest: bool,
+    #[arg(
+        help = "The full set of Cargo arguments",
+        trailing_var_arg = true,
+        allow_hyphen_values = true
+    )]
+    pub args: Vec<String>,
 }
 
 #[derive(Debug, Parser)]

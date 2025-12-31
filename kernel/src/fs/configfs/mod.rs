@@ -26,6 +26,7 @@ pub(super) fn init() {
 ///
 /// If a subsystem with the same name has already been registered,
 /// this function returns an error.
+#[cfg_attr(not(ktest), expect(dead_code))]
 pub fn register_subsystem(subsystem: Arc<dyn SysBranchNode>) -> Result<()> {
     ConfigRootNode::singleton().add_child(subsystem)?;
 

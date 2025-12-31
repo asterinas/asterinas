@@ -198,6 +198,7 @@ where
 }
 
 /// A draining iterator that iterates over intervals in an interval set.
+#[cfg_attr(not(ktest), expect(dead_code))]
 #[derive(Debug)]
 pub struct IntervalDrain<'a, K, V>
 where
