@@ -100,12 +100,23 @@ pub(crate) trait PagingConstsTrait: Debug + Send + Sync + 'static {
     const VA_SIGN_EXT: bool;
 }
 
-/// The base page size.
-pub const PAGE_SIZE: usize = page_size::<PagingConsts>(1);
+/// The page size
+pub const PAGE_SIZE: usize = page_size_at(1);
+
+/// The highest [`PagingLevel`].
+pub const HIGHEST_PAGING_LEVEL: PagingLevel = PagingConsts::NR_LEVELS;
+
+/// The highest [`PagingLevel`] that can be used for translation.
+pub const HIGHEST_TRANSLATION_LEVEL: PagingLevel = PagingConsts::HIGHEST_TRANSLATION_LEVEL;
 
 /// The page size at a given level.
 pub const fn page_size_at(level: PagingLevel) -> usize {
     page_size::<PagingConsts>(level)
+}
+
+/// The number of sub-pages in a huge page.
+pub const fn num_subpages_per_huge() -> usize {
+    nr_subpage_per_huge::<PagingConsts>()
 }
 
 /// The page size at a given level.
@@ -119,7 +130,6 @@ pub(crate) const fn nr_subpage_per_huge<C: PagingConstsTrait>() -> usize {
 }
 
 /// The number of base pages in a huge page at a given level.
-#[expect(dead_code)]
 pub(crate) const fn nr_base_per_page<C: PagingConstsTrait>(level: PagingLevel) -> usize {
     page_size::<C>(level) / C::BASE_PAGE_SIZE
 }

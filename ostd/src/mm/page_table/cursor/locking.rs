@@ -9,7 +9,7 @@ use align_ext::AlignExt;
 use super::Cursor;
 use crate::{
     mm::{
-        HasPaddr, Vaddr, nr_subpage_per_huge, paddr_to_vaddr,
+        HasPaddr, Vaddr, nr_base_per_page, nr_subpage_per_huge, paddr_to_vaddr,
         page_table::{
             PageTable, PageTableConfig, PageTableGuard, PageTableNodeRef, PagingConstsTrait,
             PagingLevel, PteScalar, PteStateRef, PteTrait, load_pte, page_size, pte_index,
@@ -53,6 +53,37 @@ pub(super) fn lock_range<'rcu, C: PageTableConfig>(
         barrier_va: va.clone(),
         _phantom: PhantomData,
     }
+}
+
+/// Tries to lock a range without waiting for a conflicting cursor.
+///
+/// If any node in the range is already locked, all locks acquired by this
+/// attempt are released before returning `None`.
+pub(super) fn try_lock_range<'rcu, C: PageTableConfig>(
+    pt: &'rcu PageTable<C>,
+    guard: &'rcu dyn InAtomicMode,
+    va: &Range<Vaddr>,
+) -> Option<Cursor<'rcu, C>> {
+    let mut subtree_root = try_traverse_and_try_lock_subtree_root(pt, guard, va)?;
+
+    let guard_level = subtree_root.level();
+    let cur_node_va = va.start.align_down(page_size::<C>(guard_level + 1));
+    if !try_dfs_acquire_lock(guard, &mut subtree_root, cur_node_va, va.clone()) {
+        return None;
+    }
+
+    let mut path = core::array::from_fn(|_| None);
+    path[guard_level as usize - 1] = Some(subtree_root);
+
+    Some(Cursor::<'rcu, C> {
+        path,
+        rcu_guard: guard,
+        level: guard_level,
+        guard_level,
+        va: va.start,
+        barrier_va: va.clone(),
+        _phantom: PhantomData,
+    })
 }
 
 pub(super) fn unlock_range<C: PageTableConfig>(cursor: &mut Cursor<'_, C>) {
@@ -165,6 +196,81 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig>(
     Some(pt_guard)
 }
 
+/// Finds and tries to lock the subtree root without waiting.
+fn try_traverse_and_try_lock_subtree_root<'rcu, C: PageTableConfig>(
+    pt: &PageTable<C>,
+    guard: &'rcu dyn InAtomicMode,
+    va: &Range<Vaddr>,
+) -> Option<PageTableGuard<'rcu, C>> {
+    let mut cur_node_guard: Option<PageTableGuard<C>> = None;
+    let mut cur_pt_addr = pt.root.paddr();
+    for cur_level in (1..=C::NR_LEVELS).rev() {
+        let start_idx = pte_index::<C>(va.start, cur_level);
+        let level_too_high = {
+            let end_idx = pte_index::<C>(va.end - 1, cur_level);
+            cur_level > 1 && start_idx == end_idx
+        };
+        if !level_too_high {
+            break;
+        }
+
+        let cur_pt_ptr = paddr_to_vaddr(cur_pt_addr) as *mut C::E;
+        // SAFETY: The root is alive and child nodes cannot be recycled while
+        // the caller is in the RCU critical section.
+        let cur_pte = unsafe { load_pte(cur_pt_ptr.add(start_idx), Ordering::Acquire) };
+
+        match cur_pte.to_repr(cur_level) {
+            PteScalar::Mapped(_, _) => break,
+            PteScalar::Absent => {}
+            PteScalar::PageTable(child_pt_addr, _) => {
+                cur_pt_addr = child_pt_addr;
+                cur_node_guard = None;
+                continue;
+            }
+        }
+
+        let mut pt_guard = match cur_node_guard.take() {
+            Some(guard) => guard,
+            None => {
+                // SAFETY: The node is protected by the caller's RCU guard.
+                let node_ref = unsafe { PageTableNodeRef::<'rcu, C>::borrow_paddr(cur_pt_addr) };
+                node_ref.try_lock(guard)?
+            }
+        };
+        if *pt_guard.stray_mut() {
+            return None;
+        }
+
+        let mut cur_entry = pt_guard.entry(va.start.align_down(page_size::<C>(cur_level)));
+        match cur_entry.to_ref() {
+            PteStateRef::Mapped(_) => break,
+            PteStateRef::Absent => {
+                let allocated_guard = cur_entry.alloc_if_none(guard).unwrap();
+                cur_pt_addr = allocated_guard.paddr();
+                cur_node_guard = Some(allocated_guard);
+            }
+            PteStateRef::PageTable(pt) => {
+                cur_pt_addr = pt.paddr();
+                cur_node_guard = None;
+            }
+        }
+    }
+
+    let mut pt_guard = match cur_node_guard {
+        Some(guard) => guard,
+        None => {
+            // SAFETY: The node is protected by the caller's RCU guard.
+            let node_ref = unsafe { PageTableNodeRef::<'rcu, C>::borrow_paddr(cur_pt_addr) };
+            node_ref.try_lock(guard)?
+        }
+    };
+    if *pt_guard.stray_mut() {
+        return None;
+    }
+
+    Some(pt_guard)
+}
+
 /// Acquires the locks for the given range in the sub-tree rooted at the node.
 ///
 /// `cur_node_va` must be the virtual address of the `cur_node`. The `va_range`
@@ -197,6 +303,72 @@ fn dfs_acquire_lock<C: PageTableConfig>(
                 let _ = ManuallyDrop::new(pt_guard);
             }
             PteStateRef::Absent | PteStateRef::Mapped(_) => {}
+        }
+    }
+}
+
+/// Tries to acquire every descendant lock in a range.
+///
+/// On failure, this function releases every descendant lock acquired by this
+/// invocation. The caller continues to own `cur_node`.
+fn try_dfs_acquire_lock<C: PageTableConfig>(
+    guard: &dyn InAtomicMode,
+    cur_node: &mut PageTableGuard<'_, C>,
+    cur_node_va: Vaddr,
+    va_range: Range<Vaddr>,
+) -> bool {
+    debug_assert!(!*cur_node.stray_mut());
+
+    let cur_level = cur_node.level();
+    if cur_level == 1 {
+        return true;
+    }
+
+    let mut locked_end = va_range.start;
+    for pte_va in dfs_get_pte_va_iter::<C>(cur_level, cur_node_va, &va_range) {
+        let child = cur_node.entry(pte_va);
+        if let PteStateRef::PageTable(pt) = child.to_ref() {
+            let Some(mut pt_guard) = pt.try_lock(guard) else {
+                release_locked_children(guard, cur_node, cur_node_va, va_range.start..locked_end);
+                return false;
+            };
+            let pte_va_end = pte_va + page_size::<C>(cur_level);
+            let child_range = va_range.start.max(pte_va)..va_range.end.min(pte_va_end);
+            if !try_dfs_acquire_lock(guard, &mut pt_guard, pte_va, child_range) {
+                release_locked_children(guard, cur_node, cur_node_va, va_range.start..locked_end);
+                return false;
+            }
+            let _ = ManuallyDrop::new(pt_guard);
+        }
+        locked_end = va_range.end.min(pte_va + page_size::<C>(cur_level));
+    }
+
+    true
+}
+
+/// Releases the already locked child prefix after a failed try-lock attempt.
+fn release_locked_children<C: PageTableConfig>(
+    guard: &dyn InAtomicMode,
+    cur_node: &mut PageTableGuard<'_, C>,
+    cur_node_va: Vaddr,
+    locked_range: Range<Vaddr>,
+) {
+    if locked_range.is_empty() {
+        return;
+    }
+
+    let cur_level = cur_node.level();
+    for pte_va in dfs_get_pte_va_iter::<C>(cur_level, cur_node_va, &locked_range).rev() {
+        let child = cur_node.entry(pte_va);
+        if let PteStateRef::PageTable(pt) = child.to_ref() {
+            // SAFETY: This function only visits the prefix successfully locked
+            // by `try_dfs_acquire_lock`, and no guard for it remains alive.
+            let child_node = unsafe { pt.make_guard_unchecked(guard) };
+            let pte_va_end = pte_va + page_size::<C>(cur_level);
+            let child_range = locked_range.start.max(pte_va)..locked_range.end.min(pte_va_end);
+            // SAFETY: The complete child range was locked and its guards were
+            // deliberately forgotten by `try_dfs_acquire_lock`.
+            unsafe { dfs_release_lock(guard, child_node, pte_va, child_range) };
         }
     }
 }
@@ -277,7 +449,10 @@ pub(super) unsafe fn dfs_mark_stray_and_unlock<C: PageTableConfig>(
                 // guards are forgotten.
                 num_frames += unsafe { dfs_mark_stray_and_unlock(rcu_guard, locked_pt, pte_va) };
             }
-            PteStateRef::Absent | PteStateRef::Mapped(_) => {}
+            PteStateRef::Absent => {}
+            PteStateRef::Mapped(_) => {
+                num_frames += nr_base_per_page::<C>(level);
+            }
         }
     }
 

@@ -147,6 +147,21 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
         PageTableGuard::<'rcu, C> { inner: self }
     }
 
+    /// Tries to lock the page table node without waiting.
+    pub(super) fn try_lock<'rcu>(
+        self,
+        _guard: &'rcu dyn InAtomicMode,
+    ) -> Option<PageTableGuard<'rcu, C>>
+    where
+        'a: 'rcu,
+    {
+        self.meta()
+            .lock
+            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
+            .ok()
+            .map(|_| PageTableGuard::<'rcu, C> { inner: self })
+    }
+
     /// Creates a new [`PageTableGuard`] without checking if the page table lock is held.
     ///
     /// # Safety
@@ -218,6 +233,12 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     pub(super) fn aux_mut(&mut self) -> &mut C::Aux {
         // SAFETY: The lock is held so we have an exclusive access.
         unsafe { &mut (*self.meta().inner.get()).aux }
+    }
+
+    /// Returns a reference to the auxiliary data of the page table node.
+    pub(super) fn aux(&self) -> &C::Aux {
+        // SAFETY: The lock is held so we have an exclusive access.
+        unsafe { &(*self.meta().inner.get()).aux }
     }
 
     /// Reads a non-owning PTE at the given index.

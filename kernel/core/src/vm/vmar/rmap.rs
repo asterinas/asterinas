@@ -1,6 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{collections::btree_map::BTreeMap, sync::Weak, vec::Vec};
+//! Reverse mappings from VMOs to the VMARs that map them.
+//!
+//! Forward mapping changes hold the page-table cursor before updating an
+//! `Rmap`. Reverse walkers hold the `Rmap` first, so they must only try to
+//! acquire page-table cursors. On contention they drop the `Rmap`, wait for the
+//! conflicting cursor, and resume. This preserves syscall atomicity without a
+//! separate mmap lock and avoids a page-table/rmap lock cycle.
+
+use alloc::{
+    collections::btree_map::BTreeMap,
+    sync::{Arc, Weak},
+    vec::Vec,
+};
 use core::ops::Range;
 
 use keyable_arc::KeyableWeak;
@@ -9,7 +21,11 @@ use ostd::{
     task::disable_preempt,
 };
 
-use crate::vm::vmar::{RssType, Vmar, cursor::CursorMutExt, vmar_impls::RssDelta};
+use crate::vm::vmar::{
+    RssType, Vmar,
+    cursor::{CursorExt, CursorMutExt},
+    vmar_impls::{PteRangeMeta, RsAsDelta},
+};
 
 /// Reverse mappings from a [`Vmo`] to [`Vmar`]s.
 ///
@@ -29,6 +45,27 @@ pub(crate) struct RmapEntry {
     pub size: usize,
 }
 
+/// State needed to retry a reverse-map walk after cursor contention.
+pub(crate) struct RmapRetry {
+    key: KeyableWeak<Vmar>,
+    vmar: Arc<Vmar>,
+    addr_range: Range<Vaddr>,
+}
+
+impl RmapRetry {
+    /// Waits for the conflicting cursor and returns the VMAR key to resume at.
+    pub(crate) fn wait(self) -> KeyableWeak<Vmar> {
+        let preempt_guard = disable_preempt();
+        let cursor = self
+            .vmar
+            .vm_space()
+            .cursor_mut(&preempt_guard, &self.addr_range)
+            .unwrap();
+        drop(cursor);
+        self.key
+    }
+}
+
 impl Rmap {
     pub(in crate::vm) const fn new() -> Self {
         Self {
@@ -44,46 +81,85 @@ impl Rmap {
             .push(entry)
     }
 
-    /// Removes a reverse mapping entry.
+    /// Removes the part of this VMAR's entries that overlaps `range`.
     ///
-    /// # Panics
-    ///
-    /// This method will panic if the reverse mapping entry does not exist.
-    pub(crate) fn remove(&mut self, vmar: Weak<Vmar>, vaddr: Vaddr) {
+    /// Entries crossing either boundary are split while preserving their VMO
+    /// offsets. Unlike [`Self::remove`], the range need not start at an entry.
+    pub(crate) fn remove_range(&mut self, vmar: Weak<Vmar>, range: &Range<Vaddr>) {
         use alloc::collections::btree_map::Entry;
 
         let key = KeyableWeak::from(vmar);
         let Entry::Occupied(mut map_entry) = self.entries.entry(key) else {
-            panic!("the entry to remove does not exist")
+            return;
         };
 
         let entries = map_entry.get_mut();
-        let index = entries
-            .iter()
-            .position(|entry| entry.vaddr == vaddr)
-            .expect("the entry to remove does not exist");
-        entries.swap_remove(index);
+        let mut replacement = Vec::with_capacity(entries.len() + 1);
+        for entry in entries.drain(..) {
+            let entry_end = entry.vaddr + entry.size;
+            let overlap_start = entry.vaddr.max(range.start);
+            let overlap_end = entry_end.min(range.end);
 
+            if overlap_start >= overlap_end {
+                replacement.push(entry);
+                continue;
+            }
+
+            if entry.vaddr < overlap_start {
+                replacement.push(RmapEntry {
+                    size: overlap_start - entry.vaddr,
+                    ..entry
+                });
+            }
+            if overlap_end < entry_end {
+                replacement.push(RmapEntry {
+                    vaddr: overlap_end,
+                    offset: entry.offset + overlap_end - entry.vaddr,
+                    size: entry_end - overlap_end,
+                });
+            }
+        }
+
+        *entries = replacement;
         if entries.is_empty() {
             map_entry.remove();
         }
     }
 
-    /// Iterates over all reverse mappings and unmaps the given offset range.
+    /// Tries to unmap an offset range through every reverse mapping.
+    ///
+    /// `resume_at` is inclusive because the previous attempt did not process
+    /// the VMAR whose cursor was contended. Earlier entries in that VMAR may be
+    /// visited again; unmapping them is idempotent.
     ///
     /// # Panics
     ///
     /// This method may panic if the offset range is not aligned to the page boundary.
-    pub(crate) fn unmap(&mut self, offset: Range<usize>) {
+    pub(crate) fn try_unmap(
+        &mut self,
+        offset: Range<usize>,
+        resume_at: Option<&KeyableWeak<Vmar>>,
+    ) -> Result<(), RmapRetry> {
         debug_assert!(offset.start.is_multiple_of(PAGE_SIZE));
         debug_assert!(offset.end.is_multiple_of(PAGE_SIZE));
 
-        self.entries.retain(|vmar, entries| {
-            let Some(vmar) = vmar.upgrade() else {
-                return false;
-            };
+        let keys: Vec<_> = if let Some(key) = resume_at {
+            self.entries
+                .range(key.clone()..)
+                .map(|(key, _)| key.clone())
+                .collect()
+        } else {
+            self.entries.keys().cloned().collect()
+        };
 
-            let mut rss_delta = RssDelta::new(&vmar);
+        for key in keys {
+            let Some(vmar) = key.upgrade() else {
+                self.entries.remove(&key);
+                continue;
+            };
+            let entries = self.entries.get(&key).unwrap();
+
+            let mut rs_as_delta = RsAsDelta::new(&vmar);
 
             for entry in entries {
                 let vmo_range =
@@ -96,10 +172,17 @@ impl Rmap {
                     ..(vmo_range.end - entry.offset + entry.vaddr);
 
                 let preempt_guard = disable_preempt();
-                let mut cursor_mut = vmar
+                let Some(mut cursor_mut) = vmar
                     .vm_space()
-                    .cursor_mut(&preempt_guard, &addr_range)
-                    .unwrap();
+                    .try_cursor_mut(&preempt_guard, &addr_range)
+                    .unwrap()
+                else {
+                    return Err(RmapRetry {
+                        key: key.clone(),
+                        vmar: vmar.clone().into(),
+                        addr_range,
+                    });
+                };
                 let mut num_unmapped = 0;
                 while cursor_mut
                     .find_next_unmappable_subtree(addr_range.end)
@@ -108,29 +191,58 @@ impl Rmap {
                     cursor_mut.split_if_map_exceeds_range(&addr_range);
                     num_unmapped += cursor_mut.unmap();
                 }
-                rss_delta.add(RssType::File, -(num_unmapped as isize));
+
+                cursor_mut.jump(addr_range.start).unwrap();
+                let mapping_addr = cursor_mut
+                    .find_next_mapped(addr_range.end)
+                    .expect("reverse mapping points outside a VM mapping")
+                    .map_to_addr();
+                let Some(PteRangeMeta::VmMapping(mapping)) =
+                    cursor_mut.aux_meta_mut().inner.find_one_mut(&mapping_addr)
+                else {
+                    panic!("reverse mapping points outside a VM mapping");
+                };
+                mapping.dec_frames_mapped(num_unmapped);
+
+                rs_as_delta.add_rs(RssType::RSS_FILEPAGES, -(num_unmapped as isize));
                 cursor_mut.flusher().dispatch_tlb_flush();
                 cursor_mut.flusher().sync_tlb_flush();
             }
 
-            true
-        });
+            drop(rs_as_delta);
+        }
+
+        Ok(())
     }
 
-    /// Iterates over all reverse mappings and freezes (i.e., makes read-only) the given offset
-    /// range.
+    /// Tries to freeze (make read-only) an offset range in every reverse mapping.
     ///
     /// # Panics
     ///
     /// This method may panic if the offset range is not aligned to the page boundary.
-    pub(crate) fn freeze(&mut self, offset: Range<usize>) {
+    pub(crate) fn try_freeze(
+        &mut self,
+        offset: Range<usize>,
+        resume_at: Option<&KeyableWeak<Vmar>>,
+    ) -> Result<(), RmapRetry> {
         debug_assert!(offset.start.is_multiple_of(PAGE_SIZE));
         debug_assert!(offset.end.is_multiple_of(PAGE_SIZE));
 
-        self.entries.retain(|vmar, entries| {
-            let Some(vmar) = vmar.upgrade() else {
-                return false;
+        let keys: Vec<_> = if let Some(key) = resume_at {
+            self.entries
+                .range(key.clone()..)
+                .map(|(key, _)| key.clone())
+                .collect()
+        } else {
+            self.entries.keys().cloned().collect()
+        };
+
+        for key in keys {
+            let Some(vmar) = key.upgrade() else {
+                self.entries.remove(&key);
+                continue;
             };
+            let entries = self.entries.get(&key).unwrap();
 
             for entry in entries {
                 let vmo_range =
@@ -143,10 +255,17 @@ impl Rmap {
                     ..(vmo_range.end - entry.offset + entry.vaddr);
 
                 let preempt_guard = disable_preempt();
-                let mut cursor_mut = vmar
+                let Some(mut cursor_mut) = vmar
                     .vm_space()
-                    .cursor_mut(&preempt_guard, &addr_range)
-                    .unwrap();
+                    .try_cursor_mut(&preempt_guard, &addr_range)
+                    .unwrap()
+                else {
+                    return Err(RmapRetry {
+                        key: key.clone(),
+                        vmar: vmar.clone().into(),
+                        addr_range,
+                    });
+                };
                 while cursor_mut.find_next(addr_range.end).is_some() {
                     cursor_mut.split_if_map_exceeds_range(&addr_range);
                     cursor_mut.protect(|page_flags, _| *page_flags -= PageFlags::W);
@@ -161,8 +280,8 @@ impl Rmap {
                 cursor_mut.flusher().dispatch_tlb_flush();
                 cursor_mut.flusher().sync_tlb_flush();
             }
+        }
 
-            true
-        });
+        Ok(())
     }
 }
