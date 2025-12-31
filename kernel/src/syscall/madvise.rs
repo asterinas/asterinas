@@ -33,13 +33,13 @@ pub fn sys_madvise(addr: Vaddr, len: usize, behavior: i32, ctx: &Context) -> Res
             vmar.discard_pages(addr_range)?;
         }
         _ if DUMMY_MADVISE.contains(&behavior) => {
-            let query_guard = vmar.query(addr_range);
-            if !query_guard.is_fully_mapped() {
-                return_errno_with_message!(
-                    Errno::ENOMEM,
-                    "the range contains pages that are not mapped"
-                );
-            }
+            vmar.for_each_mapping(addr_range, true, |_| {})
+                .map_err(|_| {
+                    Error::with_message(
+                        Errno::ENOMEM,
+                        "the range contains pages that are not mapped",
+                    )
+                })?;
             // For `DUMMY_MADVISE`, doing nothing is correct, though it may not be efficient.
         }
         _ => return_errno_with_message!(Errno::EINVAL, "the madvise behavior is not supported yet"),
