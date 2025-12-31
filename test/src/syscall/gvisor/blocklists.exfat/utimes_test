@@ -1,8 +1,9 @@
-UtimesTest.OnFile
-UtimesTest.OnDir
 FutimesatTest.OnAbsPath
+FutimesatTest.OnNullPath
 FutimesatTest.OnRelPath
+Utimensat.NullPath
 UtimensatTest.OnAbsPath
 UtimensatTest.OnRelPath
+UtimesTest.OnDir
+UtimesTest.OnFile
 UtimeTest.ZeroAtimeandMtime
-Utimensat.NullPath

@@ -1,0 +1,7 @@
+LseekTest.Cur
+LseekTest.End
+LseekTest.InvalidWhence
+LseekTest.NegativeOffset
+LseekTest.Overflow
+LseekTest.SeekDataAndSeekHole
+LseekTest.Set
