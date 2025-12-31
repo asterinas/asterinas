@@ -453,14 +453,16 @@ check: initramfs $(CARGO_OSDK)
 	@# Check compilation of the Rust code
 	@for dir in $(NON_OSDK_CRATES); do \
 		echo "Checking $$dir"; \
-		(cd $$dir && cargo clippy -- -D warnings) || exit 1; \
+		(cd $$dir && cargo clippy --no-deps -- -D warnings) || exit 1; \
 	done
 	@for dir in $(OSDK_CRATES); do \
 		echo "Checking $$dir"; \
 		# Exclude linux-bzimage-setup since it only supports x86-64 currently and will panic \
 		# in other architectures. \
 		[ "$$dir" = "ostd/libs/linux-bzimage/setup" ] && [ "$(OSDK_TARGET_ARCH)" != "x86_64" ] && continue; \
-		(cd $$dir && cargo osdk clippy -- -- -D warnings) || exit 1; \
+		# Run clippy on each crate with and without the ktest configuration. \
+		(cd $$dir && cargo osdk clippy -- --no-deps -- -D warnings) || exit 1; \
+		(cd $$dir && cargo osdk clippy --ktest -- --no-deps -- -D warnings) || exit 1; \
 	done
 	@
 	@# Check formatting issues of the C code and Nix files (regression tests)

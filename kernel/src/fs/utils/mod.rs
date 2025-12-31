@@ -20,6 +20,7 @@ pub use inode_mode::InodeMode;
 pub(crate) use inode_mode::{chmod, mkmod, perms_to_mask, who_and_perms_to_mask, who_to_mask};
 pub use open_args::OpenArgs;
 pub use page_cache::{CachePage, PageCache, PageCacheBackend};
+#[cfg(ktest)]
 pub use random_test::{generate_random_operation, new_fs_in_memory};
 pub use range_lock::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockList, RangeLockType};
 pub use status_flags::StatusFlags;
@@ -44,6 +45,7 @@ mod inode_mode;
 pub mod ioctl_defs;
 mod open_args;
 mod page_cache;
+#[cfg(ktest)]
 mod random_test;
 mod range_lock;
 mod status_flags;

@@ -510,16 +510,19 @@ impl dyn Inode {
         self.read_at(offset, &mut writer, StatusFlags::empty())
     }
 
+    #[cfg_attr(not(ktest), expect(dead_code))]
     pub fn write_bytes_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         let mut reader = VmReader::from(buf).to_fallible();
         self.write_at(offset, &mut reader, StatusFlags::empty())
     }
 
+    #[cfg_attr(not(ktest), expect(dead_code))]
     pub fn read_bytes_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         let mut writer = VmWriter::from(buf).to_fallible();
         self.read_at(offset, &mut writer, StatusFlags::O_DIRECT)
     }
 
+    #[cfg_attr(not(ktest), expect(dead_code))]
     pub fn write_bytes_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         let mut reader = VmReader::from(buf).to_fallible();
         self.write_at(offset, &mut reader, StatusFlags::O_DIRECT)
@@ -611,6 +614,7 @@ pub enum SymbolicLink {
 }
 
 impl SymbolicLink {
+    #[cfg_attr(not(ktest), expect(dead_code))]
     pub fn into_plain(self) -> Option<String> {
         match self {
             SymbolicLink::Plain(s) => Some(s),
