@@ -1,7 +1,12 @@
-RenameTest.RootToAnything
 RenameTest.AnythingToRoot
-RenameTest.FailsWithDots
-RenameTest.FailsWhenOldParentNotWritable
 RenameTest.FailsWhenNewParentNotWritable
-RenameTest.OverwriteFailsWhenNewParentNotWritable
+RenameTest.FailsWhenOldParentNotWritable
+RenameTest.FailsWithDots
 RenameTest.FileDoesNotExistWhenNewParentNotExecutable
+RenameTest.FileNameTooLong
+RenameTest.OverwriteFailsWhenNewParentNotWritable
+RenameTest.PathEndingWithDots
+RenameTest.RootToAnything
+RenameTest.SysfsDirectoryToSelf
+RenameTest.SysfsFileToSelf
+RenameTest.SysfsPathEndingWithDots
