@@ -24,24 +24,31 @@ ENV VDSO_LIBRARY_DIR="/root/linux_vdso"
 
 #= Build syscall test =========================================================
 
-FROM build-base AS build-bazel
+FROM build-base AS build-gvisor
 
-# Install bazel, which is required by the system call test suite from Gvisor project
-RUN mkdir -p /root/bazel
-COPY tools/install_bazel.sh /root/bazel/
-WORKDIR /root/bazel
-RUN ./install_bazel.sh
-RUN apt clean && rm -rf /var/lib/apt/lists/*
-WORKDIR /root
-RUN rm -rf bazel
+# Install required packages for bazel
+RUN apt update && apt install -y curl gnupg2 git \
+    python-is-python3 python3 python3-setuptools python3-pip \
+    build-essential crossbuild-essential-arm64 qemu-user-static \
+    openjdk-11-jdk-headless zip unzip \
+    apt-transport-https ca-certificates gnupg-agent \
+    software-properties-common \
+    pkg-config libffi-dev patch diffutils libssl-dev iptables kmod \
+    clang crossbuild-essential-amd64 erofs-utils busybox-static libbpf-dev \
+    iproute2 netcat-openbsd libnuma-dev libc6-dev-i386 golang-go
 
-FROM build-bazel AS build-gvisor
+# Install bazel
+RUN wget https://github.com/bazelbuild/bazelisk/releases/download/v1.27.0/bazelisk-amd64.deb && \
+    dpkg -i bazelisk-amd64.deb && \
+    rm bazelisk-amd64.deb
 
 # Build the gvisor syscall test binaries
-COPY test/initramfs/src/syscall/gvisor /root/gvisor
+WORKDIR /root
+RUN git clone -b release-20251215.0 --single-branch --depth 1 https://github.com/google/gvisor.git
 WORKDIR /root/gvisor
-RUN export BUILD_DIR=build && \
-    make ${BUILD_DIR}/syscall_test_bins
+RUN bazel build --test_tag_filters=native //test/syscalls/... && \
+    mkdir -p /root/syscall_test_bins && \
+    cp bazel-bin/test/syscalls/linux/*_test /root/syscall_test_bins
 
 #= The final stages to produce the Asterinas development image ====================
 
@@ -82,7 +89,7 @@ RUN ln -s /root/asterinas/tools/sctrace.sh /usr/local/bin/sctrace
 RUN echo 'export ASTER_SCML=$(find /root/asterinas/book/src/kernel/linux-compatibility/ -name "*.scml")' >> /root/.bashrc
 
 # Copy the gvisor syscall test binaries
-COPY --from=build-gvisor /root/gvisor/build/syscall_test_bins /root/syscall_test_bins
+COPY --from=build-gvisor /root/syscall_test_bins /root/syscall_test_bins
 ENV GVISOR_PREBUILT_DIR=/root/syscall_test_bins
 
 # Add the path of Asterinas tools
