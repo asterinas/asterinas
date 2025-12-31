@@ -8,7 +8,7 @@ LOG_FILE=$TEST_TMP_DIR/result.log
 RESULT=0
 
 rm -f $LOG_FILE
-CREATE_ENTRIES=1 $LTP_DIR/runltp -f syscalls -p -d $TEST_TMP_DIR -l $LOG_FILE
+CREATE_ENTRIES=1 $LTP_DIR/runltp -f syscalls -Q -p -d $TEST_TMP_DIR -l $LOG_FILE
 if [ $? -ne 0 ]; then
     RESULT=1
 fi
