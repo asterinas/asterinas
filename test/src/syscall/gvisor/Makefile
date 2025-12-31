@@ -88,12 +88,7 @@ TESTS ?= \
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 BUILD_DIR ?= $(CUR_DIR)/../../../build
-ifdef GVISOR_PREBUILT_DIR
-	BIN_DIR := $(GVISOR_PREBUILT_DIR)
-else
-	BIN_DIR := $(BUILD_DIR)/syscall_test_bins
-	SRC_DIR := $(BUILD_DIR)/gvisor_src
-endif
+BIN_DIR := $(GVISOR_PREBUILT_DIR)
 INITRAMFS ?= $(CUR_DIR)/../../../build/initramfs
 TARGET_DIR := $(INITRAMFS)/opt/gvisor
 RUN_BASH := $(CUR_DIR)/run_gvisor_test.sh
@@ -106,21 +101,6 @@ all: $(TESTS)
 
 $(TESTS): $(BIN_DIR) $(TARGET_DIR)
 	@cp -f $</$@ $(TARGET_DIR)/tests
-
-ifndef GVISOR_PREBUILT_DIR
-$(BIN_DIR): $(SRC_DIR)
-	@if ! type bazel > /dev/null; then \
-		echo "bazel is not installed, please run tools/install_bazel.sh with sudo permission to install it."; \
-		exit 1; \
-	fi
-	@rm -rf $@ && mkdir -p $@
-	@cd $(SRC_DIR) && bazel build --test_tag_filters=native //test/syscalls/...
-	@cp $(SRC_DIR)/bazel-bin/test/syscalls/linux/*_test $@
-
-$(SRC_DIR):
-	@rm -rf $@ && mkdir -p $@
-	@cd $@ && git clone -b 20200921.0 https://github.com/asterinas/gvisor.git .
-endif
 
 $(TARGET_DIR): $(RUN_BASH) $(BLOCK_LIST) $(EXT2_BLOCK_LIST) $(EXFAT_BLOCK_LIST)
 	@rm -rf $@ && mkdir -p $@
