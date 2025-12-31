@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::ops::Range;
+use core::{num::NonZeroUsize, ops::Range};
 
 use align_ext::AlignExt;
 
@@ -10,7 +10,7 @@ use crate::{
     util::random::getrandom,
     vm::{
         perms::VmPerms,
-        vmar::{VMAR_CAP_ADDR, Vmar},
+        vmar::{OffsetType, VMAR_CAP_ADDR, Vmar},
     },
 };
 
@@ -62,7 +62,9 @@ impl Heap {
 
         let vmar_map_options = {
             let perms = VmPerms::READ | VmPerms::WRITE;
-            vmar.new_map(PAGE_SIZE, perms).unwrap().offset(heap_start)
+            vmar.new_map(NonZeroUsize::new(PAGE_SIZE).unwrap(), perms)
+                .unwrap()
+                .offset(heap_start, OffsetType::Fixed)
         };
         vmar_map_options.build()?;
 
@@ -123,13 +125,27 @@ impl Heap {
             return Ok(new_heap_end);
         }
 
-        // Because the mapped heap region may contain multiple mappings, which can be
-        // done by `mmap` syscall or other ways, we need to be careful when modifying
-        // the heap mapping.
-        // For simplicity, we set `check_single_mapping` to `true` to ensure that the
-        // heap region contains only a single mapping.
-        vmar.resize_mapping(heap_start, old_size, new_size, true)
-            .map_err(|_| current_heap_end)?;
+        // Shrink the heap.
+        if new_size < old_size {
+            // Because the mapped heap region may contain multiple mappings,
+            // which can be done by `mmap` syscall or other ways, we need to be
+            // careful when modifying the heap mapping.
+            // For simplicity, we set `check_single_mapping` to `true` to
+            // ensure that the heap region contains only a single mapping.
+            vmar.resize_mapping(heap_start, old_size, new_size, true)
+                .map_err(|_| current_heap_end)?;
+            inner.heap_range = new_heap_range;
+            return Ok(new_heap_end);
+        }
+
+        // Expand the heap. Just map the new region without checking if the
+        // existing part of the heap is, e.g., protected or unmapped.
+        let perms = VmPerms::READ | VmPerms::WRITE;
+        let options = vmar
+            .new_map(NonZeroUsize::new(new_size - old_size).unwrap(), perms)
+            .unwrap()
+            .offset(heap_start + old_size, OffsetType::FixedNoReplace);
+        options.build().map_err(|_| current_heap_end)?;
 
         inner.heap_range = new_heap_range;
         Ok(new_heap_end)

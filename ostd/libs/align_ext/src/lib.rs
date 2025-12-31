@@ -5,13 +5,9 @@
 /// An extension trait for Rust integer types, including `u8`, `u16`, `u32`,
 /// `u64`, and `usize`, to provide methods to make integers aligned to a
 /// power of two.
-pub trait AlignExt {
+pub trait AlignExt: Sized {
     /// Returns to the smallest number that is greater than or equal to
     /// `self` and is a multiple of the given power of two.
-    ///
-    /// The method panics if `power_of_two` is not a
-    /// power of two or is smaller than 2 or the calculation overflows
-    /// because `self` is too large.
     ///
     /// # Examples
     ///
@@ -22,14 +18,35 @@ pub trait AlignExt {
     /// assert_eq!(12usize.align_up(8), 16);
     /// assert_eq!(12usize.align_up(16), 16);
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    ///  -`power_of_two` is not a power of two that is greater than or
+    ///    equal to 2.
+    ///  - the calculation overflows because `self` is too large.
     fn align_up(self, power_of_two: Self) -> Self;
+
+    /// Returns to the smallest number that is greater than or equal to
+    /// `self` and is a multiple of the given power of two.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use crate::align_ext::AlignExt;
+    /// assert_eq!(12usize.checked_align_up(2), Some(12));
+    /// assert_eq!(12usize.checked_align_up(16), Some(16));
+    /// assert_eq!(usize::MAX.checked_align_up(8), None);
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `power_of_two` is not a power of two that is greater than or
+    /// equal to 2.
+    fn checked_align_up(self, power_of_two: Self) -> Option<Self>;
 
     /// Returns to the greatest number that is smaller than or equal to
     /// `self` and is a multiple of the given power of two.
-    ///
-    /// The method panics if `power_of_two` is not a
-    /// power of two or is smaller than 2 or the calculation overflows
-    /// because `self` is too large. In release mode,
     ///
     /// # Examples
     ///
@@ -40,6 +57,11 @@ pub trait AlignExt {
     /// assert_eq!(12usize.align_down(8), 8);
     /// assert_eq!(12usize.align_down(16), 0);
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `power_of_two` is not a power of two that is greater than or
+    /// equal to 2.
     fn align_down(self, power_of_two: Self) -> Self;
 }
 
@@ -51,6 +73,12 @@ macro_rules! impl_align_ext {
                 fn align_up(self, align: Self) -> Self {
                     assert!(align.is_power_of_two() && align >= 2);
                     self.checked_add(align - 1).unwrap() & !(align - 1)
+                }
+
+                #[inline]
+                fn checked_align_up(self, align: Self) -> Option<Self> {
+                    assert!(align.is_power_of_two() && align >= 2);
+                    Some(self.checked_add(align - 1)? & !(align - 1))
                 }
 
                 #[inline]
@@ -75,31 +103,45 @@ impl_align_ext! {
 mod test {
     use super::*;
 
-    #[test]
-    fn test_align_up() {
-        let input_ns = [0usize, 1, 2, 9, 15, 21, 32, 47, 50];
-        let input_as = [2usize, 2, 2, 2, 4, 4, 8, 8, 8];
-        let output_ns = [0usize, 2, 2, 10, 16, 24, 32, 48, 56];
+    macro_rules! check {
+        ($fn:ident, $num:expr, $align:expr, $expected:expr) => {
+            let num_ = $num.iter();
+            let align_ = $align.iter();
+            let expected_ = $expected.iter();
 
-        for i in 0..input_ns.len() {
-            let n = input_ns[i];
-            let a = input_as[i];
-            let n2 = output_ns[i];
-            assert!(n.align_up(a) == n2);
-        }
+            for ((n, a), e) in num_.zip(align_).zip(expected_) {
+                assert_eq!(n.$fn(*a), *e);
+            }
+        };
     }
 
     #[test]
-    fn test_align_down() {
-        let input_ns = [0usize, 1, 2, 9, 15, 21, 32, 47, 50];
-        let input_as = [2usize, 2, 2, 2, 4, 4, 8, 8, 8];
-        let output_ns = [0usize, 0, 2, 8, 12, 20, 32, 40, 48];
+    fn align_up() {
+        check!(
+            align_up,
+            [0usize, 1, 2, 9, 15, 21, 32, 47, 50],
+            [2usize, 2, 2, 2, 4, 4, 8, 8, 8],
+            [0usize, 2, 2, 10, 16, 24, 32, 48, 56]
+        );
+    }
 
-        for i in 0..input_ns.len() {
-            let n = input_ns[i];
-            let a = input_as[i];
-            let n2 = output_ns[i];
-            assert!(n.align_down(a) == n2);
-        }
+    #[test]
+    fn checked_align_up() {
+        check!(
+            checked_align_up,
+            [0usize, 1, 2, usize::MAX - 1, usize::MAX - 7],
+            [2usize, 2, 2, 8, 8],
+            [Some(0usize), Some(2), Some(2), None, Some(usize::MAX - 7)]
+        );
+    }
+
+    #[test]
+    fn align_down() {
+        check!(
+            align_down,
+            [0usize, 1, 2, 9, 15, 21, 32, 47, 50],
+            [2usize, 2, 2, 2, 4, 4, 8, 8, 8],
+            [0usize, 0, 2, 8, 12, 20, 32, 40, 48]
+        );
     }
 }

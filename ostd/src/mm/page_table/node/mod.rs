@@ -221,6 +221,12 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
         unsafe { &mut (*self.meta().inner.get()).aux }
     }
 
+    /// Returns a reference to the auxiliary data of the page table node.
+    pub(super) fn aux(&self) -> &C::Aux {
+        // SAFETY: The lock is held so we have an exclusive access.
+        unsafe { &(*self.meta().inner.get()).aux }
+    }
+
     /// Reads a non-owning PTE at the given index.
     ///
     /// A non-owning PTE means that it does not account for a reference count

@@ -2,72 +2,102 @@
 
 use core::ops::Range;
 
-use super::{Interval, Vmar, util::get_intersected_range};
-use crate::{prelude::*, vm::perms::VmPerms};
+use ostd::{
+    mm::{PAGE_SIZE, Vaddr},
+    task::disable_preempt,
+};
+
+use super::{PteRangeMeta, Vmar};
+use crate::{
+    prelude::*,
+    vm::{
+        perms::VmPerms,
+        vmar::{
+            cursor_util::{find_next_mapped, propagate_if_needed, split_and_insert_rest},
+            interval_set::Interval,
+            util::get_intersected_range,
+        },
+    },
+};
 
 impl Vmar {
     /// Change the permissions of the memory mappings in the specified range.
     ///
-    /// The range's start and end addresses must be page-aligned.
+    /// # Errors
     ///
-    /// If the range contains unmapped pages, an [`ENOMEM`] error will be returned.
-    /// Note that pages before the unmapped hole are still protected.
+    /// Returns [`Errno::ENOMEM`] if the range covers pages that are not mapped.
+    /// Note that on returning, virtual addresses before the unmapped page are
+    /// already protected. This is compatible with Linux 6.17.
     ///
-    /// [`ENOMEM`]: Errno::ENOMEM
-    pub fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
-        debug_assert!(range.start.is_multiple_of(PAGE_SIZE));
-        debug_assert!(range.end.is_multiple_of(PAGE_SIZE));
+    /// # Panics
+    ///
+    /// Panics if the range's start and end addresses are not page-aligned.
+    pub fn protect(&self, perms: VmPerms, range: Range<Vaddr>) -> Result<()> {
+        assert!(range.start.is_multiple_of(PAGE_SIZE));
+        assert!(range.end.is_multiple_of(PAGE_SIZE));
 
-        let mut inner = self.inner.write();
+        // To check if any pages are not mapped.
+        let mut last_protected_addr = range.start;
+
+        let preempt_guard = disable_preempt();
         let vm_space = self.vm_space();
+        let mut cursor = vm_space.cursor_mut(&preempt_guard, &range).unwrap();
 
-        let mut protect_mappings = Vec::new();
+        while let Some(vm_mapping) = find_next_mapped!(cursor, range.end) {
+            let vm_mapping_range = vm_mapping.range();
 
-        for vm_mapping in inner.vm_mappings.find(&range) {
-            protect_mappings.push((vm_mapping.range(), vm_mapping.perms()))
-        }
-
-        let mut last_mapping_end = range.start;
-        for (vm_mapping_range, vm_mapping_perms) in protect_mappings {
-            if last_mapping_end < vm_mapping_range.start {
+            if last_protected_addr < vm_mapping_range.start {
                 return_errno_with_message!(
                     Errno::ENOMEM,
-                    "the range contains pages that are not mapped"
+                    "protect: the range covers unmapped pages"
                 );
             }
-            last_mapping_end = vm_mapping_range.end;
 
-            if perms == vm_mapping_perms & VmPerms::ALL_PERMS {
-                continue;
+            // Skip if no actions needed.
+            if perms == vm_mapping.perms() & VmPerms::ALL_PERMS {
+                if vm_mapping_range.end >= range.end {
+                    last_protected_addr = range.end;
+                    break;
+                } else {
+                    cursor.jump(vm_mapping_range.end).unwrap();
+                    last_protected_addr = vm_mapping_range.end;
+                    continue;
+                }
             }
-            let new_perms = perms | (vm_mapping_perms & VmPerms::ALL_MAY_PERMS);
+
+            let intersected_range = get_intersected_range(&range, &vm_mapping_range);
+            cursor.jump(intersected_range.start).unwrap();
+            propagate_if_needed(&mut cursor, intersected_range.len());
+
+            let Some(PteRangeMeta::VmMapping(vm_mapping)) = cursor
+                .aux_meta_mut()
+                .inner
+                .take_one(&intersected_range.start)
+            else {
+                panic!("`find_next_mapped` does not stop at mapped `VmMapping`");
+            };
+
+            let new_perms = perms | (vm_mapping.perms() & VmPerms::ALL_MAY_PERMS);
             new_perms.check()?;
 
-            let vm_mapping = inner.remove(&vm_mapping_range.start).unwrap();
-            let vm_mapping_range = vm_mapping.range();
-            let intersected_range = get_intersected_range(&range, &vm_mapping_range);
+            let taken = split_and_insert_rest(&mut cursor, vm_mapping, intersected_range.clone());
+            let next_address = taken.range().end;
 
-            // Protects part of the taken `VmMapping`.
-            let (left, taken, right) = vm_mapping.split_range(&intersected_range);
+            let taken = taken.protect(&mut cursor, new_perms);
+            cursor.aux_meta_mut().insert_try_merge(taken);
 
-            // Puts the rest back.
-            if let Some(left) = left {
-                inner.insert_without_try_merge(left);
+            last_protected_addr = next_address;
+
+            if cursor.jump(next_address).is_err() {
+                break;
             }
-            if let Some(right) = right {
-                inner.insert_without_try_merge(right);
-            }
-
-            // Protects part of the `VmMapping`.
-            let taken = taken.protect(vm_space.as_ref(), new_perms);
-            inner.insert_try_merge(taken);
         }
 
-        if last_mapping_end < range.end {
-            return_errno_with_message!(
-                Errno::ENOMEM,
-                "the range contains pages that are not mapped"
-            );
+        cursor.flusher().dispatch_tlb_flush();
+        cursor.flusher().sync_tlb_flush();
+
+        if last_protected_addr < range.end {
+            return_errno_with_message!(Errno::ENOMEM, "protect: the range covers unmapped pages");
         }
 
         Ok(())
