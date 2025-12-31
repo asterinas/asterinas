@@ -60,6 +60,7 @@ where
     }
 
     /// Returns an iterator over the interval items in the interval set.
+    #[cfg(ktest)]
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = &V> {
         self.btree.values()
     }
@@ -77,6 +78,26 @@ where
             .and_then(|(_, v)| (v.range().end > *point).then_some(v))
     }
 
+    /// Finds an interval item that contains the given point.
+    ///
+    /// If no such item exists, returns [`None`]. Otherwise, returns the
+    /// mutable reference to the item that contains the point.
+    pub fn find_one_mut(&mut self, point: &K) -> Option<&mut V> {
+        let mut cursor = self
+            .btree
+            .lower_bound_mut(core::ops::Bound::Excluded(point));
+        // There's only one previous element that may contain the point.
+        // If it doesn't, there's no other chances.
+        if let Some((k, v)) = cursor.peek_prev()
+            && v.range().end > *point
+        {
+            let key = k.clone();
+            return self.btree.get_mut(&key);
+        }
+
+        None
+    }
+
     /// Finds all interval items that intersect with the given range.
     pub fn find<'a>(&'a self, range: &Range<K>) -> IntervalIter<'a, K, V> {
         let cursor = self
@@ -89,7 +110,7 @@ where
         }
     }
 
-    /// Finds the last interval item before the given point.
+    /// Finds the last interval that covers any address smaller the point.
     ///
     /// If no such item exists, returns [`None`].
     pub fn find_prev(&self, point: &K) -> Option<&V> {
@@ -99,35 +120,34 @@ where
             .map(|(_, v)| v)
     }
 
-    /// Finds the first interval item after the given point.
+    /// Finds the first interval that covers any address greater the point.
     ///
     /// If no such item exists, returns [`None`].
     pub fn find_next(&self, point: &K) -> Option<&V> {
-        self.btree
-            .lower_bound(core::ops::Bound::Excluded(point))
-            .peek_next()
-            .map(|(_, v)| v)
+        let cursor = self.btree.lower_bound(core::ops::Bound::Excluded(point));
+
+        if let Some((_, v)) = cursor.peek_prev()
+            && v.range().end > *point
+        {
+            Some(v)
+        } else {
+            cursor.peek_next().map(|(_, v)| v)
+        }
     }
 
     /// Takes an interval item that contains the given point.
     ///
     /// If no such item exists, returns [`None`]. Otherwise, returns the item
     /// that contains the point.
-    #[cfg(ktest)]
     pub fn take_one(&mut self, point: &K) -> Option<V> {
         let mut cursor = self
             .btree
             .lower_bound_mut(core::ops::Bound::Excluded(point));
-        // There's one previous element and one following element that may
-        // contain the point. If they don't, there's no other chances.
-        if let Some((_, v)) = cursor.peek_prev() {
-            if v.range().end > *point {
-                return Some(cursor.remove_prev().unwrap().1);
-            }
-        } else if let Some((_, v)) = cursor.peek_next()
-            && v.range().start <= *point
+
+        if let Some((_, v)) = cursor.peek_prev()
+            && v.range().end > *point
         {
-            return Some(cursor.remove_next().unwrap().1);
+            return Some(cursor.remove_prev().unwrap().1);
         }
 
         None

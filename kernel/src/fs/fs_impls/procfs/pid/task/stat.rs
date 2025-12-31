@@ -216,8 +216,8 @@ impl ProcFileOps for StatFileOps {
             env_end,
         ) = if let Some(vmar_ref) = process.lock_vmar().as_ref() {
             let vsize = vmar_ref.get_mappings_total_size();
-            let anon = vmar_ref.get_rss_counter(RssType::Anon);
-            let file = vmar_ref.get_rss_counter(RssType::File);
+            let anon = vmar_ref.get_rss_counter(RssType::RSS_ANONPAGES);
+            let file = vmar_ref.get_rss_counter(RssType::RSS_FILEPAGES);
             let rss = anon + file;
             let process_vm = vmar_ref.process_vm();
             let code_range = process_vm.code_range();

@@ -281,6 +281,57 @@ FN_TEST(mremap_dontunmap_trim)
 }
 END_TEST()
 
+FN_TEST(mremap_trim)
+{
+	// Regression test for #2615: moving a range that starts in the middle of
+	// a larger mapping must split the source mapping around the moved range.
+	char *addr = TEST_SUCC(mmap(NULL, 4 * PAGE_SIZE, PROT_READ | PROT_WRITE,
+				    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+	strcpy(addr, "left");
+	strcpy(addr + PAGE_SIZE, "middle");
+	strcpy(addr + 2 * PAGE_SIZE, "right");
+
+	char *target = addr + 3 * PAGE_SIZE;
+	TEST_SUCC(munmap(target, PAGE_SIZE));
+
+	// Move only the middle page out of the original three-page mapping.
+	TEST_RES(mremap(addr + PAGE_SIZE, PAGE_SIZE, PAGE_SIZE,
+			MREMAP_MAYMOVE | MREMAP_FIXED, target),
+		 _ret == target);
+	TEST_RES(strcmp(target, "middle"), _ret == 0);
+
+	// The source range was unmapped while its neighboring pages remain intact.
+	TEST_ERRNO(mremap(addr + PAGE_SIZE, PAGE_SIZE, PAGE_SIZE, 0), EFAULT);
+	TEST_RES(strcmp(addr, "left"), _ret == 0);
+	TEST_RES(strcmp(addr + 2 * PAGE_SIZE, "right"), _ret == 0);
+
+	TEST_SUCC(munmap(target, PAGE_SIZE));
+	TEST_SUCC(munmap(addr, 3 * PAGE_SIZE));
+}
+END_TEST()
+
+FN_TEST(mremap_expand_trim)
+{
+	// Expanding a range that starts in the middle of a larger mapping must
+	// preserve the prefix that lies outside the range locked by mremap.
+	char *addr = TEST_SUCC(mmap(NULL, 4 * PAGE_SIZE, PROT_READ | PROT_WRITE,
+				    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+	strcpy(addr, "left");
+	strcpy(addr + PAGE_SIZE, "middle");
+	TEST_SUCC(munmap(addr + 2 * PAGE_SIZE, 2 * PAGE_SIZE));
+
+	char *expanded = TEST_SUCC(mremap(addr + PAGE_SIZE, PAGE_SIZE,
+					  3 * PAGE_SIZE, MREMAP_MAYMOVE));
+	TEST_RES(expanded, _ret == addr + PAGE_SIZE);
+	TEST_RES(strcmp(addr, "left"), _ret == 0);
+	TEST_RES(strcmp(expanded, "middle"), _ret == 0);
+	strcpy(expanded + 2 * PAGE_SIZE, "expanded");
+	TEST_RES(strcmp(expanded + 2 * PAGE_SIZE, "expanded"), _ret == 0);
+
+	TEST_SUCC(munmap(addr, 4 * PAGE_SIZE));
+}
+END_TEST()
+
 FN_TEST(mremap_dontunmap_file_backed)
 {
 	const char *filename = "mremap_dontunmap_file";

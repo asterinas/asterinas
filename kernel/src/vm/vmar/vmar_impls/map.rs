@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::num::NonZeroUsize;
+use core::{num::NonZeroUsize, ops::Range};
 
-use super::{MappedMemory, MappedVmo, RssDelta, VmMapping, Vmar};
+use ostd::{
+    mm::{CachePolicy, FrameAllocOptions, PageFlags, PageProperty},
+    task::{DisabledPreemptGuard, disable_preempt},
+};
+
+use super::{MappedMemory, MappedVmo, RsAsDelta, VmMapping, Vmar};
 use crate::{
     fs::{
         file::{FileLike, Mappable},
@@ -10,7 +15,18 @@ use crate::{
         vfs::path::Path,
     },
     prelude::*,
-    vm::{page_cache::Vmo, perms::VmPerms},
+    vm::{
+        page_cache::Vmo,
+        perms::VmPerms,
+        vmar::{
+            cursor::CursorExt,
+            interval_set::Interval,
+            is_userspace_vaddr_range,
+            util::is_intersected,
+            vm_allocator::AllocatorGuard,
+            vmar_impls::{PteRangeMeta, VmarCursorMut},
+        },
+    },
 };
 
 impl Vmar {
@@ -21,40 +37,67 @@ impl Vmar {
     /// ```
     /// use ostd::mm::PAGE_SIZE;
     ///
-    /// use crate::{
-    ///     context::current_userspace,
-    ///     vm::page_cache::VmoOptions,
-    ///     vm::{perms::VmPerms, vmar::VmarMapOffset, vmo::VmoOptions},
-    /// };
+    /// use crate::vm::{page_cache::VmoOptions, perms::VmPerms, vmar::Vmar};
     ///
+    /// let vmar = Vmar::new();
     /// let vmo = VmoOptions::new(10 * PAGE_SIZE).alloc().unwrap();
-    ///
     /// let target_vaddr = 0x1234000;
-    /// let real_vaddr = current_userspace!()
-    ///     .vmar()
-    ///     // Create a read-only mapping spanning four pages
-    ///     .new_map(PAGE_SIZE * 4, VmPerms::READ)
-    ///     .unwrap()
+    /// let real_vaddr = vmar
+    ///     // Create a 4 * PAGE_SIZE bytes, read-only mapping
+    ///     .new_map(PAGE_SIZE * 4, VmPerms::READ).unwrap()
     ///     // Provide an optional offset for the mapping inside the VMAR
-    ///     .offset(VmarMapOffset::FixedNoReplace(target_vaddr))
-    ///     // Specify an optional binding VMO
+    ///     .offset(target_vaddr)
+    ///     // Specify an optional binding VMO.
     ///     .vmo(vmo)
     ///     // Provide an optional offset to indicate the corresponding offset
     ///     // in the VMO for the mapping
     ///     .vmo_offset(2 * PAGE_SIZE)
     ///     .build()
     ///     .unwrap();
-    ///
-    /// assert_eq!(real_vaddr, target_vaddr);
+    /// assert!(real_vaddr == target_vaddr);
     /// ```
     ///
-    /// For more details on the available options, see [`VmarMapOptions`].
-    pub fn new_map(&self, size: usize, perms: VmPerms) -> Result<VmarMapOptions<'_>> {
+    /// For more details on the available options, see `VmarMapOptions`.
+    pub fn new_map(&self, size: NonZeroUsize, perms: VmPerms) -> Result<VmarMapOptions<'_>> {
         Ok(VmarMapOptions::new(self, size, perms))
+    }
+
+    /// Reserves a range to exclude it from future allocations.
+    ///
+    /// If the function succeeds, the range will not be allocated for future
+    /// allocations. There's two ways to reclaim reserved regions:
+    ///  - [`Self::new_map`] without both [`VmarMapOptions::offset`] and
+    ///    [`OffsetType::Fixed`];
+    ///  - [`Self::remap`].
+    ///
+    /// The function returns the starting virtual address of the reserved
+    /// range. And it returns [`Errno::ENOMEM`] there's not enough free space
+    /// to reserve.
+    pub fn reserve(&self, size: NonZeroUsize, align: usize) -> Result<Vaddr> {
+        assert!(align.is_power_of_two() && align.is_multiple_of(PAGE_SIZE));
+        self.new_map(size, VmPerms::empty())?.align(align).build()
+    }
+
+    /// Reserves a specific range to exclude it from future allocations.
+    ///
+    /// See [`Self::reserve`] for details.
+    ///
+    /// The function returns [`Errno::ENOMEM`] if the range is already reserved
+    /// or allocated.
+    pub fn reserve_specific(&self, range: Range<Vaddr>) -> Result<()> {
+        self.new_map(
+            NonZeroUsize::new(range.end - range.start).unwrap(),
+            VmPerms::empty(),
+        )?
+        .offset(range.start, OffsetType::FixedNoReplace)
+        .build()
+        .map(|_| ())
     }
 }
 
-/// Options for creating a new mapping.
+/// Options for creating a new mapping. The mapping is not allowed to overlap
+/// with any child VMARs. And unless specified otherwise, it is not allowed
+/// to overlap with any existing mapping, either.
 pub struct VmarMapOptions<'a> {
     parent: &'a Vmar,
     mappable: Option<Mappable>,
@@ -62,51 +105,21 @@ pub struct VmarMapOptions<'a> {
     perms: VmPerms,
     may_perms: VmPerms,
     vmo_offset: usize,
-    size: usize,
-    offset: VmarMapOffset,
+    size: NonZeroUsize,
+    offset: Option<(usize, OffsetType)>,
     align: usize,
-    // Whether the mapping is mapped with `MAP_SHARED`.
+    // Whether the mapping is mapped with `MAP_SHARED`
     is_shared: bool,
-    // Whether the mapping needs to handle surrounding pages when handling
-    // page fault.
+    // Whether the mapping needs to handle surrounding pages when handling page fault.
     handle_page_faults_around: bool,
-}
-
-/// An offset within a VMAR where a new mapping will reside.
-///
-/// Note that this differs from the VMO offset. The VMO offset and the VMO
-/// itself together specify the content of the mapping.
-#[derive(Clone, Copy, Debug)]
-pub enum VmarMapOffset {
-    /// The new mapping will be placed at the specified offset. Conflict
-    /// mappings will be replaced.
-    FixedReplace(usize),
-    /// The new mapping will be placed at the specified offset. Conflict
-    /// mappings will cause an error.
-    FixedNoReplace(usize),
-    /// The new mapping may be placed at the specified offset if there are no
-    /// conflict mappings.
-    ///
-    /// Otherwise, it can be placed at any available offset where there are no
-    /// conflict mappings.
-    Hint(usize),
-    /// The new mapping will be placed in the first 2 GiB of the address space.
-    ///
-    /// If the hint is `Some(addr)`, the allocator tries `addr` first, then
-    /// falls back to a constrained search if it fails (provided the region
-    /// `[addr, addr + size)` is within the first 2 GiB; otherwise, an error
-    /// is returned). If `None`, it directly searches below 2 GiB.
-    #[cfg(target_arch = "x86_64")]
-    Map32Bit(Option<usize>),
-    /// The new mapping can be placed at any available offset where there are
-    /// no conflict mappings.
-    Any,
+    // Whether to map all pages immediately instead of on-demand.
+    populate: bool,
 }
 
 impl<'a> VmarMapOptions<'a> {
     /// Creates a default set of options with the size and the memory access
     /// permissions.
-    fn new(parent: &'a Vmar, size: usize, perms: VmPerms) -> Self {
+    pub fn new(parent: &'a Vmar, size: NonZeroUsize, perms: VmPerms) -> Self {
         Self {
             parent,
             mappable: None,
@@ -115,10 +128,11 @@ impl<'a> VmarMapOptions<'a> {
             may_perms: VmPerms::ALL_MAY_PERMS,
             vmo_offset: 0,
             size,
-            offset: VmarMapOffset::Any,
+            offset: None,
             align: PAGE_SIZE,
             is_shared: false,
             handle_page_faults_around: false,
+            populate: false,
         }
     }
 
@@ -212,8 +226,8 @@ impl<'a> VmarMapOptions<'a> {
     /// the VMAR.
     ///
     /// If not set, the system will choose an offset automatically.
-    pub fn offset(mut self, offset: VmarMapOffset) -> Self {
-        self.offset = offset;
+    pub fn offset(mut self, offset: usize, typ: OffsetType) -> Self {
+        self.offset = Some((offset, typ));
         self
     }
 
@@ -265,118 +279,56 @@ impl<'a> VmarMapOptions<'a> {
         Ok(self)
     }
 
+    /// Sets whether to populate all pages immediately instead of on-demand.
+    pub fn populate(mut self) -> Self {
+        self.populate = true;
+        self
+    }
+
     /// Creates the mapping and adds it to the parent VMAR.
     ///
     /// All options will be checked at this point.
     ///
     /// On success, the virtual address of the new mapping is returned.
-    pub fn build(self) -> Result<Vaddr> {
+    pub fn build(mut self) -> Result<Vaddr> {
         self.check_options()?;
+
+        if matches!(self.mappable, Some(Mappable::IoMem(_))) {
+            self.populate = true;
+        } else if (self.perms & VmPerms::ALL_PERMS).is_empty() {
+            // Linux leaves `PROT_NONE` mappings unpopulated even when
+            // `MAP_POPULATE` is specified.
+            self.populate = false;
+        }
+
+        let mapped_mem = self.prepare_mapped_memory()?;
+
         let Self {
             parent,
-            mappable,
+            mappable: _,
             path,
             perms,
-            mut may_perms,
-            vmo_offset,
+            may_perms,
+            vmo_offset: _,
             size: map_size,
             offset,
             align,
             is_shared,
             handle_page_faults_around,
+            populate,
         } = self;
 
-        let mut inner = parent.inner.write();
+        let preempt_guard = disable_preempt();
 
-        inner
-            .check_extra_size_fits_rlimit(map_size)
-            .or_else(|err| {
-                if let VmarMapOffset::FixedReplace(map_to_addr) = offset {
-                    // Overlapping mappings will be removed. Check again after considering this fact.
-                    let expand_size =
-                        map_size - inner.count_overlap_size(map_to_addr..map_to_addr + map_size);
-                    inner.check_extra_size_fits_rlimit(expand_size)
-                } else {
-                    Err(err)
-                }
-            })?;
+        let (map_to_addr, _alloc_guard, mut cursor) =
+            allocate_range(&preempt_guard, parent, offset, align, map_size)?;
 
-        // Allocates a free region.
         debug!(
-            "allocate free region, map_size = 0x{:x}, offset = {:x?}, align = 0x{:x}",
-            map_size, offset, align
+            "map_size = {:#x}, offset = {:x?}, align = {:#x}; allocated to {:#x}",
+            map_size, offset, align, map_to_addr
         );
-        let map_to_addr = match offset {
-            VmarMapOffset::FixedReplace(map_to_addr) => {
-                let mut rss_delta = RssDelta::new(parent);
-                inner.alloc_free_region_exact_truncate(
-                    parent.vm_space(),
-                    map_to_addr,
-                    map_size,
-                    &mut rss_delta,
-                )?;
-                map_to_addr
-            }
-            VmarMapOffset::FixedNoReplace(map_to_addr) => {
-                inner.alloc_free_region_exact(map_to_addr, map_size)?;
-                map_to_addr
-            }
-            VmarMapOffset::Hint(map_to_addr) => {
-                if inner.alloc_free_region_exact(map_to_addr, map_size).is_ok() {
-                    map_to_addr
-                } else {
-                    inner.alloc_free_region(map_size, align)?.start
-                }
-            }
-            #[cfg(target_arch = "x86_64")]
-            VmarMapOffset::Map32Bit(addr_hint) => {
-                use super::{MAP_32BIT_HIGH_LIMIT, VMAR_LOWEST_ADDR};
-
-                if let Some(addr) = addr_hint
-                    && (VMAR_LOWEST_ADDR..MAP_32BIT_HIGH_LIMIT).contains(&addr)
-                    && map_size <= MAP_32BIT_HIGH_LIMIT - addr
-                    && inner.alloc_free_region_exact(addr, map_size).is_ok()
-                {
-                    addr
-                } else {
-                    inner.alloc_free_region_below_2gib(map_size, align)?.start
-                }
-            }
-            VmarMapOffset::Any => inner.alloc_free_region(map_size, align)?.start,
-        };
-
-        // Parse the `Mappable` and prepare the `MappedMemory`.
-        let (mapped_mem, io_mem) = match mappable {
-            Some(Mappable::Vmo(vmo)) => {
-                if let Some(ref path) = path {
-                    debug_assert!(Arc::ptr_eq(
-                        &vmo,
-                        &path.inode().page_cache().unwrap().as_vmo().clone()
-                    ));
-                }
-
-                let is_writable_tracked = if let Some(ref path) = path
-                    && let Some(memfd_inode) = path.inode().downcast_ref::<MemfdInode>()
-                    && is_shared
-                    && may_perms.contains(VmPerms::MAY_WRITE)
-                {
-                    memfd_inode.check_writable(perms, &mut may_perms)?;
-                    true
-                } else {
-                    false
-                };
-
-                let mapped_mem =
-                    MappedMemory::Vmo(MappedVmo::new(vmo, vmo_offset, is_writable_tracked)?);
-                (mapped_mem, None)
-            }
-            Some(Mappable::IoMem(io_mem)) => (MappedMemory::Device, Some(io_mem)),
-            None => (MappedMemory::Anonymous, None),
-        };
-
-        // Build the mapping.
         let vm_mapping = VmMapping::new(
-            NonZeroUsize::new(map_size).unwrap(),
+            map_size,
             map_to_addr,
             mapped_mem,
             path,
@@ -385,60 +337,42 @@ impl<'a> VmarMapOptions<'a> {
             perms | may_perms,
         );
 
-        // Populate device memory if needed before adding to VMAR.
-        //
-        // We have to map before inserting the `VmMapping` into the tree,
-        // otherwise another traversal is needed for locating the `VmMapping`.
-        // Exchange the operation is ok since we hold the write lock on the
-        // VMAR.
-        if let Some(io_mem) = io_mem {
-            vm_mapping.populate_device(parent.vm_space(), io_mem, vmo_offset);
-        }
+        parent.add_mapping_size(&preempt_guard, map_size.get())?;
 
-        // Add the mapping to the VMAR.
-        inner.insert_try_merge(vm_mapping);
+        if populate {
+            let rss_type = vm_mapping.rss_type();
+            let frames_mapped = map_populate(&mut cursor, vm_mapping);
+            parent.add_rss_counter(rss_type, frames_mapped as isize);
+        } else {
+            map_to_page_table(&mut cursor, vm_mapping);
+        }
 
         Ok(map_to_addr)
     }
 
     /// Checks whether all options are valid.
     fn check_options(&self) -> Result<()> {
-        // Check align.
         debug_assert!(self.align.is_multiple_of(PAGE_SIZE));
         debug_assert!(self.align.is_power_of_two());
-        if !self.align.is_multiple_of(PAGE_SIZE) || !self.align.is_power_of_two() {
-            return_errno_with_message!(Errno::EINVAL, "invalid align");
-        }
-        debug_assert!(self.size.is_multiple_of(self.align));
-        if !self.size.is_multiple_of(self.align) {
-            return_errno_with_message!(Errno::EINVAL, "invalid mapping size");
-        }
+        debug_assert!(self.size.get().is_multiple_of(self.align));
         debug_assert!(self.vmo_offset.is_multiple_of(self.align));
-        if !self.vmo_offset.is_multiple_of(self.align) {
-            return_errno_with_message!(Errno::EINVAL, "invalid vmo offset");
-        }
-        match self.offset {
-            VmarMapOffset::FixedReplace(offset)
-            | VmarMapOffset::FixedNoReplace(offset)
-            | VmarMapOffset::Hint(offset) => {
-                debug_assert!(offset.is_multiple_of(self.align));
-                if !offset.is_multiple_of(self.align) {
-                    return_errno_with_message!(Errno::EINVAL, "invalid offset");
-                }
-            }
-            #[cfg(target_arch = "x86_64")]
-            VmarMapOffset::Map32Bit(offset_opt) => {
-                let Some(offset) = offset_opt else {
-                    return Ok(());
-                };
 
-                debug_assert!(offset.is_multiple_of(self.align));
-                if !offset.is_multiple_of(self.align) {
-                    return_errno_with_message!(Errno::EINVAL, "invalid offset");
-                }
+        if let Some((offset, _typ)) = self.offset {
+            debug_assert!(offset.is_multiple_of(self.align));
+
+            #[cfg(target_arch = "x86_64")]
+            let is_empty_map32_hint = _typ == OffsetType::Map32Bit && offset == 0;
+            #[cfg(not(target_arch = "x86_64"))]
+            let is_empty_map32_hint = false;
+
+            if !is_empty_map32_hint && !is_userspace_vaddr_range(offset, self.size.get()) {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "the specified offset and size exceed userspace address range"
+                );
             }
-            VmarMapOffset::Any => (),
         }
+
         self.check_perms()
     }
 
@@ -447,10 +381,307 @@ impl<'a> VmarMapOptions<'a> {
         if !VmPerms::ALL_MAY_PERMS.contains(self.may_perms)
             || !VmPerms::ALL_PERMS.contains(self.perms)
         {
-            return_errno_with_message!(Errno::EACCES, "invalid perms");
+            return_errno_with_message!(Errno::EACCES, "invalid may perms");
+        }
+
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        {
+            // On x86_64 and aarch64, WRITE permission implies READ permission.
+            if self.perms.contains(VmPerms::WRITE) && !self.perms.contains(VmPerms::READ) {
+                return_errno_with_message!(Errno::EACCES, "missing read permission");
+            }
+            if self.may_perms.contains(VmPerms::MAY_WRITE)
+                && !self.may_perms.contains(VmPerms::MAY_READ)
+            {
+                return_errno_with_message!(Errno::EACCES, "missing may read permission");
+            }
         }
 
         let vm_perms = self.perms | self.may_perms;
         vm_perms.check()
     }
+
+    // Parse the `Mappable` and prepare the `MappedMemory`.
+    //
+    // This cannot be executed in the atomic mode since it may readahead pages.
+    fn prepare_mapped_memory(&mut self) -> Result<MappedMemory> {
+        let mut new_may_perms = self.may_perms;
+
+        let mem = match self.mappable.take() {
+            Some(Mappable::Vmo(vmo)) => {
+                if let Some(path) = &self.path {
+                    debug_assert!(Arc::ptr_eq(
+                        &vmo,
+                        path.inode().page_cache().unwrap().as_vmo()
+                    ));
+                }
+
+                let is_writable_tracked = if let Some(path) = &self.path
+                    && let Some(memfd_inode) = path.inode().downcast_ref::<MemfdInode>()
+                    && self.is_shared
+                    && self.may_perms.contains(VmPerms::MAY_WRITE)
+                {
+                    memfd_inode.check_writable(self.perms, &mut new_may_perms)?;
+                    true
+                } else {
+                    false
+                };
+
+                if self.populate {
+                    readahead_for_populate(vmo.clone(), self.vmo_offset, self.size);
+                }
+
+                MappedMemory::Vmo(MappedVmo::new(vmo, self.vmo_offset, is_writable_tracked)?)
+            }
+            Some(Mappable::IoMem(io_mem)) => MappedMemory::Device(io_mem),
+            None => MappedMemory::Anonymous,
+        };
+
+        self.may_perms = new_may_perms;
+
+        Ok(mem)
+    }
+}
+
+/// The type of offset specified in [`VmarMapOptions::offset`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OffsetType {
+    Hint,
+    Fixed,
+    FixedNoReplace,
+    #[cfg(target_arch = "x86_64")]
+    Map32Bit,
+}
+
+fn allocate_range<'a>(
+    preempt_guard: &'a DisabledPreemptGuard,
+    parent: &'a Vmar,
+    offset: Option<(usize, OffsetType)>,
+    align: usize,
+    map_size: NonZeroUsize,
+) -> Result<(Vaddr, AllocatorGuard<'a>, VmarCursorMut<'a>)> {
+    let map_size_bytes = map_size.get();
+
+    #[cfg_attr(not(debug_assertions), expect(unused_mut))]
+    let (map_to_addr, alloc_guard, mut cursor) = match offset {
+        None => parent.allocator.alloc_and_lock(
+            preempt_guard,
+            parent.vm_space(),
+            map_size_bytes,
+            align,
+        )?,
+        Some((offset, OffsetType::Fixed)) => {
+            let range = offset..offset + map_size_bytes;
+
+            let mut rs_as_delta = RsAsDelta::new(parent);
+
+            let (alloc_guard, mut cursor) =
+                parent
+                    .allocator
+                    .alloc_specific_and_lock(preempt_guard, parent.vm_space(), &range);
+
+            parent.remove_mappings(&mut cursor, range.len(), &mut rs_as_delta)?;
+
+            (offset, alloc_guard, cursor)
+        }
+        Some((offset, OffsetType::FixedNoReplace)) => {
+            let range = offset..offset + map_size_bytes;
+
+            let (alloc_guard, mut cursor) =
+                parent
+                    .allocator
+                    .alloc_specific_and_lock(preempt_guard, parent.vm_space(), &range);
+
+            if cursor.find_next_mapped(range.end).is_some() {
+                return_errno_with_message!(Errno::EEXIST, "the specified range is already mapped");
+            }
+
+            (offset, alloc_guard, cursor)
+        }
+        Some((offset, OffsetType::Hint)) => {
+            let range = offset..offset + map_size_bytes;
+
+            let (alloc_guard, mut cursor) =
+                parent
+                    .allocator
+                    .alloc_specific_and_lock(preempt_guard, parent.vm_space(), &range);
+
+            if cursor.find_next_mapped(range.end).is_some() {
+                drop(cursor);
+                drop(alloc_guard);
+                parent.allocator.alloc_and_lock(
+                    preempt_guard,
+                    parent.vm_space(),
+                    map_size_bytes,
+                    align,
+                )?
+            } else {
+                (offset, alloc_guard, cursor)
+            }
+        }
+        #[cfg(target_arch = "x86_64")]
+        Some((offset, OffsetType::Map32Bit)) => {
+            let allocation_range = crate::vm::vmar::VMAR_LOWEST_ADDR..super::MAP_32BIT_HIGH_LIMIT;
+
+            if offset != 0
+                && offset >= allocation_range.start
+                && map_size_bytes <= allocation_range.end - offset
+            {
+                let range = offset..offset + map_size_bytes;
+                let (alloc_guard, mut cursor) = parent.allocator.alloc_specific_and_lock(
+                    preempt_guard,
+                    parent.vm_space(),
+                    &range,
+                );
+
+                if cursor.find_next_mapped(range.end).is_none() {
+                    (offset, alloc_guard, cursor)
+                } else {
+                    drop(cursor);
+                    drop(alloc_guard);
+                    parent.allocator.alloc_and_lock_in_range(
+                        preempt_guard,
+                        parent.vm_space(),
+                        &allocation_range,
+                        map_size_bytes,
+                        align,
+                    )?
+                }
+            } else {
+                parent.allocator.alloc_and_lock_in_range(
+                    preempt_guard,
+                    parent.vm_space(),
+                    &allocation_range,
+                    map_size_bytes,
+                    align,
+                )?
+            }
+        }
+    };
+
+    #[cfg(debug_assertions)]
+    {
+        crate::vm::vmar::cursor::check_range_not_mapped(
+            &mut cursor,
+            map_to_addr..map_to_addr + map_size_bytes,
+        );
+    }
+
+    Ok((map_to_addr, alloc_guard, cursor))
+}
+
+fn readahead_for_populate(vmo: Arc<Vmo>, vmo_offset: usize, map_size: NonZeroUsize) {
+    let end = (vmo_offset + map_size.get()).min(vmo.size());
+    for offset in (vmo_offset..end).step_by(PAGE_SIZE) {
+        // `MAP_POPULATE` is advisory. A page that cannot be read ahead can
+        // still be populated by a later page fault.
+        let _ = vmo.commit_on(offset / PAGE_SIZE);
+    }
+}
+
+pub(super) fn map_to_page_table(cursor: &mut VmarCursorMut<'_>, vm_mapping: VmMapping) {
+    let max_level = cursor.guard_level();
+    for (mapping, level) in vm_mapping.split_for_pt(max_level) {
+        cursor.jump(mapping.map_to_addr()).unwrap();
+        cursor.adjust_level(level);
+
+        map_to_page_table_recursive(cursor, mapping);
+    }
+}
+
+// Inserts the mapping to the current page table frame's subtree recursively.
+fn map_to_page_table_recursive(cursor: &mut VmarCursorMut<'_>, vm_mapping: VmMapping) {
+    let mut vm_mapping = Some(vm_mapping);
+    let cur_level = cursor.level();
+    while let Some(remain) = vm_mapping.as_ref()
+        && let Some(PteRangeMeta::ChildPt(r)) = cursor.aux_meta().inner.find(&remain.range()).next()
+    {
+        debug_assert!(is_intersected(&remain.range(), r));
+        let child_start = r.start;
+
+        let (left, child_mapping, right) = vm_mapping.take().unwrap().split_range(r);
+
+        vm_mapping = right;
+
+        if let Some(left) = left {
+            cursor.aux_meta_mut().insert_try_merge(left);
+        }
+
+        cursor.jump(child_start).unwrap();
+        cursor.push_level_if_exists().unwrap();
+
+        map_to_page_table_recursive(cursor, child_mapping);
+
+        cursor.adjust_level(cur_level);
+    }
+
+    if let Some(vm_mapping) = vm_mapping {
+        cursor.aux_meta_mut().insert_try_merge(vm_mapping);
+    }
+}
+
+pub(super) fn map_populate(cursor: &mut VmarCursorMut<'_>, vm_mapping: VmMapping) -> usize {
+    // TODO: Support populating huge pages.
+    let mut total_frames_mapped = 0;
+    for (mut mapping, level) in vm_mapping.split_for_pt(1) {
+        let va = mapping.map_to_addr();
+        cursor.jump(va).unwrap();
+        debug_assert_eq!(level, 1);
+        cursor.adjust_level(level);
+
+        let map_end = va + mapping.map_size();
+        let page_range = va..map_end;
+
+        let flags = PageFlags::from(mapping.perms()) | PageFlags::ACCESSED;
+        let map_prop = PageProperty::new_user(flags, CachePolicy::Writeback);
+        let mut frames_mapped = 0;
+
+        match mapping.mapped_mem() {
+            MappedMemory::Vmo(vmo) => {
+                for page in page_range.step_by(PAGE_SIZE) {
+                    let offset = page - va;
+                    let Ok(frame) = vmo.get_committed_frame(offset) else {
+                        // Ignore errors here. If I/O is needed here, the page
+                        // may get written back after `readahead_for_populate`
+                        // due to reasons like memory pressure. Avoid trying
+                        // again to avoid thrashing.
+                        continue;
+                    };
+                    cursor.jump(page).unwrap();
+
+                    // Make the mapping copy-on-write for private mappings.
+                    let flags = if mapping.is_shared() {
+                        flags
+                    } else {
+                        flags - PageFlags::W
+                    };
+                    let map_prop = PageProperty::new_user(flags, CachePolicy::Writeback);
+
+                    cursor.map(frame, map_prop);
+                    frames_mapped += 1;
+                }
+            }
+            MappedMemory::Anonymous => {
+                for page in page_range.step_by(PAGE_SIZE) {
+                    let Ok(frame) = FrameAllocOptions::new().alloc_frame() else {
+                        // Ignore errors here for the same reason as above.
+                        continue;
+                    };
+                    cursor.jump(page).unwrap();
+                    cursor.map(frame.into(), map_prop);
+                    frames_mapped += 1;
+                }
+            }
+            MappedMemory::Device(io_mem) => {
+                cursor.map_iomem(io_mem.clone(), map_prop, page_range.len(), 0);
+                frames_mapped = page_range.len() / PAGE_SIZE;
+            }
+        }
+
+        mapping.add_frames_mapped(frames_mapped);
+        total_frames_mapped += frames_mapped;
+        cursor.aux_meta_mut().insert_try_merge(mapping);
+    }
+
+    total_frames_mapped
 }

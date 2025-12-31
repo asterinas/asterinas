@@ -92,6 +92,12 @@ fn do_sys_mremap(
 
     if flags.contains(MremapFlags::MREMAP_MAYMOVE) {
         if flags.contains(MremapFlags::MREMAP_FIXED) {
+            if !new_addr.is_multiple_of(PAGE_SIZE) {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "mremap: `new_addr` must be page-aligned when `MREMAP_FIXED` is specified"
+                );
+            }
             vmar.remap(old_addr, old_size, Some(new_addr), new_size, action)
         } else {
             vmar.remap(old_addr, old_size, None, new_size, action)
