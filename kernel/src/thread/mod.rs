@@ -147,6 +147,7 @@ impl Thread {
     ///
     /// This method will return after the thread exits.
     #[track_caller]
+    #[cfg_attr(not(ktest), expect(dead_code))]
     pub fn join(&self) {
         while !self.is_exited() {
             Self::yield_now();

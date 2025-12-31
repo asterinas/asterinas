@@ -57,6 +57,7 @@ pub trait SupportedNetlinkProtocol {
         socket_table.unicast(dst_port, message)
     }
 
+    #[cfg_attr(not(ktest), expect(dead_code))]
     fn multicast(dst_groups: GroupIdSet, message: Self::Message) -> Result<()>
     where
         Self::Message: MulticastMessage,
