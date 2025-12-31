@@ -152,6 +152,21 @@ impl<'rcu, C: PageTableConfig, const MUTABLE: bool> Cursor_<'rcu, C, MUTABLE> {
         self.level
     }
 
+    /// Gets the guard level of the cursor.
+    pub fn guard_level(&self) -> PagingLevel {
+        self.guard_level
+    }
+
+    /// Gets the guard virtual address range of the cursor.
+    pub fn guard_va_range(&self) -> Range<Vaddr> {
+        self.barrier_va.clone()
+    }
+
+    /// Gets the auxiliary metadata associated with the current page table.
+    pub fn aux_meta(&self) -> &C::Aux {
+        self.path[self.level as usize - 1].as_ref().unwrap().aux()
+    }
+
     /// Queries the mapping at the current virtual address.
     pub(in crate::mm) fn query(&self) -> PteStateRef<'rcu, C> {
         debug_assert!(self.barrier_va.contains(&self.va));
@@ -385,6 +400,14 @@ impl<C: PageTableConfig> CursorMut<'_, C> {
                 }
             }
         }
+    }
+
+    /// Gets the auxiliary metadata associated with the current page table.
+    pub fn aux_meta_mut(&mut self) -> &mut C::Aux {
+        self.path[self.level as usize - 1]
+            .as_mut()
+            .unwrap()
+            .aux_mut()
     }
 
     /// Maps the item starting from the current address to a physical address range.

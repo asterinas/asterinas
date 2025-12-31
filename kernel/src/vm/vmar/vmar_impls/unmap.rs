@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::ops::Range;
+use core::{ops::Range, sync::atomic::Ordering};
 
-use ostd::task::disable_preempt;
+use ostd::{cpu::all_cpus, mm::page_size_at, task::disable_preempt};
 
-use super::{RssDelta, Vmar};
+use super::{PteRangeMeta, RsAsDelta, Vmar, VmarCursorMut};
 use crate::{
     prelude::*,
-    vm::vmar::{VMAR_CAP_ADDR, interval_set::Interval, util::get_intersected_range},
+    vm::vmar::{
+        VMAR_CAP_ADDR,
+        cursor_util::{find_next_mapped, take_next_unmappable, unmap_count_rs_as},
+        interval_set::Interval,
+        util::get_intersected_range,
+    },
 };
 
 impl Vmar {
@@ -16,16 +21,15 @@ impl Vmar {
     /// After being cleared, this vmar will become an empty vmar
     #[expect(dead_code)] // TODO: This should be called when the last process drops the VMAR.
     pub fn clear(&self) {
-        let mut inner = self.inner.write();
-        inner.vm_mappings.clear();
-
-        // Keep `inner` locked to avoid race conditions.
         let preempt_guard = disable_preempt();
         let full_range = 0..VMAR_CAP_ADDR;
         let mut cursor = self
             .vm_space
             .cursor_mut(&preempt_guard, &full_range)
             .unwrap();
+
+        debug_assert_eq!(cursor.level(), cursor.guard_level());
+        cursor.aux_meta_mut().inner.clear();
 
         while cursor
             .find_next_unmappable_subtree(full_range.end - cursor.virt_addr())
@@ -34,6 +38,17 @@ impl Vmar {
             cursor.unmap();
         }
 
+        self.rss_counters
+            .iter()
+            .for_each(|counter| counter.reset_all_zero());
+
+        all_cpus().for_each(|cpu| {
+            self.mapped_vm_size
+                .get_on_cpu(cpu)
+                .store(0, Ordering::Release)
+        });
+
+        cursor.flusher().dispatch_tlb_flush();
         cursor.flusher().sync_tlb_flush();
     }
 
@@ -45,17 +60,65 @@ impl Vmar {
     /// Mappings may fall partially within the range; only the overlapped
     /// portions of the mappings are unmapped.
     pub fn remove_mapping(&self, range: Range<usize>) -> Result<()> {
-        debug_assert!(range.start.is_multiple_of(PAGE_SIZE));
-        debug_assert!(range.end.is_multiple_of(PAGE_SIZE));
+        let mut rs_as_delta = RsAsDelta::new(self);
 
-        let mut inner = self.inner.write();
-        let mut rss_delta = RssDelta::new(self);
-        inner.alloc_free_region_exact_truncate(
-            &self.vm_space,
-            range.start,
-            range.len(),
-            &mut rss_delta,
-        )?;
+        let preempt_guard = disable_preempt();
+        let mut cursor = self.vm_space.cursor_mut(&preempt_guard, &range).unwrap();
+
+        self.remove_mappings(&mut cursor, range.len(), &mut rs_as_delta)?;
+
+        Ok(())
+    }
+
+    /// Removes mappings in the given range using the provided cursor.
+    ///
+    /// if `dealloc` is true, it also deallocates the removed mappings' ranges
+    /// to the allocator.
+    pub(super) fn remove_mappings(
+        &self,
+        cursor: &mut VmarCursorMut<'_>,
+        len: usize,
+        rs_as_delta: &mut RsAsDelta,
+    ) -> Result<()> {
+        let range = cursor.virt_addr()..cursor.virt_addr() + len;
+
+        while let Some(meta) = take_next_unmappable(cursor, range.end) {
+            match meta {
+                PteRangeMeta::ChildPt(range) => {
+                    let cur_page_size = page_size_at(cursor.level());
+                    for child_va in range.step_by(cur_page_size) {
+                        cursor.jump(child_va).unwrap();
+
+                        // Temporarily insert the `ChildPt` meta back to allow
+                        // `unmap_count_rs_as` correctly navigating the child page table.
+                        cursor
+                            .aux_meta_mut()
+                            .inner
+                            .insert(PteRangeMeta::ChildPt(child_va..child_va + cur_page_size));
+                        let num_unmapped =
+                            unmap_count_rs_as(cursor, child_va + cur_page_size, rs_as_delta);
+                        cursor.aux_meta_mut().inner.take_one(&child_va).unwrap();
+
+                        let num_cursor_unmapped = cursor.unmap();
+
+                        debug_assert_eq!(num_unmapped, num_cursor_unmapped);
+                    }
+                }
+                PteRangeMeta::VmMapping(vm_mapping) => {
+                    let taken_range = vm_mapping.range();
+
+                    vm_mapping.unmap(cursor, rs_as_delta);
+
+                    if cursor.jump(taken_range.end).is_err() {
+                        break;
+                    };
+                }
+            }
+        }
+
+        cursor.flusher().dispatch_tlb_flush();
+        cursor.flusher().sync_tlb_flush();
+
         Ok(())
     }
 
@@ -78,14 +141,17 @@ impl Vmar {
         debug_assert!(range.start.is_multiple_of(PAGE_SIZE));
         debug_assert!(range.end.is_multiple_of(PAGE_SIZE));
 
-        let inner = self.inner.read();
-        let mut rss_delta = RssDelta::new(self);
+        let mut rs_as_delta = RsAsDelta::new(self);
 
         let mut last_mapping_end = range.start;
-        for vm_mapping in inner.vm_mappings.find(&range) {
-            if !vm_mapping.can_expand() {
-                return_errno_with_message!(Errno::EINVAL, "device mappings cannot be discarded");
-            }
+
+        let preempt_guard = disable_preempt();
+        let mut cursor = self.vm_space.cursor_mut(&preempt_guard, &range).unwrap();
+
+        while let Some(vm_mapping) = find_next_mapped!(cursor, range.end) {
+            let vm_mapping_level = cursor.level();
+            let vm_mapping_range = vm_mapping.range();
+            let rss_type = vm_mapping.rss_type();
 
             // The range may contain pages that are not mapped. According to Linux behavior, this
             // is not a fault. However, an `ENOMEM` should be reported at the end.
@@ -93,25 +159,37 @@ impl Vmar {
                 last_mapping_end = vm_mapping.map_end();
             }
 
-            let vm_mapping_range = vm_mapping.range();
             let intersected_range = get_intersected_range(&range, &vm_mapping_range);
 
-            let preempt_guard = disable_preempt();
-            let vm_space = self.vm_space();
-            let mut cursor = vm_space
-                .cursor_mut(&preempt_guard, &intersected_range)
-                .unwrap();
+            cursor.jump(intersected_range.start).unwrap();
+            let page_size = page_size_at(vm_mapping_level);
 
-            for va in intersected_range.step_by(PAGE_SIZE) {
-                cursor.jump(va).unwrap();
-                if cursor.query().is_none() {
-                    continue;
+            let mut num_unmapped_this_mapping = 0;
+
+            while let Some(va) = cursor.find_next(intersected_range.end - cursor.virt_addr()) {
+                let num_unmapped = cursor.unmap();
+                rs_as_delta.add_rs(rss_type, -(num_unmapped as isize));
+                num_unmapped_this_mapping += num_unmapped;
+
+                if va + page_size < intersected_range.end {
+                    cursor.jump(va + page_size).unwrap();
+                } else {
+                    break;
                 }
-                cursor.adjust_level(1);
-                rss_delta.add(vm_mapping.rss_type(), -(cursor.unmap() as isize));
             }
-            cursor.flusher().dispatch_tlb_flush();
-            cursor.flusher().sync_tlb_flush();
+
+            let Some(PteRangeMeta::VmMapping(mapping)) = cursor
+                .aux_meta_mut()
+                .inner
+                .find_one_mut(&intersected_range.start)
+            else {
+                panic!("there were mappings but cannot find it the second time");
+            };
+            mapping.dec_frames_mapped(num_unmapped_this_mapping);
+
+            if cursor.jump(intersected_range.end).is_err() {
+                break;
+            }
         }
 
         if last_mapping_end < range.end {
