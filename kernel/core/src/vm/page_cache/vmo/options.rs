@@ -119,7 +119,8 @@ fn alloc_vmo(
         pages,
         size: AtomicUsize::new(size),
         writable_mapping_status,
-        rmap: Mutex::new(rmap),
+        rmap_operation: Mutex::new(()),
+        rmap: SpinLock::new(rmap),
     })
 }
 

@@ -531,6 +531,15 @@ impl<C: PageTableConfig> PageTable<C> {
         CursorMut::new(self, guard.as_atomic_mode_guard(), va, min_level)
     }
 
+    /// Tries to create a mutable cursor without waiting for an overlapping cursor.
+    pub(crate) fn try_cursor_mut<'rcu, G: AsAtomicModeGuard>(
+        &'rcu self,
+        guard: &'rcu G,
+        va: &Range<Vaddr>,
+    ) -> Result<Option<CursorMut<'rcu, C>>, PageTableError> {
+        CursorMut::try_new(self, guard.as_atomic_mode_guard(), va)
+    }
+
     /// Creates a new cursor exclusively accessing the virtual address range for querying.
     ///
     /// If another cursor is already accessing the range, the new cursor may wait until the

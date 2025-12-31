@@ -99,9 +99,9 @@
 //!    correct order of multiple locks is important to ensure that the cached
 //!    page is always in a consistent state, even when operations are called
 //!    concurrently. The corresponding entry is noted as `LockA + LockB`. We
-//!    use `rmap` to denote the reverse-mapping lock, `PT` to denote the page
-//!    table lock, `page` to denote the page lock, and `xarray` to denote the
-//!    lock of VMO pages. For details, see the comments in the implementation.
+//!    use `rmap` to denote the mutex serializing reverse-mapping operations,
+//!    `PT` to denote the page table lock, `page` to denote the page lock, and
+//!    `xarray` to denote the lock of VMO pages. For details, see the comments in the implementation.
 
 use core::{
     ops::{Deref, Range},
@@ -261,7 +261,7 @@ impl PageCache {
         }
 
         let rmap = if new_file_size < old_file_size {
-            Some(vmo.rmap.lock())
+            Some(vmo.rmap_operation.lock())
         } else {
             None
         };

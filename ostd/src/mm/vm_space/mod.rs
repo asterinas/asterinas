@@ -27,6 +27,7 @@ use crate::{
         io::Fallible,
         kspace::KERNEL_PAGE_TABLE,
         page_prop::{CachePolicy, PageFlags},
+        page_size_at,
         page_table::{
             self, AuxPageTableMeta, PageTable, PageTableFrag, PteStateRef, largest_pages,
             max_page_level,
@@ -133,6 +134,24 @@ impl<A: AuxPageTableMeta> VmSpace<A> {
             flusher: TlbFlusher::new(&self.cpus, disable_preempt()),
             vmspace: self,
         })
+    }
+
+    /// Tries to get a mutable cursor without waiting for an overlapping cursor.
+    ///
+    /// Returns `Ok(None)` if the requested range is currently locked.
+    pub fn try_cursor_mut<'a, G: AsAtomicModeGuard>(
+        &'a self,
+        guard: &'a G,
+        va: &Range<Vaddr>,
+    ) -> Result<Option<CursorMut<'a, A>>> {
+        Ok(self
+            .pt
+            .try_cursor_mut(guard, va)?
+            .map(|pt_cursor| CursorMut {
+                pt_cursor,
+                flusher: TlbFlusher::new(&self.cpus, disable_preempt()),
+                vmspace: self,
+            }))
     }
 
     /// Activates the page table on the current CPU.
@@ -332,6 +351,27 @@ impl<A: AuxPageTableMeta> Cursor<'_, A> {
     pub fn push_level_if_exists(&mut self) -> Option<PagingLevel> {
         self.0.push_level_if_exists()
     }
+
+    /// Pops the cursor up to the previous level.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the current level is at the guard level.
+    pub fn pop_level(&mut self) {
+        self.0.pop_level();
+    }
+
+    /// Gets the guard level of the cursor.
+    ///
+    /// The guard level is the maximum level that the cursor can pop to.
+    pub fn guard_level(&self) -> PagingLevel {
+        self.0.guard_level()
+    }
+
+    /// Gets the auxiliary metadata associated with the current page table.
+    pub fn aux_meta(&self) -> &A {
+        self.0.aux_meta()
+    }
 }
 
 /// The cursor for modifying the mappings in VM space.
@@ -404,11 +444,42 @@ impl<'a, A: AuxPageTableMeta> CursorMut<'a, A> {
 
     impl_cursor_info_methods!(pt_cursor);
 
+    /// Gets the guard level of the cursor.
+    ///
+    /// The guard level is the maximum level that the cursor can pop to.
+    pub fn guard_level(&self) -> PagingLevel {
+        self.pt_cursor.guard_level()
+    }
+
+    /// Gets the guard virtual address range of the cursor.
+    pub fn guard_va_range(&self) -> Range<Vaddr> {
+        self.pt_cursor.guard_va_range()
+    }
+
+    /// Gets the mutable auxiliary metadata associated with the current page table.
+    pub fn aux_meta_mut(&mut self) -> &mut A {
+        self.pt_cursor.aux_meta_mut()
+    }
+
+    /// Gets the auxiliary metadata associated with the current page table.
+    pub fn aux_meta(&self) -> &A {
+        self.pt_cursor.aux_meta()
+    }
+
     /// Moves the cursor down to the next level if the next level page table exists.
     ///
     /// Returns the new level if the next level page table exists, or `None` otherwise.
     pub fn push_level_if_exists(&mut self) -> Option<PagingLevel> {
         self.pt_cursor.push_level_if_exists()
+    }
+
+    /// Pops the cursor up to the previous level.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the current level is at the guard level.
+    pub fn pop_level(&mut self) {
+        self.pt_cursor.pop_level();
     }
 
     /// Gets the dedicated TLB flusher for this cursor.
@@ -475,7 +546,7 @@ impl<'a, A: AuxPageTableMeta> CursorMut<'a, A> {
 
         let cur_va = self.pt_cursor.virt_addr();
 
-        for (va, pa, level) in largest_pages::<UserPtConfig>(cur_va, paddr_begin, map_size) {
+        for (va, pa, level) in largest_pages::<UserPtConfig<A>>(cur_va, paddr_begin, map_size) {
             self.pt_cursor.jump(va).unwrap();
             self.pt_cursor.adjust_level(level);
             // SAFETY: It is safe to map I/O memory into the userspace.
@@ -520,7 +591,7 @@ impl<'a, A: AuxPageTableMeta> CursorMut<'a, A> {
     /// level via [`Self::adjust_level`] before unmapping to change the
     /// unmapped range.
     ///
-    /// The number of unmapped frames is returned.
+    /// The number of unmapped pages is returned.
     ///
     /// # Panics
     ///
@@ -530,6 +601,8 @@ impl<'a, A: AuxPageTableMeta> CursorMut<'a, A> {
     ///  - the current virtual address range is not fully contained in the
     ///    cursor range.
     pub fn unmap(&mut self) -> usize {
+        let cur_range = self.pt_cursor.cur_va_range();
+
         // SAFETY:
         // 1. It is safe to unmap memory in the userspace.
         // 2. We drop the unmapped items only after flushing TLB entries, which is safe.
@@ -558,7 +631,7 @@ impl<'a, A: AuxPageTableMeta> CursorMut<'a, A> {
                         1
                     }
                     VmItem {
-                        mapped_item: MappedItem::UntrackedIoMem { .. },
+                        mapped_item: MappedItem::UntrackedIoMem { level, .. },
                         ..
                     } => {
                         panic_guard.forget();
@@ -568,9 +641,10 @@ impl<'a, A: AuxPageTableMeta> CursorMut<'a, A> {
                         // corresponding `IoMem`. This is because we manage
                         // the range of I/O as a whole, but the frames
                         // handled here might be one segment of it.
-                        self.flusher.issue_tlb_flush(TlbFlushOp::for_single(va));
+                        self.flusher
+                            .issue_tlb_flush(TlbFlushOp::for_range(cur_range.clone()));
 
-                        0
+                        page_size_at(level) / page_size_at(1)
                     }
                 }
             }
