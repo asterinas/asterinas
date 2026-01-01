@@ -1,2 +1,6 @@
+GetdentsTest/0.OpathFile
+GetdentsTest/1.OpathFile
 GetdentsTest/0.PartialBuffer
 GetdentsTest/1.PartialBuffer
+GetdentsTest/0.TooLargeSize
+GetdentsTest/1.TooLargeSize

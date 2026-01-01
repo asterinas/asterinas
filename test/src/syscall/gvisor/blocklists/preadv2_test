@@ -1,3 +1,4 @@
+Preadv2Test.Preadv2WithOpath
 Preadv2Test.TestInvalidFlag
 Preadv2Test.TestUnreadableFile
 Preadv2Test.TestUnseekableFileInvalid

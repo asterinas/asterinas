@@ -4,6 +4,7 @@ IoctlTest.IoctlWithOpath
 IoctlTest.FIONBIOSucceeds
 IoctlTest.FIONBIOFails
 IoctlTest.FIOASYNCFails
+IoctlTest.FIOASYNCHandlesFuseFD
 IoctlTest.FIOASYNCSucceeds
 IoctlTest.FIOASYNCNoTarget
 IoctlTest.FIOASYNCSelfTarget
@@ -31,3 +32,4 @@ IoctlTest/IoctlTestSIOCGIFCONF.ValidateNoArrayGetsLength/3
 IoctlTest/IoctlTestSIOCGIFCONF.ValidateNoArrayGetsLength/2
 IoctlTest/IoctlTestSIOCGIFCONF.ValidateNoArrayGetsLength/1
 IoctlTest/IoctlTestSIOCGIFCONF.ValidateNoArrayGetsLength/0
+IoctlTest/IoctlTestSIOCGIFCONF.ValidateNestedPointerCheck/*

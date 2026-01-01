@@ -1,0 +1,12 @@
+CreateTest.ChmodReadToWriteBetweenOpens
+CreateTest.ChmodWriteToReadBetweenOpens
+CreateTest.CreateAtFile
+CreateTest.CreateExclusively
+CreateTest.CreateFailsOnDirWithoutWritePerms
+CreateTest.CreateWithReadFlagNotAllowedByMode
+CreateTest.CreateWithWriteFlagNotAllowedByMode
+CreateTest.CreatFileWithOTruncAndReadOnly
+CreateTest.ExistingFile
+CreateTest.HonorsUmask
+CreateTest.OpenCreateROThenRW
+CreateTest.TmpFile
