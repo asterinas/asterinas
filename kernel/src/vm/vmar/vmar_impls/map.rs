@@ -59,6 +59,8 @@ pub struct VmarMapOptions<'a> {
     can_overwrite: bool,
     // Whether the mapping is mapped with `MAP_SHARED`
     is_shared: bool,
+    // Optional shared memory ID for MAP_SHARED shm segments.
+    shared_mem_id: Option<u64>,
     // Whether the mapping needs to handle surrounding pages when handling page fault.
     handle_page_faults_around: bool,
 }
@@ -79,6 +81,7 @@ impl<'a> VmarMapOptions<'a> {
             align: PAGE_SIZE,
             can_overwrite: false,
             is_shared: false,
+            shared_mem_id: None,
             handle_page_faults_around: false,
         }
     }
@@ -181,6 +184,12 @@ impl<'a> VmarMapOptions<'a> {
         self
     }
 
+    /// Sets the shared memory ID for shared mappings.
+    pub fn shared_mem_id(mut self, shmid: u64) -> Self {
+        self.shared_mem_id = Some(shmid);
+        self
+    }
+
     /// Sets the mapping to handle surrounding pages when handling page fault.
     pub fn handle_page_faults_around(mut self) -> Self {
         self.handle_page_faults_around = true;
@@ -232,6 +241,7 @@ impl<'a> VmarMapOptions<'a> {
             align,
             can_overwrite,
             is_shared,
+            shared_mem_id,
             handle_page_faults_around,
         } = self;
 
@@ -300,6 +310,7 @@ impl<'a> VmarMapOptions<'a> {
                         vmo.unwrap(),
                         vmo_offset,
                         is_writable_tracked,
+                        shared_mem_id,
                     )?);
                     (mapped_mem, Some(inode), None)
                 }
@@ -307,7 +318,7 @@ impl<'a> VmarMapOptions<'a> {
             }
         } else if let Some(vmo) = vmo {
             (
-                MappedMemory::Vmo(MappedVmo::new(vmo, vmo_offset, false)?),
+                MappedMemory::Vmo(MappedVmo::new(vmo, vmo_offset, false, shared_mem_id)?),
                 None,
                 None,
             )
@@ -316,7 +327,7 @@ impl<'a> VmarMapOptions<'a> {
         };
 
         // Build the mapping.
-        let vm_mapping = VmMapping::new(
+        let mut vm_mapping = VmMapping::new(
             NonZeroUsize::new(map_size).unwrap(),
             map_to_addr,
             mapped_mem,
@@ -325,6 +336,9 @@ impl<'a> VmarMapOptions<'a> {
             handle_page_faults_around,
             perms | may_perms,
         );
+        if let Some(shmid) = shared_mem_id {
+            vm_mapping.set_shared_mem(Some(shmid));
+        }
 
         // Populate device memory if needed before adding to VMAR.
         //

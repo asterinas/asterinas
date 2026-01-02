@@ -13,6 +13,7 @@ use osdk_frame_allocator::FrameAllocator;
 use osdk_heap_allocator::{HeapAllocator, type_from_layout};
 
 pub mod perms;
+pub mod shared_mem;
 pub mod vmar;
 pub mod vmo;
 
