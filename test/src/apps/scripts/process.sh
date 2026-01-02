@@ -51,7 +51,9 @@ process/pidfd
 process/wait4
 procfs/dentry_cache
 procfs/pid_mem
+pseudofs/pseudo_dentry
 pseudofs/pseudo_inode
+pseudofs/pseudo_mount
 pseudofs/memfd_access_err
 pthread/pthread_test
 pty/close_pty

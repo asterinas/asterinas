@@ -5,7 +5,7 @@
 use core::time::Duration;
 
 use inherit_methods_macro::inherit_methods;
-pub use mount::{Mount, MountPropType, PerMountFlags, RESERVED_MOUNT_ID};
+pub use mount::{Mount, MountPropType, PerMountFlags};
 pub use mount_namespace::MountNamespace;
 
 use crate::{
@@ -53,6 +53,16 @@ impl Path {
         }
         let new_child_dentry = self.dentry.create(name, type_, mode)?;
         Ok(Self::new(self.mount.clone(), new_child_dentry))
+    }
+
+    /// Creates a new pseudo `Path`.
+    pub fn new_pseudo(
+        mount: Arc<Mount>,
+        inode: Arc<dyn Inode>,
+        name_fn: fn(&dyn Inode) -> String,
+    ) -> Self {
+        let dentry = Dentry::new_pseudo(inode, name_fn);
+        Self::new(mount, dentry)
     }
 
     fn new(mount: Arc<Mount>, dentry: Arc<Dentry>) -> Self {
@@ -103,17 +113,38 @@ impl Path {
     ///
     /// Returns an `InodeHandle` on success.
     pub fn open(&self, open_args: OpenArgs) -> Result<InodeHandle> {
-        let inode = self.inode();
-        check_open_util(inode.as_ref(), &open_args)?;
+        let inode = self.inode().as_ref();
+        let inode_type = inode.type_();
+        let creation_flags = &open_args.creation_flags;
+        let status_flags = &open_args.status_flags;
 
-        if inode.type_().is_regular_file()
-            && open_args.creation_flags.contains(CreationFlags::O_TRUNC)
-            && !open_args.status_flags.contains(StatusFlags::O_PATH)
+        if inode_type == InodeType::SymLink
+            && creation_flags.contains(CreationFlags::O_NOFOLLOW)
+            && !status_flags.contains(StatusFlags::O_PATH)
+        {
+            return_errno_with_message!(Errno::ELOOP, "the file is a symlink");
+        }
+
+        if creation_flags.contains(CreationFlags::O_CREAT)
+            && creation_flags.contains(CreationFlags::O_EXCL)
+        {
+            return_errno_with_message!(Errno::EEXIST, "the file already exists");
+        }
+        if creation_flags.contains(CreationFlags::O_DIRECTORY) && inode_type != InodeType::Dir {
+            return_errno_with_message!(
+                Errno::ENOTDIR,
+                "O_DIRECTORY is specified but the file is not a directory"
+            );
+        }
+
+        if inode_type.is_regular_file()
+            && creation_flags.contains(CreationFlags::O_TRUNC)
+            && !status_flags.contains(StatusFlags::O_PATH)
         {
             self.resize(0)?;
         }
 
-        InodeHandle::new(self.clone(), open_args.access_mode, open_args.status_flags)
+        InodeHandle::new(self.clone(), open_args.access_mode, *status_flags)
     }
 
     /// Gets the absolute path.
@@ -137,7 +168,6 @@ impl Path {
             current_dir = parent_dir;
         }
 
-        debug_assert!(path_name.starts_with('/'));
         path_name
     }
 
@@ -167,7 +197,12 @@ impl Path {
     /// to get the parent of the mountpoint recursively.
     fn effective_parent(&self) -> Option<Self> {
         if !self.is_mount_root() {
-            return Some(Self::new(self.mount.clone(), self.dentry.parent().unwrap()));
+            if let Some(parent) = self.dentry.parent() {
+                return Some(Self::new(self.mount.clone(), parent));
+            } else {
+                debug_assert!(self.dentry.is_pseudo());
+                return None;
+            }
         }
 
         let parent = self.mount.parent()?;
@@ -220,33 +255,6 @@ impl Path {
     fn this(&self) -> Self {
         self.clone()
     }
-}
-
-/// Checks if the given `Inode` can be opened with the given `OpenArgs`.
-pub(super) fn check_open_util(inode: &dyn Inode, open_args: &OpenArgs) -> Result<()> {
-    let inode_type = inode.type_();
-    let creation_flags = &open_args.creation_flags;
-
-    if inode_type == InodeType::SymLink
-        && creation_flags.contains(CreationFlags::O_NOFOLLOW)
-        && !open_args.status_flags.contains(StatusFlags::O_PATH)
-    {
-        return_errno_with_message!(Errno::ELOOP, "the file is a symlink");
-    }
-
-    if creation_flags.contains(CreationFlags::O_CREAT)
-        && creation_flags.contains(CreationFlags::O_EXCL)
-    {
-        return_errno_with_message!(Errno::EEXIST, "the file already exists");
-    }
-    if creation_flags.contains(CreationFlags::O_DIRECTORY) && inode_type != InodeType::Dir {
-        return_errno_with_message!(
-            Errno::ENOTDIR,
-            "O_DIRECTORY is specified but the file is not a directory"
-        );
-    }
-
-    Ok(())
 }
 
 impl Path {

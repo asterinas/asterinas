@@ -20,8 +20,8 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::{FdFlags, FileDesc, get_file_fast},
-        path::RESERVED_MOUNT_ID,
-        pseudofs::anon_inodefs_shared_inode,
+        path::Path,
+        pseudofs::{anon_inodefs_mount, anon_inodefs_shared_inode},
         utils::{CreationFlags, Inode, StatusFlags},
     },
     prelude::*,
@@ -139,14 +139,23 @@ struct SignalFile {
     signals_mask: AtomicSigMask,
     /// Non-blocking mode flag
     non_blocking: AtomicBool,
+    /// The pseudo path associated with this signalfd file.
+    pseudo_path: Path,
 }
 
 impl SignalFile {
     /// Create a new signalfd instance
     fn new(mask: AtomicSigMask, non_blocking: bool) -> Self {
+        let pseudo_path = Path::new_pseudo(
+            anon_inodefs_mount().clone(),
+            anon_inodefs_shared_inode().clone(),
+            |_| "anon_inode:[signalfd]".to_string(),
+        );
+
         Self {
             signals_mask: mask,
             non_blocking: AtomicBool::new(non_blocking),
+            pseudo_path,
         }
     }
 
@@ -263,14 +272,13 @@ impl FileLike for SignalFile {
         Ok(())
     }
 
-    fn inode(&self) -> &Arc<dyn Inode> {
-        anon_inodefs_shared_inode()
+    fn path(&self) -> &Path {
+        &self.pseudo_path
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
         struct FdInfo {
             flags: u32,
-            ino: u64,
             sigmask: u64,
         }
 
@@ -278,9 +286,8 @@ impl FileLike for SignalFile {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 writeln!(f, "pos:\t{}", 0)?;
                 writeln!(f, "flags:\t0{:o}", self.flags)?;
-                // TODO: This should be the mount ID of the pseudo filesystem.
-                writeln!(f, "mnt_id:\t{}", RESERVED_MOUNT_ID)?;
-                writeln!(f, "ino:\t{}", self.ino)?;
+                writeln!(f, "mnt_id:\t{}", anon_inodefs_mount().id())?;
+                writeln!(f, "ino:\t{}", anon_inodefs_shared_inode().ino())?;
                 writeln!(f, "sigmask:\t{:016x}", self.sigmask)
             }
         }
@@ -292,7 +299,6 @@ impl FileLike for SignalFile {
 
         Box::new(FdInfo {
             flags,
-            ino: self.inode().ino(),
             sigmask: self.mask().load(Ordering::Relaxed).into(),
         })
     }
