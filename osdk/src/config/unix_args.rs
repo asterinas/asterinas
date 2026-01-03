@@ -2,22 +2,15 @@
 
 //! This module contains utilities for manipulating common Unix command-line arguments.
 
-use std::process;
-
 use indexmap::{IndexMap, IndexSet};
 
-use crate::{error::Errno, error_msg};
+use regex::Regex;
+use std::sync::OnceLock;
 
 /// Split a string of Unix arguments into an array of key-value strings or switches.
 /// Positional arguments are not supported.
 pub fn split_to_kv_array(args: &str) -> Vec<String> {
-    let target = match shlex::split(args) {
-        Some(v) => v,
-        None => {
-            error_msg!("Failed to parse unix args: {:#?}", args);
-            process::exit(Errno::ParseMetadata as _);
-        }
-    };
+    let target = split_preserving_quotes(args);
 
     // Join the key value arguments as a single element
     let mut joined = Vec::<String>::new();
@@ -130,20 +123,32 @@ fn infer_multi_value_keys(array: &Vec<String>, separator: &str) -> IndexSet<Stri
 }
 
 pub fn get_key(item: &str, separator: &str) -> Option<String> {
-    let split = item.split(separator).collect::<Vec<_>>();
-    let len = split.len();
-    if len > 2 || len == 0 {
-        error_msg!("`{}` is an invalid argument.", item);
-        process::exit(Errno::ParseMetadata as _);
-    }
+    item.split_once(separator)
+        .map(|(key, _value)| key.to_string())
+}
 
-    if len == 1 {
-        return None;
-    }
+fn split_preserving_quotes(input: &str) -> Vec<String> {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    // A Unix shell-like argument splitter that preserves quoted substrings.
+    let re = RE.get_or_init(|| Regex::new(r#"'[^']*'|"(?:[^"\\]|\\.)*"|\S+"#).unwrap());
 
-    let key = split.first().unwrap();
+    // Process line by line, removing comments and splitting
+    input
+        .lines()
+        .flat_map(|line| {
+            // Remove comment from this line
+            let line = if let Some(pos) = line.find('#') {
+                &line[..pos]
+            } else {
+                line
+            };
 
-    Some(key.to_string())
+            // Split the line into tokens
+            re.find_iter(line)
+                .map(|m| m.as_str().to_string())
+                .collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 #[cfg(test)]
