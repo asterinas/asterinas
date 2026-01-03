@@ -28,52 +28,42 @@ jobs:
     container:
       image: asterinas/asterinas:0.17.0-20251228
       options: -v /dev:/dev --privileged
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - name: Modify configuration.nix to include test-asterinas
-        run: |
-          sed -i 's/environment.systemPackages = with pkgs; \[ hello-asterinas \];/environment.systemPackages = with pkgs; \[ test-asterinas \];/' \
-            distro/etc_nixos/configuration.nix
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+          - name: nix-commands
+            disk_size: 6144
+          - name: podman
+            disk_size: 8192
 
-      - name: Test nix commands
-        run: |
-          make nixos NIXOS_DISK_SIZE_IN_MB=6144 NIXOS_TEST_COMMAND='test-nix-commands'
-          make run_nixos || true
-
-      - name: Check results
-        run: |
-          tail --lines 50 qemu.log | awk '
-          BEGIN { hello_count=0 } {
-            if ($0 ~ /^Hello, world!/) hello_count++
-          }
-          END {
-            if (hello_count == 4) exit 0
-            else exit 1
-          }' || (echo "Test nix commands failed" && exit 1)
-          echo "Test nix commands succeeds!"
-
-  podman-test:
-    runs-on: ubuntu-4-cores-150GB-ssd
-    container:
-      image: asterinas/asterinas:0.17.0-20251228
-      options: -v /dev:/dev --privileged
+    name: Test ${{ matrix.test.name }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Modify configuration.nix to include test-asterinas and podman
+      - name: Generate the configuration.nix for the test
+        working-directory: distro/etc_nixos
         run: |
-          sed -i \
-            -e 's/environment.systemPackages = with pkgs; \[ hello-asterinas \];/environment.systemPackages = with pkgs; \[ test-asterinas \];/' \
-            -e 's/^[[:space:]]*# virtualisation\.podman\.enable = true;/  virtualisation.podman.enable = true;/' \
-            distro/etc_nixos/configuration.nix
+          extra_config_path="../tests/${{ matrix.test.name }}/configuration.nix"
+          ./merge_nixos_config.sh configuration.nix ${extra_config_path} merged_configuration.nix
+          mv merged_configuration.nix configuration.nix
+          
+      - name: Run tests
+        run: |
+          TEST_COMMAND="test-${{ matrix.test.name }}.sh"
 
-      - name: Run podman commands
-        run: |
-          make nixos NIXOS_DISK_SIZE_IN_MB=8192 NIXOS_TEST_COMMAND='test-podman'
+          make nixos NIXOS_DISK_SIZE_IN_MB=${{ matrix.test.disk_size }} NIXOS_TEST_COMMAND="${TEST_COMMAND}"
           make run_nixos || true
 
       - name: Check results
         run: |
-          tail --lines 50 qemu.log | grep -q "^Test podman succeeds" || (echo "Test podman failed" && exit 1)
-          echo "Test podman succeeds!"
+          TEST_NAME="${{ matrix.test.name }}"
+          SUCCESS_MSG="CI-TEST-RESULT: SUCCESS: ${TEST_NAME}"
+          
+          if ! grep -q "${SUCCESS_MSG}" qemu.log; then
+            echo "Test '${TEST_NAME}' failed. Success message not found."
+            exit 1
+          fi
+          
+          echo "Test '${TEST_NAME}' succeeded!"
