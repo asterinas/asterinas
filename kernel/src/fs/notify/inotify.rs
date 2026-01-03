@@ -388,7 +388,7 @@ impl FileLike for InotifyFile {
                     let sdev = inode.fs().sb().fsid;
                     writeln!(
                         f,
-                        "inotify wd:{} ino:{:x} sdev:{:x} mask:{:x} ignored_mask:0 fhandle-bytes:0 fhandle-type:0 f_handle:0",
+                        "inotify wd:{} ino:{:x} sdev:{:x} mask:{:x} ignored_mask:0",
                         wd,
                         inode.ino(),
                         sdev,
