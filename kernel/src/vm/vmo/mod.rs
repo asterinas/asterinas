@@ -416,19 +416,24 @@ impl Vmo {
         let mut cursor = locked_pages.cursor_mut(page_idx_range.start as u64);
 
         let Some(pager) = &self.pager else {
-            for _ in page_idx_range {
+            cursor.remove();
+            while let Some(page_idx) = cursor.next_present()
+                && page_idx < page_idx_range.end as u64
+            {
                 cursor.remove();
-                cursor.next();
             }
             return Ok(());
         };
 
         let mut removed_page_idx = Vec::new();
-        for page_idx in page_idx_range {
-            if cursor.remove().is_some() {
-                removed_page_idx.push(page_idx);
-            }
-            cursor.next();
+        if cursor.remove().is_some() {
+            removed_page_idx.push(page_idx_range.start);
+        }
+        while let Some(page_idx) = cursor.next_present()
+            && page_idx < page_idx_range.end as u64
+        {
+            removed_page_idx.push(page_idx as usize);
+            cursor.remove();
         }
 
         drop(locked_pages);

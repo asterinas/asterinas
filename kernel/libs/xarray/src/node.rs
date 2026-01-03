@@ -15,7 +15,7 @@ use ostd::{
 use crate::{
     BITS_PER_LAYER, SLOT_MASK, SLOT_SIZE, XLockGuard,
     entry::{NodeEntry, NodeEntryRef, XEntry, XEntryRef},
-    mark::{Mark, NUM_MARKS},
+    mark::{Mark, NUM_MARKS, PRESENT_MARK},
 };
 
 /// The height of an `XNode` within an `XArray`.
@@ -94,6 +94,11 @@ impl Height {
     /// with the current height.
     pub(super) fn max_index(&self) -> u64 {
         ((SLOT_SIZE as u64) << self.height_shift()) - 1
+    }
+
+    /// Calculates the index step representing one offset at the current height.
+    pub(super) fn index_step(&self) -> u64 {
+        1 << self.height_shift()
     }
 }
 
@@ -184,6 +189,10 @@ impl<P: NonNullPtr + Send + Sync> XNode<P> {
     pub(super) fn is_leaf(&self) -> bool {
         self.height == 1
     }
+
+    pub(super) fn next_marked(&self, offset: u8, mark: usize) -> Option<u8> {
+        self.marks[mark].next_marked(offset)
+    }
 }
 
 impl<P: NonNullPtr + Send + Sync> XNode<P> {
@@ -229,6 +238,7 @@ impl<P: NonNullPtr + Send + Sync> XNode<P> {
             }
             _ => false,
         };
+        let is_new_item = matches!(&entry, Some(Either::Right(_)));
 
         self.slots[offset as usize].update(entry);
 
@@ -236,7 +246,11 @@ impl<P: NonNullPtr + Send + Sync> XNode<P> {
             self.update_mark(guard, offset);
         } else {
             for i in 0..NUM_MARKS {
-                self.unset_mark(guard, offset, i);
+                if i == PRESENT_MARK && is_new_item {
+                    self.set_mark(guard, offset, i);
+                } else {
+                    self.unset_mark(guard, offset, i);
+                }
             }
         }
     }

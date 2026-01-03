@@ -28,12 +28,12 @@ impl Mark {
 
     pub(super) fn update(&self, _guard: XLockGuard, offset: u8, set: bool) -> bool {
         let old_val = self.inner.load(Ordering::Acquire);
+
         let new_val = if set {
             old_val | (1 << offset as u64)
         } else {
             old_val & !(1 << offset as u64)
         };
-
         self.inner.store(new_val, Ordering::Release);
 
         old_val != new_val
@@ -45,6 +45,15 @@ impl Mark {
 
     pub(super) fn is_clear(&self) -> bool {
         self.inner.load(Ordering::Acquire) == 0
+    }
+
+    pub(super) fn next_marked(&self, offset: u8) -> Option<u8> {
+        let high_marks = self.inner.load(Ordering::Acquire) >> offset;
+        if high_marks == 0 {
+            None
+        } else {
+            Some(offset + (high_marks.trailing_zeros() as u8))
+        }
     }
 }
 
@@ -65,7 +74,12 @@ pub enum XMark {
     Mark2,
 }
 
-pub(super) const NUM_MARKS: usize = 3;
+pub(super) const NUM_MARKS: usize = 4;
+
+/// A mark carried by every [`XArray`] item.
+///
+/// This is is for internal use only. `XArray` users cannot set or unset this mark.
+pub(super) const PRESENT_MARK: usize = 3;
 
 impl XMark {
     /// Maps the `XMark` to an index in the range 0 to 2.
