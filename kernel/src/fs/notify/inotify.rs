@@ -10,6 +10,7 @@ use core::{
     sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
 };
 
+use align_ext::AlignExt;
 use bitflags::bitflags;
 use hashbrown::HashMap;
 use ostd::{mm::VmWriter, sync::SpinLock};
@@ -254,16 +255,11 @@ impl InotifyFile {
     fn get_all_event_size(&self) -> usize {
         let event_queue = self.event_queue.lock();
 
-        event_queue.iter().map(|event| event.get_size()).sum()
+        event_queue.iter().map(|event| event.total_size()).sum()
     }
 
     /// Tries to read events from the notification queue.
     fn try_read(&self, writer: &mut VmWriter) -> Result<usize> {
-        const HEADER_SIZE: usize = size_of::<InotifyEventHeader>();
-        if writer.avail() < HEADER_SIZE {
-            return_errno_with_message!(Errno::EINVAL, "buffer is too small");
-        }
-
         // This ensures that we report continuous events even when the user program attempts to
         // call `read()` concurrently.
         let _guard = self.read_mutex.lock();
@@ -412,13 +408,13 @@ impl FileLike for InotifyFile {
 }
 
 /// Checks if the event type is mergeable.
-fn is_mergeable_event_type(event: FsEvents) -> bool {
-    event & (FsEvents::MODIFY | FsEvents::ATTRIB | FsEvents::ACCESS) != FsEvents::empty()
+fn is_mergeable_event_type(event: u32) -> bool {
+    event & (FsEvents::MODIFY | FsEvents::ATTRIB | FsEvents::ACCESS).bits() != 0
 }
 
 /// Checks if two inotify events can be merged.
 fn can_merge_events(existing: &InotifyEvent, new_event: &InotifyEvent) -> bool {
-    existing.wd() == new_event.wd()
+    existing.header.wd == new_event.header.wd
         && existing.name == new_event.name
         && existing.header.event == new_event.header.event
         && is_mergeable_event_type(new_event.header.event)
@@ -536,95 +532,64 @@ struct InotifyEvent {
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17.8/source/include/uapi/linux/inotify.h#L21>
 #[repr(C)]
+#[derive(Clone, Copy, Pod)]
 struct InotifyEventHeader {
     wd: u32,
-    event: FsEvents,
+    event: u32,
     cookie: u32,
     name_len: u32,
 }
 
 impl InotifyEvent {
     fn new(wd: u32, event: FsEvents, cookie: u32, name: Option<String>) -> Self {
-        // Calculate actual name length including null terminator
+        // Calculate the actual name length including the null terminator.
         let actual_name_len = name.as_ref().map_or(0, |name| name.len() + 1);
-        // Calculate padded name length aligned to sizeof(struct inotify_event)
+        // Calculate the padded name length aligned to `size_of::<InotifyEventHeader>`.
         let pad_name_len = Self::round_event_name_len(actual_name_len);
 
-        Self {
-            header: InotifyEventHeader {
-                wd,
-                event,
-                cookie,
-                name_len: pad_name_len as u32,
-            },
-            name,
-        }
+        let header = InotifyEventHeader {
+            wd,
+            event: event.bits(),
+            cookie,
+            name_len: pad_name_len as u32,
+        };
+        Self { header, name }
     }
 
-    fn wd(&self) -> u32 {
-        self.header.wd
-    }
-
-    fn event(&self) -> FsEvents {
-        self.header.event
-    }
-
-    fn cookie(&self) -> u32 {
-        self.header.cookie
-    }
-
-    fn name_len(&self) -> u32 {
-        self.header.name_len
-    }
-}
-
-impl InotifyEvent {
-    /// Rounds up the name length to align with sizeof(struct inotify_event).
+    /// Rounds up the name length to align with `size_of::<InotifyEventHeader>()`.
+    ///
+    /// Reference: <https://elixir.bootlin.com/linux/v6.17.8/source/fs/notify/inotify/inotify_user.c#L160>
     fn round_event_name_len(name_len: usize) -> usize {
-        const INOTIFY_EVENT_SIZE: usize = size_of::<InotifyEventHeader>();
-        (name_len + INOTIFY_EVENT_SIZE - 1) & !(INOTIFY_EVENT_SIZE - 1)
+        const HEADER_SIZE: usize = size_of::<InotifyEventHeader>(); // 16 bytes
+        const { assert!(HEADER_SIZE.is_power_of_two()) };
+        name_len.align_up(HEADER_SIZE)
+    }
+
+    fn total_size(&self) -> usize {
+        const HEADER_SIZE: usize = size_of::<InotifyEventHeader>(); // 16 bytes
+        HEADER_SIZE + (self.header.name_len as usize)
     }
 
     fn copy_to_user(&self, writer: &mut VmWriter) -> Result<usize> {
-        let mut total_size = 0;
-
-        // Calculate actual name length including null terminator
-        let actual_name_len = self.name.as_ref().map_or(0, |name| name.len() + 1);
-        // Calculate padded name length aligned to sizeof(struct inotify_event)
-        let pad_name_len = Self::round_event_name_len(actual_name_len);
-
-        // Write the event header
-        writer.write_val(&self.wd())?;
-        writer.write_val(&self.event().bits())?;
-        writer.write_val(&self.cookie())?;
-        writer.write_val(&self.name_len())?;
-        total_size += size_of::<InotifyEventHeader>();
-
-        if let Some(name) = self.name.as_ref() {
-            // Write the actual name bytes
-            for byte in name.as_bytes() {
-                writer.write_val(byte)?;
-            }
-            // Write null terminator
-            writer.write_val(&b'\0')?;
-            total_size += name.len() + 1;
-
-            // Fill remaining bytes with zeros for alignment
-            let padding_len = pad_name_len - actual_name_len;
-            if padding_len > 0 {
-                let filled = writer.fill_zeros(padding_len).map_err(|(e, _)| e)?;
-                total_size += filled;
-            }
+        let total_size = self.total_size();
+        if total_size > writer.avail() {
+            return_errno_with_message!(Errno::EINVAL, "the buffer is too small");
         }
 
-        Ok(total_size)
-    }
+        // Write the header.
+        writer.write_val(&self.header)?;
 
-    fn get_size(&self) -> usize {
-        const HEADER_SIZE: usize = size_of::<InotifyEventHeader>(); // 16 bytes
-        let actual_name_len = self.name.as_ref().map_or(0, |name| name.len() + 1);
-        let pad_name_len = Self::round_event_name_len(actual_name_len);
-        HEADER_SIZE + pad_name_len
+        let Some(name) = self.name.as_ref() else {
+            debug_assert_eq!(self.header.name_len, 0);
+            return Ok(total_size);
+        };
+        // Write the actual name bytes.
+        writer.write_fallible(&mut VmReader::from(name.as_bytes()).to_fallible())?;
+        // Fill remaining bytes with zeros for alignment.
+        // Note that this also includes the null terminator.
+        writer.fill_zeros((self.header.name_len as usize) - name.len())?;
+
+        Ok(total_size)
     }
 }
 
