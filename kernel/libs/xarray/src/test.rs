@@ -164,16 +164,84 @@ fn cursor_store_sparse() {
 }
 
 #[ktest]
-fn set_mark() {
-    let xarray_arc: XArray<Arc<u32>, XMark> = XArray::new();
-    init_continuous_with_arc(&xarray_arc, n!(100));
-
+fn cursor_next_present_single() {
+    let xarray_arc: XArray<Arc<u32>> = XArray::new();
     let mut locked_xarray = xarray_arc.lock();
+    locked_xarray.store(2, Arc::new(2));
+
+    let mut cursor = locked_xarray.cursor(0);
+    for i in 0..2 {
+        cursor.reset_to(i);
+        assert_eq!(cursor.next_present(), Some(2));
+        assert_eq!(*cursor.load().unwrap().as_ref(), 2);
+    }
+    for i in 2..n!(100) {
+        cursor.reset_to(i);
+        assert_eq!(cursor.next_present(), None);
+    }
+}
+
+#[ktest]
+fn cursor_next_present_sparse() {
+    let xarray_arc: XArray<Arc<u32>> = XArray::new();
+    let mut locked_xarray = xarray_arc.lock();
+    locked_xarray.store(0, Arc::new(1));
+    locked_xarray.store(n!(10), Arc::new(2));
+    locked_xarray.store(n!(100), Arc::new(3));
+
+    let mut cursor = locked_xarray.cursor(0);
+    for i in 0..n!(10) {
+        cursor.reset_to(i);
+        let _ = cursor.load();
+        assert_eq!(cursor.next_present(), Some(n!(10)));
+        assert_eq!(*cursor.load().unwrap().as_ref(), 2);
+    }
+    for i in n!(10)..n!(100) {
+        cursor.reset_to(i);
+        assert_eq!(cursor.next_present(), Some(n!(100)));
+        assert_eq!(*cursor.load().unwrap().as_ref(), 3);
+    }
+}
+
+#[ktest]
+fn cursor_next_present_continuous() {
+    let xarray_arc: XArray<Arc<u32>> = XArray::new();
+    let mut locked_xarray = xarray_arc.lock();
+
+    let mut cursor = locked_xarray.cursor_mut(0);
+    for i in 0..n!(100) {
+        let value = Arc::new(i);
+        cursor.store(value);
+        cursor.next();
+    }
+
+    cursor.reset_to(0);
+    for i in 0..(n!(100) - 1) {
+        assert_eq!(cursor.next_present(), Some(i as u64 + 1));
+        assert_eq!(*cursor.load().unwrap().as_ref(), i + 1);
+    }
+    assert_eq!(cursor.next_present(), None);
+    assert_eq!(*cursor.load().unwrap().as_ref(), n!(100) - 1);
+}
+
+fn init_continuous_with_marks(xarray: &XArray<Arc<u32>, XMark>) {
+    init_continuous_with_arc(xarray, n!(100));
+
+    let mut locked_xarray = xarray.lock();
     let mut cursor = locked_xarray.cursor_mut(n!(10));
     cursor.set_mark(XMark::Mark0).unwrap();
     cursor.set_mark(XMark::Mark1).unwrap();
     cursor.reset_to(n!(20));
     cursor.set_mark(XMark::Mark1).unwrap();
+}
+
+#[ktest]
+fn set_mark() {
+    let xarray_arc: XArray<Arc<u32>, XMark> = XArray::new();
+    init_continuous_with_marks(&xarray_arc);
+
+    let guard = disable_preempt();
+    let mut cursor = xarray_arc.cursor(&guard, 0);
 
     cursor.reset_to(n!(10));
     let value1_mark0 = cursor.is_marked(XMark::Mark0);
@@ -210,6 +278,32 @@ fn unset_mark() {
     let value1_mark2 = cursor.is_marked(XMark::Mark2);
     assert!(!value1_mark0);
     assert!(!value1_mark2);
+}
+
+#[ktest]
+fn next_marked() {
+    let xarray_arc: XArray<Arc<u32>, XMark> = XArray::new();
+    init_continuous_with_marks(&xarray_arc);
+
+    let guard = disable_preempt();
+    let mut cursor = xarray_arc.cursor(&guard, 0);
+
+    assert_eq!(cursor.next_marked(XMark::Mark0), Some(n!(10)));
+    assert_eq!(cursor.next_marked(XMark::Mark0), None);
+
+    cursor.reset_to(1);
+
+    assert_eq!(cursor.next_marked(XMark::Mark1), Some(n!(10)));
+    assert_eq!(cursor.next_marked(XMark::Mark1), Some(n!(20)));
+    assert_eq!(*cursor.load().unwrap().as_ref(), n!(20));
+    assert_eq!(cursor.next_marked(XMark::Mark1), None);
+
+    cursor.reset_to(2);
+
+    assert_eq!(cursor.next_marked(XMark::Mark1), Some(n!(10)));
+    assert_eq!(*cursor.load().unwrap().as_ref(), n!(10));
+    assert_eq!(cursor.next_marked(XMark::Mark1), Some(n!(20)));
+    assert_eq!(cursor.next_marked(XMark::Mark1), None);
 }
 
 #[ktest]

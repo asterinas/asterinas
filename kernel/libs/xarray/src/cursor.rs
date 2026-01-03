@@ -12,7 +12,7 @@ use ostd::{
 use crate::{
     SLOT_SIZE, XArray, XLockGuard,
     entry::NodeEntryRef,
-    mark::{NoneMark, XMark},
+    mark::{NoneMark, PRESENT_MARK, XMark},
     node::{Height, XNode},
 };
 
@@ -167,6 +167,84 @@ impl<'a, P: NonNullPtr + Send + Sync, M> Cursor<'a, P, M> {
         }
     }
 
+    /// Finds the next marked item and moves the cursor to it.
+    ///
+    /// This method will return the index of the marked item, or `None` if no such item exists.
+    fn find_marked(&mut self, mark: usize) -> Option<u64> {
+        let mut index = self.index.checked_add(1)?;
+        let (mut current_node, mut operation_offset) =
+            if let Some((node, offset)) = core::mem::take(&mut self.state).into_node() {
+                (node, offset + 1)
+            } else if let Some(node) = self.xa.head.read_with(self.guard)
+                && index <= node.height().max_index()
+            {
+                let offset = node.entry_offset(index);
+                (node, offset)
+            } else {
+                self.reset();
+                return None;
+            };
+
+        loop {
+            // If we reach the end of the current node, go to its parent node.
+            if operation_offset == SLOT_SIZE as u8 {
+                let Some(parent_node) = current_node.deref_target().parent(self.guard) else {
+                    self.reset();
+                    return None;
+                };
+
+                operation_offset = current_node.offset_in_parent() + 1;
+                current_node = parent_node;
+                continue;
+            }
+
+            // Otherwise, check whether the remaining children contain marked items.
+            let new_operation_offset = current_node
+                .next_marked(operation_offset, mark)
+                .unwrap_or(SLOT_SIZE as u8);
+            let gap = (new_operation_offset - operation_offset) as u64;
+            if gap != 0 {
+                let index_step = current_node.height().index_step();
+                // `index_step` is a power of two. In this case, we want to clear the lower bits
+                // since we should start from the beginning of the next child.
+                let Some(new_index) = (index & !(index_step - 1)).checked_add(gap * index_step)
+                else {
+                    self.reset();
+                    return None;
+                };
+
+                index = new_index;
+                operation_offset = new_operation_offset;
+                if new_operation_offset == SLOT_SIZE as u8 {
+                    continue;
+                }
+            }
+
+            // Due to race conditions, the child may no longer exist. If so, we will retry.
+            let Some(child_node) = current_node
+                .deref_target()
+                .entry_with(self.guard, operation_offset)
+            else {
+                continue;
+            };
+
+            // If we're not at the leaf, then we continue looking down.
+            if !current_node.is_leaf() {
+                current_node = child_node.left().unwrap();
+                operation_offset = current_node.entry_offset(index);
+                continue;
+            }
+
+            // If we're at the leaf, then we have found an item.
+            self.index = index;
+            self.state = CursorState::AtNode {
+                node: current_node,
+                operation_offset,
+            };
+            return Some(index);
+        }
+    }
+
     /**** Public ****/
 
     /// Loads the item at the target index.
@@ -226,6 +304,22 @@ impl<'a, P: NonNullPtr + Send + Sync, M> Cursor<'a, P, M> {
         self.state.move_to(current_node, self.index);
         self.continue_traverse_to_target();
     }
+
+    /// Moves the cursor to the next present item.
+    ///
+    /// If an item is present after the cursor's current index, the cursor will be
+    /// positioned on the corresponding leaf node and the index of the item will be
+    /// returned.
+    ///
+    /// Otherwise, the cursor will stay where it is and a [`None`] will be returned.
+    ///
+    /// Note that this method cannot provide an atomic guarantee for the following
+    /// operations on [`Cursor`]. For example, [`Self::load`] may fail due to
+    /// concurrent removals. If this is a concern, use [`CursorMut`] to avoid the
+    /// issue.
+    pub fn next_present(&mut self) -> Option<u64> {
+        self.find_marked(PRESENT_MARK)
+    }
 }
 
 impl<P: NonNullPtr + Send + Sync, M: Into<XMark>> Cursor<'_, P, M> {
@@ -238,6 +332,22 @@ impl<P: NonNullPtr + Send + Sync, M: Into<XMark>> Cursor<'_, P, M> {
             .as_node()
             .map(|(node, off)| node.is_marked(off, mark.into().index()))
             .unwrap_or(false)
+    }
+
+    /// Moves the cursor to the next marked item.
+    ///
+    /// If an item is marked after the cursor's current index, the cursor will be
+    /// positioned on the corresponding leaf node and the index of the item will be
+    /// returned.
+    ///
+    /// Otherwise, the cursor will stay where it is and a [`None`] will be returned.
+    ///
+    /// Note that this method cannot provide an atomic guarantee for the following
+    /// operations on [`Cursor`]. For example, [`Self::load`] may return an item that
+    /// is not marked due to concurrent operations. If this is a concern, use
+    /// [`CursorMut`] to avoid the issue.
+    pub fn next_marked(&mut self, mark: M) -> Option<u64> {
+        self.find_marked(mark.into().index())
     }
 }
 
