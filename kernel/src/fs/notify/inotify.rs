@@ -42,7 +42,7 @@ struct SubscriberEntry {
 
 /// A file-like object that provides inotify functionality.
 ///
-/// InotifyFile accepts events from multiple inotify subscribers (watches) on different inodes.
+/// `InotifyFile` accepts events from multiple inotify subscribers (watches) on different inodes.
 /// Users should read events from this file to receive notifications about filesystem changes.
 pub struct InotifyFile {
     // Lock to serialize watch updates and removals.
@@ -65,6 +65,7 @@ pub struct InotifyFile {
 
 impl Drop for InotifyFile {
     /// Cleans up all subscribers when the inotify file is dropped.
+    ///
     /// This will remove all subscribers from their inodes.
     fn drop(&mut self) {
         let mut watch_map = self.watch_map.write();
@@ -87,19 +88,18 @@ impl Drop for InotifyFile {
     }
 }
 
-/// Default max queued events.
+/// The default maximum capacity of the event queue.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.14/source/fs/notify/inotify/inotify_user.c#L853>
 const DEFAULT_MAX_QUEUED_EVENTS: usize = 16384;
 
 impl InotifyFile {
     /// Creates a new inotify file.
-    ///
-    /// Watch Description starts from 1.
-    /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/fs/notify/inotify/inotify_user.c#L402>
     pub fn new(is_nonblocking: bool) -> Result<Arc<Self>> {
         Ok(Arc::new_cyclic(|weak_self| Self {
             watch_lock: Mutex::new(()),
+            // Allocate watch descriptors from 1.
+            // Reference: <https://elixir.bootlin.com/linux/v6.17/source/fs/notify/inotify/inotify_user.c#L402>
             next_wd: AtomicU32::new(1),
             watch_map: RwLock::new(HashMap::new()),
             is_nonblocking: AtomicBool::new(is_nonblocking),
@@ -116,9 +116,9 @@ impl InotifyFile {
 
         let new_wd = self.next_wd.fetch_add(1, Ordering::Relaxed);
         if new_wd > MAX_VALID_WD {
-            // Rollback the allocation if we exceeded the limit
+            // Roll back the allocation if we exceed the limit.
             self.next_wd.fetch_sub(1, Ordering::Relaxed);
-            return_errno_with_message!(Errno::ENOSPC, "Inotify watches limit reached");
+            return_errno_with_message!(Errno::ENOSPC, "the inotify watch limit is reached");
         }
         Ok(new_wd)
     }
@@ -242,15 +242,16 @@ impl InotifyFile {
     }
 
     /// Sends an inotify event to the inotify file.
+    ///
     /// The event will be queued and can be read by users.
     /// If the event can be merged with the last event in the queue, it will be merged.
     /// The event is only queued if it matches one of the subscriber's interesting events.
     fn receive_event(&self, subscriber: &InotifySubscriber, event: FsEvents, name: Option<String>) {
-        let wd = subscriber.wd();
         if !event.contains(FsEvents::IN_IGNORED) && !subscriber.is_interesting(event) {
             return;
         }
 
+        let wd = subscriber.wd();
         let new_event = InotifyEvent::new(wd, event, 0, name);
 
         {
@@ -461,18 +462,19 @@ fn can_merge_events(existing: &InotifyEvent, new_event: &InotifyEvent) -> bool {
 /// `AtomicU64` for atomic updates: the high 32 bits store options, and the low 32 bits
 /// store the event mask.
 pub struct InotifySubscriber {
-    // interesting events and control options.
+    // Interesting events and control options.
+    //
+    // This field is packed into a `u64`: the high 32 bits store options,
+    // and the low 32 bits store interesting events.
     interesting_and_controls: AtomicU64,
     // Watch descriptor.
     wd: u32,
-    // reference to the owning inotify file.
+    // Reference to the owning inotify file.
     inotify_file: Arc<InotifyFile>,
 }
 
 impl InotifySubscriber {
-    /// Creates a new InotifySubscriber with initial interesting events and options.
-    /// The `interesting_and_controls` field is packed into a u64: the high 32 bits store options,
-    /// and the low 32 bits store interesting events.
+    /// Creates a new `InotifySubscriber` with initial interesting events and options.
     pub fn new(
         inotify_file: Arc<InotifyFile>,
         interesting: InotifyEvents,
@@ -484,7 +486,7 @@ impl InotifySubscriber {
             wd,
             inotify_file,
         });
-        // Initialize the interesting_and_controls atomically
+        // Initialize the `interesting_and_controls` field.
         this.update_interesting_and_controls(interesting.bits(), options.bits());
         Ok(this)
     }
@@ -503,11 +505,11 @@ impl InotifySubscriber {
         InotifyControls::from_bits_truncate((flags >> 32) as u32)
     }
 
-    pub fn inotify_file(&self) -> Arc<InotifyFile> {
-        self.inotify_file.clone()
+    pub fn inotify_file(&self) -> &Arc<InotifyFile> {
+        &self.inotify_file
     }
 
-    /// Updates the interesting events and options atomically using a CAS (Compare-And-Swap) loop.
+    /// Updates the interesting events and options atomically.
     fn update(&self, interesting: InotifyEvents, options: InotifyControls) -> Result<u32> {
         if options.contains(InotifyControls::MASK_CREATE) {
             return_errno_with_message!(Errno::EEXIST, "watch already exists");
@@ -526,7 +528,7 @@ impl InotifySubscriber {
         Ok(self.wd())
     }
 
-    /// Atomically updates the interesting events and options using a CAS loop to ensure consistency.
+    /// Updates the interesting events and options atomically with raw bits.
     fn update_interesting_and_controls(&self, new_interesting: u32, new_options: u32) {
         let new_flags = ((new_options as u64) << 32) | (new_interesting as u64);
         self.interesting_and_controls
@@ -561,7 +563,7 @@ struct InotifyEvent {
 
 /// The header of an inotify event.
 ///
-/// see <https://elixir.bootlin.com/linux/v6.17.8/source/include/uapi/linux/inotify.h#L21>
+/// Reference: <https://elixir.bootlin.com/linux/v6.17.8/source/include/uapi/linux/inotify.h#L21>
 #[repr(C)]
 struct InotifyEventHeader {
     wd: u32,
@@ -656,7 +658,8 @@ impl InotifyEvent {
 }
 
 bitflags! {
-    /// InotifyEvents represents the set of events that a subscriber wants to monitor.
+    /// Represents the set of events that a subscriber wants to monitor.
+    ///
     /// These events are used to filter notifications sent to the subscriber.
     pub struct InotifyEvents: u32 {
         const ACCESS        = 1 << 0;  // File was accessed
