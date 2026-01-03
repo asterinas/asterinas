@@ -1,14 +1,14 @@
 [package]
 name = "cpio-decoder"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-int-to-c-enum = { path = "../../libs/int-to-c-enum" }
-core2 = { version = "0.4", default-features = false, features = ["alloc"] }
-lending-iterator = "0.1.7"
+core2.workspace = true
+int-to-c-enum.workspace = true
+lending-iterator.workspace = true
 
 [lints]
 workspace = true

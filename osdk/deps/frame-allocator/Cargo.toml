@@ -1,16 +1,16 @@
 [package]
 name = "osdk-frame-allocator"
-version = "0.17.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 description = "The default buddy system frame allocator shipped with OSDK."
-license = "MPL-2.0"
-repository ="https://github.com/asterinas/asterinas"
 readme = "README.md"
 
 [dependencies]
-log = "0.4"
-ostd = { version = "0.17.0", path = "../../../ostd" }
-paste = "1.0.15"
+log.workspace = true
+ostd.workspace = true
+paste.workspace = true
 
 [lints]
 workspace = true

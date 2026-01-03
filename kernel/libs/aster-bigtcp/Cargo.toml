@@ -1,27 +1,19 @@
 [package]
 name = "aster-bigtcp"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-aster-softirq = { path = "../../comps/softirq" }
-bitflags = "1.3"
-int-to-c-enum = { path = "../int-to-c-enum" }
-jhash = { path = "../jhash" }
-ostd = { path = "../../../ostd" }
-smoltcp = { git = "https://github.com/asterinas/smoltcp", tag = "r_2024-11-08_f07e5b5", default-features = false, features = [
-    "alloc",
-    "log",
-    "medium-ethernet",
-    "medium-ip",
-    "proto-ipv4",
-    "socket-udp",
-    "socket-tcp",
-] }
-spin = "0.9.4"
-takeable = "0.2.2"
+aster-softirq.workspace = true
+bitflags.workspace = true
+int-to-c-enum.workspace = true
+jhash.workspace = true
+ostd.workspace = true
+smoltcp.workspace = true
+spin.workspace = true
+takeable.workspace = true
 
 [lints]
 workspace = true

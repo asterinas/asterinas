@@ -3,7 +3,7 @@
 use core::ops::Range;
 
 use lending_iterator::prelude::*;
-use ostd_pod::Pod;
+use ostd::Pod;
 
 use super::{Iv, Key, Mac};
 use crate::{
