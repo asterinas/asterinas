@@ -133,7 +133,9 @@ impl FsEventPublisher {
 
     /// Updates the aggregated events when a subscriber's interesting events change.
     pub fn update_subscriber_events(&self) {
-        let subscribers = self.subscribers.read();
+        // Take a write lock to avoid race conditions that may change `all_interesting_events` to
+        // an outdated value.
+        let subscribers = self.subscribers.write();
         self.recalc_interesting_events(&subscribers);
     }
 
@@ -151,6 +153,7 @@ impl FsEventPublisher {
     ///
     /// The matcher should return `Some(T)` if the subscriber matches and processing
     /// should stop, or `None` to continue searching.
+    #[expect(dead_code)]
     pub fn find_subscriber_and_process<F, T>(&self, mut matcher: F) -> Option<T>
     where
         F: FnMut(&Arc<dyn FsEventSubscriber>) -> Option<T>,
