@@ -121,6 +121,7 @@ impl VirtioTransport for VirtioPciModernTransport {
         ConfigManager::new(safe_ptr, None)
     }
 
+    #[inline(never)]
     fn num_queues(&self) -> u16 {
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, num_queues)
             .read_once()

@@ -20,6 +20,8 @@ use log::{LevelFilter, Metadata, Record};
 use spin::Once;
 
 use crate::boot::EARLY_INFO;
+#[cfg(target_arch = "x86_64")]
+use crate::if_tdx_enabled;
 
 /// Injects a logger.
 ///
@@ -41,6 +43,13 @@ pub fn inject_logger(new_logger: &'static dyn log::Log) {
 pub(crate) fn init() {
     let level = get_log_level().unwrap_or(LevelFilter::Off);
     log::set_max_level(level);
+    #[cfg(target_arch = "x86_64")]
+    if_tdx_enabled!({
+        log::set_logger(&tdx_guest::TDX_LOGGER).unwrap();
+    } else {
+        log::set_logger(&LOGGER).unwrap();
+    });
+    #[cfg(not(target_arch = "x86_64"))]
     log::set_logger(&LOGGER).unwrap();
 }
 
