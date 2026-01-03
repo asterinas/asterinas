@@ -415,26 +415,38 @@ impl Vmo {
         let page_idx_range = get_page_idx_range(&range);
         let mut cursor = locked_pages.cursor_mut(page_idx_range.start as u64);
 
-        let Some(pager) = &self.pager else {
-            for _ in page_idx_range {
-                cursor.remove();
-                cursor.next();
+        // Ensure the cursor points to the first present item in the range
+        if cursor.load().is_none() {
+            if let Some(idx) = cursor.next_present() {
+                cursor.reset_to(idx);
+            } else {
+                return Ok(());
             }
-            return Ok(());
-        };
+        }
 
         let mut removed_page_idx = Vec::new();
-        for page_idx in page_idx_range {
+        while cursor.index() < page_idx_range.end as u64 {
             if cursor.remove().is_some() {
-                removed_page_idx.push(page_idx);
+                removed_page_idx.push(cursor.index() as usize);
             }
+
+            // Advance to the next index, then skip forward to the next present item if this slot is empty
             cursor.next();
+            if cursor.load().is_none() {
+                if let Some(idx) = cursor.next_present() {
+                    cursor.reset_to(idx);
+                } else {
+                    break;
+                }
+            }
         }
 
         drop(locked_pages);
 
-        for page_idx in removed_page_idx {
-            pager.decommit_page(page_idx)?;
+        if let Some(pager) = &self.pager {
+            for page_idx in removed_page_idx {
+                pager.decommit_page(page_idx)?;
+            }
         }
 
         Ok(())
