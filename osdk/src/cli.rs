@@ -61,10 +61,10 @@ pub fn main() {
             execute_test_command(&load_config(&test_args.common_args), test_args);
         }
         OsdkSubcommand::Check(args) => {
-            execute_forwarded_command_on_each_crate("check", &args.args, args.ktest)
+            execute_forwarded_command_on_each_crate("check", &args.args, args.ktests)
         }
         OsdkSubcommand::Clippy(args) => {
-            execute_forwarded_command_on_each_crate("clippy", &args.args, args.ktest)
+            execute_forwarded_command_on_each_crate("clippy", &args.args, args.ktests)
         }
         OsdkSubcommand::Doc(args) => execute_forwarded_command("doc", &args.args, false),
     }
@@ -109,7 +109,7 @@ pub enum OsdkSubcommand {
 #[derive(Debug, Parser)]
 pub struct KtestWithForwardedArguments {
     #[arg(long, help = "Check all targets that have `ktest = true` set")]
-    pub ktest: bool,
+    pub ktests: bool,
     #[arg(
         help = "The full set of Cargo arguments",
         trailing_var_arg = true,
