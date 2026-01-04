@@ -8,7 +8,6 @@
 //! [`UFrame`]: ostd::mm::UFrame
 //! [`USegment`]: ostd::mm::USegment
 //! [`IoMem`]: ostd::io::IoMem
-//! [`DmaStream`]: ostd::mm::DmaStream
 
 use alloc::sync::Arc;
 use core::{borrow::Borrow, fmt::Debug, ops::Range};
