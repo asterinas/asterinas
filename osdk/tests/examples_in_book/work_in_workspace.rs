@@ -27,11 +27,11 @@ fn work_in_workspace() {
     // Create a kernel project and a library project
     let kernel = "myos";
     let module = "mylib";
-    cargo_osdk(&["new", "--kernel", kernel])
+    cargo_osdk(["new", "--kernel", kernel])
         .current_dir(&workspace_dir)
         .ok()
         .unwrap();
-    cargo_osdk(&["new", module])
+    cargo_osdk(["new", module])
         .current_dir(&workspace_dir)
         .ok()
         .unwrap();
@@ -85,11 +85,11 @@ fn work_in_workspace() {
     .unwrap();
 
     // Run subcommand build & run
-    cargo_osdk(&["build"])
+    cargo_osdk(["build"])
         .current_dir(&workspace_dir)
         .ok()
         .unwrap();
-    let output = cargo_osdk(&["run"])
+    let output = cargo_osdk(["run"])
         .current_dir(&workspace_dir)
         .output()
         .unwrap();
@@ -97,7 +97,7 @@ fn work_in_workspace() {
     assert!(stdout.contains("The available memory is"));
 
     // Run subcommand test
-    cargo_osdk(&["test"])
+    cargo_osdk(["test"])
         .current_dir(&workspace_dir)
         .ok()
         .unwrap();

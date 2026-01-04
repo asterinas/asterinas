@@ -123,8 +123,7 @@ pub(crate) fn depends_on_local_ostd(manifest_path: impl AsRef<Path>) {
     let mut manifest: Table = toml::from_str(&manifest_content).unwrap();
     let dep = manifest
         .get_mut("dependencies")
-        .map(Value::as_table_mut)
-        .flatten()
+        .and_then(Value::as_table_mut)
         .unwrap();
 
     let mut table = Table::new();
@@ -145,11 +144,10 @@ pub(crate) fn depends_on_coverage(manifest_path: impl AsRef<Path>, osdk_path: im
     // Add features = ["coverage"] to ostd dependency
     let dep = manifest
         .get_mut("dependencies")
-        .map(Value::as_table_mut)
-        .flatten()
+        .and_then(Value::as_table_mut)
         .unwrap();
 
-    if let Some(ostd_dep) = dep.get_mut("ostd").map(Value::as_table_mut).flatten() {
+    if let Some(ostd_dep) = dep.get_mut("ostd").and_then(Value::as_table_mut) {
         let features = vec![Value::String("coverage".to_string())];
         ostd_dep.insert("features".to_string(), Value::Array(features));
     }
@@ -177,10 +175,7 @@ pub(crate) fn add_tdx_scheme(osdk_path: impl AsRef<Path>) -> std::io::Result<()>
         .parent()
         .unwrap()
         .join("scheme.tdx.template");
-    let mut file = OpenOptions::new()
-        .write(true)
-        .append(true)
-        .open(osdk_path)?;
+    let mut file = OpenOptions::new().append(true).open(osdk_path)?;
     let tdx_qemu_cfg = fs::read_to_string(template_path)?;
     file.write_all(format!("\n\n{}", tdx_qemu_cfg).as_bytes())?;
     Ok(())
@@ -195,7 +190,7 @@ fn conditionally_add_tdx_args<T: AsRef<OsStr>, I: IntoIterator<Item = T> + Copy>
     args: I,
 ) {
     if is_tdx_enabled() && contains_build_run_or_test(args) {
-        command.args(&["--scheme", "tdx"]);
+        command.args(["--scheme", "tdx"]);
     }
 }
 
