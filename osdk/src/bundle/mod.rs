@@ -296,9 +296,14 @@ impl Bundle {
             let qemu_exit_code = exit_status.code().unwrap();
             let kernel_exit_code = qemu_exit_code >> 1;
             match kernel_exit_code {
-                0x10 /*ostd::QemuExitCode::Success*/ => { std::process::exit(0); },
-                0x20 /*ostd::QemuExitCode::Failed*/ => { std::process::exit(1); },
-                _ /* unknown, e.g., a triple fault */ => { std::process::exit(2) },
+                // Success exit through ACPI.
+                0x0 => std::process::exit(0),
+                // Corresponds to `ostd::QemuExitCode::Success`.
+                0x10 => std::process::exit(0),
+                // Corresponds to `ostd::QemuExitCode::Failed`.
+                0x20 => std::process::exit(1),
+                // Unknown exit code, e.g., a triple fault.
+                _ => std::process::exit(2),
             }
         }
 

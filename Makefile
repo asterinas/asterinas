@@ -329,7 +329,7 @@ iso:
 # Build the Asterinas NixOS ISO installer image and then do installation
 run_iso: OVMF = off
 run_iso:
-	@./tools/nixos/run_iso.sh
+	@./tools/nixos/run.sh iso
 
 # Create an Asterinas NixOS installation on host
 nixos: BOOT_PROTOCOL = linux-efi-handover64
@@ -341,7 +341,7 @@ nixos:
 # run the NixOS
 run_nixos: OVMF = off
 run_nixos:
-	@./tools/nixos/run_nixos.sh target/nixos
+	@./tools/nixos/run.sh nixos
 
 # Build the Asterinas NixOS patched packages
 cachix:

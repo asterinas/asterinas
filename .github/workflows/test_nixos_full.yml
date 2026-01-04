@@ -39,7 +39,7 @@ jobs:
       - name: Test nix commands
         run: |
           make nixos NIXOS_DISK_SIZE_IN_MB=6144 NIXOS_TEST_COMMAND='test-nix-commands'
-          make run_nixos || true
+          make run_nixos
 
       - name: Check results
         run: |
@@ -71,7 +71,7 @@ jobs:
       - name: Run podman commands
         run: |
           make nixos NIXOS_DISK_SIZE_IN_MB=8192 NIXOS_TEST_COMMAND='test-podman'
-          make run_nixos || true
+          make run_nixos
 
       - name: Check results
         run: |
