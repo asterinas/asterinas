@@ -62,6 +62,33 @@ impl Vmar {
         self.rss_counters[rss_type as usize].sum_all_cpus()
     }
 
+    /// Returns the shared memory ID of the mapping covering the given address.
+    pub fn get_shm_id(&self, addr: Vaddr) -> Result<u64> {
+        let inner = self.inner.read();
+        let mapping = inner
+            .vm_mappings
+            .find_one(&addr)
+            .ok_or(Error::new(Errno::EINVAL))?;
+        mapping
+            .shared_mem_id()
+            .ok_or_else(|| Error::new(Errno::EINVAL))
+    }
+
+    /// Returns the minimal start address among mappings belonging to the given shmid.
+    pub fn min_shared_mapping_start(&self, shmid: u64) -> Result<Vaddr> {
+        let inner = self.inner.read();
+        let mut min = None;
+        for m in inner
+            .vm_mappings
+            .iter()
+            .filter(|m| m.shared_mem_id() == Some(shmid))
+        {
+            let start = m.map_to_addr();
+            min = Some(min.map_or(start, |cur: usize| cur.min(start)));
+        }
+        min.ok_or(Error::new(Errno::EINVAL))
+    }
+
     /// Returns the total size of the mappings in bytes.
     pub fn get_mappings_total_size(&self) -> usize {
         self.inner.read().total_vm

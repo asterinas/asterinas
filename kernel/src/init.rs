@@ -44,6 +44,7 @@ fn init() {
     crate::sched::init();
     crate::process::init();
     crate::fs::init();
+    crate::vm::shared_mem::init();
     crate::security::init();
 }
 
