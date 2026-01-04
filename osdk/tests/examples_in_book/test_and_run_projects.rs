@@ -15,18 +15,18 @@ fn create_and_run_kernel() {
         fs::remove_dir_all(&os_dir).unwrap();
     }
 
-    let mut command = cargo_osdk(&["new", "--kernel", os_name]);
+    let mut command = cargo_osdk(["new", "--kernel", os_name]);
     command.current_dir(work_dir);
     command.ok().unwrap();
 
     // Makes the kernel depend on local OSTD
     edit_config_files(&os_dir);
 
-    let mut command = cargo_osdk(&["build"]);
+    let mut command = cargo_osdk(["build"]);
     command.current_dir(&os_dir);
     command.ok().unwrap();
 
-    let mut command = cargo_osdk(&["run"]);
+    let mut command = cargo_osdk(["run"]);
     command.current_dir(&os_dir);
     let output = command.output().unwrap();
 
@@ -47,13 +47,13 @@ fn create_and_test_library() {
         fs::remove_dir_all(&module_dir).unwrap();
     }
 
-    let mut command = cargo_osdk(&["new", module_name]);
+    let mut command = cargo_osdk(["new", module_name]);
     command.current_dir(work_dir);
     command.ok().unwrap();
 
     edit_config_files(&module_dir);
 
-    let mut command = cargo_osdk(&["test"]);
+    let mut command = cargo_osdk(["test"]);
     command.current_dir(&module_dir);
     command.ok().unwrap();
 

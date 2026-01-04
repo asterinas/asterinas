@@ -15,7 +15,7 @@ fn create_a_kernel_project() {
         fs::remove_dir_all(&kernel_path).unwrap();
     }
 
-    cargo_osdk(&["new", "--kernel", kernel])
+    cargo_osdk(["new", "--kernel", kernel])
         .current_dir(workdir)
         .unwrap();
 
@@ -38,7 +38,7 @@ fn create_a_library_project() {
         fs::remove_dir_all(&module_path).unwrap();
     }
 
-    cargo_osdk(&["new", module]).current_dir(workdir).unwrap();
+    cargo_osdk(["new", module]).current_dir(workdir).unwrap();
 
     assert!(module_path.is_dir());
     assert!(module_path.join("Cargo.toml").is_file());

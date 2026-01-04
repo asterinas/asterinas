@@ -169,7 +169,7 @@ mod tests {
         let params = Parameters::new(args).unwrap();
         assert_eq!(params.scml_paths, vec!["test.scml"]);
         assert_eq!(params.input_path(), "input.txt");
-        assert_eq!(params.quiet(), false);
+        assert!(!params.quiet());
         assert_eq!(params.program_path(), "");
         assert!(params.program_args().is_empty());
         assert!(params.offline());
@@ -181,7 +181,7 @@ mod tests {
         let params = Parameters::new(args).unwrap();
         assert_eq!(params.scml_paths, vec!["test.scml"]);
         assert_eq!(params.input_path(), "");
-        assert_eq!(params.quiet(), false);
+        assert!(!params.quiet());
         assert_eq!(params.program_path(), "my_program");
         assert_eq!(params.program_args(), &["arg1", "arg2"]);
         assert!(!params.offline());

@@ -56,7 +56,7 @@ mod workspace {
     }
     impl Drop for WorkSpace {
         fn drop(&mut self) {
-            remove_dir_all(&self.os_dir()).unwrap();
+            remove_dir_all(self.os_dir()).unwrap();
         }
     }
 }
@@ -64,7 +64,6 @@ mod workspace {
 mod coverage_feature {
     use super::*;
     use crate::util::{cargo_osdk, depends_on_coverage};
-    use assert_cmd::Command;
     use std::path::Path;
 
     #[test]
@@ -78,7 +77,7 @@ mod coverage_feature {
         let osdk_path = Path::new(&workspace.os_dir()).join("OSDK.toml");
         depends_on_coverage(&manifest_path, &osdk_path);
         let mut instance = cargo_osdk(["run", "--coverage"]);
-        instance.current_dir(&workspace.os_dir());
+        instance.current_dir(workspace.os_dir());
 
         let _output = instance
             .output()
@@ -111,7 +110,7 @@ mod qemu_gdb_feature {
             "--gdb-server",
             format!("addr={},wait-client", unix_socket.as_str()).as_str(),
         ]);
-        instance.current_dir(&workspace.os_dir());
+        instance.current_dir(workspace.os_dir());
 
         let sock = unix_socket.clone();
         let _gdb = std::thread::spawn(move || {
@@ -159,7 +158,7 @@ mod qemu_gdb_feature {
                 "--gdb-server",
                 format!("wait-client,vscode,addr={}", addr).as_str(),
             ]);
-            instance.current_dir(&workspace.os_dir());
+            instance.current_dir(workspace.os_dir());
 
             let dir = workspace.os_dir();
             let bin_file_path = Path::new(&workspace.os_dir())
@@ -175,7 +174,7 @@ mod qemu_gdb_feature {
                     check_launch_file_existence(&dir),
                     "VSCode launch config file is not found during debugging session"
                 );
-                gdb_continue_via(&addr);
+                gdb_continue_via(addr);
             });
 
             let output = instance

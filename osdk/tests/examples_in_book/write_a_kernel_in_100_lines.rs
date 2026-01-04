@@ -18,8 +18,8 @@ fn write_a_kernel_in_100_lines() {
     }
 
     // Creates a new kernel project
-    cargo_osdk(&["new", "--kernel", os_name])
-        .current_dir(&workdir)
+    cargo_osdk(["new", "--kernel", os_name])
+        .current_dir(workdir)
         .ok()
         .unwrap();
 
@@ -33,7 +33,7 @@ fn write_a_kernel_in_100_lines() {
     let user_program_contents = include_str!("write_a_kernel_in_100_lines_templates/hello.S");
     fs::write(os_dir.join("hello.S"), user_program_contents).unwrap();
     Command::new("gcc")
-        .args(&["-static", "-nostdlib", "hello.S", "-o", "hello"])
+        .args(["-static", "-nostdlib", "hello.S", "-o", "hello"])
         .current_dir(&os_dir)
         .ok()
         .unwrap();
@@ -55,7 +55,7 @@ fn write_a_kernel_in_100_lines() {
     fs::write(os_dir.join("Cargo.toml"), new_file_content).unwrap();
 
     // Runs the kernel
-    let output = cargo_osdk(&["run"]).current_dir(&os_dir).ok().unwrap();
+    let output = cargo_osdk(["run"]).current_dir(&os_dir).ok().unwrap();
     let stdout = std::str::from_utf8(&output.stdout).unwrap();
     println!("stdout = {}", stdout);
 
