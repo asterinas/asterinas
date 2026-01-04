@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::boxed::ThinBox;
+use alloc::{boxed::ThinBox, sync::Arc};
 
 use super::{FlockList, Inode, RangeLockList};
 use crate::fs::notify::FsEventPublisher;
@@ -59,7 +59,7 @@ impl InodeExt for dyn Inode {
     fn fs_event_publisher_or_init(&self) -> &FsEventPublisher {
         self.extension()
             .group1()
-            .call_once(|| ThinBox::new_unsize(FsEventPublisher::new()))
+            .call_once(|| ThinBox::new_unsize(FsEventPublisher::new(Arc::downgrade(&self.fs()))))
             .downcast_ref()
             .unwrap()
     }

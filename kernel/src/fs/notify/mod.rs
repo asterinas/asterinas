@@ -17,7 +17,7 @@ use crate::{
 
 pub mod inotify;
 
-use super::utils::{Inode, InodeExt, InodeType};
+use super::utils::{FileSystem, Inode, InodeExt, InodeType};
 
 /// Publishes filesystem events to subscribers.
 ///
@@ -25,12 +25,14 @@ use super::utils::{Inode, InodeExt, InodeType};
 /// subscribers interested in filesystem events. When an event occurs, the publisher
 /// notifies all subscribers whose interesting events match the event.
 pub struct FsEventPublisher {
-    /// List of FS event subscribers.
+    /// A list of FS event subscribers.
     subscribers: RwLock<Vec<Arc<dyn FsEventSubscriber>>>,
     /// All interesting FS event types (aggregated from all subscribers).
     all_interesting_events: AtomicFsEvents,
     /// Whether this publisher still accepts new subscribers.
     accepts_new_subscribers: AtomicBool,
+    /// A weak reference to the file system.
+    fs: Weak<dyn FileSystem>,
 }
 
 impl Debug for FsEventPublisher {
@@ -41,18 +43,13 @@ impl Debug for FsEventPublisher {
     }
 }
 
-impl Default for FsEventPublisher {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl FsEventPublisher {
-    pub fn new() -> Self {
+    pub fn new(fs: Weak<dyn FileSystem>) -> Self {
         Self {
             subscribers: RwLock::new(Vec::new()),
             all_interesting_events: AtomicFsEvents::new(FsEvents::empty()),
             accepts_new_subscribers: AtomicBool::new(true),
+            fs,
         }
     }
 
@@ -72,6 +69,10 @@ impl FsEventPublisher {
 
         subscribers.push(subscriber);
 
+        if let Some(fs) = self.fs.upgrade() {
+            fs.fs_event_subscriber_stats().add_subscriber();
+        }
+
         true
     }
 
@@ -85,6 +86,10 @@ impl FsEventPublisher {
         let removed = subscribers.len() != orig_len;
         if removed {
             subscriber.deliver_event(FsEvents::IN_IGNORED, None);
+        }
+
+        if let Some(fs) = self.fs.upgrade() {
+            fs.fs_event_subscriber_stats().remove_subscriber();
         }
 
         removed
@@ -103,6 +108,11 @@ impl FsEventPublisher {
 
         self.all_interesting_events
             .store(FsEvents::empty(), Ordering::Relaxed);
+
+        if let Some(fs) = self.fs.upgrade() {
+            fs.fs_event_subscriber_stats()
+                .remove_subscribers(num_subscribers);
+        }
 
         num_subscribers
     }

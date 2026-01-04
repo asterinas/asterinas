@@ -145,7 +145,7 @@ impl InotifyFile {
                 continue;
             }
 
-            // The subscriber is dead because it's a one-shot subscriber or the inode is dead.
+            // The subscriber is dead because it's a one-shot subscriber.
             // The watch is considered removed.
             let Some(subscriber) = entry.subscriber.upgrade() else {
                 let wd = *wd;
@@ -182,7 +182,6 @@ impl InotifyFile {
                 "adding an inotify watch to a deleted inode is not supported yet"
             );
         }
-        inode.fs().fs_event_subscriber_stats().add_subscriber();
 
         let wd = inotify_subscriber.wd();
         let entry = SubscriberEntry {
@@ -209,13 +208,10 @@ impl InotifyFile {
             _ => return_errno_with_message!(Errno::EINVAL, "the inotify watch does not exist"),
         };
 
-        if inode
+        inode
             .fs_event_publisher()
             .unwrap()
-            .remove_subscriber(&(subscriber as _))
-        {
-            inode.fs().fs_event_subscriber_stats().remove_subscriber();
-        }
+            .remove_subscriber(&(subscriber as _));
 
         Ok(())
     }
