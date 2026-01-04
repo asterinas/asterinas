@@ -52,7 +52,7 @@ pub unsafe fn protect_gpa_tdvm_call(gpa: Paddr, size: usize) -> Result<(), PageC
     debug_assert!(gpa.is_multiple_of(PAGE_SIZE));
 
     map_gpa(gpa as u64, size as u64).map_err(|_| PageConvertError::TdVmcall)?;
-    for page_gpa in (0..size).step_by(PAGE_SIZE) {
+    for page_gpa in (gpa..gpa + size).step_by(PAGE_SIZE) {
         // SAFETY: The caller ensures the safety of this operation.
         unsafe {
             accept_page(0, page_gpa as u64).map_err(|_| PageConvertError::TdCall)?;
