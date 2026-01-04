@@ -38,8 +38,8 @@ jobs:
           image: asterinas/asterinas:0.17.0-20251228
           options: --privileged -v /dev:/dev -v ${{ github.workspace }}:/root/asterinas
           run: |
-            make nixos NIXOS_DISK_SIZE_IN_MB=6144 NIXOS_TEST_COMMAND='hello-asterinas' || true
-            make run_nixos || true
+            make nixos NIXOS_DISK_SIZE_IN_MB=6144 NIXOS_TEST_COMMAND='hello-asterinas'
+            make run_nixos
       - name: Check results
         run: |
           tail --lines 10 ${{ github.workspace }}/qemu.log | grep -q "^Hello Asterinas!" || (echo "Test NixOS failed" && exit 1)
