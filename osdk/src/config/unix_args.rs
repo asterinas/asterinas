@@ -28,7 +28,7 @@ pub fn split_to_kv_array(args: &str) -> Vec<String> {
             && let Some(last) = joined.last_mut()
         {
             last.push(' ');
-            last.push_str(&elem);
+            last.push_str(&shlex::Quoter::new().quote(elem.as_str()).unwrap());
             last_has_value = true;
             continue;
         }
@@ -130,20 +130,8 @@ fn infer_multi_value_keys(array: &Vec<String>, separator: &str) -> IndexSet<Stri
 }
 
 pub fn get_key(item: &str, separator: &str) -> Option<String> {
-    let split = item.split(separator).collect::<Vec<_>>();
-    let len = split.len();
-    if len > 2 || len == 0 {
-        error_msg!("`{}` is an invalid argument.", item);
-        process::exit(Errno::ParseMetadata as _);
-    }
-
-    if len == 1 {
-        return None;
-    }
-
-    let key = split.first().unwrap();
-
-    Some(key.to_string())
+    item.split_once(separator)
+        .map(|(key, _value)| key.to_string())
 }
 
 #[cfg(test)]
@@ -191,6 +179,20 @@ pub mod test {
         let args = args.iter().map(ToString::to_string).collect();
         apply_kv_array(&mut array, &args, " ", &["-device"]);
 
+        let expected: Vec<_> = expected.iter().map(ToString::to_string).collect();
+        assert_eq!(expected, array);
+    }
+
+    #[test]
+    fn test_split_kv_array() {
+        let args = "-enable-kvm -object '{ \"qom-type\": \"tdx-guest\", \"id\": \"tdx0\", \"sept-ve-disable\": true, \"quote-generation-socket\": { \"type\": \"vsock\", \"cid\": \"2\", \"port\": \"4050\" } }'";
+
+        let expected = &[
+            "-enable-kvm",
+            "-object '{ \"qom-type\": \"tdx-guest\", \"id\": \"tdx0\", \"sept-ve-disable\": true, \"quote-generation-socket\": { \"type\": \"vsock\", \"cid\": \"2\", \"port\": \"4050\" } }'",
+        ];
+
+        let array = split_to_kv_array(args);
         let expected: Vec<_> = expected.iter().map(ToString::to_string).collect();
         assert_eq!(expected, array);
     }
