@@ -239,8 +239,12 @@ impl InotifyFile {
             }
 
             // If the queue is full, drop the event.
-            // We do not return an error to the caller.
-            if event_queue.len() >= self.queue_capacity {
+            // Try to queue an overflow event in advance to alert the user.
+            if event_queue.len() == self.queue_capacity - 1 {
+                let overflow_event = InotifyEvent::new(u32::MAX, FsEvents::Q_OVERFLOW, 0, None);
+                event_queue.push_back(overflow_event);
+                return;
+            } else if event_queue.len() >= self.queue_capacity {
                 return;
             }
 
@@ -672,7 +676,6 @@ bitflags! {
         const EXCL_UNLINK   = 1 << 26; // Exclude events on unlinked objects
         const MASK_CREATE   = 1 << 28; // Only create watches
         const MASK_ADD      = 1 << 29; // Add to existing watch mask
-        const ISDIR         = 1 << 30; // Event occurred on a directory
         const ONESHOT       = 1 << 31; // Send event once
     }
 }
