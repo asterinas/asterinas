@@ -90,7 +90,6 @@ Unsupported event flags:
 
 Unsupported control flags:
 * `IN_EXCL_UNLINK` - Events on unlinked files are not excluded
-* `IN_ONESHOT` - Watches are not automatically removed after the first event
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man7/inotify.7.html).

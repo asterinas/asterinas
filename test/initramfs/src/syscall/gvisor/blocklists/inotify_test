@@ -21,9 +21,6 @@ Inotify.ExcludeUnlinkMultipleChildren_NoRandomSave
 Inotify.MoveGeneratesEvents
 Inotify.MoveWatchedTargetGeneratesEvents
 
-# TODO: Support the `ONESHOT` flag.
-Inotify.OneShot
-
 # TODO: Support the `splice()` system call.
 Inotify.SpliceOnInotifyFD
 Inotify.SpliceOnWatchTarget
