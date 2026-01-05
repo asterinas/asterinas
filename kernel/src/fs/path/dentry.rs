@@ -234,7 +234,7 @@ impl Dentry {
         if dentry.is_dentry_cacheable() {
             children.upgrade().insert(name.clone(), dentry.clone());
         }
-        fs::notify::on_link(dentry.parent().unwrap().inode(), dentry.inode(), name);
+        fs::notify::on_link(dentry.parent().unwrap().inode(), dentry.inode(), || name);
         Ok(())
     }
 

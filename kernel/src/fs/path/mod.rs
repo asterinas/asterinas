@@ -141,11 +141,16 @@ impl Path {
         path_name
     }
 
+    /// Gets the real name of the `Path` from its dentry.
+    pub fn name(&self) -> String {
+        self.dentry.name()
+    }
+
     /// Gets the effective name of the `Path`.
     ///
     /// If it is the root of a mount, it will go up to the mountpoint
     /// to get the name of the mountpoint recursively.
-    pub fn effective_name(&self) -> String {
+    fn effective_name(&self) -> String {
         if !self.is_mount_root() {
             return self.dentry.name();
         }

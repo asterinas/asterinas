@@ -252,7 +252,7 @@ pub fn on_access(file: &Arc<dyn FileLike>) {
     {
         return;
     }
-    notify_parent(path, FsEvents::ACCESS, path.effective_name());
+    notify_parent(path, FsEvents::ACCESS);
 }
 
 /// Notifies that a file was modified.
@@ -270,7 +270,7 @@ pub fn on_modify(file: &Arc<dyn FileLike>) {
     {
         return;
     }
-    notify_parent(path, FsEvents::MODIFY, path.effective_name());
+    notify_parent(path, FsEvents::MODIFY);
 }
 
 /// Notifies that a path's content was changed.
@@ -283,7 +283,7 @@ pub fn on_change(path: &Path) {
     {
         return;
     }
-    notify_parent(path, FsEvents::MODIFY, path.effective_name());
+    notify_parent(path, FsEvents::MODIFY);
 }
 
 /// Notifies that a file was deleted from a directory.
@@ -300,11 +300,10 @@ pub fn on_delete(
         return;
     }
 
-    let name = name();
     if inode.type_() == InodeType::Dir {
-        notify_inode(dir_inode, FsEvents::DELETE | FsEvents::ISDIR, Some(name))
+        notify_inode_with_name(dir_inode, FsEvents::DELETE | FsEvents::ISDIR, name)
     } else {
-        notify_inode(dir_inode, FsEvents::DELETE, Some(name))
+        notify_inode_with_name(dir_inode, FsEvents::DELETE, name)
     }
 }
 
@@ -313,7 +312,7 @@ pub fn on_link_count(inode: &Arc<dyn Inode>) {
     if !inode.fs().fs_event_subscriber_stats().has_any_subscribers() {
         return;
     }
-    notify_inode(inode, FsEvents::ATTRIB, None);
+    notify_inode(inode, FsEvents::ATTRIB);
 }
 
 /// Notifies that an inode was removed (link count reached 0).
@@ -321,11 +320,11 @@ pub fn on_inode_removed(inode: &Arc<dyn Inode>) {
     if !inode.fs().fs_event_subscriber_stats().has_any_subscribers() {
         return;
     }
-    notify_inode(inode, FsEvents::DELETE_SELF, None);
+    notify_inode(inode, FsEvents::DELETE_SELF);
 }
 
 /// Notifies that a file was linked to a directory.
-pub fn on_link(dir_inode: &Arc<dyn Inode>, inode: &Arc<dyn Inode>, name: String) {
+pub fn on_link(dir_inode: &Arc<dyn Inode>, inode: &Arc<dyn Inode>, name: impl FnOnce() -> String) {
     if !dir_inode
         .fs()
         .fs_event_subscriber_stats()
@@ -333,12 +332,12 @@ pub fn on_link(dir_inode: &Arc<dyn Inode>, inode: &Arc<dyn Inode>, name: String)
     {
         return;
     }
-    notify_inode(inode, FsEvents::ATTRIB, None);
-    notify_inode(dir_inode, FsEvents::CREATE, Some(name));
+    notify_inode(inode, FsEvents::ATTRIB);
+    notify_inode_with_name(dir_inode, FsEvents::CREATE, name);
 }
 
 /// Notifies that a directory was created.
-pub fn on_mkdir(dir_path: &Path, name: String) {
+pub fn on_mkdir(dir_path: &Path, name: impl FnOnce() -> String) {
     if !dir_path
         .inode()
         .fs()
@@ -347,15 +346,11 @@ pub fn on_mkdir(dir_path: &Path, name: String) {
     {
         return;
     }
-    notify_inode(
-        dir_path.inode(),
-        FsEvents::CREATE | FsEvents::ISDIR,
-        Some(name),
-    );
+    notify_inode_with_name(dir_path.inode(), FsEvents::CREATE | FsEvents::ISDIR, name);
 }
 
 /// Notifies that a file was created.
-pub fn on_create(file_path: &Path, name: String) {
+pub fn on_create(file_path: &Path, name: impl FnOnce() -> String) {
     if !file_path
         .inode()
         .fs()
@@ -364,7 +359,7 @@ pub fn on_create(file_path: &Path, name: String) {
     {
         return;
     }
-    notify_inode(file_path.inode(), FsEvents::CREATE, Some(name));
+    notify_inode_with_name(file_path.inode(), FsEvents::CREATE, name);
 }
 
 /// Notifies that a file was opened.
@@ -382,7 +377,7 @@ pub fn on_open(file: &Arc<dyn FileLike>) {
     {
         return;
     }
-    notify_parent(path, FsEvents::OPEN, path.effective_name());
+    notify_parent(path, FsEvents::OPEN);
 }
 
 /// Notifies that a file was closed.
@@ -401,7 +396,7 @@ pub fn on_close(file: &Arc<dyn FileLike>) {
             AccessMode::O_RDONLY => FsEvents::CLOSE_NOWRITE,
             _ => FsEvents::CLOSE_WRITE,
         };
-        notify_parent(path, events, path.effective_name());
+        notify_parent(path, events);
     }
 }
 
@@ -415,7 +410,7 @@ pub fn on_attr_change(path: &Path) {
     {
         return;
     }
-    notify_parent(path, FsEvents::ATTRIB, path.effective_name());
+    notify_parent(path, FsEvents::ATTRIB);
 }
 
 /// Notifies a path's parent and the path itself about filesystem events.
@@ -424,16 +419,19 @@ pub fn on_attr_change(path: &Path) {
 /// parent and name information, notifies the parent with child name info.
 /// Otherwise, notifies only the child without name information.
 /// This function is already called after filesystem checking in the callers.
-fn notify_parent(path: &Path, mut events: FsEvents, name: String) {
+///
+/// The child's real name (from `path.name()`) is used to notify the parent, since
+/// FS events do not cross mount boundaries.
+fn notify_parent(path: &Path, mut events: FsEvents) {
     if path.inode().type_() == InodeType::Dir {
         events |= FsEvents::ISDIR;
     }
 
     let parent = path.parent_within_mount();
     if let Some(parent) = parent {
-        notify_inode(parent.inode(), events, Some(name));
+        notify_inode_with_name(parent.inode(), events, || path.name());
     }
-    notify_inode(path.inode(), events, None);
+    notify_inode(path.inode(), events);
 }
 
 /// Sends a filesystem notification event to all subscribers of an inode.
@@ -441,8 +439,18 @@ fn notify_parent(path: &Path, mut events: FsEvents, name: String) {
 /// This is the main entry point for FS event notification. The VFS layer calls hook-specific
 /// functions in `fs/notify/`, which then call this function to broadcast events
 /// to all registered subscribers through the inode's publisher.
-fn notify_inode(inode: &Arc<dyn Inode>, events: FsEvents, name: Option<String>) {
+fn notify_inode(inode: &Arc<dyn Inode>, events: FsEvents) {
     if let Some(publisher) = inode.fs_event_publisher() {
-        publisher.publish_event(events, name);
+        publisher.publish_event(events, None);
+    }
+}
+
+/// Sends a filesystem notification event with a name to all subscribers of an inode.
+///
+/// Similar to `notify_inode`, but includes a name parameter for events that require
+/// child name information (e.g., CREATE, DELETE).
+fn notify_inode_with_name(inode: &Arc<dyn Inode>, events: FsEvents, name: impl FnOnce() -> String) {
+    if let Some(publisher) = inode.fs_event_publisher() {
+        publisher.publish_event(events, Some(name()));
     }
 }
