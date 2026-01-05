@@ -1,7 +1,7 @@
 { config, lib, pkgs, options, ... }:
 let
   kernel = builtins.path {
-    name = "aster-nix-osdk-bin";
+    name = "aster-kernel-osdk-bin";
     path = config.aster_nixos.kernel;
   };
   stage-1-init = pkgs.writeShellScript "stage-1-init" ''
