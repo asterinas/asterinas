@@ -18,6 +18,3 @@ Inotify.ExcludeUnlink_NoRandomSave
 Inotify.ExcludeUnlinkDirectory_NoRandomSave
 Inotify.ExcludeUnlinkMultipleChildren_NoRandomSave
 Inotify.ExcludeUnlinkInodeEvents_NoRandomSave
-
-# TODO: Support the `ONESHOT` flag.
-Inotify.OneShot
