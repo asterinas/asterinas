@@ -22,7 +22,7 @@ use ostd::{
     Pod,
     arch::trap::TrapFrame,
     io::IoMem,
-    mm::{FrameAllocOptions, HasDaddr, PAGE_SIZE, dma::DmaStream},
+    mm::{HasDaddr, PAGE_SIZE, dma::DmaStream},
     sync::SpinLock,
 };
 
@@ -541,10 +541,6 @@ impl EventTable {
     fn new(num_events: usize) -> Self {
         assert!(num_events * size_of::<VirtioInputEvent>() <= PAGE_SIZE);
 
-        let segment = FrameAllocOptions::new()
-            .zeroed(true)
-            .alloc_segment(1)
-            .unwrap();
         debug_assert!(
             VirtioInputEvent::default()
                 .as_bytes()
@@ -552,7 +548,7 @@ impl EventTable {
                 .all(|b| *b == 0)
         );
 
-        let stream = Arc::new(DmaStream::map(segment.into(), false).unwrap());
+        let stream = Arc::new(DmaStream::alloc(1, false).unwrap());
         Self { stream, num_events }
     }
 

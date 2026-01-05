@@ -8,7 +8,7 @@ use aster_util::mem_obj_slice::Slice;
 use log::debug;
 use ostd::{
     arch::trap::TrapFrame,
-    mm::{FrameAllocOptions, VmReader, dma::DmaStream, io_util::HasVmReaderWriter},
+    mm::{VmReader, dma::DmaStream, io_util::HasVmReaderWriter},
     sync::{Rcu, SpinLock},
 };
 
@@ -97,15 +97,9 @@ impl ConsoleDevice {
         let transmit_queue =
             SpinLock::new(VirtQueue::new(TRANSMIT0_QUEUE_INDEX, 2, transport.as_mut()).unwrap());
 
-        let send_buffer = {
-            let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-            Arc::new(DmaStream::map(segment.into(), false).unwrap())
-        };
+        let send_buffer = Arc::new(DmaStream::alloc(1, false).unwrap());
 
-        let receive_buffer = {
-            let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-            Arc::new(DmaStream::map(segment.into(), false).unwrap())
-        };
+        let receive_buffer = Arc::new(DmaStream::alloc(1, false).unwrap());
 
         let device = Arc::new(Self {
             config_manager,

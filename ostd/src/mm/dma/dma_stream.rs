@@ -9,8 +9,8 @@ use crate::{
     arch::mm::can_sync_dma,
     error::Error,
     mm::{
-        Daddr, HasDaddr, HasPaddr, HasPaddrRange, HasSize, Infallible, PAGE_SIZE, Paddr, Split,
-        USegment, VmReader, VmWriter,
+        Daddr, FrameAllocOptions, HasDaddr, HasPaddr, HasPaddrRange, HasSize, Infallible,
+        PAGE_SIZE, Paddr, Split, USegment, VmReader, VmWriter,
         io_util::{HasVmReaderWriter, VmReaderWriterResult},
         kspace::kvirt_area::KVirtArea,
         paddr_to_vaddr,
@@ -85,10 +85,71 @@ pub struct DmaStream<D: DmaDirection = FromAndToDevice> {
 #[derive(Debug)]
 enum Inner {
     Segment(USegment),
+    Kva(KVirtArea, Paddr),
     Both(KVirtArea, Paddr, USegment),
 }
 
 impl<D: DmaDirection> DmaStream<D> {
+    /// Allocates a region of physical memory for streaming DMA access.
+    ///
+    /// The memory of the newly-allocated DMA buffer is initialized to zeros.
+    /// This method is only available when `D` is [`ToDevice`] or
+    /// [`FromAndToDevice`], as zeroing requires write access to the buffer.
+    ///
+    /// The `is_cache_coherent` argument specifies whether the target device
+    /// that the DMA mapping is prepared for can access the main memory in a
+    /// CPU cache coherent way or not.
+    ///
+    /// # Comparison with [`DmaStream::map`]
+    ///
+    /// This method is semantically equivalent to allocating a [`USegment`] via
+    /// [`FrameAllocOptions::alloc_segment`] and then mapping it with
+    /// [`DmaStream::map`]. However, [`DmaStream::alloc`] combines these two
+    /// operations and can be more efficient in certain scenarios, particularly
+    /// in confidential VMs, where the overhead of bounce buffers can be
+    /// avoided.
+    pub fn alloc(nframes: usize, is_cache_coherent: bool) -> Result<Self, Error> {
+        const { assert!(D::CAN_WRITE_TO_DEVICE) };
+
+        Self::alloc_uninit(nframes, is_cache_coherent).and_then(|dma| {
+            dma.writer()?.fill_zeros(dma.size());
+            Ok(dma)
+        })
+    }
+
+    /// Allocates a region of physical memory for streaming DMA access
+    /// without initialization.
+    ///
+    /// This method is the same as [`DmaStream::alloc`]
+    /// except that it skips zeroing the memory of newly-allocated DMA region.
+    pub fn alloc_uninit(nframes: usize, is_cache_coherent: bool) -> Result<Self, Error> {
+        let cvm = cvm_need_private_protection();
+
+        let (inner, paddr_range) = if (can_sync_dma() || is_cache_coherent) && !cvm {
+            let segment: USegment = FrameAllocOptions::new()
+                .zeroed(false)
+                .alloc_segment(nframes)?
+                .into();
+            let paddr_range = segment.paddr_range();
+
+            (Inner::Segment(segment), paddr_range)
+        } else {
+            let (kva, paddr) = alloc_kva(nframes, can_sync_dma() || is_cache_coherent)?;
+
+            (Inner::Kva(kva, paddr), paddr..paddr + nframes * PAGE_SIZE)
+        };
+
+        // SAFETY: The physical address range is untyped DMA memory before `drop`.
+        let map_daddr = unsafe { prepare_dma(&paddr_range) };
+
+        Ok(Self {
+            inner,
+            map_daddr,
+            is_cache_coherent,
+            _phantom: PhantomData,
+        })
+    }
+
     /// Establishes DMA stream mapping for a given [`USegment`].
     ///
     /// The `is_cache_coherent` argument specifies whether the target device
@@ -163,6 +224,13 @@ impl<D: DmaDirection> DmaStream<D> {
                 let pa_range = segment.paddr_range();
                 paddr_to_vaddr(pa_range.start)..paddr_to_vaddr(pa_range.end)
             }
+            Inner::Kva(kva, _) => {
+                if !can_sync_dma() {
+                    // The KVA is mapped as uncachable.
+                    return Ok(());
+                }
+                kva.range()
+            }
             Inner::Both(kva, _, seg) => {
                 self.sync_via_copying(byte_range, is_from_device, seg, kva);
                 return Ok(());
@@ -235,6 +303,11 @@ impl<D: DmaDirection> Split for DmaStream<D> {
                 let (s1, s2) = segment.split(offset);
                 (Inner::Segment(s1), Inner::Segment(s2))
             }
+            Inner::Kva(kva, paddr) => {
+                let (kva1, kva2) = kva.split(offset);
+                let (paddr1, paddr2) = (paddr, paddr + offset);
+                (Inner::Kva(kva1, paddr1), Inner::Kva(kva2, paddr2))
+            }
             Inner::Both(kva, paddr, segment) => {
                 let (kva1, kva2) = kva.split(offset);
                 let (paddr1, paddr2) = (paddr, paddr + offset);
@@ -273,7 +346,7 @@ impl<D: DmaDirection> HasPaddr for DmaStream<D> {
     fn paddr(&self) -> Paddr {
         match &self.inner {
             Inner::Segment(segment) => segment.paddr(),
-            Inner::Both(_, paddr, _) => *paddr, // the mapped PA, not the buffer's PA
+            Inner::Kva(_, paddr) | Inner::Both(_, paddr, _) => *paddr, // the mapped PA, not the buffer's PA
         }
     }
 }
@@ -288,6 +361,7 @@ impl<D: DmaDirection> HasSize for DmaStream<D> {
     fn size(&self) -> usize {
         match &self.inner {
             Inner::Segment(segment) => segment.size(),
+            Inner::Kva(kva, _) => kva.size(),
             Inner::Both(kva, _, segment) => {
                 debug_assert_eq!(kva.size(), segment.size());
                 kva.size()
@@ -305,6 +379,19 @@ impl<D: DmaDirection> HasVmReaderWriter for DmaStream<D> {
         }
         match &self.inner {
             Inner::Segment(seg) | Inner::Both(_, _, seg) => Ok(seg.reader()),
+            Inner::Kva(kva, _) => {
+                // SAFETY:
+                //  - Although the memory range points to typed memory, the range is for DMA
+                //    and the access is not by linear mapping.
+                //  - The KVA is alive during the lifetime `'_`.
+                //  - Using `VmReader` and `VmWriter` is the only way to access the KVA.
+                unsafe {
+                    Ok(VmReader::from_kernel_space(
+                        kva.start() as *const u8,
+                        kva.size(),
+                    ))
+                }
+            }
         }
     }
 
@@ -314,6 +401,19 @@ impl<D: DmaDirection> HasVmReaderWriter for DmaStream<D> {
         }
         match &self.inner {
             Inner::Segment(seg) | Inner::Both(_, _, seg) => Ok(seg.writer()),
+            Inner::Kva(kva, _) => {
+                // SAFETY:
+                //  - Although the memory range points to typed memory, the range is for DMA
+                //    and the access is not by linear mapping.
+                //  - The KVA is alive during the lifetime `'_`.
+                //  - Using `VmReader` and `VmWriter` is the only way to access the KVA.
+                unsafe {
+                    Ok(VmWriter::from_kernel_space(
+                        kva.start() as *mut u8,
+                        kva.size(),
+                    ))
+                }
+            }
         }
     }
 }

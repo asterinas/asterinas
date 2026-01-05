@@ -9,7 +9,7 @@ use int_to_c_enum::TryFromInt;
 use ostd::{
     Error,
     mm::{
-        FrameAllocOptions, HasSize, Infallible, USegment, VmReader, VmWriter,
+        HasSize, Infallible, USegment, VmReader, VmWriter,
         dma::DmaStream,
         io_util::{HasVmReaderWriter, VmReaderWriterResult},
     },
@@ -446,11 +446,7 @@ impl BioSegment {
         let bio_segment_inner = target_pool(direction)
             .and_then(|pool| pool.alloc(nblocks, offset, len))
             .unwrap_or_else(|| {
-                let segment = FrameAllocOptions::new()
-                    .zeroed(false)
-                    .alloc_segment(nblocks)
-                    .unwrap();
-                let dma_stream = DmaStream::map(segment.into(), false).unwrap();
+                let dma_stream = DmaStream::alloc_uninit(nblocks, false).unwrap();
                 BioSegmentInner {
                     dma_slice: Slice::new(Arc::new(dma_stream), offset..offset + len),
                     direction,
@@ -571,13 +567,7 @@ impl BioSegmentPool {
     /// The new pool will be allocated and mapped for later allocation.
     pub fn new(direction: BioDirection) -> Self {
         let total_blocks = POOL_DEFAULT_NBLOCKS;
-        let pool = {
-            let segment = FrameAllocOptions::new()
-                .zeroed(false)
-                .alloc_segment(total_blocks)
-                .unwrap();
-            DmaStream::map(segment.into(), false).unwrap()
-        };
+        let pool = DmaStream::alloc_uninit(total_blocks, false).unwrap();
         let manager = SpinLock::new(PoolSlotManager {
             occupied: BitArray::ZERO,
             min_free: 0,
