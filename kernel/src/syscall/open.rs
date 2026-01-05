@@ -131,7 +131,7 @@ fn do_open(
             let (parent, tail_name) = result.into_parent_and_basename();
             let new_path =
                 parent.new_fs_child(&tail_name, InodeType::File, open_args.inode_mode)?;
-            fs::notify::on_create(&parent, tail_name.clone());
+            fs::notify::on_create(&parent, || tail_name.clone());
 
             // Don't check access mode for newly created file.
             Arc::new(InodeHandle::new_unchecked_access(

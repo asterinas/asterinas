@@ -59,7 +59,7 @@ pub fn sys_mknodat(
         }
         _ => return_errno_with_message!(Errno::EPERM, "unimplemented file types"),
     }
-    fs::notify::on_create(&dir_path, name);
+    fs::notify::on_create(&dir_path, || name);
     Ok(SyscallReturn::Return(0))
 }
 
