@@ -139,15 +139,19 @@ impl InotifyFile {
 
         // Try to find and update the existing subscriber first.
         let inode_weak = Arc::downgrade(path.inode());
-        for (wd, entry) in watch_map.iter() {
+        let mut watch_iter = watch_map.iter();
+        while let Some((wd, entry)) = watch_iter.next() {
             if !Weak::ptr_eq(&entry.inode, &inode_weak) {
                 continue;
             }
 
-            // The inode has been unlinked and the subscriber is dead. We shouldn't need to update
-            // since no new events can occur.
+            // The subscriber is dead because it's a one-shot subscriber or the inode is dead.
+            // The watch is considered removed.
             let Some(subscriber) = entry.subscriber.upgrade() else {
-                return Ok(*wd);
+                let wd = *wd;
+                watch_map.remove(&wd);
+                watch_iter = watch_map.iter();
+                continue;
             };
 
             subscriber.update(interesting, options)?;
@@ -200,8 +204,8 @@ impl InotifyFile {
 
         let (inode, subscriber) = match (entry.inode.upgrade(), entry.subscriber.upgrade()) {
             (Some(inode), Some(subscriber)) => (inode, subscriber),
-            // The inode has been unlinked and the subscriber is dead. The watch is considered
-            // removed, so we return an error.
+            // The subscriber is dead because it's a one-shot subscriber or the inode is dead.
+            // The watch is considered removed.
             _ => return_errno_with_message!(Errno::EINVAL, "the inotify watch does not exist"),
         };
 
@@ -221,12 +225,7 @@ impl InotifyFile {
     /// The event will be queued and can be read by users.
     /// If the event can be merged with the last event in the queue, it will be merged.
     /// The event is only queued if it matches one of the subscriber's interesting events.
-    fn receive_event(&self, subscriber: &InotifySubscriber, event: FsEvents, name: Option<String>) {
-        if !event.contains(FsEvents::IN_IGNORED) && !subscriber.is_interesting(event) {
-            return;
-        }
-
-        let wd = subscriber.wd();
+    fn receive_event(&self, wd: u32, event: FsEvents, name: Option<String>) {
         let new_event = InotifyEvent::new(wd, event, 0, name);
 
         'notify: {
@@ -445,6 +444,8 @@ pub struct InotifySubscriber {
     // This field is packed into a `u64`: the high 32 bits store options,
     // and the low 32 bits store interesting events.
     interesting_and_controls: AtomicU64,
+    // Whether the subscriber is one-shot and has been dead.
+    is_dead: AtomicBool,
     // Watch descriptor.
     wd: u32,
     // Reference to the owning inotify file.
@@ -461,6 +462,7 @@ impl InotifySubscriber {
         let wd = inotify_file.alloc_wd()?;
         let this = Arc::new(Self {
             interesting_and_controls: AtomicU64::new(0),
+            is_dead: AtomicBool::new(false),
             wd,
             inotify_file,
         });
@@ -473,14 +475,13 @@ impl InotifySubscriber {
         self.wd
     }
 
-    fn interesting(&self) -> InotifyEvents {
+    /// Loads the interesting events and options atomically.
+    fn interesting_and_controls(&self) -> (InotifyEvents, InotifyControls) {
         let flags = self.interesting_and_controls.load(Ordering::Relaxed);
-        InotifyEvents::from_bits_truncate((flags & 0xFFFFFFFF) as u32)
-    }
-
-    fn options(&self) -> InotifyControls {
-        let flags = self.interesting_and_controls.load(Ordering::Relaxed);
-        InotifyControls::from_bits_truncate((flags >> 32) as u32)
+        (
+            InotifyEvents::from_bits_truncate((flags & 0xFFFFFFFF) as u32),
+            InotifyControls::from_bits_truncate((flags >> 32) as u32),
+        )
     }
 
     pub fn inotify_file(&self) -> &Arc<InotifyFile> {
@@ -497,8 +498,10 @@ impl InotifySubscriber {
         let mut merged_options = options;
 
         if options.contains(InotifyControls::MASK_ADD) {
-            merged_interesting |= self.interesting();
-            merged_options |= self.options();
+            // There are no races because `update()` is only called under the `watch_map` lock.
+            let (old_interesting, old_options) = self.interesting_and_controls();
+            merged_interesting |= old_interesting;
+            merged_options |= old_options;
         }
         merged_options.remove(InotifyControls::MASK_ADD);
 
@@ -513,25 +516,53 @@ impl InotifySubscriber {
         self.interesting_and_controls
             .store(new_flags, Ordering::Relaxed);
     }
-
-    /// Checks if the event matches the subscriber's interesting events.
-    fn is_interesting(&self, event: FsEvents) -> bool {
-        self.interesting().bits() & event.bits() != 0
-    }
 }
 
 impl FsEventSubscriber for InotifySubscriber {
     /// Sends FS events to the inotify file.
-    fn deliver_event(&self, event: FsEvents, name: Option<String>) {
+    fn deliver_event(&self, event: FsEvents, name: Option<String>) -> bool {
+        let (interesting, options) = self.interesting_and_controls();
+
+        if !event.contains(FsEvents::IN_IGNORED) && !is_interesting(interesting, event) {
+            return false;
+        }
+
+        let (is_dead, is_oneshot) = if options.contains(InotifyControls::ONESHOT) {
+            (self.is_dead.swap(true, Ordering::Relaxed), true)
+        } else {
+            (self.is_dead.load(Ordering::Relaxed), false)
+        };
+        if is_dead {
+            return false;
+        }
+
         let inotify_file = self.inotify_file();
-        inotify_file.receive_event(self, event, name);
+        let wd = self.wd();
+
+        inotify_file.receive_event(wd, event, name);
+
+        if !event.contains(FsEvents::IN_IGNORED) && is_oneshot {
+            inotify_file.receive_event(wd, FsEvents::IN_IGNORED, None);
+        }
+
+        is_oneshot
     }
 
     /// Returns the events that this subscriber is interested in.
     fn interesting_events(&self) -> FsEvents {
-        let inotify_events = self.interesting();
+        let inotify_events = self.interesting_and_controls().0;
         FsEvents::from_bits_truncate(inotify_events.bits())
     }
+
+    /// Returns whether the subscriber is one-shot and dead.
+    fn is_oneshot_and_dead(&self) -> bool {
+        self.is_dead.load(Ordering::Relaxed)
+    }
+}
+
+/// Checks if the event matches the subscriber's interesting events.
+fn is_interesting(interesting: InotifyEvents, event: FsEvents) -> bool {
+    interesting.bits() & event.bits() != 0
 }
 
 /// Represents an inotify event that can be read by users.
