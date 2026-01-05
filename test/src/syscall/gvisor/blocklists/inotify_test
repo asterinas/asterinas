@@ -10,9 +10,6 @@ Inotify.SpliceOnWatchTarget
 # "gvisor_test_temp_1103_1767603858010282988: applet not found"
 Inotify.Exec
 
-# TODO: Generate `DELETE_SELF`/`IGNORED` after closing the last FD.
-Inotify.IncludeUnlinkedFile_NoRandomSave
-
 # TODO: Support the `EXCL_UNLINK` flag.
 Inotify.ExcludeUnlink_NoRandomSave
 Inotify.ExcludeUnlinkDirectory_NoRandomSave
