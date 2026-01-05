@@ -3,8 +3,8 @@
 , extra-trusted-public-keys ? "", pkgs ? import <nixpkgs> { } }:
 let
   aster-kernel = builtins.path {
-    name = "aster-nix-osdk-bin";
-    path = ../../target/osdk/iso_root/boot/aster-nix-osdk-bin;
+    name = "aster-kernel-osdk-bin";
+    path = ../../target/osdk/iso_root/boot/aster-kernel-osdk-bin;
   };
   etc-nixos = builtins.path { path = ../etc_nixos; };
 

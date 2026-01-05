@@ -57,7 +57,7 @@ impl CurrentThread {
 /// A `Condvar` (Condition Variable) is a synchronization primitive that can block threads
 /// until a certain condition becomes true.
 ///
-/// This is a copy from `aster-nix`.
+/// This is a copy from `aster-kernel`.
 pub struct Condvar {
     waitqueue: Arc<WaitQueue>,
     counter: SpinLock<Inner>,

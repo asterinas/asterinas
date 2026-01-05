@@ -165,50 +165,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "aster-logger"
-version = "0.1.0"
-dependencies = [
- "aster-console",
- "component",
- "log",
- "ostd",
- "owo-colors",
-]
-
-[[package]]
-name = "aster-mlsdisk"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "aster-block",
- "bittle",
- "component",
- "ctr",
- "device-id",
- "hashbrown 0.14.5",
- "inherit-methods-macro",
- "lending-iterator",
- "log",
- "lru",
- "ostd",
- "postcard",
- "serde",
-]
-
-[[package]]
-name = "aster-network"
-version = "0.1.0"
-dependencies = [
- "aster-bigtcp",
- "aster-softirq",
- "bitvec",
- "component",
- "ostd",
- "spin",
-]
-
-[[package]]
-name = "aster-nix"
+name = "aster-kernel"
 version = "0.1.0"
 dependencies = [
  "align_ext",
@@ -266,6 +223,49 @@ dependencies = [
  "typeflags-util",
  "xarray",
  "xmas-elf",
+]
+
+[[package]]
+name = "aster-logger"
+version = "0.1.0"
+dependencies = [
+ "aster-console",
+ "component",
+ "log",
+ "ostd",
+ "owo-colors",
+]
+
+[[package]]
+name = "aster-mlsdisk"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "aster-block",
+ "bittle",
+ "component",
+ "ctr",
+ "device-id",
+ "hashbrown 0.14.5",
+ "inherit-methods-macro",
+ "lending-iterator",
+ "log",
+ "lru",
+ "ostd",
+ "postcard",
+ "serde",
+]
+
+[[package]]
+name = "aster-network"
+version = "0.1.0"
+dependencies = [
+ "aster-bigtcp",
+ "aster-softirq",
+ "bitvec",
+ "component",
+ "ostd",
+ "spin",
 ]
 
 [[package]]
