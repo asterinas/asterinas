@@ -161,29 +161,33 @@ pub(super) unsafe fn unprepare_dma(pa_range: &Range<Paddr>, daddr: Option<Daddr>
 unsafe fn alloc_unprotect_physical_range(pa_range: &Range<Paddr>) {
     use alloc::{vec, vec::Vec};
 
+    debug_assert!(pa_range.start.is_multiple_of(PAGE_SIZE));
+    debug_assert!(pa_range.end.is_multiple_of(PAGE_SIZE));
+    let pfn_range = pa_range.start / PAGE_SIZE..pa_range.end / PAGE_SIZE;
+
     let mut refcnts = PADDR_REF_CNTS.lock();
-    let ranges = refcnts.add(pa_range);
+    let ranges = refcnts.add(&pfn_range);
     #[cfg(target_arch = "x86_64")]
     crate::arch::if_tdx_enabled!({
         for partial in ranges {
-            debug_assert_eq!(partial, pa_range.clone());
+            debug_assert_eq!(partial, pfn_range.clone());
             // SAFETY:
             //  - The provided physical address is page aligned.
             //  - The provided physical address range is in bounds.
             //  - All of the physical pages are untyped memory.
             unsafe {
                 crate::arch::tdx_guest::unprotect_gpa_tdvm_call(
-                    partial.start,
-                    partial.end - partial.start,
+                    partial.start * PAGE_SIZE,
+                    partial.len() * PAGE_SIZE,
                 )
-                .expect("Failed to protect the DMA segment in TDX guest");
+                .expect("failed to unprotect the DMA segment in TDX guest");
             }
         }
     } else {
-        debug_assert_eq!(ranges.collect::<Vec<_>>(), vec![pa_range.clone()]);
+        debug_assert_eq!(ranges.collect::<Vec<_>>(), vec![pfn_range.clone()]);
     });
     #[cfg(not(target_arch = "x86_64"))]
-    debug_assert_eq!(ranges.collect::<Vec<_>>(), vec![pa_range.clone()]);
+    debug_assert_eq!(ranges.collect::<Vec<_>>(), vec![pfn_range.clone()]);
 }
 
 /// Unmarks a physical address range as used (also protected if in TDX guest).
@@ -194,21 +198,25 @@ unsafe fn alloc_unprotect_physical_range(pa_range: &Range<Paddr>) {
 /// previously marked by an [`alloc_unprotect_physical_range()`] call.
 #[cfg(any(debug_assertions, all(target_arch = "x86_64", feature = "cvm_guest")))]
 unsafe fn dealloc_protect_physical_range(pa_range: &Range<Paddr>) {
+    debug_assert!(pa_range.start.is_multiple_of(PAGE_SIZE));
+    debug_assert!(pa_range.end.is_multiple_of(PAGE_SIZE));
+    let pfn_range = pa_range.start / PAGE_SIZE..pa_range.end / PAGE_SIZE;
+
     let mut refcnts = PADDR_REF_CNTS.lock();
-    let _removed_frames = refcnts.remove(pa_range);
+    let _removed_frames = refcnts.remove(&pfn_range);
     #[cfg(target_arch = "x86_64")]
     crate::arch::if_tdx_enabled!({
-        for pa_range in _removed_frames {
+        for removed in _removed_frames {
             // SAFETY:
             //  - The provided physical address is page aligned.
             //  - The provided physical address range is in bounds.
             //  - All of the physical pages are untyped memory.
             unsafe {
                 crate::arch::tdx_guest::protect_gpa_tdvm_call(
-                    pa_range.start,
-                    pa_range.end - pa_range.start,
+                    removed.start * PAGE_SIZE,
+                    removed.len() * PAGE_SIZE,
                 )
-                .expect("Failed to protect the DMA segment in TDX guest");
+                .expect("failed to protect the DMA segment in TDX guest");
             }
         }
     });
@@ -225,7 +233,7 @@ unsafe fn dma_remap(pa_range: &Range<Paddr>) -> Option<Daddr> {
         #[cfg(target_arch = "x86_64")]
         let daddr = DADDR_ALLOCATOR
             .alloc(pa_range.len())
-            .expect("Failed to allocate DMA address range");
+            .expect("failed to allocate DMA address range");
         #[cfg(not(target_arch = "x86_64"))]
         let daddr = pa_range.clone();
 
