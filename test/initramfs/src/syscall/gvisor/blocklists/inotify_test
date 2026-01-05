@@ -15,10 +15,6 @@ Inotify.ExcludeUnlinkInodeEvents_NoRandomSave
 Inotify.ExcludeUnlinkMultipleChildren
 Inotify.ExcludeUnlinkMultipleChildren_NoRandomSave
 
-# TODO: Generate `DELETE_SELF`/`IGNORED` after closing the last FD.
-Inotify.IncludeUnlinkedFile
-Inotify.IncludeUnlinkedFile_NoRandomSave
-
 # TODO: Report `MOVE_*` events at the `rename()` system call.
 Inotify.MoveGeneratesEvents
 Inotify.MoveWatchedTargetGeneratesEvents

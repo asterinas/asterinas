@@ -169,19 +169,9 @@ impl InotifyFile {
         let subscriber = inotify_subscriber.clone() as Arc<dyn FsEventSubscriber>;
 
         let inode = path.inode();
-        if !inode
+        inode
             .fs_event_publisher_or_init()
-            .add_subscriber(subscriber)
-        {
-            // FIXME: This can be triggered by `unlink()` race conditions or
-            // `inotify_add_watch("/proc/self/fd/[fd]")`, where `[fd]` is a file descriptor
-            // pointing to a deleted file. Although Linux allows this, we don't support it, so an
-            // error is returned here.
-            return_errno_with_message!(
-                Errno::ENOENT,
-                "adding an inotify watch to a deleted inode is not supported yet"
-            );
-        }
+            .add_subscriber(subscriber);
 
         let wd = inotify_subscriber.wd();
         let entry = SubscriberEntry {

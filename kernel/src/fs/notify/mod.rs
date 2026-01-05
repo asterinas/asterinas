@@ -3,7 +3,7 @@
 use alloc::{sync::Arc, vec::Vec};
 use core::{
     any::Any,
-    sync::atomic::{AtomicBool, AtomicU32, Ordering},
+    sync::atomic::{AtomicU32, Ordering},
 };
 
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
@@ -29,8 +29,8 @@ pub struct FsEventPublisher {
     subscribers: RwLock<Vec<Arc<dyn FsEventSubscriber>>>,
     /// All interesting FS event types (aggregated from all subscribers).
     all_interesting_events: AtomicFsEvents,
-    /// Whether this publisher still accepts new subscribers.
-    accepts_new_subscribers: AtomicBool,
+    /// FS events to be published when dropped.
+    events_on_drop: AtomicFsEvents,
     /// A weak reference to the file system.
     fs: Weak<dyn FileSystem>,
 }
@@ -43,25 +43,39 @@ impl Debug for FsEventPublisher {
     }
 }
 
+impl Drop for FsEventPublisher {
+    fn drop(&mut self) {
+        let subscribers = self.subscribers.get_mut();
+
+        let num_subscribers = subscribers.len();
+        let events_on_drop = self.events_on_drop.load(Ordering::Relaxed);
+        for subscriber in subscribers.drain(..) {
+            if !events_on_drop.is_empty() {
+                subscriber.deliver_event(events_on_drop, None);
+            }
+            subscriber.deliver_event(FsEvents::IN_IGNORED, None);
+        }
+
+        if let Some(fs) = self.fs.upgrade() {
+            fs.fs_event_subscriber_stats()
+                .remove_subscribers(num_subscribers);
+        }
+    }
+}
+
 impl FsEventPublisher {
     pub fn new(fs: Weak<dyn FileSystem>) -> Self {
         Self {
             subscribers: RwLock::new(Vec::new()),
             all_interesting_events: AtomicFsEvents::new(FsEvents::empty()),
-            accepts_new_subscribers: AtomicBool::new(true),
+            events_on_drop: AtomicFsEvents::new(FsEvents::empty()),
             fs,
         }
     }
 
     /// Adds a subscriber to this publisher.
-    pub fn add_subscriber(&self, subscriber: Arc<dyn FsEventSubscriber>) -> bool {
+    pub fn add_subscriber(&self, subscriber: Arc<dyn FsEventSubscriber>) {
         let mut subscribers = self.subscribers.write();
-
-        // This check must be done after locking `self.subscribers.write()` to avoid race
-        // conditions.
-        if !self.accepts_new_subscribers.load(Ordering::Relaxed) {
-            return false;
-        }
 
         let current = self.all_interesting_events.load(Ordering::Relaxed);
         self.all_interesting_events
@@ -72,8 +86,6 @@ impl FsEventPublisher {
         if let Some(fs) = self.fs.upgrade() {
             fs.fs_event_subscriber_stats().add_subscriber();
         }
-
-        true
     }
 
     /// Removes a subscriber from this publisher.
@@ -93,38 +105,6 @@ impl FsEventPublisher {
         }
 
         removed
-    }
-
-    /// Removes all subscribers from this publisher.
-    pub fn remove_all_subscribers(&self) -> usize {
-        let mut subscribers = self.subscribers.write();
-
-        for subscriber in subscribers.iter() {
-            subscriber.deliver_event(FsEvents::IN_IGNORED, None);
-        }
-
-        let num_subscribers = subscribers.len();
-        subscribers.clear();
-
-        self.all_interesting_events
-            .store(FsEvents::empty(), Ordering::Relaxed);
-
-        if let Some(fs) = self.fs.upgrade() {
-            fs.fs_event_subscriber_stats()
-                .remove_subscribers(num_subscribers);
-        }
-
-        num_subscribers
-    }
-
-    /// Forbids new subscribers from attaching to this publisher and removes all existing
-    /// subscribers.
-    pub fn disable_new_and_remove_subscribers(&self) -> usize {
-        // Do this before calling `remove_all_subscribers` so that the `self.subscribers.write()`
-        // lock will synchronize this variable.
-        self.accepts_new_subscribers.store(false, Ordering::Relaxed);
-
-        self.remove_all_subscribers()
     }
 
     /// Broadcasts an event to all the subscribers of this publisher.
@@ -177,6 +157,17 @@ impl FsEventPublisher {
         });
         self.all_interesting_events
             .store(new_events, Ordering::Relaxed);
+    }
+
+    /// Sets the events to be published when the publisher is dropped.
+    ///
+    /// [`FsEvents::IN_IGNORED`] always follows the specified FS events. If the
+    /// specified events are empty, only [`FsEvents::IN_IGNORED`] will be published
+    /// when the publisher is dropped.
+    ///
+    /// Note that this will override any previous settings.
+    pub fn set_events_on_drop(&self, events: FsEvents) {
+        self.events_on_drop.store(events, Ordering::Relaxed);
     }
 
     /// Finds a subscriber and applies an action if found.
@@ -344,7 +335,9 @@ pub fn on_inode_removed(inode: &Arc<dyn Inode>) {
     if !inode.fs().fs_event_subscriber_stats().has_any_subscribers() {
         return;
     }
-    notify_inode(inode, FsEvents::DELETE_SELF);
+    if let Some(publisher) = inode.fs_event_publisher() {
+        publisher.set_events_on_drop(FsEvents::DELETE_SELF);
+    }
 }
 
 /// Notifies that a file was linked to a directory.
