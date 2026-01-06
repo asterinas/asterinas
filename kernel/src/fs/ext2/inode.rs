@@ -20,12 +20,11 @@ use super::{
 };
 use crate::{
     fs::{
-        inode_handle::FileIo,
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
         pipe::Pipe,
         utils::{
-            AccessMode, Extension, FallocMode, Inode as _, InodeMode, Metadata, Permission,
-            StatusFlags, XattrName, XattrNamespace, XattrSetFlags,
+            Extension, FallocMode, Inode as _, InodeMode, Metadata, Permission, XattrName,
+            XattrNamespace, XattrSetFlags,
         },
     },
     process::{Gid, Uid, posix_thread::AsPosixThread},
@@ -41,6 +40,9 @@ pub const MAX_FAST_SYMLINK_LEN: usize = MAX_BLOCK_PTRS * BID_SIZE;
 pub struct Inode {
     ino: u32,
     type_: InodeType,
+    // This corresponds to the `i_pipe` field in `struct inode` in Linux.
+    // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/linux/fs.h#L771>.
+    named_pipe: Option<Box<Pipe>>,
     block_group_idx: usize,
     inner: RwMutex<InodeInner>,
     fs: Weak<Ext2>,
@@ -58,6 +60,11 @@ impl Inode {
         Arc::new_cyclic(|weak_self| Self {
             ino,
             type_: desc.type_,
+            named_pipe: if desc.type_ == InodeType::NamedPipe {
+                Some(Box::new(Pipe::new()))
+            } else {
+                None
+            },
             block_group_idx,
             xattr: desc
                 .acl
@@ -74,6 +81,10 @@ impl Inode {
 
     pub fn inode_type(&self) -> InodeType {
         self.type_
+    }
+
+    pub(super) fn named_pipe(&self) -> Option<&Pipe> {
+        self.named_pipe.as_deref()
     }
 
     pub(super) fn block_group_idx(&self) -> usize {
@@ -683,16 +694,6 @@ impl Inode {
         inner.device_id()
     }
 
-    pub(super) fn open_named_pipe(
-        &self,
-        access_mode: AccessMode,
-        status_flags: StatusFlags,
-    ) -> Result<Box<dyn FileIo>> {
-        let inner = self.inner.read();
-        let named_pipe = inner.named_pipe.as_ref().unwrap();
-        named_pipe.open_named(access_mode, status_flags)
-    }
-
     pub fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         if self.type_ != InodeType::File {
             return_errno!(Errno::EISDIR);
@@ -965,19 +966,11 @@ fn write_lock_multiple_inodes(inodes: Vec<&Inode>) -> Vec<RwMutexWriteGuard<'_, 
 struct InodeInner {
     inode_impl: InodeImpl,
     page_cache: PageCache,
-    // This corresponds to the `i_pipe` field in `struct inode` in Linux.
-    // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/linux/fs.h#L771>.
-    named_pipe: Option<Pipe>,
 }
 
 impl InodeInner {
     pub fn new(desc: Dirty<InodeDesc>, weak_self: Weak<Inode>, fs: Weak<Ext2>) -> Self {
         let num_page_bytes = desc.num_page_bytes();
-        let named_pipe = if desc.type_ == InodeType::NamedPipe {
-            Some(Pipe::new())
-        } else {
-            None
-        };
         let inode_impl = InodeImpl::new(desc, weak_self, fs);
         Self {
             page_cache: PageCache::with_capacity(
@@ -986,7 +979,6 @@ impl InodeInner {
             )
             .unwrap(),
             inode_impl,
-            named_pipe,
         }
     }
 

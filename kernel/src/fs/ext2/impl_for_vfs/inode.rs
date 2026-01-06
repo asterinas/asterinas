@@ -148,7 +148,11 @@ impl Inode for Ext2Inode {
 
                 Some(device.open())
             }
-            InodeType::NamedPipe => Some(self.open_named_pipe(access_mode, status_flags)),
+            InodeType::NamedPipe => {
+                let pipe = self.named_pipe().unwrap();
+
+                Some(pipe.open_named(access_mode, status_flags))
+            }
             _ => None,
         }
     }
