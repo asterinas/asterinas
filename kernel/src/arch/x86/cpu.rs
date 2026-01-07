@@ -144,10 +144,7 @@ impl From<&RawPageFaultInfo> for PageFaultInfo {
             VmPerms::READ
         };
 
-        PageFaultInfo {
-            address: raw_info.addr,
-            required_perms,
-        }
+        PageFaultInfo::new(raw_info.addr, required_perms)
     }
 }
 
