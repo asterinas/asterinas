@@ -150,10 +150,7 @@ impl TryFrom<&CpuException> for PageFaultInfo {
             _ => return Err(()),
         };
 
-        Ok(PageFaultInfo {
-            address: *fault_addr,
-            required_perms,
-        })
+        Ok(PageFaultInfo::new(*fault_addr, required_perms))
     }
 }
 
