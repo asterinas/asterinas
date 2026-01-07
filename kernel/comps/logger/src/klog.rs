@@ -36,7 +36,7 @@ pub fn append_log(record: &Record, timestamp: &Duration) {
 
     let secs = timestamp.as_secs();
     let millis = timestamp.subsec_millis();
-    let _ = write!(
+    let _ = writeln!(
         writer,
         "[{:>6}.{:03}] {:<5}: {}\n",
         secs,
@@ -260,7 +260,7 @@ impl KernelLog {
 
     fn wait_nonempty(&self) {
         self.waitq
-            .wait_until(|| (self.buffer.lock().len() > 0).then_some(()));
+            .wait_until(|| (!self.buffer.lock().is_empty()).then_some(()));
     }
 }
 

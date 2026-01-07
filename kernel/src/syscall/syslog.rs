@@ -164,14 +164,3 @@ fn level_from_raw(raw: i32) -> Option<LevelFilter> {
         _ => None,
     }
 }
-
-fn level_to_raw(level: LevelFilter) -> u8 {
-    match level {
-        LevelFilter::Off => 0,
-        LevelFilter::Error => 4,
-        LevelFilter::Warn => 5,
-        LevelFilter::Info => 6,
-        LevelFilter::Debug => 7,
-        LevelFilter::Trace => 8,
-    }
-}
