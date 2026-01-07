@@ -16,7 +16,7 @@ mod dma_coherent {
     use super::*;
 
     #[ktest]
-    fn map_with_coherent_device() {
+    fn alloc_with_coherent_device() {
         let dma_coherent = DmaCoherent::alloc(1, true).unwrap();
         assert_eq!(dma_coherent.size(), PAGE_SIZE);
     }
@@ -89,6 +89,19 @@ mod dma_coherent {
         assert_eq!(&read_buf[2 * PAGE_SIZE..3 * PAGE_SIZE], &pattern1[..]);
         assert_eq!(&read_buf[3 * PAGE_SIZE..4 * PAGE_SIZE], &pattern2[..]);
     }
+
+    #[ktest]
+    fn alloc_uninit_dma_coherent() {
+        let dma_coherent = DmaCoherent::alloc_uninit(1, false).unwrap();
+        assert_eq!(dma_coherent.size(), PAGE_SIZE);
+
+        let buf_write = vec![0xCDu8; PAGE_SIZE];
+        dma_coherent.write_bytes(0, &buf_write).unwrap();
+
+        let mut buf_read = vec![0u8; PAGE_SIZE];
+        dma_coherent.read_bytes(0, &mut buf_read).unwrap();
+        assert_eq!(buf_write, buf_read);
+    }
 }
 
 mod dma_stream {
@@ -115,6 +128,7 @@ mod dma_stream {
         dma_stream.write_bytes(0, &buf_write).unwrap();
         dma_stream.sync_to_device(0..2 * PAGE_SIZE).unwrap();
         let mut buf_read = vec![0u8; 2 * PAGE_SIZE];
+        dma_stream.sync_from_device(0..2 * PAGE_SIZE).unwrap();
         dma_stream.read_bytes(0, &mut buf_read).unwrap();
         assert_eq!(buf_write, buf_read);
     }
@@ -134,6 +148,7 @@ mod dma_stream {
         let mut buf_read = vec![0u8; 2 * PAGE_SIZE];
         let buf_write = vec![1u8; 2 * PAGE_SIZE];
         let mut reader = dma_stream.reader().unwrap();
+        dma_stream.sync_from_device(0..2 * PAGE_SIZE).unwrap();
         reader.read(&mut buf_read.as_mut_slice().into());
         assert_eq!(buf_read, buf_write);
     }
@@ -199,8 +214,47 @@ mod dma_stream {
             .unwrap();
         let mut read_buf = [0u8; 128];
         dma_stream
+            .sync_from_device(PAGE_SIZE - 64..PAGE_SIZE + 64)
+            .unwrap();
+        dma_stream
             .read_bytes(PAGE_SIZE - 64, &mut read_buf)
             .unwrap();
         assert_eq!(read_buf, small_buf);
+    }
+
+    #[ktest]
+    fn alloc_dma_stream() {
+        let dma_stream = DmaStream::<FromAndToDevice>::alloc(2, false).unwrap();
+        assert_eq!(dma_stream.size(), 2 * PAGE_SIZE);
+
+        // Verify allocated memory is zeroed
+        let mut buf_read = vec![1u8; 2 * PAGE_SIZE];
+        dma_stream.sync_from_device(0..2 * PAGE_SIZE).unwrap();
+        dma_stream.read_bytes(0, &mut buf_read).unwrap();
+        assert_eq!(buf_read, vec![0u8; 2 * PAGE_SIZE]);
+
+        let buf_write = vec![0xABu8; 2 * PAGE_SIZE];
+        dma_stream.write_bytes(0, &buf_write).unwrap();
+        dma_stream.sync_to_device(0..2 * PAGE_SIZE).unwrap();
+
+        let mut buf_read = vec![0u8; 2 * PAGE_SIZE];
+        dma_stream.sync_from_device(0..2 * PAGE_SIZE).unwrap();
+        dma_stream.read_bytes(0, &mut buf_read).unwrap();
+        assert_eq!(buf_write, buf_read);
+    }
+
+    #[ktest]
+    fn alloc_uninit_dma_stream() {
+        let dma_stream = DmaStream::<FromAndToDevice>::alloc_uninit(1, false).unwrap();
+        assert_eq!(dma_stream.size(), PAGE_SIZE);
+
+        let buf_write = vec![0xCDu8; PAGE_SIZE];
+        dma_stream.write_bytes(0, &buf_write).unwrap();
+        dma_stream.sync_to_device(0..PAGE_SIZE).unwrap();
+
+        let mut buf_read = vec![0u8; PAGE_SIZE];
+        dma_stream.sync_from_device(0..PAGE_SIZE).unwrap();
+        dma_stream.read_bytes(0, &mut buf_read).unwrap();
+        assert_eq!(buf_write, buf_read);
     }
 }
