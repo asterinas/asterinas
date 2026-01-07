@@ -34,7 +34,7 @@ cargo osdk test
 
 ### General Test
 
-The following command builds and runs the test binaries in `test/src/apps` directory on Asterinas.
+The following command builds and runs the test binaries in `test/initramfs/src/apps` directory on Asterinas.
 
 ```bash
 make run_kernel AUTO_TEST=test

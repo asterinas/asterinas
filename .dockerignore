@@ -1,6 +1,6 @@
 # Ignore binaries to avoid performance issues
 target/
-test/build/
+test/initramfs/build/
 
 # QEMU log file
 qemu.log
