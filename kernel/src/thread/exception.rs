@@ -28,6 +28,30 @@ pub struct PageFaultInfo {
     /// The [`VmPerms`] required by the memory operation that causes page fault.
     /// For example, a "store" operation may require `VmPerms::WRITE`.
     pub required_perms: VmPerms,
+
+    /// Whether this page fault is forced (e.g., manually triggered by `ptrace`).
+    /// A forced page fault may bypass some permission checks.
+    pub is_forced: bool,
+
+    _private: (),
+}
+
+impl PageFaultInfo {
+    /// Creates a new `PageFaultInfo`.
+    pub fn new(address: Vaddr, required_perms: VmPerms) -> Self {
+        Self {
+            address,
+            required_perms,
+            is_forced: false,
+            _private: (),
+        }
+    }
+
+    /// Marks this page fault as forced.
+    pub fn force(mut self) -> Self {
+        self.is_forced = true;
+        self
+    }
 }
 
 /// We can't handle most exceptions, just send self a fault signal before return to user space.
