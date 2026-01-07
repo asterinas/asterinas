@@ -9,7 +9,10 @@ use ostd::{
     user::UserContextApi,
 };
 
-use crate::{cpu::LinuxAbi, thread::exception::PageFaultInfo, vm::perms::VmPerms};
+use crate::{
+    cpu::LinuxAbi,
+    vm::{perms::VmPerms, vmar::PageFaultInfo},
+};
 
 impl LinuxAbi for UserContext {
     fn syscall_num(&self) -> usize {
@@ -152,10 +155,7 @@ impl TryFrom<&CpuExceptionInfo> for PageFaultInfo {
             _ => return Err(()),
         };
 
-        Ok(PageFaultInfo {
-            address: value.page_fault_addr,
-            required_perms,
-        })
+        Ok(PageFaultInfo::new(value.page_fault_addr, required_perms))
     }
 }
 

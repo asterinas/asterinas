@@ -9,7 +9,7 @@ mod vm_mapping;
 mod vmar_impls;
 
 use ostd::mm::Vaddr;
-pub use vmar_impls::{RssType, Vmar, map::VmarMapOffset};
+pub use vmar_impls::{RssType, Vmar, map::VmarMapOffset, page_fault::PageFaultInfo};
 
 pub const VMAR_LOWEST_ADDR: Vaddr = 0x001_0000; // 64 KiB is the Linux configurable default
 pub const VMAR_CAP_ADDR: Vaddr = ostd::mm::MAX_USERSPACE_VADDR;

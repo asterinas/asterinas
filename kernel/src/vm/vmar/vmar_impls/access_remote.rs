@@ -7,7 +7,10 @@ use ostd::{
 };
 
 use super::{Vmar, is_userspace_vaddr};
-use crate::{prelude::*, thread::exception::PageFaultInfo, vm::vmar::is_userspace_vaddr_range};
+use crate::{
+    prelude::*,
+    vm::vmar::{PageFaultInfo, is_userspace_vaddr_range},
+};
 
 impl Vmar {
     /// Reads memory from the process user space.
@@ -166,10 +169,7 @@ impl Vmar {
             drop(cursor);
             drop(preempt_guard);
 
-            let page_fault_info = PageFaultInfo {
-                address: vaddr,
-                required_perms: required_page_flags.into(),
-            };
+            let page_fault_info = PageFaultInfo::new(vaddr, required_page_flags.into()).force();
             self.handle_page_fault(&page_fault_info)?;
 
             // Note that we are not holding `self.inner.lock()` here. Therefore, in race conditions
