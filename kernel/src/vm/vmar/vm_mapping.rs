@@ -26,9 +26,9 @@ use crate::{
     },
     prelude::*,
     process::LockedHeap,
-    thread::exception::PageFaultInfo,
     vm::{
         perms::VmPerms,
+        vmar::PageFaultInfo,
         vmo::{CommitFlags, Vmo, VmoCommitError},
     },
 };

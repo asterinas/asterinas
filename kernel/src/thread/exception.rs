@@ -2,9 +2,7 @@
 
 #![expect(unused_variables)]
 
-#[cfg(target_arch = "x86_64")]
-use ostd::arch::cpu::context::CpuException;
-#[cfg(target_arch = "riscv64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 use ostd::arch::cpu::context::CpuException;
 #[cfg(target_arch = "loongarch64")]
 use ostd::arch::cpu::context::CpuExceptionInfo as CpuException;
@@ -13,22 +11,8 @@ use ostd::{arch::cpu::context::UserContext, task::Task};
 use crate::{
     prelude::*,
     process::signal::signals::fault::FaultSignal,
-    vm::{perms::VmPerms, vmar::Vmar},
+    vm::vmar::{PageFaultInfo, Vmar},
 };
-
-/// Page fault information converted from [`CpuException`].
-///
-/// `From<CpuException>` should be implemented for this struct.
-/// If [`CpuException`] is a page fault, `try_from` should return `Ok(PageFaultInfo)`,
-/// or `Err(())` (no error information) otherwise.
-pub struct PageFaultInfo {
-    /// The virtual address where a page fault occurred.
-    pub address: Vaddr,
-
-    /// The [`VmPerms`] required by the memory operation that causes page fault.
-    /// For example, a "store" operation may require `VmPerms::WRITE`.
-    pub required_perms: VmPerms,
-}
 
 /// We can't handle most exceptions, just send self a fault signal before return to user space.
 pub fn handle_exception(ctx: &Context, context: &UserContext, exception: CpuException) {
@@ -52,8 +36,8 @@ fn handle_page_fault_from_vmar(
 ) -> core::result::Result<(), ()> {
     if let Err(e) = vmar.handle_page_fault(page_fault_info) {
         warn!(
-            "page fault handler failed: addr: 0x{:x}, err: {:?}",
-            page_fault_info.address, e
+            "page fault handler failed: info: {:#x?}, err: {:?}",
+            page_fault_info, e
         );
         return Err(());
     }

@@ -17,7 +17,10 @@ use ostd::{
     task::DisabledPreemptGuard,
 };
 
-use crate::{cpu::LinuxAbi, thread::exception::PageFaultInfo, vm::perms::VmPerms};
+use crate::{
+    cpu::LinuxAbi,
+    vm::{perms::VmPerms, vmar::PageFaultInfo},
+};
 
 impl LinuxAbi for UserContext {
     fn syscall_num(&self) -> usize {
@@ -144,10 +147,7 @@ impl From<&RawPageFaultInfo> for PageFaultInfo {
             VmPerms::READ
         };
 
-        PageFaultInfo {
-            address: raw_info.addr,
-            required_perms,
-        }
+        PageFaultInfo::new(raw_info.addr, required_perms)
     }
 }
 

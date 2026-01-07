@@ -3,7 +3,7 @@
 mod access_remote;
 mod fork;
 pub(super) mod map;
-mod page_fault;
+pub(super) mod page_fault;
 mod protect;
 mod query;
 mod remap;
