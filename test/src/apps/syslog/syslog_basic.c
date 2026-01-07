@@ -70,7 +70,9 @@ static void drain_destructive(void)
 			return;
 		}
 
-		size_t want = (size_t)((unread < (long)sizeof(buf)) ? unread : (long)sizeof(buf));
+		size_t want = (size_t)((unread < (long)sizeof(buf)) ?
+					       unread :
+					       (long)sizeof(buf));
 		long n = syslog_read_destructive(buf, want);
 		if (n <= 0) {
 			return;
@@ -90,24 +92,24 @@ static long wait_for_unread_growth(long baseline)
 	return -1;
 }
 
-#define SKIP_NO_SYSLOG_CAPS(test_name)                                              \
-	do {                                                                        \
-		errno = 0;                                                          \
-		long _unread = syslog_size_unread();                                \
-		if (_unread < 0 && errno == EPERM) {                                \
-			__tests_passed++;                                          \
-			fprintf(stderr,                                            \
+#define SKIP_NO_SYSLOG_CAPS(test_name)                                                                \
+	do {                                                                                          \
+		errno = 0;                                                                            \
+		long _unread = syslog_size_unread();                                                  \
+		if (_unread < 0 && errno == EPERM) {                                                  \
+			__tests_passed++;                                                             \
+			fprintf(stderr,                                                               \
 				"%s: SKIP: missing CAP_SYSLOG or CAP_SYS_ADMIN for syslog actions\n", \
-				test_name);                                            \
-			return;                                                    \
-		}                                                                   \
+				test_name);                                                           \
+			return;                                                                       \
+		}                                                                                     \
 	} while (0)
 
-#define SKIP_WITH_REASON(test_name, reason)     \
-	do {                                    \
-		__tests_passed++;               \
+#define SKIP_WITH_REASON(test_name, reason)                           \
+	do {                                                          \
+		__tests_passed++;                                     \
 		fprintf(stderr, "%s: SKIP: %s\n", test_name, reason); \
-		return;                         \
+		return;                                               \
 	} while (0)
 
 static int drop_priv_or_fail(void)
@@ -211,24 +213,28 @@ FN_TEST(syslog_clear_and_read_clear_window)
 			__func__, unread_after_clear);
 	} else {
 		__tests_failed++;
-		fprintf(stderr, "%s: CLEAR changed unread size: %ld -> %ld\n", __func__,
-			unread_before, unread_after_clear);
+		fprintf(stderr, "%s: CLEAR changed unread size: %ld -> %ld\n",
+			__func__, unread_before, unread_after_clear);
 	}
 
-	long unread_before_read_all = CHECK_WITH(syslog_size_unread(), _ret >= 0);
+	long unread_before_read_all =
+		CHECK_WITH(syslog_size_unread(), _ret >= 0);
 	long window_after_clear = syslog_read_all(buf, sizeof(buf));
 	TEST_RES(window_after_clear, _ret >= 0);
 
-	long unread_after_read_all = CHECK_WITH(syslog_size_unread(), _ret >= 0);
+	long unread_after_read_all =
+		CHECK_WITH(syslog_size_unread(), _ret >= 0);
 	if (unread_after_read_all == unread_before_read_all) {
 		__tests_passed++;
-		fprintf(stderr, "%s: READ_ALL left unread size unchanged (%ld bytes)\n",
+		fprintf(stderr,
+			"%s: READ_ALL left unread size unchanged (%ld bytes)\n",
 			__func__, unread_after_read_all);
 	} else {
 		__tests_failed++;
 		fprintf(stderr,
-			"%s: READ_ALL changed unread size: %ld -> %ld\n", __func__,
-			unread_before_read_all, unread_after_read_all);
+			"%s: READ_ALL changed unread size: %ld -> %ld\n",
+			__func__, unread_before_read_all,
+			unread_after_read_all);
 	}
 
 	long unread_before_read_clear =
@@ -236,7 +242,8 @@ FN_TEST(syslog_clear_and_read_clear_window)
 	long read_clear = syslog_read_clear(buf, sizeof(buf));
 	TEST_RES(read_clear, _ret >= 0);
 
-	long unread_after_read_clear = CHECK_WITH(syslog_size_unread(), _ret >= 0);
+	long unread_after_read_clear =
+		CHECK_WITH(syslog_size_unread(), _ret >= 0);
 	if (unread_after_read_clear == unread_before_read_clear) {
 		__tests_passed++;
 		fprintf(stderr,
@@ -245,8 +252,9 @@ FN_TEST(syslog_clear_and_read_clear_window)
 	} else {
 		__tests_failed++;
 		fprintf(stderr,
-			"%s: READ_CLEAR changed unread size: %ld -> %ld\n", __func__,
-			unread_before_read_clear, unread_after_read_clear);
+			"%s: READ_CLEAR changed unread size: %ld -> %ld\n",
+			__func__, unread_before_read_clear,
+			unread_after_read_clear);
 	}
 }
 END_TEST()
@@ -272,7 +280,8 @@ FN_TEST(syslog_unprivileged_permissions)
 			"%s: unprivileged syslog actions correctly returned EPERM\n",
 			__func__);
 	} else if (rc == 2) {
-		SKIP_WITH_REASON(__func__, "cannot drop privileges to validate EPERM");
+		SKIP_WITH_REASON(__func__,
+				 "cannot drop privileges to validate EPERM");
 	} else {
 		__tests_failed++;
 		fprintf(stderr,
@@ -293,11 +302,12 @@ FN_TEST(syslog_klog_roundtrip_with_memfd_and_fadvise)
 
 	long unread_before = CHECK_WITH(syslog_size_unread(), _ret >= 0);
 	__tests_passed++;
-	fprintf(stderr, "%s: starting unread size %ld\n", __func__, unread_before);
+	fprintf(stderr, "%s: starting unread size %ld\n", __func__,
+		unread_before);
 
-	int fd = CHECK_WITH(
-		syscall(SYS_memfd_create, "klog-trigger", MFD_CLOEXEC | MFD_HUGETLB),
-		_ret >= 0);
+	int fd = CHECK_WITH(syscall(SYS_memfd_create, "klog-trigger",
+				    MFD_CLOEXEC | MFD_HUGETLB),
+			    _ret >= 0);
 
 	TEST_SUCC(posix_fadvise_checked(fd, 0, 4096, POSIX_FADV_NORMAL));
 
@@ -305,17 +315,20 @@ FN_TEST(syslog_klog_roundtrip_with_memfd_and_fadvise)
 
 	long unread_after_trigger = wait_for_unread_growth(unread_before);
 	if (unread_after_trigger < 0) {
-		SKIP_WITH_REASON(__func__,
-				 "klog did not grow after memfd/fadvise trigger");
+		SKIP_WITH_REASON(
+			__func__,
+			"klog did not grow after memfd/fadvise trigger");
 	}
 	__tests_passed++;
 	fprintf(stderr, "%s: unread grew to %ld after triggers\n", __func__,
 		unread_after_trigger);
 
-	long unread_before_read_all = CHECK_WITH(syslog_size_unread(), _ret >= 0);
+	long unread_before_read_all =
+		CHECK_WITH(syslog_size_unread(), _ret >= 0);
 	long read_all = syslog_read_all(buf, sizeof(buf));
 	TEST_RES(read_all, _ret > 0);
-	long unread_after_read_all = CHECK_WITH(syslog_size_unread(), _ret >= 0);
+	long unread_after_read_all =
+		CHECK_WITH(syslog_size_unread(), _ret >= 0);
 	if (unread_after_read_all == unread_before_read_all) {
 		__tests_passed++;
 		fprintf(stderr,
@@ -324,8 +337,9 @@ FN_TEST(syslog_klog_roundtrip_with_memfd_and_fadvise)
 	} else {
 		__tests_failed++;
 		fprintf(stderr,
-			"%s: READ_ALL changed unread size: %ld -> %ld\n", __func__,
-			unread_before_read_all, unread_after_read_all);
+			"%s: READ_ALL changed unread size: %ld -> %ld\n",
+			__func__, unread_before_read_all,
+			unread_after_read_all);
 	}
 
 	long unread_before_read_clear =
@@ -333,7 +347,8 @@ FN_TEST(syslog_klog_roundtrip_with_memfd_and_fadvise)
 	long read_clear = syslog_read_clear(buf, sizeof(buf));
 	TEST_RES(read_clear, _ret > 0);
 
-	long unread_after_read_clear = CHECK_WITH(syslog_size_unread(), _ret >= 0);
+	long unread_after_read_clear =
+		CHECK_WITH(syslog_size_unread(), _ret >= 0);
 	if (unread_after_read_clear == unread_before_read_clear) {
 		__tests_passed++;
 		fprintf(stderr,
@@ -343,14 +358,15 @@ FN_TEST(syslog_klog_roundtrip_with_memfd_and_fadvise)
 		__tests_failed++;
 		fprintf(stderr,
 			"%s: READ_CLEAR changed unread size: %ld -> %ld\n",
-			__func__, unread_before_read_clear, unread_after_read_clear);
+			__func__, unread_before_read_clear,
+			unread_after_read_clear);
 	}
 
 	long unread_before_destructive =
 		CHECK_WITH(syslog_size_unread(), _ret >= 0);
-	size_t want = (size_t)((unread_before_destructive < (long)sizeof(buf))
-					  ? unread_before_destructive
-					  : (long)sizeof(buf));
+	size_t want = (size_t)((unread_before_destructive < (long)sizeof(buf)) ?
+				       unread_before_destructive :
+				       (long)sizeof(buf));
 	long read_destructive = syslog_read_destructive(buf, want);
 	TEST_RES(read_destructive, _ret > 0);
 
@@ -360,14 +376,14 @@ FN_TEST(syslog_klog_roundtrip_with_memfd_and_fadvise)
 		__tests_passed++;
 		fprintf(stderr,
 			"%s: READ consumed data: %ld -> %ld (read %ld bytes)\n",
-			__func__, unread_before_destructive, unread_after_destructive,
-			read_destructive);
+			__func__, unread_before_destructive,
+			unread_after_destructive, read_destructive);
 	} else {
 		__tests_failed++;
 		fprintf(stderr,
 			"%s: READ did not reduce unread size: %ld -> %ld (read %ld bytes)\n",
-			__func__, unread_before_destructive, unread_after_destructive,
-			read_destructive);
+			__func__, unread_before_destructive,
+			unread_after_destructive, read_destructive);
 	}
 }
 END_TEST()
@@ -380,4 +396,3 @@ FN_TEST(syslog_console_level_errors)
 	TEST_ERRNO(syslog_call(SYSLOG_ACTION_CONSOLE_LEVEL, NULL, 0), EINVAL);
 }
 END_TEST()
-

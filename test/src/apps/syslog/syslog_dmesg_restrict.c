@@ -16,24 +16,23 @@
 
 static void drop_priv_or_die(void)
 {
-    if (geteuid() != 0)
-        return;
+	if (geteuid() != 0)
+		return;
 
-    if (setgid(65534) != 0) {
-        fprintf(stderr, "setgid failed: %s\n", strerror(errno));
-        _exit(1);
-    }
-    if (setuid(65534) != 0) {
-        fprintf(stderr, "setuid failed: %s\n", strerror(errno));
-        _exit(1);
-    }
+	if (setgid(65534) != 0) {
+		fprintf(stderr, "setgid failed: %s\n", strerror(errno));
+		_exit(1);
+	}
+	if (setuid(65534) != 0) {
+		fprintf(stderr, "setuid failed: %s\n", strerror(errno));
+		_exit(1);
+	}
 
-    if (geteuid() == 0) {
-        fprintf(stderr, "priv drop failed: still root\n");
-        _exit(1);
-    }
+	if (geteuid() == 0) {
+		fprintf(stderr, "priv drop failed: still root\n");
+		_exit(1);
+	}
 }
-
 
 static int read_dmesg_restrict(void)
 {
@@ -73,11 +72,12 @@ static int run_unpriv_checks(int expect_success)
 	}
 
 	if (pid == 0) {
-		if (geteuid() == 0) 
-            drop_priv_or_die();
+		if (geteuid() == 0)
+			drop_priv_or_die();
 
 		errno = 0;
-		long size = syscall(SYS_syslog, SYSLOG_ACTION_SIZE_BUFFER, 0, 0);
+		long size =
+			syscall(SYS_syslog, SYSLOG_ACTION_SIZE_BUFFER, 0, 0);
 		int size_ok = (size >= 0);
 		int size_errno = errno;
 
@@ -147,4 +147,3 @@ int main(void)
 	(void)write_dmesg_restrict(orig);
 	return 0;
 }
-
