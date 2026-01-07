@@ -37,14 +37,29 @@ enum Inner {
 impl DmaCoherent {
     /// Allocates a region of physical memory for coherent DMA access.
     ///
+    /// The memory of the newly-allocated DMA buffer is initialized to zeros.
+    ///
     /// The `is_cache_coherent` argument specifies whether the target device
     /// that the DMA mapping is prepared for can access the main memory in a
     /// CPU cache coherent way or not.
     pub fn alloc(nframes: usize, is_cache_coherent: bool) -> Result<Self, Error> {
+        Self::alloc_uninit(nframes, is_cache_coherent).inspect(|dma| {
+            dma.writer().fill_zeros(dma.size());
+        })
+    }
+
+    /// Allocates a region of physical memory for coherent DMA access
+    /// without initialization.
+    ///
+    /// This method is the same as [`DmaCoherent::alloc`]
+    /// except that it skips zeroing the memory of newly-allocated DMA region.
+    pub fn alloc_uninit(nframes: usize, is_cache_coherent: bool) -> Result<Self, Error> {
         let cvm = cvm_need_private_protection();
 
         let (inner, paddr_range) = if is_cache_coherent && !cvm {
-            let segment = FrameAllocOptions::new().alloc_segment(nframes)?;
+            let segment = FrameAllocOptions::new()
+                .zeroed(false)
+                .alloc_segment(nframes)?;
             let paddr_range = segment.paddr_range();
 
             (Inner::Segment(segment), paddr_range)

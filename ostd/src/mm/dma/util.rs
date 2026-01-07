@@ -76,7 +76,9 @@ pub(super) fn alloc_kva(
     is_cache_coherent: bool,
 ) -> Result<(KVirtArea, Paddr), Error> {
     let segment = Segment::from_unsized(
-        FrameAllocOptions::new().alloc_segment_with(nframes, |_| DmaBufferMeta)?,
+        FrameAllocOptions::new()
+            .zeroed(false)
+            .alloc_segment_with(nframes, |_| DmaBufferMeta)?,
     );
 
     #[cfg_attr(not(target_arch = "x86_64"), expect(unused_labels))]

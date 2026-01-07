@@ -18,7 +18,7 @@ pub enum PageConvertError {
 ///
 /// It invokes the [`map_gpa`] TDVMCALL to convert those pages into Intel TDX
 /// shared pages. Due to the conversion, any existing data on the pages will
-/// be erased.
+/// be lost.
 ///
 /// # Safety
 ///
@@ -38,7 +38,7 @@ pub unsafe fn unprotect_gpa_tdvm_call(gpa: Paddr, size: usize) -> Result<(), Pag
 ///
 /// It invokes the [`map_gpa`] TDVMCALL and the [`accept_page`] TDCALL to
 /// convert those pages into Intel TDX private pages. Due to the conversion,
-/// any existing data on the pages will be erased.
+/// any existing data on the pages will be zeroed.
 ///
 /// # Safety
 ///
