@@ -150,10 +150,7 @@ impl Vmar {
                 Some(_) | None => (),
             }
 
-            let page_fault_info = PageFaultInfo {
-                address: vaddr,
-                required_perms: required_page_flags.into(),
-            };
+            let page_fault_info = PageFaultInfo::new(vaddr, required_page_flags.into()).force();
             self.handle_page_fault(&page_fault_info)?;
 
             item = self.query_page(vaddr)?;
