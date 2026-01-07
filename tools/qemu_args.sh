@@ -11,6 +11,7 @@
 #  - NETDEV: "user" or "tap";
 #  - VHOST: "off" or "on";
 #  - VSOCK: "off" or "on";
+#  - CONSOLE: "hvc0" to enable virtio console;
 #  - SMP: number of CPUs;
 #  - MEM: amount of memory, e.g. "8G";
 #  - VNC_PORT: VNC port, default is "42".
@@ -19,6 +20,7 @@ OVMF=${OVMF:-"on"}
 VHOST=${VHOST:-"off"}
 VSOCK=${VSOCK:-"off"}
 NETDEV=${NETDEV:-"user"}
+CONSOLE=${CONSOLE:-"hvc0"}
 
 SSH_RAND_PORT=${SSH_PORT:-$(shuf -i 1024-65535 -n 1)}
 NGINX_RAND_PORT=${NGINX_PORT:-$(shuf -i 1024-65535 -n 1)}
@@ -46,6 +48,10 @@ else
     NETDEV_ARGS="-nic none"
 fi
 
+if [ "$CONSOLE" = "hvc0" ]; then
+    CONSOLE_ARGS="-device virtconsole,chardev=mux"
+fi
+
 if [ "$1" = "tdx" ]; then
     TDX_OBJECT='{ "qom-type": "tdx-guest", "id": "tdx0", "sept-ve-disable": true, "quote-generation-socket": { "type": "vsock", "cid": "2", "port": "4050" } }'
 
@@ -66,7 +72,7 @@ if [ "$1" = "tdx" ]; then
         $QEMU_OPT_ARG_DUMP_PACKETS \
         -chardev stdio,id=mux,mux=on,logfile=qemu.log \
         -device virtio-serial,romfile= \
-        -device virtconsole,chardev=mux \
+        $CONSOLE_ARGS \
         -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
         -monitor chardev:mux \
         -serial chardev:mux \
@@ -113,7 +119,7 @@ QEMU_ARGS="\
     -device virtio-blk-pci,bus=pcie.0,addr=0x7,drive=x1,serial=vexfat,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
     -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES$IOMMU_DEV_EXTRA \
     -device virtio-serial-pci,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
-    -device virtconsole,chardev=mux \
+    $CONSOLE_ARGS \
     $IOMMU_EXTRA_ARGS \
 "
 
@@ -127,7 +133,7 @@ MICROVM_QEMU_ARGS="\
     -device virtio-keyboard-device \
     -device virtio-net-device,netdev=net01 \
     -device virtio-serial-device \
-    -device virtconsole,chardev=mux \
+    $CONSOLE_ARGS \
 "
 
 if [ "$VSOCK" = "on" ]; then
