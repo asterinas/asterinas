@@ -19,6 +19,6 @@ pub(super) fn init_in_first_kthread() {
 
     #[cfg(target_arch = "x86_64")]
     ostd::if_tdx_enabled!({
-        super::registry::char::register(tdxguest::TdxGuest::new()).unwrap();
+        tdxguest::init().unwrap();
     });
 }
