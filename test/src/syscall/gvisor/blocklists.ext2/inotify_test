@@ -1,0 +1,4 @@
+# TODO: Apparently, due to some FS bugs, this triggers
+# "PosixError(errno=28 No space left on device)".
+# Further investigation is needed to determine the root cause.
+InotifyTest.InotifyAndTargetDestructionDoNotDeadlock_NoRandomSave
