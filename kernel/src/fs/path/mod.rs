@@ -51,7 +51,10 @@ impl Path {
         {
             return_errno!(Errno::EACCES);
         }
-        let new_child_dentry = self.dentry.create(name, type_, mode)?;
+        let new_child_dentry = self
+            .dentry
+            .as_dir_dentry_or_err()?
+            .create(name, type_, mode)?;
         Ok(Self::new(self.mount.clone(), new_child_dentry))
     }
 
@@ -81,9 +84,8 @@ impl Path {
 
     /// Lookups the target `Path` given the `name`.
     pub fn lookup(&self, name: &str) -> Result<Self> {
-        if self.type_() != InodeType::Dir {
-            return_errno_with_message!(Errno::ENOTDIR, "the path is not a directory");
-        }
+        let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
+
         if self.inode().check_permission(Permission::MAY_EXEC).is_err() {
             return_errno_with_message!(Errno::EACCES, "the path cannot be looked up");
         }
@@ -96,11 +98,11 @@ impl Path {
         } else if is_dotdot(name) {
             self.effective_parent().unwrap_or_else(|| self.this())
         } else {
-            let target_inner_opt = self.dentry.lookup_via_cache(name)?;
+            let target_inner_opt = dir_dentry.lookup_via_cache(name)?;
             match target_inner_opt {
                 Some(target_inner) => Self::new(self.mount.clone(), target_inner),
                 None => {
-                    let target_inner = self.dentry.lookup_via_fs(name)?;
+                    let target_inner = dir_dentry.lookup_via_fs(name)?;
                     Self::new(self.mount.clone(), target_inner)
                 }
             }
@@ -468,12 +470,13 @@ impl Path {
 impl Path {
     pub fn inode(&self) -> &Arc<dyn Inode>;
     pub fn type_(&self) -> InodeType;
-    pub fn unlink(&self, name: &str) -> Result<()>;
-    pub fn rmdir(&self, name: &str) -> Result<()>;
 
     /// Creates a `Path` by making an inode of the `type_` with the `mode`.
     pub fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Self> {
-        let inner = self.dentry.mknod(name, mode, type_)?;
+        let inner = self
+            .dentry
+            .as_dir_dentry_or_err()?
+            .mknod(name, mode, type_)?;
         Ok(Self::new(self.mount.clone(), inner))
     }
 
@@ -483,7 +486,15 @@ impl Path {
             return_errno_with_message!(Errno::EXDEV, "the operation cannot cross mounts");
         }
 
-        self.dentry.link(&old.dentry, name)
+        self.dentry.as_dir_dentry_or_err()?.link(old.inode(), name)
+    }
+
+    pub fn unlink(&self, name: &str) -> Result<()> {
+        self.dentry.as_dir_dentry_or_err()?.unlink(name)
+    }
+
+    pub fn rmdir(&self, name: &str) -> Result<()> {
+        self.dentry.as_dir_dentry_or_err()?.rmdir(name)
     }
 
     /// Renames a `Path` to the new `Path` by `rename()` the inner inode.
@@ -492,7 +503,11 @@ impl Path {
             return_errno_with_message!(Errno::EXDEV, "the operation cannot cross mounts");
         }
 
-        self.dentry.rename(old_name, &new_dir.dentry, new_name)
+        self.dentry.as_dir_dentry_or_err()?.rename(
+            old_name,
+            &new_dir.dentry.as_dir_dentry_or_err()?,
+            new_name,
+        )
     }
 }
 
