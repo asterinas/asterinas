@@ -29,6 +29,7 @@ bitflags.workspace = true
 bitvec.workspace = true
 cfg-if.workspace = true
 component.workspace = true
+const_format.workspace = true
 controlled.workspace = true
 core2.workspace = true
 cpio-decoder.workspace = true
