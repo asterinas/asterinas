@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::sync::RwMutexReadGuard;
+use ostd::{const_assert, sync::RwMutexReadGuard};
 use spin::Once;
 
 use crate::{
@@ -153,11 +153,29 @@ impl UtsName {
 
     /// The version name.
     pub const VERSION: &str = {
-        if let Some(version) = option_env!("OSDK_BUILD_TIMESTAMP") {
-            version
+        const BUILD_TIMESTAMP: &str = if let Some(timestamp) = option_env!("ASTER_BUILD_TIMESTAMP")
+        {
+            timestamp
         } else {
-            "unknown"
-        }
+            const UNIX_EPOCH: &str = "Thu Jan  1 00:00:00 UTC 1970";
+            UNIX_EPOCH
+        };
+
+        // The definition of Linux's UTS_VERSION can be found at:
+        // <https://elixir.bootlin.com/linux/v6.18/source/init/Makefile#L37>.
+        // Linux specifies that the total length of this string must not exceed 64 bytes.
+
+        // In Linux, the BUILD_VERSION represents the compilation count, which
+        // increments each time the kernel is built within the same source tree.
+        // We use a fixed value of '1' here to ensure build determinism.
+        // Reference: <https://elixir.bootlin.com/linux/v6.18/source/scripts/build-version>.
+        const BUILD_VERSION: usize = 1;
+        const SMP_FLAGS: &str = "SMP ";
+        const PREEMPT_FLAGS: &str = "";
+        const VERSION: &str =
+            const_format::formatcp!("#{BUILD_VERSION} {SMP_FLAGS}{PREEMPT_FLAGS}{BUILD_TIMESTAMP}");
+        const_assert!(VERSION.len() <= 64);
+        VERSION
     };
 
     /// The machine name.

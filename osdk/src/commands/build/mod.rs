@@ -250,19 +250,7 @@ fn build_kernel_elf(
                 .unwrap_or_else(|_| "unknown".to_string())
         ),
     );
-    // Use system date command to get the formatted time string
-    let date_output = std::process::Command::new("date")
-        // Reference: <https://man7.org/linux/man-pages/man1/date.1.html>
-        .arg("+%a %b %e %H:%M:%S %Z %Y")
-        .output()
-        .ok()
-        .and_then(|output| {
-            String::from_utf8(output.stdout)
-                .ok()
-                .map(|s| s.trim().to_string())
-        })
-        .unwrap_or_else(|| "Thu Jan  1 00:00:00 UTC 1970".to_string());
-    command.env("OSDK_BUILD_TIMESTAMP", format!("#1 {}", date_output));
+
     command.env("RUSTFLAGS", rustflags.join(" "));
     command.arg("build");
     command.arg("--features").arg(features.join(" "));

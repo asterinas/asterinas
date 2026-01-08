@@ -98,6 +98,7 @@ jobs:
           image: asterinas/asterinas:0.17.0-20251228
           options: --privileged -v /dev:/dev -v ${{ github.workspace }}:/root/asterinas
           run: |
+            export ASTER_BUILD_TIMESTAMP=`date '+%a %b %e %H:%M:%S %Z %Y'`
             make iso RELEASE=1 AUTO_INSTALL=false ARCH=${{ matrix.arch }}
             iso_path=$(realpath ./target/nixos/iso_image/iso/*.iso)
             echo "iso_path=$iso_path"
