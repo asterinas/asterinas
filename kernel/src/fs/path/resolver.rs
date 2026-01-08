@@ -376,9 +376,8 @@ impl core::fmt::Display for MountInfoEntry<'_> {
 impl PathResolver {
     /// Looks up a child entry with `name` within a directory `path`.
     pub fn lookup_at_path(&self, path: &Path, name: &str) -> Result<Path> {
-        if path.type_() != InodeType::Dir {
-            return_errno_with_message!(Errno::ENOTDIR, "the path is not a directory");
-        }
+        let dir_dentry = path.dentry.as_dir_dentry_or_err()?;
+
         if path.inode().check_permission(Permission::MAY_EXEC).is_err() {
             return_errno_with_message!(Errno::EACCES, "the path cannot be looked up");
         }
@@ -391,11 +390,11 @@ impl PathResolver {
         } else if super::is_dotdot(name) {
             self.resolve_parent(path).unwrap_or_else(|| path.this())
         } else {
-            let target_inner_opt = path.dentry.lookup_via_cache(name)?;
+            let target_inner_opt = dir_dentry.lookup_via_cache(name)?;
             match target_inner_opt {
                 Some(target_inner) => Path::new(path.mount.clone(), target_inner),
                 None => {
-                    let target_inner = path.dentry.lookup_via_fs(name)?;
+                    let target_inner = dir_dentry.lookup_via_fs(name)?;
                     Path::new(path.mount.clone(), target_inner)
                 }
             }

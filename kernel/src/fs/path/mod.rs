@@ -12,7 +12,7 @@ pub use resolver::{AT_FDCWD, AbsPathResult, FsPath, LookupResult, PathResolver, 
 use crate::{
     fs::{
         inode_handle::InodeHandle,
-        path::dentry::Dentry,
+        path::dentry::{Dentry, DirDentry},
         utils::{
             CreationFlags, FileSystem, FsFlags, Inode, InodeMode, InodeType, Metadata, MknodType,
             OpenArgs, Permission, StatusFlags, XattrName, XattrNamespace, XattrSetFlags,
@@ -61,7 +61,10 @@ impl Path {
         {
             return_errno!(Errno::EACCES);
         }
-        let new_child_dentry = self.dentry.create(name, type_, mode)?;
+        let new_child_dentry = self
+            .dentry
+            .as_dir_dentry_or_err()?
+            .create(name, type_, mode)?;
         Ok(Self::new(self.mount.clone(), new_child_dentry))
     }
 
@@ -391,12 +394,13 @@ impl Path {
 impl Path {
     pub fn inode(&self) -> &Arc<dyn Inode>;
     pub fn type_(&self) -> InodeType;
-    pub fn unlink(&self, name: &str) -> Result<()>;
-    pub fn rmdir(&self, name: &str) -> Result<()>;
 
     /// Creates a `Path` by making an inode of the `type_` with the `mode`.
     pub fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Self> {
-        let inner = self.dentry.mknod(name, mode, type_)?;
+        let inner = self
+            .dentry
+            .as_dir_dentry_or_err()?
+            .mknod(name, mode, type_)?;
         Ok(Self::new(self.mount.clone(), inner))
     }
 
@@ -406,7 +410,17 @@ impl Path {
             return_errno_with_message!(Errno::EXDEV, "the operation cannot cross mounts");
         }
 
-        self.dentry.link(&old.dentry, name)
+        self.dentry.as_dir_dentry_or_err()?.link(old.inode(), name)
+    }
+
+    /// Unlinks a name from the `Path`.
+    pub fn unlink(&self, name: &str) -> Result<()> {
+        self.dentry.as_dir_dentry_or_err()?.unlink(name)
+    }
+
+    /// Removes a directory by `rmdir()` the inner inode.
+    pub fn rmdir(&self, name: &str) -> Result<()> {
+        self.dentry.as_dir_dentry_or_err()?.rmdir(name)
     }
 
     /// Renames a `Path` to the new `Path` by `rename()` the inner inode.
@@ -415,7 +429,7 @@ impl Path {
             return_errno_with_message!(Errno::EXDEV, "the operation cannot cross mounts");
         }
 
-        self.dentry.rename(old_name, &new_dir.dentry, new_name)
+        DirDentry::rename(&self.dentry, old_name, &new_dir.dentry, new_name)
     }
 }
 
