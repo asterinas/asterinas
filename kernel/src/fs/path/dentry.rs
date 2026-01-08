@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::{
+    ops::Deref,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 use hashbrown::HashMap;
 use ostd::sync::RwMutexWriteGuard;
@@ -19,8 +22,7 @@ pub(super) struct Dentry {
     inode: Arc<dyn Inode>,
     type_: InodeType,
     name_and_parent: NameAndParent,
-    // FIXME: Only maintain children for directory dentries.
-    children: RwMutex<DentryChildren>,
+    children: Option<RwMutex<DentryChildren>>,
     flags: AtomicU32,
     mount_count: AtomicU32,
     this: Weak<Dentry>,
@@ -101,11 +103,14 @@ impl Dentry {
             DentryOptions::Pseudo(name_fn) => NameAndParent::Pseudo(name_fn),
         };
 
+        let children =
+            matches!(inode.type_(), InodeType::Dir).then(|| RwMutex::new(DentryChildren::new()));
+
         Arc::new_cyclic(|weak_self| Self {
             type_: inode.type_(),
             inode,
             name_and_parent,
-            children: RwMutex::new(DentryChildren::new()),
+            children,
             flags: AtomicU32::new(DentryFlags::empty().bits()),
             mount_count: AtomicU32::new(0),
             this: weak_self.clone(),
@@ -197,17 +202,66 @@ impl Dentry {
         }
     }
 
-    /// Creates a `Dentry_` by creating a new inode of the `type_` with the `mode`.
+    /// Gets the absolute path name of this `Dentry` within the filesystem.
+    pub(super) fn path_name(&self) -> String {
+        let mut path_name = self.name().to_string();
+        let mut current_dir = self.this();
+
+        while let Some(parent_dir) = current_dir.parent() {
+            path_name = {
+                let parent_name = parent_dir.name();
+                if parent_name != "/" {
+                    parent_name + "/" + &path_name
+                } else {
+                    parent_name + &path_name
+                }
+            };
+            current_dir = parent_dir;
+        }
+
+        debug_assert!(path_name.starts_with('/') || self.is_pseudo());
+        path_name
+    }
+
+    pub(super) fn as_dir_dentry_or_err(&self) -> Result<DirDentry<'_>> {
+        debug_assert_eq!(self.children.is_some(), self.type_ == InodeType::Dir);
+
+        let Some(children) = &self.children else {
+            return_errno_with_message!(
+                Errno::ENOTDIR,
+                "the dentry is not related to a directory inode"
+            );
+        };
+
+        Ok(DirDentry {
+            inner: self,
+            children,
+        })
+    }
+}
+
+/// A `Dentry` wrapper that has been validated to represent a directory.
+pub(super) struct DirDentry<'a> {
+    inner: &'a Dentry,
+    children: &'a RwMutex<DentryChildren>,
+}
+
+impl Deref for DirDentry<'_> {
+    type Target = Dentry;
+
+    fn deref(&self) -> &Self::Target {
+        self.inner
+    }
+}
+
+impl DirDentry<'_> {
+    /// Creates a `Dentry` by creating a new inode of the `type_` with the `mode`.
     pub(super) fn create(
         &self,
         name: &str,
         type_: InodeType,
         mode: InodeMode,
-    ) -> Result<Arc<Self>> {
-        if self.type_() != InodeType::Dir {
-            return_errno!(Errno::ENOTDIR);
-        }
-
+    ) -> Result<Arc<Dentry>> {
         let children = self.children.upread();
         if children.contains_valid(name) {
             return_errno!(Errno::EEXIST);
@@ -237,7 +291,7 @@ impl Dentry {
         // TODO: Add a right implementation to cache negative dentry.
         let inode = self.inode.lookup(name)?;
         let name = String::from(name);
-        let target = Self::new(inode, DentryOptions::Leaf((name.clone(), self.this())));
+        let target = Dentry::new(inode, DentryOptions::Leaf((name.clone(), self.this())));
 
         if target.is_dentry_cacheable() {
             children.upgrade().insert(name, target.clone());
@@ -247,11 +301,12 @@ impl Dentry {
     }
 
     /// Creates a `Dentry` by making an inode of the `type_` with the `mode`.
-    pub(super) fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<Self>> {
-        if self.type_() != InodeType::Dir {
-            return_errno!(Errno::ENOTDIR);
-        }
-
+    pub(super) fn mknod(
+        &self,
+        name: &str,
+        mode: InodeMode,
+        type_: MknodType,
+    ) -> Result<Arc<Dentry>> {
         let children = self.children.upread();
         if children.contains_valid(name) {
             return_errno!(Errno::EEXIST);
@@ -268,18 +323,13 @@ impl Dentry {
         Ok(new_child)
     }
 
-    /// Links a new name for the `Dentry` by `link()` the inner inode.
-    pub(super) fn link(&self, old: &Arc<Self>, name: &str) -> Result<()> {
-        if self.type_() != InodeType::Dir {
-            return_errno!(Errno::ENOTDIR);
-        }
-
+    /// Links a new `Dentry` by `link()` the old inode.
+    pub(super) fn link(&self, old_inode: &Arc<dyn Inode>, name: &str) -> Result<()> {
         let children = self.children.upread();
         if children.contains_valid(name) {
             return_errno!(Errno::EEXIST);
         }
 
-        let old_inode = old.inode();
         self.inode.link(old_inode, name)?;
         let name = String::from(name);
         let dentry = Dentry::new(
@@ -296,10 +346,6 @@ impl Dentry {
 
     /// Deletes a `Dentry` by `unlink()` the inner inode.
     pub(super) fn unlink(&self, name: &str) -> Result<()> {
-        if self.type_() != InodeType::Dir {
-            return_errno!(Errno::ENOTDIR);
-        }
-
         if is_dot_or_dotdot(name) {
             return_errno_with_message!(Errno::EINVAL, "unlink on . or ..");
         }
@@ -310,6 +356,7 @@ impl Dentry {
         let mut children = children.upgrade();
         let cached_child = children.delete(name);
 
+        let dir_inode = &self.inode;
         let child_inode = match cached_child {
             Some(child) => {
                 // Cache hit: use the cached dentry
@@ -318,11 +365,11 @@ impl Dentry {
             None => {
                 // Cache miss: need to lookup from the underlying filesystem
                 drop(children);
-                self.inode.lookup(name)?
+                dir_inode.lookup(name)?
             }
         };
 
-        self.inode.unlink(name)?;
+        dir_inode.unlink(name)?;
 
         let nlinks = child_inode.metadata().nlinks;
         fs::notify::on_link_count(&child_inode);
@@ -330,7 +377,7 @@ impl Dentry {
             // FIXME: `DELETE_SELF` should be generated after closing the last FD.
             fs::notify::on_inode_removed(&child_inode);
         }
-        fs::notify::on_delete(self.inode(), &child_inode, || name.to_string());
+        fs::notify::on_delete(dir_inode, &child_inode, || name.to_string());
         if nlinks == 0 {
             // Ideally, we would use `fs_event_publisher()` here to avoid creating a
             // `FsEventPublisher` instance on a dying inode. However, it isn't possible because we
@@ -347,10 +394,6 @@ impl Dentry {
 
     /// Deletes a directory `Dentry` by `rmdir()` the inner inode.
     pub(super) fn rmdir(&self, name: &str) -> Result<()> {
-        if self.type_() != InodeType::Dir {
-            return_errno!(Errno::ENOTDIR);
-        }
-
         if is_dot(name) {
             return_errno_with_message!(Errno::EINVAL, "rmdir on .");
         }
@@ -364,6 +407,7 @@ impl Dentry {
         let mut children = children.upgrade();
         let cached_child = children.delete(name);
 
+        let dir_inode = &self.inode;
         let child_inode = match cached_child {
             Some(child) => {
                 // Cache hit: use the cached dentry
@@ -372,18 +416,18 @@ impl Dentry {
             None => {
                 // Cache miss: need to lookup from the underlying filesystem
                 drop(children);
-                self.inode.lookup(name)?
+                dir_inode.lookup(name)?
             }
         };
 
-        self.inode.rmdir(name)?;
+        dir_inode.rmdir(name)?;
 
         let nlinks = child_inode.metadata().nlinks;
         if nlinks == 0 {
             // FIXME: `DELETE_SELF` should be generated after closing the last FD.
             fs::notify::on_inode_removed(&child_inode);
         }
-        fs::notify::on_delete(self.inode(), &child_inode, || name.to_string());
+        fs::notify::on_delete(dir_inode, &child_inode, || name.to_string());
         if nlinks == 0 {
             // Ideally, we would use `fs_event_publisher()` here to avoid creating a
             // `FsEventPublisher` instance on a dying inode. However, it isn't possible because we
@@ -399,31 +443,42 @@ impl Dentry {
     }
 
     /// Renames a `Dentry` to the new `Dentry` by `rename()` the inner inode.
-    pub(super) fn rename(&self, old_name: &str, new_dir: &Arc<Self>, new_name: &str) -> Result<()> {
+    pub(super) fn rename(
+        old_dir_arc: &Arc<Dentry>,
+        old_name: &str,
+        new_dir_arc: &Arc<Dentry>,
+        new_name: &str,
+    ) -> Result<()> {
+        let old_dir = old_dir_arc.as_dir_dentry_or_err()?;
+        let new_dir = new_dir_arc.as_dir_dentry_or_err()?;
+
         if is_dot_or_dotdot(old_name) || is_dot_or_dotdot(new_name) {
             return_errno_with_message!(Errno::EISDIR, "old_name or new_name is a directory");
         }
-        if self.type_() != InodeType::Dir || new_dir.type_() != InodeType::Dir {
-            return_errno!(Errno::ENOTDIR);
-        }
+
+        let old_dir_inode = old_dir.inode();
+        let new_dir_inode = new_dir.inode();
 
         // The two are the same dentry, we just modify the name
-        if Arc::ptr_eq(&self.this(), new_dir) {
+        if Arc::ptr_eq(old_dir_arc, new_dir_arc) {
             if old_name == new_name {
                 return Ok(());
             }
 
-            let children = self.children.upread();
+            let children = old_dir.children.upread();
             let old_dentry = children.check_mountpoint_then_find(old_name)?;
             children.check_mountpoint(new_name)?;
 
-            self.inode.rename(old_name, &self.inode, new_name)?;
+            old_dir_inode.rename(old_name, old_dir_inode, new_name)?;
 
             let mut children = children.upgrade();
             match old_dentry.as_ref() {
                 Some(dentry) => {
                     children.delete(old_name);
-                    dentry.name_and_parent.set(new_name, self.this()).unwrap();
+                    dentry
+                        .name_and_parent
+                        .set(new_name, old_dir_arc.clone())
+                        .unwrap();
                     if dentry.is_dentry_cacheable() {
                         children.insert(String::from(new_name), dentry.clone());
                     }
@@ -435,17 +490,17 @@ impl Dentry {
         } else {
             // The two are different dentries
             let (mut self_children, mut new_dir_children) =
-                write_lock_children_on_two_dentries(self, new_dir);
+                write_lock_children_on_two_dentries(&old_dir, &new_dir);
             let old_dentry = self_children.check_mountpoint_then_find(old_name)?;
             new_dir_children.check_mountpoint(new_name)?;
 
-            self.inode.rename(old_name, &new_dir.inode, new_name)?;
+            old_dir_inode.rename(old_name, new_dir_inode, new_name)?;
             match old_dentry.as_ref() {
                 Some(dentry) => {
                     self_children.delete(old_name);
                     dentry
                         .name_and_parent
-                        .set(new_name, new_dir.this())
+                        .set(new_name, new_dir_arc.clone())
                         .unwrap();
                     if dentry.is_dentry_cacheable() {
                         new_dir_children.insert(String::from(new_name), dentry.clone());
@@ -457,27 +512,6 @@ impl Dentry {
             }
         }
         Ok(())
-    }
-
-    /// Gets the absolute path name of this `Dentry` within the filesystem.
-    pub(super) fn path_name(&self) -> String {
-        let mut path_name = self.name().to_string();
-        let mut current_dir = self.this();
-
-        while let Some(parent_dir) = current_dir.parent() {
-            path_name = {
-                let parent_name = parent_dir.name();
-                if parent_name != "/" {
-                    parent_name + "/" + &path_name
-                } else {
-                    parent_name + &path_name
-                }
-            };
-            current_dir = parent_dir;
-        }
-
-        debug_assert!(path_name.starts_with('/') || self.is_pseudo());
-        path_name
     }
 }
 
@@ -612,8 +646,8 @@ impl DentryChildren {
 }
 
 fn write_lock_children_on_two_dentries<'a>(
-    this: &'a Dentry,
-    other: &'a Dentry,
+    this: &'a DirDentry,
+    other: &'a DirDentry,
 ) -> (
     RwMutexWriteGuard<'a, DentryChildren>,
     RwMutexWriteGuard<'a, DentryChildren>,
