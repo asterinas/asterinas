@@ -162,7 +162,7 @@ impl FileIo for TdxGuestFile {
                         inblob_ptr.read()?
                     };
 
-                    let outblob = tdx_get_report(inblob.as_bytes())?;
+                    let outblob = tdx_get_report(Some(inblob.as_bytes()))?;
                     let outblob_ptr = field_ptr!(&data_ptr, TdxReportRequest, tdx_report);
                     outblob_ptr.copy_from(&SafePtr::new(&*outblob, 0))?;
 
@@ -176,11 +176,24 @@ impl FileIo for TdxGuestFile {
 
 static TDX_REPORT: Once<RwMutex<USegment>> = Once::new();
 
+#[derive(Debug, Clone, Copy)]
+pub enum MeasurementReg {
+    MrConfigId,
+    MrOwner,
+    MrOwnerConfig,
+    MrTd,
+    Rtmr0,
+    Rtmr1,
+    Rtmr2,
+    Rtmr3,
+}
+
+/// Gets the TDX quote given the specified data in `inblob`.
 pub fn tdx_get_quote(inblob: &[u8]) -> Result<Box<[u8]>> {
     const GET_QUOTE_IN_FLIGHT: u64 = 0xFFFF_FFFF_FFFF_FFFF;
     const GET_QUOTE_BUF_SIZE: usize = 8 * 1024;
 
-    let report = tdx_get_report(inblob)?;
+    let report = tdx_get_report(Some(inblob))?;
     let report_ptr: SafePtr<TdReport, _, _> = SafePtr::new(&*report, 0);
 
     let buf = DmaCoherent::alloc(GET_QUOTE_BUF_SIZE.div_ceil(PAGE_SIZE), false)?;
@@ -217,6 +230,52 @@ pub fn tdx_get_quote(inblob: &[u8]) -> Result<Box<[u8]>> {
     let mut outblob = vec![0u8; out_len as usize].into_boxed_slice();
     payload_ptr.cast().read_slice(outblob.as_mut())?;
     Ok(outblob)
+}
+
+/// Gets the TDX report given the specified data in `inblob`.
+///
+/// The first `size_of::<TdReport>()` bytes of data in the returned `USegment` is the report.
+/// The rest in `USegment` should be ignored.
+/// If `inblob` is `None`, use the existing report data to get the report, i.e. refresh the
+/// report.
+pub fn tdx_get_report(inblob: Option<&[u8]>) -> Result<RwMutexUpgradeableGuard<'_, USegment>> {
+    let report = TDX_REPORT.get().unwrap().write();
+
+    if let Some(inblob) = inblob {
+        if inblob.len() != size_of::<ReportData>() {
+            return_errno_with_message!(Errno::EINVAL, "Invalid inblob length");
+        }
+
+        // Use `inblob` as the data associated with the report.
+        report
+            .write_bytes(TdReport::report_data_offset(), inblob)
+            .unwrap();
+    }
+
+    // From TDX Module Specification, the report structure returned by TDX Module
+    // places the report data at offset 128, so using the same offset keeps the
+    // memory layout consistent with the TDX Modules's output format. And we can
+    // directly call `get_report` on the existing report structure without needing
+    // to rewrite the report data.
+    let report_data_ptr = report.paddr() + TdReport::report_data_offset();
+
+    // FIXME: The `get_report` API from the `tdx_guest` crate should have been marked `unsafe`
+    // because it has no way to determine if the input physical address is safe or not.
+    get_report(report.paddr() as u64, report_data_ptr as u64)?;
+    Ok(report.downgrade())
+}
+
+const SHA384_DIGEST_SIZE: usize = 48;
+
+/// Gets the measurement register value from the TDX report.
+pub fn tdx_get_mr(reg: MeasurementReg) -> Result<[u8; SHA384_DIGEST_SIZE]> {
+    let report = TDX_REPORT.get().unwrap().read();
+
+    let mut blob = [0u8; SHA384_DIGEST_SIZE];
+    report
+        .read_bytes(TdReport::mr_offset(reg), blob.as_mut())
+        .unwrap();
+    Ok(blob)
 }
 
 pub(super) fn init() -> Result<()> {
@@ -283,10 +342,10 @@ struct TdInfo {
     mrconfigid: [u8; 48],
     mrowner: [u8; 48],
     mrownerconfig: [u8; 48],
+    rtmr0: [u8; 48],
     rtmr1: [u8; 48],
     rtmr2: [u8; 48],
     rtmr3: [u8; 48],
-    rtmr4: [u8; 48],
     servtd_hash: [u8; 48],
     extension: [u8; 64],
 }
@@ -294,6 +353,20 @@ struct TdInfo {
 impl TdReport {
     const fn report_data_offset() -> usize {
         offset_of!(TdReport, report_mac) + offset_of!(ReportMac, report_data)
+    }
+
+    const fn mr_offset(reg: MeasurementReg) -> usize {
+        offset_of!(TdReport, td_info)
+            + match reg {
+                MeasurementReg::MrConfigId => offset_of!(TdInfo, mrconfigid),
+                MeasurementReg::MrOwner => offset_of!(TdInfo, mrowner),
+                MeasurementReg::MrOwnerConfig => offset_of!(TdInfo, mrownerconfig),
+                MeasurementReg::MrTd => offset_of!(TdInfo, mrtd),
+                MeasurementReg::Rtmr0 => offset_of!(TdInfo, rtmr0),
+                MeasurementReg::Rtmr1 => offset_of!(TdInfo, rtmr1),
+                MeasurementReg::Rtmr2 => offset_of!(TdInfo, rtmr2),
+                MeasurementReg::Rtmr3 => offset_of!(TdInfo, rtmr3),
+            }
     }
 }
 
@@ -305,34 +378,4 @@ mod ioctl_defs {
 
     pub(super) type GetTdxReport =
         ioc!(TDX_CMD_GET_REPORT0, b'T', 0x01, InOutData<TdxReportRequest>);
-}
-
-/// Gets the TDX report given the specified data in `inblob`.
-///
-/// The first `size_of::<TdReport>()` bytes of data in the returned `USegment` is the report.
-/// The rest in `USegment` should be ignored.
-fn tdx_get_report(inblob: &[u8]) -> Result<RwMutexUpgradeableGuard<'_, USegment>> {
-    if inblob.len() != size_of::<ReportData>() {
-        return_errno_with_message!(Errno::EINVAL, "Invalid inblob length");
-    }
-
-    let report = TDX_REPORT.get().unwrap().write();
-
-    // Use `inblob` as the data associated with the report.
-    let report_data_paddr = {
-        // From TDX Module Specification, the report structure returned by TDX Module
-        // places the report data at offset 128, so using the same offset keeps the
-        // memory layout consistent with the TDX Modules's output format. And we can
-        // directly call `get_report` on the existing report structure without needing
-        // to rewrite the report data.
-        report
-            .write_bytes(TdReport::report_data_offset(), inblob)
-            .unwrap();
-        report.paddr() + TdReport::report_data_offset()
-    };
-
-    // FIXME: The `get_report` API from the `tdx_guest` crate should have been marked `unsafe`
-    // because it has no way to determine if the input physical address is safe or not.
-    get_report(report.paddr() as u64, report_data_paddr as u64)?;
-    Ok(report.downgrade())
 }

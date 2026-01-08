@@ -7,7 +7,12 @@ use aster_systree::{
     inherit_sys_branch_node, inherit_sys_leaf_node,
 };
 use inherit_methods_macro::inherit_methods;
-use ostd::mm::{VmReader, VmWriter};
+use ostd::{
+    mm::{FallibleVmWrite, VmReader, VmWriter},
+    sync::RwMutex,
+};
+
+use crate::device::misc::tdxguest::{MeasurementReg, tdx_get_mr, tdx_get_report};
 
 pub(super) fn init() {
     let node = {
@@ -66,46 +71,71 @@ inherit_sys_branch_node!(TdxGuestSysNodeRoot, fields, {
 #[derive(Debug)]
 struct Measurement {
     fields: NormalNodeFields<Self>,
+    in_sync: RwMutex<bool>,
 }
 
 #[derive(Debug)]
 struct MeasurementAttr {
     name: &'static str,
     perms: SysPerms,
+    reg: MeasurementReg,
+    refresh_on_read: bool,
+}
+
+impl MeasurementAttr {
+    fn refresh_on_read(&self) -> bool {
+        self.refresh_on_read
+    }
 }
 
 const MEASUREMENT_ATTRS: &[MeasurementAttr] = &[
     MeasurementAttr {
         name: "mrconfigid",
         perms: SysPerms::DEFAULT_RO_ATTR_PERMS,
+        reg: MeasurementReg::MrConfigId,
+        refresh_on_read: false,
     },
     MeasurementAttr {
         name: "mrowner",
         perms: SysPerms::DEFAULT_RO_ATTR_PERMS,
+        reg: MeasurementReg::MrOwner,
+        refresh_on_read: false,
     },
     MeasurementAttr {
         name: "mrownerconfig",
         perms: SysPerms::DEFAULT_RO_ATTR_PERMS,
+        reg: MeasurementReg::MrOwnerConfig,
+        refresh_on_read: false,
     },
     MeasurementAttr {
         name: "mrtd:sha384",
         perms: SysPerms::DEFAULT_RO_ATTR_PERMS,
+        reg: MeasurementReg::MrTd,
+        refresh_on_read: false,
     },
     MeasurementAttr {
         name: "rtmr0:sha384",
         perms: SysPerms::DEFAULT_RW_ATTR_PERMS,
+        reg: MeasurementReg::Rtmr0,
+        refresh_on_read: true,
     },
     MeasurementAttr {
         name: "rtmr1:sha384",
         perms: SysPerms::DEFAULT_RW_ATTR_PERMS,
+        reg: MeasurementReg::Rtmr1,
+        refresh_on_read: true,
     },
     MeasurementAttr {
         name: "rtmr2:sha384",
         perms: SysPerms::DEFAULT_RW_ATTR_PERMS,
+        reg: MeasurementReg::Rtmr2,
+        refresh_on_read: true,
     },
     MeasurementAttr {
         name: "rtmr3:sha384",
         perms: SysPerms::DEFAULT_RW_ATTR_PERMS,
+        reg: MeasurementReg::Rtmr3,
+        refresh_on_read: true,
     },
 ];
 
@@ -120,7 +150,10 @@ impl Measurement {
         Arc::new_cyclic(|weak_self| {
             let fields = NormalNodeFields::new(name, attrs, weak_self.clone());
 
-            Measurement { fields }
+            Measurement {
+                fields,
+                in_sync: RwMutex::new(false),
+            }
         })
     }
 }
@@ -131,7 +164,28 @@ inherit_sys_leaf_node!(Measurement, fields, {
     }
 
     fn read_attr_at(&self, name: &str, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        Err(Error::AttributeError)
+        let attr = MEASUREMENT_ATTRS
+            .iter()
+            .find(|attr| attr.name == name)
+            .unwrap();
+
+        let mut in_sync = self.in_sync.upread();
+
+        if attr.refresh_on_read() && !*in_sync {
+            let mut in_sync_write = in_sync.upgrade();
+            if !*in_sync_write {
+                tdx_get_report(None).map_err(|_| Error::AttributeError)?;
+                *in_sync_write = true;
+            }
+            in_sync = in_sync_write.downgrade();
+        }
+
+        let mr = tdx_get_mr(attr.reg).map_err(|_| Error::AttributeError)?;
+
+        let mut reader = VmReader::from(&mr[offset..]);
+        writer
+            .write_fallible(&mut reader)
+            .map_err(|_| Error::AttributeError)
     }
 
     fn write_attr(&self, name: &str, reader: &mut VmReader) -> Result<usize> {
