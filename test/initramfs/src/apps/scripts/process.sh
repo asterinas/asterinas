@@ -32,6 +32,7 @@ hello_pie/hello
 hello_world/hello_world
 inotify/inotify_align
 inotify/inotify_poll
+inotify/inotify_unlink
 itimer/setitimer
 itimer/timer_create
 mmap/mmap_and_fork

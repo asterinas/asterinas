@@ -1,4 +1,0 @@
-# Nothing here. Pipe files are supported by the ext2 file system.
-#
-# This file is kept to ensure that the `blocklists.ext2` directory
-# is not empty, as it may become useful in the future.
