@@ -124,28 +124,20 @@ impl FsEventSubscriberStats {
         let subscribers = self.num_subscribers.fetch_sub(1, Ordering::Release);
         debug_assert!(
             subscribers >= 0,
-            "The number of subscribers is negative: {}",
+            "the number of subscribers is negative: {} (removed one)",
             subscribers
         );
     }
 
     pub fn remove_subscribers(&self, num_subscribers: usize) {
-        let num_subscribers = num_subscribers as i64;
-        let old_value = self.num_subscribers.load(Ordering::Acquire);
-        debug_assert!(
-            old_value >= num_subscribers,
-            "integer overflow: attempting to remove {} subscribers when only {} exist",
-            num_subscribers,
-            old_value
-        );
-
         let subscribers = self
             .num_subscribers
-            .fetch_sub(num_subscribers, Ordering::Release);
+            .fetch_sub(num_subscribers as i64, Ordering::Release);
         debug_assert!(
             subscribers >= 0,
-            "The number of subscribers is negative: {}",
-            subscribers
+            "the number of subscribers is negative: {} (removed {})",
+            subscribers,
+            num_subscribers
         );
     }
 
