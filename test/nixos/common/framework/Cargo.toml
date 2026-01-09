@@ -1,0 +1,12 @@
+[package]
+name = "nixos-test-framework"
+version.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+inventory.workspace = true
+nixos-test-macro.workspace = true
+rexpect.workspace = true
+strip-ansi-escapes.workspace = true
