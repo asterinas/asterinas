@@ -1864,8 +1864,6 @@ impl InodeBlockManager {
             let range_nblocks = dev_range.len();
 
             let bio_segment = BioSegment::alloc(range_nblocks, BioDirection::FromDevice);
-            bio_segment.reader().unwrap().read_fallible(writer)?;
-
             let waiter = self.fs().read_blocks_async(start_bid, bio_segment)?;
             bio_waiter.concat(waiter);
         }
@@ -1874,10 +1872,21 @@ impl InodeBlockManager {
     }
 
     pub fn read_blocks(&self, bid: Ext2Bid, nblocks: usize, writer: &mut VmWriter) -> Result<()> {
-        match self.read_blocks_async(bid, nblocks, writer)?.wait() {
-            Some(BioStatus::Complete) => Ok(()),
-            _ => return_errno!(Errno::EIO),
+        let bio_waiter = self.read_blocks_async(bid, nblocks, writer)?;
+        if Some(BioStatus::Complete) != bio_waiter.wait() {
+            return_errno!(Errno::EIO);
         }
+
+        for bio in bio_waiter.bios() {
+            for segment in bio.segments() {
+                segment
+                    .reader()?
+                    .read_fallible(writer)
+                    .map_err(|(e, _)| Error::new(Errno::EIO))?;
+            }
+        }
+
+        Ok(())
     }
 
     pub fn read_block_async(&self, bid: Ext2Bid, frame: &CachePage) -> Result<BioWaiter> {
