@@ -37,4 +37,9 @@ impl RelocatedRange {
     pub(super) fn relocated_start(&self) -> Vaddr {
         self.relocated_start
     }
+
+    /// Returns the length of the original range.
+    pub(super) fn range_len(&self) -> usize {
+        self.original_range.len()
+    }
 }

@@ -33,13 +33,15 @@ impl Vmar {
     /// Destroys all mappings that fall within the specified
     /// range in bytes.
     ///
-    /// The range's start and end addresses must be page-aligned.
+    /// The range's start and end addresses must be page-aligned. And the range
+    /// length must be non-zero.
     ///
     /// Mappings may fall partially within the range; only the overlapped
     /// portions of the mappings are unmapped.
     pub fn remove_mapping(&self, range: Range<usize>) -> Result<()> {
         debug_assert!(range.start.is_multiple_of(PAGE_SIZE));
         debug_assert!(range.end.is_multiple_of(PAGE_SIZE));
+        debug_assert_ne!(range.len(), 0);
 
         let mut inner = self.inner.write();
         let mut rss_delta = RssDelta::new(self);

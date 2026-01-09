@@ -51,7 +51,7 @@ pub fn load_elf_to_vmar(
         not(any(target_arch = "x86_64", target_arch = "riscv64")),
         expect(unused_mut)
     )]
-    let (_range, entry_point, mut aux_vec) =
+    let (elf_mapped_info, entry_point, mut aux_vec) =
         map_vmos_and_build_aux_vec(vmar, ldso, &elf_headers, elf_inode)?;
 
     // Map the vDSO and set the entry.
@@ -68,6 +68,11 @@ pub fn load_elf_to_vmar(
 
     vmar.process_vm()
         .map_and_write_init_stack(vmar, argv, envp, aux_vec)?;
+    vmar.process_vm().map_and_init_heap(
+        vmar,
+        elf_mapped_info.data_segment_size,
+        elf_mapped_info.relocated_elf_end(),
+    )?;
 
     let user_stack_top = vmar.process_vm().init_stack().user_stack_top();
     Ok(ElfLoadInfo {
@@ -119,26 +124,26 @@ fn lookup_and_parse_ldso(
 
 /// Maps the VMOs to the corresponding virtual memory addresses and builds the auxiliary vector.
 ///
-/// Returns the mapped range, the entry point, and the auxiliary vector.
+/// Returns the mapped information, the entry point, and the auxiliary vector.
 fn map_vmos_and_build_aux_vec(
     vmar: &Vmar,
     ldso: Option<(Path, ElfHeaders)>,
     parsed_elf: &ElfHeaders,
     elf_inode: &Arc<dyn Inode>,
-) -> Result<(RelocatedRange, Vaddr, AuxVec)> {
+) -> Result<(ElfMappedInfo, Vaddr, AuxVec)> {
     let ldso_load_info = if let Some((ldso_file, ldso_elf)) = ldso {
         Some(load_ldso(vmar, &ldso_file, &ldso_elf)?)
     } else {
         None
     };
 
-    let elf_map_range = map_segment_vmos(parsed_elf, vmar, elf_inode)?;
+    let elf_mapped_info = map_segment_vmos(parsed_elf, vmar, elf_inode)?;
 
     let mut aux_vec = {
         let ldso_base = ldso_load_info
             .as_ref()
             .map(|load_info| load_info.range.relocated_start());
-        init_aux_vec(parsed_elf, &elf_map_range, ldso_base)?
+        init_aux_vec(parsed_elf, &elf_mapped_info.full_range, ldso_base)?
     };
 
     // Set AT_SECURE based on setuid/setgid bits of the executable file.
@@ -153,7 +158,8 @@ fn map_vmos_and_build_aux_vec(
     let entry_point = if let Some(ldso_load_info) = ldso_load_info {
         ldso_load_info.entry_point
     } else {
-        elf_map_range
+        elf_mapped_info
+            .full_range
             .relocated_addr_of(parsed_elf.entry_point())
             .ok_or_else(|| {
                 Error::with_message(
@@ -163,7 +169,7 @@ fn map_vmos_and_build_aux_vec(
             })?
     };
 
-    Ok((elf_map_range, entry_point, aux_vec))
+    Ok((elf_mapped_info, entry_point, aux_vec))
 }
 
 struct LdsoLoadInfo {
@@ -176,8 +182,9 @@ struct LdsoLoadInfo {
 }
 
 fn load_ldso(vmar: &Vmar, ldso_file: &Path, ldso_elf: &ElfHeaders) -> Result<LdsoLoadInfo> {
-    let range = map_segment_vmos(ldso_elf, vmar, ldso_file.inode())?;
-    let entry_point = range
+    let elf_mapped_info = map_segment_vmos(ldso_elf, vmar, ldso_file.inode())?;
+    let full_range = elf_mapped_info.full_range;
+    let entry_point = full_range
         .relocated_addr_of(ldso_elf.entry_point())
         .ok_or_else(|| {
             Error::with_message(
@@ -185,21 +192,40 @@ fn load_ldso(vmar: &Vmar, ldso_file: &Path, ldso_elf: &ElfHeaders) -> Result<Lds
                 "the entry point is not located in any segments",
             )
         })?;
-    Ok(LdsoLoadInfo { entry_point, range })
+    Ok(LdsoLoadInfo {
+        entry_point,
+        range: full_range,
+    })
+}
+
+/// The information of mapped ELF segments.
+struct ElfMappedInfo {
+    /// The range covering all the mapped segments.
+    full_range: RelocatedRange,
+    /// The size of data segments.
+    data_segment_size: usize,
+}
+
+impl ElfMappedInfo {
+    /// Returns the relocated elf end address.
+    fn relocated_elf_end(&self) -> Vaddr {
+        self.full_range.relocated_start() + self.full_range.range_len()
+    }
 }
 
 /// Initializes a [`Vmo`] for each segment and then map to the [`Vmar`].
 ///
-/// This function will return the mapped range that covers all segments. The
-/// range will be tight, i.e., will not include any padding bytes. So the
-/// boundaries may not be page-aligned.
+/// This function will return the mapped information, which contains the
+/// mapped range that covers all segments. The range will be tight,
+/// i.e., will not include any padding bytes. So the boundaries may not
+/// be page-aligned.
 ///
 /// [`Vmo`]: crate::vm::vmo::Vmo
 fn map_segment_vmos(
     elf: &ElfHeaders,
     vmar: &Vmar,
     elf_inode: &Arc<dyn Inode>,
-) -> Result<RelocatedRange> {
+) -> Result<ElfMappedInfo> {
     let elf_va_range = elf.calc_total_vaddr_bounds();
 
     let map_range = if elf.is_shared_object() {
@@ -225,6 +251,18 @@ fn map_segment_vmos(
 
         let start_offset = elf_va_range.start - elf_va_range_aligned.start;
         let end_offset = elf_va_range_aligned.end - elf_va_range.end;
+
+        // Unmap the padding areas.
+        if start_offset.align_down(PAGE_SIZE) != 0 {
+            vmar.remove_mapping(
+                aligned_range.start..(aligned_range.start + start_offset).align_down(PAGE_SIZE),
+            )?;
+        }
+        if end_offset.align_down(PAGE_SIZE) != 0 {
+            vmar.remove_mapping(
+                (aligned_range.end - end_offset).align_up(PAGE_SIZE)..aligned_range.end,
+            )?;
+        }
 
         aligned_range.start + start_offset..aligned_range.end - end_offset
     } else {
@@ -262,7 +300,17 @@ fn map_segment_vmos(
         map_segment_vmo(loadable_phdr, &elf_vmo, vmar, map_at)?;
     }
 
-    Ok(relocated_range)
+    // Calculate the data segment size.
+    // According to Linux behavior, the data segment only includes the last loadable segment.
+    // Reference: <https://github.com/torvalds/linux/blob/9094662f6707d1d4b53d18baba459604e8bb0783/fs/binfmt_elf.c#L1218>
+    let data_segment_size = elf
+        .last_loadable_vaddr_bound()
+        .map_or(0, |range| range.len());
+
+    Ok(ElfMappedInfo {
+        full_range: relocated_range,
+        data_segment_size,
+    })
 }
 
 /// Creates and maps the segment VMO to the VMAR.
