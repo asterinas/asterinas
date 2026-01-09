@@ -204,6 +204,11 @@ impl BioWaiter {
         self.bios.append(&mut other.bios);
     }
 
+    /// Returns an iterator for the `Bio` requests associated with `self`.
+    pub fn reqs(&self) -> impl Iterator<Item = Bio> {
+        self.bios.iter().map(|bio_inner| Bio(bio_inner.clone()))
+    }
+
     /// Waits for the completion of all `Bio` requests.
     ///
     /// This method iterates through each `Bio` in the list, waiting for their
