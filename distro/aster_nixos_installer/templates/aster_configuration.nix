@@ -33,7 +33,6 @@
     (import ./overlays/podman/default.nix)
     (import ./overlays/switch-to-configuration-ng/default.nix)
     (import ./overlays/systemd/default.nix)
-    (import ./overlays/test-asterinas/default.nix)
   ];
 
   # The Asterinas NixOS special options.
@@ -63,11 +62,6 @@
         type = lib.types.enum [ "tty0" "hvc0" ];
         default = "@aster-console@";
         description = "The console device.";
-      };
-      test-command = lib.mkOption {
-        type = lib.types.str;
-        default = "@aster-test-command@";
-        description = "The test command.";
       };
       break-into-stage-1-shell = lib.mkOption {
         type = lib.types.bool;
