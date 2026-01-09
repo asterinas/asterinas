@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::{
+    num::NonZeroUsize,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use align_ext::AlignExt;
 
 use crate::{
     prelude::*,
-    vm::{perms::VmPerms, vmar::Vmar},
+    vm::{
+        perms::VmPerms,
+        vmar::{OffsetType, Vmar},
+    },
 };
 
 /// The base address of user heap
@@ -35,26 +41,16 @@ impl Heap {
 
     /// Initializes and maps the heap virtual memory.
     pub(super) fn alloc_and_map(&self, vmar: &Vmar) -> Result<()> {
+        // Reserve enough space for the heap expansion.
+        vmar.reserve_specific(self.base..self.base + USER_HEAP_SIZE_LIMIT)?;
+
         let vmar_map_options = {
             let perms = VmPerms::READ | VmPerms::WRITE;
-            vmar.new_map(PAGE_SIZE, perms).unwrap().offset(self.base)
+            vmar.new_map(NonZeroUsize::new(PAGE_SIZE).unwrap(), perms)
+                .unwrap()
+                .offset(self.base, OffsetType::Fixed)
         };
         vmar_map_options.build()?;
-
-        // If we touch another mapped range when we are trying to expand the
-        // heap, we fail.
-        //
-        // So a simple solution is to reserve enough space for the heap by
-        // mapping without any permissions and allow it to be overwritten
-        // later by `brk`. New mappings from `mmap` that overlaps this range
-        // may be moved to another place.
-        let vmar_reserve_options = {
-            let perms = VmPerms::empty();
-            vmar.new_map(USER_HEAP_SIZE_LIMIT - PAGE_SIZE, perms)
-                .unwrap()
-                .offset(self.base + PAGE_SIZE)
-        };
-        vmar_reserve_options.build()?;
 
         self.set_uninitialized();
         Ok(())
@@ -100,15 +96,17 @@ impl Heap {
             return Ok(new_program_break);
         }
 
-        // Remove the reserved space.
-        vmar.remove_mapping(current_program_break_aligned..new_program_break_aligned)
-            .map_err(|_| current_program_break)?;
-
         let old_size = current_program_break_aligned - self.base;
         let new_size = new_program_break_aligned - self.base;
         // Expand the heap.
-        vmar.resize_mapping(self.base, old_size, new_size, false)
-            .map_err(|_| current_program_break)?;
+        vmar.new_map(
+            NonZeroUsize::new(new_size - old_size).unwrap(),
+            VmPerms::READ | VmPerms::WRITE,
+        )
+        .unwrap()
+        .offset(self.base + old_size, OffsetType::Fixed)
+        .build()
+        .unwrap();
 
         self.current_program_break
             .store(new_program_break, Ordering::Release);

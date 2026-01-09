@@ -132,3 +132,13 @@ bitflags! {
         const SHARED    = 0b10000000;
     }
 }
+
+bitflags! {
+    /// Flags that can be stored on intermediate page table entries.
+    pub(crate) struct PageTableFlags: u8 {
+        /// The first bit available for software use.
+        const AVAIL1    = 0b01000000;
+        /// The second bit available for software use.
+        const AVAIL2    = 0b10000000;
+    }
+}
