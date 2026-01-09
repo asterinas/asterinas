@@ -9,7 +9,7 @@ use int_to_c_enum::TryFromInt;
 use ostd::{
     Error,
     mm::{
-        HasSize, Infallible, USegment, VmReader, VmWriter,
+        FallibleVmRead, HasSize, Infallible, USegment, VmReader, VmWriter,
         dma::DmaStream,
         io_util::{HasVmReaderWriter, VmReaderWriterResult},
     },
@@ -230,6 +230,28 @@ impl BioWaiter {
         }
 
         ret
+    }
+
+    /// Waits for completion and copies data to the specified writer.
+    ///
+    /// This is a convenience method for the common case of copying data from
+    /// completed I/O operations to a `VmWriter`.
+    pub fn wait_and_copy_to(&self, writer: &mut VmWriter) -> Result<(), Error> {
+        match self.wait() {
+            Some(BioStatus::Complete) => self
+                .bios
+                .iter()
+                .flat_map(|bio| bio.segments())
+                .cloned()
+                .try_for_each(|segment| {
+                    segment
+                        .reader()?
+                        .read_fallible(writer)
+                        .map_err(|(e, _)| e)?;
+                    Ok(())
+                }),
+            _ => Err(Error::IoError),
+        }
     }
 
     /// Clears all `Bio` requests in this waiter.
