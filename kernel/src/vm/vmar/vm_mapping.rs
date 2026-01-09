@@ -268,15 +268,7 @@ impl VmMapping {
         page_fault_info: &PageFaultInfo,
         rss_delta: &mut RssDelta,
     ) -> Result<()> {
-        if !self.perms.contains(page_fault_info.required_perms) {
-            trace!(
-                "self.perms {:?}, page_fault_info.required_perms {:?}, self.range {:?}",
-                self.perms,
-                page_fault_info.required_perms,
-                self.range()
-            );
-            return_errno_with_message!(Errno::EACCES, "perm check fails");
-        }
+        self.check_perms_for_page_fault(page_fault_info)?;
 
         let page_aligned_addr = page_fault_info.address.align_down(PAGE_SIZE);
         let is_write = page_fault_info.required_perms.contains(VmPerms::WRITE);
@@ -314,6 +306,33 @@ impl VmMapping {
             page_fault_info.required_perms,
             rss_delta,
         )
+    }
+
+    fn check_perms_for_page_fault(&self, page_fault_info: &PageFaultInfo) -> Result<()> {
+        trace!(
+            "self.perms {:?}, page_fault_info.required_perms {:?}, self.range {:?}",
+            self.perms,
+            page_fault_info.required_perms,
+            self.range()
+        );
+
+        let mut perms = self.perms;
+
+        // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/mm/gup.c#L1282-L1311>
+        if page_fault_info.is_forced {
+            if perms.contains(VmPerms::MAY_READ) {
+                perms.insert(VmPerms::READ);
+            }
+            if self.is_cow() {
+                perms.insert(VmPerms::WRITE);
+            }
+        }
+
+        if !perms.contains(page_fault_info.required_perms) {
+            return_errno_with_message!(Errno::EACCES, "perm check fails");
+        }
+
+        Ok(())
     }
 
     fn handle_single_page_fault(
@@ -367,7 +386,6 @@ impl VmMapping {
                         let new_frame = duplicate_frame(&frame)?;
                         prop.flags |= new_flags;
                         cursor.map(new_frame.into(), prop);
-                        rss_delta.add(self.rss_type(), 1);
                     }
                     cursor.flusher().sync_tlb_flush();
                 }
