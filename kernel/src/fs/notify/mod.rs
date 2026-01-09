@@ -126,8 +126,18 @@ impl FsEventPublisher {
         }
 
         let subscribers = self.subscribers.read();
+        let mut has_oneshot = false;
         for subscriber in subscribers.iter() {
-            subscriber.deliver_event(events, name.clone());
+            has_oneshot |= subscriber.deliver_event(events, name.clone());
+        }
+        drop(subscribers);
+
+        if has_oneshot {
+            let mut subscribers = self.subscribers.write();
+            // The `deliver_event()` method should already deliver the `FsEvents::IN_IGNORED`
+            // events for one-shot subscribers. Here, we simply remove them.
+            subscribers.retain(|m| !m.is_dead());
+            self.recalc_interesting_events(&subscribers);
         }
     }
 
@@ -179,11 +189,21 @@ impl FsEventPublisher {
 pub trait FsEventSubscriber: Any + Send + Sync {
     /// Delivers a filesystem event notification to the subscriber.
     ///
+    /// Returns whether the subscriber is a one-shot subscriber and the event has been
+    /// delivered.
+    ///
     /// Invariant: This method must not sleep or perform blocking operations. The publisher
     /// may hold a spin lock when calling this method.
-    fn deliver_event(&self, events: FsEvents, name: Option<String>);
+    fn deliver_event(&self, events: FsEvents, name: Option<String>) -> bool;
+
     /// Returns the events that this subscriber is interested in.
     fn interesting_events(&self) -> FsEvents;
+
+    /// Returns whether the subscriber is dead (i.e., no new events can be delivered).
+    ///
+    /// This method must return `true` if and only if [`Self::deliver_event`] has already
+    /// returned `true`.
+    fn is_dead(&self) -> bool;
 }
 
 bitflags! {
@@ -299,7 +319,6 @@ pub fn on_delete(
     {
         return;
     }
-
     if inode.type_() == InodeType::Dir {
         notify_inode_with_name(dir_inode, FsEvents::DELETE | FsEvents::ISDIR, name)
     } else {
