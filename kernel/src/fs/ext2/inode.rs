@@ -1821,12 +1821,6 @@ impl InodeImpl {
 
 #[inherit_methods(from = "self.block_manager")]
 impl InodeImpl {
-    pub fn read_blocks_async(
-        &self,
-        bid: Ext2Bid,
-        nblocks: usize,
-        writer: &mut VmWriter,
-    ) -> Result<BioWaiter>;
     pub fn read_blocks(&self, bid: Ext2Bid, nblocks: usize, writer: &mut VmWriter) -> Result<()>;
     pub fn read_block_async(&self, bid: Ext2Bid, frame: &CachePage) -> Result<BioWaiter>;
     pub fn write_blocks_async(
@@ -1854,13 +1848,7 @@ struct InodeBlockManager {
 
 impl InodeBlockManager {
     /// Reads one or multiple blocks to the segment start from `bid` asynchronously.
-    pub fn read_blocks_async(
-        &self,
-        bid: Ext2Bid,
-        nblocks: usize,
-        writer: &mut VmWriter,
-    ) -> Result<BioWaiter> {
-        debug_assert!(nblocks * BLOCK_SIZE <= writer.avail());
+    fn read_blocks_async(&self, bid: Ext2Bid, nblocks: usize) -> Result<BioWaiter> {
         let mut bio_waiter = BioWaiter::new();
 
         for dev_range in DeviceRangeReader::new(self, bid..bid + nblocks as Ext2Bid)? {
@@ -1868,8 +1856,6 @@ impl InodeBlockManager {
             let range_nblocks = dev_range.len();
 
             let bio_segment = BioSegment::alloc(range_nblocks, BioDirection::FromDevice);
-            bio_segment.reader().unwrap().read_fallible(writer)?;
-
             let waiter = self.fs().read_blocks_async(start_bid, bio_segment)?;
             bio_waiter.concat(waiter);
         }
@@ -1878,10 +1864,22 @@ impl InodeBlockManager {
     }
 
     pub fn read_blocks(&self, bid: Ext2Bid, nblocks: usize, writer: &mut VmWriter) -> Result<()> {
-        match self.read_blocks_async(bid, nblocks, writer)?.wait() {
-            Some(BioStatus::Complete) => Ok(()),
-            _ => return_errno!(Errno::EIO),
+        debug_assert!(nblocks * BLOCK_SIZE <= writer.avail());
+        let bio_waiter = self.read_blocks_async(bid, nblocks)?;
+        if Some(BioStatus::Complete) != bio_waiter.wait() {
+            return_errno!(Errno::EIO);
         }
+
+        for bio in bio_waiter.reqs() {
+            for segment in bio.segments() {
+                segment
+                    .reader()?
+                    .read_fallible(writer)
+                    .map_err(|(e, _)| Error::from(e))?;
+            }
+        }
+
+        Ok(())
     }
 
     pub fn read_block_async(&self, bid: Ext2Bid, frame: &CachePage) -> Result<BioWaiter> {
