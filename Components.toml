@@ -15,6 +15,7 @@ systree = { name = "aster-systree" }
 i8042 = { name = "aster-i8042" }
 pci = { name = "aster-pci" }
 cmdline = { name = "aster-cmdline" }
+uart = { name = "aster-uart" }
 
 [whitelist]
 [whitelist.nix.main]

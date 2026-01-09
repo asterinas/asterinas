@@ -11,7 +11,7 @@ mod io;
 pub(crate) mod iommu;
 pub(crate) mod irq;
 pub(crate) mod mm;
-pub(crate) mod serial;
+pub mod serial;
 pub(crate) mod task;
 mod timer;
 pub mod trap;

@@ -16,7 +16,7 @@ use crate::{
         registry::char,
         tty::{
             Tty,
-            n_tty::{VtDriver, hvc0_device},
+            n_tty::{VtDriver, hvc0_device, serial0_device},
         },
     },
     fs::{
@@ -114,6 +114,7 @@ impl SystemConsole {
 
             let device = match console_name {
                 "tty0" => Some(Arc::new(Tty0Device) as _),
+                "ttyS0" => serial0_device().cloned().map(|device| device as _),
                 "hvc0" => hvc0_device().cloned().map(|device| device as _),
                 _ => None,
             };

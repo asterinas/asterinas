@@ -21,7 +21,7 @@ use crate::{Error, prelude::*};
 ///     PORT.write(PORT.read() + 1)
 /// }
 /// ```
-///
+#[derive(Debug)]
 pub struct IoPort<T, A> {
     port: u16,
     is_overlapping: bool,
