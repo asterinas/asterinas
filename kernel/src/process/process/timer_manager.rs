@@ -175,18 +175,18 @@ impl PosixTimerManager {
     }
 
     /// Adds a POSIX timer to the managed `posix_timers`, and allocate a timer ID for this timer.
-    /// Return the timer ID.
-    pub fn add_posix_timer(&self, posix_timer: Arc<Timer>) -> usize {
+    /// Return the timer ID, or `None` if allocation failed.
+    pub fn add_posix_timer(&self, posix_timer: Arc<Timer>) -> Option<usize> {
         let mut timers = self.posix_timers.lock();
         // Holding the lock of `posix_timers` is required to operate the `id_allocator`.
-        let timer_id = self.id_allocator.lock().alloc().unwrap();
-        if timers.len() < timer_id + 1 {
+        let timer_id = self.id_allocator.lock().alloc()?;
+        if timers.len() <= timer_id {
             timers.resize(timer_id + 1, None);
         }
         // The ID allocated is not used by any other timers so this index in `timers`
         // must be `None`.
         timers[timer_id] = Some(posix_timer);
-        timer_id
+        Some(timer_id)
     }
 
     /// Finds a POSIX timer by the input `timer_id`.
