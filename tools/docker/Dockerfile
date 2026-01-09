@@ -38,7 +38,7 @@ RUN rm -rf bazel
 FROM build-bazel AS build-gvisor
 
 # Build the gvisor syscall test binaries
-COPY test/src/syscall/gvisor /root/gvisor
+COPY test/initramfs/src/syscall/gvisor /root/gvisor
 WORKDIR /root/gvisor
 RUN export BUILD_DIR=build && \
     make ${BUILD_DIR}/syscall_test_bins

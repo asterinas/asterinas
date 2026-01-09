@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build Asterinas NixOS ISO installer image
         run: |
-          make iso NIXOS_TEST_COMMAND='hello-asterinas'
+          make iso NIXOS_TEST_SUITE=hello
       - name: Run ISO image and install Asterinas NixOS
         run: |
           make run_iso || true
@@ -34,6 +34,4 @@ jobs:
           echo "Test ISO succeeds!"
       - name : Run Asterinas NixOS
         run: |
-          make run_nixos || true
-          tail --lines 10 qemu.log | grep -q "^Hello Asterinas!" || (echo "Test NixOS failed" && exit 1)
-          echo "Test NixOS succeeds!"
+          make run_nixos NIXOS_TEST_SUITE=hello

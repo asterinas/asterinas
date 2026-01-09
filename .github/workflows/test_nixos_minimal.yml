@@ -32,15 +32,12 @@ jobs:
           remove_haskell: true
           remove_tool_cache: true
       - uses: actions/checkout@v4
-      - name: Run a Hello World program on AsterNixOS
+      - name: Run the hello test on AsterNixOS
+        timeout-minutes: 30
         uses: addnab/docker-run-action@v3
         with:
           image: asterinas/asterinas:0.17.0-20251228
           options: --privileged -v /dev:/dev -v ${{ github.workspace }}:/root/asterinas
           run: |
-            make nixos NIXOS_DISK_SIZE_IN_MB=6144 NIXOS_TEST_COMMAND='hello-asterinas'
-            make run_nixos
-      - name: Check results
-        run: |
-          tail --lines 10 ${{ github.workspace }}/qemu.log | grep -q "^Hello Asterinas!" || (echo "Test NixOS failed" && exit 1)
-          echo "Test NixOS succeeds!"
+            make nixos NIXOS_TEST_SUITE=hello NIXOS_DISK_SIZE_IN_MB=6144
+            make run_nixos NIXOS_TEST_SUITE=hello

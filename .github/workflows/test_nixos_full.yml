@@ -28,52 +28,21 @@ jobs:
     container:
       image: asterinas/asterinas:0.17.0-20251228
       options: -v /dev:/dev --privileged
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - name: Modify configuration.nix to include test-asterinas
-        run: |
-          sed -i 's/environment.systemPackages = with pkgs; \[ hello-asterinas \];/environment.systemPackages = with pkgs; \[ test-asterinas \];/' \
-            distro/etc_nixos/configuration.nix
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+          - name: nix
+            disk_size: 6144
+          - name: podman
+            disk_size: 8192
 
-      - name: Test nix commands
-        run: |
-          make nixos NIXOS_DISK_SIZE_IN_MB=6144 NIXOS_TEST_COMMAND='test-nix-commands'
-          make run_nixos
-
-      - name: Check results
-        run: |
-          tail --lines 50 qemu.log | awk '
-          BEGIN { hello_count=0 } {
-            if ($0 ~ /^Hello, world!/) hello_count++
-          }
-          END {
-            if (hello_count == 4) exit 0
-            else exit 1
-          }' || (echo "Test nix commands failed" && exit 1)
-          echo "Test nix commands succeeds!"
-
-  podman-test:
-    runs-on: ubuntu-4-cores-150GB-ssd
-    container:
-      image: asterinas/asterinas:0.17.0-20251228
-      options: -v /dev:/dev --privileged
+    name: Test ${{ matrix.test.name }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Modify configuration.nix to include test-asterinas and podman
+      - name: Run the ${{ matrix.test.name }} test on AsterNixOS 
         run: |
-          sed -i \
-            -e 's/environment.systemPackages = with pkgs; \[ hello-asterinas \];/environment.systemPackages = with pkgs; \[ test-asterinas \];/' \
-            -e 's/^[[:space:]]*# virtualisation\.podman\.enable = true;/  virtualisation.podman.enable = true;/' \
-            distro/etc_nixos/configuration.nix
-
-      - name: Run podman commands
-        run: |
-          make nixos NIXOS_DISK_SIZE_IN_MB=8192 NIXOS_TEST_COMMAND='test-podman'
-          make run_nixos
-
-      - name: Check results
-        run: |
-          tail --lines 50 qemu.log | grep -q "^Test podman succeeds" || (echo "Test podman failed" && exit 1)
-          echo "Test podman succeeds!"
+          make nixos NIXOS_TEST_SUITE=${{ matrix.test.name }} NIXOS_DISK_SIZE_IN_MB=${{ matrix.test.disk_size }}
+          make run_nixos NIXOS_TEST_SUITE=${{ matrix.test.name }}

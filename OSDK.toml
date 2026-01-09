@@ -22,7 +22,7 @@ kcmd_args = [
     "init=/usr/bin/busybox",
 ]
 init_args = ["sh", "-l"]
-initramfs = "test/build/initramfs.cpio.gz"
+initramfs = "test/initramfs/build/initramfs.cpio.gz"
 
 # Special options for testing
 [test.qemu]
@@ -62,8 +62,8 @@ qemu.args = """\
     -serial chardev:mux \
     -monitor chardev:mux \
     -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
-    -drive if=none,format=raw,id=x0,file=./test/build/ext2.img \
-    -drive if=none,format=raw,id=x1,file=./test/build/exfat.img \
+    -drive if=none,format=raw,id=x0,file=./test/initramfs/build/ext2.img \
+    -drive if=none,format=raw,id=x1,file=./test/initramfs/build/exfat.img \
     # NOTE: The `/etc/profile.d/init.sh` assumes that `ext2.img` appears as the first block device (`/dev/vda`).
     # The ordering below ensures `x1` (ext2.img) is discovered before `x0`, maintaining this assumption.
     # TODO: Once UUID-based mounting is implemented, this strict ordering will no longer be required.

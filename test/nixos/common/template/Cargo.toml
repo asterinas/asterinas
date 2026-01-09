@@ -1,0 +1,9 @@
+[package]
+name = "test-<test_name>"
+version.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+nixos-test-framework.workspace = true
