@@ -359,10 +359,17 @@ impl InitStackWriter<'_> {
     /// Writes u64 to the stack.
     /// Returns the writing address
     fn write_u64(&self, val: u64) -> Result<u64> {
-        let start_address = (self.pos() - 8).align_down(8);
+        let current_pos = self.pos();
+        let start_address = current_pos
+            .checked_sub(8)
+            .ok_or(Error::new(Errno::E2BIG))?
+            .align_down(8);
+        if start_address < self.map_addr {
+            return_errno_with_message!(Errno::E2BIG, "Init stack overflow");
+        }
         self.pos.store(start_address, Ordering::Relaxed);
         self.vmo.write_val(start_address - self.map_addr, &val)?;
-        Ok(self.pos() as u64)
+        Ok(start_address as u64)
     }
 
     /// Writes a CString including the ending null byte to the stack.
@@ -372,14 +379,20 @@ impl InitStackWriter<'_> {
         self.write_bytes(bytes)
     }
 
-    /// Writes u64 to the stack.
+    /// Writes bytes to the stack.
     /// Returns the writing address.
     fn write_bytes(&self, bytes: &[u8]) -> Result<u64> {
         let len = bytes.len();
-        self.pos.fetch_sub(len, Ordering::Relaxed);
-        let pos = self.pos();
-        self.vmo.write_bytes(pos - self.map_addr, bytes)?;
-        Ok(pos as u64)
+        let current_pos = self.pos();
+        let new_pos = current_pos
+            .checked_sub(len)
+            .ok_or(Error::new(Errno::E2BIG))?;
+        if new_pos < self.map_addr {
+            return_errno_with_message!(Errno::E2BIG, "Init stack overflow");
+        }
+        self.pos.store(new_pos, Ordering::Relaxed);
+        self.vmo.write_bytes(new_pos - self.map_addr, bytes)?;
+        Ok(new_pos as u64)
     }
 
     fn pos(&self) -> Vaddr {
