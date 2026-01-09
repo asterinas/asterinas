@@ -32,12 +32,12 @@ cargo osdk test
 
 ## Integration Test
 
-### General Test
+### Custom Test
 
-The following command builds and runs the test binaries in `test/src/apps` directory on Asterinas.
+The following command builds and runs the test binaries in `test/src/custom` directory on Asterinas. Those testcases are designed to verify specific functionality, edge cases, or custom scenarios that may not be covered by other test suites.
 
 ```bash
-make run_kernel AUTO_TEST=test
+make run_kernel AUTO_TEST=custom
 ```
 
 ### Syscall Test
