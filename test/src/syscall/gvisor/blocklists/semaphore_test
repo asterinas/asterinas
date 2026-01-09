@@ -1,12 +1,17 @@
-SemaphoreTest.SemIpcSet
-SemaphoreTest.SemCtlIpcStat
-SemaphoreTest.SemopGetzcnt
-SemaphoreTest.SemopGetncnt
 SemaphoreTest.IpcInfo
+SemaphoreTest.SemCtlIpcStat
+SemaphoreTest.SemCtlValAll
 SemaphoreTest.SemInfo
+SemaphoreTest.SemIpcSet
+SemaphoreTest.SemopGetncnt
+SemaphoreTest.SemopGetncntOnSetRemoval
+SemaphoreTest.SemopGetncntOnSignal
+SemaphoreTest.SemopGetzcnt
+SemaphoreTest.SemopGetzcntOnSetRemoval
+SemaphoreTest.SemopGetzcntOnSignal
 # SemOpMultiNoBlock requires handling the dupsop situation
 SemaphoreTest.SemOpMultiNoBlock
+SemaphoreTest.SemOpNamespace
 # SemOpRandom will failed in vmar/mod.rs:336:13:assertion failed.
 SemaphoreTest.SemOpRandom
-SemaphoreTest.SemOpNamespace
-SemaphoreTest.SemCtlValAll
+SemaphoreTest.SemTimedOpBlock

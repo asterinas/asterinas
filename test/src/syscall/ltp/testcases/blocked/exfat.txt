@@ -12,6 +12,7 @@ fallocate03
 fchmod01
 fchmodat01
 fchown05
+fchownat01
 fchownat02
 fstat02
 fstat02_64
@@ -39,6 +40,10 @@ munmap02
 open07
 open15
 openat01
+pipeio_1
+pipeio_2
+pipeio_5
+pipeio_7
 pread01
 pread01_64
 preadv01

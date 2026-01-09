@@ -1,0 +1,15 @@
+LinkTest.AbsPathsNonDirFDsWithOpath
+LinkTest.AbsPathsWithNonDirFDs
+LinkTest.CanCreateLinkFile
+LinkTest.CannotLinkDirectory
+LinkTest.CannotLinkWithSlash
+LinkTest.HardlinkChangeMode
+LinkTest.KernfsAcrossFilesystem
+LinkTest.LinkatDoesNotFollowSymlinkByDefault
+LinkTest.LinkatWithSymlinkFollow
+LinkTest.LinkDoesNotFollowSymlinks
+LinkTest.NewDirFDWithOpath
+LinkTest.RelPathsNonDirFDsWithOpath
+LinkTest.RelPathsWithNonDirFDs
+LinkTest.WithNewDirFD
+LinkTest.WithOldDirFD

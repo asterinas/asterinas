@@ -1,0 +1,8 @@
+Pread64Test.BadBuffer
+Pread64Test.BadOffset
+Pread64Test.DirNotReadable
+Pread64Test.EndOfFile
+Pread64Test.OffsetNotIncremented
+Pread64Test.Pread64WithOpath
+Pread64Test.WriteOnlyNotReadable
+Pread64Test.ZeroBuffer
