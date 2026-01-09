@@ -16,7 +16,7 @@ use ostd::{
 use spin::Once;
 use tdx_guest::{
     SHARED_MASK,
-    tdcall::{TdCallError, get_report},
+    tdcall::{TdCallError, extend_rtmr, get_report},
     tdvmcall::{TdVmcallError, get_quote},
 };
 
@@ -276,6 +276,27 @@ pub fn tdx_get_mr(reg: MeasurementReg) -> Result<[u8; SHA384_DIGEST_SIZE]> {
         .read_bytes(TdReport::mr_offset(reg), blob.as_mut())
         .unwrap();
     Ok(blob)
+}
+
+/// Extends the measurement register in the TDX report.
+pub fn tdx_extend_mr(reg: MeasurementReg, data: &[u8]) -> Result<()> {
+    if data.len() != SHA384_DIGEST_SIZE {
+        return_errno_with_message!(Errno::EINVAL, "Invalid data length for extending MR");
+    }
+
+    let index = match reg {
+        MeasurementReg::Rtmr0 => 0,
+        MeasurementReg::Rtmr1 => 1,
+        MeasurementReg::Rtmr2 => 2,
+        MeasurementReg::Rtmr3 => 3,
+        _ => return_errno_with_message!(Errno::EINVAL, "Only RTMR can be extended"),
+    };
+
+    let segment: USegment = FrameAllocOptions::new().alloc_segment(1)?.into();
+    segment.write_bytes(0, data).unwrap();
+
+    extend_rtmr(segment.paddr() as u64, index)?;
+    Ok(())
 }
 
 pub(super) fn init() -> Result<()> {

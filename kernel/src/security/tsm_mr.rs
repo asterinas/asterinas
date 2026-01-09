@@ -8,11 +8,11 @@ use aster_systree::{
 };
 use inherit_methods_macro::inherit_methods;
 use ostd::{
-    mm::{FallibleVmWrite, VmReader, VmWriter},
+    mm::{FallibleVmRead, FallibleVmWrite, VmReader, VmWriter},
     sync::RwMutex,
 };
 
-use crate::device::misc::tdxguest::{MeasurementReg, tdx_get_mr, tdx_get_report};
+use crate::device::misc::tdxguest::{MeasurementReg, tdx_extend_mr, tdx_get_mr, tdx_get_report};
 
 pub(super) fn init() {
     let node = {
@@ -189,7 +189,38 @@ inherit_sys_leaf_node!(Measurement, fields, {
     }
 
     fn write_attr(&self, name: &str, reader: &mut VmReader) -> Result<usize> {
-        Err(Error::AttributeError)
+        match name {
+            "rtmr0:sha384" | "rtmr1:sha384" | "rtmr2:sha384" | "rtmr3:sha384" => {
+                let attr = MEASUREMENT_ATTRS
+                    .iter()
+                    .find(|attr| attr.name == name)
+                    .unwrap();
+
+                let data = {
+                    let mut buf = [0u8; 48];
+                    let mut writer = VmWriter::from(&mut buf[..]);
+                    let bytes_read = reader
+                        .read_fallible(&mut writer)
+                        .map_err(|_| Error::AttributeError)?;
+                    if bytes_read != buf.len() {
+                        return Err(Error::InvalidOperation);
+                    }
+
+                    buf
+                };
+
+                let mut in_sync = self.in_sync.write();
+
+                tdx_extend_mr(attr.reg, &data).map_err(|_| Error::AttributeError)?;
+
+                if attr.refresh_on_read() {
+                    *in_sync = false;
+                }
+
+                Ok(data.len())
+            }
+            _ => Err(Error::AttributeError),
+        }
     }
 });
 
