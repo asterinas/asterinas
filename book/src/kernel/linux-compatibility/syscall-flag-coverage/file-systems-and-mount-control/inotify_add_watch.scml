@@ -3,7 +3,7 @@ inotify_events = IN_ACCESS | IN_MODIFY | IN_ATTRIB | IN_CLOSE_WRITE |
                  IN_DELETE_SELF | IN_CLOSE;
 
 inotify_controls = IN_ONLYDIR | IN_DONT_FOLLOW | IN_MASK_CREATE |
-                   IN_MASK_ADD | IN_ISDIR;
+                   IN_MASK_ADD | IN_ONESHOT;
 
 // Add a watch to an initialized inotify instance
 inotify_add_watch(fd, pathname, mask = <inotify_events> | <inotify_controls>);
