@@ -16,7 +16,6 @@ use super::{
 use crate::{
     fs::{
         device::{Device, DeviceType},
-        fs_resolver::PathOrInode,
         inode_handle::FileIo,
         path::Path,
         utils::StatusFlags,
@@ -605,33 +604,14 @@ pub enum SymbolicLink {
     /// This variant is intended to support the special ProcFS symbolic links,
     /// such as `/proc/[pid]/fd/[fd]` and `/proc/[pid]/exe`.
     Path(Path),
-    /// An inode object without a FS path.
-    // FIXME:
-    // This variant exists because not all `Arc<dyn FileLike>`s are associated
-    // with paths. We should add pseudo paths and dentries for these inodes,
-    // and eventually remove this variant.
-    Inode(Arc<dyn Inode>),
-}
-
-impl SymbolicLink {
-    #[cfg_attr(not(ktest), expect(dead_code))]
-    pub fn into_plain(self) -> Option<String> {
-        match self {
-            SymbolicLink::Plain(s) => Some(s),
-            _ => None,
-        }
-    }
 }
 
 #[expect(clippy::to_string_trait_impl)]
 impl ToString for SymbolicLink {
     fn to_string(&self) -> String {
-        let path_or_inode = match self.clone() {
-            SymbolicLink::Plain(s) => return s,
-            SymbolicLink::Path(path) => PathOrInode::Path(path),
-            SymbolicLink::Inode(inode) => PathOrInode::Inode(inode),
-        };
-
-        path_or_inode.display_name()
+        match self {
+            SymbolicLink::Plain(s) => s.clone(),
+            SymbolicLink::Path(path) => path.abs_path(),
+        }
     }
 }

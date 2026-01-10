@@ -25,11 +25,11 @@ use super::{
 };
 use crate::{
     events::IoEvents,
-    fs::{file_handle::FileLike, utils::Inode},
+    fs::{file_handle::FileLike, path::Path, pseudofs::SockFs},
     net::{
         iface::Iface,
         socket::{
-            Socket, new_pseudo_inode,
+            Socket,
             options::{
                 Error as SocketError, SocketOption,
                 macros::{sock_option_mut, sock_option_ref},
@@ -63,7 +63,7 @@ pub struct StreamSocket {
 
     is_nonblocking: AtomicBool,
     pollee: Pollee,
-    pseudo_inode: Arc<dyn Inode>,
+    pseudo_path: Path,
 }
 
 enum State {
@@ -108,7 +108,7 @@ impl StreamSocket {
             options: RwLock::new(OptionSet::new()),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
-            pseudo_inode: new_pseudo_inode(),
+            pseudo_path: SockFs::new_path(),
         })
     }
 
@@ -137,7 +137,7 @@ impl StreamSocket {
             state: RwLock::new(Takeable::new(State::Connected(connected_stream))),
             is_nonblocking: AtomicBool::new(false),
             pollee,
-            pseudo_inode: new_pseudo_inode(),
+            pseudo_path: SockFs::new_path(),
         })
     }
 
@@ -706,8 +706,8 @@ impl Socket for StreamSocket {
         Ok(())
     }
 
-    fn pseudo_inode(&self) -> &Arc<dyn Inode> {
-        &self.pseudo_inode
+    fn pseudo_path(&self) -> &Path {
+        &self.pseudo_path
     }
 }
 

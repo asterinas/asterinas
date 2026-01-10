@@ -14,9 +14,9 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::FdFlags,
-        path::RESERVED_MOUNT_ID,
+        path::Path,
         pseudofs::AnonInodeFs,
-        utils::{CreationFlags, Inode, StatusFlags},
+        utils::{CreationFlags, StatusFlags},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
@@ -35,6 +35,8 @@ pub struct TimerfdFile {
     pollee: Pollee,
     flags: AtomicTFDFlags,
     settime_flags: AtomicTFDSetTimeFlags,
+    /// The pseudo path associated with this timerfd file.
+    pseudo_path: Path,
 }
 
 bitflags! {
@@ -115,6 +117,8 @@ impl TimerfdFile {
             create_timer(clockid, expired_fn, ctx)
         }?;
 
+        let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:[timerfd]".to_string());
+
         Ok(TimerfdFile {
             clockid,
             timer,
@@ -122,6 +126,7 @@ impl TimerfdFile {
             pollee,
             flags: AtomicTFDFlags::new(flags),
             settime_flags: AtomicTFDSetTimeFlags::default(),
+            pseudo_path,
         })
     }
 
@@ -251,14 +256,13 @@ impl FileLike for TimerfdFile {
         Ok(())
     }
 
-    fn inode(&self) -> &Arc<dyn Inode> {
-        AnonInodeFs::shared_inode()
+    fn path(&self) -> &Path {
+        &self.pseudo_path
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
         struct FdInfo {
             flags: u32,
-            ino: u64,
             clockid: i32,
             ticks: u64,
             settime_flags: u32,
@@ -270,9 +274,8 @@ impl FileLike for TimerfdFile {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 writeln!(f, "pos:\t{}", 0)?;
                 writeln!(f, "flags:\t0{:o}", self.flags)?;
-                // TODO: This should be the mount ID of the pseudo filesystem.
-                writeln!(f, "mnt_id:\t{}", RESERVED_MOUNT_ID)?;
-                writeln!(f, "ino:\t{}", self.ino)?;
+                writeln!(f, "mnt_id:\t{}", AnonInodeFs::mount_node().id())?;
+                writeln!(f, "ino:\t{}", AnonInodeFs::shared_inode().ino())?;
                 writeln!(f, "clockid: {}", self.clockid)?;
                 writeln!(f, "ticks: {}", self.ticks)?;
                 writeln!(f, "settime flags: 0{:o}", self.settime_flags)?;
@@ -299,7 +302,6 @@ impl FileLike for TimerfdFile {
         let timer_guard = self.timer.lock();
         Box::new(FdInfo {
             flags,
-            ino: self.inode().ino(),
             clockid: self.clockid,
             ticks: self.ticks.load(Ordering::Relaxed),
             settime_flags: self.settime_flags.load(Ordering::Relaxed).bits(),

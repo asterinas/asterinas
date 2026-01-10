@@ -10,9 +10,9 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::FdFlags,
-        path::RESERVED_MOUNT_ID,
+        path::Path,
         pseudofs::AnonInodeFs,
-        utils::{CreationFlags, Inode, StatusFlags},
+        utils::{CreationFlags, StatusFlags},
     },
     prelude::*,
     process::{
@@ -24,6 +24,8 @@ use crate::{
 pub struct PidFile {
     process: Arc<Process>,
     is_nonblocking: AtomicBool,
+    /// The pseudo path associated with this pid file.
+    pseudo_path: Path,
 }
 
 impl Debug for PidFile {
@@ -40,9 +42,12 @@ impl Debug for PidFile {
 
 impl PidFile {
     pub fn new(process: Arc<Process>, is_nonblocking: bool) -> Self {
+        let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:[pidfd]".to_string());
+
         Self {
             process,
             is_nonblocking: AtomicBool::new(is_nonblocking),
+            pseudo_path,
         }
     }
 
@@ -94,14 +99,13 @@ impl FileLike for PidFile {
         }
     }
 
-    fn inode(&self) -> &Arc<dyn Inode> {
-        AnonInodeFs::shared_inode()
+    fn path(&self) -> &Path {
+        &self.pseudo_path
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
         struct FdInfo {
             flags: u32,
-            ino: u64,
             pid: u32,
         }
 
@@ -109,9 +113,8 @@ impl FileLike for PidFile {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 writeln!(f, "pos:\t{}", 0)?;
                 writeln!(f, "flags:\t0{:o}", self.flags)?;
-                // TODO: This should be the mount ID of the pseudo filesystem.
-                writeln!(f, "mnt_id:\t{}", RESERVED_MOUNT_ID)?;
-                writeln!(f, "ino:\t{}", self.ino)?;
+                writeln!(f, "mnt_id:\t{}", AnonInodeFs::mount_node().id())?;
+                writeln!(f, "ino:\t{}", AnonInodeFs::shared_inode().ino())?;
                 writeln!(f, "Pid:\t{}", self.pid)?;
                 // TODO: Currently we do not support PID namespaces. Just print the PID once.
                 writeln!(f, "NSpid:\t{}", self.pid)
@@ -125,7 +128,6 @@ impl FileLike for PidFile {
 
         Box::new(FdInfo {
             flags,
-            ino: self.inode().ino(),
             pid: self.process.pid(),
         })
     }

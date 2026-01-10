@@ -10,11 +10,7 @@ use super::{
     utils::{InodeType, PATH_MAX, SYMLINKS_MAX},
 };
 use crate::{
-    fs::{
-        path::MountNamespace,
-        ramfs::memfd::MemfdInode,
-        utils::{Inode, SymbolicLink},
-    },
+    fs::{path::MountNamespace, utils::SymbolicLink},
     prelude::*,
     process::posix_thread::AsThreadLocal,
 };
@@ -93,35 +89,17 @@ impl FsResolver {
     ///
     /// Symlinks are always followed.
     pub fn lookup(&self, fs_path: &FsPath) -> Result<Path> {
-        self.lookup_inode(fs_path)?
-            .into_path()
-            .ok_or_else(|| Error::with_message(Errno::EPERM, "the path refers to a pseudo file"))
+        self.lookup_unresolved(fs_path)?.into_path()
     }
 
     /// Lookups the target `Path` according to the `fs_path`.
     ///
     /// If the last component is a symlink, it will not be followed.
     pub fn lookup_no_follow(&self, fs_path: &FsPath) -> Result<Path> {
-        self.lookup_inode_no_follow(fs_path)?
-            .into_path()
-            .ok_or_else(|| Error::with_message(Errno::EPERM, "the path refers to a pseudo file"))
+        self.lookup_unresolved_no_follow(fs_path)?.into_path()
     }
 
-    /// Lookups the target `PathOrInode` according to the `fs_path`.
-    ///
-    /// Symlinks are always followed.
-    pub fn lookup_inode(&self, fs_path: &FsPath) -> Result<PathOrInode> {
-        self.lookup_inner(fs_path, true)?.into_path_or_inode()
-    }
-
-    /// Lookups the target `PathOrInode` according to the `fs_path`.
-    ///
-    /// If the last component is a symlink, it will not be followed.
-    pub fn lookup_inode_no_follow(&self, fs_path: &FsPath) -> Result<PathOrInode> {
-        self.lookup_inner(fs_path, false)?.into_path_or_inode()
-    }
-
-    /// Lookups the target `PathOrInode` according to the `fs_path` and leaves
+    /// Lookups the target `Path` according to the `fs_path` and leaves
     /// the result unresolved.
     ///
     /// An unresolved result may indicate either successful full-path resolution,
@@ -133,7 +111,7 @@ impl FsResolver {
         self.lookup_inner(fs_path, true)
     }
 
-    /// Lookups the target `PathOrInode` according to the `fs_path` and leaves
+    /// Lookups the target `Path` according to the `fs_path` and leaves
     /// the result unresolved.
     ///
     /// An unresolved result may indicate either successful full-path resolution,
@@ -153,7 +131,7 @@ impl FsResolver {
             FsPathInner::CwdRelative(path) => {
                 self.lookup_from_parent(&self.cwd, path, follow_tail_link)?
             }
-            FsPathInner::Cwd => LookupResult::Resolved(PathOrInode::Path(self.cwd.clone())),
+            FsPathInner::Cwd => LookupResult::Resolved(self.cwd.clone()),
             FsPathInner::FdRelative(fd, path) => {
                 let task = Task::current().unwrap();
                 let mut file_table = task.as_thread_local().unwrap().borrow_file_table_mut();
@@ -165,12 +143,7 @@ impl FsResolver {
                 let task = Task::current().unwrap();
                 let mut file_table = task.as_thread_local().unwrap().borrow_file_table_mut();
                 let file = get_file_fast!(&mut file_table, fd);
-                let path_or_inode = if let Ok(inode_handle) = file.as_inode_handle_or_err() {
-                    PathOrInode::Path(inode_handle.path().clone())
-                } else {
-                    PathOrInode::Inode(file.inode().clone())
-                };
-                LookupResult::Resolved(path_or_inode)
+                LookupResult::Resolved(file.path().clone())
             }
         };
 
@@ -201,7 +174,7 @@ impl FsResolver {
             return_errno_with_message!(Errno::ENAMETOOLONG, "the path is too long");
         }
         if relative_path.is_empty() {
-            return Ok(LookupResult::Resolved(PathOrInode::Path(parent.clone())));
+            return Ok(LookupResult::Resolved(parent.clone()));
         }
 
         // To handle symlinks
@@ -276,18 +249,6 @@ impl FsResolver {
                         relative_path = path_remain;
                         follows += 1;
                     }
-                    SymbolicLink::Inode(inode) => {
-                        debug_assert!(
-                            inode.type_() != InodeType::Dir && inode.type_() != InodeType::SymLink
-                        );
-                        if !next_is_tail {
-                            return_errno_with_message!(
-                                Errno::ENOTDIR,
-                                "the inode is not a directory"
-                            );
-                        }
-                        return Ok(LookupResult::Resolved(PathOrInode::Inode(inode)));
-                    }
                 }
             } else {
                 // If path ends with `/`, the inode must be a directory
@@ -299,7 +260,7 @@ impl FsResolver {
             }
         }
 
-        Ok(LookupResult::Resolved(PathOrInode::Path(current_path)))
+        Ok(LookupResult::Resolved(current_path))
     }
 }
 
@@ -378,66 +339,16 @@ impl<'a> TryFrom<&'a str> for FsPath<'a> {
     }
 }
 
-/// An item in the file system.
-// FIXME: Each item in the file system should have a `Path`. This struct exists
-// because not all `Arc<dyn FileLike>`s are associated with paths. We should
-// introduce `PipeFs`, `SocketFs`, and `AnonInodeFs`, add pseudo paths and dentries
-// for these pseudo inodes, and eventually remove this struct.
-#[derive(Clone)]
-pub enum PathOrInode {
-    Path(Path),
-    Inode(Arc<dyn Inode>),
-}
-
-impl PathOrInode {
-    pub fn into_path(self) -> Option<Path> {
-        match self {
-            PathOrInode::Path(path) => Some(path),
-            PathOrInode::Inode(_) => None,
-        }
-    }
-
-    pub fn inode(&self) -> &Arc<dyn Inode> {
-        match self {
-            PathOrInode::Path(path) => path.inode(),
-            PathOrInode::Inode(inode) => inode,
-        }
-    }
-
-    pub fn display_name(&self) -> String {
-        match self {
-            PathOrInode::Path(path) => path.abs_path(),
-            PathOrInode::Inode(inode) => {
-                // FIXME: Add pseudo dentries to store the correct name.
-                if let Some(memfd_inode) = inode.downcast_ref::<MemfdInode>() {
-                    memfd_inode.name().to_string()
-                } else {
-                    String::from("[pseudo inode]")
-                }
-            }
-        }
-    }
-}
-
-impl Debug for PathOrInode {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            PathOrInode::Path(path) => write!(f, "PathOrInode::Path({})", path.abs_path()),
-            PathOrInode::Inode(inode) => write!(f, "PathOrInode::Inode({:p})", inode.as_ref()),
-        }
-    }
-}
-
 // A result type for lookup operations.
 pub enum LookupResult {
-    /// The entire path was resolved to a final `PathOrInode`.
-    Resolved(PathOrInode),
+    /// The entire path was resolved to a final `Path`.
+    Resolved(Path),
     /// The path resolution stopped at a parent directory.
     AtParent(LookupParentResult),
 }
 
 impl LookupResult {
-    fn into_path_or_inode(self) -> Result<PathOrInode> {
+    fn into_path(self) -> Result<Path> {
         match self {
             LookupResult::Resolved(target) => Ok(target),
             LookupResult::AtParent(_) => Err(Error::with_message(

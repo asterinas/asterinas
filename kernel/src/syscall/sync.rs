@@ -18,6 +18,6 @@ pub fn sys_syncfs(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
-    file.inode().fs().sync()?;
+    file.path().fs().sync()?;
     Ok(SyscallReturn::Return(0))
 }

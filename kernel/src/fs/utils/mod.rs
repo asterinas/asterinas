@@ -23,7 +23,7 @@ pub use page_cache::{CachePage, PageCache, PageCacheBackend};
 #[cfg(ktest)]
 pub use random_test::{generate_random_operation, new_fs_in_memory};
 pub use range_lock::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockList, RangeLockType};
-pub use status_flags::StatusFlags;
+pub use status_flags::{AtomicStatusFlags, StatusFlags};
 pub use xattr::{
     XATTR_LIST_MAX_LEN, XATTR_NAME_MAX_LEN, XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace,
     XattrSetFlags,

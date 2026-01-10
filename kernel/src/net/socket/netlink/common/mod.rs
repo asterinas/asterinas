@@ -8,11 +8,10 @@ use unbound::UnboundNetlink;
 use super::{GroupIdSet, NetlinkSocketAddr};
 use crate::{
     events::IoEvents,
-    fs::utils::Inode,
+    fs::{path::Path, pseudofs::SockFs},
     net::socket::{
         Socket,
         netlink::{AddMembership, DropMembership, table::SupportedNetlinkProtocol},
-        new_pseudo_inode,
         options::{
             Error as SocketError, SocketOption,
             macros::{sock_option_mut, sock_option_ref},
@@ -38,7 +37,7 @@ pub struct NetlinkSocket<P: SupportedNetlinkProtocol> {
 
     is_nonblocking: AtomicBool,
     pollee: Pollee,
-    pseudo_inode: Arc<dyn Inode>,
+    pseudo_path: Path,
 }
 
 #[derive(Debug, Clone)]
@@ -65,7 +64,7 @@ where
             options: RwLock::new(OptionSet::new()),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
-            pseudo_inode: new_pseudo_inode(),
+            pseudo_path: SockFs::new_path(),
         })
     }
 
@@ -222,8 +221,8 @@ where
         do_netlink_setsockopt(option, &mut inner)
     }
 
-    fn pseudo_inode(&self) -> &Arc<dyn Inode> {
-        &self.pseudo_inode
+    fn pseudo_path(&self) -> &Path {
+        &self.pseudo_path
     }
 }
 

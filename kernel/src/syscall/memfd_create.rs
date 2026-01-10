@@ -4,7 +4,8 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FdFlags,
-        ramfs::memfd::{MAX_MEMFD_NAME_LEN, MemfdFile, MemfdFlags},
+        inode_handle::InodeHandle,
+        ramfs::memfd::{MAX_MEMFD_NAME_LEN, MemfdFlags, MemfdInodeHandle},
     },
     prelude::*,
 };
@@ -40,7 +41,7 @@ pub fn sys_memfd_create(name_addr: Vaddr, flags: u32, ctx: &Context) -> Result<S
             );
         }
 
-        let memfd_file = MemfdFile::new(name.to_string_lossy().as_ref(), memfd_flags)?;
+        let memfd_file = InodeHandle::new_memfd(name.to_string_lossy().into_owned(), memfd_flags)?;
 
         file_table_locked.insert(Arc::new(memfd_file), fd_flags)
     };

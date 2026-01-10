@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::format;
 use core::{
     sync::atomic::{AtomicU64, Ordering},
     time::Duration,
@@ -10,10 +11,13 @@ use spin::Once;
 use super::utils::{Extension, InodeIo, StatusFlags};
 use crate::{
     fs::{
+        inode_handle::FileIo,
+        path::{Mount, Path},
+        pipe::AnonPipeInode,
         registry::{FsProperties, FsType},
         utils::{
-            FileSystem, FsEventSubscriberStats, FsFlags, Inode, InodeMode, InodeType, Metadata,
-            NAME_MAX, SuperBlock, mkmod,
+            AccessMode, FileSystem, FsEventSubscriberStats, FsFlags, Inode, InodeMode, InodeType,
+            Metadata, NAME_MAX, SuperBlock, mkmod,
         },
     },
     prelude::*,
@@ -105,6 +109,20 @@ impl PipeFs {
 
         PseudoFs::singleton(&PIPEFS, "pipefs", PIPEFS_MAGIC)
     }
+
+    /// Creates a pseudo `Path` for an anonymous pipe.
+    pub(super) fn new_path(pipe_inode: Arc<AnonPipeInode>) -> Path {
+        Path::new_pseudo(Self::mount_node().clone(), pipe_inode, |inode| {
+            format!("pipe:[{}]", inode.ino())
+        })
+    }
+
+    /// Returns the pseudo mount node of the pipe file system.
+    fn mount_node() -> &'static Arc<Mount> {
+        static PIPEFS_MOUNT: Once<Arc<Mount>> = Once::new();
+
+        PIPEFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()))
+    }
 }
 
 pub struct SockFs {
@@ -118,6 +136,27 @@ impl SockFs {
 
         PseudoFs::singleton(&SOCKFS, "sockfs", SOCKFS_MAGIC)
     }
+
+    /// Creates a pseudo `Path` for a socket.
+    pub fn new_path() -> Path {
+        let socket_inode = Arc::new(Self::singleton().alloc_inode(
+            InodeType::Socket,
+            mkmod!(a+rwx),
+            Uid::new_root(),
+            Gid::new_root(),
+        ));
+
+        Path::new_pseudo(Self::mount_node().clone(), socket_inode, |inode| {
+            format!("socket:[{}]", inode.ino())
+        })
+    }
+
+    /// Returns the pseudo mount node of the socket file system.
+    pub fn mount_node() -> &'static Arc<Mount> {
+        static SOCKFS_MOUNT: Once<Arc<Mount>> = Once::new();
+
+        SOCKFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()))
+    }
 }
 
 pub struct AnonInodeFs {
@@ -130,6 +169,22 @@ impl AnonInodeFs {
         static ANON_INODEFS: Once<Arc<PseudoFs>> = Once::new();
 
         PseudoFs::singleton(&ANON_INODEFS, "anon_inodefs", ANON_INODEFS_MAGIC)
+    }
+
+    /// Creates a pseudo `Path` for the shared inode.
+    pub fn new_path(name_fn: fn(&dyn Inode) -> String) -> Path {
+        Path::new_pseudo(
+            Self::mount_node().clone(),
+            Self::shared_inode().clone(),
+            name_fn,
+        )
+    }
+
+    /// Returns the pseudo mount node of the anonymous inode file system.
+    pub fn mount_node() -> &'static Arc<Mount> {
+        static ANON_INODEFS_MOUNT: Once<Arc<Mount>> = Once::new();
+
+        ANON_INODEFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()))
     }
 
     /// Returns the shared inode of the anonymous inode file system singleton.
@@ -375,6 +430,17 @@ impl Inode for PseudoInode {
 
     fn set_ctime(&self, time: Duration) {
         self.metadata.lock().ctime = time;
+    }
+
+    fn open(
+        &self,
+        _access_mode: AccessMode,
+        _status_flags: StatusFlags,
+    ) -> Option<Result<Box<dyn FileIo>>> {
+        Some(Err(Error::with_message(
+            Errno::ENXIO,
+            "the pseudo inode is not re-openable",
+        )))
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {

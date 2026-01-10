@@ -9,12 +9,11 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::FdFlags,
-        path::RESERVED_MOUNT_ID,
+        path::Path,
         pseudofs::SockFs,
-        utils::{CreationFlags, Inode, InodeType, StatusFlags, mkmod},
+        utils::{CreationFlags, StatusFlags},
     },
     prelude::*,
-    process::{Gid, Uid},
     util::{MultiRead, MultiWrite},
 };
 
@@ -128,8 +127,8 @@ pub trait Socket: private::SocketPrivate + Send + Sync {
         flags: SendRecvFlags,
     ) -> Result<(usize, MessageHeader)>;
 
-    /// Returns a reference to the pseudo inode associated with this socket.
-    fn pseudo_inode(&self) -> &Arc<dyn Inode>;
+    /// Returns a reference to the pseudo path associated with this socket.
+    fn pseudo_path(&self) -> &Path;
 }
 
 impl<T: Socket + 'static> FileLike for T {
@@ -176,8 +175,8 @@ impl<T: Socket + 'static> FileLike for T {
         Some(self)
     }
 
-    fn inode(&self) -> &Arc<dyn Inode> {
-        self.pseudo_inode()
+    fn path(&self) -> &Path {
+        self.pseudo_path()
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
@@ -190,8 +189,7 @@ impl<T: Socket + 'static> FileLike for T {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 writeln!(f, "pos:\t{}", 0)?;
                 writeln!(f, "flags:\t0{:o}", self.flags)?;
-                // TODO: This should be the mount ID of the pseudo filesystem.
-                writeln!(f, "mnt_id:\t{}", RESERVED_MOUNT_ID)?;
+                writeln!(f, "mnt_id:\t{}", SockFs::mount_node().id())?;
                 writeln!(f, "ino:\t{}", self.ino)
             }
         }
@@ -203,19 +201,7 @@ impl<T: Socket + 'static> FileLike for T {
 
         Box::new(FdInfo {
             flags,
-            ino: self.inode().ino(),
+            ino: self.pseudo_path().inode().ino(),
         })
     }
-}
-
-/// Creates a new pseudo inode for a socket.
-fn new_pseudo_inode() -> Arc<dyn Inode> {
-    let pseudo_inode = SockFs::singleton().alloc_inode(
-        InodeType::Socket,
-        mkmod!(a+rwx),
-        Uid::new_root(),
-        Gid::new_root(),
-    );
-
-    Arc::new(pseudo_inode)
 }

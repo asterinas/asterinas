@@ -5,7 +5,7 @@
 use core::time::Duration;
 
 use inherit_methods_macro::inherit_methods;
-pub use mount::{Mount, MountPropType, PerMountFlags, RESERVED_MOUNT_ID};
+pub use mount::{Mount, MountPropType, PerMountFlags};
 pub use mount_namespace::MountNamespace;
 
 use crate::{
@@ -51,8 +51,21 @@ impl Path {
         {
             return_errno!(Errno::EACCES);
         }
-        let new_child_dentry = self.dentry.create(name, type_, mode)?;
+        let new_child_dentry = self
+            .dentry
+            .as_dir_dentry_or_err()?
+            .create(name, type_, mode)?;
         Ok(Self::new(self.mount.clone(), new_child_dentry))
+    }
+
+    /// Creates a new pseudo `Path`.
+    pub(super) fn new_pseudo(
+        mount: Arc<Mount>,
+        inode: Arc<dyn Inode>,
+        name_fn: fn(&dyn Inode) -> String,
+    ) -> Self {
+        let dentry = Dentry::new_pseudo(inode, name_fn);
+        Self::new(mount, dentry)
     }
 
     fn new(mount: Arc<Mount>, dentry: Arc<Dentry>) -> Self {
@@ -71,9 +84,8 @@ impl Path {
 
     /// Lookups the target `Path` given the `name`.
     pub fn lookup(&self, name: &str) -> Result<Self> {
-        if self.type_() != InodeType::Dir {
-            return_errno_with_message!(Errno::ENOTDIR, "the path is not a directory");
-        }
+        let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
+
         if self.inode().check_permission(Permission::MAY_EXEC).is_err() {
             return_errno_with_message!(Errno::EACCES, "the path cannot be looked up");
         }
@@ -86,11 +98,11 @@ impl Path {
         } else if is_dotdot(name) {
             self.effective_parent().unwrap_or_else(|| self.this())
         } else {
-            let target_inner_opt = self.dentry.lookup_via_cache(name)?;
+            let target_inner_opt = dir_dentry.lookup_via_cache(name)?;
             match target_inner_opt {
                 Some(target_inner) => Self::new(self.mount.clone(), target_inner),
                 None => {
-                    let target_inner = self.dentry.lookup_via_fs(name)?;
+                    let target_inner = dir_dentry.lookup_via_fs(name)?;
                     Self::new(self.mount.clone(), target_inner)
                 }
             }
@@ -103,17 +115,38 @@ impl Path {
     ///
     /// Returns an `InodeHandle` on success.
     pub fn open(&self, open_args: OpenArgs) -> Result<InodeHandle> {
-        let inode = self.inode();
-        check_open_util(inode.as_ref(), &open_args)?;
+        let inode = self.inode().as_ref();
+        let inode_type = inode.type_();
+        let creation_flags = &open_args.creation_flags;
+        let status_flags = &open_args.status_flags;
 
-        if inode.type_().is_regular_file()
-            && open_args.creation_flags.contains(CreationFlags::O_TRUNC)
-            && !open_args.status_flags.contains(StatusFlags::O_PATH)
+        if inode_type == InodeType::SymLink
+            && creation_flags.contains(CreationFlags::O_NOFOLLOW)
+            && !status_flags.contains(StatusFlags::O_PATH)
+        {
+            return_errno_with_message!(Errno::ELOOP, "the file is a symlink");
+        }
+
+        if creation_flags.contains(CreationFlags::O_CREAT)
+            && creation_flags.contains(CreationFlags::O_EXCL)
+        {
+            return_errno_with_message!(Errno::EEXIST, "the file already exists");
+        }
+        if creation_flags.contains(CreationFlags::O_DIRECTORY) && inode_type != InodeType::Dir {
+            return_errno_with_message!(
+                Errno::ENOTDIR,
+                "O_DIRECTORY is specified but the file is not a directory"
+            );
+        }
+
+        if inode_type.is_regular_file()
+            && creation_flags.contains(CreationFlags::O_TRUNC)
+            && !status_flags.contains(StatusFlags::O_PATH)
         {
             self.resize(0)?;
         }
 
-        InodeHandle::new(self.clone(), open_args.access_mode, open_args.status_flags)
+        InodeHandle::new(self.clone(), open_args.access_mode, *status_flags)
     }
 
     /// Gets the absolute path.
@@ -137,7 +170,6 @@ impl Path {
             current_dir = parent_dir;
         }
 
-        debug_assert!(path_name.starts_with('/'));
         path_name
     }
 
@@ -172,7 +204,12 @@ impl Path {
     /// to get the parent of the mountpoint recursively.
     fn effective_parent(&self) -> Option<Self> {
         if !self.is_mount_root() {
-            return Some(Self::new(self.mount.clone(), self.dentry.parent().unwrap()));
+            if let Some(parent) = self.dentry.parent() {
+                return Some(Self::new(self.mount.clone(), parent));
+            } else {
+                debug_assert!(self.dentry.is_pseudo());
+                return None;
+            }
         }
 
         let parent = self.mount.parent()?;
@@ -225,33 +262,6 @@ impl Path {
     fn this(&self) -> Self {
         self.clone()
     }
-}
-
-/// Checks if the given `Inode` can be opened with the given `OpenArgs`.
-pub(super) fn check_open_util(inode: &dyn Inode, open_args: &OpenArgs) -> Result<()> {
-    let inode_type = inode.type_();
-    let creation_flags = &open_args.creation_flags;
-
-    if inode_type == InodeType::SymLink
-        && creation_flags.contains(CreationFlags::O_NOFOLLOW)
-        && !open_args.status_flags.contains(StatusFlags::O_PATH)
-    {
-        return_errno_with_message!(Errno::ELOOP, "the file is a symlink");
-    }
-
-    if creation_flags.contains(CreationFlags::O_CREAT)
-        && creation_flags.contains(CreationFlags::O_EXCL)
-    {
-        return_errno_with_message!(Errno::EEXIST, "the file already exists");
-    }
-    if creation_flags.contains(CreationFlags::O_DIRECTORY) && inode_type != InodeType::Dir {
-        return_errno_with_message!(
-            Errno::ENOTDIR,
-            "O_DIRECTORY is specified but the file is not a directory"
-        );
-    }
-
-    Ok(())
 }
 
 impl Path {
@@ -460,12 +470,13 @@ impl Path {
 impl Path {
     pub fn inode(&self) -> &Arc<dyn Inode>;
     pub fn type_(&self) -> InodeType;
-    pub fn unlink(&self, name: &str) -> Result<()>;
-    pub fn rmdir(&self, name: &str) -> Result<()>;
 
     /// Creates a `Path` by making an inode of the `type_` with the `mode`.
     pub fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Self> {
-        let inner = self.dentry.mknod(name, mode, type_)?;
+        let inner = self
+            .dentry
+            .as_dir_dentry_or_err()?
+            .mknod(name, mode, type_)?;
         Ok(Self::new(self.mount.clone(), inner))
     }
 
@@ -475,7 +486,15 @@ impl Path {
             return_errno_with_message!(Errno::EXDEV, "the operation cannot cross mounts");
         }
 
-        self.dentry.link(&old.dentry, name)
+        self.dentry.as_dir_dentry_or_err()?.link(old.inode(), name)
+    }
+
+    pub fn unlink(&self, name: &str) -> Result<()> {
+        self.dentry.as_dir_dentry_or_err()?.unlink(name)
+    }
+
+    pub fn rmdir(&self, name: &str) -> Result<()> {
+        self.dentry.as_dir_dentry_or_err()?.rmdir(name)
     }
 
     /// Renames a `Path` to the new `Path` by `rename()` the inner inode.
@@ -484,7 +503,11 @@ impl Path {
             return_errno_with_message!(Errno::EXDEV, "the operation cannot cross mounts");
         }
 
-        self.dentry.rename(old_name, &new_dir.dentry, new_name)
+        self.dentry.as_dir_dentry_or_err()?.rename(
+            old_name,
+            &new_dir.dentry.as_dir_dentry_or_err()?,
+            new_name,
+        )
     }
 }
 

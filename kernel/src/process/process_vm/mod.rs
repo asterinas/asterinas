@@ -24,7 +24,7 @@ pub use self::{
         aux_vec::{AuxKey, AuxVec},
     },
 };
-use crate::{fs::fs_resolver::PathOrInode, prelude::*, vm::vmar::Vmar};
+use crate::{fs::path::Path, prelude::*, vm::vmar::Vmar};
 
 /*
  * The user's virtual memory space layout looks like below.
@@ -68,8 +68,8 @@ pub struct ProcessVm {
     init_stack: InitStack,
     /// The user heap
     heap: Heap,
-    /// The executable `PathOrInode`.
-    executable_file: PathOrInode,
+    /// The executable file.
+    executable_file: Path,
     /// The base address for vDSO segment
     #[cfg(target_arch = "riscv64")]
     vdso_base: AtomicUsize,
@@ -77,7 +77,7 @@ pub struct ProcessVm {
 
 impl ProcessVm {
     /// Creates a new `ProcessVm` without mapping anything.
-    fn new(executable_file: PathOrInode) -> Self {
+    fn new(executable_file: Path) -> Self {
         Self {
             init_stack: InitStack::new(),
             heap: Heap::new(),
@@ -108,8 +108,8 @@ impl ProcessVm {
         &self.heap
     }
 
-    /// Returns a reference to the executable `PathOrInode`.
-    pub fn executable_file(&self) -> &PathOrInode {
+    /// Returns a reference to the executable `Path`.
+    pub fn executable_file(&self) -> &Path {
         &self.executable_file
     }
 
@@ -203,7 +203,7 @@ impl<'a> ProcessVmarGuard<'a> {
 /// Creates a new VMAR and map the heap.
 ///
 /// This method should only be used to create a VMAR for the init process.
-pub(super) fn new_vmar_and_map(executable_file: PathOrInode) -> Arc<Vmar> {
+pub(super) fn new_vmar_and_map(executable_file: Path) -> Arc<Vmar> {
     let new_vmar = Vmar::new(ProcessVm::new(executable_file));
     new_vmar
         .process_vm()

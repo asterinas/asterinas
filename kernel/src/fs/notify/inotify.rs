@@ -21,7 +21,7 @@ use crate::{
         file_handle::FileLike,
         file_table::FdFlags,
         notify::{FsEventSubscriber, FsEvents},
-        path::{Path, RESERVED_MOUNT_ID},
+        path::Path,
         pseudofs::AnonInodeFs,
         utils::{AccessMode, CreationFlags, Inode, InodeExt, StatusFlags},
     },
@@ -58,6 +58,8 @@ pub struct InotifyFile {
     pollee: Pollee,
     // A weak reference to this inotify file.
     this: Weak<InotifyFile>,
+    /// The pseudo path associated with this inotify file.
+    pseudo_path: Path,
 }
 
 impl Drop for InotifyFile {
@@ -93,6 +95,8 @@ const DEFAULT_MAX_QUEUED_EVENTS: usize = 16384;
 impl InotifyFile {
     /// Creates a new inotify file.
     pub fn new(is_nonblocking: bool) -> Result<Arc<Self>> {
+        let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:inotify".to_string());
+
         Ok(Arc::new_cyclic(|weak_self| Self {
             // Allocate watch descriptors from 1.
             // Reference: <https://elixir.bootlin.com/linux/v6.17/source/fs/notify/inotify/inotify_user.c#L402>
@@ -104,6 +108,7 @@ impl InotifyFile {
             queue_capacity: DEFAULT_MAX_QUEUED_EVENTS,
             pollee: Pollee::new(),
             this: weak_self.clone(),
+            pseudo_path,
         }))
     }
 
@@ -354,8 +359,8 @@ impl FileLike for InotifyFile {
         AccessMode::O_RDONLY
     }
 
-    fn inode(&self) -> &Arc<dyn Inode> {
-        AnonInodeFs::shared_inode()
+    fn path(&self) -> &Path {
+        &self.pseudo_path
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
@@ -373,9 +378,8 @@ impl FileLike for InotifyFile {
 
                 writeln!(f, "pos:\t{}", 0)?;
                 writeln!(f, "flags:\t0{:o}", flags)?;
-                // TODO: This should be the mount ID of the pseudo filesystem.
-                writeln!(f, "mnt_id:\t{}", RESERVED_MOUNT_ID)?;
-                writeln!(f, "ino:\t{}", self.inner.inode().ino())?;
+                writeln!(f, "mnt_id:\t{}", AnonInodeFs::mount_node().id())?;
+                writeln!(f, "ino:\t{}", AnonInodeFs::shared_inode().ino())?;
 
                 for (wd, entry) in self.inner.watch_map.lock().iter() {
                     let Some(inode) = entry.inode.upgrade() else {

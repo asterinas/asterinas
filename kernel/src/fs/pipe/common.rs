@@ -29,16 +29,12 @@ use crate::{
 ///
 /// Once a handle for a `Pipe` exists, the corresponding pipe object will
 /// not be dropped.
-pub(super) struct PipeHandle {
+pub(in crate::fs) struct PipeHandle {
     inner: Arc<PipeObj>,
     access_mode: AccessMode,
 }
 
 impl PipeHandle {
-    pub(super) fn access_mode(&self) -> AccessMode {
-        self.access_mode
-    }
-
     fn new(inner: Arc<PipeObj>, access_mode: AccessMode) -> Box<Self> {
         Box::new(Self { inner, access_mode })
     }
@@ -150,7 +146,7 @@ impl FileIo for PipeHandle {
 ///
 /// A `Pipe` will maintain exactly one **pipe object** that provides actual pipe
 /// functionalities when there is at least one handle opened on it.
-pub struct Pipe {
+pub(in crate::fs) struct Pipe {
     pipe: Mutex<PipeInner>,
     wait_queue: WaitQueue,
 }
@@ -180,7 +176,7 @@ impl Pipe {
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Result<Box<dyn FileIo>> {
-        Ok(self.open_handle(access_mode, status_flags, true)?)
+        self.open_handle(access_mode, status_flags, true)
     }
 
     /// Opens the anonymous pipe with the specified access mode and status flags.
@@ -188,7 +184,7 @@ impl Pipe {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Result<Box<PipeHandle>> {
+    ) -> Result<Box<dyn FileIo>> {
         self.open_handle(access_mode, status_flags, false)
     }
 
@@ -198,7 +194,9 @@ impl Pipe {
         access_mode: AccessMode,
         status_flags: StatusFlags,
         is_named_pipe: bool,
-    ) -> Result<Box<PipeHandle>> {
+    ) -> Result<Box<dyn FileIo>> {
+        check_status_flags(status_flags)?;
+
         let mut pipe = self.pipe.lock();
         let pipe_obj = pipe.get_or_create_pipe_obj();
 
@@ -270,6 +268,24 @@ impl Pipe {
 
         Ok(handle)
     }
+}
+
+pub(in crate::fs) fn check_status_flags(status_flags: StatusFlags) -> Result<()> {
+    if status_flags.contains(StatusFlags::O_DIRECT) {
+        // TODO: Support "packet" mode for pipes.
+        //
+        // The `O_DIRECT` flag indicates that the pipe should operate in "packet" mode.
+        // "O_DIRECT .. Older kernels that do not support this flag will indicate this via an
+        // EINVAL error."
+        //
+        // See <https://man7.org/linux/man-pages/man2/pipe.2.html>.
+        return_errno_with_message!(Errno::EINVAL, "the `O_DIRECT` flag is not supported");
+    }
+
+    // TODO: Setting most of the other flags will succeed on Linux, but their effects need to be
+    // validated.
+
+    Ok(())
 }
 
 struct PipeObj {
@@ -457,5 +473,162 @@ impl Pollable for PipeWriter {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         self.state
             .poll_with(mask, poller, || self.check_io_events())
+    }
+}
+
+#[cfg(ktest)]
+mod test {
+    use alloc::sync::Arc;
+    use core::sync::atomic::{self, AtomicBool};
+
+    use ostd::prelude::*;
+
+    use super::*;
+    use crate::thread::{Thread, kernel_thread::ThreadOptions};
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Ordering {
+        WriteThenRead,
+        ReadThenWrite,
+    }
+
+    fn test_blocking<W, R>(write: W, read: R, ordering: Ordering)
+    where
+        W: FnOnce(Box<dyn FileIo>) + Send + 'static,
+        R: FnOnce(Box<dyn FileIo>) + Send + 'static,
+    {
+        let pipe = Pipe::new();
+        let reader = pipe
+            .open_anon(AccessMode::O_RDONLY, StatusFlags::empty())
+            .unwrap();
+        let writer = pipe
+            .open_anon(AccessMode::O_WRONLY, StatusFlags::empty())
+            .unwrap();
+
+        let signal_writer = Arc::new(AtomicBool::new(false));
+        let signal_reader = signal_writer.clone();
+
+        let writer = ThreadOptions::new(move || {
+            if ordering == Ordering::ReadThenWrite {
+                while !signal_writer.load(atomic::Ordering::Relaxed) {
+                    Thread::yield_now();
+                }
+            } else {
+                signal_writer.store(true, atomic::Ordering::Relaxed);
+            }
+
+            write(writer);
+        })
+        .spawn();
+
+        let reader = ThreadOptions::new(move || {
+            if ordering == Ordering::WriteThenRead {
+                while !signal_reader.load(atomic::Ordering::Relaxed) {
+                    Thread::yield_now();
+                }
+            } else {
+                signal_reader.store(true, atomic::Ordering::Relaxed);
+            }
+
+            read(reader);
+        })
+        .spawn();
+
+        writer.join();
+        reader.join();
+    }
+
+    #[ktest]
+    fn test_read_empty() {
+        test_blocking(
+            |writer| {
+                assert_eq!(write(writer.as_ref(), &[1]).unwrap(), 1);
+            },
+            |reader| {
+                let mut buf = [0; 1];
+                assert_eq!(read(reader.as_ref(), &mut buf).unwrap(), 1);
+                assert_eq!(&buf, &[1]);
+            },
+            Ordering::ReadThenWrite,
+        );
+    }
+
+    #[ktest]
+    fn test_write_full() {
+        test_blocking(
+            |writer| {
+                assert_eq!(write(writer.as_ref(), &[1, 2, 3]).unwrap(), 2);
+                assert_eq!(write(writer.as_ref(), &[2]).unwrap(), 1);
+            },
+            |reader| {
+                let mut buf = [0; 3];
+                assert_eq!(read(reader.as_ref(), &mut buf).unwrap(), 2);
+                assert_eq!(&buf[..2], &[1, 2]);
+                assert_eq!(read(reader.as_ref(), &mut buf).unwrap(), 1);
+                assert_eq!(&buf[..1], &[2]);
+            },
+            Ordering::WriteThenRead,
+        );
+    }
+
+    #[ktest]
+    fn test_read_closed() {
+        test_blocking(
+            drop,
+            |reader| {
+                let mut buf = [0; 1];
+                assert_eq!(read(reader.as_ref(), &mut buf).unwrap(), 0);
+            },
+            Ordering::ReadThenWrite,
+        );
+    }
+
+    #[ktest]
+    fn test_write_closed() {
+        test_blocking(
+            |writer| {
+                assert_eq!(write(writer.as_ref(), &[1, 2, 3]).unwrap(), 2);
+                assert_eq!(
+                    write(writer.as_ref(), &[2]).unwrap_err().error(),
+                    Errno::EPIPE
+                );
+            },
+            drop,
+            Ordering::WriteThenRead,
+        );
+    }
+
+    #[ktest]
+    fn test_write_atomicity() {
+        test_blocking(
+            |writer| {
+                assert_eq!(write(writer.as_ref(), &[1]).unwrap(), 1);
+                assert_eq!(write(writer.as_ref(), &[1, 2]).unwrap(), 2);
+            },
+            |reader| {
+                let mut buf = [0; 3];
+                assert_eq!(read(reader.as_ref(), &mut buf).unwrap(), 1);
+                assert_eq!(&buf[..1], &[1]);
+                assert_eq!(read(reader.as_ref(), &mut buf).unwrap(), 2);
+                assert_eq!(&buf[..2], &[1, 2]);
+            },
+            Ordering::WriteThenRead,
+        );
+    }
+
+    fn read(reader: &dyn FileIo, buf: &mut [u8]) -> crate::prelude::Result<usize> {
+        reader.read_at(
+            0,
+            &mut VmWriter::from(buf).to_fallible(),
+            StatusFlags::empty(),
+        )
+    }
+
+    fn write(writer: &dyn FileIo, buf: &[u8]) -> crate::prelude::Result<usize> {
+        writer.write_at(
+            0,
+            &mut VmReader::from(buf).to_fallible(),
+            StatusFlags::empty(),
+        )
     }
 }

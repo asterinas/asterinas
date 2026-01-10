@@ -2,10 +2,7 @@
 
 //! Opened Inode-backed File Handle
 
-use core::{
-    fmt::Display,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use core::{fmt::Display, sync::atomic::Ordering};
 
 use aster_rights::Rights;
 
@@ -16,9 +13,10 @@ use crate::{
         file_handle::{FileLike, Mappable},
         file_table::FdFlags,
         path::Path,
+        pipe::PipeHandle,
         utils::{
-            AccessMode, CreationFlags, DirentVisitor, FallocMode, FileRange, FlockItem, Inode,
-            InodeType, OFFSET_MAX, RangeLockItem, RangeLockType, SeekFrom, StatusFlags,
+            AccessMode, AtomicStatusFlags, CreationFlags, DirentVisitor, FallocMode, FileRange,
+            FlockItem, InodeType, OFFSET_MAX, RangeLockItem, RangeLockType, SeekFrom, StatusFlags,
         },
     },
     prelude::*,
@@ -33,7 +31,7 @@ pub struct InodeHandle {
     /// be provided by `file_io`, instead of `path`.
     file_io: Option<Box<dyn FileIo>>,
     offset: Mutex<usize>,
-    status_flags: AtomicU32,
+    status_flags: AtomicStatusFlags,
     rights: Rights,
 }
 
@@ -70,7 +68,7 @@ impl InodeHandle {
             path,
             file_io,
             offset: Mutex::new(0),
-            status_flags: AtomicU32::new(status_flags.bits()),
+            status_flags: AtomicStatusFlags::new(status_flags),
             rights,
         })
     }
@@ -82,6 +80,10 @@ impl InodeHandle {
     pub fn offset(&self) -> usize {
         let offset = self.offset.lock();
         *offset
+    }
+
+    pub fn rights(&self) -> Rights {
+        self.rights
     }
 
     fn inode_io_and_is_offset_aware(&self) -> (&dyn InodeIo, bool) {
@@ -347,17 +349,31 @@ impl FileLike for InodeHandle {
             return_errno_with_message!(Errno::EINVAL, "the file is not opened writable");
         }
 
-        do_resize_util(self.path.inode().as_ref(), self.status_flags(), new_size)
+        if self.status_flags().contains(StatusFlags::O_APPEND) {
+            // FIXME: It's allowed to `ftruncate` an append-only file on Linux.
+            return_errno_with_message!(Errno::EPERM, "can not resize append-only file");
+        }
+        self.path.inode().resize(new_size)
     }
 
     fn status_flags(&self) -> StatusFlags {
-        let bits = self.status_flags.load(Ordering::Relaxed);
-        StatusFlags::from_bits(bits).unwrap()
+        self.status_flags.load(Ordering::Relaxed)
     }
 
     fn set_status_flags(&self, new_status_flags: StatusFlags) -> Result<()> {
-        self.status_flags
-            .store(new_status_flags.bits(), Ordering::Relaxed);
+        // TODO: Pipes currently require a special status flag check because
+        // "packet" mode is not yet supported. Remove this check once "packet"
+        // mode is implemented.
+        if self
+            .file_io
+            .as_ref()
+            .and_then(|file_io| (file_io.as_ref() as &dyn Any).downcast_ref::<PipeHandle>())
+            .is_some()
+        {
+            crate::fs::pipe::check_status_flags(new_status_flags)?;
+        }
+
+        self.status_flags.store(new_status_flags, Ordering::Relaxed);
 
         Ok(())
     }
@@ -394,17 +410,45 @@ impl FileLike for InodeHandle {
             return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
         }
 
-        do_fallocate_util(
-            self.path.inode().as_ref(),
-            self.status_flags(),
-            mode,
-            offset,
-            len,
-        )
+        let inode = self.path.inode().as_ref();
+        let inode_type = inode.type_();
+
+        // TODO: `fallocate` on pipe files also fails with `ESPIPE`.
+        if inode_type == InodeType::NamedPipe {
+            return_errno_with_message!(Errno::ESPIPE, "the inode is a FIFO file");
+        }
+        if !(inode_type == InodeType::File || inode_type == InodeType::Dir) {
+            return_errno_with_message!(
+                Errno::ENODEV,
+                "the inode is not a regular file or a directory"
+            );
+        }
+
+        let status_flags = self.status_flags();
+        if status_flags.contains(StatusFlags::O_APPEND)
+            && (mode == FallocMode::PunchHoleKeepSize
+                || mode == FallocMode::CollapseRange
+                || mode == FallocMode::InsertRange)
+        {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "the flags do not work on the append-only file"
+            );
+        }
+        if status_flags.contains(StatusFlags::O_DIRECT)
+            || status_flags.contains(StatusFlags::O_PATH)
+        {
+            return_errno_with_message!(
+                Errno::EBADF,
+                "currently fallocate file with O_DIRECT or O_PATH is not supported"
+            );
+        }
+
+        inode.fallocate(mode, offset, len)
     }
 
-    fn inode(&self) -> &Arc<dyn Inode> {
-        self.path.inode()
+    fn path(&self) -> &Path {
+        &self.path
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
@@ -422,8 +466,8 @@ impl FileLike for InodeHandle {
 
                 writeln!(f, "pos:\t{}", self.inner.offset())?;
                 writeln!(f, "flags:\t0{:o}", flags)?;
-                writeln!(f, "mnt_id:\t{}", self.inner.path().mount_node().id())?;
-                writeln!(f, "ino:\t{}", self.inner.inode().ino())
+                writeln!(f, "mnt_id:\t{}", self.inner.path.mount_node().id())?;
+                writeln!(f, "ino:\t{}", self.inner.path.inode().ino())
             }
         }
 
@@ -456,7 +500,7 @@ impl Debug for InodeHandle {
 ///
 /// This trait is typically implemented for special files like devices or
 /// named pipes (FIFOs), which have behaviors different from regular on-disk files.
-pub trait FileIo: Pollable + InodeIo + Send + Sync + 'static {
+pub trait FileIo: Pollable + InodeIo + Any + Send + Sync + 'static {
     /// Checks whether the `seek()` operation should fail.
     fn check_seekable(&self) -> Result<()>;
 
@@ -477,11 +521,7 @@ pub trait FileIo: Pollable + InodeIo + Send + Sync + 'static {
     }
 }
 
-pub(super) fn do_seek_util(
-    offset: &Mutex<usize>,
-    pos: SeekFrom,
-    end: Option<usize>,
-) -> Result<usize> {
+fn do_seek_util(offset: &Mutex<usize>, pos: SeekFrom, end: Option<usize>) -> Result<usize> {
     let mut offset = offset.lock();
 
     let new_offset = match pos {
@@ -507,55 +547,4 @@ pub(super) fn do_seek_util(
 
     *offset = new_offset;
     Ok(new_offset)
-}
-
-pub(super) fn do_fallocate_util(
-    inode: &dyn Inode,
-    status_flags: StatusFlags,
-    mode: FallocMode,
-    offset: usize,
-    len: usize,
-) -> Result<()> {
-    let inode_type = inode.type_();
-    // TODO: `fallocate` on pipe files also fails with `ESPIPE`.
-    if inode_type == InodeType::NamedPipe {
-        return_errno_with_message!(Errno::ESPIPE, "the inode is a FIFO file");
-    }
-    if !(inode_type == InodeType::File || inode_type == InodeType::Dir) {
-        return_errno_with_message!(
-            Errno::ENODEV,
-            "the inode is not a regular file or a directory"
-        );
-    }
-
-    if status_flags.contains(StatusFlags::O_APPEND)
-        && (mode == FallocMode::PunchHoleKeepSize
-            || mode == FallocMode::CollapseRange
-            || mode == FallocMode::InsertRange)
-    {
-        return_errno_with_message!(
-            Errno::EPERM,
-            "the flags do not work on the append-only file"
-        );
-    }
-    if status_flags.contains(StatusFlags::O_DIRECT) || status_flags.contains(StatusFlags::O_PATH) {
-        return_errno_with_message!(
-            Errno::EBADF,
-            "currently fallocate file with O_DIRECT or O_PATH is not supported"
-        );
-    }
-
-    inode.fallocate(mode, offset, len)
-}
-
-pub(super) fn do_resize_util(
-    inode: &dyn Inode,
-    status_flags: StatusFlags,
-    new_size: usize,
-) -> Result<()> {
-    if status_flags.contains(StatusFlags::O_APPEND) {
-        // FIXME: It's allowed to `ftruncate` an append-only file on Linux.
-        return_errno_with_message!(Errno::EPERM, "can not resize append-only file");
-    }
-    inode.resize(new_size)
 }

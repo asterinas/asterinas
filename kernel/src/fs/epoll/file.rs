@@ -15,9 +15,9 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::{FdFlags, FileDesc, get_file_fast},
-        path::RESERVED_MOUNT_ID,
+        path::Path,
         pseudofs::AnonInodeFs,
-        utils::{CreationFlags, Inode},
+        utils::CreationFlags,
     },
     prelude::*,
     process::{
@@ -47,14 +47,19 @@ pub struct EpollFile {
     // Keep this in a separate `Arc` to avoid dropping `EpollFile` in the observer callback, which
     // may cause deadlocks.
     ready: Arc<ReadySet>,
+    /// The pseudo path associated with this epoll file.
+    pseudo_path: Path,
 }
 
 impl EpollFile {
     /// Creates a new epoll file.
     pub fn new() -> Arc<Self> {
+        let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:[eventpoll]".to_string());
+
         Arc::new(Self {
             interest: Mutex::new(BTreeSet::new()),
             ready: Arc::new(ReadySet::new()),
+            pseudo_path,
         })
     }
 
@@ -269,8 +274,8 @@ impl FileLike for EpollFile {
         return_errno_with_message!(Errno::ENOTTY, "epoll files do not support ioctl");
     }
 
-    fn inode(&self) -> &Arc<dyn Inode> {
-        AnonInodeFs::shared_inode()
+    fn path(&self) -> &Path {
+        &self.pseudo_path
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
@@ -288,9 +293,8 @@ impl FileLike for EpollFile {
 
                 writeln!(f, "pos:\t{}", 0)?;
                 writeln!(f, "flags:\t0{:o}", flags)?;
-                // TODO: This should be the mount ID of the pseudo filesystem.
-                writeln!(f, "mnt_id:\t{}", RESERVED_MOUNT_ID)?;
-                writeln!(f, "ino:\t{}", self.inner.inode().ino())?;
+                writeln!(f, "mnt_id:\t{}", AnonInodeFs::mount_node().id())?;
+                writeln!(f, "ino:\t{}", AnonInodeFs::shared_inode().ino())?;
                 for entry in self.inner.interest.lock().iter() {
                     writeln!(f, "{}", entry.0)?;
                 }

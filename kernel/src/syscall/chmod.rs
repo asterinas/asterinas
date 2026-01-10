@@ -16,10 +16,8 @@ pub fn sys_fchmod(fd: FileDesc, mode: u16, ctx: &Context) -> Result<SyscallRetur
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
-    file.inode().set_mode(InodeMode::from_bits_truncate(mode))?;
-    if let Some(path) = file.path() {
-        fs::notify::on_attr_change(path);
-    }
+    file.path().set_mode(InodeMode::from_bits_truncate(mode))?;
+    fs::notify::on_attr_change(file.path());
     Ok(SyscallReturn::Return(0))
 }
 
@@ -63,7 +61,7 @@ fn do_fchmodat(
         dirfd, path_name, mode, flags,
     );
 
-    let path_or_inode = {
+    let path = {
         let path_name = path_name.to_string_lossy();
         let fs_path = if flags.contains(ChmodFlags::AT_EMPTY_PATH) && path_name.is_empty() {
             FsPath::from_fd(dirfd)?
@@ -74,18 +72,14 @@ fn do_fchmodat(
         let fs_ref = ctx.thread_local.borrow_fs();
         let fs = fs_ref.resolver().read();
         if flags.contains(ChmodFlags::AT_SYMLINK_NOFOLLOW) {
-            fs.lookup_inode_no_follow(&fs_path)?
+            fs.lookup_no_follow(&fs_path)?
         } else {
-            fs.lookup_inode(&fs_path)?
+            fs.lookup(&fs_path)?
         }
     };
 
-    path_or_inode
-        .inode()
-        .set_mode(InodeMode::from_bits_truncate(mode))?;
-    if let Some(path) = path_or_inode.into_path() {
-        fs::notify::on_attr_change(&path);
-    }
+    path.set_mode(InodeMode::from_bits_truncate(mode))?;
+    fs::notify::on_attr_change(&path);
     Ok(SyscallReturn::Return(0))
 }
 
