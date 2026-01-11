@@ -1697,13 +1697,12 @@ impl InodeImpl {
         self.last_alloc_device_bid = if range.start == 0 {
             None
         } else {
-            Some(
+            let last_alloc_device_range =
                 DeviceRangeReader::new(&self.block_manager, (range.start - 1)..range.start)
                     .unwrap()
                     .read()
-                    .unwrap()
-                    .start,
-            )
+                    .unwrap();
+            last_alloc_device_range.map(|device_range| device_range.start)
         };
     }
 
@@ -2019,7 +2018,7 @@ impl<'a> DeviceRangeReader<'a> {
     ///
     /// Note that the returned device range size may be smaller than the requested range
     /// due to possible inconsecutive block allocation.
-    pub fn read(&mut self) -> Result<Range<Ext2Bid>> {
+    pub fn read(&mut self) -> Result<Option<Range<Ext2Bid>>> {
         let bid_path = BidPath::from(self.range.start);
         let max_cnt = self
             .range
@@ -2031,9 +2030,28 @@ impl<'a> DeviceRangeReader<'a> {
         let mut device_range: Option<Range<Ext2Bid>> = None;
         for i in start_idx..start_idx + max_cnt {
             let device_bid = match &self.indirect_block {
-                None => self.block_ptrs.direct(i),
+                None => match bid_path {
+                    BidPath::Direct(_) => self.block_ptrs.direct(i),
+                    _ => 0,
+                },
                 Some(indirect_block) => indirect_block.read_bid(i)?,
             };
+
+            // Skip sparse blocks which are not allocated
+            if device_bid == 0 {
+                match device_range {
+                    Some(ref mut range) => {
+                        // End the current range when hitting a sparse block
+                        break;
+                    }
+                    None => {
+                        // Skip leading sparse blocks, advance the logical range
+                        self.range.start += 1;
+                        continue;
+                    }
+                }
+            }
+
             match device_range {
                 Some(ref mut range) => {
                     if device_bid == range.end {
@@ -2047,7 +2065,16 @@ impl<'a> DeviceRangeReader<'a> {
                 }
             }
         }
-        let device_range = device_range.unwrap();
+
+        let device_range = match device_range {
+            Some(range) => range,
+            None => {
+                if !self.range.is_empty() {
+                    self.update_indirect_block()?;
+                }
+                return Ok(None);
+            }
+        };
 
         // Updates the range
         self.range.start += device_range.len() as Ext2Bid;
@@ -2056,7 +2083,7 @@ impl<'a> DeviceRangeReader<'a> {
             self.update_indirect_block()?;
         }
 
-        Ok(device_range)
+        Ok(Some(device_range))
     }
 
     fn update_indirect_block(&mut self) -> Result<()> {
@@ -2067,30 +2094,49 @@ impl<'a> DeviceRangeReader<'a> {
             }
             BidPath::Indirect(_) => {
                 let indirect_bid = self.block_ptrs.indirect();
-                let indirect_block = self.indirect_blocks.find(indirect_bid)?;
-                self.indirect_block = Some(indirect_block.clone());
+                if indirect_bid == 0 {
+                    self.indirect_block = None;
+                } else {
+                    let indirect_block = self.indirect_blocks.find(indirect_bid)?;
+                    self.indirect_block = Some(indirect_block.clone());
+                }
             }
             BidPath::DbIndirect(lvl1_idx, _) => {
-                let lvl1_indirect_bid = {
-                    let db_indirect_block =
-                        self.indirect_blocks.find(self.block_ptrs.db_indirect())?;
-                    db_indirect_block.read_bid(lvl1_idx as usize)?
-                };
-                let lvl1_indirect_block = self.indirect_blocks.find(lvl1_indirect_bid)?;
-                self.indirect_block = Some(lvl1_indirect_block.clone())
+                let db_indirect_bid = self.block_ptrs.db_indirect();
+                if db_indirect_bid == 0 {
+                    self.indirect_block = None;
+                } else {
+                    let db_indirect_block = self.indirect_blocks.find(db_indirect_bid)?;
+                    let lvl1_indirect_bid = db_indirect_block.read_bid(lvl1_idx as usize)?;
+                    if lvl1_indirect_bid == 0 {
+                        self.indirect_block = None;
+                    } else {
+                        let lvl1_indirect_block = self.indirect_blocks.find(lvl1_indirect_bid)?;
+                        self.indirect_block = Some(lvl1_indirect_block.clone());
+                    }
+                }
             }
             BidPath::TbIndirect(lvl1_idx, lvl2_idx, _) => {
-                let lvl2_indirect_bid = {
-                    let lvl1_indirect_bid = {
-                        let tb_indirect_block =
-                            self.indirect_blocks.find(self.block_ptrs.tb_indirect())?;
-                        tb_indirect_block.read_bid(lvl1_idx as usize)?
-                    };
-                    let lvl1_indirect_block = self.indirect_blocks.find(lvl1_indirect_bid)?;
-                    lvl1_indirect_block.read_bid(lvl2_idx as usize)?
-                };
-                let lvl2_indirect_block = self.indirect_blocks.find(lvl2_indirect_bid)?;
-                self.indirect_block = Some(lvl2_indirect_block.clone())
+                let tb_indirect_bid = self.block_ptrs.tb_indirect();
+                if tb_indirect_bid == 0 {
+                    self.indirect_block = None;
+                } else {
+                    let tb_indirect_block = self.indirect_blocks.find(tb_indirect_bid)?;
+                    let lvl1_indirect_bid = tb_indirect_block.read_bid(lvl1_idx as usize)?;
+                    if lvl1_indirect_bid == 0 {
+                        self.indirect_block = None;
+                    } else {
+                        let lvl1_indirect_block = self.indirect_blocks.find(lvl1_indirect_bid)?;
+                        let lvl2_indirect_bid = lvl1_indirect_block.read_bid(lvl2_idx as usize)?;
+                        if lvl2_indirect_bid == 0 {
+                            self.indirect_block = None;
+                        } else {
+                            let lvl2_indirect_block =
+                                self.indirect_blocks.find(lvl2_indirect_bid)?;
+                            self.indirect_block = Some(lvl2_indirect_block.clone());
+                        }
+                    }
+                }
             }
         }
 
@@ -2107,7 +2153,10 @@ impl Iterator for DeviceRangeReader<'_> {
         }
 
         let range = self.read().unwrap();
-        Some(range)
+        match range {
+            Some(range) => Some(range),
+            None => self.next(),
+        }
     }
 }
 
