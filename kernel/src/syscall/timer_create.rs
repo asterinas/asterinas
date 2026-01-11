@@ -108,7 +108,9 @@ pub fn sys_timer_create(
 
     let timer = create_timer(clockid, func, ctx)?;
 
-    let timer_id = current_process.timer_manager().add_posix_timer(timer);
+    let Some(timer_id) = current_process.timer_manager().add_posix_timer(timer) else {
+        return_errno_with_message!(Errno::EAGAIN, "timer IDs are exhausted");
+    };
     ctx.user_space().write_val(timer_id_addr, &timer_id)?;
     Ok(SyscallReturn::Return(0))
 }
