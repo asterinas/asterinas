@@ -18,7 +18,6 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use align_ext::AlignExt;
 use ostd::mm::{MAX_USERSPACE_VADDR, VmIo};
 
 use self::aux_vec::{AuxKey, AuxVec};
@@ -359,10 +358,9 @@ impl InitStackWriter<'_> {
     /// Writes u64 to the stack.
     /// Returns the writing address
     fn write_u64(&self, val: u64) -> Result<u64> {
-        let start_address = (self.pos() - 8).align_down(8);
-        self.pos.store(start_address, Ordering::Relaxed);
-        self.vmo.write_val(start_address - self.map_addr, &val)?;
-        Ok(self.pos() as u64)
+        let new_pos = self.reserve_pos(size_of::<u64>(), align_of::<u64>())?;
+        self.vmo.write_val(new_pos - self.map_addr, &val)?;
+        Ok(new_pos as u64)
     }
 
     /// Writes a CString including the ending null byte to the stack.
@@ -372,14 +370,23 @@ impl InitStackWriter<'_> {
         self.write_bytes(bytes)
     }
 
-    /// Writes u64 to the stack.
+    /// Writes bytes to the stack.
     /// Returns the writing address.
     fn write_bytes(&self, bytes: &[u8]) -> Result<u64> {
-        let len = bytes.len();
-        self.pos.fetch_sub(len, Ordering::Relaxed);
-        let pos = self.pos();
-        self.vmo.write_bytes(pos - self.map_addr, bytes)?;
-        Ok(pos as u64)
+        let new_pos = self.reserve_pos(bytes.len(), align_of::<u8>())?;
+        self.vmo.write_bytes(new_pos - self.map_addr, bytes)?;
+        Ok(new_pos as u64)
+    }
+
+    fn reserve_pos(&self, size: usize, align: usize) -> Result<Vaddr> {
+        if let Some(pos) = self.pos().checked_sub(size)
+            && let new_pos = pos & !(align - 1)
+            && new_pos >= self.map_addr
+        {
+            self.pos.store(new_pos, Ordering::Relaxed);
+            return Ok(new_pos);
+        }
+        return_errno_with_message!(Errno::E2BIG, "Init stack overflow");
     }
 
     fn pos(&self) -> Vaddr {
