@@ -6,7 +6,7 @@ use core::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use super::process_vm::{INIT_STACK_SIZE, USER_HEAP_SIZE_LIMIT};
+use super::process_vm::INIT_STACK_SIZE;
 use crate::{
     prelude::*,
     process::{UserNamespace, credentials::capabilities::CapSet},
@@ -48,8 +48,7 @@ impl Default for ResourceLimits {
         // Sets the resource limits with predefined values
         rlimits[ResourceType::RLIMIT_CPU as usize] = RLimit64::new(RLIM_INFINITY, RLIM_INFINITY);
         rlimits[ResourceType::RLIMIT_FSIZE as usize] = RLimit64::new(RLIM_INFINITY, RLIM_INFINITY);
-        rlimits[ResourceType::RLIMIT_DATA as usize] =
-            RLimit64::new(USER_HEAP_SIZE_LIMIT as u64, RLIM_INFINITY);
+        rlimits[ResourceType::RLIMIT_DATA as usize] = RLimit64::new(RLIM_INFINITY, RLIM_INFINITY);
         rlimits[ResourceType::RLIMIT_STACK as usize] =
             RLimit64::new(INIT_STACK_SIZE as u64, RLIM_INFINITY);
         rlimits[ResourceType::RLIMIT_CORE as usize] = RLimit64::new(0, RLIM_INFINITY);
