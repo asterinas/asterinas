@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FileDesc,
-        fs_resolver::{AT_FDCWD, FsPath, SplitPath},
+        path::{AT_FDCWD, FsPath, SplitPath},
         utils::InodeType,
     },
     prelude::*,
@@ -36,13 +36,13 @@ pub fn sys_renameat2(
     }
 
     let fs_ref = ctx.thread_local.borrow_fs();
-    let fs = fs_ref.resolver().read();
+    let path_resolver = fs_ref.resolver().read();
 
     let old_path_name = old_path_name.to_string_lossy();
     let (old_dir_path, old_name) = {
         let (old_parent_path_name, old_name) = old_path_name.split_dirname_and_basename()?;
         let old_fs_path = FsPath::from_fd_and_path(old_dirfd, old_parent_path_name)?;
-        (fs.lookup(&old_fs_path)?, old_name)
+        (path_resolver.lookup(&old_fs_path)?, old_name)
     };
     let old_path = old_dir_path.lookup(old_name)?;
     if old_path.type_() != InodeType::Dir && old_path_name.ends_with('/') {
@@ -56,7 +56,7 @@ pub fn sys_renameat2(
         }
         let (new_parent_path_name, new_name) = new_path_name.split_dirname_and_basename()?;
         let new_fs_path = FsPath::from_fd_and_path(new_dirfd, new_parent_path_name)?;
-        (fs.lookup(&new_fs_path)?, new_name)
+        (path_resolver.lookup(&new_fs_path)?, new_name)
     };
 
     // Check the absolute path

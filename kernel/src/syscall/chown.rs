@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::{FileDesc, get_file_fast},
-        fs_resolver::{AT_FDCWD, FsPath},
+        path::{AT_FDCWD, FsPath},
         utils::PATH_MAX,
     },
     prelude::*,
@@ -78,11 +78,11 @@ pub fn sys_fchownat(
         let fs_path = FsPath::from_fd_and_path(dirfd, &path_name)?;
 
         let fs_ref = ctx.thread_local.borrow_fs();
-        let fs = fs_ref.resolver().read();
+        let path_resolver = fs_ref.resolver().read();
         if flags.contains(ChownFlags::AT_SYMLINK_NOFOLLOW) {
-            fs.lookup_no_follow(&fs_path)?
+            path_resolver.lookup_no_follow(&fs_path)?
         } else {
-            fs.lookup(&fs_path)?
+            path_resolver.lookup(&fs_path)?
         }
     };
 

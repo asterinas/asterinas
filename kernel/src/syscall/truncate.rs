@@ -5,7 +5,7 @@ use crate::{
     fs,
     fs::{
         file_table::{FileDesc, get_file_fast},
-        fs_resolver::{AT_FDCWD, FsPath},
+        path::{AT_FDCWD, FsPath},
         utils::PATH_MAX,
     },
     prelude::*,

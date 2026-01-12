@@ -170,7 +170,7 @@ impl ContextSetNsAdminApi for Context<'_> {
         // other dependent fields of a posix thread may also need to be updated.
 
         if !Arc::ptr_eq(&thread_local_ns_proxy.unwrap().mnt_ns, &ns_proxy.mnt_ns) {
-            *self.thread_local.borrow_fs().resolver().write() = ns_proxy.mnt_ns.new_fs_resolver();
+            *self.thread_local.borrow_fs().resolver().write() = ns_proxy.mnt_ns.new_path_resolver();
         }
 
         *pthread_ns_proxy = Some(ns_proxy.clone());

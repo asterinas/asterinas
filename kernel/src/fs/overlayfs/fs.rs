@@ -19,9 +19,8 @@ use ostd::{
 
 use crate::{
     fs::{
-        fs_resolver::FsPath,
         inode_handle::FileIo,
-        path::Path,
+        path::{FsPath, Path},
         registry::{FsProperties, FsType},
         utils::{
             AccessMode, DirentCounter, DirentVisitor, Extension, FallocMode, FileSystem,
@@ -1180,14 +1179,18 @@ impl FsType for OverlayFsType {
         let task = Task::current().unwrap();
         let thread_local = task.as_thread_local().unwrap();
         let fs_ref = thread_local.borrow_fs();
-        let fs = fs_ref.resolver().read();
+        let path_resolver = fs_ref.resolver().read();
 
-        let upper = fs.lookup(&FsPath::try_from(upper)?)?;
+        let upper = path_resolver.lookup(&FsPath::try_from(upper)?)?;
         let lower = lower
             .iter()
-            .map(|&lower| fs.lookup(&FsPath::try_from(lower).unwrap()).unwrap())
+            .map(|&lower| {
+                path_resolver
+                    .lookup(&FsPath::try_from(lower).unwrap())
+                    .unwrap()
+            })
             .collect();
-        let work = fs.lookup(&FsPath::try_from(work)?)?;
+        let work = path_resolver.lookup(&FsPath::try_from(work)?)?;
 
         OverlayFs::new(upper, lower, work).map(|fs| fs as _)
     }

@@ -4,13 +4,13 @@ use alloc::str;
 
 use ostd::task::Task;
 
-use super::{
-    file_table::{FileDesc, get_file_fast},
-    path::Path,
-    utils::{InodeType, PATH_MAX, SYMLINKS_MAX},
-};
+use super::Path;
 use crate::{
-    fs::{path::MountNamespace, utils::SymbolicLink},
+    fs::{
+        file_table::{FileDesc, get_file_fast},
+        path::MountNamespace,
+        utils::{InodeType, PATH_MAX, SYMLINKS_MAX, SymbolicLink},
+    },
     prelude::*,
     process::posix_thread::AsThreadLocal,
 };
@@ -20,13 +20,13 @@ pub const AT_FDCWD: FileDesc = -100;
 
 /// File system resolver.
 #[derive(Debug, Clone)]
-pub struct FsResolver {
+pub struct PathResolver {
     root: Path,
     cwd: Path,
 }
 
-impl FsResolver {
-    /// Creates a new `FsResolver` with the given `root` and `cwd`.
+impl PathResolver {
+    /// Creates a new `PathResolver` with the given `root` and `cwd`.
     pub(super) fn new(root: Path, cwd: Path) -> Self {
         Self { root, cwd }
     }
@@ -51,7 +51,7 @@ impl FsResolver {
         self.root = path;
     }
 
-    /// Switches the `FsResolver` to the given mount namespace.
+    /// Switches the `PathResolver` to the given mount namespace.
     ///
     /// If the target namespace already owns both the current root and working directory's
     /// mount nodes, the operation is a no-op and returns immediately.

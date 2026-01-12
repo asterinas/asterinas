@@ -8,7 +8,7 @@ use ostd::{cpu::CpuId, util::id_set::Id};
 use spin::once::Once;
 
 use crate::{
-    fs::{fs_resolver::FsResolver, path::MountNamespace},
+    fs::path::{MountNamespace, PathResolver},
     prelude::*,
     process::{Process, spawn_init_process},
     sched::SchedPolicy,
@@ -137,7 +137,7 @@ fn first_kthread() {
     println!("[kernel] Spawn the first kernel thread");
 
     let init_mnt_ns = MountNamespace::get_init_singleton();
-    let fs_resolver = init_mnt_ns.new_fs_resolver();
+    let fs_resolver = init_mnt_ns.new_path_resolver();
     init_in_first_kthread(&fs_resolver);
 
     print_banner();
@@ -155,14 +155,14 @@ fn first_kthread() {
 
 static INIT_PROCESS: Once<Arc<Process>> = Once::new();
 
-fn init_in_first_kthread(fs_resolver: &FsResolver) {
+fn init_in_first_kthread(path_resolver: &PathResolver) {
     component::init_all(InitStage::Kthread, component::parse_metadata!()).unwrap();
     // Work queue should be initialized before interrupt is enabled,
     // in case any irq handler uses work queue as bottom half
     crate::thread::work_queue::init_in_first_kthread();
     crate::device::init_in_first_kthread();
     crate::net::init_in_first_kthread();
-    crate::fs::init_in_first_kthread(fs_resolver);
+    crate::fs::init_in_first_kthread(path_resolver);
     crate::ipc::init_in_first_kthread();
     #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
     crate::vdso::init_in_first_kthread();

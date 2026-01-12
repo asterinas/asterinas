@@ -158,8 +158,8 @@ impl PosixThreadBuilder {
         let user_ns = user_ns.unwrap_or_else(|| UserNamespace::get_init_singleton().clone());
         let ns_proxy = ns_proxy.unwrap_or_else(|| NsProxy::get_init_singleton().clone());
 
-        let fs =
-            fs.unwrap_or_else(|| Arc::new(ThreadFsInfo::new(ns_proxy.mnt_ns().new_fs_resolver())));
+        let fs = fs
+            .unwrap_or_else(|| Arc::new(ThreadFsInfo::new(ns_proxy.mnt_ns().new_path_resolver())));
 
         let vmar = process.upgrade().unwrap().lock_vmar().dup_vmar().unwrap();
 

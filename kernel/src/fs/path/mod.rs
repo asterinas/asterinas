@@ -7,6 +7,7 @@ use core::time::Duration;
 use inherit_methods_macro::inherit_methods;
 pub use mount::{Mount, MountPropType, PerMountFlags};
 pub use mount_namespace::MountNamespace;
+pub use resolver::{AT_FDCWD, FsPath, LookupResult, PathResolver, SplitPath};
 
 use crate::{
     fs::{
@@ -24,6 +25,7 @@ use crate::{
 mod dentry;
 mod mount;
 mod mount_namespace;
+mod resolver;
 
 /// A `Path` is used to represent an exact location in the VFS tree.
 ///

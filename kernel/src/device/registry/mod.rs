@@ -5,7 +5,7 @@ use device_id::DeviceId;
 use crate::{
     fs::{
         device::{Device, DeviceType},
-        fs_resolver::FsResolver,
+        path::PathResolver,
     },
     prelude::*,
 };
@@ -17,9 +17,9 @@ pub(super) fn init_in_first_kthread() {
     block::init_in_first_kthread();
 }
 
-pub(super) fn init_in_first_process(fs_resolver: &FsResolver) -> Result<()> {
-    char::init_in_first_process(fs_resolver)?;
-    block::init_in_first_process(fs_resolver)?;
+pub(super) fn init_in_first_process(path_resolver: &PathResolver) -> Result<()> {
+    char::init_in_first_process(path_resolver)?;
+    block::init_in_first_process(path_resolver)?;
 
     Ok(())
 }

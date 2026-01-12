@@ -4,8 +4,8 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::{FdFlags, FileDesc, get_file_fast},
-        fs_resolver::FsPath,
         notify::inotify::{InotifyControls, InotifyEvents, InotifyFile},
+        path::FsPath,
         utils::{InodeType, Permission},
     },
     prelude::*,

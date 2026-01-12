@@ -9,7 +9,7 @@ use self::{
 };
 use crate::{
     fs::{
-        fs_resolver::{FsPath, FsResolver},
+        path::{FsPath, PathResolver},
         utils::{Inode, InodeType, Permission},
     },
     prelude::*,
@@ -32,7 +32,7 @@ impl ProgramToLoad {
     /// necessary.
     pub(super) fn build_from_inode(
         mut elf_inode: Arc<dyn Inode>,
-        fs_resolver: &FsResolver,
+        path_resolver: &PathResolver,
         mut argv: Vec<CString>,
         envp: Vec<CString>,
     ) -> Result<Self> {
@@ -64,7 +64,7 @@ impl ProgramToLoad {
             let interpreter = {
                 let filename = new_argv[0].to_str()?.to_string();
                 let fs_path = FsPath::try_from(filename.as_str())?;
-                fs_resolver.lookup(&fs_path)?
+                path_resolver.lookup(&fs_path)?
             };
             check_executable_inode(interpreter.inode().as_ref())?;
 
@@ -87,11 +87,15 @@ impl ProgramToLoad {
     /// Loads the executable into the specified virtual memory space.
     ///
     /// Returns the information about the ELF loading process.
-    pub(super) fn load_to_vmar(self, vmar: &Vmar, fs_resolver: &FsResolver) -> Result<ElfLoadInfo> {
+    pub(super) fn load_to_vmar(
+        self,
+        vmar: &Vmar,
+        path_resolver: &PathResolver,
+    ) -> Result<ElfLoadInfo> {
         let elf_load_info = load_elf_to_vmar(
             vmar,
             &self.elf_inode,
-            fs_resolver,
+            path_resolver,
             self.elf_headers,
             self.argv,
             self.envp,

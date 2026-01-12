@@ -5,7 +5,7 @@ use crate::{
     fs,
     fs::{
         file_table::{FileDesc, get_file_fast},
-        fs_resolver::{AT_FDCWD, FsPath},
+        path::{AT_FDCWD, FsPath},
         utils::{InodeMode, PATH_MAX},
     },
     prelude::*,
@@ -70,11 +70,11 @@ fn do_fchmodat(
         };
 
         let fs_ref = ctx.thread_local.borrow_fs();
-        let fs = fs_ref.resolver().read();
+        let path_resolver = fs_ref.resolver().read();
         if flags.contains(ChmodFlags::AT_SYMLINK_NOFOLLOW) {
-            fs.lookup_no_follow(&fs_path)?
+            path_resolver.lookup_no_follow(&fs_path)?
         } else {
-            fs.lookup(&fs_path)?
+            path_resolver.lookup(&fs_path)?
         }
     };
 

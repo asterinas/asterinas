@@ -11,8 +11,8 @@ use crate::{
     fs::{
         devpts::Ptmx,
         file_table::FdFlags,
-        fs_resolver::FsPath,
         inode_handle::FileIo,
+        path::FsPath,
         utils::{AccessMode, InodeIo, OpenArgs, StatusFlags, mkmod},
     },
     prelude::*,

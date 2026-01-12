@@ -3,8 +3,7 @@
 use crate::{
     fs::{
         devpts::{DevPts, Ptmx},
-        fs_resolver::{FsPath, FsResolver},
-        path::{Path, PerMountFlags},
+        path::{FsPath, Path, PathResolver, PerMountFlags},
         utils::{InodeType, mkmod},
     },
     prelude::*,
@@ -21,8 +20,8 @@ use spin::Once;
 
 static DEV_PTS: Once<Path> = Once::new();
 
-pub fn init_in_first_process(fs_resolver: &FsResolver, ctx: &Context) -> Result<()> {
-    let dev = fs_resolver.lookup(&FsPath::try_from("/dev")?)?;
+pub fn init_in_first_process(path_resolver: &PathResolver, ctx: &Context) -> Result<()> {
+    let dev = path_resolver.lookup(&FsPath::try_from("/dev")?)?;
     // Create the "pts" directory and mount devpts on it.
     let devpts_path = dev.new_fs_child("pts", InodeType::Dir, mkmod!(a+rx, u+w))?;
     let devpts_mount = devpts_path.mount(DevPts::new(), PerMountFlags::default(), ctx)?;

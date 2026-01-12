@@ -5,8 +5,7 @@ use device_id::DeviceId;
 use super::SyscallReturn;
 use crate::{
     fs::{
-        fs_resolver::{AT_FDCWD, FsPath},
-        path::{MountPropType, Path, PerMountFlags},
+        path::{AT_FDCWD, FsPath, MountPropType, Path, PerMountFlags},
         registry::FsProperties,
         utils::{FileSystem, FsFlags, InodeType},
     },

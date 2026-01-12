@@ -9,7 +9,6 @@ pub mod exfat;
 pub mod ext2;
 pub mod file_handle;
 pub mod file_table;
-pub mod fs_resolver;
 pub mod inode_handle;
 pub mod notify;
 pub mod overlayfs;
@@ -28,7 +27,7 @@ pub mod utils;
 use crate::{
     fs::{
         file_table::FdFlags,
-        fs_resolver::{FsPath, FsResolver},
+        path::{FsPath, PathResolver},
         utils::{AccessMode, OpenArgs, mkmod},
     },
     prelude::*,
@@ -57,19 +56,19 @@ pub fn init_on_each_cpu() {
     procfs::init_on_each_cpu();
 }
 
-pub fn init_in_first_kthread(fs_resolver: &FsResolver) {
-    rootfs::init_in_first_kthread(fs_resolver).unwrap();
+pub fn init_in_first_kthread(path_resolver: &PathResolver) {
+    rootfs::init_in_first_kthread(path_resolver).unwrap();
 }
 
 pub fn init_in_first_process(ctx: &Context) {
     let fs = ctx.thread_local.borrow_fs();
-    let fs_resolver = fs.resolver().read();
+    let path_resolver = fs.resolver().read();
 
     // Initialize the file table for the first process.
     let tty_path = FsPath::try_from("/dev/console").unwrap();
     let stdin = {
         let open_args = OpenArgs::from_modes(AccessMode::O_RDONLY, mkmod!(u+r));
-        fs_resolver
+        path_resolver
             .lookup(&tty_path)
             .unwrap()
             .open(open_args)
@@ -77,7 +76,7 @@ pub fn init_in_first_process(ctx: &Context) {
     };
     let stdout = {
         let open_args = OpenArgs::from_modes(AccessMode::O_WRONLY, mkmod!(u+w));
-        fs_resolver
+        path_resolver
             .lookup(&tty_path)
             .unwrap()
             .open(open_args)
@@ -85,7 +84,7 @@ pub fn init_in_first_process(ctx: &Context) {
     };
     let stderr = {
         let open_args = OpenArgs::from_modes(AccessMode::O_WRONLY, mkmod!(u+w));
-        fs_resolver
+        path_resolver
             .lookup(&tty_path)
             .unwrap()
             .open(open_args)

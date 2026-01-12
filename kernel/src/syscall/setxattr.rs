@@ -8,8 +8,7 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::{FileDesc, get_file_fast},
-        fs_resolver::{AT_FDCWD, FsPath},
-        path::Path,
+        path::{AT_FDCWD, FsPath, Path},
         utils::{
             XATTR_NAME_MAX_LEN, XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace, XattrSetFlags,
         },
@@ -136,11 +135,11 @@ pub(super) fn lookup_path_for_xattr<'a>(
             let path = path.to_string_lossy();
             let fs_path = FsPath::from_fd_and_path(AT_FDCWD, &path)?;
             let fs_ref = ctx.thread_local.borrow_fs();
-            let fs = fs_ref.resolver().read();
+            let path_resolver = fs_ref.resolver().read();
             let path = if symlink_no_follow {
-                fs.lookup_no_follow(&fs_path)?
+                path_resolver.lookup_no_follow(&fs_path)?
             } else {
-                fs.lookup(&fs_path)?
+                path_resolver.lookup(&fs_path)?
             };
             Ok(Cow::Owned(path))
         };

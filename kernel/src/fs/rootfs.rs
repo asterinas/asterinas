@@ -7,7 +7,7 @@ use libflate::gzip::Decoder as GZipDecoder;
 use ostd::boot::boot_info;
 
 use super::{
-    fs_resolver::{FsPath, FsResolver},
+    path::{FsPath, PathResolver},
     utils::{InodeMode, InodeType},
 };
 use crate::{fs::path::is_dot, prelude::*};
@@ -27,7 +27,7 @@ impl Read for BoxedReader<'_> {
 }
 
 /// Unpack and prepare the rootfs from the initramfs CPIO buffer.
-pub fn init_in_first_kthread(fs_resolver: &FsResolver) -> Result<()> {
+pub fn init_in_first_kthread(path_resolver: &PathResolver) -> Result<()> {
     let initramfs_buf = boot_info().initramfs.expect("No initramfs found!");
 
     let reader = {
@@ -73,9 +73,9 @@ pub fn init_in_first_kthread(fs_resolver: &FsResolver) -> Result<()> {
         // The mkinitramfs script uses `find` command to ensure that the entries are
         // sorted that a directory always appears before its child directories and files.
         let (parent, name) = if let Some((prefix, last)) = entry_name.rsplit_once('/') {
-            (fs_resolver.lookup(&FsPath::try_from(prefix)?)?, last)
+            (path_resolver.lookup(&FsPath::try_from(prefix)?)?, last)
         } else {
-            (fs_resolver.root().clone(), entry_name)
+            (path_resolver.root().clone(), entry_name)
         };
 
         let metadata = entry.metadata();

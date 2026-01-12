@@ -6,8 +6,8 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::{FdFlags, FileDesc},
-        fs_resolver::{AT_FDCWD, FsPath, FsResolver, LookupResult},
         inode_handle::InodeHandle,
+        path::{AT_FDCWD, FsPath, LookupResult, PathResolver},
         utils::{AccessMode, CreationFlags, InodeMode, InodeType, OpenArgs, StatusFlags},
     },
     prelude::*,
@@ -34,9 +34,9 @@ pub fn sys_openat(
         let fs_ref = ctx.thread_local.borrow_fs();
         let mask_mode = mode & !fs_ref.umask().get();
 
-        let fs_resolver = fs_ref.resolver().read();
+        let path_resolver = fs_ref.resolver().read();
         do_open(
-            &fs_resolver,
+            &path_resolver,
             &fs_path,
             flags,
             InodeMode::from_bits_truncate(mask_mode),
@@ -74,7 +74,7 @@ pub fn sys_creat(path_addr: Vaddr, mode: u16, ctx: &Context) -> Result<SyscallRe
 }
 
 fn do_open(
-    fs_resolver: &FsResolver,
+    path_resolver: &PathResolver,
     fs_path: &FsPath,
     flags: u32,
     mode: InodeMode,
@@ -82,9 +82,9 @@ fn do_open(
     let open_args = OpenArgs::from_flags_and_mode(flags, mode)?;
 
     let lookup_res = if open_args.follow_tail_link() {
-        fs_resolver.lookup_unresolved(fs_path)?
+        path_resolver.lookup_unresolved(fs_path)?
     } else {
-        fs_resolver.lookup_unresolved_no_follow(fs_path)?
+        path_resolver.lookup_unresolved_no_follow(fs_path)?
     };
 
     let file_handle: Arc<dyn FileLike> = match lookup_res {
