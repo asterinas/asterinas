@@ -1,5 +1,8 @@
 AllocateTest.Fallocate
-AllocateTest.FallocatePipe
 AllocateTest.FallocateChar
-AllocateTest.FallocateRlimit
+AllocateTest.FallocateInvalid
 AllocateTest.FallocateOtherFDs
+AllocateTest.FallocatePipe
+AllocateTest.FallocateReadonly
+AllocateTest.FallocateRlimit
+AllocateTest.FallocateWithOpath

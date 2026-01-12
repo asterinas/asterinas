@@ -3,9 +3,12 @@ PrivateFutexTest.*
 RobustFutexTest.*
 SharedFutexTest.WakeInterprocessFile_NoRandomSave
 
+SharedPrivate/PrivateAndSharedFutexTest.NoWakeInterprocessPrivateAnon/0
 SharedPrivate/PrivateAndSharedFutexTest.NoWakeInterprocessPrivateAnon_NoRandomSave/*
 
 SharedPrivate/PrivateAndSharedFutexTest.PIBasic/*
+SharedPrivate/PrivateAndSharedFutexTest.PIConcurrency/0
+SharedPrivate/PrivateAndSharedFutexTest.PIConcurrency/1
 SharedPrivate/PrivateAndSharedFutexTest.PIConcurrency_NoRandomSave/*
 SharedPrivate/PrivateAndSharedFutexTest.PIWaiters/*
 SharedPrivate/PrivateAndSharedFutexTest.PITryLock/*
