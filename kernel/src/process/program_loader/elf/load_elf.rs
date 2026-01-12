@@ -19,12 +19,25 @@ use crate::{
         process_vm::{AuxKey, AuxVec},
         program_loader::check_executable_inode,
     },
+    util::random::getrandom,
     vm::{
         perms::VmPerms,
         vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR, Vmar},
         vmo::Vmo,
     },
 };
+
+/// The base address for PIE (ET_DYN with INTERP) loading.
+///
+/// Linux calls this `ELF_ET_DYN_BASE`. It has some intentions:
+/// - The base load address for PIE programs (ET_DYN with INTERP).
+/// - The heap start address for static PIE programs (ET_DYN without INTERP).
+///
+/// References: <https://elixir.bootlin.com/linux/v6.16.9/source/arch/x86/include/asm/elf.h#L235>
+/// - x86_64:       ELF_ET_DYN_BASE = DEFAULT_MAP_WINDOW / 3 * 2
+/// - riscv64:      ELF_ET_DYN_BASE = (DEFAULT_MAP_WINDOW / 3) * 2
+/// - loongarch64:  ELF_ET_DYN_BASE = TASK_SIZE / 3 * 2
+const PIE_BASE_ADDR: Vaddr = VMAR_CAP_ADDR / 3 * 2;
 
 pub struct ElfLoadInfo {
     /// The relocated entry point.
@@ -132,7 +145,7 @@ fn map_vmos_and_build_aux_vec(
         None
     };
 
-    let elf_map_range = map_segment_vmos(parsed_elf, vmar, elf_inode)?;
+    let elf_map_range = map_segment_vmos(parsed_elf, vmar, elf_inode, ldso_load_info.is_some())?;
 
     let mut aux_vec = {
         let ldso_base = ldso_load_info
@@ -176,7 +189,7 @@ struct LdsoLoadInfo {
 }
 
 fn load_ldso(vmar: &Vmar, ldso_file: &Path, ldso_elf: &ElfHeaders) -> Result<LdsoLoadInfo> {
-    let range = map_segment_vmos(ldso_elf, vmar, ldso_file.inode())?;
+    let range = map_segment_vmos(ldso_elf, vmar, ldso_file.inode(), false)?;
     let entry_point = range
         .relocated_addr_of(ldso_elf.entry_point())
         .ok_or_else(|| {
@@ -199,6 +212,7 @@ fn map_segment_vmos(
     elf: &ElfHeaders,
     vmar: &Vmar,
     elf_inode: &Arc<dyn Inode>,
+    has_interpreter: bool,
 ) -> Result<RelocatedRange> {
     let elf_va_range = elf.calc_total_vaddr_bounds();
 
@@ -220,8 +234,40 @@ fn map_segment_vmos(
             elf_va_range.start.align_down(align)..elf_va_range.end.align_up(align);
         let map_size = elf_va_range_aligned.len();
 
-        let vmar_map_options = vmar.new_map(map_size, VmPerms::empty())?.align(align);
+        // There are effectively two types of ET_DYN ELF binaries:
+        // - PIE programs (ET_DYN with PT_INTERP) and
+        // - static PIE programs (ET_DYN without PT_INTERP, usually the ELF interpreter itself).
+        //
+        // Reference: <https://elixir.bootlin.com/linux/v6.19-rc2/source/fs/binfmt_elf.c#L1109>
+        let vmar_map_options = if has_interpreter {
+            // PIE program: map near a dedicated base.
+
+            // Add some random padding.
+            let nr_pages_padding = {
+                let mut nr_random_padding_pages: u8 = 0;
+                getrandom(nr_random_padding_pages.as_bytes_mut());
+                nr_random_padding_pages as usize
+            };
+            let offset = (PIE_BASE_ADDR + nr_pages_padding * PAGE_SIZE).align_down(align);
+
+            if offset < VMAR_LOWEST_ADDR {
+                return_errno_with_message!(Errno::EPERM, "the mapping address is too small");
+            }
+            if VMAR_CAP_ADDR - offset < map_size {
+                return_errno_with_message!(Errno::ENOMEM, "the mapping address is too large");
+            }
+            vmar.new_map(map_size, VmPerms::empty())?
+                .align(align)
+                .offset(offset)
+        } else {
+            // Static PIE program: pick an aligned address from the mmap region.
+            vmar.new_map(map_size, VmPerms::empty())?.align(align)
+        };
         let aligned_range = vmar_map_options.build().map(|addr| addr..addr + map_size)?;
+
+        // After acquiring a suitable range, we can remove the mapping and then
+        // map each segment at the desired address.
+        vmar.remove_mapping(aligned_range.clone())?;
 
         let start_offset = elf_va_range.start - elf_va_range_aligned.start;
         let end_offset = elf_va_range_aligned.end - elf_va_range.end;
@@ -245,6 +291,10 @@ fn map_segment_vmos(
         vmar.new_map(map_size, VmPerms::empty())?
             .offset(elf_va_range_aligned.start)
             .build()?;
+
+        // After acquiring a suitable range, we can remove the mapping and then
+        // map each segment at the desired address.
+        vmar.remove_mapping(elf_va_range_aligned.clone())?;
 
         elf_va_range.clone()
     };
