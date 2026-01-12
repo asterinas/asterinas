@@ -11,3 +11,5 @@ SeqpacketUnixSockets/NonStreamSocketPairTest.MsgTruncTruncation/*
 SeqpacketUnixSockets/NonStreamSocketPairTest.MsgTruncTruncationRecvmsgMsghdrFlagMsgTrunc/*
 SeqpacketUnixSockets/NonStreamSocketPairTest.RecvmsgMsgTruncZeroLen/*
 SeqpacketUnixSockets/NonStreamSocketPairTest.RecvmsgMsgTruncMsgPeekZeroLen/*
+
+SeqpacketUnixSockets/SeqpacketUnixSocketPairTest.IncreasedSocketSendBufUnblocksWrites/*

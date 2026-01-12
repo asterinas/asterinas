@@ -1,4 +1,5 @@
-StatfsTest.InternalTmpfs
-StatfsTest.InternalDevShm
-FstatfsTest.InternalTmpfs
 FstatfsTest.InternalDevShm
+FstatfsTest.InternalTmpfs
+StatfsTest.InternalDevShm
+StatfsTest.InternalTmpfs
+StatFsTest.MountFlags

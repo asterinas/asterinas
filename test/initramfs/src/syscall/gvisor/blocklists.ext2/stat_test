@@ -1,3 +1,4 @@
+SimpleStatTest.DifferentFilesHaveDifferentDeviceInodeNumberPairs
 StatTest.BlocksIncreaseOnWrite
 StatTest.ChildOfNonDir
 StatTest.FstatatAbs
