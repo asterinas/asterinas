@@ -12,14 +12,14 @@ The benchmarks are run automatically on a nightly basis through continuous integ
 
 The benchmark collection is organized into benchmark suites, each dedicated to a specific benchmarking tool or application. These suites focus on comparing the performance of different operating systems using a particular methodology. Currently, there are eight benchmark suites, each located in its own directory:
 
-- [lmbench](https://github.com/asterinas/asterinas/tree/main/test/src/benchmark/lmbench)
-- [sysbench](https://github.com/asterinas/asterinas/tree/main/test/src/benchmark/sysbench)
-- [fio](https://github.com/asterinas/asterinas/tree/main/test/src/benchmark/fio)
-- [iperf](https://github.com/asterinas/asterinas/tree/main/test/src/benchmark/iperf)
-- [sqlite](https://github.com/asterinas/asterinas/tree/main/test/src/benchmark/sqlite)
-- [redis](https://github.com/asterinas/asterinas/tree/main/test/src/benchmark/redis)
-- [nginx](https://github.com/asterinas/asterinas/tree/main/test/src/benchmark/nginx)
-- [memcached](https://github.com/asterinas/asterinas/tree/main/test/src/benchmark/memcached)
+- [lmbench](https://github.com/asterinas/asterinas/tree/main/test/initramfs/src/benchmark/lmbench)
+- [sysbench](https://github.com/asterinas/asterinas/tree/main/test/initramfs/src/benchmark/sysbench)
+- [fio](https://github.com/asterinas/asterinas/tree/main/test/initramfs/src/benchmark/fio)
+- [iperf](https://github.com/asterinas/asterinas/tree/main/test/initramfs/src/benchmark/iperf)
+- [sqlite](https://github.com/asterinas/asterinas/tree/main/test/initramfs/src/benchmark/sqlite)
+- [redis](https://github.com/asterinas/asterinas/tree/main/test/initramfs/src/benchmark/redis)
+- [nginx](https://github.com/asterinas/asterinas/tree/main/test/initramfs/src/benchmark/nginx)
+- [memcached](https://github.com/asterinas/asterinas/tree/main/test/initramfs/src/benchmark/memcached)
 
 Each suite has a corresponding web page (e.g., [LMbench results](https://asterinas.github.io/benchmark/x86-64/lmbench/)) that publishes the latest performance data. At the top of each page, a summary table showcases the most recent results, configured using the `summary.json` file in the suite's directory.
 
@@ -33,7 +33,7 @@ Each benchmark suite is divided into benchmark jobs, which perform specific benc
 └── <bench_job_b>/
 ```
 
-Benchmark jobs can be executed using the `bench_linux_and_aster.sh` script located in the `test/src/benchmark/` directory:
+Benchmark jobs can be executed using the `bench_linux_and_aster.sh` script located in the `test/initramfs/src/benchmark/` directory:
 
 ```bash
 ./bench_linux_and_aster.sh <bench_suite>/<bench_job>
@@ -96,7 +96,7 @@ To seamlessly integrate new benchmarks into the Asterinas Benchmark Collection, 
 
 ### Step 1: Add the Directory Structure
 
-Each benchmark job should be added under the corresponding suite in the `test/src/benchmark` directory.
+Each benchmark job should be added under the corresponding suite in the `test/initramfs/src/benchmark` directory.
 
 #### Directory Structure
 
@@ -217,7 +217,7 @@ Firstly, we can run the benchmark locally to ensure it works as expected. The fo
 
 ```bash
 cd asterinas/
-bash test/src/benchmark/bench_linux_and_aster.sh <bench_suite>/<bench_job>
+bash test/initramfs/src/benchmark/bench_linux_and_aster.sh <bench_suite>/<bench_job>
 ```
 
 Secondly, we can validate modifications by running the CI pipeline on our own repository. To do this, we need to modify the `runs-on` field from `self-hosted` to `ubuntu-latest` on `.github/benchmarks.yml`. Then, we can manually trigger the CI pipeline on our own repository to ensure the new benchmark is correctly executed. After validation, we can reverse the `runs-on` field back to `self-hosted`.

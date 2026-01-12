@@ -21,7 +21,7 @@ OSTD_TASK_STACK_SIZE_IN_PAGES ?= 64
 FEATURES ?=
 NO_DEFAULT_FEATURES ?= 0
 COVERAGE ?= 0
-# Specify whether to build regression tests under `test/src/apps`.
+# Specify whether to build regression tests under `test/initramfs/src/apps`.
 ENABLE_BASIC_TEST ?= false
 # Specify the primary system console (supported: hvc0, tty0).
 # - hvc0: The virtio-console terminal.
@@ -192,7 +192,7 @@ endif
 
 # Skip GZIP to make encoding and decoding of initramfs faster
 ifeq ($(INITRAMFS_SKIP_GZIP),1)
-CARGO_OSDK_INITRAMFS_OPTION := --initramfs=$(abspath test/build/initramfs.cpio)
+CARGO_OSDK_INITRAMFS_OPTION := --initramfs=$(abspath test/initramfs/build/initramfs.cpio)
 CARGO_OSDK_COMMON_ARGS += $(CARGO_OSDK_INITRAMFS_OPTION)
 endif
 
@@ -296,7 +296,7 @@ check_vdso:
 
 .PHONY: initramfs
 initramfs: check_vdso
-	@$(MAKE) --no-print-directory -C test
+	@$(MAKE) --no-print-directory -C test/initramfs
 
 # Build the kernel with an initramfs
 .PHONY: kernel
@@ -425,7 +425,7 @@ book:
 format:
 	@./tools/format_all.sh
 	@nixfmt ./distro
-	@$(MAKE) --no-print-directory -C test format
+	@$(MAKE) --no-print-directory -C test/initramfs format
 
 .PHONY: check
 check: initramfs $(CARGO_OSDK)
@@ -469,7 +469,7 @@ check: initramfs $(CARGO_OSDK)
 	done
 	@
 	@# Check formatting issues of the C code and Nix files (regression tests)
-	@$(MAKE) --no-print-directory -C test check
+	@$(MAKE) --no-print-directory -C test/initramfs check
 	@
 	@# Check typos
 	@typos
@@ -485,6 +485,6 @@ clean:
 	@echo "Cleaning up mdBook output files"
 	@cd book && mdbook clean
 	@echo "Cleaning up test target files"
-	@$(MAKE) --no-print-directory -C test clean
+	@$(MAKE) --no-print-directory -C test/initramfs clean
 	@echo "Uninstalling OSDK"
 	@rm -f $(CARGO_OSDK)

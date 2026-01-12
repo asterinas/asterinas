@@ -88,8 +88,8 @@ COMMON_QEMU_ARGS="\
     $NETDEV_ARGS \
     $QEMU_OPT_ARG_DUMP_PACKETS \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
-    -drive if=none,format=raw,id=x0,file=./test/build/ext2.img \
-    -drive if=none,format=raw,id=x1,file=./test/build/exfat.img \
+    -drive if=none,format=raw,id=x0,file=./test/initramfs/build/ext2.img \
+    -drive if=none,format=raw,id=x1,file=./test/initramfs/build/exfat.img \
 "
 
 if [ "$1" = "iommu" ]; then
