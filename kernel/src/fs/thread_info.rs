@@ -4,26 +4,26 @@ use core::sync::atomic::Ordering;
 
 use ostd::sync::RwMutex;
 
-use super::{fs_resolver::FsResolver, utils::AtomicFileCreationMask};
+use super::{path::PathResolver, utils::AtomicFileCreationMask};
 use crate::fs::utils::FileCreationMask;
 
 /// FS information for a POSIX thread.
 pub struct ThreadFsInfo {
-    resolver: RwMutex<FsResolver>,
+    resolver: RwMutex<PathResolver>,
     umask: AtomicFileCreationMask,
 }
 
 impl ThreadFsInfo {
-    /// Creates a new `ThreadFsInfo` with the given [`FsResolver`].
-    pub fn new(fs_resolver: FsResolver) -> Self {
+    /// Creates a new `ThreadFsInfo` with the given [`PathResolver`].
+    pub fn new(path_resolver: PathResolver) -> Self {
         Self {
-            resolver: RwMutex::new(fs_resolver),
+            resolver: RwMutex::new(path_resolver),
             umask: AtomicFileCreationMask::new(FileCreationMask::default()),
         }
     }
 
-    /// Returns the associated `FsResolver`.
-    pub fn resolver(&self) -> &RwMutex<FsResolver> {
+    /// Returns the associated `PathResolver`.
+    pub fn resolver(&self) -> &RwMutex<PathResolver> {
         &self.resolver
     }
 

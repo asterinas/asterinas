@@ -7,8 +7,7 @@ use ostd::{arch::cpu::context::UserContext, task::Task, user::UserContextApi};
 use super::Process;
 use crate::{
     fs::{
-        fs_resolver::FsPath,
-        path::{MountNamespace, Path},
+        path::{FsPath, MountNamespace, Path},
         thread_info::ThreadFsInfo,
     },
     prelude::*,
@@ -49,7 +48,7 @@ fn create_init_process(
     envp: Vec<CString>,
 ) -> Result<Arc<Process>> {
     let fs = {
-        let fs_resolver = MountNamespace::get_init_singleton().new_fs_resolver();
+        let fs_resolver = MountNamespace::get_init_singleton().new_path_resolver();
         ThreadFsInfo::new(fs_resolver)
     };
     let fs_path = FsPath::try_from(executable_path)?;
@@ -108,11 +107,11 @@ fn create_init_task(
     let credentials = Credentials::new_root();
 
     let elf_load_info = {
-        let fs_resolver = fs.resolver().read();
+        let path_resolver = fs.resolver().read();
         let program_to_load =
-            ProgramToLoad::build_from_inode(elf_path.inode().clone(), &fs_resolver, argv, envp)?;
+            ProgramToLoad::build_from_inode(elf_path.inode().clone(), &path_resolver, argv, envp)?;
         let vmar = process.lock_vmar();
-        program_to_load.load_to_vmar(vmar.unwrap(), &fs_resolver)?
+        program_to_load.load_to_vmar(vmar.unwrap(), &path_resolver)?
     };
     let mut user_ctx = UserContext::default();
     user_ctx.set_instruction_pointer(elf_load_info.entry_point as _);

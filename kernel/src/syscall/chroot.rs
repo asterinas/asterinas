@@ -2,7 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::{fs_resolver::FsPath, utils::InodeType},
+    fs::{path::FsPath, utils::InodeType},
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
 };
@@ -12,19 +12,19 @@ pub fn sys_chroot(path_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     debug!("path_name = {:?}", path_name);
 
     let fs_ref = ctx.thread_local.borrow_fs();
-    let mut fs = fs_ref.resolver().write();
+    let mut path_resolver = fs_ref.resolver().write();
     let path = {
         let path_name = path_name.to_string_lossy();
         if path_name.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
         let fs_path = FsPath::try_from(path_name.as_ref())?;
-        fs.lookup(&fs_path)?
+        path_resolver.lookup(&fs_path)?
     };
 
     if path.type_() != InodeType::Dir {
         return_errno_with_message!(Errno::ENOTDIR, "must be directory");
     }
-    fs.set_root(path);
+    path_resolver.set_root(path);
     Ok(SyscallReturn::Return(0))
 }

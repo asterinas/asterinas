@@ -6,8 +6,7 @@ use super::{SyscallReturn, constants::*};
 use crate::{
     fs::{
         file_table::FileDesc,
-        fs_resolver::{AT_FDCWD, FsPath},
-        path::Path,
+        path::{AT_FDCWD, FsPath, Path},
     },
     prelude::*,
     process::do_execve,
@@ -67,11 +66,11 @@ fn lookup_executable_file(
         };
 
         let fs_ref = ctx.thread_local.borrow_fs();
-        let fs_resolver = fs_ref.resolver().read();
+        let path_resolver = fs_ref.resolver().read();
         if flags.contains(OpenFlags::AT_SYMLINK_NOFOLLOW) {
-            fs_resolver.lookup_no_follow(&fs_path)?
+            path_resolver.lookup_no_follow(&fs_path)?
         } else {
-            fs_resolver.lookup(&fs_path)?
+            path_resolver.lookup(&fs_path)?
         }
     };
 

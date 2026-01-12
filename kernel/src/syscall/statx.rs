@@ -6,7 +6,10 @@ use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
-    fs::{file_table::FileDesc, fs_resolver::FsPath, path::Path},
+    fs::{
+        file_table::FileDesc,
+        path::{FsPath, Path},
+    },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
 };
@@ -54,11 +57,11 @@ pub fn sys_statx(
         };
 
         let fs_ref = ctx.thread_local.borrow_fs();
-        let fs = fs_ref.resolver().read();
+        let path_resolver = fs_ref.resolver().read();
         if flags.contains(StatxFlags::AT_SYMLINK_NOFOLLOW) {
-            fs.lookup_no_follow(&fs_path)?
+            path_resolver.lookup_no_follow(&fs_path)?
         } else {
-            fs.lookup(&fs_path)?
+            path_resolver.lookup(&fs_path)?
         }
     };
 

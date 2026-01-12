@@ -9,8 +9,8 @@ use crate::{
     events::IoEvents,
     fs::{
         device::{Device, DeviceType, add_node},
-        fs_resolver::FsResolver,
         inode_handle::FileIo,
+        path::PathResolver,
         utils::{InodeIo, StatusFlags},
     },
     prelude::*,
@@ -35,12 +35,12 @@ pub(super) fn init_in_first_kthread() {
     }
 }
 
-pub(super) fn init_in_first_process(fs_resolver: &FsResolver) -> Result<()> {
+pub(super) fn init_in_first_process(path_resolver: &PathResolver) -> Result<()> {
     for device in aster_block::collect_all() {
         let device = Arc::new(BlockFile::new(device));
         if let Some(devtmpfs_path) = device.devtmpfs_path() {
             let dev_id = device.id().as_encoded_u64();
-            add_node(DeviceType::Block, dev_id, &devtmpfs_path, fs_resolver)?;
+            add_node(DeviceType::Block, dev_id, &devtmpfs_path, path_resolver)?;
         }
     }
 

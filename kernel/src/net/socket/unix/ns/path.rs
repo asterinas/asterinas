@@ -4,8 +4,7 @@ use ostd::task::Task;
 
 use crate::{
     fs::{
-        fs_resolver::{FsPath, SplitPath},
-        path::Path,
+        path::{FsPath, Path, SplitPath},
         utils::{InodeType, Permission, mkmod},
     },
     prelude::*,
@@ -15,9 +14,9 @@ pub fn lookup_socket_file(path: &str) -> Result<Path> {
     let path = {
         let current = Task::current().unwrap();
         let fs_ref = current.as_thread_local().unwrap().borrow_fs();
-        let fs = fs_ref.resolver().read();
+        let path_resolver = fs_ref.resolver().read();
         let fs_path = FsPath::try_from(path)?;
-        fs.lookup(&fs_path)?
+        path_resolver.lookup(&fs_path)?
     };
 
     if path
@@ -44,9 +43,9 @@ pub fn create_socket_file(path_name: &str) -> Result<Path> {
     let parent = {
         let current = Task::current().unwrap();
         let fs_ref = current.as_thread_local().unwrap().borrow_fs();
-        let fs = fs_ref.resolver().read();
+        let path_resolver = fs_ref.resolver().read();
         let parent_path = FsPath::try_from(parent_path_name)?;
-        fs.lookup(&parent_path)?
+        path_resolver.lookup(&parent_path)?
     };
 
     parent

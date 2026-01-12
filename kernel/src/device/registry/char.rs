@@ -9,7 +9,7 @@ use device_id::{DeviceId, MajorId};
 use crate::{
     fs::{
         device::{Device, DeviceType, add_node},
-        fs_resolver::FsResolver,
+        path::PathResolver,
     },
     prelude::*,
 };
@@ -112,11 +112,11 @@ impl Drop for MajorIdOwner {
     }
 }
 
-pub(super) fn init_in_first_process(fs_resolver: &FsResolver) -> Result<()> {
+pub(super) fn init_in_first_process(path_resolver: &PathResolver) -> Result<()> {
     for device in collect_all() {
         if let Some(devtmpfs_path) = device.devtmpfs_path() {
             let dev_id = device.id().as_encoded_u64();
-            add_node(DeviceType::Char, dev_id, &devtmpfs_path, fs_resolver)?;
+            add_node(DeviceType::Char, dev_id, &devtmpfs_path, path_resolver)?;
         }
     }
 

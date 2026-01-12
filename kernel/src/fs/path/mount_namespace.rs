@@ -4,8 +4,7 @@ use spin::Once;
 
 use crate::{
     fs::{
-        fs_resolver::FsResolver,
-        path::{Mount, Path},
+        path::{Mount, Path, PathResolver},
         ramfs::RamFs,
     },
     prelude::*,
@@ -54,10 +53,10 @@ impl MountNamespace {
     ///
     /// The "effective root" refers to the currently visible root directory, which
     /// may differ from the original root filesystem if overlay mounts exist.
-    pub fn new_fs_resolver(&self) -> FsResolver {
+    pub fn new_path_resolver(&self) -> PathResolver {
         let root = Path::new_fs_root(self.root.clone()).get_top_path();
         let cwd = Path::new_fs_root(self.root.clone()).get_top_path();
-        FsResolver::new(root, cwd)
+        PathResolver::new(root, cwd)
     }
 
     /// Creates a deep copy of this mount namespace, including the entire mount tree.

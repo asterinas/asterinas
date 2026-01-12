@@ -10,8 +10,7 @@ use super::{
 };
 use crate::{
     fs::{
-        fs_resolver::{FsPath, FsResolver},
-        path::Path,
+        path::{FsPath, Path, PathResolver},
         utils::Inode,
     },
     prelude::*,
@@ -53,12 +52,12 @@ pub struct ElfLoadInfo {
 pub fn load_elf_to_vmar(
     vmar: &Vmar,
     elf_inode: &Arc<dyn Inode>,
-    fs_resolver: &FsResolver,
+    path_resolver: &PathResolver,
     elf_headers: ElfHeaders,
     argv: Vec<CString>,
     envp: Vec<CString>,
 ) -> Result<ElfLoadInfo> {
-    let ldso = lookup_and_parse_ldso(&elf_headers, elf_inode, fs_resolver)?;
+    let ldso = lookup_and_parse_ldso(&elf_headers, elf_inode, path_resolver)?;
 
     #[cfg_attr(
         not(any(target_arch = "x86_64", target_arch = "riscv64")),
@@ -95,7 +94,7 @@ pub fn load_elf_to_vmar(
 fn lookup_and_parse_ldso(
     headers: &ElfHeaders,
     elf_inode: &Arc<dyn Inode>,
-    fs_resolver: &FsResolver,
+    path_resolver: &PathResolver,
 ) -> Result<Option<(Path, ElfHeaders)>> {
     let ldso_file = {
         let ldso_path = if let Some(interp_phdr) = headers.interp_phdr() {
@@ -113,7 +112,7 @@ fn lookup_and_parse_ldso(
         })?;
 
         let fs_path = FsPath::try_from(ldso_path.as_str())?;
-        fs_resolver.lookup(&fs_path)?
+        path_resolver.lookup(&fs_path)?
     };
 
     let ldso_elf = {
