@@ -209,8 +209,8 @@ NON_OSDK_CRATES := \
 	ostd/libs/id-alloc \
 	ostd/libs/int-to-c-enum \
 	ostd/libs/int-to-c-enum/derive \
-	ostd/libs/linux-bzimage/builder \
 	ostd/libs/linux-bzimage/boot-params \
+	ostd/libs/linux-bzimage/builder \
 	ostd/libs/ostd-macros \
 	ostd/libs/ostd-test \
 	kernel/libs/aster-rights \
@@ -236,18 +236,18 @@ OSDK_CRATES := \
 	kernel/comps/cmdline \
 	kernel/comps/console \
 	kernel/comps/framebuffer \
-	kernel/comps/input \
 	kernel/comps/i8042 \
-	kernel/comps/network \
-	kernel/comps/softirq \
-	kernel/comps/systree \
+	kernel/comps/input \
 	kernel/comps/logger \
 	kernel/comps/mlsdisk \
+	kernel/comps/network \
+	kernel/comps/pci \
+	kernel/comps/softirq \
+	kernel/comps/systree \
 	kernel/comps/time \
 	kernel/comps/virtio \
-	kernel/comps/pci \
-	kernel/libs/aster-util \
 	kernel/libs/aster-bigtcp \
+	kernel/libs/aster-util \
 	kernel/libs/device-id \
 	kernel/libs/xarray
 
