@@ -139,15 +139,19 @@ impl InotifyFile {
 
         // Try to find and update the existing subscriber first.
         let inode_weak = Arc::downgrade(path.inode());
-        for (wd, entry) in watch_map.iter() {
+        let mut watch_iter = watch_map.iter();
+        while let Some((wd, entry)) = watch_iter.next() {
             if !Weak::ptr_eq(&entry.inode, &inode_weak) {
                 continue;
             }
 
-            // The inode has been unlinked and the subscriber is dead. We shouldn't need to update
-            // since no new events can occur.
+            // The subscriber is dead because it's a one-shot subscriber or the inode is dead.
+            // The watch is considered removed.
             let Some(subscriber) = entry.subscriber.upgrade() else {
-                return Ok(*wd);
+                let wd = *wd;
+                watch_map.remove(&wd);
+                watch_iter = watch_map.iter();
+                continue;
             };
 
             subscriber.update(interesting, options)?;
@@ -164,13 +168,9 @@ impl InotifyFile {
         let inotify_subscriber = InotifySubscriber::new(self.this(), interesting, options)?;
         let subscriber = inotify_subscriber.clone() as Arc<dyn FsEventSubscriber>;
 
-        let inode = path.inode();
-        if inode
+        path.inode()
             .fs_event_publisher_or_init()
-            .add_subscriber(subscriber)
-        {
-            inode.fs().fs_event_subscriber_stats().add_subscriber();
-        }
+            .add_subscriber(subscriber);
 
         let wd = inotify_subscriber.wd();
         let entry = SubscriberEntry {
@@ -192,18 +192,15 @@ impl InotifyFile {
 
         let (inode, subscriber) = match (entry.inode.upgrade(), entry.subscriber.upgrade()) {
             (Some(inode), Some(subscriber)) => (inode, subscriber),
-            // The inode has been unlinked and the subscriber is dead. The watch is considered
-            // removed, so we return an error.
+            // The subscriber is dead because it's a one-shot subscriber or the inode is dead.
+            // The watch is considered removed.
             _ => return_errno_with_message!(Errno::EINVAL, "the inotify watch does not exist"),
         };
 
-        if inode
+        inode
             .fs_event_publisher()
             .unwrap()
-            .remove_subscriber(&(subscriber as _))
-        {
-            inode.fs().fs_event_subscriber_stats().remove_subscriber();
-        }
+            .remove_subscriber(&(subscriber as _));
 
         Ok(())
     }
@@ -213,12 +210,7 @@ impl InotifyFile {
     /// The event will be queued and can be read by users.
     /// If the event can be merged with the last event in the queue, it will be merged.
     /// The event is only queued if it matches one of the subscriber's interesting events.
-    fn receive_event(&self, subscriber: &InotifySubscriber, event: FsEvents, name: Option<String>) {
-        if !event.contains(FsEvents::IN_IGNORED) && !subscriber.is_interesting(event) {
-            return;
-        }
-
-        let wd = subscriber.wd();
+    fn receive_event(&self, wd: u32, event: FsEvents, name: Option<String>) {
         let new_event = InotifyEvent::new(wd, event, 0, name);
 
         'notify: {
@@ -232,8 +224,12 @@ impl InotifyFile {
             }
 
             // If the queue is full, drop the event.
-            // We do not return an error to the caller.
-            if event_queue.len() >= self.queue_capacity {
+            // Try to queue an overflow event in advance to alert the user.
+            if event_queue.len() == self.queue_capacity - 1 {
+                let overflow_event = InotifyEvent::new(u32::MAX, FsEvents::Q_OVERFLOW, 0, None);
+                event_queue.push_back(overflow_event);
+                return;
+            } else if event_queue.len() >= self.queue_capacity {
                 return;
             }
 
@@ -437,6 +433,8 @@ pub struct InotifySubscriber {
     // This field is packed into a `u64`: the high 32 bits store options,
     // and the low 32 bits store interesting events.
     interesting_and_controls: AtomicU64,
+    // Whether the subscriber is one-shot and has been dead.
+    is_dead: AtomicBool,
     // Watch descriptor.
     wd: u32,
     // Reference to the owning inotify file.
@@ -453,6 +451,7 @@ impl InotifySubscriber {
         let wd = inotify_file.alloc_wd()?;
         let this = Arc::new(Self {
             interesting_and_controls: AtomicU64::new(0),
+            is_dead: AtomicBool::new(false),
             wd,
             inotify_file,
         });
@@ -514,15 +513,41 @@ impl InotifySubscriber {
 
 impl FsEventSubscriber for InotifySubscriber {
     /// Sends FS events to the inotify file.
-    fn deliver_event(&self, event: FsEvents, name: Option<String>) {
+    fn deliver_event(&self, event: FsEvents, name: Option<String>) -> bool {
+        if !event.contains(FsEvents::IN_IGNORED) && !self.is_interesting(event) {
+            return false;
+        }
+
+        let (is_dead, is_oneshot) = if self.options().contains(InotifyControls::ONESHOT) {
+            (self.is_dead.swap(true, Ordering::Relaxed), true)
+        } else {
+            (self.is_dead.load(Ordering::Relaxed), false)
+        };
+        if is_dead {
+            return false;
+        }
+
         let inotify_file = self.inotify_file();
-        inotify_file.receive_event(self, event, name);
+        let wd = self.wd();
+
+        inotify_file.receive_event(wd, event, name);
+
+        if !event.contains(FsEvents::IN_IGNORED) && is_oneshot {
+            inotify_file.receive_event(wd, FsEvents::IN_IGNORED, None);
+        }
+
+        is_oneshot
     }
 
     /// Returns the events that this subscriber is interested in.
     fn interesting_events(&self) -> FsEvents {
         let inotify_events = self.interesting();
         FsEvents::from_bits_truncate(inotify_events.bits())
+    }
+
+    /// Returns whether the subscriber is dead (i.e., no new events can be delivered).
+    fn is_dead(&self) -> bool {
+        self.is_dead.load(Ordering::Relaxed)
     }
 }
 
@@ -633,7 +658,6 @@ bitflags! {
         const EXCL_UNLINK   = 1 << 26; // Exclude events on unlinked objects
         const MASK_CREATE   = 1 << 28; // Only create watches
         const MASK_ADD      = 1 << 29; // Add to existing watch mask
-        const ISDIR         = 1 << 30; // Event occurred on a directory
         const ONESHOT       = 1 << 31; // Send event once
     }
 }
