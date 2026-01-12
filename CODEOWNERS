@@ -28,7 +28,7 @@
 #=============================================================================
 
 /book/                          @tatetian
-/book/src/kernel/linux-compatibility/syscall-flag-coverage/ @tatetian @taosue
+/book/src/kernel/linux-compatibility/syscall-flag-coverage/ @taosue @tatetian
 
 #=============================================================================
 # The Asterinas kernel
@@ -85,7 +85,7 @@
 /osdk/tools/docker/             @grief8
 /test/                          @cqs21
 /tools/                         @grief8
-/tools/sctrace/                 @tatetian @taosue
+/tools/sctrace/                 @taosue @tatetian
 /triagebot.toml                 @grief8
 
 /Makefile                       @junyang-zh
@@ -93,5 +93,5 @@
 
 # The following critical files are singled out
 /CODEOWNERS                     @tatetian
-/VERSION                        @tatetian
 /RELEASES                       @tatetian
+/VERSION                        @tatetian

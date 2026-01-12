@@ -1,20 +1,20 @@
 # template
 [components]
-kernel = { name = "aster-kernel" }
-virtio = { name = "aster-virtio" }
-input = { name = "aster-input" }
 block = { name = "aster-block" }
-console = { name = "aster-console" }
-softirq = { name = "aster-softirq" }
-logger = { name = "aster-logger" }
-time = { name = "aster-time" }
-framebuffer = { name = "aster-framebuffer" }
-network = { name = "aster-network" }
-mlsdisk = { name = "aster-mlsdisk" }
-systree = { name = "aster-systree" }
-i8042 = { name = "aster-i8042" }
-pci = { name = "aster-pci" }
 cmdline = { name = "aster-cmdline" }
+console = { name = "aster-console" }
+framebuffer = { name = "aster-framebuffer" }
+i8042 = { name = "aster-i8042" }
+input = { name = "aster-input" }
+kernel = { name = "aster-kernel" }
+logger = { name = "aster-logger" }
+mlsdisk = { name = "aster-mlsdisk" }
+network = { name = "aster-network" }
+pci = { name = "aster-pci" }
+softirq = { name = "aster-softirq" }
+systree = { name = "aster-systree" }
+time = { name = "aster-time" }
+virtio = { name = "aster-virtio" }
 
 [whitelist]
 [whitelist.nix.main]
