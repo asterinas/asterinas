@@ -1,6 +1,6 @@
-# Test Suite Overview
+# Initramfs-Based Test Suites
 
-This directory contains the test suites of Asterinas, including various test programs, benchmarks, syscall test suites, and necessary configuration files. The structure of the test directory is designed to be modular and flexible, supporting multiple CPU architectures and a streamlined workflow for building and running tests.
+This directory contains the test suites of Asterinas running in initramfs, including various test programs, benchmarks, syscall test suites, and necessary configuration files. The structure of the test directory is designed to be modular and flexible, supporting multiple CPU architectures and a streamlined workflow for building and running tests.
 
 ## Directory Structure
 
@@ -22,8 +22,6 @@ test/
 └── README.md
 ```
 
----
-
 ## Building and Packaging Tests
 
 Most tests in this directory are compiled and packaged using [Nix](https://nixos.org/), a powerful package manager. This ensures consistency and reproducibility across environments.
@@ -35,6 +33,7 @@ Most tests in this directory are compiled and packaged using [Nix](https://nixos
 While most tests rely on `Nix` for compilation, the `gvisor` syscall test suite currently cannot be built with `Nix`. Instead, the `gvisor` tests are compiled in the Docker image. For details, refer to `tools/docker/Dockerfile`.
 
 ### Multi-Architecture Support
+
 The test suite supports building for multiple architectures, including `x86_64` and `riscv64`. You can specify the desired architecture by running:
 
 ```bash
@@ -43,7 +42,7 @@ make kernel OSDK_TARGET_ARCH=x86_64
 make kernel OSDK_TARGET_ARCH=riscv64
 ```
 
-The build artifacts (initramfs) can be found in the `test/build` directory after the compilation.
+The build artifacts (initramfs) can be found in the `test/initramfs/build` directory after the compilation.
 
 ## Supported Benchmarks
 
@@ -70,11 +69,11 @@ These benchmarks are precompiled and packaged into the Docker image for convenie
 
 We recommend utilizing `Nix` when adding new benchmarks. To check if a benchmark is already available, use the [`Nix Package Search`](https://search.nixos.org/packages?channel=25.05). If a package exists in the Nix channel, you can directly use it or modify it if necessary.
 
-If the desired benchmark is not available or cannot be easily adapted, you can add a custom `.nix` file to package it manually. Place the `.nix` files under the `test/nix/benchmark` directory.
+If the desired benchmark is not available or cannot be easily adapted, you can add a custom `.nix` file to package it manually. Place the `.nix` files under the `test/initramfs/nix/benchmark` directory.
 
 ## Configuration Files
 
-Configuration files required by benchmarks or apps should be placed in the `test/src/etc` directory.
+Configuration files required by benchmarks or apps should be placed in the `test/initramfs/src/etc` directory.
 
 If additional configuration files or directories are needed, ensure they are appropriately packaged by updating the `initramfs.nix` file.
 

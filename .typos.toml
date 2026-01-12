@@ -35,8 +35,8 @@ check-file = false
 # Files listed below are ignored to check.
 [files]
 extend-exclude = [
-    "test/src/syscall/gvisor/blocklists/pty_test",
-    "test/build/initramfs/opt/gvisor/blocklists/pty_test",
-    "test/src/syscall/gvisor/blocklists/sync_test",
-    "test/build/initramfs/opt/gvisor/blocklists/sync_test",
+    "test/initramfs/src/syscall/gvisor/blocklists/pty_test",
+    "test/initramfs/build/initramfs/opt/gvisor/blocklists/pty_test",
+    "test/initramfs/src/syscall/gvisor/blocklists/sync_test",
+    "test/initramfs/build/initramfs/opt/gvisor/blocklists/sync_test",
 ]

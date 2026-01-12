@@ -41,7 +41,7 @@ runs:
       shell: bash
       run: |
         make install_osdk
-        bash test/src/benchmark/bench_linux_and_aster.sh "${{ matrix.benchmarks }}" "${{ inputs.platform }}"
+        bash test/initramfs/src/benchmark/bench_linux_and_aster.sh "${{ matrix.benchmarks }}" "${{ inputs.platform }}"
         BENCHMARK_ARTIFACT=results_$(echo "${{ matrix.benchmarks }}" | tr '/' '-')
         echo "BENCHMARK_ARTIFACT=$BENCHMARK_ARTIFACT" >> $GITHUB_ENV
 
@@ -76,8 +76,8 @@ runs:
           BENCHMARK_DIR=$(echo "$benchmark_id" | sed 's/-/\//g')
           BENCHMARK_SUITE=$(echo "$BENCHMARK_DIR" | awk -F'/' '{print $1}')
           BENCHMARK_NAME=$(echo "$BENCHMARK_DIR" | sed -E 's|^[^/]+/||; s|/bench_results||g; s|/|_|g')
-          BENCH_RESULT_YAML="test/src/benchmark/${BENCHMARK_DIR}/bench_result.yaml"
-          [ -f "$BENCH_RESULT_YAML" ] || BENCH_RESULT_YAML="test/src/benchmark/${BENCHMARK_DIR}.yaml"
+          BENCH_RESULT_YAML="test/initramfs/src/benchmark/${BENCHMARK_DIR}/bench_result.yaml"
+          [ -f "$BENCH_RESULT_YAML" ] || BENCH_RESULT_YAML="test/initramfs/src/benchmark/${BENCHMARK_DIR}.yaml"
 
           if [ ! -f "$BENCH_RESULT_YAML" ]; then
             echo "Warning: YAML file not found for $benchmark_id at $BENCH_RESULT_YAML. Skipping config generation."
@@ -91,9 +91,9 @@ runs:
           DESCRIPTION=$(yq -r '.chart.description // "No description provided"' "$BENCH_RESULT_YAML")
 
           # Generate summary JSON if needed (only once per suite)
-          SUMMARY_JSON="test/src/benchmark/$BENCHMARK_SUITE/summary.json"
+          SUMMARY_JSON="test/initramfs/src/benchmark/$BENCHMARK_SUITE/summary.json"
           if [ ! -f "$SUMMARY_JSON" ]; then
-              SUMMARY_YAML="test/src/benchmark/$BENCHMARK_SUITE/summary.yaml"
+              SUMMARY_YAML="test/initramfs/src/benchmark/$BENCHMARK_SUITE/summary.yaml"
               if [ -f "$SUMMARY_YAML" ]; then
                 yq . "$SUMMARY_YAML" > "$SUMMARY_JSON"
                 echo "Generated $SUMMARY_JSON"
