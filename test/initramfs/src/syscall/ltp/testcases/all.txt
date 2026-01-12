@@ -68,11 +68,9 @@ capset03
 # cachestat04
 
 # chdir01
-chdir01A
 chdir04
 
 chmod01
-chmod01A
 # chmod03
 # chmod05
 # chmod06
@@ -106,7 +104,7 @@ chroot02
 clock_nanosleep04
 
 # clock_gettime01
-clock_gettime02
+# clock_gettime02
 # clock_gettime03
 # clock_gettime04
 # leapsec01
@@ -114,6 +112,7 @@ clock_gettime02
 # clock_settime01
 # clock_settime02
 # clock_settime03
+# clock_settime04
 
 clone01
 clone02
@@ -194,6 +193,7 @@ epoll_pwait02
 # epoll_pwait03
 epoll_pwait04
 epoll_pwait05
+epoll_pwait06
 
 # eventfd01
 # eventfd02
@@ -246,6 +246,11 @@ fallocate03
 # fsetxattr01
 # fsetxattr02
 
+# file_attr01
+# file_attr02
+# file_attr03
+# file_attr04
+
 #posix_fadvise test cases
 # posix_fadvise01
 # posix_fadvise01_64
@@ -288,6 +293,7 @@ fchown05
 #fchownat test case
 fchownat01
 fchownat02
+# fchownat03
 
 fcntl01
 fcntl01_64
@@ -363,6 +369,8 @@ fcntl29_64
 # fcntl38_64
 # fcntl39
 # fcntl39_64
+# fcntl40
+# fcntl40_64
 
 fdatasync01
 # fdatasync02
@@ -384,6 +392,7 @@ flock02
 flock03
 flock04
 flock06
+flock07
 
 fmtmsg01
 
@@ -570,6 +579,9 @@ getxattr01
 # init_module01
 # init_module02
 
+#Needs tty device.
+#ioctl02 ioctl02 -d /dev/tty0
+
 # Introducing ioctl tests for all /dev/tty* devices
 # ioctl01
 # ioctl02
@@ -580,6 +592,7 @@ getxattr01
 # ioctl07
 # ioctl08
 # ioctl09
+# ioctl10
 
 # ioctl_loop01
 # ioctl_loop02
@@ -604,6 +617,14 @@ getxattr01
 # ioctl_ficlone03
 # ioctl_ficlonerange01
 # ioctl_ficlonerange02
+# ioctl_fiemap01
+
+# ioctl_pidfd01
+# ioctl_pidfd02
+# ioctl_pidfd03
+# ioctl_pidfd04
+# ioctl_pidfd05
+# ioctl_pidfd06
 
 # inotify_init1_01
 # inotify_init1_02
@@ -644,6 +665,7 @@ getxattr01
 # fanotify21
 # fanotify22
 # fanotify23
+# fanotify24
 
 # ioperm01
 # ioperm02
@@ -690,12 +712,10 @@ kill02
 kill03
 # kill05
 kill06
-# kill07
 kill08
-kill09
 # kill10
 # kill11
-kill12
+# kill12
 # kill13
 
 # landlock01
@@ -706,18 +726,17 @@ kill12
 # landlock06
 # landlock07
 # landlock08
+# landlock09
+# landlock10
 
 lchown01
 # lchown01_16
 # lchown02
-# lchown03
 # lchown02_16
-# lchown03_16
 
 # lgetxattr01
 # lgetxattr02
 
-link01
 link02
 # link04
 link05
@@ -737,6 +756,7 @@ listen01
 listxattr01
 # listxattr02
 listxattr03
+# listxattr04
 
 # llistxattr01
 # llistxattr02
@@ -752,6 +772,13 @@ lseek01
 # lseek02
 lseek07
 # lseek11
+
+# lsm_get_self_attr01
+# lsm_get_self_attr02
+# lsm_get_self_attr03
+# lsm_list_modules01
+# lsm_list_modules02
+# lsm_set_self_attr01
 
 lstat01
 lstat01_64
@@ -817,7 +844,6 @@ mknodat01
 # mlock202
 # mlock203
 
-qmm01
 mmap01
 mmap02
 mmap03
@@ -837,10 +863,12 @@ mmap15
 # mmap18
 mmap19
 # mmap20
+mmap21_01
+mmap21_02
+# mmap22
 
 # modify_ldt01
 # modify_ldt02
-# modify_ldt03
 
 # mount01
 # mount02
@@ -849,11 +877,14 @@ mmap19
 # mount05
 # mount06
 # mount07
+# mount08
 
 # mount_setattr01
+# mount_setattr02
 
 # move_mount01
 # move_mount02
+# move_mount03
 
 # move_pages01
 # move_pages02
@@ -1006,7 +1037,6 @@ pathconf01
 
 # pause01
 # pause02
-# pause03
 
 # personality01
 # personality02
@@ -1042,6 +1072,16 @@ pipe14
 # pipe2_01
 # pipe2_02
 # pipe2_04
+
+# Interprocess communication stress tests
+pipeio_1
+pipeio_2
+pipeio_3
+pipeio_4
+pipeio_5
+pipeio_6
+pipeio_7
+pipeio_8
 
 # pivot_root01
 
@@ -1156,7 +1196,6 @@ read04
 # readdir01
 # readdir21
 
-# readlink01A
 # readlink01
 # readlink03
 
@@ -1189,7 +1228,6 @@ removexattr01
 # removexattr02
 
 # rename01
-rename01A
 # rename03
 # rename04
 # rename05
@@ -1220,7 +1258,6 @@ rename14
 rmdir01
 # rmdir02
 # rmdir03
-rmdir03A
 
 rt_sigaction01
 rt_sigaction02
@@ -1251,12 +1288,12 @@ sched_getparam01
 # sched_rr_get_interval03
 
 sched_setparam01
-sched_setparam02
+# sched_setparam02
 sched_setparam03
 # sched_setparam04
 # sched_setparam05
 
-sched_getscheduler01
+# sched_getscheduler01
 # sched_getscheduler02
 
 # sched_setscheduler01
@@ -1338,6 +1375,7 @@ sendmmsg02
 
 set_robust_list01
 # set_thread_area01
+# set_thread_area02
 # set_tid_address01
 
 setdomainname01
@@ -1584,6 +1622,7 @@ stat02_64
 # statmount06
 # statmount07
 # statmount08
+# statmount09
 
 # statfs01
 # statfs01_64
@@ -1610,7 +1649,6 @@ string01
 #Exclusive syscall() for POWER6 machines only
 # switch01
 
-# symlink01
 symlink02
 # symlink03
 symlink04
@@ -1667,7 +1705,7 @@ timerfd_create01
 # timerfd_settime02
 
 # timer_create01
-timer_create02
+# timer_create02
 timer_create03
 
 # timer_delete01
@@ -1700,7 +1738,6 @@ uname01
 uname02
 # uname04
 
-unlink01
 unlink05
 # unlink07
 # unlink08
@@ -1712,6 +1749,9 @@ unlinkat01
 
 # unshare01
 # unshare02
+# unshare03
+unshare04
+# unshare05
 
 #
 # These tests require an unmounted block device
