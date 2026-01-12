@@ -15,7 +15,7 @@ use crate::{
     process::{
         ContextUnshareAdminApi, Credentials, Process,
         posix_thread::{PosixThread, ThreadLocal, ThreadName, sigkill_other_threads, thread_table},
-        process_vm::{MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS, new_vmar_and_map},
+        process_vm::{MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS, ProcessVm},
         program_loader::{ProgramToLoad, elf::ElfLoadInfo},
         signal::{
             HandlePendingSignal, PauseReason, SigStack,
@@ -54,7 +54,7 @@ pub fn do_execve(
     let program_to_load =
         ProgramToLoad::build_from_inode(elf_inode.clone(), &fs_resolver, argv, envp)?;
 
-    let new_vmar = new_vmar_and_map(elf_file.clone());
+    let new_vmar = Vmar::new(ProcessVm::new(elf_file.clone()));
     let elf_load_info = program_to_load.load_to_vmar(new_vmar.as_ref(), &fs_resolver)?;
 
     // Ensure no other thread is concurrently performing exit_group or execve.

@@ -1,139 +1,157 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::ops::Range;
 
 use align_ext::AlignExt;
 
 use crate::{
     prelude::*,
+    process::ResourceType,
+    util::random::getrandom,
     vm::{perms::VmPerms, vmar::Vmar},
 };
 
-/// The base address of user heap
-pub const USER_HEAP_BASE: Vaddr = 0x0000_0000_1000_0000;
-/// The max allowed size of user heap
-pub const USER_HEAP_SIZE_LIMIT: usize = 16 * 1024 * PAGE_SIZE; // 16 * 4MB
-
 #[derive(Debug)]
 pub struct Heap {
-    /// The lowest address of the heap
-    base: Vaddr,
-    /// The heap size limit
-    limit: usize,
-    /// The current heap highest address
-    current_program_break: AtomicUsize,
+    inner: Mutex<Option<HeapInner>>,
+}
+
+#[derive(Clone, Debug)]
+struct HeapInner {
+    /// The size of the data segment, used for rlimit checking.
+    data_segment_size: usize,
+    /// The heap range.
+    // NOTE: `heap_range.end` is decided by user input and may not be page-aligned.
+    heap_range: Range<Vaddr>,
 }
 
 impl Heap {
-    pub const fn new() -> Self {
-        Heap {
-            base: USER_HEAP_BASE,
-            limit: USER_HEAP_SIZE_LIMIT,
-            current_program_break: AtomicUsize::new(USER_HEAP_BASE),
+    pub(super) const fn new_uninitialized() -> Self {
+        Self {
+            inner: Mutex::new(None),
         }
     }
 
     /// Initializes and maps the heap virtual memory.
-    pub(super) fn alloc_and_map(&self, vmar: &Vmar) -> Result<()> {
+    pub(super) fn map_and_init_heap(
+        &self,
+        vmar: &Vmar,
+        data_segment_size: usize,
+        heap_base: Vaddr,
+    ) -> Result<()> {
+        let mut inner = self.inner.lock();
+
+        let nr_pages_padding = {
+            // Some random padding pages are added as a simple measure to
+            // make the heap values of a buggy user program harder
+            // to be exploited by attackers.
+            let mut nr_random_padding_pages: u8 = 0;
+            getrandom(nr_random_padding_pages.as_bytes_mut());
+
+            nr_random_padding_pages as usize
+        };
+
+        let heap_start = heap_base.align_up(PAGE_SIZE) + nr_pages_padding * PAGE_SIZE;
+
         let vmar_map_options = {
             let perms = VmPerms::READ | VmPerms::WRITE;
-            vmar.new_map(PAGE_SIZE, perms).unwrap().offset(self.base)
+            vmar.new_map(PAGE_SIZE, perms).unwrap().offset(heap_start)
         };
         vmar_map_options.build()?;
 
-        // If we touch another mapped range when we are trying to expand the
-        // heap, we fail.
-        //
-        // So a simple solution is to reserve enough space for the heap by
-        // mapping without any permissions and allow it to be overwritten
-        // later by `brk`. New mappings from `mmap` that overlaps this range
-        // may be moved to another place.
-        let vmar_reserve_options = {
-            let perms = VmPerms::empty();
-            vmar.new_map(USER_HEAP_SIZE_LIMIT - PAGE_SIZE, perms)
-                .unwrap()
-                .offset(self.base + PAGE_SIZE)
-        };
-        vmar_reserve_options.build()?;
+        debug_assert!(inner.is_none());
+        *inner = Some(HeapInner {
+            data_segment_size,
+            heap_range: heap_start..heap_start + PAGE_SIZE,
+        });
 
-        self.set_uninitialized();
         Ok(())
     }
 
-    /// Returns the current program break.
-    pub fn program_break(&self) -> Vaddr {
-        self.current_program_break.load(Ordering::Relaxed)
+    /// Returns the current heap end.
+    pub fn heap_end(&self) -> Vaddr {
+        let inner = self.inner.lock();
+        let inner = inner.as_ref().expect("Heap is not initialized");
+        inner.heap_range.end
     }
 
-    /// Sets the program break to `new_heap_end`.
+    /// Modifies the end address of the heap.
     ///
-    /// Returns the new program break on success, or the current program break on failure.
+    /// Returns the new heap end on success, or the current heap end on failure.
     /// This behavior is consistent with the Linux `brk` syscall.
-    pub fn set_program_break(
+    //
+    // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/mm/mmap.c#L115>
+    pub fn modify_heap_end(
         &self,
-        new_program_break: Vaddr,
+        new_heap_end: Vaddr,
         ctx: &Context,
     ) -> core::result::Result<Vaddr, Vaddr> {
         let user_space = ctx.user_space();
         let vmar = user_space.vmar();
 
-        let current_program_break = self.current_program_break.load(Ordering::Acquire);
+        let mut inner = self.inner.lock();
+        let inner = inner.as_mut().expect("Heap is not initialized");
 
-        // According to the Linux source code, when the `brk` value is more than the
-        // rlimit, the `brk` syscall returns the current `brk` value.
-        // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/mm/mmap.c#L152>
-        if new_program_break > self.base + self.limit {
-            return Err(current_program_break);
-        }
-        if new_program_break < current_program_break {
-            // FIXME: should we allow shrink current user heap?
-            return Ok(current_program_break);
-        }
+        let heap_start = inner.heap_range.start;
+        let current_heap_end = inner.heap_range.end;
+        let new_heap_range = heap_start..new_heap_end;
 
-        let current_program_break_aligned = current_program_break.align_up(PAGE_SIZE);
-        let new_program_break_aligned = new_program_break.align_up(PAGE_SIZE);
-
-        // No need to expand the heap.
-        if new_program_break_aligned == current_program_break_aligned {
-            self.current_program_break
-                .store(new_program_break, Ordering::Release);
-            return Ok(new_program_break);
+        // Check if the new heap end is valid.
+        if new_heap_end < heap_start
+            || check_data_rlimit(inner.data_segment_size, &new_heap_range, ctx).is_err()
+            || new_heap_end.checked_add(PAGE_SIZE).is_none()
+        {
+            return Err(current_heap_end);
         }
 
-        // Remove the reserved space.
-        vmar.remove_mapping(current_program_break_aligned..new_program_break_aligned)
-            .map_err(|_| current_program_break)?;
+        let current_heap_end_aligned = current_heap_end.align_up(PAGE_SIZE);
+        let new_heap_end_aligned = new_heap_end.align_up(PAGE_SIZE);
 
-        let old_size = current_program_break_aligned - self.base;
-        let new_size = new_program_break_aligned - self.base;
-        // Expand the heap.
-        vmar.resize_mapping(self.base, old_size, new_size, false)
-            .map_err(|_| current_program_break)?;
+        let old_size = current_heap_end_aligned - heap_start;
+        let new_size = new_heap_end_aligned - heap_start;
 
-        self.current_program_break
-            .store(new_program_break, Ordering::Release);
-        Ok(new_program_break)
-    }
+        // No change in the heap mapping.
+        if old_size == new_size {
+            inner.heap_range = new_heap_range;
+            return Ok(new_heap_end);
+        }
 
-    pub(super) fn set_uninitialized(&self) {
-        self.current_program_break
-            .store(self.base + PAGE_SIZE, Ordering::Relaxed);
+        // Because the mapped heap region may contain multiple mappings, which can be
+        // done by `mmap` syscall or other ways, we need to be careful when modifying
+        // the heap mapping.
+        // For simplicity, we set `check_single_mapping` to `true` to ensure that the
+        // heap region contains only a single mapping.
+        vmar.resize_mapping(heap_start, old_size, new_size, true)
+            .map_err(|_| current_heap_end)?;
+
+        inner.heap_range = new_heap_range;
+        Ok(new_heap_end)
     }
 }
 
 impl Clone for Heap {
     fn clone(&self) -> Self {
-        let current_program_break = self.current_program_break.load(Ordering::Relaxed);
         Self {
-            base: self.base,
-            limit: self.limit,
-            current_program_break: AtomicUsize::new(current_program_break),
+            inner: Mutex::new(self.inner.lock().clone()),
         }
     }
 }
 
-impl Default for Heap {
-    fn default() -> Self {
-        Self::new()
+/// Checks whether the new heap range exceeds the data segment size limit.
+// Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/include/linux/mm.h#L3287>
+fn check_data_rlimit(
+    data_segment_size: usize,
+    new_heap_range: &Range<Vaddr>,
+    ctx: &Context,
+) -> Result<()> {
+    let rlimit_data = ctx
+        .process
+        .resource_limits()
+        .get_rlimit(ResourceType::RLIMIT_DATA)
+        .get_cur();
+
+    if rlimit_data.saturating_sub(data_segment_size as u64) < new_heap_range.len() as u64 {
+        return_errno_with_message!(Errno::ENOSPC, "the data segment size limit is reached");
     }
+    Ok(())
 }

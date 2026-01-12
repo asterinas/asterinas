@@ -24,7 +24,7 @@ use super::{
 };
 use crate::{
     prelude::*,
-    process::{Process, ProcessVm, ResourceType},
+    process::{INIT_STACK_SIZE, Process, ProcessVm, ResourceType},
     vm::vmar::is_userspace_vaddr_range,
 };
 
@@ -304,47 +304,59 @@ impl VmarInner {
         Ok(offset..(offset + size))
     }
 
-    /// Allocates a free region for mapping.
+    /// Allocates a free region for mapping, searching from high address to low address.
     ///
     /// If no such region is found, return an error.
     fn alloc_free_region(&mut self, size: usize, align: usize) -> Result<Range<Vaddr>> {
-        // Fast path that there's still room to the end.
-        let highest_occupied = self
-            .vm_mappings
-            .iter()
-            .next_back()
-            .map_or(VMAR_LOWEST_ADDR, |vm_mapping| vm_mapping.range().end);
-        // FIXME: The up-align may overflow.
-        let last_occupied_aligned = highest_occupied.align_up(align);
-        if let Some(last) = last_occupied_aligned.checked_add(size)
-            && last <= VMAR_CAP_ADDR
-        {
-            return Ok(last_occupied_aligned..last);
+        // This value represents the highest possible address for a new mapping.
+        // For simplicity, we use a fixed value `2048` here. The value contains the following considerations:
+        // - The stack fixed padding size.
+        // - The stack random padding size.
+        // - The future growth of the stack.
+        // FIXME: This value should consider the process's actual stack configuration, which may
+        // exist in `ResourceLimits`.
+        let high_limit = VMAR_CAP_ADDR - INIT_STACK_SIZE - PAGE_SIZE * 2048;
+        let low_limit = VMAR_LOWEST_ADDR;
+
+        fn try_alloc_in_hole(
+            hole_start: Vaddr,
+            hole_end: Vaddr,
+            size: usize,
+            align: usize,
+        ) -> Option<Range<Vaddr>> {
+            let start = hole_end.checked_sub(size)?.align_down(align);
+            if start >= hole_start {
+                Some(start..start + size)
+            } else {
+                None
+            }
         }
 
-        // Slow path that we need to search for a free region.
-        // Here, we use a simple brute-force FIRST-FIT algorithm.
-        // Allocate as low as possible to reduce fragmentation.
-        let mut last_end: Vaddr = VMAR_LOWEST_ADDR;
-        for vm_mapping in self.vm_mappings.iter() {
-            let range = vm_mapping.range();
+        let mut prev_vm_mapping_start = high_limit;
+        for vm_mapping in self.vm_mappings.iter().rev() {
+            let hole_start = vm_mapping.range().end.max(low_limit);
+            let hole_end = prev_vm_mapping_start.min(high_limit);
 
-            debug_assert!(range.start >= last_end);
-            debug_assert!(range.end <= highest_occupied);
-
-            let last_aligned = last_end.align_up(align);
-            let needed_end = last_aligned
-                .checked_add(size)
-                .ok_or(Error::new(Errno::ENOMEM))?;
-
-            if needed_end <= range.start {
-                return Ok(last_aligned..needed_end);
+            if let Some(region) = try_alloc_in_hole(hole_start, hole_end, size, align) {
+                return Ok(region);
             }
 
-            last_end = range.end;
+            prev_vm_mapping_start = vm_mapping.range().start;
+            if prev_vm_mapping_start <= low_limit {
+                break;
+            }
         }
 
-        return_errno_with_message!(Errno::ENOMEM, "Cannot find free region for mapping");
+        // Check the hole between `low_limit` and the lowest mapping.
+        if prev_vm_mapping_start > low_limit {
+            let hole_start = low_limit;
+            let hole_end = prev_vm_mapping_start.min(high_limit);
+            if let Some(region) = try_alloc_in_hole(hole_start, hole_end, size, align) {
+                return Ok(region);
+            }
+        }
+
+        return_errno_with_message!(Errno::ENOMEM, "no free region for mapping can be found");
     }
 
     /// Splits and unmaps the found mapping if the new size is smaller.

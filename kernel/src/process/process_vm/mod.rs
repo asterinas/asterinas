@@ -18,7 +18,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use ostd::{sync::MutexGuard, task::disable_preempt};
 
 pub use self::{
-    heap::{Heap, USER_HEAP_SIZE_LIMIT},
+    heap::Heap,
     init_stack::{
         INIT_STACK_SIZE, InitStack, InitStackReader, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS,
         aux_vec::{AuxKey, AuxVec},
@@ -28,8 +28,6 @@ use crate::{fs::path::Path, prelude::*, vm::vmar::Vmar};
 
 /*
  * The user's virtual memory space layout looks like below.
- * TODO: The layout of the userheap does not match the current implementation,
- * And currently the initial program break is a fixed value.
  *
  *  (high address)
  *  +---------------------+ <------+ The top of Vmar, which is the highest address usable
@@ -77,10 +75,10 @@ pub struct ProcessVm {
 
 impl ProcessVm {
     /// Creates a new `ProcessVm` without mapping anything.
-    fn new(executable_file: Path) -> Self {
+    pub(super) fn new(executable_file: Path) -> Self {
         Self {
             init_stack: InitStack::new(),
-            heap: Heap::new(),
+            heap: Heap::new_uninitialized(),
             executable_file,
             #[cfg(target_arch = "riscv64")]
             vdso_base: AtomicUsize::new(0),
@@ -122,6 +120,17 @@ impl ProcessVm {
         aux_vec: AuxVec,
     ) -> Result<()> {
         self.init_stack().map_and_write(vmar, argv, envp, aux_vec)
+    }
+
+    /// Maps and initializes the heap virtual memory.
+    pub(super) fn map_and_init_heap(
+        &self,
+        vmar: &Vmar,
+        data_segment_size: usize,
+        heap_base: Vaddr,
+    ) -> Result<()> {
+        self.heap()
+            .map_and_init_heap(vmar, data_segment_size, heap_base)
     }
 
     /// Returns the base address for vDSO segment.
@@ -198,19 +207,6 @@ impl<'a> ProcessVmarGuard<'a> {
         self.as_ref()
             .map(|vmar| vmar.process_vm().init_stack.reader(vmar))
     }
-}
-
-/// Creates a new VMAR and map the heap.
-///
-/// This method should only be used to create a VMAR for the init process.
-pub(super) fn new_vmar_and_map(executable_file: Path) -> Arc<Vmar> {
-    let new_vmar = Vmar::new(ProcessVm::new(executable_file));
-    new_vmar
-        .process_vm()
-        .heap()
-        .alloc_and_map(new_vmar.as_ref())
-        .unwrap();
-    new_vmar
 }
 
 /// Activates the [`Vmar`] in the current process's context.
