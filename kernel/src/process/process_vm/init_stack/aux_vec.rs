@@ -17,7 +17,6 @@ use crate::prelude::*;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum AuxKey {
-    AT_NULL = 0,      /* end of vector */
     AT_IGNORE = 1,    /* entry should be ignored */
     AT_EXECFD = 2,    /* file descriptor of program */
     AT_PHDR = 3,      /* program headers for program */
@@ -49,6 +48,11 @@ pub enum AuxKey {
     AT_SYSINFO_EHDR = 33, /* the start address of the page containing the VDSO */
 }
 
+impl AuxKey {
+    /// A special auxiliary key that denotes the end of the auxiliary vector.
+    pub(super) const AT_NULL: u8 = 0;
+}
+
 #[derive(Clone, Default, Debug)]
 pub struct AuxVec {
     table: BTreeMap<AuxKey, u64>,
@@ -61,18 +65,14 @@ impl AuxVec {
         }
     }
 
-    pub fn set(&mut self, key: AuxKey, val: u64) -> Result<()> {
-        if key == AuxKey::AT_NULL || key == AuxKey::AT_IGNORE {
-            return_errno_with_message!(Errno::EINVAL, "Illegal key");
-        }
+    pub fn set(&mut self, key: AuxKey, val: u64) {
         self.table
             .entry(key)
             .and_modify(|val_mut| *val_mut = val)
             .or_insert(val);
-        Ok(())
     }
 
-    pub fn table(&self) -> &BTreeMap<AuxKey, u64> {
+    pub(super) fn table(&self) -> &BTreeMap<AuxKey, u64> {
         &self.table
     }
 }

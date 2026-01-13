@@ -259,7 +259,7 @@ impl InitStackWriter<'_> {
             let random_value = generate_random_for_aux_vec();
             self.write_bytes(&random_value)?
         };
-        self.auxvec.set(AuxKey::AT_RANDOM, random_value_pointer)?;
+        self.auxvec.set(AuxKey::AT_RANDOM, random_value_pointer);
 
         self.adjust_stack_alignment(&envp_pointers, &argv_pointers)?;
         self.write_aux_vec()?;
