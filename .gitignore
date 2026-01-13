@@ -35,3 +35,6 @@ distro/result
 
 # cachix package list
 cachix.list
+
+# temporary configuration file for NixOS tests
+distro/etc_nixos/_config_for_test.nix

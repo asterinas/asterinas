@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = [
+    "common/framework", "common/test_macro",
+    "tests/*",
+]
+
+[workspace.package]
+version = "0.1.0"
+repository = "https://github.com/asterinas/asterinas"
+license = "MPL-2.0"
+edition = "2024"
+
+[workspace.dependencies]
+inventory = "0.3"
+rexpect = "0.6"
+strip-ansi-escapes = "0.2"
+nixos-test-framework = { path = "common/framework" }
+nixos-test-macro = { path = "common/test_macro" }

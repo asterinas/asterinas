@@ -21,6 +21,9 @@ MODE=$1
 SCRIPT_DIR=$(dirname "$0")
 ASTERINAS_DIR=$(realpath "${SCRIPT_DIR}/../..")
 
+# Change to Asterinas root directory to ensure all scripts run from the correct location.
+cd "${ASTERINAS_DIR}"
+
 # Base QEMU arguments
 BASE_QEMU_ARGS="qemu-system-x86_64 \
     -bios /root/ovmf/release/OVMF.fd \

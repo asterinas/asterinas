@@ -1,6 +1,6 @@
 { disable-systemd ? "false", stage-2-hook ? "/bin/sh -l", log-level ? "error"
-, console ? "hvc0", test-command ? "", extra-substituters ? ""
-, extra-trusted-public-keys ? "", pkgs ? import <nixpkgs> { } }:
+, console ? "hvc0", extra-substituters ? "", extra-trusted-public-keys ? ""
+, config-file-name ? "configuration.nix", pkgs ? import <nixpkgs> { } }:
 let
   aster-kernel = builtins.path {
     name = "aster-kernel-osdk-bin";
@@ -16,7 +16,6 @@ let
       aster-stage-2-hook = stage-2-hook;
       aster-log-level = log-level;
       aster-console = console;
-      aster-test-command = test-command;
       aster-substituters = extra-substituters;
       aster-trusted-public-keys = extra-trusted-public-keys;
     };
@@ -38,7 +37,7 @@ in pkgs.stdenv.mkDerivation {
     mkdir -p $out/{bin,etc_nixos}
     cp ${install_aster_nixos} $out/bin/install_aster_nixos.sh
     cp -L ${aster_configuration} $out/etc_nixos/aster_configuration.nix
-    cp -L ${etc-nixos}/configuration.nix $out/etc_nixos/configuration.nix
+    cp -L ${etc-nixos}/${config-file-name} $out/etc_nixos/configuration.nix
     cp -r ${etc-nixos}/modules $out/etc_nixos/modules
     cp -r ${etc-nixos}/overlays $out/etc_nixos/overlays
     ln -s ${aster-kernel} $out/kernel
