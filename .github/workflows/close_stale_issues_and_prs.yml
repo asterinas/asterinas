@@ -1,0 +1,28 @@
+name: Close stale issues and PRs
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * 1" # Runs on every Monday
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+          # Configurations for issues
+          stale-issue-message: "This issue is stale because it has been open 180 days with no activity. It will be closed in 5 days if no further activity occurs."
+          days-before-issue-stale: 180
+          days-before-issue-close: 5
+          stale-issue-label: "S-stale"
+
+          # Configurations for pull requests
+          stale-pr-message: "This PR is stale because it has been open 180 days with no activity. It will be closed in 5 days to keep the queue clean."
+          days-before-pr-stale: 180
+          days-before-pr-close: 5
+          stale-pr-label: "S-stale"
