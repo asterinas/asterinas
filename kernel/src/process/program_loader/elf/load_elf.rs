@@ -74,9 +74,7 @@ pub fn load_elf_to_vmar(
     if let Some(vdso_text_base) = map_vdso_to_vmar(vmar) {
         #[cfg(target_arch = "riscv64")]
         vmar.process_vm().set_vdso_base(vdso_text_base);
-        aux_vec
-            .set(AuxKey::AT_SYSINFO_EHDR, vdso_text_base as u64)
-            .unwrap();
+        aux_vec.set(AuxKey::AT_SYSINFO_EHDR, vdso_text_base as u64);
     }
 
     vmar.process_vm()
@@ -166,7 +164,7 @@ fn map_vmos_and_build_aux_vec(
     } else {
         0
     };
-    aux_vec.set(AuxKey::AT_SECURE, secure)?;
+    aux_vec.set(AuxKey::AT_SECURE, secure);
 
     let entry_point = if let Some(ldso_load_info) = ldso_load_info {
         ldso_load_info.entry_point
@@ -431,7 +429,7 @@ fn init_aux_vec(
 ) -> Result<AuxVec> {
     let mut aux_vec = AuxVec::new();
 
-    aux_vec.set(AuxKey::AT_PAGESZ, PAGE_SIZE as _)?;
+    aux_vec.set(AuxKey::AT_PAGESZ, PAGE_SIZE as _);
 
     let Some(ph_vaddr) = elf_map_range.relocated_addr_of(elf.find_vaddr_of_phdrs()?) else {
         return_errno_with_message!(
@@ -439,9 +437,9 @@ fn init_aux_vec(
             "the ELF program headers are not located in any segments"
         );
     };
-    aux_vec.set(AuxKey::AT_PHDR, ph_vaddr as u64)?;
-    aux_vec.set(AuxKey::AT_PHNUM, elf.ph_count() as u64)?;
-    aux_vec.set(AuxKey::AT_PHENT, elf.ph_ent() as u64)?;
+    aux_vec.set(AuxKey::AT_PHDR, ph_vaddr as u64);
+    aux_vec.set(AuxKey::AT_PHNUM, elf.ph_count() as u64);
+    aux_vec.set(AuxKey::AT_PHENT, elf.ph_ent() as u64);
 
     let Some(entry_vaddr) = elf_map_range.relocated_addr_of(elf.entry_point()) else {
         return_errno_with_message!(
@@ -449,10 +447,10 @@ fn init_aux_vec(
             "the entry point is not located in any segments"
         );
     };
-    aux_vec.set(AuxKey::AT_ENTRY, entry_vaddr as u64)?;
+    aux_vec.set(AuxKey::AT_ENTRY, entry_vaddr as u64);
 
     if let Some(ldso_base) = ldso_base {
-        aux_vec.set(AuxKey::AT_BASE, ldso_base as u64)?;
+        aux_vec.set(AuxKey::AT_BASE, ldso_base as u64);
     }
 
     Ok(aux_vec)
