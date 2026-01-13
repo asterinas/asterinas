@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(dead_code)]
-
 use crate::prelude::*;
 
 /// Auxiliary Vector.
@@ -15,6 +13,7 @@ use crate::prelude::*;
 ///  > is a table of key-value pairs, where the keys are from the set of ‘AT_’
 ///  > values in elf.h.
 #[expect(non_camel_case_types)]
+#[expect(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum AuxKey {
@@ -50,12 +49,6 @@ pub enum AuxKey {
     AT_SYSINFO_EHDR = 33, /* the start address of the page containing the VDSO */
 }
 
-impl AuxKey {
-    pub fn as_u64(&self) -> u64 {
-        *self as u64
-    }
-}
-
 #[derive(Clone, Default, Debug)]
 pub struct AuxVec {
     table: BTreeMap<AuxKey, u64>,
@@ -67,9 +60,7 @@ impl AuxVec {
             table: BTreeMap::new(),
         }
     }
-}
 
-impl AuxVec {
     pub fn set(&mut self, key: AuxKey, val: u64) -> Result<()> {
         if key == AuxKey::AT_NULL || key == AuxKey::AT_IGNORE {
             return_errno_with_message!(Errno::EINVAL, "Illegal key");
@@ -79,14 +70,6 @@ impl AuxVec {
             .and_modify(|val_mut| *val_mut = val)
             .or_insert(val);
         Ok(())
-    }
-
-    pub fn get(&self, key: AuxKey) -> Option<u64> {
-        self.table.get(&key).copied()
-    }
-
-    pub fn del(&mut self, key: AuxKey) -> Option<u64> {
-        self.table.remove(&key)
     }
 
     pub fn table(&self) -> &BTreeMap<AuxKey, u64> {

@@ -6,7 +6,7 @@ use core::cell::Ref;
 
 use inherit_methods_macro::inherit_methods;
 use ostd::{
-    mm::{Fallible, MAX_USERSPACE_VADDR, PodAtomic, VmIo, VmReader, VmWriter},
+    mm::{Fallible, PodAtomic, VmIo, VmReader, VmWriter},
     task::Task,
 };
 
@@ -17,7 +17,7 @@ use crate::{
         posix_thread::{PosixThread, ThreadLocal},
     },
     thread::Thread,
-    vm::vmar::{VMAR_LOWEST_ADDR, Vmar},
+    vm::vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR, Vmar},
 };
 
 /// The context that can be accessed from the current POSIX thread.
@@ -205,10 +205,10 @@ impl<'a> CurrentUserSpace<'a> {
             check_vaddr_lowerbound(vaddr)?;
         }
 
-        // Adjust `max_len` to ensure `vaddr + max_len` does not exceed `MAX_USERSPACE_VADDR`.
+        // Adjust `max_len` to ensure `vaddr + max_len` does not exceed `VMAR_CAP_ADDR`.
         // If `vaddr` is outside user address space, `userspace_max_len` will be set to zero and
         // further call to `self.reader` will return `EFAULT`.
-        let userspace_max_len = MAX_USERSPACE_VADDR.saturating_sub(vaddr).min(max_len);
+        let userspace_max_len = VMAR_CAP_ADDR.saturating_sub(vaddr).min(max_len);
 
         let mut user_reader = self.reader(vaddr, userspace_max_len)?;
         user_reader.read_cstring_until_nul(userspace_max_len)?
