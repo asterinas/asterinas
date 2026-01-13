@@ -58,7 +58,6 @@ DNS_SERVER ?= none
 # NixOS settings
 NIXOS_DISK_SIZE_IN_MB ?= 8192
 NIXOS_DISABLE_SYSTEMD ?= false
-NIXOS_TEST_COMMAND ?=
 # The following option is only effective when NIXOS_DISABLE_SYSTEMD is set to 'true'.
 # Use a login shell to ensure that environment variables are initialized correctly.
 NIXOS_STAGE_2_INIT ?= /bin/sh -l
@@ -326,7 +325,11 @@ endif
 iso: BOOT_PROTOCOL = linux-efi-handover64
 iso:
 	@make kernel
-	@./tools/nixos/build_iso.sh
+	@if [ -n "$(NIXOS_TEST_SUITE)" ]; then \
+        $(MAKE) --no-print-directory -C test/nixos iso; \
+    else \
+        ./tools/nixos/build_iso.sh; \
+    fi
 
 # Build the Asterinas NixOS ISO installer image and then do installation
 run_iso: OVMF = off
@@ -337,18 +340,25 @@ run_iso:
 nixos: BOOT_PROTOCOL = linux-efi-handover64
 nixos:
 	@make kernel
-	@./tools/nixos/build_nixos.sh
+	@if [ -n "$(NIXOS_TEST_SUITE)" ]; then \
+        $(MAKE) --no-print-directory -C test/nixos nixos; \
+    else \
+        ./tools/nixos/build_nixos.sh; \
+    fi
 
 # After creating a Asterinas NixOS installation (via either the `run_iso` or `nixos` target),
 # run the NixOS
 run_nixos: OVMF = off
 run_nixos:
-	@./tools/nixos/run.sh nixos
+	@if [ -n "$(NIXOS_TEST_SUITE)" ]; then \
+        $(MAKE) --no-print-directory -C test/nixos run_nixos; \
+    else \
+        ./tools/nixos/run.sh nixos; \
+    fi
 
 # Build the Asterinas NixOS patched packages
 cachix:
 	@nix-build distro/cachix \
-		--argstr test-command "${NIXOS_TEST_COMMAND}" \
 		--option extra-substituters "${RELEASE_SUBSTITUTER} ${DEV_SUBSTITUTER}" \
 		--option extra-trusted-public-keys "${RELEASE_TRUSTED_PUBLIC_KEY} ${DEV_TRUSTED_PUBLIC_KEY}" \
 		--out-link cachix.list
@@ -426,6 +436,7 @@ format:
 	@./tools/format_all.sh
 	@nixfmt ./distro
 	@$(MAKE) --no-print-directory -C test/initramfs format
+	@$(MAKE) --no-print-directory -C test/nixos format
 
 .PHONY: check
 check: initramfs $(CARGO_OSDK)
@@ -470,6 +481,9 @@ check: initramfs $(CARGO_OSDK)
 	@
 	@# Check formatting issues of the C code and Nix files (regression tests)
 	@$(MAKE) --no-print-directory -C test/initramfs check
+	@
+	@# Check formatting issues of the Rust code in NixOS tests
+	@$(MAKE) --no-print-directory -C test/nixos check
 	@
 	@# Check typos
 	@typos

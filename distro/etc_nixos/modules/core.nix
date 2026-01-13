@@ -74,15 +74,6 @@ in {
       ${config.aster_nixos.stage-2-hook}
     fi
   '';
-  # Execute test-command on hvc0 console after boot if the test-command is
-  # not empty (for CI testing).
-  environment.loginShellInit =
-    lib.mkIf ("${config.aster_nixos.test-command}" != "") ''
-      if [ "$(tty)" = "/dev/hvc0" ]; then
-        ${config.aster_nixos.test-command}
-        poweroff
-      fi
-    '';
   # Suppress error and warning messages of systemd.
   # TODO: Fix errors and warnings from systemd and remove this setting.
   environment.sessionVariables = { SYSTEMD_LOG_LEVEL = "crit"; };

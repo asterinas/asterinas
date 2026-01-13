@@ -126,7 +126,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM ERR
 
-cp $CONFIG_PATH ${BUILD_DIR}/etc/nixos
+cp $CONFIG_PATH ${BUILD_DIR}/etc/nixos/configuration.nix
 cp @aster-configuration@ ${BUILD_DIR}/etc/nixos/aster_configuration.nix
 cp -r @aster-etc-nixos@/modules ${BUILD_DIR}/etc/nixos
 cp -r @aster-etc-nixos@/overlays ${BUILD_DIR}/etc/nixos
