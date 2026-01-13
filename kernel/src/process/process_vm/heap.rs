@@ -8,7 +8,10 @@ use crate::{
     prelude::*,
     process::ResourceType,
     util::random::getrandom,
-    vm::{perms::VmPerms, vmar::Vmar},
+    vm::{
+        perms::VmPerms,
+        vmar::{VMAR_CAP_ADDR, Vmar},
+    },
 };
 
 #[derive(Debug)]
@@ -52,6 +55,10 @@ impl Heap {
         };
 
         let heap_start = heap_base.align_up(PAGE_SIZE) + nr_pages_padding * PAGE_SIZE;
+        let heap_end = heap_start + PAGE_SIZE;
+        if heap_end > VMAR_CAP_ADDR {
+            return_errno_with_message!(Errno::ENOMEM, "the mapping address is too large");
+        }
 
         let vmar_map_options = {
             let perms = VmPerms::READ | VmPerms::WRITE;
@@ -62,7 +69,7 @@ impl Heap {
         debug_assert!(inner.is_none());
         *inner = Some(HeapInner {
             data_segment_size,
-            heap_range: heap_start..heap_start + PAGE_SIZE,
+            heap_range: heap_start..heap_end,
         });
 
         Ok(())
