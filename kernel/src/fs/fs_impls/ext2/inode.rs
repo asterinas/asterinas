@@ -893,7 +893,7 @@ impl Inode {
     pub fn gid(&self) -> u32;
     pub fn file_flags(&self) -> FileFlags;
     pub fn hard_links(&self) -> u16;
-    pub fn blocks_count(&self) -> Ext2Bid;
+    pub fn size_in_blocks(&self) -> Ext2Bid;
     pub fn acl(&self) -> Bid;
     pub fn atime(&self) -> Duration;
     pub fn mtime(&self) -> Duration;
@@ -1198,7 +1198,8 @@ impl InodeInner {
     pub fn nr_sectors_allocated(&self) -> usize;
     pub fn inc_hard_links(&mut self);
     pub fn dec_hard_links(&mut self);
-    pub fn blocks_count(&self) -> Ext2Bid;
+    pub fn size_in_blocks(&self) -> Ext2Bid;
+    pub fn occupied_sectors_count(&self) -> u32;
     pub fn acl(&self) -> Bid;
     pub fn set_acl(&mut self, bid: Bid);
     pub fn atime(&self) -> Duration;
@@ -1223,7 +1224,7 @@ struct InodeImpl {
 impl InodeImpl {
     pub fn new(desc: Dirty<InodeDesc>, weak_self: Weak<Inode>, fs: Weak<Ext2>) -> Self {
         let block_manager = InodeBlockManager {
-            nblocks: AtomicUsize::new(desc.blocks_count() as _),
+            nblocks: AtomicUsize::new(desc.size_in_blocks() as _),
             block_ptrs: RwMutex::new(desc.block_ptrs),
             indirect_blocks: RwMutex::new(IndirectBlockCache::new(fs.clone())),
             fs,
@@ -1286,7 +1287,7 @@ impl InodeImpl {
     }
 
     pub fn nr_sectors_allocated(&self) -> usize {
-        self.desc.sector_count as usize
+        self.desc.occupied_sectors_count as usize
     }
 
     pub fn inc_hard_links(&mut self) {
@@ -1298,8 +1299,12 @@ impl InodeImpl {
         self.desc.hard_links -= 1;
     }
 
-    pub fn blocks_count(&self) -> Ext2Bid {
-        self.desc.blocks_count()
+    pub fn size_in_blocks(&self) -> Ext2Bid {
+        self.desc.size_in_blocks()
+    }
+
+    pub fn occupied_sectors_count(&self) -> u32 {
+        self.desc.occupied_sectors_count
     }
 
     pub fn acl(&self) -> Bid {
@@ -1408,7 +1413,7 @@ impl InodeImpl {
     /// which may result in an increased block count.
     fn expand(&mut self, new_size: usize) -> Result<()> {
         let new_blocks = self.desc.size_to_blocks(new_size);
-        let old_blocks = self.desc.blocks_count();
+        let old_blocks = self.desc.size_in_blocks();
 
         // Expands block count if necessary
         if new_blocks > old_blocks {
@@ -1485,7 +1490,6 @@ impl InodeImpl {
                 self.fs().free_blocks(device_range).unwrap();
                 return Err(e);
             }
-
             self.last_alloc_device_bid = Some(device_range.end - 1);
             let nr_blocks = device_range.len() as Ext2Bid;
             self.desc.set_data_blocks(range.start + nr_blocks);
@@ -1668,7 +1672,7 @@ impl InodeImpl {
     /// which may result in an decreased block count.
     fn shrink(&mut self, new_size: usize) {
         let new_blocks = self.desc.size_to_blocks(new_size);
-        let old_blocks = self.desc.blocks_count();
+        let old_blocks = self.desc.size_in_blocks();
 
         // Shrinks block count if necessary
         if new_blocks < old_blocks {
@@ -1683,7 +1687,7 @@ impl InodeImpl {
         self.desc.size = new_size;
         self.block_manager
             .nblocks
-            .store(self.blocks_count() as _, Ordering::Release);
+            .store(self.size_in_blocks() as _, Ordering::Release);
     }
 
     /// Shrinks inode blocks.
@@ -2141,8 +2145,8 @@ pub(super) struct InodeDesc {
     dtime: Duration,
     /// Hard links count.
     hard_links: u16,
-    /// Number of sectors.
-    sector_count: u32,
+    /// Number of sectors occupied.
+    occupied_sectors_count: u32,
     /// File flags.
     flags: FileFlags,
     /// Pointers to blocks.
@@ -2171,7 +2175,7 @@ impl TryFrom<RawInode> for InodeDesc {
             mtime: Duration::from(inode.mtime),
             dtime: Duration::from(inode.dtime),
             hard_links: inode.hard_links,
-            sector_count: inode.sector_count,
+            occupied_sectors_count: inode.occupied_sectors_count,
             flags: FileFlags::from_bits(inode.flags)
                 .ok_or(Error::with_message(Errno::EINVAL, "invalid file flags"))?,
             block_ptrs: inode.block_ptrs,
@@ -2199,7 +2203,7 @@ impl InodeDesc {
             mtime: now,
             dtime: Duration::ZERO,
             hard_links: 1,
-            sector_count: 0,
+            occupied_sectors_count: 0,
             flags: FileFlags::empty(),
             block_ptrs: BlockPtrs::default(),
             acl: Bid::new(0),
@@ -2207,13 +2211,10 @@ impl InodeDesc {
     }
 
     pub fn num_page_bytes(&self) -> usize {
-        (self.blocks_count() as usize) * BLOCK_SIZE
+        (self.size_in_blocks() as usize) * BLOCK_SIZE
     }
 
-    /// Returns the actual number of blocks utilized, excluding the indirect blocks.
-    ///
-    /// Ext2 allows the `block_count` to exceed the actual number of blocks utilized.
-    pub fn blocks_count(&self) -> Ext2Bid {
+    pub fn size_in_blocks(&self) -> Ext2Bid {
         if self.is_fast_symlink() {
             return 0;
         }
@@ -2242,17 +2243,18 @@ impl InodeDesc {
         let old_acl_sectors = self.acl_sectors();
         self.acl = bid;
         let new_acl_sectors = self.acl_sectors();
-        self.sector_count = self.sector_count - old_acl_sectors + new_acl_sectors;
+        self.occupied_sectors_count =
+            self.occupied_sectors_count - old_acl_sectors + new_acl_sectors;
     }
 
     /// Returns the number of data sectors, including the indirect blocks.
     fn data_sectors(&self) -> u32 {
-        self.sector_count - self.acl_sectors()
+        self.occupied_sectors_count - self.acl_sectors()
     }
 
     /// Sets the number of data blocks, including the indirect blocks.
     fn set_data_blocks(&mut self, block_count: u32) {
-        self.sector_count = blocks_to_sectors(block_count) + self.acl_sectors();
+        self.occupied_sectors_count = blocks_to_sectors(block_count) + self.acl_sectors();
     }
 
     /// Returns whether the inode is a fast symlink.
@@ -2263,8 +2265,8 @@ impl InodeDesc {
     }
 }
 
-fn sectors_to_blocks(sector_count: u32) -> Ext2Bid {
-    sector_count.div_ceil((BLOCK_SIZE / SECTOR_SIZE) as u32)
+fn sectors_to_blocks(sectors_count: u32) -> Ext2Bid {
+    sectors_count.div_ceil((BLOCK_SIZE / SECTOR_SIZE) as u32)
 }
 
 fn blocks_to_sectors(block_count: u32) -> u32 {
@@ -2377,7 +2379,7 @@ pub(super) struct RawInode {
     /// Low 16 bits of Group Id.
     pub gid: u16,
     pub hard_links: u16,
-    pub sector_count: u32,
+    pub occupied_sectors_count: u32,
     /// File flags.
     pub flags: u32,
     /// OS dependent Value 1.
@@ -2411,7 +2413,7 @@ impl From<&InodeDesc> for RawInode {
             dtime: UnixTime::from(inode.dtime),
             gid: inode.gid as u16,
             hard_links: inode.hard_links,
-            sector_count: inode.sector_count,
+            occupied_sectors_count: inode.occupied_sectors_count,
             flags: inode.flags.bits(),
             block_ptrs: inode.block_ptrs,
             file_acl: if inode.type_ == InodeType::File {
