@@ -69,7 +69,10 @@ fn build_proxy_from_pid_file(
 
     check_unsupported_ns_flags(flags)?;
 
-    let target_thread = pid_file.process().main_thread();
+    let target_thread = pid_file
+        .process_opt()
+        .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target process has been reaped"))?
+        .main_thread();
     let target_proxy = target_thread.as_posix_thread().unwrap().ns_proxy().lock();
     let Some(target_proxy) = target_proxy.as_ref() else {
         return_errno_with_message!(Errno::ESRCH, "the target process has exited");
