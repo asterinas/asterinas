@@ -22,7 +22,7 @@ use crate::{
             signals::user::{UserSignal, UserSignalKind},
         },
     },
-    util::ring_buffer::{RbConsumer, RbProducer, RingBuffer},
+    util::ring_buffer::{ConsumerU8Ext, ProducerU8Ext, RbConsumer, RbProducer, RingBuffer},
 };
 
 /// A handle for a pipe that implements `FileIo`.
