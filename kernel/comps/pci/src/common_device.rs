@@ -190,9 +190,9 @@ pub struct BarManager {
 }
 
 impl BarManager {
-    /// Gains access to the BAR space and returns None if that BAR is absent.
-    pub fn bar(&self, idx: u8) -> &Option<Bar> {
-        &self.bars[idx as usize]
+    /// Gains access to the BAR space and returns `None` if that BAR is absent.
+    pub fn bar(&self, idx: u8) -> Option<&Bar> {
+        self.bars[idx as usize].as_ref()
     }
 
     /// Parses the BAR space by PCI device location.
