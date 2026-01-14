@@ -10,6 +10,7 @@ align_ext.workspace = true
 bitflags.workspace = true
 cfg-if.workspace = true
 component.workspace = true
+int-to-c-enum.workspace = true
 log.workspace = true
 ostd.workspace = true
 spin.workspace = true

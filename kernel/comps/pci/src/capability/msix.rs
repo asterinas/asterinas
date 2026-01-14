@@ -4,16 +4,42 @@
 
 use alloc::vec::Vec;
 
-use ostd::{io::IoMem, irq::IrqLine, mm::VmIoOnce};
+use ostd::{Error, Result, io::IoMem, irq::IrqLine, mm::VmIoOnce};
 
 use crate::{
     PciDeviceLocation,
     arch::{MSIX_DEFAULT_MSG_ADDR, construct_remappable_msix_address},
-    cfg_space::{BarAccess, Command},
-    common_device::PciCommonDevice,
+    cfg_space::{BarAccess, Command, PciCommonCfgOffset},
+    common_device::{BarManager, PciCommonDevice},
 };
 
-/// MSI-X capability. It will set the BAR space it uses to be hidden.
+/// Raw information about MSI-X capability.
+#[derive(Debug)]
+pub(super) struct RawCapabilityMsix {
+    cap_ptr: u16,
+    msg_ctrl: u16,
+    table_info: u32,
+    pba_info: u32,
+}
+
+impl RawCapabilityMsix {
+    pub(super) fn parse(dev: &PciCommonDevice, cap_ptr: u16) -> Self {
+        let msg_ctrl = dev.location().read16(cap_ptr + 2);
+        let table_info = dev.location().read32(cap_ptr + 4);
+        let pba_info = dev.location().read32(cap_ptr + 8);
+
+        Self {
+            cap_ptr,
+            msg_ctrl,
+            table_info,
+            pba_info,
+        }
+    }
+}
+
+/// MSI-X capability.
+///
+/// It will acquire the access to the BAR space it uses.
 #[derive(Debug)]
 pub struct CapabilityMsixData {
     loc: PciDeviceLocation,
@@ -23,69 +49,41 @@ pub struct CapabilityMsixData {
     /// | Vector Control: u32 | Msg Data: u32 | Msg Upper Addr: u32 | Msg Addr: u32 |
     table_bar: IoMem,
     /// Pending bits table.
+    #[expect(dead_code)]
     pending_table_bar: IoMem,
     table_offset: usize,
+    #[expect(dead_code)]
     pending_table_offset: usize,
     irqs: Vec<Option<IrqLine>>,
 }
 
-impl Clone for CapabilityMsixData {
-    fn clone(&self) -> Self {
-        let new_vec = self.irqs.clone().to_vec();
-        Self {
-            loc: self.loc,
-            ptr: self.ptr,
-            table_size: self.table_size,
-            table_bar: self.table_bar.clone(),
-            pending_table_bar: self.pending_table_bar.clone(),
-            irqs: new_vec,
-            table_offset: self.table_offset,
-            pending_table_offset: self.pending_table_offset,
-        }
-    }
-}
-
 impl CapabilityMsixData {
-    pub(super) fn new(dev: &mut PciCommonDevice, cap_ptr: u16) -> Self {
-        // Get Table and PBA offset, provide functions to modify them
-        let table_info = dev.location().read32(cap_ptr + 4);
-        let pba_info = dev.location().read32(cap_ptr + 8);
-
-        let table_bar;
-        let pba_bar;
-
-        let bar_manager = dev.bar_manager_mut();
-        match bar_manager
-            .bar_mut((pba_info & 0b111) as u8)
-            .expect("MSIX cfg:pba BAR is none")
-            .acquire()
-            .expect("MSIX cfg:pba BAR is unavailable")
+    pub(super) fn new(
+        loc: &PciDeviceLocation,
+        bar_manager: &mut BarManager,
+        raw_cap: &RawCapabilityMsix,
+    ) -> Result<Self> {
+        let pba_bar = match bar_manager
+            .bar_mut((raw_cap.pba_info & 0b111) as u8)
+            .ok_or(Error::InvalidArgs)?
+            .acquire()?
         {
-            BarAccess::Memory(io_mem) => {
-                pba_bar = io_mem.clone();
-            }
-            BarAccess::Io => {
-                panic!("MSIX cfg:pba BAR is IO type")
-            }
+            BarAccess::Memory(io_mem) => io_mem,
+            BarAccess::Io => return Err(Error::InvalidArgs),
         };
-        match bar_manager
-            .bar_mut((table_info & 0b111) as u8)
-            .expect("MSIX cfg:table BAR is none")
-            .acquire()
-            .expect("MSIX cfg:table BAR is unavailable")
+        let pba_offset = (raw_cap.pba_info & !(0b111u32)) as usize;
+
+        let table_bar = match bar_manager
+            .bar_mut((raw_cap.table_info & 0b111) as u8)
+            .ok_or(Error::InvalidArgs)?
+            .acquire()?
         {
-            BarAccess::Memory(io_mem) => {
-                table_bar = io_mem.clone();
-            }
-            BarAccess::Io => {
-                panic!("MSIX cfg:table BAR is IO type")
-            }
-        }
+            BarAccess::Memory(io_mem) => io_mem,
+            BarAccess::Io => return Err(Error::InvalidArgs),
+        };
+        let table_offset = (raw_cap.table_info & !(0b111u32)) as usize;
 
-        let pba_offset = (pba_info & !(0b111u32)) as usize;
-        let table_offset = (table_info & !(0b111u32)) as usize;
-
-        let table_size = (dev.location().read16(cap_ptr + 2) & 0b11_1111_1111) + 1;
+        let table_size = (raw_cap.msg_ctrl & 0b11_1111_1111) + 1;
 
         // Set the message address and disable all MSI-X vectors.
         let message_address = MSIX_DEFAULT_MSG_ADDR;
@@ -103,32 +101,37 @@ impl CapabilityMsixData {
         }
 
         // Enable MSI-X (bit 15: MSI-X Enable).
-        dev.location()
-            .write16(cap_ptr + 2, dev.location().read16(cap_ptr + 2) | 0x8000);
+        loc.write16(
+            raw_cap.cap_ptr + 2,
+            loc.read16(raw_cap.cap_ptr + 2) | 0x8000,
+        );
         // Disable INTx. Enable bus master.
-        dev.write_command(dev.read_command() | Command::INTERRUPT_DISABLE | Command::BUS_MASTER);
+        loc.write16(
+            PciCommonCfgOffset::Command as u16,
+            loc.read16(PciCommonCfgOffset::Command as u16)
+                | (Command::INTERRUPT_DISABLE | Command::BUS_MASTER).bits(),
+        );
 
         let mut irqs = Vec::with_capacity(table_size as usize);
         for _ in 0..table_size {
             irqs.push(None);
         }
 
-        Self {
-            loc: *dev.location(),
-            ptr: cap_ptr,
-            table_size: (dev.location().read16(cap_ptr + 2) & 0b11_1111_1111) + 1,
+        Ok(Self {
+            loc: *loc,
+            ptr: raw_cap.cap_ptr,
+            table_size,
             table_bar,
             pending_table_bar: pba_bar,
             irqs,
             table_offset,
             pending_table_offset: pba_offset,
-        }
+        })
     }
 
     /// Returns the size of the MSI-X Table.
     pub fn table_size(&self) -> u16 {
-        // bit 10:0 table size
-        (self.loc.read16(self.ptr + 2) & 0b11_1111_1111) + 1
+        self.table_size
     }
 
     /// Enables an interrupt line.
