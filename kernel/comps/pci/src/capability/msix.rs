@@ -2,14 +2,14 @@
 
 //! MSI-X capability support.
 
-use alloc::{sync::Arc, vec::Vec};
+use alloc::vec::Vec;
 
-use ostd::{irq::IrqLine, mm::VmIoOnce};
+use ostd::{io::IoMem, irq::IrqLine, mm::VmIoOnce};
 
 use crate::{
     PciDeviceLocation,
     arch::{MSIX_DEFAULT_MSG_ADDR, construct_remappable_msix_address},
-    cfg_space::{Bar, Command, MemoryBar},
+    cfg_space::{BarAccess, Command},
     common_device::PciCommonDevice,
 };
 
@@ -21,9 +21,9 @@ pub struct CapabilityMsixData {
     table_size: u16,
     /// MSI-X table entry content:
     /// | Vector Control: u32 | Msg Data: u32 | Msg Upper Addr: u32 | Msg Addr: u32 |
-    table_bar: Arc<MemoryBar>,
+    table_bar: IoMem,
     /// Pending bits table.
-    pending_table_bar: Arc<MemoryBar>,
+    pending_table_bar: IoMem,
     table_offset: usize,
     pending_table_offset: usize,
     irqs: Vec<Option<IrqLine>>,
@@ -54,28 +54,30 @@ impl CapabilityMsixData {
         let table_bar;
         let pba_bar;
 
-        let bar_manager = dev.bar_manager();
+        let bar_manager = dev.bar_manager_mut();
         match bar_manager
-            .bar((pba_info & 0b111) as u8)
-            .cloned()
+            .bar_mut((pba_info & 0b111) as u8)
             .expect("MSIX cfg:pba BAR is none")
+            .acquire()
+            .expect("MSIX cfg:pba BAR is unavailable")
         {
-            Bar::Memory(memory) => {
-                pba_bar = memory;
+            BarAccess::Memory(io_mem) => {
+                pba_bar = io_mem.clone();
             }
-            Bar::Io(_) => {
+            BarAccess::Io => {
                 panic!("MSIX cfg:pba BAR is IO type")
             }
         };
         match bar_manager
-            .bar((table_info & 0b111) as u8)
-            .cloned()
+            .bar_mut((table_info & 0b111) as u8)
             .expect("MSIX cfg:table BAR is none")
+            .acquire()
+            .expect("MSIX cfg:table BAR is unavailable")
         {
-            Bar::Memory(memory) => {
-                table_bar = memory;
+            BarAccess::Memory(io_mem) => {
+                table_bar = io_mem.clone();
             }
-            Bar::Io(_) => {
+            BarAccess::Io => {
                 panic!("MSIX cfg:table BAR is IO type")
             }
         }
@@ -90,15 +92,12 @@ impl CapabilityMsixData {
         let message_upper_address = 0u32;
         for i in 0..table_size {
             table_bar
-                .io_mem()
                 .write_once((16 * i) as usize + table_offset, &message_address)
                 .unwrap();
             table_bar
-                .io_mem()
                 .write_once((16 * i + 4) as usize + table_offset, &message_upper_address)
                 .unwrap();
             table_bar
-                .io_mem()
                 .write_once((16 * i + 12) as usize + table_offset, &1_u32)
                 .unwrap();
         }
@@ -145,16 +144,13 @@ impl CapabilityMsixData {
             let address = construct_remappable_msix_address(remapping_index as u32);
 
             self.table_bar
-                .io_mem()
                 .write_once((16 * index) as usize + self.table_offset, &address)
                 .unwrap();
             self.table_bar
-                .io_mem()
                 .write_once((16 * index + 8) as usize + self.table_offset, &0)
                 .unwrap();
         } else {
             self.table_bar
-                .io_mem()
                 .write_once(
                     (16 * index + 8) as usize + self.table_offset,
                     &(irq.num() as u32),
@@ -165,7 +161,6 @@ impl CapabilityMsixData {
         let _old_irq = self.irqs[index as usize].replace(irq);
         // Enable this MSI-X vector.
         self.table_bar
-            .io_mem()
             .write_once((16 * index + 12) as usize + self.table_offset, &0_u32)
             .unwrap();
     }
