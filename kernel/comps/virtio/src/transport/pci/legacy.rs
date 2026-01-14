@@ -3,7 +3,7 @@
 use alloc::{boxed::Box, sync::Arc};
 use core::fmt::Debug;
 
-use aster_pci::{capability::CapabilityData, cfg_space::Bar, common_device::PciCommonDevice};
+use aster_pci::{capability::CapabilityData, cfg_space::BarAccess, common_device::PciCommonDevice};
 use aster_util::safe_ptr::SafePtr;
 use log::{info, warn};
 use ostd::{
@@ -63,7 +63,7 @@ const DEVICE_CONFIG_OFFSET_WITH_MSIX: usize = 0x18;
 pub struct VirtioPciLegacyTransport {
     device_type: VirtioDeviceType,
     common_device: PciCommonDevice,
-    config_bar: Bar,
+    config_bar: BarAccess,
     num_queues: u16,
     msix_manager: VirtioMsixManager,
 }
@@ -73,7 +73,7 @@ impl VirtioPciLegacyTransport {
 
     #[expect(clippy::result_large_err)]
     pub(super) fn new(
-        common_device: PciCommonDevice,
+        mut common_device: PciCommonDevice,
     ) -> Result<Self, (BusProbeError, PciCommonDevice)> {
         let device_type = match common_device.device_id().device_id {
             0x1000 => VirtioDeviceType::Network,
@@ -93,7 +93,12 @@ impl VirtioPciLegacyTransport {
         };
         info!("[Virtio]: Found device:{:?}", device_type);
 
-        let config_bar = common_device.bar_manager().bar(0).cloned().unwrap();
+        let config_bar = common_device
+            .bar_manager_mut()
+            .bar_mut(0)
+            .unwrap()
+            .acquire()
+            .unwrap();
 
         let mut num_queues = 0u16;
         while num_queues < u16::MAX {
@@ -202,7 +207,7 @@ impl VirtioTransport for VirtioPciLegacyTransport {
         None
     }
 
-    fn device_config_bar(&self) -> Option<(Bar, usize)> {
+    fn device_config_bar(&self) -> Option<(BarAccess, usize)> {
         let bar = self.config_bar.clone();
         let base = if self.msix_manager.is_enabled() {
             DEVICE_CONFIG_OFFSET_WITH_MSIX

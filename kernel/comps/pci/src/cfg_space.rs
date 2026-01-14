@@ -4,8 +4,6 @@
 //!
 //! Reference: <https://wiki.osdev.org/PCI>
 
-use alloc::sync::Arc;
-
 use bitflags::bitflags;
 use ostd::{
     Error, Result,
@@ -13,7 +11,6 @@ use ostd::{
     io::IoMem,
     mm::{PodOnce, VmIoOnce},
 };
-use spin::Once;
 
 use super::PciDeviceLocation;
 
@@ -238,15 +235,37 @@ bitflags! {
 }
 
 /// BAR space in PCI common config space.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Bar {
     /// Memory BAR
-    Memory(Arc<MemoryBar>),
+    Memory(MemoryBar),
     /// I/O BAR
-    Io(Arc<IoBar>),
+    Io(IoBar),
 }
 
 impl Bar {
+    /// Acquires access to the BAR.
+    pub fn acquire(&mut self) -> Result<BarAccess> {
+        match self {
+            Self::Memory(mem_bar) => mem_bar.acquire().cloned().map(BarAccess::Memory),
+            // TODO: Implement the `acquire` operation based on `IoPortAllocator`.
+            Self::Io(_) => Ok(BarAccess::Io),
+        }
+    }
+
+    /// Returns access to the BAR.
+    ///
+    /// This method will return `None` if the access is not [`acquire`]d before.
+    ///
+    /// [`acquire`]: Self::acquire
+    pub fn access(&self) -> Option<BarAccess> {
+        match self {
+            Self::Memory(mem_bar) => mem_bar.access().cloned().map(BarAccess::Memory),
+            // TODO: Implement the `access` operation based on `IoPortAllocator`.
+            Self::Io(_) => Some(BarAccess::Io),
+        }
+    }
+
     pub(super) fn new(location: PciDeviceLocation, index: u8) -> Result<Self> {
         if index >= 6 {
             return Err(Error::InvalidArgs);
@@ -258,27 +277,40 @@ impl Bar {
         // Check the "Space Indicator" bit.
         let result = if raw & 1 == 0 {
             // Memory BAR
-            Self::Memory(Arc::new(MemoryBar::new(&location, index, raw)?))
+            Self::Memory(MemoryBar::new(&location, index, raw)?)
         } else {
             // I/O port BAR
-            Self::Io(Arc::new(IoBar::new(&location, index, raw)?))
+            Self::Io(IoBar::new(&location, index, raw)?)
         };
         Ok(result)
     }
+}
 
+/// Access to memory or I/O port BAR.
+#[derive(Debug, Clone)]
+pub enum BarAccess {
+    /// Memory BAR
+    Memory(IoMem),
+    /// I/O BAR
+    Io,
+}
+
+impl BarAccess {
     /// Reads a value of a specified type at a specified offset.
     pub fn read_once<T: PodOnce + PortRead>(&self, offset: usize) -> Result<T> {
         match self {
-            Bar::Memory(mem_bar) => mem_bar.io_mem().read_once(offset),
-            Bar::Io(io_bar) => io_bar.read(offset as u32),
+            Self::Memory(io_mem) => io_mem.read_once(offset),
+            // TODO: Implement the `read` operation based on `IoPortAllocator`.
+            Self::Io => Err(Error::IoError),
         }
     }
 
     /// Writes a value of a specified type at a specified offset.
     pub fn write_once<T: PodOnce + PortWrite>(&self, offset: usize, value: T) -> Result<()> {
         match self {
-            Bar::Memory(mem_bar) => mem_bar.io_mem().write_once(offset, &value),
-            Bar::Io(io_bar) => io_bar.write(offset as u32, value),
+            Self::Memory(io_mem) => io_mem.write_once(offset, &value),
+            // TODO: Implement the `write` operation based on `IoPortAllocator`.
+            Self::Io => Err(Error::IoError),
         }
     }
 }
@@ -290,7 +322,7 @@ pub struct MemoryBar {
     size: u64,
     prefetchable: bool,
     address_length: AddrLen,
-    io_memory: Once<IoMem>,
+    io_memory: Option<IoMem>,
 }
 
 impl MemoryBar {
@@ -315,13 +347,26 @@ impl MemoryBar {
         self.size
     }
 
-    /// Grants I/O memory access
-    pub fn io_mem(&self) -> &IoMem {
-        self.io_memory.call_once(|| {
+    /// Acquires access to the memory BAR.
+    pub fn acquire(&mut self) -> Result<&IoMem> {
+        if self.io_memory.is_none() {
             // Use the `Uncacheable` cache policy for PCI device BARs by default.
             // Device-specific drivers may remap with different cache policies if needed.
-            IoMem::acquire((self.base as usize)..((self.base + self.size) as usize)).unwrap()
-        })
+            self.io_memory = Some(IoMem::acquire(
+                (self.base as usize)..((self.base + self.size) as usize),
+            )?);
+        }
+
+        Ok(self.io_memory.as_ref().unwrap())
+    }
+
+    /// Returns access to the memory BAR.
+    ///
+    /// This method will return `None` if the access is not [`acquire`]d before.
+    ///
+    /// [`acquire`]: Self::acquire
+    pub fn access(&self) -> Option<&IoMem> {
+        self.io_memory.as_ref()
     }
 
     /// Creates a memory BAR structure.
@@ -417,7 +462,7 @@ impl MemoryBar {
             size,
             prefetchable,
             address_length,
-            io_memory: Once::new(),
+            io_memory: None,
         })
     }
 }
@@ -447,36 +492,6 @@ impl IoBar {
     /// Returns the BAR's size.
     pub fn size(&self) -> u32 {
         self.size
-    }
-
-    /// Reads from port
-    pub fn read<T: PortRead>(&self, offset: u32) -> Result<T> {
-        // Check alignment
-        if !(self.base + offset).is_multiple_of(size_of::<T>() as u32) {
-            return Err(Error::InvalidArgs);
-        }
-        // Check overflow
-        if self.size < size_of::<T>() as u32 || offset > self.size - size_of::<T>() as u32 {
-            return Err(Error::InvalidArgs);
-        }
-
-        // TODO: Implement the read operation based on `IoPortAllocator`.
-        Err(Error::IoError)
-    }
-
-    /// Writes to port
-    pub fn write<T: PortWrite>(&self, offset: u32, _value: T) -> Result<()> {
-        // Check alignment
-        if !(self.base + offset).is_multiple_of(size_of::<T>() as u32) {
-            return Err(Error::InvalidArgs);
-        }
-        // Check overflow
-        if size_of::<T>() as u32 > self.size || offset > self.size - size_of::<T>() as u32 {
-            return Err(Error::InvalidArgs);
-        }
-
-        // TODO: Implement the write operation based on `IoPortAllocator`.
-        Err(Error::IoError)
     }
 
     /// Creates an I/O port BAR structure.

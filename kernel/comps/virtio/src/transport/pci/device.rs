@@ -4,7 +4,7 @@ use alloc::{boxed::Box, sync::Arc};
 use core::fmt::Debug;
 
 use aster_pci::{
-    PciDeviceId, bus::PciDevice, capability::CapabilityData, cfg_space::Bar,
+    PciDeviceId, bus::PciDevice, capability::CapabilityData, cfg_space::BarAccess,
     common_device::PciCommonDevice,
 };
 use aster_util::{field_ptr, safe_ptr::SafePtr};
@@ -134,13 +134,12 @@ impl VirtioTransport for VirtioPciModernTransport {
             .device_cfg
             .memory_bar()
             .unwrap()
-            .io_mem()
             .slice(offset..offset + length);
 
         Some(io_mem)
     }
 
-    fn device_config_bar(&self) -> Option<(Bar, usize)> {
+    fn device_config_bar(&self) -> Option<(BarAccess, usize)> {
         None
     }
 
@@ -266,7 +265,7 @@ impl VirtioTransport for VirtioPciModernTransport {
 impl VirtioPciModernTransport {
     #[expect(clippy::result_large_err)]
     pub(super) fn new(
-        common_device: PciCommonDevice,
+        mut common_device: PciCommonDevice,
     ) -> Result<Self, (BusProbeError, PciCommonDevice)> {
         let device_id = common_device.device_id().device_id;
         let device_type_value = if device_id <= 0x1040 {
@@ -289,10 +288,11 @@ impl VirtioPciModernTransport {
         let mut notify = None;
         let mut common_cfg = None;
         let mut device_cfg = None;
-        for cap in common_device.capabilities().iter() {
+        let (caps, bar_manager) = common_device.capabilities_and_bar_manager_mut();
+        for cap in caps {
             match cap.capability_data() {
                 CapabilityData::Vndr(vendor) => {
-                    let data = VirtioPciCapabilityData::new(common_device.bar_manager(), *vendor);
+                    let data = VirtioPciCapabilityData::new(bar_manager, *vendor);
                     match data.typ() {
                         VirtioPciCpabilityType::CommonCfg => {
                             common_cfg = Some(VirtioPciCommonCfg::new(&data));
@@ -301,7 +301,7 @@ impl VirtioPciModernTransport {
                             notify = Some(VirtioPciNotify {
                                 offset_multiplier: data.option_value().unwrap(),
                                 offset: data.offset(),
-                                io_memory: data.memory_bar().unwrap().io_mem().clone(),
+                                io_memory: data.memory_bar().unwrap().clone(),
                             });
                         }
                         VirtioPciCpabilityType::IsrCfg => {}
