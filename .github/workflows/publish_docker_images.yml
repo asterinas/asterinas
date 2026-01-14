@@ -12,6 +12,7 @@ jobs:
   publish_osdk_image:
     runs-on: ubuntu-latest
     steps:
+      - uses: BRAINSia/free-disk-space@v2
       - uses: actions/checkout@v4
       - name: Prepare for Docker build and push
         id: prepare-for-docker-build-and-push
@@ -34,6 +35,7 @@ jobs:
     needs: publish_osdk_image
     runs-on: ubuntu-latest
     steps:
+      - uses: BRAINSia/free-disk-space@v2
       - uses: actions/checkout@v4
       - name: Prepare for Docker build and push
         id: prepare-for-docker-build-and-push
@@ -56,6 +58,7 @@ jobs:
     needs: publish_nix_image
     runs-on: ubuntu-latest
     steps:
+      - uses: BRAINSia/free-disk-space@v2
       - uses: actions/checkout@v4
       - name: Prepare for Docker build and push
         id: prepare-for-docker-build-and-push
