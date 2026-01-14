@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use device_id::DeviceId;
-
 use super::SyscallReturn;
 use crate::{
     fs::{
@@ -254,7 +252,7 @@ fn open_fs(
             return_errno_with_message!(Errno::ENODEV, "the path is not a device file");
         }
 
-        let id = DeviceId::from_encoded_u64(path.metadata().rdev);
+        let id = path.metadata().self_dev_id;
         let device = id.and_then(aster_block::lookup);
         if device.is_none() {
             return_errno_with_message!(Errno::ENODEV, "the device is not found");

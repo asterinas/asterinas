@@ -58,27 +58,27 @@ impl Common {
     }
 
     pub fn atime(&self) -> Duration {
-        self.metadata.read().atime
+        self.metadata.read().last_access_at
     }
 
     pub fn set_atime(&self, time: Duration) {
-        self.metadata.write().atime = time;
+        self.metadata.write().last_access_at = time;
     }
 
     pub fn mtime(&self) -> Duration {
-        self.metadata.read().mtime
+        self.metadata.read().last_modify_at
     }
 
     pub fn set_mtime(&self, time: Duration) {
-        self.metadata.write().mtime = time;
+        self.metadata.write().last_modify_at = time;
     }
 
     pub fn ctime(&self) -> Duration {
-        self.metadata.read().ctime
+        self.metadata.read().last_meta_change_at
     }
 
     pub fn set_ctime(&self, time: Duration) {
-        self.metadata.write().ctime = time;
+        self.metadata.write().last_meta_change_at = time;
     }
 
     pub fn mode(&self) -> Result<InodeMode> {

@@ -1170,20 +1170,24 @@ impl Inode for RamInode {
         let rdev = self.inner.device_id().unwrap_or(0);
         let inode_metadata = self.metadata.lock();
         Metadata {
-            dev: 0,
             ino: self.ino as _,
             size: inode_metadata.size,
-            blk_size: BLOCK_SIZE,
-            blocks: inode_metadata.blocks,
-            atime: inode_metadata.atime,
-            mtime: inode_metadata.mtime,
-            ctime: inode_metadata.ctime,
+            optimal_block_size: BLOCK_SIZE,
+            nr_sectors_allocated: inode_metadata.blocks,
+            last_access_at: inode_metadata.atime,
+            last_modify_at: inode_metadata.mtime,
+            last_meta_change_at: inode_metadata.ctime,
             type_: self.typ,
             mode: inode_metadata.mode,
-            nlinks: inode_metadata.nlinks,
+            nr_hard_links: inode_metadata.nlinks,
             uid: inode_metadata.uid,
             gid: inode_metadata.gid,
-            rdev,
+            container_dev_id: DeviceId::none(), // FIXME: placeholder
+            self_dev_id: if rdev == 0 {
+                None
+            } else {
+                DeviceId::from_encoded_u64(rdev)
+            },
         }
     }
 
