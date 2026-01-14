@@ -15,12 +15,11 @@ use crate::{
 
 /// MSI-X capability. It will set the BAR space it uses to be hidden.
 #[derive(Debug)]
-#[repr(C)]
 pub struct CapabilityMsixData {
     loc: PciDeviceLocation,
     ptr: u16,
     table_size: u16,
-    /// MSIX table entry content:
+    /// MSI-X table entry content:
     /// | Vector Control: u32 | Msg Data: u32 | Msg Upper Addr: u32 | Msg Addr: u32 |
     table_bar: Arc<MemoryBar>,
     /// Pending bits table.
@@ -85,13 +84,11 @@ impl CapabilityMsixData {
         let table_offset = (table_info & !(0b111u32)) as usize;
 
         let table_size = (dev.location().read16(cap_ptr + 2) & 0b11_1111_1111) + 1;
-        // TODO: Different architecture seems to have different, so we should set different address here.
+
+        // Set the message address and disable all MSI-X vectors.
         let message_address = MSIX_DEFAULT_MSG_ADDR;
         let message_upper_address = 0u32;
-
-        // Set message address 0xFEE0_0000
         for i in 0..table_size {
-            // Set message address and disable this msix entry
             table_bar
                 .io_mem()
                 .write_once((16 * i) as usize + table_offset, &message_address)
@@ -106,11 +103,11 @@ impl CapabilityMsixData {
                 .unwrap();
         }
 
-        // enable MSI-X, bit15: MSI-X Enable
+        // Enable MSI-X (bit 15: MSI-X Enable).
         dev.location()
             .write16(cap_ptr + 2, dev.location().read16(cap_ptr + 2) | 0x8000);
-        // disable INTx, enable Bus master.
-        dev.set_command(dev.command() | Command::INTERRUPT_DISABLE | Command::BUS_MASTER);
+        // Disable INTx. Enable bus master.
+        dev.write_command(dev.read_command() | Command::INTERRUPT_DISABLE | Command::BUS_MASTER);
 
         let mut irqs = Vec::with_capacity(table_size as usize);
         for _ in 0..table_size {
@@ -129,13 +126,15 @@ impl CapabilityMsixData {
         }
     }
 
-    /// MSI-X Table size
+    /// Returns the size of the MSI-X Table.
     pub fn table_size(&self) -> u16 {
         // bit 10:0 table size
         (self.loc.read16(self.ptr + 2) & 0b11_1111_1111) + 1
     }
 
-    /// Enables an interrupt line, it will replace the old handle with the new handle.
+    /// Enables an interrupt line.
+    ///
+    /// If the interrupt line has already been enabled, the old [`IrqLine`] will be replaced.
     pub fn set_interrupt_vector(&mut self, irq: IrqLine, index: u16) {
         if index >= self.table_size {
             return;
@@ -164,19 +163,21 @@ impl CapabilityMsixData {
         }
 
         let _old_irq = self.irqs[index as usize].replace(irq);
-        // Enable this msix vector
+        // Enable this MSI-X vector.
         self.table_bar
             .io_mem()
             .write_once((16 * index + 12) as usize + self.table_offset, &0_u32)
             .unwrap();
     }
 
-    /// Gets mutable IrqLine. User can register callbacks by using this function.
+    /// Returns a mutable reference to the [`IrqLine`].
+    ///
+    /// Users can register callbacks using the returned [`IrqLine`] reference.
     pub fn irq_mut(&mut self, index: usize) -> Option<&mut IrqLine> {
         self.irqs[index].as_mut()
     }
 
-    /// Returns true if MSI-X Enable bit is set.
+    /// Returns true if the MSI-X Enable bit is set.
     pub fn is_enabled(&self) -> bool {
         let msg_ctrl = self.loc.read16(self.ptr + 2);
         msg_ctrl & 0x8000 != 0

@@ -67,7 +67,7 @@ pub enum CapabilityData {
 }
 
 impl Capability {
-    /// 0xFC, the top of the capability position.
+    /// The top of the capability position.
     const CAPABILITY_TOP: u16 = 0xFC;
 
     /// Gets the capability data
@@ -77,26 +77,29 @@ impl Capability {
 
     /// Gets the capabilities of one device
     pub(super) fn device_capabilities(dev: &mut PciCommonDevice) -> Vec<Self> {
-        if !dev.status().contains(Status::CAPABILITIES_LIST) {
+        if !dev.read_status().contains(Status::CAPABILITIES_LIST) {
             return Vec::new();
         }
 
-        // The offset of the first capability pointer is the same for PCI general devices and PCI bridge devices.
+        // The offset of the first capability pointer is the same for PCI general devices and PCI
+        // bridge devices.
         const CAP_OFFSET: u16 = PciGeneralDeviceCfgOffset::CapabilitiesPointer as u16;
         let mut cap_ptr =
             (dev.location().read8(CAP_OFFSET) as u16).align_down(align_of::<u32>() as _);
         let mut cap_ptr_vec = Vec::new();
         let mut capabilities = Vec::new();
 
-        // read all cap_ptr so that it is easy for us to get the length.
+        // Read all capability pointers so that it is easy for us to get the length of each
+        // capability.
         while cap_ptr > 0 {
             cap_ptr_vec.push(cap_ptr);
             cap_ptr = (dev.location().read8(cap_ptr + 1) as u16).align_down(align_of::<u32>() as _);
         }
         cap_ptr_vec.sort();
 
-        // Push here so that we can calculate the length of the last capability.
+        // Push the top position so that we can calculate the length of the last capability.
         cap_ptr_vec.push(Self::CAPABILITY_TOP);
+
         let length = cap_ptr_vec.len();
         for i in 0..length - 1 {
             let cap_ptr = cap_ptr_vec[i];

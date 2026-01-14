@@ -4,7 +4,7 @@
 
 use crate::cfg_space::PciCommonCfgOffset;
 
-/// PCI device Location
+/// PCI device location.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PciDeviceLocation {
     /// Bus number

@@ -10,15 +10,17 @@ use ostd::bus::BusProbeError;
 
 use super::{PciCommonDevice, device_info::PciDeviceId};
 
-/// PciDevice trait.
+/// A trait that represents PCI devices.
 pub trait PciDevice: Sync + Send + Debug {
-    /// Gets device id.
+    /// Returns the device ID.
     fn device_id(&self) -> PciDeviceId;
 }
 
-/// PCI device driver, PCI bus will pass the device through the `probe` function when a new device is registered.
+/// A trait that represents PCI device drivers.
+///
+/// The PCI bus will pass the device through the `probe` function when a new device is registered.
 pub trait PciDriver: Sync + Send + Debug {
-    /// Probe an unclaimed PCI device.
+    /// Probes an unclaimed PCI device.
     ///
     /// If the driver matches and succeeds in initializing the unclaimed device,
     /// then the driver will return an claimed instance of the device,
@@ -33,10 +35,11 @@ pub trait PciDriver: Sync + Send + Debug {
     ) -> Result<Arc<dyn PciDevice>, (BusProbeError, PciCommonDevice)>;
 }
 
-/// The PCI bus used to register PCI devices. If a component wishes to drive a PCI device, it needs to provide the following:
+/// The PCI bus used to register PCI devices.
 ///
-/// 1. The structure that implements the PciDevice trait.
-/// 2. PCI driver.
+/// If a component wishes to drive a PCI device, it needs to provide the following:
+/// 1. The structure that implements the [`PciDevice`] trait.
+/// 2. A [`PciDriver`] instance.
 pub struct PciBus {
     common_devices: VecDeque<PciCommonDevice>,
     devices: Vec<Arc<dyn PciDevice>>,
@@ -46,7 +49,7 @@ pub struct PciBus {
 impl PciBus {
     /// Registers a PCI driver to the PCI bus.
     pub fn register_driver(&mut self, driver: Arc<dyn PciDriver>) {
-        debug!("Register driver:{:#x?}", driver);
+        debug!("Register PCI driver: {:#x?}", driver);
         let length = self.common_devices.len();
         for _ in (0..length).rev() {
             let common_device = self.common_devices.pop_front().unwrap();
@@ -71,7 +74,7 @@ impl PciBus {
     }
 
     pub(super) fn register_common_device(&mut self, mut common_device: PciCommonDevice) {
-        debug!("Find pci common devices:{:x?}", common_device);
+        debug!("Find PCI common device: {:#x?}", common_device);
         let device_id = *common_device.device_id();
         for driver in self.drivers.iter() {
             common_device = match driver.probe(common_device) {

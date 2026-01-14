@@ -283,7 +283,7 @@ impl Bar {
     }
 }
 
-/// Memory BAR
+/// Memory BAR.
 #[derive(Debug)]
 pub struct MemoryBar {
     base: u64,
@@ -294,23 +294,23 @@ pub struct MemoryBar {
 }
 
 impl MemoryBar {
-    /// Memory BAR bits type
+    /// Returns the BAR's address length (32 bits or 64 bits).
     pub fn address_length(&self) -> AddrLen {
         self.address_length
     }
 
-    /// Whether this bar is prefetchable, allowing the CPU to get the data
+    /// Returns whether the BAR is prefetchable, i.e., whether the CPU is allowed to get the data
     /// in advance.
     pub fn prefetchable(&self) -> bool {
         self.prefetchable
     }
 
-    /// Base address
+    /// Returns the BAR's base address.
     pub fn base(&self) -> u64 {
         self.base
     }
 
-    /// Size of the memory
+    /// Returns the BAR's size.
     pub fn size(&self) -> u64 {
         self.size
     }
@@ -422,7 +422,7 @@ impl MemoryBar {
     }
 }
 
-/// Whether this BAR is 64bit address or 32bit address
+/// The address length of a memory BAR (32 bits or 64 bits).
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum AddrLen {
     /// 32 bits
@@ -439,12 +439,12 @@ pub struct IoBar {
 }
 
 impl IoBar {
-    /// Base port
+    /// Returns the BAR's base port.
     pub fn base(&self) -> u32 {
         self.base
     }
 
-    /// Size of the port
+    /// Returns the BAR's size.
     pub fn size(&self) -> u32 {
         self.size
     }
