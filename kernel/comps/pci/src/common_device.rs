@@ -14,7 +14,9 @@ use crate::{
     device_info::PciDeviceLocation,
 };
 
-/// PCI common device, Contains a range of information and functions common to PCI devices.
+/// PCI common device.
+///
+/// This type contains a range of information and functions common to PCI devices.
 #[derive(Debug)]
 pub struct PciCommonDevice {
     device_id: PciDeviceId,
@@ -55,25 +57,25 @@ impl PciCommonDevice {
         self.header_type.has_multi_funcs()
     }
 
-    /// Gets the PCI Command
-    pub fn command(&self) -> Command {
+    /// Reads the PCI command.
+    pub fn read_command(&self) -> Command {
         Command::from_bits_truncate(self.location.read16(PciCommonCfgOffset::Command as u16))
     }
 
-    /// Sets the PCI Command
-    pub fn set_command(&self, command: Command) {
+    /// Writes the PCI command.
+    pub fn write_command(&self, command: Command) {
         self.location
             .write16(PciCommonCfgOffset::Command as u16, command.bits())
     }
 
-    /// Gets the PCI status
-    pub fn status(&self) -> Status {
+    /// Reads the PCI status.
+    pub fn read_status(&self) -> Status {
         Status::from_bits_truncate(self.location.read16(PciCommonCfgOffset::Status as u16))
     }
 
     pub(super) fn new(location: PciDeviceLocation) -> Option<Self> {
         if location.read16(0) == 0xFFFF {
-            // not exists
+            // No device.
             return None;
         }
 
@@ -101,8 +103,8 @@ impl PciCommonDevice {
             capabilities,
         };
 
-        device.set_command(
-            device.command() | Command::MEMORY_SPACE | Command::BUS_MASTER | Command::IO_SPACE,
+        device.write_command(
+            device.read_command() | Command::MEMORY_SPACE | Command::BUS_MASTER | Command::IO_SPACE,
         );
         device.bar_manager = BarManager::new(device.header_type.device_type(), location);
         device.capabilities = Capability::device_capabilities(&mut device);
@@ -150,6 +152,7 @@ impl PciHeaderType {
 }
 
 /// Represents the type of PCI device, determined by the device's header type.
+///
 /// Used to distinguish between general devices, PCI-to-PCI bridges, and PCI-to-Cardbus bridges.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 #[repr(u8)]
@@ -175,7 +178,7 @@ impl PciDeviceType {
     }
 }
 
-/// Base Address Registers manager.
+/// Base Address Register (BAR) manager.
 #[derive(Debug)]
 pub struct BarManager {
     /// There are at most 6 BARs in PCI device.
