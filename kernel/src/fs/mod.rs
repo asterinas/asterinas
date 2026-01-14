@@ -35,6 +35,7 @@ use crate::{
 };
 
 pub fn init() {
+    device_id::init();
     registry::init();
 
     sysfs::init();

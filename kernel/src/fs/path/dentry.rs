@@ -324,7 +324,7 @@ impl Dentry {
 
         self.inode.unlink(name)?;
 
-        let nlinks = child_inode.metadata().nlinks;
+        let nlinks = child_inode.metadata().nr_hard_links;
         fs::notify::on_link_count(&child_inode);
         if nlinks == 0 {
             fs::notify::on_inode_removed(&child_inode);
@@ -377,7 +377,7 @@ impl Dentry {
 
         self.inode.rmdir(name)?;
 
-        let nlinks = child_inode.metadata().nlinks;
+        let nlinks = child_inode.metadata().nr_hard_links;
         if nlinks == 0 {
             fs::notify::on_inode_removed(&child_inode);
         }
