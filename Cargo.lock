@@ -283,6 +283,7 @@ dependencies = [
  "cfg-if",
  "component",
  "fdt",
+ "int-to-c-enum",
  "ostd",
  "spin",
 ]
