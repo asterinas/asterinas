@@ -24,7 +24,7 @@ RUN sh <(curl -L https://nixos.org/nix/install) --daemon --yes \
 
 #= Build Nix packages ======================================================
 
-COPY test /root/test
+COPY test/initramfs /root/test
 WORKDIR /root/test
 ENV PATH="/nix/var/nix/profiles/default/bin:${PATH}"
 
