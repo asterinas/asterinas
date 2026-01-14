@@ -2,9 +2,6 @@
 
 //! MSI-X capability support.
 
-#![expect(dead_code)]
-#![expect(unused_variables)]
-
 use alloc::{sync::Arc, vec::Vec};
 
 use ostd::{irq::IrqLine, mm::VmIoOnce};
@@ -58,7 +55,7 @@ impl CapabilityMsixData {
         let table_bar;
         let pba_bar;
 
-        let bar_manager = dev.bar_manager_mut();
+        let bar_manager = dev.bar_manager();
         match bar_manager
             .bar((pba_info & 0b111) as u8)
             .clone()
@@ -116,7 +113,7 @@ impl CapabilityMsixData {
         dev.set_command(dev.command() | Command::INTERRUPT_DISABLE | Command::BUS_MASTER);
 
         let mut irqs = Vec::with_capacity(table_size as usize);
-        for i in 0..table_size {
+        for _ in 0..table_size {
             irqs.push(None);
         }
 
@@ -184,8 +181,4 @@ impl CapabilityMsixData {
         let msg_ctrl = self.loc.read16(self.ptr + 2);
         msg_ctrl & 0x8000 != 0
     }
-}
-
-fn set_bit(origin_value: u16, offset: usize, set: bool) -> u16 {
-    (origin_value & (!(1 << offset))) | ((set as u16) << offset)
 }

@@ -2,8 +2,6 @@
 
 //! PCI device common definitions or functions.
 
-#![expect(dead_code)]
-
 use alloc::vec::Vec;
 
 use super::{
@@ -110,14 +108,6 @@ impl PciCommonDevice {
         device.capabilities = Capability::device_capabilities(&mut device);
 
         Some(device)
-    }
-
-    pub(super) fn bar_manager_mut(&mut self) -> &mut BarManager {
-        &mut self.bar_manager
-    }
-
-    pub(super) fn capabilities_mut(&mut self) -> &mut Vec<Capability> {
-        &mut self.capabilities
     }
 }
 

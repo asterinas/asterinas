@@ -2,8 +2,6 @@
 
 //! PCI device capabilities.
 
-#![expect(dead_code)]
-
 use alloc::vec::Vec;
 
 use align_ext::AlignExt;
@@ -18,13 +16,6 @@ pub mod vendor;
 /// PCI Capability
 #[derive(Debug)]
 pub struct Capability {
-    id: u8,
-    /// Pointer to the capability.
-    pos: u16,
-    /// Next Capability pointer, 0xFC if self is the last one.
-    next_ptr: u16,
-    /// The length of this Capability
-    len: u16,
     cap_data: CapabilityData,
 }
 
@@ -136,13 +127,7 @@ impl Capability {
                 0x14 => CapabilityData::Ea,
                 _ => CapabilityData::Unknown(cap_type),
             };
-            capabilities.push(Self {
-                id: cap_type,
-                pos: cap_ptr,
-                next_ptr,
-                len: next_ptr - cap_ptr,
-                cap_data: data,
-            });
+            capabilities.push(Self { cap_data: data });
         }
 
         capabilities
