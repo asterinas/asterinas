@@ -3,7 +3,7 @@
 use alloc::{boxed::Box, sync::Arc};
 use core::fmt::Debug;
 
-use aster_pci::{capability::CapabilityData, cfg_space::BarAccess, common_device::PciCommonDevice};
+use aster_pci::{cfg_space::BarAccess, common_device::PciCommonDevice};
 use aster_util::safe_ptr::SafePtr;
 use log::{info, warn};
 use ostd::{
@@ -112,17 +112,8 @@ impl VirtioPciLegacyTransport {
             num_queues += 1;
         }
 
-        // TODO: Support interrupt without MSI-X
-        let mut msix = None;
-        for cap in common_device.capabilities().iter() {
-            match cap.capability_data() {
-                CapabilityData::Msix(data) => {
-                    msix = Some(data.clone());
-                }
-                _ => continue,
-            }
-        }
-        let Some(msix) = msix else {
+        // TODO: Support interrupt without MSI-X.
+        let Ok(Some(msix)) = common_device.acquire_msix_capability() else {
             return Err((BusProbeError::ConfigurationSpaceError, common_device));
         };
         let msix_manager = VirtioMsixManager::new(msix);
