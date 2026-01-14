@@ -133,7 +133,6 @@ impl VirtioTransport for VirtioPciModernTransport {
         let io_mem = self
             .device_cfg
             .memory_bar()
-            .as_ref()
             .unwrap()
             .io_mem()
             .slice(offset..offset + length);
@@ -302,7 +301,7 @@ impl VirtioPciModernTransport {
                             notify = Some(VirtioPciNotify {
                                 offset_multiplier: data.option_value().unwrap(),
                                 offset: data.offset(),
-                                io_memory: data.memory_bar().as_ref().unwrap().io_mem().clone(),
+                                io_memory: data.memory_bar().unwrap().io_mem().clone(),
                             });
                         }
                         VirtioPciCpabilityType::IsrCfg => {}

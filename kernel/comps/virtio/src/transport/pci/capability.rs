@@ -30,8 +30,8 @@ pub struct VirtioPciCapabilityData {
 }
 
 impl VirtioPciCapabilityData {
-    pub fn memory_bar(&self) -> &Option<Arc<MemoryBar>> {
-        &self.memory_bar
+    pub fn memory_bar(&self) -> Option<&Arc<MemoryBar>> {
+        self.memory_bar.as_ref()
     }
 
     pub fn offset(&self) -> u32 {

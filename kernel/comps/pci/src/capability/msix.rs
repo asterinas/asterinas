@@ -57,7 +57,7 @@ impl CapabilityMsixData {
         let bar_manager = dev.bar_manager();
         match bar_manager
             .bar((pba_info & 0b111) as u8)
-            .clone()
+            .cloned()
             .expect("MSIX cfg:pba BAR is none")
         {
             Bar::Memory(memory) => {
@@ -69,7 +69,7 @@ impl CapabilityMsixData {
         };
         match bar_manager
             .bar((table_info & 0b111) as u8)
-            .clone()
+            .cloned()
             .expect("MSIX cfg:table BAR is none")
         {
             Bar::Memory(memory) => {
