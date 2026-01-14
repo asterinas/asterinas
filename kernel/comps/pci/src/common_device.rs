@@ -27,27 +27,37 @@ pub struct PciCommonDevice {
 }
 
 impl PciCommonDevice {
-    /// Gets the PCI device ID
+    /// Returns the PCI device ID.
     pub fn device_id(&self) -> &PciDeviceId {
         &self.device_id
     }
 
-    /// Gets the PCI device location
+    /// Returns the PCI device location.
     pub fn location(&self) -> &PciDeviceLocation {
         &self.location
     }
 
-    /// Gets the PCI Base Address Register (BAR) manager
+    /// Returns a reference to the PCI Base Address Register (BAR) manager.
     pub fn bar_manager(&self) -> &BarManager {
         &self.bar_manager
     }
 
-    /// Gets the PCI capabilities
+    /// Returns a mutable reference to the PCI Base Address Register (BAR) manager.
+    pub fn bar_manager_mut(&mut self) -> &mut BarManager {
+        &mut self.bar_manager
+    }
+
+    /// Returns the PCI capabilities.
     pub fn capabilities(&self) -> &Vec<Capability> {
         &self.capabilities
     }
 
-    /// Gets the PCI device type
+    /// Returns the PCI capabilities and a mutable reference to the BAR manager.
+    pub fn capabilities_and_bar_manager_mut(&mut self) -> (&Vec<Capability>, &mut BarManager) {
+        (&self.capabilities, &mut self.bar_manager)
+    }
+
+    /// Returns the PCI device type.
     pub fn device_type(&self) -> PciDeviceType {
         self.header_type.device_type()
     }
@@ -189,6 +199,11 @@ impl BarManager {
     /// Gains access to the BAR space and returns `None` if that BAR is absent.
     pub fn bar(&self, idx: u8) -> Option<&Bar> {
         self.bars[idx as usize].as_ref()
+    }
+
+    /// Gains mutable access to the BAR space and returns `None` if that BAR is absent.
+    pub fn bar_mut(&mut self, idx: u8) -> Option<&mut Bar> {
+        self.bars[idx as usize].as_mut()
     }
 
     /// Parses the BAR space by PCI device location.
