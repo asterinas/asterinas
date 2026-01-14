@@ -205,7 +205,7 @@ impl VirtioTransport for VirtioMmioTransport {
         Some(self.common_device.io_mem().slice(0x100..0x200))
     }
 
-    fn device_config_bar(&self) -> Option<(aster_pci::cfg_space::Bar, usize)> {
+    fn device_config_bar(&self) -> Option<(aster_pci::cfg_space::BarAccess, usize)> {
         None
     }
 
