@@ -134,9 +134,10 @@ impl Vmar {
             debug_assert!(new_size > old_size);
 
             // Fast path: expand the old mapping in place to the new size
-            if inner
-                .alloc_free_region_exact(old_range.end, new_size - old_size)
-                .is_ok()
+            if is_userspace_vaddr_range(old_addr, new_size)
+                && inner
+                    .alloc_free_region_exact(old_range.end, new_size - old_size)
+                    .is_ok()
             {
                 let old_mapping_addr = inner.check_lies_in_single_mapping(old_addr, old_size)?;
                 let old_mapping = inner.remove(&old_mapping_addr).unwrap();
