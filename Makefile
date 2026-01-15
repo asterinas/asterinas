@@ -314,7 +314,7 @@ book:
 
 .PHONY: format
 format:
-	@./tools/format_all.sh
+	@./tools/format_rust.sh
 	@$(MAKE) --no-print-directory -C distro format
 	@$(MAKE) --no-print-directory -C test/initramfs format
 	@$(MAKE) --no-print-directory -C test/nixos format
@@ -322,7 +322,7 @@ format:
 .PHONY: check
 check: initramfs $(CARGO_OSDK)
 	@# Check formatting issues of the Rust code
-	@./tools/format_all.sh --check
+	@./tools/format_rust.sh --check
 	@
 	@# Check compilation of the Rust code
 	@$(MAKE) --no-print-directory -C kernel check
