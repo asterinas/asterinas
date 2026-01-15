@@ -372,14 +372,12 @@ impl MemoryBar {
             }
         };
 
-        // "Size calculation can be done from the 32 bit value read by first clearing encoding
-        // information bits (bits 1:0 for I/O, bits 3:0 for memory), inverting all 32 bits (logical
-        // NOT), then incrementing by 1."
-        let size = !(size_encoded64 & !0xF) + 1;
+        // Decode the BAR's size.
+        let size = decode_size(size_encoded64, BarKind::Memory);
 
         // Restore the original base address.
         #[cfg(not(target_arch = "loongarch64"))]
-        let base = raw64 & !0xF;
+        let base = raw64 & MEMORY_ADDRESS_MASK;
         // In LoongArch, the BAR base address needs to be allocated manually.
         #[cfg(target_arch = "loongarch64")]
         let base = {
@@ -492,13 +490,11 @@ impl IoBar {
         location.write32(offset, !0);
         let size_encoded = location.read32(offset);
 
-        // "Size calculation can be done from the 32 bit value read by first clearing encoding
-        // information bits (bits 1:0 for I/O, bits 3:0 for memory), inverting all 32 bits (logical
-        // NOT), then incrementing by 1."
-        let size = !(size_encoded & !0x3) + 1;
+        // Decode the BAR's size.
+        let size = decode_size(size_encoded as u64, BarKind::Io) as u32;
 
         // Restore the original base address.
-        let base = raw & !0x3;
+        let base = raw & IO_ADDRESS_MASK;
         location.write32(offset, base);
 
         // FIXME: As with the memory BAR check, we assume that a zero base address means that the
@@ -516,4 +512,34 @@ impl IoBar {
 
         Ok(Self { base, size })
     }
+}
+
+/// The kind of a BAR (memory or I/O).
+enum BarKind {
+    Memory,
+    Io,
+}
+
+const MEMORY_ADDRESS_MASK: u64 = !0xF;
+const IO_ADDRESS_MASK: u32 = !0x3;
+
+/// Decodes a BAR's size from the encoded value.
+fn decode_size(size_encoded: u64, kind: BarKind) -> u64 {
+    let mask = match kind {
+        BarKind::Memory => MEMORY_ADDRESS_MASK,
+        BarKind::Io => IO_ADDRESS_MASK as u64,
+    };
+
+    // "Size calculation can be done from the 32 bit value read by first clearing encoding
+    // information bits (bits 1:0 for I/O, bits 3:0 for memory), inverting all 32 bits (logical
+    // NOT), then incrementing by 1. [..] 64-bit (memory) Base Address registers can be handled the
+    // same, [..]"
+    //
+    // However, some devices may hardwire the high bits of the address as zero. In that case, the
+    // approach outlined in the PCI specification quoted above can result in a size of something
+    // like `0xfffffc0000100000`. As a result, after clearing information bits, we use the least
+    // significant bit for the size. This approach is also used in Linux. For more details, see
+    // <https://github.com/asterinas/asterinas/pull/2893>.
+    let size_masked = size_encoded & mask;
+    size_masked & !(size_masked - 1)
 }
