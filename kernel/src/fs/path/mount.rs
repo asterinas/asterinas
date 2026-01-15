@@ -2,7 +2,6 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use aster_util::printer::VmPrinter;
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use hashbrown::HashMap;
 use id_alloc::IdAlloc;
@@ -496,6 +495,10 @@ impl Mount {
         &self.fs
     }
 
+    pub(super) fn flags(&self) -> PerMountFlags {
+        self.flags.load(Ordering::Relaxed)
+    }
+
     /// Sets the parent mount node.
     ///
     /// In some cases we may need to reset the parent of
@@ -537,59 +540,6 @@ impl Mount {
         Some(target_mount)
     }
 
-    /// Reads the mount information starting from this mount as the root,
-    pub fn read_mount_info(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let mut printer = VmPrinter::new_skip(writer, offset);
-
-        let mut stack = vec![self.this()];
-        while let Some(mount) = stack.pop() {
-            let mount_id = mount.id();
-            let parent = mount.parent().and_then(|parent| parent.upgrade());
-            let parent_id = parent.as_ref().map_or(mount_id, |p| p.id());
-            let root = mount.root_dentry().path_name();
-            let mount_point = if let Some(parent) = parent {
-                if let Some(mount_point_dentry) = mount.mountpoint() {
-                    Path::new(parent, mount_point_dentry).abs_path()
-                } else {
-                    "".to_string()
-                }
-            } else {
-                // No parent means it's the root of the namespace.
-                "/".to_string()
-            };
-            let mount_flags = self.flags.load(Ordering::Relaxed);
-            let fs_type = mount.fs().name();
-            let fs_flags = mount.fs().flags();
-
-            // The following fields are dummy for now.
-            let major = 0;
-            let minor = 0;
-            let source = "none";
-
-            let entry = MountInfoEntry {
-                mount_id,
-                parent_id,
-                major,
-                minor,
-                root: &root,
-                mount_point: &mount_point,
-                mount_flags,
-                fs_type,
-                source,
-                fs_flags,
-            };
-
-            writeln!(printer, "{}", entry)?;
-
-            let children = mount.children.read();
-            for child_mount in children.values() {
-                stack.push(child_mount.clone());
-            }
-        }
-
-        Ok(printer.bytes_written())
-    }
-
     fn this(&self) -> Arc<Self> {
         self.this.upgrade().unwrap()
     }
@@ -608,48 +558,5 @@ impl Debug for Mount {
 impl Drop for Mount {
     fn drop(&mut self) {
         ID_ALLOCATOR.get().unwrap().lock().free(self.id);
-    }
-}
-
-/// A single entry in the mountinfo file.
-struct MountInfoEntry<'a> {
-    /// A unique ID for the mount (but not guaranteed to be unique across reboots).
-    mount_id: usize,
-    /// The ID of the parent mount (or self if it has no parent).
-    parent_id: usize,
-    /// The major device ID of the filesystem.
-    major: u32,
-    /// The minor device ID of the filesystem.
-    minor: u32,
-    /// The root of the mount within the filesystem.
-    root: &'a str,
-    /// The mount point relative to the process's root directory.
-    mount_point: &'a str,
-    /// Per-mount flags.
-    mount_flags: PerMountFlags,
-    /// The type of the filesystem in the form "type[.subtype]".
-    fs_type: &'a str,
-    /// Filesystem-specific information or "none".
-    source: &'a str,
-    /// Per-filesystem flags.
-    fs_flags: FsFlags,
-}
-
-impl core::fmt::Display for MountInfoEntry<'_> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(
-            f,
-            "{} {} {}:{} {} {} {} - {} {} {}",
-            self.mount_id,
-            self.parent_id,
-            self.major,
-            self.minor,
-            &self.root,
-            &self.mount_point,
-            &self.mount_flags,
-            &self.fs_type,
-            &self.source,
-            &self.fs_flags,
-        )
     }
 }

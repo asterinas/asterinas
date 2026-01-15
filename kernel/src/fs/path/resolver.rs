@@ -2,14 +2,15 @@
 
 use alloc::str;
 
+use aster_util::printer::VmPrinter;
 use ostd::task::Task;
 
 use super::Path;
 use crate::{
     fs::{
         file_table::{FileDesc, get_file_fast},
-        path::MountNamespace,
-        utils::{InodeType, PATH_MAX, SYMLINKS_MAX, SymbolicLink},
+        path::{MountNamespace, PerMountFlags},
+        utils::{FsFlags, InodeType, NAME_MAX, PATH_MAX, Permission, SYMLINKS_MAX, SymbolicLink},
     },
     prelude::*,
     process::posix_thread::AsThreadLocal,
@@ -18,7 +19,14 @@ use crate::{
 /// The file descriptor of the current working directory.
 pub const AT_FDCWD: FileDesc = -100;
 
-/// File system resolver.
+/// A resolver for [`Path`]s.
+///
+/// `PathResolver` provides a context for resolving paths, defined by a root directory
+/// and a current working directory. It handles path resolution across different mount
+/// points and within a specific mount namespace.
+///
+/// All operations related to path resolution for a process should go through its associated
+/// `PathResolver`.
 #[derive(Debug, Clone)]
 pub struct PathResolver {
     root: Path,
@@ -49,6 +57,143 @@ impl PathResolver {
     /// Sets the root directory to the given `path`.
     pub fn set_root(&mut self, path: Path) {
         self.root = path;
+    }
+
+    /// Constructs the absolute path name of a [`Path`].
+    ///
+    /// This method internally resolves the name and parent of the given `Path`
+    /// repeatedly, winding up the path until it reaches the resolver's root or
+    /// cannot proceed further.
+    ///
+    /// # Returns
+    ///
+    /// - [`AbsPathResult::Reachable`]: The path can be traced back to the resolver's
+    ///   root. The returned string is guaranteed to be non-empty and starts with `/`.
+    /// - [`AbsPathResult::Unreachable`]: The path cannot be traced back to the resolver's
+    ///   root. This can happen for:
+    ///   - Pseudo paths that have no parent in the filesystem tree.
+    ///   - Paths where the parent chain terminates before reaching the resolver's root.
+    ///
+    /// For pseudo paths, the returned string is simply the path's name. For other
+    /// unreachable paths, the returned string starts with `/` but represents a partial
+    /// path that could not reach the root.
+    pub fn make_abs_path(&self, path: &Path) -> AbsPathResult {
+        // Handle the root path.
+        if path == &self.root {
+            return AbsPathResult::Reachable("/".to_string());
+        }
+        // Handle pseudo paths.
+        if path.is_pseudo() {
+            return AbsPathResult::Unreachable(path.name());
+        }
+
+        let mut components = VecDeque::new();
+        components.push_front(self.resolve_name(path));
+
+        let mut parent_path = self.resolve_parent(path);
+        let mut reach_resolver_root = false;
+
+        while let Some(parent_dir) = parent_path {
+            // Stop if we reach the resolver's root.
+            if parent_dir == self.root {
+                reach_resolver_root = true;
+                break;
+            }
+
+            let parent_name = self.resolve_name(&parent_dir);
+            // Stop if we reach an absolute root.
+            if parent_name == "/" {
+                break;
+            }
+
+            components.push_front(parent_name);
+
+            parent_path = self.resolve_parent(&parent_dir);
+        }
+
+        let path_name = alloc::format!("/{}", components.make_contiguous().join("/"));
+        debug_assert!(path_name.starts_with('/'));
+
+        if reach_resolver_root {
+            AbsPathResult::Reachable(path_name)
+        } else {
+            AbsPathResult::Unreachable(path_name)
+        }
+    }
+
+    /// Resolves the name of a `Path`.
+    ///
+    /// The method resolves the name by the following rules:
+    /// 1. If the path is the root of the `PathResolver`, then the name is `"/"`.
+    /// 2. If the path is not the root of a mount, then the name is the same as that of the
+    ///    underlying dentry.
+    /// 3. If the path is the root of a mount and
+    ///    - If the mount has a parent mount, then the name is that of the corresponding
+    ///      mountpoint in the parent mount.
+    ///    - If the mount has no parent, then the name is `"/"`.
+    fn resolve_name(&self, path: &Path) -> String {
+        let mut owned;
+        let mut current = path;
+
+        loop {
+            if current == &self.root {
+                return "/".to_string();
+            }
+
+            if !current.is_mount_root() {
+                return current.name();
+            }
+
+            let Some(parent) = current.mount_node().parent() else {
+                return current.name();
+            };
+            let Some(mountpoint) = current.mount_node().mountpoint() else {
+                return current.name();
+            };
+
+            owned = Path::new(parent.upgrade().unwrap(), mountpoint);
+            current = &owned;
+        }
+    }
+
+    /// Resolves the parent of a `Path`.
+    ///
+    /// The method resolves the parent by the following rules:
+    /// 1. If the path is the root of the FS resolver, then the parent is none.
+    /// 2. If the path is not the root of a mount, then the parent is the same as that of the
+    ///    underlying dentry.
+    /// 3. If the path is the root of a mount and
+    ///    - If the mount has a parent mount, then the parent is that of the corresponding
+    ///      mountpoint in the parent mount.
+    ///    - If the mount has no parent, then the parent is none.
+    fn resolve_parent(&self, path: &Path) -> Option<Path> {
+        // Handle pseudo paths
+        if !path.is_mount_root() && path.dentry.parent().is_none() {
+            debug_assert!(path.is_pseudo());
+            return None;
+        }
+
+        let mut owned;
+        let mut current = path;
+
+        loop {
+            if current == &self.root {
+                return None;
+            }
+
+            if !current.is_mount_root() {
+                return Some(Path::new(
+                    current.mount.clone(),
+                    current.dentry.parent().unwrap(),
+                ));
+            }
+
+            let parent = current.mount.parent()?;
+            let mountpoint = current.mount.mountpoint()?;
+
+            owned = Path::new(parent.upgrade().unwrap(), mountpoint);
+            current = &owned;
+        }
     }
 
     /// Switches the `PathResolver` to the given mount namespace.
@@ -83,6 +228,180 @@ impl PathResolver {
         self.cwd = new_cwd;
 
         Ok(())
+    }
+}
+
+/// The result of resolving an absolute path name.
+///
+/// If the path can be traced back to the root of the resolver, it is `Reachable`.
+/// Otherwise, it is `Unreachable`.
+#[derive(Debug, Clone)]
+pub enum AbsPathResult {
+    Reachable(String),
+    Unreachable(String),
+}
+
+impl AbsPathResult {
+    /// Converts the `AbsPathResult` into a `String`.
+    pub fn into_string(self) -> String {
+        match self {
+            AbsPathResult::Reachable(s) => s,
+            AbsPathResult::Unreachable(s) => s,
+        }
+    }
+}
+
+// Mount info reading implementation
+impl PathResolver {
+    /// Reads the information of the mounts visible to this resolver.
+    ///
+    /// Here, the visible mounts are defined as follows:
+    /// 1. If the resolver's root is a mount point, the visible mounts are the mount of the
+    ///    resolver's root directory and all of its descendant mounts in the mount tree.
+    /// 2. If the resolver's root is not a mount point, the visible mounts are all descendant
+    ///    mounts that are mounted under the resolver's root directory.
+    pub fn read_mount_info(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
+        let mut stack = Vec::new();
+        if self.root.is_mount_root() {
+            stack.push(self.root.mount.clone());
+        } else {
+            // The root is not a mount root, so we need to find the visible child mounts.
+            let children = self.root.mount.children.read();
+            for child_mount in children.values() {
+                if child_mount
+                    .mountpoint()
+                    .is_some_and(|dentry| dentry.is_equal_or_descendant_of(&self.root.dentry))
+                {
+                    stack.push(child_mount.clone());
+                }
+            }
+        }
+
+        while let Some(mount) = stack.pop() {
+            let mount_id = mount.id();
+            let parent = mount.parent().and_then(|parent| parent.upgrade());
+            let parent_id = parent.as_ref().map_or(mount_id, |p| p.id());
+            let root = mount.root_dentry().path_name();
+            let mount_point = if let Some(parent) = parent {
+                if let Some(mount_point_dentry) = mount.mountpoint() {
+                    self.make_abs_path(&Path::new(parent, mount_point_dentry))
+                        .into_string()
+                } else {
+                    "".to_string()
+                }
+            } else {
+                // No parent means it's the root of the namespace.
+                "/".to_string()
+            };
+            let mount_flags = mount.flags();
+            let fs_type = mount.fs().name();
+            let fs_flags = mount.fs().flags();
+
+            // The following fields are dummy for now.
+            let major = 0;
+            let minor = 0;
+            let source = "none";
+
+            let entry = MountInfoEntry {
+                mount_id,
+                parent_id,
+                major,
+                minor,
+                root: &root,
+                mount_point: &mount_point,
+                mount_flags,
+                fs_type,
+                source,
+                fs_flags,
+            };
+
+            writeln!(printer, "{}", entry)?;
+
+            let children = mount.children.read();
+            for child_mount in children.values() {
+                stack.push(child_mount.clone());
+            }
+        }
+
+        Ok(printer.bytes_written())
+    }
+}
+
+/// A single entry in the mountinfo file.
+struct MountInfoEntry<'a> {
+    /// A unique ID for the mount (but not guaranteed to be unique across reboots).
+    mount_id: usize,
+    /// The ID of the parent mount (or self if it has no parent).
+    parent_id: usize,
+    /// The major device ID of the filesystem.
+    major: u32,
+    /// The minor device ID of the filesystem.
+    minor: u32,
+    /// The root of the mount within the filesystem.
+    root: &'a str,
+    /// The mount point relative to the process's root directory.
+    mount_point: &'a str,
+    /// Per-mount flags.
+    mount_flags: PerMountFlags,
+    /// The type of the filesystem in the form "type[.subtype]".
+    fs_type: &'a str,
+    /// Filesystem-specific information or "none".
+    source: &'a str,
+    /// Per-filesystem flags.
+    fs_flags: FsFlags,
+}
+
+impl core::fmt::Display for MountInfoEntry<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "{} {} {}:{} {} {} {} - {} {} {}",
+            self.mount_id,
+            self.parent_id,
+            self.major,
+            self.minor,
+            &self.root,
+            &self.mount_point,
+            &self.mount_flags,
+            &self.fs_type,
+            &self.source,
+            &self.fs_flags,
+        )
+    }
+}
+
+// Path lookup implementations
+impl PathResolver {
+    /// Looks up a child entry with `name` within a directory `path`.
+    pub fn lookup_at_path(&self, path: &Path, name: &str) -> Result<Path> {
+        if path.type_() != InodeType::Dir {
+            return_errno_with_message!(Errno::ENOTDIR, "the path is not a directory");
+        }
+        if path.inode().check_permission(Permission::MAY_EXEC).is_err() {
+            return_errno_with_message!(Errno::EACCES, "the path cannot be looked up");
+        }
+        if name.len() > NAME_MAX {
+            return_errno_with_message!(Errno::ENAMETOOLONG, "the path name is too long");
+        }
+
+        let target_path = if super::is_dot(name) {
+            path.this()
+        } else if super::is_dotdot(name) {
+            self.resolve_parent(path).unwrap_or_else(|| path.this())
+        } else {
+            let target_inner_opt = path.dentry.lookup_via_cache(name)?;
+            match target_inner_opt {
+                Some(target_inner) => Path::new(path.mount.clone(), target_inner),
+                None => {
+                    let target_inner = path.dentry.lookup_via_fs(name)?;
+                    Path::new(path.mount.clone(), target_inner)
+                }
+            }
+        };
+
+        Ok(target_path.get_top_path())
     }
 
     /// Lookups the target `Path` according to the `fs_path`.
@@ -195,7 +514,7 @@ impl PathResolver {
 
             // Iterate next path
             let next_is_tail = path_remain.is_empty();
-            let next_path = match current_path.lookup(next_name) {
+            let next_path = match self.lookup_at_path(&current_path, next_name) {
                 Ok(child) => child,
                 Err(e) => {
                     if next_is_tail && e.error() == Errno::ENOENT {
@@ -261,81 +580,6 @@ impl PathResolver {
         }
 
         Ok(LookupResult::Resolved(current_path))
-    }
-}
-
-/// Path in the file system.
-#[derive(Debug)]
-pub struct FsPath<'a> {
-    inner: FsPathInner<'a>,
-}
-
-#[derive(Debug)]
-enum FsPathInner<'a> {
-    // Absolute path
-    Absolute(&'a str),
-    // Path is relative to `Cwd`
-    CwdRelative(&'a str),
-    // Current working directory
-    Cwd,
-    // Path is relative to the directory fd
-    FdRelative(FileDesc, &'a str),
-    // Fd
-    Fd(FileDesc),
-}
-
-impl<'a> FsPath<'a> {
-    /// Creates a new `FsPath` from the given `dirfd`.
-    ///
-    /// If the FD is not valid (i.e., it's negative and it's not [`AT_FDCWD`]), an error will be
-    /// returned.
-    pub fn from_fd(dirfd: FileDesc) -> Result<Self> {
-        let fs_path_inner = if dirfd >= 0 {
-            FsPathInner::Fd(dirfd)
-        } else if dirfd == AT_FDCWD {
-            FsPathInner::Cwd
-        } else {
-            return_errno_with_message!(Errno::EBADF, "the dirfd is invalid");
-        };
-
-        Ok(Self {
-            inner: fs_path_inner,
-        })
-    }
-
-    /// Creates a new `FsPath` from the given `dirfd` and `path`.
-    ///
-    /// If the FD is not valid (i.e., it's negative and it's not [`AT_FDCWD`]) or the path is empty
-    /// or too long, an error will be returned.
-    pub fn from_fd_and_path(dirfd: FileDesc, path: &'a str) -> Result<Self> {
-        if path.is_empty() {
-            return_errno_with_message!(Errno::ENOENT, "the path is empty")
-        }
-        if path.len() > PATH_MAX {
-            return_errno_with_message!(Errno::ENAMETOOLONG, "the path is too long");
-        }
-
-        let fs_path_inner = if path.starts_with('/') {
-            FsPathInner::Absolute(path)
-        } else if dirfd >= 0 {
-            FsPathInner::FdRelative(dirfd, path)
-        } else if dirfd == AT_FDCWD {
-            FsPathInner::CwdRelative(path)
-        } else {
-            return_errno_with_message!(Errno::EBADF, "the dirfd is invalid");
-        };
-
-        Ok(Self {
-            inner: fs_path_inner,
-        })
-    }
-}
-
-impl<'a> TryFrom<&'a str> for FsPath<'a> {
-    type Error = crate::error::Error;
-
-    fn try_from(path: &'a str) -> Result<FsPath<'a>> {
-        FsPath::from_fd_and_path(AT_FDCWD, path)
     }
 }
 
@@ -418,6 +662,81 @@ impl LookupParentResult {
     /// Consumes the `LookupParentResult` and returns the parent path and the unresolved name.
     pub fn into_parent_and_basename(self) -> (Path, String) {
         (self.parent, self.unresolved_name)
+    }
+}
+
+/// A path in the file system.
+#[derive(Debug)]
+pub struct FsPath<'a> {
+    inner: FsPathInner<'a>,
+}
+
+#[derive(Debug)]
+enum FsPathInner<'a> {
+    /// An absolute path.
+    Absolute(&'a str),
+    /// A relative path from the current working directory.
+    CwdRelative(&'a str),
+    /// The path of the current working directory.
+    Cwd,
+    /// A relative path from the directory FD (dirfd).
+    FdRelative(FileDesc, &'a str),
+    /// The path of the FD.
+    Fd(FileDesc),
+}
+
+impl<'a> FsPath<'a> {
+    /// Creates a new `FsPath` from the given `dirfd`.
+    ///
+    /// If the FD is not valid (i.e., it's negative and it's not [`AT_FDCWD`]), an error will be
+    /// returned.
+    pub fn from_fd(dirfd: FileDesc) -> Result<Self> {
+        let fs_path_inner = if dirfd >= 0 {
+            FsPathInner::Fd(dirfd)
+        } else if dirfd == AT_FDCWD {
+            FsPathInner::Cwd
+        } else {
+            return_errno_with_message!(Errno::EBADF, "the dirfd is invalid");
+        };
+
+        Ok(Self {
+            inner: fs_path_inner,
+        })
+    }
+
+    /// Creates a new `FsPath` from the given `dirfd` and `path`.
+    ///
+    /// If the FD is not valid (i.e., it's negative and it's not [`AT_FDCWD`]) or the path is empty
+    /// or too long, an error will be returned.
+    pub fn from_fd_and_path(dirfd: FileDesc, path: &'a str) -> Result<Self> {
+        if path.is_empty() {
+            return_errno_with_message!(Errno::ENOENT, "the path is empty")
+        }
+        if path.len() > PATH_MAX {
+            return_errno_with_message!(Errno::ENAMETOOLONG, "the path is too long");
+        }
+
+        let fs_path_inner = if path.starts_with('/') {
+            FsPathInner::Absolute(path)
+        } else if dirfd >= 0 {
+            FsPathInner::FdRelative(dirfd, path)
+        } else if dirfd == AT_FDCWD {
+            FsPathInner::CwdRelative(path)
+        } else {
+            return_errno_with_message!(Errno::EBADF, "the dirfd is invalid");
+        };
+
+        Ok(Self {
+            inner: fs_path_inner,
+        })
+    }
+}
+
+impl<'a> TryFrom<&'a str> for FsPath<'a> {
+    type Error = crate::error::Error;
+
+    fn try_from(path: &'a str) -> Result<FsPath<'a>> {
+        FsPath::from_fd_and_path(AT_FDCWD, path)
     }
 }
 
