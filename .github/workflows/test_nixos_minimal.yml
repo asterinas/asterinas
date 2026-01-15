@@ -36,7 +36,7 @@ jobs:
         timeout-minutes: 30
         uses: addnab/docker-run-action@v3
         with:
-          image: asterinas/asterinas:0.17.0-20251228
+          image: asterinas/asterinas:0.17.0-20260114
           options: --privileged -v /dev:/dev -v ${{ github.workspace }}:/root/asterinas
           run: |
             make nixos NIXOS_TEST_SUITE=hello NIXOS_DISK_SIZE_IN_MB=6144

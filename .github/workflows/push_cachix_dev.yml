@@ -17,7 +17,7 @@ jobs:
   push-pkgs:
     runs-on: ubuntu-4-cores-150GB-ssd
     container:
-      image: asterinas/asterinas:0.17.0-20251228
+      image: asterinas/asterinas:0.17.0-20260114
       options: -v /dev:/dev --privileged
     timeout-minutes: 60
     steps:
