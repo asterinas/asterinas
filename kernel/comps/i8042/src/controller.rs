@@ -175,7 +175,7 @@ impl I8042Controller {
 
     /// Checks if the kernel command line contains the "i8042.exist" option.
     fn is_present_cmdline() -> bool {
-        !KCMDLINE
+        KCMDLINE
             .get()
             .unwrap()
             .get_module_args("i8042")
