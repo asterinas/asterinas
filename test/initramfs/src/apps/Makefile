@@ -56,7 +56,9 @@ TEST_APPS += \
 endif
 
 ifeq ($(INTEL_TDX), 1)
-TEST_APPS += generate_tdx_quote
+TEST_APPS += \
+	generate_tdx_quote \
+	tsm_mr
 endif
 
 # The C head and source files of all the apps, excluding the downloaded mongoose files
