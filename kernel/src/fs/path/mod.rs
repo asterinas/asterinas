@@ -7,7 +7,7 @@ use core::time::Duration;
 use inherit_methods_macro::inherit_methods;
 pub use mount::{Mount, MountPropType, PerMountFlags};
 pub use mount_namespace::MountNamespace;
-pub use resolver::{AT_FDCWD, FsPath, LookupResult, PathResolver, SplitPath};
+pub use resolver::{AT_FDCWD, AbsPathResult, FsPath, LookupResult, PathResolver, SplitPath};
 
 use crate::{
     fs::{
@@ -15,7 +15,7 @@ use crate::{
         path::dentry::Dentry,
         utils::{
             CreationFlags, FileSystem, FsFlags, Inode, InodeMode, InodeType, Metadata, MknodType,
-            NAME_MAX, OpenArgs, Permission, StatusFlags, XattrName, XattrNamespace, XattrSetFlags,
+            OpenArgs, Permission, StatusFlags, XattrName, XattrNamespace, XattrSetFlags,
         },
     },
     prelude::*,
@@ -36,6 +36,14 @@ pub struct Path {
     mount: Arc<Mount>,
     dentry: Arc<Dentry>,
 }
+
+impl PartialEq for Path {
+    fn eq(&self, other: &Self) -> bool {
+        self.mount.id() == other.mount.id() && Arc::ptr_eq(&self.dentry, &other.dentry)
+    }
+}
+
+impl Eq for Path {}
 
 impl Path {
     /// Creates a new `Path` to represent the root directory of a file system.
@@ -81,36 +89,6 @@ impl Path {
         Arc::ptr_eq(&self.dentry, self.mount.root_dentry())
     }
 
-    /// Lookups the target `Path` given the `name`.
-    pub fn lookup(&self, name: &str) -> Result<Self> {
-        if self.type_() != InodeType::Dir {
-            return_errno_with_message!(Errno::ENOTDIR, "the path is not a directory");
-        }
-        if self.inode().check_permission(Permission::MAY_EXEC).is_err() {
-            return_errno_with_message!(Errno::EACCES, "the path cannot be looked up");
-        }
-        if name.len() > NAME_MAX {
-            return_errno_with_message!(Errno::ENAMETOOLONG, "the path name is too long");
-        }
-
-        let target_path = if is_dot(name) {
-            self.this()
-        } else if is_dotdot(name) {
-            self.effective_parent().unwrap_or_else(|| self.this())
-        } else {
-            let target_inner_opt = self.dentry.lookup_via_cache(name)?;
-            match target_inner_opt {
-                Some(target_inner) => Self::new(self.mount.clone(), target_inner),
-                None => {
-                    let target_inner = self.dentry.lookup_via_fs(name)?;
-                    Self::new(self.mount.clone(), target_inner)
-                }
-            }
-        };
-
-        Ok(target_path.get_top_path())
-    }
-
     /// Opens the `Path` with the given `OpenArgs`.
     ///
     /// Returns an `InodeHandle` on success.
@@ -149,75 +127,9 @@ impl Path {
         InodeHandle::new(self.clone(), open_args.access_mode, *status_flags)
     }
 
-    /// Gets the absolute path.
-    ///
-    /// It will resolve the mountpoint automatically.
-    //
-    // FIXME: This method needs to be aware of the current process's root path.
-    pub fn abs_path(&self) -> String {
-        let mut path_name = self.effective_name();
-        let mut current_dir = self.this();
-
-        while let Some(parent_dir) = current_dir.effective_parent() {
-            path_name = {
-                let parent_name = parent_dir.effective_name();
-                if parent_name != "/" {
-                    parent_name + "/" + &path_name
-                } else {
-                    parent_name + &path_name
-                }
-            };
-            current_dir = parent_dir;
-        }
-
-        debug_assert!(path_name.starts_with('/') || self.dentry.is_pseudo());
-        path_name
-    }
-
     /// Gets the real name of the `Path` from its dentry.
     pub fn name(&self) -> String {
         self.dentry.name()
-    }
-
-    /// Gets the effective name of the `Path`.
-    ///
-    /// If it is the root of a mount, it will go up to the mountpoint
-    /// to get the name of the mountpoint recursively.
-    fn effective_name(&self) -> String {
-        if !self.is_mount_root() {
-            return self.dentry.name();
-        }
-
-        let Some(parent) = self.mount.parent() else {
-            return self.dentry.name();
-        };
-        let Some(mountpoint) = self.mount.mountpoint() else {
-            return self.dentry.name();
-        };
-
-        let mount_parent = Self::new(parent.upgrade().unwrap(), mountpoint);
-        mount_parent.effective_name()
-    }
-
-    /// Gets the effective parent of the `Path`.
-    ///
-    /// If it is the root of a mount, it will go up to the mountpoint
-    /// to get the parent of the mountpoint recursively.
-    fn effective_parent(&self) -> Option<Self> {
-        if !self.is_mount_root() {
-            if let Some(parent) = self.dentry.parent() {
-                return Some(Self::new(self.mount.clone(), parent));
-            } else {
-                debug_assert!(self.dentry.is_pseudo());
-                return None;
-            }
-        }
-
-        let parent = self.mount.parent()?;
-        let mountpoint = self.mount.mountpoint()?;
-
-        let mount_parent = Self::new(parent.upgrade().unwrap(), mountpoint);
-        mount_parent.effective_parent()
     }
 
     /// Gets the parent `Path` within the same mount.
@@ -258,6 +170,11 @@ impl Path {
         let corresponding_path = Self::new(corresponding_mount, self.dentry.clone());
 
         Some(corresponding_path)
+    }
+
+    /// Returns true if the `Path` represents a pseudo file.
+    fn is_pseudo(&self) -> bool {
+        self.dentry.is_pseudo()
     }
 
     fn this(&self) -> Self {
