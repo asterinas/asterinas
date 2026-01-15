@@ -201,55 +201,6 @@ CARGO_OSDK_TEST_ARGS += $(CARGO_OSDK_COMMON_ARGS)
 # Pass make variables to all subdirectory makes
 export
 
-# Basically, non-OSDK crates do not depend on Aster Frame and can be checked
-# or tested without OSDK.
-NON_OSDK_CRATES := \
-	ostd/libs/align_ext \
-	ostd/libs/id-alloc \
-	ostd/libs/int-to-c-enum \
-	ostd/libs/int-to-c-enum/derive \
-	ostd/libs/linux-bzimage/boot-params \
-	ostd/libs/linux-bzimage/builder \
-	ostd/libs/ostd-macros \
-	ostd/libs/ostd-test \
-	kernel/libs/aster-rights \
-	kernel/libs/aster-rights-proc \
-	kernel/libs/atomic-integer-wrapper \
-	kernel/libs/cpio-decoder \
-	kernel/libs/jhash \
-	kernel/libs/keyable-arc \
-	kernel/libs/logo-ascii-art \
-	kernel/libs/typeflags \
-	kernel/libs/typeflags-util
-
-# In contrast, OSDK crates depend on OSTD (or being `ostd` itself)
-# and need to be built or tested with OSDK.
-OSDK_CRATES := \
-	osdk/deps/frame-allocator \
-	osdk/deps/heap-allocator \
-	osdk/deps/test-kernel \
-	ostd \
-	ostd/libs/linux-bzimage/setup \
-	kernel \
-	kernel/comps/block \
-	kernel/comps/cmdline \
-	kernel/comps/console \
-	kernel/comps/framebuffer \
-	kernel/comps/i8042 \
-	kernel/comps/input \
-	kernel/comps/logger \
-	kernel/comps/mlsdisk \
-	kernel/comps/network \
-	kernel/comps/pci \
-	kernel/comps/softirq \
-	kernel/comps/systree \
-	kernel/comps/time \
-	kernel/comps/virtio \
-	kernel/libs/aster-bigtcp \
-	kernel/libs/aster-util \
-	kernel/libs/device-id \
-	kernel/libs/xarray
-
 # OSDK dependencies
 OSDK_SRC_FILES := \
 	$(shell find osdk/Cargo.toml osdk/Cargo.lock osdk/src -type f)
@@ -297,15 +248,17 @@ check_vdso:
 initramfs: check_vdso
 	@$(MAKE) --no-print-directory -C test/initramfs
 
+# =========================== Kernel targets ===============================
+
 # Build the kernel with an initramfs
 .PHONY: kernel
 kernel: initramfs $(CARGO_OSDK)
-	@cd kernel && cargo osdk build $(CARGO_OSDK_BUILD_ARGS)
+	@$(MAKE) --no-print-directory -C kernel
 
 # Build the kernel with an initramfs and then run it
 .PHONY: run_kernel
 run_kernel: initramfs $(CARGO_OSDK)
-	@cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS)
+	@$(MAKE) --no-print-directory -C kernel run
 # Check the running status of auto tests from the QEMU log
 ifeq ($(AUTO_TEST), syscall)
 	@tail --lines 100 qemu.log | grep -q "^All syscall tests passed." \
@@ -321,10 +274,26 @@ else ifeq ($(AUTO_TEST), vsock)
 		|| (echo "Vsock test failed" && exit 1)
 endif
 
+# Run user-space unit tests for Rust crates not depending on OSTD
+.PHONY: test
+test:
+	@$(MAKE) --no-print-directory -C kernel test
+
+# Run kernel-space unix tests for Rust crates depending on OSTD
+.PHONY: ktest
+ktest: initramfs $(CARGO_OSDK)
+	@$(MAKE) --no-print-directory -C kernel ktest
+
+# Generate and check documentation for all crates
+.PHONY: docs
+docs: $(CARGO_OSDK)
+	@$(MAKE) --no-print-directory -C kernel docs
+
+# =========================== End of Kernel targets ===============================
+
 # Build the Asterinas NixOS ISO installer image
 iso: BOOT_PROTOCOL = linux-efi-handover64
-iso:
-	@make kernel
+iso: kernel
 	@if [ -n "$(NIXOS_TEST_SUITE)" ]; then \
         $(MAKE) --no-print-directory -C test/nixos iso; \
     else \
@@ -338,8 +307,7 @@ run_iso:
 
 # Create an Asterinas NixOS installation on host
 nixos: BOOT_PROTOCOL = linux-efi-handover64
-nixos:
-	@make kernel
+nixos: kernel
 	@if [ -n "$(NIXOS_TEST_SUITE)" ]; then \
         $(MAKE) --no-print-directory -C test/nixos nixos; \
     else \
@@ -390,43 +358,6 @@ profile_client: initramfs $(CARGO_OSDK)
 	@cd kernel && cargo osdk profile $(CARGO_OSDK_BUILD_ARGS) --remote :$(GDB_TCP_PORT) \
 		--samples $(GDB_PROFILE_COUNT) --interval $(GDB_PROFILE_INTERVAL) --format $(GDB_PROFILE_FORMAT)
 
-.PHONY: test
-test:
-	@for dir in $(NON_OSDK_CRATES); do \
-		(cd $$dir && cargo test) || exit 1; \
-	done
-
-.PHONY: ktest
-ktest: initramfs $(CARGO_OSDK)
-	@# Notes:
-	@# 1. linux-bzimage-setup is excluded from ktest since it's hard to be unit tested;
-	@# 2. Artifacts are removed after testing each crate to save the limited disk space
-	@#    available to free-tier Github runners.
-	@for dir in $(OSDK_CRATES); do \
-		[ $$dir = "ostd/libs/linux-bzimage/setup" ] && continue; \
-		echo "[make] Testing $$dir"; \
-		(cd $$dir && cargo osdk test $(CARGO_OSDK_TEST_ARGS)) || exit 1; \
-		tail --lines 10 qemu.log | grep -q "^\\[ktest runner\\] All crates tested." \
-			|| (echo "Test failed" && exit 1); \
-		rm -r target/osdk/*; \
-	done
-
-.PHONY: docs
-docs: $(CARGO_OSDK)
-	@for dir in $(NON_OSDK_CRATES); do \
-		(cd $$dir && RUSTDOCFLAGS="-Dwarnings" cargo doc --no-deps) || exit 1; \
-	done
-	@for dir in $(OSDK_CRATES); do \
-		EXTRA_DOC_FLAGS=""; \
-		# The kernel crate is primarily composed of private items. \
-		# We include the --document-private-items flag \
-		# to ensure documentation of the internal items is fully checked. \
-		if [ "$$dir" = "kernel" ]; then \
-			EXTRA_DOC_FLAGS="--document-private-items -Arustdoc::private_intra_doc_links"; \
-		fi; \
-		(cd $$dir && RUSTDOCFLAGS="-Dwarnings $$EXTRA_DOC_FLAGS" cargo osdk doc --no-deps) || exit 1; \
-	done
-
 .PHONY: book
 book:
 	@cd book && mdbook build
@@ -443,41 +374,8 @@ check: initramfs $(CARGO_OSDK)
 	@# Check formatting issues of the Rust code
 	@./tools/format_all.sh --check
 	@
-	@# Check if the combination of STD_CRATES and NON_OSDK_CRATES is the
-	@# same as all workspace members
-	@sed -n '/^\[workspace\]/,/^\[.*\]/{/members = \[/,/\]/p}' Cargo.toml | \
-		grep -v "members = \[" | tr -d '", \]' | \
-		sort > /tmp/all_crates
-	@echo $(NON_OSDK_CRATES) $(OSDK_CRATES) | tr ' ' '\n' | sort > /tmp/combined_crates
-	@diff -B /tmp/all_crates /tmp/combined_crates || \
-		(echo "Error: The combination of STD_CRATES and NOSTD_CRATES" \
-			"is not the same as all workspace members" && exit 1)
-	@rm /tmp/all_crates /tmp/combined_crates
-	@
-	@# Check if all workspace members enable workspace lints
-	@for dir in $(NON_OSDK_CRATES) $(OSDK_CRATES); do \
-		if [[ "$$(tail -2 $$dir/Cargo.toml)" != "[lints]"$$'\n'"workspace = true" ]]; then \
-			echo "Error: Workspace lints in $$dir are not enabled"; \
-			exit 1; \
-		fi \
-	done
-	@
 	@# Check compilation of the Rust code
-	@for dir in $(NON_OSDK_CRATES); do \
-		echo "Checking $$dir"; \
-		# Run clippy on each crate with and without the test configuration. \
-		(cd $$dir && cargo clippy --no-deps -- -D warnings) || exit 1; \
-		(cd $$dir && cargo clippy --tests --no-deps -- -D warnings) || exit 1; \
-	done
-	@for dir in $(OSDK_CRATES); do \
-		echo "Checking $$dir"; \
-		# Exclude linux-bzimage-setup since it only supports x86-64 currently and will panic \
-		# in other architectures. \
-		[ "$$dir" = "ostd/libs/linux-bzimage/setup" ] && [ "$(OSDK_TARGET_ARCH)" != "x86_64" ] && continue; \
-		# Run clippy on each crate with and without the ktest configuration. \
-		(cd $$dir && cargo osdk clippy -- --no-deps -- -D warnings) || exit 1; \
-		(cd $$dir && cargo osdk clippy --ktests -- --no-deps -- -D warnings) || exit 1; \
-	done
+	@$(MAKE) --no-print-directory -C kernel check
 	@
 	@# Check formatting issues of the C code and Nix files (regression tests)
 	@$(MAKE) --no-print-directory -C test/initramfs check
