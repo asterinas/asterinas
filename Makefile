@@ -55,28 +55,6 @@ VHOST ?= off
 DNS_SERVER ?= none
 # End of network settings
 
-# NixOS settings
-NIXOS_DISK_SIZE_IN_MB ?= 8192
-NIXOS_DISABLE_SYSTEMD ?= false
-# The following option is only effective when NIXOS_DISABLE_SYSTEMD is set to 'true'.
-# Use a login shell to ensure that environment variables are initialized correctly.
-NIXOS_STAGE_2_INIT ?= /bin/sh -l
-# End of NixOS settings
-
-# ISO installer settings
-AUTO_INSTALL ?= true
-# End of ISO installer settings
-
-# Cachix binary cache settings
-CACHIX_AUTH_TOKEN ?=
-RELEASE_CACHIX_NAME ?= "aster-nixos-release"
-RELEASE_SUBSTITUTER ?= https://aster-nixos-release.cachix.org
-RELEASE_TRUSTED_PUBLIC_KEY ?= aster-nixos-release.cachix.org-1:xB6U/f5ck5vGDJZ04kPp3zGpZ4Nro9X4+TSSMAETVFE=
-DEV_CACHIX_NAME ?= "aster-nixos-dev"
-DEV_SUBSTITUTER ?= https://aster-nixos-dev.cachix.org
-DEV_TRUSTED_PUBLIC_KEY ?= aster-nixos-dev.cachix.org-1:xrCbE2flfliFTQCY/2HeJoT2tCO+5kMTZeLIUH9lnIA=
-# End of Cachix binary cache settings
-
 # ========================= End of Makefile options. ==========================
 
 SHELL := /bin/bash
@@ -280,55 +258,38 @@ docs: $(CARGO_OSDK)
 
 # =========================== End of Kernel targets ===============================
 
+# ============================== Distro targets ==================================
+
 # Build the Asterinas NixOS ISO installer image
-iso: BOOT_PROTOCOL = linux-efi-handover64
-iso: kernel
-	@if [ -n "$(NIXOS_TEST_SUITE)" ]; then \
-        $(MAKE) --no-print-directory -C test/nixos iso; \
-    else \
-        ./tools/nixos/build_iso.sh; \
-    fi
+iso: BOOT_PROTOCOL := linux-efi-handover64
+iso: 
+	@$(MAKE) kernel
+	@$(MAKE) --no-print-directory -C distro iso
 
 # Build the Asterinas NixOS ISO installer image and then do installation
-run_iso: OVMF = off
 run_iso:
-	@./tools/nixos/run.sh iso
+	@$(MAKE) --no-print-directory -C distro run_iso
 
 # Create an Asterinas NixOS installation on host
-nixos: BOOT_PROTOCOL = linux-efi-handover64
-nixos: kernel
-	@if [ -n "$(NIXOS_TEST_SUITE)" ]; then \
-        $(MAKE) --no-print-directory -C test/nixos nixos; \
-    else \
-        ./tools/nixos/build_nixos.sh; \
-    fi
+nixos: BOOT_PROTOCOL := linux-efi-handover64
+nixos:
+	@$(MAKE) kernel
+	@$(MAKE) --no-print-directory -C distro nixos
 
 # After creating a Asterinas NixOS installation (via either the `run_iso` or `nixos` target),
 # run the NixOS
-run_nixos: OVMF = off
 run_nixos:
-	@if [ -n "$(NIXOS_TEST_SUITE)" ]; then \
-        $(MAKE) --no-print-directory -C test/nixos run_nixos; \
-    else \
-        ./tools/nixos/run.sh nixos; \
-    fi
+	@$(MAKE) --no-print-directory -C distro run_nixos
 
 # Build the Asterinas NixOS patched packages
 cachix:
-	@nix-build distro/cachix \
-		--option extra-substituters "${RELEASE_SUBSTITUTER} ${DEV_SUBSTITUTER}" \
-		--option extra-trusted-public-keys "${RELEASE_TRUSTED_PUBLIC_KEY} ${DEV_TRUSTED_PUBLIC_KEY}" \
-		--out-link cachix.list
+	@$(MAKE) --no-print-directory -C distro cachix
 
 # Push the Asterinas NixOS patched packages to Cachix
-.PHONY: push_cachix
-push_cachix: USE_RELEASE_CACHE ?= 0
 push_cachix: cachix
-ifeq ($(USE_RELEASE_CACHE), 1)
-	@cachix push $(RELEASE_CACHIX_NAME) < cachix.list
-else
-	@cachix push $(DEV_CACHIX_NAME) < cachix.list
-endif
+	@$(MAKE) --no-print-directory -C distro push_cachix
+
+# =========================== End of Distro targets ===============================
 
 .PHONY: gdb_server
 gdb_server: initramfs $(CARGO_OSDK)
@@ -354,7 +315,7 @@ book:
 .PHONY: format
 format:
 	@./tools/format_all.sh
-	@nixfmt ./distro
+	@$(MAKE) --no-print-directory -C distro format
 	@$(MAKE) --no-print-directory -C test/initramfs format
 	@$(MAKE) --no-print-directory -C test/nixos format
 
@@ -366,6 +327,9 @@ check: initramfs $(CARGO_OSDK)
 	@# Check compilation of the Rust code
 	@$(MAKE) --no-print-directory -C kernel check
 	@
+	@# Check formatting issues of Nix files under distro directory
+	@$(MAKE) --no-print-directory -C distro check
+	@
 	@# Check formatting issues of the C code and Nix files (regression tests)
 	@$(MAKE) --no-print-directory -C test/initramfs check
 	@
@@ -374,11 +338,11 @@ check: initramfs $(CARGO_OSDK)
 	@
 	@# Check typos
 	@typos
-	@# Check formatting issues of Nix files under distro directory
-	@nixfmt --check ./distro
 
 .PHONY: clean
 clean:
+	@echo "Cleaning up distro built files"
+	@$(MAKE) --no-print-directory -C distro clean
 	@echo "Cleaning up Asterinas workspace target files"
 	@cargo clean
 	@echo "Cleaning up OSDK workspace target files"
