@@ -1402,6 +1402,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48dd4f4a2c8405440fd0462561f0e5806bd0f77e86f51c761481bdd4018b545e"
 
 [[package]]
+name = "padding-struct"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.101",
+]
+
+[[package]]
 name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
