@@ -10,19 +10,18 @@ use aster_util::{field_ptr, safe_ptr::SafePtr};
 use device_id::{DeviceId, MinorId};
 use ostd::{
     const_assert,
-    mm::{
-        FrameAllocOptions, HasPaddr, HasSize, PAGE_SIZE, USegment, VmIo, dma::DmaCoherent,
-        io_util::HasVmReaderWriter,
-    },
-    sync::WaitQueue,
+    mm::{FrameAllocOptions, HasPaddr, HasSize, PAGE_SIZE, USegment, VmIo, dma::DmaCoherent},
+    sync::{RwMutexUpgradeableGuard, WaitQueue},
 };
+use spin::Once;
 use tdx_guest::{
     SHARED_MASK,
-    tdcall::{TdCallError, get_report},
+    tdcall::{TdCallError, extend_rtmr, get_report},
     tdvmcall::{TdVmcallError, get_quote},
 };
 
 use crate::{
+    device::registry::char::register,
     events::IoEvents,
     fs::{
         device::{Device, DeviceType},
@@ -163,9 +162,9 @@ impl FileIo for TdxGuestFile {
                         inblob_ptr.read()?
                     };
 
-                    let outblob = tdx_get_report(inblob.as_bytes())?;
+                    let outblob = tdx_get_report(Some(inblob.as_bytes()))?;
                     let outblob_ptr = field_ptr!(&data_ptr, TdxReportRequest, tdx_report);
-                    outblob_ptr.copy_from(&outblob)?;
+                    outblob_ptr.copy_from(&SafePtr::new(&*outblob, 0))?;
 
                     Ok(0)
                 })
@@ -175,28 +174,44 @@ impl FileIo for TdxGuestFile {
     }
 }
 
+static TDX_REPORT: Once<RwMutex<USegment>> = Once::new();
+
+#[derive(Debug, Clone, Copy)]
+pub enum MeasurementReg {
+    MrConfigId,
+    MrOwner,
+    MrOwnerConfig,
+    MrTd,
+    Rtmr0,
+    Rtmr1,
+    Rtmr2,
+    Rtmr3,
+}
+
+/// Gets the TDX quote given the specified data in `inblob`.
 pub fn tdx_get_quote(inblob: &[u8]) -> Result<Box<[u8]>> {
     const GET_QUOTE_IN_FLIGHT: u64 = 0xFFFF_FFFF_FFFF_FFFF;
     const GET_QUOTE_BUF_SIZE: usize = 8 * 1024;
 
-    let report = tdx_get_report(inblob)?;
+    let report = tdx_get_report(Some(inblob))?;
+    let report_ptr: SafePtr<TdReport, _, _> = SafePtr::new(&*report, 0);
 
-    let buf = alloc_dma_buf(GET_QUOTE_BUF_SIZE)?;
-    let report_ptr: SafePtr<TdxQuoteHdr, _, _> = SafePtr::new(&buf, 0);
+    let buf = DmaCoherent::alloc(GET_QUOTE_BUF_SIZE.div_ceil(PAGE_SIZE), false)?;
+    let header_ptr: SafePtr<TdxQuoteHdr, _, _> = SafePtr::new(&buf, 0);
     let payload_ptr: SafePtr<TdReport, _, _> = SafePtr::new(&buf, size_of::<TdxQuoteHdr>());
 
-    field_ptr!(&report_ptr, TdxQuoteHdr, version).write(&1u64)?;
-    field_ptr!(&report_ptr, TdxQuoteHdr, status).write(&0u64)?;
-    field_ptr!(&report_ptr, TdxQuoteHdr, in_len).write(&(size_of::<TdReport>() as u32))?;
-    field_ptr!(&report_ptr, TdxQuoteHdr, out_len).write(&0u32)?;
-    payload_ptr.copy_from(&report)?;
+    field_ptr!(&header_ptr, TdxQuoteHdr, version).write(&1u64)?;
+    field_ptr!(&header_ptr, TdxQuoteHdr, status).write(&0u64)?;
+    field_ptr!(&header_ptr, TdxQuoteHdr, in_len).write(&(size_of::<TdReport>() as u32))?;
+    field_ptr!(&header_ptr, TdxQuoteHdr, out_len).write(&0u32)?;
+    payload_ptr.copy_from(&report_ptr)?;
 
     // FIXME: The `get_quote` API from the `tdx_guest` crate should have been marked `unsafe`
     // because it has no way to determine if the input physical address is safe or not.
     get_quote((buf.paddr() as u64) | SHARED_MASK, buf.size() as u64)?;
 
     // Poll for the quote to be ready.
-    let status_ptr = field_ptr!(&report_ptr, TdxQuoteHdr, status);
+    let status_ptr = field_ptr!(&header_ptr, TdxQuoteHdr, status);
     let sleep_queue = WaitQueue::new();
     let sleep_duration = Duration::from_millis(100);
     loop {
@@ -211,10 +226,89 @@ pub fn tdx_get_quote(inblob: &[u8]) -> Result<Box<[u8]>> {
     // to private memory in TDX, `TDG.MEM.PAGE.ACCEPT` will zero out all content.
     // TDX Module Specification - `TDG.MEM.PAGE.ACCEPT` Leaf:
     // "Accept a pending private page and initialize it to all-0 using the TD ephemeral private key."
-    let out_len = field_ptr!(&report_ptr, TdxQuoteHdr, out_len).read()?;
+    let out_len = field_ptr!(&header_ptr, TdxQuoteHdr, out_len).read()?;
     let mut outblob = vec![0u8; out_len as usize].into_boxed_slice();
     payload_ptr.cast().read_slice(outblob.as_mut())?;
     Ok(outblob)
+}
+
+/// Gets the TDX report given the specified data in `inblob`.
+///
+/// The first `size_of::<TdReport>()` bytes of data in the returned `USegment` is the report.
+/// The rest in `USegment` should be ignored.
+/// If `inblob` is `None`, use the existing report data to get the report, i.e. refresh the
+/// report.
+pub fn tdx_get_report(inblob: Option<&[u8]>) -> Result<RwMutexUpgradeableGuard<'_, USegment>> {
+    let report = TDX_REPORT.get().unwrap().write();
+
+    if let Some(inblob) = inblob {
+        if inblob.len() != size_of::<ReportData>() {
+            return_errno_with_message!(Errno::EINVAL, "Invalid inblob length");
+        }
+
+        // Use `inblob` as the data associated with the report.
+        report
+            .write_bytes(TdReport::report_data_offset(), inblob)
+            .unwrap();
+    }
+
+    // From TDX Module Specification, the report structure returned by TDX Module
+    // places the report data at offset 128, so using the same offset keeps the
+    // memory layout consistent with the TDX Modules's output format. And we can
+    // directly call `get_report` on the existing report structure without needing
+    // to rewrite the report data.
+    let report_data_ptr = report.paddr() + TdReport::report_data_offset();
+
+    // FIXME: The `get_report` API from the `tdx_guest` crate should have been marked `unsafe`
+    // because it has no way to determine if the input physical address is safe or not.
+    get_report(report.paddr() as u64, report_data_ptr as u64)?;
+    Ok(report.downgrade())
+}
+
+const SHA384_DIGEST_SIZE: usize = 48;
+
+/// Gets the measurement register value from the TDX report.
+pub fn tdx_get_mr(reg: MeasurementReg) -> Result<[u8; SHA384_DIGEST_SIZE]> {
+    let report = TDX_REPORT.get().unwrap().read();
+
+    let mut blob = [0u8; SHA384_DIGEST_SIZE];
+    report
+        .read_bytes(TdReport::mr_offset(reg), blob.as_mut())
+        .unwrap();
+    Ok(blob)
+}
+
+/// Extends the measurement register in the TDX report.
+pub fn tdx_extend_mr(reg: MeasurementReg, data: &[u8]) -> Result<()> {
+    if data.len() != SHA384_DIGEST_SIZE {
+        return_errno_with_message!(Errno::EINVAL, "Invalid data length for extending MR");
+    }
+
+    let index = match reg {
+        MeasurementReg::Rtmr0 => 0,
+        MeasurementReg::Rtmr1 => 1,
+        MeasurementReg::Rtmr2 => 2,
+        MeasurementReg::Rtmr3 => 3,
+        _ => return_errno_with_message!(Errno::EINVAL, "Only RTMR can be extended"),
+    };
+
+    let segment: USegment = FrameAllocOptions::new().alloc_segment(1)?.into();
+    segment.write_bytes(0, data).unwrap();
+
+    extend_rtmr(segment.paddr() as u64, index)?;
+    Ok(())
+}
+
+pub(super) fn init() -> Result<()> {
+    TDX_REPORT.call_once(|| {
+        let report = FrameAllocOptions::new()
+            .alloc_segment(size_of::<TdReport>().div_ceil(PAGE_SIZE))
+            .unwrap()
+            .into();
+        RwMutex::new(report)
+    });
+    register(TdxGuest::new())?;
+    Ok(())
 }
 
 #[repr(C)]
@@ -269,10 +363,10 @@ struct TdInfo {
     mrconfigid: [u8; 48],
     mrowner: [u8; 48],
     mrownerconfig: [u8; 48],
+    rtmr0: [u8; 48],
     rtmr1: [u8; 48],
     rtmr2: [u8; 48],
     rtmr3: [u8; 48],
-    rtmr4: [u8; 48],
     servtd_hash: [u8; 48],
     extension: [u8; 64],
 }
@@ -280,6 +374,20 @@ struct TdInfo {
 impl TdReport {
     const fn report_data_offset() -> usize {
         offset_of!(TdReport, report_mac) + offset_of!(ReportMac, report_data)
+    }
+
+    const fn mr_offset(reg: MeasurementReg) -> usize {
+        offset_of!(TdReport, td_info)
+            + match reg {
+                MeasurementReg::MrConfigId => offset_of!(TdInfo, mrconfigid),
+                MeasurementReg::MrOwner => offset_of!(TdInfo, mrowner),
+                MeasurementReg::MrOwnerConfig => offset_of!(TdInfo, mrownerconfig),
+                MeasurementReg::MrTd => offset_of!(TdInfo, mrtd),
+                MeasurementReg::Rtmr0 => offset_of!(TdInfo, rtmr0),
+                MeasurementReg::Rtmr1 => offset_of!(TdInfo, rtmr1),
+                MeasurementReg::Rtmr2 => offset_of!(TdInfo, rtmr2),
+                MeasurementReg::Rtmr3 => offset_of!(TdInfo, rtmr3),
+            }
     }
 }
 
@@ -291,41 +399,4 @@ mod ioctl_defs {
 
     pub(super) type GetTdxReport =
         ioc!(TDX_CMD_GET_REPORT0, b'T', 0x01, InOutData<TdxReportRequest>);
-}
-
-/// Gets the TDX report given the specified data in `inblob`.
-fn tdx_get_report(inblob: &[u8]) -> Result<SafePtr<TdReport, USegment>> {
-    if inblob.len() != size_of::<ReportData>() {
-        return_errno_with_message!(Errno::EINVAL, "Invalid inblob length");
-    }
-
-    let report: USegment = {
-        const REPORT_SIZE_IN_PAGES: usize = size_of::<TdReport>().div_ceil(PAGE_SIZE);
-        FrameAllocOptions::new()
-            .alloc_segment(REPORT_SIZE_IN_PAGES)?
-            .into()
-    };
-
-    // Use `inblob` as the data associated with the report.
-    let report_data_paddr = {
-        // From TDX Module Specification, the report structure returned by TDX Module
-        // places the report data at offset 128, so using the same offset keeps the
-        // memory layout consistent with the TDX Modules's output format. And we can
-        // directly call `get_report` on the existing report structure without needing
-        // to rewrite the report data.
-        report
-            .write_bytes(TdReport::report_data_offset(), inblob)
-            .unwrap();
-        report.paddr() + TdReport::report_data_offset()
-    };
-
-    // FIXME: The `get_report` API from the `tdx_guest` crate should have been marked `unsafe`
-    // because it has no way to determine if the input physical address is safe or not.
-    get_report(report.paddr() as u64, report_data_paddr as u64)?;
-    Ok(SafePtr::new(report, 0))
-}
-
-fn alloc_dma_buf(buf_len: usize) -> Result<DmaCoherent> {
-    let dma_buf = DmaCoherent::alloc(buf_len.div_ceil(PAGE_SIZE), false)?;
-    Ok(dma_buf)
 }
