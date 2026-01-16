@@ -5,11 +5,11 @@ SMP ?= 1
 VERBOSE ?= 1
 SYSCALL_TEST_SUITE ?= ltp
 SYSCALL_TEST_WORKDIR ?= /tmp
-ENABLE_BASIC_TEST ?= false
+ENABLE_CUSTOM_TEST ?= false
 # Specify platform macros when building regression tests (supported: asterinas, linux).
 # - asterinas: Define both `__asterinas__` and `__linux__`. Tests may fail in Linux.
 # - linux: Define only `__linux__`. Tests may fail in Asterinas.
-BASIC_TEST_PLATFORM ?= asterinas
+TEST_PLATFORM ?= asterinas
 DNS_SERVER ?= none
 # Set Nix's cached tarballs to be live for a longer period of time (30 days) to avoid network traffics.
 # Nix's default value is rather small (1 hour or 3600 seconds).
@@ -65,8 +65,8 @@ $(INITRAMFS_IMAGE): $(INITRAMFS)
 	@nix-build \
 		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
 		--argstr target $(OSDK_TARGET_ARCH) \
-		--arg enableBasicTest $(ENABLE_BASIC_TEST) \
-		--argstr basicTestPlatform $(BASIC_TEST_PLATFORM) \
+		--argstr testPlatform $(TEST_PLATFORM) \
+		--arg enableCustomTest $(ENABLE_CUSTOM_TEST) \
 		--arg enableBenchmark $(ENABLE_BENCHMARK) \
 		--arg enableSyscallTest $(ENABLE_SYSCALL_TEST) \
 		--argstr syscallTestSuite $(SYSCALL_TEST_SUITE) \
@@ -74,6 +74,7 @@ $(INITRAMFS_IMAGE): $(INITRAMFS)
 		--argstr dnsServer ${DNS_SERVER} \
 		--arg initramfsCompressed $(INITRAMFS_COMPRESSED) \
 		--arg smp $(SMP) \
+		--arg intelTdx $(INTEL_TDX) \
 		--out-link $@ \
 		nix -A initramfs-image
 
@@ -82,14 +83,15 @@ $(INITRAMFS):
 	@nix-build \
 		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
 		--argstr target $(OSDK_TARGET_ARCH) \
-		--arg enableBasicTest $(ENABLE_BASIC_TEST) \
-		--argstr basicTestPlatform $(BASIC_TEST_PLATFORM) \
+		--argstr testPlatform $(TEST_PLATFORM) \
+		--arg enableCustomTest $(ENABLE_CUSTOM_TEST) \
 		--arg enableBenchmark $(ENABLE_BENCHMARK) \
 		--arg enableSyscallTest $(ENABLE_SYSCALL_TEST) \
 		--argstr syscallTestSuite $(SYSCALL_TEST_SUITE) \
 		--argstr syscallTestWorkDir $(SYSCALL_TEST_WORKDIR) \
 		--argstr dnsServer ${DNS_SERVER} \
 		--arg smp $(SMP) \
+		--arg intelTdx $(INTEL_TDX) \
 		--out-link $@ \
 		nix -A initramfs
 
@@ -104,7 +106,7 @@ x86_64_pkgs:
 		--arg enableSyscallTest true \
 		--out-link /nix/var/nix/gcroots/auto/x86_64-pkgs \
 		-A busybox \
-		-A apps.package \
+		-A custom.package \
 		-A benchmark.fio \
 		-A benchmark.hackbench \
 		-A benchmark.iperf3 \
@@ -130,16 +132,8 @@ riscv64_pkgs:
 		--arg enableSyscallTest true \
 		--out-link /nix/var/nix/gcroots/auto/riscv64-pkgs \
 		-A busybox \
-		-A apps.package \
+		-A custom.package \
 		-A syscall.ltp
-
-general_pkgs:
-	@nix-build \
-		nix/default.nix \
-		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
-		$(NIX_QUIET) \
-		--out-link /nix/var/nix/gcroots/auto/general \
-		-A apps.mongoose_src
 
 install_host_pkgs:
 	@nix-env \
@@ -178,12 +172,12 @@ $(EXFAT_IMAGE):
 
 .PHONY: format
 format:
-	@$(MAKE) --no-print-directory -C src/apps format
+	@$(MAKE) --no-print-directory -C src/custom format
 	@nixfmt nix
 
 .PHONY: check
 check:
-	@$(MAKE) --no-print-directory -C src/apps check
+	@$(MAKE) --no-print-directory -C src/custom check
 	@nixfmt --check nix
 
 .PHONY: clean
