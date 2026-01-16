@@ -80,12 +80,11 @@ impl FsEventPublisher {
         let mut subscribers = self.subscribers.write();
 
         let orig_len = subscribers.len();
-        subscribers.retain(|m| !Arc::ptr_eq(m, subscriber));
+        self.retain_and_recalc_events(&mut subscribers, |m| !Arc::ptr_eq(m, subscriber));
 
         let removed = subscribers.len() != orig_len;
         if removed {
             subscriber.deliver_event(FsEvents::IN_IGNORED, None);
-            self.recalc_interesting_events(&subscribers);
         }
 
         removed
@@ -126,8 +125,17 @@ impl FsEventPublisher {
         }
 
         let subscribers = self.subscribers.read();
+        let mut has_oneshot = false;
         for subscriber in subscribers.iter() {
-            subscriber.deliver_event(events, name.clone());
+            has_oneshot |= subscriber.deliver_event(events, name.clone());
+        }
+        drop(subscribers);
+
+        if has_oneshot {
+            let mut subscribers = self.subscribers.write();
+            // The `deliver_event()` method should already deliver the `FsEvents::IN_IGNORED`
+            // events for one-shot subscribers. Here, we simply remove them.
+            self.retain_and_recalc_events(&mut subscribers, |m| !m.is_oneshot_and_dead());
         }
     }
 
@@ -135,16 +143,28 @@ impl FsEventPublisher {
     pub fn update_subscriber_events(&self) {
         // Take a write lock to avoid race conditions that may change `all_interesting_events` to
         // an outdated value.
-        let subscribers = self.subscribers.write();
-        self.recalc_interesting_events(&subscribers);
+        let mut subscribers = self.subscribers.write();
+        self.retain_and_recalc_events(&mut subscribers, |_| true);
     }
 
-    /// Recalculates the aggregated interesting events from all subscribers.
-    fn recalc_interesting_events(&self, subscribers: &[Arc<dyn FsEventSubscriber>]) {
+    /// Retains only the subscribers specified by the predicate and recalculates the aggregated
+    /// interesting events.
+    fn retain_and_recalc_events<F>(
+        &self,
+        subscribers: &mut Vec<Arc<dyn FsEventSubscriber>>,
+        mut pred: F,
+    ) where
+        F: FnMut(&Arc<dyn FsEventSubscriber>) -> bool,
+    {
         let mut new_events = FsEvents::empty();
-        for subscriber in subscribers.iter() {
-            new_events |= subscriber.interesting_events();
-        }
+        subscribers.retain(|subscriber| {
+            if pred(subscriber) {
+                new_events |= subscriber.interesting_events();
+                true
+            } else {
+                false
+            }
+        });
         self.all_interesting_events
             .store(new_events, Ordering::Relaxed);
     }
@@ -179,11 +199,25 @@ impl FsEventPublisher {
 pub trait FsEventSubscriber: Any + Send + Sync {
     /// Delivers a filesystem event notification to the subscriber.
     ///
+    /// Returns whether the subscriber is a one-shot subscriber and the event has been
+    /// delivered. If there are no one-shot subscribers, simply return `false` here.
+    /// Otherwise, [`Self::is_oneshot_and_dead`] should be implemented correspondingly.
+    ///
     /// Invariant: This method must not sleep or perform blocking operations. The publisher
     /// may hold a spin lock when calling this method.
-    fn deliver_event(&self, events: FsEvents, name: Option<String>);
+    fn deliver_event(&self, events: FsEvents, name: Option<String>) -> bool;
+
     /// Returns the events that this subscriber is interested in.
     fn interesting_events(&self) -> FsEvents;
+
+    /// Returns whether the subscriber is a one-shot subscriber and an event has been
+    /// delivered.
+    ///
+    /// This method should return `true` if and only if a previous call to
+    /// [`Self::deliver_event`] has already returned `true`.
+    fn is_oneshot_and_dead(&self) -> bool {
+        false
+    }
 }
 
 bitflags! {
@@ -280,7 +314,6 @@ pub fn on_delete(
     {
         return;
     }
-
     if inode.type_() == InodeType::Dir {
         notify_inode_with_name(dir_inode, FsEvents::DELETE | FsEvents::ISDIR, name)
     } else {

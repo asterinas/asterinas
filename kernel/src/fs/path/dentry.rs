@@ -327,6 +327,7 @@ impl Dentry {
         let nlinks = child_inode.metadata().nlinks;
         fs::notify::on_link_count(&child_inode);
         if nlinks == 0 {
+            // FIXME: `DELETE_SELF` should be generated after closing the last FD.
             fs::notify::on_inode_removed(&child_inode);
         }
         fs::notify::on_delete(self.inode(), &child_inode, || name.to_string());
@@ -379,13 +380,14 @@ impl Dentry {
 
         let nlinks = child_inode.metadata().nlinks;
         if nlinks == 0 {
+            // FIXME: `DELETE_SELF` should be generated after closing the last FD.
             fs::notify::on_inode_removed(&child_inode);
         }
         fs::notify::on_delete(self.inode(), &child_inode, || name.to_string());
         if nlinks == 0 {
             // Ideally, we would use `fs_event_publisher()` here to avoid creating a
-            // `FsEventPublisher` on a dying inode. However, it isn't possible because we need to
-            // disable new subscribers.
+            // `FsEventPublisher` instance on a dying inode. However, it isn't possible because we
+            // need to disable new subscribers.
             let publisher = child_inode.fs_event_publisher_or_init();
             let removed_nr_subscribers = publisher.disable_new_and_remove_subscribers();
             child_inode

@@ -1,5 +1,13 @@
+# TODO: Generate `DELETE_SELF`/`IGNORED` after closing the last FD.
 Inotify.DupFD
+Inotify.IncludeUnlinkedFile
+Inotify.IncludeUnlinkedFile_NoRandomSave
+
+# Symbolic links to the busybox binary does not work:
+# "gvisor_test_temp_1103_1767603858010282988: applet not found"
 Inotify.Exec
+
+# TODO: Support the `EXCL_UNLINK` flag.
 Inotify.ExcludeUnlink
 Inotify.ExcludeUnlink_NoRandomSave
 Inotify.ExcludeUnlinkDirectory
@@ -8,16 +16,14 @@ Inotify.ExcludeUnlinkInodeEvents
 Inotify.ExcludeUnlinkInodeEvents_NoRandomSave
 Inotify.ExcludeUnlinkMultipleChildren
 Inotify.ExcludeUnlinkMultipleChildren_NoRandomSave
-Inotify.IncludeUnlinkedFile
-Inotify.IncludeUnlinkedFile_NoRandomSave
+
+# TODO: Report `MOVE_*` events at the `rename()` system call.
 Inotify.MoveGeneratesEvents
 Inotify.MoveWatchedTargetGeneratesEvents
-Inotify.OneShot
+
+# TODO: Support the `splice()` system call.
 Inotify.SpliceOnInotifyFD
 Inotify.SpliceOnWatchTarget
-Inotify.Utimensat
 
-InotifyTest.AddRemoveUnlinkDoNotDeadlock
-InotifyTest.InotifyAndTargetDestructionDoNotDeadlock
-InotifyTest.InotifyAndTargetDestructionDoNotDeadlock_NoRandomSave
-InotifyTest.NotifyNoDeadlock
+# TODO: Correct event generation at the `untimensat()` system call.
+Inotify.Utimensat
