@@ -1,0 +1,18 @@
+[package]
+name = "pod-union"
+version = "0.1.0"
+description = "A derive macro to automatically implement `bytemuck::Pod` and `bytemuck::Zeroable` for unions"
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2.workspace = true
+quote.workspace = true
+syn.workspace = true
+
+[lints]
+workspace = true
