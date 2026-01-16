@@ -1,0 +1,22 @@
+[package]
+name = "padding-struct"
+version = "0.1.0"
+description = "A procedural macro for automatically adding explicit padding fields to #[repr(C)] structs"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2.workspace = true
+quote.workspace = true
+syn.workspace = true
+
+[dev-dependencies]
+bytemuck.workspace = true
+
+[lints]
+workspace = true
