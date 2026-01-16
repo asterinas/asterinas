@@ -35,6 +35,7 @@ members = [
     "kernel/comps/softirq",
     "kernel/comps/systree",
     "kernel/comps/time",
+    "kernel/comps/uart",
     "kernel/comps/virtio",
     "kernel/libs/aster-bigtcp",
     "kernel/libs/aster-rights",
@@ -103,6 +104,7 @@ aster-pci = { path = "kernel/comps/pci" }
 aster-softirq = { path = "kernel/comps/softirq" }
 aster-systree = { path = "kernel/comps/systree" }
 aster-time = { path = "kernel/comps/time" }
+aster-uart = { path = "kernel/comps/uart" }
 aster-virtio = { path = "kernel/comps/virtio" }
 
 # Crates under kernel/libs

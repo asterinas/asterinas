@@ -23,9 +23,10 @@ NO_DEFAULT_FEATURES ?= 0
 COVERAGE ?= 0
 # Specify whether to build regression tests under `test/initramfs/src/apps`.
 ENABLE_BASIC_TEST ?= false
-# Specify the primary system console (supported: hvc0, tty0).
-# - hvc0: The virtio-console terminal.
+# Specify the primary system console (supported: tty0, ttyS0, hvc0).
 # - tty0: The active virtual terminal (VT).
+# - ttyS0: The serial (UART) terminal.
+# - hvc0: The virtio-console terminal.
 # Asterinas will automatically fall back to tty0 if hvc0 is not available.
 # Note that currently the virtual terminal (tty0) can only work with
 # linux-efi-handover64 and linux-efi-pe64 boot protocol.
@@ -244,6 +245,7 @@ OSDK_CRATES := \
 	kernel/comps/softirq \
 	kernel/comps/systree \
 	kernel/comps/time \
+	kernel/comps/uart \
 	kernel/comps/virtio \
 	kernel/libs/aster-bigtcp \
 	kernel/libs/aster-util \
