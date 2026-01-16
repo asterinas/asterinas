@@ -49,6 +49,7 @@ namespace/unshare
 process/group_session
 process/job_control
 process/pidfd
+process/pidfd_getfd
 process/wait4
 procfs/dentry_cache
 procfs/pid_mem

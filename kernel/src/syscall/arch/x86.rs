@@ -81,6 +81,7 @@ use super::{
     nanosleep::{sys_clock_nanosleep, sys_nanosleep},
     open::{sys_creat, sys_open, sys_openat},
     pause::sys_pause,
+    pidfd_getfd::sys_pidfd_getfd,
     pidfd_open::sys_pidfd_open,
     pipe::{sys_pipe, sys_pipe2},
     poll::sys_poll,
@@ -407,6 +408,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_PIDFD_OPEN = 434       => sys_pidfd_open(args[..2]);
     SYS_CLONE3 = 435           => sys_clone3(args[..2], &user_ctx);
     SYS_CLOSE_RANGE = 436      => sys_close_range(args[..3]);
+    SYS_PIDFD_GETFD = 438      => sys_pidfd_getfd(args[..3]);
     SYS_FACCESSAT2 = 439       => sys_faccessat2(args[..4]);
     SYS_EPOLL_PWAIT2 = 441     => sys_epoll_pwait2(args[..5]);
     SYS_FCHMODAT2 = 452        => sys_fchmodat2(args[..4]);
