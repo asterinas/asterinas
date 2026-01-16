@@ -22,7 +22,7 @@ use crate::{
 };
 
 pub struct PidFile {
-    process: Arc<Process>,
+    process: Weak<Process>,
     is_nonblocking: AtomicBool,
     /// The pseudo path associated with this pid file.
     pseudo_path: Path,
@@ -30,8 +30,9 @@ pub struct PidFile {
 
 impl Debug for PidFile {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let pid = self.process.upgrade().map_or(u32::MAX, |p| p.pid());
         f.debug_struct("PidFile")
-            .field("process", &self.process.pid())
+            .field("process", &pid)
             .field(
                 "is_nonblocking",
                 &self.is_nonblocking.load(Ordering::Relaxed),
@@ -45,7 +46,7 @@ impl PidFile {
         let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:[pidfd]".to_string());
 
         Self {
-            process,
+            process: Arc::downgrade(&process),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             pseudo_path,
         }
@@ -56,7 +57,11 @@ impl PidFile {
         // and epoll(7).  When the process that it refers to terminates, these
         // interfaces indicate the file descriptor as readable."
         // Reference: <https://man7.org/linux/man-pages/man2/pidfd_open.2.html>.
-        if self.process.status().is_zombie() {
+        let Some(process) = self.process.upgrade() else {
+            // The process has been reaped.
+            return IoEvents::IN;
+        };
+        if process.status().is_zombie() {
             IoEvents::IN
         } else {
             IoEvents::empty()
@@ -67,8 +72,8 @@ impl PidFile {
         self.is_nonblocking.load(Ordering::Relaxed)
     }
 
-    pub fn process(&self) -> &Arc<Process> {
-        &self.process
+    pub fn process_opt(&self) -> Option<Arc<Process>> {
+        self.process.upgrade()
     }
 }
 
@@ -125,17 +130,19 @@ impl FileLike for PidFile {
         if fd_flags.contains(FdFlags::CLOEXEC) {
             flags |= CreationFlags::O_CLOEXEC.bits();
         }
+        let pid = self.process.upgrade().map_or(u32::MAX, |p| p.pid());
 
-        Box::new(FdInfo {
-            flags,
-            pid: self.process.pid(),
-        })
+        Box::new(FdInfo { flags, pid })
     }
 }
 
 impl Pollable for PidFile {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        self.process
+        let Some(process) = self.process.upgrade() else {
+            // The process has been reaped.
+            return mask & IoEvents::IN;
+        };
+        process
             .pidfile_pollee
             .poll_with(mask, poller, || self.check_io_events())
     }

@@ -89,9 +89,10 @@ pub fn do_wait(
                         ProcessFilter::Any => true,
                         ProcessFilter::WithPid(pid) => child.pid() == *pid,
                         ProcessFilter::WithPgid(pgid) => child.pgid() == *pgid,
-                        ProcessFilter::WithPidfd(pid_file) => {
-                            Arc::ptr_eq(pid_file.process(), *child)
-                        }
+                        ProcessFilter::WithPidfd(pid_file) => match pid_file.process_opt() {
+                            Some(process) => Arc::ptr_eq(&process, child),
+                            None => false,
+                        },
                     })
                     .collect::<Box<_>>();
 
