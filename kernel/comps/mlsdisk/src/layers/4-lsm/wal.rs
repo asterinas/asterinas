@@ -4,7 +4,8 @@
 use alloc::vec;
 use core::fmt::Debug;
 
-use ostd::Pod;
+use bytemuck::Pod;
+use ostd::util::PodExtension;
 
 use super::{AsKV, SyncId};
 use crate::{

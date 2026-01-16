@@ -3,10 +3,8 @@
 use alloc::{sync::Arc, vec::Vec};
 use core::{any::Any, fmt::Debug};
 
-use ostd::{
-    Pod,
-    sync::{RwLock, WriteIrqDisabled},
-};
+use bytemuck::{Pod, Zeroable};
+use ostd::sync::{RwLock, WriteIrqDisabled};
 
 use crate::{
     event_type_codes::{EventTypes, KeyCode, KeyCodeSet, KeyStatus, RelCode, RelCodeSet, SynEvent},
@@ -69,7 +67,7 @@ impl InputEvent {
 
 /// Input device identifier.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct InputId {
     /// Bus type identifier.
     bustype: u16,

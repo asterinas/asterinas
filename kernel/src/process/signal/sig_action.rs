@@ -57,12 +57,14 @@ impl SigAction {
                 flags: 0,
                 restorer_ptr: 0,
                 mask: 0,
+                ..Default::default()
             },
             SigAction::Ign => sigaction_t {
                 handler_ptr: SIG_IGN,
                 flags: 0,
                 restorer_ptr: 0,
                 mask: 0,
+                ..Default::default()
             },
             SigAction::User {
                 handler_addr,
@@ -74,6 +76,7 @@ impl SigAction {
                 flags: flags.as_u32(),
                 restorer_ptr: *restorer_addr,
                 mask: (*mask).into(),
+                ..Default::default()
             },
         }
     }

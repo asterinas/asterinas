@@ -17,6 +17,7 @@ aster-softirq.workspace = true
 aster-systree.workspace = true
 aster-util.workspace = true
 bitflags.workspace = true
+bytemuck.workspace = true
 component.workspace = true
 int-to-c-enum.workspace = true
 spin.workspace = true
@@ -24,6 +25,7 @@ device-id.workspace = true
 id-alloc.workspace = true
 log.workspace = true
 ostd.workspace = true
+padding-struct.workspace = true
 typeflags-util.workspace = true
 
 [target.x86_64-unknown-none.dependencies]

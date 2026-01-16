@@ -451,7 +451,7 @@ const_assert!(size_of::<RawSuperBlock>() == SUPER_BLOCK_SIZE);
 /// on disk. It must be exactly 1024 bytes in length to match the Ext2 specification.
 /// The in-memory representation is provided by [`SuperBlock`].
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Pod, Default)]
+#[derive(Clone, Copy, Debug, Pod, Default, Zeroable)]
 pub(super) struct RawSuperBlock {
     pub inodes_count: u32,
     pub blocks_count: u32,
@@ -577,7 +577,7 @@ impl From<&SuperBlock> for RawSuperBlock {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Pod)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
 struct Reserved([u32; 190]);
 
 impl Default for Reserved {

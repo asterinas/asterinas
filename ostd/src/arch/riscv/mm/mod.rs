@@ -3,13 +3,13 @@
 use alloc::fmt;
 use core::ops::Range;
 
+use bytemuck::{Pod, Zeroable};
 use spin::Once;
 pub(crate) use util::{
     __atomic_cmpxchg_fallible, __atomic_load_fallible, __memcpy_fallible, __memset_fallible,
 };
 
 use crate::{
-    Pod,
     arch::{
         boot::DEVICE_TREE,
         cpu::extension::{IsaExtensions, has_extensions},
@@ -48,7 +48,7 @@ impl PagingConstsTrait for PagingConsts {
 }
 
 bitflags::bitflags! {
-    #[derive(Pod)]
+    #[derive(Pod, Zeroable)]
     #[repr(C)]
     /// Possible flags for a page table entry.
     pub(crate) struct PageTableFlags: usize {
@@ -151,7 +151,7 @@ pub(crate) unsafe fn sync_dma_range<D: DmaDirection>(range: Range<Vaddr>) {
     unsafe { core::arch::asm!("fence rw, rw", options(nostack)) };
 }
 
-#[derive(Clone, Copy, Pod, Default)]
+#[derive(Clone, Copy, Pod, Default, Zeroable)]
 #[repr(C)]
 pub(crate) struct PageTableEntry(usize);
 

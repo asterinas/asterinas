@@ -10,3 +10,5 @@ pub(crate) mod range_alloc;
 pub(crate) mod range_counter;
 
 pub use either::Either;
+mod pod_extension;
+pub use pod_extension::PodExtension;

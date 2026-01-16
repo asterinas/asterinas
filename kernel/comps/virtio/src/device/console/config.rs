@@ -3,7 +3,7 @@
 use core::mem::offset_of;
 
 use aster_util::safe_ptr::SafePtr;
-use ostd::Pod;
+use bytemuck::{Pod, Zeroable};
 
 use crate::transport::{ConfigManager, VirtioTransport};
 
@@ -20,7 +20,7 @@ bitflags::bitflags! {
     }
 }
 
-#[derive(Debug, Pod, Clone, Copy)]
+#[derive(Debug, Pod, Clone, Copy, Zeroable)]
 #[repr(C)]
 pub struct VirtioConsoleConfig {
     pub cols: u16,
@@ -41,7 +41,7 @@ impl VirtioConsoleConfig {
 
 impl ConfigManager<VirtioConsoleConfig> {
     pub(super) fn read_config(&self) -> VirtioConsoleConfig {
-        let mut console_config = VirtioConsoleConfig::new_uninit();
+        let mut console_config = VirtioConsoleConfig::zeroed();
         // Only following fields are defined in legacy interface.
         console_config.cols = self
             .read_once::<u16>(offset_of!(VirtioConsoleConfig, cols))

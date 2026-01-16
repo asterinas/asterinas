@@ -3,6 +3,7 @@
 use alloc::fmt;
 use core::ops::Range;
 
+use bytemuck::{Pod, Zeroable};
 use cfg_if::cfg_if;
 pub(crate) use util::{
     __atomic_cmpxchg_fallible, __atomic_load_fallible, __memcpy_fallible, __memset_fallible,
@@ -14,14 +15,11 @@ use x86_64::{
     structures::paging::PhysFrame,
 };
 
-use crate::{
-    Pod,
-    mm::{
-        PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
-        dma::DmaDirection,
-        page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
-        page_table::PageTableEntryTrait,
-    },
+use crate::mm::{
+    PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
+    dma::DmaDirection,
+    page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
+    page_table::PageTableEntryTrait,
 };
 
 mod pat;
@@ -42,7 +40,7 @@ impl PagingConstsTrait for PagingConsts {
 }
 
 bitflags::bitflags! {
-    #[derive(Pod)]
+    #[derive(Pod, Zeroable)]
     #[repr(C)]
     /// Possible flags for a page table entry.
     pub(crate) struct PageTableFlags: usize {
@@ -135,7 +133,7 @@ pub(crate) unsafe fn sync_dma_range<D: DmaDirection>(_range: Range<Vaddr>) {
     // Reference: <https://lwn.net/Articles/855328/>, <https://lwn.net/Articles/2265/>.
 }
 
-#[derive(Clone, Copy, Pod, Default)]
+#[derive(Clone, Copy, Pod, Default, Zeroable)]
 #[repr(C)]
 pub(crate) struct PageTableEntry(usize);
 

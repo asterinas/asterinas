@@ -3,11 +3,9 @@
 use alloc::sync::Arc;
 
 use aster_framebuffer::{ColorMapEntry, FRAMEBUFFER, FrameBuffer, MAX_CMAP_SIZE, PixelFormat};
+use bytemuck::Pod;
 use device_id::{DeviceId, MajorId, MinorId};
-use ostd::{
-    Pod,
-    mm::{HasPaddr, HasSize, VmIo, io_util::HasVmReaderWriter},
-};
+use ostd::mm::{HasPaddr, HasSize, VmIo, io_util::HasVmReaderWriter};
 
 use super::registry::char;
 use crate::{
@@ -36,7 +34,7 @@ struct FbHandle {
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/fb.h#L189>.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Default)]
+#[derive(Debug, Clone, Copy, Pod, Default, Zeroable)]
 struct FbBitfield {
     /// Bit offset of the field
     pub offset: u32,
@@ -83,7 +81,7 @@ impl FbBitfield {
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/fb.h#L243>.
 #[repr(C)]
-#[derive(Debug, Default, Clone, Copy, Pod)]
+#[derive(Debug, Default, Clone, Copy, Pod, Zeroable)]
 struct FbVarScreenInfo {
     /// Visible resolution width
     pub xres: u32,
@@ -149,7 +147,8 @@ struct FbVarScreenInfo {
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/fb.h#L158>.
 #[repr(C)]
-#[derive(Debug, Default, Clone, Copy, Pod)]
+#[padding_struct]
+#[derive(Debug, Default, Clone, Copy, Pod, Zeroable)]
 struct FbFixScreenInfo {
     /// Identification string (e.g., "EFI VGA")
     pub id: [u8; 16],
@@ -187,7 +186,7 @@ struct FbFixScreenInfo {
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/fb.h#L283>.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct FbCmapUser {
     /// Starting offset in colormap
     pub start: u32,

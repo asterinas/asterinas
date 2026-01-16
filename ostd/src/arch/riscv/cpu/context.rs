@@ -5,7 +5,8 @@
 use alloc::boxed::Box;
 use core::{arch::global_asm, fmt::Debug};
 
-use ostd_pod::Pod;
+use bytemuck::{Pod, Zeroable};
+use padding_struct::padding_struct;
 use riscv::{
     interrupt::supervisor::{Exception, Interrupt},
     register::scause::Trap,
@@ -17,6 +18,7 @@ use crate::{
         trap::{RawUserContext, SSTATUS_FS_MASK, TrapFrame, handle_irq},
     },
     cpu::PrivilegeLevel,
+    prelude::*,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
 
@@ -391,7 +393,7 @@ impl Default for FpuContext {
 
 /// FPU context for F extension (32-bit floating point).
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod, Zeroable)]
 pub struct FFpuContext {
     f: [u32; 32],
     fcsr: u32,
@@ -399,7 +401,8 @@ pub struct FFpuContext {
 
 /// FPU context for D extension (64-bit floating point).
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Pod)]
+#[padding_struct]
+#[derive(Clone, Copy, Debug, Default, Pod, Zeroable)]
 pub struct DFpuContext {
     f: [u64; 32],
     fcsr: u32,
@@ -407,7 +410,8 @@ pub struct DFpuContext {
 
 /// FPU context for Q extension (128-bit floating point).
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Pod)]
+#[padding_struct]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub struct QFpuContext {
     f: [u64; 64],
     fcsr: u32,
@@ -423,6 +427,8 @@ impl Default for QFpuContext {
         Self {
             f: [0; 64],
             fcsr: 0,
+            __pad1: [0; _],
+            __pad2: [0; _],
         }
     }
 }

@@ -7,7 +7,8 @@ use core::{
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
-use ostd::Pod;
+use bytemuck::Pod;
+use ostd::util::PodExtension;
 use serde::{Deserialize, Serialize};
 
 use super::mlsdisk::Hba;

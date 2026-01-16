@@ -18,13 +18,14 @@ use core::{mem::ManuallyDrop, time::Duration};
 use aster_time::{Instant, read_monotonic_time};
 use aster_util::coeff::Coeff;
 use ostd::{
-    Pod, const_assert,
+    const_assert,
     mm::{PAGE_SIZE, UFrame, VmIo, VmIoOnce},
     sync::SpinLock,
 };
 use spin::Once;
 
 use crate::{
+    prelude::*,
     syscall::ClockId,
     time::{
         START_TIME, SystemTime,
@@ -52,7 +53,7 @@ enum VdsoClockMode {
 /// This contains information that describes the current time with respect to a certain clock (see
 /// [`ClockId`]).
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, Pod)]
+#[derive(Debug, Default, Copy, Clone, Pod, Zeroable)]
 struct VdsoInstant {
     /// Seconds.
     secs: u64,
@@ -74,7 +75,7 @@ impl VdsoInstant {
 }
 
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, Pod)]
+#[derive(Debug, Default, Copy, Clone, Pod, Zeroable)]
 struct ArchVdsoData {}
 
 /// Plain-old-data vDSO data that will be mapped to userspace.
@@ -84,7 +85,7 @@ struct ArchVdsoData {}
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.2.10/source/include/vdso/datapage.h#L90>.
 #[repr(C)]
-#[derive(Debug, Copy, Clone, Pod)]
+#[derive(Debug, Copy, Clone, Pod, Zeroable)]
 struct VdsoData {
     seq: u32,
 

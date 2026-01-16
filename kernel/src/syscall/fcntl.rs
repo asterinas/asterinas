@@ -213,7 +213,8 @@ pub enum RangeLockWhence {
 
 /// C struct for a file range lock in Libc
 #[repr(C)]
-#[derive(Debug, Copy, Clone, Pod)]
+#[padding_struct]
+#[derive(Debug, Copy, Clone, Pod, Zeroable)]
 pub struct c_flock {
     /// Type of lock: F_RDLCK, F_WRLCK, or F_UNLCK
     pub l_type: u16,

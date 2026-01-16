@@ -498,7 +498,7 @@ const_assert!(size_of::<RawGroupDescriptor>() == 32);
 ///
 /// The table starts on the first block following the superblock.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Pod)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub(super) struct RawGroupDescriptor {
     pub block_bitmap: u32,
     pub inode_bitmap: u32,

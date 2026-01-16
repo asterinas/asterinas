@@ -301,7 +301,7 @@ impl FileLike for SignalFile {
 }
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, Pod)]
+#[derive(Debug, Copy, Clone, Pod, Zeroable)]
 struct SignalfdSiginfo {
     ssi_signo: u32,
     ssi_errno: i32,

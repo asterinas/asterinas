@@ -14,13 +14,15 @@ pub(crate) use alloc::{
 pub(crate) use core::{any::Any, ffi::CStr, fmt::Debug};
 
 pub(crate) use bitflags::bitflags;
+pub(crate) use bytemuck::{Pod, Zeroable};
 pub(crate) use int_to_c_enum::TryFromInt;
 pub(crate) use log::{debug, error, info, log_enabled, trace, warn};
 pub(crate) use ostd::{
-    Pod,
     mm::{FallibleVmRead, FallibleVmWrite, PAGE_SIZE, Vaddr, VmReader, VmWriter},
     sync::{Mutex, MutexGuard, RwLock, RwMutex, SpinLock, SpinLockGuard},
+    util::PodExtension,
 };
+pub(crate) use padding_struct::padding_struct;
 
 /// return current process
 #[macro_export]

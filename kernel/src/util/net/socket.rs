@@ -70,7 +70,7 @@ pub const SOCK_TYPE_MASK: i32 = 0xf;
 
 bitflags! {
     #[repr(C)]
-    #[derive(Pod)]
+    #[derive(Pod, Zeroable)]
     pub struct SockFlags: i32 {
         const SOCK_NONBLOCK = 1 << 11;
         const SOCK_CLOEXEC = 1 << 19;
@@ -78,7 +78,8 @@ bitflags! {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[padding_struct]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct CUserMsgHdr {
     /// Pointer to socket address structure
     pub msg_name: Vaddr,

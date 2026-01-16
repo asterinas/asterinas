@@ -3,7 +3,9 @@
 use alloc::vec;
 use core::any::Any;
 
-use ostd::{Pod, const_assert};
+use bytemuck::{Pod, Zeroable};
+use ostd::{const_assert, util::PodExtension};
+use padding_struct::padding_struct;
 use serde::{Deserialize, Serialize};
 
 use super::{Iv, Key, Mac};
@@ -111,7 +113,8 @@ pub struct RootMhtMeta {
 /// The Merkle-Hash Tree (MHT) node (internal).
 /// It contains a header for node metadata and a bunch of entries for managing children nodes.
 #[repr(C)]
-#[derive(Clone, Copy, Pod)]
+#[padding_struct]
+#[derive(Clone, Copy, Pod, Zeroable)]
 struct MhtNode {
     header: MhtNodeHeader,
     entries: [MhtNodeEntry; MHT_NBRANCHES],
@@ -120,7 +123,8 @@ const_assert!(size_of::<MhtNode>() <= BLOCK_SIZE);
 
 /// The header contains metadata of the current MHT node.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Pod)]
+#[padding_struct]
+#[derive(Clone, Copy, Debug, Pod, Zeroable, Default)]
 struct MhtNodeHeader {
     // The height of the MHT whose root is this node
     height: Height,
@@ -133,7 +137,7 @@ struct MhtNodeHeader {
 /// The entry of the MHT node, which contains the
 /// metadata of the child MHT/data node.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Pod)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
 struct MhtNodeEntry {
     pos: Pbid,
     key: Key,
@@ -145,7 +149,7 @@ const MHT_NBRANCHES: usize = (BLOCK_SIZE - size_of::<MhtNodeHeader>()) / size_of
 
 /// The data node (leaf). It contains a block of data.
 #[repr(C)]
-#[derive(Clone, Copy, Pod)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 struct DataNode([u8; BLOCK_SIZE]);
 
 /// Builder for MHT.
@@ -262,7 +266,7 @@ impl<L: BlockLog> CryptoLog<L> {
         let data_nodes: Vec<Arc<DataNode>> = buf
             .iter()
             .map(|block_buf| {
-                let mut node = DataNode::new_uninit();
+                let mut node = DataNode::zeroed();
                 node.0.copy_from_slice(block_buf.as_slice());
                 Arc::new(node)
             })
@@ -397,12 +401,9 @@ impl<L: BlockLog> Mht<L> {
         let next_level_targets = {
             let mut targets = Vec::with_capacity(nodes_needed);
             for entry in target_entries {
-                let target_node = self.storage.read_mht_node(
-                    entry.pos,
-                    &entry.key,
-                    &entry.mac,
-                    &Iv::new_zeroed(),
-                )?;
+                let target_node =
+                    self.storage
+                        .read_mht_node(entry.pos, &entry.key, &entry.mac, &Iv::zeroed())?;
                 targets.push(target_node);
             }
             targets
@@ -491,7 +492,7 @@ impl<L: BlockLog> MhtStorage<L> {
             let plain = node.as_bytes();
             let cipher = &mut cipher_buf.as_mut_slice()[i * BLOCK_SIZE..(i + 1) * BLOCK_SIZE];
             let key = Key::random();
-            let mac = Aead::new().encrypt(plain, &key, &Iv::new_zeroed(), &[], cipher)?;
+            let mac = Aead::new().encrypt(plain, &key, &Iv::zeroed(), &[], cipher)?;
 
             node_entries.push(MhtNodeEntry { pos, key, mac });
             self.node_cache.put(pos, node.clone());
@@ -516,7 +517,7 @@ impl<L: BlockLog> MhtStorage<L> {
         for (i, node) in nodes.iter().enumerate() {
             let cipher = &mut cipher_buf.as_mut_slice()[i * BLOCK_SIZE..(i + 1) * BLOCK_SIZE];
             let key = Key::random();
-            let mac = Aead::new().encrypt(&node.0, &key, &Iv::new_zeroed(), &[], cipher)?;
+            let mac = Aead::new().encrypt(&node.0, &key, &Iv::zeroed(), &[], cipher)?;
 
             node_entries.push(MhtNodeEntry { pos, key, mac });
             pos += 1;
@@ -537,7 +538,7 @@ impl<L: BlockLog> MhtStorage<L> {
         let mht_node = {
             let mut crypt_buf = self.crypt_buf.lock();
             self.block_log.read(pos, crypt_buf.cipher.as_mut())?;
-            let mut node = MhtNode::new_zeroed();
+            let mut node = MhtNode::zeroed();
             Aead::new().decrypt(
                 crypt_buf.cipher.as_slice(),
                 key,
@@ -565,7 +566,7 @@ impl<L: BlockLog> MhtStorage<L> {
         Aead::new().decrypt(
             crypt_buf.cipher.as_slice(),
             &entry.key,
-            &Iv::new_zeroed(),
+            &Iv::zeroed(),
             &[],
             &entry.mac,
             node_buf,
@@ -738,11 +739,12 @@ impl LevelBuilder {
                 break;
             }
 
-            let mut mht_node = MhtNode::new_zeroed();
+            let mut mht_node = MhtNode::zeroed();
             mht_node.header = MhtNodeHeader {
                 height: self.height,
                 num_data_nodes: MhtNode::max_num_data_nodes(self.height) as _,
                 num_valid_entries: MHT_NBRANCHES as _,
+                ..Default::default()
             };
             for (i, entry) in mht_node.entries.iter_mut().enumerate() {
                 *entry = *entries_per_node[i];
@@ -767,18 +769,19 @@ impl LevelBuilder {
         };
         let num_valid_entries = entries.len();
 
-        let mut last_mht_node = MhtNode::new_zeroed();
+        let mut last_mht_node = MhtNode::zeroed();
         last_mht_node.header = MhtNodeHeader {
             height: self.height,
             num_data_nodes: num_data_nodes as _,
             num_valid_entries: num_valid_entries as _,
+            ..Default::default()
         };
         for (i, entry) in last_mht_node.entries.iter_mut().enumerate() {
             *entry = if i < num_valid_entries {
                 *entries[i]
             } else {
                 // Padding invalid entries to the rest
-                MhtNodeEntry::new_uninit()
+                MhtNodeEntry::zeroed()
             };
         }
 
@@ -818,7 +821,7 @@ impl<'a, L: BlockLog> PreviousBuild<'a, L> {
         let mut lookup_node = {
             let entry = root_node.entries[root_node.num_valid_entries() - 1];
             self.storage
-                .read_mht_node(entry.pos, &entry.key, &entry.mac, &Iv::new_zeroed())
+                .read_mht_node(entry.pos, &entry.key, &entry.mac, &Iv::zeroed())
                 .unwrap()
         };
 
@@ -835,7 +838,7 @@ impl<'a, L: BlockLog> PreviousBuild<'a, L> {
             lookup_node = {
                 let entry = lookup_node.entries[lookup_node.num_valid_entries() - 1];
                 self.storage
-                    .read_mht_node(entry.pos, &entry.key, &entry.mac, &Iv::new_zeroed())
+                    .read_mht_node(entry.pos, &entry.key, &entry.mac, &Iv::zeroed())
                     .unwrap()
             }
         }
@@ -1063,7 +1066,7 @@ impl<L: BlockLog> Debug for MhtDisplayer<'_, L> {
                 let node = self
                     .0
                     .storage
-                    .read_mht_node(entry.pos, &entry.key, &entry.mac, &Iv::new_zeroed())
+                    .read_mht_node(entry.pos, &entry.key, &entry.mac, &Iv::zeroed())
                     .unwrap();
                 debug_struct.field("\n node_entry", entry);
                 debug_struct.field("\n -> mht_node", &node);

@@ -7,13 +7,13 @@ use ostd::{mm::VmIo, task::Task};
 use crate::{current_userspace, prelude::*, process::posix_thread::futex::futex_wake, thread::Tid};
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Pod)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
 struct RobustList {
     next: Vaddr, // *const Robust list
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Pod)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub struct RobustListHead {
     /// Linked list of lock entries
     ///

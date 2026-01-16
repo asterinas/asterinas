@@ -9,17 +9,17 @@ use crate::{net::socket::unix::UnixSocketAddr, prelude::*};
 ///
 /// See <https://www.man7.org/linux/man-pages/man7/unix.7.html>.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub(super) struct CSocketAddrUnix {
     /// Address family (AF_UNIX).
     sun_family: u16,
     /// Pathname.
-    sun_path: [u8; Self::PATH_MAX_LEN],
+    sun_path: [u8; PATH_MAX_LEN],
 }
 
-impl CSocketAddrUnix {
-    const PATH_MAX_LEN: usize = 108;
+const PATH_MAX_LEN: usize = 108;
 
+impl CSocketAddrUnix {
     const PATH_OFFSET: usize = offset_of!(Self, sun_path);
 
     const MIN_LEN: usize = Self::PATH_OFFSET;
@@ -43,7 +43,7 @@ where
     // bytes may exceed the size of `CSocketAddrUnix`. This is to match the Linux
     // implementation. See the "BUGS" section at
     // <https://man7.org/linux/man-pages/man7/unix.7.html>.
-    let mut bytes: [u8; CSocketAddrUnix::MAX_LEN + 1] = Pod::new_zeroed();
+    let mut bytes: [u8; CSocketAddrUnix::MAX_LEN + 1] = Zeroable::zeroed();
 
     bytes[..2].copy_from_slice(&(CSocketAddrFamily::AF_UNIX as u16).to_ne_bytes());
     const { assert!(CSocketAddrUnix::PATH_OFFSET == 2) };

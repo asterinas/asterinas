@@ -13,7 +13,6 @@ use aster_input::{
 };
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use ostd::{
-    Pod,
     mm::{VmReader, VmWriter},
     sync::Mutex,
 };
@@ -59,7 +58,7 @@ mod ioctl_defs {
 
 // Reference: <https://elixir.bootlin.com/linux/v6.17.9/source/include/uapi/linux/input.h#L28>
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub(super) struct EvdevEvent {
     sec: u64,
     usec: u64,

@@ -17,7 +17,7 @@ struct IoVec {
 /// is that `UserIoVec` uses `isize` as the length type,
 /// while `IoVec` uses `usize`.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct UserIoVec {
     base: Vaddr,
     len: isize,
@@ -271,7 +271,7 @@ impl MultiRead for VmReader<'_> {
 impl dyn MultiRead + '_ {
     /// Reads a `T` value, returning a `None` if the readers have insufficient bytes.
     pub fn read_val_opt<T: Pod>(&mut self) -> Result<Option<T>> {
-        let mut val = T::new_zeroed();
+        let mut val = T::zeroed();
         let nbytes = self.read(&mut VmWriter::from(val.as_bytes_mut()))?;
 
         if nbytes == size_of::<T>() {

@@ -72,7 +72,7 @@ pub fn sys_statx(
 }
 
 /// Structures for the extended file attribute retrieval system call statx.
-#[derive(Debug, Clone, Copy, Pod, Default)]
+#[derive(Debug, Clone, Copy, Pod, Default, Zeroable)]
 #[repr(C)]
 pub struct Statx {
     /// Indicates which fields in the `statx` structure were successfully filled,
@@ -174,7 +174,7 @@ impl Statx {
 }
 
 /// Statx Timestamp (seconds and nanoseconds)
-#[derive(Debug, Clone, Copy, Pod, Default)]
+#[derive(Debug, Clone, Copy, Pod, Default, Zeroable)]
 #[repr(C)]
 pub struct StatxTimestamp {
     /// Seconds

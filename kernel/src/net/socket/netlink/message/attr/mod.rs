@@ -43,7 +43,7 @@ pub mod noattr;
 // │ Nested │ Net Byteorder │ Payload  │
 // └────────┴───────────────┴──────────┘
 //   bit 15      bit 14       bits 13-0
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 pub struct CAttrHeader {
     len: u16,

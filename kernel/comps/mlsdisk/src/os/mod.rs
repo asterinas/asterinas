@@ -19,14 +19,15 @@ use aes_gcm::{
     aead::{AeadInPlace, Key, NewAead, Nonce, Tag},
     aes::Aes128,
 };
+use bytemuck::{Pod, Zeroable};
 use ctr::cipher::{NewCipher, StreamCipher};
 pub use hashbrown::{HashMap, HashSet};
 pub use ostd::sync::{Mutex, MutexGuard, RwLock, SpinLock};
 use ostd::{
-    Pod,
     arch::read_random,
     sync::{self, PreemptDisabled, WaitQueue},
     task::{Task, TaskOptions},
+    util::PodExtension,
 };
 use serde::{Deserialize, Serialize};
 
@@ -255,7 +256,7 @@ impl crate::util::Rng for Rng {
 macro_rules! new_byte_array_type {
     ($name:ident, $n:expr) => {
         #[repr(C)]
-        #[derive(Copy, Clone, Pod, Debug, Default, Deserialize, Serialize)]
+        #[derive(Copy, Clone, Pod, Debug, Default, Deserialize, Serialize, Zeroable)]
         pub struct $name([u8; $n]);
 
         impl core::ops::Deref for $name {
@@ -326,7 +327,7 @@ impl crate::util::Aead for Aead {
             .encrypt_in_place_detached(nonce, aad, output)
             .map_err(|_| Error::with_msg(Errno::EncryptFailed, "aes-128-gcm encryption failed"))?;
 
-        let mut aead_mac = AeadMac::new_zeroed();
+        let mut aead_mac = AeadMac::zeroed();
         aead_mac.copy_from_slice(&tag);
         Ok(aead_mac)
     }

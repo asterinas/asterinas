@@ -7,8 +7,9 @@ use core::mem::offset_of;
 use aster_block::SECTOR_SIZE;
 use aster_util::safe_ptr::SafePtr;
 use bitflags::bitflags;
+use bytemuck::{Pod, Zeroable};
 use int_to_c_enum::TryFromInt;
-use ostd::Pod;
+use padding_struct::padding_struct;
 
 use crate::transport::{ConfigManager, VirtioTransport};
 
@@ -57,7 +58,8 @@ pub enum RespStatus {
     _NotReady = 3,
 }
 
-#[derive(Debug, Copy, Clone, Pod)]
+#[padding_struct]
+#[derive(Debug, Copy, Clone, Pod, Zeroable)]
 #[repr(C)]
 pub struct VirtioBlockConfig {
     /// The number of 512-byte sectors.
@@ -94,7 +96,7 @@ pub struct VirtioBlockConfig {
     unused1: [u8; 3],
 }
 
-#[derive(Debug, Copy, Clone, Pod)]
+#[derive(Debug, Copy, Clone, Pod, Zeroable)]
 #[repr(C)]
 pub struct VirtioBlockGeometry {
     cylinders: u16,
@@ -102,7 +104,7 @@ pub struct VirtioBlockGeometry {
     sectors: u8,
 }
 
-#[derive(Debug, Copy, Clone, Pod)]
+#[derive(Debug, Copy, Clone, Pod, Zeroable)]
 #[repr(C)]
 pub struct VirtioBlockTopology {
     /// Exponent for physical block per logical block.
@@ -138,7 +140,7 @@ impl VirtioBlockConfig {
 
 impl ConfigManager<VirtioBlockConfig> {
     pub(super) fn read_config(&self) -> VirtioBlockConfig {
-        let mut blk_config = VirtioBlockConfig::new_uninit();
+        let mut blk_config = VirtioBlockConfig::zeroed();
         // Only following fields are defined in legacy interface.
         let cap_low = self
             .read_once::<u32>(offset_of!(VirtioBlockConfig, capacity))

@@ -536,7 +536,7 @@ struct InotifyEvent {
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17.8/source/include/uapi/linux/inotify.h#L21>
 #[repr(C)]
-#[derive(Clone, Copy, Pod)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 struct InotifyEventHeader {
     wd: u32,
     event: u32,

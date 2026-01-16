@@ -5,7 +5,7 @@ use core::mem::offset_of;
 use aster_network::EthernetAddr;
 use aster_util::safe_ptr::SafePtr;
 use bitflags::bitflags;
-use ostd::Pod;
+use bytemuck::{Pod, Zeroable};
 
 use crate::transport::{ConfigManager, VirtioTransport};
 
@@ -57,14 +57,14 @@ impl NetworkFeatures {
 
 bitflags! {
     #[repr(C)]
-    #[derive(Pod)]
+    #[derive(Pod, Zeroable)]
     pub struct Status: u16 {
         const VIRTIO_NET_S_LINK_UP = 1;
         const VIRTIO_NET_S_ANNOUNCE = 2;
     }
 }
 
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 pub struct VirtioNetConfig {
     pub mac: EthernetAddr,
@@ -90,7 +90,7 @@ impl VirtioNetConfig {
 
 impl ConfigManager<VirtioNetConfig> {
     pub(super) fn read_config(&self) -> VirtioNetConfig {
-        let mut net_config = VirtioNetConfig::new_uninit();
+        let mut net_config = VirtioNetConfig::zeroed();
         // Only following fields are defined in legacy interface.
         for i in 0..6 {
             net_config.mac.0[i] = self

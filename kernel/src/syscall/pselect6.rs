@@ -53,7 +53,7 @@ pub fn sys_pselect6(
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct SigMaskWithSize {
     sigmask: SigMask,
     sigmasksize: usize,

@@ -6,6 +6,7 @@
 use aster_util::read_union_field;
 use inherit_methods_macro::inherit_methods;
 use ostd::arch::cpu::context::UserContext;
+use pod_union::PodUnion;
 
 use super::sig_num::SigNum;
 use crate::{
@@ -18,7 +19,8 @@ pub type sigset_t = u64;
 // FIXME: this type should be put at suitable place
 pub type clock_t = i64;
 
-#[derive(Debug, Clone, Copy, Pod)]
+#[padding_struct]
+#[derive(Debug, Clone, Copy, Pod, Zeroable, Default)]
 #[repr(C)]
 pub struct sigaction_t {
     pub handler_ptr: Vaddr,
@@ -27,7 +29,8 @@ pub struct sigaction_t {
     pub mask: sigset_t,
 }
 
-#[derive(Clone, Copy, Pod)]
+#[padding_struct]
+#[derive(Clone, Copy, Pod, Zeroable, Default)]
 #[repr(C)]
 pub struct siginfo_t {
     pub si_signo: i32,
@@ -48,6 +51,7 @@ impl siginfo_t {
             si_errno: 0,
             si_code: code,
             siginfo_fields: siginfo_fields_t::zero_fields(),
+            ..Default::default()
         }
     }
 
@@ -72,12 +76,20 @@ impl siginfo_t {
     }
 }
 
-#[derive(Clone, Copy, Pod)]
+#[derive(Clone, Copy, PodUnion)]
 #[repr(C)]
 union siginfo_fields_t {
     bytes: [u8; 128 - size_of::<i32>() * 4],
     common: siginfo_common_t,
     sigfault: siginfo_sigfault_t,
+}
+
+impl Default for siginfo_fields_t {
+    fn default() -> Self {
+        siginfo_fields_t {
+            bytes: [0u8; 128 - size_of::<i32>() * 4],
+        }
+    }
 }
 
 impl siginfo_fields_t {
@@ -88,42 +100,42 @@ impl siginfo_fields_t {
     }
 }
 
-#[derive(Clone, Copy, Pod)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 struct siginfo_common_t {
     first: siginfo_common_first_t,
     second: siginfo_common_second_t,
 }
 
-#[derive(Clone, Copy, Pod)]
+#[derive(Clone, Copy, PodUnion)]
 #[repr(C)]
 union siginfo_common_first_t {
     piduid: siginfo_piduid_t,
     timer: siginfo_timer_t,
 }
 
-#[derive(Clone, Copy, Pod)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 struct siginfo_piduid_t {
     pid: Pid,
     uid: Uid,
 }
 
-#[derive(Clone, Copy, Pod)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 struct siginfo_timer_t {
     timerid: i32,
     overrun: i32,
 }
 
-#[derive(Clone, Copy, Pod)]
+#[derive(Clone, Copy, PodUnion)]
 #[repr(C)]
 union siginfo_common_second_t {
     value: sigval_t,
     sigchild: siginfo_sigchild_t,
 }
 
-#[derive(Clone, Copy, Pod)]
+#[derive(Clone, Copy, PodUnion)]
 #[repr(C)]
 pub union sigval_t {
     sigval_int: i32,
@@ -140,7 +152,7 @@ impl sigval_t {
     }
 }
 
-#[derive(Clone, Copy, Pod)]
+#[derive(Clone, Copy, PodUnion)]
 #[repr(C)]
 union siginfo_sigchild_t {
     status: i32,
@@ -148,7 +160,8 @@ union siginfo_sigchild_t {
     stime: clock_t,
 }
 
-#[derive(Clone, Copy, Pod)]
+#[padding_struct]
+#[derive(Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 struct siginfo_sigfault_t {
     addr: Vaddr, //*const c_void
@@ -156,14 +169,14 @@ struct siginfo_sigfault_t {
     first: siginfo_sigfault_first_t,
 }
 
-#[derive(Clone, Copy, Pod)]
+#[derive(Clone, Copy, PodUnion)]
 #[repr(C)]
 union siginfo_sigfault_first_t {
     addr_bnd: siginfo_addr_bnd_t,
     pkey: u32,
 }
 
-#[derive(Clone, Copy, Pod)]
+#[derive(Clone, Copy, PodUnion)]
 #[repr(C)]
 union siginfo_addr_bnd_t {
     lower: Vaddr, // *const c_void
@@ -172,7 +185,7 @@ union siginfo_addr_bnd_t {
 
 /// Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/include/uapi/asm-generic/ucontext.h#L5>
 #[cfg(target_arch = "x86_64")]
-#[derive(Clone, Copy, Debug, Default, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod, Zeroable)]
 #[repr(C)]
 pub struct ucontext_t {
     pub uc_flags: u64,
@@ -185,7 +198,8 @@ pub struct ucontext_t {
 /// Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/riscv/include/uapi/asm/ucontext.h>
 /// Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/loongarch/include/uapi/asm/ucontext.h>
 #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))]
-#[derive(Clone, Copy, Debug, Pod)]
+#[padding_struct]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
 #[repr(C)]
 pub struct ucontext_t {
     pub uc_flags: u64,
@@ -211,13 +225,20 @@ impl Default for ucontext_t {
             uc_sigmask: Default::default(),
             __unused: [0; 120],
             uc_mcontext: Default::default(),
+            __pad1: [0; _],
+            __pad2: [0; _],
+            __pad3: [0; _],
+            __pad4: [0; _],
+            __pad5: [0; _],
+            __pad6: [0; _],
         }
     }
 }
 
 pub type stack_t = sigaltstack_t;
 
-#[derive(Debug, Clone, Copy, Pod, Default)]
+#[padding_struct]
+#[derive(Debug, Clone, Copy, Pod, Default, Zeroable)]
 #[repr(C)]
 pub struct sigaltstack_t {
     pub ss_sp: Vaddr, // *mut c_void
@@ -225,7 +246,7 @@ pub struct sigaltstack_t {
     pub ss_size: usize,
 }
 
-#[derive(Debug, Clone, Copy, Pod, Default)]
+#[derive(Debug, Clone, Copy, Pod, Default, Zeroable)]
 #[repr(C)]
 pub struct mcontext_t {
     inner: SigContext,
@@ -241,7 +262,8 @@ impl mcontext_t {
     pub fn set_fpu_context_addr(&mut self, addr: Vaddr);
 }
 
-#[derive(Clone, Copy, Pod)]
+#[padding_struct]
+#[derive(Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 pub struct _sigev_thread {
     pub function: Vaddr,
@@ -253,7 +275,7 @@ const SIGEV_MAX_SIZE: usize = 64;
 const SIGEV_PREAMBLE_SIZE: usize = size_of::<i32>() * 2 + size_of::<sigval_t>();
 const SIGEV_PAD_SIZE: usize = (SIGEV_MAX_SIZE - SIGEV_PREAMBLE_SIZE) / size_of::<i32>();
 
-#[derive(Clone, Copy, Pod)]
+#[derive(Clone, Copy, PodUnion)]
 #[repr(C)]
 pub union _sigev_un {
     pub _pad: [i32; SIGEV_PAD_SIZE],
@@ -284,7 +306,7 @@ pub enum SigNotify {
     SIGEV_THREAD_ID = 4,
 }
 
-#[derive(Clone, Copy, Pod)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 pub struct sigevent_t {
     pub sigev_value: sigval_t,

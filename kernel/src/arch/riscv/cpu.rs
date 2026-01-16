@@ -2,8 +2,8 @@
 
 use core::fmt;
 
+use bytemuck::{Pod, Zeroable};
 use ostd::{
-    Pod,
     arch::cpu::context::{CpuException, UserContext},
     cpu::PinCurrentCpu,
     task::DisabledPreemptGuard,
@@ -81,7 +81,7 @@ macro_rules! copy_gp_regs {
 /// Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/riscv/include/uapi/asm/sigcontext.h#L30>
 #[repr(C)]
 #[repr(align(16))]
-#[derive(Clone, Copy, Debug, Default, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod, Zeroable)]
 pub struct SigContext {
     pc: usize,
     ra: usize,

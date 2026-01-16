@@ -12,12 +12,13 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+use bytemuck::Pod;
+
 use super::{
     HasPaddr, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr, kspace::KernelPtConfig,
     nr_subpage_per_huge, page_prop::PageProperty, page_size, vm_space::UserPtConfig,
 };
 use crate::{
-    Pod,
     arch::mm::{PageTableEntry, PagingConsts},
     task::{atomic_mode::AsAtomicModeGuard, disable_preempt},
 };

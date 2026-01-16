@@ -4,8 +4,8 @@
 
 use alloc::collections::BTreeMap;
 
+use bytemuck::{Pod, Zeroable};
 use log::trace;
-use ostd_pod::Pod;
 
 use super::second_stage::IommuPtConfig;
 use crate::{
@@ -20,7 +20,7 @@ use crate::{
 
 /// Bit 0 is `Present` bit, indicating whether this entry is present.
 /// Bit 63:12 is the context-table pointer pointing to this bus's context-table.
-#[derive(Pod, Clone, Copy)]
+#[derive(Pod, Clone, Copy, Zeroable)]
 #[repr(C)]
 pub struct RootEntry(u128);
 
@@ -174,7 +174,7 @@ impl RootTable {
 /// 0-----0: Present
 /// ```
 ///
-#[derive(Pod, Clone, Copy)]
+#[derive(Pod, Clone, Copy, Zeroable)]
 #[repr(C)]
 pub struct ContextEntry(u128);
 

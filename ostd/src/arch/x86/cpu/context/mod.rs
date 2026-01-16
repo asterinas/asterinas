@@ -6,9 +6,9 @@ use alloc::boxed::Box;
 use core::arch::x86_64::{_fxrstor64, _fxsave64, _xrstor64, _xsave64};
 
 use bitflags::bitflags;
+use bytemuck::{Pod, Zeroable};
 use cfg_if::cfg_if;
 use log::debug;
-use ostd_pod::Pod;
 use spin::Once;
 use x86::bits64::segmentation::wrfsbase;
 use x86_64::registers::{
@@ -25,6 +25,7 @@ use crate::{
     cpu::PrivilegeLevel,
     irq::call_irq_callback_functions,
     mm::Vaddr,
+    prelude::*,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
 
@@ -583,7 +584,7 @@ impl Clone for FpuContext {
 /// The modern FPU context format (as saved and restored by the `XSAVE` and `XRSTOR` instructions).
 #[repr(C)]
 #[repr(align(64))]
-#[derive(Clone, Copy, Debug, Pod)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
 struct XSaveArea {
     fxsave_area: FxSaveArea,
     features: u64,
@@ -600,7 +601,7 @@ impl XSaveArea {
             0
         };
 
-        let mut xsave_area = Self::new_zeroed();
+        let mut xsave_area = Self::zeroed();
         // Set the initial values for the FPU context. Refer to Intel SDM, Table 11-1:
         // "IA-32 and Intel® 64 Processor States Following Power-up, Reset, or INIT (Contd.)".
         xsave_area.fxsave_area.control = 0x037F;
@@ -615,7 +616,7 @@ impl XSaveArea {
 /// The legacy SSE/MMX FPU context format (as saved and restored by the `FXSAVE` and `FXRSTOR` instructions).
 #[repr(C)]
 #[repr(align(16))]
-#[derive(Clone, Copy, Debug, Pod)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
 struct FxSaveArea {
     control: u16,         // x87 FPU Control Word
     status: u16,          // x87 FPU Status Word

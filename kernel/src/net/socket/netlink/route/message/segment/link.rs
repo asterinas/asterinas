@@ -25,7 +25,7 @@ impl SegmentBody for LinkSegmentBody {
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/rtnetlink.h#L561>.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct CIfinfoMsg {
     /// AF_UNSPEC
     pub family: u8,

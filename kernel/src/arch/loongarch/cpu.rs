@@ -2,13 +2,14 @@
 
 use core::fmt;
 
+use bytemuck::{Pod, Zeroable};
 use ostd::{
-    Pod,
     arch::cpu::context::{CpuExceptionInfo, UserContext},
     cpu::PinCurrentCpu,
     task::DisabledPreemptGuard,
     user::UserContextApi,
 };
+use padding_struct::padding_struct;
 
 use crate::{cpu::LinuxAbi, thread::exception::PageFaultInfo, vm::perms::VmPerms};
 
@@ -45,7 +46,8 @@ impl LinuxAbi for UserContext {
 /// Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/loongarch/include/uapi/asm/sigcontext.h#L20>
 #[repr(C)]
 #[repr(align(16))]
-#[derive(Clone, Copy, Debug, Default, Pod)]
+#[padding_struct]
+#[derive(Clone, Copy, Debug, Default, Pod, Zeroable)]
 pub struct SigContext {
     pub pc: usize,
     pub zero: usize,

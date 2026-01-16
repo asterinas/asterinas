@@ -3,14 +3,15 @@
 use alloc::{collections::linked_list::LinkedList, sync::Arc};
 
 use aster_softirq::BottomHalfDisabled;
+use bytemuck::Pod;
 use ostd::{
-    Pod,
     mm::{
         Daddr, FrameAllocOptions, HasDaddr, HasSize, Infallible, PAGE_SIZE, VmReader, VmWriter,
         dma::{DmaStream, FromDevice, ToDevice},
         io_util::HasVmReaderWriter,
     },
     sync::SpinLock,
+    util::PodExtension,
 };
 use spin::Once;
 

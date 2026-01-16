@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::Pod;
+use bytemuck::Pod;
+use ostd::util::PodExtension;
 
 /// A reader to read `Pod` fields from a `Pod` type.
 pub struct Reader<'a> {

@@ -4,8 +4,9 @@ use core::{fmt::Debug, marker::PhantomData};
 
 use aster_rights::{Dup, Exec, Full, Read, Signal, TRightSet, TRights, Write};
 use aster_rights_proc::require;
+use bytemuck::Pod;
 use ostd::{
-    Error, Pod, Result,
+    Error, Result,
     mm::{
         Daddr, HasDaddr, HasPaddr, Paddr, PodOnce, VmIo, VmIoOnce,
         dma::DmaDirection,

@@ -9,6 +9,7 @@ edition.workspace = true
 aster-bigtcp.workspace = true
 aster-softirq.workspace = true
 bitvec.workspace = true
+bytemuck.workspace = true
 component.workspace = true
 ostd.workspace = true
 spin.workspace = true

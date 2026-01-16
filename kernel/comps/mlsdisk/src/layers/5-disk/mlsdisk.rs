@@ -15,11 +15,9 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
+use bytemuck::{Pod, Zeroable};
 use device_id::DeviceId;
-use ostd::{
-    Pod,
-    mm::{HasSize, VmIo},
-};
+use ostd::mm::{HasSize, VmIo};
 
 use super::{
     bio::{BioReq, BioReqQueue, BioResp, BioType},
@@ -408,7 +406,7 @@ impl<D: BlockSet + 'static> DiskInner<D> {
         Aead::new().decrypt(
             cipher.as_slice(),
             &value.key,
-            &Iv::new_zeroed(),
+            &Iv::zeroed(),
             &[],
             &value.mac,
             buf.as_mut_slice(),
@@ -462,7 +460,7 @@ impl<D: BlockSet + 'static> DiskInner<D> {
                 Aead::new().decrypt(
                     &cipher_slice[nth * BLOCK_SIZE..(nth + 1) * BLOCK_SIZE],
                     &value.key,
-                    &Iv::new_zeroed(),
+                    &Iv::zeroed(),
                     &[],
                     &value.mac,
                     buf_vec.nth_buf_mut_slice(key.lba - lba),
@@ -539,7 +537,7 @@ impl<D: BlockSet + 'static> DiskInner<D> {
                 let mac = Aead::new().encrypt(
                     data_block.as_slice(),
                     &key,
-                    &Iv::new_zeroed(),
+                    &Iv::zeroed(),
                     &[],
                     &mut cipher_slice[i * BLOCK_SIZE..(i + 1) * BLOCK_SIZE],
                 )?;
@@ -788,7 +786,7 @@ pub(super) struct Record {
 
 /// The key of a `Record`.
 #[repr(C)]
-#[derive(Clone, Copy, Pod, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, Pod, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Zeroable)]
 pub(super) struct RecordKey {
     /// Logical block address of user data block.
     pub lba: Lba,
@@ -796,7 +794,7 @@ pub(super) struct RecordKey {
 
 /// The value of a `Record`.
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Debug)]
+#[derive(Clone, Copy, Pod, Debug, Zeroable)]
 pub(super) struct RecordValue {
     /// Host block address of user data block.
     pub hba: Hba,

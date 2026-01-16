@@ -20,6 +20,7 @@ align_ext.workspace = true
 bit_field.workspace = true
 bitflags.workspace = true
 bitvec.workspace = true
+bytemuck.workspace = true
 cfg-if.workspace = true
 gimli.workspace = true
 id-alloc.workspace = true
@@ -32,7 +33,7 @@ minicov = { workspace = true, optional = true }
 num-traits.workspace = true
 ostd-macros.workspace = true
 ostd-test.workspace = true
-ostd-pod.workspace = true
+padding-struct.workspace = true
 spin.workspace = true
 smallvec.workspace = true
 volatile.workspace = true

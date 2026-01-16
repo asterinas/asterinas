@@ -2,7 +2,8 @@
 
 use aster_util::safe_ptr::SafePtr;
 use bitflags::bitflags;
-use ostd::{Pod, io::IoMem, mm::PodOnce};
+use bytemuck::{Pod, Zeroable};
+use ostd::{io::IoMem, mm::PodOnce};
 
 use crate::transport::VirtioTransport;
 
@@ -19,7 +20,7 @@ impl VsockFeatures {
     }
 }
 
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 pub struct VirtioVsockConfig {
     /// The guest_cid field contains the guest’s context ID, which uniquely identifies

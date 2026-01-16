@@ -6,7 +6,8 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{prelude::*, process::process_table};
 
-#[derive(Debug, Default, Clone, Copy, Pod)]
+#[padding_struct]
+#[derive(Debug, Default, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 struct SysInfo {
     uptime: i64,     /* Seconds since boot */

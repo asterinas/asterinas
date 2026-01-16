@@ -26,8 +26,8 @@
 // SOFTWARE.
 //
 use bitflags::bitflags;
+use bytemuck::{Pod, Zeroable};
 use int_to_c_enum::TryFromInt;
-use ostd::Pod;
 
 use super::error::{self, SocketError};
 
@@ -45,7 +45,7 @@ pub struct VsockDeviceAddr {
 /// VirtioVsock header precedes the payload in each packet.
 // #[repr(packed)]
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct VirtioVsockHdr {
     pub src_cid: u64,
     pub dst_cid: u64,
@@ -139,7 +139,7 @@ pub enum VirtioVsockOp {
 
 bitflags! {
     #[repr(C)]
-    #[derive(Default, Pod)]
+    #[derive(Default, Pod, Zeroable)]
     /// Header flags field type makes sense when connected socket receives VIRTIO_VSOCK_OP_SHUTDOWN.
     pub struct ShutdownFlags: u32{
         /// The peer will not receive any more data.

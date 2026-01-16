@@ -27,6 +27,7 @@ aster-virtio.workspace = true
 atomic-integer-wrapper.workspace = true
 bitflags.workspace = true
 bitvec.workspace = true
+bytemuck.workspace = true
 cfg-if.workspace = true
 component.workspace = true
 const_format.workspace = true
@@ -50,7 +51,9 @@ lru.workspace = true
 osdk-frame-allocator.workspace = true
 osdk-heap-allocator.workspace = true
 ostd.workspace = true
+padding-struct.workspace = true
 paste.workspace = true
+pod-union.workspace = true
 rand = { workspace = true, features = [
     "small_rng",
     "std_rng",

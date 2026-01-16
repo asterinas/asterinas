@@ -99,7 +99,7 @@ pub enum ResourceType {
 
 const RLIMIT_COUNT: usize = 16;
 
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 pub struct RawRLimit64 {
     pub cur: u64,
