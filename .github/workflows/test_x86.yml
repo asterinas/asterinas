@@ -13,11 +13,21 @@ jobs:
     container:
       image: asterinas/asterinas:0.17.0-20260114
       options: --device=/dev/kvm --privileged
+      volumes:
+        # Map the following directories on the host into the container so that
+        # the container can remove them to save some precious disk space (~16GB),
+        # which is quite limited on free-tier Github runners.
+        - /usr/lib/google-cloud-sdk:/usr/lib/google-cloud-sdk
+        - /usr/local/lib/android:/usr/local/lib/android
+        - /usr/share/dotnet:/usr/share/dotnet
     strategy:
       matrix:
         id: ['lint', 'compile', 'usermode_test', 'ktest']
       fail-fast: false
     steps:
+      - name: Free disk space
+        # Remove unused packages from the host to save disk space.
+        run: rm -rf /usr/lib/google-cloud-sdk/* /usr/local/lib/android/* /usr/share/dotnet/*
       - uses: actions/checkout@v4
       - name: Run basic tests
         uses: ./.github/actions/test
@@ -30,6 +40,13 @@ jobs:
     container:
       image: asterinas/asterinas:0.17.0-20260114
       options: --device=/dev/kvm --privileged
+      volumes:
+        # Map the following directories on the host into the container so that
+        # the container can remove them to save some precious disk space (~16GB),
+        # which is quite limited on free-tier Github runners.
+        - /usr/lib/google-cloud-sdk:/usr/lib/google-cloud-sdk
+        - /usr/local/lib/android:/usr/local/lib/android
+        - /usr/share/dotnet:/usr/share/dotnet
     strategy:
       matrix:
         include:
@@ -78,6 +95,9 @@ jobs:
             smp: 4
       fail-fast: false
     steps:
+      - name: Free disk space
+        # Remove unused packages from the host to save disk space.
+        run: rm -rf /usr/lib/google-cloud-sdk/* /usr/local/lib/android/* /usr/share/dotnet/*
       - uses: actions/checkout@v4
       - name: Run integration tests ${{ (startsWith(matrix.test_id, 'syscall') && 'with LTP') || '' }}
         uses: ./.github/actions/test
