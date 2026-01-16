@@ -4,7 +4,7 @@ pub mod bin;
 pub mod file;
 pub mod vm_image;
 
-use bin::AsterBin;
+use bin::{AsterBin, AsterBinType};
 use file::{BundleFile, Initramfs};
 use std::{
     io::{BufRead, BufReader, Write},
@@ -24,7 +24,7 @@ use crate::{
     arch::Arch,
     config::{
         Config,
-        scheme::{ActionChoice, BootMethod},
+        scheme::{ActionChoice, BootMethod, BootProtocol},
     },
     error::Errno,
     error_msg,
@@ -148,6 +148,19 @@ impl Bundle {
                 if self.manifest.aster_bin.is_none() {
                     return Err("Kernel binary is required for direct QEMU booting".to_owned());
                 };
+
+                // Validate the kernel binary type against the configured boot protocol.
+                // This prevents reusing an incompatible binary (e.g. ELF vs. `bzImage`) when
+                // switching boot methods (for example, from a Grub ISO to `qemu-direct`),
+                // which would otherwise cause boot failures.
+                let aster_bin_type = self.manifest.aster_bin.as_ref().unwrap().typ();
+                let expects_linux = matches!(aster_bin_type, AsterBinType::BzImage(_));
+                let actual_linux = config_action.grub.boot_protocol == BootProtocol::Linux;
+                if expects_linux != actual_linux {
+                    return Err(
+                        "The boot protocol is not compatible with the kernel binary".to_owned()
+                    );
+                }
             }
             BootMethod::GrubRescueIso => {
                 let Some(ref vm_image) = self.manifest.vm_image else {
