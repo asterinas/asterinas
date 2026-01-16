@@ -15,6 +15,7 @@ TEST_BUILD_DIR ?= $(INITRAMFS)/test
 TEST_APPS := \
 	alarm \
 	capability \
+	chroot \
 	clone3 \
 	cpu_affinity \
 	devfs \
