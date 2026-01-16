@@ -91,6 +91,10 @@ impl AsterBin {
         self.stripped
     }
 
+    pub fn typ(&self) -> &AsterBinType {
+        &self.typ
+    }
+
     /// Copy the binary to the `base` directory and convert the path to a relative path.
     pub fn copy_to(self, base: impl AsRef<Path>) -> Self {
         let file_name = self.path.file_name().unwrap();
