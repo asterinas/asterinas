@@ -21,6 +21,7 @@ members = [
     "ostd/libs/linux-bzimage/setup",
     "ostd/libs/ostd-macros",
     "ostd/libs/ostd-test",
+    "ostd/libs/padding-struct",
     "kernel",
     "kernel/comps/block",
     "kernel/comps/cmdline",
