@@ -91,7 +91,7 @@ bitflags::bitflags! {
 /// This is the x86_64-specific version.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/arch/x86/include/uapi/asm/stat.h#L83>.
-#[derive(Debug, Clone, Copy, Pod, Default)]
+#[derive(Debug, Clone, Copy, Pod, Default, Zeroable)]
 #[repr(C)]
 #[cfg(target_arch = "x86_64")]
 struct Stat {
@@ -132,7 +132,7 @@ struct Stat {
 /// This is the generic version that is used by most popular 64-bit architectures except x86_64.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/include/uapi/asm-generic/stat.h#L24>.
-#[derive(Debug, Clone, Copy, Pod, Default)]
+#[derive(Debug, Clone, Copy, Pod, Default, Zeroable)]
 #[repr(C)]
 #[cfg(not(target_arch = "x86_64"))]
 struct Stat {

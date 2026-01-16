@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::Pod;
-
 use crate::prelude::*;
 
 /// A trait that can copies structures from/to the user space in a backward-compatible way.
@@ -34,7 +32,7 @@ pub trait CopyCompat {
 
 impl CopyCompat for CurrentUserSpace<'_> {
     fn read_val_compat<T: Pod>(&self, src: Vaddr, size: usize) -> Result<T> {
-        let mut val = T::new_zeroed();
+        let mut val = T::zeroed();
 
         let mut reader = self.reader(src, size)?;
         reader.read_fallible(&mut VmWriter::from(val.as_bytes_mut()))?;

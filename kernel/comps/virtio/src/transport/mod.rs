@@ -5,8 +5,8 @@ use core::fmt::Debug;
 
 use aster_pci::cfg_space::Bar;
 use aster_util::safe_ptr::SafePtr;
+use bytemuck::Pod;
 use ostd::{
-    Pod,
     arch::device::io_port::{PortRead, PortWrite},
     io::IoMem,
     irq::IrqCallbackFunction,

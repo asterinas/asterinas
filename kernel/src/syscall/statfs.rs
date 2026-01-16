@@ -52,7 +52,7 @@ pub fn sys_fstatfs(fd: FileDesc, statfs_buf_ptr: Vaddr, ctx: &Context) -> Result
 }
 
 /// FS Stat
-#[derive(Debug, Clone, Copy, Pod, Default)]
+#[derive(Debug, Clone, Copy, Pod, Default, Zeroable)]
 #[repr(C)]
 struct Statfs {
     /// Type of filesystem

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use bitflags::bitflags;
+use bytemuck::{Pod, Zeroable};
 use int_to_c_enum::TryFromInt;
-use ostd::Pod;
 
 pub const VIRTIO_NET_HDR_LEN: usize = size_of::<VirtioNetHdr>();
 
 /// VirtioNet header precedes each packet
 #[repr(C)]
-#[derive(Default, Debug, Clone, Copy, Pod)]
+#[derive(Default, Debug, Clone, Copy, Pod, Zeroable)]
 pub struct VirtioNetHdr {
     flags: Flags,
     gso_type: u8,
@@ -24,7 +24,7 @@ pub struct VirtioNetHdr {
 
 bitflags! {
     #[repr(C)]
-    #[derive(Default, Pod)]
+    #[derive(Default, Pod, Zeroable)]
     pub struct Flags: u8 {
         const VIRTIO_NET_HDR_F_NEEDS_CSUM = 1;
         const VIRTIO_NET_HDR_F_DATA_VALID = 2;

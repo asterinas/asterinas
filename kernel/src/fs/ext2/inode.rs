@@ -2312,7 +2312,7 @@ const_assert!(size_of::<RawInode>() == 128);
 
 /// The raw inode on device.
 #[repr(C)]
-#[derive(Clone, Copy, Default, Debug, Pod)]
+#[derive(Clone, Copy, Default, Debug, Pod, Zeroable)]
 pub(super) struct RawInode {
     /// File mode (type and permissions).
     pub mode: u16,
@@ -2388,7 +2388,7 @@ impl From<&InodeDesc> for RawInode {
 
 /// OS dependent Value 2
 #[repr(C)]
-#[derive(Clone, Copy, Default, Debug, Pod)]
+#[derive(Clone, Copy, Default, Debug, Pod, Zeroable)]
 pub(super) struct Osd2 {
     /// Fragment number.
     pub frag_num: u8,

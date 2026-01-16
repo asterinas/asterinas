@@ -2,14 +2,14 @@
 
 use crate::{prelude::*, process::Pid};
 
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 pub struct cap_user_header_t {
     pub version: u32,
     pub pid: Pid,
 }
 
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 pub struct cap_user_data_t {
     pub effective: u32,

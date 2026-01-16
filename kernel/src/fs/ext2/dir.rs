@@ -80,7 +80,7 @@ impl DirEntry {
 
 /// The header of `DirEntry`.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Pod)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub(super) struct DirEntryHeader {
     /// Inode number
     ino: u32,

@@ -2,9 +2,9 @@
 
 use core::fmt::Debug;
 
-use ostd::Pod;
+use bytemuck::{Pod, Zeroable};
 
-#[derive(Clone, Copy, Pod)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 pub struct VirtioMmioLayout {
     /// Magic value: 0x74726976. **Read-only**

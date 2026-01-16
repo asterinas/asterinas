@@ -4,13 +4,12 @@
 
 use core::ops::Range;
 
-use crate::{
-    Pod,
-    mm::{
-        Paddr, PageProperty, PagingConstsTrait, PagingLevel, PodOnce,
-        page_prop::{CachePolicy, PageFlags, PrivilegedPageFlags as PrivFlags},
-        page_table::{PageTableConfig, PageTableEntryTrait},
-    },
+use bytemuck::{Pod, Zeroable};
+
+use crate::mm::{
+    Paddr, PageProperty, PagingConstsTrait, PagingLevel, PodOnce,
+    page_prop::{CachePolicy, PageFlags, PrivilegedPageFlags as PrivFlags},
+    page_table::{PageTableConfig, PageTableEntryTrait},
 };
 
 /// The page table used by iommu maps the device address
@@ -52,7 +51,7 @@ impl PagingConstsTrait for PagingConsts {
 }
 
 bitflags::bitflags! {
-    #[derive(Pod)]
+    #[derive(Pod, Zeroable)]
     #[repr(C)]
     pub struct PageTableFlags : u64{
         /// Whether accesses to this page must snoop processor caches.
@@ -82,7 +81,7 @@ bitflags::bitflags! {
     }
 }
 
-#[derive(Debug, Clone, Copy, Pod, Default)]
+#[derive(Debug, Clone, Copy, Pod, Default, Zeroable)]
 #[repr(C)]
 pub struct PageTableEntry(u64);
 

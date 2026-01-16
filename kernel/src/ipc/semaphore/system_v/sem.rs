@@ -20,7 +20,7 @@ use crate::{
     },
 };
 
-#[derive(Clone, Copy, Debug, Pod)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
 #[repr(C)]
 pub struct SemBuf {
     sem_num: u16,

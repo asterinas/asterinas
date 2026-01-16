@@ -3,8 +3,8 @@
 use alloc::{borrow::ToOwned, collections::btree_set::BTreeSet, string::String, vec::Vec};
 use core::{arch::x86_64::CpuidResult, ffi::CStr, fmt, str};
 
+use bytemuck::{Pod, Zeroable};
 use ostd::{
-    Pod,
     arch::{
         cpu::{
             context::{CpuException, PageFaultErrorCode, RawPageFaultInfo, UserContext},
@@ -51,7 +51,7 @@ impl LinuxAbi for UserContext {
 /// `sys_rt_sigreturn`.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/x86/include/uapi/asm/sigcontext.h#L325>
-#[derive(Clone, Copy, Debug, Default, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod, Zeroable)]
 #[repr(C)]
 pub struct SigContext {
     r8: usize,

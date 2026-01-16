@@ -63,7 +63,10 @@ pub fn sys_socketpair(
         };
         let fd_a = file_table_locked.insert(socket_a, fd_flags);
         let fd_b = file_table_locked.insert(socket_b, fd_flags);
-        SocketFds(fd_a, fd_b)
+        SocketFds {
+            fd1: fd_a,
+            fd2: fd_b,
+        }
     };
     ctx.user_space().write_val(sv, &socket_fds)?;
 
@@ -71,5 +74,8 @@ pub fn sys_socketpair(
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
-struct SocketFds(FileDesc, FileDesc);
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct SocketFds {
+    fd1: FileDesc,
+    fd2: FileDesc,
+}

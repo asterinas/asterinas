@@ -3,14 +3,13 @@
 use alloc::fmt;
 use core::{arch::asm, intrinsics::AtomicOrdering::Relaxed, ops::Range};
 
-use crate::{
-    Pod,
-    mm::{
-        PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
-        dma::DmaDirection,
-        page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
-        page_table::PageTableEntryTrait,
-    },
+use bytemuck::{Pod, Zeroable};
+
+use crate::mm::{
+    PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
+    dma::DmaDirection,
+    page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
+    page_table::PageTableEntryTrait,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -27,7 +26,7 @@ impl PagingConstsTrait for PagingConsts {
 }
 
 bitflags::bitflags! {
-    #[derive(Pod)]
+    #[derive(Pod, Zeroable)]
     #[repr(C)]
     /// Possible flags for a page table entry.
     pub(crate) struct PageTableFlags: usize {
@@ -119,7 +118,7 @@ pub(crate) unsafe fn sync_dma_range<D: DmaDirection>(_range: Range<Vaddr>) {
     unreachable!("`can_sync_dma()` never returns `true`");
 }
 
-#[derive(Clone, Copy, Pod, Default)]
+#[derive(Clone, Copy, Pod, Default, Zeroable)]
 #[repr(C)]
 pub(crate) struct PageTableEntry(usize);
 

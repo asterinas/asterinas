@@ -9,7 +9,7 @@ type CCtrlChar = u8;
 
 bitflags! {
     /// The input flags; `c_iflags` bits in Linux.
-    #[derive(Pod)]
+    #[derive(Pod, Zeroable)]
     #[repr(C)]
     pub struct CInputFlags: u32 {
         // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits-common.h
@@ -41,7 +41,7 @@ impl Default for CInputFlags {
 bitflags! {
     /// The output flags; `c_oflags` bits in Linux.
     #[repr(C)]
-    #[derive(Pod)]
+    #[derive(Pod, Zeroable)]
     pub(super) struct COutputFlags: u32 {
         // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits-common.h#L21
         const OPOST  = 1 << 0;			/* Perform output processing */
@@ -63,7 +63,7 @@ impl Default for COutputFlags {
 
 /// The control flags; `c_cflags` bits in Linux.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub(super) struct CCtrlFlags(u32);
 
 impl Default for CCtrlFlags {
@@ -135,7 +135,7 @@ pub(super) enum CCtrlBaud {
 bitflags! {
     /// The local flags; `c_lflags` bits in Linux.
     #[repr(C)]
-    #[derive(Pod)]
+    #[derive(Pod, Zeroable)]
     pub struct CLocalFlags: u32 {
         // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits.h#L127
         const ISIG    = 0x00001;
@@ -228,7 +228,7 @@ impl CCtrlCharId {
 /// The termios; `struct termios` in Linux.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits.h#L30>.
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 pub struct CTermios {
     c_iflags: CInputFlags,
@@ -236,8 +236,13 @@ pub struct CTermios {
     c_cflags: CCtrlFlags,
     c_lflags: CLocalFlags,
     c_line: CCtrlChar,
-    c_cc: [CCtrlChar; Self::NUM_CTRL_CHARS],
+    c_cc: [CCtrlChar; NUM_CTRL_CHARS],
 }
+
+/// The number of the control characters.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits.h#L9>.
+const NUM_CTRL_CHARS: usize = 19;
 
 impl Default for CTermios {
     fn default() -> Self {
@@ -247,7 +252,7 @@ impl Default for CTermios {
             c_cflags: CCtrlFlags::default(),
             c_lflags: CLocalFlags::default(),
             c_line: 0,
-            c_cc: [CCtrlChar::default(); Self::NUM_CTRL_CHARS],
+            c_cc: [CCtrlChar::default(); NUM_CTRL_CHARS],
         };
         *termios.special_char_mut(CCtrlCharId::VINTR) = CCtrlCharId::VINTR.default_char();
         *termios.special_char_mut(CCtrlCharId::VQUIT) = CCtrlCharId::VQUIT.default_char();
@@ -271,11 +276,6 @@ impl Default for CTermios {
 }
 
 impl CTermios {
-    /// The number of the control characters.
-    ///
-    /// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits.h#L9>.
-    const NUM_CTRL_CHARS: usize = 19;
-
     pub fn special_char(&self, id: CCtrlCharId) -> CCtrlChar {
         self.c_cc[id as usize]
     }
@@ -306,7 +306,7 @@ impl CTermios {
 /// A window size; `struct winsize` in Linux.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termios.h#L15>.
-#[derive(Debug, Clone, Copy, Default, Pod)]
+#[derive(Debug, Clone, Copy, Default, Pod, Zeroable)]
 #[repr(C)]
 pub struct CWinSize {
     ws_row: u16,
@@ -318,7 +318,8 @@ pub struct CWinSize {
 /// A font operation; `struct console_font_op` in Linux.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.15/source/include/uapi/linux/kd.h#L159>.
-#[derive(Debug, Clone, Copy, Default, Pod)]
+#[padding_struct]
+#[derive(Debug, Clone, Copy, Default, Pod, Zeroable)]
 #[repr(C)]
 pub struct CFontOp {
     pub(super) op: u32,

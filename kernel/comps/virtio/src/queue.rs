@@ -11,11 +11,10 @@ use core::{
 use aster_rights::{Dup, TRightSet, TRights, Write};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
+use bytemuck::{Pod, Zeroable};
 use log::debug;
-use ostd::{
-    Pod,
-    mm::{HasPaddr, PodOnce, Split, dma::DmaCoherent},
-};
+use ostd::mm::{HasPaddr, PodOnce, Split, dma::DmaCoherent};
+use padding_struct::padding_struct;
 
 use crate::{
     dma_buf::DmaBuf,
@@ -388,7 +387,7 @@ impl VirtQueue {
 }
 
 #[repr(C, align(16))]
-#[derive(Debug, Default, Copy, Clone, Pod)]
+#[derive(Debug, Default, Copy, Clone, Pod, Zeroable)]
 pub struct Descriptor {
     addr: u64,
     len: u32,
@@ -412,7 +411,7 @@ fn set_dma_buf<T: DmaBuf>(desc_ptr: &DescriptorPtr, buf: &T) {
 
 bitflags! {
     /// Descriptor flags
-    #[derive(Pod, Default)]
+    #[derive(Pod, Default, Zeroable)]
     #[repr(C)]
     struct DescFlags: u16 {
         const NEXT = 1;
@@ -427,7 +426,7 @@ impl PodOnce for DescFlags {}
 /// each ring entry refers to the head of a descriptor chain.
 /// It is only written by the driver and read by the device.
 #[repr(C, align(2))]
-#[derive(Debug, Copy, Clone, Pod)]
+#[derive(Debug, Copy, Clone, Pod, Zeroable)]
 pub struct AvailRing {
     flags: AvailFlags,
     /// A driver MUST NOT decrement the idx.
@@ -439,7 +438,8 @@ pub struct AvailRing {
 /// The used ring is where the device returns buffers once it is done with them:
 /// it is only written to by the device, and read by the driver.
 #[repr(C, align(4))]
-#[derive(Debug, Copy, Clone, Pod)]
+#[padding_struct]
+#[derive(Debug, Copy, Clone, Pod, Zeroable)]
 pub struct UsedRing {
     // the flag in UsedRing
     flags: u16,
@@ -450,7 +450,7 @@ pub struct UsedRing {
 }
 
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, Pod)]
+#[derive(Debug, Default, Copy, Clone, Pod, Zeroable)]
 pub struct UsedElem {
     id: u32,
     len: u32,
@@ -459,7 +459,7 @@ pub struct UsedElem {
 bitflags! {
     /// The flags useds in [`AvailRing`]
     #[repr(C)]
-    #[derive(Pod)]
+    #[derive(Pod, Zeroable)]
     pub struct AvailFlags: u16 {
         /// The flag used to disable virt queue interrupt
         const VIRTQ_AVAIL_F_NO_INTERRUPT = 1;

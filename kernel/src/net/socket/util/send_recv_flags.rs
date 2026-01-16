@@ -6,7 +6,7 @@ bitflags! {
     /// Flags used for send/recv.
     /// The definition is from https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/socket.h
     #[repr(C)]
-    #[derive(Pod)]
+    #[derive(Pod, Zeroable)]
     pub struct SendRecvFlags: i32 {
         const MSG_OOB = 1;
         const MSG_PEEK	= 2;

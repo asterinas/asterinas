@@ -10,9 +10,12 @@
 //! Most of the introduction are copied from Intel vt-directed-io-specification.
 
 use alloc::{borrow::ToOwned, string::String, vec::Vec};
+use padding_struct::padding_struct;
 use core::fmt::Debug;
 
-use ostd_pod::Pod;
+use bytemuck::{Pod, Zeroable};
+
+use crate::util::PodExtension;
 
 /// DMA-remapping hardware unit definition (DRHD).
 ///
@@ -31,7 +34,7 @@ impl Drhd {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct DrhdHeader {
     typ: u16,
     length: u16,
@@ -53,7 +56,7 @@ pub struct Rmrr {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct RmrrHeader {
     typ: u16,
     length: u16,
@@ -74,7 +77,7 @@ pub struct Atsr {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct AtsrHeader {
     typ: u16,
     length: u16,
@@ -90,7 +93,8 @@ pub struct AtsrHeader {
 /// This optional structure provides the association between each Remapping hardware unit (identified
 /// by its espective Base Address) and the proximity domain to which that hardware unit belongs.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[padding_struct]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct Rhsa {
     typ: u16,
     length: u16,
@@ -110,7 +114,7 @@ pub struct Andd {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct AnddHeader {
     typ: u16,
     length: u16,
@@ -129,7 +133,7 @@ pub struct Satc {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct SatcHeader {
     typ: u16,
     length: u16,
@@ -150,7 +154,7 @@ pub struct Sidp {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct SidpHeader {
     typ: u16,
     length: u16,
@@ -167,7 +171,7 @@ pub struct DeviceScope {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct DeviceScopeHeader {
     typ: u8,
     length: u8,
@@ -249,7 +253,7 @@ impl Rhsa {
     ///
     /// This method may panic if the bytes do not represent a valid [`Rhsa`].
     pub fn from_bytes(bytes: &[u8]) -> Self {
-        let val = <Self as Pod>::from_bytes(bytes);
+        let val = <Self as PodExtension>::from_bytes(bytes);
         debug_assert_eq!(val.length as usize, bytes.len());
 
         val

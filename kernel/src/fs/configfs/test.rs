@@ -29,9 +29,9 @@ use aster_systree::{
 };
 use inherit_methods_macro::inherit_methods;
 use ostd::{
-    Pod,
     mm::{VmReader, VmWriter},
     prelude::ktest,
+    util::PodExtension,
 };
 use spin::Once;
 

@@ -9,6 +9,7 @@ edition.workspace = true
 aes-gcm.workspace = true
 aster-block.workspace = true
 bittle.workspace = true
+bytemuck.workspace = true
 component.workspace = true
 ctr.workspace = true
 device-id.workspace = true
@@ -18,6 +19,7 @@ lending-iterator.workspace = true
 lru.workspace = true
 log.workspace = true
 ostd.workspace = true
+padding-struct.workspace = true
 postcard.workspace = true
 serde.workspace = true
 

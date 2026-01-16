@@ -6,8 +6,7 @@ use crate::prelude::*;
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/rtnetlink.h#L237>.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
-#[expect(unused)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub(super) struct CRtMsg {
     family: u8,
     dst_len: u8,

@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_util::safe_ptr::SafePtr;
-use ostd::{Pod, io::IoMem};
+use bytemuck::{Pod, Zeroable};
+use ostd::io::IoMem;
 
 use super::capability::VirtioPciCapabilityData;
 use crate::transport::pci::capability::VirtioPciCpabilityType;
 
-#[derive(Debug, Default, Copy, Clone, Pod)]
+#[derive(Debug, Default, Copy, Clone, Pod, Zeroable)]
 #[repr(C)]
 pub struct VirtioPciCommonCfg {
     pub device_feature_select: u32,

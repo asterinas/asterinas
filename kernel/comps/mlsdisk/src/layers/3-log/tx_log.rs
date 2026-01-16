@@ -65,8 +65,9 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
+use bytemuck::{Pod, Zeroable};
 use lru::LruCache;
-use ostd::Pod;
+use ostd::util::PodExtension;
 use serde::{Deserialize, Serialize};
 
 use self::journaling::{AllEdit, AllState, Journal, JournalCompactPolicy};
@@ -113,7 +114,7 @@ pub struct TxLogStore<D> {
 
 /// Superblock of `TxLogStore`.
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Debug)]
+#[derive(Clone, Copy, Pod, Debug, Zeroable)]
 pub struct Superblock {
     journal_area_meta: EditJournalMeta,
     chunk_area_nblocks: usize,
@@ -735,7 +736,7 @@ impl Superblock {
         Skcipher::new().decrypt(
             cipher.as_slice(),
             &Self::derive_skcipher_key(root_key),
-            &SkcipherIv::new_zeroed(),
+            &SkcipherIv::zeroed(),
             plain.as_mut_slice(),
         )?;
 
@@ -755,7 +756,7 @@ impl Superblock {
         Skcipher::new().encrypt(
             plain.as_slice(),
             &Self::derive_skcipher_key(root_key),
-            &SkcipherIv::new_zeroed(),
+            &SkcipherIv::zeroed(),
             cipher.as_mut_slice(),
         )?;
         disk.write(0, cipher.as_ref())

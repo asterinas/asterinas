@@ -42,8 +42,10 @@
 
 use core::{marker::PhantomData, mem::MaybeUninit};
 
+use bytemuck::Pod;
+
 use crate::{
-    Error, Pod,
+    Error,
     arch::mm::{
         __atomic_cmpxchg_fallible, __atomic_load_fallible, __memcpy_fallible, __memset_fallible,
     },
@@ -108,7 +110,7 @@ pub trait VmIo {
         // which could be implemented outside OSTD and thus is untrusted,
         // may not really initialize the bits of `val` at all!
 
-        let mut val = T::new_zeroed();
+        let mut val = T::zeroed();
         self.read_bytes(offset, val.as_bytes_mut())?;
         Ok(val)
     }

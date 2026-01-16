@@ -45,7 +45,7 @@ pub fn sys_pipe(fds: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     self::sys_pipe2(fds, 0, ctx)
 }
 
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 struct PipeFds {
     reader_fd: FileDesc,

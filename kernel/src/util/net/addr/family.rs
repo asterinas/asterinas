@@ -119,7 +119,7 @@ const ADDR_MAX_LEN: usize = 128;
 /// The size and layout of this structure is specified by RFC 3493. For details, see
 /// <https://datatracker.ietf.org/doc/html/rfc3493#section-3.10>.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct Storage {
     sa_family: u16,
     bytes: [u8; ADDR_MAX_LEN - 2],
@@ -144,7 +144,7 @@ pub fn read_socket_addr_from_user(addr: Vaddr, addr_len: usize) -> Result<Socket
         return_errno_with_message!(Errno::EINVAL, "the socket address length is too small");
     }
 
-    let mut storage = Storage::new_zeroed();
+    let mut storage = Storage::zeroed();
     current_userspace!().read_bytes(addr, &mut storage.as_bytes_mut()[..addr_len])?;
 
     let result = match CSocketAddrFamily::try_from(storage.sa_family as i32) {

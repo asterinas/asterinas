@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::Pod;
-
 use super::constants::{EXFAT_FIRST_CLUSTER, EXFAT_RESERVED_CLUSTERS, MEDIA_FAILURE, VOLUME_DIRTY};
 use crate::prelude::*;
 
@@ -92,7 +90,7 @@ pub const BOOTSEC_FS_NAME_LEN: usize = 8;
 pub const BOOTSEC_OLDBPB_LEN: usize = 53;
 // EXFAT: Main and Backup Boot Sector (512 bytes)
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug, Pod)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub(super) struct ExfatBootSector {
     pub jmp_boot: [u8; BOOTSEC_JUMP_BOOT_LEN],
     pub fs_name: [u8; BOOTSEC_FS_NAME_LEN],

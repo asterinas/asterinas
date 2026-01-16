@@ -19,12 +19,13 @@ use aster_softirq::{
     softirq_id::{NETWORK_RX_SOFTIRQ_ID, NETWORK_TX_SOFTIRQ_ID},
 };
 pub use buffer::{RX_BUFFER_POOL, RxBuffer, TX_BUFFER_LEN, TxBuffer};
+use bytemuck::{Pod, Zeroable};
 use component::{ComponentInitError, init_component};
 pub use dma_pool::DmaSegment;
-use ostd::{Pod, sync::SpinLock};
+use ostd::sync::SpinLock;
 use spin::Once;
 
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 pub struct EthernetAddr(pub [u8; 6]);
 

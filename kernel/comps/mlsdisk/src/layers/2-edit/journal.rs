@@ -2,8 +2,9 @@
 
 use core::marker::PhantomData;
 
+use bytemuck::{Pod, Zeroable};
 use lending_iterator::LendingIterator;
-use ostd::Pod;
+use ostd::util::PodExtension;
 use serde::{
     Deserialize, Serialize,
     de::{VariantAccess, Visitor},
@@ -68,7 +69,7 @@ pub struct EditJournal<
 ///
 /// The metadata is mainly useful when recovering an edit journal after a reboot.
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Debug)]
+#[derive(Clone, Copy, Pod, Debug, Zeroable)]
 pub struct EditJournalMeta {
     /// The number of blocks reserved for storing a snapshot `CryptoBlob`.
     pub snapshot_area_nblocks: usize,

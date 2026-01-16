@@ -219,7 +219,7 @@ impl PollFiles<'_> {
 }
 
 // https://github.com/torvalds/linux/blob/master/include/uapi/asm-generic/poll.h
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 struct c_pollfd {
     fd: i32,

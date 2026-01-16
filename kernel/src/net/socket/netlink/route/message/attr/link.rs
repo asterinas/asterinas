@@ -191,7 +191,7 @@ bitflags! {
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/rtnetlink.h#L819>.
     #[repr(C)]
-    #[derive(Pod)]
+    #[derive(Pod, Zeroable)]
     pub struct RtExtFilter: u32 {
         const VF = 1 << 0;
         const BRVLAN = 1 << 1;

@@ -12,6 +12,7 @@ pub(crate) use alloc::{boxed::Box, sync::Arc, vec::Vec};
 #[cfg(ktest)]
 pub use ostd_macros::ktest;
 
+pub(crate) use crate::util::PodExtension;
 pub use crate::{
     early_print as print, early_println as println,
     mm::{HasPaddr, HasSize, Paddr, Vaddr},

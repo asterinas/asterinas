@@ -123,7 +123,7 @@ struct Dirent {
 }
 
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct DirentInner {
     d_ino: u64,
     d_off: u64,
@@ -172,7 +172,7 @@ struct Dirent64 {
 }
 
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct Dirent64Inner {
     d_ino: u64,
     d_off: u64,

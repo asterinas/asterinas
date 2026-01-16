@@ -19,10 +19,10 @@ use aster_block::{
     request_queue::{BioRequest, BioRequestSingleQueue},
 };
 use aster_util::mem_obj_slice::Slice;
+use bytemuck::{Pod, Zeroable};
 use device_id::{DeviceId, MinorId};
 use log::{debug, info};
 use ostd::{
-    Pod,
     arch::trap::TrapFrame,
     mm::{HasSize, VmIo, dma::DmaStream},
     sync::SpinLock,
@@ -534,7 +534,7 @@ impl SubmittedRequest {
 
 /// VirtIOBlock request.
 #[repr(C)]
-#[derive(Debug, Copy, Clone, Pod)]
+#[derive(Debug, Copy, Clone, Pod, Zeroable)]
 struct BlockReq {
     pub type_: u32,
     pub reserved: u32,
@@ -545,7 +545,7 @@ const REQ_SIZE: usize = size_of::<BlockReq>();
 
 /// Response of a VirtIOBlock request.
 #[repr(C)]
-#[derive(Debug, Copy, Clone, Pod)]
+#[derive(Debug, Copy, Clone, Pod, Zeroable)]
 struct BlockResp {
     pub status: u8,
 }

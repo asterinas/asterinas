@@ -18,7 +18,7 @@ use crate::{net::socket::netlink::message::NoAttr, prelude::*};
 pub type DoneSegment = SegmentCommon<DoneSegmentBody, NoAttr>;
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct DoneSegmentBody {
     error_code: i32,
 }
@@ -48,7 +48,7 @@ impl DoneSegment {
 
 pub type ErrorSegment = SegmentCommon<ErrorSegmentBody, NoAttr>;
 
-#[derive(Debug, Pod, Clone, Copy)]
+#[derive(Debug, Pod, Clone, Copy, Zeroable)]
 #[repr(C)]
 pub struct ErrorSegmentBody {
     error_code: i32,

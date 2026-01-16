@@ -22,7 +22,7 @@ impl SegmentBody for AddrSegmentBody {
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/if_addr.h#L8>.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct CIfaddrMsg {
     pub family: u8,
     /// The prefix length

@@ -2,8 +2,8 @@
 
 //! Utilities for types in [`super::io`].
 
+use bytemuck::Pod;
 use inherit_methods_macro::inherit_methods;
-use ostd_pod::Pod;
 
 use super::{Infallible, PodOnce, VmIo, VmIoFill, VmIoOnce, VmReader, VmWriter};
 use crate::{

@@ -28,7 +28,8 @@
 
 pub mod device;
 use aster_util::safe_ptr::SafePtr;
-use ostd::{Pod, io::IoMem};
+use bytemuck::{Pod, Zeroable};
+use ostd::io::IoMem;
 
 use crate::transport::VirtioTransport;
 
@@ -61,7 +62,7 @@ pub enum InputConfigSelect {
     AbsInfo = 0x12,
 }
 
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 pub struct VirtioInputConfig {
     /// write only
@@ -83,8 +84,7 @@ impl VirtioInputConfig {
 }
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, Pod)]
-#[expect(dead_code)]
+#[derive(Debug, Copy, Clone, Pod, Zeroable)]
 struct AbsInfo {
     min: u32,
     max: u32,
@@ -96,7 +96,7 @@ struct AbsInfo {
 /// Both queues use the same `virtio_input_event` struct. `type`, `code` and `value`
 /// are filled according to the Linux input layer (evdev) interface.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod, Zeroable)]
 pub struct VirtioInputEvent {
     /// Event type.
     pub event_type: u16,

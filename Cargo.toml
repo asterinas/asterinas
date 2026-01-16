@@ -21,6 +21,8 @@ members = [
     "ostd/libs/linux-bzimage/setup",
     "ostd/libs/ostd-macros",
     "ostd/libs/ostd-test",
+    "ostd/libs/padding-struct",
+    "ostd/libs/pod-union",
     "kernel",
     "kernel/comps/block",
     "kernel/comps/cmdline",
@@ -88,6 +90,8 @@ int-to-c-enum = { path = "ostd/libs/int-to-c-enum", version = "0.1.0" }
 linux-boot-params = { version = "0.17.0", path = "ostd/libs/linux-bzimage/boot-params" }
 ostd-macros = { version = "0.17.0", path = "ostd/libs/ostd-macros" }
 ostd-test = { version = "0.17.0", path = "ostd/libs/ostd-test" }
+padding-struct = { path = "ostd/libs/padding-struct", version = "0.1.0" }
+pod-union = { path = "ostd/libs/pod-union", version = "0.1.0" }
 
 # Crates under kernel/comps
 aster-block = { path = "kernel/comps/block" }
@@ -130,11 +134,10 @@ osdk-heap-allocator = { path = "osdk/deps/heap-allocator" }
 
 # External dependencies only for unsafe crates (i.e., crates under ostd directory)
 bit_field = "0.10.1"
-bytemuck = { version = "1.17.0", features = ["derive"] }
+bytemuck = { version = "1.17.0", features = [ "latest_stable_rust" ] }
 gimli = { version = "0.28", default-features = false, features = ["read-core"] }
 minicov = "0.3"
 num-traits = { version = "0.2", default-features = false }
-ostd-pod = { git = "https://github.com/asterinas/ostd-pod", rev = "c4644be", version = "0.1.1" }
 serde = { version = "1.0.192", default-features = false, features = ["alloc", "derive"] }
 smallvec = "1.13.2"
 uart_16550 = "0.3.0"

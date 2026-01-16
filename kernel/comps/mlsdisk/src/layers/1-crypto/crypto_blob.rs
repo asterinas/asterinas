@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::Pod;
+use bytemuck::{Pod, Zeroable};
+use ostd::util::PodExtension;
 
 use super::{Iv, Key, Mac, VersionId};
 use crate::{
@@ -55,7 +56,7 @@ pub struct CryptoBlob<B> {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Pod)]
+#[derive(Copy, Clone, Pod, Zeroable)]
 struct Header {
     version: VersionId,
     mac: Mac,
@@ -94,7 +95,7 @@ impl<B: BlockSet> CryptoBlob<B> {
         let aead = Aead::new();
         let key = Key::random();
         let version: VersionId = 0;
-        let mut iv = Iv::new_zeroed();
+        let mut iv = Iv::zeroed();
         iv.as_bytes_mut()[..version.as_bytes().len()].copy_from_slice(version.as_bytes());
         let output = &mut block_buf.as_mut_slice()
             [Self::HEADER_NBYTES..Self::HEADER_NBYTES + init_data.len()];
@@ -145,7 +146,7 @@ impl<B: BlockSet> CryptoBlob<B> {
             Some(version) => version + 1,
             None => return_errno_with_msg!(NotFound, "write with no valid version ID"),
         };
-        let mut iv = Iv::new_zeroed();
+        let mut iv = Iv::zeroed();
         iv.as_bytes_mut()[..version.as_bytes().len()].copy_from_slice(version.as_bytes());
         let output =
             &mut block_buf.as_mut_slice()[Self::HEADER_NBYTES..Self::HEADER_NBYTES + buf.len()];
@@ -177,7 +178,7 @@ impl<B: BlockSet> CryptoBlob<B> {
         let header = match *self.header.lock() {
             Some(header) => header,
             None => {
-                let mut header = Header::new_zeroed();
+                let mut header = Header::zeroed();
                 self.block_set.read_slice(0, header.as_bytes_mut())?;
                 header
             }
@@ -195,7 +196,7 @@ impl<B: BlockSet> CryptoBlob<B> {
         // Decrypt payload.
         let aead = Aead::new();
         let version = header.version;
-        let mut iv = Iv::new_zeroed();
+        let mut iv = Iv::zeroed();
         iv.as_bytes_mut()[..version.as_bytes().len()].copy_from_slice(version.as_bytes());
         let input =
             &block_buf.as_slice()[Self::HEADER_NBYTES..Self::HEADER_NBYTES + header.payload_len];
@@ -241,7 +242,7 @@ impl<B: BlockSet> CryptoBlob<B> {
 
         // Encrypt payload.
         let aead = Aead::new();
-        let mut iv = Iv::new_zeroed();
+        let mut iv = Iv::zeroed();
         iv.as_bytes_mut()[..version.as_bytes().len()].copy_from_slice(version.as_bytes());
         let input = &read_buf.as_slice()[..payload_len];
         let mut write_buf = Buf::alloc(nblocks)?;

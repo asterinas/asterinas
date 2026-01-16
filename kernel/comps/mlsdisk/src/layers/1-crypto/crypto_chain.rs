@@ -2,8 +2,9 @@
 
 use core::ops::Range;
 
+use bytemuck::{Pod, Zeroable};
 use lending_iterator::prelude::*;
-use ostd::Pod;
+use ostd::util::PodExtension;
 
 use super::{Iv, Key, Mac};
 use crate::{
@@ -65,7 +66,7 @@ pub struct CryptoChain<L> {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Pod)]
+#[derive(Copy, Clone, Pod, Zeroable)]
 struct Footer {
     len: u32,
     pre_mac: Mac,
@@ -110,7 +111,8 @@ impl<L: BlockLog> CryptoChain<L> {
         // Read block and get footer.
         let mut block_buf = Buf::alloc(1)?;
         self.block_log.read(pos, block_buf.as_mut())?;
-        let footer: Footer = Pod::from_bytes(&block_buf.as_slice()[Self::AVAIL_BLOCK_SIZE..]);
+        let footer: Footer =
+            PodExtension::from_bytes(&block_buf.as_slice()[Self::AVAIL_BLOCK_SIZE..]);
 
         let payload_len = footer.len as usize;
         if payload_len > Self::AVAIL_BLOCK_SIZE || payload_len > buf.len() {
@@ -289,8 +291,9 @@ impl<L: BlockLog> LendingIterator for Recovery<L> {
             .ok()?;
 
         // Deserialize footer.
-        let footer: Footer =
-            Pod::from_bytes(&self.read_buf.as_slice()[CryptoChain::<L>::AVAIL_BLOCK_SIZE..]);
+        let footer: Footer = PodExtension::from_bytes(
+            &self.read_buf.as_slice()[CryptoChain::<L>::AVAIL_BLOCK_SIZE..],
+        );
         let payload_len = footer.len as usize;
         if payload_len > CryptoChain::<L>::AVAIL_BLOCK_SIZE {
             return None;
