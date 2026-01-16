@@ -2,8 +2,6 @@
 
 //! PCI bus
 
-#![expect(unused_variables)]
-
 use alloc::{collections::VecDeque, sync::Arc, vec::Vec};
 use core::fmt::Debug;
 
@@ -12,15 +10,17 @@ use ostd::bus::BusProbeError;
 
 use super::{PciCommonDevice, device_info::PciDeviceId};
 
-/// PciDevice trait.
+/// A trait that represents PCI devices.
 pub trait PciDevice: Sync + Send + Debug {
     /// Gets device id.
     fn device_id(&self) -> PciDeviceId;
 }
 
-/// PCI device driver, PCI bus will pass the device through the `probe` function when a new device is registered.
+/// A trait that represents PCI device drivers.
+///
+/// PCI bus will pass the device through the `probe` function when a new device is registered.
 pub trait PciDriver: Sync + Send + Debug {
-    /// Probe an unclaimed PCI device.
+    /// Probes an unclaimed PCI device.
     ///
     /// If the driver matches and succeeds in initializing the unclaimed device,
     /// then the driver will return an claimed instance of the device,
@@ -35,9 +35,10 @@ pub trait PciDriver: Sync + Send + Debug {
     ) -> Result<Arc<dyn PciDevice>, (BusProbeError, PciCommonDevice)>;
 }
 
-/// The PCI bus used to register PCI devices. If a component wishes to drive a PCI device, it needs to provide the following:
+/// The PCI bus used to register PCI devices.
 ///
-/// 1. The structure that implements the PciDevice trait.
+/// If a component wishes to drive a PCI device, it needs to provide the following:
+/// 1. The structure that implements the [`PciDevice`] trait.
 /// 2. PCI driver.
 pub struct PciBus {
     common_devices: VecDeque<PciCommonDevice>,
@@ -50,7 +51,7 @@ impl PciBus {
     pub fn register_driver(&mut self, driver: Arc<dyn PciDriver>) {
         debug!("Register driver:{:#x?}", driver);
         let length = self.common_devices.len();
-        for i in (0..length).rev() {
+        for _ in (0..length).rev() {
             let common_device = self.common_devices.pop_front().unwrap();
             let device_id = *common_device.device_id();
             let device = match driver.probe(common_device) {
