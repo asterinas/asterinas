@@ -10,6 +10,7 @@ cd ${SCRIPT_DIR}/..
 echo "Start process test......"
 # These test programs are sorted by name.
 tests="
+chroot/chroot_jail
 clone3/clone_exit_signal
 clone3/clone_files
 clone3/clone_no_exit_signal
