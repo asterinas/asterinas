@@ -30,8 +30,7 @@ impl FileOps for MountInfoFileOps {
 
         let fs = posix_thread.read_fs();
         let path_resolver = fs.resolver().read();
-        let root_mount = path_resolver.root().mount_node();
 
-        root_mount.read_mount_info(offset, writer)
+        path_resolver.read_mount_info(offset, writer)
     }
 }

@@ -73,7 +73,7 @@ pub fn add_node(
             (relative_path, "")
         };
 
-        match dev_path.lookup(next_name) {
+        match path_resolver.lookup_at_path(&dev_path, next_name) {
             Ok(next_path) => {
                 if path_remain.is_empty() {
                     return_errno_with_message!(Errno::EEXIST, "the device node already exists");

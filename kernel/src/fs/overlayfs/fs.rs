@@ -1489,6 +1489,9 @@ mod tests {
         let link = d1.create("link", InodeType::SymLink, mode).unwrap();
         let link_str = "link_to_somewhere";
         link.write_link(link_str).unwrap();
-        assert_eq!(link.read_link().unwrap().to_string(), link_str.to_string());
+        assert!(matches!(
+            link.read_link().unwrap(),
+            SymbolicLink::Plain(s) if s == link_str
+        ));
     }
 }

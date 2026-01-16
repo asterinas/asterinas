@@ -44,7 +44,7 @@ pub fn sys_renameat2(
         let old_fs_path = FsPath::from_fd_and_path(old_dirfd, old_parent_path_name)?;
         (path_resolver.lookup(&old_fs_path)?, old_name)
     };
-    let old_path = old_dir_path.lookup(old_name)?;
+    let old_path = path_resolver.lookup_at_path(&old_dir_path, old_name)?;
     if old_path.type_() != InodeType::Dir && old_path_name.ends_with('/') {
         return_errno_with_message!(Errno::ENOTDIR, "the old path is not a directory");
     }
@@ -60,8 +60,10 @@ pub fn sys_renameat2(
     };
 
     // Check the absolute path
-    let old_abs_path = old_path.abs_path();
-    let new_abs_path = new_dir_path.abs_path() + "/" + new_name;
+    // FIXME: Using string prefix matching to check for path containment is incorrect.
+    // It doesn't handle path components like '..' or '.' properly.
+    let old_abs_path = path_resolver.make_abs_path(&old_path).into_string();
+    let new_abs_path = path_resolver.make_abs_path(&new_dir_path).into_string() + "/" + new_name;
     if new_abs_path.starts_with(&old_abs_path) {
         if new_abs_path.len() == old_abs_path.len() {
             return Ok(SyscallReturn::Return(0));
