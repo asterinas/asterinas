@@ -605,13 +605,3 @@ pub enum SymbolicLink {
     /// such as `/proc/[pid]/fd/[fd]` and `/proc/[pid]/exe`.
     Path(Path),
 }
-
-#[expect(clippy::to_string_trait_impl)]
-impl ToString for SymbolicLink {
-    fn to_string(&self) -> String {
-        match self {
-            SymbolicLink::Plain(s) => s.clone(),
-            SymbolicLink::Path(path) => path.abs_path(),
-        }
-    }
-}

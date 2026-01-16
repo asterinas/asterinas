@@ -200,8 +200,13 @@ impl FileIo for PtyMaster {
 
                 // TODO: Deal with `open()` flags.
                 let slave = {
+                    let fs_ref = thread_local.borrow_fs();
+                    let path_resolver = fs_ref.resolver().read();
+
                     let slave_name = {
-                        let devpts_path = super::DEV_PTS.get().unwrap().abs_path();
+                        let devpts_path = path_resolver
+                            .make_abs_path(super::DEV_PTS.get().unwrap())
+                            .into_string();
                         format!("{}/{}", devpts_path, self.slave.index())
                     };
 
@@ -209,12 +214,7 @@ impl FileIo for PtyMaster {
 
                     let inode_handle = {
                         let open_args = OpenArgs::from_modes(AccessMode::O_RDWR, mkmod!(u+rw));
-                        thread_local
-                            .borrow_fs()
-                            .resolver()
-                            .read()
-                            .lookup(&fs_path)?
-                            .open(open_args)?
+                        path_resolver.lookup(&fs_path)?.open(open_args)?
                     };
                     Arc::new(inode_handle)
                 };

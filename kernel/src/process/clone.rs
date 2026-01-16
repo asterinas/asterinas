@@ -498,9 +498,16 @@ fn clone_child_process(
 
     let child = {
         let mut child_thread_builder = {
-            let child_thread_name = ThreadName::new_from_executable_path(
-                &child_vmar.process_vm().executable_file().abs_path(),
-            );
+            let thread_name = {
+                let executable_path = child_vmar.process_vm().executable_file();
+                thread_local
+                    .borrow_fs()
+                    .resolver()
+                    .read()
+                    .make_abs_path(executable_path)
+                    .into_string()
+            };
+            let child_thread_name = ThreadName::new_from_executable_path(&thread_name);
 
             let credentials = {
                 let credentials = ctx.posix_thread.credentials();

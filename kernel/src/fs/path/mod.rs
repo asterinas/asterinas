@@ -206,7 +206,10 @@ impl Path {
             return_errno_with_message!(Errno::ENOTDIR, "the path is not a directory");
         }
 
-        if self.effective_parent().is_none() {
+        let fs_ref = ctx.thread_local.borrow_fs();
+        let path_resolver = fs_ref.resolver().read();
+
+        if path_resolver.root() == self {
             return_errno_with_message!(Errno::EINVAL, "the root cannot be mounted on");
         }
 

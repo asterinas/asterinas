@@ -33,9 +33,8 @@ impl FileOps for CommFileOps {
             return Ok(0);
         };
 
-        let exe_path = vmar.process_vm().executable_file().abs_path();
-        let last_component = exe_path.rsplit('/').next().unwrap_or(&exe_path);
-        let mut comm = last_component.as_bytes().to_vec();
+        let executable_file_name = vmar.process_vm().executable_file().name();
+        let mut comm = executable_file_name.as_bytes().to_vec();
         comm.truncate(TASK_COMM_LEN - 1);
         comm.push(b'\n');
 

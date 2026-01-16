@@ -427,6 +427,8 @@ fn test_sysfs_write_attr() {
 
 #[ktest]
 fn test_sysfs_read_link() {
+    use crate::fs::utils::SymbolicLink;
+
     let sysfs = init_sysfs_with_mock_tree();
     let root_inode = sysfs.root_inode();
     // Action: Lookup the sysfs symlink corresponding to a systree symlink node
@@ -436,7 +438,10 @@ fn test_sysfs_read_link() {
     // the path provided by the underlying mock systree symlink node's target_path method.
 
     let target = link1_inode.read_link().expect("read_link failed");
-    assert_eq!(target.to_string(), "../branch1/leaf1");
+    assert!(matches!(
+        target,
+        SymbolicLink::Plain(s) if s == "../branch1/leaf1"
+    ));
 
     // read_link on non-symlink should fail (expect EINVAL as per inode.rs)
     let branch1_inode = root_inode.lookup("branch1").unwrap();
