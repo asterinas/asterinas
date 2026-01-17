@@ -13,6 +13,61 @@
 #![deny(unsafe_code)]
 
 use aster_util::ranged_integer::{RangedU16, RangedU32};
+use id_alloc::IdAlloc;
+use spin::{Mutex, Once};
+
+pub struct PseudoFSDeviceIdAllocator {
+    minor_allocator: Mutex<IdAlloc>,
+}
+
+/// An allocator for pseudo filesystems (no backing block device) device ID.
+///
+/// This follows the Linux convention where pseudo filesystems use major=0
+/// and dynamically allocate minor numbers (starting from 1) to distinguish different
+/// pseudo filesystem instances.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/fs/super.c#L1242-L1271>
+impl PseudoFSDeviceIdAllocator {
+    fn new() -> Self {
+        let mut minor_allocator = IdAlloc::with_capacity(MinorId::MAX.get() as usize + 1);
+        // Mark 0 as allocated to ensure minor numbers start from 1.
+        let _ = minor_allocator.alloc_specific(0);
+
+        Self {
+            minor_allocator: Mutex::new(minor_allocator),
+        }
+    }
+
+    /// Allocate a device ID for pseudo filesystems.
+    /// Returns `None` if minor number allocation fails (exhausted).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the allocator was not initialized.
+    pub fn allocate(&self) -> DeviceId {
+        let major = MajorId::new(0);
+        let minor = self.minor_allocator.lock().alloc().unwrap() as u32;
+
+        DeviceId::new(major, MinorId::new(minor))
+    }
+
+    /// Free a dynamically allocated pseudo filesystem device ID.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the device ID's major is not 0.
+    pub fn release(&mut self, id: DeviceId) {
+        debug_assert!(id.major().get() == 0);
+
+        self.minor_allocator.lock().free(id.minor().get() as usize);
+    }
+}
+
+pub static PSEUDO_FS_DEVICE_ID_ALLOCATOR: Once<PseudoFSDeviceIdAllocator> = Once::new();
+
+pub fn init() {
+    PSEUDO_FS_DEVICE_ID_ALLOCATOR.call_once(PseudoFSDeviceIdAllocator::new);
+}
 
 /// A device ID, embedding the major ID and minor ID.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -22,6 +77,11 @@ impl DeviceId {
     /// Creates a device ID from the major device number and the minor device number.
     pub fn new(major: MajorId, minor: MinorId) -> Self {
         Self(((major.get() as u32) << 20) | minor.get())
+    }
+
+    /// FIXME: just a placeholder for now.
+    pub const fn none() -> Self {
+        Self(0)
     }
 
     /// Returns the encoded `u32` value.
@@ -37,6 +97,11 @@ impl DeviceId {
     /// Returns the minor device number.
     pub fn minor(&self) -> MinorId {
         MinorId::new(self.0 & 0xf_ffff)
+    }
+
+    /// Checks if the container device is valid (major != 0).
+    pub fn has_valid_container(&self) -> bool {
+        self.major().get() != 0
     }
 }
 
@@ -92,10 +157,13 @@ const MAX_MINOR_ID: u32 = 0x000f_ffff;
 
 /// The major component of a device ID.
 ///
-/// A major ID is a non-zero, 12-bit integer, thus falling in the range of `1..(1u16 << 12)`.
+/// A major ID is a 12-bit integer, thus falling in the range of `0..(1u16 << 12)`.
+///
+/// - **0**: Represents an invalid or absent device (used for pseudo filesystems)
+/// - **1-4095**: Valid major device numbers
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/linux/kdev_t.h#L10>.
-pub type MajorId = RangedU16<1, MAX_MAJOR_ID>;
+pub type MajorId = RangedU16<0, MAX_MAJOR_ID>;
 
 /// The minor component of a device ID.
 ///
