@@ -17,18 +17,27 @@ use crate::PciDeviceLocation;
 static PCI_ECAM_CFG_SPACE: Once<IoMem> = Once::new();
 
 pub(crate) fn write32(location: &PciDeviceLocation, offset: u32, value: u32) -> Result<(), Error> {
+    if offset > PCI_ECAM_MAX_OFFSET {
+        return Err(Error::InvalidArgs);
+    }
     PCI_ECAM_CFG_SPACE.get().ok_or(Error::IoError)?.write_once(
-        (encode_as_address_offset(location) | (offset & 0xfc)) as usize,
+        (encode_as_address_offset(location) | offset) as usize,
         &value,
     )
 }
 
 pub(crate) fn read32(location: &PciDeviceLocation, offset: u32) -> Result<u32, Error> {
+    if offset > PCI_ECAM_MAX_OFFSET {
+        return Err(Error::InvalidArgs);
+    }
     PCI_ECAM_CFG_SPACE
         .get()
         .ok_or(Error::IoError)?
-        .read_once((encode_as_address_offset(location) | (offset & 0xfc)) as usize)
+        .read_once((encode_as_address_offset(location) | offset) as usize)
 }
+
+/// The maximum offset in the 12-bit configuration space when using [`encode_as_address_offset`].
+const PCI_ECAM_MAX_OFFSET: u32 = 0xffc;
 
 /// Encodes the bus, device, and function into an address offset in the PCI MMIO region.
 fn encode_as_address_offset(location: &PciDeviceLocation) -> u32 {

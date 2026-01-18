@@ -9,6 +9,7 @@ use acpi::{
     AcpiHandler, AcpiTables,
     address::AddressSpace,
     fadt::{Fadt, IaPcBootArchFlags},
+    mcfg::Mcfg,
     rsdp::Rsdp,
 };
 use log::warn;
@@ -85,6 +86,19 @@ pub struct AcpiInfo {
     pub boot_flags: Option<IaPcBootArchFlags>,
     /// An I/O port to reset the machine by writing the specified value.
     pub reset_port_and_val: Option<(u16, u8)>,
+    /// A memory region that is stolen for PCI configuration space.
+    pub pci_ecam_region: Option<PciEcamRegion>,
+}
+
+/// A memory region that is stolen for PCI configuration space.
+#[derive(Debug)]
+pub struct PciEcamRegion {
+    /// The base address of the memory region.
+    pub base_address: u64,
+    /// The start of the bus number.
+    pub bus_start: u8,
+    /// The end of the bus number.
+    pub bus_end: u8,
 }
 
 /// The [`AcpiInfo`] singleton.
@@ -95,11 +109,15 @@ pub(in crate::arch) fn init() {
         century_register: None,
         boot_flags: None,
         reset_port_and_val: None,
+        pci_ecam_region: None,
     };
 
-    if let Some(acpi_tables) = get_acpi_tables()
-        && let Ok(fadt) = acpi_tables.find_table::<Fadt>()
-    {
+    let Some(acpi_tables) = get_acpi_tables() else {
+        ACPI_INFO.call_once(|| acpi_info);
+        return;
+    };
+
+    if let Ok(fadt) = acpi_tables.find_table::<Fadt>() {
         // A zero means that the century register does not exist.
         acpi_info.century_register = NonZeroU8::new(fadt.century);
         acpi_info.boot_flags = Some(fadt.iapc_boot_arch);
@@ -110,6 +128,18 @@ pub(in crate::arch) fn init() {
             acpi_info.reset_port_and_val = Some((reset_port, fadt.reset_value));
         }
     };
+
+    if let Ok(mcfg) = acpi_tables.find_table::<Mcfg>()
+        // TODO: Support multiple PCIe segment groups instead of assuming only one
+        // PCIe segment group is in use.
+        && let Some(mcfg_entry) = mcfg.entries().first()
+    {
+        acpi_info.pci_ecam_region = Some(PciEcamRegion {
+            base_address: mcfg_entry.base_address,
+            bus_start: mcfg_entry.bus_number_start,
+            bus_end: mcfg_entry.bus_number_end,
+        });
+    }
 
     log::info!("[ACPI]: Collected information {:?}", acpi_info);
 
