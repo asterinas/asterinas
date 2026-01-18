@@ -2,6 +2,8 @@
 
 //! PCI bus access
 
+use core::ops::RangeInclusive;
+
 use ostd::{
     Error,
     arch::device::io_port::{ReadWriteAccess, WriteOnlyAccess},
@@ -45,17 +47,18 @@ fn encode_as_port(location: &PciDeviceLocation) -> u32 {
         | (((location.function as u32) & 0b111) << 8)
 }
 
-pub(crate) fn has_pci_bus() -> bool {
-    true
-}
-
-pub(crate) fn init() {
+/// Initializes the platform-specific module for accessing the PCI configuration space.
+///
+/// Returns a range for the PCI bus number, or [`None`] if there is no PCI bus.
+pub(crate) fn init() -> Option<RangeInclusive<u8>> {
     // We use `acquire_overlapping` to acquire the port at 0xCF8 because 0xCF9 may be used as a
     // reset control register in the PIIX4. Although the two ports overlap in their I/O range, they
     // serve completely different purposes. See
     // <https://www.intel.com/Assets/PDF/datasheet/290562.pdf>.
     PCI_ADDRESS_PORT.call_once(|| IoPort::acquire_overlapping(0xCF8).unwrap());
     PCI_DATA_PORT.call_once(|| IoPort::acquire(0xCFC).unwrap());
+
+    Some(0..=255)
 }
 
 pub(crate) const MSIX_DEFAULT_MSG_ADDR: u32 = 0xFEE0_0000;

@@ -2,6 +2,8 @@
 
 //! PCI bus access
 
+use core::ops::RangeInclusive;
+
 use log::warn;
 use ostd::{Error, arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce};
 use spin::Once;
@@ -33,11 +35,10 @@ fn encode_as_address_offset(location: &PciDeviceLocation) -> u32 {
         | ((location.function as u32) << 12)
 }
 
-pub(crate) fn has_pci_bus() -> bool {
-    PCI_ECAM_CFG_SPACE.is_completed()
-}
-
-pub(crate) fn init() {
+/// Initializes the platform-specific module for accessing the PCI configuration space.
+///
+/// Returns a range for the PCI bus number, or [`None`] if there is no PCI bus.
+pub(crate) fn init() -> Option<RangeInclusive<u8>> {
     // We follow the Linux's PCI device tree to obtain the register information
     // about the PCI bus. See also the specification at
     // <https://www.kernel.org/doc/Documentation/devicetree/bindings/pci/host-generic-pci.txt>.
@@ -50,28 +51,53 @@ pub(crate) fn init() {
         .find_compatible(&["pci-host-ecam-generic"])
     else {
         warn!("No generic PCI host controller node found in the device tree");
-        return;
+        return None;
     };
 
     let Some(mut reg) = pci.reg() else {
         warn!("PCI node should have exactly one `reg` property, but found zero `reg`s");
-        return;
+        return None;
     };
     let Some(region) = reg.next() else {
         warn!("PCI node should have exactly one `reg` property, but found zero `reg`s");
-        return;
+        return None;
     };
     if reg.next().is_some() {
         warn!(
             "PCI node should have exactly one `reg` property, but found {} `reg`s",
             reg.count() + 2
         );
-        return;
+        return None;
     }
+
+    let bus_range = if let Some(prop) = pci.property("bus-range") {
+        if prop.value.len() != 8 || prop.value[0..3] != [0, 0, 0] || prop.value[4..7] != [0, 0, 0] {
+            warn!(
+                "PCI node should have a `bus-range` property with two bytes, but found `{:?}`",
+                prop.value
+            );
+            return None;
+        }
+        if prop.value[3] != 0 {
+            // TODO: We don't support this case because the base address corresponds to the first
+            // bus. Therefore, an offset must be applied to the bus value in `read32`/`write32`.
+            warn!(
+                "PCI node with a non-zero bus start `{}` is not supported yet",
+                prop.value[3]
+            );
+            return None;
+        }
+        Some(prop.value[3]..=prop.value[7])
+    } else {
+        // "bus-range: Optional property [..] If absent, defaults to <0 255> (i.e. all buses)."
+        Some(0..=255)
+    };
 
     let addr_start = region.starting_address as usize;
     let addr_end = addr_start.checked_add(region.size.unwrap()).unwrap();
     PCI_ECAM_CFG_SPACE.call_once(|| IoMem::acquire(addr_start..addr_end).unwrap());
+
+    bus_range
 }
 
 pub(crate) const MSIX_DEFAULT_MSG_ADDR: u32 = 0x2400_0000;

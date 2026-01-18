@@ -80,24 +80,18 @@ fn pci_init() -> Result<(), ComponentInitError> {
     Ok(())
 }
 
-/// Checks if the system has a PCI bus.
-pub fn has_pci_bus() -> bool {
-    crate::arch::has_pci_bus()
-}
-
-/// PCI bus instance
+/// The PCI bus instance.
 pub static PCI_BUS: Mutex<PciBus> = Mutex::new(PciBus::new());
 
 fn init() {
-    crate::arch::init();
-
-    if !crate::arch::has_pci_bus() {
+    let Some(all_bus) = arch::init() else {
+        log::info!("no PCI bus was found");
         return;
-    }
+    };
+    log::info!("initializing the PCI bus with bus numbers `{:?}`", all_bus);
 
     let mut lock = PCI_BUS.lock();
 
-    let all_bus = PciDeviceLocation::MIN_BUS..=PciDeviceLocation::MAX_BUS;
     let all_dev = PciDeviceLocation::MIN_DEVICE..=PciDeviceLocation::MAX_DEVICE;
     let all_func = PciDeviceLocation::MIN_FUNCTION..=PciDeviceLocation::MAX_FUNCTION;
 
