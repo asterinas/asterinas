@@ -8,34 +8,34 @@ use ostd::{
     Error,
     arch::device::io_port::{ReadWriteAccess, WriteOnlyAccess},
     io::IoPort,
+    sync::SpinLock,
 };
 use spin::Once;
 
 use crate::device_info::PciDeviceLocation;
 
-static PCI_ADDRESS_PORT: Once<IoPort<u32, WriteOnlyAccess>> = Once::new();
-static PCI_DATA_PORT: Once<IoPort<u32, ReadWriteAccess>> = Once::new();
+struct AddressAndDataPort {
+    address_port: IoPort<u32, WriteOnlyAccess>,
+    data_port: IoPort<u32, ReadWriteAccess>,
+}
+
+static PCI_PIO_CFG_SPACE: Once<SpinLock<AddressAndDataPort>> = Once::new();
 
 const BIT32_ALIGN_MASK: u32 = 0xFFFC;
 
 pub(crate) fn write32(location: &PciDeviceLocation, offset: u32, value: u32) -> Result<(), Error> {
-    PCI_ADDRESS_PORT
-        .get()
-        .ok_or(Error::IoError)?
+    let pio = PCI_PIO_CFG_SPACE.get().ok_or(Error::IoError)?.lock();
+    pio.address_port
         .write(encode_as_port(location) | (offset & BIT32_ALIGN_MASK));
-    PCI_DATA_PORT
-        .get()
-        .ok_or(Error::IoError)?
-        .write(value.to_le());
+    pio.data_port.write(value.to_le());
     Ok(())
 }
 
 pub(crate) fn read32(location: &PciDeviceLocation, offset: u32) -> Result<u32, Error> {
-    PCI_ADDRESS_PORT
-        .get()
-        .ok_or(Error::IoError)?
+    let pio = PCI_PIO_CFG_SPACE.get().ok_or(Error::IoError)?.lock();
+    pio.address_port
         .write(encode_as_port(location) | (offset & BIT32_ALIGN_MASK));
-    Ok(PCI_DATA_PORT.get().ok_or(Error::IoError)?.read().to_le())
+    Ok(pio.data_port.read().to_le())
 }
 
 /// Encodes the bus, device, and function into a port address for use with the PCI I/O port.
@@ -55,8 +55,14 @@ pub(crate) fn init() -> Option<RangeInclusive<u8>> {
     // reset control register in the PIIX4. Although the two ports overlap in their I/O range, they
     // serve completely different purposes. See
     // <https://www.intel.com/Assets/PDF/datasheet/290562.pdf>.
-    PCI_ADDRESS_PORT.call_once(|| IoPort::acquire_overlapping(0xCF8).unwrap());
-    PCI_DATA_PORT.call_once(|| IoPort::acquire(0xCFC).unwrap());
+    let address_port = IoPort::acquire_overlapping(0xCF8).unwrap();
+    let data_port = IoPort::acquire(0xCFC).unwrap();
+    PCI_PIO_CFG_SPACE.call_once(move || {
+        SpinLock::new(AddressAndDataPort {
+            address_port,
+            data_port,
+        })
+    });
 
     Some(0..=255)
 }
