@@ -12,4 +12,5 @@ DgramUnixSockets/NonStreamSocketPairTest.MsgTruncTruncationRecvmsgMsghdrFlagMsgT
 DgramUnixSockets/NonStreamSocketPairTest.RecvmsgMsgTruncZeroLen/*
 DgramUnixSockets/NonStreamSocketPairTest.RecvmsgMsgTruncMsgPeekZeroLen/*
 
+# TODO: Implement `SO_SNDBUF` behavior
 DgramUnixSockets/DgramUnixSocketPairTest.IncreasedSocketSendBufUnblocksWrites/*

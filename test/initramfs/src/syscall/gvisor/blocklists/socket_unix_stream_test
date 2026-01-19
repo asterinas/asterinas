@@ -4,8 +4,7 @@ AllUnixDomainSockets/StreamUnixSocketPairTest.RecvmsgOneSideClosed/*
 # TODO: Support `ECONNRESET` errors on UNIX sockets
 AllUnixDomainSockets/StreamUnixSocketPairTest.ReadOneSideClosedWithUnreadData/*
 
+# TODO: Implement `SO_SNDBUF` behavior
 AllUnixDomainSockets/StreamUnixSocketPairTest.IncreasedSocketSendBufUnblocksWrites/*
-
 AllUnixDomainSockets/StreamUnixSocketPairTest.SendBufferOverflow/*
-
 AllUnixDomainSockets/StreamUnixSocketPairTest.SetSocketSendBuf/*

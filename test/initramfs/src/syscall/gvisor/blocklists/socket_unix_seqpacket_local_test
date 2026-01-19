@@ -12,4 +12,5 @@ SeqpacketUnixSockets/NonStreamSocketPairTest.MsgTruncTruncationRecvmsgMsghdrFlag
 SeqpacketUnixSockets/NonStreamSocketPairTest.RecvmsgMsgTruncZeroLen/*
 SeqpacketUnixSockets/NonStreamSocketPairTest.RecvmsgMsgTruncMsgPeekZeroLen/*
 
+# TODO: Implement `SO_SNDBUF` behavior
 SeqpacketUnixSockets/SeqpacketUnixSocketPairTest.IncreasedSocketSendBufUnblocksWrites/*
