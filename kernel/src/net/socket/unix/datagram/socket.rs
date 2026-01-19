@@ -2,15 +2,17 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use aster_rights::ReadDupOp;
+
 use super::message::{MessageQueue, MessageReceiver};
 use crate::{
     events::IoEvents,
     fs::{path::Path, pseudofs::SockFs},
     net::socket::{
         Socket,
-        options::{Error as SocketError, SocketOption, macros::sock_option_mut},
+        options::{Error as SocketError, PeerCred, SocketOption, macros::sock_option_mut},
         private::SocketPrivate,
-        unix::{UnixSocketAddr, ctrl_msg::AuxiliaryData},
+        unix::{CUserCred, UnixSocketAddr, cred::SocketCred, ctrl_msg::AuxiliaryData},
         util::{
             MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr,
             options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
@@ -25,6 +27,10 @@ pub struct UnixDatagramSocket {
     local_receiver: MessageReceiver,
     remote_queue: RwLock<Option<Arc<MessageQueue>>>,
     options: RwLock<OptionSet>,
+    // Since datagram sockets are not connection-oriented, they typically lack well-defined peer
+    // credentials. According to the Linux implementation, however, peer credentials are recorded
+    // when a socket pair is created using the `socketpair` system call.
+    peer_cred: Option<SocketCred>,
 
     is_nonblocking: AtomicBool,
     is_write_shutdown: AtomicBool,
@@ -53,6 +59,10 @@ impl UnixDatagramSocket {
         let mut socket_a = Self::new_raw(is_nonblocking);
         let mut socket_b = Self::new_raw(is_nonblocking);
 
+        let cred = SocketCred::<ReadDupOp>::new_current();
+        socket_a.peer_cred = Some(cred.dup().restrict());
+        socket_b.peer_cred = Some(cred.restrict());
+
         let remote_queue_a = socket_a.remote_queue.get_mut();
         let remote_queue_b = socket_b.remote_queue.get_mut();
 
@@ -67,6 +77,7 @@ impl UnixDatagramSocket {
             local_receiver: MessageReceiver::new(),
             remote_queue: RwLock::new(None),
             options: RwLock::new(OptionSet::new()),
+            peer_cred: None,
             is_nonblocking: AtomicBool::new(is_nonblocking),
             is_write_shutdown: AtomicBool::new(false),
             pseudo_path: SockFs::new_path(),
@@ -207,6 +218,12 @@ impl Socket for UnixDatagramSocket {
             _ => (),
         });
 
+        // Deal with UNIX-socket-specific socket-level options
+        match do_unix_getsockopt(option, self) {
+            Err(err) if err.error() == Errno::ENOPROTOOPT => (),
+            res => return res,
+        }
+
         let options = self.options.read();
 
         // Deal with socket-level options
@@ -284,6 +301,25 @@ impl Socket for UnixDatagramSocket {
     fn pseudo_path(&self) -> &Path {
         &self.pseudo_path
     }
+}
+
+fn do_unix_getsockopt(option: &mut dyn SocketOption, socket: &UnixDatagramSocket) -> Result<()> {
+    sock_option_mut!(match option {
+        socket_peer_cred @ PeerCred => {
+            let peer_cred = socket
+                .peer_cred
+                .as_ref()
+                .map(SocketCred::to_effective_c_cred)
+                .unwrap_or_else(CUserCred::new_invalid);
+            socket_peer_cred.set(peer_cred);
+        }
+        _ => return_errno_with_message!(
+            Errno::ENOPROTOOPT,
+            "the socket option to get is not UNIX-socket-specific"
+        ),
+    });
+
+    Ok(())
 }
 
 impl GetSocketLevelOption for MessageReceiver {
