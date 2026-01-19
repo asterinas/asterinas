@@ -6,9 +6,6 @@ AllUnixDomainSockets/UnixSocketPairTest.TIOCINQSucceeds/*
 AllUnixDomainSockets/UnixSocketPairTest.TIOCOUTQSucceeds/*
 AllUnixDomainSockets/UnixSocketPairTest.NetdeviceIoctlsSucceed/*
 
-# TODO: Fix operations on `/proc/*/fd/*`
-AllUnixDomainSockets/UnixSocketPairTest.SocketReopenFromProcfs/*
-
 # TODO: Report `MSG_(C)TRUNC` after truncating the (control) message
 AllUnixDomainSockets/UnixSocketPairCmsgTest.BasicFDPassNoSpaceMsgCtrunc/*
 AllUnixDomainSockets/UnixSocketPairCmsgTest.BasicFDPassNullControlMsgCtrunc/*
