@@ -1,0 +1,4 @@
+user_events:ftrace_test
+user_events:dyn_test
+user_events:perf_test
+user_events:abi_test

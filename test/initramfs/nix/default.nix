@@ -1,7 +1,7 @@
 { target ? "x86_64", enableBasicTest ? false, basicTestPlatform ? "asterinas"
-, enableBenchmark ? false, enableSyscallTest ? false, syscallTestSuite ? "ltp"
-, syscallTestWorkDir ? "/tmp", dnsServer ? "none", smp ? 1
-, initramfsCompressed ? true, }:
+, enableBenchmark ? false, enableSyscallTest ? false, enableKselfTest ? false
+, syscallTestSuite ? "ltp", syscallTestWorkDir ? "/tmp", dnsServer ? "none"
+, smp ? 1, initramfsCompressed ? true, }:
 let
   crossSystem.config = if target == "x86_64" then
     "x86_64-unknown-linux-gnu"
@@ -26,6 +26,7 @@ in rec {
   apps = pkgs.callPackage ./apps.nix { testPlatform = basicTestPlatform; };
   busybox = pkgs.busybox;
   benchmark = pkgs.callPackage ./benchmark { };
+  kselftest = pkgs.callPackage ./kselftest.nix { };
   syscall = pkgs.callPackage ./syscall {
     inherit smp;
     testSuite = syscallTestSuite;
@@ -35,6 +36,7 @@ in rec {
     inherit busybox;
     apps = if enableBasicTest then apps else null;
     benchmark = if enableBenchmark then benchmark else null;
+    kselftest = if enableKselfTest then kselftest else null;
     syscall = if enableSyscallTest then syscall else null;
     dnsServer = dnsServer;
   };

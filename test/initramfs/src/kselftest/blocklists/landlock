@@ -1,0 +1,8 @@
+landlock:audit_test
+landlock:base_test
+landlock:fs_test
+landlock:net_test
+landlock:ptrace_test
+landlock:scoped_abstract_unix_test
+landlock:scoped_signal_test
+landlock:scoped_test

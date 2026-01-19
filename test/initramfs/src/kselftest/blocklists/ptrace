@@ -1,0 +1,5 @@
+ptrace:get_syscall_info
+ptrace:set_syscall_info
+ptrace:peeksiginfo
+ptrace:vmaccess
+ptrace:get_set_sud

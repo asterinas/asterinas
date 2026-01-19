@@ -1,5 +1,5 @@
 { lib, stdenvNoCC, fetchFromGitHub, hostPlatform, writeClosure, busybox, apps
-, benchmark, syscall, dnsServer, pkgs }:
+, benchmark, kselftest, syscall, dnsServer, pkgs }:
 let
   etc = lib.fileset.toSource {
     root = ./../src/etc;
@@ -18,6 +18,7 @@ let
   all_pkgs = [ busybox etc resolv_conf ]
     ++ lib.optionals (apps != null) [ apps.package ]
     ++ lib.optionals (benchmark != null) [ benchmark.package ]
+    ++ lib.optionals (kselftest != null) [ kselftest.package ]
     ++ lib.optionals (syscall != null) [ syscall.package ]
     ++ lib.optionals is_evtest_included [ pkgs.evtest ];
 in stdenvNoCC.mkDerivation {
@@ -41,6 +42,10 @@ in stdenvNoCC.mkDerivation {
 
     ${lib.optionalString (apps != null) ''
       cp -r ${apps.package}/* $out/test/
+    ''}
+
+    ${lib.optionalString (kselftest != null) ''
+      cp -r ${kselftest.package}/* $out/test/
     ''}
 
     ${lib.optionalString (benchmark != null) ''

@@ -1,0 +1,7 @@
+drivers/dma-buf:*
+drivers/ntsync:*
+drivers/net:*
+drivers/net/bonding:*
+drivers/net/team:*
+drivers/net/virtio_net:*
+drivers/platform/x86/intel/ifs:*
