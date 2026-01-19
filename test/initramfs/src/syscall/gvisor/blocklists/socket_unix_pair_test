@@ -22,8 +22,3 @@ AllUnixDomainSockets/UnixSocketPairCmsgTest.CloexecRecvFDPass/*
 AllUnixDomainSockets/UnixSocketPairCmsgTest.FDPassPeek/*
 
 AllUnixDomainSockets/UnixSocketPairCmsgTest.InheritPasscred/*
-
-AllUnixDomainSockets/UnixSocketPeerCredTest.GetPeerCred/2
-AllUnixDomainSockets/UnixSocketPeerCredTest.GetPeerCred/3
-AllUnixDomainSockets/UnixSocketPeerCredTest.GetPeerCred/8
-AllUnixDomainSockets/UnixSocketPeerCredTest.GetPeerCred/9
