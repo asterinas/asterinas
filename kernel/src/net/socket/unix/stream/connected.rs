@@ -14,7 +14,7 @@ use crate::{
         unix::{
             UnixSocketAddr, addr::UnixSocketAddrBound, cred::SocketCred, ctrl_msg::AuxiliaryData,
         },
-        util::{ControlMessage, SockShutdownCmd, options::SocketOptionSet},
+        util::{ControlMessage, SockShutdownCmd},
     },
     prelude::*,
     process::signal::Pollee,
@@ -39,7 +39,6 @@ impl Connected {
         peer_state: EndpointState,
         cred: SocketCred,
         peer_cred: SocketCred,
-        options: &SocketOptionSet,
     ) -> (Connected, Connected) {
         let (this_writer, peer_reader) = RingBuffer::new(UNIX_STREAM_DEFAULT_BUF_SIZE).split();
         let (peer_writer, this_reader) = RingBuffer::new(UNIX_STREAM_DEFAULT_BUF_SIZE).split();
@@ -51,7 +50,7 @@ impl Connected {
             writer: Mutex::new(this_writer),
             all_aux: Mutex::new(VecDeque::new()),
             has_aux: AtomicBool::new(false),
-            is_pass_cred: AtomicBool::new(options.pass_cred()),
+            is_pass_cred: AtomicBool::new(false),
             cred,
         };
         let peer_inner = Inner {
@@ -327,6 +326,10 @@ impl Connected {
             .this_end()
             .is_pass_cred
             .store(is_pass_cred, Ordering::Relaxed);
+    }
+
+    pub(super) fn is_pass_cred(&self) -> bool {
+        self.inner.this_end().is_pass_cred.load(Ordering::Relaxed)
     }
 
     pub(super) fn check_io_events(&self) -> IoEvents {

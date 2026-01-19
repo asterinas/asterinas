@@ -20,5 +20,3 @@ AllUnixDomainSockets/UnixSocketPairCmsgTest.CloexecRecvFDPass/*
 
 # TODO: Support `MSG_PEEK`
 AllUnixDomainSockets/UnixSocketPairCmsgTest.FDPassPeek/*
-
-AllUnixDomainSockets/UnixSocketPairCmsgTest.InheritPasscred/*
