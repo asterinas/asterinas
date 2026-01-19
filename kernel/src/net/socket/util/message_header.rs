@@ -49,7 +49,7 @@ impl ControlMessage {
 
         while reader.has_remain() && msgs.len() < MAX_NR_MSGS {
             let header = reader.read_val::<CControlHeader>()?;
-            if header.len <= size_of::<CControlHeader>() || header.payload_len() > reader.remain() {
+            if header.len < size_of::<CControlHeader>() || header.payload_len() > reader.remain() {
                 return_errno_with_message!(
                     Errno::EINVAL,
                     "the size of the control message is invalid"
