@@ -746,8 +746,9 @@ impl Inode {
             let len = inner.extend_write_at(offset, reader)?;
             (len, inner)
         } else {
+            let mut inner = inner.upgrade();
             let len = inner.write_at(offset, reader)?;
-            (len, inner.upgrade())
+            (len, inner)
         };
 
         let now = now();
@@ -1033,8 +1034,20 @@ impl InodeInner {
         Ok(read_len)
     }
 
-    pub fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+    pub fn write_at(&mut self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         let write_len = reader.remain();
+        let end_offset = offset + write_len;
+
+        // Check if the write range contains sparse blocks.
+        // If so, allocate blocks for them before writing.
+        // Reference: <https://elixir.bootlin.com/linux/v6.18/source/fs/buffer.c#L2145>
+        assert!(end_offset <= self.file_size());
+        let start_bid = Bid::from_offset(offset).to_raw() as Ext2Bid;
+        let end_bid = Bid::from_offset(end_offset.align_up(BLOCK_SIZE)).to_raw() as Ext2Bid;
+        let nblocks = (end_bid - start_bid) as usize;
+        self.inode_impl
+            .ensure_blocks_allocated(start_bid, nblocks)?;
+
         self.page_cache.pages().write(offset, reader)?;
         Ok(write_len)
     }
@@ -1064,6 +1077,9 @@ impl InodeInner {
 
         let start_bid = Bid::from_offset(offset).to_raw() as Ext2Bid;
         let buf_nblocks = write_len / BLOCK_SIZE;
+        self.inode_impl
+            .ensure_blocks_allocated(start_bid, buf_nblocks)?;
+
         self.inode_impl
             .write_blocks(start_bid, buf_nblocks, reader)?;
 
@@ -1401,6 +1417,86 @@ impl InodeImpl {
             self.shrink(new_size);
         }
         Ok(())
+    }
+
+    /// Ensures that blocks in the specified range are allocated.
+    ///
+    /// This method checks each block in the range and allocates any sparse blocks.
+    pub fn ensure_blocks_allocated(&mut self, start_bid: Ext2Bid, nblocks: usize) -> Result<()> {
+        let end_bid = start_bid + nblocks as Ext2Bid;
+        let mut current_bid = start_bid;
+
+        while current_bid < end_bid {
+            let device_bid = self.get_device_bid(current_bid)?;
+            if device_bid == 0 {
+                let sparse_start = current_bid;
+                while current_bid < end_bid {
+                    if self.get_device_bid(current_bid)? != 0 {
+                        break;
+                    }
+                    current_bid += 1;
+                }
+                self.expand_blocks(sparse_start..current_bid)?;
+            } else {
+                current_bid += 1;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Gets the device block ID for a given file block ID.
+    ///
+    /// Returns 0 if the block is sparse (not allocated).
+    fn get_device_bid(&self, bid: Ext2Bid) -> Result<Ext2Bid> {
+        let bid_path = BidPath::from(bid);
+        let block_ptrs = self.block_manager.block_ptrs.read();
+
+        match bid_path {
+            BidPath::Direct(idx) => Ok(block_ptrs.direct(idx as usize)),
+            BidPath::Indirect(idx) => {
+                let indirect_bid = block_ptrs.indirect();
+                if indirect_bid == 0 {
+                    return Ok(0);
+                }
+                let mut indirect_blocks = self.block_manager.indirect_blocks.write();
+                let indirect_block = indirect_blocks.find(indirect_bid)?;
+                indirect_block.read_bid(idx as usize)
+            }
+            BidPath::DbIndirect(lvl1_idx, lvl2_idx) => {
+                let db_indirect_bid = block_ptrs.db_indirect();
+                if db_indirect_bid == 0 {
+                    return Ok(0);
+                }
+                let mut indirect_blocks = self.block_manager.indirect_blocks.write();
+                let db_indirect_block = indirect_blocks.find(db_indirect_bid)?;
+                let lvl1_indirect_bid = db_indirect_block.read_bid(lvl1_idx as usize)?;
+                if lvl1_indirect_bid == 0 {
+                    return Ok(0);
+                }
+                let lvl1_indirect_block = indirect_blocks.find(lvl1_indirect_bid)?;
+                lvl1_indirect_block.read_bid(lvl2_idx as usize)
+            }
+            BidPath::TbIndirect(lvl1_idx, lvl2_idx, lvl3_idx) => {
+                let tb_indirect_bid = block_ptrs.tb_indirect();
+                if tb_indirect_bid == 0 {
+                    return Ok(0);
+                }
+                let mut indirect_blocks = self.block_manager.indirect_blocks.write();
+                let tb_indirect_block = indirect_blocks.find(tb_indirect_bid)?;
+                let lvl1_indirect_bid = tb_indirect_block.read_bid(lvl1_idx as usize)?;
+                if lvl1_indirect_bid == 0 {
+                    return Ok(0);
+                }
+                let lvl1_indirect_block = indirect_blocks.find(lvl1_indirect_bid)?;
+                let lvl2_indirect_bid = lvl1_indirect_block.read_bid(lvl2_idx as usize)?;
+                if lvl2_indirect_bid == 0 {
+                    return Ok(0);
+                }
+                let lvl2_indirect_block = indirect_blocks.find(lvl2_indirect_bid)?;
+                lvl2_indirect_block.read_bid(lvl3_idx as usize)
+            }
+        }
     }
 
     /// Expands inode size.
