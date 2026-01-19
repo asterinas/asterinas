@@ -85,12 +85,12 @@ jobs:
             boot_protocol: 'multiboot2'
             smp: 4
 
-          # General Test (Linux EFI Handover) (Debug Build)
-          - test_id: 'general-handover64-debug'
+          # Custom Test (Linux EFI Handover) (Debug Build)
+          - test_id: 'custom-handover64-debug'
             release: false
             boot_protocol: 'linux-efi-handover64'
-          # SMP General Test (Multiboot2)
-          - test_id: 'general-multiboot2-smp4'
+          # SMP Custom Test (Multiboot2)
+          - test_id: 'custom-multiboot2-smp4'
             boot_protocol: 'multiboot2'
             smp: 4
       fail-fast: false
@@ -103,7 +103,7 @@ jobs:
         uses: ./.github/actions/test
         with:
           auto_test: ${{ (startsWith(matrix.test_id, 'boot') && 'boot') ||
-              (startsWith(matrix.test_id, 'syscall') && 'syscall') || 'test' }}
+              (startsWith(matrix.test_id, 'syscall') && 'syscall') || 'custom' }}
           release: ${{ !contains(matrix.release, 'false') }}
           enable_kvm: ${{ !contains(matrix.enable_kvm, 'false') }}
           smp: ${{ matrix.smp }}
@@ -118,7 +118,7 @@ jobs:
         uses: ./.github/actions/test
         with:
           auto_test: ${{ (startsWith(matrix.test_id, 'boot') && 'boot') ||
-              (startsWith(matrix.test_id, 'syscall') && 'syscall') || 'test' }}
+              (startsWith(matrix.test_id, 'syscall') && 'syscall') || 'custom' }}
           release: ${{ !contains(matrix.release, 'false') }}
           enable_kvm: ${{ !contains(matrix.enable_kvm, 'false') }}
           smp: ${{ matrix.smp }}
