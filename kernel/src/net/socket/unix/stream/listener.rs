@@ -15,12 +15,13 @@ use crate::{
     events::IoEvents,
     fs::file_handle::FileLike,
     net::socket::{
+        SocketAddr,
         unix::{
             addr::{UnixSocketAddrBound, UnixSocketAddrKey},
             cred::SocketCred,
             stream::socket::OptionSet,
         },
-        util::{SockShutdownCmd, SocketAddr, options::SocketOptionSet},
+        util::SockShutdownCmd,
     },
     prelude::*,
     process::signal::Pollee,
@@ -58,10 +59,9 @@ impl Listener {
         let connected = self.backlog.pop_incoming()?;
 
         let peer_addr = connected.peer_addr().into();
-        // TODO: Update options for a newly-accepted socket
-        let options = OptionSet::new();
-        let socket = UnixStreamSocket::new_connected(connected, options, false, is_seqpacket);
+        let options = OptionSet::new_accepted(connected.is_pass_cred());
 
+        let socket = UnixStreamSocket::new_connected(connected, options, false, is_seqpacket);
         Ok((socket, peer_addr))
     }
 
@@ -86,6 +86,12 @@ impl Listener {
 
     pub(super) fn is_write_shutdown(&self) -> bool {
         self.is_write_shutdown.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn set_pass_cred(&self, is_pass_cred: bool) {
+        self.backlog
+            .is_pass_cred
+            .store(is_pass_cred, Ordering::Relaxed);
     }
 
     pub(super) fn check_io_events(&self) -> IoEvents {
@@ -164,6 +170,7 @@ pub(super) struct Backlog {
     incoming_conns: SpinLock<Option<VecDeque<Connected>>>,
     connect_wait_queue: WaitQueue,
     listener_cred: SocketCred<ReadDupOp>,
+    is_pass_cred: AtomicBool,
     is_seqpacket: bool,
 }
 
@@ -188,6 +195,7 @@ impl Backlog {
             incoming_conns: SpinLock::new(incoming_sockets),
             connect_wait_queue: WaitQueue::new(),
             listener_cred: SocketCred::<ReadDupOp>::new_current(),
+            is_pass_cred: AtomicBool::new(false),
             is_seqpacket,
         }
     }
@@ -252,7 +260,7 @@ impl Backlog {
         &self,
         init: Init,
         pollee: Pollee,
-        options: &SocketOptionSet,
+        options: &OptionSet,
         is_seqpacket: bool,
     ) -> core::result::Result<Connected, (Error, Init)> {
         if is_seqpacket != self.is_seqpacket {
@@ -294,8 +302,11 @@ impl Backlog {
             self.addr.clone(),
             pollee,
             self.listener_cred.dup().restrict(),
-            options,
         );
+        options.apply_to_connected(&client_conn);
+        if self.is_pass_cred.load(Ordering::Relaxed) {
+            server_conn.set_pass_cred(true);
+        }
 
         incoming_conns.push_back(server_conn);
         self.pollee.notify(IoEvents::IN);

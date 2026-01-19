@@ -126,9 +126,38 @@ pub(super) struct OptionSet {
 }
 
 impl OptionSet {
-    pub(super) fn new() -> Self {
+    pub(self) fn new() -> Self {
         Self {
             socket: SocketOptionSet::new_unix_stream(),
+        }
+    }
+
+    /// Creates a new option set for an accepted socket.
+    ///
+    /// This should work together with [`Self::apply_to_listener`] to pass the necessary flags from
+    /// a listening socket to an accepted socket. See the references below for a list of socket
+    /// options that should be inherited this way.
+    ///
+    /// Reference:
+    /// <https://elixir.bootlin.com/linux/v6.18.6/source/net/unix/af_unix.c#L1765>
+    /// <https://elixir.bootlin.com/linux/v6.18.6/source/include/net/sock.h#L543-L550>
+    pub(super) fn new_accepted(is_pass_cred: bool) -> Self {
+        let mut result = Self::new();
+        if is_pass_cred {
+            result.socket.set_pass_cred(is_pass_cred);
+        }
+        result
+    }
+
+    pub(super) fn apply_to_connected(&self, connected: &Connected) {
+        if self.socket.pass_cred() {
+            connected.set_pass_cred(true);
+        }
+    }
+
+    pub(self) fn apply_to_listener(&self, listener: &Listener) {
+        if self.socket.pass_cred() {
+            listener.set_pass_cred(true);
         }
     }
 }
@@ -151,7 +180,6 @@ impl UnixStreamSocket {
 
     pub fn new_pair(is_nonblocking: bool, is_seqpacket: bool) -> (Arc<Self>, Arc<Self>) {
         let cred = SocketCred::<ReadDupOp>::new_current();
-        let options = OptionSet::new();
 
         let (conn_a, conn_b) = Connected::new_pair(
             None,
@@ -160,10 +188,9 @@ impl UnixStreamSocket {
             EndpointState::default(),
             cred.dup().restrict(),
             cred.restrict(),
-            &options.socket,
         );
         (
-            Self::new_connected(conn_a, options, is_nonblocking, is_seqpacket),
+            Self::new_connected(conn_a, OptionSet::new(), is_nonblocking, is_seqpacket),
             Self::new_connected(conn_b, OptionSet::new(), is_nonblocking, is_seqpacket),
         )
     }
@@ -214,7 +241,6 @@ impl UnixStreamSocket {
 
     fn try_connect(&self, backlog: &Arc<Backlog>) -> Result<()> {
         let mut state = self.state.write();
-        let options = self.options.read();
 
         state.borrow_result(|owned_state| {
             let init = match owned_state {
@@ -242,7 +268,7 @@ impl UnixStreamSocket {
             let connected = match backlog.push_incoming(
                 init,
                 self.pollee.clone(),
-                &options.socket,
+                &self.options.read(),
                 self.is_seqpacket,
             ) {
                 Ok(connected) => connected,
@@ -343,6 +369,7 @@ impl Socket for UnixStreamSocket {
                     return (State::Init(init), Err(err));
                 }
             };
+            self.options.read().apply_to_listener(&listener);
 
             (State::Listen(listener), Ok(()))
         })
