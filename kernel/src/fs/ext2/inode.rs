@@ -7,7 +7,10 @@ use alloc::{borrow::ToOwned, rc::Rc};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use inherit_methods_macro::inherit_methods;
-use ostd::{const_assert, mm::io_util::HasVmReaderWriter};
+use ostd::{
+    const_assert,
+    mm::{HasSize, io_util::HasVmReaderWriter},
+};
 
 use super::{
     block_ptr::{BID_SIZE, BidPath, BlockPtrs, Ext2Bid, MAX_BLOCK_PTRS},
@@ -1861,6 +1864,10 @@ struct InodeBlockManager {
 
 impl InodeBlockManager {
     /// Reads one or multiple blocks to the segment start from `bid` asynchronously.
+    ///
+    /// This method handles sparse blocks by filling them with zeros directly,
+    /// and only initiates I/O for non-sparse blocks.
+    /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/fs/iomap/direct-io.c#L505>
     pub fn read_blocks_async(
         &self,
         bid: Ext2Bid,
@@ -1869,16 +1876,41 @@ impl InodeBlockManager {
     ) -> Result<BioWaiter> {
         debug_assert!(nblocks * BLOCK_SIZE <= writer.avail());
         let mut bio_waiter = BioWaiter::new();
+        let mut range_reader = DeviceRangeReader::new(self, bid..bid + nblocks as Ext2Bid)?;
+        let mut current_logical_idx = 0usize;
+        let start_bid = bid;
 
-        for dev_range in DeviceRangeReader::new(self, bid..bid + nblocks as Ext2Bid)? {
+        loop {
+            let pos_before = range_reader.pos();
+            let dev_range = match range_reader.read() {
+                Ok(Some(range)) => range,
+                Ok(None) => {
+                    // All remaining logical blocks are sparse (hole).
+                    let remaining = nblocks - current_logical_idx;
+                    writer.fill_zeros(remaining * BLOCK_SIZE)?;
+                    break;
+                }
+                Err(_) => return Err(Error::new(Errno::EIO)),
+            };
+
+            let range_logical_start = (pos_before - start_bid) as usize;
+
+            // Fill zeros for sparse blocks before this range.
+            while current_logical_idx < range_logical_start {
+                writer.fill_zeros(BLOCK_SIZE)?;
+                current_logical_idx += 1;
+            }
+
+            // Initiate async read for this non-sparse range.
             let start_bid = dev_range.start as Ext2Bid;
             let range_nblocks = dev_range.len();
-
             let bio_segment = BioSegment::alloc(range_nblocks, BioDirection::FromDevice);
             bio_segment.reader().unwrap().read_fallible(writer)?;
 
             let waiter = self.fs().read_blocks_async(start_bid, bio_segment)?;
             bio_waiter.concat(waiter);
+
+            current_logical_idx += range_nblocks;
         }
 
         Ok(bio_waiter)
@@ -1891,8 +1923,13 @@ impl InodeBlockManager {
         }
     }
 
+    /// Reads one block to the frame start from `bid` asynchronously.
+    ///
+    /// This method handles sparse block by filling it with zeros directly.
+    /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/fs/iomap/buffered-io.c#L389>
     pub fn read_block_async(&self, bid: Ext2Bid, frame: &CachePage) -> Result<BioWaiter> {
         let mut bio_waiter = BioWaiter::new();
+        let mut is_hole = true;
 
         for dev_range in DeviceRangeReader::new(self, bid..bid + 1 as Ext2Bid)? {
             let start_bid = dev_range.start as Ext2Bid;
@@ -1904,6 +1941,11 @@ impl InodeBlockManager {
             );
             let waiter = self.fs().read_blocks_async(start_bid, bio_segment)?;
             bio_waiter.concat(waiter);
+            is_hole = false;
+        }
+
+        if is_hole {
+            frame.writer().fill_zeros(frame.size());
         }
 
         Ok(bio_waiter)
@@ -2012,6 +2054,11 @@ impl<'a> DeviceRangeReader<'a> {
         };
         reader.update_indirect_block()?;
         Ok(reader)
+    }
+
+    /// Gets the current logical block position.
+    pub fn pos(&self) -> Ext2Bid {
+        self.range.start
     }
 
     /// Reads the corresponding device block IDs for a specified range.
