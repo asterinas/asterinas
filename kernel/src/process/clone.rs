@@ -391,7 +391,7 @@ fn clone_child_task(
 
         let mut thread_builder =
             PosixThreadBuilder::new(child_tid, thread_name, child_user_ctx, credentials)
-                .process(posix_thread.weak_process())
+                .process(posix_thread.weak_process().clone())
                 .sig_mask(sig_mask)
                 .file_table(child_file_table)
                 .fs(child_fs)
