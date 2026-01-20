@@ -2,12 +2,18 @@
 
 use super::TidDirOps;
 use crate::{
+    events::IoEvents,
     fs::{
-        procfs::template::{FileOps, ProcFileBuilder},
-        utils::{Inode, mkmod},
+        inode_handle::FileIo,
+        procfs::template::{FileOpsByHandle, ProcFileBuilder},
+        utils::{AccessMode, Inode, InodeIo, StatusFlags, mkmod},
     },
     prelude::*,
-    process::Process,
+    process::{
+        Process, VmarSnapshot,
+        posix_thread::{AsPosixThread, alien_access::AlienAccessMode},
+        signal::{PollHandle, Pollable},
+    },
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/mem` (and also `/proc/[pid]/mem`).
@@ -24,12 +30,57 @@ impl MemFileOps {
     }
 }
 
-impl FileOps for MemFileOps {
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+impl FileOpsByHandle for MemFileOps {
+    fn open(
+        &self,
+        _access_mode: AccessMode,
+        _status_flags: StatusFlags,
+    ) -> Result<Box<dyn FileIo>> {
+        // Hold the process VMAR lock while checking access permissions and
+        // taking the VMAR identity snapshot to prevent race conditions.
         let vmar_guard = self.0.lock_vmar();
+
+        self.0
+            .main_thread()
+            .as_posix_thread()
+            .unwrap()
+            .check_alien_access_from(
+                current_thread!().as_posix_thread().unwrap(),
+                AlienAccessMode::ATTACH_WITH_FS_CREDS,
+            )?;
+
+        let vmar = vmar_guard.snapshot();
+        Ok(Box::new(MemFileHandle(self.0.clone(), vmar)))
+    }
+}
+
+/// A file handle opened from `/proc/[pid]/task/[tid]/mem` (and also `/proc/[pid]/mem`).
+struct MemFileHandle(Arc<Process>, VmarSnapshot);
+
+impl Pollable for MemFileHandle {
+    fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
+        let events = IoEvents::IN | IoEvents::OUT;
+        events & mask
+    }
+}
+
+impl InodeIo for MemFileHandle {
+    fn read_at(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        let vmar_guard = self.0.lock_vmar();
+        if !vmar_guard.is_same_as(&self.1) {
+            // The process has executed a new program.
+            return Ok(0);
+        }
         let Some(vmar) = vmar_guard.as_ref() else {
-            return_errno_with_message!(Errno::ESRCH, "the process has exited");
+            // The process has exited.
+            return Ok(0);
         };
+
         match vmar.read_remote(offset, writer) {
             Ok(bytes) => Ok(bytes),
             Err((_, 0)) => Err(Error::new(Errno::EIO)),
@@ -37,15 +88,36 @@ impl FileOps for MemFileOps {
         }
     }
 
-    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+    fn write_at(
+        &self,
+        offset: usize,
+        reader: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
         let vmar_guard = self.0.lock_vmar();
+        if !vmar_guard.is_same_as(&self.1) {
+            // The process has executed a new program.
+            return Ok(0);
+        }
         let Some(vmar) = vmar_guard.as_ref() else {
-            return_errno_with_message!(Errno::ESRCH, "the process has exited");
+            // The process has exited.
+            return Ok(0);
         };
+
         match vmar.write_remote(offset, reader) {
             Ok(bytes) => Ok(bytes),
             Err((_, 0)) => Err(Error::new(Errno::EIO)),
             Err((_, bytes)) => Ok(bytes),
         }
+    }
+}
+
+impl FileIo for MemFileHandle {
+    fn check_seekable(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn is_offset_aware(&self) -> bool {
+        true
     }
 }

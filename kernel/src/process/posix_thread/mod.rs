@@ -25,6 +25,7 @@ use crate::{
     time::{Timer, TimerManager, clocks::ProfClock, timer::TimerGuard},
 };
 
+pub mod alien_access;
 mod builder;
 mod exit;
 pub mod futex;
@@ -97,8 +98,8 @@ impl PosixThread {
         self.process.upgrade().unwrap()
     }
 
-    pub fn weak_process(&self) -> Weak<Process> {
-        Weak::clone(&self.process)
+    pub fn weak_process(&self) -> &Weak<Process> {
+        &self.process
     }
 
     /// Returns the thread id

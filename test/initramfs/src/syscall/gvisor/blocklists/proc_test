@@ -11,7 +11,7 @@ ProcPid.AccessDeny
 ProcPidCwd.Subprocess
 ProcPidRoot.Subprocess
 ProcPidEnviron.MatchesEnviron
-ProcPidMem.AfterExit
+# TODO: Support `ptrace`.
 ProcPidMem.DifferentUserAttached
 ProcPidFile.SubprocessRunning
 ProcPidFile.SubprocessZombie
