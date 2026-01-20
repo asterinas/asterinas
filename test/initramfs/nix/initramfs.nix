@@ -1,6 +1,7 @@
-{ lib, stdenvNoCC, fetchFromGitHub, hostPlatform, writeClosure, busybox, apps
-, benchmark, syscall, dnsServer, pkgs }:
+{ lib, stdenvNoCC, fetchFromGitHub, hostPlatform, writeClosure, busybox
+, benchmark, custom, syscall, dnsServer, pkgs }:
 let
+  boot_hello = builtins.path { path = ./../src/boot_hello.sh; };
   etc = lib.fileset.toSource {
     root = ./../src/etc;
     fileset = ./../src/etc;
@@ -16,8 +17,8 @@ let
   # Whether the initramfs should include evtest, a common tool to debug input devices (`/dev/input/eventX`)
   is_evtest_included = false;
   all_pkgs = [ busybox etc resolv_conf ]
-    ++ lib.optionals (apps != null) [ apps.package ]
     ++ lib.optionals (benchmark != null) [ benchmark.package ]
+    ++ lib.optionals (custom != null) [ custom.package ]
     ++ lib.optionals (syscall != null) [ syscall.package ]
     ++ lib.optionals is_evtest_included [ pkgs.evtest ];
 in stdenvNoCC.mkDerivation {
@@ -37,14 +38,16 @@ in stdenvNoCC.mkDerivation {
 
     cp -r ${etc}/* $out/etc/
 
-    cp ${resolv_conf}/resolv.conf $out/etc/
+    cp ${boot_hello} $out/test/boot_hello.sh
 
-    ${lib.optionalString (apps != null) ''
-      cp -r ${apps.package}/* $out/test/
-    ''}
+    cp ${resolv_conf}/resolv.conf $out/etc/
 
     ${lib.optionalString (benchmark != null) ''
       cp -r "${benchmark.package}"/* $out/benchmark/
+    ''}
+
+    ${lib.optionalString (custom != null) ''
+      cp -r ${custom.package}/* $out/test/
     ''}
 
     ${lib.optionalString (syscall != null) ''

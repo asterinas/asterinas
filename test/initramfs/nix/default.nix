@@ -1,7 +1,7 @@
-{ target ? "x86_64", enableBasicTest ? false, basicTestPlatform ? "asterinas"
+{ target ? "x86_64", testPlatform ? "asterinas", enableCustomTest ? false
 , enableBenchmark ? false, enableSyscallTest ? false, syscallTestSuite ? "ltp"
 , syscallTestWorkDir ? "/tmp", dnsServer ? "none", smp ? 1
-, initramfsCompressed ? true, }:
+, initramfsCompressed ? true, intelTdx ? 0, }:
 let
   crossSystem.config = if target == "x86_64" then
     "x86_64-unknown-linux-gnu"
@@ -23,9 +23,9 @@ let
   };
 in rec {
   # Packages needed by initramfs
-  apps = pkgs.callPackage ./apps.nix { testPlatform = basicTestPlatform; };
   busybox = pkgs.busybox;
   benchmark = pkgs.callPackage ./benchmark { };
+  custom = pkgs.callPackage ./custom { inherit testPlatform intelTdx; };
   syscall = pkgs.callPackage ./syscall {
     inherit smp;
     testSuite = syscallTestSuite;
@@ -33,8 +33,8 @@ in rec {
   };
   initramfs = pkgs.callPackage ./initramfs.nix {
     inherit busybox;
-    apps = if enableBasicTest then apps else null;
     benchmark = if enableBenchmark then benchmark else null;
+    custom = if enableCustomTest then custom else null;
     syscall = if enableSyscallTest then syscall else null;
     dnsServer = dnsServer;
   };
