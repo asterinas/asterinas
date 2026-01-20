@@ -6,9 +6,12 @@ use inherit_methods_macro::inherit_methods;
 
 use super::{Common, ProcFs};
 use crate::{
-    fs::utils::{
-        Extension, FileSystem, Inode, InodeIo, InodeMode, InodeType, Metadata, StatusFlags,
-        SymbolicLink,
+    fs::{
+        inode_handle::FileIo,
+        utils::{
+            AccessMode, Extension, FileSystem, Inode, InodeIo, InodeMode, InodeType, Metadata,
+            StatusFlags, SymbolicLink,
+        },
     },
     prelude::*,
     process::{Gid, Uid},
@@ -108,6 +111,14 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
         // Seeking regular files under `/proc` with `SEEK_END` will fail.
         None
     }
+
+    fn open(
+        &self,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Option<Result<Box<dyn FileIo>>> {
+        self.inner.open(access_mode, status_flags)
+    }
 }
 
 pub trait FileOps: Sync + Send {
@@ -115,5 +126,39 @@ pub trait FileOps: Sync + Send {
 
     fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
         return_errno_with_message!(Errno::EPERM, "the file is not writable");
+    }
+
+    fn open(
+        &self,
+        _access_mode: AccessMode,
+        _status_flags: StatusFlags,
+    ) -> Option<Result<Box<dyn FileIo>>> {
+        None
+    }
+}
+
+pub trait FileOpsByHandle: Sync + Send {
+    fn open(
+        &self,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Option<Result<Box<dyn FileIo>>>;
+}
+
+impl<T: FileOpsByHandle> FileOps for T {
+    fn read_at(&self, _offset: usize, _writer: &mut VmWriter) -> Result<usize> {
+        unreachable!("should read via opened file handle")
+    }
+
+    fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
+        unreachable!("should write via opened file handle")
+    }
+
+    fn open(
+        &self,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Option<Result<Box<dyn FileIo>>> {
+        self.open(access_mode, status_flags)
     }
 }

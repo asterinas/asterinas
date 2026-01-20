@@ -30,6 +30,7 @@ mod exit;
 pub mod futex;
 mod name;
 mod posix_thread_ext;
+pub mod ptrace;
 mod robust_list;
 mod thread_local;
 pub mod thread_table;
@@ -97,8 +98,8 @@ impl PosixThread {
         self.process.upgrade().unwrap()
     }
 
-    pub fn weak_process(&self) -> Weak<Process> {
-        Weak::clone(&self.process)
+    pub fn weak_process(&self) -> &Weak<Process> {
+        &self.process
     }
 
     /// Returns the thread id
