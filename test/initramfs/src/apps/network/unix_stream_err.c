@@ -114,4 +114,87 @@ FN_TEST(scm_rights)
 }
 END_TEST()
 
+#define MAKE_SOCKOPTION_INHERIT_TEST(before_listen, after_listen,           \
+				     after_connect, after_accept)           \
+	int sk2_listen, sk2_connected, sk2_accepted;                        \
+                                                                            \
+	sk2_listen = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));            \
+	TEST_SUCC(bind(sk2_listen, &UNIX_ADDR("\0abcd"), PATH_OFFSET + 5)); \
+                                                                            \
+	before_listen;                                                      \
+                                                                            \
+	TEST_SUCC(listen(sk2_listen, 0));                                   \
+                                                                            \
+	after_listen;                                                       \
+                                                                            \
+	sk2_connected = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));         \
+	TEST_SUCC(connect(sk2_connected, &UNIX_ADDR("\0abcd"),              \
+			  PATH_OFFSET + 5));                                \
+                                                                            \
+	after_connect;                                                      \
+                                                                            \
+	sk2_accepted = TEST_SUCC(accept(sk2_listen, NULL, NULL));           \
+                                                                            \
+	after_accept;                                                       \
+                                                                            \
+	TEST_SUCC(close(sk2_listen));                                       \
+	TEST_SUCC(close(sk2_connected));                                    \
+	TEST_SUCC(close(sk2_accepted));
+
+static int val;
+static socklen_t val_len = sizeof(val);
+static const int one = 1;
+static const int zero = 0;
+
+FN_TEST(passcred_in_listen_wont_inherit)
+{
+	MAKE_SOCKOPTION_INHERIT_TEST(
+		/* before_listen */
+		TEST_SUCC(setsockopt(sk2_listen, SOL_SOCKET, SO_PASSCRED, &one,
+				     sizeof(one))),
+		/* after_listen */
+		TEST_SUCC(setsockopt(sk2_listen, SOL_SOCKET, SO_PASSCRED, &zero,
+				     sizeof(zero))),
+		/* after_connect */,
+		/* after_accept */
+		TEST_RES(getsockopt(sk2_accepted, SOL_SOCKET, SO_PASSCRED, &val,
+				    &val_len),
+			 val_len == sizeof(val) && val == 0));
+}
+END_TEST()
+
+FN_TEST(passcred_in_connect_will_inherit)
+{
+	MAKE_SOCKOPTION_INHERIT_TEST(
+		/* before_listen */,
+		/* after_listen */
+		TEST_SUCC(setsockopt(sk2_listen, SOL_SOCKET, SO_PASSCRED, &one,
+				     sizeof(one))),
+		/* after_connect */
+		TEST_SUCC(setsockopt(sk2_listen, SOL_SOCKET, SO_PASSCRED, &zero,
+				     sizeof(zero))),
+		/* after_accept */
+		TEST_RES(getsockopt(sk2_accepted, SOL_SOCKET, SO_PASSCRED, &val,
+				    &val_len),
+			 val_len == sizeof(val) && val == 1));
+}
+END_TEST()
+
+FN_TEST(passcred_in_accept_wont_inherit)
+{
+	MAKE_SOCKOPTION_INHERIT_TEST(
+		/* before_listen */,
+		/* after_listen */,
+		/* after_connect */
+		TEST_SUCC(setsockopt(sk2_listen, SOL_SOCKET, SO_PASSCRED, &one,
+				     sizeof(one))),
+		/* after_accept */
+		TEST_RES(getsockopt(sk2_accepted, SOL_SOCKET, SO_PASSCRED, &val,
+				    &val_len),
+			 val_len == sizeof(val) && val == 0));
+}
+END_TEST()
+
+#undef MAKE_SOCKOPTION_INHERIT_TEST
+
 #include "unix_streamlike_epilogue.h"

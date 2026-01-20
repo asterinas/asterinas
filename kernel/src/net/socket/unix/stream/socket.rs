@@ -553,7 +553,7 @@ impl SetSocketLevelOption for State {
                 // automatically." See <https://man7.org/linux/man-pages/man7/unix.7.html> for
                 // details.
             }
-            Self::Listen(_) => {}
+            Self::Listen(listener) => listener.set_pass_cred(pass_cred),
             Self::Connected(connected) => connected.set_pass_cred(pass_cred),
         }
     }
