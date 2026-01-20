@@ -183,6 +183,13 @@ impl<'a> ProcessVmarGuard<'a> {
         self.inner.as_ref().map(|v| &**v)
     }
 
+    /// Returns a weak reference to the process VMAR if it exists.
+    ///
+    /// Returns an empty `Weak` if the process has exited and its VMAR has been dropped.
+    pub fn as_weak(&self) -> Weak<Vmar> {
+        self.inner.as_ref().map(Arc::downgrade).unwrap_or_default()
+    }
+
     /// Sets a new VMAR for the binding process.
     ///
     /// If the `new_vmar` is `None`, this method will remove the
