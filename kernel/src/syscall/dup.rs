@@ -56,12 +56,12 @@ fn do_dup3(
         return_errno!(Errno::EINVAL);
     }
 
-    if new_fd
+    if new_fd.cast_unsigned() as u64
         >= ctx
             .process
             .resource_limits()
             .get_rlimit(ResourceType::RLIMIT_NOFILE)
-            .get_cur() as FileDesc
+            .get_cur()
     {
         return_errno!(Errno::EBADF);
     }
