@@ -155,8 +155,13 @@ fn do_execve_no_return(
     wait_other_threads_exit(ctx)?;
     thread_table::make_current_main_thread(ctx);
 
-    // Activate the new VMAR, where the ELF has been loaded, in the current context.
-    activate_vmar(ctx, new_vmar);
+    // Activate the new VMAR in the current context and apply file-capability changes,
+    // while holding the process VMAR lock.
+    // This prevents race conditions when checking access permissions while opening
+    // `/proc/[pid]/mem` or `/proc/[pid]/maps`.
+    let vmar_guard = activate_vmar(ctx, new_vmar);
+    apply_caps_from_exec(process, posix_thread, elf_file.inode())?;
+    drop(vmar_guard);
 
     // After the program has been successfully loaded, the virtual memory of the current process
     // is initialized. Hence, it is necessary to clear the previously recorded robust list.
@@ -165,9 +170,6 @@ fn do_execve_no_return(
 
     // Set up the CPU context.
     set_cpu_context(thread_local, user_context, elf_load_info);
-
-    // Apply file-capability changes.
-    apply_caps_from_exec(process, posix_thread, elf_file.inode())?;
 
     // If this was a vfork child, reset vfork-specific state.
     reset_vfork_child(process);

@@ -157,6 +157,15 @@ pub struct ProcessVmarGuard<'a> {
     inner: MutexGuard<'a, Option<Arc<Vmar>>>,
 }
 
+/// A snapshot of the process VMAR identity.
+///
+/// This type is used only for identity comparison.
+//
+// NOTE: Upgrading the `Weak<Vmar>` in the snapshot is not permitted,
+// as this will cause the `Vmar` to be dropped in the wrong context,
+// and break the reference count used in `CurrentUserSpace::is_vmar_shared`.
+pub struct VmarSnapshot(Weak<Vmar>);
+
 impl<'a> ProcessVmarGuard<'a> {
     /// Creates a new VMAR guard from the mutex guard.
     ///
@@ -181,6 +190,18 @@ impl<'a> ProcessVmarGuard<'a> {
     /// Returns `None` if the process has exited and its VMAR has been dropped.
     pub fn as_ref(&self) -> Option<&Vmar> {
         self.inner.as_ref().map(|v| &**v)
+    }
+
+    /// Takes a snapshot of the current VMAR identity.
+    pub fn snapshot(&self) -> VmarSnapshot {
+        VmarSnapshot(self.inner.as_ref().map(Arc::downgrade).unwrap_or_default())
+    }
+
+    /// Returns whether the current VMAR has the same identity as the `snapshot`.
+    pub fn is_same_as(&self, snapshot: &VmarSnapshot) -> bool {
+        self.inner
+            .as_ref()
+            .is_some_and(|vmar| core::ptr::eq(Arc::as_ptr(vmar), Weak::as_ptr(&snapshot.0)))
     }
 
     /// Sets a new VMAR for the binding process.
@@ -210,7 +231,9 @@ impl<'a> ProcessVmarGuard<'a> {
 }
 
 /// Activates the [`Vmar`] in the current process's context.
-pub(super) fn activate_vmar(ctx: &Context, new_vmar: Arc<Vmar>) {
+///
+/// Returns a [`ProcessVmarGuard`] that keeps the process VMAR lock held.
+pub(super) fn activate_vmar<'a>(ctx: &'a Context<'a>, new_vmar: Arc<Vmar>) -> ProcessVmarGuard<'a> {
     let mut vmar_guard = ctx.process.lock_vmar();
     // Disable preemption because `thread_local::vmar()` will be borrowed during a context switch.
     let _preempt_guard = disable_preempt();
@@ -219,4 +242,6 @@ pub(super) fn activate_vmar(ctx: &Context, new_vmar: Arc<Vmar>) {
     new_vmar.vm_space().activate();
 
     vmar_guard.set_vmar(Some(new_vmar));
+
+    vmar_guard
 }
