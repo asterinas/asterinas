@@ -198,8 +198,29 @@ fn do_new_mount(
     if fs_type.is_empty() {
         return_errno_with_message!(Errno::EINVAL, "fs_type is empty");
     }
+
+    // Determine the source string based on filesystem type
+    let fs_type_str = fs_type
+        .to_str()
+        .map_err(|_| Error::with_message(Errno::ENODEV, "invalid file system type"))?;
+    let fs_type_obj = crate::fs::registry::look_up(fs_type_str).ok_or(Error::with_message(
+        Errno::ENODEV,
+        "the filesystem is not configured in the kernel",
+    ))?;
+
+    let source = if fs_type_obj.properties().contains(FsProperties::NEED_DISK) {
+        // Block device filesystem: use device path
+        ctx.user_space()
+            .read_cstring(src_name_addr, MAX_FILENAME_LEN)?
+            .to_string_lossy()
+            .into_owned()
+    } else {
+        // Virtual filesystem: use filesystem type name
+        fs_type_str.to_string()
+    };
+
     let fs = get_fs(src_name_addr, flags, fs_type, data_addr, ctx)?;
-    target_path.mount(fs, flags.into(), ctx)?;
+    target_path.mount(fs, flags.into(), source, ctx)?;
     Ok(())
 }
 

@@ -203,6 +203,7 @@ impl Path {
         &self,
         fs: Arc<dyn FileSystem>,
         flags: PerMountFlags,
+        source: String,
         ctx: &Context,
     ) -> Result<Arc<Mount>> {
         if self.type_() != InodeType::Dir {
@@ -222,7 +223,7 @@ impl Path {
             return_errno_with_message!(Errno::EINVAL, "the path is not in this mount namespace");
         }
 
-        let child_mount = self.mount.do_mount(fs, flags, &self.dentry)?;
+        let child_mount = self.mount.do_mount(fs, flags, &self.dentry, source)?;
 
         Ok(child_mount)
     }
