@@ -6,7 +6,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         path::{AT_FDCWD, FsPath, MountPropType, Path, PerMountFlags},
-        registry::FsProperties,
+        registry::{FsProperties, FsType},
         utils::{FileSystem, FsFlags, InodeType},
     },
     prelude::*,
@@ -198,16 +198,37 @@ fn do_new_mount(
     if fs_type.is_empty() {
         return_errno_with_message!(Errno::EINVAL, "fs_type is empty");
     }
-    let fs = get_fs(src_name_addr, flags, fs_type, data_addr, ctx)?;
-    target_path.mount(fs, flags.into(), ctx)?;
+
+    // Determine the source string based on filesystem type
+    let fs_type_str = fs_type
+        .to_str()
+        .map_err(|_| Error::with_message(Errno::ENODEV, "invalid file system type"))?;
+    let fs_type = crate::fs::registry::look_up(fs_type_str).ok_or(Error::with_message(
+        Errno::ENODEV,
+        "the filesystem is not configured in the kernel",
+    ))?;
+
+    let source = if src_name_addr == 0 {
+        None
+    } else {
+        let s = ctx
+            .user_space()
+            .read_cstring(src_name_addr, MAX_FILENAME_LEN)?
+            .to_string_lossy()
+            .into_owned();
+        Some(s)
+    };
+
+    let fs = get_fs(source.as_deref(), flags, fs_type, data_addr, ctx)?;
+    target_path.mount(fs, flags.into(), source, ctx)?;
     Ok(())
 }
 
 /// Gets the filesystem by fs_type and devname.
 fn get_fs(
-    src_name_addr: Vaddr,
+    devname: Option<&str>,
     flags: MountFlags,
-    fs_type: CString,
+    fs_type: &dyn FsType,
     data_addr: Vaddr,
     ctx: &Context,
 ) -> Result<Arc<dyn FileSystem>> {
@@ -218,18 +239,10 @@ fn get_fs(
         Some(user_space.read_cstring(data_addr, MAX_FILENAME_LEN)?)
     };
 
-    let fs_type = fs_type
-        .to_str()
-        .map_err(|_| Error::with_message(Errno::ENODEV, "invalid file system type"))?;
-    let fs_type = crate::fs::registry::look_up(fs_type).ok_or(Error::with_message(
-        Errno::ENODEV,
-        "the filesystem is not configured in the kernel",
-    ))?;
-
     let disk = if fs_type.properties().contains(FsProperties::NEED_DISK) {
-        let devname = user_space.read_cstring(src_name_addr, MAX_FILENAME_LEN)?;
-        let path = devname.to_string_lossy();
-        let fs_path = FsPath::from_fd_and_path(AT_FDCWD, path.as_ref())?;
+        let devname =
+            devname.ok_or_else(|| Error::with_message(Errno::EINVAL, "No source specified"))?;
+        let fs_path = FsPath::from_fd_and_path(AT_FDCWD, devname)?;
         let path = ctx
             .thread_local
             .borrow_fs()
