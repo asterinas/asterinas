@@ -47,7 +47,7 @@ pub fn sys_timer_create(
             let process = current_process.clone();
             let signal = KernelSignal::new(SIGALRM);
             Box::new(move || {
-                process.enqueue_signal(signal);
+                process.enqueue_signal(Box::new(signal));
             })
         // Determine the timeout action through `sigevent`.
         } else {
@@ -62,7 +62,7 @@ pub fn sys_timer_create(
                     let process = current_process.clone();
                     let signal = KernelSignal::new(SigNum::try_from(signo as u8)?);
                     Box::new(move || {
-                        process.enqueue_signal(signal);
+                        process.enqueue_signal(Box::new(signal));
                     })
                 }
                 // Spawn a posix thread to run the `sigev_function`, which is stored in
