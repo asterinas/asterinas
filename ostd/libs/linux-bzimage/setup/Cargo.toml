@@ -24,7 +24,7 @@ xmas-elf.workspace = true
 [target.x86_64-unknown-none.dependencies]
 uefi = { version = "0.32.0", features = ["global_allocator", "panic_handler", "logger", "qemu"]}
 uefi-raw = "0.8.0"
-tdx-guest = { version = "0.2.2", optional = true }
+tdx-guest = { version = "0.2.4", optional = true }
 
 [features]
 default = ["cvm_guest"]

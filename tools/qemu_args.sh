@@ -70,6 +70,7 @@ if [ "$1" = "tdx" ]; then
         -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
         -monitor chardev:mux \
         -serial chardev:mux \
+        -d guest_errors \
     "
     echo $QEMU_ARGS
     exit 0

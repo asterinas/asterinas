@@ -27,7 +27,7 @@ ostd.workspace = true
 typeflags-util.workspace = true
 
 [target.x86_64-unknown-none.dependencies]
-tdx-guest = { version = "0.2.2", optional = true }
+tdx-guest = { version = "0.2.4", optional = true }
 
 [features]
 all = ["cvm_guest"]

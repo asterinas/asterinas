@@ -22,13 +22,30 @@ pub(crate) mod tdx_guest;
 #[cfg(feature = "cvm_guest")]
 pub(crate) fn init_cvm_guest() {
     use ::tdx_guest::{
-        disable_sept_ve, init_tdx, metadata, reduce_unnecessary_ve,
+        SeptVeError, disable_sept_ve, init_tdx, metadata, reduce_unnecessary_ve,
         tdcall::{InitError, write_td_metadata},
+        tdvmcall::report_fatal_error_simple,
     };
     match init_tdx() {
         Ok(td_info) => {
             reduce_unnecessary_ve().unwrap();
-            disable_sept_ve(td_info.attributes).unwrap();
+            match disable_sept_ve(td_info.attributes) {
+                Ok(_) => {}
+                Err(SeptVeError::Misconfiguration) => {
+                    crate::early_println!(
+                        "[kernel] Error: TD misconfiguration: \
+                        The SEPT_VE_DISABLE bit of the TD attributes must be set by VMM \
+                        when running in non-debug mode and FLEXIBLE_PENDING_VE is not enabled."
+                    );
+                    report_fatal_error_simple("TD misconfiguration: SEPT #VE has to be disabled");
+                }
+                Err(e) => {
+                    crate::early_println!("[kernel] Error: Unexpected TDX error: {:?}", e);
+                    report_fatal_error_simple(
+                        "Disabling SEPT #VE failed due to unexpected TDX error",
+                    );
+                }
+            }
             // Enable notification for zero step attack detection.
             write_td_metadata(metadata::NOTIFY_ENABLES, 1, 1).unwrap();
 
@@ -39,10 +56,11 @@ pub(crate) fn init_cvm_guest() {
             );
         }
         Err(InitError::TdxGetVpInfoError(td_call_error)) => {
-            panic!(
-                "[kernel] Intel TDX not initialized, Failed to get TD info: {:?}",
+            crate::early_println!(
+                "[kernel] Intel TDX not initialized, Failed to get TD info. TD call error: {:?}",
                 td_call_error
             );
+            report_fatal_error_simple("Intel TDX not initialized, Failed to get TD info.");
         }
         // The machine has no TDX support.
         Err(_) => {}
