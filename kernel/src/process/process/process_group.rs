@@ -66,7 +66,7 @@ impl ProcessGroup {
     // TODO: Do some checks to forbid user signals.
     pub fn broadcast_signal(&self, signal: impl Signal + Clone + 'static) {
         for process in self.inner.lock().processes.values() {
-            process.enqueue_signal(signal.clone());
+            process.enqueue_signal(Box::new(signal.clone()));
         }
     }
 }

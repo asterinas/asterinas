@@ -7,7 +7,10 @@ use crate::{
         ProcessFilter, kill, kill_all, kill_group,
         signal::{
             sig_num::SigNum,
-            signals::user::{UserSignal, UserSignalKind},
+            signals::{
+                Signal,
+                user::{UserSignal, UserSignalKind},
+            },
         },
     },
 };
@@ -36,7 +39,9 @@ pub fn do_sys_kill(filter: ProcessFilter, sig_num: Option<SigNum>, ctx: &Context
 
     match filter {
         ProcessFilter::Any => kill_all(signal, ctx)?,
-        ProcessFilter::WithPid(pid) => kill(pid, signal, ctx)?,
+        ProcessFilter::WithPid(pid) => {
+            kill(pid, signal.map(|s| Box::new(s) as Box<dyn Signal>), ctx)?
+        }
         ProcessFilter::WithPgid(pgid) => kill_group(pgid, signal, ctx)?,
         ProcessFilter::WithPidfd(_) => unreachable!(),
     }
