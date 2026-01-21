@@ -23,6 +23,8 @@ NO_DEFAULT_FEATURES ?= 0
 COVERAGE ?= 0
 # Specify whether to build regression tests under `test/initramfs/src/apps`.
 ENABLE_BASIC_TEST ?= false
+# Specify whether to build xfstests.
+ENABLE_XFSTESTS ?= false
 # Specify the primary system console (supported: tty0, ttyS0, hvc0).
 # - tty0: The active virtual terminal (VT).
 # - ttyS0: The serial (UART) terminal.
@@ -310,7 +312,7 @@ run_kernel: initramfs $(CARGO_OSDK)
 	@cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS)
 # Check the running status of auto tests from the QEMU log
 ifeq ($(AUTO_TEST), syscall)
-	@tail --lines 100 qemu.log | grep -q "^All syscall tests passed." \
+	@tail --lines 100 qemu.log | grep -q "^All  tests passed." \
 		|| (echo "Syscall test failed" && exit 1)
 else ifeq ($(AUTO_TEST), test)
 	@tail --lines 100 qemu.log | grep -q "^All general tests passed." \
