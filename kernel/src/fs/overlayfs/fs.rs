@@ -1184,12 +1184,8 @@ impl FsType for OverlayFsType {
         let upper = path_resolver.lookup(&FsPath::try_from(upper)?)?;
         let lower = lower
             .iter()
-            .map(|&lower| {
-                path_resolver
-                    .lookup(&FsPath::try_from(lower).unwrap())
-                    .unwrap()
-            })
-            .collect();
+            .map(|&lower| path_resolver.lookup(&FsPath::try_from(lower)?))
+            .collect::<Result<Vec<_>>>()?;
         let work = path_resolver.lookup(&FsPath::try_from(work)?)?;
 
         OverlayFs::new(upper, lower, work).map(|fs| fs as _)
