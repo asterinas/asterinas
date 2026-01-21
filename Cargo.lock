@@ -1772,12 +1772,13 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "tdx-guest"
-version = "0.2.2"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15fda2de9c0a2fdcc22e802af4f7f1e8f609a206f34d30986e3cd974b04911f0"
+checksum = "be70e62fdd829b19d5e1e03969f125391347e4e33d1419addfe59a45b043005d"
 dependencies = [
  "bitflags 1.3.2",
  "iced-x86",
+ "log",
  "raw-cpuid",
  "x86_64",
 ]
