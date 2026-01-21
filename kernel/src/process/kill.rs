@@ -4,11 +4,7 @@ use super::{
     Pgid, Pid, Process,
     posix_thread::{AsPosixThread, thread_table},
     process_table,
-    signal::{
-        constants::SIGCONT,
-        sig_num::SigNum,
-        signals::{Signal, user::UserSignal},
-    },
+    signal::{constants::SIGCONT, sig_num::SigNum, signals::Signal},
 };
 use crate::{
     prelude::*,
@@ -23,8 +19,8 @@ use crate::{
 ///
 /// If `signal` is `None`, this method will only check permission without sending
 /// any signal.
-pub fn kill(pid: Pid, signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
-    // Fast path: If the signal is sent to self, we can skip most check.
+pub fn kill<S: Signal + Clone>(pid: Pid, signal: Option<S>, ctx: &Context) -> Result<()> {
+    // Fast path: If the signal is sent to self, we can skip most checks.
     if pid == ctx.process.pid() {
         let Some(signal) = signal else {
             return Ok(());
@@ -40,7 +36,6 @@ pub fn kill(pid: Pid, signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
     }
 
     // Slow path
-
     let process = process_table::get_process(pid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target process does not exist"))?;
 
@@ -55,7 +50,7 @@ pub fn kill(pid: Pid, signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
 ///
 /// If `signal` is `None`, this method will only check permission without sending
 /// any signal.
-pub fn kill_group(pgid: Pgid, signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
+pub fn kill_group<S: Signal + Clone>(pgid: Pgid, signal: Option<S>, ctx: &Context) -> Result<()> {
     let process_group = process_table::get_process_group(&pgid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target group does not exist"))?;
 
@@ -63,7 +58,7 @@ pub fn kill_group(pgid: Pgid, signal: Option<UserSignal>, ctx: &Context) -> Resu
 
     let inner = process_group.lock();
     for process in inner.iter() {
-        let res = kill_process(process, signal, ctx);
+        let res = kill_process(process, signal.clone(), ctx);
         if res.is_err_and(|err| err.error() != Errno::EPERM) {
             result = res;
         }
@@ -77,7 +72,12 @@ pub fn kill_group(pgid: Pgid, signal: Option<UserSignal>, ctx: &Context) -> Resu
 ///
 /// If `signal` is `None`, this method will only check permission without sending
 /// any signal.
-pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
+pub fn tgkill<S: Signal + Clone>(
+    tid: Tid,
+    tgid: Pid,
+    signal: Option<S>,
+    ctx: &Context,
+) -> Result<()> {
     let thread = thread_table::get_thread(tid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target thread does not exist"))?;
     let target_posix_thread = thread.as_posix_thread().unwrap();
@@ -92,7 +92,7 @@ pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<UserSignal>, ctx: &Context) ->
     }
 
     // Check permission
-    let signum = signal.map(|signal| signal.num());
+    let signum = signal.as_ref().map(|signal| signal.num());
     check_signal_perm(target_posix_thread, ctx, signum)?;
 
     if thread.is_exited() {
@@ -113,7 +113,7 @@ pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<UserSignal>, ctx: &Context) ->
 ///
 /// The credentials of the current process will be checked to determine
 /// if it is authorized to send the signal to the target group.
-pub fn kill_all(signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
+pub fn kill_all<S: Signal + Clone>(signal: Option<S>, ctx: &Context) -> Result<()> {
     let mut result = Ok(());
 
     for process in process_table::process_table_mut().iter() {
@@ -121,7 +121,7 @@ pub fn kill_all(signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
             continue;
         }
 
-        let res = kill_process(process, signal, ctx);
+        let res = kill_process(process, signal.clone(), ctx);
         if res.is_err_and(|err| err.error() != Errno::EPERM) {
             result = res;
         }
@@ -130,8 +130,12 @@ pub fn kill_all(signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
     result
 }
 
-fn kill_process(process: &Process, signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
-    let signum = signal.map(|signal| signal.num());
+fn kill_process<S: Signal + Clone>(
+    process: &Process,
+    signal: Option<S>,
+    ctx: &Context,
+) -> Result<()> {
+    let signum = signal.as_ref().map(|signal| signal.num());
     let target_main_thread = process.main_thread();
     check_signal_perm(target_main_thread.as_posix_thread().unwrap(), ctx, signum)?;
 
