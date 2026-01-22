@@ -4,7 +4,11 @@ use core::num::NonZeroUsize;
 
 use super::{MappedMemory, MappedVmo, RssDelta, VmMapping, Vmar};
 use crate::{
-    fs::{file_handle::Mappable, ramfs::memfd::MemfdInode},
+    fs::{
+        file_handle::{FileLike, Mappable},
+        path::Path,
+        ramfs::memfd::MemfdInode,
+    },
     prelude::*,
     vm::{perms::VmPerms, vmo::Vmo},
 };
@@ -50,6 +54,7 @@ pub struct VmarMapOptions<'a> {
     parent: &'a Vmar,
     vmo: Option<Arc<Vmo>>,
     mappable: Option<Mappable>,
+    path: Option<Path>,
     perms: VmPerms,
     may_perms: VmPerms,
     vmo_offset: usize,
@@ -71,6 +76,7 @@ impl<'a> VmarMapOptions<'a> {
             parent,
             vmo: None,
             mappable: None,
+            path: None,
             perms,
             may_perms: VmPerms::ALL_MAY_PERMS,
             vmo_offset: 0,
@@ -121,6 +127,19 @@ impl<'a> VmarMapOptions<'a> {
         }
         self.vmo = Some(vmo);
 
+        self
+    }
+
+    /// Sets the [`Path`] of the mapping.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if a [`Mappable`] is already provided.
+    pub fn path(mut self, path: Path) -> Self {
+        if self.mappable.is_some() {
+            panic!("Cannot set `path` when `mappable` is already set");
+        }
+        self.path = Some(path);
         self
     }
 
@@ -194,14 +213,24 @@ impl<'a> VmarMapOptions<'a> {
     ///
     /// # Panics
     ///
-    /// This function panics if a [`Vmo`] or [`Mappable`] is already provided.
-    pub fn mappable(mut self, mappable: Mappable) -> Self {
+    /// This function panics if a [`Vmo`], [`Path`] or [`Mappable`] is already provided.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error if the file does not have a corresponding
+    /// mappable object of [`crate::fs::file_handle::Mappable`].
+    pub fn mappable(mut self, file: &dyn FileLike) -> Result<Self> {
         if self.vmo.is_some() {
             panic!("Cannot set `mappable` when `vmo` is already set");
+        }
+        if self.path.is_some() {
+            panic!("Cannot set `mappable` when `path` is already set");
         }
         if self.mappable.is_some() {
             panic!("Cannot set `mappable` when `mappable` is already set");
         }
+
+        let mappable = file.mappable()?;
 
         // Verify whether the page cache inode is valid.
         if let Mappable::Inode(ref inode) = mappable {
@@ -209,8 +238,9 @@ impl<'a> VmarMapOptions<'a> {
         }
 
         self.mappable = Some(mappable);
+        self.path = Some(file.path().clone());
 
-        self
+        Ok(self)
     }
 
     /// Creates the mapping and adds it to the parent VMAR.
@@ -224,6 +254,7 @@ impl<'a> VmarMapOptions<'a> {
             parent,
             vmo,
             mappable,
+            path,
             perms,
             mut may_perms,
             vmo_offset,
@@ -321,6 +352,7 @@ impl<'a> VmarMapOptions<'a> {
             map_to_addr,
             mapped_mem,
             inode,
+            path,
             is_shared,
             handle_page_faults_around,
             perms | may_perms,
