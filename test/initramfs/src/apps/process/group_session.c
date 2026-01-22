@@ -138,11 +138,7 @@ END_TEST()
 
 FN_TEST(setsid_session_leader)
 {
-	// FIXME: We fail this test to work around a gVisor bug.
-	// See comments in `Process::to_new_session` for details.
-#ifndef __asterinas__
 	TEST_ERRNO(setsid(), EPERM);
-#endif
 }
 END_TEST()
 
