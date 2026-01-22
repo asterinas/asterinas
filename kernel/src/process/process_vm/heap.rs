@@ -75,11 +75,11 @@ impl Heap {
         Ok(())
     }
 
-    /// Returns the current heap end.
-    pub fn heap_end(&self) -> Vaddr {
+    /// Returns the current heap range.
+    pub fn heap_range(&self) -> Range<Vaddr> {
         let inner = self.inner.lock();
         let inner = inner.as_ref().expect("Heap is not initialized");
-        inner.heap_range.end
+        inner.heap_range.clone()
     }
 
     /// Modifies the end address of the heap.

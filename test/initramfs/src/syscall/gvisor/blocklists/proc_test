@@ -28,11 +28,9 @@ ProcSelfCwd.Absolute
 ProcSelfFd.OpenFd
 # TODO: Support `O_LARGEFILE` flag.
 ProcSelfFdInfo.Flags
-ProcSelfMaps.Basic
-ProcSelfMaps.Map1
+# TODO: Mappings created with only `PROT_WRITE` should be shown as `-w-`.
 ProcSelfMaps.Map2
 ProcSelfMaps.MapUnmap
-ProcSelfMaps.SharedAnon
 ProcSelfMounts.ContainsProcfsEntry
 ProcSelfMounts.RequiredFieldsArePresent
 ProcSelfRoot.IsRoot

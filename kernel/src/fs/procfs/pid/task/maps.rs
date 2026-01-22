@@ -9,7 +9,7 @@ use crate::{
         utils::{Inode, mkmod},
     },
     prelude::*,
-    process::Process,
+    process::{Process, posix_thread::AsPosixThread},
     vm::vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR},
 };
 
@@ -36,16 +36,13 @@ impl FileOps for MapsFileOps {
             return_errno_with_message!(Errno::ESRCH, "the process has exited");
         };
 
-        let user_stack_top = vmar.process_vm().init_stack().user_stack_top();
+        let current = current_thread!();
+        let fs_ref = current.as_posix_thread().unwrap().read_fs();
+        let path_resolver = fs_ref.resolver().read();
 
         let guard = vmar.query(VMAR_LOWEST_ADDR..VMAR_CAP_ADDR);
         for vm_mapping in guard.iter() {
-            if vm_mapping.map_to_addr() <= user_stack_top && vm_mapping.map_end() > user_stack_top {
-                vm_mapping.print_to_maps(&mut printer, "[stack]")?;
-            } else {
-                // TODO: Print the status of mappings other than the stack.
-                continue;
-            }
+            vm_mapping.print_to_maps(&mut printer, vmar, &path_resolver)?;
         }
 
         Ok(printer.bytes_written())

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::{borrow::Cow, format};
 use core::{
     cmp::{max, min},
     num::NonZeroUsize,
@@ -17,9 +18,12 @@ use ostd::{
     task::disable_preempt,
 };
 
-use super::{RssType, interval_set::Interval, util::is_intersected, vmar_impls::RssDelta};
+use super::{RssType, Vmar, interval_set::Interval, util::is_intersected, vmar_impls::RssDelta};
 use crate::{
-    fs::utils::Inode,
+    fs::{
+        path::{Path, PathResolver},
+        utils::Inode,
+    },
     prelude::*,
     thread::exception::PageFaultInfo,
     vm::{
@@ -69,6 +73,8 @@ pub struct VmMapping {
     /// And the `mapped_mem` field must be the page cache of the inode, i.e.
     /// [`MappedMemory::Vmo`].
     inode: Option<Arc<dyn Inode>>,
+    /// The path of the file that backs the mapping.
+    path: Option<Path>,
     /// Whether the mapping is shared.
     ///
     /// The updates to a shared mapping are visible among processes, or carried
@@ -92,11 +98,13 @@ impl Interval<Vaddr> for VmMapping {
 /***************************** Basic methods *********************************/
 
 impl VmMapping {
+    #[expect(clippy::too_many_arguments)]
     pub(super) fn new(
         map_size: NonZeroUsize,
         map_to_addr: Vaddr,
         mapped_mem: MappedMemory,
         inode: Option<Arc<dyn Inode>>,
+        path: Option<Path>,
         is_shared: bool,
         handle_page_faults_around: bool,
         perms: VmPerms,
@@ -106,6 +114,7 @@ impl VmMapping {
             map_to_addr,
             mapped_mem,
             inode,
+            path,
             is_shared,
             handle_page_faults_around,
             perms,
@@ -116,6 +125,7 @@ impl VmMapping {
         VmMapping {
             mapped_mem: self.mapped_mem.dup(),
             inode: self.inode.clone(),
+            path: self.path.clone(),
             ..*self
         }
     }
@@ -205,7 +215,12 @@ impl VmMapping {
     /// Prints the mapping information in the format of `/proc/[pid]/maps`.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/task_mmu.c#L304-L359>
-    pub fn print_to_maps(&self, printer: &mut VmPrinter, name: &str) -> Result<()> {
+    pub fn print_to_maps(
+        &self,
+        printer: &mut VmPrinter,
+        parent_vmar: &Vmar,
+        path_resolver: &PathResolver,
+    ) -> Result<()> {
         let start = self.map_to_addr;
         let end = self.map_end();
         let read_char = if self.perms.contains(VmPerms::READ) {
@@ -231,9 +246,8 @@ impl VmMapping {
             .unwrap_or((0, 0));
         let ino = self.inode().map(|inode| inode.ino()).unwrap_or(0);
 
-        writeln!(
-            printer,
-            "{:x}-{:x} {}{}{}{} {:08x} {:02x}:{:02x} {:<26} {}",
+        let line = format!(
+            "{:x}-{:x} {}{}{}{} {:08x} {:02x}:{:02x} {} ",
             start,
             end,
             read_char,
@@ -244,8 +258,57 @@ impl VmMapping {
             dev_major,
             dev_minor,
             ino,
-            name
-        )?;
+        );
+
+        let name = || {
+            let process_vm = parent_vmar.process_vm();
+            let user_stack_top = process_vm.init_stack().user_stack_top();
+
+            if self.map_to_addr <= user_stack_top && self.map_end() > user_stack_top {
+                return Some(Cow::Borrowed("[stack]"));
+            }
+
+            let heap_range = process_vm.heap().heap_range();
+            if self.map_to_addr >= heap_range.start && self.map_end() <= heap_range.end {
+                return Some(Cow::Borrowed("[heap]"));
+            }
+
+            #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
+            if let Some(vmo) = self.vmo() {
+                use crate::vdso::{VDSO_VMO_LAYOUT, vdso_vmo};
+
+                if let Some(vdso_vmo) = vdso_vmo()
+                    && Arc::ptr_eq(vmo.vmo(), &vdso_vmo)
+                {
+                    let offset = vmo.offset();
+                    if offset == VDSO_VMO_LAYOUT.data_segment_offset {
+                        return Some(Cow::Borrowed("[vvar]"));
+                    } else if offset == VDSO_VMO_LAYOUT.text_segment_offset {
+                        return Some(Cow::Borrowed("[vdso]"));
+                    }
+                }
+            }
+
+            if let Some(path) = &self.path {
+                return Some(Cow::Owned(path_resolver.make_abs_path(path).into_string()));
+            }
+
+            // Reference: <https://github.com/google/gvisor/blob/38123b53da96ff6983fcc103dfe2a9cc4e0d80c8/test/syscalls/linux/proc.cc#L1158-L1172>
+            if matches!(&self.mapped_mem, MappedMemory::Vmo(_)) && self.is_shared {
+                return Some(Cow::Borrowed("/dev/zero (deleted)"));
+            }
+
+            // Common anonymous mappings do not have names.
+            None
+        };
+
+        let name = name();
+
+        if let Some(name) = name {
+            writeln!(printer, "{:<72} {}", line, name)?;
+        } else {
+            writeln!(printer, "{}", line)?;
+        }
 
         Ok(())
     }
@@ -578,6 +641,7 @@ impl VmMapping {
             map_size: NonZeroUsize::new(left_size).unwrap(),
             mapped_mem: l_mapped_mem,
             inode: self.inode.clone(),
+            path: self.path.clone(),
             ..self
         };
         let right = Self {
@@ -900,6 +964,7 @@ fn try_merge(left: &VmMapping, right: &VmMapping) -> Option<VmMapping> {
         map_size,
         mapped_mem,
         inode: left.inode.clone(),
+        path: left.path.clone(),
         ..*left
     })
 }

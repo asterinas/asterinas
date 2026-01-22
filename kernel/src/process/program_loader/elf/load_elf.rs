@@ -385,6 +385,7 @@ fn map_segment_vmo(
         let mut vm_map_options = vmar
             .new_map(segment_size, perms)?
             .vmo(elf_vmo.clone())
+            .path(elf_file.clone())
             .vmo_offset(segment_offset)
             .can_overwrite(true);
         vm_map_options = vm_map_options.offset(offset).handle_page_faults_around();

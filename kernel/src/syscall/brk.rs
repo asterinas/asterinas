@@ -18,7 +18,7 @@ pub fn sys_brk(heap_end: u64, ctx: &Context) -> Result<SyscallReturn> {
         Some(addr) => user_heap
             .modify_heap_end(addr, ctx)
             .unwrap_or_else(|cur_heap_end| cur_heap_end),
-        None => user_heap.heap_end(),
+        None => user_heap.heap_range().end,
     };
 
     Ok(SyscallReturn::Return(current_heap_end as _))
