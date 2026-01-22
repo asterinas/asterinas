@@ -21,31 +21,62 @@ impl Vmar {
         let mut inner = self.inner.write();
         let vm_space = self.vm_space();
 
-        let mut protect_mappings = Vec::new();
+        // Step 1: Validate mappings and collect their start addresses
+        let mut starts = Vec::new();
+        let mut last_end = range.start;
+        let mut actual_end = range.start;
 
         for vm_mapping in inner.vm_mappings.find(&range) {
-            protect_mappings.push((vm_mapping.range(), vm_mapping.perms()))
+            let r = vm_mapping.range();
+
+            // Check for gaps between mappings
+            if last_end < r.start {
+                actual_end = last_end;
+                break;
+            }
+
+            starts.push(r.start);
+            last_end = r.end;
         }
 
-        let mut last_mapping_end = range.start;
-        for (vm_mapping_range, vm_mapping_perms) in protect_mappings {
-            if last_mapping_end < vm_mapping_range.start {
-                return_errno_with_message!(
-                    Errno::ENOMEM,
-                    "the range contains pages that are not mapped"
-                );
-            }
-            last_mapping_end = vm_mapping_range.end;
+        if actual_end == range.start {
+            actual_end = last_end;
+        }
 
-            if perms == vm_mapping_perms & VmPerms::ALL_PERMS {
+        // Determine if the full range is covered
+        let full_range_covered = actual_end >= range.end;
+        let protect_end = if full_range_covered {
+            range.end
+        } else {
+            actual_end
+        };
+
+        if protect_end == range.start {
+            return_errno_with_message!(
+                Errno::ENOMEM,
+                "the range contains pages that are not mapped"
+            );
+        }
+
+        // Step 2: Remove all affected mappings from the tree
+        let mut mappings = Vec::new();
+        for start in starts {
+            if let Some(m) = inner.remove(&start) {
+                mappings.push(m);
+            }
+        }
+
+        // Step 3: Process each mapping - split, protect, and reinsert
+        let protect_range = range.start..protect_end;
+
+        for vm_mapping in mappings {
+            let vm_mapping_range = vm_mapping.range();
+            let intersected_range = get_intersected_range(&protect_range, &vm_mapping_range);
+
+            if intersected_range.start == intersected_range.end {
+                inner.insert_try_merge(vm_mapping);
                 continue;
             }
-            let new_perms = perms | (vm_mapping_perms & VmPerms::ALL_MAY_PERMS);
-            new_perms.check()?;
-
-            let vm_mapping = inner.remove(&vm_mapping_range.start).unwrap();
-            let vm_mapping_range = vm_mapping.range();
-            let intersected_range = get_intersected_range(&range, &vm_mapping_range);
 
             // Protects part of the taken `VmMapping`.
             let (left, taken, right) = vm_mapping.split_range(&intersected_range);
@@ -58,12 +89,21 @@ impl Vmar {
                 inner.insert_without_try_merge(right);
             }
 
+            let old_perms = taken.perms();
+            if perms == (old_perms & VmPerms::ALL_PERMS) {
+                inner.insert_try_merge(taken);
+                continue;
+            }
+
+            let new_perms = perms | (old_perms & VmPerms::ALL_MAY_PERMS);
+            new_perms.check()?;
+
             // Protects part of the `VmMapping`.
             let taken = taken.protect(vm_space.as_ref(), new_perms);
             inner.insert_try_merge(taken);
         }
 
-        if last_mapping_end < range.end {
+        if !full_range_covered {
             return_errno_with_message!(
                 Errno::ENOMEM,
                 "the range contains pages that are not mapped"
