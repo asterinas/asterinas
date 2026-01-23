@@ -523,7 +523,7 @@ mod vmspace {
         let preempt_guard = disable_preempt();
         let mut cursor = vmspace
             .cursor(&preempt_guard, &range)
-            .expect("Failed to create cursor");
+            .expect("failed to create the cursor");
         assert!(matches!(
             cursor.query(),
             Ok((r, None)) if r == range
@@ -542,7 +542,7 @@ mod vmspace {
         {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
-                .expect("Failed to create mutable cursor");
+                .expect("failed to create the mutable cursor");
             // Initially, the page should not be mapped.
             assert!(matches!(
                 cursor_mut.query().unwrap(),
@@ -556,7 +556,7 @@ mod vmspace {
         {
             let mut cursor = vmspace
                 .cursor(&preempt_guard, &range)
-                .expect("Failed to create cursor");
+                .expect("failed to create the cursor");
             assert_eq!(cursor.virt_addr(), range.start);
             assert_matches_mapped!(cursor, range.clone(), frame, prop);
         }
@@ -564,7 +564,7 @@ mod vmspace {
         {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
-                .expect("Failed to create mutable cursor");
+                .expect("failed to create the mutable cursor");
             // Unmaps the frame.
             cursor_mut.unmap(range.start);
         }
@@ -572,7 +572,7 @@ mod vmspace {
         // Queries to ensure it's unmapped.
         let mut cursor = vmspace
             .cursor(&preempt_guard, &range)
-            .expect("Failed to create cursor");
+            .expect("failed to create the cursor");
         assert!(matches!(
             cursor.query().unwrap(),
             (r, None) if r == range
@@ -581,7 +581,7 @@ mod vmspace {
 
     /// Maps a page twice and unmaps twice using `CursorMut`.
     #[ktest]
-    #[should_panic = "Mapping over an already mapped page at 0x1000"]
+    #[should_panic = "mapping over an already mapped page"]
     fn vmspace_map_twice() {
         let vmspace = VmSpace::default();
         let range = 0x1000..0x2000;
@@ -592,21 +592,21 @@ mod vmspace {
         {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
-                .expect("Failed to create mutable cursor");
+                .expect("failed to create the mutable cursor");
             cursor_mut.map(frame.clone(), prop);
         }
 
         {
             let mut cursor = vmspace
                 .cursor(&preempt_guard, &range)
-                .expect("Failed to create cursor");
+                .expect("failed to create the cursor");
             assert_matches_mapped!(cursor, range.clone(), frame, prop);
         }
 
         {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
-                .expect("Failed to create mutable cursor");
+                .expect("failed to create the mutable cursor");
             cursor_mut.map(frame.clone(), prop);
         }
     }
@@ -623,27 +623,27 @@ mod vmspace {
         {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
-                .expect("Failed to create mutable cursor");
+                .expect("failed to create the mutable cursor");
             cursor_mut.map(frame.clone(), prop);
         }
 
         {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
-                .expect("Failed to create mutable cursor");
+                .expect("failed to create the mutable cursor");
             cursor_mut.unmap(range.start);
         }
 
         {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
-                .expect("Failed to create mutable cursor");
+                .expect("failed to create the mutable cursor");
             cursor_mut.unmap(range.start);
         }
 
         let mut cursor = vmspace
             .cursor(&preempt_guard, &range)
-            .expect("Failed to create cursor");
+            .expect("failed to create the cursor");
         assert!(matches!(
             cursor.query().unwrap(),
             (r, None) if r == range
@@ -677,7 +677,7 @@ mod vmspace {
         {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
-                .expect("Failed to create mutable cursor");
+                .expect("failed to create the mutable cursor");
             cursor_mut.map(frame.clone(), prop);
         }
 
@@ -685,7 +685,7 @@ mod vmspace {
             // Verifies that the mapping exists.
             let mut cursor = vmspace
                 .cursor(&preempt_guard, &range)
-                .expect("Failed to create cursor");
+                .expect("failed to create the cursor");
             assert_matches_mapped!(cursor, range.clone(), frame, prop);
         }
 
@@ -693,7 +693,7 @@ mod vmspace {
             // Flushes the TLB using a mutable cursor.
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
-                .expect("Failed to create mutable cursor");
+                .expect("failed to create the mutable cursor");
             cursor_mut.flusher().issue_tlb_flush(TlbFlushOp::for_all());
             cursor_mut.flusher().dispatch_tlb_flush();
         }
@@ -702,7 +702,7 @@ mod vmspace {
             // Verifies that the mapping still exists.
             let mut cursor = vmspace
                 .cursor(&preempt_guard, &range)
-                .expect("Failed to create cursor");
+                .expect("failed to create the cursor");
             assert_matches_mapped!(cursor, range.clone(), frame, prop);
         }
     }
@@ -716,7 +716,7 @@ mod vmspace {
         {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
-                .expect("Failed to create mutable cursor");
+                .expect("failed to create the mutable cursor");
             let frame = create_dummy_frame();
             let prop = PageProperty::new_user(PageFlags::R, CachePolicy::Writeback);
             cursor_mut.map(frame, prop);
@@ -763,7 +763,7 @@ mod vmspace {
         // Creates the first cursor.
         let _cursor1 = vmspace
             .cursor(&preempt_guard, &range1)
-            .expect("Failed to create first cursor");
+            .expect("failed to create first cursor");
 
         // Attempts to create the second overlapping cursor.
         let cursor2_result = vmspace.cursor(&preempt_guard, &range2);
@@ -780,10 +780,10 @@ mod vmspace {
         {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
-                .expect("Failed to create mutable cursor");
+                .expect("failed to create the mutable cursor");
             let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
             cursor_mut.map(frame.clone(), prop);
-            cursor_mut.jump(range.start).expect("Failed to jump cursor");
+            cursor_mut.jump(range.start).expect("failed to jump cursor");
             let protected_range = cursor_mut.protect_next(0x1000, |flags, _cache| {
                 *flags = PageFlags::R;
             });
@@ -793,7 +793,7 @@ mod vmspace {
         // Confirms that the property was updated.
         let mut cursor = vmspace
             .cursor(&preempt_guard, &range)
-            .expect("Failed to create cursor");
+            .expect("failed to create the cursor");
         assert_matches_mapped!(
             cursor,
             range.clone(),
@@ -811,7 +811,7 @@ mod vmspace {
         let preempt_guard = disable_preempt();
         let mut cursor_mut = vmspace
             .cursor_mut(&preempt_guard, &range)
-            .expect("Failed to create mutable cursor");
+            .expect("failed to create the mutable cursor");
         cursor_mut.unmap(0x800); // Not page-aligned.
     }
 
@@ -824,7 +824,7 @@ mod vmspace {
         let preempt_guard = disable_preempt();
         let mut cursor_mut = vmspace
             .cursor_mut(&preempt_guard, &range)
-            .expect("Failed to create mutable cursor");
+            .expect("failed to create the mutable cursor");
         cursor_mut.protect_next(0x2000, |_flags, _cache| {}); // Not page-aligned.
     }
 
@@ -843,7 +843,7 @@ mod vmspace {
         {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
-                .expect("Failed to create mutable cursor");
+                .expect("failed to create the mutable cursor");
             // Initially, the page should not be mapped.
             assert!(matches!(
                 cursor_mut.query().unwrap(),
@@ -857,7 +857,7 @@ mod vmspace {
         {
             let mut cursor = vmspace
                 .cursor(&preempt_guard, &range)
-                .expect("Failed to create cursor");
+                .expect("failed to create the cursor");
             assert_eq!(cursor.virt_addr(), range.start);
             let (query_range, query_item) = cursor.query().unwrap();
             assert_eq!(query_range, range);
@@ -874,7 +874,7 @@ mod vmspace {
         {
             let cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
-                .expect("Failed to create mutable cursor");
+                .expect("failed to create the mutable cursor");
             let (found_iomem, offset) = cursor_mut.find_iomem_by_paddr(IOMEM_PADDR).unwrap();
             assert_eq!(found_iomem.paddr(), IOMEM_PADDR);
             assert_eq!(found_iomem.size(), 0x1000);
@@ -907,7 +907,7 @@ mod vmspace {
         {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
-                .expect("Failed to create mutable cursor");
+                .expect("failed to create the mutable cursor");
             // Maps the `IoMem` with the offset.
             cursor_mut.map_iomem(iomem.clone(), prop, 0x1000, 0x1000);
         }
@@ -916,7 +916,7 @@ mod vmspace {
         {
             let mut cursor = vmspace
                 .cursor(&preempt_guard, &range)
-                .expect("Failed to create cursor");
+                .expect("failed to create the cursor");
             let (query_range, query_item) = cursor.query().unwrap();
             assert_eq!(query_range, range);
 
@@ -932,7 +932,7 @@ mod vmspace {
         {
             let cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
-                .expect("Failed to create mutable cursor");
+                .expect("failed to create the mutable cursor");
             let (found_iomem, offset) = cursor_mut
                 .find_iomem_by_paddr(IOMEM_PADDR + 0x2000)
                 .unwrap();
@@ -954,7 +954,7 @@ mod vmspace {
         {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
-                .expect("Failed to create mutable cursor");
+                .expect("failed to create the mutable cursor");
             cursor_mut.map_iomem(iomem.clone(), prop, 0x1000, 0);
         }
 
@@ -962,7 +962,7 @@ mod vmspace {
         {
             let cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
-                .expect("Failed to create mutable cursor");
+                .expect("failed to create the mutable cursor");
             assert!(
                 cursor_mut
                     .find_iomem_by_paddr(IOMEM_PADDR + 0x3000)
@@ -974,7 +974,7 @@ mod vmspace {
         {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
-                .expect("Failed to create mutable cursor");
+                .expect("failed to create the mutable cursor");
             cursor_mut.unmap(0x1000);
         }
 
@@ -982,7 +982,7 @@ mod vmspace {
         {
             let cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
-                .expect("Failed to create mutable cursor");
+                .expect("failed to create the mutable cursor");
             assert!(
                 cursor_mut
                     .find_iomem_by_paddr(IOMEM_PADDR + 0x3000)
