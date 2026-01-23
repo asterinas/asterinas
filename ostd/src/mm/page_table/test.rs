@@ -31,7 +31,7 @@ mod test_utils {
         unsafe {
             page_table
                 .cursor_mut(&preempt_guard, &virt_range)
-                .unwrap()
+                .expect("failed to create the cursor")
                 .map(VmItem::new_tracked(frame.into(), page_property))
         };
 
@@ -320,7 +320,7 @@ mod range_checks {
     }
 
     #[ktest]
-    #[should_panic]
+    #[should_panic = "failed to create the cursor"]
     fn overflow_boundary_mapping() {
         let virt_range =
             (MAX_USERSPACE_VADDR - (PAGE_SIZE / 2))..(MAX_USERSPACE_VADDR + (PAGE_SIZE / 2));
@@ -437,7 +437,7 @@ mod overlapping_mappings {
     use super::{test_utils::*, *};
 
     #[ktest]
-    #[should_panic]
+    #[should_panic = "mapping over an already mapped page"]
     fn overlapping_mappings() {
         let page_table = PageTable::<TestPtConfig>::empty();
         let vrange1 = PAGE_SIZE..(PAGE_SIZE * 2);
@@ -464,7 +464,7 @@ mod overlapping_mappings {
     }
 
     #[ktest]
-    #[should_panic]
+    #[should_panic = "cursor virtual address not aligned for mapping"]
     fn unaligned_map() {
         let page_table = PageTable::<TestPtConfig>::empty();
         let virt_range = (PAGE_SIZE + 512)..(PAGE_SIZE * 2 + 512);
@@ -1011,7 +1011,7 @@ mod boot_pt {
     }
 
     #[ktest]
-    #[should_panic]
+    #[should_panic = "mapping an already mapped huge page in the boot page table"]
     fn map_base_page_already_mapped() {
         let root_frame = FrameAllocOptions::new().alloc_frame().unwrap();
         let root_paddr = root_frame.paddr();
@@ -1029,7 +1029,7 @@ mod boot_pt {
     }
 
     #[ktest]
-    #[should_panic]
+    #[should_panic = "protecting an unmapped page in the boot page table"]
     fn protect_base_page_unmapped() {
         let root_frame = FrameAllocOptions::new().alloc_frame().unwrap();
         let root_paddr = root_frame.paddr();
