@@ -10,6 +10,9 @@
 #include "../test.h"
 
 #define PAGE_SIZE 4096
+#ifndef MAY_READ
+#define MAY_READ (1 << 3)
+#endif
 const char *filename = "testfile";
 
 FN_TEST(mprotect_shared_writable_mapping_on_read_only_file)
@@ -52,5 +55,19 @@ FN_TEST(mprotect_private_writable_mapping_copy_on_write)
 
 	TEST_SUCC(close(fd));
 	TEST_SUCC(unlink(filename));
+}
+END_TEST()
+
+FN_TEST(mprotect_merge_after_split_mapping)
+{
+	void *p = CHECK_WITH(mmap(NULL, 2 * PAGE_SIZE, PROT_READ | PROT_WRITE,
+				  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0),
+			     _ret != MAP_FAILED);
+
+	TEST_SUCC(mprotect(p, PAGE_SIZE, PROT_READ));
+
+	// Trigger an update + merge.
+	TEST_SUCC(
+		mprotect(p, 2 * PAGE_SIZE, PROT_READ | PROT_WRITE | MAY_READ));
 }
 END_TEST()
