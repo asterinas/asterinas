@@ -233,7 +233,7 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
 
                     let split_child = cur_entry
                         .split_if_mapped_huge(rcu_guard)
-                        .expect("The entry must be a huge page");
+                        .expect("the entry must be a huge page");
                     self.push_level(split_child);
                     continue;
                 }
@@ -296,7 +296,7 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
     fn pop_level(&mut self) {
         let taken = self.path[self.level as usize - 1]
             .take()
-            .expect("Popping a level without a lock");
+            .expect("popping a level without a lock");
         let _ = ManuallyDrop::new(taken);
 
         debug_assert!(self.level < self.guard_level);
@@ -413,7 +413,11 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
         let (_, level, _) = C::item_raw_info(&item);
         assert!(level <= C::HIGHEST_TRANSLATION_LEVEL);
         let size = page_size::<C>(level);
-        assert_eq!(self.0.va % size, 0);
+        assert_eq!(
+            self.0.va % size,
+            0,
+            "cursor virtual address not aligned for mapping"
+        );
         let end = self.0.va + size;
         assert!(end <= self.0.barrier_va.end);
 
@@ -445,7 +449,7 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
         }
 
         if !matches!(self.0.cur_entry().to_ref(), PteStateRef::Absent) {
-            panic!("Mapping over an already mapped page at {:#x}", self.0.va);
+            panic!("mapping over an already mapped page");
         }
 
         let _ = self.replace_cur_entry(PteState::Mapped(RcuDrop::new(item)));
@@ -550,7 +554,7 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
 
                 if !C::TOP_LEVEL_CAN_UNMAP && level == C::NR_LEVELS {
                     let _ = ManuallyDrop::new(pt); // leak it to make shared PTs stay `'static`.
-                    panic!("Unmapping shared kernel page table nodes");
+                    panic!("unmapping shared kernel page table nodes");
                 }
 
                 // SAFETY: We must have locked this node.
