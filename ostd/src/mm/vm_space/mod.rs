@@ -8,6 +8,9 @@
 //! the page table cursor, providing efficient, powerful concurrent accesses
 //! to the page table.
 
+#[cfg(ktest)]
+mod test;
+
 use core::{ops::Range, sync::atomic::Ordering};
 
 use super::{AnyUFrameMeta, PagingLevel, page_table::PageTableConfig};
