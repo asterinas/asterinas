@@ -103,10 +103,14 @@ impl PciCommonDevice {
             capabilities,
         };
 
-        device.write_command(
-            device.read_command() | Command::MEMORY_SPACE | Command::BUS_MASTER | Command::IO_SPACE,
-        );
+        // While setting up the BARs, we need to ensure that
+        // "Decode (I/O or memory) of the appropriate address space is disabled via the Command
+        // Register before sizing a Base Address register."
+        let command_val = device.read_command() | Command::BUS_MASTER;
+        device.write_command(command_val - (Command::MEMORY_SPACE | Command::IO_SPACE));
         device.bar_manager = BarManager::new(device.header_type.device_type(), location);
+        device.write_command(command_val | (Command::MEMORY_SPACE | Command::IO_SPACE));
+
         device.capabilities = Capability::device_capabilities(&mut device);
 
         Some(device)
