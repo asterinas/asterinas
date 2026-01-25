@@ -105,6 +105,7 @@ pipe/short_rw
 epoll/epoll_err
 epoll/poll_err
 file_io/access_err
+file_io/file_err
 file_io/iovec_err
 devfs/full
 devfs/random
