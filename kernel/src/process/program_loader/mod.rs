@@ -9,7 +9,7 @@ use self::{
 };
 use crate::{
     fs::{
-        path::{FsPath, PathResolver},
+        path::{FsPath, Path, PathResolver},
         utils::{Inode, InodeType, Permission},
     },
     prelude::*,
@@ -21,22 +21,22 @@ use crate::{
 /// This struct encapsulates the ELF file to be executed along with its header data,
 /// the `argv` and the `envp` which is required for the program execution.
 pub(super) struct ProgramToLoad {
-    elf_inode: Arc<dyn Inode>,
+    elf_file: Path,
     elf_headers: ElfHeaders,
     argv: Vec<CString>,
     envp: Vec<CString>,
 }
 
 impl ProgramToLoad {
-    /// Constructs a new `ProgramToLoad` from an inode and handles shebang interpretation if
+    /// Constructs a new `ProgramToLoad` from a file and handles shebang interpretation if
     /// necessary.
-    pub(super) fn build_from_inode(
-        mut elf_inode: Arc<dyn Inode>,
+    pub(super) fn build_from_file(
+        mut elf_file: Path,
         path_resolver: &PathResolver,
         mut argv: Vec<CString>,
         envp: Vec<CString>,
     ) -> Result<Self> {
-        check_executable_inode(elf_inode.as_ref())?;
+        check_executable_inode(elf_file.inode().as_ref())?;
 
         // A limit to the recursion depth of shebang executables.
         //
@@ -48,7 +48,7 @@ impl ProgramToLoad {
             // Read the first page of the file, which should contain a shebang or an ELF header.
             let (file_first_page, len) = {
                 let mut buffer = Box::new([0u8; PAGE_SIZE]);
-                let len = elf_inode.read_bytes_at(0, &mut *buffer)?;
+                let len = elf_file.inode().read_bytes_at(0, &mut *buffer)?;
                 (buffer, len)
             };
 
@@ -71,13 +71,13 @@ impl ProgramToLoad {
             // Update the argument list and the executable inode. Then, try again.
             new_argv.extend(argv);
             argv = new_argv;
-            elf_inode = interpreter.inode().clone();
+            elf_file = interpreter;
         };
 
         let elf_headers = ElfHeaders::parse(&file_first_page[..len])?;
 
         Ok(Self {
-            elf_inode,
+            elf_file,
             elf_headers,
             argv,
             envp,
@@ -94,7 +94,7 @@ impl ProgramToLoad {
     ) -> Result<ElfLoadInfo> {
         let elf_load_info = load_elf_to_vmar(
             vmar,
-            &self.elf_inode,
+            self.elf_file,
             path_resolver,
             self.elf_headers,
             self.argv,

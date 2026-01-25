@@ -54,9 +54,8 @@ pub fn do_execve(
         envp
     );
 
-    let elf_inode = elf_file.inode();
     let program_to_load =
-        ProgramToLoad::build_from_inode(elf_inode.clone(), &path_resolver, argv, envp)?;
+        ProgramToLoad::build_from_file(elf_file.clone(), &path_resolver, argv, envp)?;
 
     let new_vmar = Vmar::new(ProcessVm::new(elf_file.clone()));
     let elf_load_info = program_to_load.load_to_vmar(new_vmar.as_ref(), &path_resolver)?;
