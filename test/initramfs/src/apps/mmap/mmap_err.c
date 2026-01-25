@@ -32,7 +32,11 @@ FN_TEST(overflow_len)
 			MAP_PRIVATE | MAP_ANONYMOUS, 0, 0),
 		   ENOMEM);
 	TEST_ERRNO(mremap(valid_addr, ~(size_t)1, PAGE_SIZE, 0), EINVAL);
+	TEST_ERRNO(mremap(valid_addr, ~(size_t)1, PAGE_SIZE, MREMAP_MAYMOVE),
+		   EINVAL);
 	TEST_ERRNO(mremap(valid_addr, PAGE_SIZE, ~(size_t)1, 0), EINVAL);
+	TEST_ERRNO(mremap(valid_addr, PAGE_SIZE, ~(size_t)1, MREMAP_MAYMOVE),
+		   EINVAL);
 	TEST_ERRNO(munmap(valid_addr, ~(size_t)1), EINVAL);
 	TEST_ERRNO(mprotect(valid_addr, ~(size_t)1, PROT_READ), ENOMEM);
 	TEST_ERRNO(madvise(valid_addr, ~(size_t)1, MADV_NORMAL), EINVAL);
@@ -52,7 +56,9 @@ FN_TEST(zero_len)
 			0, 0),
 		   EINVAL);
 	TEST_ERRNO(mremap(valid_addr, 0, PAGE_SIZE, 0), EINVAL);
+	TEST_ERRNO(mremap(valid_addr, 0, PAGE_SIZE, MREMAP_MAYMOVE), EINVAL);
 	TEST_ERRNO(mremap(valid_addr, PAGE_SIZE, 0, 0), EINVAL);
+	TEST_ERRNO(mremap(valid_addr, PAGE_SIZE, 0, MREMAP_MAYMOVE), EINVAL);
 	TEST_ERRNO(munmap(valid_addr, 0), EINVAL);
 	TEST_SUCC(mprotect(valid_addr, 0, PROT_READ));
 	TEST_SUCC(madvise(valid_addr, 0, MADV_NORMAL));
@@ -71,7 +77,18 @@ FN_TEST(overflow_addr)
 				MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0, 0),
 			   ENOMEM);
 		TEST_ERRNO(mremap(valid_addr, len, PAGE_SIZE, 0), EINVAL);
+		TEST_ERRNO(mremap(valid_addr, len, PAGE_SIZE, MREMAP_MAYMOVE),
+			   EINVAL);
 		TEST_ERRNO(mremap(valid_addr, PAGE_SIZE, len, 0), EINVAL);
+		// FIXME: Asterinas will return `ENOMEM` in this test, which differs
+		// from Linux's error code.
+#ifdef __asterinas__
+		TEST_ERRNO(mremap(valid_addr, PAGE_SIZE, len, MREMAP_MAYMOVE),
+			   ENOMEM);
+#else
+		TEST_ERRNO(mremap(valid_addr, PAGE_SIZE, len, MREMAP_MAYMOVE),
+			   EINVAL);
+#endif
 		TEST_ERRNO(munmap(valid_addr, len), EINVAL);
 		TEST_ERRNO(mprotect(valid_addr, len, PROT_READ), ENOMEM);
 		TEST_ERRNO(madvise(valid_addr, len, MADV_NORMAL), EINVAL);
@@ -88,6 +105,7 @@ FN_TEST(underflow_addr)
 			MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0, 0),
 		   EPERM);
 	TEST_ERRNO(mremap(addr, PAGE_SIZE, PAGE_SIZE, 0), EFAULT);
+	TEST_ERRNO(mremap(addr, PAGE_SIZE, PAGE_SIZE, MREMAP_MAYMOVE), EFAULT);
 	TEST_ERRNO(mremap(valid_addr, PAGE_SIZE, PAGE_SIZE, MREMAP_FIXED, addr),
 		   EINVAL);
 	TEST_SUCC(munmap(addr, PAGE_SIZE));
@@ -103,6 +121,8 @@ FN_TEST(unaligned_addr)
 			MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0, 0),
 		   EINVAL);
 	TEST_ERRNO(mremap(valid_addr + 1, PAGE_SIZE, PAGE_SIZE, 0), EINVAL);
+	TEST_ERRNO(mremap(valid_addr + 1, PAGE_SIZE, PAGE_SIZE, MREMAP_MAYMOVE),
+		   EINVAL);
 	TEST_ERRNO(mremap(valid_addr, PAGE_SIZE, PAGE_SIZE, MREMAP_FIXED,
 			  valid_addr + 1),
 		   EINVAL);
