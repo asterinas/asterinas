@@ -9,10 +9,7 @@ use super::{
     relocate::RelocatedRange,
 };
 use crate::{
-    fs::{
-        path::{FsPath, Path, PathResolver},
-        utils::Inode,
-    },
+    fs::path::{FsPath, Path, PathResolver},
     prelude::*,
     process::{
         process_vm::{AuxKey, AuxVec},
@@ -22,7 +19,6 @@ use crate::{
     vm::{
         perms::VmPerms,
         vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR, Vmar},
-        vmo::Vmo,
     },
 };
 
@@ -51,20 +47,20 @@ pub struct ElfLoadInfo {
 /// initialize the init stack and heap.
 pub fn load_elf_to_vmar(
     vmar: &Vmar,
-    elf_inode: &Arc<dyn Inode>,
+    elf_file: Path,
     path_resolver: &PathResolver,
     elf_headers: ElfHeaders,
     argv: Vec<CString>,
     envp: Vec<CString>,
 ) -> Result<ElfLoadInfo> {
-    let ldso = lookup_and_parse_ldso(&elf_headers, elf_inode, path_resolver)?;
+    let ldso = lookup_and_parse_ldso(&elf_headers, &elf_file, path_resolver)?;
 
     #[cfg_attr(
         not(any(target_arch = "x86_64", target_arch = "riscv64")),
         expect(unused_mut)
     )]
     let (elf_mapped_info, entry_point, mut aux_vec) =
-        map_vmos_and_build_aux_vec(vmar, ldso, &elf_headers, elf_inode)?;
+        map_vmos_and_build_aux_vec(vmar, ldso, &elf_headers, &elf_file)?;
 
     // Map the vDSO and set the entry.
     // Since the vDSO does not require being mapped to any specific address,
@@ -93,12 +89,12 @@ pub fn load_elf_to_vmar(
 
 fn lookup_and_parse_ldso(
     headers: &ElfHeaders,
-    elf_inode: &Arc<dyn Inode>,
+    elf_file: &Path,
     path_resolver: &PathResolver,
 ) -> Result<Option<(Path, ElfHeaders)>> {
     let ldso_file = {
         let ldso_path = if let Some(interp_phdr) = headers.interp_phdr() {
-            interp_phdr.read_ldso_path(elf_inode)?
+            interp_phdr.read_ldso_path(elf_file.inode())?
         } else {
             return Ok(None);
         };
@@ -139,7 +135,7 @@ fn map_vmos_and_build_aux_vec(
     vmar: &Vmar,
     ldso: Option<(Path, ElfHeaders)>,
     parsed_elf: &ElfHeaders,
-    elf_inode: &Arc<dyn Inode>,
+    elf_file: &Path,
 ) -> Result<(ElfMappedInfo, Vaddr, AuxVec)> {
     let ldso_load_info = if let Some((ldso_file, ldso_elf)) = ldso {
         Some(load_ldso(vmar, &ldso_file, &ldso_elf)?)
@@ -147,7 +143,7 @@ fn map_vmos_and_build_aux_vec(
         None
     };
 
-    let elf_mapped_info = map_segment_vmos(parsed_elf, vmar, elf_inode, ldso_load_info.is_some())?;
+    let elf_mapped_info = map_segment_vmos(parsed_elf, vmar, elf_file, ldso_load_info.is_some())?;
 
     let mut aux_vec = {
         let ldso_base = ldso_load_info
@@ -157,7 +153,7 @@ fn map_vmos_and_build_aux_vec(
     };
 
     // Set AT_SECURE based on setuid/setgid bits of the executable file.
-    let mode = elf_inode.mode()?;
+    let mode = elf_file.inode().mode()?;
     let secure = if mode.has_set_uid() || mode.has_set_gid() {
         1
     } else {
@@ -192,7 +188,7 @@ struct LdsoLoadInfo {
 }
 
 fn load_ldso(vmar: &Vmar, ldso_file: &Path, ldso_elf: &ElfHeaders) -> Result<LdsoLoadInfo> {
-    let elf_mapped_info = map_segment_vmos(ldso_elf, vmar, ldso_file.inode(), false)?;
+    let elf_mapped_info = map_segment_vmos(ldso_elf, vmar, ldso_file, false)?;
     let range = elf_mapped_info.full_range;
     let entry_point = range
         .relocated_addr_of(ldso_elf.entry_point())
@@ -226,7 +222,7 @@ struct ElfMappedInfo {
 fn map_segment_vmos(
     elf: &ElfHeaders,
     vmar: &Vmar,
-    elf_inode: &Arc<dyn Inode>,
+    elf_file: &Path,
     has_interpreter: bool,
 ) -> Result<ElfMappedInfo> {
     let elf_va_range = elf.calc_total_vaddr_bounds();
@@ -330,14 +326,11 @@ fn map_segment_vmos(
     let relocated_range = RelocatedRange::new(elf_va_range, map_range.start)
         .expect("`map_range` should not overflow");
 
-    let Some(elf_vmo) = elf_inode.page_cache() else {
-        return_errno_with_message!(Errno::ENOEXEC, "the executable has no page cache");
-    };
     for loadable_phdr in elf.loadable_phdrs() {
         let map_at = relocated_range
             .relocated_addr_of(loadable_phdr.virt_range().start)
             .expect("`calc_total_vaddr_bounds()` should cover all segments");
-        map_segment_vmo(loadable_phdr, &elf_vmo, vmar, map_at)?;
+        map_segment_vmo(loadable_phdr, elf_file, vmar, map_at)?;
     }
 
     // Calculate the data segment size.
@@ -358,10 +351,14 @@ fn map_segment_vmos(
 /// this applies to the `.bss` segment.
 fn map_segment_vmo(
     loadable_phdr: &LoadablePhdr,
-    elf_vmo: &Arc<Vmo>,
+    elf_file: &Path,
     vmar: &Vmar,
     map_at: Vaddr,
 ) -> Result<()> {
+    let Some(elf_vmo) = elf_file.inode().page_cache() else {
+        return_errno_with_message!(Errno::ENOEXEC, "the executable has no page cache");
+    };
+
     let virt_range = loadable_phdr.virt_range();
     let file_range = loadable_phdr.file_range();
     trace!(
