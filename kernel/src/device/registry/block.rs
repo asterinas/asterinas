@@ -15,7 +15,8 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
-    thread::kernel_thread::ThreadOptions, util::ioctl::{RawIoctl, dispatch_ioctl},
+    thread::kernel_thread::ThreadOptions,
+    util::ioctl::{RawIoctl, dispatch_ioctl},
 };
 
 pub(super) fn init_in_first_kthread() {
@@ -46,7 +47,6 @@ pub(super) fn init_in_first_process(path_resolver: &PathResolver) -> Result<()> 
 
     Ok(())
 }
-
 
 mod ioctl_defs {
     use crate::util::ioctl::{OutData, ioc};
@@ -137,7 +137,7 @@ impl FileIo for OpenBlockFile {
     }
 
     fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
-        use ioctl_defs::*;  
+        use ioctl_defs::*;
         dispatch_ioctl!(match raw_ioctl {
             cmd @ BlkGetSize64 => {
                 let size = (self.0.metadata().nr_sectors * SECTOR_SIZE) as u64;
