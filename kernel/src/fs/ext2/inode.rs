@@ -1741,8 +1741,8 @@ impl InodeImpl {
                     return Ok(());
                 }
 
-                self.desc.block_ptrs.set_indirect(bid);
-                block_ptrs.set_indirect(bid);
+                self.desc.block_ptrs.set_indirect(0);
+                block_ptrs.set_indirect(0);
                 indirect_blocks.remove(indirect_bid);
                 self.fs()
                     .free_blocks(indirect_bid..indirect_bid + 1)
