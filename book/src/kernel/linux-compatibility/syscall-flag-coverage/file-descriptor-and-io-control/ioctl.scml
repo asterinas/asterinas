@@ -26,5 +26,8 @@ ioctl(
     ..
 );
 
+// Control block devices
+ioctl(fd, op = BLKGETSIZE64, ..);
+
 // Control Trust Domain Extensions (TDX) guest devices
 ioctl(fd, op = TDX_CMD_GET_REPORT0, ..);
