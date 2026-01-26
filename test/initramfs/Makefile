@@ -51,9 +51,20 @@ endif
 .PHONY: all
 all: build
 
+.PHONY: check_vdso
+check_vdso:
+	@# Checking `VDSO_LIBRARY_DIR` environment variable
+	@if [ -z "$(VDSO_LIBRARY_DIR)" ]; then \
+		echo "Error: the VDSO_LIBRARY_DIR environment variable must be given."; \
+		echo "    This variable points to a directory that provides Linux's vDSO files,"; \
+		echo "    which is required to build Asterinas. Search for VDSO_LIBRARY_DIR"; \
+		echo "    in Asterinas's Dockerfile for more information."; \
+		exit 1; \
+	fi
+
 .PHONY: build
 ifeq ($(OSDK_TARGET_ARCH), loongarch64)
-build: $(EXT2_IMAGE) $(EXFAT_IMAGE)
+build: check_vdso $(EXT2_IMAGE) $(EXFAT_IMAGE)
 	@echo "For loongarch, we generate a fake initramfs to successfully test or build."
 	@touch $(INITRAMFS_IMAGE)
 else

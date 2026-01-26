@@ -4,6 +4,24 @@
 
 set -e
 
+# --- Help message ---
+show_help() {
+    cat << EOF
+Usage: $0 [OPTION]
+
+Format all Rust code in the workspace, including excluded crates and special files.
+
+OPTIONS:
+    --check     Check if code is formatted (do not modify files)
+    --help      Display this help message and exit
+
+EXAMPLES:
+    $0                # Format all applicable Rust code
+    $0 --check        # Check formatting without modifying files
+
+EOF
+}
+
 WORKSPACE_ROOT="$(dirname "$(readlink -f "$0")")/.."
 
 EXCLUDED_CRATES=$(sed -n -e 's/#.*//; /^\s*$/d' -e '/^\[workspace\]/,/^\[.*\]/{/exclude = \[/,/\]/p}' "$WORKSPACE_ROOT/Cargo.toml" | grep -v "exclude = \[" | tr -d '", \]')
@@ -11,14 +29,23 @@ EXCLUDED_CRATES=$(sed -n -e 's/#.*//; /^\s*$/d' -e '/^\[workspace\]/,/^\[.*\]/{/
 CHECK_MODE=false
 
 if [ "$#" -eq 1 ]; then
-    if [ "$1" == "--check" ]; then
-        CHECK_MODE=true
-    else
-        echo "Error: Invalid argument. Only '--check' is allowed."
-        exit 1
-    fi
+    case "$1" in
+        --help)
+            show_help
+            exit 0
+            ;;
+        --check)
+            CHECK_MODE=true
+            ;;
+        *)
+            echo "Error: Invalid argument '$1'."
+            echo "Run '$0 --help' for usage."
+            exit 1
+            ;;
+    esac
 elif [ "$#" -gt 1 ]; then
-    echo "Error: Too many arguments. Only '--check' is allowed."
+    echo "Error: Too many arguments."
+    echo "Run '$0 --help' for usage."
     exit 1
 fi
 
