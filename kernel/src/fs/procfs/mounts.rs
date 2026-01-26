@@ -9,7 +9,6 @@ use crate::{
 };
 
 /// Represents the inode at `/proc/mounts`.
-/// This is a symbolic link to `self/mounts`.
 pub struct MountsSymOps;
 
 impl MountsSymOps {

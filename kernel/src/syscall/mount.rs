@@ -208,15 +208,14 @@ fn do_new_mount(
         "the filesystem is not configured in the kernel",
     ))?;
 
-    let source = if fs_type.properties().contains(FsProperties::NEED_DISK) {
-        // Block device filesystem: use device path
-        ctx.user_space()
-            .read_cstring(src_name_addr, MAX_FILENAME_LEN)?
-            .to_string_lossy()
-            .into_owned()
+    let source = ctx
+        .user_space()
+        .read_cstring(src_name_addr, MAX_FILENAME_LEN)?;
+    let source = if source.is_empty() {
+        // If source is an empty string, set it to None
+        None
     } else {
-        // Virtual filesystem: use filesystem type name
-        fs_type_str.to_string()
+        Some(source.to_string_lossy().into_owned())
     };
 
     let fs = get_fs(src_name_addr, flags, fs_type, data_addr, ctx)?;

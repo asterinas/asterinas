@@ -27,7 +27,7 @@ pub fn init_in_first_process(path_resolver: &PathResolver, ctx: &Context) -> Res
     let devpts_mount = devpts_path.mount(
         DevPts::new(),
         PerMountFlags::default(),
-        "devpts".to_string(),
+        Some("devpts".to_string()),
         ctx,
     )?;
 

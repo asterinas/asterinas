@@ -37,6 +37,9 @@ static ID_ALLOCATOR: Once<SpinLock<IdAlloc>> = Once::new();
 /// The reserved mount ID, which represents an invalid mount.
 static RESERVED_MOUNT_ID: usize = 0;
 
+/// The default source for mounts without a specific source.   
+pub(super) static DEFAULT_SOURCE: &str = "none";
+
 pub(super) fn init() {
     // TODO: Make it configurable.
     const MAX_MOUNT_NUM: usize = 10000;
@@ -161,7 +164,7 @@ pub struct Mount {
     /// The associated FS.
     fs: Arc<dyn FileSystem>,
     /// The mount source (device path like "/dev/vda" or filesystem name like "proc").
-    source: String,
+    source: Option<String>,
     /// The parent mount node.
     parent: RwLock<Option<Weak<Mount>>>,
     /// Child mount nodes which are mounted on one dentry of self.
@@ -189,7 +192,7 @@ impl Mount {
         mnt_ns: Weak<MountNamespace>,
     ) -> Arc<Self> {
         let source = fs.name().to_string();
-        Self::new(fs, PerMountFlags::default(), None, mnt_ns, source)
+        Self::new(fs, PerMountFlags::default(), None, mnt_ns, Some(source))
     }
 
     /// Creates a pseudo mount node with an associated FS.
@@ -197,8 +200,7 @@ impl Mount {
     /// This pseudo mount is not mounted on other mount nodes, has no parent, and does not
     /// belong to any mount namespace.
     pub(in crate::fs) fn new_pseudo(fs: Arc<dyn FileSystem>) -> Arc<Self> {
-        let source = fs.name().to_string();
-        Self::new(fs, PerMountFlags::KERNMOUNT, None, Weak::new(), source)
+        Self::new(fs, PerMountFlags::KERNMOUNT, None, Weak::new(), None)
     }
 
     /// The internal constructor.
@@ -214,7 +216,7 @@ impl Mount {
         flags: PerMountFlags,
         parent_mount: Option<Weak<Mount>>,
         mnt_ns: Weak<MountNamespace>,
-        source: String,
+        source: Option<String>,
     ) -> Arc<Self> {
         let id = ID_ALLOCATOR.get().unwrap().lock().alloc().unwrap();
 
@@ -238,9 +240,9 @@ impl Mount {
         self.id
     }
 
-    /// Returns the mount source (device path or filesystem name).
-    pub fn source(&self) -> &str {
-        &self.source
+    /// Returns the mount source.
+    pub(super) fn source(&self) -> Option<&str> {
+        self.source.as_deref()
     }
 
     /// Mounts a fs on the mountpoint, it will create a new child mount node.
@@ -259,7 +261,7 @@ impl Mount {
         fs: Arc<dyn FileSystem>,
         flags: PerMountFlags,
         mountpoint: &Arc<Dentry>,
-        source: String,
+        source: Option<String>,
     ) -> Result<Arc<Self>> {
         if mountpoint.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);

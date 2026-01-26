@@ -39,7 +39,7 @@ pub fn init_in_first_process(ctx: &Context) -> Result<()> {
     dev_path.mount(
         RamFs::new(),
         PerMountFlags::default(),
-        "ramfs".to_string(),
+        Some("ramfs".to_string()),
         ctx,
     )?;
 

@@ -203,7 +203,7 @@ impl Path {
         &self,
         fs: Arc<dyn FileSystem>,
         flags: PerMountFlags,
-        source: String,
+        source: Option<String>,
         ctx: &Context,
     ) -> Result<Arc<Mount>> {
         if self.type_() != InodeType::Dir {

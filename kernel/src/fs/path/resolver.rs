@@ -9,7 +9,7 @@ use super::{Mount, Path};
 use crate::{
     fs::{
         file_table::{FileDesc, get_file_fast},
-        path::{MountNamespace, PerMountFlags},
+        path::{MountNamespace, PerMountFlags, mount::DEFAULT_SOURCE},
         utils::{FsFlags, InodeType, NAME_MAX, PATH_MAX, Permission, SYMLINKS_MAX, SymbolicLink},
     },
     prelude::*,
@@ -253,27 +253,27 @@ impl AbsPathResult {
 
 // Mount info reading implementation
 impl PathResolver {
-    /// Reads the information of the mounts visible to this resolver.
+    /// Collects the mounts visible to this resolver.
     ///
     /// Here, the visible mounts are defined as follows:
     /// 1. If the resolver's root is a mount point, the visible mounts are the mount of the
     ///    resolver's root directory and all of its descendant mounts in the mount tree.
     /// 2. If the resolver's root is not a mount point, the visible mounts are all descendant
     ///    mounts that are mounted under the resolver's root directory.
+    ///
+    /// The mounts are collected in depth-first order.
     fn collect_visible_mounts(&self) -> Vec<Arc<Mount>> {
-        let mut stack = Vec::new();
         let mut visible = Vec::new();
-        let filter_root_children = !self.root.is_mount_root();
+        let mut stack = vec![self.root.mount.clone()];
 
-        stack.push((self.root.mount.clone(), filter_root_children));
-        // The root is not a mount root, so we need to find the visible child mounts.
-
-        while let Some((mount, filter_children)) = stack.pop() {
+        while let Some(mount) = stack.pop() {
             visible.push(mount.clone());
 
             let children = mount.children.read();
             for child_mount in children.values() {
-                if filter_children {
+                // Filter children only for the root mount if it's not a mount root.
+                let is_root_mount = Arc::ptr_eq(&mount, &self.root.mount);
+                if is_root_mount && !self.root.is_mount_root() {
                     let Some(mountpoint) = child_mount.mountpoint() else {
                         continue;
                     };
@@ -281,15 +281,17 @@ impl PathResolver {
                         continue;
                     }
                 }
-                // Once a mount is under the resolver root, all its descendants are visible.
-                stack.push((child_mount.clone(), false));
+                stack.push(child_mount.clone());
             }
         }
 
         visible
     }
 
-    /// Reads the information of the mounts visible to this resolver.
+    /// Reads mount information for `/proc/[pid]/mountinfo`.
+    ///
+    /// Provides detailed mount information including mount IDs, parent relationships,
+    /// and device numbers.
     pub fn read_mount_info(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
@@ -319,7 +321,7 @@ impl PathResolver {
             let mount_flags = mount.flags();
             let fs_type = mount.fs().name();
             let fs_flags = mount.fs().flags();
-            let source = mount.source();
+            let source = mount.source().unwrap_or(DEFAULT_SOURCE);
 
             // The following fields are dummy for now.
             let major = 0;
@@ -344,7 +346,10 @@ impl PathResolver {
         Ok(printer.bytes_written())
     }
 
-    /// Reads the information of the mounts visible to this resolver.
+    /// Reads mount information for `/proc/[pid]/mounts` and `/proc/mounts`.
+    ///
+    /// Provides a simplified view of mounted filesystems in the traditional
+    /// `/etc/fstab` format.
     pub fn read_mounts(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
@@ -366,7 +371,7 @@ impl PathResolver {
             };
             let mount_flags = mount.flags();
             let fs_type = mount.fs().name();
-            let source = mount.source();
+            let source = mount.source().unwrap_or(DEFAULT_SOURCE);
 
             let entry = MountsEntry {
                 source,
@@ -427,6 +432,7 @@ impl core::fmt::Display for MountInfoEntry<'_> {
     }
 }
 
+/// A single entry in the mounts file.
 struct MountsEntry<'a> {
     /// Filesystem-specific information or "none".
     source: &'a str,

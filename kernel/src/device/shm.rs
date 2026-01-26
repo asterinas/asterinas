@@ -21,7 +21,7 @@ pub fn init_in_first_process(path_resolver: &PathResolver, ctx: &Context) -> Res
     shm_path.mount(
         RamFs::new(),
         PerMountFlags::default(),
-        "tmpfs".to_string(),
+        Some("tmpfs".to_string()),
         ctx,
     )?;
     log::debug!("Mount RamFs at \"/dev/shm\"");
