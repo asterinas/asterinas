@@ -46,7 +46,7 @@ struct MyStruct {
 
 ### Integration with zerocopy
 
-The generated structs work seamlessly with `zerocopy` for safe transmutation:
+The generated structs work seamlessly with [`zerocopy`] for safe transmutation:
 
 ```rust
 use padding_struct::padding_struct;

@@ -1,0 +1,25 @@
+[package]
+name = "ostd-pod-macros"
+version = "0.4.0"
+description = "The proc macro crate for ostd-pod"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2.workspace = true
+quote.workspace = true
+syn.workspace = true
+
+[dev-dependencies]
+ostd-pod = { path = "../", default-features = false }
+zerocopy.workspace = true
+
+[lints]
+workspace = true
