@@ -54,19 +54,17 @@ FN_TEST(anon_inodefs_share_inode)
 {
 	struct fd_mode {
 		int fd;
-		mode_t modes[2];
+		mode_t mode;
 	};
 
 	struct fd_mode fds[] = {
-		{ epoll_fd, { 0600, 0000 } },	{ event_fd, { 0000, 0111 } },
-		{ timer_fd, { 0111, 0222 } },	{ signal_fd, { 0222, 0333 } },
-		{ inotify_fd, { 0333, 0444 } }, { pid_fd, { 0444, 0600 } },
+		{ epoll_fd, 0600 },  { event_fd, 0600 },   { timer_fd, 0600 },
+		{ signal_fd, 0600 }, { inotify_fd, 0600 }, { pid_fd, 0700 },
 	};
 
 	for (size_t i = 0; i < sizeof(fds) / sizeof(fds[0]); i++) {
-		TEST_RES(get_mode(fds[i].fd), _ret == fds[i].modes[0]);
-		TEST_SUCC(set_mode(fds[i].fd, fds[i].modes[1]));
-		TEST_RES(get_mode(fds[i].fd), _ret == fds[i].modes[1]);
+		TEST_RES(get_mode(fds[i].fd), _ret == fds[i].mode);
+		TEST_ERRNO(set_mode(fds[i].fd, 0600), EOPNOTSUPP);
 	}
 }
 END_TEST()

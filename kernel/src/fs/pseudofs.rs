@@ -71,7 +71,7 @@ impl PseudoFs {
                 sb: SuperBlock::new(magic, aster_block::BLOCK_SIZE, NAME_MAX),
                 root: Arc::new(PseudoInode::new(
                     ROOT_INO,
-                    InodeType::Dir,
+                    PseudoInodeType::Root,
                     mkmod!(u+rw),
                     Uid::new_root(),
                     Gid::new_root(),
@@ -85,7 +85,7 @@ impl PseudoFs {
 
     pub fn alloc_inode(
         self: &Arc<Self>,
-        type_: InodeType,
+        type_: PseudoInodeType,
         mode: InodeMode,
         uid: Uid,
         gid: Gid,
@@ -140,7 +140,7 @@ impl SockFs {
     /// Creates a pseudo `Path` for a socket.
     pub fn new_path() -> Path {
         let socket_inode = Arc::new(Self::singleton().alloc_inode(
-            InodeType::Socket,
+            PseudoInodeType::Socket,
             mkmod!(a+rwx),
             Uid::new_root(),
             Gid::new_root(),
@@ -206,13 +206,58 @@ impl AnonInodeFs {
 
         SHARED_INODE.call_once(|| {
             let shared_inode = Self::singleton().alloc_inode(
-                InodeType::Unknown,
+                PseudoInodeType::AnonInode,
                 mkmod!(u+rw),
                 Uid::new_root(),
                 Gid::new_root(),
             );
 
             Arc::new(shared_inode)
+        })
+    }
+}
+
+pub struct PidfdFs {
+    _private: (),
+}
+
+impl PidfdFs {
+    /// Returns the singleton instance of the pidfd file system.
+    pub fn singleton() -> &'static Arc<PseudoFs> {
+        static PIDFDFS: Once<Arc<PseudoFs>> = Once::new();
+
+        PseudoFs::singleton(&PIDFDFS, "pidfdfs", PIDFDFS_MAGIC)
+    }
+
+    /// Creates a pseudo `Path` for a pidfd.
+    pub fn new_path(name_fn: fn(&dyn Inode) -> String) -> Path {
+        Path::new_pseudo(
+            Self::mount_node().clone(),
+            Self::shared_inode().clone(),
+            name_fn,
+        )
+    }
+
+    /// Returns the pseudo mount node of the pidfd file system.
+    pub fn mount_node() -> &'static Arc<Mount> {
+        static PIDFDFS_MOUNT: Once<Arc<Mount>> = Once::new();
+
+        PIDFDFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()))
+    }
+
+    /// Returns the shared inode of the pidfd file system.
+    pub fn shared_inode() -> &'static Arc<dyn Inode> {
+        static SHARED_INODE: Once<Arc<dyn Inode>> = Once::new();
+
+        SHARED_INODE.call_once(|| {
+            let pidfd_inode = Self::singleton().alloc_inode(
+                PseudoInodeType::Pidfd,
+                mkmod!(u+rwx),
+                Uid::new_root(),
+                Gid::new_root(),
+            );
+
+            Arc::new(pidfd_inode)
         })
     }
 }
@@ -282,24 +327,50 @@ const PIPEFS_MAGIC: u64 = 0x50495045;
 const SOCKFS_MAGIC: u64 = 0x534F434B;
 // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/include/uapi/linux/magic.h#L93>
 const ANON_INODEFS_MAGIC: u64 = 0x09041934;
+// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/include/uapi/linux/magic.h#L105>
+const PIDFDFS_MAGIC: u64 = 0x50494446;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PseudoInodeType {
+    Root,
+    Pipe,
+    Socket,
+    AnonInode,
+    Pidfd,
+}
+
+impl From<PseudoInodeType> for InodeType {
+    fn from(pseudo_type: PseudoInodeType) -> Self {
+        match pseudo_type {
+            PseudoInodeType::Root => InodeType::Dir,
+            PseudoInodeType::Pipe => InodeType::NamedPipe,
+            PseudoInodeType::Socket => InodeType::Socket,
+            PseudoInodeType::AnonInode => InodeType::Unknown,
+            PseudoInodeType::Pidfd => InodeType::Unknown,
+        }
+    }
+}
 
 /// A pseudo inode that does not correspond to any real path in the file system.
 pub struct PseudoInode {
     metadata: SpinLock<Metadata>,
     extension: Extension,
     fs: Weak<PseudoFs>,
+    is_anon: bool,
 }
 
 impl PseudoInode {
     fn new(
         ino: u64,
-        type_: InodeType,
+        type_: PseudoInodeType,
         mode: InodeMode,
         uid: Uid,
         gid: Gid,
         fs: Weak<PseudoFs>,
     ) -> Self {
         let now = now();
+        let type_ = InodeType::from(type_);
+
         let metadata = Metadata {
             dev: 0,
             ino,
@@ -316,10 +387,12 @@ impl PseudoInode {
             gid,
             rdev: 0,
         };
+
         PseudoInode {
             metadata: SpinLock::new(metadata),
             extension: Extension::new(),
             fs,
+            is_anon: type_ == InodeType::Unknown,
         }
     }
 }
@@ -380,6 +453,13 @@ impl Inode for PseudoInode {
     }
 
     fn set_mode(&self, mode: InodeMode) -> Result<()> {
+        if self.is_anon {
+            return_errno_with_message!(
+                Errno::EOPNOTSUPP,
+                "the mode of anonymous inodes cannot be changed"
+            );
+        }
+
         let mut meta = self.metadata.lock();
         meta.mode = mode;
         meta.ctime = now();

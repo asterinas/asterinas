@@ -24,8 +24,7 @@ static int read_fdinfo_mnt_id(int fd)
 
 FN_TEST(pseudo_mount)
 {
-	int anon[] = { epoll_fd,  event_fd,   timer_fd,
-		       signal_fd, inotify_fd, pid_fd };
+	int anon[] = { epoll_fd, event_fd, timer_fd, signal_fd, inotify_fd };
 
 	struct fd_group {
 		int *fds;
@@ -34,13 +33,11 @@ FN_TEST(pseudo_mount)
 	};
 
 	struct fd_group groups[] = {
-		{ pipe_1, 2, -1 },
-		{ sock, 2, -1 },
-		{ anon, 6, -1 },
-		{ &mem_fd, 1, -1 },
+		{ pipe_1, 2, -1 },  { sock, 2, -1 },	{ anon, 5, -1 },
+		{ &mem_fd, 1, -1 }, { &pid_fd, 1, -1 },
 	};
 
-	for (int i = 0; i < 4; i++) {
+	for (int i = 0; i < 5; i++) {
 		int base = TEST_SUCC(read_fdinfo_mnt_id(groups[i].fds[0]));
 		for (int j = 1; j < groups[i].nr; j++) {
 			TEST_RES(read_fdinfo_mnt_id(groups[i].fds[j]),
@@ -49,8 +46,8 @@ FN_TEST(pseudo_mount)
 		groups[i].mnt_id = base;
 	}
 
-	for (int i = 0; i < 4; i++) {
-		for (int j = i + 1; j < 4; j++) {
+	for (int i = 0; i < 5; i++) {
+		for (int j = i + 1; j < 5; j++) {
 			TEST_RES(0, groups[i].mnt_id != groups[j].mnt_id);
 		}
 	}

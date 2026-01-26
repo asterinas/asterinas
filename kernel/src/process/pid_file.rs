@@ -11,7 +11,7 @@ use crate::{
         file_handle::FileLike,
         file_table::FdFlags,
         path::Path,
-        pseudofs::AnonInodeFs,
+        pseudofs::PidfdFs,
         utils::{CreationFlags, StatusFlags},
     },
     prelude::*,
@@ -43,7 +43,7 @@ impl Debug for PidFile {
 
 impl PidFile {
     pub fn new(process: Arc<Process>, is_nonblocking: bool) -> Self {
-        let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:[pidfd]".to_string());
+        let pseudo_path = PidfdFs::new_path(|_| "anon_inode:[pidfd]".to_string());
 
         Self {
             process: Arc::downgrade(&process),
@@ -59,7 +59,7 @@ impl PidFile {
         // Reference: <https://man7.org/linux/man-pages/man2/pidfd_open.2.html>.
         let Some(process) = self.process.upgrade() else {
             // The process has been reaped.
-            return IoEvents::IN;
+            return IoEvents::IN | IoEvents::HUP;
         };
         if process.status().is_zombie() {
             IoEvents::IN
@@ -84,6 +84,20 @@ impl FileLike for PidFile {
 
     fn write(&self, _reader: &mut VmReader) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "PID file cannot be written");
+    }
+
+    fn read_at(&self, _offset: usize, _writer: &mut VmWriter) -> Result<usize> {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "PID file cannot be read at a specific offset"
+        );
+    }
+
+    fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "PID file cannot be written at a specific offset"
+        );
     }
 
     fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
@@ -118,8 +132,8 @@ impl FileLike for PidFile {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 writeln!(f, "pos:\t{}", 0)?;
                 writeln!(f, "flags:\t0{:o}", self.flags)?;
-                writeln!(f, "mnt_id:\t{}", AnonInodeFs::mount_node().id())?;
-                writeln!(f, "ino:\t{}", AnonInodeFs::shared_inode().ino())?;
+                writeln!(f, "mnt_id:\t{}", PidfdFs::mount_node().id())?;
+                writeln!(f, "ino:\t{}", PidfdFs::shared_inode().ino())?;
                 writeln!(f, "Pid:\t{}", self.pid)?;
                 // TODO: Currently we do not support PID namespaces. Just print the PID once.
                 writeln!(f, "NSpid:\t{}", self.pid)
@@ -140,7 +154,7 @@ impl Pollable for PidFile {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         let Some(process) = self.process.upgrade() else {
             // The process has been reaped.
-            return mask & IoEvents::IN;
+            return mask & (IoEvents::IN | IoEvents::HUP);
         };
         process
             .pidfile_pollee
