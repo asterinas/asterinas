@@ -20,6 +20,7 @@ use super::{
     task_set::TaskSet,
 };
 use crate::{
+    events::IoEvents,
     fs::cgroupfs::CgroupNode,
     prelude::*,
     process::{
@@ -149,6 +150,12 @@ pub struct Process {
     // Namespaces
     /// The user namespace
     user_ns: Mutex<Arc<UserNamespace>>,
+}
+
+impl Drop for Process {
+    fn drop(&mut self) {
+        self.pidfile_pollee.notify(IoEvents::HUP);
+    }
 }
 
 /// Representing a parent process by holding a weak reference to it and its PID.

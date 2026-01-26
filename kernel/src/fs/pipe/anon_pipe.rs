@@ -8,7 +8,7 @@ use crate::{
     fs::{
         inode_handle::{FileIo, InodeHandle},
         pipe::Pipe,
-        pseudofs::{PipeFs, PseudoInode},
+        pseudofs::{PipeFs, PseudoInode, PseudoInodeType},
         utils::{
             AccessMode, Extension, FileSystem, Inode, InodeIo, InodeMode, InodeType, Metadata,
             StatusFlags, mkmod,
@@ -46,7 +46,7 @@ impl AnonPipeInode {
         let pipe = Pipe::new();
 
         let pseudo_inode = PipeFs::singleton().alloc_inode(
-            InodeType::NamedPipe,
+            PseudoInodeType::Pipe,
             mkmod!(u+rw),
             Uid::new_root(),
             Gid::new_root(),

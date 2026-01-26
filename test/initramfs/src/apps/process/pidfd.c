@@ -36,9 +36,9 @@ FN_TEST(read_write)
 {
 	char buf[1] = {};
 	TEST_ERRNO(read(pid_fd, buf, 1), EINVAL);
-	TEST_ERRNO(pread(pid_fd, buf, 1, 0), ESPIPE);
+	TEST_ERRNO(pread(pid_fd, buf, 1, 0), EINVAL);
 	TEST_ERRNO(write(pid_fd, "a", 1), EINVAL);
-	TEST_ERRNO(pwrite(pid_fd, "b", 1, 0), ESPIPE);
+	TEST_ERRNO(pwrite(pid_fd, "b", 1, 0), EINVAL);
 }
 END_TEST()
 
@@ -55,7 +55,7 @@ FN_TEST(file_stat)
 {
 	struct stat file_info;
 	TEST_RES(fstat(pid_fd, &file_info),
-		 file_info.st_mode == 0600 && file_info.st_size == 0 &&
+		 file_info.st_mode == 0700 && file_info.st_size == 0 &&
 			 file_info.st_blksize == 4096);
 }
 END_TEST()
@@ -78,9 +78,10 @@ END_TEST()
 FN_TEST(wait)
 {
 #define P_PIDFD 3
-	TEST_SUCC(waitid(P_PIDFD, pid_fd, NULL, WNOHANG | WEXITED));
-	pfd.revents = 0;
+	TEST_SUCC(waitid(P_PIDFD, pid_fd, NULL, WEXITED | WNOWAIT));
 	TEST_RES(poll(&pfd, 1, 0), pfd.revents == POLLIN);
+	TEST_SUCC(waitid(P_PIDFD, pid_fd, NULL, WEXITED));
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == (POLLIN | POLLHUP));
 	TEST_ERRNO(waitid(P_PIDFD, pid_fd, NULL, WNOHANG | WEXITED), ECHILD);
 
 	TEST_ERRNO(waitid(P_PIDFD, 100, NULL, WNOHANG | WEXITED), EBADF);
