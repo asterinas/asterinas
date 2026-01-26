@@ -19,6 +19,8 @@ members = [
     "ostd/libs/linux-bzimage/boot-params",
     "ostd/libs/linux-bzimage/builder",
     "ostd/libs/linux-bzimage/setup",
+    "ostd/libs/ostd-pod",
+    "ostd/libs/ostd-pod/macros",
     "ostd/libs/ostd-macros",
     "ostd/libs/ostd-test",
     "ostd/libs/padding-struct",
@@ -142,6 +144,7 @@ serde = { version = "1.0.192", default-features = false, features = ["alloc", "d
 smallvec = "1.13.2"
 uart_16550 = "0.3.0"
 volatile = "0.6.1"
+zerocopy = { version = "0.8.34", features = [ "derive" ] }
 
 # External dependencies only for safe crates (i.e., crates under kernel or osdk/deps directories)
 #
