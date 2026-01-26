@@ -15,6 +15,7 @@ softirq = { name = "aster-softirq" }
 systree = { name = "aster-systree" }
 time = { name = "aster-time" }
 virtio = { name = "aster-virtio" }
+nvme = { name = "aster-nvme" }
 
 [whitelist]
 [whitelist.nix.main]

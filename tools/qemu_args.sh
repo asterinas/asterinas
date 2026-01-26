@@ -90,6 +90,7 @@ COMMON_QEMU_ARGS="\
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
     -drive if=none,format=raw,id=x0,file=./test/initramfs/build/ext2.img \
     -drive if=none,format=raw,id=x1,file=./test/initramfs/build/exfat.img \
+    -drive if=none,id=nvme0,file=./test/initramfs/build/nvme0.img \
 "
 
 if [ "$1" = "iommu" ]; then
@@ -113,6 +114,7 @@ QEMU_ARGS="\
     -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES$IOMMU_DEV_EXTRA \
     -device virtio-serial-pci,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
     -device virtconsole,chardev=mux \
+    -device nvme,drive=nvme0,serial=nvme0 \
     $IOMMU_EXTRA_ARGS \
 "
 
