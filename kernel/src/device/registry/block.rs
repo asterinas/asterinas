@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_block::BlockDevice;
+use aster_block::{BlockDevice, SECTOR_SIZE};
 use aster_virtio::device::block::device::BlockDevice as VirtIoBlockDevice;
 use device_id::DeviceId;
 use ostd::mm::VmIo;
@@ -15,7 +15,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
-    thread::kernel_thread::ThreadOptions,
+    thread::kernel_thread::ThreadOptions, util::ioctl::{RawIoctl, dispatch_ioctl},
 };
 
 pub(super) fn init_in_first_kthread() {
@@ -45,6 +45,14 @@ pub(super) fn init_in_first_process(path_resolver: &PathResolver) -> Result<()> 
     }
 
     Ok(())
+}
+
+
+mod ioctl_defs {
+    use crate::util::ioctl::{OutData, ioc};
+
+    // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/fs.h>
+    pub(super) type BlkGetSize64 = ioc!(BLKGETSIZE64, 0x12, 114, OutData<u64>);
 }
 
 /// Represents a block device inode in the filesystem.
@@ -126,6 +134,18 @@ impl FileIo for OpenBlockFile {
 
     fn is_offset_aware(&self) -> bool {
         true
+    }
+
+    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+        use ioctl_defs::*;  
+        dispatch_ioctl!(match raw_ioctl {
+            cmd @ BlkGetSize64 => {
+                let size = (self.0.metadata().nr_sectors * SECTOR_SIZE) as u64;
+                cmd.write(&size)?;
+                Ok(0)
+            }
+            _ => return_errno_with_message!(Errno::ENOTTY, "unsupported ioctl on block device"),
+        })
     }
 }
 
