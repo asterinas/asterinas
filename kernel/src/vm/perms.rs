@@ -42,6 +42,24 @@ impl VmPerms {
 
         Ok(())
     }
+
+    /// Parses `bits` as requested permissions from user programs and returns errors
+    /// if there are unknown permissions.
+    pub fn from_user_bits(bits: u32) -> Result<Self> {
+        if let Some(vm_perms) = VmPerms::from_bits(bits)
+            && Self::ALL_PERMS.contains(vm_perms)
+        {
+            Ok(vm_perms)
+        } else {
+            return_errno_with_message!(Errno::EINVAL, "invalid permissions");
+        }
+    }
+
+    /// Parses `bits` as requested permissions from user programs and ignores any
+    /// unknown permissions.
+    pub fn from_user_bits_truncate(bits: u32) -> Self {
+        VmPerms::from_bits_truncate(bits) & Self::ALL_PERMS
+    }
 }
 
 impl From<Rights> for VmPerms {
