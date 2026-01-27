@@ -58,7 +58,7 @@ use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     boot::memory_region::MemoryRegionType,
     const_assert,
-    mm::{PAGE_SIZE, PagingLevel, page_table::largest_pages},
+    mm::{HasPaddr, PAGE_SIZE, PagingLevel, frame::FrameRef, page_table::largest_pages},
     task::disable_preempt,
 };
 
@@ -141,29 +141,33 @@ pub(super) static KERNEL_PAGE_TABLE: Once<PageTable<KernelPtConfig>> = Once::new
 pub(super) struct KernelPtConfig {}
 
 // We use the first available PTE bit to mark the frame as tracked.
-// SAFETY: `item_into_raw` and `item_from_raw` are implemented correctly,
+// SAFETY: `item_raw_info`, `item_into_raw`, `item_from_raw`, and
+// `item_ref_from_raw` are correctly implemented with respect to the `Item` and
+// `ItemRef` types.
 unsafe impl PageTableConfig for KernelPtConfig {
     const TOP_LEVEL_INDEX_RANGE: Range<usize> = 256..512;
     const TOP_LEVEL_CAN_UNMAP: bool = false;
 
     type E = PageTableEntry;
     type C = PagingConsts;
+    type Aux = ();
 
     type Item = MappedItem;
+    type ItemRef<'a> = MappedItemRef<'a>;
 
-    fn item_into_raw(item: Self::Item) -> (Paddr, PagingLevel, PageProperty) {
-        match item {
-            MappedItem::Tracked(frame, mut prop) => {
+    fn item_raw_info(item: &Self::Item) -> (Paddr, PagingLevel, PageProperty) {
+        match *item {
+            MappedItem::Tracked(ref frame, mut prop) => {
                 debug_assert!(!prop.priv_flags.contains(PrivilegedPageFlags::AVAIL1));
                 prop.priv_flags |= PrivilegedPageFlags::AVAIL1;
                 let level = frame.map_level();
-                let paddr = frame.into_raw();
+                let paddr = frame.paddr();
                 (paddr, level, prop)
             }
-            MappedItem::Untracked(pa, level, mut prop) => {
+            MappedItem::Untracked(ref pa, ref level, mut prop) => {
                 debug_assert!(!prop.priv_flags.contains(PrivilegedPageFlags::AVAIL1));
                 prop.priv_flags -= PrivilegedPageFlags::AVAIL1;
-                (pa, level, prop)
+                (*pa, *level, prop)
             }
         }
     }
@@ -178,11 +182,35 @@ unsafe impl PageTableConfig for KernelPtConfig {
             MappedItem::Untracked(paddr, level, prop)
         }
     }
+
+    unsafe fn item_ref_from_raw<'a>(
+        paddr: Paddr,
+        level: PagingLevel,
+        prop: PageProperty,
+    ) -> Self::ItemRef<'a> {
+        if prop.priv_flags.contains(PrivilegedPageFlags::AVAIL1) {
+            debug_assert_eq!(level, 1);
+            // SAFETY: The caller ensures that the frame outlives `'a` and that
+            // the type matches the frame.
+            let frame = unsafe { FrameRef::<dyn AnyFrameMeta>::borrow_paddr(paddr) };
+            MappedItemRef::Tracked(frame, prop)
+        } else {
+            MappedItemRef::Untracked(paddr, level, prop)
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum MappedItem {
     Tracked(Frame<dyn AnyFrameMeta>, PageProperty),
+    Untracked(Paddr, PagingLevel, PageProperty),
+}
+
+#[derive(Debug)]
+pub(crate) enum MappedItemRef<'a> {
+    #[cfg_attr(not(ktest), expect(dead_code))]
+    Tracked(FrameRef<'a, dyn AnyFrameMeta>, PageProperty),
+    #[cfg_attr(not(ktest), expect(dead_code))]
     Untracked(Paddr, PagingLevel, PageProperty),
 }
 
@@ -213,10 +241,11 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
         let mut cursor = kpt.cursor_mut(&preempt_guard, &from).unwrap();
-        for (pa, level) in largest_pages::<KernelPtConfig>(from.start, 0, max_paddr) {
+        for (va, pa, level) in largest_pages::<KernelPtConfig>(from.start, 0, max_paddr) {
+            cursor.jump(va).unwrap();
+            cursor.adjust_level(level);
             // SAFETY: we are doing the linear mapping for the kernel.
-            unsafe { cursor.map(MappedItem::Untracked(pa, level, prop)) }
-                .expect("Kernel linear address space is mapped twice");
+            unsafe { cursor.map(MappedItem::Untracked(pa, level, prop)) };
         }
     }
 
@@ -234,12 +263,13 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
         // We won't unmap them anyway, so there's no leaking problem yet.
         // TODO: support tracked huge page mapping.
         let pa_range = meta_pages.into_raw();
-        for (pa, level) in
+        for (va, pa, level) in
             largest_pages::<KernelPtConfig>(from.start, pa_range.start, pa_range.len())
         {
+            cursor.jump(va).unwrap();
+            cursor.adjust_level(level);
             // SAFETY: We are doing the metadata mappings for the kernel.
-            unsafe { cursor.map(MappedItem::Untracked(pa, level, prop)) }
-                .expect("Frame metadata address space is mapped twice");
+            unsafe { cursor.map(MappedItem::Untracked(pa, level, prop)) };
         }
     }
 
@@ -261,10 +291,13 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
         let mut cursor = kpt.cursor_mut(&preempt_guard, &from).unwrap();
-        for (pa, level) in largest_pages::<KernelPtConfig>(from.start, region.base(), from.len()) {
+        for (va, pa, level) in
+            largest_pages::<KernelPtConfig>(from.start, region.base(), from.len())
+        {
+            cursor.jump(va).unwrap();
+            cursor.adjust_level(level);
             // SAFETY: we are doing the kernel code mapping.
-            unsafe { cursor.map(MappedItem::Untracked(pa, level, prop)) }
-                .expect("Kernel code mapped twice");
+            unsafe { cursor.map(MappedItem::Untracked(pa, level, prop)) };
         }
     }
 

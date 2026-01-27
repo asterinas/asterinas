@@ -465,6 +465,19 @@ impl<T: Send + 'static> RcuDrop<T> {
             value: ManuallyDrop::new(value),
         }
     }
+
+    /// Extracts the value from the `RcuDrop` container.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the returned value will be dropped after
+    /// all the threads cannot access it anymore. Specifically, dropping it
+    /// after the RCU grace period must be safe.
+    pub unsafe fn into_inner(slot: RcuDrop<T>) -> T {
+        let mut slot = ManuallyDrop::new(slot);
+        // SAFETY: The `slot` will not be used after this point.
+        unsafe { ManuallyDrop::take(&mut slot.value) }
+    }
 }
 
 impl<T: Send + 'static> Deref for RcuDrop<T> {

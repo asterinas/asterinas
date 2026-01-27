@@ -44,7 +44,7 @@ bitflags::bitflags! {
         const PLVL =            1 << 2;
         const PLVH =            1 << 3;
         /// Controls the memory access type of the memory access operation
-        /// falling on the address space of the table page entry.
+        /// falling on the address space of the page table entry.
         const MATL =            1 << 4;
         const MATH =            1 << 5;
         /// If this entry is a basic page table entry, it is `GLOBAL`,
