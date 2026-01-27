@@ -10,6 +10,7 @@ use crate::{
         page_size,
         page_table::{PageTableConfig, PageTableNodeRef, PteScalar},
     },
+    panic::PanicGuard,
     sync::RcuDrop,
     task::atomic_mode::InAtomicMode,
 };
@@ -175,6 +176,9 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         // Lock before writing the PTE, so no one else can operate on it.
         let mut pt_lock_guard = pt_ref.lock(guard);
 
+        // Prevent double-dropping the small items when panicking (e.g., debug assertion fails).
+        let panic_guard = PanicGuard::new();
+
         for i in 0..nr_subpage_per_huge::<C>() {
             let small_pa = pa + i * page_size::<C>(level - 1);
             let mut entry = pt_lock_guard.entry(i);
@@ -189,6 +193,8 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         //  2. The new PTE is a child in `C` and at the correct paging level.
         //  3. The ownership of the child is passed to the page table node.
         unsafe { self.node.write_pte(self.idx, self.pte) };
+
+        panic_guard.forget();
 
         Some(pt_lock_guard)
     }
