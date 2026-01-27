@@ -1436,7 +1436,7 @@ impl InodeImpl {
                     }
                     current_bid += 1;
                 }
-                self.expand_blocks(sparse_start..current_bid)?;
+                self.alloc_range_blocks(sparse_start..current_bid)?;
             } else {
                 current_bid += 1;
             }
@@ -1512,7 +1512,7 @@ impl InodeImpl {
             if new_blocks - old_blocks > self.fs().super_block().free_blocks_count() {
                 return_errno_with_message!(Errno::ENOSPC, "not enough free blocks");
             }
-            self.expand_blocks(old_blocks..new_blocks)?;
+            self.alloc_range_blocks(old_blocks..new_blocks)?;
         }
 
         // Expands the size
@@ -1520,13 +1520,13 @@ impl InodeImpl {
         Ok(())
     }
 
-    /// Expands inode blocks.
+    /// Allocate inode blocks in a specified range.
     ///
-    /// After a successful expansion, the block count will be enlarged to `range.end`.
-    fn expand_blocks(&mut self, range: Range<Ext2Bid>) -> Result<()> {
+    /// After a successful allocation, the block count will be increase `range.len`.
+    fn alloc_range_blocks(&mut self, range: Range<Ext2Bid>) -> Result<()> {
         let mut current_range = range.clone();
         while !current_range.is_empty() {
-            let Ok(expand_cnt) = self.try_expand_blocks(current_range.clone()) else {
+            let Ok(expand_cnt) = self.try_alloc_range_blocks(current_range.clone()) else {
                 self.shrink_blocks(range.start..current_range.start);
                 return_errno_with_message!(Errno::ENOSPC, "can not allocate blocks");
             };
@@ -1536,31 +1536,61 @@ impl InodeImpl {
         Ok(())
     }
 
-    /// Attempts to expand a range of blocks and returns the number of consecutive
+    fn count_required_indirect_blocks(&self, bid: Ext2Bid) -> Result<u32> {
+        let bid_path = BidPath::from(bid);
+        let block_ptrs = self.block_manager.block_ptrs.read();
+
+        match bid_path {
+            BidPath::Direct(_) => Ok(0),
+            BidPath::Indirect(_) => {
+                if block_ptrs.indirect() == 0 {
+                    Ok(1)
+                } else {
+                    Ok(0)
+                }
+            }
+            BidPath::DbIndirect(lvl1_idx, _) => {
+                if block_ptrs.db_indirect() == 0 {
+                    return Ok(2);
+                }
+                let mut indirect_blocks = self.block_manager.indirect_blocks.write();
+                let db_indirect_block = indirect_blocks.find(block_ptrs.db_indirect())?;
+                let lvl1_indirect_bid = db_indirect_block.read_bid(lvl1_idx as usize).unwrap_or(0);
+                if lvl1_indirect_bid == 0 { Ok(1) } else { Ok(0) }
+            }
+            BidPath::TbIndirect(lvl1_idx, lvl2_idx, _) => {
+                if block_ptrs.tb_indirect() == 0 {
+                    return Ok(3);
+                }
+                let mut indirect_blocks = self.block_manager.indirect_blocks.write();
+                let tb_indirect_block = indirect_blocks.find(block_ptrs.tb_indirect())?;
+                let lvl1_indirect_bid = tb_indirect_block.read_bid(lvl1_idx as usize).unwrap_or(0);
+                if lvl1_indirect_bid == 0 {
+                    return Ok(2);
+                }
+                let lvl2_indirect_bid = indirect_blocks
+                    .find(lvl1_indirect_bid)?
+                    .read_bid(lvl2_idx as usize)
+                    .unwrap_or(0);
+                if lvl2_indirect_bid == 0 { Ok(1) } else { Ok(0) }
+            }
+        }
+    }
+
+    /// Attempts to allocate a range of blocks and returns the number of consecutive
     /// blocks successfully allocated.
     ///
     /// Note that the returned number may be less than the requested range if there
     /// isn't enough consecutive space available or if there is a necessity to allocate
     /// indirect blocks.
-    fn try_expand_blocks(&mut self, range: Range<Ext2Bid>) -> Result<Ext2Bid> {
+    fn try_alloc_range_blocks(&mut self, range: Range<Ext2Bid>) -> Result<Ext2Bid> {
         // Calculates the maximum number of consecutive blocks that can be allocated in
         // this round, as well as the number of additional indirect blocks required for
         // the allocation.
         let (max_cnt, indirect_cnt) = {
             let bid_path = BidPath::from(range.start);
             let max_cnt = (range.len() as Ext2Bid).min(bid_path.cnt_to_next_indirect());
-            let indirect_cnt = match bid_path {
-                BidPath::Direct(_) => 0,
-                BidPath::Indirect(0) => 1,
-                BidPath::Indirect(_) => 0,
-                BidPath::DbIndirect(0, 0) => 2,
-                BidPath::DbIndirect(_, 0) => 1,
-                BidPath::DbIndirect(_, _) => 0,
-                BidPath::TbIndirect(0, 0, 0) => 3,
-                BidPath::TbIndirect(_, 0, 0) => 2,
-                BidPath::TbIndirect(_, _, 0) => 1,
-                BidPath::TbIndirect(_, _, _) => 0,
-            };
+            let indirect_cnt = self.count_required_indirect_blocks(range.start)?;
             (max_cnt, indirect_cnt)
         };
 
@@ -1582,9 +1612,9 @@ impl InodeImpl {
                 self.fs().free_blocks(device_range).unwrap();
                 return Err(e);
             }
+            self.desc.occupied_sectors_count += blocks_to_sectors(device_range.len() as u32);
             self.last_alloc_device_bid = Some(device_range.end - 1);
             let nr_blocks = device_range.len() as Ext2Bid;
-            self.desc.set_data_blocks(range.start + nr_blocks);
             return Ok(nr_blocks);
         }
 
@@ -1629,9 +1659,9 @@ impl InodeImpl {
             return Err(e);
         }
 
+        self.desc.occupied_sectors_count += blocks_to_sectors(device_range.len() as u32);
         self.last_alloc_device_bid = Some(device_range.end - 1);
         let nr_blocks = device_range.len() as Ext2Bid;
-        self.desc.set_data_blocks(range.start + nr_blocks);
         Ok(nr_blocks)
     }
 
@@ -1707,52 +1737,79 @@ impl InodeImpl {
         let bid_path = BidPath::from(bid);
         let mut block_ptrs = self.block_manager.block_ptrs.write();
         let mut indirect_blocks = self.block_manager.indirect_blocks.write();
+
         for indirect_bid in indirect_bids.iter() {
             let indirect_block = IndirectBlock::alloc()?;
             indirect_blocks.insert(*indirect_bid, indirect_block)?;
+        }
 
-            match bid_path {
-                BidPath::Indirect(idx) => {
-                    assert_eq!(idx, 0);
-                    self.desc.block_ptrs.set_indirect(*indirect_bid);
-                    block_ptrs.set_indirect(*indirect_bid);
-                }
-                BidPath::DbIndirect(lvl1_idx, lvl2_idx) => {
-                    assert_eq!(lvl2_idx, 0);
-                    if self.desc.block_ptrs.db_indirect() == 0 {
-                        self.desc.block_ptrs.set_db_indirect(*indirect_bid);
-                        block_ptrs.set_db_indirect(*indirect_bid);
-                    } else {
-                        let db_indirect_block =
-                            indirect_blocks.find_mut(self.desc.block_ptrs.db_indirect())?;
-                        db_indirect_block.write_bid(lvl1_idx as usize, indirect_bid)?;
-                    }
-                }
-                BidPath::TbIndirect(lvl1_idx, lvl2_idx, lvl3_idx) => {
-                    assert_eq!(lvl3_idx, 0);
-                    if self.desc.block_ptrs.tb_indirect() == 0 {
-                        self.desc.block_ptrs.set_tb_indirect(*indirect_bid);
-                        block_ptrs.set_tb_indirect(*indirect_bid);
-                    } else {
-                        let lvl1_indirect_bid = {
-                            let tb_indirect_block =
-                                indirect_blocks.find(self.desc.block_ptrs.tb_indirect())?;
-                            tb_indirect_block.read_bid(lvl1_idx as usize)?
-                        };
-
-                        if lvl1_indirect_bid == 0 {
-                            let tb_indirect_block =
-                                indirect_blocks.find_mut(self.desc.block_ptrs.tb_indirect())?;
-                            tb_indirect_block.write_bid(lvl1_idx as usize, indirect_bid)?;
-                        } else {
-                            let lvl1_indirect_block =
-                                indirect_blocks.find_mut(lvl1_indirect_bid)?;
-                            lvl1_indirect_block.write_bid(lvl2_idx as usize, indirect_bid)?;
-                        }
-                    }
-                }
-                BidPath::Direct(_) => panic!(),
+        match bid_path {
+            BidPath::Indirect(idx) => {
+                assert_eq!(indirect_bids.len(), 1);
+                self.desc.block_ptrs.set_indirect(indirect_bids[0]);
+                block_ptrs.set_indirect(indirect_bids[0]);
             }
+            BidPath::DbIndirect(lvl1_idx, _) => {
+                let mut bid_idx = 0;
+                if self.desc.block_ptrs.db_indirect() == 0 {
+                    self.desc.block_ptrs.set_db_indirect(indirect_bids[bid_idx]);
+                    block_ptrs.set_db_indirect(indirect_bids[bid_idx]);
+                    bid_idx += 1;
+                }
+
+                if bid_idx == 1 {
+                    assert!(indirect_bids.len() == 2);
+                } else {
+                    assert!(indirect_bids.len() == 1);
+                }
+
+                let db_indirect_block =
+                    indirect_blocks.find_mut(self.desc.block_ptrs.db_indirect())?;
+                db_indirect_block.write_bid(lvl1_idx as usize, &indirect_bids[bid_idx])?;
+            }
+            BidPath::TbIndirect(lvl1_idx, lvl2_idx, _) => {
+                let mut bid_idx = 0;
+                let tb_indirect_not_alloc = self.desc.block_ptrs.tb_indirect() == 0;
+                if tb_indirect_not_alloc {
+                    self.desc.block_ptrs.set_tb_indirect(indirect_bids[bid_idx]);
+                    block_ptrs.set_tb_indirect(indirect_bids[bid_idx]);
+                    bid_idx += 1;
+                }
+
+                if bid_idx == 1 {
+                    assert!(indirect_bids.len() == 3);
+                }
+
+                // If upper level indirect bid is zero, then the lower level
+                // one should be treated as zero (not allocated) as well.
+                let lvl1_indirect_bid = if tb_indirect_not_alloc {
+                    0
+                } else {
+                    let tb_indirect_block =
+                        indirect_blocks.find(self.desc.block_ptrs.tb_indirect())?;
+                    tb_indirect_block.read_bid(lvl1_idx as usize)?
+                };
+                let lvl1_indirect_bid = if lvl1_indirect_bid == 0 {
+                    let tb_indirect_block =
+                        indirect_blocks.find_mut(self.desc.block_ptrs.tb_indirect())?;
+                    tb_indirect_block.write_bid(lvl1_idx as usize, &indirect_bids[bid_idx])?;
+                    let bid = indirect_bids[bid_idx];
+                    bid_idx += 1;
+                    bid
+                } else {
+                    lvl1_indirect_bid
+                };
+
+                if bid_idx == 1 {
+                    assert!(indirect_bids.len() == 2);
+                } else {
+                    assert!(indirect_bids.len() == 1);
+                }
+
+                let lvl1_indirect_block = indirect_blocks.find_mut(lvl1_indirect_bid)?;
+                lvl1_indirect_block.write_bid(lvl2_idx as usize, &indirect_bids[bid_idx])?;
+            }
+            BidPath::Direct(_) => panic!(),
         }
 
         Ok(())
@@ -1792,7 +1849,6 @@ impl InodeImpl {
             current_range.end -= free_cnt;
         }
 
-        self.desc.set_data_blocks(range.start);
         self.last_alloc_device_bid = if range.start == 0 {
             None
         } else {
@@ -2437,11 +2493,6 @@ impl InodeDesc {
     /// Returns the number of data sectors, including the indirect blocks.
     fn data_sectors(&self) -> u32 {
         self.occupied_sectors_count - self.acl_sectors()
-    }
-
-    /// Sets the number of data blocks, including the indirect blocks.
-    fn set_data_blocks(&mut self, block_count: u32) {
-        self.occupied_sectors_count = blocks_to_sectors(block_count) + self.acl_sectors();
     }
 
     /// Returns whether the inode is a fast symlink.
