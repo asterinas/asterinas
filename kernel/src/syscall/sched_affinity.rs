@@ -67,7 +67,7 @@ const SIZE_OF_PART: usize = size_of::<Part>();
 const CPUS_IN_PART: usize = SIZE_OF_PART * 8;
 
 fn read_cpu_set_from(
-    uspace: CurrentUserSpace,
+    user_space: CurrentUserSpace,
     cpuset_size: usize,
     cpu_set_ptr: Vaddr,
 ) -> Result<CpuSet> {
@@ -81,7 +81,7 @@ fn read_cpu_set_from(
 
     let nr_parts_to_read = cmp::min(cpuset_size / SIZE_OF_PART, num_cpus.div_ceil(CPUS_IN_PART));
     for part_id in 0..nr_parts_to_read {
-        let user_part: Part = uspace.read_val(cpu_set_ptr + part_id * SIZE_OF_PART)?;
+        let user_part: Part = user_space.read_val(cpu_set_ptr + part_id * SIZE_OF_PART)?;
         for bit_id in 0..CPUS_IN_PART {
             if user_part & (1 << bit_id) != 0 {
                 // If the CPU ID is invalid, just ignore it.
@@ -102,7 +102,7 @@ fn read_cpu_set_from(
 
 // Returns the number of bytes written.
 fn write_cpu_set_to(
-    uspace: CurrentUserSpace,
+    user_space: CurrentUserSpace,
     cpu_set: &CpuSet,
     cpuset_size: usize,
     cpu_set_ptr: Vaddr,
@@ -119,7 +119,7 @@ fn write_cpu_set_to(
     for cpu_id in cpu_set.iter() {
         let id = cpu_id.as_usize();
         while part_idx < cmp::min(id / CPUS_IN_PART, nr_parts_to_write) {
-            uspace.write_val(cpu_set_ptr + part_idx * SIZE_OF_PART, &user_part)?;
+            user_space.write_val(cpu_set_ptr + part_idx * SIZE_OF_PART, &user_part)?;
             user_part = 0;
             part_idx += 1;
         }
@@ -130,7 +130,7 @@ fn write_cpu_set_to(
     }
 
     while part_idx < nr_parts_to_write {
-        uspace.write_val(cpu_set_ptr + part_idx * SIZE_OF_PART, &user_part)?;
+        user_space.write_val(cpu_set_ptr + part_idx * SIZE_OF_PART, &user_part)?;
         user_part = 0;
         part_idx += 1;
     }

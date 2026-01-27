@@ -33,12 +33,12 @@ pub fn sys_prlimit64(
     old_rlim_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let userspace = ctx.user_space();
+    let user_space = ctx.user_space();
 
     let new_raw = if new_rlim_addr == 0 {
         None
     } else {
-        Some(userspace.read_val(new_rlim_addr)?)
+        Some(user_space.read_val(new_rlim_addr)?)
     };
 
     let old_raw = if pid == 0 || pid == ctx.process.pid() {
@@ -53,7 +53,7 @@ pub fn sys_prlimit64(
     };
 
     if old_rlim_addr != 0 {
-        userspace.write_val(old_rlim_addr, &old_raw)?;
+        user_space.write_val(old_rlim_addr, &old_raw)?;
     }
 
     Ok(SyscallReturn::Return(0))
