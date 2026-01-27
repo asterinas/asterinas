@@ -99,6 +99,7 @@ impl From<&SigStack> for stack_t {
             ss_sp: value.base,
             ss_flags: value.flags.bits as _,
             ss_size: value.size,
+            ..Default::default()
         }
     }
 }

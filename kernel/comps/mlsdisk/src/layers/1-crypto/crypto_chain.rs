@@ -4,6 +4,7 @@ use core::ops::Range;
 
 use lending_iterator::prelude::*;
 use ostd::Pod;
+use ostd_pod::IntoBytes;
 
 use super::{Iv, Key, Mac};
 use crate::{

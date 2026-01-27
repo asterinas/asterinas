@@ -13,7 +13,6 @@ use aster_input::{
 };
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use ostd::{
-    Pod,
     mm::{VmReader, VmWriter},
     sync::Mutex,
 };

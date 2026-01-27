@@ -29,10 +29,10 @@ use aster_systree::{
 };
 use inherit_methods_macro::inherit_methods;
 use ostd::{
-    Pod,
     mm::{VmReader, VmWriter},
     prelude::ktest,
 };
+use ostd_pod::IntoBytes;
 use spin::Once;
 
 use crate::{
@@ -191,7 +191,7 @@ fn test_config_fs() {
     // Test attr_a read/write on demo_foo
     assert!(
         attr_a_foo
-            .read_bytes_at(0, read_buffer.as_bytes_mut())
+            .read_bytes_at(0, read_buffer.as_mut_bytes())
             .is_ok()
     );
     assert_eq!(read_buffer, 0);
@@ -204,7 +204,7 @@ fn test_config_fs() {
     );
     assert!(
         attr_a_foo
-            .read_bytes_at(0, read_buffer.as_bytes_mut())
+            .read_bytes_at(0, read_buffer.as_mut_bytes())
             .is_ok()
     );
     assert_eq!(read_buffer, 42);
@@ -212,7 +212,7 @@ fn test_config_fs() {
     // Test attr_b read/write on demo_foo
     assert!(
         attr_b_foo
-            .read_bytes_at(0, read_buffer.as_bytes_mut())
+            .read_bytes_at(0, read_buffer.as_mut_bytes())
             .is_ok()
     );
     assert_eq!(read_buffer, 0);
@@ -225,7 +225,7 @@ fn test_config_fs() {
     );
     assert!(
         attr_b_foo
-            .read_bytes_at(0, read_buffer.as_bytes_mut())
+            .read_bytes_at(0, read_buffer.as_mut_bytes())
             .is_ok()
     );
     assert_eq!(read_buffer, 100);
@@ -236,7 +236,7 @@ fn test_config_fs() {
     // Verify that demo_bar has independent state from demo_foo
     assert!(
         attr_a_bar
-            .read_bytes_at(0, read_buffer.as_bytes_mut())
+            .read_bytes_at(0, read_buffer.as_mut_bytes())
             .is_ok()
     );
     assert_eq!(read_buffer, 0); // Should be 0, not 42 like demo_foo
@@ -249,7 +249,7 @@ fn test_config_fs() {
     );
     assert!(
         attr_a_bar
-            .read_bytes_at(0, read_buffer.as_bytes_mut())
+            .read_bytes_at(0, read_buffer.as_mut_bytes())
             .is_ok()
     );
     assert_eq!(read_buffer, 200);
@@ -257,7 +257,7 @@ fn test_config_fs() {
     // Verify demo_foo's attr_a is still 42
     assert!(
         attr_a_foo
-            .read_bytes_at(0, read_buffer.as_bytes_mut())
+            .read_bytes_at(0, read_buffer.as_mut_bytes())
             .is_ok()
     );
     assert_eq!(read_buffer, 42);

@@ -14,6 +14,8 @@ mod tx;
 mod util;
 
 extern crate alloc;
+#[macro_use]
+extern crate ostd_pod;
 
 use alloc::{string::ToString, sync::Arc, vec};
 use core::ops::Range;

@@ -3,6 +3,7 @@
 use core::cmp::min;
 
 use ostd::{mm::VmIo, task::Task};
+use ostd_pod::FromZeros;
 
 use super::{ip::CSocketAddrInet, netlink::CSocketAddrNetlink, unix, vsock::CSocketAddrVm};
 use crate::{current_userspace, net::socket::util::SocketAddr, prelude::*};
@@ -145,7 +146,7 @@ pub fn read_socket_addr_from_user(addr: Vaddr, addr_len: usize) -> Result<Socket
     }
 
     let mut storage = Storage::new_zeroed();
-    current_userspace!().read_bytes(addr, &mut storage.as_bytes_mut()[..addr_len])?;
+    current_userspace!().read_bytes(addr, &mut storage.as_mut_bytes()[..addr_len])?;
 
     let result = match CSocketAddrFamily::try_from(storage.sa_family as i32) {
         Ok(CSocketAddrFamily::AF_INET) => {

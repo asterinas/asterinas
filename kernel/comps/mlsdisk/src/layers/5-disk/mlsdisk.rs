@@ -20,6 +20,7 @@ use ostd::{
     Pod,
     mm::{HasSize, VmIo},
 };
+use ostd_pod::FromZeros;
 
 use super::{
     bio::{BioReq, BioReqQueue, BioResp, BioType},

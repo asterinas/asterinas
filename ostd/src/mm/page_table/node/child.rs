@@ -4,7 +4,7 @@
 
 use core::mem::ManuallyDrop;
 
-use ostd_pod::Pod;
+use ostd_pod::FromZeros;
 
 use super::{PageTableNode, PageTableNodeRef, PteTrait};
 use crate::{
