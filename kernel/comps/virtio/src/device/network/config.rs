@@ -5,7 +5,7 @@ use core::mem::offset_of;
 use aster_network::EthernetAddr;
 use aster_util::safe_ptr::SafePtr;
 use bitflags::bitflags;
-use ostd::Pod;
+use ostd_pod::FromZeros;
 
 use crate::transport::{ConfigManager, VirtioTransport};
 
@@ -90,7 +90,7 @@ impl VirtioNetConfig {
 
 impl ConfigManager<VirtioNetConfig> {
     pub(super) fn read_config(&self) -> VirtioNetConfig {
-        let mut net_config = VirtioNetConfig::new_uninit();
+        let mut net_config = VirtioNetConfig::new_zeroed();
         // Only following fields are defined in legacy interface.
         for i in 0..6 {
             net_config.mac.0[i] = self

@@ -11,7 +11,9 @@ bitflags.workspace = true
 bitvec.workspace = true
 log.workspace = true
 ostd.workspace = true
+ostd-pod.workspace = true
 spin.workspace = true
+zerocopy.workspace = true
 
 [lints]
 workspace = true

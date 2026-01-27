@@ -578,7 +578,9 @@ impl From<&SuperBlock> for RawSuperBlock {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-struct Reserved([u32; 190]);
+// FIXME: `pub(super)` is needed due to a bug in `zerocopy`. See
+// <https://github.com/google/zerocopy/issues/1292>.
+pub(super) struct Reserved([u32; 190]);
 
 impl Default for Reserved {
     fn default() -> Self {

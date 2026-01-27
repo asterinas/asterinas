@@ -23,11 +23,11 @@ use ctr::cipher::{NewCipher, StreamCipher};
 pub use hashbrown::{HashMap, HashSet};
 pub use ostd::sync::{Mutex, MutexGuard, RwLock, SpinLock};
 use ostd::{
-    Pod,
     arch::read_random,
     sync::{self, PreemptDisabled, WaitQueue},
     task::{Task, TaskOptions},
 };
+use ostd_pod::{FromZeros, IntoBytes, Pod};
 use serde::{Deserialize, Serialize};
 
 use crate::{

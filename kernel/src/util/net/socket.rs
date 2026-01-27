@@ -78,6 +78,7 @@ bitflags! {
 }
 
 #[repr(C)]
+#[padding_struct]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct CUserMsgHdr {
     /// Pointer to socket address structure

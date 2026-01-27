@@ -29,7 +29,7 @@ pub fn expand_derive(attrs: TokenStream, input: TokenStream) -> TokenStream {
     let attr_tokens = proc_macro2::TokenStream::from(attrs);
     for token in attr_tokens.into_iter() {
         match token {
-            TokenTree::Ident(ident) if ident.to_string() == "Pod" => {
+            TokenTree::Ident(ident) if ident == "Pod" => {
                 // Replace Pod with zerocopy traits
                 push_zerocopy_derive(&mut new_derives, "FromBytes", true);
                 push_zerocopy_derive(&mut new_derives, "IntoBytes", true);
