@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use ostd::const_assert;
+use ostd_pod::derive;
 
 use super::{inode::RawInode, prelude::*};
 
@@ -578,7 +579,7 @@ impl From<&SuperBlock> for RawSuperBlock {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-struct Reserved([u32; 190]);
+pub struct Reserved([u32; 190]);
 
 impl Default for Reserved {
     fn default() -> Self {

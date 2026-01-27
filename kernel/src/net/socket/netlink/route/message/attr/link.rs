@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use ostd_pod::derive;
+
 use super::IFNAME_SIZE;
 use crate::{
     net::socket::netlink::message::{Attribute, CAttrHeader, ContinueRead},

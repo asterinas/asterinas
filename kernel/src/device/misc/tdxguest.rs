@@ -16,6 +16,7 @@ use ostd::{
     },
     sync::WaitQueue,
 };
+use ostd_pod::derive;
 use tdx_guest::{
     SHARED_MASK,
     tdcall::{TdCallError, get_report},

@@ -2,13 +2,13 @@
 
 use core::ops::Range;
 
+use ostd_pod::derive;
 use spin::Once;
 pub(crate) use util::{
     __atomic_cmpxchg_fallible, __atomic_load_fallible, __memcpy_fallible, __memset_fallible,
 };
 
 use crate::{
-    Pod,
     arch::{
         boot::DEVICE_TREE,
         cpu::extension::{IsaExtensions, has_extensions},

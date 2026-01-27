@@ -2,8 +2,6 @@
 
 use alloc::vec;
 
-use ostd_pod::Pod;
-
 use crate::{
     Error,
     io::IoMem,
@@ -20,11 +18,14 @@ use crate::{
 };
 
 mod io {
+    use ostd_pod::{derive, padding_struct};
+
     use super::*;
 
     /// A dummy Pod struct for testing complex types.
     #[repr(C)]
-    #[derive(Clone, Copy, PartialEq, Debug, Pod)]
+    #[padding_struct]
+    #[derive(Clone, Copy, PartialEq, Debug, Default, Pod)]
     pub struct TestPodStruct {
         pub a: u32,
         pub b: u64,
@@ -85,6 +86,7 @@ mod io {
         let test_struct = TestPodStruct {
             a: 0x12345678,
             b: 0xABCDEF0123456789,
+            ..Default::default()
         };
         writer_infallible.write_val(&test_struct).unwrap();
 

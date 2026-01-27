@@ -57,6 +57,8 @@ use core::{
     hash::{Hash, Hasher},
 };
 
+use ostd_pod::derive;
+
 use crate::prelude::*;
 
 #[derive(Copy, PartialEq, Eq, Clone, Debug)]

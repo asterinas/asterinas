@@ -3,6 +3,7 @@
 use core::marker::PhantomData;
 
 use align_ext::AlignExt;
+use ostd_pod::derive;
 
 use super::SyscallReturn;
 use crate::{

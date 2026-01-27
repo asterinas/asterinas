@@ -6,6 +6,8 @@ use core::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use ostd_pod::derive;
+
 use super::process_vm::INIT_STACK_SIZE;
 use crate::{
     prelude::*,

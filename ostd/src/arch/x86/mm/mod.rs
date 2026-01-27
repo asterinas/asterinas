@@ -3,6 +3,7 @@
 use core::ops::Range;
 
 use cfg_if::cfg_if;
+use ostd_pod::derive;
 pub(crate) use util::{
     __atomic_cmpxchg_fallible, __atomic_load_fallible, __memcpy_fallible, __memset_fallible,
 };
@@ -13,16 +14,13 @@ use x86_64::{
     structures::paging::PhysFrame,
 };
 
-use crate::{
-    Pod,
-    mm::{
-        PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
-        dma::DmaDirection,
-        page_prop::{
-            CachePolicy, PageFlags, PageProperty, PageTableFlags, PrivilegedPageFlags as PrivFlags,
-        },
-        page_table::{PteScalar, PteTrait},
+use crate::mm::{
+    PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
+    dma::DmaDirection,
+    page_prop::{
+        CachePolicy, PageFlags, PageProperty, PageTableFlags, PrivilegedPageFlags as PrivFlags,
     },
+    page_table::{PteScalar, PteTrait},
 };
 
 mod pat;

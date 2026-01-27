@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use ostd_pod::derive;
+
 use crate::{prelude::*, process::Pid};
 
 #[derive(Debug, Clone, Copy, Pod)]

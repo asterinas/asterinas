@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use ostd_pod::derive;
+
 use super::prelude::*;
 
 pub type Ext2Bid = u32;
@@ -69,7 +71,7 @@ impl BlockPtrs {
 
     /// Views it as a mutable slice of `u8` bytes.
     pub fn as_bytes_mut(&mut self) -> &mut [u8] {
-        self.inner.as_bytes_mut()
+        self.inner.as_mut_bytes()
     }
 }
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use ostd::mm::{Infallible, VmSpace};
+use ostd_pod::derive;
 
 use crate::prelude::*;
 
@@ -272,7 +273,7 @@ impl dyn MultiRead + '_ {
     /// Reads a `T` value, returning a `None` if the readers have insufficient bytes.
     pub fn read_val_opt<T: Pod>(&mut self) -> Result<Option<T>> {
         let mut val = T::new_zeroed();
-        let nbytes = self.read(&mut VmWriter::from(val.as_bytes_mut()))?;
+        let nbytes = self.read(&mut VmWriter::from(val.as_mut_bytes()))?;
 
         if nbytes == size_of::<T>() {
             Ok(Some(val))

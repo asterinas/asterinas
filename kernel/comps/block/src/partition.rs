@@ -2,6 +2,7 @@
 
 use device_id::DeviceId;
 use ostd::{Pod, mm::VmIo};
+use ostd_pod::derive;
 
 use crate::{
     BlockDevice, BlockDeviceMeta, SECTOR_SIZE,

@@ -12,7 +12,7 @@
 use alloc::{borrow::ToOwned, string::String, vec::Vec};
 use core::fmt::Debug;
 
-use ostd_pod::Pod;
+use ostd_pod::{Pod, derive, padding_struct};
 
 /// DMA-remapping hardware unit definition (DRHD).
 ///
@@ -90,6 +90,7 @@ pub struct AtsrHeader {
 /// This optional structure provides the association between each Remapping hardware unit (identified
 /// by its espective Base Address) and the proximity domain to which that hardware unit belongs.
 #[repr(C)]
+#[padding_struct]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct Rhsa {
     typ: u16,

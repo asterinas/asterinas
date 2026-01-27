@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use ostd_pod::derive;
+
 use super::CSocketAddrFamily;
 use crate::{
     net::socket::netlink::{GroupIdSet, NetlinkSocketAddr},

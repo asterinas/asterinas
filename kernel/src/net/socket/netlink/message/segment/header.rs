@@ -3,6 +3,7 @@
 //! General netlink message types for all netlink protocols.
 
 use align_ext::AlignExt;
+use ostd_pod::derive;
 
 use crate::{net::socket::netlink::message::NLMSG_ALIGN, prelude::*, util::MultiRead};
 

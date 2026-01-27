@@ -14,6 +14,7 @@ use align_ext::AlignExt;
 use bitflags::bitflags;
 use hashbrown::HashMap;
 use ostd::{mm::VmWriter, sync::SpinLock};
+use ostd_pod::derive;
 
 use crate::{
     events::IoEvents,
