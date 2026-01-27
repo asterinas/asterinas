@@ -8,7 +8,6 @@ pub(crate) use util::{
 };
 
 use crate::{
-    Pod,
     arch::{
         boot::DEVICE_TREE,
         cpu::extension::{IsaExtensions, has_extensions},

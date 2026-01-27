@@ -259,7 +259,7 @@ fn map_segment_vmos(
             // Add some random padding.
             let nr_pages_padding = {
                 let mut nr_random_padding_pages: u8 = 0;
-                getrandom(nr_random_padding_pages.as_bytes_mut());
+                getrandom(nr_random_padding_pages.as_mut_bytes());
                 nr_random_padding_pages as usize
             };
             let offset = (PIE_BASE_ADDR + nr_pages_padding * PAGE_SIZE).align_down(align);

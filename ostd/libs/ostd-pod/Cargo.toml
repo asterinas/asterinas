@@ -1,7 +1,8 @@
 [package]
 name = "ostd-pod"
 # REMINDER: Whenever you change this number, 
-# update the external documentation links in README.md.
+# update all occurrences of the version in README
+# (e.g., in external links and in the sample Cargo.toml).
 version = "0.4.0"
 description = "A trait for plain old data (POD)"
 readme = "README.md"

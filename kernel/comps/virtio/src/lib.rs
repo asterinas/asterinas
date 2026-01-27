@@ -3,10 +3,12 @@
 //! The virtio of Asterinas.
 #![no_std]
 #![deny(unsafe_code)]
-#![feature(trait_alias)]
 #![feature(linked_list_cursors)]
+#![feature(trait_alias)]
 
 extern crate alloc;
+#[macro_use]
+extern crate ostd_pod;
 
 use alloc::boxed::Box;
 use core::hint::spin_loop;

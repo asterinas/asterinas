@@ -31,6 +31,8 @@
 #![feature(step_trait)]
 
 extern crate alloc;
+#[macro_use]
+extern crate ostd_pod;
 
 pub mod bio;
 mod device_id;

@@ -19,12 +19,12 @@ use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
 use log::{debug, info};
 use ostd::{
-    Pod,
     arch::trap::TrapFrame,
     io::IoMem,
     mm::{HasDaddr, PAGE_SIZE, dma::DmaStream},
     sync::SpinLock,
 };
+use ostd_pod::IntoBytes;
 
 use super::{InputConfigSelect, QUEUE_EVENT, QUEUE_STATUS, VirtioInputConfig, VirtioInputEvent};
 use crate::{

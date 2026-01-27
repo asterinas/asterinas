@@ -16,4 +16,3 @@ pub mod printer;
 pub mod ranged_integer;
 pub mod safe_ptr;
 pub mod slot_vec;
-pub mod union_read_ptr;

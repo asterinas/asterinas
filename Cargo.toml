@@ -91,6 +91,7 @@ id-alloc = { path = "ostd/libs/id-alloc", version = "0.1.0" }
 int-to-c-enum = { path = "ostd/libs/int-to-c-enum", version = "0.1.0" }
 linux-boot-params = { version = "0.17.0", path = "ostd/libs/linux-bzimage/boot-params" }
 ostd-macros = { version = "0.17.0", path = "ostd/libs/ostd-macros" }
+ostd-pod = { path = "ostd/libs/ostd-pod", version = "0.4.0" }
 ostd-test = { version = "0.17.0", path = "ostd/libs/ostd-test" }
 
 # Crates under kernel/comps
@@ -135,16 +136,13 @@ osdk-heap-allocator = { path = "osdk/deps/heap-allocator" }
 
 # External dependencies only for unsafe crates (i.e., crates under ostd directory)
 bit_field = "0.10.1"
-bytemuck = { version = "1.17.0", features = ["derive"] }
 gimli = { version = "0.28", default-features = false, features = ["read-core"] }
 minicov = "0.3"
 num-traits = { version = "0.2", default-features = false }
-ostd-pod = { git = "https://github.com/asterinas/ostd-pod", rev = "c4644be", version = "0.1.1" }
 serde = { version = "1.0.192", default-features = false, features = ["alloc", "derive"] }
 smallvec = "1.13.2"
 uart_16550 = "0.3.0"
 volatile = "0.6.1"
-zerocopy = { version = "0.8.34", features = [ "derive" ] }
 
 # External dependencies only for safe crates (i.e., crates under kernel or osdk/deps directories)
 #
@@ -191,6 +189,9 @@ log = "0.4"
 rand = { version = "0.9.2", default-features = false }
 spin = "0.9.4"
 xmas-elf = "0.10.0"
+# Note: when updating the zerocopy version, 
+# also update it in `ostd/libs/ostd-pod/README.md`.
+zerocopy = { version = "0.8.34", features = [ "derive" ] }
 
 # Proc-macro dependencies
 proc-macro2 = { version = "1.0.95", features = ["span-locations"] }

@@ -2,16 +2,13 @@
 
 use core::{arch::asm, intrinsics::AtomicOrdering::Relaxed, ops::Range};
 
-use crate::{
-    Pod,
-    mm::{
-        PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
-        dma::DmaDirection,
-        page_prop::{
-            CachePolicy, PageFlags, PageProperty, PageTableFlags, PrivilegedPageFlags as PrivFlags,
-        },
-        page_table::{PteScalar, PteTrait},
+use crate::mm::{
+    PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
+    dma::DmaDirection,
+    page_prop::{
+        CachePolicy, PageFlags, PageProperty, PageTableFlags, PrivilegedPageFlags as PrivFlags,
     },
+    page_table::{PteScalar, PteTrait},
 };
 
 #[derive(Clone, Debug, Default)]

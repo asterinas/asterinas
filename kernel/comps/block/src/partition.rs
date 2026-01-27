@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use device_id::DeviceId;
-use ostd::{Pod, mm::VmIo};
+use ostd::mm::VmIo;
+use ostd_pod::Pod;
 
 use crate::{
     BlockDevice, BlockDeviceMeta, SECTOR_SIZE,

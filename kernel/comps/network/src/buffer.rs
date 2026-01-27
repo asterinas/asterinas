@@ -4,7 +4,6 @@ use alloc::{collections::linked_list::LinkedList, sync::Arc};
 
 use aster_softirq::BottomHalfDisabled;
 use ostd::{
-    Pod,
     mm::{
         Daddr, FrameAllocOptions, HasDaddr, HasSize, Infallible, PAGE_SIZE, VmReader, VmWriter,
         dma::{DmaStream, FromDevice, ToDevice},
@@ -12,6 +11,7 @@ use ostd::{
     },
     sync::SpinLock,
 };
+use ostd_pod::Pod;
 use spin::Once;
 
 use crate::dma_pool::{DmaPool, DmaSegment};

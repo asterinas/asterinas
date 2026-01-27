@@ -42,8 +42,10 @@
 
 use core::{marker::PhantomData, mem::MaybeUninit};
 
+use ostd_pod::Pod;
+
 use crate::{
-    Error, Pod,
+    Error,
     arch::mm::{
         __atomic_cmpxchg_fallible, __atomic_load_fallible, __memcpy_fallible, __memset_fallible,
     },
@@ -109,7 +111,7 @@ pub trait VmIo {
         // may not really initialize the bits of `val` at all!
 
         let mut val = T::new_zeroed();
-        self.read_bytes(offset, val.as_bytes_mut())?;
+        self.read_bytes(offset, val.as_mut_bytes())?;
         Ok(val)
     }
 

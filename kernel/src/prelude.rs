@@ -17,10 +17,10 @@ pub(crate) use bitflags::bitflags;
 pub(crate) use int_to_c_enum::TryFromInt;
 pub(crate) use log::{debug, error, info, log_enabled, trace, warn};
 pub(crate) use ostd::{
-    Pod,
     mm::{FallibleVmRead, FallibleVmWrite, PAGE_SIZE, Vaddr, VmReader, VmWriter},
     sync::{Mutex, MutexGuard, RwLock, RwMutex, SpinLock, SpinLockGuard},
 };
+pub(crate) use ostd_pod::{FromBytes, FromZeros, IntoBytes, Pod};
 
 /// return current process
 #[macro_export]

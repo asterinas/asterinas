@@ -8,7 +8,7 @@ use aster_block::SECTOR_SIZE;
 use aster_util::safe_ptr::SafePtr;
 use bitflags::bitflags;
 use int_to_c_enum::TryFromInt;
-use ostd::Pod;
+use ostd_pod::FromZeros;
 
 use crate::transport::{ConfigManager, VirtioTransport};
 
@@ -57,8 +57,9 @@ pub enum RespStatus {
     _NotReady = 3,
 }
 
-#[derive(Debug, Copy, Clone, Pod)]
 #[repr(C)]
+#[padding_struct]
+#[derive(Debug, Copy, Clone, Pod)]
 pub struct VirtioBlockConfig {
     /// The number of 512-byte sectors.
     capacity: u64,
@@ -138,7 +139,7 @@ impl VirtioBlockConfig {
 
 impl ConfigManager<VirtioBlockConfig> {
     pub(super) fn read_config(&self) -> VirtioBlockConfig {
-        let mut blk_config = VirtioBlockConfig::new_uninit();
+        let mut blk_config = VirtioBlockConfig::new_zeroed();
         // Only following fields are defined in legacy interface.
         let cap_low = self
             .read_once::<u32>(offset_of!(VirtioBlockConfig, capacity))
