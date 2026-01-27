@@ -5,7 +5,7 @@ use alloc::vec;
 use core::{marker::PhantomData, num::NonZeroUsize, ops::RangeInclusive};
 
 use lru::LruCache;
-use ostd::Pod;
+use ostd_pod::{IntoBytes, Pod};
 
 use super::{
     RangeQueryCtx, RecordKey, RecordValue, SyncId, TxEventListener, mem_table::ValueEx,
@@ -42,7 +42,8 @@ struct Footer<K> {
 
 /// Footer metadata to describe a `SSTable`.
 #[repr(C)]
-#[derive(Copy, Clone, Pod, Debug)]
+#[padding_struct]
+#[derive(Copy, Clone, Pod, Debug, Default)]
 struct FooterMeta {
     num_index: u16,
     index_nblocks: u16,
@@ -486,6 +487,7 @@ impl<K: RecordKey<K>, V: RecordValue> SSTable<K, V> {
             total_records: total_records as _,
             record_block_size: RECORD_BLOCK_SIZE as _,
             sync_id,
+            ..Default::default()
         };
         append_buf[footer_buf_len - FOOTER_META_SIZE..].copy_from_slice(meta.as_bytes());
         tx_log.append(BufRef::try_from(&append_buf[..]).unwrap())?;

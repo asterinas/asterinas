@@ -4,10 +4,7 @@ use alloc::sync::Arc;
 
 use aster_framebuffer::{ColorMapEntry, FRAMEBUFFER, FrameBuffer, MAX_CMAP_SIZE, PixelFormat};
 use device_id::{DeviceId, MajorId, MinorId};
-use ostd::{
-    Pod,
-    mm::{HasPaddr, HasSize, VmIo, io_util::HasVmReaderWriter},
-};
+use ostd::mm::{HasPaddr, HasSize, VmIo, io_util::HasVmReaderWriter};
 
 use super::registry::char;
 use crate::{
@@ -149,6 +146,7 @@ struct FbVarScreenInfo {
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/fb.h#L158>.
 #[repr(C)]
+#[padding_struct]
 #[derive(Debug, Default, Clone, Copy, Pod)]
 struct FbFixScreenInfo {
     /// Identification string (e.g., "EFI VGA")

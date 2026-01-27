@@ -112,14 +112,15 @@ pub enum VmPrinterError {
 
 #[cfg(ktest)]
 mod test {
-    use ostd::{Pod, mm::VmWriter, prelude::*};
+    use ostd::{mm::VmWriter, prelude::*};
+    use ostd_pod::IntoBytes;
 
     use super::*;
 
     #[ktest]
     fn basic_write() {
         let mut buf = [0u8; 64];
-        let mut writer = VmWriter::from(buf.as_bytes_mut()).to_fallible();
+        let mut writer = VmWriter::from(buf.as_mut_bytes()).to_fallible();
         let mut printer = VmPrinter::from(&mut writer);
 
         let res = writeln!(printer, "test");
@@ -132,7 +133,7 @@ mod test {
     #[ktest]
     fn write_with_skip() {
         let mut buf = [0u8; 3];
-        let mut writer = VmWriter::from(buf.as_bytes_mut()).to_fallible();
+        let mut writer = VmWriter::from(buf.as_mut_bytes()).to_fallible();
         let mut printer = VmPrinter::new_skip(&mut writer, 3);
 
         let res = writeln!(printer, "val: {}", 123);
@@ -145,7 +146,7 @@ mod test {
     #[ktest]
     fn skip_all_content() {
         let mut buf = [0u8; 64];
-        let mut writer = VmWriter::from(buf.as_bytes_mut()).to_fallible();
+        let mut writer = VmWriter::from(buf.as_mut_bytes()).to_fallible();
         let mut printer = VmPrinter::new_skip(&mut writer, 100);
 
         let res = writeln!(printer, "short message");

@@ -52,6 +52,7 @@ pub struct SemaphoreSet {
 
 // https://github.com/torvalds/linux/blob/master/include/uapi/asm-generic/ipcbuf.h
 #[repr(C)]
+#[padding_struct]
 #[derive(Debug, Copy, Clone, Default, Pod)]
 pub struct IpcPerm {
     key: u32,
@@ -70,16 +71,29 @@ pub struct IpcPerm {
 // In Linux, most popular 64-bit architectures except x86_64 adopt the same
 // layout of `semid_ds`.
 // Reference: <https://elixir.bootlin.com/linux/v6.16.9/A/ident/semid64_ds>.
+#[cfg(target_arch = "x86_64")]
 #[repr(C)]
+#[padding_struct]
 #[derive(Debug, Copy, Clone, Default, Pod)]
 pub struct SemidDs {
     sem_perm: IpcPerm,
     sem_otime: u64,
-    #[cfg(target_arch = "x86_64")]
     _unused1: u64,
     sem_ctime: u64,
-    #[cfg(target_arch = "x86_64")]
     _unused2: u64,
+    sem_nsems: u64,
+    _unused3: u64,
+    _unused4: u64,
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+#[repr(C)]
+#[padding_struct]
+#[derive(Debug, Copy, Clone, Default, Pod)]
+pub struct SemidDs {
+    sem_perm: IpcPerm,
+    sem_otime: u64,
+    sem_ctime: u64,
     sem_nsems: u64,
     _unused3: u64,
     _unused4: u64,

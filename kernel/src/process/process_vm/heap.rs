@@ -63,7 +63,7 @@ impl Heap {
             // make the heap values of a buggy user program harder
             // to be exploited by attackers.
             let mut nr_random_padding_pages: u8 = 0;
-            getrandom(nr_random_padding_pages.as_bytes_mut());
+            getrandom(nr_random_padding_pages.as_mut_bytes());
 
             nr_random_padding_pages as usize
         };

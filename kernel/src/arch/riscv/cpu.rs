@@ -3,7 +3,6 @@
 use core::fmt;
 
 use ostd::{
-    Pod,
     arch::cpu::context::{CpuException, UserContext},
     cpu::PinCurrentCpu,
     task::DisabledPreemptGuard,

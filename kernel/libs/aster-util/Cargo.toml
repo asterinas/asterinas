@@ -11,7 +11,9 @@ aster-rights-proc.workspace = true
 inherit-methods-macro.workspace = true
 osdk-heap-allocator.workspace = true
 ostd.workspace = true
+ostd-pod.workspace = true
 typeflags-util.workspace = true
+zerocopy.workspace = true
 
 [lints]
 workspace = true

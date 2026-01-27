@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-// ! #![feature(linked_list_cursors)]
 use alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec};
 
 use ostd::sync::SpinLock;

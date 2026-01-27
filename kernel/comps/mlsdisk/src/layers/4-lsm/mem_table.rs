@@ -243,7 +243,7 @@ impl<K: RecordKey<K>, V: RecordValue> MemTable<K, V> {
         // Insert an empty range upon first sync
         let _ = self
             .unsynced_range
-            .get_or_insert_with(|| K::new_uninit()..K::new_uninit());
+            .get_or_insert_with(|| K::new_zeroed()..K::new_zeroed());
     }
 
     /// Return the sync ID of this table.
@@ -343,7 +343,7 @@ impl<V: RecordValue> ValueEx<V> {
 
 impl<V: RecordValue> Default for ValueEx<V> {
     fn default() -> Self {
-        Self::Unsynced(V::new_uninit())
+        Self::Unsynced(V::new_zeroed())
     }
 }
 

@@ -1333,7 +1333,7 @@ impl InodeImpl {
     pub fn device_id(&self) -> u64 {
         let mut device_id: u64 = 0;
         device_id
-            .as_bytes_mut()
+            .as_mut_bytes()
             .copy_from_slice(&self.desc.block_ptrs.as_bytes()[..size_of::<u64>()]);
         device_id
     }

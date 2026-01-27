@@ -35,6 +35,8 @@
 #![deny(unsafe_code)]
 
 extern crate alloc;
+#[macro_use]
+extern crate ostd_pod;
 
 pub mod event_type_codes;
 mod input_core;

@@ -10,7 +10,7 @@ use core::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
-use ostd_pod::Pod;
+use ostd_pod::FromZeros;
 
 use super::{PteTrait, pte_index};
 use crate::{

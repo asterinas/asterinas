@@ -11,10 +11,11 @@ edition.workspace = true
 [dependencies]
 align_ext.workspace = true
 bitflags.workspace = true
-bytemuck.workspace = true
 libflate = { workspace = true, features = [ "std" ] }
+ostd-pod.workspace = true
 serde.workspace = true
 xmas-elf.workspace = true
+zerocopy.workspace = true
 
 [lints]
 workspace = true
