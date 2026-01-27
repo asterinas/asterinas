@@ -2,6 +2,8 @@
 
 //! Panic support.
 
+use core::mem::ManuallyDrop;
+
 use crate::early_println;
 
 extern crate cfg_if;
@@ -42,6 +44,34 @@ pub fn abort() -> ! {
     // freeze after panicking. However, this is unnecessary and may prevent debugging on a real
     // machine (i.e., the message will disappear afterward).
     crate::power::poweroff(crate::power::ExitCode::Failure);
+}
+
+/// A guard that aborts the system if dropped.
+///
+/// This is useful to ensure that certain objects will not be dropped during
+/// panic handling.
+#[derive(Debug, Default)]
+pub struct PanicGuard(());
+
+impl Drop for PanicGuard {
+    fn drop(&mut self) {
+        crate::panic::abort();
+    }
+}
+
+impl PanicGuard {
+    /// Creates a panic guard that aborts the system if dropped.
+    pub fn new() -> Self {
+        PanicGuard(())
+    }
+
+    /// Finishes panic guarding by forgetting the guard.
+    ///
+    /// After the panic guarding finishes, it no longer aborts the system
+    /// when panic happens.
+    pub fn forget(self) {
+        let _ = ManuallyDrop::new(self);
+    }
 }
 
 #[cfg(not(target_arch = "loongarch64"))]
