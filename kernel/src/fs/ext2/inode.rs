@@ -1091,8 +1091,16 @@ impl InodeInner {
         let write_len = reader.remain();
         let new_size = offset + write_len;
         self.page_cache.resize(new_size.align_up(BLOCK_SIZE))?;
+
+        // Only allocate blocks for the content being written, for creating sparse blocks
+        let start_bid = Bid::from_offset(offset).to_raw() as Ext2Bid;
+        let end_bid = Bid::from_offset(new_size.align_up(BLOCK_SIZE)).to_raw() as Ext2Bid;
+        let nblocks = (end_bid - start_bid) as usize;
+        self.inode_impl
+            .ensure_blocks_allocated(start_bid, nblocks)?;
+
         self.page_cache.pages().write(offset, reader)?;
-        self.inode_impl.resize(new_size)?;
+        self.inode_impl.update_size(new_size);
         Ok(write_len)
     }
 
