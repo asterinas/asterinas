@@ -95,6 +95,7 @@ mod open;
 mod pause;
 mod pidfd_getfd;
 mod pidfd_open;
+mod pidfd_send_signal;
 mod pipe;
 mod poll;
 mod ppoll;

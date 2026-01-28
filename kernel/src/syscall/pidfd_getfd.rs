@@ -25,7 +25,7 @@ pub fn sys_pidfd_getfd(
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, pidfd);
     let Some(pid_file) = file.downcast_ref::<PidFile>() else {
-        return_errno_with_message!(Errno::EINVAL, "the file is not a PID file");
+        return_errno_with_message!(Errno::EBADF, "the file is not a PID file");
     };
 
     let process = pid_file
