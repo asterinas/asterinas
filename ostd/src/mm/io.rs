@@ -42,6 +42,8 @@
 
 use core::{marker::PhantomData, mem::MaybeUninit};
 
+#[cfg(target_arch = "x86_64")]
+use crate::if_tdx_enabled;
 use crate::{
     Error, Pod,
     arch::mm::{
@@ -509,6 +511,52 @@ impl<'a> VmReader<'a, Infallible> {
     /// This method will panic if the current position of the reader does not meet the alignment
     /// requirements of type `T`.
     pub fn read_once<T: PodOnce>(&mut self) -> Result<T> {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if_tdx_enabled!({
+                self.do_read_once_noinline::<T>()
+            } else {
+                self.do_read_once::<T>()
+            })
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            self.do_read_once::<T>()
+        }
+    }
+
+    // Accessing MMIO within a CVM guest triggers a hardware exception
+    // (#VE on Intel TDX or #VC on AMD SEV-SNP)
+    // which requires the guest kernel to manually decode the faulting instruction.
+    // Due to the inherent complexity of x86 instruction decoding,
+    // the kernel exception handler only supports a subset of simple memory-access instructions,
+    // such as the standard `mov`.
+    // Consequently, the kernel must be compiled such that
+    // all MMIO-triggering operations use only these supported instructions.
+    // To achieve this, we rely on `ptr::write_volatile` and `ptr::read_volatile`,
+    // assuming these APIs are sufficient to
+    // force the compiler to emit a straightforward `mov` instruction.
+    //
+    // This assumption held true until a recent upgrade of the Rust toolchain.
+    // We discovered that the newer LLVM backend now optimizes
+    // a volatile read followed by an integer comparison
+    // into a single `cmp` instruction that operates directly on memory.
+    // Decoding this fused instruction is beyond the capabilities of the CVM exception handler.
+    //
+    // We consider this aggressive optimization of a volatile access to be an LLVM bug;
+    // therefore, it should not be permanently "fixed" within Asterinas.
+    // Instead, we introduce a workaround using `#[inline(never)]`,
+    // which effectively prevents LLVM from performing this problematic instruction fusion.
+    //
+    // For discussion detail, see
+    // <https://github.com/asterinas/asterinas/pull/2785#issuecomment-3717554895>.
+    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+    #[inline(never)]
+    fn do_read_once_noinline<T: PodOnce>(&mut self) -> Result<T> {
+        self.do_read_once::<T>()
+    }
+
+    fn do_read_once<T: PodOnce>(&mut self) -> Result<T> {
         if self.remain() < size_of::<T>() {
             return Err(Error::InvalidArgs);
         }
@@ -760,6 +808,28 @@ impl<'a> VmWriter<'a, Infallible> {
     /// This method will panic if the current position of the writer does not meet the alignment
     /// requirements of type `T`.
     pub fn write_once<T: PodOnce>(&mut self, new_val: &T) -> Result<()> {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if_tdx_enabled!({
+                self.do_write_once_noinline::<T>(new_val)
+            } else {
+                self.do_write_once::<T>(new_val)
+            })
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            self.do_write_once::<T>(new_val)
+        }
+    }
+
+    // See the doc of `do_read_once_noinline` for why this noinline version is needed.
+    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+    #[inline(never)]
+    fn do_write_once_noinline<T: PodOnce>(&mut self, new_val: &T) -> Result<()> {
+        self.do_write_once::<T>(new_val)
+    }
+
+    fn do_write_once<T: PodOnce>(&mut self, new_val: &T) -> Result<()> {
         if self.avail() < size_of::<T>() {
             return Err(Error::InvalidArgs);
         }
