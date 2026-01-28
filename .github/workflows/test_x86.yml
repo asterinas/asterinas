@@ -93,6 +93,15 @@ jobs:
           - test_id: 'general-multiboot2-smp4'
             boot_protocol: 'multiboot2'
             smp: 4
+
+          # Linux Kernel Selftests (Linux EFI Handover) (Debug Build)
+          - test_id: 'kselftest-handover64-debug'
+            release: false
+            boot_protocol: 'linux-efi-handover64'
+          # SMP Linux Kernel Selftests (Multiboot2)
+          - test_id: 'kselftest-multiboot2-smp4'
+            boot_protocol: 'multiboot2'
+            smp: 4
       fail-fast: false
     steps:
       - name: Free disk space
@@ -103,6 +112,7 @@ jobs:
         uses: ./.github/actions/test
         with:
           auto_test: ${{ (startsWith(matrix.test_id, 'boot') && 'boot') ||
+              (startsWith(matrix.test_id, 'kselftest') && 'kselftest') ||
               (startsWith(matrix.test_id, 'syscall') && 'syscall') || 'test' }}
           release: ${{ !contains(matrix.release, 'false') }}
           enable_kvm: ${{ !contains(matrix.enable_kvm, 'false') }}
@@ -118,6 +128,7 @@ jobs:
         uses: ./.github/actions/test
         with:
           auto_test: ${{ (startsWith(matrix.test_id, 'boot') && 'boot') ||
+              (startsWith(matrix.test_id, 'kselftest') && 'kselftest') ||
               (startsWith(matrix.test_id, 'syscall') && 'syscall') || 'test' }}
           release: ${{ !contains(matrix.release, 'false') }}
           enable_kvm: ${{ !contains(matrix.enable_kvm, 'false') }}
