@@ -33,7 +33,7 @@ select(nfds, readfds, writefds, exceptfds, timeout);
 pidfd_open(pid, flags = PIDFD_NONBLOCK);
 
 // Obtain a duplicate of another process's file descriptor
-pidfd_getfd(pid, targetfd, flags = 0);
+pidfd_getfd(pidfd, targetfd, flags = 0);
 
 // Close all file descriptors in the inclusive range [first, last]
 close_range(first, last, flags = CLOSE_RANGE_UNSHARE | CLOSE_RANGE_CLOEXEC);
