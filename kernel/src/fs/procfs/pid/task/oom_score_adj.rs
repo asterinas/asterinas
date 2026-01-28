@@ -43,6 +43,7 @@ impl FileOps for OomScoreAdjFileOps {
         let val = cstr
             .to_str()
             .ok()
+            .map(|str| str.trim())
             .and_then(|str| str.parse::<i32>().ok())
             .ok_or_else(|| {
                 Error::with_message(Errno::EINVAL, "the value is not a valid integer")
