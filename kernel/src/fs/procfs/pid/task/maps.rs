@@ -4,12 +4,21 @@ use aster_util::printer::VmPrinter;
 
 use super::TidDirOps;
 use crate::{
+    events::IoEvents,
     fs::{
+        inode_handle::FileIo,
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::{Inode, mkmod},
+        utils::{AccessMode, Inode, InodeIo, StatusFlags, mkmod},
     },
     prelude::*,
-    process::Process,
+    process::{
+        Process,
+        posix_thread::{
+            AsPosixThread,
+            ptrace::{PtraceMode, check_may_access},
+        },
+        signal::{PollHandle, Pollable},
+    },
     vm::vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR},
 };
 
@@ -28,12 +37,44 @@ impl MapsFileOps {
 }
 
 impl FileOps for MapsFileOps {
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+    fn read_at(&self, _offset: usize, _writer: &mut VmWriter) -> Result<usize> {
+        unreachable!("should read via opened `MapsFileHandle`")
+    }
+
+    fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
+        unreachable!("should write via opened `MapsFileHandle`")
+    }
+
+    fn open(
+        &self,
+        _access_mode: AccessMode,
+        _status_flags: StatusFlags,
+    ) -> Option<Result<Box<dyn FileIo>>> {
+        let handle = check_may_access(
+            current_thread!().as_posix_thread().unwrap(),
+            self.0.main_thread().as_posix_thread().unwrap(),
+            PtraceMode::READ_FSCREDS,
+        )
+        .map(|_| Box::new(MapsFileHandle(self.0.clone())) as Box<dyn FileIo>);
+
+        Some(handle)
+    }
+}
+
+struct MapsFileHandle(Arc<Process>);
+
+impl InodeIo for MapsFileHandle {
+    fn read_at(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
         let vmar_guard = self.0.lock_vmar();
         let Some(vmar) = vmar_guard.as_ref() else {
-            return_errno_with_message!(Errno::ESRCH, "the process has exited");
+            return Ok(0);
         };
 
         let user_stack_top = vmar.process_vm().init_stack().user_stack_top();
@@ -49,5 +90,31 @@ impl FileOps for MapsFileOps {
         }
 
         Ok(printer.bytes_written())
+    }
+
+    fn write_at(
+        &self,
+        _offset: usize,
+        _reader: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        return_errno_with_message!(Errno::EACCES, "`/proc/[pid]/maps` is read-only");
+    }
+}
+
+impl Pollable for MapsFileHandle {
+    fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
+        let events = IoEvents::IN | IoEvents::OUT;
+        events & mask
+    }
+}
+
+impl FileIo for MapsFileHandle {
+    fn check_seekable(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn is_offset_aware(&self) -> bool {
+        true
     }
 }
