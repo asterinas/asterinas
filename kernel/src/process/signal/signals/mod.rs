@@ -2,6 +2,7 @@
 
 pub mod fault;
 pub mod kernel;
+pub mod raw;
 pub mod user;
 
 use core::{any::Any, fmt::Debug};

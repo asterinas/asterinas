@@ -82,6 +82,7 @@ macro_rules! import_generic_syscall_entries {
             open::sys_openat,
             pidfd_getfd::sys_pidfd_getfd,
             pidfd_open::sys_pidfd_open,
+            pidfd_send_signal::sys_pidfd_send_signal,
             pipe::sys_pipe2,
             ppoll::sys_ppoll,
             prctl::sys_prctl,
@@ -390,6 +391,7 @@ macro_rules! define_syscalls_with_generic_syscall_table {
             SYS_PREADV2 = 286                => sys_preadv2(args[..6]);
             SYS_PWRITEV2 = 287               => sys_pwritev2(args[..6]);
             SYS_STATX = 291                  => sys_statx(args[..5]);
+            SYS_PIDFD_SEND_SIGNAL = 424      => sys_pidfd_send_signal(args[..4]);
             SYS_PIDFD_OPEN = 434             => sys_pidfd_open(args[..2]);
             SYS_CLONE3 = 435                 => sys_clone3(args[..2], &user_ctx);
             SYS_CLOSE_RANGE = 436            => sys_close_range(args[..3]);
