@@ -21,9 +21,11 @@ use super::{RssType, interval_set::Interval, util::is_intersected, vmar_impls::R
 use crate::{
     fs::utils::Inode,
     prelude::*,
+    process::Process,
     thread::exception::PageFaultInfo,
     vm::{
         perms::VmPerms,
+        shared_mem::{AttachedShm, SHM_OBJ_MANAGER},
         vmo::{CommitFlags, Vmo, VmoCommitError},
     },
 };
@@ -114,16 +116,26 @@ impl VmMapping {
 
     pub(super) fn new_fork(&self) -> VmMapping {
         VmMapping {
+            map_size: self.map_size,
+            map_to_addr: self.map_to_addr,
             mapped_mem: self.mapped_mem.dup(),
             inode: self.inode.clone(),
-            ..*self
+            is_shared: self.is_shared,
+            handle_page_faults_around: self.handle_page_faults_around,
+            perms: self.perms,
         }
     }
 
     pub(super) fn clone_for_remap_at(&self, va: Vaddr) -> VmMapping {
-        let mut vm_mapping = self.new_fork();
-        vm_mapping.map_to_addr = va;
-        vm_mapping
+        VmMapping {
+            map_size: self.map_size,
+            map_to_addr: va,
+            mapped_mem: self.mapped_mem.dup(),
+            inode: self.inode.clone(),
+            is_shared: self.is_shared,
+            handle_page_faults_around: self.handle_page_faults_around,
+            perms: self.perms,
+        }
     }
 
     /// Returns the mapping's start address.
@@ -146,9 +158,35 @@ impl VmMapping {
         self.perms
     }
 
+    /// Returns the shared memory attachment identifier if the mapping comes
+    /// from `shmat`.
+    pub fn attached_shm(&self) -> Option<AttachedShm> {
+        match &self.mapped_mem {
+            MappedMemory::Vmo(vmo) => vmo.attached_shm(),
+            _ => None,
+        }
+    }
+
     /// Returns the inode of the file that backs the mapping.
     pub fn inode(&self) -> Option<&Arc<dyn Inode>> {
         self.inode.as_ref()
+    }
+
+    /// Returns the mapped VMO offset (in bytes) if this mapping is VMO-backed.
+    pub fn vmo_offset(&self) -> Option<usize> {
+        match &self.mapped_mem {
+            MappedMemory::Vmo(vmo) => Some(vmo.offset()),
+            _ => None,
+        }
+    }
+
+    /// Returns the underlying VMO size (in bytes) if this mapping is
+    /// VMO-backed.
+    pub fn vmo_size(&self) -> Option<usize> {
+        match &self.mapped_mem {
+            MappedMemory::Vmo(vmo) => Some(vmo.vmo().size()),
+            _ => None,
+        }
     }
 
     /// Returns a reference to the VMO if this mapping is VMO-backed.
@@ -716,9 +754,9 @@ pub(super) enum MappedMemory {
     Anonymous,
     /// Memory in a [`Vmo`].
     ///
-    /// These pages are associated with regular files that are backed by the page cache. On-demand
-    /// population is possible by enabling page fault handlers to allocate pages and read the page
-    /// content from the disk.
+    /// These pages are associated with regular files or shared memory objects that are backed by
+    /// kernel-managed memory such as the page cache. On-demand population is possible by enabling
+    /// handlers to allocate pages and read the page content from the disk or shared memory.
     Vmo(MappedVmo),
     /// Device memory.
     ///
@@ -748,11 +786,18 @@ pub(super) struct MappedVmo {
     /// Whether the VMO's writable mappings need to be tracked, and the
     /// mapping is writable to the VMO.
     is_writable_tracked: bool,
+    /// Shared memory attachment identifier if this mapping comes from `shmat`.
+    attached_shm: Option<AttachedShm>,
 }
 
 impl MappedVmo {
     /// Creates a `MappedVmo` used for the mapping.
-    pub(super) fn new(vmo: Arc<Vmo>, offset: usize, is_writable_tracked: bool) -> Result<Self> {
+    pub(super) fn new(
+        vmo: Arc<Vmo>,
+        offset: usize,
+        is_writable_tracked: bool,
+        attached_shm: Option<AttachedShm>,
+    ) -> Result<Self> {
         if is_writable_tracked {
             vmo.writable_mapping_status().map()?;
         }
@@ -761,6 +806,7 @@ impl MappedVmo {
             vmo,
             offset,
             is_writable_tracked,
+            attached_shm,
         })
     }
 
@@ -835,11 +881,31 @@ impl MappedVmo {
             self.vmo.writable_mapping_status().increment();
         }
 
+        if let Some(attached_shm) = self.attached_shm
+            && let Some(manager) = SHM_OBJ_MANAGER.get()
+        {
+            let pid = Process::current().map(|p| p.pid()).unwrap_or(0);
+            let shm_obj = {
+                let guard = manager.read();
+                guard.get_shm_obj(attached_shm.shmid)
+            };
+            if let Some(shm_obj) = shm_obj {
+                shm_obj.inc_nattch_for_mapping(pid);
+            }
+        }
+
         Self {
             vmo: self.vmo.clone(),
             offset,
             is_writable_tracked: self.is_writable_tracked,
+            attached_shm: self.attached_shm,
         }
+    }
+
+    /// Returns the shared memory attachment identifier if this mapping comes
+    /// from `shmat`.
+    pub fn attached_shm(&self) -> Option<AttachedShm> {
+        self.attached_shm
     }
 }
 
@@ -847,6 +913,24 @@ impl Drop for MappedVmo {
     fn drop(&mut self) {
         if self.is_writable_tracked {
             self.vmo.writable_mapping_status().decrement();
+        }
+
+        if let Some(attached_shm) = self.attached_shm
+            && let Some(manager) = SHM_OBJ_MANAGER.get()
+        {
+            let pid = Process::current().map(|p| p.pid()).unwrap_or(0);
+            let shm_obj = {
+                let guard = manager.read();
+                guard.get_shm_obj(attached_shm.shmid)
+            };
+            let Some(shm_obj) = shm_obj else {
+                return;
+            };
+
+            shm_obj.set_detached(pid);
+            if shm_obj.should_be_deleted() {
+                let _ = manager.write().try_delete_shm_obj(attached_shm.shmid);
+            }
         }
     }
 }
@@ -880,6 +964,9 @@ fn try_merge(left: &VmMapping, right: &VmMapping) -> Option<VmMapping> {
             let r_vmo = r_vmo_obj.vmo();
 
             if Arc::ptr_eq(l_vmo, r_vmo) {
+                if l_vmo_obj.attached_shm() != r_vmo_obj.attached_shm() {
+                    return None;
+                }
                 let is_offset_contiguous =
                     l_vmo_obj.offset() + left.map_size() == r_vmo_obj.offset();
                 if !is_offset_contiguous {

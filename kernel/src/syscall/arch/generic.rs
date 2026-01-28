@@ -142,6 +142,10 @@ macro_rules! import_generic_syscall_entries {
             setsockopt::sys_setsockopt,
             setuid::sys_setuid,
             setxattr::{sys_fsetxattr, sys_lsetxattr, sys_setxattr},
+            shmat::sys_shmat,
+            shmctl::sys_shmctl,
+            shmdt::sys_shmdt,
+            shmget::sys_shmget,
             shutdown::sys_shutdown,
             sigaltstack::sys_sigaltstack,
             signalfd::sys_signalfd4,
@@ -350,6 +354,10 @@ macro_rules! define_syscalls_with_generic_syscall_table {
             SYS_SEMCTL = 191                 => sys_semctl(args[..4]);
             SYS_SEMTIMEDOP = 192             => sys_semtimedop(args[..4]);
             SYS_SEMOP = 193                  => sys_semop(args[..3]);
+            SYS_SHMGET = 194                => sys_shmget(args[..3]);
+            SYS_SHMCTL = 195                => sys_shmctl(args[..3]);
+            SYS_SHMAT = 196                  => sys_shmat(args[..3]);
+            SYS_SHMDT = 197                 => sys_shmdt(args[..1]);
             SYS_SOCKET = 198                 => sys_socket(args[..3]);
             SYS_SOCKETPAIR = 199             => sys_socketpair(args[..4]);
             SYS_BIND = 200                   => sys_bind(args[..3]);
