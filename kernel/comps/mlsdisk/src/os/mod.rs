@@ -28,6 +28,7 @@ use ostd::{
     sync::{self, PreemptDisabled, WaitQueue},
     task::{Task, TaskOptions},
 };
+use ostd_pod::{FromZeros, IntoBytes};
 use serde::{Deserialize, Serialize};
 
 use crate::{

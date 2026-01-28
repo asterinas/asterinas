@@ -192,6 +192,7 @@ impl<D: TtyDriver> Tty<D> {
             height,
             charcount,
             data,
+            ..
         } = font_op;
 
         let vpitch = match *op {

@@ -18,10 +18,11 @@ use core::{mem::ManuallyDrop, time::Duration};
 use aster_time::{Instant, read_monotonic_time};
 use aster_util::coeff::Coeff;
 use ostd::{
-    Pod, const_assert,
+    const_assert,
     mm::{PAGE_SIZE, UFrame, VmIo, VmIoOnce},
     sync::SpinLock,
 };
+use ostd_pod::IntoBytes;
 use spin::Once;
 
 use crate::{

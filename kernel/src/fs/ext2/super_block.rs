@@ -578,7 +578,7 @@ impl From<&SuperBlock> for RawSuperBlock {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-struct Reserved([u32; 190]);
+pub struct Reserved([u32; 190]);
 
 impl Default for Reserved {
     fn default() -> Self {

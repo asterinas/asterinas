@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::Pod;
-
 use super::constants::{EXFAT_FIRST_CLUSTER, EXFAT_RESERVED_CLUSTERS, MEDIA_FAILURE, VOLUME_DIRTY};
 use crate::prelude::*;
 

@@ -13,11 +13,15 @@
 #![feature(negative_impls)]
 #![feature(ptr_metadata)]
 #![feature(sync_unsafe_cell)]
+#![feature(trivial_bounds)]
 #![expect(internal_features)]
 #![no_std]
 #![warn(missing_docs)]
 
 extern crate alloc;
+
+#[macro_use]
+extern crate ostd_pod;
 
 #[cfg_attr(target_arch = "x86_64", path = "arch/x86/mod.rs")]
 #[cfg_attr(target_arch = "riscv64", path = "arch/riscv/mod.rs")]

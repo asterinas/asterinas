@@ -9,6 +9,8 @@ pub mod dma_pool;
 mod driver;
 
 extern crate alloc;
+#[macro_use]
+extern crate ostd_pod;
 
 use alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec};
 use core::{any::Any, fmt::Debug};
@@ -21,7 +23,7 @@ use aster_softirq::{
 pub use buffer::{RX_BUFFER_POOL, RxBuffer, TX_BUFFER_LEN, TxBuffer};
 use component::{ComponentInitError, init_component};
 pub use dma_pool::DmaSegment;
-use ostd::{Pod, sync::SpinLock};
+use ostd::sync::SpinLock;
 use spin::Once;
 
 #[derive(Debug, Clone, Copy, Pod)]

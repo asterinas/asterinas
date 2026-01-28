@@ -21,6 +21,7 @@ pub(crate) use ostd::{
     mm::{FallibleVmRead, FallibleVmWrite, PAGE_SIZE, Vaddr, VmReader, VmWriter},
     sync::{Mutex, MutexGuard, RwLock, RwMutex, SpinLock, SpinLockGuard},
 };
+pub(crate) use ostd_pod::{FromBytes, FromZeros, IntoBytes};
 
 /// return current process
 #[macro_export]

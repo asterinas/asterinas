@@ -2,8 +2,6 @@
 
 use core::fmt::Debug;
 
-use ostd::Pod;
-
 #[derive(Clone, Copy, Pod)]
 #[repr(C)]
 pub struct VirtioMmioLayout {
