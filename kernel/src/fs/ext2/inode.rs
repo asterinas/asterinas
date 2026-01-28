@@ -66,9 +66,12 @@ impl Inode {
                 None
             },
             block_group_idx,
-            xattr: desc
-                .acl
-                .map(|acl| Xattr::new(acl, weak_self.clone(), fs.clone())),
+            xattr: match desc.type_ {
+                InodeType::Dir | InodeType::File => {
+                    Some(Xattr::new(desc.acl, weak_self.clone(), fs.clone()))
+                }
+                _ => None,
+            },
             inner: RwMutex::new(InodeInner::new(desc, weak_self.clone(), fs.clone())),
             fs,
             extension: Extension::new(),
@@ -885,7 +888,7 @@ impl Inode {
     pub fn file_flags(&self) -> FileFlags;
     pub fn hard_links(&self) -> u16;
     pub fn blocks_count(&self) -> Ext2Bid;
-    pub fn acl(&self) -> Option<Bid>;
+    pub fn acl(&self) -> Bid;
     pub fn atime(&self) -> Duration;
     pub fn mtime(&self) -> Duration;
     pub fn ctime(&self) -> Duration;
@@ -1189,7 +1192,7 @@ impl InodeInner {
     pub fn inc_hard_links(&mut self);
     pub fn dec_hard_links(&mut self);
     pub fn blocks_count(&self) -> Ext2Bid;
-    pub fn acl(&self) -> Option<Bid>;
+    pub fn acl(&self) -> Bid;
     pub fn set_acl(&mut self, bid: Bid);
     pub fn atime(&self) -> Duration;
     pub fn set_atime(&mut self, time: Duration);
@@ -1288,7 +1291,7 @@ impl InodeImpl {
         self.desc.blocks_count()
     }
 
-    pub fn acl(&self) -> Option<Bid> {
+    pub fn acl(&self) -> Bid {
         self.desc.acl
     }
 
@@ -2136,7 +2139,7 @@ pub(super) struct InodeDesc {
     /// Pointers to blocks.
     block_ptrs: BlockPtrs,
     /// File or directory acl block.
-    acl: Option<Bid>,
+    acl: Bid,
 }
 
 impl TryFrom<RawInode> for InodeDesc {
@@ -2164,9 +2167,9 @@ impl TryFrom<RawInode> for InodeDesc {
                 .ok_or(Error::with_message(Errno::EINVAL, "invalid file flags"))?,
             block_ptrs: inode.block_ptrs,
             acl: match inode_type {
-                InodeType::File => Some(Bid::new(inode.file_acl as _)),
-                InodeType::Dir => Some(Bid::new(inode.size_high as _)),
-                _ => None,
+                InodeType::File => Bid::new(inode.file_acl as _),
+                InodeType::Dir => Bid::new(inode.size_high as _),
+                _ => Bid::new(0),
             },
         })
     }
@@ -2190,10 +2193,7 @@ impl InodeDesc {
             sector_count: 0,
             flags: FileFlags::empty(),
             block_ptrs: BlockPtrs::default(),
-            acl: match type_ {
-                InodeType::File | InodeType::Dir => Some(Bid::new(0)),
-                _ => None,
-            },
+            acl: Bid::new(0),
         })
     }
 
@@ -2221,11 +2221,7 @@ impl InodeDesc {
 
     /// Returns the number of sectors used for ACL.
     fn acl_sectors(&self) -> u32 {
-        let Some(bid) = self.acl else {
-            return 0;
-        };
-
-        if bid.to_raw() == 0 {
+        if self.acl.to_raw() == 0 {
             return 0;
         }
 
@@ -2235,7 +2231,7 @@ impl InodeDesc {
     /// Sets the extended attribute block for ACL.
     fn set_acl_block(&mut self, bid: Bid) {
         let old_acl_sectors = self.acl_sectors();
-        self.acl = Some(bid);
+        self.acl = bid;
         let new_acl_sectors = self.acl_sectors();
         self.sector_count = self.sector_count - old_acl_sectors + new_acl_sectors;
     }
@@ -2409,13 +2405,15 @@ impl From<&InodeDesc> for RawInode {
             sector_count: inode.sector_count,
             flags: inode.flags.bits(),
             block_ptrs: inode.block_ptrs,
-            file_acl: match inode.acl {
-                Some(acl) if inode.type_ == InodeType::File => acl.to_raw() as u32,
-                _ => Default::default(),
+            file_acl: if inode.type_ == InodeType::File {
+                inode.acl.to_raw() as u32
+            } else {
+                0
             },
-            size_high: match inode.acl {
-                Some(acl) if inode.type_ == InodeType::Dir => acl.to_raw() as u32,
-                _ => Default::default(),
+            size_high: if inode.type_ == InodeType::Dir {
+                inode.acl.to_raw() as u32
+            } else {
+                0
             },
             os_dependent_2: Osd2 {
                 uid_high: (inode.uid >> 16) as u16,
