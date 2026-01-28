@@ -1,4 +1,4 @@
-{ lib, stdenvNoCC, fetchFromGitHub, hostPlatform, writeClosure, busybox, xfstests, apps
+{ lib, stdenvNoCC, fetchFromGitHub, hostPlatform, writeClosure, busybox, kmod, xfstests, apps
 , benchmark, syscall, dnsServer, pkgs }:
 let
   etc = lib.fileset.toSource {
@@ -17,7 +17,7 @@ let
   is_evtest_included = false;
 
   all_pkgs = [ busybox etc resolv_conf ]
-    ++ lib.optionals (xfstests != null) [ xfstests ]
+    ++ lib.optionals (xfstests != null) [ xfstests kmod ]
     ++ lib.optionals (apps != null) [ apps.package ]
     ++ lib.optionals (benchmark != null) [ benchmark.package ]
     ++ lib.optionals (syscall != null) [ syscall.package ]
@@ -36,6 +36,14 @@ in stdenvNoCC.mkDerivation {
     cp -r ${busybox}/bin/* $out/bin/
     ${lib.optionalString is_evtest_included ''
       cp -r ${pkgs.evtest}/bin/* $out/bin/
+    ''}
+
+    ${lib.optionalString (xfstests != null) ''
+      # Prefer kmod's modprobe over busybox for xfstests.
+      cp -r ${kmod}/bin/* $out/bin/
+      if [ -d ${kmod}/sbin ]; then
+        cp -r ${kmod}/sbin/* $out/sbin/
+      fi
     ''}
 
     cp -r ${etc}/* $out/etc/
