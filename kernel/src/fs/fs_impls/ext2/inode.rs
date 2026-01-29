@@ -1896,12 +1896,14 @@ impl InodeImpl {
     /// After the reduction, the block count will be decreased to `range.start`.
     fn shrink_blocks(&mut self, range: Range<Ext2Bid>) {
         let mut current_range = range.clone();
+        let mut total_freed_blocks = 0;
         while !current_range.is_empty() {
-            let free_cnt = self.try_shrink_blocks(current_range.clone());
+            let (free_cnt, freed_blocks) = self.try_shrink_blocks(current_range.clone());
+            total_freed_blocks += freed_blocks;
             current_range.end -= free_cnt;
         }
 
-        self.desc.occupied_sectors_count -= blocks_to_sectors(range.len() as u32);
+        self.desc.occupied_sectors_count -= blocks_to_sectors(total_freed_blocks);
         self.last_alloc_device_bid = if range.start == 0 {
             None
         } else {
@@ -1917,9 +1919,9 @@ impl InodeImpl {
     /// Attempts to shrink a range of blocks and returns the number of blocks
     /// successfully freed.
     ///
-    /// Note that the returned number may be less than the requested range if needs
+    /// Note that the first returned number may be less than the requested range if needs
     /// to free the indirect blocks that are no longer required.
-    fn try_shrink_blocks(&mut self, range: Range<Ext2Bid>) -> Ext2Bid {
+    fn try_shrink_blocks(&mut self, range: Range<Ext2Bid>) -> (Ext2Bid, u32) {
         // Calculates the maximum range of blocks that can be freed in this round.
         let range = {
             let max_cnt = (range.len() as Ext2Bid)
@@ -1930,12 +1932,14 @@ impl InodeImpl {
         let fs = self.fs();
         let device_range_reader =
             DeviceRangeReader::new(&self.block_manager, range.clone()).unwrap();
+        let mut freed_blocks = 0u32;
         for device_range in device_range_reader {
+            freed_blocks += device_range.len() as u32;
             fs.free_blocks(device_range.clone()).unwrap();
         }
 
         self.free_indirect_blocks_required_by(range.start).unwrap();
-        range.len() as Ext2Bid
+        (range.len() as Ext2Bid, freed_blocks)
     }
 
     /// Deallocate inode blocks in a specified range.
@@ -1943,12 +1947,14 @@ impl InodeImpl {
     /// After the reduction, the block count will be decreased `range.len`.
     fn dealloc_range_blocks(&mut self, range: Range<Ext2Bid>) {
         let mut current_range = range.clone();
+        let mut total_freed_blocks = 0;
         while !current_range.is_empty() {
-            let free_cnt = self.try_dealloc_range_blocks(current_range.clone());
+            let (free_cnt, freed_blocks) = self.try_dealloc_range_blocks(current_range.clone());
+            total_freed_blocks += freed_blocks;
             current_range.end -= free_cnt;
         }
 
-        self.desc.occupied_sectors_count -= blocks_to_sectors(range.len() as u32);
+        self.desc.occupied_sectors_count -= blocks_to_sectors(total_freed_blocks);
         self.last_alloc_device_bid = if range.start == 0 {
             None
         } else {
@@ -1966,7 +1972,7 @@ impl InodeImpl {
     ///
     /// Note that the returned number may be less than the requested range if needs
     /// to free the indirect blocks that are no longer required.
-    fn try_dealloc_range_blocks(&mut self, range: Range<Ext2Bid>) -> Ext2Bid {
+    fn try_dealloc_range_blocks(&mut self, range: Range<Ext2Bid>) -> (Ext2Bid, u32) {
         // Calculates the maximum range of blocks that can be freed in this round.
         let range = {
             let max_cnt = (range.len() as Ext2Bid)
@@ -1974,6 +1980,7 @@ impl InodeImpl {
             (range.end - max_cnt)..range.end
         };
 
+        let mut freed_blocks = 0u32;
         for bid in range.clone() {
             let bid_path = BidPath::from(bid);
             let device_bid = self.get_device_bid(bid).unwrap();
@@ -1981,6 +1988,7 @@ impl InodeImpl {
                 continue;
             }
 
+            freed_blocks += 1;
             self.fs().free_blocks(device_bid..device_bid + 1).unwrap();
             match bid_path {
                 BidPath::Direct(idx) => {
@@ -2033,7 +2041,7 @@ impl InodeImpl {
         }
         self.free_indirect_blocks_required_by(range.start).unwrap();
 
-        range.len() as Ext2Bid
+        (range.len() as Ext2Bid, freed_blocks)
     }
 
     /// Frees the indirect blocks required by the specified block ID.
