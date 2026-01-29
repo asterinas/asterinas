@@ -31,9 +31,6 @@ pub struct VirtioPciCommonCfg {
 impl VirtioPciCommonCfg {
     pub(super) fn new(cap: &VirtioPciCapabilityData) -> SafePtr<Self, IoMem> {
         debug_assert!(cap.typ() == VirtioPciCpabilityType::CommonCfg);
-        SafePtr::new(
-            cap.memory_bar().as_ref().unwrap().io_mem().clone(),
-            cap.offset() as usize,
-        )
+        SafePtr::new(cap.memory_bar().unwrap().clone(), cap.offset() as usize)
     }
 }
