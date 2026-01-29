@@ -25,6 +25,7 @@ use crate::{
         utils::Inode,
     },
     prelude::*,
+    process::LockedHeap,
     thread::exception::PageFaultInfo,
     vm::{
         perms::VmPerms,
@@ -219,6 +220,7 @@ impl VmMapping {
         &self,
         printer: &mut VmPrinter,
         parent_vmar: &Vmar,
+        parent_heap_guard: &LockedHeap,
         path_resolver: &PathResolver,
     ) -> Result<()> {
         let start = self.map_to_addr;
@@ -263,12 +265,11 @@ impl VmMapping {
         let name = || {
             let process_vm = parent_vmar.process_vm();
             let user_stack_top = process_vm.init_stack().user_stack_top();
-
             if self.map_to_addr <= user_stack_top && self.map_end() > user_stack_top {
                 return Some(Cow::Borrowed("[stack]"));
             }
 
-            let heap_range = process_vm.heap().heap_range();
+            let heap_range = parent_heap_guard.heap_range();
             if self.map_to_addr >= heap_range.start && self.map_end() <= heap_range.end {
                 return Some(Cow::Borrowed("[heap]"));
             }

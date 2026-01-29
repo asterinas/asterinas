@@ -19,6 +19,11 @@ pub struct Heap {
     inner: Mutex<Option<HeapInner>>,
 }
 
+#[derive(Debug)]
+pub struct LockedHeap<'a> {
+    inner: MutexGuard<'a, Option<HeapInner>>,
+}
+
 #[derive(Clone, Debug)]
 struct HeapInner {
     /// The size of the data segment, used for rlimit checking.
@@ -32,6 +37,15 @@ impl Heap {
     pub(super) const fn new_uninitialized() -> Self {
         Self {
             inner: Mutex::new(None),
+        }
+    }
+
+    /// Creates a new `Heap` with identical contents of an existing one.
+    pub(super) fn fork_from(heap_guard: &LockedHeap) -> Self {
+        let inner = heap_guard.inner.as_ref().expect("Heap is not initialized");
+
+        Self {
+            inner: Mutex::new(Some(inner.clone())),
         }
     }
 
@@ -75,11 +89,11 @@ impl Heap {
         Ok(())
     }
 
-    /// Returns the current heap range.
-    pub fn heap_range(&self) -> Range<Vaddr> {
-        let inner = self.inner.lock();
-        let inner = inner.as_ref().expect("Heap is not initialized");
-        inner.heap_range.clone()
+    /// Locks the heap and returns a guard to access the heap information.
+    pub fn lock(&self) -> LockedHeap<'_> {
+        LockedHeap {
+            inner: self.inner.lock(),
+        }
     }
 
     /// Modifies the end address of the heap.
@@ -136,11 +150,12 @@ impl Heap {
     }
 }
 
-impl Clone for Heap {
-    fn clone(&self) -> Self {
-        Self {
-            inner: Mutex::new(self.inner.lock().clone()),
-        }
+impl LockedHeap<'_> {
+    /// Returns the current heap range.
+    pub fn heap_range(&self) -> &Range<Vaddr> {
+        let inner = self.inner.as_ref().expect("Heap is not initialized");
+
+        &inner.heap_range
     }
 }
 
