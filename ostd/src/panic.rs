@@ -44,6 +44,37 @@ pub fn abort() -> ! {
     crate::power::poweroff(crate::power::ExitCode::Failure);
 }
 
+/// A guard that aborts the system if dropped.
+///
+/// This is useful to ensure that certain objects will not be dropped during
+/// panic handling.
+#[derive(Debug)]
+pub(crate) struct PanicGuard {
+    _private: (),
+}
+
+impl Drop for PanicGuard {
+    fn drop(&mut self) {
+        early_println!("Panicked in `PanicGuard`, aborting the system");
+        abort();
+    }
+}
+
+impl PanicGuard {
+    /// Creates a panic guard that aborts the system if dropped.
+    pub(crate) fn new() -> Self {
+        PanicGuard { _private: () }
+    }
+
+    /// Finishes panic guarding by forgetting the guard.
+    ///
+    /// After the panic guarding finishes, it no longer aborts the system
+    /// when panic happens.
+    pub(crate) fn forget(self) {
+        core::mem::forget(self);
+    }
+}
+
 #[cfg(not(target_arch = "loongarch64"))]
 pub use unwinding::panic::{begin_panic, catch_unwind};
 
