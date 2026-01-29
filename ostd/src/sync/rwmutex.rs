@@ -38,6 +38,7 @@ use super::WaitQueue;
 /// while the mutex is held.
 ///
 /// # Usage
+///
 /// The mutex can be used in scenarios where data needs to be read frequently
 /// but written to occasionally.
 ///
@@ -100,6 +101,10 @@ const READER: usize = 1;
 const WRITER: usize = 1 << (usize::BITS - 1);
 const UPGRADEABLE_READER: usize = 1 << (usize::BITS - 2);
 const BEING_UPGRADED: usize = 1 << (usize::BITS - 3);
+
+/// This bit is reserved as an overflow sentinel.
+/// For more details, see comments on the `MAX_READER` constant
+/// in the [`super::rwlock`] module.
 const MAX_READER: usize = 1 << (usize::BITS - 4);
 
 impl<T> RwMutex<T> {

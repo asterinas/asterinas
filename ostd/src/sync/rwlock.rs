@@ -45,6 +45,7 @@ use crate::task::atomic_mode::AsAtomicModeGuard;
 /// while the lock is held.
 ///
 /// # Usage
+///
 /// The lock can be used in scenarios where data needs to be read frequently
 /// but written to occasionally.
 ///
@@ -110,6 +111,21 @@ const READER: usize = 1;
 const WRITER: usize = 1 << (usize::BITS - 1);
 const UPGRADEABLE_READER: usize = 1 << (usize::BITS - 2);
 const BEING_UPGRADED: usize = 1 << (usize::BITS - 3);
+
+/// This bit is reserved as an overflow sentinel.
+/// We intentionally cap read guards before counter growth can affect
+/// `BEING_UPGRADED` / `UPGRADEABLE_READER` / `WRITER` bits.
+/// This is defense-in-depth with no extra runtime cost.
+///
+/// This follows the same strategy as Rust std's `Arc`,
+/// which uses `isize::MAX` as a sentinel to prevent its reference count
+/// from overflowing into values that could compromise safety.
+///
+/// On 64-bit platforms (the only targets Asterinas supports),
+/// a counter overflow is not a practical concern:
+/// incrementing one-by-one from zero to `MAX_READER` (2^60)
+/// would take hundreds of years even at billions of increments per second.
+/// Nevertheless, this sentinel provides an extra layer of safety at no runtime cost.
 const MAX_READER: usize = 1 << (usize::BITS - 4);
 
 impl<T, G> RwLock<T, G> {

@@ -189,6 +189,7 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
         split_huge: bool,
     ) -> Option<Vaddr> {
         assert_eq!(len % C::BASE_PAGE_SIZE, 0);
+
         let end = self.va + len;
         assert!(end <= self.barrier_va.end);
         debug_assert_eq!(end % C::BASE_PAGE_SIZE, 0);
@@ -264,7 +265,6 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
             self.va = va;
             return Ok(());
         }
-
         debug_assert!(self.barrier_va.contains(&self.va));
 
         loop {
@@ -410,8 +410,12 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     ///  - the physical address to be mapped is valid and safe to use.
     pub unsafe fn map(&mut self, item: C::Item) {
         assert!(self.0.va < self.0.barrier_va.end);
+
         let (_, level, _) = C::item_raw_info(&item);
-        assert!(level <= C::HIGHEST_TRANSLATION_LEVEL);
+        assert!(
+            level <= C::HIGHEST_TRANSLATION_LEVEL,
+            "cursor level not suitable for mapping"
+        );
         let size = page_size::<C>(level);
         assert_eq!(
             self.0.va % size,
@@ -419,7 +423,10 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
             "cursor virtual address not aligned for mapping"
         );
         let end = self.0.va + size;
-        assert!(end <= self.0.barrier_va.end);
+        assert!(
+            end <= self.0.barrier_va.end,
+            "cursor virtual address out-of-bound for mapping"
+        );
 
         let rcu_guard = self.0.rcu_guard;
 
