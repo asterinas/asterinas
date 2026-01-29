@@ -1555,18 +1555,8 @@ impl InodeImpl {
     /// After a successful expansion, the size will be enlarged to `new_size`,
     /// which may result in an increased block count.
     fn expand(&mut self, new_size: usize) -> Result<()> {
-        let new_blocks = self.desc.size_to_blocks(new_size);
-        let old_blocks = self.desc.size_in_blocks();
-
-        // Expands block count if necessary
-        if new_blocks > old_blocks {
-            if new_blocks - old_blocks > self.fs().super_block().free_blocks_count() {
-                return_errno_with_message!(Errno::ENOSPC, "not enough free blocks");
-            }
-            self.alloc_range_blocks(old_blocks..new_blocks)?;
-        }
-
-        // Expands the size
+        // Only update the size, creating sparse blocks.
+        // Actual disk blocks will be allocated on-demand during writes.
         self.update_size(new_size);
         Ok(())
     }
