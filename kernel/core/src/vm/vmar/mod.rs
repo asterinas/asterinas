@@ -12,6 +12,7 @@ mod vmar_impls;
 
 use ostd::mm::Vaddr;
 
+pub use self::vm_mapping::MapHandle;
 pub(crate) use self::{
     handle::VmarHandle,
     rmap::{Rmap, RmapEntry},
