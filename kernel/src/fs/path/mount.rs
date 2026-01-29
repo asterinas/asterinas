@@ -37,6 +37,9 @@ static ID_ALLOCATOR: Once<SpinLock<IdAlloc>> = Once::new();
 /// The reserved mount ID, which represents an invalid mount.
 static RESERVED_MOUNT_ID: usize = 0;
 
+/// The default source for mounts without a specific source.   
+pub(super) static DEFAULT_SOURCE: &str = "none";
+
 pub(super) fn init() {
     // TODO: Make it configurable.
     const MAX_MOUNT_NUM: usize = 10000;
@@ -160,6 +163,8 @@ pub struct Mount {
     mountpoint: RwLock<Option<Arc<Dentry>>>,
     /// The associated FS.
     fs: Arc<dyn FileSystem>,
+    /// The mount source (device path like "/dev/vda" or filesystem name like "proc").
+    source: Option<String>,
     /// The parent mount node.
     parent: RwLock<Option<Weak<Mount>>>,
     /// Child mount nodes which are mounted on one dentry of self.
@@ -186,7 +191,8 @@ impl Mount {
         fs: Arc<dyn FileSystem>,
         mnt_ns: Weak<MountNamespace>,
     ) -> Arc<Self> {
-        Self::new(fs, PerMountFlags::default(), None, mnt_ns)
+        let source = fs.name().to_string();
+        Self::new(fs, PerMountFlags::default(), None, mnt_ns, Some(source))
     }
 
     /// Creates a pseudo mount node with an associated FS.
@@ -194,7 +200,7 @@ impl Mount {
     /// This pseudo mount is not mounted on other mount nodes, has no parent, and does not
     /// belong to any mount namespace.
     pub(in crate::fs) fn new_pseudo(fs: Arc<dyn FileSystem>) -> Arc<Self> {
-        Self::new(fs, PerMountFlags::KERNMOUNT, None, Weak::new())
+        Self::new(fs, PerMountFlags::KERNMOUNT, None, Weak::new(), None)
     }
 
     /// The internal constructor.
@@ -210,6 +216,7 @@ impl Mount {
         flags: PerMountFlags,
         parent_mount: Option<Weak<Mount>>,
         mnt_ns: Weak<MountNamespace>,
+        source: Option<String>,
     ) -> Arc<Self> {
         let id = ID_ALLOCATOR.get().unwrap().lock().alloc().unwrap();
 
@@ -221,6 +228,7 @@ impl Mount {
             children: RwLock::new(HashMap::new()),
             propagation: RwLock::new(MountPropType::default()),
             fs,
+            source,
             mnt_ns,
             flags: AtomicPerMountFlags::new(flags),
             this: weak_self.clone(),
@@ -230,6 +238,11 @@ impl Mount {
     /// Gets the mount ID.
     pub fn id(&self) -> usize {
         self.id
+    }
+
+    /// Returns the mount source.
+    pub(super) fn source(&self) -> Option<&str> {
+        self.source.as_deref()
     }
 
     /// Mounts a fs on the mountpoint, it will create a new child mount node.
@@ -248,13 +261,20 @@ impl Mount {
         fs: Arc<dyn FileSystem>,
         flags: PerMountFlags,
         mountpoint: &Arc<Dentry>,
+        source: Option<String>,
     ) -> Result<Arc<Self>> {
         if mountpoint.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
 
         let key = mountpoint.key();
-        let child_mount = Self::new(fs, flags, Some(Arc::downgrade(self)), self.mnt_ns.clone());
+        let child_mount = Self::new(
+            fs,
+            flags,
+            Some(Arc::downgrade(self)),
+            self.mnt_ns.clone(),
+            source,
+        );
         self.children.write().insert(key, child_mount.clone());
         child_mount.set_mountpoint(mountpoint);
 
@@ -296,6 +316,7 @@ impl Mount {
             children: RwLock::new(HashMap::new()),
             propagation: RwLock::new(MountPropType::default()),
             fs: self.fs.clone(),
+            source: self.source.clone(),
             mnt_ns: new_ns.cloned().unwrap_or_else(|| self.mnt_ns.clone()),
             flags: AtomicPerMountFlags::new(self.flags.load(Ordering::Relaxed)),
             this: weak_self.clone(),

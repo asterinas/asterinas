@@ -5,11 +5,11 @@ use alloc::str;
 use aster_util::printer::VmPrinter;
 use ostd::task::Task;
 
-use super::Path;
+use super::{Mount, Path};
 use crate::{
     fs::{
         file_table::{FileDesc, get_file_fast},
-        path::{MountNamespace, PerMountFlags},
+        path::{MountNamespace, PerMountFlags, mount::DEFAULT_SOURCE},
         utils::{FsFlags, InodeType, NAME_MAX, PATH_MAX, Permission, SYMLINKS_MAX, SymbolicLink},
     },
     prelude::*,
@@ -253,38 +253,61 @@ impl AbsPathResult {
 
 // Mount info reading implementation
 impl PathResolver {
-    /// Reads the information of the mounts visible to this resolver.
+    /// Collects the mounts visible to this resolver.
     ///
     /// Here, the visible mounts are defined as follows:
     /// 1. If the resolver's root is a mount point, the visible mounts are the mount of the
     ///    resolver's root directory and all of its descendant mounts in the mount tree.
     /// 2. If the resolver's root is not a mount point, the visible mounts are all descendant
     ///    mounts that are mounted under the resolver's root directory.
-    pub fn read_mount_info(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let mut printer = VmPrinter::new_skip(writer, offset);
+    ///
+    /// The mounts are collected in depth-first order.
+    fn collect_visible_mounts(&self) -> Vec<Arc<Mount>> {
+        let mut visible = Vec::new();
+        let mut stack = vec![self.root.mount.clone()];
 
-        let mut stack = Vec::new();
-        if self.root.is_mount_root() {
-            stack.push(self.root.mount.clone());
-        } else {
-            // The root is not a mount root, so we need to find the visible child mounts.
-            let children = self.root.mount.children.read();
+        while let Some(mount) = stack.pop() {
+            visible.push(mount.clone());
+
+            let children = mount.children.read();
             for child_mount in children.values() {
-                if child_mount
-                    .mountpoint()
-                    .is_some_and(|dentry| dentry.is_equal_or_descendant_of(&self.root.dentry))
-                {
-                    stack.push(child_mount.clone());
+                // Filter children only for the root mount if it's not a mount root.
+                let is_root_mount = Arc::ptr_eq(&mount, &self.root.mount);
+                if is_root_mount && !self.root.is_mount_root() {
+                    let Some(mountpoint) = child_mount.mountpoint() else {
+                        continue;
+                    };
+                    if !mountpoint.is_equal_or_descendant_of(&self.root.dentry) {
+                        continue;
+                    }
                 }
+                stack.push(child_mount.clone());
             }
         }
 
-        while let Some(mount) = stack.pop() {
+        visible
+    }
+
+    /// Reads mount information for `/proc/[pid]/mountinfo`.
+    ///
+    /// Provides detailed mount information including mount IDs, parent relationships,
+    /// and device numbers.
+    pub fn read_mount_info(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
+        for mount in self.collect_visible_mounts() {
             let mount_id = mount.id();
             let parent = mount.parent().and_then(|parent| parent.upgrade());
             let parent_id = parent.as_ref().map_or(mount_id, |p| p.id());
-            let root = mount.root_dentry().path_name();
-            let mount_point = if let Some(parent) = parent {
+            let is_resolver_root_mount = Arc::ptr_eq(&mount, &self.root.mount);
+            let root = if is_resolver_root_mount {
+                self.root.dentry.path_name()
+            } else {
+                mount.root_dentry().path_name()
+            };
+            let mount_point = if is_resolver_root_mount {
+                "/".to_string()
+            } else if let Some(parent) = parent {
                 if let Some(mount_point_dentry) = mount.mountpoint() {
                     self.make_abs_path(&Path::new(parent, mount_point_dentry))
                         .into_string()
@@ -298,11 +321,11 @@ impl PathResolver {
             let mount_flags = mount.flags();
             let fs_type = mount.fs().name();
             let fs_flags = mount.fs().flags();
+            let source = mount.source().unwrap_or(DEFAULT_SOURCE);
 
             // The following fields are dummy for now.
             let major = 0;
             let minor = 0;
-            let source = "none";
 
             let entry = MountInfoEntry {
                 mount_id,
@@ -318,11 +341,48 @@ impl PathResolver {
             };
 
             writeln!(printer, "{}", entry)?;
+        }
 
-            let children = mount.children.read();
-            for child_mount in children.values() {
-                stack.push(child_mount.clone());
-            }
+        Ok(printer.bytes_written())
+    }
+
+    /// Reads mount information for `/proc/[pid]/mounts` and `/proc/mounts`.
+    ///
+    /// Provides a simplified view of mounted filesystems in the traditional
+    /// `/etc/fstab` format.
+    pub fn read_mounts(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
+        for mount in self.collect_visible_mounts() {
+            let parent = mount.parent().and_then(|parent| parent.upgrade());
+            let is_resolver_root_mount = Arc::ptr_eq(&mount, &self.root.mount);
+            let mount_point = if is_resolver_root_mount {
+                "/".to_string()
+            } else if let Some(parent) = parent {
+                if let Some(mount_point_dentry) = mount.mountpoint() {
+                    self.make_abs_path(&Path::new(parent, mount_point_dentry))
+                        .into_string()
+                } else {
+                    "".to_string()
+                }
+            } else {
+                // No parent means it's the root of the namespace.
+                "/".to_string()
+            };
+            let mount_flags = mount.flags();
+            let fs_type = mount.fs().name();
+            let source = mount.source().unwrap_or(DEFAULT_SOURCE);
+
+            let entry = MountsEntry {
+                source,
+                mount_point: &mount_point,
+                fs_type,
+                mount_flag: mount_flags,
+                dump: 0,
+                pass: 0,
+            };
+
+            writeln!(printer, "{}", entry)?;
         }
 
         Ok(printer.bytes_written())
@@ -368,6 +428,38 @@ impl core::fmt::Display for MountInfoEntry<'_> {
             &self.fs_type,
             &self.source,
             &self.fs_flags,
+        )
+    }
+}
+
+/// A single entry in the mounts file.
+struct MountsEntry<'a> {
+    /// Filesystem-specific information or "none".
+    source: &'a str,
+    /// Mount point relative to the process's root directory.
+    mount_point: &'a str,
+    /// The type of the filesystem in the form "type[.subtype]".
+    fs_type: &'a str,
+    /// Per-mount flags.
+    mount_flag: PerMountFlags,
+    /// The dump field is used by the dump(8) program to determine which
+    /// filesystems need to be dumped.
+    dump: u32,
+    /// The fsck(8) program uses this field.
+    pass: u32,
+}
+
+impl core::fmt::Display for MountsEntry<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "{} {} {} {} {} {}",
+            &self.source,
+            &self.mount_point,
+            &self.fs_type,
+            &self.mount_flag,
+            &self.dump,
+            &self.pass,
         )
     }
 }

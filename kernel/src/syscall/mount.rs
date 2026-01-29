@@ -6,7 +6,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         path::{AT_FDCWD, FsPath, MountPropType, Path, PerMountFlags},
-        registry::FsProperties,
+        registry::{FsProperties, FsType},
         utils::{FileSystem, FsFlags, InodeType},
     },
     prelude::*,
@@ -198,8 +198,28 @@ fn do_new_mount(
     if fs_type.is_empty() {
         return_errno_with_message!(Errno::EINVAL, "fs_type is empty");
     }
+
+    // Determine the source string based on filesystem type
+    let fs_type_str = fs_type
+        .to_str()
+        .map_err(|_| Error::with_message(Errno::ENODEV, "invalid file system type"))?;
+    let fs_type = crate::fs::registry::look_up(fs_type_str).ok_or(Error::with_message(
+        Errno::ENODEV,
+        "the filesystem is not configured in the kernel",
+    ))?;
+
+    let source = ctx
+        .user_space()
+        .read_cstring(src_name_addr, MAX_FILENAME_LEN)?;
+    let source = if source.is_empty() {
+        // If source is an empty string, set it to None
+        None
+    } else {
+        Some(source.to_string_lossy().into_owned())
+    };
+
     let fs = get_fs(src_name_addr, flags, fs_type, data_addr, ctx)?;
-    target_path.mount(fs, flags.into(), ctx)?;
+    target_path.mount(fs, flags.into(), source, ctx)?;
     Ok(())
 }
 
@@ -207,7 +227,7 @@ fn do_new_mount(
 fn get_fs(
     src_name_addr: Vaddr,
     flags: MountFlags,
-    fs_type: CString,
+    fs_type: &dyn FsType,
     data_addr: Vaddr,
     ctx: &Context,
 ) -> Result<Arc<dyn FileSystem>> {
@@ -217,14 +237,6 @@ fn get_fs(
     } else {
         Some(user_space.read_cstring(data_addr, MAX_FILENAME_LEN)?)
     };
-
-    let fs_type = fs_type
-        .to_str()
-        .map_err(|_| Error::with_message(Errno::ENODEV, "invalid file system type"))?;
-    let fs_type = crate::fs::registry::look_up(fs_type).ok_or(Error::with_message(
-        Errno::ENODEV,
-        "the filesystem is not configured in the kernel",
-    ))?;
 
     let disk = if fs_type.properties().contains(FsProperties::NEED_DISK) {
         let devname = user_space.read_cstring(src_name_addr, MAX_FILENAME_LEN)?;
