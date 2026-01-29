@@ -12,6 +12,7 @@ use core::time::Duration;
 use aster_systree::{
     SysAttr, SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj, SysStr, SysSymlink,
 };
+use device_id::DeviceId;
 
 use super::Extension;
 use crate::{
@@ -74,21 +75,21 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
     fn new_metadata(ino: u64, type_: InodeType) -> Metadata {
         let now = RealTimeCoarseClock::get().read_time();
         Metadata {
-            dev: 0,
             ino,
             size: 0,
-            blk_size: 1024,
-            blocks: 0,
-            atime: now,
-            mtime: now,
-            ctime: now,
+            optimal_block_size: 1024,
+            nr_sectors_allocated: 0,
+            last_access_at: now,
+            last_modify_at: now,
+            last_meta_change_at: now,
             type_,
             // The mode field in metadata will not be used
             mode: mkmod!(a=),
-            nlinks: 1,
+            nr_hard_links: 1,
             uid: Uid::new_root(),
             gid: Gid::new_root(),
-            rdev: 0,
+            container_dev_id: DeviceId::none(), // FIXME: placeholder
+            self_dev_id: None,
         }
     }
 
@@ -361,19 +362,19 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
     }
 
     default fn atime(&self) -> Duration {
-        self.metadata().atime
+        self.metadata().last_access_at
     }
 
     default fn set_atime(&self, _time: Duration) {}
 
     default fn mtime(&self) -> Duration {
-        self.metadata().mtime
+        self.metadata().last_modify_at
     }
 
     default fn set_mtime(&self, _time: Duration) {}
 
     default fn ctime(&self) -> Duration {
-        self.metadata().ctime
+        self.metadata().last_meta_change_at
     }
 
     default fn set_ctime(&self, _time: Duration) {}
