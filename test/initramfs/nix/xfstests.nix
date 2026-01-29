@@ -43,34 +43,12 @@ exec ./check "$@"
 EOF
     chmod +x $out/xfstests/run-xfstests.sh
 
-    # Copy local.config from source directory
-    cp ${./../src/fs/xfstests/local.config} $out/xfstests/local.config
-
-    # create a mkfs wrapper script
-    cat > $out/xfstests/asterinas_mkfs << 'EOF'
-#!/bin/sh
-REAL_BIN="${pkgs.e2fsprogs}/bin/mke2fs"
-
-DEV=""
-for arg in "$@"; do
-    case "$arg" in
-        /dev/vd*) DEV="$arg" ;;
-    esac
-done
-
-if [ -n "$DEV" ]; then
-    echo "[ASTERINAS-WRAPPER] Forcing 4KB blocks and size for $DEV"
-    # 10G image with 4KB blocks = 2621440 blocks
-    exec "$REAL_BIN" -t ext2 -F -b 4096 "$DEV" 2621440
-else
-    exec "$REAL_BIN" -t ext2 "$@"
-fi
-EOF
-    chmod +x $out/xfstests/asterinas_mkfs
-
     # copy fix.sh into xfstests directory
     cp ${./../src/fs/xfstests/fix.sh} $out/xfstests/fix.sh
     chmod +x $out/xfstests/fix.sh
+
+    # Copy local.config from source directory
+    cp ${./../src/fs/xfstests/local.config} $out/xfstests/local.config
 
     # copy skip.list into xfstests directory
     cp ${./../src/fs/xfstests/skip.list} $out/xfstests/skip.list
