@@ -13,7 +13,7 @@ use aster_util::printer::VmPrinter;
 use ostd::{
     io::IoMem,
     mm::{
-        CachePolicy, Frame, FrameAllocOptions, PageFlags, PageProperty, UFrame, VmSpace,
+        CachePolicy, Frame, FrameAllocOptions, HasSize, PageFlags, PageProperty, UFrame, VmSpace,
         io::util::HasVmReaderWriter, tlb::TlbFlushOp, vm_space::VmQueriedItem,
     },
     task::disable_preempt,
@@ -25,7 +25,7 @@ use super::{
 };
 use crate::{
     fs::{
-        file::FileLike,
+        file::{FileLike, Mappable, MappedObject},
         vfs::{inode::Inode, path::PathResolver},
     },
     prelude::*,
@@ -216,7 +216,8 @@ impl VmMapping {
     pub(crate) fn rss_type(&self) -> RssType {
         match &self.mapped_mem {
             MappedMemory::Anonymous => RssType::Anon,
-            MappedMemory::Vmo(_) | MappedMemory::Device => RssType::File,
+            MappedMemory::Vmo(_) => RssType::File,
+            MappedMemory::Device(_) => MapHandle::DEVICE_RSS_TYPE,
         }
     }
 
@@ -229,7 +230,7 @@ impl VmMapping {
         let mapped_vmo = match &self.mapped_mem {
             MappedMemory::Vmo(mapped_vmo) => mapped_vmo,
             MappedMemory::Anonymous => return Ok(None),
-            MappedMemory::Device => {
+            MappedMemory::Device(_) => {
                 return_errno_with_message!(
                     Errno::EFAULT,
                     "shared futexes on device mappings are not supported"
@@ -247,27 +248,7 @@ impl VmMapping {
     /// Device mappings cannot be expanded as they represent fixed-size MMIO
     /// regions.
     pub(super) fn can_expand(&self) -> bool {
-        !matches!(self.mapped_mem, MappedMemory::Device)
-    }
-
-    /// Populates device memory for this mapping.
-    ///
-    /// This method should only be called for device memory mappings. It maps
-    /// the provided I/O memory region into the virtual address space.
-    ///
-    /// # Panics
-    ///
-    /// In debug builds, this method panics if the mapping is not a device
-    /// memory mapping.
-    pub(super) fn populate_device(&self, vm_space: &VmSpace, io_mem: IoMem, vmo_offset: usize) {
-        debug_assert!(matches!(self.mapped_mem, MappedMemory::Device));
-
-        let preempt_guard = disable_preempt();
-        let map_range = self.map_to_addr..self.map_to_addr + self.map_size.get();
-        let mut cursor = vm_space.cursor_mut(&preempt_guard, &map_range).unwrap();
-        let io_page_prop =
-            PageProperty::new_user(PageFlags::from(self.perms), io_mem.cache_policy());
-        cursor.map_iomem(io_mem, io_page_prop, self.map_size.get(), vmo_offset);
+        !matches!(self.mapped_mem, MappedMemory::Device(_))
     }
 
     /// Prints the mapping information in the format of `/proc/[pid]/maps`.
@@ -424,6 +405,16 @@ impl VmMapping {
                     return Ok(());
                 }
             }
+
+            return res;
+        } else if let MappedMemory::Device(ref mapped_obj) = self.mapped_mem {
+            let handle = MapHandle {
+                vm_mapping: self,
+                vm_space,
+                rss_delta,
+            };
+
+            let res = mapped_obj.handle_page_fault(page_aligned_addr - self.map_to_addr(), handle);
 
             return res;
         }
@@ -597,7 +588,7 @@ impl VmMapping {
                 // Anonymous mapping. Allocate a new frame.
                 return Ok((FrameAllocOptions::new().alloc_frame()?.into(), is_readonly));
             }
-            MappedMemory::Device => {
+            MappedMemory::Device(_) => {
                 // Device memory is populated when the memory mapping is created.
                 return Err(VmoCommitError::Err(Error::with_message(
                     Errno::EFAULT,
@@ -850,12 +841,21 @@ impl VmMapping {
 
     /// Change the perms of the mapping.
     pub(super) fn protect(self, vm_space: &VmSpace, perms: VmPerms) -> Self {
-        // We should never convert a page to a writable page directly.
+        // For device mappings, they're shared as we have checked that when
+        // creating the mapping. Additionally, we need to keep the page flags
+        // in sync with the mapping to avoid handling a write page fault on a
+        // read-only page, which is not yet supported.
+        //
+        // Otherwise, we should never convert a page to a writable page:
         //  - For private mappings, we may need to perform Copy-On-Write (COW)
         //    before doing so.
         //  - For shared mappings, the page may need to be marked as a dirty
         //    page in the page cache.
-        let new_flags = PageFlags::from(perms) - PageFlags::W;
+        let new_flags = if matches!(self.mapped_mem, MappedMemory::Device(_)) {
+            PageFlags::from(perms)
+        } else {
+            PageFlags::from(perms) - PageFlags::W
+        };
 
         let preempt_guard = disable_preempt();
         let range = self.range();
@@ -894,7 +894,7 @@ pub(super) enum MappedMemory {
     ///
     /// These pages are associated with special files (typically device memory). They are populated
     /// when the memory mapping is created via mmap, instead of occurring at page faults.
-    Device,
+    Device(Box<dyn MappedObject>),
 }
 
 impl MappedMemory {
@@ -903,7 +903,7 @@ impl MappedMemory {
         match self {
             MappedMemory::Anonymous => MappedMemory::Anonymous,
             MappedMemory::Vmo(v) => MappedMemory::Vmo(v.dup()),
-            MappedMemory::Device => MappedMemory::Device,
+            MappedMemory::Device(o) => MappedMemory::Device(o.dup()),
         }
     }
 
@@ -920,7 +920,9 @@ impl MappedMemory {
                 let new_offset = offset + vmo.offset();
                 MappedMemory::Vmo(vmo.dup_at_offset(new_offset))
             }
-            MappedMemory::Device => MappedMemory::Device,
+            MappedMemory::Device(mapped_obj) => {
+                MappedMemory::Device(mapped_obj.dup_at_offset(offset))
+            }
         }
     }
 }
@@ -1104,4 +1106,106 @@ fn duplicate_frame(src: &UFrame) -> Result<Frame<()>> {
     let new_frame = FrameAllocOptions::new().zeroed(false).alloc_frame()?;
     new_frame.writer().write(&mut src.reader());
     Ok(new_frame)
+}
+
+/**************************** Device mappings ********************************/
+
+/// The handle used in [`Mappable::map`].
+pub struct MapHandle<'a, 'b, 'c> {
+    vm_mapping: &'a VmMapping,
+    vm_space: &'a VmSpace,
+    rss_delta: &'c mut RssDelta<'b>,
+}
+
+impl MapHandle<'_, '_, '_> {
+    const DEVICE_RSS_TYPE: RssType = RssType::File;
+
+    /// Maps a [`UFrame`].
+    ///
+    /// `offset` specifies the virtual address offset (from the start of the memory region).
+    #[expect(dead_code)]
+    pub(crate) fn map_frame(&mut self, offset: usize, frame: UFrame) {
+        let map_size = self.vm_mapping.map_size.get();
+        if offset >= map_size {
+            return;
+        }
+
+        let map_addr = self.vm_mapping.map_to_addr + offset;
+        let map_len = PAGE_SIZE;
+        let map_range = map_addr..(map_addr + map_len);
+
+        let page_prop = PageProperty::new_user(
+            PageFlags::from(self.vm_mapping.perms),
+            CachePolicy::Writeback,
+        );
+
+        let preempt_guard = disable_preempt();
+        let mut cursor = self
+            .vm_space
+            .cursor_mut(&preempt_guard, &map_range)
+            .unwrap();
+        if cursor.query().unwrap().1.is_some() {
+            // We assume this is a race condition because the page fault has already been handled.
+            // Therefore, no action is required.
+            return;
+        }
+        cursor.map(frame, page_prop);
+        self.rss_delta.add(Self::DEVICE_RSS_TYPE, 1);
+    }
+
+    /// Maps an [`IoMem`].
+    ///
+    /// `offset` specifies the virtual address offset (from the start of the memory region).
+    pub(crate) fn map_iomem(&mut self, offset: usize, io_mem: IoMem) {
+        let map_size = self.vm_mapping.map_size.get();
+        if offset >= map_size {
+            return;
+        }
+
+        let map_addr = self.vm_mapping.map_to_addr + offset;
+        let map_len = io_mem.size().min(map_size - offset);
+        let map_range = map_addr..(map_addr + map_len);
+
+        let page_prop = PageProperty::new_user(
+            PageFlags::from(self.vm_mapping.perms),
+            io_mem.cache_policy(),
+        );
+
+        let preempt_guard = disable_preempt();
+        let mut cursor = self
+            .vm_space
+            .cursor_mut(&preempt_guard, &map_range)
+            .unwrap();
+        if cursor.query().unwrap().1.is_some() {
+            // We assume this is a race condition because the page fault has already been handled.
+            // Therefore, no action is required.
+            return;
+        }
+        cursor.map_iomem(io_mem, page_prop, map_len, 0);
+    }
+}
+
+impl VmMapping {
+    /// Populates device memory for this mapping.
+    ///
+    /// This method should only be called for device memory mappings. It maps
+    /// the provided I/O memory region into the virtual address space.
+    pub(super) fn populate_device(
+        &mut self,
+        vm_space: &VmSpace,
+        mappable: &dyn Mappable,
+        vmo_offset: usize,
+        rss_delta: &mut RssDelta,
+    ) {
+        debug_assert!(matches!(self.mapped_mem, MappedMemory::Anonymous));
+
+        let handle = MapHandle {
+            vm_mapping: self,
+            vm_space,
+            rss_delta,
+        };
+        let mapped_obj = mappable.map(vmo_offset, handle);
+
+        self.mapped_mem = MappedMemory::Device(mapped_obj);
+    }
 }
