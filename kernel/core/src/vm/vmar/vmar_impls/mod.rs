@@ -130,7 +130,7 @@ impl Vmar {
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/include/linux/mm_types_task.h#L26-L32>
 #[repr(u32)]
-#[derive(Clone, Copy, Debug, TryFromInt)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
 pub(crate) enum RssType {
     File = 0,
     Anon = 1,
