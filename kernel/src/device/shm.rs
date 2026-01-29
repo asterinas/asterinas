@@ -18,7 +18,12 @@ pub fn init_in_first_process(path_resolver: &PathResolver, ctx: &Context) -> Res
     // Create the "shm" directory under "/dev" and mount a ramfs on it.
     let shm_path =
         dev_path.new_fs_child("shm", InodeType::Dir, chmod!(InodeMode::S_ISVTX, a+rwx))?;
-    shm_path.mount(RamFs::new(), PerMountFlags::default(), ctx)?;
+    shm_path.mount(
+        RamFs::new(),
+        PerMountFlags::default(),
+        Some("tmpfs".to_string()),
+        ctx,
+    )?;
     log::debug!("Mount RamFs at \"/dev/shm\"");
     Ok(())
 }

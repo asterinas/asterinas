@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// A `Dentry` represents a cached filesystem node in the VFS tree.
-pub(super) struct Dentry {
+pub(in crate::fs) struct Dentry {
     inode: Arc<dyn Inode>,
     type_: InodeType,
     name_and_parent: NameAndParent,
@@ -203,7 +203,7 @@ impl Dentry {
     }
 
     /// Gets the absolute path name of this `Dentry` within the filesystem.
-    pub(super) fn path_name(&self) -> String {
+    pub(in crate::fs) fn path_name(&self) -> String {
         let mut path_name = self.name().to_string();
         let mut current_dir = self.this();
 
