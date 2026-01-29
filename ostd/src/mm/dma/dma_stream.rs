@@ -238,9 +238,12 @@ impl<D: DmaDirection> DmaStream<D> {
         };
         let range = va_range.start + byte_range.start..va_range.start + byte_range.end;
 
-        // SAFETY: We've checked that the range is inbound, so the virtual
-        // address range and the DMA direction correspond to a DMA region
-        // (they're part of `self`).
+        // SAFETY:
+        // 1. We've checked that the range is inbound, so the virtual address
+        //    range and the DMA direction correspond to a DMA region (they're
+        //    part of `self`).
+        // 2. `can_sync_dma()` is either checked above (for `Inner::Kva`) or
+        //    checked when constructing `self` (for `Inner::Segment`).
         unsafe { crate::arch::mm::sync_dma_range::<D>(range) };
 
         Ok(())

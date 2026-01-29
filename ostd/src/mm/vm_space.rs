@@ -290,13 +290,13 @@ impl Cursor<'_> {
         self.0.find_next(len)
     }
 
-    /// Jump to the virtual address.
+    /// Jumps to the virtual address.
     pub fn jump(&mut self, va: Vaddr) -> Result<()> {
         self.0.jump(va)?;
         Ok(())
     }
 
-    /// Get the virtual address of the current slot.
+    /// Gets the virtual address of the current slot.
     pub fn virt_addr(&self) -> Vaddr {
         self.0.virt_addr()
     }
@@ -334,7 +334,7 @@ impl<'a> CursorMut<'a> {
         self.pt_cursor.find_next(len)
     }
 
-    /// Jump to the virtual address.
+    /// Jumps to the virtual address.
     ///
     /// This is the same as [`Cursor::jump`].
     pub fn jump(&mut self, va: Vaddr) -> Result<()> {
@@ -342,12 +342,12 @@ impl<'a> CursorMut<'a> {
         Ok(())
     }
 
-    /// Get the virtual address of the current slot.
+    /// Gets the virtual address of the current slot.
     pub fn virt_addr(&self) -> Vaddr {
         self.pt_cursor.virt_addr()
     }
 
-    /// Get the dedicated TLB flusher for this cursor.
+    /// Gets the dedicated TLB flusher for this cursor.
     pub fn flusher(&mut self) -> &mut TlbFlusher<'a, DisabledPreemptGuard> {
         &mut self.flusher
     }
@@ -449,6 +449,7 @@ impl<'a> CursorMut<'a> {
     /// splitting the operation into multiple small ones.
     ///
     /// # Panics
+    ///
     /// Panics if:
     ///  - the length is longer than the remaining range of the cursor;
     ///  - the length is not page-aligned.
