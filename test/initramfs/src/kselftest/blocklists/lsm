@@ -1,0 +1,2 @@
+lsm:lsm_get_self_attr_test
+lsm:lsm_list_modules_test

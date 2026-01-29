@@ -1,0 +1,12 @@
+cgroup:test_core
+cgroup:test_cpu
+cgroup:test_cpuset
+cgroup:test_freezer
+cgroup:test_hugetlb_memcg
+cgroup:test_kill
+cgroup:test_kmem
+cgroup:test_pids
+cgroup:test_zswap
+cgroup:test_stress.sh
+cgroup:test_cpuset_prs.sh
+cgroup:test_cpuset_v1_hp.sh
