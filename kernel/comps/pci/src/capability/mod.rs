@@ -5,80 +5,83 @@
 use alloc::vec::Vec;
 
 use align_ext::AlignExt;
+use int_to_c_enum::TryFromInt;
+use ostd::Result;
 
-use self::{msix::CapabilityMsixData, vendor::CapabilityVndrData};
-use super::{cfg_space::Status, common_device::PciCommonDevice};
-use crate::cfg_space::PciGeneralDeviceCfgOffset;
+use self::{
+    msix::{CapabilityMsixData, RawCapabilityMsix},
+    vendor::{CapabilityVndrData, RawCapabilityVndr},
+};
+use crate::{
+    PciDeviceLocation,
+    cfg_space::{PciGeneralDeviceCfgOffset, Status},
+    common_device::{BarManager, PciCommonDevice},
+};
 
 pub mod msix;
 pub mod vendor;
 
-/// PCI Capability
-#[derive(Debug)]
-pub struct Capability {
-    cap_data: CapabilityData,
+/// Raw PCI Capabilities.
+#[derive(Debug, Default)]
+pub(super) struct RawCapabilities {
+    msix: Option<RawCapabilityMsix>,
+    vndr: Vec<RawCapabilityVndr>,
 }
 
-/// PCI Capability data.
-#[derive(Debug, Clone)]
-pub enum CapabilityData {
-    /// Id:0x01, Power Management
-    Pm,
-    /// Id:0x02, Accelerated Graphics Part
-    Agp,
-    /// Id:0x03, Vital Product Data
-    Vpd,
-    /// Id:0x04, Slot Identification
-    SlotId,
-    /// Id:0x05, Message Signalled Interrupts
-    Msi,
-    /// Id:0x06, CompactPCI HotSwap
-    Chswp,
-    /// Id:0x07, PCI-X
-    PciX,
-    /// Id:0x08, HyperTransport
-    Hp,
-    /// Id:0x09, Vendor-Specific
-    Vndr(CapabilityVndrData),
-    /// Id:0x0A, Debug port
-    Dbg,
-    /// Id:0x0B, CompactPCI Central Resource Control
-    Ccrc,
-    /// Id:0x0C, PCI Standard Hot-Plug Controller
-    Shpc,
-    /// Id:0x0D, Bridge subsystem vendor/device ID
-    Ssvid,
-    /// Id:0x0R, AGP Target PCI-PCI bridge
-    Agp3,
-    /// Id:0x0F, Secure Device
-    Secdev,
-    /// Id:0x10, PCI Express
-    Exp,
-    /// Id:0x11, MSI-X
-    Msix(CapabilityMsixData),
-    /// Id:0x12, SATA Data/Index Conf
-    Sata,
-    /// Id:0x13, PCI Advanced Features
-    Af,
-    /// Id:0x14, Enhanced Allocation
-    Ea,
-    /// Id:?, Unknown
-    Unknown(u8),
+/// PCI capability types.
+#[derive(Debug, Clone, Copy, TryFromInt)]
+#[repr(u8)]
+enum CapabilityType {
+    /// Power Management
+    Pm = 0x01,
+    /// Accelerated Graphics Part
+    Agp = 0x02,
+    /// Vital Product Data
+    Vpd = 0x03,
+    /// Slot Identification
+    SlotId = 0x04,
+    /// Message Signalled Interrupts
+    Msi = 0x05,
+    /// CompactPCI HotSwap
+    Chswp = 0x06,
+    /// PCI-X
+    PciX = 0x07,
+    /// HyperTransport
+    Hp = 0x08,
+    /// Vendor-Specific
+    Vndr = 0x09,
+    /// Debug port
+    Dbg = 0x0A,
+    /// CompactPCI Central Resource Control
+    Ccrc = 0x0B,
+    /// PCI Standard Hot-Plug Controller
+    Shpc = 0x0C,
+    /// Bridge subsystem vendor/device ID
+    Ssvid = 0x0D,
+    /// AGP Target PCI-PCI bridge
+    Agp3 = 0x0E,
+    /// Secure Device
+    Secdev = 0x0F,
+    /// PCI Express
+    Exp = 0x10,
+    /// MSI-X
+    Msix = 0x11,
+    /// SATA Data/Index Conf
+    Sata = 0x12,
+    /// PCI Advanced Features
+    Af = 0x13,
+    /// Enhanced Allocation
+    Ea = 0x14,
 }
 
-impl Capability {
+impl RawCapabilities {
     /// The top of the capability position.
     const CAPABILITY_TOP: u16 = 0xFC;
 
-    /// Gets the capability data
-    pub fn capability_data(&self) -> &CapabilityData {
-        &self.cap_data
-    }
-
-    /// Gets the capabilities of one device
-    pub(super) fn device_capabilities(dev: &mut PciCommonDevice) -> Vec<Self> {
+    /// Parses the capabilities of the PCI device.
+    pub(super) fn parse(dev: &PciCommonDevice) -> Self {
         if !dev.read_status().contains(Status::CAPABILITIES_LIST) {
-            return Vec::new();
+            return Self::default();
         }
 
         // The offset of the first capability pointer is the same for PCI general devices and PCI
@@ -87,7 +90,6 @@ impl Capability {
         let mut cap_ptr =
             (dev.location().read8(CAP_OFFSET) as u16).align_down(align_of::<u32>() as _);
         let mut cap_ptr_vec = Vec::new();
-        let mut capabilities = Vec::new();
 
         // Read all capability pointers so that it is easy for us to get the length of each
         // capability.
@@ -100,39 +102,60 @@ impl Capability {
         // Push the top position so that we can calculate the length of the last capability.
         cap_ptr_vec.push(Self::CAPABILITY_TOP);
 
+        let mut caps = Self::default();
+
         let length = cap_ptr_vec.len();
         for i in 0..length - 1 {
             let cap_ptr = cap_ptr_vec[i];
             let next_ptr = cap_ptr_vec[i + 1];
-            let cap_type = dev.location().read8(cap_ptr);
-            let data = match cap_type {
-                0x01 => CapabilityData::Pm,
-                0x02 => CapabilityData::Agp,
-                0x03 => CapabilityData::Vpd,
-                0x04 => CapabilityData::SlotId,
-                0x05 => CapabilityData::Msi,
-                0x06 => CapabilityData::Chswp,
-                0x07 => CapabilityData::PciX,
-                0x08 => CapabilityData::Hp,
-                0x09 => {
-                    CapabilityData::Vndr(CapabilityVndrData::new(dev, cap_ptr, next_ptr - cap_ptr))
-                }
-                0x0A => CapabilityData::Dbg,
-                0x0B => CapabilityData::Ccrc,
-                0x0C => CapabilityData::Shpc,
-                0x0D => CapabilityData::Ssvid,
-                0x0E => CapabilityData::Agp3,
-                0x0F => CapabilityData::Secdev,
-                0x10 => CapabilityData::Exp,
-                0x11 => CapabilityData::Msix(CapabilityMsixData::new(dev, cap_ptr)),
-                0x12 => CapabilityData::Sata,
-                0x13 => CapabilityData::Af,
-                0x14 => CapabilityData::Ea,
-                _ => CapabilityData::Unknown(cap_type),
+            let raw_cap_type = dev.location().read8(cap_ptr);
+
+            let Ok(cap_type) = CapabilityType::try_from(raw_cap_type) else {
+                continue;
             };
-            capabilities.push(Self { cap_data: data });
+            match cap_type {
+                CapabilityType::Msix => {
+                    // "More than one MSI-X Capability structure per Function is prohibited."
+                    if caps.msix.is_some() {
+                        log::warn!(
+                            "superfluous MSI-X Capability structures at {:?} are ignored",
+                            dev.location()
+                        );
+                        continue;
+                    }
+                    caps.msix = Some(RawCapabilityMsix::parse(dev, cap_ptr));
+                }
+                CapabilityType::Vndr => {
+                    caps.vndr
+                        .push(RawCapabilityVndr::new(cap_ptr, next_ptr - cap_ptr));
+                }
+                _ => {}
+            }
         }
 
-        capabilities
+        caps
+    }
+
+    /// Acquires a new [`CapabilityMsixData`] instance.
+    pub(super) fn acquire_msix_data(
+        &self,
+        loc: &PciDeviceLocation,
+        bar_manager: &mut BarManager,
+    ) -> Result<Option<CapabilityMsixData>> {
+        let Some(raw_msix) = self.msix.as_ref() else {
+            return Ok(None);
+        };
+
+        Ok(Some(CapabilityMsixData::new(loc, bar_manager, raw_msix)?))
+    }
+
+    /// Iterates over [`CapabilityVndrData`] instances.
+    pub(super) fn iter_vndr_data(
+        &self,
+        loc: &PciDeviceLocation,
+    ) -> impl Iterator<Item = CapabilityVndrData> {
+        self.vndr
+            .iter()
+            .map(|raw_vndr| CapabilityVndrData::new(loc, raw_vndr))
     }
 }
