@@ -49,7 +49,10 @@ else
 fi
 
 if [ "$CONSOLE" = "hvc0" ]; then
-    CONSOLE_ARGS="-device virtconsole,chardev=mux"
+    # Kernel logs are printed to all consoles. Redirect serial output to a file to avoid duplicate logs.
+    CONSOLE_ARGS="-device virtconsole,chardev=mux -serial file:qemu-serial.log"
+else
+    CONSOLE_ARGS="-serial chardev:mux"
 fi
 
 if [ "$1" = "tdx" ]; then
@@ -75,7 +78,6 @@ if [ "$1" = "tdx" ]; then
         $CONSOLE_ARGS \
         -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
         -monitor chardev:mux \
-        -serial chardev:mux \
         -d guest_errors \
     "
     echo $QEMU_ARGS
@@ -89,7 +91,6 @@ COMMON_QEMU_ARGS="\
     --no-reboot \
     -nographic \
     -display vnc=0.0.0.0:${VNC_PORT:-42} \
-    -serial chardev:mux \
     -monitor chardev:mux \
     -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
     $NETDEV_ARGS \
