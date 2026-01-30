@@ -75,6 +75,7 @@ signal_c/signal_fd
 signal_c/signal_fpu
 signal_c/signal_test
 signal_c/signal_test2
+signal_c/pidfd_send_signal
 "
 
 # Add TDX-specific tests

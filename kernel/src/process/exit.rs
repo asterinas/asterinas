@@ -49,7 +49,7 @@ fn send_parent_death_signal(current_process: &Process) {
         };
 
         // FIXME: Set `si_pid` in the `siginfo_t` argument.
-        let signal = KernelSignal::new(signum);
+        let signal = Box::new(KernelSignal::new(signum));
         child.enqueue_signal(signal);
     }
 }
@@ -142,7 +142,7 @@ fn send_child_death_signal(current_process: &Process) {
     };
 
     if let Some(signal) = current_process.exit_signal().map(KernelSignal::new) {
-        parent.enqueue_signal(signal);
+        parent.enqueue_signal(Box::new(signal));
     };
     parent.children_wait_queue().wake_all();
 }

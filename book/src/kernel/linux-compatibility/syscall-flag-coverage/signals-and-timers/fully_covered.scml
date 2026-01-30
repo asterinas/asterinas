@@ -16,6 +16,9 @@ kill(pid, sig);
 // Send signal to a thread
 tgkill(tgid, tid, sig);
 
+// Send signal to the target process referred to by pidfd
+pidfd_send_signal(pidfd, sig, info, flags = PIDFD_SIGNAL_THREAD | PIDFD_SIGNAL_THREAD_GROUP | PIDFD_SIGNAL_PROCESS_GROUP);
+
 // Wait for signal
 pause();
 

@@ -7,7 +7,10 @@ use crate::{
         Pid,
         signal::{
             sig_num::SigNum,
-            signals::user::{UserSignal, UserSignalKind},
+            signals::{
+                Signal,
+                user::{UserSignal, UserSignalKind},
+            },
         },
         tgkill,
     },
@@ -30,7 +33,7 @@ pub fn sys_tgkill(tgid: Pid, tid: Tid, sig_num: u8, ctx: &Context) -> Result<Sys
     let signal = sig_num.map(|sig_num| {
         let pid = ctx.process.pid();
         let uid = ctx.posix_thread.credentials().ruid();
-        UserSignal::new(sig_num, UserSignalKind::Tkill, pid, uid)
+        Box::new(UserSignal::new(sig_num, UserSignalKind::Tkill, pid, uid)) as Box<dyn Signal>
     });
     tgkill(tid, tgid, signal, ctx)?;
     Ok(SyscallReturn::Return(0))
