@@ -2,6 +2,7 @@
 
 //! User address space management.
 
+mod cursor;
 mod handle;
 mod interval_set;
 mod rmap;

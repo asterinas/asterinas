@@ -118,10 +118,9 @@ impl Cursor<'_> {
     /// Queries the mapping at the current guest physical address.
     ///
     /// If the cursor is pointing to a valid guest physical address that is
-    /// locked, it will return the guest physical address range, the borrowed
-    /// backing frame, and its page properties.
-    pub fn query(&mut self) -> Result<(Range<Gpaddr>, Option<QueriedItem<'_>>)> {
-        Ok(self.0.query()?)
+    /// locked, it will return the borrowed backing frame and its page properties.
+    pub fn query(&mut self) -> Option<QueriedItem<'_>> {
+        self.0.query()
     }
 
     /// Moves the cursor forward to the next mapped guest physical address.
@@ -176,10 +175,9 @@ impl<'a> CursorMut<'a> {
     /// This is the same as [`Cursor::query`].
     ///
     /// If the cursor is pointing to a valid guest physical address that is
-    /// locked, it will return the guest physical address range, the borrowed
-    /// backing frame, and its page properties.
-    pub fn query(&mut self) -> Result<(Range<Gpaddr>, Option<QueriedItem<'_>>)> {
-        Ok(self.pt_cursor.query()?)
+    /// locked, it will return the borrowed backing frame and its page properties.
+    pub fn query(&mut self) -> Option<QueriedItem<'_>> {
+        self.pt_cursor.query()
     }
 
     /// Moves the cursor forward to the next mapped guest physical address.
@@ -209,7 +207,7 @@ impl<'a> CursorMut<'a> {
 
     /// Maps a frame into the current slot.
     ///
-    /// This method will bring the cursor to the next slot after the modification.
+    /// The cursor remains at the mapped address.
     ///
     /// # Panics
     ///
@@ -223,43 +221,22 @@ impl<'a> CursorMut<'a> {
         unsafe { self.pt_cursor.map(item) };
     }
 
-    /// Applies the operation to the next slot of mapping within the range.
+    /// Applies the operation to the mapping at the current address.
     ///
-    /// The range to be found in is the current guest physical address with the
-    /// provided length.
-    ///
-    /// The function stops and yields the actually protected range if it has
-    /// actually protected a page, no matter if the following pages are also
-    /// required to be protected.
-    ///
-    /// It also makes the cursor moves forward to the next page after the
-    /// protected one. If no mapped pages exist in the following range, the
-    /// cursor will stop at the end of the range and return [`None`].
+    /// The cursor remains at the protected address. If the address is not
+    /// mapped, this method does nothing.
     ///
     /// Cached translations are invalidated on the current CPU before returning,
     /// and asynchronously on remote CPUs. Use [`Self::sync_tlb_flush`] to
     /// wait for remote invalidations to complete.
-    ///
-    /// # Panics
-    ///
-    /// Panics if:
-    ///  - the length is longer than the remaining range of the cursor;
-    ///  - the length is not page-aligned.
-    pub fn protect_next(
-        &mut self,
-        len: usize,
-        op: &mut impl FnMut(&mut PageFlags),
-    ) -> Option<Range<Gpaddr>> {
+    pub fn protect(&mut self, op: &mut impl FnMut(&mut PageFlags)) {
+        if self.pt_cursor.query().is_none() {
+            return;
+        }
         // SAFETY: It is safe to set `PageFlags` of guest physical memory.
-        let range = unsafe {
-            self.pt_cursor
-                .protect_next(self.gpa().checked_add(len).unwrap(), &mut |prop| {
-                    op(&mut prop.flags)
-                })
-        }?;
+        unsafe { self.pt_cursor.protect(&mut |prop| op(&mut prop.flags)) };
         self.pending_ipis
             .extend(&invept::invalidate(self.vmx_guard, &[]));
-        Some(range)
     }
 
     /// Clears the mapping starting from the current slot,
@@ -284,19 +261,24 @@ impl<'a> CursorMut<'a> {
     ///  - the length is longer than the remaining range of the cursor;
     ///  - the length is not page-aligned.
     pub fn unmap(&mut self, len: usize) -> usize {
-        let end_gpa = self.gpa() + len;
+        let end_gpa = self.gpa().checked_add(len).unwrap();
         let mut num_unmapped: usize = 0;
         // Retain removed frames even if unwinding happens before dispatch.
         let mut frames = ManuallyDrop::new(Vec::new());
         loop {
+            if self
+                .pt_cursor
+                .find_next_unmappable_subtree(end_gpa)
+                .is_none()
+            {
+                break;
+            }
             frames.reserve(1);
             // SAFETY:
             // 1. It is safe to unmap guest physical memory.
             // 2. Removed frames are retained below, then cloned into each CPU's
             //    invalidation queue before their references here are released.
-            let Some(frag) = (unsafe { self.pt_cursor.take_next(end_gpa) }) else {
-                break; // No more mappings in the range.
-            };
+            let frag = unsafe { self.pt_cursor.unmap() }.unwrap();
 
             match frag {
                 PageTableFrag::Mapped { item, .. } => {
@@ -325,7 +307,7 @@ impl<'a> CursorMut<'a> {
     /// Waits for this cursor's previous EPT invalidations to complete on all CPUs.
     ///
     /// This synchronizes invalidations issued by [`Self::unmap`] and
-    /// [`Self::protect_next`]. Dropping the cursor does not wait for completion;
+    /// [`Self::protect`]. Dropping the cursor does not wait for completion;
     /// removed frames are retained until invalidation completes regardless.
     ///
     /// # Panics
@@ -369,32 +351,30 @@ mod test {
 
         // Test `map`.
         cursor.map(first.into(), prop);
+        assert_eq!(cursor.gpa(), PAGE_SIZE);
+        cursor.jump(2 * PAGE_SIZE).unwrap();
         cursor.map(second.into(), prop);
-        assert_eq!(cursor.gpa(), 3 * PAGE_SIZE);
+        assert_eq!(cursor.gpa(), 2 * PAGE_SIZE);
 
         // Test `query`.
         cursor.jump(2 * PAGE_SIZE).unwrap();
-        let (queried_range, item) = cursor.query().unwrap();
-        assert_eq!(queried_range, 2 * PAGE_SIZE..3 * PAGE_SIZE);
+        let item = cursor.query();
         assert_eq!(
             item.map(|(frame, prop)| (frame.paddr(), prop)),
             Some((second_paddr, prop))
         );
         cursor.jump(PAGE_SIZE).unwrap();
-        let (queried_range, item) = cursor.query().unwrap();
-        assert_eq!(queried_range, PAGE_SIZE..2 * PAGE_SIZE);
+        let item = cursor.query();
         assert_eq!(
             item.map(|(frame, prop)| (frame.paddr(), prop)),
             Some((first_paddr, prop))
         );
 
         // Test `protect`.
-        assert_eq!(
-            cursor.protect_next(PAGE_SIZE, &mut |flags| *flags = PageFlags::RX),
-            Some(PAGE_SIZE..2 * PAGE_SIZE)
-        );
+        cursor.protect(&mut |flags| *flags = PageFlags::RX);
+        assert_eq!(cursor.gpa(), PAGE_SIZE);
         cursor.jump(PAGE_SIZE).unwrap();
-        assert_eq!(cursor.query().unwrap().1.unwrap().1.flags, PageFlags::RX);
+        assert_eq!(cursor.query().unwrap().1.flags, PageFlags::RX);
 
         // Test `unmap`.
         assert_eq!(cursor.unmap(2 * PAGE_SIZE), 2);
