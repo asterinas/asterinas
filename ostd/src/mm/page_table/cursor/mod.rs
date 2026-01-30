@@ -124,10 +124,10 @@ pub(crate) enum PageTableFrag<C: PageTableConfig> {
     },
 }
 
-/// The state of virtual pages represented by a page table.
-///
-/// This is the return type of the [`Cursor::query`] method.
-pub type PagesState<'a, C> = (Range<Vaddr>, Option<<C as PageTableConfig>::ItemRef<'a>>);
+enum FindNextMode {
+    Mapping,
+    UnmappableSubtree,
+}
 
 impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
     /// Creates a cursor claiming exclusive access over the given range.
@@ -158,15 +158,24 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
         self.va
     }
 
+    /// Gets the virtual address range that the current entry covers.
+    pub fn cur_va_range(&self) -> Range<Vaddr> {
+        let entry_size = page_size::<C>(self.level);
+        let entry_start = self.va.align_down(entry_size);
+        entry_start..entry_start + entry_size
+    }
+
+    /// Gets the current level of the cursor.
+    pub fn level(&self) -> PagingLevel {
+        self.level
+    }
+
     /// Queries the mapping at the current virtual address.
     ///
-    /// If the cursor is pointing to a valid virtual address that is locked,
-    /// it will return the virtual address range and the item at that slot.
-    pub fn query(&mut self) -> Result<PagesState<'rcu, C>, PageTableError> {
-        if self.va >= self.barrier_va.end {
-            return Err(PageTableError::InvalidVaddr(self.va));
-        }
-
+    /// # Panics
+    ///
+    /// Panics if the cursor is at the end of its locked range.
+    pub fn query(&mut self) -> Option<C::ItemRef<'rcu>> {
         let rcu_guard = self.rcu_guard;
 
         loop {
@@ -182,7 +191,7 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
                 PteStateRef::Mapped(item) => Some(item),
             };
 
-            return Ok((self.cur_va_range(), item));
+            return item;
         }
     }
 
@@ -201,43 +210,52 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
     ///  - `end` exceeds the cursor's range;
     ///  - `end` is not page-aligned.
     pub fn find_next(&mut self, end: Vaddr) -> Option<Vaddr> {
-        self.find_next_impl(end, false, false)
+        self.find_next_impl(end, FindNextMode::Mapping)
     }
 
-    /// Moves the cursor forward to the next fragment in the range.
+    /// Moves the cursor forward to the largest possible subtree that contains
+    /// mapped pages.
     ///
-    /// See [`Self::find_next`] for more details. Other than the semantics
-    /// provided by [`Self::find_next`], this method also supports finding non-
-    /// leaf entries and splitting huge pages if necessary.
+    /// This is similar to [`Self::find_next`], except that the cursor will
+    /// stop at the highest possible level, that the subtree's virtual address
+    /// range is fully covered by the range ending at `end`. This is useful for
+    /// [`CursorMut::unmap`].
     ///
-    /// `find_unmap_subtree` specifies whether the cursor should stop at the
-    /// highest possible level for unmapping. If `false`, the cursor will only
-    /// stop at leaf entries.
+    /// # Panics
     ///
-    /// `split_huge` specifies whether the cursor should split huge pages when
-    /// it finds a huge page that is mapped over the required range ending at
-    /// `end`.
-    fn find_next_impl(
-        &mut self,
-        end: Vaddr,
-        find_unmap_subtree: bool,
-        split_huge: bool,
-    ) -> Option<Vaddr> {
+    /// Panics if:
+    ///  - `end` is before the current virtual address;
+    ///  - `end` exceeds the cursor's range;
+    ///  - `end` is not page-aligned.
+    pub fn find_next_unmappable_subtree(&mut self, end: Vaddr) -> Option<Vaddr> {
+        self.find_next_impl(end, FindNextMode::UnmappableSubtree)
+    }
+
+    fn find_next_impl(&mut self, end: Vaddr, mode: FindNextMode) -> Option<Vaddr> {
         assert_eq!(end % C::BASE_PAGE_SIZE, 0);
         assert!(end >= self.va, "end precedes current cursor position");
         assert!(end <= self.barrier_va.end, "end exceeds cursor range");
 
+        if self.va == end {
+            return None;
+        }
+
         let rcu_guard = self.rcu_guard;
 
-        while self.va < end {
+        loop {
+            while matches!(mode, FindNextMode::UnmappableSubtree)
+                && self.entry_at_level_fits_unmap(self.level + 1, end)
+            {
+                self.pop_level();
+            }
+
             let cur_va = self.va;
             let cur_va_range = self.cur_va_range();
-            let cur_entry_fits_range = cur_va == cur_va_range.start && cur_va_range.end <= end;
+            let cur_entry_fits_range = self.entry_at_level_fits_unmap(self.level, end);
 
-            let mut cur_entry = self.cur_entry();
-            match cur_entry.to_ref() {
+            match self.cur_entry().to_ref() {
                 PteStateRef::PageTable(pt) => {
-                    if find_unmap_subtree
+                    if matches!(mode, FindNextMode::UnmappableSubtree)
                         && cur_entry_fits_range
                         && (C::TOP_LEVEL_CAN_UNMAP || self.level != C::NR_LEVELS)
                     {
@@ -252,52 +270,51 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
                         self.push_level(pt_guard);
                     } else {
                         let _ = ManuallyDrop::new(pt_guard);
-                        self.move_forward();
+                        if cur_va_range.end >= end {
+                            self.va = end;
+                            return None;
+                        } else {
+                            self.move_forward();
+                        }
                     }
                     continue;
                 }
                 PteStateRef::Absent => {
-                    self.move_forward();
+                    if cur_va_range.end >= end {
+                        self.va = end;
+                        return None;
+                    } else {
+                        self.move_forward();
+                    }
                     continue;
                 }
                 PteStateRef::Mapped(_) => {
-                    if cur_entry_fits_range || !split_huge {
-                        return Some(cur_va);
-                    }
-
-                    let split_child = cur_entry
-                        .split_if_mapped_huge(rcu_guard)
-                        .expect("the entry must be a huge page");
-                    self.push_level(split_child);
-                    continue;
+                    return Some(cur_va);
                 }
             }
         }
+    }
 
-        // An absent entry may cover addresses beyond the search range.
-        // Keep the cursor at the requested end instead of skipping over it.
-        if self.va > end {
-            self.va = end;
+    fn entry_at_level_fits_unmap(&self, level: PagingLevel, end: Vaddr) -> bool {
+        if (level > self.guard_level) || (level == C::NR_LEVELS && !C::TOP_LEVEL_CAN_UNMAP) {
+            return false;
         }
-
-        None
+        let entry_size = page_size::<C>(level);
+        let entry_start = self.va.align_down(entry_size);
+        entry_start == self.va && entry_start < end && entry_size <= end - entry_start
     }
 
     /// Jumps to the given virtual address.
     ///
     /// If the target address is out of the range, this method will return `Err`.
     ///
-    /// # Panics
-    ///
-    /// This method panics if the address has bad alignment.
+    /// If the target address is out of the range or if the address is not
+    /// base-page-aligned, this method will return `Err`.
     pub fn jump(&mut self, va: Vaddr) -> Result<(), PageTableError> {
-        assert!(va.is_multiple_of(C::BASE_PAGE_SIZE));
-        if !self.barrier_va.contains(&va) {
+        if !va.is_multiple_of(C::BASE_PAGE_SIZE) || !self.barrier_va.contains(&va) {
             return Err(PageTableError::InvalidVaddr(va));
         }
 
-        // FIXME: Maintain the `self.barrier_va.contains(self.va)` invariant:
-        // <https://github.com/asterinas/asterinas/pull/2613>.
         if self.va == self.barrier_va.end {
             while self.level < self.guard_level {
                 self.pop_level();
@@ -305,6 +322,7 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
             self.va = va;
             return Ok(());
         }
+
         debug_assert!(self.barrier_va.contains(&self.va));
 
         loop {
@@ -354,15 +372,12 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
     }
 
     fn cur_entry(&mut self) -> Entry<'_, 'rcu, C> {
+        assert!(
+            self.barrier_va.contains(&self.va),
+            "cursor virtual address outside locked range"
+        );
         let node = self.path[self.level as usize - 1].as_mut().unwrap();
         node.entry(pte_index::<C>(self.va, self.level))
-    }
-
-    /// Gets the virtual address range that the current entry covers.
-    fn cur_va_range(&self) -> Range<Vaddr> {
-        let entry_size = page_size::<C>(self.level);
-        let entry_start = self.va.align_down(entry_size);
-        entry_start..entry_start + entry_size
     }
 }
 
@@ -386,17 +401,57 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
         Ok(Self(Cursor::<'rcu, C>::new(pt, guard, va)?))
     }
 
+    /// Adjusts to the given level.
+    ///
+    /// When the specified level page table is not allocated, it will allocate
+    /// and go to that page table. If the current virtual address contains a
+    /// huge mapping, and the specified level is lower than the mapping, it
+    /// will split the huge mapping into smaller mappings.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the specified level is invalid.
+    pub fn adjust_level(&mut self, to: PagingLevel) {
+        assert!(1 <= to && to <= C::NR_LEVELS);
+
+        let rcu_guard = self.rcu_guard;
+
+        while self.level != to {
+            if self.level < to {
+                self.pop_level();
+                continue;
+            }
+            // We are at a higher level, go down.
+            let mut cur_entry = self.cur_entry();
+            match cur_entry.to_ref() {
+                PteStateRef::PageTable(pt) => {
+                    // SAFETY: The `pt` must be locked and no other guards exist.
+                    let pt_guard = unsafe { pt.make_guard_unchecked(rcu_guard) };
+                    self.push_level(pt_guard);
+                }
+                PteStateRef::Absent => {
+                    let child_guard = cur_entry.alloc_if_none(rcu_guard).unwrap();
+                    self.push_level(child_guard);
+                }
+                PteStateRef::Mapped(_) => {
+                    let split_child = cur_entry.split_if_mapped_huge(rcu_guard).unwrap();
+                    self.push_level(split_child);
+                }
+            }
+        }
+    }
+
     /// Maps the item starting from the current address to a physical address range.
     ///
     /// The current virtual address should not be mapped.
     ///
     /// # Panics
     ///
-    /// This function will panic if
-    ///  - the virtual address range to be mapped is out of the locked range;
+    /// Panics if
     ///  - the current virtual address is not aligned to the page size of the
     ///    item to be mapped;
-    ///  - the virtual address range contains mappings that conflicts with the item.
+    ///  - the end of the current virtual address range exceeds the locked range;
+    ///  - the current virtual address range contains mappings.
     ///
     /// # Safety
     ///
@@ -422,55 +477,22 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
             "cursor virtual address out-of-bound for mapping"
         );
 
-        let rcu_guard = self.rcu_guard;
-
-        // Adjust ourselves to the level of the item.
-        while self.level != level {
-            if self.level < level {
-                self.pop_level();
-                continue;
-            }
-            // We are at a higher level, go down.
-            let mut cur_entry = self.cur_entry();
-            match cur_entry.to_ref() {
-                PteStateRef::PageTable(pt) => {
-                    // SAFETY: The `pt` must be locked and no other guards exist.
-                    let pt_guard = unsafe { pt.make_guard_unchecked(rcu_guard) };
-                    self.push_level(pt_guard);
-                }
-                PteStateRef::Absent => {
-                    let child_guard = cur_entry.alloc_if_none(rcu_guard).unwrap();
-                    self.push_level(child_guard);
-                }
-                PteStateRef::Mapped(_) => {
-                    let split_child = cur_entry.split_if_mapped_huge(rcu_guard).unwrap();
-                    self.push_level(split_child);
-                }
-            }
-        }
+        self.adjust_level(level);
+        self.assert_cur_va_range_valid();
 
         if !matches!(self.cur_entry().to_ref(), PteStateRef::Absent) {
             panic!("mapping over an already mapped page");
         }
 
         let _ = self.replace_cur_entry(PteState::Mapped(RcuDrop::new(item)));
-
-        self.move_forward();
     }
 
-    /// Finds and removes the first page table fragment in the range.
+    /// Removes the page table fragment at the current PTE.
     ///
-    /// The range is the current virtual address to the provided `end`.
-    ///
-    /// The function stops and yields the fragment if it has actually removed a
-    /// fragment, no matter if the following pages are also required to be
-    /// unmapped. The returned virtual address is the virtual page that existed
-    /// before the removal but having just been unmapped.
-    ///
-    /// It also makes the cursor moves forward to the next page after the
-    /// removed one, when an actual page is removed. If no mapped pages exist
-    /// in the following range, the cursor will stop at the end of the range
-    /// and return [`None`].
+    /// The unmapped virtual address range depends on the current level of the
+    /// cursor, and can be queried via [`Self::cur_va_range`]. Adjust the
+    /// level via [`Self::adjust_level`] before unmapping to change the
+    /// unmapped range.
     ///
     /// The caller should handle TLB coherence if necessary, using the returned
     /// virtual address range.
@@ -486,30 +508,34 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     /// # Panics
     ///
     /// Panics if:
-    ///  - `end` is before the current virtual address;
-    ///  - `end` exceeds the cursor's range;
-    ///  - `end` is not page-aligned.
-    pub unsafe fn take_next(&mut self, end: Vaddr) -> Option<PageTableFrag<C>> {
-        self.find_next_impl(end, true, true)?;
-
-        let frag = self.replace_cur_entry(PteState::Absent);
-
-        self.move_forward();
-
-        frag
+    ///  - the current virtual address is not aligned to the current entry
+    ///    range;
+    ///  - the current entry range is not fully contained in the cursor range;
+    ///  - the current level is at the top level and the corresponding
+    ///    [`PageTableConfig::TOP_LEVEL_CAN_UNMAP`] is false.
+    pub unsafe fn unmap(&mut self) -> Option<PageTableFrag<C>> {
+        self.assert_cur_va_range_valid();
+        if !C::TOP_LEVEL_CAN_UNMAP && self.level == C::NR_LEVELS {
+            panic!("unmapping top-level page table nodes");
+        }
+        self.replace_cur_entry(PteState::Absent)
     }
 
-    /// Applies the operation to the next slot of mapping within the range.
+    /// Applies the operation to the current PTE.
     ///
-    /// The range is the current virtual address to the provided `end`.
+    /// The protected virtual address range depends on the current level of the
+    /// cursor, and can be queried via [`Self::cur_va_range`]. Adjust the
+    /// level via [`Self::adjust_level`] before protecting to change the
+    /// protected range.
     ///
-    /// The function stops and yields the actually protected range if it has
-    /// actually protected a page, no matter if the following pages are also
-    /// required to be protected.
+    /// It only modifies the page properties if the current entry state is
+    /// [`PteState::Mapped`]. Otherwise, it does nothing.
     ///
-    /// It also makes the cursor moves forward to the next page after the
-    /// protected one. If no mapped pages exist in the following range, the
-    /// cursor will stop at the end of the range and return [`None`].
+    /// # Panics
+    ///
+    /// Panics if the current virtual address is not aligned to the current
+    /// entry range or the entry range is not fully contained in the cursor
+    /// range.
     ///
     /// # Safety
     ///
@@ -518,27 +544,27 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     ///    kernel's memory safety;
     ///  - the privileged flag `AVAIL1` should not be altered, since this flag
     ///    is reserved for all page tables.
-    ///
-    /// # Panics
-    ///
-    /// Panics if:
-    ///  - `end` is before the current virtual address;
-    ///  - `end` exceeds the cursor's range;
-    ///  - `end` is not page-aligned.
-    pub unsafe fn protect_next(
-        &mut self,
-        end: Vaddr,
-        op: &mut impl FnMut(&mut PageProperty),
-    ) -> Option<Range<Vaddr>> {
-        self.find_next_impl(end, false, true)?;
+    pub unsafe fn protect(&mut self, protect_fn: &mut impl FnMut(&mut PageProperty)) {
+        self.assert_cur_va_range_valid();
+        self.cur_entry().protect(protect_fn);
+    }
 
-        self.cur_entry().protect(op);
+    fn assert_cur_va_range_valid(&self) {
+        assert!(
+            self.barrier_va.contains(&self.va),
+            "current virtual address range exceeds cursor range"
+        );
 
-        let protected_va = self.cur_va_range();
-
-        self.move_forward();
-
-        Some(protected_va)
+        let entry_size = page_size::<C>(self.level);
+        let entry_start = self.va.align_down(entry_size);
+        assert_eq!(
+            self.va, entry_start,
+            "current virtual address is not aligned to the current entry range"
+        );
+        assert!(
+            self.barrier_va.start <= entry_start && entry_size <= self.barrier_va.end - entry_start,
+            "current virtual address range exceeds cursor range"
+        );
     }
 
     fn replace_cur_entry(&mut self, new_child: PteState<C>) -> Option<PageTableFrag<C>> {
