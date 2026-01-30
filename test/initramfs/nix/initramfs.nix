@@ -1,5 +1,5 @@
-{ lib, stdenvNoCC, fetchFromGitHub, hostPlatform, writeClosure, busybox, kmod, xfstests, apps
-, benchmark, syscall, dnsServer, pkgs }:
+{ lib, stdenvNoCC, fetchFromGitHub, hostPlatform, writeClosure, busybox
+, xfstests, apps, benchmark, syscall, dnsServer, pkgs }:
 let
   etc = lib.fileset.toSource {
     root = ./../src/etc;
@@ -17,7 +17,7 @@ let
   is_evtest_included = false;
 
   all_pkgs = [ busybox etc resolv_conf ]
-    ++ lib.optionals (xfstests != null) [ xfstests kmod ]
+    ++ lib.optionals (xfstests != null) [ xfstests pkgs.xfstests ]
     ++ lib.optionals (apps != null) [ apps.package ]
     ++ lib.optionals (benchmark != null) [ benchmark.package ]
     ++ lib.optionals (syscall != null) [ syscall.package ]
@@ -36,14 +36,6 @@ in stdenvNoCC.mkDerivation {
     cp -r ${busybox}/bin/* $out/bin/
     ${lib.optionalString is_evtest_included ''
       cp -r ${pkgs.evtest}/bin/* $out/bin/
-    ''}
-
-    ${lib.optionalString (xfstests != null) ''
-      # Prefer kmod's modprobe over busybox for xfstests.
-      cp -r ${kmod}/bin/* $out/bin/
-      if [ -d ${kmod}/sbin ]; then
-        cp -r ${kmod}/sbin/* $out/sbin/
-      fi
     ''}
 
     cp -r ${etc}/* $out/etc/
@@ -73,9 +65,14 @@ in stdenvNoCC.mkDerivation {
     ''}
 
     ${lib.optionalString (xfstests != null) ''
-      # Copy xfstests package content
+      # Copy xfstests suite and overlay local config/scripts
+      cp -r ${pkgs.xfstests}/lib/xfstests/* $out/xfstests/
+      cp -r ${pkgs.xfstests}/bin/* $out/bin/
       cp -r ${xfstests}/xfstests/* $out/xfstests/
       cp -r ${xfstests}/bin/* $out/bin/
+      if [ -d ${xfstests}/sbin ]; then
+        cp -r ${xfstests}/sbin/* $out/sbin/
+      fi
     ''}
 
     # Use `writeClosure` to retrieve all dependencies of the specified packages.

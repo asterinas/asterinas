@@ -1,3 +1,7 @@
+#!/bin/sh
+
+# SPDX-License-Identifier: MPL-2.0
+
 cd /xfstests
 
 # Replace echo with printf for oom_score_adj writes (echo fails on this system).

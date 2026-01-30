@@ -315,7 +315,7 @@ run_kernel: initramfs $(CARGO_OSDK)
 	@cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS)
 # Check the running status of auto tests from the QEMU log
 ifeq ($(AUTO_TEST), syscall)
-	@tail --lines 100 qemu.log | grep -q "^All  tests passed." \
+	@tail --lines 100 qemu.log | grep -q "^All syscall tests passed." \
 		|| (echo "Syscall test failed" && exit 1)
 else ifeq ($(AUTO_TEST), test)
 	@tail --lines 100 qemu.log | grep -q "^All general tests passed." \

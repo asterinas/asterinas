@@ -25,17 +25,16 @@ in rec {
   # Packages needed by initramfs
   apps = pkgs.callPackage ./apps.nix { testPlatform = basicTestPlatform; };
   busybox = pkgs.busybox;
-  kmod = pkgs.kmod;
   benchmark = pkgs.callPackage ./benchmark { };
-  xfstests = pkgs.callPackage ./xfstests.nix { };
+  xfstests = pkgs.callPackage ./fs/xfstests.nix { };
   syscall = pkgs.callPackage ./syscall {
     inherit smp;
     testSuite = syscallTestSuite;
     workDir = syscallTestWorkDir;
   };
-  
+
   initramfs = pkgs.callPackage ./initramfs.nix {
-    inherit busybox kmod;
+    inherit busybox;
     xfstests = if enableXfstests then xfstests else null;
     apps = if enableBasicTest then apps else null;
     benchmark = if enableBenchmark then benchmark else null;
