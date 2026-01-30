@@ -148,7 +148,7 @@ impl Vmar {
             let preempt_guard = disable_preempt();
             let mut cursor = vmspace.cursor(&preempt_guard, &(vaddr..vaddr + PAGE_SIZE))?;
 
-            match cursor.query()?.1 {
+            match cursor.query() {
                 Some(vm_item) if vm_item.prop().flags.contains(required_page_flags) => {
                     match vm_item {
                         VmQueriedItem::MappedRam { frame, .. } => return Ok((*frame).clone()),
