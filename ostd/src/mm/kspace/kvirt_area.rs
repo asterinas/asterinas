@@ -85,13 +85,15 @@ impl KVirtArea {
         let vaddr = start..start + PAGE_SIZE;
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let mut cursor = page_table.cursor(guard, &vaddr).unwrap();
-        cursor.query().unwrap().1
+        cursor.query()
     }
 
     /// Create a kernel virtual area and map tracked pages into it.
     ///
     /// The created virtual area will have a size of `area_size`, and the pages
-    /// will be mapped starting from `map_offset` in the area.
+    /// will be mapped starting from `map_offset` in the area. The actual
+    /// number of frames mapped will be the smaller between the number of
+    /// provided frames and the available pages in the area.
     ///
     /// # Panics
     ///
@@ -117,7 +119,8 @@ impl KVirtArea {
             .cursor_mut(&preempt_guard, &cursor_range)
             .unwrap();
 
-        for frame in frames.into_iter() {
+        for (va, frame) in cursor_range.step_by(PAGE_SIZE).zip(frames.into_iter()) {
+            cursor.jump(va).unwrap();
             // SAFETY: The constructor of the `KVirtArea` has already ensured
             // that this mapping does not affect kernel's memory safety.
             unsafe { cursor.map(MappedItem::Tracked(Frame::from_unsized(frame), prop)) };
@@ -166,8 +169,10 @@ impl KVirtArea {
             let preempt_guard = disable_preempt();
             let mut cursor = page_table.cursor_mut(&preempt_guard, &va_range).unwrap();
 
-            for (pa, level) in largest_pages::<KernelPtConfig>(va_range.start, pa_range.start, len)
+            for (va, pa, level) in
+                largest_pages::<KernelPtConfig>(va_range.start, pa_range.start, len)
             {
+                cursor.jump(va).unwrap();
                 // SAFETY: The caller of `map_untracked_frames` has ensured the safety of this mapping.
                 unsafe { cursor.map(MappedItem::Untracked(pa, level, prop)) };
             }
@@ -184,12 +189,14 @@ impl Drop for KVirtArea {
         let range = self.start()..self.end();
         let preempt_guard = disable_preempt();
         let mut cursor = page_table.cursor_mut(&preempt_guard, &range).unwrap();
-        loop {
+        while let Some(_va) = cursor.find_next_unmappable_subtree(self.end() - cursor.virt_addr()) {
+            while cursor.cur_va_range().start < range.start || cursor.cur_va_range().end > range.end
+            {
+                cursor.adjust_level(cursor.level() - 1);
+            }
             // SAFETY: The range is under `KVirtArea` so it is safe to unmap.
+            let frag = unsafe { cursor.unmap() }.unwrap();
             // FIXME: Need to ensure that the unmapped item outlives the TLB entries.
-            let Some(frag) = (unsafe { cursor.take_next(self.end() - cursor.virt_addr()) }) else {
-                break;
-            };
             drop(frag);
         }
         // 2. free the virtual block

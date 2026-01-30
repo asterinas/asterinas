@@ -26,7 +26,14 @@ impl Vmar {
             .vm_space
             .cursor_mut(&preempt_guard, &full_range)
             .unwrap();
-        cursor.unmap(full_range.len());
+
+        while cursor
+            .find_next_unmappable_subtree(full_range.end - cursor.virt_addr())
+            .is_some()
+        {
+            cursor.unmap();
+        }
+
         cursor.flusher().sync_tlb_flush();
     }
 
@@ -95,10 +102,14 @@ impl Vmar {
                 .cursor_mut(&preempt_guard, &intersected_range)
                 .unwrap();
 
-            rss_delta.add(
-                vm_mapping.rss_type(),
-                -(cursor.unmap(intersected_range.len()) as isize),
-            );
+            for va in intersected_range.step_by(PAGE_SIZE) {
+                cursor.jump(va).unwrap();
+                if cursor.query().is_none() {
+                    continue;
+                }
+
+                rss_delta.add(vm_mapping.rss_type(), -(cursor.unmap() as isize));
+            }
             cursor.flusher().dispatch_tlb_flush();
             cursor.flusher().sync_tlb_flush();
         }
