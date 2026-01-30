@@ -68,13 +68,10 @@ pub struct VmMapping {
     /// The start of the virtual address maps to the start of the range
     /// specified in the mapped object.
     mapped_mem: MappedMemory,
-    /// The inode of the file that backs the mapping.
-    ///
-    /// If the inode is `Some`, it means that the mapping is file-backed.
-    /// And the `mapped_mem` field must be the page cache of the inode, i.e.
-    /// [`MappedMemory::Vmo`].
-    inode: Option<Arc<dyn Inode>>,
     /// The path of the file that backs the mapping.
+    ///
+    /// If the mapping is VMO-backed, the `mapped_mem` field should be the
+    /// page cache of the inode in the path.
     path: Option<Path>,
     /// Whether the mapping is shared.
     ///
@@ -99,12 +96,10 @@ impl Interval<Vaddr> for VmMapping {
 /***************************** Basic methods *********************************/
 
 impl VmMapping {
-    #[expect(clippy::too_many_arguments)]
     pub(super) fn new(
         map_size: NonZeroUsize,
         map_to_addr: Vaddr,
         mapped_mem: MappedMemory,
-        inode: Option<Arc<dyn Inode>>,
         path: Option<Path>,
         is_shared: bool,
         handle_page_faults_around: bool,
@@ -114,7 +109,6 @@ impl VmMapping {
             map_size,
             map_to_addr,
             mapped_mem,
-            inode,
             path,
             is_shared,
             handle_page_faults_around,
@@ -125,7 +119,6 @@ impl VmMapping {
     pub(super) fn new_fork(&self) -> VmMapping {
         VmMapping {
             mapped_mem: self.mapped_mem.dup(),
-            inode: self.inode.clone(),
             path: self.path.clone(),
             ..*self
         }
@@ -159,7 +152,7 @@ impl VmMapping {
 
     /// Returns the inode of the file that backs the mapping.
     pub fn inode(&self) -> Option<&Arc<dyn Inode>> {
-        self.inode.as_ref()
+        self.path.as_ref().map(|path| path.inode())
     }
 
     /// Returns a reference to the VMO if this mapping is VMO-backed.
@@ -641,7 +634,6 @@ impl VmMapping {
             map_to_addr: self.map_to_addr,
             map_size: NonZeroUsize::new(left_size).unwrap(),
             mapped_mem: l_mapped_mem,
-            inode: self.inode.clone(),
             path: self.path.clone(),
             ..self
         };
@@ -964,7 +956,6 @@ fn try_merge(left: &VmMapping, right: &VmMapping) -> Option<VmMapping> {
     Some(VmMapping {
         map_size,
         mapped_mem,
-        inode: left.inode.clone(),
         path: left.path.clone(),
         ..*left
     })
