@@ -85,10 +85,6 @@ jobs:
             boot_protocol: 'multiboot2'
             smp: 4
 
-          # Xfstests (run.list)
-          - test_id: 'xfstests'
-            mem: '16G'
-
           # General Test (Linux EFI Handover) (Debug Build)
           - test_id: 'general-handover64-debug'
             release: false
@@ -107,8 +103,7 @@ jobs:
         uses: ./.github/actions/test
         with:
           auto_test: ${{ (startsWith(matrix.test_id, 'boot') && 'boot') ||
-              (startsWith(matrix.test_id, 'syscall') && 'syscall') ||
-              (startsWith(matrix.test_id, 'xfstests') && 'xfstests') || 'test' }}
+              (startsWith(matrix.test_id, 'syscall') && 'syscall') || 'test' }}
           release: ${{ !contains(matrix.release, 'false') }}
           enable_kvm: ${{ !contains(matrix.enable_kvm, 'false') }}
           smp: ${{ matrix.smp }}
@@ -124,8 +119,7 @@ jobs:
         uses: ./.github/actions/test
         with:
           auto_test: ${{ (startsWith(matrix.test_id, 'boot') && 'boot') ||
-              (startsWith(matrix.test_id, 'syscall') && 'syscall') ||
-              (startsWith(matrix.test_id, 'xfstests') && 'xfstests') || 'test' }}
+              (startsWith(matrix.test_id, 'syscall') && 'syscall') || 'test' }}
           release: ${{ !contains(matrix.release, 'false') }}
           enable_kvm: ${{ !contains(matrix.enable_kvm, 'false') }}
           smp: ${{ matrix.smp }}
@@ -136,6 +130,20 @@ jobs:
           syscall_test_suite: 'gvisor'
           syscall_test_workdir: ${{ matrix.syscall_test_workdir }}
           boot_protocol: ${{ matrix.boot_protocol || 'linux-efi-handover64' }}
+
+  xfstests:
+    runs-on: ubuntu-4-cores-150GB-ssd
+    container:
+      image: asterinas/asterinas:0.17.0-20260114
+      options: --device=/dev/kvm --privileged
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run xfstests
+        uses: ./.github/actions/test
+        with:
+          auto_test: 'xfstests'
+          mem: '16G'
 
   osdk-test:
     runs-on: ubuntu-latest
