@@ -12,12 +12,13 @@ use super::{inode_handle::InodeHandle, path::Path};
 use crate::{
     fs::{
         file_table::FdFlags,
-        utils::{AccessMode, FallocMode, Inode, SeekFrom, StatusFlags},
+        utils::{AccessMode, FallocMode, SeekFrom, StatusFlags},
     },
     net::socket::Socket,
     prelude::*,
     process::signal::Pollable,
     util::ioctl::RawIoctl,
+    vm::vmo::Vmo,
 };
 
 /// The basic operations defined on a file
@@ -154,8 +155,8 @@ impl dyn FileLike {
 /// An object that may be memory mapped into the user address space.
 #[derive(Debug, Clone)]
 pub enum Mappable {
-    /// An inode object.
-    Inode(Arc<dyn Inode>),
+    /// A VMO (i.e., page cache).
+    Vmo(Arc<Vmo>),
     /// An MMIO region.
     IoMem(IoMem),
 }
