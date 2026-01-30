@@ -49,14 +49,14 @@ fn create_vm_space(program: &[u8]) -> VmSpace {
     // The page table of the user space can be
     // created and manipulated safely through
     // the `VmSpace` abstraction.
-    let vm_space = VmSpace::new();
+    let vm_space = VmSpace::<()>::new();
     const MAP_ADDR: Vaddr = 0x0040_0000; // The map addr for statically-linked executable
+    let map_range = MAP_ADDR..MAP_ADDR + nbytes;
     let preempt_guard = disable_preempt();
-    let mut cursor = vm_space
-        .cursor_mut(&preempt_guard, &(MAP_ADDR..MAP_ADDR + nbytes))
-        .unwrap();
+    let mut cursor = vm_space.cursor_mut(&preempt_guard, &map_range).unwrap();
     let map_prop = PageProperty::new_user(PageFlags::RWX, CachePolicy::Writeback);
-    for frame in user_pages {
+    for (va, frame) in map_range.step_by(PAGE_SIZE).zip(user_pages) {
+        cursor.jump(va).unwrap();
         cursor.map(frame.into(), map_prop);
     }
     drop(cursor);

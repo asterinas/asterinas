@@ -2,14 +2,15 @@
 
 //! This module provides accessors to the page table entries in a node.
 
-use super::{Child, ChildRef, PageTableGuard, PageTableNode, PteTrait};
+use super::{PageTableGuard, PageTableNode, PteState, PteStateRef, PteTrait};
 use crate::{
     mm::{
-        HasPaddr, nr_subpage_per_huge,
+        HasPaddr, Vaddr, nr_subpage_per_huge,
         page_prop::PageProperty,
         page_size,
-        page_table::{PageTableConfig, PageTableNodeRef, PteScalar},
+        page_table::{AuxPageTableMeta, PageTableConfig, PageTableNodeRef, PteScalar, pte_index},
     },
+    panic::PanicGuard,
     sync::RcuDrop,
     task::atomic_mode::InAtomicMode,
 };
@@ -20,7 +21,7 @@ use crate::{
 ///
 /// This is a static reference to an entry in a node that does not account for
 /// a dynamic reference count to the child. It can be used to create a owned
-/// handle, which is a [`Child`].
+/// handle, which is a [`PteState`].
 pub(in crate::mm) struct Entry<'a, 'rcu, C: PageTableConfig> {
     /// The page table entry.
     ///
@@ -30,19 +31,21 @@ pub(in crate::mm) struct Entry<'a, 'rcu, C: PageTableConfig> {
     /// accesses will violate the aliasing rules of Rust and cause undefined
     /// behaviors.
     pte: C::E,
-    /// The index of the entry in the node.
-    idx: usize,
+    /// The virtual address corresponding to the entry.
+    pte_vaddr: usize,
     /// The node that contains the entry.
     node: &'a mut PageTableGuard<'rcu, C>,
 }
 
 impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     /// Gets a reference to the child.
-    pub(in crate::mm) fn to_ref(&self) -> ChildRef<'rcu, C> {
+    pub(in crate::mm) fn to_ref(&self) -> PteStateRef<'rcu, C> {
         // SAFETY:
-        //  - The PTE outlives the reference (since we have `&self`).
-        //  - The level matches the current node.
-        unsafe { ChildRef::from_pte(&self.pte, self.node.level()) }
+        //  - The PTE was read from the node, which contains valid PTEs;
+        //  - the child pointed to by the PTE outlives the reference, since
+        //    either PTs and mapped items outlive `'rcu`;
+        //  - the level matches the current node.
+        unsafe { PteStateRef::from_pte(&self.pte, self.node.level()) }
     }
 
     /// Operates on the mapping properties of the entry.
@@ -68,7 +71,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         //  2. We replace the PTE with a new one, which differs only in
         //     `PageProperty`, so it's in `C` and at the correct paging level.
         //  3. The child is still owned by the page table node.
-        unsafe { self.node.write_pte(self.idx, self.pte) };
+        unsafe { self.node.write_pte(self.idx(), self.pte) };
     }
 
     /// Replaces the entry with a new child.
@@ -79,25 +82,25 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     ///
     /// The method panics if the level of the new child does not match the
     /// current node.
-    pub(in crate::mm) fn replace(&mut self, new_child: Child<C>) -> Child<C> {
+    pub(in crate::mm) fn replace(&mut self, new_child: PteState<C>) -> PteState<C> {
         match &new_child {
-            Child::PageTable(node) => {
+            PteState::PageTable(node) => {
                 assert_eq!(node.level(), self.node.level() - 1);
             }
-            Child::Frame(_, level, _) => {
-                assert_eq!(*level, self.node.level());
+            PteState::Mapped(item) => {
+                assert_eq!(C::item_raw_info(&**item).1, self.node.level());
             }
-            Child::None => {}
+            PteState::Absent => {}
         }
 
         // SAFETY:
-        //  - The PTE is not referenced by other `ChildRef`s (since we have `&mut self`).
+        //  - The PTE is not referenced by other `PteStateRef`s (since we have `&mut self`).
         //  - The level matches the current node.
-        let old_child = unsafe { Child::from_pte(self.pte, self.node.level()) };
+        let old_child = unsafe { PteState::from_pte(self.pte, self.node.level()) };
 
-        if old_child.is_none() && !new_child.is_none() {
+        if old_child.is_absent() && !new_child.is_absent() {
             *self.node.nr_children_mut() += 1;
-        } else if !old_child.is_none() && new_child.is_none() {
+        } else if !old_child.is_absent() && new_child.is_absent() {
             *self.node.nr_children_mut() -= 1;
         }
 
@@ -107,7 +110,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         //  1. The index is within the bounds.
         //  2. The new PTE is a child in `C` and at the correct paging level.
         //  3. The ownership of the child is passed to the page table node.
-        unsafe { self.node.write_pte(self.idx, self.pte) };
+        unsafe { self.node.write_pte(self.idx(), self.pte) };
 
         old_child
     }
@@ -120,12 +123,16 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         &mut self,
         guard: &'rcu dyn InAtomicMode,
     ) -> Option<PageTableGuard<'rcu, C>> {
-        if !matches!(self.to_ref(), ChildRef::None) || self.node.level() == 1 {
+        if !matches!(self.to_ref(), PteStateRef::Absent) || self.node.level() == 1 {
             return None;
         }
 
         let level = self.node.level();
-        let new_page = RcuDrop::new(PageTableNode::<C>::alloc(level - 1));
+        let aux = self
+            .node
+            .aux_mut()
+            .alloc_child_page_table(self.pte_vaddr, level);
+        let new_page = RcuDrop::new(PageTableNode::<C>::alloc(level - 1, aux));
 
         let paddr = new_page.paddr();
         // SAFETY: The page table won't be dropped before the RCU grace period
@@ -135,13 +142,13 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         // Lock before writing the PTE, so no one else can operate on it.
         let pt_lock_guard = pt_ref.lock(guard);
 
-        self.pte = Child::PageTable(new_page).into_pte();
+        self.pte = PteState::PageTable(new_page).into_pte();
 
         // SAFETY:
         //  1. The index is within the bounds.
         //  2. The new PTE is a child in `C` and at the correct paging level.
         //  3. The ownership of the child is passed to the page table node.
-        unsafe { self.node.write_pte(self.idx, self.pte) };
+        unsafe { self.node.write_pte(self.idx(), self.pte) };
 
         *self.node.nr_children_mut() += 1;
 
@@ -165,7 +172,11 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             return None;
         };
 
-        let new_page = RcuDrop::new(PageTableNode::<C>::alloc(level - 1));
+        let aux = self
+            .node
+            .aux_mut()
+            .alloc_child_page_table(self.pte_vaddr, level);
+        let new_page = RcuDrop::new(PageTableNode::<C>::alloc(level - 1, aux));
 
         let paddr = new_page.paddr();
         // SAFETY: The page table won't be dropped before the RCU grace period
@@ -175,20 +186,29 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         // Lock before writing the PTE, so no one else can operate on it.
         let mut pt_lock_guard = pt_ref.lock(guard);
 
+        // Prevent double-dropping the small items when panicking (e.g., debug assertion fails).
+        let panic_guard = PanicGuard::new();
+
         for i in 0..nr_subpage_per_huge::<C>() {
             let small_pa = pa + i * page_size::<C>(level - 1);
-            let mut entry = pt_lock_guard.entry(i);
-            let old = entry.replace(Child::Frame(small_pa, level - 1, prop));
-            debug_assert!(old.is_none());
+            let small_va = self.pte_vaddr + i * page_size::<C>(level - 1);
+            let mut entry = pt_lock_guard.entry(small_va);
+            // SAFETY: It's a part of the mapped item, and the ownership is
+            // properly transferred to the new sub-entry.
+            let small_item = unsafe { C::item_from_raw(small_pa, level - 1, prop) };
+            let old = entry.replace(PteState::Mapped(RcuDrop::new(small_item)));
+            debug_assert!(old.is_absent());
         }
 
-        self.pte = Child::PageTable(new_page).into_pte();
+        self.pte = PteState::PageTable(new_page).into_pte();
 
         // SAFETY:
         //  1. The index is within the bounds.
         //  2. The new PTE is a child in `C` and at the correct paging level.
         //  3. The ownership of the child is passed to the page table node.
-        unsafe { self.node.write_pte(self.idx, self.pte) };
+        unsafe { self.node.write_pte(self.idx(), self.pte) };
+
+        panic_guard.forget();
 
         Some(pt_lock_guard)
     }
@@ -197,14 +217,19 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that the index is within the bounds of the node.
-    pub(super) unsafe fn new_at(guard: &'a mut PageTableGuard<'rcu, C>, idx: usize) -> Self {
-        // SAFETY: The index is within the bound.
-        let pte = unsafe { guard.read_pte(idx) };
+    /// The caller must ensure that the virtual address corresponds to a PTE
+    /// in the provided node.
+    pub(super) unsafe fn new_at(guard: &'a mut PageTableGuard<'rcu, C>, pte_vaddr: Vaddr) -> Self {
+        let idx = pte_index::<C>(pte_vaddr, guard.level());
+        let pte = guard.read_pte(idx);
         Self {
             pte,
-            idx,
+            pte_vaddr,
             node: guard,
         }
+    }
+
+    fn idx(&self) -> usize {
+        pte_index::<C>(self.pte_vaddr, self.node.level())
     }
 }

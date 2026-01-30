@@ -6,23 +6,23 @@ use core::{marker::PhantomData, mem::ManuallyDrop, ops::Range, sync::atomic::Ord
 
 use align_ext::AlignExt;
 
-use super::Cursor;
+use super::Cursor_;
 use crate::{
     mm::{
-        HasPaddr, Vaddr, nr_subpage_per_huge, paddr_to_vaddr,
+        HasPaddr, Vaddr, nr_base_per_page, nr_subpage_per_huge, paddr_to_vaddr,
         page_table::{
-            ChildRef, PageTable, PageTableConfig, PageTableGuard, PageTableNodeRef,
-            PagingConstsTrait, PagingLevel, PteScalar, PteTrait, load_pte, page_size, pte_index,
+            PageTable, PageTableConfig, PageTableGuard, PageTableNodeRef, PagingConstsTrait,
+            PagingLevel, PteScalar, PteStateRef, PteTrait, load_pte, page_size, pte_index,
         },
     },
     task::atomic_mode::InAtomicMode,
 };
 
-pub(super) fn lock_range<'rcu, C: PageTableConfig>(
+pub(super) fn lock_range<'rcu, C: PageTableConfig, const MUTABLE: bool>(
     pt: &'rcu PageTable<C>,
     guard: &'rcu dyn InAtomicMode,
     va: &Range<Vaddr>,
-) -> Cursor<'rcu, C> {
+) -> Cursor_<'rcu, C, MUTABLE> {
     // The re-try loop of finding the sub-tree root.
     //
     // If we locked a stray node, we need to re-try. Otherwise, although
@@ -44,7 +44,7 @@ pub(super) fn lock_range<'rcu, C: PageTableConfig>(
     let mut path = core::array::from_fn(|_| None);
     path[guard_level as usize - 1] = Some(subtree_root);
 
-    Cursor::<'rcu, C> {
+    Cursor_::<'rcu, C, MUTABLE> {
         path,
         rcu_guard: guard,
         level: guard_level,
@@ -55,7 +55,9 @@ pub(super) fn lock_range<'rcu, C: PageTableConfig>(
     }
 }
 
-pub(super) fn unlock_range<C: PageTableConfig>(cursor: &mut Cursor<'_, C>) {
+pub(super) fn unlock_range<C: PageTableConfig, const MUTABLE: bool>(
+    cursor: &mut Cursor_<'_, C, MUTABLE>,
+) {
     for i in (0..cursor.guard_level as usize - 1).rev() {
         if let Some(guard) = cursor.path[i].take() {
             let _ = ManuallyDrop::new(guard);
@@ -135,17 +137,17 @@ fn try_traverse_and_lock_subtree_root<'rcu, C: PageTableConfig>(
             return None;
         }
 
-        let mut cur_entry = pt_guard.entry(start_idx);
+        let mut cur_entry = pt_guard.entry(va.start.align_down(page_size::<C>(cur_level)));
         match cur_entry.to_ref() {
-            ChildRef::Frame(_, _, _) => {
+            PteStateRef::Mapped(_) => {
                 break;
             }
-            ChildRef::None => {
+            PteStateRef::Absent => {
                 let allocated_guard = cur_entry.alloc_if_none(guard).unwrap();
                 cur_pt_addr = allocated_guard.paddr();
                 cur_node_guard = Some(allocated_guard);
             }
-            ChildRef::PageTable(pt) => {
+            PteStateRef::PageTable(pt) => {
                 cur_pt_addr = pt.paddr();
                 cur_node_guard = None;
             }
@@ -184,20 +186,19 @@ fn dfs_acquire_lock<C: PageTableConfig>(
         return;
     }
 
-    let idx_range = dfs_get_idx_range::<C>(cur_level, cur_node_va, &va_range);
-    for i in idx_range {
-        let child = cur_node.entry(i);
+    let pte_va_iter = dfs_get_pte_va_iter::<C>(cur_level, cur_node_va, &va_range);
+    for pte_va in pte_va_iter {
+        let child = cur_node.entry(pte_va);
         match child.to_ref() {
-            ChildRef::PageTable(pt) => {
+            PteStateRef::PageTable(pt) => {
                 let mut pt_guard = pt.lock(guard);
-                let child_node_va = cur_node_va + i * page_size::<C>(cur_level);
-                let child_node_va_end = child_node_va + page_size::<C>(cur_level);
-                let va_start = va_range.start.max(child_node_va);
-                let va_end = va_range.end.min(child_node_va_end);
-                dfs_acquire_lock(guard, &mut pt_guard, child_node_va, va_start..va_end);
+                let pte_va_end = pte_va + page_size::<C>(cur_level);
+                let va_start = va_range.start.max(pte_va);
+                let va_end = va_range.end.min(pte_va_end);
+                dfs_acquire_lock(guard, &mut pt_guard, pte_va, va_start..va_end);
                 let _ = ManuallyDrop::new(pt_guard);
             }
-            ChildRef::None | ChildRef::Frame(_, _, _) => {}
+            PteStateRef::Absent | PteStateRef::Mapped(_) => {}
         }
     }
 }
@@ -219,22 +220,21 @@ unsafe fn dfs_release_lock<'rcu, C: PageTableConfig>(
         return;
     }
 
-    let idx_range = dfs_get_idx_range::<C>(cur_level, cur_node_va, &va_range);
-    for i in idx_range.rev() {
-        let child = cur_node.entry(i);
+    let pte_va_iter = dfs_get_pte_va_iter::<C>(cur_level, cur_node_va, &va_range);
+    for pte_va in pte_va_iter.rev() {
+        let child = cur_node.entry(pte_va);
         match child.to_ref() {
-            ChildRef::PageTable(pt) => {
+            PteStateRef::PageTable(pt) => {
                 // SAFETY: The caller ensures that the node is locked and the new guard is unique.
                 let child_node = unsafe { pt.make_guard_unchecked(guard) };
-                let child_node_va = cur_node_va + i * page_size::<C>(cur_level);
-                let child_node_va_end = child_node_va + page_size::<C>(cur_level);
-                let va_start = va_range.start.max(child_node_va);
-                let va_end = va_range.end.min(child_node_va_end);
+                let pte_va_end = pte_va + page_size::<C>(cur_level);
+                let va_start = va_range.start.max(pte_va);
+                let va_end = va_range.end.min(pte_va_end);
                 // SAFETY: The caller ensures that all the nodes in the sub-tree are locked and all
                 // guards are forgotten.
-                unsafe { dfs_release_lock(guard, child_node, child_node_va, va_start..va_end) };
+                unsafe { dfs_release_lock(guard, child_node, pte_va, va_start..va_end) };
             }
-            ChildRef::None | ChildRef::Frame(_, _, _) => {}
+            PteStateRef::Absent | PteStateRef::Mapped(_) => {}
         }
     }
 }
@@ -257,45 +257,53 @@ unsafe fn dfs_release_lock<'rcu, C: PageTableConfig>(
 pub(super) unsafe fn dfs_mark_stray_and_unlock<C: PageTableConfig>(
     rcu_guard: &dyn InAtomicMode,
     mut sub_tree: PageTableGuard<C>,
+    subtree_va: Vaddr,
 ) -> usize {
     *sub_tree.stray_mut() = true;
+    let level = sub_tree.level();
 
-    if sub_tree.level() == 1 {
+    if level == 1 {
         return sub_tree.nr_children() as usize;
     }
 
     let mut num_frames = 0;
 
     for i in (0..nr_subpage_per_huge::<C>()).rev() {
-        let child = sub_tree.entry(i);
+        let pte_va = subtree_va + i * page_size::<C>(level);
+        let child = sub_tree.entry(pte_va);
         match child.to_ref() {
-            ChildRef::PageTable(pt) => {
+            PteStateRef::PageTable(pt) => {
                 // SAFETY: The caller ensures that the node is locked and the new guard is unique.
                 let locked_pt = unsafe { pt.make_guard_unchecked(rcu_guard) };
                 // SAFETY: The caller ensures that all the nodes in the sub-tree are locked and all
                 // guards are forgotten.
-                num_frames += unsafe { dfs_mark_stray_and_unlock(rcu_guard, locked_pt) };
+                num_frames += unsafe { dfs_mark_stray_and_unlock(rcu_guard, locked_pt, pte_va) };
             }
-            ChildRef::None | ChildRef::Frame(_, _, _) => {}
+            PteStateRef::Absent => {}
+            PteStateRef::Mapped(_) => {
+                num_frames += nr_base_per_page::<C>(level);
+            }
         }
     }
 
     num_frames
 }
 
-fn dfs_get_idx_range<C: PagingConstsTrait>(
+fn dfs_get_pte_va_iter<C: PagingConstsTrait>(
     cur_node_level: PagingLevel,
     cur_node_va: Vaddr,
     va_range: &Range<Vaddr>,
-) -> Range<usize> {
+) -> impl DoubleEndedIterator<Item = Vaddr> {
+    let cur_node_page_size = page_size::<C>(cur_node_level);
+
     debug_assert!(va_range.start >= cur_node_va);
     debug_assert!(va_range.end <= cur_node_va.saturating_add(page_size::<C>(cur_node_level + 1)));
 
-    let start_idx = (va_range.start - cur_node_va) / page_size::<C>(cur_node_level);
-    let end_idx = (va_range.end - cur_node_va).div_ceil(page_size::<C>(cur_node_level));
+    let start_idx = (va_range.start - cur_node_va) / cur_node_page_size;
+    let end_idx = (va_range.end - cur_node_va).div_ceil(cur_node_page_size);
 
     debug_assert!(start_idx < end_idx);
     debug_assert!(end_idx <= nr_subpage_per_huge::<C>());
 
-    start_idx..end_idx
+    (start_idx..end_idx).map(move |idx| cur_node_va + idx * cur_node_page_size)
 }

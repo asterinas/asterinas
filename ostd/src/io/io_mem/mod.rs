@@ -148,6 +148,18 @@ impl<SecuritySensitivity> IoMem<SecuritySensitivity> {
     }
 }
 
+impl<SecuritySensitivity> PartialEq for IoMem<SecuritySensitivity> {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.kvirt_area, &other.kvirt_area)
+            && self.pa == other.pa
+            && self.limit == other.limit
+            && self.offset == other.offset
+            && self.cache_policy == other.cache_policy
+    }
+}
+
+impl<SecuritySensitivity> Eq for IoMem<SecuritySensitivity> {}
+
 #[cfg_attr(target_arch = "loongarch64", expect(unused))]
 impl IoMem<Sensitive> {
     /// Reads a value of the `PodOnce` type at the specified offset using one

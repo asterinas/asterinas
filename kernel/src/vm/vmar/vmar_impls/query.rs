@@ -2,51 +2,44 @@
 
 use core::ops::Range;
 
-use ostd::sync::RwMutexReadGuard;
+use ostd::task::disable_preempt;
 
-use super::{VmMapping, Vmar, VmarInner};
+use super::Vmar;
+use crate::{
+    error::Error,
+    vm::vmar::{
+        cursor_util::{check_range_mapped, find_next_mapped},
+        interval_set::Interval,
+        vm_mapping::VmMapping,
+    },
+};
 
 impl Vmar {
-    /// Finds all the mapped regions that intersect with the specified range.
-    pub fn query(&self, range: Range<usize>) -> VmarQueryGuard<'_> {
-        VmarQueryGuard {
-            vmar: self.inner.read(),
-            range,
+    /// Calls the provided function for each mapping in the VMAR.
+    pub fn for_each_mapping(
+        &self,
+        range: Range<usize>,
+        check_fully_mapped: bool,
+        mut f: impl FnMut(&VmMapping),
+    ) -> Result<(), Error> {
+        let preempt_guard = disable_preempt();
+        let vm_space = self.vm_space();
+        let mut cursor = vm_space.cursor_mut(&preempt_guard, &range).unwrap();
+
+        if check_fully_mapped {
+            check_range_mapped!(&mut cursor, range.end)?;
         }
-    }
-}
 
-/// A guard that allows querying a [`Vmar`] for its mappings.
-pub struct VmarQueryGuard<'a> {
-    vmar: RwMutexReadGuard<'a, VmarInner>,
-    range: Range<usize>,
-}
+        while let Some(vm_mapping) = find_next_mapped!(cursor, range.end) {
+            let vm_mapping_end = vm_mapping.range().end;
 
-impl VmarQueryGuard<'_> {
-    /// Returns an iterator over the [`VmMapping`]s that intersect with the
-    /// provided range when calling [`Vmar::query`].
-    pub fn iter(&self) -> impl Iterator<Item = &VmMapping> {
-        self.vmar.query(&self.range)
-    }
+            f(vm_mapping);
 
-    /// Returns whether the range is fully mapped.
-    ///
-    /// In other words, this method will return `false` if and only if the
-    /// range contains pages that are not mapped.
-    pub fn is_fully_mapped(&self) -> bool {
-        let mut last_mapping_end = self.range.start;
-
-        for mapping in self.iter() {
-            if last_mapping_end < mapping.map_to_addr() {
-                return false;
+            if cursor.jump(vm_mapping_end).is_err() {
+                break;
             }
-            last_mapping_end = mapping.map_end();
         }
 
-        if last_mapping_end < self.range.end {
-            return false;
-        }
-
-        true
+        Ok(())
     }
 }

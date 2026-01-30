@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::ops::Range;
+use core::{marker::PhantomData, ops::Range};
 
 use crate::{
     Pod,
@@ -16,7 +16,9 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct IommuPtConfig {}
 
-// SAFETY: `item_into_raw` and `item_from_raw` are implemented correctly,
+// SAFETY: `item_raw_info`, `item_into_raw`, `item_from_raw`, and
+// `item_ref_from_raw` are correctly implemented with respect to the `Item` and
+// `ItemRef` types.
 unsafe impl PageTableConfig for IommuPtConfig {
     /// From section 3.6 in "Intel(R) Virtualization Technology for Directed I/O",
     /// only low canonical addresses can be used.
@@ -24,18 +26,31 @@ unsafe impl PageTableConfig for IommuPtConfig {
 
     type E = PageTableEntry;
     type C = PagingConsts;
+    type Aux = ();
 
     /// All mappings are untracked.
-    type Item = (Paddr, PagingLevel, PageProperty);
+    type Item = PtItem;
+    type ItemRef<'a> = PtItemRef<'a>;
 
-    fn item_into_raw(item: Self::Item) -> (Paddr, PagingLevel, PageProperty) {
-        item
+    fn item_raw_info(item: &Self::Item) -> (Paddr, PagingLevel, PageProperty) {
+        (item.0, item.1, item.2)
     }
 
     unsafe fn item_from_raw(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self::Item {
         (paddr, level, prop)
     }
+
+    unsafe fn item_ref_from_raw<'a>(
+        _paddr: Paddr,
+        _level: PagingLevel,
+        _prop: PageProperty,
+    ) -> Self::ItemRef<'a> {
+        PhantomData
+    }
 }
+
+pub(crate) type PtItem = (Paddr, PagingLevel, PageProperty);
+pub(crate) type PtItemRef<'a> = PhantomData<&'a ()>;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PagingConsts {}

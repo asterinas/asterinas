@@ -14,7 +14,7 @@ use crate::{
 
 // Constants for the boot-time rlimit defaults
 // See https://github.com/torvalds/linux/blob/fac04efc5c793dccbd07e2d59af9f90b7fc0dca4/include/asm-generic/resource.h#L11
-const RLIM_INFINITY: u64 = u64::MAX;
+pub const RLIM_INFINITY: u64 = u64::MAX;
 const INIT_RLIMIT_NPROC: u64 = 0;
 const INIT_RLIMIT_NICE: u64 = 0;
 const INIT_RLIMIT_SIGPENDING: u64 = 0;
