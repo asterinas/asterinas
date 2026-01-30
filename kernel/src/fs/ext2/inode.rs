@@ -66,9 +66,12 @@ impl Inode {
                 None
             },
             block_group_idx,
-            xattr: desc
-                .acl
-                .map(|acl| Xattr::new(acl, weak_self.clone(), fs.clone())),
+            xattr: match desc.type_ {
+                InodeType::Dir | InodeType::File => {
+                    Some(Xattr::new(desc.acl, weak_self.clone(), fs.clone()))
+                }
+                _ => None,
+            },
             inner: RwMutex::new(InodeInner::new(desc, weak_self.clone(), fs.clone())),
             fs,
             extension: Extension::new(),
@@ -885,7 +888,7 @@ impl Inode {
     pub fn file_flags(&self) -> FileFlags;
     pub fn hard_links(&self) -> u16;
     pub fn blocks_count(&self) -> Ext2Bid;
-    pub fn acl(&self) -> Option<Bid>;
+    pub fn acl(&self) -> Bid;
     pub fn atime(&self) -> Duration;
     pub fn mtime(&self) -> Duration;
     pub fn ctime(&self) -> Duration;
@@ -1062,7 +1065,7 @@ impl InodeInner {
 
     pub fn write_link(&mut self, target: &str) -> Result<()> {
         if target.len() <= MAX_FAST_SYMLINK_LEN {
-            return self.inode_impl.write_link(target);
+            return self.inode_impl.write_fast_link(target);
         }
 
         self.page_cache.resize(target.len())?;
@@ -1076,8 +1079,8 @@ impl InodeInner {
 
     pub fn read_link(&self) -> Result<String> {
         let file_size = self.inode_impl.file_size();
-        if file_size <= MAX_FAST_SYMLINK_LEN {
-            return self.inode_impl.read_link();
+        if self.inode_impl.desc.is_fast_symlink() {
+            return self.inode_impl.read_fast_link();
         }
 
         let mut symlink = vec![0u8; file_size];
@@ -1189,7 +1192,7 @@ impl InodeInner {
     pub fn inc_hard_links(&mut self);
     pub fn dec_hard_links(&mut self);
     pub fn blocks_count(&self) -> Ext2Bid;
-    pub fn acl(&self) -> Option<Bid>;
+    pub fn acl(&self) -> Bid;
     pub fn set_acl(&mut self, bid: Bid);
     pub fn atime(&self) -> Duration;
     pub fn set_atime(&mut self, time: Duration);
@@ -1288,12 +1291,12 @@ impl InodeImpl {
         self.desc.blocks_count()
     }
 
-    pub fn acl(&self) -> Option<Bid> {
+    pub fn acl(&self) -> Bid {
         self.desc.acl
     }
 
     pub fn set_acl(&mut self, bid: Bid) {
-        self.desc.acl = Some(bid);
+        self.desc.set_acl_block(bid);
     }
 
     pub fn atime(&self) -> Duration {
@@ -1335,16 +1338,14 @@ impl InodeImpl {
         device_id
     }
 
-    pub fn read_link(&self) -> Result<String> {
+    pub fn read_fast_link(&self) -> Result<String> {
         let symlink_str = core::str::from_utf8(&self.desc.block_ptrs.as_bytes()[..self.desc.size])?;
         Ok(symlink_str.to_owned())
     }
 
-    pub fn write_link(&mut self, target: &str) -> Result<()> {
+    pub fn write_fast_link(&mut self, target: &str) -> Result<()> {
         let target_len = target.len();
         self.desc.block_ptrs.as_bytes_mut()[..target_len].copy_from_slice(target.as_bytes());
-        self.block_manager.block_ptrs.write().as_bytes_mut()[..target_len]
-            .copy_from_slice(target.as_bytes());
         if self.desc.size != target_len {
             self.resize(target_len)?;
         }
@@ -1473,9 +1474,11 @@ impl InodeImpl {
                 self.fs().free_blocks(device_range).unwrap();
                 return Err(e);
             }
-            self.desc.sector_count = blocks_to_sectors(range.start + device_range.len() as u32);
+
             self.last_alloc_device_bid = Some(device_range.end - 1);
-            return Ok(device_range.len() as Ext2Bid);
+            let nr_blocks = device_range.len() as Ext2Bid;
+            self.desc.set_data_blocks(range.start + nr_blocks);
+            return Ok(nr_blocks);
         }
 
         // Allocates the required additional indirect blocks and at least one block.
@@ -1519,9 +1522,10 @@ impl InodeImpl {
             return Err(e);
         }
 
-        self.desc.sector_count = blocks_to_sectors(range.start + device_range.len() as u32);
         self.last_alloc_device_bid = Some(device_range.end - 1);
-        Ok(device_range.len() as Ext2Bid)
+        let nr_blocks = device_range.len() as Ext2Bid;
+        self.desc.set_data_blocks(range.start + nr_blocks);
+        Ok(nr_blocks)
     }
 
     /// Sets the device block IDs for a specified range.
@@ -1681,7 +1685,7 @@ impl InodeImpl {
             current_range.end -= free_cnt;
         }
 
-        self.desc.sector_count = blocks_to_sectors(range.start);
+        self.desc.set_data_blocks(range.start);
         self.last_alloc_device_bid = if range.start == 0 {
             None
         } else {
@@ -2135,7 +2139,7 @@ pub(super) struct InodeDesc {
     /// Pointers to blocks.
     block_ptrs: BlockPtrs,
     /// File or directory acl block.
-    acl: Option<Bid>,
+    acl: Bid,
 }
 
 impl TryFrom<RawInode> for InodeDesc {
@@ -2163,9 +2167,9 @@ impl TryFrom<RawInode> for InodeDesc {
                 .ok_or(Error::with_message(Errno::EINVAL, "invalid file flags"))?,
             block_ptrs: inode.block_ptrs,
             acl: match inode_type {
-                InodeType::File => Some(Bid::new(inode.file_acl as _)),
-                InodeType::Dir => Some(Bid::new(inode.size_high as _)),
-                _ => None,
+                InodeType::File => Bid::new(inode.file_acl as _),
+                InodeType::Dir => Bid::new(inode.size_high as _),
+                _ => Bid::new(0),
             },
         })
     }
@@ -2189,10 +2193,7 @@ impl InodeDesc {
             sector_count: 0,
             flags: FileFlags::empty(),
             block_ptrs: BlockPtrs::default(),
-            acl: match type_ {
-                InodeType::File | InodeType::Dir => Some(Bid::new(0)),
-                _ => None,
-            },
+            acl: Bid::new(0),
         })
     }
 
@@ -2200,13 +2201,15 @@ impl InodeDesc {
         (self.blocks_count() as usize) * BLOCK_SIZE
     }
 
-    /// Returns the actual number of blocks utilized.
+    /// Returns the actual number of blocks utilized, excluding the indirect blocks.
     ///
     /// Ext2 allows the `block_count` to exceed the actual number of blocks utilized.
     pub fn blocks_count(&self) -> Ext2Bid {
-        let blocks = self.size_to_blocks(self.size);
-        debug_assert!(blocks <= sectors_to_blocks(self.sector_count));
-        blocks
+        if self.is_fast_symlink() {
+            return 0;
+        }
+
+        self.size.div_ceil(BLOCK_SIZE) as Ext2Bid
     }
 
     fn size_to_blocks(&self, size: usize) -> Ext2Bid {
@@ -2214,6 +2217,40 @@ impl InodeDesc {
             return 0;
         }
         size.div_ceil(BLOCK_SIZE) as Ext2Bid
+    }
+
+    /// Returns the number of sectors used for ACL.
+    fn acl_sectors(&self) -> u32 {
+        if self.acl.to_raw() == 0 {
+            return 0;
+        }
+
+        blocks_to_sectors(1)
+    }
+
+    /// Sets the extended attribute block for ACL.
+    fn set_acl_block(&mut self, bid: Bid) {
+        let old_acl_sectors = self.acl_sectors();
+        self.acl = bid;
+        let new_acl_sectors = self.acl_sectors();
+        self.sector_count = self.sector_count - old_acl_sectors + new_acl_sectors;
+    }
+
+    /// Returns the number of data sectors, including the indirect blocks.
+    fn data_sectors(&self) -> u32 {
+        self.sector_count - self.acl_sectors()
+    }
+
+    /// Sets the number of data blocks, including the indirect blocks.
+    fn set_data_blocks(&mut self, block_count: u32) {
+        self.sector_count = blocks_to_sectors(block_count) + self.acl_sectors();
+    }
+
+    /// Returns whether the inode is a fast symlink.
+    ///
+    /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/fs/ext2/inode.c#L48-L55>.
+    fn is_fast_symlink(&self) -> bool {
+        self.type_ == InodeType::SymLink && self.data_sectors() == 0
     }
 }
 
@@ -2368,13 +2405,15 @@ impl From<&InodeDesc> for RawInode {
             sector_count: inode.sector_count,
             flags: inode.flags.bits(),
             block_ptrs: inode.block_ptrs,
-            file_acl: match inode.acl {
-                Some(acl) if inode.type_ == InodeType::File => acl.to_raw() as u32,
-                _ => Default::default(),
+            file_acl: if inode.type_ == InodeType::File {
+                inode.acl.to_raw() as u32
+            } else {
+                0
             },
-            size_high: match inode.acl {
-                Some(acl) if inode.type_ == InodeType::Dir => acl.to_raw() as u32,
-                _ => Default::default(),
+            size_high: if inode.type_ == InodeType::Dir {
+                inode.acl.to_raw() as u32
+            } else {
+                0
             },
             os_dependent_2: Osd2 {
                 uid_high: (inode.uid >> 16) as u16,
