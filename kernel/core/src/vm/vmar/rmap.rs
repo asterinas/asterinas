@@ -9,7 +9,7 @@ use ostd::{
     task::disable_preempt,
 };
 
-use crate::vm::vmar::{RssType, Vmar, vmar_impls::RssDelta};
+use crate::vm::vmar::{RssType, Vmar, cursor::CursorMutExt, vmar_impls::RssDelta};
 
 /// Reverse mappings from a [`Vmo`] to [`Vmar`]s.
 ///
@@ -100,10 +100,15 @@ impl Rmap {
                     .vm_space()
                     .cursor_mut(&preempt_guard, &addr_range)
                     .unwrap();
-                rss_delta.add(
-                    RssType::File,
-                    -(cursor_mut.unmap(addr_range.end) as isize),
-                );
+                let mut num_unmapped = 0;
+                while cursor_mut
+                    .find_next_unmappable_subtree(addr_range.end)
+                    .is_some()
+                {
+                    cursor_mut.split_if_map_exceeds_range(&addr_range);
+                    num_unmapped += cursor_mut.unmap();
+                }
+                rss_delta.add(RssType::File, -(num_unmapped as isize));
                 cursor_mut.flusher().dispatch_tlb_flush();
                 cursor_mut.flusher().sync_tlb_flush();
             }
@@ -142,18 +147,14 @@ impl Rmap {
                     .vm_space()
                     .cursor_mut(&preempt_guard, &addr_range)
                     .unwrap();
-                loop {
-                    let addr = cursor_mut.virt_addr();
-                    if addr >= addr_range.end {
-                        break;
-                    }
-                    if let Some(va) = cursor_mut
-                        .protect_next(addr_range.end, |page_flags, _| *page_flags -= PageFlags::W)
-                    {
-                        cursor_mut
-                            .flusher()
-                            .issue_tlb_flush(TlbFlushOp::for_range(va));
-                    } else {
+                while cursor_mut.find_next(addr_range.end).is_some() {
+                    cursor_mut.split_if_map_exceeds_range(&addr_range);
+                    cursor_mut.protect(|page_flags, _| *page_flags -= PageFlags::W);
+                    let va = cursor_mut.cur_va_range();
+                    cursor_mut
+                        .flusher()
+                        .issue_tlb_flush(TlbFlushOp::for_range(va.clone()));
+                    if cursor_mut.jump(va.end).is_err() {
                         break;
                     }
                 }
