@@ -212,7 +212,10 @@ NON_OSDK_CRATES := \
 	ostd/libs/linux-bzimage/boot-params \
 	ostd/libs/linux-bzimage/builder \
 	ostd/libs/ostd-macros \
+	ostd/libs/ostd-pod \
+	ostd/libs/ostd-pod/macros \
 	ostd/libs/ostd-test \
+	ostd/libs/padding-struct \
 	kernel/libs/aster-rights \
 	kernel/libs/aster-rights-proc \
 	kernel/libs/atomic-integer-wrapper \

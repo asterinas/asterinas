@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use ostd_pod::{derive, padding_struct};
+
 use crate::prelude::*;
 
 /// A control character; the `cc_t` type in Linux.
@@ -318,8 +320,9 @@ pub struct CWinSize {
 /// A font operation; `struct console_font_op` in Linux.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.15/source/include/uapi/linux/kd.h#L159>.
-#[derive(Debug, Clone, Copy, Default, Pod)]
 #[repr(C)]
+#[padding_struct]
+#[derive(Debug, Clone, Copy, Default, Pod)]
 pub struct CFontOp {
     pub(super) op: u32,
     pub(super) flags: u32,

@@ -2,6 +2,7 @@
 
 use aster_rights::{Dup, Read, ReadDupOp, ReadOp, TRights};
 use aster_rights_proc::require;
+use ostd_pod::derive;
 
 use crate::{
     prelude::*,

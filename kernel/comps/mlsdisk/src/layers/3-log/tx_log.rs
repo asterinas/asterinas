@@ -67,6 +67,7 @@ use core::{
 
 use lru::LruCache;
 use ostd::Pod;
+use ostd_pod::{FromZeros, IntoBytes, derive};
 use serde::{Deserialize, Serialize};
 
 use self::journaling::{AllEdit, AllState, Journal, JournalCompactPolicy};
@@ -1288,6 +1289,8 @@ impl TxData for OpenLogCache {}
 ////////////////////////////////////////////////////////////////////////////////
 
 mod journaling {
+    use ostd_pod::derive;
+
     use super::*;
     use crate::layers::edit::DefaultCompactPolicy;
 

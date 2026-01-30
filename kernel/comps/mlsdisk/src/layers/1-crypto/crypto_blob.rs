@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::Pod;
+use ostd_pod::{FromZeros, IntoBytes, Pod, derive, padding_struct};
 
 use super::{Iv, Key, Mac, VersionId};
 use crate::{

@@ -5,7 +5,7 @@
 use alloc::collections::BTreeMap;
 
 use log::trace;
-use ostd_pod::Pod;
+use ostd_pod::derive;
 
 use super::second_stage::IommuPtConfig;
 use crate::{

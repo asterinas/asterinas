@@ -2,7 +2,8 @@
 
 use aster_util::safe_ptr::SafePtr;
 use bitflags::bitflags;
-use ostd::{Pod, io::IoMem, mm::PodOnce};
+use ostd::{io::IoMem, mm::PodOnce};
+use ostd_pod::derive;
 
 use crate::transport::VirtioTransport;
 

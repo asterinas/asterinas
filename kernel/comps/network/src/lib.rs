@@ -21,7 +21,8 @@ use aster_softirq::{
 pub use buffer::{RX_BUFFER_POOL, RxBuffer, TX_BUFFER_LEN, TxBuffer};
 use component::{ComponentInitError, init_component};
 pub use dma_pool::DmaSegment;
-use ostd::{Pod, sync::SpinLock};
+use ostd::sync::SpinLock;
+use ostd_pod::derive;
 use spin::Once;
 
 #[derive(Debug, Clone, Copy, Pod)]

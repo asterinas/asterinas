@@ -3,6 +3,7 @@
 use core::{num::NonZeroU8, time::Duration};
 
 use ostd::mm::VmIo;
+use ostd_pod::derive;
 
 use crate::{
     current_userspace,

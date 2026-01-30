@@ -3,6 +3,7 @@
 use core::num::NonZeroU64;
 
 use ostd::{arch::cpu::context::UserContext, mm::VmIo};
+use ostd_pod::derive;
 
 use super::SyscallReturn;
 use crate::{

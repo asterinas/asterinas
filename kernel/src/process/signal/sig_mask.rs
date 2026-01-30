@@ -13,6 +13,7 @@ use core::{
 };
 
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
+use ostd_pod::derive;
 
 use super::{constants::MIN_STD_SIG_NUM, sig_num::SigNum};
 use crate::prelude::*;

@@ -3,10 +3,8 @@
 use alloc::{sync::Arc, vec::Vec};
 use core::{any::Any, fmt::Debug};
 
-use ostd::{
-    Pod,
-    sync::{RwLock, WriteIrqDisabled},
-};
+use ostd::sync::{RwLock, WriteIrqDisabled};
+use ostd_pod::derive;
 
 use crate::{
     event_type_codes::{EventTypes, KeyCode, KeyCodeSet, KeyStatus, RelCode, RelCodeSet, SynEvent},

@@ -3,6 +3,7 @@
 use core::{cell::Cell, time::Duration};
 
 use ostd::mm::VmIo;
+use ostd_pod::derive;
 
 use super::SyscallReturn;
 use crate::{

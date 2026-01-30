@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use ostd::mm::VmIo;
+use ostd_pod::{derive, padding_struct};
 
 use crate::{
     fs::file_table::FileDesc,
@@ -47,6 +48,7 @@ pub fn sys_sendmmsg(
 }
 
 #[repr(C)]
+#[padding_struct]
 #[derive(Debug, Clone, Copy, Pod)]
 struct CMmsgHdr {
     msg_hdr: CUserMsgHdr,

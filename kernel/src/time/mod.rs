@@ -5,6 +5,7 @@
 pub use core::{Clock, timer};
 
 use ::core::time::Duration;
+use ostd_pod::derive;
 pub use system_time::{START_TIME, SystemTime};
 pub use timer::{Timer, TimerManager};
 

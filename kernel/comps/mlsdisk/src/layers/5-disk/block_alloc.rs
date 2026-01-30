@@ -8,6 +8,7 @@ use core::{
 };
 
 use ostd::Pod;
+use ostd_pod::IntoBytes;
 use serde::{Deserialize, Serialize};
 
 use super::mlsdisk::Hba;

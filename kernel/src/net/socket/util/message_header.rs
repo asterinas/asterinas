@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use align_ext::AlignExt;
+use ostd_pod::derive;
 
 use super::SocketAddr;
 use crate::{net::socket::unix::UnixControlMessage, prelude::*, util::net::CSocketOptionLevel};

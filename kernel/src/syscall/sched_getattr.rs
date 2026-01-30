@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use ostd::{const_assert, mm::VmIo};
+use ostd_pod::derive;
 
 use super::{
     SyscallReturn,

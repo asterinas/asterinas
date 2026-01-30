@@ -3,6 +3,7 @@
 use core::{fmt::Display, ops::Range};
 
 use ostd::mm::VmIo;
+use ostd_pod::derive;
 
 use super::{
     constants::{EXFAT_FILE_NAME_LEN, MAX_NAME_LENGTH},

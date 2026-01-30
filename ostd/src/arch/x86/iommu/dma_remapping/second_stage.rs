@@ -2,13 +2,12 @@
 
 use core::ops::Range;
 
-use crate::{
-    Pod,
-    mm::{
-        Paddr, PageProperty, PagingConstsTrait, PagingLevel, PodOnce,
-        page_prop::{CachePolicy, PageFlags, PageTableFlags, PrivilegedPageFlags as PrivFlags},
-        page_table::{PageTableConfig, PteScalar, PteTrait},
-    },
+use ostd_pod::derive;
+
+use crate::mm::{
+    Paddr, PageProperty, PagingConstsTrait, PagingLevel, PodOnce,
+    page_prop::{CachePolicy, PageFlags, PageTableFlags, PrivilegedPageFlags as PrivFlags},
+    page_table::{PageTableConfig, PteScalar, PteTrait},
 };
 
 /// The page table used by iommu maps the device address

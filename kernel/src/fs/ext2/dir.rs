@@ -2,6 +2,8 @@
 
 #![expect(dead_code)]
 
+use ostd_pod::derive;
+
 use super::{inode::MAX_FNAME_LEN, prelude::*};
 
 /// The data structure in a directory's data block. It is stored in a linked list.

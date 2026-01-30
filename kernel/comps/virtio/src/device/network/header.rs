@@ -2,7 +2,7 @@
 
 use bitflags::bitflags;
 use int_to_c_enum::TryFromInt;
-use ostd::Pod;
+use ostd_pod::derive;
 
 pub const VIRTIO_NET_HDR_LEN: usize = size_of::<VirtioNetHdr>();
 

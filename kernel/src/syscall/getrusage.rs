@@ -2,6 +2,7 @@
 
 use int_to_c_enum::TryFromInt;
 use ostd::mm::VmIo;
+use ostd_pod::derive;
 
 use super::SyscallReturn;
 use crate::{prelude::*, time::timeval_t};

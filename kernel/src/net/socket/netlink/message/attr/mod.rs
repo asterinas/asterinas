@@ -25,6 +25,7 @@
 //! [`segment`]: super::segment
 
 use align_ext::AlignExt;
+use ostd_pod::derive;
 
 use super::{ContinueRead, NLMSG_ALIGN};
 use crate::{

@@ -3,6 +3,7 @@
 use core::num::NonZeroU32;
 
 use aster_bigtcp::iface::{InterfaceFlags, InterfaceType};
+use ostd_pod::derive;
 
 use super::legacy::CRtGenMsg;
 use crate::{

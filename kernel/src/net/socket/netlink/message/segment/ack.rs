@@ -8,6 +8,8 @@
 //! 2. Error Segment: Indicates that an error occurred while the kernel processed the user space request.
 //!
 
+use ostd_pod::derive;
+
 use super::{
     CSegmentType, SegmentBody,
     common::SegmentCommon,

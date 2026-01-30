@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use ostd_pod::{derive, padding_struct};
+
 use super::read_socket_addr_from_user;
 use crate::{
     net::socket::util::{ControlMessage, SocketAddr},
@@ -78,6 +80,7 @@ bitflags! {
 }
 
 #[repr(C)]
+#[padding_struct]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct CUserMsgHdr {
     /// Pointer to socket address structure

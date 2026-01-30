@@ -37,7 +37,7 @@ impl CopyCompat for CurrentUserSpace<'_> {
         let mut val = T::new_zeroed();
 
         let mut reader = self.reader(src, size)?;
-        reader.read_fallible(&mut VmWriter::from(val.as_bytes_mut()))?;
+        reader.read_fallible(&mut VmWriter::from(val.as_mut_bytes()))?;
 
         while reader.remain() > size_of::<u64>() {
             if reader.read_val::<u64>()? != 0 {

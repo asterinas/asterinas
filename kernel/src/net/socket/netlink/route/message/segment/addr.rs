@@ -2,6 +2,8 @@
 
 use core::num::NonZeroU32;
 
+use ostd_pod::derive;
+
 use super::legacy::CRtGenMsg;
 use crate::{
     net::socket::netlink::{
