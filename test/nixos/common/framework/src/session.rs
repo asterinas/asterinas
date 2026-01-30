@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use rexpect::session::PtySession;
+use rexpect::{reader::Regex, session::PtySession};
 
 use super::Error;
 
@@ -153,9 +153,9 @@ impl Session {
         Ok(())
     }
 
-    /// Executes a command and verifies its output contains expected text.
+    /// Executes a command and verifies its output matches expected regex.
     ///
-    /// This method runs the command and checks that the specified string appears
+    /// This method runs the command and checks that the specified regex appears
     /// in the output. This is useful for validating command results.
     ///
     /// Returns an error if:
@@ -178,6 +178,9 @@ impl Session {
     ///     // Verify system information
     ///     nixos_shell.run_cmd_and_expect("cat /etc/os-release", "NixOS")?;
     ///
+    ///     // Verify output matches regex
+    ///     nixos_shell.run_cmd_and_expect_regex("echo 'Hello, World!'", "(?m)^H.*!$")?;
+    ///
     ///     Ok(())
     /// }
     /// ```
@@ -191,7 +194,7 @@ impl Session {
             Ok(unread) => {
                 let cleaned_unread =
                     String::from_utf8_lossy(&strip_ansi_escapes::strip(&unread)).to_string();
-                if !cleaned_unread.contains(expected) {
+                if !Regex::new(expected)?.is_match(&cleaned_unread) {
                     println!("=== Unexpected Output ===");
                     println!("Expected: {}", expected);
                     println!("Output before prompt:\n{}", cleaned_unread);
