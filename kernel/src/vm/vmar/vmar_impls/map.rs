@@ -350,7 +350,7 @@ impl<'a> VmarMapOptions<'a> {
         // Exchange the operation is ok since we hold the write lock on the
         // VMAR.
         if let Some(io_mem) = io_mem {
-            vm_mapping.populate_device(parent.vm_space(), io_mem, vmo_offset)?;
+            vm_mapping.populate_device(parent.vm_space(), io_mem, vmo_offset);
         }
 
         // Add the mapping to the VMAR.
