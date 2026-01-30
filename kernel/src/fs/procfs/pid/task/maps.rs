@@ -40,9 +40,12 @@ impl FileOps for MapsFileOps {
         let fs_ref = current.as_posix_thread().unwrap().read_fs();
         let path_resolver = fs_ref.resolver().read();
 
+        // To maintain a consistent lock order and avoid race conditions, we must lock the heap
+        // before querying the VMAR.
+        let heap_guard = vmar.process_vm().heap().lock();
         let guard = vmar.query(VMAR_LOWEST_ADDR..VMAR_CAP_ADDR);
         for vm_mapping in guard.iter() {
-            vm_mapping.print_to_maps(&mut printer, vmar, &path_resolver)?;
+            vm_mapping.print_to_maps(&mut printer, vmar, &heap_guard, &path_resolver)?;
         }
 
         Ok(printer.bytes_written())

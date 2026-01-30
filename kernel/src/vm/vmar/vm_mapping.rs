@@ -25,6 +25,7 @@ use crate::{
         utils::Inode,
     },
     prelude::*,
+    process::LockedHeap,
     thread::exception::PageFaultInfo,
     vm::{
         perms::VmPerms,
@@ -67,13 +68,10 @@ pub struct VmMapping {
     /// The start of the virtual address maps to the start of the range
     /// specified in the mapped object.
     mapped_mem: MappedMemory,
-    /// The inode of the file that backs the mapping.
-    ///
-    /// If the inode is `Some`, it means that the mapping is file-backed.
-    /// And the `mapped_mem` field must be the page cache of the inode, i.e.
-    /// [`MappedMemory::Vmo`].
-    inode: Option<Arc<dyn Inode>>,
     /// The path of the file that backs the mapping.
+    ///
+    /// If the mapping is VMO-backed, the `mapped_mem` field should be the
+    /// page cache of the inode in the path.
     path: Option<Path>,
     /// Whether the mapping is shared.
     ///
@@ -98,12 +96,10 @@ impl Interval<Vaddr> for VmMapping {
 /***************************** Basic methods *********************************/
 
 impl VmMapping {
-    #[expect(clippy::too_many_arguments)]
     pub(super) fn new(
         map_size: NonZeroUsize,
         map_to_addr: Vaddr,
         mapped_mem: MappedMemory,
-        inode: Option<Arc<dyn Inode>>,
         path: Option<Path>,
         is_shared: bool,
         handle_page_faults_around: bool,
@@ -113,7 +109,6 @@ impl VmMapping {
             map_size,
             map_to_addr,
             mapped_mem,
-            inode,
             path,
             is_shared,
             handle_page_faults_around,
@@ -124,7 +119,6 @@ impl VmMapping {
     pub(super) fn new_fork(&self) -> VmMapping {
         VmMapping {
             mapped_mem: self.mapped_mem.dup(),
-            inode: self.inode.clone(),
             path: self.path.clone(),
             ..*self
         }
@@ -158,7 +152,7 @@ impl VmMapping {
 
     /// Returns the inode of the file that backs the mapping.
     pub fn inode(&self) -> Option<&Arc<dyn Inode>> {
-        self.inode.as_ref()
+        self.path.as_ref().map(|path| path.inode())
     }
 
     /// Returns a reference to the VMO if this mapping is VMO-backed.
@@ -194,22 +188,15 @@ impl VmMapping {
     ///
     /// In debug builds, this method panics if the mapping is not a device
     /// memory mapping.
-    pub(super) fn populate_device(
-        &self,
-        vm_space: &VmSpace,
-        io_mem: IoMem,
-        vmo_offset: usize,
-    ) -> Result<()> {
+    pub(super) fn populate_device(&self, vm_space: &VmSpace, io_mem: IoMem, vmo_offset: usize) {
         debug_assert!(matches!(self.mapped_mem, MappedMemory::Device));
 
         let preempt_guard = disable_preempt();
         let map_range = self.map_to_addr..self.map_to_addr + self.map_size.get();
-        let mut cursor = vm_space.cursor_mut(&preempt_guard, &map_range)?;
+        let mut cursor = vm_space.cursor_mut(&preempt_guard, &map_range).unwrap();
         let io_page_prop =
             PageProperty::new_user(PageFlags::from(self.perms), io_mem.cache_policy());
         cursor.map_iomem(io_mem, io_page_prop, self.map_size.get(), vmo_offset);
-
-        Ok(())
     }
 
     /// Prints the mapping information in the format of `/proc/[pid]/maps`.
@@ -219,6 +206,7 @@ impl VmMapping {
         &self,
         printer: &mut VmPrinter,
         parent_vmar: &Vmar,
+        parent_heap_guard: &LockedHeap,
         path_resolver: &PathResolver,
     ) -> Result<()> {
         let start = self.map_to_addr;
@@ -263,12 +251,11 @@ impl VmMapping {
         let name = || {
             let process_vm = parent_vmar.process_vm();
             let user_stack_top = process_vm.init_stack().user_stack_top();
-
             if self.map_to_addr <= user_stack_top && self.map_end() > user_stack_top {
                 return Some(Cow::Borrowed("[stack]"));
             }
 
-            let heap_range = process_vm.heap().heap_range();
+            let heap_range = parent_heap_guard.heap_range();
             if self.map_to_addr >= heap_range.start && self.map_end() <= heap_range.end {
                 return Some(Cow::Borrowed("[heap]"));
             }
@@ -640,7 +627,6 @@ impl VmMapping {
             map_to_addr: self.map_to_addr,
             map_size: NonZeroUsize::new(left_size).unwrap(),
             mapped_mem: l_mapped_mem,
-            inode: self.inode.clone(),
             path: self.path.clone(),
             ..self
         };
@@ -963,7 +949,6 @@ fn try_merge(left: &VmMapping, right: &VmMapping) -> Option<VmMapping> {
     Some(VmMapping {
         map_size,
         mapped_mem,
-        inode: left.inode.clone(),
         path: left.path.clone(),
         ..*left
     })

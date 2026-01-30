@@ -19,13 +19,14 @@ impl Vmar {
     /// Creates a new VMAR whose content is inherited from another
     /// using copy-on-write (COW) technique.
     pub fn fork_from(vmar: &Self) -> Result<Arc<Self>> {
+        // Obtain the heap lock and hold it for the entire method to avoid race conditions.
+        let heap_guard = vmar.process_vm.heap().lock();
+
         let new_vmar = Arc::new(Vmar {
             inner: RwMutex::new(VmarInner::new()),
             vm_space: Arc::new(VmSpace::new()),
             rss_counters: array::from_fn(|_| PerCpuCounter::new()),
-            // FIXME: There are race conditions because `process_vm` is not operating under the
-            // `vmar.inner` lock.
-            process_vm: ProcessVm::fork_from(&vmar.process_vm),
+            process_vm: ProcessVm::fork_from(&vmar.process_vm, &heap_guard),
         });
 
         {

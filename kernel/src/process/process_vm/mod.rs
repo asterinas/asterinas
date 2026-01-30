@@ -18,7 +18,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use ostd::{sync::MutexGuard, task::disable_preempt};
 
 pub use self::{
-    heap::Heap,
+    heap::{Heap, LockedHeap},
     init_stack::{
         INIT_STACK_SIZE, InitStack, InitStackReader, MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS,
         aux_vec::{AuxKey, AuxVec},
@@ -86,10 +86,10 @@ impl ProcessVm {
     }
 
     /// Creates a new `ProcessVm` with identical contents of an existing one.
-    pub fn fork_from(process_vm: &Self) -> Self {
+    pub fn fork_from(process_vm: &Self, heap_guard: &LockedHeap) -> Self {
         Self {
             init_stack: process_vm.init_stack.clone(),
-            heap: process_vm.heap.clone(),
+            heap: Heap::fork_from(heap_guard),
             executable_file: process_vm.executable_file.clone(),
             #[cfg(target_arch = "riscv64")]
             vdso_base: AtomicUsize::new(process_vm.vdso_base.load(Ordering::Relaxed)),
