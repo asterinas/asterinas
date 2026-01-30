@@ -140,15 +140,31 @@ impl Vmar {
         vaddr: Vaddr,
         required_page_flags: PageFlags,
     ) -> Result<UFrame> {
-        let mut item = self.query_page(vaddr)?;
+        debug_assert!(is_userspace_vaddr(vaddr) && vaddr.is_multiple_of(PAGE_SIZE));
 
-        let vm_item = loop {
-            match item {
-                Some(vm_item) if vm_item.prop().flags.contains(required_page_flags) => {
-                    break vm_item;
+        let vmspace = self.vm_space();
+
+        loop {
+            let preempt_guard = disable_preempt();
+            let mut cursor = vmspace.cursor(&preempt_guard, &(vaddr..vaddr + PAGE_SIZE))?;
+
+            match cursor.query() {
+                VmQueriedItem::MappedRam { frame, prop }
+                    if prop.flags.contains(required_page_flags) =>
+                {
+                    return Ok((*frame).clone());
                 }
-                Some(_) | None => (),
+                VmQueriedItem::MappedIoMem { .. } => {
+                    return_errno_with_message!(
+                        Errno::EOPNOTSUPP,
+                        "accessing remote MMIO memory is not supported currently"
+                    );
+                }
+                _ => {}
             }
+
+            drop(cursor);
+            drop(preempt_guard);
 
             let page_fault_info = PageFaultInfo {
                 address: vaddr,
@@ -156,32 +172,9 @@ impl Vmar {
             };
             self.handle_page_fault(&page_fault_info)?;
 
-            item = self.query_page(vaddr)?;
-
             // Note that we are not holding `self.inner.lock()` here. Therefore, in race conditions
             // (e.g., if the mapping is removed concurrently), we will need to try again. The same
             // is true for real page faults; they may occur more than once at the same address.
-        };
-
-        match vm_item {
-            VmQueriedItem::MappedRam { frame, .. } => Ok(frame),
-            VmQueriedItem::MappedIoMem { .. } => {
-                return_errno_with_message!(
-                    Errno::EOPNOTSUPP,
-                    "accessing remote MMIO memory is not supported currently"
-                );
-            }
         }
-    }
-
-    fn query_page(&self, vaddr: Vaddr) -> Result<Option<VmQueriedItem>> {
-        debug_assert!(is_userspace_vaddr(vaddr) && vaddr.is_multiple_of(PAGE_SIZE));
-
-        let preempt_guard = disable_preempt();
-        let vmspace = self.vm_space();
-        let mut cursor = vmspace.cursor(&preempt_guard, &(vaddr..vaddr + PAGE_SIZE))?;
-        let (_, item) = cursor.query()?;
-
-        Ok(item)
     }
 }

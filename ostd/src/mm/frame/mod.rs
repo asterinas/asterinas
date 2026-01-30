@@ -55,7 +55,10 @@ use meta::{AnyFrameMeta, GetFrameError, MetaSlot, REF_COUNT_UNUSED, mapping};
 pub use segment::Segment;
 use untyped::{AnyUFrameMeta, UFrame};
 
-use crate::mm::{HasPaddr, HasSize, PAGE_SIZE, Paddr, PagingConsts, PagingLevel, Vaddr};
+use crate::{
+    mm::{HasPaddr, HasSize, PAGE_SIZE, Paddr, PagingConsts, PagingLevel, Vaddr},
+    sync::RcuDrop,
+};
 
 static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
 
@@ -292,6 +295,19 @@ impl Frame<dyn AnyFrameMeta> {
     pub fn from_unsized<M: AnyFrameMeta + ?Sized>(frame: Frame<M>) -> Frame<dyn AnyFrameMeta> {
         // SAFETY: The metadata is coerceable and the struct is transmutable.
         unsafe { core::mem::transmute(frame) }
+    }
+
+    /// Converts an RCU-dropped [`Frame`] with a specific metadata type into a
+    /// RCU-dropped [`Frame<dyn AnyFrameMeta>`].
+    ///
+    /// See also [`Frame::from_unsized`] for the reason of why not implementing
+    /// [`From`] directly.
+    pub fn rcu_from_unsized<M: AnyFrameMeta + ?Sized>(frame: RcuDrop<Frame<M>>) -> RcuDrop<Self> {
+        // SAFETY: The resulting frame will be dropped after the RCU grace period.
+        let (frame, panic_guard) = unsafe { RcuDrop::into_inner(frame) };
+        let dyn_frame = Self::from_unsized(frame);
+        panic_guard.forget();
+        RcuDrop::new(dyn_frame)
     }
 }
 

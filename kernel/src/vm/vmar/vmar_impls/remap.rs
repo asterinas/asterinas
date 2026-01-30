@@ -178,24 +178,30 @@ impl Vmar {
             let Some(mapped_va) = cursor.find_next(old_size - current_offset) else {
                 break;
             };
-            let (va, Some(item)) = cursor.query().unwrap() else {
-                panic!("Found mapped page but query failed");
-            };
-            debug_assert_eq!(mapped_va, va.start);
-            cursor.unmap(PAGE_SIZE);
 
             let offset = mapped_va - old_range.start;
-            cursor.jump(new_range.start + offset).unwrap();
+            let new_map_va = new_range.start + offset;
 
-            match item {
+            match cursor.query() {
                 VmQueriedItem::MappedRam { frame, prop } => {
+                    let frame = (*frame).clone();
+
+                    cursor.unmap();
+                    cursor.jump(new_map_va).unwrap();
+
                     cursor.map(frame, prop);
                 }
                 VmQueriedItem::MappedIoMem { paddr, prop } => {
+                    cursor.unmap();
+                    cursor.jump(new_map_va).unwrap();
+
                     // For MMIO pages, find the corresponding `IoMem` and map it
                     // at the new location
                     let (iomem, offset) = cursor.find_iomem_by_paddr(paddr).unwrap();
                     cursor.map_iomem(iomem, prop, PAGE_SIZE, offset);
+                }
+                _ => {
+                    unreachable!("mapped item found but query failed")
                 }
             }
 
