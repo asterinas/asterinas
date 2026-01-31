@@ -1,5 +1,27 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! The infrastructure of pseudo FSes along with some naive implementations of pseudo FSes.
+//!
+//! Pseudo FSes are those that have no physical storage.
+//! Some pseudo FSes are trivial,
+//! e.g., [`PipeFs`], [`SockFs`], [`PidfdFs`], and [`AnonInodeFs`].
+//! Such trivial pseudo FSes are directly implemented in this module
+//! using a generic pseudo FS implementation called `NaivePseudoFs`.
+//!
+//! On the other hand, some pseudo FSes are quite complex,
+//! including [`RamFs`], `ProcFs`, and `SysFs`. Just to name a few.
+//! They are implemented in their own modules.
+//!
+//! Pseudo FSes are not backed by physical storage devices,
+//! but they still need to be assigned container device IDs
+//! (see [`Metadata::container_dev_id`]).
+//! [Linux's behavior](https://elixir.bootlin.com/linux/v6.19.3/source/fs/super.c#L1254)
+//! is to assign _anonymous device IDs_ (whose major IDs are 0).
+//! As such, this module provides a device ID allocator called [`allocator::DEVICE_ID_ALLOCATOR`]
+//! to allocate and free anonymous device IDs.
+//!
+//! [`RamFs`]: crate::fs::ramfs::RamFs
+
 use core::{
     sync::atomic::{AtomicU64, Ordering},
     time::Duration,
@@ -29,11 +51,13 @@ use crate::{
     time::clocks::RealTimeCoarseClock,
 };
 
+mod allocator;
 mod anon_inodefs;
 mod nsfs;
 mod pidfdfs;
 mod pipefs;
 mod sockfs;
+pub use allocator::{DEVICE_ID_ALLOCATOR, release_container_dev_id};
 
 /// A pseudo file system that manages pseudo inodes, such as pipe inodes and socket inodes.
 pub struct PseudoFs {
@@ -67,6 +91,12 @@ impl FileSystem for PseudoFs {
     }
 }
 
+impl Drop for PseudoFs {
+    fn drop(&mut self) {
+        release_container_dev_id(self.sb.container_dev_id);
+    }
+}
+
 impl PseudoFs {
     /// Returns a reference to the singleton pseudo file system.
     fn singleton(
@@ -76,9 +106,14 @@ impl PseudoFs {
     ) -> &'static Arc<Self> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/libfs.c#L659-L689>
         fs.call_once(|| {
+            let dev_id = allocator::DEVICE_ID_ALLOCATOR
+                .get()
+                .unwrap()
+                .allocate()
+                .expect("no device ID is available for pseudofs");
             Arc::new_cyclic(|weak_fs: &Weak<Self>| Self {
                 name,
-                sb: SuperBlock::new(magic, aster_block::BLOCK_SIZE, NAME_MAX),
+                sb: SuperBlock::new(magic, aster_block::BLOCK_SIZE, NAME_MAX, dev_id),
                 root: Arc::new(PseudoInode::new(
                     ROOT_INO,
                     PseudoInodeType::Root,
@@ -86,6 +121,7 @@ impl PseudoFs {
                     Uid::new_root(),
                     Gid::new_root(),
                     weak_fs.clone(),
+                    dev_id,
                 )),
                 inode_allocator: AtomicU64::new(ROOT_INO + 1),
                 fs_event_subscriber_stats: FsEventSubscriberStats::new(),
@@ -100,7 +136,15 @@ impl PseudoFs {
         uid: Uid,
         gid: Gid,
     ) -> PseudoInode {
-        PseudoInode::new(self.alloc_id(), type_, mode, uid, gid, Arc::downgrade(self))
+        PseudoInode::new(
+            self.alloc_id(),
+            type_,
+            mode,
+            uid,
+            gid,
+            Arc::downgrade(self),
+            self.sb.container_dev_id,
+        )
     }
 
     fn alloc_id(&self) -> u64 {
@@ -113,6 +157,7 @@ pub(super) fn init() {
     super::registry::register(&SockFsType).unwrap();
     // Note: `AnonInodeFs` does not need to be registered in the FS registry.
     // Reference: <https://elixir.bootlin.com/linux/v6.16.5/A/ident/anon_inode_fs_type>
+    allocator::DEVICE_ID_ALLOCATOR.call_once(allocator::DeviceIdAllocator::new);
 }
 
 /// Root Inode ID.
@@ -157,6 +202,7 @@ impl PseudoInode {
         uid: Uid,
         gid: Gid,
         fs: Weak<PseudoFs>,
+        dev_id: DeviceId,
     ) -> Self {
         let now = now();
         let type_ = InodeType::from(type_);
@@ -174,7 +220,7 @@ impl PseudoInode {
             nr_hard_links: 1,
             uid,
             gid,
-            container_dev_id: DeviceId::none(), // FIXME: placeholder
+            container_dev_id: dev_id,
             self_dev_id: None,
         };
 

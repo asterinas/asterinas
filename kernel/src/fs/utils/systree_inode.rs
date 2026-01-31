@@ -88,7 +88,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
             nr_hard_links: 1,
             uid: Uid::new_root(),
             gid: Gid::new_root(),
-            container_dev_id: DeviceId::none(), // FIXME: placeholder
+            container_dev_id: DeviceId::null(),
             self_dev_id: None,
         }
     }
@@ -336,6 +336,9 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
     default fn metadata(&self) -> Metadata {
         let mut metadata = *self.metadata();
         metadata.mode = self.mode().unwrap();
+        if metadata.container_dev_id.is_null() {
+            metadata.container_dev_id = self.fs().sb().container_dev_id;
+        }
         metadata
     }
 

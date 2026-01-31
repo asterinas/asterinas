@@ -12,7 +12,6 @@ use aster_block::{
     bio::{BioDirection, BioSegment, BioWaiter},
     id::{Bid, BlockId},
 };
-use device_id::DeviceId;
 use ostd::mm::{Segment, VmIo, io_util::HasVmReaderWriter};
 
 use super::{
@@ -1371,7 +1370,7 @@ impl Inode for ExfatInode {
             nr_hard_links: nlinks,
             uid: Uid::new(inner.fs().mount_option().fs_uid as u32),
             gid: Gid::new(inner.fs().mount_option().fs_gid as u32),
-            container_dev_id: DeviceId::none(), // FIXME: placeholder
+            container_dev_id: inner.fs().container_device_id(),
             self_dev_id: None,
         }
     }

@@ -14,6 +14,7 @@ use crate::{
     device::PtyMaster,
     fs::{
         device::{Device, DeviceType},
+        pseudofs,
         registry::{FsProperties, FsType},
         utils::{
             DirEntryVecExt, DirentVisitor, FileSystem, FsEventSubscriberStats, FsFlags, Inode,
@@ -53,8 +54,13 @@ pub struct DevPts {
 
 impl DevPts {
     pub fn new() -> Arc<Self> {
+        let dev_id = pseudofs::DEVICE_ID_ALLOCATOR
+            .get()
+            .unwrap()
+            .allocate()
+            .expect("no device ID is available for devpts");
         Arc::new_cyclic(|weak_self| Self {
-            sb: SuperBlock::new(DEVPTS_MAGIC, BLOCK_SIZE, NAME_MAX),
+            sb: SuperBlock::new(DEVPTS_MAGIC, BLOCK_SIZE, NAME_MAX, dev_id),
             root: RootInode::new(weak_self.clone()),
             index_alloc: Mutex::new(IdAlloc::with_capacity(MAX_PTY_NUM)),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
@@ -114,6 +120,12 @@ impl FileSystem for DevPts {
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
         &self.fs_event_subscriber_stats
+    }
+}
+
+impl Drop for DevPts {
+    fn drop(&mut self) {
+        pseudofs::release_container_dev_id(self.sb.container_dev_id);
     }
 }
 
@@ -196,7 +208,16 @@ impl Inode for RootInode {
     }
 
     fn metadata(&self) -> Metadata {
-        *self.metadata.read()
+        let metadata = *self.metadata.read();
+        if metadata.container_dev_id.is_null()
+            && let Some(devpts) = self.fs.upgrade()
+        {
+            let dev_id = devpts.sb().container_dev_id;
+            let mut metadata_lock = self.metadata.write();
+            metadata_lock.container_dev_id = dev_id;
+            return *metadata_lock;
+        }
+        metadata
     }
 
     fn extension(&self) -> &Extension {

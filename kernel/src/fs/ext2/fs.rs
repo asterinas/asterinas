@@ -2,6 +2,8 @@
 
 #![expect(dead_code)]
 
+use device_id::DeviceId;
+
 use super::{
     block_group::{BlockGroup, RawGroupDescriptor},
     block_ptr::Ext2Bid,
@@ -108,6 +110,11 @@ impl Ext2 {
     /// Returns the block device.
     pub fn block_device(&self) -> &dyn BlockDevice {
         self.block_device.as_ref()
+    }
+
+    /// Returns the device ID containing this filesystem.
+    pub fn container_device_id(&self) -> DeviceId {
+        self.block_device.id()
     }
 
     /// Returns the size of block.

@@ -42,7 +42,16 @@ impl Common {
     }
 
     pub fn metadata(&self) -> Metadata {
-        *self.metadata.read()
+        let metadata = *self.metadata.read();
+        if metadata.container_dev_id.is_null()
+            && let Some(fs) = self.fs.upgrade()
+        {
+            let dev_id = fs.sb().container_dev_id;
+            let mut metadata_lock = self.metadata.write();
+            metadata_lock.container_dev_id = dev_id;
+            return *metadata_lock;
+        }
+        metadata
     }
 
     pub fn ino(&self) -> u64 {
