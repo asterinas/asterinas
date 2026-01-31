@@ -236,7 +236,7 @@ impl Metadata {
             nr_hard_links: 2,
             uid: Uid::new_root(),
             gid: Gid::new_root(),
-            container_dev_id: DeviceId::none(), // FIXME: placeholder
+            container_dev_id: DeviceId::null(),
             self_dev_id: None,
         }
     }
@@ -256,7 +256,7 @@ impl Metadata {
             nr_hard_links: 1,
             uid: Uid::new_root(),
             gid: Gid::new_root(),
-            container_dev_id: DeviceId::none(), // FIXME: placeholder
+            container_dev_id: DeviceId::null(),
             self_dev_id: None,
         }
     }
@@ -276,7 +276,7 @@ impl Metadata {
             nr_hard_links: 1,
             uid: Uid::new_root(),
             gid: Gid::new_root(),
-            container_dev_id: DeviceId::none(), // FIXME: placeholder
+            container_dev_id: DeviceId::null(),
             self_dev_id: None,
         }
     }
@@ -296,7 +296,7 @@ impl Metadata {
             nr_hard_links: 1,
             uid: Uid::new_root(),
             gid: Gid::new_root(),
-            container_dev_id: DeviceId::none(), // FIXME: placeholder
+            container_dev_id: DeviceId::null(),
             self_dev_id: Some(device.id()),
         }
     }

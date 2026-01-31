@@ -105,7 +105,7 @@ impl Inode {
 
     pub fn metadata(&self) -> Metadata {
         let inner = self.inner.read();
-        let id = self.fs.upgrade().unwrap().block_device().id();
+        let dev_id = self.fs.upgrade().unwrap().container_device_id();
         Metadata {
             ino: self.ino() as _,
             size: inner.file_size() as _,
@@ -119,7 +119,7 @@ impl Inode {
             nr_hard_links: inner.hard_links() as _,
             uid: Uid::new(inner.uid()),
             gid: Gid::new(inner.gid()),
-            container_dev_id: id,
+            container_dev_id: dev_id,
             self_dev_id: if self.device_id() != 0 {
                 DeviceId::from_encoded_u64(self.device_id())
             } else {

@@ -28,7 +28,7 @@ struct Inner(Weak<DevPts>);
 
 impl Ptmx {
     pub fn new(fs: Weak<DevPts>) -> Arc<Self> {
-        let inner = Inner(fs);
+        let inner = Inner(fs.clone());
         Arc::new(Self {
             metadata: RwLock::new(Metadata::new_device(
                 PTMX_INO,
@@ -78,7 +78,16 @@ impl Inode for Ptmx {
     }
 
     fn metadata(&self) -> Metadata {
-        *self.metadata.read()
+        let metadata = *self.metadata.read();
+        if metadata.container_dev_id.is_null()
+            && let Some(devpts) = self.inner.0.upgrade()
+        {
+            let dev_id = devpts.sb().container_dev_id;
+            let mut metadata_lock = self.metadata.write();
+            metadata_lock.container_dev_id = dev_id;
+            return *metadata_lock;
+        }
+        metadata
     }
 
     fn extension(&self) -> &Extension {

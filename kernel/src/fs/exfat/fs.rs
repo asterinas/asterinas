@@ -10,6 +10,7 @@ use aster_block::{
     bio::{BioDirection, BioSegment, BioWaiter},
     id::BlockId,
 };
+use device_id::DeviceId;
 use hashbrown::HashMap;
 use lru::LruCache;
 use ostd::mm::Segment;
@@ -310,6 +311,10 @@ impl ExfatFs {
         self.block_device.as_ref()
     }
 
+    pub(super) fn container_device_id(&self) -> DeviceId {
+        self.block_device.id()
+    }
+
     pub(super) fn super_block(&self) -> ExfatSuperBlock {
         self.super_block
     }
@@ -421,7 +426,12 @@ impl FileSystem for ExfatFs {
     }
 
     fn sb(&self) -> SuperBlock {
-        SuperBlock::new(BOOT_SIGNATURE as u64, self.sector_size(), MAX_NAME_LENGTH)
+        SuperBlock::new(
+            BOOT_SIGNATURE as u64,
+            self.sector_size(),
+            MAX_NAME_LENGTH,
+            self.block_device.id(),
+        )
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
