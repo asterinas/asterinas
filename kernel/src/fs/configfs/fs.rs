@@ -11,6 +11,7 @@ use crate::{
     fs::{
         Result,
         configfs::systree_node::ConfigRootNode,
+        pseudofs,
         registry::{FsProperties, FsType},
         utils::{
             FileSystem, FsEventSubscriberStats, FsFlags, Inode, SuperBlock,
@@ -46,7 +47,12 @@ impl ConfigFs {
     }
 
     fn new(root_node: Arc<ConfigRootNode>) -> Arc<Self> {
-        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX);
+        let dev_id = pseudofs::allocator::DEVICE_ID_ALLOCATOR
+            .get()
+            .expect("pseudofs's DEVICE_ID_ALLOCATOR is not initialized")
+            .allocate()
+            .expect("failed to allocate device ID for ConfigFs: minor numbers exhausted");
+        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, dev_id);
         let root_inode = ConfigInode::new_root(root_node);
 
         Arc::new(Self {

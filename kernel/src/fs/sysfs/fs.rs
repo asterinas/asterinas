@@ -4,7 +4,7 @@ use spin::Once;
 
 use crate::{
     fs::{
-        Result,
+        Result, pseudofs,
         registry::{FsProperties, FsType},
         sysfs::{self, inode::SysFsInode},
         utils::{
@@ -41,7 +41,12 @@ impl SysFs {
     }
 
     fn new() -> Arc<Self> {
-        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX);
+        let dev_id = pseudofs::allocator::DEVICE_ID_ALLOCATOR
+            .get()
+            .expect("pseudofs's DEVICE_ID_ALLOCATOR is not initialized")
+            .allocate()
+            .expect("failed to allocate device ID for SysFs: minor numbers exhausted");
+        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, dev_id);
         let systree_ref = sysfs::systree_singleton();
         let root_inode = SysFsInode::new_root(systree_ref.root().clone());
 

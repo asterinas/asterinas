@@ -10,6 +10,7 @@ use aster_block::{
     bio::{BioDirection, BioSegment, BioWaiter},
     id::BlockId,
 };
+use device_id::DeviceId;
 use hashbrown::HashMap;
 use lru::LruCache;
 use ostd::mm::Segment;
@@ -38,6 +39,7 @@ use crate::{
 pub struct ExfatFs {
     block_device: Arc<dyn BlockDevice>,
     super_block: ExfatSuperBlock,
+    dev_id: DeviceId,
 
     bitmap: Arc<Mutex<ExfatBitmap>>,
 
@@ -71,10 +73,12 @@ impl ExfatFs {
     ) -> Result<Arc<Self>> {
         // Load the super_block
         let super_block = Self::read_super_block(block_device.as_ref())?;
+        let dev_id = block_device.id();
         let fs_size = super_block.num_clusters as usize * super_block.cluster_size as usize;
         let exfat_fs = Arc::new_cyclic(|weak_self| ExfatFs {
             block_device,
             super_block,
+            dev_id,
             bitmap: Arc::new(Mutex::new(ExfatBitmap::default())),
             upcase_table: Arc::new(SpinLock::new(ExfatUpcaseTable::empty())),
             mount_option,
@@ -310,6 +314,10 @@ impl ExfatFs {
         self.block_device.as_ref()
     }
 
+    pub(super) fn dev_id(&self) -> DeviceId {
+        self.dev_id
+    }
+
     pub(super) fn super_block(&self) -> ExfatSuperBlock {
         self.super_block
     }
@@ -421,7 +429,12 @@ impl FileSystem for ExfatFs {
     }
 
     fn sb(&self) -> SuperBlock {
-        SuperBlock::new(BOOT_SIGNATURE as u64, self.sector_size(), MAX_NAME_LENGTH)
+        SuperBlock::new(
+            BOOT_SIGNATURE as u64,
+            self.sector_size(),
+            MAX_NAME_LENGTH,
+            self.dev_id,
+        )
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
