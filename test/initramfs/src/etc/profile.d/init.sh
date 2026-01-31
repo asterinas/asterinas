@@ -2,7 +2,7 @@
 
 # SPDX-License-Identifier: MPL-2.0
 
-# TODO: This script simulates the process of mounting filesystems as performed by 
+# TODO: This script simulates the process of mounting filesystems as performed by
 # a generic init process. It should later be replaced by the actual init process.
 mount -t sysfs none /sys
 mount -t proc none /proc
@@ -10,3 +10,11 @@ mount -t cgroup2 none /sys/fs/cgroup
 mount -t configfs none /sys/kernel/config
 mount -t ext2 /dev/vda /ext2
 mount -t exfat /dev/vdb /exfat
+
+# Mount xfstests images if they exist
+if [ -b /dev/vdc ]; then
+    mount -t ext2 /dev/vdc /xfstests/test
+fi
+if [ -b /dev/vdd ]; then
+    mount -t ext2 /dev/vdd /xfstests/scratch
+fi
