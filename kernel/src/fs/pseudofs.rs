@@ -6,6 +6,7 @@ use core::{
     time::Duration,
 };
 
+use device_id::DeviceId;
 use spin::Once;
 
 use super::utils::{Extension, InodeIo, StatusFlags};
@@ -66,9 +67,13 @@ impl PseudoFs {
     ) -> &'static Arc<Self> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/libfs.c#L659-L689>
         fs.call_once(|| {
+            let dev_id = device_id::PSEUDO_FS_DEVICE_ID_ALLOCATOR
+                .get()
+                .expect("PSEUDO_FS_DEVICE_ID_ALLOCATOR not initialized")
+                .allocate();
             Arc::new_cyclic(|weak_fs: &Weak<Self>| Self {
                 name,
-                sb: SuperBlock::new(magic, aster_block::BLOCK_SIZE, NAME_MAX),
+                sb: SuperBlock::new(magic, aster_block::BLOCK_SIZE, NAME_MAX, dev_id),
                 root: Arc::new(PseudoInode::new(
                     ROOT_INO,
                     PseudoInodeType::Root,
@@ -76,6 +81,7 @@ impl PseudoFs {
                     Uid::new_root(),
                     Gid::new_root(),
                     weak_fs.clone(),
+                    dev_id,
                 )),
                 inode_allocator: AtomicU64::new(ROOT_INO + 1),
                 fs_event_subscriber_stats: FsEventSubscriberStats::new(),
@@ -90,7 +96,15 @@ impl PseudoFs {
         uid: Uid,
         gid: Gid,
     ) -> PseudoInode {
-        PseudoInode::new(self.alloc_id(), type_, mode, uid, gid, Arc::downgrade(self))
+        PseudoInode::new(
+            self.alloc_id(),
+            type_,
+            mode,
+            uid,
+            gid,
+            Arc::downgrade(self),
+            self.sb.dev_id,
+        )
     }
 
     fn alloc_id(&self) -> u64 {
@@ -367,25 +381,26 @@ impl PseudoInode {
         uid: Uid,
         gid: Gid,
         fs: Weak<PseudoFs>,
+        dev_id: DeviceId,
     ) -> Self {
         let now = now();
         let type_ = InodeType::from(type_);
 
         let metadata = Metadata {
-            dev: 0,
             ino,
             size: 0,
-            blk_size: aster_block::BLOCK_SIZE,
-            blocks: 0,
-            atime: now,
-            mtime: now,
-            ctime: now,
+            optimal_block_size: aster_block::BLOCK_SIZE,
+            nr_sectors_allocated: 0,
+            last_access_at: now,
+            last_modify_at: now,
+            last_meta_change_at: now,
             type_,
             mode,
-            nlinks: 1,
+            nr_hard_links: 1,
             uid,
             gid,
-            rdev: 0,
+            container_dev_id: Some(dev_id),
+            self_dev_id: None,
         };
 
         PseudoInode {
@@ -462,7 +477,7 @@ impl Inode for PseudoInode {
 
         let mut meta = self.metadata.lock();
         meta.mode = mode;
-        meta.ctime = now();
+        meta.last_meta_change_at = now();
         Ok(())
     }
 
@@ -473,7 +488,7 @@ impl Inode for PseudoInode {
     fn set_owner(&self, uid: Uid) -> Result<()> {
         let mut meta = self.metadata.lock();
         meta.uid = uid;
-        meta.ctime = now();
+        meta.last_meta_change_at = now();
         Ok(())
     }
 
@@ -484,32 +499,32 @@ impl Inode for PseudoInode {
     fn set_group(&self, gid: Gid) -> Result<()> {
         let mut meta = self.metadata.lock();
         meta.gid = gid;
-        meta.ctime = now();
+        meta.last_meta_change_at = now();
         Ok(())
     }
 
     fn atime(&self) -> Duration {
-        self.metadata.lock().atime
+        self.metadata.lock().last_access_at
     }
 
     fn set_atime(&self, time: Duration) {
-        self.metadata.lock().atime = time;
+        self.metadata.lock().last_access_at = time;
     }
 
     fn mtime(&self) -> Duration {
-        self.metadata.lock().mtime
+        self.metadata.lock().last_modify_at
     }
 
     fn set_mtime(&self, time: Duration) {
-        self.metadata.lock().mtime = time;
+        self.metadata.lock().last_modify_at = time;
     }
 
     fn ctime(&self) -> Duration {
-        self.metadata.lock().ctime
+        self.metadata.lock().last_meta_change_at
     }
 
     fn set_ctime(&self, time: Duration) {
-        self.metadata.lock().ctime = time;
+        self.metadata.lock().last_meta_change_at = time;
     }
 
     fn open(

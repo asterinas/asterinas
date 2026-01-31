@@ -50,6 +50,8 @@ pub struct OverlayFs {
     config: OverlayConfig,
     /// Super block.
     sb: OverlaySB,
+    /// The device ID containing this filesystem.
+    dev_id: device_id::DeviceId,
     /// Unique inode number generator.
     next_ino: AtomicU64,
     /// FS event subscriber stats for this file system.
@@ -123,12 +125,17 @@ impl OverlayFs {
         Self::validate_work_and_upper(&work, &upper)?;
         Self::validate_work_empty(&work)?;
 
+        let dev_id = device_id::PSEUDO_FS_DEVICE_ID_ALLOCATOR
+            .get()
+            .expect("PSEUDO_FS_DEVICE_ID_ALLOCATOR not initialized")
+            .allocate();
         Ok(Arc::new_cyclic(|weak| Self {
             upper: OverlayUpper { path: upper },
             lower: OverlayLower { paths: lower },
             work: OverlayWork { path: work },
             config: OverlayConfig::default(),
             sb: OverlaySB,
+            dev_id,
             next_ino: AtomicU64::new(0),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             self_: weak.clone(),
@@ -194,7 +201,7 @@ impl FileSystem for OverlayFs {
 
     fn sb(&self) -> SuperBlock {
         // TODO: Fill the super block with valid field values.
-        SuperBlock::new(OVERLAY_FS_MAGIC, BLOCK_SIZE, NAME_MAX)
+        SuperBlock::new(OVERLAY_FS_MAGIC, BLOCK_SIZE, NAME_MAX, self.dev_id)
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {

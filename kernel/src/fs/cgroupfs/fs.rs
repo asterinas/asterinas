@@ -41,7 +41,11 @@ impl CgroupFs {
     }
 
     fn new(root_node: Arc<CgroupSystem>) -> Arc<Self> {
-        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX);
+        let dev_id = device_id::PSEUDO_FS_DEVICE_ID_ALLOCATOR
+            .get()
+            .expect("PSEUDO_FS_DEVICE_ID_ALLOCATOR not initialized")
+            .allocate();
+        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, dev_id);
         let root_inode = CgroupInode::new_root(root_node);
 
         Arc::new(Self {
