@@ -267,6 +267,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-python"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
 name = "thiserror"
 version = "2.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
