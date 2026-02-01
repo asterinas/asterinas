@@ -68,6 +68,7 @@ impl RamFs {
                 typ: InodeType::Dir,
                 this: weak_root.clone(),
                 fs: weak_fs.clone(),
+                dev_id: None,
                 extension: Extension::new(),
                 xattr: RamXattr::new(),
             }),
@@ -118,6 +119,8 @@ pub(super) struct RamInode {
     this: Weak<RamInode>,
     /// Reference to fs
     fs: Weak<RamFs>,
+    /// Device ID. Used for detached inodes (memfd) that don't have a valid fs reference.
+    dev_id: Option<DeviceId>,
     /// Extensions
     extension: Extension,
     /// Extended attributes
@@ -453,6 +456,7 @@ impl RamInode {
             typ: InodeType::Dir,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            dev_id: None,
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -466,6 +470,7 @@ impl RamInode {
             typ: InodeType::File,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            dev_id: None,
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -474,6 +479,7 @@ impl RamInode {
     /// Creates a `RamInode` that is detached from any `RamFs`, and resides in a `MemfdInode`.
     pub(super) fn new_file_detached_in_memfd(
         weak_self: &Weak<MemfdInode>,
+        dev_id: DeviceId,
         mode: InodeMode,
         uid: Uid,
         gid: Gid,
@@ -485,6 +491,7 @@ impl RamInode {
             typ: InodeType::File,
             this: Weak::new(),
             fs: Weak::new(),
+            dev_id: Some(dev_id),
             extension: Extension::new(),
             xattr: RamXattr::new(),
         }
@@ -498,6 +505,7 @@ impl RamInode {
             typ: InodeType::SymLink,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            dev_id: None,
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -523,6 +531,7 @@ impl RamInode {
             typ: dev_type.into(),
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            dev_id: None,
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -536,6 +545,7 @@ impl RamInode {
             typ: InodeType::Socket,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            dev_id: None,
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -549,6 +559,7 @@ impl RamInode {
             typ: InodeType::NamedPipe,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            dev_id: None,
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -1173,7 +1184,10 @@ impl Inode for RamInode {
     fn metadata(&self) -> Metadata {
         let rdev = self.inner.device_id().unwrap_or(0);
         let inode_metadata = self.metadata.lock();
-        let container_dev_id = self.fs().sb().dev_id;
+        let container_dev_id = match self.dev_id {
+            Some(id) => id,
+            None => self.fs().sb().dev_id,
+        };
         Metadata {
             ino: self.ino as _,
             size: inode_metadata.size,
