@@ -2647,7 +2647,9 @@ impl InodeDesc {
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/fs/ext2/inode.c#L48-L55>.
     fn is_fast_symlink(&self) -> bool {
-        self.type_ == InodeType::SymLink && self.data_sectors() == 0
+        self.type_ == InodeType::SymLink
+            && self.data_sectors() == 0
+            && self.size <= MAX_FAST_SYMLINK_LEN
     }
 }
 
