@@ -4,8 +4,8 @@ use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
-    fs::{
-        file_handle::FileLike,
+    fs::file::{
+        FileLike,
         file_table::{FdFlags, FileDesc},
     },
     net::socket::unix::{UnixDatagramSocket, UnixStreamSocket},

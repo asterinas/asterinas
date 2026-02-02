@@ -6,8 +6,8 @@ use super::{
 };
 use crate::{
     fs::{
-        file_table::{FileDesc, get_file_fast},
-        utils::{XATTR_LIST_MAX_LEN, XattrNamespace},
+        file::file_table::{FileDesc, get_file_fast},
+        vfs::xattr::{XATTR_LIST_MAX_LEN, XattrNamespace},
     },
     prelude::*,
     process::credentials::capabilities::CapSet,

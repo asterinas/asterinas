@@ -8,7 +8,7 @@ use xmas_elf::{
 };
 
 use crate::{
-    fs::utils::{Inode, PATH_MAX},
+    fs::{utils::PATH_MAX, vfs::inode::Inode},
     prelude::*,
     vm::{perms::VmPerms, vmar::VMAR_CAP_ADDR},
 };

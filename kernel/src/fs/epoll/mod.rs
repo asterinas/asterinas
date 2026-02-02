@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::file_table::FileDesc;
-use crate::{events::IoEvents, prelude::*};
+use crate::{events::IoEvents, fs::file::file_table::FileDesc, prelude::*};
 
 mod entry;
 mod file;

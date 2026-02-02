@@ -2,7 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::FdFlags,
+    fs::file::file_table::FdFlags,
     prelude::*,
     time::{
         clockid_t,

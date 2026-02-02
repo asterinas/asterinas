@@ -9,7 +9,7 @@ use super::{
     relocate::RelocatedRange,
 };
 use crate::{
-    fs::path::{FsPath, Path, PathResolver},
+    fs::vfs::path::{FsPath, Path, PathResolver},
     prelude::*,
     process::{
         process_vm::{AuxKey, AuxVec},

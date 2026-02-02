@@ -3,8 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::FdFlags,
-        inode_handle::InodeHandle,
+        file::{InodeHandle, file_table::FdFlags},
         ramfs::memfd::{MAX_MEMFD_NAME_LEN, MemfdFlags, MemfdInodeHandle},
     },
     prelude::*,

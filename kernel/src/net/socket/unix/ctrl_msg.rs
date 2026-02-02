@@ -7,8 +7,8 @@ use ostd::task::Task;
 
 use super::{CUserCred, UnixStreamSocket, cred::SocketCred};
 use crate::{
-    fs::{
-        file_handle::FileLike,
+    fs::file::{
+        FileLike,
         file_table::{FdFlags, get_file_fast},
     },
     net::socket::util::{CControlHeader, ControlMessage},

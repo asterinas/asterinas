@@ -2,55 +2,20 @@
 
 //! VFS components
 
-pub use access_mode::AccessMode;
-pub use creation_flags::CreationFlags;
 pub use dirent_visitor::{DirentCounter, DirentVisitor};
 pub use direntry_vec::DirEntryVecExt;
 pub use endpoint::{Endpoint, EndpointState};
-pub use falloc_mode::FallocMode;
-pub use file_creation_mask::{AtomicFileCreationMask, FileCreationMask};
-pub use flock::{FlockItem, FlockList, FlockType};
-pub use fs::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock};
 pub use id_bitmap::IdBitmap;
-pub use inode::{
-    Extension, Inode, InodeIo, InodeType, Metadata, MknodType, Permission, SymbolicLink,
-};
-pub use inode_ext::InodeExt;
-pub use inode_mode::InodeMode;
-pub(crate) use inode_mode::{chmod, mkmod, perms_to_mask, who_and_perms_to_mask, who_to_mask};
-pub use open_args::OpenArgs;
-pub use page_cache::{CachePage, PageCache, PageCacheBackend};
 #[cfg(ktest)]
 pub use random_test::{generate_random_operation, new_fs_in_memory};
-pub use range_lock::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockList, RangeLockType};
-pub use status_flags::{AtomicStatusFlags, StatusFlags};
-pub use xattr::{
-    XATTR_LIST_MAX_LEN, XATTR_NAME_MAX_LEN, XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace,
-    XattrSetFlags,
-};
 
-mod access_mode;
-mod creation_flags;
 mod dirent_visitor;
 mod direntry_vec;
 mod endpoint;
-mod falloc_mode;
-mod file_creation_mask;
-mod flock;
-mod fs;
 mod id_bitmap;
-mod inode;
-mod inode_ext;
-mod inode_mode;
-pub mod ioctl_defs;
-mod open_args;
-mod page_cache;
 #[cfg(ktest)]
 mod random_test;
-mod range_lock;
-mod status_flags;
 pub mod systree_inode;
-mod xattr;
 
 use core::{
     borrow::Borrow,
@@ -58,13 +23,6 @@ use core::{
 };
 
 use crate::prelude::*;
-
-#[derive(Copy, PartialEq, Eq, Clone, Debug)]
-pub enum SeekFrom {
-    Start(usize),
-    End(isize),
-    Current(isize),
-}
 
 /// Maximum bytes in a path
 pub const PATH_MAX: usize = 4096;

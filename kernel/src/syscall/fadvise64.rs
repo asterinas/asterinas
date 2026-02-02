@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{fs::file_table::get_file_fast, prelude::*};
+use crate::{fs::file::file_table::get_file_fast, prelude::*};
 
 #[repr(i32)]
 #[derive(Debug, TryFromInt)]

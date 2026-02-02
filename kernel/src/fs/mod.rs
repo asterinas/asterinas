@@ -1,59 +1,31 @@
 // SPDX-License-Identifier: MPL-2.0
 
-pub mod cgroupfs;
-pub mod configfs;
-pub mod device;
-pub mod devpts;
 pub mod epoll;
-pub mod exfat;
-pub mod ext2;
-pub mod file_handle;
-pub mod file_table;
-pub mod inode_handle;
-pub mod notify;
-pub mod overlayfs;
-pub mod path;
+pub mod file;
+pub mod fs_impls;
 pub mod pipe;
-pub mod procfs;
-pub mod pseudofs;
-pub mod ramfs;
-pub mod registry;
 pub mod rootfs;
-pub mod sysfs;
 pub mod thread_info;
-pub mod tmpfs;
 pub mod utils;
+pub mod vfs;
+
+pub use fs_impls::*;
 
 use crate::{
     fs::{
-        file_table::FdFlags,
-        path::{FsPath, PathResolver},
-        utils::{AccessMode, OpenArgs, mkmod},
+        file::{AccessMode, OpenArgs, file_table::FdFlags, mkmod},
+        vfs::path::{FsPath, PathResolver},
     },
     prelude::*,
 };
 
 pub fn init() {
-    registry::init();
-
-    sysfs::init();
-    procfs::init();
-    cgroupfs::init();
-    configfs::init();
-    ramfs::init();
-    tmpfs::init();
-    devpts::init();
-    pseudofs::init();
-
-    ext2::init();
-    exfat::init();
-    overlayfs::init();
-
-    path::init();
+    vfs::init();
+    fs_impls::init();
 }
 
 pub fn init_on_each_cpu() {
-    procfs::init_on_each_cpu();
+    fs_impls::init_on_each_cpu();
 }
 
 pub fn init_in_first_kthread(path_resolver: &PathResolver) {

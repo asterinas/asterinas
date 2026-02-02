@@ -25,7 +25,7 @@ use super::{
 };
 use crate::{
     events::IoEvents,
-    fs::{file_handle::FileLike, path::Path, pseudofs::SockFs},
+    fs::{file::FileLike, pseudofs::SockFs, vfs::path::Path},
     net::{
         iface::Iface,
         socket::{

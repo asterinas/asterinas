@@ -7,8 +7,8 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     events::IoEvents,
-    fs::{
-        file_handle::FileLike,
+    fs::file::{
+        FileLike,
         file_table::{FileDesc, FileTable},
     },
     prelude::*,

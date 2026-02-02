@@ -2,10 +2,9 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::{
-        file_handle::FileLike,
+    fs::file::{
+        FileLike, StatusFlags,
         file_table::{FdFlags, FileDesc, WithFileTable, get_file_fast},
-        utils::StatusFlags,
     },
     prelude::*,
     process::posix_thread::FileTableRefMut,

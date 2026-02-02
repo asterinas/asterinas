@@ -8,7 +8,7 @@ use unbound::UnboundNetlink;
 use super::{GroupIdSet, NetlinkSocketAddr};
 use crate::{
     events::IoEvents,
-    fs::{path::Path, pseudofs::SockFs},
+    fs::{pseudofs::SockFs, vfs::path::Path},
     net::socket::{
         Socket,
         netlink::{AddMembership, DropMembership, table::SupportedNetlinkProtocol},

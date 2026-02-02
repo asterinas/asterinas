@@ -6,8 +6,8 @@ use crate::{
     device::PtySlave,
     events::IoEvents,
     fs::{
-        inode_handle::FileIo,
-        utils::{InodeIo, StatusFlags},
+        file::{FileIo, StatusFlags},
+        vfs::inode::InodeIo,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},

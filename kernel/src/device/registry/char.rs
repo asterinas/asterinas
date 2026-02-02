@@ -7,10 +7,8 @@ use core::ops::Range;
 use device_id::{DeviceId, MajorId};
 
 use crate::{
-    fs::{
-        device::{Device, DeviceType, add_node},
-        path::PathResolver,
-    },
+    device::{Device, DeviceType, add_node},
+    fs::vfs::path::PathResolver,
     prelude::*,
 };
 

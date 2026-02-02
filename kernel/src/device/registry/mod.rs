@@ -3,10 +3,8 @@
 use device_id::DeviceId;
 
 use crate::{
-    fs::{
-        device::{Device, DeviceType},
-        path::PathResolver,
-    },
+    device::{Device, DeviceType},
+    fs::vfs::path::PathResolver,
     prelude::*,
 };
 

@@ -5,9 +5,12 @@ use device_id::DeviceId;
 use super::SyscallReturn;
 use crate::{
     fs::{
-        path::{AT_FDCWD, FsPath, MountPropType, Path, PerMountFlags},
-        registry::FsProperties,
-        utils::{FileSystem, FsFlags, InodeType},
+        file::InodeType,
+        vfs::{
+            path::{AT_FDCWD, FsPath, MountPropType, Path, PerMountFlags},
+            registry::FsProperties,
+            super_block::{FileSystem, FsFlags},
+        },
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -221,7 +224,7 @@ fn get_fs(
     let fs_type = fs_type
         .to_str()
         .map_err(|_| Error::with_message(Errno::ENODEV, "invalid file system type"))?;
-    let fs_type = crate::fs::registry::look_up(fs_type).ok_or(Error::with_message(
+    let fs_type = crate::fs::vfs::registry::look_up(fs_type).ok_or(Error::with_message(
         Errno::ENODEV,
         "the filesystem is not configured in the kernel",
     ))?;

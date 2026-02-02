@@ -9,7 +9,7 @@ use unbound::{BindOptions, UnboundDatagram};
 use super::addr::UNSPECIFIED_LOCAL_ENDPOINT;
 use crate::{
     events::IoEvents,
-    fs::{path::Path, pseudofs::SockFs},
+    fs::{pseudofs::SockFs, vfs::path::Path},
     net::{
         iface::is_broadcast_endpoint,
         socket::{

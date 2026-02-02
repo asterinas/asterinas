@@ -6,12 +6,12 @@ use inherit_methods_macro::inherit_methods;
 
 use crate::{
     fs::{
-        inode_handle::{FileIo, InodeHandle},
+        file::{AccessMode, FileIo, InodeHandle, InodeMode, InodeType, StatusFlags, mkmod},
         pipe::Pipe,
         pseudofs::{PipeFs, PseudoInode, PseudoInodeType},
-        utils::{
-            AccessMode, Extension, FileSystem, Inode, InodeIo, InodeMode, InodeType, Metadata,
-            StatusFlags, mkmod,
+        vfs::{
+            inode::{Extension, Inode, InodeIo, Metadata},
+            super_block::FileSystem,
         },
     },
     prelude::*,

@@ -10,10 +10,8 @@ use crate::{
     events::IoEvents,
     fs::{
         devpts::Ptmx,
-        file_table::FdFlags,
-        inode_handle::FileIo,
-        path::FsPath,
-        utils::{AccessMode, InodeIo, OpenArgs, StatusFlags, mkmod},
+        file::{AccessMode, FileIo, OpenArgs, StatusFlags, file_table::FdFlags, mkmod},
+        vfs::{inode::InodeIo, path::FsPath},
     },
     prelude::*,
     process::{
@@ -167,7 +165,7 @@ impl FileIo for PtyMaster {
     fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
         use ioctl_defs::*;
 
-        use crate::{device::tty::ioctl_defs::*, fs::utils::ioctl_defs::GetNumBytesToRead};
+        use crate::{device::tty::ioctl_defs::*, util::ioctl::GetNumBytesToRead};
 
         dispatch_ioctl!(match raw_ioctl {
             GetTermios | SetTermios | SetTermiosWait | SetTermiosFlush | GetWinSize

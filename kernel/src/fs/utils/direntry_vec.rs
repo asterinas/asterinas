@@ -2,8 +2,7 @@
 
 use aster_util::slot_vec::SlotVec;
 
-use super::Inode;
-use crate::prelude::*;
+use crate::{fs::vfs::inode::Inode, prelude::*};
 
 pub trait DirEntryVecExt {
     /// Finds the entry by the `name`.

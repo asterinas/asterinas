@@ -13,16 +13,14 @@ use spin::Once;
 use super::n_tty::tty1_device;
 use crate::{
     device::{
+        Device, DeviceType,
         registry::char,
         tty::{
             Tty,
             n_tty::{VtDriver, hvc0_device, serial0_device},
         },
     },
-    fs::{
-        device::{Device, DeviceType},
-        inode_handle::FileIo,
-    },
+    fs::file::FileIo,
     prelude::*,
     process::{JobControl, Terminal},
 };

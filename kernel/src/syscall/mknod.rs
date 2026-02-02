@@ -4,9 +4,11 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         self,
-        file_table::FileDesc,
-        path::{AT_FDCWD, FsPath},
-        utils::{InodeMode, InodeType, MknodType},
+        file::{InodeMode, InodeType, file_table::FileDesc},
+        vfs::{
+            inode::MknodType,
+            path::{AT_FDCWD, FsPath},
+        },
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -59,7 +61,7 @@ pub fn sys_mknodat(
         }
         _ => return_errno_with_message!(Errno::EPERM, "unimplemented file types"),
     }
-    fs::notify::on_create(&dir_path, || name);
+    fs::vfs::notify::on_create(&dir_path, || name);
     Ok(SyscallReturn::Return(0))
 }
 

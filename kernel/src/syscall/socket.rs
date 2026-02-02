@@ -2,7 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::{file_handle::FileLike, file_table::FdFlags},
+    fs::file::{FileLike, file_table::FdFlags},
     net::socket::{
         ip::{DatagramSocket, StreamSocket},
         netlink::{

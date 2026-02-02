@@ -11,7 +11,7 @@
 //! 2. A `PidFile` opened by `pidfd_open` or by opening `/proc/[pid]` directory.
 
 use crate::{
-    fs::{file_table::FileDesc, path::MountNamespace},
+    fs::{file::file_table::FileDesc, vfs::path::MountNamespace},
     net::uts_ns::UtsNamespace,
     prelude::*,
     process::{

@@ -4,9 +4,9 @@ use super::SyscallReturn;
 use crate::{
     fs,
     fs::{
-        file_table::{FileDesc, get_file_fast},
-        path::{AT_FDCWD, FsPath},
+        file::file_table::{FileDesc, get_file_fast},
         utils::PATH_MAX,
+        vfs::path::{AT_FDCWD, FsPath},
     },
     prelude::*,
     process::ResourceType,
@@ -20,7 +20,7 @@ pub fn sys_ftruncate(fd: FileDesc, len: isize, ctx: &Context) -> Result<SyscallR
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
     file.resize(len as usize)?;
-    fs::notify::on_change(file.path());
+    fs::vfs::notify::on_change(file.path());
     Ok(SyscallReturn::Return(0))
 }
 
@@ -40,7 +40,7 @@ pub fn sys_truncate(path_ptr: Vaddr, len: isize, ctx: &Context) -> Result<Syscal
             .lookup(&fs_path)?
     };
     dir_path.resize(len as usize)?;
-    fs::notify::on_change(&dir_path);
+    fs::vfs::notify::on_change(&dir_path);
     Ok(SyscallReturn::Return(0))
 }
 

@@ -5,10 +5,12 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_handle::FileLike,
-        file_table::{FdFlags, FileDesc, WithFileTable, get_file_fast},
+        file::{
+            FileLike, StatusFlags,
+            file_table::{FdFlags, FileDesc, WithFileTable, get_file_fast},
+        },
         ramfs::memfd::{FileSeals, MemfdInodeHandle},
-        utils::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockType, StatusFlags},
+        vfs::range_lock::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockType},
     },
     prelude::*,
     process::{Pid, process_table},

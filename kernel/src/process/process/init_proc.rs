@@ -7,8 +7,8 @@ use ostd::{arch::cpu::context::UserContext, task::Task, user::UserContextApi};
 use super::Process;
 use crate::{
     fs::{
-        path::{FsPath, MountNamespace, Path},
         thread_info::ThreadFsInfo,
+        vfs::path::{FsPath, MountNamespace, Path},
     },
     prelude::*,
     process::{

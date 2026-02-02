@@ -24,7 +24,7 @@ pub use self::{
         aux_vec::{AuxKey, AuxVec},
     },
 };
-use crate::{fs::path::Path, prelude::*, vm::vmar::Vmar};
+use crate::{fs::vfs::path::Path, prelude::*, vm::vmar::Vmar};
 
 /*
  * The user's virtual memory space layout looks like below.

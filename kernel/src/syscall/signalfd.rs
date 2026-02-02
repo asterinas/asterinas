@@ -18,11 +18,12 @@ use super::SyscallReturn;
 use crate::{
     events::IoEvents,
     fs::{
-        file_handle::FileLike,
-        file_table::{FdFlags, FileDesc, get_file_fast},
-        path::Path,
+        file::{
+            CreationFlags, FileLike, StatusFlags,
+            file_table::{FdFlags, FileDesc, get_file_fast},
+        },
         pseudofs::AnonInodeFs,
-        utils::{CreationFlags, StatusFlags},
+        vfs::path::Path,
     },
     prelude::*,
     process::{

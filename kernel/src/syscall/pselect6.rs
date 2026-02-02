@@ -6,7 +6,7 @@ use ostd::mm::VmIo;
 
 use super::{SyscallReturn, select::do_sys_select};
 use crate::{
-    fs::file_table::FileDesc,
+    fs::file::file_table::FileDesc,
     prelude::*,
     process::signal::{sig_mask::SigMask, with_sigmask_changed},
     time::timespec_t,

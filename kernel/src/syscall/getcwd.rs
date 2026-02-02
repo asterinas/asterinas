@@ -3,7 +3,7 @@
 use ostd::mm::VmIo;
 
 use super::SyscallReturn;
-use crate::{fs::path::AbsPathResult, prelude::*};
+use crate::{fs::vfs::path::AbsPathResult, prelude::*};
 
 pub fn sys_getcwd(buf: Vaddr, len: usize, ctx: &Context) -> Result<SyscallReturn> {
     let abs_path = {

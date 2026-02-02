@@ -9,15 +9,13 @@ use ostd::{
     mm::{HasPaddr, HasSize, VmIo, io_util::HasVmReaderWriter},
 };
 
-use super::registry::char;
+use super::{Device, DeviceType, registry::char};
 use crate::{
     current_userspace,
     events::IoEvents,
     fs::{
-        device::{Device, DeviceType},
-        file_handle::Mappable,
-        inode_handle::FileIo,
-        utils::{InodeIo, StatusFlags},
+        file::{FileIo, Mappable, StatusFlags},
+        vfs::inode::InodeIo,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
