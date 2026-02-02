@@ -150,6 +150,11 @@ pub trait FileSystem: Any + Sync + Send {
     /// Gets the name of this FS type such as `"ext4"` or `"sysfs"`.
     fn name(&self) -> &'static str;
 
+    /// Gets the source of this file system, e.g., the device name or user-provided source string.
+    fn source(&self) -> Option<&str> {
+        None
+    }
+
     /// Syncs the file system.
     fn sync(&self) -> Result<()>;
 
