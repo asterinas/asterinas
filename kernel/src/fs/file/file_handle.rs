@@ -159,3 +159,11 @@ pub enum Mappable {
     /// An MMIO region.
     IoMem(IoMem),
 }
+
+/// Describes the position to seek from.
+#[derive(Copy, PartialEq, Eq, Clone, Debug)]
+pub enum SeekFrom {
+    Start(usize),
+    End(isize),
+    Current(isize),
+}
