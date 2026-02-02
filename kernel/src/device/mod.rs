@@ -36,7 +36,12 @@ pub fn init_in_first_process(ctx: &Context) -> Result<()> {
 
     // Mount devtmpfs.
     let dev_path = path_resolver.lookup(&FsPath::try_from("/dev")?)?;
-    dev_path.mount(RamFs::new(), PerMountFlags::default(), ctx)?;
+    dev_path.mount(
+        RamFs::new(),
+        PerMountFlags::default(),
+        Some("ramfs".to_string()),
+        ctx,
+    )?;
 
     tty::init_in_first_process()?;
     pty::init_in_first_process(&path_resolver, ctx)?;
