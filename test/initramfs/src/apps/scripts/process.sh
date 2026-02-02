@@ -81,6 +81,7 @@ signal_c/signal_test2
 if [ "$INTEL_TDX" = "1" ]; then
 tests="${tests}
 generate_tdx_quote/generate_tdx_quote
+tsm_mr/tsm_mr.sh
 "
 fi
 
