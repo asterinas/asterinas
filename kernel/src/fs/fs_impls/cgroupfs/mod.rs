@@ -11,5 +11,5 @@ mod systree_node;
 // This method should be called during kernel file system initialization,
 // _after_ `aster_systree::init`.
 pub(super) fn init() {
-    super::registry::register(&CgroupFsType).unwrap();
+    crate::fs::vfs::registry::register(&CgroupFsType).unwrap();
 }

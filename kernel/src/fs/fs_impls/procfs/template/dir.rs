@@ -9,10 +9,12 @@ use ostd::sync::RwMutexUpgradeableGuard;
 use super::{Common, ProcFs};
 use crate::{
     fs::{
-        path::{is_dot, is_dotdot},
-        utils::{
-            DirEntryVecExt, DirentVisitor, Extension, FileSystem, Inode, InodeIo, InodeMode,
-            InodeType, Metadata, MknodType, StatusFlags,
+        file::{InodeMode, InodeType, StatusFlags},
+        utils::{DirEntryVecExt, DirentVisitor},
+        vfs::{
+            inode::{Extension, Inode, InodeIo, Metadata, MknodType},
+            path::{is_dot, is_dotdot},
+            super_block::FileSystem,
         },
     },
     prelude::*,

@@ -4,7 +4,7 @@ use core::sync::atomic::{AtomicI64, AtomicU32, Ordering};
 
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 
-use super::Inode;
+use super::inode::Inode;
 use crate::prelude::*;
 
 #[derive(Debug, Clone)]

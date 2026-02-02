@@ -16,8 +16,9 @@ use spin::Once;
 use crate::{
     arch::cpu::CpuInformation,
     fs::{
+        file::mkmod,
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::{Inode, mkmod},
+        vfs::inode::Inode,
     },
     prelude::*,
 };

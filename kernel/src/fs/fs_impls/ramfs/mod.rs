@@ -15,5 +15,5 @@ const ROOT_INO: u64 = 1;
 const NAME_MAX: usize = 255;
 
 pub(super) fn init() {
-    super::registry::register(&RamFsType).unwrap();
+    crate::fs::vfs::registry::register(&RamFsType).unwrap();
 }

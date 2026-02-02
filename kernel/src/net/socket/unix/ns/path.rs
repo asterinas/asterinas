@@ -4,8 +4,8 @@ use ostd::task::Task;
 
 use crate::{
     fs::{
-        path::{FsPath, Path, SplitPath},
-        utils::{InodeType, Permission, mkmod},
+        file::{InodeType, Permission, mkmod},
+        vfs::path::{FsPath, Path, SplitPath},
     },
     prelude::*,
 };

@@ -27,10 +27,13 @@ use super::{
 use crate::{
     fs::{
         exfat::{dentry::ExfatDentryIterator, fat::ExfatChain, fs::ExfatFs},
-        path::{is_dot, is_dot_or_dotdot, is_dotdot},
-        utils::{
-            CachePage, DirentVisitor, Extension, Inode, InodeIo, InodeMode, InodeType, Metadata,
-            MknodType, PageCache, PageCacheBackend, StatusFlags, SymbolicLink, mkmod,
+        file::{InodeMode, InodeType, StatusFlags, mkmod},
+        utils::DirentVisitor,
+        vfs::{
+            inode::{Extension, Inode, InodeIo, Metadata, MknodType, SymbolicLink},
+            page_cache::{CachePage, PageCache, PageCacheBackend},
+            path::{is_dot, is_dot_or_dotdot, is_dotdot},
+            super_block::FileSystem,
         },
     },
     prelude::*,
@@ -1346,7 +1349,7 @@ impl Inode for ExfatInode {
         Ok(())
     }
 
-    fn metadata(&self) -> crate::fs::utils::Metadata {
+    fn metadata(&self) -> Metadata {
         let inner = self.inner.read();
 
         let blk_size = inner.fs().super_block().sector_size as usize;
@@ -1435,7 +1438,7 @@ impl Inode for ExfatInode {
         Ok(())
     }
 
-    fn fs(&self) -> alloc::sync::Arc<dyn crate::fs::utils::FileSystem> {
+    fn fs(&self) -> alloc::sync::Arc<dyn FileSystem> {
         self.inner.read().fs()
     }
 

@@ -13,7 +13,7 @@ mod utils;
 use crate::fs::exfat::fs::ExfatType;
 
 pub(super) fn init() {
-    super::registry::register(&ExfatType).unwrap();
+    crate::fs::vfs::registry::register(&ExfatType).unwrap();
 }
 
 #[cfg(ktest)]
@@ -35,7 +35,9 @@ mod test {
     use crate::{
         fs::{
             exfat::constants::{EXFAT_RESERVED_CLUSTERS, MAX_NAME_LENGTH},
-            utils::{Inode, InodeMode, InodeType, generate_random_operation, new_fs_in_memory},
+            file::{InodeMode, InodeType},
+            utils::{generate_random_operation, new_fs_in_memory},
+            vfs::inode::Inode,
         },
         prelude::*,
     };
@@ -119,7 +121,7 @@ mod test {
         }
     }
     /// Exfat disk image
-    static EXFAT_IMAGE: &[u8] = include_bytes!("../../../../test/initramfs/build/exfat.img");
+    static EXFAT_IMAGE: &[u8] = include_bytes!("../../../../../test/initramfs/build/exfat.img");
 
     /// Read exfat disk image
     fn new_vm_segment_from_image() -> Segment<()> {
@@ -143,11 +145,7 @@ mod test {
     }
 
     fn create_file(parent: Arc<dyn Inode>, filename: &str) -> Arc<dyn Inode> {
-        let create_result = parent.create(
-            filename,
-            crate::fs::utils::InodeType::File,
-            InodeMode::all(),
-        );
+        let create_result = parent.create(filename, InodeType::File, InodeMode::all());
 
         assert!(
             create_result.is_ok(),
@@ -159,11 +157,7 @@ mod test {
     }
 
     fn create_folder(parent: Arc<dyn Inode>, foldername: &str) -> Arc<dyn Inode> {
-        let create_result = parent.create(
-            foldername,
-            crate::fs::utils::InodeType::Dir,
-            InodeMode::all(),
-        );
+        let create_result = parent.create(foldername, InodeType::Dir, InodeMode::all());
 
         assert!(
             create_result.is_ok(),
@@ -191,16 +185,10 @@ mod test {
         create_folder(root.clone(), dir_name);
 
         // test create with an exist name
-        let create_file_with_an_exist_name = root.create(
-            dir_name,
-            crate::fs::utils::InodeType::File,
-            InodeMode::all(),
-        );
-        let create_dir_with_an_exist_name = root.create(
-            file_name,
-            crate::fs::utils::InodeType::Dir,
-            InodeMode::all(),
-        );
+        let create_file_with_an_exist_name =
+            root.create(dir_name, InodeType::File, InodeMode::all());
+        let create_dir_with_an_exist_name =
+            root.create(file_name, InodeType::Dir, InodeMode::all());
         assert!(
             create_dir_with_an_exist_name.is_err() && create_file_with_an_exist_name.is_err(),
             "Fs deal with create an exist name incorrectly"
@@ -208,22 +196,14 @@ mod test {
 
         // test create with a long name
         let long_file_name = "x".repeat(MAX_NAME_LENGTH);
-        let create_long_name_file = root.create(
-            &long_file_name,
-            crate::fs::utils::InodeType::File,
-            InodeMode::all(),
-        );
+        let create_long_name_file = root.create(&long_file_name, InodeType::File, InodeMode::all());
         assert!(
             create_long_name_file.is_ok(),
             "Fail to create a long name file"
         );
 
         let long_dir_name = "y".repeat(MAX_NAME_LENGTH);
-        let create_long_name_dir = root.create(
-            &long_dir_name,
-            crate::fs::utils::InodeType::Dir,
-            InodeMode::all(),
-        );
+        let create_long_name_dir = root.create(&long_dir_name, InodeType::Dir, InodeMode::all());
         assert!(
             create_long_name_dir.is_ok(),
             "Fail to create a long name directory"

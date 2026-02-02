@@ -28,15 +28,11 @@ use file::{
 use ostd::sync::SpinLock;
 use spin::Once;
 
-use super::registry::char::{MajorIdOwner, acquire_major, register, unregister};
-use crate::{
-    fs::{
-        device::{Device, DeviceType},
-        inode_handle::FileIo,
-    },
-    prelude::*,
-    util::ring_buffer::RbProducer,
+use super::{
+    Device, DeviceType,
+    registry::char::{MajorIdOwner, acquire_major, register, unregister},
 };
+use crate::{fs::file::FileIo, prelude::*, util::ring_buffer::RbProducer};
 
 /// Major device number for evdev devices.
 const EVDEV_MAJOR_ID: u16 = 13;

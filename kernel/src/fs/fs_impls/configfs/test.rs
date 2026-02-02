@@ -36,7 +36,10 @@ use ostd::{
 use spin::Once;
 
 use crate::{
-    fs::utils::{FileSystem, InodeType, mkmod},
+    fs::{
+        file::{InodeType, mkmod},
+        vfs::super_block::FileSystem,
+    },
     time::clocks::init_for_ktest as time_init_for_ktest,
 };
 

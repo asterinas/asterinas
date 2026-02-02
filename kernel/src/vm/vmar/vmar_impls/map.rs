@@ -5,9 +5,9 @@ use core::num::NonZeroUsize;
 use super::{MappedMemory, MappedVmo, RssDelta, VmMapping, Vmar};
 use crate::{
     fs::{
-        file_handle::{FileLike, Mappable},
-        path::Path,
+        file::{FileLike, Mappable},
         ramfs::memfd::MemfdInode,
+        vfs::path::Path,
     },
     prelude::*,
     vm::{perms::VmPerms, vmo::Vmo},
@@ -218,7 +218,7 @@ impl<'a> VmarMapOptions<'a> {
     /// # Errors
     ///
     /// This function returns an error if the file does not have a corresponding
-    /// mappable object of [`crate::fs::file_handle::Mappable`].
+    /// mappable object of [`crate::fs::file::Mappable`].
     pub fn mappable(mut self, file: &dyn FileLike) -> Result<Self> {
         if self.vmo.is_some() {
             panic!("Cannot set `mappable` when `vmo` is already set");

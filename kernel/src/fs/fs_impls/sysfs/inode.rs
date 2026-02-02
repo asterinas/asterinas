@@ -6,9 +6,13 @@ use ostd::sync::RwLock;
 
 use super::fs::SysFs;
 use crate::{
-    fs::utils::{
-        Extension, FileSystem, Inode, InodeMode, InodeType, Metadata,
-        systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
+    fs::{
+        file::{InodeMode, InodeType},
+        utils::systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
+        vfs::{
+            inode::{Extension, Inode, Metadata},
+            super_block::FileSystem,
+        },
     },
     prelude::*,
 };

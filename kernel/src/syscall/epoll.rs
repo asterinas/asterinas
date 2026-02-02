@@ -9,8 +9,10 @@ use crate::{
     events::IoEvents,
     fs::{
         epoll::{EpollCtl, EpollEvent, EpollFile, EpollFlags},
-        file_table::{FdFlags, FileDesc, get_file_fast},
-        utils::CreationFlags,
+        file::{
+            CreationFlags,
+            file_table::{FdFlags, FileDesc, get_file_fast},
+        },
     },
     prelude::*,
     process::signal::sig_mask::{SigMask, SigSet},

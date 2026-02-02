@@ -8,16 +8,16 @@ use core::{
 
 use spin::Once;
 
-use super::utils::{Extension, InodeIo, StatusFlags};
 use crate::{
     fs::{
-        inode_handle::FileIo,
-        path::{Mount, Path},
+        file::{AccessMode, FileIo, InodeMode, InodeType, StatusFlags, mkmod},
         pipe::AnonPipeInode,
-        registry::{FsProperties, FsType},
-        utils::{
-            AccessMode, FileSystem, FsEventSubscriberStats, FsFlags, Inode, InodeMode, InodeType,
-            Metadata, NAME_MAX, SuperBlock, mkmod,
+        utils::NAME_MAX,
+        vfs::{
+            inode::{Extension, Inode, InodeIo, Metadata},
+            path::{Mount, Path},
+            registry::{FsProperties, FsType},
+            super_block::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
         },
     },
     prelude::*,
@@ -98,20 +98,20 @@ impl PseudoFs {
     }
 }
 
-pub(super) struct PipeFs {
+pub(in crate::fs) struct PipeFs {
     _private: (),
 }
 
 impl PipeFs {
     /// Returns the singleton instance of the anonymous pipe file system.
-    pub(super) fn singleton() -> &'static Arc<PseudoFs> {
+    pub(in crate::fs) fn singleton() -> &'static Arc<PseudoFs> {
         static PIPEFS: Once<Arc<PseudoFs>> = Once::new();
 
         PseudoFs::singleton(&PIPEFS, "pipefs", PIPEFS_MAGIC)
     }
 
     /// Creates a pseudo `Path` for an anonymous pipe.
-    pub(super) fn new_path(pipe_inode: Arc<AnonPipeInode>) -> Path {
+    pub(in crate::fs) fn new_path(pipe_inode: Arc<AnonPipeInode>) -> Path {
         Path::new_pseudo(Self::mount_node().clone(), pipe_inode, |inode| {
             format!("pipe:[{}]", inode.ino())
         })
@@ -263,8 +263,8 @@ impl PidfdFs {
 }
 
 pub(super) fn init() {
-    super::registry::register(&PipeFsType).unwrap();
-    super::registry::register(&SockFsType).unwrap();
+    crate::fs::vfs::registry::register(&PipeFsType).unwrap();
+    crate::fs::vfs::registry::register(&SockFsType).unwrap();
     // Note: `AnonInodeFs` does not need to be registered in the FS registry.
     // Reference: <https://elixir.bootlin.com/linux/v6.16.5/A/ident/anon_inode_fs_type>
 }

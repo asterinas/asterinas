@@ -10,15 +10,15 @@ use ostd::task::Task;
 use spin::Once;
 
 use super::{
-    AccessMode, DirentVisitor, FallocMode, FileSystem, InodeMode, XattrName, XattrNamespace,
-    XattrSetFlags,
+    super_block::FileSystem,
+    xattr::{XattrName, XattrNamespace, XattrSetFlags},
 };
 use crate::{
+    device::{Device, DeviceType},
     fs::{
-        device::{Device, DeviceType},
-        inode_handle::FileIo,
-        path::Path,
-        utils::StatusFlags,
+        file::{AccessMode, FileIo, InodeMode, InodeType, Permission, StatusFlags},
+        utils::DirentVisitor,
+        vfs::path::Path,
     },
     prelude::*,
     process::{Gid, Uid, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
@@ -289,7 +289,7 @@ pub trait Inode: Any + InodeIo + Send + Sync {
 
     /// Returns the end position for [`SeekFrom::End`].
     ///
-    /// [`SeekFrom::End`]: super::SeekFrom::End
+    /// [`SeekFrom::End`]: crate::fs::file::SeekFrom::End
     fn seek_end(&self) -> Option<usize> {
         if self.type_() == InodeType::File {
             Some(self.size())

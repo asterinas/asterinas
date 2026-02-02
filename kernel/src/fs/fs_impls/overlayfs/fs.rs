@@ -19,14 +19,14 @@ use ostd::{
 
 use crate::{
     fs::{
-        inode_handle::FileIo,
-        path::{FsPath, Path},
-        registry::{FsProperties, FsType},
-        utils::{
-            AccessMode, DirentCounter, DirentVisitor, Extension, FallocMode, FileSystem,
-            FsEventSubscriberStats, FsFlags, Inode, InodeIo, InodeMode, InodeType, Metadata,
-            MknodType, NAME_MAX, StatusFlags, SuperBlock, SymbolicLink, XATTR_VALUE_MAX_LEN,
-            XattrName, XattrNamespace, XattrSetFlags, mkmod,
+        file::{AccessMode, FileIo, InodeMode, InodeType, StatusFlags, mkmod},
+        utils::{DirentCounter, DirentVisitor, NAME_MAX},
+        vfs::{
+            inode::{Extension, FallocMode, Inode, InodeIo, Metadata, MknodType, SymbolicLink},
+            path::{FsPath, Path},
+            registry::{FsProperties, FsType},
+            super_block::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
+            xattr::{XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace, XattrSetFlags},
         },
     },
     prelude::*,
@@ -1203,8 +1203,8 @@ mod tests {
 
     use super::*;
     use crate::fs::{
-        path::{Mount, MountNamespace},
         ramfs::RamFs,
+        vfs::path::{Mount, MountNamespace},
     };
 
     fn new_dummy_mount() -> Arc<Mount> {
@@ -1216,7 +1216,7 @@ mod tests {
 
     fn create_overlay_fs() -> Arc<dyn FileSystem> {
         crate::time::clocks::init_for_ktest();
-        crate::fs::path::init();
+        crate::fs::vfs::path::init();
 
         let mode = InodeMode::all();
         let upper = {
@@ -1266,7 +1266,7 @@ mod tests {
     #[ktest]
     fn work_and_upper_should_be_in_same_mount() {
         crate::time::clocks::init_for_ktest();
-        crate::fs::path::init();
+        crate::fs::vfs::path::init();
 
         let upper = Path::new_fs_root(new_dummy_mount());
         let lower = vec![Path::new_fs_root(new_dummy_mount())];
@@ -1281,7 +1281,7 @@ mod tests {
     #[ktest]
     fn work_should_be_empty() {
         crate::time::clocks::init_for_ktest();
-        crate::fs::path::init();
+        crate::fs::vfs::path::init();
 
         let mode = InodeMode::all();
         let upper = {
@@ -1301,7 +1301,7 @@ mod tests {
     #[ktest]
     fn obscured_multi_layers() {
         crate::time::clocks::init_for_ktest();
-        crate::fs::path::init();
+        crate::fs::vfs::path::init();
 
         let mode = InodeMode::all();
         let root = Path::new_fs_root(new_dummy_mount());

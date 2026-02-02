@@ -4,7 +4,7 @@ use aster_console::AnyConsoleDevice;
 
 use crate::{
     device::tty::{Tty, termio::CTermios},
-    fs::inode_handle::FileIo,
+    fs::file::FileIo,
     prelude::*,
 };
 

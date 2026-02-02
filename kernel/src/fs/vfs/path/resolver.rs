@@ -8,9 +8,16 @@ use ostd::task::Task;
 use super::Path;
 use crate::{
     fs::{
-        file_table::{FileDesc, get_file_fast},
-        path::{MountNamespace, PerMountFlags},
-        utils::{FsFlags, InodeType, NAME_MAX, PATH_MAX, Permission, SYMLINKS_MAX, SymbolicLink},
+        file::{
+            InodeType, Permission,
+            file_table::{FileDesc, get_file_fast},
+        },
+        utils::{NAME_MAX, PATH_MAX, SYMLINKS_MAX},
+        vfs::{
+            inode::SymbolicLink,
+            path::{MountNamespace, PerMountFlags},
+            super_block::FsFlags,
+        },
     },
     prelude::*,
     process::posix_thread::AsThreadLocal,

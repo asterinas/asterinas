@@ -25,10 +25,11 @@ use super::{
 use crate::{
     fs::{
         exfat::{constants::*, inode::Ino},
-        registry::{FsProperties, FsType},
-        utils::{
-            CachePage, FileSystem, FsEventSubscriberStats, FsFlags, Inode, PageCache,
-            PageCacheBackend, SuperBlock,
+        vfs::{
+            inode::Inode,
+            page_cache::{CachePage, PageCache, PageCacheBackend},
+            registry::{FsProperties, FsType},
+            super_block::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
         },
     },
     prelude::*,

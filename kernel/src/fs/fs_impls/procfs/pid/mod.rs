@@ -8,8 +8,9 @@ use super::template::{
 };
 use crate::{
     fs::{
+        file::mkmod,
         procfs::pid::task::{TaskDirOps, TidDirOps},
-        utils::{Inode, mkmod},
+        vfs::inode::Inode,
     },
     prelude::*,
     process::Process,

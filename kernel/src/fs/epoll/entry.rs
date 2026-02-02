@@ -15,7 +15,7 @@ use ostd::sync::{LocalIrqDisabled, Mutex, MutexGuard, SpinLock, SpinLockGuard};
 use super::{EpollEvent, EpollFlags};
 use crate::{
     events::{self, IoEvents},
-    fs::{file_handle::FileLike, file_table::FileDesc},
+    fs::file::{FileLike, file_table::FileDesc},
     process::signal::{PollHandle, Pollee},
 };
 

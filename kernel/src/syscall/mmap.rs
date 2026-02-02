@@ -4,7 +4,7 @@ use align_ext::AlignExt;
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::{FileDesc, get_file_fast},
+    fs::file::file_table::{FileDesc, get_file_fast},
     prelude::*,
     vm::{
         perms::VmPerms,

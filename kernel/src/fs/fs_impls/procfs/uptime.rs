@@ -9,8 +9,9 @@ use aster_util::printer::VmPrinter;
 
 use crate::{
     fs::{
+        file::mkmod,
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::{Inode, mkmod},
+        vfs::inode::Inode,
     },
     prelude::*,
     time::cpu_time_stats::CpuTimeStatsManager,

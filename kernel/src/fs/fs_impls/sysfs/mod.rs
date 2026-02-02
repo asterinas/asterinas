@@ -10,12 +10,12 @@ use aster_systree::SysNode;
 pub use aster_systree::primary_tree as systree_singleton;
 use fs::SysFsType;
 
-use crate::prelude::*;
+use crate::{fs::vfs::registry, prelude::*};
 
 // This method should be called during kernel file system initialization,
 // _after_ `aster_systree::init`.
 pub fn init() {
-    super::registry::register(&SysFsType).unwrap();
+    registry::register(&SysFsType).unwrap();
 
     kernel::init();
 }

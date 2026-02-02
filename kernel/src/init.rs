@@ -8,7 +8,7 @@ use ostd::{cpu::CpuId, util::id_set::Id};
 use spin::once::Once;
 
 use crate::{
-    fs::path::{MountNamespace, PathResolver},
+    fs::vfs::path::{MountNamespace, PathResolver},
     prelude::*,
     process::{Process, spawn_init_process},
     sched::SchedPolicy,

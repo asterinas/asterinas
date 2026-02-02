@@ -13,7 +13,7 @@ use crate::{
         },
     },
     events::IoEvents,
-    fs::inode_handle::FileIo,
+    fs::file::FileIo,
     prelude::*,
     process::signal::Pollee,
     util::ring_buffer::RingBuffer,

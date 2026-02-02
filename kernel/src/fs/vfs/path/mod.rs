@@ -4,6 +4,7 @@
 
 use core::time::Duration;
 
+use dentry::{Dentry, DirDentry};
 use inherit_methods_macro::inherit_methods;
 pub use mount::{Mount, MountPropType, PerMountFlags};
 pub use mount_namespace::MountNamespace;
@@ -11,11 +12,13 @@ pub use resolver::{AT_FDCWD, AbsPathResult, FsPath, LookupResult, PathResolver, 
 
 use crate::{
     fs::{
-        inode_handle::InodeHandle,
-        path::dentry::{Dentry, DirDentry},
-        utils::{
-            CreationFlags, FileSystem, FsFlags, Inode, InodeMode, InodeType, Metadata, MknodType,
-            OpenArgs, Permission, StatusFlags, XattrName, XattrNamespace, XattrSetFlags,
+        file::{
+            CreationFlags, InodeHandle, InodeMode, InodeType, OpenArgs, Permission, StatusFlags,
+        },
+        vfs::{
+            inode::{Inode, Metadata, MknodType},
+            super_block::{FileSystem, FsFlags},
+            xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
     prelude::*,
@@ -69,7 +72,7 @@ impl Path {
     }
 
     /// Creates a new pseudo `Path`.
-    pub(super) fn new_pseudo(
+    pub(in crate::fs) fn new_pseudo(
         mount: Arc<Mount>,
         inode: Arc<dyn Inode>,
         name_fn: fn(&dyn Inode) -> String,
@@ -142,7 +145,7 @@ impl Path {
     /// it will return `None`.
     ///
     /// For cross-filesystem parent lookup, use `effective_parent()` instead.
-    pub(super) fn parent_within_mount(&self) -> Option<Self> {
+    pub(in crate::fs) fn parent_within_mount(&self) -> Option<Self> {
         let parent = self.dentry.parent()?;
         Some(Self::new(self.mount.clone(), parent))
     }
@@ -496,6 +499,6 @@ pub const fn is_dot_or_dotdot(filename: &str) -> bool {
 
 const DOT_BYTE: u8 = b'.';
 
-pub(super) fn init() {
+pub fn init() {
     mount::init();
 }

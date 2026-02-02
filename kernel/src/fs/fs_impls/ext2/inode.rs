@@ -20,11 +20,12 @@ use super::{
 };
 use crate::{
     fs::{
-        path::{is_dot, is_dot_or_dotdot, is_dotdot},
+        file::{InodeMode, Permission},
         pipe::Pipe,
-        utils::{
-            Extension, FallocMode, Inode as _, InodeMode, Metadata, Permission, XattrName,
-            XattrNamespace, XattrSetFlags,
+        vfs::{
+            inode::{Extension, FallocMode, Inode as _, Metadata},
+            path::{is_dot, is_dot_or_dotdot, is_dotdot},
+            xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
     process::{Gid, Uid, posix_thread::AsPosixThread},

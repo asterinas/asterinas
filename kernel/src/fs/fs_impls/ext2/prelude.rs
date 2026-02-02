@@ -18,8 +18,10 @@ pub(super) use ostd::{
 
 pub(super) use super::utils::{Dirty, IsPowerOf};
 pub(super) use crate::{
-    fs::utils::{
-        CStr256, CachePage, DirentVisitor, InodeType, PageCache, PageCacheBackend, Str16, Str64,
+    fs::{
+        file::InodeType,
+        utils::{CStr256, DirentVisitor, Str16, Str64},
+        vfs::page_cache::{CachePage, PageCache, PageCacheBackend},
     },
     prelude::*,
     time::UnixTime,

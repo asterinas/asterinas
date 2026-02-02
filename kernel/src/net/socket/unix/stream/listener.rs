@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     events::IoEvents,
-    fs::file_handle::FileLike,
+    fs::file::FileLike,
     net::socket::{
         SocketAddr,
         unix::{

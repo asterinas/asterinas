@@ -7,8 +7,8 @@ use super::*;
 use crate::{
     device::PtySlave,
     fs::{
-        inode_handle::FileIo,
-        utils::{AccessMode, InodeIo, StatusFlags},
+        file::{AccessMode, FileIo, StatusFlags},
+        vfs::inode::InodeIo,
     },
 };
 

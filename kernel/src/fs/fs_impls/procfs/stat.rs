@@ -13,8 +13,9 @@ use ostd::util::id_set::Id;
 
 use crate::{
     fs::{
+        file::mkmod,
         procfs::template::{FileOps, ProcFileBuilder},
-        utils::{Inode, mkmod},
+        vfs::inode::Inode,
     },
     prelude::*,
     process::collect_process_creation_count,

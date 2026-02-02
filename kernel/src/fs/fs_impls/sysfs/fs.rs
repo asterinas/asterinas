@@ -5,11 +5,12 @@ use spin::Once;
 use crate::{
     fs::{
         Result,
-        registry::{FsProperties, FsType},
         sysfs::{self, inode::SysFsInode},
-        utils::{
-            FileSystem, FsEventSubscriberStats, FsFlags, Inode, SuperBlock,
-            systree_inode::SysTreeInodeTy,
+        utils::systree_inode::SysTreeInodeTy,
+        vfs::{
+            inode::Inode,
+            registry::{FsProperties, FsType},
+            super_block::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
         },
     },
     prelude::*,

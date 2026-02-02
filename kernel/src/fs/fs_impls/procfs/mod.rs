@@ -22,11 +22,13 @@ use self::{
 use crate::{
     events::Observer,
     fs::{
+        file::mkmod,
         procfs::{filesystems::FileSystemsFileOps, stat::StatFileOps},
-        registry::{FsProperties, FsType},
-        utils::{
-            DirEntryVecExt, FileSystem, FsEventSubscriberStats, FsFlags, Inode, NAME_MAX,
-            SuperBlock, mkmod,
+        utils::{DirEntryVecExt, NAME_MAX},
+        vfs::{
+            inode::Inode,
+            registry::{FsProperties, FsType},
+            super_block::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
         },
     },
     prelude::*,
@@ -51,7 +53,7 @@ mod uptime;
 mod version;
 
 pub(super) fn init() {
-    super::registry::register(&ProcFsType).unwrap();
+    crate::fs::vfs::registry::register(&ProcFsType).unwrap();
 }
 
 pub(super) fn init_on_each_cpu() {

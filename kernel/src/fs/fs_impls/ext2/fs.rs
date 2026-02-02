@@ -9,9 +9,9 @@ use super::{
     prelude::*,
     super_block::{RawSuperBlock, SUPER_BLOCK_OFFSET, SuperBlock},
 };
-use crate::fs::{
+use crate::fs::vfs::{
     registry::{FsProperties, FsType},
-    utils::{FileSystem, FsEventSubscriberStats, FsFlags},
+    super_block::{FileSystem, FsEventSubscriberStats, FsFlags},
 };
 
 /// The root inode number.

@@ -7,6 +7,7 @@ use super::PidDirOps;
 use crate::{
     events::Observer,
     fs::{
+        file::mkmod,
         procfs::{
             pid::task::{
                 cgroup::CgroupFileOps, cmdline::CmdlineFileOps, comm::CommFileOps,
@@ -20,7 +21,8 @@ use crate::{
                 populate_children_from_table,
             },
         },
-        utils::{DirEntryVecExt, Inode, mkmod},
+        utils::DirEntryVecExt,
+        vfs::inode::Inode,
     },
     prelude::*,
     process::{Process, posix_thread::AsPosixThread, task_set::TidEvent},

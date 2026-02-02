@@ -17,18 +17,18 @@ use ostd::{
 
 use super::{memfd::MemfdInode, xattr::RamXattr, *};
 use crate::{
-    device,
+    device::{self, DeviceType},
     fs::{
-        device::DeviceType,
-        inode_handle::FileIo,
-        path::{is_dot, is_dot_or_dotdot, is_dotdot},
+        file::{AccessMode, FileIo, InodeMode, InodeType, Permission, StatusFlags, mkmod},
         pipe::Pipe,
-        registry::{FsProperties, FsType},
-        utils::{
-            AccessMode, CStr256, CachePage, DirentVisitor, Extension, FallocMode, FileSystem,
-            FsEventSubscriberStats, FsFlags, Inode, InodeIo, InodeMode, InodeType, Metadata,
-            MknodType, PageCache, PageCacheBackend, Permission, StatusFlags, SuperBlock,
-            SymbolicLink, XattrName, XattrNamespace, XattrSetFlags, mkmod,
+        utils::{CStr256, DirentVisitor},
+        vfs::{
+            inode::{Extension, FallocMode, Inode, InodeIo, Metadata, MknodType, SymbolicLink},
+            page_cache::{CachePage, PageCache, PageCacheBackend},
+            path::{is_dot, is_dot_or_dotdot, is_dotdot},
+            registry::{FsProperties, FsType},
+            super_block::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
+            xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
     prelude::*,

@@ -25,8 +25,10 @@ use ostd::{
 
 use crate::{
     fs::{
+        file::{InodeType, StatusFlags, mkmod},
         sysfs::{self, fs::SysFs},
-        utils::{DirentVisitor, FileSystem, InodeType, StatusFlags, mkmod},
+        utils::DirentVisitor,
+        vfs::super_block::FileSystem,
     },
     prelude::*,
     time::clocks::init_for_ktest as time_init_for_ktest,
@@ -427,7 +429,7 @@ fn test_sysfs_write_attr() {
 
 #[ktest]
 fn test_sysfs_read_link() {
-    use crate::fs::utils::SymbolicLink;
+    use crate::fs::vfs::inode::SymbolicLink;
 
     let sysfs = init_sysfs_with_mock_tree();
     let root_inode = sysfs.root_inode();

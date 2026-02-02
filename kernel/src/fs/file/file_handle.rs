@@ -8,11 +8,11 @@ use core::fmt::Display;
 
 use ostd::io::IoMem;
 
-use super::{inode_handle::InodeHandle, path::Path};
+use super::{AccessMode, InodeHandle, StatusFlags, file_table::FdFlags};
 use crate::{
-    fs::{
-        file_table::FdFlags,
-        utils::{AccessMode, FallocMode, Inode, SeekFrom, StatusFlags},
+    fs::vfs::{
+        inode::{FallocMode, Inode},
+        path::Path,
     },
     net::socket::Socket,
     prelude::*,

@@ -5,11 +5,12 @@ use aster_util::printer::VmPrinter;
 
 use crate::{
     fs::{
+        file::mkmod,
         procfs::{
             pid::TidDirOps,
             template::{FileOps, ProcFileBuilder},
         },
-        utils::{Inode, mkmod},
+        vfs::inode::Inode,
     },
     prelude::*,
 };

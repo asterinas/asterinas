@@ -6,7 +6,7 @@ use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::FileDesc,
+    fs::file::file_table::FileDesc,
     prelude::*,
     time::{
         itimerspec_t,

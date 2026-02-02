@@ -23,11 +23,11 @@ use tdx_guest::{
 };
 
 use crate::{
+    device::{Device, DeviceType},
     events::IoEvents,
     fs::{
-        device::{Device, DeviceType},
-        inode_handle::FileIo,
-        utils::{InodeIo, StatusFlags},
+        file::{FileIo, StatusFlags},
+        vfs::inode::InodeIo,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},

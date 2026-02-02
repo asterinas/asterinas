@@ -11,7 +11,7 @@ use ostd::{
 
 use super::{PosixThread, ThreadLocal, thread_table};
 use crate::{
-    fs::{file_table::FileTable, thread_info::ThreadFsInfo},
+    fs::{file::file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
     process::{
         Credentials, NsProxy, Process, UserNamespace,

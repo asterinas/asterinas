@@ -7,9 +7,11 @@ use ostd::sync::RwLock;
 use crate::{
     fs::{
         configfs::fs::ConfigFs,
-        utils::{
-            Extension, FileSystem, Inode, InodeMode, Metadata,
-            systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
+        file::InodeMode,
+        utils::systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
+        vfs::{
+            inode::{Extension, Inode, Metadata},
+            super_block::FileSystem,
         },
     },
     prelude::*,

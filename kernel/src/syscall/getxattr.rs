@@ -9,8 +9,8 @@ use super::{
 };
 use crate::{
     fs::{
-        file_table::{FileDesc, get_file_fast},
-        utils::XATTR_VALUE_MAX_LEN,
+        file::file_table::{FileDesc, get_file_fast},
+        vfs::xattr::XATTR_VALUE_MAX_LEN,
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,

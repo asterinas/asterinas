@@ -19,7 +19,7 @@ pub(super) fn init() {
     let config_kernel_sysnode = EmptyNode::new("config".into());
     super::sysfs::register_kernel_sysnode(config_kernel_sysnode).unwrap();
 
-    super::registry::register(&ConfigFsType).unwrap();
+    crate::fs::vfs::registry::register(&ConfigFsType).unwrap();
 }
 
 /// Registers a subsystem `SysTree` node under the root node of [`ConfigFs`].
@@ -50,7 +50,7 @@ pub fn unregister_subsystem(name: &str) -> Result<()> {
 #[cfg(ktest)]
 pub fn init_for_ktest() {
     aster_systree::init_for_ktest();
-    super::registry::init();
+    crate::fs::vfs::init();
     super::sysfs::init();
     init();
 }

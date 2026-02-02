@@ -9,15 +9,15 @@ use id_alloc::IdAlloc;
 
 pub use self::ptmx::Ptmx;
 use self::slave::PtySlaveInode;
-use super::utils::{Extension, MknodType, StatusFlags};
 use crate::{
-    device::PtyMaster,
+    device::{Device, DeviceType, PtyMaster},
     fs::{
-        device::{Device, DeviceType},
-        registry::{FsProperties, FsType},
-        utils::{
-            DirEntryVecExt, DirentVisitor, FileSystem, FsEventSubscriberStats, FsFlags, Inode,
-            InodeIo, InodeMode, InodeType, Metadata, NAME_MAX, SuperBlock, mkmod,
+        file::{InodeMode, InodeType, StatusFlags, mkmod},
+        utils::{DirEntryVecExt, DirentVisitor, NAME_MAX},
+        vfs::{
+            inode::{Extension, Inode, InodeIo, Metadata, MknodType},
+            registry::{FsProperties, FsType},
+            super_block::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
         },
     },
     prelude::*,
@@ -143,7 +143,7 @@ impl FsType for DevPtsType {
 }
 
 pub(super) fn init() {
-    super::registry::register(&DevPtsType).unwrap();
+    crate::fs::vfs::registry::register(&DevPtsType).unwrap();
 }
 
 struct RootInode {

@@ -3,7 +3,7 @@
 use ostd::mm::VmIo;
 
 use crate::{
-    fs::file_table::FileDesc,
+    fs::file::file_table::FileDesc,
     net::socket::{Socket, util::SendRecvFlags},
     prelude::*,
     syscall::{SyscallReturn, sendmsg::send_one_message},

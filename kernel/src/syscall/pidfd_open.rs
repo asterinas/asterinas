@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::{
-    fs::{file_table::FdFlags, utils::StatusFlags},
+    fs::file::{StatusFlags, file_table::FdFlags},
     prelude::*,
     process::{Pid, PidFile, process_table},
     syscall::SyscallReturn,

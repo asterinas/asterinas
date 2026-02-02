@@ -3,10 +3,14 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::{FdFlags, FileDesc, get_file_fast},
-        notify::inotify::{InotifyControls, InotifyEvents, InotifyFile},
-        path::FsPath,
-        utils::{InodeType, Permission},
+        file::{
+            InodeType, Permission,
+            file_table::{FdFlags, FileDesc, get_file_fast},
+        },
+        vfs::{
+            notify::inotify::{InotifyControls, InotifyEvents, InotifyFile},
+            path::FsPath,
+        },
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,

@@ -6,7 +6,7 @@ use ostd::{arch::cpu::context::FpuContext, mm::Vaddr, sync::RwArc, task::Current
 
 use super::RobustListHead;
 use crate::{
-    fs::{file_table::FileTable, thread_info::ThreadFsInfo},
+    fs::{file::file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
     process::{NsProxy, UserNamespace, signal::SigStack},
     vm::vmar::Vmar,

@@ -2,16 +2,16 @@
 
 use crate::{
     fs::{
-        path::{FsPath, PathResolver, PerMountFlags},
+        file::{InodeType, chmod},
         ramfs::RamFs,
-        utils::{InodeType, chmod},
+        vfs::path::{FsPath, PathResolver, PerMountFlags},
     },
     prelude::*,
 };
 
 /// Initializes "/dev/shm" for POSIX shared memory usage.
 pub fn init_in_first_process(path_resolver: &PathResolver, ctx: &Context) -> Result<()> {
-    use crate::fs::utils::InodeMode;
+    use crate::fs::file::InodeMode;
 
     let dev_path = path_resolver.lookup(&FsPath::try_from("/dev")?)?;
 

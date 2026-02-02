@@ -8,8 +8,8 @@ use spin::Once;
 
 use crate::{
     fs::{
-        sysfs,
-        utils::{FileSystem, FsFlags},
+        fs_impls::sysfs,
+        vfs::super_block::{FileSystem, FsFlags},
     },
     prelude::*,
 };

@@ -11,10 +11,11 @@ use crate::{
     fs::{
         Result,
         cgroupfs::systree_node::CgroupSystem,
-        registry::{FsProperties, FsType},
-        utils::{
-            FileSystem, FsEventSubscriberStats, FsFlags, Inode, SuperBlock,
-            systree_inode::SysTreeInodeTy,
+        utils::systree_inode::SysTreeInodeTy,
+        vfs::{
+            inode::Inode,
+            registry::{FsProperties, FsType},
+            super_block::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
         },
     },
     prelude::*,

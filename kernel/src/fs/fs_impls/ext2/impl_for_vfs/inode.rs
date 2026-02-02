@@ -8,11 +8,12 @@ use crate::{
     device,
     fs::{
         ext2::{FilePerm, Inode as Ext2Inode},
-        inode_handle::FileIo,
-        utils::{
-            AccessMode, DirentVisitor, Extension, FallocMode, FileSystem, Inode, InodeIo,
-            InodeMode, InodeType, Metadata, MknodType, StatusFlags, SymbolicLink, XattrName,
-            XattrNamespace, XattrSetFlags,
+        file::{AccessMode, FileIo, InodeMode, InodeType, StatusFlags},
+        utils::DirentVisitor,
+        vfs::{
+            inode::{Extension, FallocMode, Inode, InodeIo, Metadata, MknodType, SymbolicLink},
+            super_block::FileSystem,
+            xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
     prelude::*,

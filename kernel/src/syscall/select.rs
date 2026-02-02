@@ -8,7 +8,7 @@ use super::{
     SyscallReturn,
     poll::{PollFd, do_poll},
 };
-use crate::{events::IoEvents, fs::file_table::FileDesc, prelude::*, time::timeval_t};
+use crate::{events::IoEvents, fs::file::file_table::FileDesc, prelude::*, time::timeval_t};
 
 pub fn sys_select(
     nfds: FileDesc,

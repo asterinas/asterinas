@@ -13,7 +13,7 @@ use super::{
     utils::{DosTimestamp, calc_checksum_16},
 };
 use crate::{
-    fs::utils::{InodeMode, InodeType},
+    fs::file::{InodeMode, InodeType},
     prelude::*,
     vm::vmo::Vmo,
 };

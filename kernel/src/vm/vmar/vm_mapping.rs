@@ -20,9 +20,9 @@ use ostd::{
 
 use super::{RssType, Vmar, interval_set::Interval, util::is_intersected, vmar_impls::RssDelta};
 use crate::{
-    fs::{
+    fs::vfs::{
+        inode::Inode,
         path::{Path, PathResolver},
-        utils::Inode,
     },
     prelude::*,
     thread::exception::PageFaultInfo,

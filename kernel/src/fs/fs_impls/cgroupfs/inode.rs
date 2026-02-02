@@ -8,10 +8,12 @@ use super::fs::CgroupFs;
 use crate::{
     fs::{
         cgroupfs::CgroupNode,
-        path::{is_dot, is_dotdot},
-        utils::{
-            Extension, FileSystem, Inode, InodeMode, Metadata,
-            systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
+        file::InodeMode,
+        utils::systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
+        vfs::{
+            inode::{Extension, Inode, Metadata},
+            path::{is_dot, is_dotdot},
+            super_block::FileSystem,
         },
     },
     prelude::*,

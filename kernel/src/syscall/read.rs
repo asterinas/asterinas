@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs,
-    fs::file_table::{FileDesc, get_file_fast},
+    fs::file::file_table::{FileDesc, get_file_fast},
     prelude::*,
 };
 
@@ -39,7 +39,7 @@ pub fn sys_read(
     })?;
 
     if read_len > 0 {
-        fs::notify::on_access(&file);
+        fs::vfs::notify::on_access(&file);
     }
     Ok(SyscallReturn::Return(read_len as _))
 }

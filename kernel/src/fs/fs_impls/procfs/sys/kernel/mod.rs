@@ -5,6 +5,7 @@ use ostd::sync::RwMutexUpgradeableGuard;
 
 use crate::{
     fs::{
+        file::mkmod,
         procfs::{
             ProcDir,
             sys::kernel::{cap_last_cap::CapLastCapFileOps, pid_max::PidMaxFileOps},
@@ -12,7 +13,7 @@ use crate::{
                 DirOps, ProcDirBuilder, lookup_child_from_table, populate_children_from_table,
             },
         },
-        utils::{Inode, mkmod},
+        vfs::inode::Inode,
     },
     prelude::*,
 };

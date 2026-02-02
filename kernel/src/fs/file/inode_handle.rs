@@ -6,17 +6,21 @@ use core::{fmt::Display, sync::atomic::Ordering};
 
 use aster_rights::Rights;
 
-use super::utils::{InodeExt, InodeIo};
+use super::{
+    AccessMode, AtomicStatusFlags, CreationFlags, FileLike, InodeType, Mappable, StatusFlags,
+    file_table::FdFlags, flock::FlockItem,
+};
 use crate::{
     events::IoEvents,
     fs::{
-        file_handle::{FileLike, Mappable},
-        file_table::FdFlags,
-        path::Path,
+        file::SeekFrom,
         pipe::PipeHandle,
-        utils::{
-            AccessMode, AtomicStatusFlags, CreationFlags, DirentVisitor, FallocMode, FileRange,
-            FlockItem, InodeType, OFFSET_MAX, RangeLockItem, RangeLockType, SeekFrom, StatusFlags,
+        utils::DirentVisitor,
+        vfs::{
+            inode::{FallocMode, InodeIo},
+            inode_ext::InodeExt,
+            path::Path,
+            range_lock::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockType},
         },
     },
     prelude::*,
@@ -82,7 +86,7 @@ impl InodeHandle {
         *offset
     }
 
-    pub(super) fn rights(&self) -> Rights {
+    pub(in crate::fs) fn rights(&self) -> Rights {
         self.rights
     }
 

@@ -11,12 +11,9 @@ use ostd::{mm::VmIo, sync::LocalIrqDisabled};
 use self::{line_discipline::LineDiscipline, termio::CFontOp};
 use crate::{
     current_userspace,
+    device::{Device, DeviceType},
     events::IoEvents,
-    fs::{
-        device::{Device, DeviceType},
-        inode_handle::FileIo,
-        utils::StatusFlags,
-    },
+    fs::file::{FileIo, StatusFlags},
     prelude::*,
     process::{
         JobControl, Terminal, broadcast_signal_async,
@@ -304,7 +301,7 @@ impl<D: TtyDriver> Tty<D> {
     pub fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
         use ioctl_defs::*;
 
-        use crate::fs::utils::ioctl_defs::GetNumBytesToRead;
+        use crate::util::ioctl::GetNumBytesToRead;
 
         dispatch_ioctl!(match raw_ioctl {
             cmd @ GetTermios => {
