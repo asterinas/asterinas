@@ -6,7 +6,7 @@ branding:
 inputs:
   # Test Configuration
   auto_test:
-    description: 'Test type (general, osdk, boot, syscall, test)'
+    description: 'Test type (general, osdk, boot, syscall, custom)'
     required: true
   release:
     description: 'Whether to run in release mode'
