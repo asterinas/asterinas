@@ -117,6 +117,7 @@ device-id = { path = "kernel/libs/device-id" }
 jhash = { path = "kernel/libs/jhash" }
 keyable-arc = { path = "kernel/libs/keyable-arc" }
 logo-ascii-art = { path = "kernel/libs/logo-ascii-art" }
+ring-buffer = { path = "kernel/libs/ring-buffer" }
 typeflags = { path = "kernel/libs/typeflags" }
 typeflags-util = { path = "kernel/libs/typeflags-util" }
 xarray = { path = "kernel/libs/xarray" }

@@ -54,7 +54,7 @@ rand = { workspace = true, features = [
     "small_rng",
     "std_rng",
 ] }
-ring-buffer = { path = "libs/ring-buffer" }
+ring-buffer.workspace = true
 spin.workspace = true
 takeable.workspace = true
 time.workspace = true

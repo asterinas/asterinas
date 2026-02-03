@@ -38,7 +38,7 @@ impl RingBufferU8Ext for RingBuffer<u8> {
             writer.write(&mut reader)?
         };
 
-        self.advance_head(head, read_len);
+        self.commit_read(read_len);
         Ok(read_len)
     }
 }
@@ -86,7 +86,7 @@ impl<R: Deref<Target = RingBuffer<u8>>> ProducerU8Ext for Producer<u8, R> {
             reader.read(&mut writer)?
         };
 
-        self.advance_tail(tail, write_len);
+        self.commit_write(write_len);
         Ok(write_len)
     }
 }
@@ -134,7 +134,7 @@ impl<R: Deref<Target = RingBuffer<u8>>> ConsumerU8Ext for Consumer<u8, R> {
             writer.write(&mut reader)?
         };
 
-        self.advance_head(head, read_len);
+        self.commit_read(read_len);
         Ok(read_len)
     }
 }

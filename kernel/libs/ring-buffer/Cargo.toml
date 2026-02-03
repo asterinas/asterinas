@@ -4,8 +4,8 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
-inherit-methods-macro = { git = "https://github.com/asterinas/inherit-methods-macro", rev = "98f7e3e" }
-ostd = { path = "../../../ostd" }
+inherit-methods-macro.workspace = true
+ostd.workspace = true
 
 [lints]
 workspace = true
