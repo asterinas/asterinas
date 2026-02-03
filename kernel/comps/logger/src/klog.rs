@@ -131,15 +131,14 @@ impl KernelLog {
 
             if bytes.len() > cap {
                 bytes = &bytes[bytes.len() - cap..];
-                buf.reset_head();
+                buf.clear();
             }
 
             // Drop oldest data if needed.
             let free = buf.free_len();
             let need_drop = bytes.len().saturating_sub(free);
             if need_drop > 0 {
-                let head = buf.head();
-                buf.advance_head(head, need_drop);
+                buf.commit_read(need_drop);
                 self.bump_clear_tail(&mut buf);
             }
 
@@ -171,8 +170,7 @@ impl KernelLog {
                 let take =
                     core::cmp::min(core::cmp::min(dst.len() - copied, COPY_CHUNK), available);
                 copy_from(&buf, buf.head().0, &mut dst[copied..copied + take]);
-                let head = buf.head();
-                buf.advance_head(head, take);
+                buf.commit_read(take);
                 self.bump_clear_tail(&mut buf);
                 take
             };
