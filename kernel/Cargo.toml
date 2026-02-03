@@ -74,7 +74,7 @@ riscv = { version = "0.15.0", features = ["s-mode"] }
 loongArch64 = "0.2.5"
 
 [features]
-all = ["cvm_guest"]
+default = ["cvm_guest"]
 coverage = ["ostd/coverage"]
 cvm_guest = ["dep:tdx-guest", "ostd/cvm_guest", "aster-virtio/cvm_guest"]
 # By default we use the Sv48 address translation mode.
