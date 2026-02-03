@@ -1,39 +1,61 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_logger::{
-    console_off, console_on, console_set_level, klog_capacity, klog_read, klog_read_all,
-    klog_size_unread, klog_wait_nonempty, mark_clear, read_all_requires_cap,
+    LinuxConsoleLogLevel, console_off, console_on, console_set_level, klog_capacity, klog_read,
+    klog_read_all, klog_size_unread, klog_wait_nonempty, mark_clear, read_all_requires_cap,
 };
-use log::LevelFilter;
+use int_to_c_enum::TryFromInt;
 use ostd::mm::VmReader;
 
 use super::SyscallReturn;
 use crate::{prelude::*, process::credentials::capabilities::CapSet, util::MultiWrite};
 
-const SYSLOG_ACTION_CLOSE: i32 = 0;
-const SYSLOG_ACTION_OPEN: i32 = 1;
-const SYSLOG_ACTION_READ: i32 = 2;
-const SYSLOG_ACTION_READ_ALL: i32 = 3;
-const SYSLOG_ACTION_READ_CLEAR: i32 = 4;
-const SYSLOG_ACTION_CLEAR: i32 = 5;
-const SYSLOG_ACTION_CONSOLE_OFF: i32 = 6;
-const SYSLOG_ACTION_CONSOLE_ON: i32 = 7;
-const SYSLOG_ACTION_CONSOLE_LEVEL: i32 = 8;
-const SYSLOG_ACTION_SIZE_UNREAD: i32 = 9;
-const SYSLOG_ACTION_SIZE_BUFFER: i32 = 10;
+/// Actions for the syslog system call.
+///
+/// These actions control how the kernel log buffer is accessed and managed.
+/// See `man 2 syslog` for detailed documentation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
+#[repr(i32)]
+enum SysLogAction {
+    /// Close the log (currently a no-op).
+    Close = 0,
+    /// Open the log (currently a no-op).
+    Open = 1,
+    /// Read from the log (blocking, destructive).
+    Read = 2,
+    /// Read all messages remaining in the ring buffer (non-destructive).
+    ReadAll = 3,
+    /// Read and clear all messages remaining in the ring buffer.
+    ReadClear = 4,
+    /// Clear the ring buffer.
+    Clear = 5,
+    /// Disable printk to console.
+    ConsoleOff = 6,
+    /// Enable printk to console.
+    ConsoleOn = 7,
+    /// Set the console log level.
+    ConsoleLevel = 8,
+    /// Return number of unread characters in the log buffer.
+    SizeUnread = 9,
+    /// Return the size of the log buffer.
+    SizeBuffer = 10,
+}
 
 const TMP_BUF: usize = 512;
 
 pub fn sys_syslog(action: i32, buf: Vaddr, len: usize, ctx: &Context) -> Result<SyscallReturn> {
+    let action = SysLogAction::try_from(action)
+        .map_err(|_| Error::with_message(Errno::EINVAL, "unknown syslog action"))?;
+
     match action {
-        SYSLOG_ACTION_CLOSE | SYSLOG_ACTION_OPEN => Ok(SyscallReturn::Return(0)),
-        SYSLOG_ACTION_READ => {
+        SysLogAction::Close | SysLogAction::Open => Ok(SyscallReturn::Return(0)),
+        SysLogAction::Read => {
             ensure_cap(ctx)?;
             Ok(SyscallReturn::Return(
                 read_destructive(buf, len, ctx)? as isize
             ))
         }
-        SYSLOG_ACTION_READ_ALL => {
+        SysLogAction::ReadAll => {
             if read_all_requires_cap() {
                 ensure_cap(ctx)?;
             }
@@ -41,45 +63,43 @@ pub fn sys_syslog(action: i32, buf: Vaddr, len: usize, ctx: &Context) -> Result<
                 read_all(buf, len, ctx, false)? as isize
             ))
         }
-        SYSLOG_ACTION_READ_CLEAR => {
+        SysLogAction::ReadClear => {
             ensure_cap(ctx)?;
             let copied = read_all(buf, len, ctx, true)?;
             Ok(SyscallReturn::Return(copied as isize))
         }
-        SYSLOG_ACTION_CLEAR => {
+        SysLogAction::Clear => {
             ensure_cap(ctx)?;
             mark_clear();
             Ok(SyscallReturn::Return(0))
         }
-        SYSLOG_ACTION_CONSOLE_OFF => {
+        SysLogAction::ConsoleOff => {
             ensure_cap(ctx)?;
             console_off();
             Ok(SyscallReturn::Return(0))
         }
-        SYSLOG_ACTION_CONSOLE_ON => {
+        SysLogAction::ConsoleOn => {
             ensure_cap(ctx)?;
             console_on();
             Ok(SyscallReturn::Return(0))
         }
-        SYSLOG_ACTION_CONSOLE_LEVEL => {
+        SysLogAction::ConsoleLevel => {
             ensure_cap(ctx)?;
-            let Some(new_level) = level_from_raw(len as i32) else {
-                return_errno_with_message!(Errno::EINVAL, "invalid console level");
-            };
+            let new_level = LinuxConsoleLogLevel::from_raw(len as i32)
+                .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid console level"))?;
             let _old = console_set_level(new_level);
             Ok(SyscallReturn::Return(0))
         }
-        SYSLOG_ACTION_SIZE_UNREAD => {
+        SysLogAction::SizeUnread => {
             ensure_cap(ctx)?;
             Ok(SyscallReturn::Return(klog_size_unread() as isize))
         }
-        SYSLOG_ACTION_SIZE_BUFFER => {
+        SysLogAction::SizeBuffer => {
             if read_all_requires_cap() {
                 ensure_cap(ctx)?;
             }
             Ok(SyscallReturn::Return(klog_capacity() as isize))
         }
-        _ => return_errno_with_message!(Errno::EINVAL, "unknown syslog action"),
     }
 }
 
@@ -152,15 +172,4 @@ fn read_all(buf: Vaddr, len: usize, ctx: &Context, clear_after: bool) -> Result<
     }
 
     Ok(copied)
-}
-
-fn level_from_raw(raw: i32) -> Option<LevelFilter> {
-    match raw {
-        1..=4 => Some(LevelFilter::Error),
-        5 => Some(LevelFilter::Warn),
-        6 => Some(LevelFilter::Info),
-        7 => Some(LevelFilter::Debug),
-        8 => Some(LevelFilter::Trace),
-        _ => None,
-    }
 }

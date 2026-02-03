@@ -1,35 +1,128 @@
 use alloc::sync::Arc;
 use core::{
     fmt::{self, Write},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicU8, Ordering},
     time::Duration,
 };
 
 use log::{Level, LevelFilter, Record};
 use ostd::{
     mm::VmIo,
-    sync::{SpinLock, WaitQueue},
+    sync::{Once, SpinLock, WaitQueue},
 };
 use ring_buffer::RingBuffer;
 
+/// Size of the kernel log ring buffer (64 KB).
+///
+/// This matches the default `CONFIG_LOG_BUF_SHIFT=16` in Linux.
+/// The buffer stores formatted log messages including timestamps.
 const LOG_BUFFER_CAPACITY: usize = 64 * 1024;
+
+/// Maximum size of a single formatted log message.
+///
+/// Log messages longer than this will be truncated. This is a stack-allocated
+/// scratch buffer used to format messages without heap allocation, which is
+/// important for logging in low-memory or allocator-internal contexts.
 const FORMAT_BUF_CAPACITY: usize = 512;
+
+/// Chunk size for copying data to/from user space.
+///
+/// Reading and writing are done in chunks to avoid holding locks for too long
+/// and to limit stack usage.
 const COPY_CHUNK: usize = 512;
 
-static KLOG: SpinLock<Option<Arc<KernelLog>>> = SpinLock::new(None);
-
-pub fn init_klog() {
-    let _ = klog();
+/// Linux console log level.
+///
+/// Controls which log messages are broadcast to the console. Only messages
+/// with a priority level less than the console log level will be displayed.
+/// For example, setting the console level to `Error` (4) will display messages
+/// of levels `Emerg`, `Alert`, `Crit`, and `Error`.
+///
+/// These values correspond to Linux's console log level as documented in
+/// `man 2 syslog` and used by the `SYSLOG_ACTION_CONSOLE_LEVEL` action.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum LinuxConsoleLogLevel {
+    /// Suppress all console output.
+    Off = 0,
+    /// Allow messages with priority `KERN_EMERG` (0) or higher.
+    Emerg = 1,
+    /// Allow messages with priority `KERN_ALERT` (1) or higher.
+    Alert = 2,
+    /// Allow messages with priority `KERN_CRIT` (2) or higher.
+    Crit = 3,
+    /// Allow messages with priority `KERN_ERR` (3) or higher.
+    Error = 4,
+    /// Allow messages with priority `KERN_WARNING` (4) or higher.
+    Warn = 5,
+    /// Allow messages with priority `KERN_NOTICE` (5) or higher.
+    Notice = 6,
+    /// Allow messages with priority `KERN_INFO` (6) or higher.
+    Info = 7,
+    /// Allow messages with priority `KERN_DEBUG` (7) or higher (all messages).
+    Debug = 8,
 }
 
-fn klog() -> Arc<KernelLog> {
-    let mut guard = KLOG.lock();
-    if guard.is_none() {
-        *guard = Some(Arc::new(KernelLog::new()));
+impl LinuxConsoleLogLevel {
+    /// Creates a console log level from a raw integer value.
+    ///
+    /// Returns `None` if the value is out of the valid range (0-8).
+    pub fn from_raw(raw: i32) -> Option<Self> {
+        match raw {
+            0 => Some(Self::Off),
+            1 => Some(Self::Emerg),
+            2 => Some(Self::Alert),
+            3 => Some(Self::Crit),
+            4 => Some(Self::Error),
+            5 => Some(Self::Warn),
+            6 => Some(Self::Notice),
+            7 => Some(Self::Info),
+            8 => Some(Self::Debug),
+            _ => None,
+        }
     }
-    guard.as_ref().unwrap().clone()
+
+    /// Converts the console log level to a `log::LevelFilter`.
+    fn to_level_filter(self) -> LevelFilter {
+        match self {
+            Self::Off => LevelFilter::Off,
+            Self::Emerg | Self::Alert | Self::Crit | Self::Error => LevelFilter::Error,
+            Self::Warn => LevelFilter::Warn,
+            Self::Notice | Self::Info => LevelFilter::Info,
+            Self::Debug => LevelFilter::Debug,
+        }
+    }
+
+    /// Checks if a log level should be printed at this console log level.
+    fn should_print(self, level: Level) -> bool {
+        match self {
+            Self::Off => false,
+            Self::Emerg | Self::Alert | Self::Crit | Self::Error => matches!(level, Level::Error),
+            Self::Warn => matches!(level, Level::Error | Level::Warn),
+            Self::Notice | Self::Info => matches!(level, Level::Error | Level::Warn | Level::Info),
+            Self::Debug => !matches!(level, Level::Trace),
+        }
+    }
 }
 
+static KLOG: Once<Arc<KernelLog>> = Once::new();
+
+/// Initializes the kernel log buffer.
+///
+/// This function must be called before any logging operations.
+pub fn init_klog() {
+    KLOG.call_once(|| Arc::new(KernelLog::new()));
+}
+
+fn klog() -> &'static Arc<KernelLog> {
+    KLOG.get()
+        .expect("klog not initialized; call init_klog() first")
+}
+
+/// Appends a log record to the kernel log buffer.
+///
+/// The record is formatted with a timestamp prefix before being stored.
+/// This function does not allocate memory and uses a fixed-size scratch buffer.
 pub fn append_log(record: &Record, timestamp: &Duration) {
     let mut scratch = [0u8; FORMAT_BUF_CAPACITY];
     let mut writer = FixedBuf::new(&mut scratch);
@@ -50,54 +143,89 @@ pub fn append_log(record: &Record, timestamp: &Duration) {
     }
 }
 
+/// Checks if a log message at the given level should be printed to console.
 pub fn should_print(level: Level) -> bool {
     klog().should_print(level)
 }
 
-pub fn console_level() -> LevelFilter {
-    klog().console_level()
+/// Returns the current console log level.
+pub fn console_level() -> LinuxConsoleLogLevel {
+    klog().get_console_level()
 }
 
-pub fn console_set_level(level: LevelFilter) -> LevelFilter {
+/// Sets the console log level.
+///
+/// Returns the previous console log level.
+pub fn console_set_level(level: LinuxConsoleLogLevel) -> LinuxConsoleLogLevel {
     klog().set_console_level(level, false)
 }
 
-pub fn console_off() -> LevelFilter {
-    klog().set_console_level(LevelFilter::Off, true)
+/// Disables console output by setting the log level to `Off`.
+///
+/// The previous log level is saved and can be restored with `console_on()`.
+/// Returns the previous console log level.
+pub fn console_off() -> LinuxConsoleLogLevel {
+    klog().set_console_level(LinuxConsoleLogLevel::Off, true)
 }
 
-pub fn console_on() -> LevelFilter {
+/// Restores the console log level that was saved by `console_off()`.
+///
+/// Returns the restored console log level.
+pub fn console_on() -> LinuxConsoleLogLevel {
     klog().restore_console_level()
 }
 
+/// Reads log messages from the kernel log buffer (destructive).
+///
+/// This is a blocking read that removes data from the buffer as it is read.
+/// Returns the number of bytes read into `dst`.
 pub fn klog_read(dst: &mut [u8]) -> usize {
     klog().read(dst)
 }
 
+/// Reads log messages from the kernel log buffer (non-destructive).
+///
+/// Reads up to `window_len` bytes starting at `offset` within the available
+/// log data. The data remains in the buffer after reading.
+/// Returns the number of bytes read into `dst`.
 pub fn klog_read_all(dst: &mut [u8], offset: usize, window_len: usize) -> usize {
     klog().read_all(dst, offset, window_len)
 }
 
+/// Marks the current buffer position as cleared.
+///
+/// After this call, `klog_read_all` will only return messages logged after
+/// the clear operation, but the data is not actually removed from the buffer.
 pub fn mark_clear() {
     klog().mark_clear();
 }
 
+/// Returns the number of unread bytes in the kernel log buffer.
 pub fn klog_size_unread() -> usize {
     klog().size_unread()
 }
 
+/// Returns the total capacity of the kernel log buffer in bytes.
 pub fn klog_capacity() -> usize {
     LOG_BUFFER_CAPACITY
 }
 
+/// Checks if reading all log messages requires `CAP_SYSLOG` or `CAP_SYS_ADMIN`.
+///
+/// When `dmesg_restrict` is enabled, unprivileged users cannot read the
+/// kernel log buffer via `SYSLOG_ACTION_READ_ALL`.
 pub fn read_all_requires_cap() -> bool {
     klog().dmesg_restrict()
 }
 
+/// Gets the current value of the `dmesg_restrict` flag.
 pub fn dmesg_restrict_get() -> bool {
     klog().dmesg_restrict.load(Ordering::Relaxed)
 }
 
+/// Sets the `dmesg_restrict` flag.
+///
+/// When enabled, reading all log messages requires `CAP_SYSLOG` or `CAP_SYS_ADMIN`.
 pub fn dmesg_restrict_set(val: bool) {
     klog().dmesg_restrict.store(val, Ordering::Relaxed);
 }
@@ -106,19 +234,20 @@ struct KernelLog {
     buffer: SpinLock<RingBuffer<u8>>,
     clear_tail: SpinLock<usize>,
     dmesg_restrict: AtomicBool,
-    console_level: SpinLock<LevelFilter>,
-    saved_console_level: SpinLock<Option<LevelFilter>>,
+    /// Current console log level (stored as raw u8 for atomic access).
+    console_level: AtomicU8,
+    /// Saved console log level for restore after console_off/console_on.
+    saved_console_level: SpinLock<Option<LinuxConsoleLogLevel>>,
     waitq: WaitQueue,
 }
 
 impl KernelLog {
     fn new() -> Self {
-        // klog records whatever records reach the logger; global filtering is configured elsewhere.
         Self {
             buffer: SpinLock::new(RingBuffer::new(LOG_BUFFER_CAPACITY)),
             clear_tail: SpinLock::new(0),
             dmesg_restrict: AtomicBool::new(false),
-            console_level: SpinLock::new(LevelFilter::Info),
+            console_level: AtomicU8::new(LinuxConsoleLogLevel::Info as u8),
             saved_console_level: SpinLock::new(None),
             waitq: WaitQueue::new(),
         }
@@ -221,39 +350,39 @@ impl KernelLog {
         self.dmesg_restrict.load(Ordering::Relaxed)
     }
 
-    fn set_console_level(&self, level: LevelFilter, save_old: bool) -> LevelFilter {
+    fn set_console_level(
+        &self,
+        level: LinuxConsoleLogLevel,
+        save_old: bool,
+    ) -> LinuxConsoleLogLevel {
         let mut saved = self.saved_console_level.lock();
-        let mut current = self.console_level.lock();
+        let old_raw = self.console_level.swap(level as u8, Ordering::SeqCst);
+        // SAFETY: We only store valid LinuxConsoleLogLevel values.
+        let old =
+            LinuxConsoleLogLevel::from_raw(old_raw as i32).unwrap_or(LinuxConsoleLogLevel::Info);
         if save_old && saved.is_none() {
-            *saved = Some(*current);
+            *saved = Some(old);
         }
-        let old = *current;
-        *current = level;
         old
     }
 
-    fn restore_console_level(&self) -> LevelFilter {
+    fn restore_console_level(&self) -> LinuxConsoleLogLevel {
         let mut saved = self.saved_console_level.lock();
-        let mut current = self.console_level.lock();
         if let Some(prev) = saved.take() {
-            *current = prev;
+            self.console_level.store(prev as u8, Ordering::SeqCst);
+            prev
+        } else {
+            self.get_console_level()
         }
-        *current
     }
 
-    fn console_level(&self) -> LevelFilter {
-        *self.console_level.lock()
+    fn get_console_level(&self) -> LinuxConsoleLogLevel {
+        let raw = self.console_level.load(Ordering::SeqCst);
+        LinuxConsoleLogLevel::from_raw(raw as i32).unwrap_or(LinuxConsoleLogLevel::Info)
     }
 
     fn should_print(&self, level: Level) -> bool {
-        match *self.console_level.lock() {
-            LevelFilter::Off => false,
-            LevelFilter::Error => matches!(level, Level::Error),
-            LevelFilter::Warn => matches!(level, Level::Error | Level::Warn),
-            LevelFilter::Info => matches!(level, Level::Error | Level::Warn | Level::Info),
-            LevelFilter::Debug => !matches!(level, Level::Trace),
-            LevelFilter::Trace => true,
-        }
+        self.get_console_level().should_print(level)
     }
 
     fn wait_nonempty(&self) {
