@@ -41,6 +41,7 @@ enum SysLogAction {
     SizeBuffer = 10,
 }
 
+/// Temporary buffer size for copying data between kernel and user space.
 const TMP_BUF: usize = 512;
 
 pub fn sys_syslog(action: i32, buf: Vaddr, len: usize, ctx: &Context) -> Result<SyscallReturn> {

@@ -5,10 +5,10 @@ use core::{
     time::Duration,
 };
 
-use log::{Level, LevelFilter, Record};
+use log::{Level, Record};
 use ostd::{
     mm::VmIo,
-    sync::{Once, SpinLock, WaitQueue},
+    sync::{SpinLock, WaitQueue},
 };
 use ring_buffer::RingBuffer;
 
@@ -82,17 +82,6 @@ impl LinuxConsoleLogLevel {
         }
     }
 
-    /// Converts the console log level to a `log::LevelFilter`.
-    fn to_level_filter(self) -> LevelFilter {
-        match self {
-            Self::Off => LevelFilter::Off,
-            Self::Emerg | Self::Alert | Self::Crit | Self::Error => LevelFilter::Error,
-            Self::Warn => LevelFilter::Warn,
-            Self::Notice | Self::Info => LevelFilter::Info,
-            Self::Debug => LevelFilter::Debug,
-        }
-    }
-
     /// Checks if a log level should be printed at this console log level.
     fn should_print(self, level: Level) -> bool {
         match self {
@@ -105,18 +94,24 @@ impl LinuxConsoleLogLevel {
     }
 }
 
-static KLOG: Once<Arc<KernelLog>> = Once::new();
+static KLOG: SpinLock<Option<Arc<KernelLog>>> = SpinLock::new(None);
 
 /// Initializes the kernel log buffer.
 ///
 /// This function must be called before any logging operations.
 pub fn init_klog() {
-    KLOG.call_once(|| Arc::new(KernelLog::new()));
+    let mut guard = KLOG.lock();
+    if guard.is_none() {
+        *guard = Some(Arc::new(KernelLog::new()));
+    }
 }
 
-fn klog() -> &'static Arc<KernelLog> {
-    KLOG.get()
-        .expect("klog not initialized; call init_klog() first")
+fn klog() -> Arc<KernelLog> {
+    let mut guard = KLOG.lock();
+    if guard.is_none() {
+        *guard = Some(Arc::new(KernelLog::new()));
+    }
+    guard.as_ref().unwrap().clone()
 }
 
 /// Appends a log record to the kernel log buffer.
@@ -131,7 +126,7 @@ pub fn append_log(record: &Record, timestamp: &Duration) {
     let millis = timestamp.subsec_millis();
     let _ = writeln!(
         writer,
-        "[{:>6}.{:03}] {:<5}: {}\n",
+        "[{:>6}.{:03}] {:<5}: {}",
         secs,
         millis,
         record.level(),
@@ -311,26 +306,26 @@ impl KernelLog {
     fn read_all(&self, dst: &mut [u8], offset: usize, window_len: usize) -> usize {
         let mut copied = 0;
         while copied < dst.len() {
-            let (take, start) = {
-                let buf = self.buffer.lock();
-                let head = buf.head().0;
-                let tail = buf.tail().0;
-                let base = core::cmp::max(head, *self.clear_tail.lock());
-                let available = tail.saturating_sub(base);
-                if available == 0 {
-                    return copied;
-                }
-                let window = core::cmp::min(available, window_len);
-                if offset + copied >= window {
-                    return copied;
-                }
-                let remain = window - (offset + copied);
-                let take = core::cmp::min(core::cmp::min(dst.len() - copied, COPY_CHUNK), remain);
-                let start = (tail - window) + offset + copied;
-                (take, start)
-            };
+            let buf = self.buffer.lock();
+            let head = buf.head().0;
+            let tail = buf.tail().0;
+            let base = core::cmp::max(head, *self.clear_tail.lock());
+            let available = tail.saturating_sub(base);
+            if available == 0 {
+                return copied;
+            }
+            let window = core::cmp::min(available, window_len);
+            if offset + copied >= window {
+                return copied;
+            }
+            let remain = window - (offset + copied);
+            let take = core::cmp::min(core::cmp::min(dst.len() - copied, COPY_CHUNK), remain);
+            let start = (tail - window) + offset + copied;
 
-            copy_from(&self.buffer.lock(), start, &mut dst[copied..copied + take]);
+            // Copy while holding the lock to prevent data from being overwritten.
+            copy_from(&buf, start, &mut dst[copied..copied + take]);
+            drop(buf);
+
             copied += take;
         }
         copied
@@ -391,6 +386,9 @@ impl KernelLog {
     }
 }
 
+/// Blocks until the kernel log buffer is non-empty.
+///
+/// This is used by `SYSLOG_ACTION_READ` to wait for new log messages.
 pub fn klog_wait_nonempty() {
     klog().wait_nonempty();
 }
