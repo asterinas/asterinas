@@ -28,7 +28,7 @@ pub(super) fn init() {
 /// this function returns an error.
 ///
 /// [`ConfigFs`]: fs::ConfigFs
-#[cfg_attr(not(ktest), expect(dead_code))]
+#[cfg_attr(not(any(ktest, target_arch = "x86_64")), expect(dead_code))]
 pub fn register_subsystem(subsystem: Arc<dyn SysBranchNode>) -> Result<()> {
     ConfigRootNode::singleton().add_child(subsystem)?;
 
