@@ -109,6 +109,7 @@ jobs:
           smp: ${{ matrix.smp }}
           netdev: ${{ matrix.netdev || 'tap' }}
           scheme: ${{ matrix.scheme }}
+          mem: ${{ matrix.mem }}
           extra_blocklists: ${{ matrix.extra_blocklists }}
           syscall_test_suite: 'ltp'
           syscall_test_workdir: ${{ matrix.syscall_test_workdir }}
@@ -124,10 +125,26 @@ jobs:
           smp: ${{ matrix.smp }}
           netdev: ${{ matrix.netdev || 'tap' }}
           scheme: ${{ matrix.scheme }}
+          mem: ${{ matrix.mem }}
           extra_blocklists: ${{ matrix.extra_blocklists }}
           syscall_test_suite: 'gvisor'
           syscall_test_workdir: ${{ matrix.syscall_test_workdir }}
           boot_protocol: ${{ matrix.boot_protocol || 'linux-efi-handover64' }}
+
+  xfstests:
+    runs-on: ubuntu-4-cores-150GB-ssd
+    container:
+      image: asterinas/asterinas:0.17.0-20260114
+      options: --device=/dev/kvm --privileged
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run xfstests
+        uses: ./.github/actions/test
+        with:
+          auto_test: 'xfstests'
+          release: true
+          mem: '12G'
 
   osdk-test:
     runs-on: ubuntu-latest
