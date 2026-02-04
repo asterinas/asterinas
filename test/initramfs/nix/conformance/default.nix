@@ -9,13 +9,16 @@
   };
   kselftest = callPackage ./kselftest.nix { };
 
+  conformanceSrc = lib.fileset.toSource {
+    root = ./../../src/conformance;
+    fileset = ./../../src/conformance;
+  };
+  xfstests = callPackage ./xfstests.nix { inherit conformanceSrc; };
+
   package = stdenvNoCC.mkDerivation {
     pname = "conformance";
     version = "0.1.0";
-    src = lib.fileset.toSource {
-      root = ./../../src/conformance;
-      fileset = ./../../src/conformance;
-    };
+    src = conformanceSrc;
     buildCommand = ''
       cd $src
       mkdir -p $out
@@ -29,6 +32,8 @@
       "export GVISOR_PREBUILT_DIR=${gvisor}"}
       ${lib.optionalString (testSuite == "kselftest")
       "export KSELFTEST_PREBUILT_DIR=${kselftest}"}
+      ${lib.optionalString (testSuite == "xfstests")
+      "export XFSTESTS_PREBUILT_DIR=${xfstests}"}
       make
     '';
   };
