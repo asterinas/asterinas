@@ -19,7 +19,7 @@ use crate::{
     cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu},
     cpu_local,
     smp::IpiSender,
-    sync::{LocalIrqDisabled, SpinLock},
+    sync::{LocalIrqDisabled, RcuDrop, SpinLock},
 };
 
 /// A TLB flusher that is aware of which CPUs are needed to be flushed.
@@ -67,10 +67,13 @@ impl<'a, G: PinCurrentCpu> TlbFlusher<'a, G> {
     /// flushed. Otherwise if the page is recycled for other purposes, the user
     /// space program can still access the page through the TLB entries. This
     /// method is designed to be used in such cases.
+    ///
+    /// Furthermore, the frames will be dropped after the RCU grace period to
+    /// ensure that no RCU references are held to the frames.
     pub fn issue_tlb_flush_with(
         &mut self,
         op: TlbFlushOp,
-        drop_after_flush: Frame<dyn AnyFrameMeta>,
+        drop_after_flush: RcuDrop<Frame<dyn AnyFrameMeta>>,
     ) {
         self.ops_stack.push(op, Some(drop_after_flush));
     }
@@ -301,7 +304,11 @@ struct OpsStack {
     ///
     /// Otherwise, it counts the number of pages to flush in `ops`.
     num_pages_to_flush: u32,
-    page_keeper: Vec<Frame<dyn AnyFrameMeta>>,
+    /// Keeps all the to-be-dropped frames.
+    ///
+    /// The elements cannot be modified after being pushed. And they must be
+    /// dropped after the RCU grace period and the TLB flushes.
+    frame_keeper: Vec<Frame<dyn AnyFrameMeta>>,
 }
 
 impl OpsStack {
@@ -310,7 +317,7 @@ impl OpsStack {
             ops: [const { MaybeUninit::uninit() }; FLUSH_ALL_PAGES_THRESHOLD],
             num_ops: 0,
             num_pages_to_flush: 0,
-            page_keeper: Vec::new(),
+            frame_keeper: Vec::new(),
         }
     }
 
@@ -322,9 +329,13 @@ impl OpsStack {
         self.num_pages_to_flush == u32::MAX
     }
 
-    fn push(&mut self, op: TlbFlushOp, drop_after_flush: Option<Frame<dyn AnyFrameMeta>>) {
+    fn push(&mut self, op: TlbFlushOp, drop_after_flush: Option<RcuDrop<Frame<dyn AnyFrameMeta>>>) {
         if let Some(frame) = drop_after_flush {
-            self.page_keeper.push(frame);
+            // SAFETY: By pushing into the `frame_keeper`, the frame will be
+            // dropped after the RCU grace period.
+            let (frame, panic_guard) = unsafe { RcuDrop::into_inner(frame) };
+            self.frame_keeper.push(frame);
+            panic_guard.forget();
         }
 
         if self.need_flush_all() {
@@ -345,7 +356,7 @@ impl OpsStack {
     }
 
     fn push_from(&mut self, other: &OpsStack) {
-        self.page_keeper.extend(other.page_keeper.iter().cloned());
+        self.frame_keeper.extend(other.frame_keeper.iter().cloned());
 
         if self.need_flush_all() {
             return;
@@ -381,7 +392,9 @@ impl OpsStack {
     fn clear_without_flush(&mut self) {
         self.num_pages_to_flush = 0;
         self.num_ops = 0;
-        self.page_keeper.clear();
+        if !self.frame_keeper.is_empty() {
+            let _ = RcuDrop::new(core::mem::take(&mut self.frame_keeper));
+        }
     }
 
     fn ops_iter(&self) -> impl Iterator<Item = &TlbFlushOp> {
@@ -389,5 +402,13 @@ impl OpsStack {
             // SAFETY: From 0 to `num_ops`, the array entry must be initialized.
             unsafe { op.assume_init_ref() }
         })
+    }
+}
+
+impl Drop for OpsStack {
+    fn drop(&mut self) {
+        if !self.frame_keeper.is_empty() {
+            let _ = RcuDrop::new(core::mem::take(&mut self.frame_keeper));
+        }
     }
 }

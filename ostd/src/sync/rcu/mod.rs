@@ -17,10 +17,13 @@ use non_null::NonNullPtr;
 use spin::once::Once;
 
 use self::monitor::RcuMonitor;
-use crate::task::{
-    DisabledPreemptGuard,
-    atomic_mode::{AsAtomicModeGuard, InAtomicMode},
-    disable_preempt,
+use crate::{
+    panic::PanicGuard,
+    task::{
+        DisabledPreemptGuard,
+        atomic_mode::{AsAtomicModeGuard, InAtomicMode},
+        disable_preempt,
+    },
 };
 
 mod monitor;
@@ -464,6 +467,26 @@ impl<T: Send + 'static> RcuDrop<T> {
         Self {
             value: ManuallyDrop::new(value),
         }
+    }
+
+    /// Extracts the value from the `RcuDrop` container.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the returned value will be dropped after
+    /// all the threads cannot access it anymore. Specifically, dropping it
+    /// after the RCU grace period is guaranteed to be safe.
+    ///
+    /// Note that panic unwinding may cause the returned value to be dropped
+    /// immediately, which is not sound. Therefore, the caller must forget the
+    /// [`PanicGuard`] after it ensures that the value will be dropped at the
+    /// correct time.
+    pub(crate) unsafe fn into_inner(slot: RcuDrop<T>) -> (T, PanicGuard) {
+        let mut slot = ManuallyDrop::new(slot);
+        let panic_guard = PanicGuard::new();
+        // SAFETY: The `slot` will not be used after this point.
+        let val = unsafe { ManuallyDrop::take(&mut slot.value) };
+        (val, panic_guard)
     }
 }
 
