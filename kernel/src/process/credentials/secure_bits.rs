@@ -55,12 +55,26 @@ impl SecureBits {
         Self::from_bits_truncate((self.bits & Self::LOCK_MASK) >> 1)
     }
 
+    // Currently, we never grant capabilities when executing a new program, even when switching to
+    // root. Therefore, this flag is not used.
+    #[expect(dead_code)]
+    pub(super) fn no_root(&self) -> bool {
+        self.contains(SecureBits::NOROOT)
+    }
+
     pub(super) fn keep_capabilities(&self) -> bool {
         self.contains(SecureBits::KEEP_CAPS)
     }
 
     pub(super) fn no_setuid_fixup(&self) -> bool {
         self.contains(SecureBits::NO_SETUID_FIXUP)
+    }
+
+    // Currently, ambient capabilities and the PR_CAP_AMBIENT_RAISE operation are not supported.
+    // Therefore, this flag is not used.
+    #[expect(dead_code)]
+    pub(super) fn no_cap_ambient_raise(&self) -> bool {
+        self.contains(SecureBits::NO_CAP_AMBIENT_RAISE)
     }
 }
 
@@ -70,20 +84,6 @@ impl TryFrom<u16> for SecureBits {
     fn try_from(value: u16) -> Result<Self> {
         if value & !SecureBits::ALL_VALID_BITS != 0 {
             return_errno_with_message!(Errno::EINVAL, "the bits are not valid secure bits");
-        }
-
-        #[cfg(debug_assertions)]
-        {
-            // Warn about unsupported bits in debug builds.
-            const DUMMY_IMPL_BITS: u16 =
-                SecureBits::NOROOT.bits() | SecureBits::NO_CAP_AMBIENT_RAISE.bits();
-            let dummy_bits = value & DUMMY_IMPL_BITS;
-            if dummy_bits != 0 {
-                warn!(
-                    "Some SecureBits flags are unsupported currently: {:?}.",
-                    SecureBits::from_bits_truncate(dummy_bits)
-                );
-            }
         }
 
         Ok(SecureBits { bits: value })
