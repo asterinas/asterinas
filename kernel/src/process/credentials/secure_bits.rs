@@ -8,36 +8,33 @@ use bitflags::bitflags;
 use crate::prelude::*;
 
 bitflags! {
-    /// Represents the secure bits flags for a POSIX thread.
+    /// Represents the secure bits for a POSIX thread.
     ///
     /// These flags control the behavior of capabilities when changing UIDs.
+    ///
     /// Reference: <https://man7.org/linux/man-pages/man7/capabilities.7.html>
     pub struct SecureBits: u16 {
         /// If set, the kernel does not grant capabilities when a set-user-ID-root program
         /// is executed, or when a process with an effective or real UID of 0 calls `execve`.
         const NOROOT = 1 << 0;
-
         /// Make `NOROOT` bit immutable (irreversible).
         const NOROOT_LOCKED = 1 << 1;
 
         /// If set, the kernel does not adjust the process's permitted, effective, and
         /// ambient capability sets when the UIDs are switched between zero and nonzero values.
         const NO_SETUID_FIXUP = 1 << 2;
-
         /// Make `NO_SETUID_FIXUP` bit immutable (irreversible).
         const NO_SETUID_FIXUP_LOCKED = 1 << 3;
 
         /// If set, the kernel preserves permitted capabilities across UID changes,
         /// specifically when all UIDs transition from root (0) to non-root values.
         const KEEP_CAPS = 1 << 4;
-
         /// Make `KEEP_CAPS` bit immutable (irreversible).
         const KEEP_CAPS_LOCKED = 1 << 5;
 
         /// If set, the kernel will not permit raising ambient capabilities via the
         /// prctl PR_CAP_AMBIENT_RAISE operation.
         const NO_CAP_AMBIENT_RAISE = 1 << 6;
-
         /// Make `NO_CAP_AMBIENT_RAISE` bit immutable (irreversible).
         const NO_CAP_AMBIENT_RAISE_LOCKED = 1 << 7;
     }
@@ -72,7 +69,7 @@ impl TryFrom<u16> for SecureBits {
 
     fn try_from(value: u16) -> Result<Self> {
         if value & !SecureBits::ALL_VALID_BITS != 0 {
-            return_errno_with_message!(Errno::EINVAL, "invalid SecureBits value");
+            return_errno_with_message!(Errno::EINVAL, "the bits are not valid secure bits");
         }
 
         #[cfg(debug_assertions)]
@@ -140,11 +137,11 @@ impl AtomicSecureBits {
         let locked_bits = current.locked_bits();
 
         if locked_bits & current != locked_bits & bits {
-            return_errno_with_message!(Errno::EPERM, "one or more SecureBits are locked");
+            return_errno_with_message!(Errno::EPERM, "one or more secure bits are locked");
         }
 
         if SecureBits::LOCK_MASK & current.bits() & !bits.bits() != 0 {
-            return_errno_with_message!(Errno::EPERM, "cannot unlock the lock bits");
+            return_errno_with_message!(Errno::EPERM, "locked secure bits cannot be unlocked");
         }
 
         self.inner.store(bits, ordering);

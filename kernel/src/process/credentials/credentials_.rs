@@ -14,48 +14,68 @@ use crate::{
 
 #[derive(Debug)]
 pub(super) struct Credentials_ {
-    /// Real user id. The user to which the process belongs.
+    /// The real user ID.
+    ///
+    /// This is the user to which the process belongs.
     ruid: AtomicUid,
-    /// Effective user id. Used to determine the permissions granted to a process when it tries to perform various operations (i.e., system calls)
+    /// The effective user ID.
+    ///
+    /// This is used to determine the permissions granted to a process when it tries to perform
+    /// various operations (e.g., system calls).
     euid: AtomicUid,
-    /// Saved-set uid. Used by set_uid elf, the saved_set_uid will be set if the elf has setuid bit
+    /// The saved-set user ID.
+    ///
+    /// This saves a copy of the effective user ID that were set when the program was executed.
     suid: AtomicUid,
-    /// User id used for filesystem checks.
+    /// The filesystem user ID.
+    ///
+    /// This is used to determine permissions for accessing files.
     fsuid: AtomicUid,
 
-    /// Real group id. The group to which the process belongs
+    /// The real group ID.
+    ///
+    /// This is the group to which the process belongs.
     rgid: AtomicGid,
-    /// Effective gid,
+    /// The effective group ID.
+    ///
+    /// This is used to determine the permissions granted to a process when it tries to perform
+    /// various operations (e.g., system calls).
     egid: AtomicGid,
-    /// Saved-set gid. Used by set_gid elf, the saved_set_gid will be set if the elf has setgid bit
+    /// The saved-set group ID.
+    ///
+    /// This saves a copy of the effective group ID that were set when the program was executed.
     sgid: AtomicGid,
-    /// Group id used for file system checks.
+    /// The filesystem group ID.
+    ///
+    /// This is used to determine permissions for accessing files.
     fsgid: AtomicGid,
 
     /// A set of additional groups to which a process belongs.
     supplementary_gids: RwLock<BTreeSet<Gid>>,
 
-    /// The Linux capabilities.
-    ///
-    /// This is not the capability (in static_cap.rs) enforced on rust objects.
-    /// Capability that child processes can inherit
+    // The Linux capabilities. They are not the capability (in `static_cap.rs`) that is enforced on
+    // Rust objects.
+    //
+    /// Capabilities that child processes can inherit.
     inheritable_capset: AtomicCapSet,
-
     /// Capabilities that a process can potentially be granted.
-    /// It defines the maximum set of privileges that the process could possibly have.
-    /// Even if the process is not currently using these privileges, it has the potential ability to enable them.
+    ///
+    /// It defines the maximum set of privileges that the process could possibly have. Even if the
+    /// process is not currently using these privileges, it has the potential ability to enable
+    /// them.
     permitted_capset: AtomicCapSet,
-
-    /// Capability that we can actually use
+    /// Capabilities that we can actually use.
     effective_capset: AtomicCapSet,
 
-    /// Secure bits flags
+    /// Secure bits.
     securebits: AtomicSecureBits,
 }
 
 impl Credentials_ {
-    /// Create a new credentials. ruid, euid, suid will be set as the same uid, and gid is the same.
-    pub fn new(uid: Uid, gid: Gid, capset: CapSet) -> Self {
+    /// Creates a new `Credentials_`.
+    ///
+    /// The real, effective, saved set, and filesystem IDs will be initialized to the same ID.
+    pub(super) fn new(uid: Uid, gid: Gid, capset: CapSet) -> Self {
         let mut supplementary_gids = BTreeSet::new();
         supplementary_gids.insert(gid);
 
@@ -76,7 +96,7 @@ impl Credentials_ {
         }
     }
 
-    //  ******* Uid methods *******
+    //  ******* UID methods *******
 
     pub(super) fn ruid(&self) -> Uid {
         self.ruid.load(Ordering::Relaxed)
@@ -160,8 +180,8 @@ impl Credentials_ {
         self.set_resuid_unchecked(None, None, Some(suid));
     }
 
-    // For `setreuid`, ruid can *NOT* be set to old suid,
-    // while for `setresuid`, ruid can be set to old suid.
+    // For `setreuid`, the real UID can *NOT* be set to the old saved-set user ID,
+    // For `setresuid`, the real UID can be set to the old saved-set user ID.
     fn check_uid_perm(
         &self,
         ruid: Option<&Uid>,
@@ -180,7 +200,7 @@ impl Credentials_ {
         {
             return_errno_with_message!(
                 Errno::EPERM,
-                "ruid can only be one of old ruid, old euid (and old suid)."
+                "the new real UID is not one of the associated UIDs"
             );
         }
 
@@ -191,7 +211,7 @@ impl Credentials_ {
         {
             return_errno_with_message!(
                 Errno::EPERM,
-                "euid can only be one of old ruid, old euid and old suid."
+                "the new effective UID is not one of the associated UIDs"
             )
         }
 
@@ -202,7 +222,7 @@ impl Credentials_ {
         {
             return_errno_with_message!(
                 Errno::EPERM,
-                "suid can only be one of old ruid, old euid and old suid."
+                "the new saved-set UID is not one of the associated UIDs"
             )
         }
 
@@ -285,7 +305,7 @@ impl Credentials_ {
         }
     }
 
-    //  ******* Gid methods *******
+    //  ******* GID methods *******
 
     pub(super) fn rgid(&self) -> Gid {
         self.rgid.load(Ordering::Relaxed)
@@ -373,8 +393,8 @@ impl Credentials_ {
         self.set_resgid_unchecked(None, None, Some(sgid));
     }
 
-    // For `setregid`, rgid can *NOT* be set to old sgid,
-    // while for `setresgid`, ruid can be set to old sgid.
+    // For `setregid`, the real GID can *NOT* be set to old saved-set GID,
+    // For `setresgid`, the real GID can be set to the old saved-set GID.
     fn check_gid_perm(
         &self,
         rgid: Option<&Gid>,
@@ -393,7 +413,7 @@ impl Credentials_ {
         {
             return_errno_with_message!(
                 Errno::EPERM,
-                "rgid can only be one of old rgid, old egid (and old sgid)."
+                "the new real GID is not one of the associated GIDs"
             );
         }
 
@@ -404,7 +424,7 @@ impl Credentials_ {
         {
             return_errno_with_message!(
                 Errno::EPERM,
-                "egid can only be one of old rgid, old egid and old sgid."
+                "the new effective GID is not one of the associated GIDs"
             )
         }
 
@@ -415,7 +435,7 @@ impl Credentials_ {
         {
             return_errno_with_message!(
                 Errno::EPERM,
-                "sgid can only be one of old rgid, old egid and old sgid."
+                "the new saved-set GID is not one of the associated GIDs"
             )
         }
 
@@ -442,7 +462,7 @@ impl Credentials_ {
         self.fsgid.store(fsuid, Ordering::Relaxed);
     }
 
-    //  ******* Supplementary groups methods *******
+    //  ******* Supplementary Groups methods *******
 
     pub(super) fn groups(&self) -> RwLockReadGuard<'_, BTreeSet<Gid>, PreemptDisabled> {
         self.supplementary_gids.read()
@@ -452,7 +472,7 @@ impl Credentials_ {
         self.supplementary_gids.write()
     }
 
-    //  ******* Linux Capability methods *******
+    //  ******* Linux Capabilities methods *******
 
     pub(super) fn inheritable_capset(&self) -> CapSet {
         self.inheritable_capset.load(Ordering::Relaxed)
@@ -496,7 +516,7 @@ impl Credentials_ {
         self.securebits.try_store(stored_bits, Ordering::Relaxed)
     }
 
-    //  ******* SecureBits methods *******
+    //  ******* Secure Bits methods *******
 
     pub(super) fn securebits(&self) -> SecureBits {
         self.securebits.load(Ordering::Relaxed)
@@ -506,7 +526,7 @@ impl Credentials_ {
         if !self.effective_capset().contains(CapSet::SETPCAP) {
             return_errno_with_message!(
                 Errno::EPERM,
-                "only threads with CAP_SETPCAP can change securebits"
+                "only threads with CAP_SETPCAP can change secure bits"
             );
         }
 
