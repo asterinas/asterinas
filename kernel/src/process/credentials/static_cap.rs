@@ -77,14 +77,6 @@ impl<R: TRights> Credentials<R> {
         self.0.fsuid()
     }
 
-    /// Gets keep capabilities flag.
-    ///
-    /// This method requires the `Read` right.
-    #[require(R > Read)]
-    pub fn keep_capabilities(&self) -> bool {
-        self.0.keep_capabilities()
-    }
-
     /// Sets uid. If self is privileged, sets the effective, real, saved-set user ids as `uid`,
     /// Otherwise, sets effective user id as `uid`.
     ///
@@ -143,16 +135,6 @@ impl<R: TRights> Credentials<R> {
     pub fn reset_suid(&self) {
         let euid = self.0.euid();
         self.0.set_suid(euid);
-    }
-
-    /// Sets keep capabilities flag.
-    ///
-    /// If the [`SecureBits::KEEP_CAPS_LOCKED`] is set, this method will return an error.
-    ///
-    /// This method requires the `Write` right.
-    #[require(R > Write)]
-    pub fn set_keep_capabilities(&self, keep_capabilities: bool) -> Result<()> {
-        self.0.set_keep_capabilities(keep_capabilities)
     }
 
     // *********** Gid methods **********
@@ -249,27 +231,6 @@ impl<R: TRights> Credentials<R> {
         self.0.set_sgid(egid);
     }
 
-    // *********** SecureBits methods **********
-
-    /// Gets the secure bits.
-    ///
-    /// This method requires the `Read` right.
-    #[require(R > Read)]
-    pub fn securebits(&self) -> SecureBits {
-        self.0.securebits()
-    }
-
-    /// Sets the secure bits.
-    ///
-    /// If the caller does not have the `CAP_SETPCAP` capability, or if it tries to set
-    /// locked bits, this method will return an error.
-    ///
-    /// This method requires the `Write` right.
-    #[require(R > Write)]
-    pub fn set_securebits(&self, securebits: SecureBits) -> Result<()> {
-        self.0.set_securebits(securebits)
-    }
-
     // *********** Supplementary group methods **********
 
     /// Acquires the read lock of supplementary group ids.
@@ -336,5 +297,44 @@ impl<R: TRights> Credentials<R> {
     #[require(R > Write)]
     pub fn set_effective_capset(&self, effective_capset: CapSet) {
         self.0.set_effective_capset(effective_capset);
+    }
+
+    /// Gets keep capabilities flag.
+    ///
+    /// This method requires the `Read` right.
+    #[require(R > Read)]
+    pub fn keep_capabilities(&self) -> bool {
+        self.0.keep_capabilities()
+    }
+
+    /// Sets keep capabilities flag.
+    ///
+    /// If the [`SecureBits::KEEP_CAPS_LOCKED`] is set, this method will return an error.
+    ///
+    /// This method requires the `Write` right.
+    #[require(R > Write)]
+    pub fn set_keep_capabilities(&self, keep_capabilities: bool) -> Result<()> {
+        self.0.set_keep_capabilities(keep_capabilities)
+    }
+
+    // *********** SecureBits methods **********
+
+    /// Gets the secure bits.
+    ///
+    /// This method requires the `Read` right.
+    #[require(R > Read)]
+    pub fn securebits(&self) -> SecureBits {
+        self.0.securebits()
+    }
+
+    /// Sets the secure bits.
+    ///
+    /// If the caller does not have the `CAP_SETPCAP` capability, or if it tries to set
+    /// locked bits, this method will return an error.
+    ///
+    /// This method requires the `Write` right.
+    #[require(R > Write)]
+    pub fn set_securebits(&self, securebits: SecureBits) -> Result<()> {
+        self.0.set_securebits(securebits)
     }
 }

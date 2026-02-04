@@ -98,10 +98,6 @@ impl Credentials_ {
         self.fsuid.load(Ordering::Relaxed)
     }
 
-    pub(super) fn keep_capabilities(&self) -> bool {
-        self.securebits.load(Ordering::Relaxed).keep_capabilities()
-    }
-
     pub(super) fn set_uid(&self, uid: Uid) {
         if self.is_privileged() {
             self.set_resuid_unchecked(Some(uid), Some(uid), Some(uid));
@@ -406,17 +402,6 @@ impl Credentials_ {
         self.sgid.store(sgid, Ordering::Relaxed);
     }
 
-    pub(super) fn set_keep_capabilities(&self, keep_capabilities: bool) -> Result<()> {
-        let current_bits = self.securebits();
-        let stored_bits = if !keep_capabilities {
-            current_bits - SecureBits::KEEP_CAPS
-        } else {
-            current_bits | SecureBits::KEEP_CAPS
-        };
-
-        self.securebits.try_store(stored_bits, Ordering::Relaxed)
-    }
-
     // For `setregid`, rgid can *NOT* be set to old sgid,
     // while for `setresgid`, ruid can be set to old sgid.
     fn check_gid_perm(
@@ -517,6 +502,21 @@ impl Credentials_ {
     pub(super) fn set_effective_capset(&self, effective_capset: CapSet) {
         self.effective_capset
             .store(effective_capset, Ordering::Relaxed);
+    }
+
+    pub(super) fn keep_capabilities(&self) -> bool {
+        self.securebits.load(Ordering::Relaxed).keep_capabilities()
+    }
+
+    pub(super) fn set_keep_capabilities(&self, keep_capabilities: bool) -> Result<()> {
+        let current_bits = self.securebits();
+        let stored_bits = if !keep_capabilities {
+            current_bits - SecureBits::KEEP_CAPS
+        } else {
+            current_bits | SecureBits::KEEP_CAPS
+        };
+
+        self.securebits.try_store(stored_bits, Ordering::Relaxed)
     }
 
     //  ******* SecureBits methods *******
