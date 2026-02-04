@@ -1,0 +1,26 @@
+name: Test xfstests full
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Schedule to run on every day at 18:00 UTC (02:00 Beijing Time)
+    - cron: '0 18 * * *'
+
+jobs:
+  xfstests-full:
+    runs-on: ubuntu-4-cores-150GB-ssd
+    container:
+      image: asterinas/asterinas:0.17.1-20260319
+      options: --device=/dev/kvm --privileged
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run xfstests full.list
+        uses: ./.github/actions/test
+        with:
+          auto_test: 'conformance'
+          conformance_test_suite: 'xfstests'
+          release: true
+          mem: '12G'
+          xfstests_disk_size: '12G'
+          xfstests_runlist: '/opt/xfstests/full.list'

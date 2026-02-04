@@ -15,13 +15,20 @@
 #  - CONSOLE: "hvc0" to enable virtio console;
 #  - SMP: number of CPUs;
 #  - MEM: amount of memory, e.g. "8G";
-#  - VNC_PORT: VNC port, default is "42".
+#  - VNC_PORT: VNC port, default is "42";
+#  - ATTACH_XFSTESTS_IMAGES: "true" or "false", whether to attach xfstests images (xfstests_test.img and xfstests_scratch.img) to the VM. Defaults to auto-detection from ENABLE_CONFORMANCE_TEST + CONFORMANCE_TEST_SUITE.
 
 OVMF=${OVMF:-"on"}
 VHOST=${VHOST:-"off"}
 VSOCK=${VSOCK:-"off"}
 NETDEV=${NETDEV:-"user"}
 CONSOLE=${CONSOLE:-"hvc0"}
+
+ATTACH_XFSTESTS_IMAGES=${ATTACH_XFSTESTS_IMAGES:-false}
+if [ "${ENABLE_CONFORMANCE_TEST:-"false"}" = "true" ] && \
+   [ "${CONFORMANCE_TEST_SUITE:-"ltp"}" = "xfstests" ]; then
+    ATTACH_XFSTESTS_IMAGES="true"
+fi
 
 SSH_RAND_PORT=${SSH_PORT:-$(shuf -i 1024-65535 -n 1)}
 NGINX_RAND_PORT=${NGINX_PORT:-$(shuf -i 1024-65535 -n 1)}
@@ -127,6 +134,14 @@ COMMON_QEMU_ARGS="\
     -drive if=none,format=raw,id=x1,file=./test/initramfs/build/exfat.img \
 "
 
+# Add xfstests drives when the selected conformance suite is `xfstests`.
+if [ "$ATTACH_XFSTESTS_IMAGES" = "true" ]; then
+    COMMON_QEMU_ARGS="$COMMON_QEMU_ARGS \
+    -drive if=none,format=raw,id=x2,file=./test/initramfs/build/xfstests_test.img \
+    -drive if=none,format=raw,id=x3,file=./test/initramfs/build/xfstests_scratch.img \
+"
+fi
+
 if [ "$1" = "iommu" ]; then
     if [ "$OVMF" = "off" ]; then
         echo "Warning: OVMF is off, enabling it for IOMMU support." 1>&2
@@ -167,6 +182,22 @@ else
         $IOMMU_EXTRA_ARGS \
     "
 fi
+
+# Add xfstests devices when the selected conformance suite is `xfstests`.
+if [ "$ATTACH_XFSTESTS_IMAGES" = "true" ]; then
+    if [ "$1" = "microvm" ]; then
+        QEMU_ARGS="$QEMU_ARGS \
+        -device virtio-blk-device,drive=x2,serial=vxfstest \
+        -device virtio-blk-device,drive=x3,serial=vxfsscratch \
+    "
+    else
+        QEMU_ARGS="$QEMU_ARGS \
+        -device virtio-blk-pci,bus=pcie.0,addr=0x9,drive=x2,serial=vxfstest,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
+        -device virtio-blk-pci,bus=pcie.0,addr=0xa,drive=x3,serial=vxfsscratch,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
+    "
+    fi
+fi
+
 
 if [ "$VSOCK" = "on" ]; then
     # RAND_CID=$(shuf -i 3-65535 -n 1)
