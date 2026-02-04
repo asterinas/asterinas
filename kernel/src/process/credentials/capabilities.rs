@@ -61,24 +61,29 @@ impl CapSet {
         self.bits() as u32
     }
 
-    /// Creates a new `CapSet` with a full capability set, typically for a root user.
+    /// Creates a new `CapSet` with full capabilities, typically for a root user.
     pub const fn new_root() -> Self {
         CapSet::all()
     }
 
-    /// The most significant bit in a 64-bit `CapSet` that may be set to represent a Linux capability.
+    /// Returns the most significant bit in a 64-bit `CapSet` that may be set to represent a Linux
+    /// capability.
     pub const fn most_significant_bit() -> u8 {
-        // CHECKPOINT_RESTORE is the Linux capability with the largest numerical value
+        // CHECKPOINT_RESTORE is the Linux capability with the largest numerical value.
         40
     }
 }
 
+/// An error occurred when converting invalid bits to a [`CapSet`].
+#[derive(Debug)]
+pub struct InvalidCapSetError;
+
 impl TryFrom<u64> for CapSet {
-    type Error = &'static str;
+    type Error = InvalidCapSetError;
 
     fn try_from(value: u64) -> Result<Self, Self::Error> {
         if value & !CapSet::MASK != 0 {
-            Err("Invalid CapSet.")
+            Err(InvalidCapSetError)
         } else {
             Ok(CapSet { bits: value })
         }

@@ -16,13 +16,14 @@ pub use user::Uid;
 
 use crate::prelude::*;
 
-/// `Credentials` represents a set of associated numeric user ids (UIDs) and group identifiers (GIDs)
-/// for a process.
-/// These identifiers are as follows:
+/// A set of associated numeric user IDs (UIDs) and group IDs (GIDs) for a process.
+///
+/// This type contains:
 /// - real user ID and group ID;
 /// - effective user ID and group ID;
 /// - saved-set user ID and saved-set group ID;
-/// - file system user ID and group ID (Linux-specific);
+/// - filesystem user ID and group ID (Linux-specific);
 /// - supplementary group IDs;
-/// - Linux capabilities.
+/// - Linux capabilities;
+/// - secure bits.
 pub struct Credentials<R = FullOp>(Arc<Credentials_>, R);
