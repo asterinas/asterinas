@@ -2,6 +2,7 @@
 
 mod evdev;
 mod fb;
+mod hwrng;
 mod mem;
 pub mod misc;
 mod pty;
@@ -38,6 +39,7 @@ pub fn init_in_first_process(ctx: &Context) -> Result<()> {
     let dev_path = path_resolver.lookup(&FsPath::try_from("/dev")?)?;
     dev_path.mount(RamFs::new(), PerMountFlags::default(), ctx)?;
 
+    hwrng::init_in_first_process()?;
     tty::init_in_first_process()?;
     pty::init_in_first_process(&path_resolver, ctx)?;
     shm::init_in_first_process(&path_resolver, ctx)?;
