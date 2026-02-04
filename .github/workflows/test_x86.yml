@@ -171,3 +171,27 @@ jobs:
         with:
           auto_test: ${{ matrix.auto_test }}
           enable_kvm: ${{ matrix.enable_kvm }}
+          
+  xfstests:
+    runs-on: ubuntu-latest
+    container:
+      image: asterinas/asterinas:0.17.1-20260319
+      options: -v /dev:/dev --privileged
+      volumes:
+        - /usr/lib/google-cloud-sdk:/usr/lib/google-cloud-sdk
+        - /usr/local/lib/android:/usr/local/lib/android
+        - /usr/share/dotnet:/usr/share/dotnet
+    timeout-minutes: 30
+    steps:
+      - name: Free disk space
+        run: rm -rf /usr/lib/google-cloud-sdk/* /usr/local/lib/android/* /usr/share/dotnet/*
+      - uses: actions/checkout@v4
+      - name: Run xfstests
+        uses: ./.github/actions/test
+        with:
+          auto_test: 'conformance'
+          conformance_test_suite: 'xfstests'
+          release: true
+          mem: '12G'
+          xfstests_disk_size: '2G'
+          xfstests_runlist: '/opt/xfstests/short.list'

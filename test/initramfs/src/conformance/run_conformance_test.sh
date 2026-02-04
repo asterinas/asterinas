@@ -8,14 +8,15 @@ CONFORMANCE_TEST_SUITE=${CONFORMANCE_TEST_SUITE:-ltp}
 LTP_DIR=/opt/ltp
 GVISOR_DIR=/opt/gvisor
 KSELFTEST_DIR=/opt/kselftest
+XFSTESTS_DIR=/opt/xfstests
 
-if [ "${CONFORMANCE_TEST_SUITE}" == "ltp" ]; then
+if [ "${CONFORMANCE_TEST_SUITE}" = "ltp" ]; then
     echo "Running LTP syscall tests..."
     if ! "${LTP_DIR}/run_ltp_test.sh"; then
         echo "Error: LTP syscall tests failed." >&2
         exit 1
     fi
-elif [ "${CONFORMANCE_TEST_SUITE}" == "gvisor" ]; then
+elif [ "${CONFORMANCE_TEST_SUITE}" = "gvisor" ]; then
     echo "Running gVisor syscall tests..."
     if ! "${GVISOR_DIR}/run_gvisor_test.sh"; then
         echo "Error: gVisor syscall tests failed." >&2
@@ -27,9 +28,20 @@ elif [ "${CONFORMANCE_TEST_SUITE}" == "kselftest" ]; then
         echo "Error: Linux kernel selftest failed." >&2
         exit 3
     fi
+elif [ "${CONFORMANCE_TEST_SUITE}" = "xfstests" ]; then
+    echo "Running xfstests..."
+    if [ -n "${XFSTESTS_RUNLIST}" ]; then
+        set -- -R "${XFSTESTS_RUNLIST}"
+    else
+        set --
+    fi
+    if ! "${XFSTESTS_DIR}/run_xfstests.sh" "$@"; then
+        echo "Error: xfstests failed." >&2
+        exit 4
+    fi
 else
     echo "Error: Unknown test suite '${CONFORMANCE_TEST_SUITE}'." >&2
-    exit 4
+    exit 5
 fi
 
 echo "All conformance tests passed."

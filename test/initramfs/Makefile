@@ -29,12 +29,22 @@ INITRAMFS_COMPRESSED := true
 endif
 EXT2_IMAGE := $(BUILD_DIR)/ext2.img
 EXFAT_IMAGE := $(BUILD_DIR)/exfat.img
+XFSTESTS_TEST_IMAGE := $(BUILD_DIR)/xfstests_test.img
+XFSTESTS_SCRATCH_IMAGE := $(BUILD_DIR)/xfstests_scratch.img
+XFSTESTS_DISK_SIZE ?= 12G
 
 # Include benchmark, if BENCHMARK is set.
 ifeq ($(BENCHMARK), none)
 ENABLE_BENCHMARK_TEST = false
 else
 ENABLE_BENCHMARK_TEST = true
+endif
+
+BUILD_XFSTESTS_IMAGES = false
+ifeq ($(ENABLE_CONFORMANCE_TEST), true)
+ifeq ($(CONFORMANCE_TEST_SUITE), xfstests)
+BUILD_XFSTESTS_IMAGES = true
+endif
 endif
 
 # Decreases the level of verbosity of diagnostic messages from Nix.
@@ -50,6 +60,8 @@ ifeq ($(TARGET_ARCH), loongarch64)
 build: $(EXT2_IMAGE) $(EXFAT_IMAGE)
 	@echo "For loongarch, we generate a fake initramfs to successfully test or build."
 	@touch $(INITRAMFS_IMAGE)
+else ifeq ($(BUILD_XFSTESTS_IMAGES), true)
+build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE) $(XFSTESTS_TEST_IMAGE) $(XFSTESTS_SCRATCH_IMAGE)
 else
 build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE)
 endif
@@ -162,6 +174,16 @@ $(EXFAT_IMAGE):
 	@mkdir -p $(BUILD_DIR)
 	@fallocate -l 512M $(EXFAT_IMAGE)
 	@mkfs.exfat $(EXFAT_IMAGE)
+
+$(XFSTESTS_TEST_IMAGE):
+	@mkdir -p $(BUILD_DIR)
+	@truncate -s $(XFSTESTS_DISK_SIZE) $(XFSTESTS_TEST_IMAGE)
+	@mkfs.ext2 $(XFSTESTS_TEST_IMAGE)
+
+$(XFSTESTS_SCRATCH_IMAGE):
+	@mkdir -p $(BUILD_DIR)
+	@truncate -s $(XFSTESTS_DISK_SIZE) $(XFSTESTS_SCRATCH_IMAGE)
+	@mkfs.ext2 $(XFSTESTS_SCRATCH_IMAGE)
 
 .PHONY: format
 format:

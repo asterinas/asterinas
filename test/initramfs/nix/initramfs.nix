@@ -17,6 +17,7 @@ let
   resolv_conf = pkgs.callPackage ./resolv_conf.nix { dnsServer = dnsServer; };
   # Whether the initramfs should include evtest, a common tool to debug input devices (`/dev/input/eventX`)
   is_evtest_included = false;
+
   all_pkgs = [ busybox etc resolv_conf ]
     ++ lib.optionals (benchmark != null) [ benchmark.package ]
     ++ lib.optionals (conformance != null) [ conformance.package ]
@@ -53,7 +54,7 @@ in stdenvNoCC.mkDerivation {
     ''}
 
     ${lib.optionalString (conformance != null) ''
-      cp -r "${conformance.package}"/opt/* $out/opt/
+      cp -r "${conformance.package}"/* $out/
     ''}
 
     ${lib.optionalString
