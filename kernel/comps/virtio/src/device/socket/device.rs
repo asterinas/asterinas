@@ -338,7 +338,7 @@ impl Debug for SocketDevice {
 
 fn read_header_and_body(buffer: &[u8]) -> Result<(VirtioVsockHdr, &[u8]), SocketError> {
     // Shouldn't panic, because we know `RX_BUFFER_SIZE > size_of::<VirtioVsockHdr>()`.
-    let header = VirtioVsockHdr::from_bytes(&buffer[..VIRTIO_VSOCK_HDR_LEN]);
+    let header = VirtioVsockHdr::from_first_bytes(&buffer[..VIRTIO_VSOCK_HDR_LEN]);
     let body_length = header.len() as usize;
 
     // This could fail if the device returns an unreasonably long body length.

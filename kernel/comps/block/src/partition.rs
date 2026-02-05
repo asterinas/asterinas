@@ -229,7 +229,7 @@ fn parse_gpt(device: &Arc<dyn BlockDevice>) -> Vec<Option<PartitionInfo>> {
 
         for j in 0..entries_per_sector {
             let entry_offset = j * gpt.size_of_partition_entry as usize;
-            let entry = GptEntry::from_bytes(&buf[entry_offset..entry_offset + entry_size]);
+            let entry = GptEntry::from_first_bytes(&buf[entry_offset..entry_offset + entry_size]);
             if entry.is_valid() {
                 partitions.push(Some(PartitionInfo::Gpt(entry)));
             } else {
