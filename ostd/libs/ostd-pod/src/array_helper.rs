@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! Aligned array helpers for Pod types.
+//!
+//! This module provides type-level utilities
+//! for creating arrays with specific alignment requirements.
+//! It's primarily used internally to support Pod unions
+//! that need to maintain precise memory layouts with guaranteed alignment.
+
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 /// A transparent wrapper around `[u8; N]` with guaranteed 1-byte alignment.

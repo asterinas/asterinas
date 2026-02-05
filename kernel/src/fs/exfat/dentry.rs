@@ -91,40 +91,36 @@ impl TryFrom<RawExfatDentry> for ExfatDentry {
         #[expect(clippy::match_overlapping_arm)]
         // FIXME: `EXFAT_STREAM` and `0xC0..=0xFF` overlap. Is the overlapping case expected?
         match dentry.dentry_type {
-            EXFAT_FILE => Ok(ExfatDentry::File(ExfatFileDentry::from_first_bytes(
+            EXFAT_FILE => Ok(ExfatDentry::File(ExfatFileDentry::from_bytes(dentry_bytes))),
+            EXFAT_STREAM => Ok(ExfatDentry::Stream(ExfatStreamDentry::from_bytes(
                 dentry_bytes,
             ))),
-            EXFAT_STREAM => Ok(ExfatDentry::Stream(ExfatStreamDentry::from_first_bytes(
+            EXFAT_NAME => Ok(ExfatDentry::Name(ExfatNameDentry::from_bytes(dentry_bytes))),
+            EXFAT_BITMAP => Ok(ExfatDentry::Bitmap(ExfatBitmapDentry::from_bytes(
                 dentry_bytes,
             ))),
-            EXFAT_NAME => Ok(ExfatDentry::Name(ExfatNameDentry::from_first_bytes(
+            EXFAT_UPCASE => Ok(ExfatDentry::Upcase(ExfatUpcaseDentry::from_bytes(
                 dentry_bytes,
             ))),
-            EXFAT_BITMAP => Ok(ExfatDentry::Bitmap(ExfatBitmapDentry::from_first_bytes(
+            EXFAT_VENDOR_EXT => Ok(ExfatDentry::VendorExt(ExfatVendorExtDentry::from_bytes(
                 dentry_bytes,
             ))),
-            EXFAT_UPCASE => Ok(ExfatDentry::Upcase(ExfatUpcaseDentry::from_first_bytes(
-                dentry_bytes,
-            ))),
-            EXFAT_VENDOR_EXT => Ok(ExfatDentry::VendorExt(
-                ExfatVendorExtDentry::from_first_bytes(dentry_bytes),
-            )),
             EXFAT_VENDOR_ALLOC => Ok(ExfatDentry::VendorAlloc(
-                ExfatVendorAllocDentry::from_first_bytes(dentry_bytes),
+                ExfatVendorAllocDentry::from_bytes(dentry_bytes),
             )),
 
             EXFAT_UNUSED => Ok(ExfatDentry::UnUsed),
             // Deleted
-            0x01..0x80 => Ok(ExfatDentry::Deleted(ExfatDeletedDentry::from_first_bytes(
+            0x01..0x80 => Ok(ExfatDentry::Deleted(ExfatDeletedDentry::from_bytes(
                 dentry_bytes,
             ))),
             // Primary
             0x80..0xC0 => Ok(ExfatDentry::GenericPrimary(
-                ExfatGenericPrimaryDentry::from_first_bytes(dentry_bytes),
+                ExfatGenericPrimaryDentry::from_bytes(dentry_bytes),
             )),
             // Secondary
             0xC0..=0xFF => Ok(ExfatDentry::GenericSecondary(
-                ExfatGenericSecondaryDentry::from_first_bytes(dentry_bytes),
+                ExfatGenericSecondaryDentry::from_bytes(dentry_bytes),
             )),
         }
     }
@@ -494,8 +490,7 @@ impl Iterator for ExfatDentryIterator<'_> {
         }
 
         // The result is always OK.
-        let dentry_result =
-            ExfatDentry::try_from(RawExfatDentry::from_first_bytes(&dentry_buf)).unwrap();
+        let dentry_result = ExfatDentry::try_from(RawExfatDentry::from_bytes(&dentry_buf)).unwrap();
 
         self.entry += 1;
         if let Some(s) = self.size {
