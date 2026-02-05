@@ -196,7 +196,7 @@ impl AllocTable {
                     if diff == AllocDiff::Invalid {
                         continue;
                     }
-                    let bid = BlockId::from_first_bytes(&buf_slice[offset..offset + BID_SIZE]);
+                    let bid = BlockId::from_bytes(&buf_slice[offset..offset + BID_SIZE]);
                     offset += BID_SIZE;
                     match diff {
                         AllocDiff::Alloc => bitmap.set(bid, false),

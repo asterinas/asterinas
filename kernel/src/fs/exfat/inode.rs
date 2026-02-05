@@ -1147,7 +1147,7 @@ impl ExfatInode {
         for i in 0..num_dentry {
             let buf_offset = DENTRY_SIZE * i;
             // Delete cluster chain if needed.
-            let dentry = ExfatDentry::try_from(RawExfatDentry::from_first_bytes(
+            let dentry = ExfatDentry::try_from(RawExfatDentry::from_bytes(
                 &buf[buf_offset..buf_offset + DENTRY_SIZE],
             ))?;
             self.inner

@@ -509,7 +509,7 @@ impl<K: RecordKey<K>, V: RecordValue> SSTable<K, V> {
         let mut rbuf = Buf::alloc(1)?;
         // Load footer block (last block)
         tx_log.read(nblocks - 1, rbuf.as_mut())?;
-        let meta = FooterMeta::from_first_bytes(&rbuf.as_slice()[BLOCK_SIZE - FOOTER_META_SIZE..]);
+        let meta = FooterMeta::from_bytes(&rbuf.as_slice()[BLOCK_SIZE - FOOTER_META_SIZE..]);
 
         let mut rbuf = Buf::alloc(meta.index_nblocks as _)?;
         tx_log.read(nblocks - meta.index_nblocks as usize, rbuf.as_mut())?;
@@ -521,10 +521,9 @@ impl<K: RecordKey<K>, V: RecordValue> SSTable<K, V> {
                 &rbuf.as_slice()[i * Self::INDEX_ENTRY_SIZE..(i + 1) * Self::INDEX_ENTRY_SIZE];
 
             let pos = BlockId::from_le_bytes(buf[..BID_SIZE].try_into().unwrap());
-            let first = K::from_first_bytes(&buf[BID_SIZE..BID_SIZE + Self::K_SIZE]);
-            let last = K::from_first_bytes(
-                &buf[Self::INDEX_ENTRY_SIZE - Self::K_SIZE..Self::INDEX_ENTRY_SIZE],
-            );
+            let first = K::from_bytes(&buf[BID_SIZE..BID_SIZE + Self::K_SIZE]);
+            let last =
+                K::from_bytes(&buf[Self::INDEX_ENTRY_SIZE - Self::K_SIZE..Self::INDEX_ENTRY_SIZE]);
 
             tx_log.read(pos, BufMut::try_from(&mut record_block[..]).unwrap())?;
             let _ = cache.put(pos, Arc::new(RecordBlock::from_buf(record_block.clone())));
@@ -593,7 +592,7 @@ impl<K: RecordKey<K>, V: RecordValue> Iterator for BlockQueryIter<'_, K, V> {
             return None;
         }
 
-        let key = K::from_first_bytes(&buf_slice[offset..offset + k_size]);
+        let key = K::from_bytes(&buf_slice[offset..offset + k_size]);
         offset += k_size;
 
         let flag = RecordFlag::from(buf_slice[offset]);
@@ -606,7 +605,7 @@ impl<K: RecordKey<K>, V: RecordValue> Iterator for BlockQueryIter<'_, K, V> {
         let value_opt = match flag {
             RecordFlag::Synced | RecordFlag::Unsynced => {
                 let v_opt = if hit_target {
-                    Some(V::from_first_bytes(&buf_slice[offset..offset + v_size]))
+                    Some(V::from_bytes(&buf_slice[offset..offset + v_size]))
                 } else {
                     None
                 };
@@ -615,7 +614,7 @@ impl<K: RecordKey<K>, V: RecordValue> Iterator for BlockQueryIter<'_, K, V> {
             }
             RecordFlag::SyncedAndUnsynced => {
                 let v_opt = if hit_target {
-                    Some(V::from_first_bytes(
+                    Some(V::from_bytes(
                         &buf_slice[offset + v_size..offset + 2 * v_size],
                     ))
                 } else {
@@ -650,7 +649,7 @@ impl<K: RecordKey<K>, V: RecordValue> Iterator for BlockScanIter<'_, K, V> {
                 return None;
             }
 
-            let key = K::from_first_bytes(&buf_slice[offset..offset + k_size]);
+            let key = K::from_bytes(&buf_slice[offset..offset + k_size]);
             offset += k_size;
 
             let flag = RecordFlag::from(buf_slice[offset]);
@@ -661,12 +660,12 @@ impl<K: RecordKey<K>, V: RecordValue> Iterator for BlockScanIter<'_, K, V> {
 
             let v_ex = match flag {
                 RecordFlag::Synced => {
-                    let v = V::from_first_bytes(&buf_slice[offset..offset + v_size]);
+                    let v = V::from_bytes(&buf_slice[offset..offset + v_size]);
                     offset += v_size;
                     ValueEx::Synced(v)
                 }
                 RecordFlag::Unsynced => {
-                    let v = V::from_first_bytes(&buf_slice[offset..offset + v_size]);
+                    let v = V::from_bytes(&buf_slice[offset..offset + v_size]);
                     offset += v_size;
                     if all_synced {
                         ValueEx::Synced(v)
@@ -680,9 +679,9 @@ impl<K: RecordKey<K>, V: RecordValue> Iterator for BlockScanIter<'_, K, V> {
                     }
                 }
                 RecordFlag::SyncedAndUnsynced => {
-                    let sv = V::from_first_bytes(&buf_slice[offset..offset + v_size]);
+                    let sv = V::from_bytes(&buf_slice[offset..offset + v_size]);
                     offset += v_size;
-                    let usv = V::from_first_bytes(&buf_slice[offset..offset + v_size]);
+                    let usv = V::from_bytes(&buf_slice[offset..offset + v_size]);
                     offset += v_size;
                     if all_synced {
                         if let Some(listener) = event_listener {
