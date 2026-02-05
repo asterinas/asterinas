@@ -6,6 +6,7 @@
 use alloc::{borrow::ToOwned, rc::Rc};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+use aster_block::bio::SubmittedBio;
 use inherit_methods_macro::inherit_methods;
 use ostd::{const_assert, mm::io_util::HasVmReaderWriter};
 
@@ -23,8 +24,8 @@ use crate::{
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
         pipe::Pipe,
         utils::{
-            Extension, FallocMode, Inode as _, InodeMode, Metadata, Permission, XattrName,
-            XattrNamespace, XattrSetFlags,
+            CachePageExt, Extension, FallocMode, Inode as _, InodeMode, LockedCachePage, Metadata,
+            Permission, XattrName, XattrNamespace, XattrSetFlags,
         },
     },
     process::{Gid, Uid, posix_thread::AsPosixThread},
@@ -978,7 +979,7 @@ impl InodeInner {
         Self {
             page_cache: PageCache::with_capacity(
                 num_page_bytes,
-                Arc::downgrade(&inode_impl.block_manager) as _,
+                Some(inode_impl.block_manager.clone() as _),
             )
             .unwrap(),
             inode_impl,
@@ -1016,7 +1017,7 @@ impl InodeInner {
         if read_len == 0 {
             return Ok(read_len);
         }
-        self.page_cache.discard_range(offset..offset + read_len);
+        self.page_cache.discard_range(offset..offset + read_len)?;
 
         let start_bid = Bid::from_offset(offset).to_raw() as Ext2Bid;
         let buf_nblocks = read_len / BLOCK_SIZE;
@@ -1049,7 +1050,7 @@ impl InodeInner {
 
         let start = offset.min(file_size);
         let end = end_offset.min(file_size);
-        self.page_cache.discard_range(start..end);
+        self.page_cache.discard_range(start..end)?;
 
         if end_offset > file_size {
             self.inode_impl.resize(end_offset)?;
@@ -1172,7 +1173,7 @@ impl InodeInner {
     pub fn sync_data(&self) -> Result<()> {
         // Writes back the data in page cache.
         let file_size = self.file_size();
-        self.page_cache.evict_range(0..file_size)?;
+        self.page_cache.flush_range(0..file_size)?;
         Ok(())
     }
 }

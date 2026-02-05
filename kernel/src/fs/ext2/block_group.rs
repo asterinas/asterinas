@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_block::bio::SubmittedBio;
 use ostd::{const_assert, mm::io_util::HasVmReaderWriter};
 
 use super::{
@@ -9,7 +10,7 @@ use super::{
     prelude::*,
     super_block::SuperBlock,
 };
-use crate::fs::utils::IdBitmap;
+use crate::fs::utils::{CachePageExt, IdBitmap, LockedCachePage};
 
 /// Blocks are clustered into block groups in order to reduce fragmentation and minimise
 /// the amount of head seeking when reading a large amount of consecutive data.
@@ -91,7 +92,7 @@ impl BlockGroup {
         };
 
         let raw_inodes_cache =
-            PageCache::with_capacity(raw_inodes_size, Arc::downgrade(&bg_impl) as _)?;
+            PageCache::with_capacity(raw_inodes_size, Some(bg_impl.clone() as _))?;
 
         Ok(Self {
             idx,
@@ -296,8 +297,7 @@ impl BlockGroup {
 
         // Writes back the raw inode metadata.
         self.raw_inodes_cache
-            .pages()
-            .decommit(0..self.bg_impl.raw_inodes_size)?;
+            .discard_range(0..self.bg_impl.raw_inodes_size)?;
         Ok(())
     }
 
