@@ -37,10 +37,11 @@ FN_TEST(proc_mem_remote)
 		CHECK(close(pipe_p2c[1]));
 
 		int fd = CHECK(open(FILE_NAME, O_RDONLY));
-		void *addr =
-			CHECK_WITH(mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE,
-					MAP_PRIVATE, fd, 0),
-				   _ret != MAP_FAILED);
+		// The parent should successfully read from and (force) write to this
+		// memory region via `/proc/pid/mem`, although it isn't `PROT_WRITE`.
+		void *addr = CHECK_WITH(mmap(NULL, PAGE_SIZE, PROT_READ,
+					     MAP_PRIVATE, fd, 0),
+					_ret != MAP_FAILED);
 		CHECK(write(pipe_c2p[1], &addr, sizeof(addr)));
 
 		// Wait for the parent to read and write.

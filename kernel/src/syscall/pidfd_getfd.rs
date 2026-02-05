@@ -3,7 +3,13 @@
 use crate::{
     fs::file_table::{FdFlags, FileDesc, get_file_fast},
     prelude::*,
-    process::{PidFile, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
+    process::{
+        PidFile,
+        posix_thread::{
+            AsPosixThread,
+            ptrace::{PtraceMode, check_may_access},
+        },
+    },
     syscall::SyscallReturn,
 };
 
@@ -32,22 +38,11 @@ pub fn sys_pidfd_getfd(
         .process_opt()
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target process has been reaped"))?;
 
-    // The calling process should have PTRACE_MODE_ATTACH_REALCREDS permissions (see ptrace(2))
-    // over the process referred to by `pidfd`.
-    // Currently, this is implemented as requiring the calling process to have the
-    // CAP_SYS_PTRACE capability, which is stricter.
-    // TODO: Implement appropriate PTRACE_MODE_ATTACH_REALCREDS permission check.
-    if process
-        .user_ns()
-        .lock()
-        .check_cap(CapSet::SYS_PTRACE, ctx.posix_thread)
-        .is_err()
-    {
-        return_errno_with_message!(
-            Errno::EPERM,
-            "the calling process does not have the required permissions"
-        );
-    }
+    check_may_access(
+        ctx.posix_thread,
+        process.main_thread().as_posix_thread().unwrap(),
+        PtraceMode::ATTACH_REALCREDS,
+    )?;
 
     let main_thread = process.main_thread();
 
