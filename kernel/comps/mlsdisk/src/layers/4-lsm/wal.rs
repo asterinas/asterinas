@@ -188,9 +188,10 @@ impl<D: BlockSet + 'static> WalAppendTx<D> {
             match flag.unwrap() {
                 WalAppendFlag::Record => {
                     let record = {
-                        let k = K::from_bytes(&buf_slice[offset..offset + k_size]);
-                        let v =
-                            V::from_bytes(&buf_slice[offset + k_size..offset + k_size + v_size]);
+                        let k = K::from_first_bytes(&buf_slice[offset..offset + k_size]);
+                        let v = V::from_first_bytes(
+                            &buf_slice[offset + k_size..offset + k_size + v_size],
+                        );
                         offset += k_size + v_size;
                         (k, v)
                     };

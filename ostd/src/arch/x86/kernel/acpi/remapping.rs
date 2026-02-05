@@ -191,7 +191,7 @@ macro_rules! impl_from_bytes {
                 "`].",
             )]
             pub fn from_bytes(bytes: &[u8]) -> Self {
-                let header = $header_struct::from_bytes(bytes);
+                let header = $header_struct::from_first_bytes(bytes);
                 debug_assert_eq!(header.length as usize, bytes.len());
 
                 let mut index = size_of::<$header_struct>();
@@ -226,7 +226,7 @@ impl DeviceScope {
     ///
     /// This method may panic if the byte prefix does not represent a valid [`DeviceScope`].
     fn from_bytes_prefix(bytes: &[u8]) -> Self {
-        let header = DeviceScopeHeader::from_bytes(bytes);
+        let header = DeviceScopeHeader::from_first_bytes(bytes);
         debug_assert!((header.length as usize) <= bytes.len());
 
         let mut index = size_of::<DeviceScopeHeader>();
@@ -250,7 +250,7 @@ impl Rhsa {
     ///
     /// This method may panic if the bytes do not represent a valid [`Rhsa`].
     pub fn from_bytes(bytes: &[u8]) -> Self {
-        let val = <Self as Pod>::from_bytes(bytes);
+        let val = <Self as Pod>::from_first_bytes(bytes);
         debug_assert_eq!(val.length as usize, bytes.len());
 
         val
@@ -264,7 +264,7 @@ impl Andd {
     ///
     /// This method may panic if the bytes do not represent a valid [`Andd`].
     pub fn from_bytes(bytes: &[u8]) -> Self {
-        let header = AnddHeader::from_bytes(bytes);
+        let header = AnddHeader::from_first_bytes(bytes);
         debug_assert_eq!(header.length as usize, bytes.len());
 
         let header_len = size_of::<AnddHeader>();
