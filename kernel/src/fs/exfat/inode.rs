@@ -134,7 +134,7 @@ struct ExfatInodeInner {
 }
 
 impl PageCacheBackend for ExfatInode {
-    fn read_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
+    fn read_page_async(&self, idx: usize, frame: LockedCachePage) -> Result<BioWaiter> {
         let inner = self.inner.read();
         if inner.size < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "Invalid read size")
@@ -144,14 +144,18 @@ impl PageCacheBackend for ExfatInode {
             Segment::from(frame.clone()).into(),
             BioDirection::FromDevice,
         );
+        let complete_fn = Box::new(move |_: &SubmittedBio| {
+            frame.set_up_to_date();
+        });
         let waiter = inner.fs().block_device().read_blocks_async(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
             bio_segment,
+            Some(complete_fn),
         )?;
         Ok(waiter)
     }
 
-    fn write_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
+    fn write_page_async(&self, idx: usize, frame: LockedCachePage) -> Result<BioWaiter> {
         let inner = self.inner.read();
         let sector_size = inner.fs().sector_size();
 
@@ -163,9 +167,20 @@ impl PageCacheBackend for ExfatInode {
             Segment::from(frame.clone()).into(),
             BioDirection::ToDevice,
         );
+
+        frame.wait_until_finish_write_back();
+        frame.set_write_back();
+        frame.set_up_to_date();
+        let frame = frame.unlock();
+
+        let complete_fn = Box::new(move |_: &SubmittedBio| {
+            frame.clear_writing_back();
+        });
+
         let waiter = inner.fs().block_device().write_blocks_async(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
             bio_segment,
+            Some(complete_fn),
         )?;
         Ok(waiter)
     }

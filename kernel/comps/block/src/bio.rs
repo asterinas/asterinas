@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::boxed::Box;
 use core::sync::atomic::AtomicU64;
 
 use align_ext::AlignExt;
@@ -37,11 +38,12 @@ impl Bio {
     /// The `start_sid` is the starting sector id on the device.
     /// The `segments` describes the memory segments.
     /// The `complete_fn` is the optional callback function.
+    #[expect(clippy::type_complexity)]
     pub fn new(
         type_: BioType,
         start_sid: Sid,
         segments: Vec<BioSegment>,
-        complete_fn: Option<fn(&SubmittedBio)>,
+        complete_fn: Option<Box<dyn FnOnce(&SubmittedBio) + Send + Sync>>,
     ) -> Self {
         let nsectors = segments
             .iter()
@@ -53,7 +55,7 @@ impl Bio {
             sid_range: start_sid..start_sid + nsectors,
             sid_offset: AtomicU64::new(0),
             segments,
-            complete_fn,
+            complete_fn: SpinLock::new(complete_fn),
             status: AtomicU32::new(BioStatus::Init as u32),
             wait_queue: WaitQueue::new(),
         });
@@ -297,7 +299,7 @@ impl SubmittedBio {
         assert!(result.is_ok());
 
         self.0.wait_queue.wake_all();
-        if let Some(complete_fn) = self.0.complete_fn {
+        if let Some(complete_fn) = self.0.complete_fn.disable_irq().lock().take() {
             complete_fn(self);
         }
     }
@@ -314,7 +316,8 @@ struct BioInner {
     /// The memory segments in this `Bio`
     segments: Vec<BioSegment>,
     /// The I/O completion method
-    complete_fn: Option<fn(&SubmittedBio)>,
+    #[expect(clippy::type_complexity)]
+    complete_fn: SpinLock<Option<Box<dyn FnOnce(&SubmittedBio) + Send + Sync>>>,
     /// The I/O status
     status: AtomicU32,
     /// The wait queue for I/O completion
@@ -346,7 +349,6 @@ impl Debug for BioInner {
             .field("sid_range", &self.sid_range())
             .field("status", &self.status())
             .field("segments", &self.segments())
-            .field("complete_fn", &self.complete_fn)
             .finish()
     }
 }

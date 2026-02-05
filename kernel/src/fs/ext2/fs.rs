@@ -2,6 +2,8 @@
 
 #![expect(dead_code)]
 
+use aster_block::bio::SubmittedBio;
+
 use super::{
     block_group::{BlockGroup, RawGroupDescriptor},
     block_ptr::Ext2Bid,
@@ -316,14 +318,16 @@ impl Ext2 {
     }
 
     /// Reads contiguous blocks starting from the `bid` asynchronously.
+    #[expect(clippy::type_complexity)]
     pub(super) fn read_blocks_async(
         &self,
         bid: Ext2Bid,
         bio_segment: BioSegment,
+        complete_fn: Option<Box<dyn FnOnce(&SubmittedBio) + Send + Sync>>,
     ) -> Result<BioWaiter> {
-        let waiter = self
-            .block_device
-            .read_blocks_async(Bid::new(bid as u64), bio_segment)?;
+        let waiter =
+            self.block_device
+                .read_blocks_async(Bid::new(bid as u64), bio_segment, complete_fn)?;
         Ok(waiter)
     }
 
@@ -339,14 +343,16 @@ impl Ext2 {
     }
 
     /// Writes contiguous blocks starting from the `bid` asynchronously.
+    #[expect(clippy::type_complexity)]
     pub(super) fn write_blocks_async(
         &self,
         bid: Ext2Bid,
         bio_segment: BioSegment,
+        complete_fn: Option<Box<dyn FnOnce(&SubmittedBio) + Send + Sync>>,
     ) -> Result<BioWaiter> {
-        let waiter = self
-            .block_device
-            .write_blocks_async(Bid::new(bid as u64), bio_segment)?;
+        let waiter =
+            self.block_device
+                .write_blocks_async(Bid::new(bid as u64), bio_segment, complete_fn)?;
         Ok(waiter)
     }
 
@@ -377,6 +383,7 @@ impl Ext2 {
         bio_waiter.concat(self.block_device.write_blocks_async(
             super_block.group_descriptors_bid(0),
             group_descriptors_bio_segment.clone(),
+            None,
         )?);
         bio_waiter
             .wait()
@@ -396,6 +403,7 @@ impl Ext2 {
                 bio_waiter.concat(self.block_device.write_blocks_async(
                     super_block.group_descriptors_bid(idx as usize),
                     group_descriptors_bio_segment.clone(),
+                    None,
                 )?);
                 bio_waiter.wait().ok_or_else(|| {
                     Error::with_message(Errno::EIO, "failed to sync backup metadata")

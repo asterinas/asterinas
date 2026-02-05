@@ -324,7 +324,7 @@ impl Debug for BlockGroup {
 }
 
 impl PageCacheBackend for BlockGroupImpl {
-    fn read_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
+    fn read_page_async(&self, idx: usize, frame: LockedCachePage) -> Result<BioWaiter> {
         let bid = self.inode_table_bid + idx as Ext2Bid;
         // TODO: Should we allocate the bio segment from the pool on reads?
         // This may require an additional copy to the requested frame in the completion callback.
@@ -332,13 +332,17 @@ impl PageCacheBackend for BlockGroupImpl {
             Segment::from(frame.clone()).into(),
             BioDirection::FromDevice,
         );
+
+        let complete_fn = Box::new(move |_: &SubmittedBio| {
+            frame.set_up_to_date();
+        });
         self.fs
             .upgrade()
             .unwrap()
-            .read_blocks_async(bid, bio_segment)
+            .read_blocks_async(bid, bio_segment, Some(complete_fn))
     }
 
-    fn write_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
+    fn write_page_async(&self, idx: usize, frame: LockedCachePage) -> Result<BioWaiter> {
         let bid = self.inode_table_bid + idx as Ext2Bid;
         let bio_segment = BioSegment::alloc(1, BioDirection::ToDevice);
         // This requires an additional copy to the pooled bio segment.
@@ -346,10 +350,19 @@ impl PageCacheBackend for BlockGroupImpl {
             .writer()
             .unwrap()
             .write_fallible(&mut frame.reader().to_fallible())?;
+
+        frame.wait_until_finish_write_back();
+        frame.set_write_back();
+        frame.set_up_to_date();
+        let frame = frame.unlock();
+
+        let complete_fn = Box::new(move |_: &SubmittedBio| {
+            frame.clear_writing_back();
+        });
         self.fs
             .upgrade()
             .unwrap()
-            .write_blocks_async(bid, bio_segment)
+            .write_blocks_async(bid, bio_segment, Some(complete_fn))
     }
 
     fn npages(&self) -> usize {

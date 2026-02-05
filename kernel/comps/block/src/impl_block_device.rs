@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::boxed::Box;
+
 use ostd::mm::{VmIo, VmReader, VmWriter};
 
 use super::{
@@ -26,23 +28,26 @@ impl dyn BlockDevice {
             BioType::Read,
             Sid::from(bid),
             vec![bio_segment],
-            Some(general_complete_fn),
+            Some(Box::new(general_complete_fn)),
         );
         let status = bio.submit_and_wait(self)?;
         Ok(status)
     }
 
     /// Asynchronously reads contiguous blocks starting from the `bid`.
+    #[expect(clippy::type_complexity)]
     pub fn read_blocks_async(
         &self,
         bid: Bid,
         bio_segment: BioSegment,
+        complete_fn: Option<Box<dyn FnOnce(&SubmittedBio) + Send + Sync>>,
     ) -> Result<BioWaiter, BioEnqueueError> {
+        let complete_fn = complete_fn.or(Some(Box::new(general_complete_fn)));
         let bio = Bio::new(
             BioType::Read,
             Sid::from(bid),
             vec![bio_segment],
-            Some(general_complete_fn),
+            complete_fn,
         );
         bio.submit(self)
     }
@@ -57,23 +62,26 @@ impl dyn BlockDevice {
             BioType::Write,
             Sid::from(bid),
             vec![bio_segment],
-            Some(general_complete_fn),
+            Some(Box::new(general_complete_fn)),
         );
         let status = bio.submit_and_wait(self)?;
         Ok(status)
     }
 
     /// Asynchronously writes contiguous blocks starting from the `bid`.
+    #[expect(clippy::type_complexity)]
     pub fn write_blocks_async(
         &self,
         bid: Bid,
         bio_segment: BioSegment,
+        complete_fn: Option<Box<dyn FnOnce(&SubmittedBio) + Send + Sync>>,
     ) -> Result<BioWaiter, BioEnqueueError> {
+        let complete_fn = complete_fn.or(Some(Box::new(general_complete_fn)));
         let bio = Bio::new(
             BioType::Write,
             Sid::from(bid),
             vec![bio_segment],
-            Some(general_complete_fn),
+            complete_fn,
         );
         bio.submit(self)
     }
@@ -84,7 +92,7 @@ impl dyn BlockDevice {
             BioType::Flush,
             Sid::from(Bid::from_offset(0)),
             vec![],
-            Some(general_complete_fn),
+            Some(Box::new(general_complete_fn)),
         );
         let status = bio.submit_and_wait(self)?;
         Ok(status)
@@ -120,7 +128,7 @@ impl VmIo for dyn BlockDevice {
                     BioType::Read,
                     Sid::from_offset(offset),
                     vec![bio_segment.clone()],
-                    Some(general_complete_fn),
+                    Some(Box::new(general_complete_fn)),
                 ),
                 bio_segment,
             )
@@ -161,7 +169,7 @@ impl VmIo for dyn BlockDevice {
                 BioType::Write,
                 Sid::from_offset(offset),
                 vec![bio_segment],
-                Some(general_complete_fn),
+                Some(Box::new(general_complete_fn)),
             )
         };
 
@@ -201,7 +209,7 @@ impl dyn BlockDevice {
                 BioType::Write,
                 Sid::from_offset(offset),
                 vec![bio_segment],
-                Some(general_complete_fn),
+                Some(Box::new(general_complete_fn)),
             )
         };
 
