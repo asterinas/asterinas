@@ -739,7 +739,7 @@ impl Superblock {
             plain.as_mut_slice(),
         )?;
 
-        let superblock = Superblock::from_bytes(&plain.as_slice()[..Self::SUPERBLOCK_SIZE]);
+        let superblock = Superblock::from_first_bytes(&plain.as_slice()[..Self::SUPERBLOCK_SIZE]);
         if superblock.magic != MAGIC_NUMBER {
             Err(Error::with_msg(InvalidArgs, "open superblock failed"))
         } else {
@@ -762,7 +762,7 @@ impl Superblock {
     }
 
     fn derive_skcipher_key(root_key: &Key) -> SkcipherKey {
-        SkcipherKey::from_bytes(root_key.as_bytes())
+        SkcipherKey::from_first_bytes(root_key.as_bytes())
     }
 }
 
