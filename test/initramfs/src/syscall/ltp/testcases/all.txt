@@ -470,19 +470,19 @@ getcwd03
 
 getdomainname01
 
-# getegid01
+getegid01
 # getegid01_16
-# getegid02
+getegid02
 # getegid02_16
 
 geteuid01
 # geteuid01_16
-# geteuid02
+geteuid02
 # geteuid02_16
 
-# getgid01
+getgid01
 # getgid01_16
-# getgid03
+getgid03
 # getgid03_16
 
 getgroups01
@@ -526,16 +526,16 @@ getrandom05
 
 getresgid01
 # getresgid01_16
-# getresgid02
+getresgid02
 # getresgid02_16
-# getresgid03
+getresgid03
 # getresgid03_16
 
 getresuid01
 # getresuid01_16
-# getresuid02
+getresuid02
 # getresuid02_16
-# getresuid03
+getresuid03
 # getresuid03_16
 
 getrlimit01
@@ -567,7 +567,7 @@ gettimeofday02
 
 getuid01
 # getuid01_16
-# getuid03
+getuid03
 # getuid03_16
 
 getxattr01
@@ -1380,34 +1380,33 @@ set_robust_list01
 
 setdomainname01
 setdomainname02
-# TODO: Drop capabilities on UID changes, so that setdomainname() will fail with EPERM.
-# setdomainname03
+setdomainname03
 
-# setfsgid01
+setfsgid01
 # setfsgid01_16
-# setfsgid02
+setfsgid02
 # setfsgid02_16
-# setfsgid03
+setfsgid03
 # setfsgid03_16
 
-# setfsuid01
+setfsuid01
 # setfsuid01_16
 setfsuid02
 # setfsuid02_16
-# setfsuid03
+setfsuid03
 # setfsuid03_16
-# setfsuid04
+setfsuid04
 # setfsuid04_16
 
 setgid01
 # setgid01_16
-# setgid02
+setgid02
 # setgid02_16
-# setgid03
+setgid03
 # setgid03_16
 
-# setegid01
-# setegid02
+setegid01
+setegid02
 
 # sgetmask01
 
@@ -1420,8 +1419,7 @@ setgroups02
 
 sethostname01
 sethostname02
-# TODO: Drop capabilities on UID changes, so that sethostname() will fail with EPERM.
-# sethostname03
+sethostname03
 
 # setitimer01
 setitimer02
@@ -1441,46 +1439,48 @@ setpgrp02
 
 setregid01
 # setregid01_16
-# setregid02
+setregid02
 # setregid02_16
-# setregid03
+setregid03
 # setregid03_16
-# setregid04
+setregid04
 # setregid04_16
 
-# setresgid01
+setresgid01
 # setresgid01_16
-# setresgid02
+setresgid02
 # setresgid02_16
-# setresgid03
+setresgid03
 # setresgid03_16
+# TODO: Fix the GID of newly created files.
 # setresgid04
 # setresgid04_16
 
-# setresuid01
+setresuid01
 # setresuid01_16
 setresuid02
 # setresuid02_16
 setresuid03
 # setresuid03_16
-# setresuid04
+setresuid04
 # setresuid04_16
+# TODO: Fix the UID of newly created files.
 # setresuid05
 # setresuid05_16
 
 setreuid01
 # setreuid01_16
-# setreuid02
+setreuid02
 # setreuid02_16
-# setreuid03
+setreuid03
 # setreuid03_16
 setreuid04
 # setreuid04_16
-# setreuid05
+setreuid05
 # setreuid05_16
 setreuid06
 # setreuid06_16
-# setreuid07
+setreuid07
 # setreuid07_16
 
 # setrlimit01
@@ -1508,7 +1508,7 @@ setsockopt03
 
 setuid01
 # setuid01_16
-# setuid03
+setuid03
 # setuid03_16
 setuid04
 # setuid04_16

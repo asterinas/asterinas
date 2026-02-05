@@ -109,6 +109,25 @@ impl FileOps for StatusFileOps {
         writeln!(printer, "Pid:\t{}", posix_thread.tid())?;
         writeln!(printer, "PPid:\t{}", process.parent().pid())?;
         writeln!(printer, "TracerPid:\t{}", 0)?;
+
+        let credentials = posix_thread.credentials();
+        writeln!(
+            printer,
+            "Uid:\t{}\t{}\t{}\t{}",
+            u32::from(credentials.ruid()),
+            u32::from(credentials.euid()),
+            u32::from(credentials.suid()),
+            u32::from(credentials.fsuid()),
+        )?;
+        writeln!(
+            printer,
+            "Gid:\t{}\t{}\t{}\t{}",
+            u32::from(credentials.rgid()),
+            u32::from(credentials.egid()),
+            u32::from(credentials.sgid()),
+            u32::from(credentials.fsgid()),
+        )?;
+
         writeln!(
             printer,
             "FDSize:\t{}",
