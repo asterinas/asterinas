@@ -2,6 +2,8 @@
 
 #![expect(dead_code)]
 
+use device_id::DeviceId;
+
 use super::{
     block_group::{BlockGroup, RawGroupDescriptor},
     block_ptr::Ext2Bid,
@@ -22,6 +24,7 @@ const ROOT_INO: u32 = 2;
 pub struct Ext2 {
     block_device: Arc<dyn BlockDevice>,
     super_block: RwMutex<Dirty<SuperBlock>>,
+    dev_id: DeviceId,
     block_groups: Vec<BlockGroup>,
     inodes_per_group: u32,
     blocks_per_group: Ext2Bid,
@@ -90,6 +93,7 @@ impl Ext2 {
             blocks_per_group: super_block.blocks_per_group(),
             inode_size: super_block.inode_size(),
             block_size: super_block.block_size(),
+            dev_id: block_device.id(),
             block_groups: load_block_groups(
                 weak_ref.clone(),
                 block_device.as_ref(),
@@ -108,6 +112,11 @@ impl Ext2 {
     /// Returns the block device.
     pub fn block_device(&self) -> &dyn BlockDevice {
         self.block_device.as_ref()
+    }
+
+    /// Returns the device ID containing this filesystem.
+    pub fn dev_id(&self) -> DeviceId {
+        self.dev_id
     }
 
     /// Returns the size of block.

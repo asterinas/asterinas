@@ -38,7 +38,7 @@
 
 pub use fs::Ext2;
 pub use inode::{FilePerm, Inode};
-pub use super_block::{MAGIC_NUM, SuperBlock};
+pub use super_block::MAGIC_NUM;
 
 use crate::fs::ext2::fs::Ext2Type;
 

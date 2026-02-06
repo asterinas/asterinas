@@ -53,8 +53,12 @@ pub struct DevPts {
 
 impl DevPts {
     pub fn new() -> Arc<Self> {
+        let dev_id = device_id::PSEUDO_FS_DEVICE_ID_ALLOCATOR
+            .get()
+            .expect("PSEUDO_FS_DEVICE_ID_ALLOCATOR not initialized")
+            .allocate();
         Arc::new_cyclic(|weak_self| Self {
-            sb: SuperBlock::new(DEVPTS_MAGIC, BLOCK_SIZE, NAME_MAX),
+            sb: SuperBlock::new(DEVPTS_MAGIC, BLOCK_SIZE, NAME_MAX, dev_id),
             root: RootInode::new(weak_self.clone()),
             index_alloc: Mutex::new(IdAlloc::with_capacity(MAX_PTY_NUM)),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
@@ -196,7 +200,16 @@ impl Inode for RootInode {
     }
 
     fn metadata(&self) -> Metadata {
-        *self.metadata.read()
+        let metadata = *self.metadata.read();
+        if metadata.container_dev_id.is_none()
+            && let Some(devpts) = self.fs.upgrade()
+        {
+            let dev_id = devpts.sb().dev_id;
+            let mut metadata_lock = self.metadata.write();
+            metadata_lock.container_dev_id = Some(dev_id);
+            return *metadata_lock;
+        }
+        metadata
     }
 
     fn extension(&self) -> &Extension {
@@ -239,27 +252,27 @@ impl Inode for RootInode {
     }
 
     fn atime(&self) -> Duration {
-        self.metadata.read().atime
+        self.metadata.read().last_access_at
     }
 
     fn set_atime(&self, time: Duration) {
-        self.metadata.write().atime = time;
+        self.metadata.write().last_access_at = time;
     }
 
     fn mtime(&self) -> Duration {
-        self.metadata.read().mtime
+        self.metadata.read().last_modify_at
     }
 
     fn set_mtime(&self, time: Duration) {
-        self.metadata.write().mtime = time;
+        self.metadata.write().last_modify_at = time;
     }
 
     fn ctime(&self) -> Duration {
-        self.metadata.read().ctime
+        self.metadata.read().last_meta_change_at
     }
 
     fn set_ctime(&self, time: Duration) {
-        self.metadata.write().ctime = time;
+        self.metadata.write().last_meta_change_at = time;
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {

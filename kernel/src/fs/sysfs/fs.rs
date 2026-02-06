@@ -41,7 +41,11 @@ impl SysFs {
     }
 
     fn new() -> Arc<Self> {
-        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX);
+        let dev_id = device_id::PSEUDO_FS_DEVICE_ID_ALLOCATOR
+            .get()
+            .expect("PSEUDO_FS_DEVICE_ID_ALLOCATOR not initialized")
+            .allocate();
+        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, dev_id);
         let systree_ref = sysfs::systree_singleton();
         let root_inode = SysFsInode::new_root(systree_ref.root().clone());
 
