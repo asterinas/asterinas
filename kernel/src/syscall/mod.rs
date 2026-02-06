@@ -96,6 +96,7 @@ mod pause;
 mod pidfd_getfd;
 mod pidfd_open;
 mod pipe;
+mod pivot_root;
 mod poll;
 mod ppoll;
 mod prctl;

@@ -15,7 +15,6 @@ TEST_BUILD_DIR ?= $(INITRAMFS)/test
 TEST_APPS := \
 	alarm \
 	capability \
-	chroot \
 	clone3 \
 	cpu_affinity \
 	devfs \
@@ -27,6 +26,7 @@ TEST_APPS := \
 	fdatasync \
 	file_io \
 	fork_c \
+	fs_isolation \
 	getcpu \
 	getpid \
 	hello_pie \
