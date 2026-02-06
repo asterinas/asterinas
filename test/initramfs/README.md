@@ -7,16 +7,16 @@ This directory contains the test suites of Asterinas running in initramfs, inclu
 ```
 test/
 ├── src/
-│   ├── apps/          # Handwritten test applications
 │   ├── benchmark/     # Supported benchmark test suites
+│   ├── custom/        # Handwritten testcases
 │   ├── etc/           # Configuration files
 │   └── syscall/       # Syscall test suites
 │       ├── ltp/       # LTP syscall test suite
 │       └── gvisor/    # Gvisor syscall test suite
 ├── nix/
 │   ├── benchmark/     # Nix expressions for `benchmark`
+│   ├── custom/        # Nix expressions for `custom`
 │   ├── syscall/       # Nix expressions for `syscall`
-│   ├── apps.nix       # Nix expression for `apps`
 │   └── initramfs.nix  # Nix expression for packaging initramfs
 ├── Makefile
 └── README.md
@@ -26,7 +26,7 @@ test/
 
 Most tests in this directory are compiled and packaged using [Nix](https://nixos.org/), a powerful package manager. This ensures consistency and reproducibility across environments.
 
-> **Note**: If you are adding a new test to the `apps` directory, ensure that it supports multiple architectures. Some of the existing apps lack proper architecture-specific handling.
+> **Note**: If you are adding a new test to the `custom` directory, ensure that it supports multiple architectures. Some of the existing testcases lack proper architecture-specific handling.
 
 ### Syscall Test Suite - Gvisor Exception
 
@@ -73,11 +73,11 @@ If the desired benchmark is not available or cannot be easily adapted, you can a
 
 ## Configuration Files
 
-Configuration files required by benchmarks or apps should be placed in the `test/initramfs/src/etc` directory.
+Configuration files required by benchmarks or custom testcases should be placed in the `test/initramfs/src/etc` directory.
 
 If additional configuration files or directories are needed, ensure they are appropriately packaged by updating the `initramfs.nix` file.
 
 ## Notes for Developers
 
 - **Nix Usage**: Use `Nix` whenever possible to manage dependencies and builds for ease of maintenance and consistency.
-- **Multi-Architecture Support**: Ensure new apps or benchmarks properly support multiple CPU architectures.
+- **Multi-Architecture Support**: Ensure new custom testcase or benchmarks properly support multiple CPU architectures.

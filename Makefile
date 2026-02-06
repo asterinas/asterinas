@@ -21,8 +21,8 @@ OSTD_TASK_STACK_SIZE_IN_PAGES ?= 64
 FEATURES ?=
 NO_DEFAULT_FEATURES ?= 0
 COVERAGE ?= 0
-# Specify whether to build regression tests under `test/initramfs/src/apps`.
-ENABLE_BASIC_TEST ?= false
+# Specify whether to build regression tests under `test/initramfs/src/custom`.
+ENABLE_CUSTOM_TEST ?= false
 # Specify the primary system console (supported: tty0, ttyS0, hvc0).
 # - tty0: The active virtual terminal (VT).
 # - ttyS0: The serial (UART) terminal.
@@ -97,18 +97,14 @@ CARGO_OSDK_BUILD_ARGS += --kcmd-args="SYSCALL_TEST_SUITE=$(SYSCALL_TEST_SUITE)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="SYSCALL_TEST_WORKDIR=$(SYSCALL_TEST_WORKDIR)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="EXTRA_BLOCKLISTS_DIRS=$(EXTRA_BLOCKLISTS_DIRS)"
 CARGO_OSDK_BUILD_ARGS += --init-args="/opt/syscall_test/run_syscall_test.sh"
-else ifeq ($(AUTO_TEST), test)
-ENABLE_BASIC_TEST := true
-	ifneq ($(SMP), 1)
-	CARGO_OSDK_BUILD_ARGS += --kcmd-args="BLOCK_UNSUPPORTED_SMP_TESTS=1"
-	endif
+else ifeq ($(AUTO_TEST), custom)
+ENABLE_CUSTOM_TEST := true
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="INTEL_TDX=$(INTEL_TDX)"
-CARGO_OSDK_BUILD_ARGS += --init-args="/test/run_general_test.sh"
+CARGO_OSDK_BUILD_ARGS += --init-args="/test/run_custom_test.sh"
 else ifeq ($(AUTO_TEST), boot)
-ENABLE_BASIC_TEST := true
 CARGO_OSDK_BUILD_ARGS += --init-args="/test/boot_hello.sh"
 else ifeq ($(AUTO_TEST), vsock)
-ENABLE_BASIC_TEST := true
+ENABLE_CUSTOM_TEST := true
 export VSOCK=on
 CARGO_OSDK_BUILD_ARGS += --init-args="/test/run_vsock_test.sh"
 endif
@@ -312,9 +308,9 @@ run_kernel: initramfs $(CARGO_OSDK)
 ifeq ($(AUTO_TEST), syscall)
 	@tail --lines 100 qemu.log | grep -q "^All syscall tests passed." \
 		|| (echo "Syscall test failed" && exit 1)
-else ifeq ($(AUTO_TEST), test)
-	@tail --lines 100 qemu.log | grep -q "^All general tests passed." \
-		|| (echo "General test failed" && exit 1)
+else ifeq ($(AUTO_TEST), custom)
+	@tail --lines 100 qemu.log | grep -q "^All custom tests passed." \
+		|| (echo "Custom test failed" && exit 1)
 else ifeq ($(AUTO_TEST), boot)
 	@tail --lines 100 qemu.log | grep -q "^Successfully booted." \
 		|| (echo "Boot test failed" && exit 1)
