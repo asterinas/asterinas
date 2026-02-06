@@ -48,6 +48,7 @@ fn get_old_stack(ctx: &Context, sp: usize) -> Result<stack_t> {
         ss_sp: old_stack.base(),
         ss_flags: flags.cast_signed(),
         ss_size: old_stack.size(),
+        ..Default::default()
     };
 
     Ok(stack)

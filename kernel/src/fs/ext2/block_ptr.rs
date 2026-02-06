@@ -69,7 +69,7 @@ impl BlockPtrs {
 
     /// Views it as a mutable slice of `u8` bytes.
     pub fn as_bytes_mut(&mut self) -> &mut [u8] {
-        self.inner.as_bytes_mut()
+        self.inner.as_mut_bytes()
     }
 }
 

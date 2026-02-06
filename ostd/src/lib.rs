@@ -18,6 +18,8 @@
 #![warn(missing_docs)]
 
 extern crate alloc;
+#[macro_use]
+extern crate ostd_pod;
 
 #[cfg_attr(target_arch = "x86_64", path = "arch/x86/mod.rs")]
 #[cfg_attr(target_arch = "riscv64", path = "arch/riscv/mod.rs")]
@@ -53,7 +55,6 @@ pub use ostd_macros::{
     global_frame_allocator, global_heap_allocator, global_heap_allocator_slot_map, main,
     panic_handler,
 };
-pub use ostd_pod::Pod;
 
 pub use self::{error::Error, prelude::Result};
 

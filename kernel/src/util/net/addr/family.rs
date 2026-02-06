@@ -145,14 +145,14 @@ pub fn read_socket_addr_from_user(addr: Vaddr, addr_len: usize) -> Result<Socket
     }
 
     let mut storage = Storage::new_zeroed();
-    current_userspace!().read_bytes(addr, &mut storage.as_bytes_mut()[..addr_len])?;
+    current_userspace!().read_bytes(addr, &mut storage.as_mut_bytes()[..addr_len])?;
 
     let result = match CSocketAddrFamily::try_from(storage.sa_family as i32) {
         Ok(CSocketAddrFamily::AF_INET) => {
             if addr_len < size_of::<CSocketAddrInet>() {
                 return_errno_with_message!(Errno::EINVAL, "the socket address length is too small");
             }
-            let (addr, port) = CSocketAddrInet::from_bytes(storage.as_bytes()).into();
+            let (addr, port) = CSocketAddrInet::from_first_bytes(storage.as_bytes()).into();
             SocketAddr::IPv4(addr, port)
         }
         Ok(CSocketAddrFamily::AF_UNIX) => {
@@ -163,14 +163,14 @@ pub fn read_socket_addr_from_user(addr: Vaddr, addr_len: usize) -> Result<Socket
             if addr_len < size_of::<CSocketAddrNetlink>() {
                 return_errno_with_message!(Errno::EINVAL, "the socket address length is too small");
             }
-            let addr = CSocketAddrNetlink::from_bytes(storage.as_bytes());
+            let addr = CSocketAddrNetlink::from_first_bytes(storage.as_bytes());
             SocketAddr::Netlink(addr.into())
         }
         Ok(CSocketAddrFamily::AF_VSOCK) => {
             if addr_len < size_of::<CSocketAddrVm>() {
                 return_errno_with_message!(Errno::EINVAL, "the socket address length is too small");
             }
-            let addr = CSocketAddrVm::from_bytes(storage.as_bytes());
+            let addr = CSocketAddrVm::from_first_bytes(storage.as_bytes());
             SocketAddr::Vsock(addr.into())
         }
         _ => {

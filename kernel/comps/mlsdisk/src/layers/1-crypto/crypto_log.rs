@@ -3,7 +3,8 @@
 use alloc::vec;
 use core::any::Any;
 
-use ostd::{Pod, const_assert};
+use ostd::const_assert;
+use ostd_pod::{FromZeros, IntoBytes, Pod};
 use serde::{Deserialize, Serialize};
 
 use super::{Iv, Key, Mac};
@@ -111,6 +112,7 @@ pub struct RootMhtMeta {
 /// The Merkle-Hash Tree (MHT) node (internal).
 /// It contains a header for node metadata and a bunch of entries for managing children nodes.
 #[repr(C)]
+#[padding_struct]
 #[derive(Clone, Copy, Pod)]
 struct MhtNode {
     header: MhtNodeHeader,
@@ -120,7 +122,8 @@ const_assert!(size_of::<MhtNode>() <= BLOCK_SIZE);
 
 /// The header contains metadata of the current MHT node.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Pod)]
+#[padding_struct]
+#[derive(Clone, Copy, Debug, Pod, Default)]
 struct MhtNodeHeader {
     // The height of the MHT whose root is this node
     height: Height,
@@ -262,7 +265,7 @@ impl<L: BlockLog> CryptoLog<L> {
         let data_nodes: Vec<Arc<DataNode>> = buf
             .iter()
             .map(|block_buf| {
-                let mut node = DataNode::new_uninit();
+                let mut node = DataNode::new_zeroed();
                 node.0.copy_from_slice(block_buf.as_slice());
                 Arc::new(node)
             })
@@ -743,6 +746,7 @@ impl LevelBuilder {
                 height: self.height,
                 num_data_nodes: MhtNode::max_num_data_nodes(self.height) as _,
                 num_valid_entries: MHT_NBRANCHES as _,
+                ..Default::default()
             };
             for (i, entry) in mht_node.entries.iter_mut().enumerate() {
                 *entry = *entries_per_node[i];
@@ -772,13 +776,14 @@ impl LevelBuilder {
             height: self.height,
             num_data_nodes: num_data_nodes as _,
             num_valid_entries: num_valid_entries as _,
+            ..Default::default()
         };
         for (i, entry) in last_mht_node.entries.iter_mut().enumerate() {
             *entry = if i < num_valid_entries {
                 *entries[i]
             } else {
                 // Padding invalid entries to the rest
-                MhtNodeEntry::new_uninit()
+                MhtNodeEntry::new_zeroed()
             };
         }
 

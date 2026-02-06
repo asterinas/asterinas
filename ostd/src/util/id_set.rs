@@ -22,7 +22,6 @@
 use core::{
     fmt::Debug,
     marker::PhantomData,
-    mem::size_of,
     ops::{Bound, Range, RangeFrom, RangeFull, RangeTo, RangeToInclusive},
     sync::atomic::{AtomicU64, Ordering},
 };

@@ -12,10 +12,7 @@ use aster_rights::{Dup, TRightSet, TRights, Write};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
 use log::debug;
-use ostd::{
-    Pod,
-    mm::{HasPaddr, PodOnce, Split, dma::DmaCoherent},
-};
+use ostd::mm::{HasPaddr, PodOnce, Split, dma::DmaCoherent};
 
 use crate::{
     dma_buf::DmaBuf,
@@ -439,6 +436,7 @@ pub struct AvailRing {
 /// The used ring is where the device returns buffers once it is done with them:
 /// it is only written to by the device, and read by the driver.
 #[repr(C, align(4))]
+#[padding_struct]
 #[derive(Debug, Copy, Clone, Pod)]
 pub struct UsedRing {
     // the flag in UsedRing

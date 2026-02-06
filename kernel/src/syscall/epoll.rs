@@ -266,21 +266,24 @@ pub fn sys_epoll_pwait2(
     Ok(SyscallReturn::Return(events_len as _))
 }
 
-#[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
 // Here we use `repr(packed)` on x86_64 to ensure the same layout as Linux.
 // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/include/uapi/linux/eventpoll.h#L71-L81>.
 #[cfg_attr(target_arch = "x86_64", repr(packed))]
+#[cfg_attr(not(target_arch = "x86_64"), padding_struct)]
+#[derive(Debug, Clone, Copy, Pod, Default)]
 struct c_epoll_event {
     events: u32,
     data: u64,
 }
 
 impl From<&EpollEvent> for c_epoll_event {
+    #[cfg_attr(target_arch = "x86_64", expect(clippy::needless_update))]
     fn from(ep_event: &EpollEvent) -> Self {
         Self {
             events: ep_event.events.bits(),
             data: ep_event.user_data,
+            ..Default::default()
         }
     }
 }

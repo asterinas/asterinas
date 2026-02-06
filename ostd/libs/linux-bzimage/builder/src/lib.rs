@@ -13,6 +13,9 @@
 //! The setup code should be built into the ELF target and we convert it to a flat binary
 //! in the builder.
 
+#[macro_use]
+extern crate ostd_pod;
+
 pub mod encoder;
 mod mapping;
 mod pe_header;

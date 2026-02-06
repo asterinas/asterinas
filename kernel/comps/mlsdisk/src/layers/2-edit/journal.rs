@@ -3,7 +3,7 @@
 use core::marker::PhantomData;
 
 use lending_iterator::LendingIterator;
-use ostd::Pod;
+use ostd_pod::{IntoBytes, Pod};
 use serde::{
     Deserialize, Serialize,
     de::{VariantAccess, Visitor},
