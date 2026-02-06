@@ -3,12 +3,15 @@
 #![expect(dead_code)]
 
 use super::Signal;
-use crate::process::{
-    Pid, Uid,
-    signal::{
-        c_types::siginfo_t,
-        constants::{SI_QUEUE, SI_TKILL, SI_USER},
-        sig_num::SigNum,
+use crate::{
+    context::Context,
+    process::{
+        Pid, Uid,
+        signal::{
+            c_types::siginfo_t,
+            constants::{SI_QUEUE, SI_TKILL, SI_USER},
+            sig_num::SigNum,
+        },
     },
 };
 
@@ -34,6 +37,15 @@ impl UserSignal {
             kind,
             pid,
             uid,
+        }
+    }
+
+    pub fn new_kill(num: SigNum, ctx: &Context) -> Self {
+        Self {
+            num,
+            kind: UserSignalKind::Kill,
+            pid: ctx.process.pid(),
+            uid: ctx.posix_thread.credentials().ruid(),
         }
     }
 

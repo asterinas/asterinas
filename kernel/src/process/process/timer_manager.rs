@@ -107,7 +107,7 @@ fn create_process_timer_callback(
     let sent_signal = move || {
         let signal = KernelSignal::new(SIGALRM);
         if let Some(process) = current_process.upgrade() {
-            process.enqueue_signal(signal);
+            process.enqueue_signal(Box::new(signal));
         }
     };
 
