@@ -1,5 +1,5 @@
-{ lib, stdenvNoCC, fetchFromGitHub, hostPlatform, writeClosure, busybox, apps
-, benchmark, syscall, dnsServer, pkgs }:
+{ lib, stdenvNoCC, fetchFromGitHub, hostPlatform, writeClosure, busybox
+, xfstests, apps, benchmark, syscall, dnsServer, pkgs }:
 let
   etc = lib.fileset.toSource {
     root = ./../src/etc;
@@ -15,7 +15,9 @@ let
   resolv_conf = pkgs.callPackage ./resolv_conf.nix { dnsServer = dnsServer; };
   # Whether the initramfs should include evtest, a common tool to debug input devices (`/dev/input/eventX`)
   is_evtest_included = false;
+
   all_pkgs = [ busybox etc resolv_conf ]
+    ++ lib.optionals (xfstests != null) [ xfstests ]
     ++ lib.optionals (apps != null) [ apps.package ]
     ++ lib.optionals (benchmark != null) [ benchmark.package ]
     ++ lib.optionals (syscall != null) [ syscall.package ]
@@ -24,7 +26,8 @@ in stdenvNoCC.mkDerivation {
   name = "initramfs";
   buildCommand = ''
     mkdir -p $out/{dev,etc,root,usr,opt,tmp,var,proc,sys}
-    mkdir -p $out/{benchmark,test,ext2,exfat}
+    mkdir -p $out/{benchmark,test,xfstests,ext2,exfat}
+    mkdir -p $out/xfstests/{test,scratch}
     mkdir -p $out/usr/{bin,sbin,lib,lib64,local}
     ln -sfn usr/bin $out/bin
     ln -sfn usr/sbin $out/sbin
@@ -59,6 +62,11 @@ in stdenvNoCC.mkDerivation {
       cp -L ${gvisor_libs}/libgcc_s.so.1 $out/lib/x86_64-linux-gnu/libgcc_s.so.1
       cp -L ${gvisor_libs}/libc.so.6 $out/lib/x86_64-linux-gnu/libc.so.6
       cp -L ${gvisor_libs}/libm.so.6 $out/lib/x86_64-linux-gnu/libm.so.6
+    ''}
+
+    ${lib.optionalString (xfstests != null) ''
+      # Copy xfstests package content
+      cp -r ${xfstests}/xfstests/* $out/xfstests/
     ''}
 
     # Use `writeClosure` to retrieve all dependencies of the specified packages.
