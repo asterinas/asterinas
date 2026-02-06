@@ -9,7 +9,7 @@ use core::{cmp::Ordering, time::Duration};
 pub(super) use align_ext::AlignExt;
 use aster_block::{
     BLOCK_SIZE,
-    bio::{BioDirection, BioSegment, BioWaiter},
+    bio::{BioDirection, BioSegment, BioWaiter, SubmittedBio},
     id::{Bid, BlockId},
 };
 use ostd::mm::{Segment, VmIo, io_util::HasVmReaderWriter};
@@ -29,8 +29,9 @@ use crate::{
         exfat::{dentry::ExfatDentryIterator, fat::ExfatChain, fs::ExfatFs},
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
         utils::{
-            CachePage, DirentVisitor, Extension, Inode, InodeIo, InodeMode, InodeType, Metadata,
-            MknodType, PageCache, PageCacheBackend, StatusFlags, SymbolicLink, mkmod,
+            CachePageExt, DirentVisitor, Extension, Inode, InodeIo, InodeMode, InodeType,
+            LockedCachePage, Metadata, MknodType, PageCache, PageCacheBackend, StatusFlags,
+            SymbolicLink, mkmod,
         },
     },
     prelude::*,
@@ -134,7 +135,7 @@ struct ExfatInodeInner {
 }
 
 impl PageCacheBackend for ExfatInode {
-    fn read_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
+    fn read_page_async(&self, idx: usize, frame: LockedCachePage) -> Result<BioWaiter> {
         let inner = self.inner.read();
         if inner.size < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "Invalid read size")
@@ -144,14 +145,18 @@ impl PageCacheBackend for ExfatInode {
             Segment::from(frame.clone()).into(),
             BioDirection::FromDevice,
         );
+        let complete_fn = Box::new(move |_: &SubmittedBio| {
+            frame.set_up_to_date();
+        });
         let waiter = inner.fs().block_device().read_blocks_async(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
             bio_segment,
+            Some(complete_fn),
         )?;
         Ok(waiter)
     }
 
-    fn write_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
+    fn write_page_async(&self, idx: usize, frame: LockedCachePage) -> Result<BioWaiter> {
         let inner = self.inner.read();
         let sector_size = inner.fs().sector_size();
 
@@ -163,9 +168,20 @@ impl PageCacheBackend for ExfatInode {
             Segment::from(frame.clone()).into(),
             BioDirection::ToDevice,
         );
+
+        frame.wait_until_finish_write_back();
+        frame.set_write_back();
+        frame.set_up_to_date();
+        let frame = frame.unlock();
+
+        let complete_fn = Box::new(move |_: &SubmittedBio| {
+            frame.clear_writing_back();
+        });
+
         let waiter = inner.fs().block_device().write_blocks_async(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
             bio_segment,
+            Some(complete_fn),
         )?;
         Ok(waiter)
     }
@@ -348,7 +364,11 @@ impl ExfatInodeInner {
 
         page_cache.write_bytes(start_off, &bytes)?;
         if sync {
-            page_cache.decommit(start_off..start_off + bytes.len())?;
+            parent
+                .inner
+                .read()
+                .page_cache
+                .flush_range(start_off..start_off + bytes.len())?;
         }
 
         Ok(())
@@ -581,7 +601,7 @@ impl ExfatInodeInner {
     }
 
     fn sync_data(&self, fs_guard: &MutexGuard<()>) -> Result<()> {
-        self.page_cache.evict_range(0..self.size)?;
+        self.page_cache.flush_range(0..self.size)?;
         Ok(())
     }
 
@@ -654,7 +674,7 @@ impl ExfatInode {
 
         inner
             .page_cache
-            .discard_range(read_off..read_off + read_len);
+            .discard_range(read_off..read_off + read_len)?;
 
         let bio_segment = BioSegment::alloc(1, BioDirection::FromDevice);
 
@@ -745,7 +765,7 @@ impl ExfatInode {
 
         let start = offset.min(file_size);
         let end = end_offset.min(file_size);
-        inner.page_cache.discard_range(start..end);
+        inner.page_cache.discard_range(start..end)?;
 
         let new_size = {
             let mut inner = inner.upgrade();
@@ -836,7 +856,6 @@ impl ExfatInode {
         let size = root_chain.num_clusters() as usize * sb.cluster_size as usize;
 
         let name = ExfatName::new();
-
         let inode = Arc::new_cyclic(|weak_self| ExfatInode {
             inner: RwMutex::new(ExfatInodeInner {
                 ino: EXFAT_ROOT_INO,
@@ -857,7 +876,12 @@ impl ExfatInode {
                 is_deleted: false,
                 parent_hash: 0,
                 fs: fs_weak,
-                page_cache: PageCache::with_capacity(size, weak_self.clone() as _).unwrap(),
+                // FIXME: Handling circular references.
+                page_cache: PageCache::with_capacity(
+                    size,
+                    weak_self.upgrade().map(|backend| backend as _),
+                )
+                .unwrap(),
             }),
             extension: Extension::new(),
         });
@@ -967,7 +991,12 @@ impl ExfatInode {
                 is_deleted: false,
                 parent_hash,
                 fs: fs_weak,
-                page_cache: PageCache::with_capacity(size, weak_self.clone() as _).unwrap(),
+                // FIXME: Handling circular references.
+                page_cache: PageCache::with_capacity(
+                    size,
+                    weak_self.upgrade().map(|backend| backend as _),
+                )
+                .unwrap(),
             }),
             extension: Extension::new(),
         });
@@ -1061,7 +1090,6 @@ impl ExfatInode {
         // We need to write unused dentries (i.e. 0) to page cache.
         inner
             .page_cache
-            .pages()
             .clear(old_size_allocated..new_size_allocated)?;
 
         Ok(entry_id)

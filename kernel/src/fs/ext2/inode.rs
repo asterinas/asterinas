@@ -6,6 +6,7 @@
 use alloc::{borrow::ToOwned, rc::Rc};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+use aster_block::bio::SubmittedBio;
 use inherit_methods_macro::inherit_methods;
 use ostd::{const_assert, mm::io_util::HasVmReaderWriter};
 
@@ -23,8 +24,8 @@ use crate::{
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
         pipe::Pipe,
         utils::{
-            Extension, FallocMode, Inode as _, InodeMode, Metadata, Permission, XattrName,
-            XattrNamespace, XattrSetFlags,
+            CachePageExt, Extension, FallocMode, Inode as _, InodeMode, LockedCachePage, Metadata,
+            Permission, XattrName, XattrNamespace, XattrSetFlags,
         },
     },
     process::{Gid, Uid, posix_thread::AsPosixThread},
@@ -978,7 +979,7 @@ impl InodeInner {
         Self {
             page_cache: PageCache::with_capacity(
                 num_page_bytes,
-                Arc::downgrade(&inode_impl.block_manager) as _,
+                Some(inode_impl.block_manager.clone() as _),
             )
             .unwrap(),
             inode_impl,
@@ -1016,7 +1017,7 @@ impl InodeInner {
         if read_len == 0 {
             return Ok(read_len);
         }
-        self.page_cache.discard_range(offset..offset + read_len);
+        self.page_cache.discard_range(offset..offset + read_len)?;
 
         let start_bid = Bid::from_offset(offset).to_raw() as Ext2Bid;
         let buf_nblocks = read_len / BLOCK_SIZE;
@@ -1049,7 +1050,7 @@ impl InodeInner {
 
         let start = offset.min(file_size);
         let end = end_offset.min(file_size);
-        self.page_cache.discard_range(start..end);
+        self.page_cache.discard_range(start..end)?;
 
         if end_offset > file_size {
             self.inode_impl.resize(end_offset)?;
@@ -1172,7 +1173,7 @@ impl InodeInner {
     pub fn sync_data(&self) -> Result<()> {
         // Writes back the data in page cache.
         let file_size = self.file_size();
-        self.page_cache.evict_range(0..file_size)?;
+        self.page_cache.flush_range(0..file_size)?;
         Ok(())
     }
 }
@@ -1828,7 +1829,7 @@ impl InodeImpl {
         writer: &mut VmWriter,
     ) -> Result<BioWaiter>;
     pub fn read_blocks(&self, bid: Ext2Bid, nblocks: usize, writer: &mut VmWriter) -> Result<()>;
-    pub fn read_block_async(&self, bid: Ext2Bid, frame: &CachePage) -> Result<BioWaiter>;
+    pub fn read_block_async(&self, bid: Ext2Bid, frame: LockedCachePage) -> Result<BioWaiter>;
     pub fn write_blocks_async(
         &self,
         bid: Ext2Bid,
@@ -1836,7 +1837,7 @@ impl InodeImpl {
         reader: &mut VmReader,
     ) -> Result<BioWaiter>;
     pub fn write_blocks(&self, bid: Ext2Bid, nblocks: usize, reader: &mut VmReader) -> Result<()>;
-    pub fn write_block_async(&self, bid: Ext2Bid, frame: &CachePage) -> Result<BioWaiter>;
+    pub fn write_block_async(&self, bid: Ext2Bid, frame: LockedCachePage) -> Result<BioWaiter>;
 }
 
 /// Manages the inode blocks and block I/O operations.
@@ -1870,7 +1871,7 @@ impl InodeBlockManager {
             let bio_segment = BioSegment::alloc(range_nblocks, BioDirection::FromDevice);
             bio_segment.reader().unwrap().read_fallible(writer)?;
 
-            let waiter = self.fs().read_blocks_async(start_bid, bio_segment)?;
+            let waiter = self.fs().read_blocks_async(start_bid, bio_segment, None)?;
             bio_waiter.concat(waiter);
         }
 
@@ -1884,22 +1885,25 @@ impl InodeBlockManager {
         }
     }
 
-    pub fn read_block_async(&self, bid: Ext2Bid, frame: &CachePage) -> Result<BioWaiter> {
-        let mut bio_waiter = BioWaiter::new();
+    pub fn read_block_async(&self, bid: Ext2Bid, frame: LockedCachePage) -> Result<BioWaiter> {
+        let dev_range = DeviceRangeReader::new(self, bid..bid + 1 as Ext2Bid)?.read()?;
+        let start_bid = dev_range.start as Ext2Bid;
+        // TODO: Should we allocate the bio segment from the pool on reads?
+        // This may require an additional copy to the requested frame in the completion callback.
+        let bio_segment = BioSegment::new_from_segment(
+            Segment::from(frame.clone()).into(),
+            BioDirection::FromDevice,
+        );
 
-        for dev_range in DeviceRangeReader::new(self, bid..bid + 1 as Ext2Bid)? {
-            let start_bid = dev_range.start as Ext2Bid;
-            // TODO: Should we allocate the bio segment from the pool on reads?
-            // This may require an additional copy to the requested frame in the completion callback.
-            let bio_segment = BioSegment::new_from_segment(
-                Segment::from(frame.clone()).into(),
-                BioDirection::FromDevice,
-            );
-            let waiter = self.fs().read_blocks_async(start_bid, bio_segment)?;
-            bio_waiter.concat(waiter);
-        }
+        let complete_fn = Box::new(move |_: &SubmittedBio| {
+            frame.set_up_to_date();
+        });
 
-        Ok(bio_waiter)
+        let waiter = self
+            .fs()
+            .read_blocks_async(start_bid, bio_segment, Some(complete_fn))?;
+
+        Ok(waiter)
     }
 
     /// Writes one or multiple blocks from the segment start from `bid` asynchronously.
@@ -1919,7 +1923,7 @@ impl InodeBlockManager {
             let bio_segment = BioSegment::alloc(range_nblocks, BioDirection::ToDevice);
             bio_segment.writer().unwrap().write_fallible(reader)?;
 
-            let waiter = self.fs().write_blocks_async(start_bid, bio_segment)?;
+            let waiter = self.fs().write_blocks_async(start_bid, bio_segment, None)?;
             bio_waiter.concat(waiter);
         }
 
@@ -1933,22 +1937,30 @@ impl InodeBlockManager {
         }
     }
 
-    pub fn write_block_async(&self, bid: Ext2Bid, frame: &CachePage) -> Result<BioWaiter> {
-        let mut bio_waiter = BioWaiter::new();
+    pub fn write_block_async(&self, bid: Ext2Bid, frame: LockedCachePage) -> Result<BioWaiter> {
+        let dev_range = DeviceRangeReader::new(self, bid..bid + 1 as Ext2Bid)?.read()?;
+        let start_bid = dev_range.start as Ext2Bid;
+        let bio_segment = BioSegment::alloc(1, BioDirection::ToDevice);
 
-        for dev_range in DeviceRangeReader::new(self, bid..bid + 1 as Ext2Bid)? {
-            let start_bid = dev_range.start as Ext2Bid;
-            let bio_segment = BioSegment::alloc(1, BioDirection::ToDevice);
-            // This requires an additional copy to the pooled bio segment.
-            bio_segment
-                .writer()
-                .unwrap()
-                .write_fallible(&mut frame.reader().to_fallible())?;
-            let waiter = self.fs().write_blocks_async(start_bid, bio_segment)?;
-            bio_waiter.concat(waiter);
-        }
+        // This requires an additional copy to the pooled bio segment.
+        bio_segment
+            .writer()
+            .unwrap()
+            .write_fallible(&mut frame.reader().to_fallible())?;
 
-        Ok(bio_waiter)
+        frame.wait_until_finish_write_back();
+        frame.set_write_back();
+        frame.set_up_to_date();
+        let frame = frame.unlock();
+        let complete_fn = Box::new(move |_: &SubmittedBio| {
+            frame.clear_writing_back();
+        });
+
+        let waiter = self
+            .fs()
+            .write_blocks_async(start_bid, bio_segment, Some(complete_fn))?;
+
+        Ok(waiter)
     }
 
     pub fn nblocks(&self) -> usize {
@@ -1961,12 +1973,12 @@ impl InodeBlockManager {
 }
 
 impl PageCacheBackend for InodeBlockManager {
-    fn read_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
+    fn read_page_async(&self, idx: usize, frame: LockedCachePage) -> Result<BioWaiter> {
         let bid = idx as Ext2Bid;
         self.read_block_async(bid, frame)
     }
 
-    fn write_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
+    fn write_page_async(&self, idx: usize, frame: LockedCachePage) -> Result<BioWaiter> {
         let bid = idx as Ext2Bid;
         self.write_block_async(bid, frame)
     }

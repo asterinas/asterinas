@@ -411,7 +411,7 @@ impl<'a> DirEntryWriter<'a> {
     pub fn init_dir(&mut self, self_ino: u32, parent_ino: u32) -> Result<()> {
         debug_assert!(self.page_cache.pages().size() == 0 && self.offset == 0);
 
-        self.page_cache.pages().resize(BLOCK_SIZE)?;
+        self.page_cache.resize(BLOCK_SIZE)?;
 
         let self_header = DirEntryHeader::new(self_ino, InodeType::Dir, 1);
         self.write_entry(&self_header, ".")?;

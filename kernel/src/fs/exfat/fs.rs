@@ -7,7 +7,7 @@ use core::{num::NonZeroUsize, ops::Range, sync::atomic::AtomicU64};
 
 use aster_block::{
     BlockDevice,
-    bio::{BioDirection, BioSegment, BioWaiter},
+    bio::{BioDirection, BioSegment, BioWaiter, SubmittedBio},
     id::BlockId,
 };
 use hashbrown::HashMap;
@@ -27,8 +27,8 @@ use crate::{
         exfat::{constants::*, inode::Ino},
         registry::{FsProperties, FsType},
         utils::{
-            CachePage, FileSystem, FsEventSubscriberStats, FsFlags, Inode, PageCache,
-            PageCacheBackend, SuperBlock,
+            CachePageExt, FileSystem, FsEventSubscriberStats, FsFlags, Inode, LockedCachePage,
+            PageCache, PageCacheBackend, SuperBlock,
         },
     },
     prelude::*,
@@ -83,7 +83,12 @@ impl ExfatFs {
             fat_cache: RwLock::new(LruCache::<ClusterID, ClusterID>::new(
                 NonZeroUsize::new(FAT_LRU_CACHE_SIZE).unwrap(),
             )),
-            meta_cache: PageCache::with_capacity(fs_size, weak_self.clone() as _).unwrap(),
+            // FIXME: Handling circular references.
+            meta_cache: PageCache::with_capacity(
+                fs_size,
+                weak_self.upgrade().map(|backend| backend as _),
+            )
+            .unwrap(),
             mutex: Mutex::new(()),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
         });
@@ -153,7 +158,7 @@ impl ExfatFs {
     }
 
     pub(super) fn sync_meta_at(&self, range: core::ops::Range<usize>) -> Result<()> {
-        self.meta_cache.pages().decommit(range)?;
+        self.meta_cache.flush_range(range)?;
         Ok(())
     }
 
@@ -370,7 +375,7 @@ impl ExfatFs {
 }
 
 impl PageCacheBackend for ExfatFs {
-    fn read_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
+    fn read_page_async(&self, idx: usize, frame: LockedCachePage) -> Result<BioWaiter> {
         if self.fs_size() < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "invalid read size")
         }
@@ -378,13 +383,19 @@ impl PageCacheBackend for ExfatFs {
             Segment::from(frame.clone()).into(),
             BioDirection::FromDevice,
         );
-        let waiter = self
-            .block_device
-            .read_blocks_async(BlockId::new(idx as u64), bio_segment)?;
+
+        let complete_fn = Box::new(move |_: &SubmittedBio| {
+            frame.set_up_to_date();
+        });
+        let waiter = self.block_device.read_blocks_async(
+            BlockId::new(idx as u64),
+            bio_segment,
+            Some(complete_fn),
+        )?;
         Ok(waiter)
     }
 
-    fn write_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
+    fn write_page_async(&self, idx: usize, frame: LockedCachePage) -> Result<BioWaiter> {
         if self.fs_size() < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "invalid write size")
         }
@@ -392,9 +403,20 @@ impl PageCacheBackend for ExfatFs {
             Segment::from(frame.clone()).into(),
             BioDirection::ToDevice,
         );
-        let waiter = self
-            .block_device
-            .write_blocks_async(BlockId::new(idx as u64), bio_segment)?;
+
+        frame.wait_until_finish_write_back();
+        frame.set_write_back();
+        frame.set_up_to_date();
+        let frame = frame.unlock();
+
+        let complete_fn = Box::new(move |_: &SubmittedBio| {
+            frame.clear_writing_back();
+        });
+        let waiter = self.block_device.write_blocks_async(
+            BlockId::new(idx as u64),
+            bio_segment,
+            Some(complete_fn),
+        )?;
         Ok(waiter)
     }
 
@@ -412,7 +434,7 @@ impl FileSystem for ExfatFs {
         for inode in self.inodes.read().values() {
             inode.sync_all()?;
         }
-        self.meta_cache.evict_range(0..self.fs_size())?;
+        self.meta_cache.flush_range(0..self.fs_size())?;
         Ok(())
     }
 
