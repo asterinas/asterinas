@@ -83,6 +83,7 @@ macro_rules! import_generic_syscall_entries {
             pidfd_getfd::sys_pidfd_getfd,
             pidfd_open::sys_pidfd_open,
             pipe::sys_pipe2,
+            pivot_root::sys_pivot_root,
             ppoll::sys_ppoll,
             prctl::sys_prctl,
             pread64::sys_pread64,
@@ -233,6 +234,7 @@ macro_rules! define_syscalls_with_generic_syscall_table {
             SYS_LINKAT = 37                  => sys_linkat(args[..5]);
             SYS_UMOUNT = 39                  => sys_umount(args[..2]);
             SYS_MOUNT = 40                   => sys_mount(args[..5]);
+            SYS_PIVOT_ROOT = 41              => sys_pivot_root(args[..2]);
             SYS_STATFS = 43                  => sys_statfs(args[..2]);
             SYS_FSTATFS = 44                 => sys_fstatfs(args[..2]);
             SYS_TRUNCATE = 45                => sys_truncate(args[..2]);

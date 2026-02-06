@@ -14,3 +14,6 @@ chroot(path);
 
 // Remove a watch from an inotify instance
 inotify_rm_watch(fd, wd);
+
+// Change the root mount in the mount namespace of the calling thread
+pivot_root(new_root, put_old);

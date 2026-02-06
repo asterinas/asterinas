@@ -175,7 +175,7 @@ which are summarized in the table below.
 | 152     | munlockall             | ❌             | N/A |
 | 153     | vhangup                | ❌             | N/A |
 | 154     | modify_ldt             | ❌             | N/A |
-| 155     | pivot_root             | ❌             | N/A |
+| 155     | pivot_root             | ✅             | 💯 |
 | 156     | _sysctl                | ❌             | N/A |
 | 157     | prctl                  | ✅             | [⚠️](syscall-flag-coverage/namespaces-cgroups-and-security/#prctl) |
 | 158     | arch_prctl             | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#arch_prctl) |
