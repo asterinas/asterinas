@@ -9,11 +9,9 @@ use syn::{Expr, Ident, ItemFn, parse_macro_input};
 
 /// A macro attribute to mark the kernel entry point.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```ignore
-/// #![no_std]
-///
 /// use ostd::prelude::*;
 ///
 /// #[ostd::main]
@@ -29,12 +27,12 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     quote!(
         #[cfg(not(ktest))]
         // SAFETY: The name does not collide with other symbols.
-    #[unsafe(no_mangle)]
+        #[unsafe(no_mangle)]
         extern "Rust" fn __ostd_main() -> ! {
             let _: () = #main_fn_name();
 
-            ostd::task::Task::yield_now();
-            unreachable!("`yield_now` in the boot context should not return");
+            ::ostd::task::Task::yield_now();
+            ::core::unreachable!("`yield_now` in the boot context should not return");
         }
 
         #[expect(unused)]
@@ -43,10 +41,11 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     .into()
 }
 
-/// A macro attribute for the unit test kernel entry point.
+/// A macro attribute to mark the unit test kernel entry point.
 ///
 /// This macro is used for internal OSDK implementation. Do not use it
 /// directly.
+#[doc(hidden)]
 #[proc_macro_attribute]
 pub fn test_main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let main_fn = parse_macro_input!(item as ItemFn);
@@ -54,12 +53,12 @@ pub fn test_main(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     quote!(
         // SAFETY: The name does not collide with other symbols.
-    #[unsafe(no_mangle)]
+        #[unsafe(no_mangle)]
         extern "Rust" fn __ostd_main() -> ! {
             let _: () = #main_fn_name();
 
-            ostd::task::Task::yield_now();
-            unreachable!("`yield_now` in the boot context should not return");
+            ::ostd::task::Task::yield_now();
+            ::core::unreachable!("`yield_now` in the boot context should not return");
         }
 
         #main_fn
@@ -72,7 +71,7 @@ pub fn test_main(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// The attributed static variable will be used to provide frame allocation
 /// for the kernel.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```ignore
 /// use core::alloc::Layout;
@@ -94,13 +93,16 @@ pub fn test_main(_attr: TokenStream, item: TokenStream) -> TokenStream {
 pub fn global_frame_allocator(_attr: TokenStream, item: TokenStream) -> TokenStream {
     // Make a `static __GLOBAL_FRAME_ALLOCATOR_REF: &'static dyn GlobalFrameAllocator`
     // That points to the annotated static variable.
+
     let item = parse_macro_input!(item as syn::ItemStatic);
     let static_name = &item.ident;
 
     quote!(
         // SAFETY: The name does not collide with other symbols.
-    #[unsafe(no_mangle)]
-        static __GLOBAL_FRAME_ALLOCATOR_REF: &'static dyn ostd::mm::frame::GlobalFrameAllocator = &#static_name;
+        #[unsafe(no_mangle)]
+        static __GLOBAL_FRAME_ALLOCATOR_REF: &'static dyn ::ostd::mm::frame::GlobalFrameAllocator =
+            &#static_name;
+
         #item
     )
     .into()
@@ -118,7 +120,7 @@ pub fn global_frame_allocator(_attr: TokenStream, item: TokenStream) -> TokenStr
 /// implement an unsafe trait. [`macro@global_heap_allocator`] eventually relies on
 /// [`global_allocator`] to customize Rust's heap allocator.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```ignore
 /// use core::alloc::{AllocError, Layout};
@@ -140,13 +142,16 @@ pub fn global_frame_allocator(_attr: TokenStream, item: TokenStream) -> TokenStr
 pub fn global_heap_allocator(_attr: TokenStream, item: TokenStream) -> TokenStream {
     // Make a `static __GLOBAL_HEAP_ALLOCATOR_REF: &'static dyn GlobalHeapAllocator`
     // That points to the annotated static variable.
+
     let item = parse_macro_input!(item as syn::ItemStatic);
     let static_name = &item.ident;
 
     quote!(
         // SAFETY: The name does not collide with other symbols.
-    #[unsafe(no_mangle)]
-        static __GLOBAL_HEAP_ALLOCATOR_REF: &'static dyn ostd::mm::heap::GlobalHeapAllocator = &#static_name;
+        #[unsafe(no_mangle)]
+        static __GLOBAL_HEAP_ALLOCATOR_REF: &'static dyn ::ostd::mm::heap::GlobalHeapAllocator =
+            &#static_name;
+
         #item
     )
     .into()
@@ -170,9 +175,12 @@ pub fn global_heap_allocator(_attr: TokenStream, item: TokenStream) -> TokenStre
 #[proc_macro_attribute]
 pub fn global_heap_allocator_slot_map(_attr: TokenStream, item: TokenStream) -> TokenStream {
     // Rewrite the input `const fn __any_name__(layout: Layout) -> Option<SlotInfo> { ... }` to
-    // `const extern "Rust" fn __GLOBAL_HEAP_SLOT_INFO_FROM_LAYOUT(layout: Layout) -> Option<SlotInfo> { ... }`.
-    // Reject if the input is not a `const fn`.
+    // `const extern "Rust" fn __global_heap_slot_info_from_layout(layout: Layout) -> Option<SlotInfo> { ... }`.
+
     let item = parse_macro_input!(item as syn::ItemFn);
+    let fn_name = &item.sig.ident;
+
+    // Reject if the input is not a `const fn`.
     assert!(
         item.sig.constness.is_some(),
         "the annotated function must be `const`"
@@ -180,7 +188,13 @@ pub fn global_heap_allocator_slot_map(_attr: TokenStream, item: TokenStream) -> 
 
     quote!(
         /// SAFETY: The name does not collide with other symbols.
-        #[unsafe(export_name = "__GLOBAL_HEAP_SLOT_INFO_FROM_LAYOUT")]
+        #[unsafe(no_mangle)]
+        const extern "Rust" fn __global_heap_slot_info_from_layout(
+            layout: ::core::alloc::Layout,
+        ) -> ::core::option::Option<::ostd::mm::heap::SlotInfo> {
+            #fn_name(layout)
+        }
+
         #item
     )
     .into()
@@ -199,8 +213,8 @@ pub fn panic_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
     quote!(
         #[cfg(not(ktest))]
         // SAFETY: The name does not collide with other symbols.
-    #[unsafe(no_mangle)]
-        extern "Rust" fn __ostd_panic_handler(info: &core::panic::PanicInfo) -> ! {
+        #[unsafe(no_mangle)]
+        extern "Rust" fn __ostd_panic_handler(info: &::core::panic::PanicInfo) -> ! {
             #handler_fn_name(info);
         }
 
@@ -210,10 +224,11 @@ pub fn panic_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
     .into()
 }
 
-/// A macro attribute for the panic handler.
+/// A macro attribute for the unit test panic handler.
 ///
 /// This macro is used for internal OSDK implementation. Do not use it
 /// directly.
+#[doc(hidden)]
 #[proc_macro_attribute]
 pub fn test_panic_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let handler_fn = parse_macro_input!(item as ItemFn);
@@ -221,8 +236,8 @@ pub fn test_panic_handler(_attr: TokenStream, item: TokenStream) -> TokenStream 
 
     quote!(
         // SAFETY: The name does not collide with other symbols.
-    #[unsafe(no_mangle)]
-        extern "Rust" fn __ostd_panic_handler(info: &core::panic::PanicInfo) -> ! {
+        #[unsafe(no_mangle)]
+        extern "Rust" fn __ostd_panic_handler(info: &::core::panic::PanicInfo) -> ! {
             #handler_fn_name(info);
         }
 
@@ -233,9 +248,9 @@ pub fn test_panic_handler(_attr: TokenStream, item: TokenStream) -> TokenStream 
 
 /// The test attribute macro to mark a test function.
 ///
-/// # Example
+/// # Examples
 ///
-/// For crates other than ostd,
+/// For crates other than `ostd`,
 /// this macro can be used in the following form.
 ///
 /// ```ignore
@@ -247,7 +262,7 @@ pub fn test_panic_handler(_attr: TokenStream, item: TokenStream) -> TokenStream 
 /// }
 /// ```
 ///
-/// For ostd crate itself,
+/// For `ostd` crate itself,
 /// this macro can be used in the form
 ///
 /// ```ignore
@@ -264,11 +279,11 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemFn);
     assert!(
         input.sig.inputs.is_empty(),
-        "ostd::test function should have no arguments"
+        "test functions should have no arguments"
     );
     assert!(
         matches!(input.sig.output, syn::ReturnType::Default),
-        "ostd::test function should return `()`"
+        "test functions should return `()`"
     );
 
     // Generate a random identifier to avoid name conflicts.
@@ -300,16 +315,17 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
             );
             match &attr.meta {
                 syn::Meta::List(l) => {
-                    let arg_err_message = "`should_panic` attribute should only have zero or one `expected` argument, with the format of `expected = \"<panic message>\"`";
-                    let expected_assign =
-                        syn::parse2::<syn::ExprAssign>(l.tokens.clone()).expect(arg_err_message);
-                    let Expr::Lit(s) = *expected_assign.right else {
-                        panic!("{}", arg_err_message);
-                    };
-                    let syn::Lit::Str(expectation) = s.lit else {
-                        panic!("{}", arg_err_message);
-                    };
-                    (true, Some(expectation))
+                    if let Ok(expected_assign) = syn::parse2::<syn::ExprAssign>(l.tokens.clone())
+                        && let Expr::Lit(s) = *expected_assign.right
+                        && let syn::Lit::Str(expectation) = s.lit
+                    {
+                        (true, Some(expectation))
+                    } else {
+                        panic!(
+                            "`should_panic` attributes should only have zero or one `expected` argument, \
+                             with the format of `expected = \"<panic message>\"`"
+                        );
+                    }
                 }
                 _ => (true, None),
             }
@@ -337,14 +353,14 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
             #[used]
             // SAFETY: This is properly handled in the linker script.
             #[unsafe(link_section = ".ktest_array")]
-            static #fn_ktest_item_name: ostd_test::KtestItem = ostd_test::KtestItem::new(
+            static #fn_ktest_item_name: ::ostd_test::KtestItem = ::ostd_test::KtestItem::new(
                 #fn_name,
                 (#should_panic, #expectation_tokens),
-                ostd_test::KtestItemInfo {
-                    module_path: module_path!(),
-                    fn_name: stringify!(#fn_name),
+                ::ostd_test::KtestItemInfo {
+                    module_path: ::core::module_path!(),
+                    fn_name: ::core::stringify!(#fn_name),
                     package: #package_name,
-                    source: file!(),
+                    source: ::core::file!(),
                     line: #line,
                     col: #col,
                 },
@@ -356,14 +372,14 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
             #[used]
             // SAFETY: This is properly handled in the linker script.
             #[unsafe(link_section = ".ktest_array")]
-            static #fn_ktest_item_name: ostd::ktest::KtestItem = ostd::ktest::KtestItem::new(
+            static #fn_ktest_item_name: ::ostd::ktest::KtestItem = ::ostd::ktest::KtestItem::new(
                 #fn_name,
                 (#should_panic, #expectation_tokens),
-                ostd::ktest::KtestItemInfo {
-                    module_path: module_path!(),
-                    fn_name: stringify!(#fn_name),
+                ::ostd::ktest::KtestItemInfo {
+                    module_path: ::core::module_path!(),
+                    fn_name: ::core::stringify!(#fn_name),
                     package: #package_name,
-                    source: file!(),
+                    source: ::core::file!(),
                     line: #line,
                     col: #col,
                 },
