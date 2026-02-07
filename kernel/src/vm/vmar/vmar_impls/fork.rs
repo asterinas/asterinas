@@ -132,7 +132,7 @@ mod test {
     use super::*;
 
     #[ktest]
-    fn test_cow_copy_pt() {
+    fn cow_copy_pt_basic() {
         let vm_space = VmSpace::new();
         let map_range = PAGE_SIZE..(PAGE_SIZE * 2);
         let cow_range = 0..PAGE_SIZE * 512 * 512;
@@ -264,7 +264,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_cow_copy_pt_iomem() {
+    fn cow_copy_pt_iomem() {
         /// A very large address (1TiB) beyond typical physical memory for testing.
         const IOMEM_PADDR: usize = 0x100_000_000_000;
 

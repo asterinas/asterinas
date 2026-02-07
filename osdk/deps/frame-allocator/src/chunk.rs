@@ -257,7 +257,7 @@ mod test {
     use ostd::prelude::ktest;
 
     #[ktest]
-    fn test_greater_order_of() {
+    fn greater_order_of_works() {
         #[track_caller]
         fn assert_greater_order_of(nframes: usize, expected: BuddyOrder) {
             assert_eq!(greater_order_of(nframes * PAGE_SIZE), expected);
@@ -275,7 +275,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_lesser_order_of() {
+    fn lesser_order_of_works() {
         #[track_caller]
         fn assert_lesser_order_of(nframes: usize, expected: BuddyOrder) {
             assert_eq!(lesser_order_of(nframes * PAGE_SIZE), expected);
@@ -293,7 +293,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_max_order_from() {
+    fn max_order_from_works() {
         #[track_caller]
         fn assert_max_order_from(frame_num: usize, expected: BuddyOrder) {
             assert_eq!(max_order_from(frame_num * PAGE_SIZE), expected);
@@ -315,7 +315,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_split_to_chunks() {
+    fn split_to_chunks_works() {
         use alloc::{vec, vec::Vec};
 
         #[track_caller]
@@ -346,7 +346,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_split_to_order() {
+    fn split_to_order_works() {
         use alloc::{vec, vec::Vec};
 
         #[track_caller]
@@ -374,7 +374,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_free_chunk_ops() {
+    fn free_chunk_ops() {
         let order = 3;
         let size = size_of_order(order);
         let region = MockMemoryRegion::alloc(size);

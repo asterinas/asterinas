@@ -252,7 +252,7 @@ mod tests {
     }
 
     #[ktest]
-    fn test_tree_iter() {
+    fn tree_iter() {
         let tree = gen_test_case!();
         let mut iter = tree.iter();
         let c1 = iter.next().unwrap();
@@ -263,7 +263,7 @@ mod tests {
     }
 
     #[ktest]
-    fn test_crate_iter() {
+    fn crate_iter() {
         let tree = gen_test_case!();
         for crate_ in tree.iter() {
             if crate_.name() == "crate1" {
@@ -287,7 +287,7 @@ mod tests {
     }
 
     #[ktest]
-    fn test_module_iter() {
+    fn module_iter() {
         let tree = gen_test_case!();
         let mut collection = Vec::<&KtestItem>::new();
         for crate_ in tree.iter() {

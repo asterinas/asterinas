@@ -271,7 +271,7 @@ mod test {
     use crate::thread::{Thread, kernel_thread::ThreadOptions};
 
     #[ktest]
-    fn test_condvar_wait() {
+    fn wait() {
         let pair = Arc::new((Mutex::new(false), Condvar::new()));
         let pair2 = Arc::clone(&pair);
 
@@ -295,7 +295,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_condvar_wait_timeout() {
+    fn wait_timeout() {
         let pair = Arc::new((Mutex::new(false), Condvar::new()));
         let pair2 = Arc::clone(&pair);
 
@@ -321,7 +321,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_condvar_wait_while() {
+    fn wait_while() {
         let pair = Arc::new((Mutex::new(true), Condvar::new()));
         let pair2 = Arc::clone(&pair);
 
@@ -344,7 +344,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_condvar_wait_timeout_while() {
+    fn wait_timeout_while() {
         let pair = Arc::new((Mutex::new(true), Condvar::new()));
         let pair2 = Arc::clone(&pair);
 

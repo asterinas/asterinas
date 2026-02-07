@@ -260,7 +260,7 @@ mod test {
     const JHASH_INITVAL: u32 = 0;
 
     #[test]
-    fn test_jhash_3vals() {
+    fn jhash_3vals_works() {
         assert_eq!(jhash_3vals(1, 2, 3, JHASH_INITVAL), 2757843189);
         assert_eq!(jhash_3vals(4, 5, 6, JHASH_INITVAL), 3701334656);
 
@@ -275,7 +275,7 @@ mod test {
     }
 
     #[test]
-    fn test_jhash_2vals() {
+    fn jhash_2vals_works() {
         assert_eq!(jhash_2vals(1, 2, JHASH_INITVAL), 2337044857);
         assert_eq!(jhash_2vals(3, 4, JHASH_INITVAL), 3842257880);
         assert_eq!(jhash_2vals(0, 0, JHASH_INITVAL), 1489077439);
@@ -285,7 +285,7 @@ mod test {
     }
 
     #[test]
-    fn test_jhash_1vals() {
+    fn jhash_1vals_works() {
         assert_eq!(jhash_1vals(1, JHASH_INITVAL), 1923623579);
         assert_eq!(jhash_1vals(5, JHASH_INITVAL), 4121471414);
         assert_eq!(jhash_1vals(0, JHASH_INITVAL), 76781240);
@@ -295,7 +295,7 @@ mod test {
     }
 
     #[test]
-    fn test_jhash_u32_array() {
+    fn jhash_u32_array_works() {
         assert_eq!(jhash_u32_array(&[1, 2, 3], JHASH_INITVAL), 2757843189);
         assert_eq!(jhash_u32_array(&[4, 5, 6, 7, 8], JHASH_INITVAL), 581654130);
         assert_eq!(jhash_u32_array(&[], JHASH_INITVAL), 3735928559);
@@ -309,7 +309,7 @@ mod test {
     }
 
     #[test]
-    fn test_jhash_slice() {
+    fn jhash_slice_works() {
         assert_eq!(jhash_slice(b"hello world", JHASH_INITVAL), 1252609637);
         assert_eq!(jhash_slice(b"12345", JHASH_INITVAL), 729031446);
         assert_eq!(jhash_slice(b"\n\t\r", JHASH_INITVAL), 483925400);

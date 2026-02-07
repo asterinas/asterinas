@@ -398,7 +398,7 @@ mod test {
     use super::*;
 
     #[ktest]
-    fn test_notify_before() {
+    fn notify_before() {
         let pollee = Pollee::new();
 
         pollee.notify(IoEvents::OUT);
@@ -417,7 +417,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_notify_middle() {
+    fn notify_middle() {
         let pollee = Pollee::new();
 
         assert_eq!(
@@ -439,7 +439,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_notify_after() {
+    fn notify_after() {
         let pollee = Pollee::new();
 
         assert_eq!(
@@ -460,7 +460,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_nested_notify_before() {
+    fn nested_notify_before() {
         let pollee = Pollee::new();
 
         pollee.notify(IoEvents::OUT);
@@ -486,7 +486,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_nested_notify_between() {
+    fn nested_notify_between() {
         let pollee = Pollee::new();
 
         assert_eq!(
@@ -513,7 +513,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_nested_notify_inside() {
+    fn nested_notify_inside() {
         let pollee = Pollee::new();
 
         assert_eq!(
