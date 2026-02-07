@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![feature(proc_macro_diagnostic)]
 #![feature(proc_macro_span)]
 
-use proc_macro::TokenStream;
+use proc_macro::{Diagnostic, Level, Span, TokenStream};
 use quote::quote;
 use rand::{Rng, distr::Alphanumeric};
 use syn::{Expr, Ident, ItemFn, parse_macro_input};
@@ -274,7 +275,7 @@ pub fn test_panic_handler(_attr: TokenStream, item: TokenStream) -> TokenStream 
 /// }
 /// ```
 #[proc_macro_attribute]
-pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn ktest(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Assuming that the item has type `fn() -> ()`, otherwise panics.
     let input = parse_macro_input!(item as ItemFn);
     assert!(
@@ -299,48 +300,11 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
         proc_macro2::Span::call_site(),
     );
 
-    let is_should_panic_attr = |attr: &&syn::Attribute| {
-        attr.path()
-            .segments
-            .iter()
-            .any(|segment| segment.ident == "should_panic")
-    };
-    let mut attr_iter = input.attrs.iter();
-    let should_panic = attr_iter.find(is_should_panic_attr);
-    let (should_panic, expectation) = match should_panic {
-        Some(attr) => {
-            assert!(
-                !attr_iter.any(|attr: &syn::Attribute| is_should_panic_attr(&attr)),
-                "multiple `should_panic` attributes"
-            );
-            match &attr.meta {
-                syn::Meta::List(l) => {
-                    if let Ok(expected_assign) = syn::parse2::<syn::ExprAssign>(l.tokens.clone())
-                        && let Expr::Lit(s) = *expected_assign.right
-                        && let syn::Lit::Str(expectation) = s.lit
-                    {
-                        (true, Some(expectation))
-                    } else {
-                        panic!(
-                            "`should_panic` attributes should only have zero or one `expected` argument, \
-                             with the format of `expected = \"<panic message>\"`"
-                        );
-                    }
-                }
-                _ => (true, None),
-            }
-        }
-        None => (false, None),
-    };
-    let expectation_tokens = if let Some(s) = expectation {
-        quote! {
-            Some(#s)
-        }
-    } else {
-        quote! {
-            None
-        }
-    };
+    // Emit warnings similar to `clippy::redundant_test_prefix`.
+    emit_redundant_test_prefix_warnings(attr, &input.sig.ident);
+
+    // Deal with `#[should_panic]`.
+    let panic_expectation_tokens = generate_panic_expectation_tokens(&input.attrs);
 
     let package_name = std::env::var("CARGO_PKG_NAME").unwrap();
     let span = proc_macro2::Span::call_site();
@@ -355,7 +319,7 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
             #[unsafe(link_section = ".ktest_array")]
             static #fn_ktest_item_name: ::ostd_test::KtestItem = ::ostd_test::KtestItem::new(
                 #fn_name,
-                (#should_panic, #expectation_tokens),
+                #panic_expectation_tokens,
                 ::ostd_test::KtestItemInfo {
                     module_path: ::core::module_path!(),
                     fn_name: ::core::stringify!(#fn_name),
@@ -374,7 +338,7 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
             #[unsafe(link_section = ".ktest_array")]
             static #fn_ktest_item_name: ::ostd::ktest::KtestItem = ::ostd::ktest::KtestItem::new(
                 #fn_name,
-                (#should_panic, #expectation_tokens),
+                #panic_expectation_tokens,
                 ::ostd::ktest::KtestItemInfo {
                     module_path: ::core::module_path!(),
                     fn_name: ::core::stringify!(#fn_name),
@@ -394,4 +358,130 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(output)
+}
+
+fn emit_redundant_test_prefix_warnings(attr: TokenStream, ident: &Ident) {
+    let should_have_test_prefix = if !attr.is_empty() {
+        // This is an equivalent of `#[expect(clippy::redundant_test_prefix)]`.
+        assert_eq!(
+            attr.to_string(),
+            "expect_redundant_test_prefix",
+            "unknown arguments"
+        );
+        true
+    } else {
+        false
+    };
+
+    fn should_deny_warnings(rustflags: &str) -> bool {
+        let options = rustflags.split_whitespace().collect::<Vec<_>>();
+
+        if options.is_empty() {
+            return false;
+        }
+
+        if options.contains(&"-Dwarnings") {
+            return true;
+        }
+
+        for i in 0..options.len() - 1 {
+            if (options[i] == "--deny" || options[i] == "-D") && options[i + 1] == "warnings" {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    // FIXME: `-Dwarnings` cannot automatically convert warnings generated from procedural macros
+    // into errors. So we do this manually. Remove this workaround when the upstream changes
+    // resolve the issue (see <https://github.com/rust-lang/rust/pull/135432>).
+    let lint_level = if let Ok(rustflags) = std::env::var("RUSTFLAGS")
+        && should_deny_warnings(rustflags.as_str())
+    {
+        Level::Error
+    } else {
+        Level::Warning
+    };
+
+    let test_prefix_stripped = ident
+        .to_string()
+        .strip_prefix("test_")
+        .map(ToOwned::to_owned);
+
+    if !should_have_test_prefix && let Some(name_to_suggest) = test_prefix_stripped {
+        Diagnostic::spanned(
+            ident.span().unwrap(),
+            lint_level,
+            "redundant `test_` prefix in test function name",
+        )
+        .span_help(
+            ident.span().unwrap(),
+            format!(
+                "consider removing the `test_` prefix: `{}`",
+                name_to_suggest
+            ),
+        )
+        .span_help(
+            Span::call_site(),
+            "consider allowing the lint: `#[ktest(expect_redundant_test_prefix)]`",
+        )
+        .help(
+            "for further information visit \
+             https://rust-lang.github.io/rust-clippy/master/index.html#redundant_test_prefix",
+        )
+        .emit()
+    } else if should_have_test_prefix && test_prefix_stripped.is_none() {
+        Diagnostic::spanned(
+            ident.span().unwrap(),
+            lint_level,
+            "no redundant `test_` prefix in test function name",
+        )
+        .span_help(
+            Span::call_site(),
+            "consider removing the expectation: `#[ktest]`",
+        )
+        .emit();
+    };
+}
+
+fn generate_panic_expectation_tokens(attrs: &[syn::Attribute]) -> proc_macro2::TokenStream {
+    fn is_should_panic_attr(attr: &syn::Attribute) -> bool {
+        attr.path()
+            .segments
+            .iter()
+            .any(|segment| segment.ident == "should_panic")
+    }
+
+    let mut attr_iter = attrs.iter();
+    let Some(should_panic_attr) = attr_iter.find(|&attr| is_should_panic_attr(attr)) else {
+        let tokens = quote! { (false, None) };
+        return tokens;
+    };
+    assert!(
+        !attr_iter.any(is_should_panic_attr),
+        "multiple `should_panic` attributes"
+    );
+
+    match &should_panic_attr.meta {
+        syn::Meta::List(list) => {
+            if let Ok(expected_assign) = syn::parse2::<syn::ExprAssign>(list.tokens.clone())
+                && let Expr::Lit(lit) = *expected_assign.right
+                && let syn::Lit::Str(expectation) = lit.lit
+            {
+                let tokens = quote! { (true, Some(#expectation)) };
+                return tokens;
+            }
+        }
+        syn::Meta::Path(_) => {
+            let tokens = quote! { (true, None) };
+            return tokens;
+        }
+        _ => (),
+    }
+
+    panic!(
+        "`should_panic` attributes should only have zero or one `expected` argument, \
+         with the format of `expected = \"<panic message>\"`"
+    );
 }

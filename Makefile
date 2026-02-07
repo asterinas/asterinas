@@ -275,8 +275,8 @@ $(CARGO_OSDK): $(OSDK_SRC_FILES)
 .PHONY: check_osdk
 check_osdk:
 	@# Run clippy on OSDK with and without the test configuration.
-	@cd osdk && cargo clippy --no-deps -- -D warnings
-	@cd osdk && cargo clippy --tests --no-deps -- -D warnings
+	@cd osdk && RUSTFLAGS="-Dwarnings" cargo clippy --no-deps
+	@cd osdk && RUSTFLAGS="-Dwarnings" cargo clippy --tests --no-deps
 
 .PHONY: test_osdk
 test_osdk:
@@ -468,8 +468,8 @@ check: initramfs $(CARGO_OSDK)
 	@for dir in $(NON_OSDK_CRATES); do \
 		echo "Checking $$dir"; \
 		# Run clippy on each crate with and without the test configuration. \
-		(cd $$dir && cargo clippy --no-deps -- -D warnings) || exit 1; \
-		(cd $$dir && cargo clippy --tests --no-deps -- -D warnings) || exit 1; \
+		(cd $$dir && RUSTFLAGS="-Dwarnings" cargo clippy --no-deps) || exit 1; \
+		(cd $$dir && RUSTFLAGS="-Dwarnings" cargo clippy --tests --no-deps) || exit 1; \
 	done
 	@for dir in $(OSDK_CRATES); do \
 		echo "Checking $$dir"; \
@@ -477,8 +477,8 @@ check: initramfs $(CARGO_OSDK)
 		# in other architectures. \
 		[ "$$dir" = "ostd/libs/linux-bzimage/setup" ] && [ "$(OSDK_TARGET_ARCH)" != "x86_64" ] && continue; \
 		# Run clippy on each crate with and without the ktest configuration. \
-		(cd $$dir && cargo osdk clippy -- --no-deps -- -D warnings) || exit 1; \
-		(cd $$dir && cargo osdk clippy --ktests -- --no-deps -- -D warnings) || exit 1; \
+		(cd $$dir && RUSTFLAGS="-Dwarnings" cargo osdk clippy -- --no-deps) || exit 1; \
+		(cd $$dir && RUSTFLAGS="-Dwarnings" cargo osdk clippy --ktests -- --no-deps) || exit 1; \
 	done
 	@
 	@# Check formatting issues of the C code and Nix files (regression tests)
