@@ -69,6 +69,7 @@ unexpected_cfgs = { level = "allow", check-cfg = ['cfg(ktest)'] }
 
 [workspace.lints.clippy]
 allow_attributes = "warn"
+redundant_test_prefix = "warn"
 
 # Keys under `workspace.package` and the `package` section of each crate 
 # follow the ordering suggested at: 
