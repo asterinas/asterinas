@@ -6,7 +6,7 @@ use ostd::{
     Error, Result,
     boot::boot_info,
     io::IoMem,
-    mm::{CachePolicy, HasSize, VmIo},
+    mm::{CachePolicy, HasSize},
     sync::Mutex,
 };
 use spin::Once;
