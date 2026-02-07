@@ -266,7 +266,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_screen_info_offsets() {
+    fn screen_info_offsets() {
         assert_eq!(offset_of!(ScreenInfo, orig_x), 0x00);
         assert_eq!(offset_of!(ScreenInfo, orig_y), 0x01);
         assert_eq!(offset_of!(ScreenInfo, ext_mem_k), 0x02);
@@ -305,7 +305,7 @@ mod tests {
     }
 
     #[test]
-    fn test_boot_params_offsets() {
+    fn boot_params_offsets() {
         assert_eq!(offset_of!(BootParams, screen_info), 0x000);
         assert_eq!(offset_of!(BootParams, apm_bios_info), 0x040);
         assert_eq!(offset_of!(BootParams, tboot_addr), 0x058);

@@ -88,7 +88,7 @@ mod test {
     use ostd::{cpu::PinCurrentCpu, irq, prelude::*};
 
     #[ktest]
-    fn test_per_cpu_counter() {
+    fn per_cpu_counter() {
         fast_smp_counter! {
             /// The total size of free memory.
             pub static FREE_SIZE_COUNTER: usize;

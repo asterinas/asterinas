@@ -140,7 +140,7 @@ mod test {
 
     // A regression test for a bug fixed in [#1279](https://github.com/asterinas/asterinas/pull/1279).
     #[ktest]
-    fn test_mutex_try_lock_does_not_unlock() {
+    fn try_lock_does_not_unlock() {
         let lock = Mutex::new(0);
         assert!(!lock.lock.load(Ordering::Relaxed));
 

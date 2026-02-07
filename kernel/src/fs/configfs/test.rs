@@ -158,7 +158,7 @@ fn init_demo_subsystem() {
 }
 
 #[ktest]
-fn test_config_fs() {
+fn config_fs() {
     init_demo_subsystem();
     let config_fs = super::fs::ConfigFs::singleton();
 

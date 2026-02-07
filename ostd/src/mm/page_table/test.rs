@@ -153,7 +153,7 @@ mod test_utils {
         }
     }
 
-    #[ktest]
+    #[ktest(expect_redundant_test_prefix)]
     fn test_subset_iter() {
         use alloc::{vec, vec::Vec};
 
@@ -962,7 +962,7 @@ mod protection_and_query {
     }
 
     #[ktest]
-    fn test_protect_next_empty_entry() {
+    fn protect_next_empty_entry() {
         let page_table = PageTable::<TestPtConfig>::empty();
         let range = 0x1000..0x2000;
         let preempt_guard = disable_preempt();
@@ -977,7 +977,7 @@ mod protection_and_query {
     }
 
     #[ktest]
-    fn test_protect_next_touches_empty_range() {
+    fn protect_next_touches_empty_range() {
         let page_table = PageTable::<TestPtConfig>::empty();
         let range = 0x1000..0x3000; // Range spanning multiple pages.
         let preempt_guard = disable_preempt();

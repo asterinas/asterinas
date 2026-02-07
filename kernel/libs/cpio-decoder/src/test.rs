@@ -5,7 +5,7 @@ use lending_iterator::LendingIterator;
 use super::{CpioDecoder, FileType, error::*};
 
 #[test]
-fn test_decoder() {
+fn decoder() {
     use std::process::{Command, Stdio};
 
     let manifest_path = std::env::var("CARGO_MANIFEST_DIR").unwrap();
@@ -63,7 +63,7 @@ fn test_decoder() {
 }
 
 #[test]
-fn test_short_buffer() {
+fn short_buffer() {
     let short_buffer: Vec<u8> = Vec::new();
     let mut decoder = CpioDecoder::new(short_buffer.as_slice());
     let entry_result = decoder.next().unwrap();
@@ -72,7 +72,7 @@ fn test_short_buffer() {
 }
 
 #[test]
-fn test_invalid_buffer() {
+fn invalid_buffer() {
     let buffer: &[u8] = b"invalidmagic.invalidmagic.invalidmagic.invalidmagic.invalidmagic.invalidmagic.invalidmagic.invalidmagic.invalidmagic.invalidmagic";
     let mut decoder = CpioDecoder::new(buffer);
     let entry_result = decoder.next().unwrap();

@@ -281,7 +281,7 @@ mod test {
     use crate::thread::{Thread, kernel_thread::ThreadOptions};
 
     #[ktest]
-    fn test_waiter_pause() {
+    fn waiter_pause() {
         let wait_queue = Arc::new(WaitQueue::new());
         let wait_queue_cloned = wait_queue.clone();
 

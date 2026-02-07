@@ -107,7 +107,7 @@ mod test {
     use ostd::prelude::ktest;
 
     #[ktest]
-    fn test_buddy_set_insert_alloc() {
+    fn buddy_set_insert_alloc() {
         let region_order = 4;
         let region_size = size_of_order(region_order);
         let region = MockMemoryRegion::alloc(region_size);
