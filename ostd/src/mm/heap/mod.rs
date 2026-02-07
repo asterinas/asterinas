@@ -58,7 +58,7 @@ unsafe extern "Rust" {
 
     /// Gets the size and type of heap slots to serve allocations of the layout.
     /// See [`crate::global_heap_allocator_slot_map`].
-    fn __GLOBAL_HEAP_SLOT_INFO_FROM_LAYOUT(layout: Layout) -> Option<SlotInfo>;
+    fn __global_heap_slot_info_from_layout(layout: Layout) -> Option<SlotInfo>;
 }
 
 /// Gets the reference to the user-defined global heap allocator.
@@ -75,7 +75,7 @@ fn get_global_heap_allocator() -> &'static dyn GlobalHeapAllocator {
 /// See [`crate::global_heap_allocator_slot_map`].
 fn slot_size_from_layout(layout: Layout) -> Option<SlotInfo> {
     // SAFETY: This up-call is redirected safely to Rust code by OSDK.
-    unsafe { __GLOBAL_HEAP_SLOT_INFO_FROM_LAYOUT(layout) }
+    unsafe { __global_heap_slot_info_from_layout(layout) }
 }
 
 macro_rules! abort_with_message {
