@@ -16,6 +16,11 @@ impl Vmar {
     /// After being cleared, this VMAR will become an empty VMAR.
     pub(super) fn clear(&self) {
         let mut inner = self.inner.write();
+        for vm_mapping in inner.vm_mappings.iter() {
+            if let Some(mut rmap) = vm_mapping.lock_rmap() {
+                rmap.remove(self.weak_self.clone(), vm_mapping.map_to_addr());
+            }
+        }
         inner.vm_mappings.clear();
 
         // Keep `inner` locked to avoid race conditions.
@@ -42,12 +47,7 @@ impl Vmar {
 
         let mut inner = self.inner.write();
         let mut rss_delta = RssDelta::new(self);
-        inner.alloc_free_region_exact_truncate(
-            &self.vm_space,
-            range.start,
-            range.len(),
-            &mut rss_delta,
-        )?;
+        inner.alloc_free_region_exact_truncate(self, range.start, range.len(), &mut rss_delta)?;
         Ok(())
     }
 
