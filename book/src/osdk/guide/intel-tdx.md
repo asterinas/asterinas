@@ -76,3 +76,15 @@ cargo osdk build --scheme tdx
 cargo osdk run --scheme tdx
 cargo osdk test --scheme tdx
 ```
+
+## Run AsterNixOS in Intel TDX
+
+You can also run AsterNixOS with TDX by setting `INTEL_TDX=1`, which switches
+the QEMU scheme in the NixOS run script to TDX.
+
+Build the AsterNixOS image and run the OS:
+
+```bash
+make nixos
+INTEL_TDX=1 make run_nixos
+```
