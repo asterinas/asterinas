@@ -32,17 +32,19 @@ fi
 # Change to Asterinas root directory to ensure all scripts run from the correct location.
 cd "${ASTERINAS_DIR}"
 
-# Get base QEMU arguments from qemu_args.sh script
-QEMU_ARGS=$(${ASTERINAS_DIR}/tools/qemu_args.sh common 2>/dev/null)
+if [ "${INTEL_TDX}" = "1" ]; then
+    SCHEME="tdx"
+else
+    SCHEME="normal"
+fi
 
-# Add mode-specific disk and device arguments
+QEMU_BIN=${QEMU_BIN:-qemu-system-${TARGET_ARCH}}
+
 case "$MODE" in
     nixos)
         NIXOS_DIR="${ASTERINAS_DIR}/target/nixos"
-        QEMU_ARGS="${QEMU_ARGS} \
-            -drive if=none,format=raw,id=u0,file=${NIXOS_DIR}/asterinas.img \
-            -device virtio-blk-pci,drive=u0,disable-legacy=on,disable-modern=off \
-        "
+        DISK_ARGS="-drive if=none,format=raw,id=u0,file=\"${NIXOS_DIR}/asterinas.img\" \
+            -device virtio-blk-pci,drive=u0,disable-legacy=on,disable-modern=off"
         ;;
     iso)
         ASTER_IMAGE_PATH=${ASTERINAS_DIR}/target/nixos/asterinas.img
@@ -59,22 +61,21 @@ case "$MODE" in
         dd if=/dev/zero of="${ASTER_IMAGE_PATH}" bs=1M count=${NIXOS_DISK_SIZE_IN_MB} status=none
         echo "Image created successfully!"
 
-        QEMU_ARGS="${QEMU_ARGS} \
-            -cdrom ${ISO_IMAGE_PATH} -boot d \
-            -drive if=none,format=raw,id=u0,file=${ASTER_IMAGE_PATH} \
-            -device virtio-blk-pci,drive=u0,disable-legacy=on,disable-modern=off \
-        "
+        DISK_ARGS="-cdrom \"${ISO_IMAGE_PATH}\" -boot d \
+            -drive if=none,format=raw,id=u0,file=\"${ASTER_IMAGE_PATH}\" \
+            -device virtio-blk-pci,drive=u0,disable-legacy=on,disable-modern=off"
         ;;
     *)
         usage
         ;;
 esac
 
+EXTRA_ARGS=$("${ASTERINAS_DIR}/tools/qemu_args.sh" "${SCHEME}" 2>/dev/null)
+QEMU_ARGS="${QEMU_BIN} ${DISK_ARGS} ${EXTRA_ARGS}"
+
 if [ "${ENABLE_KVM}" = "1" ]; then
     QEMU_ARGS="${QEMU_ARGS} -accel kvm"
 fi
-
-QEMU_BIN=${QEMU_BIN:-qemu-system-${TARGET_ARCH}}
 
 # The kernel uses a specific value to signal a successful shutdown via the
 # isa-debug-exit device.
@@ -84,8 +85,7 @@ KERNEL_SUCCESS_EXIT_CODE=16 # 0x10 in hexadecimal
 QEMU_SUCCESS_EXIT_CODE=$(((KERNEL_SUCCESS_EXIT_CODE << 1) | 1))
 
 # Execute QEMU
-# shellcheck disable=SC2086
-${QEMU_BIN} ${QEMU_ARGS} || exit_code=$?
+eval "${QEMU_ARGS}" || exit_code=$?
 exit_code=${exit_code:-0}
 
 # Check if the execution was successful:
