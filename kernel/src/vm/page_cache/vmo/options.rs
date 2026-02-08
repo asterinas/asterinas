@@ -11,7 +11,10 @@ use xarray::XArray;
 use super::{Vmo, VmoFlags, WritableMappingStatus};
 use crate::{
     prelude::*,
-    vm::page_cache::{CachePage, CachePageMeta, PageCacheBackend},
+    vm::{
+        page_cache::{CachePage, CachePageMeta, PageCacheBackend},
+        vmar::Rmap,
+    },
 };
 
 /// Options for allocating a root VMO.
@@ -109,12 +112,14 @@ fn alloc_vmo(
     let size = size.align_up(PAGE_SIZE);
     let pages = committed_pages_if_continuous(flags, size)?;
     let writable_mapping_status = WritableMappingStatus::default();
+    let rmap = Rmap::new();
     Ok(Vmo {
         backend,
         flags,
         pages,
         size: AtomicUsize::new(size),
         writable_mapping_status,
+        rmap: Mutex::new(rmap),
     })
 }
 

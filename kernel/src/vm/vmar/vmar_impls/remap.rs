@@ -44,7 +44,7 @@ impl Vmar {
         // `map_addr..map_addr + old_size` have a mapping. If not,
         // we should return an `Err`.
 
-        inner.resize_mapping(&self.vm_space, map_addr, old_size, new_size, &mut rss_delta)
+        inner.resize_mapping(self, map_addr, old_size, new_size, &mut rss_delta)
     }
 
     /// Remaps the original mapping to a new address and/or size.
@@ -99,7 +99,7 @@ impl Vmar {
         }
         let (old_size, old_range) = if new_size < old_size {
             inner.alloc_free_region_exact_truncate(
-                &self.vm_space,
+                self,
                 old_addr + new_size,
                 old_size - new_size,
                 &mut rss_delta,
@@ -124,12 +124,7 @@ impl Vmar {
                     "remap: the new range overlaps with the old one"
                 );
             }
-            inner.alloc_free_region_exact_truncate(
-                &self.vm_space,
-                new_addr,
-                new_size,
-                &mut rss_delta,
-            )?
+            inner.alloc_free_region_exact_truncate(self, new_addr, new_size, &mut rss_delta)?
         } else {
             debug_assert!(new_size > old_size);
 
@@ -140,9 +135,10 @@ impl Vmar {
                     .is_ok()
             {
                 let old_mapping_addr = inner.check_lies_in_single_mapping(old_addr, old_size)?;
-                let old_mapping = inner.remove(&old_mapping_addr).unwrap();
+                let (old_mapping, rmap_to_remove) = inner.remove(&old_mapping_addr).unwrap();
+                let mut rmap = rmap_to_remove.remove(self, old_mapping_addr);
                 let new_mapping = old_mapping.enlarge(new_size - old_size);
-                inner.insert_try_merge(new_mapping);
+                inner.insert_try_merge(self, new_mapping, rmap.as_deref_mut());
                 return Ok(old_range.start);
             }
 
@@ -150,26 +146,31 @@ impl Vmar {
         };
 
         // Create a new `VmMapping`.
+        let old_mapping_addr = inner.check_lies_in_single_mapping(old_addr, old_size)?;
+        let (vm_mapping, rmap_to_remove) = inner.remove(&old_mapping_addr).unwrap();
+        let mut rmap = rmap_to_remove.remove(self, old_mapping_addr);
         let old_mapping = {
-            let old_mapping_addr = inner.check_lies_in_single_mapping(old_addr, old_size)?;
-            let vm_mapping = inner.remove(&old_mapping_addr).unwrap();
             let (left, old_mapping, right) = vm_mapping.split_range(&old_range);
             if let Some(left) = left {
-                inner.insert_without_try_merge(left);
+                inner.insert_without_try_merge(self, left, rmap.as_deref_mut());
             }
             if let Some(right) = right {
-                inner.insert_without_try_merge(right);
+                inner.insert_without_try_merge(self, right, rmap.as_deref_mut());
             }
             old_mapping
         };
         // Note that we have ensured that `new_size >= old_size` at the beginning.
-        let new_mapping = old_mapping.clone_for_remap_at(new_range.start);
-        inner.insert_try_merge(new_mapping.enlarge(new_size - old_size));
+        let new_mapping = old_mapping
+            .clone_for_remap_at(new_range.start)
+            .enlarge(new_size - old_size);
+        inner.insert_try_merge(self, new_mapping, rmap.as_deref_mut());
 
         let preempt_guard = disable_preempt();
         let total_range = old_range.start.min(new_range.start)..old_range.end.max(new_range.end);
-        let vmspace = self.vm_space();
-        let mut cursor = vmspace.cursor_mut(&preempt_guard, &total_range).unwrap();
+        let mut cursor = self
+            .vm_space
+            .cursor_mut(&preempt_guard, &total_range)
+            .unwrap();
 
         // Move the mapping.
         let mut current_offset = 0;
