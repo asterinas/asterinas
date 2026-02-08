@@ -48,6 +48,11 @@ where
         }
     }
 
+    /// Returns the number of elements in the interval set.
+    pub fn len(&self) -> usize {
+        self.btree.len()
+    }
+
     /// Inserts an interval item into the interval set.
     pub fn insert(&mut self, item: V) {
         let range = item.range();

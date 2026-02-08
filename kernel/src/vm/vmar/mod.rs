@@ -4,6 +4,7 @@
 
 mod handle;
 mod interval_set;
+mod rmap;
 mod util;
 mod vm_mapping;
 
@@ -13,6 +14,7 @@ use ostd::mm::Vaddr;
 
 pub use self::{
     handle::VmarHandle,
+    rmap::{Rmap, RmapEntry},
     vmar_impls::{
         RssType, Vmar, map::VmarMapOffset, page_fault::PageFaultInfo, remap::RemapOldMappingAction,
     },
