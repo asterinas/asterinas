@@ -31,7 +31,10 @@ use xarray::{Cursor, LockedXArray, XArray};
 
 use crate::{
     prelude::*,
-    vm::page_cache::{CachePage, CachePageExt, PageCacheBackend},
+    vm::{
+        page_cache::{CachePage, CachePageExt, PageCacheBackend},
+        vmar::Rmap,
+    },
 };
 
 mod options;
@@ -131,6 +134,8 @@ pub struct Vmo {
     // not have the knowledge to determine if they belong to memfd. We may want to enhance
     // `VmoOptions` to make VMOs aware of whether its writable mappings should be tracked.
     pub(super) writable_mapping_status: WritableMappingStatus,
+    /// Reserve mappings.
+    pub(super) rmap: Mutex<Rmap>,
 }
 
 impl Debug for Vmo {
@@ -343,6 +348,18 @@ impl Vmo {
         // VMOs with a backend do not use this field.
         debug_assert!(!self.has_backend());
         &self.writable_mapping_status
+    }
+
+    /// Returns reverse mappings of the VMO.
+    ///
+    /// Holding either this lock or the VMAR lock ensures the stability of the
+    /// associated VM mappings. In other words, when adding, removing, or
+    /// moving a VM mapping, both this lock and the VMAR lock must be held.
+    ///
+    /// To avoid deadlocks, acquire this lock after the VMAR lock in cases both
+    /// locks need to be acquired.
+    pub fn rmap(&self) -> &Mutex<Rmap> {
+        &self.rmap
     }
 
     /// Decommits anonymous pages in the specified byte range.

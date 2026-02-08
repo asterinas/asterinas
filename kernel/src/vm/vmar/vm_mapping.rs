@@ -18,7 +18,10 @@ use ostd::{
     task::disable_preempt,
 };
 
-use super::{RssType, Vmar, interval_set::Interval, util::is_intersected, vmar_impls::RssDelta};
+use super::{
+    PageFaultInfo, Rmap, RssType, Vmar, interval_set::Interval, util::is_intersected,
+    vmar_impls::RssDelta,
+};
 use crate::{
     fs::vfs::{
         inode::Inode,
@@ -29,7 +32,6 @@ use crate::{
     vm::{
         page_cache::{CachePage, Vmo, VmoCommitError},
         perms::VmPerms,
-        vmar::PageFaultInfo,
     },
 };
 
@@ -172,6 +174,28 @@ impl VmMapping {
             MappedMemory::Vmo(vmo) => Some(vmo),
             _ => None,
         }
+    }
+
+    /// Returns a reference to the VMO for reserve mappings.
+    ///
+    /// This method will return `Some(_)` if this mapping is shared and
+    /// VMO-backed.
+    //
+    // FIXME: According to Linux behavior, private mappings and COWed pages
+    // are also affected by file operations (e.g., truncation). So reverse
+    // mappings should also include them. We don't do this for now, as the
+    // man pages say that private mappings have unspecified behavior if the
+    // file content changes later on.
+    pub(super) fn vmo_for_rmap(&self) -> Option<&Arc<Vmo>> {
+        match &self.mapped_mem {
+            MappedMemory::Vmo(vmo) if self.is_shared => Some(vmo.vmo()),
+            _ => None,
+        }
+    }
+
+    /// Locks reserve mappings of [`Self::vmo_for_rmap`].
+    pub(super) fn lock_rmap(&self) -> Option<MutexGuard<'_, Rmap>> {
+        self.vmo_for_rmap().map(|vmo| vmo.rmap().lock())
     }
 
     /// Returns the mapping's RSS type.
