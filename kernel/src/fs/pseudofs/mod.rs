@@ -1,29 +1,36 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::format;
 use core::{
     sync::atomic::{AtomicU64, Ordering},
     time::Duration,
 };
 
+pub use anon_inodefs::AnonInodeFs;
+pub use pidfdfs::PidfdFs;
+pub(super) use pipefs::PipeFs;
+use pipefs::PipeFsType;
+pub use sockfs::SockFs;
+use sockfs::SockFsType;
 use spin::Once;
 
 use super::utils::{Extension, InodeIo, StatusFlags};
 use crate::{
     fs::{
         inode_handle::FileIo,
-        path::{Mount, Path},
-        pipe::AnonPipeInode,
-        registry::{FsProperties, FsType},
         utils::{
-            AccessMode, FileSystem, FsEventSubscriberStats, FsFlags, Inode, InodeMode, InodeType,
-            Metadata, NAME_MAX, SuperBlock, mkmod,
+            AccessMode, FileSystem, FsEventSubscriberStats, Inode, InodeMode, InodeType, Metadata,
+            NAME_MAX, SuperBlock, mkmod,
         },
     },
     prelude::*,
     process::{Gid, Uid},
     time::clocks::RealTimeCoarseClock,
 };
+
+mod anon_inodefs;
+mod pidfdfs;
+mod pipefs;
+mod sockfs;
 
 /// A pseudo file system that manages pseudo inodes, such as pipe inodes and socket inodes.
 pub struct PseudoFs {
@@ -98,170 +105,6 @@ impl PseudoFs {
     }
 }
 
-pub(super) struct PipeFs {
-    _private: (),
-}
-
-impl PipeFs {
-    /// Returns the singleton instance of the anonymous pipe file system.
-    pub(super) fn singleton() -> &'static Arc<PseudoFs> {
-        static PIPEFS: Once<Arc<PseudoFs>> = Once::new();
-
-        PseudoFs::singleton(&PIPEFS, "pipefs", PIPEFS_MAGIC)
-    }
-
-    /// Creates a pseudo `Path` for an anonymous pipe.
-    pub(super) fn new_path(pipe_inode: Arc<AnonPipeInode>) -> Path {
-        Path::new_pseudo(Self::mount_node().clone(), pipe_inode, |inode| {
-            format!("pipe:[{}]", inode.ino())
-        })
-    }
-
-    /// Returns the pseudo mount node of the pipe file system.
-    fn mount_node() -> &'static Arc<Mount> {
-        static PIPEFS_MOUNT: Once<Arc<Mount>> = Once::new();
-
-        PIPEFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()))
-    }
-}
-
-pub struct SockFs {
-    _private: (),
-}
-
-impl SockFs {
-    /// Returns the singleton instance of the socket file system.
-    pub fn singleton() -> &'static Arc<PseudoFs> {
-        static SOCKFS: Once<Arc<PseudoFs>> = Once::new();
-
-        PseudoFs::singleton(&SOCKFS, "sockfs", SOCKFS_MAGIC)
-    }
-
-    /// Creates a pseudo `Path` for a socket.
-    pub fn new_path() -> Path {
-        let socket_inode = Arc::new(Self::singleton().alloc_inode(
-            PseudoInodeType::Socket,
-            mkmod!(a+rwx),
-            Uid::new_root(),
-            Gid::new_root(),
-        ));
-
-        Path::new_pseudo(Self::mount_node().clone(), socket_inode, |inode| {
-            format!("socket:[{}]", inode.ino())
-        })
-    }
-
-    /// Returns the pseudo mount node of the socket file system.
-    pub fn mount_node() -> &'static Arc<Mount> {
-        static SOCKFS_MOUNT: Once<Arc<Mount>> = Once::new();
-
-        SOCKFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()))
-    }
-}
-
-pub struct AnonInodeFs {
-    _private: (),
-}
-
-impl AnonInodeFs {
-    /// Returns the singleton instance of the anonymous inode file system.
-    fn singleton() -> &'static Arc<PseudoFs> {
-        static ANON_INODEFS: Once<Arc<PseudoFs>> = Once::new();
-
-        PseudoFs::singleton(&ANON_INODEFS, "anon_inodefs", ANON_INODEFS_MAGIC)
-    }
-
-    /// Creates a pseudo `Path` for the shared inode.
-    pub fn new_path(name_fn: fn(&dyn Inode) -> String) -> Path {
-        Path::new_pseudo(
-            Self::mount_node().clone(),
-            Self::shared_inode().clone(),
-            name_fn,
-        )
-    }
-
-    /// Returns the pseudo mount node of the anonymous inode file system.
-    pub fn mount_node() -> &'static Arc<Mount> {
-        static ANON_INODEFS_MOUNT: Once<Arc<Mount>> = Once::new();
-
-        ANON_INODEFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()))
-    }
-
-    /// Returns the shared inode of the anonymous inode file system singleton.
-    //
-    // Some members of anon_inodefs (such as epollfd, eventfd, timerfd, etc.) share
-    // the same inode. The sharing is not only within the same category (e.g., two
-    // epollfds share the same inode) but also across different categories (e.g.,
-    // an epollfd and a timerfd share the same inode). Even across namespaces, this
-    // inode is still shared. Although this Linux behavior is a bit odd, we keep it
-    // for compatibility.
-    //
-    // A small subset of members in anon_inodefs (i.e., userfaultfd, io_uring, and
-    // kvm_guest_memfd) have their own dedicated inodes. We need to support creating
-    // independent inodes within anon_inodefs for them in the future.
-    //
-    // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/anon_inodes.c#L153-L164>
-    pub fn shared_inode() -> &'static Arc<dyn Inode> {
-        static SHARED_INODE: Once<Arc<dyn Inode>> = Once::new();
-
-        SHARED_INODE.call_once(|| {
-            let shared_inode = Self::singleton().alloc_inode(
-                PseudoInodeType::AnonInode,
-                mkmod!(u+rw),
-                Uid::new_root(),
-                Gid::new_root(),
-            );
-
-            Arc::new(shared_inode)
-        })
-    }
-}
-
-pub struct PidfdFs {
-    _private: (),
-}
-
-impl PidfdFs {
-    /// Returns the singleton instance of the pidfd file system.
-    pub fn singleton() -> &'static Arc<PseudoFs> {
-        static PIDFDFS: Once<Arc<PseudoFs>> = Once::new();
-
-        PseudoFs::singleton(&PIDFDFS, "pidfdfs", PIDFDFS_MAGIC)
-    }
-
-    /// Creates a pseudo `Path` for a pidfd.
-    pub fn new_path(name_fn: fn(&dyn Inode) -> String) -> Path {
-        Path::new_pseudo(
-            Self::mount_node().clone(),
-            Self::shared_inode().clone(),
-            name_fn,
-        )
-    }
-
-    /// Returns the pseudo mount node of the pidfd file system.
-    pub fn mount_node() -> &'static Arc<Mount> {
-        static PIDFDFS_MOUNT: Once<Arc<Mount>> = Once::new();
-
-        PIDFDFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()))
-    }
-
-    /// Returns the shared inode of the pidfd file system.
-    pub fn shared_inode() -> &'static Arc<dyn Inode> {
-        static SHARED_INODE: Once<Arc<dyn Inode>> = Once::new();
-
-        SHARED_INODE.call_once(|| {
-            let pidfd_inode = Self::singleton().alloc_inode(
-                PseudoInodeType::Pidfd,
-                mkmod!(u+rwx),
-                Uid::new_root(),
-                Gid::new_root(),
-            );
-
-            Arc::new(pidfd_inode)
-        })
-    }
-}
-
 pub(super) fn init() {
     super::registry::register(&PipeFsType).unwrap();
     super::registry::register(&SockFsType).unwrap();
@@ -269,66 +112,8 @@ pub(super) fn init() {
     // Reference: <https://elixir.bootlin.com/linux/v6.16.5/A/ident/anon_inode_fs_type>
 }
 
-pub(super) struct PipeFsType;
-
-impl FsType for PipeFsType {
-    fn name(&self) -> &'static str {
-        "pipefs"
-    }
-
-    fn properties(&self) -> FsProperties {
-        FsProperties::empty()
-    }
-
-    fn create(
-        &self,
-        _flags: FsFlags,
-        _args: Option<CString>,
-        _disk: Option<Arc<dyn aster_block::BlockDevice>>,
-    ) -> Result<Arc<dyn FileSystem>> {
-        return_errno_with_message!(Errno::EINVAL, "pipefs cannot be mounted");
-    }
-
-    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
-        None
-    }
-}
-
-pub(super) struct SockFsType;
-
-impl FsType for SockFsType {
-    fn name(&self) -> &'static str {
-        "sockfs"
-    }
-
-    fn properties(&self) -> FsProperties {
-        FsProperties::empty()
-    }
-
-    fn create(
-        &self,
-        _flags: FsFlags,
-        _args: Option<CString>,
-        _disk: Option<Arc<dyn aster_block::BlockDevice>>,
-    ) -> Result<Arc<dyn FileSystem>> {
-        return_errno_with_message!(Errno::EINVAL, "sockfs cannot be mounted");
-    }
-
-    fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
-        None
-    }
-}
-
 /// Root Inode ID.
 const ROOT_INO: u64 = 1;
-// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/include/uapi/linux/magic.h#L87>
-const PIPEFS_MAGIC: u64 = 0x50495045;
-// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/include/uapi/linux/magic.h#L89>
-const SOCKFS_MAGIC: u64 = 0x534F434B;
-// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/include/uapi/linux/magic.h#L93>
-const ANON_INODEFS_MAGIC: u64 = 0x09041934;
-// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/include/uapi/linux/magic.h#L105>
-const PIDFDFS_MAGIC: u64 = 0x50494446;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PseudoInodeType {
