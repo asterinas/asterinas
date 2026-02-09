@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_rights::WriteOp;
+use aster_rights::ReadWriteOp;
 use ostd::{
     arch::cpu::context::{FpuContext, GeneralRegs, UserContext},
     mm::VmIo,
@@ -266,7 +266,7 @@ fn apply_caps_from_exec(
 /// inode's UID.
 fn set_uid_from_elf(
     current: &Process,
-    credentials: &Credentials<WriteOp>,
+    credentials: &Credentials<ReadWriteOp>,
     elf_inode: &Arc<dyn Inode>,
 ) -> Result<()> {
     if elf_inode.mode()?.has_set_uid() {
@@ -287,7 +287,7 @@ fn set_uid_from_elf(
 /// inode's GID.
 fn set_gid_from_elf(
     current: &Process,
-    credentials: &Credentials<WriteOp>,
+    credentials: &Credentials<ReadWriteOp>,
     elf_inode: &Arc<dyn Inode>,
 ) -> Result<()> {
     if elf_inode.mode()?.has_set_gid() {

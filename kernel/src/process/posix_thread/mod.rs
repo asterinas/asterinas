@@ -2,7 +2,7 @@
 
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
-use aster_rights::{ReadDupOp, ReadOp, WriteOp};
+use aster_rights::{ReadDupOp, ReadOp, ReadWriteOp};
 use ostd::{
     sync::{RoArc, RwMutexReadGuard, Waker},
     task::Task,
@@ -295,12 +295,12 @@ impl PosixThread {
         self.credentials.dup().restrict()
     }
 
-    /// Gets the write-only credentials of the current thread.
+    /// Gets the read-write credentials of the current thread.
     ///
     /// It is illegal to mutate the credentials from a thread other than the
     /// current thread. For performance reasons, this function only checks it
     /// using debug assertions.
-    pub fn credentials_mut(&self) -> Credentials<WriteOp> {
+    pub fn credentials_mut(&self) -> Credentials<ReadWriteOp> {
         debug_assert!(core::ptr::eq(
             current_thread!().as_posix_thread().unwrap(),
             self

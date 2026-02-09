@@ -2,16 +2,22 @@
 
 use crate::{prelude::*, process::Pid};
 
-#[derive(Debug, Clone, Copy, Pod)]
+/// `struct __user_cap_header_struct` in Linux.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.18.6/source/include/uapi/linux/capability.h#L40>.
 #[repr(C)]
-pub struct cap_user_header_t {
+#[derive(Debug, Clone, Copy, Pod)]
+pub struct CUserCapHeader {
     pub version: u32,
     pub pid: Pid,
 }
 
-#[derive(Debug, Clone, Copy, Pod)]
+/// `struct __user_cap_data_struct` in Linux.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.18.6/source/include/uapi/linux/capability.h#L40>.
 #[repr(C)]
-pub struct cap_user_data_t {
+#[derive(Debug, Clone, Copy, Pod)]
+pub struct CUserCapData {
     pub effective: u32,
     pub permitted: u32,
     pub inheritable: u32,

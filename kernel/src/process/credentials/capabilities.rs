@@ -56,9 +56,15 @@ bitflags! {
 impl CapSet {
     const MASK: u64 = (1 << (CapSet::most_significant_bit() + 1)) - 1;
 
-    /// Converts the capability set to a `u32`. The higher bits are truncated.
-    pub fn as_u32(&self) -> u32 {
-        self.bits() as u32
+    /// Converts two `u32`s to the capability set. The high bits are truncated.
+    pub fn from_lo_hi(lo: u32, hi: u32) -> Self {
+        let bits = lo as u64 | ((hi as u64) << 32);
+        Self::from_bits_truncate(bits)
+    }
+
+    /// Converts the capability set to two `u32`s.
+    pub fn to_lo_hi(self) -> (u32, u32) {
+        (self.bits() as u32, (self.bits() >> 32) as u32)
     }
 
     /// Creates a new `CapSet` with full capabilities, typically for a root user.
