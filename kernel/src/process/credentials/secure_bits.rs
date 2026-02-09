@@ -55,9 +55,6 @@ impl SecureBits {
         Self::from_bits_truncate((self.bits & Self::LOCK_MASK) >> 1)
     }
 
-    // Currently, we never grant capabilities when executing a new program, even when switching to
-    // root. Therefore, this flag is not used.
-    #[expect(dead_code)]
     pub(super) fn no_root(&self) -> bool {
         self.contains(SecureBits::NOROOT)
     }

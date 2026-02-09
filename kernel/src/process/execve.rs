@@ -252,8 +252,6 @@ fn apply_caps_from_exec(
     posix_thread: &PosixThread,
     elf_inode: &Arc<dyn Inode>,
 ) -> Result<()> {
-    // FIXME: We need to recalculate the capabilities during execve even the executable inode
-    // does not have setuid/setgid bit.
     let credentials = posix_thread.credentials_mut();
     set_uid_from_elf(process, &credentials, elf_inode)?;
     set_gid_from_elf(process, &credentials, elf_inode)?;
