@@ -9,7 +9,10 @@ use super::{
 };
 use crate::{
     prelude::*,
-    process::credentials::capabilities::{AtomicCapSet, CapSet},
+    process::credentials::{
+        AMBIENT_CAPSET, BOUNDING_CAPSET,
+        capabilities::{AtomicCapSet, CapSet},
+    },
 };
 
 #[derive(Debug)]
@@ -89,7 +92,7 @@ impl Credentials_ {
             sgid: AtomicGid::new(gid),
             fsgid: AtomicGid::new(gid),
             supplementary_gids: RwLock::new(supplementary_gids),
-            inheritable_capset: AtomicCapSet::new(capset),
+            inheritable_capset: AtomicCapSet::new(CapSet::empty()),
             permitted_capset: AtomicCapSet::new(capset),
             effective_capset: AtomicCapSet::new(capset),
             securebits: AtomicSecureBits::new(SecureBits::new_empty()),
@@ -178,6 +181,34 @@ impl Credentials_ {
 
     pub(super) fn set_suid(&self, suid: Uid) {
         self.set_resuid_unchecked(None, None, Some(suid));
+
+        // Begin to adjust capabilities.
+        // Reference: The "Transformation of capabilities during execve()" section and
+        // the "Capabilities and execution of programs by root" section in
+        // <https://man7.org/linux/man-pages/man7/capabilities.7.html>.
+
+        let (file_permitted, file_inheritable) =
+            if (self.euid().is_root() || self.ruid().is_root()) && !self.securebits().no_root() {
+                (CapSet::all(), CapSet::all())
+            } else {
+                // TODO: Get the file capabilities from the file system.
+                (CapSet::empty(), CapSet::empty())
+            };
+
+        let file_effective = if self.euid().is_root() && !self.securebits().no_root() {
+            CapSet::all()
+        } else {
+            // TODO: Get the file capabilities from the file system.
+            CapSet::empty()
+        };
+
+        let new_permitted = (self.inheritable_capset() & file_inheritable)
+            | (file_permitted & BOUNDING_CAPSET)
+            | AMBIENT_CAPSET;
+        let new_effective = (file_effective & new_permitted) | (!file_effective & AMBIENT_CAPSET);
+
+        self.set_permitted_capset(new_permitted);
+        self.set_effective_capset(new_effective);
     }
 
     // For `setreuid`, the real UID can *NOT* be set to the old saved-set user ID,
