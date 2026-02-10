@@ -7,7 +7,7 @@
 //!  - `IoMem` for memory I/O (MMIO).
 //!  - `IoPort` for port I/O (PIO).
 
-mod io_mem;
+pub(crate) mod io_mem;
 
 pub use self::io_mem::IoMem;
 #[cfg_attr(target_arch = "loongarch64", expect(unused_imports))]
