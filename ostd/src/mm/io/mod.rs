@@ -252,6 +252,22 @@ pub enum Fallible {}
 /// to indicate the property of the underlying memory.
 pub enum Infallible {}
 
+/// A marker type for I/O memory regions.
+///
+/// This marker is used by [`memcpy`] and [`memset`]
+/// to indicate that a source or destination operand
+/// resides in I/O memory (MMIO).
+///
+/// Unlike [`Fallible`] and [`Infallible`],
+/// `Io` cannot statically determine
+/// whether a memory access will fault:
+/// MMIO fallibility is platform-dependent.
+/// For example, on Intel TDX
+/// every MMIO access triggers a #VE exception,
+/// whereas on a non-CVM x86 host
+/// the same access completes without faulting.
+pub(crate) enum Io {}
+
 /// Fallible memory read from a `VmWriter`.
 pub trait FallibleVmRead<F> {
     /// Reads all data into the writer until one of the three conditions is met:
@@ -930,6 +946,28 @@ impl<Fallibility> VmWriter<'_, Fallibility> {
         self.cursor = self.cursor.wrapping_add(nbytes);
 
         self
+    }
+
+    /// Creates a clone of this writer, requiring exclusive access.
+    ///
+    /// This method is analogous to [`Clone::clone`], but takes `&mut self`
+    /// instead of `&self`. The `&mut self` receiver is necessary because
+    /// `VmWriter` cannot safely implement `Clone`:
+    /// the underlying buffer may be a mutable slice,
+    /// and two concurrent writers would violate Rust's aliasing rules.
+    ///
+    /// The returned writer has the same cursor position and limit as `self`.
+    /// Because it borrows `self` mutably,
+    /// the original writer cannot be used until the returned writer is dropped.
+    ///
+    /// Note that writes through the returned writer
+    /// do **not** advance the cursor of the original writer.
+    pub fn clone_exclusive(&mut self) -> VmWriter<'_, Fallibility> {
+        VmWriter {
+            cursor: self.cursor,
+            end: self.end,
+            phantom: PhantomData,
+        }
     }
 }
 

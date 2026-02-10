@@ -64,7 +64,6 @@ pub unsafe fn protect_gpa_tdvm_call(gpa: Paddr, size: usize) -> Result<(), PageC
 
 pub struct TrapFrameWrapper<'a>(pub &'a mut TrapFrame);
 
-#[cfg(feature = "cvm_guest")]
 impl TdxTrapFrame for TrapFrameWrapper<'_> {
     fn rax(&self) -> usize {
         self.0.rax

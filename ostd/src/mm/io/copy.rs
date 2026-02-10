@@ -4,7 +4,7 @@
 //!
 //! This module provides [`Memcpy`] and [`Memset`] traits that generalize
 //! the classic C `memcpy` and `memset` for typed memory categories
-//! ([`Infallible`], [`Fallible`]).
+//! ([`Infallible`], [`Fallible`], [`Io`]).
 //!
 //! # Examples
 //!
@@ -34,9 +34,22 @@
 //!     // A page fault occurred after `filled` bytes.
 //! }
 //! ```
+//!
+//! Kernel buffer to MMIO data-region copy (for example, framebuffer upload):
+//!
+//! ```ignore
+//! // SAFETY: `src_kbuf` points to valid kernel bytes,
+//! // and `dst_io` points to a valid MMIO data region for `len` bytes.
+//! unsafe { memcpy::<Io, Infallible>(dst_io, src_kbuf, len) };
+//! ```
 
-use super::{Fallible, Infallible};
-use crate::arch::mm::{__memcpy_fallible, __memset_fallible};
+use super::{Fallible, Infallible, Io};
+use crate::arch::{
+    io::io_mem::{
+        copy_from_mmio, copy_from_mmio_fallible, copy_to_mmio, copy_to_mmio_fallible, memset_mmio,
+    },
+    mm::{__memcpy_fallible, __memset_fallible},
+};
 
 /// Copies `len` bytes from `src` to `dst`.
 ///
@@ -165,6 +178,17 @@ unsafe impl Memcpy<Fallible> for Infallible {
     }
 }
 
+// SAFETY: Delegates to `copy_from_mmio`, which correctly copies from MMIO
+// to kernel memory using MMIO-safe load/store operations.
+unsafe impl Memcpy<Io> for Infallible {
+    type Result = ();
+
+    unsafe fn memcpy(dst: *mut u8, src: *const u8, len: usize) {
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { copy_from_mmio(dst, src, len) };
+    }
+}
+
 // SAFETY: Delegates to `__memcpy_fallible`,
 // which handles page faults when copying from infallible to fallible memory.
 unsafe impl Memcpy<Infallible> for Fallible {
@@ -189,6 +213,39 @@ unsafe impl Memcpy<Fallible> for Fallible {
     }
 }
 
+// SAFETY: Delegates to `copy_from_mmio_fallible`,
+// which preserves fallible semantics and handles CVM/non-CVM differences.
+unsafe impl Memcpy<Io> for Fallible {
+    type Result = usize;
+
+    unsafe fn memcpy(dst: *mut u8, src: *const u8, len: usize) -> usize {
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { copy_from_mmio_fallible(dst, src, len) }
+    }
+}
+
+// SAFETY: Delegates to `copy_to_mmio`, which copies from kernel memory
+// to MMIO using MMIO-safe load/store operations.
+unsafe impl Memcpy<Infallible> for Io {
+    type Result = ();
+
+    unsafe fn memcpy(dst: *mut u8, src: *const u8, len: usize) {
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { copy_to_mmio(src, dst, len) };
+    }
+}
+
+// SAFETY: Delegates to `copy_to_mmio_fallible`,
+// which preserves fallible semantics and handles CVM/non-CVM differences.
+unsafe impl Memcpy<Fallible> for Io {
+    type Result = usize;
+
+    unsafe fn memcpy(dst: *mut u8, src: *const u8, len: usize) -> usize {
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { copy_to_mmio_fallible(src, dst, len) }
+    }
+}
+
 // SAFETY: Delegates to `volatile_set_memory`,
 // which correctly fills bytes in valid kernel memory.
 unsafe impl Memset for Infallible {
@@ -209,5 +266,16 @@ unsafe impl Memset for Fallible {
         // SAFETY: The safety is upheld by the caller.
         let failed_bytes = unsafe { __memset_fallible(dst, value, len) };
         len - failed_bytes
+    }
+}
+
+// SAFETY: Delegates to architecture MMIO fill entry,
+// which uses MMIO-safe stores on CVM guests and optimized string ops otherwise.
+unsafe impl Memset for Io {
+    type Result = ();
+
+    unsafe fn memset(dst: *mut u8, value: u8, len: usize) {
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { memset_mmio(dst, value, len) };
     }
 }

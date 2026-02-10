@@ -4,7 +4,7 @@ use alloc::sync::Arc;
 
 use aster_framebuffer::{ColorMapEntry, FRAMEBUFFER, FrameBuffer, MAX_CMAP_SIZE, PixelFormat};
 use device_id::{DeviceId, MajorId, MinorId};
-use ostd::mm::{HasPaddr, HasSize, VmIo, io::util::HasVmReaderWriter};
+use ostd::mm::{HasPaddr, HasSize, VmIo, VmReader, VmWriter};
 
 use super::{Device, DeviceType, registry::char};
 use crate::{
@@ -410,21 +410,34 @@ impl InodeIo for FbHandle {
             return Ok(0);
         }
 
-        let mut reader = self.framebuffer.io_mem().reader();
-
-        if offset >= reader.remain() {
+        let io_mem = self.framebuffer.io_mem();
+        let size = io_mem.size();
+        if offset >= size {
             return Ok(0);
         }
-        reader.skip(offset);
 
-        let mut reader = reader.to_fallible();
-        let len = match reader.read_fallible(writer) {
-            Ok(len) => len,
-            Err((err, 0)) => return Err(err.into()),
-            Err((_err, len)) => len,
+        let len = writer.avail().min(size - offset);
+        if len == 0 {
+            return Ok(0);
+        }
+
+        let mut new_writer = writer.clone_exclusive();
+        new_writer.limit(len);
+
+        let result = io_mem.read_fallible(offset, &mut new_writer);
+        let copied = match result {
+            Ok(copied) => copied,
+            Err((err, copied)) => {
+                if copied > 0 {
+                    copied
+                } else {
+                    return Err(err.into());
+                }
+            }
         };
 
-        Ok(len)
+        writer.skip(copied);
+        Ok(copied)
     }
 
     fn write_at(
@@ -437,23 +450,37 @@ impl InodeIo for FbHandle {
             return Ok(0);
         }
 
-        let mut writer = self.framebuffer.io_mem().writer();
-        if offset >= writer.avail() {
+        let io_mem = self.framebuffer.io_mem();
+        let size = io_mem.size();
+        if offset >= size {
             return_errno_with_message!(
                 Errno::ENOSPC,
                 "the write offset is beyond the framebuffer size"
             );
         }
-        writer.skip(offset);
 
-        let mut writer = writer.to_fallible();
-        let len = match writer.write_fallible(reader) {
-            Ok(len) => len,
-            Err((err, 0)) => return Err(err.into()),
-            Err((_err, len)) => len,
+        let len = reader.remain().min(size - offset);
+        if len == 0 {
+            return Ok(0);
+        }
+
+        let mut new_reader = reader.clone();
+        new_reader.limit(len);
+
+        let result = io_mem.write_fallible(offset, &mut new_reader);
+        let copied = match result {
+            Ok(copied) => copied,
+            Err((err, copied)) => {
+                if copied > 0 {
+                    copied
+                } else {
+                    return Err(err.into());
+                }
+            }
         };
 
-        Ok(len)
+        reader.skip(copied);
+        Ok(copied)
     }
 }
 

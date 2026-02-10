@@ -1,10 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! I/O memory utilities and port-I/O limit definitions.
+
 use alloc::vec::Vec;
 
 use align_ext::AlignExt;
 
 use crate::{boot::memory_region::MemoryRegionType, io::IoMemAllocatorBuilder};
+
+pub(crate) mod io_mem;
+
+#[cfg(feature = "cvm_guest")]
+pub(crate) mod cvm;
 
 /// Initializes the allocatable MMIO area based on the x86-64 memory distribution map.
 ///
