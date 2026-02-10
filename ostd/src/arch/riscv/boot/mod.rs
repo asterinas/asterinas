@@ -139,5 +139,7 @@ unsafe extern "C" fn riscv_boot(hart_id: usize, device_tree_paddr: usize) -> ! {
         memory_regions: parse_memory_regions(),
     });
 
-    call_ostd_main();
+    // SAFETY: The safety is guaranteed by the safety preconditions and the fact that we call it
+    // once after setting up necessary resources.
+    unsafe { call_ostd_main() };
 }

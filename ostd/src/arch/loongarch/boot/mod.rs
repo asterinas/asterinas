@@ -136,5 +136,7 @@ unsafe extern "C" fn loongarch_boot(
         memory_regions: parse_memory_regions(),
     });
 
-    call_ostd_main();
+    // SAFETY: The safety is guaranteed by the safety preconditions and the fact that we call it
+    // once after setting up necessary resources.
+    unsafe { call_ostd_main() };
 }
