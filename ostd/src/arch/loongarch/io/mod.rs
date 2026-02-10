@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! I/O memory utilities.
+
 use alloc::vec::Vec;
 
 use crate::{boot::memory_region::MemoryRegionType, io::IoMemAllocatorBuilder};
 
-/// Initializes the allocatable MMIO area based on the RISC-V memory
+pub(crate) mod io_mem;
+
+/// Initializes the allocatable MMIO area based on the LoongArch memory
 /// distribution map.
 ///
 /// Here we consider all the holes (filtering usable RAM) in the physical
