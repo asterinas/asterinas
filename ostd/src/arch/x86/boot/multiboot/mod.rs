@@ -368,6 +368,7 @@ impl Iterator for MemoryEntryIter {
 ///
 /// - This function must be called only once at a proper timing in the BSP's boot assembly code.
 /// - The caller must follow C calling conventions and put the right arguments in registers.
+/// - If this function is called, entry points of other boot protocols must never be called.
 // SAFETY: The name does not collide with other symbols.
 #[unsafe(no_mangle)]
 unsafe extern "sysv64" fn __multiboot_entry(boot_magic: u32, boot_params: u64) -> ! {
@@ -386,5 +387,7 @@ unsafe extern "sysv64" fn __multiboot_entry(boot_magic: u32, boot_params: u64) -
         memory_regions: parse_memory_regions(mb1_info),
     });
 
-    call_ostd_main();
+    // SAFETY: The safety is guaranteed by the safety preconditions and the fact that we call it
+    // once after setting up necessary resources.
+    unsafe { call_ostd_main() };
 }
