@@ -4,13 +4,28 @@ use crate::Pixel;
 
 /// A finite-state machine (FSM) to handle ANSI escape sequences.
 #[derive(Debug)]
-pub(super) struct EscapeFsm {
+pub struct EscapeFsm {
     state: WaitFor,
-    params: [u32; MAX_PARAMS],
+    params: [Option<u32>; MAX_PARAMS],
+}
+
+impl Default for EscapeFsm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The mode for "Erase in Display" (ED) command.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EraseInDisplay {
+    CursorToEnd,
+    CursorToBeginning,
+    EntireScreen,
+    EntireScreenAndScrollback,
 }
 
 /// A trait to execute operations from ANSI escape sequences.
-pub(super) trait EscapeOp {
+pub trait EscapeOp {
     /// Sets the cursor position.
     fn set_cursor(&mut self, x: usize, y: usize);
 
@@ -18,15 +33,30 @@ pub(super) trait EscapeOp {
     fn set_fg_color(&mut self, val: Pixel);
     /// Sets the background color.
     fn set_bg_color(&mut self, val: Pixel);
+
+    /// Erases part or all of the display.
+    fn erase_in_display(&mut self, mode: EraseInDisplay);
 }
 
 const MAX_PARAMS: usize = 8;
 
+// FIXME: Currently we only support a few ANSI escape sequences, and we just swallow the unsupported ones.
 #[derive(Clone, Copy, Debug)]
 enum WaitFor {
     Escape,
-    Bracket,
-    Params(u8),
+    /// Just saw ESC (0x1B), expecting the next selector.
+    AfterEscape,
+    /// Currently parsing CSI parameters.
+    Csi {
+        idx: u8,
+        is_private: bool,
+        saw_digit: bool,
+        in_intermediate: bool,
+    },
+    /// OSC payload after ESC] . Swallow until BEL (0x07) or ST (ESC \).
+    Osc,
+    /// Saw ESC inside OSC and it maybe ST.
+    OscEscape,
 }
 
 /// Foreground and background colors.
@@ -69,92 +99,265 @@ const COLORS: [Pixel; 16] = [
 ];
 
 impl EscapeFsm {
-    pub(super) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             state: WaitFor::Escape,
-            params: [0; MAX_PARAMS],
+            params: [None; MAX_PARAMS],
         }
     }
 
-    /// Tries to eat a character as part of the ANSI escape sequence.
+    /// Tries to eat a byte as part of the ANSI escape sequence.
     ///
-    /// This method returns a boolean value indicating whether the character is part of an ANSI
-    /// escape sequence. In other words, if the method returns true, then the character has been
-    /// eaten and should not be displayed in the console.
-    pub(super) fn eat<T: EscapeOp>(&mut self, byte: u8, op: &mut T) -> bool {
-        let num_params = match (self.state, byte) {
-            // Handle '\033'.
-            (WaitFor::Escape, 0o33) => {
-                self.state = WaitFor::Bracket;
-                return true;
-            }
-            (WaitFor::Escape, _) => {
-                // This is not an ANSI escape sequence.
-                return false;
+    /// Returns `true` if the byte is consumed by the FSM and must not be rendered as text.
+    /// Returns `false` if the byte is not part of an escape sequence and should be rendered.
+    pub fn eat<T: EscapeOp>(&mut self, byte: u8, op: &mut T) -> bool {
+        match self.state {
+            WaitFor::Escape => {
+                if byte == 0x1b {
+                    self.state = WaitFor::AfterEscape;
+                    return true;
+                }
+                false
             }
 
-            // Handle '['.
-            (WaitFor::Bracket, b'[') => {
-                self.state = WaitFor::Params(0);
-                self.params[0] = 0;
-                return true;
-            }
-            (WaitFor::Bracket, _) => {
-                // The character is invalid. We cannot handle it, so we are aborting the ANSI
-                // escape sequence.
-                self.state = WaitFor::Escape;
-                return true;
-            }
-
-            // Handle numeric parameters.
-            (WaitFor::Params(i), b'0'..=b'9') => {
-                let param = &mut self.params[i as usize];
-                *param = param.wrapping_mul(10).wrapping_add((byte - b'0') as u32);
-                return true;
-            }
-            (WaitFor::Params(i), b';') if (i as usize + 1) < MAX_PARAMS => {
-                self.state = WaitFor::Params(i + 1);
-                self.params[i as usize + 1] = 0;
-                return true;
-            }
-            (WaitFor::Params(_), b';') => {
-                // There are too many parameters. We cannot handle that many, so we are aborting
-                // the ANSI escape sequence.
-                self.state = WaitFor::Escape;
-                return true;
+            WaitFor::AfterEscape => {
+                match byte {
+                    b'[' => {
+                        // CSI begins.
+                        self.params.fill(None);
+                        self.state = WaitFor::Csi {
+                            idx: 0,
+                            is_private: false,
+                            saw_digit: false,
+                            in_intermediate: false,
+                        };
+                        true
+                    }
+                    b']' => {
+                        // OSC begins.
+                        self.state = WaitFor::Osc;
+                        true
+                    }
+                    _ => {
+                        // The character is invalid. We cannot handle it, so we are aborting the ANSI
+                        // escape sequence.
+                        self.state = WaitFor::Escape;
+                        true
+                    }
+                }
             }
 
-            // Break and handle the final action.
-            (WaitFor::Params(i), _) => {
-                self.state = WaitFor::Escape;
-                (i + 1) as usize
+            WaitFor::Osc => {
+                match byte {
+                    0x07 => {
+                        // BEL terminator
+                        self.state = WaitFor::Escape;
+                        true
+                    }
+                    0x1b => {
+                        // Might be ST
+                        self.state = WaitFor::OscEscape;
+                        true
+                    }
+                    _ => {
+                        // Swallow OSC payload.
+                        true
+                    }
+                }
             }
-        };
 
-        match byte {
-            // CUP - Cursor Position
-            b'H' if num_params == 2 => {
-                op.set_cursor(
-                    self.params[1].saturating_sub(1) as usize,
-                    self.params[0].saturating_sub(1) as usize,
-                );
+            WaitFor::OscEscape => {
+                if byte == b'\\' {
+                    self.state = WaitFor::Escape;
+                    true
+                } else {
+                    // Not ST and we go back to OSC and keep swallowing.
+                    self.state = WaitFor::Osc;
+                    true
+                }
+            }
+
+            WaitFor::Csi {
+                idx,
+                is_private,
+                saw_digit,
+                in_intermediate,
+            } => {
+                match byte {
+                    // Intermediate bytes (0x20..=0x2F).
+                    // Once we see any intermediate, we are in the intermediate section;
+                    // later bytes must be intermediate or final.
+                    0x20..=0x2f => {
+                        // If we already entered intermediate section, just keep swallowing them.
+                        // If we were still in parameter section, we now transition to intermediate.
+                        self.state = WaitFor::Csi {
+                            idx,
+                            is_private,
+                            saw_digit,
+                            in_intermediate: true,
+                        };
+                        true
+                    }
+
+                    // Parameter bytes (0x30..=0x3F).
+                    0x30..=0x3f if !in_intermediate => {
+                        match byte {
+                            // digits: contribute to numeric params
+                            b'0'..=b'9' => {
+                                let i = idx as usize;
+                                if i < MAX_PARAMS {
+                                    let p = &mut self.params[i];
+                                    *p = Some(
+                                        p.unwrap_or(0)
+                                            .saturating_mul(10)
+                                            .saturating_add((byte - b'0') as u32),
+                                    );
+                                }
+                                self.state = WaitFor::Csi {
+                                    idx,
+                                    is_private,
+                                    saw_digit: true,
+                                    in_intermediate: false,
+                                };
+                            }
+
+                            // ';' separates numeric parameters.
+                            b';' => {
+                                let next = idx.saturating_add(1);
+                                if (next as usize) < MAX_PARAMS {
+                                    // If there were no digits for this param, it already stays None.
+                                    self.state = WaitFor::Csi {
+                                        idx: next,
+                                        is_private,
+                                        saw_digit: false,
+                                        in_intermediate: false,
+                                    };
+                                } else {
+                                    // There are too many parameters. We cannot handle that many, so we are aborting
+                                    // the ANSI escape sequence.
+                                    self.state = WaitFor::Escape;
+                                }
+                            }
+
+                            b':' => {
+                                // The behavior of ':' is not defined by the standard.
+                                log::warn!("EscapeFsm: unsupported ':' parameter separator in CSI");
+                            }
+
+                            // Sequences containing <=>? are "private". We swallow them and mark `is_private`.
+                            b'<' | b'=' | b'>' | b'?' => {
+                                self.state = WaitFor::Csi {
+                                    idx,
+                                    is_private: true,
+                                    saw_digit,
+                                    in_intermediate: false,
+                                };
+                            }
+
+                            _ => unreachable!(),
+                        }
+                        true
+                    }
+
+                    // Parameter bytes after intermediate section is illegal by the formal grammar.
+                    // We'll abort and swallow to avoid leaking garbage.
+                    0x30..=0x3f if in_intermediate => {
+                        self.state = WaitFor::Escape;
+                        true
+                    }
+
+                    // Final byte (0x40..=0x7E): ends the CSI.
+                    0x40..=0x7e => {
+                        self.state = WaitFor::Escape;
+
+                        let num_params = (idx as usize).saturating_add(1).min(MAX_PARAMS);
+
+                        self.dispatch_csi(byte, num_params, is_private, op);
+                        true
+                    }
+
+                    _ => {
+                        // Terminal behavior is undefined if a CSI contains bytes outside 0x20..=0x7E.
+                        log::warn!("EscapeFsm: invalid byte {:#x} in CSI sequence", byte);
+                        self.state = WaitFor::Escape;
+                        true
+                    }
+                }
+            }
+        }
+    }
+
+    /// Gets the parameter at the given index, or returns the default value if the parameter is not present.
+    fn param_or(&self, i: usize, default: u32) -> u32 {
+        self.params.get(i).and_then(|p| *p).unwrap_or(default)
+    }
+
+    fn dispatch_csi<T: EscapeOp>(
+        &self,
+        final_byte: u8,
+        num_params: usize,
+        is_private: bool,
+        op: &mut T,
+    ) {
+        if is_private {
+            // For now we don't handle any private sequences, so just swallow them.
+            return;
+        }
+
+        match final_byte {
+            // CUP - Cursor Position: CSI n ; m H
+            //
+            // - n=row, m=col
+            // - default to 1 if omitted
+            //
+            // Examples:
+            // - CSI H        -> 1;1
+            // - CSI ;5H      -> 1;5
+            // - CSI 17H      -> 17;1
+            // - CSI 17;H     -> 17;1
+            // - CSI 17;1H    -> 17;1
+            b'H' => {
+                let row_1b = self.param_or(0, 1);
+                let col_1b = self.param_or(1, 1);
+
+                op.set_cursor((col_1b - 1) as usize, (row_1b - 1) as usize);
+            }
+
+            // ED - Erase in Display: CSI n J
+            //
+            // n:
+            // - 0 (or missing): cursor to end of screen
+            // - 1: cursor to beginning of screen
+            // - 2: entire screen
+            // - 3: entire screen + scrollback
+            b'J' => {
+                let n = self.param_or(0, 0);
+                let mode = match n {
+                    0 => EraseInDisplay::CursorToEnd,
+                    1 => EraseInDisplay::CursorToBeginning,
+                    2 => EraseInDisplay::EntireScreen,
+                    3 => EraseInDisplay::EntireScreenAndScrollback,
+                    _ => {
+                        // Invalid parameter.
+                        return;
+                    }
+                };
+                op.erase_in_display(mode);
             }
 
             // SGR - Select Graphic Rendition
-            b'm' => self.handle_srg(num_params, op),
+            b'm' => self.handle_sgr(num_params, op),
 
-            // Invalid or unsupported
+            // Unknown CSI: swallow silently.
             _ => {}
         }
-
-        true
     }
 
     /// Handles the "Select Graphic Rendition" sequence.
-    fn handle_srg<T: EscapeOp>(&self, num_params: usize, op: &mut T) {
+    fn handle_sgr<T: EscapeOp>(&self, num_params: usize, op: &mut T) {
         let mut cursor = 0;
         while cursor < num_params {
-            let op_code = self.params[cursor];
+            let op_code = self.param_or(cursor, 0) as u8;
             cursor += 1;
 
             match op_code {
@@ -167,15 +370,15 @@ impl EscapeFsm {
                 // Set foreground colors
                 // Reference: <https://en.wikipedia.org/wiki/ANSI_escape_code#Colors>
                 30..=37 => op.set_fg_color(COLORS[op_code as usize - 30]),
-                38 if num_params - cursor >= 2 && self.params[cursor] == 5 => {
-                    op.set_fg_color(Self::get_256_color(self.params[cursor + 1] as u8));
+                38 if num_params - cursor >= 2 && self.param_or(cursor, 0) == 5 => {
+                    op.set_fg_color(Self::get_256_color(self.param_or(cursor + 1, 0) as u8));
                     cursor += 2;
                 }
-                38 if num_params - cursor >= 4 && self.params[cursor] == 2 => {
+                38 if num_params - cursor >= 4 && self.param_or(cursor, 0) == 2 => {
                     op.set_fg_color(Pixel {
-                        red: self.params[cursor + 1] as u8,
-                        green: self.params[cursor + 2] as u8,
-                        blue: self.params[cursor + 3] as u8,
+                        red: self.param_or(cursor + 1, 0) as u8,
+                        green: self.param_or(cursor + 2, 0) as u8,
+                        blue: self.param_or(cursor + 3, 0) as u8,
                     });
                     cursor += 4;
                 }
@@ -186,15 +389,15 @@ impl EscapeFsm {
                 // Set background colors
                 // Reference: <https://en.wikipedia.org/wiki/ANSI_escape_code#Colors>
                 40..=47 => op.set_bg_color(COLORS[op_code as usize - 40]),
-                48 if num_params - cursor >= 2 && self.params[cursor] == 5 => {
-                    op.set_bg_color(Self::get_256_color(self.params[cursor + 1] as u8));
+                48 if num_params - cursor >= 2 && self.param_or(cursor, 0) == 5 => {
+                    op.set_bg_color(Self::get_256_color(self.param_or(cursor + 1, 0) as u8));
                     cursor += 2;
                 }
-                48 if num_params - cursor >= 4 && self.params[cursor] == 2 => {
+                48 if num_params - cursor >= 4 && self.param_or(cursor, 0) == 2 => {
                     op.set_bg_color(Pixel {
-                        red: self.params[cursor + 1] as u8,
-                        green: self.params[cursor + 2] as u8,
-                        blue: self.params[cursor + 3] as u8,
+                        red: self.param_or(cursor + 1, 0) as u8,
+                        green: self.param_or(cursor + 2, 0) as u8,
+                        blue: self.param_or(cursor + 3, 0) as u8,
                     });
                     cursor += 4;
                 }
@@ -260,6 +463,7 @@ mod test {
         y: usize,
         fg: Pixel,
         bg: Pixel,
+        last_ed: Option<EraseInDisplay>,
     }
 
     impl Default for State {
@@ -269,6 +473,7 @@ mod test {
                 y: 0,
                 fg: Pixel::WHITE,
                 bg: Pixel::BLACK,
+                last_ed: None,
             }
         }
     }
@@ -285,6 +490,10 @@ mod test {
 
         fn set_bg_color(&mut self, val: Pixel) {
             self.bg = val;
+        }
+
+        fn erase_in_display(&mut self, mode: EraseInDisplay) {
+            self.last_ed = Some(mode);
         }
     }
 
@@ -306,11 +515,34 @@ mod test {
 
         assert!(!esc_fsm.eat(b'a', &mut state));
 
-        // There is invalid as there is no 0-th row or 0-th column. But in this case, let's move
-        // the cursor to the first row and the first column.
-        eat_escape_sequence(&mut esc_fsm, &mut state, b"\x1B[0;0H");
+        // CUP defaults to 1;1 when omitted.
+        eat_escape_sequence(&mut esc_fsm, &mut state, b"\x1B[H");
         assert_eq!(state.x, 0);
         assert_eq!(state.y, 0);
+
+        assert!(!esc_fsm.eat(b'a', &mut state));
+    }
+
+    #[ktest]
+    fn erase_in_display() {
+        let mut esc_fsm = EscapeFsm::new();
+        let mut state = State::default();
+
+        // Default (or missing) is 0: cursor to end of screen.
+        eat_escape_sequence(&mut esc_fsm, &mut state, b"\x1B[J");
+        assert_eq!(state.last_ed, Some(EraseInDisplay::CursorToEnd));
+
+        eat_escape_sequence(&mut esc_fsm, &mut state, b"\x1B[1J");
+        assert_eq!(state.last_ed, Some(EraseInDisplay::CursorToBeginning));
+
+        eat_escape_sequence(&mut esc_fsm, &mut state, b"\x1B[2J");
+        assert_eq!(state.last_ed, Some(EraseInDisplay::EntireScreen));
+
+        eat_escape_sequence(&mut esc_fsm, &mut state, b"\x1B[3J");
+        assert_eq!(
+            state.last_ed,
+            Some(EraseInDisplay::EntireScreenAndScrollback)
+        );
 
         assert!(!esc_fsm.eat(b'a', &mut state));
     }
