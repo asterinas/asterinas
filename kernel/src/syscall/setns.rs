@@ -113,7 +113,7 @@ fn set_uts_ns(
     // Verify the thread has SYS_ADMIN capability in the target namespace's owner
     // and the current user namespace.
     target_ns
-        .owner_ns()
+        .get_owner_user_ns()?
         .check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
     ctx.thread_local
         .borrow_user_ns()
@@ -134,7 +134,7 @@ fn set_mnt_ns(
     // Verify the thread has SYS_ADMIN capability in the target namespace's owner
     // and the current user namespace.
     target_ns
-        .owner()
+        .get_owner_user_ns()?
         .check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
     ctx.thread_local
         .borrow_user_ns()

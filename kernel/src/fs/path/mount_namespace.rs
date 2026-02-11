@@ -5,6 +5,7 @@ use spin::Once;
 use crate::{
     fs::{
         path::{Mount, Path, PathResolver},
+        pseudofs::{NsCommonOps, NsFs, NsType},
         ramfs::RamFs,
     },
     prelude::*,
@@ -22,6 +23,8 @@ pub struct MountNamespace {
     root: Arc<Mount>,
     /// The user namespace that owns this mount namespace.
     owner: Arc<UserNamespace>,
+    /// The path in nsfs.
+    path: Path,
 }
 
 impl MountNamespace {
@@ -36,7 +39,8 @@ impl MountNamespace {
 
             Arc::new_cyclic(|weak_self| {
                 let root = Mount::new_root(rootfs, weak_self.clone());
-                MountNamespace { root, owner }
+                let path = NsFs::new_path(weak_self.clone());
+                MountNamespace { root, owner, path }
             })
         })
     }
@@ -73,10 +77,11 @@ impl MountNamespace {
         let new_mnt_ns = Arc::new_cyclic(|weak_self| {
             let new_root =
                 root_mount.clone_mount_tree(root_mount.root_dentry(), Some(weak_self), true);
-
+            let path = NsFs::new_path(weak_self.clone());
             MountNamespace {
                 root: new_root,
                 owner,
+                path,
             }
         });
 
@@ -106,11 +111,6 @@ impl MountNamespace {
         Ok(())
     }
 
-    /// Returns the owner user namespace of the namespace.
-    pub fn owner(&self) -> &Arc<UserNamespace> {
-        &self.owner
-    }
-
     /// Checks whether a given mount belongs to this mount namespace.
     pub fn owns(self: &Arc<Self>, mount: &Mount) -> bool {
         mount.mnt_ns().as_ptr() == Arc::as_ptr(self)
@@ -132,5 +132,24 @@ impl Drop for MountNamespace {
                 worklist.push_back(child);
             }
         }
+    }
+}
+
+impl NsCommonOps for MountNamespace {
+    const TYPE: NsType = NsType::Mnt;
+
+    fn get_owner_user_ns(&self) -> Result<&Arc<UserNamespace>> {
+        Ok(&self.owner)
+    }
+
+    fn get_parent(&self) -> Result<Arc<Self>> {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "a mount namespace does not have a parent namespace"
+        );
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
     }
 }

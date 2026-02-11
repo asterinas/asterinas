@@ -6,6 +6,7 @@ use core::{
 };
 
 pub use anon_inode_fs::AnonInodeFs;
+pub use nsfs::{NsCommonOps, NsFile, NsFs, NsType};
 pub use pidfdfs::PidfdFs;
 pub(super) use pipefs::PipeFs;
 use pipefs::PipeFsType;
@@ -28,6 +29,7 @@ use crate::{
 };
 
 mod anon_inode_fs;
+mod nsfs;
 mod pidfdfs;
 mod pipefs;
 mod sockfs;
@@ -122,6 +124,7 @@ pub enum PseudoInodeType {
     Socket,
     AnonInode,
     Pidfd,
+    Ns,
 }
 
 impl From<PseudoInodeType> for InodeType {
@@ -132,6 +135,7 @@ impl From<PseudoInodeType> for InodeType {
             PseudoInodeType::Socket => InodeType::Socket,
             PseudoInodeType::AnonInode => InodeType::Unknown,
             PseudoInodeType::Pidfd => InodeType::Unknown,
+            PseudoInodeType::Ns => InodeType::File,
         }
     }
 }
