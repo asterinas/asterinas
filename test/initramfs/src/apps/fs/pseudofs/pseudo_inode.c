@@ -69,4 +69,11 @@ FN_TEST(anon_inodefs_share_inode)
 }
 END_TEST()
 
+FN_TEST(nsfs_inode)
+{
+	TEST_RES(get_mode(ns_uts_fd), _ret == 0444);
+	TEST_ERRNO(set_mode(ns_uts_fd, 0600), EPERM);
+}
+END_TEST()
+
 #include "pseudo_file_cleanup.h"

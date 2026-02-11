@@ -24,6 +24,7 @@
 int pipe_1[2], pipe_2[2];
 int sock[2];
 int epoll_fd, event_fd, timer_fd, signal_fd, inotify_fd, pid_fd, mem_fd;
+int ns_uts_fd;
 pid_t child;
 
 FN_SETUP(create)
@@ -49,6 +50,8 @@ FN_SETUP(create)
 		exit(-1);
 	}
 	pid_fd = CHECK(syscall(SYS_pidfd_open, child, 0));
+
+	ns_uts_fd = CHECK(open("/proc/self/ns/uts", O_RDONLY));
 }
 END_SETUP()
 
