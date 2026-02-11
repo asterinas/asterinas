@@ -4,6 +4,7 @@ use ostd::{const_assert, sync::RwMutexReadGuard};
 use spin::Once;
 
 use crate::{
+    fs::pseudofs::{NsCommonOps, NsType, StashedDentry},
     prelude::*,
     process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::PosixThread},
     util::padded,
@@ -13,6 +14,7 @@ use crate::{
 pub struct UtsNamespace {
     uts_name: RwMutex<UtsName>,
     owner: Arc<UserNamespace>,
+    stashed_dentry: StashedDentry,
 }
 
 impl UtsNamespace {
@@ -33,11 +35,16 @@ impl UtsNamespace {
             };
 
             let owner = UserNamespace::get_init_singleton().clone();
+            Self::new(uts_name, owner)
+        })
+    }
 
-            Arc::new(Self {
-                uts_name: RwMutex::new(uts_name),
-                owner,
-            })
+    fn new(uts_name: UtsName, owner: Arc<UserNamespace>) -> Arc<Self> {
+        let stashed_dentry = StashedDentry::new();
+        Arc::new(Self {
+            uts_name: RwMutex::new(uts_name),
+            owner,
+            stashed_dentry,
         })
     }
 
@@ -48,15 +55,7 @@ impl UtsNamespace {
         posix_thread: &PosixThread,
     ) -> Result<Arc<Self>> {
         owner.check_cap(CapSet::SYS_ADMIN, posix_thread)?;
-        Ok(Arc::new(Self {
-            uts_name: RwMutex::new(*self.uts_name.read()),
-            owner,
-        }))
-    }
-
-    /// Returns the owner user namespace of the namespace.
-    pub fn owner_ns(&self) -> &Arc<UserNamespace> {
-        &self.owner
+        Ok(Self::new(*self.uts_name.read(), owner))
     }
 
     /// Returns a read-only lock guard for accessing the UTS name.
@@ -194,4 +193,23 @@ impl UtsName {
             }
         }
     };
+}
+
+impl NsCommonOps for UtsNamespace {
+    const TYPE: NsType = NsType::Uts;
+
+    fn owner_user_ns(&self) -> Option<&Arc<UserNamespace>> {
+        Some(&self.owner)
+    }
+
+    fn parent(&self) -> Result<&Arc<Self>> {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "a UTS namespace does not have a parent namespace"
+        );
+    }
+
+    fn stashed_dentry(&self) -> &StashedDentry {
+        &self.stashed_dentry
+    }
 }
