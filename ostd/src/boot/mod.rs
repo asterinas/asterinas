@@ -113,10 +113,13 @@ pub(crate) fn init_after_heap() {
     });
 }
 
-/// Initializes OSTD and then jumps to the `#[ostd::main]` entry point.
+/// Starts the kernel.
 ///
-/// Any kernel that uses the `ostd` crate should define a function marked with
-/// `#[ostd::main]` as the kernel's entry function.
+/// The job of this function is to continue the early bootstrap (started in [`arch::boot`])
+/// and performs the initialization of OSTD.
+/// Eventually, it transfers control to the entrypoint function
+/// that the user of OSTD defines with `#[ostd::main]`,
+/// which completes the kernel initialization.
 ///
 /// # Safety
 ///
@@ -124,7 +127,7 @@ pub(crate) fn init_after_heap() {
 /// [`arch::boot`] module.
 ///
 /// [`arch::boot`]: crate::arch::boot
-pub(crate) unsafe fn call_ostd_main() -> ! {
+pub(crate) unsafe fn start_kernel() -> ! {
     // The entry point of kernel code, which should be defined by the package that
     // uses OSTD.
     unsafe extern "Rust" {

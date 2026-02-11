@@ -125,7 +125,7 @@ unsafe extern "C" fn loongarch_boot(
     let cmdline_ptr = paddr_to_vaddr(cmdline_paddr) as *const i8;
     let cmdline = unsafe { CStr::from_ptr(cmdline_ptr) }.to_str();
 
-    use crate::boot::{EARLY_INFO, EarlyBootInfo, call_ostd_main};
+    use crate::boot::{EARLY_INFO, EarlyBootInfo, start_kernel};
 
     EARLY_INFO.call_once(|| EarlyBootInfo {
         bootloader_name: parse_bootloader_name(),
@@ -138,5 +138,5 @@ unsafe extern "C" fn loongarch_boot(
 
     // SAFETY: The safety is guaranteed by the safety preconditions and the fact that we call it
     // once after setting up necessary resources.
-    unsafe { call_ostd_main() };
+    unsafe { start_kernel() };
 }

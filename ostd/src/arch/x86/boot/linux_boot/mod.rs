@@ -205,7 +205,7 @@ unsafe extern "sysv64" fn __linux_boot(params_ptr: *const BootParams) -> ! {
     let params = unsafe { &*params_ptr };
     assert_eq!({ params.hdr.header }, LINUX_BOOT_HEADER_MAGIC);
 
-    use crate::boot::{EARLY_INFO, EarlyBootInfo, call_ostd_main};
+    use crate::boot::{EARLY_INFO, EarlyBootInfo, start_kernel};
 
     #[cfg(feature = "cvm_guest")]
     init_cvm_guest();
@@ -221,5 +221,5 @@ unsafe extern "sysv64" fn __linux_boot(params_ptr: *const BootParams) -> ! {
 
     // SAFETY: The safety is guaranteed by the safety preconditions and the fact that we call it
     // once after setting up necessary resources.
-    unsafe { call_ostd_main() };
+    unsafe { start_kernel() };
 }
