@@ -3,7 +3,7 @@
 use alloc::{boxed::Box, sync::Arc};
 use core::fmt::Debug;
 
-use aster_pci::cfg_space::Bar;
+use aster_pci::cfg_space::BarAccess;
 use aster_util::safe_ptr::SafePtr;
 use ostd::{
     arch::device::io_port::{PortRead, PortWrite},
@@ -61,7 +61,7 @@ pub trait VirtioTransport: Sync + Send + Debug {
     fn device_config_mem(&self) -> Option<IoMem>;
 
     /// Get access to the device config BAR space.
-    fn device_config_bar(&self) -> Option<(Bar, usize)>;
+    fn device_config_bar(&self) -> Option<(BarAccess, usize)>;
 
     // ====================Virtqueue related APIs====================
 
@@ -113,13 +113,13 @@ pub trait VirtioTransport: Sync + Send + Debug {
 #[derive(Debug)]
 pub struct ConfigManager<T: Pod> {
     modern_space: Option<SafePtr<T, IoMem>>,
-    legacy_space: Option<(Bar, usize)>,
+    legacy_space: Option<(BarAccess, usize)>,
 }
 
 impl<T: Pod> ConfigManager<T> {
     pub(super) fn new(
         modern_space: Option<SafePtr<T, IoMem>>,
-        legacy_space: Option<(Bar, usize)>,
+        legacy_space: Option<(BarAccess, usize)>,
     ) -> Self {
         Self {
             modern_space,
