@@ -151,7 +151,7 @@ unsafe extern "sysv64" fn __multiboot2_entry(boot_magic: u32, boot_params: u64) 
     let mb2_info =
         unsafe { BootInformation::load(boot_params as *const BootInformationHeader).unwrap() };
 
-    use crate::boot::{EARLY_INFO, EarlyBootInfo, call_ostd_main};
+    use crate::boot::{EARLY_INFO, EarlyBootInfo, start_kernel};
 
     EARLY_INFO.call_once(|| EarlyBootInfo {
         bootloader_name: parse_bootloader_name(&mb2_info).unwrap_or("Unknown Multiboot2 Loader"),
@@ -164,5 +164,5 @@ unsafe extern "sysv64" fn __multiboot2_entry(boot_magic: u32, boot_params: u64) 
 
     // SAFETY: The safety is guaranteed by the safety preconditions and the fact that we call it
     // once after setting up necessary resources.
-    unsafe { call_ostd_main() };
+    unsafe { start_kernel() };
 }

@@ -128,7 +128,7 @@ unsafe extern "C" fn riscv_boot(hart_id: usize, device_tree_paddr: usize) -> ! {
     let fdt = unsafe { fdt::Fdt::from_ptr(device_tree_ptr).unwrap() };
     DEVICE_TREE.call_once(|| fdt);
 
-    use crate::boot::{EARLY_INFO, EarlyBootInfo, call_ostd_main};
+    use crate::boot::{EARLY_INFO, EarlyBootInfo, start_kernel};
 
     EARLY_INFO.call_once(|| EarlyBootInfo {
         bootloader_name: parse_bootloader_name(),
@@ -141,5 +141,5 @@ unsafe extern "C" fn riscv_boot(hart_id: usize, device_tree_paddr: usize) -> ! {
 
     // SAFETY: The safety is guaranteed by the safety preconditions and the fact that we call it
     // once after setting up necessary resources.
-    unsafe { call_ostd_main() };
+    unsafe { start_kernel() };
 }
