@@ -34,10 +34,12 @@ FN_TEST(pseudo_mount)
 
 	struct fd_group groups[] = {
 		{ pipe_1, 2, -1 },  { sock, 2, -1 },	{ anon, 5, -1 },
-		{ &mem_fd, 1, -1 }, { &pid_fd, 1, -1 },
+		{ &mem_fd, 1, -1 }, { &pid_fd, 1, -1 }, { &ns_uts_fd, 1, -1 },
 	};
 
-	for (int i = 0; i < 5; i++) {
+	int nr_groups = sizeof(groups) / sizeof(groups[0]);
+
+	for (int i = 0; i < nr_groups; i++) {
 		int base = TEST_SUCC(read_fdinfo_mnt_id(groups[i].fds[0]));
 		for (int j = 1; j < groups[i].nr; j++) {
 			TEST_RES(read_fdinfo_mnt_id(groups[i].fds[j]),
@@ -46,8 +48,8 @@ FN_TEST(pseudo_mount)
 		groups[i].mnt_id = base;
 	}
 
-	for (int i = 0; i < 5; i++) {
-		for (int j = i + 1; j < 5; j++) {
+	for (int i = 0; i < nr_groups; i++) {
+		for (int j = i + 1; j < nr_groups; j++) {
 			TEST_RES(0, groups[i].mnt_id != groups[j].mnt_id);
 		}
 	}

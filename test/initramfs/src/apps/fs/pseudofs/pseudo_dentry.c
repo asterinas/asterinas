@@ -53,6 +53,8 @@ FN_TEST(pseudo_dentry)
 	TEST_RES(readlink_check(pid_fd, "anon_inode:[pidfd]", 0), _ret == 0);
 
 	TEST_RES(readlink_check(mem_fd, "/memfd:test_memfd", 0), _ret == 0);
+
+	TEST_RES(readlink_check(ns_uts_fd, "uts:[", 1), _ret == 0);
 }
 END_TEST()
 

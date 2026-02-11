@@ -15,6 +15,7 @@ FN_SETUP(cleanup)
 	CHECK(close(inotify_fd));
 	CHECK(close(pid_fd));
 	CHECK(close(mem_fd));
+	CHECK(close(ns_uts_fd));
 	CHECK(kill(child, SIGKILL));
 	CHECK(waitpid(child, NULL, 0));
 }
