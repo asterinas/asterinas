@@ -85,6 +85,7 @@ use super::{
     pidfd_open::sys_pidfd_open,
     pidfd_send_signal::sys_pidfd_send_signal,
     pipe::{sys_pipe, sys_pipe2},
+    pivot_root::sys_pivot_root,
     poll::sys_poll,
     ppoll::sys_ppoll,
     prctl::sys_prctl,
@@ -309,6 +310,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SCHED_GETSCHEDULER = 145 => sys_sched_getscheduler(args[..1]);
     SYS_SCHED_GET_PRIORITY_MAX = 146 => sys_sched_get_priority_max(args[..1]);
     SYS_SCHED_GET_PRIORITY_MIN = 147 => sys_sched_get_priority_min(args[..1]);
+    SYS_PIVOT_ROOT = 155       => sys_pivot_root(args[..2]);
     SYS_PRCTL = 157            => sys_prctl(args[..5]);
     SYS_ARCH_PRCTL = 158       => sys_arch_prctl(args[..2], &mut user_ctx);
     SYS_SETRLIMIT = 160        => sys_setrlimit(args[..2]);

@@ -420,10 +420,9 @@ impl Mount {
     }
 
     /// Grafts the mount node tree to the mountpoint.
-    pub(super) fn graft_mount_tree(&self, target_path: &Path) -> Result<()> {
+    pub(super) fn graft_mount_tree(&self, target_path: &Path) {
         self.detach_from_parent();
         self.attach_to_path(target_path);
-        Ok(())
     }
 
     /// Gets a child mount node from the mountpoint if any.
