@@ -6,6 +6,7 @@ VERBOSE ?= 1
 SYSCALL_TEST_SUITE ?= ltp
 SYSCALL_TEST_WORKDIR ?= /tmp
 ENABLE_BASIC_TEST ?= false
+ENABLE_KSELFTEST_TEST ?= false
 # Specify platform macros when building regression tests (supported: asterinas, linux).
 # - asterinas: Define both `__asterinas__` and `__linux__`. Tests may fail in Linux.
 # - linux: Define only `__linux__`. Tests may fail in Asterinas.
@@ -69,6 +70,7 @@ $(INITRAMFS_IMAGE): $(INITRAMFS)
 		--argstr basicTestPlatform $(BASIC_TEST_PLATFORM) \
 		--arg enableBenchmark $(ENABLE_BENCHMARK) \
 		--arg enableSyscallTest $(ENABLE_SYSCALL_TEST) \
+		--arg enableKselfTest $(ENABLE_KSELFTEST_TEST) \
 		--argstr syscallTestSuite $(SYSCALL_TEST_SUITE) \
 		--argstr syscallTestWorkDir $(SYSCALL_TEST_WORKDIR) \
 		--argstr dnsServer ${DNS_SERVER} \
@@ -86,6 +88,7 @@ $(INITRAMFS):
 		--argstr basicTestPlatform $(BASIC_TEST_PLATFORM) \
 		--arg enableBenchmark $(ENABLE_BENCHMARK) \
 		--arg enableSyscallTest $(ENABLE_SYSCALL_TEST) \
+		--arg enableKselfTest $(ENABLE_KSELFTEST_TEST) \
 		--argstr syscallTestSuite $(SYSCALL_TEST_SUITE) \
 		--argstr syscallTestWorkDir $(SYSCALL_TEST_WORKDIR) \
 		--argstr dnsServer ${DNS_SERVER} \
