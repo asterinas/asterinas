@@ -4,7 +4,10 @@ use ostd::mm::{VmIo, VmReader, VmWriter};
 
 use super::{
     BLOCK_SIZE, BlockDevice,
-    bio::{Bio, BioEnqueueError, BioSegment, BioStatus, BioType, BioWaiter, SubmittedBio},
+    bio::{
+        Bio, BioCompleteFn, BioEnqueueError, BioSegment, BioStatus, BioType, BioWaiter,
+        SubmittedBio,
+    },
     id::{Bid, Sid},
 };
 use crate::{
@@ -22,12 +25,7 @@ impl dyn BlockDevice {
         bid: Bid,
         bio_segment: BioSegment,
     ) -> Result<BioStatus, BioEnqueueError> {
-        let bio = Bio::new(
-            BioType::Read,
-            Sid::from(bid),
-            vec![bio_segment],
-            Some(general_complete_fn),
-        );
+        let bio = Bio::new(BioType::Read, Sid::from(bid), vec![bio_segment], None);
         let status = bio.submit_and_wait(self)?;
         Ok(status)
     }
@@ -37,12 +35,13 @@ impl dyn BlockDevice {
         &self,
         bid: Bid,
         bio_segment: BioSegment,
+        complete_fn: Option<BioCompleteFn>,
     ) -> Result<BioWaiter, BioEnqueueError> {
         let bio = Bio::new(
             BioType::Read,
             Sid::from(bid),
             vec![bio_segment],
-            Some(general_complete_fn),
+            complete_fn,
         );
         bio.submit(self)
     }
@@ -53,12 +52,7 @@ impl dyn BlockDevice {
         bid: Bid,
         bio_segment: BioSegment,
     ) -> Result<BioStatus, BioEnqueueError> {
-        let bio = Bio::new(
-            BioType::Write,
-            Sid::from(bid),
-            vec![bio_segment],
-            Some(general_complete_fn),
-        );
+        let bio = Bio::new(BioType::Write, Sid::from(bid), vec![bio_segment], None);
         let status = bio.submit_and_wait(self)?;
         Ok(status)
     }
@@ -68,24 +62,20 @@ impl dyn BlockDevice {
         &self,
         bid: Bid,
         bio_segment: BioSegment,
+        complete_fn: Option<BioCompleteFn>,
     ) -> Result<BioWaiter, BioEnqueueError> {
         let bio = Bio::new(
             BioType::Write,
             Sid::from(bid),
             vec![bio_segment],
-            Some(general_complete_fn),
+            complete_fn,
         );
         bio.submit(self)
     }
 
     /// Issues a sync request
     pub fn sync(&self) -> Result<BioStatus, BioEnqueueError> {
-        let bio = Bio::new(
-            BioType::Flush,
-            Sid::from(Bid::from_offset(0)),
-            vec![],
-            Some(general_complete_fn),
-        );
+        let bio = Bio::new(BioType::Flush, Sid::from(Bid::from_offset(0)), vec![], None);
         let status = bio.submit_and_wait(self)?;
         Ok(status)
     }
@@ -120,7 +110,7 @@ impl VmIo for dyn BlockDevice {
                     BioType::Read,
                     Sid::from_offset(offset),
                     vec![bio_segment.clone()],
-                    Some(general_complete_fn),
+                    None,
                 ),
                 bio_segment,
             )
@@ -161,7 +151,7 @@ impl VmIo for dyn BlockDevice {
                 BioType::Write,
                 Sid::from_offset(offset),
                 vec![bio_segment],
-                Some(general_complete_fn),
+                None,
             )
         };
 
@@ -201,7 +191,7 @@ impl dyn BlockDevice {
                 BioType::Write,
                 Sid::from_offset(offset),
                 vec![bio_segment],
-                Some(general_complete_fn),
+                None,
             )
         };
 
@@ -210,13 +200,16 @@ impl dyn BlockDevice {
     }
 }
 
-fn general_complete_fn(bio: &SubmittedBio) {
-    match bio.status() {
-        BioStatus::Complete => (),
-        err_status => log::error!(
+pub(super) fn general_complete_fn(bio: &SubmittedBio, complete_fn: Option<BioCompleteFn>) {
+    let is_success = bio.status() == BioStatus::Complete;
+    if !is_success {
+        log::error!(
             "failed to do {:?} on the device with error status: {:?}",
             bio.type_(),
-            err_status
-        ),
+            bio.status()
+        );
+    }
+    if let Some(complete_fn) = complete_fn {
+        complete_fn(is_success);
     }
 }

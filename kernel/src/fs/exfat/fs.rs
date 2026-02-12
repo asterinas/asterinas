@@ -370,31 +370,37 @@ impl ExfatFs {
 }
 
 impl PageCacheBackend for ExfatFs {
-    fn read_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
+    fn read_page_raw(
+        &self,
+        idx: usize,
+        bio_segment: BioSegment,
+        complete_fn: Option<BioCompleteFn>,
+    ) -> Result<BioWaiter> {
         if self.fs_size() < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "invalid read size")
         }
-        let bio_segment = BioSegment::new_from_segment(
-            Segment::from(frame.clone()).into(),
-            BioDirection::FromDevice,
-        );
-        let waiter = self
-            .block_device
-            .read_blocks_async(BlockId::new(idx as u64), bio_segment)?;
+        let waiter = self.block_device.read_blocks_async(
+            BlockId::new(idx as u64),
+            bio_segment,
+            complete_fn,
+        )?;
         Ok(waiter)
     }
 
-    fn write_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
+    fn write_page_raw(
+        &self,
+        idx: usize,
+        bio_segment: BioSegment,
+        complete_fn: Option<BioCompleteFn>,
+    ) -> Result<BioWaiter> {
         if self.fs_size() < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "invalid write size")
         }
-        let bio_segment = BioSegment::new_from_segment(
-            Segment::from(frame.clone()).into(),
-            BioDirection::ToDevice,
-        );
-        let waiter = self
-            .block_device
-            .write_blocks_async(BlockId::new(idx as u64), bio_segment)?;
+        let waiter = self.block_device.write_blocks_async(
+            BlockId::new(idx as u64),
+            bio_segment,
+            complete_fn,
+        )?;
         Ok(waiter)
     }
 

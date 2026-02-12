@@ -134,38 +134,37 @@ struct ExfatInodeInner {
 }
 
 impl PageCacheBackend for ExfatInode {
-    fn read_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
+    fn read_page_raw(
+        &self,
+        idx: usize,
+        bio_segment: BioSegment,
+        complete_fn: Option<BioCompleteFn>,
+    ) -> Result<BioWaiter> {
         let inner = self.inner.read();
         if inner.size < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "Invalid read size")
         }
         let sector_id = inner.get_sector_id(idx * PAGE_SIZE / inner.fs().sector_size())?;
-        let bio_segment = BioSegment::new_from_segment(
-            Segment::from(frame.clone()).into(),
-            BioDirection::FromDevice,
-        );
         let waiter = inner.fs().block_device().read_blocks_async(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
             bio_segment,
+            complete_fn,
         )?;
         Ok(waiter)
     }
 
-    fn write_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
+    fn write_page_raw(
+        &self,
+        idx: usize,
+        bio_segment: BioSegment,
+        complete_fn: Option<BioCompleteFn>,
+    ) -> Result<BioWaiter> {
         let inner = self.inner.read();
-        let sector_size = inner.fs().sector_size();
-
         let sector_id = inner.get_sector_id(idx * PAGE_SIZE / inner.fs().sector_size())?;
-
-        // FIXME: We may need to truncate the file if write_page fails.
-        // To fix this issue, we need to change the interface of the PageCacheBackend trait.
-        let bio_segment = BioSegment::new_from_segment(
-            Segment::from(frame.clone()).into(),
-            BioDirection::ToDevice,
-        );
         let waiter = inner.fs().block_device().write_blocks_async(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
             bio_segment,
+            complete_fn,
         )?;
         Ok(waiter)
     }
