@@ -6,14 +6,10 @@ use core::{
 };
 
 use align_ext::AlignExt;
-use aster_block::bio::BioWaiter;
 use aster_util::slot_vec::SlotVec;
 use device_id::DeviceId;
 use hashbrown::HashMap;
-use ostd::{
-    mm::{HasSize, io_util::HasVmReaderWriter},
-    sync::{PreemptDisabled, RwLockWriteGuard},
-};
+use ostd::sync::{PreemptDisabled, RwLockWriteGuard};
 
 use super::{memfd::MemfdInode, xattr::RamXattr, *};
 use crate::{
@@ -25,16 +21,16 @@ use crate::{
         pipe::Pipe,
         registry::{FsProperties, FsType},
         utils::{
-            AccessMode, CStr256, CachePage, DirentVisitor, Extension, FallocMode, FileSystem,
+            AccessMode, CStr256, DirentVisitor, Extension, FallocMode, FileSystem,
             FsEventSubscriberStats, FsFlags, Inode, InodeIo, InodeMode, InodeType, Metadata,
-            MknodType, PageCache, PageCacheBackend, Permission, StatusFlags, SuperBlock,
-            SymbolicLink, XattrName, XattrNamespace, XattrSetFlags, mkmod,
+            MknodType, PageCache, PageCacheOps, Permission, StatusFlags, SuperBlock, SymbolicLink,
+            XattrName, XattrNamespace, XattrSetFlags, mkmod,
         },
     },
     prelude::*,
     process::{Gid, Uid},
     time::clocks::RealTimeCoarseClock,
-    vm::vmo::Vmo,
+    vm::vmo::{Vmo, VmoFlags, VmoOptions},
 };
 
 /// A volatile file system whose data and metadata exists only in memory.
@@ -136,8 +132,13 @@ impl Inner {
         Self::Dir(RwLock::new(DirEntry::new(this, parent)))
     }
 
-    pub(self) fn new_file(this: Weak<RamInode>) -> Self {
-        Self::File(PageCache::new(this).unwrap())
+    pub(self) fn new_file() -> Self {
+        Self::File(
+            VmoOptions::new(0)
+                .flags(VmoFlags::RESIZABLE)
+                .alloc()
+                .unwrap(),
+        )
     }
 
     pub(self) fn new_symlink() -> Self {
@@ -160,8 +161,13 @@ impl Inner {
         Self::NamedPipe(Pipe::new())
     }
 
-    pub(self) fn new_file_in_memfd(this: Weak<MemfdInode>) -> Self {
-        Self::File(PageCache::new(this).unwrap())
+    pub(self) fn new_file_in_memfd() -> Self {
+        Self::File(
+            VmoOptions::new(0)
+                .flags(VmoFlags::RESIZABLE)
+                .alloc()
+                .unwrap(),
+        )
     }
 
     fn as_direntry(&self) -> Option<&RwLock<DirEntry>> {
@@ -456,7 +462,7 @@ impl RamInode {
 
     fn new_file(fs: &Arc<RamFs>, mode: InodeMode, uid: Uid, gid: Gid) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| RamInode {
-            inner: Inner::new_file(weak_self.clone()),
+            inner: Inner::new_file(),
             metadata: SpinLock::new(InodeMeta::new(mode, uid, gid)),
             ino: fs.alloc_id(),
             typ: InodeType::File,
@@ -475,7 +481,7 @@ impl RamInode {
         gid: Gid,
     ) -> Self {
         Self {
-            inner: Inner::new_file_in_memfd(weak_self.clone()),
+            inner: Inner::new_file_in_memfd(),
             metadata: SpinLock::new(InodeMeta::new(mode, uid, gid)),
             ino: weak_self.as_ptr() as u64,
             typ: InodeType::File,
@@ -566,23 +572,6 @@ impl RamInode {
     }
 }
 
-impl PageCacheBackend for RamInode {
-    fn read_page_async(&self, _idx: usize, frame: &CachePage) -> Result<BioWaiter> {
-        // Initially, any block/page in a RamFs inode contains all zeros
-        frame.writer().fill_zeros(frame.size());
-        Ok(BioWaiter::new())
-    }
-
-    fn write_page_async(&self, _idx: usize, _frame: &CachePage) -> Result<BioWaiter> {
-        // do nothing
-        Ok(BioWaiter::new())
-    }
-
-    fn npages(&self) -> usize {
-        self.metadata.lock().blocks
-    }
-}
-
 impl InodeIo for RamInode {
     fn read_at(
         &self,
@@ -598,7 +587,7 @@ impl InodeIo for RamInode {
                     let end = file_size.min(offset + writer.avail());
                     (start, end - start)
                 };
-                page_cache.pages().read(offset, writer)?;
+                page_cache.read(offset, writer)?;
                 read_len
             }
             _ => return_errno_with_message!(Errno::EISDIR, "read is not supported"),
@@ -626,9 +615,9 @@ impl InodeIo for RamInode {
                 let should_expand_size = new_size > file_size;
                 let new_size_aligned = new_size.align_up(BLOCK_SIZE);
                 if should_expand_size {
-                    page_cache.resize(new_size_aligned)?;
+                    page_cache.resize(new_size_aligned, file_size)?;
                 }
-                page_cache.pages().write(offset, reader)?;
+                page_cache.write(offset, reader)?;
 
                 let now = now();
                 let mut inode_meta = self.metadata.lock();
@@ -648,9 +637,7 @@ impl InodeIo for RamInode {
 
 impl Inode for RamInode {
     fn page_cache(&self) -> Option<Arc<Vmo>> {
-        self.inner
-            .as_file()
-            .map(|page_cache| page_cache.pages().clone())
+        self.inner.as_file().cloned()
     }
 
     fn size(&self) -> usize {
@@ -671,7 +658,7 @@ impl Inode for RamInode {
         }
 
         let page_cache = self.inner.as_file().unwrap();
-        page_cache.resize(new_size)?;
+        page_cache.resize(new_size, file_size)?;
 
         let now = now();
         let mut inode_meta = self.metadata.lock();

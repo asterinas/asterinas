@@ -9,10 +9,10 @@ use core::{cmp::Ordering, time::Duration};
 pub(super) use align_ext::AlignExt;
 use aster_block::{
     BLOCK_SIZE,
-    bio::{BioDirection, BioSegment, BioWaiter},
+    bio::{BioCompleteFn, BioDirection, BioSegment, BioWaiter},
     id::{Bid, BlockId},
 };
-use ostd::mm::{Segment, VmIo, io_util::HasVmReaderWriter};
+use ostd::mm::{VmIo, io_util::HasVmReaderWriter};
 
 use super::{
     constants::*,
@@ -29,8 +29,8 @@ use crate::{
         exfat::{dentry::ExfatDentryIterator, fat::ExfatChain, fs::ExfatFs},
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
         utils::{
-            CachePage, DirentVisitor, Extension, Inode, InodeIo, InodeMode, InodeType, Metadata,
-            MknodType, PageCache, PageCacheBackend, StatusFlags, SymbolicLink, mkmod,
+            DirentVisitor, Extension, Inode, InodeIo, InodeMode, InodeType, Metadata, MknodType,
+            PageCache, PageCacheBackend, PageCacheOps, StatusFlags, SymbolicLink, mkmod,
         },
     },
     prelude::*,
@@ -244,7 +244,7 @@ impl ExfatInodeInner {
             return Ok((0, 0));
         }
 
-        let iterator = ExfatDentryIterator::new(self.page_cache.pages(), 0, Some(self.size))?;
+        let iterator = ExfatDentryIterator::new(&self.page_cache, 0, Some(self.size))?;
         let mut sub_inodes = 0;
         let mut sub_dirs = 0;
         for dentry_result in iterator {
@@ -347,7 +347,7 @@ impl ExfatInodeInner {
 
         page_cache.write_bytes(start_off, &bytes)?;
         if sync {
-            page_cache.decommit(start_off..start_off + bytes.len())?;
+            page_cache.flush_range(start_off..start_off + bytes.len())?;
         }
 
         Ok(())
@@ -373,7 +373,7 @@ impl ExfatInodeInner {
         let fs = self.fs();
         let cluster_size = fs.cluster_size();
 
-        let mut iter = ExfatDentryIterator::new(self.page_cache.pages(), offset, None)?;
+        let mut iter = ExfatDentryIterator::new(&self.page_cache, offset, None)?;
 
         let mut dir_read = 0;
         let mut current_off = offset;
@@ -580,7 +580,7 @@ impl ExfatInodeInner {
     }
 
     fn sync_data(&self, fs_guard: &MutexGuard<()>) -> Result<()> {
-        self.page_cache.evict_range(0..self.size)?;
+        self.page_cache.flush_range(0..self.size)?;
         Ok(())
     }
 
@@ -624,7 +624,7 @@ impl ExfatInode {
             let end = file_size.min(offset + writer.avail());
             (start, end - start)
         };
-        inner.page_cache.pages().read(read_off, writer)?;
+        inner.page_cache.read(read_off, writer)?;
 
         inner.upgrade().update_atime()?;
         Ok(read_len)
@@ -653,7 +653,7 @@ impl ExfatInode {
 
         inner
             .page_cache
-            .discard_range(read_off..read_off + read_len);
+            .discard_range(read_off..read_off + read_len)?;
 
         let bio_segment = BioSegment::alloc(1, BioDirection::FromDevice);
 
@@ -699,14 +699,14 @@ impl ExfatInode {
                 if new_size > file_allocated_size {
                     inner.resize(new_size, &fs_guard)?;
                 }
-                inner.page_cache.resize(new_size)?;
+                inner.page_cache.resize(new_size, file_size)?;
             }
             new_size.max(file_size)
         };
 
         // Locks released here, so that file write can be parallelized.
         let inner = self.inner.upread();
-        inner.page_cache.pages().write(offset, reader)?;
+        inner.page_cache.write(offset, reader)?;
 
         // Update timestamps and size.
         {
@@ -744,7 +744,7 @@ impl ExfatInode {
 
         let start = offset.min(file_size);
         let end = end_offset.min(file_size);
-        inner.page_cache.discard_range(start..end);
+        inner.page_cache.discard_range(start..end)?;
 
         let new_size = {
             let mut inner = inner.upgrade();
@@ -754,7 +754,7 @@ impl ExfatInode {
                 if end_offset > file_allocated_size {
                     inner.resize(end_offset, &fs_guard)?;
                 }
-                inner.page_cache.resize(end_offset)?;
+                inner.page_cache.resize(end_offset, file_size)?;
             }
             file_size.max(end_offset)
         };
@@ -803,8 +803,9 @@ impl ExfatInode {
         let inner = self.inner.write();
         let fs = inner.fs();
         let fs_guard = fs.lock();
-        self.inner.write().resize(0, &fs_guard)?;
-        self.inner.read().page_cache.resize(0)?;
+        let mut inner = self.inner.write();
+        inner.resize(0, &fs_guard)?;
+        inner.page_cache.resize(0, inner.size)?;
         Ok(())
     }
 
@@ -835,7 +836,6 @@ impl ExfatInode {
         let size = root_chain.num_clusters() as usize * sb.cluster_size as usize;
 
         let name = ExfatName::new();
-
         let inode = Arc::new_cyclic(|weak_self| ExfatInode {
             inner: RwMutex::new(ExfatInodeInner {
                 ino: EXFAT_ROOT_INO,
@@ -856,7 +856,7 @@ impl ExfatInode {
                 is_deleted: false,
                 parent_hash: 0,
                 fs: fs_weak,
-                page_cache: PageCache::with_capacity(size, weak_self.clone() as _).unwrap(),
+                page_cache: PageCacheOps::with_capacity(size, weak_self.clone() as _).unwrap(),
             }),
             extension: Extension::new(),
         });
@@ -966,7 +966,7 @@ impl ExfatInode {
                 is_deleted: false,
                 parent_hash,
                 fs: fs_weak,
-                page_cache: PageCache::with_capacity(size, weak_self.clone() as _).unwrap(),
+                page_cache: PageCacheOps::with_capacity(size, weak_self.clone() as _).unwrap(),
             }),
             extension: Extension::new(),
         });
@@ -1009,8 +1009,7 @@ impl ExfatInode {
     fn find_empty_dentries(&self, num_dentries: usize, fs_guard: &MutexGuard<()>) -> Result<usize> {
         let inner = self.inner.upread();
 
-        let dentry_iterator =
-            ExfatDentryIterator::new(inner.page_cache.pages(), 0, Some(inner.size))?;
+        let dentry_iterator = ExfatDentryIterator::new(&inner.page_cache, 0, Some(inner.size))?;
 
         let mut contiguous_unused = 0;
         let mut entry_id = 0;
@@ -1053,15 +1052,16 @@ impl ExfatInode {
             inner.size_allocated = new_size_allocated;
             inner.size = new_size_allocated;
 
-            inner.page_cache.resize(new_size_allocated)?;
+            inner
+                .page_cache
+                .resize(new_size_allocated, old_size_allocated)?;
         }
         let inner = self.inner.read();
 
         // We need to write unused dentries (i.e. 0) to page cache.
         inner
             .page_cache
-            .pages()
-            .clear(old_size_allocated..new_size_allocated)?;
+            .fill_zeros(old_size_allocated..new_size_allocated)?;
 
         Ok(entry_id)
     }
@@ -1096,7 +1096,6 @@ impl ExfatInode {
         let inner = self.inner.upread();
         inner
             .page_cache
-            .pages()
             .write_bytes(start_off, &dentry_set.to_le_bytes())?;
 
         let mut inner = inner.upgrade();
@@ -1134,11 +1133,7 @@ impl ExfatInode {
         let fs = self.inner.read().fs();
         let mut buf = vec![0; len];
 
-        self.inner
-            .read()
-            .page_cache
-            .pages()
-            .read_bytes(offset, &mut buf)?;
+        self.inner.read().page_cache.read_bytes(offset, &mut buf)?;
 
         let num_dentry = len / DENTRY_SIZE;
 
@@ -1156,11 +1151,7 @@ impl ExfatInode {
             buf[buf_offset] &= 0x7F;
         }
 
-        self.inner
-            .read()
-            .page_cache
-            .pages()
-            .write_bytes(offset, &buf)?;
+        self.inner.read().page_cache.write_bytes(offset, &buf)?;
 
         // FIXME: We must make sure that there are no spare tailing clusters in a directory.
         Ok(())
@@ -1232,8 +1223,9 @@ impl ExfatInode {
         let is_dir = inode.inner.read().inode_type.is_directory();
         if delete_contents {
             if is_dir {
-                inode.inner.write().resize(0, fs_guard)?;
-                inode.inner.read().page_cache.resize(0)?;
+                let mut inner = inode.inner.write();
+                inner.resize(0, fs_guard)?;
+                inner.page_cache.resize(0, inner.size)?;
             }
             // Set the delete flag.
             inode.inner.write().is_deleted = true;
@@ -1334,7 +1326,7 @@ impl Inode for ExfatInode {
 
         // We will delay updating the page_cache size when enlarging an inode until the real write.
         if new_size < file_size {
-            self.inner.read().page_cache.resize(new_size)?;
+            self.inner.read().page_cache.resize(new_size, file_size)?;
         }
 
         // Sync this inode since size has changed.
@@ -1439,7 +1431,7 @@ impl Inode for ExfatInode {
     }
 
     fn page_cache(&self) -> Option<Arc<Vmo>> {
-        Some(self.inner.read().page_cache.pages().clone())
+        Some(self.inner.read().page_cache.clone())
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
