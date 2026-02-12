@@ -53,12 +53,12 @@ bind04
 # brk02
 
 # capget01
-# capget02
+capget02
 
 # capset01
 # capset02
 capset03
-# capset04
+capset04
 
 # cacheflush01
 
