@@ -24,6 +24,7 @@ use crate::{
     events::Observer,
     fs::{
         procfs::{filesystems::FileSystemsFileOps, stat::StatFileOps},
+        pseudofs,
         registry::{FsProperties, FsType},
         utils::{
             DirEntryVecExt, FileSystem, FsEventSubscriberStats, FsFlags, Inode, NAME_MAX,
@@ -76,8 +77,13 @@ struct ProcFs {
 
 impl ProcFs {
     pub(self) fn new() -> Arc<Self> {
+        let dev_id = pseudofs::allocator::DEVICE_ID_ALLOCATOR
+            .get()
+            .expect("pseudofs's DEVICE_ID_ALLOCATOR is not initialized")
+            .allocate()
+            .expect("failed to allocate device ID for ProcFs: minor numbers exhausted");
         Arc::new_cyclic(|weak_fs| Self {
-            sb: SuperBlock::new(PROC_MAGIC, BLOCK_SIZE, NAME_MAX),
+            sb: SuperBlock::new(PROC_MAGIC, BLOCK_SIZE, NAME_MAX, dev_id),
             root: RootDirOps::new_inode(weak_fs.clone()),
             inode_allocator: AtomicU64::new(PROC_ROOT_INO + 1),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),

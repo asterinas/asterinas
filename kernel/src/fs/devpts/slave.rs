@@ -77,7 +77,16 @@ impl Inode for PtySlaveInode {
     }
 
     fn metadata(&self) -> Metadata {
-        *self.metadata.read()
+        let metadata = *self.metadata.read();
+        if metadata.container_dev_id.is_null()
+            && let Some(devpts) = self.fs.upgrade()
+        {
+            let dev_id = devpts.sb().dev_id;
+            let mut metadata_lock = self.metadata.write();
+            metadata_lock.container_dev_id = dev_id;
+            return *metadata_lock;
+        }
+        metadata
     }
 
     fn extension(&self) -> &Extension {
@@ -120,27 +129,27 @@ impl Inode for PtySlaveInode {
     }
 
     fn atime(&self) -> Duration {
-        self.metadata.read().atime
+        self.metadata.read().last_access_at
     }
 
     fn set_atime(&self, time: Duration) {
-        self.metadata.write().atime = time;
+        self.metadata.write().last_access_at = time;
     }
 
     fn mtime(&self) -> Duration {
-        self.metadata.read().mtime
+        self.metadata.read().last_modify_at
     }
 
     fn set_mtime(&self, time: Duration) {
-        self.metadata.write().mtime = time;
+        self.metadata.write().last_modify_at = time;
     }
 
     fn ctime(&self) -> Duration {
-        self.metadata.read().ctime
+        self.metadata.read().last_meta_change_at
     }
 
     fn set_ctime(&self, time: Duration) {
-        self.metadata.write().ctime = time;
+        self.metadata.write().last_meta_change_at = time;
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {

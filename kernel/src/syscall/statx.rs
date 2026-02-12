@@ -128,8 +128,10 @@ impl Statx {
     fn new(path: &Path) -> Self {
         let info = path.metadata();
 
-        let (stx_dev_major, stx_dev_minor) = device_id::decode_device_numbers(info.dev);
-        let (stx_rdev_major, stx_rdev_minor) = device_id::decode_device_numbers(info.rdev);
+        let (stx_dev_major, stx_dev_minor) =
+            device_id::decode_device_numbers(info.container_dev_id.as_encoded_u64());
+        let (stx_rdev_major, stx_rdev_minor) =
+            device_id::decode_device_numbers(info.self_dev_id.map_or(0, |id| id.as_encoded_u64()));
 
         // TODO: Support more `stx_attributes` flags.
         let stx_attributes_mask = STATX_ATTR_MOUNT_ROOT;
@@ -146,21 +148,21 @@ impl Statx {
         Self {
             // FIXME: All zero fields below are dummy implementations that need to be improved in the future.
             stx_mask,
-            stx_blksize: info.blk_size as u32,
+            stx_blksize: info.optimal_block_size as u32,
             stx_attributes,
-            stx_nlink: info.nlinks as u32,
+            stx_nlink: info.nr_hard_links as u32,
             stx_uid: info.uid.into(),
             stx_gid: info.gid.into(),
             stx_mode: info.type_ as u16 | info.mode.bits(),
             __spare0: [0; 1],
             stx_ino: info.ino,
             stx_size: info.size as u64,
-            stx_blocks: (info.blocks * (info.blk_size / 512)) as u64,
+            stx_blocks: (info.nr_sectors_allocated * (info.optimal_block_size / 512)) as u64,
             stx_attributes_mask,
-            stx_atime: StatxTimestamp::from(info.atime),
-            stx_btime: StatxTimestamp::from(info.atime),
-            stx_ctime: StatxTimestamp::from(info.ctime),
-            stx_mtime: StatxTimestamp::from(info.ctime),
+            stx_atime: StatxTimestamp::from(info.last_access_at),
+            stx_btime: StatxTimestamp::from(info.last_access_at),
+            stx_ctime: StatxTimestamp::from(info.last_meta_change_at),
+            stx_mtime: StatxTimestamp::from(info.last_meta_change_at),
             stx_rdev_major,
             stx_rdev_minor,
             stx_dev_major,
