@@ -4,6 +4,34 @@
 
 use crate::util::is_tdx_enabled;
 
+mod basic {
+    use std::path::PathBuf;
+
+    use tempfile::tempdir;
+
+    use crate::util::*;
+
+    #[test]
+    fn new_kernel_and_run() {
+        const KERNEL_NAME: &str = "myos";
+
+        // Use a per-test temporary directory to avoid cross-run collisions.
+        let work_dir = tempdir().unwrap();
+
+        // Run `cargo osdk new --kernel KERNEL_NAME` in the workspace directory
+        let mut cmd_new = cargo_osdk(["new", "--kernel", KERNEL_NAME]);
+        cmd_new.current_dir(&work_dir);
+        cmd_new.ok().expect("create kernel fails");
+
+        // Run `cargo osdk run` in the created kernel directory
+        let os_dir = PathBuf::from(work_dir.path()).join(KERNEL_NAME);
+        let mut cmd_run = cargo_osdk(["run"]);
+        cmd_run.current_dir(&os_dir);
+        let output = cmd_run.ok().unwrap();
+        assert_eq!(output.status.code().unwrap(), 0);
+    }
+}
+
 const WORKSPACE: &str = "/tmp/kernel_test_workspace/run_command";
 
 mod workspace {
