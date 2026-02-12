@@ -36,9 +36,8 @@ RUN make riscv64_pkgs VERBOSE=0 \
 RUN make x86_64_pkgs VERBOSE=0 \
     && make nix_gc
 
-# Build general packages and install host required packages
-RUN make general_pkgs VERBOSE=0 \
-    && make install_host_pkgs \
+# Install host required packages
+RUN make install_host_pkgs \
     && make nix_gc
 
 # Build initramfs packages to accelerate CI workflows

@@ -11,7 +11,7 @@
 #include <unistd.h>
 #include <stddef.h>
 
-#include "../test.h"
+#include "../common/test.h"
 
 FN_SETUP(general)
 {

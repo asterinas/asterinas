@@ -10,7 +10,7 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <stdbool.h>
-#include "../test.h"
+#include "../common/test.h"
 
 int sk_sender;
 int sk_receiver;
