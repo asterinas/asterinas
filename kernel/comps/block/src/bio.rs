@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::boxed::Box;
 use core::sync::atomic::AtomicU64;
 
 use align_ext::AlignExt;
@@ -18,7 +19,14 @@ use ostd::{
 use spin::Once;
 
 use super::{BlockDevice, id::Sid};
-use crate::{BLOCK_SIZE, SECTOR_SIZE, prelude::*};
+use crate::{BLOCK_SIZE, SECTOR_SIZE, impl_block_device::general_complete_fn, prelude::*};
+
+/// The completion function type for BIO operations.
+///
+/// The function receives a `bool` indicating whether the I/O completed successfully.
+/// - `true`: The I/O operation completed successfully (`BioStatus::Complete`).
+/// - `false`: The I/O operation failed.
+pub type BioCompleteFn = Box<dyn FnOnce(bool) + Send + Sync>;
 
 /// The unit for block I/O.
 ///
@@ -36,12 +44,13 @@ impl Bio {
     /// The `type_` describes the type of the I/O.
     /// The `start_sid` is the starting sector id on the device.
     /// The `segments` describes the memory segments.
-    /// The `complete_fn` is the optional callback function.
+    /// The `complete_fn` is the optional callback function that will be invoked
+    /// when the I/O is completed, receiving a boolean indicating success.
     pub fn new(
         type_: BioType,
         start_sid: Sid,
         segments: Vec<BioSegment>,
-        complete_fn: Option<fn(&SubmittedBio)>,
+        complete_fn: Option<BioCompleteFn>,
     ) -> Self {
         let nsectors = segments
             .iter()
@@ -53,7 +62,7 @@ impl Bio {
             sid_range: start_sid..start_sid + nsectors,
             sid_offset: AtomicU64::new(0),
             segments,
-            complete_fn,
+            complete_fn: SpinLock::new(complete_fn),
             status: AtomicU32::new(BioStatus::Init as u32),
             wait_queue: WaitQueue::new(),
         });
@@ -302,9 +311,8 @@ impl SubmittedBio {
         assert!(result.is_ok());
 
         self.0.wait_queue.wake_all();
-        if let Some(complete_fn) = self.0.complete_fn {
-            complete_fn(self);
-        }
+
+        general_complete_fn(self, self.0.complete_fn.disable_irq().lock().take());
     }
 }
 
@@ -318,8 +326,8 @@ struct BioInner {
     sid_offset: AtomicU64,
     /// The memory segments in this `Bio`
     segments: Vec<BioSegment>,
-    /// The I/O completion method
-    complete_fn: Option<fn(&SubmittedBio)>,
+    /// The I/O completion callback
+    complete_fn: SpinLock<Option<BioCompleteFn>>,
     /// The I/O status
     status: AtomicU32,
     /// The wait queue for I/O completion
@@ -351,7 +359,6 @@ impl Debug for BioInner {
             .field("sid_range", &self.sid_range())
             .field("status", &self.status())
             .field("segments", &self.segments())
-            .field("complete_fn", &self.complete_fn)
             .finish()
     }
 }
