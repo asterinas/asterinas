@@ -5,6 +5,8 @@
 set -e
 
 ./capability/capabilities
+./capability/capset
+./capability/execve
 
 ./namespace/mnt_ns
 ./namespace/setns
