@@ -7,70 +7,38 @@ MAKEFLAGS += --no-builtin-rules
 
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
+BUILD_DIR ?= $(CUR_DIR)/../../build
+OUTPUT_DIR ?= $(BUILD_DIR)/initramfs/test
 
-INITRAMFS ?= $(CUR_DIR)/../../build/initramfs
-TEST_BUILD_DIR ?= $(INITRAMFS)/test
-
-# These test apps are sorted by name
-TEST_APPS := \
-	alarm \
-	capability \
-	chroot \
-	clone3 \
-	cpu_affinity \
-	devfs \
-	epoll \
-	eventfd2 \
-	execve \
-	exit \
-	ext2 \
-	fdatasync \
-	file_io \
-	fork_c \
-	getcpu \
-	getpid \
-	hello_pie \
-	inotify \
-	itimer \
-	mmap \
-	mongoose \
-	namespace \
-	network \
-	pipe \
-	prctl \
-	process \
-	procfs \
-	pseudofs \
-	pthread \
-	pty \
-	sched \
-	shm \
-	vsock \
-
-# TODO: Refactor those tests for target CPU arch using C macro-based conditional compilation.
-ifeq ($(HOST_PLATFORM), x86_64-linux)
-TEST_APPS += \
-	fork \
-	hello_c \
+# REMINDER: Whenever you change this list, update the corresponding `default.nix` file.
+SUBDIRS := \
+	device \
+	fs \
 	hello_world \
-	signal_c
-endif
+	io \
+	ipc \
+	memory \
+	network \
+	process \
+	scripts \
+	security \
 
-ifeq ($(INTEL_TDX), 1)
-TEST_APPS += generate_tdx_quote
+ifeq ($(HOST_PLATFORM), x86_64-linux)
+SUBDIRS += intel_tdx
 endif
 
 # The C head and source files of all the apps, excluding the downloaded mongoose files
-C_SOURCES := \
-	$(shell find . -type f \( -name "*.c" -or -name "*.h" \) \
-		! -name "mongoose.c" ! -name "mongoose.h")
+C_SOURCES := $(shell find . -type f \( -name "*.c" -or -name "*.h" \))
 
 .PHONY: all
-all: $(TEST_APPS) scripts
+all: $(SUBDIRS)
 
-.PHONY: $(TEST_APPS)
-$(TEST_APPS):
-	@make --no-print-directory -C $@
+$(OUTPUT_DIR):
+	@mkdir -p $@
+
+.PHONY: $(SUBDIRS)
+$(SUBDIRS): $(OUTPUT_DIR)
+	@make --no-print-directory BUILD_DIR=$(BUILD_DIR) OUTPUT_DIR=$(OUTPUT_DIR) -C $@
 
 .PHONY: format
 format:
@@ -81,10 +49,3 @@ format:
 check:
 	@echo "Checking code format for general tests..."
 	@clang-format --dry-run --Werror $(C_SOURCES)
-
-$(TEST_BUILD_DIR):
-	@mkdir -p $@
-
-.PHONY: scripts
-scripts: | $(TEST_BUILD_DIR)
-	@make --no-print-directory BUILD_DIR=$(TEST_BUILD_DIR) -C scripts

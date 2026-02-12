@@ -8,7 +8,7 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 
-#include "../test.h"
+#include "../common/test.h"
 
 static struct sockaddr_in sk_addr;
 

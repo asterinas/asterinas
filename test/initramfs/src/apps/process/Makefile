@@ -1,5 +1,22 @@
 # SPDX-License-Identifier: MPL-2.0
 
-include ../test_common.mk
+SUBDIRS := \
+	alarm \
+	clone3 \
+	cpu_affinity \
+	execve \
+	exit \
+	fork_c \
+	getcpu \
+	getpid \
+	itimer \
+	prctl \
+	pthread \
+	sched \
+	signal \
 
-EXTRA_C_FLAGS :=
+ifeq ($(HOST_PLATFORM), x86_64-linux)
+SUBDIRS += fork
+endif
+
+include ../common/Makefile

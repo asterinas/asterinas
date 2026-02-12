@@ -5,17 +5,15 @@
 set -e
 
 SCRIPT_DIR=/test
-cd ${SCRIPT_DIR}
 
-./shell_cmd.sh
-./test_epoll_pwait.sh
-./cgroup.sh
-
-# TODO: Support the following tests with SMP
-if [ -z $BLOCK_UNSUPPORTED_SMP_TESTS ]; then
-    ./fs.sh # will hang
-    ./process.sh # will randomly hang
-    ./network.sh # will hang
-fi
+for dir in $(find -L "${SCRIPT_DIR}" -mindepth 1 -maxdepth 1 -type d); do
+    if [ -x "${dir}/run_test.sh" ]; then
+        echo "Running test in $dir"
+        (cd "$dir" && ./run_test.sh)
+        echo "All test in $dir passed."
+    else
+        echo "Skipping $dir (no executable TEST_SCRIPT)"
+    fi
+done
 
 echo "All general tests passed."

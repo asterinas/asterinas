@@ -1,3 +1,0 @@
-# SPDX-License-Identifier: MPL-2.0
-
-include ../test_common.mk

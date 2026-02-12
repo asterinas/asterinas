@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: MPL-2.0
 
-include ../test_common.mk
+SUBDIRS := \
+	in_c \
+	in_c_pie \
 
-EXTRA_C_FLAGS := -static -nostdlib
+ifeq ($(HOST_PLATFORM), x86_64-linux)
+SUBDIRS += in_assembly
+endif
+
+include ../common/Makefile

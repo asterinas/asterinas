@@ -12,7 +12,7 @@
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include "../test.h"
+#include "../common/test.h"
 
 static int pidfd;
 static pid_t pid;
