@@ -20,6 +20,7 @@ use device::{
     VirtioDeviceType,
     block::device::BlockDevice,
     console::device::ConsoleDevice,
+    entropy::{self, device::EntropyDevice},
     input::device::InputDevice,
     network::device::NetworkDevice,
     socket::{self, device::SocketDevice},
@@ -44,6 +45,8 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
 
     // Find all devices and register them to the corresponding crate
     transport::init();
+    // For entropy table static init
+    entropy::init();
     // For vsock table static init
     socket::init();
     while let Some(mut transport) = pop_device_transport() {
@@ -72,9 +75,10 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
         let device_type = transport.device_type();
         let res = match transport.device_type() {
             VirtioDeviceType::Block => BlockDevice::init(transport),
+            VirtioDeviceType::Console => ConsoleDevice::init(transport),
+            VirtioDeviceType::Entropy => EntropyDevice::init(transport),
             VirtioDeviceType::Input => InputDevice::init(transport),
             VirtioDeviceType::Network => NetworkDevice::init(transport),
-            VirtioDeviceType::Console => ConsoleDevice::init(transport),
             VirtioDeviceType::Socket => SocketDevice::init(transport),
             _ => {
                 warn!("[Virtio]: Found unimplemented device:{:?}", device_type);
