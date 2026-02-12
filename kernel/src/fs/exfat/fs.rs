@@ -7,12 +7,11 @@ use core::{num::NonZeroUsize, ops::Range, sync::atomic::AtomicU64};
 
 use aster_block::{
     BlockDevice,
-    bio::{BioDirection, BioSegment, BioWaiter},
+    bio::{BioCompleteFn, BioSegment, BioWaiter},
     id::BlockId,
 };
 use hashbrown::HashMap;
 use lru::LruCache;
-use ostd::mm::Segment;
 pub(super) use ostd::mm::VmIo;
 
 use super::{
@@ -27,8 +26,8 @@ use crate::{
         exfat::{constants::*, inode::Ino},
         registry::{FsProperties, FsType},
         utils::{
-            CachePage, FileSystem, FsEventSubscriberStats, FsFlags, Inode, PageCache,
-            PageCacheBackend, SuperBlock,
+            FileSystem, FsEventSubscriberStats, FsFlags, Inode, PageCache, PageCacheBackend,
+            PageCacheOps, SuperBlock,
         },
     },
     prelude::*,
@@ -83,7 +82,7 @@ impl ExfatFs {
             fat_cache: RwLock::new(LruCache::<ClusterID, ClusterID>::new(
                 NonZeroUsize::new(FAT_LRU_CACHE_SIZE).unwrap(),
             )),
-            meta_cache: PageCache::with_capacity(fs_size, weak_self.clone() as _).unwrap(),
+            meta_cache: PageCacheOps::with_capacity(fs_size, weak_self.clone() as _).unwrap(),
             mutex: Mutex::new(()),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
         });
@@ -153,17 +152,17 @@ impl ExfatFs {
     }
 
     pub(super) fn sync_meta_at(&self, range: core::ops::Range<usize>) -> Result<()> {
-        self.meta_cache.pages().decommit(range)?;
+        self.meta_cache.flush_range(range)?;
         Ok(())
     }
 
     pub(super) fn write_meta_at(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        self.meta_cache.pages().write_bytes(offset, buf)?;
+        self.meta_cache.write_bytes(offset, buf)?;
         Ok(())
     }
 
     pub(super) fn read_meta_at(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        self.meta_cache.pages().read_bytes(offset, buf)?;
+        self.meta_cache.read_bytes(offset, buf)?;
         Ok(())
     }
 
@@ -418,7 +417,7 @@ impl FileSystem for ExfatFs {
         for inode in self.inodes.read().values() {
             inode.sync_all()?;
         }
-        self.meta_cache.evict_range(0..self.fs_size())?;
+        self.meta_cache.flush_range(0..self.fs_size())?;
         Ok(())
     }
 
