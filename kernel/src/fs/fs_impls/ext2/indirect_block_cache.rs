@@ -117,7 +117,7 @@ impl IndirectBlockCache {
                     Segment::<()>::from(block.frame.clone()).into(),
                     BioDirection::ToDevice,
                 );
-                bio_waiter.concat(self.fs().write_blocks_async(bid, bio_segment)?);
+                bio_waiter.concat(self.fs().write_blocks_async(bid, bio_segment, None)?);
             }
         }
 

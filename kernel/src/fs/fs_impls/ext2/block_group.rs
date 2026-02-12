@@ -324,32 +324,30 @@ impl Debug for BlockGroup {
 }
 
 impl PageCacheBackend for BlockGroupImpl {
-    fn read_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
+    fn read_page_raw(
+        &self,
+        idx: usize,
+        bio_segment: BioSegment,
+        complete_fn: Option<BioCompleteFn>,
+    ) -> Result<BioWaiter> {
         let bid = self.inode_table_bid + idx as Ext2Bid;
-        // TODO: Should we allocate the bio segment from the pool on reads?
-        // This may require an additional copy to the requested frame in the completion callback.
-        let bio_segment = BioSegment::new_from_segment(
-            Segment::from(frame.clone()).into(),
-            BioDirection::FromDevice,
-        );
         self.fs
             .upgrade()
             .unwrap()
-            .read_blocks_async(bid, bio_segment)
+            .read_blocks_async(bid, bio_segment, complete_fn)
     }
 
-    fn write_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
+    fn write_page_raw(
+        &self,
+        idx: usize,
+        bio_segment: BioSegment,
+        complete_fn: Option<BioCompleteFn>,
+    ) -> Result<BioWaiter> {
         let bid = self.inode_table_bid + idx as Ext2Bid;
-        let bio_segment = BioSegment::alloc(1, BioDirection::ToDevice);
-        // This requires an additional copy to the pooled bio segment.
-        bio_segment
-            .writer()
-            .unwrap()
-            .write_fallible(&mut frame.reader().to_fallible())?;
         self.fs
             .upgrade()
             .unwrap()
-            .write_blocks_async(bid, bio_segment)
+            .write_blocks_async(bid, bio_segment, complete_fn)
     }
 
     fn npages(&self) -> usize {
