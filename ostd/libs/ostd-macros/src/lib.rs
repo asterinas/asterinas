@@ -24,16 +24,14 @@ use syn::{Expr, Ident, ItemFn, parse_macro_input};
 pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let main_fn = parse_macro_input!(item as ItemFn);
     let main_fn_name = &main_fn.sig.ident;
+    let body = ostd_main_body(main_fn_name);
 
     quote!(
         #[cfg(not(ktest))]
         // SAFETY: The name does not collide with other symbols.
         #[unsafe(no_mangle)]
         extern "Rust" fn __ostd_main() -> ! {
-            let _: () = #main_fn_name();
-
-            ::ostd::task::Task::yield_now();
-            ::core::unreachable!("`yield_now` in the boot context should not return");
+            #body
         }
 
         #[expect(unused)]
@@ -51,20 +49,32 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
 pub fn test_main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let main_fn = parse_macro_input!(item as ItemFn);
     let main_fn_name = &main_fn.sig.ident;
+    let body = ostd_main_body(main_fn_name);
 
     quote!(
         // SAFETY: The name does not collide with other symbols.
         #[unsafe(no_mangle)]
         extern "Rust" fn __ostd_main() -> ! {
-            let _: () = #main_fn_name();
-
-            ::ostd::task::Task::yield_now();
-            ::core::unreachable!("`yield_now` in the boot context should not return");
+            #body
         }
 
         #main_fn
     )
     .into()
+}
+
+fn ostd_main_body(main_fn_name: &Ident) -> proc_macro2::TokenStream {
+    quote! {
+        let _: () = #main_fn_name();
+
+        ::ostd::task::Task::yield_now();
+
+        // If we reach this point, the user-provided main function did not
+        // spawn any tasks, so there is nothing left to schedule.
+        // Power off gracefully.
+        ::core::assert!(::ostd::task::Task::current().is_none());
+        ::ostd::power::poweroff(::ostd::power::ExitCode::Success);
+    }
 }
 
 /// A macro attribute for the global frame allocator.
