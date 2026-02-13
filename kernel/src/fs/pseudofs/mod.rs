@@ -6,7 +6,7 @@ use core::{
 };
 
 pub use anon_inodefs::AnonInodeFs;
-pub use nsfs::{NsCommonOps, NsType, StashedDentry};
+pub use nsfs::{NsCommonOps, NsFile, NsType, StashedDentry};
 pub use pidfdfs::PidfdFs;
 pub(super) use pipefs::PipeFs;
 use pipefs::PipeFsType;
