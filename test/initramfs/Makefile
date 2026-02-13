@@ -10,6 +10,7 @@ ENABLE_BASIC_TEST ?= false
 # - asterinas: Define both `__asterinas__` and `__linux__`. Tests may fail in Linux.
 # - linux: Define only `__linux__`. Tests may fail in Asterinas.
 BASIC_TEST_PLATFORM ?= asterinas
+ENABLE_XFSTESTS ?= false
 DNS_SERVER ?= none
 # Set Nix's cached tarballs to be live for a longer period of time (30 days) to avoid network traffics.
 # Nix's default value is rather small (1 hour or 3600 seconds).
@@ -28,6 +29,8 @@ INITRAMFS_COMPRESSED := true
 endif
 EXT2_IMAGE := $(BUILD_DIR)/ext2.img
 EXFAT_IMAGE := $(BUILD_DIR)/exfat.img
+XFSTESTS_TEST_IMAGE := $(BUILD_DIR)/xfstests_test.img
+XFSTESTS_SCRATCH_IMAGE := $(BUILD_DIR)/xfstests_scratch.img
 
 # Include benchmark, if BENCHMARK is set.
 ifeq ($(BENCHMARK), none)
@@ -56,6 +59,8 @@ ifeq ($(OSDK_TARGET_ARCH), loongarch64)
 build: $(EXT2_IMAGE) $(EXFAT_IMAGE)
 	@echo "For loongarch, we generate a fake initramfs to successfully test or build."
 	@touch $(INITRAMFS_IMAGE)
+else ifeq ($(ENABLE_XFSTESTS), true)
+build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE) $(XFSTESTS_TEST_IMAGE) $(XFSTESTS_SCRATCH_IMAGE)
 else
 build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE)
 endif
@@ -69,6 +74,7 @@ $(INITRAMFS_IMAGE): $(INITRAMFS)
 		--argstr basicTestPlatform $(BASIC_TEST_PLATFORM) \
 		--arg enableBenchmark $(ENABLE_BENCHMARK) \
 		--arg enableSyscallTest $(ENABLE_SYSCALL_TEST) \
+		--arg enableXfstests $(ENABLE_XFSTESTS) \
 		--argstr syscallTestSuite $(SYSCALL_TEST_SUITE) \
 		--argstr syscallTestWorkDir $(SYSCALL_TEST_WORKDIR) \
 		--argstr dnsServer ${DNS_SERVER} \
@@ -86,6 +92,7 @@ $(INITRAMFS):
 		--argstr basicTestPlatform $(BASIC_TEST_PLATFORM) \
 		--arg enableBenchmark $(ENABLE_BENCHMARK) \
 		--arg enableSyscallTest $(ENABLE_SYSCALL_TEST) \
+		--arg enableXfstests $(ENABLE_XFSTESTS) \
 		--argstr syscallTestSuite $(SYSCALL_TEST_SUITE) \
 		--argstr syscallTestWorkDir $(SYSCALL_TEST_WORKDIR) \
 		--argstr dnsServer ${DNS_SERVER} \
@@ -167,6 +174,16 @@ $(EXFAT_IMAGE):
 	@mkdir -p $(BUILD_DIR)
 	@fallocate -l 64M $(EXFAT_IMAGE)
 	@mkfs.exfat $(EXFAT_IMAGE)
+
+$(XFSTESTS_TEST_IMAGE):
+	@mkdir -p $(BUILD_DIR)
+	@fallocate -l 12G $(XFSTESTS_TEST_IMAGE)
+	@mkfs.ext2 $(XFSTESTS_TEST_IMAGE)
+
+$(XFSTESTS_SCRATCH_IMAGE):
+	@mkdir -p $(BUILD_DIR)
+	@fallocate -l 12G $(XFSTESTS_SCRATCH_IMAGE)
+	@mkfs.ext2 $(XFSTESTS_SCRATCH_IMAGE)
 
 .PHONY: format
 format:
