@@ -215,6 +215,18 @@ impl InodeHandle {
 
         Ok(())
     }
+
+    pub fn downcast_file_io<T: 'static>(&self) -> Result<Option<&T>> {
+        if self.rights.is_empty() {
+            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+        }
+
+        let Some(file_io) = self.file_io.as_ref() else {
+            return Ok(None);
+        };
+
+        Ok((file_io.as_ref() as &dyn Any).downcast_ref::<T>())
+    }
 }
 
 impl Pollable for InodeHandle {
