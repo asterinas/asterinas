@@ -25,7 +25,7 @@ pub fn sys_poll(fds: Vaddr, nfds: u32, timeout: i32, ctx: &Context) -> Result<Sy
     do_sys_poll(fds, nfds, timeout, ctx)
 }
 
-pub fn do_sys_poll(
+pub(super) fn do_sys_poll(
     fds: Vaddr,
     nfds: u32,
     timeout: Option<Duration>,
@@ -82,7 +82,11 @@ pub fn do_sys_poll(
     Ok(SyscallReturn::Return(num_revents as _))
 }
 
-pub fn do_poll(poll_fds: &[PollFd], timeout: Option<&Duration>, ctx: &Context) -> Result<usize> {
+pub(super) fn do_poll(
+    poll_fds: &[PollFd],
+    timeout: Option<&Duration>,
+    ctx: &Context,
+) -> Result<usize> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file_table = file_table.unwrap();
 

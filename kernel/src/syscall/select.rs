@@ -38,7 +38,7 @@ pub fn sys_select(
     )
 }
 
-pub fn do_sys_select(
+pub(super) fn do_sys_select(
     nfds: FileDesc,
     readfds_addr: Vaddr,
     writefds_addr: Vaddr,

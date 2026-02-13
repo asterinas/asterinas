@@ -393,7 +393,7 @@ impl Credentials_ {
         self.set_resgid_unchecked(None, None, Some(sgid));
     }
 
-    // For `setregid`, the real GID can *NOT* be set to old saved-set GID,
+    // For `setregid`, the real GID can *NOT* be set to the old saved-set GID,
     // For `setresgid`, the real GID can be set to the old saved-set GID.
     fn check_gid_perm(
         &self,

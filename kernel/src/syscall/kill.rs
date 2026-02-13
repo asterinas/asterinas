@@ -27,7 +27,7 @@ pub fn sys_kill(process_filter: u64, sig_num: u64, ctx: &Context) -> Result<Sysc
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn do_sys_kill(filter: ProcessFilter, sig_num: Option<SigNum>, ctx: &Context) -> Result<()> {
+fn do_sys_kill(filter: ProcessFilter, sig_num: Option<SigNum>, ctx: &Context) -> Result<()> {
     let signal = sig_num.map(|sig_num| UserSignal::new_kill(sig_num, ctx));
 
     match filter {

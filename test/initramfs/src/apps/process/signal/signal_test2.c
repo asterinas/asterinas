@@ -33,6 +33,7 @@ FN_TEST(kill_blocked_and_ignored)
 
 	signal(SIGCHLD, &signal_handler);
 
+	received_signals = 0;
 	TEST_RES(sigprocmask(SIG_UNBLOCK, &sigs, NULL), received_signals == 1);
 }
 END_TEST()
