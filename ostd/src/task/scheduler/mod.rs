@@ -80,10 +80,22 @@ use crate::{
 
 /// Injects a custom implementation of task scheduler into OSTD.
 ///
-/// This function can only be called once and must be called during the initialization phase of kernel,
+/// This function can only be called once and must be called
+/// during the initialization phase of kernel,
 /// before any [`Task`]-related APIs are invoked.
+///
+/// # Panics
+///
+/// This function panics if a scheduler has already been injected,
+/// either explicitly via a previous call to this function
+/// or implicitly via the lazy default FIFO scheduler.
 pub fn inject_scheduler(scheduler: &'static dyn Scheduler<Task>) {
-    SCHEDULER.call_once(|| scheduler);
+    let mut is_new = false;
+    SCHEDULER.call_once(|| {
+        is_new = true;
+        scheduler
+    });
+    assert!(is_new, "a scheduler has already been initialized");
 }
 
 /// Enables preemptive scheduling on the current CPU.
@@ -99,7 +111,7 @@ pub fn inject_scheduler(scheduler: &'static dyn Scheduler<Task>) {
 /// after it has injected its scheduler via [`inject_scheduler`].
 pub fn enable_preemption_on_cpu() {
     timer::register_callback_on_cpu(|| {
-        SCHEDULER.get().unwrap().mut_local_rq_with(&mut |local_rq| {
+        scheduler_singleton().mut_local_rq_with(&mut |local_rq| {
             let should_pick_next = local_rq.update_current(UpdateFlags::Tick);
             if should_pick_next {
                 cpu_local::set_need_preempt();
@@ -108,7 +120,25 @@ pub fn enable_preemption_on_cpu() {
     });
 }
 
+/// The global scheduler singleton.
+///
+/// Do not access this directly; it may not yet be initialized.
+/// Use [`scheduler_singleton`] instead, which returns the current scheduler
+/// and falls back to a default FIFO scheduler if none has been injected.
 static SCHEDULER: Once<&'static dyn Scheduler<Task>> = Once::new();
+
+/// Returns the global scheduler.
+///
+/// If a scheduler has already been injected (e.g., by a custom scheduler),
+/// it is returned directly. Otherwise, a default FIFO scheduler
+/// is lazily initialized and used.
+///
+/// Initialization is atomic: [`Once::call_once`] guarantees that even if
+/// multiple CPUs call this concurrently, only one will execute the
+/// initialization closure while the others block until it completes.
+fn scheduler_singleton() -> &'static dyn Scheduler<Task> {
+    *SCHEDULER.call_once(|| fifo_scheduler::new_instance())
+}
 
 /// A SMP-aware task scheduler.
 pub trait Scheduler<T = Task>: Sync + Send {
@@ -457,10 +487,7 @@ where
 
 /// Unblocks a target task.
 pub(crate) fn unpark_target(runnable: Arc<Task>) {
-    let preempt_cpu = SCHEDULER
-        .get()
-        .unwrap()
-        .enqueue(runnable, EnqueueFlags::Wake);
+    let preempt_cpu = scheduler_singleton().enqueue(runnable, EnqueueFlags::Wake);
     if let Some(preempt_cpu_id) = preempt_cpu {
         set_need_preempt(preempt_cpu_id);
     }
@@ -471,16 +498,7 @@ pub(crate) fn unpark_target(runnable: Arc<Task>) {
 /// Note that the new task is not guaranteed to run at once.
 #[track_caller]
 pub(super) fn run_new_task(runnable: Arc<Task>) {
-    // FIXME: remove this check for `SCHEDULER`.
-    // Currently OSTD cannot know whether its user has injected a scheduler.
-    if !SCHEDULER.is_completed() {
-        fifo_scheduler::init();
-    }
-
-    let preempt_cpu = SCHEDULER
-        .get()
-        .unwrap()
-        .enqueue(runnable, EnqueueFlags::Spawn);
+    let preempt_cpu = scheduler_singleton().enqueue(runnable, EnqueueFlags::Spawn);
     if let Some(preempt_cpu_id) = preempt_cpu {
         set_need_preempt(preempt_cpu_id);
     }
@@ -556,7 +574,7 @@ where
 
     let next_task = loop {
         let mut action = ReschedAction::DoNothing;
-        SCHEDULER.get().unwrap().mut_local_rq_with(&mut |rq| {
+        scheduler_singleton().mut_local_rq_with(&mut |rq| {
             action = f(rq);
         });
 
