@@ -21,7 +21,7 @@ use crate::prelude::*;
 /// This type contains:
 /// - real user ID and group ID;
 /// - effective user ID and group ID;
-/// - saved-set user ID and saved-set group ID;
+/// - saved-set user ID and group ID;
 /// - filesystem user ID and group ID (Linux-specific);
 /// - supplementary group IDs;
 /// - Linux capabilities;
