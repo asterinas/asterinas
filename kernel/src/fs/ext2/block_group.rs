@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::{const_assert, mm::io_util::HasVmReaderWriter};
+use aster_block::bio::BioCompleteFn;
+use ostd::const_assert;
 
 use super::{
     block_ptr::Ext2Bid,
@@ -91,7 +92,7 @@ impl BlockGroup {
         };
 
         let raw_inodes_cache =
-            PageCache::with_capacity(raw_inodes_size, Arc::downgrade(&bg_impl) as _)?;
+            PageCacheOps::with_capacity(raw_inodes_size, Arc::downgrade(&bg_impl) as _)?;
 
         Ok(Self {
             idx,
@@ -134,10 +135,7 @@ impl BlockGroup {
         let fs = self.fs();
         let raw_inode = {
             let offset = (inode_idx as usize) * fs.inode_size();
-            self.raw_inodes_cache
-                .pages()
-                .read_val::<RawInode>(offset)
-                .unwrap()
+            self.raw_inodes_cache.read_val::<RawInode>(offset).unwrap()
         };
         let inode_desc = Dirty::new(InodeDesc::try_from(raw_inode)?);
         let ino = inode_idx + self.idx as u32 * fs.inodes_per_group() + 1;
@@ -217,10 +215,7 @@ impl BlockGroup {
     /// Writes back the raw inode metadata to the raw inode metadata cache.
     pub fn sync_raw_inode(&self, inode_idx: u32, raw_inode: &RawInode) {
         let offset = (inode_idx as usize) * self.fs().inode_size();
-        self.raw_inodes_cache
-            .pages()
-            .write_val(offset, raw_inode)
-            .unwrap();
+        self.raw_inodes_cache.write_val(offset, raw_inode).unwrap();
     }
 
     /// Writes back the metadata of this group.
@@ -296,8 +291,7 @@ impl BlockGroup {
 
         // Writes back the raw inode metadata.
         self.raw_inodes_cache
-            .pages()
-            .decommit(0..self.bg_impl.raw_inodes_size)?;
+            .flush_range(0..self.bg_impl.raw_inodes_size)?;
         Ok(())
     }
 
@@ -324,32 +318,30 @@ impl Debug for BlockGroup {
 }
 
 impl PageCacheBackend for BlockGroupImpl {
-    fn read_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
+    fn read_page_raw(
+        &self,
+        idx: usize,
+        bio_segment: BioSegment,
+        complete_fn: Option<BioCompleteFn>,
+    ) -> Result<BioWaiter> {
         let bid = self.inode_table_bid + idx as Ext2Bid;
-        // TODO: Should we allocate the bio segment from the pool on reads?
-        // This may require an additional copy to the requested frame in the completion callback.
-        let bio_segment = BioSegment::new_from_segment(
-            Segment::from(frame.clone()).into(),
-            BioDirection::FromDevice,
-        );
         self.fs
             .upgrade()
             .unwrap()
-            .read_blocks_async(bid, bio_segment)
+            .read_blocks_async(bid, bio_segment, complete_fn)
     }
 
-    fn write_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
+    fn write_page_raw(
+        &self,
+        idx: usize,
+        bio_segment: BioSegment,
+        complete_fn: Option<BioCompleteFn>,
+    ) -> Result<BioWaiter> {
         let bid = self.inode_table_bid + idx as Ext2Bid;
-        let bio_segment = BioSegment::alloc(1, BioDirection::ToDevice);
-        // This requires an additional copy to the pooled bio segment.
-        bio_segment
-            .writer()
-            .unwrap()
-            .write_fallible(&mut frame.reader().to_fallible())?;
         self.fs
             .upgrade()
             .unwrap()
-            .write_blocks_async(bid, bio_segment)
+            .write_blocks_async(bid, bio_segment, complete_fn)
     }
 
     fn npages(&self) -> usize {
