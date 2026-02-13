@@ -91,7 +91,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build ISO
-        uses: addnab/docker-run-action@v3
+        uses: maus007/docker-run-action-fork@v1
         with:
           image: asterinas/asterinas:0.17.0-20260114
           options: --privileged -v /dev:/dev -v ${{ github.workspace }}:/root/asterinas
