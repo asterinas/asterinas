@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_console::{
-    AnyConsoleDevice,
-    font::BitmapFont,
-    mode::{ConsoleMode, KeyboardMode},
-};
+use aster_console::{AnyConsoleDevice, font::BitmapFont};
 use device_id::{DeviceId, MajorId, MinorId};
+use inherit_methods_macro::inherit_methods;
 use ostd::{mm::VmIo, sync::LocalIrqDisabled};
 
 use self::{line_discipline::LineDiscipline, termio::CFontOp};
@@ -15,7 +12,7 @@ use crate::{
     fs::{
         device::{Device, DeviceType},
         inode_handle::FileIo,
-        utils::StatusFlags,
+        utils::{InodeIo, StatusFlags},
     },
     prelude::*,
     process::{
@@ -28,18 +25,22 @@ use crate::{
 mod device;
 mod driver;
 mod flags;
+mod hvc;
 pub(super) mod ioctl_defs;
 mod line_discipline;
-mod n_tty;
+mod serial;
 pub(super) mod termio;
+mod vt;
 
 pub use device::SystemConsole;
 pub use driver::TtyDriver;
 pub(super) use flags::TtyFlags;
 
 pub(super) fn init_in_first_process() -> Result<()> {
-    n_tty::init_in_first_process()?;
+    hvc::init_in_first_process()?;
+    serial::init_in_first_process()?;
     device::init_in_first_process()?;
+    vt::init_in_first_process()?;
 
     Ok(())
 }
@@ -70,7 +71,7 @@ pub struct Tty<D> {
     index: u32,
     driver: D,
     ldisc: SpinLock<LineDiscipline, LocalIrqDisabled>,
-    job_control: JobControl,
+    job_control: Arc<JobControl>,
     pollee: Pollee,
     tty_flags: TtyFlags,
     weak_self: Weak<Self>,
@@ -82,7 +83,7 @@ impl<D> Tty<D> {
             index,
             driver,
             ldisc: SpinLock::new(LineDiscipline::new()),
-            job_control: JobControl::new(),
+            job_control: Arc::new(JobControl::new()),
             pollee: Pollee::new(),
             tty_flags: TtyFlags::new(),
             weak_self: weak_ref.clone(),
@@ -376,37 +377,22 @@ impl<D: TtyDriver> Tty<D> {
 
                 self.handle_set_font(&font_op)?;
             }
-            cmd @ SetGraphicsMode => {
-                let console = self.console()?;
-
-                let mode = ConsoleMode::try_from(cmd.get())?;
-                if !console.set_mode(mode) {
-                    return_errno_with_message!(Errno::EINVAL, "the console mode is not supported");
+            _ => {
+                if (self.weak_self.upgrade().unwrap() as Arc<dyn Terminal>)
+                    .job_ioctl(raw_ioctl, false)?
+                    .is_none()
+                {
+                    match self.driver.ioctl(self, raw_ioctl)? {
+                        Some(ret) => return Ok(ret),
+                        None => {
+                            return Err(crate::prelude::Error::with_message(
+                                Errno::ENOTTY,
+                                "unhandled ioctl command",
+                            ));
+                        }
+                    }
                 }
             }
-            cmd @ GetGraphicsMode => {
-                let console = self.console()?;
-
-                let mode = console.mode().unwrap_or(ConsoleMode::Text);
-                cmd.write(&(mode as i32))?;
-            }
-            cmd @ SetKeyboardMode => {
-                let console = self.console()?;
-
-                let mode = KeyboardMode::try_from(cmd.get())?;
-                if !console.set_keyboard_mode(mode) {
-                    return_errno_with_message!(Errno::EINVAL, "the keyboard mode is not supported");
-                }
-            }
-            cmd @ GetKeyboardMode => {
-                let console = self.console()?;
-
-                let mode = console.keyboard_mode().unwrap_or(KeyboardMode::Xlate);
-                cmd.write(&(mode as i32))?;
-            }
-
-            _ => (self.weak_self.upgrade().unwrap() as Arc<dyn Terminal>)
-                .job_ioctl(raw_ioctl, false)?,
         });
 
         Ok(0)
@@ -414,8 +400,8 @@ impl<D: TtyDriver> Tty<D> {
 }
 
 impl<D: TtyDriver> Terminal for Tty<D> {
-    fn job_control(&self) -> &JobControl {
-        &self.job_control
+    fn job_control(&self) -> Arc<JobControl> {
+        self.job_control.clone()
     }
 }
 
@@ -437,5 +423,45 @@ impl<D: TtyDriver> Device for Tty<D> {
 
     fn open(&self) -> Result<Box<dyn FileIo>> {
         D::open(self.weak_self.upgrade().unwrap())
+    }
+}
+
+struct TtyFile<D>(Arc<Tty<D>>);
+
+#[inherit_methods(from = "self.0")]
+impl<D: TtyDriver> Pollable for TtyFile<D> {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents;
+}
+
+impl<D: TtyDriver> InodeIo for TtyFile<D> {
+    fn read_at(
+        &self,
+        _offset: usize,
+        writer: &mut VmWriter,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
+        self.0.read(writer, status_flags)
+    }
+
+    fn write_at(
+        &self,
+        _offset: usize,
+        reader: &mut VmReader,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
+        self.0.write(reader, status_flags)
+    }
+}
+
+#[inherit_methods(from = "self.0")]
+impl<D: TtyDriver> FileIo for TtyFile<D> {
+    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32>;
+
+    fn check_seekable(&self) -> Result<()> {
+        return_errno_with_message!(Errno::ESPIPE, "the inode is a TTY");
+    }
+
+    fn is_offset_aware(&self) -> bool {
+        false
     }
 }

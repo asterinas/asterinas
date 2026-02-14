@@ -21,7 +21,7 @@ kcmd_args = [
     "PATH=/bin:/benchmark",
     "init=/usr/bin/busybox",
 ]
-init_args = ["sh", "-l"]
+init_args = ["/init"]
 initramfs = "test/initramfs/build/initramfs.cpio.gz"
 
 # Special options for testing

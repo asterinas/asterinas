@@ -40,6 +40,9 @@ in stdenvNoCC.mkDerivation {
 
     cp -r ${etc}/* $out/etc/
 
+    cp ${./../src/init} $out/init
+    chmod +x $out/init
+
     cp ${resolv_conf}/resolv.conf $out/etc/
 
     ${lib.optionalString (apps != null) ''

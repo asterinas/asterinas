@@ -6,6 +6,7 @@ use crate::{
     device::tty::{Tty, termio::CTermios},
     fs::inode_handle::FileIo,
     prelude::*,
+    util::ioctl::RawIoctl,
 };
 
 /// A TTY driver.
@@ -64,4 +65,24 @@ pub trait TtyDriver: Send + Sync + 'static {
     ///
     /// This method will be called with a spin lock held, so it cannot break atomic mode.
     fn on_termios_change(&self, old_termios: &CTermios, new_termios: &CTermios);
+
+    /// Driver-specific ioctl handler.
+    ///
+    /// This method allows a TTY driver to handle driver-specific
+    /// ioctl commands that are not processed by the generic TTY layer.
+    ///
+    /// Semantics:
+    /// - If the driver recognizes and handles the ioctl, it should return
+    ///   `Ok(Some(retval))`, where `retval` is the value returned to userspace.
+    /// - If the driver does not recognize the ioctl, it should return
+    ///   `Ok(None)` to indicate that the request should be handled by higher
+    ///   layers or reported as unsupported.
+    /// - If an error occurs while processing the ioctl, it should return
+    ///   `Err(...)`.
+    fn ioctl(&self, _tty: &Tty<Self>, _raw: RawIoctl) -> Result<Option<i32>>
+    where
+        Self: Sized,
+    {
+        Ok(None)
+    }
 }
