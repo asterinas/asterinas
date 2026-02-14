@@ -246,6 +246,7 @@ OSDK_CRATES := \
 	kernel/comps/time \
 	kernel/comps/uart \
 	kernel/comps/virtio \
+	kernel/comps/nvme \
 	kernel/libs/aster-bigtcp \
 	kernel/libs/aster-util \
 	kernel/libs/device-id \
