@@ -4,6 +4,10 @@ use ostd::{const_assert, sync::RwMutexReadGuard};
 use spin::Once;
 
 use crate::{
+    fs::{
+        path::Path,
+        pseudofs::{NsCommonOps, NsFs, NsType},
+    },
     prelude::*,
     process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::PosixThread},
     util::padded,
@@ -13,6 +17,7 @@ use crate::{
 pub struct UtsNamespace {
     uts_name: RwMutex<UtsName>,
     owner: Arc<UserNamespace>,
+    path: Path,
 }
 
 impl UtsNamespace {
@@ -33,11 +38,18 @@ impl UtsNamespace {
             };
 
             let owner = UserNamespace::get_init_singleton().clone();
+            Self::new(uts_name, owner)
+        })
+    }
 
-            Arc::new(Self {
+    fn new(uts_name: UtsName, owner: Arc<UserNamespace>) -> Arc<Self> {
+        Arc::new_cyclic(|weak_self| {
+            let path = NsFs::new_path(weak_self.clone());
+            Self {
                 uts_name: RwMutex::new(uts_name),
                 owner,
-            })
+                path,
+            }
         })
     }
 
@@ -48,15 +60,7 @@ impl UtsNamespace {
         posix_thread: &PosixThread,
     ) -> Result<Arc<Self>> {
         owner.check_cap(CapSet::SYS_ADMIN, posix_thread)?;
-        Ok(Arc::new(Self {
-            uts_name: RwMutex::new(*self.uts_name.read()),
-            owner,
-        }))
-    }
-
-    /// Returns the owner user namespace of the namespace.
-    pub fn owner_ns(&self) -> &Arc<UserNamespace> {
-        &self.owner
+        Ok(Self::new(*self.uts_name.read(), owner))
     }
 
     /// Returns a read-only lock guard for accessing the UTS name.
@@ -194,4 +198,23 @@ impl UtsName {
             }
         }
     };
+}
+
+impl NsCommonOps for UtsNamespace {
+    const TYPE: NsType = NsType::Uts;
+
+    fn get_owner_user_ns(&self) -> Result<&Arc<UserNamespace>> {
+        Ok(&self.owner)
+    }
+
+    fn get_parent(&self) -> Result<Arc<Self>> {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "a UTS namespace does not have a parent namespace"
+        );
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
 }

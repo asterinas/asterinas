@@ -215,6 +215,11 @@ impl InodeHandle {
 
         Ok(())
     }
+
+    pub fn downcast_file_io<T: 'static>(&self) -> Option<&T> {
+        let file_io = self.file_io.as_ref()?;
+        (file_io.as_ref() as &dyn Any).downcast_ref::<T>()
+    }
 }
 
 impl Pollable for InodeHandle {

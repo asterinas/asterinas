@@ -52,6 +52,7 @@ TESTS ?= \
 	sched_yield_test \
 	semaphore_test \
 	sendfile_test \
+	setns_test \
 	sigaction_test \
 	sigaltstack_test \
 	signalfd_test \

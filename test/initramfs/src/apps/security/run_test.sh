@@ -7,5 +7,6 @@ set -e
 ./capability/capabilities
 
 ./namespace/mnt_ns
+./namespace/proc_nsfs
 ./namespace/setns
 ./namespace/unshare
