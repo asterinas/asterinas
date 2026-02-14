@@ -6,6 +6,8 @@ use align_ext::AlignExt;
 
 use crate::{boot::memory_region::MemoryRegionType, io::IoMemAllocatorBuilder};
 
+pub(crate) mod io_mem;
+
 /// Initializes the allocatable MMIO area based on the x86-64 memory distribution map.
 ///
 /// In x86-64, the available physical memory area is divided into two regions below 32 bits (Low memory)

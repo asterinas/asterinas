@@ -236,6 +236,28 @@ pub enum Fallible {}
 pub enum Infallible {}
 
 /// Copies `len` bytes from `src` to `dst`.
+/// This function will early stop copying if encountering an unresolvable page fault.
+///
+/// Returns the number of successfully copied bytes.
+///
+/// In the following cases, this method may cause unexpected bytes to be copied, but will not cause
+/// safety problems as long as the safety requirements are met:
+/// - The source and destination overlap.
+/// - The current context is not associated with valid user space (e.g., in the kernel thread).
+///
+/// # Safety
+///
+/// - `src` must either be [valid] for reads of `len` bytes or be in user space for `len` bytes.
+/// - `dst` must either be [valid] for writes of `len` bytes or be in user space for `len` bytes.
+///
+/// [valid]: crate::mm::io#safety
+pub(crate) unsafe fn memcpy_fallible(dst: *mut u8, src: *const u8, len: usize) -> usize {
+    // SAFETY: The safety is upheld by the caller.
+    let failed_bytes = unsafe { __memcpy_fallible(dst, src, len) };
+    len - failed_bytes
+}
+
+/// Copies `len` bytes from `src` to `dst`.
 ///
 /// # Safety
 ///
@@ -271,28 +293,6 @@ unsafe fn memset(dst: *mut u8, value: u8, len: usize) {
     unsafe {
         core::intrinsics::volatile_set_memory(dst, value, len);
     }
-}
-
-/// Copies `len` bytes from `src` to `dst`.
-/// This function will early stop copying if encountering an unresolvable page fault.
-///
-/// Returns the number of successfully copied bytes.
-///
-/// In the following cases, this method may cause unexpected bytes to be copied, but will not cause
-/// safety problems as long as the safety requirements are met:
-/// - The source and destination overlap.
-/// - The current context is not associated with valid user space (e.g., in the kernel thread).
-///
-/// # Safety
-///
-/// - `src` must either be [valid] for reads of `len` bytes or be in user space for `len` bytes.
-/// - `dst` must either be [valid] for writes of `len` bytes or be in user space for `len` bytes.
-///
-/// [valid]: crate::mm::io#safety
-unsafe fn memcpy_fallible(dst: *mut u8, src: *const u8, len: usize) -> usize {
-    // SAFETY: The safety is upheld by the caller.
-    let failed_bytes = unsafe { __memcpy_fallible(dst, src, len) };
-    len - failed_bytes
 }
 
 /// Fills `len` bytes of memory at `dst` with the specified `value`.
@@ -983,6 +983,28 @@ impl<Fallibility> VmWriter<'_, Fallibility> {
         self.cursor = self.cursor.wrapping_add(nbytes);
 
         self
+    }
+
+    /// Creates a clone of this writer, requiring exclusive access.
+    ///
+    /// This method is analogous to [`Clone::clone`], but takes `&mut self`
+    /// instead of `&self`. The `&mut self` receiver is necessary because
+    /// `VmWriter` cannot safely implement `Clone`:
+    /// the underlying buffer may be a mutable slice,
+    /// and two concurrent writers would violate Rust's aliasing rules.
+    ///
+    /// The returned writer has the same cursor position and limit as `self`.
+    /// Because it borrows `self` mutably,
+    /// the original writer cannot be used until the returned writer is dropped.
+    ///
+    /// Note that writes through the returned writer
+    /// do **not** advance the cursor of the original writer.
+    pub fn clone_exclusive(&mut self) -> VmWriter<'_, Fallibility> {
+        VmWriter {
+            cursor: self.cursor,
+            end: self.end,
+            phantom: PhantomData,
+        }
     }
 }
 
