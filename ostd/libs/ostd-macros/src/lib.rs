@@ -10,14 +10,68 @@ use syn::{Expr, Ident, ItemFn, parse_macro_input};
 
 /// A macro attribute to mark the kernel entry point.
 ///
+/// # Bootstrap Context
+///
+/// After initializing itself on the BSP,
+/// OSTD transfers control to this kernel entrypoint function marked with `#[ostd::main]`.
+/// Symmetrically, each AP also has a kernel entrypoint function,
+/// which is specified with `ostd::boot::smp::register_ap_entry`.
+///
+/// Both BSP and AP kernel entrypoints execute code in the **bootstrap context**,
+/// which is intended to provide an opportunity for an OSTD-based kernel to
+/// perform all sorts of necessary initialization steps
+/// before spawning kernel/user tasks to execute code in the task context.
+///
+/// The bootstrap context has the following limitations:
+/// 1. No current task: Unlike the task context, the bootstrap context is not
+///    associated with a task. So calling `Task::current` in the bootstrap
+///    context always gets a `None`.
+/// 2. No turning back: The kernel code execution eventually transitions
+///    from the bootstrap context to the task context. This transition is
+///    triggered by doing `return` or by calling `Task::yield_now`
+///    in a kernel entrypoint function.
+///    Either way, there is no turning back once leaving the bootstrap context.
+///
+/// # Custom Task Scheduler
+///
+/// One key initialization step is to set up a custom task scheduler.
+/// To do so, the bootstrap code should initialize the task scheduler and then
+/// enable it by injecting it into OSTD (see `ostd::task::scheduler::inject_scheduler`).
+/// If no scheduler is injected until a scheduler-related operation (e.g., `Task::yield_now`) is triggered,
+/// then the default FIFO task scheduler will be used by OSTD.
+///
 /// # Examples
 ///
+/// The high-level workflow of a typical entrypoint function is demonstrated below:
+///
 /// ```ignore
-/// use ostd::prelude::*;
+/// use ostd::boot::smp;
+/// use ostd::task::{Task, TaskOptions};
 ///
 /// #[ostd::main]
-/// pub fn main() {
-///     println!("hello world");
+/// fn bsp_entrypoint() {
+///     // Call `ostd::task::scheduler::inject_scheduler` here
+///     // to specify a custom scheduler.
+///
+///     // Perform initialization steps on BSP here.
+///
+///     smp::register_ap_entry(ap_entrypoint);
+///
+///     TaskOptions::new(idle_task_fn).spawn();
+///     // Returning from here transitions to the task context.
+/// }
+///
+/// fn ap_entrypoint() {
+///     // Perform initialization steps on AP here.
+///
+///     TaskOptions::new(idle_task_fn).spawn().unwrap();
+///     // Returning from here transitions to the task context.
+/// }
+///
+/// fn idle_task_fn() {
+///     loop {
+///         Task::yield_now();
+///     }
 /// }
 /// ```
 #[proc_macro_attribute]
