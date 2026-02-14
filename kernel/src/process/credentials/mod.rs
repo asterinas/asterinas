@@ -9,6 +9,7 @@ mod static_cap;
 mod user;
 
 use aster_rights::FullOp;
+use capabilities::CapSet;
 use credentials_::Credentials_;
 pub use group::Gid;
 pub use secure_bits::SecureBits;
@@ -27,3 +28,7 @@ use crate::prelude::*;
 /// - Linux capabilities;
 /// - secure bits.
 pub struct Credentials<R = FullOp>(Arc<Credentials_>, R);
+
+// TODO: Support the bounding and ambient capability set.
+pub const BOUNDING_CAPSET: CapSet = CapSet::all();
+pub const AMBIENT_CAPSET: CapSet = CapSet::empty();

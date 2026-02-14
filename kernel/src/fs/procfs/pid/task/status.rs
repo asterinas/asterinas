@@ -9,7 +9,10 @@ use crate::{
         utils::{Inode, mkmod},
     },
     prelude::*,
-    process::posix_thread::{AsPosixThread, SleepingState},
+    process::{
+        credentials::{AMBIENT_CAPSET, BOUNDING_CAPSET},
+        posix_thread::{AsPosixThread, SleepingState},
+    },
     vm::vmar::RssType,
 };
 
@@ -78,6 +81,7 @@ impl FileOps for StatusFileOps {
         let process = self.0.process_ref.as_ref();
         let thread = self.0.thread();
         let posix_thread = thread.as_posix_thread().unwrap();
+        let credentials = posix_thread.credentials();
 
         // According to the Linux implementation, a process's `/proc/<pid>/status`
         // is exactly the same as its main thread's `/proc/<pid>/task/<pid>/status`.
@@ -110,7 +114,6 @@ impl FileOps for StatusFileOps {
         writeln!(printer, "PPid:\t{}", process.parent().pid())?;
         writeln!(printer, "TracerPid:\t{}", 0)?;
 
-        let credentials = posix_thread.credentials();
         writeln!(
             printer,
             "Uid:\t{}\t{}\t{}\t{}",
@@ -158,6 +161,24 @@ impl FileOps for StatusFileOps {
                 process.tasks().lock().as_slice().len()
             )?;
         }
+
+        writeln!(
+            printer,
+            "CapInh:\t{:016x}",
+            credentials.inheritable_capset().bits()
+        )?;
+        writeln!(
+            printer,
+            "CapPrm:\t{:016x}",
+            credentials.permitted_capset().bits()
+        )?;
+        writeln!(
+            printer,
+            "CapEff:\t{:016x}",
+            credentials.effective_capset().bits()
+        )?;
+        writeln!(printer, "CapBnd:\t{:016x}", BOUNDING_CAPSET.bits())?;
+        writeln!(printer, "CapAmb:\t{:016x}", AMBIENT_CAPSET.bits())?;
 
         Ok(printer.bytes_written())
     }
