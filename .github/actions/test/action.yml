@@ -6,7 +6,7 @@ branding:
 inputs:
   # Test Configuration
   auto_test:
-    description: 'Test type (general, osdk, boot, syscall, test)'
+    description: 'Test type (general, osdk, boot, syscall, test, xfstests)'
     required: true
   release:
     description: 'Whether to run in release mode'
@@ -44,6 +44,9 @@ inputs:
     required: false
   boot_protocol:
     description: 'Boot protocol (linux-efi-handover64/multiboot/multiboot2/linux-legacy32)'
+    required: false
+  mem:
+    description: 'Guest memory size'
     required: false
 
 runs:
@@ -91,6 +94,7 @@ runs:
         [[ -n "${{ inputs.syscall_test_suite }}" ]] && CMD+=" SYSCALL_TEST_SUITE=${{ inputs.syscall_test_suite }}"
         [[ -n "${{ inputs.syscall_test_workdir }}" ]] && CMD+=" SYSCALL_TEST_WORKDIR=${{ inputs.syscall_test_workdir }}"
         [[ -n "${{ inputs.boot_protocol }}" ]] && CMD+=" BOOT_PROTOCOL=${{ inputs.boot_protocol }}"
+        [[ -n "${{ inputs.mem }}" ]] && CMD+=" MEM=${{ inputs.mem }}"
         
         echo "Executing: $CMD"
         eval $CMD

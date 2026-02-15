@@ -14,12 +14,14 @@
 #  - CONSOLE: "hvc0" to enable virtio console;
 #  - SMP: number of CPUs;
 #  - MEM: amount of memory, e.g. "8G";
-#  - VNC_PORT: VNC port, default is "42".
+#  - VNC_PORT: VNC port, default is "42";
+#  - ENABLE_XFSTESTS: "true" or "false", whether to attach xfstests images.
 
 OVMF=${OVMF:-"on"}
 VHOST=${VHOST:-"off"}
 VSOCK=${VSOCK:-"off"}
 NETDEV=${NETDEV:-"user"}
+ENABLE_XFSTESTS=${ENABLE_XFSTESTS:-"false"}
 CONSOLE=${CONSOLE:-"hvc0"}
 
 SSH_RAND_PORT=${SSH_PORT:-$(shuf -i 1024-65535 -n 1)}
@@ -100,6 +102,14 @@ COMMON_QEMU_ARGS="\
     -drive if=none,format=raw,id=x1,file=./test/initramfs/build/exfat.img \
 "
 
+# Add xfstests drives if enabled
+if [ "$ENABLE_XFSTESTS" = "true" ]; then
+    COMMON_QEMU_ARGS="$COMMON_QEMU_ARGS \
+    -drive if=none,format=raw,id=x2,file=./test/initramfs/build/xfstests_test.img \
+    -drive if=none,format=raw,id=x3,file=./test/initramfs/build/xfstests_scratch.img \
+"
+fi
+
 if [ "$1" = "iommu" ]; then
     if [ "$OVMF" = "off" ]; then
         echo "Warning: OVMF is off, enabling it for IOMMU support." 1>&2
@@ -118,6 +128,17 @@ QEMU_ARGS="\
     -machine q35,kernel-irqchip=split \
     -device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,serial=vext2,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
     -device virtio-blk-pci,bus=pcie.0,addr=0x7,drive=x1,serial=vexfat,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
+"
+
+# Add xfstests devices if enabled
+if [ "$ENABLE_XFSTESTS" = "true" ]; then
+    QEMU_ARGS="$QEMU_ARGS \
+    -device virtio-blk-pci,bus=pcie.0,addr=0x8,drive=x2,serial=vxfstest,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
+    -device virtio-blk-pci,bus=pcie.0,addr=0x9,drive=x3,serial=vxfsscratch,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
+"
+fi
+
+QEMU_ARGS="$QEMU_ARGS \
     -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES$IOMMU_DEV_EXTRA \
     -device virtio-serial-pci,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
     $CONSOLE_ARGS \
@@ -131,6 +152,17 @@ MICROVM_QEMU_ARGS="\
     -no-user-config \
     -device virtio-blk-device,drive=x0,serial=vext2 \
     -device virtio-blk-device,drive=x1,serial=vexfat \
+"
+
+# Add xfstests devices for microvm if enabled
+if [ "$ENABLE_XFSTESTS" = "true" ]; then
+    MICROVM_QEMU_ARGS="$MICROVM_QEMU_ARGS \
+    -device virtio-blk-device,drive=x2,serial=vxfstest \
+    -device virtio-blk-device,drive=x3,serial=vxfsscratch \
+"
+fi
+
+MICROVM_QEMU_ARGS="$MICROVM_QEMU_ARGS \
     -device virtio-keyboard-device \
     -device virtio-net-device,netdev=net01 \
     -device virtio-serial-device \
