@@ -4,10 +4,24 @@
 
 use ostd::{Error, Result};
 
-use crate::{PciDeviceLocation, common_device::PciCommonDevice};
+use crate::PciDeviceLocation;
 
-/// Vendor specific capability. Users can access this capability area at will,
-/// except for the PCI configuration space which cannot be accessed at will through this structure.
+/// Raw information about vendor-specific capability.
+#[derive(Debug)]
+pub(super) struct RawCapabilityVndr {
+    cap_ptr: u16,
+    length: u16,
+}
+
+impl RawCapabilityVndr {
+    pub(super) fn new(cap_ptr: u16, length: u16) -> Self {
+        Self { cap_ptr, length }
+    }
+}
+
+/// Vendor-specific capability.
+///
+/// Users can access this capability area at will.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct CapabilityVndrData {
     location: PciDeviceLocation,
@@ -16,11 +30,11 @@ pub struct CapabilityVndrData {
 }
 
 impl CapabilityVndrData {
-    pub(super) fn new(dev: &PciCommonDevice, cap_ptr: u16, length: u16) -> Self {
+    pub(super) fn new(loc: &PciDeviceLocation, raw_cap: &RawCapabilityVndr) -> Self {
         Self {
-            location: *dev.location(),
-            cap_ptr,
-            length,
+            location: *loc,
+            cap_ptr: raw_cap.cap_ptr,
+            length: raw_cap.length,
         }
     }
 

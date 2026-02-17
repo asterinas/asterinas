@@ -4,7 +4,6 @@ use alloc::{boxed::Box, collections::vec_deque::VecDeque, sync::Arc};
 
 use aster_pci::{
     bus::{PciDevice, PciDriver},
-    capability::CapabilityData,
     common_device::PciCommonDevice,
 };
 use ostd::{bus::BusProbeError, sync::SpinLock};
@@ -42,10 +41,7 @@ impl PciDriver for VirtioPciDriver {
             return Err((BusProbeError::DeviceNotMatch, device));
         }
 
-        let has_vendor_cap = device
-            .capabilities()
-            .iter()
-            .any(|cap| matches!(cap.capability_data(), CapabilityData::Vndr(_)));
+        let has_vendor_cap = device.iter_vndr_capability().next().is_some();
         let device_id = *device.device_id();
         let transport: Box<dyn VirtioTransport> = match device_id.device_id {
             0x1000..0x1040 if (device.device_id().revision_id == 0) => {
