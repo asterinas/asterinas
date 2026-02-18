@@ -36,7 +36,7 @@ impl<T: ?Sized> Mutex<T> {
         self.queue.wait_until(|| self.try_lock())
     }
 
-    /// Tries Acquire the mutex immedidately.
+    /// Tries to acquire the mutex immediately.
     pub fn try_lock(&self) -> Option<MutexGuard<'_, T>> {
         // Cannot be reduced to `then_some`, or the possible dropping of the temporary
         // guard will cause an unexpected unlock.
