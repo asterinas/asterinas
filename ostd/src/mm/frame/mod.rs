@@ -145,7 +145,7 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
         1
     }
 
-    /// Gets the dyncamically-typed metadata of this frame.
+    /// Gets the dynamically-typed metadata of this frame.
     ///
     /// If the type is known at compile time, use [`Frame::meta`] instead.
     pub fn dyn_meta(&self) -> &dyn AnyFrameMeta {

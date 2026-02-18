@@ -143,9 +143,9 @@ impl<T: ?Sized> RwMutex<T> {
     /// readers or writers waiting simultaneously will acquire the mutex.
     ///
     /// Upreader will not block new readers until it tries to upgrade. Upreader
-    /// and reader do not differ before invoking the upgread method. However,
+    /// and reader do not differ before invoking the upgrade method. However,
     /// only one upreader can exist at any time to avoid deadlock in the
-    /// upgread method.
+    /// upgrade method.
     #[track_caller]
     pub fn upread(&self) -> RwMutexUpgradeableGuard<'_, T> {
         self.queue.wait_until(|| self.try_upread())

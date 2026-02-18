@@ -79,7 +79,7 @@ impl<T: ?Sized, G: SpinGuardian> SpinLock<T, G> {
         }
     }
 
-    /// Tries acquiring the spin lock immedidately.
+    /// Tries acquiring the spin lock immediately.
     pub fn try_lock(&self) -> Option<SpinLockGuard<'_, T, G>> {
         let inner_guard = G::guard();
         if self.try_acquire_lock() {

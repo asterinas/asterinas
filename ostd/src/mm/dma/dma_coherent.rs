@@ -126,7 +126,7 @@ impl Split for DmaCoherent {
 
 impl Drop for DmaCoherent {
     fn drop(&mut self) {
-        // SAFETY: The physical address range was prepeared in `alloc`.
+        // SAFETY: The physical address range was prepared in `alloc`.
         unsafe { unprepare_dma(&self.paddr_range(), self.map_daddr) };
     }
 }

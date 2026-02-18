@@ -28,7 +28,7 @@ impl ExtendedCapability {
     }
 
     /// Maximum Handle Mask Value, indicates the maximum supported value for the Interrupt
-    /// Mask (IM) field in the Interrupt Entry Cache Invalidation Descriptorr (iec_inv_dsc).
+    /// Mask (IM) field in the Interrupt Entry Cache Invalidation Descriptor (iec_inv_dsc).
     pub const fn maximum_handle_mask(&self) -> u64 {
         const MHMV_MASK: u64 = 0xF << 20;
         (self.0 & MHMV_MASK) >> 20
@@ -61,9 +61,9 @@ impl Debug for ExtendedCapability {
 bitflags! {
     /// Extended Capability flags in IOMMU.
     ///
-    /// TODO: Add adetailed description of each flag.
+    /// TODO: Add a detailed description of each flag.
     pub struct ExtendedCapabilityFlags: u64{
-        /// Page-walk Conherency.
+        /// Page-walk Coherency.
         const C =           1 << 0;
         /// Queued Invalidation Support.
         const QI =          1 << 1;
