@@ -53,7 +53,7 @@ impl ConfigFs {
             .allocate()
             .expect("no device ID is available for configfs");
         let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, dev_id);
-        let root_inode = ConfigInode::new_root(root_node);
+        let root_inode = ConfigInode::new_root(root_node, dev_id);
 
         Arc::new(Self {
             sb,

@@ -5,6 +5,7 @@
 use core::time::Duration;
 
 use aster_util::slot_vec::SlotVec;
+use device_id::DeviceId;
 use id_alloc::IdAlloc;
 
 pub use self::ptmx::Ptmx;
@@ -61,7 +62,7 @@ impl DevPts {
             .expect("no device ID is available for devpts");
         Arc::new_cyclic(|weak_self| Self {
             sb: SuperBlock::new(DEVPTS_MAGIC, BLOCK_SIZE, NAME_MAX, dev_id),
-            root: RootInode::new(weak_self.clone()),
+            root: RootInode::new(weak_self.clone(), dev_id),
             index_alloc: Mutex::new(IdAlloc::with_capacity(MAX_PTY_NUM)),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             this: weak_self.clone(),
@@ -78,7 +79,8 @@ impl DevPts {
 
         let (master, slave) = crate::device::new_pty_pair(index as u32, self.root.ptmx.clone())?;
 
-        let slave_inode = PtySlaveInode::new(slave, self.this.clone());
+        let dev_id = self.sb.container_dev_id;
+        let slave_inode = PtySlaveInode::new(slave, self.this.clone(), dev_id);
         self.root
             .slaves
             .write()
@@ -161,11 +163,16 @@ struct RootInode {
 }
 
 impl RootInode {
-    pub fn new(fs: Weak<DevPts>) -> Arc<Self> {
+    pub fn new(fs: Weak<DevPts>, dev_id: DeviceId) -> Arc<Self> {
         Arc::new(Self {
-            ptmx: Ptmx::new(fs.clone()),
+            ptmx: Ptmx::new(fs.clone(), dev_id),
             slaves: RwLock::new(SlotVec::new()),
-            metadata: RwLock::new(Metadata::new_dir(ROOT_INO, mkmod!(a+rx, u+w), BLOCK_SIZE)),
+            metadata: RwLock::new(Metadata::new_dir(
+                ROOT_INO,
+                mkmod!(a+rx, u+w),
+                BLOCK_SIZE,
+                dev_id,
+            )),
             extension: Extension::new(),
             fs,
         })
@@ -202,16 +209,7 @@ impl Inode for RootInode {
     }
 
     fn metadata(&self) -> Metadata {
-        let metadata = *self.metadata.read();
-        if metadata.container_dev_id.is_null()
-            && let Some(devpts) = self.fs.upgrade()
-        {
-            let dev_id = devpts.sb().container_dev_id;
-            let mut metadata_lock = self.metadata.write();
-            metadata_lock.container_dev_id = dev_id;
-            return *metadata_lock;
-        }
-        metadata
+        *self.metadata.read()
     }
 
     fn extension(&self) -> &Extension {

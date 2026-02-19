@@ -3,6 +3,7 @@
 use core::time::Duration;
 
 use aster_util::slot_vec::SlotVec;
+use device_id::DeviceId;
 use inherit_methods_macro::inherit_methods;
 use ostd::sync::RwMutexUpgradeableGuard;
 
@@ -33,16 +34,22 @@ impl<D: DirOps> ProcDir<D> {
         fs: Weak<dyn FileSystem>,
         parent: Option<Weak<dyn Inode>>,
         ino: Option<u64>,
+        dev_id: Option<DeviceId>,
         is_volatile: bool,
         mode: InodeMode,
     ) -> Arc<Self> {
         let common = {
-            let ino = ino.unwrap_or_else(|| {
-                let arc_fs = fs.upgrade().unwrap();
-                let procfs = arc_fs.downcast_ref::<ProcFs>().unwrap();
-                procfs.alloc_id()
-            });
-            let metadata = Metadata::new_dir(ino, mode, super::BLOCK_SIZE);
+            let (ino, dev_id) = match ino.zip(dev_id) {
+                Some((i, d)) => (i, d),
+                None => {
+                    let arc_fs = fs.upgrade().unwrap();
+                    let procfs = arc_fs.downcast_ref::<ProcFs>().unwrap();
+                    let ino = ino.unwrap_or_else(|| procfs.alloc_id());
+                    let dev_id = dev_id.unwrap_or_else(|| procfs.sb().container_dev_id);
+                    (ino, dev_id)
+                }
+            };
+            let metadata = Metadata::new_dir(ino, mode, super::BLOCK_SIZE, dev_id);
             Common::new(metadata, fs, is_volatile)
         };
         Arc::new_cyclic(|weak_self| Self {
