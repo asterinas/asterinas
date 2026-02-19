@@ -10,9 +10,9 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::FileDesc,
-        procfs::{
-            DirOps, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps,
-            template::{FileOps, ProcFile, ProcFileBuilder, ProcSym},
+        procfs::template::{
+            DirOps, FileOps, ProcDir, ProcDirBuilder, ProcFile, ProcFileBuilder, ProcSym,
+            ProcSymBuilder, SymOps,
         },
         utils::{AccessMode, DirEntryVecExt, Inode, SymbolicLink, chmod, mkmod},
     },

@@ -37,21 +37,53 @@ impl Common {
         }
     }
 
+    fn new_dir(fs: Weak<dyn FileSystem>, mode: InodeMode, is_volatile: bool) -> Self {
+        let metadata = Self::with_procfs(&fs, |procfs| {
+            let ino = procfs.alloc_id();
+            Metadata::new_dir(ino, mode, BLOCK_SIZE, procfs.sb().container_dev_id)
+        });
+        Self::new(metadata, fs, is_volatile)
+    }
+
+    fn new_file(fs: Weak<dyn FileSystem>, mode: InodeMode, is_volatile: bool) -> Self {
+        let metadata = Self::with_procfs(&fs, |procfs| {
+            Metadata::new_file(
+                procfs.alloc_id(),
+                mode,
+                BLOCK_SIZE,
+                procfs.sb().container_dev_id,
+            )
+        });
+        Self::new(metadata, fs, is_volatile)
+    }
+
+    fn new_symlink(fs: Weak<dyn FileSystem>, mode: InodeMode, is_volatile: bool) -> Self {
+        let metadata = Self::with_procfs(&fs, |procfs| {
+            Metadata::new_symlink(
+                procfs.alloc_id(),
+                mode,
+                BLOCK_SIZE,
+                procfs.sb().container_dev_id,
+            )
+        });
+        Self::new(metadata, fs, is_volatile)
+    }
+
+    fn with_procfs<F, T>(fs: &Weak<dyn FileSystem>, with_procfs_fn: F) -> T
+    where
+        F: FnOnce(&ProcFs) -> T,
+    {
+        let fs = fs.upgrade().unwrap();
+        let procfs = fs.downcast_ref::<ProcFs>().unwrap();
+        with_procfs_fn(procfs)
+    }
+
     pub fn fs(&self) -> Arc<dyn FileSystem> {
         self.fs.upgrade().unwrap()
     }
 
     pub fn metadata(&self) -> Metadata {
-        let metadata = *self.metadata.read();
-        if metadata.container_dev_id.is_null()
-            && let Some(fs) = self.fs.upgrade()
-        {
-            let dev_id = fs.sb().container_dev_id;
-            let mut metadata_lock = self.metadata.write();
-            metadata_lock.container_dev_id = dev_id;
-            return *metadata_lock;
-        }
-        metadata
+        *self.metadata.read()
     }
 
     pub fn ino(&self) -> u64 {

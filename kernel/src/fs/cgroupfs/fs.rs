@@ -46,7 +46,7 @@ impl CgroupFs {
             .allocate()
             .expect("no device ID is available for cgroupfs");
         let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, dev_id);
-        let root_inode = CgroupInode::new_root(root_node);
+        let root_inode = CgroupInode::new_root(root_node, &sb);
 
         Arc::new(Self {
             sb,

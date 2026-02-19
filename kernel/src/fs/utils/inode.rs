@@ -221,7 +221,7 @@ pub struct Metadata {
 }
 
 impl Metadata {
-    pub fn new_dir(ino: u64, mode: InodeMode, blk_size: usize) -> Self {
+    pub fn new_dir(ino: u64, mode: InodeMode, blk_size: usize, container_dev_id: DeviceId) -> Self {
         let now = RealTimeCoarseClock::get().read_time();
         Self {
             ino,
@@ -236,12 +236,17 @@ impl Metadata {
             nr_hard_links: 2,
             uid: Uid::new_root(),
             gid: Gid::new_root(),
-            container_dev_id: DeviceId::null(),
+            container_dev_id,
             self_dev_id: None,
         }
     }
 
-    pub fn new_file(ino: u64, mode: InodeMode, blk_size: usize) -> Self {
+    pub fn new_file(
+        ino: u64,
+        mode: InodeMode,
+        blk_size: usize,
+        container_dev_id: DeviceId,
+    ) -> Self {
         let now = RealTimeCoarseClock::get().read_time();
         Self {
             ino,
@@ -256,12 +261,17 @@ impl Metadata {
             nr_hard_links: 1,
             uid: Uid::new_root(),
             gid: Gid::new_root(),
-            container_dev_id: DeviceId::null(),
+            container_dev_id,
             self_dev_id: None,
         }
     }
 
-    pub fn new_symlink(ino: u64, mode: InodeMode, blk_size: usize) -> Self {
+    pub fn new_symlink(
+        ino: u64,
+        mode: InodeMode,
+        blk_size: usize,
+        container_dev_id: DeviceId,
+    ) -> Self {
         let now = RealTimeCoarseClock::get().read_time();
         Self {
             ino,
@@ -276,12 +286,18 @@ impl Metadata {
             nr_hard_links: 1,
             uid: Uid::new_root(),
             gid: Gid::new_root(),
-            container_dev_id: DeviceId::null(),
+            container_dev_id,
             self_dev_id: None,
         }
     }
 
-    pub fn new_device(ino: u64, mode: InodeMode, blk_size: usize, device: &dyn Device) -> Self {
+    pub fn new_device(
+        ino: u64,
+        mode: InodeMode,
+        blk_size: usize,
+        device: &dyn Device,
+        container_dev_id: DeviceId,
+    ) -> Self {
         let now = RealTimeCoarseClock::get().read_time();
         Self {
             ino,
@@ -296,7 +312,7 @@ impl Metadata {
             nr_hard_links: 1,
             uid: Uid::new_root(),
             gid: Gid::new_root(),
-            container_dev_id: DeviceId::null(),
+            container_dev_id,
             self_dev_id: Some(device.id()),
         }
     }

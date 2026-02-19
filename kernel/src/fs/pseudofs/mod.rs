@@ -148,6 +148,10 @@ impl PseudoFs {
     fn alloc_id(&self) -> u64 {
         self.inode_allocator.fetch_add(1, Ordering::Relaxed)
     }
+
+    pub(super) fn container_dev_id(&self) -> DeviceId {
+        self.sb.container_dev_id
+    }
 }
 
 pub(super) fn init() {

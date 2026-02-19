@@ -46,7 +46,7 @@ impl SysFs {
             .expect("no device ID is available for sysfs");
         let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, dev_id);
         let systree_ref = sysfs::systree_singleton();
-        let root_inode = SysFsInode::new_root(systree_ref.root().clone());
+        let root_inode = SysFsInode::new_root(systree_ref.root().clone(), &sb);
 
         Arc::new(Self {
             sb,

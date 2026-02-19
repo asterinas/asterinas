@@ -5,7 +5,7 @@ use device_id::{DeviceId, MajorId, MinorId};
 use super::*;
 use crate::fs::{
     inode_handle::FileIo,
-    utils::{AccessMode, Extension, InodeIo, StatusFlags},
+    utils::{AccessMode, Extension, InodeIo, StatusFlags, SuperBlock},
 };
 
 /// Same major number with Linux.
@@ -27,7 +27,7 @@ pub struct Ptmx {
 struct Inner(Weak<DevPts>);
 
 impl Ptmx {
-    pub fn new(fs: Weak<DevPts>) -> Arc<Self> {
+    pub fn new(fs: Weak<DevPts>, sb: &SuperBlock) -> Arc<Self> {
         let inner = Inner(fs.clone());
         Arc::new(Self {
             metadata: RwLock::new(Metadata::new_device(
@@ -35,6 +35,7 @@ impl Ptmx {
                 mkmod!(a+rw),
                 super::BLOCK_SIZE,
                 &inner,
+                sb.container_dev_id,
             )),
             inner,
             extension: Extension::new(),
@@ -78,16 +79,7 @@ impl Inode for Ptmx {
     }
 
     fn metadata(&self) -> Metadata {
-        let metadata = *self.metadata.read();
-        if metadata.container_dev_id.is_null()
-            && let Some(devpts) = self.inner.0.upgrade()
-        {
-            let dev_id = devpts.sb().container_dev_id;
-            let mut metadata_lock = self.metadata.write();
-            metadata_lock.container_dev_id = dev_id;
-            return *metadata_lock;
-        }
-        metadata
+        *self.metadata.read()
     }
 
     fn extension(&self) -> &Extension {
