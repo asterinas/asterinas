@@ -4,8 +4,10 @@ use alloc::{collections::linked_list::LinkedList, sync::Arc};
 
 use aster_softirq::BottomHalfDisabled;
 use ostd::{
+    Result,
     mm::{
-        Daddr, FrameAllocOptions, HasDaddr, HasSize, Infallible, PAGE_SIZE, VmReader,
+        Daddr, FallibleVmWrite, FrameAllocOptions, HasDaddr, HasSize, Infallible, PAGE_SIZE,
+        VmReader,
         dma::{DmaStream, FromDevice, ToDevice},
         io_util::HasVmReaderWriter,
     },
@@ -25,36 +27,41 @@ pub struct TxBuffer {
 impl TxBuffer {
     pub fn new<H: Pod>(
         header: &H,
-        packet: &[u8],
+        packet: &mut VmReader,
         pool: &'static SpinLock<LinkedList<Arc<DmaStream<ToDevice>>>, BottomHalfDisabled>,
-    ) -> Self {
-        let header = header.as_bytes();
-        let nbytes = header.len() + packet.len();
+    ) -> Result<Self> {
+        // This wraps `new_impl` to prevent unnecessary monomorphization caused by `H`.
+        Self::new_impl(header.as_bytes(), packet, pool)
+    }
 
+    fn new_impl(
+        header: &[u8],
+        packet: &mut VmReader,
+        pool: &'static SpinLock<LinkedList<Arc<DmaStream<ToDevice>>>, BottomHalfDisabled>,
+    ) -> Result<Self> {
+        let nbytes = header.len().checked_add(packet.remain()).unwrap();
         assert!(nbytes <= TX_BUFFER_LEN);
 
         let dma_stream = if let Some(stream) = pool.lock().pop_front() {
             stream
         } else {
-            let segment = FrameAllocOptions::new()
-                .alloc_segment(TX_BUFFER_LEN / PAGE_SIZE)
-                .unwrap();
+            let segment = FrameAllocOptions::new().alloc_segment(TX_BUFFER_LEN / PAGE_SIZE)?;
             Arc::new(DmaStream::<ToDevice>::map(segment.into(), false).unwrap())
         };
 
         let tx_buffer = {
             let mut writer = dma_stream.writer().unwrap();
             writer.write(&mut VmReader::from(header));
-            writer.write(&mut VmReader::from(packet));
+            writer.write_fallible(packet).map_err(|(err, _)| err)?;
             Self {
                 dma_stream,
                 nbytes,
                 pool,
             }
         };
-
         tx_buffer.sync_to_device();
-        tx_buffer
+
+        Ok(tx_buffer)
     }
 
     fn sync_to_device(&self) {
@@ -87,14 +94,15 @@ pub struct RxBuffer {
 }
 
 impl RxBuffer {
-    pub fn new(header_len: usize, pool: &Arc<DmaPool<FromDevice>>) -> Self {
+    pub fn new(header_len: usize, pool: &Arc<DmaPool<FromDevice>>) -> Result<Self> {
         assert!(header_len <= pool.segment_size());
-        let segment = pool.alloc_segment().unwrap();
-        Self {
+
+        let segment = pool.alloc_segment()?;
+        Ok(Self {
             segment,
             header_len,
             packet_len: 0,
-        }
+        })
     }
 
     pub const fn packet_len(&self) -> usize {
@@ -110,6 +118,7 @@ impl RxBuffer {
         self.segment
             .sync_from_device(self.header_len..self.header_len + self.packet_len)
             .unwrap();
+
         let mut reader = self.segment.reader().unwrap();
         reader.skip(self.header_len).limit(self.packet_len);
         reader
@@ -119,6 +128,7 @@ impl RxBuffer {
         self.segment
             .sync_from_device(0..self.header_len + self.packet_len)
             .unwrap();
+
         let mut reader = self.segment.reader().unwrap();
         reader.limit(self.header_len + self.packet_len);
         reader
