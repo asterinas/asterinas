@@ -5,7 +5,7 @@ use alloc::{collections::linked_list::LinkedList, sync::Arc};
 use aster_softirq::BottomHalfDisabled;
 use ostd::{
     mm::{
-        Daddr, FrameAllocOptions, HasDaddr, HasSize, Infallible, PAGE_SIZE, VmReader, VmWriter,
+        Daddr, FrameAllocOptions, HasDaddr, HasSize, Infallible, PAGE_SIZE, VmReader,
         dma::{DmaStream, FromDevice, ToDevice},
         io_util::HasVmReaderWriter,
     },
@@ -55,12 +55,6 @@ impl TxBuffer {
 
         tx_buffer.sync_to_device();
         tx_buffer
-    }
-
-    pub fn writer(&self) -> VmWriter<'_, Infallible> {
-        let mut writer = self.dma_stream.writer().unwrap();
-        writer.limit(self.nbytes);
-        writer
     }
 
     fn sync_to_device(&self) {
