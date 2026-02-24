@@ -20,7 +20,7 @@ use aster_softirq::{
     BottomHalfDisabled, SoftIrqLine,
     softirq_id::{NETWORK_RX_SOFTIRQ_ID, NETWORK_TX_SOFTIRQ_ID},
 };
-pub use buffer::{RX_BUFFER_POOL, RxBuffer, TX_BUFFER_LEN, TxBuffer};
+pub use buffer::{RxBuffer, TxBuffer};
 use component::{ComponentInitError, init_component};
 pub use dma_pool::DmaSegment;
 use ostd::sync::SpinLock;
@@ -173,11 +173,12 @@ static COMPONENT: Once<Component> = Once::new();
 
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {
-    let a = Component::init()?;
-    COMPONENT.call_once(|| a);
+    let component = Component::init()?;
+    COMPONENT.call_once(|| component);
+
     SoftIrqLine::get(NETWORK_TX_SOFTIRQ_ID).enable(handle_tx_softirq);
     SoftIrqLine::get(NETWORK_RX_SOFTIRQ_ID).enable(handle_rx_softirq);
-    buffer::init();
+
     Ok(())
 }
 

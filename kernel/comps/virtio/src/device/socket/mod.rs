@@ -48,7 +48,7 @@ pub fn register_recv_callback(name: &str, callback: impl VsockDeviceIrqHandler) 
     callbacks.disable_irq().lock().push(Arc::new(callback));
 }
 
-pub fn handle_recv_irq(name: &str) {
+fn handle_recv_irq(name: &str) {
     let lock = VSOCK_DEVICE_TABLE.get().unwrap().disable_irq().lock();
     let Some((callbacks, _)) = lock.get(name) else {
         return;
@@ -59,7 +59,7 @@ pub fn handle_recv_irq(name: &str) {
     }
 }
 
-pub fn init() {
+pub(crate) fn init() {
     VSOCK_DEVICE_TABLE.call_once(|| SpinLock::new(BTreeMap::new()));
     buffer::init();
 }
@@ -67,6 +67,6 @@ pub fn init() {
 type VsockDeviceIrqHandlerListRef = Arc<SpinLock<Vec<Arc<dyn VsockDeviceIrqHandler>>>>;
 type VsockDeviceRef = Arc<SpinLock<SocketDevice>>;
 
-pub static VSOCK_DEVICE_TABLE: Once<
+static VSOCK_DEVICE_TABLE: Once<
     SpinLock<BTreeMap<String, (VsockDeviceIrqHandlerListRef, VsockDeviceRef)>>,
 > = Once::new();

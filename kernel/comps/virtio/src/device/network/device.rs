@@ -1,27 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{
-    boxed::Box, collections::linked_list::LinkedList, string::ToString, sync::Arc, vec::Vec,
-};
+use alloc::{boxed::Box, string::ToString, sync::Arc, vec::Vec};
 use core::fmt::Debug;
 
 use aster_bigtcp::device::{Checksum, DeviceCapabilities, Medium};
-use aster_network::{AnyNetworkDevice, EthernetAddr, NetError, RX_BUFFER_POOL, RxBuffer, TxBuffer};
-use aster_softirq::BottomHalfDisabled;
+use aster_network::{AnyNetworkDevice, EthernetAddr, NetError, RxBuffer, TxBuffer};
 use aster_util::slot_vec::SlotVec;
 use log::{debug, warn};
-use ostd::{
-    arch::trap::TrapFrame,
-    mm::{
-        VmReader,
-        dma::{DmaStream, ToDevice},
-    },
-    sync::SpinLock,
-};
+use ostd::{arch::trap::TrapFrame, mm::VmReader, sync::SpinLock};
 
 use super::{config::VirtioNetConfig, header::VirtioNetHdr};
 use crate::{
-    device::{VirtioDeviceError, network::config::NetworkFeatures},
+    device::{
+        VirtioDeviceError,
+        network::{
+            buffer::{RX_BUFFER_POOL, TX_BUFFER_POOL},
+            config::NetworkFeatures,
+        },
+    },
     queue::{QueueError, VirtQueue},
     transport::{ConfigManager, VirtioTransport},
 };
@@ -199,10 +195,11 @@ impl NetworkDevice {
             return Err(NetError::Busy);
         }
 
+        let tx_pool = TX_BUFFER_POOL.get().unwrap();
         let tx_buffer = TxBuffer::new(
             &self.header,
             &mut VmReader::from(packet).to_fallible(),
-            &TX_BUFFER_POOL,
+            tx_pool,
         )
         .unwrap();
 
@@ -369,9 +366,6 @@ impl Debug for NetworkDevice {
             .finish()
     }
 }
-
-static TX_BUFFER_POOL: SpinLock<LinkedList<Arc<DmaStream<ToDevice>>>, BottomHalfDisabled> =
-    SpinLock::new(LinkedList::new());
 
 const QUEUE_RECV: u16 = 0;
 const QUEUE_SEND: u16 = 1;
