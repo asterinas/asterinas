@@ -6,8 +6,9 @@ use ostd::sync::SpinLock;
 use spin::Once;
 
 use self::device::SocketDevice;
-pub mod buffer;
-pub mod config;
+
+mod buffer;
+mod config;
 pub mod connect;
 pub mod device;
 pub mod error;

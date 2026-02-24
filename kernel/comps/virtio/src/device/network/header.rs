@@ -3,12 +3,10 @@
 use bitflags::bitflags;
 use int_to_c_enum::TryFromInt;
 
-pub const VIRTIO_NET_HDR_LEN: usize = size_of::<VirtioNetHdr>();
-
 /// VirtioNet header precedes each packet
 #[repr(C)]
 #[derive(Default, Debug, Clone, Copy, Pod)]
-pub struct VirtioNetHdr {
+pub(super) struct VirtioNetHdr {
     flags: Flags,
     gso_type: u8,
     hdr_len: u16,
@@ -24,7 +22,7 @@ pub struct VirtioNetHdr {
 bitflags! {
     #[repr(C)]
     #[derive(Default, Pod)]
-    pub struct Flags: u8 {
+    pub(super) struct Flags: u8 {
         const VIRTIO_NET_HDR_F_NEEDS_CSUM = 1;
         const VIRTIO_NET_HDR_F_DATA_VALID = 2;
         const VIRTIO_NET_HDR_F_RSC_INFO = 4;
@@ -34,7 +32,8 @@ bitflags! {
 #[repr(u8)]
 #[derive(Default, Debug, Clone, Copy, TryFromInt)]
 #[expect(non_camel_case_types)]
-pub enum GsoType {
+#[expect(dead_code)]
+pub(super) enum GsoType {
     #[default]
     VIRTIO_NET_HDR_GSO_NONE = 0,
     VIRTIO_NET_HDR_GSO_TCPV4 = 1,

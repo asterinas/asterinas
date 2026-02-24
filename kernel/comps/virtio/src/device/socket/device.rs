@@ -38,7 +38,6 @@ const QUEUE_EVENT: u16 = 2;
 
 /// Vsock device driver
 pub struct SocketDevice {
-    config: VirtioVsockConfig,
     guest_cid: u64,
 
     /// Virtqueue to receive packets.
@@ -52,7 +51,7 @@ pub struct SocketDevice {
 
 impl SocketDevice {
     /// Create a new vsock device
-    pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
+    pub(crate) fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
         let virtio_vsock_config = VirtioVsockConfig::new(transport.as_mut());
         debug!("virtio_vsock_config = {:?}", virtio_vsock_config);
         let guest_cid = field_ptr!(&virtio_vsock_config, VirtioVsockConfig, guest_cid_low)
@@ -86,7 +85,6 @@ impl SocketDevice {
         }
 
         let mut device = Self {
-            config: virtio_vsock_config.read_once().unwrap(),
             guest_cid,
             send_queue,
             recv_queue,
@@ -330,7 +328,6 @@ impl SocketDevice {
 impl Debug for SocketDevice {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("SocketDevice")
-            .field("config", &self.config)
             .field("guest_cid", &self.guest_cid)
             .field("send_queue", &self.send_queue)
             .field("recv_queue", &self.recv_queue)

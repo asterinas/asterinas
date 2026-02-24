@@ -70,7 +70,7 @@ impl NetworkDevice {
         network_features.bits()
     }
 
-    pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
+    pub(crate) fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
         let config_manager = VirtioNetConfig::new_manager(transport.as_ref());
         let config = config_manager.read_config();
         debug!("virtio_net_config = {:?}", config);

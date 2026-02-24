@@ -12,7 +12,7 @@ pub mod socket;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, TryFromInt)]
 #[repr(u8)]
-pub enum VirtioDeviceType {
+pub(crate) enum VirtioDeviceType {
     Invalid = 0,
     Network = 1,
     Block = 2,
@@ -25,16 +25,16 @@ pub enum VirtioDeviceType {
     Transport9P = 9,
     Mac80211Wlan = 10,
     RprocSerial = 11,
-    VirtioCAIF = 12,
+    VirtioCaif = 12,
     MemoryBalloon = 13,
-    GPU = 16,
+    Gpu = 16,
     Timer = 17,
     Input = 18,
     Socket = 19,
     Crypto = 20,
     SignalDistribution = 21,
     Pstore = 22,
-    IOMMU = 23,
+    Iommu = 23,
     Memory = 24,
 }
 

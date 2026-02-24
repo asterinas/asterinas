@@ -22,7 +22,6 @@ use aster_softirq::{
 };
 pub use buffer::{RxBuffer, TxBuffer};
 use component::{ComponentInitError, init_component};
-pub use dma_pool::DmaSegment;
 use ostd::sync::SpinLock;
 use spin::Once;
 

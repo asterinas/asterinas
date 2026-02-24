@@ -84,14 +84,7 @@ pub struct VsockEvent {
 }
 
 impl VsockEvent {
-    /// Returns whether the event matches the given connection.
-    pub fn matches_connection(&self, connection_info: &ConnectionInfo, guest_cid: u64) -> bool {
-        self.source == connection_info.dst
-            && self.destination.cid == guest_cid
-            && self.destination.port == connection_info.src_port
-    }
-
-    pub fn from_header(header: &VirtioVsockHdr) -> Result<Self, SocketError> {
+    pub(super) fn from_header(header: &VirtioVsockHdr) -> Result<Self, SocketError> {
         let op = header.op()?;
         let buffer_status = VsockBufferStatus {
             buffer_allocation: header.buf_alloc,
@@ -195,11 +188,11 @@ impl ConnectionInfo {
 
     /// Returns the number of bytes of RX buffer space the peer has available to receive packet body
     /// data from us.
-    pub fn peer_free(&self) -> u32 {
+    pub(super) fn peer_free(&self) -> u32 {
         self.peer_buf_alloc - (self.tx_cnt - self.peer_fwd_cnt)
     }
 
-    pub fn new_header(&self, src_cid: u64) -> VirtioVsockHdr {
+    pub(super) fn new_header(&self, src_cid: u64) -> VirtioVsockHdr {
         VirtioVsockHdr {
             src_cid,
             dst_cid: self.dst.cid,
