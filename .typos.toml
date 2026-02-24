@@ -36,6 +36,8 @@ check-file = false
 # Files listed below are ignored to check.
 [files]
 extend-exclude = [
+    "test/initramfs/src/kselftest/blocklists/damon",
+    "test/initramfs/build/initramfs/test/kselftest/blocklists/damon",
     "test/initramfs/src/syscall/gvisor/blocklists/pty_test",
     "test/initramfs/build/initramfs/opt/gvisor/blocklists/pty_test",
     "test/initramfs/src/syscall/gvisor/blocklists/sync_test",

@@ -1,0 +1,3 @@
+memfd:memfd_test
+memfd:run_fuse_test.sh
+memfd:run_hugetlbfs_test.sh

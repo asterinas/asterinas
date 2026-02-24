@@ -1,0 +1,4 @@
+clone3:clone3
+clone3:clone3_clear_sighand
+clone3:clone3_set_tid
+clone3:clone3_cap_checkpoint_restore

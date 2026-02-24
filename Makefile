@@ -97,6 +97,9 @@ CARGO_OSDK_BUILD_ARGS += --kcmd-args="SYSCALL_TEST_SUITE=$(SYSCALL_TEST_SUITE)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="SYSCALL_TEST_WORKDIR=$(SYSCALL_TEST_WORKDIR)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="EXTRA_BLOCKLISTS_DIRS=$(EXTRA_BLOCKLISTS_DIRS)"
 CARGO_OSDK_BUILD_ARGS += --init-args="/opt/syscall_test/run_syscall_test.sh"
+else ifeq ($(AUTO_TEST), kselftest)
+ENABLE_KSELFTEST_TEST := true
+CARGO_OSDK_BUILD_ARGS += --init-args="/test/kselftest/run_kselftest.sh"
 else ifeq ($(AUTO_TEST), test)
 ENABLE_BASIC_TEST := true
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="INTEL_TDX=$(INTEL_TDX)"
@@ -311,6 +314,9 @@ run_kernel: initramfs $(CARGO_OSDK)
 ifeq ($(AUTO_TEST), syscall)
 	@tail --lines 100 qemu.log | grep -q "^All syscall tests passed." \
 		|| (echo "Syscall test failed" && exit 1)
+else ifeq ($(AUTO_TEST), kselftest)
+	@tail --lines 100 qemu.log | grep -q "^All kselftest tests passed." \
+		|| (echo "Kselftest test failed" && exit 1)
 else ifeq ($(AUTO_TEST), test)
 	@tail --lines 100 qemu.log | grep -q "^All general tests passed." \
 		|| (echo "General test failed" && exit 1)

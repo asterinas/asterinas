@@ -1,0 +1,2 @@
+pid_namespace:regression_enomem
+pid_namespace:pid_max

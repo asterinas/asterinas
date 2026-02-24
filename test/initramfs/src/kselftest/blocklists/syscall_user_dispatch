@@ -1,0 +1,2 @@
+syscall_user_dispatch:sud_test
+syscall_user_dispatch:sud_benchmark

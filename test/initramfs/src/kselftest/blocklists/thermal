@@ -1,0 +1,2 @@
+thermal/intel/power_floor:power_floor_test
+thermal/intel/workload_hint:workload_hint_test
