@@ -37,10 +37,17 @@ RUN apt update && apt install -y curl gnupg2 git \
     clang crossbuild-essential-amd64 erofs-utils busybox-static libbpf-dev \
     iproute2 netcat-openbsd libnuma-dev libc6-dev-i386 golang-go
 
+ARG TARGETARCH
+
 # Install bazel
-RUN wget https://github.com/bazelbuild/bazelisk/releases/download/v1.27.0/bazelisk-amd64.deb && \
-    dpkg -i bazelisk-amd64.deb && \
-    rm bazelisk-amd64.deb
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+        amd64|arm64) deb="bazelisk-${TARGETARCH}.deb" ;; \
+        *) echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    wget -O "${deb}" "https://github.com/bazelbuild/bazelisk/releases/download/v1.27.0/${deb}"; \
+    dpkg -i "${deb}"; \
+    rm -f "${deb}"
 
 # Build the gvisor syscall test binaries
 WORKDIR /root
