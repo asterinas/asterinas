@@ -399,6 +399,7 @@ test:
 	done
 
 .PHONY: ktest
+ktest: CONSOLE = ttyS0
 ktest: initramfs $(CARGO_OSDK)
 	@# linux-bzimage-setup is excluded from ktest since it's hard to be unit tested.
 	@CRATES=$$(echo $(filter-out ostd/libs/linux-bzimage/setup,$(OSDK_CRATES)) | tr ' ' ','); \
