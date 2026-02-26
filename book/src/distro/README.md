@@ -120,19 +120,10 @@ to customize the NixOS system to be installed:
 
 ### Kernel Developers
 
-1. Download the latest source code on an x86-64 Linux machine:
+1. Follow Steps 1 and 2 in the ["Getting Started" section of the Asterinas Kernel](../kernel/index.html#getting-started)
+   to set up the development environment.
 
-    ```bash
-    git clone https://github.com/asterinas/asterinas
-    ```
-
-2. Run a Docker container as the development environment:
-
-    ```bash
-    docker run -it --privileged --network=host -v /dev:/dev -v $(pwd)/asterinas:/root/asterinas asterinas/asterinas:0.16.2-20251211
-    ```
-
-3. Inside the Docker container,
+2. Inside the Docker container,
 generate a disk image with Asterinas NixOS installed using this command:
 
     ```bash
@@ -152,7 +143,7 @@ generate a disk image with Asterinas NixOS installed using this command:
     by running a VM.
     Using either method results in a disk image with an Asterinas NixOS installation.
     
-4. Start a VM to run the installed Asterinas NixOS:
+3. Start a VM to run the installed Asterinas NixOS:
 
     ```bash
     make run_nixos
