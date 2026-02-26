@@ -159,7 +159,7 @@ impl Path {
     /// For example, first `mount /dev/sda1 /mnt` and then `mount /dev/sda2 /mnt`.
     /// After the second mount is completed, the content of the first mount will be overridden.
     /// We need to recursively obtain the top `Path`.
-    pub(super) fn get_top_path(mut self) -> Self {
+    pub fn get_top_path(mut self) -> Self {
         while self.dentry.is_mountpoint() {
             if let Some(child_mount) = self.mount.get(&self.dentry) {
                 let inner = child_mount.root_dentry().clone();
