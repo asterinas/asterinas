@@ -3,10 +3,12 @@
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use aster_rights::{ReadDupOp, ReadOp, ReadWriteOp};
+use hashbrown::HashMap;
 use ostd::{
     sync::{RoArc, RwMutexReadGuard, Waker},
     task::Task,
 };
+use spin::Once;
 
 use super::{
     Credentials, Process,
@@ -19,6 +21,7 @@ use crate::{
     process::{
         Pid,
         namespace::nsproxy::NsProxy,
+        posix_thread::ptrace::TraceeStatus,
         signal::{PauseReason, PollHandle},
     },
     thread::{Thread, Tid},
@@ -91,6 +94,12 @@ pub struct PosixThread {
     timer_slack_ns: AtomicU64,
     /// The default timer slack value for this thread.
     default_timer_slack_ns: AtomicU64,
+
+    /// Status of being traced.
+    tracee_status: Once<TraceeStatus>,
+
+    /// Threads traced by this thread.
+    tracees: Once<Mutex<HashMap<Tid, Arc<Thread>>>>,
 }
 
 impl PosixThread {
@@ -333,6 +342,49 @@ impl PosixThread {
     pub fn reset_timer_slack_to_default(&self) {
         let default = self.default_timer_slack_ns.load(Ordering::Relaxed);
         self.timer_slack_ns.store(default, Ordering::Relaxed);
+    }
+
+    /// Returns the tracer of this thread if it is being traced.
+    pub fn tracer(&self) -> Option<Arc<Thread>> {
+        self.tracee_status.get().and_then(|status| status.tracer())
+    }
+
+    /// Sets the tracer of this thread.
+    pub fn set_tracer(&self, tracer: Weak<Thread>) {
+        let status = self.tracee_status.call_once(TraceeStatus::new);
+        status.set_tracer(tracer);
+    }
+
+    /// Detaches the tracer of this thread.
+    pub fn detach_tracer(&self) {
+        if let Some(status) = self.tracee_status.get() {
+            status.detach_tracer();
+        }
+    }
+
+    /// Inserts a tracee to the tracee map of this thread.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the tracee is not a POSIX thread.
+    pub fn insert_tracee(&self, tracee: Arc<Thread>) {
+        let tracees = self.tracees.call_once(|| Mutex::new(HashMap::new()));
+        tracees
+            .lock()
+            .insert(tracee.as_posix_thread().unwrap().tid(), tracee);
+    }
+
+    /// Removes the tracee with the given tid from the tracee map of this thread.
+    #[expect(dead_code)]
+    pub fn remove_tracee(&self, tid: Tid) {
+        if let Some(tracees) = self.tracees.get() {
+            tracees.lock().remove(&tid);
+        }
+    }
+
+    /// Returns the tracee map of this thread if it is a tracer.
+    pub fn tracees(&self) -> Option<&Mutex<HashMap<Tid, Arc<Thread>>>> {
+        self.tracees.get()
     }
 }
 

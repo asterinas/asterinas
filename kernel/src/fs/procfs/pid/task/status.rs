@@ -112,7 +112,14 @@ impl FileOps for StatusFileOps {
         writeln!(printer, "Tgid:\t{}", process.pid())?;
         writeln!(printer, "Pid:\t{}", posix_thread.tid())?;
         writeln!(printer, "PPid:\t{}", process.parent().pid())?;
-        writeln!(printer, "TracerPid:\t{}", 0)?;
+        writeln!(
+            printer,
+            "TracerPid:\t{}",
+            posix_thread
+                .tracer()
+                .map(|tracer| tracer.as_posix_thread().unwrap().tid())
+                .unwrap_or(0)
+        )?;
 
         writeln!(
             printer,

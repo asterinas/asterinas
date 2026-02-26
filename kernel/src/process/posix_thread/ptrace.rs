@@ -1,11 +1,54 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use bitflags::bitflags;
+use inherit_methods_macro::inherit_methods;
 
 use crate::{
     prelude::*,
     process::{credentials::capabilities::CapSet, posix_thread::PosixThread},
+    thread::Thread,
 };
+
+pub(super) struct TraceeStatus {
+    state: Mutex<TraceeState>,
+}
+
+#[inherit_methods(from = "self.state.lock()")]
+impl TraceeStatus {
+    pub(super) fn tracer(&self) -> Option<Arc<Thread>>;
+    pub(super) fn set_tracer(&self, tracer: Weak<Thread>);
+    pub(super) fn detach_tracer(&self);
+
+    pub(super) fn new() -> Self {
+        Self {
+            state: Mutex::new(TraceeState::new()),
+        }
+    }
+}
+
+struct TraceeState {
+    tracer: Weak<Thread>,
+}
+
+impl TraceeState {
+    fn new() -> Self {
+        Self {
+            tracer: Weak::new(),
+        }
+    }
+
+    fn tracer(&self) -> Option<Arc<Thread>> {
+        self.tracer.upgrade()
+    }
+
+    fn set_tracer(&mut self, tracer: Weak<Thread>) {
+        self.tracer = tracer;
+    }
+
+    fn detach_tracer(&mut self) {
+        self.tracer = Weak::new();
+    }
+}
 
 /// Checks whether the current `PosixThread` may access the given target
 /// `PosixThread` via ptrace operations.
