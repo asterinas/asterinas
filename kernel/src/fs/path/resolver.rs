@@ -12,7 +12,7 @@ use crate::{
         utils::{InodeType, NAME_MAX, PATH_MAX, Permission, SYMLINKS_MAX, SymbolicLink},
     },
     prelude::*,
-    process::posix_thread::AsThreadLocal,
+    process::posix_thread::{AsPosixThread, AsThreadLocal, thread_table::ThreadTable},
 };
 
 /// The file descriptor of the current working directory.
@@ -225,6 +225,121 @@ impl PathResolver {
 
         self.root = new_root;
         self.cwd = new_cwd;
+
+        Ok(())
+    }
+
+    /// Changes the root mount in the mount namespace of the calling thread.
+    ///
+    /// This function moves the original root mount of the calling thread to `put_old_path` and makes
+    /// `new_root_path` the new root mount. For other threads in the current mount namespace, if their
+    /// root directory and current working directory are the same as the current thread's root directory,
+    /// they will also be changed to `new_root_path`.
+    pub fn pivot_root(
+        &mut self,
+        new_root_path: FsPath,
+        put_old_path: FsPath,
+        thread_table: &ThreadTable,
+        ctx: &Context,
+    ) -> Result<()> {
+        let new_root_path = self.lookup(&new_root_path)?;
+        let put_old_path = self.lookup(&put_old_path)?;
+
+        if new_root_path.type_() != InodeType::Dir || put_old_path.type_() != InodeType::Dir {
+            return_errno_with_message!(
+                Errno::ENOTDIR,
+                "`new_root` or `put_old` is not a directory"
+            );
+        }
+
+        // TODO: Check the following once we support `MS_SHARED`:
+        // "The propagation type of the parent mount of `new_root` and the
+        // parent mount of the current root directory must not be
+        // `MS_SHARED`; similarly, if `put_old` is an existing mount point,
+        // its propagation type must not be `MS_SHARED`."
+
+        let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
+        let current_mnt_ns = current_ns_proxy.unwrap().mnt_ns();
+        if !current_mnt_ns.owns(&new_root_path.mount) || !current_mnt_ns.owns(&put_old_path.mount) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "`new_root` or `put_old` is not in the current mount namespace"
+            );
+        }
+
+        if self.root.mount.id() == new_root_path.mount.id()
+            || self.root.mount.id() == put_old_path.mount.id()
+        {
+            return_errno_with_message!(
+                Errno::EBUSY,
+                "`new_root` or `put_old` is on the current root mount"
+            );
+        }
+        if !new_root_path.is_mount_root() || !self.root.is_mount_root() {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "`new_root` or the current root is not a mount point"
+            );
+        }
+        if new_root_path.mount.parent().is_none() || self.root.mount.parent().is_none() {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "`new_root` or the current root is on the rootfs mount"
+            );
+        }
+        if !put_old_path.is_reachable_from(&new_root_path) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "`put_old` is not at or underneath `new_root`"
+            );
+        }
+        if !new_root_path.is_reachable_from(&self.root) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "`new_root` is not at or underneath the current root"
+            );
+        }
+
+        let parent_path = {
+            let parent_mount = self.root.mount.parent().unwrap().upgrade().unwrap();
+            let mountpoint = self.root.mount.mountpoint().unwrap();
+            Path::new(parent_mount, mountpoint)
+        };
+
+        self.root.mount.graft_mount_tree(&put_old_path);
+        new_root_path.mount.graft_mount_tree(&parent_path);
+
+        // TODO: This method should only iterate threads in the current PID namespace instead of
+        // the whole thread table.
+        for thread in thread_table.values() {
+            let posix_thread = thread.as_posix_thread().unwrap();
+            let ns_proxy = posix_thread.ns_proxy().lock();
+            let Some(ns_proxy) = ns_proxy.as_ref() else {
+                // The thread has exited.
+                continue;
+            };
+            let mnt_ns = ns_proxy.mnt_ns();
+            if !Arc::ptr_eq(mnt_ns, current_mnt_ns) {
+                continue;
+            }
+            let fs = posix_thread.read_fs();
+            if Arc::ptr_eq(&fs, &ctx.thread_local.borrow_fs()) {
+                continue;
+            }
+
+            let mut fs_resolver = fs.resolver().write();
+            if fs_resolver.root() == &self.root {
+                fs_resolver.set_root(new_root_path.clone());
+            }
+            if fs_resolver.cwd() == &self.root {
+                fs_resolver.set_cwd(new_root_path.clone());
+            }
+        }
+
+        if self.cwd == self.root {
+            self.cwd = new_root_path.clone();
+        }
+        self.root = new_root_path;
 
         Ok(())
     }

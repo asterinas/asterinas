@@ -3,20 +3,22 @@
 use super::{Thread, Tid};
 use crate::{prelude::*, process::posix_thread::AsPosixThread};
 
-static THREAD_TABLE: SpinLock<BTreeMap<Tid, Arc<Thread>>> = SpinLock::new(BTreeMap::new());
+pub type ThreadTable = BTreeMap<Tid, Arc<Thread>>;
 
-/// Adds a posix thread to global thread table
+static THREAD_TABLE: Mutex<ThreadTable> = Mutex::new(BTreeMap::new());
+
+/// Adds a POSIX thread to the global thread table.
 pub fn add_thread(tid: Tid, thread: Arc<Thread>) {
     debug_assert_eq!(tid, thread.as_posix_thread().unwrap().tid());
     THREAD_TABLE.lock().insert(tid, thread);
 }
 
-/// Removes a posix thread to global thread table
+/// Removes a POSIX thread from the global thread table.
 pub fn remove_thread(tid: Tid) {
     THREAD_TABLE.lock().remove(&tid);
 }
 
-/// Gets a posix thread from the global thread table
+/// Gets a POSIX thread from the global thread table.
 pub fn get_thread(tid: Tid) -> Option<Arc<Thread>> {
     THREAD_TABLE.lock().get(&tid).cloned()
 }
@@ -46,4 +48,13 @@ pub(in crate::process) fn make_current_main_thread(ctx: &Context) {
     thread_table.remove(&pid).unwrap();
     let thread = thread_table.remove(&old_tid).unwrap();
     thread_table.insert(pid, thread);
+}
+
+/// Locks the global thread table and applies the given function.
+pub fn with_global_threads<F, R>(f: F) -> R
+where
+    F: FnOnce(&ThreadTable) -> R,
+{
+    let table = THREAD_TABLE.lock();
+    f(&table)
 }

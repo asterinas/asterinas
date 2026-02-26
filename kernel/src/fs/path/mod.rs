@@ -173,11 +173,46 @@ impl Path {
     }
 
     /// Finds the corresponding `Path` in the given mount namespace.
-    pub(super) fn find_corresponding_mount(&self, mnt_ns: &Arc<MountNamespace>) -> Option<Self> {
+    fn find_corresponding_mount(&self, mnt_ns: &Arc<MountNamespace>) -> Option<Self> {
         let corresponding_mount = self.mount.find_corresponding_mount(mnt_ns)?;
         let corresponding_path = Self::new(corresponding_mount, self.dentry.clone());
 
         Some(corresponding_path)
+    }
+
+    /// Checks if this path is reachable from the given `root` path.
+    ///
+    /// A path is considered reachable if it is the same as or a descendant
+    /// of the `root` path. The check traverses upwards from the current path,
+    /// crossing mount point boundaries as necessary, until it either finds
+    /// the `root` path or reaches the global root.
+    fn is_reachable_from(&self, root: &Path) -> bool {
+        let mut owned;
+        let mut current = self;
+
+        loop {
+            if current.mount.id() == root.mount.id() {
+                return current.dentry.is_equal_or_descendant_of(&root.dentry);
+            }
+
+            let Some(parent_mount) = current.mount.parent().and_then(|mount| mount.upgrade())
+            else {
+                // `upgrade()` may fail if `current` is in a mount namespace that has been
+                // dropped. In this situation, `current` is not reachable from `root` because
+                // `root` holds strong reference counts for all its descendant mounts.
+                return false;
+            };
+
+            owned = Path::new(
+                parent_mount,
+                current
+                    .mount
+                    .mountpoint()
+                    .expect("Mounts with parents must have a mount point")
+                    .clone(),
+            );
+            current = &owned;
+        }
     }
 
     /// Returns true if the `Path` represents a pseudo file.
@@ -333,7 +368,7 @@ impl Path {
         }
 
         let new_mount = self.mount.clone_mount_tree(&self.dentry, None, recursive);
-        new_mount.graft_mount_tree(dst_path)?;
+        new_mount.graft_mount_tree(dst_path);
         Ok(())
     }
 
@@ -369,7 +404,9 @@ impl Path {
             );
         }
 
-        self.mount.graft_mount_tree(dst_path)
+        self.mount.graft_mount_tree(dst_path);
+
+        Ok(())
     }
 
     /// Sets the propagation type of the mount of this `Path`.
