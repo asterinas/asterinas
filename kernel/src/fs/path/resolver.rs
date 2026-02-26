@@ -421,7 +421,7 @@ impl PathResolver {
         }
 
         let target_path = if super::is_dot(name) {
-            path.this()
+            return Ok(path.this());
         } else if super::is_dotdot(name) {
             self.resolve_parent(path).unwrap_or_else(|| path.this())
         } else {

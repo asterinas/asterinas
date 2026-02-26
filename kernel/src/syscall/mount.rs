@@ -42,6 +42,7 @@ pub fn sys_mount(
             .resolver()
             .read()
             .lookup(&fs_path)?
+            .get_top_path()
     };
 
     if mount_flags.contains(MountFlags::MS_REMOUNT) && mount_flags.contains(MountFlags::MS_BIND) {
