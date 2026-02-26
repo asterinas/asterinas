@@ -3,10 +3,12 @@
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use aster_rights::{ReadDupOp, ReadOp, ReadWriteOp};
+use hashbrown::HashMap;
 use ostd::{
     sync::{RoArc, RwMutexReadGuard, Waker},
     task::Task,
 };
+use spin::Once;
 
 use super::{
     Credentials, Process,
@@ -19,6 +21,7 @@ use crate::{
     process::{
         Pid,
         namespace::nsproxy::NsProxy,
+        posix_thread::ptrace::TraceeStatus,
         signal::{PauseReason, PollHandle, sig_mask::SigMask},
     },
     thread::{Thread, Tid},
@@ -31,6 +34,7 @@ mod exit;
 pub mod futex;
 mod name;
 mod posix_thread_ext;
+mod ptrace;
 mod robust_list;
 mod thread_local;
 pub mod thread_table;
@@ -91,6 +95,12 @@ pub struct PosixThread {
     timer_slack_ns: AtomicU64,
     /// The default timer slack value for this thread.
     default_timer_slack_ns: AtomicU64,
+
+    /// Status of being traced.
+    tracee_status: Once<TraceeStatus>,
+
+    /// Threads traced by this thread.
+    tracees: Once<Mutex<HashMap<Tid, Arc<Thread>>>>,
 }
 
 impl PosixThread {
