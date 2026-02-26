@@ -31,7 +31,7 @@
     engine = {
       cgroup_manager = "cgroupfs";
       events_logger = "none";
-      no_pivot_root = true;
+      no_pivot_root = false;
       runtime = "runc";
     };
   };
