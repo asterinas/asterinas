@@ -72,6 +72,11 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
         tasks.remove_exited(&current_task, posix_thread.tid())
     };
 
+    // This is put after `current_thread.exit()`,
+    // so `attach_tracee` will observe that the tracer has exited while
+    // holding the `tracees` lock, and can not race with `clear_tracees`.
+    posix_thread.clear_tracees();
+
     wake_clear_ctid(thread_local);
 
     wake_robust_list(thread_local, posix_thread.tid());

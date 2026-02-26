@@ -91,6 +91,7 @@ macro_rules! import_generic_syscall_entries {
             preadv::{sys_preadv, sys_preadv2, sys_readv},
             prlimit64::{sys_getrlimit, sys_prlimit64, sys_setrlimit},
             pselect6::sys_pselect6,
+            ptrace::sys_ptrace,
             pwrite64::sys_pwrite64,
             pwritev::{sys_pwritev, sys_pwritev2, sys_writev},
             read::sys_read,
@@ -294,6 +295,7 @@ macro_rules! define_syscalls_with_generic_syscall_table {
             SYS_TIMER_DELETE = 111           => sys_timer_delete(args[..1]);
             SYS_CLOCK_GETTIME = 113          => sys_clock_gettime(args[..2]);
             SYS_CLOCK_NANOSLEEP = 115        => sys_clock_nanosleep(args[..4]);
+            SYS_PTRACE = 117                 => sys_ptrace(args[..4]);
             SYS_SCHED_SETPARAM = 118         => sys_sched_setparam(args[..2]);
             SYS_SCHED_SETSCHEDULER = 119     => sys_sched_setscheduler(args[..3]);
             SYS_SCHED_GETSCHEDULER = 120     => sys_sched_getscheduler(args[..1]);

@@ -111,6 +111,7 @@ mod pread64;
 mod preadv;
 mod prlimit64;
 mod pselect6;
+mod ptrace;
 mod pwrite64;
 mod pwritev;
 mod read;
