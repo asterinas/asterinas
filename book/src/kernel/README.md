@@ -46,7 +46,7 @@ Follow the three simple steps below to get Asterinas up and running.
     ```bash
     docker run -it --privileged \
                 --network=host \
-                --device=/dev/kvm \
+                -v /dev:/dev \
                 -v $(pwd)/asterinas:/root/asterinas \
                 asterinas/asterinas:0.17.0-20260114
     ```
