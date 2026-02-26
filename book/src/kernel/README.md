@@ -35,6 +35,8 @@ for both bare-metal and VM environments.
 Get yourself an x86-64 Linux machine with Docker installed.
 Follow the three simple steps below to get Asterinas up and running.
 
+<!-- REMINDER: Be careful when editing the first two steps
+since `distro/README.md` references them -->
 1. Download the latest source code.
 
     ```bash
