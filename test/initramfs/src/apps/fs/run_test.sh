@@ -103,6 +103,9 @@ echo "All mount bind file test passed."
 ./inotify/inotify_poll
 ./inotify/inotify_unlink
 
+./isolation/chroot
+./isolation/pivot_root
+
 ./overlayfs/ovl_test
 
 ./procfs/dentry_cache
