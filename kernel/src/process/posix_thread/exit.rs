@@ -81,6 +81,11 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
     // holding the `tracees` lock, and can not race with `clear_tracees`.
     posix_thread.clear_tracees();
 
+    if let Some(tracer) = posix_thread.tracer() {
+        let tracer = tracer.as_posix_thread().unwrap();
+        tracer.process().children_wait_queue().wake_all();
+    }
+
     wake_clear_ctid(thread_local);
 
     wake_robust_list(thread_local, posix_thread.tid());
