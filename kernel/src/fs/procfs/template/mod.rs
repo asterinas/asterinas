@@ -5,7 +5,7 @@ use core::time::Duration;
 pub(super) use self::{
     builder::{ProcDirBuilder, ProcFileBuilder, ProcSymBuilder},
     dir::{DirOps, ProcDir, lookup_child_from_table, populate_children_from_table},
-    file::{FileOps, ProcFile},
+    file::{FileOps, FileOpsByHandle, ProcFile},
     sym::{ProcSym, SymOps},
 };
 use super::{BLOCK_SIZE, ProcFs};
