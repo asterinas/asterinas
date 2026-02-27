@@ -1145,7 +1145,7 @@ pselect03_64
 # ptrace02
 # ptrace03
 # ptrace04
-# ptrace05
+ptrace05
 # ptrace06
 # ptrace07
 # ptrace08

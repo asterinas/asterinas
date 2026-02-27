@@ -1,0 +1,16 @@
+PtraceTest.Attach*
+PtraceTest.Trace*
+PtraceTest.Prctl*
+PtraceTest.GetSigMask
+PtraceTest.GetSiginfo_SetSiginfo_SignalInjection
+PtraceTest.GetRegSet
+PtraceTest.ChangeRegSetInOptSyscall
+PtraceTest.ExitWhenParentIsNotTracer_Syscall_TraceVfork_TraceVforkDone
+PtraceTest.Int3
+PtraceTest.Sysemu_PokeUser
+PtraceTest.85
+PtraceTest.Seize_Interrupt_Listen
+PtraceTest.Interrupt_Listen_RequireSeize
+PtraceTest.SeizeSetOptions
+PtraceTest.ExecvePtraceLockStress
+TraceExec*
