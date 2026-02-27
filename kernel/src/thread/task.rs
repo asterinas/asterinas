@@ -110,14 +110,23 @@ pub fn create_new_user_task(
             // However, when the process is stopped, at least signals with user-provided handlers
             // should not be handled; these signals should only be handled when the process is continued.
             // Certain signals, such as SIGKILL, should be handled even if the process is stopped.
+            // FIXME: Currently, when the thread is ptrace-stopped, we handle all signals and "swallow"
+            // every signal except SIGKILL.
             // We need to further investigate Linux behavior regarding which signals should be handled
             // when the thread is stopped.
-            while !current_thread.is_exited() && ctx.process.is_stopped() {
-                let _ = stop_waiter.pause_until_by(
-                    || (!ctx.process.is_stopped()).then_some(()),
-                    // We currently do not support ptrace.
-                    PauseReason::StopBySignal,
-                );
+            let is_stopped = || {
+                if ctx.process.is_stopped() {
+                    Some(PauseReason::StopBySignal)
+                } else if ctx.posix_thread.is_ptrace_stopped() {
+                    Some(PauseReason::StopByPtrace)
+                } else {
+                    None
+                }
+            };
+            while !current_thread.is_exited()
+                && let Some(reason) = is_stopped()
+            {
+                let _ = stop_waiter.pause_until_by(|| is_stopped().is_none().then_some(()), reason);
                 handle_pending_signal(user_ctx, &ctx, None);
             }
         }
