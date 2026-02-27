@@ -515,10 +515,16 @@ impl HasVmReaderWriter for BioSegment {
     type Types = VmReaderWriterResult;
 
     fn reader(&self) -> Result<VmReader<'_, Infallible>, Error> {
+        if self.inner.direction != BioDirection::FromDevice {
+            return Err(Error::AccessDenied);
+        }
         self.inner.dma_slice.reader()
     }
 
     fn writer(&self) -> Result<VmWriter<'_, Infallible>, Error> {
+        if self.inner.direction != BioDirection::ToDevice {
+            return Err(Error::AccessDenied);
+        }
         self.inner.dma_slice.writer()
     }
 }
