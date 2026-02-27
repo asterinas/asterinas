@@ -41,6 +41,7 @@ TESTS ?= \
 	proc_pid_oomscore_test \
 	proc_test \
 	pselect_test \
+	ptrace_test \
 	pty_test \
 	pwrite64_test \
 	pwritev2_test \
