@@ -10,7 +10,7 @@ use crate::{
     process::{
         credentials::capabilities::CapSet,
         posix_thread::{AsPosixThread, PosixThread},
-        signal::{c_types::siginfo_t, signals::Signal},
+        signal::{c_types::siginfo_t, sig_num::SigNum, signals::Signal},
     },
     thread::Thread,
 };
@@ -52,12 +52,29 @@ impl TraceeStatus {
     pub(super) fn is_ptrace_stopped(&self) -> bool {
         self.is_stopped.load(Ordering::Relaxed)
     }
+
+    pub(super) fn wait(&self) -> Option<SigNum> {
+        // Hold the lock first to avoid race conditions
+        let mut tracee_state = self.state.lock();
+
+        if let Some(siginfo) = tracee_state.siginfo.take() {
+            let sig_num = (siginfo.si_signo as u8).try_into().unwrap();
+            tracee_state.waited_siginfo = Some(siginfo);
+            Some(sig_num)
+        } else {
+            None
+        }
+    }
 }
 
 struct TraceeState {
     tracer: Weak<Thread>,
     /// The siginfo of the signal that stopped the tracee and has not yet been waited on.
     siginfo: Option<siginfo_t>,
+    /// The siginfo of the signal that stopped the tracee and has already been waited on.
+    ///
+    /// This is needed to support `PTRACE_GETSIGINFO`.
+    waited_siginfo: Option<siginfo_t>,
 }
 
 impl TraceeState {
@@ -65,6 +82,7 @@ impl TraceeState {
         Self {
             tracer: Weak::new(),
             siginfo: None,
+            waited_siginfo: None,
         }
     }
 

@@ -383,6 +383,16 @@ impl PosixThread {
         }
     }
 
+    /// Gets and clears the ptrace-stop status changes for the `wait` syscall.
+    pub(super) fn wait_ptrace_stopped(&self) -> Option<SigNum> {
+        self.tracee_status.get().and_then(|status| status.wait())
+    }
+
+    /// Returns whether this thread may be a tracer.
+    pub(super) fn may_be_tracer(&self) -> bool {
+        self.tracees.get().is_some()
+    }
+
     /// Inserts a tracee to the tracee map of this thread.
     ///
     /// # Panics
