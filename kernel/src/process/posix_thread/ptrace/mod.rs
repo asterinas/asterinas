@@ -9,11 +9,15 @@ use ostd::sync::Waiter;
 use super::{AsPosixThread, PosixThread};
 use crate::{
     prelude::*,
-    process::signal::{
-        DequeuedSignal, PauseReason,
-        c_types::siginfo_t,
-        constants::{CLD_TRAPPED, SIGCHLD},
-        signals::raw::RawSignal,
+    process::{
+        WaitOptions,
+        signal::{
+            DequeuedSignal, PauseReason,
+            c_types::siginfo_t,
+            constants::{CLD_TRAPPED, SIGCHLD},
+            sig_num::SigNum,
+            signals::raw::RawSignal,
+        },
     },
     thread::{Thread, Tid},
 };
@@ -65,6 +69,13 @@ impl PosixThread {
         } else {
             PtraceStopResult::NotTraced(signal)
         }
+    }
+
+    /// Returns the ptrace-stop status changes for the `wait` syscall.
+    pub(in crate::process) fn wait_ptrace_stopped(&self, options: WaitOptions) -> Option<SigNum> {
+        self.tracee_status
+            .get()
+            .and_then(|status| status.wait(options))
     }
 }
 
@@ -202,6 +213,19 @@ impl TraceeStatus {
 
     fn is_ptrace_stopped(&self) -> bool {
         self.is_stopped.load(Ordering::Relaxed)
+    }
+
+    fn wait(&self, options: WaitOptions) -> Option<SigNum> {
+        // Hold the lock first to avoid race conditions.
+        let mut state = self.state.lock();
+
+        // Avoid the race with `detach_tracer` or `resume` in between.
+        if !self.is_ptrace_stopped() {
+            return None;
+        }
+
+        let signal = state.signal.wait(options)?;
+        Some(signal.num())
     }
 }
 
