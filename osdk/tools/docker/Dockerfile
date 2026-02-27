@@ -36,8 +36,7 @@ FROM build-qemu AS qemu
 # The libslirp dependency is for QEMU's network backend.
 WORKDIR /root
 
-# FIXME: Update the QEMU version to the latest stable release when available.
-RUN wget -O qemu.tar.xz https://download.qemu.org/qemu-10.1.0-rc2.tar.xz \
+RUN wget -O qemu.tar.xz https://download.qemu.org/qemu-10.2.1.tar.xz \
     && mkdir /root/qemu \
     && tar xf qemu.tar.xz --strip-components=1 -C /root/qemu \
     && rm qemu.tar.xz
