@@ -109,7 +109,7 @@ jobs:
     timeout-minutes: 60
     container: 
       image: asterinas/asterinas:0.17.0-20260114
-      options: --device=/dev/kvm --privileged
+      options: -v /dev:/dev --privileged
 
     steps:
       - uses: actions/checkout@v4

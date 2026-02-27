@@ -32,7 +32,7 @@ for both bare-metal and VM environments.
 
 ## Getting Started
 
-Get yourself an x86-64 Linux machine with Docker installed.
+Get yourself an x86-64/ARM64 Linux machine with Docker installed.
 Follow the three simple steps below to get Asterinas up and running.
 
 <!-- REMINDER: Be careful when editing the first two steps
@@ -61,3 +61,12 @@ since `distro/README.md` references them -->
     ```
 
 If everything goes well, Asterinas is now up and running inside a VM.
+
+### Development environment
+
+We currently provide `linux/amd64` and `linux/arm64` Docker images. To develop
+x86-64 Asterinas kernel, it is recommended to use the `linux/amd64` image,
+otherwise you should pass `ENABLE_KVM=0` to `make` commands.
+
+Darwin hosts (MacOS) can also run the `linux/amd64` image via Docker Desktop (or
+similar tools with built-in emulation support).

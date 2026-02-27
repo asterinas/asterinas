@@ -12,7 +12,7 @@ jobs:
     container:
       image: asterinas/asterinas:0.17.0-20260114
       options: --device=/dev/kvm --privileged
-    strategy:
+    strategy:-v /dev:/dev
       matrix:
         include:
           # Boot Test (linux-efi-handover64)
