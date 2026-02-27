@@ -116,8 +116,12 @@ impl MountNamespace {
     }
 
     /// Checks whether a given mount belongs to this mount namespace.
+    ///
+    /// A pseudo mount may not belong to any namespace,
+    /// so this also returns `true` when the mount has no associated namespace.
     pub fn owns(self: &Arc<Self>, mount: &Mount) -> bool {
-        mount.mnt_ns().as_ptr() == Arc::as_ptr(self)
+        let mnt_ns = mount.mnt_ns();
+        mnt_ns.ptr_eq(&Weak::new()) || mnt_ns.as_ptr() == Arc::as_ptr(self)
     }
 }
 
