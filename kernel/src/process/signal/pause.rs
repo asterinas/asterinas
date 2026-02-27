@@ -246,7 +246,6 @@ impl Pause for WaitQueue {
 pub enum PauseReason {
     Sleep,
     StopBySignal,
-    #[expect(dead_code)]
     StopByPtrace,
 }
 

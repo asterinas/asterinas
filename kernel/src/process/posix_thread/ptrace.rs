@@ -1,15 +1,22 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::{AtomicBool, Ordering};
+
 use bitflags::bitflags;
 use inherit_methods_macro::inherit_methods;
 
 use crate::{
     prelude::*,
-    process::{credentials::capabilities::CapSet, posix_thread::PosixThread},
+    process::{
+        credentials::capabilities::CapSet,
+        posix_thread::{AsPosixThread, PosixThread},
+        signal::{c_types::siginfo_t, signals::Signal},
+    },
     thread::Thread,
 };
 
 pub(super) struct TraceeStatus {
+    is_stopped: AtomicBool,
     state: Mutex<TraceeState>,
 }
 
@@ -21,19 +28,43 @@ impl TraceeStatus {
 
     pub(super) fn new() -> Self {
         Self {
+            is_stopped: AtomicBool::new(false),
             state: Mutex::new(TraceeState::new()),
         }
+    }
+
+    pub(super) fn ptrace_stop(&self, signal: Box<dyn Signal>) {
+        // Hold the lock first to avoid race conditions
+        let mut tracee_state = self.state.lock();
+
+        let Some(tracer) = tracee_state.tracer() else {
+            return;
+        };
+
+        if !self.is_stopped.load(Ordering::Relaxed) {
+            self.is_stopped.store(true, Ordering::Relaxed);
+            tracee_state.siginfo = Some(signal.to_info());
+            let tracer_process = tracer.as_posix_thread().unwrap().process();
+            tracer_process.children_wait_queue().wake_all();
+        }
+    }
+
+    pub(super) fn is_ptrace_stopped(&self) -> bool {
+        self.is_stopped.load(Ordering::Relaxed)
     }
 }
 
 struct TraceeState {
     tracer: Weak<Thread>,
+    /// The siginfo of the signal that stopped the tracee and has not yet been waited on.
+    siginfo: Option<siginfo_t>,
 }
 
 impl TraceeState {
     fn new() -> Self {
         Self {
             tracer: Weak::new(),
+            siginfo: None,
         }
     }
 

@@ -115,8 +115,16 @@ pub fn create_new_user_task(
             while !current_thread.is_exited() && ctx.process.is_stopped() {
                 let _ = stop_waiter.pause_until_by(
                     || (!ctx.process.is_stopped()).then_some(()),
-                    // We currently do not support ptrace.
                     PauseReason::StopBySignal,
+                );
+                handle_pending_signal(user_ctx, &ctx, None);
+            }
+
+            // FIXME: Currently, we handle all signals when the thread is ptrace-stopped.
+            while !current_thread.is_exited() && current_posix_thread.is_ptrace_stopped() {
+                let _ = stop_waiter.pause_until_by(
+                    || (!current_posix_thread.is_ptrace_stopped()).then_some(()),
+                    PauseReason::StopByPtrace,
                 );
                 handle_pending_signal(user_ctx, &ctx, None);
             }

@@ -344,6 +344,11 @@ impl PosixThread {
         self.timer_slack_ns.store(default, Ordering::Relaxed);
     }
 
+    /// Returns whether this thread may be a tracee.
+    pub(super) fn may_be_tracee(&self) -> bool {
+        self.tracee_status.get().is_some()
+    }
+
     /// Returns the tracer of this thread if it is being traced.
     pub fn tracer(&self) -> Option<Arc<Thread>> {
         self.tracee_status.get().and_then(|status| status.tracer())
@@ -359,6 +364,22 @@ impl PosixThread {
     pub fn detach_tracer(&self) {
         if let Some(status) = self.tracee_status.get() {
             status.detach_tracer();
+        }
+    }
+
+    /// Stops this thread by ptrace with the given signal.
+    pub(super) fn ptrace_stop(&self, signal: Box<dyn Signal>) {
+        if let Some(status) = self.tracee_status.get() {
+            status.ptrace_stop(signal);
+        }
+    }
+
+    /// Returns whether this thread is stopped by ptrace.
+    pub fn is_ptrace_stopped(&self) -> bool {
+        if let Some(status) = self.tracee_status.get() {
+            status.is_ptrace_stopped()
+        } else {
+            false
         }
     }
 
