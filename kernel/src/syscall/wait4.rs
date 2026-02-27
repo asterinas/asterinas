@@ -56,5 +56,7 @@ fn calculate_status_code(wait_status: &WaitStatus) -> u32 {
         WaitStatus::Zombie(process) => process.status().exit_code(),
         WaitStatus::Stop(_, sig_num) => ((sig_num.as_u8() as u32) << 8) | 0x7f,
         WaitStatus::Continue(_) => 0xffff,
+        // TODO: Add `PTRACE_EVENT_*` flags.
+        WaitStatus::PtraceStop(_, sig_num) => ((sig_num.as_u8() as u32) << 8) | 0x7f,
     }
 }
