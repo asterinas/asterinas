@@ -65,6 +65,21 @@ impl TraceeStatus {
             None
         }
     }
+
+    #[expect(unused_variables)]
+    pub(super) fn resume(&self, request: PtraceContRequest) -> Result<()> {
+        // Hold the lock first to avoid race conditions
+        let mut tracee_state = self.state.lock();
+
+        if self.is_stopped.load(Ordering::Relaxed) {
+            self.is_stopped.store(false, Ordering::Relaxed);
+            tracee_state.siginfo = None;
+        } else {
+            return_errno_with_message!(Errno::ESRCH, "the thread is not ptrace-stopped");
+        }
+
+        Ok(())
+    }
 }
 
 struct TraceeState {
@@ -97,6 +112,14 @@ impl TraceeState {
     fn detach_tracer(&mut self) {
         self.tracer = Weak::new();
     }
+}
+
+/// The requests that can continue a stopped tracee.
+#[expect(dead_code)]
+pub enum PtraceContRequest {
+    Continue,
+    SingleStep,
+    Syscall,
 }
 
 /// Checks whether the current `PosixThread` may access the given target
