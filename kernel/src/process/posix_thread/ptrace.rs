@@ -7,7 +7,7 @@ use hashbrown::HashMap;
 use super::{AsPosixThread, PosixThread};
 use crate::{
     prelude::*,
-    process::signal::{c_types::siginfo_t, signals::Signal},
+    process::signal::{c_types::siginfo_t, sig_num::SigNum, signals::Signal},
     thread::{Thread, Tid},
 };
 
@@ -64,6 +64,11 @@ impl PosixThread {
             false
         }
     }
+
+    /// Gets and clears the ptrace-stop status changes for the `wait` syscall.
+    pub(in crate::process) fn wait_ptrace_stopped(&self) -> Option<SigNum> {
+        self.tracee_status.get().and_then(|status| status.wait())
+    }
 }
 
 impl PosixThread {
@@ -88,7 +93,7 @@ impl PosixThread {
     }
 
     /// Returns the tracee map of this thread if it is a tracer.
-    pub(super) fn tracees(&self) -> Option<&Mutex<HashMap<Tid, Arc<Thread>>>> {
+    pub(in crate::process) fn tracees(&self) -> Option<&Mutex<HashMap<Tid, Arc<Thread>>>> {
         self.tracees.get()
     }
 }
@@ -150,12 +155,29 @@ impl TraceeStatus {
     fn is_ptrace_stopped(&self) -> bool {
         self.is_stopped.load(Ordering::Relaxed)
     }
+
+    fn wait(&self) -> Option<SigNum> {
+        // Hold the lock first to avoid race conditions.
+        let mut tracee_state = self.state.lock();
+
+        if let Some(siginfo) = tracee_state.siginfo.take() {
+            let sig_num = (siginfo.si_signo as u8).try_into().unwrap();
+            tracee_state.waited_siginfo = Some(siginfo);
+            Some(sig_num)
+        } else {
+            None
+        }
+    }
 }
 
 struct TraceeState {
     tracer: Weak<Thread>,
     /// The siginfo of the signal that stopped the tracee and has not yet been waited on.
     siginfo: Option<siginfo_t>,
+    /// The siginfo of the signal that stopped the tracee and has already been waited on.
+    ///
+    /// This is needed to support `PTRACE_GETSIGINFO`.
+    waited_siginfo: Option<siginfo_t>,
 }
 
 impl TraceeState {
@@ -163,6 +185,7 @@ impl TraceeState {
         Self {
             tracer: Weak::new(),
             siginfo: None,
+            waited_siginfo: None,
         }
     }
 
