@@ -69,6 +69,22 @@ impl PosixThread {
     pub(in crate::process) fn wait_ptrace_stopped(&self) -> Option<SigNum> {
         self.tracee_status.get().and_then(|status| status.wait())
     }
+
+    /// Continues this thread from a ptrace-stop.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if this thread is not ptrace-stopped.
+    pub fn ptrace_continue(&self, request: PtraceContRequest) -> Result<()> {
+        let Some(status) = self.tracee_status.get() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread is not being traced");
+        };
+
+        status.resume(request)?;
+        self.wake_signalled_waker();
+
+        Ok(())
+    }
 }
 
 impl PosixThread {
@@ -95,6 +111,17 @@ impl PosixThread {
     /// Returns the tracee map of this thread if it is a tracer.
     pub(in crate::process) fn tracees(&self) -> Option<&Mutex<HashMap<Tid, Arc<Thread>>>> {
         self.tracees.get()
+    }
+
+    /// Returns the tracee with the given tid, if it is being traced by this thread.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if there is no tracee with the given tid.
+    pub fn get_tracee(&self, tid: Tid) -> Result<Arc<Thread>> {
+        self.tracees()
+            .and_then(|tracees| tracees.lock().get(&tid).cloned())
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "no such tracee"))
     }
 }
 
@@ -168,6 +195,21 @@ impl TraceeStatus {
             None
         }
     }
+
+    #[expect(unused_variables)]
+    fn resume(&self, request: PtraceContRequest) -> Result<()> {
+        // Hold the lock first to avoid race conditions.
+        let mut tracee_state = self.state.lock();
+
+        if self.is_stopped.load(Ordering::Relaxed) {
+            tracee_state.siginfo = None;
+            self.is_stopped.store(false, Ordering::Relaxed);
+        } else {
+            return_errno_with_message!(Errno::ESRCH, "the thread is not ptrace-stopped");
+        }
+
+        Ok(())
+    }
 }
 
 struct TraceeState {
@@ -200,4 +242,12 @@ impl TraceeState {
     fn detach_tracer(&mut self) {
         self.tracer = Weak::new();
     }
+}
+
+/// The requests that can continue a stopped tracee.
+#[expect(dead_code)]
+pub enum PtraceContRequest {
+    Continue,
+    SingleStep,
+    Syscall,
 }
