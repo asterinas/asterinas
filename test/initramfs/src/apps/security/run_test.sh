@@ -8,6 +8,8 @@ set -e
 ./capability/capset
 ./capability/execve
 
+./namespace/ipc_ns_sem
 ./namespace/mnt_ns
+./namespace/proc_nsfs
 ./namespace/setns
 ./namespace/unshare

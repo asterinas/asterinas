@@ -11,7 +11,7 @@ use ostd::sync::{PreemptDisabled, Waiter, Waker};
 
 use super::sem_set::{SEMVMX, SemSetInner};
 use crate::{
-    ipc::{IpcFlags, key_t, semaphore::system_v::sem_set::sem_sets},
+    ipc::{IpcFlags, IpcNamespace, key_t},
     prelude::*,
     process::Pid,
     time::{
@@ -123,6 +123,7 @@ pub fn sem_op(
     sem_id: key_t,
     sops: Vec<SemBuf>,
     timeout: Option<Duration>,
+    ipc_ns: &Arc<IpcNamespace>,
     ctx: &Context,
 ) -> Result<()> {
     debug_assert!(sem_id > 0);
@@ -136,15 +137,15 @@ pub fn sem_op(
         pid,
     };
 
-    // TODO: Support permission check
-    warn!("Semaphore operation doesn't support permission check now");
+    // TODO: Support permission check.
+    debug!("Semaphore operation doesn't support permission check now");
 
     let (alter, dupsop) = get_sops_flags(&pending_op);
     if dupsop {
         warn!("Found duplicate sop");
     }
 
-    let local_sem_sets = sem_sets();
+    let local_sem_sets = ipc_ns.sem_sets();
     let sem_set = local_sem_sets
         .get(&sem_id)
         .ok_or(Error::new(Errno::EINVAL))?;
@@ -200,7 +201,7 @@ pub fn sem_op(
         Status::Removed => Err(Error::new(Errno::EIDRM)),
         Status::Pending => {
             // FIXME: Getting sem_sets maybe time-consuming.
-            let sem_sets = sem_sets();
+            let sem_sets = ipc_ns.sem_sets();
             let sem_set = sem_sets.get(&sem_id).ok_or(Error::new(Errno::EINVAL))?;
             let mut inner = sem_set.inner();
 

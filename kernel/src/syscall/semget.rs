@@ -6,7 +6,7 @@ use crate::{
         IpcFlags,
         semaphore::system_v::{
             PermissionMode,
-            sem_set::{SEMMNI, SEMMSL, check_sem, create_sem_set, create_sem_set_with_id},
+            sem_set::{SEMMNI, SEMMSL},
         },
     },
     prelude::*,
@@ -30,6 +30,9 @@ pub fn sys_semget(key: i32, nsems: i32, semflags: i32, ctx: &Context) -> Result<
         key, nsems, semflags
     );
 
+    let ns_proxy = ctx.thread_local.borrow_ns_proxy();
+    let ipc_ns = ns_proxy.unwrap().ipc_ns();
+
     // Create a new semaphore set directly
     const IPC_NEW: i32 = 0;
     if key == IPC_NEW || (key as usize > SEMMNI && flags.contains(IpcFlags::IPC_CREAT)) {
@@ -37,12 +40,12 @@ pub fn sys_semget(key: i32, nsems: i32, semflags: i32, ctx: &Context) -> Result<
             return_errno!(Errno::EINVAL);
         }
         return Ok(SyscallReturn::Return(
-            create_sem_set(nsems, mode, credentials)? as isize,
+            ipc_ns.create_sem_set(nsems, mode, credentials)? as isize,
         ));
     }
 
     // Get a semaphore set, and create if necessary
-    match check_sem(
+    match ipc_ns.check_sem(
         key,
         Some(nsems),
         PermissionMode::ALTER | PermissionMode::READ,
@@ -61,7 +64,7 @@ pub fn sys_semget(key: i32, nsems: i32, semflags: i32, ctx: &Context) -> Result<
                 return_errno!(Errno::EINVAL);
             }
 
-            create_sem_set_with_id(key, nsems, mode, credentials)?
+            ipc_ns.create_sem_set_with_id(key, nsems, mode, credentials)?
         }
     };
 
