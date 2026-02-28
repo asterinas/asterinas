@@ -19,7 +19,7 @@ use crate::{
     cpu::LinuxAbi,
     current_userspace,
     fs::{
-        cgroupfs::CgroupMembership,
+        cgroupfs::{CgroupMembership, CgroupSysNode},
         file_table::{FdFlags, FileTable},
         thread_info::ThreadFsInfo,
     },
@@ -289,16 +289,41 @@ pub fn clone_child(
         let child_tid = child_thread.as_posix_thread().unwrap().tid();
         Ok(child_tid)
     } else {
-        let child_process = clone_child_process(ctx, parent_context, clone_args)?;
+        let cgroup_read_guard = CgroupMembership::read_lock();
 
-        let mut cgroup_guard = CgroupMembership::lock();
-        let cgroup = ctx.process.cgroup().get().map(|cgroup| cgroup.clone());
-        if let Some(cgroup) = cgroup {
-            cgroup_guard
-                .move_process_to_node(child_process.clone(), &cgroup)
+        // Pre-charge the pids controller before creating the child process.
+        // This enforces `pids.max` at fork time per cgroupv2 semantics.
+        // The charge must happen before process creation so that on failure
+        // we can return EAGAIN without leaving an orphaned process.
+        let parent_cgroup = ctx.process.cgroup().get().map(|cgroup| cgroup.clone());
+        if let Some(ref cgroup) = parent_cgroup {
+            cgroup.controller().try_charge_pids().map_err(|_| {
+                Error::with_message(
+                    Errno::EAGAIN,
+                    "failed to fork process due to pids controller limit",
+                )
+            })?;
+        }
+
+        let child_process = match clone_child_process(ctx, parent_context, clone_args) {
+            Ok(child) => child,
+            Err(e) => {
+                // Cancel the pids charge if process creation fails.
+                if let Some(ref cgroup) = parent_cgroup {
+                    cgroup.controller().uncharge_pids();
+                }
+                return Err(e);
+            }
+        };
+
+        // Use the same cgroup snapshot that was charged above to avoid
+        // a mismatch if the parent migrates concurrently.
+        if let Some(ref cgroup) = parent_cgroup {
+            cgroup_read_guard
+                .move_forked_process_to_node(child_process.clone(), cgroup)
                 .unwrap();
         }
-        drop(cgroup_guard);
+        drop(cgroup_read_guard);
 
         if clone_args.flags.contains(CloneFlags::CLONE_VFORK) {
             child_process.status().set_vfork_child(true);
