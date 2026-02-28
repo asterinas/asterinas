@@ -4,7 +4,7 @@ use spin::Once;
 
 use crate::{
     fs::{
-        Result,
+        Result, pseudofs,
         registry::{FsProperties, FsType},
         sysfs::{self, inode::SysFsInode},
         utils::{
@@ -41,9 +41,14 @@ impl SysFs {
     }
 
     fn new() -> Arc<Self> {
-        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX);
+        let dev_id = pseudofs::DEVICE_ID_ALLOCATOR
+            .get()
+            .unwrap()
+            .allocate()
+            .expect("no device ID is available for sysfs");
+        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, dev_id);
         let systree_ref = sysfs::systree_singleton();
-        let root_inode = SysFsInode::new_root(systree_ref.root().clone());
+        let root_inode = SysFsInode::new_root(systree_ref.root().clone(), dev_id);
 
         Arc::new(Self {
             sb,

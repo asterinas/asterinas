@@ -23,6 +23,7 @@ use crate::{
         inode_handle::FileIo,
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
         pipe::Pipe,
+        pseudofs,
         registry::{FsProperties, FsType},
         utils::{
             AccessMode, CStr256, CachePage, DirentVisitor, Extension, FallocMode, FileSystem,
@@ -51,8 +52,13 @@ pub struct RamFs {
 
 impl RamFs {
     pub fn new() -> Arc<Self> {
+        let dev_id = pseudofs::DEVICE_ID_ALLOCATOR
+            .get()
+            .unwrap()
+            .allocate()
+            .expect("no device ID is available for ramfs");
         Arc::new_cyclic(|weak_fs| Self {
-            sb: SuperBlock::new(RAMFS_MAGIC, BLOCK_SIZE, NAME_MAX),
+            sb: SuperBlock::new(RAMFS_MAGIC, BLOCK_SIZE, NAME_MAX, dev_id),
             root: Arc::new_cyclic(|weak_root| RamInode {
                 inner: Inner::new_dir(weak_root.clone(), weak_root.clone()),
                 metadata: SpinLock::new(InodeMeta::new_dir(
@@ -64,6 +70,7 @@ impl RamFs {
                 typ: InodeType::Dir,
                 this: weak_root.clone(),
                 fs: weak_fs.clone(),
+                container_dev_id: DeviceId::null(),
                 extension: Extension::new(),
                 xattr: RamXattr::new(),
             }),
@@ -114,6 +121,8 @@ pub(super) struct RamInode {
     this: Weak<RamInode>,
     /// Reference to fs
     fs: Weak<RamFs>,
+    /// Device ID. Used for detached inodes (memfd) that don't have a valid fs reference.
+    container_dev_id: DeviceId,
     /// Extensions
     extension: Extension,
     /// Extended attributes
@@ -449,6 +458,7 @@ impl RamInode {
             typ: InodeType::Dir,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            container_dev_id: DeviceId::null(),
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -462,6 +472,7 @@ impl RamInode {
             typ: InodeType::File,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            container_dev_id: DeviceId::null(),
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -470,6 +481,7 @@ impl RamInode {
     /// Creates a `RamInode` that is detached from any `RamFs`, and resides in a `MemfdInode`.
     pub(super) fn new_file_detached_in_memfd(
         weak_self: &Weak<MemfdInode>,
+        dev_id: DeviceId,
         mode: InodeMode,
         uid: Uid,
         gid: Gid,
@@ -481,6 +493,7 @@ impl RamInode {
             typ: InodeType::File,
             this: Weak::new(),
             fs: Weak::new(),
+            container_dev_id: dev_id,
             extension: Extension::new(),
             xattr: RamXattr::new(),
         }
@@ -494,6 +507,7 @@ impl RamInode {
             typ: InodeType::SymLink,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            container_dev_id: DeviceId::null(),
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -519,6 +533,7 @@ impl RamInode {
             typ: dev_type.into(),
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            container_dev_id: DeviceId::null(),
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -532,6 +547,7 @@ impl RamInode {
             typ: InodeType::Socket,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            container_dev_id: DeviceId::null(),
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -545,6 +561,7 @@ impl RamInode {
             typ: InodeType::NamedPipe,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            container_dev_id: DeviceId::null(),
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -1169,21 +1186,30 @@ impl Inode for RamInode {
     fn metadata(&self) -> Metadata {
         let rdev = self.inner.device_id().unwrap_or(0);
         let inode_metadata = self.metadata.lock();
+        let container_dev_id = if self.container_dev_id.is_null() {
+            self.fs().sb().container_dev_id
+        } else {
+            self.container_dev_id
+        };
         Metadata {
-            dev: 0,
             ino: self.ino as _,
             size: inode_metadata.size,
-            blk_size: BLOCK_SIZE,
-            blocks: inode_metadata.blocks,
-            atime: inode_metadata.atime,
-            mtime: inode_metadata.mtime,
-            ctime: inode_metadata.ctime,
+            optimal_block_size: BLOCK_SIZE,
+            nr_sectors_allocated: inode_metadata.blocks,
+            last_access_at: inode_metadata.atime,
+            last_modify_at: inode_metadata.mtime,
+            last_meta_change_at: inode_metadata.ctime,
             type_: self.typ,
             mode: inode_metadata.mode,
-            nlinks: inode_metadata.nlinks,
+            nr_hard_links: inode_metadata.nlinks,
             uid: inode_metadata.uid,
             gid: inode_metadata.gid,
-            rdev,
+            container_dev_id,
+            self_dev_id: if rdev == 0 {
+                None
+            } else {
+                DeviceId::from_encoded_u64(rdev)
+            },
         }
     }
 

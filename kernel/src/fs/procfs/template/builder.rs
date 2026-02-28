@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use device_id::DeviceId;
+
 use super::{
     dir::{DirOps, ProcDir},
     file::{FileOps, ProcFile},
@@ -44,13 +46,19 @@ impl<O: DirOps> ProcDirBuilder<O> {
         self.optional_builder(|ob| ob.ino(ino))
     }
 
+    pub fn dev_id(self, dev_id: DeviceId) -> Self {
+        self.optional_builder(|ob| ob.dev_id(dev_id))
+    }
+
     pub fn build(mut self) -> Result<Arc<ProcDir<O>>> {
-        let (fs, parent, ino, is_volatile) = self.optional_builder.take().unwrap().build()?;
+        let (fs, parent, ino, dev_id, is_volatile) =
+            self.optional_builder.take().unwrap().build()?;
         Ok(ProcDir::new(
             self.dir,
             fs,
             parent,
             ino,
+            dev_id,
             is_volatile,
             self.mode,
         ))
@@ -94,7 +102,7 @@ impl<O: FileOps> ProcFileBuilder<O> {
     }
 
     pub fn build(mut self) -> Result<Arc<ProcFile<O>>> {
-        let (fs, _, _, is_volatile) = self.optional_builder.take().unwrap().build()?;
+        let (fs, _, _, _, is_volatile) = self.optional_builder.take().unwrap().build()?;
         Ok(ProcFile::new(self.file, fs, is_volatile, self.mode))
     }
 
@@ -136,7 +144,7 @@ impl<O: SymOps> ProcSymBuilder<O> {
     }
 
     pub fn build(mut self) -> Result<Arc<ProcSym<O>>> {
-        let (fs, _, _, is_volatile) = self.optional_builder.take().unwrap().build()?;
+        let (fs, _, _, _, is_volatile) = self.optional_builder.take().unwrap().build()?;
         Ok(ProcSym::new(self.sym, fs, is_volatile, self.mode))
     }
 
@@ -154,6 +162,7 @@ struct OptionalBuilder {
     parent: Option<Weak<dyn Inode>>,
     fs: Option<Weak<dyn FileSystem>>,
     ino: Option<u64>,
+    dev_id: Option<DeviceId>,
     is_volatile: bool,
 }
 
@@ -163,6 +172,7 @@ impl OptionalBuilder {
             parent: None,
             fs: None,
             ino: None,
+            dev_id: None,
             is_volatile: false,
         }
     }
@@ -182,6 +192,11 @@ impl OptionalBuilder {
         self
     }
 
+    pub fn dev_id(mut self, dev_id: DeviceId) -> Self {
+        self.dev_id = Some(dev_id);
+        self
+    }
+
     pub fn volatile(mut self) -> Self {
         self.is_volatile = true;
         self
@@ -194,6 +209,7 @@ impl OptionalBuilder {
         Weak<dyn FileSystem>,
         Option<Weak<dyn Inode>>,
         Option<u64>,
+        Option<DeviceId>,
         bool,
     )> {
         if self.parent.is_none() && self.fs.is_none() {
@@ -215,6 +231,6 @@ impl OptionalBuilder {
             is_volatile
         };
 
-        Ok((fs, self.parent, self.ino, is_volatile))
+        Ok((fs, self.parent, self.ino, self.dev_id, is_volatile))
     }
 }

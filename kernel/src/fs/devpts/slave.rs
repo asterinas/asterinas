@@ -3,6 +3,8 @@
 #![expect(dead_code)]
 #![expect(unused_variables)]
 
+use device_id::DeviceId;
+
 use super::*;
 use crate::{
     device::PtySlave,
@@ -24,13 +26,14 @@ pub struct PtySlaveInode {
 }
 
 impl PtySlaveInode {
-    pub fn new(device: Arc<PtySlave>, fs: Weak<DevPts>) -> Arc<Self> {
+    pub fn new(device: Arc<PtySlave>, fs: Weak<DevPts>, dev_id: DeviceId) -> Arc<Self> {
         Arc::new(Self {
             metadata: RwLock::new(Metadata::new_device(
                 device.index() as u64 + FIRST_SLAVE_INO,
                 mkmod!(u+rw, g+w),
                 super::BLOCK_SIZE,
                 device.as_ref(),
+                dev_id,
             )),
             device,
             extension: Extension::new(),
@@ -120,27 +123,27 @@ impl Inode for PtySlaveInode {
     }
 
     fn atime(&self) -> Duration {
-        self.metadata.read().atime
+        self.metadata.read().last_access_at
     }
 
     fn set_atime(&self, time: Duration) {
-        self.metadata.write().atime = time;
+        self.metadata.write().last_access_at = time;
     }
 
     fn mtime(&self) -> Duration {
-        self.metadata.read().mtime
+        self.metadata.read().last_modify_at
     }
 
     fn set_mtime(&self, time: Duration) {
-        self.metadata.write().mtime = time;
+        self.metadata.write().last_modify_at = time;
     }
 
     fn ctime(&self) -> Duration {
-        self.metadata.read().ctime
+        self.metadata.read().last_meta_change_at
     }
 
     fn set_ctime(&self, time: Duration) {
-        self.metadata.write().ctime = time;
+        self.metadata.write().last_meta_change_at = time;
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {

@@ -371,7 +371,7 @@ impl DirDentry<'_> {
 
         dir_inode.unlink(name)?;
 
-        let nlinks = child_inode.metadata().nlinks;
+        let nlinks = child_inode.metadata().nr_hard_links;
         fs::notify::on_link_count(&child_inode);
         if nlinks == 0 {
             // FIXME: `DELETE_SELF` should be generated after closing the last FD.
@@ -422,7 +422,7 @@ impl DirDentry<'_> {
 
         dir_inode.rmdir(name)?;
 
-        let nlinks = child_inode.metadata().nlinks;
+        let nlinks = child_inode.metadata().nr_hard_links;
         if nlinks == 0 {
             // FIXME: `DELETE_SELF` should be generated after closing the last FD.
             fs::notify::on_inode_removed(&child_inode);

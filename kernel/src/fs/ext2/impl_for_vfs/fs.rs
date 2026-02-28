@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::sync::RwMutexReadGuard;
-
 use crate::{
     fs::{
-        ext2::{Ext2, MAGIC_NUM as EXT2_MAGIC, SuperBlock as Ext2SuperBlock, utils::Dirty},
+        ext2::{Ext2, MAGIC_NUM as EXT2_MAGIC},
         utils::{FileSystem, FsEventSubscriberStats, Inode, NAME_MAX, SuperBlock},
     },
     prelude::*,
@@ -28,17 +26,8 @@ impl FileSystem for Ext2 {
     }
 
     fn sb(&self) -> SuperBlock {
-        SuperBlock::from(self.super_block())
-    }
-
-    fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
-        self.fs_event_subscriber_stats()
-    }
-}
-
-impl From<RwMutexReadGuard<'_, Dirty<Ext2SuperBlock>>> for SuperBlock {
-    fn from(ext2_sb: RwMutexReadGuard<Dirty<Ext2SuperBlock>>) -> Self {
-        Self {
+        let ext2_sb = self.super_block();
+        SuperBlock {
             magic: EXT2_MAGIC as _,
             bsize: ext2_sb.block_size(),
             blocks: ext2_sb.total_blocks() as _,
@@ -50,6 +39,11 @@ impl From<RwMutexReadGuard<'_, Dirty<Ext2SuperBlock>>> for SuperBlock {
             namelen: NAME_MAX,
             frsize: ext2_sb.fragment_size(),
             flags: 0, // TODO
+            container_dev_id: self.container_device_id(),
         }
+    }
+
+    fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
+        self.fs_event_subscriber_stats()
     }
 }

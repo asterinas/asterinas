@@ -29,7 +29,8 @@ impl<F: FileOps> ProcFile<F> {
         let common = {
             let arc_fs = fs.upgrade().unwrap();
             let procfs = arc_fs.downcast_ref::<ProcFs>().unwrap();
-            let metadata = Metadata::new_file(procfs.alloc_id(), mode, super::BLOCK_SIZE);
+            let dev_id = procfs.sb().container_dev_id;
+            let metadata = Metadata::new_file(procfs.alloc_id(), mode, super::BLOCK_SIZE, dev_id);
             Common::new(metadata, fs, is_volatile)
         };
         Arc::new(Self {

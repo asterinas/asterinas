@@ -27,14 +27,15 @@ pub struct Ptmx {
 struct Inner(Weak<DevPts>);
 
 impl Ptmx {
-    pub fn new(fs: Weak<DevPts>) -> Arc<Self> {
-        let inner = Inner(fs);
+    pub fn new(fs: Weak<DevPts>, dev_id: DeviceId) -> Arc<Self> {
+        let inner = Inner(fs.clone());
         Arc::new(Self {
             metadata: RwLock::new(Metadata::new_device(
                 PTMX_INO,
                 mkmod!(a+rw),
                 super::BLOCK_SIZE,
                 &inner,
+                dev_id,
             )),
             inner,
             extension: Extension::new(),
@@ -121,27 +122,27 @@ impl Inode for Ptmx {
     }
 
     fn atime(&self) -> Duration {
-        self.metadata.read().atime
+        self.metadata.read().last_access_at
     }
 
     fn set_atime(&self, time: Duration) {
-        self.metadata.write().atime = time;
+        self.metadata.write().last_access_at = time;
     }
 
     fn mtime(&self) -> Duration {
-        self.metadata.read().mtime
+        self.metadata.read().last_modify_at
     }
 
     fn set_mtime(&self, time: Duration) {
-        self.metadata.write().mtime = time;
+        self.metadata.write().last_modify_at = time;
     }
 
     fn ctime(&self) -> Duration {
-        self.metadata.read().ctime
+        self.metadata.read().last_meta_change_at
     }
 
     fn set_ctime(&self, time: Duration) {
-        self.metadata.write().ctime = time;
+        self.metadata.write().last_meta_change_at = time;
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {
