@@ -17,6 +17,7 @@ aster-input.workspace = true
 aster-logger.workspace = true
 aster-mlsdisk.workspace = true
 aster-network.workspace = true
+aster-nvme.workspace = true
 aster-rights.workspace = true
 aster-rights-proc.workspace = true
 aster-softirq.workspace = true
