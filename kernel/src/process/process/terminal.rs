@@ -16,7 +16,7 @@ use crate::{
 /// `JobControl` to track the session and the foreground process group.
 pub trait Terminal: Device {
     /// Returns the job control of the terminal.
-    fn job_control(&self) -> &JobControl;
+    fn job_control(&self) -> Arc<JobControl>;
 }
 
 mod ioctl_defs {
@@ -36,7 +36,11 @@ mod ioctl_defs {
 }
 
 impl dyn Terminal {
-    pub fn job_ioctl(self: Arc<Self>, raw_ioctl: RawIoctl, via_master: bool) -> Result<()> {
+    /// Handles an ioctl command for the terminal.
+    ///
+    /// Returns `Ok(None)` if the command is not recognized as a terminal ioctl command,
+    /// and returns `Ok(Some(()))` if the command is successfully handled.
+    pub fn job_ioctl(self: Arc<Self>, raw_ioctl: RawIoctl, via_master: bool) -> Result<Option<()>> {
         use ioctl_defs::*;
 
         dispatch_ioctl!(match raw_ioctl {
@@ -54,7 +58,7 @@ impl dyn Terminal {
                     self.is_control_and(&current!(), |_, _| Ok(operate()))?
                 };
 
-                cmd.write(&pgid)
+                cmd.write(&pgid)?
             }
             cmd @ SetForegroundPgid => {
                 let pgid = cmd.read()?;
@@ -62,7 +66,7 @@ impl dyn Terminal {
                     return_errno_with_message!(Errno::EINVAL, "negative PGIDs are not valid");
                 }
 
-                self.set_foreground(pgid, &current!())
+                self.set_foreground(pgid, &current!())?
             }
 
             // Commands about sessions
@@ -71,7 +75,7 @@ impl dyn Terminal {
                     warn!("stealing TTY from another session is not supported");
                 }
 
-                self.set_control(&current!())
+                self.set_control(&current!())?
             }
             _cmd @ SetControlNoTty => {
                 if via_master {
@@ -81,7 +85,7 @@ impl dyn Terminal {
                     );
                 }
 
-                self.unset_control(&current!())
+                self.unset_control(&current!())?
             }
             cmd @ GetControlSid => {
                 let sid = if via_master {
@@ -98,14 +102,16 @@ impl dyn Terminal {
                     self.is_control_and(&current!(), |session, _| Ok(session.sid()))?
                 };
 
-                cmd.write(&sid)
+                cmd.write(&sid)?
             }
 
             // Commands that are invalid or not supported
             _ => {
-                return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown")
+                return Ok(None);
             }
-        })
+        });
+
+        Ok(Some(()))
     }
 
     /// Sets the terminal to be the controlling terminal of the process.

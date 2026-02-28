@@ -247,7 +247,14 @@ impl FileIo for PtyMaster {
                 cmd.write(&packet_mode)?;
             }
 
-            _ => (self.slave.clone() as Arc<dyn Terminal>).job_ioctl(raw_ioctl, true)?,
+            _ => {
+                match (self.slave.clone() as Arc<dyn Terminal>).job_ioctl(raw_ioctl, true)? {
+                    Some(()) => {}
+                    None => {
+                        return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown");
+                    }
+                }
+            }
         });
 
         Ok(0)
