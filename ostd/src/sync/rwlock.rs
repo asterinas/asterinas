@@ -110,7 +110,6 @@ const READER: usize = 1;
 const WRITER: usize = 1 << (usize::BITS - 1);
 const UPGRADEABLE_READER: usize = 1 << (usize::BITS - 2);
 const BEING_UPGRADED: usize = 1 << (usize::BITS - 3);
-const MAX_READER: usize = 1 << (usize::BITS - 4);
 
 impl<T, G> RwLock<T, G> {
     /// Creates a new spin-based read-write lock with an initial value.
@@ -182,7 +181,7 @@ impl<T: ?Sized, G: SpinGuardian> RwLock<T, G> {
     pub fn try_read(&self) -> Option<RwLockReadGuard<'_, T, G>> {
         let guard = G::read_guard();
         let lock = self.lock.fetch_add(READER, Acquire);
-        if lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
+        if lock & (WRITER | BEING_UPGRADED) == 0 {
             Some(RwLockReadGuard { inner: self, guard })
         } else {
             self.lock.fetch_sub(READER, Release);
