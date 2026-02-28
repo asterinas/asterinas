@@ -686,9 +686,6 @@ impl Process {
     }
 
     /// Stops the process.
-    //
-    // FIXME: `ptrace` is another reason that can cause a process to stop.
-    // Consider extending the method signature to support `ptrace` if necessary.
     pub fn stop(&self, sig_num: SigNum) {
         if self.status.stop_status().stop(sig_num) {
             self.wake_up_parent();

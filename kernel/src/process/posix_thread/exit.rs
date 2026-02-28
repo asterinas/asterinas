@@ -70,6 +70,12 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
         tasks.remove_exited(&current_task, posix_thread.tid())
     };
 
+    if let Some(tracees) = posix_thread.tracees() {
+        for (_, tracee) in tracees.lock().iter() {
+            tracee.as_posix_thread().unwrap().detach_tracer();
+        }
+    }
+
     wake_clear_ctid(thread_local);
 
     wake_robust_list(thread_local, posix_thread.tid());

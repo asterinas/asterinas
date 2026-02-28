@@ -39,7 +39,7 @@ use crate::{
     process::{
         TermStatus,
         posix_thread::do_exit_group,
-        signal::{c_types::stack_t, signals::Signal},
+        signal::{c_types::stack_t, constants::SIGKILL, signals::Signal},
     },
 };
 
@@ -71,6 +71,12 @@ pub fn handle_pending_signal(
     };
 
     let sig_num = signal.num();
+
+    if sig_num != SIGKILL && ctx.posix_thread.may_be_tracee() {
+        ctx.posix_thread.ptrace_stop(signal);
+        return;
+    }
+
     match sig_action {
         SigAction::Ign => {
             trace!("Ignore signal {:?}", sig_num);
@@ -144,10 +150,9 @@ fn dequeue_pending_signal(ctx: &Context) -> Option<(Box<dyn Signal>, SigAction)>
         let signal = ctx.dequeue_signal(&sig_mask)?;
         let sig_num = signal.num();
         let sig_action = sig_dispositions.get(sig_num);
-        if sig_action.will_ignore(sig_num) {
+        if sig_action.will_ignore(sig_num) && !posix_thread.may_be_tracee() {
             continue;
         }
-
         break (signal, sig_num, sig_action);
     };
 

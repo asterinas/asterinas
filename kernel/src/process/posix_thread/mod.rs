@@ -3,10 +3,12 @@
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use aster_rights::{ReadDupOp, ReadOp, ReadWriteOp};
+use hashbrown::HashMap;
 use ostd::{
     sync::{RoArc, RwMutexReadGuard, Waker},
     task::Task,
 };
+use spin::Once;
 
 use super::{
     Credentials, Process,
@@ -19,6 +21,7 @@ use crate::{
     process::{
         Pid,
         namespace::nsproxy::NsProxy,
+        posix_thread::ptrace::{PtraceContRequest, TraceeStatus},
         signal::{PauseReason, PollHandle},
     },
     thread::{Thread, Tid},
@@ -30,6 +33,7 @@ mod exit;
 pub mod futex;
 mod name;
 mod posix_thread_ext;
+pub mod ptrace;
 mod robust_list;
 mod thread_local;
 pub mod thread_table;
@@ -90,6 +94,12 @@ pub struct PosixThread {
     timer_slack_ns: AtomicU64,
     /// The default timer slack value for this thread.
     default_timer_slack_ns: AtomicU64,
+
+    /// Status of being traced.
+    tracee_status: Once<TraceeStatus>,
+
+    /// Threads traced by this thread.
+    tracees: Once<Mutex<HashMap<Tid, Arc<Thread>>>>,
 }
 
 impl PosixThread {
@@ -97,8 +107,8 @@ impl PosixThread {
         self.process.upgrade().unwrap()
     }
 
-    pub fn weak_process(&self) -> Weak<Process> {
-        Weak::clone(&self.process)
+    pub fn weak_process(&self) -> &Weak<Process> {
+        &self.process
     }
 
     /// Returns the thread id
@@ -332,6 +342,107 @@ impl PosixThread {
     pub fn reset_timer_slack_to_default(&self) {
         let default = self.default_timer_slack_ns.load(Ordering::Relaxed);
         self.timer_slack_ns.store(default, Ordering::Relaxed);
+    }
+
+    /// Returns whether this thread may be a tracee.
+    pub(super) fn may_be_tracee(&self) -> bool {
+        self.tracee_status.get().is_some()
+    }
+
+    /// Returns the tracer of this thread if it is being traced.
+    pub fn tracer(&self) -> Option<Arc<Thread>> {
+        self.tracee_status.get().and_then(|status| status.tracer())
+    }
+
+    /// Sets the tracer of this thread.
+    pub fn set_tracer(&self, tracer: Weak<Thread>) {
+        let status = self.tracee_status.call_once(TraceeStatus::new);
+        status.set_tracer(tracer);
+    }
+
+    /// Detaches the tracer of this thread.
+    pub fn detach_tracer(&self) {
+        if let Some(status) = self.tracee_status.get() {
+            status.detach_tracer();
+        }
+    }
+
+    /// Stops this thread by ptrace with the given signal.
+    pub(super) fn ptrace_stop(&self, signal: Box<dyn Signal>) {
+        if let Some(status) = self.tracee_status.get() {
+            status.ptrace_stop(signal);
+        }
+    }
+
+    /// Returns whether this thread is stopped by ptrace.
+    pub fn is_ptrace_stopped(&self) -> bool {
+        if let Some(status) = self.tracee_status.get() {
+            status.is_ptrace_stopped()
+        } else {
+            false
+        }
+    }
+
+    /// Gets and clears the ptrace-stop status changes for the `wait` syscall.
+    pub(super) fn wait_ptrace_stopped(&self) -> Option<SigNum> {
+        self.tracee_status.get().and_then(|status| status.wait())
+    }
+
+    /// Continues this thread from a ptrace-stop.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if this thread is not ptrace-stopped.
+    pub fn ptrace_continue(&self, request: PtraceContRequest) -> Result<()> {
+        let Some(status) = self.tracee_status.get() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread is not being traced");
+        };
+
+        status.resume(request)?;
+        self.wake_signalled_waker();
+
+        Ok(())
+    }
+
+    /// Returns whether this thread may be a tracer.
+    pub(super) fn may_be_tracer(&self) -> bool {
+        self.tracees.get().is_some()
+    }
+
+    /// Inserts a tracee to the tracee map of this thread.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the tracee is not a POSIX thread.
+    pub fn insert_tracee(&self, tracee: Arc<Thread>) {
+        let tracees = self.tracees.call_once(|| Mutex::new(HashMap::new()));
+        tracees
+            .lock()
+            .insert(tracee.as_posix_thread().unwrap().tid(), tracee);
+    }
+
+    /// Removes the tracee with the given tid from the tracee map of this thread.
+    #[expect(dead_code)]
+    pub fn remove_tracee(&self, tid: Tid) {
+        if let Some(tracees) = self.tracees.get() {
+            tracees.lock().remove(&tid);
+        }
+    }
+
+    /// Returns the tracee map of this thread if it is a tracer.
+    pub fn tracees(&self) -> Option<&Mutex<HashMap<Tid, Arc<Thread>>>> {
+        self.tracees.get()
+    }
+
+    /// Returns the tracee with the given tid, if it is being traced by this thread.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if there is no tracee with the given tid.
+    pub fn get_tracee(&self, tid: Tid) -> Result<Arc<Thread>> {
+        self.tracees()
+            .and_then(|tracees| tracees.lock().get(&tid).cloned())
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "no such tracee"))
     }
 }
 

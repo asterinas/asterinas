@@ -92,6 +92,7 @@ use super::{
     preadv::{sys_preadv, sys_preadv2, sys_readv},
     prlimit64::{sys_getrlimit, sys_prlimit64, sys_setrlimit},
     pselect6::sys_pselect6,
+    ptrace::sys_ptrace,
     pwrite64::sys_pwrite64,
     pwritev::{sys_pwritev, sys_pwritev2, sys_writev},
     read::sys_read,
@@ -269,6 +270,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_GETRLIMIT = 97         => sys_getrlimit(args[..2]);
     SYS_GETRUSAGE = 98         => sys_getrusage(args[..2]);
     SYS_SYSINFO = 99           => sys_sysinfo(args[..1]);
+    SYS_PTRACE = 101           => sys_ptrace(args[..4]);
     SYS_GETUID = 102           => sys_getuid(args[..0]);
     SYS_GETGID = 104           => sys_getgid(args[..0]);
     SYS_SETUID = 105           => sys_setuid(args[..1]);
