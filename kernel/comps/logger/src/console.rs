@@ -25,9 +25,13 @@ pub fn _print(args: fmt::Arguments) {
     );
     impl Write for Printer<'_> {
         fn write_str(&mut self, s: &str) -> fmt::Result {
-            self.0
-                .values()
-                .for_each(|console| console.send(s.as_bytes()));
+            if self.0.is_empty() {
+                ostd::early_print!("{}", s);
+            } else {
+                for console in self.0.values() {
+                    console.send(s.as_bytes());
+                }
+            }
             Ok(())
         }
     }
