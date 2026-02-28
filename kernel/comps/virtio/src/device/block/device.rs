@@ -213,7 +213,7 @@ impl DeviceInner {
     const QUEUE_SIZE: u16 = 64;
 
     /// Creates and inits the device.
-    pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<Arc<Self>, VirtioDeviceError> {
+    fn init(mut transport: Box<dyn VirtioTransport>) -> Result<Arc<Self>, VirtioDeviceError> {
         let config_manager = VirtioBlockConfig::new_manager(transport.as_ref());
         debug!("virio_blk_config = {:?}", config_manager.read_config());
         assert_eq!(

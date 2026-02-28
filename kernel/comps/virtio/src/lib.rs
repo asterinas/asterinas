@@ -17,12 +17,8 @@ use aster_block::MajorIdOwner;
 use bitflags::bitflags;
 use component::{ComponentInitError, init_component};
 use device::{
-    VirtioDeviceType,
-    block::device::BlockDevice,
-    console::device::ConsoleDevice,
-    input::device::InputDevice,
-    network::device::NetworkDevice,
-    socket::{self, device::SocketDevice},
+    VirtioDeviceType, block::device::BlockDevice, console::device::ConsoleDevice,
+    input::device::InputDevice, network::device::NetworkDevice, socket::device::SocketDevice,
 };
 use log::{error, warn};
 use spin::Once;
@@ -44,8 +40,10 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
 
     // Find all devices and register them to the corresponding crate
     transport::init();
-    // For vsock table static init
-    socket::init();
+
+    device::network::init();
+    device::socket::init();
+
     while let Some(mut transport) = pop_device_transport() {
         // Reset device
         transport

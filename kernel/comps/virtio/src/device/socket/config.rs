@@ -2,26 +2,26 @@
 
 use aster_util::safe_ptr::SafePtr;
 use bitflags::bitflags;
-use ostd::{io::IoMem, mm::PodOnce};
+use ostd::io::IoMem;
 
 use crate::transport::VirtioTransport;
 
 bitflags! {
-    pub struct VsockFeatures: u64 {
+    pub(super) struct VsockFeatures: u64 {
         const VIRTIO_VSOCK_F_STREAM = 1 << 0; // stream socket type is supported.
         const VIRTIO_VSOCK_F_SEQPACKET = 1 << 1; //seqpacket socket type is not supported now.
     }
 }
 
 impl VsockFeatures {
-    pub const fn supported_features() -> Self {
+    pub(super) const fn supported_features() -> Self {
         VsockFeatures::VIRTIO_VSOCK_F_STREAM
     }
 }
 
 #[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
-pub struct VirtioVsockConfig {
+pub(super) struct VirtioVsockConfig {
     /// The guest_cid field contains the guest’s context ID, which uniquely identifies
     /// the device for its lifetime. The upper 32 bits of the CID are reserved and zeroed.
     ///
@@ -32,10 +32,8 @@ pub struct VirtioVsockConfig {
     pub guest_cid_high: u32,
 }
 
-impl PodOnce for VirtioVsockConfig {}
-
 impl VirtioVsockConfig {
-    pub(crate) fn new(transport: &dyn VirtioTransport) -> SafePtr<Self, IoMem> {
+    pub(super) fn new(transport: &dyn VirtioTransport) -> SafePtr<Self, IoMem> {
         let memory = transport.device_config_mem().unwrap();
         SafePtr::new(memory, 0)
     }

@@ -13,7 +13,7 @@ pub(super) static RX_BUFFER_POOL: Once<Arc<DmaPool<FromDevice>>> = Once::new();
 pub(super) static TX_BUFFER_POOL: Once<Arc<DmaPool<ToDevice>>> = Once::new();
 
 pub(super) fn init() {
-    const POOL_INIT_SIZE: usize = 0;
+    const POOL_INIT_SIZE: usize = 32;
     const POOL_HIGH_WATERMARK: usize = 64;
 
     RX_BUFFER_POOL

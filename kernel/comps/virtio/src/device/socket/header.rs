@@ -30,7 +30,7 @@ use int_to_c_enum::TryFromInt;
 
 use super::error::{self, SocketError};
 
-pub const VIRTIO_VSOCK_HDR_LEN: usize = size_of::<VirtioVsockHdr>();
+pub(super) const VIRTIO_VSOCK_HDR_LEN: usize = size_of::<VirtioVsockHdr>();
 
 /// Socket address.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
@@ -45,7 +45,7 @@ pub struct VsockDeviceAddr {
 // #[repr(packed)]
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod)]
-pub struct VirtioVsockHdr {
+pub(super) struct VirtioVsockHdr {
     pub src_cid: u64,
     pub dst_cid: u64,
     pub src_port: u32,
@@ -80,33 +80,33 @@ impl Default for VirtioVsockHdr {
 
 impl VirtioVsockHdr {
     /// Returns the length of the data.
-    pub fn len(&self) -> u32 {
+    pub(super) fn len(&self) -> u32 {
         self.len
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(super) fn is_empty(&self) -> bool {
         self.len == 0
     }
 
-    pub fn op(&self) -> error::Result<VirtioVsockOp> {
+    pub(super) fn op(&self) -> error::Result<VirtioVsockOp> {
         VirtioVsockOp::try_from(self.op).map_err(|err| err.into())
     }
 
-    pub fn source(&self) -> VsockDeviceAddr {
+    pub(super) fn source(&self) -> VsockDeviceAddr {
         VsockDeviceAddr {
             cid: self.src_cid,
             port: self.src_port,
         }
     }
 
-    pub fn destination(&self) -> VsockDeviceAddr {
+    pub(super) fn destination(&self) -> VsockDeviceAddr {
         VsockDeviceAddr {
             cid: self.dst_cid,
             port: self.dst_port,
         }
     }
 
-    pub fn check_data_is_empty(&self) -> error::Result<()> {
+    pub(super) fn check_data_is_empty(&self) -> error::Result<()> {
         if self.is_empty() {
             Ok(())
         } else {
@@ -117,7 +117,7 @@ impl VirtioVsockHdr {
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
 #[repr(u16)]
-pub enum VirtioVsockOp {
+pub(super) enum VirtioVsockOp {
     #[default]
     Invalid = 0,
 
@@ -140,7 +140,7 @@ bitflags! {
     #[repr(C)]
     #[derive(Default, Pod)]
     /// Header flags field type makes sense when connected socket receives VIRTIO_VSOCK_OP_SHUTDOWN.
-    pub struct ShutdownFlags: u32{
+    pub(super) struct ShutdownFlags: u32{
         /// The peer will not receive any more data.
         const VIRTIO_VSOCK_SHUTDOWN_RCV = 1 << 0;
         /// The peer will not send any more data.
@@ -153,9 +153,10 @@ bitflags! {
 /// Currently only stream sockets are supported. type is 1 for stream socket types.
 #[derive(Copy, Clone, Debug)]
 #[repr(u16)]
-pub enum VsockType {
+pub(super) enum VsockType {
     /// Stream sockets provide in-order, guaranteed, connection-oriented delivery without message boundaries.
     Stream = 1,
     /// seqpacket socket type introduced in virtio-v1.2.
+    #[expect(dead_code)]
     SeqPacket = 2,
 }

@@ -222,7 +222,6 @@ impl<T: Pod> ConfigManager<T> {
 pub enum VirtioTransportError {
     DeviceStatusError,
     InvalidArgs,
-    NotEnoughResources,
 }
 
 bitflags::bitflags! {

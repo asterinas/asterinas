@@ -6,7 +6,11 @@ use core::{fmt::Debug, hint::spin_loop};
 use aster_network::{RxBuffer, TxBuffer};
 use aster_util::{field_ptr, slot_vec::SlotVec};
 use log::debug;
-use ostd::{arch::trap::TrapFrame, mm::VmWriter, sync::SpinLock};
+use ostd::{
+    arch::trap::TrapFrame,
+    mm::{VmReader, VmWriter},
+    sync::SpinLock,
+};
 use ostd_pod::Pod;
 
 use super::{
@@ -34,7 +38,6 @@ const QUEUE_EVENT: u16 = 2;
 
 /// Vsock device driver
 pub struct SocketDevice {
-    config: VirtioVsockConfig,
     guest_cid: u64,
 
     /// Virtqueue to receive packets.
@@ -48,7 +51,7 @@ pub struct SocketDevice {
 
 impl SocketDevice {
     /// Create a new vsock device
-    pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
+    pub(crate) fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
         let virtio_vsock_config = VirtioVsockConfig::new(transport.as_mut());
         debug!("virtio_vsock_config = {:?}", virtio_vsock_config);
         let guest_cid = field_ptr!(&virtio_vsock_config, VirtioVsockConfig, guest_cid_low)
@@ -70,7 +73,7 @@ impl SocketDevice {
         let mut rx_buffers = SlotVec::new();
         for i in 0..QUEUE_SIZE {
             let rx_pool = RX_BUFFER_POOL.get().unwrap();
-            let rx_buffer = RxBuffer::new(size_of::<VirtioVsockHdr>(), rx_pool);
+            let rx_buffer = RxBuffer::new(size_of::<VirtioVsockHdr>(), rx_pool).unwrap();
             let token = recv_queue.add_dma_buf(&[], &[&rx_buffer])?;
             assert_eq!(i, token);
             assert_eq!(rx_buffers.put(rx_buffer) as u16, i);
@@ -82,7 +85,6 @@ impl SocketDevice {
         }
 
         let mut device = Self {
-            config: virtio_vsock_config.read_once().unwrap(),
             guest_cid,
             send_queue,
             recv_queue,
@@ -189,8 +191,8 @@ impl SocketDevice {
         debug!("Sent packet {:?}. Op {:?}", header, header.op());
         debug!("buffer in send_packet_to_tx_queue: {:?}", buffer);
         let tx_buffer = {
-            let pool = TX_BUFFER_POOL.get().unwrap();
-            TxBuffer::new(header, buffer, pool)
+            let tx_pool = TX_BUFFER_POOL.get().unwrap();
+            TxBuffer::new(header, &mut VmReader::from(buffer).to_fallible(), tx_pool).unwrap()
         };
 
         let token = self.send_queue.add_dma_buf(&[&tx_buffer], &[])?;
@@ -274,7 +276,7 @@ impl SocketDevice {
         rx_buffer.set_packet_len(len as usize);
 
         let rx_pool = RX_BUFFER_POOL.get().unwrap();
-        let new_rx_buffer = RxBuffer::new(size_of::<VirtioVsockHdr>(), rx_pool);
+        let new_rx_buffer = RxBuffer::new(size_of::<VirtioVsockHdr>(), rx_pool).unwrap();
         self.add_rx_buffer(new_rx_buffer, token)?;
 
         Ok(rx_buffer)
@@ -326,7 +328,6 @@ impl SocketDevice {
 impl Debug for SocketDevice {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("SocketDevice")
-            .field("config", &self.config)
             .field("guest_cid", &self.guest_cid)
             .field("send_queue", &self.send_queue)
             .field("recv_queue", &self.recv_queue)

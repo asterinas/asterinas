@@ -35,7 +35,7 @@ bitflags! {
     /// The properties of input device.
     ///
     /// Ref: Linux input-event-codes.h
-    pub struct InputProp : u8 {
+    struct InputProp : u8 {
         /// Needs a pointer
         const POINTER           = 1 << 0;
         /// Direct input devices
@@ -52,19 +52,6 @@ bitflags! {
         const ACCELEROMETER     = 1 << 6;
     }
 }
-
-pub const SYN: u8 = 0x00;
-pub const KEY: u8 = 0x01;
-pub const REL: u8 = 0x02;
-pub const ABS: u8 = 0x03;
-pub const MSC: u8 = 0x04;
-pub const SW: u8 = 0x05;
-pub const LED: u8 = 0x11;
-pub const SND: u8 = 0x12;
-pub const REP: u8 = 0x14;
-pub const FF: u8 = 0x15;
-pub const PWR: u8 = 0x16;
-pub const FF_STATUS: u8 = 0x17;
 
 const QUEUE_SIZE: u16 = 64;
 
@@ -89,7 +76,7 @@ pub struct InputDevice {
 impl InputDevice {
     /// Create a new VirtIO-Input driver.
     /// msix_vector_left should at least have one element or n elements where n is the virtqueue amount
-    pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
+    pub(crate) fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
         let mut event_queue = VirtQueue::new(QUEUE_EVENT, QUEUE_SIZE, transport.as_mut())
             .expect("create event virtqueue failed");
         let status_queue = VirtQueue::new(QUEUE_STATUS, QUEUE_SIZE, transport.as_mut())
@@ -196,7 +183,7 @@ impl InputDevice {
         }
     }
 
-    pub fn query_config_id_name(&self) -> String {
+    fn query_config_id_name(&self) -> String {
         let size = self.select_config(InputConfigSelect::IdName, 0);
 
         let out = {
@@ -213,7 +200,7 @@ impl InputDevice {
         String::from_utf8(out).unwrap()
     }
 
-    pub fn query_config_prop_bits(&self) -> Option<InputProp> {
+    fn query_config_prop_bits(&self) -> Option<InputProp> {
         let size = self.select_config(InputConfigSelect::PropBits, 0);
         if size == 0 {
             return None;

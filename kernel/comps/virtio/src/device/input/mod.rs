@@ -27,6 +27,7 @@
 //
 
 pub mod device;
+
 use aster_util::safe_ptr::SafePtr;
 use ostd::io::IoMem;
 
@@ -37,14 +38,17 @@ pub const DEVICE_NAME: &str = "Virtio-Input";
 /// Select value used for `device::InputDevice::select_config`.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
-pub enum InputConfigSelect {
+enum InputConfigSelect {
     /// Invalid configuration selection.
+    #[expect(dead_code)]
     Unset = 0x00,
     /// Returns the name of the device, subsel is zero.
     IdName = 0x01,
     /// Returns the serial number of the device, subsel is zero.
+    #[expect(dead_code)]
     IdSerial = 0x02,
     /// Returns ID information of the device, subsel is zero.
+    #[expect(dead_code)]
     IdDevids = 0x03,
     /// Returns input properties of the device, subsel is zero.
     /// Individual bits in the bitmap correspond to INPUT_PROP_* constants used
@@ -58,12 +62,13 @@ pub enum InputConfigSelect {
     EvBits = 0x11,
     /// subsel specifies the absolute axis using ABS_* constants in the underlying
     /// evdev implementation. Information about the axis will be returned.
+    #[expect(dead_code)]
     AbsInfo = 0x12,
 }
 
 #[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
-pub struct VirtioInputConfig {
+struct VirtioInputConfig {
     /// write only
     select: u8,
     /// write only
@@ -97,7 +102,7 @@ struct AbsInfo {
 /// are filled according to the Linux input layer (evdev) interface.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct VirtioInputEvent {
+struct VirtioInputEvent {
     /// Event type.
     pub event_type: u16,
     /// Event code.
