@@ -4,6 +4,7 @@ use spin::Once;
 
 use crate::{
     fs::path::MountNamespace,
+    ipc::IpcNamespace,
     net::uts_ns::UtsNamespace,
     prelude::*,
     process::{CloneFlags, UserNamespace, posix_thread::PosixThread},
@@ -19,6 +20,7 @@ use crate::{
 pub struct NsProxy {
     uts_ns: Arc<UtsNamespace>,
     mnt_ns: Arc<MountNamespace>,
+    ipc_ns: Arc<IpcNamespace>,
 }
 
 impl NsProxy {
@@ -29,6 +31,7 @@ impl NsProxy {
             Arc::new(NsProxy {
                 uts_ns: UtsNamespace::get_init_singleton().clone(),
                 mnt_ns: MountNamespace::get_init_singleton().clone(),
+                ipc_ns: IpcNamespace::get_init_singleton().clone(),
             })
         })
     }
@@ -73,7 +76,10 @@ impl NsProxy {
             builder.mnt_ns(new_mnt_ns);
         }
 
-        // TODO: Support other namespaces.
+        if clone_ns_flags.contains(CloneFlags::CLONE_NEWIPC) {
+            let new_ipc_ns = self.ipc_ns.new_clone(user_ns.clone(), posix_thread)?;
+            builder.ipc_ns(new_ipc_ns);
+        }
 
         Ok(Arc::new(builder.build()))
     }
@@ -87,6 +93,11 @@ impl NsProxy {
     pub fn mnt_ns(&self) -> &Arc<MountNamespace> {
         &self.mnt_ns
     }
+
+    /// Returns the associated IPC namespace.
+    pub fn ipc_ns(&self) -> &Arc<IpcNamespace> {
+        &self.ipc_ns
+    }
 }
 
 /// A builder for creating a new `NsProxy` by selectively cloning namespaces
@@ -97,6 +108,7 @@ pub struct NsProxyBuilder<'a> {
     // Fields for new namespaces.
     uts_ns: Option<Arc<UtsNamespace>>,
     mnt_ns: Option<Arc<MountNamespace>>,
+    ipc_ns: Option<Arc<IpcNamespace>>,
 }
 
 impl<'a> NsProxyBuilder<'a> {
@@ -106,6 +118,7 @@ impl<'a> NsProxyBuilder<'a> {
             old_proxy,
             uts_ns: None,
             mnt_ns: None,
+            ipc_ns: None,
         }
     }
 
@@ -121,20 +134,29 @@ impl<'a> NsProxyBuilder<'a> {
         self
     }
 
+    /// Sets the new IPC namespace for the context being built.
+    pub fn ipc_ns(&mut self, ipc_ns: Arc<IpcNamespace>) -> &mut Self {
+        self.ipc_ns = Some(ipc_ns);
+        self
+    }
+
     /// Builds the new `NsProxy`.
     pub fn build(self) -> NsProxy {
         let Self {
             old_proxy,
             uts_ns: new_uts,
             mnt_ns: new_mnt,
+            ipc_ns: new_ipc,
         } = self;
 
         let new_uts = new_uts.unwrap_or_else(|| old_proxy.uts_ns.clone());
         let new_mnt = new_mnt.unwrap_or_else(|| old_proxy.mnt_ns.clone());
+        let new_ipc = new_ipc.unwrap_or_else(|| old_proxy.ipc_ns.clone());
 
         NsProxy {
             uts_ns: new_uts,
             mnt_ns: new_mnt,
+            ipc_ns: new_ipc,
         }
     }
 }
@@ -143,7 +165,9 @@ impl<'a> NsProxyBuilder<'a> {
 ///
 /// This method does _not_ check CLONE_NEWUSER since it's handled separately.
 pub fn check_unsupported_ns_flags(flags: CloneFlags) -> Result<()> {
-    const SUPPORTED_FLAGS: CloneFlags = CloneFlags::CLONE_NEWUTS.union(CloneFlags::CLONE_NEWNS);
+    const SUPPORTED_FLAGS: CloneFlags = CloneFlags::CLONE_NEWUTS
+        .union(CloneFlags::CLONE_NEWNS)
+        .union(CloneFlags::CLONE_NEWIPC);
 
     let unsupported_flags =
         (flags & CloneFlags::CLONE_NS_FLAGS) - SUPPORTED_FLAGS - CloneFlags::CLONE_NEWUSER;

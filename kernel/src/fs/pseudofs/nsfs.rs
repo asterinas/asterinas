@@ -331,7 +331,6 @@ pub enum NsType {
     Time,
     #[expect(unused)]
     Cgroup,
-    #[expect(unused)]
     Ipc,
     #[expect(unused)]
     Net,

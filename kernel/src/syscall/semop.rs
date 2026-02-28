@@ -65,7 +65,10 @@ fn do_sys_semtimedop(
         semops.push(user_space.read_val::<SemBuf>(tsops + size_of::<SemBuf>() * i)?);
     }
 
-    sem_op(sem_id, semops, timeout, ctx)?;
+    let ns_proxy = ctx.thread_local.borrow_ns_proxy();
+    let ipc_ns = ns_proxy.unwrap().ipc_ns().clone();
+
+    sem_op(sem_id, semops, timeout, &ipc_ns, ctx)?;
 
     Ok(SyscallReturn::Return(0))
 }
