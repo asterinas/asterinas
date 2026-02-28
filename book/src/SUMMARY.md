@@ -9,6 +9,13 @@
     * [Package Management](distro/popular-applications/package-management.md)
     * [Desktop Environment](distro/popular-applications/desktop-environment.md)
     * [Containerization](distro/popular-applications/containerization.md)
+    * [System Tools](distro/popular-applications/system-tools.md)
+    * [File Tools](distro/popular-applications/file-tools.md)
+    * [Network Tools](distro/popular-applications/network-tools.md)
+    * [Development Tools](distro/popular-applications/development-tools.md)
+    * [Database Tools](distro/popular-applications/database-tools.md)
+    * [Media Tools](distro/popular-applications/media-tools.md)
+    * [Security Tools](distro/popular-applications/security-tools.md)
 
 # Asterinas Kernel
 
