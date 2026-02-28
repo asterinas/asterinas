@@ -25,8 +25,8 @@
 //! the initialization of the entity that the PTE points to. This is taken care in this module.
 //!
 
-mod child;
 mod entry;
+mod pte_state;
 
 use core::{
     cell::SyncUnsafeCell,
@@ -36,8 +36,8 @@ use core::{
 };
 
 pub(in crate::mm) use self::{
-    child::{Child, ChildRef},
     entry::Entry,
+    pte_state::{PteState, PteStateRef},
 };
 use super::{PageTableConfig, PteTrait, nr_subpage_per_huge};
 use crate::{
@@ -59,7 +59,7 @@ use crate::{
 ///
 /// [`PageTableNode`] is read-only. To modify the page table node, lock and use
 /// [`PageTableGuard`].
-pub(super) type PageTableNode<C> = Frame<PageTablePageMeta<C>>;
+pub(crate) type PageTableNode<C> = Frame<PageTablePageMeta<C>>;
 
 impl<C: PageTableConfig> PageTableNode<C> {
     pub(super) fn level(&self) -> PagingLevel {
@@ -91,7 +91,7 @@ impl<C: PageTableConfig> PageTableNode<C> {
     /// # Panics
     ///
     /// Only top-level page tables can be activated using this function.
-    pub(crate) unsafe fn activate(&self) {
+    pub(super) unsafe fn activate(&self) {
         use crate::{
             arch::mm::{activate_page_table, current_page_table_paddr},
             mm::CachePolicy,
@@ -225,9 +225,9 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     ///
     /// The caller must ensure that:
     ///  1. The index must be within the bound;
-    ///  2. The PTE must represent a [`Child`] in the same [`PageTableConfig`]
+    ///  2. The PTE must represent a [`PteState`] in the same [`PageTableConfig`]
     ///     and at the right paging level (`self.level() - 1`).
-    ///  3. The page table node will have the ownership of the [`Child`]
+    ///  3. The page table node will have the ownership of the [`PteState`]
     ///     after this method.
     pub(super) unsafe fn write_pte(&mut self, idx: usize, pte: C::E) {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
@@ -262,25 +262,25 @@ impl<C: PageTableConfig> Drop for PageTableGuard<'_, C> {
 /// The metadata of any kinds of page table pages.
 /// Make sure the the generic parameters don't effect the memory layout.
 #[derive(Debug)]
-pub(in crate::mm) struct PageTablePageMeta<C: PageTableConfig> {
+pub(crate) struct PageTablePageMeta<C: PageTableConfig> {
     /// The number of valid PTEs. It is mutable if the lock is held.
-    pub nr_children: SyncUnsafeCell<u16>,
+    nr_children: SyncUnsafeCell<u16>,
     /// If the page table is detached from its parent.
     ///
     /// A page table can be detached from its parent while still being accessed,
     /// since we use a RCU scheme to recycle page tables. If this flag is set,
     /// it means that the parent is recycling the page table.
-    pub stray: SyncUnsafeCell<bool>,
+    stray: SyncUnsafeCell<bool>,
     /// The level of the page table page. A page table page cannot be
     /// referenced by page tables of different levels.
-    pub level: PagingLevel,
+    level: PagingLevel,
     /// The lock for the page table page.
-    pub lock: AtomicU8,
+    lock: AtomicU8,
     _phantom: core::marker::PhantomData<C>,
 }
 
 impl<C: PageTableConfig> PageTablePageMeta<C> {
-    pub fn new(level: PagingLevel) -> Self {
+    fn new(level: PagingLevel) -> Self {
         Self {
             nr_children: SyncUnsafeCell::new(0),
             stray: SyncUnsafeCell::new(false),
@@ -291,7 +291,7 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
     }
 }
 
-// FIXME: The safe APIs in the `page_table/node` module allow `Child::Frame`s with
+// FIXME: The safe APIs in the `page_table/node` module allow `PteState::Frame`s with
 // arbitrary addresses to be stored in the page table nodes. Therefore, they may not
 // be valid `C::Item`s. The soundness of the following `on_drop` implementation must
 // be reasoned in conjunction with the `page_table/cursor` implementation.

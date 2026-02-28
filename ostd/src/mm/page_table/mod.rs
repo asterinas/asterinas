@@ -24,11 +24,12 @@ use crate::{
     task::{atomic_mode::AsAtomicModeGuard, disable_preempt},
 };
 
-mod node;
-use node::*;
 mod cursor;
+mod node;
 
-pub(crate) use cursor::{Cursor, CursorMut, PageTableFrag};
+pub(in crate::mm) use cursor::PageTableFrag;
+pub(crate) use cursor::{Cursor, CursorMut};
+use node::*; // FIXME: Remove glob imports.
 
 #[cfg(ktest)]
 mod test;
@@ -56,12 +57,16 @@ pub enum PageTableError {
 ///
 /// # Safety
 ///
-/// The implementor must ensure that the `item_into_raw` and `item_from_raw`
-/// are implemented correctly so that:
-///  - `item_into_raw` consumes the ownership of the item;
+/// The implementor must ensure that `item_raw_info`, `item_into_raw`,
+/// `item_from_raw`, and `item_ref_from_raw` are implemented correctly so that:
+///  - `item_into_raw` is not overridden;
+///  - `item_raw_info` returns the exact same values as if called with
+///    `item_into_raw`;
 ///  - if the provided raw form matches the item that was consumed by
 ///    `item_into_raw`, `item_from_raw` restores the exact item that was
-///    consumed by `item_into_raw`.
+///    consumed by `item_into_raw`;
+///  - `item_ref_from_raw`, if called with the same argument, returns the same
+///    value.
 pub(crate) unsafe trait PageTableConfig:
     Clone + Debug + Send + Sync + 'static
 {
@@ -98,14 +103,23 @@ pub(crate) unsafe trait PageTableConfig:
     ///
     /// [`item_from_raw`]: PageTableConfig::item_from_raw
     /// [`item_into_raw`]: PageTableConfig::item_into_raw
-    type Item: Clone;
+    type Item: Send;
+    /// The reference type of the [`PageTableConfig::Item`].
+    type ItemRef<'a>;
+
+    /// Gets the physical address, the paging level, and the page property of
+    /// the item.
+    fn item_raw_info(item: &Self::Item) -> (Paddr, PagingLevel, PageProperty);
 
     /// Consumes the item and returns the physical address, the paging level,
     /// and the page property.
     ///
     /// The ownership of the item will be consumed, i.e., the item will be
     /// forgotten after this function is called.
-    fn item_into_raw(item: Self::Item) -> (Paddr, PagingLevel, PageProperty);
+    fn item_into_raw(item: Self::Item) -> (Paddr, PagingLevel, PageProperty) {
+        let item = core::mem::ManuallyDrop::new(item);
+        Self::item_raw_info(&*item)
+    }
 
     /// Restores the item from the physical address and the paging level.
     ///
@@ -125,11 +139,28 @@ pub(crate) unsafe trait PageTableConfig:
     ///  - the physical address and the paging level represent a page table
     ///    item or part of it (as described above);
     ///  - either the ownership of the item is properly transferred to the
-    ///    return value, or the return value is wrapped in a
-    ///    [`core::mem::ManuallyDrop`] that won't outlive the original item;
-    ///  - the [`super::PageFlags::AVAIL1`] flag is preserved, i.e., it is
-    ///    the same as that returned from [`PageTableConfig::item_into_raw`].
+    ///    return value;
+    ///  - the [`super::PrivilegedPageFlags::AVAIL1`] flag is preserved, i.e.,
+    ///    it is the same as that returned from
+    ///    [`PageTableConfig::item_into_raw`].
     unsafe fn item_from_raw(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self::Item;
+
+    /// Restores a reference to the item from the physical address and the
+    /// paging level.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    ///  - the physical address and the paging level represent a page table
+    ///    item or part of it (see also [`PageTableConfig::item_from_raw`]);
+    ///  - the returned reference `'a` does not outlive the original item;
+    ///  - the [`super::PrivilegedPageFlags::AVAIL1`] flag is preserved, as
+    ///    described in [`PageTableConfig::item_from_raw`].
+    unsafe fn item_ref_from_raw<'a>(
+        paddr: Paddr,
+        level: PagingLevel,
+        prop: PageProperty,
+    ) -> Self::ItemRef<'a>;
 }
 
 // Implement it so that we can comfortably use low level functions
@@ -335,7 +366,7 @@ impl PageTable<KernelPtConfig> {
         for i in KernelPtConfig::TOP_LEVEL_INDEX_RANGE {
             let root_entry = root_node.entry(i);
             let child = root_entry.to_ref();
-            let ChildRef::PageTable(pt) = child else {
+            let PteStateRef::PageTable(pt) = child else {
                 panic!("The kernel page table doesn't contain shared nodes");
             };
 

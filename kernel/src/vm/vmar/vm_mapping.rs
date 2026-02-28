@@ -400,10 +400,8 @@ impl VmMapping {
 
                     // If the forked child or parent immediately unmaps the page after
                     // the fork without accessing it, we are the only reference to the
-                    // frame. We can directly map the frame as writable without
-                    // copying. In this case, the reference count of the frame is 2 (
-                    // one for the mapping and one for the frame handle itself).
-                    let only_reference = frame.reference_count() == 2;
+                    // frame. We can directly map the frame as writable without copying.
+                    let only_reference = frame.reference_count() == 1;
 
                     let new_flags = PageFlags::W | PageFlags::ACCESSED | PageFlags::DIRTY;
 
@@ -416,6 +414,8 @@ impl VmMapping {
                     } else {
                         let new_frame = duplicate_frame(&frame)?;
                         prop.flags |= new_flags;
+                        cursor.unmap(PAGE_SIZE);
+                        cursor.jump(va.start).unwrap();
                         cursor.map(new_frame.into(), prop);
                         rss_delta.add(self.rss_type(), 1);
                     }

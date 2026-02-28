@@ -73,15 +73,18 @@ impl KVirtArea {
     }
 
     #[cfg(ktest)]
-    pub(in crate::mm) fn query(&self, addr: Vaddr) -> Option<super::MappedItem> {
+    pub fn query<'a, G: crate::task::atomic_mode::AsAtomicModeGuard>(
+        &'a self,
+        guard: &'a G,
+        addr: Vaddr,
+    ) -> Option<super::MappedItemRef<'a>> {
         use align_ext::AlignExt;
 
         assert!(self.start() <= addr && self.end() >= addr);
         let start = addr.align_down(PAGE_SIZE);
         let vaddr = start..start + PAGE_SIZE;
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-        let preempt_guard = disable_preempt();
-        let mut cursor = page_table.cursor(&preempt_guard, &vaddr).unwrap();
+        let mut cursor = page_table.cursor(guard, &vaddr).unwrap();
         cursor.query().unwrap().1
     }
 
@@ -117,8 +120,7 @@ impl KVirtArea {
         for frame in frames.into_iter() {
             // SAFETY: The constructor of the `KVirtArea` has already ensured
             // that this mapping does not affect kernel's memory safety.
-            unsafe { cursor.map(MappedItem::Tracked(Frame::from_unsized(frame), prop)) }
-                .expect("Failed to map frame in a new `KVirtArea`");
+            unsafe { cursor.map(MappedItem::Tracked(Frame::from_unsized(frame), prop)) };
         }
 
         Self { range }
@@ -167,7 +169,7 @@ impl KVirtArea {
             for (pa, level) in largest_pages::<KernelPtConfig>(va_range.start, pa_range.start, len)
             {
                 // SAFETY: The caller of `map_untracked_frames` has ensured the safety of this mapping.
-                let _ = unsafe { cursor.map(MappedItem::Untracked(pa, level, prop)) };
+                unsafe { cursor.map(MappedItem::Untracked(pa, level, prop)) };
             }
         }
 
@@ -184,6 +186,7 @@ impl Drop for KVirtArea {
         let mut cursor = page_table.cursor_mut(&preempt_guard, &range).unwrap();
         loop {
             // SAFETY: The range is under `KVirtArea` so it is safe to unmap.
+            // FIXME: Need to ensure that the unmapped item outlives the TLB entries.
             let Some(frag) = (unsafe { cursor.take_next(self.end() - cursor.virt_addr()) }) else {
                 break;
             };
