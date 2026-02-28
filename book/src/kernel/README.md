@@ -50,7 +50,7 @@ since `distro/README.md` references them -->
                 --network=host \
                 -v /dev:/dev \
                 -v $(pwd)/asterinas:/root/asterinas \
-                asterinas/asterinas:0.17.0-20260114
+                asterinas/asterinas:0.17.0-20260227
     ```
 
 3. Inside the container, go to the project folder to build and run Asterinas.
