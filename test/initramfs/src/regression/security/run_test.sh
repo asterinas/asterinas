@@ -9,6 +9,7 @@ set -e
 ./capability/execve
 
 ./namespace/cgroup_ns
+./namespace/ipc_ns_sem
 ./namespace/mnt_ns
 ./namespace/proc_nsfs
 ./namespace/setns
