@@ -131,7 +131,6 @@ struct SubController<T: SubControlStatic> {
     /// The parent sub-controller in the hierarchy.
     ///
     /// This field is used to traverse the controller hierarchy.
-    #[expect(dead_code)]
     parent: Option<Arc<SubController<T>>>,
 }
 
@@ -178,7 +177,7 @@ impl<T: SubControlStatic> TryGetSubControl for SubController<T> {
 /// The root node serves as the origin for all these control capabilities, so the sub-controllers
 /// it possesses are always active. For any other node, only if its parent node first enables a
 /// sub-control, its corresponding sub-controller will be activated.
-pub(super) struct Controller {
+pub struct Controller {
     /// A set of types of active sub-controllers.
     active_set: Mutex<SubCtrlSet>,
 
@@ -275,6 +274,39 @@ impl Controller {
     }
 }
 
+// For pid sub-controller
+impl Controller {
+    /// Charge a process in the pids sub-controller hierarchy.
+    ///
+    /// This operation is used for explicit migration and will not enforce
+    /// the `pids.max` limit.
+    ///
+    /// Reference: <https://docs.kernel.org/admin-guide/cgroup-v2.html#pid>
+    pub fn charge_pids(&self) {
+        let guard = self.pids.read();
+        let sub = guard.get();
+        sub.charge_hierarchy();
+    }
+
+    /// Tries to charge a process in the pids sub-controller hierarchy,
+    /// enforcing `pids.max` at each level.
+    ///
+    /// This is used at fork time. Returns `Err` if any ancestor's limit
+    /// would be exceeded; all intermediate charges are rolled back.
+    pub fn try_charge_pids(&self) -> Result<()> {
+        let guard = self.pids.read();
+        let sub = guard.get();
+        sub.try_charge_hierarchy()
+    }
+
+    /// Uncharges a process in the pids sub-controller hierarchy
+    pub fn uncharge_pids(&self) {
+        let guard = self.pids.read();
+        let sub = guard.get();
+        sub.uncharge_hierarchy();
+    }
+}
+
 /// A locked controller for a cgroup.
 ///
 /// Holding this lock indicates exclusive access to modify the sub-control state.
@@ -358,7 +390,18 @@ impl LockedController<'_> {
                     child_node.controller().cpuset.update(new_controller);
                 }
                 SubCtrlType::Pids => {
-                    let new_controller = SubController::new(Some(parent_controller));
+                    let new_controller: Arc<SubController<PidsController>> =
+                        SubController::new(Some(parent_controller));
+                    if let Some(inner) = new_controller.inner.as_ref() {
+                        // When the pids sub-controller is being activated, initialize
+                        // pids.current with the number of processes already present
+                        // in this cgroup's subtree. The parent's counter is already
+                        // correct because charges propagated through inactive levels.
+                        let count = child_node.count_subtree_processes();
+                        if count > 0 {
+                            inner.init_count(count);
+                        }
+                    }
                     child_node.controller().pids.update(new_controller);
                 }
             }
