@@ -2,6 +2,8 @@
 
 #![expect(dead_code)]
 
+use aster_block::bio::BioCompleteFn;
+
 use super::{
     block_group::{BlockGroup, RawGroupDescriptor},
     block_ptr::Ext2Bid,
@@ -320,10 +322,11 @@ impl Ext2 {
         &self,
         bid: Ext2Bid,
         bio_segment: BioSegment,
+        complete_fn: Option<BioCompleteFn>,
     ) -> Result<BioWaiter> {
-        let waiter = self
-            .block_device
-            .read_blocks_async(Bid::new(bid as u64), bio_segment)?;
+        let waiter =
+            self.block_device
+                .read_blocks_async(Bid::new(bid as u64), bio_segment, complete_fn)?;
         Ok(waiter)
     }
 
@@ -343,10 +346,11 @@ impl Ext2 {
         &self,
         bid: Ext2Bid,
         bio_segment: BioSegment,
+        complete_fn: Option<BioCompleteFn>,
     ) -> Result<BioWaiter> {
-        let waiter = self
-            .block_device
-            .write_blocks_async(Bid::new(bid as u64), bio_segment)?;
+        let waiter =
+            self.block_device
+                .write_blocks_async(Bid::new(bid as u64), bio_segment, complete_fn)?;
         Ok(waiter)
     }
 
@@ -377,6 +381,7 @@ impl Ext2 {
         bio_waiter.concat(self.block_device.write_blocks_async(
             super_block.group_descriptors_bid(0),
             group_descriptors_bio_segment.clone(),
+            None,
         )?);
         bio_waiter
             .wait()
@@ -396,6 +401,7 @@ impl Ext2 {
                 bio_waiter.concat(self.block_device.write_blocks_async(
                     super_block.group_descriptors_bid(idx as usize),
                     group_descriptors_bio_segment.clone(),
+                    None,
                 )?);
                 bio_waiter.wait().ok_or_else(|| {
                     Error::with_message(Errno::EIO, "failed to sync backup metadata")
