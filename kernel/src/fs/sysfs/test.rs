@@ -238,7 +238,7 @@ fn create_mock_systree_instance() {
     let _ = root.add_child(symlink1.clone() as Arc<dyn SysObj>);
 }
 
-// Initialize a SysFs instance using the mock systree.
+// Initialize a sysfs instance using the mock systree.
 fn init_sysfs_with_mock_tree() -> Arc<SysFs> {
     create_mock_systree_instance();
     SysFs::new_for_ktest()
@@ -246,7 +246,7 @@ fn init_sysfs_with_mock_tree() -> Arc<SysFs> {
 
 #[ktest]
 fn root_lookup() {
-    // Setup: Create SysFs instance backed by the mock systree
+    // Setup: Create a sysfs instance backed by the mock systree
     let sysfs = init_sysfs_with_mock_tree();
     let root_inode = sysfs.root_inode(); // Get the sysfs root inode
 

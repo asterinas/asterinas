@@ -59,7 +59,7 @@ impl FileSystem for SysFs {
     }
 
     fn sync(&self) -> Result<()> {
-        // Sysfs is volatile, sync is a no-op
+        // `SysFs` is volatile, sync is a no-op
         Ok(())
     }
 
