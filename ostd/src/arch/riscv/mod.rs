@@ -7,7 +7,7 @@
 pub mod boot;
 pub mod cpu;
 pub mod device;
-mod io;
+pub(crate) mod io;
 pub(crate) mod iommu;
 pub mod irq;
 pub(crate) mod mm;
