@@ -106,7 +106,7 @@ struct OverlayInode {
 }
 
 impl OverlayFs {
-    /// Creates a new OverlayFs instance.
+    /// Creates a new overlayfs instance.
     ///
     /// # Arguments
     /// * `upper` - The upper directory (writable layer)

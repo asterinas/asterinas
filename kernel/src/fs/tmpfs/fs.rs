@@ -11,7 +11,7 @@ use crate::{
 
 /// The temporary file system (tmpfs) structure.
 //
-// TODO: Currently, tmpfs is implemented as a thin wrapper around RamFs.
+// TODO: Currently, tmpfs is implemented as a thin wrapper around ramfs.
 // In the future we need to implement tmpfs-specific features such as
 // memory limits and swap support.
 pub struct TmpFs {

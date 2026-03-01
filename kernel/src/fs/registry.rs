@@ -48,9 +48,9 @@ bitflags! {
     pub struct FsProperties: u32 {
         /// Whether a FS needs to be backed by a disk.
         ///
-        /// Most persistent FSes such as Ext2 require disks.
-        /// But a volatile FS such as RamFs or
-        /// a pseudo FS such as SysFS does not.
+        /// Most persistent FSes such as ext2 require disks.
+        /// But a volatile FS such as ramfs or
+        /// a pseudo FS such as sysfs does not.
         const NEED_DISK = 1 << 1;
     }
 }

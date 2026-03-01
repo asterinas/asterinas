@@ -58,7 +58,7 @@ impl FileSystem for CgroupFs {
     }
 
     fn sync(&self) -> Result<()> {
-        // CgroupFs is volatile, sync is a no-op
+        // `CgroupFs` is volatile, sync is a no-op
         Ok(())
     }
 
