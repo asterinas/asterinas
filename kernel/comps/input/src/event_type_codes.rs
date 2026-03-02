@@ -345,6 +345,10 @@ pub enum KeyCode {
     VolumeDown = 114,
     VolumeUp = 115,
 
+    // Misc keys.
+    Power = 116,
+    Pause = 119,
+
     // Starting code of button events.
     BtnMisc = 0x100,
 
