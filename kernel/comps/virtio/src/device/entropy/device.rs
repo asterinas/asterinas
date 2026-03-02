@@ -42,7 +42,7 @@ pub struct EntropyDevice {
 }
 
 impl EntropyDevice {
-    pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
+    pub(crate) fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
         let request_queue =
             SpinLock::new(VirtQueue::new(0, ENTROPY_QUEUE_SIZE, transport.as_mut()).unwrap());
         let receive_buffer = DmaStream::alloc_uninit(ENTROPY_BUFFER_COUNT, false).unwrap();
