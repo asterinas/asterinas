@@ -130,7 +130,7 @@ impl InodeIo for PipeHandle {
 
 impl FileIo for PipeHandle {
     fn check_seekable(&self) -> Result<()> {
-        return_errno_with_message!(Errno::ESPIPE, "the inode is a FIFO file")
+        Ok(())
     }
 
     fn is_offset_aware(&self) -> bool {
