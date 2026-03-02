@@ -6,6 +6,7 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bitflags.workspace = true
 component.workspace = true
 font8x8.workspace = true
 int-to-c-enum.workspace = true

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Mode types.
+//! Modes and flags for the console and keyboard.
 
 use int_to_c_enum::TryFromInt;
 
@@ -36,4 +36,27 @@ pub enum KeyboardMode {
     Unicode = 3,
     /// The off mode (`K_OFF` in Linux).
     Off = 4,
+}
+
+bitflags::bitflags! {
+    /// The keyboard mode flags.
+    ///
+    /// Reference: <https://elixir.bootlin.com/linux/v6.17.4/source/include/linux/kbd_kern.h#L53-L58>.
+    pub struct KeyboardModeFlags: u8 {
+        /// The application key mode (`VC_APPLIC` in Linux).
+        const APPLICATION = 1 << 0;
+        /// The cursor key mode (`VC_CKMODE` in Linux).
+        const CURSOR_KEY = 1 << 1;
+        /// The repeat mode (`VC_REPEAT` in Linux).
+        const REPEAT = 1 << 2;
+        /// The CRLF mode (`VC_CRLF` in Linux).
+        ///
+        /// If set, the Enter key sends `\r\n`; otherwise, it sends `\r` only.
+        const CRLF   = 1 << 3;
+        /// The meta key mode (`VC_META` in Linux).
+        ///
+        /// If set, every input character has a prefix with `ESC` (0x1B) when the Alt key is
+        /// pressed.
+        const META   = 1 << 4;
+    }
 }
