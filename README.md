@@ -94,6 +94,39 @@ in data centers, autonomous vehicles, and embodied AI.
 
 ## Getting Started
 
+### Supported CPU Architectures
+
+Asterinas targets modern, 64-bit platforms only.
+
+A **development platform** is where you build and test Asterinas
+(i.e., the host machine running the Docker-based development environment).
+
+| Development Platform |
+| -------------------- |
+| x86-64               |
+
+A **deployment platform** is a CPU architecture
+that Asterinas can run on as an OS kernel.
+
+| Deployment Platform | Tier   |
+| ------------------- | ------ |
+| x86-64              | Tier 1 |
+| x86-64 (Intel TDX)  | Tier 2 |
+| RISC-V 64           | Tier 2 |
+| LoongArch 64        | Tier 3 |
+
+Tier definitions:
+- **Tier 1:** Fully supported and tested.
+  CI runs the full test suite on every PR.
+- **Tier 2:** Actively developed with basic functionality working.
+  CI runs build checks and basic tests on a regular basis
+  (per PR for RISC-V and nightly for Intel TDX),
+  but the full test suite is not yet covered.
+- **Tier 3:** Early-stage or experimental.
+  The kernel can boot and perform basic operations,
+  but CI coverage is limited and
+  may not include automated runtime tests for every pull request.
+
 ### For End Users
 
 We provide [Asterinas NixOS ISO Installer](https://github.com/asterinas/asterinas/releases)
