@@ -1,8 +1,6 @@
 name: Review PR with Codex
 
 on:
-  pull_request:
-    types: [opened, reopened]
   issue_comment:
     types: [created]
   workflow_dispatch:
@@ -13,18 +11,15 @@ on:
         type: number
 
 concurrency:
-  group: codex-review-pr-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number }}
+  group: codex-review-pr-${{ github.event.issue.number || inputs.pr_number }}
   cancel-in-progress: true
 
 jobs:
   review:
-    # pull_request: skip fork PRs (no secrets available).
     # issue_comment: only on PRs, only "@boterinas codex", only repo members.
     # workflow_dispatch: always allowed (for maintainer use).
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request &&
        contains(github.event.comment.body, '@boterinas codex') &&
@@ -54,10 +49,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             PR_NUMBER="${{ inputs.pr_number }}"
-          elif [ "${{ github.event_name }}" = "issue_comment" ]; then
-            PR_NUMBER="${{ github.event.issue.number }}"
           else
-            PR_NUMBER="${{ github.event.pull_request.number }}"
+            PR_NUMBER="${{ github.event.issue.number }}"
           fi
           echo "pr_number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
 
@@ -87,6 +80,14 @@ jobs:
         run: |
           git remote add base-repo "https://github.com/${{ github.repository }}.git"
           git fetch base-repo "${{ steps.pr_info.outputs.base_ref }}"
+
+      # Always use the base branch's schema so fork PRs cannot supply a
+      # crafted version, and so PRs predating the file still work.
+      - name: Restore Codex output schema from base
+        env:
+          BASE_SHA: ${{ steps.pr_info.outputs.base_sha }}
+        run: |
+          git checkout "$BASE_SHA" -- .github/codex-output-schema.json
 
       - name: Build prompt
         env:
