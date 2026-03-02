@@ -2,7 +2,9 @@ name: Review PR with Codex
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, reopened]
+  issue_comment:
+    types: [created]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -11,22 +13,40 @@ on:
         type: number
 
 concurrency:
-  group: codex-review-pr-${{ github.event.pull_request.number || inputs.pr_number }}
+  group: codex-review-pr-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number }}
   cancel-in-progress: true
 
 jobs:
   review:
-    # Skip PRs from forks — repository secrets are not available.
-    # Use workflow_dispatch to manually review fork PRs.
+    # pull_request: skip fork PRs (no secrets available).
+    # issue_comment: only on PRs, only "@boterinas codex", only repo members.
+    # workflow_dispatch: always allowed (for maintainer use).
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      github.event.pull_request.head.repo.full_name == github.repository
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '@boterinas codex') &&
+       (github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'COLLABORATOR'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
       pull-requests: write
     steps:
+      - name: React to trigger comment
+        if: github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api \
+            "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
+            --method POST \
+            -f content='eyes'
+
       - name: Get PR info
         id: pr_info
         env:
@@ -34,6 +54,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             PR_NUMBER="${{ inputs.pr_number }}"
+          elif [ "${{ github.event_name }}" = "issue_comment" ]; then
+            PR_NUMBER="${{ github.event.issue.number }}"
           else
             PR_NUMBER="${{ github.event.pull_request.number }}"
           fi
