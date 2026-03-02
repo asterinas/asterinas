@@ -54,6 +54,11 @@ impl IdAlloc {
             return None;
         }
 
+        let end = self.first_available_id.checked_add(count)?;
+        if end > self.bitset.len() {
+            return None;
+        }
+
         // Scan the bitmap from the position `first_available_id`
         // for the first `count` number of consecutive 0's.
         let allocated_range = {
@@ -161,5 +166,24 @@ impl Debug for IdAlloc {
             .field("len", &self.bitset.len())
             .field("first_available_id", &self.first_available_id)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::IdAlloc;
+
+    #[test]
+    fn bitmap_alloc_out_of_bounds() {
+        let capacity = 16;
+        let mut bitmap = IdAlloc::with_capacity(capacity);
+
+        for _ in 0..capacity {
+            assert!(bitmap.alloc().is_some());
+        }
+
+        // Allocating one more ID should fail since the
+        // bitmap's `first_available_id` + `count` is out of bounds.
+        assert!(bitmap.alloc_consecutive(1).is_none());
     }
 }

@@ -634,12 +634,12 @@ impl Process {
     /// This method does not perform permission checks on user signals.
     /// Therefore, unless the caller can ensure that there are no permission issues,
     /// this method should be used to enqueue kernel signals or fault signals.
-    pub fn enqueue_signal(&self, signal: impl Signal + Clone + 'static) {
+    pub fn enqueue_signal(&self, signal: Box<dyn Signal>) {
         if self.status.is_zombie() {
             return;
         }
 
-        self.sig_queues.enqueue(Box::new(signal));
+        self.sig_queues.enqueue(signal);
 
         for task in self.tasks.lock().as_slice() {
             let posix_thread = task.as_posix_thread().unwrap();
@@ -819,7 +819,7 @@ pub fn enqueue_signal_async(process: Weak<Process>, signum: SigNum) {
     work_queue::submit_work_func(
         move || {
             if let Some(process) = process.upgrade() {
-                process.enqueue_signal(KernelSignal::new(signum));
+                process.enqueue_signal(Box::new(KernelSignal::new(signum)));
             }
         },
         work_queue::WorkPriority::High,

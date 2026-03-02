@@ -337,7 +337,7 @@ impl<D: DmaDirection> Split for DmaStream<D> {
 
 impl<D: DmaDirection> Drop for DmaStream<D> {
     fn drop(&mut self) {
-        // SAFETY: The physical address range was prepeared in `map`.
+        // SAFETY: The physical address range was prepared in `map`.
         unsafe { unprepare_dma(&self.paddr_range(), self.map_daddr) };
     }
 }

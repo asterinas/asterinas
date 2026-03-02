@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: MPL-2.0
 
 SOURCES := $(wildcard *.sh)
-TARGETS := $(addprefix $(BUILD_DIR)/, $(SOURCES))
+TARGETS := $(addprefix $(OUTPUT_DIR)/, $(SOURCES))
 
 .PHONY: all
 all: $(TARGETS)
 
-$(BUILD_DIR)/%.sh: %.sh
+$(OUTPUT_DIR)/%.sh: %.sh
 	@cp $< $@

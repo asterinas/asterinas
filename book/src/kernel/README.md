@@ -25,16 +25,46 @@ thanks to the flexibility offered by [MPL](../).
 
 While the journey towards a production-grade OS kernel can be challenging,
 we are steadfastly progressing towards our goal.
-Currently, Asterinas only supports x86-64 VMs.
-However, [our aim for 2024](roadmap.md) is
-to make Asterinas production-ready on x86-64
-for both bare-metal and VM environments.
+
+## Supported CPU Architectures
+
+Asterinas targets modern, 64-bit platforms only.
+
+A **development platform** is where you build and test Asterinas
+(i.e., the host machine running the Docker-based development environment).
+
+| Development Platform |
+| -------------------- |
+| x86-64               |
+
+A **deployment platform** is a CPU architecture
+that Asterinas can run on as an OS kernel.
+
+| Deployment Platform | Tier   |
+| ------------------- | ------ |
+| x86-64              | Tier 1 |
+| x86-64 (Intel TDX)  | Tier 2 |
+| RISC-V 64           | Tier 2 |
+| LoongArch 64        | Tier 3 |
+
+- **Tier 1:** Fully supported and tested.
+  CI runs the full test suite on every PR.
+- **Tier 2:** Actively developed with basic functionality working.
+  CI runs build checks and basic tests on a regular basis
+  (per PR for RISC-V and nightly for Intel TDX),
+  but the full test suite is not yet covered.
+- **Tier 3:** Early-stage or experimental.
+  The kernel can boot and perform basic operations,
+  but CI coverage is limited and
+  may not include automated runtime tests for every pull request.
 
 ## Getting Started
 
 Get yourself an x86-64 Linux machine with Docker installed.
 Follow the three simple steps below to get Asterinas up and running.
 
+<!-- REMINDER: Be careful when editing the first two steps
+since `distro/README.md` references them -->
 1. Download the latest source code.
 
     ```bash
@@ -46,9 +76,9 @@ Follow the three simple steps below to get Asterinas up and running.
     ```bash
     docker run -it --privileged \
                 --network=host \
-                --device=/dev/kvm \
+                -v /dev:/dev \
                 -v $(pwd)/asterinas:/root/asterinas \
-                asterinas/asterinas:0.17.0-20260114
+                asterinas/asterinas:0.17.0-20260227
     ```
 
 3. Inside the container, go to the project folder to build and run Asterinas.

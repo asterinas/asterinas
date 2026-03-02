@@ -53,6 +53,7 @@ pub type Full = TRightSet<TRights![Dup, Read, Write, Exec, Signal]>;
 pub type ReadOp = TRights![Read];
 pub type WriteOp = TRights![Write];
 pub type ReadDupOp = TRights![Read, Dup];
+pub type ReadWriteOp = TRights![Read, Write];
 pub type FullOp = TRights![Read, Write, Dup];
 
 /// Wrapper for TRights, used to bypass an error message from the Rust compiler,

@@ -133,14 +133,6 @@ riscv64_pkgs:
 		-A apps.package \
 		-A syscall.ltp
 
-general_pkgs:
-	@nix-build \
-		nix/default.nix \
-		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
-		$(NIX_QUIET) \
-		--out-link /nix/var/nix/gcroots/auto/general \
-		-A apps.mongoose_src
-
 install_host_pkgs:
 	@nix-env \
 		--file nix/default.nix \

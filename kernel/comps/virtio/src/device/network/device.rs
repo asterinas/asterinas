@@ -1,24 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{
-    boxed::Box, collections::linked_list::LinkedList, string::ToString, sync::Arc, vec::Vec,
-};
+use alloc::{boxed::Box, string::ToString, sync::Arc, vec::Vec};
 use core::fmt::Debug;
 
 use aster_bigtcp::device::{Checksum, DeviceCapabilities, Medium};
-use aster_network::{AnyNetworkDevice, EthernetAddr, NetError, RX_BUFFER_POOL, RxBuffer, TxBuffer};
-use aster_softirq::BottomHalfDisabled;
+use aster_network::{AnyNetworkDevice, EthernetAddr, NetError, RxBuffer, TxBuffer};
 use aster_util::slot_vec::SlotVec;
 use log::{debug, warn};
-use ostd::{
-    arch::trap::TrapFrame,
-    mm::dma::{DmaStream, ToDevice},
-    sync::SpinLock,
-};
+use ostd::{arch::trap::TrapFrame, mm::VmReader, sync::SpinLock};
 
 use super::{config::VirtioNetConfig, header::VirtioNetHdr};
 use crate::{
-    device::{VirtioDeviceError, network::config::NetworkFeatures},
+    device::{
+        VirtioDeviceError,
+        network::{
+            buffer::{RX_BUFFER_POOL, TX_BUFFER_POOL},
+            config::NetworkFeatures,
+        },
+    },
     queue::{QueueError, VirtQueue},
     transport::{ConfigManager, VirtioTransport},
 };
@@ -71,7 +70,7 @@ impl NetworkDevice {
         network_features.bits()
     }
 
-    pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
+    pub(crate) fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
         let config_manager = VirtioNetConfig::new_manager(transport.as_ref());
         let config = config_manager.read_config();
         debug!("virtio_net_config = {:?}", config);
@@ -84,7 +83,7 @@ impl NetworkDevice {
         let caps = init_caps(&features, &config);
 
         let mut send_queue = VirtQueue::new(QUEUE_SEND, QUEUE_SIZE, transport.as_mut())
-            .expect("create send queue fails");
+            .expect("creating send queue fails");
         send_queue.disable_callback();
 
         let mut recv_queue = VirtQueue::new(QUEUE_RECV, QUEUE_SIZE, transport.as_mut())
@@ -95,7 +94,7 @@ impl NetworkDevice {
         let mut rx_buffers = SlotVec::new();
         for i in 0..QUEUE_SIZE {
             let rx_pool = RX_BUFFER_POOL.get().unwrap();
-            let rx_buffer = RxBuffer::new(size_of::<VirtioNetHdr>(), rx_pool);
+            let rx_buffer = RxBuffer::new(size_of::<VirtioNetHdr>(), rx_pool).unwrap();
             let token = recv_queue.add_dma_buf(&[], &[&rx_buffer])?;
             assert_eq!(i, token);
             assert_eq!(rx_buffers.put(rx_buffer) as u16, i);
@@ -185,7 +184,7 @@ impl NetworkDevice {
         // FIXME: Ideally, we can reuse the returned buffer without creating new buffer.
         // But this requires locking device to be compatible with smoltcp interface.
         let rx_pool = RX_BUFFER_POOL.get().unwrap();
-        let new_rx_buffer = RxBuffer::new(size_of::<VirtioNetHdr>(), rx_pool);
+        let new_rx_buffer = RxBuffer::new(size_of::<VirtioNetHdr>(), rx_pool).unwrap();
         self.add_rx_buffer(new_rx_buffer)?;
         Ok(rx_buffer)
     }
@@ -196,7 +195,13 @@ impl NetworkDevice {
             return Err(NetError::Busy);
         }
 
-        let tx_buffer = TxBuffer::new(&self.header, packet, &TX_BUFFER_POOL);
+        let tx_pool = TX_BUFFER_POOL.get().unwrap();
+        let tx_buffer = TxBuffer::new(
+            &self.header,
+            &mut VmReader::from(packet).to_fallible(),
+            tx_pool,
+        )
+        .unwrap();
 
         let token = self
             .send_queue
@@ -361,9 +366,6 @@ impl Debug for NetworkDevice {
             .finish()
     }
 }
-
-static TX_BUFFER_POOL: SpinLock<LinkedList<Arc<DmaStream<ToDevice>>>, BottomHalfDisabled> =
-    SpinLock::new(LinkedList::new());
 
 const QUEUE_RECV: u16 = 0;
 const QUEUE_SEND: u16 = 1;

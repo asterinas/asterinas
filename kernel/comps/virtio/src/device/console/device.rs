@@ -79,14 +79,14 @@ impl Debug for ConsoleDevice {
 }
 
 impl ConsoleDevice {
-    pub fn negotiate_features(features: u64) -> u64 {
+    pub(crate) fn negotiate_features(features: u64) -> u64 {
         let mut features = ConsoleFeatures::from_bits_truncate(features);
         // A virtio console device may have multiple ports, but we only use one port to communicate now.
         features.remove(ConsoleFeatures::VIRTIO_CONSOLE_F_MULTIPORT);
         features.bits()
     }
 
-    pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
+    pub(crate) fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
         let config_manager = VirtioConsoleConfig::new_manager(transport.as_ref());
         debug!("virtio_console_config = {:?}", config_manager.read_config());
 

@@ -4,17 +4,19 @@ use super::SyscallReturn;
 use crate::{prelude::*, process::Gid};
 
 pub fn sys_setfsgid(gid: i32, ctx: &Context) -> Result<SyscallReturn> {
-    debug!("gid = {}", gid);
-
-    let fsgid = if gid < 0 {
-        None
+    let fsgid = if gid >= 0 {
+        Some(Gid::new(gid.cast_unsigned()))
     } else {
-        Some(Gid::new(gid as u32))
+        None
     };
+
+    debug!("fsgid = {:?}", fsgid);
 
     let old_fsgid = {
         let credentials = ctx.posix_thread.credentials_mut();
-        credentials.set_fsgid(fsgid)?
+        credentials
+            .set_fsgid(fsgid)
+            .unwrap_or_else(|old_fsgid| old_fsgid)
     };
 
     Ok(SyscallReturn::Return(

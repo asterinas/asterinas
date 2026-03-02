@@ -83,6 +83,7 @@ use super::{
     pause::sys_pause,
     pidfd_getfd::sys_pidfd_getfd,
     pidfd_open::sys_pidfd_open,
+    pidfd_send_signal::sys_pidfd_send_signal,
     pipe::{sys_pipe, sys_pipe2},
     poll::sys_poll,
     ppoll::sys_ppoll,
@@ -405,6 +406,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_PREADV2 = 327          => sys_preadv2(args[..6]);
     SYS_PWRITEV2 = 328         => sys_pwritev2(args[..6]);
     SYS_STATX = 332            => sys_statx(args[..5]);
+    SYS_PIDFD_SEND_SIGNAL = 424 => sys_pidfd_send_signal(args[..4]);
     SYS_PIDFD_OPEN = 434       => sys_pidfd_open(args[..2]);
     SYS_CLONE3 = 435           => sys_clone3(args[..2], &user_ctx);
     SYS_CLOSE_RANGE = 436      => sys_close_range(args[..3]);

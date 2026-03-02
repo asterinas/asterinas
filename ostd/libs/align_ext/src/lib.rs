@@ -76,7 +76,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_align_up() {
+    fn align_up() {
         let input_ns = [0usize, 1, 2, 9, 15, 21, 32, 47, 50];
         let input_as = [2usize, 2, 2, 2, 4, 4, 8, 8, 8];
         let output_ns = [0usize, 2, 2, 10, 16, 24, 32, 48, 56];
@@ -90,7 +90,7 @@ mod test {
     }
 
     #[test]
-    fn test_align_down() {
+    fn align_down() {
         let input_ns = [0usize, 1, 2, 9, 15, 21, 32, 47, 50];
         let input_as = [2usize, 2, 2, 2, 4, 4, 8, 8, 8];
         let output_ns = [0usize, 0, 2, 8, 12, 20, 32, 40, 48];

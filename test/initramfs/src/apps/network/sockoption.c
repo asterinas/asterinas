@@ -7,7 +7,7 @@
 #include <netinet/tcp.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include "../test.h"
+#include "../common/test.h"
 
 int sk_unbound;
 int sk_listen;

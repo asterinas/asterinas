@@ -67,7 +67,7 @@ impl<M: AnyFrameMeta + ?Sized> UniqueFrame<M> {
         1
     }
 
-    /// Gets the dyncamically-typed metadata of this frame.
+    /// Gets the dynamically-typed metadata of this frame.
     ///
     /// If the type is known at compile time, use [`Frame::meta`] instead.
     pub fn dyn_meta(&self) -> &dyn AnyFrameMeta {
@@ -75,7 +75,7 @@ impl<M: AnyFrameMeta + ?Sized> UniqueFrame<M> {
         unsafe { &*self.slot().dyn_meta_ptr() }
     }
 
-    /// Gets the dyncamically-typed metadata of this frame.
+    /// Gets the dynamically-typed metadata of this frame.
     ///
     /// If the type is known at compile time, use [`Frame::meta`] instead.
     pub fn dyn_meta_mut(&mut self) -> &mut dyn AnyFrameMeta {

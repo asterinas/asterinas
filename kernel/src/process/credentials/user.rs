@@ -56,14 +56,8 @@ define_atomic_version_of_integer_like_type!(Uid, {
     pub(super) struct AtomicUid(AtomicU32);
 });
 
-impl AtomicUid {
-    pub fn is_root(&self) -> bool {
-        self.load(Ordering::Acquire).is_root()
-    }
-}
-
 impl Clone for AtomicUid {
     fn clone(&self) -> Self {
-        Self::new(self.load(Ordering::Acquire))
+        Self::new(self.load(Ordering::Relaxed))
     }
 }

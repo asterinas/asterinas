@@ -129,7 +129,7 @@ impl<Message: 'static> ProtocolSocketTable<Message> {
             let mut random_port = current!().pid();
             while random_port == UNSPECIFIED_PORT || self.unicast_sockets.contains_key(&random_port)
             {
-                getrandom(random_port.as_bytes_mut());
+                getrandom(random_port.as_mut_bytes());
             }
             random_port
         };

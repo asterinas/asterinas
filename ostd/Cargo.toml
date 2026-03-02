@@ -36,6 +36,7 @@ ostd-pod.workspace = true
 spin.workspace = true
 smallvec.workspace = true
 volatile.workspace = true
+zerocopy.workspace = true
 
 # The targets are chosen to prevent the generated machine code from using any
 # vector or floating-point registers.

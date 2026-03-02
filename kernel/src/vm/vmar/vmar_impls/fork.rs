@@ -19,13 +19,14 @@ impl Vmar {
     /// Creates a new VMAR whose content is inherited from another
     /// using copy-on-write (COW) technique.
     pub fn fork_from(vmar: &Self) -> Result<Arc<Self>> {
+        // Obtain the heap lock and hold it for the entire method to avoid race conditions.
+        let heap_guard = vmar.process_vm.heap().lock();
+
         let new_vmar = Arc::new(Vmar {
             inner: RwMutex::new(VmarInner::new()),
             vm_space: Arc::new(VmSpace::new()),
             rss_counters: array::from_fn(|_| PerCpuCounter::new()),
-            // FIXME: There are race conditions because `process_vm` is not operating under the
-            // `vmar.inner` lock.
-            process_vm: ProcessVm::fork_from(&vmar.process_vm),
+            process_vm: ProcessVm::fork_from(&vmar.process_vm, &heap_guard),
         });
 
         {
@@ -131,7 +132,7 @@ mod test {
     use super::*;
 
     #[ktest]
-    fn test_cow_copy_pt() {
+    fn cow_copy_pt_basic() {
         let vm_space = VmSpace::new();
         let map_range = PAGE_SIZE..(PAGE_SIZE * 2);
         let cow_range = 0..PAGE_SIZE * 512 * 512;
@@ -263,7 +264,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_cow_copy_pt_iomem() {
+    fn cow_copy_pt_iomem() {
         /// A very large address (1TiB) beyond typical physical memory for testing.
         const IOMEM_PADDR: usize = 0x100_000_000_000;
 

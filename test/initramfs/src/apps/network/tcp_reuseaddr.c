@@ -8,7 +8,7 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 
-#include "../test.h"
+#include "../common/test.h"
 
 int sock1;
 int sock2;

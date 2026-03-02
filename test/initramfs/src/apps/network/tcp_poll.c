@@ -11,7 +11,7 @@
 #include <fcntl.h>
 #include <stddef.h>
 
-#include "../test.h"
+#include "../common/test.h"
 
 #define S_PORT htons(0x1238)
 

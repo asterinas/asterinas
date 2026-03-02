@@ -539,7 +539,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_read_empty() {
+    fn read_empty() {
         test_blocking(
             |writer| {
                 assert_eq!(write(writer.as_ref(), &[1]).unwrap(), 1);
@@ -554,7 +554,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_write_full() {
+    fn write_full() {
         test_blocking(
             |writer| {
                 assert_eq!(write(writer.as_ref(), &[1, 2, 3]).unwrap(), 2);
@@ -572,7 +572,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_read_closed() {
+    fn read_closed() {
         test_blocking(
             drop,
             |reader| {
@@ -584,7 +584,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_write_closed() {
+    fn write_closed() {
         test_blocking(
             |writer| {
                 assert_eq!(write(writer.as_ref(), &[1, 2, 3]).unwrap(), 2);
@@ -599,7 +599,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_write_atomicity() {
+    fn write_atomicity() {
         test_blocking(
             |writer| {
                 assert_eq!(write(writer.as_ref(), &[1]).unwrap(), 1);

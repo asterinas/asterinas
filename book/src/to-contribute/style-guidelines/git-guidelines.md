@@ -1,1 +1,0 @@
-# Commit Guidelines

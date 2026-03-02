@@ -15,12 +15,19 @@ use crate::{error::Errno, error_msg};
 
 use quote::ToTokens;
 
-/// The version of OSTD on crates.io.
-///
-/// OSTD shares the same version with OSDK, so just use the version of OSDK here.
-pub const OSTD_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub fn ostd_dep() -> String {
-    format!("ostd = {{ version = \"{}\" }}", OSTD_VERSION)
+    if let Some("1") = option_env!("OSDK_LOCAL_DEV") {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("CARGO_MANIFEST_DIR should have a parent directory")
+            .join("ostd");
+        let path = path.to_string_lossy();
+        format!("ostd = {{ path = \"{}\" }}", path)
+    } else {
+        // OSTD shares the same version with OSDK, so just use the version of OSDK here.
+        const OSTD_VERSION: &str = env!("CARGO_PKG_VERSION");
+        format!("ostd = {{ version = \"{}\" }}", OSTD_VERSION)
+    }
 }
 
 fn cargo() -> Command {

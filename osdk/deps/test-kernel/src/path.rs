@@ -124,7 +124,7 @@ mod path_test {
     use super::*;
 
     #[ktest]
-    fn test_ktest_path() {
+    fn basics() {
         let mut path = KtestPath::new();
         path.push_back("a");
         path.push_back("b");
@@ -137,7 +137,7 @@ mod path_test {
     }
 
     #[ktest]
-    fn test_ktest_path_starts_with() {
+    fn starts_with() {
         let mut path = KtestPath::new();
         path.push_back("a");
         path.push_back("b");
@@ -152,7 +152,7 @@ mod path_test {
     }
 
     #[ktest]
-    fn test_ktest_path_ends_with() {
+    fn ends_with() {
         let mut path = KtestPath::new();
         path.push_back("a");
         path.push_back("b");
@@ -263,7 +263,7 @@ mod suffix_trie_test {
     ];
 
     #[ktest]
-    fn test_contains() {
+    fn contains() {
         let trie = SuffixTrie::from_paths(TEST_PATHS.iter().map(|&s| KtestPath::from(s)));
 
         assert!(trie.contains(KtestPath::from("e::f::g::a::b::c::d").iter()));
@@ -280,7 +280,7 @@ mod suffix_trie_test {
     }
 
     #[ktest]
-    fn test_matches() {
+    fn matches() {
         let trie = SuffixTrie::from_paths(TEST_PATHS.iter().map(|&s| KtestPath::from(s)));
 
         assert!(trie.matches(KtestPath::from("a::b::c::d").iter()));

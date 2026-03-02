@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 
-#include "../test.h"
+#include "../common/test.h"
 
 static struct sockaddr_nl sk_addr = { .nl_family = AF_NETLINK };
 

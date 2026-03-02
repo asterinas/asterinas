@@ -8,7 +8,7 @@ use core::arch::x86_64::{_fxrstor64, _fxsave64, _xrstor64, _xsave64};
 use bitflags::bitflags;
 use cfg_if::cfg_if;
 use log::debug;
-use ostd_pod::Pod;
+use ostd_pod::{FromZeros, IntoBytes};
 use spin::Once;
 use x86::bits64::segmentation::wrfsbase;
 use x86_64::registers::{
@@ -551,7 +551,7 @@ impl FpuContext {
 
     /// Returns the FPU context as a mutable byte slice.
     pub fn as_bytes_mut(&mut self) -> &mut [u8] {
-        &mut self.xsave_area.as_bytes_mut()[..self.area_size]
+        &mut self.xsave_area.as_mut_bytes()[..self.area_size]
     }
 }
 

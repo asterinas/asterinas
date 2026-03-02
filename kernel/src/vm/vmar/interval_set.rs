@@ -261,7 +261,7 @@ mod tests {
     }
 
     #[ktest]
-    fn test_insert_and_find_one() {
+    fn insert_and_find_one() {
         let mut set = IntervalSet::new();
         let interval = TestInterval { range: 10..20 };
         set.insert(interval.clone());
@@ -271,7 +271,7 @@ mod tests {
     }
 
     #[ktest]
-    fn test_remove() {
+    fn remove() {
         let mut set = IntervalSet::new();
         let interval = TestInterval { range: 10..20 };
         set.insert(interval.clone());
@@ -281,7 +281,7 @@ mod tests {
     }
 
     #[ktest]
-    fn test_iter() {
+    fn iter() {
         let mut set = IntervalSet::new();
         let interval1 = TestInterval { range: 10..20 };
         let interval2 = TestInterval { range: 30..40 };
@@ -293,7 +293,7 @@ mod tests {
     }
 
     #[ktest]
-    fn test_find() {
+    fn find() {
         let mut set = IntervalSet::new();
         let interval1 = TestInterval { range: 10..20 };
         let interval2 = TestInterval { range: 30..40 };
@@ -309,7 +309,7 @@ mod tests {
     }
 
     #[ktest]
-    fn test_take_one() {
+    fn take_one() {
         let mut set = IntervalSet::new();
         let interval1 = TestInterval { range: 10..20 };
         let interval2 = TestInterval { range: 20..30 };
@@ -321,7 +321,7 @@ mod tests {
     }
 
     #[ktest]
-    fn test_take() {
+    fn take() {
         let mut set = IntervalSet::new();
         let interval1 = TestInterval { range: 10..20 };
         let interval2 = TestInterval { range: 30..40 };
@@ -337,7 +337,7 @@ mod tests {
     }
 
     #[ktest]
-    fn test_clear() {
+    fn clear() {
         let mut set = IntervalSet::new();
         let interval1 = TestInterval { range: 10..20 };
         let interval2 = TestInterval { range: 20..30 };

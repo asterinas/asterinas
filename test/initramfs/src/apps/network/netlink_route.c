@@ -4,7 +4,7 @@
 #include <netlink/route/addr.h>
 #include <unistd.h>
 
-#include "../test.h"
+#include "../common/test.h"
 
 #define ETHER_NAME "eth0"
 #define LOOPBACK_NAME "lo"

@@ -511,7 +511,7 @@ mod test {
     use super::*;
 
     #[ktest]
-    fn test_rb_basics() {
+    fn basics() {
         let mut rb = RingBuffer::<i32>::new(4);
         rb.push(-100).unwrap();
         rb.push_slice(&[-1]).unwrap();
@@ -536,7 +536,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_rb_write_read_one() {
+    fn write_read_one() {
         let rb = RingBuffer::<u8>::new(1);
 
         let (mut prod, mut cons) = rb.split();
@@ -582,7 +582,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_rb_write_read_all() {
+    fn write_read_all() {
         let rb = RingBuffer::<u8>::new(4 * PAGE_SIZE);
         assert_eq!(rb.capacity(), 4 * PAGE_SIZE);
 

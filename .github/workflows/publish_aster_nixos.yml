@@ -12,7 +12,7 @@ jobs:
   push-cachix:
     runs-on: ubuntu-4-cores-150GB-ssd
     container:
-      image: asterinas/asterinas:0.17.0-20260114
+      image: asterinas/asterinas:0.17.0-20260227
       options: -v /dev:/dev --privileged
     timeout-minutes: 60
     steps:
@@ -91,9 +91,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build ISO
-        uses: addnab/docker-run-action@v3
+        uses: maus007/docker-run-action-fork@v1
         with:
-          image: asterinas/asterinas:0.17.0-20260114
+          image: asterinas/asterinas:0.17.0-20260227
           options: --privileged -v /dev:/dev -v ${{ github.workspace }}:/root/asterinas
           run: |
             export ASTER_BUILD_TIMESTAMP=`date '+%a %b %e %H:%M:%S %Z %Y'`

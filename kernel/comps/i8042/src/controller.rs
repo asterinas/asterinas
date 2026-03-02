@@ -170,7 +170,7 @@ impl I8042Controller {
             .get()
             .unwrap()
             .boot_flags
-            .is_some_and(|flags| !flags.motherboard_implements_8042())
+            .is_some_and(|flags| flags.motherboard_implements_8042())
     }
 
     /// Checks if the kernel command line contains the "i8042.exist" option.

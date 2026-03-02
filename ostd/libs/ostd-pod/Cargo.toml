@@ -1,0 +1,25 @@
+[package]
+name = "ostd-pod"
+# REMINDER: Whenever you change this number, 
+# update all occurrences of the version in README
+# (e.g., in external links and in the sample Cargo.toml).
+version = "0.4.0"
+description = "A trait for plain old data (POD)"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ostd-pod-macros = { path = "macros", version = "0.4.0", optional = true }
+padding-struct = { path = "../padding-struct", version = "0.2.0", optional = true }
+zerocopy.workspace = true
+
+[features]
+default = ["macros"]
+macros = ["ostd-pod-macros", "padding-struct"]
+
+[lints]
+workspace = true

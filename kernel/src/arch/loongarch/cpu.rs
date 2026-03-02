@@ -3,7 +3,6 @@
 use core::fmt;
 
 use ostd::{
-    Pod,
     arch::cpu::context::{CpuExceptionInfo, UserContext},
     cpu::PinCurrentCpu,
     task::DisabledPreemptGuard,
@@ -45,6 +44,7 @@ impl LinuxAbi for UserContext {
 /// Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/loongarch/include/uapi/asm/sigcontext.h#L20>
 #[repr(C)]
 #[repr(align(16))]
+#[padding_struct]
 #[derive(Clone, Copy, Debug, Default, Pod)]
 pub struct SigContext {
     pub pc: usize,

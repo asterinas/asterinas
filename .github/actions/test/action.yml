@@ -67,7 +67,7 @@ runs:
       run: |
         CMD=""
         [[ "${{ matrix.id }}" == "lint" ]] && CMD+="make check"
-        [[ "${{ matrix.id }}" == "compile" ]] && CMD+="make kernel FEATURES=all"
+        [[ "${{ matrix.id }}" == "compile" ]] && CMD+="make kernel"
         [[ "${{ matrix.id }}" == "usermode_test" ]] && CMD+="make test"
         [[ "${{ matrix.id }}" == "ktest" ]] && CMD+="make ktest NETDEV=tap"
         [[ -n "${{ inputs.arch }}" ]] && CMD+=" OSDK_TARGET_ARCH=${{ inputs.arch }}"

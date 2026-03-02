@@ -17,12 +17,11 @@
 //! One use case of `IdSet<I>` inside OSTD is
 //! to implement a set of CPU IDs.
 //! [`crate::cpu::CpuSet`] has been simply defined
-//! as a typa alias for `IdSet<CpuId>`.
+//! as a type alias for `IdSet<CpuId>`.
 
 use core::{
     fmt::Debug,
     marker::PhantomData,
-    mem::size_of,
     ops::{Bound, Range, RangeFrom, RangeFull, RangeTo, RangeToInclusive},
     sync::atomic::{AtomicU64, Ordering},
 };

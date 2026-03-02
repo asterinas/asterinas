@@ -9,53 +9,76 @@ use super::{
 };
 use crate::{
     prelude::*,
-    process::credentials::capabilities::{AtomicCapSet, CapSet},
+    process::credentials::{
+        AMBIENT_CAPSET, BOUNDING_CAPSET,
+        capabilities::{AtomicCapSet, CapSet},
+    },
 };
 
 #[derive(Debug)]
 pub(super) struct Credentials_ {
-    /// Real user id. The user to which the process belongs.
+    /// The real user ID.
+    ///
+    /// This is the user to which the process belongs.
     ruid: AtomicUid,
-    /// Effective user id. Used to determine the permissions granted to a process when it tries to perform various operations (i.e., system calls)
+    /// The effective user ID.
+    ///
+    /// This is used to determine the permissions granted to a process when it tries to perform
+    /// various operations (e.g., system calls).
     euid: AtomicUid,
-    /// Saved-set uid. Used by set_uid elf, the saved_set_uid will be set if the elf has setuid bit
+    /// The saved-set user ID.
+    ///
+    /// This saves a copy of the effective user ID that were set when the program was executed.
     suid: AtomicUid,
-    /// User id used for filesystem checks.
+    /// The filesystem user ID.
+    ///
+    /// This is used to determine permissions for accessing files.
     fsuid: AtomicUid,
 
-    /// Real group id. The group to which the process belongs
+    /// The real group ID.
+    ///
+    /// This is the group to which the process belongs.
     rgid: AtomicGid,
-    /// Effective gid,
+    /// The effective group ID.
+    ///
+    /// This is used to determine the permissions granted to a process when it tries to perform
+    /// various operations (e.g., system calls).
     egid: AtomicGid,
-    /// Saved-set gid. Used by set_gid elf, the saved_set_gid will be set if the elf has setgid bit
+    /// The saved-set group ID.
+    ///
+    /// This saves a copy of the effective group ID that were set when the program was executed.
     sgid: AtomicGid,
-    /// Group id used for file system checks.
+    /// The filesystem group ID.
+    ///
+    /// This is used to determine permissions for accessing files.
     fsgid: AtomicGid,
 
     /// A set of additional groups to which a process belongs.
     supplementary_gids: RwLock<BTreeSet<Gid>>,
 
-    /// The Linux capabilities.
-    ///
-    /// This is not the capability (in static_cap.rs) enforced on rust objects.
-    /// Capability that child processes can inherit
+    // The Linux capabilities. They are not the capability (in `static_cap.rs`) that is enforced on
+    // Rust objects.
+    //
+    /// Capabilities that child processes can inherit.
     inheritable_capset: AtomicCapSet,
-
     /// Capabilities that a process can potentially be granted.
-    /// It defines the maximum set of privileges that the process could possibly have.
-    /// Even if the process is not currently using these privileges, it has the potential ability to enable them.
+    ///
+    /// It defines the maximum set of privileges that the process could possibly have. Even if the
+    /// process is not currently using these privileges, it has the potential ability to enable
+    /// them.
     permitted_capset: AtomicCapSet,
-
-    /// Capability that we can actually use
+    /// Capabilities that we can actually use.
     effective_capset: AtomicCapSet,
 
-    /// Secure bits flags
+    /// Secure bits.
     securebits: AtomicSecureBits,
 }
 
 impl Credentials_ {
-    /// Create a new credentials. ruid, euid, suid will be set as the same uid, and gid is the same.
-    pub fn new(uid: Uid, gid: Gid, capset: CapSet) -> Self {
+    /// Creates a new `Credentials_`.
+    ///
+    /// The real, effective, saved set, and filesystem IDs will be initialized to the same ID.
+    pub(super) fn new(uid: Uid, gid: Gid, capset: CapSet) -> Self {
         let mut supplementary_gids = BTreeSet::new();
         supplementary_gids.insert(gid);
 
@@ -69,18 +92,14 @@ impl Credentials_ {
             sgid: AtomicGid::new(gid),
             fsgid: AtomicGid::new(gid),
             supplementary_gids: RwLock::new(supplementary_gids),
-            inheritable_capset: AtomicCapSet::new(capset),
+            inheritable_capset: AtomicCapSet::new(CapSet::empty()),
             permitted_capset: AtomicCapSet::new(capset),
             effective_capset: AtomicCapSet::new(capset),
             securebits: AtomicSecureBits::new(SecureBits::new_empty()),
         }
     }
 
-    fn is_privileged(&self) -> bool {
-        self.euid.is_root()
-    }
-
-    //  ******* Uid methods *******
+    //  ******* UID methods *******
 
     pub(super) fn ruid(&self) -> Uid {
         self.ruid.load(Ordering::Relaxed)
@@ -98,43 +117,25 @@ impl Credentials_ {
         self.fsuid.load(Ordering::Relaxed)
     }
 
-    pub(super) fn keep_capabilities(&self) -> bool {
-        self.securebits.load(Ordering::Relaxed).keep_capabilities()
-    }
-
-    pub(super) fn set_uid(&self, uid: Uid) {
-        if self.is_privileged() {
+    pub(super) fn set_uid(&self, uid: Uid) -> Result<()> {
+        if self.effective_capset().contains(CapSet::SETUID) {
             self.set_resuid_unchecked(Some(uid), Some(uid), Some(uid));
+            Ok(())
         } else {
-            // Unprivileged processes can only switch between ruid, euid, suid
-            if uid != self.ruid.load(Ordering::Relaxed)
-                && uid != self.euid.load(Ordering::Relaxed)
-                && uid != self.suid.load(Ordering::Relaxed)
-            {
-                // No permission to set to this UID
-                return;
-            }
-            self.set_resuid_unchecked(None, Some(uid), None)
+            self.set_resuid(None, Some(uid), None)
         }
-
-        self.set_fsuid_unchecked(uid)
     }
 
     pub(super) fn set_reuid(&self, ruid: Option<Uid>, euid: Option<Uid>) -> Result<()> {
         self.check_uid_perm(ruid.as_ref(), euid.as_ref(), None, false)?;
 
         let should_set_suid = ruid.is_some() || euid.is_some_and(|euid| euid != self.ruid());
-
-        self.set_resuid_unchecked(ruid, euid, None);
-
-        if should_set_suid {
-            self.suid.store(self.euid(), Ordering::Release);
-        }
-
-        // FIXME: should we set fsuid here? The linux document for syscall `setfsuid` is contradictory
-        // with the document of syscall `setreuid`. The `setfsuid` document says the `fsuid` is always
-        // the same as `euid`, but `setreuid` does not mention the `fsuid` should be set.
-        self.set_fsuid_unchecked(self.euid());
+        let suid = if should_set_suid {
+            Some(euid.unwrap_or_else(|| self.euid()))
+        } else {
+            None
+        };
+        self.set_resuid_unchecked(ruid, euid, suid);
 
         Ok(())
     }
@@ -149,28 +150,24 @@ impl Credentials_ {
 
         self.set_resuid_unchecked(ruid, euid, suid);
 
-        self.set_fsuid_unchecked(self.euid());
-
         Ok(())
     }
 
-    pub(super) fn set_fsuid(&self, fsuid: Option<Uid>) -> Result<Uid> {
+    pub(super) fn set_fsuid(&self, fsuid: Option<Uid>) -> core::result::Result<Uid, Uid> {
         let old_fsuid = self.fsuid();
 
         let Some(fsuid) = fsuid else {
             return Ok(old_fsuid);
         };
 
-        if self.is_privileged() {
-            self.fsuid.store(fsuid, Ordering::Release);
+        if self.effective_capset().contains(CapSet::SETUID) {
+            self.set_fsuid_unchecked(fsuid);
             return Ok(old_fsuid);
         }
 
         if fsuid != self.ruid() && fsuid != self.euid() && fsuid != self.suid() {
-            return_errno_with_message!(
-                Errno::EPERM,
-                "fsuid can only be one of old ruid, old euid and old suid."
-            )
+            // The new filesystem UID is not one of the associated UIDs.
+            return Err(old_fsuid);
         }
 
         self.set_fsuid_unchecked(fsuid);
@@ -184,10 +181,38 @@ impl Credentials_ {
 
     pub(super) fn set_suid(&self, suid: Uid) {
         self.set_resuid_unchecked(None, None, Some(suid));
+
+        // Begin to adjust capabilities.
+        // Reference: The "Transformation of capabilities during execve()" section and
+        // the "Capabilities and execution of programs by root" section in
+        // <https://man7.org/linux/man-pages/man7/capabilities.7.html>.
+
+        let (file_permitted, file_inheritable) =
+            if (self.euid().is_root() || self.ruid().is_root()) && !self.securebits().no_root() {
+                (CapSet::all(), CapSet::all())
+            } else {
+                // TODO: Get the file capabilities from the file system.
+                (CapSet::empty(), CapSet::empty())
+            };
+
+        let file_effective = if self.euid().is_root() && !self.securebits().no_root() {
+            CapSet::all()
+        } else {
+            // TODO: Get the file capabilities from the file system.
+            CapSet::empty()
+        };
+
+        let new_permitted = (self.inheritable_capset() & file_inheritable)
+            | (file_permitted & BOUNDING_CAPSET)
+            | AMBIENT_CAPSET;
+        let new_effective = (file_effective & new_permitted) | (!file_effective & AMBIENT_CAPSET);
+
+        self.set_permitted_capset(new_permitted);
+        self.set_effective_capset(new_effective);
     }
 
-    // For `setreuid`, ruid can *NOT* be set to old suid,
-    // while for `setresuid`, ruid can be set to old suid.
+    // For `setreuid`, the real UID can *NOT* be set to the old saved-set user ID,
+    // For `setresuid`, the real UID can be set to the old saved-set user ID.
     fn check_uid_perm(
         &self,
         ruid: Option<&Uid>,
@@ -195,7 +220,7 @@ impl Credentials_ {
         suid: Option<&Uid>,
         ruid_may_be_old_suid: bool,
     ) -> Result<()> {
-        if self.is_privileged() {
+        if self.effective_capset().contains(CapSet::SETUID) {
             return Ok(());
         }
 
@@ -206,7 +231,7 @@ impl Credentials_ {
         {
             return_errno_with_message!(
                 Errno::EPERM,
-                "ruid can only be one of old ruid, old euid (and old suid)."
+                "the new real UID is not one of the associated UIDs"
             );
         }
 
@@ -217,7 +242,7 @@ impl Credentials_ {
         {
             return_errno_with_message!(
                 Errno::EPERM,
-                "euid can only be one of old ruid, old euid and old suid."
+                "the new effective UID is not one of the associated UIDs"
             )
         }
 
@@ -228,7 +253,7 @@ impl Credentials_ {
         {
             return_errno_with_message!(
                 Errno::EPERM,
-                "suid can only be one of old ruid, old euid and old suid."
+                "the new saved-set UID is not one of the associated UIDs"
             )
         }
 
@@ -261,45 +286,43 @@ impl Credentials_ {
             old_suid
         };
 
+        self.set_fsuid_unchecked(new_euid);
+
         // If the `SECBIT_NO_SETUID_FIXUP` bit is set, do not adjust capabilities.
         // Reference: The "SECBIT_NO_SETUID_FIXUP" section in
-        // https://man7.org/linux/man-pages/man7/capabilities.7.html
+        // <https://man7.org/linux/man-pages/man7/capabilities.7.html>.
         if self.securebits().no_setuid_fixup() {
             return;
         }
 
         // Begin to adjust capabilities.
         // Reference: The "Effect of user ID changes on capabilities" section in
-        // https://man7.org/linux/man-pages/man7/capabilities.7.html
+        // <https://man7.org/linux/man-pages/man7/capabilities.7.html>.
+
         let had_root = old_ruid.is_root() || old_euid.is_root() || old_suid.is_root();
         let all_nonroot = !new_ruid.is_root() && !new_euid.is_root() && !new_suid.is_root();
+        if had_root && all_nonroot && !self.keep_capabilities() {
+            self.set_permitted_capset(CapSet::empty());
+            self.set_inheritable_capset(CapSet::empty());
+            // TODO: Clear ambient capabilities when we support it. Note that ambient capabilities
+            // should be cleared even if `keep_capabilities` is true.
+        }
 
-        if had_root && all_nonroot {
-            if !self.keep_capabilities() {
-                self.set_permitted_capset(CapSet::empty());
-                self.set_inheritable_capset(CapSet::empty());
-                // TODO: Also need to clear ambient capabilities when we support it
-            }
-
+        if old_euid.is_root() && !new_euid.is_root() {
             self.set_effective_capset(CapSet::empty());
-        } else {
-            if old_euid.is_root() && !new_euid.is_root() {
-                self.set_effective_capset(CapSet::empty());
-            }
-
-            if !old_euid.is_root() && new_euid.is_root() {
-                let permitted = self.permitted_capset();
-                self.set_effective_capset(permitted);
-            }
+        } else if !old_euid.is_root() && new_euid.is_root() {
+            let permitted = self.permitted_capset();
+            self.set_effective_capset(permitted);
         }
     }
 
     fn set_fsuid_unchecked(&self, fsuid: Uid) {
-        let old_uid = self.fsuid.swap(fsuid, Ordering::Relaxed);
+        let old_fsuid = self.fsuid();
+        self.fsuid.store(fsuid, Ordering::Relaxed);
 
-        if old_uid.is_root() && !fsuid.is_root() {
+        if old_fsuid.is_root() && !fsuid.is_root() {
             // Reference: The "Effect of user ID changes on capabilities" section in
-            // https://man7.org/linux/man-pages/man7/capabilities.7.html
+            // <https://man7.org/linux/man-pages/man7/capabilities.7.html>.
             let cap_to_remove = CapSet::CHOWN
                 | CapSet::DAC_OVERRIDE
                 | CapSet::FOWNER
@@ -313,7 +336,7 @@ impl Credentials_ {
         }
     }
 
-    //  ******* Gid methods *******
+    //  ******* GID methods *******
 
     pub(super) fn rgid(&self) -> Gid {
         self.rgid.load(Ordering::Relaxed)
@@ -331,15 +354,12 @@ impl Credentials_ {
         self.fsgid.load(Ordering::Relaxed)
     }
 
-    pub(super) fn set_gid(&self, gid: Gid) {
-        if self.is_privileged() {
-            self.rgid.store(gid, Ordering::Relaxed);
-            self.egid.store(gid, Ordering::Relaxed);
-            self.sgid.store(gid, Ordering::Relaxed);
-            self.fsgid.store(gid, Ordering::Relaxed);
+    pub(super) fn set_gid(&self, gid: Gid) -> Result<()> {
+        if self.effective_capset().contains(CapSet::SETGID) {
+            self.set_resgid_unchecked(Some(gid), Some(gid), Some(gid));
+            Ok(())
         } else {
-            self.egid.store(gid, Ordering::Relaxed);
-            self.fsgid.store(gid, Ordering::Relaxed);
+            self.set_resgid(None, Some(gid), None)
         }
     }
 
@@ -347,14 +367,12 @@ impl Credentials_ {
         self.check_gid_perm(rgid.as_ref(), egid.as_ref(), None, false)?;
 
         let should_set_sgid = rgid.is_some() || egid.is_some_and(|egid| egid != self.rgid());
-
-        self.set_resgid_unchecked(rgid, egid, None);
-
-        if should_set_sgid {
-            self.sgid.store(self.egid(), Ordering::Relaxed);
-        }
-
-        self.fsgid.store(self.egid(), Ordering::Relaxed);
+        let sgid = if should_set_sgid {
+            Some(egid.unwrap_or_else(|| self.egid()))
+        } else {
+            None
+        };
+        self.set_resgid_unchecked(rgid, egid, sgid);
 
         Ok(())
     }
@@ -369,56 +387,45 @@ impl Credentials_ {
 
         self.set_resgid_unchecked(rgid, egid, sgid);
 
-        self.fsgid.store(self.egid(), Ordering::Relaxed);
-
         Ok(())
     }
 
-    pub(super) fn set_fsgid(&self, fsgid: Option<Gid>) -> Result<Gid> {
+    pub(super) fn set_fsgid(&self, fsgid: Option<Gid>) -> core::result::Result<Gid, Gid> {
         let old_fsgid = self.fsgid();
 
         let Some(fsgid) = fsgid else {
             return Ok(old_fsgid);
         };
 
-        if self.is_privileged() {
-            self.fsgid.store(fsgid, Ordering::Relaxed);
+        if fsgid == old_fsgid {
+            return Ok(old_fsgid);
+        }
+
+        if self.effective_capset().contains(CapSet::SETGID) {
+            self.set_fsgid_unchecked(fsgid);
             return Ok(old_fsgid);
         }
 
         if fsgid != self.rgid() && fsgid != self.egid() && fsgid != self.sgid() {
-            return_errno_with_message!(
-                Errno::EPERM,
-                "fsuid can only be one of old ruid, old euid and old suid."
-            )
+            // The new filesystem GID is not one of the associated GIDs.
+            return Err(old_fsgid);
         }
 
-        self.fsgid.store(fsgid, Ordering::Relaxed);
+        self.set_fsgid_unchecked(fsgid);
 
         Ok(old_fsgid)
     }
 
     pub(super) fn set_egid(&self, egid: Gid) {
-        self.egid.store(egid, Ordering::Relaxed);
+        self.set_resgid_unchecked(None, Some(egid), None);
     }
 
     pub(super) fn set_sgid(&self, sgid: Gid) {
-        self.sgid.store(sgid, Ordering::Relaxed);
+        self.set_resgid_unchecked(None, None, Some(sgid));
     }
 
-    pub(super) fn set_keep_capabilities(&self, keep_capabilities: bool) -> Result<()> {
-        let current_bits = self.securebits();
-        let stored_bits = if !keep_capabilities {
-            current_bits - SecureBits::KEEP_CAPS
-        } else {
-            current_bits | SecureBits::KEEP_CAPS
-        };
-
-        self.securebits.try_store(stored_bits, Ordering::Relaxed)
-    }
-
-    // For `setregid`, rgid can *NOT* be set to old sgid,
-    // while for `setresgid`, ruid can be set to old sgid.
+    // For `setregid`, the real GID can *NOT* be set to the old saved-set GID,
+    // For `setresgid`, the real GID can be set to the old saved-set GID.
     fn check_gid_perm(
         &self,
         rgid: Option<&Gid>,
@@ -426,7 +433,7 @@ impl Credentials_ {
         sgid: Option<&Gid>,
         rgid_may_be_old_sgid: bool,
     ) -> Result<()> {
-        if self.is_privileged() {
+        if self.effective_capset().contains(CapSet::SETGID) {
             return Ok(());
         }
 
@@ -437,7 +444,7 @@ impl Credentials_ {
         {
             return_errno_with_message!(
                 Errno::EPERM,
-                "rgid can only be one of old rgid, old egid (and old sgid)."
+                "the new real GID is not one of the associated GIDs"
             );
         }
 
@@ -448,7 +455,7 @@ impl Credentials_ {
         {
             return_errno_with_message!(
                 Errno::EPERM,
-                "egid can only be one of old rgid, old egid and old sgid."
+                "the new effective GID is not one of the associated GIDs"
             )
         }
 
@@ -459,7 +466,7 @@ impl Credentials_ {
         {
             return_errno_with_message!(
                 Errno::EPERM,
-                "sgid can only be one of old rgid, old egid and old sgid."
+                "the new saved-set GID is not one of the associated GIDs"
             )
         }
 
@@ -478,9 +485,15 @@ impl Credentials_ {
         if let Some(sgid) = sgid {
             self.sgid.store(sgid, Ordering::Relaxed);
         }
+
+        self.set_fsgid_unchecked(self.egid());
     }
 
-    //  ******* Supplementary groups methods *******
+    fn set_fsgid_unchecked(&self, fsuid: Gid) {
+        self.fsgid.store(fsuid, Ordering::Relaxed);
+    }
+
+    //  ******* Supplementary Groups methods *******
 
     pub(super) fn groups(&self) -> RwLockReadGuard<'_, BTreeSet<Gid>, PreemptDisabled> {
         self.supplementary_gids.read()
@@ -490,7 +503,7 @@ impl Credentials_ {
         self.supplementary_gids.write()
     }
 
-    //  ******* Linux Capability methods *******
+    //  ******* Linux Capabilities methods *******
 
     pub(super) fn inheritable_capset(&self) -> CapSet {
         self.inheritable_capset.load(Ordering::Relaxed)
@@ -519,7 +532,22 @@ impl Credentials_ {
             .store(effective_capset, Ordering::Relaxed);
     }
 
-    //  ******* SecureBits methods *******
+    pub(super) fn keep_capabilities(&self) -> bool {
+        self.securebits.load(Ordering::Relaxed).keep_capabilities()
+    }
+
+    pub(super) fn set_keep_capabilities(&self, keep_capabilities: bool) -> Result<()> {
+        let current_bits = self.securebits();
+        let stored_bits = if !keep_capabilities {
+            current_bits - SecureBits::KEEP_CAPS
+        } else {
+            current_bits | SecureBits::KEEP_CAPS
+        };
+
+        self.securebits.try_store(stored_bits, Ordering::Relaxed)
+    }
+
+    //  ******* Secure Bits methods *******
 
     pub(super) fn securebits(&self) -> SecureBits {
         self.securebits.load(Ordering::Relaxed)
@@ -529,7 +557,7 @@ impl Credentials_ {
         if !self.effective_capset().contains(CapSet::SETPCAP) {
             return_errno_with_message!(
                 Errno::EPERM,
-                "only threads with CAP_SETPCAP can change securebits"
+                "only threads with CAP_SETPCAP can change secure bits"
             );
         }
 

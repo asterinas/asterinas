@@ -52,7 +52,6 @@ impl Vmar {
 /// to overlap with any existing mapping, either.
 pub struct VmarMapOptions<'a> {
     parent: &'a Vmar,
-    vmo: Option<Arc<Vmo>>,
     mappable: Option<Mappable>,
     path: Option<Path>,
     perms: VmPerms,
@@ -74,7 +73,6 @@ impl<'a> VmarMapOptions<'a> {
     pub fn new(parent: &'a Vmar, size: usize, perms: VmPerms) -> Self {
         Self {
             parent,
-            vmo: None,
             mappable: None,
             path: None,
             perms,
@@ -116,30 +114,37 @@ impl<'a> VmarMapOptions<'a> {
     ///     oversized mappings can reserve space for future expansions.
     ///
     /// The [`Vmo`] of a mapping will be implicitly set if [`Self::mappable`] is
-    /// set with a [`Mappable::Inode`].
+    /// set with a [`Mappable::Vmo`].
     ///
     /// # Panics
     ///
-    /// This function panics if a [`Mappable`] is already provided.
+    /// This function panics if a [`Vmo`] or [`Mappable`] is already provided.
     pub fn vmo(mut self, vmo: Arc<Vmo>) -> Self {
         if self.mappable.is_some() {
             panic!("Cannot set `vmo` when `mappable` is already set");
         }
-        self.vmo = Some(vmo);
+        self.mappable = Some(Mappable::Vmo(vmo));
 
         self
     }
 
     /// Sets the [`Path`] of the mapping.
     ///
+    /// If a [`Vmo`] is specified, the inode behind the [`Path`] must have
+    /// the [`Vmo`] as the page cache.
+    ///
+    /// The [`Path`] of a mapping will be implicitly set if [`Self::mappable`]
+    /// is set.
+    ///
     /// # Panics
     ///
-    /// This function panics if a [`Mappable`] is already provided.
+    /// This function panics if a [`Path`] is already provided.
     pub fn path(mut self, path: Path) -> Self {
-        if self.mappable.is_some() {
-            panic!("Cannot set `path` when `mappable` is already set");
+        if self.path.is_some() {
+            panic!("Cannot set `path` when `path` is already set");
         }
         self.path = Some(path);
+
         self
     }
 
@@ -206,37 +211,30 @@ impl<'a> VmarMapOptions<'a> {
         self
     }
 
-    /// Binds memory to map based on the [`Mappable`] enum.
+    /// Binds the file's [`Mappable`] object to the mapping and sets the
+    /// [`Path`] of the mapping.
     ///
     /// This method accepts file-specific details, like a page cache (inode)
     /// or I/O memory, but not both simultaneously.
     ///
     /// # Panics
     ///
-    /// This function panics if a [`Vmo`], [`Path`] or [`Mappable`] is already provided.
+    /// This function panics if a [`Vmo`], [`Mappable`], or [`Path`] is already
+    /// provided.
     ///
     /// # Errors
     ///
     /// This function returns an error if the file does not have a corresponding
-    /// mappable object of [`crate::fs::file_handle::Mappable`].
+    /// mappable object of [`Mappable`].
     pub fn mappable(mut self, file: &dyn FileLike) -> Result<Self> {
-        if self.vmo.is_some() {
-            panic!("Cannot set `mappable` when `vmo` is already set");
+        if self.mappable.is_some() {
+            panic!("Cannot set `mappable` when `mappable` is already set");
         }
         if self.path.is_some() {
             panic!("Cannot set `mappable` when `path` is already set");
         }
-        if self.mappable.is_some() {
-            panic!("Cannot set `mappable` when `mappable` is already set");
-        }
 
         let mappable = file.mappable()?;
-
-        // Verify whether the page cache inode is valid.
-        if let Mappable::Inode(ref inode) = mappable {
-            self.vmo = Some(inode.page_cache().expect("Map an inode without page cache"));
-        }
-
         self.mappable = Some(mappable);
         self.path = Some(file.path().clone());
 
@@ -252,7 +250,6 @@ impl<'a> VmarMapOptions<'a> {
         self.check_options()?;
         let Self {
             parent,
-            vmo,
             mappable,
             path,
             perms,
@@ -310,40 +307,29 @@ impl<'a> VmarMapOptions<'a> {
         };
 
         // Parse the `Mappable` and prepare the `MappedMemory`.
-        let (mapped_mem, inode, io_mem) = if let Some(mappable) = mappable {
-            // Handle the memory backed by device or page cache.
-            match mappable {
-                Mappable::Inode(inode) => {
-                    let is_writable_tracked = if let Some(memfd_inode) =
-                        inode.downcast_ref::<MemfdInode>()
-                        && is_shared
-                        && may_perms.contains(VmPerms::MAY_WRITE)
-                    {
-                        memfd_inode.check_writable(perms, &mut may_perms)?;
-                        true
-                    } else {
-                        false
-                    };
-
-                    // Since `Mappable::Inode` is provided, it is
-                    // reasonable to assume that the VMO is provided.
-                    let mapped_mem = MappedMemory::Vmo(MappedVmo::new(
-                        vmo.unwrap(),
-                        vmo_offset,
-                        is_writable_tracked,
-                    )?);
-                    (mapped_mem, Some(inode), None)
+        let (mapped_mem, io_mem) = match mappable {
+            Some(Mappable::Vmo(vmo)) => {
+                if let Some(ref path) = path {
+                    debug_assert!(Arc::ptr_eq(&vmo, &path.inode().page_cache().unwrap()));
                 }
-                Mappable::IoMem(iomem) => (MappedMemory::Device, None, Some(iomem)),
+
+                let is_writable_tracked = if let Some(ref path) = path
+                    && let Some(memfd_inode) = path.inode().downcast_ref::<MemfdInode>()
+                    && is_shared
+                    && may_perms.contains(VmPerms::MAY_WRITE)
+                {
+                    memfd_inode.check_writable(perms, &mut may_perms)?;
+                    true
+                } else {
+                    false
+                };
+
+                let mapped_mem =
+                    MappedMemory::Vmo(MappedVmo::new(vmo, vmo_offset, is_writable_tracked)?);
+                (mapped_mem, None)
             }
-        } else if let Some(vmo) = vmo {
-            (
-                MappedMemory::Vmo(MappedVmo::new(vmo, vmo_offset, false)?),
-                None,
-                None,
-            )
-        } else {
-            (MappedMemory::Anonymous, None, None)
+            Some(Mappable::IoMem(io_mem)) => (MappedMemory::Device, Some(io_mem)),
+            None => (MappedMemory::Anonymous, None),
         };
 
         // Build the mapping.
@@ -351,7 +337,6 @@ impl<'a> VmarMapOptions<'a> {
             NonZeroUsize::new(map_size).unwrap(),
             map_to_addr,
             mapped_mem,
-            inode,
             path,
             is_shared,
             handle_page_faults_around,
@@ -365,7 +350,7 @@ impl<'a> VmarMapOptions<'a> {
         // Exchange the operation is ok since we hold the write lock on the
         // VMAR.
         if let Some(io_mem) = io_mem {
-            vm_mapping.populate_device(parent.vm_space(), io_mem, vmo_offset)?;
+            vm_mapping.populate_device(parent.vm_space(), io_mem, vmo_offset);
         }
 
         // Add the mapping to the VMAR.

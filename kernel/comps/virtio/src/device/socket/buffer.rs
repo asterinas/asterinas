@@ -1,25 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{collections::linked_list::LinkedList, sync::Arc};
+use alloc::sync::Arc;
 
 use aster_network::dma_pool::DmaPool;
-use aster_softirq::BottomHalfDisabled;
-use ostd::{
-    mm::dma::{DmaStream, FromDevice, ToDevice},
-    sync::SpinLock,
-};
+use ostd::mm::dma::{FromDevice, ToDevice};
 use spin::Once;
 
 const RX_BUFFER_LEN: usize = 4096;
-pub static RX_BUFFER_POOL: Once<Arc<DmaPool<FromDevice>>> = Once::new();
-pub static TX_BUFFER_POOL: Once<
-    SpinLock<LinkedList<Arc<DmaStream<ToDevice>>>, BottomHalfDisabled>,
-> = Once::new();
+const TX_BUFFER_LEN: usize = 4096;
 
-pub fn init() {
-    const POOL_INIT_SIZE: usize = 32;
+pub(super) static RX_BUFFER_POOL: Once<Arc<DmaPool<FromDevice>>> = Once::new();
+pub(super) static TX_BUFFER_POOL: Once<Arc<DmaPool<ToDevice>>> = Once::new();
+
+pub(super) fn init() {
+    const POOL_INIT_SIZE: usize = 0;
     const POOL_HIGH_WATERMARK: usize = 64;
+
     RX_BUFFER_POOL
         .call_once(|| DmaPool::new(RX_BUFFER_LEN, POOL_INIT_SIZE, POOL_HIGH_WATERMARK, false));
-    TX_BUFFER_POOL.call_once(|| SpinLock::new(LinkedList::new()));
+    TX_BUFFER_POOL
+        .call_once(|| DmaPool::new(TX_BUFFER_LEN, POOL_INIT_SIZE, POOL_HIGH_WATERMARK, false));
 }

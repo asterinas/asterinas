@@ -7,7 +7,7 @@ use crate::{
         ProcessFilter, kill, kill_all, kill_group,
         signal::{
             sig_num::SigNum,
-            signals::user::{UserSignal, UserSignalKind},
+            signals::{Signal, user::UserSignal},
         },
     },
 };
@@ -27,16 +27,14 @@ pub fn sys_kill(process_filter: u64, sig_num: u64, ctx: &Context) -> Result<Sysc
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn do_sys_kill(filter: ProcessFilter, sig_num: Option<SigNum>, ctx: &Context) -> Result<()> {
-    let signal = sig_num.map(|sig_num| {
-        let pid = ctx.process.pid();
-        let uid = ctx.posix_thread.credentials().ruid();
-        UserSignal::new(sig_num, UserSignalKind::Kill, pid, uid)
-    });
+fn do_sys_kill(filter: ProcessFilter, sig_num: Option<SigNum>, ctx: &Context) -> Result<()> {
+    let signal = sig_num.map(|sig_num| UserSignal::new_kill(sig_num, ctx));
 
     match filter {
         ProcessFilter::Any => kill_all(signal, ctx)?,
-        ProcessFilter::WithPid(pid) => kill(pid, signal, ctx)?,
+        ProcessFilter::WithPid(pid) => {
+            kill(pid, signal.map(|s| Box::new(s) as Box<dyn Signal>), ctx)?
+        }
         ProcessFilter::WithPgid(pgid) => kill_group(pgid, signal, ctx)?,
         ProcessFilter::WithPidfd(_) => unreachable!(),
     }

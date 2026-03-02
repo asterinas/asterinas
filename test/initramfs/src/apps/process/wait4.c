@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#include "../test.h"
+#include "../common/test.h"
 
 #include <stdlib.h>
 #include <sys/types.h>

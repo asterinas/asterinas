@@ -1,0 +1,77 @@
+{
+  "type": "object",
+  "properties": {
+    "findings": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000
+          },
+          "confidence_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3
+          },
+          "code_location": {
+            "type": "object",
+            "properties": {
+              "absolute_file_path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "line_range": {
+                "type": "object",
+                "properties": {
+                  "start": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "end": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": ["start", "end"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["absolute_file_path", "line_range"],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "title",
+          "body",
+          "confidence_score",
+          "priority",
+          "code_location"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 10000
+    }
+  },
+  "required": [
+    "findings",
+    "summary"
+  ],
+  "additionalProperties": false
+}

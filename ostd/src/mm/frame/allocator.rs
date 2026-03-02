@@ -106,7 +106,7 @@ impl FrameAllocOptions {
 }
 
 #[cfg(ktest)]
-#[ktest]
+#[ktest(expect_redundant_test_prefix)]
 fn test_alloc_dealloc() {
     // Here we allocate and deallocate frames in random orders to test the allocator.
     // We expect the test to fail if the underlying implementation panics.

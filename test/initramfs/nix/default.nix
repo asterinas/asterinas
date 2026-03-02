@@ -23,7 +23,7 @@ let
   };
 in rec {
   # Packages needed by initramfs
-  apps = pkgs.callPackage ./apps.nix { testPlatform = basicTestPlatform; };
+  apps = pkgs.callPackage ./apps { testPlatform = basicTestPlatform; };
   busybox = pkgs.busybox;
   benchmark = pkgs.callPackage ./benchmark { };
   syscall = pkgs.callPackage ./syscall {

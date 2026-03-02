@@ -7,7 +7,6 @@ ProcCpuinfo.RequiredFieldsArePresent
 ProcCpuinfo.DeniesWriteNonRoot
 ProcFilesystems.OverflowID
 ProcFilesystems.PresenceOfShmMaxMniAll
-ProcMounts.IsSymlink
 ProcPid.AccessDeny
 ProcPidCwd.Subprocess
 ProcPidRoot.Subprocess
@@ -31,8 +30,6 @@ ProcSelfFdInfo.Flags
 # TODO: Mappings created with only `PROT_WRITE` should be shown as `-w-`.
 ProcSelfMaps.Map2
 ProcSelfMaps.MapUnmap
-ProcSelfMounts.ContainsProcfsEntry
-ProcSelfMounts.RequiredFieldsArePresent
 ProcSelfRoot.IsRoot
 ProcSelfStat.PopulateWriteRSS
 ProcSysKernelHostname.Exists

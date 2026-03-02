@@ -39,8 +39,9 @@ mod default_heap_allocator {
     // SAFETY: The name does not collide with other symbols.
     #[unsafe(no_mangle)]
     #[linkage = "weak"]
-    #[expect(non_snake_case)]
-    fn __GLOBAL_HEAP_SLOT_INFO_FROM_LAYOUT(layout: core::alloc::Layout) -> Option<ostd::mm::heap::SlotInfo> {
+    fn __global_heap_slot_info_from_layout(
+        layout: core::alloc::Layout,
+    ) -> Option<ostd::mm::heap::SlotInfo> {
         type_from_layout(layout)
     }
 }

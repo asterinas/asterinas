@@ -8,7 +8,7 @@
 
 set -e
 
-VSOCK_DIR=/test/vsock
+VSOCK_DIR=/test/network/vsock
 cd ${VSOCK_DIR}
 
 echo "Start vsock test......"

@@ -3,10 +3,12 @@
 //! The virtio of Asterinas.
 #![no_std]
 #![deny(unsafe_code)]
-#![feature(trait_alias)]
 #![feature(linked_list_cursors)]
+#![feature(trait_alias)]
 
 extern crate alloc;
+#[macro_use]
+extern crate ostd_pod;
 
 use alloc::boxed::Box;
 use core::hint::spin_loop;
@@ -21,7 +23,7 @@ use device::{
     entropy::{self, device::EntropyDevice},
     input::device::InputDevice,
     network::device::NetworkDevice,
-    socket::{self, device::SocketDevice},
+    socket::device::SocketDevice,
 };
 use log::{error, warn};
 use spin::Once;
@@ -43,10 +45,13 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
 
     // Find all devices and register them to the corresponding crate
     transport::init();
+
+    device::network::init();
+    device::socket::init();
+
     // For entropy table static init
     entropy::init();
-    // For vsock table static init
-    socket::init();
+
     while let Some(mut transport) = pop_device_transport() {
         // Reset device
         transport

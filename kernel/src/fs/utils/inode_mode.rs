@@ -254,7 +254,7 @@ mod test {
     use ostd::prelude::*;
 
     #[ktest]
-    fn test_mkmod_and_chmod() {
+    fn mkmod_and_chmod() {
         let mode0 = mkmod!(a+rw);
         assert!(mode0.bits() == 0o666);
 

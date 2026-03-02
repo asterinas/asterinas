@@ -9,7 +9,7 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 
-#include "../test.h"
+#include "../common/test.h"
 
 static int sk_unbound;
 static int sk_bound;

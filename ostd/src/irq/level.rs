@@ -115,6 +115,6 @@ cpu_local_cell! {
     /// | `0b10_1` | L2 (L1 from user)   |
     ///
     /// This compact encoding allows us to update this value
-    /// in a single arithematic operation (see `enter`).
+    /// in a single arithmetic operation (see `enter`).
     static INTERRUPT_LEVEL: u8 = 0;
 }

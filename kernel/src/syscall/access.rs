@@ -63,7 +63,7 @@ bitflags! {
     }
 }
 
-pub fn do_faccessat(
+fn do_faccessat(
     dirfd: FileDesc,
     path_ptr: Vaddr,
     mode: u16,

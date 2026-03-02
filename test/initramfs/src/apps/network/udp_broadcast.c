@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include "../test.h"
+#include "../common/test.h"
 
 #define SENDER_BIND_ADDR "127.0.0.1"
 #define SENDER_PORT 12345

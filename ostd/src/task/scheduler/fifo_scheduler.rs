@@ -2,9 +2,7 @@
 
 use alloc::{boxed::Box, collections::VecDeque, sync::Arc, vec::Vec};
 
-use super::{
-    EnqueueFlags, LocalRunQueue, Scheduler, UpdateFlags, info::CommonSchedInfo, inject_scheduler,
-};
+use super::{EnqueueFlags, LocalRunQueue, Scheduler, UpdateFlags, info::CommonSchedInfo};
 use crate::{
     cpu::{CpuId, PinCurrentCpu, num_cpus},
     sync::SpinLock,
@@ -12,10 +10,9 @@ use crate::{
     util::id_set::Id,
 };
 
-pub fn init() {
+pub(super) fn new_instance() -> &'static dyn Scheduler {
     let fifo_scheduler = Box::new(FifoScheduler::default());
-    let scheduler = Box::<FifoScheduler<Task>>::leak(fifo_scheduler);
-    inject_scheduler(scheduler);
+    Box::<FifoScheduler<Task>>::leak(fifo_scheduler)
 }
 
 /// A simple FIFO (First-In-First-Out) task scheduler.

@@ -108,6 +108,11 @@ impl IdBitmap {
             return None;
         }
 
+        let end = self.first_available_id.checked_add(count)?;
+        if end > self.len {
+            return None;
+        }
+
         // Scan the bitmap from the position `first_available_id`
         // for the first `count` number of consecutive 0's.
         let allocated_range = {
@@ -189,5 +194,31 @@ impl Debug for IdBitmap {
             .field("len", &self.len)
             .field("first_available_id", &self.first_available_id)
             .finish()
+    }
+}
+
+#[cfg(ktest)]
+mod test {
+    use alloc::vec;
+
+    use aster_block::BLOCK_SIZE;
+    use ostd::prelude::ktest;
+
+    use super::IdBitmap;
+
+    #[ktest]
+    fn bitmap_alloc_out_of_bounds() {
+        let buf = vec![0; BLOCK_SIZE].into_boxed_slice();
+
+        let capacity = BLOCK_SIZE as u16 * 8;
+        let mut bitmap = IdBitmap::from_buf(buf, capacity);
+
+        for _ in 0..capacity {
+            assert!(bitmap.alloc().is_some());
+        }
+
+        // Allocating one more ID should fail since the
+        // bitmap's `first_available_id` + `count` is out of bounds.
+        assert!(bitmap.alloc_consecutive(1).is_none());
     }
 }

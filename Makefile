@@ -99,13 +99,9 @@ CARGO_OSDK_BUILD_ARGS += --kcmd-args="EXTRA_BLOCKLISTS_DIRS=$(EXTRA_BLOCKLISTS_D
 CARGO_OSDK_BUILD_ARGS += --init-args="/opt/syscall_test/run_syscall_test.sh"
 else ifeq ($(AUTO_TEST), test)
 ENABLE_BASIC_TEST := true
-	ifneq ($(SMP), 1)
-	CARGO_OSDK_BUILD_ARGS += --kcmd-args="BLOCK_UNSUPPORTED_SMP_TESTS=1"
-	endif
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="INTEL_TDX=$(INTEL_TDX)"
 CARGO_OSDK_BUILD_ARGS += --init-args="/test/run_general_test.sh"
 else ifeq ($(AUTO_TEST), boot)
-ENABLE_BASIC_TEST := true
 CARGO_OSDK_BUILD_ARGS += --init-args="/test/boot_hello.sh"
 else ifeq ($(AUTO_TEST), vsock)
 ENABLE_BASIC_TEST := true
@@ -212,7 +208,10 @@ NON_OSDK_CRATES := \
 	ostd/libs/linux-bzimage/boot-params \
 	ostd/libs/linux-bzimage/builder \
 	ostd/libs/ostd-macros \
+	ostd/libs/ostd-pod \
+	ostd/libs/ostd-pod/macros \
 	ostd/libs/ostd-test \
+	ostd/libs/padding-struct \
 	kernel/libs/aster-rights \
 	kernel/libs/aster-rights-proc \
 	kernel/libs/atomic-integer-wrapper \
@@ -275,8 +274,8 @@ $(CARGO_OSDK): $(OSDK_SRC_FILES)
 .PHONY: check_osdk
 check_osdk:
 	@# Run clippy on OSDK with and without the test configuration.
-	@cd osdk && cargo clippy --no-deps -- -D warnings
-	@cd osdk && cargo clippy --tests --no-deps -- -D warnings
+	@cd osdk && RUSTFLAGS="-Dwarnings" cargo clippy --no-deps
+	@cd osdk && RUSTFLAGS="-Dwarnings" cargo clippy --tests --no-deps
 
 .PHONY: test_osdk
 test_osdk:
@@ -468,8 +467,8 @@ check: initramfs $(CARGO_OSDK)
 	@for dir in $(NON_OSDK_CRATES); do \
 		echo "Checking $$dir"; \
 		# Run clippy on each crate with and without the test configuration. \
-		(cd $$dir && cargo clippy --no-deps -- -D warnings) || exit 1; \
-		(cd $$dir && cargo clippy --tests --no-deps -- -D warnings) || exit 1; \
+		(cd $$dir && RUSTFLAGS="-Dwarnings" cargo clippy --no-deps) || exit 1; \
+		(cd $$dir && RUSTFLAGS="-Dwarnings" cargo clippy --tests --no-deps) || exit 1; \
 	done
 	@for dir in $(OSDK_CRATES); do \
 		echo "Checking $$dir"; \
@@ -477,8 +476,8 @@ check: initramfs $(CARGO_OSDK)
 		# in other architectures. \
 		[ "$$dir" = "ostd/libs/linux-bzimage/setup" ] && [ "$(OSDK_TARGET_ARCH)" != "x86_64" ] && continue; \
 		# Run clippy on each crate with and without the ktest configuration. \
-		(cd $$dir && cargo osdk clippy -- --no-deps -- -D warnings) || exit 1; \
-		(cd $$dir && cargo osdk clippy --ktests -- --no-deps -- -D warnings) || exit 1; \
+		(cd $$dir && RUSTFLAGS="-Dwarnings" cargo osdk clippy -- --no-deps) || exit 1; \
+		(cd $$dir && RUSTFLAGS="-Dwarnings" cargo osdk clippy --ktests -- --no-deps) || exit 1; \
 	done
 	@
 	@# Check formatting issues of the C code and Nix files (regression tests)

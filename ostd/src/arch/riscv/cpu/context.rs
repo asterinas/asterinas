@@ -5,7 +5,7 @@
 use alloc::boxed::Box;
 use core::{arch::global_asm, fmt::Debug};
 
-use ostd_pod::Pod;
+use ostd_pod::IntoBytes;
 use riscv::{
     interrupt::supervisor::{Exception, Interrupt},
     register::scause::Trap,
@@ -375,9 +375,9 @@ impl FpuContext {
     /// Returns the FPU context as a mutable byte slice.
     pub fn as_bytes_mut(&mut self) -> &mut [u8] {
         match self {
-            Self::F(ctx) => ctx.as_bytes_mut(),
-            Self::D(ctx) => ctx.as_bytes_mut(),
-            Self::Q(ctx) => ctx.as_bytes_mut(),
+            Self::F(ctx) => ctx.as_mut_bytes(),
+            Self::D(ctx) => ctx.as_mut_bytes(),
+            Self::Q(ctx) => ctx.as_mut_bytes(),
             Self::None => &mut [],
         }
     }
@@ -399,6 +399,7 @@ pub struct FFpuContext {
 
 /// FPU context for D extension (64-bit floating point).
 #[repr(C)]
+#[padding_struct]
 #[derive(Clone, Copy, Debug, Default, Pod)]
 pub struct DFpuContext {
     f: [u64; 32],
@@ -407,6 +408,7 @@ pub struct DFpuContext {
 
 /// FPU context for Q extension (128-bit floating point).
 #[repr(C)]
+#[padding_struct]
 #[derive(Clone, Copy, Debug, Pod)]
 pub struct QFpuContext {
     f: [u64; 64],
@@ -423,6 +425,8 @@ impl Default for QFpuContext {
         Self {
             f: [0; 64],
             fcsr: 0,
+            __pad1: [0; _],
+            __pad2: [0; _],
         }
     }
 }

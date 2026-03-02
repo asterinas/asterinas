@@ -16,7 +16,7 @@ pub(crate) use remapping::IrqRemapping;
 
 use crate::arch::{cpu, kernel};
 
-// Intel(R) 64 and IA-32 rchitectures Software Developer's Manual,
+// Intel(R) 64 and IA-32 architectures Software Developer's Manual,
 // Volume 3A, Section 6.2 says "Vector numbers in the range 32 to 255
 // are designated as user-defined interrupts and are not reserved by
 // the Intel 64 and IA-32 architecture."

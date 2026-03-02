@@ -36,7 +36,7 @@ impl<T: ?Sized> Mutex<T> {
         self.queue.wait_until(|| self.try_lock())
     }
 
-    /// Tries Acquire the mutex immedidately.
+    /// Tries to acquire the mutex immediately.
     pub fn try_lock(&self) -> Option<MutexGuard<'_, T>> {
         // Cannot be reduced to `then_some`, or the possible dropping of the temporary
         // guard will cause an unexpected unlock.
@@ -140,7 +140,7 @@ mod test {
 
     // A regression test for a bug fixed in [#1279](https://github.com/asterinas/asterinas/pull/1279).
     #[ktest]
-    fn test_mutex_try_lock_does_not_unlock() {
+    fn try_lock_does_not_unlock() {
         let lock = Mutex::new(0);
         assert!(!lock.lock.load(Ordering::Relaxed));
 

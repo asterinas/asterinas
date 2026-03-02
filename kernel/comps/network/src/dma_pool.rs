@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(unused)]
-
 use alloc::{
     collections::VecDeque,
     sync::{Arc, Weak},
@@ -9,18 +7,18 @@ use alloc::{
 use core::ops::Range;
 
 use aster_softirq::BottomHalfDisabled;
-use bitvec::{array::BitArray, prelude::Lsb0};
+use bitvec::array::BitArray;
 use ostd::{
     mm::{
         Daddr, FrameAllocOptions, HasDaddr, Infallible, PAGE_SIZE, VmReader, VmWriter,
         dma::{DmaDirection, DmaStream},
         io_util::HasVmReaderWriter,
     },
-    sync::{RwLock, SpinLock},
+    sync::SpinLock,
 };
 
 /// `DmaPool` is responsible for allocating small streaming DMA segments
-/// (equal to or smaller than PAGE_SIZE),
+/// (equal to or smaller than `PAGE_SIZE`),
 /// referred to as `DmaSegment`.
 ///
 /// A `DmaPool` can only allocate `DmaSegment` of a fixed size.
@@ -87,13 +85,13 @@ impl<D: DmaDirection> DmaPool<D> {
         })
     }
 
-    /// Allocates a `DmaSegment` from the pool
+    /// Allocates a segment from the pool.
     pub fn alloc_segment(self: &Arc<Self>) -> Result<DmaSegment<D>, ostd::Error> {
         // Lock order: pool.avail_pages -> pool.all_pages
         //             pool.avail_pages -> page.allocated_segments
         let mut avail_pages = self.avail_pages.lock();
         if avail_pages.is_empty() {
-            /// Allocate a new page
+            // Allocate a new page
             let new_page = {
                 let pool = Arc::downgrade(self);
                 Arc::new(DmaPage::new(
@@ -115,12 +113,13 @@ impl<D: DmaDirection> DmaPool<D> {
         Ok(free_segment)
     }
 
-    /// Returns the number of pages in pool
+    /// Returns the number of pages in the pool.
+    #[cfg(ktest)]
     fn num_pages(&self) -> usize {
         self.all_pages.lock().len()
     }
 
-    /// Return segment size in pool
+    /// Returns the segment size of the pool.
     pub fn segment_size(&self) -> usize {
         self.segment_size
     }
@@ -130,8 +129,8 @@ impl<D: DmaDirection> DmaPool<D> {
 struct DmaPage<D: DmaDirection> {
     storage: Arc<DmaStream<D>>,
     segment_size: usize,
-    // `BitArray` is 64 bits, since each `DmaSegment` is bigger than 64 bytes,
-    // there's no more than `PAGE_SIZE` / 64 = 64 `DmaSegment`s in a `DmaPage`.
+    // A `BitArray` has 64 bits. Since each `DmaSegment` is bigger than 64 bytes,
+    // there are no more than `PAGE_SIZE` / 64 = 64 `DmaSegment`s in a `DmaPage`.
     allocated_segments: SpinLock<BitArray, BottomHalfDisabled>,
     pool: Weak<DmaPool<D>>,
 }
@@ -171,10 +170,6 @@ impl<D: DmaDirection> DmaPage<D> {
         Some(segment)
     }
 
-    fn is_free(&self) -> bool {
-        *self.allocated_segments.lock() == BitArray::<[usize; 1], Lsb0>::ZERO
-    }
-
     const fn nr_blocks_per_page(&self) -> usize {
         PAGE_SIZE / self.segment_size
     }
@@ -203,8 +198,9 @@ impl<D: DmaDirection> HasDaddr for DmaPage<D> {
 
 /// A small and fixed-size segment of DMA memory.
 ///
-/// The size of `DmaSegment` ranges from 64 bytes to `PAGE_SIZE` and must be 2^K.
-/// Each `DmaSegment`'s daddr must be aligned with its size.
+/// The size of a `DmaSegment` ranges from 64 bytes to `PAGE_SIZE`
+/// and is a power of two.
+/// Each `DmaSegment`'s DMA address is guaranteed to be aligned with its size.
 #[derive(Debug)]
 pub struct DmaSegment<D: DmaDirection> {
     dma_stream: Arc<DmaStream<D>>,

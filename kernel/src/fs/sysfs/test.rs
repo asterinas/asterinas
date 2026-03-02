@@ -245,7 +245,7 @@ fn init_sysfs_with_mock_tree() -> Arc<SysFs> {
 }
 
 #[ktest]
-fn test_sysfs_root_lookup() {
+fn root_lookup() {
     // Setup: Create SysFs instance backed by the mock systree
     let sysfs = init_sysfs_with_mock_tree();
     let root_inode = sysfs.root_inode(); // Get the sysfs root inode
@@ -280,7 +280,7 @@ fn test_sysfs_root_lookup() {
 }
 
 #[ktest]
-fn test_sysfs_branch_lookup() {
+fn branch_lookup() {
     let sysfs = init_sysfs_with_mock_tree();
     let root_inode = sysfs.root_inode();
     // Action: Lookup a branch node within sysfs
@@ -313,7 +313,7 @@ fn test_sysfs_branch_lookup() {
 }
 
 #[ktest]
-fn test_sysfs_leaf_lookup() {
+fn leaf_lookup() {
     let sysfs = init_sysfs_with_mock_tree();
     let root_inode = sysfs.root_inode();
     // Action: Lookup a leaf node (represented as a directory in sysfs)
@@ -350,7 +350,7 @@ fn test_sysfs_leaf_lookup() {
 }
 
 #[ktest]
-fn test_sysfs_read_attr() {
+fn read_attr() {
     let sysfs = init_sysfs_with_mock_tree();
     let root_inode = sysfs.root_inode();
     let leaf1_dir_inode = root_inode
@@ -381,7 +381,7 @@ fn test_sysfs_read_attr() {
 }
 
 #[ktest]
-fn test_sysfs_write_attr() {
+fn write_attr() {
     let sysfs = init_sysfs_with_mock_tree();
     let root_inode = sysfs.root_inode();
     let leaf1_dir_inode = root_inode
@@ -426,7 +426,7 @@ fn test_sysfs_write_attr() {
 }
 
 #[ktest]
-fn test_sysfs_read_link() {
+fn read_link() {
     use crate::fs::utils::SymbolicLink;
 
     let sysfs = init_sysfs_with_mock_tree();
@@ -462,7 +462,7 @@ impl DirentVisitor for TestDirentVisitor {
 }
 
 #[ktest]
-fn test_sysfs_readdir_leaf() {
+fn readdir_leaf() {
     let sysfs = init_sysfs_with_mock_tree();
     let root_inode = sysfs.root_inode();
     let leaf1_inode = root_inode
@@ -510,7 +510,7 @@ fn test_sysfs_readdir_leaf() {
 }
 
 #[ktest]
-fn test_sysfs_mode_permissions() {
+fn mode_permissions() {
     let sysfs = init_sysfs_with_mock_tree();
     let root_inode = sysfs.root_inode();
     let leaf1_dir_inode = root_inode

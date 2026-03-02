@@ -1,6 +1,7 @@
 { lib, stdenvNoCC, fetchFromGitHub, hostPlatform, writeClosure, busybox, apps
 , benchmark, syscall, dnsServer, pkgs }:
 let
+  boot_hello = builtins.path { path = ./../src/boot_hello.sh; };
   etc = lib.fileset.toSource {
     root = ./../src/etc;
     fileset = ./../src/etc;
@@ -34,6 +35,8 @@ in stdenvNoCC.mkDerivation {
     ${lib.optionalString is_evtest_included ''
       cp -r ${pkgs.evtest}/bin/* $out/bin/
     ''}
+
+    cp ${boot_hello} $out/test/boot_hello.sh
 
     cp -r ${etc}/* $out/etc/
 

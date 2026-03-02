@@ -21,8 +21,12 @@ Below, you'll find a comprehensive guide on how to use `@boterinas` effectively.
 ## Commands and Usage
 
 ### Workflow Management
-- **`@boterinas rerun`**  
+- **`@boterinas rerun`**
   Restarts the workflow of the current pull request if it has failed unexpectedly. Only the author of the pull request can use this command.
+
+### Code Review
+- **`@boterinas codex`**
+  Triggers an AI-powered code review of the pull request using OpenAI Codex. The review posts inline comments highlighting potential issues with correctness, performance, security, and maintainability. Only repository members and collaborators can use this command.
 
 ### Issue and Pull Request Management
 - **`@boterinas claim`**  

@@ -10,10 +10,7 @@ use aster_util::{field_ptr, safe_ptr::SafePtr};
 use device_id::{DeviceId, MinorId};
 use ostd::{
     const_assert,
-    mm::{
-        FrameAllocOptions, HasPaddr, HasSize, PAGE_SIZE, USegment, VmIo, dma::DmaCoherent,
-        io_util::HasVmReaderWriter,
-    },
+    mm::{FrameAllocOptions, HasPaddr, HasSize, PAGE_SIZE, USegment, VmIo, dma::DmaCoherent},
     sync::WaitQueue,
 };
 use tdx_guest::{

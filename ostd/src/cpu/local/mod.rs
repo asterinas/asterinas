@@ -317,7 +317,7 @@ mod test {
     use ostd_macros::ktest;
 
     #[ktest]
-    fn test_cpu_local() {
+    fn cpu_local() {
         crate::cpu_local! {
             static FOO: RefCell<usize> = RefCell::new(1);
         }
@@ -330,7 +330,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_cpu_local_cell() {
+    fn cpu_local_cell() {
         crate::cpu_local_cell! {
             static BAR: usize = 3;
         }

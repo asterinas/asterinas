@@ -160,6 +160,15 @@ pub struct Mount {
     mountpoint: RwLock<Option<Arc<Dentry>>>,
     /// The associated FS.
     fs: Arc<dyn FileSystem>,
+    /// The mount source (e.g., a device path like "/dev/vda" or a filesystem name like "proc").
+    ///
+    /// The source is stored in `Mount` instead of requiring each filesystem to provide it.
+    /// If a filesystem does not provide a source, it falls back to the value stored in `Mount`.
+    /// This behavior aligns with that of Linux. Concrete examples can be found here:
+    /// <https://github.com/asterinas/asterinas/pull/2929#discussion_r2729739818>.
+    ///
+    /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/fs/mount.h#L68>
+    source: Option<String>,
     /// The parent mount node.
     parent: RwLock<Option<Weak<Mount>>>,
     /// Child mount nodes which are mounted on one dentry of self.
@@ -186,7 +195,8 @@ impl Mount {
         fs: Arc<dyn FileSystem>,
         mnt_ns: Weak<MountNamespace>,
     ) -> Arc<Self> {
-        Self::new(fs, PerMountFlags::default(), None, mnt_ns)
+        let source = fs.name().to_string();
+        Self::new(fs, PerMountFlags::default(), None, mnt_ns, Some(source))
     }
 
     /// Creates a pseudo mount node with an associated FS.
@@ -194,7 +204,7 @@ impl Mount {
     /// This pseudo mount is not mounted on other mount nodes, has no parent, and does not
     /// belong to any mount namespace.
     pub(in crate::fs) fn new_pseudo(fs: Arc<dyn FileSystem>) -> Arc<Self> {
-        Self::new(fs, PerMountFlags::KERNMOUNT, None, Weak::new())
+        Self::new(fs, PerMountFlags::KERNMOUNT, None, Weak::new(), None)
     }
 
     /// The internal constructor.
@@ -210,6 +220,7 @@ impl Mount {
         flags: PerMountFlags,
         parent_mount: Option<Weak<Mount>>,
         mnt_ns: Weak<MountNamespace>,
+        source: Option<String>,
     ) -> Arc<Self> {
         let id = ID_ALLOCATOR.get().unwrap().lock().alloc().unwrap();
 
@@ -221,6 +232,7 @@ impl Mount {
             children: RwLock::new(HashMap::new()),
             propagation: RwLock::new(MountPropType::default()),
             fs,
+            source,
             mnt_ns,
             flags: AtomicPerMountFlags::new(flags),
             this: weak_self.clone(),
@@ -230,6 +242,11 @@ impl Mount {
     /// Gets the mount ID.
     pub fn id(&self) -> usize {
         self.id
+    }
+
+    /// Returns the mount source.
+    pub(in crate::fs) fn source(&self) -> Option<&str> {
+        self.fs.source().or(self.source.as_deref())
     }
 
     /// Mounts a fs on the mountpoint, it will create a new child mount node.
@@ -242,19 +259,28 @@ impl Mount {
     /// It is allowed to mount a fs even if the fs has been provided to another
     /// mountpoint. It is the fs's responsibility to ensure the data consistency.
     ///
+    /// If the source is provided by user, it will be recorded in the new mount.
+    ///
     /// Return the mounted child mount.
     pub(super) fn do_mount(
         self: &Arc<Self>,
         fs: Arc<dyn FileSystem>,
         flags: PerMountFlags,
         mountpoint: &Arc<Dentry>,
+        source: Option<String>,
     ) -> Result<Arc<Self>> {
         if mountpoint.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
 
         let key = mountpoint.key();
-        let child_mount = Self::new(fs, flags, Some(Arc::downgrade(self)), self.mnt_ns.clone());
+        let child_mount = Self::new(
+            fs,
+            flags,
+            Some(Arc::downgrade(self)),
+            self.mnt_ns.clone(),
+            source,
+        );
         self.children.write().insert(key, child_mount.clone());
         child_mount.set_mountpoint(mountpoint);
 
@@ -296,6 +322,7 @@ impl Mount {
             children: RwLock::new(HashMap::new()),
             propagation: RwLock::new(MountPropType::default()),
             fs: self.fs.clone(),
+            source: self.source.clone(),
             mnt_ns: new_ns.cloned().unwrap_or_else(|| self.mnt_ns.clone()),
             flags: AtomicPerMountFlags::new(self.flags.load(Ordering::Relaxed)),
             this: weak_self.clone(),
@@ -405,12 +432,12 @@ impl Mount {
     }
 
     /// Gets the root `Dentry` of this mount node.
-    pub(super) fn root_dentry(&self) -> &Arc<Dentry> {
+    pub(in crate::fs) fn root_dentry(&self) -> &Arc<Dentry> {
         &self.root_dentry
     }
 
     /// Gets the mountpoint `Dentry` of this mount node if any.
-    pub(super) fn mountpoint(&self) -> Option<Arc<Dentry>> {
+    pub(in crate::fs) fn mountpoint(&self) -> Option<Arc<Dentry>> {
         self.mountpoint.read().clone()
     }
 
@@ -481,7 +508,7 @@ impl Mount {
     }
 
     /// Gets the parent mount node if any.
-    pub(super) fn parent(&self) -> Option<Weak<Self>> {
+    pub(in crate::fs) fn parent(&self) -> Option<Weak<Self>> {
         self.parent.read().as_ref().cloned()
     }
 
@@ -491,11 +518,11 @@ impl Mount {
     }
 
     /// Gets the associated FS.
-    pub(super) fn fs(&self) -> &Arc<dyn FileSystem> {
+    pub(in crate::fs) fn fs(&self) -> &Arc<dyn FileSystem> {
         &self.fs
     }
 
-    pub(super) fn flags(&self) -> PerMountFlags {
+    pub(in crate::fs) fn flags(&self) -> PerMountFlags {
         self.flags.load(Ordering::Relaxed)
     }
 
