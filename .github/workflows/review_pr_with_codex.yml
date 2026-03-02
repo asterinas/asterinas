@@ -95,13 +95,18 @@ jobs:
           git remote add base-repo "https://github.com/${{ github.repository }}.git"
           git fetch base-repo "${{ steps.pr_info.outputs.base_ref }}"
 
-      # Always use the base branch's schema so fork PRs cannot supply a
-      # crafted version, and so PRs predating the file still work.
-      - name: Restore Codex output schema from base
+      # Always fetch the schema from the upstream at the workflow commit so
+      # it matches the workflow version. The PR checkout won't have it if the
+      # branch predates the file, and fork PRs should not supply their own.
+      - name: Fetch Codex output schema from upstream
         env:
-          BASE_SHA: ${{ steps.pr_info.outputs.base_sha }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
         run: |
-          git checkout "$BASE_SHA" -- .github/codex-output-schema.json
+          set -euo pipefail
+          mkdir -p .github
+          gh api "repos/${REPOSITORY}/contents/.github/codex-output-schema.json?ref=${{ github.sha }}" \
+            --jq '.content' | base64 -d > .github/codex-output-schema.json
 
       - name: Build prompt
         env:
