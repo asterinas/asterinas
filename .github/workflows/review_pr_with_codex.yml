@@ -1,0 +1,238 @@
+name: Review PR with Codex
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number to review"
+        required: true
+        type: number
+
+concurrency:
+  group: codex-review-pr-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # Skip PRs from forks — repository secrets are not available.
+    # Use workflow_dispatch to manually review fork PRs.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Get PR info
+        id: pr_info
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            PR_NUMBER="${{ inputs.pr_number }}"
+          else
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+          fi
+          echo "pr_number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+
+          PR_JSON=$(gh api repos/${{ github.repository }}/pulls/${PR_NUMBER})
+          echo "head_sha=$(echo "$PR_JSON" | jq -r .head.sha)" >> "$GITHUB_OUTPUT"
+          echo "head_repo=$(echo "$PR_JSON" | jq -r .head.repo.full_name)" >> "$GITHUB_OUTPUT"
+          echo "base_sha=$(echo "$PR_JSON" | jq -r .base.sha)" >> "$GITHUB_OUTPUT"
+          echo "base_ref=$(echo "$PR_JSON" | jq -r .base.ref)" >> "$GITHUB_OUTPUT"
+          echo "title=$(echo "$PR_JSON" | jq -r .title)" >> "$GITHUB_OUTPUT"
+
+          # Use a random delimiter to prevent injection via PR body content
+          BODY_DELIM="$(uuidgen)"
+          echo "body<<${BODY_DELIM}" >> "$GITHUB_OUTPUT"
+          echo "$PR_JSON" | jq -r '.body // ""' >> "$GITHUB_OUTPUT"
+          echo "${BODY_DELIM}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.pr_info.outputs.head_repo }}
+          ref: ${{ steps.pr_info.outputs.head_sha }}
+          fetch-depth: 0
+
+      # For fork PRs, the base branch tip may not exist in the fork's history.
+      # Fetch it from the base repo so that git diff can find the merge-base.
+      - name: Fetch base ref for fork PRs
+        if: steps.pr_info.outputs.head_repo != github.repository
+        run: |
+          git remote add base-repo "https://github.com/${{ github.repository }}.git"
+          git fetch base-repo "${{ steps.pr_info.outputs.base_ref }}"
+
+      - name: Build prompt
+        env:
+          BASE_SHA: ${{ steps.pr_info.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.pr_info.outputs.head_sha }}
+          PR_NUMBER: ${{ steps.pr_info.outputs.pr_number }}
+          PR_TITLE: ${{ steps.pr_info.outputs.title }}
+          PR_BODY: ${{ steps.pr_info.outputs.body }}
+        run: |
+          cat > codex-prompt.md <<'PROMPT_HEADER'
+          You are acting as a reviewer for a proposed code change made by another engineer.
+          Focus on issues that impact correctness, performance, security, maintainability, or developer experience.
+
+          Flag only actionable issues introduced by the pull request.
+          When you flag an issue, provide a short, direct explanation and cite the affected file and line range.
+          For issues that violate coding guidelines (book/src/to-contribute/coding-guidelines/README.md),
+          cite the corresponding guideline with a hyperlink. To build the link, take the relative
+          path from the Index table in README.md (e.g., "rust-guidelines/language-items/functions-and-methods.md#small-functions")
+          and prepend "https://asterinas.github.io/book/to-contribute/coding-guidelines/" to get the
+          full URL (e.g., "https://asterinas.github.io/book/to-contribute/coding-guidelines/rust-guidelines/language-items/functions-and-methods.html#small-functions").
+          Note: replace ".md" with ".html" in the final URL.
+
+          Prioritize severe issues.
+          Only give nit-level comments when there are no severe issues.
+
+          After listing findings, provide an overall summary that lists the issues that must be addressed.
+          Ensure that file citations and line numbers are exactly correct using the tools available; if they are incorrect your comments will be rejected.
+          For code_location.absolute_file_path, use repository-relative paths (e.g., "src/main.rs"), NOT absolute filesystem paths (e.g., "/home/runner/work/...").
+          PROMPT_HEADER
+
+          {
+            printf '\n'
+            printf 'Repository: %s\n' "${{ github.repository }}"
+            printf 'Pull Request #: %s\n' "${PR_NUMBER}"
+            printf 'Base SHA: %s\n' "${BASE_SHA}"
+            printf 'Head SHA: %s\n' "${HEAD_SHA}"
+            printf '\n'
+            printf 'Pull request title: %s\n' "${PR_TITLE}"
+            printf 'Pull request body:\n'
+            printf '%s\n' "${PR_BODY}"
+            printf '\n'
+            printf 'Changed files:\n'
+            git --no-pager diff --name-status "${BASE_SHA}...${HEAD_SHA}"
+            echo ""
+            echo "Unified diff (context=5, truncated to 200000 chars):"
+            DIFF=$(git --no-pager diff --unified=5 "${BASE_SHA}...${HEAD_SHA}")
+            if [ ${#DIFF} -gt 200000 ]; then
+              echo "${DIFF:0:200000}"
+              echo ""
+              echo "[diff truncated — exceeded 200000 character limit]"
+            else
+              echo "$DIFF"
+            fi
+          } >> codex-prompt.md
+
+      - name: Run Codex
+        id: run_codex
+        uses: openai/codex-action@94bb7a052e529936e5260a35838e61b190855739 # v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          model: gpt-5.3-codex
+          prompt-file: codex-prompt.md
+          output-schema-file: .github/codex-output-schema.json
+          output-file: codex-output.json
+          sandbox: read-only
+
+      - name: Post review comments
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.pr_info.outputs.head_sha }}
+          PR_NUMBER: ${{ steps.pr_info.outputs.pr_number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ ! -f codex-output.json ]; then
+            echo "No Codex output found, skipping."
+            exit 0
+          fi
+
+          # Validate that the output is well-formed JSON with required fields
+          if ! jq -e '.findings and .summary' codex-output.json > /dev/null 2>&1; then
+            echo "Codex output is missing required fields or is invalid JSON, skipping."
+            exit 0
+          fi
+
+          # Workspace prefix to strip from absolute paths
+          WORKSPACE="${GITHUB_WORKSPACE}/"
+          MAX_FINDINGS=50
+
+          # Build overall summary body for the review (using jq to avoid shell expansion issues)
+          # Truncate to 60000 chars to stay within GitHub's comment size limit
+          REVIEW_BODY=$(jq -r '"## Reviews by Codex\n\n" + (.summary | .[0:60000])' codex-output.json)
+
+          # Build a single PR review payload with summary + batched inline comments.
+          # Normalize paths: strip workspace prefix, strip leading "./", skip
+          # absolute paths outside the workspace.
+          jq -c \
+            --arg commit "$HEAD_SHA" \
+            --arg ws "$WORKSPACE" \
+            --arg body "$REVIEW_BODY" \
+            --argjson max "$MAX_FINDINGS" \
+            '{
+              event: "COMMENT",
+              commit_id: $commit,
+              body: $body,
+              comments: (
+                .findings
+                | .[0:$max]
+                | map(
+                    .code_location.absolute_file_path as $abs
+                    | (
+                        if ($abs | startswith($ws)) then ($abs | ltrimstr($ws))
+                        elif ($abs | startswith("./")) then ($abs | ltrimstr("./"))
+                        elif ($abs | startswith("/")) then null
+                        else $abs
+                        end
+                      ) as $rel
+                    | select($rel != null)
+                    | {
+                        body: (("**" + .title + "**\n\n" + .body + "\n\n_Confidence: " +
+                               (.confidence_score | tostring) + " | Priority: P" +
+                               (.priority | tostring) + "_") | .[0:65000]),
+                        path: $rel,
+                        line: .code_location.line_range.end,
+                        side: "RIGHT",
+                        start_line: (if .code_location.line_range.start != .code_location.line_range.end
+                                     then .code_location.line_range.start else null end),
+                        start_side: (if .code_location.line_range.start != .code_location.line_range.end
+                                     then "RIGHT" else null end)
+                      }
+                    | with_entries(select(.value != null))
+                  )
+              )
+            }' codex-output.json > review-payload.json
+
+          # Post the review (summary + inline comments in one API call)
+          num_comments=$(jq '.comments | length' review-payload.json)
+          echo "Posting review with ${num_comments} inline comment(s)..."
+          if ! gh api \
+            "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
+            --method POST \
+            --input review-payload.json; then
+            echo "Warning: batched review failed. Falling back to summary + individual comments..."
+
+            # Post the summary as a review without inline comments
+            jq -c '{event: "COMMENT", commit_id: .commit_id, body: .body, comments: []}' \
+              review-payload.json > review-summary-only.json
+            gh api \
+              "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
+              --method POST \
+              --input review-summary-only.json || echo "Error: failed to post summary review."
+
+            # Try each inline comment individually via the single-comment API
+            posted=0
+            failed=0
+            for i in $(seq 0 $((num_comments - 1))); do
+              jq -c --argjson idx "$i" \
+                --arg commit "$HEAD_SHA" \
+                '.comments[$idx] + {commit_id: $commit}' \
+                review-payload.json > "comment-${i}.json"
+              if gh api \
+                "repos/${REPOSITORY}/pulls/${PR_NUMBER}/comments" \
+                --method POST \
+                --input "comment-${i}.json" > /dev/null 2>&1; then
+                posted=$((posted + 1))
+              else
+                failed=$((failed + 1))
+                echo "Warning: failed to post inline comment #${i} ($(jq -r --argjson idx "$i" '.comments[$idx].path' review-payload.json))"
+              fi
+            done
+            echo "Individual comments: ${posted} posted, ${failed} failed."
+          fi
