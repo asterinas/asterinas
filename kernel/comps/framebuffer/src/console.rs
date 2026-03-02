@@ -15,7 +15,7 @@ use spin::Once;
 
 use crate::{
     FRAMEBUFFER, FrameBuffer, Pixel,
-    ansi_escape::{EscapeFsm, EscapeOp},
+    ansi_escape::{EraseInDisplay, EscapeFsm, EscapeOp},
 };
 
 /// A text console rendered onto the framebuffer.
@@ -293,6 +293,40 @@ impl ConsoleState {
             ConsoleMode::Graphics
         }
     }
+
+    /// Fills a rectangular pixel region `[x0, x1) × [y0, y1)` with the given color.
+    ///
+    /// The caller must pass arguments that form a valid rectangle within the framebuffer, i.e.,
+    /// `x0 ≤ x1 ≤ w` and `y0 ≤ y1 ≤ h`, where `w` and `h` are the framebuffer width and height.
+    fn fill_rect_pixels(&mut self, x0: usize, y0: usize, x1: usize, y1: usize, color: Pixel) {
+        let rendered_pixel = self.backend.render_pixel(color);
+        let rendered_pixel_size = rendered_pixel.nbytes();
+        let row_bytes = (x1 - x0) * rendered_pixel_size;
+
+        for y in y0..y1 {
+            let off = self.backend.calc_offset(x0, y).as_usize();
+            let buf = &mut self.bytes[off..off + row_bytes];
+
+            // Write pixels to the console buffer.
+            for chunk in buf.chunks_exact_mut(rendered_pixel_size) {
+                chunk.copy_from_slice(rendered_pixel.as_slice());
+            }
+
+            // Write pixels to the framebuffer.
+            if self.is_output_enabled {
+                self.backend.write_bytes_at(off, buf).unwrap();
+            }
+        }
+    }
+
+    /// Calculates the pixel coordinates for the cursor cell.
+    fn cursor_cell_rect(&self) -> (usize, usize, usize, usize) {
+        let cx0 = self.x_pos;
+        let cy0 = self.y_pos;
+        let cx1 = cx0 + self.font.width();
+        let cy1 = cy0 + self.font.height();
+        (cx0, cy0, cx1, cy1)
+    }
 }
 
 impl EscapeOp for ConsoleState {
@@ -312,5 +346,38 @@ impl EscapeOp for ConsoleState {
 
     fn set_bg_color(&mut self, val: Pixel) {
         self.bg_color = val;
+    }
+
+    fn erase_in_display(&mut self, mode: EraseInDisplay) {
+        let bg = self.bg_color;
+        let w = self.backend.width();
+        let h = self.backend.height();
+
+        let (cx0, cy0, cx1, cy1) = self.cursor_cell_rect();
+
+        match mode {
+            EraseInDisplay::CursorToEnd => {
+                // Clear from the cursor to the end of the line, within the cursor row.
+                self.fill_rect_pixels(cx0, cy0, w, cy1, bg);
+
+                // Clear all rows below the cursor row.
+                if cy1 < h {
+                    self.fill_rect_pixels(0, cy1, w, h, bg);
+                }
+            }
+            EraseInDisplay::CursorToBeginning => {
+                // Clear all rows above the cursor row.
+                if cy0 > 0 {
+                    self.fill_rect_pixels(0, 0, w, cy0, bg);
+                }
+
+                // Clear from the start of the line to the cursor, within the cursor row.
+                self.fill_rect_pixels(0, cy0, cx1, cy1, bg);
+            }
+            EraseInDisplay::EntireScreen | EraseInDisplay::EntireScreenAndScrollback => {
+                // Clear the entire screen.
+                self.fill_rect_pixels(0, 0, w, h, bg);
+            }
+        }
     }
 }
