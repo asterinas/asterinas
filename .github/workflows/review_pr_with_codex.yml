@@ -33,6 +33,19 @@ jobs:
       contents: read
       pull-requests: write
     steps:
+      # The job-level `contains()` is a substring match. This step does a
+      # stricter check: "@boterinas codex" must appear at the start of a line
+      # so that blockquotes, inline code, or mid-sentence mentions are ignored.
+      - name: Validate trigger command
+        if: github.event_name == 'issue_comment'
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          if ! printf '%s\n' "$COMMENT_BODY" | grep -qE '^\s*@boterinas\s+codex($|\s)'; then
+            echo "::notice::No valid @boterinas codex command found at start of line."
+            exit 1
+          fi
+
       - name: React to trigger comment
         if: github.event_name == 'issue_comment'
         env:
