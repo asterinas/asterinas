@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   review:
-    # issue_comment: only on PRs, only "@boterinas codex", only repo members.
+    # issue_comment: only on PRs, only "@boterinas codex", only members/contributors.
     # workflow_dispatch: always allowed (for maintainer use).
     if: >-
       github.event_name == 'workflow_dispatch' ||
@@ -25,7 +25,8 @@ jobs:
        contains(github.event.comment.body, '@boterinas codex') &&
        (github.event.comment.author_association == 'MEMBER' ||
         github.event.comment.author_association == 'OWNER' ||
-        github.event.comment.author_association == 'COLLABORATOR'))
+        github.event.comment.author_association == 'COLLABORATOR' ||
+        github.event.comment.author_association == 'CONTRIBUTOR'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
