@@ -165,7 +165,9 @@ impl KtestItem {
                 Err(e) => match e.downcast::<PanicInfo>() {
                     Ok(s) => {
                         if let Some(expected) = self.should_panic.1 {
-                            if s.message == expected {
+                            // The expected message should appear in the actual panic message. Reference:
+                            // <https://doc.rust-lang.org/reference/attributes/testing.html#the-should_panic-attribute>
+                            if s.message.contains(expected) {
                                 Ok(())
                             } else {
                                 Err(KtestError::ExpectedPanicNotMatch(expected, s))
