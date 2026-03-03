@@ -5,11 +5,11 @@ use alloc::{sync::Arc, vec::Vec};
 use aster_console::{
     AnyConsoleDevice, ConsoleCallback, ConsoleSetFontError,
     font::BitmapFont,
-    mode::{ConsoleMode, KeyboardMode},
+    mode::{ConsoleMode, KeyboardMode, KeyboardModeFlags},
 };
 use ostd::{
     mm::{HasSize, VmReader},
-    sync::{LocalIrqDisabled, SpinLock},
+    sync::{LocalIrqDisabled, SpinLock, SpinLockGuard},
 };
 use spin::Once;
 
@@ -75,20 +75,13 @@ impl AnyConsoleDevice for FramebufferConsole {
     }
 
     fn set_keyboard_mode(&self, mode: KeyboardMode) -> bool {
-        match mode {
-            KeyboardMode::Xlate => self.callbacks.lock().is_input_enabled = true,
-            KeyboardMode::Off => self.callbacks.lock().is_input_enabled = false,
-            _ => return false,
-        }
+        let mut callbacks = self.callbacks.lock();
+        callbacks.keyboard_mode = mode;
         true
     }
 
     fn keyboard_mode(&self) -> Option<KeyboardMode> {
-        if self.callbacks.lock().is_input_enabled {
-            Some(KeyboardMode::Xlate)
-        } else {
-            Some(KeyboardMode::Off)
-        }
+        Some(self.callbacks.lock().keyboard_mode())
     }
 }
 
@@ -97,7 +90,10 @@ impl FramebufferConsole {
     pub(self) fn new(framebuffer: Arc<FrameBuffer>) -> Self {
         let callbacks = ConsoleCallbacks {
             callbacks: Vec::new(),
-            is_input_enabled: true,
+            keyboard_mode: KeyboardMode::Unicode,
+            // Linux default: REPEAT | META
+            // Reference: <https://elixir.bootlin.com/linux/v6.17.4/source/drivers/tty/vt/keyboard.c#L56>
+            keyboard_mode_flags: KeyboardModeFlags::REPEAT | KeyboardModeFlags::META,
         };
 
         let state = ConsoleState {
@@ -120,17 +116,9 @@ impl FramebufferConsole {
         }
     }
 
-    /// Triggers the registered input callbacks with the given data.
-    pub(crate) fn trigger_input_callbacks(&self, bytes: &[u8]) {
-        let callbacks = self.callbacks.lock();
-        if !callbacks.is_input_enabled {
-            return;
-        }
-
-        let reader = VmReader::from(bytes);
-        for callback in callbacks.callbacks.iter() {
-            callback(reader.clone());
-        }
+    /// Locks the console callbacks.
+    pub fn lock_callbacks(&self) -> SpinLockGuard<'_, ConsoleCallbacks, LocalIrqDisabled> {
+        self.callbacks.lock()
     }
 }
 
@@ -140,10 +128,30 @@ impl core::fmt::Debug for FramebufferConsole {
     }
 }
 
-struct ConsoleCallbacks {
+pub struct ConsoleCallbacks {
     callbacks: Vec<&'static ConsoleCallback>,
-    /// Whether the input characters will be handled by the callbacks.
-    is_input_enabled: bool,
+    keyboard_mode: KeyboardMode,
+    keyboard_mode_flags: KeyboardModeFlags,
+}
+
+impl ConsoleCallbacks {
+    /// Triggers the registered input callbacks with the given data.
+    pub fn trigger_callbacks(&self, bytes: &[u8]) {
+        let reader = VmReader::from(bytes);
+        for callback in self.callbacks.iter() {
+            callback(reader.clone());
+        }
+    }
+
+    /// Returns the keyboard mode.
+    pub fn keyboard_mode(&self) -> KeyboardMode {
+        self.keyboard_mode
+    }
+
+    /// Returns the keyboard mode flags.
+    pub fn keyboard_mode_flags(&self) -> KeyboardModeFlags {
+        self.keyboard_mode_flags
+    }
 }
 
 #[derive(Debug)]
