@@ -4,14 +4,14 @@ use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::{FileDesc, get_file_fast},
+    fs::file_table::{RawFileDesc, get_file_fast},
     net::socket::util::SendRecvFlags,
     prelude::*,
     util::net::CUserMsgHdr,
 };
 
 pub fn sys_recvmsg(
-    sockfd: FileDesc,
+    sockfd: RawFileDesc,
     user_msghdr_ptr: Vaddr,
     flags: i32,
     ctx: &Context,

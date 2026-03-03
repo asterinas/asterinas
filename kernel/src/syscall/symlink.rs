@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs,
     fs::{
-        file_table::FileDesc,
+        file_table::RawFileDesc,
         path::{AT_FDCWD, FsPath},
         utils::{InodeType, mkmod},
     },
@@ -14,7 +14,7 @@ use crate::{
 
 pub fn sys_symlinkat(
     target_addr: Vaddr,
-    dirfd: FileDesc,
+    dirfd: RawFileDesc,
     linkpath_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {

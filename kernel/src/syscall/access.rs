@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::FileDesc,
+        file_table::RawFileDesc,
         path::{AT_FDCWD, FsPath},
         utils::{PATH_MAX, Permission},
     },
@@ -11,7 +11,7 @@ use crate::{
 };
 
 pub fn sys_faccessat(
-    dirfd: FileDesc,
+    dirfd: RawFileDesc,
     path_ptr: Vaddr,
     mode: u16,
     ctx: &Context,
@@ -31,7 +31,7 @@ pub fn sys_access(path_ptr: Vaddr, mode: u16, ctx: &Context) -> Result<SyscallRe
 }
 
 pub fn sys_faccessat2(
-    dirfd: FileDesc,
+    dirfd: RawFileDesc,
     path_ptr: Vaddr,
     mode: u16,
     flags: u32,
@@ -64,7 +64,7 @@ bitflags! {
 }
 
 fn do_faccessat(
-    dirfd: FileDesc,
+    dirfd: RawFileDesc,
     path_ptr: Vaddr,
     mode: u16,
     flags: u32,

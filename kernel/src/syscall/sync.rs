@@ -2,7 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::{FileDesc, get_file_fast},
+    fs::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
 };
 
@@ -13,7 +13,7 @@ pub fn sys_sync(ctx: &Context) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_syncfs(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_syncfs(fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}", fd);
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();

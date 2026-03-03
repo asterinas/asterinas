@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::{FileDesc, get_file_fast},
+        file_table::{RawFileDesc, get_file_fast},
         path::FsPath,
         utils::InodeType,
     },
@@ -32,7 +32,7 @@ pub fn sys_chdir(path_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_fchdir(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_fchdir(fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}", fd);
 
     let path = {

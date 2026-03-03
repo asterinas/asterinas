@@ -8,7 +8,7 @@ use super::{SyscallReturn, constants::MAX_FILENAME_LEN};
 use crate::{
     fs,
     fs::{
-        file_table::FileDesc,
+        file_table::RawFileDesc,
         path::{AT_FDCWD, FsPath, Path},
     },
     prelude::*,
@@ -21,7 +21,7 @@ use crate::{
 /// The `flags` argument is a bit mask that can include the following values:
 /// - `AT_SYMLINK_NOFOLLOW`: If set, the file is not dereferenced if it is a symbolic link.
 pub fn sys_utimensat(
-    dirfd: FileDesc,
+    dirfd: RawFileDesc,
     pathname_ptr: Vaddr,
     timespecs_ptr: Vaddr,
     flags: u32,
@@ -50,7 +50,7 @@ pub fn sys_utimensat(
 /// Unlike 'sys_utimensat', it receives time values in the form of timeval structures,
 /// and it does not support the 'flags' argument.
 pub fn sys_futimesat(
-    dirfd: FileDesc,
+    dirfd: RawFileDesc,
     pathname_ptr: Vaddr,
     timeval_ptr: Vaddr,
     ctx: &Context,
@@ -150,7 +150,7 @@ fn vfs_utimes(path: &Path, times: Option<TimeSpecPair>) -> Result<SyscallReturn>
 
 // Common function to handle updating file times, supporting both fd and path based operations
 fn do_utimes(
-    dirfd: FileDesc,
+    dirfd: RawFileDesc,
     pathname_ptr: Vaddr,
     times: Option<TimeSpecPair>,
     flags: u32,
@@ -192,7 +192,7 @@ fn do_utimes(
 // Sets the access and modification times for a file,
 // specified by a pathname relative to the directory file descriptor `dirfd`.
 fn do_futimesat(
-    dirfd: FileDesc,
+    dirfd: RawFileDesc,
     pathname_ptr: Vaddr,
     timeval_ptr: Vaddr,
     ctx: &Context,

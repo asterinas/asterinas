@@ -23,7 +23,7 @@ use crate::{
     events::IoEvents,
     fs::{
         file_handle::FileLike,
-        file_table::{FdFlags, FileDesc},
+        file_table::{FdFlags, RawFileDesc},
         path::Path,
         pseudofs::AnonInodeFs,
         utils::{CreationFlags, StatusFlags},
@@ -51,7 +51,7 @@ pub fn sys_eventfd2(init_val: u64, flags: u32, ctx: &Context) -> Result<SyscallR
     Ok(SyscallReturn::Return(fd as _))
 }
 
-fn do_sys_eventfd2(init_val: u64, flags: Flags, ctx: &Context) -> FileDesc {
+fn do_sys_eventfd2(init_val: u64, flags: Flags, ctx: &Context) -> RawFileDesc {
     let event_file = EventFile::new(init_val, flags);
     let file_table = ctx.thread_local.borrow_file_table();
     let mut file_table_locked = file_table.unwrap().write();

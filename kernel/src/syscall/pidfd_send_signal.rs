@@ -3,7 +3,7 @@
 use ostd::mm::VmIo;
 
 use crate::{
-    fs::file_table::{FileDesc, get_file_fast},
+    fs::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
     process::{
         Pgid, Pid, PidFile, kill, kill_group,
@@ -21,7 +21,7 @@ use crate::{
 };
 
 pub fn sys_pidfd_send_signal(
-    pidfd: FileDesc,
+    pidfd: RawFileDesc,
     sig_num: u64,
     info_ptr: Vaddr,
     flags: u32,
@@ -85,7 +85,7 @@ fn read_siginfo_from_user(info_ptr: Vaddr, sig_num: SigNum, ctx: &Context) -> Re
 }
 
 fn get_target_from_pidfd(
-    pidfd: FileDesc,
+    pidfd: RawFileDesc,
     flags: PidfdSendSignalFlags,
     ctx: &Context,
 ) -> Result<SignalTarget> {

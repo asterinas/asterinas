@@ -5,7 +5,7 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::{FileDesc, get_file_fast},
+        file_table::{RawFileDesc, get_file_fast},
         path::{AT_FDCWD, FsPath},
         utils::Metadata,
     },
@@ -14,7 +14,7 @@ use crate::{
     time::timespec_t,
 };
 
-pub fn sys_fstat(fd: FileDesc, stat_buf_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_fstat(fd: RawFileDesc, stat_buf_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}, stat_buf_addr = 0x{:x}", fd, stat_buf_ptr);
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
@@ -41,7 +41,7 @@ pub fn sys_lstat(filename_ptr: Vaddr, stat_buf_ptr: Vaddr, ctx: &Context) -> Res
 }
 
 pub fn sys_fstatat(
-    dirfd: FileDesc,
+    dirfd: RawFileDesc,
     filename_ptr: Vaddr,
     stat_buf_ptr: Vaddr,
     flags: u32,

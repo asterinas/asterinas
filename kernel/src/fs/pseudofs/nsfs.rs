@@ -10,7 +10,7 @@ use spin::Once;
 use crate::{
     events::IoEvents,
     fs::{
-        file_table::{FdFlags, FileDesc},
+        file_table::{FdFlags, RawFileDesc},
         inode_handle::{FileIo, InodeHandle},
         path::{Dentry, Mount, Path},
         pseudofs::{PseudoFs, PseudoInode, PseudoInodeType},
@@ -247,7 +247,7 @@ impl<T: NsCommonOps> InodeIo for NsFile<T> {
 }
 
 /// Opens a namespace as a file and returns the file descriptor.
-fn open_ns_as_file<T: NsCommonOps>(ns: &Arc<T>) -> Result<FileDesc> {
+fn open_ns_as_file<T: NsCommonOps>(ns: &Arc<T>) -> Result<RawFileDesc> {
     let path = ns.get_path();
     let inode_handle = InodeHandle::new(path.clone(), AccessMode::O_RDONLY, StatusFlags::empty())?;
 

@@ -6,7 +6,7 @@ use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::FileDesc,
+    fs::file_table::RawFileDesc,
     prelude::*,
     time::{
         itimerspec_t,
@@ -16,7 +16,7 @@ use crate::{
 };
 
 pub fn sys_timerfd_settime(
-    fd: FileDesc,
+    fd: RawFileDesc,
     flags: i32,
     new_itimerspec_addr: Vaddr,
     old_itimerspec_addr: Vaddr,

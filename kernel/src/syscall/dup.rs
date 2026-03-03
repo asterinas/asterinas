@@ -2,12 +2,12 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::{FdFlags, FileDesc, get_file_fast},
+    fs::file_table::{FdFlags, RawFileDesc, get_file_fast},
     prelude::*,
     process::ResourceType,
 };
 
-pub fn sys_dup(old_fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_dup(old_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("old_fd = {}", old_fd);
 
     let file_table = ctx.thread_local.borrow_file_table();
@@ -17,7 +17,7 @@ pub fn sys_dup(old_fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(new_fd as _))
 }
 
-pub fn sys_dup2(old_fd: FileDesc, new_fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_dup2(old_fd: RawFileDesc, new_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("old_fd = {}, new_fd = {}", old_fd, new_fd);
 
     if old_fd == new_fd {
@@ -30,8 +30,8 @@ pub fn sys_dup2(old_fd: FileDesc, new_fd: FileDesc, ctx: &Context) -> Result<Sys
 }
 
 pub fn sys_dup3(
-    old_fd: FileDesc,
-    new_fd: FileDesc,
+    old_fd: RawFileDesc,
+    new_fd: RawFileDesc,
     flags: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
@@ -47,8 +47,8 @@ pub fn sys_dup3(
 }
 
 fn do_dup3(
-    old_fd: FileDesc,
-    new_fd: FileDesc,
+    old_fd: RawFileDesc,
+    new_fd: RawFileDesc,
     flags: FdFlags,
     ctx: &Context,
 ) -> Result<SyscallReturn> {

@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::FileDesc,
+        file_table::RawFileDesc,
         path::{AT_FDCWD, FsPath, SplitPath},
     },
     prelude::*,
@@ -11,7 +11,7 @@ use crate::{
 };
 
 pub fn sys_unlinkat(
-    dirfd: FileDesc,
+    dirfd: RawFileDesc,
     path_addr: Vaddr,
     flags: u32,
     ctx: &Context,

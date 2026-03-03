@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::{
-    fs::file_table::{FdFlags, FileDesc, get_file_fast},
+    fs::file_table::{FdFlags, RawFileDesc, get_file_fast},
     prelude::*,
     process::{PidFile, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
     syscall::SyscallReturn,
 };
 
 pub fn sys_pidfd_getfd(
-    pidfd: FileDesc,
-    targetfd: FileDesc,
+    pidfd: RawFileDesc,
+    targetfd: RawFileDesc,
     flags: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {

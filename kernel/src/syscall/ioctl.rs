@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file_handle::FileLike,
-        file_table::{FdFlags, FileDesc, WithFileTable, get_file_fast},
+        file_table::{FdFlags, RawFileDesc, WithFileTable, get_file_fast},
         utils::StatusFlags,
     },
     prelude::*,
@@ -12,7 +12,7 @@ use crate::{
     util::ioctl::{RawIoctl, dispatch_ioctl},
 };
 
-pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_ioctl(fd: RawFileDesc, cmd: u32, arg: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     let raw_ioctl = RawIoctl::new(cmd, arg);
     debug!("fd = {}, raw_ioctl = {:#x?}", fd, raw_ioctl,);
 
@@ -55,7 +55,7 @@ mod ioctl_defs {
 
 fn handle_fd_ioctl(
     file_table: &mut FileTableRefMut,
-    fd: FileDesc,
+    fd: RawFileDesc,
     raw_ioctl: RawIoctl,
 ) -> Option<Result<()>> {
     use ioctl_defs::*;

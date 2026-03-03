@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     fs::{
-        file_table::{FileDesc, get_file_fast},
+        file_table::{RawFileDesc, get_file_fast},
         utils::XATTR_VALUE_MAX_LEN,
     },
     prelude::*,
@@ -61,7 +61,7 @@ pub fn sys_lgetxattr(
 }
 
 pub fn sys_fgetxattr(
-    fd: FileDesc,
+    fd: RawFileDesc,
     name_ptr: Vaddr,
     value_ptr: Vaddr,
     value_len: usize,

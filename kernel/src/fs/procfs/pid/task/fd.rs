@@ -9,7 +9,7 @@ use super::TidDirOps;
 use crate::{
     fs::{
         file_handle::FileLike,
-        file_table::FileDesc,
+        file_table::RawFileDesc,
         procfs::{
             DirOps, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps,
             template::{FileOps, ProcFile, ProcFileBuilder, ProcSym},
@@ -49,7 +49,7 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
     // spin lock but the cached entries are protected by a mutex.
 
     fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
-        let Ok(file_desc) = name.parse::<FileDesc>() else {
+        let Ok(file_desc) = name.parse::<RawFileDesc>() else {
             return_errno_with_message!(Errno::ENOENT, "the name is not a valid FD");
         };
 
@@ -152,12 +152,12 @@ pub(super) trait FdOps: Send + Sync + 'static {
 
     fn new_inode(
         tid_dir_ops: TidDirOps,
-        file_desc: FileDesc,
+        file_desc: RawFileDesc,
         access_mode: AccessMode,
         parent: Weak<dyn Inode>,
     ) -> Arc<dyn Inode>;
 
-    fn file_desc(&self) -> FileDesc;
+    fn file_desc(&self) -> RawFileDesc;
 
     fn is_valid(&self, correspond_file: &Arc<dyn FileLike>) -> bool;
 
@@ -167,7 +167,7 @@ pub(super) trait FdOps: Send + Sync + 'static {
 /// Represents the inode at `/proc/[pid]/task/[tid]/fd/[n]` (and also `/proc/[pid]/fd/[n]`).
 pub(super) struct FileSymOps {
     tid_dir_ops: TidDirOps,
-    file_desc: FileDesc,
+    file_desc: RawFileDesc,
     access_mode: AccessMode,
 }
 
@@ -176,7 +176,7 @@ impl FdOps for FileSymOps {
 
     fn new_inode(
         tid_dir_ops: TidDirOps,
-        file_desc: FileDesc,
+        file_desc: RawFileDesc,
         access_mode: AccessMode,
         parent: Weak<dyn Inode>,
     ) -> Arc<dyn Inode> {
@@ -202,7 +202,7 @@ impl FdOps for FileSymOps {
         .unwrap()
     }
 
-    fn file_desc(&self) -> FileDesc {
+    fn file_desc(&self) -> RawFileDesc {
         self.file_desc
     }
 
@@ -238,7 +238,7 @@ impl SymOps for FileSymOps {
 /// Represents the inode at `/proc/[pid]/task/[tid]/fdinfo/[n]` (and also `/proc/[pid]/fdinfo/[n]`).
 pub(super) struct FileInfoOps {
     tid_dir_ops: TidDirOps,
-    file_desc: FileDesc,
+    file_desc: RawFileDesc,
 }
 
 impl FdOps for FileInfoOps {
@@ -246,7 +246,7 @@ impl FdOps for FileInfoOps {
 
     fn new_inode(
         tid_dir_ops: TidDirOps,
-        file_desc: FileDesc,
+        file_desc: RawFileDesc,
         _access_mode: AccessMode,
         parent: Weak<dyn Inode>,
     ) -> Arc<dyn Inode> {
@@ -263,7 +263,7 @@ impl FdOps for FileInfoOps {
         .unwrap()
     }
 
-    fn file_desc(&self) -> FileDesc {
+    fn file_desc(&self) -> RawFileDesc {
         self.file_desc
     }
 

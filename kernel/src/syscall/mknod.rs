@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         self,
-        file_table::FileDesc,
+        file_table::RawFileDesc,
         path::{AT_FDCWD, FsPath},
         utils::{InodeMode, InodeType, MknodType},
     },
@@ -13,7 +13,7 @@ use crate::{
 };
 
 pub fn sys_mknodat(
-    dirfd: FileDesc,
+    dirfd: RawFileDesc,
     path_addr: Vaddr,
     mode: u16,
     dev: usize,

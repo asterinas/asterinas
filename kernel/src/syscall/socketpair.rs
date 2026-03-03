@@ -6,7 +6,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file_handle::FileLike,
-        file_table::{FdFlags, FileDesc},
+        file_table::{FdFlags, RawFileDesc},
     },
     net::socket::unix::{UnixDatagramSocket, UnixStreamSocket},
     prelude::*,
@@ -72,4 +72,4 @@ pub fn sys_socketpair(
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod)]
-struct SocketFds(FileDesc, FileDesc);
+struct SocketFds(RawFileDesc, RawFileDesc);

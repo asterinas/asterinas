@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::{FileDesc, get_file_fast},
+        file_table::{RawFileDesc, get_file_fast},
         path::{AT_FDCWD, FsPath},
         utils::PATH_MAX,
     },
@@ -11,7 +11,7 @@ use crate::{
     process::{Gid, Uid},
 };
 
-pub fn sys_fchown(fd: FileDesc, uid: i32, gid: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_fchown(fd: RawFileDesc, uid: i32, gid: i32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}, uid = {}, gid = {}", fd, uid, gid);
 
     let uid = to_optional_id(uid, Uid::new)?;
@@ -48,7 +48,7 @@ pub fn sys_lchown(path_ptr: Vaddr, uid: i32, gid: i32, ctx: &Context) -> Result<
 }
 
 pub fn sys_fchownat(
-    dirfd: FileDesc,
+    dirfd: RawFileDesc,
     path_ptr: Vaddr,
     uid: i32,
     gid: i32,

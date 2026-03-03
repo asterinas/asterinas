@@ -7,7 +7,7 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::FileDesc,
+        file_table::RawFileDesc,
         path::{FsPath, Path},
     },
     prelude::*,
@@ -17,7 +17,7 @@ use crate::{
 const STATX_ATTR_MOUNT_ROOT: u64 = 0x0000_2000;
 
 pub fn sys_statx(
-    dirfd: FileDesc,
+    dirfd: RawFileDesc,
     filename_ptr: Vaddr,
     flags: u32,
     mask: u32,

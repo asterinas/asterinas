@@ -3,12 +3,12 @@
 use super::SyscallReturn;
 use crate::{
     fs,
-    fs::file_table::{FileDesc, get_file_fast},
+    fs::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
 };
 
 pub fn sys_pread64(
-    fd: FileDesc,
+    fd: RawFileDesc,
     user_buf_ptr: Vaddr,
     user_buf_len: usize,
     offset: i64,

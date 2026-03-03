@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::FileDesc,
+        file_table::RawFileDesc,
         path::{AT_FDCWD, FsPath},
         utils::InodeType,
     },
@@ -12,9 +12,9 @@ use crate::{
 };
 
 pub fn sys_linkat(
-    old_dirfd: FileDesc,
+    old_dirfd: RawFileDesc,
     old_path_addr: Vaddr,
-    new_dirfd: FileDesc,
+    new_dirfd: RawFileDesc,
     new_path_addr: Vaddr,
     flags: u32,
     ctx: &Context,

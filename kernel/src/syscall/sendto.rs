@@ -2,14 +2,14 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::{FileDesc, get_file_fast},
+    fs::file_table::{RawFileDesc, get_file_fast},
     net::socket::util::{MessageHeader, SendRecvFlags},
     prelude::*,
     util::net::read_socket_addr_from_user,
 };
 
 pub fn sys_sendto(
-    sockfd: FileDesc,
+    sockfd: RawFileDesc,
     buf: Vaddr,
     len: usize,
     flags: i32,

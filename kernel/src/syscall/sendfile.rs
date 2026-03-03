@@ -5,13 +5,13 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     fs,
-    fs::file_table::{FileDesc, WithFileTable},
+    fs::file_table::{RawFileDesc, WithFileTable},
     prelude::*,
 };
 
 pub fn sys_sendfile(
-    out_fd: FileDesc,
-    in_fd: FileDesc,
+    out_fd: RawFileDesc,
+    in_fd: RawFileDesc,
     offset_ptr: Vaddr,
     count: isize,
     ctx: &Context,

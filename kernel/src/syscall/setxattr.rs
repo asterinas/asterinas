@@ -7,7 +7,7 @@ use crate::{
     fs,
     fs::{
         file_handle::FileLike,
-        file_table::{FileDesc, get_file_fast},
+        file_table::{RawFileDesc, get_file_fast},
         path::{AT_FDCWD, FsPath, Path},
         utils::{
             XATTR_NAME_MAX_LEN, XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace, XattrSetFlags,
@@ -67,7 +67,7 @@ pub fn sys_lsetxattr(
 }
 
 pub fn sys_fsetxattr(
-    fd: FileDesc,
+    fd: RawFileDesc,
     name_ptr: Vaddr,
     value_ptr: Vaddr,
     value_len: usize,

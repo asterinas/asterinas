@@ -5,7 +5,7 @@ use crate::{
     fs,
     fs::{
         file_handle::FileLike,
-        file_table::{FdFlags, FileDesc},
+        file_table::{FdFlags, RawFileDesc},
         inode_handle::InodeHandle,
         path::{AT_FDCWD, FsPath, LookupResult, PathResolver},
         utils::{AccessMode, CreationFlags, InodeMode, InodeType, OpenArgs, StatusFlags},
@@ -15,7 +15,7 @@ use crate::{
 };
 
 pub fn sys_openat(
-    dirfd: FileDesc,
+    dirfd: RawFileDesc,
     path_addr: Vaddr,
     flags: u32,
     mode: u16,

@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs,
     fs::{
-        file_table::{FileDesc, get_file_fast},
+        file_table::{RawFileDesc, get_file_fast},
         path::{AT_FDCWD, FsPath},
         utils::PATH_MAX,
     },
@@ -12,7 +12,7 @@ use crate::{
     process::ResourceType,
 };
 
-pub fn sys_ftruncate(fd: FileDesc, len: isize, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_ftruncate(fd: RawFileDesc, len: isize, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}, length = {}", fd, len);
 
     check_length(len, ctx)?;

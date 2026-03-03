@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::FileDesc,
+        file_table::RawFileDesc,
         path::{AT_FDCWD, FsPath, SplitPath},
     },
     prelude::*,
@@ -15,7 +15,7 @@ pub fn sys_rmdir(path_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
 }
 
 pub(super) fn sys_rmdirat(
-    dirfd: FileDesc,
+    dirfd: RawFileDesc,
     path_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {

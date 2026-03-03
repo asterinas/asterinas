@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs,
     fs::{
-        file_table::{FileDesc, get_file_fast},
+        file_table::{RawFileDesc, get_file_fast},
         utils::FallocMode,
     },
     prelude::*,
@@ -12,7 +12,7 @@ use crate::{
 };
 
 pub fn sys_fallocate(
-    fd: FileDesc,
+    fd: RawFileDesc,
     mode: u64,
     offset: i64,
     len: i64,
