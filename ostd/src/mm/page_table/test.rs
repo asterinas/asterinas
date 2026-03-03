@@ -468,18 +468,19 @@ mod overlapping_mappings {
     #[ktest]
     #[should_panic(expected = "cursor virtual address not aligned for mapping")]
     fn unaligned_map() {
+        const HUGE_PAGE_SIZE: usize = PAGE_SIZE * 512;
+
         let page_table = PageTable::<TestPtConfig>::empty();
-        let virt_range = (PAGE_SIZE + 512)..(PAGE_SIZE * 2 + 512);
-        let phys_range = (PAGE_SIZE * 100 + 512)..(PAGE_SIZE * 101 + 512);
+        let virt_range = PAGE_SIZE..HUGE_PAGE_SIZE + PAGE_SIZE; // Aligned to 4k but not 2M.
+        let phys_range = HUGE_PAGE_SIZE..HUGE_PAGE_SIZE * 2; // Aligned to 2M.
         let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
         let preempt_guard = disable_preempt();
 
-        // Attempts to map an unaligned virtual address range (expected to panic).
+        let mut cursor = page_table.cursor_mut(&preempt_guard, &virt_range).unwrap();
+
+        // Attempts to map an virtual address range not aligned to 2M (expected to panic).
         unsafe {
-            page_table
-                .cursor_mut(&preempt_guard, &virt_range)
-                .unwrap()
-                .map((phys_range.start, 1, page_property));
+            cursor.map((phys_range.start, 2, page_property));
         }
     }
 }
@@ -1013,7 +1014,7 @@ mod boot_pt {
     }
 
     #[ktest]
-    #[should_panic(expected = "mapping an already mapped huge page in the boot page table")]
+    #[should_panic(expected = "mapping an already mapped page in the boot page table")]
     fn map_base_page_already_mapped() {
         let root_frame = FrameAllocOptions::new().alloc_frame().unwrap();
         let root_paddr = root_frame.paddr();
