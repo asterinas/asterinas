@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: MPL-2.0
+
+mod keyboard;
+
+use core::num::NonZeroU8;
+
+use crate::prelude::Result;
+
+const MAX_CONSOLES: usize = 63;
+
+/// A virtual terminal index that is always in the range `1..=MAX_CONSOLES`.
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct VtIndex(NonZeroU8);
+
+impl VtIndex {
+    /// Creates a `VtIndex` from a 1-based VT number.
+    ///
+    /// Returns `None` if `value == 0` or `value > MAX_CONSOLES`.
+    const fn new(value: u8) -> Option<Self> {
+        if value == 0 || value as usize > MAX_CONSOLES {
+            None
+        } else {
+            Some(VtIndex(NonZeroU8::new(value).unwrap()))
+        }
+    }
+}
+
+pub(super) fn init_in_first_process() -> Result<()> {
+    keyboard::init();
+    Ok(())
+}
