@@ -358,22 +358,24 @@ impl DirDentry<'_> {
         children.check_mountpoint(name)?;
 
         let mut children = children.upgrade();
-        let cached_child = children.delete(name);
-
         let dir_inode = &self.inode;
-        let child_inode = match cached_child {
-            Some(child) => {
-                // Cache hit: use the cached dentry
-                child.inode().clone()
-            }
-            None => {
-                // Cache miss: need to lookup from the underlying filesystem
-                drop(children);
-                dir_inode.lookup(name)?
-            }
+
+        let child_inode = if let Some(cached_dentry) = children.entry(name)? {
+            let child_inode = cached_dentry.inode().clone();
+
+            dir_inode.unlink(name)?;
+            children.delete(name);
+
+            child_inode
+        } else {
+            // Cache miss: need to lookup from the underlying filesystem
+            let child_inode = dir_inode.lookup(name)?;
+            dir_inode.unlink(name)?;
+
+            child_inode
         };
 
-        dir_inode.unlink(name)?;
+        drop(children);
 
         let nlinks = child_inode.metadata().nr_hard_links;
         fs::vfs::notify::on_link_count(&child_inode);
@@ -409,22 +411,24 @@ impl DirDentry<'_> {
         children.check_mountpoint(name)?;
 
         let mut children = children.upgrade();
-        let cached_child = children.delete(name);
-
         let dir_inode = &self.inode;
-        let child_inode = match cached_child {
-            Some(child) => {
-                // Cache hit: use the cached dentry
-                child.inode().clone()
-            }
-            None => {
-                // Cache miss: need to lookup from the underlying filesystem
-                drop(children);
-                dir_inode.lookup(name)?
-            }
+
+        let child_inode = if let Some(cached_dentry) = children.entry(name)? {
+            let child_inode = cached_dentry.inode().clone();
+
+            dir_inode.rmdir(name)?;
+            children.delete(name);
+
+            child_inode
+        } else {
+            // Cache miss: need to lookup from the underlying filesystem
+            let child_inode = dir_inode.lookup(name)?;
+            dir_inode.rmdir(name)?;
+
+            child_inode
         };
 
-        dir_inode.rmdir(name)?;
+        drop(children);
 
         let nlinks = child_inode.metadata().nr_hard_links;
         if nlinks == 0 {
@@ -621,6 +625,20 @@ impl DentryChildren {
     /// Deletes a dentry by name, turning it into a negative entry if exists.
     fn delete(&mut self, name: &str) -> Option<Arc<Dentry>> {
         self.dentries.get_mut(name).and_then(Option::take)
+    }
+
+    /// Probes the corresponding cache entry by name.
+    ///
+    /// Returns:
+    /// - `Ok(Some(entry))` for a valid dentry,
+    /// - `Ok(None)` for cache miss,
+    /// - `Err(ENOENT)` for a negative dentry.
+    fn entry(&self, name: &str) -> Result<Option<Arc<Dentry>>> {
+        match self.dentries.get(name) {
+            Some(Some(dentry)) => Ok(Some(dentry.clone())),
+            Some(None) => return_errno_with_message!(Errno::ENOENT, "found a negative dentry"),
+            None => Ok(None),
+        }
     }
 
     /// Checks whether the dentry is a mount point. Returns an error if it is.
