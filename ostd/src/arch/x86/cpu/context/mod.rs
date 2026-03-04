@@ -50,6 +50,7 @@ pub struct UserContext {
 #[expect(missing_docs)]
 pub struct GeneralRegs {
     pub rax: usize,
+    pub orig_rax: usize,
     pub rbx: usize,
     pub rcx: usize,
     pub rdx: usize,
@@ -472,6 +473,7 @@ macro_rules! cpu_context_impl_getter_setter {
 
 cpu_context_impl_getter_setter!(
     [rax, set_rax],
+    [orig_rax, set_orig_rax],
     [rbx, set_rbx],
     [rcx, set_rcx],
     [rdx, set_rdx],
