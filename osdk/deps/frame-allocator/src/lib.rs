@@ -47,7 +47,7 @@ mod test;
 
 fast_smp_counter! {
     /// The total size of free memory.
-    pub static TOTAL_FREE_SIZE: usize;
+    static TOTAL_FREE_SIZE: usize;
 }
 
 /// Loads the total size (in bytes) of free memory in the allocator.

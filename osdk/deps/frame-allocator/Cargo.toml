@@ -12,5 +12,9 @@ log.workspace = true
 ostd.workspace = true
 paste.workspace = true
 
+[features]
+default = []
+cvm_guest = ["ostd/cvm_guest"]
+
 [lints]
 workspace = true
