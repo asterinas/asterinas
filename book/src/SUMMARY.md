@@ -30,6 +30,7 @@
         * [Namespaces, cgroups & security](kernel/linux-compatibility/syscall-flag-coverage/namespaces-cgroups-and-security/README.md)
         * [System information & misc](kernel/linux-compatibility/syscall-flag-coverage/system-information-and-misc/README.md)
     * [File System Coverage]()
+    * [Kernel Parameters](kernel/linux-compatibility/kernel-parameters.md)
 * [Roadmap](kernel/roadmap.md)
 
 # Asterinas OSTD
