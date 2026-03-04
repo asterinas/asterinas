@@ -27,6 +27,8 @@ use component::{ComponentInitError, init_component};
 pub use inventory::submit;
 use spin::Once;
 
+pub mod types;
+
 /// Defines a **single-value** `key=value` kernel command-line parameter.
 ///
 /// During command-line parsing, all occurrences of `$name` are grouped and then
