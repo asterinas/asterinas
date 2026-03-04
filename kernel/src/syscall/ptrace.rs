@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#[cfg(target_arch = "x86_64")]
+use ostd::{arch::cpu::context::c_user_regs_struct, mm::VmIo};
+
 use super::SyscallReturn;
 use crate::{
     prelude::*,
@@ -43,6 +46,31 @@ pub fn sys_ptrace(
                 .as_posix_thread()
                 .unwrap()
                 .ptrace_continue(PtraceContRequest::Continue)?;
+        }
+        #[cfg(target_arch = "x86_64")]
+        PtraceRequest::PTRACE_GETREGS => {
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let tracee = tracee.as_posix_thread().unwrap();
+
+            // Lock order: user_ctx -> ptrace_status.
+            let user_ctx = tracee.user_ctx().lock();
+            let regs = tracee.ptrace_get_regs(&user_ctx)?;
+
+            let regs = c_user_regs_struct::from(regs);
+            ctx.user_space().write_val(data as usize, &regs)?;
+        }
+        #[cfg(target_arch = "x86_64")]
+        PtraceRequest::PTRACE_SETREGS => {
+            let regs = ctx
+                .user_space()
+                .read_val::<c_user_regs_struct>(data as usize)?;
+
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let tracee = tracee.as_posix_thread().unwrap();
+
+            // Lock order: user_ctx -> ptrace_status.
+            let mut user_ctx = tracee.user_ctx().lock();
+            tracee.ptrace_set_regs(&mut user_ctx, regs.into())?;
         }
         _ => {
             warn!("unimplemented ptrace request: {:?}", request);

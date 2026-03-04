@@ -72,6 +72,105 @@ pub struct GeneralRegs {
     pub gsbase: usize,
 }
 
+/// x86_64 Linux-like C ABI register layout used by ptrace-style FFI.
+#[derive(Debug, Default, Clone, Copy, Eq, PartialEq, Pod)]
+#[repr(C)]
+#[expect(missing_docs)]
+pub struct c_user_regs_struct {
+    pub r15: usize,
+    pub r14: usize,
+    pub r13: usize,
+    pub r12: usize,
+    pub rbp: usize,
+    pub rbx: usize,
+    pub r11: usize,
+    pub r10: usize,
+    pub r9: usize,
+    pub r8: usize,
+    pub rax: usize,
+    pub rcx: usize,
+    pub rdx: usize,
+    pub rsi: usize,
+    pub rdi: usize,
+    pub orig_rax: usize,
+    pub rip: usize,
+    pub cs: usize,
+    pub eflags: usize,
+    pub rsp: usize,
+    pub ss: usize,
+    pub fs_base: usize,
+    pub gs_base: usize,
+    pub ds: usize,
+    pub es: usize,
+    pub fs: usize,
+    pub gs: usize,
+}
+
+impl From<GeneralRegs> for c_user_regs_struct {
+    fn from(regs: GeneralRegs) -> Self {
+        // Reference:
+        // <https://elixir.bootlin.com/linux/v6.16.5/source/arch/x86/include/asm/segment.h#L137-L138>
+        // <https://www.kernel.org/doc/html/next/x86/x86_64/fsgs.html>
+        Self {
+            r15: regs.r15,
+            r14: regs.r14,
+            r13: regs.r13,
+            r12: regs.r12,
+            rbp: regs.rbp,
+            rbx: regs.rbx,
+            r11: regs.r11,
+            r10: regs.r10,
+            r9: regs.r9,
+            r8: regs.r8,
+            rax: regs.rax,
+            rcx: regs.rcx,
+            rdx: regs.rdx,
+            rsi: regs.rsi,
+            rdi: regs.rdi,
+            orig_rax: regs.orig_rax,
+            rip: regs.rip,
+            cs: 0x33,
+            eflags: regs.rflags,
+            rsp: regs.rsp,
+            ss: 0x2b,
+            fs_base: regs.fsbase,
+            gs_base: regs.gsbase,
+            ds: 0,
+            es: 0,
+            fs: 0,
+            gs: 0,
+        }
+    }
+}
+
+impl From<c_user_regs_struct> for GeneralRegs {
+    fn from(regs: c_user_regs_struct) -> Self {
+        Self {
+            rax: regs.rax,
+            orig_rax: regs.orig_rax,
+            rbx: regs.rbx,
+            rcx: regs.rcx,
+            rdx: regs.rdx,
+            rsi: regs.rsi,
+            rdi: regs.rdi,
+            rbp: regs.rbp,
+            rsp: regs.rsp,
+            r8: regs.r8,
+            r9: regs.r9,
+            r10: regs.r10,
+            r11: regs.r11,
+            r12: regs.r12,
+            r13: regs.r13,
+            r14: regs.r14,
+            r15: regs.r15,
+            rip: regs.rip,
+            rflags: regs.eflags,
+            fsbase: regs.fs_base,
+            gsbase: regs.gs_base,
+        }
+    }
+}
+
 /// Architectural CPU exceptions (x86-64 vectors 0-31).
 ///
 /// For the authoritative specification of each vector, see the

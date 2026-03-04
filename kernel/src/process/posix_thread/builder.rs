@@ -188,6 +188,7 @@ impl PosixThreadBuilder {
                     ns_proxy: Mutex::new(Some(ns_proxy.clone())),
                     timer_slack_ns: AtomicU64::new(default_timer_slack_ns),
                     default_timer_slack_ns: AtomicU64::new(default_timer_slack_ns),
+                    user_ctx: Mutex::new(*user_ctx),
                     tracee_status: Once::new(),
                     tracees: Once::new(),
                 }
@@ -213,7 +214,7 @@ impl PosixThreadBuilder {
             );
 
             thread_table::add_thread(tid, thread.clone());
-            task::create_new_user_task(user_ctx, thread, thread_local, is_init_process)
+            task::create_new_user_task(thread, thread_local, is_init_process)
         })
     }
 }

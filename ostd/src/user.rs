@@ -2,7 +2,10 @@
 
 //! User mode.
 
-use crate::arch::{cpu::context::UserContext, trap::TrapFrame};
+use crate::{
+    arch::{cpu::context::UserContext, trap::TrapFrame},
+    sync::MutexGuard,
+};
 
 /// Specific architectures need to implement this trait. This should only used in [`UserMode`]
 ///
@@ -51,7 +54,7 @@ pub trait UserContextApi {
 /// let current = Task::current();
 /// let user_ctx = current.user_ctx()
 ///     .expect("the current task is not associated with a user context");
-/// let mut user_mode = UserMode::new(UserContext::clone(user_ctx));
+/// let mut user_mode = UserMode::new(user_ctx.lock());
 /// loop {
 ///     // Execute in the user space until some interesting events occur.
 ///     // Note: users should activate a suitable `VmSpace` before to support
@@ -60,18 +63,18 @@ pub trait UserContextApi {
 ///     todo!("handle the event, e.g., syscall");
 /// }
 /// ```
-pub struct UserMode {
-    context: UserContext,
+pub struct UserMode<'a> {
+    context: MutexGuard<'a, UserContext>,
 }
 
 // An instance of `UserMode` is bound to the current task. So it must not be sent to other tasks.
-impl !Send for UserMode {}
+impl !Send for UserMode<'_> {}
 // Note that implementing `!Sync` is unnecessary
 // because entering the user space via `UserMode` requires taking a mutable reference.
 
-impl UserMode {
+impl<'a> UserMode<'a> {
     /// Creates a new `UserMode`.
-    pub fn new(context: UserContext) -> Self {
+    pub fn new(context: MutexGuard<'a, UserContext>) -> Self {
         Self { context }
     }
 

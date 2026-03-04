@@ -73,6 +73,7 @@ pub fn handle_pending_signal(
     let sig_num = signal.num();
 
     if sig_num != SIGKILL && ctx.posix_thread.may_be_tracee() {
+        // Lock order: user_ctx -> ptrace_status.
         match ctx.posix_thread.ptrace_stop(signal) {
             Ok(()) => return,
             Err(s) => signal = s,

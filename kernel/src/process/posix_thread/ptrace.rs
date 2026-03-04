@@ -4,6 +4,8 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use hashbrown::HashMap;
 use inherit_methods_macro::inherit_methods;
+#[cfg(target_arch = "x86_64")]
+use ostd::arch::cpu::context::{GeneralRegs, UserContext};
 
 use super::{AsPosixThread, PosixThread};
 use crate::{
@@ -85,6 +87,38 @@ impl PosixThread {
         self.wake_signalled_waker();
 
         Ok(())
+    }
+
+    /// Gets the general-purpose registers of this thread for ptrace.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if this thread is not ptrace-stopped.
+    #[cfg(target_arch = "x86_64")]
+    pub fn ptrace_get_regs(&self, user_ctx: &MutexGuard<'_, UserContext>) -> Result<GeneralRegs> {
+        let Some(status) = self.tracee_status.get() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread is not being traced");
+        };
+
+        status.get_regs(user_ctx)
+    }
+
+    /// Sets the general-purpose registers of this thread for ptrace.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if this thread is not ptrace-stopped.
+    #[cfg(target_arch = "x86_64")]
+    pub fn ptrace_set_regs(
+        &self,
+        user_ctx: &mut MutexGuard<'_, UserContext>,
+        regs: GeneralRegs,
+    ) -> Result<()> {
+        let Some(status) = self.tracee_status.get() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread is not being traced");
+        };
+
+        status.set_regs(user_ctx, regs)
     }
 }
 
@@ -214,6 +248,35 @@ impl TraceeStatus {
         }
 
         Ok(())
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn get_regs(&self, user_ctx: &MutexGuard<'_, UserContext>) -> Result<GeneralRegs> {
+        // Hold the lock first to avoid race conditions.
+        let _tracee_state = self.state.lock();
+
+        if self.is_stopped.load(Ordering::Relaxed) {
+            Ok(*user_ctx.general_regs())
+        } else {
+            return_errno_with_message!(Errno::ESRCH, "the thread is not ptrace-stopped");
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn set_regs(
+        &self,
+        user_ctx: &mut MutexGuard<'_, UserContext>,
+        regs: GeneralRegs,
+    ) -> Result<()> {
+        // Hold the lock first to avoid race conditions.
+        let _tracee_state = self.state.lock();
+
+        if self.is_stopped.load(Ordering::Relaxed) {
+            *user_ctx.general_regs_mut() = regs;
+            Ok(())
+        } else {
+            return_errno_with_message!(Errno::ESRCH, "the thread is not ptrace-stopped");
+        }
     }
 }
 
