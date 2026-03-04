@@ -2,6 +2,7 @@
 #include <sys/ptrace.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/user.h>
 #include <signal.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -77,6 +78,85 @@ static void print_waitid_siginfo(const siginfo_t *si)
 	}
 }
 
+static void print_regs(const struct user_regs_struct *r)
+{
+	printf("r15=0x%016llx r14=0x%016llx r13=0x%016llx r12=0x%016llx\n",
+	       r->r15, r->r14, r->r13, r->r12);
+
+	printf("rbp=0x%016llx rbx=0x%016llx r11=0x%016llx r10=0x%016llx\n",
+	       r->rbp, r->rbx, r->r11, r->r10);
+
+	printf("r9 =0x%016llx r8 =0x%016llx rax=0x%016llx rcx=0x%016llx\n",
+	       r->r9, r->r8, r->rax, r->rcx);
+
+	printf("rdx=0x%016llx rsi=0x%016llx rdi=0x%016llx\n", r->rdx, r->rsi,
+	       r->rdi);
+
+	printf("orig_rax=0x%016llx rip=0x%016llx\n", r->orig_rax, r->rip);
+
+	printf("cs=0x%016llx eflags=0x%016llx\n", r->cs, r->eflags);
+
+	printf("rsp=0x%016llx ss=0x%016llx\n", r->rsp, r->ss);
+
+	printf("fs_base=0x%016llx gs_base=0x%016llx\n", r->fs_base, r->gs_base);
+
+	printf("ds=0x%016llx es=0x%016llx fs=0x%016llx gs=0x%016llx\n", r->ds,
+	       r->es, r->fs, r->gs);
+}
+
+static void ptrace_regs_roundtrip(pid_t pid, const char *stage)
+{
+	struct user_regs_struct before, after_set, after_get, restored_get;
+
+	if (ptrace(PTRACE_GETREGS, pid, NULL, &before) == -1) {
+		perror("ptrace(GETREGS before)");
+		exit(1);
+	}
+
+	printf("[parent][%s] regs before set:\n", stage);
+	print_regs(&before);
+
+	after_set = before;
+	after_set.r15 ^= 0x5a5a5a5a5a5a5a5aULL;
+
+	if (ptrace(PTRACE_SETREGS, pid, NULL, &after_set) == -1) {
+		perror("ptrace(SETREGS)");
+		exit(1);
+	}
+
+	if (ptrace(PTRACE_GETREGS, pid, NULL, &after_get) == -1) {
+		perror("ptrace(GETREGS after set)");
+		exit(1);
+	}
+
+	printf("[parent][%s] regs after set:\n", stage);
+	print_regs(&after_get);
+
+	if (after_get.r15 != after_set.r15) {
+		fprintf(stderr,
+			"[parent][%s] SETREGS not visible via GETREGS: expected r15=0x%016llx got r15=0x%016llx\n",
+			stage, after_set.r15, after_get.r15);
+		exit(1);
+	}
+
+	if (ptrace(PTRACE_SETREGS, pid, NULL, &before) == -1) {
+		perror("ptrace(SETREGS restore)");
+		exit(1);
+	}
+
+	if (ptrace(PTRACE_GETREGS, pid, NULL, &restored_get) == -1) {
+		perror("ptrace(GETREGS after restore)");
+		exit(1);
+	}
+
+	if (restored_get.r15 != before.r15) {
+		fprintf(stderr,
+			"[parent][%s] restore failed: expected r15=0x%016llx got r15=0x%016llx\n",
+			stage, before.r15, restored_get.r15);
+		exit(1);
+	}
+}
+
 int main(void)
 {
 	pid_t pid = fork();
@@ -120,6 +200,7 @@ int main(void)
 		}
 
 		print_waitid_siginfo(&si);
+		ptrace_regs_roundtrip(pid, "first-stop");
 		if (si.si_code != CLD_TRAPPED || si.si_status != SIGTRAP) {
 			fprintf(stderr,
 				"[parent] unexpected first ptrace stop: code=%d status=%d\n",
@@ -139,6 +220,7 @@ int main(void)
 		}
 
 		print_waitid_siginfo(&si);
+		ptrace_regs_roundtrip(pid, "second-stop");
 		if (si.si_code != CLD_TRAPPED || si.si_status != SIGCHLD) {
 			fprintf(stderr,
 				"[parent] unexpected second ptrace stop: code=%d status=%d\n",
