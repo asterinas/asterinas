@@ -102,6 +102,7 @@ ENABLE_BASIC_TEST := true
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="INTEL_TDX=$(INTEL_TDX)"
 CARGO_OSDK_BUILD_ARGS += --init-args="/test/run_general_test.sh"
 else ifeq ($(AUTO_TEST), boot)
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="undefined_key=1 undefined-key undefined-flag undefined-key=2 undefined_module.flag undefined_module.key=val"
 CARGO_OSDK_BUILD_ARGS += --init-args="/test/boot_hello.sh"
 else ifeq ($(AUTO_TEST), vsock)
 ENABLE_BASIC_TEST := true
