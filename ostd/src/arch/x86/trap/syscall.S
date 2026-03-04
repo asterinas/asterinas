@@ -38,6 +38,7 @@ syscall_return: # (regs: &mut RawUserContext)
     swapgs
 
     pop rax
+    pop rbx                 # skip orig_rax
     pop rbx
     pop rcx
     pop rdx
@@ -113,7 +114,7 @@ syscall_entry:
     mov gs:12, rsp          # store user rsp -> scratch at TSS.sp1
     mov rsp, gs:4           # load kernel rsp <- TSS.sp0
     pop rsp                 # load rsp <- UserContext
-    add rsp, 21*8           # rsp -> error code of UserContext
+    add rsp, 22*8           # rsp -> error code of UserContext
 
     push 0x100              # push trap_num
     sub rsp, 16             # skip fsbase, gsbase
@@ -138,6 +139,10 @@ trap_syscall_entry:
     push rdx
     push rcx
     push rbx
+    mov rcx, -1
+    cmp qword ptr [rsp + 19*8], 0x100
+    cmove rcx, rax
+    push rcx                # push orig_rax (-1 for non-syscall, rax for syscall)
     push rax
 
     # restore callee-saved registers
