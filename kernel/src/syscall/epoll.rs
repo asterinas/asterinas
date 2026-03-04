@@ -9,7 +9,7 @@ use crate::{
     events::IoEvents,
     fs::{
         epoll::{EpollCtl, EpollEvent, EpollFile, EpollFlags},
-        file_table::{FdFlags, RawFileDesc, get_file_fast},
+        file_table::{FdFlags, FileDesc, RawFileDesc, get_file_fast},
         utils::CreationFlags,
     },
     prelude::*,
@@ -65,6 +65,7 @@ pub fn sys_epoll_ctl(
     const EPOLL_CTL_DEL: i32 = 2;
     const EPOLL_CTL_MOD: i32 = 3;
 
+    let fd = FileDesc::new(fd.cast_unsigned());
     let cmd = match op {
         EPOLL_CTL_ADD => {
             let c_epoll_event = ctx.user_space().read_val::<c_epoll_event>(event_addr)?;

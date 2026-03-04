@@ -14,7 +14,7 @@ use crate::{
     events::IoEvents,
     fs::{
         file_handle::FileLike,
-        file_table::{FdFlags, RawFileDesc, get_file_fast},
+        file_table::{FdFlags, FileDesc, get_file_fast},
         path::Path,
         pseudofs::AnonInodeFs,
         utils::CreationFlags,
@@ -72,7 +72,7 @@ impl EpollFile {
         };
 
         let mut file_table = thread_local.borrow_file_table_mut();
-        let file = get_file_fast!(&mut file_table, fd).into_owned();
+        let file = get_file_fast!(&mut file_table, fd.get() as i32).into_owned();
         drop(file_table);
 
         match *cmd {
@@ -88,7 +88,7 @@ impl EpollFile {
 
     fn add_interest(
         &self,
-        fd: RawFileDesc,
+        fd: FileDesc,
         file: Arc<dyn FileLike>,
         ep_event: EpollEvent,
         ep_flags: EpollFlags,
@@ -129,7 +129,7 @@ impl EpollFile {
         Ok(())
     }
 
-    fn del_interest(&self, fd: RawFileDesc, file: KeyableWeak<dyn FileLike>) -> Result<()> {
+    fn del_interest(&self, fd: FileDesc, file: KeyableWeak<dyn FileLike>) -> Result<()> {
         // If this epoll entry is in the ready list, then we should delete it.
         // But unfortunately, deleting an entry from the ready list has a
         // complexity of O(N).
@@ -148,7 +148,7 @@ impl EpollFile {
 
     fn mod_interest(
         &self,
-        fd: RawFileDesc,
+        fd: FileDesc,
         file: Arc<dyn FileLike>,
         new_ep_event: EpollEvent,
         new_ep_flags: EpollFlags,
