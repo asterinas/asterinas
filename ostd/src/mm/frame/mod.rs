@@ -38,6 +38,9 @@ pub mod segment;
 pub mod unique;
 pub mod untyped;
 
+#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+pub(crate) mod unaccepted;
+
 mod frame_ref;
 pub use frame_ref::FrameRef;
 
@@ -61,6 +64,23 @@ use crate::{
 };
 
 static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
+
+/// Loads the total size (in bytes) of memory that is still unaccepted.
+pub fn load_total_unaccepted_mem() -> usize {
+    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+    {
+        crate::if_tdx_enabled!({
+            unaccepted::load_total_unaccepted_mem()
+        } else {
+            0
+        })
+    }
+
+    #[cfg(not(all(target_arch = "x86_64", feature = "cvm_guest")))]
+    {
+        0
+    }
+}
 
 /// Returns the maximum physical address that is tracked by frame metadata.
 pub(in crate::mm) fn max_paddr() -> Paddr {

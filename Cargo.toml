@@ -143,6 +143,7 @@ num-traits = { version = "0.2", default-features = false }
 serde = { version = "1.0.192", default-features = false, features = ["alloc", "derive"] }
 smallvec = "1.13.2"
 uart_16550 = "0.3.0"
+tdx-guest = { version = "0.3.0" }
 volatile = "0.6.1"
 
 # External dependencies only for safe crates (i.e., crates under kernel or osdk/deps directories)

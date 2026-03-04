@@ -29,7 +29,7 @@ typeflags-util.workspace = true
 zerocopy.workspace = true
 
 [target.x86_64-unknown-none.dependencies]
-tdx-guest = { version = "0.2.4", optional = true }
+tdx-guest = { workspace = true, optional = true }
 
 [features]
 all = ["cvm_guest"]
