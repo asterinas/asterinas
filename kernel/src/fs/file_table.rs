@@ -68,8 +68,8 @@ impl FileTable {
         FileDesc::new(self.table.put(entry) as u32)
     }
 
-    pub fn close_file(&mut self, fd: RawFileDesc) -> Option<Arc<dyn FileLike>> {
-        let removed_entry = self.table.remove(fd as usize)?;
+    pub fn close_file(&mut self, fd: FileDesc) -> Option<Arc<dyn FileLike>> {
+        let removed_entry = self.table.remove(fd.get() as _)?;
         Some(removed_entry.file)
     }
 

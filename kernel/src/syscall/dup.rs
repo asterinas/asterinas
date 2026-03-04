@@ -60,7 +60,8 @@ fn do_dup3(
         return_errno!(Errno::EINVAL);
     }
 
-    if new_fd.cast_unsigned() as u64
+    let new_fd = FileDesc::new(new_fd.cast_unsigned());
+    if new_fd.get() as u64
         >= ctx
             .process
             .resource_limits()
@@ -73,11 +74,7 @@ fn do_dup3(
     let file_table = ctx.thread_local.borrow_file_table();
     let mut file_table_locked = file_table.unwrap().write();
     let _ = file_table_locked.close_file(new_fd);
-    let new_fd = file_table_locked.dup(
-        FileDesc::new(old_fd as u32),
-        FileDesc::new(new_fd as u32),
-        flags,
-    )?;
+    let new_fd = file_table_locked.dup(FileDesc::new(old_fd.cast_unsigned()), new_fd, flags)?;
 
     Ok(SyscallReturn::Return(new_fd.get() as _))
 }
