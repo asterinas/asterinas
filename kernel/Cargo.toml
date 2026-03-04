@@ -67,7 +67,7 @@ xmas-elf.workspace = true
 zerocopy.workspace = true
 
 [target.x86_64-unknown-none.dependencies]
-tdx-guest = { version = "0.2.4", optional = true }
+tdx-guest = { workspace = true, optional = true }
 
 [target.riscv64imac-unknown-none-elf.dependencies]
 riscv = { version = "0.15.0", features = ["s-mode"] }
@@ -78,7 +78,12 @@ loongArch64 = "0.2.5"
 [features]
 default = ["cvm_guest"]
 coverage = ["ostd/coverage"]
-cvm_guest = ["dep:tdx-guest", "ostd/cvm_guest", "aster-virtio/cvm_guest"]
+cvm_guest = [
+    "dep:tdx-guest",
+    "ostd/cvm_guest",
+    "aster-virtio/cvm_guest",
+    "osdk-frame-allocator/cvm_guest",
+]
 # By default we use the Sv48 address translation mode.
 riscv_sv39_mode = ["ostd/riscv_sv39_mode"]
 
