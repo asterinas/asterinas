@@ -4,6 +4,11 @@
 //!
 
 use linux_boot_params::{BootParams, E820Type, LINUX_BOOT_HEADER_MAGIC};
+#[cfg(feature = "cvm_guest")]
+use tdx_guest::{
+    is_tdx_guest_early,
+    unaccepted_memory::{EfiUnacceptedMemory, LINUX_EFI_UNACCEPTED_MEM_TABLE_GUID, LINUX_EFI_UNACCEPTED_MEM_TABLE_VERSION},
+};
 
 #[cfg(feature = "cvm_guest")]
 use crate::arch::init_cvm_guest;
@@ -210,6 +215,13 @@ unsafe extern "sysv64" fn __linux_boot(params_ptr: *const BootParams) -> ! {
     #[cfg(feature = "cvm_guest")]
     init_cvm_guest();
 
+    #[cfg(feature = "cvm_guest")]
+    if is_tdx_guest_early() {
+        crate::mm::frame::unaccepted::set_unaccepted_memory_table(
+            parse_unaccepted_memory_table(params),
+        );
+    }
+
     EARLY_INFO.call_once(|| EarlyBootInfo {
         bootloader_name: parse_bootloader_name(params),
         kernel_cmdline: parse_kernel_commandline(params).unwrap_or(""),
@@ -222,4 +234,54 @@ unsafe extern "sysv64" fn __linux_boot(params_ptr: *const BootParams) -> ! {
     // SAFETY: The safety is guaranteed by the safety preconditions and the fact that we call it
     // once after setting up necessary resources.
     unsafe { start_kernel() };
+}
+
+/// Finds the unaccepted-memory table from EFI configuration tables.
+#[cfg(feature = "cvm_guest")]
+fn parse_unaccepted_memory_table(
+    boot_params: &BootParams,
+) -> Option<&'static mut EfiUnacceptedMemory> {
+    let efi_info = boot_params.efi_info;
+    let systab_addr = u64::from(efi_info.efi_systab) | (u64::from(efi_info.efi_systab_hi) << 32);
+
+    if systab_addr == 0 {
+        return None;
+    }
+
+    // SAFETY: `systab_addr` is valid because it is provided by firmware and we have not yet enabled paging.
+    let systab = unsafe { &*(systab_addr as *const uefi_raw::table::system::SystemTable) };
+
+    if systab.configuration_table.is_null() {
+        return None;
+    }
+
+    // SAFETY: `configuration_table` points to a firmware-provided array in the EFI system table.
+    // An empty slice is safe if `number_of_configuration_table_entries` is zero.
+    let entries = unsafe {
+        core::slice::from_raw_parts(
+            systab.configuration_table,
+            systab.number_of_configuration_table_entries,
+        )
+    };
+
+    let table_ptr = entries
+        .iter()
+        .find(|entry| entry.vendor_guid == LINUX_EFI_UNACCEPTED_MEM_TABLE_GUID)?
+        .vendor_table
+        .cast::<EfiUnacceptedMemory>();
+
+    // SAFETY: EFI config table entry points to an installed unaccepted table.
+    let table = unsafe { table_ptr.as_mut() }?;
+
+    if table.version() != LINUX_EFI_UNACCEPTED_MEM_TABLE_VERSION {
+        log::warn!(
+            "Unknown unaccepted memory table version: {}",
+            table.version()
+        );
+        return None;
+    }
+
+    log::info!("Found unaccepted memory table at {:p}", table_ptr);
+
+    Some(table)
 }
