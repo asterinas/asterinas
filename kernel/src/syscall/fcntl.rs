@@ -31,7 +31,7 @@ pub fn sys_fcntl(fd: RawFileDesc, cmd: i32, arg: u64, ctx: &Context) -> Result<S
             _ => err,
         }),
         FcntlCmd::F_GETOWN => handle_getown(fd, ctx),
-        FcntlCmd::F_SETOWN => handle_setown(fd, arg, ctx),
+        FcntlCmd::F_SETOWN => handle_setown(FileDesc::new(fd.cast_unsigned()), arg, ctx),
         FcntlCmd::F_ADD_SEALS => handle_addseal(fd, arg, ctx),
         FcntlCmd::F_GET_SEALS => handle_getseal(fd, ctx),
     }
@@ -50,7 +50,7 @@ fn handle_dupfd(fd: RawFileDesc, arg: u64, flags: FdFlags, ctx: &Context) -> Res
 fn handle_getfd(fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     file_table.read_with(|inner| {
-        let fd_flags = inner.get_entry(fd)?.flags();
+        let fd_flags = inner.get_entry(FileDesc::new(fd.cast_unsigned()))?.flags();
         Ok(SyscallReturn::Return(fd_flags.bits() as _))
     })
 }
@@ -63,7 +63,9 @@ fn handle_setfd(fd: RawFileDesc, arg: u64, ctx: &Context) -> Result<SyscallRetur
     };
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     file_table.read_with(|inner| {
-        inner.get_entry(fd)?.set_flags(flags);
+        inner
+            .get_entry(FileDesc::new(fd.cast_unsigned()))?
+            .set_flags(flags);
         Ok(SyscallReturn::Return(0))
     })
 }
@@ -130,12 +132,15 @@ fn handle_setlk(
 fn handle_getown(fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     file_table.read_with(|inner| {
-        let pid = inner.get_entry(fd)?.owner().unwrap_or(0);
+        let pid = inner
+            .get_entry(FileDesc::new(fd.cast_unsigned()))?
+            .owner()
+            .unwrap_or(0);
         Ok(SyscallReturn::Return(pid as _))
     })
 }
 
-fn handle_setown(fd: RawFileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
+fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
     // A process ID is specified as a positive value; a process group ID is specified as a negative value.
     let abs_arg = (arg as i32).unsigned_abs();
     if abs_arg > i32::MAX as u32 {

@@ -102,22 +102,22 @@ impl FileTable {
         closed_files
     }
 
-    pub fn get_file(&self, fd: RawFileDesc) -> Result<&Arc<dyn FileLike>> {
+    pub fn get_file(&self, fd: FileDesc) -> Result<&Arc<dyn FileLike>> {
         self.table
-            .get(fd as usize)
+            .get(fd.get() as _)
             .map(|entry| entry.file())
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 
-    pub fn get_entry(&self, fd: RawFileDesc) -> Result<&FileTableEntry> {
+    pub fn get_entry(&self, fd: FileDesc) -> Result<&FileTableEntry> {
         self.table
-            .get(fd as usize)
+            .get(fd.get() as _)
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 
-    pub fn get_entry_mut(&mut self, fd: RawFileDesc) -> Result<&mut FileTableEntry> {
+    pub fn get_entry_mut(&mut self, fd: FileDesc) -> Result<&mut FileTableEntry> {
         self.table
-            .get_mut(fd as usize)
+            .get_mut(fd.get() as _)
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 
@@ -181,13 +181,13 @@ macro_rules! get_file_fast {
 
         use ostd::sync::RwArc;
         use $crate::{
-            fs::file_table::{FileTable, RawFileDesc},
+            fs::file_table::{FileDesc, FileTable},
             process::posix_thread::FileTableRefMut,
         };
 
         let file_table: &mut FileTableRefMut<'_> = $file_table;
         let file_table: &mut RwArc<FileTable> = file_table.unwrap();
-        let file_desc: RawFileDesc = $file_desc;
+        let file_desc = FileDesc::new($file_desc.cast_unsigned());
 
         if let Some(inner) = file_table.get() {
             // Fast path: The file table is not shared, we can get the file in a lockless way.

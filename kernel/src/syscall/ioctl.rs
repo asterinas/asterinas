@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file_handle::FileLike,
-        file_table::{FdFlags, RawFileDesc, WithFileTable, get_file_fast},
+        file_table::{FdFlags, FileDesc, RawFileDesc, WithFileTable, get_file_fast},
         utils::StatusFlags,
     },
     prelude::*,
@@ -66,7 +66,7 @@ fn handle_fd_ioctl(
             // Follow the implementation of `fcntl()`.
 
             Some(file_table.read_with(|inner| {
-                let entry = inner.get_entry(fd)?;
+                let entry = inner.get_entry(FileDesc::new(fd.cast_unsigned()))?;
                 // FIXME: This is racy.
                 entry.set_flags(entry.flags() - FdFlags::CLOEXEC);
                 Ok(())
@@ -77,7 +77,7 @@ fn handle_fd_ioctl(
             // Follow the implementation of `fcntl()`.
 
             Some(file_table.read_with(|inner| {
-                let entry = inner.get_entry(fd)?;
+                let entry = inner.get_entry(FileDesc::new(fd.cast_unsigned()))?;
                 // FIXME: This is racy.
                 entry.set_flags(entry.flags() | FdFlags::CLOEXEC);
                 Ok(())

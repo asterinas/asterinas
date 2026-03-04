@@ -13,7 +13,7 @@
 use crate::{
     fs::{
         file_handle::FileLike,
-        file_table::RawFileDesc,
+        file_table::{FileDesc, RawFileDesc},
         inode_handle::InodeHandle,
         path::MountNamespace,
         pseudofs::{NsCommonOps, NsFile},
@@ -35,7 +35,9 @@ pub fn sys_setns(fd: RawFileDesc, flags: u32, ctx: &Context) -> Result<SyscallRe
     let file = {
         let file_table = ctx.thread_local.borrow_file_table();
         let file_table_locked = file_table.unwrap().read();
-        file_table_locked.get_file(fd)?.clone()
+        file_table_locked
+            .get_file(FileDesc::new(fd.cast_unsigned()))?
+            .clone()
     };
 
     let new_ns_proxy = if let Some(pid_file) = file.downcast_ref::<PidFile>() {

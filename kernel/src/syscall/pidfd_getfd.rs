@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::{
-    fs::file_table::{FdFlags, RawFileDesc, get_file_fast},
+    fs::file_table::{FdFlags, FileDesc, RawFileDesc, get_file_fast},
     prelude::*,
     process::{PidFile, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
     syscall::SyscallReturn,
@@ -59,7 +59,7 @@ pub fn sys_pidfd_getfd(
         .as_ref()
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target process has exited"))?
         .read()
-        .get_file(targetfd)?
+        .get_file(FileDesc::new(targetfd.cast_unsigned()))?
         .clone();
 
     // Duplicate the file descriptor into the caller's file descriptor table.

@@ -25,7 +25,7 @@ pub fn sys_close(fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     let file = {
         let file_table = ctx.thread_local.borrow_file_table();
         let mut file_table_locked = file_table.unwrap().write();
-        let _ = file_table_locked.get_file(fd)?;
+        let _ = file_table_locked.get_file(FileDesc::new(fd.cast_unsigned()))?;
         file_table_locked
             .close_file(FileDesc::new(fd as _))
             .unwrap()
@@ -87,10 +87,10 @@ pub fn sys_close_range(
         let actual_last = last.min(table_len - 1);
 
         for fd in first..=actual_last {
-            let fd = FileDesc::new(fd as _);
+            let fd = FileDesc::new(fd);
 
             if flags.contains(CloseRangeFlags::CLOEXEC) {
-                if let Ok(entry) = file_table_locked.get_entry_mut(fd.get() as _) {
+                if let Ok(entry) = file_table_locked.get_entry_mut(fd) {
                     entry.set_flags(entry.flags() | FdFlags::CLOEXEC);
                 }
             } else if let Some(file) = file_table_locked.close_file(fd) {

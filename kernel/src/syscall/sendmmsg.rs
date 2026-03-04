@@ -3,7 +3,7 @@
 use ostd::mm::VmIo;
 
 use crate::{
-    fs::file_table::RawFileDesc,
+    fs::file_table::{FileDesc, RawFileDesc},
     net::socket::{Socket, util::SendRecvFlags},
     prelude::*,
     syscall::{SyscallReturn, sendmsg::send_one_message},
@@ -34,7 +34,9 @@ pub fn sys_sendmmsg(
         // so we have to clone the file and drop the file table reference here.
         let file_table = ctx.thread_local.borrow_file_table();
         let file_table_locked = file_table.unwrap().read();
-        file_table_locked.get_file(sockfd)?.clone()
+        file_table_locked
+            .get_file(FileDesc::new(sockfd.cast_unsigned()))?
+            .clone()
     };
     let socket = file.as_socket_or_err()?;
 
