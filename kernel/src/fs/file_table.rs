@@ -2,7 +2,7 @@
 
 use core::sync::atomic::{AtomicU8, Ordering};
 
-use aster_util::slot_vec::SlotVec;
+use aster_util::{ranged_integer::RangedU32, slot_vec::SlotVec};
 
 use super::file_handle::FileLike;
 use crate::{
@@ -16,6 +16,7 @@ use crate::{
     },
 };
 
+pub type FileDesc = RangedU32<0, { i32::MAX as u32 }>;
 pub type RawFileDesc = i32;
 
 #[derive(Clone)]
@@ -34,16 +35,16 @@ impl FileTable {
         self.table.slots_len()
     }
 
-    pub fn dup(&mut self, fd: RawFileDesc, new_fd: RawFileDesc, flags: FdFlags) -> Result<RawFileDesc> {
+    pub fn dup(&mut self, fd: FileDesc, new_fd: FileDesc, flags: FdFlags) -> Result<FileDesc> {
         let file = self
             .table
-            .get(fd as usize)
+            .get(fd.get() as usize)
             .map(|entry| entry.file.clone())
             .ok_or(Error::with_message(Errno::ENOENT, "No such file"))?;
 
         // Get the lowest-numbered available fd equal to or greater than `new_fd`.
         let get_min_free_fd = || -> usize {
-            let new_fd = new_fd as usize;
+            let new_fd = new_fd.get() as usize;
             if self.table.get(new_fd).is_none() {
                 return new_fd;
             }
@@ -59,7 +60,7 @@ impl FileTable {
         let min_free_fd = get_min_free_fd();
         let entry = FileTableEntry::new(file, flags);
         self.table.put_at(min_free_fd, entry);
-        Ok(min_free_fd as RawFileDesc)
+        Ok(FileDesc::new(min_free_fd as u32))
     }
 
     pub fn insert(&mut self, item: Arc<dyn FileLike>, flags: FdFlags) -> RawFileDesc {
@@ -180,7 +181,7 @@ macro_rules! get_file_fast {
 
         use ostd::sync::RwArc;
         use $crate::{
-            fs::file_table::{RawFileDesc, FileTable},
+            fs::file_table::{FileTable, RawFileDesc},
             process::posix_thread::FileTableRefMut,
         };
 

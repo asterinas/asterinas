@@ -6,7 +6,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file_handle::FileLike,
-        file_table::{FdFlags, RawFileDesc, WithFileTable, get_file_fast},
+        file_table::{FdFlags, FileDesc, RawFileDesc, WithFileTable, get_file_fast},
         ramfs::memfd::{FileSeals, MemfdInodeHandle},
         utils::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockType, StatusFlags},
     },
@@ -39,11 +39,12 @@ pub fn sys_fcntl(fd: RawFileDesc, cmd: i32, arg: u64, ctx: &Context) -> Result<S
 
 fn handle_dupfd(fd: RawFileDesc, arg: u64, flags: FdFlags, ctx: &Context) -> Result<SyscallReturn> {
     let file_table = ctx.thread_local.borrow_file_table();
-    let new_fd = file_table
-        .unwrap()
-        .write()
-        .dup(fd, arg as RawFileDesc, flags)?;
-    Ok(SyscallReturn::Return(new_fd as _))
+    let new_fd = file_table.unwrap().write().dup(
+        FileDesc::new(fd as u32),
+        FileDesc::new(arg as u32),
+        flags,
+    )?;
+    Ok(SyscallReturn::Return(new_fd.get() as _))
 }
 
 fn handle_getfd(fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {

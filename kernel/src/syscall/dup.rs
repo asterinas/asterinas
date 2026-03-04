@@ -2,7 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::{FdFlags, RawFileDesc, get_file_fast},
+    fs::file_table::{FdFlags, FileDesc, RawFileDesc, get_file_fast},
     prelude::*,
     process::ResourceType,
 };
@@ -12,9 +12,13 @@ pub fn sys_dup(old_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
 
     let file_table = ctx.thread_local.borrow_file_table();
     let mut file_table_locked = file_table.unwrap().write();
-    let new_fd = file_table_locked.dup(old_fd, 0, FdFlags::empty())?;
+    let new_fd = file_table_locked.dup(
+        FileDesc::new(old_fd as u32),
+        FileDesc::new(0),
+        FdFlags::empty(),
+    )?;
 
-    Ok(SyscallReturn::Return(new_fd as _))
+    Ok(SyscallReturn::Return(new_fd.get() as _))
 }
 
 pub fn sys_dup2(old_fd: RawFileDesc, new_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
@@ -69,7 +73,11 @@ fn do_dup3(
     let file_table = ctx.thread_local.borrow_file_table();
     let mut file_table_locked = file_table.unwrap().write();
     let _ = file_table_locked.close_file(new_fd);
-    let new_fd = file_table_locked.dup(old_fd, new_fd, flags)?;
+    let new_fd = file_table_locked.dup(
+        FileDesc::new(old_fd as u32),
+        FileDesc::new(new_fd as u32),
+        flags,
+    )?;
 
-    Ok(SyscallReturn::Return(new_fd as _))
+    Ok(SyscallReturn::Return(new_fd.get() as _))
 }
