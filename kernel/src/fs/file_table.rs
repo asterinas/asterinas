@@ -63,9 +63,9 @@ impl FileTable {
         Ok(FileDesc::new(min_free_fd as u32))
     }
 
-    pub fn insert(&mut self, item: Arc<dyn FileLike>, flags: FdFlags) -> RawFileDesc {
+    pub fn insert(&mut self, item: Arc<dyn FileLike>, flags: FdFlags) -> FileDesc {
         let entry = FileTableEntry::new(item, flags);
-        self.table.put(entry) as RawFileDesc
+        FileDesc::new(self.table.put(entry) as u32)
     }
 
     pub fn close_file(&mut self, fd: RawFileDesc) -> Option<Arc<dyn FileLike>> {

@@ -134,7 +134,8 @@ impl FileMessage {
             let fd = file_table
                 .unwrap()
                 .write()
-                .insert(file.clone(), FdFlags::empty());
+                .insert(file.clone(), FdFlags::empty())
+                .get() as i32;
             // Perhaps we should remove the inserted files from the file table if we cannot write
             // the file descriptor back to user space? However, even Linux cannot handle every
             // corner case (https://elixir.bootlin.com/linux/v6.15.2/source/net/core/scm.c#L357).

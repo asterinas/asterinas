@@ -46,5 +46,5 @@ pub fn sys_memfd_create(name_addr: Vaddr, flags: u32, ctx: &Context) -> Result<S
         file_table_locked.insert(Arc::new(memfd_file), fd_flags)
     };
 
-    Ok(SyscallReturn::Return(fd as _))
+    Ok(SyscallReturn::Return(fd.get() as _))
 }

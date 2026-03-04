@@ -68,5 +68,5 @@ pub fn sys_pidfd_getfd(
         file_table_locked.insert(target_file, FdFlags::CLOEXEC)
     };
 
-    Ok(SyscallReturn::Return(new_fd as _))
+    Ok(SyscallReturn::Return(new_fd.get() as _))
 }

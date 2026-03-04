@@ -33,7 +33,7 @@ fn do_inotify_init(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     let file = InotifyFile::new(is_nonblocking)?;
     let file_table = ctx.thread_local.borrow_file_table();
     let fd = file_table.unwrap().write().insert(file, fd_flags);
-    Ok(SyscallReturn::Return(fd as _))
+    Ok(SyscallReturn::Return(fd.get() as _))
 }
 
 pub fn sys_inotify_add_watch(

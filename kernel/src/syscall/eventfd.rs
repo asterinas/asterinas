@@ -60,7 +60,9 @@ fn do_sys_eventfd2(init_val: u64, flags: Flags, ctx: &Context) -> RawFileDesc {
     } else {
         FdFlags::empty()
     };
-    file_table_locked.insert(Arc::new(event_file), fd_flags)
+    file_table_locked
+        .insert(Arc::new(event_file), fd_flags)
+        .get() as _
 }
 
 bitflags! {

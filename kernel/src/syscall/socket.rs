@@ -99,5 +99,5 @@ pub fn sys_socket(domain: i32, type_: i32, protocol: i32, ctx: &Context) -> Resu
         file_table_locked.insert(file_like, fd_flags)
     };
 
-    Ok(SyscallReturn::Return(fd as _))
+    Ok(SyscallReturn::Return(fd.get() as _))
 }

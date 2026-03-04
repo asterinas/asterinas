@@ -46,7 +46,7 @@ pub fn sys_epoll_create1(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     let epoll_file: Arc<EpollFile> = EpollFile::new();
     let file_table = ctx.thread_local.borrow_file_table();
     let fd = file_table.unwrap().write().insert(epoll_file, fd_flags);
-    Ok(SyscallReturn::Return(fd as _))
+    Ok(SyscallReturn::Return(fd.get() as _))
 }
 
 pub fn sys_epoll_ctl(

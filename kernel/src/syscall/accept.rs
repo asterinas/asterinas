@@ -78,7 +78,7 @@ fn do_accept(
         file_table_locked.insert(connected_socket, fd_flags)
     };
 
-    Ok(fd)
+    Ok(fd.get() as _)
 }
 
 bitflags! {
