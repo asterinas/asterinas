@@ -2,6 +2,8 @@
 
 //! ELF file parser.
 
+use core::num::NonZeroUsize;
+
 use align_ext::AlignExt;
 
 use super::{
@@ -18,7 +20,7 @@ use crate::{
     util::random::getrandom,
     vm::{
         perms::VmPerms,
-        vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR, Vmar},
+        vmar::{OffsetType, VMAR_CAP_ADDR, VMAR_LOWEST_ADDR, Vmar},
     },
 };
 
@@ -253,7 +255,7 @@ fn map_segment_vmos(
         // - static PIE programs (ET_DYN without PT_INTERP, usually the ELF interpreter itself).
         //
         // Reference: <https://elixir.bootlin.com/linux/v6.19-rc2/source/fs/binfmt_elf.c#L1109>
-        let vmar_map_options = if has_interpreter {
+        let reserved_addr = if has_interpreter {
             // PIE program: map near a dedicated base.
 
             // Add some random padding.
@@ -270,9 +272,8 @@ fn map_segment_vmos(
             if VMAR_CAP_ADDR - offset < map_size {
                 return_errno_with_message!(Errno::ENOMEM, "the mapping address is too large");
             }
-            vmar.new_map(map_size, VmPerms::empty())?
-                .align(align)
-                .offset(offset)
+            vmar.reserve_specific(offset..offset + map_size)?;
+            offset
         } else {
             // Static PIE program: pick an aligned address from the mmap region.
 
@@ -285,9 +286,9 @@ fn map_segment_vmos(
             // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/fs/binfmt_elf.c#L1293>
             heap_base = Some(PIE_BASE_ADDR);
 
-            vmar.new_map(map_size, VmPerms::empty())?.align(align)
+            vmar.reserve(NonZeroUsize::new(map_size).unwrap(), align)?
         };
-        let aligned_range = vmar_map_options.build().map(|addr| addr..addr + map_size)?;
+        let aligned_range = reserved_addr..reserved_addr + map_size;
 
         // After acquiring a suitable range, we can remove the mapping and then
         // map each segment at the desired address.
@@ -310,10 +311,10 @@ fn map_segment_vmos(
         // as the interpreter.
         let elf_va_range_aligned =
             elf_va_range.start.align_down(PAGE_SIZE)..elf_va_range.end.align_up(PAGE_SIZE);
-        let map_size = elf_va_range_aligned.len();
+        let map_size = NonZeroUsize::new(elf_va_range_aligned.len()).unwrap();
 
         vmar.new_map(map_size, VmPerms::empty())?
-            .offset(elf_va_range_aligned.start)
+            .offset(elf_va_range_aligned.start, OffsetType::Fixed)
             .build()?;
 
         // After acquiring a suitable range, we can remove the mapping and then
@@ -383,12 +384,13 @@ fn map_segment_vmo(
 
     if segment_size != 0 {
         let mut vm_map_options = vmar
-            .new_map(segment_size, perms)?
+            .new_map(NonZeroUsize::new(segment_size).unwrap(), perms)?
             .vmo(elf_vmo.clone())
             .path(elf_file.clone())
-            .vmo_offset(segment_offset)
-            .can_overwrite(true);
-        vm_map_options = vm_map_options.offset(offset).handle_page_faults_around();
+            .vmo_offset(segment_offset);
+        vm_map_options = vm_map_options
+            .offset(offset, OffsetType::Fixed)
+            .handle_page_faults_around();
         let map_addr = vm_map_options.build()?;
 
         // Write zero as paddings if the tail is not page-aligned and map size
@@ -411,8 +413,9 @@ fn map_segment_vmo(
     let anonymous_map_size = total_map_size - segment_size;
     if anonymous_map_size > 0 {
         let mut anonymous_map_options =
-            vmar.new_map(anonymous_map_size, perms)?.can_overwrite(true);
-        anonymous_map_options = anonymous_map_options.offset(offset + segment_size);
+            vmar.new_map(NonZeroUsize::new(anonymous_map_size).unwrap(), perms)?;
+        anonymous_map_options =
+            anonymous_map_options.offset(offset + segment_size, OffsetType::Fixed);
         anonymous_map_options.build()?;
     }
 
@@ -461,7 +464,10 @@ fn map_vdso_to_vmar(vmar: &Vmar) -> Option<Vaddr> {
     let vdso_vmo = vdso_vmo()?;
 
     let options = vmar
-        .new_map(VDSO_VMO_LAYOUT.size, VmPerms::empty())
+        .new_map(
+            NonZeroUsize::new(VDSO_VMO_LAYOUT.size).unwrap(),
+            VmPerms::empty(),
+        )
         .unwrap()
         .vmo(vdso_vmo);
 

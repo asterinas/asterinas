@@ -8,6 +8,9 @@
 //! the page table cursor, providing efficient, powerful concurrent accesses
 //! to the page table.
 
+#[cfg(ktest)]
+mod test;
+
 use core::{ops::Range, sync::atomic::Ordering};
 
 use super::{AnyUFrameMeta, PagingLevel, page_table::PageTableConfig};
@@ -24,7 +27,9 @@ use crate::{
         io::Fallible,
         kspace::KERNEL_PAGE_TABLE,
         page_prop::{CachePolicy, PageFlags},
-        page_table::{self, PageTable, PageTableFrag},
+        page_table::{
+            self, AuxPageTableMeta, PageTable, PageTableFrag, PteStateRef, largest_pages,
+        },
         tlb::{TlbFlushOp, TlbFlusher},
     },
     prelude::*,
@@ -68,18 +73,21 @@ use crate::{
 /// [`inject_post_schedule_handler`]: crate::task::inject_post_schedule_handler
 /// [`UserMode::execute`]: crate::user::UserMode::execute
 #[derive(Debug)]
-pub struct VmSpace {
-    pt: PageTable<UserPtConfig>,
-    cpus: AtomicCpuSet,
+pub struct VmSpace<A: AuxPageTableMeta = ()> {
+    pt: PageTable<UserPtConfig<A>>,
+    cpus: Arc<AtomicCpuSet>,
     iomems: SpinLock<Vec<IoMem>>,
 }
 
-impl VmSpace {
+impl<A: AuxPageTableMeta> VmSpace<A> {
     /// Creates a new VM address space.
     pub fn new() -> Self {
         Self {
-            pt: KERNEL_PAGE_TABLE.get().unwrap().create_user_page_table(),
-            cpus: AtomicCpuSet::new(CpuSet::new_empty()),
+            pt: KERNEL_PAGE_TABLE
+                .get()
+                .unwrap()
+                .create_user_page_table::<A>(),
+            cpus: Arc::new(AtomicCpuSet::new(CpuSet::new_empty())),
             iomems: SpinLock::new(Vec::new()),
         }
     }
@@ -96,7 +104,7 @@ impl VmSpace {
         &'a self,
         guard: &'a G,
         va: &Range<Vaddr>,
-    ) -> Result<Cursor<'a>> {
+    ) -> Result<Cursor<'a, A>> {
         Ok(Cursor(self.pt.cursor(guard, va)?))
     }
 
@@ -114,7 +122,7 @@ impl VmSpace {
         &'a self,
         guard: &'a G,
         va: &Range<Vaddr>,
-    ) -> Result<CursorMut<'a>> {
+    ) -> Result<CursorMut<'a, A>> {
         Ok(CursorMut {
             pt_cursor: self.pt.cursor_mut(guard, va)?,
             flusher: TlbFlusher::new(&self.cpus, disable_preempt()),
@@ -123,13 +131,13 @@ impl VmSpace {
     }
 
     /// Activates the page table on the current CPU.
-    pub fn activate(self: &Arc<Self>) {
+    pub fn activate(&self) {
         let preempt_guard = disable_preempt();
         let cpu = preempt_guard.current_cpu();
 
-        let last_ptr = ACTIVATED_VM_SPACE.load();
+        let last_cpus_ptr = ACTIVATED_VM_SPACE_CPUSET.load();
 
-        if last_ptr == Arc::as_ptr(self) {
+        if last_cpus_ptr == Arc::as_ptr(&self.cpus) {
             return;
         }
 
@@ -137,14 +145,14 @@ impl VmSpace {
         // `Acquire` to ensure the modification to the PT is visible by this CPU.
         self.cpus.add(cpu, Ordering::Acquire);
 
-        let self_ptr = Arc::into_raw(Arc::clone(self)) as *mut VmSpace;
-        ACTIVATED_VM_SPACE.store(self_ptr);
+        let self_cpus_ptr = Arc::into_raw(Arc::clone(&self.cpus)) as *mut AtomicCpuSet;
+        ACTIVATED_VM_SPACE_CPUSET.store(self_cpus_ptr);
 
-        if !last_ptr.is_null() {
+        if !last_cpus_ptr.is_null() {
             // SAFETY: The pointer is cast from an `Arc` when it's activated
             // the last time, so it can be restored and only restored once.
-            let last = unsafe { Arc::from_raw(last_ptr) };
-            last.cpus.remove(cpu, Ordering::Relaxed);
+            let last = unsafe { Arc::from_raw(last_cpus_ptr) };
+            last.remove(cpu, Ordering::Relaxed);
         }
 
         self.pt.activate();
@@ -232,13 +240,13 @@ impl VmSpace {
     }
 }
 
-impl Default for VmSpace {
+impl<A: AuxPageTableMeta> Default for VmSpace<A> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl VmSpace {
+impl<A: AuxPageTableMeta> VmSpace<A> {
     /// Finds the [`IoMem`] that contains the given physical address.
     ///
     /// It is a private method for internal use only. Please refer to
@@ -262,16 +270,12 @@ impl VmSpace {
 /// It exclusively owns a sub-tree of the page table, preventing others from
 /// reading or modifying the same sub-tree. Two read-only cursors can not be
 /// created from the same virtual address range either.
-pub struct Cursor<'a>(page_table::Cursor<'a, UserPtConfig>);
+pub struct Cursor<'a, A: AuxPageTableMeta = ()>(page_table::Cursor<'a, UserPtConfig<A>>);
 
-impl Cursor<'_> {
+impl<A: AuxPageTableMeta> Cursor<'_, A> {
     /// Queries the mapping at the current virtual address.
-    ///
-    /// If the cursor is pointing to a valid virtual address that is locked,
-    /// it will return the virtual address range and the mapped item.
-    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<VmQueriedItem<'_>>)> {
-        let (range, item) = self.0.query()?;
-        Ok((range, item.map(VmQueriedItem::from)))
+    pub fn query(&mut self) -> VmQueriedItem<'_> {
+        self.0.query().into()
     }
 
     /// Moves the cursor forward to the next mapped virtual address.
@@ -281,7 +285,7 @@ impl Cursor<'_> {
     /// the cursor will stop at the mapped address.
     ///
     /// Otherwise, it will return `None`. And the cursor may stop at any
-    /// address after `len` bytes.
+    /// address within `len` bytes.
     ///
     /// # Panics
     ///
@@ -300,31 +304,47 @@ impl Cursor<'_> {
     pub fn virt_addr(&self) -> Vaddr {
         self.0.virt_addr()
     }
+
+    /// Get the current level of the cursor.
+    pub fn level(&self) -> PagingLevel {
+        self.0.level()
+    }
+
+    /// Get the current virtual address range of the cursor.
+    pub fn cur_va_range(&self) -> Range<Vaddr> {
+        self.0.cur_va_range()
+    }
+
+    /// Moves the cursor down to the next level if the next level page table exists.
+    ///
+    /// Returns the new level if the next level page table exists, or `None` otherwise.
+    pub fn push_level_if_exists(&mut self) -> Option<PagingLevel> {
+        self.0.push_level_if_exists()
+    }
 }
 
 /// The cursor for modifying the mappings in VM space.
 ///
 /// It exclusively owns a sub-tree of the page table, preventing others from
 /// reading or modifying the same sub-tree.
-pub struct CursorMut<'a> {
-    pt_cursor: page_table::CursorMut<'a, UserPtConfig>,
+pub struct CursorMut<'a, A: AuxPageTableMeta = ()> {
+    pt_cursor: page_table::CursorMut<'a, UserPtConfig<A>>,
     // We have a read lock so the CPU set in the flusher is always a superset
     // of actual activated CPUs.
     flusher: TlbFlusher<'a, DisabledPreemptGuard>,
     // References to the `VmSpace`
-    vmspace: &'a VmSpace,
+    vmspace: &'a VmSpace<A>,
 }
 
-impl<'a> CursorMut<'a> {
+impl<'a, A: AuxPageTableMeta> CursorMut<'a, A> {
     /// Queries the mapping at the current virtual address.
     ///
     /// This is the same as [`Cursor::query`].
     ///
     /// If the cursor is pointing to a valid virtual address that is locked,
     /// it will return the virtual address range and the mapped item.
-    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<VmQueriedItem<'_>>)> {
-        let (range, item) = self.pt_cursor.query()?;
-        Ok((range, item.map(VmQueriedItem::from)))
+    pub fn query(&self) -> VmQueriedItem<'_> {
+        self.pt_cursor.query().into()
     }
 
     /// Moves the cursor forward to the next mapped virtual address.
@@ -332,6 +352,17 @@ impl<'a> CursorMut<'a> {
     /// This is the same as [`Cursor::find_next`].
     pub fn find_next(&mut self, len: usize) -> Option<Vaddr> {
         self.pt_cursor.find_next(len)
+    }
+
+    /// Moves the cursor forward to the largest possible subtree that contains
+    /// mapped pages.
+    ///
+    /// This is similar to [`Self::find_next`], except that the cursor will
+    /// stop at the highest possible level, that the subtree's virtual address
+    /// range is fully covered by `len`. This is useful for
+    /// [`CursorMut::unmap`].
+    pub fn find_next_unmappable_subtree(&mut self, len: usize) -> Option<Vaddr> {
+        self.pt_cursor.find_next_unmappable_subtree(len)
     }
 
     /// Jumps to the virtual address.
@@ -342,9 +373,71 @@ impl<'a> CursorMut<'a> {
         Ok(())
     }
 
+    /// Adjusts the level of the cursor to the given level.
+    ///
+    /// When the specified level page table is not allocated, it will allocate
+    /// and go to that page table. If the current virtual address contains a
+    /// huge mapping, and the specified level is lower than the mapping, it
+    /// will split the huge mapping into smaller mappings.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the specified level is invalid.
+    pub fn adjust_level(&mut self, level: PagingLevel) {
+        self.pt_cursor.adjust_level(level);
+    }
+
+    /// Gets the guard level of the cursor.
+    ///
+    /// The guard level is the maximum level that the cursor can pop to.
+    pub fn guard_level(&self) -> PagingLevel {
+        self.pt_cursor.guard_level()
+    }
+
+    /// Gets the guard virtual address range of the cursor.
+    pub fn guard_va_range(&self) -> Range<Vaddr> {
+        self.pt_cursor.guard_va_range()
+    }
+
+    /// Gets the mutable auxiliary metadata associated with the current page table.
+    pub fn aux_meta_mut(&mut self) -> &mut A {
+        self.pt_cursor.aux_meta_mut()
+    }
+
+    /// Gets the auxiliary metadata associated with the current page table.
+    pub fn aux_meta(&self) -> &A {
+        self.pt_cursor.aux_meta()
+    }
+
     /// Gets the virtual address of the current slot.
     pub fn virt_addr(&self) -> Vaddr {
         self.pt_cursor.virt_addr()
+    }
+
+    /// Gets the current level of the cursor.
+    pub fn level(&self) -> PagingLevel {
+        self.pt_cursor.level()
+    }
+
+    /// Moves the cursor down to the next level if the next level page table exists.
+    ///
+    /// Returns the new level if the next level page table exists, or `None` otherwise.
+    pub fn push_level_if_exists(&mut self) -> Option<PagingLevel> {
+        self.pt_cursor.push_level_if_exists()
+    }
+
+    /// Pops the cursor up to the previous level.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the current level is at the guard level.
+    pub fn pop_level(&mut self) {
+        self.pt_cursor.pop_level();
+    }
+
+    /// Gets the current virtual address range of the cursor.
+    pub fn cur_va_range(&self) -> Range<Vaddr> {
+        self.pt_cursor.cur_va_range()
     }
 
     /// Gets the dedicated TLB flusher for this cursor.
@@ -353,8 +446,6 @@ impl<'a> CursorMut<'a> {
     }
 
     /// Maps a frame into the current slot.
-    ///
-    /// This method will bring the cursor to the next slot after the modification.
     ///
     /// # Panics
     ///
@@ -370,8 +461,7 @@ impl<'a> CursorMut<'a> {
     ///
     /// The memory region to be mapped is the [`IoMem`] range starting at
     /// `offset` and extending to `offset + len`, or to the end of [`IoMem`],
-    /// whichever comes first. This method will bring the cursor to the next
-    /// slot after the modification.
+    /// whichever comes first.
     ///
     /// # Limitations
     ///
@@ -394,17 +484,21 @@ impl<'a> CursorMut<'a> {
         }
 
         let paddr_begin = io_mem.paddr() + offset;
-        let paddr_end = if io_mem.size() - offset < len {
-            io_mem.paddr() + io_mem.size()
+        let map_size = if io_mem.size() - offset < len {
+            io_mem.size() - offset
         } else {
-            io_mem.paddr() + len + offset
+            len
         };
 
-        for current_paddr in (paddr_begin..paddr_end).step_by(PAGE_SIZE) {
+        let cur_va = self.pt_cursor.virt_addr();
+
+        for (va, pa, level) in largest_pages::<UserPtConfig>(cur_va, paddr_begin, map_size) {
+            self.pt_cursor.jump(va).unwrap();
+            self.pt_cursor.adjust_level(level);
             // SAFETY: It is safe to map I/O memory into the userspace.
             unsafe {
                 self.pt_cursor
-                    .map(VmItem::new_untracked_io(current_paddr, prop))
+                    .map(VmItem::new_untracked_io(pa, level, prop))
             };
         }
 
@@ -434,121 +528,90 @@ impl<'a> CursorMut<'a> {
         self.vmspace.find_iomem_by_paddr(paddr)
     }
 
-    /// Clears the mapping starting from the current slot,
-    /// and returns the number of unmapped pages.
+    /// Removes all the mappings at the current PTE.
     ///
-    /// This method will bring the cursor forward by `len` bytes in the virtual
-    /// address space after the modification.
+    /// The unmapped virtual address range depends on the current level of the
+    /// cursor, and can be queried via [`Self::cur_va_range`]. Adjust the
+    /// level via [`Self::adjust_level`] before unmapping to change the
     ///
-    /// Already-absent mappings encountered by the cursor will be skipped. It
-    /// is valid to unmap a range that is not mapped.
-    ///
-    /// It must issue and dispatch a TLB flush after the operation. Otherwise,
-    /// the memory safety will be compromised. Please call this function less
-    /// to avoid the overhead of TLB flush. Using a large `len` is wiser than
-    /// splitting the operation into multiple small ones.
+    /// The number of unmapped frames is returned.
     ///
     /// # Panics
     ///
-    /// Panics if:
-    ///  - the length is longer than the remaining range of the cursor;
-    ///  - the length is not page-aligned.
-    pub fn unmap(&mut self, len: usize) -> usize {
-        let end_va = self.virt_addr() + len;
-        let mut num_unmapped: usize = 0;
-        loop {
-            // SAFETY: It is safe to un-map memory in the userspace. And the
-            // un-mapped items are dropped after TLB flushes.
-            let Some(frag) = (unsafe { self.pt_cursor.take_next(end_va - self.virt_addr()) })
-            else {
-                break; // No more mappings in the range.
-            };
+    /// Panics if the current level is at the top level.
+    pub fn unmap(&mut self) -> usize {
+        let cur_range = self.pt_cursor.cur_va_range();
 
-            match frag {
-                PageTableFrag::Mapped { va, item, .. } => {
-                    // SAFETY: If the item is not a scalar (e.g., a frame
-                    // pointer), we will drop it after the RCU grace period
-                    // (see `issue_tlb_flush_with`).
-                    let (item, panic_guard) = unsafe { RcuDrop::into_inner(item) };
+        // SAFETY: It is safe to un-map memory in the userspace. And the
+        // un-mapped items are dropped after TLB flushes.
+        let Some(frag) = (unsafe { self.pt_cursor.unmap() }) else {
+            return 0;
+        };
 
-                    match item {
-                        VmItem {
-                            mapped_item: MappedItem::TrackedFrame(old_frame),
-                            ..
-                        } => {
-                            num_unmapped += 1;
+        match frag {
+            PageTableFrag::Mapped { va, item, .. } => {
+                // SAFETY: If the item is not a scalar (e.g., a frame
+                // pointer), we will drop it after the RCU grace period
+                // (see `issue_tlb_flush_with`).
+                let (item, panic_guard) = unsafe { RcuDrop::into_inner(item) };
 
-                            let rcu_frame = RcuDrop::new(old_frame);
-                            panic_guard.forget();
-                            let rcu_frame = Frame::rcu_from_unsized(rcu_frame);
-                            self.flusher
-                                .issue_tlb_flush_with(TlbFlushOp::for_single(va), rcu_frame);
-                        }
-                        VmItem {
-                            mapped_item: MappedItem::UntrackedIoMem { .. },
-                            ..
-                        } => {
-                            panic_guard.forget();
+                match item {
+                    VmItem {
+                        mapped_item: MappedItem::TrackedFrame(old_frame),
+                        ..
+                    } => {
+                        let rcu_frame = RcuDrop::new(old_frame);
+                        panic_guard.forget();
+                        let rcu_frame = Frame::rcu_from_unsized(rcu_frame);
+                        self.flusher
+                            .issue_tlb_flush_with(TlbFlushOp::for_single(va), rcu_frame);
 
-                            // Flush the TLB entry for the current address, but
-                            // in the current design, we cannot drop the
-                            // corresponding `IoMem`. This is because we manage
-                            // the range of I/O as a whole, but the frames
-                            // handled here might be one segment of it.
-                            self.flusher.issue_tlb_flush(TlbFlushOp::for_single(va));
-                        }
+                        1
+                    }
+                    VmItem {
+                        mapped_item: MappedItem::UntrackedIoMem { .. },
+                        ..
+                    } => {
+                        panic_guard.forget();
+
+                        // Flush the TLB entry for the current address, but
+                        // in the current design, we cannot drop the
+                        // corresponding `IoMem`. This is because we manage
+                        // the range of I/O as a whole, but the frames
+                        // handled here might be one segment of it.
+                        self.flusher
+                            .issue_tlb_flush(TlbFlushOp::for_range(cur_range.clone()));
+
+                        0
                     }
                 }
-                PageTableFrag::StrayPageTable {
-                    pt,
-                    va,
-                    len,
-                    num_frames,
-                } => {
-                    num_unmapped += num_frames;
+            }
+            PageTableFrag::StrayPageTable {
+                pt,
+                va,
+                len,
+                num_frames,
+            } => {
+                self.flusher.issue_tlb_flush_with(
+                    TlbFlushOp::for_range(va..va + len),
+                    Frame::rcu_from_unsized(pt),
+                );
 
-                    self.flusher.issue_tlb_flush_with(
-                        TlbFlushOp::for_range(va..va + len),
-                        Frame::rcu_from_unsized(pt),
-                    );
-                }
+                num_frames
             }
         }
-
-        self.flusher.dispatch_tlb_flush();
-
-        num_unmapped
     }
 
-    /// Applies the operation to the next slot of mapping within the range.
+    /// Applies the operation to the current PTE.
     ///
-    /// The range to be found in is the current virtual address with the
-    /// provided length.
-    ///
-    /// The function stops and yields the actually protected range if it has
-    /// actually protected a page, no matter if the following pages are also
-    /// required to be protected.
-    ///
-    /// It also makes the cursor moves forward to the next page after the
-    /// protected one. If no mapped pages exist in the following range, the
-    /// cursor will stop at the end of the range and return [`None`].
-    ///
-    /// Note that it will **NOT** flush the TLB after the operation. Please
-    /// make the decision yourself on when and how to flush the TLB using
-    /// [`Self::flusher`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if the length is longer than the remaining range of the cursor.
-    pub fn protect_next(
-        &mut self,
-        len: usize,
-        mut op: impl FnMut(&mut PageFlags, &mut CachePolicy),
-    ) -> Option<Range<Vaddr>> {
+    /// The unmapped virtual address range depends on the current level of the
+    /// cursor, and can be queried via [`Self::cur_va_range`]. Adjust the
+    /// level via [`Self::adjust_level`] before unmapping to change the
+    pub fn protect(&mut self, mut op: impl FnMut(&mut PageFlags, &mut CachePolicy)) {
         // SAFETY: It is safe to set `PageFlags` and `CachePolicy` of memory
         // in the userspace.
         unsafe {
-            self.pt_cursor.protect_next(len, &mut |prop| {
+            self.pt_cursor.protect(&mut |prop| {
                 op(&mut prop.flags, &mut prop.cache);
             })
         }
@@ -556,22 +619,21 @@ impl<'a> CursorMut<'a> {
 }
 
 cpu_local_cell! {
-    /// The `Arc` pointer to the activated VM space on this CPU. If the pointer
-    /// is NULL, it means that the activated page table is merely the kernel
-    /// page table.
+    /// The `Arc` pointer to the activated VM space's `cpus` field on this CPU.
+    /// If the pointer is NULL, it means that the activated page table is the
+    /// kernel page table.
     // TODO: If we are enabling ASID, we need to maintain the TLB state of each
     // CPU, rather than merely the activated `VmSpace`. When ASID is enabled,
     // the non-active `VmSpace`s can still have their TLB entries in the CPU!
-    static ACTIVATED_VM_SPACE: *const VmSpace = core::ptr::null();
-}
-
-#[cfg(ktest)]
-pub(super) fn get_activated_vm_space() -> *const VmSpace {
-    ACTIVATED_VM_SPACE.load()
+    static ACTIVATED_VM_SPACE_CPUSET: *const AtomicCpuSet = core::ptr::null();
 }
 
 /// The result of a query over the VM space.
 pub enum VmQueriedItem<'a> {
+    /// The current PTE is absent.
+    None,
+    /// The current PTE points to a child page table.
+    PageTable,
     /// The current slot is mapped, the frame within is allocated from the
     /// physical memory.
     MappedRam {
@@ -591,12 +653,14 @@ pub enum VmQueriedItem<'a> {
 }
 
 impl VmQueriedItem<'_> {
-    /// Returns the page property of the mapped item.
-    pub fn prop(&self) -> &PageProperty {
-        match self {
-            Self::MappedRam { prop, .. } => prop,
-            Self::MappedIoMem { prop, .. } => prop,
-        }
+    /// Returns `true` if the queried item is not [`VmQueriedItem::None`].
+    pub fn is_some(&self) -> bool {
+        !self.is_none()
+    }
+
+    /// Returns `true` if the queried item is [`VmQueriedItem::None`].
+    pub fn is_none(&self) -> bool {
+        matches!(self, VmQueriedItem::None)
     }
 }
 
@@ -639,43 +703,51 @@ impl VmItem {
     }
 
     /// Creates a new `VmItem` that maps an untracked I/O memory.
-    fn new_untracked_io(paddr: Paddr, prop: PageProperty) -> Self {
+    fn new_untracked_io(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self {
         Self {
             prop,
-            mapped_item: MappedItem::UntrackedIoMem { paddr, level: 1 },
+            mapped_item: MappedItem::UntrackedIoMem { paddr, level },
         }
     }
 }
 
-impl<'a> From<VmItemRef<'a>> for VmQueriedItem<'a> {
-    fn from(item: VmItemRef<'a>) -> Self {
-        match item.mapped_item {
-            MappedItemRef::TrackedFrame(frame) => VmQueriedItem::MappedRam {
-                frame,
-                prop: item.prop,
-            },
-            MappedItemRef::UntrackedIoMem { paddr, level } => {
-                debug_assert_eq!(level, 1);
-                VmQueriedItem::MappedIoMem {
-                    paddr,
+impl<'a, A: AuxPageTableMeta> From<PteStateRef<'a, UserPtConfig<A>>> for VmQueriedItem<'a> {
+    fn from(state: PteStateRef<'a, UserPtConfig<A>>) -> Self {
+        match state {
+            PteStateRef::Absent => VmQueriedItem::None,
+            PteStateRef::PageTable { .. } => VmQueriedItem::PageTable,
+            PteStateRef::Mapped(item) => match item.mapped_item {
+                MappedItemRef::TrackedFrame(frame) => VmQueriedItem::MappedRam {
+                    frame,
                     prop: item.prop,
+                },
+                MappedItemRef::UntrackedIoMem { paddr, level } => {
+                    debug_assert_eq!(level, 1);
+                    VmQueriedItem::MappedIoMem {
+                        paddr,
+                        prop: item.prop,
+                    }
                 }
-            }
+            },
         }
     }
 }
 
+/// The page table configuration for user space page tables.
 #[derive(Clone, Debug)]
-pub(crate) struct UserPtConfig {}
+pub struct UserPtConfig<A: AuxPageTableMeta = ()> {
+    _phantom: core::marker::PhantomData<A>,
+}
 
 // SAFETY: `item_raw_info`, `item_into_raw`, `item_from_raw`, and
 // `item_ref_from_raw` are correctly implemented with respect to the `Item` and
 // `ItemRef` types.
-unsafe impl PageTableConfig for UserPtConfig {
+unsafe impl<A: AuxPageTableMeta> PageTableConfig for UserPtConfig<A> {
     const TOP_LEVEL_INDEX_RANGE: Range<usize> = 0..256;
 
     type E = PageTableEntry;
     type C = PagingConsts;
+    type Aux = A;
 
     type Item = VmItem;
     type ItemRef<'a> = VmItemRef<'a>;
@@ -698,11 +770,11 @@ unsafe impl PageTableConfig for UserPtConfig {
     }
 
     unsafe fn item_from_raw(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self::Item {
-        debug_assert_eq!(level, 1);
         if prop.priv_flags.contains(PrivilegedPageFlags::AVAIL1) {
             // `AVAIL1` is set, this is I/O memory.
-            VmItem::new_untracked_io(paddr, prop)
+            VmItem::new_untracked_io(paddr, level, prop)
         } else {
+            debug_assert_eq!(level, 1);
             // `AVAIL1` is clear, this is tracked memory.
             // SAFETY: The caller ensures safety.
             let frame = unsafe { Frame::<dyn AnyUFrameMeta>::from_raw(paddr) };

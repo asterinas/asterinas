@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::num::NonZeroUsize;
+
 use align_ext::AlignExt;
 
 use super::SyscallReturn;
@@ -8,7 +10,7 @@ use crate::{
     prelude::*,
     vm::{
         perms::VmPerms,
-        vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR},
+        vmar::{OffsetType, VMAR_CAP_ADDR, VMAR_LOWEST_ADDR, is_userspace_vaddr_range},
         vmo::VmoOptions,
     },
 };
@@ -22,7 +24,7 @@ pub fn sys_mmap(
     offset: u64,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let perms = VmPerms::from_user_bits_truncate(perms as u32);
+    let perms = VmPerms::from_user_bits_truncate(perms);
     let option = MMapOptions::try_from(flags as u32)?;
     let res = do_sys_mmap(
         addr as usize,
@@ -73,14 +75,25 @@ fn do_sys_mmap(
     let vm_map_options = {
         let mut options = vmar.new_map(len, vm_perms)?;
 
+        if option.flags().contains(MMapFlags::MAP_POPULATE) {
+            options = options.populate();
+        }
+
         if option.flags().is_fixed() {
-            options = options.offset(addr);
-            if !option.flags().contains(MMapFlags::MAP_FIXED_NOREPLACE) {
-                options = options.can_overwrite(true);
-            }
+            let offset_type = if option.flags().contains(MMapFlags::MAP_FIXED_NOREPLACE) {
+                OffsetType::FixedNoReplace
+            } else {
+                OffsetType::Fixed
+            };
+            options = options.offset(addr, offset_type);
         } else if option.flags().contains(MMapFlags::MAP_32BIT) {
             // TODO: Support MAP_32BIT. MAP_32BIT requires the mapping address to be below 2 GiB.
             warn!("MAP_32BIT is not supported");
+        } else if addr != 0
+            && addr.is_multiple_of(PAGE_SIZE)
+            && is_userspace_vaddr_range(addr, len.get())
+        {
+            options = options.offset(addr, OffsetType::Hint);
         }
 
         if option.typ().is_shared() {
@@ -91,7 +104,7 @@ fn do_sys_mmap(
             // Anonymous shared mappings should share the same memory pages.
             if option.typ().is_shared() {
                 let shared_vmo = {
-                    let vmo_options = VmoOptions::new(len);
+                    let vmo_options = VmoOptions::new(len.get());
                     vmo_options.alloc()?
                 };
                 options = options.vmo(shared_vmo);
@@ -126,7 +139,7 @@ fn do_sys_mmap(
     Ok(map_addr)
 }
 
-fn check_len(len: usize) -> Result<usize> {
+fn check_len(len: usize) -> Result<NonZeroUsize> {
     if len == 0 {
         return_errno_with_message!(Errno::EINVAL, "the mapping length is zero");
     }
@@ -135,10 +148,10 @@ fn check_len(len: usize) -> Result<usize> {
         return_errno_with_message!(Errno::ENOMEM, "the mapping length is too large");
     }
 
-    Ok(len.align_up(PAGE_SIZE))
+    Ok(NonZeroUsize::new(len.align_up(PAGE_SIZE)).unwrap())
 }
 
-fn check_addr(addr: Vaddr, len: usize, flags: MMapFlags) -> Result<()> {
+fn check_addr(addr: Vaddr, len: NonZeroUsize, flags: MMapFlags) -> Result<()> {
     if !flags.is_fixed() {
         return Ok(());
     }
@@ -151,14 +164,14 @@ fn check_addr(addr: Vaddr, len: usize, flags: MMapFlags) -> Result<()> {
         return_errno_with_message!(Errno::EPERM, "the mapping address is too low");
     }
 
-    if addr > VMAR_CAP_ADDR - len {
+    if addr > VMAR_CAP_ADDR - len.get() {
         return_errno_with_message!(Errno::ENOMEM, "the mapping address is too high");
     }
 
     Ok(())
 }
 
-fn check_offset(offset: usize, len: usize, flags: MMapFlags) -> Result<()> {
+fn check_offset(offset: usize, len: NonZeroUsize, flags: MMapFlags) -> Result<()> {
     if !offset.is_multiple_of(PAGE_SIZE) {
         return_errno_with_message!(Errno::EINVAL, "the mapping offset is not aligned");
     }
@@ -168,7 +181,7 @@ fn check_offset(offset: usize, len: usize, flags: MMapFlags) -> Result<()> {
     }
 
     if offset
-        .checked_add(len)
+        .checked_add(len.get())
         .is_none_or(|end| end >= isize::MAX as usize)
     {
         return_errno_with_message!(Errno::EOVERFLOW, "the mapping offset overflows");
