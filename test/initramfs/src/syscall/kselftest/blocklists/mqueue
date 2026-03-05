@@ -1,0 +1,2 @@
+mqueue:mq_open_tests
+mqueue:mq_perf_tests

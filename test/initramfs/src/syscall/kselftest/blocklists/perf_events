@@ -1,0 +1,3 @@
+perf_events:sigtrap_threads
+perf_events:remove_on_exec
+perf_events:mmap
