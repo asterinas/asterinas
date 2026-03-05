@@ -163,7 +163,6 @@ fn init_in_first_kthread(path_resolver: &PathResolver) {
     crate::device::init_in_first_kthread();
     crate::net::init_in_first_kthread();
     crate::fs::init_in_first_kthread(path_resolver);
-    crate::ipc::init_in_first_kthread();
     #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
     crate::vdso::init_in_first_kthread();
 }

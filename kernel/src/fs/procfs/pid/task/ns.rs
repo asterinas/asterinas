@@ -15,6 +15,7 @@ use crate::{
         pseudofs::NsCommonOps,
         utils::{DirEntryVecExt, Inode, SymbolicLink, mkmod},
     },
+    ipc::IpcNamespace,
     net::uts_ns::UtsNamespace,
     prelude::*,
     process::{NsProxy, UserNamespace, posix_thread::AsPosixThread},
@@ -46,17 +47,20 @@ enum NsProxyEntry {
     Uts,
     /// The mount namespace.
     Mnt,
+    /// The IPC namespace.
+    Ipc,
 }
 
 impl NsProxyEntry {
     /// All supported `NsProxy`-backed namespace entries.
-    const ALL: &[Self] = &[Self::Uts, Self::Mnt];
+    const ALL: &[Self] = &[Self::Uts, Self::Mnt, Self::Ipc];
 
     /// Returns the filename of this namespace entry under `/proc/[pid]/ns/`.
     fn as_str(self) -> &'static str {
         match self {
             Self::Uts => "uts",
             Self::Mnt => "mnt",
+            Self::Ipc => "ipc",
         }
     }
 
@@ -65,6 +69,7 @@ impl NsProxyEntry {
         match s {
             "uts" => Some(Self::Uts),
             "mnt" => Some(Self::Mnt),
+            "ipc" => Some(Self::Ipc),
             _ => None,
         }
     }
@@ -76,6 +81,7 @@ impl NsProxyEntry {
             Self::Mnt => {
                 NsSymOps::<MountNamespace>::new_inode(ns_proxy.mnt_ns().get_path(), parent)
             }
+            Self::Ipc => NsSymOps::<IpcNamespace>::new_inode(ns_proxy.ipc_ns().get_path(), parent),
         }
     }
 
@@ -84,6 +90,7 @@ impl NsProxyEntry {
         match self {
             Self::Uts => ns_proxy.uts_ns().get_path(),
             Self::Mnt => ns_proxy.mnt_ns().get_path(),
+            Self::Ipc => ns_proxy.ipc_ns().get_path(),
         }
     }
 }
@@ -99,6 +106,9 @@ fn cached_ns_path(inode: &dyn Inode) -> Option<&Path> {
         return Some(&sym.inner().ns_path);
     }
     if let Some(sym) = inode.downcast_ref::<NsSymlink<MountNamespace>>() {
+        return Some(&sym.inner().ns_path);
+    }
+    if let Some(sym) = inode.downcast_ref::<NsSymlink<IpcNamespace>>() {
         return Some(&sym.inner().ns_path);
     }
     // TODO: Support additional namespace types.
@@ -225,6 +235,10 @@ impl DirOps for NsDirOps {
 
         if child.downcast_ref::<NsSymlink<MountNamespace>>().is_some() {
             return cached_path == &ns_proxy.mnt_ns().get_path();
+        }
+
+        if child.downcast_ref::<NsSymlink<IpcNamespace>>().is_some() {
+            return cached_path == &ns_proxy.ipc_ns().get_path();
         }
 
         // TODO: Support additional namespace types.
