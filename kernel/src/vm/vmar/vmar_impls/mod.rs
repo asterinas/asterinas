@@ -2,7 +2,7 @@
 
 mod access_remote;
 mod fork;
-mod map;
+pub(super) mod map;
 mod page_fault;
 mod protect;
 mod query;

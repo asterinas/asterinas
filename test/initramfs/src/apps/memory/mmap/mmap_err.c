@@ -9,18 +9,22 @@
 
 #define PAGE_SIZE 4096
 
+// The value in `/proc/sys/vm/mmap_min_addr`.
+#define MMAP_MIN_ADDR ((void *)65536)
+
 static void *valid_addr;
 static void *avail_addr;
 static int fd;
 
 FN_SETUP(init)
 {
-	valid_addr = CHECK_WITH(mmap(NULL, PAGE_SIZE * 2, PROT_READ,
+	valid_addr = CHECK_WITH(mmap(NULL, PAGE_SIZE * 4, PROT_READ,
 				     MAP_PRIVATE | MAP_ANONYMOUS, 0, 0),
 				_ret != MAP_FAILED);
 
 	avail_addr = valid_addr + PAGE_SIZE;
-	CHECK(munmap(avail_addr, PAGE_SIZE));
+	CHECK(munmap(avail_addr, PAGE_SIZE * 3));
+	avail_addr += PAGE_SIZE;
 
 	fd = CHECK(open("/proc/self/exe", O_RDONLY));
 }
@@ -30,6 +34,9 @@ FN_TEST(overflow_len)
 {
 	TEST_ERRNO(mmap(valid_addr, ~(size_t)1, PROT_READ,
 			MAP_PRIVATE | MAP_ANONYMOUS, 0, 0),
+		   ENOMEM);
+	TEST_ERRNO(mmap(valid_addr, ~(size_t)1, PROT_READ,
+			MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0, 0),
 		   ENOMEM);
 	TEST_ERRNO(mremap(valid_addr, ~(size_t)1, PAGE_SIZE, 0), EINVAL);
 	TEST_ERRNO(mremap(valid_addr, ~(size_t)1, PAGE_SIZE, MREMAP_MAYMOVE),
@@ -55,6 +62,9 @@ FN_TEST(zero_len)
 	TEST_ERRNO(mmap(valid_addr, 0, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS,
 			0, 0),
 		   EINVAL);
+	TEST_ERRNO(mmap(valid_addr, 0, PROT_READ,
+			MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0, 0),
+		   EINVAL);
 	TEST_ERRNO(mremap(valid_addr, 0, PAGE_SIZE, 0), EINVAL);
 	TEST_ERRNO(mremap(valid_addr, 0, PAGE_SIZE, MREMAP_MAYMOVE), EINVAL);
 	TEST_ERRNO(mremap(valid_addr, PAGE_SIZE, 0, 0), EINVAL);
@@ -73,6 +83,9 @@ FN_TEST(overflow_addr)
 	for (int diff = -1; diff <= 1; ++diff) {
 		size_t len = exact_len + diff;
 
+		TEST_ERRNO(mmap(valid_addr, len, PROT_READ,
+				MAP_PRIVATE | MAP_ANONYMOUS, 0, 0),
+			   ENOMEM);
 		TEST_ERRNO(mmap(valid_addr, len, PROT_READ,
 				MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0, 0),
 			   ENOMEM);
@@ -100,6 +113,23 @@ END_TEST()
 FN_TEST(underflow_addr)
 {
 	void *addr = (void *)PAGE_SIZE;
+	void *addr2;
+
+	// `mmap` without MAP_FIXED. The hint address will be rounded
+	// to MMAP_MIN_ADDR, unless it is in the first page, in which
+	// case the hint will be ignored.
+	addr2 = TEST_RES(mmap(addr, PAGE_SIZE, PROT_READ,
+			      MAP_PRIVATE | MAP_ANONYMOUS, 0, 0),
+			 _ret == MMAP_MIN_ADDR);
+	TEST_SUCC(munmap(addr2, PAGE_SIZE));
+	addr2 = TEST_RES(mmap(addr + 1, PAGE_SIZE, PROT_READ,
+			      MAP_PRIVATE | MAP_ANONYMOUS, 0, 0),
+			 _ret == MMAP_MIN_ADDR);
+	TEST_SUCC(munmap(addr2, PAGE_SIZE));
+	addr2 = TEST_RES(mmap(addr - 1, PAGE_SIZE, PROT_READ,
+			      MAP_PRIVATE | MAP_ANONYMOUS, 0, 0),
+			 _ret != MMAP_MIN_ADDR);
+	TEST_SUCC(munmap(addr2, PAGE_SIZE));
 
 	TEST_ERRNO(mmap(addr, PAGE_SIZE, PROT_READ,
 			MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0, 0),
@@ -117,6 +147,25 @@ END_TEST()
 
 FN_TEST(unaligned_addr)
 {
+	void *addr;
+
+	// `mmap` without MAP_FIXED. The hint address may not be
+	// page-aligned and will be rounded down to the nearest page
+	// boundary. Additionally, it will be ignored if there are
+	// conflict mappings.
+	addr = TEST_RES(mmap(valid_addr + 1, PAGE_SIZE, PROT_READ,
+			     MAP_PRIVATE | MAP_ANONYMOUS, 0, 0),
+			_ret != valid_addr);
+	TEST_SUCC(munmap(addr, PAGE_SIZE));
+	addr = TEST_RES(mmap(avail_addr + 1, PAGE_SIZE, PROT_READ,
+			     MAP_PRIVATE | MAP_ANONYMOUS, 0, 0),
+			_ret == avail_addr);
+	TEST_SUCC(munmap(addr, PAGE_SIZE));
+	addr = TEST_RES(mmap(avail_addr + (PAGE_SIZE - 1), PAGE_SIZE, PROT_READ,
+			     MAP_PRIVATE | MAP_ANONYMOUS, 0, 0),
+			_ret == avail_addr);
+	TEST_SUCC(munmap(addr, PAGE_SIZE));
+
 	TEST_ERRNO(mmap(valid_addr + 1, PAGE_SIZE, PROT_READ,
 			MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0, 0),
 		   EINVAL);
