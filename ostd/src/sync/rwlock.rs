@@ -373,10 +373,14 @@ impl<'a, T: ?Sized, G: SpinGuardian> RwLockUpgradeableGuard<'a, T, G> {
             };
         }
     }
+
     /// Attempts to upgrade this upread guard to a write guard atomically.
     ///
     /// This function will never spin-wait and will return immediately.
-    pub fn try_upgrade(mut self) -> Result<RwLockWriteGuard<'a, T, G>, Self> {
+    ///
+    /// This function is not exposed publicly because the `BEING_UPGRADED` bit
+    /// is set only in [`Self::upgrade`].
+    fn try_upgrade(mut self) -> Result<RwLockWriteGuard<'a, T, G>, Self> {
         let res = self.inner.lock.compare_exchange(
             UPGRADEABLE_READER | BEING_UPGRADED,
             WRITER | UPGRADEABLE_READER,

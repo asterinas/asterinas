@@ -340,7 +340,10 @@ impl<'a, T: ?Sized> RwMutexUpgradeableGuard<'a, T> {
     /// Attempts to upgrade this upread guard to a write guard atomically.
     ///
     /// This function will return immediately.
-    pub fn try_upgrade(self) -> Result<RwMutexWriteGuard<'a, T>, Self> {
+    ///
+    /// This function is not exposed publicly because the `BEING_UPGRADED` bit
+    /// is set only in [`Self::upgrade`].
+    fn try_upgrade(self) -> Result<RwMutexWriteGuard<'a, T>, Self> {
         let res = self.inner.lock.compare_exchange(
             UPGRADEABLE_READER | BEING_UPGRADED,
             WRITER | UPGRADEABLE_READER,
