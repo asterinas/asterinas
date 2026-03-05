@@ -18,7 +18,7 @@ use crate::{
     util::random::getrandom,
     vm::{
         perms::VmPerms,
-        vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR, Vmar},
+        vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR, Vmar, VmarMapOffset},
     },
 };
 
@@ -272,7 +272,7 @@ fn map_segment_vmos(
             }
             vmar.new_map(map_size, VmPerms::empty())?
                 .align(align)
-                .offset(offset)
+                .offset(VmarMapOffset::FixedNoReplace(offset))
         } else {
             // Static PIE program: pick an aligned address from the mmap region.
 
@@ -313,7 +313,7 @@ fn map_segment_vmos(
         let map_size = elf_va_range_aligned.len();
 
         vmar.new_map(map_size, VmPerms::empty())?
-            .offset(elf_va_range_aligned.start)
+            .offset(VmarMapOffset::FixedNoReplace(elf_va_range_aligned.start))
             .build()?;
 
         // After acquiring a suitable range, we can remove the mapping and then
@@ -382,13 +382,13 @@ fn map_segment_vmo(
     let offset = map_at.align_down(PAGE_SIZE);
 
     if segment_size != 0 {
-        let mut vm_map_options = vmar
+        let vm_map_options = vmar
             .new_map(segment_size, perms)?
             .vmo(elf_vmo.clone())
             .path(elf_file.clone())
             .vmo_offset(segment_offset)
-            .can_overwrite(true);
-        vm_map_options = vm_map_options.offset(offset).handle_page_faults_around();
+            .offset(VmarMapOffset::FixedReplace(offset))
+            .handle_page_faults_around();
         let map_addr = vm_map_options.build()?;
 
         // Write zero as paddings if the tail is not page-aligned and map size
@@ -410,9 +410,9 @@ fn map_segment_vmo(
 
     let anonymous_map_size = total_map_size - segment_size;
     if anonymous_map_size > 0 {
-        let mut anonymous_map_options =
-            vmar.new_map(anonymous_map_size, perms)?.can_overwrite(true);
-        anonymous_map_options = anonymous_map_options.offset(offset + segment_size);
+        let anonymous_map_options = vmar
+            .new_map(anonymous_map_size, perms)?
+            .offset(VmarMapOffset::FixedReplace(offset + segment_size));
         anonymous_map_options.build()?;
     }
 

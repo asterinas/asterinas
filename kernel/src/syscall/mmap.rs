@@ -8,7 +8,7 @@ use crate::{
     prelude::*,
     vm::{
         perms::VmPerms,
-        vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR},
+        vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR, VmarMapOffset},
         vmo::VmoOptions,
     },
 };
@@ -51,7 +51,12 @@ fn do_sys_mmap(
     );
 
     let len = check_len(len)?;
-    check_addr(addr, len, option.flags())?;
+    let addr = if option.flags().is_fixed() {
+        check_addr(addr, len)?;
+        addr
+    } else {
+        adjust_addr_hint(addr, len)
+    };
     check_offset(offset, len, option.flags())?;
 
     // On x86_64 and riscv64, `PROT_WRITE` implies `PROT_READ`.
@@ -74,13 +79,19 @@ fn do_sys_mmap(
         let mut options = vmar.new_map(len, vm_perms)?;
 
         if option.flags().is_fixed() {
-            options = options.offset(addr);
-            if !option.flags().contains(MMapFlags::MAP_FIXED_NOREPLACE) {
-                options = options.can_overwrite(true);
+            if option.flags().contains(MMapFlags::MAP_FIXED_NOREPLACE) {
+                options = options.offset(VmarMapOffset::FixedNoReplace(addr));
+            } else {
+                options = options.offset(VmarMapOffset::FixedReplace(addr));
             }
-        } else if option.flags().contains(MMapFlags::MAP_32BIT) {
-            // TODO: Support MAP_32BIT. MAP_32BIT requires the mapping address to be below 2 GiB.
-            warn!("MAP_32BIT is not supported");
+        } else {
+            if option.flags().contains(MMapFlags::MAP_32BIT) {
+                // TODO: MAP_32BIT requires the mapping address to be below 2 GiB.
+                warn!("MAP_32BIT is not supported");
+            }
+            if addr != 0 {
+                options = options.offset(VmarMapOffset::Hint(addr))
+            }
         }
 
         if option.typ().is_shared() {
@@ -138,11 +149,7 @@ fn check_len(len: usize) -> Result<usize> {
     Ok(len.align_up(PAGE_SIZE))
 }
 
-fn check_addr(addr: Vaddr, len: usize, flags: MMapFlags) -> Result<()> {
-    if !flags.is_fixed() {
-        return Ok(());
-    }
-
+fn check_addr(addr: Vaddr, len: usize) -> Result<()> {
     if !addr.is_multiple_of(PAGE_SIZE) {
         return_errno_with_message!(Errno::EINVAL, "the mapping address is not aligned");
     }
@@ -156,6 +163,26 @@ fn check_addr(addr: Vaddr, len: usize, flags: MMapFlags) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn adjust_addr_hint(mut addr: Vaddr, len: usize) -> Vaddr {
+    addr = addr.align_down(PAGE_SIZE);
+    if addr == 0 {
+        // No hint.
+        return 0;
+    }
+
+    if addr < VMAR_LOWEST_ADDR {
+        // This is Linux behavior.
+        // Reference: <https://elixir.bootlin.com/linux/v6.19.3/source/mm/mmap.c#L219>.
+        addr = VMAR_LOWEST_ADDR;
+    }
+    if addr > VMAR_CAP_ADDR - len {
+        // Illegal hint. Treat it as if there were no hint.
+        addr = 0;
+    }
+
+    addr
 }
 
 fn check_offset(offset: usize, len: usize, flags: MMapFlags) -> Result<()> {

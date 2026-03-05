@@ -25,7 +25,7 @@ use crate::{
     util::random::getrandom,
     vm::{
         perms::VmPerms,
-        vmar::{VMAR_CAP_ADDR, Vmar},
+        vmar::{VMAR_CAP_ADDR, Vmar, VmarMapOffset},
         vmo::{Vmo, VmoOptions},
     },
 };
@@ -178,7 +178,7 @@ impl InitStack {
             let map_addr = self.initial_top - self.max_size;
             debug_assert!(map_addr.is_multiple_of(PAGE_SIZE));
             vmar.new_map(self.max_size, perms)?
-                .offset(map_addr)
+                .offset(VmarMapOffset::FixedNoReplace(map_addr))
                 .vmo(vmo.clone())
         };
         vmar_map_options.build()?;

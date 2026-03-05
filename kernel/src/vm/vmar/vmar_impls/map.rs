@@ -21,35 +21,39 @@ impl Vmar {
     /// ```
     /// use ostd::mm::PAGE_SIZE;
     ///
-    /// use crate::vm::{perms::VmPerms, vmar::Vmar, vmo::VmoOptions};
+    /// use crate::{
+    ///     current_userspace,
+    ///     vm::{perms::VmPerms, vmar::VmarMapOffset, vmo::VmoOptions},
+    /// };
     ///
-    /// let vmar = Vmar::new();
     /// let vmo = VmoOptions::new(10 * PAGE_SIZE).alloc().unwrap();
+    ///
     /// let target_vaddr = 0x1234000;
-    /// let real_vaddr = vmar
-    ///     // Create a 4 * PAGE_SIZE bytes, read-only mapping
-    ///     .new_map(PAGE_SIZE * 4, VmPerms::READ).unwrap()
+    /// let real_vaddr = current_userspace!()
+    ///     .vmar()
+    ///     // Create a read-only mapping spanning four pages
+    ///     .new_map(PAGE_SIZE * 4, VmPerms::READ)
+    ///     .unwrap()
     ///     // Provide an optional offset for the mapping inside the VMAR
-    ///     .offset(target_vaddr)
-    ///     // Specify an optional binding VMO.
+    ///     .offset(VmarMapOffset::FixedNoReplace(target_vaddr))
+    ///     // Specify an optional binding VMO
     ///     .vmo(vmo)
     ///     // Provide an optional offset to indicate the corresponding offset
     ///     // in the VMO for the mapping
     ///     .vmo_offset(2 * PAGE_SIZE)
     ///     .build()
     ///     .unwrap();
-    /// assert!(real_vaddr == target_vaddr);
+    ///
+    /// assert_eq!(real_vaddr, target_vaddr);
     /// ```
     ///
-    /// For more details on the available options, see `VmarMapOptions`.
+    /// For more details on the available options, see [`VmarMapOptions`].
     pub fn new_map(&self, size: usize, perms: VmPerms) -> Result<VmarMapOptions<'_>> {
         Ok(VmarMapOptions::new(self, size, perms))
     }
 }
 
-/// Options for creating a new mapping. The mapping is not allowed to overlap
-/// with any child VMARs. And unless specified otherwise, it is not allowed
-/// to overlap with any existing mapping, either.
+/// Options for creating a new mapping.
 pub struct VmarMapOptions<'a> {
     parent: &'a Vmar,
     mappable: Option<Mappable>,
@@ -58,19 +62,42 @@ pub struct VmarMapOptions<'a> {
     may_perms: VmPerms,
     vmo_offset: usize,
     size: usize,
-    offset: Option<usize>,
+    offset: VmarMapOffset,
     align: usize,
-    can_overwrite: bool,
-    // Whether the mapping is mapped with `MAP_SHARED`
+    // Whether the mapping is mapped with `MAP_SHARED`.
     is_shared: bool,
-    // Whether the mapping needs to handle surrounding pages when handling page fault.
+    // Whether the mapping needs to handle surrounding pages when handling
+    // page fault.
     handle_page_faults_around: bool,
+}
+
+/// An offset within a VMAR where a new mapping will reside.
+///
+/// Note that this differs from the VMO offset. The VMO offset and the VMO
+/// itself together specify the content of the mapping.
+#[derive(Clone, Copy, Debug)]
+pub enum VmarMapOffset {
+    /// The new mapping will be placed at the specified offset. Conflict
+    /// mappings will be replaced.
+    FixedReplace(usize),
+    /// The new mapping will be placed at the specified offset. Conflict
+    /// mappings will cause an error.
+    FixedNoReplace(usize),
+    /// The new mapping may be placed at the specified offset if there are no
+    /// conflict mappings.
+    ///
+    /// Otherwise, it can be placed at any available offset where there are no
+    /// conflict mappings.
+    Hint(usize),
+    /// The new mapping can be placed at any available offset where there are
+    /// no conflict mappings.
+    Any,
 }
 
 impl<'a> VmarMapOptions<'a> {
     /// Creates a default set of options with the size and the memory access
     /// permissions.
-    pub fn new(parent: &'a Vmar, size: usize, perms: VmPerms) -> Self {
+    fn new(parent: &'a Vmar, size: usize, perms: VmPerms) -> Self {
         Self {
             parent,
             mappable: None,
@@ -79,9 +106,8 @@ impl<'a> VmarMapOptions<'a> {
             may_perms: VmPerms::ALL_MAY_PERMS,
             vmo_offset: 0,
             size,
-            offset: None,
+            offset: VmarMapOffset::Any,
             align: PAGE_SIZE,
-            can_overwrite: false,
             is_shared: false,
             handle_page_faults_around: false,
         }
@@ -177,19 +203,8 @@ impl<'a> VmarMapOptions<'a> {
     /// the VMAR.
     ///
     /// If not set, the system will choose an offset automatically.
-    pub fn offset(mut self, offset: usize) -> Self {
-        self.offset = Some(offset);
-        self
-    }
-
-    /// Sets whether the mapping can overwrite existing mappings.
-    ///
-    /// The default value is false.
-    ///
-    /// If this option is set to true, then the `offset` option must be
-    /// set.
-    pub fn can_overwrite(mut self, can_overwrite: bool) -> Self {
-        self.can_overwrite = can_overwrite;
+    pub fn offset(mut self, offset: VmarMapOffset) -> Self {
+        self.offset = offset;
         self
     }
 
@@ -258,52 +273,53 @@ impl<'a> VmarMapOptions<'a> {
             size: map_size,
             offset,
             align,
-            can_overwrite,
             is_shared,
             handle_page_faults_around,
         } = self;
 
         let mut inner = parent.inner.write();
 
-        inner.check_extra_size_fits_rlimit(map_size).or_else(|e| {
-            if can_overwrite {
-                let offset = offset.ok_or(Error::with_message(
-                    Errno::EINVAL,
-                    "offset cannot be None since can overwrite is set",
-                ))?;
-                // MAP_FIXED may remove pages overlapped with requested mapping.
-                let expand_size = map_size - inner.count_overlap_size(offset..offset + map_size);
-                inner.check_extra_size_fits_rlimit(expand_size)
-            } else {
-                Err(e)
-            }
-        })?;
+        inner
+            .check_extra_size_fits_rlimit(map_size)
+            .or_else(|err| {
+                if let VmarMapOffset::FixedReplace(map_to_addr) = offset {
+                    // Overlapping mappings will be removed. Check again after considering this fact.
+                    let expand_size =
+                        map_size - inner.count_overlap_size(map_to_addr..map_to_addr + map_size);
+                    inner.check_extra_size_fits_rlimit(expand_size)
+                } else {
+                    Err(err)
+                }
+            })?;
 
         // Allocates a free region.
         trace!(
-            "allocate free region, map_size = 0x{:x}, offset = {:x?}, align = 0x{:x}, can_overwrite = {}",
-            map_size, offset, align, can_overwrite
+            "allocate free region, map_size = 0x{:x}, offset = {:x?}, align = 0x{:x}",
+            map_size, offset, align
         );
-        let map_to_addr = if can_overwrite {
-            // If can overwrite, the offset is ensured not to be `None`.
-            let offset = offset.ok_or(Error::with_message(
-                Errno::EINVAL,
-                "offset cannot be None since can overwrite is set",
-            ))?;
-            let mut rss_delta = RssDelta::new(parent);
-            inner.alloc_free_region_exact_truncate(
-                parent.vm_space(),
-                offset,
-                map_size,
-                &mut rss_delta,
-            )?;
-            offset
-        } else if let Some(offset) = offset {
-            inner.alloc_free_region_exact(offset, map_size)?;
-            offset
-        } else {
-            let free_region = inner.alloc_free_region(map_size, align)?;
-            free_region.start
+        let map_to_addr = match offset {
+            VmarMapOffset::FixedReplace(map_to_addr) => {
+                let mut rss_delta = RssDelta::new(parent);
+                inner.alloc_free_region_exact_truncate(
+                    parent.vm_space(),
+                    map_to_addr,
+                    map_size,
+                    &mut rss_delta,
+                )?;
+                map_to_addr
+            }
+            VmarMapOffset::FixedNoReplace(map_to_addr) => {
+                inner.alloc_free_region_exact(map_to_addr, map_size)?;
+                map_to_addr
+            }
+            VmarMapOffset::Hint(map_to_addr) => {
+                if inner.alloc_free_region_exact(map_to_addr, map_size).is_ok() {
+                    map_to_addr
+                } else {
+                    inner.alloc_free_region(map_size, align)?.start
+                }
+            }
+            VmarMapOffset::Any => inner.alloc_free_region(map_size, align)?.start,
         };
 
         // Parse the `Mappable` and prepare the `MappedMemory`.
@@ -375,11 +391,16 @@ impl<'a> VmarMapOptions<'a> {
         if !self.vmo_offset.is_multiple_of(self.align) {
             return_errno_with_message!(Errno::EINVAL, "invalid vmo offset");
         }
-        if let Some(offset) = self.offset {
-            debug_assert!(offset.is_multiple_of(self.align));
-            if !offset.is_multiple_of(self.align) {
-                return_errno_with_message!(Errno::EINVAL, "invalid offset");
+        match self.offset {
+            VmarMapOffset::FixedReplace(offset)
+            | VmarMapOffset::FixedNoReplace(offset)
+            | VmarMapOffset::Hint(offset) => {
+                debug_assert!(offset.is_multiple_of(self.align));
+                if !offset.is_multiple_of(self.align) {
+                    return_errno_with_message!(Errno::EINVAL, "invalid offset");
+                }
             }
+            VmarMapOffset::Any => (),
         }
         self.check_perms()
     }

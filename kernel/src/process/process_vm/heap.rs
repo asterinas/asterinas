@@ -10,7 +10,7 @@ use crate::{
     util::random::getrandom,
     vm::{
         perms::VmPerms,
-        vmar::{VMAR_CAP_ADDR, Vmar},
+        vmar::{VMAR_CAP_ADDR, Vmar, VmarMapOffset},
     },
 };
 
@@ -76,7 +76,9 @@ impl Heap {
 
         let vmar_map_options = {
             let perms = VmPerms::READ | VmPerms::WRITE;
-            vmar.new_map(PAGE_SIZE, perms).unwrap().offset(heap_start)
+            vmar.new_map(PAGE_SIZE, perms)
+                .unwrap()
+                .offset(VmarMapOffset::FixedNoReplace(heap_start))
         };
         vmar_map_options.build()?;
 
