@@ -16,6 +16,7 @@ use crate::{
         pseudofs::{NsCommonOps, NsFile},
         vfs::path::MountNamespace,
     },
+    ipc::IpcNamespace,
     net::uts_ns::UtsNamespace,
     prelude::*,
     process::{
@@ -92,6 +93,11 @@ fn build_proxy_from_pid_file(
         set_mnt_ns(&mut builder, target_ns, ctx)?;
     }
 
+    if flags.contains(CloneFlags::CLONE_NEWIPC) {
+        let target_ns = target_proxy.ipc_ns();
+        set_ipc_ns(&mut builder, target_ns, ctx)?;
+    }
+
     // TODO: Support setting other namespaces from the target process.
 
     Ok(builder.build())
@@ -124,6 +130,9 @@ fn build_proxy_from_ns_file(
         })?
         || try_apply_ns_from_inode::<MountNamespace>(inode_handle, flags, |ns| {
             set_mnt_ns(&mut builder, &ns, ctx)
+        })?
+        || try_apply_ns_from_inode::<IpcNamespace>(inode_handle, flags, |ns| {
+            set_ipc_ns(&mut builder, &ns, ctx)
         })?;
     // TODO: Support setting other namespaces from the ns file.
 
@@ -201,6 +210,28 @@ fn set_mnt_ns(
     // TODO: Are the checks above sufficient?
 
     builder.mnt_ns(target_ns.clone());
+
+    Ok(())
+}
+
+fn set_ipc_ns(
+    builder: &mut NsProxyBuilder,
+    target_ns: &Arc<IpcNamespace>,
+    ctx: &Context,
+) -> Result<()> {
+    // Verify the thread has SYS_ADMIN capability in the target namespace's owner
+    // and the current user namespace.
+    target_ns
+        .owner_user_ns()
+        .unwrap()
+        .check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
+    ctx.thread_local
+        .borrow_user_ns()
+        .check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
+
+    // TODO: Are the checks above sufficient?
+
+    builder.ipc_ns(target_ns.clone());
 
     Ok(())
 }

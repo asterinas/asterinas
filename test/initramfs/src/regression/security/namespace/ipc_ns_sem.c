@@ -101,10 +101,15 @@ FN_TEST(sem_shared_in_same_ipc_ns)
 }
 END_TEST()
 
-FN_TEST(sem_key_exceeding_supported_range_is_rejected)
+FN_TEST(sem_large_positive_key_is_supported)
 {
-	TEST_ERRNO(semget(INT_MAX, 1, IPC_CREAT | 0666), EINVAL);
-	TEST_ERRNO(semget(INT_MAX, 1, 0666), EINVAL);
+	int key = INT_MAX - 1;
+	int semid = TEST_SUCC(create_sem(key));
+
+	TEST_RES(semid, _ret > 0);
+	TEST_RES(get_sem(key), _ret == semid);
+
+	TEST_SUCC(remove_sem(semid));
 }
 END_TEST()
 
