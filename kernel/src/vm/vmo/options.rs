@@ -17,23 +17,25 @@ use crate::prelude::*;
 ///
 /// Creating a VMO:
 /// ```
-/// use aster_nix::vm::{PAGE_SIZE, VmoOptions};
+/// use ostd::mm::PAGE_SIZE;
 ///
-/// let vmo = VmoOptions::new(PAGE_SIZE)
-///     .alloc()
-///     .unwrap();
+/// use crate::vm::vmo::VmoOptions;
+///
+/// let vmo = VmoOptions::new(PAGE_SIZE).alloc();
+/// assert!(vmo.is_ok());
 /// ```
 ///
 /// Creating a resizable VMO backed by 10 memory pages that may not be
 /// physically contiguous:
-///
 /// ```
-/// use aster_nix::vm::{PAGE_SIZE, VmoOptions, VmoFlags};
+/// use ostd::mm::PAGE_SIZE;
+///
+/// use crate::vm::vmo::{VmoFlags, VmoOptions};
 ///
 /// let vmo = VmoOptions::new(10 * PAGE_SIZE)
 ///     .flags(VmoFlags::RESIZABLE)
-///     .alloc()
-///     .unwrap();
+///     .alloc();
+/// assert!(vmo.is_ok());
 /// ```
 pub struct VmoOptions {
     size: usize,
