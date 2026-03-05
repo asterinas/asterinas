@@ -14,7 +14,3 @@ bitflags! {
         const READ   = 0o004;
     }
 }
-
-pub(super) fn init_in_first_kthread() {
-    sem_set::init_in_first_kthread();
-}
