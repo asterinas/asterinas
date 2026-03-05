@@ -5,12 +5,8 @@ use core::{fmt::Debug, marker::PhantomData};
 use aster_rights::{Dup, Exec, Full, Read, Signal, TRightSet, TRights, Write};
 use aster_rights_proc::require;
 use ostd::{
-    Error, Result,
-    mm::{
-        Daddr, HasDaddr, HasPaddr, Paddr, PodOnce, VmIo, VmIoOnce,
-        dma::DmaDirection,
-        io_util::{HasVmReaderWriter, VmReaderWriterTypes},
-    },
+    Result,
+    mm::{Daddr, HasDaddr, HasPaddr, Paddr, PodOnce, VmIo, VmIoOnce, dma::DmaDirection},
 };
 use ostd_pod::Pod;
 
@@ -239,18 +235,12 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, TRightSet<R>> {
     ///  - the Read right for another pointer.
     #[require(R > Write)]
     #[require(R1 > Read)]
-    pub fn copy_from<M1: HasVmReaderWriter, R1: TRights>(
+    pub fn copy_from<M1: VmIo, R1: TRights>(
         &self,
         ptr: &SafePtr<T, M1, TRightSet<R1>>,
     ) -> Result<()> {
-        let mut reader = M1::Types::to_reader_result(ptr.vm_obj.reader())?.to_fallible();
-
-        if reader.remain() < size_of::<T>() {
-            return Err(Error::InvalidArgs);
-        }
-        reader.limit(size_of::<T>());
-
-        self.vm_obj.write(self.offset, &mut reader)
+        let val = ptr.vm_obj.read_val::<T>(ptr.offset)?;
+        self.vm_obj.write_val(self.offset, &val)
     }
 }
 

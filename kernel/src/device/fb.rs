@@ -4,7 +4,7 @@ use alloc::sync::Arc;
 
 use aster_framebuffer::{ColorMapEntry, FRAMEBUFFER, FrameBuffer, MAX_CMAP_SIZE, PixelFormat};
 use device_id::{DeviceId, MajorId, MinorId};
-use ostd::mm::{HasPaddr, HasSize, VmIo, io_util::HasVmReaderWriter};
+use ostd::mm::{HasPaddr, HasSize, VmIo};
 
 use super::registry::char;
 use crate::{
@@ -412,21 +412,33 @@ impl InodeIo for FbHandle {
             return Ok(0);
         }
 
-        let mut reader = self.framebuffer.io_mem().reader();
-
-        if offset >= reader.remain() {
+        let io_mem = self.framebuffer.io_mem();
+        let size = io_mem.size();
+        if offset >= size {
             return Ok(0);
         }
-        reader.skip(offset);
 
-        let mut reader = reader.to_fallible();
-        let len = match reader.read_fallible(writer) {
-            Ok(len) => len,
-            Err((err, 0)) => return Err(err.into()),
-            Err((_err, len)) => len,
-        };
+        let len = writer.avail().min(size - offset);
+        if len == 0 {
+            return Ok(0);
+        }
 
-        Ok(len)
+        // Create a new writer. We should preserve the end of the original writer.
+        let mut new_writer = writer.clone_exclusive();
+        new_writer.limit(len);
+        let before_avail = new_writer.avail();
+
+        let res = io_mem.read(offset, &mut new_writer);
+        let bytes_copied = before_avail - new_writer.avail();
+
+        // Synchronize the cursor inside the original writer only by the bytes actually written.
+        writer.skip(bytes_copied);
+
+        match res {
+            Ok(()) => Ok(bytes_copied),
+            Err(err) if bytes_copied > 0 => Ok(bytes_copied),
+            Err(err) => Err(err.into()),
+        }
     }
 
     fn write_at(
@@ -439,23 +451,36 @@ impl InodeIo for FbHandle {
             return Ok(0);
         }
 
-        let mut writer = self.framebuffer.io_mem().writer();
-        if offset >= writer.avail() {
+        let io_mem = self.framebuffer.io_mem();
+        let size = io_mem.size();
+        if offset >= size {
             return_errno_with_message!(
                 Errno::ENOSPC,
                 "the write offset is beyond the framebuffer size"
             );
         }
-        writer.skip(offset);
 
-        let mut writer = writer.to_fallible();
-        let len = match writer.write_fallible(reader) {
-            Ok(len) => len,
-            Err((err, 0)) => return Err(err.into()),
-            Err((_err, len)) => len,
-        };
+        let len = reader.remain().min(size - offset);
+        if len == 0 {
+            return Ok(0);
+        }
 
-        Ok(len)
+        // Create a new reader. We should preserve the end of the original reader.
+        let mut new_reader = reader.clone();
+        new_reader.limit(len);
+        let before_remain = new_reader.remain();
+
+        let res = io_mem.write(offset, &mut new_reader);
+        let bytes_copied = before_remain - new_reader.remain();
+
+        // Synchronize the cursor inside the original reader.
+        reader.skip(bytes_copied);
+
+        match res {
+            Ok(()) => Ok(bytes_copied),
+            Err(err) if bytes_copied > 0 => Ok(bytes_copied),
+            Err(err) => Err(err.into()),
+        }
     }
 }
 

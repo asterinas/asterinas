@@ -5,7 +5,11 @@
 use spin::Once;
 
 use crate::{
-    arch::{boot::DEVICE_TREE, mm::paddr_to_daddr},
+    arch::{
+        boot::DEVICE_TREE,
+        io::io_mem::{read_once, write_once},
+        mm::paddr_to_daddr,
+    },
     console::uart_ns16650a::{Ns16550aAccess, Ns16550aRegister, Ns16550aUart},
     sync::{LocalIrqDisabled, SpinLock},
 };
@@ -34,12 +38,12 @@ impl SerialAccess {
 impl Ns16550aAccess for SerialAccess {
     fn read(&self, reg: Ns16550aRegister) -> u8 {
         // SAFETY: `self.base + reg` is a valid register of the serial port.
-        unsafe { core::ptr::read_volatile(self.base.add(reg as u8 as usize)) }
+        unsafe { read_once(self.base.add(usize::from(reg as u8))) }
     }
 
     fn write(&mut self, reg: Ns16550aRegister, val: u8) {
         // SAFETY: `self.base + reg` is a valid register of the serial port.
-        unsafe { core::ptr::write_volatile(self.base.add(reg as u8 as usize), val) };
+        unsafe { write_once(self.base.add(usize::from(reg as u8)), val) }
     }
 }
 
