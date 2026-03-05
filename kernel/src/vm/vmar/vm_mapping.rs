@@ -601,7 +601,7 @@ impl VmMapping {
     ///
     /// The address must be within the mapping and page-aligned. The address
     /// must not be either the start or the end of the mapping.
-    pub fn split(self, at: Vaddr) -> Result<(Self, Self)> {
+    pub fn split(self, at: Vaddr) -> (Self, Self) {
         debug_assert!(self.map_to_addr < at && at < self.map_end());
         debug_assert!(at.is_multiple_of(PAGE_SIZE));
 
@@ -637,7 +637,7 @@ impl VmMapping {
             ..self
         };
 
-        Ok((left, right))
+        (left, right)
     }
 
     /// Splits the mapping at the specified address.
@@ -660,10 +660,10 @@ impl VmMapping {
             // Condition 4.
             (None, self, None)
         } else if mapping_range.start < range.start {
-            let (left, within) = self.split(range.start).unwrap();
+            let (left, within) = self.split(range.start);
             if range.end < mapping_range.end {
                 // Condition 3.
-                let (within, right) = within.split(range.end).unwrap();
+                let (within, right) = within.split(range.end);
                 (Some(left), within, Some(right))
             } else {
                 // Condition 1.
@@ -671,7 +671,7 @@ impl VmMapping {
             }
         } else if mapping_range.contains(&range.end) {
             // Condition 2.
-            let (within, right) = self.split(range.end).unwrap();
+            let (within, right) = self.split(range.end);
             (None, within, Some(right))
         } else {
             panic!("The mapping does not contain the splitting range");
