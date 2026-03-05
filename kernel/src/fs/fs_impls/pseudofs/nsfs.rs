@@ -357,7 +357,6 @@ impl StashedDentry {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum NsType {
     Cgroup,
-    #[expect(unused)]
     Ipc,
     Mnt,
     #[expect(unused)]

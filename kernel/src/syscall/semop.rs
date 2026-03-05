@@ -53,10 +53,10 @@ fn do_sys_semtimedop(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     if sem_id <= 0 || nsops == 0 {
-        return_errno!(Errno::EINVAL);
+        return_errno_with_message!(Errno::EINVAL, "invalid sem_id or nsops");
     }
     if nsops > SEMOPM {
-        return_errno!(Errno::E2BIG);
+        return_errno_with_message!(Errno::E2BIG, "nsops exceeds SEMOPM");
     }
 
     let user_space = ctx.user_space();
@@ -65,7 +65,10 @@ fn do_sys_semtimedop(
         semops.push(user_space.read_val::<SemBuf>(tsops + size_of::<SemBuf>() * i)?);
     }
 
-    sem_op(sem_id, semops, timeout, ctx)?;
+    let ns_proxy = ctx.thread_local.borrow_ns_proxy();
+    let ipc_ns = ns_proxy.unwrap().ipc_ns();
+
+    sem_op(sem_id, semops, timeout, ipc_ns, ctx)?;
 
     Ok(SyscallReturn::Return(0))
 }

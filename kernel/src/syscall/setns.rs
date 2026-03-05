@@ -17,6 +17,7 @@ use crate::{
         pseudofs::{NsCommonOps, NsFile},
         vfs::path::MountNamespace,
     },
+    ipc::IpcNamespace,
     net::uts_ns::UtsNamespace,
     prelude::*,
     process::{
@@ -88,6 +89,11 @@ fn build_proxy_from_pid_file(
         set_cgroup_ns(&mut builder, target_ns, ctx)?;
     }
 
+    if flags.contains(CloneFlags::CLONE_NEWIPC) {
+        let target_ns = target_proxy.ipc_ns();
+        set_ipc_ns(&mut builder, target_ns, ctx)?;
+    }
+
     if flags.contains(CloneFlags::CLONE_NEWNS) {
         let target_ns = target_proxy.mnt_ns();
         set_mnt_ns(&mut builder, target_ns, ctx)?;
@@ -127,6 +133,9 @@ fn build_proxy_from_ns_file(
     let applied = false
         || try_apply_ns_from_inode::<CgroupNamespace>(inode_handle, flags, |ns| {
             set_cgroup_ns(&mut builder, &ns, ctx)
+        })?
+        || try_apply_ns_from_inode::<IpcNamespace>(inode_handle, flags, |ns| {
+            set_ipc_ns(&mut builder, &ns, ctx)
         })?
         || try_apply_ns_from_inode::<MountNamespace>(inode_handle, flags, |ns| {
             set_mnt_ns(&mut builder, &ns, ctx)
@@ -171,6 +180,18 @@ fn set_cgroup_ns(
     check_set_ns_perms(target_ns, ctx)?;
 
     builder.cgroup_ns(target_ns.clone());
+
+    Ok(())
+}
+
+fn set_ipc_ns(
+    builder: &mut NsProxyBuilder,
+    target_ns: &Arc<IpcNamespace>,
+    ctx: &Context,
+) -> Result<()> {
+    check_set_ns_perms(target_ns, ctx)?;
+
+    builder.ipc_ns(target_ns.clone());
 
     Ok(())
 }

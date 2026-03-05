@@ -39,6 +39,10 @@ fn apply_implied_flags(flags: &mut CloneFlags) {
         *flags |= CloneFlags::CLONE_THREAD | CloneFlags::CLONE_FS;
     }
 
+    if flags.contains(CloneFlags::CLONE_NEWIPC) {
+        *flags |= CloneFlags::CLONE_SYSVSEM;
+    }
+
     if flags.contains(CloneFlags::CLONE_SIGHAND) {
         *flags |= CloneFlags::CLONE_THREAD;
     }

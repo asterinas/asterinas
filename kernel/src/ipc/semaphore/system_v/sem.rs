@@ -9,9 +9,12 @@ use core::{
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use ostd::sync::{PreemptDisabled, Waiter, Waker};
 
-use super::sem_set::{SEMVMX, SemSetInner};
+use super::{
+    PermissionMode,
+    sem_set::{SEMVMX, SemSetInner},
+};
 use crate::{
-    ipc::{IpcFlags, key_t, semaphore::system_v::sem_set::sem_sets},
+    ipc::{IpcFlags, IpcNamespace, key_t},
     prelude::*,
     process::Pid,
     time::{
@@ -123,10 +126,13 @@ pub fn sem_op(
     sem_id: key_t,
     sops: Vec<SemBuf>,
     timeout: Option<Duration>,
+    ipc_ns: &Arc<IpcNamespace>,
     ctx: &Context,
 ) -> Result<()> {
-    debug_assert!(sem_id > 0);
-    debug!("sops: {:?}", sops);
+    if sem_id <= 0 {
+        return_errno_with_message!(Errno::EINVAL, "semaphore ID must be positive");
+    }
+    debug!("[semop] sops: {:?}", sops);
 
     let pid = ctx.process.pid();
     let mut pending_op = PendingOp {
@@ -144,74 +150,85 @@ pub fn sem_op(
         warn!("Found duplicate sop");
     }
 
-    let local_sem_sets = sem_sets();
-    let sem_set = local_sem_sets
-        .get(&sem_id)
-        .ok_or(Error::new(Errno::EINVAL))?;
-    let mut inner = sem_set.inner();
+    enum SemOpResult {
+        Completed,
+        Pending {
+            status: Arc<AtomicStatus>,
+            waiter: Waiter,
+        },
+    }
 
-    if perform_atomic_semop(&mut inner.sems, &mut pending_op)? {
-        if alter {
-            let wake_queue = do_smart_update(&mut inner, &pending_op);
-            for wake_op in wake_queue {
-                wake_op.set_status(Status::Normal);
-                if let Some(waker) = wake_op.waker {
-                    waker.wake_up();
+    let sem_op_result = ipc_ns.with_sem_set(sem_id, None, PermissionMode::empty(), |sem_set| {
+        let mut inner = sem_set.inner();
+
+        if perform_atomic_semop(&mut inner.sems, &mut pending_op)? {
+            if alter {
+                let wake_queue = do_smart_update(&mut inner, &pending_op);
+                for wake_op in wake_queue {
+                    wake_op.set_status(Status::Normal);
+                    if let Some(waker) = wake_op.waker {
+                        waker.wake_up();
+                    }
                 }
             }
+
+            sem_set.update_otime();
+            return Ok(SemOpResult::Completed);
         }
 
-        sem_set.update_otime();
-        return Ok(());
-    }
+        // Prepare to wait
+        let status = pending_op.status.clone();
+        let (waiter, waker) = Waiter::new_pair();
 
-    // Prepare to wait
-    let status = pending_op.status.clone();
-    let (waiter, waker) = Waiter::new_pair();
+        // Check if timeout exists to avoid calling `Arc::clone()`
+        if let Some(timeout) = timeout {
+            pending_op.waker = Some(waker.clone());
 
-    // Check if timeout exists to avoid calling `Arc::clone()`
-    if let Some(timeout) = timeout {
-        pending_op.waker = Some(waker.clone());
+            let jiffies_timer =
+                JIFFIES_TIMER_MANAGER
+                    .get()
+                    .unwrap()
+                    .create_timer(move |_guard: TimerGuard| {
+                        waker.wake_up();
+                    });
+            jiffies_timer.lock().set_timeout(Timeout::After(timeout));
+        } else {
+            pending_op.waker = Some(waker);
+        }
 
-        let jiffies_timer =
-            JIFFIES_TIMER_MANAGER
-                .get()
-                .unwrap()
-                .create_timer(move |_guard: TimerGuard| {
-                    waker.wake_up();
-                });
-        jiffies_timer.lock().set_timeout(Timeout::After(timeout));
-    } else {
-        pending_op.waker = Some(waker);
-    }
+        if alter {
+            inner.pending_alter.push_back(pending_op);
+        } else {
+            inner.pending_const.push_back(pending_op);
+        }
 
-    if alter {
-        inner.pending_alter.push_back(pending_op);
-    } else {
-        inner.pending_const.push_back(pending_op);
-    }
+        Ok(SemOpResult::Pending { status, waiter })
+    })?;
 
-    drop(inner);
-    drop(local_sem_sets);
+    match sem_op_result {
+        SemOpResult::Completed => Ok(()),
+        SemOpResult::Pending { status, waiter } => {
+            waiter.wait();
+            match status.load(Ordering::Relaxed) {
+                Status::Normal => Ok(()),
+                Status::Removed => Err(Error::new(Errno::EIDRM)),
+                Status::Pending => {
+                    // FIXME: Lookup may be time-consuming.
+                    ipc_ns.with_sem_set(sem_id, None, PermissionMode::empty(), |sem_set| {
+                        let mut inner = sem_set.inner();
+                        let pending_ops = if alter {
+                            &mut inner.pending_alter
+                        } else {
+                            &mut inner.pending_const
+                        };
+                        pending_ops.retain(|op| op.pid != pid);
 
-    waiter.wait();
-    match status.load(Ordering::Relaxed) {
-        Status::Normal => Ok(()),
-        Status::Removed => Err(Error::new(Errno::EIDRM)),
-        Status::Pending => {
-            // FIXME: Getting sem_sets maybe time-consuming.
-            let sem_sets = sem_sets();
-            let sem_set = sem_sets.get(&sem_id).ok_or(Error::new(Errno::EINVAL))?;
-            let mut inner = sem_set.inner();
+                        Ok(())
+                    })?;
 
-            let pending_ops = if alter {
-                &mut inner.pending_alter
-            } else {
-                &mut inner.pending_const
-            };
-            pending_ops.retain(|op| op.pid != pid);
-
-            Err(Error::new(Errno::EAGAIN))
+                    Err(Error::new(Errno::EAGAIN))
+                }
+            }
         }
     }
 }
@@ -321,7 +338,7 @@ fn perform_atomic_semop(sems: &mut Box<[Semaphore]>, pending_op: &mut PendingOp)
         // Zero condition
         if op.sem_op == 0 && result != 0 {
             if flags.contains(IpcFlags::IPC_NOWAIT) {
-                return_errno!(Errno::EAGAIN);
+                return_errno_with_message!(Errno::EAGAIN, "semaphore would block on wait-for-zero");
             } else {
                 return Ok(false);
             }
@@ -330,14 +347,14 @@ fn perform_atomic_semop(sems: &mut Box<[Semaphore]>, pending_op: &mut PendingOp)
         result += i32::from(op.sem_op);
         if result < 0 {
             if flags.contains(IpcFlags::IPC_NOWAIT) {
-                return_errno!(Errno::EAGAIN);
+                return_errno_with_message!(Errno::EAGAIN, "semaphore would block on decrement");
             } else {
                 return Ok(false);
             }
         }
 
         if result > SEMVMX {
-            return_errno!(Errno::ERANGE);
+            return_errno_with_message!(Errno::ERANGE, "semaphore value exceeds SEMVMX");
         }
         if flags.contains(IpcFlags::SEM_UNDO) {
             todo!()

@@ -20,6 +20,7 @@ use crate::{
             path::{MountNamespace, Path},
         },
     },
+    ipc::IpcNamespace,
     net::uts_ns::UtsNamespace,
     prelude::*,
     process::{NsProxy, UserNamespace, posix_thread::AsPosixThread},
@@ -49,6 +50,8 @@ impl NsDirOps {
 enum NsProxyEntry {
     /// The cgroup namespace.
     Cgroup,
+    /// The IPC namespace.
+    Ipc,
     /// The mount namespace.
     Mnt,
     /// The UTS namespace.
@@ -57,12 +60,13 @@ enum NsProxyEntry {
 
 impl NsProxyEntry {
     /// All supported `NsProxy`-backed namespace entries.
-    const ALL: &[Self] = &[Self::Cgroup, Self::Mnt, Self::Uts];
+    const ALL: &[Self] = &[Self::Cgroup, Self::Ipc, Self::Mnt, Self::Uts];
 
     /// Returns the filename of this namespace entry under `/proc/[pid]/ns/`.
     fn as_str(self) -> &'static str {
         match self {
             Self::Cgroup => "cgroup",
+            Self::Ipc => "ipc",
             Self::Mnt => "mnt",
             Self::Uts => "uts",
         }
@@ -72,6 +76,7 @@ impl NsProxyEntry {
     fn from_str(s: &str) -> Option<Self> {
         match s {
             "cgroup" => Some(Self::Cgroup),
+            "ipc" => Some(Self::Ipc),
             "mnt" => Some(Self::Mnt),
             "uts" => Some(Self::Uts),
             _ => None,
@@ -84,6 +89,7 @@ impl NsProxyEntry {
             Self::Cgroup => {
                 NsSymOps::<CgroupNamespace>::new_inode(ns_proxy.cgroup_ns().get_path(), parent)
             }
+            Self::Ipc => NsSymOps::<IpcNamespace>::new_inode(ns_proxy.ipc_ns().get_path(), parent),
             Self::Mnt => {
                 NsSymOps::<MountNamespace>::new_inode(ns_proxy.mnt_ns().get_path(), parent)
             }
@@ -95,6 +101,7 @@ impl NsProxyEntry {
     fn current_path(self, ns_proxy: &NsProxy) -> Path {
         match self {
             Self::Cgroup => ns_proxy.cgroup_ns().get_path(),
+            Self::Ipc => ns_proxy.ipc_ns().get_path(),
             Self::Mnt => ns_proxy.mnt_ns().get_path(),
             Self::Uts => ns_proxy.uts_ns().get_path(),
         }
@@ -106,6 +113,9 @@ impl NsProxyEntry {
 /// Returns `None` if the inode is not a known namespace symlink type.
 fn cached_ns_path(inode: &dyn Inode) -> Option<&Path> {
     if let Some(sym) = inode.downcast_ref::<NsSymlink<CgroupNamespace>>() {
+        return Some(&sym.inner().ns_path);
+    }
+    if let Some(sym) = inode.downcast_ref::<NsSymlink<IpcNamespace>>() {
         return Some(&sym.inner().ns_path);
     }
     if let Some(sym) = inode.downcast_ref::<NsSymlink<MountNamespace>>() {
@@ -245,6 +255,10 @@ impl DirOps for NsDirOps {
 
         if child.downcast_ref::<NsSymlink<UtsNamespace>>().is_some() {
             return cached_path == &ns_proxy.uts_ns().get_path();
+        }
+
+        if child.downcast_ref::<NsSymlink<IpcNamespace>>().is_some() {
+            return cached_path == &ns_proxy.ipc_ns().get_path();
         }
 
         // TODO: Support additional namespace types.
