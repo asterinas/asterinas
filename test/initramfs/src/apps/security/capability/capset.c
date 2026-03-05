@@ -19,12 +19,13 @@ FN_TEST(capget)
 {
 	TEST_SUCC(syscall(SYS_capget, &caphdr, capdat));
 
-	TEST_RES(0, (capdat[0].effective |
-		     (((uint64_t)capdat[1].effective) << 32)) == CAPS_ALL);
-	TEST_RES(0, (capdat[0].permitted |
-		     (((uint64_t)capdat[1].permitted) << 32)) == CAPS_ALL);
-	TEST_RES(0, (capdat[0].inheritable |
-		     (((uint64_t)capdat[1].inheritable) << 32)) == CAPS_NONE);
+	TEST_RES(capdat[0].effective | (((uint64_t)capdat[1].effective) << 32),
+		 _ret == CAPS_ALL);
+	TEST_RES(capdat[0].permitted | (((uint64_t)capdat[1].permitted) << 32),
+		 _ret == CAPS_ALL);
+	TEST_RES(capdat[0].inheritable |
+			 (((uint64_t)capdat[1].inheritable) << 32),
+		 _ret == CAPS_NONE);
 
 	TEST_SUCC(syscall(SYS_capset, &caphdr, &capdat));
 }

@@ -41,11 +41,11 @@ FN_TEST(check_caps)
 
 	TEST_SUCC(syscall(SYS_capget, &hdr, data));
 
-	TEST_RES(0, (data[0].effective |
-		     (((uint64_t)data[1].effective) << 32)) == effective);
-	TEST_RES(0, (data[0].permitted |
-		     (((uint64_t)data[1].permitted) << 32)) == permitted);
-	TEST_RES(0, (data[0].inheritable |
-		     (((uint64_t)data[1].inheritable) << 32)) == inheritable);
+	TEST_RES(data[0].effective | (((uint64_t)data[1].effective) << 32),
+		 _ret == effective);
+	TEST_RES(data[0].permitted | (((uint64_t)data[1].permitted) << 32),
+		 _ret == permitted);
+	TEST_RES(data[0].inheritable | (((uint64_t)data[1].inheritable) << 32),
+		 _ret == inheritable);
 }
 END_TEST()
