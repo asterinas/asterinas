@@ -120,10 +120,10 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
 
         // Add new entries.
         for (file_desc, file) in file_table.fds_and_files() {
-            cached_children.put_entry_if_not_found(&file_desc.to_string(), || {
+            cached_children.put_entry_if_not_found(&file_desc.get().to_string(), || {
                 T::new_inode(
                     self.dir.clone(),
-                    FileDesc::new(file_desc.cast_unsigned()),
+                    file_desc,
                     file.access_mode(),
                     dir.this_weak().clone(),
                 )

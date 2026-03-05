@@ -82,12 +82,12 @@ impl FileTable {
         F: Fn(&FileTableEntry) -> bool,
     {
         let mut closed_files = Vec::new();
-        let closed_fds: Vec<RawFileDesc> = self
+        let closed_fds: Vec<FileDesc> = self
             .table
             .idxes_and_items()
             .filter_map(|(idx, entry)| {
                 if should_close(entry) {
-                    Some(idx as RawFileDesc)
+                    Some(FileDesc::new(idx as _))
                 } else {
                     None
                 }
@@ -95,7 +95,7 @@ impl FileTable {
             .collect();
 
         for fd in closed_fds {
-            let removed_entry = self.table.remove(fd as usize).unwrap();
+            let removed_entry = self.table.remove(fd.get() as _).unwrap();
             closed_files.push(removed_entry.file);
         }
 
@@ -121,10 +121,10 @@ impl FileTable {
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 
-    pub fn fds_and_files(&self) -> impl Iterator<Item = (RawFileDesc, &'_ Arc<dyn FileLike>)> {
+    pub fn fds_and_files(&self) -> impl Iterator<Item = (FileDesc, &'_ Arc<dyn FileLike>)> {
         self.table
             .idxes_and_items()
-            .map(|(idx, entry)| (idx as RawFileDesc, entry.file()))
+            .map(|(idx, entry)| (FileDesc::new(idx as _), entry.file()))
     }
 }
 
