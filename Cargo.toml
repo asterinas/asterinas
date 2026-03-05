@@ -78,22 +78,22 @@ redundant_test_prefix = "warn"
 # FIXME: The current key order is not yet finalized.
 # Once `cargo-cargofmt` becomes stable, we will use it to enforce a consistent key order.
 [workspace.package]
-version = "0.17.0"
+version = "0.17.1"
 repository = "https://github.com/asterinas/asterinas"
 license = "MPL-2.0"
 edition = "2024"
 
 [workspace.dependencies]
-ostd = { version = "0.17.0", path = "ostd" }
+ostd = { version = "0.17.1", path = "ostd" }
 
 # Crates under ostd/libs
 align_ext = { path = "ostd/libs/align_ext", version = "0.1.0" }
 id-alloc = { path = "ostd/libs/id-alloc", version = "0.1.0" }
 int-to-c-enum = { path = "ostd/libs/int-to-c-enum", version = "0.1.0" }
-linux-boot-params = { version = "0.17.0", path = "ostd/libs/linux-bzimage/boot-params" }
-ostd-macros = { version = "0.17.0", path = "ostd/libs/ostd-macros" }
+linux-boot-params = { version = "0.17.1", path = "ostd/libs/linux-bzimage/boot-params" }
+ostd-macros = { version = "0.17.1", path = "ostd/libs/ostd-macros" }
 ostd-pod = { path = "ostd/libs/ostd-pod", version = "0.4.0" }
-ostd-test = { version = "0.17.0", path = "ostd/libs/ostd-test" }
+ostd-test = { version = "0.17.1", path = "ostd/libs/ostd-test" }
 
 # Crates under kernel/comps
 aster-block = { path = "kernel/comps/block" }
