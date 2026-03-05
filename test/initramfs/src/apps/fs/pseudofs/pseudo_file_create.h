@@ -61,8 +61,8 @@ static void __attribute__((unused)) fd_path(int fd, char *buf, size_t buflen)
 		   _ret > 0 && _ret < buflen);
 }
 
-static void __attribute__((unused))
-fdinfo_path(int fd, char *buf, size_t buflen)
+static void __attribute__((unused)) fdinfo_path(int fd, char *buf,
+						size_t buflen)
 {
 	CHECK_WITH(snprintf(buf, buflen, "/proc/self/fdinfo/%d", fd),
 		   _ret > 0 && _ret < buflen);
