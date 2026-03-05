@@ -399,7 +399,7 @@ fn map_segment_vmo(
         let vaddr_to_zero = map_addr + (file_range.end - segment_offset);
         let size_to_zero = map_addr + segment_size - vaddr_to_zero;
         if size_to_zero != 0 {
-            let res = vmar.fill_zeros_remote(vaddr_to_zero, size_to_zero);
+            let res = vmar.fill_zeros_alien(vaddr_to_zero, size_to_zero);
             if let Err((err, _)) = res
                 && perms.contains(VmPerms::WRITE)
             {

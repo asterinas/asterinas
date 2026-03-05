@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! This module enables access to a VMAR
+//! from an [_alien thread_] (crate::process::posix_thread::alien_access),
+//! which is a non-member of the owner process of the VMAR.
+
 use align_ext::AlignExt;
 use ostd::{
     mm::{PAGE_SIZE, PageFlags, UFrame, io_util::HasVmReaderWriter, vm_space::VmQueriedItem},
@@ -13,7 +17,7 @@ use crate::{
 };
 
 impl Vmar {
-    /// Reads memory from the process user space.
+    /// Reads memory in the context of an alien thread.
     ///
     /// This method reads until one of the conditions is met:
     /// 1. The writer has no available space.
@@ -23,7 +27,7 @@ impl Vmar {
     /// On error, both the error and the number of bytes read so far are returned.
     ///
     /// The `VmSpace` of the process is not required to be activated on the current CPU.
-    pub fn read_remote(
+    pub fn read_alien(
         &self,
         vaddr: Vaddr,
         writer: &mut VmWriter,
@@ -35,10 +39,10 @@ impl Vmar {
             reader.read_fallible(writer)
         };
 
-        self.access_remote(vaddr, len, PageFlags::R, read)
+        self.access_alien(vaddr, len, PageFlags::R, read)
     }
 
-    /// Writes memory to the process user space.
+    /// Writes memory in the context of an alien thread.
     ///
     /// This method writes until one of the conditions is met:
     /// 1. The reader has no remaining data.
@@ -48,7 +52,7 @@ impl Vmar {
     /// On error, both the error and the number of bytes written so far are returned.
     ///
     /// The `VmSpace` of the process is not required to be activated on the current CPU.
-    pub fn write_remote(
+    pub fn write_alien(
         &self,
         vaddr: Vaddr,
         reader: &mut VmReader,
@@ -60,17 +64,17 @@ impl Vmar {
             writer.write_fallible(reader)
         };
 
-        self.access_remote(vaddr, len, PageFlags::W, write)
+        self.access_alien(vaddr, len, PageFlags::W, write)
     }
 
-    /// Writes zeros to the process user space.
+    /// Writes zeros in the context of an alien thread.
     ///
     /// This method writes at most `len` bytes of zeros to the process user space.
     /// On success, the number of bytes written is returned; on error, both the
     /// error and the number of bytes written so far are returned.
     ///
     /// The `VmSpace` of the process is not required to be activated on the current CPU.
-    pub fn fill_zeros_remote(
+    pub fn fill_zeros_alien(
         &self,
         vaddr: Vaddr,
         len: usize,
@@ -84,15 +88,15 @@ impl Vmar {
             Ok(res)
         };
 
-        self.access_remote(vaddr, len, PageFlags::W, write)
+        self.access_alien(vaddr, len, PageFlags::W, write)
     }
 
-    /// Accesses memory at `vaddr..vaddr+len` within the process user space using `op`.
+    /// Accesses memory at `vaddr..vaddr+len` in the context of an alien thread using `op`.
     ///
     /// The `VmSpace` of the process is not required to be activated on the current CPU.
     /// If any page in the range is not mapped or does not have the required page
     /// flags, a page fault will be handled to try to make the page accessible.
-    fn access_remote<F>(
+    fn access_alien<F>(
         &self,
         vaddr: Vaddr,
         len: usize,
@@ -158,7 +162,7 @@ impl Vmar {
                         VmQueriedItem::MappedIoMem { .. } => {
                             return_errno_with_message!(
                                 Errno::EOPNOTSUPP,
-                                "accessing remote MMIO memory is not supported currently"
+                                "accessing alien MMIO memory is not supported currently"
                             );
                         }
                     }
