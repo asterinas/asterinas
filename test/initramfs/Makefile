@@ -115,7 +115,8 @@ x86_64_pkgs:
 		-A benchmark.schbench \
 		-A benchmark.sqlite-speedtest1 \
 		-A benchmark.sysbench \
-		-A syscall.ltp
+		-A syscall.ltp \
+		-A syscall.kselftest
 
 # Prebuild riscv64 packages
 # Note: This may cause GitHub Runner ResourceExhausted errors when publish nix docker image.
