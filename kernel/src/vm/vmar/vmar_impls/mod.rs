@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-mod access_remote;
+mod access_alien;
 mod fork;
 pub(super) mod map;
 pub(super) mod page_fault;

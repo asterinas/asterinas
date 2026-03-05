@@ -81,7 +81,7 @@ impl InodeIo for MemFileHandle {
             return Ok(0);
         };
 
-        match vmar.read_remote(offset, writer) {
+        match vmar.read_alien(offset, writer) {
             Ok(bytes) => Ok(bytes),
             Err((_, 0)) => Err(Error::new(Errno::EIO)),
             Err((_, bytes)) => Ok(bytes),
@@ -104,7 +104,7 @@ impl InodeIo for MemFileHandle {
             return Ok(0);
         };
 
-        match vmar.write_remote(offset, reader) {
+        match vmar.write_alien(offset, reader) {
             Ok(bytes) => Ok(bytes),
             Err((_, 0)) => Err(Error::new(Errno::EIO)),
             Err((_, bytes)) => Ok(bytes),

@@ -415,7 +415,7 @@ impl InitStackReader<'_> {
 
         let read_at = self.argv_range.start + offset;
         writer.limit(self.argv_range.end - read_at);
-        let bytes_read = self.vmar.read_remote(read_at, writer)?;
+        let bytes_read = self.vmar.read_alien(read_at, writer)?;
 
         Ok(bytes_read)
     }
@@ -428,7 +428,7 @@ impl InitStackReader<'_> {
 
         let read_at = self.envp_range.start + offset;
         writer.limit(self.envp_range.end - read_at);
-        let bytes_read = self.vmar.read_remote(read_at, writer)?;
+        let bytes_read = self.vmar.read_alien(read_at, writer)?;
 
         Ok(bytes_read)
     }
