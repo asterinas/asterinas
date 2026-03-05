@@ -1,19 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{collections::btree_map::BTreeMap, vec::Vec};
+use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use aster_rights::ReadOp;
-use id_alloc::IdAlloc;
-use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
-use spin::Once;
+use ostd::sync::PreemptDisabled;
 
-use super::{
-    PermissionMode,
-    sem::{PendingOp, Status, update_pending_alter, wake_const_ops},
-};
+use super::sem::{PendingOp, Status, update_pending_alter, wake_const_ops};
 use crate::{
-    ipc::{IpcPermission, key_t, semaphore::system_v::sem::Semaphore},
+    ipc::{IpcNamespace, IpcPermission, key_t, semaphore::system_v::sem::Semaphore},
     prelude::*,
     process::{Credentials, Pid},
     time::clocks::RealTimeCoarseClock,
@@ -48,9 +43,11 @@ pub struct SemaphoreSet {
     sem_ctime: AtomicU64,
     /// Last semop time.
     sem_otime: AtomicU64,
+    /// The IPC namespace.
+    ipc_ns: Weak<IpcNamespace>,
 }
 
-// https://github.com/torvalds/linux/blob/master/include/uapi/asm-generic/ipcbuf.h
+// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/asm-generic/ipcbuf.h#L22>.
 #[repr(C)]
 #[padding_struct]
 #[derive(Debug, Copy, Clone, Default, Pod)]
@@ -159,8 +156,8 @@ impl SemaphoreSet {
     }
 
     pub fn setval(&self, sem_num: usize, val: i32, pid: Pid) -> Result<()> {
-        if !(0..SEMVMX).contains(&val) {
-            return_errno!(Errno::ERANGE);
+        if !(0..=SEMVMX).contains(&val) {
+            return_errno_with_message!(Errno::ERANGE, "semaphore value out of range");
         }
 
         let mut inner = self.inner();
@@ -217,8 +214,16 @@ impl SemaphoreSet {
         self.inner.lock()
     }
 
-    fn new(key: key_t, nsems: usize, mode: u16, credentials: Credentials<ReadOp>) -> Result<Self> {
-        debug_assert!(nsems <= SEMMSL);
+    pub(in crate::ipc) fn new(
+        key: key_t,
+        nsems: usize,
+        mode: u16,
+        credentials: Credentials<ReadOp>,
+        ipc_ns: &Arc<IpcNamespace>,
+    ) -> Result<Self> {
+        if nsems > SEMMSL {
+            return_errno_with_message!(Errno::EINVAL, "nsems exceeds SEMMSL");
+        }
 
         let mut sems = Vec::with_capacity(nsems);
         for _ in 0..nsems {
@@ -238,6 +243,7 @@ impl SemaphoreSet {
                 pending_alter: LinkedList::new(),
                 pending_const: LinkedList::new(),
             }),
+            ipc_ns: Arc::downgrade(ipc_ns),
         })
     }
 
@@ -282,97 +288,10 @@ impl Drop for SemaphoreSet {
             }
         }
         pending_const.clear();
+        drop(inner);
 
-        ID_ALLOCATOR
-            .get()
-            .unwrap()
-            .lock()
-            .free(self.permission.key() as usize);
-    }
-}
-
-pub fn create_sem_set_with_id(
-    id: key_t,
-    nsems: usize,
-    mode: u16,
-    credentials: Credentials<ReadOp>,
-) -> Result<()> {
-    debug_assert!(nsems <= SEMMSL);
-    debug_assert!(id > 0);
-    if id as usize > SEMMNI {
-        return_errno_with_message!(Errno::ENOENT, "id larger than SEMMNI");
-    }
-
-    ID_ALLOCATOR
-        .get()
-        .unwrap()
-        .lock()
-        .alloc_specific(id as usize)
-        .ok_or(Error::new(Errno::EEXIST))?;
-
-    let mut sem_sets = SEMAPHORE_SETS.write();
-    sem_sets.insert(id, SemaphoreSet::new(id, nsems, mode, credentials)?);
-
-    Ok(())
-}
-
-/// Checks the semaphore. Return Ok if the semaphore exists and pass the check.
-pub fn check_sem(id: key_t, nsems: Option<usize>, required_perm: PermissionMode) -> Result<()> {
-    debug_assert!(id > 0);
-
-    let sem_sets = SEMAPHORE_SETS.read();
-    let sem_set = sem_sets.get(&id).ok_or(Error::new(Errno::ENOENT))?;
-
-    if let Some(nsems) = nsems {
-        debug_assert!(nsems <= SEMMSL);
-        if nsems > sem_set.nsems() {
-            return_errno!(Errno::EINVAL);
+        if let Some(ipc_ns) = self.ipc_ns.upgrade() {
+            ipc_ns.free_sem_key(self.permission.key());
         }
     }
-
-    if !required_perm.is_empty() {
-        // TODO: Support permission check
-        warn!("Semaphore doesn't support permission check now");
-    }
-
-    Ok(())
-}
-
-pub fn create_sem_set(nsems: usize, mode: u16, credentials: Credentials<ReadOp>) -> Result<key_t> {
-    debug_assert!(nsems <= SEMMSL);
-
-    let id = ID_ALLOCATOR
-        .get()
-        .unwrap()
-        .lock()
-        .alloc()
-        .ok_or(Error::new(Errno::ENOSPC))? as i32;
-
-    let mut sem_sets = SEMAPHORE_SETS.write();
-    sem_sets.insert(id, SemaphoreSet::new(id, nsems, mode, credentials)?);
-
-    Ok(id)
-}
-
-pub fn sem_sets<'a>() -> RwLockReadGuard<'a, BTreeMap<key_t, SemaphoreSet>, PreemptDisabled> {
-    SEMAPHORE_SETS.read()
-}
-
-pub fn sem_sets_mut<'a>() -> RwLockWriteGuard<'a, BTreeMap<key_t, SemaphoreSet>, PreemptDisabled> {
-    SEMAPHORE_SETS.write()
-}
-
-static ID_ALLOCATOR: Once<SpinLock<IdAlloc>> = Once::new();
-
-/// Semaphore sets in system
-static SEMAPHORE_SETS: RwLock<BTreeMap<key_t, SemaphoreSet>> = RwLock::new(BTreeMap::new());
-
-pub(super) fn init_in_first_kthread() {
-    ID_ALLOCATOR.call_once(|| {
-        let mut id_alloc = IdAlloc::with_capacity(SEMMNI + 1);
-        // Remove the first index 0
-        id_alloc.alloc();
-
-        SpinLock::new(id_alloc)
-    });
 }

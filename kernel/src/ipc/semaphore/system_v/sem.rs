@@ -11,7 +11,7 @@ use ostd::sync::{PreemptDisabled, Waiter, Waker};
 
 use super::sem_set::{SEMVMX, SemSetInner};
 use crate::{
-    ipc::{IpcFlags, key_t, semaphore::system_v::sem_set::sem_sets},
+    ipc::{IpcFlags, IpcNamespace, key_t},
     prelude::*,
     process::Pid,
     time::{
@@ -123,9 +123,12 @@ pub fn sem_op(
     sem_id: key_t,
     sops: Vec<SemBuf>,
     timeout: Option<Duration>,
+    ipc_ns: &Arc<IpcNamespace>,
     ctx: &Context,
 ) -> Result<()> {
-    debug_assert!(sem_id > 0);
+    if sem_id <= 0 {
+        return_errno_with_message!(Errno::EINVAL, "semaphore ID must be positive");
+    }
     debug!("[semop] sops: {:?}", sops);
 
     let pid = ctx.process.pid();
@@ -144,7 +147,7 @@ pub fn sem_op(
         warn!("Found duplicate sop");
     }
 
-    let local_sem_sets = sem_sets();
+    let local_sem_sets = ipc_ns.sem_sets();
     let sem_set = local_sem_sets
         .get(&sem_id)
         .ok_or(Error::new(Errno::EINVAL))?;
@@ -200,7 +203,7 @@ pub fn sem_op(
         Status::Removed => Err(Error::new(Errno::EIDRM)),
         Status::Pending => {
             // FIXME: Getting sem_sets maybe time-consuming.
-            let sem_sets = sem_sets();
+            let sem_sets = ipc_ns.sem_sets();
             let sem_set = sem_sets.get(&sem_id).ok_or(Error::new(Errno::EINVAL))?;
             let mut inner = sem_set.inner();
 
@@ -321,7 +324,7 @@ fn perform_atomic_semop(sems: &mut Box<[Semaphore]>, pending_op: &mut PendingOp)
         // Zero condition
         if op.sem_op == 0 && result != 0 {
             if flags.contains(IpcFlags::IPC_NOWAIT) {
-                return_errno!(Errno::EAGAIN);
+                return_errno_with_message!(Errno::EAGAIN, "semaphore would block on wait-for-zero");
             } else {
                 return Ok(false);
             }
@@ -330,14 +333,14 @@ fn perform_atomic_semop(sems: &mut Box<[Semaphore]>, pending_op: &mut PendingOp)
         result += i32::from(op.sem_op);
         if result < 0 {
             if flags.contains(IpcFlags::IPC_NOWAIT) {
-                return_errno!(Errno::EAGAIN);
+                return_errno_with_message!(Errno::EAGAIN, "semaphore would block on decrement");
             } else {
                 return Ok(false);
             }
         }
 
         if result > SEMVMX {
-            return_errno!(Errno::ERANGE);
+            return_errno_with_message!(Errno::ERANGE, "semaphore value exceeds SEMVMX");
         }
         if flags.contains(IpcFlags::SEM_UNDO) {
             todo!()
