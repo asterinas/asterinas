@@ -21,7 +21,7 @@ use crate::{
         namespace::nsproxy::NsProxy,
         signal::{PauseReason, PollHandle},
     },
-    thread::{Thread, Tid},
+    thread::Tid,
     time::{Timer, TimerManager, clocks::ProfClock, timer::TimerGuard},
 };
 
@@ -32,7 +32,6 @@ mod name;
 mod posix_thread_ext;
 mod robust_list;
 mod thread_local;
-pub mod thread_table;
 
 pub use builder::PosixThreadBuilder;
 pub(super) use exit::sigkill_other_threads;

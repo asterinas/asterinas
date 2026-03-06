@@ -9,7 +9,7 @@ use super::{
 use crate::{
     prelude::*,
     process::{
-        posix_thread::{AsPosixThread, thread_table},
+        posix_thread::AsPosixThread,
         process_table,
         signal::{
             c_types::{SigNotify, sigevent_t},
@@ -76,7 +76,7 @@ pub fn sys_timer_create(
                 // Send a signal to the specified thread when the timer is expired.
                 SigNotify::SIGEV_THREAD_ID => {
                     let tid = sig_event.sigev_un.read_tid() as u32;
-                    let thread = thread_table::get_thread(tid).ok_or_else(|| {
+                    let thread = process_table::get_thread(tid).ok_or_else(|| {
                         Error::with_message(Errno::EINVAL, "target thread does not exist")
                     })?;
                     let posix_thread = thread.as_posix_thread().unwrap();
@@ -158,7 +158,7 @@ where
                 }
             }
             DynamicClockIdInfo::Tid(tid, clock_type) => {
-                let thread = thread_table::get_thread(tid)
+                let thread = process_table::get_thread(tid)
                     .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clock id"))?;
                 let posix_thread = thread.as_posix_thread().unwrap();
                 match clock_type {

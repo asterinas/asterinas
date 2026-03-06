@@ -2,8 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::path::FsPath, prelude::*, process::posix_thread::thread_table::with_global_threads,
-    syscall::constants::MAX_FILENAME_LEN,
+    fs::path::FsPath, prelude::*, process::process_table, syscall::constants::MAX_FILENAME_LEN,
 };
 
 pub fn sys_pivot_root(
@@ -28,13 +27,13 @@ pub fn sys_pivot_root(
     let put_old_name = put_old_name.to_string_lossy();
     let put_old_path = FsPath::try_from(put_old_name.as_ref())?;
 
-    // TODO: Locking the global thread table here is a workaround. We need to use a more
+    // TODO: Locking the global PID table here is a workaround. We need to use a more
     // suitable lock (i.e. the global mount lock or the namespace lock) to avoid deadlock.
-    with_global_threads(move |table| {
+    process_table::with_pid_table(move |pid_table| {
         let fs_ref = ctx.thread_local.borrow_fs();
         let mut fs_resolver = fs_ref.resolver().write();
 
-        fs_resolver.pivot_root(new_root_path, put_old_path, table, ctx)
+        fs_resolver.pivot_root(new_root_path, put_old_path, pid_table, ctx)
     })?;
 
     Ok(SyscallReturn::Return(0))

@@ -9,7 +9,7 @@ use ostd::{
 };
 
 use super::{
-    Credentials, Pid, Process,
+    Credentials, Process,
     posix_thread::{AsPosixThread, PosixThreadBuilder, ThreadName},
     process_table,
     rlimit::ResourceLimits,
@@ -25,7 +25,7 @@ use crate::{
     },
     prelude::*,
     process::{
-        NsProxy, UserNamespace,
+        NsProxy, Pid, UserNamespace,
         pid_file::PidFile,
         posix_thread::{PosixThread, ThreadLocal, allocate_posix_tid},
         stats::PROCESS_CREATION_COUNTER,
@@ -777,10 +777,10 @@ fn set_parent_and_group(clone_flags: CloneFlags, parent: &Arc<Process>, child: &
             child.has_child_subreaper.store(true, Ordering::Release);
         }
 
-        // Lock order: children of process -> process table
+        // Lock order: children of process -> pid table
         // -> group of process -> group inner
 
-        let mut process_table_mut = process_table::process_table_mut();
+        let mut pid_table = process_table::pid_table_mut();
 
         let process_group_mut = parent.process_group.lock();
 
@@ -795,7 +795,7 @@ fn set_parent_and_group(clone_flags: CloneFlags, parent: &Arc<Process>, child: &
         children_mut.insert(child.pid(), child.clone());
 
         // Put the child process in the global table
-        process_table_mut.insert(child.pid(), child.clone());
+        pid_table.insert_process(child.pid(), child.clone());
 
         return;
     }

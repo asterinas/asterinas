@@ -12,7 +12,10 @@ use crate::{
         utils::{InodeType, NAME_MAX, PATH_MAX, Permission, SYMLINKS_MAX, SymbolicLink},
     },
     prelude::*,
-    process::posix_thread::{AsPosixThread, AsThreadLocal, thread_table::ThreadTable},
+    process::{
+        posix_thread::{AsPosixThread, AsThreadLocal},
+        process_table::PidTable,
+    },
 };
 
 /// The file descriptor of the current working directory.
@@ -239,7 +242,7 @@ impl PathResolver {
         &mut self,
         new_root_path: FsPath,
         put_old_path: FsPath,
-        thread_table: &ThreadTable,
+        pid_table: &PidTable,
         ctx: &Context,
     ) -> Result<()> {
         let new_root_path = self.lookup(&new_root_path)?;
@@ -310,8 +313,8 @@ impl PathResolver {
         new_root_path.mount.graft_mount_tree(&parent_path);
 
         // TODO: This method should only iterate threads in the current PID namespace instead of
-        // the whole thread table.
-        for thread in thread_table.values() {
+        // the whole PID table.
+        for thread in pid_table.iter_threads() {
             let posix_thread = thread.as_posix_thread().unwrap();
             let ns_proxy = posix_thread.ns_proxy().lock();
             let Some(ns_proxy) = ns_proxy.as_ref() else {

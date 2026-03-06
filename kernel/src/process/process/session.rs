@@ -33,6 +33,7 @@ impl Session {
     /// The caller needs to ensure that the process does not belong to other process group or other
     /// session.
     pub(in crate::process) fn new_pair(process: Arc<Process>) -> (Arc<Self>, Arc<ProcessGroup>) {
+        let sid = process.pid();
         let mut process_group = None;
 
         let session = Arc::new_cyclic(|weak_session| {
@@ -51,7 +52,7 @@ impl Session {
             };
 
             Self {
-                sid: pgid,
+                sid,
                 inner: Mutex::new(inner),
             }
         });
@@ -66,7 +67,7 @@ impl Session {
 
     /// Returns whether the process is the session leader.
     pub(super) fn is_leader(&self, process: &Process) -> bool {
-        self.sid == process.pid()
+        self.sid() == process.pid()
     }
 
     /// Acquires a lock on the session.

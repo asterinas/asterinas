@@ -27,16 +27,16 @@ impl ProcessGroup {
     ///
     /// The caller needs to ensure that the process does not belong to other process group.
     pub(super) fn new(process: Arc<Process>, session: Weak<Session>) -> Arc<Self> {
-        let pid = process.pid();
+        let pgid = process.pid();
 
         let inner = {
             let mut processes = BTreeMap::new();
-            processes.insert(pid, process);
+            processes.insert(pgid, process);
             Inner { processes }
         };
 
         Arc::new(ProcessGroup {
-            pgid: pid,
+            pgid,
             session,
             inner: Mutex::new(inner),
         })
