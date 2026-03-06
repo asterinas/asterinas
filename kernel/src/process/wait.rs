@@ -6,6 +6,7 @@ use super::{
     signal::{constants::SIGCHLD, with_sigmask_changed},
 };
 use crate::{
+    events::IoEvents,
     prelude::*,
     process::{
         ReapedChildrenStats, Uid, posix_thread::AsPosixThread, process_table,
@@ -225,8 +226,13 @@ fn reap_zombie_child(
         pid_table.remove_thread(tid);
     }
 
-    // Remove the process from the global table
+    // Remove the process from the global table.
     pid_table.remove_process(child_process.pid());
+
+    // Notify pidfd pollers that the process has been reaped. This must be done
+    // explicitly because the `RcuOption` defers the drop of the `Arc<Process>`,
+    // so `Process::drop` (which also notifies HUP) may not run immediately.
+    child_process.pidfile_pollee.notify(IoEvents::HUP);
 
     // Remove the process group and the session from global table, if necessary
     let mut child_group_mut = child_process.process_group.lock();
