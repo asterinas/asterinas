@@ -77,9 +77,7 @@ struct ProcFs {
 
 impl ProcFs {
     pub(self) fn new() -> Arc<Self> {
-        let dev_id = pseudofs::DEVICE_ID_ALLOCATOR
-            .get()
-            .unwrap()
+        let dev_id = pseudofs::DeviceIdAllocator::singleton()
             .allocate()
             .expect("no device ID is available for procfs");
         Arc::new_cyclic(|weak_fs| Self {

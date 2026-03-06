@@ -17,7 +17,7 @@
 //! (see [`Metadata::container_dev_id`]).
 //! [Linux's behavior](https://elixir.bootlin.com/linux/v6.19.3/source/fs/super.c#L1254)
 //! is to assign _anonymous device IDs_ (whose major IDs are 0).
-//! As such, this module provides a device ID allocator called [`allocator::DEVICE_ID_ALLOCATOR`]
+//! As such, this module provides a device ID allocator called [`allocator::DeviceIdAllocator`]
 //! to allocate and free anonymous device IDs.
 //!
 //! [`RamFs`]: crate::fs::ramfs::RamFs
@@ -57,7 +57,7 @@ mod nsfs;
 mod pidfdfs;
 mod pipefs;
 mod sockfs;
-pub use allocator::{DEVICE_ID_ALLOCATOR, release_container_dev_id};
+pub use allocator::{DeviceIdAllocator, release_container_dev_id};
 
 /// A pseudo file system that manages pseudo inodes, such as pipe inodes and socket inodes.
 pub struct PseudoFs {
@@ -106,9 +106,7 @@ impl PseudoFs {
     ) -> &'static Arc<Self> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/libfs.c#L659-L689>
         fs.call_once(|| {
-            let dev_id = allocator::DEVICE_ID_ALLOCATOR
-                .get()
-                .unwrap()
+            let dev_id = allocator::DeviceIdAllocator::singleton()
                 .allocate()
                 .expect("no device ID is available for pseudofs");
             Arc::new_cyclic(|weak_fs: &Weak<Self>| Self {
@@ -157,7 +155,6 @@ pub(super) fn init() {
     super::registry::register(&SockFsType).unwrap();
     // Note: `AnonInodeFs` does not need to be registered in the FS registry.
     // Reference: <https://elixir.bootlin.com/linux/v6.16.5/A/ident/anon_inode_fs_type>
-    allocator::DEVICE_ID_ALLOCATOR.call_once(allocator::DeviceIdAllocator::new);
 }
 
 /// Root Inode ID.

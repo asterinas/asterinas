@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::sync::Arc;
+
 use device_id::{DeviceId, MajorId, MinorId};
 use id_alloc::IdAlloc;
 use ostd::sync::Mutex;
@@ -17,6 +19,12 @@ pub struct DeviceIdAllocator {
 }
 
 impl DeviceIdAllocator {
+    pub fn singleton() -> &'static Arc<Self> {
+        static SINGLETON: Once<Arc<DeviceIdAllocator>> = Once::new();
+
+        SINGLETON.call_once(|| Arc::new(Self::new()))
+    }
+
     pub(super) fn new() -> Self {
         let mut minor_allocator = IdAlloc::with_capacity(MinorId::MAX.get() as usize + 1);
         // Mark 0 as allocated to ensure minor numbers start from 1.
@@ -49,8 +57,6 @@ impl DeviceIdAllocator {
     }
 }
 
-pub static DEVICE_ID_ALLOCATOR: Once<DeviceIdAllocator> = Once::new();
-
 pub fn release_container_dev_id(dev_id: DeviceId) {
-    DEVICE_ID_ALLOCATOR.get().unwrap().release(dev_id);
+    DeviceIdAllocator::singleton().release(dev_id);
 }

@@ -54,9 +54,7 @@ pub struct DevPts {
 
 impl DevPts {
     pub fn new() -> Arc<Self> {
-        let dev_id = pseudofs::DEVICE_ID_ALLOCATOR
-            .get()
-            .unwrap()
+        let dev_id = pseudofs::DeviceIdAllocator::singleton()
             .allocate()
             .expect("no device ID is available for devpts");
         Arc::new_cyclic(|weak_self| Self {

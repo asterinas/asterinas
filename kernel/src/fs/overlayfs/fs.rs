@@ -126,9 +126,7 @@ impl OverlayFs {
         Self::validate_work_and_upper(&work, &upper)?;
         Self::validate_work_empty(&work)?;
 
-        let dev_id = pseudofs::DEVICE_ID_ALLOCATOR
-            .get()
-            .unwrap()
+        let dev_id = pseudofs::DeviceIdAllocator::singleton()
             .allocate()
             .expect("no device ID is available for overlayfs");
         Ok(Arc::new_cyclic(|weak| Self {

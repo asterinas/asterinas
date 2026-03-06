@@ -52,9 +52,7 @@ pub struct RamFs {
 
 impl RamFs {
     pub fn new() -> Arc<Self> {
-        let dev_id = pseudofs::DEVICE_ID_ALLOCATOR
-            .get()
-            .unwrap()
+        let dev_id = pseudofs::DeviceIdAllocator::singleton()
             .allocate()
             .expect("no device ID is available for ramfs");
         Arc::new_cyclic(|weak_fs| Self {
