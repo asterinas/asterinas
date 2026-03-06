@@ -34,8 +34,10 @@ END_TEST()
 
 FN_TEST(open_creat_excl_nofollow_symlink)
 {
-        // O_CREAT | O_EXCL | O_NOFOLLOW on an existing symlink should return EEXIST
-	int fd = TEST_ERRNO(open(SYMLINK, O_CREAT | O_EXCL | O_NOFOLLOW | O_RDWR, 0644), EEXIST);
+	// O_CREAT | O_EXCL | O_NOFOLLOW on an existing symlink should return EEXIST
+	int fd = TEST_ERRNO(open(SYMLINK,
+				 O_CREAT | O_EXCL | O_NOFOLLOW | O_RDWR, 0644),
+			    EEXIST);
 }
 END_TEST()
 
