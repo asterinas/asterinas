@@ -52,6 +52,13 @@ impl FileOps for MemInfoFileOps {
         writeln!(printer, "MemFree:\t{} kB", available)?;
         writeln!(printer, "MemAvailable:\t{} kB", available)?;
 
+        #[cfg(feature = "cvm_guest")]
+        writeln!(
+            printer,
+            "Unaccepted:\t{} kB",
+            ostd::mm::frame::load_total_unaccepted_mem() / 1024
+        )?;
+
         Ok(printer.bytes_written())
     }
 }

@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
+extern crate alloc;
+
+use alloc::vec::Vec;
+
 use xmas_elf::program::{ProgramHeader, SegmentData};
 
 /// Load the kernel ELF payload to memory.
@@ -17,6 +21,49 @@ pub fn load_elf(file: &[u8]) {
             load_segment(&elf, program);
         }
     }
+}
+
+/// Returns merged physical ranges of all PT_LOAD segments in the ELF file.
+///
+/// Each range is `[p_paddr, p_paddr + p_memsz)`, so `.bss` is included.
+#[cfg(feature = "cvm_guest")]
+pub(crate) fn elf_load_ranges(file: &[u8]) -> Vec<(u64, u64)> {
+    let elf = xmas_elf::ElfFile::new(file).unwrap();
+    let mut ranges = Vec::new();
+
+    for ph in elf.program_iter() {
+        if let ProgramHeader::Ph64(program) = ph {
+            if program.get_type().unwrap() == xmas_elf::program::Type::Load && program.mem_size > 0
+            {
+                let start = program.physical_addr;
+                let end = start
+                    .checked_add(program.mem_size)
+                    .expect("[setup] PT_LOAD physical range overflows.");
+                ranges.push((start, end));
+            }
+        } else {
+            panic!(
+                "[setup] Unexpected program header type! Asterinas should be 64-bit ELF binary."
+            );
+        }
+    }
+
+    ranges.sort_unstable_by_key(|(start, _)| *start);
+
+    let mut merged = Vec::new();
+    for (start, end) in ranges {
+        if let Some((_, last_end)) = merged.last_mut()
+            && start <= *last_end
+        {
+            if end > *last_end {
+                *last_end = end;
+            }
+            continue;
+        }
+        merged.push((start, end));
+    }
+
+    merged
 }
 
 fn load_segment(file: &xmas_elf::ElfFile, program: &xmas_elf::program::ProgramHeader64) {
