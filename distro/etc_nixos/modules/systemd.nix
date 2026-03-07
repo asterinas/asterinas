@@ -22,7 +22,14 @@
     shell = "${pkgs.bash}/bin/bash";
     hashedPassword = null;
   };
-  systemd.targets.getty.wants = [ "autovt@hvc0.service" ];
+  systemd.targets.getty.wants = [
+    "autovt@hvc0.service"
+    "getty@tty2.service"
+    "getty@tty3.service"
+    "getty@tty4.service"
+    "getty@tty5.service"
+    "getty@tty6.service"
+  ];
 
   systemd.extraConfig = ''
     LogLevel=crit      

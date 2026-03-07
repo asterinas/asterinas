@@ -1,0 +1,15 @@
+hvc0::respawn:/bin/sh
+tty1::askfirst:/bin/cttyhack /bin/sh
+tty2::askfirst:/bin/cttyhack /bin/sh
+tty3::askfirst:/bin/cttyhack /bin/sh
+tty4::askfirst:/bin/cttyhack /bin/sh
+tty5::askfirst:/bin/cttyhack /bin/sh
+tty6::askfirst:/bin/cttyhack /bin/sh
+
+# Stuff to do when restarting the init process
+::restart:/bin/init
+
+# Stuff to do before rebooting
+::ctrlaltdel:/bin/reboot
+::shutdown:/bin/umount -a -r
+::shutdown:/bin/swapoff -a
