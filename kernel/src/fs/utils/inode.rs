@@ -6,6 +6,7 @@ use alloc::boxed::ThinBox;
 use core::time::Duration;
 
 use core2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
+use device_id::DeviceId;
 use ostd::task::Task;
 use spin::Once;
 
@@ -124,101 +125,195 @@ impl From<AccessMode> for Permission {
     }
 }
 
+/// File metadata, providing detailed information about an inode.
+///
+/// Asterinas's type-safe counterparts for Linux's `struct stat`.
 #[derive(Debug, Clone, Copy)]
 pub struct Metadata {
-    pub dev: u64,
+    /// The inode number, which uniquely identifies the file within the filesystem.
+    ///
+    /// Corresponds to `st_ino`.
     pub ino: u64,
+
+    /// The size of the inode.
+    ///
+    /// The interpretation depends on `inode_type`:
+    /// - **Regular File**: The total length of the file content.
+    /// - **Directory**: The size of the directory's internal table (usually a multiple of block size).
+    /// - **Symbolic Link**: The length of the target pathname.
+    /// - **Device/Socket/FIFO**: Usually zero.
+    ///
+    /// Corresponds to `st_size`.
     pub size: usize,
-    pub blk_size: usize,
-    pub blocks: usize,
-    pub atime: Duration,
-    pub mtime: Duration,
-    pub ctime: Duration,
+
+    /// The optimal block size for filesystem I/O operations.
+    ///
+    /// Corresponds to `st_blksize`.
+    pub optimal_block_size: usize,
+
+    /// The number of 512-byte sectors allocated for the inode on disk.
+    ///
+    /// This represents physical usage.
+    /// For sparse files (those having holes), `size` is greater than this field.
+    /// For files with preallocated blocks (`FALLOC_FL_KEEP_SIZE`),
+    /// `size` is smaller than this field.
+    ///
+    /// Corresponds to `st_blocks`.
+    pub nr_sectors_allocated: usize,
+
+    /// The timestamp of the last access to the inode's data.
+    ///
+    /// Corresponds to `st_atime`.
+    pub last_access_at: Duration,
+
+    /// The timestamp of the last modification to the inode's content.
+    ///
+    /// Corresponds to `st_mtime`.
+    pub last_modify_at: Duration,
+
+    /// The timestamp of the last change to the inode's metadata.
+    ///
+    /// This is updated when permissions, ownership, or link count change,
+    /// not just when the inode content is modified.
+    ///
+    /// Corresponds to `st_ctime`.
+    pub last_meta_change_at: Duration,
+
+    /// The type of the inode (e.g., regular file, directory, symlink).
+    ///
+    /// Derived from the file type bits of `st_mode` (using the `S_IFMT` mask).
     pub type_: InodeType,
+
+    /// The inode mode, representing access permissions.
+    ///
+    /// Derived from the permission bits of `st_mode`.
     pub mode: InodeMode,
-    pub nlinks: usize,
+
+    /// The number of hard links pointing to this inode.
+    ///
+    /// Corresponds to `st_nlink`.
+    pub nr_hard_links: usize,
+
+    /// The User ID (UID) of the inode's owner.
+    ///
+    /// Corresponds to `st_uid`.
     pub uid: Uid,
+
+    /// The Group ID (GID) of the inode's owner.
+    ///
+    /// Corresponds to `st_gid`.
     pub gid: Gid,
-    pub rdev: u64,
+
+    /// The ID of the device containing the inode.
+    ///
+    /// For persisted files, this device could be a on-disk partition
+    /// or a logical volume (with RAID).
+    /// For pseudo files (e.g., those on sockfs), this device is also "pseudo".
+    ///
+    /// Corresponds to `st_dev`.
+    pub container_dev_id: DeviceId,
+
+    /// The device ID of the inode itself, if this inode represents a
+    /// special device file (character or block).
+    ///
+    /// Corresponds to `st_rdev`.
+    pub self_dev_id: Option<DeviceId>,
 }
 
 impl Metadata {
-    pub fn new_dir(ino: u64, mode: InodeMode, blk_size: usize) -> Self {
+    pub fn new_dir(ino: u64, mode: InodeMode, blk_size: usize, container_dev_id: DeviceId) -> Self {
         let now = RealTimeCoarseClock::get().read_time();
         Self {
-            dev: 0,
             ino,
             size: 2,
-            blk_size,
-            blocks: 1,
-            atime: now,
-            mtime: now,
-            ctime: now,
+            optimal_block_size: blk_size,
+            nr_sectors_allocated: 1,
+            last_access_at: now,
+            last_modify_at: now,
+            last_meta_change_at: now,
             type_: InodeType::Dir,
             mode,
-            nlinks: 2,
+            nr_hard_links: 2,
             uid: Uid::new_root(),
             gid: Gid::new_root(),
-            rdev: 0,
+            container_dev_id,
+            self_dev_id: None,
         }
     }
 
-    pub fn new_file(ino: u64, mode: InodeMode, blk_size: usize) -> Self {
+    pub fn new_file(
+        ino: u64,
+        mode: InodeMode,
+        blk_size: usize,
+        container_dev_id: DeviceId,
+    ) -> Self {
         let now = RealTimeCoarseClock::get().read_time();
         Self {
-            dev: 0,
             ino,
             size: 0,
-            blk_size,
-            blocks: 0,
-            atime: now,
-            mtime: now,
-            ctime: now,
+            optimal_block_size: blk_size,
+            nr_sectors_allocated: 0,
+            last_access_at: now,
+            last_modify_at: now,
+            last_meta_change_at: now,
             type_: InodeType::File,
             mode,
-            nlinks: 1,
+            nr_hard_links: 1,
             uid: Uid::new_root(),
             gid: Gid::new_root(),
-            rdev: 0,
+            container_dev_id,
+            self_dev_id: None,
         }
     }
 
-    pub fn new_symlink(ino: u64, mode: InodeMode, blk_size: usize) -> Self {
+    pub fn new_symlink(
+        ino: u64,
+        mode: InodeMode,
+        blk_size: usize,
+        container_dev_id: DeviceId,
+    ) -> Self {
         let now = RealTimeCoarseClock::get().read_time();
         Self {
-            dev: 0,
             ino,
             size: 0,
-            blk_size,
-            blocks: 0,
-            atime: now,
-            mtime: now,
-            ctime: now,
+            optimal_block_size: blk_size,
+            nr_sectors_allocated: 0,
+            last_access_at: now,
+            last_modify_at: now,
+            last_meta_change_at: now,
             type_: InodeType::SymLink,
             mode,
-            nlinks: 1,
+            nr_hard_links: 1,
             uid: Uid::new_root(),
             gid: Gid::new_root(),
-            rdev: 0,
+            container_dev_id,
+            self_dev_id: None,
         }
     }
-    pub fn new_device(ino: u64, mode: InodeMode, blk_size: usize, device: &dyn Device) -> Self {
+
+    pub fn new_device(
+        ino: u64,
+        mode: InodeMode,
+        blk_size: usize,
+        device: &dyn Device,
+        container_dev_id: DeviceId,
+    ) -> Self {
         let now = RealTimeCoarseClock::get().read_time();
         Self {
-            dev: 0,
             ino,
             size: 0,
-            blk_size,
-            blocks: 0,
-            atime: now,
-            mtime: now,
-            ctime: now,
+            optimal_block_size: blk_size,
+            nr_sectors_allocated: 0,
+            last_access_at: now,
+            last_modify_at: now,
+            last_meta_change_at: now,
             type_: InodeType::from(device.type_()),
             mode,
-            nlinks: 1,
+            nr_hard_links: 1,
             uid: Uid::new_root(),
             gid: Gid::new_root(),
-            rdev: device.id().as_encoded_u64(),
+            container_dev_id,
+            self_dev_id: Some(device.id()),
         }
     }
 }

@@ -69,7 +69,16 @@ struct NsInode<T: NsCommonOps> {
 impl<T: NsCommonOps> NsInode<T> {
     fn new(ino: u64, uid: Uid, gid: Gid, ns: Arc<T>, fs: Weak<PseudoFs>) -> Self {
         let mode = mkmod!(a+r);
-        let common = PseudoInode::new(ino, PseudoInodeType::Ns, mode, uid, gid, fs);
+        let fs = fs.upgrade().unwrap();
+        let common = PseudoInode::new(
+            ino,
+            PseudoInodeType::Ns,
+            mode,
+            uid,
+            gid,
+            Arc::downgrade(&fs),
+            fs.container_dev_id(),
+        );
         let name = format!("{}:[{}]", T::NAME, ino);
 
         Self { common, ns, name }

@@ -37,6 +37,47 @@ impl Common {
         }
     }
 
+    fn new_dir(fs: Weak<dyn FileSystem>, mode: InodeMode, is_volatile: bool) -> Self {
+        let metadata = Self::with_procfs(&fs, |procfs| {
+            let ino = procfs.alloc_id();
+            Metadata::new_dir(ino, mode, BLOCK_SIZE, procfs.sb().container_dev_id)
+        });
+        Self::new(metadata, fs, is_volatile)
+    }
+
+    fn new_file(fs: Weak<dyn FileSystem>, mode: InodeMode, is_volatile: bool) -> Self {
+        let metadata = Self::with_procfs(&fs, |procfs| {
+            Metadata::new_file(
+                procfs.alloc_id(),
+                mode,
+                BLOCK_SIZE,
+                procfs.sb().container_dev_id,
+            )
+        });
+        Self::new(metadata, fs, is_volatile)
+    }
+
+    fn new_symlink(fs: Weak<dyn FileSystem>, mode: InodeMode, is_volatile: bool) -> Self {
+        let metadata = Self::with_procfs(&fs, |procfs| {
+            Metadata::new_symlink(
+                procfs.alloc_id(),
+                mode,
+                BLOCK_SIZE,
+                procfs.sb().container_dev_id,
+            )
+        });
+        Self::new(metadata, fs, is_volatile)
+    }
+
+    fn with_procfs<F, T>(fs: &Weak<dyn FileSystem>, with_procfs_fn: F) -> T
+    where
+        F: FnOnce(&ProcFs) -> T,
+    {
+        let fs = fs.upgrade().unwrap();
+        let procfs = fs.downcast_ref::<ProcFs>().unwrap();
+        with_procfs_fn(procfs)
+    }
+
     pub fn fs(&self) -> Arc<dyn FileSystem> {
         self.fs.upgrade().unwrap()
     }
@@ -58,27 +99,27 @@ impl Common {
     }
 
     pub fn atime(&self) -> Duration {
-        self.metadata.read().atime
+        self.metadata.read().last_access_at
     }
 
     pub fn set_atime(&self, time: Duration) {
-        self.metadata.write().atime = time;
+        self.metadata.write().last_access_at = time;
     }
 
     pub fn mtime(&self) -> Duration {
-        self.metadata.read().mtime
+        self.metadata.read().last_modify_at
     }
 
     pub fn set_mtime(&self, time: Duration) {
-        self.metadata.write().mtime = time;
+        self.metadata.write().last_modify_at = time;
     }
 
     pub fn ctime(&self) -> Duration {
-        self.metadata.read().ctime
+        self.metadata.read().last_meta_change_at
     }
 
     pub fn set_ctime(&self, time: Duration) {
-        self.metadata.write().ctime = time;
+        self.metadata.write().last_meta_change_at = time;
     }
 
     pub fn mode(&self) -> Result<InodeMode> {

@@ -19,7 +19,7 @@ use crate::{
         inode_handle::FileIo,
         utils::{
             AccessMode, DirentVisitor, FallocMode, FileSystem, Inode, InodeIo, InodeMode,
-            InodeType, Metadata, MknodType, StatusFlags, SymbolicLink, mkmod,
+            InodeType, Metadata, MknodType, StatusFlags, SuperBlock, SymbolicLink, mkmod,
         },
     },
     prelude::*,
@@ -62,54 +62,59 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
     where
         Self: Sized + 'static;
 
-    fn new_root(root_node: Arc<dyn SysBranchNode>) -> Arc<Self>
+    fn new_root(root_node: Arc<dyn SysBranchNode>, sb: &SuperBlock) -> Arc<Self>
     where
         Self: Sized + 'static,
     {
         let node_kind = SysTreeNodeKind::Branch(root_node);
         let parent = Weak::new();
-        Self::new_branch_dir(node_kind, None, parent)
+        Self::new_branch_dir(node_kind, None, parent, sb)
     }
 
-    fn new_metadata(ino: u64, type_: InodeType) -> Metadata {
+    fn new_metadata(ino: u64, type_: InodeType, sb: &SuperBlock) -> Metadata {
         let now = RealTimeCoarseClock::get().read_time();
         Metadata {
-            dev: 0,
             ino,
             size: 0,
-            blk_size: 1024,
-            blocks: 0,
-            atime: now,
-            mtime: now,
-            ctime: now,
+            optimal_block_size: 1024,
+            nr_sectors_allocated: 0,
+            last_access_at: now,
+            last_modify_at: now,
+            last_meta_change_at: now,
             type_,
             // The mode field in metadata will not be used
             mode: mkmod!(a=),
-            nlinks: 1,
+            nr_hard_links: 1,
             uid: Uid::new_root(),
             gid: Gid::new_root(),
-            rdev: 0,
+            container_dev_id: sb.container_dev_id,
+            self_dev_id: None,
         }
     }
 
-    fn new_attr(attr: SysAttr, node: Arc<dyn SysNode>, parent: Weak<Self>) -> Arc<Self>
+    fn new_attr(
+        attr: SysAttr,
+        node: Arc<dyn SysNode>,
+        parent: Weak<Self>,
+        sb: &SuperBlock,
+    ) -> Arc<Self>
     where
         Self: Sized + 'static,
     {
         let node_kind = SysTreeNodeKind::Attr(attr.clone(), node);
         let ino = ino::from_node_kind(&node_kind);
-        let metadata = Self::new_metadata(ino, InodeType::File);
+        let metadata = Self::new_metadata(ino, InodeType::File, sb);
         let mode = attr.perms().into();
         Self::new_arc(node_kind, metadata, mode, parent)
     }
 
-    fn new_symlink(symlink: Arc<dyn SysSymlink>, parent: Weak<Self>) -> Arc<Self>
+    fn new_symlink(symlink: Arc<dyn SysSymlink>, parent: Weak<Self>, sb: &SuperBlock) -> Arc<Self>
     where
         Self: Sized + 'static,
     {
         let node_kind = SysTreeNodeKind::Symlink(symlink);
         let ino = ino::from_node_kind(&node_kind);
-        let metadata = Self::new_metadata(ino, InodeType::SymLink);
+        let metadata = Self::new_metadata(ino, InodeType::SymLink, sb);
         let mode = mkmod!(a+rwx);
         Self::new_arc(node_kind, metadata, mode, parent)
     }
@@ -118,12 +123,13 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
         node_kind: SysTreeNodeKind, // Must be SysTreeNodeKind::Branch
         mode: Option<InodeMode>,
         parent: Weak<Self>,
+        sb: &SuperBlock,
     ) -> Arc<Self>
     where
         Self: Sized + 'static,
     {
         let ino = ino::from_node_kind(&node_kind);
-        let metadata = Self::new_metadata(ino, InodeType::Dir);
+        let metadata = Self::new_metadata(ino, InodeType::Dir, sb);
         let SysTreeNodeKind::Branch(branch_node) = &node_kind else {
             panic!("new_branch_dir called with non-branch SysTreeNodeKind");
         };
@@ -136,12 +142,13 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
         node_kind: SysTreeNodeKind, // Must be SysTreeNodeKind::Leaf
         mode: Option<InodeMode>,
         parent: Weak<Self>,
+        sb: &SuperBlock,
     ) -> Arc<Self>
     where
         Self: Sized + 'static,
     {
         let ino = ino::from_node_kind(&node_kind);
-        let metadata = Self::new_metadata(ino, InodeType::Dir); // Leaf nodes are represented as Dirs
+        let metadata = Self::new_metadata(ino, InodeType::Dir, sb); // Leaf nodes are represented as Dirs
 
         let SysTreeNodeKind::Leaf(leaf_node) = &node_kind else {
             panic!("new_leaf_dir called with non-leaf SysTreeNodeKind");
@@ -155,6 +162,8 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
     where
         Self: Sized + 'static,
     {
+        let sb = self.fs().sb();
+
         // Try finding a child node (Branch, Leaf, Symlink) first
         if let Some(child_sysnode) = sysnode.child(name) {
             let child_type = child_sysnode.type_();
@@ -167,6 +176,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
                         SysTreeNodeKind::Branch(child_branch),
                         None,
                         Arc::downgrade(&self.this()),
+                        &sb,
                     );
                     Ok(inode)
                 }
@@ -177,6 +187,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
                         SysTreeNodeKind::Leaf(child_leaf_node),
                         None,
                         Arc::downgrade(&self.this()),
+                        &sb,
                     );
                     Ok(inode)
                 }
@@ -184,7 +195,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
                     let child_symlink = child_sysnode
                         .cast_to_symlink()
                         .ok_or(Error::new(Errno::EIO))?;
-                    let inode = Self::new_symlink(child_symlink, Arc::downgrade(&self.this()));
+                    let inode = Self::new_symlink(child_symlink, Arc::downgrade(&self.this()), &sb);
                     Ok(inode)
                 }
             }
@@ -208,7 +219,12 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
                 }
             };
 
-            let inode = Self::new_attr(attr.clone(), parent_node_arc, Arc::downgrade(&self.this()));
+            let inode = Self::new_attr(
+                attr.clone(),
+                parent_node_arc,
+                Arc::downgrade(&self.this()),
+                &sb,
+            );
             Ok(inode)
         }
     }
@@ -233,7 +249,13 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
             }
         };
 
-        let inode = Self::new_attr(attr.clone(), leaf_node_arc, Arc::downgrade(&self.this()));
+        let sb = self.fs().sb();
+        let inode = Self::new_attr(
+            attr.clone(),
+            leaf_node_arc,
+            Arc::downgrade(&self.this()),
+            &sb,
+        );
         Ok(inode)
     }
 
@@ -361,19 +383,19 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
     }
 
     default fn atime(&self) -> Duration {
-        self.metadata().atime
+        self.metadata().last_access_at
     }
 
     default fn set_atime(&self, _time: Duration) {}
 
     default fn mtime(&self) -> Duration {
-        self.metadata().mtime
+        self.metadata().last_modify_at
     }
 
     default fn set_mtime(&self, _time: Duration) {}
 
     default fn ctime(&self) -> Duration {
-        self.metadata().ctime
+        self.metadata().last_meta_change_at
     }
 
     default fn set_ctime(&self, _time: Duration) {}
@@ -418,17 +440,20 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
 
         let new_child = branch_node.create_child(name)?;
 
+        let sb = self.fs().sb();
         let new_inode = if let Some(branch_child) = new_child.cast_to_branch() {
             Self::new_branch_dir(
                 SysTreeNodeKind::Branch(branch_child),
                 Some(mode),
                 self.parent().clone(),
+                &sb,
             )
         } else {
             Self::new_leaf_dir(
                 SysTreeNodeKind::Leaf(new_child.cast_to_node().unwrap()),
                 Some(mode),
                 self.parent().clone(),
+                &sb,
             )
         };
 

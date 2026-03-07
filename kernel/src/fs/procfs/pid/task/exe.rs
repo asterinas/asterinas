@@ -3,7 +3,7 @@
 use super::TidDirOps;
 use crate::{
     fs::{
-        procfs::{ProcSymBuilder, SymOps},
+        procfs::template::{ProcSymBuilder, SymOps},
         utils::{Inode, SymbolicLink, mkmod},
     },
     prelude::*,

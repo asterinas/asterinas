@@ -1358,21 +1358,20 @@ impl Inode for ExfatInode {
         };
 
         Metadata {
-            dev: 0,
             ino: inner.ino,
             size: inner.size,
-            blk_size,
-            blocks: inner.size.div_ceil(blk_size),
-            atime: inner.atime.as_duration().unwrap_or_default(),
-            mtime: inner.mtime.as_duration().unwrap_or_default(),
-            ctime: inner.ctime.as_duration().unwrap_or_default(),
+            optimal_block_size: blk_size,
+            nr_sectors_allocated: inner.size.div_ceil(blk_size),
+            last_access_at: inner.atime.as_duration().unwrap_or_default(),
+            last_modify_at: inner.mtime.as_duration().unwrap_or_default(),
+            last_meta_change_at: inner.ctime.as_duration().unwrap_or_default(),
             type_: inner.inode_type,
             mode: inner.make_mode(),
-            nlinks,
+            nr_hard_links: nlinks,
             uid: Uid::new(inner.fs().mount_option().fs_uid as u32),
             gid: Gid::new(inner.fs().mount_option().fs_gid as u32),
-            //real device
-            rdev: 0,
+            container_dev_id: inner.fs().container_device_id(),
+            self_dev_id: None,
         }
     }
 

@@ -6,13 +6,13 @@ use aster_util::slot_vec::SlotVec;
 use inherit_methods_macro::inherit_methods;
 use ostd::sync::RwMutexUpgradeableGuard;
 
-use super::{Common, ProcFs};
+use super::Common;
 use crate::{
     fs::{
         path::{is_dot, is_dotdot},
         utils::{
             DirEntryVecExt, DirentVisitor, Extension, FileSystem, Inode, InodeIo, InodeMode,
-            InodeType, Metadata, MknodType, StatusFlags,
+            InodeType, Metadata, MknodType, StatusFlags, SuperBlock,
         },
     },
     prelude::*,
@@ -28,23 +28,33 @@ pub struct ProcDir<D: DirOps> {
 }
 
 impl<D: DirOps> ProcDir<D> {
+    pub(in crate::fs::procfs) fn new_root(
+        dir: D,
+        fs: Weak<dyn FileSystem>,
+        ino: u64,
+        sb: &SuperBlock,
+        mode: InodeMode,
+    ) -> Arc<Self> {
+        let metadata = Metadata::new_dir(ino, mode, super::BLOCK_SIZE, sb.container_dev_id);
+        let common = Common::new(metadata, fs, false);
+
+        Arc::new_cyclic(|weak_self| Self {
+            inner: dir,
+            this: weak_self.clone(),
+            parent: None,
+            cached_children: RwMutex::new(SlotVec::new()),
+            common,
+        })
+    }
+
     pub(super) fn new(
         dir: D,
         fs: Weak<dyn FileSystem>,
         parent: Option<Weak<dyn Inode>>,
-        ino: Option<u64>,
         is_volatile: bool,
         mode: InodeMode,
     ) -> Arc<Self> {
-        let common = {
-            let ino = ino.unwrap_or_else(|| {
-                let arc_fs = fs.upgrade().unwrap();
-                let procfs = arc_fs.downcast_ref::<ProcFs>().unwrap();
-                procfs.alloc_id()
-            });
-            let metadata = Metadata::new_dir(ino, mode, super::BLOCK_SIZE);
-            Common::new(metadata, fs, is_volatile)
-        };
+        let common = Common::new_dir(fs, mode, is_volatile);
         Arc::new_cyclic(|weak_self| Self {
             inner: dir,
             this: weak_self.clone(),

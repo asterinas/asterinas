@@ -11,6 +11,7 @@ use crate::{
     fs::{
         Result,
         cgroupfs::systree_node::CgroupSystem,
+        pseudofs,
         registry::{FsProperties, FsType},
         utils::{
             FileSystem, FsEventSubscriberStats, FsFlags, Inode, SuperBlock,
@@ -41,8 +42,11 @@ impl CgroupFs {
     }
 
     fn new(root_node: Arc<CgroupSystem>) -> Arc<Self> {
-        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX);
-        let root_inode = CgroupInode::new_root(root_node);
+        let dev_id = pseudofs::DeviceIdAllocator::singleton()
+            .allocate()
+            .expect("no device ID is available for cgroupfs");
+        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, dev_id);
+        let root_inode = CgroupInode::new_root(root_node, &sb);
 
         Arc::new(Self {
             sb,

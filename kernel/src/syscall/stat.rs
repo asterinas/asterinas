@@ -175,19 +175,19 @@ struct Stat {
 impl From<Metadata> for Stat {
     fn from(info: Metadata) -> Self {
         Self {
-            st_dev: info.dev,
+            st_dev: info.container_dev_id.as_encoded_u64(),
             st_ino: info.ino,
-            st_nlink: info.nlinks as _,
+            st_nlink: info.nr_hard_links as _,
             st_mode: info.type_ as u32 | info.mode.bits() as u32,
             st_uid: info.uid.into(),
             st_gid: info.gid.into(),
-            st_rdev: info.rdev,
+            st_rdev: info.self_dev_id.map_or(0, |id| id.as_encoded_u64()),
             st_size: info.size as i64,
-            st_blksize: info.blk_size as _,
-            st_blocks: (info.blocks * (info.blk_size / 512)) as i64,
-            st_atime: info.atime.into(),
-            st_mtime: info.mtime.into(),
-            st_ctime: info.ctime.into(),
+            st_blksize: info.optimal_block_size as _,
+            st_blocks: info.nr_sectors_allocated as _,
+            st_atime: info.last_access_at.into(),
+            st_mtime: info.last_modify_at.into(),
+            st_ctime: info.last_meta_change_at.into(),
             ..Default::default()
         }
     }
