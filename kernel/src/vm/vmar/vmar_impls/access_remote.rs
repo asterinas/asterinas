@@ -148,19 +148,19 @@ impl Vmar {
             let preempt_guard = disable_preempt();
             let mut cursor = vmspace.cursor(&preempt_guard, &(vaddr..vaddr + PAGE_SIZE))?;
 
-            match cursor.query()?.1 {
-                Some(vm_item) if vm_item.prop().flags.contains(required_page_flags) => {
-                    match vm_item {
-                        VmQueriedItem::MappedRam { frame, .. } => return Ok((*frame).clone()),
-                        VmQueriedItem::MappedIoMem { .. } => {
-                            return_errno_with_message!(
-                                Errno::EOPNOTSUPP,
-                                "accessing remote MMIO memory is not supported currently"
-                            );
-                        }
-                    }
+            match cursor.query() {
+                VmQueriedItem::MappedRam { frame, prop }
+                    if prop.flags.contains(required_page_flags) =>
+                {
+                    return Ok((*frame).clone());
                 }
-                Some(_) | None => (),
+                VmQueriedItem::MappedIoMem { .. } => {
+                    return_errno_with_message!(
+                        Errno::EOPNOTSUPP,
+                        "accessing remote MMIO memory is not supported currently"
+                    );
+                }
+                _ => {}
             }
 
             drop(cursor);
