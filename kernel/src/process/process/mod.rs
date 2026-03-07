@@ -200,8 +200,8 @@ pub struct ParentProcessGuard<'a> {
 }
 
 impl ParentProcessGuard<'_> {
-    pub fn process(&self) -> Weak<Process> {
-        self.guard.clone()
+    pub fn process(&self) -> &Weak<Process> {
+        &self.guard
     }
 
     /// Update both pid and weak ref.
