@@ -6,7 +6,6 @@
 //!
 //! Reference: <https://www.kernel.org/doc/html/latest/admin-guide/devices.html>
 
-use aster_cmdline::KCMDLINE;
 use device_id::{DeviceId, MajorId, MinorId};
 use spin::Once;
 
@@ -104,12 +103,9 @@ impl SystemConsole {
 
         INSTANCE.call_once(|| {
             // TODO: Support specifying multiple TTY devices, e.g., "console=hvc0 console=tty0".
-            let console_name = KCMDLINE
+            let console_name = CONSOLES
                 .get()
-                .unwrap()
-                .get_console_names()
-                .first()
-                .map(String::as_str)
+                .and_then(|consoles| consoles.first().map(|s| s.as_str()))
                 .unwrap_or("tty0");
 
             let device = match console_name {
@@ -161,3 +157,6 @@ pub(super) fn init_in_first_process() -> Result<()> {
 
     Ok(())
 }
+
+static CONSOLES: Once<Vec<String>> = Once::new();
+aster_cmdline::define_repeatable_kv_param!("console", CONSOLES);

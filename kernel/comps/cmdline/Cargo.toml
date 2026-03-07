@@ -10,6 +10,7 @@ component.workspace = true
 log.workspace = true
 ostd.workspace = true
 spin.workspace = true
+inventory = { git = "https://github.com/asterinas/inventory", rev = "9dce587" }
 
 [lints]
 workspace = true
