@@ -1,0 +1,149 @@
+From 017b5d4f857e68dda1bf5594ffcac9d14b82c678 Mon Sep 17 00:00:00 2001
+From: Qingsong Chen <changxian.cqs@antgroup.com>
+Date: Mon, 2 Mar 2026 03:26:07 +0000
+Subject: [PATCH] Fix tool paths and build flags
+
+---
+ make/Defs.gmk  | 86 ++++++++++++++++++++------------------------------
+ make/jtreg.gmk |  6 ++--
+ 2 files changed, 36 insertions(+), 56 deletions(-)
+
+diff --git a/make/Defs.gmk b/make/Defs.gmk
+index 9089e9c..5a14d04 100644
+--- a/make/Defs.gmk
++++ b/make/Defs.gmk
+@@ -124,59 +124,41 @@ REGTEST_TOOL_PATCH_JAVA_BASE_OPTIONS = --patch-module java.base=$(JAVADIR)
+ # for files needed to run agentvm and othervm tests (on platforms back to JDK 8)
+ REGTEST_AGENT_JAVAC = $(JDKHOME)/bin/javac
+ REGTEST_AGENT_JAVAC_OPTIONS = \
+-	$(AGENT_JAVAC_SOURCE_TARGET) -Xlint:all,-options,-deprecation -Werror
++	$(AGENT_JAVAC_SOURCE_TARGET) -Xlint:all,-options,-deprecation
+ 
+ # for files needed for jtreg tool
+ REGTEST_TOOL_JAVAC = $(JDKHOME)/bin/javac
+ REGTEST_TOOL_JAVAC_OPTIONS = \
+-	$(TOOL_JAVAC_SOURCE_TARGET) -Xlint:all,-options,-deprecation -Werror
++	$(TOOL_JAVAC_SOURCE_TARGET) -Xlint:all,-options,-deprecation
+ 
+ 
+ #----- Unix commands
+ 
+-AWK     = /usr/bin/awk
+-CAT 	= /bin/cat
+-CHMOD 	= /bin/chmod
+-CP 	= /bin/cp
+-DIFF 	= /usr/bin/diff
+-ECHO	= /bin/echo
+-FIND	= /usr/bin/find
+-GREP 	:= $(shell if [ -r /bin/grep ]; then echo /bin/grep ; else echo /usr/bin/grep ; fi )
+-LN	= /bin/ln
+-LS	= /bin/ls
+-MKDIR 	= /bin/mkdir
+-MV 	= /bin/mv
+-PANDOC  := $(shell if [ -r /usr/bin/pandoc ]; then \
+-		echo /usr/bin/pandoc ; \
+-	elif [ -r /usr/local/bin/pandoc ]; then \
+-		echo /usr/local/bin/pandoc ; \
+-	elif [ -r /opt/homebrew/bin/tidy ]; then \
+-		echo /opt/homebrew/bin/pandoc ; \
+-	else \
+-		echo /bin/echo "pandoc not available" ; \
+-	fi )
+-PERL	= /usr/bin/perl
+-PRINTF  = /usr/bin/printf
+-RM 	= /bin/rm -rf
+-SED 	:= $(shell if [ -r /bin/sed ]; then echo /bin/sed ; else echo /usr/bin/sed ; fi )
+-SH 	= /bin/sh
+-SORT    = /usr/bin/sort
+-TEST 	= /usr/bin/test
+-ifeq ($(SYSTEM_UNAME), Darwin)
+-TIDY 	:= $(shell if [ -r /usr/local/bin/tidy ]; then \
+-		echo /usr/local/bin/tidy ; \
+-	elif [ -r /opt/homebrew/bin/tidy ]; then \
+-		echo /opt/homebrew/bin/tidy ; \
+-	else \
+-		echo /usr/bin/tidy ; \
+-	fi )
+-else
+-TIDY	= /usr/bin/tidy
+-endif
+-TOUCH 	= /usr/bin/touch
+-UNZIP 	= /usr/bin/unzip
+-WC 	= /usr/bin/wc
+-ZIP 	= /usr/bin/zip
++AWK     = awk
++CAT 	= cat
++CHMOD 	= chmod
++CP 	= cp
++DIFF 	= diff
++ECHO	= echo
++FIND	= find
++GREP 	:= grep
++LN	= ln
++LS	= ls
++MKDIR 	= mkdir
++MV 	= mv
++PANDOC  := pandoc
++PERL	= perl
++PRINTF  = printf
++RM 	= rm -rf
++SED 	:= sed
++SH 	= sh
++SORT    = sort
++TEST 	= test
++TIDY	= tidy
++TOUCH 	= touch
++UNZIP 	= unzip
++WC 	= wc
++ZIP 	= zip
+ 
+ 
+ #----------------------------------------------------------------------
+@@ -212,12 +194,12 @@ BUILD_MILESTONE = dev
+ BUILD_NUMBER = b00
+ 
+ # don't eval dates here directly, because that leads to unstable builds
+-#BUILD_YEAR:sh = /bin/date +"%Y"
+-BUILD_YEAR_CMD = /bin/date '+%Y'
+-#BUILD_DOCDATE:sh = /bin/date +"%B %d, %Y"
+-BUILD_DOCDATE_CMD = /bin/date  +'%B %d, %Y'
+-#BUILD_ZIPDATE:sh = /bin/date '+%d %h %Y'
+-BUILD_ZIPDATE_CMD = /bin/date  '+%d %h %Y'
++#BUILD_YEAR:sh = date +"%Y"
++BUILD_YEAR_CMD = date '+%Y'
++#BUILD_DOCDATE:sh = date +"%B %d, %Y"
++BUILD_DOCDATE_CMD = date  +'%B %d, %Y'
++#BUILD_ZIPDATE:sh = date '+%d %h %Y'
++BUILD_ZIPDATE_CMD = date  '+%d %h %Y'
+ BUILD_NONFCS_MILESTONE_sh = echo $(BUILD_MILESTONE) | sed -e 's/[fF][cC][sS]//'
+ BUILD_NONFCS_MILESTONE = $(BUILD_NONFCS_MILESTONE_sh:sh)
+ 
+@@ -226,7 +208,7 @@ ZIPSFX_VERSION_sh = echo '$(BUILD_VERSION)' | sed -e 's|\([^0-9][^0-9]*\)|_|g'
+ ZIPSFX_MILESTONE_sh = echo '$(BUILD_MILESTONE)'
+ ZIPSFX_BUILD_sh = echo '$(BUILD_NUMBER)'
+ ZIPSFX_NEWBUILD_sh = echo '$(BUILD_NUMBER)' | sed -e 's|[^[0-9]||g' | xargs printf "%d"
+-ZIPSFX_DATE_sh = echo "`$(BUILD_ZIPDATE_CMD)`" | /usr/bin/tr -s '[A-Z] ' '[a-z]_'
++ZIPSFX_DATE_sh = echo "`$(BUILD_ZIPDATE_CMD)`" | tr -s '[A-Z] ' '[a-z]_'
+ 
+ VERBOSE_ZIP_SUFFIX = $(shell $(ZIPSFX_VERSION_sh))-$(shell $(ZIPSFX_MILESTONE_sh))-bin-$(shell $(ZIPSFX_BUILD_sh))-$(shell $(ZIPSFX_DATE_sh))
+ 
+diff --git a/make/jtreg.gmk b/make/jtreg.gmk
+index 85a01f2..3a2dc20 100644
+--- a/make/jtreg.gmk
++++ b/make/jtreg.gmk
+@@ -336,10 +336,8 @@ ID_COMMAND := $(PRINTF) "git:%s%s\n" \
+ 
+ $(JTREG_IMAGEDIR)/release:
+ 	echo "JTREG_VERSION=$(BUILD_VERSION) $(BUILD_NUMBER)" > $@
+-	echo "BUILD_DATE=`/bin/date +'%B %d, %Y'`" >> $@
+-	if [ -r $(TOPDIR)/.git ]; then \
+-	    echo "SOURCE=$$($(ID_COMMAND))" >> $@ ; \
+-	elif [ -n "$(SRCREV)" -a -r $(SRCREV) ]; then \
++	echo "BUILD_DATE=`date +'%B %d, %Y'`" >> $@
++	if [ -n "$(SRCREV)" -a -r $(SRCREV) ]; then \
+ 	    echo "SOURCE=\"$$($(CAT) $(SRCREV) | $(SED) -e 's/:/:git:/' -e 's/  *$$//')\"" >> $@ ; \
+ 	fi
+ 
+-- 
+2.43.0
+
