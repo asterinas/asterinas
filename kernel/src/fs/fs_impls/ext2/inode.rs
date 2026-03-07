@@ -1469,28 +1469,141 @@ impl InodeImpl {
 
     /// Ensures that blocks in the specified range are allocated.
     ///
-    /// This method checks each block in the range and allocates any sparse blocks.
+    /// This method scans the block mappings in the range and allocates any sparse blocks.
     pub fn ensure_blocks_allocated(&mut self, start_bid: Ext2Bid, nblocks: usize) -> Result<()> {
         let end_bid = start_bid + nblocks as Ext2Bid;
         let mut current_bid = start_bid;
 
-        while current_bid < end_bid {
-            let device_bid = self.get_device_bid(current_bid)?;
-            if device_bid == 0 {
-                let sparse_start = current_bid;
-                while current_bid < end_bid {
-                    if self.get_device_bid(current_bid)? != 0 {
-                        break;
-                    }
-                    current_bid += 1;
-                }
-                self.alloc_range_blocks(sparse_start..current_bid)?;
-            } else {
-                current_bid += 1;
-            }
+        while let Some(sparse_range) = self.find_next_sparse_range(current_bid..end_bid)? {
+            current_bid = sparse_range.end;
+            self.alloc_range_blocks(sparse_range)?;
         }
 
         Ok(())
+    }
+
+    fn find_next_sparse_range(&self, range: Range<Ext2Bid>) -> Result<Option<Range<Ext2Bid>>> {
+        let mut current_bid = range.start;
+
+        while current_bid < range.end {
+            let bid_path = BidPath::from(current_bid);
+            let window_end = (current_bid + bid_path.cnt_to_next_indirect()).min(range.end);
+            let range_in_window = current_bid..window_end;
+
+            let sparse_range = match bid_path {
+                BidPath::Direct(index) => {
+                    let block_ptrs = self.block_manager.block_ptrs.read();
+                    Self::find_sparse_range_in_window(
+                        range_in_window.clone(),
+                        index as usize,
+                        |entry_index| Ok(block_ptrs.direct(entry_index)),
+                    )?
+                }
+                BidPath::Indirect(index) => {
+                    let indirect_bid = self.block_manager.block_ptrs.read().indirect();
+                    if indirect_bid == 0 {
+                        return Ok(Some(range_in_window));
+                    }
+
+                    let mut indirect_blocks = self.block_manager.indirect_blocks.write();
+                    let indirect_block = indirect_blocks.find(indirect_bid)?;
+                    Self::find_sparse_range_in_window(
+                        range_in_window.clone(),
+                        index as usize,
+                        |entry_index| indirect_block.read_bid(entry_index),
+                    )?
+                }
+                BidPath::DbIndirect(level_one_index, level_two_index) => {
+                    let db_indirect_bid = self.block_manager.block_ptrs.read().db_indirect();
+                    if db_indirect_bid == 0 {
+                        return Ok(Some(range_in_window));
+                    }
+
+                    let mut indirect_blocks = self.block_manager.indirect_blocks.write();
+                    let level_one_indirect_bid = {
+                        let db_indirect_block = indirect_blocks.find(db_indirect_bid)?;
+                        db_indirect_block.read_bid(level_one_index as usize)?
+                    };
+                    if level_one_indirect_bid == 0 {
+                        return Ok(Some(range_in_window));
+                    }
+
+                    let level_one_indirect_block = indirect_blocks.find(level_one_indirect_bid)?;
+                    Self::find_sparse_range_in_window(
+                        range_in_window.clone(),
+                        level_two_index as usize,
+                        |entry_index| level_one_indirect_block.read_bid(entry_index),
+                    )?
+                }
+                BidPath::TbIndirect(level_one_index, level_two_index, level_three_index) => {
+                    let tb_indirect_bid = self.block_manager.block_ptrs.read().tb_indirect();
+                    if tb_indirect_bid == 0 {
+                        return Ok(Some(range_in_window));
+                    }
+
+                    let mut indirect_blocks = self.block_manager.indirect_blocks.write();
+                    let level_one_indirect_bid = {
+                        let tb_indirect_block = indirect_blocks.find(tb_indirect_bid)?;
+                        tb_indirect_block.read_bid(level_one_index as usize)?
+                    };
+                    if level_one_indirect_bid == 0 {
+                        return Ok(Some(range_in_window));
+                    }
+
+                    let level_two_indirect_bid = {
+                        let level_one_indirect_block =
+                            indirect_blocks.find(level_one_indirect_bid)?;
+                        level_one_indirect_block.read_bid(level_two_index as usize)?
+                    };
+                    if level_two_indirect_bid == 0 {
+                        return Ok(Some(range_in_window));
+                    }
+
+                    let level_two_indirect_block = indirect_blocks.find(level_two_indirect_bid)?;
+                    Self::find_sparse_range_in_window(
+                        range_in_window.clone(),
+                        level_three_index as usize,
+                        |entry_index| level_two_indirect_block.read_bid(entry_index),
+                    )?
+                }
+            };
+
+            if let Some(sparse_range) = sparse_range {
+                return Ok(Some(sparse_range));
+            }
+
+            current_bid = window_end;
+        }
+
+        Ok(None)
+    }
+
+    fn find_sparse_range_in_window(
+        logical_range: Range<Ext2Bid>,
+        start_index: usize,
+        mut read_bid_fn: impl FnMut(usize) -> Result<Ext2Bid>,
+    ) -> Result<Option<Range<Ext2Bid>>> {
+        let end_index = start_index + logical_range.len();
+        let mut current_index = start_index;
+
+        while current_index < end_index {
+            if read_bid_fn(current_index)? != 0 {
+                current_index += 1;
+                continue;
+            }
+
+            let sparse_start_index = current_index;
+            current_index += 1;
+            while current_index < end_index && read_bid_fn(current_index)? == 0 {
+                current_index += 1;
+            }
+
+            let sparse_start = logical_range.start + (sparse_start_index - start_index) as Ext2Bid;
+            let sparse_end = logical_range.start + (current_index - start_index) as Ext2Bid;
+            return Ok(Some(sparse_start..sparse_end));
+        }
+
+        Ok(None)
     }
 
     /// Punch a hole in the file by deallocating blocks in the specified range.
@@ -1501,60 +1614,6 @@ impl InodeImpl {
         self.dealloc_range_blocks(range);
 
         Ok(())
-    }
-
-    /// Gets the device block ID for a given file block ID.
-    ///
-    /// Returns 0 if the block is sparse (not allocated).
-    fn get_device_bid(&self, bid: Ext2Bid) -> Result<Ext2Bid> {
-        let bid_path = BidPath::from(bid);
-        let block_ptrs = self.block_manager.block_ptrs.read();
-
-        match bid_path {
-            BidPath::Direct(idx) => Ok(block_ptrs.direct(idx as usize)),
-            BidPath::Indirect(idx) => {
-                let indirect_bid = block_ptrs.indirect();
-                if indirect_bid == 0 {
-                    return Ok(0);
-                }
-                let mut indirect_blocks = self.block_manager.indirect_blocks.write();
-                let indirect_block = indirect_blocks.find(indirect_bid)?;
-                indirect_block.read_bid(idx as usize)
-            }
-            BidPath::DbIndirect(lvl1_idx, lvl2_idx) => {
-                let db_indirect_bid = block_ptrs.db_indirect();
-                if db_indirect_bid == 0 {
-                    return Ok(0);
-                }
-                let mut indirect_blocks = self.block_manager.indirect_blocks.write();
-                let db_indirect_block = indirect_blocks.find(db_indirect_bid)?;
-                let lvl1_indirect_bid = db_indirect_block.read_bid(lvl1_idx as usize)?;
-                if lvl1_indirect_bid == 0 {
-                    return Ok(0);
-                }
-                let lvl1_indirect_block = indirect_blocks.find(lvl1_indirect_bid)?;
-                lvl1_indirect_block.read_bid(lvl2_idx as usize)
-            }
-            BidPath::TbIndirect(lvl1_idx, lvl2_idx, lvl3_idx) => {
-                let tb_indirect_bid = block_ptrs.tb_indirect();
-                if tb_indirect_bid == 0 {
-                    return Ok(0);
-                }
-                let mut indirect_blocks = self.block_manager.indirect_blocks.write();
-                let tb_indirect_block = indirect_blocks.find(tb_indirect_bid)?;
-                let lvl1_indirect_bid = tb_indirect_block.read_bid(lvl1_idx as usize)?;
-                if lvl1_indirect_bid == 0 {
-                    return Ok(0);
-                }
-                let lvl1_indirect_block = indirect_blocks.find(lvl1_indirect_bid)?;
-                let lvl2_indirect_bid = lvl1_indirect_block.read_bid(lvl2_idx as usize)?;
-                if lvl2_indirect_bid == 0 {
-                    return Ok(0);
-                }
-                let lvl2_indirect_block = indirect_blocks.find(lvl2_indirect_bid)?;
-                lvl2_indirect_block.read_bid(lvl3_idx as usize)
-            }
-        }
     }
 
     /// Expands inode size.
@@ -1976,68 +2035,108 @@ impl InodeImpl {
             (range.end - max_cnt)..range.end
         };
 
+        let fs = self.fs();
+        let device_range_reader =
+            DeviceRangeReader::new(&self.block_manager, range.clone()).unwrap();
         let mut freed_blocks = 0u32;
-        for bid in range.clone() {
-            let bid_path = BidPath::from(bid);
-            let device_bid = self.get_device_bid(bid).unwrap();
-            if device_bid == 0 {
-                continue;
-            }
-
-            freed_blocks += 1;
-            self.fs().free_blocks(device_bid..device_bid + 1).unwrap();
-            match bid_path {
-                BidPath::Direct(idx) => {
-                    let mut block_ptrs = self.block_manager.block_ptrs.write();
-                    self.desc.block_ptrs.set_direct(idx as usize, 0);
-                    block_ptrs.set_direct(idx as usize, 0);
-                }
-                BidPath::Indirect(idx) => {
-                    let block_ptrs = self.block_manager.block_ptrs.write();
-                    let mut indirect_blocks = self.block_manager.indirect_blocks.write();
-                    let indirect_bid = block_ptrs.indirect();
-                    let indirect_block = indirect_blocks.find_mut(indirect_bid).unwrap();
-                    indirect_block.write_bid(idx as usize, &0).unwrap();
-                }
-                BidPath::DbIndirect(lvl1_idx, lvl2_idx) => {
-                    let block_ptrs = self.block_manager.block_ptrs.write();
-                    let mut indirect_blocks = self.block_manager.indirect_blocks.write();
-                    let db_indirect_bid = block_ptrs.db_indirect();
-                    let db_indirect_block = indirect_blocks.find_mut(db_indirect_bid).unwrap();
-                    let lvl1_indirect_bid = db_indirect_block.read_bid(lvl1_idx as usize).unwrap();
-                    if lvl1_indirect_bid != 0 {
-                        let lvl1_indirect_block =
-                            indirect_blocks.find_mut(lvl1_indirect_bid).unwrap();
-                        lvl1_indirect_block
-                            .write_bid(lvl2_idx as usize, &0)
-                            .unwrap();
-                    }
-                }
-                BidPath::TbIndirect(lvl1_idx, lvl2_idx, lvl3_idx) => {
-                    let block_ptrs = self.block_manager.block_ptrs.write();
-                    let mut indirect_blocks = self.block_manager.indirect_blocks.write();
-                    let tb_indirect_bid = block_ptrs.tb_indirect();
-                    let tb_indirect_block = indirect_blocks.find_mut(tb_indirect_bid).unwrap();
-                    let lvl1_indirect_bid = tb_indirect_block.read_bid(lvl1_idx as usize).unwrap();
-                    if lvl1_indirect_bid != 0 {
-                        let lvl1_indirect_block =
-                            indirect_blocks.find_mut(lvl1_indirect_bid).unwrap();
-                        let lvl2_indirect_bid =
-                            lvl1_indirect_block.read_bid(lvl2_idx as usize).unwrap();
-                        if lvl2_indirect_bid != 0 {
-                            let lvl2_indirect_block =
-                                indirect_blocks.find_mut(lvl2_indirect_bid).unwrap();
-                            lvl2_indirect_block
-                                .write_bid(lvl3_idx as usize, &0)
-                                .unwrap();
-                        }
-                    }
-                }
-            }
+        for device_range in device_range_reader {
+            freed_blocks += device_range.len() as u32;
+            fs.free_blocks(device_range).unwrap();
         }
+
+        self.clear_range_block_mappings(range.clone());
         self.free_indirect_blocks_required_by(range.start).unwrap();
 
         (range.len() as Ext2Bid, freed_blocks)
+    }
+
+    /// Clears the block mappings for the specified range.
+    ///
+    /// It sets all block pointers within the range to 0, indicating that
+    /// these blocks are no longer mapped to the file.
+    fn clear_range_block_mappings(&mut self, range: Range<Ext2Bid>) {
+        let bid_path = BidPath::from(range.start);
+        let start_index = bid_path.last_lvl_idx();
+        let end_index = start_index + range.len();
+
+        match bid_path {
+            BidPath::Direct(_) => {
+                let mut block_ptrs = self.block_manager.block_ptrs.write();
+                for index in start_index..end_index {
+                    self.desc.block_ptrs.set_direct(index, 0);
+                    block_ptrs.set_direct(index, 0);
+                }
+            }
+            BidPath::Indirect(_) => {
+                let indirect_bid = self.desc.block_ptrs.indirect();
+                if indirect_bid == 0 {
+                    return;
+                }
+
+                let mut indirect_blocks = self.block_manager.indirect_blocks.write();
+                let indirect_block = indirect_blocks.find_mut(indirect_bid).unwrap();
+                for index in start_index..end_index {
+                    indirect_block.write_bid(index, &0).unwrap();
+                }
+            }
+            BidPath::DbIndirect(level_one_index, _) => {
+                let db_indirect_bid = self.desc.block_ptrs.db_indirect();
+                if db_indirect_bid == 0 {
+                    return;
+                }
+
+                let mut indirect_blocks = self.block_manager.indirect_blocks.write();
+                let level_one_indirect_bid = {
+                    let db_indirect_block = indirect_blocks.find(db_indirect_bid).unwrap();
+                    db_indirect_block
+                        .read_bid(level_one_index as usize)
+                        .unwrap()
+                };
+                if level_one_indirect_bid == 0 {
+                    return;
+                }
+
+                let level_one_indirect_block =
+                    indirect_blocks.find_mut(level_one_indirect_bid).unwrap();
+                for index in start_index..end_index {
+                    level_one_indirect_block.write_bid(index, &0).unwrap();
+                }
+            }
+            BidPath::TbIndirect(level_one_index, level_two_index, _) => {
+                let tb_indirect_bid = self.desc.block_ptrs.tb_indirect();
+                if tb_indirect_bid == 0 {
+                    return;
+                }
+
+                let mut indirect_blocks = self.block_manager.indirect_blocks.write();
+                let level_one_indirect_bid = {
+                    let tb_indirect_block = indirect_blocks.find(tb_indirect_bid).unwrap();
+                    tb_indirect_block
+                        .read_bid(level_one_index as usize)
+                        .unwrap()
+                };
+                if level_one_indirect_bid == 0 {
+                    return;
+                }
+
+                let level_two_indirect_bid = {
+                    let level_one_indirect_block =
+                        indirect_blocks.find(level_one_indirect_bid).unwrap();
+                    level_one_indirect_block
+                        .read_bid(level_two_index as usize)
+                        .unwrap()
+                };
+                if level_two_indirect_bid == 0 {
+                    return;
+                }
+
+                let level_two_indirect_block =
+                    indirect_blocks.find_mut(level_two_indirect_bid).unwrap();
+                for index in start_index..end_index {
+                    level_two_indirect_block.write_bid(index, &0).unwrap();
+                }
+            }
+        }
     }
 
     /// Frees the indirect blocks required by the specified block ID.
