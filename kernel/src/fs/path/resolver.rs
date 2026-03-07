@@ -564,7 +564,9 @@ impl PathResolver {
 
             let next_type = next_path.type_();
             // If next inode is a symlink, follow symlinks at most `SYMLINKS_MAX` times.
-            if next_type == InodeType::SymLink && (follow_tail_link || !next_is_tail) {
+            if next_type == InodeType::SymLink
+                && (follow_tail_link || !next_is_tail || target_is_dir)
+            {
                 if follows >= SYMLINKS_MAX {
                     return_errno_with_message!(Errno::ELOOP, "there are too many symlinks");
                 }
