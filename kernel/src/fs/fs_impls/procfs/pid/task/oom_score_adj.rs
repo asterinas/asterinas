@@ -8,7 +8,7 @@ use super::TidDirOps;
 use crate::{
     fs::{
         file::mkmod,
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{FileOps, ProcFileBuilder, read_i32_from},
         vfs::inode::Inode,
     },
     prelude::*,
@@ -40,15 +40,8 @@ impl FileOps for OomScoreAdjFileOps {
     }
 
     fn write_at(&self, _offset: usize, reader: &mut VmReader) -> Result<usize> {
-        let (cstr, read_bytes) = reader.read_cstring_until_end(BUF_SIZE_I32 - 1)?;
-        let val = cstr
-            .to_str()
-            .ok()
-            .map(|str| str.trim())
-            .and_then(|str| str.parse::<i32>().ok())
-            .ok_or_else(|| {
-                Error::with_message(Errno::EINVAL, "the value is not a valid integer")
-            })?;
+        let (val, read_bytes) = read_i32_from(reader)?;
+
         if !(OOM_SCORE_ADJ_MIN..=OOM_SCORE_ADJ_MAX).contains(&val) {
             return_errno_with_message!(Errno::EINVAL, "the OOM score adjustment is out of range");
         }
@@ -63,10 +56,6 @@ impl FileOps for OomScoreAdjFileOps {
         Ok(read_bytes)
     }
 }
-
-/// Worst case buffer size needed for holding an integer.
-// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/internal.h#L163>.
-const BUF_SIZE_I32: usize = 13;
 
 // FIXME: Support OOM killer and move these constants to a more appropriate place.
 const OOM_SCORE_ADJ_MIN: i32 = -1000;

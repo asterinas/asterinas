@@ -54,14 +54,13 @@ impl PosixThread {
             );
         }
 
-        // TODO: Add further security checks (e.g., YAMA LSM).
+        yama::check_alien_access(accessor, self, mode, caller_has_cap)?;
 
         Ok(())
     }
 }
 
 /// The mode used by the alien access permission check.
-#[expect(dead_code)]
 pub struct AlienAccessMode(AlienAccessFlags, CredsSource);
 
 impl AlienAccessMode {
@@ -89,4 +88,98 @@ bitflags! {
 enum CredsSource {
     FsCreds,
     RealCreds,
+}
+
+// TODO: Rewrite Yama as a minor LSM module when Asterinas introduces the LSM subsystem.
+pub mod yama {
+    use core::sync::atomic::{AtomicI32, Ordering};
+
+    use super::*;
+    use crate::process::{Process, UserNamespace, posix_thread::AsPosixThread};
+
+    /// Returns the current Yama scope for alien access.
+    pub fn get_yama_scope() -> YamaScope {
+        YAMA_SCOPE.load(Ordering::Relaxed).try_into().unwrap()
+    }
+
+    /// Sets the Yama scope for alien access.
+    pub fn set_yama_scope(new_scope: YamaScope) -> Result<()> {
+        UserNamespace::get_init_singleton().check_cap(
+            CapSet::SYS_PTRACE,
+            current_thread!().as_posix_thread().unwrap(),
+        )?;
+
+        YAMA_SCOPE
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current_scope| {
+                let is_downgrading_from_no_attach =
+                    current_scope == YamaScope::NoAttach as i32 && new_scope != YamaScope::NoAttach;
+                (!is_downgrading_from_no_attach).then_some(new_scope as i32)
+            })
+            .map_err(|_| {
+                Error::with_message(
+                    Errno::EINVAL,
+                    "`YamaScope::NoAttach` cannot be changed once set",
+                )
+            })?;
+
+        Ok(())
+    }
+
+    static YAMA_SCOPE: AtomicI32 = AtomicI32::new(YamaScope::Relational as i32);
+
+    /// The Yama scope levels.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
+    #[repr(i32)]
+    pub enum YamaScope {
+        /// No additional restrictions on alien attach.
+        Disabled = 0,
+        /// Only allow alien attach by ancestor processes, or processes with `CapSet::SYS_PTRACE`.
+        Relational = 1,
+        /// Only allow alien attach by processes with `CapSet::SYS_PTRACE`.
+        Capability = 2,
+        /// Disallow any alien attach.
+        NoAttach = 3,
+    }
+
+    pub(super) fn check_alien_access(
+        accessor: &PosixThread,
+        target: &PosixThread,
+        mode: AlienAccessMode,
+        caller_has_cap: bool,
+    ) -> Result<()> {
+        if !mode.0.contains(AlienAccessFlags::ATTACH) {
+            return Ok(());
+        }
+
+        let is_denied = match get_yama_scope() {
+            YamaScope::Disabled => false,
+            YamaScope::Relational => {
+                !caller_has_cap && !is_ancestor_of(accessor.weak_process(), target.process())
+            }
+            YamaScope::Capability => !caller_has_cap,
+            YamaScope::NoAttach => true,
+        };
+
+        if is_denied {
+            return_errno_with_message!(Errno::EPERM, "alien access is denied due to Yama scope");
+        }
+
+        Ok(())
+    }
+
+    fn is_ancestor_of(ancestor: &Weak<Process>, descendant: Arc<Process>) -> bool {
+        let mut current = descendant;
+        loop {
+            let parent_guard = current.parent().lock();
+            let parent = parent_guard.process();
+            if Weak::ptr_eq(parent, ancestor) {
+                return true;
+            }
+            let Some(parent) = parent.upgrade() else {
+                return false;
+            };
+            drop(parent_guard);
+            current = parent;
+        }
+    }
 }

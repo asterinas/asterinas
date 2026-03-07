@@ -165,3 +165,22 @@ impl<T: FileOpsByHandle> FileOps for T {
         Some(self.open(access_mode, status_flags))
     }
 }
+
+/// Reads a string from `reader` and parses it as an `i32`.
+pub fn read_i32_from(reader: &mut VmReader) -> Result<(i32, usize)> {
+    /// Worst case buffer size needed for holding an integer.
+    ///
+    /// The longest possible string is `"-2147483648\n\0"`,
+    /// whose length is 13 bytes.
+    const BUF_SIZE_I32: usize = 13;
+
+    let (cstr, read_bytes) = reader.read_cstring_until_end(BUF_SIZE_I32 - 1)?;
+    let val = cstr
+        .to_str()
+        .ok()
+        .map(|str| str.trim())
+        .and_then(|str| str.parse::<i32>().ok())
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "the value is not a valid integer"))?;
+
+    Ok((val, read_bytes))
+}
