@@ -158,3 +158,7 @@ impl<T: FileOpsByHandle> FileOps for T {
         Some(self.open(access_mode, status_flags))
     }
 }
+
+/// Worst case buffer size needed for holding an integer.
+// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/internal.h#L163>.
+pub const BUF_SIZE_I32: usize = 13;

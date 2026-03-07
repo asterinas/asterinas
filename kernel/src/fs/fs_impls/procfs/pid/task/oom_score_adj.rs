@@ -8,7 +8,7 @@ use super::TidDirOps;
 use crate::{
     fs::{
         file::mkmod,
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{BUF_SIZE_I32, FileOps, ProcFileBuilder},
         vfs::inode::Inode,
     },
     prelude::*,
@@ -63,10 +63,6 @@ impl FileOps for OomScoreAdjFileOps {
         Ok(read_bytes)
     }
 }
-
-/// Worst case buffer size needed for holding an integer.
-// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/internal.h#L163>.
-const BUF_SIZE_I32: usize = 13;
 
 // FIXME: Support OOM killer and move these constants to a more appropriate place.
 const OOM_SCORE_ADJ_MIN: i32 = -1000;

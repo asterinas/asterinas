@@ -47,7 +47,8 @@ impl FileOpsByHandle for MemFileOps {
             .check_alien_access_from(
                 current_thread!().as_posix_thread().unwrap(),
                 AlienAccessMode::ATTACH_WITH_FS_CREDS,
-            )?;
+            )
+            .map_err(|_| Error::with_message(Errno::EACCES, "alien access check denied"))?;
 
         let vmar = vmar_guard.snapshot();
         Ok(Box::new(MemFileHandle(self.0.clone(), vmar)))
