@@ -237,6 +237,12 @@ impl TraceeStatus {
 
         state.tracer = Weak::new();
         state.siginfo.clear();
+        #[cfg(target_arch = "x86_64")]
+        {
+            if let Some(regs) = state.general_regs.as_mut() {
+                regs.set_single_step(false);
+            }
+        }
         self.is_stopped.store(false, Ordering::Relaxed);
     }
 
@@ -316,13 +322,18 @@ impl TraceeStatus {
         }
     }
 
-    #[expect(unused_variables)]
     fn resume(&self, request: PtraceContRequest) -> Result<()> {
         // Hold the lock first to avoid race conditions.
         let mut state = self.state.lock();
         self.check_ptrace_stopped(&state)?;
+        debug!("resuming from ptrace-stop by request: {:?}", request);
 
         state.siginfo.clear();
+        #[cfg(target_arch = "x86_64")]
+        {
+            let regs = state.general_regs.as_mut().unwrap();
+            regs.set_single_step(matches!(request, PtraceContRequest::SingleStep));
+        }
         self.is_stopped.store(false, Ordering::Relaxed);
 
         Ok(())

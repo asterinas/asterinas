@@ -3,6 +3,7 @@
 use super::*;
 
 /// The requests that can continue a stopped tracee.
+#[derive(Debug)]
 #[expect(dead_code)]
 pub enum PtraceContRequest {
     Continue,
