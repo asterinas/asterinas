@@ -161,6 +161,14 @@ impl PosixThread {
         // Lock order: user_ctx -> ptrace_status.
         status.poke_user(&mut self.user_ctx().lock(), offset, value)
     }
+
+    /// Gets the waited signal info of this thread for ptrace.
+    pub fn ptrace_get_siginfo(&self) -> Result<siginfo_t> {
+        let Some(status) = self.tracee_status.get() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread is not being traced");
+        };
+        status.get_siginfo()
+    }
 }
 
 impl PosixThread {
@@ -391,6 +399,19 @@ impl TraceeStatus {
         ostd::for_all_general_regs!(write_user_reg_by_offset, regs, offset, value);
 
         unreachable!("the offset is valid in `c_user_regs_struct`")
+    }
+
+    fn get_siginfo(&self) -> Result<siginfo_t> {
+        // Hold the lock first to avoid race conditions.
+        let tracee_state = self.state.lock();
+
+        if self.is_stopped.load(Ordering::Relaxed)
+            && let Some(siginfo) = tracee_state.waited_siginfo
+        {
+            Ok(siginfo)
+        } else {
+            return_errno_with_message!(Errno::ESRCH, "the thread is not ptrace-stopped");
+        }
     }
 }
 

@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #[cfg(target_arch = "x86_64")]
-use ostd::{arch::cpu::context::c_user_regs_struct, mm::VmIo};
+use ostd::arch::cpu::context::c_user_regs_struct;
+use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::posix_thread::{
-        AsPosixThread, alien_access::AlienAccessMode, ptrace::PtraceContRequest,
+    process::{
+        posix_thread::{AsPosixThread, alien_access::AlienAccessMode, ptrace::PtraceContRequest},
+        signal::{constants::SIGKILL, signals::user::UserSignal},
     },
     thread::{Thread, Tid},
 };
@@ -62,6 +64,12 @@ pub fn sys_ptrace(
                 .unwrap()
                 .ptrace_continue(PtraceContRequest::Continue)?;
         }
+        PtraceRequest::PTRACE_KILL => {
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let tracee = tracee.as_posix_thread().unwrap();
+            tracee.enqueue_signal(Box::new(UserSignal::new_kill(SIGKILL, ctx)));
+            tracee.wake_signalled_waker();
+        }
         #[cfg(target_arch = "x86_64")]
         PtraceRequest::PTRACE_SINGLESTEP => {
             if data != 0 {
@@ -95,6 +103,11 @@ pub fn sys_ptrace(
             let tracee = tracee.as_posix_thread().unwrap();
 
             tracee.ptrace_set_regs(regs)?;
+        }
+        PtraceRequest::PTRACE_GETSIGINFO => {
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let siginfo = tracee.as_posix_thread().unwrap().ptrace_get_siginfo()?;
+            ctx.user_space().write_val(data, &siginfo)?;
         }
         _ => {
             warn!("unimplemented ptrace request: {:?}", request);
