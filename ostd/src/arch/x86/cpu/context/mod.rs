@@ -604,6 +604,19 @@ macro_rules! general_regs_impl_getter_setter {
 
 for_all_general_regs!(general_regs_impl_getter_setter);
 
+impl GeneralRegs {
+    /// Sets or unsets single-step execution.
+    pub fn set_single_step(&mut self, enable: bool) {
+        const TRAP_FLAG: usize = RFlags::TRAP_FLAG.bits() as usize;
+        let current_rflags = self.rflags();
+        if enable {
+            self.set_rflags(current_rflags | TRAP_FLAG);
+        } else {
+            self.set_rflags(current_rflags & !TRAP_FLAG);
+        }
+    }
+}
+
 /// The FPU context of user task.
 ///
 /// This could be used for saving both legacy and modern state format.
