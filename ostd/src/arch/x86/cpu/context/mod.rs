@@ -570,6 +570,17 @@ impl UserContextApi for UserContext {
     fn instruction_pointer(&self) -> usize {
         self.general_regs().rip()
     }
+
+    fn set_single_step(&mut self, enable: bool) {
+        const TRAP_FLAG: usize = RFlags::TRAP_FLAG.bits() as usize;
+        let regs = self.general_regs_mut();
+        let current_rflags = regs.rflags();
+        if enable {
+            regs.set_rflags(current_rflags | TRAP_FLAG);
+        } else {
+            regs.set_rflags(current_rflags & !TRAP_FLAG);
+        }
+    }
 }
 
 macro_rules! general_regs_impl_getter_setter {

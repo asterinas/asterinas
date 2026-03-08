@@ -63,6 +63,21 @@ pub fn sys_ptrace(
                 .ptrace_continue(PtraceContRequest::Continue)?;
         }
         #[cfg(target_arch = "x86_64")]
+        PtraceRequest::PTRACE_SINGLESTEP => {
+            if data != 0 {
+                return_errno_with_message!(
+                    Errno::EOPNOTSUPP,
+                    "delivering signal via `PTRACE_SINGLESTEP` is not supported currently"
+                );
+            }
+
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            tracee
+                .as_posix_thread()
+                .unwrap()
+                .ptrace_continue(PtraceContRequest::SingleStep)?;
+        }
+        #[cfg(target_arch = "x86_64")]
         PtraceRequest::PTRACE_GETREGS => {
             let tracee = ctx.posix_thread.get_tracee(tid)?;
             let tracee = tracee.as_posix_thread().unwrap();

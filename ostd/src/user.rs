@@ -28,17 +28,21 @@ pub trait UserContextApi {
     /// Gets the trap error code of this interrupt.
     fn trap_error_code(&self) -> usize;
 
-    /// Sets the instruction pointer
+    /// Sets the instruction pointer.
     fn set_instruction_pointer(&mut self, ip: usize);
 
-    /// Gets the instruction pointer
+    /// Gets the instruction pointer.
     fn instruction_pointer(&self) -> usize;
 
-    /// Sets the stack pointer
+    /// Sets the stack pointer.
     fn set_stack_pointer(&mut self, sp: usize);
 
-    /// Gets the stack pointer
+    /// Gets the stack pointer.
     fn stack_pointer(&self) -> usize;
+
+    /// Sets whether the single-step mode is enabled.
+    #[cfg(target_arch = "x86_64")]
+    fn set_single_step(&mut self, enable: bool);
 }
 
 /// Code execution in the user mode.
@@ -47,7 +51,7 @@ pub trait UserContextApi {
 /// space safely.
 ///
 /// Here is a sample code on how to use `UserMode`.
-///  
+///
 /// ```no_run
 /// use ostd::task::Task;
 ///

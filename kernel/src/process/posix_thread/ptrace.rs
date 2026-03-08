@@ -6,7 +6,10 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use hashbrown::HashMap;
 #[cfg(target_arch = "x86_64")]
-use ostd::arch::cpu::context::{GeneralRegs, UserContext, c_user_regs_struct};
+use ostd::{
+    arch::cpu::context::{GeneralRegs, UserContext, c_user_regs_struct},
+    user::UserContextApi,
+};
 
 use super::{AsPosixThread, PosixThread};
 use crate::{
@@ -39,7 +42,11 @@ impl PosixThread {
     /// Detaches the tracer of this thread.
     pub fn detach_tracer(&self) {
         if let Some(status) = self.tracee_status.get() {
-            status.detach_tracer();
+            status.detach_tracer(
+                // Lock order: user_ctx -> ptrace_status.
+                #[cfg(target_arch = "x86_64")]
+                &mut self.user_ctx().lock(),
+            );
             self.wake_signalled_waker();
         }
     }
@@ -84,7 +91,12 @@ impl PosixThread {
             return_errno_with_message!(Errno::ESRCH, "the thread is not being traced");
         };
 
-        status.resume(request)?;
+        status.resume(
+            request,
+            // Lock order: user_ctx -> ptrace_status.
+            #[cfg(target_arch = "x86_64")]
+            &mut self.user_ctx().lock(),
+        )?;
         self.wake_signalled_waker();
 
         Ok(())
@@ -216,11 +228,18 @@ impl TraceeStatus {
         Ok(())
     }
 
-    fn detach_tracer(&self) {
+    fn detach_tracer(
+        &self,
+        #[cfg(target_arch = "x86_64")] user_ctx: &mut MutexGuard<'_, UserContext>,
+    ) {
         // Hold the lock first to avoid race conditions.
         let mut tracee_state = self.state.lock();
 
         tracee_state.detach_tracer();
+        #[cfg(target_arch = "x86_64")]
+        {
+            user_ctx.set_single_step(false);
+        }
         tracee_state.siginfo = None;
         self.is_stopped.store(false, Ordering::Relaxed);
     }
@@ -260,12 +279,21 @@ impl TraceeStatus {
         }
     }
 
-    #[expect(unused_variables)]
-    fn resume(&self, request: PtraceContRequest) -> Result<()> {
+    fn resume(
+        &self,
+        request: PtraceContRequest,
+        #[cfg(target_arch = "x86_64")] user_ctx: &mut MutexGuard<'_, UserContext>,
+    ) -> Result<()> {
+        debug!("resuming from ptrace-stop with request: {:?}", request);
+
         // Hold the lock first to avoid race conditions.
         let mut tracee_state = self.state.lock();
 
         if self.is_stopped.load(Ordering::Relaxed) {
+            #[cfg(target_arch = "x86_64")]
+            {
+                user_ctx.set_single_step(matches!(request, PtraceContRequest::SingleStep));
+            }
             tracee_state.siginfo = None;
             self.is_stopped.store(false, Ordering::Relaxed);
         } else {
@@ -400,6 +428,7 @@ impl TraceeState {
 
 /// The requests that can continue a stopped tracee.
 #[expect(dead_code)]
+#[derive(Debug)]
 pub enum PtraceContRequest {
     Continue,
     SingleStep,
