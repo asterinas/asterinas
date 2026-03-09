@@ -59,13 +59,6 @@ use core::{
 
 use crate::prelude::*;
 
-#[derive(Copy, PartialEq, Eq, Clone, Debug)]
-pub enum SeekFrom {
-    Start(usize),
-    End(isize),
-    Current(isize),
-}
-
 /// Maximum bytes in a path
 pub const PATH_MAX: usize = 4096;
 

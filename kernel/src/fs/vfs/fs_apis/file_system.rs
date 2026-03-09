@@ -7,6 +7,58 @@ use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use super::Inode;
 use crate::prelude::*;
 
+/// Common interface implemented by each concrete file system instance.
+pub trait FileSystem: Any + Sync + Send {
+    /// Gets the name of this FS type such as `"ext4"` or `"sysfs"`.
+    fn name(&self) -> &'static str;
+
+    /// Gets the source of this file system, e.g., the device name or user-provided source string.
+    fn source(&self) -> Option<&str> {
+        None
+    }
+
+    /// Syncs the file system.
+    fn sync(&self) -> Result<()>;
+
+    /// Returns the root inode of this file system.
+    fn root_inode(&self) -> Arc<dyn Inode>;
+
+    /// Returns the super block of this file system.
+    fn sb(&self) -> SuperBlock;
+
+    /// Returns the flags of this file system.
+    fn flags(&self) -> FsFlags {
+        // TODO: Currently we do not support any flags for filesystems.
+        // Remove the default empty implementation in the future.
+        FsFlags::empty()
+    }
+
+    /// Sets the flags of this file system.
+    fn set_fs_flags(&self, _flags: FsFlags, _data: Option<CString>, _ctx: &Context) -> Result<()> {
+        // TODO: Remove the default empty implementation in the future.
+        warn!("setting file system flags is not implemented");
+        Ok(())
+    }
+
+    /// Returns the FS event subscriber stats of this file system.
+    fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats;
+}
+
+impl dyn FileSystem {
+    pub fn downcast_ref<T: FileSystem>(&self) -> Option<&T> {
+        (self as &dyn Any).downcast_ref::<T>()
+    }
+}
+
+impl Debug for dyn FileSystem {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("FileSystem")
+            .field("super_block", &self.sb())
+            .field("flags", &self.flags())
+            .finish()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SuperBlock {
     pub magic: u64,
@@ -143,56 +195,5 @@ impl FsEventSubscriberStats {
 
     pub fn has_any_subscribers(&self) -> bool {
         self.num_subscribers.load(Ordering::Acquire) > 0
-    }
-}
-
-pub trait FileSystem: Any + Sync + Send {
-    /// Gets the name of this FS type such as `"ext4"` or `"sysfs"`.
-    fn name(&self) -> &'static str;
-
-    /// Gets the source of this file system, e.g., the device name or user-provided source string.
-    fn source(&self) -> Option<&str> {
-        None
-    }
-
-    /// Syncs the file system.
-    fn sync(&self) -> Result<()>;
-
-    /// Returns the root inode of this file system.
-    fn root_inode(&self) -> Arc<dyn Inode>;
-
-    /// Returns the super block of this file system.
-    fn sb(&self) -> SuperBlock;
-
-    /// Returns the flags of this file system.
-    fn flags(&self) -> FsFlags {
-        // TODO: Currently we do not support any flags for filesystems.
-        // Remove the default empty implementation in the future.
-        FsFlags::empty()
-    }
-
-    /// Sets the flags of this file system.
-    fn set_fs_flags(&self, _flags: FsFlags, _data: Option<CString>, _ctx: &Context) -> Result<()> {
-        // TODO: Remove the default empty implementation in the future.
-        warn!("setting file system flags is not implemented");
-        Ok(())
-    }
-
-    /// Returns the FS event subscriber stats of this file system.
-    fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats;
-}
-
-impl dyn FileSystem {
-    pub fn downcast_ref<T: FileSystem>(&self) -> Option<&T> {
-        (self as &dyn Any).downcast_ref::<T>()
-    }
-}
-
-impl Debug for dyn FileSystem {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("FileSystem")
-            .field("super_block", &self.sb())
-            .field("flags", &self.flags())
-            .finish()
     }
 }
