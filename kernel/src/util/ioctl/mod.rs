@@ -99,10 +99,12 @@
 use core::marker::PhantomData;
 
 use aster_util::safe_ptr::SafePtr;
+pub use common_defs::GetNumBytesToRead;
 use sealed::{DataSpec, IoctlCmd, IoctlDir, PtrDataSpec};
 
 use crate::{current_userspace, prelude::*};
 
+mod common_defs;
 mod sealed;
 
 /// An ioctl command and its argument in raw form.

@@ -508,6 +508,14 @@ impl Debug for InodeHandle {
     }
 }
 
+/// Describes the position to seek from.
+#[derive(Copy, PartialEq, Eq, Clone, Debug)]
+pub enum SeekFrom {
+    Start(usize),
+    End(isize),
+    Current(isize),
+}
+
 /// A trait for file-like objects that provide custom I/O operations.
 ///
 /// This trait is typically implemented for special files like devices or

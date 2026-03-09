@@ -26,104 +26,6 @@ use crate::{
     vm::vmo::Vmo,
 };
 
-#[repr(u16)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, TryFromInt)]
-pub enum InodeType {
-    Unknown = 0o000000,
-    NamedPipe = 0o010000,
-    CharDevice = 0o020000,
-    Dir = 0o040000,
-    BlockDevice = 0o060000,
-    File = 0o100000,
-    SymLink = 0o120000,
-    Socket = 0o140000,
-}
-
-impl InodeType {
-    pub fn is_regular_file(&self) -> bool {
-        *self == InodeType::File
-    }
-
-    pub fn is_directory(&self) -> bool {
-        *self == InodeType::Dir
-    }
-
-    pub fn is_device(&self) -> bool {
-        *self == InodeType::BlockDevice || *self == InodeType::CharDevice
-    }
-
-    pub fn is_seekable(&self) -> bool {
-        *self != InodeType::NamedPipe && *self != Self::Socket
-    }
-
-    /// Parse the inode type in the `mode` from syscall, and convert it into `InodeType`.
-    pub fn from_raw_mode(mut mode: u16) -> Result<Self> {
-        const TYPE_MASK: u16 = 0o170000;
-        mode &= TYPE_MASK;
-
-        // Special case
-        if mode == 0 {
-            return Ok(Self::File);
-        }
-        Self::try_from(mode & TYPE_MASK)
-            .map_err(|_| Error::with_message(Errno::EINVAL, "invalid file type"))
-    }
-
-    pub fn device_type(&self) -> Option<DeviceType> {
-        match self {
-            InodeType::BlockDevice => Some(DeviceType::Block),
-            InodeType::CharDevice => Some(DeviceType::Char),
-            _ => None,
-        }
-    }
-}
-
-impl From<DeviceType> for InodeType {
-    fn from(type_: DeviceType) -> InodeType {
-        match type_ {
-            DeviceType::Char => InodeType::CharDevice,
-            DeviceType::Block => InodeType::BlockDevice,
-        }
-    }
-}
-
-bitflags! {
-    pub struct Permission: u16 {
-        // This implementation refers the implementation of linux
-        // https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/fs.h#L95
-        const MAY_EXEC		= 0x0001;
-        const MAY_WRITE		= 0x0002;
-        const MAY_READ		= 0x0004;
-        const MAY_APPEND    = 0x0008;
-        const MAY_ACCESS	= 0x0010;
-        const MAY_OPEN		= 0x0020;
-        const MAY_CHDIR		= 0x0040;
-        const MAY_NOT_BLOCK	= 0x0080;
-    }
-}
-impl Permission {
-    pub fn may_read(&self) -> bool {
-        self.contains(Self::MAY_READ)
-    }
-
-    pub fn may_write(&self) -> bool {
-        self.contains(Self::MAY_WRITE)
-    }
-
-    pub fn may_exec(&self) -> bool {
-        self.contains(Self::MAY_EXEC)
-    }
-}
-impl From<AccessMode> for Permission {
-    fn from(access_mode: AccessMode) -> Permission {
-        match access_mode {
-            AccessMode::O_RDONLY => Permission::MAY_READ,
-            AccessMode::O_WRONLY => Permission::MAY_WRITE,
-            AccessMode::O_RDWR => Permission::MAY_READ | Permission::MAY_WRITE,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct Metadata {
     pub dev: u64,
@@ -604,4 +506,28 @@ pub enum SymbolicLink {
     /// This variant is intended to support the special ProcFS symbolic links,
     /// such as `/proc/[pid]/fd/[fd]` and `/proc/[pid]/exe`.
     Path(Path),
+}
+
+/// Represents the various operation modes for fallocate.
+///
+/// Each mode determines whether the target disk space within a file
+/// will be allocated, deallocated, or zeroed, among other operations.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FallocMode {
+    /// Allocates disk space within the range specified.
+    Allocate,
+    /// Like `Allocate`, but does not change the file size.
+    AllocateKeepSize,
+    /// Makes shared file data extents private to guarantee subsequent writes.
+    AllocateUnshareRange,
+    /// Deallocates space (creates a hole) while keeping the file size unchanged.
+    PunchHoleKeepSize,
+    /// Converts a file range to zeros, expanding the file if necessary.
+    ZeroRange,
+    /// Like `ZeroRange`, but does not change the file size.
+    ZeroRangeKeepSize,
+    /// Removes a range of bytes without leaving a hole.
+    CollapseRange,
+    /// Inserts space within a file without overwriting existing data.
+    InsertRange,
 }
