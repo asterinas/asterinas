@@ -2,7 +2,7 @@
 
 use super::{
     Pgid, Pid, Process,
-    posix_thread::{AsPosixThread, thread_table},
+    posix_thread::AsPosixThread,
     process_table,
     signal::{constants::SIGCONT, sig_num::SigNum, signals::Signal},
 };
@@ -77,7 +77,7 @@ pub fn kill_group<S: Signal + Clone>(pgid: Pgid, signal: Option<S>, ctx: &Contex
 /// If `signal` is `None`, this method will only check permission without sending
 /// any signal.
 pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<Box<dyn Signal>>, ctx: &Context) -> Result<()> {
-    let thread = thread_table::get_thread(tid)
+    let thread = process_table::get_thread(tid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target thread does not exist"))?;
     let target_posix_thread = thread.as_posix_thread().unwrap();
 
@@ -115,13 +115,13 @@ pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<Box<dyn Signal>>, ctx: &Contex
 pub fn kill_all<S: Signal + Clone>(signal: Option<S>, ctx: &Context) -> Result<()> {
     let mut result = Ok(());
 
-    for process in process_table::process_table_mut().iter() {
-        if Arc::ptr_eq(&ctx.process, process) || process.is_init_process() {
+    for process in process_table::pid_table_mut().iter_processes() {
+        if Arc::ptr_eq(&ctx.process, &process) || process.is_init_process() {
             continue;
         }
 
         let res = kill_process(
-            process,
+            &process,
             signal.clone().map(|s| Box::new(s) as Box<dyn Signal>),
             ctx,
         );

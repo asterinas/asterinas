@@ -506,8 +506,8 @@ inherit_sys_branch_node!(CgroupSystem, fields, {
                 writeln!(printer, "{}", SubCtrlSet::all())?;
             }
             "cgroup.procs" => {
-                let process_table = process_table::process_table_mut();
-                for process in process_table.iter() {
+                let pid_table = process_table::pid_table_mut();
+                for process in pid_table.iter_processes() {
                     if process.cgroup().is_none() {
                         writeln!(printer, "{}", process.pid())?;
                     }
