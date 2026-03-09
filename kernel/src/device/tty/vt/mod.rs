@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
+mod driver;
 mod keyboard;
 
 use core::num::NonZeroU8;
+
+pub(super) use driver::{VtDriver, tty1_device};
 
 use crate::prelude::Result;
 
@@ -28,5 +31,6 @@ impl VtIndex {
 
 pub(super) fn init_in_first_process() -> Result<()> {
     keyboard::init();
+    driver::init()?;
     Ok(())
 }

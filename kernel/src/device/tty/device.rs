@@ -10,14 +10,15 @@ use aster_cmdline::KCMDLINE;
 use device_id::{DeviceId, MajorId, MinorId};
 use spin::Once;
 
-use super::n_tty::tty1_device;
 use crate::{
     device::{
         Device, DeviceType,
         registry::char,
         tty::{
             Tty,
-            n_tty::{VtDriver, hvc0_device, serial0_device},
+            hvc::hvc0_device,
+            serial::serial0_device,
+            vt::{VtDriver, tty1_device},
         },
     },
     fs::file::FileIo,
