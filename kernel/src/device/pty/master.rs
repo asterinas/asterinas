@@ -165,7 +165,7 @@ impl FileIo for PtyMaster {
     fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
         use ioctl_defs::*;
 
-        use crate::{device::tty::ioctl_defs::*, util::ioctl::GetNumBytesToRead};
+        use crate::{device::tty::ioctl_defs::*, util::ioctl::common_defs::GetNumBytesToRead};
 
         dispatch_ioctl!(match raw_ioctl {
             GetTermios | SetTermios | SetTermiosWait | SetTermiosFlush | GetWinSize

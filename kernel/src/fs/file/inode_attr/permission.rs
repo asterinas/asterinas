@@ -16,6 +16,7 @@ bitflags! {
         const MAY_NOT_BLOCK	= 0x0080;
     }
 }
+
 impl Permission {
     pub fn may_read(&self) -> bool {
         self.contains(Self::MAY_READ)
@@ -29,6 +30,7 @@ impl Permission {
         self.contains(Self::MAY_EXEC)
     }
 }
+
 impl From<AccessMode> for Permission {
     fn from(access_mode: AccessMode) -> Permission {
         match access_mode {

@@ -339,7 +339,7 @@ impl FileLike for InotifyFile {
     }
 
     fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
-        use crate::util::ioctl::GetNumBytesToRead;
+        use crate::util::ioctl::common_defs::GetNumBytesToRead;
 
         dispatch_ioctl!(match raw_ioctl {
             cmd @ GetNumBytesToRead => {
