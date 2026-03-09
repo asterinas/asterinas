@@ -131,9 +131,25 @@ cp @aster-configuration@ ${BUILD_DIR}/etc/nixos/aster_configuration.nix
 cp -r @aster-etc-nixos@/modules ${BUILD_DIR}/etc/nixos
 cp -r @aster-etc-nixos@/overlays ${BUILD_DIR}/etc/nixos
 
+COMMON_NIX_ARGS=(
+    --option extra-substituters "@aster-substituters@"
+    --option extra-trusted-public-keys "@aster-trusted-public-keys@"
+)
+
+# Pre-build the NixOS system closure on the host
+# so that the result is cached in the host's Nix store.
+# Without this, nixos-install would build the system inside the (possibly empty) target image,
+# causing redundant downloads after every `make clean`.
+#
+# See: https://www.mankier.com/8/nixos-install#--system
+SYSTEM_CLOSURE=$(nix-build '<nixpkgs/nixos>' -A system \
+    -I "nixos-config=${BUILD_DIR}/etc/nixos/configuration.nix" \
+    "${COMMON_NIX_ARGS[@]}" \
+    --no-out-link)
+
 export PATH=${PATH}:/run/current-system/sw/bin
 nixos-install --root ${BUILD_DIR} --no-root-passwd \
-    --option extra-substituters "@aster-substituters@" \
-    --option extra-trusted-public-keys "@aster-trusted-public-keys@"
+    --system "${SYSTEM_CLOSURE}" \
+    "${COMMON_NIX_ARGS[@]}"
 
 echo "Congratulations! Asterinas NixOS has been installed successfully!"
