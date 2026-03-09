@@ -7,8 +7,8 @@ use core::{
 
 use self::timer_manager::PosixTimerManager;
 use super::{
+    pid_table::{self, PidTable},
     posix_thread::AsPosixThread,
-    process_table::{self, PidTable},
     process_vm::ProcessVmarGuard,
     rlimit::ResourceLimits,
     signal::{
@@ -382,7 +382,7 @@ impl Process {
     /// process group is still alive.
     pub fn to_new_session(self: &Arc<Self>) -> Result<Sid> {
         // Lock order: PID table -> group of process -> group inner -> session inner
-        let mut pid_table = process_table::pid_table_mut();
+        let mut pid_table = pid_table::pid_table_mut();
 
         if pid_table.contains_process_group(&self.pid) {
             return_errno_with_message!(
@@ -464,7 +464,7 @@ impl Process {
     ///  * The process group does not exist, but `pgid` is not equal to the process ID.
     pub fn move_process_to_group(&self, pid: Pid, pgid: Pgid) -> Result<()> {
         // Lock order: PID table -> group of process -> group inner -> session inner
-        let mut pid_table = process_table::pid_table_mut();
+        let mut pid_table = pid_table::pid_table_mut();
 
         let process = pid_table.get_process(pid).ok_or(Error::with_message(
             Errno::ESRCH,
