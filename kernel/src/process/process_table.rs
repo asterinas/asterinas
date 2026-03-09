@@ -326,8 +326,9 @@ pub(in crate::process) fn make_current_main_thread(ctx: &Context) {
         return;
     }
 
-    let mut tasks = ctx.process.tasks().lock();
+    // Lock order: pid table -> tasks of process.
     let mut pid_table = pid_table_mut();
+    let mut tasks = ctx.process.tasks().lock();
 
     assert!(tasks.has_exited_main());
     assert!(tasks.in_execve());
