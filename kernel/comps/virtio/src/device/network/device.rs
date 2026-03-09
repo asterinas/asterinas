@@ -6,7 +6,7 @@ use core::fmt::Debug;
 use aster_bigtcp::device::{Checksum, DeviceCapabilities, Medium};
 use aster_network::{AnyNetworkDevice, EthernetAddr, NetError, RxBuffer, TxBuffer};
 use aster_util::slot_vec::SlotVec;
-use ostd::{arch::trap::TrapFrame, debug, mm::VmReader, sync::SpinLock, warn};
+use ostd::{arch::trap::TrapFrame, debug, sync::SpinLock, warn};
 
 use super::{config::VirtioNetConfig, header::VirtioNetHdr};
 use crate::{
@@ -188,7 +188,7 @@ impl NetworkDevice {
         debug!("receive packet: token = {}, len = {}", token, len);
 
         let mut rx_buffer = self.rx_buffers.remove(token as usize).unwrap();
-        rx_buffer.set_packet_len(len as usize - size_of::<VirtioNetHdr>());
+        rx_buffer.set_payload_len(len as usize - size_of::<VirtioNetHdr>());
 
         let new_rx_buffer = self.new_rx_buffer.take().unwrap();
         self.add_rx_buffer(new_rx_buffer).unwrap();
@@ -203,12 +203,8 @@ impl NetworkDevice {
         }
 
         let tx_pool = TX_BUFFER_POOL.get().unwrap();
-        let tx_buffer = TxBuffer::new(
-            &self.header,
-            &mut VmReader::from(packet).to_fallible(),
-            tx_pool,
-        )
-        .map_err(|_| NetError::NoMemory)?;
+        let tx_buffer =
+            TxBuffer::new(&self.header, packet, tx_pool).map_err(|_| NetError::NoMemory)?;
 
         let token = self.send_queue.add_input_bufs(&[&tx_buffer]).unwrap();
 
