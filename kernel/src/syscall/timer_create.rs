@@ -9,8 +9,8 @@ use super::{
 use crate::{
     prelude::*,
     process::{
+        pid_table,
         posix_thread::AsPosixThread,
-        process_table,
         signal::{
             c_types::{SigNotify, sigevent_t},
             constants::SIGALRM,
@@ -76,12 +76,9 @@ pub fn sys_timer_create(
                 // Send a signal to the specified thread when the timer is expired.
                 SigNotify::SIGEV_THREAD_ID => {
                     let tid = sig_event.sigev_un.read_tid() as u32;
-                    let thread =
-                        process_table::pid_table_mut()
-                            .get_thread(tid)
-                            .ok_or_else(|| {
-                                Error::with_message(Errno::EINVAL, "target thread does not exist")
-                            })?;
+                    let thread = pid_table::pid_table_mut().get_thread(tid).ok_or_else(|| {
+                        Error::with_message(Errno::EINVAL, "target thread does not exist")
+                    })?;
                     let posix_thread = thread.as_posix_thread().unwrap();
                     if posix_thread.process().pid() != current_process.pid() {
                         return_errno_with_message!(
@@ -150,7 +147,7 @@ where
         let dynamic_clockid_info = DynamicClockIdInfo::try_from(clockid)?;
         match dynamic_clockid_info {
             DynamicClockIdInfo::Pid(pid, clock_type) => {
-                let process = process_table::pid_table_mut()
+                let process = pid_table::pid_table_mut()
                     .get_process(pid)
                     .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clock id"))?;
                 let process_timer_manager = process.timer_manager();
@@ -162,7 +159,7 @@ where
                 }
             }
             DynamicClockIdInfo::Tid(tid, clock_type) => {
-                let thread = process_table::pid_table_mut()
+                let thread = pid_table::pid_table_mut()
                     .get_thread(tid)
                     .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clock id"))?;
                 let posix_thread = thread.as_posix_thread().unwrap();
