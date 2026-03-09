@@ -33,7 +33,7 @@ impl IoPrioWho {
                     who
                 };
 
-                let thread = crate::process::process_table::pid_table_mut()
+                let thread = crate::process::pid_table::pid_table_mut()
                     .get_thread(target_tid)
                     .ok_or_else(|| Error::new(Errno::ESRCH))?;
                 Ok(Self::Thread(thread))

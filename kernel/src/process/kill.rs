@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{
-    Pgid, Pid, Process,
+    Pgid, Pid, Process, pid_table,
     posix_thread::AsPosixThread,
-    process_table,
     signal::{constants::SIGCONT, sig_num::SigNum, signals::Signal},
 };
 use crate::{
@@ -36,7 +35,7 @@ pub fn kill(pid: Pid, signal: Option<Box<dyn Signal>>, ctx: &Context) -> Result<
     }
 
     // Slow path
-    let process = process_table::pid_table_mut()
+    let process = pid_table::pid_table_mut()
         .get_process(pid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target process does not exist"))?;
 
@@ -52,7 +51,7 @@ pub fn kill(pid: Pid, signal: Option<Box<dyn Signal>>, ctx: &Context) -> Result<
 /// If `signal` is `None`, this method will only check permission without sending
 /// any signal.
 pub fn kill_group<S: Signal + Clone>(pgid: Pgid, signal: Option<S>, ctx: &Context) -> Result<()> {
-    let process_group = process_table::pid_table_mut()
+    let process_group = pid_table::pid_table_mut()
         .get_process_group(&pgid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target group does not exist"))?;
 
@@ -79,7 +78,7 @@ pub fn kill_group<S: Signal + Clone>(pgid: Pgid, signal: Option<S>, ctx: &Contex
 /// If `signal` is `None`, this method will only check permission without sending
 /// any signal.
 pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<Box<dyn Signal>>, ctx: &Context) -> Result<()> {
-    let thread = process_table::pid_table_mut()
+    let thread = pid_table::pid_table_mut()
         .get_thread(tid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target thread does not exist"))?;
     let target_posix_thread = thread.as_posix_thread().unwrap();
@@ -118,7 +117,7 @@ pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<Box<dyn Signal>>, ctx: &Contex
 pub fn kill_all<S: Signal + Clone>(signal: Option<S>, ctx: &Context) -> Result<()> {
     let mut result = Ok(());
 
-    for process in process_table::pid_table_mut().iter_processes() {
+    for process in pid_table::pid_table_mut().iter_processes() {
         if Arc::ptr_eq(&ctx.process, &process) || process.is_init_process() {
             continue;
         }

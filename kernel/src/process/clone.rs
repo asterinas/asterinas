@@ -9,9 +9,8 @@ use ostd::{
 };
 
 use super::{
-    Credentials, Pid, Process,
+    Credentials, Pid, Process, pid_table,
     posix_thread::{AsPosixThread, PosixThreadBuilder, ThreadName},
-    process_table,
     rlimit::ResourceLimits,
     signal::{constants::SIGCHLD, sig_disposition::SigDispositions, sig_num::SigNum},
 };
@@ -805,7 +804,7 @@ fn set_parent_and_group(clone_flags: CloneFlags, parent: &Arc<Process>, child: &
         // Lock order: children of process -> PID table
         // -> group of process -> group inner
 
-        let mut pid_table = process_table::pid_table_mut();
+        let mut pid_table = pid_table::pid_table_mut();
 
         let process_group_mut = parent.process_group.lock();
 

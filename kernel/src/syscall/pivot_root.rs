@@ -2,7 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::vfs::path::FsPath, prelude::*, process::process_table, syscall::constants::MAX_FILENAME_LEN,
+    fs::vfs::path::FsPath, prelude::*, process::pid_table, syscall::constants::MAX_FILENAME_LEN,
 };
 
 pub fn sys_pivot_root(
@@ -29,7 +29,7 @@ pub fn sys_pivot_root(
 
     // TODO: Locking the global PID table here is a workaround. We need to use a
     // more suitable lock (i.e. the global mount lock or the namespace lock) to avoid deadlock.
-    let pid_table = process_table::pid_table_mut();
+    let pid_table = pid_table::pid_table_mut();
     let fs_ref = ctx.thread_local.borrow_fs();
     let mut path_resolver = fs_ref.resolver().write();
     path_resolver.pivot_root(new_root_path, put_old_path, &pid_table, ctx)?;

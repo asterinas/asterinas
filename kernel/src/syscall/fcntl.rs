@@ -13,7 +13,7 @@ use crate::{
         vfs::range_lock::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockType},
     },
     prelude::*,
-    process::{Pid, process_table},
+    process::{Pid, pid_table},
 };
 
 pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
@@ -149,7 +149,7 @@ fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn>
         None
     } else {
         Some(
-            process_table::pid_table_mut()
+            pid_table::pid_table_mut()
                 .get_process(pid)
                 .ok_or(Error::with_message(
                     Errno::ESRCH,

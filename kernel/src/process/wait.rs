@@ -8,8 +8,8 @@ use super::{
 use crate::{
     prelude::*,
     process::{
-        ReapedChildrenStats, Uid, posix_thread::AsPosixThread, process_table,
-        signal::sig_num::SigNum, status::StopWaitStatus,
+        ReapedChildrenStats, Uid, pid_table, posix_thread::AsPosixThread, signal::sig_num::SigNum,
+        status::StopWaitStatus,
     },
     time::clocks::ProfClock,
 };
@@ -208,7 +208,7 @@ fn reap_zombie_child(
     let child_process = children_lock.remove(&child_pid).unwrap();
     assert!(child_process.status().is_zombie());
 
-    let mut pid_table = process_table::pid_table_mut();
+    let mut pid_table = pid_table::pid_table_mut();
 
     // Lock order: children of process -> PID table -> tasks of process
     for task in child_process.tasks().lock().as_slice() {
