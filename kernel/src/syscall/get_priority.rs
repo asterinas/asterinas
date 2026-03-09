@@ -49,14 +49,13 @@ pub(super) fn get_processes(prio_target: PriorityTarget) -> Result<Vec<Arc<Proce
         }
         PriorityTarget::User(uid) => {
             // Get the processes that are running under the specified user
-            let processes: Vec<Arc<Process>> = process_table::process_table_mut()
-                .iter()
+            let processes: Vec<Arc<Process>> = process_table::pid_table_mut()
+                .iter_processes()
                 .filter(|process| {
                     let main_thread = process.main_thread();
                     let posix_thread = main_thread.as_posix_thread().unwrap();
                     uid == posix_thread.credentials().ruid()
                 })
-                .cloned()
                 .collect();
             if processes.is_empty() {
                 return_errno!(Errno::ESRCH);
