@@ -17,10 +17,12 @@ pub fn sys_getsid(pid: Pid, ctx: &Context) -> Result<SyscallReturn> {
         return Ok(SyscallReturn::Return(ctx.process.sid() as _));
     }
 
-    let process = process_table::get_process(pid).ok_or(Error::with_message(
-        Errno::ESRCH,
-        "the process to get the SID does not exist",
-    ))?;
+    let process = process_table::pid_table_mut()
+        .get_process(pid)
+        .ok_or(Error::with_message(
+            Errno::ESRCH,
+            "the process to get the SID does not exist",
+        ))?;
 
     // The man pages allow the implementation to return `EPERM` if `process` is in a different
     // session than the current process. Linux does not perform this check by default, but some

@@ -151,7 +151,7 @@ impl RootDirOps {
             .unwrap();
 
         let weak_ptr = Arc::downgrade(&root_inode);
-        process_table::register_observer(weak_ptr);
+        process_table::pid_table_mut().register_observer(weak_ptr);
 
         root_inode
     }
