@@ -357,19 +357,24 @@ impl DirDentry<'_> {
         let cached_child = children.delete(name);
 
         let dir_inode = &self.inode;
-        let child_inode = match cached_child {
-            Some(child) => {
-                // Cache hit: use the cached dentry
-                child.inode().clone()
-            }
-            None => {
-                // Cache miss: need to lookup from the underlying filesystem
-                drop(children);
-                dir_inode.lookup(name)?
-            }
-        };
+        let child_inode = if let Some(child) = cached_child {
+            let child_inode = child.inode().clone();
 
-        dir_inode.unlink(name)?;
+            if let Err(err) = dir_inode.unlink(name) {
+                children.insert(name.to_string(), child);
+                return Err(err);
+            }
+
+            child_inode
+        } else {
+            // Cache miss: need to lookup from the underlying filesystem
+            drop(children);
+            let child_inode = dir_inode.lookup(name)?;
+
+            dir_inode.unlink(name)?;
+
+            child_inode
+        };
 
         let nlinks = child_inode.metadata().nlinks;
         fs::notify::on_link_count(&child_inode);
@@ -408,19 +413,24 @@ impl DirDentry<'_> {
         let cached_child = children.delete(name);
 
         let dir_inode = &self.inode;
-        let child_inode = match cached_child {
-            Some(child) => {
-                // Cache hit: use the cached dentry
-                child.inode().clone()
-            }
-            None => {
-                // Cache miss: need to lookup from the underlying filesystem
-                drop(children);
-                dir_inode.lookup(name)?
-            }
-        };
+        let child_inode = if let Some(child) = cached_child {
+            let child_inode = child.inode().clone();
 
-        dir_inode.rmdir(name)?;
+            if let Err(err) = dir_inode.rmdir(name) {
+                children.insert(name.to_string(), child);
+                return Err(err);
+            }
+
+            child_inode
+        } else {
+            // Cache miss: need to lookup from the underlying filesystem
+            drop(children);
+            let child_inode = dir_inode.lookup(name)?;
+
+            dir_inode.rmdir(name)?;
+
+            child_inode
+        };
 
         let nlinks = child_inode.metadata().nlinks;
         if nlinks == 0 {
