@@ -20,7 +20,7 @@ use aster_softirq::{
     BottomHalfDisabled, SoftIrqLine,
     softirq_id::{NETWORK_RX_SOFTIRQ_ID, NETWORK_TX_SOFTIRQ_ID},
 };
-pub use buffer::{RxBuffer, TxBuffer};
+pub use buffer::{RxBuffer, TxBuffer, TxBufferBuilder};
 use component::{ComponentInitError, init_component};
 use ostd::sync::SpinLock;
 use spin::Once;

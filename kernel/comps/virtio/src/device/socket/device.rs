@@ -5,12 +5,7 @@ use core::{fmt::Debug, hint::spin_loop};
 
 use aster_network::{RxBuffer, TxBuffer};
 use aster_util::{field_ptr, slot_vec::SlotVec};
-use ostd::{
-    arch::trap::TrapFrame,
-    debug,
-    mm::{VmReader, VmWriter},
-    sync::SpinLock,
-};
+use ostd::{arch::trap::TrapFrame, debug, mm::VmWriter, sync::SpinLock};
 use ostd_pod::Pod;
 
 use super::{
@@ -192,7 +187,7 @@ impl SocketDevice {
         debug!("buffer in send_packet_to_tx_queue: {:?}", buffer);
         let tx_buffer = {
             let tx_pool = TX_BUFFER_POOL.get().unwrap();
-            TxBuffer::new(header, &mut VmReader::from(buffer).to_fallible(), tx_pool).unwrap()
+            TxBuffer::new(header, buffer, tx_pool).unwrap()
         };
 
         let token = self
@@ -282,7 +277,7 @@ impl SocketDevice {
             .rx_buffers
             .remove(token as usize)
             .ok_or(SocketError::QueueError)?;
-        rx_buffer.set_packet_len(len as usize);
+        rx_buffer.set_payload_len(len as usize);
 
         let rx_pool = RX_BUFFER_POOL.get().unwrap();
         let new_rx_buffer = RxBuffer::new(size_of::<VirtioVsockHdr>(), rx_pool).unwrap();
