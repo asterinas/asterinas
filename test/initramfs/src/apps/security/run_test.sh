@@ -9,6 +9,7 @@ set -e
 ./capability/execve
 
 ./namespace/mnt_ns
+./namespace/pid_ns
 ./namespace/proc_nsfs
 ./namespace/setns
 ./namespace/unshare
