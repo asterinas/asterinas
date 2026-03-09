@@ -35,12 +35,15 @@ pub fn sys_get_priority(which: i32, who: u32, ctx: &Context) -> Result<SyscallRe
 pub(super) fn get_processes(prio_target: PriorityTarget) -> Result<Vec<Arc<Process>>> {
     Ok(match prio_target {
         PriorityTarget::Process(pid) => {
-            let process = process_table::get_process(pid).ok_or(Error::new(Errno::ESRCH))?;
+            let process = process_table::pid_table_mut()
+                .get_process(pid)
+                .ok_or(Error::new(Errno::ESRCH))?;
             vec![process]
         }
         PriorityTarget::ProcessGroup(pgid) => {
-            let process_group =
-                process_table::get_process_group(&pgid).ok_or(Error::new(Errno::ESRCH))?;
+            let process_group = process_table::pid_table_mut()
+                .get_process_group(&pgid)
+                .ok_or(Error::new(Errno::ESRCH))?;
             let processes: Vec<Arc<Process>> = process_group.lock().iter().cloned().collect();
             if processes.is_empty() {
                 return_errno!(Errno::ESRCH);
