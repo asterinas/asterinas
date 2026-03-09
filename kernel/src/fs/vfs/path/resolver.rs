@@ -16,8 +16,8 @@ use crate::{
     },
     prelude::*,
     process::{
+        pid_table::PidTable,
         posix_thread::{AsPosixThread, AsThreadLocal},
-        process_table::PidTable,
     },
 };
 

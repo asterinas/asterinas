@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{Pid, process_table},
+    process::{Pid, pid_table},
 };
 
 pub fn sys_getsid(pid: Pid, ctx: &Context) -> Result<SyscallReturn> {
@@ -17,7 +17,7 @@ pub fn sys_getsid(pid: Pid, ctx: &Context) -> Result<SyscallReturn> {
         return Ok(SyscallReturn::Return(ctx.process.sid() as _));
     }
 
-    let process = process_table::pid_table_mut()
+    let process = pid_table::pid_table_mut()
         .get_process(pid)
         .ok_or(Error::with_message(
             Errno::ESRCH,
