@@ -20,7 +20,7 @@ use crate::{
     process::signal::Pollee,
     util::{
         MultiRead, MultiWrite,
-        ring_buffer::{RbConsumer, RbProducer, RingBuffer},
+        ring_buffer::{ConsumerU8Ext, ProducerU8Ext, RbConsumer, RbProducer, RingBuffer},
     },
 };
 

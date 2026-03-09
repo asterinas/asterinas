@@ -250,6 +250,7 @@ OSDK_CRATES := \
 	kernel/libs/aster-bigtcp \
 	kernel/libs/aster-util \
 	kernel/libs/device-id \
+	kernel/libs/ring-buffer \
 	kernel/libs/xarray
 
 # OSDK dependencies

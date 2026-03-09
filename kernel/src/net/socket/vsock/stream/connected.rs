@@ -11,7 +11,10 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollee},
-    util::{MultiRead, MultiWrite, ring_buffer::RingBuffer},
+    util::{
+        MultiRead, MultiWrite,
+        ring_buffer::{RingBuffer, RingBufferU8Ext},
+    },
 };
 
 const PER_CONNECTION_BUFFER_CAPACITY: usize = 4096;
