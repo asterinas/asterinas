@@ -208,13 +208,15 @@ fn reap_zombie_child(
     let child_process = children_lock.remove(&child_pid).unwrap();
     assert!(child_process.status().is_zombie());
 
+    // Lock order: children of process -> pid table -> tasks of process
+    let mut pid_table = process_table::pid_table_mut();
+
     for task in child_process.tasks().lock().as_slice() {
-        process_table::remove_thread(task.as_posix_thread().unwrap().tid());
+        pid_table.remove_thread(task.as_posix_thread().unwrap().tid());
     }
 
     // Lock order: children of process -> pid table
     // -> group of process -> group inner -> session inner
-    let mut pid_table = process_table::pid_table_mut();
 
     // Remove the process from the global table
     pid_table.remove_process(child_process.pid());
