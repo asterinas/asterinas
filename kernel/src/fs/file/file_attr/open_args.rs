@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{AccessMode, CreationFlags, StatusFlags};
-use crate::{fs::file::InodeMode, prelude::*};
+use crate::{
+    fs::file::{AccessMode, CreationFlags, InodeMode, StatusFlags},
+    prelude::*,
+};
 
 /// Arguments for an open request.
 #[derive(Debug)]
@@ -13,7 +15,7 @@ pub struct OpenArgs {
 }
 
 impl OpenArgs {
-    /// Create `OpenArgs` from the given flags and mode.
+    /// Creates `OpenArgs` from the given flags and mode.
     pub fn from_flags_and_mode(flags: u32, inode_mode: InodeMode) -> Result<Self> {
         let creation_flags = CreationFlags::from_bits_truncate(flags);
         let status_flags = StatusFlags::from_bits_truncate(flags);
@@ -26,7 +28,7 @@ impl OpenArgs {
         })
     }
 
-    /// Create `OpenArgs` from the given access mode and inode mode.
+    /// Creates `OpenArgs` from the given access mode and inode mode.
     pub fn from_modes(access_mode: AccessMode, inode_mode: InodeMode) -> Self {
         Self {
             creation_flags: CreationFlags::empty(),
