@@ -5,7 +5,10 @@ use crate::{
     process::{Gid, Uid},
 };
 
+mod ipc_ns;
 pub mod semaphore;
+
+pub use ipc_ns::IpcNamespace;
 
 #[expect(non_camel_case_types)]
 pub type key_t = i32;
@@ -95,8 +98,4 @@ impl IpcPermission {
             mode,
         }
     }
-}
-
-pub(super) fn init_in_first_kthread() {
-    semaphore::init_in_first_kthread();
 }
