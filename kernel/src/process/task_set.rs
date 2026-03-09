@@ -92,7 +92,7 @@ impl TaskSet {
     /// The method should only be calling when doing execve.
     pub(super) fn swap_main(&mut self, pid: Pid, tid: Tid) {
         // This is an extremely internal method. The caller must uphold certain invariants, update
-        // the thread status, modify the thread table, etc.
+        // the thread status, modify the PID table entry, etc.
 
         self.tasks.swap_remove(0);
         self.has_exited_main = false;
