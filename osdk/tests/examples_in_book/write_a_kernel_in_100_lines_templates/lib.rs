@@ -102,7 +102,7 @@ fn create_user_context() -> UserContext {
     // abstraction.
     let mut user_ctx = UserContext::default();
     const ENTRY_POINT: Vaddr = 0x0040_1000; // The entry point for statically-linked executable
-    user_ctx.set_rip(ENTRY_POINT);
+    user_ctx.general_regs_mut().set_rip(ENTRY_POINT);
     user_ctx
 }
 
@@ -110,11 +110,11 @@ fn handle_syscall(user_context: &mut UserContext, vm_space: &VmSpace) {
     const SYS_WRITE: usize = 1;
     const SYS_EXIT: usize = 60;
 
-    match user_context.rax() {
+    let regs = user_context.general_regs_mut();
+    match regs.rax() {
         SYS_WRITE => {
             // Access the user-space CPU registers safely.
-            let (_, buf_addr, buf_len) =
-                (user_context.rdi(), user_context.rsi(), user_context.rdx());
+            let (_, buf_addr, buf_len) = { (regs.rdi(), regs.rsi(), regs.rdx()) };
             let buf = {
                 let mut buf = vec![0u8; buf_len];
                 // Copy data from the user space without
@@ -128,7 +128,7 @@ fn handle_syscall(user_context: &mut UserContext, vm_space: &VmSpace) {
             // Use the console for output safely.
             println!("{}", str::from_utf8(&buf).unwrap());
             // Manipulate the user-space CPU registers safely.
-            user_context.set_rax(buf_len);
+            regs.set_rax(buf_len);
         }
         SYS_EXIT => poweroff(ExitCode::Success),
         _ => unimplemented!(),

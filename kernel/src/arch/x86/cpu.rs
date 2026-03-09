@@ -24,25 +24,25 @@ use crate::{
 
 impl LinuxAbi for UserContext {
     fn syscall_num(&self) -> usize {
-        self.rax()
+        self.general_regs().rax()
     }
 
     fn syscall_ret(&self) -> usize {
-        self.rax()
+        self.general_regs().rax()
     }
 
     fn set_syscall_ret(&mut self, ret: usize) {
-        self.set_rax(ret);
+        self.general_regs_mut().set_rax(ret);
     }
 
     fn syscall_args(&self) -> [usize; 6] {
         [
-            self.rdi(),
-            self.rsi(),
-            self.rdx(),
-            self.r10(),
-            self.r8(),
-            self.r9(),
+            self.general_regs().rdi(),
+            self.general_regs().rsi(),
+            self.general_regs().rdx(),
+            self.general_regs().r10(),
+            self.general_regs().r8(),
+            self.general_regs().r9(),
         ]
     }
 }
