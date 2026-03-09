@@ -29,9 +29,11 @@ pub use self::{
     preempt::{DisabledPreemptGuard, disable_preempt, halt_cpu},
     scheduler::info::{AtomicCpuId, TaskScheduleInfo},
 };
+
 use crate::{
     arch::task::TaskContext,
     irq::{DisabledLocalIrqGuard, InterruptLevel},
+    sync::SpinLock
     prelude::*,
 };
 
@@ -247,6 +249,10 @@ impl TaskOptions {
             schedule_info: TaskScheduleInfo {
                 cpu: AtomicCpuId::default(),
             },
+            seccomp: SpinLock::new(SeccompTask {
+                mode: SeccompMode::SECCOMP_MODE_DISABLED,
+                leaf_filter: None,
+            }),
         };
 
         Ok(new_task)
