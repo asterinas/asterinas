@@ -2,7 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::{path::FsPath, utils::InodeType},
+    fs::{file::InodeType, vfs::path::FsPath},
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
 };

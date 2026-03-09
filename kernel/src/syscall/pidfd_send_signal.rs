@@ -3,7 +3,7 @@
 use ostd::mm::VmIo;
 
 use crate::{
-    fs::file_table::{FileDesc, get_file_fast},
+    fs::file::file_table::{FileDesc, get_file_fast},
     prelude::*,
     process::{
         Pgid, Pid, PidFile, kill, kill_group,

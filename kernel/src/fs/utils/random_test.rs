@@ -7,8 +7,13 @@ use alloc::sync::Arc;
 use hashbrown::HashMap;
 use rand::{Rng, RngCore};
 
-use super::{Inode, InodeMode, InodeType};
-use crate::prelude::*;
+use crate::{
+    fs::{
+        file::{InodeMode, InodeType},
+        vfs::inode::Inode,
+    },
+    prelude::*,
+};
 
 pub struct FileInMemory {
     pub name: String,

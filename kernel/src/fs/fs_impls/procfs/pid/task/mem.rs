@@ -4,9 +4,9 @@ use super::TidDirOps;
 use crate::{
     events::IoEvents,
     fs::{
-        inode_handle::FileIo,
+        file::{AccessMode, FileIo, StatusFlags, mkmod},
         procfs::template::{FileOpsByHandle, ProcFileBuilder},
-        utils::{AccessMode, Inode, InodeIo, StatusFlags, mkmod},
+        vfs::inode::{Inode, InodeIo},
     },
     prelude::*,
     process::{

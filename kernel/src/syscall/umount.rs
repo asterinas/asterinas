@@ -2,7 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::path::{AT_FDCWD, FsPath},
+    fs::vfs::path::{AT_FDCWD, FsPath},
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
 };

@@ -2,8 +2,10 @@
 
 use alloc::boxed::ThinBox;
 
-use super::{FlockList, Inode, RangeLockList};
-use crate::fs::notify::FsEventPublisher;
+use crate::fs::{
+    file::flock::FlockList,
+    vfs::{inode::Inode, notify::FsEventPublisher, range_lock::RangeLockList},
+};
 
 /// Context for FS locks.
 pub struct FsLockContext {
@@ -32,7 +34,7 @@ impl FsLockContext {
 
 /// A trait that instantiates kernel types for the inode [`Extension`].
 ///
-/// [`Extension`]: super::Extension
+/// [`Extension`]: super::inode::Extension
 pub trait InodeExt {
     /// Gets or initializes the FS event publisher.
     ///

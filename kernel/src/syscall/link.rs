@@ -3,9 +3,8 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::FileDesc,
-        path::{AT_FDCWD, FsPath},
-        utils::InodeType,
+        file::{InodeType, file_table::FileDesc},
+        vfs::path::{AT_FDCWD, FsPath},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,

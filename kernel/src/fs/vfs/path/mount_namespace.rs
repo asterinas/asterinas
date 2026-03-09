@@ -4,9 +4,9 @@ use spin::Once;
 
 use crate::{
     fs::{
-        path::{Mount, Path, PathResolver},
+        fs_impls::ramfs::RamFs,
         pseudofs::{NsCommonOps, NsType, StashedDentry},
-        ramfs::RamFs,
+        vfs::path::{Mount, Path, PathResolver},
     },
     prelude::*,
     process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::PosixThread},

@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     events::IoEvents,
-    fs::{file_handle::FileLike, path::Path, pseudofs::SockFs, utils::EndpointState},
+    fs::{file::FileLike, pseudofs::SockFs, utils::EndpointState, vfs::path::Path},
     net::socket::{
         Socket,
         options::{

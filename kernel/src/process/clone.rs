@@ -20,7 +20,7 @@ use crate::{
     current_userspace,
     fs::{
         cgroupfs::CgroupMembership,
-        file_table::{FdFlags, FileTable},
+        file::file_table::{FdFlags, FileTable},
         thread_info::ThreadFsInfo,
     },
     prelude::*,

@@ -3,8 +3,11 @@
 use crate::{
     fs::{
         ramfs::RamFs,
-        registry::{FsProperties, FsType},
-        utils::{FileSystem, FsEventSubscriberStats, FsFlags, Inode, SuperBlock},
+        vfs::{
+            file_system::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
+            inode::Inode,
+            registry::{FsProperties, FsType},
+        },
     },
     prelude::*,
 };

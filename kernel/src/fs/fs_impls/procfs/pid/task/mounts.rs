@@ -5,12 +5,15 @@ use aster_util::printer::VmPrinter;
 use super::TidDirOps;
 use crate::{
     fs::{
-        path::{PathResolver, PerMountFlags},
+        file::mkmod,
         procfs::{
             pid::task::mountinfo::make_mount_point_path,
             template::{FileOps, ProcFileBuilder},
         },
-        utils::{Inode, mkmod},
+        vfs::{
+            inode::Inode,
+            path::{PathResolver, PerMountFlags},
+        },
     },
     prelude::*,
     process::posix_thread::AsPosixThread,

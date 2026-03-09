@@ -5,9 +5,11 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::{FileDesc, get_file_fast},
-        path::{AT_FDCWD, FsPath},
-        utils::Metadata,
+        file::file_table::{FileDesc, get_file_fast},
+        vfs::{
+            inode::Metadata,
+            path::{AT_FDCWD, FsPath},
+        },
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,

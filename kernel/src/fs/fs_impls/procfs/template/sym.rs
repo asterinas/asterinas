@@ -6,9 +6,12 @@ use inherit_methods_macro::inherit_methods;
 
 use super::{Common, ProcFs};
 use crate::{
-    fs::utils::{
-        Extension, FileSystem, Inode, InodeIo, InodeMode, InodeType, Metadata, StatusFlags,
-        SymbolicLink,
+    fs::{
+        file::{InodeMode, InodeType, StatusFlags},
+        vfs::{
+            file_system::FileSystem,
+            inode::{Extension, Inode, InodeIo, Metadata, SymbolicLink},
+        },
     },
     prelude::*,
     process::{Gid, Uid},

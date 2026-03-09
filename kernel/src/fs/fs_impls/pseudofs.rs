@@ -8,19 +8,19 @@ use core::{
 pub use anon_inodefs::AnonInodeFs;
 pub use nsfs::{NsCommonOps, NsFile, NsType, StashedDentry};
 pub use pidfdfs::PidfdFs;
-pub(super) use pipefs::PipeFs;
+pub(in crate::fs) use pipefs::PipeFs;
 use pipefs::PipeFsType;
 pub use sockfs::SockFs;
 use sockfs::SockFsType;
 use spin::Once;
 
-use super::utils::{Extension, InodeIo, StatusFlags};
 use crate::{
     fs::{
-        inode_handle::FileIo,
-        utils::{
-            AccessMode, FileSystem, FsEventSubscriberStats, Inode, InodeMode, InodeType, Metadata,
-            NAME_MAX, SuperBlock, mkmod,
+        file::{AccessMode, FileIo, InodeMode, InodeType, StatusFlags, mkmod},
+        utils::NAME_MAX,
+        vfs::{
+            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            inode::{Extension, Inode, InodeIo, Metadata},
         },
     },
     prelude::*,
@@ -108,8 +108,8 @@ impl PseudoFs {
 }
 
 pub(super) fn init() {
-    super::registry::register(&PipeFsType).unwrap();
-    super::registry::register(&SockFsType).unwrap();
+    crate::fs::vfs::registry::register(&PipeFsType).unwrap();
+    crate::fs::vfs::registry::register(&SockFsType).unwrap();
     // Note: `AnonInodeFs` does not need to be registered in the FS registry.
     // Reference: <https://elixir.bootlin.com/linux/v6.16.5/A/ident/anon_inode_fs_type>
 }

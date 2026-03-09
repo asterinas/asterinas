@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::{
-    fs::utils::{AccessMode, CreationFlags, InodeMode, StatusFlags},
-    prelude::*,
-};
+use super::{AccessMode, CreationFlags, StatusFlags};
+use crate::{fs::file::InodeMode, prelude::*};
 
 /// Arguments for an open request.
 #[derive(Debug)]

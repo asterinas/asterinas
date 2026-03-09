@@ -55,5 +55,5 @@ mod utils;
 mod xattr;
 
 pub(super) fn init() {
-    super::registry::register(&Ext2Type).unwrap();
+    crate::fs::vfs::registry::register(&Ext2Type).unwrap();
 }

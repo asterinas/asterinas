@@ -147,27 +147,27 @@ macro_rules! chmod {
     ($mode:expr) => { $mode };
 
     ($mode:expr, $who:ident + $perms:ident $(, $($rest:tt)*)?) => {
-        $crate::fs::utils::chmod!(@apply $mode, $who, '+', $perms $(, $($rest)*)?)
+        $crate::fs::file::chmod!(@apply $mode, $who, '+', $perms $(, $($rest)*)?)
     };
     ($mode:expr, $who:ident - $perms:ident $(, $($rest:tt)*)?) => {
-        $crate::fs::utils::chmod!(@apply $mode, $who, '-', $perms $(, $($rest)*)?)
+        $crate::fs::file::chmod!(@apply $mode, $who, '-', $perms $(, $($rest)*)?)
     };
     ($mode:expr, $who:ident = $perms:ident $(, $($rest:tt)*)?) => {
-        $crate::fs::utils::chmod!(@apply $mode, $who, '=', $perms $(, $($rest)*)?)
+        $crate::fs::file::chmod!(@apply $mode, $who, '=', $perms $(, $($rest)*)?)
     };
     ($mode:expr, $who:ident = $(, $($rest:tt)*)?) => {
-        $crate::fs::utils::chmod!(@apply $mode, $who, '=', none $(, $($rest)*)?)
+        $crate::fs::file::chmod!(@apply $mode, $who, '=', none $(, $($rest)*)?)
     };
 
     (@apply $mode:expr, $who:ident, $op:expr, $perms:ident $(, $($rest:tt)*)?) => {{
-        let mask = $crate::fs::utils::who_and_perms_to_mask!($who, $perms);
+        let mask = $crate::fs::file::who_and_perms_to_mask!($who, $perms);
         let new_mode = match $op {
             '+' => $mode | mask,
             '-' => $mode & !mask,
-            '=' => ($mode & !$crate::fs::utils::who_and_perms_to_mask!($who, rwx)) | mask,
+            '=' => ($mode & !$crate::fs::file::who_and_perms_to_mask!($who, rwx)) | mask,
             _ => unreachable!(),
         };
-        $crate::fs::utils::chmod!(new_mode $(, $($rest)*)?)
+        $crate::fs::file::chmod!(new_mode $(, $($rest)*)?)
     }};
 }
 
@@ -177,14 +177,14 @@ macro_rules! chmod {
 /// `InodeMode::empty()`. See [`chmod`] for details.
 macro_rules! mkmod {
     ($($args:tt)*) => {
-        $crate::fs::utils::chmod!($crate::fs::utils::InodeMode::empty(), $($args)*)
+        $crate::fs::file::chmod!($crate::fs::file::InodeMode::empty(), $($args)*)
     };
 }
 
 macro_rules! who_and_perms_to_mask {
     ($who:ident, $perms:ident) => {
-        $crate::fs::utils::InodeMode::from_bits_truncate(
-            $crate::fs::utils::who_to_mask!($who) & $crate::fs::utils::perms_to_mask!($perms),
+        $crate::fs::file::InodeMode::from_bits_truncate(
+            $crate::fs::file::who_to_mask!($who) & $crate::fs::file::perms_to_mask!($perms),
         )
     };
 }

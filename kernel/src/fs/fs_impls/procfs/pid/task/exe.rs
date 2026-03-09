@@ -3,8 +3,9 @@
 use super::TidDirOps;
 use crate::{
     fs::{
+        file::mkmod,
         procfs::{ProcSymBuilder, SymOps},
-        utils::{Inode, SymbolicLink, mkmod},
+        vfs::inode::{Inode, SymbolicLink},
     },
     prelude::*,
     process::Process,

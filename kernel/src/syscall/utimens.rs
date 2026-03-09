@@ -8,8 +8,8 @@ use super::{SyscallReturn, constants::MAX_FILENAME_LEN};
 use crate::{
     fs,
     fs::{
-        file_table::FileDesc,
-        path::{AT_FDCWD, FsPath, Path},
+        file::file_table::FileDesc,
+        vfs::path::{AT_FDCWD, FsPath, Path},
     },
     prelude::*,
     time::{clocks::RealTimeCoarseClock, timespec_t, timeval_t},
@@ -144,7 +144,7 @@ fn vfs_utimes(path: &Path, times: Option<TimeSpecPair>) -> Result<SyscallReturn>
     path.set_atime(atime);
     path.set_mtime(mtime);
     path.set_ctime(ctime);
-    fs::notify::on_attr_change(path);
+    fs::vfs::notify::on_attr_change(path);
     Ok(SyscallReturn::Return(0))
 }
 

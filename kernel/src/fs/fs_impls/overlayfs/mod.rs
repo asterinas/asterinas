@@ -5,5 +5,5 @@ use fs::OverlayFsType;
 mod fs;
 
 pub(super) fn init() {
-    super::registry::register(&OverlayFsType).unwrap();
+    crate::fs::vfs::registry::register(&OverlayFsType).unwrap();
 }

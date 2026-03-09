@@ -36,7 +36,10 @@ use ostd_pod::IntoBytes;
 use spin::Once;
 
 use crate::{
-    fs::utils::{FileSystem, InodeType, mkmod},
+    fs::{
+        file::{InodeType, mkmod},
+        vfs::file_system::FileSystem,
+    },
     time::clocks::init_for_ktest as time_init_for_ktest,
 };
 

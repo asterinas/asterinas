@@ -7,10 +7,10 @@ use inherit_methods_macro::inherit_methods;
 use super::{Common, ProcFs};
 use crate::{
     fs::{
-        inode_handle::FileIo,
-        utils::{
-            AccessMode, Extension, FileSystem, Inode, InodeIo, InodeMode, InodeType, Metadata,
-            StatusFlags, SymbolicLink,
+        file::{AccessMode, FileIo, InodeMode, InodeType, StatusFlags},
+        vfs::{
+            file_system::FileSystem,
+            inode::{Extension, Inode, InodeIo, Metadata, SymbolicLink},
         },
     },
     prelude::*,

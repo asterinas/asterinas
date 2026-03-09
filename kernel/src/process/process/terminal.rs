@@ -4,7 +4,7 @@ use alloc::sync::Arc;
 
 use super::{JobControl, Pgid, Process, Session, session::SessionGuard};
 use crate::{
-    fs::device::Device,
+    device::Device,
     prelude::{Errno, Error, Result, current, return_errno_with_message, warn},
     process::process_table,
     util::ioctl::{RawIoctl, dispatch_ioctl},

@@ -6,10 +6,13 @@ use spin::Once;
 
 use crate::{
     fs::{
-        path::{Mount, Path},
+        file::mkmod,
         pseudofs::{PseudoFs, PseudoInodeType},
-        registry::{FsProperties, FsType},
-        utils::{FileSystem, FsFlags, mkmod},
+        vfs::{
+            file_system::{FileSystem, FsFlags},
+            path::{Mount, Path},
+            registry::{FsProperties, FsType},
+        },
     },
     prelude::*,
     process::{Gid, Uid},

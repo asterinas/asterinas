@@ -11,5 +11,5 @@ mod fs;
 const TMPFS_MAGIC: u64 = 0x0102_1994;
 
 pub(super) fn init() {
-    super::registry::register(&TmpFsType).unwrap();
+    crate::fs::vfs::registry::register(&TmpFsType).unwrap();
 }

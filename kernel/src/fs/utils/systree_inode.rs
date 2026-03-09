@@ -13,13 +13,13 @@ use aster_systree::{
     SysAttr, SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj, SysStr, SysSymlink,
 };
 
-use super::Extension;
 use crate::{
     fs::{
-        inode_handle::FileIo,
-        utils::{
-            AccessMode, DirentVisitor, FallocMode, FileSystem, Inode, InodeIo, InodeMode,
-            InodeType, Metadata, MknodType, StatusFlags, SymbolicLink, mkmod,
+        file::{AccessMode, FileIo, InodeMode, InodeType, StatusFlags, mkmod},
+        utils::DirentVisitor,
+        vfs::{
+            file_system::FileSystem,
+            inode::{Extension, FallocMode, Inode, InodeIo, Metadata, MknodType, SymbolicLink},
         },
     },
     prelude::*,

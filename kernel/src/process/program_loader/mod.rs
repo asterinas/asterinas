@@ -9,8 +9,11 @@ use self::{
 };
 use crate::{
     fs::{
-        path::{FsPath, Path, PathResolver},
-        utils::{Inode, InodeType, Permission},
+        file::{InodeType, Permission},
+        vfs::{
+            inode::Inode,
+            path::{FsPath, Path, PathResolver},
+        },
     },
     prelude::*,
     vm::vmar::Vmar,

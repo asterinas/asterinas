@@ -5,9 +5,9 @@ use core::num::NonZeroUsize;
 use super::{MappedMemory, MappedVmo, RssDelta, VmMapping, Vmar};
 use crate::{
     fs::{
-        file_handle::{FileLike, Mappable},
-        path::Path,
+        file::{FileLike, Mappable},
         ramfs::memfd::MemfdInode,
+        vfs::path::Path,
     },
     prelude::*,
     vm::{perms::VmPerms, vmo::Vmo},

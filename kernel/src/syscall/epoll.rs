@@ -6,11 +6,10 @@ use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
-    events::IoEvents,
-    fs::{
-        epoll::{EpollCtl, EpollEvent, EpollFile, EpollFlags},
+    events::{EpollCtl, EpollEvent, EpollFile, EpollFlags, IoEvents},
+    fs::file::{
+        CreationFlags,
         file_table::{FdFlags, FileDesc, get_file_fast},
-        utils::CreationFlags,
     },
     prelude::*,
     process::signal::sig_mask::{SigMask, SigSet},

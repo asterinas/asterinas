@@ -4,7 +4,8 @@
 
 use core::time::Duration;
 
-pub(super) use dentry::Dentry;
+pub(in crate::fs) use dentry::Dentry;
+use dentry::DirDentry;
 use inherit_methods_macro::inherit_methods;
 pub use mount::{Mount, MountPropType, PerMountFlags};
 pub use mount_namespace::MountNamespace;
@@ -12,11 +13,13 @@ pub use resolver::{AT_FDCWD, AbsPathResult, FsPath, LookupResult, PathResolver, 
 
 use crate::{
     fs::{
-        inode_handle::InodeHandle,
-        path::dentry::DirDentry,
-        utils::{
-            CreationFlags, FileSystem, FsFlags, Inode, InodeMode, InodeType, Metadata, MknodType,
-            OpenArgs, Permission, StatusFlags, XattrName, XattrNamespace, XattrSetFlags,
+        file::{
+            CreationFlags, InodeHandle, InodeMode, InodeType, OpenArgs, Permission, StatusFlags,
+        },
+        vfs::{
+            file_system::{FileSystem, FsFlags},
+            inode::{Inode, Metadata, MknodType},
+            xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
     prelude::*,
@@ -70,7 +73,7 @@ impl Path {
     }
 
     /// Creates a new pseudo `Path`.
-    pub(super) fn new_pseudo(
+    pub(in crate::fs) fn new_pseudo(
         mount: Arc<Mount>,
         inode: Arc<dyn Inode>,
         name_fn: fn(&dyn Inode) -> String,

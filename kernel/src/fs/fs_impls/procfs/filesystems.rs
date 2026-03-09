@@ -4,9 +4,9 @@ use aster_util::printer::{VmPrinter, VmPrinterError};
 
 use crate::{
     fs::{
+        file::mkmod,
         procfs::template::{FileOps, ProcFileBuilder},
-        registry::FsProperties,
-        utils::{Inode, mkmod},
+        vfs::{inode::Inode, registry::FsProperties},
     },
     prelude::*,
 };
@@ -30,7 +30,7 @@ impl FileOps for FileSystemsFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
-        crate::fs::registry::with_iter(|iter| -> core::result::Result<(), VmPrinterError> {
+        crate::fs::vfs::registry::with_iter(|iter| -> core::result::Result<(), VmPrinterError> {
             for (fs_name, fs_type) in iter {
                 if fs_type.properties().contains(FsProperties::NEED_DISK) {
                     writeln!(printer, "\t{}", fs_name)?;

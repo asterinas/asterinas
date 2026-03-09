@@ -14,7 +14,7 @@ use super::{
 };
 use crate::{
     events::IoEvents,
-    fs::{file_table::FileTable, thread_info::ThreadFsInfo},
+    fs::{file::file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
     process::{
         Pid,

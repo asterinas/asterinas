@@ -7,8 +7,8 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::FileDesc,
-        path::{FsPath, Path},
+        file::file_table::FileDesc,
+        vfs::path::{FsPath, Path},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
