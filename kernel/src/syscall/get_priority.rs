@@ -49,6 +49,7 @@ pub(super) fn get_processes(prio_target: PriorityTarget) -> Result<Vec<Arc<Proce
         }
         PriorityTarget::User(uid) => {
             // Get the processes that are running under the specified user
+            // Lock order: PID table -> tasks of process.
             let processes: Vec<Arc<Process>> = process_table::pid_table_mut()
                 .iter_processes()
                 .filter(|process| {
