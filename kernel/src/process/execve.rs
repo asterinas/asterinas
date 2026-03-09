@@ -17,9 +17,8 @@ use crate::{
     prelude::*,
     process::{
         ContextUnshareAdminApi, Credentials, Process,
-        posix_thread::{
-            ContextPthreadAdminApi, ThreadLocal, ThreadName, sigkill_other_threads, thread_table,
-        },
+        posix_thread::{ContextPthreadAdminApi, ThreadLocal, ThreadName, sigkill_other_threads},
+        process_table,
         process_vm::{MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS, ProcessVm},
         program_loader::{ProgramToLoad, elf::ElfLoadInfo},
         signal::{
@@ -155,7 +154,7 @@ fn do_execve_no_return(
     // Wait for all other threads to terminate,
     // then promote the current thread to be the process's main thread if necessary.
     wait_other_threads_exit(ctx)?;
-    thread_table::make_current_main_thread(ctx);
+    process_table::make_current_main_thread(ctx);
 
     // Activate the new VMAR in the current context and apply file-capability changes,
     // while holding the process VMAR lock.
@@ -252,12 +251,12 @@ fn set_cpu_context(
 ///
 /// The capabilities will be updated accordingly.
 fn apply_caps_from_exec(
-    current: &Process,
+    process: &Process,
     credentials: Credentials<ReadWriteOp>,
     elf_inode: &Arc<dyn Inode>,
 ) -> Result<()> {
-    set_uid_from_elf(current, &credentials, elf_inode)?;
-    set_gid_from_elf(current, &credentials, elf_inode)?;
+    set_uid_from_elf(process, &credentials, elf_inode)?;
+    set_gid_from_elf(process, &credentials, elf_inode)?;
     credentials.set_keep_capabilities(false)?;
 
     Ok(())
