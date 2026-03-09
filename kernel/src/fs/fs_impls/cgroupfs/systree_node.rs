@@ -735,7 +735,9 @@ where
     let process = if pid == 0 {
         current!()
     } else {
-        process_table::get_process(pid).ok_or(Error::InvalidOperation)?
+        process_table::pid_table_mut()
+            .get_process(pid)
+            .ok_or(Error::InvalidOperation)?
     };
 
     let mut cgroup_guard = CgroupMembership::lock();

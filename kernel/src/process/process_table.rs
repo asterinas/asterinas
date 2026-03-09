@@ -71,11 +71,6 @@ impl PidEntry {
         self.inner.lock().process_group.clone()
     }
 
-    /// Returns the session associated with the entry, if any.
-    pub fn session(&self) -> Option<Arc<Session>> {
-        self.inner.lock().session.clone()
-    }
-
     /// Sets the thread reference.
     pub(super) fn set_thread(&self, thread: &Arc<Thread>) {
         self.inner.lock().thread = Arc::downgrade(thread);
@@ -270,11 +265,6 @@ impl PidTable {
         self.try_remove_entry(sid);
     }
 
-    /// Gets a session by sid.
-    pub fn get_session(&self, sid: &Sid) -> Option<Arc<Session>> {
-        self.entries.get(sid).and_then(|e| e.session())
-    }
-
     /// Returns an iterator over threads that have a live thread reference.
     pub fn iter_threads(&self) -> impl Iterator<Item = Arc<Thread>> + '_ {
         self.entries.values().filter_map(|entry| entry.thread())
@@ -283,38 +273,14 @@ impl PidTable {
     // ---- Observer operations ----
 
     /// Registers an observer which watches `PidEvent`.
-    fn register_observer(&mut self, observer: Weak<dyn Observer<PidEvent>>) {
+    pub fn register_observer(&mut self, observer: Weak<dyn Observer<PidEvent>>) {
         self.subject.register_observer(observer);
     }
-
-    /// Unregisters an observer which watches `PidEvent`.
-    fn unregister_observer(&mut self, observer: &Weak<dyn Observer<PidEvent>>) {
-        self.subject.unregister_observer(observer);
-    }
 }
-
-// ==================== Public API ====================
 
 /// Acquires a mutable reference to the global PID table.
 pub(crate) fn pid_table_mut() -> MutexGuard<'static, PidTable> {
     PID_TABLE.lock()
-}
-
-// ---- Thread helpers ----
-
-/// Adds a thread to the global PID table.
-pub fn add_thread(tid: Tid, thread: Arc<Thread>) {
-    PID_TABLE.lock().insert_thread(tid, thread);
-}
-
-/// Removes a thread from the global PID table.
-pub fn remove_thread(tid: Tid) {
-    PID_TABLE.lock().remove_thread(tid);
-}
-
-/// Gets a thread from the global PID table.
-pub fn get_thread(tid: Tid) -> Option<Arc<Thread>> {
-    PID_TABLE.lock().get_thread(tid)
 }
 
 /// Makes the current thread become the main thread if necessary.
@@ -342,61 +308,6 @@ pub(in crate::process) fn make_current_main_thread(ctx: &Context) {
     let thread = pid_table.get_thread(old_tid).unwrap();
     pid_table.remove_thread(old_tid);
     pid_table.insert_thread(pid, thread);
-}
-
-/// Locks the global PID table and applies the given function.
-pub fn with_pid_table<F, R>(f: F) -> R
-where
-    F: FnOnce(&PidTable) -> R,
-{
-    let pid_table = pid_table_mut();
-    f(&pid_table)
-}
-
-// ---- Process helpers ----
-
-/// Gets a process by pid.
-pub fn get_process(pid: Pid) -> Option<Arc<Process>> {
-    PID_TABLE.lock().get_process(pid)
-}
-
-/// Returns the number of current processes.
-pub fn process_num() -> usize {
-    PID_TABLE.lock().process_count()
-}
-
-// ---- Process group helpers ----
-
-/// Gets a process group by pgid.
-pub fn get_process_group(pgid: &Pgid) -> Option<Arc<ProcessGroup>> {
-    PID_TABLE.lock().get_process_group(pgid)
-}
-
-/// Returns whether a process group with the given pgid exists.
-#[expect(dead_code)]
-pub fn contain_process_group(pgid: &Pgid) -> bool {
-    PID_TABLE.lock().contains_process_group(pgid)
-}
-
-// ---- Session helpers ----
-
-/// Gets a session by sid.
-#[expect(dead_code)]
-pub fn get_session(sid: &Sid) -> Option<Arc<Session>> {
-    PID_TABLE.lock().get_session(sid)
-}
-
-// ---- Observer helpers ----
-
-/// Registers an observer which watches `PidEvent`.
-pub fn register_observer(observer: Weak<dyn Observer<PidEvent>>) {
-    PID_TABLE.lock().register_observer(observer);
-}
-
-/// Unregisters an observer which watches `PidEvent`.
-#[expect(dead_code)]
-pub fn unregister_observer(observer: &Weak<dyn Observer<PidEvent>>) {
-    PID_TABLE.lock().unregister_observer(observer);
 }
 
 /// An event emitted when a process exits.
