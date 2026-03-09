@@ -119,6 +119,7 @@ use super::{
     sched_setparam::sys_sched_setparam,
     sched_setscheduler::sys_sched_setscheduler,
     sched_yield::sys_sched_yield,
+    seccomp::sys_seccomp,
     select::sys_select,
     semctl::sys_semctl,
     semget::sys_semget,
@@ -402,6 +403,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SCHED_SETATTR = 314    => sys_sched_setattr(args[..3]);
     SYS_SCHED_GETATTR = 315    => sys_sched_getattr(args[..4]);
     SYS_RENAMEAT2 = 316        => sys_renameat2(args[..5]);
+    SYS_SECCOMP = 317          => sys_seccomp(args[..3]);
     SYS_GETRANDOM = 318        => sys_getrandom(args[..3]);
     SYS_MEMFD_CREATE = 319     => sys_memfd_create(args[..2]);
     SYS_EXECVEAT = 322         => sys_execveat(args[..5], &mut user_ctx);
