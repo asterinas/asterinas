@@ -302,7 +302,7 @@ impl<D: TtyDriver> Tty<D> {
     pub fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
         use ioctl_defs::*;
 
-        use crate::util::ioctl::GetNumBytesToRead;
+        use crate::util::ioctl::common_defs::GetNumBytesToRead;
 
         dispatch_ioctl!(match raw_ioctl {
             cmd @ GetTermios => {
