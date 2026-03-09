@@ -421,7 +421,7 @@ impl InputHandler for VtKeyboardHandler {
 
 static REGISTERED_INPUT_HANDLER_CLASS: Once<RegisteredInputHandlerClass> = Once::new();
 
-pub(super) fn init() {
+pub(super) fn init_in_first_process() {
     if FRAMEBUFFER_CONSOLE.get().is_none() {
         return;
     }
