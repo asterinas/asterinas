@@ -9,8 +9,15 @@ pub mod flock;
 mod inode_attr;
 mod inode_handle;
 
-pub use file_attr::{AccessMode, AtomicStatusFlags, CreationFlags, OpenArgs, StatusFlags};
+pub use file_attr::{
+    access_mode::AccessMode,
+    creation_flags::CreationFlags,
+    open_args::OpenArgs,
+    status_flags::{AtomicStatusFlags, StatusFlags},
+};
 pub use file_handle::{FileLike, Mappable};
-pub use inode_attr::{InodeMode, InodeType, Permission};
-pub(crate) use inode_attr::{chmod, mkmod, perms_to_mask, who_and_perms_to_mask, who_to_mask};
+pub(crate) use inode_attr::mode::{
+    chmod, mkmod, perms_to_mask, who_and_perms_to_mask, who_to_mask,
+};
+pub use inode_attr::{mode::InodeMode, permission::Permission, r#type::InodeType};
 pub use inode_handle::{FileIo, InodeHandle, SeekFrom};

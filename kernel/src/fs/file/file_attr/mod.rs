@@ -8,12 +8,7 @@
 //! and creation semantics, forming the contract between user-space requests
 //! and VFS actions.
 
-mod access_mode;
-mod creation_flags;
-mod open_args;
-mod status_flags;
-
-pub use access_mode::AccessMode;
-pub use creation_flags::CreationFlags;
-pub use open_args::OpenArgs;
-pub use status_flags::{AtomicStatusFlags, StatusFlags};
+pub(super) mod access_mode;
+pub(super) mod creation_flags;
+pub(super) mod open_args;
+pub(super) mod status_flags;

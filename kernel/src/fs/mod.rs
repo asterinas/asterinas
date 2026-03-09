@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 pub mod file;
-pub mod fs_impls;
+mod fs_impls;
 pub mod pipe;
 pub mod rootfs;
 pub mod thread_info;
