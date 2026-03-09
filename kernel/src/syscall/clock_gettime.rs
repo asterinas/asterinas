@@ -8,10 +8,7 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{
-        posix_thread::{AsPosixThread, thread_table},
-        process_table,
-    },
+    process::{posix_thread::AsPosixThread, process_table},
     time::{
         Clock, clockid_t,
         clocks::{
@@ -139,7 +136,7 @@ pub fn read_clock(clockid: clockid_t, ctx: &Context) -> Result<Duration> {
                 }
             }
             DynamicClockIdInfo::Tid(tid, clock_type) => {
-                let thread = thread_table::get_thread(tid)
+                let thread = process_table::get_thread(tid)
                     .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clock ID"))?;
                 let posix_thread = thread.as_posix_thread().unwrap();
                 match clock_type {

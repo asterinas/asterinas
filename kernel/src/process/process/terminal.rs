@@ -183,11 +183,11 @@ impl dyn Terminal {
 
     /// Sets the foreground process group of the terminal.
     fn set_foreground(self: Arc<Self>, pgid: Pgid, process: &Process) -> Result<()> {
-        // Lock order: group table -> group of process -> session inner -> job control
-        let group_table_mut = process_table::group_table_mut();
+        // Lock order: PID table -> group of process -> session inner -> job control
+        let pid_table = process_table::pid_table_mut();
 
         self.is_control_and(process, |session, _| {
-            let Some(process_group) = group_table_mut.get(&pgid) else {
+            let Some(process_group) = pid_table.get_process_group(&pgid) else {
                 return_errno_with_message!(
                     Errno::ESRCH,
                     "the process group to be foreground does not exist"
@@ -201,7 +201,7 @@ impl dyn Terminal {
                 );
             }
 
-            self.job_control().set_foreground(process_group);
+            self.job_control().set_foreground(&process_group);
 
             Ok(())
         })
