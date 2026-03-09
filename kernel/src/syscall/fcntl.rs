@@ -148,10 +148,14 @@ fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn>
     let owner_process = if pid == 0 {
         None
     } else {
-        Some(process_table::get_process(pid).ok_or(Error::with_message(
-            Errno::ESRCH,
-            "cannot set_owner with an invalid pid",
-        ))?)
+        Some(
+            process_table::pid_table_mut()
+                .get_process(pid)
+                .ok_or(Error::with_message(
+                    Errno::ESRCH,
+                    "cannot set_owner with an invalid pid",
+                ))?,
+        )
     };
 
     let file_table = ctx.thread_local.borrow_file_table();

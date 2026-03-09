@@ -29,7 +29,7 @@ pub fn sys_sysinfo(sysinfo_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> 
         uptime: read_monotonic_time().as_secs() as i64,
         totalram: crate::vm::mem_total() as u64,
         freeram: osdk_frame_allocator::load_total_free_size() as u64,
-        procs: process_table::process_num() as u16,
+        procs: process_table::pid_table_mut().process_count() as u16,
         // `mem_unit` will always be 1 byte since Asterinas only supports
         // 64-bit CPU architectures.
         mem_unit: 1,

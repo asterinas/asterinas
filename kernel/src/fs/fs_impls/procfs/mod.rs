@@ -144,7 +144,7 @@ impl RootDirOps {
         let root_inode = ProcDir::new_root(Self, fs, PROC_ROOT_INO, sb, mkmod!(a+rx));
 
         let weak_ptr = Arc::downgrade(&root_inode);
-        process_table::register_observer(weak_ptr);
+        process_table::pid_table_mut().register_observer(weak_ptr);
 
         root_inode
     }
