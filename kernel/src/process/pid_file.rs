@@ -8,11 +8,9 @@ use core::{
 use crate::{
     events::IoEvents,
     fs::{
-        file_handle::FileLike,
-        file_table::FdFlags,
-        path::Path,
+        file::{CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
         pseudofs::PidfdFs,
-        utils::{CreationFlags, StatusFlags},
+        vfs::path::Path,
     },
     prelude::*,
     process::{

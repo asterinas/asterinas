@@ -8,8 +8,11 @@ use super::SyscallReturn;
 use crate::{
     fs,
     fs::{
-        file_table::{FileDesc, get_file_fast},
-        utils::{DirentVisitor, InodeType},
+        file::{
+            InodeType,
+            file_table::{FileDesc, get_file_fast},
+        },
+        utils::DirentVisitor,
     },
     prelude::*,
 };
@@ -36,7 +39,7 @@ pub fn sys_getdents(
     let mut reader = DirentBufferReader::<Dirent>::new(writer); // Use the non-64-bit reader
     let _ = inode_handle.readdir(&mut reader)?;
     let read_len = reader.read_len();
-    fs::notify::on_access(&file);
+    fs::vfs::notify::on_access(&file);
     Ok(SyscallReturn::Return(read_len as _))
 }
 
@@ -62,7 +65,7 @@ pub fn sys_getdents64(
     let mut reader = DirentBufferReader::<Dirent64>::new(writer);
     let _ = inode_handle.readdir(&mut reader)?;
     let read_len = reader.read_len();
-    fs::notify::on_access(&file);
+    fs::vfs::notify::on_access(&file);
     Ok(SyscallReturn::Return(read_len as _))
 }
 

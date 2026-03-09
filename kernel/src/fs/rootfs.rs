@@ -7,10 +7,10 @@ use libflate::gzip::Decoder as GZipDecoder;
 use ostd::boot::boot_info;
 
 use super::{
-    path::{FsPath, PathResolver},
-    utils::{InodeMode, InodeType},
+    file::{InodeMode, InodeType},
+    vfs::path::{FsPath, PathResolver, is_dot},
 };
-use crate::{fs::path::is_dot, prelude::*};
+use crate::prelude::*;
 
 struct BoxedReader<'a>(Box<dyn Read + 'a>);
 

@@ -13,11 +13,12 @@ use super::{
 use crate::{
     events::IoEvents,
     fs::{
-        file_handle::FileLike,
-        file_table::{FdFlags, FileDesc, get_file_fast},
-        path::Path,
+        file::{
+            CreationFlags, FileLike,
+            file_table::{FdFlags, FileDesc, get_file_fast},
+        },
         pseudofs::AnonInodeFs,
-        utils::CreationFlags,
+        vfs::path::Path,
     },
     prelude::*,
     process::{

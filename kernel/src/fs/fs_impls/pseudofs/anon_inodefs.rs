@@ -4,9 +4,12 @@ use spin::Once;
 
 use crate::{
     fs::{
-        path::{Mount, Path},
+        file::mkmod,
         pseudofs::{PseudoFs, PseudoInodeType},
-        utils::{Inode, mkmod},
+        vfs::{
+            inode::Inode,
+            path::{Mount, Path},
+        },
     },
     prelude::*,
     process::{Gid, Uid},

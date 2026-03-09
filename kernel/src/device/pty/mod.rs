@@ -3,8 +3,8 @@
 use crate::{
     fs::{
         devpts::{DevPts, Ptmx},
-        path::{FsPath, Path, PathResolver, PerMountFlags},
-        utils::{InodeType, mkmod},
+        file::{InodeType, mkmod},
+        vfs::path::{FsPath, Path, PathResolver, PerMountFlags},
     },
     prelude::*,
 };

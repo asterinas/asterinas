@@ -10,7 +10,13 @@ pub(super) use self::{
 };
 use super::{BLOCK_SIZE, ProcFs};
 use crate::{
-    fs::utils::{Extension, FileSystem, InodeMode, InodeType, Metadata},
+    fs::{
+        file::{InodeMode, InodeType},
+        vfs::{
+            file_system::FileSystem,
+            inode::{Extension, Metadata},
+        },
+    },
     prelude::*,
     process::{Gid, Uid},
 };

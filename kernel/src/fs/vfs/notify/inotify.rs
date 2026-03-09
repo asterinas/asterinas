@@ -18,12 +18,14 @@ use ostd::{mm::VmWriter, sync::SpinLock};
 use crate::{
     events::IoEvents,
     fs::{
-        file_handle::FileLike,
-        file_table::FdFlags,
-        notify::{FsEventSubscriber, FsEvents},
-        path::Path,
+        file::{AccessMode, CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
         pseudofs::AnonInodeFs,
-        utils::{AccessMode, CreationFlags, Inode, InodeExt, StatusFlags},
+        vfs::{
+            inode::Inode,
+            inode_ext::InodeExt,
+            notify::{FsEventSubscriber, FsEvents},
+            path::Path,
+        },
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
@@ -337,7 +339,7 @@ impl FileLike for InotifyFile {
     }
 
     fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
-        use crate::fs::utils::ioctl_defs::GetNumBytesToRead;
+        use crate::util::ioctl::GetNumBytesToRead;
 
         dispatch_ioctl!(match raw_ioctl {
             cmd @ GetNumBytesToRead => {

@@ -6,12 +6,11 @@ use device_id::DeviceId;
 use ostd::mm::VmIo;
 
 use crate::{
+    device::{Device, DeviceType, add_node},
     events::IoEvents,
     fs::{
-        device::{Device, DeviceType, add_node},
-        inode_handle::FileIo,
-        path::PathResolver,
-        utils::{InodeIo, StatusFlags},
+        file::{FileIo, StatusFlags},
+        vfs::{inode::InodeIo, path::PathResolver},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},

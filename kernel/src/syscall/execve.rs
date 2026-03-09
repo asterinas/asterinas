@@ -5,8 +5,8 @@ use ostd::arch::cpu::context::UserContext;
 use super::{SyscallReturn, constants::*};
 use crate::{
     fs::{
-        file_table::FileDesc,
-        path::{AT_FDCWD, FsPath, Path},
+        file::file_table::FileDesc,
+        vfs::path::{AT_FDCWD, FsPath, Path},
     },
     prelude::*,
     process::do_execve,

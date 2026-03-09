@@ -2,7 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::path::FsPath, prelude::*, process::posix_thread::thread_table::with_global_threads,
+    fs::vfs::path::FsPath, prelude::*, process::posix_thread::thread_table::with_global_threads,
     syscall::constants::MAX_FILENAME_LEN,
 };
 

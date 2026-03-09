@@ -4,8 +4,8 @@ use device_id::{DeviceId, MajorId, MinorId};
 
 use super::*;
 use crate::fs::{
-    inode_handle::FileIo,
-    utils::{AccessMode, Extension, InodeIo, StatusFlags},
+    file::{AccessMode, FileIo, StatusFlags},
+    vfs::inode::{Extension, InodeIo},
 };
 
 /// Same major number with Linux.

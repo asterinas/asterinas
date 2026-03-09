@@ -14,13 +14,14 @@ use spin::Once;
 use super::fs::RamInode;
 use crate::{
     fs::{
-        inode_handle::InodeHandle,
-        path::{Mount, Path},
+        file::{AccessMode, InodeHandle, InodeMode, InodeType, StatusFlags, mkmod},
         tmpfs::TmpFs,
-        utils::{
-            AccessMode, CachePage, Extension, FallocMode, FileSystem, Inode, InodeIo, InodeMode,
-            InodeType, Metadata, PageCacheBackend, StatusFlags, XattrName, XattrNamespace,
-            XattrSetFlags, mkmod,
+        vfs::{
+            file_system::FileSystem,
+            inode::{Extension, FallocMode, Inode, InodeIo, Metadata},
+            page_cache::{CachePage, PageCacheBackend},
+            path::{Mount, Path},
+            xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
     prelude::*,

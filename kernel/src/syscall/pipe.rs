@@ -5,9 +5,11 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::{FdFlags, FileDesc},
+        file::{
+            CreationFlags,
+            file_table::{FdFlags, FileDesc},
+        },
         pipe,
-        utils::CreationFlags,
     },
     prelude::*,
 };

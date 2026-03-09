@@ -12,11 +12,9 @@
 
 use crate::{
     fs::{
-        file_handle::FileLike,
-        file_table::FileDesc,
-        inode_handle::InodeHandle,
-        path::MountNamespace,
+        file::{FileLike, InodeHandle, file_table::FileDesc},
         pseudofs::{NsCommonOps, NsFile},
+        vfs::path::MountNamespace,
     },
     net::uts_ns::UtsNamespace,
     prelude::*,

@@ -6,7 +6,10 @@ use super::{
     sym::{ProcSym, SymOps},
 };
 use crate::{
-    fs::utils::{FileSystem, Inode, InodeMode},
+    fs::{
+        file::InodeMode,
+        vfs::{file_system::FileSystem, inode::Inode},
+    },
     prelude::*,
 };
 

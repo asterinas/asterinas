@@ -4,9 +4,12 @@ use super::SyscallReturn;
 use crate::{
     fs,
     fs::{
-        file_table::{FileDesc, get_file_fast},
-        path::{AT_FDCWD, FsPath},
-        utils::{InodeMode, PATH_MAX},
+        file::{
+            InodeMode,
+            file_table::{FileDesc, get_file_fast},
+        },
+        utils::PATH_MAX,
+        vfs::path::{AT_FDCWD, FsPath},
     },
     prelude::*,
 };
@@ -17,7 +20,7 @@ pub fn sys_fchmod(fd: FileDesc, mode: u16, ctx: &Context) -> Result<SyscallRetur
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
     file.path().set_mode(InodeMode::from_bits_truncate(mode))?;
-    fs::notify::on_attr_change(file.path());
+    fs::vfs::notify::on_attr_change(file.path());
     Ok(SyscallReturn::Return(0))
 }
 
@@ -79,7 +82,7 @@ fn do_fchmodat(
     };
 
     path.set_mode(InodeMode::from_bits_truncate(mode))?;
-    fs::notify::on_attr_change(&path);
+    fs::vfs::notify::on_attr_change(&path);
     Ok(SyscallReturn::Return(0))
 }
 

@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     fs,
-    fs::file_table::{FileDesc, get_file_fast},
+    fs::file::file_table::{FileDesc, get_file_fast},
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
 };
@@ -56,7 +56,7 @@ fn removexattr(
     match lookup_path_for_xattr(&file_ctx, ctx) {
         Ok(path) => {
             path.remove_xattr(xattr_name)?;
-            fs::notify::on_attr_change(&path);
+            fs::vfs::notify::on_attr_change(&path);
             Ok(())
         }
         Err(e) => Err(e),

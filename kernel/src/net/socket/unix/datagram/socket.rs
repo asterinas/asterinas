@@ -7,7 +7,7 @@ use aster_rights::ReadDupOp;
 use super::message::{MessageQueue, MessageReceiver};
 use crate::{
     events::IoEvents,
-    fs::{path::Path, pseudofs::SockFs},
+    fs::{pseudofs::SockFs, vfs::path::Path},
     net::socket::{
         Socket,
         options::{Error as SocketError, PeerCred, SocketOption, macros::sock_option_mut},

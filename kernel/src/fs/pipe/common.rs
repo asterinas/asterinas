@@ -10,8 +10,9 @@ use ostd::sync::WaitQueue;
 use crate::{
     events::IoEvents,
     fs::{
-        inode_handle::FileIo,
-        utils::{AccessMode, Endpoint, EndpointState, InodeIo, StatusFlags},
+        file::{AccessMode, FileIo, StatusFlags},
+        utils::{Endpoint, EndpointState},
+        vfs::inode::InodeIo,
     },
     prelude::*,
     process::{

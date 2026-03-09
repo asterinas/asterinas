@@ -7,11 +7,9 @@ use util::{MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr};
 
 use crate::{
     fs::{
-        file_handle::FileLike,
-        file_table::FdFlags,
-        path::Path,
+        file::{CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
         pseudofs::SockFs,
-        utils::{CreationFlags, StatusFlags},
+        vfs::path::Path,
     },
     prelude::*,
     util::{MultiRead, MultiWrite},

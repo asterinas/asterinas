@@ -4,10 +4,9 @@ use core::sync::atomic::{AtomicU8, Ordering};
 
 use aster_util::slot_vec::SlotVec;
 
-use super::file_handle::FileLike;
+use super::{StatusFlags, file_handle::FileLike};
 use crate::{
     events::{IoEvents, Observer},
-    fs::utils::StatusFlags,
     prelude::*,
     process::{
         Pid, Process,
@@ -180,7 +179,7 @@ macro_rules! get_file_fast {
 
         use ostd::sync::RwArc;
         use $crate::{
-            fs::file_table::{FileDesc, FileTable},
+            fs::file::file_table::{FileDesc, FileTable},
             process::posix_thread::FileTableRefMut,
         };
 

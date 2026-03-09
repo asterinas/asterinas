@@ -10,13 +10,16 @@ use spin::Once;
 use crate::{
     events::IoEvents,
     fs::{
-        file_table::{FdFlags, FileDesc},
-        inode_handle::{FileIo, InodeHandle},
-        path::{Dentry, Mount, Path},
+        file::{
+            AccessMode, FileIo, InodeHandle, InodeMode, InodeType, StatusFlags,
+            file_table::{FdFlags, FileDesc},
+            mkmod,
+        },
         pseudofs::{PseudoFs, PseudoInode, PseudoInodeType},
-        utils::{
-            AccessMode, Extension, FileSystem, Inode, InodeIo, InodeMode, InodeType, Metadata,
-            StatusFlags, mkmod,
+        vfs::{
+            file_system::FileSystem,
+            inode::{Extension, Inode, InodeIo, Metadata},
+            path::{Dentry, Mount, Path},
         },
     },
     prelude::*,

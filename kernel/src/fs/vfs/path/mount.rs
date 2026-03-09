@@ -9,12 +9,15 @@ use spin::Once;
 
 use crate::{
     fs::{
-        path::{
-            Path,
-            dentry::{Dentry, DentryKey},
-            mount_namespace::MountNamespace,
+        file::InodeType,
+        vfs::{
+            file_system::{FileSystem, FsFlags},
+            path::{
+                Path,
+                dentry::{Dentry, DentryKey},
+                mount_namespace::MountNamespace,
+            },
         },
-        utils::{FileSystem, FsFlags, InodeType},
     },
     prelude::*,
 };

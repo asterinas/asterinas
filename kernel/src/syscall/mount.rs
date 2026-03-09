@@ -5,9 +5,12 @@ use device_id::DeviceId;
 use super::SyscallReturn;
 use crate::{
     fs::{
-        path::{AT_FDCWD, FsPath, MountPropType, Path, PerMountFlags},
-        registry::{FsProperties, FsType},
-        utils::{FileSystem, FsFlags, InodeType},
+        file::InodeType,
+        vfs::{
+            file_system::{FileSystem, FsFlags},
+            path::{AT_FDCWD, FsPath, MountPropType, Path, PerMountFlags},
+            registry::{FsProperties, FsType},
+        },
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -204,7 +207,7 @@ fn do_new_mount(
         let fs_type_str = fs_type_cstr
             .to_str()
             .map_err(|_| Error::with_message(Errno::ENODEV, "invalid file system type"))?;
-        crate::fs::registry::look_up(fs_type_str).ok_or(Error::with_message(
+        crate::fs::vfs::registry::look_up(fs_type_str).ok_or(Error::with_message(
             Errno::ENODEV,
             "the filesystem is not configured in the kernel",
         ))?

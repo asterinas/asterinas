@@ -2,8 +2,10 @@
 
 #![expect(unused_variables)]
 
-use super::InodeType;
-use crate::{fs::path::is_dot_or_dotdot, prelude::*};
+use crate::{
+    fs::{file::InodeType, vfs::path::is_dot_or_dotdot},
+    prelude::*,
+};
 
 /// A visitor for dir entries.
 pub trait DirentVisitor {

@@ -8,13 +8,13 @@ use ostd::sync::RwMutexUpgradeableGuard;
 use super::TidDirOps;
 use crate::{
     fs::{
-        file_handle::FileLike,
-        file_table::FileDesc,
+        file::{AccessMode, FileLike, chmod, file_table::FileDesc, mkmod},
         procfs::{
             DirOps, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps,
             template::{FileOps, ProcFile, ProcFileBuilder, ProcSym},
         },
-        utils::{AccessMode, DirEntryVecExt, Inode, SymbolicLink, chmod, mkmod},
+        utils::DirEntryVecExt,
+        vfs::inode::{Inode, SymbolicLink},
     },
     prelude::*,
     process::posix_thread::AsPosixThread,

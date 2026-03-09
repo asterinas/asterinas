@@ -4,7 +4,10 @@ use hashbrown::{Equivalent, HashMap, hash_map::Entry};
 use spin::Once;
 
 use crate::{
-    fs::utils::{InodeType, XattrName, XattrNamespace, XattrSetFlags},
+    fs::{
+        file::InodeType,
+        vfs::xattr::{XattrName, XattrNamespace, XattrSetFlags},
+    },
     prelude::*,
 };
 

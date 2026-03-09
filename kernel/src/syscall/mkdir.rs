@@ -4,9 +4,8 @@ use super::SyscallReturn;
 use crate::{
     fs,
     fs::{
-        file_table::FileDesc,
-        path::{AT_FDCWD, FsPath},
-        utils::{InodeMode, InodeType},
+        file::{InodeMode, InodeType, file_table::FileDesc},
+        vfs::path::{AT_FDCWD, FsPath},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -37,7 +36,7 @@ pub fn sys_mkdirat(
         InodeMode::from_bits_truncate(mask_mode)
     };
     dir_path.new_fs_child(&name, InodeType::Dir, inode_mode)?;
-    fs::notify::on_mkdir(&dir_path, || name);
+    fs::vfs::notify::on_mkdir(&dir_path, || name);
     Ok(SyscallReturn::Return(0))
 }
 

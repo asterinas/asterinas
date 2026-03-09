@@ -27,14 +27,11 @@ use file::MemFile;
 pub use file::{getrandom, geturandom};
 use spin::Once;
 
-use super::registry::char::{MajorIdOwner, acquire_major, register};
-use crate::{
-    fs::{
-        device::{Device, DeviceType},
-        inode_handle::FileIo,
-    },
-    prelude::*,
+use super::{
+    Device, DeviceType,
+    registry::char::{MajorIdOwner, acquire_major, register},
 };
+use crate::{fs::file::FileIo, prelude::*};
 
 /// A memory device.
 #[derive(Debug)]

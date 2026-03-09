@@ -3,9 +3,11 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::{FileDesc, get_file_fast},
-        path::FsPath,
-        utils::InodeType,
+        file::{
+            InodeType,
+            file_table::{FileDesc, get_file_fast},
+        },
+        vfs::path::FsPath,
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,

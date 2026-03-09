@@ -2,9 +2,9 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::{
+    fs::file::{
+        CreationFlags, StatusFlags,
         file_table::{FdFlags, FileDesc, get_file_fast},
-        utils::{CreationFlags, StatusFlags},
     },
     prelude::*,
     util::net::write_socket_addr_to_user,

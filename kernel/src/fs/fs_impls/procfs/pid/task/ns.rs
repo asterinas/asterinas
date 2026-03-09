@@ -7,13 +7,17 @@ use ostd::sync::RwMutexUpgradeableGuard;
 
 use crate::{
     fs::{
-        path::{MountNamespace, Path},
+        file::mkmod,
         procfs::{
             DirOps, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps, pid::TidDirOps,
             template::ProcSym,
         },
         pseudofs::NsCommonOps,
-        utils::{DirEntryVecExt, Inode, SymbolicLink, mkmod},
+        utils::DirEntryVecExt,
+        vfs::{
+            inode::{Inode, SymbolicLink},
+            path::{MountNamespace, Path},
+        },
     },
     net::uts_ns::UtsNamespace,
     prelude::*,

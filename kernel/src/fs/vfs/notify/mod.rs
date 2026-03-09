@@ -11,13 +11,16 @@ use bitflags::bitflags;
 use ostd::sync::RwLock;
 
 use crate::{
-    fs::{file_handle::FileLike, path::Path, utils::AccessMode},
+    fs::{
+        file::{AccessMode, FileLike, InodeType},
+        vfs::path::Path,
+    },
     prelude::*,
 };
 
 pub mod inotify;
 
-use super::utils::{Inode, InodeExt, InodeType};
+use crate::fs::vfs::{inode::Inode, inode_ext::InodeExt};
 
 /// Publishes filesystem events to subscribers.
 ///

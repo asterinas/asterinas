@@ -8,8 +8,8 @@ use crate::{
     error::Errno,
     events::IoEvents,
     fs::{
-        inode_handle::FileIo,
-        utils::{InodeIo, StatusFlags},
+        file::{FileIo, StatusFlags},
+        vfs::inode::InodeIo,
     },
     prelude::Result,
     process::signal::{PollHandle, Pollable},

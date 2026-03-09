@@ -3,7 +3,7 @@
 use ostd::mm::{HasSize, io_util::HasVmReaderWriter};
 
 use super::{Ext2, Inode, block_ptr::Ext2Bid, prelude::*};
-use crate::fs::utils::{XATTR_NAME_MAX_LEN, XattrName, XattrNamespace, XattrSetFlags};
+use crate::fs::vfs::xattr::{XATTR_NAME_MAX_LEN, XattrName, XattrNamespace, XattrSetFlags};
 
 const EXT2_XATTR_MAGIC: u32 = 0xEA020000;
 

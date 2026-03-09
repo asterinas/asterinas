@@ -10,9 +10,9 @@ use ostd::{
 
 use super::process_vm::activate_vmar;
 use crate::{
-    fs::{
+    fs::vfs::{
+        inode::Inode,
         path::{Path, PathResolver},
-        utils::Inode,
     },
     prelude::*,
     process::{

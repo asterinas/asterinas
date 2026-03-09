@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::Ordering;
+use core::sync::atomic::{AtomicU16, Ordering};
 
+use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use ostd::sync::RwMutex;
 
-use super::{path::PathResolver, utils::AtomicFileCreationMask};
-use crate::fs::utils::FileCreationMask;
+use super::vfs::path::PathResolver;
+use crate::prelude::*;
 
 /// FS information for a POSIX thread.
 pub struct ThreadFsInfo {

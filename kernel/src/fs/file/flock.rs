@@ -4,10 +4,8 @@ use core::ptr;
 
 use ostd::sync::{WaitQueue, Waiter, Waker};
 
-use crate::{
-    fs::{file_handle::FileLike, inode_handle::InodeHandle},
-    prelude::*,
-};
+use super::{FileLike, InodeHandle};
+use crate::prelude::*;
 
 /// Represents a file lock (FLOCK) with an owner and type.
 #[derive(Debug, Clone)]
