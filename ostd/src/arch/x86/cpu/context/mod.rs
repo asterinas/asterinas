@@ -239,12 +239,12 @@ impl UserContext {
 
     /// Sets the thread-local storage pointer.
     pub fn set_tls_pointer(&mut self, tls: usize) {
-        self.set_fsbase(tls)
+        self.general_regs_mut().set_fsbase(tls)
     }
 
     /// Gets the thread-local storage pointer.
     pub fn tls_pointer(&self) -> usize {
-        self.fsbase()
+        self.general_regs().fsbase()
     }
 
     /// Activates the thread-local storage pointer for the current task.
@@ -257,7 +257,7 @@ impl UserContext {
         // `UserContext::execute`, so it must be activated in advance.
         //
         // SAFETY: Setting `fsbase` won't affect kernel code.
-        unsafe { wrfsbase(self.fsbase() as u64) }
+        unsafe { wrfsbase(self.general_regs().fsbase() as u64) }
     }
 }
 
@@ -435,64 +435,66 @@ impl UserContextApi for UserContext {
     }
 
     fn set_instruction_pointer(&mut self, ip: usize) {
-        self.set_rip(ip);
+        self.general_regs_mut().set_rip(ip)
     }
 
     fn set_stack_pointer(&mut self, sp: usize) {
-        self.set_rsp(sp)
+        self.general_regs_mut().set_rsp(sp)
     }
 
     fn stack_pointer(&self) -> usize {
-        self.rsp()
+        self.general_regs().rsp()
     }
 
     fn instruction_pointer(&self) -> usize {
-        self.rip()
+        self.general_regs().rip()
     }
 }
 
-macro_rules! cpu_context_impl_getter_setter {
-    ( $( [ $field: ident, $setter_name: ident] ),*) => {
-        impl UserContext {
+macro_rules! general_regs_impl_getter_setter {
+    ( $( [ $field: ident ] ),*) => {
+        impl GeneralRegs {
             $(
-                #[doc = concat!("Gets the value of ", stringify!($field))]
+                #[doc = concat!("Gets the value of `", stringify!($field), "`.")]
                 #[inline(always)]
                 pub fn $field(&self) -> usize {
-                    self.user_context.general.$field
+                    self.$field
                 }
 
-                #[doc = concat!("Sets the value of ", stringify!(field))]
-                #[inline(always)]
-                pub fn $setter_name(&mut self, $field: usize) {
-                    self.user_context.general.$field = $field;
+                paste::paste! {
+                    #[doc = concat!("Sets the value of `", stringify!($field), "`.")]
+                    #[inline(always)]
+                    pub fn [<set_ $field>](&mut self, $field: usize) {
+                        self.$field = $field;
+                    }
                 }
             )*
         }
     };
 }
 
-cpu_context_impl_getter_setter!(
-    [rax, set_rax],
-    [orig_rax, set_orig_rax],
-    [rbx, set_rbx],
-    [rcx, set_rcx],
-    [rdx, set_rdx],
-    [rsi, set_rsi],
-    [rdi, set_rdi],
-    [rbp, set_rbp],
-    [rsp, set_rsp],
-    [r8, set_r8],
-    [r9, set_r9],
-    [r10, set_r10],
-    [r11, set_r11],
-    [r12, set_r12],
-    [r13, set_r13],
-    [r14, set_r14],
-    [r15, set_r15],
-    [rip, set_rip],
-    [rflags, set_rflags],
-    [fsbase, set_fsbase],
-    [gsbase, set_gsbase]
+general_regs_impl_getter_setter!(
+    [rax],
+    [orig_rax],
+    [rbx],
+    [rcx],
+    [rdx],
+    [rsi],
+    [rdi],
+    [rbp],
+    [rsp],
+    [r8],
+    [r9],
+    [r10],
+    [r11],
+    [r12],
+    [r13],
+    [r14],
+    [r15],
+    [rip],
+    [rflags],
+    [fsbase],
+    [gsbase]
 );
 
 /// The FPU context of user task.
