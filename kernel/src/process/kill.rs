@@ -36,7 +36,8 @@ pub fn kill(pid: Pid, signal: Option<Box<dyn Signal>>, ctx: &Context) -> Result<
     }
 
     // Slow path
-    let process = process_table::get_process(pid)
+    let process = process_table::pid_table_mut()
+        .get_process(pid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target process does not exist"))?;
 
     kill_process(&process, signal, ctx)
@@ -51,7 +52,8 @@ pub fn kill(pid: Pid, signal: Option<Box<dyn Signal>>, ctx: &Context) -> Result<
 /// If `signal` is `None`, this method will only check permission without sending
 /// any signal.
 pub fn kill_group<S: Signal + Clone>(pgid: Pgid, signal: Option<S>, ctx: &Context) -> Result<()> {
-    let process_group = process_table::get_process_group(&pgid)
+    let process_group = process_table::pid_table_mut()
+        .get_process_group(&pgid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target group does not exist"))?;
 
     let mut result = Ok(());
@@ -77,7 +79,8 @@ pub fn kill_group<S: Signal + Clone>(pgid: Pgid, signal: Option<S>, ctx: &Contex
 /// If `signal` is `None`, this method will only check permission without sending
 /// any signal.
 pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<Box<dyn Signal>>, ctx: &Context) -> Result<()> {
-    let thread = process_table::get_thread(tid)
+    let thread = process_table::pid_table_mut()
+        .get_thread(tid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target thread does not exist"))?;
     let target_posix_thread = thread.as_posix_thread().unwrap();
 
