@@ -131,8 +131,15 @@ cp @aster-configuration@ ${BUILD_DIR}/etc/nixos/aster_configuration.nix
 cp -r @aster-etc-nixos@/modules ${BUILD_DIR}/etc/nixos
 cp -r @aster-etc-nixos@/overlays ${BUILD_DIR}/etc/nixos
 
+SYSTEM_CLOSURE=$(nix-build '<nixpkgs/nixos>' -A system \
+    -I nixos-config=${BUILD_DIR}/etc/nixos/configuration.nix \
+    --option extra-substituters "@aster-substituters@" \
+    --option extra-trusted-public-keys "@aster-trusted-public-keys@" \
+    --no-out-link)
+
 export PATH=${PATH}:/run/current-system/sw/bin
 nixos-install --root ${BUILD_DIR} --no-root-passwd \
+    --system ${SYSTEM_CLOSURE} \
     --option extra-substituters "@aster-substituters@" \
     --option extra-trusted-public-keys "@aster-trusted-public-keys@"
 
