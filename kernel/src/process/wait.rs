@@ -8,11 +8,8 @@ use super::{
 use crate::{
     prelude::*,
     process::{
-        ReapedChildrenStats, Uid,
-        posix_thread::{AsPosixThread, thread_table},
-        process_table,
-        signal::sig_num::SigNum,
-        status::StopWaitStatus,
+        ReapedChildrenStats, Uid, posix_thread::AsPosixThread, process_table,
+        signal::sig_num::SigNum, status::StopWaitStatus,
     },
     time::clocks::ProfClock,
 };
@@ -212,25 +209,19 @@ fn reap_zombie_child(
     assert!(child_process.status().is_zombie());
 
     for task in child_process.tasks().lock().as_slice() {
-        thread_table::remove_thread(task.as_posix_thread().unwrap().tid());
+        process_table::remove_thread(task.as_posix_thread().unwrap().tid());
     }
 
-    // Lock order: children of process -> session table -> group table
-    // -> process table -> group of process -> group inner -> session inner
-    let mut session_table_mut = process_table::session_table_mut();
-    let mut group_table_mut = process_table::group_table_mut();
+    // Lock order: children of process -> pid table
+    // -> group of process -> group inner -> session inner
+    let mut pid_table = process_table::pid_table_mut();
 
     // Remove the process from the global table
-    let mut process_table_mut = process_table::process_table_mut();
-    process_table_mut.remove(child_process.pid());
+    pid_table.remove_process(child_process.pid());
 
     // Remove the process group and the session from global table, if necessary
     let mut child_group_mut = child_process.process_group.lock();
-    child_process.clear_old_group_and_session(
-        &mut child_group_mut,
-        &mut session_table_mut,
-        &mut group_table_mut,
-    );
+    child_process.clear_old_group_and_session(&mut child_group_mut, &mut pid_table);
     *child_group_mut = Weak::new();
 
     let (mut user_time, mut kernel_time) = child_process.reaped_children_stats().lock().get();

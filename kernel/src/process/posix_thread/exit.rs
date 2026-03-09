@@ -4,7 +4,6 @@ use ostd::{mm::VmIo, task::Task};
 
 use super::{
     AsPosixThread, AsThreadLocal, ThreadLocal, futex::futex_wake, robust_list::wake_robust_futex,
-    thread_table,
 };
 use crate::{
     current_userspace,
@@ -12,6 +11,7 @@ use crate::{
     process::{
         TermStatus,
         exit::exit_process,
+        process_table,
         signal::{constants::SIGKILL, signals::kernel::KernelSignal},
         task_set::TaskSet,
     },
@@ -77,7 +77,7 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
     // According to Linux behavior, the main thread shouldn't be removed from the table until the
     // process is reaped by its parent.
     if posix_thread.tid() != posix_process.pid() {
-        thread_table::remove_thread(posix_thread.tid());
+        process_table::remove_thread(posix_thread.tid());
     }
 
     // Drop fields in `PosixThread`.
