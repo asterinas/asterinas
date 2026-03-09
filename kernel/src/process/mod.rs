@@ -7,11 +7,11 @@ mod exit;
 mod kill;
 mod namespace;
 mod pid_file;
+pub mod pid_table;
 pub mod posix_thread;
 #[expect(clippy::module_inception)]
 mod process;
 mod process_filter;
-pub mod process_table;
 mod process_vm;
 mod program_loader;
 pub mod rlimit;
