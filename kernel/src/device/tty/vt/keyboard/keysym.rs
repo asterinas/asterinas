@@ -897,6 +897,6 @@ static FUNC_TABLE: [Option<&'static [u8]>; 30] = [
     Some(b"\x1b[P"),
 ];
 
-pub(super) fn init() {
+pub(super) fn init_in_first_process() {
     KEYMAPS.call_once(KeyMaps::default);
 }

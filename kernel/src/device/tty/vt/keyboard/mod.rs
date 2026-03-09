@@ -6,9 +6,9 @@ mod keysym;
 use core::sync::atomic::{AtomicU8, Ordering};
 
 /// Initializes the key symbol mapping table and keyboard event handler.
-pub(super) fn init() {
-    keysym::init();
-    handler::init();
+pub(super) fn init_in_first_process() {
+    keysym::init_in_first_process();
+    handler::init_in_first_process();
 }
 
 /// A modifier key (Shift, Ctrl, Alt).
