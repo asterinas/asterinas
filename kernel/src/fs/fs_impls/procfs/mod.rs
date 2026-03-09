@@ -35,7 +35,7 @@ use crate::{
     prelude::*,
     process::{
         Pid,
-        process_table::{self, PidEvent},
+        pid_table::{self, PidEvent},
     },
 };
 
@@ -151,7 +151,7 @@ impl RootDirOps {
             .unwrap();
 
         let weak_ptr = Arc::downgrade(&root_inode);
-        process_table::pid_table_mut().register_observer(weak_ptr);
+        pid_table::pid_table_mut().register_observer(weak_ptr);
 
         root_inode
     }
@@ -190,7 +190,7 @@ impl DirOps for RootDirOps {
 
     fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
         if let Ok(pid) = name.parse::<Pid>()
-            && let pid_table = process_table::pid_table_mut()
+            && let pid_table = pid_table::pid_table_mut()
             && let Some(process_ref) = pid_table.get_process(pid)
         {
             let mut cached_children = dir.cached_children().write();
@@ -218,7 +218,7 @@ impl DirOps for RootDirOps {
         &self,
         dir: &'a ProcDir<Self>,
     ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>> {
-        let pid_table = process_table::pid_table_mut();
+        let pid_table = pid_table::pid_table_mut();
         let mut cached_children = dir.cached_children().write();
 
         for process_ref in pid_table.iter_processes() {
