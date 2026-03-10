@@ -160,9 +160,9 @@ impl Statx {
             stx_blocks: info.nr_sectors_allocated as u64,
             stx_attributes_mask,
             stx_atime: StatxTimestamp::from(info.last_access_at),
-            stx_btime: StatxTimestamp::from(info.last_access_at),
+            stx_btime: StatxTimestamp::from(Duration::ZERO), // TODO: Metadata do not track birth time for now.
             stx_ctime: StatxTimestamp::from(info.last_meta_change_at),
-            stx_mtime: StatxTimestamp::from(info.last_meta_change_at),
+            stx_mtime: StatxTimestamp::from(info.last_modify_at),
             stx_rdev_major,
             stx_rdev_minor,
             stx_dev_major,
