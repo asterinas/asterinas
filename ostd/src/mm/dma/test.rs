@@ -7,7 +7,7 @@ use crate::{
         FrameAllocOptions, HasPaddr, PAGE_SIZE, VmReader, VmWriter,
         dma::*,
         io::{VmIo, VmIoOnce},
-        io_util::HasVmReaderWriter,
+        io::util::HasVmReaderWriter,
     },
     prelude::*,
 };
