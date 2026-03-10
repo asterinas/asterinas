@@ -98,7 +98,7 @@ pub struct Process {
     /// Children processes
     children: Mutex<Option<BTreeMap<Pid, Arc<Process>>>>,
     /// Process group
-    pub(super) process_group: Mutex<Weak<ProcessGroup>>,
+    pub(super) process_group: Mutex<Option<Arc<ProcessGroup>>>,
     /// The resource usage statistics of reaped child processes.
     reaped_children_stats: Mutex<ReapedChildrenStats>,
     /// resource limits
@@ -246,7 +246,7 @@ impl Process {
             status: ProcessStatus::default(),
             parent: ParentProcess::new(Weak::new()),
             children: Mutex::new(Some(BTreeMap::new())),
-            process_group: Mutex::new(Weak::new()),
+            process_group: Mutex::new(None),
             reaped_children_stats: Mutex::new(ReapedChildrenStats::default()),
             is_child_subreaper: AtomicBool::new(false),
             has_child_subreaper: AtomicBool::new(false),
@@ -344,7 +344,7 @@ impl Process {
     pub fn pgid(&self) -> Pgid {
         self.process_group
             .lock()
-            .upgrade()
+            .as_ref()
             .map_or(0, |group| group.pgid())
     }
 
@@ -355,18 +355,16 @@ impl Process {
     pub fn sid(&self) -> Sid {
         self.process_group
             .lock()
-            .upgrade()
-            .and_then(|group| group.session())
-            .map_or(0, |session| session.sid())
+            .as_ref()
+            .map_or(0, |group| group.session().sid())
     }
 
     /// Returns the controlling terminal of the process, if any.
     pub fn terminal(&self) -> Option<Arc<dyn Terminal>> {
         self.process_group
             .lock()
-            .upgrade()
-            .and_then(|group| group.session())
-            .and_then(|session| session.lock().terminal().cloned())
+            .as_ref()
+            .and_then(|group| group.session().lock().terminal().cloned())
     }
 
     /// Moves the process to the new session.
@@ -400,12 +398,12 @@ impl Process {
 
     pub(super) fn clear_old_group_and_session(
         &self,
-        process_group_mut: &mut MutexGuard<Weak<ProcessGroup>>,
+        process_group_mut: &mut MutexGuard<Option<Arc<ProcessGroup>>>,
         pid_table: &mut PidTable,
     ) {
-        let process_group = process_group_mut.upgrade().unwrap();
+        let process_group = process_group_mut.take().unwrap();
         let mut process_group_inner = process_group.lock();
-        let session = process_group.session().unwrap();
+        let session = process_group.session();
         let mut session_inner = session.lock();
 
         // Remove the process from the process group.
@@ -419,23 +417,20 @@ impl Process {
                 pid_table.remove_session(session.sid());
             }
         }
-
-        **process_group_mut = Weak::new();
     }
 
     fn set_new_session(
         self: &Arc<Self>,
-        process_group_mut: &mut MutexGuard<Weak<ProcessGroup>>,
+        process_group_mut: &mut MutexGuard<Option<Arc<ProcessGroup>>>,
         pid_table: &mut PidTable,
     ) -> Sid {
-        let (session, process_group) = Session::new_pair(self.clone());
+        let (session, process_group) = Session::new_pair(self);
         let sid = session.sid();
 
-        **process_group_mut = Arc::downgrade(&process_group);
-
         // Insert the new session and the new process group to the global table.
-        pid_table.insert_session(session.sid(), session);
-        pid_table.insert_process_group(process_group.pgid(), process_group);
+        pid_table.insert_session(session.sid(), &session);
+        pid_table.insert_process_group(process_group.pgid(), &process_group);
+        **process_group_mut = Some(process_group);
 
         sid
     }
@@ -482,10 +477,10 @@ impl Process {
             Some(
                 self.process_group
                     .lock()
-                    .upgrade()
+                    .as_ref()
                     .unwrap()
                     .session()
-                    .unwrap(),
+                    .clone(),
             )
         } else {
             return_errno_with_message!(
@@ -511,22 +506,26 @@ impl Process {
         new_process_group: Arc<ProcessGroup>,
     ) -> Result<()> {
         let mut process_group_mut = self.process_group.lock();
-        let process_group = process_group_mut.upgrade().unwrap();
 
-        let session = process_group.session().unwrap();
+        let process_group = process_group_mut.as_ref().unwrap();
+        let session = process_group.session();
+
         if session.sid() == self.pid {
             return_errno_with_message!(
                 Errno::EPERM,
                 "a session leader cannot be moved to a new process group"
             );
         }
-        if !Arc::ptr_eq(&session, &new_process_group.session().unwrap()) {
+        if !Arc::ptr_eq(session, new_process_group.session()) {
             return_errno_with_message!(
                 Errno::EPERM,
                 "the new process group does not belong to the same session"
             );
         }
-        if current_session.is_some_and(|current| !Arc::ptr_eq(&current, &session)) {
+        if current_session
+            .as_ref()
+            .is_some_and(|current| !Arc::ptr_eq(current, session))
+        {
             return_errno_with_message!(Errno::EPERM, "the process belongs to a different session");
         }
 
@@ -545,18 +544,21 @@ impl Process {
                 }
                 core::cmp::Ordering::Equal => return Ok(()),
             };
-        let mut session_inner = session.lock();
 
         // Remove the process from the old process group
+        let mut session_inner = session.lock();
         process_group_inner.remove_process(&self.pid);
         if process_group_inner.is_empty() {
             pid_table.remove_process_group(process_group.pgid());
             session_inner.remove_process_group(&process_group.pgid());
         }
+        drop(session_inner);
+        drop(process_group_inner);
 
         // Insert the process to the new process group
-        new_group_inner.insert_process(self.clone());
-        *process_group_mut = Arc::downgrade(&new_process_group);
+        new_group_inner.insert_process(self);
+        drop(new_group_inner);
+        *process_group_mut = Some(new_process_group);
 
         Ok(())
     }
@@ -569,10 +571,13 @@ impl Process {
     ) -> Result<()> {
         let mut process_group_mut = self.process_group.lock();
 
-        let process_group = process_group_mut.upgrade().unwrap();
-        let session = process_group.session().unwrap();
+        let process_group = process_group_mut.as_ref().unwrap();
+        let session = process_group.session();
 
-        if current_session.is_some_and(|current| !Arc::ptr_eq(&current, &session)) {
+        if current_session
+            .as_ref()
+            .is_some_and(|current| !Arc::ptr_eq(current, session))
+        {
             return_errno_with_message!(Errno::EPERM, "the process belongs to a different session");
         }
         if process_group.pgid() == self.pid {
@@ -580,21 +585,22 @@ impl Process {
             return Ok(());
         }
 
+        // Remove the process from the old process group
         let mut process_group_inner = process_group.lock();
         let mut session_inner = session.lock();
-
-        // Remove the process from the old process group
         process_group_inner.remove_process(&self.pid);
         if process_group_inner.is_empty() {
             pid_table.remove_process_group(process_group.pgid());
             session_inner.remove_process_group(&process_group.pgid());
         }
+        drop(session_inner);
+        drop(process_group_inner);
 
         // Create a new process group and insert the process to it
-        let new_process_group = ProcessGroup::new(self.clone(), Arc::downgrade(&session));
-        *process_group_mut = Arc::downgrade(&new_process_group);
-        pid_table.insert_process_group(new_process_group.pgid(), new_process_group.clone());
-        session_inner.insert_process_group(new_process_group);
+        let new_process_group = ProcessGroup::new(self, session.clone());
+        pid_table.insert_process_group(new_process_group.pgid(), &new_process_group);
+        session.lock().insert_process_group(&new_process_group);
+        *process_group_mut = Some(new_process_group);
 
         Ok(())
     }

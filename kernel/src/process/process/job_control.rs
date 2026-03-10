@@ -107,7 +107,7 @@ impl JobControl {
         let mut inner = self.inner.lock();
 
         debug_assert!(Arc::ptr_eq(
-            &process_group.session().unwrap(),
+            process_group.session(),
             &inner.session.upgrade().unwrap()
         ));
         inner.foreground = Arc::downgrade(process_group);
@@ -130,14 +130,14 @@ impl JobControl {
 
         self.wait_queue.pause_until(|| {
             let process_group_mut = current.process_group.lock();
-            let process_group = process_group_mut.upgrade().unwrap();
-            let session = process_group.session().unwrap();
+            let process_group = process_group_mut.as_ref().unwrap();
+            let session = process_group.session();
 
             let inner = self.inner.lock();
             if !inner
                 .session
                 .upgrade()
-                .is_some_and(|terminal_session| Arc::ptr_eq(&terminal_session, &session))
+                .is_some_and(|terminal_session| Arc::ptr_eq(&terminal_session, session))
             {
                 // The terminal is not our controlling terminal. Don't wait.
                 return Some(());
@@ -146,7 +146,7 @@ impl JobControl {
             inner
                 .foreground
                 .upgrade()
-                .is_some_and(|terminal_foregroup| Arc::ptr_eq(&terminal_foregroup, &process_group))
+                .is_some_and(|terminal_foregroup| Arc::ptr_eq(&terminal_foregroup, process_group))
                 .then_some(())
         })
     }

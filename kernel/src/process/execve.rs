@@ -153,7 +153,7 @@ fn do_execve_no_return(
     // Wait for all other threads to terminate,
     // then promote the current thread to be the process's main thread if necessary.
     wait_other_threads_exit(ctx)?;
-    pid_table::make_current_main_thread(ctx);
+    make_current_main_thread(ctx);
 
     // Activate the new VMAR in the current context and apply file-capability changes,
     // while holding the process VMAR lock.
@@ -224,6 +224,34 @@ fn wait_other_threads_exit(ctx: &Context) -> Result<()> {
         tasks = ctx.process.tasks().lock();
         tasks.clear_execve_waker();
     }
+}
+
+fn make_current_main_thread(ctx: &Context) {
+    let pid = ctx.process.pid();
+    let old_tid = ctx.posix_thread.tid();
+
+    // The current thread is already the main thread.
+    if old_tid == pid {
+        return;
+    }
+
+    // The current thread is not the main thread.
+
+    // Lock order: PID table -> tasks of process
+    let mut pid_table = pid_table::pid_table_mut();
+    let mut tasks = ctx.process.tasks().lock();
+
+    assert!(tasks.has_exited_main());
+    assert!(tasks.in_execve());
+    assert_eq!(tasks.as_slice().len(), 2);
+    assert!(core::ptr::eq(ctx.task, tasks.as_slice()[1].as_ref()));
+
+    tasks.swap_main(pid, old_tid);
+    ctx.posix_thread.set_main(pid);
+    drop(tasks);
+
+    let thread = pid_table.take_thread(old_tid).unwrap();
+    pid_table.replace_thread(pid, &thread);
 }
 
 fn set_cpu_context(
