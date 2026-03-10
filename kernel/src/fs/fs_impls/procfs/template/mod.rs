@@ -34,7 +34,7 @@ struct Common {
 }
 
 impl Common {
-    pub fn new(metadata: Metadata, fs: Weak<dyn FileSystem>, is_volatile: bool) -> Self {
+    fn new(metadata: Metadata, fs: Weak<dyn FileSystem>, is_volatile: bool) -> Self {
         Self {
             metadata: RwLock::new(metadata),
             extension: Extension::new(),
@@ -43,82 +43,82 @@ impl Common {
         }
     }
 
-    pub fn fs(&self) -> Arc<dyn FileSystem> {
+    fn fs(&self) -> Arc<dyn FileSystem> {
         self.fs.upgrade().unwrap()
     }
 
-    pub fn metadata(&self) -> Metadata {
+    fn metadata(&self) -> Metadata {
         *self.metadata.read()
     }
 
-    pub fn ino(&self) -> u64 {
+    fn ino(&self) -> u64 {
         self.metadata.read().ino
     }
 
-    pub fn type_(&self) -> InodeType {
+    fn type_(&self) -> InodeType {
         self.metadata.read().type_
     }
 
-    pub fn size(&self) -> usize {
+    fn size(&self) -> usize {
         self.metadata.read().size
     }
 
-    pub fn atime(&self) -> Duration {
+    fn atime(&self) -> Duration {
         self.metadata.read().last_access_at
     }
 
-    pub fn set_atime(&self, time: Duration) {
+    fn set_atime(&self, time: Duration) {
         self.metadata.write().last_access_at = time;
     }
 
-    pub fn mtime(&self) -> Duration {
+    fn mtime(&self) -> Duration {
         self.metadata.read().last_modify_at
     }
 
-    pub fn set_mtime(&self, time: Duration) {
+    fn set_mtime(&self, time: Duration) {
         self.metadata.write().last_modify_at = time;
     }
 
-    pub fn ctime(&self) -> Duration {
+    fn ctime(&self) -> Duration {
         self.metadata.read().last_meta_change_at
     }
 
-    pub fn set_ctime(&self, time: Duration) {
+    fn set_ctime(&self, time: Duration) {
         self.metadata.write().last_meta_change_at = time;
     }
 
-    pub fn mode(&self) -> Result<InodeMode> {
+    fn mode(&self) -> Result<InodeMode> {
         Ok(self.metadata.read().mode)
     }
 
-    pub fn set_mode(&self, mode: InodeMode) -> Result<()> {
+    fn set_mode(&self, mode: InodeMode) -> Result<()> {
         self.metadata.write().mode = mode;
         Ok(())
     }
 
-    pub fn owner(&self) -> Result<Uid> {
+    fn owner(&self) -> Result<Uid> {
         Ok(self.metadata.read().uid)
     }
 
-    pub fn set_owner(&self, uid: Uid) -> Result<()> {
+    fn set_owner(&self, uid: Uid) -> Result<()> {
         self.metadata.write().uid = uid;
         Ok(())
     }
 
-    pub fn group(&self) -> Result<Gid> {
+    fn group(&self) -> Result<Gid> {
         Ok(self.metadata.read().gid)
     }
 
-    pub fn set_group(&self, gid: Gid) -> Result<()> {
+    fn set_group(&self, gid: Gid) -> Result<()> {
         self.metadata.write().gid = gid;
         Ok(())
     }
 
-    pub fn is_volatile(&self) -> bool {
+    fn is_volatile(&self) -> bool {
         self.is_volatile
     }
 
-    pub fn extension(&self) -> &Extension {
+    fn extension(&self) -> &Extension {
         &self.extension
     }
 }
