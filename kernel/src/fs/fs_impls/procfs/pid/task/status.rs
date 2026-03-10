@@ -145,8 +145,8 @@ impl FileOps for StatusFileOps {
 
         if let Some(vmar_ref) = process.lock_vmar().as_ref() {
             let vsize = vmar_ref.get_mappings_total_size();
-            let anon = vmar_ref.get_rss_counter(RssType::RSS_ANONPAGES) * (PAGE_SIZE / 1024);
-            let file = vmar_ref.get_rss_counter(RssType::RSS_FILEPAGES) * (PAGE_SIZE / 1024);
+            let anon = vmar_ref.get_rss_counter(RssType::Anon) * (PAGE_SIZE / 1024);
+            let file = vmar_ref.get_rss_counter(RssType::File) * (PAGE_SIZE / 1024);
             let rss = anon + file;
             writeln!(
                 printer,
