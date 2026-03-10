@@ -227,12 +227,27 @@ pub trait VmIoOnce {
     fn write_once<T: PodOnce>(&self, offset: usize, new_val: &T) -> Result<()>;
 }
 
-/// A marker type used for [`VmReader`] and [`VmWriter`],
-/// representing whether reads or writes on the underlying memory region are fallible.
+/// A marker type used for _fallible_ memory,
+/// where memory access _might_ trigger page faults.
+///
+/// The most prominent example of fallible memory is user virtual memory.
+///
+/// By definition, infallible memory is a subset of fallible memory.
+/// As a consequence, any code that intends to work with fallible memory
+/// should work for both user virtual memory and kernel virtual memory.
+///
+/// [`VmReader`] and [`VmWriter`] types use this marker type
+/// to indicate the property of the underlying memory.
 pub enum Fallible {}
 
-/// A marker type used for [`VmReader`] and [`VmWriter`],
-/// representing whether reads or writes on the underlying memory region are infallible.
+/// A marker type used for _infallible_ memory,
+/// where memory access is valid and won't trigger page faults.
+///
+/// The most prominent example of infallible memory is kernel virtual memory
+/// (at least for the part where Rust code and data reside).
+///
+/// [`VmReader`] and [`VmWriter`] types use this marker type
+/// to indicate the property of the underlying memory.
 pub enum Infallible {}
 
 /// Copies `len` bytes from `src` to `dst`.
