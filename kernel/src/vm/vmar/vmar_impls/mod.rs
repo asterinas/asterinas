@@ -86,13 +86,12 @@ impl Vmar {
 
 /// The type representing categories of Resident Set Size (RSS).
 ///
-/// See <https://github.com/torvalds/linux/blob/fac04efc5c793dccbd07e2d59af9f90b7fc0dca4/include/linux/mm_types_task.h#L26..L32>
+/// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/include/linux/mm_types_task.h#L26-L32>
 #[repr(u32)]
-#[expect(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
 pub enum RssType {
-    RSS_FILEPAGES = 0,
-    RSS_ANONPAGES = 1,
+    File = 0,
+    Anon = 1,
 }
 
 const NUM_RSS_COUNTERS: usize = 2;
