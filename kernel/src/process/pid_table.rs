@@ -7,6 +7,8 @@
 //! the kernel objects that share the same numeric identifier, which eliminates
 //! the need for separate per-type lookup tables.
 
+use alloc::collections::btree_map::Entry;
+
 use super::{Pgid, Pid, Process, ProcessGroup, Session, Sid};
 use crate::{
     events::{Events, Observer, Subject},
@@ -17,116 +19,12 @@ use crate::{
 
 static PID_TABLE: Mutex<PidTable> = Mutex::new(PidTable::new());
 
-/// An entry in the unified PID table.
-///
-/// Each entry stores references to the thread, process, process group, and
-/// session that share the same numeric identifier. Not all slots need to be
-/// occupied at the same time.
-struct PidEntry {
-    inner: Mutex<PidEntryInner>,
-}
-
-struct PidEntryInner {
-    // `thread` and `process` are only observed through the PID table. Their
-    // lifetime is anchored elsewhere, so these slots must not keep them alive.
-    thread: Weak<Thread>,
-    process: Weak<Process>,
-    // `session` is different: live sessions are otherwise reached through
-    // `Weak<Session>` links from process groups and job control state, so the
-    // PID table needs to keep the strong reference for SID lookups.
-    process_group: Option<Arc<ProcessGroup>>,
-    session: Option<Arc<Session>>,
-}
-
-impl PidEntry {
-    /// Creates a new empty `PidEntry`.
-    fn new() -> Self {
-        Self {
-            inner: Mutex::new(PidEntryInner {
-                thread: Weak::new(),
-                process: Weak::new(),
-                process_group: None,
-                session: None,
-            }),
-        }
-    }
-
-    /// Returns the thread associated with the entry, if any.
-    fn thread(&self) -> Option<Arc<Thread>> {
-        self.inner.lock().thread.upgrade()
-    }
-
-    /// Returns the process associated with the entry, if any.
-    fn process(&self) -> Option<Arc<Process>> {
-        self.inner.lock().process.upgrade()
-    }
-
-    /// Returns whether the entry still tracks a live process.
-    fn has_live_process(&self) -> bool {
-        self.inner.lock().process.strong_count() > 0
-    }
-
-    /// Returns the process group associated with the entry, if any.
-    fn process_group(&self) -> Option<Arc<ProcessGroup>> {
-        self.inner.lock().process_group.clone()
-    }
-
-    /// Sets the thread reference.
-    pub(super) fn set_thread(&self, thread: &Arc<Thread>) {
-        self.inner.lock().thread = Arc::downgrade(thread);
-    }
-
-    /// Clears the thread reference.
-    pub(super) fn clear_thread(&self) {
-        self.inner.lock().thread = Weak::new();
-    }
-
-    /// Sets the process reference.
-    pub(super) fn set_process(&self, process: &Arc<Process>) {
-        self.inner.lock().process = Arc::downgrade(process);
-    }
-
-    /// Clears the process reference.
-    pub(super) fn clear_process(&self) {
-        self.inner.lock().process = Weak::new();
-    }
-
-    /// Sets the process group reference.
-    pub(super) fn set_process_group(&self, group: &Arc<ProcessGroup>) {
-        self.inner.lock().process_group = Some(group.clone());
-    }
-
-    /// Clears the process group reference.
-    pub(super) fn clear_process_group(&self) {
-        self.inner.lock().process_group = None;
-    }
-
-    /// Sets the session reference.
-    pub(super) fn set_session(&self, session: &Arc<Session>) {
-        self.inner.lock().session = Some(session.clone());
-    }
-
-    /// Clears the session reference.
-    pub(super) fn clear_session(&self) {
-        self.inner.lock().session = None;
-    }
-
-    /// Returns `true` if the entry no longer tracks any live object.
-    fn is_empty(&self) -> bool {
-        let inner = self.inner.lock();
-        inner.thread.strong_count() == 0
-            && inner.process.strong_count() == 0
-            && inner.process_group.is_none()
-            && inner.session.is_none()
-    }
-}
-
 /// The unified PID table.
 ///
-/// Replaces the former separate process, process-group, session, and thread
-/// tables with a single structure.
-pub(crate) struct PidTable {
-    entries: BTreeMap<u32, Arc<PidEntry>>,
+/// Combines the process, process-group, session, and thread tables into a
+/// single structure.
+pub struct PidTable {
+    entries: BTreeMap<u32, Arc<Mutex<PidEntry>>>,
     process_count: usize,
     subject: Subject<PidEvent>,
 }
@@ -141,20 +39,10 @@ impl PidTable {
     }
 
     /// Returns the entry for the given ID, or creates a new one if absent.
-    fn get_or_create_entry(&mut self, id: u32) -> Arc<PidEntry> {
+    fn get_or_create_entry(&mut self, id: u32) -> &Arc<Mutex<PidEntry>> {
         self.entries
             .entry(id)
-            .or_insert_with(|| Arc::new(PidEntry::new()))
-            .clone()
-    }
-
-    /// Removes the entry entirely if all weak references are dead.
-    fn try_remove_entry(&mut self, id: u32) {
-        if let Some(entry) = self.entries.get(&id)
-            && entry.is_empty()
-        {
-            self.entries.remove(&id);
-        }
+            .or_insert_with(|| Arc::new(Mutex::new(PidEntry::new())))
     }
 
     // ---- Thread operations ----
@@ -163,57 +51,113 @@ impl PidTable {
     pub(super) fn insert_thread(&mut self, tid: Tid, thread: Arc<Thread>) {
         debug_assert_eq!(tid, thread.as_posix_thread().unwrap().tid());
         let entry = self.get_or_create_entry(tid);
-        entry.set_thread(&thread);
+        entry.lock().set_thread(&thread);
     }
 
     /// Removes a thread from the table.
     pub(super) fn remove_thread(&mut self, tid: Tid) {
-        if let Some(entry) = self.entries.get(&tid) {
-            entry.clear_thread();
+        let Entry::Occupied(map_entry) = self.entries.entry(tid) else {
+            return;
+        };
+
+        let should_remove = {
+            let mut pid_entry = map_entry.get().lock();
+            pid_entry.clear_thread();
+            // Drop the locked PID entry before removing the B-tree entry.
+            pid_entry.is_empty()
+        };
+
+        if should_remove {
+            map_entry.remove();
         }
-        self.try_remove_entry(tid);
     }
 
     /// Gets a thread by a TID.
     pub fn get_thread(&self, tid: Tid) -> Option<Arc<Thread>> {
-        self.entries.get(&tid).and_then(|e| e.thread())
+        self.entries
+            .get(&tid)
+            .and_then(|entry| entry.lock().thread())
+    }
+
+    /// Removes a thread from the table and returns it.
+    pub(super) fn take_thread(&mut self, tid: Tid) -> Option<Arc<Thread>> {
+        let Entry::Occupied(map_entry) = self.entries.entry(tid) else {
+            return None;
+        };
+
+        let (thread, should_remove) = {
+            let mut pid_entry = map_entry.get().lock();
+            let thread = pid_entry.thread()?;
+            pid_entry.clear_thread();
+            // Drop the locked PID entry before removing the B-tree entry.
+            (thread, pid_entry.is_empty())
+        };
+
+        if should_remove {
+            map_entry.remove();
+        }
+
+        Some(thread)
+    }
+
+    /// Returns an iterator over threads that have a live thread reference.
+    pub fn iter_threads(&self) -> impl Iterator<Item = Arc<Thread>> + '_ {
+        self.entries
+            .values()
+            .filter_map(|entry| entry.lock().thread())
     }
 
     // ---- Process operations ----
 
     /// Inserts a process into the table.
     pub(super) fn insert_process(&mut self, pid: Pid, process: Arc<Process>) {
-        let entry = self.get_or_create_entry(pid);
-        if !entry.has_live_process() {
-            self.process_count += 1;
-        }
+        // Clone the entry handle so the borrow of `self` ends before we update
+        // `self.process_count`.
+        let entry = self.get_or_create_entry(pid).clone();
+        let mut entry = entry.lock();
+
+        debug_assert!(!entry.has_live_process());
+        self.process_count += 1;
+
         entry.set_process(&process);
     }
 
     /// Removes a process from the table and notifies observers.
     pub(super) fn remove_process(&mut self, pid: Pid) {
-        let Some(entry) = self.entries.get(&pid) else {
+        let Entry::Occupied(map_entry) = self.entries.entry(pid) else {
             return;
         };
 
-        if !entry.has_live_process() {
-            return;
-        }
+        let should_remove = {
+            let mut pid_entry = map_entry.get().lock();
 
-        self.process_count -= 1;
-        entry.clear_process();
+            debug_assert!(pid_entry.has_live_process());
+            self.process_count -= 1;
+
+            pid_entry.clear_process();
+            // Drop the locked PID entry before removing the B-tree entry.
+            pid_entry.is_empty()
+        };
+
         self.subject.notify_observers(&PidEvent::Exit(pid));
-        self.try_remove_entry(pid);
+
+        if should_remove {
+            map_entry.remove();
+        }
     }
 
     /// Gets a process by a PID.
     pub fn get_process(&self, pid: Pid) -> Option<Arc<Process>> {
-        self.entries.get(&pid).and_then(|e| e.process())
+        self.entries
+            .get(&pid)
+            .and_then(|entry| entry.lock().process())
     }
 
     /// Returns an iterator over processes that have a live process reference.
     pub fn iter_processes(&self) -> impl Iterator<Item = Arc<Process>> + '_ {
-        self.entries.values().filter_map(|e| e.process())
+        self.entries
+            .values()
+            .filter_map(|entry| entry.lock().process())
     }
 
     /// Returns the number of live processes.
@@ -226,27 +170,39 @@ impl PidTable {
     /// Inserts a process group into the table.
     pub(super) fn insert_process_group(&mut self, pgid: Pgid, group: Arc<ProcessGroup>) {
         let entry = self.get_or_create_entry(pgid);
-        entry.set_process_group(&group);
+        entry.lock().set_process_group(&group);
     }
 
     /// Removes a process group from the table.
     pub(super) fn remove_process_group(&mut self, pgid: Pgid) {
-        if let Some(entry) = self.entries.get(&pgid) {
-            entry.clear_process_group();
+        let Entry::Occupied(map_entry) = self.entries.entry(pgid) else {
+            return;
+        };
+
+        let should_remove = {
+            let mut pid_entry = map_entry.get().lock();
+            pid_entry.clear_process_group();
+            // Drop the locked PID entry before removing the B-tree entry.
+            pid_entry.is_empty()
+        };
+
+        if should_remove {
+            map_entry.remove();
         }
-        self.try_remove_entry(pgid);
     }
 
     /// Gets a process group by a PGID.
     pub fn get_process_group(&self, pgid: &Pgid) -> Option<Arc<ProcessGroup>> {
-        self.entries.get(pgid).and_then(|e| e.process_group())
+        self.entries
+            .get(pgid)
+            .and_then(|entry| entry.lock().process_group())
     }
 
     /// Returns whether a process group with the given PGID exists.
     pub fn contains_process_group(&self, pgid: &Pgid) -> bool {
         self.entries
             .get(pgid)
-            .is_some_and(|entry| entry.inner.lock().process_group.is_some())
+            .is_some_and(|entry| entry.lock().has_live_process_group())
     }
 
     // ---- Session operations ----
@@ -254,20 +210,25 @@ impl PidTable {
     /// Inserts a session into the table.
     pub(super) fn insert_session(&mut self, sid: Sid, session: Arc<Session>) {
         let entry = self.get_or_create_entry(sid);
-        entry.set_session(&session);
+        entry.lock().set_session(&session);
     }
 
     /// Removes a session from the table.
     pub(super) fn remove_session(&mut self, sid: Sid) {
-        if let Some(entry) = self.entries.get(&sid) {
-            entry.clear_session();
-        }
-        self.try_remove_entry(sid);
-    }
+        let Entry::Occupied(map_entry) = self.entries.entry(sid) else {
+            return;
+        };
 
-    /// Returns an iterator over threads that have a live thread reference.
-    pub fn iter_threads(&self) -> impl Iterator<Item = Arc<Thread>> + '_ {
-        self.entries.values().filter_map(|entry| entry.thread())
+        let should_remove = {
+            let mut pid_entry = map_entry.get().lock();
+            pid_entry.clear_session();
+            // Drop the locked PID entry before removing the B-tree entry.
+            pid_entry.is_empty()
+        };
+
+        if should_remove {
+            map_entry.remove();
+        }
     }
 
     // ---- Observer operations ----
@@ -278,43 +239,135 @@ impl PidTable {
     }
 }
 
-/// Acquires a mutable reference to the global PID table.
- pub fn pid_table_mut() -> MutexGuard<'static, PidTable> {
-    PID_TABLE.lock()
+/// An entry in the unified PID table.
+///
+/// Each entry stores references to the thread, process, process group, and
+/// session that share the same numeric identifier. Not all slots need to be
+/// occupied at the same time.
+///
+/// These references are stored as `Weak` so the PID table remains a lookup
+/// index rather than an owner, matching Linux's `struct pid`. This also avoids
+/// future reference cycles once processes hold references to their
+/// corresponding `PidEntry`s. With this ownership model, processes are owned
+/// by their parents, while process groups and sessions are owned by their
+/// member processes and are reclaimed automatically after the last process is reaped.
+struct PidEntry {
+    thread: Weak<Thread>,
+    process: Weak<Process>,
+    process_group: Weak<ProcessGroup>,
+    session: Weak<Session>,
 }
 
-/// Makes the current thread become the main thread if necessary.
-pub(in crate::process) fn make_current_main_thread(ctx: &Context) {
-    let pid = ctx.process.pid();
-    let old_tid = ctx.posix_thread.tid();
-
-    if old_tid == pid {
-        return;
+impl PidEntry {
+    /// Creates a new empty `PidEntry`.
+    fn new() -> Self {
+        Self {
+            thread: Weak::new(),
+            process: Weak::new(),
+            process_group: Weak::new(),
+            session: Weak::new(),
+        }
     }
 
-    // Lock order: pid table -> tasks of process.
-    let mut pid_table = pid_table_mut();
-    let mut tasks = ctx.process.tasks().lock();
+    /// Returns the thread associated with the entry, if any.
+    fn thread(&self) -> Option<Arc<Thread>> {
+        self.thread.upgrade()
+    }
 
-    assert!(tasks.has_exited_main());
-    assert!(tasks.in_execve());
-    assert_eq!(tasks.as_slice().len(), 2);
-    assert!(core::ptr::eq(ctx.task, tasks.as_slice()[1].as_ref()));
+    /// Returns the process associated with the entry, if any.
+    fn process(&self) -> Option<Arc<Process>> {
+        self.process.upgrade()
+    }
 
-    tasks.swap_main(pid, old_tid);
-    ctx.posix_thread.set_main(pid);
+    /// Returns whether the entry still tracks a live process.
+    fn has_live_process(&self) -> bool {
+        !self.process.is_dangling()
+    }
 
-    pid_table.remove_thread(pid);
-    let thread = pid_table.get_thread(old_tid).unwrap();
-    pid_table.remove_thread(old_tid);
-    pid_table.insert_thread(pid, thread);
+    /// Returns the process group associated with the entry, if any.
+    fn process_group(&self) -> Option<Arc<ProcessGroup>> {
+        self.process_group.upgrade()
+    }
+
+    /// Returns whether the entry still tracks a live process group.
+    fn has_live_process_group(&self) -> bool {
+        !self.process_group.is_dangling()
+    }
+
+    /// Sets the thread reference.
+    fn set_thread(&mut self, thread: &Arc<Thread>) {
+        self.thread = Arc::downgrade(thread);
+    }
+
+    /// Clears the thread reference.
+    fn clear_thread(&mut self) {
+        self.thread = Weak::new();
+    }
+
+    /// Sets the process reference.
+    fn set_process(&mut self, process: &Arc<Process>) {
+        self.process = Arc::downgrade(process);
+    }
+
+    /// Clears the process reference.
+    fn clear_process(&mut self) {
+        self.process = Weak::new();
+    }
+
+    /// Sets the process group reference.
+    fn set_process_group(&mut self, group: &Arc<ProcessGroup>) {
+        self.process_group = Arc::downgrade(group);
+    }
+
+    /// Clears the process group reference.
+    fn clear_process_group(&mut self) {
+        self.process_group = Weak::new();
+    }
+
+    /// Sets the session reference.
+    fn set_session(&mut self, session: &Arc<Session>) {
+        self.session = Arc::downgrade(session);
+    }
+
+    /// Clears the session reference.
+    fn clear_session(&mut self) {
+        self.session = Weak::new();
+    }
+
+    /// Returns `true` if the entry no longer tracks any live object.
+    fn is_empty(&self) -> bool {
+        self.thread.is_dangling()
+            && self.process.is_dangling()
+            && self.process_group.is_dangling()
+            && self.session.is_dangling()
+    }
+}
+
+/// Acquires a mutable reference to the global PID table.
+pub fn pid_table_mut() -> MutexGuard<'static, PidTable> {
+    PID_TABLE.lock()
 }
 
 /// An event emitted when a process exits.
 #[derive(Copy, Clone)]
- pub enum PidEvent {
+pub enum PidEvent {
     /// A process with the given PID has exited.
     Exit(Pid),
 }
 
 impl Events for PidEvent {}
+
+/// Extension methods for `Weak<T>` values stored in `PidEntry`.
+///
+/// In this file, `Weak::new()` is used as a sentinel that represents an empty
+/// slot. This trait provides a small helper for recognizing that state.
+trait WeakIsDangling {
+    /// Returns `true` if `self` is the empty-slot sentinel `Weak::new()`.
+    fn is_dangling(&self) -> bool;
+}
+
+impl<T> WeakIsDangling for Weak<T> {
+    fn is_dangling(&self) -> bool {
+        Weak::ptr_eq(self, &Weak::new())
+    }
+}

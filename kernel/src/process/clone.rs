@@ -806,20 +806,26 @@ fn set_parent_and_group(clone_flags: CloneFlags, parent: &Arc<Process>, child: &
 
         let mut pid_table = pid_table::pid_table_mut();
 
-        let process_group_mut = parent.process_group.lock();
+        let process_group = {
+            let process_group_mut = parent.process_group.lock();
+            let Some(process_group) = process_group_mut.as_ref() else {
+                // The parent is concurrently moving to another process group.
+                // Retry so the child inherits the up-to-date process group.
+                continue;
+            };
+            let mut process_group_inner = process_group.lock();
 
-        let process_group = process_group_mut.upgrade().unwrap();
-        let mut process_group_inner = process_group.lock();
-
-        // Put the child process in the parent's process group
-        process_group_inner.insert_process(child.clone());
-        *child.process_group.lock() = Arc::downgrade(&process_group);
+            // Put the child process in the parent's process group
+            process_group_inner.insert_process(child);
+            process_group.clone()
+        };
+        *child.process_group.lock() = Some(process_group);
 
         // Put the child process in the parent's `children` field
         children_mut.insert(child.pid(), child.clone());
 
         // Put the child process in the global table
-        pid_table.insert_process(child.pid(), child.clone());
+        pid_table.insert_process(child.pid(), child);
 
         return;
     }
