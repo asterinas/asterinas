@@ -7,7 +7,7 @@ use spin::Once;
 use crate::{
     fs::{
         file::mkmod,
-        pseudofs::{PseudoFs, PseudoInodeType},
+        pseudofs::{NaivePseudoFs, PseudoInodeType},
         vfs::{
             file_system::{FileSystem, FsFlags},
             path::{Mount, Path},
@@ -24,10 +24,10 @@ pub struct SockFs {
 
 impl SockFs {
     /// Returns the singleton instance of the socket file system.
-    pub fn singleton() -> &'static Arc<PseudoFs> {
-        static SOCKFS: Once<Arc<PseudoFs>> = Once::new();
+    pub fn singleton() -> &'static Arc<NaivePseudoFs> {
+        static SOCKFS: Once<Arc<NaivePseudoFs>> = Once::new();
 
-        PseudoFs::singleton(&SOCKFS, "sockfs", SOCKFS_MAGIC)
+        NaivePseudoFs::singleton(&SOCKFS, "sockfs", SOCKFS_MAGIC)
     }
 
     /// Creates a pseudo `Path` for a socket.

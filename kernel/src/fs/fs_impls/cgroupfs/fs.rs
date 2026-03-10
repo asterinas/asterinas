@@ -11,6 +11,7 @@ use crate::{
     fs::{
         Result,
         cgroupfs::systree_node::CgroupSystem,
+        pseudofs::AnonDeviceId,
         utils::systree_inode::SysTreeInodeTy,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
@@ -23,6 +24,7 @@ use crate::{
 
 /// A file system for managing cgroups.
 pub(super) struct CgroupFs {
+    _anon_device_id: AnonDeviceId,
     sb: SuperBlock,
     root: Arc<dyn Inode>,
     fs_event_subscriber_stats: FsEventSubscriberStats,
@@ -42,10 +44,13 @@ impl CgroupFs {
     }
 
     fn new(root_node: Arc<CgroupSystem>) -> Arc<Self> {
-        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX);
-        let root_inode = CgroupInode::new_root(root_node);
+        let anon_device_id =
+            AnonDeviceId::acquire().expect("no device ID is available for cgroupfs");
+        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
+        let root_inode = CgroupInode::new_root(root_node, &sb);
 
         Arc::new(Self {
+            _anon_device_id: anon_device_id,
             sb,
             root: root_inode,
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),

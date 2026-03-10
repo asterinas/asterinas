@@ -4,7 +4,7 @@ use super::TidDirOps;
 use crate::{
     fs::{
         file::mkmod,
-        procfs::{ProcSymBuilder, SymOps},
+        procfs::template::{ProcSymBuilder, SymOps},
         vfs::inode::{Inode, SymbolicLink},
     },
     prelude::*,

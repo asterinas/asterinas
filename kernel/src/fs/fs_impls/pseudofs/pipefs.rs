@@ -7,7 +7,7 @@ use spin::Once;
 use crate::{
     fs::{
         pipe::AnonPipeInode,
-        pseudofs::PseudoFs,
+        pseudofs::NaivePseudoFs,
         vfs::{
             file_system::{FileSystem, FsFlags},
             path::{Mount, Path},
@@ -23,10 +23,10 @@ pub(in crate::fs) struct PipeFs {
 
 impl PipeFs {
     /// Returns the singleton instance of the anonymous pipe file system.
-    pub(in crate::fs) fn singleton() -> &'static Arc<PseudoFs> {
-        static PIPEFS: Once<Arc<PseudoFs>> = Once::new();
+    pub(in crate::fs) fn singleton() -> &'static Arc<NaivePseudoFs> {
+        static PIPEFS: Once<Arc<NaivePseudoFs>> = Once::new();
 
-        PseudoFs::singleton(&PIPEFS, "pipefs", PIPEFS_MAGIC)
+        NaivePseudoFs::singleton(&PIPEFS, "pipefs", PIPEFS_MAGIC)
     }
 
     /// Creates a pseudo `Path` for an anonymous pipe.

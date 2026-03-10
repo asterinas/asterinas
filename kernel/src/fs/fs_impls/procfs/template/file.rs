@@ -4,7 +4,7 @@ use core::time::Duration;
 
 use inherit_methods_macro::inherit_methods;
 
-use super::{Common, ProcFs};
+use super::Common;
 use crate::{
     fs::{
         file::{AccessMode, FileIo, InodeMode, InodeType, StatusFlags},
@@ -29,12 +29,7 @@ impl<F: FileOps> ProcFile<F> {
         is_volatile: bool,
         mode: InodeMode,
     ) -> Arc<Self> {
-        let common = {
-            let arc_fs = fs.upgrade().unwrap();
-            let procfs = arc_fs.downcast_ref::<ProcFs>().unwrap();
-            let metadata = Metadata::new_file(procfs.alloc_id(), mode, super::BLOCK_SIZE);
-            Common::new(metadata, fs, is_volatile)
-        };
+        let common = new_file_common(fs, mode, is_volatile);
         Arc::new(Self {
             inner: file,
             common,
@@ -44,6 +39,18 @@ impl<F: FileOps> ProcFile<F> {
     pub fn inner(&self) -> &F {
         &self.inner
     }
+}
+
+fn new_file_common(fs: Weak<dyn FileSystem>, mode: InodeMode, is_volatile: bool) -> Common {
+    let fs_ref = fs.upgrade().unwrap();
+    let procfs = fs_ref.downcast_ref::<super::ProcFs>().unwrap();
+    let metadata = Metadata::new_file(
+        procfs.alloc_id(),
+        mode,
+        super::BLOCK_SIZE,
+        procfs.sb().container_dev_id,
+    );
+    Common::new(metadata, fs, is_volatile)
 }
 
 impl<F: FileOps + 'static> InodeIo for ProcFile<F> {

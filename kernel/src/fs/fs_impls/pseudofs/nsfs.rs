@@ -15,7 +15,7 @@ use crate::{
             file_table::{FdFlags, FileDesc},
             mkmod,
         },
-        pseudofs::{PseudoFs, PseudoInode, PseudoInodeType},
+        pseudofs::{NaivePseudoFs, PseudoInode, PseudoInodeType},
         vfs::{
             file_system::FileSystem,
             inode::{Extension, Inode, InodeIo, Metadata},
@@ -37,9 +37,9 @@ struct NsFs {
 
 impl NsFs {
     /// Returns the singleton instance of the ns file system.
-    pub(self) fn singleton() -> &'static Arc<PseudoFs> {
-        static NSFS: Once<Arc<PseudoFs>> = Once::new();
-        PseudoFs::singleton(&NSFS, "nsfs", NSFS_MAGIC)
+    pub(self) fn singleton() -> &'static Arc<NaivePseudoFs> {
+        static NSFS: Once<Arc<NaivePseudoFs>> = Once::new();
+        NaivePseudoFs::singleton(&NSFS, "nsfs", NSFS_MAGIC)
     }
 
     /// Creates a pseudo `Path` for a namespace file.
@@ -70,9 +70,18 @@ struct NsInode<T: NsCommonOps> {
 }
 
 impl<T: NsCommonOps> NsInode<T> {
-    fn new(ino: u64, uid: Uid, gid: Gid, ns: Arc<T>, fs: Weak<PseudoFs>) -> Self {
+    fn new(ino: u64, uid: Uid, gid: Gid, ns: Arc<T>, fs: Weak<NaivePseudoFs>) -> Self {
         let mode = mkmod!(a+r);
-        let common = PseudoInode::new(ino, PseudoInodeType::Ns, mode, uid, gid, fs);
+        let fs = fs.upgrade().unwrap();
+        let common = PseudoInode::new(
+            ino,
+            PseudoInodeType::Ns,
+            mode,
+            uid,
+            gid,
+            Arc::downgrade(&fs),
+            fs.container_dev_id(),
+        );
         let name = format!("{}:[{}]", T::NAME, ino);
 
         Self { common, ns, name }

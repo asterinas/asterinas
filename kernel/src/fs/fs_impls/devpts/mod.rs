@@ -13,6 +13,7 @@ use crate::{
     device::{Device, DeviceType, PtyMaster},
     fs::{
         file::{InodeMode, InodeType, StatusFlags, mkmod},
+        pseudofs::AnonDeviceId,
         utils::{DirEntryVecExt, DirentVisitor, NAME_MAX},
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
@@ -44,6 +45,7 @@ const MAX_PTY_NUM: usize = 4096;
 ///
 /// Actually, the "/dev/ptmx" is a symlink to the real device at "/dev/pts/ptmx".
 pub struct DevPts {
+    _anon_device_id: AnonDeviceId,
     sb: SuperBlock,
     root: Arc<RootInode>,
     index_alloc: Mutex<IdAlloc>,
@@ -53,9 +55,12 @@ pub struct DevPts {
 
 impl DevPts {
     pub fn new() -> Arc<Self> {
+        let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for devpts");
+        let sb = SuperBlock::new(DEVPTS_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
         Arc::new_cyclic(|weak_self| Self {
-            sb: SuperBlock::new(DEVPTS_MAGIC, BLOCK_SIZE, NAME_MAX),
-            root: RootInode::new(weak_self.clone()),
+            _anon_device_id: anon_device_id,
+            sb: sb.clone(),
+            root: RootInode::new(weak_self.clone(), &sb),
             index_alloc: Mutex::new(IdAlloc::with_capacity(MAX_PTY_NUM)),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             this: weak_self.clone(),
@@ -155,11 +160,16 @@ struct RootInode {
 }
 
 impl RootInode {
-    pub fn new(fs: Weak<DevPts>) -> Arc<Self> {
+    pub fn new(fs: Weak<DevPts>, sb: &SuperBlock) -> Arc<Self> {
         Arc::new(Self {
-            ptmx: Ptmx::new(fs.clone()),
+            ptmx: Ptmx::new(fs.clone(), sb),
             slaves: RwLock::new(SlotVec::new()),
-            metadata: RwLock::new(Metadata::new_dir(ROOT_INO, mkmod!(a+rx, u+w), BLOCK_SIZE)),
+            metadata: RwLock::new(Metadata::new_dir(
+                ROOT_INO,
+                mkmod!(a+rx, u+w),
+                BLOCK_SIZE,
+                sb.container_dev_id,
+            )),
             extension: Extension::new(),
             fs,
         })
@@ -239,27 +249,27 @@ impl Inode for RootInode {
     }
 
     fn atime(&self) -> Duration {
-        self.metadata.read().atime
+        self.metadata.read().last_access_at
     }
 
     fn set_atime(&self, time: Duration) {
-        self.metadata.write().atime = time;
+        self.metadata.write().last_access_at = time;
     }
 
     fn mtime(&self) -> Duration {
-        self.metadata.read().mtime
+        self.metadata.read().last_modify_at
     }
 
     fn set_mtime(&self, time: Duration) {
-        self.metadata.write().mtime = time;
+        self.metadata.write().last_modify_at = time;
     }
 
     fn ctime(&self) -> Duration {
-        self.metadata.read().ctime
+        self.metadata.read().last_meta_change_at
     }
 
     fn set_ctime(&self, time: Duration) {
-        self.metadata.write().ctime = time;
+        self.metadata.write().last_meta_change_at = time;
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
