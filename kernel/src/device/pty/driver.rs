@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_console::AnyConsoleDevice;
 use ostd::sync::SpinLock;
 
 use super::file::PtySlaveFile;
@@ -16,7 +15,10 @@ use crate::{
     fs::file::FileIo,
     prelude::*,
     process::signal::Pollee,
-    util::ring_buffer::RingBuffer,
+    util::{
+        ioctl::{RawIoctl, dispatch_ioctl},
+        ring_buffer::RingBuffer,
+    },
 };
 
 const BUFFER_CAPACITY: usize = 8192;
@@ -171,10 +173,6 @@ impl TtyDriver for PtyDriver {
         self.pollee.notify(IoEvents::OUT);
     }
 
-    fn console(&self) -> Option<&dyn AnyConsoleDevice> {
-        None
-    }
-
     fn on_termios_change(&self, old_termios: &CTermios, new_termios: &CTermios) {
         // Reference: <https://elixir.bootlin.com/linux/v6.17/source/drivers/tty/pty.c#L246>.
         let extproc = old_termios.local_flags().contains(CLocalFlags::EXTPROC)
@@ -209,5 +207,22 @@ impl TtyDriver for PtyDriver {
             self.pollee
                 .notify(IoEvents::PRI | IoEvents::IN | IoEvents::RDNORM);
         }
+    }
+
+    fn ioctl(&self, tty: &Tty<Self>, raw_ioctl: RawIoctl) -> Result<bool>
+    where
+        Self: Sized,
+    {
+        use super::ioctl_defs::*;
+
+        dispatch_ioctl!(match raw_ioctl {
+            cmd @ GetPtyNumber => {
+                let idx = tty.index();
+                cmd.write(&idx)?;
+            }
+            _ => return Ok(false),
+        });
+
+        Ok(true)
     }
 }
