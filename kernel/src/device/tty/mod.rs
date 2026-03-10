@@ -1,16 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_console::{
-    AnyConsoleDevice,
-    font::BitmapFont,
-    mode::{ConsoleMode, KeyboardMode},
-};
 use device_id::{DeviceId, MajorId, MinorId};
-use ostd::{mm::VmIo, sync::LocalIrqDisabled};
+use ostd::sync::LocalIrqDisabled;
 
 use self::{line_discipline::LineDiscipline, termio::CFontOp};
 use crate::{
-    current_userspace,
     device::{Device, DeviceType},
     events::IoEvents,
     fs::file::{FileIo, StatusFlags},
@@ -177,81 +171,6 @@ impl<D: TtyDriver> Tty<D> {
     }
 }
 
-impl<D: TtyDriver> Tty<D> {
-    fn console(&self) -> Result<&dyn AnyConsoleDevice> {
-        self.driver.console().ok_or_else(|| {
-            Error::with_message(Errno::ENOTTY, "the TTY is not connected to a console")
-        })
-    }
-
-    fn handle_set_font(&self, font_op: &CFontOp) -> Result<()> {
-        let console = self.console()?;
-
-        let CFontOp {
-            op,
-            flags: _,
-            width,
-            height,
-            charcount,
-            data,
-            ..
-        } = font_op;
-
-        let vpitch = match *op {
-            CFontOp::OP_SET => CFontOp::NONTALL_VPITCH,
-            CFontOp::OP_SET_TALL => font_op.height,
-            CFontOp::OP_SET_DEFAULT => {
-                return console_set_font(console, BitmapFont::new_basic8x8());
-            }
-            _ => return_errno_with_message!(Errno::EINVAL, "the font operation is invalid"),
-        };
-
-        if *width == 0
-            || *height == 0
-            || *width > CFontOp::MAX_WIDTH
-            || *height > CFontOp::MAX_HEIGHT
-            || *charcount > CFontOp::MAX_CHARCOUNT
-            || *height > vpitch
-        {
-            return_errno_with_message!(Errno::EINVAL, "the font is invalid or too large");
-        }
-
-        let font_size = width.div_ceil(u8::BITS) * vpitch * charcount;
-        let mut font_data = vec![0; font_size as usize];
-        current_userspace!().read_bytes(*data as Vaddr, &mut font_data[..])?;
-
-        // In Linux, the most significant bit represents the first pixel, but `BitmapFont` requires
-        // the least significant bit to represent the first pixel. So now we reverse the bits.
-        font_data
-            .iter_mut()
-            .for_each(|byte| *byte = byte.reverse_bits());
-
-        let font = BitmapFont::new_with_vpitch(
-            *width as usize,
-            *height as usize,
-            vpitch as usize,
-            font_data,
-        );
-        console_set_font(console, font)?;
-
-        Ok(())
-    }
-}
-
-fn console_set_font(console: &dyn AnyConsoleDevice, font: BitmapFont) -> Result<()> {
-    use aster_console::ConsoleSetFontError;
-
-    match console.set_font(font) {
-        Ok(()) => Ok(()),
-        Err(ConsoleSetFontError::InappropriateDevice) => {
-            return_errno_with_message!(Errno::ENOTTY, "the console has no support for font setting")
-        }
-        Err(ConsoleSetFontError::InvalidFont) => {
-            return_errno_with_message!(Errno::EINVAL, "the font is invalid for the console")
-        }
-    }
-}
-
 impl<D: TtyDriver> Pollable for Tty<D> {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         self.pollee
@@ -359,11 +278,6 @@ impl<D: TtyDriver> Tty<D> {
 
                 self.ldisc.lock().set_window_size(winsize);
             }
-            cmd @ GetPtyNumber => {
-                let idx = self.index;
-
-                cmd.write(&idx)?;
-            }
             cmd @ GetNumBytesToRead => {
                 if self.tty_flags.is_other_closed() {
                     return_errno_with_message!(Errno::EIO, "the TTY is closed");
@@ -373,42 +287,22 @@ impl<D: TtyDriver> Tty<D> {
 
                 cmd.write(&buffer_len)?;
             }
-            cmd @ SetOrGetFont => {
-                let font_op = cmd.read()?;
 
-                self.handle_set_font(&font_op)?;
-            }
-            cmd @ SetGraphicsMode => {
-                let console = self.console()?;
+            _ => {
+                let terminal = self.weak_self.upgrade().unwrap() as Arc<dyn Terminal>;
 
-                let mode = ConsoleMode::try_from(cmd.get())?;
-                if !console.set_mode(mode) {
-                    return_errno_with_message!(Errno::EINVAL, "the console mode is not supported");
+                // Process job-control ioctls.
+                if terminal.job_ioctl(raw_ioctl, false)? {
+                    return Ok(0);
                 }
-            }
-            cmd @ GetGraphicsMode => {
-                let console = self.console()?;
 
-                let mode = console.mode().unwrap_or(ConsoleMode::Text);
-                cmd.write(&(mode as i32))?;
-            }
-            cmd @ SetKeyboardMode => {
-                let console = self.console()?;
-
-                let mode = KeyboardMode::try_from(cmd.get())?;
-                if !console.set_keyboard_mode(mode) {
-                    return_errno_with_message!(Errno::EINVAL, "the keyboard mode is not supported");
+                // Process driver-specific ioctls.
+                if self.driver.ioctl(self, raw_ioctl)? {
+                    return Ok(0);
                 }
-            }
-            cmd @ GetKeyboardMode => {
-                let console = self.console()?;
 
-                let mode = console.keyboard_mode().unwrap_or(KeyboardMode::Xlate);
-                cmd.write(&(mode as i32))?;
+                return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown");
             }
-
-            _ => (self.weak_self.upgrade().unwrap() as Arc<dyn Terminal>)
-                .job_ioctl(raw_ioctl, false)?,
         });
 
         Ok(0)

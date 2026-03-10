@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_console::AnyConsoleDevice;
-
 use crate::{
     device::tty::{Tty, termio::CTermios},
     fs::file::FileIo,
     prelude::*,
+    util::ioctl::RawIoctl,
 };
 
 /// A TTY driver.
@@ -55,13 +54,27 @@ pub trait TtyDriver: Send + Sync + 'static {
     /// [`Tty::can_push`]: super::Tty::can_push
     fn notify_input(&self);
 
-    /// Returns the console device associated with the TTY.
-    ///
-    /// If the TTY is not associated with any console device, this method will return `None`.
-    fn console(&self) -> Option<&dyn AnyConsoleDevice>;
-
     /// Notifies that the TTY termios is changed.
     ///
     /// This method will be called with a spin lock held, so it cannot break atomic mode.
     fn on_termios_change(&self, old_termios: &CTermios, new_termios: &CTermios);
+
+    /// Handles driver-specific ioctl.
+    ///
+    /// This method allows a TTY driver to handle driver-specific
+    /// ioctl commands that are not processed by the generic TTY layer.
+    ///
+    /// The return value depends on whether the ioctl is recognized:
+    /// - If the driver recognizes and handles the ioctl, it should return
+    ///   `Ok(true)`.
+    /// - If an error occurs while processing the ioctl, it should return
+    ///   `Err(_)`.
+    /// - If the driver does not recognize the ioctl command, it should return
+    ///   `Ok(false)` to indicate that the ioctl command is not supported.
+    fn ioctl(&self, _tty: &Tty<Self>, _raw_ioctl: RawIoctl) -> Result<bool>
+    where
+        Self: Sized,
+    {
+        Ok(false)
+    }
 }

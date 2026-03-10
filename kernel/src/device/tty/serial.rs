@@ -53,10 +53,6 @@ impl TtyDriver for SerialDriver {
 
     fn notify_input(&self) {}
 
-    fn console(&self) -> Option<&dyn AnyConsoleDevice> {
-        Some(&*self.console)
-    }
-
     fn on_termios_change(&self, _old_termios: &CTermios, _new_termios: &CTermios) {}
 }
 
