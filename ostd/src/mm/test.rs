@@ -8,8 +8,7 @@ use crate::{
     mm::{
         CachePolicy, FallibleVmRead, FallibleVmWrite, FrameAllocOptions, PageFlags, PageProperty,
         UFrame, VmSpace,
-        io::{VmIo, VmIoFill, VmReader, VmWriter},
-        io::util::HasVmReaderWriter,
+        io::{VmIo, VmIoFill, VmReader, VmWriter, util::HasVmReaderWriter},
         tlb::TlbFlushOp,
         vm_space::{VmQueriedItem, get_activated_vm_space},
     },

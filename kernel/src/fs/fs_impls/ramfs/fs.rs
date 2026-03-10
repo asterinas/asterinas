@@ -11,7 +11,7 @@ use aster_util::slot_vec::SlotVec;
 use device_id::DeviceId;
 use hashbrown::HashMap;
 use ostd::{
-    mm::{HasSize, io_util::HasVmReaderWriter},
+    mm::{HasSize, io::util::HasVmReaderWriter},
     sync::{PreemptDisabled, RwLockWriteGuard},
 };
 
