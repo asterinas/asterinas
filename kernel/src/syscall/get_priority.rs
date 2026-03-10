@@ -44,7 +44,7 @@ pub(super) fn get_processes(prio_target: PriorityTarget) -> Result<Vec<Arc<Proce
             let process_group = pid_table::pid_table_mut()
                 .get_process_group(&pgid)
                 .ok_or(Error::new(Errno::ESRCH))?;
-            let processes: Vec<Arc<Process>> = process_group.lock().iter().cloned().collect();
+            let processes: Vec<Arc<Process>> = process_group.lock().iter().collect();
             if processes.is_empty() {
                 return_errno!(Errno::ESRCH);
             }

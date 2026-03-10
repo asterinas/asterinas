@@ -60,7 +60,7 @@ pub fn kill_group<S: Signal + Clone>(pgid: Pgid, signal: Option<S>, ctx: &Contex
     let inner = process_group.lock();
     for process in inner.iter() {
         let res = kill_process(
-            process,
+            &process,
             signal.clone().map(|s| Box::new(s) as Box<dyn Signal>),
             ctx,
         );
