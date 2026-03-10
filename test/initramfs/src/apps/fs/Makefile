@@ -5,6 +5,7 @@ SUBDIRS := \
 	fdatasync \
 	inotify \
 	isolation \
+	mount \
 	overlayfs \
 	procfs \
 	pseudofs \
