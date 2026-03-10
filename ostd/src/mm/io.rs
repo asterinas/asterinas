@@ -50,10 +50,11 @@ use crate::{
         __atomic_cmpxchg_fallible, __atomic_load_fallible, __memcpy_fallible, __memset_fallible,
     },
     mm::{
-        MAX_USERSPACE_VADDR,
         kspace::{KERNEL_BASE_VADDR, KERNEL_END_VADDR},
+        MAX_USERSPACE_VADDR,
     },
     prelude::*,
+    Error,
 };
 
 /// A trait that enables reading/writing data from/to a VM object,
@@ -227,12 +228,27 @@ pub trait VmIoOnce {
     fn write_once<T: PodOnce>(&self, offset: usize, new_val: &T) -> Result<()>;
 }
 
-/// A marker type used for [`VmReader`] and [`VmWriter`],
-/// representing whether reads or writes on the underlying memory region are fallible.
+/// A marker type used for _fallible_ memory,
+/// where memory access _might_ trigger page faults.
+///
+/// The most prominent example of fallible memory is user virtual memory.
+///
+/// By definition, infallible memory is a subset of fallible memory.
+/// As a consequence, any code that intends to work with fallible memory
+/// should work for both user virtual memory and kernel virtual memory.
+///
+/// [`VmReader`] and [`VmWriter`] types use this marker type
+/// to indicate the property of the underlying memory.
 pub enum Fallible {}
 
-/// A marker type used for [`VmReader`] and [`VmWriter`],
-/// representing whether reads or writes on the underlying memory region are infallible.
+/// A marker type used for _infallible_ memory,
+/// where memory access is valid and won't trigger page faults.
+///
+/// The most prominent example of infallible memory is kernel virtual memory
+/// (at least for the part where Rust code and data reside).
+///
+/// [`VmReader`] and [`VmWriter`] types use this marker type
+/// to indicate the property of the underlying memory.
 pub enum Infallible {}
 
 /// Copies `len` bytes from `src` to `dst`.
@@ -1068,7 +1084,7 @@ pub trait PodAtomic: Pod {
     /// [valid]: crate::mm::io#safety
     #[doc(hidden)]
     unsafe fn atomic_cmpxchg_fallible(ptr: *mut Self, old_val: Self, new_val: Self)
-    -> Result<Self>;
+        -> Result<Self>;
 }
 
 impl PodAtomic for u32 {
