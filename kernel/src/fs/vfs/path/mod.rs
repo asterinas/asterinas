@@ -407,6 +407,17 @@ impl Path {
                 "the destination path is not in this mount namespace"
             );
         }
+        if dst_path
+            .mount_node()
+            .is_equal_or_descendant_of(self.mount_node())
+        {
+            // Reject moves that would place a mount beneath itself, because the mount tree
+            // must remain acyclic.
+            return_errno_with_message!(
+                Errno::ELOOP,
+                "the destination path is inside the mount subtree being moved"
+            );
+        }
 
         self.mount.graft_mount_tree(dst_path);
 
