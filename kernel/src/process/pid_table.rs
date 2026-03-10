@@ -27,15 +27,10 @@ struct PidEntry {
 }
 
 struct PidEntryInner {
-    // `thread` and `process` are only observed through the PID table. Their
-    // lifetime is anchored elsewhere, so these slots must not keep them alive.
     thread: Weak<Thread>,
     process: Weak<Process>,
-    // `session` is different: live sessions are otherwise reached through
-    // `Weak<Session>` links from process groups and job control state, so the
-    // PID table needs to keep the strong reference for SID lookups.
-    process_group: Option<Arc<ProcessGroup>>,
-    session: Option<Arc<Session>>,
+    process_group: Weak<ProcessGroup>,
+    session: Weak<Session>,
 }
 
 impl PidEntry {
@@ -45,8 +40,8 @@ impl PidEntry {
             inner: Mutex::new(PidEntryInner {
                 thread: Weak::new(),
                 process: Weak::new(),
-                process_group: None,
-                session: None,
+                process_group: Weak::new(),
+                session: Weak::new(),
             }),
         }
     }
@@ -68,7 +63,7 @@ impl PidEntry {
 
     /// Returns the process group associated with the entry, if any.
     fn process_group(&self) -> Option<Arc<ProcessGroup>> {
-        self.inner.lock().process_group.clone()
+        self.inner.lock().process_group.upgrade()
     }
 
     /// Sets the thread reference.
@@ -93,22 +88,22 @@ impl PidEntry {
 
     /// Sets the process group reference.
     pub(super) fn set_process_group(&self, group: &Arc<ProcessGroup>) {
-        self.inner.lock().process_group = Some(group.clone());
+        self.inner.lock().process_group = Arc::downgrade(group);
     }
 
     /// Clears the process group reference.
     pub(super) fn clear_process_group(&self) {
-        self.inner.lock().process_group = None;
+        self.inner.lock().process_group = Weak::new();
     }
 
     /// Sets the session reference.
     pub(super) fn set_session(&self, session: &Arc<Session>) {
-        self.inner.lock().session = Some(session.clone());
+        self.inner.lock().session = Arc::downgrade(session);
     }
 
     /// Clears the session reference.
     pub(super) fn clear_session(&self) {
-        self.inner.lock().session = None;
+        self.inner.lock().session = Weak::new();
     }
 
     /// Returns `true` if the entry no longer tracks any live object.
@@ -116,8 +111,8 @@ impl PidEntry {
         let inner = self.inner.lock();
         inner.thread.strong_count() == 0
             && inner.process.strong_count() == 0
-            && inner.process_group.is_none()
-            && inner.session.is_none()
+            && inner.process_group.strong_count() == 0
+            && inner.session.strong_count() == 0
     }
 }
 
@@ -246,7 +241,7 @@ impl PidTable {
     pub fn contains_process_group(&self, pgid: &Pgid) -> bool {
         self.entries
             .get(pgid)
-            .is_some_and(|entry| entry.inner.lock().process_group.is_some())
+            .is_some_and(|entry| entry.inner.lock().process_group.strong_count() > 0)
     }
 
     // ---- Session operations ----

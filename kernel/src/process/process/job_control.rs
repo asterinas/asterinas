@@ -107,7 +107,7 @@ impl JobControl {
         let mut inner = self.inner.lock();
 
         debug_assert!(Arc::ptr_eq(
-            &process_group.session().unwrap(),
+            process_group.session(),
             &inner.session.upgrade().unwrap()
         ));
         inner.foreground = Arc::downgrade(process_group);
@@ -130,8 +130,8 @@ impl JobControl {
 
         self.wait_queue.pause_until(|| {
             let process_group_mut = current.process_group.lock();
-            let process_group = process_group_mut.upgrade().unwrap();
-            let session = process_group.session().unwrap();
+            let process_group = process_group_mut.as_ref().cloned().unwrap();
+            let session = process_group.session().clone();
 
             let inner = self.inner.lock();
             if !inner
