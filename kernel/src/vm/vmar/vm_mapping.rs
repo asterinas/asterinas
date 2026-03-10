@@ -13,7 +13,7 @@ use ostd::{
     io::IoMem,
     mm::{
         CachePolicy, Frame, FrameAllocOptions, PageFlags, PageProperty, UFrame, VmSpace,
-        io_util::HasVmReaderWriter, tlb::TlbFlushOp, vm_space::VmQueriedItem,
+        io::util::HasVmReaderWriter, tlb::TlbFlushOp, vm_space::VmQueriedItem,
     },
     task::disable_preempt,
 };

@@ -26,7 +26,7 @@ mod test {
     };
     use device_id::DeviceId;
     use ostd::{
-        mm::{FrameAllocOptions, PAGE_SIZE, Segment, VmIo, io_util::HasVmReaderWriter},
+        mm::{FrameAllocOptions, PAGE_SIZE, Segment, VmIo, io::util::HasVmReaderWriter},
         prelude::*,
     };
     use rand::{RngCore, SeedableRng, rngs::SmallRng};

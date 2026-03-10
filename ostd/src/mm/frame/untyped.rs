@@ -12,8 +12,10 @@
 use super::{Frame, Segment, meta::AnyFrameMeta};
 use crate::mm::{
     HasPaddr, HasSize, Infallible,
-    io::{VmReader, VmWriter},
-    io::util::{HasVmReaderWriter, VmReaderWriterIdentity},
+    io::{
+        VmReader, VmWriter,
+        util::{HasVmReaderWriter, VmReaderWriterIdentity},
+    },
     paddr_to_vaddr,
 };
 

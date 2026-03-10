@@ -40,23 +40,22 @@
 //! user space, making it impossible to avoid data races). However, they may produce erroneous
 //! results, such as unexpected bytes being copied, but do not cause soundness problems.
 
+pub(crate) mod copy;
 pub mod util;
 
 use core::{marker::PhantomData, mem::MaybeUninit};
 
 use ostd_pod::Pod;
 
+use self::copy::{memcpy, memset};
 use crate::{
     Error,
-    arch::mm::{
-        __atomic_cmpxchg_fallible, __atomic_load_fallible, __memcpy_fallible, __memset_fallible,
-    },
+    arch::mm::{__atomic_cmpxchg_fallible, __atomic_load_fallible},
     mm::{
-        kspace::{KERNEL_BASE_VADDR, KERNEL_END_VADDR},
         MAX_USERSPACE_VADDR,
+        kspace::{KERNEL_BASE_VADDR, KERNEL_END_VADDR},
     },
     prelude::*,
-    Error,
 };
 
 /// A trait that enables reading/writing data from/to a VM object,
@@ -253,82 +252,6 @@ pub enum Fallible {}
 /// to indicate the property of the underlying memory.
 pub enum Infallible {}
 
-/// Copies `len` bytes from `src` to `dst`.
-///
-/// # Safety
-///
-/// - `src` must be [valid] for reads of `len` bytes.
-/// - `dst` must be [valid] for writes of `len` bytes.
-///
-/// [valid]: crate::mm::io#safety
-unsafe fn memcpy(dst: *mut u8, src: *const u8, len: usize) {
-    // This method is implemented by calling `volatile_copy_memory`. Note that even with the
-    // "volatile" keyword, data races are still considered undefined behavior (UB) in both the Rust
-    // documentation and the C/C++ standards. In general, UB makes the behavior of the entire
-    // program unpredictable, usually due to compiler optimizations that assume the absence of UB.
-    // However, in this particular case, considering that the Linux kernel uses the "volatile"
-    // keyword to implement `READ_ONCE` and `WRITE_ONCE`, the compiler is extremely unlikely to
-    // break our code unless it also breaks the Linux kernel.
-    //
-    // For more details and future possibilities, see
-    // <https://github.com/asterinas/asterinas/pull/1001#discussion_r1667317406>.
-
-    // SAFETY: The safety is guaranteed by the safety preconditions and the explanation above.
-    unsafe { core::intrinsics::volatile_copy_memory(dst, src, len) };
-}
-
-/// Fills `len` bytes of memory at `dst` with the specified `value`.
-///
-/// # Safety
-///
-/// - `dst` must be [valid] for writes of `len` bytes.
-///
-/// [valid]: crate::mm::io#safety
-unsafe fn memset(dst: *mut u8, value: u8, len: usize) {
-    // SAFETY: The safety is guaranteed by the safety preconditions and the explanation above.
-    unsafe {
-        core::intrinsics::volatile_set_memory(dst, value, len);
-    }
-}
-
-/// Copies `len` bytes from `src` to `dst`.
-/// This function will early stop copying if encountering an unresolvable page fault.
-///
-/// Returns the number of successfully copied bytes.
-///
-/// In the following cases, this method may cause unexpected bytes to be copied, but will not cause
-/// safety problems as long as the safety requirements are met:
-/// - The source and destination overlap.
-/// - The current context is not associated with valid user space (e.g., in the kernel thread).
-///
-/// # Safety
-///
-/// - `src` must either be [valid] for reads of `len` bytes or be in user space for `len` bytes.
-/// - `dst` must either be [valid] for writes of `len` bytes or be in user space for `len` bytes.
-///
-/// [valid]: crate::mm::io#safety
-unsafe fn memcpy_fallible(dst: *mut u8, src: *const u8, len: usize) -> usize {
-    // SAFETY: The safety is upheld by the caller.
-    let failed_bytes = unsafe { __memcpy_fallible(dst, src, len) };
-    len - failed_bytes
-}
-
-/// Fills `len` bytes of memory at `dst` with the specified `value`.
-/// This function will early stop filling if encountering an unresolvable page fault.
-///
-/// Returns the number of successfully set bytes.
-///
-/// # Safety
-///
-/// - `dst` must either be [valid] for writes of `len` bytes or be in user space for `len` bytes.
-///
-/// [valid]: crate::mm::io#safety
-unsafe fn memset_fallible(dst: *mut u8, value: u8, len: usize) -> usize {
-    // SAFETY: The safety is upheld by the caller.
-    let failed_bytes = unsafe { __memset_fallible(dst, value, len) };
-    len - failed_bytes
-}
-
 /// Fallible memory read from a `VmWriter`.
 pub trait FallibleVmRead<F> {
     /// Reads all data into the writer until one of the three conditions is met:
@@ -411,7 +334,13 @@ macro_rules! impl_read_fallible {
                 // SAFETY: The source and destination are subsets of memory ranges specified by
                 // the reader and writer, so they are either valid for reading and writing or in
                 // user space.
-                let copied_len = unsafe { memcpy_fallible(writer.cursor, self.cursor, copy_len) };
+                let copied_len = unsafe {
+                    memcpy::<$writer_fallibility, $reader_fallibility>(
+                        writer.cursor,
+                        self.cursor,
+                        copy_len,
+                    )
+                };
                 self.cursor = self.cursor.wrapping_add(copied_len);
                 writer.cursor = writer.cursor.wrapping_add(copied_len);
 
@@ -481,7 +410,7 @@ impl<'a> VmReader<'a, Infallible> {
 
         // SAFETY: The source and destination are subsets of memory ranges specified by the reader
         // and writer, so they are valid for reading and writing.
-        unsafe { memcpy(writer.cursor, self.cursor, copy_len) };
+        unsafe { memcpy::<Infallible, Infallible>(writer.cursor, self.cursor, copy_len) };
         self.cursor = self.cursor.wrapping_add(copy_len);
         writer.cursor = writer.cursor.wrapping_add(copy_len);
 
@@ -814,7 +743,7 @@ impl<'a> VmWriter<'a, Infallible> {
 
         // SAFETY: The destination is a subset of the memory range specified by
         // the current writer, so it is valid for writing.
-        unsafe { memset(self.cursor, 0u8, len_to_set) };
+        unsafe { memset::<Infallible>(self.cursor, 0u8, len_to_set) };
         self.cursor = self.cursor.wrapping_add(len_to_set);
 
         len_to_set
@@ -952,7 +881,7 @@ impl VmWriter<'_, Fallible> {
 
         // SAFETY: The destination is a subset of the memory range specified by
         // the current writer, so it is either valid for writing or in user space.
-        let set_len = unsafe { memset_fallible(self.cursor, 0u8, len_to_set) };
+        let set_len = unsafe { memset::<Fallible>(self.cursor, 0u8, len_to_set) };
         self.cursor = self.cursor.wrapping_add(set_len);
 
         if set_len < len_to_set {
@@ -1086,7 +1015,7 @@ pub trait PodAtomic: Pod {
     /// [valid]: crate::mm::io#safety
     #[doc(hidden)]
     unsafe fn atomic_cmpxchg_fallible(ptr: *mut Self, old_val: Self, new_val: Self)
-        -> Result<Self>;
+    -> Result<Self>;
 }
 
 impl PodAtomic for u32 {
