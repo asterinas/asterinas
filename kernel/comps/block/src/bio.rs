@@ -11,7 +11,7 @@ use ostd::{
     mm::{
         HasSize, Infallible, USegment, VmReader, VmWriter,
         dma::DmaStream,
-        io_util::{HasVmReaderWriter, VmReaderWriterResult},
+        io::util::{HasVmReaderWriter, VmReaderWriterResult},
     },
     sync::{SpinLock, WaitQueue},
 };

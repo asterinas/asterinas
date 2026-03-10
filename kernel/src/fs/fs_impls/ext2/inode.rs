@@ -8,7 +8,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 use device_id::DeviceId;
 use inherit_methods_macro::inherit_methods;
-use ostd::{const_assert, mm::io_util::HasVmReaderWriter};
+use ostd::{const_assert, mm::io::util::HasVmReaderWriter};
 
 use super::{
     block_ptr::{BID_SIZE, BidPath, BlockPtrs, Ext2Bid, MAX_BLOCK_PTRS},

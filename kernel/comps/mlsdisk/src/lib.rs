@@ -28,7 +28,7 @@ use aster_block::{
 use component::{ComponentInitError, init_component};
 use device_id::{DeviceId, MajorId, MinorId};
 use ostd::{
-    mm::{VmIo, io_util::HasVmReaderWriter},
+    mm::{VmIo, io::util::HasVmReaderWriter},
     prelude::*,
 };
 

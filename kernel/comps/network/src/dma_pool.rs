@@ -12,7 +12,7 @@ use ostd::{
     mm::{
         Daddr, FrameAllocOptions, HasDaddr, Infallible, PAGE_SIZE, VmReader, VmWriter,
         dma::{DmaDirection, DmaStream},
-        io_util::HasVmReaderWriter,
+        io::util::HasVmReaderWriter,
     },
     sync::SpinLock,
 };

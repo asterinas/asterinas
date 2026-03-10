@@ -6,7 +6,7 @@
 
 use align_ext::AlignExt;
 use ostd::{
-    mm::{PAGE_SIZE, PageFlags, UFrame, io_util::HasVmReaderWriter, vm_space::VmQueriedItem},
+    mm::{PAGE_SIZE, PageFlags, UFrame, io::util::HasVmReaderWriter, vm_space::VmQueriedItem},
     task::disable_preempt,
 };
 

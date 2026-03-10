@@ -12,7 +12,7 @@ use aster_block::{
     bio::{BioDirection, BioSegment, BioWaiter},
     id::{Bid, BlockId},
 };
-use ostd::mm::{Segment, VmIo, io_util::HasVmReaderWriter};
+use ostd::mm::{Segment, VmIo, io::util::HasVmReaderWriter};
 
 use super::{
     constants::*,

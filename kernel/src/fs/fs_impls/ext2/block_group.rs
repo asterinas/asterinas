@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::{const_assert, mm::io_util::HasVmReaderWriter};
+use ostd::{const_assert, mm::io::util::HasVmReaderWriter};
 
 use super::{
     block_ptr::Ext2Bid,

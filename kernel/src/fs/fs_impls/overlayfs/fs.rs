@@ -13,7 +13,7 @@ use aster_block::BLOCK_SIZE;
 use hashbrown::HashSet;
 use inherit_methods_macro::inherit_methods;
 use ostd::{
-    mm::{FrameAllocOptions, io_util::HasVmReaderWriter},
+    mm::{FrameAllocOptions, io::util::HasVmReaderWriter},
     task::Task,
 };
 
