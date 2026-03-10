@@ -126,7 +126,7 @@ impl Metadata {
             ino,
             size: 2,
             optimal_block_size: blk_size,
-            nr_sectors_allocated: 1,
+            nr_sectors_allocated: 0,
             last_access_at: now,
             last_modify_at: now,
             last_meta_change_at: now,
