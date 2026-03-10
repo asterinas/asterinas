@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Utilities for types in [`super::io`].
+//! Utilities for VM I/O types defined in the parent module.
 
 use inherit_methods_macro::inherit_methods;
 use ostd_pod::Pod;
 
-use super::{Infallible, PodOnce, VmIo, VmIoFill, VmIoOnce, VmReader, VmWriter};
-use crate::{
-    Error,
-    mm::{FallibleVmRead, FallibleVmWrite},
-    prelude::*,
+use super::{
+    FallibleVmRead, FallibleVmWrite, Infallible, PodOnce, VmIo, VmIoFill, VmIoOnce, VmReader,
+    VmWriter,
 };
+use crate::{Error, prelude::*};
 
 /// A helper trait that denotes types that can provide [`VmReader`]s and [`VmWriter`]s.
 ///

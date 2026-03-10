@@ -10,7 +10,7 @@ use crate::{
     mm::{
         Daddr, FrameAllocOptions, HasDaddr, HasPaddr, HasPaddrRange, HasSize, Infallible,
         PAGE_SIZE, Paddr, Segment, Split, VmReader, VmWriter,
-        io_util::{HasVmReaderWriter, VmReaderWriterIdentity},
+        io::util::{HasVmReaderWriter, VmReaderWriterIdentity},
         kspace::kvirt_area::KVirtArea,
     },
 };

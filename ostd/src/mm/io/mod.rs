@@ -40,6 +40,8 @@
 //! user space, making it impossible to avoid data races). However, they may produce erroneous
 //! results, such as unexpected bytes being copied, but do not cause soundness problems.
 
+pub mod util;
+
 use core::{marker::PhantomData, mem::MaybeUninit};
 
 use ostd_pod::Pod;
