@@ -18,7 +18,7 @@ use crate::{
     cpu::{AtomicCpuSet, CpuSet},
     mm::{
         HasPaddr, HasSize, Infallible, PAGE_SIZE, Paddr, PodOnce, VmReader, VmWriter,
-        io_util::{HasVmReaderWriter, VmReaderWriterIdentity},
+        io::util::{HasVmReaderWriter, VmReaderWriterIdentity},
         kspace::kvirt_area::KVirtArea,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
         tlb::{TlbFlushOp, TlbFlusher},
