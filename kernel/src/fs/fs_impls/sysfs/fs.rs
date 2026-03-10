@@ -5,6 +5,7 @@ use spin::Once;
 use crate::{
     fs::{
         Result,
+        pseudofs::AnonDeviceId,
         sysfs::{self, inode::SysFsInode},
         utils::systree_inode::SysTreeInodeTy,
         vfs::{
@@ -19,6 +20,7 @@ use crate::{
 /// A file system for exposing kernel information to the user space.
 #[derive(Debug)]
 pub(super) struct SysFs {
+    _anon_device_id: AnonDeviceId,
     sb: SuperBlock,
     root: Arc<dyn Inode>,
     fs_event_subscriber_stats: FsEventSubscriberStats,
@@ -42,11 +44,13 @@ impl SysFs {
     }
 
     fn new() -> Arc<Self> {
-        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX);
+        let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for sysfs");
+        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
         let systree_ref = sysfs::systree_singleton();
-        let root_inode = SysFsInode::new_root(systree_ref.root().clone());
+        let root_inode = SysFsInode::new_root(systree_ref.root().clone(), &sb);
 
         Arc::new(Self {
+            _anon_device_id: anon_device_id,
             sb,
             root: root_inode,
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),

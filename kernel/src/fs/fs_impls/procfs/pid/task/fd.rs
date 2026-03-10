@@ -9,9 +9,9 @@ use super::TidDirOps;
 use crate::{
     fs::{
         file::{AccessMode, FileLike, chmod, file_table::FileDesc, mkmod},
-        procfs::{
-            DirOps, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps,
-            template::{FileOps, ProcFile, ProcFileBuilder, ProcSym},
+        procfs::template::{
+            DirOps, FileOps, ProcDir, ProcDirBuilder, ProcFile, ProcFileBuilder, ProcSym,
+            ProcSymBuilder, SymOps,
         },
         utils::DirEntryVecExt,
         vfs::inode::{Inode, SymbolicLink},

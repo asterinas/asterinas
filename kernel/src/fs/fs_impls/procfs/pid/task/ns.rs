@@ -9,8 +9,8 @@ use crate::{
     fs::{
         file::mkmod,
         procfs::{
-            DirOps, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps, pid::TidDirOps,
-            template::ProcSym,
+            pid::TidDirOps,
+            template::{DirOps, ProcDir, ProcDirBuilder, ProcSym, ProcSymBuilder, SymOps},
         },
         pseudofs::NsCommonOps,
         utils::DirEntryVecExt,

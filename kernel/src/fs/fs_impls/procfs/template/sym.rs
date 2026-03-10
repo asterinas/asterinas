@@ -4,7 +4,7 @@ use core::time::Duration;
 
 use inherit_methods_macro::inherit_methods;
 
-use super::{Common, ProcFs};
+use super::Common;
 use crate::{
     fs::{
         file::{InodeMode, InodeType, StatusFlags},
@@ -29,18 +29,25 @@ impl<S: SymOps> ProcSym<S> {
         is_volatile: bool,
         mode: InodeMode,
     ) -> Arc<Self> {
-        let common = {
-            let arc_fs = fs.upgrade().unwrap();
-            let procfs = arc_fs.downcast_ref::<ProcFs>().unwrap();
-            let metadata = Metadata::new_symlink(procfs.alloc_id(), mode, super::BLOCK_SIZE);
-            Common::new(metadata, fs, is_volatile)
-        };
+        let common = new_symlink_common(fs, mode, is_volatile);
         Arc::new(Self { inner: sym, common })
     }
 
     pub fn inner(&self) -> &S {
         &self.inner
     }
+}
+
+fn new_symlink_common(fs: Weak<dyn FileSystem>, mode: InodeMode, is_volatile: bool) -> Common {
+    let fs_ref = fs.upgrade().unwrap();
+    let procfs = fs_ref.downcast_ref::<super::ProcFs>().unwrap();
+    let metadata = Metadata::new_symlink(
+        procfs.alloc_id(),
+        mode,
+        super::BLOCK_SIZE,
+        procfs.sb().container_dev_id,
+    );
+    Common::new(metadata, fs, is_volatile)
 }
 
 impl<S: SymOps + 'static> InodeIo for ProcSym<S> {

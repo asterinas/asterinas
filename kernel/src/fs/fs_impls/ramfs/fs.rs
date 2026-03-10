@@ -6,7 +6,7 @@ use core::{
 };
 
 use align_ext::AlignExt;
-use aster_block::bio::BioWaiter;
+use aster_block::{SECTOR_SIZE, bio::BioWaiter};
 use aster_util::slot_vec::SlotVec;
 use device_id::DeviceId;
 use hashbrown::HashMap;
@@ -21,6 +21,7 @@ use crate::{
     fs::{
         file::{AccessMode, FileIo, InodeMode, InodeType, Permission, StatusFlags, mkmod},
         pipe::Pipe,
+        pseudofs::AnonDeviceId,
         utils::{CStr256, DirentVisitor},
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
@@ -39,6 +40,7 @@ use crate::{
 
 /// A volatile file system whose data and metadata exists only in memory.
 pub struct RamFs {
+    _anon_device_id: AnonDeviceId,
     /// The super block
     sb: SuperBlock,
     /// Root inode
@@ -51,8 +53,11 @@ pub struct RamFs {
 
 impl RamFs {
     pub fn new() -> Arc<Self> {
-        Arc::new_cyclic(|weak_fs| Self {
-            sb: SuperBlock::new(RAMFS_MAGIC, BLOCK_SIZE, NAME_MAX),
+        let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for ramfs");
+        let root_dev_id = anon_device_id.id();
+        Arc::new_cyclic(move |weak_fs| Self {
+            _anon_device_id: anon_device_id,
+            sb: SuperBlock::new(RAMFS_MAGIC, BLOCK_SIZE, NAME_MAX, root_dev_id),
             root: Arc::new_cyclic(|weak_root| RamInode {
                 inner: Inner::new_dir(weak_root.clone(), weak_root.clone()),
                 metadata: SpinLock::new(InodeMeta::new_dir(
@@ -64,6 +69,7 @@ impl RamFs {
                 typ: InodeType::Dir,
                 this: weak_root.clone(),
                 fs: weak_fs.clone(),
+                container_dev_id: root_dev_id,
                 extension: Extension::new(),
                 xattr: RamXattr::new(),
             }),
@@ -114,6 +120,10 @@ pub(super) struct RamInode {
     this: Weak<RamInode>,
     /// Reference to fs
     fs: Weak<RamFs>,
+    /// Device ID.
+    /// Detached inodes such as `memfd` store it directly
+    /// because they do not have a valid fs reference.
+    container_dev_id: DeviceId,
     /// Extensions
     extension: Extension,
     /// Extended attributes
@@ -291,6 +301,12 @@ impl InodeMeta {
         self.blocks = self.size.align_up(BLOCK_SIZE) / BLOCK_SIZE;
     }
 
+    pub fn nr_sectors_allocated(&self) -> usize {
+        self.blocks
+            .checked_mul(BLOCK_SIZE / SECTOR_SIZE)
+            .expect("ramfs allocated sector count overflow")
+    }
+
     pub fn set_atime(&mut self, time: Duration) {
         self.atime = time;
     }
@@ -449,6 +465,7 @@ impl RamInode {
             typ: InodeType::Dir,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            container_dev_id: fs.sb.container_dev_id,
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -462,6 +479,7 @@ impl RamInode {
             typ: InodeType::File,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            container_dev_id: fs.sb.container_dev_id,
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -470,6 +488,7 @@ impl RamInode {
     /// Creates a `RamInode` that is detached from any `RamFs`, and resides in a `MemfdInode`.
     pub(super) fn new_file_detached_in_memfd(
         weak_self: &Weak<MemfdInode>,
+        dev_id: DeviceId,
         mode: InodeMode,
         uid: Uid,
         gid: Gid,
@@ -481,6 +500,7 @@ impl RamInode {
             typ: InodeType::File,
             this: Weak::new(),
             fs: Weak::new(),
+            container_dev_id: dev_id,
             extension: Extension::new(),
             xattr: RamXattr::new(),
         }
@@ -494,6 +514,7 @@ impl RamInode {
             typ: InodeType::SymLink,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            container_dev_id: fs.sb.container_dev_id,
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -519,6 +540,7 @@ impl RamInode {
             typ: dev_type.into(),
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            container_dev_id: fs.sb.container_dev_id,
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -532,6 +554,7 @@ impl RamInode {
             typ: InodeType::Socket,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            container_dev_id: fs.sb.container_dev_id,
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -545,6 +568,7 @@ impl RamInode {
             typ: InodeType::NamedPipe,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            container_dev_id: fs.sb.container_dev_id,
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -1170,20 +1194,24 @@ impl Inode for RamInode {
         let rdev = self.inner.device_id().unwrap_or(0);
         let inode_metadata = self.metadata.lock();
         Metadata {
-            dev: 0,
             ino: self.ino as _,
             size: inode_metadata.size,
-            blk_size: BLOCK_SIZE,
-            blocks: inode_metadata.blocks,
-            atime: inode_metadata.atime,
-            mtime: inode_metadata.mtime,
-            ctime: inode_metadata.ctime,
+            optimal_block_size: BLOCK_SIZE,
+            nr_sectors_allocated: inode_metadata.nr_sectors_allocated(),
+            last_access_at: inode_metadata.atime,
+            last_modify_at: inode_metadata.mtime,
+            last_meta_change_at: inode_metadata.ctime,
             type_: self.typ,
             mode: inode_metadata.mode,
-            nlinks: inode_metadata.nlinks,
+            nr_hard_links: inode_metadata.nlinks,
             uid: inode_metadata.uid,
             gid: inode_metadata.gid,
-            rdev,
+            container_dev_id: self.container_dev_id,
+            self_dev_id: if rdev == 0 {
+                None
+            } else {
+                DeviceId::from_encoded_u64(rdev)
+            },
         }
     }
 

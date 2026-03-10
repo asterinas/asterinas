@@ -5,7 +5,7 @@ use spin::Once;
 use crate::{
     fs::{
         file::mkmod,
-        pseudofs::{PseudoFs, PseudoInodeType},
+        pseudofs::{NaivePseudoFs, PseudoInodeType},
         vfs::{
             inode::Inode,
             path::{Mount, Path},
@@ -21,10 +21,10 @@ pub struct AnonInodeFs {
 
 impl AnonInodeFs {
     /// Returns the singleton instance of the anonymous inode file system.
-    fn singleton() -> &'static Arc<PseudoFs> {
-        static ANON_INODEFS: Once<Arc<PseudoFs>> = Once::new();
+    fn singleton() -> &'static Arc<NaivePseudoFs> {
+        static ANON_INODEFS: Once<Arc<NaivePseudoFs>> = Once::new();
 
-        PseudoFs::singleton(&ANON_INODEFS, "anon_inodefs", ANON_INODEFS_MAGIC)
+        NaivePseudoFs::singleton(&ANON_INODEFS, "anon_inodefs", ANON_INODEFS_MAGIC)
     }
 
     /// Creates a pseudo `Path` for the shared inode.
