@@ -101,7 +101,7 @@ impl Inode {
     }
 
     pub fn page_cache(&self) -> Arc<Vmo> {
-        self.inner.read().page_cache.pages().clone()
+        self.inner.read().page_cache.clone()
     }
 
     pub fn metadata(&self) -> Metadata {
@@ -982,7 +982,7 @@ impl InodeInner {
         let num_page_bytes = desc.num_page_bytes();
         let inode_impl = InodeImpl::new(desc, weak_self, fs);
         Self {
-            page_cache: PageCache::with_capacity(
+            page_cache: PageCacheOps::with_capacity(
                 num_page_bytes,
                 Arc::downgrade(&inode_impl.block_manager) as _,
             )
@@ -992,7 +992,8 @@ impl InodeInner {
     }
 
     pub fn resize(&mut self, new_size: usize) -> Result<()> {
-        self.page_cache.resize(new_size)?;
+        self.page_cache
+            .resize(new_size, self.inode_impl.file_size())?;
         self.inode_impl.resize(new_size)?;
         Ok(())
     }
@@ -1005,7 +1006,7 @@ impl InodeInner {
             (start, end - start)
         };
 
-        self.page_cache.pages().read(offset, writer)?;
+        self.page_cache.read(offset, writer)?;
         Ok(read_len)
     }
 
@@ -1022,7 +1023,8 @@ impl InodeInner {
         if read_len == 0 {
             return Ok(read_len);
         }
-        self.page_cache.discard_range(offset..offset + read_len);
+
+        self.page_cache.flush_range(offset..offset + read_len)?;
 
         let start_bid = Bid::from_offset(offset).to_raw() as Ext2Bid;
         let buf_nblocks = read_len / BLOCK_SIZE;
@@ -1034,15 +1036,16 @@ impl InodeInner {
 
     pub fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         let write_len = reader.remain();
-        self.page_cache.pages().write(offset, reader)?;
+        self.page_cache.write(offset, reader)?;
         Ok(write_len)
     }
 
     pub fn extend_write_at(&mut self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         let write_len = reader.remain();
         let new_size = offset + write_len;
-        self.page_cache.resize(new_size.align_up(BLOCK_SIZE))?;
-        self.page_cache.pages().write(offset, reader)?;
+        self.page_cache
+            .resize(new_size.align_up(BLOCK_SIZE), self.inode_impl.file_size())?;
+        self.page_cache.write(offset, reader)?;
         self.inode_impl.resize(new_size)?;
         Ok(write_len)
     }
@@ -1055,7 +1058,11 @@ impl InodeInner {
 
         let start = offset.min(file_size);
         let end = end_offset.min(file_size);
-        self.page_cache.discard_range(start..end);
+
+        self.page_cache.flush_range(start..end)?;
+        self.page_cache.evict_range(start..end)?;
+        // TODO: If some pages in the write range have been mapped, we need to fallback to
+        // writing with the page cache.
 
         if end_offset > file_size {
             self.inode_impl.resize(end_offset)?;
@@ -1066,6 +1073,9 @@ impl InodeInner {
         self.inode_impl
             .write_blocks(start_bid, buf_nblocks, reader)?;
 
+        // TODO: Do `evict_range` again after write to prevent stale data from being loaded
+        // into page cache during asynchronous read-ahead.
+
         Ok(write_len)
     }
 
@@ -1074,12 +1084,14 @@ impl InodeInner {
             return self.inode_impl.write_fast_link(target);
         }
 
-        self.page_cache.resize(target.len())?;
-        self.page_cache.pages().write_bytes(0, target.as_bytes())?;
         let file_size = self.inode_impl.file_size();
         if file_size != target.len() {
+            self.page_cache.resize(target.len(), file_size)?;
             self.inode_impl.resize(target.len())?;
         }
+
+        self.page_cache.write_bytes(0, target.as_bytes())?;
+
         Ok(())
     }
 
@@ -1090,9 +1102,7 @@ impl InodeInner {
         }
 
         let mut symlink = vec![0u8; file_size];
-        self.page_cache
-            .pages()
-            .read_bytes(0, symlink.as_mut_slice())?;
+        self.page_cache.read_bytes(0, symlink.as_mut_slice())?;
 
         Ok(String::from_utf8(symlink)?)
     }
@@ -1131,7 +1141,7 @@ impl InodeInner {
         )?;
 
         let file_size = self.file_size();
-        let page_cache_size = self.page_cache.pages().size();
+        let page_cache_size = self.page_cache.size();
         if page_cache_size > file_size {
             self.inode_impl.resize(page_cache_size)?;
         }
@@ -1147,7 +1157,7 @@ impl InodeInner {
     pub fn remove_entry_at(&mut self, name: &str, offset: usize) -> Result<()> {
         let removed_entry = DirEntryWriter::new(&self.page_cache, offset).remove_entry(name)?;
         let file_size = self.file_size();
-        let page_cache_size = self.page_cache.pages().size();
+        let page_cache_size = self.page_cache.size();
         if page_cache_size < file_size {
             self.inode_impl.resize(page_cache_size)?;
         }
@@ -1160,7 +1170,7 @@ impl InodeInner {
     pub fn rename_entry_at(&mut self, old_name: &str, new_name: &str, offset: usize) -> Result<()> {
         DirEntryWriter::new(&self.page_cache, offset).rename_entry(old_name, new_name)?;
         let file_size = self.file_size();
-        let page_cache_size = self.page_cache.pages().size();
+        let page_cache_size = self.page_cache.size();
         if page_cache_size != file_size {
             self.inode_impl.resize(page_cache_size)?;
         }
@@ -1178,7 +1188,7 @@ impl InodeInner {
     pub fn sync_data(&self) -> Result<()> {
         // Writes back the data in page cache.
         let file_size = self.file_size();
-        self.page_cache.evict_range(0..file_size)?;
+        self.page_cache.flush_range(0..file_size)?;
         Ok(())
     }
 }
