@@ -8,7 +8,7 @@ use core::{
 };
 
 use intrusive_collections::{LinkedList, LinkedListAtomicLink, intrusive_adapter};
-use ostd::{cpu::local::StaticCpuLocal, cpu_local, irq, sync::SpinLock};
+use ostd::{cpu::local::StaticCpuLocal, cpu_local, irq};
 
 use super::{
     SoftIrqLine,
@@ -58,7 +58,7 @@ pub struct Taskless {
     /// Whether the taskless job is running.
     is_running: AtomicBool,
     /// The function that will be called when executing this taskless job.
-    callback: Box<SpinLock<dyn FnMut() + Send + Sync + 'static>>,
+    callback: Box<dyn Fn() + Send + Sync + 'static>,
     /// Whether this `Taskless` is disabled.
     is_disabled: AtomicBool,
     link: LinkedListAtomicLink,
@@ -67,20 +67,22 @@ pub struct Taskless {
 intrusive_adapter!(TasklessAdapter = Arc<Taskless>: Taskless { link: LinkedListAtomicLink });
 
 cpu_local! {
-    static TASKLESS_LIST: RefCell<LinkedList<TasklessAdapter>> = RefCell::new(LinkedList::new(TasklessAdapter::NEW));
-    static TASKLESS_URGENT_LIST: RefCell<LinkedList<TasklessAdapter>> = RefCell::new(LinkedList::new(TasklessAdapter::NEW));
+    static TASKLESS_LIST: RefCell<LinkedList<TasklessAdapter>> =
+        RefCell::new(LinkedList::new(TasklessAdapter::NEW));
+    static TASKLESS_URGENT_LIST: RefCell<LinkedList<TasklessAdapter>> =
+        RefCell::new(LinkedList::new(TasklessAdapter::NEW));
 }
 
 impl Taskless {
     /// Creates a new `Taskless` instance with its callback function.
     pub fn new<F>(callback: F) -> Arc<Self>
     where
-        F: FnMut() + Send + Sync + 'static,
+        F: Fn() + Send + Sync + 'static,
     {
         Arc::new(Self {
             is_scheduled: AtomicBool::new(false),
             is_running: AtomicBool::new(false),
-            callback: Box::new(SpinLock::new(callback)),
+            callback: Box::new(callback),
             is_disabled: AtomicBool::new(false),
             link: LinkedListAtomicLink::new(),
         })
@@ -181,7 +183,7 @@ fn taskless_softirq_handler(
 
         taskless.is_scheduled.store(false, Ordering::Release);
 
-        (taskless.callback.lock())();
+        (taskless.callback)();
         taskless.is_running.store(false, Ordering::Release);
     }
 }
