@@ -4,27 +4,19 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use aster_util::slot_vec::SlotVec;
 use ostd::sync::RwMutexUpgradeableGuard;
-use template::{lookup_child_from_table, populate_children_from_table};
+use template::{DirOps, ProcDir, lookup_child_from_table, populate_children_from_table};
 
 use self::{
-    cmdline::CmdLineFileOps,
-    cpuinfo::CpuInfoFileOps,
-    loadavg::LoadAvgFileOps,
-    meminfo::MemInfoFileOps,
-    mounts::MountsSymOps,
-    pid::PidDirOps,
-    self_::SelfSymOps,
-    sys::SysDirOps,
-    template::{DirOps, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps},
-    thread_self::ThreadSelfSymOps,
-    uptime::UptimeFileOps,
-    version::VersionFileOps,
+    cmdline::CmdLineFileOps, cpuinfo::CpuInfoFileOps, loadavg::LoadAvgFileOps,
+    meminfo::MemInfoFileOps, mounts::MountsSymOps, pid::PidDirOps, self_::SelfSymOps,
+    sys::SysDirOps, thread_self::ThreadSelfSymOps, uptime::UptimeFileOps, version::VersionFileOps,
 };
 use crate::{
     events::Observer,
     fs::{
         file::mkmod,
         procfs::{filesystems::FileSystemsFileOps, stat::StatFileOps},
+        pseudofs::AnonDeviceId,
         utils::{DirEntryVecExt, NAME_MAX},
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
@@ -70,6 +62,7 @@ const PROC_ROOT_INO: u64 = 1;
 const BLOCK_SIZE: usize = 1024;
 
 struct ProcFs {
+    _anon_device_id: AnonDeviceId,
     sb: SuperBlock,
     root: Arc<dyn Inode>,
     inode_allocator: AtomicU64,
@@ -78,9 +71,12 @@ struct ProcFs {
 
 impl ProcFs {
     pub(self) fn new() -> Arc<Self> {
+        let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for procfs");
+        let sb = SuperBlock::new(PROC_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
         Arc::new_cyclic(|weak_fs| Self {
-            sb: SuperBlock::new(PROC_MAGIC, BLOCK_SIZE, NAME_MAX),
-            root: RootDirOps::new_inode(weak_fs.clone()),
+            _anon_device_id: anon_device_id,
+            sb: sb.clone(),
+            root: RootDirOps::new_inode(weak_fs.clone(), &sb),
             inode_allocator: AtomicU64::new(PROC_ROOT_INO + 1),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
         })
@@ -142,13 +138,10 @@ impl FsType for ProcFsType {
 struct RootDirOps;
 
 impl RootDirOps {
-    pub fn new_inode(fs: Weak<ProcFs>) -> Arc<dyn Inode> {
+    pub fn new_inode(fs: Weak<ProcFs>, sb: &SuperBlock) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/root.c#L368>
-        let root_inode = ProcDirBuilder::new(Self, mkmod!(a+rx))
-            .fs(fs)
-            .ino(PROC_ROOT_INO)
-            .build()
-            .unwrap();
+        let fs: Weak<dyn FileSystem> = fs;
+        let root_inode = ProcDir::new_root(Self, fs, PROC_ROOT_INO, sb, mkmod!(a+rx));
 
         let weak_ptr = Arc::downgrade(&root_inode);
         process_table::register_observer(weak_ptr);

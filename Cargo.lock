@@ -716,6 +716,7 @@ name = "device-id"
 version = "0.1.0"
 dependencies = [
  "aster-util",
+ "spin",
 ]
 
 [[package]]

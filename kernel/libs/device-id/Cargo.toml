@@ -7,6 +7,7 @@ edition.workspace = true
 
 [dependencies]
 aster-util.workspace = true
+spin.workspace = true
 
 [lints]
 workspace = true

@@ -5,7 +5,7 @@ use spin::Once;
 use crate::{
     fs::{
         file::mkmod,
-        pseudofs::{PseudoFs, PseudoInodeType},
+        pseudofs::{NaivePseudoFs, PseudoInodeType},
         vfs::{
             inode::Inode,
             path::{Mount, Path},
@@ -21,10 +21,10 @@ pub struct PidfdFs {
 
 impl PidfdFs {
     /// Returns the singleton instance of the pidfd file system.
-    pub fn singleton() -> &'static Arc<PseudoFs> {
-        static PIDFDFS: Once<Arc<PseudoFs>> = Once::new();
+    pub fn singleton() -> &'static Arc<NaivePseudoFs> {
+        static PIDFDFS: Once<Arc<NaivePseudoFs>> = Once::new();
 
-        PseudoFs::singleton(&PIDFDFS, "pidfdfs", PIDFDFS_MAGIC)
+        NaivePseudoFs::singleton(&PIDFDFS, "pidfdfs", PIDFDFS_MAGIC)
     }
 
     /// Creates a pseudo `Path` for a pidfd.

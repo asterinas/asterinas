@@ -6,6 +6,7 @@
 use alloc::{borrow::ToOwned, rc::Rc};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+use device_id::DeviceId;
 use inherit_methods_macro::inherit_methods;
 use ostd::{const_assert, mm::io_util::HasVmReaderWriter};
 
@@ -105,22 +106,26 @@ impl Inode {
 
     pub fn metadata(&self) -> Metadata {
         let inner = self.inner.read();
-        let id = self.fs.upgrade().unwrap().block_device().id();
+        let dev_id = self.fs.upgrade().unwrap().container_device_id();
         Metadata {
-            dev: id.as_encoded_u64(),
             ino: self.ino() as _,
             size: inner.file_size() as _,
-            blk_size: BLOCK_SIZE,
-            blocks: inner.blocks_count() as _,
-            atime: inner.atime(),
-            mtime: inner.mtime(),
-            ctime: inner.ctime(),
+            optimal_block_size: BLOCK_SIZE,
+            nr_sectors_allocated: inner.nr_sectors_allocated() as _,
+            last_access_at: inner.atime(),
+            last_modify_at: inner.mtime(),
+            last_meta_change_at: inner.ctime(),
             type_: self.type_,
             mode: InodeMode::from(inner.file_perm()),
-            nlinks: inner.hard_links() as _,
+            nr_hard_links: inner.hard_links() as _,
             uid: Uid::new(inner.uid()),
             gid: Gid::new(inner.gid()),
-            rdev: self.device_id(),
+            container_dev_id: dev_id,
+            self_dev_id: if self.device_id() != 0 {
+                DeviceId::from_encoded_u64(self.device_id())
+            } else {
+                None
+            },
         }
     }
 
@@ -1190,6 +1195,7 @@ impl InodeInner {
     pub fn set_gid(&mut self, gid: u32);
     pub fn file_flags(&self) -> FileFlags;
     pub fn hard_links(&self) -> u16;
+    pub fn nr_sectors_allocated(&self) -> usize;
     pub fn inc_hard_links(&mut self);
     pub fn dec_hard_links(&mut self);
     pub fn blocks_count(&self) -> Ext2Bid;
@@ -1277,6 +1283,10 @@ impl InodeImpl {
 
     pub fn hard_links(&self) -> u16 {
         self.desc.hard_links
+    }
+
+    pub fn nr_sectors_allocated(&self) -> usize {
+        self.desc.sector_count as usize
     }
 
     pub fn inc_hard_links(&mut self) {
