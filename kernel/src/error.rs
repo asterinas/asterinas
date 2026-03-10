@@ -151,6 +151,8 @@ pub enum Errno {
     EHWPOISON = 133, /* Memory page has hardware error */
 
     ERESTARTSYS = 512, /* Restart of an interrupted system call. For kernel internal use only. */
+
+    ENOIOCTLCMD = 515, /* No ioctl command. For kernel internal use only. */
 }
 
 /// error used in this crate
