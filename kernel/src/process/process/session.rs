@@ -20,7 +20,7 @@ pub struct Session {
 }
 
 struct Inner {
-    process_groups: BTreeMap<Pgid, Arc<ProcessGroup>>,
+    process_groups: BTreeMap<Pgid, Weak<ProcessGroup>>,
     terminal: Option<Arc<dyn Terminal>>,
 }
 
@@ -33,30 +33,22 @@ impl Session {
     /// The caller needs to ensure that the process does not belong to other process group or other
     /// session.
     pub(in crate::process) fn new_pair(process: Arc<Process>) -> (Arc<Self>, Arc<ProcessGroup>) {
-        let mut process_group = None;
-
-        let session = Arc::new_cyclic(|weak_session| {
-            let group = ProcessGroup::new(process, weak_session.clone());
-            process_group = Some(group.clone());
-
-            let pgid = group.pgid();
-
-            let inner = {
-                let mut process_groups = BTreeMap::new();
-                process_groups.insert(pgid, group);
-                Inner {
-                    process_groups,
-                    terminal: None,
-                }
-            };
-
-            Self {
-                sid: pgid,
-                inner: Mutex::new(inner),
-            }
+        let session = Arc::new(Self {
+            sid: process.pid(),
+            inner: Mutex::new(Inner {
+                process_groups: BTreeMap::new(),
+                terminal: None,
+            }),
         });
 
-        (session, process_group.unwrap())
+        let process_group = ProcessGroup::new(process, session.clone());
+        session
+            .inner
+            .lock()
+            .process_groups
+            .insert(process_group.pgid(), Arc::downgrade(&process_group));
+
+        (session, process_group)
     }
 
     /// Returns the session identifier.
@@ -108,7 +100,7 @@ impl SessionGuard<'_> {
         let old_process_group = self
             .inner
             .process_groups
-            .insert(process_group.pgid(), process_group);
+            .insert(process_group.pgid(), Arc::downgrade(&process_group));
         debug_assert!(old_process_group.is_none());
     }
 

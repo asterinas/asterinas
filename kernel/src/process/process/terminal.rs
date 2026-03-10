@@ -113,8 +113,8 @@ impl dyn Terminal {
         // Lock order: group of process -> session inner -> job control
         let process_group_mut = process.process_group.lock();
 
-        let process_group = process_group_mut.upgrade().unwrap();
-        let session = process_group.session().unwrap();
+        let process_group = process_group_mut.as_ref().cloned().unwrap();
+        let session = process_group.session().clone();
 
         if !session.is_leader(process) {
             return_errno_with_message!(
@@ -183,7 +183,7 @@ impl dyn Terminal {
                 );
             };
 
-            if !Arc::ptr_eq(session, &process_group.session().unwrap()) {
+            if !Arc::ptr_eq(session, process_group.session()) {
                 return_errno_with_message!(
                     Errno::EPERM,
                     "the process group to be foreground belongs to a different session"
@@ -206,8 +206,8 @@ impl dyn Terminal {
     {
         let process_group_mut = process.process_group.lock();
 
-        let process_group = process_group_mut.upgrade().unwrap();
-        let session = process_group.session().unwrap();
+        let process_group = process_group_mut.as_ref().cloned().unwrap();
+        let session = process_group.session().clone();
 
         let mut session_inner = session.lock();
 

@@ -224,7 +224,6 @@ fn reap_zombie_child(
     // Remove the process group and the session from global table, if necessary
     let mut child_group_mut = child_process.process_group.lock();
     child_process.clear_old_group_and_session(&mut child_group_mut, &mut pid_table);
-    *child_group_mut = Weak::new();
 
     let (mut user_time, mut kernel_time) = child_process.reaped_children_stats().lock().get();
     user_time += child_process.prof_clock().user_clock().read_time();

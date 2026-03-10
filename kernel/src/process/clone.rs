@@ -782,13 +782,12 @@ fn set_parent_and_group(clone_flags: CloneFlags, parent: &Arc<Process>, child: &
         let mut pid_table = pid_table::pid_table_mut();
 
         let process_group_mut = parent.process_group.lock();
-
-        let process_group = process_group_mut.upgrade().unwrap();
+        let process_group = process_group_mut.as_ref().cloned().unwrap();
         let mut process_group_inner = process_group.lock();
 
         // Put the child process in the parent's process group
         process_group_inner.insert_process(child.clone());
-        *child.process_group.lock() = Arc::downgrade(&process_group);
+        *child.process_group.lock() = Some(process_group.clone());
 
         // Put the child process in the parent's `children` field
         children_mut.insert(child.pid(), child.clone());

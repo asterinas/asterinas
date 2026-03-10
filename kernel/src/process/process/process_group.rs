@@ -11,12 +11,12 @@ use crate::{prelude::*, process::signal::signals::Signal};
 /// which has a unique identifier PGID (i.e., [`Pgid`]).
 pub struct ProcessGroup {
     pgid: Pgid,
-    session: Weak<Session>,
+    session: Arc<Session>,
     inner: Mutex<Inner>,
 }
 
 struct Inner {
-    processes: BTreeMap<Pid, Arc<Process>>,
+    processes: BTreeMap<Pid, Weak<Process>>,
 }
 
 impl ProcessGroup {
@@ -26,12 +26,12 @@ impl ProcessGroup {
     /// process of the new process group.
     ///
     /// The caller needs to ensure that the process does not belong to other process group.
-    pub(super) fn new(process: Arc<Process>, session: Weak<Session>) -> Arc<Self> {
+    pub(super) fn new(process: Arc<Process>, session: Arc<Session>) -> Arc<Self> {
         let pid = process.pid();
 
         let inner = {
             let mut processes = BTreeMap::new();
-            processes.insert(pid, process);
+            processes.insert(pid, Arc::downgrade(&process));
             Inner { processes }
         };
 
@@ -48,8 +48,8 @@ impl ProcessGroup {
     }
 
     /// Returns the session to which the process group belongs.
-    pub fn session(&self) -> Option<Arc<Session>> {
-        self.session.upgrade()
+    pub fn session(&self) -> &Arc<Session> {
+        &self.session
     }
 
     /// Acquires a lock on the process group.
@@ -65,7 +65,13 @@ impl ProcessGroup {
     //
     // TODO: Do some checks to forbid user signals.
     pub fn broadcast_signal(&self, signal: impl Signal + Clone + 'static) {
-        for process in self.inner.lock().processes.values() {
+        for process in self
+            .inner
+            .lock()
+            .processes
+            .values()
+            .filter_map(Weak::upgrade)
+        {
             process.enqueue_signal(Box::new(signal.clone()));
         }
     }
@@ -93,7 +99,10 @@ impl ProcessGroupGuard<'_> {
     /// The caller needs to ensure that the process didn't previously belong to the process group,
     /// but now does.
     pub(in crate::process) fn insert_process(&mut self, process: Arc<Process>) {
-        let old_process = self.inner.processes.insert(process.pid(), process);
+        let old_process = self
+            .inner
+            .processes
+            .insert(process.pid(), Arc::downgrade(&process));
         debug_assert!(old_process.is_none());
     }
 
@@ -114,13 +123,13 @@ impl ProcessGroupGuard<'_> {
 
 /// An iterator over the processes of the process group.
 pub struct ProcessGroupIter<'a> {
-    inner: Values<'a, Pid, Arc<Process>>,
+    inner: Values<'a, Pid, Weak<Process>>,
 }
 
 impl<'a> Iterator for ProcessGroupIter<'a> {
-    type Item = &'a Arc<Process>;
+    type Item = Arc<Process>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next()
+        self.inner.by_ref().find_map(Weak::upgrade)
     }
 }
