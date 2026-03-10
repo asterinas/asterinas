@@ -11,6 +11,7 @@ use crate::{
 
 mod driver;
 mod file;
+mod ioctl_defs;
 mod master;
 mod packet;
 

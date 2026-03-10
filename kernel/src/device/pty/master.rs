@@ -139,20 +139,6 @@ impl InodeIo for PtyMaster {
     }
 }
 
-mod ioctl_defs {
-    use crate::util::ioctl::{InData, NoData, OutData, ioc};
-
-    // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/asm-generic/ioctls.h>
-
-    pub(super) type SetPtyLock   = ioc!(TIOCSPTLCK,  b'T', 0x31, InData<i32>);
-    pub(super) type GetPtyLock   = ioc!(TIOCGPTLCK,  b'T', 0x39, OutData<i32>);
-
-    pub(super) type OpenPtySlave = ioc!(TIOCGPTPEER, b'T', 0x41, NoData);
-
-    pub(super) type SetPktMode   = ioc!(TIOCPKT,     0x5420,     InData<i32>);
-    pub(super) type GetPktMode   = ioc!(TIOCGPKT,    b'T', 0x38, OutData<i32>);
-}
-
 impl FileIo for PtyMaster {
     fn check_seekable(&self) -> Result<()> {
         return_errno_with_message!(Errno::ESPIPE, "the inode is a pty");
@@ -163,8 +149,7 @@ impl FileIo for PtyMaster {
     }
 
     fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
-        use ioctl_defs::*;
-
+        use super::ioctl_defs::*;
         use crate::{device::tty::ioctl_defs::*, util::ioctl::common_defs::GetNumBytesToRead};
 
         dispatch_ioctl!(match raw_ioctl {
@@ -245,7 +230,15 @@ impl FileIo for PtyMaster {
                 cmd.write(&packet_mode)?;
             }
 
-            _ => (self.slave.clone() as Arc<dyn Terminal>).job_ioctl(raw_ioctl, true)?,
+            _ => {
+                let terminal = self.slave.clone() as Arc<dyn Terminal>;
+
+                if terminal.job_ioctl(raw_ioctl, true)? {
+                    return Ok(0);
+                }
+
+                return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown");
+            }
         });
 
         Ok(0)

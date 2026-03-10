@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 mod driver;
+mod ioctl_defs;
 mod keyboard;
 
 use core::num::NonZeroU8;
