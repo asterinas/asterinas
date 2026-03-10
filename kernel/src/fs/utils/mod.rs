@@ -9,6 +9,12 @@ pub use id_bitmap::IdBitmap;
 #[cfg(ktest)]
 pub use random_test::{generate_random_operation, new_fs_in_memory};
 
+#[expect(unused_imports)]
+pub use crate::fs::vfs::page_cache::{
+    CachePage, CachePageExt, CachePageMeta, LockedCachePage, PageCache, PageCacheBackend,
+    PageCacheOps, PageState,
+};
+
 mod dirent_visitor;
 mod direntry_vec;
 mod endpoint;
