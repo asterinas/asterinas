@@ -135,7 +135,7 @@ impl RangeLockItem {
     /// Sets a new ending position for the lock range
     /// If the range shrinks, it will wake all waiting processes
     pub fn set_end(&mut self, new_end: usize) {
-        let change = self.range().set_end(new_end).expect("invalid new end");
+        let change = self.lock.range.set_end(new_end).expect("invalid new end");
         if let FileRangeChange::Shrunk = change {
             self.waitqueue.wake_all();
         }

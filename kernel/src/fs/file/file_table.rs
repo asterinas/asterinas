@@ -71,8 +71,9 @@ impl FileTable {
         flags: FdFlags,
     ) -> Result<Option<Arc<dyn FileLike>>> {
         let entry = self.duplicate_entry(fd, flags)?;
-        let replaced = self.table.put_at(new_fd as usize, entry);
-        Ok(replaced.map(|entry| entry.file))
+        let closed_file = self.close_file(new_fd);
+        self.table.put_at(new_fd as usize, entry);
+        Ok(closed_file)
     }
 
     fn duplicate_entry(&self, fd: FileDesc, flags: FdFlags) -> Result<FileTableEntry> {
@@ -91,6 +92,13 @@ impl FileTable {
 
     pub fn close_file(&mut self, fd: FileDesc) -> Option<Arc<dyn FileLike>> {
         let removed_entry = self.table.remove(fd as usize)?;
+        // POSIX record locks are process-associated and Linux drops them when any fd for the inode is
+        // closed by that process, even if duplicated descriptors still exist.
+        //
+        // Reference: <https://man7.org/linux/man-pages/man2/fcntl_locking.2.html>
+        if let Ok(inode_handle) = removed_entry.file.as_inode_handle_or_err() {
+            inode_handle.release_range_locks();
+        }
         Some(removed_entry.file)
     }
 
@@ -116,8 +124,7 @@ impl FileTable {
             .collect();
 
         for fd in closed_fds {
-            let removed_entry = self.table.remove(fd as usize).unwrap();
-            closed_files.push(removed_entry.file);
+            closed_files.push(self.close_file(fd).unwrap());
         }
 
         closed_files
