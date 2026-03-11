@@ -109,7 +109,7 @@ fn do_sys_mmap(
             }
         } else {
             let mut file_table = ctx.thread_local.borrow_file_table_mut();
-            let file = get_file_fast!(&mut file_table, fd);
+            let file = get_file_fast!(&mut file_table, fd.try_into()?);
 
             let access_mode = file.access_mode();
             if vm_perms.contains(VmPerms::READ) && !access_mode.is_readable() {

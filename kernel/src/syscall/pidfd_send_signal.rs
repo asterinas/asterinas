@@ -114,7 +114,7 @@ fn get_target_from_pidfd(
         },
         _ => {
             let mut file_table = ctx.thread_local.borrow_file_table_mut();
-            let file = get_file_fast!(&mut file_table, pidfd);
+            let file = get_file_fast!(&mut file_table, pidfd.try_into()?);
 
             // FIXME: On Linux, a pidfd can be also obtained by opening a `/proc/pid` directory.
             // Reference: <https://man7.org/linux/man-pages/man2/pidfd_send_signal.2.html>

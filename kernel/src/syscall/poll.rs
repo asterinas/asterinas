@@ -142,9 +142,10 @@ impl<'a> PollFiles<'a> {
         let files = poll_fds
             .iter()
             .map(|poll_fd| {
-                poll_fd
-                    .fd()
-                    .and_then(|fd| file_table.get_file(fd).ok().cloned())
+                poll_fd.fd().and_then(|raw_fd| {
+                    let fd = raw_fd.try_into().ok()?;
+                    file_table.get_file(fd).ok().cloned()
+                })
             })
             .collect();
         Self {
@@ -215,7 +216,7 @@ impl PollFiles<'_> {
         match &self.files {
             CowFiles::Borrowed(table) => self.poll_fds[index]
                 .fd()
-                .and_then(|fd| table.get_file(fd).ok())
+                .and_then(|fd| table.get_file(fd.try_into().ok()?).ok())
                 .map(Arc::as_ref),
             CowFiles::Owned(files) => files[index].as_deref(),
         }

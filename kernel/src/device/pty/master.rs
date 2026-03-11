@@ -208,7 +208,7 @@ impl FileIo for PtyMaster {
                     // TODO: Deal with the `O_CLOEXEC` flag.
                     file_table_locked.insert(slave, FdFlags::empty())
                 };
-                return Ok(fd);
+                return Ok(fd.into());
             }
             cmd @ GetNumBytesToRead => {
                 let len = self.slave.driver().buffer_len() as i32;

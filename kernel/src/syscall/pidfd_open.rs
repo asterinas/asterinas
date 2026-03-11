@@ -32,7 +32,7 @@ pub fn sys_pidfd_open(pid: Pid, flags: u32, ctx: &Context) -> Result<SyscallRetu
         file_table_locked.insert(pid_file, FdFlags::CLOEXEC)
     };
 
-    Ok(SyscallReturn::Return(pid_fd as _))
+    Ok(SyscallReturn::Return(pid_fd.into()))
 }
 
 bitflags! {

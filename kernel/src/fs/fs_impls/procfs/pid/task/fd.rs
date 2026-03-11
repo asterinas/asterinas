@@ -59,8 +59,12 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
         let posix_thread = thread.as_posix_thread().unwrap();
 
         let access_mode = if let Some(file_table) = posix_thread.file_table().lock().as_ref()
-            && let Ok(file) = file_table.read().get_file(file_desc)
-        {
+            && let Ok(file) = file_table.read().get_file(
+                file_desc
+                    .cast_unsigned()
+                    .try_into()
+                    .map_err(|_| Errno::EBADF)?,
+            ) {
             file.access_mode()
         } else {
             return_errno_with_message!(Errno::ENOENT, "the file does not exist");
@@ -106,7 +110,10 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
             let child = child.downcast_ref::<T::NodeType>().unwrap();
             let child_ops = T::ref_from_inode(child);
 
-            let Ok(file) = file_table.get_file(child_ops.file_desc()) else {
+            let Ok(fd) = child_ops.file_desc().try_into() else {
+                continue;
+            };
+            let Ok(file) = file_table.get_file(fd) else {
                 cached_children.remove(i);
                 continue;
             };
@@ -120,7 +127,7 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
             cached_children.put_entry_if_not_found(&file_desc.to_string(), || {
                 T::new_inode(
                     self.dir.clone(),
-                    file_desc,
+                    file_desc.into(),
                     file.access_mode(),
                     dir.this_weak().clone(),
                 )
@@ -138,7 +145,9 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
         let posix_thread = thread.as_posix_thread().unwrap();
 
         if let Some(file_table) = posix_thread.file_table().lock().as_ref()
-            && let Ok(file) = file_table.read().get_file(child_ops.file_desc())
+            && let Ok(file) = file_table
+                .read()
+                .get_file(child_ops.file_desc().try_into().unwrap())
         {
             child_ops.is_valid(file)
         } else {
@@ -228,7 +237,12 @@ impl SymOps for FileSymOps {
         };
         let file_table = file_table.read();
         let file = file_table
-            .get_file(self.file_desc)
+            .get_file(
+                self.file_desc
+                    .cast_unsigned()
+                    .try_into()
+                    .map_err(|_| Errno::EBADF)?,
+            )
             .map_err(|_| Error::with_message(Errno::ENOENT, "the file does not exist"))?;
 
         Ok(SymbolicLink::Path(file.path().clone()))
@@ -282,8 +296,12 @@ impl FileOps for FileInfoOps {
         let posix_thread = thread.as_posix_thread().unwrap();
 
         let info = if let Some(file_table) = posix_thread.file_table().lock().as_ref()
-            && let Ok(entry) = file_table.read().get_entry(self.file_desc)
-        {
+            && let Ok(entry) = file_table.read().get_entry(
+                self.file_desc
+                    .cast_unsigned()
+                    .try_into()
+                    .map_err(|_| Errno::EBADF)?,
+            ) {
             entry.file().clone().dump_proc_fdinfo(entry.flags())
         } else {
             return_errno_with_message!(Errno::ENOENT, "the file does not exist");
