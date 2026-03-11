@@ -1,0 +1,9 @@
+[package]
+name = "test-development-tools"
+version.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+nixos-test-framework.workspace = true
