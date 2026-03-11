@@ -8,7 +8,6 @@ use core::{
 use self::timer_manager::PosixTimerManager;
 use super::{
     KernelPid, PidChain, PidNamespace,
-    pid_table::{self, PidTable},
     posix_thread::AsPosixThread,
     process_vm::ProcessVmarGuard,
     rlimit::ResourceLimits,
@@ -427,10 +426,7 @@ impl Process {
     /// process ID. This means that the process is or was a process group leader and that the
     /// process group is still alive.
     pub fn to_new_session(self: &Arc<Self>) -> Result<Sid> {
-        // Lock order: pid table -> group of process -> group inner -> session inner
-        let mut pid_table = pid_table::pid_table_mut();
-
-        if pid_table.contains_process_group(self.pid()) {
+        if self.active_pid_ns().contains_process_group(self.pid()) {
             return_errno_with_message!(
                 Errno::EPERM,
                 "a process group leader cannot be moved to a new session"
@@ -439,15 +435,14 @@ impl Process {
 
         let mut process_group_mut = self.process_group.lock();
 
-        self.clear_old_group_and_session(&mut process_group_mut, &mut pid_table);
+        self.clear_old_group_and_session(&mut process_group_mut);
 
-        Ok(self.set_new_session(&mut process_group_mut, &mut pid_table))
+        Ok(self.set_new_session(&mut process_group_mut))
     }
 
     pub(super) fn clear_old_group_and_session(
         &self,
         process_group_mut: &mut MutexGuard<Option<Arc<ProcessGroup>>>,
-        pid_table: &mut PidTable,
     ) {
         let process_group = process_group_mut.as_ref().cloned().unwrap();
         let mut process_group_inner = process_group.lock();
@@ -457,12 +452,12 @@ impl Process {
         // Remove the process from the process group.
         process_group_inner.remove_process(&self.kernel_pid);
         if process_group_inner.is_empty() {
-            pid_table.remove_process_group(process_group.pgid());
+            PidNamespace::remove_process_group_across_namespaces(process_group.as_ref());
 
             // Remove the process group from the session.
             session_inner.remove_process_group(&process_group.kernel_pgid());
             if session_inner.is_empty() {
-                pid_table.remove_session(session.sid());
+                PidNamespace::remove_session_across_namespaces(session.as_ref());
             }
         }
 
@@ -472,16 +467,14 @@ impl Process {
     fn set_new_session(
         self: &Arc<Self>,
         process_group_mut: &mut MutexGuard<Option<Arc<ProcessGroup>>>,
-        pid_table: &mut PidTable,
     ) -> Sid {
         let (session, process_group) = Session::new_pair(self.clone());
         let sid = session.sid();
 
         **process_group_mut = Some(process_group.clone());
 
-        // Insert the new session and the new process group to the global table.
-        pid_table.insert_session(session.sid(), session);
-        pid_table.insert_process_group(process_group.pgid(), process_group);
+        PidNamespace::insert_session_across_namespaces(session);
+        PidNamespace::insert_process_group_across_namespaces(process_group);
 
         sid
     }
@@ -509,10 +502,9 @@ impl Process {
     ///  * The process group already exists, but the group does not belong to the same session;
     ///  * The process group does not exist, but `pgid` is not equal to the process ID.
     pub fn move_process_to_group(&self, pid: Pid, pgid: Pgid) -> Result<()> {
-        // Lock order: pid table -> group of process -> group inner -> session inner
-        let mut pid_table = pid_table::pid_table_mut();
+        let pid_ns = self.active_pid_ns();
 
-        let process = pid_table.get_process(pid).ok_or(Error::with_message(
+        let process = pid_ns.lookup_process(pid).ok_or(Error::with_message(
             Errno::ESRCH,
             "the process to set the PGID does not exist",
         ))?;
@@ -540,10 +532,10 @@ impl Process {
             );
         };
 
-        if let Some(new_process_group) = pid_table.get_process_group(&pgid) {
-            process.to_existing_group(current_session, &mut pid_table, new_process_group)
+        if let Some(new_process_group) = pid_ns.lookup_process_group(pgid) {
+            process.to_existing_group(current_session, new_process_group)
         } else if pgid == process.pid() {
-            process.to_new_group(current_session, &mut pid_table)
+            process.to_new_group(current_session)
         } else {
             return_errno_with_message!(Errno::EPERM, "the new process group does not exist");
         }
@@ -553,7 +545,6 @@ impl Process {
     fn to_existing_group(
         self: &Arc<Self>,
         current_session: Option<Arc<Session>>,
-        pid_table: &mut PidTable,
         new_process_group: Arc<ProcessGroup>,
     ) -> Result<()> {
         let mut process_group_mut = self.process_group.lock();
@@ -596,7 +587,7 @@ impl Process {
         // Remove the process from the old process group
         process_group_inner.remove_process(&self.kernel_pid);
         if process_group_inner.is_empty() {
-            pid_table.remove_process_group(process_group.pgid());
+            PidNamespace::remove_process_group_across_namespaces(process_group.as_ref());
             session_inner.remove_process_group(&process_group.kernel_pgid());
         }
 
@@ -608,11 +599,7 @@ impl Process {
     }
 
     /// Creates a new process group and moves the process to the group.
-    fn to_new_group(
-        self: &Arc<Self>,
-        current_session: Option<Arc<Session>>,
-        pid_table: &mut PidTable,
-    ) -> Result<()> {
+    fn to_new_group(self: &Arc<Self>, current_session: Option<Arc<Session>>) -> Result<()> {
         let mut process_group_mut = self.process_group.lock();
 
         let process_group = process_group_mut.as_ref().cloned().unwrap();
@@ -632,14 +619,14 @@ impl Process {
         // Remove the process from the old process group
         process_group_inner.remove_process(&self.kernel_pid);
         if process_group_inner.is_empty() {
-            pid_table.remove_process_group(process_group.pgid());
+            PidNamespace::remove_process_group_across_namespaces(process_group.as_ref());
             session_inner.remove_process_group(&process_group.kernel_pgid());
         }
 
         // Create a new process group and insert the process to it
         let new_process_group = ProcessGroup::new(self.clone(), session.clone());
         *process_group_mut = Some(new_process_group.clone());
-        pid_table.insert_process_group(new_process_group.pgid(), new_process_group.clone());
+        PidNamespace::insert_process_group_across_namespaces(new_process_group.clone());
         session_inner.insert_process_group(new_process_group);
 
         Ok(())

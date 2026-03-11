@@ -5,10 +5,13 @@ use core::sync::atomic::{AtomicU8, AtomicU32, AtomicU64, Ordering};
 use spin::Once;
 
 use crate::{
+    context::Context,
     fs::pseudofs::{NsCommonOps, NsType, StashedDentry},
     prelude::*,
-    process::{Pgid, Pid, Process, ProcessGroup, Session, Sid, UserNamespace},
-    thread::{Thread, Tid},
+    process::{
+        Pgid, Pid, Process, ProcessGroup, Session, Sid, UserNamespace, posix_thread::AsPosixThread,
+    },
+    thread::{AsThread, Thread, Tid},
 };
 
 pub const PID_NS_LEVEL_LIMIT: u32 = 32;
@@ -155,10 +158,6 @@ impl PidEntry {
 
     fn process_group(&self) -> Option<Arc<ProcessGroup>> {
         self.inner.lock().process_group.upgrade()
-    }
-
-    fn session(&self) -> Option<Arc<Session>> {
-        self.inner.lock().session.upgrade()
     }
 
     fn set_thread(&self, thread: &Arc<Thread>) {
@@ -415,14 +414,6 @@ impl PidNamespace {
             .and_then(|entry| entry.process_group())
     }
 
-    pub fn lookup_session(&self, sid: Sid) -> Option<Arc<Session>> {
-        self.visible_table
-            .lock()
-            .entries
-            .get(&sid)
-            .and_then(|entry| entry.session())
-    }
-
     pub fn contains_process_group(&self, pgid: Pgid) -> bool {
         self.lookup_process_group(pgid).is_some()
     }
@@ -447,6 +438,59 @@ impl PidNamespace {
 
     pub fn visible_process_count(&self) -> usize {
         self.visible_processes().len()
+    }
+
+    pub fn insert_process_across_namespaces(process: Arc<Process>) {
+        for link in process.pid_chain().links() {
+            link.ns().insert_process_chain(&process);
+        }
+    }
+
+    pub fn remove_process_across_namespaces(process: &Process) {
+        for link in process.pid_chain().links() {
+            link.ns().remove_process_chain(process);
+        }
+    }
+
+    pub fn insert_thread_across_namespaces(thread: Arc<Thread>) {
+        let posix_thread = thread.as_posix_thread().unwrap();
+        let tid_chain = posix_thread.tid_chain().clone();
+        for link in tid_chain.links() {
+            link.ns().insert_thread_chain(&thread, &tid_chain);
+        }
+    }
+
+    pub fn remove_thread_across_namespaces(tid_chain: &PidChain) {
+        for link in tid_chain.links() {
+            link.ns().remove_thread_chain(tid_chain);
+        }
+    }
+
+    pub fn insert_process_group_across_namespaces(process_group: Arc<ProcessGroup>) {
+        for link in process_group.pgid_chain().links() {
+            link.ns()
+                .insert_process_group_chain(&process_group, process_group.pgid_chain());
+        }
+    }
+
+    pub fn remove_process_group_across_namespaces(process_group: &ProcessGroup) {
+        for link in process_group.pgid_chain().links() {
+            link.ns()
+                .remove_process_group_chain(process_group.pgid_chain());
+        }
+    }
+
+    pub fn insert_session_across_namespaces(session: Arc<Session>) {
+        for link in session.sid_chain().links() {
+            link.ns()
+                .insert_session_chain(&session, session.sid_chain());
+        }
+    }
+
+    pub fn remove_session_across_namespaces(session: &Session) {
+        for link in session.sid_chain().links() {
+            link.ns().remove_session_chain(session.sid_chain());
+        }
     }
 
     pub fn insert_process_chain(&self, process: &Arc<Process>) {
@@ -523,6 +567,32 @@ impl PidNamespace {
                 table.remove_session(link.nr);
             }
         }
+    }
+
+    pub(in crate::process) fn make_current_main_thread(ctx: &Context) {
+        let pid = ctx.process.pid();
+        let old_tid = ctx.posix_thread.tid();
+
+        if old_tid == pid {
+            return;
+        }
+
+        let mut tasks = ctx.process.tasks().lock();
+
+        assert!(tasks.has_exited_main());
+        assert!(tasks.in_execve());
+        assert_eq!(tasks.as_slice().len(), 2);
+        assert!(core::ptr::eq(ctx.task, tasks.as_slice()[1].as_ref()));
+
+        tasks.swap_main(pid, old_tid);
+
+        let old_tid_chain = ctx.posix_thread.tid_chain().clone();
+        let new_tid_chain = ctx.process.pid_chain().clone();
+        let thread = ctx.task.as_thread().unwrap().clone();
+
+        Self::remove_thread_across_namespaces(&old_tid_chain);
+        ctx.posix_thread.set_main(new_tid_chain);
+        Self::insert_thread_across_namespaces(thread);
     }
 }
 

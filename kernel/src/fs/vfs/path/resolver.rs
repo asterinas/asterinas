@@ -16,7 +16,7 @@ use crate::{
     },
     prelude::*,
     process::{
-        pid_table::PidTable,
+        PidNamespace,
         posix_thread::{AsPosixThread, AsThreadLocal},
     },
 };
@@ -245,7 +245,7 @@ impl PathResolver {
         &mut self,
         new_root_path: FsPath,
         put_old_path: FsPath,
-        pid_table: &PidTable,
+        pid_ns: &Arc<PidNamespace>,
         ctx: &Context,
     ) -> Result<()> {
         let new_root_path = self.lookup(&new_root_path)?;
@@ -315,9 +315,7 @@ impl PathResolver {
         self.root.mount.graft_mount_tree(&put_old_path);
         new_root_path.mount.graft_mount_tree(&parent_path);
 
-        // TODO: This method should only iterate threads in the current PID namespace instead of
-        // the whole PID table.
-        for thread in pid_table.iter_threads() {
+        for thread in pid_ns.visible_threads() {
             let posix_thread = thread.as_posix_thread().unwrap();
             let ns_proxy = posix_thread.ns_proxy().lock();
             let Some(ns_proxy) = ns_proxy.as_ref() else {

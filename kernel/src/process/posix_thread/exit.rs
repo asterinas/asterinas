@@ -9,9 +9,8 @@ use crate::{
     current_userspace,
     prelude::*,
     process::{
-        TermStatus,
+        PidNamespace, TermStatus,
         exit::exit_process,
-        pid_table,
         signal::{constants::SIGKILL, signals::kernel::KernelSignal},
         task_set::TaskSet,
     },
@@ -77,7 +76,8 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
     // According to Linux behavior, the main thread shouldn't be removed from the table until the
     // process is reaped by its parent.
     if posix_thread.tid() != posix_process.pid() {
-        pid_table::pid_table_mut().remove_thread(posix_thread.tid());
+        let tid_chain = posix_thread.tid_chain().clone();
+        PidNamespace::remove_thread_across_namespaces(&tid_chain);
     }
 
     // Drop fields in `PosixThread`.

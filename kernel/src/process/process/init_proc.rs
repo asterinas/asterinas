@@ -13,7 +13,6 @@ use crate::{
     prelude::*,
     process::{
         Credentials, KernelTid, PidChain, PidNamespace, PidNsForChildren, ProcessVm, UserNamespace,
-        pid_table,
         posix_thread::{PosixThreadBuilder, ThreadName, allocate_posix_tid},
         program_loader::ProgramToLoad,
         rlimit::new_resource_limits_for_init,
@@ -91,14 +90,10 @@ fn create_init_process(
 }
 
 fn set_session_and_group(process: &Arc<Process>) {
-    // Locking order: pid table -> process group
-    let mut pid_table = pid_table::pid_table_mut();
-
     // Create a new process group and session for the process
-    process.set_new_session(&mut process.process_group.lock(), &mut pid_table);
+    process.set_new_session(&mut process.process_group.lock());
 
-    // Add the new process to the global table
-    pid_table.insert_process(process.clone());
+    PidNamespace::insert_process_across_namespaces(process.clone());
 }
 
 /// Creates the init task from the given executable file.

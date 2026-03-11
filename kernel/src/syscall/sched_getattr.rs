@@ -8,7 +8,6 @@ use super::{
 };
 use crate::{
     prelude::*,
-    process::pid_table,
     sched::{Nice, RealTimePolicy, SchedAttr, SchedPolicy},
     thread::Tid,
     util::CopyCompat,
@@ -207,7 +206,7 @@ pub(super) fn access_sched_attr_with<T>(
         return f(ctx.thread.sched_attr());
     }
 
-    let Some(thread) = pid_table::pid_table_mut().get_thread(tid) else {
+    let Some(thread) = ctx.process.active_pid_ns().lookup_thread(tid) else {
         return_errno_with_message!(Errno::ESRCH, "the target thread does not exist");
     };
     f(thread.sched_attr())

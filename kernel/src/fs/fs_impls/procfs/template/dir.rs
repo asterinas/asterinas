@@ -64,6 +64,10 @@ impl<D: DirOps> ProcDir<D> {
         &self.this
     }
 
+    pub fn inner(&self) -> &D {
+        &self.inner
+    }
+
     pub fn parent(&self) -> Option<Arc<dyn Inode>> {
         self.parent.as_ref().and_then(|p| p.upgrade())
     }

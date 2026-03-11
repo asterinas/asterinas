@@ -16,7 +16,7 @@ use crate::{
     },
     prelude::*,
     process::{
-        ContextUnshareAdminApi, Credentials, Process, pid_table,
+        ContextUnshareAdminApi, Credentials, PidNamespace, Process,
         posix_thread::{PosixThread, ThreadLocal, ThreadName, sigkill_other_threads},
         process_vm::{MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS, ProcessVm},
         program_loader::{ProgramToLoad, elf::ElfLoadInfo},
@@ -153,7 +153,7 @@ fn do_execve_no_return(
     // Wait for all other threads to terminate,
     // then promote the current thread to be the process's main thread if necessary.
     wait_other_threads_exit(ctx)?;
-    pid_table::make_current_main_thread(ctx);
+    PidNamespace::make_current_main_thread(ctx);
 
     // Activate the new VMAR in the current context and apply file-capability changes,
     // while holding the process VMAR lock.

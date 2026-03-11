@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{
-    prelude::*,
-    process::{Pid, pid_table},
-};
+use crate::{prelude::*, process::Pid};
 
 pub fn sys_getpgid(pid: Pid, ctx: &Context) -> Result<SyscallReturn> {
     debug!("pid = {}", pid);
@@ -18,8 +15,10 @@ pub fn sys_getpgid(pid: Pid, ctx: &Context) -> Result<SyscallReturn> {
         return Ok(SyscallReturn::Return(ctx.process.pgid() as _));
     }
 
-    let process = pid_table::pid_table_mut()
-        .get_process(pid)
+    let process = ctx
+        .process
+        .active_pid_ns()
+        .lookup_process(pid)
         .ok_or(Error::with_message(
             Errno::ESRCH,
             "the process to get the PGID does not exist",
@@ -29,5 +28,7 @@ pub fn sys_getpgid(pid: Pid, ctx: &Context) -> Result<SyscallReturn> {
     // session than the current process. Linux does not perform this check by default, but some
     // strict security policies (e.g. SELinux) may do so.
 
-    Ok(SyscallReturn::Return(process.pgid() as _))
+    Ok(SyscallReturn::Return(
+        process.pgid_in(ctx.process.active_pid_ns()).unwrap_or(0) as _,
+    ))
 }

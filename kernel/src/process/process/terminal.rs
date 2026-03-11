@@ -6,7 +6,6 @@ use super::{JobControl, Pgid, Process, Session, session::SessionGuard};
 use crate::{
     device::Device,
     prelude::{Errno, Error, Result, current, return_errno_with_message, warn},
-    process::pid_table,
     util::ioctl::{RawIoctl, dispatch_ioctl},
 };
 
@@ -172,11 +171,8 @@ impl dyn Terminal {
 
     /// Sets the foreground process group of the terminal.
     fn set_foreground(self: Arc<Self>, pgid: Pgid, process: &Process) -> Result<()> {
-        // Lock order: pid table -> group of process -> session inner -> job control
-        let pid_table = pid_table::pid_table_mut();
-
         self.is_control_and(process, |session, _| {
-            let Some(process_group) = pid_table.get_process_group(&pgid) else {
+            let Some(process_group) = process.active_pid_ns().lookup_process_group(pgid) else {
                 return_errno_with_message!(
                     Errno::ESRCH,
                     "the process group to be foreground does not exist"
