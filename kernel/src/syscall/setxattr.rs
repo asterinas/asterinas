@@ -8,7 +8,7 @@ use crate::{
     fs::{
         file::{
             FileLike,
-            file_table::{FileDesc, get_file_fast},
+            file_table::{RawFileDesc, get_file_fast},
         },
         vfs::{
             path::{AT_FDCWD, FsPath, Path},
@@ -71,7 +71,7 @@ pub fn sys_lsetxattr(
 }
 
 pub fn sys_fsetxattr(
-    fd: FileDesc,
+    fd: RawFileDesc,
     name_ptr: Vaddr,
     value_ptr: Vaddr,
     value_len: usize,

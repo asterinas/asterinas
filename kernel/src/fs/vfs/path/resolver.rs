@@ -9,7 +9,7 @@ use crate::{
     fs::{
         file::{
             InodeType, Permission,
-            file_table::{FileDesc, get_file_fast},
+            file_table::{RawFileDesc, get_file_fast},
         },
         utils::{NAME_MAX, PATH_MAX, SYMLINKS_MAX},
         vfs::{inode::SymbolicLink, path::MountNamespace},
@@ -22,7 +22,7 @@ use crate::{
 };
 
 /// The file descriptor of the current working directory.
-pub const AT_FDCWD: FileDesc = -100;
+pub const AT_FDCWD: RawFileDesc = -100;
 
 /// A resolver for [`Path`]s.
 ///
@@ -725,9 +725,9 @@ enum FsPathInner<'a> {
     /// The path of the current working directory.
     Cwd,
     /// A relative path from the directory FD (dirfd).
-    FdRelative(FileDesc, &'a str),
+    FdRelative(RawFileDesc, &'a str),
     /// The path of the FD.
-    Fd(FileDesc),
+    Fd(RawFileDesc),
 }
 
 impl<'a> FsPath<'a> {
@@ -735,7 +735,7 @@ impl<'a> FsPath<'a> {
     ///
     /// If the FD is not valid (i.e., it's negative and it's not [`AT_FDCWD`]), an error will be
     /// returned.
-    pub fn from_fd(dirfd: FileDesc) -> Result<Self> {
+    pub fn from_fd(dirfd: RawFileDesc) -> Result<Self> {
         let fs_path_inner = if dirfd >= 0 {
             FsPathInner::Fd(dirfd)
         } else if dirfd == AT_FDCWD {
@@ -753,7 +753,7 @@ impl<'a> FsPath<'a> {
     ///
     /// If the FD is not valid (i.e., it's negative and it's not [`AT_FDCWD`]) or the path is empty
     /// or too long, an error will be returned.
-    pub fn from_fd_and_path(dirfd: FileDesc, path: &'a str) -> Result<Self> {
+    pub fn from_fd_and_path(dirfd: RawFileDesc, path: &'a str) -> Result<Self> {
         if path.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "the path is empty")
         }

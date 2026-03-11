@@ -2,12 +2,12 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::{FileDesc, get_file_fast},
+    fs::file::file_table::{RawFileDesc, get_file_fast},
     net::socket::util::SockShutdownCmd,
     prelude::*,
 };
 
-pub fn sys_shutdown(sockfd: FileDesc, how: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_shutdown(sockfd: RawFileDesc, how: i32, ctx: &Context) -> Result<SyscallReturn> {
     let shutdown_cmd = SockShutdownCmd::try_from(how)?;
     debug!("sockfd = {sockfd}, cmd = {shutdown_cmd:?}");
 

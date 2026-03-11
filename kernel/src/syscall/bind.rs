@@ -2,13 +2,13 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::{FileDesc, get_file_fast},
+    fs::file::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
     util::net::read_socket_addr_from_user,
 };
 
 pub fn sys_bind(
-    sockfd: FileDesc,
+    sockfd: RawFileDesc,
     sockaddr_ptr: Vaddr,
     addrlen: u32,
     ctx: &Context,

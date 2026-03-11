@@ -5,7 +5,7 @@ use crate::{
     fs::{
         file::{
             InodeType, Permission,
-            file_table::{FdFlags, FileDesc, get_file_fast},
+            file_table::{FdFlags, RawFileDesc, get_file_fast},
         },
         vfs::{
             notify::inotify::{InotifyControls, InotifyEvents, InotifyFile},
@@ -41,7 +41,7 @@ fn do_inotify_init(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
 }
 
 pub fn sys_inotify_add_watch(
-    fd: FileDesc,
+    fd: RawFileDesc,
     path: Vaddr,
     flags: u32,
     ctx: &Context,
@@ -99,7 +99,7 @@ pub fn sys_inotify_add_watch(
     Ok(SyscallReturn::Return(wd as _))
 }
 
-pub fn sys_inotify_rm_watch(fd: FileDesc, wd: u32, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_inotify_rm_watch(fd: RawFileDesc, wd: u32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("inotify_rm_watch fd = {}, wd = {}", fd, wd);
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();

@@ -5,7 +5,7 @@ use crate::{
     fs::{
         file::{
             InodeType,
-            file_table::{FileDesc, get_file_fast},
+            file_table::{RawFileDesc, get_file_fast},
         },
         vfs::path::FsPath,
     },
@@ -34,7 +34,7 @@ pub fn sys_chdir(path_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_fchdir(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_fchdir(fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}", fd);
 
     let path = {

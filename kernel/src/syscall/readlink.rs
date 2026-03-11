@@ -5,7 +5,7 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file::file_table::FileDesc,
+        file::file_table::RawFileDesc,
         vfs::{
             inode::SymbolicLink,
             path::{AT_FDCWD, FsPath},
@@ -16,7 +16,7 @@ use crate::{
 };
 
 pub fn sys_readlinkat(
-    dirfd: FileDesc,
+    dirfd: RawFileDesc,
     path_addr: Vaddr,
     usr_buf_addr: Vaddr,
     usr_buf_len: usize,

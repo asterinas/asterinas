@@ -5,7 +5,7 @@ use bitflags::bitflags;
 use super::SyscallReturn;
 use crate::{
     fs,
-    fs::file::file_table::{FdFlags, FileDesc},
+    fs::file::file_table::{FdFlags, RawFileDesc},
     prelude::*,
     process::ContextUnshareAdminApi,
 };
@@ -17,7 +17,7 @@ bitflags! {
     }
 }
 
-pub fn sys_close(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_close(fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}", fd);
 
     let file = {
@@ -83,7 +83,7 @@ pub fn sys_close_range(
         let actual_last = last.min(table_len - 1);
 
         for fd in first..=actual_last {
-            let fd = fd as FileDesc;
+            let fd = fd as RawFileDesc;
 
             if flags.contains(CloseRangeFlags::CLOEXEC) {
                 if let Ok(entry) = file_table_locked.get_entry_mut(fd) {

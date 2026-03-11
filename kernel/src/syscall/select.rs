@@ -8,10 +8,10 @@ use super::{
     SyscallReturn,
     poll::{PollFd, do_poll},
 };
-use crate::{events::IoEvents, fs::file::file_table::FileDesc, prelude::*, time::timeval_t};
+use crate::{events::IoEvents, fs::file::file_table::RawFileDesc, prelude::*, time::timeval_t};
 
 pub fn sys_select(
-    nfds: FileDesc,
+    nfds: RawFileDesc,
     readfds_addr: Vaddr,
     writefds_addr: Vaddr,
     exceptfds_addr: Vaddr,
@@ -39,7 +39,7 @@ pub fn sys_select(
 }
 
 pub(super) fn do_sys_select(
-    nfds: FileDesc,
+    nfds: RawFileDesc,
     readfds_addr: Vaddr,
     writefds_addr: Vaddr,
     exceptfds_addr: Vaddr,
@@ -98,7 +98,7 @@ pub(super) fn do_sys_select(
 }
 
 fn do_select(
-    nfds: FileDesc,
+    nfds: RawFileDesc,
     mut readfds: Option<&mut FdSet>,
     mut writefds: Option<&mut FdSet>,
     mut exceptfds: Option<&mut FdSet>,
@@ -211,7 +211,7 @@ struct FdSet {
 
 impl FdSet {
     /// Equivalent to FD_SET.
-    pub fn set(&mut self, fd: FileDesc) -> Result<()> {
+    pub fn set(&mut self, fd: RawFileDesc) -> Result<()> {
         let fd = fd as usize;
         if fd >= FD_SETSIZE {
             return_errno_with_message!(Errno::EINVAL, "fd exceeds FD_SETSIZE");
@@ -222,7 +222,7 @@ impl FdSet {
 
     /// Equivalent to FD_CLR.
     #[expect(unused)]
-    pub fn unset(&mut self, fd: FileDesc) -> Result<()> {
+    pub fn unset(&mut self, fd: RawFileDesc) -> Result<()> {
         let fd = fd as usize;
         if fd >= FD_SETSIZE {
             return_errno_with_message!(Errno::EINVAL, "fd exceeds FD_SETSIZE");
@@ -232,7 +232,7 @@ impl FdSet {
     }
 
     /// Equivalent to FD_ISSET.
-    pub fn is_set(&self, fd: FileDesc) -> bool {
+    pub fn is_set(&self, fd: RawFileDesc) -> bool {
         let fd = fd as usize;
         if fd >= FD_SETSIZE {
             return false;

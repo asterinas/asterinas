@@ -4,13 +4,13 @@ use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::FileDesc,
+    fs::file::file_table::RawFileDesc,
     prelude::*,
     time::{itimerspec_t, timerfd::TimerfdFile, timespec_t},
 };
 
 pub fn sys_timerfd_gettime(
-    fd: FileDesc,
+    fd: RawFileDesc,
     itimerspec_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {

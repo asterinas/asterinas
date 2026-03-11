@@ -2,14 +2,14 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::{FileDesc, get_file_fast},
+    fs::file::file_table::{RawFileDesc, get_file_fast},
     net::socket::util::SendRecvFlags,
     prelude::*,
     util::net::write_socket_addr_to_user,
 };
 
 pub fn sys_recvfrom(
-    sockfd: FileDesc,
+    sockfd: RawFileDesc,
     buf: Vaddr,
     len: usize,
     flags: i32,

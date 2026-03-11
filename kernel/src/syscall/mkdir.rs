@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs,
     fs::{
-        file::{InodeMode, InodeType, file_table::FileDesc},
+        file::{InodeMode, InodeType, file_table::RawFileDesc},
         vfs::path::{AT_FDCWD, FsPath},
     },
     prelude::*,
@@ -12,7 +12,7 @@ use crate::{
 };
 
 pub fn sys_mkdirat(
-    dirfd: FileDesc,
+    dirfd: RawFileDesc,
     path_addr: Vaddr,
     mode: u16,
     ctx: &Context,

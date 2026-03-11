@@ -7,7 +7,7 @@ use crate::{
     fs::{
         file::{
             CreationFlags, StatusFlags,
-            file_table::{FdFlags, FileDesc},
+            file_table::{FdFlags, RawFileDesc},
         },
         pipe,
     },
@@ -59,6 +59,6 @@ pub fn sys_pipe(fds: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
 #[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
 struct PipeFds {
-    reader_fd: FileDesc,
-    writer_fd: FileDesc,
+    reader_fd: RawFileDesc,
+    writer_fd: RawFileDesc,
 }

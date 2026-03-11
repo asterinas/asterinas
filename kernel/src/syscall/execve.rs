@@ -5,7 +5,7 @@ use ostd::arch::cpu::context::UserContext;
 use super::{SyscallReturn, constants::*};
 use crate::{
     fs::{
-        file::file_table::FileDesc,
+        file::file_table::RawFileDesc,
         vfs::path::{AT_FDCWD, FsPath, Path},
     },
     prelude::*,
@@ -29,7 +29,7 @@ pub fn sys_execve(
 }
 
 pub fn sys_execveat(
-    dfd: FileDesc,
+    dfd: RawFileDesc,
     filename_ptr: Vaddr,
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
@@ -48,7 +48,7 @@ pub fn sys_execveat(
 }
 
 fn lookup_executable_file(
-    dfd: FileDesc,
+    dfd: RawFileDesc,
     filename_ptr: Vaddr,
     flags: OpenFlags,
     ctx: &Context,

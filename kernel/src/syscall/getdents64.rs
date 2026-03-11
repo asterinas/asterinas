@@ -10,7 +10,7 @@ use crate::{
     fs::{
         file::{
             InodeType,
-            file_table::{FileDesc, get_file_fast},
+            file_table::{RawFileDesc, get_file_fast},
         },
         utils::DirentVisitor,
     },
@@ -18,7 +18,7 @@ use crate::{
 };
 
 pub fn sys_getdents(
-    fd: FileDesc,
+    fd: RawFileDesc,
     buf_addr: Vaddr,
     buf_len: usize,
     ctx: &Context,
@@ -44,7 +44,7 @@ pub fn sys_getdents(
 }
 
 pub fn sys_getdents64(
-    fd: FileDesc,
+    fd: RawFileDesc,
     buf_addr: Vaddr,
     buf_len: usize,
     ctx: &Context,
