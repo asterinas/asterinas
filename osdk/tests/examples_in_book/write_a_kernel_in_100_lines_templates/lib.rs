@@ -18,6 +18,7 @@ use ostd::mm::{
 };
 use ostd::power::{poweroff, ExitCode};
 use ostd::prelude::*;
+use ostd::sync::Mutex;
 use ostd::task::{disable_preempt, Task, TaskOptions};
 use ostd::user::{ReturnReason, UserMode};
 
@@ -68,10 +69,8 @@ fn create_user_task(vm_space: Arc<VmSpace>) -> Arc<Task> {
         let current = Task::current().unwrap();
         // Switching between user-kernel space is
         // performed via the UserMode abstraction.
-        let mut user_mode = {
-            let user_ctx = create_user_context();
-            UserMode::new(user_ctx)
-        };
+        let user_ctx = Mutex::new(create_user_context());
+        let mut user_mode = UserMode::new(user_ctx.lock());
 
         loop {
             // The execute method returns when system

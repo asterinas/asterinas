@@ -5,6 +5,7 @@ use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use aster_rights::{ReadDupOp, ReadOp, ReadWriteOp};
 use hashbrown::HashMap;
 use ostd::{
+    arch::cpu::context::UserContext,
     sync::{RoArc, RwMutexReadGuard, Waker},
     task::Task,
 };
@@ -96,6 +97,9 @@ pub struct PosixThread {
     /// The default timer slack value for this thread.
     default_timer_slack_ns: AtomicU64,
 
+    /// Userspace context associated with this thread.
+    user_ctx: Mutex<UserContext>,
+
     /// Status of being traced.
     tracee_status: Once<TraceeStatus>,
 
@@ -104,6 +108,10 @@ pub struct PosixThread {
 }
 
 impl PosixThread {
+    pub fn user_ctx(&self) -> &Mutex<UserContext> {
+        &self.user_ctx
+    }
+
     pub fn process(&self) -> Arc<Process> {
         self.process.upgrade().unwrap()
     }
