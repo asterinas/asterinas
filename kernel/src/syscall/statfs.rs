@@ -42,7 +42,7 @@ pub fn sys_fstatfs(fd: RawFileDesc, statfs_buf_ptr: Vaddr, ctx: &Context) -> Res
 
     let fs = {
         let mut file_table = ctx.thread_local.borrow_file_table_mut();
-        let file = get_file_fast!(&mut file_table, fd);
+        let file = get_file_fast!(&mut file_table, fd.try_into()?);
         file.path().fs()
     };
 

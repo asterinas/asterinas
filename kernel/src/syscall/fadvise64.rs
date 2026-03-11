@@ -30,7 +30,7 @@ pub fn sys_fadvise64(
     );
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let _file = get_file_fast!(&mut file_table, fd);
+    let _file = get_file_fast!(&mut file_table, fd.try_into()?);
 
     match behavior {
         FadviseBehavior::Normal => {

@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicU8, Ordering};
+use core::{
+    fmt::Display,
+    sync::atomic::{AtomicU8, Ordering},
+};
 
-use aster_util::slot_vec::SlotVec;
+use aster_util::{ranged_integer::RangedU32, slot_vec::SlotVec};
 
 use super::{StatusFlags, file_handle::FileLike};
 use crate::{
@@ -15,7 +18,82 @@ use crate::{
     },
 };
 
+/// Represents a validated, non-negative file descriptor.
+///
+/// The value is guaranteed to be in the range `[0, i32::MAX]`.
+/// Use [`RawFileDesc`] at syscall boundaries,
+/// then convert to `FileDesc` via `TryFrom` for kernel-internal use.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub struct FileDesc(RangedU32<0, { i32::MAX as _ }>);
+
+/// A raw file descriptor as received from or returned to user space.
+///
+/// This is the `int` type from Linux syscall signatures.
+/// It may hold negative sentinel values like `AT_FDCWD` (-100).
+/// Convert to [`FileDesc`] via `TryFrom` before use.
 pub type RawFileDesc = i32;
+
+impl FileDesc {
+    /// File descriptor 0.
+    pub const ZERO: Self = Self(RangedU32::new(0));
+}
+
+impl Display for FileDesc {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0.get())
+    }
+}
+
+impl From<FileDesc> for RawFileDesc {
+    fn from(value: FileDesc) -> Self {
+        value.0.get() as _
+    }
+}
+
+impl From<FileDesc> for isize {
+    fn from(value: FileDesc) -> Self {
+        value.0.get() as _
+    }
+}
+
+impl From<FileDesc> for u32 {
+    fn from(value: FileDesc) -> Self {
+        value.0.get()
+    }
+}
+
+impl From<FileDesc> for u64 {
+    fn from(value: FileDesc) -> Self {
+        value.0.get() as _
+    }
+}
+
+impl From<FileDesc> for usize {
+    fn from(value: FileDesc) -> Self {
+        value.0.get() as _
+    }
+}
+
+impl TryFrom<RawFileDesc> for FileDesc {
+    type Error = Error;
+
+    fn try_from(value: RawFileDesc) -> Result<Self> {
+        if value < 0 {
+            return_errno_with_message!(Errno::EBADF, "negative FDs are not valid");
+        }
+        Ok(Self(RangedU32::new(value.cast_unsigned())))
+    }
+}
+
+impl TryFrom<u32> for FileDesc {
+    type Error = Error;
+
+    fn try_from(value: u32) -> Result<Self> {
+        Ok(Self(RangedU32::try_from(value).map_err(|_| {
+            Error::with_message(Errno::EBADF, "FD value exceeds maximum")
+        })?))
+    }
+}
 
 #[derive(Clone)]
 pub struct FileTable {
@@ -37,15 +115,15 @@ impl FileTable {
     /// or greater than `ceil_fd`.
     pub fn dup_ceil(
         &mut self,
-        fd: RawFileDesc,
-        ceil_fd: RawFileDesc,
+        fd: FileDesc,
+        ceil_fd: FileDesc,
         flags: FdFlags,
-    ) -> Result<RawFileDesc> {
+    ) -> Result<FileDesc> {
         let entry = self.duplicate_entry(fd, flags)?;
 
         // Get the lowest-numbered available fd equal to or greater than `ceil_fd`.
         let get_min_free_fd = || -> usize {
-            let ceil_fd = ceil_fd as usize;
+            let ceil_fd = ceil_fd.into();
             if self.table.get(ceil_fd).is_none() {
                 return ceil_fd;
             }
@@ -60,7 +138,8 @@ impl FileTable {
 
         let min_free_fd = get_min_free_fd();
         self.table.put_at(min_free_fd, entry);
-        Ok(min_free_fd as RawFileDesc)
+        // Resource limits guarantee the table never exceeds `i32::MAX` entries.
+        Ok((min_free_fd as u32).try_into().unwrap())
     }
 
     /// Duplicates `fd` onto the exact descriptor number `new_fd`.
@@ -72,26 +151,27 @@ impl FileTable {
     ) -> Result<Option<Arc<dyn FileLike>>> {
         let entry = self.duplicate_entry(fd, flags)?;
         let closed_file = self.close_file(new_fd);
-        self.table.put_at(new_fd as usize, entry);
+        self.table.put_at(new_fd.into(), entry);
         Ok(closed_file)
     }
 
-    fn duplicate_entry(&self, fd: RawFileDesc, flags: FdFlags) -> Result<FileTableEntry> {
+    fn duplicate_entry(&self, fd: FileDesc, flags: FdFlags) -> Result<FileTableEntry> {
         let file = self
             .table
-            .get(fd as usize)
+            .get(fd.into())
             .map(|entry| entry.file.clone())
             .ok_or(Error::with_message(Errno::EBADF, "fd does not exist"))?;
         Ok(FileTableEntry::new(file, flags))
     }
 
-    pub fn insert(&mut self, item: Arc<dyn FileLike>, flags: FdFlags) -> RawFileDesc {
+    pub fn insert(&mut self, item: Arc<dyn FileLike>, flags: FdFlags) -> FileDesc {
         let entry = FileTableEntry::new(item, flags);
-        self.table.put(entry) as RawFileDesc
+        // Resource limits guarantee the table never exceeds `i32::MAX` entries.
+        (self.table.put(entry) as u32).try_into().unwrap()
     }
 
-    pub fn close_file(&mut self, fd: RawFileDesc) -> Option<Arc<dyn FileLike>> {
-        let removed_entry = self.table.remove(fd as usize)?;
+    pub fn close_file(&mut self, fd: FileDesc) -> Option<Arc<dyn FileLike>> {
+        let removed_entry = self.table.remove(fd.into())?;
         // POSIX record locks are process-associated and Linux drops them when any fd for the inode is
         // closed by that process, even if duplicated descriptors still exist.
         //
@@ -111,12 +191,13 @@ impl FileTable {
         F: Fn(&FileTableEntry) -> bool,
     {
         let mut closed_files = Vec::new();
-        let closed_fds: Vec<RawFileDesc> = self
+        let closed_fds: Vec<FileDesc> = self
             .table
             .idxes_and_items()
             .filter_map(|(idx, entry)| {
                 if should_close(entry) {
-                    Some(idx as RawFileDesc)
+                    // Resource limits guarantee the table never exceeds `i32::MAX` entries.
+                    Some((idx as u32).try_into().unwrap())
                 } else {
                     None
                 }
@@ -130,29 +211,30 @@ impl FileTable {
         closed_files
     }
 
-    pub fn get_file(&self, fd: RawFileDesc) -> Result<&Arc<dyn FileLike>> {
+    pub fn get_file(&self, fd: FileDesc) -> Result<&Arc<dyn FileLike>> {
         self.table
-            .get(fd as usize)
+            .get(fd.into())
             .map(|entry| entry.file())
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 
-    pub fn get_entry(&self, fd: RawFileDesc) -> Result<&FileTableEntry> {
+    pub fn get_entry(&self, fd: FileDesc) -> Result<&FileTableEntry> {
         self.table
-            .get(fd as usize)
+            .get(fd.into())
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 
-    pub fn get_entry_mut(&mut self, fd: RawFileDesc) -> Result<&mut FileTableEntry> {
+    pub fn get_entry_mut(&mut self, fd: FileDesc) -> Result<&mut FileTableEntry> {
         self.table
-            .get_mut(fd as usize)
+            .get_mut(fd.into())
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 
-    pub fn fds_and_files(&self) -> impl Iterator<Item = (RawFileDesc, &'_ Arc<dyn FileLike>)> {
+    pub fn fds_and_files(&self) -> impl Iterator<Item = (FileDesc, &'_ Arc<dyn FileLike>)> {
+        // Resource limits guarantee the table never exceeds `i32::MAX` entries.
         self.table
             .idxes_and_items()
-            .map(|(idx, entry)| (idx as RawFileDesc, entry.file()))
+            .map(|(idx, entry)| ((idx as u32).try_into().unwrap(), entry.file()))
     }
 }
 
@@ -209,13 +291,13 @@ macro_rules! get_file_fast {
 
         use ostd::sync::RwArc;
         use $crate::{
-            fs::file::file_table::{FileTable, RawFileDesc},
+            fs::file::file_table::{FileDesc, FileTable},
             process::posix_thread::FileTableRefMut,
         };
 
         let file_table: &mut FileTableRefMut<'_> = $file_table;
         let file_table: &mut RwArc<FileTable> = file_table.unwrap();
-        let file_desc: RawFileDesc = $file_desc;
+        let file_desc: FileDesc = $file_desc;
 
         if let Some(inner) = file_table.get() {
             // Fast path: The file table is not shared, we can get the file in a lockless way.
