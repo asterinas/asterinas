@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#[cfg(target_arch = "x86_64")]
+use ostd::{arch::cpu::context::c_user_regs_struct, mm::VmIo};
+
 use super::SyscallReturn;
 use crate::{
     prelude::*,
@@ -12,8 +15,8 @@ use crate::{
 pub fn sys_ptrace(
     request: u32,
     tid: Tid,
-    addr: u64,
-    data: u64,
+    addr: usize,
+    data: usize,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let request = PtraceRequest::try_from(request)?;
@@ -30,6 +33,21 @@ pub fn sys_ptrace(
 
             do_ptrace_attach(parent_main_thread, current_thread)?;
         }
+        #[cfg(target_arch = "x86_64")]
+        PtraceRequest::PTRACE_PEEKUSER => {
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let tracee = tracee.as_posix_thread().unwrap();
+
+            let val = tracee.ptrace_peek_user(addr)?;
+            ctx.user_space().write_val(data, &val)?;
+        }
+        #[cfg(target_arch = "x86_64")]
+        PtraceRequest::PTRACE_POKEUSER => {
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let tracee = tracee.as_posix_thread().unwrap();
+
+            tracee.ptrace_poke_user(addr, data)?;
+        }
         PtraceRequest::PTRACE_CONT => {
             if data != 0 {
                 return_errno_with_message!(
@@ -43,6 +61,24 @@ pub fn sys_ptrace(
                 .as_posix_thread()
                 .unwrap()
                 .ptrace_continue(PtraceContRequest::Continue)?;
+        }
+        #[cfg(target_arch = "x86_64")]
+        PtraceRequest::PTRACE_GETREGS => {
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let tracee = tracee.as_posix_thread().unwrap();
+
+            let regs = tracee.ptrace_get_regs()?;
+
+            ctx.user_space().write_val(data, &regs)?;
+        }
+        #[cfg(target_arch = "x86_64")]
+        PtraceRequest::PTRACE_SETREGS => {
+            let regs = ctx.user_space().read_val::<c_user_regs_struct>(data)?;
+
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let tracee = tracee.as_posix_thread().unwrap();
+
+            tracee.ptrace_set_regs(regs)?;
         }
         _ => {
             warn!("unimplemented ptrace request: {:?}", request);

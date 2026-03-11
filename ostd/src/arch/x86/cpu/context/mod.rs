@@ -72,6 +72,127 @@ pub struct GeneralRegs {
     pub gsbase: usize,
 }
 
+/// C struct corresponding to `struct user_regs_struct` in Linux,
+/// used for ptrace interface.
+//
+// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/arch/x86/include/asm/user_64.h#L66-L97>
+#[derive(Debug, Clone, Copy, Pod, Default)]
+#[repr(C)]
+#[expect(missing_docs)]
+pub struct c_user_regs_struct {
+    pub r15: usize,
+    pub r14: usize,
+    pub r13: usize,
+    pub r12: usize,
+    pub rbp: usize,
+    pub rbx: usize,
+    pub r11: usize,
+    pub r10: usize,
+    pub r9: usize,
+    pub r8: usize,
+    pub rax: usize,
+    pub rcx: usize,
+    pub rdx: usize,
+    pub rsi: usize,
+    pub rdi: usize,
+    pub orig_rax: usize,
+    pub rip: usize,
+    pub cs: usize,
+    pub rflags: usize,
+    pub rsp: usize,
+    pub ss: usize,
+    pub fsbase: usize,
+    pub gsbase: usize,
+    pub ds: usize,
+    pub es: usize,
+    pub fs: usize,
+    pub gs: usize,
+}
+
+/// User-space code segment selector value.
+pub const USER_CS: usize = crate::arch::trap::gdt::USER_CS.0 as usize;
+/// User-space stack segment selector value.
+pub const USER_SS: usize = crate::arch::trap::gdt::USER_SS.0 as usize;
+
+/// RFlags bits that can be modified by the user.
+// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/arch/x86/kernel/ptrace.c#L369>.
+pub const RFLAGS_MASK: usize = (RFlags::CARRY_FLAG.bits()
+    | RFlags::PARITY_FLAG.bits()
+    | RFlags::AUXILIARY_CARRY_FLAG.bits()
+    | RFlags::ZERO_FLAG.bits()
+    | RFlags::SIGN_FLAG.bits()
+    | RFlags::TRAP_FLAG.bits()
+    | RFlags::DIRECTION_FLAG.bits()
+    | RFlags::OVERFLOW_FLAG.bits()
+    | RFlags::RESUME_FLAG.bits()
+    | RFlags::ALIGNMENT_CHECK.bits()
+    | RFlags::NESTED_TASK.bits()) as usize;
+
+/// Expands the given macro as a callback over all general register entries.
+///
+/// The callback is invoked once per entry, in this form:
+/// `callback!(...extra_args, [field, rule])`.
+///
+/// Invocation forms:
+/// - `for_all_general_regs!(callback)`
+/// - `for_all_general_regs!(callback, arg1, arg2, ...)`
+///
+/// The `rule` is one of the following:
+/// - `set`: The user can set this field directly.
+/// - `set_if(check)`: The user can set this field only when `check(value)` is true.
+/// - `set_bits_truncate(mask)`: The user can set this field,
+///   but only bits in the const `mask` are applied.
+/// - `fixed(expected)`: The field is a pseudo field fixed at `expected`,
+///   and is not stored in `GeneralRegs`.
+#[macro_export]
+macro_rules! for_all_general_regs {
+    ($macro:ident $(, $arg:ident)*) => {
+        $macro!($($arg,)* [rax, set]);
+        $macro!($($arg,)* [orig_rax, set]);
+        $macro!($($arg,)* [rbx, set]);
+        $macro!($($arg,)* [rcx, set]);
+        $macro!($($arg,)* [rdx, set]);
+        $macro!($($arg,)* [rsi, set]);
+        $macro!($($arg,)* [rdi, set]);
+        $macro!($($arg,)* [rbp, set]);
+        // This is more strict than Linux.
+        $macro!($($arg,)* [rsp, set_if(|rsp| rsp < $crate::mm::MAX_USERSPACE_VADDR)]);
+        $macro!($($arg,)* [r8, set]);
+        $macro!($($arg,)* [r9, set]);
+        $macro!($($arg,)* [r10, set]);
+        $macro!($($arg,)* [r11, set]);
+        $macro!($($arg,)* [r12, set]);
+        $macro!($($arg,)* [r13, set]);
+        $macro!($($arg,)* [r14, set]);
+        $macro!($($arg,)* [r15, set]);
+        // This is more strict than Linux.
+        $macro!($($arg,)* [rip, set_if(|rip| rip < $crate::mm::MAX_USERSPACE_VADDR)]);
+        $macro!($($arg,)* [rflags, set_bits_truncate($crate::arch::cpu::context::RFLAGS_MASK)]);
+        // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/arch/x86/kernel/ptrace.c#L389-L400>
+        $macro!($($arg,)* [fsbase, set_if(|fsbase| fsbase < $crate::mm::MAX_USERSPACE_VADDR)]);
+        $macro!($($arg,)* [gsbase, set_if(|gsbase| gsbase < $crate::mm::MAX_USERSPACE_VADDR)]);
+        $macro!($($arg,)* [cs, fixed($crate::arch::cpu::context::USER_CS)]);
+        $macro!($($arg,)* [ss, fixed($crate::arch::cpu::context::USER_SS)]);
+        $macro!($($arg,)* [ds, fixed(0)]);
+        $macro!($($arg,)* [es, fixed(0)]);
+        $macro!($($arg,)* [fs, fixed(0)]);
+        $macro!($($arg,)* [gs, fixed(0)]);
+    };
+}
+
+impl From<GeneralRegs> for c_user_regs_struct {
+    fn from(regs: GeneralRegs) -> Self {
+        let mut c_regs = c_user_regs_struct::default();
+        macro_rules! c_user_regs_struct_from_general_regs {
+            ([ $field: ident, $($meta:tt)+ ]) => {
+                c_regs.$field = regs.$field();
+            };
+        }
+        for_all_general_regs!(c_user_regs_struct_from_general_regs);
+        c_regs
+    }
+}
+
 /// Architectural CPU exceptions (x86-64 vectors 0-31).
 ///
 /// For the authoritative specification of each vector, see the
@@ -452,50 +573,36 @@ impl UserContextApi for UserContext {
 }
 
 macro_rules! general_regs_impl_getter_setter {
-    ( $( [ $field: ident ] ),*) => {
+    ([ $field: ident, fixed($expected: expr) ]) => {
         impl GeneralRegs {
-            $(
-                #[doc = concat!("Gets the value of `", stringify!($field), "`.")]
-                #[inline(always)]
-                pub fn $field(&self) -> usize {
-                    self.$field
-                }
+            #[doc = concat!("Gets the value of `", stringify!($field), "`.")]
+            #[inline(always)]
+            pub fn $field(&self) -> usize {
+                $expected
+            }
+        }
+    };
 
-                paste::paste! {
-                    #[doc = concat!("Sets the value of `", stringify!($field), "`.")]
-                    #[inline(always)]
-                    pub fn [<set_ $field>](&mut self, $field: usize) {
-                        self.$field = $field;
-                    }
+    ([ $field: ident, $($meta:tt)+ ]) => {
+        impl GeneralRegs {
+            #[doc = concat!("Gets the value of `", stringify!($field), "`.")]
+            #[inline(always)]
+            pub fn $field(&self) -> usize {
+                self.$field
+            }
+
+            paste::paste! {
+                #[doc = concat!("Sets the value of `", stringify!($field), "`.")]
+                #[inline(always)]
+                pub fn [<set_ $field>](&mut self, $field: usize) {
+                    self.$field = $field;
                 }
-            )*
+            }
         }
     };
 }
 
-general_regs_impl_getter_setter!(
-    [rax],
-    [orig_rax],
-    [rbx],
-    [rcx],
-    [rdx],
-    [rsi],
-    [rdi],
-    [rbp],
-    [rsp],
-    [r8],
-    [r9],
-    [r10],
-    [r11],
-    [r12],
-    [r13],
-    [r14],
-    [r15],
-    [rip],
-    [rflags],
-    [fsbase],
-    [gsbase]
-);
+for_all_general_regs!(general_regs_impl_getter_setter);
 
 /// The FPU context of user task.
 ///
