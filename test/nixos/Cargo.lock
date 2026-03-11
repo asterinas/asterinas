@@ -288,6 +288,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-office-productivity"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
 name = "test-podman"
 version = "0.1.0"
 dependencies = [

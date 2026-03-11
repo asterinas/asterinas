@@ -38,6 +38,8 @@ jobs:
             disk_size: 8192
           - name: monitoring-observability
             disk_size: 8192
+          - name: office-productivity
+            disk_size: 8192
 
     name: Test ${{ matrix.test.name }}
     steps:
