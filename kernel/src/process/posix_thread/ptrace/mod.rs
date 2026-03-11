@@ -4,9 +4,13 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use ostd::sync::Waiter;
+#[cfg(target_arch = "x86_64")]
+use ostd::arch::cpu::context::GeneralRegs;
+use ostd::{arch::cpu::context::UserContext, sync::Waiter};
 
 use super::{AsPosixThread, PosixThread};
+#[cfg(target_arch = "x86_64")]
+use crate::{arch::ptrace as arch_ptrace, process::posix_thread::NOT_A_SYSCALL};
 use crate::{
     prelude::*,
     process::{
@@ -64,9 +68,10 @@ impl PosixThread {
         &self,
         signal: DequeuedSignal,
         ctx: &Context,
+        user_ctx: &mut UserContext,
     ) -> PtraceStopResult {
         if let Some(status) = self.tracee_status.get() {
-            status.ptrace_stop(signal, ctx)
+            status.ptrace_stop(signal, ctx, user_ctx)
         } else {
             PtraceStopResult::NotTraced(signal)
         }
@@ -91,6 +96,50 @@ impl PosixThread {
         self.wake_signalled_waker();
 
         Ok(())
+    }
+
+    /// Gets the general-purpose registers of this thread for ptrace.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if this thread is not ptrace-stopped.
+    #[cfg(target_arch = "x86_64")]
+    pub fn ptrace_get_regs(&self) -> Result<arch_ptrace::CUserRegsStruct> {
+        let status = self.get_tracee_status()?;
+        status.get_regs()
+    }
+
+    /// Sets the general-purpose registers of this thread for ptrace.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if this thread is not ptrace-stopped.
+    #[cfg(target_arch = "x86_64")]
+    pub fn ptrace_set_regs(&self, regs: arch_ptrace::CUserRegsStruct) -> Result<()> {
+        let status = self.get_tracee_status()?;
+        status.set_regs(regs)
+    }
+
+    /// Reads one word in the tracee's USER area.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if this thread is not ptrace-stopped.
+    #[cfg(target_arch = "x86_64")]
+    pub fn ptrace_peek_user(&self, offset: usize) -> Result<usize> {
+        let status = self.get_tracee_status()?;
+        status.peek_user(offset)
+    }
+
+    /// Writes one word in the tracee's USER area.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if this thread is not ptrace-stopped.
+    #[cfg(target_arch = "x86_64")]
+    pub fn ptrace_poke_user(&self, offset: usize, value: usize) -> Result<()> {
+        let status = self.get_tracee_status()?;
+        status.poke_user(offset, value)
     }
 
     /// Returns the tracee status of this thread if it has ever been traced.
@@ -206,7 +255,15 @@ impl TraceeStatus {
         self.is_stopped.store(false, Ordering::Relaxed);
     }
 
-    fn ptrace_stop(&self, signal: DequeuedSignal, ctx: &Context) -> PtraceStopResult {
+    fn ptrace_stop(
+        &self,
+        signal: DequeuedSignal,
+        ctx: &Context,
+        user_ctx: &mut UserContext,
+    ) -> PtraceStopResult {
+        #[cfg(not(target_arch = "x86_64"))]
+        let _ = user_ctx;
+
         // Hold the lock first to avoid race conditions.
         let mut state = self.state.lock();
 
@@ -217,6 +274,11 @@ impl TraceeStatus {
         debug_assert!(!self.is_ptrace_stopped());
 
         state.signal.stop(signal);
+        #[cfg(target_arch = "x86_64")]
+        {
+            state.general_regs = Some(*user_ctx.general_regs());
+            state.orig_syscall_ret = ctx.posix_thread.orig_syscall_ret();
+        }
         self.is_stopped.store(true, Ordering::Relaxed);
         drop(state);
 
@@ -239,12 +301,27 @@ impl TraceeStatus {
             // A `SIGKILL` interrupts this ptrace-stop.
             let mut state = self.state.lock();
             state.signal.clear();
+            #[cfg(target_arch = "x86_64")]
+            {
+                state.general_regs = None;
+                state.orig_syscall_ret = NOT_A_SYSCALL;
+            }
             self.is_stopped.store(false, Ordering::Relaxed);
             return PtraceStopResult::Interrupted;
         };
 
         let mut state = self.state.lock();
         let signal = state.signal.clear();
+
+        #[cfg(target_arch = "x86_64")]
+        {
+            let regs = state.general_regs.take().unwrap();
+            *user_ctx.general_regs_mut() = regs;
+            ctx.posix_thread
+                .set_orig_syscall_ret(state.orig_syscall_ret);
+            state.orig_syscall_ret = NOT_A_SYSCALL;
+        }
+
         PtraceStopResult::Continued(signal)
     }
 
@@ -289,12 +366,63 @@ impl TraceeStatus {
 
         Ok(())
     }
+
+    #[cfg(target_arch = "x86_64")]
+    fn get_regs(&self) -> Result<arch_ptrace::CUserRegsStruct> {
+        // Hold the lock first to avoid race conditions.
+        let state = self.state.lock();
+        self.check_ptrace_stopped(&state)?;
+
+        let regs = state.general_regs.as_ref().unwrap();
+        let mut regs = arch_ptrace::CUserRegsStruct::from(regs);
+        regs.orig_rax = state.orig_syscall_ret;
+        Ok(regs)
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn set_regs(&self, regs: arch_ptrace::CUserRegsStruct) -> Result<()> {
+        // Hold the lock first to avoid race conditions.
+        let mut state = self.state.lock();
+        self.check_ptrace_stopped(&state)?;
+
+        regs.apply_to(state.general_regs.as_mut().unwrap())?;
+        state.orig_syscall_ret = regs.orig_rax;
+
+        Ok(())
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn peek_user(&self, offset: usize) -> Result<usize> {
+        // Hold the lock first to avoid race conditions.
+        let state = self.state.lock();
+        self.check_ptrace_stopped(&state)?;
+        let regs = state.general_regs.as_ref().unwrap();
+        arch_ptrace::read_user_word(regs, state.orig_syscall_ret, offset)
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn poke_user(&self, offset: usize, value: usize) -> Result<()> {
+        // Hold the lock first to avoid race conditions.
+        let mut state = self.state.lock();
+        self.check_ptrace_stopped(&state)?;
+        let mut orig_syscall_ret = state.orig_syscall_ret;
+        let regs = state.general_regs.as_mut().unwrap();
+        arch_ptrace::write_user_word(regs, &mut orig_syscall_ret, offset, value)?;
+        state.orig_syscall_ret = orig_syscall_ret;
+        Ok(())
+    }
 }
 
 struct TraceeState {
     tracer: Weak<Thread>,
     /// The signal associated with the current ptrace-stop and later signal delivery.
     signal: StopDeliverySignal,
+    /// The general-purpose registers of the tracee at the time of ptrace-stop.
+    #[cfg(target_arch = "x86_64")]
+    general_regs: Option<GeneralRegs>,
+    /// The value of `PosixThread::orig_syscall_ret` at the time of ptrace-stop.
+    #[cfg(target_arch = "x86_64")]
+    orig_syscall_ret: usize,
 }
 
 impl TraceeState {
@@ -302,6 +430,10 @@ impl TraceeState {
         Self {
             tracer: Weak::new(),
             signal: StopDeliverySignal::default(),
+            #[cfg(target_arch = "x86_64")]
+            general_regs: None,
+            #[cfg(target_arch = "x86_64")]
+            orig_syscall_ret: NOT_A_SYSCALL,
         }
     }
 
