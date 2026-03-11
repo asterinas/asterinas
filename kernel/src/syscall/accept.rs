@@ -4,14 +4,14 @@ use super::SyscallReturn;
 use crate::{
     fs::file::{
         CreationFlags, StatusFlags,
-        file_table::{FdFlags, FileDesc, get_file_fast},
+        file_table::{FdFlags, RawFileDesc, get_file_fast},
     },
     prelude::*,
     util::net::write_socket_addr_to_user,
 };
 
 pub fn sys_accept(
-    sockfd: FileDesc,
+    sockfd: RawFileDesc,
     sockaddr_ptr: Vaddr,
     addrlen_ptr: Vaddr,
     ctx: &Context,
@@ -23,7 +23,7 @@ pub fn sys_accept(
 }
 
 pub fn sys_accept4(
-    sockfd: FileDesc,
+    sockfd: RawFileDesc,
     sockaddr_ptr: Vaddr,
     addrlen_ptr: Vaddr,
     flags: u32,
@@ -41,12 +41,12 @@ pub fn sys_accept4(
 }
 
 fn do_accept(
-    sockfd: FileDesc,
+    sockfd: RawFileDesc,
     sockaddr_ptr: Vaddr,
     addrlen_ptr: Vaddr,
     flags: Flags,
     ctx: &Context,
-) -> Result<FileDesc> {
+) -> Result<RawFileDesc> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, sockfd);
     let socket = file.as_socket_or_err()?;

@@ -12,7 +12,7 @@ use crate::{
     fs::{
         file::{
             AccessMode, FileIo, InodeHandle, InodeMode, InodeType, StatusFlags,
-            file_table::{FdFlags, FileDesc},
+            file_table::{FdFlags, RawFileDesc},
             mkmod,
         },
         pseudofs::{NaivePseudoFs, PseudoInode, PseudoInodeType},
@@ -259,7 +259,7 @@ impl<T: NsCommonOps> InodeIo for NsFile<T> {
 }
 
 /// Opens a namespace as a file and returns the file descriptor.
-fn open_ns_as_file<T: NsCommonOps>(ns: &Arc<T>) -> Result<FileDesc> {
+fn open_ns_as_file<T: NsCommonOps>(ns: &Arc<T>) -> Result<RawFileDesc> {
     let path = ns.get_path();
     let inode_handle = InodeHandle::new(path.clone(), AccessMode::O_RDONLY, StatusFlags::empty())?;
 

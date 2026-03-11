@@ -6,7 +6,7 @@ use super::{
 };
 use crate::{
     fs::{
-        file::file_table::{FileDesc, get_file_fast},
+        file::file_table::{RawFileDesc, get_file_fast},
         vfs::xattr::{XATTR_LIST_MAX_LEN, XattrNamespace},
     },
     prelude::*,
@@ -55,7 +55,7 @@ pub fn sys_llistxattr(
 }
 
 pub fn sys_flistxattr(
-    fd: FileDesc,
+    fd: RawFileDesc,
     list_ptr: Vaddr, // The given list is used to place xattr (null-terminated) names.
     list_len: usize,
     ctx: &Context,
