@@ -7,6 +7,7 @@ use crate::{
         vfs::inode::{Inode, SymbolicLink},
     },
     prelude::*,
+    process::PidNamespace,
 };
 
 /// Represents the inode at `/proc/self`.
@@ -24,6 +25,9 @@ impl SelfSymOps {
 
 impl SymOps for SelfSymOps {
     fn read_link(&self) -> Result<SymbolicLink> {
-        Ok(SymbolicLink::Plain(current!().pid().to_string()))
+        let root_pid = current!()
+            .pid_in(PidNamespace::get_init_singleton())
+            .unwrap_or_else(|| current!().pid());
+        Ok(SymbolicLink::Plain(root_pid.to_string()))
     }
 }

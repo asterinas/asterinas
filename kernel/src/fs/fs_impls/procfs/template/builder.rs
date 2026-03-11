@@ -133,7 +133,6 @@ impl<O: SymOps> ProcSymBuilder<O> {
         self.optional_builder(|ob| ob.parent(parent))
     }
 
-    #[expect(dead_code)]
     pub fn volatile(self) -> Self {
         self.optional_builder(|ob| ob.volatile())
     }

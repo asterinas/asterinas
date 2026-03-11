@@ -9,7 +9,7 @@ use crate::{
         vfs::inode::{Inode, SymbolicLink},
     },
     prelude::*,
-    process::posix_thread::AsPosixThread,
+    process::{PidNamespace, posix_thread::AsPosixThread},
 };
 
 /// Represents the inode at `/proc/self-thread`.
@@ -27,8 +27,14 @@ impl ThreadSelfSymOps {
 
 impl SymOps for ThreadSelfSymOps {
     fn read_link(&self) -> Result<SymbolicLink> {
-        let pid = current!().pid();
-        let tid = current_thread!().as_posix_thread().unwrap().tid();
+        let pid = current!()
+            .pid_in(PidNamespace::get_init_singleton())
+            .unwrap_or_else(|| current!().pid());
+        let tid = current_thread!()
+            .as_posix_thread()
+            .unwrap()
+            .tid_in(PidNamespace::get_init_singleton())
+            .unwrap_or_else(|| current_thread!().as_posix_thread().unwrap().tid());
         Ok(SymbolicLink::Plain(format!("{}/task/{}", pid, tid)))
     }
 }
