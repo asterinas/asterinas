@@ -14,19 +14,21 @@ use crate::{
     fs::{file::file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
     process::{
-        Credentials, NsProxy, Process, UserNamespace, pid_table,
+        Credentials, KernelTid, NsProxy, PidChain, PidNsForChildren, Process, UserNamespace,
+        pid_table,
         posix_thread::name::ThreadName,
         signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
     },
     sched::{Nice, SchedPolicy},
-    thread::{Thread, Tid, task},
+    thread::{Thread, task},
     time::{TimerManager, clocks::ProfClock},
 };
 
 /// The builder to build a posix thread
 pub struct PosixThreadBuilder {
     // The essential part
-    tid: Tid,
+    kernel_tid: KernelTid,
+    tid_chain: PidChain,
     thread_name: ThreadName,
     user_ctx: Box<UserContext>,
     process: Weak<Process>,
@@ -43,19 +45,22 @@ pub struct PosixThreadBuilder {
     fpu_context: FpuContext,
     user_ns: Option<Arc<UserNamespace>>,
     ns_proxy: Option<Arc<NsProxy>>,
+    pid_ns_for_children: Option<PidNsForChildren>,
     is_init_process: bool,
     default_timer_slack_ns: u64,
 }
 
 impl PosixThreadBuilder {
     pub fn new(
-        tid: Tid,
+        kernel_tid: KernelTid,
+        tid_chain: PidChain,
         thread_name: ThreadName,
         user_ctx: Box<UserContext>,
         credentials: Credentials,
     ) -> Self {
         Self {
-            tid,
+            kernel_tid,
+            tid_chain,
             thread_name,
             user_ctx,
             process: Weak::new(),
@@ -71,6 +76,7 @@ impl PosixThreadBuilder {
             is_init_process: false,
             user_ns: None,
             ns_proxy: None,
+            pid_ns_for_children: None,
             default_timer_slack_ns: 50_000, // 50 usec default slack
         }
     }
@@ -120,6 +126,11 @@ impl PosixThreadBuilder {
         self
     }
 
+    pub fn pid_ns_for_children(mut self, pid_ns_for_children: PidNsForChildren) -> Self {
+        self.pid_ns_for_children = Some(pid_ns_for_children);
+        self
+    }
+
     pub fn default_timer_slack_ns(mut self, slack_ns: u64) -> Self {
         self.default_timer_slack_ns = slack_ns;
         self
@@ -133,7 +144,8 @@ impl PosixThreadBuilder {
 
     pub fn build(self) -> Arc<Task> {
         let Self {
-            tid,
+            kernel_tid,
+            tid_chain,
             user_ctx,
             process,
             credentials,
@@ -148,6 +160,7 @@ impl PosixThreadBuilder {
             fpu_context,
             user_ns,
             ns_proxy,
+            pid_ns_for_children,
             is_init_process,
             default_timer_slack_ns,
         } = self;
@@ -157,6 +170,7 @@ impl PosixThreadBuilder {
         assert_eq!(user_ns.is_none(), ns_proxy.is_none());
         let user_ns = user_ns.unwrap_or_else(|| UserNamespace::get_init_singleton().clone());
         let ns_proxy = ns_proxy.unwrap_or_else(|| NsProxy::get_init_singleton().clone());
+        let pid_ns_for_children = pid_ns_for_children.unwrap_or(PidNsForChildren::SameAsActive);
 
         let fs = fs
             .unwrap_or_else(|| Arc::new(ThreadFsInfo::new(ns_proxy.mnt_ns().new_path_resolver())));
@@ -172,7 +186,8 @@ impl PosixThreadBuilder {
                 PosixThread {
                     process,
                     task: weak_task.clone(),
-                    tid: AtomicU32::new(tid),
+                    kernel_tid,
+                    tid_chain: Mutex::new(tid_chain),
                     name: Mutex::new(thread_name),
                     credentials,
                     fs: RwMutex::new(fs.clone()),
@@ -185,6 +200,7 @@ impl PosixThreadBuilder {
                     prof_timer_manager,
                     io_priority: AtomicU32::new(0),
                     ns_proxy: Mutex::new(Some(ns_proxy.clone())),
+                    pid_ns_for_children: Mutex::new(pid_ns_for_children),
                     timer_slack_ns: AtomicU64::new(default_timer_slack_ns),
                     default_timer_slack_ns: AtomicU64::new(default_timer_slack_ns),
                 }
@@ -209,7 +225,7 @@ impl PosixThreadBuilder {
                 ns_proxy,
             );
 
-            pid_table::pid_table_mut().insert_thread(tid, thread.clone());
+            pid_table::pid_table_mut().insert_thread(thread.clone());
             task::create_new_user_task(user_ctx, thread, thread_local, is_init_process)
         })
     }

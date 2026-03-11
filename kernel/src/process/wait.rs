@@ -8,8 +8,8 @@ use super::{
 use crate::{
     prelude::*,
     process::{
-        ReapedChildrenStats, Uid, pid_table, posix_thread::AsPosixThread, signal::sig_num::SigNum,
-        status::StopWaitStatus,
+        KernelPid, ReapedChildrenStats, Uid, pid_table, posix_thread::AsPosixThread,
+        signal::sig_num::SigNum, status::StopWaitStatus,
     },
     time::clocks::ProfClock,
 };
@@ -79,13 +79,16 @@ pub fn do_wait(
                 // do not return the same waited process status.
                 let mut children_lock = ctx.process.children().lock();
                 let children_mut = children_lock.as_mut().unwrap();
+                let caller_pid_ns = ctx.process.active_pid_ns();
 
                 let unwaited_children = children_mut
                     .values()
                     .filter(|child| match &child_filter {
                         ProcessFilter::Any => true,
-                        ProcessFilter::WithPid(pid) => child.pid() == *pid,
-                        ProcessFilter::WithPgid(pgid) => child.pgid() == *pgid,
+                        ProcessFilter::WithPid(pid) => child.pid_in(caller_pid_ns) == Some(*pid),
+                        ProcessFilter::WithPgid(pgid) => {
+                            child.pgid_in(caller_pid_ns) == Some(*pgid)
+                        }
                         ProcessFilter::WithPidfd(pid_file) => match pid_file.process_opt() {
                             Some(process) => Arc::ptr_eq(&process, child),
                             None => false,
@@ -103,7 +106,7 @@ pub fn do_wait(
                 if let Some(status) = wait_zombie(&unwaited_children) {
                     if !wait_options.contains(WaitOptions::WNOWAIT) {
                         reap_zombie_child(
-                            status.pid(),
+                            status.kernel_pid(),
                             children_mut,
                             ctx.process.reaped_children_stats(),
                         );
@@ -142,8 +145,12 @@ pub enum WaitStatus {
 }
 
 impl WaitStatus {
-    pub fn pid(&self) -> Pid {
-        self.process().pid()
+    pub fn pid_in(&self, ns: &crate::process::PidNamespace) -> Option<Pid> {
+        self.process().pid_in(ns)
+    }
+
+    fn kernel_pid(&self) -> KernelPid {
+        self.process().kernel_pid()
     }
 
     pub fn uid(&self) -> Uid {
@@ -201,8 +208,8 @@ fn wait_stopped_or_continued(
 
 /// Free zombie child with `child_pid`, returns the exit code of child process.
 fn reap_zombie_child(
-    child_pid: Pid,
-    children_lock: &mut BTreeMap<Pid, Arc<Process>>,
+    child_pid: KernelPid,
+    children_lock: &mut BTreeMap<KernelPid, Arc<Process>>,
     reaped_children_stats: &Mutex<ReapedChildrenStats>,
 ) -> ExitCode {
     let child_process = children_lock.remove(&child_pid).unwrap();
@@ -219,7 +226,10 @@ fn reap_zombie_child(
     // -> group of process -> group inner -> session inner
 
     // Remove the process from the global table
-    pid_table.remove_process(child_process.pid());
+    if let Some(root_pid) = child_process.pid_in(crate::process::PidNamespace::get_init_singleton())
+    {
+        pid_table.remove_process(root_pid);
+    }
 
     // Remove the process group and the session from global table, if necessary
     let mut child_group_mut = child_process.process_group.lock();

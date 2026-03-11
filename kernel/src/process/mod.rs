@@ -29,6 +29,10 @@ pub use execve::do_execve;
 pub use kill::{kill, kill_all, kill_group, tgkill};
 pub use namespace::{
     nsproxy::{ContextSetNsAdminApi, NsProxy, NsProxyBuilder, check_unsupported_ns_flags},
+    pid_ns::{
+        KernelPid, KernelTid, PidChain, PidNamespace, PidNsForChildren, PidNsState,
+        kernel_id_allocator,
+    },
     unshare::ContextUnshareAdminApi,
     user_ns::UserNamespace,
 };

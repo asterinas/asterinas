@@ -9,7 +9,7 @@ use ostd::{
 };
 
 use super::{
-    Credentials, Pid, Process, pid_table,
+    Credentials, PidChain, PidNamespace, PidNsForChildren, PidNsState, Process, pid_table,
     posix_thread::{AsPosixThread, PosixThreadBuilder, ThreadName},
     rlimit::ResourceLimits,
     signal::{constants::SIGCHLD, sig_disposition::SigDispositions, sig_num::SigNum},
@@ -198,10 +198,10 @@ impl CloneArgs {
                 );
             }
 
-            if ctx.process.is_init_process() {
+            if ctx.process.is_pid_namespace_init() {
                 return_errno_with_message!(
                     Errno::EINVAL,
-                    "`CLONE_PARENT` cannot be used if the process is the init process"
+                    "`CLONE_PARENT` cannot be used if the process is the pid namespace init process"
                 )
             }
         }
@@ -219,6 +219,13 @@ impl CloneArgs {
                 return_errno_with_message!(
                     Errno::EINVAL,
                     "`CLONE_THREAD` cannot be used together with `CLONE_PIDFD` or `CLONE_NEWUSER`"
+                );
+            }
+
+            if clone_flags.contains(CloneFlags::CLONE_NEWPID) {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "`CLONE_THREAD` cannot be used together with `CLONE_NEWPID`"
                 );
             }
         }
@@ -260,7 +267,8 @@ impl CloneFlags {
             | CloneFlags::CLONE_CHILD_CLEARTID
             | CloneFlags::CLONE_VFORK
             | CloneFlags::CLONE_NEWNS
-            | CloneFlags::CLONE_PARENT;
+            | CloneFlags::CLONE_PARENT
+            | CloneFlags::CLONE_NEWPID;
         let unsupported_flags = *self - supported_flags;
         if !unsupported_flags.is_empty() {
             warn!("contains unsupported clone flags: {:?}", unsupported_flags);
@@ -317,7 +325,9 @@ pub fn clone_child(
             current.children_wait_queue().wait_until(cond);
         }
 
-        let child_pid = child_process.pid();
+        let child_pid = child_process
+            .pid_in(ctx.process.active_pid_ns())
+            .unwrap_or(0);
         Ok(child_pid)
     }
 }
@@ -381,26 +391,38 @@ fn clone_child_task(
     // Inherit the thread name.
     let thread_name = posix_thread.thread_name().lock().clone();
 
-    let child_tid = allocate_posix_tid();
+    let child_kernel_tid = allocate_posix_tid();
+    let child_tid_chain = process.active_pid_ns().alloc_chain()?;
+    let child_pid_ns_for_children = posix_thread.pid_ns_for_children().lock().clone();
     let child_task = {
         let credentials = {
             let credentials = ctx.posix_thread.credentials();
             Credentials::new_from(&credentials)
         };
 
-        let mut thread_builder =
-            PosixThreadBuilder::new(child_tid, thread_name, child_user_ctx, credentials)
-                .process(posix_thread.weak_process().clone())
-                .sig_mask(sig_mask)
-                .file_table(child_file_table)
-                .fs(child_fs)
-                .fpu_context(child_fpu_context)
-                .user_ns(child_user_ns)
-                .ns_proxy(child_ns_proxy)
-                .default_timer_slack_ns(default_timer_slack_ns);
+        let mut thread_builder = PosixThreadBuilder::new(
+            child_kernel_tid,
+            child_tid_chain.clone(),
+            thread_name,
+            child_user_ctx,
+            credentials,
+        )
+        .process(posix_thread.weak_process().clone())
+        .sig_mask(sig_mask)
+        .file_table(child_file_table)
+        .fs(child_fs)
+        .fpu_context(child_fpu_context)
+        .user_ns(child_user_ns)
+        .ns_proxy(child_ns_proxy)
+        .pid_ns_for_children(child_pid_ns_for_children)
+        .default_timer_slack_ns(default_timer_slack_ns);
 
         // Deal with SETTID/CLEARTID flags
-        clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
+        clone_parent_settid(
+            child_tid_chain.active_link().nr(),
+            clone_args.parent_tid,
+            clone_flags,
+        )?;
         thread_builder = clone_child_cleartid(thread_builder, clone_args.child_tid, clone_flags);
         thread_builder = clone_child_settid(thread_builder, clone_args.child_tid, clone_flags);
 
@@ -493,7 +515,9 @@ fn clone_child_process(
     // Inherit the parent's OOM score adjustment
     let child_oom_score_adj = process.oom_score_adj().load(Ordering::Relaxed);
 
-    let child_tid = allocate_posix_tid();
+    let (child_active_pid_ns, child_pid_chain, first_process_in_ns) =
+        select_child_pid_namespace(ctx, clone_flags)?;
+    let child_kernel_tid = allocate_posix_tid();
 
     let child = {
         let mut child_thread_builder = {
@@ -513,25 +537,40 @@ fn clone_child_process(
                 Credentials::new_from(&credentials)
             };
 
-            PosixThreadBuilder::new(child_tid, child_thread_name, child_user_ctx, credentials)
-                .sig_mask(child_sig_mask)
-                .file_table(child_file_table)
-                .fs(child_fs)
-                .fpu_context(child_fpu_context)
-                .user_ns(child_user_ns.clone())
-                .ns_proxy(child_ns_proxy)
-                .default_timer_slack_ns(default_timer_slack_ns)
+            PosixThreadBuilder::new(
+                child_kernel_tid,
+                child_pid_chain.clone(),
+                child_thread_name,
+                child_user_ctx,
+                credentials,
+            )
+            .sig_mask(child_sig_mask)
+            .file_table(child_file_table)
+            .fs(child_fs)
+            .fpu_context(child_fpu_context)
+            .user_ns(child_user_ns.clone())
+            .ns_proxy(child_ns_proxy)
+            .pid_ns_for_children(PidNsForChildren::SameAsActive)
+            .default_timer_slack_ns(default_timer_slack_ns)
         };
 
         // Deal with SETTID/CLEARTID flags
-        clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
+        clone_parent_settid(
+            child_pid_chain
+                .nr_in(ctx.process.active_pid_ns())
+                .unwrap_or(child_pid_chain.active_link().nr()),
+            clone_args.parent_tid,
+            clone_flags,
+        )?;
         child_thread_builder =
             clone_child_cleartid(child_thread_builder, clone_args.child_tid, clone_flags);
         child_thread_builder =
             clone_child_settid(child_thread_builder, clone_args.child_tid, clone_flags);
 
         create_child_process(
-            child_tid,
+            child_kernel_tid,
+            child_pid_chain.clone(),
+            child_active_pid_ns.clone(),
             child_vmar,
             child_resource_limits,
             child_nice,
@@ -541,6 +580,11 @@ fn clone_child_process(
             child_thread_builder,
         )
     };
+
+    if first_process_in_ns {
+        child_active_pid_ns.set_state(PidNsState::Alive);
+        child_active_pid_ns.set_child_reaper(&child);
+    }
 
     clone_pidfd(ctx, &child, clone_flags, clone_args.pidfd)?;
 
@@ -725,9 +769,44 @@ fn clone_ns_proxy(
     parent_ns_proxy.new_clone(user_ns, clone_flags, posix_thread)
 }
 
+fn select_child_pid_namespace(
+    ctx: &Context,
+    clone_flags: CloneFlags,
+) -> Result<(Arc<PidNamespace>, PidChain, bool)> {
+    if clone_flags.contains(CloneFlags::CLONE_NEWPID) {
+        ctx.thread_local.borrow_user_ns().check_cap(
+            crate::process::credentials::capabilities::CapSet::SYS_ADMIN,
+            ctx.posix_thread,
+        )?;
+        let child_ns = PidNamespace::new_child(
+            ctx.process.active_pid_ns().clone(),
+            ctx.thread_local.borrow_user_ns().clone(),
+        )?;
+        let pid_chain = child_ns.alloc_chain()?;
+        return Ok((child_ns, pid_chain, true));
+    }
+
+    let pid_ns_for_children = ctx.posix_thread.pid_ns_for_children().lock().clone();
+    let target_ns = pid_ns_for_children.target(ctx.process.active_pid_ns());
+    let pid_chain;
+    let first_process_in_ns;
+    if matches!(target_ns.state(), PidNsState::PendingInit) {
+        let _guard = target_ns.pending_init_lock().lock();
+        first_process_in_ns = matches!(target_ns.state(), PidNsState::PendingInit);
+        pid_chain = target_ns.alloc_chain()?;
+    } else {
+        first_process_in_ns = false;
+        pid_chain = target_ns.alloc_chain()?;
+    }
+
+    Ok((target_ns, pid_chain, first_process_in_ns))
+}
+
 #[expect(clippy::too_many_arguments)]
 fn create_child_process(
-    pid: Pid,
+    kernel_pid: crate::process::KernelPid,
+    pid_chain: PidChain,
+    active_pid_ns: Arc<PidNamespace>,
     vmar: Arc<Vmar>,
     resource_limits: ResourceLimits,
     nice: Nice,
@@ -737,7 +816,9 @@ fn create_child_process(
     thread_builder: PosixThreadBuilder,
 ) -> Arc<Process> {
     let child_proc = Process::new(
-        pid,
+        kernel_pid,
+        pid_chain,
+        active_pid_ns,
         vmar,
         resource_limits,
         nice,
@@ -767,12 +848,18 @@ fn set_parent_and_group(clone_flags: CloneFlags, parent: &Arc<Process>, child: &
         };
 
         // Lock order: children of process -> parent of process
-        child.parent().lock().set_process(&real_parent);
+        let visible_parent_pid = real_parent.pid_in(child.active_pid_ns()).unwrap_or(0);
+        child
+            .parent()
+            .lock()
+            .set_process_with_visible_pid(&real_parent, visible_parent_pid);
 
         // Update `has_child_subreaper` for the child process to
         // make sure the `has_child_subreaper` state of the child process
         // will be consistent with its parent.
-        if real_parent.has_child_subreaper.load(Ordering::Acquire) {
+        if Arc::ptr_eq(real_parent.active_pid_ns(), child.active_pid_ns())
+            && real_parent.has_child_subreaper.load(Ordering::Acquire)
+        {
             child.has_child_subreaper.store(true, Ordering::Release);
         }
 
@@ -790,10 +877,10 @@ fn set_parent_and_group(clone_flags: CloneFlags, parent: &Arc<Process>, child: &
         *child.process_group.lock() = Some(process_group.clone());
 
         // Put the child process in the parent's `children` field
-        children_mut.insert(child.pid(), child.clone());
+        children_mut.insert(child.kernel_pid(), child.clone());
 
         // Put the child process in the global table
-        pid_table.insert_process(child.pid(), child.clone());
+        pid_table.insert_process(child.clone());
 
         return;
     }

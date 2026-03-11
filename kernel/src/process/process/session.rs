@@ -1,40 +1,32 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{Pgid, Process, ProcessGroup, Sid, Terminal};
-use crate::prelude::*;
+use super::{Process, ProcessGroup, Terminal};
+use crate::{
+    prelude::*,
+    process::{KernelPid, PidChain, PidNamespace, Sid},
+};
 
 /// A session.
-///
-/// A session is a collection of related process groups, which has a unique identifier SID (i.e.,
-/// [`Sid`]). Process groups and sessions form a two-level hierarchical relationship between
-/// processes.
-///
-/// **Leader**: A *session leader* is the process that creates the session and whose process ID is
-/// equal to the session ID.
-///
-/// **Controlling terminal**: A terminal can be used to manage all processes in the session. The
-/// controlling terminal is established when the session leader first opens a terminal.
 pub struct Session {
-    sid: Sid,
+    owner_pid_ns: Arc<PidNamespace>,
+    kernel_sid: KernelPid,
+    sid_chain: PidChain,
+    leader: Weak<Process>,
     inner: Mutex<Inner>,
 }
 
 struct Inner {
-    process_groups: BTreeMap<Pgid, Weak<ProcessGroup>>,
+    process_groups: BTreeMap<KernelPid, Weak<ProcessGroup>>,
     terminal: Option<Arc<dyn Terminal>>,
 }
 
 impl Session {
-    /// Creates a new session and a new process group with one process.
-    ///
-    /// The SID and the PGID are the same as the process ID, which means that the process will
-    /// become the leader process of the new session and the new process group.
-    ///
-    /// The caller needs to ensure that the process does not belong to other process group or other
-    /// session.
     pub(in crate::process) fn new_pair(process: Arc<Process>) -> (Arc<Self>, Arc<ProcessGroup>) {
         let session = Arc::new(Self {
-            sid: process.pid(),
+            owner_pid_ns: process.active_pid_ns().clone(),
+            kernel_sid: process.kernel_pid(),
+            sid_chain: process.pid_chain().clone(),
+            leader: Arc::downgrade(&process),
             inner: Mutex::new(Inner {
                 process_groups: BTreeMap::new(),
                 terminal: None,
@@ -46,22 +38,46 @@ impl Session {
             .inner
             .lock()
             .process_groups
-            .insert(process_group.pgid(), Arc::downgrade(&process_group));
+            .insert(process_group.kernel_pgid(), Arc::downgrade(&process_group));
 
         (session, process_group)
     }
 
-    /// Returns the session identifier.
+    #[expect(dead_code)]
+    pub fn owner_pid_ns(&self) -> &Arc<PidNamespace> {
+        &self.owner_pid_ns
+    }
+
+    #[expect(dead_code)]
+    pub fn kernel_sid(&self) -> KernelPid {
+        self.kernel_sid
+    }
+
+    #[expect(dead_code)]
+    pub fn leader(&self) -> Option<Arc<Process>> {
+        self.leader.upgrade()
+    }
+
     pub fn sid(&self) -> Sid {
-        self.sid
+        self.canonical_sid_unchecked()
     }
 
-    /// Returns whether the process is the session leader.
+    pub fn sid_in(&self, ns: &PidNamespace) -> Option<Sid> {
+        self.sid_chain.nr_in(ns)
+    }
+
+    pub fn sid_chain(&self) -> &PidChain {
+        &self.sid_chain
+    }
+
+    pub(super) fn canonical_sid_unchecked(&self) -> Sid {
+        self.sid_chain.active_link().nr()
+    }
+
     pub(super) fn is_leader(&self, process: &Process) -> bool {
-        self.sid == process.pid()
+        self.kernel_sid == process.kernel_pid()
     }
 
-    /// Acquires a lock on the session.
     pub fn lock(&self) -> SessionGuard<'_> {
         SessionGuard {
             inner: self.inner.lock(),
@@ -69,9 +85,6 @@ impl Session {
     }
 }
 
-/// A scoped lock guard for a session.
-///
-/// It provides some public methods to prevent the exposure of the inner type.
 #[clippy::has_significant_drop]
 #[must_use]
 pub struct SessionGuard<'a> {
@@ -79,40 +92,26 @@ pub struct SessionGuard<'a> {
 }
 
 impl SessionGuard<'_> {
-    /// Sets the controlling terminal of the session.
-    ///
-    /// The caller needs to ensure that the job control of the old and new controlling terminals
-    /// are properly updated and synchronized.
     pub(super) fn set_terminal(&mut self, terminal: Option<Arc<dyn Terminal>>) {
         self.inner.terminal = terminal;
     }
 
-    /// Returns the controlling terminal of the session.
     pub fn terminal(&self) -> Option<&Arc<dyn Terminal>> {
         self.inner.terminal.as_ref()
     }
 
-    /// Inserts a process group into the session.
-    ///
-    /// The caller needs to ensure that the process group didn't previously belong to the session,
-    /// but now does.
     pub(in crate::process) fn insert_process_group(&mut self, process_group: Arc<ProcessGroup>) {
         let old_process_group = self
             .inner
             .process_groups
-            .insert(process_group.pgid(), Arc::downgrade(&process_group));
+            .insert(process_group.kernel_pgid(), Arc::downgrade(&process_group));
         debug_assert!(old_process_group.is_none());
     }
 
-    /// Removes a process group from the session.
-    ///
-    /// The caller needs to ensure that the process group previously belonged to the session, but
-    /// now doesn't.
-    pub(in crate::process) fn remove_process_group(&mut self, pgid: &Pgid) {
+    pub(in crate::process) fn remove_process_group(&mut self, pgid: &KernelPid) {
         self.inner.process_groups.remove(pgid);
     }
 
-    /// Returns whether the session is empty.
     pub(in crate::process) fn is_empty(&self) -> bool {
         self.inner.process_groups.is_empty()
     }

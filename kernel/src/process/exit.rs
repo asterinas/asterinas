@@ -107,8 +107,11 @@ fn move_process_children(
     let mut current_children = current_process.children().lock();
     for child_process in current_children.as_mut().unwrap().values() {
         let mut parent = child_process.parent.lock();
-        reaper_process_children.insert(child_process.pid(), child_process.clone());
-        parent.set_process(reaper_process);
+        reaper_process_children.insert(child_process.kernel_pid(), child_process.clone());
+        let visible_parent_pid = reaper_process
+            .pid_in(child_process.active_pid_ns())
+            .unwrap_or(0);
+        parent.set_process_with_visible_pid(reaper_process, visible_parent_pid);
     }
     *current_children = None;
 
