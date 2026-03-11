@@ -274,6 +274,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-multimedia"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
 name = "test-networking"
 version = "0.1.0"
 dependencies = [
