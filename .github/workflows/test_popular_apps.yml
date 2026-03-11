@@ -32,6 +32,8 @@ jobs:
             disk_size: 8192
           - name: web-servers-proxies
             disk_size: 8192
+          - name: databases-middleware
+            disk_size: 8192
 
     name: Test ${{ matrix.test.name }}
     steps:
