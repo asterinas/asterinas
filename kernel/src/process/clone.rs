@@ -19,7 +19,7 @@ use crate::{
     current_userspace,
     fs::{
         cgroupfs::{CgroupMembership, CgroupSysNode},
-        file::file_table::{FdFlags, FileTable},
+        file::file_table::{FdFlags, FileTable, RawFileDesc},
         thread_info::ThreadFsInfo,
     },
     prelude::*,
@@ -716,7 +716,10 @@ fn clone_pidfd(
 
     // Since `write_val` may sleep, we cannot hold the file table lock during its execution.
     // FIXME: Should we remove the file from the file table if the write operation fails?
-    match ctx.user_space().write_val(pidfd_addr, &fd) {
+    match ctx
+        .user_space()
+        .write_val(pidfd_addr, &RawFileDesc::from(fd))
+    {
         Ok(()) => Ok(()),
         Err(err) => {
             let file_table = ctx.thread_local.borrow_file_table();

@@ -101,7 +101,7 @@ fn create_new_signalfd(
 
     let file_table = ctx.thread_local.borrow_file_table();
     let fd = file_table.unwrap().write().insert(signal_file, fd_flags);
-    Ok(fd)
+    Ok(fd.into())
 }
 
 fn update_existing_signalfd(
@@ -111,7 +111,7 @@ fn update_existing_signalfd(
     non_blocking: bool,
 ) -> Result<RawFileDesc> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(&mut file_table, fd.try_into()?);
     let signal_file = file
         .downcast_ref::<SignalFile>()
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "File descriptor is not a signalfd"))?;

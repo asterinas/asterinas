@@ -15,7 +15,7 @@ use ostd::sync::{LocalIrqDisabled, Mutex, MutexGuard, SpinLock, SpinLockGuard};
 use super::{EpollEvent, EpollFlags};
 use crate::{
     events::{self, IoEvents},
-    fs::file::{FileLike, file_table::RawFileDesc},
+    fs::file::{FileLike, file_table::FileDesc},
     process::signal::{PollHandle, Pollee},
 };
 
@@ -45,12 +45,12 @@ impl Display for Entry {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct EntryKey {
-    fd: RawFileDesc,
+    fd: FileDesc,
     file: KeyableWeak<dyn FileLike>,
 }
 
-impl From<(RawFileDesc, KeyableWeak<dyn FileLike>)> for EntryKey {
-    fn from(value: (RawFileDesc, KeyableWeak<dyn FileLike>)) -> Self {
+impl From<(FileDesc, KeyableWeak<dyn FileLike>)> for EntryKey {
+    fn from(value: (FileDesc, KeyableWeak<dyn FileLike>)) -> Self {
         Self {
             fd: value.0,
             file: value.1,
@@ -58,8 +58,8 @@ impl From<(RawFileDesc, KeyableWeak<dyn FileLike>)> for EntryKey {
     }
 }
 
-impl From<(RawFileDesc, &Arc<dyn FileLike>)> for EntryKey {
-    fn from(value: (RawFileDesc, &Arc<dyn FileLike>)) -> Self {
+impl From<(FileDesc, &Arc<dyn FileLike>)> for EntryKey {
+    fn from(value: (FileDesc, &Arc<dyn FileLike>)) -> Self {
         Self {
             fd: value.0,
             file: KeyableWeak::from(Arc::downgrade(value.1)),
@@ -76,7 +76,7 @@ struct Inner {
 impl Entry {
     /// Creates a new epoll entry associated with the given epoll file.
     pub(super) fn new(
-        fd: RawFileDesc,
+        fd: FileDesc,
         file: KeyableWeak<dyn FileLike>,
         ready_set: Arc<ReadySet>,
     ) -> Arc<Self> {
@@ -186,7 +186,7 @@ impl Entry {
     }
 
     /// Gets the file descriptor associated with the epoll entry.
-    pub(super) fn fd(&self) -> RawFileDesc {
+    pub(super) fn fd(&self) -> FileDesc {
         self.key.fd
     }
 

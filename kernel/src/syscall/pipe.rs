@@ -37,15 +37,17 @@ pub fn sys_pipe2(fds: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn>
     let file_table = ctx.thread_local.borrow_file_table();
     let mut file_table_locked = file_table.unwrap().write();
 
+    let reader_fd = file_table_locked.insert(pipe_reader, fd_flags);
+    let writer_fd = file_table_locked.insert(pipe_writer, fd_flags);
     let pipe_fds = PipeFds {
-        reader_fd: file_table_locked.insert(pipe_reader, fd_flags),
-        writer_fd: file_table_locked.insert(pipe_writer, fd_flags),
+        reader_raw_fd: reader_fd.into(),
+        writer_raw_fd: writer_fd.into(),
     };
     debug!("pipe_fds: {:?}", pipe_fds);
 
     if let Err(err) = ctx.user_space().write_val(fds, &pipe_fds) {
-        file_table_locked.close_file(pipe_fds.reader_fd).unwrap();
-        file_table_locked.close_file(pipe_fds.writer_fd).unwrap();
+        file_table_locked.close_file(reader_fd).unwrap();
+        file_table_locked.close_file(writer_fd).unwrap();
         return Err(err.into());
     }
 
@@ -59,6 +61,6 @@ pub fn sys_pipe(fds: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
 #[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
 struct PipeFds {
-    reader_fd: RawFileDesc,
-    writer_fd: RawFileDesc,
+    reader_raw_fd: RawFileDesc,
+    writer_raw_fd: RawFileDesc,
 }
