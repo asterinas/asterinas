@@ -4,7 +4,7 @@ use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::FileDesc,
+    fs::file::file_table::RawFileDesc,
     net::socket::{
         Socket,
         util::{MessageHeader, SendRecvFlags},
@@ -14,7 +14,7 @@ use crate::{
 };
 
 pub fn sys_sendmsg(
-    sockfd: FileDesc,
+    sockfd: RawFileDesc,
     user_msghdr_ptr: Vaddr,
     flags: i32,
     ctx: &Context,

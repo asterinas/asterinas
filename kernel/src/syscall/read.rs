@@ -3,12 +3,12 @@
 use super::SyscallReturn;
 use crate::{
     fs,
-    fs::file::file_table::{FileDesc, get_file_fast},
+    fs::file::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
 };
 
 pub fn sys_read(
-    fd: FileDesc,
+    fd: RawFileDesc,
     user_buf_addr: Vaddr,
     buf_len: usize,
     ctx: &Context,

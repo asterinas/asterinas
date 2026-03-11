@@ -15,7 +15,7 @@ use crate::{
     },
 };
 
-pub type FileDesc = i32;
+pub type RawFileDesc = i32;
 
 #[derive(Clone)]
 pub struct FileTable {
@@ -37,10 +37,10 @@ impl FileTable {
     /// or greater than `ceil_fd`.
     pub fn dup_ceil(
         &mut self,
-        fd: FileDesc,
-        ceil_fd: FileDesc,
+        fd: RawFileDesc,
+        ceil_fd: RawFileDesc,
         flags: FdFlags,
-    ) -> Result<FileDesc> {
+    ) -> Result<RawFileDesc> {
         let entry = self.duplicate_entry(fd, flags)?;
 
         // Get the lowest-numbered available fd equal to or greater than `ceil_fd`.
@@ -60,7 +60,7 @@ impl FileTable {
 
         let min_free_fd = get_min_free_fd();
         self.table.put_at(min_free_fd, entry);
-        Ok(min_free_fd as FileDesc)
+        Ok(min_free_fd as RawFileDesc)
     }
 
     /// Duplicates `fd` onto the exact descriptor number `new_fd`.
@@ -76,7 +76,7 @@ impl FileTable {
         Ok(closed_file)
     }
 
-    fn duplicate_entry(&self, fd: FileDesc, flags: FdFlags) -> Result<FileTableEntry> {
+    fn duplicate_entry(&self, fd: RawFileDesc, flags: FdFlags) -> Result<FileTableEntry> {
         let file = self
             .table
             .get(fd as usize)
@@ -85,12 +85,12 @@ impl FileTable {
         Ok(FileTableEntry::new(file, flags))
     }
 
-    pub fn insert(&mut self, item: Arc<dyn FileLike>, flags: FdFlags) -> FileDesc {
+    pub fn insert(&mut self, item: Arc<dyn FileLike>, flags: FdFlags) -> RawFileDesc {
         let entry = FileTableEntry::new(item, flags);
-        self.table.put(entry) as FileDesc
+        self.table.put(entry) as RawFileDesc
     }
 
-    pub fn close_file(&mut self, fd: FileDesc) -> Option<Arc<dyn FileLike>> {
+    pub fn close_file(&mut self, fd: RawFileDesc) -> Option<Arc<dyn FileLike>> {
         let removed_entry = self.table.remove(fd as usize)?;
         // POSIX record locks are process-associated and Linux drops them when any fd for the inode is
         // closed by that process, even if duplicated descriptors still exist.
@@ -111,12 +111,12 @@ impl FileTable {
         F: Fn(&FileTableEntry) -> bool,
     {
         let mut closed_files = Vec::new();
-        let closed_fds: Vec<FileDesc> = self
+        let closed_fds: Vec<RawFileDesc> = self
             .table
             .idxes_and_items()
             .filter_map(|(idx, entry)| {
                 if should_close(entry) {
-                    Some(idx as FileDesc)
+                    Some(idx as RawFileDesc)
                 } else {
                     None
                 }
@@ -130,29 +130,29 @@ impl FileTable {
         closed_files
     }
 
-    pub fn get_file(&self, fd: FileDesc) -> Result<&Arc<dyn FileLike>> {
+    pub fn get_file(&self, fd: RawFileDesc) -> Result<&Arc<dyn FileLike>> {
         self.table
             .get(fd as usize)
             .map(|entry| entry.file())
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 
-    pub fn get_entry(&self, fd: FileDesc) -> Result<&FileTableEntry> {
+    pub fn get_entry(&self, fd: RawFileDesc) -> Result<&FileTableEntry> {
         self.table
             .get(fd as usize)
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 
-    pub fn get_entry_mut(&mut self, fd: FileDesc) -> Result<&mut FileTableEntry> {
+    pub fn get_entry_mut(&mut self, fd: RawFileDesc) -> Result<&mut FileTableEntry> {
         self.table
             .get_mut(fd as usize)
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 
-    pub fn fds_and_files(&self) -> impl Iterator<Item = (FileDesc, &'_ Arc<dyn FileLike>)> {
+    pub fn fds_and_files(&self) -> impl Iterator<Item = (RawFileDesc, &'_ Arc<dyn FileLike>)> {
         self.table
             .idxes_and_items()
-            .map(|(idx, entry)| (idx as FileDesc, entry.file()))
+            .map(|(idx, entry)| (idx as RawFileDesc, entry.file()))
     }
 }
 
@@ -209,13 +209,13 @@ macro_rules! get_file_fast {
 
         use ostd::sync::RwArc;
         use $crate::{
-            fs::file::file_table::{FileDesc, FileTable},
+            fs::file::file_table::{FileTable, RawFileDesc},
             process::posix_thread::FileTableRefMut,
         };
 
         let file_table: &mut FileTableRefMut<'_> = $file_table;
         let file_table: &mut RwArc<FileTable> = file_table.unwrap();
-        let file_desc: FileDesc = $file_desc;
+        let file_desc: RawFileDesc = $file_desc;
 
         if let Some(inner) = file_table.get() {
             // Fast path: The file table is not shared, we can get the file in a lockless way.

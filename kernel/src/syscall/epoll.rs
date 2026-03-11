@@ -9,7 +9,7 @@ use crate::{
     events::{EpollCtl, EpollEvent, EpollFile, EpollFlags, IoEvents},
     fs::file::{
         CreationFlags,
-        file_table::{FdFlags, FileDesc, get_file_fast},
+        file_table::{FdFlags, RawFileDesc, get_file_fast},
     },
     prelude::*,
     process::signal::sig_mask::{SigMask, SigSet},
@@ -49,9 +49,9 @@ pub fn sys_epoll_create1(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
 }
 
 pub fn sys_epoll_ctl(
-    epfd: FileDesc,
+    epfd: RawFileDesc,
     op: i32,
-    fd: FileDesc,
+    fd: RawFileDesc,
     event_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
@@ -95,7 +95,7 @@ pub fn sys_epoll_ctl(
 }
 
 fn do_epoll_pwait2(
-    epfd: FileDesc,
+    epfd: RawFileDesc,
     events_addr: Vaddr,
     max_events: i32,
     timeout: Option<Duration>,
@@ -160,7 +160,7 @@ fn do_epoll_pwait2(
 }
 
 pub fn sys_epoll_wait(
-    epfd: FileDesc,
+    epfd: RawFileDesc,
     events_addr: Vaddr,
     max_events: i32,
     timeout: i32,
@@ -207,7 +207,7 @@ fn restore_signal_mask(sig_mask_val: SigMask, ctx: &Context) {
 }
 
 pub fn sys_epoll_pwait(
-    epfd: FileDesc,
+    epfd: RawFileDesc,
     events_addr: Vaddr,
     max_events: i32,
     timeout: i32,
@@ -240,7 +240,7 @@ pub fn sys_epoll_pwait(
 }
 
 pub fn sys_epoll_pwait2(
-    epfd: FileDesc,
+    epfd: RawFileDesc,
     events_addr: Vaddr,
     max_events: i32,
     timeout_addr: Vaddr,

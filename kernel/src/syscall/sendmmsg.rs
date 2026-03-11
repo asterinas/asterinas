@@ -3,7 +3,7 @@
 use ostd::mm::VmIo;
 
 use crate::{
-    fs::file::file_table::FileDesc,
+    fs::file::file_table::RawFileDesc,
     net::socket::{Socket, util::SendRecvFlags},
     prelude::*,
     syscall::{SyscallReturn, sendmsg::send_one_message},
@@ -11,7 +11,7 @@ use crate::{
 };
 
 pub fn sys_sendmmsg(
-    sockfd: FileDesc,
+    sockfd: RawFileDesc,
     mmsghdrs_addr: Vaddr,
     count: usize,
     flags: i32,

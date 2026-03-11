@@ -9,7 +9,7 @@ use crate::{
     events::IoEvents,
     fs::file::{
         FileLike,
-        file_table::{FileDesc, FileTable},
+        file_table::{FileTable, RawFileDesc},
     },
     prelude::*,
     process::{ResourceType, signal::Poller},
@@ -233,13 +233,13 @@ struct c_pollfd {
 
 #[derive(Debug, Clone)]
 pub struct PollFd {
-    fd: Option<FileDesc>,
+    fd: Option<RawFileDesc>,
     events: IoEvents,
     revents: Cell<IoEvents>,
 }
 
 impl PollFd {
-    pub fn new(fd: Option<FileDesc>, events: IoEvents) -> Self {
+    pub fn new(fd: Option<RawFileDesc>, events: IoEvents) -> Self {
         let revents = Cell::new(IoEvents::empty());
         Self {
             fd,
@@ -248,7 +248,7 @@ impl PollFd {
         }
     }
 
-    pub fn fd(&self) -> Option<FileDesc> {
+    pub fn fd(&self) -> Option<RawFileDesc> {
         self.fd
     }
 
@@ -264,7 +264,7 @@ impl PollFd {
 impl From<c_pollfd> for PollFd {
     fn from(raw: c_pollfd) -> Self {
         let fd = if raw.fd >= 0 {
-            Some(raw.fd as FileDesc)
+            Some(raw.fd as RawFileDesc)
         } else {
             None
         };
