@@ -15,7 +15,7 @@ use crate::{
     fs::{
         file::{
             CreationFlags, FileLike,
-            file_table::{FdFlags, FileDesc, get_file_fast},
+            file_table::{FdFlags, RawFileDesc, get_file_fast},
         },
         pseudofs::AnonInodeFs,
         vfs::path::Path,
@@ -89,7 +89,7 @@ impl EpollFile {
 
     fn add_interest(
         &self,
-        fd: FileDesc,
+        fd: RawFileDesc,
         file: Arc<dyn FileLike>,
         ep_event: EpollEvent,
         ep_flags: EpollFlags,
@@ -130,7 +130,7 @@ impl EpollFile {
         Ok(())
     }
 
-    fn del_interest(&self, fd: FileDesc, file: KeyableWeak<dyn FileLike>) -> Result<()> {
+    fn del_interest(&self, fd: RawFileDesc, file: KeyableWeak<dyn FileLike>) -> Result<()> {
         // If this epoll entry is in the ready list, then we should delete it.
         // But unfortunately, deleting an entry from the ready list has a
         // complexity of O(N).
@@ -149,7 +149,7 @@ impl EpollFile {
 
     fn mod_interest(
         &self,
-        fd: FileDesc,
+        fd: RawFileDesc,
         file: Arc<dyn FileLike>,
         new_ep_event: EpollEvent,
         new_ep_flags: EpollFlags,

@@ -3,13 +3,13 @@
 use super::SyscallReturn;
 use crate::{
     fs,
-    fs::file::file_table::{FileDesc, get_file_fast},
+    fs::file::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
     util::VmReaderArray,
 };
 
 pub fn sys_writev(
-    fd: FileDesc,
+    fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     ctx: &Context,
@@ -19,7 +19,7 @@ pub fn sys_writev(
 }
 
 pub fn sys_pwritev(
-    fd: FileDesc,
+    fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     offset_low: u64,
@@ -35,7 +35,7 @@ pub fn sys_pwritev(
 }
 
 pub fn sys_pwritev2(
-    fd: FileDesc,
+    fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     offset_low: u64,
@@ -60,7 +60,7 @@ pub fn sys_pwritev2(
 }
 
 fn do_sys_pwritev(
-    fd: FileDesc,
+    fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     offset: i64,
@@ -120,7 +120,7 @@ fn do_sys_pwritev(
 }
 
 fn do_sys_writev(
-    fd: FileDesc,
+    fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     ctx: &Context,
