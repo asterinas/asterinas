@@ -25,6 +25,12 @@ entry_efi_handover32:
     // just in case.
     jmp entry_legacy32
 
+// The 32-bit EFI handover offset expected by Linux boot header.
+// Keep this as an absolute symbol so `header.S` can reference it directly
+// without doing cross-unit symbol subtraction.
+.global entry_efi_handover_offset32
+.set entry_efi_handover_offset32, (entry_efi_handover32 - entry_legacy32)
+
 // The 64-bit Linux legacy entry point must be 0x200 bytes after the 32-bit
 // one. This is required by the x86 Linux boot protocol.
 .skip 0x200 - (. - entry_legacy32)
