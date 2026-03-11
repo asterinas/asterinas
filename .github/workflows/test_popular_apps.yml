@@ -24,6 +24,10 @@ jobs:
         test:
           - name: system-core
             disk_size: 8192
+          - name: nix
+            disk_size: 6144
+          - name: podman
+            disk_size: 8192
 
     name: Test ${{ matrix.test.name }}
     steps:
