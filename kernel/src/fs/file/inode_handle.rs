@@ -179,7 +179,7 @@ impl InodeHandle {
         range_lock_list.set_lock(lock, is_nonblocking)
     }
 
-    fn release_range_locks(&self) {
+    pub fn release_range_locks(&self) {
         let range_lock = RangeLockItem::new(
             RangeLockType::Unlock,
             FileRange::new(0, OFFSET_MAX).unwrap(),

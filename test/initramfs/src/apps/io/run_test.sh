@@ -11,5 +11,6 @@ set -e
 ./eventfd2/eventfd2
 
 ./file_io/access_err
+./file_io/fcntl_lock
 ./file_io/file_err
 ./file_io/iovec_err
