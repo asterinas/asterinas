@@ -64,6 +64,7 @@ pub fn sys_epoll_ctl(
     const EPOLL_CTL_DEL: i32 = 2;
     const EPOLL_CTL_MOD: i32 = 3;
 
+    let fd = fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?;
     let cmd = match op {
         EPOLL_CTL_ADD => {
             let c_epoll_event = ctx.user_space().read_val::<c_epoll_event>(event_addr)?;
