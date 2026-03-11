@@ -44,7 +44,7 @@ fn handle_dupfd(fd: FileDesc, arg: u64, flags: FdFlags, ctx: &Context) -> Result
     let new_fd = file_table
         .unwrap()
         .write()
-        .dup(fd, arg as FileDesc, flags)?;
+        .dup_ceil(fd, arg as FileDesc, flags)?;
     Ok(SyscallReturn::Return(new_fd as _))
 }
 

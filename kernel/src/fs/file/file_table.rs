@@ -33,21 +33,24 @@ impl FileTable {
         self.table.slots_len()
     }
 
-    pub fn dup(&mut self, fd: FileDesc, new_fd: FileDesc, flags: FdFlags) -> Result<FileDesc> {
-        let file = self
-            .table
-            .get(fd as usize)
-            .map(|entry| entry.file.clone())
-            .ok_or(Error::with_message(Errno::ENOENT, "No such file"))?;
+    /// Duplicates `fd` onto the lowest-numbered available descriptor equal to
+    /// or greater than `ceil_fd`.
+    pub fn dup_ceil(
+        &mut self,
+        fd: FileDesc,
+        ceil_fd: FileDesc,
+        flags: FdFlags,
+    ) -> Result<FileDesc> {
+        let entry = self.duplicate_entry(fd, flags)?;
 
-        // Get the lowest-numbered available fd equal to or greater than `new_fd`.
+        // Get the lowest-numbered available fd equal to or greater than `ceil_fd`.
         let get_min_free_fd = || -> usize {
-            let new_fd = new_fd as usize;
-            if self.table.get(new_fd).is_none() {
-                return new_fd;
+            let ceil_fd = ceil_fd as usize;
+            if self.table.get(ceil_fd).is_none() {
+                return ceil_fd;
             }
 
-            for idx in new_fd + 1..self.len() {
+            for idx in ceil_fd + 1..self.len() {
                 if self.table.get(idx).is_none() {
                     return idx;
                 }
@@ -56,9 +59,29 @@ impl FileTable {
         };
 
         let min_free_fd = get_min_free_fd();
-        let entry = FileTableEntry::new(file, flags);
         self.table.put_at(min_free_fd, entry);
         Ok(min_free_fd as FileDesc)
+    }
+
+    /// Duplicates `fd` onto the exact descriptor number `new_fd`.
+    pub fn dup_exact(
+        &mut self,
+        fd: FileDesc,
+        new_fd: FileDesc,
+        flags: FdFlags,
+    ) -> Result<Option<Arc<dyn FileLike>>> {
+        let entry = self.duplicate_entry(fd, flags)?;
+        let replaced = self.table.put_at(new_fd as usize, entry);
+        Ok(replaced.map(|entry| entry.file))
+    }
+
+    fn duplicate_entry(&self, fd: FileDesc, flags: FdFlags) -> Result<FileTableEntry> {
+        let file = self
+            .table
+            .get(fd as usize)
+            .map(|entry| entry.file.clone())
+            .ok_or(Error::with_message(Errno::EBADF, "fd does not exist"))?;
+        Ok(FileTableEntry::new(file, flags))
     }
 
     pub fn insert(&mut self, item: Arc<dyn FileLike>, flags: FdFlags) -> FileDesc {

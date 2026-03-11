@@ -12,7 +12,7 @@ pub fn sys_dup(old_fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
 
     let file_table = ctx.thread_local.borrow_file_table();
     let mut file_table_locked = file_table.unwrap().write();
-    let new_fd = file_table_locked.dup(old_fd, 0, FdFlags::empty())?;
+    let new_fd = file_table_locked.dup_ceil(old_fd, 0, FdFlags::empty())?;
 
     Ok(SyscallReturn::Return(new_fd as _))
 }
@@ -67,9 +67,11 @@ fn do_dup3(
     }
 
     let file_table = ctx.thread_local.borrow_file_table();
-    let mut file_table_locked = file_table.unwrap().write();
-    let _ = file_table_locked.close_file(new_fd);
-    let new_fd = file_table_locked.dup(old_fd, new_fd, flags)?;
+    let replaced_file = {
+        let mut file_table_locked = file_table.unwrap().write();
+        file_table_locked.dup_exact(old_fd, new_fd, flags)?
+    };
+    drop(replaced_file);
 
     Ok(SyscallReturn::Return(new_fd as _))
 }
