@@ -246,6 +246,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-ai-machine-learning"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
 name = "test-databases-middleware"
 version = "0.1.0"
 dependencies = [

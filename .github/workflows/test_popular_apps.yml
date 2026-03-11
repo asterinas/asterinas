@@ -44,6 +44,8 @@ jobs:
             disk_size: 8192
           - name: file-management-terminal
             disk_size: 8192
+          - name: ai-machine-learning
+            disk_size: 8192
 
     name: Test ${{ matrix.test.name }}
     steps:
