@@ -3,7 +3,7 @@
 use crate::{
     fs::file::{StatusFlags, file_table::FdFlags},
     prelude::*,
-    process::{Pid, PidFile, pid_table},
+    process::{Pid, PidFile},
     syscall::SyscallReturn,
 };
 
@@ -19,8 +19,10 @@ pub fn sys_pidfd_open(pid: Pid, flags: u32, ctx: &Context) -> Result<SyscallRetu
         return_errno_with_message!(Errno::EINVAL, "all negative PIDs are not valid");
     }
 
-    let process = pid_table::pid_table_mut()
-        .get_process(pid)
+    let process = ctx
+        .process
+        .active_pid_ns()
+        .lookup_process(pid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the process does not exist"))?;
 
     let pid_fd = {
