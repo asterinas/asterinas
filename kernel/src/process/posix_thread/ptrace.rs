@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#[cfg(target_arch = "x86_64")]
+use core::mem::{offset_of, size_of};
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use hashbrown::HashMap;
+#[cfg(target_arch = "x86_64")]
+use ostd::arch::cpu::context::{GeneralRegs, UserContext, c_user_regs_struct};
 
 use super::{AsPosixThread, PosixThread};
 use crate::{
@@ -84,6 +88,66 @@ impl PosixThread {
         self.wake_signalled_waker();
 
         Ok(())
+    }
+
+    /// Gets the general-purpose registers of this thread for ptrace.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if this thread is not ptrace-stopped.
+    #[cfg(target_arch = "x86_64")]
+    pub fn ptrace_get_regs(&self) -> Result<GeneralRegs> {
+        let Some(status) = self.tracee_status.get() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread is not being traced");
+        };
+
+        // Lock order: user_ctx -> ptrace_status.
+        status.get_regs(&self.user_ctx().lock())
+    }
+
+    /// Sets the general-purpose registers of this thread for ptrace.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if this thread is not ptrace-stopped.
+    #[cfg(target_arch = "x86_64")]
+    pub fn ptrace_set_regs(&self, regs: c_user_regs_struct) -> Result<()> {
+        let Some(status) = self.tracee_status.get() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread is not being traced");
+        };
+
+        // Lock order: user_ctx -> ptrace_status.
+        status.set_regs(&mut self.user_ctx().lock(), regs)
+    }
+
+    /// Reads one word in the tracee's USER area.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if this thread is not ptrace-stopped.
+    #[cfg(target_arch = "x86_64")]
+    pub fn ptrace_peek_user(&self, offset: usize) -> Result<usize> {
+        let Some(status) = self.tracee_status.get() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread is not being traced");
+        };
+
+        // Lock order: user_ctx -> ptrace_status.
+        status.peek_user(&self.user_ctx().lock(), offset)
+    }
+
+    /// Writes one word in the tracee's USER area.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if this thread is not ptrace-stopped.
+    #[cfg(target_arch = "x86_64")]
+    pub fn ptrace_poke_user(&self, offset: usize, value: usize) -> Result<()> {
+        let Some(status) = self.tracee_status.get() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread is not being traced");
+        };
+
+        // Lock order: user_ctx -> ptrace_status.
+        status.poke_user(&mut self.user_ctx().lock(), offset, value)
     }
 }
 
@@ -210,6 +274,96 @@ impl TraceeStatus {
 
         Ok(())
     }
+
+    #[cfg(target_arch = "x86_64")]
+    fn get_regs(&self, user_ctx: &MutexGuard<'_, UserContext>) -> Result<GeneralRegs> {
+        // Hold the lock first to avoid race conditions.
+        let _tracee_state = self.state.lock();
+
+        if self.is_stopped.load(Ordering::Relaxed) {
+            Ok(*user_ctx.general_regs())
+        } else {
+            return_errno_with_message!(Errno::ESRCH, "the thread is not ptrace-stopped");
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn set_regs(
+        &self,
+        user_ctx: &mut MutexGuard<'_, UserContext>,
+        regs: c_user_regs_struct,
+    ) -> Result<()> {
+        // Hold the lock first to avoid race conditions.
+        let _tracee_state = self.state.lock();
+        if !self.is_stopped.load(Ordering::Relaxed) {
+            return_errno_with_message!(Errno::ESRCH, "the thread is not ptrace-stopped");
+        }
+
+        macro_rules! set_regs_from_user_regs {
+            ($old_regs:ident, $regs:ident, [ $field:ident, $($meta:tt)+ ]) => {
+                paste::paste! {
+                    [<ptrace_set_ $field>](&mut $old_regs, $regs.$field)?;
+                }
+            };
+        }
+        let mut old_regs = *user_ctx.general_regs();
+        ostd::for_all_general_regs!(set_regs_from_user_regs, old_regs, regs);
+
+        *user_ctx.general_regs_mut() = old_regs;
+        Ok(())
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn peek_user(&self, user_ctx: &MutexGuard<'_, UserContext>, offset: usize) -> Result<usize> {
+        // Hold the lock first to avoid race conditions.
+        let _tracee_state = self.state.lock();
+        if !self.is_stopped.load(Ordering::Relaxed) {
+            return_errno_with_message!(Errno::ESRCH, "the thread is not ptrace-stopped");
+        }
+        check_user_offset(offset)?;
+
+        macro_rules! read_user_reg_by_offset {
+            ($regs:ident, $offset:ident, [ $field:ident, $($meta:tt)+ ]) => {
+                if $offset == offset_of!(c_user_regs_struct, $field) {
+                    return Ok($regs.$field());
+                }
+            };
+        }
+        let regs = user_ctx.general_regs();
+        ostd::for_all_general_regs!(read_user_reg_by_offset, regs, offset);
+
+        unreachable!("the offset is valid in `c_user_regs_struct`")
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn poke_user(
+        &self,
+        user_ctx: &mut MutexGuard<'_, UserContext>,
+        offset: usize,
+        value: usize,
+    ) -> Result<()> {
+        // Hold the lock first to avoid race conditions.
+        let _tracee_state = self.state.lock();
+        if !self.is_stopped.load(Ordering::Relaxed) {
+            return_errno_with_message!(Errno::ESRCH, "the thread is not ptrace-stopped");
+        }
+        check_user_offset(offset)?;
+
+        macro_rules! write_user_reg_by_offset {
+            ($regs:ident, $offset:ident, $value:ident, [ $field:ident, $($meta:tt)+ ]) => {
+                if $offset == offset_of!(c_user_regs_struct, $field) {
+                    paste::paste! {
+                        [<ptrace_set_ $field>](&mut $regs, $value)?;
+                        return Ok(());
+                    }
+                }
+            };
+        }
+        let mut regs = user_ctx.general_regs_mut();
+        ostd::for_all_general_regs!(write_user_reg_by_offset, regs, offset, value);
+
+        unreachable!("the offset is valid in `c_user_regs_struct`")
+    }
 }
 
 struct TraceeState {
@@ -250,4 +404,72 @@ pub enum PtraceContRequest {
     Continue,
     SingleStep,
     Syscall,
+}
+
+#[cfg(target_arch = "x86_64")]
+macro_rules! general_regs_ptrace_setter {
+    ([ $field:ident, $($meta:tt)+ ]) => {
+        paste::paste! {
+            #[inline(always)]
+            fn [<ptrace_set_ $field>](regs: &mut GeneralRegs, value: usize) -> Result<()> {
+                general_regs_ptrace_setter!(@body regs, value, [ $field, $($meta)+ ]);
+                Ok(())
+            }
+        }
+    };
+
+    (@body $regs:ident, $value:ident, [ $field:ident, set ]) => {{
+        paste::paste! {
+            $regs.[<set_ $field>]($value);
+        }
+    }};
+
+    (@body $regs:ident, $value:ident, [ $field:ident, set_if($check:expr) ]) => {{
+        if ($check)($value) {
+            paste::paste! {
+                $regs.[<set_ $field>]($value);
+            }
+        } else {
+            return Err(Error::with_message(Errno::EIO, "invalid register value"));
+        }
+    }};
+
+    (@body $regs:ident, $value:ident, [ $field:ident, set_bits_truncate($mask:expr) ]) => {{
+        let old_value = $regs.$field();
+        const MASK: usize = $mask;
+        paste::paste! {
+            $regs.[<set_ $field>]((old_value & !MASK) | ($value & MASK));
+        }
+    }};
+
+    (@body $regs:ident, $value:ident, [ $field:ident, fixed($expected:expr) ]) => {{
+        let _ = $regs;
+        const EXPECTED: usize = $expected;
+        if $value != EXPECTED {
+            return Err(Error::with_message(Errno::EIO, "invalid segment selector"));
+        }
+    }};
+}
+
+#[cfg(target_arch = "x86_64")]
+ostd::for_all_general_regs!(general_regs_ptrace_setter);
+
+/// Checks whether the given offset is valid for in `struct user`.
+//
+// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/arch/x86/include/asm/user_64.h#L103-L132>
+#[cfg(target_arch = "x86_64")]
+fn check_user_offset(offset: usize) -> Result<()> {
+    if !offset.is_multiple_of(size_of::<usize>()) {
+        return_errno_with_message!(Errno::EIO, "invalid USER area offset");
+    }
+
+    // We only support the offsets for general-purpose registers currently.
+    // `struct user_regs_struct` is the first field in `struct user`.
+    if offset >= size_of::<c_user_regs_struct>() {
+        return_errno_with_message!(
+            Errno::EOPNOTSUPP,
+            "only offsets for general-purpose registers are supported currently"
+        );
+    }
+    Ok(())
 }
