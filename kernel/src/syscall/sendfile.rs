@@ -43,9 +43,18 @@ pub fn sys_sendfile(
         .thread_local
         .borrow_file_table_mut()
         .read_with(|inner| {
-            let out_file = inner.get_file(out_fd)?.clone();
+            let out_file = inner
+                .get_file(
+                    out_fd
+                        .cast_unsigned()
+                        .try_into()
+                        .map_err(|_| Errno::EBADF)?,
+                )?
+                .clone();
             // FIXME: the in_file must support mmap-like operations (i.e., it cannot be a socket).
-            let in_file = inner.get_file(in_fd)?.clone();
+            let in_file = inner
+                .get_file(in_fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?)?
+                .clone();
             Ok::<_, Error>((out_file, in_file))
         })?;
 

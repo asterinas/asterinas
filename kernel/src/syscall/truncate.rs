@@ -18,7 +18,10 @@ pub fn sys_ftruncate(fd: RawFileDesc, len: isize, ctx: &Context) -> Result<Sysca
     check_length(len, ctx)?;
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(
+        &mut file_table,
+        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
+    );
     file.resize(len as usize)?;
     fs::vfs::notify::on_change(file.path());
     Ok(SyscallReturn::Return(0))

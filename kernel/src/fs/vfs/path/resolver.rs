@@ -491,14 +491,20 @@ impl PathResolver {
             FsPathInner::FdRelative(fd, path) => {
                 let task = Task::current().unwrap();
                 let mut file_table = task.as_thread_local().unwrap().borrow_file_table_mut();
-                let file = get_file_fast!(&mut file_table, fd);
+                let file = get_file_fast!(
+                    &mut file_table,
+                    fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
+                );
                 let parent = file.as_inode_handle_or_err()?.path();
                 self.lookup_from_parent(parent, path, follow_tail_link)?
             }
             FsPathInner::Fd(fd) => {
                 let task = Task::current().unwrap();
                 let mut file_table = task.as_thread_local().unwrap().borrow_file_table_mut();
-                let file = get_file_fast!(&mut file_table, fd);
+                let file = get_file_fast!(
+                    &mut file_table,
+                    fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
+                );
                 LookupResult::Resolved(file.path().clone())
             }
         };

@@ -23,7 +23,13 @@ pub fn sys_recvfrom(
     );
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, sockfd);
+    let file = get_file_fast!(
+        &mut file_table,
+        sockfd
+            .cast_unsigned()
+            .try_into()
+            .map_err(|_| Errno::EBADF)?
+    );
     let socket = file.as_socket_or_err()?;
 
     let user_space = ctx.user_space();

@@ -48,7 +48,13 @@ fn do_accept(
     ctx: &Context,
 ) -> Result<RawFileDesc> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, sockfd);
+    let file = get_file_fast!(
+        &mut file_table,
+        sockfd
+            .cast_unsigned()
+            .try_into()
+            .map_err(|_| Errno::EBADF)?
+    );
     let socket = file.as_socket_or_err()?;
 
     let (connected_socket, socket_addr) = {
@@ -78,7 +84,7 @@ fn do_accept(
         file_table_locked.insert(connected_socket, fd_flags)
     };
 
-    Ok(fd)
+    Ok(fd.get() as _)
 }
 
 bitflags! {

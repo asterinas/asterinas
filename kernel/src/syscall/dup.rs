@@ -2,7 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::{FdFlags, RawFileDesc, get_file_fast},
+    fs::file::file_table::{FdFlags, FileDesc, RawFileDesc, get_file_fast},
     prelude::*,
     process::ResourceType,
 };
@@ -12,9 +12,16 @@ pub fn sys_dup(old_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
 
     let file_table = ctx.thread_local.borrow_file_table();
     let mut file_table_locked = file_table.unwrap().write();
-    let new_fd = file_table_locked.dup_ceil(old_fd, 0, FdFlags::empty())?;
+    let new_fd = file_table_locked.dup_ceil(
+        old_fd
+            .cast_unsigned()
+            .try_into()
+            .map_err(|_| Errno::EBADF)?,
+        FileDesc::new(0),
+        FdFlags::empty(),
+    )?;
 
-    Ok(SyscallReturn::Return(new_fd as _))
+    Ok(SyscallReturn::Return(new_fd.get() as _))
 }
 
 pub fn sys_dup2(old_fd: RawFileDesc, new_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
@@ -22,7 +29,13 @@ pub fn sys_dup2(old_fd: RawFileDesc, new_fd: RawFileDesc, ctx: &Context) -> Resu
 
     if old_fd == new_fd {
         let mut file_table = ctx.thread_local.borrow_file_table_mut();
-        let _file = get_file_fast!(&mut file_table, old_fd);
+        let _file = get_file_fast!(
+            &mut file_table,
+            old_fd
+                .cast_unsigned()
+                .try_into()
+                .map_err(|_| Errno::EBADF)?
+        );
         return Ok(SyscallReturn::Return(new_fd as _));
     }
 
@@ -52,11 +65,14 @@ fn do_dup3(
     flags: FdFlags,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
+    let old_fd = FileDesc::try_from(old_fd.cast_unsigned()).map_err(|_| Errno::EBADF)?;
+    let new_fd = FileDesc::try_from(new_fd.cast_unsigned()).map_err(|_| Errno::EBADF)?;
+
     if old_fd == new_fd {
         return_errno!(Errno::EINVAL);
     }
 
-    if new_fd.cast_unsigned() as u64
+    if new_fd.get() as u64
         >= ctx
             .process
             .resource_limits()
@@ -73,5 +89,5 @@ fn do_dup3(
     };
     drop(replaced_file);
 
-    Ok(SyscallReturn::Return(new_fd as _))
+    Ok(SyscallReturn::Return(new_fd.get() as _))
 }

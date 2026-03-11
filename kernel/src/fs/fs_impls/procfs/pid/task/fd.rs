@@ -8,7 +8,11 @@ use ostd::sync::RwMutexUpgradeableGuard;
 use super::TidDirOps;
 use crate::{
     fs::{
-        file::{AccessMode, FileLike, chmod, file_table::RawFileDesc, mkmod},
+        file::{
+            AccessMode, FileLike, chmod,
+            file_table::{FileDesc, RawFileDesc},
+            mkmod,
+        },
         procfs::template::{
             DirOps, FileOps, ProcDir, ProcDirBuilder, ProcFile, ProcFileBuilder, ProcSym,
             ProcSymBuilder, SymOps,
@@ -59,8 +63,12 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
         let posix_thread = thread.as_posix_thread().unwrap();
 
         let access_mode = if let Some(file_table) = posix_thread.file_table().lock().as_ref()
-            && let Ok(file) = file_table.read().get_file(file_desc)
-        {
+            && let Ok(file) = file_table.read().get_file(
+                file_desc
+                    .cast_unsigned()
+                    .try_into()
+                    .map_err(|_| Errno::EBADF)?,
+            ) {
             file.access_mode()
         } else {
             return_errno_with_message!(Errno::ENOENT, "the file does not exist");
@@ -106,7 +114,9 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
             let child = child.downcast_ref::<T::NodeType>().unwrap();
             let child_ops = T::ref_from_inode(child);
 
-            let Ok(file) = file_table.get_file(child_ops.file_desc()) else {
+            let Ok(file) =
+                file_table.get_file(FileDesc::new(child_ops.file_desc().cast_unsigned()))
+            else {
                 cached_children.remove(i);
                 continue;
             };
@@ -117,10 +127,10 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
 
         // Add new entries.
         for (file_desc, file) in file_table.fds_and_files() {
-            cached_children.put_entry_if_not_found(&file_desc.to_string(), || {
+            cached_children.put_entry_if_not_found(&file_desc.get().to_string(), || {
                 T::new_inode(
                     self.dir.clone(),
-                    file_desc,
+                    file_desc.get() as _,
                     file.access_mode(),
                     dir.this_weak().clone(),
                 )
@@ -138,7 +148,9 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
         let posix_thread = thread.as_posix_thread().unwrap();
 
         if let Some(file_table) = posix_thread.file_table().lock().as_ref()
-            && let Ok(file) = file_table.read().get_file(child_ops.file_desc())
+            && let Ok(file) = file_table
+                .read()
+                .get_file(FileDesc::new(child_ops.file_desc().cast_unsigned()))
         {
             child_ops.is_valid(file)
         } else {
@@ -228,7 +240,12 @@ impl SymOps for FileSymOps {
         };
         let file_table = file_table.read();
         let file = file_table
-            .get_file(self.file_desc)
+            .get_file(
+                self.file_desc
+                    .cast_unsigned()
+                    .try_into()
+                    .map_err(|_| Errno::EBADF)?,
+            )
             .map_err(|_| Error::with_message(Errno::ENOENT, "the file does not exist"))?;
 
         Ok(SymbolicLink::Path(file.path().clone()))
@@ -282,8 +299,12 @@ impl FileOps for FileInfoOps {
         let posix_thread = thread.as_posix_thread().unwrap();
 
         let info = if let Some(file_table) = posix_thread.file_table().lock().as_ref()
-            && let Ok(entry) = file_table.read().get_entry(self.file_desc)
-        {
+            && let Ok(entry) = file_table.read().get_entry(
+                self.file_desc
+                    .cast_unsigned()
+                    .try_into()
+                    .map_err(|_| Errno::EBADF)?,
+            ) {
             entry.file().clone().dump_proc_fdinfo(entry.flags())
         } else {
             return_errno_with_message!(Errno::ENOENT, "the file does not exist");
