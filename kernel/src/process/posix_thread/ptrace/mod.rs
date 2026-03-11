@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#[cfg(target_arch = "x86_64")]
+use core::mem::{offset_of, size_of};
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use hashbrown::HashMap;
-use ostd::sync::Waiter;
+#[cfg(target_arch = "x86_64")]
+use ostd::arch::cpu::context::{GeneralRegs, c_user_regs_struct};
+use ostd::{arch::cpu::context::UserContext, sync::Waiter};
 
 use super::{AsPosixThread, PosixThread};
 use crate::{
@@ -64,9 +68,10 @@ impl PosixThread {
         &self,
         signal: Box<dyn Signal>,
         ctx: &Context,
+        user_ctx: &mut UserContext,
     ) -> PtraceStopResult {
         if let Some(status) = self.tracee_status.get() {
-            status.ptrace_stop(signal, ctx)
+            status.ptrace_stop(signal, ctx, user_ctx)
         } else {
             PtraceStopResult::NotTraced(signal)
         }
@@ -89,6 +94,50 @@ impl PosixThread {
         self.wake_signalled_waker();
 
         Ok(())
+    }
+
+    /// Gets the general-purpose registers of this thread for ptrace.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if this thread is not ptrace-stopped.
+    #[cfg(target_arch = "x86_64")]
+    pub fn ptrace_get_regs(&self) -> Result<c_user_regs_struct> {
+        let status = self.get_tracee_status()?;
+        status.get_regs()
+    }
+
+    /// Sets the general-purpose registers of this thread for ptrace.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if this thread is not ptrace-stopped.
+    #[cfg(target_arch = "x86_64")]
+    pub fn ptrace_set_regs(&self, regs: c_user_regs_struct) -> Result<()> {
+        let status = self.get_tracee_status()?;
+        status.set_regs(regs)
+    }
+
+    /// Reads one word in the tracee's USER area.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if this thread is not ptrace-stopped.
+    #[cfg(target_arch = "x86_64")]
+    pub fn ptrace_peek_user(&self, offset: usize) -> Result<usize> {
+        let status = self.get_tracee_status()?;
+        status.peek_user(offset)
+    }
+
+    /// Writes one word in the tracee's USER area.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if this thread is not ptrace-stopped.
+    #[cfg(target_arch = "x86_64")]
+    pub fn ptrace_poke_user(&self, offset: usize, value: usize) -> Result<()> {
+        let status = self.get_tracee_status()?;
+        status.poke_user(offset, value)
     }
 
     /// Returns the tracee status of this thread if it is being traced.
@@ -177,7 +226,15 @@ impl TraceeStatus {
         self.is_stopped.store(false, Ordering::Relaxed);
     }
 
-    fn ptrace_stop(&self, signal: Box<dyn Signal>, ctx: &Context) -> PtraceStopResult {
+    fn ptrace_stop(
+        &self,
+        signal: Box<dyn Signal>,
+        ctx: &Context,
+        user_ctx: &mut UserContext,
+    ) -> PtraceStopResult {
+        #[cfg(not(target_arch = "x86_64"))]
+        let _ = user_ctx;
+
         // Hold the lock first to avoid race conditions.
         let mut state = self.state.lock();
 
@@ -188,6 +245,10 @@ impl TraceeStatus {
         debug_assert!(!self.is_ptrace_stopped());
 
         state.siginfo.stop(signal.to_info());
+        #[cfg(target_arch = "x86_64")]
+        {
+            state.general_regs = Some(*user_ctx.general_regs());
+        }
         self.is_stopped.store(true, Ordering::Relaxed);
 
         let tracer = tracer.as_posix_thread().unwrap();
@@ -207,6 +268,13 @@ impl TraceeStatus {
             // A `SIGKILL` interrupts this ptrace-stop.
             return PtraceStopResult::Interrupted;
         };
+
+        #[cfg(target_arch = "x86_64")]
+        {
+            let mut state = self.state.lock();
+            let regs = state.general_regs.take().unwrap();
+            *user_ctx.general_regs_mut() = regs;
+        }
 
         PtraceStopResult::Continued
     }
@@ -245,12 +313,87 @@ impl TraceeStatus {
 
         Ok(())
     }
+
+    #[cfg(target_arch = "x86_64")]
+    fn get_regs(&self) -> Result<c_user_regs_struct> {
+        // Hold the lock first to avoid race conditions.
+        let state = self.state.lock();
+        self.check_ptrace_stopped(&state)?;
+
+        Ok(state.general_regs.unwrap().into())
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn set_regs(&self, regs: c_user_regs_struct) -> Result<()> {
+        // Hold the lock first to avoid race conditions.
+        let mut state = self.state.lock();
+        self.check_ptrace_stopped(&state)?;
+
+        macro_rules! set_regs_from_user_regs {
+            ($old_regs:ident, $regs:ident, [ $field:ident, $($meta:tt)+ ]) => {
+                paste::paste! {
+                    util::[<ptrace_set_ $field>](&mut $old_regs, $regs.$field)?;
+                }
+            };
+        }
+        let mut old_regs = state.general_regs.unwrap();
+        ostd::for_all_general_regs!(set_regs_from_user_regs, old_regs, regs);
+
+        state.general_regs = Some(old_regs);
+        Ok(())
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn peek_user(&self, offset: usize) -> Result<usize> {
+        // Hold the lock first to avoid race conditions.
+        let state = self.state.lock();
+        self.check_ptrace_stopped(&state)?;
+        util::check_user_offset(offset)?;
+
+        macro_rules! read_user_reg_by_offset {
+            ($regs:ident, $offset:ident, [ $field:ident, $($meta:tt)+ ]) => {
+                if $offset == offset_of!(c_user_regs_struct, $field) {
+                    return Ok($regs.$field());
+                }
+            };
+        }
+        let regs = state.general_regs.unwrap();
+        ostd::for_all_general_regs!(read_user_reg_by_offset, regs, offset);
+
+        unreachable!("the offset is valid in `c_user_regs_struct`")
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn poke_user(&self, offset: usize, value: usize) -> Result<()> {
+        // Hold the lock first to avoid race conditions.
+        let mut state = self.state.lock();
+        self.check_ptrace_stopped(&state)?;
+        util::check_user_offset(offset)?;
+
+        macro_rules! write_user_reg_by_offset {
+            ($regs:ident, $offset:ident, $value:ident, [ $field:ident, $($meta:tt)+ ]) => {
+                if $offset == offset_of!(c_user_regs_struct, $field) {
+                    paste::paste! {
+                        util::[<ptrace_set_ $field>](&mut $regs, $value)?;
+                        return Ok(());
+                    }
+                }
+            };
+        }
+        let mut regs = state.general_regs.as_mut().unwrap();
+        ostd::for_all_general_regs!(write_user_reg_by_offset, regs, offset, value);
+
+        unreachable!("the offset is valid in `c_user_regs_struct`")
+    }
 }
 
 struct TraceeState {
     tracer: Weak<Thread>,
     /// The siginfo of the signal that stopped the tracee.
     siginfo: StopSigInfo,
+    /// The general-purpose registers of the tracee at the time of ptrace-stop.
+    #[cfg(target_arch = "x86_64")]
+    general_regs: Option<GeneralRegs>,
 }
 
 impl TraceeState {
@@ -258,6 +401,8 @@ impl TraceeState {
         Self {
             tracer: Weak::new(),
             siginfo: StopSigInfo::default(),
+            #[cfg(target_arch = "x86_64")]
+            general_regs: None,
         }
     }
 

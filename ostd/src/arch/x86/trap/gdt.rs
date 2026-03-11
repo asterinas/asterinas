@@ -126,5 +126,5 @@ const UDATA: u64 = 0x00CF_F300_0000_FFFF;
 const KERNEL_CS: SegmentSelector = SegmentSelector::new(1, PrivilegeLevel::Ring0);
 const KERNEL_SS: SegmentSelector = SegmentSelector::new(2, PrivilegeLevel::Ring0);
 
-pub(super) const USER_CS: SegmentSelector = SegmentSelector::new(5, PrivilegeLevel::Ring3);
-pub(super) const USER_SS: SegmentSelector = SegmentSelector::new(4, PrivilegeLevel::Ring3);
+pub(in crate::arch) const USER_CS: SegmentSelector = SegmentSelector::new(5, PrivilegeLevel::Ring3);
+pub(in crate::arch) const USER_SS: SegmentSelector = SegmentSelector::new(4, PrivilegeLevel::Ring3);
