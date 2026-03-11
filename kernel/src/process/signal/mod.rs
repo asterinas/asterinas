@@ -86,7 +86,7 @@ pub fn handle_pending_signal(
     };
 
     if signal.num() != SIGKILL {
-        match ctx.posix_thread.ptrace_stop(signal, ctx) {
+        match ctx.posix_thread.ptrace_stop(signal, ctx, user_ctx) {
             PtraceStopResult::Continued => return,
             PtraceStopResult::Interrupted => {
                 let (sigkill, sigkill_action) = dequeue_pending_signal(ctx)
