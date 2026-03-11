@@ -63,7 +63,7 @@ pub fn sys_socketpair(
         };
         let fd_a = file_table_locked.insert(socket_a, fd_flags);
         let fd_b = file_table_locked.insert(socket_b, fd_flags);
-        SocketFds(fd_a, fd_b)
+        SocketFds(fd_a.get() as _, fd_b.get() as _)
     };
     ctx.user_space().write_val(sv, &socket_fds)?;
 

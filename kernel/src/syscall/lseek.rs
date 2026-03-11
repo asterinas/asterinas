@@ -24,7 +24,10 @@ pub fn sys_lseek(
     };
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(
+        &mut file_table,
+        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
+    );
 
     let offset = file.seek(seek_from)?;
     Ok(SyscallReturn::Return(offset as _))

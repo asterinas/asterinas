@@ -21,7 +21,10 @@ pub fn sys_fchown(fd: RawFileDesc, uid: i32, gid: i32, ctx: &Context) -> Result<
     }
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(
+        &mut file_table,
+        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
+    );
     let path = file.path();
     if let Some(uid) = uid {
         path.set_owner(uid)?;

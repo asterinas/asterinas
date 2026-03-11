@@ -26,7 +26,10 @@ pub fn sys_pidfd_getfd(
     );
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, pidfd);
+    let file = get_file_fast!(
+        &mut file_table,
+        pidfd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
+    );
     let Some(pid_file) = file.downcast_ref::<PidFile>() else {
         return_errno_with_message!(Errno::EBADF, "the file is not a PID file");
     };
@@ -51,7 +54,12 @@ pub fn sys_pidfd_getfd(
         .as_ref()
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target process has exited"))?
         .read()
-        .get_file(targetfd)?
+        .get_file(
+            targetfd
+                .cast_unsigned()
+                .try_into()
+                .map_err(|_| Errno::EBADF)?,
+        )?
         .clone();
 
     // Duplicate the file descriptor into the caller's file descriptor table.
@@ -60,5 +68,5 @@ pub fn sys_pidfd_getfd(
         file_table_locked.insert(target_file, FdFlags::CLOEXEC)
     };
 
-    Ok(SyscallReturn::Return(new_fd as _))
+    Ok(SyscallReturn::Return(new_fd.get() as _))
 }

@@ -101,7 +101,11 @@ impl FileMessage {
         let mut file_table = current.as_thread_local().unwrap().borrow_file_table_mut();
         for _ in 0..nfiles {
             let fd = reader.read_val::<i32>()?;
-            let file = get_file_fast!(&mut file_table, fd).into_owned();
+            let file = get_file_fast!(
+                &mut file_table,
+                fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
+            )
+            .into_owned();
             files.push(file);
         }
 
@@ -138,7 +142,7 @@ impl FileMessage {
             // Perhaps we should remove the inserted files from the file table if we cannot write
             // the file descriptor back to user space? However, even Linux cannot handle every
             // corner case (https://elixir.bootlin.com/linux/v6.15.2/source/net/core/scm.c#L357).
-            writer.write_val::<i32>(&fd)?;
+            writer.write_val::<i32>(&(fd.get() as _))?;
         }
 
         Ok(header)

@@ -29,7 +29,13 @@ pub fn sys_sendto(
     );
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, sockfd);
+    let file = get_file_fast!(
+        &mut file_table,
+        sockfd
+            .cast_unsigned()
+            .try_into()
+            .map_err(|_| Errno::EBADF)?
+    );
     let socket = file.as_socket_or_err()?;
 
     let message_header = MessageHeader::new(socket_addr, Vec::new());

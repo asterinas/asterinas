@@ -18,7 +18,10 @@ pub fn sys_fchmod(fd: RawFileDesc, mode: u16, ctx: &Context) -> Result<SyscallRe
     debug!("fd = {}, mode = 0o{:o}", fd, mode);
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(
+        &mut file_table,
+        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
+    );
     file.path().set_mode(InodeMode::from_bits_truncate(mode))?;
     fs::vfs::notify::on_attr_change(file.path());
     Ok(SyscallReturn::Return(0))

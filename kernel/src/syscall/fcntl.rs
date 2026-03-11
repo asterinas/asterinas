@@ -7,7 +7,7 @@ use crate::{
     fs::{
         file::{
             FileLike, StatusFlags,
-            file_table::{FdFlags, RawFileDesc, WithFileTable, get_file_fast},
+            file_table::{FdFlags, FileDesc, RawFileDesc, WithFileTable, get_file_fast},
         },
         ramfs::memfd::{FileSeals, MemfdInodeHandle},
         vfs::range_lock::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockType},
@@ -17,8 +17,9 @@ use crate::{
 };
 
 pub fn sys_fcntl(fd: RawFileDesc, cmd: i32, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
+    let fd = FileDesc::try_from(fd.cast_unsigned()).map_err(|_| Errno::EBADF)?;
     let fcntl_cmd = FcntlCmd::try_from(cmd)?;
-    debug!("fd = {}, cmd = {:?}, arg = {}", fd, fcntl_cmd, arg);
+    debug!("fd = {}, cmd = {:?}, arg = {}", fd.get(), fcntl_cmd, arg);
     match fcntl_cmd {
         FcntlCmd::F_DUPFD => handle_dupfd(fd, arg, FdFlags::empty(), ctx),
         FcntlCmd::F_DUPFD_CLOEXEC => handle_dupfd(fd, arg, FdFlags::CLOEXEC, ctx),
@@ -39,16 +40,16 @@ pub fn sys_fcntl(fd: RawFileDesc, cmd: i32, arg: u64, ctx: &Context) -> Result<S
     }
 }
 
-fn handle_dupfd(fd: RawFileDesc, arg: u64, flags: FdFlags, ctx: &Context) -> Result<SyscallReturn> {
+fn handle_dupfd(fd: FileDesc, arg: u64, flags: FdFlags, ctx: &Context) -> Result<SyscallReturn> {
     let file_table = ctx.thread_local.borrow_file_table();
     let new_fd = file_table
         .unwrap()
         .write()
-        .dup_ceil(fd, arg as RawFileDesc, flags)?;
-    Ok(SyscallReturn::Return(new_fd as _))
+        .dup_ceil(fd, FileDesc::new(arg as _), flags)?;
+    Ok(SyscallReturn::Return(new_fd.get() as _))
 }
 
-fn handle_getfd(fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
+fn handle_getfd(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     file_table.read_with(|inner| {
         let fd_flags = inner.get_entry(fd)?.flags();
@@ -56,7 +57,7 @@ fn handle_getfd(fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     })
 }
 
-fn handle_setfd(fd: RawFileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
+fn handle_setfd(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
     let flags = if arg > u64::from(u8::MAX) {
         return_errno_with_message!(Errno::EINVAL, "invalid fd flags");
     } else {
@@ -69,7 +70,7 @@ fn handle_setfd(fd: RawFileDesc, arg: u64, ctx: &Context) -> Result<SyscallRetur
     })
 }
 
-fn handle_getfl(fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
+fn handle_getfl(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
     let status_flags = file.status_flags();
@@ -79,7 +80,7 @@ fn handle_getfl(fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     ))
 }
 
-fn handle_setfl(fd: RawFileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
+fn handle_setfl(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
     let valid_flags_mask = StatusFlags::O_APPEND
@@ -94,7 +95,7 @@ fn handle_setfl(fd: RawFileDesc, arg: u64, ctx: &Context) -> Result<SyscallRetur
     Ok(SyscallReturn::Return(0))
 }
 
-fn handle_getlk(fd: RawFileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
+fn handle_getlk(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
     let lock_mut_ptr = arg as Vaddr;
@@ -112,7 +113,7 @@ fn handle_getlk(fd: RawFileDesc, arg: u64, ctx: &Context) -> Result<SyscallRetur
 }
 
 fn handle_setlk(
-    fd: RawFileDesc,
+    fd: FileDesc,
     arg: u64,
     is_nonblocking: bool,
     ctx: &Context,
@@ -128,7 +129,7 @@ fn handle_setlk(
     Ok(SyscallReturn::Return(0))
 }
 
-fn handle_getown(fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
+fn handle_getown(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     file_table.read_with(|inner| {
         let pid = inner.get_entry(fd)?.owner().unwrap_or(0);
@@ -136,7 +137,7 @@ fn handle_getown(fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     })
 }
 
-fn handle_setown(fd: RawFileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
+fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
     // A process ID is specified as a positive value; a process group ID is specified as a negative value.
     let abs_arg = (arg as i32).unsigned_abs();
     if abs_arg > i32::MAX as u32 {
@@ -161,7 +162,7 @@ fn handle_setown(fd: RawFileDesc, arg: u64, ctx: &Context) -> Result<SyscallRetu
     Ok(SyscallReturn::Return(0))
 }
 
-fn handle_addseal(fd: RawFileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
+fn handle_addseal(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
     let new_seals = FileSeals::from_bits(arg as u32)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid seals"))?;
 
@@ -173,7 +174,7 @@ fn handle_addseal(fd: RawFileDesc, arg: u64, ctx: &Context) -> Result<SyscallRet
     Ok(SyscallReturn::Return(0))
 }
 
-fn handle_getseal(fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
+fn handle_getseal(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
 
