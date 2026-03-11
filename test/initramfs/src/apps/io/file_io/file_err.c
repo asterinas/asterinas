@@ -4,9 +4,10 @@
 
 #include "../../common/test.h"
 #include <stdint.h>
-#include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 
 static int fd;
 
@@ -20,6 +21,21 @@ FN_TEST(dup_out_of_range)
 {
 	// `-1` is out of the allowed range for file descriptors.
 	TEST_ERRNO(dup2(fd, -1), EBADF);
+}
+END_TEST()
+
+FN_TEST(dup_invalid_old_preserves_new)
+{
+	char buf[1];
+	int new_fd = CHECK(dup(fd));
+
+	TEST_ERRNO(dup2(-1, new_fd), EBADF);
+	TEST_RES(read(new_fd, buf, sizeof(buf)), _ret == 1);
+
+	TEST_ERRNO(syscall(SYS_dup3, -1, new_fd, 0), EBADF);
+	TEST_RES(read(new_fd, buf, sizeof(buf)), _ret == 1);
+
+	TEST_SUCC(close(new_fd));
 }
 END_TEST()
 
