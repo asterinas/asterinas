@@ -2,6 +2,7 @@
 
 pub mod cpu;
 mod power;
+pub mod ptrace;
 pub mod signal;
 
 pub fn init() {

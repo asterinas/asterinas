@@ -89,7 +89,7 @@ pub fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) {
     };
 
     let (signal, sig_action) = if dequeued.num() != SIGKILL {
-        match ctx.posix_thread.ptrace_stop(dequeued, ctx) {
+        match ctx.posix_thread.ptrace_stop(dequeued, ctx, user_ctx) {
             PtraceStopResult::Continued(Some(dequeued)) => {
                 // Note that this `dequeued` object outputted by `ptrace_stop`
                 // might be different from the input `dequeued` object

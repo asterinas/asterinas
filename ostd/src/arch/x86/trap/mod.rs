@@ -227,3 +227,8 @@ fn handle_user_page_fault(f: &mut TrapFrame, exception: &CpuException) {
         panic!("Cannot handle user page fault; trapframe: {:#x?}", f);
     }
 }
+
+/// User-space code segment selector value.
+pub const USER_CS_VALUE: usize = gdt::USER_CS.0 as usize;
+/// User-space stack segment selector value.
+pub const USER_SS_VALUE: usize = gdt::USER_SS.0 as usize;

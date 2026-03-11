@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#[cfg(target_arch = "x86_64")]
+use ostd::mm::VmIo;
+
 use super::SyscallReturn;
+#[cfg(target_arch = "x86_64")]
+use crate::arch::ptrace as arch_ptrace;
 use crate::{
     prelude::*,
     process::{
@@ -13,8 +18,8 @@ use crate::{
 pub fn sys_ptrace(
     request: u32,
     tid: Tid,
-    addr: u64,
-    data: u64,
+    addr: usize,
+    data: usize,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let request = PtraceRequest::try_from(request)
@@ -32,6 +37,21 @@ pub fn sys_ptrace(
 
             do_ptrace_attach(&parent_main_thread, current_thread)?;
         }
+        #[cfg(target_arch = "x86_64")]
+        PtraceRequest::PTRACE_PEEKUSER => {
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let tracee = tracee.as_posix_thread().unwrap();
+
+            let val = tracee.ptrace_peek_user(addr)?;
+            ctx.user_space().write_val(data, &val)?;
+        }
+        #[cfg(target_arch = "x86_64")]
+        PtraceRequest::PTRACE_POKEUSER => {
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let tracee = tracee.as_posix_thread().unwrap();
+
+            tracee.ptrace_poke_user(addr, data)?;
+        }
         PtraceRequest::PTRACE_CONT => {
             let sig_num = parse_ptrace_injected_signal(data)?;
 
@@ -40,6 +60,24 @@ pub fn sys_ptrace(
                 .as_posix_thread()
                 .unwrap()
                 .ptrace_continue(PtraceContRequest::Continue(sig_num), ctx)?;
+        }
+        #[cfg(target_arch = "x86_64")]
+        PtraceRequest::PTRACE_GETREGS => {
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let tracee = tracee.as_posix_thread().unwrap();
+
+            let regs = tracee.ptrace_get_regs()?;
+            ctx.user_space().write_val(data, &regs)?;
+        }
+        #[cfg(target_arch = "x86_64")]
+        PtraceRequest::PTRACE_SETREGS => {
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let tracee = tracee.as_posix_thread().unwrap();
+
+            let regs = ctx
+                .user_space()
+                .read_val::<arch_ptrace::CUserRegsStruct>(data)?;
+            tracee.ptrace_set_regs(regs)?;
         }
     }
 
@@ -68,7 +106,7 @@ fn do_ptrace_attach(tracer_thread: &Arc<Thread>, tracee_thread: Arc<Thread>) -> 
     tracer.attach_to(tracer_thread, tracee_thread)
 }
 
-fn parse_ptrace_injected_signal(data: u64) -> Result<Option<SigNum>> {
+fn parse_ptrace_injected_signal(data: usize) -> Result<Option<SigNum>> {
     if data == 0 {
         return Ok(None);
     }
@@ -86,29 +124,33 @@ fn parse_ptrace_injected_signal(data: u64) -> Result<Option<SigNum>> {
 enum PtraceRequest {
     /// Indicate that this thread should be traced by its parent.
     PTRACE_TRACEME = 0,
+    /// Return the word in the thread's user area at offset ADDR.
+    #[cfg(target_arch = "x86_64")]
+    PTRACE_PEEKUSER = 3,
+    /// Write the word DATA into the thread's user area at offset ADDR.
+    #[cfg(target_arch = "x86_64")]
+    PTRACE_POKEUSER = 6,
     /// Continue the thread.
     PTRACE_CONT = 7,
+    /// Get all general purpose registers used by a thread.
+    #[cfg(target_arch = "x86_64")]
+    PTRACE_GETREGS = 12,
+    /// Set all general purpose registers used by a thread.
+    #[cfg(target_arch = "x86_64")]
+    PTRACE_SETREGS = 13,
     // TODO: Support other operations.
     // /// Return the word in the thread's text space at address ADDR.
     // PTRACE_PEEKTEXT = 1,
     // /// Return the word in the thread's data space at address ADDR.
     // PTRACE_PEEKDATA = 2,
-    // /// Return the word in the thread's user area at offset ADDR.
-    // PTRACE_PEEKUSER = 3,
     // /// Write the word DATA into the thread's text space at address ADDR.
     // PTRACE_POKETEXT = 4,
     // /// Write the word DATA into the thread's data space at address ADDR.
     // PTRACE_POKEDATA = 5,
-    // /// Write the word DATA into the thread's user area at offset ADDR.
-    // PTRACE_POKEUSER = 6,
     // /// Kill the thread.
     // PTRACE_KILL = 8,
     // /// Single step the thread.
     // PTRACE_SINGLESTEP = 9,
-    // /// Get all general purpose registers used by a thread.
-    // PTRACE_GETREGS = 12,
-    // /// Set all general purpose registers used by a thread.
-    // PTRACE_SETREGS = 13,
     // /// Get all floating point registers used by a thread.
     // PTRACE_GETFPREGS = 14,
     // /// Set all floating point registers used by a thread.
