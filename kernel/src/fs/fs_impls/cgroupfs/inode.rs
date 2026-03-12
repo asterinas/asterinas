@@ -108,7 +108,7 @@ impl Inode for CgroupInode {
             return_errno_with_message!(Errno::ENOENT, "the child node does not exist");
         };
 
-        let target_node = child.as_any().downcast_ref::<CgroupNode>().unwrap();
+        let target_node = Arc::downcast::<CgroupNode>(child).unwrap();
 
         // This will succeed only if the child is empty and has not been removed.
         target_node.mark_as_dead()?;

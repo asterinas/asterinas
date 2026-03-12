@@ -19,7 +19,7 @@ use crate::{
     cpu::LinuxAbi,
     current_userspace,
     fs::{
-        cgroupfs::CgroupMembership,
+        cgroupfs::{CgroupMembership, CgroupSysNode},
         file::file_table::{FdFlags, FileTable},
         thread_info::ThreadFsInfo,
     },
@@ -289,16 +289,41 @@ pub fn clone_child(
         let child_tid = child_thread.as_posix_thread().unwrap().tid();
         Ok(child_tid)
     } else {
+        // Hold the read lock before charge to ensure the cgroup of current process
+        // won't change during the charge and the subsequent move operation.
+        let cgroup_read_guard = CgroupMembership::read_lock();
+
+        // Pre-charge the pids sub-controller before creating the child process.
+        // This enforces `pids.max` at fork time per cgroupv2 semantics.
+        // The charge must happen before process creation so that on failure
+        // we can return EAGAIN without leaving an orphaned process.
+        let parent_cgroup = ctx.process.cgroup().get().map(|cgroup| cgroup.clone());
+        let pids_charge = if let Some(ref cgroup) = parent_cgroup {
+            let pids_charge = cgroup
+                .controller()
+                .pre_charge_pids(&cgroup_read_guard)
+                .map_err(|_| {
+                    Error::with_message(Errno::EAGAIN, "the pids sub-controller limit is reached")
+                })?;
+            Some(pids_charge)
+        } else {
+            None
+        };
+
         let child_process = clone_child_process(ctx, parent_context, clone_args)?;
 
-        let mut cgroup_guard = CgroupMembership::lock();
-        let cgroup = ctx.process.cgroup().get().map(|cgroup| cgroup.clone());
-        if let Some(cgroup) = cgroup {
-            cgroup_guard
-                .move_process_to_node(child_process.clone(), &cgroup)
-                .unwrap();
+        // Use the same cgroup snapshot that was charged above to avoid
+        // a mismatch if the parent migrates concurrently.
+        if let Some(ref cgroup) = parent_cgroup {
+            cgroup_read_guard.move_forked_process_to_node(
+                child_process.clone(),
+                cgroup,
+                pids_charge.unwrap(),
+            );
+        } else {
+            drop(pids_charge);
         }
-        drop(cgroup_guard);
+        drop(cgroup_read_guard);
 
         if clone_args.flags.contains(CloneFlags::CLONE_VFORK) {
             child_process.status().set_vfork_child(true);

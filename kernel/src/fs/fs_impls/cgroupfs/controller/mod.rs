@@ -11,7 +11,7 @@ use ostd::{
 };
 
 use crate::fs::cgroupfs::{
-    CgroupNode,
+    CgroupMembership, CgroupNode,
     controller::{cpuset::CpuSetController, memory::MemoryController, pids::PidsController},
     systree_node::CgroupSysNode,
 };
@@ -131,12 +131,11 @@ struct SubController<T: SubControlStatic> {
     /// The parent sub-controller in the hierarchy.
     ///
     /// This field is used to traverse the controller hierarchy.
-    #[expect(dead_code)]
     parent: Option<Arc<SubController<T>>>,
 }
 
 impl<T: SubControlStatic> SubController<T> {
-    fn new(parent_controller: Option<&LockedController>) -> Arc<Self> {
+    fn new(parent_controller: Option<&LockedController>) -> Self {
         let is_active = if let Some(parent) = parent_controller {
             parent.active_set.contains_type(T::type_())
         } else {
@@ -151,7 +150,7 @@ impl<T: SubControlStatic> SubController<T> {
 
         let parent = parent_controller.map(|controller| T::read_from(controller.controller));
 
-        Arc::new(Self { inner, parent })
+        Self { inner, parent }
     }
 }
 
@@ -178,7 +177,7 @@ impl<T: SubControlStatic> TryGetSubControl for SubController<T> {
 /// The root node serves as the origin for all these control capabilities, so the sub-controllers
 /// it possesses are always active. For any other node, only if its parent node first enables a
 /// sub-control, its corresponding sub-controller will be activated.
-pub(super) struct Controller {
+pub struct Controller {
     /// A set of types of active sub-controllers.
     active_set: Mutex<SubCtrlSet>,
 
@@ -190,9 +189,9 @@ pub(super) struct Controller {
 impl Controller {
     /// Creates a new controller manager for a cgroup.
     pub(super) fn new(locked_parent_controller: Option<&LockedController>) -> Self {
-        let memory_controller = SubController::new(locked_parent_controller);
-        let cpuset_controller = SubController::new(locked_parent_controller);
-        let pids_controller = SubController::new(locked_parent_controller);
+        let memory_controller = Arc::new(SubController::new(locked_parent_controller));
+        let cpuset_controller = Arc::new(SubController::new(locked_parent_controller));
+        let pids_controller = Arc::new(SubController::new(locked_parent_controller));
 
         Self {
             active_set: Mutex::new(SubCtrlSet::empty()),
@@ -275,6 +274,72 @@ impl Controller {
     }
 }
 
+// For pids sub-controller
+impl Controller {
+    /// Charges a process in the pids sub-controller hierarchy.
+    ///
+    /// This operation is used for explicit migration and will not enforce
+    /// the `pids.max` limit.
+    ///
+    /// Reference: <https://docs.kernel.org/admin-guide/cgroup-v2.html#pid>
+    pub(super) fn charge_pids(&self) {
+        let guard = self.pids.read();
+        let sub = guard.get();
+        sub.charge_hierarchy();
+    }
+
+    /// Pre-charges a process in the pids sub-controller hierarchy,
+    /// enforcing `pids.max` at each level.
+    ///
+    /// This is used at fork time. Returns a guard that will roll back the
+    /// charge unless it is explicitly applied.
+    ///
+    /// Note that concurrent operations of moving processes to cgroups and
+    /// setting `pids.max` may cause the actual charge to exceed the peak at
+    /// charge time.
+    pub fn pre_charge_pids<'a>(
+        &'a self,
+        _cgroup_membership: &'a CgroupMembership,
+    ) -> core::result::Result<PidsPreCharge<'a>, TryChargeError> {
+        let guard = self.pids.read();
+        let sub = guard.get();
+        sub.try_charge_hierarchy()?;
+
+        // This will not outlive `_cgroup_membership`, so we will roll back
+        // the charge for the right pids sub-controller.
+        Ok(PidsPreCharge { controller: self })
+    }
+
+    /// Uncharges a process in the pids sub-controller hierarchy.
+    pub(super) fn uncharge_pids(&self) {
+        let guard = self.pids.read();
+        let sub = guard.get();
+        sub.uncharge_hierarchy();
+    }
+}
+
+/// Represents a pre-charged pids slot that rolls back on drop.
+pub struct PidsPreCharge<'a> {
+    controller: &'a Controller,
+}
+
+impl PidsPreCharge<'_> {
+    /// Applies the pre-charge and prevents rollback on drop.
+    pub(super) fn apply(self) {
+        core::mem::forget(self);
+    }
+}
+
+impl Drop for PidsPreCharge<'_> {
+    fn drop(&mut self) {
+        self.controller.uncharge_pids();
+    }
+}
+
+/// An error type indicating that a problem occurred during the charge operation.
+#[derive(Debug, Clone, Copy)]
+pub struct TryChargeError;
+
 /// A locked controller for a cgroup.
 ///
 /// Holding this lock indicates exclusive access to modify the sub-control state.
@@ -290,6 +355,7 @@ impl LockedController<'_> {
         ctrl_type: SubCtrlType,
         current_node: &dyn CgroupSysNode,
         parent_controller: Option<&LockedController>,
+        cgroup_membership: &mut CgroupMembership,
     ) -> Result<()> {
         if self.active_set.contains_type(ctrl_type) {
             return Ok(());
@@ -304,7 +370,7 @@ impl LockedController<'_> {
         }
 
         self.active_set.add_type(ctrl_type);
-        self.update_sub_controllers_for_descents(ctrl_type, current_node);
+        self.update_sub_controllers_for_descents(ctrl_type, current_node, cgroup_membership);
 
         Ok(())
     }
@@ -314,6 +380,7 @@ impl LockedController<'_> {
         &mut self,
         ctrl_type: SubCtrlType,
         current_node: &dyn CgroupSysNode,
+        cgroup_membership: &mut CgroupMembership,
     ) -> Result<()> {
         if !self.active_set.contains_type(ctrl_type) {
             return Ok(());
@@ -322,7 +389,7 @@ impl LockedController<'_> {
         // If any child node has activated this sub-control,
         // the deactivation operation will be rejected.
         for child in current_node.children() {
-            let cgroup_child = child.as_any().downcast_ref::<CgroupNode>().unwrap();
+            let cgroup_child = Arc::downcast::<CgroupNode>(child).unwrap();
             let child_controller = cgroup_child.controller().lock();
             // This is race-free because if a child wants to activate a sub-controller, it should
             // first acquire the lock of the parent controller, which is held here.
@@ -332,7 +399,7 @@ impl LockedController<'_> {
         }
 
         self.active_set.remove_type(ctrl_type);
-        self.update_sub_controllers_for_descents(ctrl_type, current_node);
+        self.update_sub_controllers_for_descents(ctrl_type, current_node, cgroup_membership);
 
         Ok(())
     }
@@ -341,25 +408,41 @@ impl LockedController<'_> {
         &self,
         ctrl_type: SubCtrlType,
         current_node: &dyn CgroupSysNode,
+        cgroup_membership: &mut CgroupMembership,
     ) {
         fn update_sub_controller_for_one_child(
             child: &Arc<dyn SysObj>,
             ctrl_type: SubCtrlType,
             parent_controller: &LockedController,
+            cgroup_membership: &mut CgroupMembership,
         ) {
             let child_node = child.as_any().downcast_ref::<CgroupNode>().unwrap();
             match ctrl_type {
                 SubCtrlType::Memory => {
-                    let new_controller = SubController::new(Some(parent_controller));
+                    let new_controller = Arc::new(SubController::new(Some(parent_controller)));
                     child_node.controller().memory.update(new_controller);
                 }
                 SubCtrlType::CpuSet => {
-                    let new_controller = SubController::new(Some(parent_controller));
+                    let new_controller = Arc::new(SubController::new(Some(parent_controller)));
                     child_node.controller().cpuset.update(new_controller);
                 }
                 SubCtrlType::Pids => {
-                    let new_controller = SubController::new(Some(parent_controller));
-                    child_node.controller().pids.update(new_controller);
+                    let mut new_controller: SubController<PidsController> =
+                        SubController::new(Some(parent_controller));
+                    if let Some(inner) = new_controller.inner.as_mut() {
+                        // When the pids sub-controller is being activated, initialize
+                        // `pids.current` with the number of processes already present
+                        // in this cgroup's subtree. The parent's counter is already
+                        // correct because charges propagated through inactive levels.
+                        let count = cgroup_membership.count_subtree_processes(child_node);
+                        if count > 0 {
+                            inner.init_count(count);
+                        }
+                    }
+                    child_node
+                        .controller()
+                        .pids
+                        .update(Arc::new(new_controller));
                 }
             }
         }
@@ -387,20 +470,25 @@ impl LockedController<'_> {
         // Update the direct children first.
         current_node.visit_children_with(0, &mut |child_node| {
             descents.push_back(child_node.clone());
-            update_sub_controller_for_one_child(child_node, ctrl_type, self);
+            update_sub_controller_for_one_child(child_node, ctrl_type, self, cgroup_membership);
 
             Some(())
         });
 
         // Then update all the other descendent nodes.
         while let Some(node) = descents.pop_front() {
-            let current_node = node.as_any().downcast_ref::<CgroupNode>().unwrap();
+            let current_node = Arc::downcast::<CgroupNode>(node).unwrap();
             // For descendent nodes, the sub-control must be inactive. But taking the controller
             // lock is necessary for synchronization purposes (see the explanation above).
             let locked_controller = current_node.controller().lock();
             current_node.visit_children_with(0, &mut |child_node| {
                 descents.push_back(child_node.clone());
-                update_sub_controller_for_one_child(child_node, ctrl_type, &locked_controller);
+                update_sub_controller_for_one_child(
+                    child_node,
+                    ctrl_type,
+                    &locked_controller,
+                    cgroup_membership,
+                );
 
                 Some(())
             });
