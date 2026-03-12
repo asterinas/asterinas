@@ -44,33 +44,47 @@ impl AcpiHandler for AcpiMemoryHandler {
     fn unmap_physical_region<T>(_region: &acpi::PhysicalMapping<Self, T>) {}
 }
 
-pub(crate) fn get_acpi_tables() -> Option<AcpiTables<AcpiMemoryHandler>> {
-    let acpi_tables = match boot::EARLY_INFO.get().unwrap().acpi_arg {
-        BootloaderAcpiArg::Rsdp(addr) => unsafe {
-            AcpiTables::from_rsdp(AcpiMemoryHandler {}, addr).unwrap()
-        },
-        BootloaderAcpiArg::Rsdt(addr) => unsafe {
-            AcpiTables::from_rsdt(AcpiMemoryHandler {}, 0, addr).unwrap()
-        },
-        BootloaderAcpiArg::Xsdt(addr) => unsafe {
-            AcpiTables::from_rsdt(AcpiMemoryHandler {}, 1, addr).unwrap()
-        },
-        BootloaderAcpiArg::NotProvided => {
-            // We search by ourselves if the bootloader decides not to provide a rsdp location.
-            let rsdp = unsafe { Rsdp::search_for_on_bios(AcpiMemoryHandler {}) };
-            match rsdp {
-                Ok(map) => unsafe {
-                    AcpiTables::from_rsdp(AcpiMemoryHandler {}, map.physical_start()).unwrap()
-                },
-                Err(_) => {
-                    warn!("ACPI info not found!");
-                    return None;
+struct SyncAcpiTables(Option<AcpiTables<AcpiMemoryHandler>>);
+
+// SAFETY: This relies on the current implementation of `AcpiTables`,
+// which provides thread-safe access to read-only ACPI table data,
+// so `Sync` is sound for the wrapper.
+// FIXME: It depends on implementation details of `AcpiTables`, which should be avoided.
+unsafe impl Sync for SyncAcpiTables {}
+
+static ACPI_TABLES: Once<SyncAcpiTables> = Once::new();
+
+pub(crate) fn get_acpi_tables() -> Option<&'static AcpiTables<AcpiMemoryHandler>> {
+    let acpi_tables = ACPI_TABLES.call_once(|| {
+        let acpi_tables = match boot::EARLY_INFO.get().unwrap().acpi_arg {
+            BootloaderAcpiArg::Rsdp(addr) => unsafe {
+                AcpiTables::from_rsdp(AcpiMemoryHandler {}, addr).unwrap()
+            },
+            BootloaderAcpiArg::Rsdt(addr) => unsafe {
+                AcpiTables::from_rsdt(AcpiMemoryHandler {}, 0, addr).unwrap()
+            },
+            BootloaderAcpiArg::Xsdt(addr) => unsafe {
+                AcpiTables::from_rsdt(AcpiMemoryHandler {}, 1, addr).unwrap()
+            },
+            BootloaderAcpiArg::NotProvided => {
+                // We search by ourselves if the bootloader decides not to provide a rsdp location.
+                let rsdp = unsafe { Rsdp::search_for_on_bios(AcpiMemoryHandler {}) };
+                match rsdp {
+                    Ok(map) => unsafe {
+                        AcpiTables::from_rsdp(AcpiMemoryHandler {}, map.physical_start()).unwrap()
+                    },
+                    Err(_) => {
+                        warn!("ACPI info not found!");
+                        return SyncAcpiTables(None);
+                    }
                 }
             }
-        }
-    };
+        };
 
-    Some(acpi_tables)
+        SyncAcpiTables(Some(acpi_tables))
+    });
+
+    acpi_tables.0.as_ref()
 }
 
 /// The platform information provided by the ACPI tables.
