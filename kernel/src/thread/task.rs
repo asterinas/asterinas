@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use ostd::{
-    arch::cpu::context::UserContext,
     mm::VmIo,
     sync::Waiter,
     task::{Task, TaskOptions},
@@ -24,12 +23,11 @@ use crate::{
 
 /// create new task with userspace and parent process
 pub fn create_new_user_task(
-    user_ctx: Box<UserContext>,
     thread_ref: Arc<Thread>,
     thread_local: ThreadLocal,
     is_init_process: bool,
 ) -> Task {
-    let user_task_entry = move |user_ctx: UserContext| {
+    let user_task_entry = move || {
         let current_task = Task::current().unwrap();
         let current_thread = current_task.as_thread().unwrap();
         let current_posix_thread = current_thread.as_posix_thread().unwrap();
@@ -37,7 +35,7 @@ pub fn create_new_user_task(
         let current_process = current_posix_thread.process();
         let (stop_waiter, _) = Waiter::new_pair();
 
-        let mut user_mode = UserMode::new(user_ctx);
+        let mut user_mode = UserMode::new(current_posix_thread.user_ctx().lock());
         user_mode.context_mut().activate_tls_pointer();
         debug!(
             "[Task entry] rip = 0x{:x}",
@@ -83,7 +81,7 @@ pub fn create_new_user_task(
             ctx.thread_local.fpu().deactivate();
 
             // Handle user events
-            let user_ctx = user_mode.context_mut();
+            let mut user_ctx = user_mode.context_mut();
             let mut pre_syscall_ret = None;
             match return_reason {
                 ReturnReason::UserException => {
@@ -110,20 +108,42 @@ pub fn create_new_user_task(
             // However, when the process is stopped, at least signals with user-provided handlers
             // should not be handled; these signals should only be handled when the process is continued.
             // Certain signals, such as SIGKILL, should be handled even if the process is stopped.
+            // FIXME: Currently, when the thread is ptrace-stopped, we handle all signals and "swallow"
+            // every signal except SIGKILL.
             // We need to further investigate Linux behavior regarding which signals should be handled
             // when the thread is stopped.
-            while !current_thread.is_exited() && ctx.process.is_stopped() {
-                let _ = stop_waiter.pause_until_by(
-                    || (!ctx.process.is_stopped()).then_some(()),
-                    // We currently do not support ptrace.
-                    PauseReason::StopBySignal,
-                );
+            let is_stopped = || {
+                if ctx.process.is_stopped() {
+                    Some(PauseReason::StopBySignal)
+                } else if ctx.posix_thread.is_ptrace_stopped() {
+                    Some(PauseReason::StopByPtrace)
+                } else {
+                    None
+                }
+            };
+            while !current_thread.is_exited()
+                && let Some(reason) = is_stopped()
+            {
+                match reason {
+                    PauseReason::StopBySignal => {
+                        let _ = stop_waiter
+                            .pause_until_by(|| is_stopped().is_none().then_some(()), reason);
+                    }
+                    PauseReason::StopByPtrace => {
+                        drop(user_mode);
+                        let _ = stop_waiter
+                            .pause_until_by(|| is_stopped().is_none().then_some(()), reason);
+                        user_mode = UserMode::new(ctx.posix_thread.user_ctx().lock());
+                        user_ctx = user_mode.context_mut();
+                    }
+                    PauseReason::Sleep => unreachable!(),
+                }
                 handle_pending_signal(user_ctx, &ctx, None);
             }
         }
     };
 
-    let user_task_func = move || user_task_entry(*user_ctx);
+    let user_task_func = move || user_task_entry();
 
     TaskOptions::new(move || {
         // TODO: If a kernel "oops" is caught, we should kill the entire

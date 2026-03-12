@@ -8,9 +8,9 @@ use crate::process::signal::{
 
 impl SignalContext for UserContext {
     fn set_arguments(&mut self, sig_num: SigNum, siginfo_addr: usize, ucontext_addr: usize) {
-        self.set_rdi(sig_num.as_u8() as usize);
-        self.set_rsi(siginfo_addr);
-        self.set_rdx(ucontext_addr);
+        self.general_regs_mut().set_rdi(sig_num.as_u8() as usize);
+        self.general_regs_mut().set_rsi(siginfo_addr);
+        self.general_regs_mut().set_rdx(ucontext_addr);
     }
 }
 
@@ -37,6 +37,9 @@ impl From<&CpuException> for FaultSignal {
                 let addr = Some(raw_page_fault_info.addr as u64);
                 (SIGSEGV, code, addr)
             }
+            CpuException::StackSegmentFault(..) => (SIGBUS, SI_KERNEL, None),
+            CpuException::BreakPoint => (SIGTRAP, SI_KERNEL, None),
+            CpuException::Debug => (SIGTRAP, TRAP_TRACE, None),
             e => panic!("{e:?} cannot be handled via signals ({exception:?})"),
         };
 

@@ -33,6 +33,7 @@ num-traits.workspace = true
 ostd-macros.workspace = true
 ostd-test.workspace = true
 ostd-pod.workspace = true
+paste = "1.0.15"
 spin.workspace = true
 smallvec.workspace = true
 volatile.workspace = true

@@ -2,7 +2,10 @@
 
 //! User mode.
 
-use crate::arch::{cpu::context::UserContext, trap::TrapFrame};
+use crate::{
+    arch::{cpu::context::UserContext, trap::TrapFrame},
+    sync::MutexGuard,
+};
 
 /// Specific architectures need to implement this trait. This should only used in [`UserMode`]
 ///
@@ -25,17 +28,21 @@ pub trait UserContextApi {
     /// Gets the trap error code of this interrupt.
     fn trap_error_code(&self) -> usize;
 
-    /// Sets the instruction pointer
+    /// Sets the instruction pointer.
     fn set_instruction_pointer(&mut self, ip: usize);
 
-    /// Gets the instruction pointer
+    /// Gets the instruction pointer.
     fn instruction_pointer(&self) -> usize;
 
-    /// Sets the stack pointer
+    /// Sets the stack pointer.
     fn set_stack_pointer(&mut self, sp: usize);
 
-    /// Gets the stack pointer
+    /// Gets the stack pointer.
     fn stack_pointer(&self) -> usize;
+
+    /// Sets whether the single-step mode is enabled.
+    #[cfg(target_arch = "x86_64")]
+    fn set_single_step(&mut self, enable: bool);
 }
 
 /// Code execution in the user mode.
@@ -44,14 +51,14 @@ pub trait UserContextApi {
 /// space safely.
 ///
 /// Here is a sample code on how to use `UserMode`.
-///  
+///
 /// ```no_run
 /// use ostd::task::Task;
 ///
 /// let current = Task::current();
 /// let user_ctx = current.user_ctx()
 ///     .expect("the current task is not associated with a user context");
-/// let mut user_mode = UserMode::new(UserContext::clone(user_ctx));
+/// let mut user_mode = UserMode::new(user_ctx.lock());
 /// loop {
 ///     // Execute in the user space until some interesting events occur.
 ///     // Note: users should activate a suitable `VmSpace` before to support
@@ -60,18 +67,18 @@ pub trait UserContextApi {
 ///     todo!("handle the event, e.g., syscall");
 /// }
 /// ```
-pub struct UserMode {
-    context: UserContext,
+pub struct UserMode<'a> {
+    context: MutexGuard<'a, UserContext>,
 }
 
 // An instance of `UserMode` is bound to the current task. So it must not be sent to other tasks.
-impl !Send for UserMode {}
+impl !Send for UserMode<'_> {}
 // Note that implementing `!Sync` is unnecessary
 // because entering the user space via `UserMode` requires taking a mutable reference.
 
-impl UserMode {
+impl<'a> UserMode<'a> {
     /// Creates a new `UserMode`.
-    pub fn new(context: UserContext) -> Self {
+    pub fn new(context: MutexGuard<'a, UserContext>) -> Self {
         Self { context }
     }
 

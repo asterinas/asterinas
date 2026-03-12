@@ -38,6 +38,9 @@ set -e
 ./pthread/pthread_signal_test
 ./pthread/pthread_test
 
+./ptrace/ptracer
+./ptrace/read_write_regs
+
 ./sched/sched_attr_getset
 ./sched/sched_param_getset
 ./sched/sched_param_idle

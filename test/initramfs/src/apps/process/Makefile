@@ -12,6 +12,7 @@ SUBDIRS := \
 	itimer \
 	prctl \
 	pthread \
+	ptrace \
 	sched \
 	signal \
 
