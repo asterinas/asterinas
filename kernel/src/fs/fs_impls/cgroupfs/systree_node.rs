@@ -25,8 +25,13 @@
 //!    an `RwMutex` from `BranchNodeFields`. This lock protects access to and
 //!    modification of the list of child cgroup nodes.
 //!
-//! 4. **Cgroup Membership Lock**: A global `Mutex` managed by [`CgroupMembership`] that
-//!    serializes modifications to process cgroup memberships across the entire system.
+//! 4. **Cgroup Membership Lock**: A global `RwMutex` managed by [`CgroupMembership`]
+//!    that protects the mapping from existing processes to cgroups. Use the read
+//!    lock when an operation only needs that mapping to remain stable while it
+//!    works from a snapshot; use the write lock when an operation may change an
+//!    existing membership, or when it needs an exclusive subtree snapshot. For
+//!    example, fork uses the read lock, while explicit migration, process exit,
+//!    and `cgroup.subtree_control` writes use the write lock.
 //!
 //! ### Locking Rules
 //!
@@ -61,27 +66,29 @@ use aster_systree::{
 };
 use aster_util::printer::VmPrinter;
 use inherit_methods_macro::inherit_methods;
-use ostd::mm::{VmReader, VmWriter};
+use ostd::{
+    mm::{VmReader, VmWriter},
+    sync::{RwMutexReadGuard, RwMutexWriteGuard},
+};
 use spin::Once;
 
 use crate::{
-    fs::cgroupfs::controller::{Controller, LockedController, SubCtrlSet, SubCtrlType},
+    fs::cgroupfs::controller::{
+        Controller, LockedController, PidsPreCharge, SubCtrlSet, SubCtrlType,
+    },
     prelude::*,
     process::{Pid, Process, process_table},
 };
 
-/// A type that provides exclusive, synchronized access to modify cgroup membership.
+/// A type that provides synchronized access to cgroup membership.
 ///
-/// This struct encapsulates the logic for moving processes between cgroups.
-/// By calling `CgroupMembership::lock()`, a thread can attempt to acquire a lock
-/// on the global instance. Upon success, it returns a guard that provides mutable
-/// access, allowing for safe cgroup membership modifications.
+/// See the module-level documentation for the lock model.
 ///
 /// # Usage
 ///
 /// ```rust,ignore
-/// // Acquire the lock.
-/// let membership = CgroupMembership::lock();
+/// // Acquire the write lock for explicit migration.
+/// let membership = CgroupMembership::write_lock();
 ///
 /// // Move a process to a new cgroup node.
 /// membership.move_process_to_node(process, &new_cgroup);
@@ -92,18 +99,63 @@ pub struct CgroupMembership {
     _private: (),
 }
 
-impl CgroupMembership {
-    /// Acquires the lock on the global instance.
-    ///
-    /// Returns a guard that provides mutable access to modify cgroup membership.
-    pub fn lock() -> MutexGuard<'static, Self> {
-        static CGROUP_MEMBERSHIP: Mutex<CgroupMembership> =
-            Mutex::new(CgroupMembership { _private: () });
+fn global_cgroup_membership() -> &'static RwMutex<CgroupMembership> {
+    static CGROUP_MEMBERSHIP: RwMutex<CgroupMembership> =
+        RwMutex::new(CgroupMembership { _private: () });
+    &CGROUP_MEMBERSHIP
+}
 
-        CGROUP_MEMBERSHIP.lock()
+impl CgroupMembership {
+    /// Acquires the write side of the membership lock.
+    ///
+    /// Use this for operations that may reassign an existing process or need an
+    /// exclusive subtree snapshot.
+    pub fn write_lock() -> RwMutexWriteGuard<'static, Self> {
+        global_cgroup_membership().write()
     }
 
-    /// Moves a process to the new cgroup node.
+    /// Acquires the read side of the membership lock.
+    ///
+    /// Use this for snapshot-based operations that do not reassign any existing
+    /// process.
+    pub fn read_lock() -> RwMutexReadGuard<'static, Self> {
+        global_cgroup_membership().read()
+    }
+
+    /// Counts the total number of processes in a cgroup subtree.
+    ///
+    /// This is used when the pids sub-controller is activated to initialize
+    /// `pids.current` with the correct value reflecting already-existing
+    /// processes.
+    pub(super) fn count_subtree_processes(&mut self, cgroup_node: &CgroupNode) -> u32 {
+        let mut total: u32 = 0;
+        let mut stack: Vec<Arc<dyn SysObj>> = vec![];
+
+        total += cgroup_node
+            .with_inner(|procs| procs.len() as u32)
+            .unwrap_or(0);
+        cgroup_node.visit_children_with(0, &mut |child| {
+            stack.push(child.clone());
+            Some(())
+        });
+
+        while let Some(node) = stack.pop() {
+            let cgroup_node = Arc::downcast::<CgroupNode>(node).unwrap();
+
+            total += cgroup_node
+                .with_inner(|procs| procs.len() as u32)
+                .unwrap_or(0);
+
+            cgroup_node.visit_children_with(0, &mut |child| {
+                stack.push(child.clone());
+                Some(())
+            });
+        }
+
+        total
+    }
+
+    /// Moves a process to the new cgroup node via explicit migration.
     ///
     /// A process can only belong to one cgroup at a time.
     /// When moved to a new cgroup, it's automatically removed from the
@@ -125,7 +177,48 @@ impl CgroupMembership {
         };
 
         // Try to add the process to the new cgroup first.
+        self.add_process_to_node(&process, new_cgroup)?;
+        new_cgroup.controller.charge_pids();
 
+        // Remove the process from the old cgroup second.
+        if let Some(old_cgroup) = old_cgroup {
+            old_cgroup
+                .with_inner_mut(|old_cgroup_processes| {
+                    old_cgroup_processes.remove(&process.pid()).unwrap();
+                    if old_cgroup_processes.is_empty() {
+                        let old_count = old_cgroup.populated_count.fetch_sub(1, Ordering::Relaxed);
+                        if old_count == 1 {
+                            old_cgroup.propagate_sub_populated();
+                        }
+                    }
+                })
+                .unwrap();
+
+            // Uncharge the pids sub-controller for the old cgroup.
+            old_cgroup.controller.uncharge_pids();
+        }
+
+        Ok(())
+    }
+
+    /// Moves a newly forked process into its inherited cgroup node.
+    ///
+    /// This is the fork-path variant of [`CgroupMembership::move_process_to_node`].
+    /// It assumes the caller already holds the read side of the membership lock,
+    /// and that the `CgroupNode` has already reserved a pids slot during fork.
+    pub fn move_forked_process_to_node(
+        &self,
+        process: Arc<Process>,
+        new_cgroup: &CgroupNode,
+        pids_charge: PidsPreCharge<'_>,
+    ) {
+        debug_assert!(process.cgroup().get().is_none());
+
+        pids_charge.apply();
+        self.add_process_to_node(&process, new_cgroup).unwrap();
+    }
+
+    fn add_process_to_node(&self, process: &Arc<Process>, new_cgroup: &CgroupNode) -> Result<()> {
         let controller = new_cgroup.controller.lock();
         // According to "no internal processes" rule of cgroupv2, if a non-root
         // cgroup node has activated some sub-controls, it cannot bind any process.
@@ -143,26 +236,11 @@ impl CgroupMembership {
                     }
                 }
 
-                current_processes.insert(process.pid(), Arc::downgrade(&process));
+                current_processes.insert(process.pid(), Arc::downgrade(process));
                 process.set_cgroup(Some(new_cgroup.fields.weak_self().upgrade().unwrap()));
             })
             .ok_or(Error::IsDead)?;
         drop(controller);
-
-        // Remove the process from the old cgroup second.
-        if let Some(old_cgroup) = old_cgroup {
-            old_cgroup
-                .with_inner_mut(|old_cgroup_processes| {
-                    old_cgroup_processes.remove(&process.pid()).unwrap();
-                    if old_cgroup_processes.is_empty() {
-                        let old_count = old_cgroup.populated_count.fetch_sub(1, Ordering::Relaxed);
-                        if old_count == 1 {
-                            old_cgroup.propagate_sub_populated();
-                        }
-                    }
-                })
-                .unwrap();
-        }
 
         Ok(())
     }
@@ -189,6 +267,9 @@ impl CgroupMembership {
                 }
             })
             .unwrap();
+
+        // Uncharge the pids sub-controller for the old cgroup.
+        old_cgroup.controller.uncharge_pids();
     }
 }
 
@@ -546,12 +627,13 @@ inherit_sys_branch_node!(CgroupSystem, fields, {
             "cgroup.subtree_control" => {
                 let (activate_set, deactivate_set, len) = read_subtree_control_from_reader(reader)?;
 
+                let mut cgroup_guard = CgroupMembership::write_lock();
                 let mut controller = self.controller.lock();
                 for ctrl_type in activate_set.iter_types() {
-                    controller.activate(ctrl_type, self, None)?;
+                    controller.activate(ctrl_type, self, None, &mut cgroup_guard)?;
                 }
                 for ctrl_type in deactivate_set.iter_types() {
-                    controller.deactivate(ctrl_type, self)?;
+                    controller.deactivate(ctrl_type, self, &mut cgroup_guard)?;
                 }
 
                 Ok(len)
@@ -671,6 +753,7 @@ inherit_sys_branch_node!(CgroupNode, fields, {
             "cgroup.subtree_control" => {
                 let (activate_set, deactivate_set, len) = read_subtree_control_from_reader(reader)?;
 
+                let mut cgroup_guard = CgroupMembership::write_lock();
                 let parent_node = self.cgroup_parent().ok_or(Error::IsDead)?;
                 let parent_controller = parent_node.controller().lock();
                 let mut current_controller = self.controller.lock();
@@ -685,10 +768,15 @@ inherit_sys_branch_node!(CgroupNode, fields, {
                     }
 
                     for ctrl_type in activate_set.iter_types() {
-                        current_controller.activate(ctrl_type, self, Some(&parent_controller))?;
+                        current_controller.activate(
+                            ctrl_type,
+                            self,
+                            Some(&parent_controller),
+                            &mut cgroup_guard,
+                        )?;
                     }
                     for ctrl_type in deactivate_set.iter_types() {
-                        current_controller.deactivate(ctrl_type, self)?;
+                        current_controller.deactivate(ctrl_type, self, &mut cgroup_guard)?;
                     }
 
                     Ok(len)
@@ -738,7 +826,7 @@ where
         process_table::get_process(pid).ok_or(Error::InvalidOperation)?
     };
 
-    let mut cgroup_guard = CgroupMembership::lock();
+    let mut cgroup_guard = CgroupMembership::write_lock();
     if process.status().is_zombie() {
         return Err(Error::InvalidOperation);
     }
@@ -787,7 +875,7 @@ fn read_subtree_control_from_reader(
 
 /// A trait that abstracts over different types of cgroup nodes (`CgroupNode`, `CgroupSystem`)
 /// to provide a common API for controller logics.
-pub(super) trait CgroupSysNode: SysBranchNode {
+pub trait CgroupSysNode: SysBranchNode {
     fn controller(&self) -> &Controller;
 
     fn cgroup_parent(&self) -> Option<Arc<dyn CgroupSysNode>> {
