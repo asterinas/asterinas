@@ -28,6 +28,8 @@ jobs:
             disk_size: 6144
           - name: podman
             disk_size: 8192
+          - name: networking
+            disk_size: 8192
 
     name: Test ${{ matrix.test.name }}
     steps:
