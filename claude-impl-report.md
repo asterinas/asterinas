@@ -1,28 +1,41 @@
 # PID Namespace Implementation Deviations
 
-This file records the current implementation gaps against `plan.md`.
+This file records the implementation gaps that still remain against `plan.md`.
+The previous structural deviations around the transitional `pid_table` module
+and root-visible `/proc` path resolution have been fixed and are therefore no
+longer listed here.
 
-1. The legacy [`kernel/src/process/pid_table.rs`] module still exists.
-It no longer owns a global numeric object table; it is now a transitional wrapper over per-namespace visible tables.
-`plan.md` asked for the global `pid_table` to be deleted entirely, so keeping the wrapper module is a structural deviation.
+1. The namespace-graph locking model from `plan.md` is still only partially implemented.
+The code now has `PidNamespace`, per-namespace visible tables, and
+`pending_init_lock`, but child creation, table insertion/removal, reparenting,
+and namespace-state transitions still do not consistently follow the full
+`PidNsGraphLock`-first discipline and root-to-leaf namespace lock ordering
+described in `plan.md`.
 
-2. `/proc` root is not fully viewer-relative yet.
-The current implementation wires `/proc/[pid]/ns/pid`, `/proc/[pid]/ns/pid_for_children`, `/proc/self`, and `/proc/thread-self` well enough for the PID-namespace tests, but `/proc` root enumeration and most `/proc/[pid]` lookups still fundamentally rely on root-namespace visibility rather than a true caller-relative PID-namespace view.
+2. Namespace-init teardown and reparenting are improved but still incomplete.
+The implementation now marks a non-root namespace init as `Dying`, rejects new
+children from entering a dying namespace, sends `SIGKILL` to processes still
+visible in that namespace, and falls back to an ancestor namespace reaper once
+the namespace is dying.
+It still does not implement the full `plan.md` teardown contract: there is no
+complete drain/lifetime accounting for dying namespaces, no fully bounded
+monotonic retry rule for concurrent reparent races, and no graph-lock-backed
+atomic transition covering the whole teardown path.
 
-3. `/proc/self` and `/proc/thread-self` currently resolve through root-visible IDs as a compatibility workaround.
-`plan.md` requires these interfaces to be fully caller-namespace-relative.
-The current behavior is sufficient for the exercised test cases but is not the final object-model described in `plan.md`.
+3. Job-control semantics are still only partially migrated.
+`setpgid`, `getsid`, `getpgid`, and terminal foreground-group lookup now use
+caller-relative PID-namespace translation and reject cross-active-namespace
+`setpgid` participants.
+However, the full caller-namespace visibility audit from `plan.md` is not done
+for every job-control path, especially around inherited but numerically
+invisible process groups/sessions and all terminal state/reporting edges.
 
-4. Not every numeric PID/TID/PGID/SID entry point has been migrated to namespace-local lookup yet.
-The PID-namespace work covered clone/unshare/setns, pidfd-open, wait-path filtering/return values, and proc/ns plumbing required by the tests.
-Other numeric interfaces still rely on transitional root-namespace lookups or pre-existing behavior and therefore do not yet satisfy the "every numeric lookup starts from `PidNamespace.visible_table`" requirement from `plan.md`.
-
-5. The namespace-graph locking model from `plan.md` is only partially implemented.
-The code now has PID-namespace objects, per-namespace visible tables, and pending-init serialization, but the full `PidNsGraphLock`-first lock discipline and the documented root-to-leaf namespace lock ordering have not been enforced across all call sites yet.
-
-7. Namespace-init teardown and full namespace-aware orphan reparenting are incomplete.
-The implementation covers namespace PID 1 creation, pending-init materialization, and parent-visible `getppid()` behavior for descendant children.
-It does not yet implement the full `plan.md` teardown semantics for killing all surviving tasks when namespace init exits, nor the complete namespace-scoped reaper search and bounded retry rules described there.
-
-8. Job-control semantics are only partially migrated.
-`ProcessGroup` and `Session` now carry owner namespace and PID chains, but the full caller-namespace visibility rules for `setpgid`, `getsid`, `getpgid`, terminal foreground state, and invisible groups/sessions are not completely enforced yet.
+4. Procfs is substantially more viewer-relative now, but not every procfs path
+has been fully re-audited against `plan.md`.
+`/proc` root, `/proc/self`, `/proc/thread-self`, `/proc/[pid]` lookup,
+`/proc/[pid]/task/[tid]` lookup, and the key numeric fields in `stat` and
+`status` now resolve from the viewer's active PID namespace.
+What remains is a full audit of every procfs file and cache invalidation path
+to ensure that all numeric fields, all task-directory behaviors, and all
+namespace-related lifetimes match the final object-model described in
+`plan.md`.

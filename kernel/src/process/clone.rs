@@ -773,6 +773,13 @@ fn select_child_pid_namespace(
     ctx: &Context,
     clone_flags: CloneFlags,
 ) -> Result<(Arc<PidNamespace>, PidChain, bool)> {
+    if matches!(ctx.process.active_pid_ns().state(), PidNsState::Dying) {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "the current pid namespace is dying and cannot accept new children"
+        );
+    }
+
     if clone_flags.contains(CloneFlags::CLONE_NEWPID) {
         ctx.thread_local.borrow_user_ns().check_cap(
             crate::process::credentials::capabilities::CapSet::SYS_ADMIN,
@@ -788,6 +795,12 @@ fn select_child_pid_namespace(
 
     let pid_ns_for_children = ctx.posix_thread.pid_ns_for_children().lock().clone();
     let target_ns = pid_ns_for_children.target(ctx.process.active_pid_ns());
+    if matches!(target_ns.state(), PidNsState::Dying) {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "the target pid namespace is dying and cannot accept new children"
+        );
+    }
     let pid_chain;
     let first_process_in_ns;
     if matches!(target_ns.state(), PidNsState::PendingInit) {

@@ -346,10 +346,6 @@ impl Process {
         &self.parent
     }
 
-    pub fn is_init_process(&self) -> bool {
-        self.is_root_pid_ns_init()
-    }
-
     pub fn is_root_pid_ns_init(&self) -> bool {
         Arc::ptr_eq(self.active_pid_ns(), PidNamespace::get_init_singleton()) && self.pid() == 1
     }
@@ -508,6 +504,12 @@ impl Process {
             Errno::ESRCH,
             "the process to set the PGID does not exist",
         ))?;
+        if !Arc::ptr_eq(process.active_pid_ns(), pid_ns) {
+            return_errno_with_message!(
+                Errno::ESRCH,
+                "the process to set the PGID is not in the caller's pid namespace"
+            );
+        }
 
         let current_session = if self.kernel_pid == process.kernel_pid() {
             // There is no need to check if the session is the same in this case.
@@ -532,7 +534,10 @@ impl Process {
             );
         };
 
-        if let Some(new_process_group) = pid_ns.lookup_process_group(pgid) {
+        if let Some(new_process_group) = pid_ns
+            .lookup_process_group(pgid)
+            .filter(|group| Arc::ptr_eq(group.owner_pid_ns(), pid_ns))
+        {
             process.to_existing_group(current_session, new_process_group)
         } else if pgid == process.pid() {
             process.to_new_group(current_session)

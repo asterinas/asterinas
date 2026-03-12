@@ -188,23 +188,21 @@ impl DirOps for TaskDirOps {
         let Ok(tid) = name.parse::<Tid>() else {
             return_errno_with_message!(Errno::ENOENT, "the name is not a valid TID");
         };
+        let current_process = current!();
+        let viewer_pid_ns = current_process.active_pid_ns();
 
         for task in self.0.tasks().lock().as_slice() {
             let thread_ref = task.as_thread().unwrap();
-            if thread_ref.as_posix_thread().unwrap().tid() != tid {
+            if thread_ref.as_posix_thread().unwrap().tid_in(viewer_pid_ns) != Some(tid) {
                 continue;
             }
 
             let mut cached_children = dir.cached_children().write();
-            return Ok(cached_children
-                .put_entry_if_not_found(name, || {
-                    TidDirOps::new_inode(
-                        self.0.clone(),
-                        thread_ref.clone(),
-                        dir.this_weak().clone(),
-                    )
-                })
-                .clone());
+            let child =
+                TidDirOps::new_inode(self.0.clone(), thread_ref.clone(), dir.this_weak().clone());
+            cached_children.remove_entry_by_name(name);
+            cached_children.put((String::from(name), child.clone()));
+            return Ok(child);
         }
 
         return_errno_with_message!(Errno::ENOENT, "the thread does not exist")
@@ -216,21 +214,34 @@ impl DirOps for TaskDirOps {
     ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>> {
         let tasks = self.0.tasks().lock();
         let mut cached_dentries = dir.cached_children().write();
+        let current_process = current!();
+        let viewer_pid_ns = current_process.active_pid_ns();
+        *cached_dentries = SlotVec::new();
 
         for task in tasks.as_slice() {
             let thread_ref = task.as_thread().unwrap();
-            cached_dentries.put_entry_if_not_found(
-                &task.as_posix_thread().unwrap().tid().to_string(),
-                || {
-                    TidDirOps::new_inode(
-                        self.0.clone(),
-                        thread_ref.clone(),
-                        dir.this_weak().clone(),
-                    )
-                },
-            );
+            let Some(tid) = task.as_posix_thread().unwrap().tid_in(viewer_pid_ns) else {
+                continue;
+            };
+            cached_dentries.put_entry_if_not_found(&tid.to_string(), || {
+                TidDirOps::new_inode(self.0.clone(), thread_ref.clone(), dir.this_weak().clone())
+            });
         }
 
         cached_dentries.downgrade()
+    }
+
+    fn validate_child(&self, child: &dyn Inode) -> bool {
+        let Some(tid_dir) = child.downcast_ref::<ProcDir<TidDirOps>>() else {
+            return true;
+        };
+
+        tid_dir
+            .inner()
+            .thread()
+            .as_posix_thread()
+            .unwrap()
+            .tid_in(current!().active_pid_ns())
+            .is_some()
     }
 }

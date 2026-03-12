@@ -312,7 +312,6 @@ impl PidNamespace {
         }))
     }
 
-    #[expect(dead_code)]
     pub fn parent_ns(&self) -> Option<&Arc<PidNamespace>> {
         self.parent.as_ref()
     }
@@ -334,7 +333,6 @@ impl PidNamespace {
         &self.pending_init_lock
     }
 
-    #[expect(dead_code)]
     pub fn child_reaper(&self) -> Option<Arc<Process>> {
         self.child_reaper.lock().upgrade()
     }

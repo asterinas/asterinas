@@ -172,7 +172,11 @@ impl dyn Terminal {
     /// Sets the foreground process group of the terminal.
     fn set_foreground(self: Arc<Self>, pgid: Pgid, process: &Process) -> Result<()> {
         self.is_control_and(process, |session, _| {
-            let Some(process_group) = process.active_pid_ns().lookup_process_group(pgid) else {
+            let Some(process_group) = process
+                .active_pid_ns()
+                .lookup_process_group(pgid)
+                .filter(|group| Arc::ptr_eq(group.owner_pid_ns(), process.active_pid_ns()))
+            else {
                 return_errno_with_message!(
                     Errno::ESRCH,
                     "the process group to be foreground does not exist"

@@ -42,7 +42,6 @@ impl ProcessGroup {
         })
     }
 
-    #[expect(dead_code)]
     pub fn owner_pid_ns(&self) -> &Arc<PidNamespace> {
         &self.owner_pid_ns
     }

@@ -4,8 +4,10 @@ use core::sync::atomic::Ordering;
 
 use super::{Pid, PidNamespace, Process};
 use crate::{
-    events::IoEvents, fs::cgroupfs::CgroupMembership, prelude::*,
-    process::signal::signals::kernel::KernelSignal,
+    events::IoEvents,
+    fs::cgroupfs::CgroupMembership,
+    prelude::*,
+    process::signal::{constants::SIGKILL, signals::kernel::KernelSignal},
 };
 
 /// Exits the current POSIX process.
@@ -57,21 +59,39 @@ fn send_parent_death_signal(current_process: &Process) {
 /// Finds a reaper process for `current_process`.
 ///
 /// If there is no reaper process for `current_process`, returns `None`.
+fn first_live_ancestor_namespace_reaper(pid_ns: &Arc<PidNamespace>) -> Option<Arc<Process>> {
+    let mut current_ns = pid_ns.parent_ns().cloned();
+    while let Some(ns) = current_ns {
+        if let Some(reaper) = ns.child_reaper()
+            && !reaper.status().is_zombie()
+        {
+            return Some(reaper);
+        }
+        current_ns = ns.parent_ns().cloned();
+    }
+    None
+}
+
 fn find_reaper_process(current_process: &Process) -> Option<Arc<Process>> {
+    let parent_ns = current_process.active_pid_ns();
+    if matches!(parent_ns.state(), crate::process::PidNsState::Dying) {
+        return first_live_ancestor_namespace_reaper(parent_ns);
+    }
+
+    if !current_process.has_child_subreaper.load(Ordering::Acquire) {
+        return parent_ns
+            .child_reaper()
+            .filter(|reaper| !reaper.status().is_zombie());
+    }
+
     let mut parent = current_process.parent().lock().process().upgrade().unwrap();
 
     loop {
-        if parent.is_init_process() {
-            return Some(parent);
+        if !Arc::ptr_eq(parent.active_pid_ns(), parent_ns) {
+            break;
         }
 
-        if !parent.has_child_subreaper.load(Ordering::Acquire) {
-            return None;
-        }
-
-        let is_reaper = parent.is_child_subreaper();
-        let is_zombie = parent.status().is_zombie();
-        if is_reaper && !is_zombie {
+        if parent.is_child_subreaper() && !parent.status().is_zombie() {
             return Some(parent);
         }
 
@@ -83,6 +103,19 @@ fn find_reaper_process(current_process: &Process) -> Option<Arc<Process>> {
             // about the ancestor processes. Therefore, we have to retry.
             parent = current_process.parent().lock().process().upgrade().unwrap();
         }
+    }
+
+    parent_ns
+        .child_reaper()
+        .filter(|reaper| !reaper.status().is_zombie())
+}
+
+fn kill_visible_processes_in_pid_namespace(current_process: &Process) {
+    for process in current_process.active_pid_ns().visible_processes() {
+        if process.kernel_pid() == current_process.kernel_pid() || process.status().is_zombie() {
+            continue;
+        }
+        process.enqueue_signal(Box::new(KernelSignal::new(SIGKILL)));
     }
 }
 
@@ -120,8 +153,15 @@ fn move_process_children(
 
 /// Moves the children to a reaper process.
 fn move_children_to_reaper_process(current_process: &Process) {
-    if current_process.is_init_process() {
+    if current_process.is_root_pid_ns_init() {
         return;
+    }
+
+    if current_process.is_pid_namespace_init() {
+        current_process
+            .active_pid_ns()
+            .set_state(crate::process::PidNsState::Dying);
+        kill_visible_processes_in_pid_namespace(current_process);
     }
 
     while let Some(reaper_process) = find_reaper_process(current_process) {
