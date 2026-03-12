@@ -8,7 +8,7 @@ use aster_util::mem_obj_slice::Slice;
 use log::debug;
 use ostd::{
     arch::trap::TrapFrame,
-    mm::{VmReader, dma::DmaStream, io_util::HasVmReaderWriter},
+    mm::{VmReader, dma::DmaStream, io::util::HasVmReaderWriter},
     sync::{Rcu, SpinLock},
 };
 

@@ -15,7 +15,7 @@ use core::{borrow::Borrow, fmt::Debug, ops::Range};
 use ostd::mm::{
     HasDaddr, HasPaddr, HasSize, Infallible, VmReader, VmWriter,
     dma::DmaStream,
-    io_util::{HasVmReaderWriter, VmReaderWriterResult},
+    io::util::{HasVmReaderWriter, VmReaderWriterResult},
 };
 
 macro_rules! assert_in_range {

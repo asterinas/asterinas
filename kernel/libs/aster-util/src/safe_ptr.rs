@@ -9,7 +9,7 @@ use ostd::{
     mm::{
         Daddr, HasDaddr, HasPaddr, Paddr, PodOnce, VmIo, VmIoOnce,
         dma::DmaDirection,
-        io_util::{HasVmReaderWriter, VmReaderWriterTypes},
+        io::util::{HasVmReaderWriter, VmReaderWriterTypes},
     },
 };
 use ostd_pod::Pod;

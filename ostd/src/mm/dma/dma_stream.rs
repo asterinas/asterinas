@@ -11,7 +11,7 @@ use crate::{
     mm::{
         Daddr, FrameAllocOptions, HasDaddr, HasPaddr, HasPaddrRange, HasSize, Infallible,
         PAGE_SIZE, Paddr, Split, USegment, VmReader, VmWriter,
-        io_util::{HasVmReaderWriter, VmReaderWriterResult},
+        io::util::{HasVmReaderWriter, VmReaderWriterResult},
         kspace::kvirt_area::KVirtArea,
         paddr_to_vaddr,
     },
@@ -29,7 +29,7 @@ pub trait DmaDirection: 'static + Debug + private::Sealed {
 mod private {
     /// To avoid users implement `DmaDirection` and triggers unreachable code in
     /// functions like [`crate::arch::mm::sync_dma_range`], or bypasses checks
-    /// in [`crate::mm::io_util::HasVmReaderWriter`].
+    /// in [`crate::mm::io::util::HasVmReaderWriter`].
     pub trait Sealed {}
 }
 
