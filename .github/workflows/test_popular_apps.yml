@@ -1,0 +1,45 @@
+# Daily test for popular applications on AsterNixOS.
+#
+# This workflow runs basic tests for popular applications to ensure
+# compatibility with Asterinas NixOS. It executes daily at 16:00 UTC.
+name: Test Popular Applications
+
+on:
+  schedule:
+    # Schedule to run on every day at 16:00 UTC (00:00 Beijing Time)
+    - cron: '0 16 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/test_popular_apps.yml
+      - book/src/distro/popular-applications/**
+      - test/nixos/tests/**
+
+jobs:
+  popular-apps-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+          - name: system-core
+            disk_size: 8192
+
+    name: Test ${{ matrix.test.name }}
+    steps:
+      - uses: endersonmenezes/free-disk-space@v3
+        with:
+          rm_cmd: "rmz"
+          remove_android: true
+          remove_dotnet: true
+          remove_haskell: true
+          remove_tool_cache: true
+      - uses: actions/checkout@v4
+      - name: Run the ${{ matrix.test.name }} test on AsterNixOS
+        uses: maus007/docker-run-action-fork@v1
+        with:
+          image: asterinas/asterinas:0.17.0-20260227
+          options: --privileged -v /dev:/dev -v ${{ github.workspace }}:/root/asterinas
+          run: |
+            make nixos NIXOS_TEST_SUITE=${{ matrix.test.name }} NIXOS_DISK_SIZE_IN_MB=${{ matrix.test.disk_size }}
+            make run_nixos NIXOS_TEST_SUITE=${{ matrix.test.name }}
