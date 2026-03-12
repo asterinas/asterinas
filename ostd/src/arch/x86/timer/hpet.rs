@@ -138,7 +138,7 @@ impl Hpet {
 pub fn init() -> Result<(), AcpiError> {
     let tables = get_acpi_tables().unwrap();
 
-    let hpet_info = HpetInfo::new(&tables)?;
+    let hpet_info = HpetInfo::new(tables)?;
     assert_ne!(hpet_info.base_address, 0, "HPET address should not be zero");
 
     let base = NonNull::new(paddr_to_vaddr(hpet_info.base_address) as *mut u8).unwrap();

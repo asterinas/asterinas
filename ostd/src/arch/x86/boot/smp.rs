@@ -231,7 +231,7 @@ unsafe fn wake_up_aps_via_mailbox(num_cpus: u32) {
     let acpi_tables = get_acpi_tables().unwrap();
     for ap_num in 1..num_cpus {
         wakeup_aps(
-            &acpi_tables,
+            acpi_tables,
             AcpiMemoryHandler {},
             ap_num,
             (AP_BOOT_START_PA + offset) as u64,
