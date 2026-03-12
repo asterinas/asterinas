@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::mm::{Infallible, VmSpace};
+use ostd::mm::Infallible;
 
-use crate::prelude::*;
+use crate::{prelude::*, vm::vmar::VmarSpace};
 
 /// A kernel space I/O vector.
 #[derive(Debug, Clone, Copy)]
@@ -44,11 +44,11 @@ impl IoVec {
         self.len == 0 || self.base == 0
     }
 
-    fn reader<'a>(&self, vm_space: &'a VmSpace) -> Result<VmReader<'a>> {
+    fn reader<'a>(&self, vm_space: &'a VmarSpace) -> Result<VmReader<'a>> {
         Ok(vm_space.reader(self.base, self.len)?)
     }
 
-    fn writer<'a>(&self, vm_space: &'a VmSpace) -> Result<VmWriter<'a>> {
+    fn writer<'a>(&self, vm_space: &'a VmarSpace) -> Result<VmWriter<'a>> {
         Ok(vm_space.writer(self.base, self.len)?)
     }
 }
@@ -77,13 +77,13 @@ fn copy_iovs_and_convert<'a, T: 'a>(
     user_space: &'a CurrentUserSpace<'a>,
     start_addr: Vaddr,
     count: usize,
-    convert_iovec: impl Fn(&IoVec, &'a VmSpace) -> Result<T>,
+    convert_iovec: impl Fn(&IoVec, &'a VmarSpace) -> Result<T>,
 ) -> Result<Box<[T]>> {
     if count > MAX_IO_VECTOR_LENGTH {
         return_errno_with_message!(Errno::EINVAL, "the I/O vector contains too many buffers");
     }
 
-    let vm_space = user_space.vmar().vm_space();
+    let vm_space: &'a VmarSpace = user_space.vmar().vm_space();
 
     let mut v = Vec::with_capacity(count);
     let mut max_len = MAX_TOTAL_IOV_BYTES;
@@ -133,7 +133,9 @@ impl<'a> VmReaderArray<'a> {
         start_addr: Vaddr,
         count: usize,
     ) -> Result<Self> {
-        let readers = copy_iovs_and_convert(user_space, start_addr, count, IoVec::reader)?;
+        let readers = copy_iovs_and_convert(user_space, start_addr, count, |iov, space| {
+            iov.reader(space)
+        })?;
         Ok(Self(readers))
     }
 
@@ -159,7 +161,9 @@ impl<'a> VmWriterArray<'a> {
         start_addr: Vaddr,
         count: usize,
     ) -> Result<Self> {
-        let writers = copy_iovs_and_convert(user_space, start_addr, count, IoVec::writer)?;
+        let writers = copy_iovs_and_convert(user_space, start_addr, count, |iov, space| {
+            iov.writer(space)
+        })?;
         Ok(Self(writers))
     }
 

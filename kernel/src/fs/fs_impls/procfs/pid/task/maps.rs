@@ -16,7 +16,7 @@ use crate::{
         posix_thread::{AsPosixThread, alien_access::AlienAccessMode},
         signal::{PollHandle, Pollable},
     },
-    vm::vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR},
+    vm::vmar::{VmMapping, userspace_range},
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/maps` (and also `/proc/[pid]/maps`).
@@ -93,8 +93,21 @@ impl InodeIo for MapsFileHandle {
         // To maintain a consistent lock order and avoid race conditions, we must lock the heap
         // before querying the VMAR.
         let heap_guard = vmar.process_vm().heap().lock();
-        let guard = vmar.query(VMAR_LOWEST_ADDR..VMAR_CAP_ADDR);
-        for vm_mapping in guard.iter() {
+
+        let mut mappings: Vec<VmMapping> = Vec::new();
+
+        vmar.for_each_mapping(userspace_range(), false, |vm_mapping| {
+            if let Some(last) = mappings.last_mut()
+                && last.can_merge_with(vm_mapping)
+            {
+                let merged = mappings.pop().unwrap().try_merge_with(vm_mapping).0;
+                mappings.push(merged);
+            } else {
+                mappings.push(vm_mapping.clone_for_check());
+            }
+        })?;
+
+        for vm_mapping in mappings {
             vm_mapping.print_to_maps(&mut printer, vmar, &heap_guard, &path_resolver)?;
         }
 
