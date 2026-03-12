@@ -267,6 +267,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-monitoring-observability"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
 name = "test-networking"
 version = "0.1.0"
 dependencies = [
