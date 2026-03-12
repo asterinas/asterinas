@@ -19,8 +19,9 @@ use crate::{
     net::uts_ns::UtsNamespace,
     prelude::*,
     process::{
-        CloneFlags, ContextSetNsAdminApi, NsProxy, NsProxyBuilder, PidFile,
-        check_unsupported_ns_flags, credentials::capabilities::CapSet, posix_thread::AsPosixThread,
+        CloneFlags, ContextSetNsAdminApi, NsProxy, NsProxyBuilder, PidFile, PidNamespace,
+        PidNsForChildren, PidNsState, check_unsupported_ns_flags,
+        credentials::capabilities::CapSet, posix_thread::AsPosixThread,
     },
     syscall::SyscallReturn,
 };
@@ -36,14 +37,19 @@ pub fn sys_setns(fd: FileDesc, flags: u32, ctx: &Context) -> Result<SyscallRetur
         file_table_locked.get_file(fd)?.clone()
     };
 
-    let new_ns_proxy = if let Some(pid_file) = file.downcast_ref::<PidFile>() {
+    let (new_ns_proxy, pid_ns_target) = if let Some(pid_file) = file.downcast_ref::<PidFile>() {
         build_proxy_from_pid_file(pid_file, ns_type_flags, ctx)?
     } else {
         build_proxy_from_ns_file(file.as_ref(), ns_type_flags, ctx)?
     };
 
-    // Install the newly created `NsProxy`.
-    ctx.set_ns_proxy(Arc::new(new_ns_proxy));
+    if let Some(new_ns_proxy) = new_ns_proxy {
+        ctx.set_ns_proxy(Arc::new(new_ns_proxy));
+    }
+
+    if let Some(target_pid_ns) = pid_ns_target {
+        set_pid_ns_for_children(target_pid_ns, ctx)?;
+    }
 
     Ok(SyscallReturn::Return(0))
 }
@@ -52,7 +58,7 @@ fn build_proxy_from_pid_file(
     pid_file: &PidFile,
     flags: CloneFlags,
     ctx: &Context,
-) -> Result<NsProxy> {
+) -> Result<(Option<NsProxy>, Option<Arc<PidNamespace>>)> {
     if flags.is_empty() {
         return_errno_with_message!(Errno::EINVAL, "flags must be specified with a PID file");
     }
@@ -66,7 +72,8 @@ fn build_proxy_from_pid_file(
         return_errno_with_message!(Errno::EINVAL, "setting a user namespace is not supported");
     }
 
-    check_unsupported_ns_flags(flags)?;
+    let mut remaining_flags = flags;
+    let mut pid_ns_target = None;
 
     let target_thread = pid_file
         .process_opt()
@@ -82,6 +89,20 @@ fn build_proxy_from_pid_file(
 
     let mut builder = NsProxyBuilder::new(current_proxy);
 
+    if remaining_flags.contains(CloneFlags::CLONE_NEWPID) {
+        pid_ns_target = Some(
+            target_thread
+                .as_posix_thread()
+                .unwrap()
+                .process()
+                .active_pid_ns()
+                .clone(),
+        );
+        remaining_flags.remove(CloneFlags::CLONE_NEWPID);
+    }
+
+    check_unsupported_ns_flags(remaining_flags)?;
+
     if flags.contains(CloneFlags::CLONE_NEWUTS) {
         let target_ns = target_proxy.uts_ns();
         set_uts_ns(&mut builder, target_ns, ctx)?;
@@ -94,19 +115,26 @@ fn build_proxy_from_pid_file(
 
     // TODO: Support setting other namespaces from the target process.
 
-    Ok(builder.build())
+    let proxy = if remaining_flags.is_empty() {
+        None
+    } else {
+        Some(builder.build())
+    };
+
+    Ok((proxy, pid_ns_target))
 }
 
 fn build_proxy_from_ns_file(
     file: &dyn FileLike,
     flags: CloneFlags,
     ctx: &Context,
-) -> Result<NsProxy> {
+) -> Result<(Option<NsProxy>, Option<Arc<PidNamespace>>)> {
     if flags.contains(CloneFlags::CLONE_NEWUSER) {
         return_errno_with_message!(Errno::EINVAL, "setting a user namespace is not supported");
     }
 
-    check_unsupported_ns_flags(flags)?;
+    let mut remaining_flags = flags;
+    let mut pid_ns_target = None;
 
     let inode_handle = file
         .downcast_ref::<InodeHandle>()
@@ -117,21 +145,35 @@ fn build_proxy_from_ns_file(
 
     let mut builder = NsProxyBuilder::new(current_proxy);
 
+    if let Some(ns_file) = inode_handle.downcast_file_io::<NsFile<PidNamespace>>()? {
+        if !remaining_flags.is_empty() && remaining_flags != CloneFlags::CLONE_NEWPID {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the flags do not match the type of the ns file"
+            );
+        }
+        pid_ns_target = Some(ns_file.ns().clone());
+        remaining_flags = CloneFlags::empty();
+    }
+
+    check_unsupported_ns_flags(remaining_flags)?;
+
     #[expect(clippy::nonminimal_bool)]
     let applied = false
-        || try_apply_ns_from_inode::<UtsNamespace>(inode_handle, flags, |ns| {
+        || try_apply_ns_from_inode::<UtsNamespace>(inode_handle, remaining_flags, |ns| {
             set_uts_ns(&mut builder, &ns, ctx)
         })?
-        || try_apply_ns_from_inode::<MountNamespace>(inode_handle, flags, |ns| {
+        || try_apply_ns_from_inode::<MountNamespace>(inode_handle, remaining_flags, |ns| {
             set_mnt_ns(&mut builder, &ns, ctx)
         })?;
     // TODO: Support setting other namespaces from the ns file.
 
-    if !applied {
+    if !applied && pid_ns_target.is_none() {
         return_errno_with_message!(Errno::EINVAL, "invalid flags are specified with a ns file");
     }
 
-    Ok(builder.build())
+    let proxy = if applied { Some(builder.build()) } else { None };
+    Ok((proxy, pid_ns_target))
 }
 
 fn try_apply_ns_from_inode<T: NsCommonOps>(
@@ -201,6 +243,37 @@ fn set_mnt_ns(
     // TODO: Are the checks above sufficient?
 
     builder.mnt_ns(target_ns.clone());
+
+    Ok(())
+}
+
+fn set_pid_ns_for_children(target_ns: Arc<PidNamespace>, ctx: &Context) -> Result<()> {
+    if target_ns.state() != PidNsState::Alive {
+        return_errno_with_message!(Errno::EINVAL, "the target pid namespace is not alive");
+    }
+
+    target_ns
+        .owner_user_ns()
+        .unwrap()
+        .check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
+    ctx.thread_local
+        .borrow_user_ns()
+        .check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
+
+    let current_active = ctx.process.active_pid_ns();
+    if !current_active.is_same_or_ancestor_of(&target_ns) {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "the target pid namespace must be the current one or a descendant"
+        );
+    }
+
+    let mut pid_ns_for_children = ctx.posix_thread.pid_ns_for_children().lock();
+    *pid_ns_for_children = if Arc::ptr_eq(current_active, &target_ns) {
+        PidNsForChildren::SameAsActive
+    } else {
+        PidNsForChildren::Target(target_ns)
+    };
 
     Ok(())
 }

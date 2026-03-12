@@ -5,7 +5,7 @@ use core::sync::atomic::Ordering;
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{Pgid, Pid, Process, Uid, posix_thread::AsPosixThread, process_table},
+    process::{Pgid, Pid, Process, Uid, posix_thread::AsPosixThread},
     sched::Nice,
 };
 
@@ -13,7 +13,7 @@ pub fn sys_get_priority(which: i32, who: u32, ctx: &Context) -> Result<SyscallRe
     let prio_target = PriorityTarget::new(which, who, ctx)?;
     debug!("get_priority prio_target: {:?}", prio_target);
 
-    let processes = get_processes(prio_target)?;
+    let processes = get_processes(prio_target, ctx.process.active_pid_ns())?;
     let highest_prio = {
         let mut nice = Nice::MAX.value().get();
         for process in processes.iter() {
@@ -32,31 +32,34 @@ pub fn sys_get_priority(which: i32, who: u32, ctx: &Context) -> Result<SyscallRe
     Ok(SyscallReturn::Return(highest_prio as _))
 }
 
-pub(super) fn get_processes(prio_target: PriorityTarget) -> Result<Vec<Arc<Process>>> {
+pub(super) fn get_processes(
+    prio_target: PriorityTarget,
+    pid_ns: &Arc<crate::process::PidNamespace>,
+) -> Result<Vec<Arc<Process>>> {
     Ok(match prio_target {
         PriorityTarget::Process(pid) => {
-            let process = process_table::get_process(pid).ok_or(Error::new(Errno::ESRCH))?;
+            let process = pid_ns.lookup_process(pid).ok_or(Error::new(Errno::ESRCH))?;
             vec![process]
         }
         PriorityTarget::ProcessGroup(pgid) => {
-            let process_group =
-                process_table::get_process_group(&pgid).ok_or(Error::new(Errno::ESRCH))?;
-            let processes: Vec<Arc<Process>> = process_group.lock().iter().cloned().collect();
+            let process_group = pid_ns
+                .lookup_process_group(pgid)
+                .ok_or(Error::new(Errno::ESRCH))?;
+            let processes: Vec<Arc<Process>> = process_group.lock().iter().collect();
             if processes.is_empty() {
                 return_errno!(Errno::ESRCH);
             }
             processes
         }
         PriorityTarget::User(uid) => {
-            // Get the processes that are running under the specified user
-            let processes: Vec<Arc<Process>> = process_table::process_table_mut()
-                .iter()
+            let processes: Vec<Arc<Process>> = pid_ns
+                .visible_processes()
+                .into_iter()
                 .filter(|process| {
                     let main_thread = process.main_thread();
                     let posix_thread = main_thread.as_posix_thread().unwrap();
                     uid == posix_thread.credentials().ruid()
                 })
-                .cloned()
                 .collect();
             if processes.is_empty() {
                 return_errno!(Errno::ESRCH);

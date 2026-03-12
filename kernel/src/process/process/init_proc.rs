@@ -12,15 +12,15 @@ use crate::{
     },
     prelude::*,
     process::{
-        Credentials, ProcessVm, UserNamespace,
+        Credentials, KernelTid, PidChain, PidNamespace, PidNsForChildren, ProcessVm, UserNamespace,
+        namespace::pid_ns::pid_ns_graph_lock,
         posix_thread::{PosixThreadBuilder, ThreadName, allocate_posix_tid},
-        process_table,
         program_loader::ProgramToLoad,
         rlimit::new_resource_limits_for_init,
         signal::sig_disposition::SigDispositions,
     },
     sched::Nice,
-    thread::Tid,
+    thread::AsThread,
     vm::vmar::Vmar,
 };
 
@@ -54,7 +54,9 @@ fn create_init_process(
     let fs_path = FsPath::try_from(executable_path)?;
     let elf_path = fs.resolver().read().lookup(&fs_path)?;
 
-    let pid = allocate_posix_tid();
+    let root_pid_ns = PidNamespace::get_init_singleton().clone();
+    let pid_chain = PidChain::one(root_pid_ns.clone(), 1);
+    let kernel_tid = allocate_posix_tid();
     let vmar = Vmar::new(ProcessVm::new(elf_path.clone()));
     let resource_limits = new_resource_limits_for_init();
     let nice = Nice::default();
@@ -63,7 +65,9 @@ fn create_init_process(
     let user_ns = UserNamespace::get_init_singleton().clone();
 
     let init_proc = Process::new(
-        pid,
+        kernel_tid,
+        pid_chain.clone(),
+        root_pid_ns.clone(),
         vmar,
         resource_limits,
         nice,
@@ -72,32 +76,36 @@ fn create_init_process(
         user_ns,
     );
 
-    let init_task = create_init_task(pid, &init_proc, fs, elf_path, argv, envp)?;
+    let init_task = create_init_task(
+        kernel_tid,
+        pid_chain.clone(),
+        &init_proc,
+        fs,
+        elf_path,
+        argv,
+        envp,
+    )?;
     init_proc.tasks().lock().insert(init_task).unwrap();
+    root_pid_ns.set_child_reaper(&init_proc);
 
     Ok(init_proc)
 }
 
 fn set_session_and_group(process: &Arc<Process>) {
-    // Locking order: session table -> group table -> process table -> process group
-    let mut session_table_mut = process_table::session_table_mut();
-    let mut group_table_mut = process_table::group_table_mut();
-    let mut process_table_mut = process_table::process_table_mut();
+    let _pid_ns_graph_guard = pid_ns_graph_lock().lock();
 
-    // Create a new process group and session for the process
-    process.set_new_session(
-        &mut process.process_group.lock(),
-        &mut session_table_mut,
-        &mut group_table_mut,
-    );
+    // Create a new process group and session for the process.
+    process.set_new_session_with_pid_ns_graph_lock(&mut process.process_group.lock());
 
-    // Add the new process to the global table
-    process_table_mut.insert(process.pid(), process.clone());
+    PidNamespace::insert_process_across_namespaces_with_pid_ns_graph_lock(process.clone());
+    let init_thread = process.tasks().lock().main().as_thread().unwrap().clone();
+    PidNamespace::insert_thread_across_namespaces_with_pid_ns_graph_lock(init_thread);
 }
 
 /// Creates the init task from the given executable file.
 fn create_init_task(
-    tid: Tid,
+    kernel_tid: KernelTid,
+    pid_chain: PidChain,
     process: &Arc<Process>,
     fs: ThreadFsInfo,
     elf_path: Path,
@@ -124,9 +132,16 @@ fn create_init_task(
 
     let thread_name = ThreadName::new_from_executable_path(&elf_abs_path);
 
-    let thread_builder = PosixThreadBuilder::new(tid, thread_name, Box::new(user_ctx), credentials)
-        .process(Arc::downgrade(process))
-        .fs(Arc::new(fs))
-        .is_init_process();
+    let thread_builder = PosixThreadBuilder::new(
+        kernel_tid,
+        pid_chain,
+        thread_name,
+        Box::new(user_ctx),
+        credentials,
+    )
+    .process(Arc::downgrade(process))
+    .fs(Arc::new(fs))
+    .pid_ns_for_children(PidNsForChildren::SameAsActive)
+    .is_init_process();
     Ok(thread_builder.build())
 }

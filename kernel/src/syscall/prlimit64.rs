@@ -9,7 +9,6 @@ use crate::{
         Pid, Process, ResourceType,
         credentials::capabilities::CapSet,
         posix_thread::AsPosixThread,
-        process_table,
         rlimit::{RawRLimit64, SYSCTL_NR_OPEN},
     },
 };
@@ -44,9 +43,13 @@ pub fn sys_prlimit64(
     let old_raw = if pid == 0 || pid == ctx.process.pid() {
         do_prlimit64(&ctx.process, resource, new_raw, ctx)?
     } else {
-        let target_process = process_table::get_process(pid).ok_or_else(|| {
-            Error::with_message(Errno::ESRCH, "the target process does not exist")
-        })?;
+        let target_process = ctx
+            .process
+            .active_pid_ns()
+            .lookup_process(pid)
+            .ok_or_else(|| {
+                Error::with_message(Errno::ESRCH, "the target process does not exist")
+            })?;
         // Check permissions
         check_rlimit_perm(&target_process, ctx)?;
         do_prlimit64(&target_process, resource, new_raw, ctx)?

@@ -13,7 +13,7 @@ use crate::{
         vfs::range_lock::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockType},
     },
     prelude::*,
-    process::{Pid, process_table},
+    process::Pid,
 };
 
 pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
@@ -148,10 +148,15 @@ fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn>
     let owner_process = if pid == 0 {
         None
     } else {
-        Some(process_table::get_process(pid).ok_or(Error::with_message(
-            Errno::ESRCH,
-            "cannot set_owner with an invalid pid",
-        ))?)
+        Some(
+            ctx.process
+                .active_pid_ns()
+                .lookup_process(pid)
+                .ok_or(Error::with_message(
+                    Errno::ESRCH,
+                    "cannot set_owner with an invalid pid",
+                ))?,
+        )
     };
 
     let file_table = ctx.thread_local.borrow_file_table();

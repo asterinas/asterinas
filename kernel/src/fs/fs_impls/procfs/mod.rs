@@ -21,7 +21,6 @@ use self::{
     version::VersionFileOps,
 };
 use crate::{
-    events::Observer,
     fs::{
         file::mkmod,
         procfs::{filesystems::FileSystemsFileOps, stat::StatFileOps},
@@ -33,10 +32,7 @@ use crate::{
         },
     },
     prelude::*,
-    process::{
-        Pid,
-        process_table::{self, PidEvent},
-    },
+    process::Pid,
 };
 
 mod cmdline;
@@ -144,16 +140,11 @@ struct RootDirOps;
 impl RootDirOps {
     pub fn new_inode(fs: Weak<ProcFs>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/root.c#L368>
-        let root_inode = ProcDirBuilder::new(Self, mkmod!(a+rx))
+        ProcDirBuilder::new(Self, mkmod!(a+rx))
             .fs(fs)
             .ino(PROC_ROOT_INO)
             .build()
-            .unwrap();
-
-        let weak_ptr = Arc::downgrade(&root_inode);
-        process_table::register_observer(weak_ptr);
-
-        root_inode
+            .unwrap()
     }
 
     #[expect(clippy::type_complexity)]
@@ -173,32 +164,16 @@ impl RootDirOps {
     ];
 }
 
-impl Observer<PidEvent> for ProcDir<RootDirOps> {
-    fn on_events(&self, events: &PidEvent) {
-        let PidEvent::Exit(pid) = events;
-
-        let mut cached_children = self.cached_children().write();
-        cached_children.remove_entry_by_name(&pid.to_string());
-    }
-}
-
 impl DirOps for RootDirOps {
-    // Lock order: process table -> cached entries
-    //
-    // Note that inverting the lock order is non-trivial because `Observer::on_events` will be
-    // called with the process table locked.
-
     fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
         if let Ok(pid) = name.parse::<Pid>()
-            && let process_table_mut = process_table::process_table_mut()
-            && let Some(process_ref) = process_table_mut.get(pid)
+            && let Some(process_ref) = current!().active_pid_ns().lookup_process(pid)
         {
             let mut cached_children = dir.cached_children().write();
-            return Ok(cached_children
-                .put_entry_if_not_found(name, || {
-                    PidDirOps::new_inode(process_ref.clone(), dir.this_weak().clone())
-                })
-                .clone());
+            let child = PidDirOps::new_inode(process_ref, dir.this_weak().clone());
+            cached_children.remove_entry_by_name(name);
+            cached_children.put((String::from(name), child.clone()));
+            return Ok(child);
         }
 
         let mut cached_children = dir.cached_children().write();
@@ -218,22 +193,34 @@ impl DirOps for RootDirOps {
         &self,
         dir: &'a ProcDir<Self>,
     ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>> {
-        let process_table_mut = process_table::process_table_mut();
         let mut cached_children = dir.cached_children().write();
+        *cached_children = SlotVec::new();
 
-        for process_ref in process_table_mut.iter() {
+        for process_ref in current!().active_pid_ns().visible_processes() {
             let pid = process_ref.pid().to_string();
             cached_children.put_entry_if_not_found(&pid, || {
                 PidDirOps::new_inode(process_ref.clone(), dir.this_weak().clone())
             });
         }
 
-        drop(process_table_mut);
-
         populate_children_from_table(&mut cached_children, Self::STATIC_ENTRIES, |f| {
             (f)(dir.this_weak().clone())
         });
 
         cached_children.downgrade()
+    }
+
+    fn validate_child(&self, child: &dyn Inode) -> bool {
+        let Some(pid_dir) = child.downcast_ref::<ProcDir<PidDirOps>>() else {
+            return true;
+        };
+
+        let current = current!();
+        let viewer_pid_ns = current.active_pid_ns();
+        let process_ref = pid_dir.inner().process_ref();
+        process_ref
+            .pid_in(viewer_pid_ns)
+            .and_then(|pid| viewer_pid_ns.lookup_process(pid))
+            .is_some_and(|process| Arc::ptr_eq(&process, process_ref))
     }
 }

@@ -37,10 +37,22 @@
  *     but noted here for future reference).
  * `clone_flags` lists the corresponding CLONE_NEW* flag for each entry.
  */
-static const char *ns_files[] = { "uts", "mnt", "user" };
-static const char *ns_names[] = { "uts", "mnt", "user" };
-static const int clone_flags[] = { CLONE_NEWUTS, CLONE_NEWNS, CLONE_NEWUSER };
+static const char *ns_files[] = { "uts", "mnt", "pid", "user" };
+static const char *ns_names[] = { "uts", "mnt", "pid", "user" };
+static const int clone_flags[] = {
+	CLONE_NEWUTS,
+	CLONE_NEWNS,
+	CLONE_NEWPID,
+	CLONE_NEWUSER,
+};
 static const size_t ns_count = sizeof(ns_files) / sizeof(ns_files[0]);
+
+static void read_link_value(const char *path, char *buf, size_t buf_size)
+{
+	ssize_t len = CHECK(readlink(path, buf, buf_size - 1));
+
+	buf[len] = '\0';
+}
 
 /* -------------------------------------------------------------------------- */
 
@@ -111,8 +123,8 @@ FN_TEST(readlink)
 			 st.st_ino);
 
 		memset(link, 0, sizeof(link));
-		TEST_RES(readlink(path, link, sizeof(link) - 1),
-			 strcmp(expected, link) == 0);
+		read_link_value(path, link, sizeof(link));
+		TEST_RES(0, strcmp(expected, link) == 0);
 	}
 }
 END_TEST()
@@ -179,6 +191,7 @@ FN_TEST(ioctl)
 		snprintf(path, sizeof(path), "%s/%s", NS_DIR, ns_files[i]);
 		int nsfd = TEST_SUCC(open(path, O_RDONLY));
 		int is_user_ns = (strcmp(ns_files[i], "user") == 0);
+		int is_pid_ns = (strcmp(ns_files[i], "pid") == 0);
 
 		/*
 		 * NS_GET_USERNS: returns the owning user namespace fd.
@@ -193,13 +206,13 @@ FN_TEST(ioctl)
 
 		/*
 		 * NS_GET_PARENT: returns the parent namespace fd.
-		 * Non-hierarchical namespaces return EINVAL;
-		 * the initial user namespace returns EPERM.
+		 * Non-hierarchical namespaces return EINVAL.
+		 * The initial user and PID namespaces return EPERM.
 		 */
-		if (!is_user_ns) {
-			TEST_ERRNO(ioctl(nsfd, NS_GET_PARENT), EINVAL);
-		} else {
+		if (is_pid_ns || is_user_ns) {
 			TEST_ERRNO(ioctl(nsfd, NS_GET_PARENT), EPERM);
+		} else {
+			TEST_ERRNO(ioctl(nsfd, NS_GET_PARENT), EINVAL);
 		}
 
 		/* NS_GET_NSTYPE: should match the corresponding clone flag. */
@@ -283,15 +296,15 @@ FN_TEST(proc_fd_name)
 		snprintf(path, sizeof(path), "%s/%s", NS_DIR, ns_files[i]);
 
 		memset(link_ns, 0, sizeof(link_ns));
-		TEST_SUCC(readlink(path, link_ns, sizeof(link_ns) - 1));
+		read_link_value(path, link_ns, sizeof(link_ns));
 
 		int nsfd = TEST_SUCC(open(path, O_RDONLY));
 
 		snprintf(path, sizeof(path), "/proc/self/fd/%d", nsfd);
 
 		memset(link_fd, 0, sizeof(link_fd));
-		TEST_RES(readlink(path, link_fd, sizeof(link_fd) - 1),
-			 strcmp(link_ns, link_fd) == 0);
+		read_link_value(path, link_fd, sizeof(link_fd));
+		TEST_RES(0, strcmp(link_ns, link_fd) == 0);
 
 		TEST_SUCC(close(nsfd));
 	}

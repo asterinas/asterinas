@@ -21,7 +21,7 @@ use crate::{
     },
     net::uts_ns::UtsNamespace,
     prelude::*,
-    process::{NsProxy, UserNamespace, posix_thread::AsPosixThread},
+    process::{NsProxy, PidNamespace, PidNsState, UserNamespace, posix_thread::AsPosixThread},
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/ns` (and also `/proc/[pid]/ns`).
@@ -38,6 +38,7 @@ impl NsDirOps {
             mkmod!(u+r, a+x),
         )
         .parent(parent)
+        .volatile()
         .build()
         .unwrap()
     }
@@ -99,6 +100,12 @@ fn cached_ns_path(inode: &dyn Inode) -> Option<&Path> {
     if let Some(sym) = inode.downcast_ref::<NsSymlink<UserNamespace>>() {
         return Some(&sym.inner().ns_path);
     }
+    if let Some(sym) = inode.downcast_ref::<NsSymlink<PidNamespace>>() {
+        return Some(&sym.inner().ns_path);
+    }
+    if let Some(sym) = inode.downcast_ref::<PidForChildrenSymlink>() {
+        return Some(&sym.inner().ns_path);
+    }
     if let Some(sym) = inode.downcast_ref::<NsSymlink<UtsNamespace>>() {
         return Some(&sym.inner().ns_path);
     }
@@ -112,6 +119,34 @@ fn cached_ns_path(inode: &dyn Inode) -> Option<&Path> {
 impl DirOps for NsDirOps {
     fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
         let mut cached_children = dir.cached_children().write();
+
+        if name == "pid" {
+            let current_path = self.dir.process_ref.active_pid_ns().get_path();
+            if let Some(cached) = cached_children.find_entry_by_name(name)
+                && cached_ns_path(&**cached) == Some(&current_path)
+            {
+                return Ok(cached.clone());
+            }
+
+            let inode = NsSymOps::<PidNamespace>::new_inode(current_path, dir.this_weak().clone());
+            cached_children.remove_entry_by_name(name);
+            cached_children.put((name.to_string(), inode.clone()));
+            return Ok(inode);
+        }
+
+        if name == "pid_for_children" {
+            let current_path = pid_for_children_path(&self.dir)?;
+            if let Some(cached) = cached_children.find_entry_by_name(name)
+                && cached_ns_path(&**cached) == Some(&current_path)
+            {
+                return Ok(cached.clone());
+            }
+
+            let inode = PidForChildrenSymOps::new_inode(current_path, dir.this_weak().clone());
+            cached_children.remove_entry_by_name(name);
+            cached_children.put((name.to_string(), inode.clone()));
+            return Ok(inode);
+        }
 
         if name == "user" {
             let current_path = {
@@ -160,6 +195,34 @@ impl DirOps for NsDirOps {
         dir: &'a ProcDir<Self>,
     ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>> {
         let mut cached_children = dir.cached_children().write();
+
+        let pid_ns_path = self.dir.process_ref.active_pid_ns().get_path();
+        let pid_needs_update = cached_children
+            .find_entry_by_name("pid")
+            .is_none_or(|cached| cached_ns_path(&**cached) != Some(&pid_ns_path));
+        if pid_needs_update {
+            cached_children.remove_entry_by_name("pid");
+            let pid_inode =
+                NsSymOps::<PidNamespace>::new_inode(pid_ns_path, dir.this_weak().clone());
+            cached_children.put(("pid".to_string(), pid_inode));
+        }
+
+        match pid_for_children_path(&self.dir) {
+            Ok(current_path) => {
+                let needs_update = cached_children
+                    .find_entry_by_name("pid_for_children")
+                    .is_none_or(|cached| cached_ns_path(&**cached) != Some(&current_path));
+                if needs_update {
+                    cached_children.remove_entry_by_name("pid_for_children");
+                    let inode =
+                        PidForChildrenSymOps::new_inode(current_path, dir.this_weak().clone());
+                    cached_children.put(("pid_for_children".to_string(), inode));
+                }
+            }
+            Err(_) => {
+                cached_children.remove_entry_by_name("pid_for_children");
+            }
+        }
 
         // Refresh `NsProxy`-backed entries only when the namespace has changed
         // or the proxy has been dropped.
@@ -217,6 +280,16 @@ impl DirOps for NsDirOps {
             return cached_path == &user_ns.get_path();
         }
 
+        if child.downcast_ref::<NsSymlink<PidNamespace>>().is_some() {
+            return cached_path == &self.dir.process_ref.active_pid_ns().get_path();
+        }
+
+        if child.downcast_ref::<PidForChildrenSymlink>().is_some() {
+            return pid_for_children_path(&self.dir)
+                .map(|path| cached_path == &path)
+                .unwrap_or(false);
+        }
+
         let thread = self.dir.thread();
         let ns_proxy = thread.as_posix_thread().unwrap().ns_proxy().lock();
         let Some(ns_proxy) = ns_proxy.as_ref() else {
@@ -236,7 +309,36 @@ impl DirOps for NsDirOps {
     }
 }
 
+fn pid_for_children_path(dir: &TidDirOps) -> Result<Path> {
+    if dir.process_ref.status().is_zombie() {
+        return_errno_with_message!(
+            Errno::ENOENT,
+            "the thread has no pid-for-children namespace"
+        );
+    }
+
+    let thread = dir.thread();
+    let posix_thread = thread.as_posix_thread().unwrap();
+    let pid_ns_for_children = posix_thread.pid_ns_for_children().lock().clone();
+
+    match pid_ns_for_children {
+        crate::process::PidNsForChildren::SameAsActive => {
+            Ok(dir.process_ref.active_pid_ns().get_path())
+        }
+        crate::process::PidNsForChildren::Target(pid_ns) => {
+            if pid_ns.state() == PidNsState::PendingInit {
+                return_errno_with_message!(
+                    Errno::ENOENT,
+                    "the pid-for-children namespace has not been materialized"
+                );
+            }
+            Ok(pid_ns.get_path())
+        }
+    }
+}
+
 type NsSymlink<T> = ProcSym<NsSymOps<T>>;
+type PidForChildrenSymlink = ProcSym<PidForChildrenSymOps>;
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/ns/<type>` (and also `/proc/[pid]/ns/<type>`).
 struct NsSymOps<T: NsCommonOps> {
@@ -262,6 +364,26 @@ impl<T: NsCommonOps> NsSymOps<T> {
 }
 
 impl<T: NsCommonOps> SymOps for NsSymOps<T> {
+    fn read_link(&self) -> Result<SymbolicLink> {
+        Ok(SymbolicLink::Path(self.ns_path.clone()))
+    }
+}
+
+struct PidForChildrenSymOps {
+    ns_path: Path,
+}
+
+impl PidForChildrenSymOps {
+    fn new_inode(ns_path: Path, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        ProcSymBuilder::new(Self { ns_path }, mkmod!(a+rwx))
+            .parent(parent)
+            .volatile()
+            .build()
+            .unwrap()
+    }
+}
+
+impl SymOps for PidForChildrenSymOps {
     fn read_link(&self) -> Result<SymbolicLink> {
         Ok(SymbolicLink::Path(self.ns_path.clone()))
     }

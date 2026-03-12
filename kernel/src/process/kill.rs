@@ -2,8 +2,7 @@
 
 use super::{
     Pgid, Pid, Process,
-    posix_thread::{AsPosixThread, thread_table},
-    process_table,
+    posix_thread::AsPosixThread,
     signal::{constants::SIGCONT, sig_num::SigNum, signals::Signal},
 };
 use crate::{
@@ -36,7 +35,10 @@ pub fn kill(pid: Pid, signal: Option<Box<dyn Signal>>, ctx: &Context) -> Result<
     }
 
     // Slow path
-    let process = process_table::get_process(pid)
+    let process = ctx
+        .process
+        .active_pid_ns()
+        .lookup_process(pid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target process does not exist"))?;
 
     kill_process(&process, signal, ctx)
@@ -51,7 +53,10 @@ pub fn kill(pid: Pid, signal: Option<Box<dyn Signal>>, ctx: &Context) -> Result<
 /// If `signal` is `None`, this method will only check permission without sending
 /// any signal.
 pub fn kill_group<S: Signal + Clone>(pgid: Pgid, signal: Option<S>, ctx: &Context) -> Result<()> {
-    let process_group = process_table::get_process_group(&pgid)
+    let process_group = ctx
+        .process
+        .active_pid_ns()
+        .lookup_process_group(pgid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target group does not exist"))?;
 
     let mut result = Ok(());
@@ -59,7 +64,7 @@ pub fn kill_group<S: Signal + Clone>(pgid: Pgid, signal: Option<S>, ctx: &Contex
     let inner = process_group.lock();
     for process in inner.iter() {
         let res = kill_process(
-            process,
+            &process,
             signal.clone().map(|s| Box::new(s) as Box<dyn Signal>),
             ctx,
         );
@@ -77,7 +82,10 @@ pub fn kill_group<S: Signal + Clone>(pgid: Pgid, signal: Option<S>, ctx: &Contex
 /// If `signal` is `None`, this method will only check permission without sending
 /// any signal.
 pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<Box<dyn Signal>>, ctx: &Context) -> Result<()> {
-    let thread = thread_table::get_thread(tid)
+    let thread = ctx
+        .process
+        .active_pid_ns()
+        .lookup_thread(tid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target thread does not exist"))?;
     let target_posix_thread = thread.as_posix_thread().unwrap();
 
@@ -115,13 +123,15 @@ pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<Box<dyn Signal>>, ctx: &Contex
 pub fn kill_all<S: Signal + Clone>(signal: Option<S>, ctx: &Context) -> Result<()> {
     let mut result = Ok(());
 
-    for process in process_table::process_table_mut().iter() {
-        if Arc::ptr_eq(&ctx.process, process) || process.is_init_process() {
+    for process in ctx.process.active_pid_ns().visible_processes() {
+        if Arc::ptr_eq(&ctx.process, &process)
+            || process.pid_in(ctx.process.active_pid_ns()) == Some(1)
+        {
             continue;
         }
 
         let res = kill_process(
-            process,
+            &process,
             signal.clone().map(|s| Box::new(s) as Box<dyn Signal>),
             ctx,
         );

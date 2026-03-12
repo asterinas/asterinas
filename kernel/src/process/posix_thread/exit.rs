@@ -4,14 +4,14 @@ use ostd::{mm::VmIo, task::Task};
 
 use super::{
     AsPosixThread, AsThreadLocal, ThreadLocal, futex::futex_wake, robust_list::wake_robust_futex,
-    thread_table,
 };
 use crate::{
     current_userspace,
     prelude::*,
     process::{
-        TermStatus,
+        PidNamespace, TermStatus,
         exit::exit_process,
+        namespace::pid_ns::pid_ns_graph_lock,
         signal::{constants::SIGKILL, signals::kernel::KernelSignal},
         task_set::TaskSet,
     },
@@ -43,6 +43,9 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
     let posix_thread = current_thread.as_posix_thread().unwrap();
     let thread_local = current_task.as_thread_local().unwrap();
     let posix_process = posix_thread.process();
+    let tid_chain =
+        (posix_thread.tid() != posix_process.pid()).then(|| posix_thread.tid_chain().clone());
+    let _pid_ns_graph_guard = tid_chain.as_ref().map(|_| pid_ns_graph_lock().lock());
 
     let is_last_thread = {
         let mut tasks = posix_process.tasks().lock();
@@ -67,18 +70,16 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
         }
         current_thread.exit();
 
-        tasks.remove_exited(&current_task, posix_thread.tid())
+        let is_last_thread = tasks.remove_exited(&current_task, posix_thread.tid());
+        if let Some(tid_chain) = tid_chain.as_ref() {
+            PidNamespace::remove_thread_across_namespaces_with_pid_ns_graph_lock(tid_chain);
+        }
+        is_last_thread
     };
 
     wake_clear_ctid(thread_local);
 
     wake_robust_list(thread_local, posix_thread.tid());
-
-    // According to Linux behavior, the main thread shouldn't be removed from the table until the
-    // process is reaped by its parent.
-    if posix_thread.tid() != posix_process.pid() {
-        thread_table::remove_thread(posix_thread.tid());
-    }
 
     // Drop fields in `PosixThread`.
     *posix_thread.file_table().lock() = None;

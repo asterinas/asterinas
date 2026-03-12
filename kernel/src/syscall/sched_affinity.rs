@@ -9,7 +9,7 @@ use ostd::{
 };
 
 use super::SyscallReturn;
-use crate::{prelude::*, process::posix_thread::thread_table, thread::Tid};
+use crate::{prelude::*, thread::Tid};
 
 pub fn sys_sched_getaffinity(
     tid: Tid,
@@ -19,7 +19,7 @@ pub fn sys_sched_getaffinity(
 ) -> Result<SyscallReturn> {
     let cpu_set = match tid {
         0 => ctx.thread.atomic_cpu_affinity().load(Ordering::Relaxed),
-        _ => match thread_table::get_thread(tid) {
+        _ => match ctx.process.active_pid_ns().lookup_thread(tid) {
             Some(thread) => thread.atomic_cpu_affinity().load(Ordering::Relaxed),
             None => return Err(Error::with_message(Errno::ESRCH, "thread does not exist")),
         },
@@ -47,7 +47,7 @@ pub fn sys_sched_setaffinity(
             .thread
             .atomic_cpu_affinity()
             .store(&user_cpu_set, Ordering::Relaxed),
-        _ => match thread_table::get_thread(tid) {
+        _ => match ctx.process.active_pid_ns().lookup_thread(tid) {
             Some(thread) => {
                 thread
                     .atomic_cpu_affinity()

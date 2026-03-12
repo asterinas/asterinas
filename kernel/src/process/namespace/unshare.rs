@@ -2,7 +2,10 @@
 
 use ostd::sync::RwArc;
 
-use crate::{prelude::*, process::CloneFlags};
+use crate::{
+    prelude::*,
+    process::{CloneFlags, PidNamespace, PidNsForChildren, credentials::capabilities::CapSet},
+};
 
 /// Provides administrative APIs for disassociating execution contexts.
 pub trait ContextUnshareAdminApi {
@@ -42,11 +45,35 @@ impl ContextUnshareAdminApi for Context<'_> {
     }
 
     fn unshare_namespaces(&self, flags: CloneFlags) -> Result<()> {
+        let mut remaining_flags = flags;
+
         if flags.contains(CloneFlags::CLONE_NEWUSER) {
             return_errno_with_message!(
                 Errno::EINVAL,
                 "cloning a new user namespace is not supported"
             );
+        }
+
+        if flags.contains(CloneFlags::CLONE_NEWPID) {
+            let user_ns = self.thread_local.borrow_user_ns();
+            user_ns.check_cap(CapSet::SYS_ADMIN, self.posix_thread)?;
+
+            let mut pid_ns_for_children = self.posix_thread.pid_ns_for_children().lock();
+            if !matches!(&*pid_ns_for_children, PidNsForChildren::SameAsActive) {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "the pid-for-children namespace is already pending"
+                );
+            }
+
+            let new_pid_ns =
+                PidNamespace::new_child(self.process.active_pid_ns().clone(), user_ns.clone())?;
+            *pid_ns_for_children = PidNsForChildren::Target(new_pid_ns);
+            remaining_flags.remove(CloneFlags::CLONE_NEWPID);
+        }
+
+        if remaining_flags.is_empty() {
+            return Ok(());
         }
 
         let user_ns_ref = self.thread_local.borrow_user_ns();
@@ -57,9 +84,9 @@ impl ContextUnshareAdminApi for Context<'_> {
         let thread_local_ns_proxy = thread_local_ns_proxy_ref.unwrap();
 
         let new_ns_proxy =
-            thread_local_ns_proxy.new_clone(&user_ns_ref, flags, self.posix_thread)?;
+            thread_local_ns_proxy.new_clone(&user_ns_ref, remaining_flags, self.posix_thread)?;
 
-        if flags.contains(CloneFlags::CLONE_NEWNS) {
+        if remaining_flags.contains(CloneFlags::CLONE_NEWNS) {
             self.thread_local
                 .borrow_fs()
                 .resolver()

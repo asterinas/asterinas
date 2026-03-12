@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{
-    fs::vfs::path::FsPath, prelude::*, process::posix_thread::thread_table::with_global_threads,
-    syscall::constants::MAX_FILENAME_LEN,
-};
+use crate::{fs::vfs::path::FsPath, prelude::*, syscall::constants::MAX_FILENAME_LEN};
 
 pub fn sys_pivot_root(
     new_root_ptr: Vaddr,
@@ -28,14 +25,14 @@ pub fn sys_pivot_root(
     let put_old_name = put_old_name.to_string_lossy();
     let put_old_path = FsPath::try_from(put_old_name.as_ref())?;
 
-    // TODO: Locking the global thread table here is a workaround. We need to use a more
-    // suitable lock (i.e. the global mount lock or the namespace lock) to avoid deadlock.
-    with_global_threads(move |table| {
-        let fs_ref = ctx.thread_local.borrow_fs();
-        let mut fs_resolver = fs_ref.resolver().write();
-
-        fs_resolver.pivot_root(new_root_path, put_old_path, table, ctx)
-    })?;
+    let fs_ref = ctx.thread_local.borrow_fs();
+    let mut path_resolver = fs_ref.resolver().write();
+    path_resolver.pivot_root(
+        new_root_path,
+        put_old_path,
+        ctx.process.active_pid_ns(),
+        ctx,
+    )?;
 
     Ok(SyscallReturn::Return(0))
 }

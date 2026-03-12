@@ -11,7 +11,6 @@ pub mod posix_thread;
 #[expect(clippy::module_inception)]
 mod process;
 mod process_filter;
-pub mod process_table;
 mod process_vm;
 mod program_loader;
 pub mod rlimit;
@@ -29,6 +28,10 @@ pub use execve::do_execve;
 pub use kill::{kill, kill_all, kill_group, tgkill};
 pub use namespace::{
     nsproxy::{ContextSetNsAdminApi, NsProxy, NsProxyBuilder, check_unsupported_ns_flags},
+    pid_ns::{
+        KernelPid, KernelTid, PidChain, PidNamespace, PidNsForChildren, PidNsState,
+        kernel_id_allocator,
+    },
     unshare::ContextUnshareAdminApi,
     user_ns::UserNamespace,
 };

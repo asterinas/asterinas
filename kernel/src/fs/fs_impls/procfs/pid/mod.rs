@@ -41,6 +41,10 @@ impl PidDirOps {
             .unwrap()
     }
 
+    pub fn process_ref(&self) -> &Arc<Process> {
+        &self.0.process_ref
+    }
+
     #[expect(clippy::type_complexity)]
     const STATIC_ENTRIES: &'static [(
         &'static str,

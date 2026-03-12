@@ -345,7 +345,6 @@ pub enum NsType {
     Uts,
     User,
     Mnt,
-    #[expect(unused)]
     Pid,
     #[expect(unused)]
     Time,
