@@ -29,6 +29,7 @@ mod node;
 
 pub(in crate::mm) use cursor::PageTableFrag;
 pub(crate) use cursor::{Cursor, CursorMut};
+pub(in crate::mm) use node::PteStateRef;
 use node::*; // FIXME: Remove glob imports.
 
 #[cfg(ktest)]
@@ -202,7 +203,7 @@ pub(crate) fn largest_pages<C: PageTableConfig>(
     mut va: Vaddr,
     mut pa: Paddr,
     mut len: usize,
-) -> impl Iterator<Item = (Paddr, PagingLevel)> {
+) -> impl Iterator<Item = (Vaddr, Paddr, PagingLevel)> {
     assert_eq!(va % C::BASE_PAGE_SIZE, 0);
     assert_eq!(pa % C::BASE_PAGE_SIZE, 0);
     assert_eq!(len % C::BASE_PAGE_SIZE, 0);
@@ -221,12 +222,13 @@ pub(crate) fn largest_pages<C: PageTableConfig>(
             level -= 1;
         }
 
+        let va_start = va;
         let item_start = pa;
         va += page_size::<C>(level);
         pa += page_size::<C>(level);
         len -= page_size::<C>(level);
 
-        Some((item_start, level))
+        Some((va_start, item_start, level))
     })
 }
 
