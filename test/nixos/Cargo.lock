@@ -246,7 +246,56 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-ai-machine-learning"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
+name = "test-databases-middleware"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
+name = "test-development-tools"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
+name = "test-file-management-terminal"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
 name = "test-hello"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
+name = "test-monitoring-observability"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
+name = "test-multimedia"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
+name = "test-networking"
 version = "0.1.0"
 dependencies = [
  "nixos-test-framework",
@@ -260,7 +309,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-office-productivity"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
 name = "test-podman"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
+name = "test-system-core"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
+name = "test-web-servers-proxies"
 version = "0.1.0"
 dependencies = [
  "nixos-test-framework",

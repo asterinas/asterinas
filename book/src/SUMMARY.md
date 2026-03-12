@@ -6,9 +6,21 @@
 
 * [Getting Started](distro/README.md)
 * [Popular Applications](distro/popular-applications/README.md)
-    * [Package Management](distro/popular-applications/package-management.md)
-    * [Desktop Environment](distro/popular-applications/desktop-environment.md)
-    * [Containerization](distro/popular-applications/containerization.md)
+    * [System Core](distro/popular-applications/system-core.md)
+    * [Package Management & Containerization](distro/popular-applications/package-management-containerization.md)
+    * [Networking](distro/popular-applications/networking.md)
+    * [Web Servers & Proxies](distro/popular-applications/web-servers-proxies.md)
+    * [Databases & Middleware](distro/popular-applications/databases-middleware.md)
+    * [Development Tools](distro/popular-applications/development-tools.md)
+    * [CI/CD & DevOps](distro/popular-applications/cicd-devops.md)
+    * [Monitoring & Observability](distro/popular-applications/monitoring-observability.md)
+    * [Desktop Environments & Display](distro/popular-applications/desktop-environments-display.md)
+    * [Web Browsers](distro/popular-applications/web-browsers.md)
+    * [Office & Productivity](distro/popular-applications/office-productivity.md)
+    * [Multimedia](distro/popular-applications/multimedia.md)
+    * [Communication](distro/popular-applications/communication.md)
+    * [File Management & Terminal Productivity](distro/popular-applications/file-management-terminal.md)
+    * [AI & Machine Learning](distro/popular-applications/ai-machine-learning.md)
 
 # Asterinas Kernel
 
