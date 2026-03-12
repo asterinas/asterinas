@@ -2,7 +2,7 @@
 
 use core::sync::atomic::Ordering;
 
-use super::{Pid, PidNamespace, Process};
+use super::{Pid, PidNamespace, Process, namespace::pid_ns::pid_ns_graph_lock};
 use crate::{
     events::IoEvents,
     fs::cgroupfs::CgroupMembership,
@@ -158,12 +158,23 @@ fn move_children_to_reaper_process(current_process: &Process) {
     }
 
     if current_process.is_pid_namespace_init() {
+        let _pid_ns_graph_guard = pid_ns_graph_lock().lock();
         current_process
             .active_pid_ns()
             .set_state(crate::process::PidNsState::Dying);
+        drop(_pid_ns_graph_guard);
         kill_visible_processes_in_pid_namespace(current_process);
     }
 
+    {
+        let mut current_children = current_process.children().lock();
+        if current_children.as_ref().is_some_and(BTreeMap::is_empty) {
+            *current_children = None;
+            return;
+        }
+    }
+
+    let _pid_ns_graph_guard = pid_ns_graph_lock().lock();
     while let Some(reaper_process) = find_reaper_process(current_process) {
         if move_process_children(current_process, &reaper_process).is_ok() {
             reaper_process.children_wait_queue().wake_all();

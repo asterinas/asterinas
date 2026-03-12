@@ -2,13 +2,14 @@
 
 use super::{
     ExitCode, Pid, Process,
+    posix_thread::AsPosixThread,
     process_filter::ProcessFilter,
     signal::{constants::SIGCHLD, with_sigmask_changed},
 };
 use crate::{
     prelude::*,
     process::{
-        KernelPid, PidNamespace, ReapedChildrenStats, Uid, posix_thread::AsPosixThread,
+        KernelPid, PidNamespace, ReapedChildrenStats, Uid, namespace::pid_ns::pid_ns_graph_lock,
         signal::sig_num::SigNum, status::StopWaitStatus,
     },
     time::clocks::ProfClock,
@@ -74,6 +75,7 @@ pub fn do_wait(
         |sigmask| sigmask + SIGCHLD,
         || {
             ctx.process.children_wait_queue().pause_until(|| {
+                let _pid_ns_graph_guard = pid_ns_graph_lock().lock();
                 // Acquire the children lock at first to prevent race conditions.
                 // We want to ensure that multiple waiting threads
                 // do not return the same waited process status.
@@ -105,11 +107,9 @@ pub fn do_wait(
 
                 if let Some(status) = wait_zombie(&unwaited_children) {
                     if !wait_options.contains(WaitOptions::WNOWAIT) {
-                        reap_zombie_child(
-                            status.kernel_pid(),
-                            children_mut,
-                            ctx.process.reaped_children_stats(),
-                        );
+                        let child_process = children_mut.remove(&status.kernel_pid()).unwrap();
+                        drop(children_lock);
+                        reap_zombie_child(child_process, ctx.process.reaped_children_stats());
                     }
                     return Some(Ok(Some(status)));
                 }
@@ -206,24 +206,28 @@ fn wait_stopped_or_continued(
     None
 }
 
-/// Free zombie child with `child_pid`, returns the exit code of child process.
+/// Frees a zombie child and returns the exit code of the child process.
 fn reap_zombie_child(
-    child_pid: KernelPid,
-    children_lock: &mut BTreeMap<KernelPid, Arc<Process>>,
+    child_process: Arc<Process>,
     reaped_children_stats: &Mutex<ReapedChildrenStats>,
 ) -> ExitCode {
-    let child_process = children_lock.remove(&child_pid).unwrap();
     assert!(child_process.status().is_zombie());
 
-    for task in child_process.tasks().lock().as_slice() {
-        let tid_chain = task.as_posix_thread().unwrap().tid_chain().clone();
-        PidNamespace::remove_thread_across_namespaces(&tid_chain);
-    }
+    let tid_chains = child_process
+        .tasks()
+        .lock()
+        .as_slice()
+        .iter()
+        .map(|task| task.as_posix_thread().unwrap().tid_chain().clone())
+        .collect::<Vec<_>>();
 
-    PidNamespace::remove_process_across_namespaces(child_process.as_ref());
+    for tid_chain in &tid_chains {
+        PidNamespace::remove_thread_across_namespaces_with_pid_ns_graph_lock(tid_chain);
+    }
+    PidNamespace::remove_process_across_namespaces_with_pid_ns_graph_lock(child_process.as_ref());
 
     let mut child_group_mut = child_process.process_group.lock();
-    child_process.clear_old_group_and_session(&mut child_group_mut);
+    child_process.clear_old_group_and_session_with_pid_ns_graph_lock(&mut child_group_mut);
 
     let (mut user_time, mut kernel_time) = child_process.reaped_children_stats().lock().get();
     user_time += child_process.prof_clock().user_clock().read_time();

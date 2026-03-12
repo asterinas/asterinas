@@ -215,10 +215,12 @@ impl DirOps for RootDirOps {
             return true;
         };
 
-        pid_dir
-            .inner()
-            .process_ref()
-            .pid_in(current!().active_pid_ns())
-            .is_some()
+        let current = current!();
+        let viewer_pid_ns = current.active_pid_ns();
+        let process_ref = pid_dir.inner().process_ref();
+        process_ref
+            .pid_in(viewer_pid_ns)
+            .and_then(|pid| viewer_pid_ns.lookup_process(pid))
+            .is_some_and(|process| Arc::ptr_eq(&process, process_ref))
     }
 }

@@ -57,7 +57,6 @@ pub fn kernel_id_allocator() -> &'static KernelIdAllocator {
     &ALLOCATOR
 }
 
-#[expect(dead_code)]
 pub fn pid_ns_graph_lock() -> &'static Mutex<()> {
     static LOCK: Mutex<()> = Mutex::new(());
     &LOCK
@@ -438,19 +437,25 @@ impl PidNamespace {
         self.visible_processes().len()
     }
 
-    pub fn insert_process_across_namespaces(process: Arc<Process>) {
+    pub(in crate::process) fn insert_process_across_namespaces_with_pid_ns_graph_lock(
+        process: Arc<Process>,
+    ) {
         for link in process.pid_chain().links() {
             link.ns().insert_process_chain(&process);
         }
     }
 
-    pub fn remove_process_across_namespaces(process: &Process) {
+    pub(in crate::process) fn remove_process_across_namespaces_with_pid_ns_graph_lock(
+        process: &Process,
+    ) {
         for link in process.pid_chain().links() {
             link.ns().remove_process_chain(process);
         }
     }
 
-    pub fn insert_thread_across_namespaces(thread: Arc<Thread>) {
+    pub(in crate::process) fn insert_thread_across_namespaces_with_pid_ns_graph_lock(
+        thread: Arc<Thread>,
+    ) {
         let posix_thread = thread.as_posix_thread().unwrap();
         let tid_chain = posix_thread.tid_chain().clone();
         for link in tid_chain.links() {
@@ -458,34 +463,44 @@ impl PidNamespace {
         }
     }
 
-    pub fn remove_thread_across_namespaces(tid_chain: &PidChain) {
+    pub(in crate::process) fn remove_thread_across_namespaces_with_pid_ns_graph_lock(
+        tid_chain: &PidChain,
+    ) {
         for link in tid_chain.links() {
             link.ns().remove_thread_chain(tid_chain);
         }
     }
 
-    pub fn insert_process_group_across_namespaces(process_group: Arc<ProcessGroup>) {
+    pub(in crate::process) fn insert_process_group_across_namespaces_with_pid_ns_graph_lock(
+        process_group: Arc<ProcessGroup>,
+    ) {
         for link in process_group.pgid_chain().links() {
             link.ns()
                 .insert_process_group_chain(&process_group, process_group.pgid_chain());
         }
     }
 
-    pub fn remove_process_group_across_namespaces(process_group: &ProcessGroup) {
+    pub(in crate::process) fn remove_process_group_across_namespaces_with_pid_ns_graph_lock(
+        process_group: &ProcessGroup,
+    ) {
         for link in process_group.pgid_chain().links() {
             link.ns()
                 .remove_process_group_chain(process_group.pgid_chain());
         }
     }
 
-    pub fn insert_session_across_namespaces(session: Arc<Session>) {
+    pub(in crate::process) fn insert_session_across_namespaces_with_pid_ns_graph_lock(
+        session: Arc<Session>,
+    ) {
         for link in session.sid_chain().links() {
             link.ns()
                 .insert_session_chain(&session, session.sid_chain());
         }
     }
 
-    pub fn remove_session_across_namespaces(session: &Session) {
+    pub(in crate::process) fn remove_session_across_namespaces_with_pid_ns_graph_lock(
+        session: &Session,
+    ) {
         for link in session.sid_chain().links() {
             link.ns().remove_session_chain(session.sid_chain());
         }
@@ -575,6 +590,8 @@ impl PidNamespace {
             return;
         }
 
+        let old_tid_chain = ctx.posix_thread.tid_chain().clone();
+        let _pid_ns_graph_guard = pid_ns_graph_lock().lock();
         let mut tasks = ctx.process.tasks().lock();
 
         assert!(tasks.has_exited_main());
@@ -584,13 +601,12 @@ impl PidNamespace {
 
         tasks.swap_main(pid, old_tid);
 
-        let old_tid_chain = ctx.posix_thread.tid_chain().clone();
         let new_tid_chain = ctx.process.pid_chain().clone();
         let thread = ctx.task.as_thread().unwrap().clone();
 
-        Self::remove_thread_across_namespaces(&old_tid_chain);
         ctx.posix_thread.set_main(new_tid_chain);
-        Self::insert_thread_across_namespaces(thread);
+        Self::remove_thread_across_namespaces_with_pid_ns_graph_lock(&old_tid_chain);
+        Self::insert_thread_across_namespaces_with_pid_ns_graph_lock(thread);
     }
 }
 

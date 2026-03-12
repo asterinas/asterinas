@@ -13,12 +13,14 @@ use crate::{
     prelude::*,
     process::{
         Credentials, KernelTid, PidChain, PidNamespace, PidNsForChildren, ProcessVm, UserNamespace,
+        namespace::pid_ns::pid_ns_graph_lock,
         posix_thread::{PosixThreadBuilder, ThreadName, allocate_posix_tid},
         program_loader::ProgramToLoad,
         rlimit::new_resource_limits_for_init,
         signal::sig_disposition::SigDispositions,
     },
     sched::Nice,
+    thread::AsThread,
     vm::vmar::Vmar,
 };
 
@@ -90,10 +92,14 @@ fn create_init_process(
 }
 
 fn set_session_and_group(process: &Arc<Process>) {
-    // Create a new process group and session for the process
-    process.set_new_session(&mut process.process_group.lock());
+    let _pid_ns_graph_guard = pid_ns_graph_lock().lock();
 
-    PidNamespace::insert_process_across_namespaces(process.clone());
+    // Create a new process group and session for the process.
+    process.set_new_session_with_pid_ns_graph_lock(&mut process.process_group.lock());
+
+    PidNamespace::insert_process_across_namespaces_with_pid_ns_graph_lock(process.clone());
+    let init_thread = process.tasks().lock().main().as_thread().unwrap().clone();
+    PidNamespace::insert_thread_across_namespaces_with_pid_ns_graph_lock(init_thread);
 }
 
 /// Creates the init task from the given executable file.

@@ -236,12 +236,14 @@ impl DirOps for TaskDirOps {
             return true;
         };
 
-        tid_dir
-            .inner()
-            .thread()
+        let current = current!();
+        let viewer_pid_ns = current.active_pid_ns();
+        let thread_ref = tid_dir.inner().thread();
+        thread_ref
             .as_posix_thread()
             .unwrap()
-            .tid_in(current!().active_pid_ns())
-            .is_some()
+            .tid_in(viewer_pid_ns)
+            .and_then(|tid| viewer_pid_ns.lookup_thread(tid))
+            .is_some_and(|thread| Arc::ptr_eq(&thread, &thread_ref))
     }
 }

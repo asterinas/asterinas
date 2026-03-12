@@ -14,8 +14,7 @@ use crate::{
     fs::{file::file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
     process::{
-        Credentials, KernelTid, NsProxy, PidChain, PidNamespace, PidNsForChildren, Process,
-        UserNamespace,
+        Credentials, KernelTid, NsProxy, PidChain, PidNsForChildren, Process, UserNamespace,
         posix_thread::name::ThreadName,
         signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
     },
@@ -225,7 +224,6 @@ impl PosixThreadBuilder {
                 ns_proxy,
             );
 
-            PidNamespace::insert_thread_across_namespaces(thread.clone());
             task::create_new_user_task(user_ctx, thread, thread_local, is_init_process)
         })
     }

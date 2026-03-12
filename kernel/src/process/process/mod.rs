@@ -8,6 +8,7 @@ use core::{
 use self::timer_manager::PosixTimerManager;
 use super::{
     KernelPid, PidChain, PidNamespace,
+    namespace::pid_ns::pid_ns_graph_lock,
     posix_thread::AsPosixThread,
     process_vm::ProcessVmarGuard,
     rlimit::ResourceLimits,
@@ -429,14 +430,15 @@ impl Process {
             );
         }
 
+        let _pid_ns_graph_guard = pid_ns_graph_lock().lock();
         let mut process_group_mut = self.process_group.lock();
 
-        self.clear_old_group_and_session(&mut process_group_mut);
+        self.clear_old_group_and_session_with_pid_ns_graph_lock(&mut process_group_mut);
 
-        Ok(self.set_new_session(&mut process_group_mut))
+        Ok(self.set_new_session_with_pid_ns_graph_lock(&mut process_group_mut))
     }
 
-    pub(super) fn clear_old_group_and_session(
+    pub(super) fn clear_old_group_and_session_with_pid_ns_graph_lock(
         &self,
         process_group_mut: &mut MutexGuard<Option<Arc<ProcessGroup>>>,
     ) {
@@ -448,19 +450,23 @@ impl Process {
         // Remove the process from the process group.
         process_group_inner.remove_process(&self.kernel_pid);
         if process_group_inner.is_empty() {
-            PidNamespace::remove_process_group_across_namespaces(process_group.as_ref());
+            PidNamespace::remove_process_group_across_namespaces_with_pid_ns_graph_lock(
+                process_group.as_ref(),
+            );
 
             // Remove the process group from the session.
             session_inner.remove_process_group(&process_group.kernel_pgid());
             if session_inner.is_empty() {
-                PidNamespace::remove_session_across_namespaces(session.as_ref());
+                PidNamespace::remove_session_across_namespaces_with_pid_ns_graph_lock(
+                    session.as_ref(),
+                );
             }
         }
 
         **process_group_mut = None;
     }
 
-    fn set_new_session(
+    pub(super) fn set_new_session_with_pid_ns_graph_lock(
         self: &Arc<Self>,
         process_group_mut: &mut MutexGuard<Option<Arc<ProcessGroup>>>,
     ) -> Sid {
@@ -469,8 +475,8 @@ impl Process {
 
         **process_group_mut = Some(process_group.clone());
 
-        PidNamespace::insert_session_across_namespaces(session);
-        PidNamespace::insert_process_group_across_namespaces(process_group);
+        PidNamespace::insert_session_across_namespaces_with_pid_ns_graph_lock(session);
+        PidNamespace::insert_process_group_across_namespaces_with_pid_ns_graph_lock(process_group);
 
         sid
     }
@@ -552,6 +558,7 @@ impl Process {
         current_session: Option<Arc<Session>>,
         new_process_group: Arc<ProcessGroup>,
     ) -> Result<()> {
+        let _pid_ns_graph_guard = pid_ns_graph_lock().lock();
         let mut process_group_mut = self.process_group.lock();
         let process_group = process_group_mut.as_ref().cloned().unwrap();
 
@@ -592,7 +599,9 @@ impl Process {
         // Remove the process from the old process group
         process_group_inner.remove_process(&self.kernel_pid);
         if process_group_inner.is_empty() {
-            PidNamespace::remove_process_group_across_namespaces(process_group.as_ref());
+            PidNamespace::remove_process_group_across_namespaces_with_pid_ns_graph_lock(
+                process_group.as_ref(),
+            );
             session_inner.remove_process_group(&process_group.kernel_pgid());
         }
 
@@ -605,6 +614,7 @@ impl Process {
 
     /// Creates a new process group and moves the process to the group.
     fn to_new_group(self: &Arc<Self>, current_session: Option<Arc<Session>>) -> Result<()> {
+        let _pid_ns_graph_guard = pid_ns_graph_lock().lock();
         let mut process_group_mut = self.process_group.lock();
 
         let process_group = process_group_mut.as_ref().cloned().unwrap();
@@ -624,14 +634,18 @@ impl Process {
         // Remove the process from the old process group
         process_group_inner.remove_process(&self.kernel_pid);
         if process_group_inner.is_empty() {
-            PidNamespace::remove_process_group_across_namespaces(process_group.as_ref());
+            PidNamespace::remove_process_group_across_namespaces_with_pid_ns_graph_lock(
+                process_group.as_ref(),
+            );
             session_inner.remove_process_group(&process_group.kernel_pgid());
         }
 
         // Create a new process group and insert the process to it
         let new_process_group = ProcessGroup::new(self.clone(), session.clone());
         *process_group_mut = Some(new_process_group.clone());
-        PidNamespace::insert_process_group_across_namespaces(new_process_group.clone());
+        PidNamespace::insert_process_group_across_namespaces_with_pid_ns_graph_lock(
+            new_process_group.clone(),
+        );
         session_inner.insert_process_group(new_process_group);
 
         Ok(())
