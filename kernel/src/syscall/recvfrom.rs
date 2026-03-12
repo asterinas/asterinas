@@ -2,14 +2,14 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::{FileDesc, get_file_fast},
+    fs::file::file_table::{RawFileDesc, get_file_fast},
     net::socket::util::SendRecvFlags,
     prelude::*,
     util::net::write_socket_addr_to_user,
 };
 
 pub fn sys_recvfrom(
-    sockfd: FileDesc,
+    sockfd: RawFileDesc,
     buf: Vaddr,
     len: usize,
     flags: i32,
@@ -23,7 +23,13 @@ pub fn sys_recvfrom(
     );
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, sockfd);
+    let file = get_file_fast!(
+        &mut file_table,
+        sockfd
+            .cast_unsigned()
+            .try_into()
+            .map_err(|_| Errno::EBADF)?
+    );
     let socket = file.as_socket_or_err()?;
 
     let user_space = ctx.user_space();

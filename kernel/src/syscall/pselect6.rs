@@ -6,14 +6,14 @@ use ostd::mm::VmIo;
 
 use super::{SyscallReturn, select::do_sys_select};
 use crate::{
-    fs::file::file_table::FileDesc,
+    fs::file::file_table::RawFileDesc,
     prelude::*,
     process::signal::{sig_mask::SigMask, with_sigmask_changed},
     time::timespec_t,
 };
 
 pub fn sys_pselect6(
-    nfds: FileDesc,
+    nfds: RawFileDesc,
     readfds_addr: Vaddr,
     writefds_addr: Vaddr,
     exceptfds_addr: Vaddr,

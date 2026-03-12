@@ -4,14 +4,14 @@ use super::SyscallReturn;
 use crate::{
     fs::file::{
         FileLike, StatusFlags,
-        file_table::{FdFlags, FileDesc, WithFileTable, get_file_fast},
+        file_table::{FdFlags, RawFileDesc, WithFileTable, get_file_fast},
     },
     prelude::*,
     process::posix_thread::FileTableRefMut,
     util::ioctl::{RawIoctl, dispatch_ioctl},
 };
 
-pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_ioctl(fd: RawFileDesc, cmd: u32, arg: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     let raw_ioctl = RawIoctl::new(cmd, arg);
     debug!("fd = {}, raw_ioctl = {:#x?}", fd, raw_ioctl,);
 
@@ -23,7 +23,10 @@ pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr, ctx: &Context) -> Result<Sy
         return Ok(SyscallReturn::Return(0));
     }
 
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(
+        &mut file_table,
+        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
+    );
 
     // Then, handle the ioctl command the affects the file description.
     let res = if let Some(res) = handle_file_ioctl(&**file, raw_ioctl) {
@@ -54,7 +57,7 @@ mod ioctl_defs {
 
 fn handle_fd_ioctl(
     file_table: &mut FileTableRefMut,
-    fd: FileDesc,
+    fd: RawFileDesc,
     raw_ioctl: RawIoctl,
 ) -> Option<Result<()>> {
     use ioctl_defs::*;
@@ -65,7 +68,8 @@ fn handle_fd_ioctl(
             // Follow the implementation of `fcntl()`.
 
             Some(file_table.read_with(|inner| {
-                let entry = inner.get_entry(fd)?;
+                let entry =
+                    inner.get_entry(fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?)?;
                 // FIXME: This is racy.
                 entry.set_flags(entry.flags() - FdFlags::CLOEXEC);
                 Ok(())
@@ -76,7 +80,8 @@ fn handle_fd_ioctl(
             // Follow the implementation of `fcntl()`.
 
             Some(file_table.read_with(|inner| {
-                let entry = inner.get_entry(fd)?;
+                let entry =
+                    inner.get_entry(fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?)?;
                 // FIXME: This is racy.
                 entry.set_flags(entry.flags() | FdFlags::CLOEXEC);
                 Ok(())

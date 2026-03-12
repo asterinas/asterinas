@@ -2,13 +2,13 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::{FileDesc, get_file_fast},
+    fs::file::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
     util::net::{CSocketOptionLevel, new_raw_socket_option},
 };
 
 pub fn sys_setsockopt(
-    sockfd: FileDesc,
+    sockfd: RawFileDesc,
     level: i32,
     optname: i32,
     optval: Vaddr,
@@ -26,7 +26,13 @@ pub fn sys_setsockopt(
     );
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, sockfd);
+    let file = get_file_fast!(
+        &mut file_table,
+        sockfd
+            .cast_unsigned()
+            .try_into()
+            .map_err(|_| Errno::EBADF)?
+    );
     let socket = file.as_socket_or_err()?;
 
     let raw_option = {

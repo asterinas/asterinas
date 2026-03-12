@@ -3,12 +3,12 @@
 use super::SyscallReturn;
 use crate::{
     fs,
-    fs::file::file_table::{FileDesc, get_file_fast},
+    fs::file::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
 };
 
 pub fn sys_write(
-    fd: FileDesc,
+    fd: RawFileDesc,
     user_buf_ptr: Vaddr,
     user_buf_len: usize,
     ctx: &Context,
@@ -19,7 +19,10 @@ pub fn sys_write(
     );
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(
+        &mut file_table,
+        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
+    );
 
     // According to <https://man7.org/linux/man-pages/man2/write.2.html>, if
     // the user specified an empty buffer, we should detect errors by checking

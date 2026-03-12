@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs,
     fs::{
-        file::file_table::{FileDesc, get_file_fast},
+        file::file_table::{RawFileDesc, get_file_fast},
         vfs::inode::FallocMode,
     },
     prelude::*,
@@ -12,7 +12,7 @@ use crate::{
 };
 
 pub fn sys_fallocate(
-    fd: FileDesc,
+    fd: RawFileDesc,
     mode: u64,
     offset: i64,
     len: i64,
@@ -26,7 +26,10 @@ pub fn sys_fallocate(
     check_offset_and_len(offset, len, ctx)?;
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(
+        &mut file_table,
+        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
+    );
 
     let falloc_mode = FallocMode::try_from(
         RawFallocMode::from_bits(mode as _)

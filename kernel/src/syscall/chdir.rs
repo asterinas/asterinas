@@ -5,7 +5,7 @@ use crate::{
     fs::{
         file::{
             InodeType,
-            file_table::{FileDesc, get_file_fast},
+            file_table::{RawFileDesc, get_file_fast},
         },
         vfs::path::FsPath,
     },
@@ -34,12 +34,15 @@ pub fn sys_chdir(path_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_fchdir(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_fchdir(fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}", fd);
 
     let path = {
         let mut file_table = ctx.thread_local.borrow_file_table_mut();
-        let file = get_file_fast!(&mut file_table, fd);
+        let file = get_file_fast!(
+            &mut file_table,
+            fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
+        );
         file.as_inode_handle_or_err()?.path().clone()
     };
     if path.type_() != InodeType::Dir {

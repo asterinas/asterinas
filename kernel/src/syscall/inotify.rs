@@ -5,7 +5,7 @@ use crate::{
     fs::{
         file::{
             InodeType, Permission,
-            file_table::{FdFlags, FileDesc, get_file_fast},
+            file_table::{FdFlags, RawFileDesc, get_file_fast},
         },
         vfs::{
             notify::inotify::{InotifyControls, InotifyEvents, InotifyFile},
@@ -37,11 +37,11 @@ fn do_inotify_init(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     let file = InotifyFile::new(is_nonblocking)?;
     let file_table = ctx.thread_local.borrow_file_table();
     let fd = file_table.unwrap().write().insert(file, fd_flags);
-    Ok(SyscallReturn::Return(fd as _))
+    Ok(SyscallReturn::Return(fd.get() as _))
 }
 
 pub fn sys_inotify_add_watch(
-    fd: FileDesc,
+    fd: RawFileDesc,
     path: Vaddr,
     flags: u32,
     ctx: &Context,
@@ -60,7 +60,10 @@ pub fn sys_inotify_add_watch(
 
     let path = ctx.user_space().read_cstring(path, MAX_FILENAME_LEN)?;
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(
+        &mut file_table,
+        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
+    );
 
     // Verify that the file is an inotify file.
     let inotify_file = match file.downcast_ref::<InotifyFile>() {
@@ -99,11 +102,14 @@ pub fn sys_inotify_add_watch(
     Ok(SyscallReturn::Return(wd as _))
 }
 
-pub fn sys_inotify_rm_watch(fd: FileDesc, wd: u32, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_inotify_rm_watch(fd: RawFileDesc, wd: u32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("inotify_rm_watch fd = {}, wd = {}", fd, wd);
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(
+        &mut file_table,
+        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
+    );
     let inotify_file = match file.downcast_ref::<InotifyFile>() {
         Some(inotify_file) => inotify_file,
         None => return_errno_with_message!(Errno::EINVAL, "file is not an inotify file"),

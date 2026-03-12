@@ -3,13 +3,13 @@
 use super::SyscallReturn;
 use crate::{
     fs,
-    fs::file::file_table::{FileDesc, get_file_fast},
+    fs::file::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
     util::VmWriterArray,
 };
 
 pub fn sys_readv(
-    fd: FileDesc,
+    fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     ctx: &Context,
@@ -19,7 +19,7 @@ pub fn sys_readv(
 }
 
 pub fn sys_preadv(
-    fd: FileDesc,
+    fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     offset_low: u64,
@@ -35,7 +35,7 @@ pub fn sys_preadv(
 }
 
 pub fn sys_preadv2(
-    fd: FileDesc,
+    fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     offset_low: u64,
@@ -60,7 +60,7 @@ pub fn sys_preadv2(
 }
 
 fn do_sys_preadv(
-    fd: FileDesc,
+    fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     offset: i64,
@@ -77,7 +77,10 @@ fn do_sys_preadv(
     }
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(
+        &mut file_table,
+        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
+    );
 
     if io_vec_count == 0 {
         return Ok(0);
@@ -119,7 +122,7 @@ fn do_sys_preadv(
 }
 
 fn do_sys_readv(
-    fd: FileDesc,
+    fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     ctx: &Context,
@@ -130,7 +133,10 @@ fn do_sys_readv(
     );
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(
+        &mut file_table,
+        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
+    );
 
     if io_vec_count == 0 {
         return Ok(0);

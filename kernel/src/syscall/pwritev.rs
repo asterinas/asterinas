@@ -3,13 +3,13 @@
 use super::SyscallReturn;
 use crate::{
     fs,
-    fs::file::file_table::{FileDesc, get_file_fast},
+    fs::file::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
     util::VmReaderArray,
 };
 
 pub fn sys_writev(
-    fd: FileDesc,
+    fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     ctx: &Context,
@@ -19,7 +19,7 @@ pub fn sys_writev(
 }
 
 pub fn sys_pwritev(
-    fd: FileDesc,
+    fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     offset_low: u64,
@@ -35,7 +35,7 @@ pub fn sys_pwritev(
 }
 
 pub fn sys_pwritev2(
-    fd: FileDesc,
+    fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     offset_low: u64,
@@ -60,7 +60,7 @@ pub fn sys_pwritev2(
 }
 
 fn do_sys_pwritev(
-    fd: FileDesc,
+    fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     offset: i64,
@@ -78,7 +78,10 @@ fn do_sys_pwritev(
     }
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(
+        &mut file_table,
+        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
+    );
 
     // TODO: Check (f.file->f_mode & FMODE_PREAD); We don't have f_mode in our FileLike trait
     if io_vec_count == 0 {
@@ -120,7 +123,7 @@ fn do_sys_pwritev(
 }
 
 fn do_sys_writev(
-    fd: FileDesc,
+    fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     ctx: &Context,
@@ -131,7 +134,10 @@ fn do_sys_writev(
     );
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(
+        &mut file_table,
+        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
+    );
 
     let mut total_len = 0;
 

@@ -6,7 +6,7 @@ use crate::{
     fs::{
         file::{
             InodeMode,
-            file_table::{FileDesc, get_file_fast},
+            file_table::{RawFileDesc, get_file_fast},
         },
         utils::PATH_MAX,
         vfs::path::{AT_FDCWD, FsPath},
@@ -14,11 +14,14 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_fchmod(fd: FileDesc, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_fchmod(fd: RawFileDesc, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}, mode = 0o{:o}", fd, mode);
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(
+        &mut file_table,
+        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
+    );
     file.path().set_mode(InodeMode::from_bits_truncate(mode))?;
     fs::vfs::notify::on_attr_change(file.path());
     Ok(SyscallReturn::Return(0))
@@ -29,7 +32,7 @@ pub fn sys_chmod(path_ptr: Vaddr, mode: u16, ctx: &Context) -> Result<SyscallRet
 }
 
 pub fn sys_fchmodat(
-    dirfd: FileDesc,
+    dirfd: RawFileDesc,
     path_ptr: Vaddr,
     mode: u16,
     ctx: &Context,
@@ -38,7 +41,7 @@ pub fn sys_fchmodat(
 }
 
 pub fn sys_fchmodat2(
-    dirfd: FileDesc,
+    dirfd: RawFileDesc,
     path_ptr: Vaddr,
     mode: u16,
     flags: u32,
@@ -51,7 +54,7 @@ pub fn sys_fchmodat2(
 }
 
 fn do_fchmodat(
-    dirfd: FileDesc,
+    dirfd: RawFileDesc,
     path_ptr: Vaddr,
     mode: u16,
     flags: ChmodFlags,

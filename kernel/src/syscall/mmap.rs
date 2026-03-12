@@ -4,7 +4,7 @@ use align_ext::AlignExt;
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::{FileDesc, get_file_fast},
+    fs::file::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
     vm::{
         perms::VmPerms,
@@ -41,7 +41,7 @@ fn do_sys_mmap(
     len: usize,
     vm_perms: VmPerms,
     option: MMapOptions,
-    fd: FileDesc,
+    fd: RawFileDesc,
     offset: usize,
     ctx: &Context,
 ) -> Result<Vaddr> {
@@ -109,7 +109,10 @@ fn do_sys_mmap(
             }
         } else {
             let mut file_table = ctx.thread_local.borrow_file_table_mut();
-            let file = get_file_fast!(&mut file_table, fd);
+            let file = get_file_fast!(
+                &mut file_table,
+                fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
+            );
 
             let access_mode = file.access_mode();
             if vm_perms.contains(VmPerms::READ) && !access_mode.is_readable() {

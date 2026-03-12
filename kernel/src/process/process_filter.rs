@@ -35,7 +35,11 @@ impl ProcessFilter {
                 };
                 let file = {
                     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-                    get_file_fast!(&mut file_table, fd).into_owned()
+                    get_file_fast!(
+                        &mut file_table,
+                        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
+                    )
+                    .into_owned()
                 };
                 let pid_file = Arc::downcast(file).map_err(|_| {
                     Error::with_message(Errno::EINVAL, "the file is not a PID file")
