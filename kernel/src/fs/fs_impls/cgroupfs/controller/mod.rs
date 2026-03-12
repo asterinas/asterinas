@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{collections::vec_deque::VecDeque, sync::Arc};
-use core::{fmt::Display, str::FromStr};
+use core::{
+    fmt::Display,
+    str::FromStr,
+    sync::atomic::{AtomicU8, Ordering},
+};
 
 use aster_systree::{Error, Result, SysAttrSetBuilder, SysBranchNode, SysObj};
+use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use bitflags::bitflags;
 use ostd::{
     mm::{VmReader, VmWriter},
-    sync::{Mutex, MutexGuard, Rcu},
+    sync::Rcu,
 };
 
 use crate::fs::cgroupfs::{
@@ -123,6 +128,24 @@ impl From<SubCtrlType> for SubCtrlSet {
     }
 }
 
+impl From<u8> for SubCtrlSet {
+    fn from(value: u8) -> Self {
+        Self::from_bits_truncate(value)
+    }
+}
+
+impl From<SubCtrlSet> for u8 {
+    fn from(value: SubCtrlSet) -> Self {
+        value.bits()
+    }
+}
+
+define_atomic_version_of_integer_like_type!(SubCtrlSet, {
+    /// An atomic version of `SubCtrlSet`.
+    #[derive(Debug)]
+    struct AtomicSubCtrlSet(AtomicU8);
+});
+
 /// The sub-controller for a specific cgroup controller type.
 ///
 /// If the sub-controller is inactive, the `inner` field will be `None`.
@@ -135,9 +158,9 @@ struct SubController<T: SubControlStatic> {
 }
 
 impl<T: SubControlStatic> SubController<T> {
-    fn new(parent_controller: Option<&LockedController>) -> Self {
+    fn new(parent_controller: Option<&Controller>) -> Self {
         let is_active = if let Some(parent) = parent_controller {
-            parent.active_set.contains_type(T::type_())
+            parent.active_set().contains_type(T::type_())
         } else {
             true
         };
@@ -148,7 +171,7 @@ impl<T: SubControlStatic> SubController<T> {
             None
         };
 
-        let parent = parent_controller.map(|controller| T::read_from(controller.controller));
+        let parent = parent_controller.map(T::read_from);
 
         Self { inner, parent }
     }
@@ -179,7 +202,9 @@ impl<T: SubControlStatic> TryGetSubControl for SubController<T> {
 /// sub-control, its corresponding sub-controller will be activated.
 pub struct Controller {
     /// A set of types of active sub-controllers.
-    active_set: Mutex<SubCtrlSet>,
+    ///
+    /// Updates to this set are serialized by `CgroupMembership::write_lock()`.
+    active_set: AtomicSubCtrlSet,
 
     memory: Rcu<Arc<SubController<MemoryController>>>,
     cpuset: Rcu<Arc<SubController<CpuSetController>>>,
@@ -188,13 +213,13 @@ pub struct Controller {
 
 impl Controller {
     /// Creates a new controller manager for a cgroup.
-    pub(super) fn new(locked_parent_controller: Option<&LockedController>) -> Self {
-        let memory_controller = Arc::new(SubController::new(locked_parent_controller));
-        let cpuset_controller = Arc::new(SubController::new(locked_parent_controller));
-        let pids_controller = Arc::new(SubController::new(locked_parent_controller));
+    pub(super) fn new(parent_controller: Option<&Controller>) -> Self {
+        let memory_controller = Arc::new(SubController::new(parent_controller));
+        let cpuset_controller = Arc::new(SubController::new(parent_controller));
+        let pids_controller = Arc::new(SubController::new(parent_controller));
 
         Self {
-            active_set: Mutex::new(SubCtrlSet::empty()),
+            active_set: AtomicSubCtrlSet::new(SubCtrlSet::empty()),
             memory: Rcu::new(memory_controller),
             cpuset: Rcu::new(cpuset_controller),
             pids: Rcu::new(pids_controller),
@@ -205,13 +230,6 @@ impl Controller {
         MemoryController::init_attr_set(builder, is_root);
         CpuSetController::init_attr_set(builder, is_root);
         PidsController::init_attr_set(builder, is_root);
-    }
-
-    pub(super) fn lock(&self) -> LockedController<'_> {
-        LockedController {
-            active_set: self.active_set.lock(),
-            controller: self,
-        }
     }
 
     fn read_sub(&self, ctrl_type: SubCtrlType) -> Arc<dyn TryGetSubControl> {
@@ -271,6 +289,150 @@ impl Controller {
         };
 
         controller.write_attr(name, reader)
+    }
+
+    /// Activates a sub-control of the specified type.
+    pub(super) fn activate(
+        &self,
+        ctrl_type: SubCtrlType,
+        current_node: &dyn CgroupSysNode,
+        parent_controller: Option<&Controller>,
+        cgroup_membership: &mut CgroupMembership,
+    ) -> Result<()> {
+        let mut active_set = self.active_set();
+        if active_set.contains_type(ctrl_type) {
+            return Ok(());
+        }
+
+        // A cgroup can activate the sub-control only if this
+        // sub-control has been activated in its parent cgroup.
+        if parent_controller
+            .is_some_and(|controller| !controller.active_set().contains_type(ctrl_type))
+        {
+            return Err(Error::NotFound);
+        }
+
+        active_set.add_type(ctrl_type);
+        self.active_set.store(active_set, Ordering::Relaxed);
+        self.update_sub_controllers_for_descents(ctrl_type, current_node, cgroup_membership);
+
+        Ok(())
+    }
+
+    /// Deactivates a sub-control of the specified type.
+    pub(super) fn deactivate(
+        &self,
+        ctrl_type: SubCtrlType,
+        current_node: &dyn CgroupSysNode,
+        cgroup_membership: &mut CgroupMembership,
+    ) -> Result<()> {
+        let mut active_set = self.active_set();
+        if !active_set.contains_type(ctrl_type) {
+            return Ok(());
+        }
+
+        // If any child node has activated this sub-control,
+        // the deactivation operation will be rejected.
+        for child in current_node.children() {
+            let cgroup_child = Arc::downcast::<CgroupNode>(child).unwrap();
+            // This is race-free because if a child wants to activate a sub-controller, it must
+            // acquire the write lock of `CgroupMembership` which has already been held here.
+            if cgroup_child
+                .controller()
+                .active_set()
+                .contains_type(ctrl_type)
+            {
+                return Err(Error::InvalidOperation);
+            }
+        }
+
+        active_set.remove_type(ctrl_type);
+        self.active_set.store(active_set, Ordering::Relaxed);
+        self.update_sub_controllers_for_descents(ctrl_type, current_node, cgroup_membership);
+
+        Ok(())
+    }
+
+    fn update_sub_controllers_for_descents(
+        &self,
+        ctrl_type: SubCtrlType,
+        current_node: &dyn CgroupSysNode,
+        cgroup_membership: &mut CgroupMembership,
+    ) {
+        fn update_sub_controller_for_one_child(
+            child: &Arc<dyn SysObj>,
+            ctrl_type: SubCtrlType,
+            parent_controller: &Controller,
+            cgroup_membership: &mut CgroupMembership,
+        ) {
+            let child_node = child.as_any().downcast_ref::<CgroupNode>().unwrap();
+            match ctrl_type {
+                SubCtrlType::Memory => {
+                    let new_controller = Arc::new(SubController::new(Some(parent_controller)));
+                    child_node.controller().memory.update(new_controller);
+                }
+                SubCtrlType::CpuSet => {
+                    let new_controller = Arc::new(SubController::new(Some(parent_controller)));
+                    child_node.controller().cpuset.update(new_controller);
+                }
+                SubCtrlType::Pids => {
+                    let mut new_controller: SubController<PidsController> =
+                        SubController::new(Some(parent_controller));
+                    if let Some(inner) = new_controller.inner.as_mut() {
+                        // When the pids sub-controller is being activated, initialize
+                        // `pids.current` with the number of processes already present
+                        // in this cgroup's subtree. The parent's counter is already
+                        // correct because charges propagated through inactive levels.
+                        let count = cgroup_membership.count_subtree_processes(child_node);
+                        if count > 0 {
+                            inner.init_count(count);
+                        }
+                    }
+                    child_node
+                        .controller()
+                        .pids
+                        .update(Arc::new(new_controller));
+                }
+            }
+        }
+
+        let mut descents = VecDeque::new();
+
+        // Subtree-control writes hold `CgroupMembership::write_lock()`, so operations
+        // protected by `CgroupMembership` like controller activation and deactivation
+        // and child node creation are serialized while the subtree updates are applied.
+        //
+        // Concurrent child removal is still fine: If a child is removed, we may update
+        // a sub-controller that's about to be destroyed, which is harmless.
+
+        // Update the direct children first.
+        current_node.visit_children_with(0, &mut |child_node| {
+            descents.push_back(child_node.clone());
+            update_sub_controller_for_one_child(child_node, ctrl_type, self, cgroup_membership);
+
+            Some(())
+        });
+
+        // Then update all the other descendent nodes.
+        while let Some(node) = descents.pop_front() {
+            let current_node = Arc::downcast::<CgroupNode>(node).unwrap();
+            let current_controller = current_node.controller();
+            current_node.visit_children_with(0, &mut |child_node| {
+                descents.push_back(child_node.clone());
+                update_sub_controller_for_one_child(
+                    child_node,
+                    ctrl_type,
+                    current_controller,
+                    cgroup_membership,
+                );
+
+                Some(())
+            });
+        }
+    }
+
+    pub(super) fn active_set(&self) -> SubCtrlSet {
+        self.active_set.load(Ordering::Relaxed)
     }
 }
 
@@ -339,163 +501,3 @@ impl Drop for PidsPreCharge<'_> {
 /// An error type indicating that a problem occurred during the charge operation.
 #[derive(Debug, Clone, Copy)]
 pub struct TryChargeError;
-
-/// A locked controller for a cgroup.
-///
-/// Holding this lock indicates exclusive access to modify the sub-control state.
-pub(super) struct LockedController<'a> {
-    active_set: MutexGuard<'a, SubCtrlSet>,
-    controller: &'a Controller,
-}
-
-impl LockedController<'_> {
-    /// Activates a sub-control of the specified type.
-    pub(super) fn activate(
-        &mut self,
-        ctrl_type: SubCtrlType,
-        current_node: &dyn CgroupSysNode,
-        parent_controller: Option<&LockedController>,
-        cgroup_membership: &mut CgroupMembership,
-    ) -> Result<()> {
-        if self.active_set.contains_type(ctrl_type) {
-            return Ok(());
-        }
-
-        // A cgroup can activate the sub-control only if this
-        // sub-control has been activated in its parent cgroup.
-        if parent_controller
-            .is_some_and(|controller| !controller.active_set.contains_type(ctrl_type))
-        {
-            return Err(Error::NotFound);
-        }
-
-        self.active_set.add_type(ctrl_type);
-        self.update_sub_controllers_for_descents(ctrl_type, current_node, cgroup_membership);
-
-        Ok(())
-    }
-
-    /// Deactivates a sub-control of the specified type.
-    pub(super) fn deactivate(
-        &mut self,
-        ctrl_type: SubCtrlType,
-        current_node: &dyn CgroupSysNode,
-        cgroup_membership: &mut CgroupMembership,
-    ) -> Result<()> {
-        if !self.active_set.contains_type(ctrl_type) {
-            return Ok(());
-        }
-
-        // If any child node has activated this sub-control,
-        // the deactivation operation will be rejected.
-        for child in current_node.children() {
-            let cgroup_child = Arc::downcast::<CgroupNode>(child).unwrap();
-            let child_controller = cgroup_child.controller().lock();
-            // This is race-free because if a child wants to activate a sub-controller, it should
-            // first acquire the lock of the parent controller, which is held here.
-            if child_controller.active_set().contains_type(ctrl_type) {
-                return Err(Error::InvalidOperation);
-            }
-        }
-
-        self.active_set.remove_type(ctrl_type);
-        self.update_sub_controllers_for_descents(ctrl_type, current_node, cgroup_membership);
-
-        Ok(())
-    }
-
-    fn update_sub_controllers_for_descents(
-        &self,
-        ctrl_type: SubCtrlType,
-        current_node: &dyn CgroupSysNode,
-        cgroup_membership: &mut CgroupMembership,
-    ) {
-        fn update_sub_controller_for_one_child(
-            child: &Arc<dyn SysObj>,
-            ctrl_type: SubCtrlType,
-            parent_controller: &LockedController,
-            cgroup_membership: &mut CgroupMembership,
-        ) {
-            let child_node = child.as_any().downcast_ref::<CgroupNode>().unwrap();
-            match ctrl_type {
-                SubCtrlType::Memory => {
-                    let new_controller = Arc::new(SubController::new(Some(parent_controller)));
-                    child_node.controller().memory.update(new_controller);
-                }
-                SubCtrlType::CpuSet => {
-                    let new_controller = Arc::new(SubController::new(Some(parent_controller)));
-                    child_node.controller().cpuset.update(new_controller);
-                }
-                SubCtrlType::Pids => {
-                    let mut new_controller: SubController<PidsController> =
-                        SubController::new(Some(parent_controller));
-                    if let Some(inner) = new_controller.inner.as_mut() {
-                        // When the pids sub-controller is being activated, initialize
-                        // `pids.current` with the number of processes already present
-                        // in this cgroup's subtree. The parent's counter is already
-                        // correct because charges propagated through inactive levels.
-                        let count = cgroup_membership.count_subtree_processes(child_node);
-                        if count > 0 {
-                            inner.init_count(count);
-                        }
-                    }
-                    child_node
-                        .controller()
-                        .pids
-                        .update(Arc::new(new_controller));
-                }
-            }
-        }
-
-        let mut descents = VecDeque::new();
-
-        // The following update logic is race-free due to the following reasons:
-        //
-        // 1. **No Concurrent Controller Activation/Deactivation**:
-        //    At this point, we hold the controller lock for the current node and we know that the
-        //    sub-controllers for the direct children are inactive. Then, no sub-controllers for
-        //    any of the descendants can be activated before we release the lock.
-        //
-        // 2. **Concurrent Child Addition/Deletion is Fine**:
-        //    We do need to consider that children may be added or removed concurrently. However,
-        //    this is handled correctly:
-        //    - If a child is added, it will attempt to hold its parent's controller lock, which is
-        //      synchronized with the code below. If this happens after us, the up-to-date
-        //      sub-controllers will be seen. If it happens before us, we will update the
-        //      sub-controllers for it; due to race conditions, the sub-controllers may already be
-        //      up to date, but updating them twice is harmless since they must not be activated.
-        //    - If a child is removed, we may update a sub-controller that's about to be destroyed,
-        //      which is harmless.
-
-        // Update the direct children first.
-        current_node.visit_children_with(0, &mut |child_node| {
-            descents.push_back(child_node.clone());
-            update_sub_controller_for_one_child(child_node, ctrl_type, self, cgroup_membership);
-
-            Some(())
-        });
-
-        // Then update all the other descendent nodes.
-        while let Some(node) = descents.pop_front() {
-            let current_node = Arc::downcast::<CgroupNode>(node).unwrap();
-            // For descendent nodes, the sub-control must be inactive. But taking the controller
-            // lock is necessary for synchronization purposes (see the explanation above).
-            let locked_controller = current_node.controller().lock();
-            current_node.visit_children_with(0, &mut |child_node| {
-                descents.push_back(child_node.clone());
-                update_sub_controller_for_one_child(
-                    child_node,
-                    ctrl_type,
-                    &locked_controller,
-                    cgroup_membership,
-                );
-
-                Some(())
-            });
-        }
-    }
-
-    pub(super) fn active_set(&self) -> SubCtrlSet {
-        *self.active_set
-    }
-}

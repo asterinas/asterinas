@@ -14,24 +14,23 @@
 //!
 //! ### Lock Types
 //!
-//! 1. **Controller Lock**: Each cgroup node (including the root) has a [`Controller`]
-//!    that contains a `Mutex`. This lock protects the activation state of the sub-controllers
-//!    for its children (e.g., `memory`, `pids`).
-//!
-//! 2. **Inner Lock**: Each non-root [`CgroupNode`] has an `RwMutex` that protects its
+//! 1. **Inner Lock**: Each non-root [`CgroupNode`] has an `RwMutex` that protects its
 //!    `inner` data.
 //!
-//! 3. **Children Lock**: Each cgroup node ([`CgroupNode`] and [`CgroupSystem`]) inherits
+//! 2. **Children Lock**: Each cgroup node ([`CgroupNode`] and [`CgroupSystem`]) inherits
 //!    an `RwMutex` from `BranchNodeFields`. This lock protects access to and
 //!    modification of the list of child cgroup nodes.
 //!
-//! 4. **Cgroup Membership Lock**: A global `RwMutex` managed by [`CgroupMembership`]
-//!    that protects the mapping from existing processes to cgroups. Use the read
-//!    lock when an operation only needs that mapping to remain stable while it
-//!    works from a snapshot; use the write lock when an operation may change an
-//!    existing membership, or when it needs an exclusive subtree snapshot. For
-//!    example, fork uses the read lock, while explicit migration, process exit,
-//!    and `cgroup.subtree_control` writes use the write lock.
+//! 3. **Cgroup Membership Lock**: A global `RwMutex` managed by [`CgroupMembership`]
+//!    that serializes updates to process-to-cgroup associations and sub-controller
+//!    activation states. Only a writer can change cgroup associations for _existing_
+//!    processes or modify sub-controller activation, leaving readers with a stable
+//!    view of those states. Note that because readers cannot block _new_ processes
+//!    from joining, only a writer has a truly stable view of all the processes
+//!    within a cgroup subtree.
+//!
+//!    For example, fork and cgroup child creation use the read lock, while explicit
+//!    migration, process exit, and sub-controller activation use the write lock.
 //!
 //! ### Locking Rules
 //!
@@ -44,7 +43,7 @@
 //! 2. **Order Within a Single Node**:
 //!    When multiple locks are needed on the same cgroup node, they must be
 //!    acquired in this specific order:
-//!    `Controller Lock` -> `Inner Lock` -> `Children Lock`
+//!    `Inner Lock` -> `Children Lock`
 //!
 //! 3. **Global Lock First**:
 //!    When acquiring the `Cgroup Membership Lock` along with any other cgroup locks,
@@ -73,14 +72,12 @@ use ostd::{
 use spin::Once;
 
 use crate::{
-    fs::cgroupfs::controller::{
-        Controller, LockedController, PidsPreCharge, SubCtrlSet, SubCtrlType,
-    },
+    fs::cgroupfs::controller::{Controller, PidsPreCharge, SubCtrlSet, SubCtrlType},
     prelude::*,
     process::{Pid, Process, process_table},
 };
 
-/// A type that provides synchronized access to cgroup membership.
+/// A type that provides synchronized access to cgroup membership and sub-controller state.
 ///
 /// See the module-level documentation for the lock model.
 ///
@@ -108,16 +105,16 @@ fn global_cgroup_membership() -> &'static RwMutex<CgroupMembership> {
 impl CgroupMembership {
     /// Acquires the write side of the membership lock.
     ///
-    /// Use this for operations that may reassign an existing process or need an
-    /// exclusive subtree snapshot.
+    /// Use this for operations that may reassign an existing process, update
+    /// active sub-controllers, or need an exclusive snapshot of those states.
     pub fn write_lock() -> RwMutexWriteGuard<'static, Self> {
         global_cgroup_membership().write()
     }
 
     /// Acquires the read side of the membership lock.
     ///
-    /// Use this for snapshot-based operations that do not reassign any existing
-    /// process.
+    /// Use this for snapshot-based operations that need stable cgroup
+    /// memberships or active sub-controllers without mutating them.
     pub fn read_lock() -> RwMutexReadGuard<'static, Self> {
         global_cgroup_membership().read()
     }
@@ -219,12 +216,11 @@ impl CgroupMembership {
     }
 
     fn add_process_to_node(&self, process: &Arc<Process>, new_cgroup: &CgroupNode) -> Result<()> {
-        let controller = new_cgroup.controller.lock();
         // According to "no internal processes" rule of cgroupv2, if a non-root
         // cgroup node has activated some sub-controls, it cannot bind any process.
         //
         // Reference: <https://man7.org/linux/man-pages/man7/cgroups.7.html>
-        if !controller.active_set().is_empty() {
+        if !new_cgroup.controller.active_set().is_empty() {
             return Err(Error::ResourceUnavailable);
         }
         new_cgroup
@@ -240,7 +236,6 @@ impl CgroupMembership {
                 process.set_cgroup(Some(new_cgroup.fields.weak_self().upgrade().unwrap()));
             })
             .ok_or(Error::IsDead)?;
-        drop(controller);
 
         Ok(())
     }
@@ -401,11 +396,7 @@ impl CgroupSysNode for CgroupSystem {
 }
 
 impl CgroupNode {
-    pub(self) fn new(
-        name: SysStr,
-        depth: usize,
-        locked_parent_controller: &LockedController,
-    ) -> Arc<Self> {
+    pub(self) fn new(name: SysStr, depth: usize, parent_controller: &Controller) -> Arc<Self> {
         let mut builder = SysAttrSetBuilder::new();
         // TODO: Add more attributes as needed. The normal cgroup node may have
         // more attributes than the unified one.
@@ -445,7 +436,7 @@ impl CgroupNode {
             let fields = BranchNodeFields::new(name, attrs, weak_self.clone());
             CgroupNode {
                 fields,
-                controller: Controller::new(Some(locked_parent_controller)),
+                controller: Controller::new(Some(parent_controller)),
                 inner: RwMutex::new(Some(Inner::default())),
                 depth,
                 populated_count: AtomicUsize::new(0),
@@ -595,7 +586,7 @@ inherit_sys_branch_node!(CgroupSystem, fields, {
                 }
             }
             "cgroup.subtree_control" => {
-                let active_set = self.controller.lock().active_set();
+                let active_set = self.controller.active_set();
                 writeln!(printer, "{}", active_set)?;
             }
             // TODO: Add support for reading other attributes.
@@ -628,12 +619,13 @@ inherit_sys_branch_node!(CgroupSystem, fields, {
                 let (activate_set, deactivate_set, len) = read_subtree_control_from_reader(reader)?;
 
                 let mut cgroup_guard = CgroupMembership::write_lock();
-                let mut controller = self.controller.lock();
                 for ctrl_type in activate_set.iter_types() {
-                    controller.activate(ctrl_type, self, None, &mut cgroup_guard)?;
+                    self.controller
+                        .activate(ctrl_type, self, None, &mut cgroup_guard)?;
                 }
                 for ctrl_type in deactivate_set.iter_types() {
-                    controller.deactivate(ctrl_type, self, &mut cgroup_guard)?;
+                    self.controller
+                        .deactivate(ctrl_type, self, &mut cgroup_guard)?;
                 }
 
                 Ok(len)
@@ -648,8 +640,10 @@ inherit_sys_branch_node!(CgroupSystem, fields, {
     }
 
     fn create_child(&self, name: &str) -> Result<Arc<dyn SysObj>> {
-        let controller = self.controller.lock();
-        let new_child = CgroupNode::new(name.to_string().into(), 1, &controller);
+        // The child node's content depends on our sub-controller activation
+        // state. Take a read lock to prevent any state changes.
+        let _cgroup_read_guard = CgroupMembership::read_lock();
+        let new_child = CgroupNode::new(name.to_string().into(), 1, &self.controller);
         self.add_child(new_child.clone())?;
         Ok(new_child)
     }
@@ -672,7 +666,6 @@ inherit_sys_branch_node!(CgroupNode, fields, {
                     .cgroup_parent()
                     .ok_or(Error::IsDead)?
                     .controller()
-                    .lock()
                     .active_set();
                 self.with_inner(|_| {
                     writeln!(printer, "{}", active_set)?;
@@ -714,7 +707,7 @@ inherit_sys_branch_node!(CgroupNode, fields, {
                 })
                 .ok_or(Error::IsDead)?,
             "cgroup.subtree_control" => {
-                let active_set = self.controller.lock().active_set();
+                let active_set = self.controller.active_set();
                 self.with_inner(|_| {
                     writeln!(printer, "{}", active_set)?;
 
@@ -755,8 +748,7 @@ inherit_sys_branch_node!(CgroupNode, fields, {
 
                 let mut cgroup_guard = CgroupMembership::write_lock();
                 let parent_node = self.cgroup_parent().ok_or(Error::IsDead)?;
-                let parent_controller = parent_node.controller().lock();
-                let mut current_controller = self.controller.lock();
+                let parent_controller = parent_node.controller();
 
                 self.with_inner(|processes| {
                     // According to "no internal processes" rule of cgroupv2, if a non-root
@@ -768,15 +760,16 @@ inherit_sys_branch_node!(CgroupNode, fields, {
                     }
 
                     for ctrl_type in activate_set.iter_types() {
-                        current_controller.activate(
+                        self.controller.activate(
                             ctrl_type,
                             self,
-                            Some(&parent_controller),
+                            Some(parent_controller),
                             &mut cgroup_guard,
                         )?;
                     }
                     for ctrl_type in deactivate_set.iter_types() {
-                        current_controller.deactivate(ctrl_type, self, &mut cgroup_guard)?;
+                        self.controller
+                            .deactivate(ctrl_type, self, &mut cgroup_guard)?;
                     }
 
                     Ok(len)
@@ -798,9 +791,12 @@ inherit_sys_branch_node!(CgroupNode, fields, {
     }
 
     fn create_child(&self, name: &str) -> Result<Arc<dyn SysObj>> {
-        let controller = self.controller.lock();
+        // The child node's content depends on our sub-controller activation
+        // state. Take a read lock to prevent any state changes.
+        let _cgroup_read_guard = CgroupMembership::read_lock();
         self.with_inner(|_| {
-            let new_child = CgroupNode::new(name.to_string().into(), self.depth + 1, &controller);
+            let new_child =
+                CgroupNode::new(name.to_string().into(), self.depth + 1, &self.controller);
             self.add_child(new_child.clone())?;
             Ok(new_child as _)
         })
