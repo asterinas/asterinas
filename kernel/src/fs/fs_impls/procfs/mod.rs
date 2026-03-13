@@ -27,7 +27,7 @@ use crate::{
     prelude::*,
     process::{
         Pid,
-        process_table::{self, PidEvent},
+        pid_table::{self, PidEvent},
     },
 };
 
@@ -144,7 +144,7 @@ impl RootDirOps {
         let root_inode = ProcDir::new_root(Self, fs, PROC_ROOT_INO, sb, mkmod!(a+rx));
 
         let weak_ptr = Arc::downgrade(&root_inode);
-        process_table::register_observer(weak_ptr);
+        pid_table::pid_table_mut().register_observer(weak_ptr);
 
         root_inode
     }
@@ -176,15 +176,15 @@ impl Observer<PidEvent> for ProcDir<RootDirOps> {
 }
 
 impl DirOps for RootDirOps {
-    // Lock order: process table -> cached entries
+    // Lock order: PID table -> cached entries
     //
     // Note that inverting the lock order is non-trivial because `Observer::on_events` will be
-    // called with the process table locked.
+    // called with the PID table locked.
 
     fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
         if let Ok(pid) = name.parse::<Pid>()
-            && let process_table_mut = process_table::process_table_mut()
-            && let Some(process_ref) = process_table_mut.get(pid)
+            && let pid_table = pid_table::pid_table_mut()
+            && let Some(process_ref) = pid_table.get_process(pid)
         {
             let mut cached_children = dir.cached_children().write();
             return Ok(cached_children
@@ -211,17 +211,17 @@ impl DirOps for RootDirOps {
         &self,
         dir: &'a ProcDir<Self>,
     ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>> {
-        let process_table_mut = process_table::process_table_mut();
+        let pid_table = pid_table::pid_table_mut();
         let mut cached_children = dir.cached_children().write();
 
-        for process_ref in process_table_mut.iter() {
+        for process_ref in pid_table.iter_processes() {
             let pid = process_ref.pid().to_string();
             cached_children.put_entry_if_not_found(&pid, || {
                 PidDirOps::new_inode(process_ref.clone(), dir.this_weak().clone())
             });
         }
 
-        drop(process_table_mut);
+        drop(pid_table);
 
         populate_children_from_table(&mut cached_children, Self::STATIC_ENTRIES, |f| {
             (f)(dir.this_weak().clone())

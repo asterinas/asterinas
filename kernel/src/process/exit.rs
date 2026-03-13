@@ -2,7 +2,7 @@
 
 use core::sync::atomic::Ordering;
 
-use super::{Pid, Process, process_table};
+use super::{Pid, Process, pid_table};
 use crate::{
     events::IoEvents, fs::cgroupfs::CgroupMembership, prelude::*,
     process::signal::signals::kernel::KernelSignal,
@@ -130,7 +130,9 @@ fn move_children_to_reaper_process(current_process: &Process) {
 
     const INIT_PROCESS_PID: Pid = 1;
 
-    let init_process = process_table::get_process(INIT_PROCESS_PID).unwrap();
+    let init_process = pid_table::pid_table_mut()
+        .get_process(INIT_PROCESS_PID)
+        .unwrap();
     move_process_children(current_process, &init_process).unwrap();
     init_process.children_wait_queue().wake_all();
 }

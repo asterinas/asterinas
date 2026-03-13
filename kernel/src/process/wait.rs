@@ -8,10 +8,7 @@ use super::{
 use crate::{
     prelude::*,
     process::{
-        ReapedChildrenStats, Uid,
-        posix_thread::{AsPosixThread, thread_table},
-        process_table,
-        signal::sig_num::SigNum,
+        ReapedChildrenStats, Uid, pid_table, posix_thread::AsPosixThread, signal::sig_num::SigNum,
         status::StopWaitStatus,
     },
     time::clocks::ProfClock,
@@ -211,27 +208,22 @@ fn reap_zombie_child(
     let child_process = children_lock.remove(&child_pid).unwrap();
     assert!(child_process.status().is_zombie());
 
+    // Lock order: children of process -> pid table -> tasks of process
+    let mut pid_table = pid_table::pid_table_mut();
+
     for task in child_process.tasks().lock().as_slice() {
-        thread_table::remove_thread(task.as_posix_thread().unwrap().tid());
+        pid_table.remove_thread(task.as_posix_thread().unwrap().tid());
     }
 
-    // Lock order: children of process -> session table -> group table
-    // -> process table -> group of process -> group inner -> session inner
-    let mut session_table_mut = process_table::session_table_mut();
-    let mut group_table_mut = process_table::group_table_mut();
+    // Lock order: children of process -> pid table
+    // -> group of process -> group inner -> session inner
 
     // Remove the process from the global table
-    let mut process_table_mut = process_table::process_table_mut();
-    process_table_mut.remove(child_process.pid());
+    pid_table.remove_process(child_process.pid());
 
     // Remove the process group and the session from global table, if necessary
     let mut child_group_mut = child_process.process_group.lock();
-    child_process.clear_old_group_and_session(
-        &mut child_group_mut,
-        &mut session_table_mut,
-        &mut group_table_mut,
-    );
-    *child_group_mut = Weak::new();
+    child_process.clear_old_group_and_session(&mut child_group_mut, &mut pid_table);
 
     let (mut user_time, mut kernel_time) = child_process.reaped_children_stats().lock().get();
     user_time += child_process.prof_clock().user_clock().read_time();
