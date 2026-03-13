@@ -176,6 +176,13 @@ impl Path {
         self
     }
 
+    /// Returns whether this path is the same as or a descendant of `ancestor`
+    /// within the same mount.
+    pub fn is_equal_or_descendant_of(&self, ancestor: &Path) -> bool {
+        self.mount.id() == ancestor.mount.id()
+            && self.dentry.is_equal_or_descendant_of(&ancestor.dentry)
+    }
+
     /// Finds the corresponding `Path` in the given mount namespace.
     fn find_corresponding_mount(&self, mnt_ns: &Arc<MountNamespace>) -> Option<Self> {
         let corresponding_mount = self.mount.find_corresponding_mount(mnt_ns)?;
