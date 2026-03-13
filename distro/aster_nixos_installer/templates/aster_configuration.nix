@@ -33,6 +33,7 @@
     (import ./overlays/podman/default.nix)
     (import ./overlays/switch-to-configuration-ng/default.nix)
     (import ./overlays/systemd/default.nix)
+    (import ./overlays/jtreg/default.nix)
   ];
 
   # The Asterinas NixOS special options.
