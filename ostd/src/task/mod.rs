@@ -7,6 +7,7 @@ mod kernel_stack;
 mod preempt;
 mod processor;
 pub mod scheduler;
+pub mod seccomp;
 mod utils;
 
 use core::{
@@ -20,6 +21,7 @@ use core::{
 
 use kernel_stack::KernelStack;
 use processor::current_task;
+use seccomp::{SeccompMode, SeccompTask};
 use spin::Once;
 use utils::ForceSync;
 
@@ -27,7 +29,7 @@ pub use self::{
     preempt::{DisabledPreemptGuard, disable_preempt, halt_cpu},
     scheduler::info::{AtomicCpuId, TaskScheduleInfo},
 };
-use crate::{arch::task::TaskContext, irq::InterruptLevel, prelude::*};
+use crate::{arch::task::TaskContext, irq::InterruptLevel, prelude::*, sync::SpinLock};
 
 static PRE_SCHEDULE_HANDLER: Once<fn()> = Once::new();
 
@@ -67,6 +69,7 @@ pub struct Task {
     switched_to_cpu: AtomicBool,
 
     schedule_info: TaskScheduleInfo,
+    pub seccomp: SpinLock<SeccompTask>,
 }
 
 impl Task {
@@ -222,6 +225,10 @@ impl TaskOptions {
                 cpu: AtomicCpuId::default(),
             },
             switched_to_cpu: AtomicBool::new(false),
+            seccomp: SpinLock::new(SeccompTask {
+                mode: SeccompMode::SECCOMP_MODE_DISABLED,
+                leaf_filter: None,
+            }),
         };
 
         Ok(new_task)
