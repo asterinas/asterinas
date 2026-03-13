@@ -69,8 +69,8 @@ impl PendingOp {
         self.status.store(status, Ordering::Relaxed);
     }
 
-    pub(super) fn waker(&self) -> &Option<Arc<Waker>> {
-        &self.waker
+    pub(super) fn waker(&self) -> Option<&Arc<Waker>> {
+        self.waker.as_ref()
     }
 }
 
