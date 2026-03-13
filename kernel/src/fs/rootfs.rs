@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use core2::io::{Cursor, Read};
-use cpio_decoder::{CpioDecoder, FileType};
+use cpio_decoder::{CpioDecoder, FileMetadata, FileType};
+use device_id::{DeviceId, MajorId, MinorId};
 use lending_iterator::LendingIterator;
 use libflate::gzip::Decoder as GZipDecoder;
 use ostd::boot::boot_info;
@@ -10,7 +11,7 @@ use super::{
     file::{InodeMode, InodeType},
     vfs::path::{FsPath, PathResolver, is_dot},
 };
-use crate::prelude::*;
+use crate::{fs::vfs::inode::MknodType, prelude::*};
 
 struct BoxedReader<'a>(Box<dyn Read + 'a>);
 
@@ -97,12 +98,32 @@ pub fn init_in_first_kthread(path_resolver: &PathResolver) -> Result<()> {
                 };
                 path.inode().write_link(&link_content)?;
             }
-            type_ => {
-                panic!("unsupported file type = {:?} in initramfs", type_);
+            FileType::Char => {
+                let device_id = device_id_from_metadata(metadata);
+                parent.mknod(name, mode, MknodType::CharDevice(device_id))?;
+            }
+            FileType::Block => {
+                let device_id = device_id_from_metadata(metadata);
+                parent.mknod(name, mode, MknodType::BlockDevice(device_id))?;
+            }
+            FileType::FiFo => {
+                parent.mknod(name, mode, MknodType::NamedPipe)?;
+            }
+            FileType::Socket => {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "socket files are not supported in initramfs"
+                )
             }
         }
     }
 
     println!("[kernel] rootfs is ready");
     Ok(())
+}
+
+fn device_id_from_metadata(metadata: &FileMetadata) -> u64 {
+    let major = MajorId::new(metadata.rdev_maj() as _);
+    let minor = MinorId::new(metadata.rdev_min());
+    DeviceId::new(major, minor).as_encoded_u64()
 }
