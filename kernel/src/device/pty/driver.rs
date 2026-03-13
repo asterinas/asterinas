@@ -16,7 +16,10 @@ use crate::{
     fs::file::FileIo,
     prelude::*,
     process::signal::Pollee,
-    util::ring_buffer::RingBuffer,
+    util::{
+        ioctl::{RawIoctl, dispatch_ioctl},
+        ring_buffer::RingBuffer,
+    },
 };
 
 const BUFFER_CAPACITY: usize = 8192;
@@ -209,5 +212,21 @@ impl TtyDriver for PtyDriver {
             self.pollee
                 .notify(IoEvents::PRI | IoEvents::IN | IoEvents::RDNORM);
         }
+    }
+
+    fn ioctl(&self, tty: &Tty<Self>, raw_ioctl: RawIoctl) -> Result<i32>
+    where
+        Self: Sized,
+    {
+        use super::ioctl_defs::*;
+
+        dispatch_ioctl!(match raw_ioctl {
+            cmd @ GetPtyNumber => {
+                let idx = tty.index();
+                cmd.write(&idx)?;
+                Ok(0)
+            }
+            _ => return_errno_with_message!(Errno::ENOIOCTLCMD, "unsupported ioctl command"),
+        })
     }
 }

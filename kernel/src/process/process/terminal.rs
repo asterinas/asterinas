@@ -103,7 +103,7 @@ impl dyn Terminal {
 
             // Commands that are invalid or not supported
             _ => {
-                return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown")
+                return_errno_with_message!(Errno::ENOIOCTLCMD, "unsupported ioctl command")
             }
         })
     }

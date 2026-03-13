@@ -6,6 +6,7 @@ use crate::{
     device::tty::{Tty, termio::CTermios},
     fs::file::FileIo,
     prelude::*,
+    util::ioctl::RawIoctl,
 };
 
 /// A TTY driver.
@@ -58,10 +59,30 @@ pub trait TtyDriver: Send + Sync + 'static {
     /// Returns the console device associated with the TTY.
     ///
     /// If the TTY is not associated with any console device, this method will return `None`.
+    #[expect(dead_code)]
     fn console(&self) -> Option<&dyn AnyConsoleDevice>;
 
     /// Notifies that the TTY termios is changed.
     ///
     /// This method will be called with a spin lock held, so it cannot break atomic mode.
     fn on_termios_change(&self, old_termios: &CTermios, new_termios: &CTermios);
+
+    /// Driver-specific ioctl handler.
+    ///
+    /// This method allows a TTY driver to handle driver-specific
+    /// ioctl commands that are not processed by the generic TTY layer.
+    ///
+    /// Semantics:
+    /// - If the driver recognizes and handles the ioctl, it should return
+    ///   `Ok(retval)`, where `retval` is the value returned to userspace.
+    /// - If an error occurs while processing the ioctl, it should return
+    ///   `Err(...)`.
+    /// - If the driver does not recognize the ioctl command, it should return
+    ///   `Err(Errno::ENOIOCTLCMD)` to indicate that the ioctl command is not supported.
+    fn ioctl(&self, _tty: &Tty<Self>, _raw_ioctl: RawIoctl) -> Result<i32>
+    where
+        Self: Sized,
+    {
+        return_errno_with_message!(Errno::ENOIOCTLCMD, "unsupported ioctl command");
+    }
 }
