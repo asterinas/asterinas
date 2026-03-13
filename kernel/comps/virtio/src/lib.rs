@@ -17,8 +17,13 @@ use aster_block::MajorIdOwner;
 use bitflags::bitflags;
 use component::{ComponentInitError, init_component};
 use device::{
-    VirtioDeviceType, block::device::BlockDevice, console::device::ConsoleDevice,
-    input::device::InputDevice, network::device::NetworkDevice, socket::device::SocketDevice,
+    VirtioDeviceType,
+    block::device::BlockDevice,
+    console::device::ConsoleDevice,
+    entropy::{self, device::EntropyDevice},
+    input::device::InputDevice,
+    network::device::NetworkDevice,
+    socket::device::SocketDevice,
 };
 use log::{error, warn};
 use spin::Once;
@@ -43,6 +48,9 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
 
     device::network::init();
     device::socket::init();
+
+    // For entropy table static init
+    entropy::init();
 
     while let Some(mut transport) = pop_device_transport() {
         // Reset device
@@ -70,9 +78,10 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
         let device_type = transport.device_type();
         let res = match transport.device_type() {
             VirtioDeviceType::Block => BlockDevice::init(transport),
+            VirtioDeviceType::Console => ConsoleDevice::init(transport),
+            VirtioDeviceType::Entropy => EntropyDevice::init(transport),
             VirtioDeviceType::Input => InputDevice::init(transport),
             VirtioDeviceType::Network => NetworkDevice::init(transport),
-            VirtioDeviceType::Console => ConsoleDevice::init(transport),
             VirtioDeviceType::Socket => SocketDevice::init(transport),
             _ => {
                 warn!("[Virtio]: Found unimplemented device:{:?}", device_type);

@@ -15,7 +15,7 @@ use syn::parse_macro_input;
 
 pub(crate) const COMPONENT_FILE_NAME: &str = "Components.toml";
 
-/// Register a function to be called when the component system is initialized. The function should not public.
+/// Register a function to be called when the component system is initialized. The function should not be public.
 ///
 /// You can specify the initialization stage by:
 /// - `#[init_component]` or `#[init_component(bootstrap)]` - the **Bootstrap** stage
