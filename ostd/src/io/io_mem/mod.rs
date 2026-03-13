@@ -3,6 +3,7 @@
 //! I/O memory and its allocator that allocates memory I/O (MMIO) to device drivers.
 
 mod allocator;
+pub(crate) mod util;
 
 use core::{
     marker::PhantomData,
@@ -10,15 +11,18 @@ use core::{
 };
 
 use align_ext::AlignExt;
+use inherit_methods_macro::inherit_methods;
 
 pub(crate) use self::allocator::IoMemAllocatorBuilder;
 pub(super) use self::allocator::init;
 use crate::{
     Error,
     cpu::{AtomicCpuSet, CpuSet},
+    io::io_mem::util::{
+        copy_from_io_mem, copy_from_io_to_writer, copy_from_reader_to_io, copy_to_io_mem,
+    },
     mm::{
-        HasPaddr, HasSize, Infallible, PAGE_SIZE, Paddr, PodOnce, VmReader, VmWriter,
-        io_util::{HasVmReaderWriter, VmReaderWriterIdentity},
+        HasPaddr, HasSize, PAGE_SIZE, Paddr, PodOnce, VmIo, VmIoFill, VmIoOnce, VmReader, VmWriter,
         kspace::kvirt_area::KVirtArea,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
         tlb::{TlbFlushOp, TlbFlusher},
@@ -146,6 +150,19 @@ impl<SecuritySensitivity> IoMem<SecuritySensitivity> {
     pub fn cache_policy(&self) -> CachePolicy {
         self.cache_policy
     }
+
+    /// Returns the base virtual address of the MMIO range.
+    fn base(&self) -> usize {
+        self.kvirt_area.deref().start() + self.offset
+    }
+
+    /// Validates that the offset range lies within the MMIO window.
+    fn check_range(&self, offset: usize, len: usize) -> Result<()> {
+        if offset.checked_add(len).is_none_or(|end| end > self.limit) {
+            return Err(Error::InvalidArgs);
+        }
+        Ok(())
+    }
 }
 
 #[cfg_attr(target_arch = "loongarch64", expect(unused))]
@@ -163,10 +180,10 @@ impl IoMem<Sensitive> {
     /// not cause any out-of-bounds access, and does not cause unsound side
     /// effects (e.g., corrupting the kernel memory).
     pub(crate) unsafe fn read_once<T: PodOnce>(&self, offset: usize) -> T {
-        debug_assert!(offset + size_of::<T>() < self.limit);
+        debug_assert!(offset + size_of::<T>() <= self.limit);
         let ptr = (self.kvirt_area.deref().start() + self.offset + offset) as *const T;
         // SAFETY: The safety of the read operation's semantics is upheld by the caller.
-        unsafe { core::ptr::read_volatile(ptr) }
+        unsafe { crate::arch::io::io_mem::read_once(ptr) }
     }
 
     /// Writes a value of the `PodOnce` type at the specified offset using one
@@ -182,10 +199,10 @@ impl IoMem<Sensitive> {
     /// not cause any out-of-bounds access, and does not cause unsound side
     /// effects (e.g., corrupting the kernel memory).
     pub(crate) unsafe fn write_once<T: PodOnce>(&self, offset: usize, value: &T) {
-        debug_assert!(offset + size_of::<T>() < self.limit);
+        debug_assert!(offset + size_of::<T>() <= self.limit);
         let ptr = (self.kvirt_area.deref().start() + self.offset + offset) as *mut T;
         // SAFETY: The safety of the write operation's semantics is upheld by the caller.
-        unsafe { core::ptr::write_volatile(ptr, *value) };
+        unsafe { crate::arch::io::io_mem::write_once(ptr, *value) };
     }
 }
 
@@ -210,38 +227,149 @@ impl IoMem<Insensitive> {
     }
 }
 
-// For now, we reuse `VmReader` and `VmWriter` to access I/O memory.
-//
-// Note that I/O memory is not normal typed or untyped memory. Strictly speaking, it is not
-// "memory", but rather I/O ports that communicate directly with the hardware. However, this code
-// is in OSTD, so we can rely on the implementation details of `VmReader` and `VmWriter`, which we
-// know are also suitable for accessing I/O memory.
-
-impl HasVmReaderWriter for IoMem<Insensitive> {
-    type Types = VmReaderWriterIdentity;
-
-    fn reader(&self) -> VmReader<'_, Infallible> {
-        // SAFETY: The constructor of the `IoMem` structure has already ensured the
-        // safety of reading from the mapped physical address, and the mapping is valid.
-        unsafe {
-            VmReader::from_kernel_space(
-                (self.kvirt_area.deref().start() + self.offset) as *mut u8,
-                self.limit,
-            )
+impl VmIoOnce for IoMem<Insensitive> {
+    fn read_once<T: PodOnce>(&self, offset: usize) -> Result<T> {
+        self.check_range(offset, size_of::<T>())?;
+        let ptr = (self.base() + offset) as *const T;
+        if !ptr.is_aligned() {
+            return Err(Error::InvalidArgs);
         }
+
+        // SAFETY: The pointer is properly aligned and within the validated range.
+        let val = unsafe { crate::arch::io::io_mem::read_once(ptr) };
+        Ok(val)
     }
 
-    fn writer(&self) -> VmWriter<'_, Infallible> {
-        // SAFETY: The constructor of the `IoMem` structure has already ensured the
-        // safety of writing to the mapped physical address, and the mapping is valid.
-        unsafe {
-            VmWriter::from_kernel_space(
-                (self.kvirt_area.deref().start() + self.offset) as *mut u8,
-                self.limit,
-            )
+    fn write_once<T: PodOnce>(&self, offset: usize, value: &T) -> Result<()> {
+        self.check_range(offset, size_of::<T>())?;
+        let ptr = (self.base() + offset) as *mut T;
+        if !ptr.is_aligned() {
+            return Err(Error::InvalidArgs);
+        }
+
+        // SAFETY: The pointer is properly aligned and within the validated range.
+        unsafe { crate::arch::io::io_mem::write_once(ptr, *value) };
+        Ok(())
+    }
+}
+
+impl VmIo for IoMem<Insensitive> {
+    fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()> {
+        let len = writer.avail();
+        self.check_range(offset, len)?;
+
+        let src = (self.base() + offset) as *const u8;
+
+        // SAFETY: `check_range` guarantees a valid MMIO range for `len` bytes.
+        unsafe { copy_from_io_to_writer(writer, src, len) }.map_err(|(err, _)| err)
+    }
+
+    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
+        let len = buf.len();
+        self.check_range(offset, len)?;
+        let src = (self.base() + offset) as *const u8;
+        let dst = buf.as_mut_ptr();
+
+        // SAFETY: The `dst` and `src` buffers are valid to write and read for `len` bytes.
+        unsafe { copy_from_io_mem(dst, src, len) };
+        Ok(())
+    }
+
+    fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()> {
+        let len = reader.remain();
+        self.check_range(offset, len)?;
+
+        let dst = (self.base() + offset) as *mut u8;
+
+        // SAFETY: `check_range` guarantees a valid MMIO range for `len` bytes.
+        unsafe { copy_from_reader_to_io(reader, dst, len) }.map_err(|(err, _)| err)
+    }
+
+    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
+        let len = buf.len();
+        self.check_range(offset, len)?;
+        let src = buf.as_ptr();
+        let dst = (self.base() + offset) as *mut u8;
+
+        // SAFETY: The `dst` and `src` buffers are valid to write and read for `len` bytes.
+        unsafe { copy_to_io_mem(src, dst, len) };
+        Ok(())
+    }
+}
+
+impl VmIoFill for IoMem<Insensitive> {
+    fn fill_zeros(&self, offset: usize, len: usize) -> core::result::Result<(), (Error, usize)> {
+        if offset > self.limit {
+            return Err((Error::InvalidArgs, 0));
+        }
+
+        let available = self.limit - offset;
+        let write_len = core::cmp::min(len, available);
+        if write_len == 0 {
+            return Ok(());
+        }
+
+        let mut remaining = write_len;
+        let mut ptr = (self.base() + offset) as *mut u8;
+        let word_size = size_of::<usize>();
+
+        // Align destination to word size.
+        while remaining >= 1 && (ptr.addr() & (word_size - 1)) != 0 {
+            // SAFETY: `check_range` guarantees a valid MMIO range for the range.
+            unsafe { crate::arch::io::io_mem::write_once(ptr, 0u8) };
+            ptr = ptr.wrapping_add(1);
+            remaining -= 1;
+        }
+
+        while remaining >= word_size {
+            // SAFETY: `check_range` guarantees a valid MMIO range for the range.
+            unsafe { crate::arch::io::io_mem::write_once(ptr.cast::<usize>(), 0usize) };
+            ptr = ptr.wrapping_add(word_size);
+            remaining -= word_size;
+        }
+
+        while remaining >= 1 {
+            // SAFETY: The remaining range is within the validated MMIO window.
+            unsafe { crate::arch::io::io_mem::write_once(ptr, 0u8) };
+            ptr = ptr.wrapping_add(1);
+            remaining -= 1;
+        }
+
+        if write_len == len {
+            Ok(())
+        } else {
+            Err((Error::InvalidArgs, write_len))
         }
     }
 }
+
+macro_rules! impl_vm_io_pointer {
+    ($ty:ty, $from:tt) => {
+        #[inherit_methods(from = $from)]
+        impl VmIo for $ty {
+            fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()>;
+            fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()>;
+        }
+
+        #[inherit_methods(from = $from)]
+        impl VmIoOnce for $ty {
+            fn read_once<T: PodOnce>(&self, offset: usize) -> Result<T>;
+            fn write_once<T: PodOnce>(&self, offset: usize, value: &T) -> Result<()>;
+        }
+
+        #[inherit_methods(from = $from)]
+        impl VmIoFill for $ty {
+            fn fill_zeros(
+                &self,
+                offset: usize,
+                len: usize,
+            ) -> core::result::Result<(), (Error, usize)>;
+        }
+    };
+}
+
+impl_vm_io_pointer!(&IoMem<Insensitive>, "(**self)");
+impl_vm_io_pointer!(&mut IoMem<Insensitive>, "(**self)");
 
 impl<SecuritySensitivity> HasPaddr for IoMem<SecuritySensitivity> {
     fn paddr(&self) -> Paddr {

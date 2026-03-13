@@ -2,7 +2,13 @@
 
 use tdx_guest::{TdxTrapFrame, tdcall::accept_page, tdvmcall::map_gpa};
 
-use super::trap::TrapFrame;
+use super::{
+    io::io_mem::{
+        copy_u8_from, copy_u8_to, copy_u16_from, copy_u16_to, copy_u32_from, copy_u32_to,
+        copy_u64_from, copy_u64_to,
+    },
+    trap::TrapFrame,
+};
 use crate::{mm::PAGE_SIZE, prelude::Paddr};
 
 const SHARED_BIT: u8 = 51;
@@ -64,7 +70,110 @@ pub unsafe fn protect_gpa_tdvm_call(gpa: Paddr, size: usize) -> Result<(), PageC
 
 pub struct TrapFrameWrapper<'a>(pub &'a mut TrapFrame);
 
-#[cfg(feature = "cvm_guest")]
+pub(crate) fn copy_to_mmio_slow(mut src_ptr: *const u8, mut dst_io_ptr: *mut u8, mut count: usize) {
+    if count == 0 {
+        return;
+    }
+
+    // Align any unaligned destination IO.
+    if dst_io_ptr.addr() & 1 != 0 {
+        // SAFETY: The caller guarantees valid reads from regular memory and MMIO writes.
+        unsafe { copy_u8_to(&mut src_ptr, &mut dst_io_ptr) };
+        count -= 1;
+    }
+
+    if count >= 2 && dst_io_ptr.addr() & 2 != 0 {
+        // SAFETY: The caller guarantees valid reads from regular memory and MMIO writes.
+        unsafe { copy_u16_to(&mut src_ptr, &mut dst_io_ptr) };
+        count -= 2;
+    }
+
+    if count >= 4 && dst_io_ptr.addr() & 4 != 0 {
+        // SAFETY: The caller guarantees valid reads from regular memory and MMIO writes.
+        unsafe { copy_u32_to(&mut src_ptr, &mut dst_io_ptr) };
+        count -= 4;
+    }
+
+    let word_size = size_of::<u64>();
+    while count >= word_size {
+        // SAFETY: The caller guarantees valid reads from regular memory and MMIO writes.
+        // The destination pointer is aligned by the steps above.
+        unsafe { copy_u64_to(&mut src_ptr, &mut dst_io_ptr) };
+        count -= word_size;
+    }
+
+    if count >= 4 {
+        // SAFETY: The caller guarantees valid reads from regular memory and MMIO writes.
+        unsafe { copy_u32_to(&mut src_ptr, &mut dst_io_ptr) };
+        count -= 4;
+    }
+
+    if count >= 2 {
+        // SAFETY: The caller guarantees valid reads from regular memory and MMIO writes.
+        unsafe { copy_u16_to(&mut src_ptr, &mut dst_io_ptr) };
+        count -= 2;
+    }
+
+    if count >= 1 {
+        // SAFETY: The caller guarantees valid reads from regular memory and MMIO writes.
+        unsafe { copy_u8_to(&mut src_ptr, &mut dst_io_ptr) };
+    }
+}
+
+pub(crate) fn copy_from_mmio_slow(
+    mut dst_ptr: *mut u8,
+    mut src_io_ptr: *const u8,
+    mut count: usize,
+) {
+    if count == 0 {
+        return;
+    }
+
+    // Align any unaligned source IO.
+    if src_io_ptr.addr() & 1 != 0 {
+        // SAFETY: The caller guarantees valid MMIO reads and regular memory writes.
+        unsafe { copy_u8_from(&mut dst_ptr, &mut src_io_ptr) };
+        count -= 1;
+    }
+
+    if count >= 2 && src_io_ptr.addr() & 2 != 0 {
+        // SAFETY: The caller guarantees valid MMIO reads and regular memory writes.
+        unsafe { copy_u16_from(&mut dst_ptr, &mut src_io_ptr) };
+        count -= 2;
+    }
+
+    if count >= 4 && src_io_ptr.addr() & 4 != 0 {
+        // SAFETY: The caller guarantees valid MMIO reads and regular memory writes.
+        unsafe { copy_u32_from(&mut dst_ptr, &mut src_io_ptr) };
+        count -= 4;
+    }
+
+    let word_size = size_of::<u64>();
+    while count >= word_size {
+        // SAFETY: The caller guarantees valid MMIO reads and regular memory writes.
+        // The source pointer is aligned by the steps above.
+        unsafe { copy_u64_from(&mut dst_ptr, &mut src_io_ptr) };
+        count -= word_size;
+    }
+
+    if count >= 4 {
+        // SAFETY: The caller guarantees valid MMIO reads and regular memory writes.
+        unsafe { copy_u32_from(&mut dst_ptr, &mut src_io_ptr) };
+        count -= 4;
+    }
+
+    if count >= 2 {
+        // SAFETY: The caller guarantees valid MMIO reads and regular memory writes.
+        unsafe { copy_u16_from(&mut dst_ptr, &mut src_io_ptr) };
+        count -= 2;
+    }
+
+    if count >= 1 {
+        // SAFETY: The caller guarantees valid MMIO reads and regular memory writes.
+        unsafe { copy_u8_from(&mut dst_ptr, &mut src_io_ptr) };
+    }
+}
+
 impl TdxTrapFrame for TrapFrameWrapper<'_> {
     fn rax(&self) -> usize {
         self.0.rax
