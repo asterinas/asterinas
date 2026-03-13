@@ -1,0 +1,12 @@
+pidfd:pidfd_test
+pidfd:pidfd_fdinfo_test
+pidfd:pidfd_open_test
+pidfd:pidfd_poll_test
+pidfd:pidfd_wait
+pidfd:pidfd_getfd_test
+pidfd:pidfd_setns_test
+pidfd:pidfd_file_handle_test
+pidfd:pidfd_bind_mount
+pidfd:pidfd_info_test
+pidfd:pidfd_xattr_test
+pidfd:pidfd_setattr_test

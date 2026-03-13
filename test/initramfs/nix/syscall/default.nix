@@ -7,6 +7,7 @@
     name = "gvisor-prebuilt";
     path = builtins.getEnv "GVISOR_PREBUILT_DIR";
   };
+  kselftest = callPackage ./kselftest { };
 
   package = stdenvNoCC.mkDerivation {
     pname = "syscall_test";
@@ -21,6 +22,7 @@
       export INITRAMFS=$out
       export LTP_PREBUILT_DIR=${ltp}
       export GVISOR_PREBUILT_DIR=${gvisor}
+      export KSELFTEST_PREBUILT_DIR=${kselftest}
       export SYSCALL_TEST_SUITE=${testSuite}
       export SYSCALL_TEST_WORKDIR=${workDir}
       export SMP=${toString smp}
