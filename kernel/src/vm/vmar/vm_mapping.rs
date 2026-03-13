@@ -166,8 +166,8 @@ impl VmMapping {
     /// Returns the mapping's RSS type.
     pub fn rss_type(&self) -> RssType {
         match &self.mapped_mem {
-            MappedMemory::Anonymous => RssType::RSS_ANONPAGES,
-            MappedMemory::Vmo(_) | MappedMemory::Device => RssType::RSS_FILEPAGES,
+            MappedMemory::Anonymous => RssType::Anon,
+            MappedMemory::Vmo(_) | MappedMemory::Device => RssType::File,
         }
     }
 
@@ -441,7 +441,10 @@ impl VmMapping {
                         cursor.unmap(PAGE_SIZE);
                         cursor.jump(va.start).unwrap();
                         cursor.map(new_frame.into(), prop);
-                        rss_delta.add(self.rss_type(), 1);
+                        // FIXME: Linux re-classify the page from `File` to `Anon` in RSS,
+                        // when a COW on a file-backed mapping happens.
+                        // We currently do not support this re-classification,
+                        // since it will introduce some complexity when unmapping this page.
                     }
                     cursor.flusher().sync_tlb_flush();
                 }
