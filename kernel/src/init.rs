@@ -2,7 +2,7 @@
 
 //! Kernel initialization.
 
-use aster_cmdline::KCMDLINE;
+use aster_cmdline::dispatch::INIT_PROC_ARGS;
 use component::InitStage;
 use ostd::{cpu::CpuId, util::id_set::Id};
 use spin::once::Once;
@@ -143,13 +143,10 @@ fn first_kthread() {
     print_banner();
 
     INIT_PROCESS.call_once(|| {
-        let karg = KCMDLINE.get().unwrap();
-        spawn_init_process(
-            karg.get_initproc_path().unwrap(),
-            karg.get_initproc_argv().to_vec(),
-            karg.get_initproc_envp().to_vec(),
-        )
-        .expect("Run init process failed.")
+        let karg = INIT_PROC_ARGS.get().unwrap();
+        let init_path = INIT_PATH.get().expect("Init process path not specified.");
+        spawn_init_process(init_path, karg.argv().to_vec(), karg.envp().to_vec())
+            .expect("Run init process failed.")
     });
 }
 
@@ -179,3 +176,6 @@ pub(crate) fn on_first_process_startup(ctx: &Context) {
     crate::fs::init_in_first_process(ctx);
     crate::process::init_in_first_process(ctx);
 }
+
+static INIT_PATH: Once<String> = Once::new();
+aster_cmdline::define_kv_param!("init", INIT_PATH);
