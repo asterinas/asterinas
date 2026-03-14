@@ -10,6 +10,7 @@ component.workspace = true
 log.workspace = true
 ostd.workspace = true
 spin.workspace = true
+inventory.workspace = true
 
 [lints]
 workspace = true

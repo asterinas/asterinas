@@ -5,7 +5,6 @@
 //! Reference: <https://wiki.osdev.org/I8042_PS/2_Controller>
 //!
 
-use aster_cmdline::{KCMDLINE, ModuleArg};
 use bitflags::bitflags;
 use ostd::{
     arch::{device::io_port::ReadWriteAccess, kernel::ACPI_INFO},
@@ -175,14 +174,7 @@ impl I8042Controller {
 
     /// Checks if the kernel command line contains the "i8042.exist" option.
     fn is_present_cmdline() -> bool {
-        KCMDLINE
-            .get()
-            .unwrap()
-            .get_module_args("i8042")
-            .is_some_and(|args| {
-                args.iter()
-                    .any(|arg| matches!(arg, ModuleArg::Arg(s) if s.as_bytes() == b"exist"))
-            })
+        I8042_EXIST.get().copied().unwrap_or(false)
     }
 
     fn read_configuration(&mut self) -> Result<Configuration, I8042ControllerError> {
@@ -400,3 +392,6 @@ bitflags! {
         const PARITY_ERROR = 1 << 7;
     }
 }
+
+static I8042_EXIST: Once<bool> = Once::new();
+aster_cmdline::define_flag_param!("i8042.exist", I8042_EXIST);
