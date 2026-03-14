@@ -55,6 +55,7 @@ pub use inventory::submit;
 
 pub mod dispatch;
 pub mod parse;
+pub mod types;
 
 /// Defines a **single-value** `key=value` kernel command-line parameter.
 ///
