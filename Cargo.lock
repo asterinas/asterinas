@@ -113,6 +113,7 @@ name = "aster-cmdline"
 version = "0.1.0"
 dependencies = [
  "component",
+ "inventory",
  "log",
  "ostd",
  "spin",
