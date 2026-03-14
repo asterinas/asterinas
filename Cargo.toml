@@ -177,6 +177,7 @@ smoltcp = { git = "https://github.com/asterinas/smoltcp", tag = "r_2024-11-08_f0
 ] }
 takeable = "0.2.2"
 time = { version = "0.3", default-features = false, features = ["alloc"] }
+inventory = { git = "https://github.com/asterinas/inventory", rev = "9dce587" }
 
 # External dependencies for both safe and unsafe crates
 bitflags = "1.3"
