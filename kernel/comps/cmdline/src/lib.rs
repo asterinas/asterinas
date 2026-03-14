@@ -53,12 +53,15 @@ extern crate alloc;
 mod dispatch;
 pub mod parse;
 pub mod types;
+mod unimplemented;
 
 pub use dispatch::INIT_PROC_ARGS;
 #[doc(hidden)]
 pub use dispatch::KernelParam;
 #[doc(hidden)]
 pub use inventory::submit;
+#[doc(hidden)]
+pub use unimplemented::setup_unimplemented;
 
 /// Defines a **single-value** `key=value` kernel command-line parameter.
 ///
