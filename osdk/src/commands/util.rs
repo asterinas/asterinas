@@ -4,11 +4,6 @@ use std::process::Command;
 
 use crate::util::{get_kernel_crate, new_command_checked_exists};
 
-pub const COMMON_CARGO_ARGS: &[&str] = &[
-    "-Zbuild-std=core,alloc,compiler_builtins",
-    "-Zbuild-std-features=compiler-builtins-mem",
-];
-
 pub const DEFAULT_TARGET_RELPATH: &str = "osdk";
 
 pub fn cargo() -> Command {
