@@ -26,7 +26,7 @@ use crate::{
 /// The `cfg_ktest` parameter controls whether `cfg(ktest)` is enabled.
 pub fn execute_forwarded_command(subcommand: &str, args: &Vec<String>, cfg_ktest: bool) {
     let mut cargo = util::cargo();
-    cargo.arg(subcommand).args(util::COMMON_CARGO_ARGS);
+    cargo.arg(subcommand);
     if !args.contains(&"--target".to_owned()) {
         cargo.arg("--target").arg(get_default_arch().triple());
     }

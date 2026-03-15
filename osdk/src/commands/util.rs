@@ -4,10 +4,13 @@ use std::process::Command;
 
 use crate::util::{get_kernel_crate, new_command_checked_exists};
 
-pub const COMMON_CARGO_ARGS: &[&str] = &[
-    "-Zbuild-std=core,alloc,compiler_builtins",
-    "-Zbuild-std-features=compiler-builtins-mem",
-];
+/// Since the pre-compiled `libcore` distribution for bare-metal targets
+/// defaults to the `abort` panic strategy, `cargo osdk test` requires a
+/// recompile via `-Zbuild-std` to enable the `unwind` strategy.
+/// This is necessary for the kernel to catch `#[should_panic]` tests;
+/// otherwise, `gimli` will be unable to perform stack backtraces, preventing
+/// the `unwinding` crate from intercepting panics.
+pub const OSDK_TEST_CARGO_ARGS: &[&str] = &["-Zbuild-std=core,alloc"];
 
 pub const DEFAULT_TARGET_RELPATH: &str = "osdk";
 
