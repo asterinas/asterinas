@@ -11,7 +11,7 @@ use std::{
     time::SystemTime,
 };
 
-use bin::{make_elf_for_qemu, make_install_bzimage};
+use bin::make_elf_for_qemu;
 
 use super::util::{COMMON_CARGO_ARGS, DEFAULT_TARGET_RELPATH, cargo, profile_name_adapter};
 use crate::{
@@ -25,7 +25,7 @@ use crate::{
     cli::BuildArgs,
     config::{
         Config,
-        scheme::{ActionChoice, BootMethod, BootProtocol},
+        scheme::{ActionChoice, BootMethod},
     },
     error::Errno,
     error_msg,
@@ -132,9 +132,9 @@ pub fn do_cached_build(
     action: ActionChoice,
     rustflags: &[&str],
 ) -> Bundle {
-    let (build, boot, grub) = match action {
-        ActionChoice::Run => (&config.run.build, &config.run.boot, &config.run.grub),
-        ActionChoice::Test => (&config.test.build, &config.test.boot, &config.test.grub),
+    let (build, boot) = match action {
+        ActionChoice::Run => (&config.run.build, &config.run.boot),
+        ActionChoice::Test => (&config.test.build, &config.test.boot),
     };
 
     let mut rustflags = rustflags.to_vec();
@@ -183,17 +183,8 @@ pub fn do_cached_build(
             bundle.consume_aster_bin(aster_elf);
         }
         BootMethod::QemuDirect => {
-            let aster_bin = match grub.boot_protocol {
-                BootProtocol::Linux => make_install_bzimage(
-                    &osdk_output_directory,
-                    &osdk_output_directory,
-                    &aster_elf,
-                    build.linux_x86_legacy_boot,
-                    config.build.encoding.clone(),
-                ),
-                _ => make_elf_for_qemu(&osdk_output_directory, &aster_elf, build.strip_elf),
-            };
-            bundle.consume_aster_bin(aster_bin);
+            let qemu_elf = make_elf_for_qemu(&osdk_output_directory, &aster_elf, build.strip_elf);
+            bundle.consume_aster_bin(qemu_elf);
         }
     }
 
