@@ -145,7 +145,7 @@ fn first_kthread() {
     INIT_PROCESS.call_once(|| {
         let karg = KCMDLINE.get().unwrap();
         spawn_init_process(
-            karg.get_initproc_path().unwrap(),
+            karg.get_initproc_path(),
             karg.get_initproc_argv().to_vec(),
             karg.get_initproc_envp().to_vec(),
         )
