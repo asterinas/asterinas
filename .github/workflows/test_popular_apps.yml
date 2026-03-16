@@ -36,6 +36,8 @@ jobs:
             disk_size: 8192
           - name: development-tools
             disk_size: 8192
+          - name: monitoring-observability
+            disk_size: 8192
 
     name: Test ${{ matrix.test.name }}
     steps:
