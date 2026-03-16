@@ -113,9 +113,6 @@ impl From<&str> for KCmdlineArg {
             // KernelArg => Arg "\s+" KernelArg | %empty
             // InitArg => Arg "\s+" InitArg | %empty
             if kcmdline_end {
-                if result.initproc.path.is_none() {
-                    panic!("[KCmdline] Init arguments specified without init process");
-                }
                 result.initproc.argv.push(CString::new(arg).unwrap());
                 continue;
             }

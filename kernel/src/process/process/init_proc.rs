@@ -26,20 +26,54 @@ use crate::{
 
 /// Creates and schedules the init process to run.
 pub fn spawn_init_process(
-    executable_path: &str,
+    executable_path: Option<&str>,
     argv: Vec<CString>,
     envp: Vec<CString>,
 ) -> Result<Arc<Process>> {
-    // Ensure the path for init process executable is absolute.
-    debug_assert!(executable_path.starts_with('/'));
-
-    let process = create_init_process(executable_path, argv, envp)?;
+    let process = if let Some(executable_path) = executable_path {
+        create_init_process(
+            executable_path,
+            with_init_argv0(executable_path, argv),
+            envp,
+        )?
+    } else {
+        create_default_init_process(argv, envp)?
+    };
 
     set_session_and_group(&process);
 
     process.run();
 
     Ok(process)
+}
+
+fn create_default_init_process(argv: Vec<CString>, envp: Vec<CString>) -> Result<Arc<Process>> {
+    // Linux probes the fallback init executables in this order:
+    // <https://elixir.bootlin.com/linux/v6.19/source/init/main.c#L1634>.
+    const DEFAULT_INIT_EXEC_PATHS: &[&str] = &["/sbin/init", "/etc/init", "/bin/init", "/bin/sh"];
+
+    let mut last_error = None;
+
+    for default_init_exec_path in DEFAULT_INIT_EXEC_PATHS {
+        // FIXME: Avoid cloning `argv` and `envp` for each fallback candidate.
+        match create_init_process(
+            default_init_exec_path,
+            with_init_argv0(default_init_exec_path, argv.clone()),
+            envp.clone(),
+        ) {
+            Ok(process) => return Ok(process),
+            Err(error) => last_error = Some(error),
+        }
+    }
+
+    Err(last_error.unwrap())
+}
+
+fn with_init_argv0(executable_path: &str, mut argv: Vec<CString>) -> Vec<CString> {
+    // Linux prepends the init executable path as `argv[0]`.
+    // Reference: <https://elixir.bootlin.com/linux/v6.19/source/init/main.c#L1491>.
+    argv.insert(0, CString::new(executable_path).unwrap());
+    argv
 }
 
 fn create_init_process(
