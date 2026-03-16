@@ -253,6 +253,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-java"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
 name = "test-nix"
 version = "0.1.0"
 dependencies = [
