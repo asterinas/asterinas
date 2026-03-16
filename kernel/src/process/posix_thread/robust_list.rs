@@ -158,7 +158,9 @@ pub fn wake_robust_futex(futex_addr: Vaddr, tid: Tid) -> Result<()> {
                 // Wake up one waiter and break out from the loop.
                 if new_val & FUTEX_WAITERS != 0 {
                     debug!("wake the robust futex at {:#x}", futex_addr);
-                    futex_wake(futex_addr, 1, None)?;
+                    let current_vmar = task.as_thread_local().unwrap().vmar().borrow();
+                    let current_vmar = current_vmar.as_ref().unwrap().clone();
+                    futex_wake(futex_addr, 1, &current_vmar, false)?;
                 }
                 break;
             }

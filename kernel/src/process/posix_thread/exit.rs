@@ -124,7 +124,8 @@ fn wake_clear_ctid(thread_local: &ThreadLocal) {
     let _ = current_userspace!()
         .write_val(clear_ctid, &0u32)
         .inspect_err(|err| debug!("exit: cannot clear the child TID: {:?}", err));
-    let _ = futex_wake(clear_ctid, 1, None)
+    let current_vmar = thread_local.vmar().borrow().as_ref().unwrap().clone();
+    let _ = futex_wake(clear_ctid, 1, &current_vmar, false)
         .inspect_err(|err| debug!("exit: cannot wake the futex on the child TID: {:?}", err));
 
     thread_local.clear_child_tid().set(0);

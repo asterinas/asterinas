@@ -79,15 +79,12 @@ pub fn sys_futex(
         )))
     };
 
-    let pid = if futex_flags.contains(FutexFlags::FUTEX_PRIVATE) {
-        Some(ctx.process.pid())
-    } else {
-        None
-    };
+    let is_private = futex_flags.contains(FutexFlags::FUTEX_PRIVATE);
+    let current_vmar = ctx.thread_local.vmar().borrow().as_ref().unwrap().clone();
     let res = match futex_op {
         FutexOp::FUTEX_WAIT => {
             let timeout = get_futex_timeout(utime_addr)?;
-            futex_wait(futex_addr as _, futex_val as _, timeout, ctx, pid).map(|_| 0)
+            futex_wait(futex_addr as _, futex_val as _, timeout, ctx, is_private).map(|_| 0)
         }
         FutexOp::FUTEX_WAIT_BITSET => {
             let timeout = get_futex_timeout(utime_addr)?;
@@ -97,17 +94,23 @@ pub fn sys_futex(
                 timeout,
                 bitset as _,
                 ctx,
-                pid,
+                is_private,
             )
             .map(|_| 0)
         }
         FutexOp::FUTEX_WAKE => {
             let max_count = futex_val_to_max_count(futex_val);
-            futex_wake(futex_addr as _, max_count, pid)
+            futex_wake(futex_addr as _, max_count, &current_vmar, is_private)
         }
         FutexOp::FUTEX_WAKE_BITSET => {
             let max_count = futex_val_to_max_count(futex_val);
-            futex_wake_bitset(futex_addr as _, max_count, bitset as _, pid)
+            futex_wake_bitset(
+                futex_addr as _,
+                max_count,
+                bitset as _,
+                &current_vmar,
+                is_private,
+            )
         }
         FutexOp::FUTEX_REQUEUE => {
             let max_nwakes = futex_val_to_max_count(futex_val);
@@ -119,7 +122,8 @@ pub fn sys_futex(
                 max_nwakes,
                 max_nrequeues,
                 futex_new_addr as _,
-                pid,
+                &current_vmar,
+                is_private,
             )
         }
         FutexOp::FUTEX_WAKE_OP => {
@@ -132,7 +136,7 @@ pub fn sys_futex(
                 futex_val_to_max_count(futex_val_2),
                 bitset,
                 ctx,
-                pid,
+                is_private,
             )
         }
         _ => {
