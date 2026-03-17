@@ -5,13 +5,7 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{
-        posix_thread::ContextPthreadAdminApi,
-        signal::{
-            constants::{SIGKILL, SIGSTOP},
-            sig_mask::SigMask,
-        },
-    },
+    process::{posix_thread::ContextPthreadAdminApi, signal::sig_mask::SigMask},
 };
 
 pub fn sys_rt_sigprocmask(
@@ -47,21 +41,15 @@ fn do_rt_sigprocmask(
     }
 
     if set_ptr != 0 {
-        let mut read_mask = ctx.user_space().read_val::<SigMask>(set_ptr)?;
+        let read_mask = ctx.user_space().read_val::<SigMask>(set_ptr)?;
         match mask_op {
             MaskOp::Block => {
-                // According to man pages, "it is not possible to block SIGKILL or SIGSTOP.
-                // Attempts to do so are silently ignored."
-                read_mask -= SIGKILL;
-                read_mask -= SIGSTOP;
                 ctx.set_sig_mask(old_sig_mask_value + read_mask);
             }
             MaskOp::Unblock => {
                 ctx.set_sig_mask(old_sig_mask_value - read_mask);
             }
             MaskOp::SetMask => {
-                read_mask -= SIGKILL; // Cannot block SIGKILL
-                read_mask -= SIGSTOP; // Cannot block SIGSTOP
                 ctx.set_sig_mask(read_mask);
             }
         }

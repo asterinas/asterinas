@@ -5,11 +5,7 @@ use ostd::{mm::VmIo, sync::Waiter};
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::signal::{
-        constants::{SIGKILL, SIGSTOP},
-        sig_mask::SigMask,
-        with_sigmask_changed,
-    },
+    process::signal::{sig_mask::SigMask, with_sigmask_changed},
 };
 
 pub fn sys_rt_sigsuspend(
@@ -26,14 +22,7 @@ pub fn sys_rt_sigsuspend(
         return_errno_with_message!(Errno::EINVAL, "invalid sigmask size");
     }
 
-    let sigmask = {
-        let mut mask: SigMask = ctx.user_space().read_val(sigmask_addr)?;
-        // It is not possible to block SIGKILL or SIGSTOP,
-        // specifying these signals in mask has no effect.
-        mask -= SIGKILL;
-        mask -= SIGSTOP;
-        mask
-    };
+    let sigmask = ctx.user_space().read_val::<SigMask>(sigmask_addr)?;
 
     // Wait until receiving any signal
     let waiter = Waiter::new_pair().0;
