@@ -292,19 +292,6 @@ impl PosixThread {
         self.credentials.dup().restrict()
     }
 
-    /// Gets the read-write credentials of the current thread.
-    ///
-    /// It is illegal to mutate the credentials from a thread other than the
-    /// current thread. For performance reasons, this function only checks it
-    /// using debug assertions.
-    pub fn credentials_mut(&self) -> Credentials<ReadWriteOp> {
-        debug_assert!(core::ptr::eq(
-            current_thread!().as_posix_thread().unwrap(),
-            self
-        ));
-        self.credentials.dup().restrict()
-    }
-
     /// Returns the I/O priority value of the thread.
     pub fn io_priority(&self) -> &AtomicU32 {
         &self.io_priority
@@ -339,6 +326,9 @@ pub trait ContextPthreadAdminApi {
     /// Note that it is not possible to block SIGKILL or SIGSTOP.
     /// Attempts to do so are silently ignored.
     fn set_sig_mask(&self, sig_mask: SigMask);
+
+    /// Gets the read-write credentials of the current thread.
+    fn credentials_mut(&self) -> Credentials<ReadWriteOp>;
 }
 
 impl ContextPthreadAdminApi for Context<'_> {
@@ -351,6 +341,10 @@ impl ContextPthreadAdminApi for Context<'_> {
         self.posix_thread
             .sig_mask
             .store(sig_mask, Ordering::Relaxed);
+    }
+
+    fn credentials_mut(&self) -> Credentials<ReadWriteOp> {
+        self.posix_thread.credentials.dup().restrict()
     }
 }
 
