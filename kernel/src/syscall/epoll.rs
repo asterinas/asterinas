@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{sync::atomic::Ordering, time::Duration};
+use core::time::Duration;
 
 use ostd::mm::VmIo;
 
@@ -12,7 +12,10 @@ use crate::{
         file_table::{FdFlags, FileDesc, get_file_fast},
     },
     prelude::*,
-    process::signal::sig_mask::{SigMask, SigSet},
+    process::{
+        posix_thread::ContextPthreadAdminApi,
+        signal::sig_mask::{SigMask, SigSet},
+    },
     time::timespec_t,
 };
 
@@ -189,21 +192,17 @@ fn set_signal_mask(set_ptr: Vaddr, ctx: &Context) -> Result<SigMask> {
         None
     };
 
-    let old_sig_mask_value = ctx.posix_thread.sig_mask().load(Ordering::Relaxed);
+    let old_sig_mask_value = ctx.posix_thread.sig_mask();
 
     if let Some(new_mask) = new_mask {
-        ctx.posix_thread
-            .sig_mask()
-            .store(new_mask, Ordering::Relaxed);
+        ctx.set_sig_mask(new_mask);
     }
 
     Ok(old_sig_mask_value)
 }
 
 fn restore_signal_mask(sig_mask_val: SigMask, ctx: &Context) {
-    ctx.posix_thread
-        .sig_mask()
-        .store(sig_mask_val, Ordering::Relaxed);
+    ctx.set_sig_mask(sig_mask_val);
 }
 
 pub fn sys_epoll_pwait(
