@@ -27,6 +27,7 @@ jobs:
       - name: Build the website
         run: |
           cd asterinas/book
+          mdbook-mermaid install
           mdbook build
 
       - name: Deploy website
