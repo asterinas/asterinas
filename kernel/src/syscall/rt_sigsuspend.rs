@@ -37,11 +37,10 @@ pub fn sys_rt_sigsuspend(
 
     // Wait until receiving any signal
     let waiter = Waiter::new_pair().0;
-    with_sigmask_changed(
-        ctx,
-        |old_mask| old_mask + sigmask,
-        || waiter.pause_until(|| None::<()>),
-    )?;
+    // FIXME: In this approach, after the syscall returns, when handling pending signals,
+    // the signal mask has already been restored to the old mask,
+    // which prevents the signal from being handled correctly.
+    with_sigmask_changed(ctx, |_| sigmask, || waiter.pause_until(|| None::<()>))?;
 
     // This syscall should always return `Err(EINTR)`. This path should never be reached.
     unreachable!("rt_sigsuspend always return EINTR");
