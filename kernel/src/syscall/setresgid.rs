@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{prelude::*, process::Gid};
+use crate::{
+    prelude::*,
+    process::{Gid, posix_thread::ContextPthreadAdminApi},
+};
 
 pub fn sys_setresgid(rgid: i32, egid: i32, sgid: i32, ctx: &Context) -> Result<SyscallReturn> {
     let rgid = if rgid >= 0 {
@@ -24,7 +27,7 @@ pub fn sys_setresgid(rgid: i32, egid: i32, sgid: i32, ctx: &Context) -> Result<S
 
     debug!("rgid = {:?}, egid = {:?}, sgid = {:?}", rgid, egid, sgid);
 
-    let credentials = ctx.posix_thread.credentials_mut();
+    let credentials = ctx.credentials_mut();
     credentials.set_resgid(rgid, egid, sgid)?;
 
     Ok(SyscallReturn::Return(0))
