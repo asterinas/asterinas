@@ -423,8 +423,11 @@ docs: $(CARGO_OSDK)
 	done
 
 .PHONY: book
-book:
+book: book/mermaid.min.js book/mermaid-init.js
 	@cd book && mdbook build
+
+book/mermaid.min.js book/mermaid-init.js:
+	@mdbook-mermaid install book/
 
 .PHONY: format
 format:
