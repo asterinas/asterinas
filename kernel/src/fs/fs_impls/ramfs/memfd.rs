@@ -6,7 +6,6 @@ use alloc::format;
 use core::time::Duration;
 
 use align_ext::AlignExt;
-use aster_block::bio::BioWaiter;
 use aster_rights::Rights;
 use inherit_methods_macro::inherit_methods;
 use spin::Once;
@@ -19,7 +18,6 @@ use crate::{
         vfs::{
             file_system::FileSystem,
             inode::{Extension, FallocMode, Inode, InodeIo, Metadata},
-            page_cache::{CachePage, PageCacheBackend},
             path::{Mount, Path},
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
@@ -90,13 +88,6 @@ impl MemfdInode {
     pub(self) fn name(&self) -> &str {
         &self.name
     }
-}
-
-#[inherit_methods(from = "self.inode")]
-impl PageCacheBackend for MemfdInode {
-    fn read_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter>;
-    fn write_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter>;
-    fn npages(&self) -> usize;
 }
 
 #[inherit_methods(from = "self.inode")]
