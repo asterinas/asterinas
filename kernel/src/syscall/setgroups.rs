@@ -3,7 +3,10 @@
 use ostd::mm::VmIo;
 
 use super::SyscallReturn;
-use crate::{prelude::*, process::Gid};
+use crate::{
+    prelude::*,
+    process::{Gid, posix_thread::ContextPthreadAdminApi},
+};
 
 pub fn sys_setgroups(size: usize, group_list_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     debug!("size = {}, group_list_addr = 0x{:x}", size, group_list_addr);
@@ -21,7 +24,7 @@ pub fn sys_setgroups(size: usize, group_list_addr: Vaddr, ctx: &Context) -> Resu
         new_groups.insert(gid);
     }
 
-    let credentials = ctx.posix_thread.credentials_mut();
+    let credentials = ctx.credentials_mut();
     *credentials.groups_mut() = new_groups;
 
     Ok(SyscallReturn::Return(0))

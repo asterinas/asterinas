@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{prelude::*, process::Gid};
+use crate::{
+    prelude::*,
+    process::{Gid, posix_thread::ContextPthreadAdminApi},
+};
 
 pub fn sys_setgid(gid: i32, ctx: &Context) -> Result<SyscallReturn> {
     if gid < 0 {
@@ -11,7 +14,7 @@ pub fn sys_setgid(gid: i32, ctx: &Context) -> Result<SyscallReturn> {
     let gid = Gid::new(gid.cast_unsigned());
     debug!("gid = {:?}", gid);
 
-    let credentials = ctx.posix_thread.credentials_mut();
+    let credentials = ctx.credentials_mut();
     credentials.set_gid(gid)?;
 
     Ok(SyscallReturn::Return(0))

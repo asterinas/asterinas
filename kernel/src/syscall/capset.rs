@@ -5,10 +5,13 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::credentials::{
-        BOUNDING_CAPSET,
-        c_types::{CUserCapData, CUserCapHeader, LINUX_CAPABILITY_VERSION_3},
-        capabilities::CapSet,
+    process::{
+        credentials::{
+            BOUNDING_CAPSET,
+            c_types::{CUserCapData, CUserCapHeader, LINUX_CAPABILITY_VERSION_3},
+            capabilities::CapSet,
+        },
+        posix_thread::ContextPthreadAdminApi,
     },
 };
 
@@ -49,7 +52,7 @@ pub fn sys_capset(
     let effective_capset = CapSet::from_lo_hi(caps_lo.effective, caps_hi.effective);
     let inheritable_capset = CapSet::from_lo_hi(caps_lo.inheritable, caps_hi.inheritable);
 
-    let credentials = ctx.posix_thread.credentials_mut();
+    let credentials = ctx.credentials_mut();
 
     if !credentials.permitted_capset().contains(permitted_capset) {
         return_errno_with_message!(Errno::EPERM, "adding permitted capabilities is not allowed");

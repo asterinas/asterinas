@@ -6,7 +6,9 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::{
-        credentials::SecureBits, posix_thread::MAX_THREAD_NAME_LEN, signal::sig_num::SigNum,
+        credentials::SecureBits,
+        posix_thread::{ContextPthreadAdminApi, MAX_THREAD_NAME_LEN},
+        signal::sig_num::SigNum,
     },
 };
 
@@ -61,7 +63,7 @@ pub fn sys_prctl(
             if keep_cap > 1 {
                 return_errno!(Errno::EINVAL)
             }
-            let credentials = ctx.posix_thread.credentials_mut();
+            let credentials = ctx.credentials_mut();
             credentials.set_keep_capabilities(keep_cap != 0)?;
         }
         PrctlCmd::PR_GET_NAME(write_to_addr) => {
@@ -95,7 +97,7 @@ pub fn sys_prctl(
             return Ok(SyscallReturn::Return(securebits.bits() as _));
         }
         PrctlCmd::PR_SET_SECUREBITS(securebits) => {
-            let credentials = ctx.posix_thread.credentials_mut();
+            let credentials = ctx.credentials_mut();
             credentials.set_securebits(securebits)?;
         }
         PrctlCmd::PR_GET_TIMERSLACK => {

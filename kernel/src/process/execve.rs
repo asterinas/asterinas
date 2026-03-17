@@ -17,7 +17,9 @@ use crate::{
     prelude::*,
     process::{
         ContextUnshareAdminApi, Credentials, Process,
-        posix_thread::{PosixThread, ThreadLocal, ThreadName, sigkill_other_threads, thread_table},
+        posix_thread::{
+            ContextPthreadAdminApi, ThreadLocal, ThreadName, sigkill_other_threads, thread_table,
+        },
         process_vm::{MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS, ProcessVm},
         program_loader::{ProgramToLoad, elf::ElfLoadInfo},
         signal::{
@@ -160,7 +162,7 @@ fn do_execve_no_return(
     // This prevents race conditions when checking access permissions while opening
     // `/proc/[pid]/mem` or `/proc/[pid]/maps`.
     let vmar_guard = activate_vmar(ctx, new_vmar);
-    apply_caps_from_exec(process, posix_thread, elf_file.inode())?;
+    apply_caps_from_exec(process, ctx.credentials_mut(), elf_file.inode())?;
     drop(vmar_guard);
 
     // After the program has been successfully loaded, the virtual memory of the current process
@@ -250,13 +252,12 @@ fn set_cpu_context(
 ///
 /// The capabilities will be updated accordingly.
 fn apply_caps_from_exec(
-    process: &Process,
-    posix_thread: &PosixThread,
+    current: &Process,
+    credentials: Credentials<ReadWriteOp>,
     elf_inode: &Arc<dyn Inode>,
 ) -> Result<()> {
-    let credentials = posix_thread.credentials_mut();
-    set_uid_from_elf(process, &credentials, elf_inode)?;
-    set_gid_from_elf(process, &credentials, elf_inode)?;
+    set_uid_from_elf(current, &credentials, elf_inode)?;
+    set_gid_from_elf(current, &credentials, elf_inode)?;
     credentials.set_keep_capabilities(false)?;
 
     Ok(())

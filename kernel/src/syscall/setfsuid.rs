@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{prelude::*, process::Uid};
+use crate::{
+    prelude::*,
+    process::{Uid, posix_thread::ContextPthreadAdminApi},
+};
 
 pub fn sys_setfsuid(uid: i32, ctx: &Context) -> Result<SyscallReturn> {
     let fsuid = if uid >= 0 {
@@ -13,7 +16,7 @@ pub fn sys_setfsuid(uid: i32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fsuid = {:?}", fsuid);
 
     let old_fsuid = {
-        let credentials = ctx.posix_thread.credentials_mut();
+        let credentials = ctx.credentials_mut();
         credentials
             .set_fsuid(fsuid)
             .unwrap_or_else(|old_fsuid| old_fsuid)
