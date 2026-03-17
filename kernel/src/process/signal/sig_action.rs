@@ -31,13 +31,7 @@ impl From<sigaction_t> for SigAction {
             SIG_IGN => SigAction::Ign,
             _ => {
                 let flags = SigActionFlags::from_bits_truncate(input.flags);
-                let mask = {
-                    let mut sigset = SigSet::from(input.mask);
-                    // SIGSTOP and SIGKILL cannot be masked
-                    sigset -= SIGSTOP;
-                    sigset -= SIGKILL;
-                    sigset
-                };
+                let mask = SigSet::from(input.mask);
                 SigAction::User {
                     handler_addr: input.handler_ptr,
                     flags,

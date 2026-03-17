@@ -335,11 +335,19 @@ impl PosixThread {
 /// Provides administrative APIs for the current POSIX thread.
 pub trait ContextPthreadAdminApi {
     /// Sets the signal mask of the current thread.
+    ///
+    /// Note that it is not possible to block SIGKILL or SIGSTOP.
+    /// Attempts to do so are silently ignored.
     fn set_sig_mask(&self, sig_mask: SigMask);
 }
 
 impl ContextPthreadAdminApi for Context<'_> {
-    fn set_sig_mask(&self, sig_mask: SigMask) {
+    fn set_sig_mask(&self, mut sig_mask: SigMask) {
+        use crate::process::signal::constants::{SIGKILL, SIGSTOP};
+
+        sig_mask -= SIGKILL;
+        sig_mask -= SIGSTOP;
+
         self.posix_thread
             .sig_mask
             .store(sig_mask, Ordering::Relaxed);
