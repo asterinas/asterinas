@@ -19,7 +19,7 @@ use crate::{
     process::{
         Pid,
         namespace::nsproxy::NsProxy,
-        signal::{PauseReason, PollHandle},
+        signal::{PauseReason, PollHandle, sig_mask::SigMask},
     },
     thread::{Thread, Tid},
     time::{Timer, TimerManager, clocks::ProfClock, timer::TimerGuard},
@@ -134,13 +134,9 @@ impl PosixThread {
         &self.file_table
     }
 
-    /// Gets the reference to the signal mask of the thread.
-    ///
-    /// Note that while this function offers mutable access to the signal mask,
-    /// it is not sound for callers other than the current thread to modify the
-    /// signal mask. They may only read the signal mask.
-    pub fn sig_mask(&self) -> &AtomicSigMask {
-        &self.sig_mask
+    /// Returns the signal mask of the thread.
+    pub fn sig_mask(&self) -> SigMask {
+        self.sig_mask.load(Ordering::Relaxed)
     }
 
     pub(super) fn sig_queues(&self) -> &SigQueues {
@@ -333,6 +329,20 @@ impl PosixThread {
     pub fn reset_timer_slack_to_default(&self) {
         let default = self.default_timer_slack_ns.load(Ordering::Relaxed);
         self.timer_slack_ns.store(default, Ordering::Relaxed);
+    }
+}
+
+/// Provides administrative APIs for the current POSIX thread.
+pub trait ContextPthreadAdminApi {
+    /// Sets the signal mask of the current thread.
+    fn set_sig_mask(&self, sig_mask: SigMask);
+}
+
+impl ContextPthreadAdminApi for Context<'_> {
+    fn set_sig_mask(&self, sig_mask: SigMask) {
+        self.posix_thread
+            .sig_mask
+            .store(sig_mask, Ordering::Relaxed);
     }
 }
 

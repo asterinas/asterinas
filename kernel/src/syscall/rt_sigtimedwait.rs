@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{sync::atomic::Ordering, time::Duration};
+use core::time::Duration;
 
 use ostd::{mm::VmIo, sync::Waiter};
 
@@ -60,7 +60,7 @@ pub fn sys_rt_sigtimedwait(
         timeout
     );
 
-    let block_list = ctx.posix_thread.sig_mask().load(Ordering::Relaxed);
+    let block_list = ctx.posix_thread.sig_mask();
     // Fast path: If a signal is already pending, dequeue and return it immediately.
     if let Some(signal) = dequeue_signal_with_checking_ignore(ctx, mask, block_list) {
         if info_ptr != 0 {

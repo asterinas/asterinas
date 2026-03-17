@@ -402,7 +402,7 @@ fn clone_child_task(
     ));
 
     // Inherit sigmask from current thread
-    let sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed).into();
+    let sig_mask = posix_thread.sig_mask().into();
 
     // Inherit the thread name.
     let thread_name = posix_thread.thread_name().lock().clone();
@@ -508,7 +508,7 @@ fn clone_child_process(
     }
 
     // Inherit the parent's signal mask
-    let child_sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed).into();
+    let child_sig_mask = posix_thread.sig_mask().into();
 
     // Inherit the parent's resource limits
     let child_resource_limits = process.resource_limits().clone();

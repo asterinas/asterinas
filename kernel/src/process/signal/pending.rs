@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::Ordering;
-
 use crate::{
     prelude::*,
     process::{
@@ -91,7 +89,7 @@ fn has_pending_signal(posix_thread: &PosixThread, process: &Process) -> bool {
     // Slow path: Some signals are pending.
     let sig_dispositions = process.sig_dispositions().lock();
     let sig_dispositions = sig_dispositions.lock();
-    let blocked = posix_thread.sig_mask().load(Ordering::Relaxed);
+    let blocked = posix_thread.sig_mask();
 
     posix_thread
         .sig_queues()

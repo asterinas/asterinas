@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::Ordering;
-
 use ostd::sync::{WaitQueue, Waiter};
 
 use super::sig_mask::SigMask;
 use crate::{
     prelude::*,
-    process::{posix_thread::AsPosixThread, signal::HandlePendingSignal},
+    process::{
+        posix_thread::{AsPosixThread, ContextPthreadAdminApi},
+        signal::HandlePendingSignal,
+    },
     thread::AsThread,
     time::{
         timer::TimerGuard,
@@ -256,24 +257,22 @@ pub fn with_sigmask_changed<R>(
     mask_op: impl FnOnce(SigMask) -> SigMask,
     operate: impl FnOnce() -> R,
 ) -> R {
-    let sig_mask = ctx.posix_thread.sig_mask();
-
     // Save the original signal mask and apply the mask updates.
-    let old_mask = sig_mask.load(Ordering::Relaxed);
-    sig_mask.store(mask_op(old_mask), Ordering::Relaxed);
+    let old_mask = ctx.posix_thread.sig_mask();
+    ctx.set_sig_mask(mask_op(old_mask));
 
     // Perform the operation.
     let res = operate();
 
     // Restore the original signal mask.
-    sig_mask.store(old_mask, Ordering::Relaxed);
+    ctx.set_sig_mask(old_mask);
 
     res
 }
 
 #[cfg(ktest)]
 mod test {
-    use core::sync::atomic::AtomicBool;
+    use core::sync::atomic::{AtomicBool, Ordering};
 
     use ostd::prelude::*;
 
