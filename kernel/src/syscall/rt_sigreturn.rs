@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::Ordering;
-
 use ostd::{
     arch::cpu::context::{FpuContext, UserContext},
     mm::VmIo,
@@ -10,7 +8,9 @@ use ostd::{
 
 use super::SyscallReturn;
 use crate::{
-    prelude::*, process::signal::c_types::ucontext_t, syscall::sigaltstack::set_new_stack,
+    prelude::*,
+    process::{posix_thread::ContextPthreadAdminApi, signal::c_types::ucontext_t},
+    syscall::sigaltstack::set_new_stack,
 };
 
 pub fn sys_rt_sigreturn(ctx: &Context, user_ctx: &mut UserContext) -> Result<SyscallReturn> {
@@ -66,10 +66,8 @@ pub fn sys_rt_sigreturn(ctx: &Context, user_ctx: &mut UserContext) -> Result<Sys
 
     // unblock sig mask
     let sig_mask = ucontext.uc_sigmask;
-    let old_mask = posix_thread.sig_mask().load(Ordering::Relaxed);
-    posix_thread
-        .sig_mask()
-        .store(old_mask - sig_mask, Ordering::Relaxed);
+    let old_mask = posix_thread.sig_mask();
+    ctx.set_sig_mask(old_mask - sig_mask);
 
     Ok(SyscallReturn::NoReturn)
 }

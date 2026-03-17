@@ -13,8 +13,6 @@ pub mod sig_queues;
 mod sig_stack;
 pub mod signals;
 
-use core::sync::atomic::Ordering;
-
 use align_ext::AlignExt;
 use c_types::{siginfo_t, ucontext_t};
 use constants::SIGSEGV;
@@ -38,7 +36,7 @@ use crate::{
     prelude::*,
     process::{
         TermStatus,
-        posix_thread::do_exit_group,
+        posix_thread::{ContextPthreadAdminApi, do_exit_group},
         signal::{c_types::stack_t, signals::Signal},
     },
 };
@@ -139,7 +137,7 @@ fn dequeue_pending_signal(ctx: &Context) -> Option<(Box<dyn Signal>, SigAction)>
     let sig_dispositions = ctx.process.sig_dispositions().lock();
     let mut sig_dispositions = sig_dispositions.lock();
 
-    let sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed);
+    let sig_mask = posix_thread.sig_mask();
     let (signal, sig_num, sig_action) = loop {
         let signal = ctx.dequeue_signal(&sig_mask)?;
         let sig_num = signal.num();
@@ -196,10 +194,8 @@ pub fn handle_user_signal(
     }
 
     // Block signals in sigmask when running signal handler
-    let old_mask = ctx.posix_thread.sig_mask().load(Ordering::Relaxed);
-    ctx.posix_thread
-        .sig_mask()
-        .store(old_mask + mask, Ordering::Relaxed);
+    let old_mask = ctx.posix_thread.sig_mask();
+    ctx.set_sig_mask(old_mask + mask);
 
     // Set up signal stack.
     let mut stack_pointer = if let Some(sp) =
