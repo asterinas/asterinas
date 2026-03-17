@@ -1,0 +1,6 @@
+exec:execveat
+exec:non-regular
+exec:null-argv
+exec:check-exec
+exec:binfmt_script.py
+exec:check-exec-tests.sh

@@ -1,0 +1,2 @@
+membarrier:membarrier_test_single_thread
+membarrier:membarrier_test_multi_thread
