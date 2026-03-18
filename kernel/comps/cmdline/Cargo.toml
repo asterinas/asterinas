@@ -7,10 +7,10 @@ edition.workspace = true
 
 [dependencies]
 component.workspace = true
+inventory.workspace = true
 log.workspace = true
 ostd.workspace = true
 spin.workspace = true
-inventory.workspace = true
 
 [lints]
 workspace = true

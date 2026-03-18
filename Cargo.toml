@@ -160,6 +160,7 @@ ctr = "0.8.0"
 font8x8 = { version = "0.2.5", default-features = false, features = [ "unicode" ] }
 getset = "0.1.2"
 hashbrown = { version = "0.14.3", features = ["serde"]  }
+inventory = { git = "https://github.com/asterinas/inventory", rev = "9dce587" }
 itertools = "0.10.5"
 lending-iterator = "0.1.7"
 lru = "0.16.3"
@@ -177,7 +178,6 @@ smoltcp = { git = "https://github.com/asterinas/smoltcp", tag = "r_2024-11-08_f0
 ] }
 takeable = "0.2.2"
 time = { version = "0.3", default-features = false, features = ["alloc"] }
-inventory = { git = "https://github.com/asterinas/inventory", rev = "9dce587" }
 
 # External dependencies for both safe and unsafe crates
 bitflags = "1.3"

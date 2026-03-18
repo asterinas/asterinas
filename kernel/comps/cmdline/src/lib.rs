@@ -69,16 +69,19 @@ pub use unimplemented::setup_unimplemented;
 /// handled with **last-wins** semantics.
 ///
 /// # Arguments
+///
 /// - `$name`: Parameter name (e.g. `"log_level"`).
 /// - `$storage`: Storage location for the parsed value. Its type must implement
 ///   [`crate::parse::ParamStorage`].
 ///
 /// # Parsing
+///
 /// The stored value type `S::Value` must implement [`crate::parse::ParseParamValue`].
 /// By default, any type implementing [`core::str::FromStr`] automatically implements
 /// [`crate::parse::ParseParamValue`].
 ///
-/// # Example
+/// # Examples
+///
 /// ```ignore
 /// static LOG_LEVEL: AtomicU8 = AtomicU8::new(0);
 /// define_kv_param!("log_level", LOG_LEVEL);
@@ -106,16 +109,19 @@ macro_rules! define_kv_param_early {
 /// framework collects **all** values and passes them to the parser in one shot.
 ///
 /// # Arguments
+///
 /// - `$name`: Parameter name (e.g. `"console"`).
 /// - `$storage`: Storage location for the parsed value. Its type must implement
 ///   [`crate::parse::ParamStorage`].
 ///
 /// # Parsing
+///
 /// The stored value type `S::Value` must implement
 /// [`crate::parse::ParseRepeatableParamValue`]. This crate provides a default
 /// implementation for `Vec<T>` where `T: FromStr`.
 ///
-/// # Example
+/// # Examples
+///
 /// ```ignore
 /// static CONSOLES: Once<Vec<String>> = Once::new();
 /// define_repeatable_kv_param!("console", CONSOLES);
@@ -149,12 +155,14 @@ macro_rules! define_repeatable_kv_param_early {
 ///   [`crate::parse::ParamStorage`].
 ///
 /// # Parsing
+///
 /// The stored value type `S::Value` must implement [`crate::parse::ParseFlag`].
 /// This crate provides a default `bool` implementation:
 /// - `flag` / `flag=1` / `flag=on|yes|true` => `true`
 /// - `flag=0` / `flag=off|no|false` => `false`
 ///
-/// # Example
+/// # Examples
+///
 /// ```ignore
 /// static DEBUG: AtomicBool = AtomicBool::new(false);
 /// define_flag_param!("debug", DEBUG);

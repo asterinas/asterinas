@@ -7,7 +7,7 @@ edition = "2024"
 
 [dependencies]
 inventory.workspace = true
-log = "0.4"
+log.workspace = true
 component-macro = { path = "../component-macro" }
 
 [build-dependencies]

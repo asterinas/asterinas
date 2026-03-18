@@ -72,8 +72,10 @@ pub trait ParseRepeatableParamValue: Sized {
 ///
 /// Flags may optionally accept a value (e.g., "debug=1" in Linux).
 pub trait ParseFlag: Sized {
-    /// Called when the flag is present on the command line.
-    /// `value` is `Some(v)` if written as "flag=v", `None` if bare.
+    /// Prases the flag with an optional value.
+    ///
+    /// If the flag is specified as "flag=v", then `value` is `Some(v)`;
+    /// if the flag is bare, then `value` is `None`.
     fn parse_flag(value: Option<&str>) -> Result<Self, ParamError>;
 }
 
@@ -85,7 +87,6 @@ impl<T: FromStr> ParseParamValue for T {
 }
 
 /// A `Vec<T>` where `T: FromStr` can be a repeatable parameter.
-/// (No coherence conflict: `Vec<T>` does not implement `FromStr`.)
 impl<T: FromStr> ParseRepeatableParamValue for Vec<T> {
     fn parse_all(values: &[&str]) -> Result<Self, ParamError> {
         values
@@ -95,7 +96,8 @@ impl<T: FromStr> ParseRepeatableParamValue for Vec<T> {
     }
 }
 
-/// `bool` as a flag: bare flag means `true`; "flag=1"/"flag=on" also accepted.
+/// `bool` as a flag: a bare flag means `true`;
+/// flags with typical values such as `1`/`0`, `on`/`off` are also accepted.
 impl ParseFlag for bool {
     fn parse_flag(value: Option<&str>) -> Result<Self, ParamError> {
         match value {
@@ -111,9 +113,8 @@ pub fn setup_kv_param<S: ParamStorage>(storage: &S, occurrences: &[Option<&str>]
 where
     S::Value: ParseParamValue,
 {
-    let last = match occurrences.last() {
-        Some(val) => *val, // Option<&str> is Copy
-        None => return,
+    let Some(last) = occurrences.last() else {
+        return;
     };
     match last {
         Some(value) => match S::Value::parse_param(value) {
