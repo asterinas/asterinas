@@ -20,6 +20,7 @@ use crate::{
 
 mod util;
 
+pub use util::PtraceContRequest;
 pub(in crate::process) use util::PtraceStopResult;
 use util::StopSigInfo;
 
@@ -75,6 +76,31 @@ impl PosixThread {
     pub(in crate::process) fn wait_ptrace_stopped(&self) -> Option<SigNum> {
         self.tracee_status.get().and_then(|status| status.wait())
     }
+
+    /// Continues this thread from a ptrace-stop.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if this thread is not ptrace-stopped.
+    pub fn ptrace_continue(&self, request: PtraceContRequest) -> Result<()> {
+        let status = self.get_tracee_status()?;
+
+        status.resume(request)?;
+        self.wake_signalled_waker();
+
+        Ok(())
+    }
+
+    /// Returns the tracee status of this thread if it is being traced.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if this thread is not being traced.
+    fn get_tracee_status(&self) -> Result<&TraceeStatus> {
+        self.tracee_status
+            .get()
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "the thread is not being traced"))
+    }
 }
 
 impl PosixThread {
@@ -101,6 +127,17 @@ impl PosixThread {
     /// Returns the tracee map of this thread if it is a tracer.
     pub(in crate::process) fn tracees(&self) -> Option<&Mutex<HashMap<Tid, Arc<Thread>>>> {
         self.tracees.get()
+    }
+
+    /// Returns the tracee with the given tid, if it is being traced by this thread.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if there is no tracee with the given tid.
+    pub fn get_tracee(&self, tid: Tid) -> Result<Arc<Thread>> {
+        self.tracees()
+            .and_then(|tracees| tracees.lock().get(&tid).cloned())
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "no such tracee"))
     }
 }
 
@@ -178,6 +215,14 @@ impl TraceeStatus {
         self.is_stopped.load(Ordering::Relaxed)
     }
 
+    fn check_ptrace_stopped(&self, _state_guard: &MutexGuard<'_, TraceeState>) -> Result<()> {
+        if self.is_ptrace_stopped() {
+            Ok(())
+        } else {
+            return_errno_with_message!(Errno::ESRCH, "the thread is not ptrace-stopped");
+        }
+    }
+
     fn wait(&self) -> Option<SigNum> {
         let mut state = self.state.lock();
 
@@ -187,6 +232,18 @@ impl TraceeStatus {
         } else {
             None
         }
+    }
+
+    #[expect(unused_variables)]
+    fn resume(&self, request: PtraceContRequest) -> Result<()> {
+        // Hold the lock first to avoid race conditions.
+        let mut state = self.state.lock();
+        self.check_ptrace_stopped(&state)?;
+
+        state.siginfo.clear();
+        self.is_stopped.store(false, Ordering::Relaxed);
+
+        Ok(())
     }
 }
 
