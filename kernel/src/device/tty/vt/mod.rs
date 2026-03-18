@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
+mod console;
 mod driver;
+mod file;
 mod ioctl_defs;
 mod keyboard;
+mod manager;
 
 use core::num::NonZeroU8;
 
-pub(super) use driver::{VtDriver, tty1_device};
+pub(super) use driver::VtDriver;
+pub(super) use manager::active_vt;
 
 use crate::prelude::Result;
 
@@ -28,10 +32,46 @@ impl VtIndex {
             Some(VtIndex(NonZeroU8::new(value).unwrap()))
         }
     }
+
+    /// Returns the 1-based VT number.
+    #[inline]
+    const fn get(self) -> u8 {
+        self.0.get()
+    }
+
+    /// Converts this VT number to a 0-based index for array access.
+    ///
+    /// Safe because `VtIndex` is guaranteed to be non-zero.
+    #[inline]
+    const fn to_zero_based(self) -> usize {
+        (self.get() as usize) - 1
+    }
+
+    /// Returns the next VT index, wrapping around to VT1 after reaching VT`MAX_CONSOLES`.
+    fn next_wrap(self) -> Self {
+        let next = if (self.get() as usize) >= MAX_CONSOLES {
+            1
+        } else {
+            self.get() + 1
+        };
+
+        Self(NonZeroU8::new(next).unwrap())
+    }
+
+    /// Returns the previous VT index, wrapping around to VT`MAX_CONSOLES` when at VT1.
+    fn prev_wrap(self) -> Self {
+        let prev = if self.get() == 1 {
+            MAX_CONSOLES as u8
+        } else {
+            self.get() - 1
+        };
+
+        Self(NonZeroU8::new(prev).unwrap())
+    }
 }
 
 pub(super) fn init_in_first_process() -> Result<()> {
     keyboard::init_in_first_process();
-    driver::init_in_first_process()?;
+    manager::init_in_first_process()?;
     Ok(())
 }
