@@ -333,6 +333,7 @@ pub struct CFontOp {
 impl CFontOp {
     // https://elixir.bootlin.com/linux/v6.15/source/include/uapi/linux/kd.h#L177
     pub(super) const OP_SET: u32 = 0;
+    pub(super) const OP_GET: u32 = 1;
     pub(super) const OP_SET_DEFAULT: u32 = 2;
     pub(super) const OP_SET_TALL: u32 = 4;
 
