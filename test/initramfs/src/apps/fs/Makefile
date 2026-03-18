@@ -10,5 +10,6 @@ SUBDIRS := \
 	procfs \
 	pseudofs \
 	symlink \
+	open_dir \
 
 include ../common/Makefile
