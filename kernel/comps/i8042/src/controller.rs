@@ -5,6 +5,8 @@
 //! Reference: <https://wiki.osdev.org/I8042_PS/2_Controller>
 //!
 
+use core::sync::atomic::{AtomicBool, Ordering};
+
 use bitflags::bitflags;
 use ostd::{
     arch::{device::io_port::ReadWriteAccess, kernel::ACPI_INFO},
@@ -174,7 +176,7 @@ impl I8042Controller {
 
     /// Checks if the kernel command line contains the "i8042.exist" option.
     fn is_present_cmdline() -> bool {
-        I8042_EXIST.get().copied().unwrap_or(false)
+        I8042_EXIST.load(Ordering::Relaxed)
     }
 
     fn read_configuration(&mut self) -> Result<Configuration, I8042ControllerError> {
@@ -393,5 +395,5 @@ bitflags! {
     }
 }
 
-static I8042_EXIST: Once<bool> = Once::new();
+static I8042_EXIST: AtomicBool = AtomicBool::new(false);
 aster_cmdline::define_flag_param!("i8042.exist", I8042_EXIST);

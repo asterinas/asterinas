@@ -6,6 +6,7 @@
 //! command lines so users of this framework don't need to rewrite them.
 
 use alloc::vec::Vec;
+use core::num::NonZeroU32;
 
 use crate::parse::{ParamError, ParseParamValue};
 
@@ -27,10 +28,10 @@ pub struct CpuListSegment {
     start: u32,
     end: u32,
     /// Step within range, default 1.
-    stride: u32,
+    stride: NonZeroU32,
     /// Optional group size (the `/N` part). When present, stride selection is
     /// applied within each group window.
-    group: Option<u32>,
+    group: Option<NonZeroU32>,
 }
 
 impl CpuList {
@@ -44,16 +45,16 @@ impl CpuList {
 
     /// Expands to concrete CPU IDs, returning at most `max_elems` elements.
     ///
-    /// Note: if the CPU list expands to more than `max_elems`, the result is truncated.
-    pub fn expand_bounded(&self, max_elems: usize) -> Result<Vec<u32>, ParamError> {
+    /// Note: If the CPU list expands to more than `max_elems`, the result is truncated.
+    pub fn expand_bounded(&self, max_elems: usize) -> Vec<u32> {
         if max_elems == 0 {
-            return Ok(Vec::new());
+            return Vec::new();
         }
 
         let mut out = Vec::new();
 
-        // Helper: push a cpu id; if we reached the bound, stop expansion.
-        let push_or_done_fn = |out: &mut Vec<u32>, cpu: u32| -> bool {
+        // Helper: Pushes a CPU ID and returns whether we reached the bound.
+        let mut push_or_done_fn = |cpu: u32| -> bool {
             if out.len() >= max_elems {
                 return true;
             }
@@ -61,75 +62,31 @@ impl CpuList {
             out.len() >= max_elems
         };
 
-        for s in &self.segments {
-            if s.stride == 0 {
-                return Err(ParamError::InvalidValue);
-            }
-            if let Some(g) = s.group
-                && g == 0
-            {
-                return Err(ParamError::InvalidValue);
-            }
-            if s.start > s.end {
-                return Err(ParamError::InvalidValue);
-            }
-
-            // Fast path: no group => arithmetic progression from start to end by stride.
-            if s.group.is_none() {
-                let mut cur = s.start;
-                while cur <= s.end {
-                    if push_or_done_fn(&mut out, cur) {
-                        return Ok(out);
-                    }
-
-                    match cur.checked_add(s.stride) {
-                        Some(n) => cur = n,
-                        None => break,
+        for seg in &self.segments {
+            let Some(group) = seg.group else {
+                // No group. Arithmetic progression from `start` to `end` by `stride`.
+                for cur in (seg.start..=seg.end).step_by(seg.stride.get() as usize) {
+                    if push_or_done_fn(cur) {
+                        return out;
                     }
                 }
                 continue;
-            }
+            };
 
-            // Grouped selection:
-            // for each group window [start+gb, start+gb+g), emit start+gb+within for within=0,stride,2*stride...
-            let g = s.group.unwrap();
-            let stride = s.stride;
+            // Grouped selection: Iterate over the groups first.
+            for group_start in (seg.start..=seg.end).step_by(group.get() as usize) {
+                let group_end = group_start.saturating_add(group.get() - 1).min(seg.end);
 
-            let mut gb: u32 = 0;
-            while let Some(v) = s.start.checked_add(gb) {
-                let group_start = v;
-                if group_start > s.end {
-                    break;
-                }
-
-                let mut within: u32 = 0;
-                while within < g {
-                    let cpu = match group_start.checked_add(within) {
-                        Some(v) => v,
-                        None => break,
-                    };
-                    if cpu > s.end {
-                        break;
+                // Arithmetic progression within the group by `stride`.
+                for cur in (group_start..=group_end).step_by(seg.stride.get() as usize) {
+                    if push_or_done_fn(cur) {
+                        return out;
                     }
-
-                    if push_or_done_fn(&mut out, cpu) {
-                        return Ok(out);
-                    }
-
-                    match within.checked_add(stride) {
-                        Some(n) => within = n,
-                        None => break,
-                    }
-                }
-
-                match gb.checked_add(g) {
-                    Some(n) => gb = n,
-                    None => break,
                 }
             }
         }
 
-        Ok(out)
+        out
     }
 }
 
@@ -145,33 +102,27 @@ impl CpuListSegment {
     }
 
     /// Returns the stride of the segment (the `S` in `N-M:S`).
-    pub fn stride(&self) -> u32 {
+    pub fn stride(&self) -> NonZeroU32 {
         self.stride
     }
 
     /// Returns the group size of the segment (the `G` in `N-M:S/G`).
-    pub fn group(&self) -> Option<u32> {
+    pub fn group(&self) -> Option<NonZeroU32> {
         self.group
     }
 }
 
-fn segment_contains(s: &CpuListSegment, cpu: u32) -> bool {
-    if cpu < s.start || cpu > s.end {
-        return false;
-    }
-    if s.stride == 0 {
+fn segment_contains(seg: &CpuListSegment, cpu: u32) -> bool {
+    if cpu < seg.start || cpu > seg.end {
         return false;
     }
 
-    let offset = cpu - s.start;
-    if let Some(g) = s.group {
-        if g == 0 {
-            return false;
-        }
-        let in_group_offset = offset % g;
-        in_group_offset.is_multiple_of(s.stride)
+    let offset = cpu - seg.start;
+    if let Some(group) = seg.group {
+        let in_group_offset = offset % group.get();
+        in_group_offset.is_multiple_of(seg.stride.get())
     } else {
-        offset.is_multiple_of(s.stride)
+        offset.is_multiple_of(seg.stride.get())
     }
 }
 
@@ -197,7 +148,7 @@ fn parse_cpu_segment(s: &str) -> Result<CpuListSegment, ParamError> {
     // Grammar (pragmatic):
     //   <range> [":" <stride> ["/" <group>] ]
     // where <range> := <n> | <n> "-" <m>
-    let (range_part, tail) = match s.split_once(':') {
+    let (range_part, tail_opt) = match s.split_once(':') {
         Some((a, b)) => (a, Some(b)),
         None => (s, None),
     };
@@ -213,31 +164,34 @@ fn parse_cpu_segment(s: &str) -> Result<CpuListSegment, ParamError> {
         return Err(ParamError::InvalidValue);
     }
 
-    let (stride, group) = match tail {
+    let (stride, group_opt) = match tail_opt {
         None => (1u32, None),
-        Some(t) => {
-            if t.is_empty() {
+        Some(tail) => {
+            if tail.is_empty() {
                 return Err(ParamError::InvalidValue);
             }
-            if let Some((stride_s, group_s)) = t.split_once('/') {
+            if let Some((stride_s, group_s)) = tail.split_once('/') {
                 let stride = parse_u32(stride_s)?;
                 let group = parse_u32(group_s)?;
                 (stride, Some(group))
             } else {
-                (parse_u32(t)?, None)
+                (parse_u32(tail)?, None)
             }
         }
     };
 
-    if stride == 0 {
+    let Some(stride) = NonZeroU32::new(stride) else {
         return Err(ParamError::InvalidValue);
-    }
+    };
 
-    if let Some(g) = group
-        && g == 0
-    {
-        return Err(ParamError::InvalidValue);
-    }
+    let group = if let Some(group_val) = group_opt {
+        let Some(group) = NonZeroU32::new(group_val) else {
+            return Err(ParamError::InvalidValue);
+        };
+        Some(group)
+    } else {
+        None
+    };
 
     Ok(CpuListSegment {
         start,
@@ -404,10 +358,9 @@ mod test {
     #[ktest]
     fn cpu_list_expand_bounded() {
         let cl = CpuList::parse_param("10-20:2").unwrap(); // 10,12,14,16,18,20 => 6 elems
-        let v = cl.expand_bounded(6).unwrap();
+        let v = cl.expand_bounded(6);
         assert_eq!(v.as_slice(), &[10u32, 12u32, 14u32, 16u32, 18u32, 20u32]);
-
-        let v = cl.expand_bounded(5).unwrap();
+        let v = cl.expand_bounded(5);
         assert_eq!(v.as_slice(), &[10u32, 12u32, 14u32, 16u32, 18u32]);
     }
 
@@ -416,7 +369,7 @@ mod test {
         // 0-4_000_000_000:1024 should not scan the whole range; it should just step by 1024.
         // We only ask for a few elements to ensure it returns quickly and correctly.
         let cl = CpuList::parse_param("0-4000000000:1024").unwrap();
-        let v = cl.expand_bounded(4).unwrap();
+        let v = cl.expand_bounded(4);
         assert_eq!(v.as_slice(), &[0u32, 1024u32, 2048u32, 3072u32]);
     }
 
@@ -426,7 +379,7 @@ mod test {
         // 0-4_000_000_000:2/4 => in each group of 4 select offsets 0 and 2.
         // First few selected: 0,2,4,6,8,10,...
         let cl = CpuList::parse_param("0-4000000000:2/4").unwrap();
-        let v = cl.expand_bounded(6).unwrap();
+        let v = cl.expand_bounded(6);
         assert_eq!(v.as_slice(), &[0u32, 2u32, 4u32, 6u32, 8u32, 10u32]);
     }
 
@@ -435,7 +388,7 @@ mod test {
         // Ensure the last (partial) group is clipped by end.
         // 0-5:2/4 => groups [0..3] => 0,2; [4..7] => 4,6 but end=5 so only 4.
         let cl = CpuList::parse_param("0-5:2/4").unwrap();
-        let v = cl.expand_bounded(8).unwrap();
+        let v = cl.expand_bounded(8);
         assert_eq!(v.as_slice(), &[0u32, 2u32, 4u32]);
     }
 
@@ -444,7 +397,7 @@ mod test {
         // stride > group: only within=0 is emitted per group.
         // 0-20:8/4 => groups start at 0,4,8,12,16,20 => emit 0,4,8,12,16,20
         let cl = CpuList::parse_param("0-20:8/4").unwrap();
-        let v = cl.expand_bounded(16).unwrap();
+        let v = cl.expand_bounded(16);
         assert_eq!(v.as_slice(), &[0u32, 4u32, 8u32, 12u32, 16u32, 20u32]);
     }
 }

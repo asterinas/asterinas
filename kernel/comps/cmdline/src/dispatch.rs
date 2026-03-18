@@ -42,7 +42,6 @@ pub struct KernelParam {
     early: bool,
 }
 
-#[doc(hidden)]
 impl KernelParam {
     #[doc(hidden)]
     pub const fn new(
@@ -60,7 +59,6 @@ impl KernelParam {
         }
     }
 
-    #[doc(hidden)]
     const fn contains_hyphen(s: &'static str) -> bool {
         let bytes = s.as_bytes();
         let mut i = 0;
