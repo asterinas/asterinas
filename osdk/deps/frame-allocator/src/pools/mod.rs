@@ -2,6 +2,9 @@
 
 mod balancing;
 
+#[cfg(feature = "cvm_guest")]
+mod unaccepted;
+
 use core::{
     alloc::Layout,
     cell::RefCell,
@@ -60,16 +63,29 @@ pub(super) fn alloc(guard: &DisabledLocalIrqGuard, layout: Layout) -> Option<Pad
     let align_order = greater_order_of(layout.align());
     let order = size_order.max(align_order);
 
-    let mut chunk_addr = None;
+    let chunk_addr = try_alloc_hierarchical(local_pool.deref_mut(), &mut global_pool, order);
 
-    if order < MAX_LOCAL_BUDDY_ORDER {
-        chunk_addr = local_pool.alloc_chunk(order);
-    }
+    #[cfg(feature = "cvm_guest")]
+    let chunk_addr = if chunk_addr.is_none() {
+        // Do not hold the global pool lock while accepting unaccepted memory,
+        // otherwise we may deadlock with paths that lock unaccepted bitmap first.
+        global_pool.unlock();
 
-    // Fall back to the global free lists if the local free lists are empty.
-    if chunk_addr.is_none() {
-        chunk_addr = global_pool.get().alloc_chunk(order);
-    }
+        // 1st Attempt: Heuristic refill based on watermark
+        unaccepted::accept_memory_on_demand(local_pool.deref_mut(), order, false).unwrap();
+        let addr = try_alloc_hierarchical(local_pool.deref_mut(), &mut global_pool, order);
+
+        if addr.is_none() {
+            // 2nd Attempt: Forced refill
+            unaccepted::accept_memory_on_demand(local_pool.deref_mut(), order, true).unwrap();
+            try_alloc_hierarchical(local_pool.deref_mut(), &mut global_pool, order)
+        } else {
+            addr
+        }
+    } else {
+        chunk_addr
+    };
+
     // TODO: On memory pressure the global pool may be not enough. We may need
     // to merge all buddy chunks from the local pools to the global pool and
     // try again.
@@ -106,11 +122,28 @@ pub(super) fn dealloc(
 }
 
 pub(super) fn add_free_memory(_guard: &DisabledLocalIrqGuard, addr: Paddr, size: usize) {
-    let mut global_pool = OnDemandGlobalLock::new();
-
     split_to_chunks(addr, size).for_each(|(addr, order)| {
-        global_pool.get().insert_chunk(addr, order);
+        #[cfg(feature = "cvm_guest")]
+        {
+            let chunk_size = size_of_order(order);
+            // Memory blocks with granularity smaller than BITMAP_UNIT_ORDER
+            // have already been accepted during the EFI stub phase.
+            if order >= unaccepted::BITMAP_UNIT_ORDER
+                && ostd::mm::frame::is_range_unaccepted(addr, chunk_size)
+            {
+                unaccepted::insert_unaccepted_chunk(addr, order);
+                return;
+            }
+        }
+
+        insert_global_chunk(addr, order);
     });
+}
+
+fn insert_global_chunk(addr: Paddr, order: BuddyOrder) {
+    let mut global_pool = GLOBAL_POOL.lock();
+    global_pool.insert_chunk(addr, order);
+    GLOBAL_POOL_SIZE.store(global_pool.total_size(), Ordering::Relaxed);
 }
 
 fn do_dealloc(
@@ -127,6 +160,21 @@ fn do_dealloc(
             }
         });
     });
+}
+
+fn try_alloc_hierarchical(
+    local_pool: &mut BuddySet<MAX_LOCAL_BUDDY_ORDER>,
+    global_pool: &mut OnDemandGlobalLock,
+    order: BuddyOrder,
+) -> Option<Paddr> {
+    let local_res = if order < MAX_LOCAL_BUDDY_ORDER {
+        local_pool.alloc_chunk(order)
+    } else {
+        None
+    };
+
+    // Fall back to the global free lists if the local free lists are empty.
+    local_res.or_else(|| global_pool.get().alloc_chunk(order))
 }
 
 type GlobalLockGuard = SpinLockGuard<'static, BuddySet<MAX_BUDDY_ORDER>, LocalIrqDisabled>;
@@ -158,6 +206,15 @@ impl OnDemandGlobalLock {
             guard.total_size()
         } else {
             GLOBAL_POOL_SIZE.load(Ordering::Relaxed)
+        }
+    }
+
+    /// Explicitly unlocks the global pool if it is currently locked.
+    #[cfg(feature = "cvm_guest")]
+    fn unlock(&mut self) {
+        if let Some(guard) = self.guard.take() {
+            GLOBAL_POOL_SIZE.store(guard.total_size(), Ordering::Relaxed);
+            drop(guard);
         }
     }
 }

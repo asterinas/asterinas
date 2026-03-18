@@ -57,8 +57,9 @@ iced-x86 = { version = "1.21.0", default-features = false, features = [
     "decoder",
     "gas",
 ], optional = true }
-tdx-guest = { version = "0.2.4", optional = true }
+tdx-guest = { workspace = true, optional = true }
 unwinding = { version = "=0.2.8", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
+uefi-raw = "0.8.0"
 
 [target.riscv64imac-unknown-none-elf.dependencies]
 riscv = { version = "0.15.0", features = ["s-mode"] }
