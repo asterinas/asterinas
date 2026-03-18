@@ -82,6 +82,16 @@ fn do_open(
 ) -> Result<Arc<dyn FileLike>> {
     let open_args = OpenArgs::from_flags_and_mode(flags, mode)?;
 
+    let creation_flags = CreationFlags::from_bits_truncate(flags);
+    if creation_flags.contains(CreationFlags::O_CREAT)
+        && creation_flags.contains(CreationFlags::O_DIRECTORY)
+    {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "O_CREAT and O_DIRECTORY cannot be specified together"
+        );
+    }
+
     let lookup_res = if open_args.follow_tail_link() {
         path_resolver.lookup_unresolved(fs_path)?
     } else {
