@@ -7,7 +7,7 @@ use ostd::mm::VmIo;
 use super::{SyscallReturn, poll::do_sys_poll};
 use crate::{
     prelude::*,
-    process::signal::{sig_mask::SigMask, with_sigmask_changed},
+    process::{posix_thread::ContextPthreadAdminApi, signal::sig_mask::SigMask},
     time::timespec_t,
 };
 
@@ -34,10 +34,10 @@ pub fn sys_ppoll(
         }
 
         let sigmask = user_space.read_val::<SigMask>(sigmask_addr)?;
-        with_sigmask_changed(ctx, |_| sigmask, || do_sys_poll(fds, nfds, timeout, ctx))
-    } else {
-        do_sys_poll(fds, nfds, timeout, ctx)
+        ctx.save_and_set_sig_mask(sigmask);
     }
+
+    do_sys_poll(fds, nfds, timeout, ctx)
 
     // TODO: Write back the remaining time to `timespec_addr`.
     //

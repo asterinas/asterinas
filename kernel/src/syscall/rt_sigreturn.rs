@@ -14,11 +14,7 @@ use crate::{
 };
 
 pub fn sys_rt_sigreturn(ctx: &Context, user_ctx: &mut UserContext) -> Result<SyscallReturn> {
-    let Context {
-        thread_local,
-        posix_thread,
-        ..
-    } = ctx;
+    let Context { thread_local, .. } = ctx;
 
     let Some(sig_context_addr) = thread_local.sig_context().get() else {
         return_errno_with_message!(
@@ -64,10 +60,9 @@ pub fn sys_rt_sigreturn(ctx: &Context, user_ctx: &mut UserContext) -> Result<Sys
         .read_bytes(fpu_context_addr, fpu_context.as_bytes_mut())?;
     ctx.thread_local.fpu().set_context(fpu_context);
 
-    // unblock sig mask
+    // Restore the signal mask.
     let sig_mask = ucontext.uc_sigmask;
-    let old_mask = posix_thread.sig_mask();
-    ctx.set_sig_mask(old_mask - sig_mask);
+    ctx.set_sig_mask(sig_mask.into());
 
     Ok(SyscallReturn::NoReturn)
 }

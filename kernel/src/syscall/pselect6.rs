@@ -8,7 +8,7 @@ use super::{SyscallReturn, select::do_sys_select};
 use crate::{
     fs::file::file_table::FileDesc,
     prelude::*,
-    process::signal::{sig_mask::SigMask, with_sigmask_changed},
+    process::{posix_thread::ContextPthreadAdminApi, signal::sig_mask::SigMask},
     time::timespec_t,
 };
 
@@ -30,26 +30,22 @@ pub fn sys_pselect6(
         None
     };
 
-    let operate = || {
-        do_sys_select(
-            nfds,
-            readfds_addr,
-            writefds_addr,
-            exceptfds_addr,
-            timeout,
-            ctx,
-        )
-    };
-
     if sigmask_addr != 0 {
         let sigmask_with_size = user_space.read_val::<SigMaskWithSize>(sigmask_addr)?;
         if !sigmask_with_size.is_valid() {
-            return_errno_with_message!(Errno::EINVAL, "sigmask size is invalid")
+            return_errno_with_message!(Errno::EINVAL, "invalid sigmask size")
         }
-        with_sigmask_changed(ctx, |_: SigMask| sigmask_with_size.sigmask, operate)
-    } else {
-        operate()
+        ctx.save_and_set_sig_mask(sigmask_with_size.sigmask);
     }
+
+    do_sys_select(
+        nfds,
+        readfds_addr,
+        writefds_addr,
+        exceptfds_addr,
+        timeout,
+        ctx,
+    )
 }
 
 #[repr(C)]

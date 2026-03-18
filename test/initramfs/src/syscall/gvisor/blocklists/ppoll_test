@@ -1,3 +1,4 @@
+# TODO: To pass the following tests, we need to update the timeout before
+# returning to userspace to reflect the remaining time.
 PpollTest.NullFds
 PpollTest.SignalMaskBlocksSignal
-PpollTest.SignalMaskAllowsSignal
