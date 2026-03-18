@@ -16,7 +16,7 @@ use crate::{
 /// `JobControl` to track the session and the foreground process group.
 pub trait Terminal: Device {
     /// Returns the job control of the terminal.
-    fn job_control(&self) -> &JobControl;
+    fn job_control(&self) -> Arc<JobControl>;
 }
 
 mod ioctl_defs {
