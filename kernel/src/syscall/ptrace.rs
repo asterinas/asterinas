@@ -3,7 +3,10 @@
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::posix_thread::{AsPosixThread, alien_access::AlienAccessMode},
+    process::{
+        posix_thread::{AsPosixThread, alien_access::AlienAccessMode, ptrace::PtraceContRequest},
+        signal::sig_num::SigNum,
+    },
     thread::{Thread, Tid},
 };
 
@@ -28,6 +31,15 @@ pub fn sys_ptrace(
             let parent_main_thread = parent_guard.process().upgrade().unwrap().main_thread();
 
             do_ptrace_attach(&parent_main_thread, current_thread)?;
+        }
+        PtraceRequest::PTRACE_CONT => {
+            let sig_num = parse_ptrace_injected_signal(data)?;
+
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            tracee
+                .as_posix_thread()
+                .unwrap()
+                .ptrace_continue(PtraceContRequest::Continue(sig_num), ctx)?;
         }
     }
 
@@ -56,12 +68,26 @@ fn do_ptrace_attach(tracer_thread: &Arc<Thread>, tracee_thread: Arc<Thread>) -> 
     tracer.attach_to(tracer_thread, tracee_thread)
 }
 
+fn parse_ptrace_injected_signal(data: u64) -> Result<Option<SigNum>> {
+    if data == 0 {
+        return Ok(None);
+    }
+
+    let sig_num = u8::try_from(data)
+        .map_err(|_| Error::with_message(Errno::EINVAL, "invalid signal number"))?;
+    let sig_num = SigNum::try_from(sig_num)?;
+
+    Ok(Some(sig_num))
+}
+
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
 #[expect(non_camel_case_types)]
 enum PtraceRequest {
     /// Indicate that this thread should be traced by its parent.
     PTRACE_TRACEME = 0,
+    /// Continue the thread.
+    PTRACE_CONT = 7,
     // TODO: Support other operations.
     // /// Return the word in the thread's text space at address ADDR.
     // PTRACE_PEEKTEXT = 1,
@@ -75,8 +101,6 @@ enum PtraceRequest {
     // PTRACE_POKEDATA = 5,
     // /// Write the word DATA into the thread's user area at offset ADDR.
     // PTRACE_POKEUSER = 6,
-    // /// Continue the thread.
-    // PTRACE_CONT = 7,
     // /// Kill the thread.
     // PTRACE_KILL = 8,
     // /// Single step the thread.
