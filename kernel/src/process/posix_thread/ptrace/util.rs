@@ -57,7 +57,6 @@ impl StopSigInfo {
     }
 
     /// Returns the ptrace-stop signal info.
-    #[expect(dead_code)]
     pub(super) fn get(&self) -> Option<siginfo_t> {
         match self {
             Self::UnWaited(siginfo) | Self::Waited(siginfo) => Some(*siginfo),
