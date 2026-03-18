@@ -16,7 +16,7 @@ fi
 XKB_DATA="/run/current-system/sw/share/X11/xkb"
 MODULE_PATH="/run/current-system/sw/lib/xorg/modules"
 
-nohup Xorg :0 \
+nohup Xorg :0 vt1 \
   -modulepath "$MODULE_PATH" \
   -xkbdir "$XKB_DATA" \
   -logverbose 0 \
