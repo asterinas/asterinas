@@ -13,28 +13,15 @@ use crate::{
     device::{
         Device, DeviceType, DevtmpfsInodeMeta,
         registry::char,
-        tty::{
-            Tty,
-            hvc::hvc0_device,
-            serial::serial0_device,
-            vt::{VtDriver, tty1_device},
-        },
+        tty::{hvc::hvc0_device, serial::serial0_device, vt::active_vt},
     },
     fs::file::{PerOpenFileOps, mkmod},
     prelude::*,
-    process::{JobControl, Terminal},
 };
 
 /// Corresponds to `/dev/tty0` in the file system. This device represents the active virtual
 /// terminal.
 pub struct Tty0Device;
-
-impl Tty0Device {
-    fn active_vt(&self) -> &Arc<Tty<VtDriver>> {
-        // Currently there is only one virtual terminal `tty1`.
-        tty1_device()
-    }
-}
 
 impl Device for Tty0Device {
     fn type_(&self) -> DeviceType {
@@ -50,13 +37,7 @@ impl Device for Tty0Device {
     }
 
     fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
-        self.active_vt().open()
-    }
-}
-
-impl Terminal for Tty0Device {
-    fn job_control(&self) -> &JobControl {
-        self.active_vt().job_control()
+        active_vt().open()
     }
 }
 
@@ -93,7 +74,7 @@ impl Device for TtyDevice {
 /// Corresponds to `/dev/console` in the file system. This device represents a console to which
 /// system messages will be sent.
 pub struct SystemConsole {
-    inner: Arc<dyn Terminal>,
+    inner: Arc<dyn Device>,
 }
 
 impl SystemConsole {
