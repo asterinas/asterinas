@@ -6,6 +6,7 @@
 #![no_std]
 #![no_main]
 #![deny(unsafe_code)]
+#![feature(array_try_from_fn)]
 #![feature(associated_type_defaults)]
 #![feature(btree_cursors)]
 #![feature(debug_closure_helpers)]
