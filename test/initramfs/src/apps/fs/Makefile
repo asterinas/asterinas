@@ -4,6 +4,7 @@ SUBDIRS := \
 	ext2 \
 	fdatasync \
 	inotify \
+	group_perm \
 	isolation \
 	mount \
 	overlayfs \
