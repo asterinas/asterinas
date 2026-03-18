@@ -2,6 +2,14 @@
 
 use super::*;
 
+/// The requests that can continue a stopped tracee.
+#[expect(dead_code)]
+pub enum PtraceContRequest {
+    Continue,
+    SingleStep,
+    Syscall,
+}
+
 /// The result of a ptrace-stop.
 pub enum PtraceStopResult {
     /// The ptrace-stop is continued by the tracer.
