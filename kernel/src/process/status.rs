@@ -16,7 +16,7 @@ use crate::process::{WaitOptions, signal::sig_num::SigNum};
 /// 2. Whether the process is the vfork child, which shares the user-space virtual memory
 ///    with its parent process;
 /// 3. The exit code of the process;
-/// 4. Whether the process is stopped (by a signal or ptrace).
+/// 4. Whether the process is stopped by a signal.
 #[derive(Debug)]
 pub struct ProcessStatus {
     is_zombie: AtomicBool,
@@ -165,8 +165,6 @@ impl StopStatus {
 
 #[derive(Debug)]
 pub(super) enum StopWaitStatus {
-    // FIXME: A process can also be stopped by ptrace.
-    // Extend this enum to support ptrace.
     Stopped(SigNum),
     Continue,
 }
