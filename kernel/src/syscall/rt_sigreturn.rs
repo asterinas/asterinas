@@ -14,42 +14,31 @@ use crate::{
 };
 
 pub fn sys_rt_sigreturn(ctx: &Context, user_ctx: &mut UserContext) -> Result<SyscallReturn> {
-    let Context { thread_local, .. } = ctx;
-
-    let Some(sig_context_addr) = thread_local.sig_context().get() else {
-        return_errno_with_message!(
-            Errno::EINVAL,
-            "`sigreturn` cannot be called outside the signal context"
-        );
-    };
-    // FIXME: This assertion is not always true, if RESTORER flag is not presented.
-    // In this case, we will put restorer code on user stack, then the assertion will fail.
-    // However, for most glibc applications, the restorer codes is provided by glibc and RESTORER flag is set.
-    debug_assert!(sig_context_addr == user_ctx.stack_pointer() as Vaddr);
+    let sig_context_addr = user_ctx.stack_pointer() as Vaddr;
+    debug!(
+        "sys_rt_sigreturn: sig_context_addr = {:#x}",
+        sig_context_addr
+    );
 
     let ucontext = ctx.user_space().read_val::<ucontext_t>(sig_context_addr)?;
 
-    // Set previous ucontext address
-    if ucontext.uc_link == 0 {
-        thread_local.sig_context().set(None);
-    } else {
-        thread_local.sig_context().set(Some(ucontext.uc_link));
-    };
+    // Restore general-purpose registers.
     ucontext.uc_mcontext.copy_user_regs_to(user_ctx);
 
-    // Restore signal stack settings
+    // Restore signal stack settings.
     let stack = ucontext.uc_stack;
     // If the stack setting is invalid, we silently ignore the error,
     // following Linux's behavior.
     // Reference: <https://elixir.bootlin.com/linux/v6.15/source/kernel/signal.c#L4456>.
     let _ = set_new_stack(stack, ctx, user_ctx.stack_pointer());
 
-    // Restore FPU context on stack
+    // Restore the FPU context.
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "x86_64")] {
             let fpu_context_addr = ucontext.uc_mcontext.fpu_context_addr();
         } else if #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))] {
-            // In RISC-V/LoongArch64, FPU context is placed directly after `ucontext_t` on signal stack.
+            // In RISC-V/LoongArch64, the FPU context is placed directly after `ucontext_t` on the
+            // signal stack.
             let fpu_context_addr = sig_context_addr + size_of::<ucontext_t>();
         } else {
             compile_error!("unsupported target");

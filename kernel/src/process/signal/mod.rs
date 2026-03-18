@@ -32,7 +32,6 @@ pub use sig_stack::{SigStack, SigStackFlags, SigStackStatus};
 use super::posix_thread::ThreadLocal;
 use crate::{
     cpu::LinuxAbi,
-    current_userspace,
     prelude::*,
     process::{
         TermStatus,
@@ -42,13 +41,11 @@ use crate::{
 };
 
 pub trait SignalContext {
-    /// Set signal handler arguments
+    /// Sets signal handler arguments.
     fn set_arguments(&mut self, sig_num: SigNum, siginfo_addr: usize, ucontext_addr: usize);
 }
 
-// TODO: This interface of this method is error prone.
-// The method takes an argument for the current thread to optimize its efficiency.
-/// Handle pending signal for current process.
+/// Handles a pending signal for the current process.
 pub fn handle_pending_signal(
     user_ctx: &mut UserContext,
     ctx: &Context,
@@ -127,13 +124,14 @@ pub fn handle_pending_signal(
             ) {
                 debug!("Failed to handle user signal: {:?}", e);
                 // If signal handling fails, the process should be terminated with SIGSEGV.
-                // Ref: <https://elixir.bootlin.com/linux/v6.13/source/kernel/signal.c#L3082>
+                // Reference: <https://elixir.bootlin.com/linux/v6.13/source/kernel/signal.c#L3082>
                 do_exit_group(TermStatus::Killed(SIGSEGV));
             }
         }
         SigAction::Dfl => {
             let sig_default_action = SigDefaultAction::from_signum(sig_num);
-            trace!("sig_default_action: {:?}", sig_default_action);
+            trace!("sig_default_action = {:?}", sig_default_action);
+
             match sig_default_action {
                 SigDefaultAction::Core | SigDefaultAction::Term => {
                     warn!(
@@ -141,7 +139,7 @@ pub fn handle_pending_signal(
                         ctx.process.pid(),
                         sig_num.sig_name()
                     );
-                    // We should exit current here, since we cannot restore a valid status from trap now.
+                    // The signal terminates the current process. Therefore, we should exit here.
                     do_exit_group(TermStatus::Killed(sig_num));
                 }
                 SigDefaultAction::Ign => {}
@@ -233,40 +231,46 @@ pub fn handle_user_signal(
     debug!("mask = {:?}, mask_to_restore = {:?}", mask, mask_to_restore);
 
     if flags.contains_unsupported_flag() {
-        warn!("Unsupported Signal flags: {:?}", flags);
+        warn!("Unsupported signal flags: {:?}", flags);
     }
 
     if !flags.contains(SigActionFlags::SA_NODEFER) {
-        // Add current signal to mask
+        // Add the current signal to `mask`.
         mask += sig_num;
     }
 
-    // Block signals in sigmask when running signal handler
+    // Block signals in `mask` while running the signal handler.
     let old_mask = ctx.posix_thread.sig_mask();
     let mask_to_restore = mask_to_restore.unwrap_or(old_mask);
     ctx.set_sig_mask(old_mask + mask);
 
-    // Set up signal stack.
+    // Set up the signal stack.
     let mut stack_pointer = if let Some(sp) =
         use_alternate_signal_stack(flags, ctx.thread_local, user_ctx.stack_pointer())
     {
         sp as u64
     } else {
-        // Just use user stack
-        user_ctx.stack_pointer() as u64
-    };
+        // Just use the user stack.
+        let sp = user_ctx.stack_pointer() as u64;
 
-    // To avoid corrupting signal stack, we minus 128 first.
-    stack_pointer -= 128;
+        // Prevent corruption of the current stack. Architectures like as x86-64 have red zones
+        // that can be accessed below the SP. Signal handlers must not write to these zones.
+        // FIXME: This may not be necessary for all architectures.
+        sp.wrapping_sub(128)
+    };
 
     let user_space = ctx.user_space();
 
-    // 1. Write siginfo_t
-    stack_pointer -= size_of::<siginfo_t>() as u64;
+    // 1. Write `siginfo_t`.
+    stack_pointer = alloc_aligned_in_user_stack(
+        stack_pointer,
+        size_of::<siginfo_t>(),
+        align_of::<siginfo_t>(),
+    );
     user_space.write_val(stack_pointer as _, &sig_info)?;
     let siginfo_addr = stack_pointer;
 
-    // 2. Write ucontext_t.
+    // 2. Write `ucontext_t`.
 
     // Save the current signal stack information.
     let uc_stack = {
@@ -286,13 +290,8 @@ pub fn handle_user_signal(
         ..Default::default()
     };
 
+    // Save general-purpose registers.
     ucontext.uc_mcontext.copy_user_regs_from(user_ctx);
-    let sig_context = ctx.thread_local.sig_context().get();
-    if let Some(sig_context_addr) = sig_context {
-        ucontext.uc_link = sig_context_addr;
-    } else {
-        ucontext.uc_link = 0;
-    }
 
     // Clone and reset the FPU context.
     let fpu_context = ctx.thread_local.fpu().clone_context();
@@ -305,12 +304,12 @@ pub fn handle_user_signal(
             // user program can use the XSAVE/XRSTOR instructions at that address,
             // if necessary.
             let fpu_context_addr =
-                alloc_aligned_in_user_stack(stack_pointer, fpu_context_bytes.len(), 64)?;
+                alloc_aligned_in_user_stack(stack_pointer, fpu_context_bytes.len(), 64);
             let ucontext_addr = alloc_aligned_in_user_stack(
                 fpu_context_addr,
                 size_of::<ucontext_t>(),
                 align_of::<ucontext_t>(),
-            )?;
+            );
             ucontext
                 .uc_mcontext
                 .set_fpu_context_addr(fpu_context_addr as _);
@@ -328,17 +327,17 @@ pub fn handle_user_signal(
                 stack_pointer,
                 size_of::<ucontext_t>() + FP_STATE_SIZE,
                 align_of::<ucontext_t>(),
-            )?;
+            );
             let fpu_context_addr = (ucontext_addr as usize) + size_of::<ucontext_t>();
         } else if #[cfg(target_arch = "loongarch64")] {
-            // FIXME: It seems that we still need to allocate an sctx_info struct
+            // FIXME: It seems that we need to allocate an `sctx_info` structure.
             // Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/loongarch/kernel/signal.c#L848>
             let ucontext_addr = alloc_aligned_in_user_stack(
                 stack_pointer,
                 size_of::<ucontext_t>() + fpu_context_bytes.len(),
                 align_of::<ucontext_t>(),
-            )?;
-            // TODO: Set the `SigContext`.flags
+            );
+            // TODO: Set the flags in the context structure.
             // Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/loongarch/kernel/signal.c#L805>
             let fpu_context_addr = (ucontext_addr as usize) + size_of::<ucontext_t>();
         } else {
@@ -347,45 +346,58 @@ pub fn handle_user_signal(
     }
 
     user_space.write_bytes(fpu_context_addr as _, fpu_context_bytes)?;
-
     user_space.write_val(ucontext_addr as _, &ucontext)?;
-    // Store the ucontext addr in sig context of current thread.
-    ctx.thread_local
-        .sig_context()
-        .set(Some(ucontext_addr as Vaddr));
+
+    // Align the SP to the 16-byte boundary. This is required by the x86-64 ABI before calling any
+    // function.
+    stack_pointer = ucontext_addr.align_down(16);
 
     // 3. Write the address of the restorer code.
-    stack_pointer = ucontext_addr;
-    if flags.contains(SigActionFlags::SA_RESTORER) {
-        // If the SA_RESTORER flag is present, the restorer code address is provided by the user.
-        stack_pointer = write_u64_to_user_stack(stack_pointer, restorer_addr as u64)?;
-        trace!(
-            "After writing restorer addr: user_rsp = 0x{:x}",
-            stack_pointer
-        );
+    let retaddr = if flags.contains(SigActionFlags::SA_RESTORER) {
+        restorer_addr
     } else {
-        #[cfg(target_arch = "riscv64")]
-        user_ctx.set_ra(
-            ctx.user_space().vmar().process_vm().vdso_base()
-                + crate::vdso::__VDSO_RT_SIGRETURN_OFFSET,
-        );
+        cfg_if::cfg_if! {
+            if #[cfg(target_arch = "riscv64")] {
+                ctx.user_space().vmar().process_vm().vdso_base()
+                    + crate::vdso::__VDSO_RT_SIGRETURN_OFFSET
+            } else {
+                // Note that this should already be rejected at the `rt_sigaction` system call.
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "this architecture currently requires SA_RESTORER"
+                )
+            }
+        }
+    };
+    cfg_if::cfg_if! {
+        if #[cfg(target_arch = "x86_64")] {
+            stack_pointer = write_u64_to_user_stack(stack_pointer, retaddr as u64)?;
+        } else if #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))] {
+            user_ctx.set_ra(retaddr);
+        } else {
+            compile_error!("unsupported target");
+        }
     }
 
-    // 4. Set correct register values
+    trace!(
+        "Before calling to signal handler: stack_pointer = 0x{:x}",
+        stack_pointer
+    );
+
+    // 4. Set correct register values.
     user_ctx.set_instruction_pointer(handler_addr as _);
     user_ctx.set_stack_pointer(stack_pointer as usize);
-    // Parameters of signal handler
+    // Set parameters of the signal handler.
     if flags.contains(SigActionFlags::SA_SIGINFO) {
         user_ctx.set_arguments(sig_num, siginfo_addr as usize, ucontext_addr as usize);
     } else {
         user_ctx.set_arguments(sig_num, 0, 0);
     }
-    // CPU architecture-dependent logic
+    // Perform CPU architecture-dependent logic.
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "x86_64")] {
-            // Clear `DF` flag for C function entry to conform to x86-64 calling convention.
-            // Bit 10 is the DF flag.
-            const X86_RFLAGS_DF: usize = 1 << 10;
+            // Clear the DF flag. This is to conform to x86-64 calling conventions.
+            const X86_RFLAGS_DF: usize = 1 << 10; // Bit 10 is the DF flag.
             user_ctx.general_regs_mut().rflags &= !X86_RFLAGS_DF;
         }
     }
@@ -413,22 +425,23 @@ fn use_alternate_signal_stack(
         return None;
     }
 
-    // Make sp align at 16. FIXME: is this required?
-    let stack_pointer = (sig_stack.base() + sig_stack.size()).align_down(16);
-    Some(stack_pointer)
+    // Overflow checks are done in the `sigaltstack` system call.
+    Some(sig_stack.base() + sig_stack.size())
 }
 
-fn write_u64_to_user_stack(rsp: u64, value: u64) -> Result<u64> {
-    let rsp = rsp - 8;
-    current_userspace!().write_val(rsp as Vaddr, &value)?;
-    Ok(rsp)
+/// Writes a `u64` integer to the user's stack.
+#[cfg(target_arch = "x86_64")]
+fn write_u64_to_user_stack(sp: u64, value: u64) -> Result<u64> {
+    use crate::current_userspace;
+
+    let sp = sp.wrapping_sub(size_of::<u64>() as u64);
+    current_userspace!().write_val(sp as _, &value)?;
+    Ok(sp)
 }
 
-/// Allocates `size` bytes on the user's stack, ensuring the returned address is aligned to `align`.
-fn alloc_aligned_in_user_stack(rsp: u64, size: usize, align: usize) -> Result<u64> {
-    if !align.is_power_of_two() {
-        return_errno_with_message!(Errno::EINVAL, "align must be power of two");
-    }
-    let start = (rsp - size as u64).align_down(align as u64);
-    Ok(start)
+/// Allocates `size` bytes on the user's stack.
+///
+/// The allocation will be aligned to `align`, which must be a power of two.
+fn alloc_aligned_in_user_stack(sp: u64, size: usize, align: usize) -> u64 {
+    sp.wrapping_sub(size as u64).align_down(align as u64)
 }

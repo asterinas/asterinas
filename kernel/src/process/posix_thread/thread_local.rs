@@ -41,10 +41,6 @@ pub struct ThreadLocal {
     fpu_state: Cell<FpuState>,
 
     // Signal.
-    /// `ucontext` address for the signal handler.
-    // FIXME: This field may be removed. For glibc applications with RESTORER flag set, the
-    // `sig_context` is always equals with RSP.
-    sig_context: Cell<Option<Vaddr>>,
     /// Stack address, size, and flags for the signal handler.
     sig_stack: RefCell<SigStack>,
     /// Saved signal mask. It will be restored either after the signal handler, or upon
@@ -78,7 +74,6 @@ impl ThreadLocal {
             fs: RefCell::new(fs),
             fpu_context: RefCell::new(fpu_context),
             fpu_state: Cell::new(FpuState::Unloaded),
-            sig_context: Cell::new(None),
             sig_stack: RefCell::new(SigStack::default()),
             sig_mask_saved: Cell::new(None),
             user_ns: RefCell::new(user_ns),
@@ -165,10 +160,6 @@ impl ThreadLocal {
 
     pub fn fpu(&self) -> ThreadFpu<'_> {
         ThreadFpu(self)
-    }
-
-    pub fn sig_context(&self) -> &Cell<Option<Vaddr>> {
-        &self.sig_context
     }
 
     pub fn sig_stack(&self) -> &RefCell<SigStack> {
