@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#[cfg(target_arch = "x86_64")]
 use ostd::mm::VmIo;
 
 use super::SyscallReturn;
@@ -10,7 +9,7 @@ use crate::{
     prelude::*,
     process::{
         posix_thread::{AsPosixThread, alien_access::AlienAccessMode, ptrace::PtraceContRequest},
-        signal::sig_num::SigNum,
+        signal::{constants::SIGKILL, sig_num::SigNum, signals::user::UserSignal},
     },
     thread::{Thread, Tid},
 };
@@ -60,6 +59,12 @@ pub fn sys_ptrace(
 
             tracee.ptrace_continue(PtraceContRequest::Continue(sig_num), ctx)?;
         }
+        PtraceRequest::PTRACE_KILL => {
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let tracee = tracee.as_posix_thread().unwrap();
+
+            tracee.enqueue_signal(Box::new(UserSignal::new_kill(SIGKILL, ctx)));
+        }
         #[cfg(target_arch = "x86_64")]
         PtraceRequest::PTRACE_SINGLESTEP => {
             let sig_num = parse_ptrace_injected_signal(data)?;
@@ -86,6 +91,12 @@ pub fn sys_ptrace(
                 .user_space()
                 .read_val::<arch_ptrace::CUserRegsStruct>(data)?;
             tracee.ptrace_set_regs(regs)?;
+        }
+        PtraceRequest::PTRACE_GETSIGINFO => {
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let siginfo = tracee.as_posix_thread().unwrap().ptrace_get_siginfo()?;
+
+            ctx.user_space().write_val(data, &siginfo)?;
         }
     }
 
@@ -140,6 +151,8 @@ enum PtraceRequest {
     PTRACE_POKEUSER = 6,
     /// Continue the thread.
     PTRACE_CONT = 7,
+    /// Kill the thread.
+    PTRACE_KILL = 8,
     /// Single step the thread.
     #[cfg(target_arch = "x86_64")]
     PTRACE_SINGLESTEP = 9,
@@ -149,6 +162,8 @@ enum PtraceRequest {
     /// Set all general purpose registers used by a thread.
     #[cfg(target_arch = "x86_64")]
     PTRACE_SETREGS = 13,
+    /// Get the siginfo of the last ptrace-stop.
+    PTRACE_GETSIGINFO = 0x4202,
     // TODO: Support other operations.
     // /// Return the word in the thread's text space at address ADDR.
     // PTRACE_PEEKTEXT = 1,
@@ -158,8 +173,6 @@ enum PtraceRequest {
     // PTRACE_POKETEXT = 4,
     // /// Write the word DATA into the thread's data space at address ADDR.
     // PTRACE_POKEDATA = 5,
-    // /// Kill the thread.
-    // PTRACE_KILL = 8,
     // /// Get all floating point registers used by a thread.
     // PTRACE_GETFPREGS = 14,
     // /// Set all floating point registers used by a thread.
@@ -180,8 +193,6 @@ enum PtraceRequest {
     // PTRACE_SYSEMU_SINGLESTEP = 32,
     // /// Set ptrace filter options.
     // PTRACE_SETOPTIONS = 0x4200,
-    // /// Get the siginfo of the last ptrace-stop.
-    // PTRACE_GETSIGINFO = 0x4202,
     // /// Get register content.
     // PTRACE_GETREGSET = 0x4204,
     // /// Set register content.
