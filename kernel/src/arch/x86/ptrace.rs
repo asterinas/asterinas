@@ -348,3 +348,14 @@ fn write_word(bytes: &mut [u8], offset: usize, value: usize) {
 const fn word_range(offset: usize) -> Range<usize> {
     offset..offset + size_of::<usize>()
 }
+
+// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/arch/x86/include/asm/segment.h#L188-L189>
+const LINUX_USER_CS: usize = 0x33;
+const LINUX_USER_SS: usize = 0x2b;
+
+// Some applications (e.g., GDB), rely on `ptrace` exposing Linux's
+// conventional x86-64 user segment selector values.
+//
+// See: <https://sourceware.org/git/?p=binutils-gdb.git;a=blob;f=gdb/nat/x86-linux.c#l124>.
+ostd::const_assert!(LINUX_USER_CS == USER_CS_VALUE);
+ostd::const_assert!(LINUX_USER_SS == USER_SS_VALUE);
