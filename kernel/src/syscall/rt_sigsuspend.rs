@@ -5,7 +5,7 @@ use ostd::{mm::VmIo, sync::Waiter};
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::signal::{sig_mask::SigMask, with_sigmask_changed},
+    process::{posix_thread::ContextPthreadAdminApi, signal::sig_mask::SigMask},
 };
 
 pub fn sys_rt_sigsuspend(
@@ -23,14 +23,11 @@ pub fn sys_rt_sigsuspend(
     }
 
     let sigmask = ctx.user_space().read_val::<SigMask>(sigmask_addr)?;
+    ctx.save_and_set_sig_mask(sigmask);
 
     // Wait until receiving any signal
     let waiter = Waiter::new_pair().0;
-    with_sigmask_changed(
-        ctx,
-        |old_mask| old_mask + sigmask,
-        || waiter.pause_until(|| None::<()>),
-    )?;
+    waiter.pause_until(|| None::<()>)?;
 
     // This syscall should always return `Err(EINTR)`. This path should never be reached.
     unreachable!("rt_sigsuspend always return EINTR");
