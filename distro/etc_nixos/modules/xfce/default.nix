@@ -16,7 +16,6 @@ in {
   systemd.services."xfce-desktop" = lib.mkIf (config.services.xserver.enable
     && config.services.xserver.desktopManager.xfce.enable) {
       description = "XFCE Desktop Environment";
-      after = [ "getty.target" ];
       wantedBy = [ "multi-user.target" ];
       # XFCE needs exclusive access to tty1 to prevent the getty login prompt
       # from interfering with the graphical display. This conflict ensures

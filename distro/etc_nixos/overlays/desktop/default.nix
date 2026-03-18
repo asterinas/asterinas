@@ -5,10 +5,8 @@ self: super:
     xorgserver = super.xorg.xorgserver.overrideAttrs (oldAttrs: {
       version = "21.1.4";
       src = oldAttrs.src;
-      patches = (oldAttrs.patches or [ ]) ++ [
-        ./patches/xorgServer/0001-Skip-checking-graphics-under-sys.patch
-        ./patches/xorgServer/0002-hardcode-tty1-usage-due-to-Asterinas-limitations.patch
-      ];
+      patches = (oldAttrs.patches or [ ])
+        ++ [ ./patches/xorgServer/0001-Skip-checking-graphics-under-sys.patch ];
       nativeBuildInputs = (oldAttrs.nativeBuildInputs or [ ])
         ++ [ self.meson self.ninja self.pkg-config ];
       buildInputs = (oldAttrs.buildInputs or [ ]) ++ [
