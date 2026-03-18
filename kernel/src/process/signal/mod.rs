@@ -35,8 +35,8 @@ use crate::{
     prelude::*,
     process::{
         TermStatus,
-        posix_thread::{ContextPthreadAdminApi, do_exit_group},
-        signal::c_types::stack_t,
+        posix_thread::{ContextPthreadAdminApi, do_exit_group, ptrace::PtraceStopResult},
+        signal::{c_types::stack_t, constants::SIGKILL},
     },
 };
 
@@ -51,6 +51,10 @@ pub fn handle_pending_signal(
     ctx: &Context,
     pre_syscall_ret: Option<usize>,
 ) {
+    // FIXME: This function may handle or suppress only one signal per trap, delaying
+    // other pending unmasked signals until the next trap. Consider a looped scan.
+    //
+    // For details, see <https://github.com/asterinas/asterinas/pull/2984/#discussion_r3137275994>.
     let syscall_restart = if let Some(pre_syscall_ret) = pre_syscall_ret
         && user_ctx.syscall_ret() == -(Errno::ERESTARTSYS as i32) as usize
     {
@@ -85,7 +89,42 @@ pub fn handle_pending_signal(
         }
     };
 
-    let signal = dequeued.unwrap();
+    let (signal, sig_action) = if dequeued.num() != SIGKILL {
+        match ctx.posix_thread.ptrace_stop(dequeued, ctx) {
+            PtraceStopResult::Continued(Some(dequeued)) => {
+                // Note that this `dequeued` object outputted by `ptrace_stop`
+                // might be different from the input `dequeued` object
+                // because of tracer manipulation.
+                // But we name both `dequeued` anyway.
+
+                let sig_num = dequeued.num();
+                if ctx.posix_thread.sig_mask().contains(sig_num) {
+                    // Requeue the injected signal to the same signal queue as the
+                    // dequeued stop signal (thread queue or process queue).
+                    //
+                    // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/kernel/signal.c#L2770>
+                    requeue_signal(ctx, dequeued);
+                    return;
+                }
+
+                (dequeued.unwrap(), get_sig_action(ctx, sig_num))
+            }
+            PtraceStopResult::Continued(None) => return,
+            PtraceStopResult::Interrupted => {
+                match dequeue_pending_signal(ctx) {
+                    Some((dequeued, action)) if dequeued.num() == SIGKILL => {
+                        (dequeued.unwrap(), action)
+                    }
+                    // SIGKILL was consumed by a sibling thread; this thread will be
+                    // terminated as part of the process-wide exit.
+                    _ => return,
+                }
+            }
+            PtraceStopResult::NotTraced(dequeued) => (dequeued.unwrap(), sig_action),
+        }
+    } else {
+        (dequeued.unwrap(), sig_action)
+    };
 
     let sig_num = signal.num();
     match sig_action {
@@ -206,7 +245,7 @@ fn dequeue_pending_signal(ctx: &Context) -> Option<(DequeuedSignal, SigAction)> 
         let signal = ctx.dequeue_signal(&sig_mask)?;
         let sig_num = signal.num();
         let sig_action = sig_dispositions.get(sig_num);
-        if sig_action.will_ignore(sig_num) {
+        if sig_action.will_ignore(sig_num) && !posix_thread.is_traced() {
             continue;
         }
 
@@ -221,6 +260,26 @@ fn dequeue_pending_signal(ctx: &Context) -> Option<(DequeuedSignal, SigAction)> 
     );
 
     Some((signal, sig_action))
+}
+
+/// Re-queue the ptrace-captured signal.
+///
+/// This appends to the tail of the origin queue,
+/// which (a) loses same-number RT-signal send-order FIFO and
+/// (b) allows newer lower-numbered standard signals queued
+/// during the ptrace stop to preempt this signal.
+/// This is intentionally consistent with Linux's behaviors.
+fn requeue_signal(ctx: &Context, signal: DequeuedSignal) {
+    match signal {
+        DequeuedSignal::FromProcess(signal) => ctx.process.enqueue_signal(signal),
+        DequeuedSignal::FromThread(signal) => ctx.posix_thread.enqueue_signal(signal),
+    }
+}
+
+fn get_sig_action(ctx: &Context, sig_num: SigNum) -> SigAction {
+    let sig_dispositions = ctx.process.sig_dispositions().lock();
+    let sig_dispositions = sig_dispositions.lock();
+    sig_dispositions.get(sig_num)
 }
 
 #[expect(clippy::too_many_arguments)]

@@ -33,7 +33,7 @@ mod exit;
 pub mod futex;
 mod name;
 mod posix_thread_ext;
-mod ptrace;
+pub mod ptrace;
 mod robust_list;
 mod thread_local;
 

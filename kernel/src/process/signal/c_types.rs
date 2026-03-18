@@ -64,6 +64,10 @@ impl siginfo_t {
         self.siginfo_fields.common_mut().first = pid_uid;
     }
 
+    pub fn set_pid_uid_by(&mut self, ctx: &Context) {
+        self.set_pid_uid(ctx.process.pid(), ctx.posix_thread.credentials().ruid());
+    }
+
     pub fn set_status(&mut self, status: i32) {
         *self
             .siginfo_fields

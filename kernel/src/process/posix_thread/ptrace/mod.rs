@@ -2,13 +2,33 @@
 
 //! Ptrace implementation for POSIX threads.
 
+use core::sync::atomic::{AtomicBool, Ordering};
+
+use ostd::sync::Waiter;
+
 use super::{AsPosixThread, PosixThread};
 use crate::{
     prelude::*,
+    process::signal::{
+        DequeuedSignal, PauseReason,
+        c_types::siginfo_t,
+        constants::{CLD_TRAPPED, SIGCHLD},
+        signals::raw::RawSignal,
+    },
     thread::{Thread, Tid},
 };
 
+mod util;
+
+pub(in crate::process) use util::PtraceStopResult;
+use util::StopDeliverySignal;
+
 impl PosixThread {
+    /// Returns whether this thread is being traced.
+    pub(in crate::process) fn is_traced(&self) -> bool {
+        self.tracer().is_some()
+    }
+
     /// Returns the tracer of this thread if it is being traced.
     pub fn tracer(&self) -> Option<Arc<Thread>> {
         self.tracee_status.get().and_then(|status| status.tracer())
@@ -28,6 +48,22 @@ impl PosixThread {
     pub(in crate::process) fn detach_tracer(&self) {
         if let Some(status) = self.tracee_status.get() {
             status.detach_tracer();
+            self.wake_signalled_waker();
+        }
+    }
+
+    /// Stops this thread by ptrace with the given signal if it is currently traced.
+    ///
+    /// Returns a [`PtraceStopResult`] indicating why this ptrace-stop ended.
+    pub(in crate::process) fn ptrace_stop(
+        &self,
+        signal: DequeuedSignal,
+        ctx: &Context,
+    ) -> PtraceStopResult {
+        if let Some(status) = self.tracee_status.get() {
+            status.ptrace_stop(signal, ctx)
+        } else {
+            PtraceStopResult::NotTraced(signal)
         }
     }
 }
@@ -88,12 +124,14 @@ impl PosixThread {
 }
 
 pub(super) struct TraceeStatus {
+    is_stopped: AtomicBool,
     state: Mutex<TraceeState>,
 }
 
 impl TraceeStatus {
     pub(super) fn new() -> Self {
         Self {
+            is_stopped: AtomicBool::new(false),
             state: Mutex::new(TraceeState::new()),
         }
     }
@@ -113,18 +151,71 @@ impl TraceeStatus {
     }
 
     fn detach_tracer(&self) {
-        self.state.lock().tracer = Weak::new();
+        // Hold the lock first to avoid race conditions.
+        let mut state = self.state.lock();
+
+        state.tracer = Weak::new();
+        self.is_stopped.store(false, Ordering::Relaxed);
+    }
+
+    fn ptrace_stop(&self, signal: DequeuedSignal, ctx: &Context) -> PtraceStopResult {
+        // Hold the lock first to avoid race conditions.
+        let mut state = self.state.lock();
+
+        let Some(tracer) = state.tracer() else {
+            return PtraceStopResult::NotTraced(signal);
+        };
+
+        debug_assert!(!self.is_ptrace_stopped());
+
+        state.signal.stop(signal);
+        self.is_stopped.store(true, Ordering::Relaxed);
+        drop(state);
+
+        let tracer = tracer.as_posix_thread().unwrap();
+        tracer.enqueue_signal(Box::new(RawSignal::new({
+            let mut siginfo = siginfo_t::new(SIGCHLD, CLD_TRAPPED);
+            siginfo.set_pid_uid_by(ctx);
+            siginfo
+        })));
+        tracer.process().children_wait_queue().wake_all();
+
+        let waiter = Waiter::new_pair().0;
+        if waiter
+            .pause_until_by(
+                || (!self.is_ptrace_stopped()).then_some(()),
+                PauseReason::StopByPtrace,
+            )
+            .is_err()
+        {
+            // A `SIGKILL` interrupts this ptrace-stop.
+            let mut state = self.state.lock();
+            state.signal.clear();
+            self.is_stopped.store(false, Ordering::Relaxed);
+            return PtraceStopResult::Interrupted;
+        };
+
+        let mut state = self.state.lock();
+        let signal = state.signal.clear();
+        PtraceStopResult::Continued(signal)
+    }
+
+    fn is_ptrace_stopped(&self) -> bool {
+        self.is_stopped.load(Ordering::Relaxed)
     }
 }
 
 struct TraceeState {
     tracer: Weak<Thread>,
+    /// The signal associated with the current ptrace-stop and later signal delivery.
+    signal: StopDeliverySignal,
 }
 
 impl TraceeState {
     fn new() -> Self {
         Self {
             tracer: Weak::new(),
+            signal: StopDeliverySignal::default(),
         }
     }
 
