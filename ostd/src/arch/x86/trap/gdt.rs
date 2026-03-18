@@ -47,9 +47,10 @@ pub(super) unsafe fn init_on_cpu() {
     // intended for switching to a new kernel CS.
     assert_eq!(CS::get_reg(), KERNEL_CS);
 
-    // Allocate a new GDT with 8 entries.
+    // Allocate a new GDT with 9 entries.
     let gdt = Box::new([
-        0, KCODE64, KDATA, /* UCODE32 (not used) */ 0, UDATA, UCODE64, tss0, tss1,
+        0, KCODE64, KDATA, /* KCODE32 (not used) */ 0, /* UCODE32 (not used) */ 0, UDATA,
+        UCODE64, tss0, tss1,
     ]);
     let gdt = &*Box::leak(gdt);
     assert_eq!(gdt[KERNEL_CS.index() as usize], KCODE64);
@@ -70,14 +71,14 @@ pub(super) unsafe fn init_on_cpu() {
     unsafe { lgdt(&gdtr) };
 
     // Load the TSS.
-    let tss_sel = SegmentSelector::new(6, PrivilegeLevel::Ring0);
+    let tss_sel = SegmentSelector::new(7, PrivilegeLevel::Ring0);
     assert_eq!(gdt[tss_sel.index() as usize], tss0);
     assert_eq!(gdt[(tss_sel.index() + 1) as usize], tss1);
     // SAFETY: The selector points to the TSS descriptors in the GDT.
     unsafe { load_tss(tss_sel) };
 
     // Set up the selectors for the `syscall` and `sysret` instructions.
-    let sysret = SegmentSelector::new(3, PrivilegeLevel::Ring3);
+    let sysret = SegmentSelector::new(4, PrivilegeLevel::Ring3);
     assert_eq!(gdt[(sysret.index() + 1) as usize], UDATA);
     assert_eq!(gdt[(sysret.index() + 2) as usize], UCODE64);
     let syscall = SegmentSelector::new(1, PrivilegeLevel::Ring0);
@@ -126,5 +127,5 @@ const UDATA: u64 = 0x00CF_F300_0000_FFFF;
 const KERNEL_CS: SegmentSelector = SegmentSelector::new(1, PrivilegeLevel::Ring0);
 const KERNEL_SS: SegmentSelector = SegmentSelector::new(2, PrivilegeLevel::Ring0);
 
-pub(super) const USER_CS: SegmentSelector = SegmentSelector::new(5, PrivilegeLevel::Ring3);
-pub(super) const USER_SS: SegmentSelector = SegmentSelector::new(4, PrivilegeLevel::Ring3);
+pub(super) const USER_CS: SegmentSelector = SegmentSelector::new(6, PrivilegeLevel::Ring3);
+pub(super) const USER_SS: SegmentSelector = SegmentSelector::new(5, PrivilegeLevel::Ring3);
