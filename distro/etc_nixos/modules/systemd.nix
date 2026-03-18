@@ -22,7 +22,18 @@
     shell = "${pkgs.bash}/bin/bash";
     hashedPassword = null;
   };
-  systemd.targets.getty.wants = [ "autovt@hvc0.service" ];
+
+  systemd.targets.getty.wants =
+    # tty1: provide text login ONLY when X server is disabled.
+    # Other VTs: always provide text logins
+    (lib.optional (!config.services.xserver.enable) "autovt@tty1.service") ++ [
+      "autovt@hvc0.service"
+      "autovt@tty2.service"
+      "autovt@tty3.service"
+      "autovt@tty4.service"
+      "autovt@tty5.service"
+      "autovt@tty6.service"
+    ];
 
   systemd.extraConfig = ''
     LogLevel=crit      
