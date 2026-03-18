@@ -12,10 +12,7 @@ use crate::{
         file_table::{FdFlags, FileDesc, get_file_fast},
     },
     prelude::*,
-    process::{
-        posix_thread::ContextPthreadAdminApi,
-        signal::sig_mask::{SigMask, SigSet},
-    },
+    process::{posix_thread::ContextPthreadAdminApi, signal::sig_mask::SigMask},
     time::timespec_t,
 };
 
@@ -102,8 +99,8 @@ fn do_epoll_pwait2(
     events_addr: Vaddr,
     max_events: i32,
     timeout: Option<Duration>,
-    sigmask: Vaddr,
-    sigset_size: usize,
+    sigmask_addr: Vaddr,
+    sigmask_size: usize,
     ctx: &Context,
 ) -> Result<usize> {
     let max_events = {
@@ -113,16 +110,14 @@ fn do_epoll_pwait2(
         max_events as usize
     };
 
-    let sigset = sigmask != 0;
-    if sigset && sigset_size != 8 {
-        return_errno_with_message!(Errno::EINVAL, "sigset size is not equal to 8");
-    }
+    if sigmask_addr != 0 {
+        if sigmask_size != size_of::<SigMask>() {
+            return_errno_with_message!(Errno::EINVAL, "invalid sigmask size");
+        }
 
-    let old_sig_mask_value = if sigset {
-        set_signal_mask(sigmask, ctx)?
-    } else {
-        SigSet::from(0)
-    };
+        let sigmask = ctx.user_space().read_val::<SigMask>(sigmask_addr)?;
+        ctx.save_and_set_sig_mask(sigmask);
+    }
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, epfd);
@@ -131,10 +126,6 @@ fn do_epoll_pwait2(
         .ok_or(Error::with_message(Errno::EINVAL, "not epoll file"))?;
 
     let result = epoll_file.wait(max_events, timeout.as_ref());
-
-    if sigset {
-        restore_signal_mask(old_sig_mask_value, ctx);
-    }
 
     // As mentioned in the manual, the return value should be zero if no file descriptor becomes ready
     // during the requested `timeout` milliseconds. So we ignore `Err(ETIME)` and return an empty vector.
@@ -185,38 +176,18 @@ pub fn sys_epoll_wait(
     Ok(SyscallReturn::Return(events_len as _))
 }
 
-fn set_signal_mask(set_ptr: Vaddr, ctx: &Context) -> Result<SigMask> {
-    let new_mask: Option<SigMask> = if set_ptr != 0 {
-        Some(ctx.user_space().read_val::<u64>(set_ptr)?.into())
-    } else {
-        None
-    };
-
-    let old_sig_mask_value = ctx.posix_thread.sig_mask();
-
-    if let Some(new_mask) = new_mask {
-        ctx.set_sig_mask(new_mask);
-    }
-
-    Ok(old_sig_mask_value)
-}
-
-fn restore_signal_mask(sig_mask_val: SigMask, ctx: &Context) {
-    ctx.set_sig_mask(sig_mask_val);
-}
-
 pub fn sys_epoll_pwait(
     epfd: FileDesc,
     events_addr: Vaddr,
     max_events: i32,
     timeout: i32,
-    sigmask: Vaddr,
-    sigset_size: usize,
+    sigmask_addr: Vaddr,
+    sigmask_size: usize,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
-        "epfd = {}, events_addr = 0x{:x}, max_events = {}, timeout = {:?}, sigmask = 0x{:x}, sigset_size = {}",
-        epfd, events_addr, max_events, timeout, sigmask, sigset_size
+        "epfd = {}, events_addr = 0x{:x}, max_events = {}, timeout = {:?}, sigmask_addr = 0x{:x}, sigmask_size = {}",
+        epfd, events_addr, max_events, timeout, sigmask_addr, sigmask_size
     );
 
     let timeout = if timeout >= 0 {
@@ -230,8 +201,8 @@ pub fn sys_epoll_pwait(
         events_addr,
         max_events,
         timeout,
-        sigmask,
-        sigset_size,
+        sigmask_addr,
+        sigmask_size,
         ctx,
     )?;
 

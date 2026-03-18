@@ -327,6 +327,16 @@ pub trait ContextPthreadAdminApi {
     /// Attempts to do so are silently ignored.
     fn set_sig_mask(&self, sig_mask: SigMask);
 
+    /// Saves and sets the signal mask of the current thread.
+    ///
+    /// If there are no signals to process, the old signal mask will
+    /// be automatically restored when returning from the system call.
+    /// Otherwise, it will be restored after the signal handler.
+    ///
+    /// This method should only be called when handling a system call.
+    /// It should not be called more than once per system call.
+    fn save_and_set_sig_mask(&self, sig_mask: SigMask);
+
     /// Gets the read-write credentials of the current thread.
     fn credentials_mut(&self) -> Credentials<ReadWriteOp>;
 }
@@ -341,6 +351,14 @@ impl ContextPthreadAdminApi for Context<'_> {
         self.posix_thread
             .sig_mask
             .store(sig_mask, Ordering::Relaxed);
+    }
+
+    fn save_and_set_sig_mask(&self, sig_mask: SigMask) {
+        let sig_mask_saved = self.thread_local.sig_mask_saved();
+        debug_assert!(sig_mask_saved.get().is_none());
+        sig_mask_saved.set(Some(self.posix_thread.sig_mask()));
+
+        self.set_sig_mask(sig_mask);
     }
 
     fn credentials_mut(&self) -> Credentials<ReadWriteOp> {

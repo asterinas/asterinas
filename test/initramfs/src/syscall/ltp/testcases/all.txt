@@ -181,14 +181,14 @@ epoll_ctl01
 epoll_ctl03
 # epoll_ctl04
 # epoll_ctl05
-# epoll_wait01
+epoll_wait01
 # epoll_wait02
 epoll_wait03
 epoll_wait04
 # epoll_wait05
 # epoll_wait06
 epoll_wait07
-# epoll_pwait01
+epoll_pwait01
 epoll_pwait02
 # epoll_pwait03
 epoll_pwait04
@@ -1570,7 +1570,7 @@ sigprocmask01
 
 sigrelse01
 
-# sigsuspend01
+sigsuspend01
 sigsuspend02
 
 # sigtimedwait01

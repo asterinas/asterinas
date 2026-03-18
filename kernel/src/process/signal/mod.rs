@@ -64,8 +64,28 @@ pub fn handle_pending_signal(
         None
     };
 
-    let Some((signal, sig_action)) = dequeue_pending_signal(ctx) else {
-        return;
+    let mut restore_sig_mask = ctx
+        .thread_local
+        .sig_mask_saved()
+        .take()
+        .map(|mask| RestoreSigMaskGuard { ctx, mask });
+
+    let (signal, sig_action) = if let Some(dequeued_signal) = dequeue_pending_signal(ctx) {
+        dequeued_signal
+    } else {
+        // Fast path: There is no signal mask to restore.
+        if restore_sig_mask.is_none() {
+            return;
+        }
+        // Restore the signal mask first.
+        let _ = restore_sig_mask.take();
+
+        // Try again with the new signal mask.
+        if let Some(dequeued_signal) = dequeue_pending_signal(ctx) {
+            dequeued_signal
+        } else {
+            return;
+        }
     };
 
     let sig_num = signal.num();
@@ -101,6 +121,7 @@ pub fn handle_pending_signal(
                 flags,
                 restorer_addr,
                 mask,
+                restore_sig_mask.map(RestoreSigMaskGuard::into_mask),
                 user_ctx,
                 signal.to_info(),
             ) {
@@ -128,6 +149,31 @@ pub fn handle_pending_signal(
                 SigDefaultAction::Cont => ctx.process.resume(),
             }
         }
+    }
+}
+
+/// A guard that restores the signal mask on drop.
+struct RestoreSigMaskGuard<'a> {
+    ctx: &'a Context<'a>,
+    mask: SigMask,
+}
+
+impl RestoreSigMaskGuard<'_> {
+    /// Forgets the guard and returns the signal mask to restore.
+    fn into_mask(self) -> SigMask {
+        let mask = self.mask;
+        // Assert that it's a `Copy` type. So we won't leak resources.
+        let _ = self.mask;
+
+        core::mem::forget(self);
+
+        mask
+    }
+}
+
+impl Drop for RestoreSigMaskGuard<'_> {
+    fn drop(&mut self) {
+        self.ctx.set_sig_mask(self.mask);
     }
 }
 
@@ -176,6 +222,7 @@ pub fn handle_user_signal(
     flags: SigActionFlags,
     restorer_addr: Vaddr,
     mut mask: SigMask,
+    mask_to_restore: Option<SigMask>,
     user_ctx: &mut UserContext,
     sig_info: siginfo_t,
 ) -> Result<()> {
@@ -183,6 +230,7 @@ pub fn handle_user_signal(
     debug!("handler_addr = 0x{:x}", handler_addr);
     debug!("flags = {:?}", flags);
     debug!("restorer_addr = 0x{:x}", restorer_addr);
+    debug!("mask = {:?}, mask_to_restore = {:?}", mask, mask_to_restore);
 
     if flags.contains_unsupported_flag() {
         warn!("Unsupported Signal flags: {:?}", flags);
@@ -195,6 +243,7 @@ pub fn handle_user_signal(
 
     // Block signals in sigmask when running signal handler
     let old_mask = ctx.posix_thread.sig_mask();
+    let mask_to_restore = mask_to_restore.unwrap_or(old_mask);
     ctx.set_sig_mask(old_mask + mask);
 
     // Set up signal stack.
@@ -232,7 +281,7 @@ pub fn handle_user_signal(
     };
 
     let mut ucontext = ucontext_t {
-        uc_sigmask: mask.into(),
+        uc_sigmask: mask_to_restore.into(),
         uc_stack,
         ..Default::default()
     };

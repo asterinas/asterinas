@@ -1,4 +1,4 @@
-PselectTest.NoTimeout_NoRandomSave
+# TODO: To pass the following tests, we need to update the timeout before
+# returning to userspace to reflect the remaining time.
 PselectTest.NullFds
 PselectTest.SignalMaskBlocksSignal
-PselectTest.SignalMaskAllowsSignal

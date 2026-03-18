@@ -8,7 +8,10 @@ use super::RobustListHead;
 use crate::{
     fs::{file::file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
-    process::{NsProxy, UserNamespace, signal::SigStack},
+    process::{
+        NsProxy, UserNamespace,
+        signal::{SigStack, sig_mask::SigMask},
+    },
     vm::vmar::Vmar,
 };
 
@@ -44,6 +47,9 @@ pub struct ThreadLocal {
     sig_context: Cell<Option<Vaddr>>,
     /// Stack address, size, and flags for the signal handler.
     sig_stack: RefCell<SigStack>,
+    /// Saved signal mask. It will be restored either after the signal handler, or upon
+    /// return from the system call if there is no signal handler to run.
+    sig_mask_saved: Cell<Option<SigMask>>,
 
     // Namespaces.
     user_ns: RefCell<Arc<UserNamespace>>,
@@ -70,10 +76,11 @@ impl ThreadLocal {
             robust_list: RefCell::new(None),
             file_table: RefCell::new(Some(file_table)),
             fs: RefCell::new(fs),
-            sig_context: Cell::new(None),
-            sig_stack: RefCell::new(SigStack::default()),
             fpu_context: RefCell::new(fpu_context),
             fpu_state: Cell::new(FpuState::Unloaded),
+            sig_context: Cell::new(None),
+            sig_stack: RefCell::new(SigStack::default()),
+            sig_mask_saved: Cell::new(None),
             user_ns: RefCell::new(user_ns),
             ns_proxy: RefCell::new(Some(ns_proxy)),
         }
@@ -156,6 +163,10 @@ impl ThreadLocal {
         Arc::strong_count(&self.fs.borrow()) > 2
     }
 
+    pub fn fpu(&self) -> ThreadFpu<'_> {
+        ThreadFpu(self)
+    }
+
     pub fn sig_context(&self) -> &Cell<Option<Vaddr>> {
         &self.sig_context
     }
@@ -164,8 +175,8 @@ impl ThreadLocal {
         &self.sig_stack
     }
 
-    pub fn fpu(&self) -> ThreadFpu<'_> {
-        ThreadFpu(self)
+    pub(in crate::process) fn sig_mask_saved(&self) -> &Cell<Option<SigMask>> {
+        &self.sig_mask_saved
     }
 
     pub fn borrow_user_ns(&self) -> Ref<'_, Arc<UserNamespace>> {
