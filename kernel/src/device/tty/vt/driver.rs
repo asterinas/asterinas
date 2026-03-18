@@ -1,21 +1,27 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{boxed::Box, format, sync::Arc};
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 use aster_console::{
     AnyConsoleDevice,
     font::BitmapFont,
     mode::{ConsoleMode, KeyboardMode},
 };
-use aster_framebuffer::DummyFramebufferConsole;
-use ostd::mm::{Infallible, VmIo, VmReader, VmWriter};
-use spin::Once;
+use ostd::mm::VmIo;
 
 use crate::{
     current_userspace,
-    device::{
-        registry::char,
-        tty::{CFontOp, Tty, TtyDriver, file::TtyFile, termio::CTermios},
+    device::tty::{
+        CFontOp, Tty, TtyDriver,
+        termio::CTermios,
+        vt::{
+            VtIndex,
+            c_types::{CVtMode, ReleaseDisplayType},
+            console::{VtConsole, VtMode},
+            file::VtFile,
+            manager::VT_MANAGER,
+        },
     },
     fs::file::FileIo,
     prelude::*,
@@ -23,11 +29,10 @@ use crate::{
 };
 
 /// The driver for VT (virtual terminal) devices.
-//
-// TODO: This driver needs to support more features for future VT management.
-#[derive(Clone)]
 pub struct VtDriver {
-    console: Arc<dyn AnyConsoleDevice>,
+    index: VtIndex,
+    console: VtConsole,
+    ref_count: AtomicUsize,
 }
 
 impl VtDriver {
@@ -46,7 +51,7 @@ impl VtDriver {
             CFontOp::OP_SET => CFontOp::NONTALL_VPITCH,
             CFontOp::OP_SET_TALL => font_op.height,
             CFontOp::OP_SET_DEFAULT => {
-                return console_set_font(self.console.as_ref(), BitmapFont::new_basic8x8());
+                return console_set_font(&self.console, BitmapFont::new_basic8x8());
             }
             _ => return_errno_with_message!(Errno::EINVAL, "the font operation is invalid"),
         };
@@ -77,7 +82,7 @@ impl VtDriver {
             vpitch as usize,
             font_data,
         );
-        console_set_font(self.console.as_ref(), font)?;
+        console_set_font(&self.console, font)?;
 
         Ok(())
     }
@@ -106,7 +111,7 @@ impl TtyDriver for VtDriver {
     }
 
     fn open(tty: Arc<Tty<Self>>) -> Result<Box<dyn FileIo>> {
-        Ok(Box::new(TtyFile::new(tty)))
+        Ok(Box::new(VtFile::new(tty)?))
     }
 
     fn push_output(&self, chs: &[u8]) -> Result<usize> {
@@ -133,29 +138,122 @@ impl TtyDriver for VtDriver {
         use super::ioctl_defs::*;
 
         dispatch_ioctl!(match raw_ioctl {
-            cmd @ SetOrGetFont => {
-                let font_op = cmd.read()?;
-                self.handle_set_font(&font_op)?;
+            cmd @ GetKeyboardType => {
+                // Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/kd.h#L36>.
+                const KB_101: u8 = 0x02;
+
+                cmd.write(&KB_101)?;
             }
             cmd @ SetGraphicsMode => {
                 let mode = ConsoleMode::try_from(cmd.get())?;
+
                 if !self.console.set_mode(mode) {
                     return_errno_with_message!(Errno::EINVAL, "the console mode is not supported");
                 }
             }
             cmd @ GetGraphicsMode => {
                 let mode = self.console.mode().unwrap_or(ConsoleMode::Text);
+
+                cmd.write(&(mode as i32))?;
+            }
+            cmd @ GetKeyboardMode => {
+                let mode = self.console.keyboard_mode().unwrap_or(KeyboardMode::Xlate);
+
                 cmd.write(&(mode as i32))?;
             }
             cmd @ SetKeyboardMode => {
                 let mode = KeyboardMode::try_from(cmd.get())?;
+
                 if !self.console.set_keyboard_mode(mode) {
                     return_errno_with_message!(Errno::EINVAL, "the keyboard mode is not supported");
                 }
             }
-            cmd @ GetKeyboardMode => {
-                let mode = self.console.keyboard_mode().unwrap_or(KeyboardMode::Xlate);
-                cmd.write(&(mode as i32))?;
+            cmd @ SetOrGetFont => {
+                let font_op = cmd.read()?;
+
+                self.handle_set_font(&font_op)?;
+            }
+            cmd @ GetAvailableVt => {
+                let vtm = VT_MANAGER.get().expect("`VT_MANAGER` is not initialized");
+                let res = vtm.with_lock(|m| {
+                    m.get_available_vt_index()
+                        .map(|index| index.get() as i32)
+                        .unwrap_or(-1)
+                });
+
+                cmd.write(&res)?;
+            }
+            cmd @ GetVtMode => {
+                // Reference: <https://elixir.bootlin.com/linux/v6.17/source/drivers/tty/vt/vt_ioctl.c#L785-L798>
+
+                let vtm = VT_MANAGER.get().expect("`VT_MANAGER` is not initialized");
+                let c_vt_mode = vtm.with_lock(|_| {
+                    let vt_console_inner = self.console.lock_inner();
+                    (*vt_console_inner.vt_mode()).into()
+                });
+
+                cmd.write(&c_vt_mode)?;
+            }
+            cmd @ SetVtMode => {
+                // Reference: <https://elixir.bootlin.com/linux/v6.17/source/drivers/tty/vt/vt_ioctl.c#L762-L783>
+
+                let c_vt_mode: CVtMode = cmd.read()?;
+
+                let vt_mode: VtMode = c_vt_mode.try_into()?;
+
+                let vtm = VT_MANAGER.get().expect("`VT_MANAGER` is not initialized");
+                vtm.with_lock(|_| {
+                    let mut vt_console_inner = self.console.lock_inner();
+                    vt_console_inner.set_vt_mode(vt_mode);
+                    vt_console_inner.set_process(Some(Arc::downgrade(&current!())));
+                    vt_console_inner.set_wanted(None);
+                });
+            }
+            cmd @ GetVtState => {
+                let vtm = VT_MANAGER.get().expect("`VT_MANAGER` is not initialized");
+                let state = vtm.with_lock(|m| m.get_global_vt_state());
+
+                cmd.write(&state)?;
+            }
+            cmd @ ReleaseDisplay => {
+                let reldisp_type = ReleaseDisplayType::try_from(cmd.get())?;
+
+                let vtm = VT_MANAGER.get().expect("`VT_MANAGER` is not initialized");
+                vtm.with_lock(|m| m.handle_release_display(self.index, reldisp_type))?;
+            }
+            cmd @ ActivateVt => {
+                // Reference: <https://elixir.bootlin.com/linux/v6.17/source/drivers/tty/vt/vt_ioctl.c#L835-L854>
+
+                let vt_index = VtIndex::new(cmd.get() as u8)
+                    .ok_or_else(|| Error::with_message(Errno::ENXIO, "the VT index is invalid"))?;
+
+                let vtm = VT_MANAGER.get().expect("`VT_MANAGER` is not initialized");
+                vtm.with_lock(|m| m.allocate_vt(vt_index))?;
+                vtm.with_lock(|m| m.switch_vt(vt_index))?;
+            }
+            cmd @ WaitForVtActive => {
+                // Reference: <https://elixir.bootlin.com/linux/v6.17/source/drivers/tty/vt/vt_ioctl.c#L862-L870>
+
+                let vt_index = VtIndex::new(cmd.get() as u8)
+                    .ok_or_else(|| Error::with_message(Errno::ENXIO, "the VT index is invalid"))?;
+
+                let vtm = VT_MANAGER.get().expect("`VT_MANAGER` is not initialized");
+                vtm.wait_for_vt_active(vt_index)?;
+            }
+            cmd @ DisallocateVt => {
+                // Reference: <https://elixir.bootlin.com/linux/v6.17/source/drivers/tty/vt/vt_ioctl.c#L893-L906>
+
+                let vtm = VT_MANAGER.get().expect("`VT_MANAGER` is not initialized");
+
+                if cmd.get() == 0 {
+                    vtm.with_lock(|m| m.disallocate_all_vts())?;
+                } else {
+                    let vt_index = VtIndex::new(cmd.get() as u8).ok_or_else(|| {
+                        Error::with_message(Errno::ENXIO, "the VT index is invalid")
+                    })?;
+
+                    vtm.with_lock(|m| m.disallocate_vt(vt_index))?;
+                }
             }
             _ => return Ok(false),
         });
@@ -164,43 +262,80 @@ impl TtyDriver for VtDriver {
     }
 }
 
-static TTY1: Once<Arc<Tty<VtDriver>>> = Once::new();
+impl VtDriver {
+    /// Creates a new VT driver with none vt console backend.
+    pub(super) fn new(index: VtIndex) -> Self {
+        Self {
+            index,
+            console: VtConsole::new(),
+            ref_count: AtomicUsize::new(0),
+        }
+    }
 
-/// Returns the `tty1` device.
-///
-/// # Panics
-///
-/// This function will panic if the `tty1` device has not been initialized.
-pub fn tty1_device() -> &'static Arc<Tty<VtDriver>> {
-    TTY1.get().unwrap()
-}
+    /// Gets the VT console associated with this driver.
+    pub(super) fn vt_console(&self) -> &VtConsole {
+        &self.console
+    }
 
-pub(super) fn init_in_first_process() -> Result<()> {
-    let devices = aster_console::all_devices();
+    /// Initializes the VT driver.
+    ///
+    /// This acttually includes operations below:
+    /// - Increase the reference count to 1, which clones the linux
+    ///   [`tty_port_init`](https://elixir.bootlin.com/linux/v6.17/source/drivers/tty/vt/vt.c#L3744)
+    ///   key behavior.
+    /// - Tries to switch the VT console to framebuffer backend if possible, which clones the linux
+    ///   [`visual_init`](https://elixir.bootlin.com/linux/v6.17/source/drivers/tty/vt/vt.c#L3745)
+    ///   key behavior.
+    pub(super) fn initialize(&self) {
+        self.ref_count.store(1, Ordering::Relaxed);
+        self.console.try_switch_to_framebuffer_backend();
+    }
 
-    // Initialize the `tty1` device.
+    /// Checks if this VT driver is initialized by checking if the
+    /// reference count is greater than 0.
+    pub(super) fn is_initialized(&self) -> bool {
+        self.ref_count.load(Ordering::Relaxed) > 0
+    }
 
-    let fb_console = devices
-        .iter()
-        .find(|(name, _)| name.as_str() == aster_framebuffer::CONSOLE_NAME)
-        .map(|(_, device)| device.clone())
-        .unwrap_or_else(|| Arc::new(DummyFramebufferConsole));
+    /// Checks if this VT driver is currently in use by any file handle.
+    pub(super) fn is_in_use(&self) -> bool {
+        self.ref_count.load(Ordering::Relaxed) > 1
+    }
 
-    let driver = VtDriver {
-        console: fb_console.clone(),
-    };
-    let tty1 = Tty::new(1, driver);
+    /// The open callback for this VT driver.
+    ///
+    /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/drivers/tty/vt/vt.c#L3590-L3631>
+    pub(super) fn open_callback(&self) -> Result<()> {
+        let vtm = VT_MANAGER.get().expect("`VT_MANAGER` is not initialized");
+        vtm.with_lock(|m| {
+            m.allocate_vt(self.index)?;
+            self.inc_ref_count();
+            Ok(())
+        })
+    }
 
-    TTY1.call_once(|| tty1.clone());
-    char::register(tty1.clone())?;
+    /// The close callback for this VT driver.
+    ///
+    /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/drivers/tty/vt/vt.c#L3640-L3659>
+    pub(super) fn close_callback(&self) {
+        self.dec_ref_count();
+    }
 
-    fb_console.register_callback(Box::leak(Box::new(
-        move |mut reader: VmReader<Infallible>| {
-            let mut chs = vec![0u8; reader.remain()];
-            reader.read(&mut VmWriter::from(chs.as_mut_slice()));
-            let _ = tty1.push_input(chs.as_slice());
-        },
-    )));
+    /// Increases the reference count of this VT driver by 1.
+    fn inc_ref_count(&self) {
+        self.ref_count.fetch_add(1, Ordering::Relaxed);
+    }
 
-    Ok(())
+    /// Decreases the reference count of this VT driver by 1.
+    pub(super) fn dec_ref_count(&self) {
+        if self
+            .ref_count
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |count| {
+                if count == 0 { None } else { Some(count - 1) }
+            })
+            .is_err()
+        {
+            log::warn!("VtDriver `ref_count` is already zero");
+        }
+    }
 }
