@@ -1,14 +1,28 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::{AtomicBool, Ordering};
+
 use hashbrown::HashMap;
+use ostd::sync::Waiter;
 
 use super::{AsPosixThread, PosixThread};
 use crate::{
     prelude::*,
+    process::signal::{
+        PauseReason,
+        c_types::siginfo_t,
+        constants::SIGCHLD,
+        signals::{Signal, user::UserSignal},
+    },
     thread::{Thread, Tid},
 };
 
 impl PosixThread {
+    /// Returns whether this thread may be a tracee.
+    pub(in crate::process) fn may_be_tracee(&self) -> bool {
+        self.tracee_status.is_completed()
+    }
+
     /// Returns the tracer of this thread if it is being traced.
     pub fn tracer(&self) -> Option<Arc<Thread>> {
         self.tracee_status.get().and_then(|status| status.tracer())
@@ -28,6 +42,26 @@ impl PosixThread {
     pub fn detach_tracer(&self) {
         if let Some(status) = self.tracee_status.get() {
             status.detach_tracer();
+            self.wake_signalled_waker();
+        }
+    }
+
+    /// Stops this thread by ptrace with the given signal if it is currently traced.
+    ///
+    /// Returns:
+    /// - `PtraceStopResult::Continued` if the ptrace-stop is continued by the tracer.
+    /// - `PtraceStopResult::Interrupted` if the ptrace-stop is interrupted by `SIGKILL`.
+    /// - `PtraceStopResult::NotTraced(signal)` if the thread is not traced,
+    ///   with the given `signal` returned back.
+    pub(in crate::process) fn ptrace_stop(
+        &self,
+        signal: Box<dyn Signal>,
+        ctx: &Context,
+    ) -> PtraceStopResult {
+        if let Some(status) = self.tracee_status.get() {
+            status.ptrace_stop(signal, ctx)
+        } else {
+            PtraceStopResult::NotTraced(signal)
         }
     }
 }
@@ -60,12 +94,14 @@ impl PosixThread {
 }
 
 pub(super) struct TraceeStatus {
+    is_stopped: AtomicBool,
     state: Mutex<TraceeState>,
 }
 
 impl TraceeStatus {
     pub(super) fn new() -> Self {
         Self {
+            is_stopped: AtomicBool::new(false),
             state: Mutex::new(TraceeState::new()),
         }
     }
@@ -85,22 +121,85 @@ impl TraceeStatus {
     }
 
     fn detach_tracer(&self) {
-        self.state.lock().tracer = Weak::new();
+        // Hold the lock first to avoid race conditions.
+        let mut state = self.state.lock();
+
+        state.tracer = Weak::new();
+        state.unwaited_siginfo = None;
+        state.siginfo = None;
+        self.is_stopped.store(false, Ordering::Relaxed);
+    }
+
+    fn ptrace_stop(&self, signal: Box<dyn Signal>, ctx: &Context) -> PtraceStopResult {
+        // Hold the lock first to avoid race conditions.
+        let mut state = self.state.lock();
+
+        let Some(tracer) = state.tracer() else {
+            return PtraceStopResult::NotTraced(signal);
+        };
+
+        debug_assert!(!self.is_ptrace_stopped());
+
+        state.unwaited_siginfo = Some(signal.to_info());
+        state.siginfo = Some(signal.to_info());
+        self.is_stopped.store(true, Ordering::Relaxed);
+
+        let tracer = tracer.as_posix_thread().unwrap();
+        tracer.enqueue_signal(Box::new(UserSignal::new_kill(SIGCHLD, ctx)));
+        tracer.process().children_wait_queue().wake_all();
+
+        drop(state);
+
+        let waiter = Waiter::new_pair().0;
+        if waiter
+            .pause_until_by(
+                || (!self.is_ptrace_stopped()).then_some(()),
+                PauseReason::StopByPtrace,
+            )
+            .is_err()
+        {
+            // A `SIGKILL` interrupts this ptrace-stop.
+            return PtraceStopResult::Interrupted;
+        };
+
+        PtraceStopResult::Continued
+    }
+
+    fn is_ptrace_stopped(&self) -> bool {
+        self.is_stopped.load(Ordering::Relaxed)
     }
 }
 
 struct TraceeState {
     tracer: Weak<Thread>,
+    /// The siginfo of the signal that stopped the tracee and has not yet been waited on.
+    unwaited_siginfo: Option<siginfo_t>,
+    /// The siginfo of the signal that stopped the tracee.
+    ///
+    /// This is needed to support `PTRACE_GETSIGINFO`.
+    siginfo: Option<siginfo_t>,
 }
 
 impl TraceeState {
     fn new() -> Self {
         Self {
             tracer: Weak::new(),
+            unwaited_siginfo: None,
+            siginfo: None,
         }
     }
 
     fn tracer(&self) -> Option<Arc<Thread>> {
         self.tracer.upgrade()
     }
+}
+
+/// The result of a ptrace-stop.
+pub(in crate::process) enum PtraceStopResult {
+    /// The ptrace-stop is continued by the tracer.
+    Continued,
+    /// The ptrace-stop is interrupted by `SIGKILL`.
+    Interrupted,
+    /// The thread is not traced.
+    NotTraced(Box<dyn Signal>),
 }
