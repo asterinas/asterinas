@@ -16,7 +16,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    container: asterinas/asterinas:0.17.1-20260317
+    container: asterinas/asterinas:0.17.1-20260319
     steps:
       - uses: actions/checkout@v4
 
