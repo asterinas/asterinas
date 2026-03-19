@@ -118,3 +118,5 @@ echo "All mount bind file test passed."
 ./pseudofs/pseudo_dev_id
 ./pseudofs/pseudo_inode
 ./pseudofs/pseudo_mount
+
+./symlink/symlink
