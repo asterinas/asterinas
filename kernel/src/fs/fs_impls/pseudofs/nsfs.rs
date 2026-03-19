@@ -12,7 +12,7 @@ use crate::{
     fs::{
         file::{
             AccessMode, FileIo, InodeHandle, InodeMode, InodeType, StatusFlags,
-            file_table::{FdFlags, RawFileDesc},
+            file_table::{FdFlags, FileDesc},
             mkmod,
         },
         pseudofs::{NaivePseudoFs, PseudoInode, PseudoInodeType},
@@ -198,11 +198,11 @@ impl<T: NsCommonOps> FileIo for NsFile<T> {
                     );
                 }
 
-                open_ns_as_file(user_ns)
+                open_ns_as_file(user_ns).map(|fd| fd.into())
             }
             _cmd @ GetParent => {
                 let parent = self.ns.parent()?;
-                open_ns_as_file(parent)
+                open_ns_as_file(parent).map(|fd| fd.into())
             }
             _cmd @ GetType => {
                 let clone_flags = CloneFlags::from(T::TYPE);
@@ -259,7 +259,7 @@ impl<T: NsCommonOps> InodeIo for NsFile<T> {
 }
 
 /// Opens a namespace as a file and returns the file descriptor.
-fn open_ns_as_file<T: NsCommonOps>(ns: &Arc<T>) -> Result<RawFileDesc> {
+fn open_ns_as_file<T: NsCommonOps>(ns: &Arc<T>) -> Result<FileDesc> {
     let path = ns.get_path();
     let inode_handle = InodeHandle::new(path.clone(), AccessMode::O_RDONLY, StatusFlags::empty())?;
 
@@ -269,7 +269,7 @@ fn open_ns_as_file<T: NsCommonOps>(ns: &Arc<T>) -> Result<RawFileDesc> {
     let mut file_table = file_table_ref.unwrap().write();
     let fd = file_table.insert(Arc::new(inode_handle), FdFlags::CLOEXEC);
 
-    Ok(fd.into())
+    Ok(fd)
 }
 
 /// Common operations shared by all namespace types.
