@@ -6,7 +6,7 @@ branding:
 inputs:
   # Test Configuration
   auto_test:
-    description: 'Test type (general, osdk, boot, syscall, test)'
+    description: 'Test type (general, osdk, boot, conformance, regression)'
     required: true
   release:
     description: 'Whether to run in release mode'
@@ -36,14 +36,14 @@ inputs:
   extra_blocklists:
     description: 'Extra blocklists directories'
     required: false
-  syscall_test_suite:
-    description: 'Selected syscall test suite'
+  conformance_test_suite:
+    description: 'Selected conformance test suite'
     required: false
-  syscall_test_workdir:
-    description: 'Syscall test working directory'
+  conformance_test_workdir:
+    description: 'Conformance test working directory'
     required: false
   boot_protocol:
-    description: 'Boot protocol (linux-efi-handover64/multiboot/multiboot2/linux-legacy32)'
+    description: 'Boot protocol (linux-efi-handover64/linux-efi-pe64/multiboot/multiboot2/linux-legacy32)'
     required: false
 
 runs:
@@ -88,8 +88,8 @@ runs:
         [[ -n "${{ inputs.scheme }}" ]] && CMD+=" SCHEME=${{ inputs.scheme }}"
         [[ -n "${{ inputs.arch }}" ]] && CMD+=" OSDK_TARGET_ARCH=${{ inputs.arch }}"
         [[ -n "${{ inputs.extra_blocklists }}" ]] && CMD+=" EXTRA_BLOCKLISTS_DIRS=${{ inputs.extra_blocklists }}"
-        [[ -n "${{ inputs.syscall_test_suite }}" ]] && CMD+=" SYSCALL_TEST_SUITE=${{ inputs.syscall_test_suite }}"
-        [[ -n "${{ inputs.syscall_test_workdir }}" ]] && CMD+=" SYSCALL_TEST_WORKDIR=${{ inputs.syscall_test_workdir }}"
+        [[ -n "${{ inputs.conformance_test_suite }}" ]] && CMD+=" CONFORMANCE_TEST_SUITE=${{ inputs.conformance_test_suite }}"
+        [[ -n "${{ inputs.conformance_test_workdir }}" ]] && CMD+=" CONFORMANCE_TEST_WORKDIR=${{ inputs.conformance_test_workdir }}"
         [[ -n "${{ inputs.boot_protocol }}" ]] && CMD+=" BOOT_PROTOCOL=${{ inputs.boot_protocol }}"
         
         echo "Executing: $CMD"

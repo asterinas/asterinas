@@ -1,7 +1,7 @@
-{ target ? "x86_64", enableBasicTest ? false, basicTestPlatform ? "asterinas"
-, enableBenchmark ? false, enableSyscallTest ? false, syscallTestSuite ? "ltp"
-, syscallTestWorkDir ? "/tmp", dnsServer ? "none", smp ? 1
-, initramfsCompressed ? true, }:
+{ target ? "x86_64", enableBenchmarkTest ? false, enableConformanceTest ? false
+, enableRegressionTest ? false, conformanceTestSuite ? "ltp"
+, conformanceTestWorkDir ? "/tmp", regressionTestPlatform ? "asterinas"
+, dnsServer ? "none", smp ? 1, initramfsCompressed ? true, }:
 let
   crossSystem.config = if target == "x86_64" then
     "x86_64-unknown-linux-gnu"
@@ -23,19 +23,21 @@ let
   };
 in rec {
   # Packages needed by initramfs
-  apps = pkgs.callPackage ./apps { testPlatform = basicTestPlatform; };
   busybox = pkgs.busybox;
   benchmark = pkgs.callPackage ./benchmark { };
-  syscall = pkgs.callPackage ./syscall {
+  conformance = pkgs.callPackage ./conformance {
     inherit smp;
-    testSuite = syscallTestSuite;
-    workDir = syscallTestWorkDir;
+    testSuite = conformanceTestSuite;
+    workDir = conformanceTestWorkDir;
   };
+  regression =
+    pkgs.callPackage ./regression { testPlatform = regressionTestPlatform; };
+
   initramfs = pkgs.callPackage ./initramfs.nix {
     inherit busybox;
-    apps = if enableBasicTest then apps else null;
-    benchmark = if enableBenchmark then benchmark else null;
-    syscall = if enableSyscallTest then syscall else null;
+    benchmark = if enableBenchmarkTest then benchmark else null;
+    conformance = if enableConformanceTest then conformance else null;
+    regression = if enableRegressionTest then regression else null;
     dnsServer = dnsServer;
   };
   initramfs-image = pkgs.callPackage ./initramfs-image.nix {
