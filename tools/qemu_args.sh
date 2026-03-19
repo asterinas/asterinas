@@ -7,7 +7,8 @@
 #  - scheme: "normal", "test", "microvm" or "iommu";
 # Other arguments are configured via environmental variables:
 #  - OVMF: "on" or "off";
-#  - BOOT_METHOD: "qemu-direct", "grub-rescue-iso", "linux-efi-pe64" or "linux-efi-handover64";
+#  - BOOT_METHOD: "qemu-direct", "grub-rescue-iso" or "grub-qcow2";
+#  - BOOT_PROTOCOL: "multiboot", "multiboot2", "linux-legacy32", "linux-efi-pe64" or "linux-efi-handover64";
 #  - NETDEV: "user" or "tap";
 #  - VHOST: "off" or "on";
 #  - VSOCK: "off" or "on";
@@ -113,62 +114,65 @@ if [ "$1" = "iommu" ]; then
     # TODO: Add support for enabling IOMMU on AMD platforms
 fi
 
-QEMU_ARGS="\
-    $COMMON_QEMU_ARGS \
-    -machine q35,kernel-irqchip=split \
-    -device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,serial=vext2,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
-    -device virtio-blk-pci,bus=pcie.0,addr=0x7,drive=x1,serial=vexfat,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
-    -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES$IOMMU_DEV_EXTRA \
-    -device virtio-serial-pci,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
-    $CONSOLE_ARGS \
-    $IOMMU_EXTRA_ARGS \
-"
-
-MICROVM_QEMU_ARGS="\
-    $COMMON_QEMU_ARGS \
-    -machine microvm,rtc=on \
-    -nodefaults \
-    -no-user-config \
-    -device virtio-blk-device,drive=x0,serial=vext2 \
-    -device virtio-blk-device,drive=x1,serial=vexfat \
-    -device virtio-keyboard-device \
-    -device virtio-net-device,netdev=net01 \
-    -device virtio-serial-device \
-    $CONSOLE_ARGS \
-"
+if [ "$1" = "microvm" ]; then
+    QEMU_ARGS="\
+        $COMMON_QEMU_ARGS \
+        -machine microvm,rtc=on \
+        -nodefaults \
+        -no-user-config \
+        -device virtio-blk-device,drive=x0,serial=vext2 \
+        -device virtio-blk-device,drive=x1,serial=vexfat \
+        -device virtio-keyboard-device \
+        -device virtio-net-device,netdev=net01 \
+        -device virtio-serial-device \
+        $CONSOLE_ARGS \
+    "
+else
+    QEMU_ARGS="\
+        $COMMON_QEMU_ARGS \
+        -machine q35,kernel-irqchip=split \
+        -device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,serial=vext2,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
+        -device virtio-blk-pci,bus=pcie.0,addr=0x7,drive=x1,serial=vexfat,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
+        -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES$IOMMU_DEV_EXTRA \
+        -device virtio-serial-pci,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
+        $CONSOLE_ARGS \
+        $IOMMU_EXTRA_ARGS \
+    "
+fi
 
 if [ "$VSOCK" = "on" ]; then
     # RAND_CID=$(shuf -i 3-65535 -n 1)
     RAND_CID=3
     echo "[$1] Launched QEMU VM with CID $RAND_CID" 1>&2
     if [ "$1" = "microvm" ]; then
-        MICROVM_QEMU_ARGS="
-            $MICROVM_QEMU_ARGS \
+        QEMU_ARGS="$QEMU_ARGS \
             -device vhost-vsock-device,guest-cid=$RAND_CID \
         "
     else
-        QEMU_ARGS="
-            $QEMU_ARGS \
+        QEMU_ARGS="$QEMU_ARGS \
             -device vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=$RAND_CID,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
         "
     fi
 fi
 
-
-if [ "$1" = "microvm" ]; then
-    QEMU_ARGS=$MICROVM_QEMU_ARGS
-    echo $QEMU_ARGS
-    exit 0
+# When using qemu-direct boot, OVMF depends on the boot protocol:
+# linux-efi-* protocols require OVMF; other protocols (e.g. multiboot) do not.
+if [ "$BOOT_METHOD" = "qemu-direct" ]; then
+    if [ "$BOOT_PROTOCOL" = "linux-efi-pe64" ] || [ "$BOOT_PROTOCOL" = "linux-efi-handover64" ]; then
+        OVMF="on"
+    else
+        OVMF="off"
+    fi
 fi
 
 if [ "$OVMF" = "on" ]; then
-    if [ "$BOOT_METHOD" = "qemu-direct" ]; then
-        echo "QEMU direct boot is not compatible with OVMF, ignoring OVMF" 1>&2
-    else
-        OVMF_PATH="/root/ovmf/release"
+    if [ "$1" = "microvm" ]; then
         QEMU_ARGS="${QEMU_ARGS} \
-            -drive if=pflash,format=raw,unit=0,readonly=on,file=$OVMF_PATH/OVMF_CODE.fd \
-            -drive if=pflash,format=raw,unit=1,file=$OVMF_PATH/OVMF_VARS.fd \
+            -bios /root/ovmf/release/microvm/MICROVM.fd \
+        "
+    else
+        QEMU_ARGS="${QEMU_ARGS} \
+            -bios /root/ovmf/release/OVMF.fd \
         "
     fi
 fi
