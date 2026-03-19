@@ -1,9 +1,9 @@
 { lib, pkgs, stdenv, callPackage, testPlatform ? "asterinas", }:
 let
   scripts = lib.fileset.toSource {
-    root = ./../../src/apps/scripts;
-    fileset =
-      lib.fileset.fileFilter (file: file.hasExt "sh") ./../../src/apps/scripts;
+    root = ./../../src/regression/scripts;
+    fileset = lib.fileset.fileFilter (file: file.hasExt "sh")
+      ./../../src/regression/scripts;
   };
 
   commonArgs = { inherit testPlatform; };
@@ -28,7 +28,7 @@ let
   };
 in {
   package = stdenv.mkDerivation {
-    pname = "apps";
+    pname = "regression";
     version = "0.1.0";
     buildCommand = ''
       mkdir -p $out

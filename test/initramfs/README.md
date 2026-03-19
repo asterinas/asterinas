@@ -1,23 +1,24 @@
 # Initramfs-Based Test Suites
 
-This directory contains the test suites of Asterinas running in initramfs, including various test programs, benchmarks, syscall test suites, and necessary configuration files. The structure of the test directory is designed to be modular and flexible, supporting multiple CPU architectures and a streamlined workflow for building and running tests.
+This directory contains the test suites of Asterinas running in initramfs, including in-house regression tests, third-party conformance suites, benchmarks, configuration files, and Nix expressions to package them.
 
 ## Directory Structure
 
 ```
-test/
-├── src/
-│   ├── apps/          # Handwritten test applications
-│   ├── benchmark/     # Supported benchmark test suites
-│   ├── etc/           # Configuration files
-│   └── syscall/       # Syscall test suites
-│       ├── ltp/       # LTP syscall test suite
-│       └── gvisor/    # Gvisor syscall test suite
+initramfs/
+├── etc/               # Configuration files packaged into initramfs
 ├── nix/
 │   ├── benchmark/     # Nix expressions for `benchmark`
-│   ├── syscall/       # Nix expressions for `syscall`
-│   ├── apps.nix       # Nix expression for `apps`
+│   ├── conformance/   # Nix expressions for `conformance`
+│   ├── regression/    # Nix expressions for `regression`
 │   └── initramfs.nix  # Nix expression for packaging initramfs
+├── src/
+│   ├── benchmark/     # Third-party benchmark suites to compare Asterinas against Linux
+│   ├── conformance/   # Third-party test suites to verify Linux compatibility
+│   │   ├── gvisor/    # Gvisor syscall test suite
+│   │   └── ltp/       # Linux Test Project syscall test suite
+│   ├── regression/    # In-house syscall and subsystem regression tests
+│   └── boot_hello.sh  # Minimal boot smoke test script
 ├── Makefile
 └── README.md
 ```
@@ -26,11 +27,11 @@ test/
 
 Most tests in this directory are compiled and packaged using [Nix](https://nixos.org/), a powerful package manager. This ensures consistency and reproducibility across environments.
 
-> **Note**: If you are adding a new test to the `apps` directory, ensure that it supports multiple architectures. Some of the existing apps lack proper architecture-specific handling.
+> **Note**: If you are adding a new test to the `regression` directory, ensure that it supports multiple architectures. Some of the existing tests lack proper architecture-specific handling.
 
-### Syscall Test Suite - Gvisor Exception
+### Conformance Test Suite - gVisor Exception
 
-While most tests rely on `Nix` for compilation, the `gvisor` syscall test suite currently cannot be built with `Nix`. Instead, the `gvisor` tests are compiled in the Docker image. For details, refer to `tools/docker/Dockerfile`.
+While most tests rely on `Nix` for compilation, the `gvisor` conformance test suite currently cannot be built with `Nix`. Instead, the `gvisor` tests are compiled in the Docker image. For details, refer to `tools/docker/Dockerfile`.
 
 ### Multi-Architecture Support
 
@@ -73,11 +74,11 @@ If the desired benchmark is not available or cannot be easily adapted, you can a
 
 ## Configuration Files
 
-Configuration files required by benchmarks or apps should be placed in the `test/initramfs/src/etc` directory.
+Configuration files required by benchmarks or regression tests should be placed in the `test/initramfs/etc` directory.
 
 If additional configuration files or directories are needed, ensure they are appropriately packaged by updating the `initramfs.nix` file.
 
 ## Notes for Developers
 
 - **Nix Usage**: Use `Nix` whenever possible to manage dependencies and builds for ease of maintenance and consistency.
-- **Multi-Architecture Support**: Ensure new apps or benchmarks properly support multiple CPU architectures.
+- **Multi-Architecture Support**: Ensure new regression tests or benchmarks properly support multiple CPU architectures.

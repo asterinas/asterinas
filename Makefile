@@ -7,7 +7,6 @@ OSDK_TARGET_ARCH ?= x86_64
 BENCHMARK ?= none
 BOOT_METHOD ?= grub-rescue-iso
 BOOT_PROTOCOL ?= multiboot2
-BUILD_SYSCALL_TEST ?= 0
 ENABLE_KVM ?= 1
 INTEL_TDX ?= 0
 MEM ?= 8G
@@ -21,8 +20,7 @@ OSTD_TASK_STACK_SIZE_IN_PAGES ?= 64
 FEATURES ?=
 NO_DEFAULT_FEATURES ?= 0
 COVERAGE ?= 0
-# Specify whether to build regression tests under `test/initramfs/src/apps`.
-ENABLE_BASIC_TEST ?= false
+
 # Specify the primary system console (supported: tty0, ttyS0, hvc0).
 # - tty0: The active virtual terminal (VT).
 # - ttyS0: The serial (UART) terminal.
@@ -44,8 +42,13 @@ GDB_PROFILE_INTERVAL ?= 0.1
 # mode using the kernel command line.
 # Here are the options for the auto test feature.
 AUTO_TEST ?= none
+# Specify whether to build conformance tests under `test/initramfs/src/conformance`.
+ENABLE_CONFORMANCE_TEST ?= false
+CONFORMANCE_TEST_SUITE ?= ltp
+CONFORMANCE_TEST_WORKDIR ?= /tmp
 EXTRA_BLOCKLISTS_DIRS ?= ""
-SYSCALL_TEST_WORKDIR ?= /tmp
+# Specify whether to build regression tests under `test/initramfs/src/regression`.
+ENABLE_REGRESSION_TEST ?= false
 # End of auto test features.
 
 # Network settings
@@ -91,20 +94,20 @@ CARGO_OSDK_BUILD_ARGS := --kcmd-args="ostd.log_level=$(LOG_LEVEL)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="console=$(CONSOLE)"
 CARGO_OSDK_TEST_ARGS :=
 
-ifeq ($(AUTO_TEST), syscall)
-BUILD_SYSCALL_TEST := 1
-CARGO_OSDK_BUILD_ARGS += --kcmd-args="SYSCALL_TEST_SUITE=$(SYSCALL_TEST_SUITE)"
-CARGO_OSDK_BUILD_ARGS += --kcmd-args="SYSCALL_TEST_WORKDIR=$(SYSCALL_TEST_WORKDIR)"
+ifeq ($(AUTO_TEST), conformance)
+ENABLE_CONFORMANCE_TEST := true
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="CONFORMANCE_TEST_SUITE=$(CONFORMANCE_TEST_SUITE)"
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="CONFORMANCE_TEST_WORKDIR=$(CONFORMANCE_TEST_WORKDIR)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="EXTRA_BLOCKLISTS_DIRS=$(EXTRA_BLOCKLISTS_DIRS)"
-CARGO_OSDK_BUILD_ARGS += --init-args="/opt/syscall_test/run_syscall_test.sh"
-else ifeq ($(AUTO_TEST), test)
-ENABLE_BASIC_TEST := true
+CARGO_OSDK_BUILD_ARGS += --init-args="/opt/run_conformance_test.sh"
+else ifeq ($(AUTO_TEST), regression)
+ENABLE_REGRESSION_TEST := true
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="INTEL_TDX=$(INTEL_TDX)"
-CARGO_OSDK_BUILD_ARGS += --init-args="/test/run_general_test.sh"
+CARGO_OSDK_BUILD_ARGS += --init-args="/test/run_regression_test.sh"
 else ifeq ($(AUTO_TEST), boot)
 CARGO_OSDK_BUILD_ARGS += --init-args="/test/boot_hello.sh"
 else ifeq ($(AUTO_TEST), vsock)
-ENABLE_BASIC_TEST := true
+ENABLE_REGRESSION_TEST := true
 export VSOCK=on
 CARGO_OSDK_BUILD_ARGS += --init-args="/test/run_vsock_test.sh"
 endif
@@ -308,12 +311,12 @@ kernel: initramfs $(CARGO_OSDK)
 run_kernel: initramfs $(CARGO_OSDK)
 	@cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS)
 # Check the running status of auto tests from the QEMU log
-ifeq ($(AUTO_TEST), syscall)
-	@tail --lines 100 qemu.log | grep -q "^All syscall tests passed." \
-		|| (echo "Syscall test failed" && exit 1)
-else ifeq ($(AUTO_TEST), test)
-	@tail --lines 100 qemu.log | grep -q "^All general tests passed." \
-		|| (echo "General test failed" && exit 1)
+ifeq ($(AUTO_TEST), conformance)
+	@tail --lines 100 qemu.log | grep -q "^All conformance tests passed." \
+		|| (echo "Conformance test failed" && exit 1)
+else ifeq ($(AUTO_TEST), regression)
+	@tail --lines 100 qemu.log | grep -q "^All regression tests passed." \
+		|| (echo "Regression test failed" && exit 1)
 else ifeq ($(AUTO_TEST), boot)
 	@tail --lines 100 qemu.log | grep -q "^Successfully booted." \
 		|| (echo "Boot test failed" && exit 1)
