@@ -34,12 +34,12 @@ pub fn sys_chdir(path_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_fchdir(fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
-    debug!("fd = {}", fd);
+pub fn sys_fchdir(raw_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
+    debug!("raw_fd = {}", raw_fd);
 
     let path = {
         let mut file_table = ctx.thread_local.borrow_file_table_mut();
-        let file = get_file_fast!(&mut file_table, fd.try_into()?);
+        let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
         file.as_inode_handle_or_err()?.path().clone()
     };
     if path.type_() != InodeType::Dir {

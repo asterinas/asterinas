@@ -18,18 +18,18 @@ use crate::{
 };
 
 pub fn sys_getdents(
-    fd: RawFileDesc,
+    raw_fd: RawFileDesc,
     buf_addr: Vaddr,
     buf_len: usize,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
-        "fd = {}, buf_addr = 0x{:x}, buf_len = 0x{:x}",
-        fd, buf_addr, buf_len
+        "raw_fd = {}, buf_addr = 0x{:x}, buf_len = 0x{:x}",
+        raw_fd, buf_addr, buf_len
     );
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd.try_into()?);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
     let inode_handle = file.as_inode_handle_or_err()?;
     if inode_handle.path().type_() != InodeType::Dir {
         return_errno!(Errno::ENOTDIR);
@@ -44,18 +44,18 @@ pub fn sys_getdents(
 }
 
 pub fn sys_getdents64(
-    fd: RawFileDesc,
+    raw_fd: RawFileDesc,
     buf_addr: Vaddr,
     buf_len: usize,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
-        "fd = {}, buf_addr = 0x{:x}, buf_len = 0x{:x}",
-        fd, buf_addr, buf_len
+        "raw_fd = {}, buf_addr = 0x{:x}, buf_len = 0x{:x}",
+        raw_fd, buf_addr, buf_len
     );
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd.try_into()?);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
     let inode_handle = file.as_inode_handle_or_err()?;
     if inode_handle.path().type_() != InodeType::Dir {
         return_errno!(Errno::ENOTDIR);

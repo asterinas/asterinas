@@ -32,9 +32,13 @@ pub fn sys_lremovexattr(path_ptr: Vaddr, name_ptr: Vaddr, ctx: &Context) -> Resu
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_fremovexattr(fd: RawFileDesc, name_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_fremovexattr(
+    raw_fd: RawFileDesc,
+    name_ptr: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd.try_into()?);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
 
     let user_space = ctx.user_space();
     removexattr(XattrFileCtx::FileHandle(file), name_ptr, &user_space, ctx)?;

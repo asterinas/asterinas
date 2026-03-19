@@ -19,11 +19,11 @@ bitflags! {
     }
 }
 
-pub fn sys_close(fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
-    debug!("fd = {}", fd);
+pub fn sys_close(raw_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
+    debug!("raw_fd = {}", raw_fd);
 
     let file = {
-        let fd = fd.try_into()?;
+        let fd = raw_fd.try_into()?;
         let file_table = ctx.thread_local.borrow_file_table();
         let mut file_table_locked = file_table.unwrap().write();
         let _ = file_table_locked.get_file(fd)?;

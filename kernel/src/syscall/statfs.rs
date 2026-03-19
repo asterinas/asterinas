@@ -37,12 +37,19 @@ pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr, ctx: &Context) -> Resu
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_fstatfs(fd: RawFileDesc, statfs_buf_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
-    debug!("fd = {}, statfs_buf_addr = 0x{:x}", fd, statfs_buf_ptr);
+pub fn sys_fstatfs(
+    raw_fd: RawFileDesc,
+    statfs_buf_ptr: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
+    debug!(
+        "raw_fd = {}, statfs_buf_addr = 0x{:x}",
+        raw_fd, statfs_buf_ptr
+    );
 
     let fs = {
         let mut file_table = ctx.thread_local.borrow_file_table_mut();
-        let file = get_file_fast!(&mut file_table, fd.try_into()?);
+        let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
         file.path().fs()
     };
 

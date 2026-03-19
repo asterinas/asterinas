@@ -11,8 +11,8 @@ use crate::{
     process::{Gid, Uid},
 };
 
-pub fn sys_fchown(fd: RawFileDesc, uid: i32, gid: i32, ctx: &Context) -> Result<SyscallReturn> {
-    debug!("fd = {}, uid = {}, gid = {}", fd, uid, gid);
+pub fn sys_fchown(raw_fd: RawFileDesc, uid: i32, gid: i32, ctx: &Context) -> Result<SyscallReturn> {
+    debug!("raw_fd = {}, uid = {}, gid = {}", raw_fd, uid, gid);
 
     let uid = to_optional_id(uid, Uid::new)?;
     let gid = to_optional_id(gid, Gid::new)?;
@@ -21,7 +21,7 @@ pub fn sys_fchown(fd: RawFileDesc, uid: i32, gid: i32, ctx: &Context) -> Result<
     }
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd.try_into()?);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
     let path = file.path();
     if let Some(uid) = uid {
         path.set_owner(uid)?;
