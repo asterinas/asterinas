@@ -8,7 +8,11 @@ use ostd::sync::RwMutexUpgradeableGuard;
 use super::TidDirOps;
 use crate::{
     fs::{
-        file::{AccessMode, FileLike, chmod, file_table::RawFileDesc, mkmod},
+        file::{
+            AccessMode, FileLike, chmod,
+            file_table::{FileDesc, RawFileDesc},
+            mkmod,
+        },
         procfs::template::{
             DirOps, FileOps, ProcDir, ProcDirBuilder, ProcFile, ProcFileBuilder, ProcSym,
             ProcSymBuilder, SymOps,
@@ -49,9 +53,10 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
     // spin lock but the cached entries are protected by a mutex.
 
     fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
-        let Ok(file_desc) = name.parse::<RawFileDesc>() else {
+        let Ok(raw_fd) = name.parse::<RawFileDesc>() else {
             return_errno_with_message!(Errno::ENOENT, "the name is not a valid FD");
         };
+        let fd = raw_fd.try_into()?;
 
         let mut cached_children = dir.cached_children().write();
 
@@ -59,23 +64,14 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
         let posix_thread = thread.as_posix_thread().unwrap();
 
         let access_mode = if let Some(file_table) = posix_thread.file_table().lock().as_ref()
-            && let Ok(file) = file_table.read().get_file(
-                file_desc
-                    .cast_unsigned()
-                    .try_into()
-                    .map_err(|_| Errno::EBADF)?,
-            ) {
+            && let Ok(file) = file_table.read().get_file(fd)
+        {
             file.access_mode()
         } else {
             return_errno_with_message!(Errno::ENOENT, "the file does not exist");
         };
 
-        let child = T::new_inode(
-            self.dir.clone(),
-            file_desc,
-            access_mode,
-            dir.this_weak().clone(),
-        );
+        let child = T::new_inode(self.dir.clone(), fd, access_mode, dir.this_weak().clone());
         // The old entry is likely outdated given that `lookup_child` is called. Race conditions
         // may occur, but caching the file descriptor (which aligns with the Linux implementation)
         // is inherently racy, so preventing race conditions is not very meaningful.
@@ -110,10 +106,7 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
             let child = child.downcast_ref::<T::NodeType>().unwrap();
             let child_ops = T::ref_from_inode(child);
 
-            let Ok(fd) = child_ops.file_desc().try_into() else {
-                continue;
-            };
-            let Ok(file) = file_table.get_file(fd) else {
+            let Ok(file) = file_table.get_file(child_ops.file_desc()) else {
                 cached_children.remove(i);
                 continue;
             };
@@ -127,7 +120,7 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
             cached_children.put_entry_if_not_found(&file_desc.raw_fd().to_string(), || {
                 T::new_inode(
                     self.dir.clone(),
-                    file_desc.into(),
+                    file_desc,
                     file.access_mode(),
                     dir.this_weak().clone(),
                 )
@@ -145,9 +138,7 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
         let posix_thread = thread.as_posix_thread().unwrap();
 
         if let Some(file_table) = posix_thread.file_table().lock().as_ref()
-            && let Ok(file) = file_table
-                .read()
-                .get_file(child_ops.file_desc().try_into().unwrap())
+            && let Ok(file) = file_table.read().get_file(child_ops.file_desc())
         {
             child_ops.is_valid(file)
         } else {
@@ -161,12 +152,12 @@ pub(super) trait FdOps: Send + Sync + 'static {
 
     fn new_inode(
         tid_dir_ops: TidDirOps,
-        file_desc: RawFileDesc,
+        file_desc: FileDesc,
         access_mode: AccessMode,
         parent: Weak<dyn Inode>,
     ) -> Arc<dyn Inode>;
 
-    fn file_desc(&self) -> RawFileDesc;
+    fn file_desc(&self) -> FileDesc;
 
     fn is_valid(&self, correspond_file: &Arc<dyn FileLike>) -> bool;
 
@@ -176,7 +167,7 @@ pub(super) trait FdOps: Send + Sync + 'static {
 /// Represents the inode at `/proc/[pid]/task/[tid]/fd/[n]` (and also `/proc/[pid]/fd/[n]`).
 pub(super) struct FileSymOps {
     tid_dir_ops: TidDirOps,
-    file_desc: RawFileDesc,
+    file_desc: FileDesc,
     access_mode: AccessMode,
 }
 
@@ -185,7 +176,7 @@ impl FdOps for FileSymOps {
 
     fn new_inode(
         tid_dir_ops: TidDirOps,
-        file_desc: RawFileDesc,
+        file_desc: FileDesc,
         access_mode: AccessMode,
         parent: Weak<dyn Inode>,
     ) -> Arc<dyn Inode> {
@@ -211,7 +202,7 @@ impl FdOps for FileSymOps {
         .unwrap()
     }
 
-    fn file_desc(&self) -> RawFileDesc {
+    fn file_desc(&self) -> FileDesc {
         self.file_desc
     }
 
@@ -237,12 +228,7 @@ impl SymOps for FileSymOps {
         };
         let file_table = file_table.read();
         let file = file_table
-            .get_file(
-                self.file_desc
-                    .cast_unsigned()
-                    .try_into()
-                    .map_err(|_| Errno::EBADF)?,
-            )
+            .get_file(self.file_desc)
             .map_err(|_| Error::with_message(Errno::ENOENT, "the file does not exist"))?;
 
         Ok(SymbolicLink::Path(file.path().clone()))
@@ -252,7 +238,7 @@ impl SymOps for FileSymOps {
 /// Represents the inode at `/proc/[pid]/task/[tid]/fdinfo/[n]` (and also `/proc/[pid]/fdinfo/[n]`).
 pub(super) struct FileInfoOps {
     tid_dir_ops: TidDirOps,
-    file_desc: RawFileDesc,
+    file_desc: FileDesc,
 }
 
 impl FdOps for FileInfoOps {
@@ -260,7 +246,7 @@ impl FdOps for FileInfoOps {
 
     fn new_inode(
         tid_dir_ops: TidDirOps,
-        file_desc: RawFileDesc,
+        file_desc: FileDesc,
         _access_mode: AccessMode,
         parent: Weak<dyn Inode>,
     ) -> Arc<dyn Inode> {
@@ -277,7 +263,7 @@ impl FdOps for FileInfoOps {
         .unwrap()
     }
 
-    fn file_desc(&self) -> RawFileDesc {
+    fn file_desc(&self) -> FileDesc {
         self.file_desc
     }
 
@@ -296,12 +282,8 @@ impl FileOps for FileInfoOps {
         let posix_thread = thread.as_posix_thread().unwrap();
 
         let info = if let Some(file_table) = posix_thread.file_table().lock().as_ref()
-            && let Ok(entry) = file_table.read().get_entry(
-                self.file_desc
-                    .cast_unsigned()
-                    .try_into()
-                    .map_err(|_| Errno::EBADF)?,
-            ) {
+            && let Ok(entry) = file_table.read().get_entry(self.file_desc)
+        {
             entry.file().clone().dump_proc_fdinfo(entry.flags())
         } else {
             return_errno_with_message!(Errno::ENOENT, "the file does not exist");
