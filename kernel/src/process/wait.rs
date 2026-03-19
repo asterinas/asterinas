@@ -9,7 +9,7 @@ use crate::{
     prelude::*,
     process::{
         ReapedChildrenStats, Uid,
-        posix_thread::{AsPosixThread, PosixThread, thread_table},
+        posix_thread::{AsPosixThread, PosixThread, ptrace::PtraceWaitStatus, thread_table},
         process_table,
         signal::sig_num::SigNum,
         status::StopWaitStatus,
@@ -227,7 +227,7 @@ pub enum WaitStatus {
     Zombie(Arc<Process>),
     Stop(Arc<Process>, SigNum),
     Continue(Arc<Process>),
-    PtraceStop(Arc<Thread>, SigNum),
+    PtraceStop(Arc<Thread>, PtraceWaitStatus),
 }
 
 impl WaitStatus {
@@ -318,11 +318,11 @@ fn wait_zombie_tracees(unwaited_tracees: &[&Arc<Thread>]) -> Option<WaitStatus> 
 
 fn wait_stopped_tracees(unwaited_tracees: &[&Arc<Thread>]) -> Option<WaitStatus> {
     for tracee in unwaited_tracees.iter() {
-        let Some(sig_num) = tracee.as_posix_thread().unwrap().wait_ptrace_stopped() else {
+        let Some(status) = tracee.as_posix_thread().unwrap().wait_ptrace_stopped() else {
             continue;
         };
 
-        return Some(WaitStatus::PtraceStop((*tracee).clone(), sig_num));
+        return Some(WaitStatus::PtraceStop((*tracee).clone(), status));
     }
 
     None
