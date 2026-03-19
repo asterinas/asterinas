@@ -70,8 +70,8 @@ RUN git clone --depth 1 --branch edk2-stable202508 --recurse-submodules --shallo
 WORKDIR /root/edk2
 RUN /bin/bash -c "source ./edksetup.sh \
     && make -C BaseTools \
-    && build -a X64 -t GCC5 -b DEBUG -p OvmfPkg/OvmfPkgX64.dsc -D DEBUG_ON_SERIAL_PORT \
-    && build -a X64 -t GCC5 -b RELEASE -p OvmfPkg/OvmfPkgX64.dsc"
+    && build -a X64 -t GCC5 -b RELEASE -p OvmfPkg/OvmfPkgX64.dsc \
+    && build -a X64 -t GCC5 -b RELEASE -p OvmfPkg/Microvm/MicrovmX64.dsc"
 
 #= Build GRUB =================================================================
 
@@ -173,6 +173,7 @@ ENV LD_LIBRARY_PATH="/usr/local/qemu/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
 
 # Install OVMF built from the previous stages
 COPY --from=ovmf /root/edk2/Build/OvmfX64/RELEASE_GCC5/FV/ /root/ovmf/release
+COPY --from=ovmf /root/edk2/Build/MicrovmX64/RELEASE_GCC5/FV/ /root/ovmf/release/microvm/
 
 # Install GRUB built from the previous stages
 COPY --from=grub /usr/local/grub /usr/local/grub
