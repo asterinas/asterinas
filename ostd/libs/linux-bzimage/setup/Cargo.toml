@@ -26,6 +26,9 @@ uefi = { version = "0.32.0", features = ["global_allocator", "panic_handler", "l
 uefi-raw = "0.8.0"
 tdx-guest = { version = "0.2.4", optional = true }
 
+[target.x86_64-i386_pm-none.dependencies]
+uefi-raw = "0.8.0"
+
 [features]
 default = ["cvm_guest"]
 debug_print = []
