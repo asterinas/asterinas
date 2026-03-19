@@ -15,8 +15,7 @@ use crate::{
     process::signal::{
         PauseReason,
         c_types::siginfo_t,
-        constants::{SIGCHLD, SIGKILL},
-        sig_num::SigNum,
+        constants::{SIGCHLD, SIGKILL, SIGTRAP},
         signals::{Signal, user::UserSignal},
     },
     thread::{Thread, Tid},
@@ -25,7 +24,7 @@ use crate::{
 mod util;
 
 use util::StopSigInfo;
-pub use util::{PtraceContRequest, PtraceOptions};
+pub use util::{PtraceContRequest, PtraceOptions, PtraceWaitStatus};
 pub(in crate::process) use util::{PtraceEvent, PtraceStopResult};
 
 impl PosixThread {
@@ -78,8 +77,21 @@ impl PosixThread {
         }
     }
 
+    /// Stops this thread by ptrace on the given event if it is currently traced,
+    /// and the corresponding option is enabled.
+    pub(in crate::process) fn ptrace_may_stop_on(
+        &self,
+        event: PtraceEvent,
+        ctx: &Context,
+        user_ctx: &mut UserContext,
+    ) {
+        if let Some(status) = self.tracee_status.get() {
+            status.ptrace_may_stop_on(event, ctx, user_ctx)
+        }
+    }
+
     /// Gets and clears the ptrace-stop status changes for the `wait` syscall.
-    pub(in crate::process) fn wait_ptrace_stopped(&self) -> Option<SigNum> {
+    pub(in crate::process) fn wait_ptrace_stopped(&self) -> Option<PtraceWaitStatus> {
         self.tracee_status.get().and_then(|status| status.wait())
     }
 
@@ -303,22 +315,64 @@ impl TraceeStatus {
         let _ = user_ctx;
 
         // Hold the lock first to avoid race conditions.
-        let mut state = self.state.lock();
+        let state = self.state.lock();
 
-        let Some(tracer) = state.tracer() else {
+        if state.tracer().is_none() {
             return PtraceStopResult::NotTraced(signal);
-        };
+        }
+
+        self.do_ptrace_stop(state, signal.to_info(), None, ctx, user_ctx)
+    }
+
+    fn ptrace_may_stop_on(&self, event: PtraceEvent, ctx: &Context, user_ctx: &mut UserContext) {
+        // Hold the lock first to avoid race conditions.
+        let state = self.state.lock();
+
+        if state.tracer().is_none() {
+            return;
+        }
+
+        if !state.options.contains(event.option()) {
+            // If the PTRACE_O_TRACEEXEC option is not in effect, all successful
+            // calls to execve(2) by the traced process will cause it to be sent
+            // a SIGTRAP signal, giving the parent a chance to gain control
+            // before the new program begins execution.
+            //
+            // Reference: <https://man7.org/linux/man-pages/man2/ptrace.2.html>
+            if matches!(&event, PtraceEvent::Exec(_)) {
+                ctx.posix_thread
+                    .enqueue_signal(Box::new(UserSignal::new_kill(SIGTRAP, ctx)));
+            }
+            return;
+        }
+
+        let siginfo = event.siginfo(ctx);
+
+        self.do_ptrace_stop(state, siginfo, Some(event), ctx, user_ctx);
+    }
+
+    fn do_ptrace_stop(
+        &self,
+        mut state: MutexGuard<'_, TraceeState>,
+        siginfo: siginfo_t,
+        event: Option<PtraceEvent>,
+        ctx: &Context,
+        user_ctx: &mut UserContext,
+    ) -> PtraceStopResult {
+        #[cfg(not(target_arch = "x86_64"))]
+        let _ = user_ctx;
 
         debug_assert!(!self.is_ptrace_stopped());
 
-        state.siginfo.stop(signal.to_info());
-        state.event = None;
+        state.siginfo.stop(siginfo);
+        state.event = event;
         #[cfg(target_arch = "x86_64")]
         {
             state.general_regs = Some(*user_ctx.general_regs());
         }
         self.is_stopped.store(true, Ordering::Relaxed);
 
+        let tracer = state.tracer().unwrap();
         let tracer = tracer.as_posix_thread().unwrap();
         tracer.enqueue_signal(Box::new(UserSignal::new_kill(SIGCHLD, ctx)));
         tracer.process().children_wait_queue().wake_all();
@@ -359,15 +413,9 @@ impl TraceeStatus {
         }
     }
 
-    fn wait(&self) -> Option<SigNum> {
+    fn wait(&self) -> Option<PtraceWaitStatus> {
         let mut state = self.state.lock();
-
-        if let Some(siginfo) = state.siginfo.wait() {
-            let sig_num = (siginfo.si_signo as u8).try_into().unwrap();
-            Some(sig_num)
-        } else {
-            None
-        }
+        state.siginfo.wait().map(|siginfo| siginfo.into())
     }
 
     fn resume(&self, request: PtraceContRequest) -> Result<()> {

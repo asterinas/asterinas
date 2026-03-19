@@ -40,6 +40,7 @@ set -e
 
 ./ptrace/ptracer
 ./ptrace/read_write_regs
+./ptrace/set_options
 
 ./sched/sched_attr_getset
 ./sched/sched_param_getset
