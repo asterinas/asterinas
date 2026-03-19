@@ -22,6 +22,7 @@ pub struct ProcDirBuilder<O: DirOps> {
 }
 
 impl<O: DirOps> ProcDirBuilder<O> {
+    /// Creates a builder for a procfs directory inode.
     pub fn new(dir: O, mode: InodeMode) -> Self {
         let optional_builder = OptionalBuilder::new();
         Self {
@@ -31,17 +32,34 @@ impl<O: DirOps> ProcDirBuilder<O> {
         }
     }
 
+    /// Sets the parent inode of the directory.
     pub fn parent(self, parent: Weak<dyn Inode>) -> Self {
         self.optional_builder(|ob| ob.parent(parent))
     }
 
-    pub fn volatile(self) -> Self {
-        self.optional_builder(|ob| ob.volatile())
+    /// Marks this directory entry as requiring revalidation in its parent directory.
+    pub fn need_revalidation(self) -> Self {
+        self.optional_builder(|ob| ob.need_revalidation())
     }
 
+    /// Marks cached negative child entries under this directory as requiring revalidation.
+    pub fn need_neg_child_revalidation(self) -> Self {
+        self.optional_builder(|ob| ob.need_neg_child_revalidation())
+    }
+
+    /// Builds the procfs directory inode.
     pub fn build(mut self) -> Result<Arc<ProcDir<O>>> {
-        let (fs, parent, is_volatile) = self.optional_builder.take().unwrap().build()?;
-        Ok(ProcDir::new(self.dir, fs, parent, is_volatile, self.mode))
+        let (fs, parent, ino, need_revalidation, need_neg_child_revalidation) =
+            self.optional_builder.take().unwrap().build()?;
+        Ok(ProcDir::new(
+            self.dir,
+            fs,
+            parent,
+            ino,
+            need_revalidation,
+            need_neg_child_revalidation,
+            self.mode,
+        ))
     }
 
     fn optional_builder<F>(mut self, f: F) -> Self
@@ -63,6 +81,7 @@ pub struct ProcFileBuilder<O: FileOps> {
 }
 
 impl<O: FileOps> ProcFileBuilder<O> {
+    /// Creates a builder for a procfs regular file inode.
     pub fn new(file: O, mode: InodeMode) -> Self {
         let optional_builder = OptionalBuilder::new();
         Self {
@@ -72,18 +91,20 @@ impl<O: FileOps> ProcFileBuilder<O> {
         }
     }
 
+    /// Sets the parent inode of the file.
     pub fn parent(self, parent: Weak<dyn Inode>) -> Self {
         self.optional_builder(|ob| ob.parent(parent))
     }
 
-    #[expect(dead_code)]
-    pub fn volatile(self) -> Self {
-        self.optional_builder(|ob| ob.volatile())
+    /// Marks the file entry as requiring dentry revalidation in its parent directory.
+    pub fn need_revalidation(self) -> Self {
+        self.optional_builder(|ob| ob.need_revalidation())
     }
 
+    /// Builds the procfs file inode.
     pub fn build(mut self) -> Result<Arc<ProcFile<O>>> {
-        let (fs, _, is_volatile) = self.optional_builder.take().unwrap().build()?;
-        Ok(ProcFile::new(self.file, fs, is_volatile, self.mode))
+        let (fs, _, _, need_revalidation, _) = self.optional_builder.take().unwrap().build()?;
+        Ok(ProcFile::new(self.file, fs, need_revalidation, self.mode))
     }
 
     fn optional_builder<F>(mut self, f: F) -> Self
@@ -105,6 +126,7 @@ pub struct ProcSymBuilder<O: SymOps> {
 }
 
 impl<O: SymOps> ProcSymBuilder<O> {
+    /// Creates a builder for a procfs symbolic-link inode.
     pub fn new(sym: O, mode: InodeMode) -> Self {
         let optional_builder = OptionalBuilder::new();
         Self {
@@ -114,18 +136,20 @@ impl<O: SymOps> ProcSymBuilder<O> {
         }
     }
 
+    /// Sets the parent inode of the symbolic link.
     pub fn parent(self, parent: Weak<dyn Inode>) -> Self {
         self.optional_builder(|ob| ob.parent(parent))
     }
 
-    #[expect(dead_code)]
-    pub fn volatile(self) -> Self {
-        self.optional_builder(|ob| ob.volatile())
+    /// Marks the symbolic-link entry as requiring dentry revalidation in its parent directory.
+    pub fn need_revalidation(self) -> Self {
+        self.optional_builder(|ob| ob.need_revalidation())
     }
 
+    /// Builds the procfs symbolic-link inode.
     pub fn build(mut self) -> Result<Arc<ProcSym<O>>> {
-        let (fs, _, is_volatile) = self.optional_builder.take().unwrap().build()?;
-        Ok(ProcSym::new(self.sym, fs, is_volatile, self.mode))
+        let (fs, _, _, need_revalidation, _) = self.optional_builder.take().unwrap().build()?;
+        Ok(ProcSym::new(self.sym, fs, need_revalidation, self.mode))
     }
 
     fn optional_builder<F>(mut self, f: F) -> Self
@@ -140,14 +164,20 @@ impl<O: SymOps> ProcSymBuilder<O> {
 
 struct OptionalBuilder {
     parent: Option<Weak<dyn Inode>>,
-    is_volatile: bool,
+    fs: Option<Weak<dyn FileSystem>>,
+    ino: Option<u64>,
+    need_revalidation: bool,
+    need_neg_child_revalidation: bool,
 }
 
 impl OptionalBuilder {
     fn new() -> Self {
         Self {
             parent: None,
-            is_volatile: false,
+            fs: None,
+            ino: None,
+            need_revalidation: false,
+            need_neg_child_revalidation: false,
         }
     }
 
@@ -156,29 +186,39 @@ impl OptionalBuilder {
         self
     }
 
-    pub fn volatile(mut self) -> Self {
-        self.is_volatile = true;
+    pub fn need_revalidation(mut self) -> Self {
+        self.need_revalidation = true;
+        self
+    }
+
+    pub fn need_neg_child_revalidation(mut self) -> Self {
+        self.need_neg_child_revalidation = true;
         self
     }
 
     #[expect(clippy::type_complexity)]
-    pub fn build(self) -> Result<(Weak<dyn FileSystem>, Option<Weak<dyn Inode>>, bool)> {
-        let Some(parent) = self.parent else {
-            return_errno_with_message!(Errno::EINVAL, "must have parent");
-        };
-        let parent_inode = parent.upgrade().unwrap();
-        let fs = Arc::downgrade(&parent_inode.fs());
+    pub fn build(
+        self,
+    ) -> Result<(
+        Weak<dyn FileSystem>,
+        Option<Weak<dyn Inode>>,
+        Option<u64>,
+        bool,
+        bool,
+    )> {
+        if self.parent.is_none() && self.fs.is_none() {
+            return_errno_with_message!(Errno::EINVAL, "must have parent or fs");
+        }
+        let fs = self.fs.unwrap_or_else(|| {
+            Arc::downgrade(&self.parent.as_ref().unwrap().upgrade().unwrap().fs())
+        });
 
-        // The volatile property is inherited from parent.
-        let is_volatile = {
-            let mut is_volatile = self.is_volatile;
-            if !parent_inode.is_dentry_cacheable() {
-                is_volatile = true;
-            }
-
-            is_volatile
-        };
-
-        Ok((fs, Some(parent), is_volatile))
+        Ok((
+            fs,
+            self.parent,
+            self.ino,
+            self.need_revalidation,
+            self.need_neg_child_revalidation,
+        ))
     }
 }

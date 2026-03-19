@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_util::slot_vec::SlotVec;
-use ostd::sync::RwMutexUpgradeableGuard;
-
 use super::template::{
     DirOps, ProcDir, ProcDirBuilder, lookup_child_from_table, populate_children_from_table,
 };
@@ -35,10 +32,14 @@ impl PidDirOps {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3493>
         ProcDirBuilder::new(Self(tid_dir_ops.clone()), mkmod!(a+rx))
             .parent(parent)
-            // The PID directories must be volatile, because it is just associated with one process.
-            .volatile()
+            // The PID directories are tied to one process and can disappear at any time.
+            .need_revalidation()
             .build()
             .unwrap()
+    }
+
+    pub(super) fn process_ref(&self) -> &Arc<Process> {
+        &self.0.process_ref
     }
 
     #[expect(clippy::type_complexity)]
@@ -50,42 +51,33 @@ impl PidDirOps {
 
 impl DirOps for PidDirOps {
     fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
-        let mut cached_children = dir.cached_children().write();
-
         // Look up entries that either exist under `/proc/<pid>`
         // but not under `/proc/<pid>/task/<tid>`,
         // or entries whose contents differ between `/proc/<pid>` and `/proc/<pid>/task/<tid>`.
-        if let Some(child) =
-            lookup_child_from_table(name, &mut cached_children, Self::STATIC_ENTRIES, |f| {
-                (f)(self, dir.this_weak().clone())
-            })
-        {
+        if let Some(child) = lookup_child_from_table(name, Self::STATIC_ENTRIES, |f| {
+            (f)(self, dir.this_weak().clone())
+        }) {
             return Ok(child);
         }
 
         // For all other children, the content is the same under both `/proc/<pid>` and `/proc/<pid>/task/<tid>`.
-        self.0
-            .lookup_child_locked(&mut cached_children, dir.this_weak().clone(), name)
+        self.0.lookup_child(dir.this_weak().clone(), name)
     }
 
-    fn populate_children<'a>(
-        &self,
-        dir: &'a ProcDir<Self>,
-    ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>> {
-        let mut cached_children = dir.cached_children().write();
+    fn populate_children(&self, dir: &ProcDir<Self>) -> Vec<(String, Arc<dyn Inode>)> {
+        let mut children = Vec::new();
 
         // Populate entries that either exist under `/proc/<pid>`
         // but not under `/proc/<pid>/task/<tid>`,
         // or whose contents differ between the two paths.
-        populate_children_from_table(&mut cached_children, Self::STATIC_ENTRIES, |f| {
+        populate_children_from_table(&mut children, Self::STATIC_ENTRIES, |f| {
             (f)(self, dir.this_weak().clone())
         });
 
         // Populate the remaining children that are identical
         // under both `/proc/<pid>` and `/proc/<pid>/task/<tid>`.
-        self.0
-            .populate_children_locked(&mut cached_children, dir.this_weak().clone());
+        children.extend(self.0.populate_children(dir.this_weak().clone()));
 
-        cached_children.downgrade()
+        children
     }
 }
