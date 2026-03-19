@@ -95,7 +95,6 @@ fn calculate_si_code_and_si_status(wait_status: &WaitStatus) -> (i32, i32) {
             let exit_code = thread.as_posix_thread().unwrap().exit_code();
             parse_exit_code(exit_code)
         }
-        // TODO: Add `PTRACE_EVENT_*` flags into `si_status`.
-        WaitStatus::PtraceStop(_, signum) => (CLD_TRAPPED, signum.as_u8() as i32),
+        WaitStatus::PtraceStop(_, status) => (CLD_TRAPPED, *status),
     }
 }

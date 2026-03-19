@@ -5,6 +5,7 @@ use ostd::{arch::cpu::context::UserContext, mm::VmIo, task::Task};
 use super::{
     AsPosixThread, AsThreadLocal, ThreadLocal,
     futex::{FutexVisibility, futex_wake},
+    ptrace::PtraceEvent,
     robust_list::wake_robust_futex,
 };
 use crate::{
@@ -46,6 +47,8 @@ fn exit_internal(
     user_ctx: &mut UserContext,
 ) {
     let exit_code = term_status.as_u32();
+    ctx.posix_thread
+        .ptrace_may_stop_on(PtraceEvent::Exit(exit_code), ctx, user_ctx);
 
     let current_task = Task::current().unwrap();
     let current_thread = current_task.as_thread().unwrap();

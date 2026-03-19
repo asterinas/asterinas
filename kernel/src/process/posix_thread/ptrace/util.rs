@@ -74,6 +74,11 @@ impl PtraceEvent {
         }
     }
 
+    /// Returns whether the given code is a Linux `PTRACE_EVENT_*` code.
+    const fn is_code(code: i32) -> bool {
+        matches!(code, 1..=6)
+    }
+
     /// Returns the `PtraceOptions` corresponding to this event.
     pub(super) const fn option(&self) -> PtraceOptions {
         PtraceOptions::from_bits(1 << self.code()).unwrap()
@@ -88,6 +93,33 @@ impl PtraceEvent {
             | Self::Exec(tid)
             | Self::VforkDone(tid) => *tid as usize,
             Self::Exit(exit_code) => *exit_code as usize,
+        }
+    }
+
+    /// Creates a `siginfo_t` for the ptrace-stop triggered by this event.
+    pub(super) fn siginfo(&self, ctx: &Context) -> siginfo_t {
+        let code = SIGTRAP.as_u8() as i32 | ((self.code() as i32) << 8);
+        let mut siginfo = siginfo_t::new(SIGTRAP, code);
+        siginfo.set_pid_uid(
+            ctx.posix_thread.tid(),
+            ctx.posix_thread.credentials().ruid(),
+        );
+        siginfo
+    }
+}
+
+/// The `si_status` code of a ptrace-stop for `wait` syscalls.
+pub type PtraceWaitStatus = i32;
+
+impl From<siginfo_t> for PtraceWaitStatus {
+    fn from(siginfo: siginfo_t) -> Self {
+        let is_ptrace_event = siginfo.si_code & 0xff == SIGTRAP.as_u8() as i32
+            && PtraceEvent::is_code(siginfo.si_code >> 8);
+
+        if is_ptrace_event {
+            siginfo.si_code
+        } else {
+            siginfo.si_signo
         }
     }
 }
