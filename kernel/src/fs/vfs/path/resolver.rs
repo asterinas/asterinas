@@ -9,7 +9,7 @@ use crate::{
     fs::{
         file::{
             InodeType, Permission,
-            file_table::{RawFileDesc, get_file_fast},
+            file_table::{FileDesc, RawFileDesc, get_file_fast},
         },
         utils::{NAME_MAX, PATH_MAX, SYMLINKS_MAX},
         vfs::{inode::SymbolicLink, path::MountNamespace},
@@ -494,14 +494,14 @@ impl PathResolver {
             FsPathInner::FdRelative(fd, path) => {
                 let task = Task::current().unwrap();
                 let mut file_table = task.as_thread_local().unwrap().borrow_file_table_mut();
-                let file = get_file_fast!(&mut file_table, fd.try_into()?);
+                let file = get_file_fast!(&mut file_table, fd);
                 let parent = file.as_inode_handle_or_err()?.path();
                 self.lookup_from_parent(parent, path, follow_tail_link)?
             }
             FsPathInner::Fd(fd) => {
                 let task = Task::current().unwrap();
                 let mut file_table = task.as_thread_local().unwrap().borrow_file_table_mut();
-                let file = get_file_fast!(&mut file_table, fd.try_into()?);
+                let file = get_file_fast!(&mut file_table, fd);
                 LookupResult::Resolved(file.path().clone())
             }
         };
@@ -725,9 +725,9 @@ enum FsPathInner<'a> {
     /// The path of the current working directory.
     Cwd,
     /// A relative path from the directory FD (dirfd).
-    FdRelative(RawFileDesc, &'a str),
+    FdRelative(FileDesc, &'a str),
     /// The path of the FD.
-    Fd(RawFileDesc),
+    Fd(FileDesc),
 }
 
 impl<'a> FsPath<'a> {
@@ -736,12 +736,10 @@ impl<'a> FsPath<'a> {
     /// If the FD is not valid (i.e., it's negative and it's not [`AT_FDCWD`]), an error will be
     /// returned.
     pub fn from_fd(dirfd: RawFileDesc) -> Result<Self> {
-        let fs_path_inner = if dirfd >= 0 {
-            FsPathInner::Fd(dirfd)
-        } else if dirfd == AT_FDCWD {
+        let fs_path_inner = if dirfd == AT_FDCWD {
             FsPathInner::Cwd
         } else {
-            return_errno_with_message!(Errno::EBADF, "the dirfd is invalid");
+            FsPathInner::Fd(FileDesc::try_from(dirfd)?)
         };
 
         Ok(Self {
@@ -763,12 +761,10 @@ impl<'a> FsPath<'a> {
 
         let fs_path_inner = if path.starts_with('/') {
             FsPathInner::Absolute(path)
-        } else if dirfd >= 0 {
-            FsPathInner::FdRelative(dirfd, path)
         } else if dirfd == AT_FDCWD {
             FsPathInner::CwdRelative(path)
         } else {
-            return_errno_with_message!(Errno::EBADF, "the dirfd is invalid");
+            FsPathInner::FdRelative(FileDesc::try_from(dirfd)?, path)
         };
 
         Ok(Self {
