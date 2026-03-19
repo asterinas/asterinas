@@ -17,7 +17,8 @@ use crate::{
     process::posix_thread::AsPosixThread,
 };
 
-/// A helper function to create the mount point path for a given mount (used by `mounts` and `mountinfo`).
+/// A helper function to create the mount point path for a given mount (used by `mounts`,
+/// `mountinfo` and `mountstats`).
 pub(super) fn make_mount_point_path(
     is_resolver_root_mount: bool,
     parent: Option<&Arc<Mount>>,
