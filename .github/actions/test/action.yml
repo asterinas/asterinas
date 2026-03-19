@@ -43,7 +43,7 @@ inputs:
     description: 'Syscall test working directory'
     required: false
   boot_protocol:
-    description: 'Boot protocol (linux-efi-handover64/multiboot/multiboot2/linux-legacy32)'
+    description: 'Boot protocol (linux-efi-handover64/linux-efi-pe64/multiboot/multiboot2)'
     required: false
 
 runs:

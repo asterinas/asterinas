@@ -393,5 +393,5 @@ Here is the list of supported symbols in vDSO:
 Here is the list of supported boot protocols:
 * [Multiboot](https://www.gnu.org/software/grub/manual/multiboot/multiboot.html)
 * [Multiboot2](https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html)
-* [Linux 32-bit boot protocol](https://www.kernel.org/doc/html/v5.4/x86/boot.html#bit-boot-protocol)
+* [Linux 64-bit boot protocol](https://www.kernel.org/doc/html/v5.4/x86/boot.html#bit-boot-protocol)
 * [Linux EFI handover](https://www.kernel.org/doc/html/v5.4/x86/boot.html#efi-handover-protocol)

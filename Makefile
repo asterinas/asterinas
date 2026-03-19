@@ -135,10 +135,7 @@ BOOT_PROTOCOL = linux-efi-handover64
 CARGO_OSDK_COMMON_ARGS += --scheme tdx
 endif
 
-ifeq ($(BOOT_PROTOCOL), linux-legacy32)
-BOOT_METHOD = qemu-direct
-OVMF = off
-else ifeq ($(BOOT_PROTOCOL), multiboot)
+ifeq ($(BOOT_PROTOCOL), multiboot)
 BOOT_METHOD = qemu-direct
 OVMF = off
 endif
@@ -174,8 +171,6 @@ ifeq ($(BOOT_PROTOCOL), linux-efi-handover64)
 CARGO_OSDK_COMMON_ARGS += --grub-mkrescue=/usr/bin/grub-mkrescue --grub-boot-protocol="linux"
 else ifeq ($(BOOT_PROTOCOL), linux-efi-pe64)
 CARGO_OSDK_COMMON_ARGS += --grub-boot-protocol="linux"
-else ifeq ($(BOOT_PROTOCOL), linux-legacy32)
-CARGO_OSDK_COMMON_ARGS += --linux-x86-legacy-boot --grub-boot-protocol="linux"
 else
 CARGO_OSDK_COMMON_ARGS += --grub-boot-protocol=$(BOOT_PROTOCOL)
 endif
