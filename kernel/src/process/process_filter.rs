@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{Pgid, Pid};
-use crate::{fs::file::file_table::get_file_fast, prelude::*, process::PidFile};
+use crate::{
+    fs::file::file_table::{FileDesc, get_file_fast},
+    prelude::*,
+    process::PidFile,
+};
 
 #[derive(Debug, Clone)]
 pub enum ProcessFilter {
@@ -26,20 +30,11 @@ impl ProcessFilter {
             P_PID => Ok(ProcessFilter::WithPid(id)),
             P_PGID => Ok(ProcessFilter::WithPgid(id)),
             P_PIDFD => {
-                let fd = {
-                    let fd = id.cast_signed();
-                    if fd < 0 {
-                        return_errno_with_message!(Errno::EINVAL, "the pidfd is invalid");
-                    }
-                    fd
-                };
+                let fd = FileDesc::try_from(id)
+                    .map_err(|_| Error::with_message(Errno::EINVAL, "the pidfd is invalid"))?;
                 let file = {
                     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-                    get_file_fast!(
-                        &mut file_table,
-                        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
-                    )
-                    .into_owned()
+                    get_file_fast!(&mut file_table, fd).into_owned()
                 };
                 let pid_file = Arc::downcast(file).map_err(|_| {
                     Error::with_message(Errno::EINVAL, "the file is not a PID file")

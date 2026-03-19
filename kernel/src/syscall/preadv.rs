@@ -77,10 +77,7 @@ fn do_sys_preadv(
     }
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(
-        &mut file_table,
-        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
-    );
+    let file = get_file_fast!(&mut file_table, fd.try_into()?);
 
     if io_vec_count == 0 {
         return Ok(0);
@@ -133,10 +130,7 @@ fn do_sys_readv(
     );
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(
-        &mut file_table,
-        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
-    );
+    let file = get_file_fast!(&mut file_table, fd.try_into()?);
 
     if io_vec_count == 0 {
         return Ok(0);

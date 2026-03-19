@@ -24,10 +24,7 @@ pub fn sys_pwrite64(
     }
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(
-        &mut file_table,
-        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
-    );
+    let file = get_file_fast!(&mut file_table, fd.try_into()?);
 
     // TODO: Check (f.file->f_mode & FMODE_PWRITE); We don't have f_mode in our FileLike trait
     if user_buf_len == 0 {

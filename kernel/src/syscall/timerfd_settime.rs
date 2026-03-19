@@ -26,8 +26,7 @@ pub fn sys_timerfd_settime(
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags for timerfd_settime"))?;
     let file_table = ctx.thread_local.borrow_file_table();
     let file_table_locked = file_table.unwrap().read();
-    let timerfd_file =
-        file_table_locked.get_file(fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?)?;
+    let timerfd_file = file_table_locked.get_file(fd.try_into()?)?;
     let timerfd_file = timerfd_file
         .downcast_ref::<TimerfdFile>()
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "the fd is not a timerfd"))?;

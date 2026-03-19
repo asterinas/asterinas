@@ -61,7 +61,7 @@ pub fn sys_openat(
     };
     let file_like: Arc<dyn FileLike> = file_handle;
     fs::vfs::notify::on_open(&file_like);
-    Ok(SyscallReturn::Return(fd.get() as _))
+    Ok(SyscallReturn::Return(fd.into()))
 }
 
 pub fn sys_open(path_addr: Vaddr, flags: u32, mode: u16, ctx: &Context) -> Result<SyscallReturn> {

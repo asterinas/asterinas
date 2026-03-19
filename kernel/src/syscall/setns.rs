@@ -33,9 +33,7 @@ pub fn sys_setns(fd: RawFileDesc, flags: u32, ctx: &Context) -> Result<SyscallRe
     let file = {
         let file_table = ctx.thread_local.borrow_file_table();
         let file_table_locked = file_table.unwrap().read();
-        file_table_locked
-            .get_file(fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?)?
-            .clone()
+        file_table_locked.get_file(fd.try_into()?)?.clone()
     };
 
     let new_ns_proxy = if let Some(pid_file) = file.downcast_ref::<PidFile>() {

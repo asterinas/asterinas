@@ -269,7 +269,7 @@ fn open_ns_as_file<T: NsCommonOps>(ns: &Arc<T>) -> Result<RawFileDesc> {
     let mut file_table = file_table_ref.unwrap().write();
     let fd = file_table.insert(Arc::new(inode_handle), FdFlags::CLOEXEC);
 
-    Ok(fd.get() as _)
+    Ok(fd.into())
 }
 
 /// Common operations shared by all namespace types.

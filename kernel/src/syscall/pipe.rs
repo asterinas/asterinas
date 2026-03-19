@@ -7,7 +7,7 @@ use crate::{
     fs::{
         file::{
             CreationFlags,
-            file_table::{FdFlags, FileDesc, RawFileDesc},
+            file_table::{FdFlags, RawFileDesc},
         },
         pipe,
     },
@@ -29,17 +29,17 @@ pub fn sys_pipe2(fds: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn>
     let mut file_table_locked = file_table.unwrap().write();
 
     let pipe_fds = PipeFds {
-        reader_fd: file_table_locked.insert(pipe_reader, fd_flags).get() as _,
-        writer_fd: file_table_locked.insert(pipe_writer, fd_flags).get() as _,
+        reader_fd: file_table_locked.insert(pipe_reader, fd_flags).into(),
+        writer_fd: file_table_locked.insert(pipe_writer, fd_flags).into(),
     };
     debug!("pipe_fds: {:?}", pipe_fds);
 
     if let Err(err) = ctx.user_space().write_val(fds, &pipe_fds) {
         file_table_locked
-            .close_file(FileDesc::new(pipe_fds.reader_fd.cast_unsigned()))
+            .close_file(pipe_fds.reader_fd.try_into()?)
             .unwrap();
         file_table_locked
-            .close_file(FileDesc::new(pipe_fds.writer_fd.cast_unsigned()))
+            .close_file(pipe_fds.writer_fd.try_into()?)
             .unwrap();
         return Err(err.into());
     }

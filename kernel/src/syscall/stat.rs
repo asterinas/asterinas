@@ -20,10 +20,7 @@ pub fn sys_fstat(fd: RawFileDesc, stat_buf_ptr: Vaddr, ctx: &Context) -> Result<
     debug!("fd = {}, stat_buf_addr = 0x{:x}", fd, stat_buf_ptr);
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(
-        &mut file_table,
-        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
-    );
+    let file = get_file_fast!(&mut file_table, fd.try_into()?);
 
     let stat = Stat::from(file.path().metadata());
     ctx.user_space().write_val(stat_buf_ptr, &stat)?;

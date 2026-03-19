@@ -27,5 +27,5 @@ pub fn sys_timerfd_create(clockid: clockid_t, flags: i32, ctx: &Context) -> Resu
         file_table_locked.insert(Arc::new(timerfd_file), fd_flags)
     };
 
-    Ok(SyscallReturn::Return(fd.get() as _))
+    Ok(SyscallReturn::Return(fd.into()))
 }

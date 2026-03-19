@@ -78,10 +78,7 @@ fn do_sys_pwritev(
     }
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(
-        &mut file_table,
-        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
-    );
+    let file = get_file_fast!(&mut file_table, fd.try_into()?);
 
     // TODO: Check (f.file->f_mode & FMODE_PREAD); We don't have f_mode in our FileLike trait
     if io_vec_count == 0 {
@@ -134,10 +131,7 @@ fn do_sys_writev(
     );
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(
-        &mut file_table,
-        fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?
-    );
+    let file = get_file_fast!(&mut file_table, fd.try_into()?);
 
     let mut total_len = 0;
 

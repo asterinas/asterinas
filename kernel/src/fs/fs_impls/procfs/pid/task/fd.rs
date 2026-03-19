@@ -8,11 +8,7 @@ use ostd::sync::RwMutexUpgradeableGuard;
 use super::TidDirOps;
 use crate::{
     fs::{
-        file::{
-            AccessMode, FileLike, chmod,
-            file_table::{FileDesc, RawFileDesc},
-            mkmod,
-        },
+        file::{AccessMode, FileLike, chmod, file_table::RawFileDesc, mkmod},
         procfs::template::{
             DirOps, FileOps, ProcDir, ProcDirBuilder, ProcFile, ProcFileBuilder, ProcSym,
             ProcSymBuilder, SymOps,
@@ -114,9 +110,10 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
             let child = child.downcast_ref::<T::NodeType>().unwrap();
             let child_ops = T::ref_from_inode(child);
 
-            let Ok(file) =
-                file_table.get_file(FileDesc::new(child_ops.file_desc().cast_unsigned()))
-            else {
+            let Ok(fd) = child_ops.file_desc().try_into() else {
+                continue;
+            };
+            let Ok(file) = file_table.get_file(fd) else {
                 cached_children.remove(i);
                 continue;
             };
@@ -127,10 +124,10 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
 
         // Add new entries.
         for (file_desc, file) in file_table.fds_and_files() {
-            cached_children.put_entry_if_not_found(&file_desc.get().to_string(), || {
+            cached_children.put_entry_if_not_found(&file_desc.raw_fd().to_string(), || {
                 T::new_inode(
                     self.dir.clone(),
-                    file_desc.get() as _,
+                    file_desc.into(),
                     file.access_mode(),
                     dir.this_weak().clone(),
                 )
@@ -150,7 +147,7 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
         if let Some(file_table) = posix_thread.file_table().lock().as_ref()
             && let Ok(file) = file_table
                 .read()
-                .get_file(FileDesc::new(child_ops.file_desc().cast_unsigned()))
+                .get_file(child_ops.file_desc().try_into().unwrap())
         {
             child_ops.is_valid(file)
         } else {

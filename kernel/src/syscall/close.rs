@@ -6,7 +6,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         self,
-        file::file_table::{FdFlags, FileDesc, RawFileDesc},
+        file::file_table::{FdFlags, RawFileDesc},
     },
     prelude::*,
     process::ContextUnshareAdminApi,
@@ -23,7 +23,7 @@ pub fn sys_close(fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}", fd);
 
     let file = {
-        let fd = fd.cast_unsigned().try_into().map_err(|_| Errno::EBADF)?;
+        let fd = fd.try_into()?;
         let file_table = ctx.thread_local.borrow_file_table();
         let mut file_table_locked = file_table.unwrap().write();
         let _ = file_table_locked.get_file(fd)?;
@@ -86,7 +86,7 @@ pub fn sys_close_range(
         let actual_last = last.min(table_len - 1);
 
         for fd in first..=actual_last {
-            let fd = FileDesc::new(fd);
+            let fd = fd.try_into()?;
 
             if flags.contains(CloseRangeFlags::CLOEXEC) {
                 if let Ok(entry) = file_table_locked.get_entry_mut(fd) {
