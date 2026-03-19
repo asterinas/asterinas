@@ -41,13 +41,13 @@ fn do_sys_mmap(
     len: usize,
     vm_perms: VmPerms,
     option: MMapOptions,
-    fd: RawFileDesc,
+    raw_fd: RawFileDesc,
     offset: usize,
     ctx: &Context,
 ) -> Result<Vaddr> {
     debug!(
-        "addr = 0x{:x}, len = 0x{:x}, perms = {:?}, option = {:?}, fd = {}, offset = 0x{:x}",
-        addr, len, vm_perms, option, fd, offset
+        "addr = 0x{:x}, len = 0x{:x}, perms = {:?}, option = {:?}, raw_fd = {}, offset = 0x{:x}",
+        addr, len, vm_perms, option, raw_fd, offset
     );
 
     let len = check_len(len)?;
@@ -109,7 +109,7 @@ fn do_sys_mmap(
             }
         } else {
             let mut file_table = ctx.thread_local.borrow_file_table_mut();
-            let file = get_file_fast!(&mut file_table, fd.try_into()?);
+            let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
 
             let access_mode = file.access_mode();
             if vm_perms.contains(VmPerms::READ) && !access_mode.is_readable() {

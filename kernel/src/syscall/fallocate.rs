@@ -12,21 +12,21 @@ use crate::{
 };
 
 pub fn sys_fallocate(
-    fd: RawFileDesc,
+    raw_fd: RawFileDesc,
     mode: u64,
     offset: i64,
     len: i64,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
-        "fd = {}, mode = {}, offset = {}, len = {}",
-        fd, mode, offset, len
+        "raw_fd = {}, mode = {}, offset = {}, len = {}",
+        raw_fd, mode, offset, len
     );
 
     check_offset_and_len(offset, len, ctx)?;
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd.try_into()?);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
 
     let falloc_mode = FallocMode::try_from(
         RawFallocMode::from_bits(mode as _)

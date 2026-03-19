@@ -61,14 +61,14 @@ pub fn sys_lgetxattr(
 }
 
 pub fn sys_fgetxattr(
-    fd: RawFileDesc,
+    raw_fd: RawFileDesc,
     name_ptr: Vaddr,
     value_ptr: Vaddr,
     value_len: usize,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd.try_into()?);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
 
     let user_space = ctx.user_space();
     let len = getxattr(

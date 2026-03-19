@@ -9,17 +9,17 @@ use crate::{
 };
 
 pub fn sys_readv(
-    fd: RawFileDesc,
+    raw_fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let res = do_sys_readv(fd, io_vec_ptr, io_vec_count, ctx)?;
+    let res = do_sys_readv(raw_fd, io_vec_ptr, io_vec_count, ctx)?;
     Ok(SyscallReturn::Return(res as _))
 }
 
 pub fn sys_preadv(
-    fd: RawFileDesc,
+    raw_fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     offset_low: u64,
@@ -30,12 +30,19 @@ pub fn sys_preadv(
     // 64-bit offset.
     // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/fs/read_write.c#L1114-L1118>.
     let offset = offset_low.cast_signed();
-    let res = do_sys_preadv(fd, io_vec_ptr, io_vec_count, offset, RWFFlag::empty(), ctx)?;
+    let res = do_sys_preadv(
+        raw_fd,
+        io_vec_ptr,
+        io_vec_count,
+        offset,
+        RWFFlag::empty(),
+        ctx,
+    )?;
     Ok(SyscallReturn::Return(res as _))
 }
 
 pub fn sys_preadv2(
-    fd: RawFileDesc,
+    raw_fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     offset_low: u64,
@@ -52,15 +59,15 @@ pub fn sys_preadv2(
         None => return_errno_with_message!(Errno::EINVAL, "invalid flags"),
     };
     let res = if offset == -1 {
-        do_sys_readv(fd, io_vec_ptr, io_vec_count, ctx)?
+        do_sys_readv(raw_fd, io_vec_ptr, io_vec_count, ctx)?
     } else {
-        do_sys_preadv(fd, io_vec_ptr, io_vec_count, offset, flags, ctx)?
+        do_sys_preadv(raw_fd, io_vec_ptr, io_vec_count, offset, flags, ctx)?
     };
     Ok(SyscallReturn::Return(res as _))
 }
 
 fn do_sys_preadv(
-    fd: RawFileDesc,
+    raw_fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     offset: i64,
@@ -68,8 +75,8 @@ fn do_sys_preadv(
     ctx: &Context,
 ) -> Result<usize> {
     debug!(
-        "preadv: fd = {}, io_vec_ptr = 0x{:x}, io_vec_counter = 0x{:x}, offset = 0x{:x}",
-        fd, io_vec_ptr, io_vec_count, offset
+        "preadv: raw_fd = {}, io_vec_ptr = 0x{:x}, io_vec_counter = 0x{:x}, offset = 0x{:x}",
+        raw_fd, io_vec_ptr, io_vec_count, offset
     );
 
     if offset < 0 {
@@ -77,7 +84,7 @@ fn do_sys_preadv(
     }
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd.try_into()?);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
 
     if io_vec_count == 0 {
         return Ok(0);
@@ -119,18 +126,18 @@ fn do_sys_preadv(
 }
 
 fn do_sys_readv(
-    fd: RawFileDesc,
+    raw_fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     ctx: &Context,
 ) -> Result<usize> {
     debug!(
-        "fd = {}, io_vec_ptr = 0x{:x}, io_vec_counter = 0x{:x}",
-        fd, io_vec_ptr, io_vec_count
+        "raw_fd = {}, io_vec_ptr = 0x{:x}, io_vec_counter = 0x{:x}",
+        raw_fd, io_vec_ptr, io_vec_count
     );
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd.try_into()?);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
 
     if io_vec_count == 0 {
         return Ok(0);

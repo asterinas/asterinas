@@ -8,7 +8,7 @@ use crate::{
 };
 
 pub fn sys_pwrite64(
-    fd: RawFileDesc,
+    raw_fd: RawFileDesc,
     user_buf_ptr: Vaddr,
     user_buf_len: usize,
     offset: i64,
@@ -16,7 +16,7 @@ pub fn sys_pwrite64(
 ) -> Result<SyscallReturn> {
     debug!(
         "fd = {}, user_buf_ptr = 0x{:x}, user_buf_len = 0x{:x}, offset = 0x{:x}",
-        fd, user_buf_ptr, user_buf_len, offset
+        raw_fd, user_buf_ptr, user_buf_len, offset
     );
 
     if offset < 0 {
@@ -24,7 +24,7 @@ pub fn sys_pwrite64(
     }
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd.try_into()?);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
 
     // TODO: Check (f.file->f_mode & FMODE_PWRITE); We don't have f_mode in our FileLike trait
     if user_buf_len == 0 {
