@@ -16,8 +16,8 @@ use crate::{
     process::{Pid, process_table},
 };
 
-pub fn sys_fcntl(fd: RawFileDesc, cmd: i32, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
-    let fd = FileDesc::try_from(fd)?;
+pub fn sys_fcntl(raw_fd: RawFileDesc, cmd: i32, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
+    let fd = FileDesc::try_from(raw_fd)?;
     let fcntl_cmd = FcntlCmd::try_from(cmd)?;
     debug!("fd = {}, cmd = {:?}, arg = {}", fd.raw_fd(), fcntl_cmd, arg);
     match fcntl_cmd {
