@@ -1,5 +1,8 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 
+#ifndef TEST_H
+#define TEST_H
+
 /*
  * A framework for writing general tests.
  *
@@ -24,6 +27,9 @@
  *  - Within a test function, TEST_SUCC() can be used to write a test expression
  * that should succeed. If the expression fails, a test failure will be reported
  * but the execution will continue.
+ *
+ *  - Within a test function, SKIP_TEST_IF() can be used to skip the current test
+ * if a condition is met.
  *
  *  - The number of successful and failed tests is tracked. When a test function
  * finishes, a summary sentence is printed describing the number of test
@@ -83,6 +89,11 @@
 
 static int __total_failures;
 
+#define __TEST_SUMMARY()                                                  \
+	fprintf(stderr, "%s summary: %d tests passed, %d tests failed\n", \
+		__func__, __tests_passed, __tests_failed);                \
+	__total_failures += __tests_failed;
+
 /** Starts the definition of a test function. */
 #define FN_TEST(name)                                            \
 	void test_##name(void)                                   \
@@ -93,11 +104,20 @@ static int __total_failures;
 		int __tests_passed = 0, __tests_failed = 0;
 
 /** Ends the definition of a test function. */
-#define END_TEST()                                                        \
-	fprintf(stderr, "%s summary: %d tests passed, %d tests failed\n", \
-		__func__, __tests_passed, __tests_failed);                \
-	__total_failures += __tests_failed;                               \
+#define END_TEST()        \
+	__TEST_SUMMARY(); \
 	}
+
+/** Skips the current test if the condition is true. */
+#define SKIP_TEST_IF(cond)                                            \
+	({                                                            \
+		if (cond) {                                           \
+			fprintf(stderr, "%s skipped: `%s` is true\n", \
+				__func__, #cond);                     \
+			__TEST_SUMMARY();                             \
+			return;                                       \
+		}                                                     \
+	})
 
 #define __TEST(func, err, cond)                                                \
 	errno = 0;                                                             \
@@ -161,3 +181,5 @@ int main(void)
 {
 	return __total_failures ? 1 : 0;
 }
+
+#endif
