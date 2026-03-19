@@ -50,6 +50,10 @@ jobs:
     strategy:
       matrix:
         include:
+          # SMP Boot Test (Linux Legacy 32-bit Boot Protocol)
+          - test_id: 'boot-legacy32'
+            boot_protocol: 'linux-legacy32'
+            smp: 4
           # SMP Boot Test (Multiboot)
           - test_id: 'boot-multiboot2-smp4'
             boot_protocol: 'multiboot'
