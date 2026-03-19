@@ -136,7 +136,6 @@ endif
 
 ifeq ($(BOOT_PROTOCOL), multiboot)
 BOOT_METHOD = qemu-direct
-OVMF = off
 endif
 
 ifeq ($(SCHEME), "")
