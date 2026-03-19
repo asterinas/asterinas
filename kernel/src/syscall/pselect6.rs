@@ -32,10 +32,14 @@ pub fn sys_pselect6(
 
     if sigmask_addr != 0 {
         let sigmask_with_size = user_space.read_val::<SigMaskWithSize>(sigmask_addr)?;
-        if !sigmask_with_size.is_valid() {
-            return_errno_with_message!(Errno::EINVAL, "invalid sigmask size")
+        if sigmask_with_size.addr != 0 {
+            if sigmask_with_size.size != size_of::<SigMask>() {
+                return_errno_with_message!(Errno::EINVAL, "invalid sigmask size");
+            }
+
+            let sigmask = user_space.read_val::<SigMask>(sigmask_with_size.addr)?;
+            ctx.save_and_set_sig_mask(sigmask);
         }
-        ctx.save_and_set_sig_mask(sigmask_with_size.sigmask);
     }
 
     do_sys_select(
@@ -48,15 +52,10 @@ pub fn sys_pselect6(
     )
 }
 
+// Reference: <https://elixir.bootlin.com/linux/v6.19.8/source/fs/select.c#L763-L772>
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod)]
 struct SigMaskWithSize {
-    sigmask: SigMask,
-    sigmasksize: usize,
-}
-
-impl SigMaskWithSize {
-    const fn is_valid(&self) -> bool {
-        self.sigmask.is_empty() || self.sigmasksize == size_of::<SigMask>()
-    }
+    addr: Vaddr,
+    size: usize,
 }
