@@ -112,6 +112,7 @@ echo "All mount bind file test passed."
 ./overlayfs/ovl_test
 
 ./procfs/dentry_cache
+./procfs/mountstats
 ./procfs/pid_mem
 
 ./pseudofs/memfd_access_err
