@@ -6,6 +6,7 @@ SUBDIRS := \
 	cpu_affinity \
 	execve \
 	exit \
+	futex \
 	fork_c \
 	getcpu \
 	getpid \

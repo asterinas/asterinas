@@ -22,6 +22,8 @@ set -e
 ./exit/exit_code
 ./exit/exit_procfs
 
+./futex/clear_child_tid
+
 [ "$(uname -m)" = "x86_64" ] && ./fork/fork
 ./fork_c/fork
 
