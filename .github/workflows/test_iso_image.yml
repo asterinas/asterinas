@@ -19,7 +19,7 @@ jobs:
   iso-test:
     runs-on: ubuntu-4-cores-150GB-ssd
     container:
-      image: asterinas/asterinas:0.17.1-20260317
+      image: asterinas/asterinas:0.17.1-20260319
       options: -v /dev:/dev --privileged
     timeout-minutes: 60
     steps:
