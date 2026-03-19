@@ -16,11 +16,11 @@ use crate::{
     time::timespec_t,
 };
 
-pub fn sys_fstat(fd: RawFileDesc, stat_buf_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
-    debug!("fd = {}, stat_buf_addr = 0x{:x}", fd, stat_buf_ptr);
+pub fn sys_fstat(raw_fd: RawFileDesc, stat_buf_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+    debug!("fd = {}, stat_buf_addr = 0x{:x}", raw_fd, stat_buf_ptr);
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd.try_into()?);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
 
     let stat = Stat::from(file.path().metadata());
     ctx.user_space().write_val(stat_buf_ptr, &stat)?;

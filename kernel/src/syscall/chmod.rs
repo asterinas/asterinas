@@ -14,11 +14,11 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_fchmod(fd: RawFileDesc, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
-    debug!("fd = {}, mode = 0o{:o}", fd, mode);
+pub fn sys_fchmod(raw_fd: RawFileDesc, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
+    debug!("raw_fd = {}, mode = 0o{:o}", raw_fd, mode);
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd.try_into()?);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
     file.path().set_mode(InodeMode::from_bits_truncate(mode))?;
     fs::vfs::notify::on_attr_change(file.path());
     Ok(SyscallReturn::Return(0))

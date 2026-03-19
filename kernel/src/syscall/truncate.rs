@@ -12,13 +12,13 @@ use crate::{
     process::ResourceType,
 };
 
-pub fn sys_ftruncate(fd: RawFileDesc, len: isize, ctx: &Context) -> Result<SyscallReturn> {
-    debug!("fd = {}, length = {}", fd, len);
+pub fn sys_ftruncate(raw_fd: RawFileDesc, len: isize, ctx: &Context) -> Result<SyscallReturn> {
+    debug!("raw_fd = {}, length = {}", raw_fd, len);
 
     check_length(len, ctx)?;
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd.try_into()?);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
     file.resize(len as usize)?;
     fs::vfs::notify::on_change(file.path());
     Ok(SyscallReturn::Return(0))

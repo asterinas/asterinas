@@ -13,11 +13,11 @@ pub fn sys_sync(ctx: &Context) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_syncfs(fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
-    debug!("fd = {}", fd);
+pub fn sys_syncfs(raw_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
+    debug!("raw_fd = {}", raw_fd);
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd.try_into()?);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
     file.path().fs().sync()?;
     Ok(SyscallReturn::Return(0))
 }
