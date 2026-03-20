@@ -262,7 +262,7 @@ impl FutexWakeOpEncode {
             FutexWakeOp::FUTEX_OP_SET => oparg,
             FutexWakeOp::FUTEX_OP_ADD => oparg.wrapping_add(old_val),
             FutexWakeOp::FUTEX_OP_OR => oparg | old_val,
-            FutexWakeOp::FUTEX_OP_ANDN => oparg & !old_val,
+            FutexWakeOp::FUTEX_OP_ANDN => !oparg & old_val,
             FutexWakeOp::FUTEX_OP_XOR => oparg ^ old_val,
         }
     }
