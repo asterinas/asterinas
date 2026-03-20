@@ -8,7 +8,11 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::{
-        posix_thread::{AsPosixThread, alien_access::AlienAccessMode, ptrace::PtraceContRequest},
+        posix_thread::{
+            AsPosixThread,
+            alien_access::AlienAccessMode,
+            ptrace::{PtraceContRequest, PtraceOptions},
+        },
         signal::{constants::SIGKILL, signals::user::UserSignal},
     },
     thread::{Thread, Tid},
@@ -102,6 +106,21 @@ pub fn sys_ptrace(
 
             tracee.ptrace_set_regs(regs)?;
         }
+        PtraceRequest::PTRACE_SETOPTIONS => {
+            let options = PtraceOptions::from_bits(data)
+                .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid ptrace options"))?;
+
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let tracee = tracee.as_posix_thread().unwrap();
+
+            tracee.ptrace_set_options(options)?;
+        }
+        PtraceRequest::PTRACE_GETEVENTMSG => {
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let eventmsg = tracee.as_posix_thread().unwrap().ptrace_get_eventmsg()?;
+
+            ctx.user_space().write_val(data, &eventmsg)?;
+        }
         PtraceRequest::PTRACE_GETSIGINFO => {
             let tracee = ctx.posix_thread.get_tracee(tid)?;
             let siginfo = tracee.as_posix_thread().unwrap().ptrace_get_siginfo()?;
@@ -189,6 +208,8 @@ enum PtraceRequest {
     PTRACE_SYSEMU_SINGLESTEP = 32,
     /// Set ptrace filter options.
     PTRACE_SETOPTIONS = 0x4200,
+    /// Get the message of the last ptrace-event-stop.
+    PTRACE_GETEVENTMSG = 0x4201,
     /// Get the siginfo of the last ptrace-stop.
     PTRACE_GETSIGINFO = 0x4202,
     /// Get register content.

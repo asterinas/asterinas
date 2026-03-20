@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::*;
+use crate::process::ExitCode;
 
 /// The requests that can continue a stopped tracee.
 #[derive(Debug)]
@@ -19,6 +20,76 @@ pub enum PtraceStopResult {
     Interrupted,
     /// The thread is not traced.
     NotTraced(Box<dyn Signal>),
+}
+
+bitflags! {
+    /// Options accepted by `PTRACE_SETOPTIONS`.
+    pub struct PtraceOptions: usize {
+        /// Marks syscall stops with signal number set to `SIGTRAP | 0x80`.
+        const PTRACE_O_TRACESYSGOOD = 1;
+        /// Stops the tracee at `fork` and automatically traces the new thread.
+        const PTRACE_O_TRACEFORK = 1 << PtraceEvent::Fork(0).code();
+        /// Stops the tracee at `vfork` and automatically traces the new thread.
+        const PTRACE_O_TRACEVFORK = 1 << PtraceEvent::Vfork(0).code();
+        /// Stops the tracee at `clone` and automatically traces the new thread.
+        const PTRACE_O_TRACECLONE = 1 << PtraceEvent::Clone(0).code();
+        /// Stops the tracee at `execve`.
+        const PTRACE_O_TRACEEXEC = 1 << PtraceEvent::Exec(0).code();
+        /// Stops the tracee at the completion of `vfork`.
+        const PTRACE_O_TRACEVFORKDONE = 1 << PtraceEvent::VforkDone(0).code();
+        /// Stops the tracee at `exit`.
+        const PTRACE_O_TRACEEXIT = 1 << PtraceEvent::Exit(0).code();
+        /// Send a `SIGKILL` signal to the tracee if the tracer exits.
+        const PTRACE_O_EXITKILL = 1 << 20;
+    }
+}
+
+/// The ptrace-stop events.
+#[derive(Debug, Clone)]
+pub enum PtraceEvent {
+    /// A `fork` event stop with the new child thread ID.
+    Fork(Tid),
+    /// A `vfork` event stop with the new child thread ID.
+    Vfork(Tid),
+    /// A `clone` event stop with the new child thread ID.
+    Clone(Tid),
+    /// An `execve` event stop with the former thread ID.
+    Exec(Tid),
+    /// A done `vfork` event stop with the child thread ID.
+    VforkDone(Tid),
+    /// An `exit` event stop with the tracee's exit code.
+    Exit(ExitCode),
+}
+
+impl PtraceEvent {
+    /// Returns the Linux `PTRACE_EVENT_*` code of this event.
+    const fn code(&self) -> u32 {
+        match self {
+            Self::Fork(_) => 1,
+            Self::Vfork(_) => 2,
+            Self::Clone(_) => 3,
+            Self::Exec(_) => 4,
+            Self::VforkDone(_) => 5,
+            Self::Exit(_) => 6,
+        }
+    }
+
+    /// Returns the `PtraceOptions` corresponding to this event.
+    pub(super) const fn option(&self) -> PtraceOptions {
+        PtraceOptions::from_bits(1 << self.code()).unwrap()
+    }
+
+    /// Returns the message of this event.
+    pub(super) const fn message(&self) -> usize {
+        match self {
+            Self::Fork(tid)
+            | Self::Vfork(tid)
+            | Self::Clone(tid)
+            | Self::Exec(tid)
+            | Self::VforkDone(tid) => *tid as usize,
+            Self::Exit(exit_code) => *exit_code as usize,
+        }
+    }
 }
 
 /// The signal info of a ptrace-stop.
