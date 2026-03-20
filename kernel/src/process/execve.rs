@@ -248,7 +248,7 @@ fn make_current_main_thread(ctx: &Context) {
     drop(tasks);
 
     let thread = pid_table.take_thread(old_tid).unwrap();
-    pid_table.insert_thread(pid, thread);
+    pid_table.insert_thread(pid, &thread);
 }
 
 fn set_cpu_context(

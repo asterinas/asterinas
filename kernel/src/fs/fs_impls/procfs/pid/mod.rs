@@ -33,7 +33,7 @@ impl PidDirOps {
             thread_ref: None,
         };
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3493>
-        ProcDirBuilder::new(Self(tid_dir_ops.clone()), mkmod!(a+rx))
+        ProcDirBuilder::new(Self(tid_dir_ops), mkmod!(a+rx))
             .parent(parent)
             // The PID directories must be volatile, because it is just associated with one process.
             .volatile()

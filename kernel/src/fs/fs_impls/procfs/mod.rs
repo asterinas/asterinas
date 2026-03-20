@@ -188,8 +188,8 @@ impl DirOps for RootDirOps {
         {
             let mut cached_children = dir.cached_children().write();
             return Ok(cached_children
-                .put_entry_if_not_found(name, || {
-                    PidDirOps::new_inode(process_ref.clone(), dir.this_weak().clone())
+                .put_entry_if_not_found(name, move || {
+                    PidDirOps::new_inode(process_ref, dir.this_weak().clone())
                 })
                 .clone());
         }
@@ -216,8 +216,8 @@ impl DirOps for RootDirOps {
 
         for process_ref in pid_table.iter_processes() {
             let pid = process_ref.pid().to_string();
-            cached_children.put_entry_if_not_found(&pid, || {
-                PidDirOps::new_inode(process_ref.clone(), dir.this_weak().clone())
+            cached_children.put_entry_if_not_found(&pid, move || {
+                PidDirOps::new_inode(process_ref, dir.this_weak().clone())
             });
         }
 

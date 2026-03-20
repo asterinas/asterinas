@@ -209,7 +209,7 @@ impl PosixThreadBuilder {
                 ns_proxy,
             );
 
-            pid_table::pid_table_mut().insert_thread(tid, thread.clone());
+            pid_table::pid_table_mut().insert_thread(tid, &thread);
             task::create_new_user_task(user_ctx, thread, thread_local, is_init_process)
         })
     }

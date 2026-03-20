@@ -48,10 +48,10 @@ impl PidTable {
     // ---- Thread operations ----
 
     /// Inserts a thread into the table.
-    pub(super) fn insert_thread(&mut self, tid: Tid, thread: Arc<Thread>) {
+    pub(super) fn insert_thread(&mut self, tid: Tid, thread: &Arc<Thread>) {
         debug_assert_eq!(tid, thread.as_posix_thread().unwrap().tid());
         let entry = self.get_or_create_entry(tid);
-        entry.lock().set_thread(&thread);
+        entry.lock().set_thread(thread);
     }
 
     /// Removes a thread from the table.
@@ -110,16 +110,16 @@ impl PidTable {
     // ---- Process operations ----
 
     /// Inserts a process into the table.
-    pub(super) fn insert_process(&mut self, pid: Pid, process: Arc<Process>) {
-        // Clone the entry handle so the borrow of `self` ends before we update
-        // `self.process_count`.
-        let entry = self.get_or_create_entry(pid).clone();
-        let mut entry = entry.lock();
-
-        debug_assert!(!entry.has_live_process());
+    pub(super) fn insert_process(&mut self, pid: Pid, process: &Arc<Process>) {
+        debug_assert!(
+            !self
+                .entries
+                .get(&pid)
+                .is_some_and(|entry| entry.lock().has_live_process())
+        );
         self.process_count += 1;
 
-        entry.set_process(&process);
+        self.get_or_create_entry(pid).lock().set_process(process);
     }
 
     /// Removes a process from the table and notifies observers.
@@ -168,9 +168,9 @@ impl PidTable {
     // ---- Process group operations ----
 
     /// Inserts a process group into the table.
-    pub(super) fn insert_process_group(&mut self, pgid: Pgid, group: Arc<ProcessGroup>) {
+    pub(super) fn insert_process_group(&mut self, pgid: Pgid, group: &Arc<ProcessGroup>) {
         let entry = self.get_or_create_entry(pgid);
-        entry.lock().set_process_group(&group);
+        entry.lock().set_process_group(group);
     }
 
     /// Removes a process group from the table.
@@ -208,9 +208,9 @@ impl PidTable {
     // ---- Session operations ----
 
     /// Inserts a session into the table.
-    pub(super) fn insert_session(&mut self, sid: Sid, session: Arc<Session>) {
+    pub(super) fn insert_session(&mut self, sid: Sid, session: &Arc<Session>) {
         let entry = self.get_or_create_entry(sid);
-        entry.lock().set_session(&session);
+        entry.lock().set_session(session);
     }
 
     /// Removes a session from the table.
