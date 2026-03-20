@@ -113,8 +113,8 @@ impl ConsoleDevice {
 
         device.activate_receive_buffer(&mut device.receive_queue.disable_irq().lock());
 
-        // Register irq callbacks
-        let mut transport = device.transport.disable_irq().lock();
+        // Register IRQ callbacks.
+        let mut transport = device.transport.lock();
         let handle_console_input = {
             let device = device.clone();
             move |_: &TrapFrame| device.handle_recv_irq()

@@ -136,7 +136,7 @@ impl InputDevice {
             debug!("input device has no properties or the properties is not defined");
         }
 
-        let mut transport = device.transport.disable_irq().lock();
+        let mut transport = device.transport.lock();
         fn config_space_change(_: &TrapFrame) {
             debug!("input device config space change");
         }
@@ -149,7 +149,7 @@ impl InputDevice {
         // Register with the input subsystem.
         let registered_device = aster_input::register_device(device.clone());
 
-        let mut transport = device.transport.disable_irq().lock();
+        let mut transport = device.transport.lock();
         let handle_input = {
             let device = device.clone();
             move |_: &TrapFrame| device.handle_irq(&registered_device)
