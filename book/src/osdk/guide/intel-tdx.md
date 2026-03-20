@@ -33,7 +33,7 @@ Run a TDX Docker container:
 
 ```bash
 docker run -it --privileged --network=host --device=/dev/kvm asterinas/osdk:0.17.1-20260317
-```
+```-v /dev:/dev
 
 ## Edit `OSDK.toml` for Intel TDX support
 
