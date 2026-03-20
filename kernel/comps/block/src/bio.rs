@@ -366,8 +366,7 @@ pub enum BioType {
     Write = 1,
     /// Flush the volatile write cache.
     Flush = 2,
-    /// Discard sectors.
-    Discard = 3,
+    // TODO: Add support for other BIO types, such as discarding sectors.
 }
 
 /// The status of `Bio`.
