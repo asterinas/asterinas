@@ -163,7 +163,7 @@ mod test {
     impl BlockDevice for MemoryDisk {
         fn enqueue(&self, bio: SubmittedBio) -> core::result::Result<(), BioEnqueueError> {
             let bio_type = bio.type_();
-            if bio_type == BioType::Flush || bio_type == BioType::Discard {
+            if bio_type == BioType::Flush {
                 bio.complete(BioStatus::Complete);
                 return Ok(());
             }
