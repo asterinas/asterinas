@@ -13,7 +13,7 @@ use std::{
 
 use bin::make_elf_for_qemu;
 
-use super::util::{COMMON_CARGO_ARGS, DEFAULT_TARGET_RELPATH, cargo, profile_name_adapter};
+use super::util::{DEFAULT_TARGET_RELPATH, cargo, profile_name_adapter};
 use crate::{
     arch::Arch,
     base_crate::{BaseCrateType, new_base_crate},
@@ -261,7 +261,6 @@ fn build_kernel_elf(
     command
         .arg("--target-dir")
         .arg(cargo_target_directory.as_ref());
-    command.args(COMMON_CARGO_ARGS);
     command.arg("--profile=".to_string() + profile);
     for override_config in override_configs {
         command.arg("--config").arg(override_config);
