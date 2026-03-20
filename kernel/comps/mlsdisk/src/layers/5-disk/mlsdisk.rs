@@ -77,12 +77,6 @@ impl<D: BlockSet + 'static> aster_block::BlockDevice for MlsDisk<D> {
     ) -> core::result::Result<(), aster_block::bio::BioEnqueueError> {
         use aster_block::bio::{BioStatus, BioType, SubmittedBio};
 
-        if bio.type_() == BioType::Discard {
-            warn!("discard operation not supported");
-            bio.complete(BioStatus::NotSupported);
-            return Ok(());
-        }
-
         if bio.type_() == BioType::Flush {
             let status = match self.sync() {
                 Ok(_) => BioStatus::Complete,
