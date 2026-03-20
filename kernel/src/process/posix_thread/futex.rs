@@ -8,10 +8,11 @@ use ostd::{
 use spin::Once;
 
 use crate::{
+    current_userspace,
     prelude::*,
-    process::Pid,
+    process::VmarSnapshot,
     time::wait::ManagedTimeout,
-    vm::{perms::VmPerms, vmar::PageFaultInfo},
+    vm::{perms::VmPerms, vmar::PageFaultInfo, vmo::Vmo},
 };
 
 type FutexBitSet = u32;
@@ -23,7 +24,7 @@ pub fn futex_wait(
     futex_val: i32,
     timeout: Option<ManagedTimeout>,
     ctx: &Context,
-    pid: Option<Pid>,
+    is_private: bool,
 ) -> Result<()> {
     futex_wait_bitset(
         futex_addr as _,
@@ -31,7 +32,7 @@ pub fn futex_wait(
         timeout,
         FUTEX_BITSET_MATCH_ANY,
         ctx,
-        pid,
+        is_private,
     )
 }
 
@@ -41,7 +42,7 @@ pub fn futex_wait_bitset(
     timeout: Option<ManagedTimeout>,
     bitset: FutexBitSet,
     ctx: &Context,
-    pid: Option<Pid>,
+    is_private: bool,
 ) -> Result<()> {
     debug!(
         "futex_wait_bitset: addr = {:#x}, val = {}, bitset = {:#x}",
@@ -52,11 +53,10 @@ pub fn futex_wait_bitset(
         return_errno_with_message!(Errno::EINVAL, "at least one bit should be set");
     }
 
-    let futex_key = FutexKey::new(futex_addr, bitset, pid)?;
+    let user_space = ctx.user_space();
+    let futex_key = FutexKey::new(futex_addr, bitset, &user_space, is_private)?;
     let (_, futex_bucket_ref) = get_futex_bucket(&futex_key);
     let (futex_item, waiter) = FutexItem::create(futex_key);
-
-    let user_space = ctx.user_space();
 
     let (mut futex_bucket, val) = loop {
         // Lock the futex bucket first to avoid race conditions.
@@ -118,15 +118,15 @@ pub fn futex_wait_bitset(
     }
 }
 
-pub fn futex_wake(futex_addr: Vaddr, max_count: usize, pid: Option<Pid>) -> Result<usize> {
-    futex_wake_bitset(futex_addr, max_count, FUTEX_BITSET_MATCH_ANY, pid)
+pub fn futex_wake(futex_addr: Vaddr, max_count: usize, is_private: bool) -> Result<usize> {
+    futex_wake_bitset(futex_addr, max_count, FUTEX_BITSET_MATCH_ANY, is_private)
 }
 
 pub fn futex_wake_bitset(
     futex_addr: Vaddr,
     max_count: usize,
     bitset: FutexBitSet,
-    pid: Option<Pid>,
+    is_private: bool,
 ) -> Result<usize> {
     debug!(
         "futex_wake_bitset: addr = {:#x}, max_count = {}, bitset = {:#x}",
@@ -137,7 +137,7 @@ pub fn futex_wake_bitset(
         return_errno_with_message!(Errno::EINVAL, "at least one bit should be set");
     }
 
-    let futex_key = FutexKey::new(futex_addr, bitset, pid)?;
+    let futex_key = FutexKey::new(futex_addr, bitset, &current_userspace!(), is_private)?;
     let (_, futex_bucket_ref) = get_futex_bucket(&futex_key);
     let mut futex_bucket = futex_bucket_ref.lock();
     let res = futex_bucket.remove_and_wake_items(&futex_key, max_count);
@@ -261,14 +261,23 @@ pub fn futex_wake_op(
     max_count_2: usize,
     wake_op_bits: u32,
     ctx: &Context,
-    pid: Option<Pid>,
+    is_private: bool,
 ) -> Result<usize> {
     let wake_op = FutexWakeOpEncode::from_u32(wake_op_bits)?;
 
-    let futex_key_1 = FutexKey::new(futex_addr_1, FUTEX_BITSET_MATCH_ANY, pid)?;
-    let futex_key_2 = FutexKey::new(futex_addr_2, FUTEX_BITSET_MATCH_ANY, pid)?;
-
     let user_space = ctx.user_space();
+    let futex_key_1 = FutexKey::new(
+        futex_addr_1,
+        FUTEX_BITSET_MATCH_ANY,
+        &user_space,
+        is_private,
+    )?;
+    let futex_key_2 = FutexKey::new(
+        futex_addr_2,
+        FUTEX_BITSET_MATCH_ANY,
+        &user_space,
+        is_private,
+    )?;
 
     let (mut futex_bucket_1, mut futex_bucket_2, old_val) = loop {
         let (futex_bucket_1, futex_bucket_2) = lock_bucket_pairs(&futex_key_1, &futex_key_2);
@@ -313,14 +322,21 @@ pub fn futex_requeue(
     max_nwakes: usize,
     max_nrequeues: usize,
     futex_new_addr: Vaddr,
-    pid: Option<Pid>,
+    ctx: &Context,
+    is_private: bool,
 ) -> Result<usize> {
     if futex_new_addr == futex_addr {
-        return futex_wake(futex_addr, max_nwakes, pid);
+        return futex_wake(futex_addr, max_nwakes, is_private);
     }
 
-    let futex_key = FutexKey::new(futex_addr, FUTEX_BITSET_MATCH_ANY, pid)?;
-    let futex_new_key = FutexKey::new(futex_new_addr, FUTEX_BITSET_MATCH_ANY, pid)?;
+    let user_space = ctx.user_space();
+    let futex_key = FutexKey::new(futex_addr, FUTEX_BITSET_MATCH_ANY, &user_space, is_private)?;
+    let futex_new_key = FutexKey::new(
+        futex_new_addr,
+        FUTEX_BITSET_MATCH_ANY,
+        &user_space,
+        is_private,
+    )?;
 
     let (mut futex_bucket, futex_new_bucket) = lock_bucket_pairs(&futex_key, &futex_new_key);
 
@@ -445,9 +461,6 @@ impl FutexBucket {
         let mut count = 0;
 
         self.items.retain(|item| {
-            // FIXME: `match_up` only checks the hash, which may wake up unrelated futex items. We
-            // need to check a globally unique identifier here instead. This is important because
-            // the number of woken items will be returned as the system call return value.
             if item.key.match_up(key) && count < max_count && item.wake() {
                 count += 1;
                 false
@@ -515,21 +528,30 @@ impl FutexItem {
     }
 }
 
-/// The key of a futex used to mark a futex word.
+/// The identity used for futex namespace and backing selection.
+#[derive(Debug, Clone)]
+enum FutexIdentity {
+    Private { vmar: VmarSnapshot, addr: Vaddr },
+    SharedLocal { vmar: VmarSnapshot, addr: Vaddr },
+    Shared { vmo: Weak<Vmo>, offset: usize },
+}
+
+/// The lookup key used for futex bucket selection and matching.
 #[derive(Debug, Clone)]
 struct FutexKey {
-    /// A hash value deterministically computed from the `Vaddr` and `Option<Pid>`
-    /// associated with the futex on instantiation.
+    /// A hash value deterministically computed from the futex identity.
     hash: usize,
+    identity: FutexIdentity,
     bitset: FutexBitSet,
 }
 
 impl FutexKey {
-    // FIXME: Shared mappings can be mapped to different virtual addresses in different processes.
-    // Using the virtual address as the key does not makes any sense at all. We need to use a
-    // global identifier here, e.g., something like the one used in the Linux implementation:
-    // <https://elixir.bootlin.com/linux/v6.17/source/kernel/futex/core.c#L533-L544>.
-    pub(self) fn new(addr: Vaddr, bitset: FutexBitSet, pid: Option<Pid>) -> Result<Self> {
+    pub(self) fn new(
+        addr: Vaddr,
+        bitset: FutexBitSet,
+        user_space: &CurrentUserSpace<'_>,
+        is_private: bool,
+    ) -> Result<Self> {
         // "On all platforms, futexes are four-byte integers that must be aligned on a four-byte
         // boundary."
         // Reference: <https://man7.org/linux/man-pages/man2/futex.2.html>.
@@ -540,21 +562,99 @@ impl FutexKey {
             );
         }
 
-        // Use `jhash` to hash `addr` and `pid`.
-        let hash = {
-            let addr_low = addr as u32;
-            let addr_high = (addr >> 32) as u32;
-            // Choose a different jhash seed (or salt) for each process (unless the futex is shared)
-            // to prevent common key patterns from causing excessive collisions in the table.
-            let seed = pid.unwrap_or(u32::MAX);
-            jhash::jhash_2vals(addr_low, addr_high, seed) as usize
+        let identity = if is_private {
+            FutexIdentity::Private {
+                vmar: user_space.vmar_snapshot(),
+                addr,
+            }
+        } else {
+            user_space
+                .vmar()
+                .query(addr..addr + 1)
+                .iter()
+                .next()
+                .and_then(|mapping| mapping.futex_backing(addr))
+                .map_or(
+                    FutexIdentity::SharedLocal {
+                        vmar: user_space.vmar_snapshot(),
+                        addr,
+                    },
+                    |(vmo, offset)| FutexIdentity::Shared { vmo, offset },
+                )
         };
 
-        Ok(Self { hash, bitset })
+        let hash = identity.hash();
+
+        Ok(Self {
+            hash,
+            identity,
+            bitset,
+        })
     }
 
     pub(self) fn match_up(&self, another: &Self) -> bool {
-        self.hash == another.hash && (self.bitset & another.bitset) != 0
+        self.identity.match_up(&another.identity) && (self.bitset & another.bitset) != 0
+    }
+}
+
+impl FutexIdentity {
+    fn hash(&self) -> usize {
+        // Use a distinct `initval` salt for each futex namespace so that
+        // `Private`, `SharedLocal`, and `Shared` keys do not collapse into the
+        // same buckets when their folded key material happens to match.
+        match self {
+            FutexIdentity::Private { vmar, addr } => {
+                let vmar_id = vmar.as_ptr() as u64;
+                let vmar_mix = (vmar_id as u32) ^ ((vmar_id >> 32) as u32).rotate_left(16);
+                jhash::jhash_3vals(*addr as u32, (*addr >> 32) as u32, vmar_mix, 0) as usize
+            }
+            FutexIdentity::SharedLocal { vmar, addr } => {
+                let vmar_id = vmar.as_ptr() as u64;
+                let vmar_mix = (vmar_id as u32) ^ ((vmar_id >> 32) as u32).rotate_left(16);
+                jhash::jhash_3vals(*addr as u32, (*addr >> 32) as u32, vmar_mix, 1) as usize
+            }
+            FutexIdentity::Shared { vmo, offset } => {
+                let vmo_id = Weak::as_ptr(vmo) as u64;
+                let vmo_mix = (vmo_id as u32) ^ ((vmo_id >> 32) as u32).rotate_left(16);
+                jhash::jhash_3vals(*offset as u32, (*offset >> 32) as u32, vmo_mix, 2) as usize
+            }
+        }
+    }
+
+    fn match_up(&self, another: &Self) -> bool {
+        match (self, another) {
+            (
+                FutexIdentity::Private {
+                    vmar: left_vmar,
+                    addr: left_addr,
+                },
+                FutexIdentity::Private {
+                    vmar: right_vmar,
+                    addr: right_addr,
+                },
+            )
+            | (
+                FutexIdentity::SharedLocal {
+                    vmar: left_vmar,
+                    addr: left_addr,
+                },
+                FutexIdentity::SharedLocal {
+                    vmar: right_vmar,
+                    addr: right_addr,
+                },
+            ) => left_addr == right_addr && left_vmar.ptr_eq(right_vmar),
+            (
+                FutexIdentity::Shared {
+                    vmo: left_vmo,
+                    offset: left_offset,
+                },
+                FutexIdentity::Shared {
+                    vmo: right_vmo,
+                    offset: right_offset,
+                },
+            ) => left_offset == right_offset && Weak::ptr_eq(left_vmo, right_vmo),
+            _ => false,
+        }
     }
 }
 
