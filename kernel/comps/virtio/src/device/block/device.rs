@@ -274,9 +274,9 @@ impl DeviceInner {
         Ok(device)
     }
 
-    /// Handles the irq issued from the device
+    /// Handles the IRQ issued from the device.
     fn handle_irq(&self) {
-        info!("Virtio block device handle irq");
+        info!("Virtio block device handle IRQ");
         // When we enter the IRQs handling function,
         // IRQs have already been disabled,
         // so there is no need to call `disable_irq`.
