@@ -1847,15 +1847,15 @@ writev06
 # futex_cmp_requeue02
 futex_wait01
 futex_wait02
-# futex_wait03
+futex_wait03
 futex_wait04
 # futex_wait05
 # futex_waitv01
 # futex_waitv02
 # futex_waitv03
 futex_wake01
-# futex_wake02
-# futex_wake03
+futex_wake02
+futex_wake03
 # futex_wake04
 futex_wait_bitset01
 
