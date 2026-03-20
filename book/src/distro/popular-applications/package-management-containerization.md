@@ -1,11 +1,17 @@
-# Package Management
+# Package Management & Containerization
+
+This category covers Nix package management tools and container runtimes.
+
+## Package Management
+
+### Nix
 
 NixOS provides a set of [tools](https://nix.dev/manual/nix/2.28/command-ref/main-commands)
 for building, installing, and managing packages.
 
-## Verified Usage
+#### Verified Usage
 
-### `nix-build`
+##### `nix-build`
 
 `nix-build` builds Nix derivations and produces outputs in the Nix store.
 It is the preferred way to build software reproducibly.
@@ -51,7 +57,7 @@ nix-build
 ./result/bin/hello
 ```
 
-### `nix-env`
+##### `nix-env`
 
 `nix-env` installs or removes individual packages in your user profile.
 
@@ -63,7 +69,7 @@ nix-env -iA nixos.hello
 nix-env -e hello
 ```
 
-### `nix-shell`
+##### `nix-shell`
 
 `nix-shell` creates a temporary development environment with the specified dependencies.
 This is useful for testing software without modifying your system environment.
@@ -73,7 +79,7 @@ This is useful for testing software without modifying your system environment.
 nix-shell -p hello
 ```
 
-### `nixos-rebuild`
+##### `nixos-rebuild`
 
 `nixos-rebuild` manages the entire system configuration declaratively.
 It applies changes defined in `configuration.nix`,
@@ -93,3 +99,79 @@ TODO: upgrade mdbook to enable admonition blocks like the one below:
 > [!WARNING]
 > `nixos-rebuild switch` is not yet supported
 -->
+
+## Container Runtimes
+
+### Podman
+
+[Podman](https://docs.podman.io/en/stable/Introduction.html) is a modern, daemonless container engine
+that provides a Docker-compatible command-line interface,
+making it easy for users familiar with Docker to transition.
+
+#### Installation
+
+To install Podman, add the following line to `configuration.nix`:
+
+```nix
+virtualization.podman.enable = true;
+```
+
+#### Verified Usage
+
+##### `podman run`
+
+`podman run` runs a command in a new container.
+
+```bash
+# Start a container, execute a command, and then exit
+podman run --name=c1 docker.io/library/alpine ls /etc
+
+# Start a container and attach to an interactive shell
+podman run -it docker.io/library/alpine
+```
+
+##### `podman image`
+
+`podman image` manages local images.
+
+```bash
+# List downloaded images
+podman image ls
+```
+
+##### `podman ps`
+
+`podman ps` lists containers.
+
+```bash
+# Show the status of all containers (including exited ones)
+podman ps -a
+```
+
+##### `podman rm`
+
+`podman rm` removes one or more containers.
+
+```bash
+# Remove a container named foo
+podman rm foo
+```
+
+### TODO: Docker
+
+[Docker](https://www.docker.com/) is a widely-used container platform.
+
+### TODO: containerd
+
+[containerd](https://containerd.io/) is an industry-standard container runtime.
+
+## Container Orchestration
+
+### TODO: Kubernetes (kubectl)
+
+[Kubernetes](https://kubernetes.io/) is a container orchestration platform.
+`kubectl` is the command-line tool for interacting with Kubernetes clusters.
+
+### TODO: Helm
+
+[Helm](https://helm.sh/) is a package manager for Kubernetes.
