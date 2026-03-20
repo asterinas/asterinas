@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{Pid, process_table},
+    process::{Pid, pid_table},
 };
 
 pub fn sys_getpgid(pid: Pid, ctx: &Context) -> Result<SyscallReturn> {
@@ -18,10 +18,12 @@ pub fn sys_getpgid(pid: Pid, ctx: &Context) -> Result<SyscallReturn> {
         return Ok(SyscallReturn::Return(ctx.process.pgid() as _));
     }
 
-    let process = process_table::get_process(pid).ok_or(Error::with_message(
-        Errno::ESRCH,
-        "the process to get the PGID does not exist",
-    ))?;
+    let process = pid_table::pid_table_mut()
+        .get_process(pid)
+        .ok_or(Error::with_message(
+            Errno::ESRCH,
+            "the process to get the PGID does not exist",
+        ))?;
 
     // The man pages allow the implementation to return `EPERM` if `process` is in a different
     // session than the current process. Linux does not perform this check by default, but some

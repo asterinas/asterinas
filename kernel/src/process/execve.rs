@@ -16,10 +16,8 @@ use crate::{
     },
     prelude::*,
     process::{
-        ContextUnshareAdminApi, Credentials, Process,
-        posix_thread::{
-            ContextPthreadAdminApi, ThreadLocal, ThreadName, sigkill_other_threads, thread_table,
-        },
+        ContextUnshareAdminApi, Credentials, Process, pid_table,
+        posix_thread::{ContextPthreadAdminApi, ThreadLocal, ThreadName, sigkill_other_threads},
         process_vm::{MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS, ProcessVm},
         program_loader::{ProgramToLoad, elf::ElfLoadInfo},
         signal::{
@@ -155,7 +153,7 @@ fn do_execve_no_return(
     // Wait for all other threads to terminate,
     // then promote the current thread to be the process's main thread if necessary.
     wait_other_threads_exit(ctx)?;
-    thread_table::make_current_main_thread(ctx);
+    make_current_main_thread(ctx);
 
     // Activate the new VMAR in the current context and apply file-capability changes,
     // while holding the process VMAR lock.
@@ -228,6 +226,31 @@ fn wait_other_threads_exit(ctx: &Context) -> Result<()> {
     }
 }
 
+fn make_current_main_thread(ctx: &Context) {
+    let pid = ctx.process.pid();
+    let old_tid = ctx.posix_thread.tid();
+
+    if old_tid == pid {
+        return;
+    }
+
+    // Lock order: PID table -> tasks of process.
+    let mut pid_table = pid_table::pid_table_mut();
+    let mut tasks = ctx.process.tasks().lock();
+
+    assert!(tasks.has_exited_main());
+    assert!(tasks.in_execve());
+    assert_eq!(tasks.as_slice().len(), 2);
+    assert!(core::ptr::eq(ctx.task, tasks.as_slice()[1].as_ref()));
+
+    tasks.swap_main(pid, old_tid);
+    ctx.posix_thread.set_main(pid);
+    drop(tasks);
+
+    let thread = pid_table.take_thread(old_tid).unwrap();
+    pid_table.insert_thread(pid, &thread);
+}
+
 fn set_cpu_context(
     thread_local: &ThreadLocal,
     user_context: &mut UserContext,
@@ -252,12 +275,12 @@ fn set_cpu_context(
 ///
 /// The capabilities will be updated accordingly.
 fn apply_caps_from_exec(
-    current: &Process,
+    process: &Process,
     credentials: Credentials<ReadWriteOp>,
     elf_inode: &Arc<dyn Inode>,
 ) -> Result<()> {
-    set_uid_from_elf(current, &credentials, elf_inode)?;
-    set_gid_from_elf(current, &credentials, elf_inode)?;
+    set_uid_from_elf(process, &credentials, elf_inode)?;
+    set_gid_from_elf(process, &credentials, elf_inode)?;
     credentials.set_keep_capabilities(false)?;
 
     Ok(())

@@ -74,7 +74,7 @@ use spin::Once;
 use crate::{
     fs::cgroupfs::controller::{Controller, PidsPreCharge, SubCtrlSet, SubCtrlType},
     prelude::*,
-    process::{Pid, Process, process_table},
+    process::{Pid, Process, pid_table},
 };
 
 /// A type that provides synchronized access to cgroup membership and sub-controller state.
@@ -578,8 +578,8 @@ inherit_sys_branch_node!(CgroupSystem, fields, {
                 writeln!(printer, "{}", SubCtrlSet::all())?;
             }
             "cgroup.procs" => {
-                let process_table = process_table::process_table_mut();
-                for process in process_table.iter() {
+                let pid_table = pid_table::pid_table_mut();
+                for process in pid_table.iter_processes() {
                     if process.cgroup().is_none() {
                         writeln!(printer, "{}", process.pid())?;
                     }
@@ -819,7 +819,9 @@ where
     let process = if pid == 0 {
         current!()
     } else {
-        process_table::get_process(pid).ok_or(Error::InvalidOperation)?
+        pid_table::pid_table_mut()
+            .get_process(pid)
+            .ok_or(Error::InvalidOperation)?
     };
 
     let mut cgroup_guard = CgroupMembership::write_lock();

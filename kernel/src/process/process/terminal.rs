@@ -6,7 +6,7 @@ use super::{JobControl, Pgid, Process, Session, session::SessionGuard};
 use crate::{
     device::Device,
     prelude::{Errno, Error, Result, current, return_errno_with_message, warn},
-    process::process_table,
+    process::pid_table,
     util::ioctl::{RawIoctl, dispatch_ioctl},
 };
 
@@ -124,8 +124,8 @@ impl dyn Terminal {
         // Lock order: group of process -> session inner -> job control
         let process_group_mut = process.process_group.lock();
 
-        let process_group = process_group_mut.upgrade().unwrap();
-        let session = process_group.session().unwrap();
+        let process_group = process_group_mut.as_ref().unwrap();
+        let session = process_group.session();
 
         if !session.is_leader(process) {
             return_errno_with_message!(
@@ -146,7 +146,7 @@ impl dyn Terminal {
             );
         }
 
-        self.job_control().set_session(&session, &process_group)?;
+        self.job_control().set_session(session, process_group)?;
         session_inner.set_terminal(Some(self));
 
         Ok(())
@@ -183,25 +183,25 @@ impl dyn Terminal {
 
     /// Sets the foreground process group of the terminal.
     fn set_foreground(self: Arc<Self>, pgid: Pgid, process: &Process) -> Result<()> {
-        // Lock order: group table -> group of process -> session inner -> job control
-        let group_table_mut = process_table::group_table_mut();
+        // Lock order: PID table -> group of process -> session inner -> job control
+        let pid_table = pid_table::pid_table_mut();
 
         self.is_control_and(process, |session, _| {
-            let Some(process_group) = group_table_mut.get(&pgid) else {
+            let Some(process_group) = pid_table.get_process_group(&pgid) else {
                 return_errno_with_message!(
                     Errno::ESRCH,
                     "the process group to be foreground does not exist"
                 );
             };
 
-            if !Arc::ptr_eq(session, &process_group.session().unwrap()) {
+            if !Arc::ptr_eq(session, process_group.session()) {
                 return_errno_with_message!(
                     Errno::EPERM,
                     "the process group to be foreground belongs to a different session"
                 );
             }
 
-            self.job_control().set_foreground(process_group);
+            self.job_control().set_foreground(&process_group);
 
             Ok(())
         })
@@ -217,8 +217,8 @@ impl dyn Terminal {
     {
         let process_group_mut = process.process_group.lock();
 
-        let process_group = process_group_mut.upgrade().unwrap();
-        let session = process_group.session().unwrap();
+        let process_group = process_group_mut.as_ref().unwrap();
+        let session = process_group.session();
 
         let mut session_inner = session.lock();
 
@@ -232,6 +232,6 @@ impl dyn Terminal {
             );
         }
 
-        op(&session, &mut session_inner)
+        op(session, &mut session_inner)
     }
 }

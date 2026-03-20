@@ -7,7 +7,8 @@ use crate::{
     prelude::*,
     process::{
         credentials::c_types::{CUserCapData, CUserCapHeader, LINUX_CAPABILITY_VERSION_3},
-        posix_thread::{AsPosixThread, thread_table},
+        pid_table,
+        posix_thread::AsPosixThread,
     },
 };
 
@@ -41,7 +42,8 @@ pub fn sys_capget(
     }
 
     let credentials = if cap_user_header.pid != 0 {
-        thread_table::get_thread(cap_user_header.pid)
+        pid_table::pid_table_mut()
+            .get_thread(cap_user_header.pid)
             .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target thread does not exist"))?
             .as_posix_thread()
             .unwrap()

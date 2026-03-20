@@ -9,12 +9,12 @@ use ostd::{
     task::Task,
 };
 
-use super::{PosixThread, ThreadLocal, thread_table};
+use super::{PosixThread, ThreadLocal};
 use crate::{
     fs::{file::file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
     process::{
-        Credentials, NsProxy, Process, UserNamespace,
+        Credentials, NsProxy, Process, UserNamespace, pid_table,
         posix_thread::name::ThreadName,
         signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
     },
@@ -209,7 +209,7 @@ impl PosixThreadBuilder {
                 ns_proxy,
             );
 
-            thread_table::add_thread(tid, thread.clone());
+            pid_table::pid_table_mut().insert_thread(tid, &thread);
             task::create_new_user_task(user_ctx, thread, thread_local, is_init_process)
         })
     }
