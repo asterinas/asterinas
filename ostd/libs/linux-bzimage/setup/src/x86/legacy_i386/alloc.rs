@@ -29,7 +29,7 @@ pub(super) unsafe fn init(boot_params: &'static linux_boot_params::BootParams) {
         fn __executable_end();
     }
 
-    used[0] = (__executable_start as usize)..(__executable_end as usize);
+    used[0] = (__executable_start as *const () as usize)..(__executable_end as *const () as usize);
 
     fn range_from_start_and_len(start: usize, len: usize) -> Range<usize> {
         start..start.checked_add(len).unwrap()
