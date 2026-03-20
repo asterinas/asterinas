@@ -160,6 +160,7 @@ impl TaskSet {
     }
 
     /// Registers an observer which watches `TidEvent`.
+    #[expect(dead_code)]
     pub fn register_observer(&mut self, observer: Weak<dyn Observer<TidEvent>>) {
         self.subject.register_observer(observer);
     }
@@ -173,6 +174,7 @@ impl TaskSet {
 
 #[derive(Copy, Clone)]
 pub enum TidEvent {
+    #[expect(dead_code)]
     Exit(Tid),
 }
 

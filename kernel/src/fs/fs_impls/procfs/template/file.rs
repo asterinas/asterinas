@@ -8,6 +8,7 @@ use super::Common;
 use crate::{
     fs::{
         file::{AccessMode, FileIo, InodeMode, InodeType, StatusFlags},
+        procfs::{BLOCK_SIZE, ProcFs},
         vfs::{
             file_system::FileSystem,
             inode::{Extension, Inode, InodeIo, Metadata, SymbolicLink},
@@ -26,10 +27,20 @@ impl<F: FileOps> ProcFile<F> {
     pub(super) fn new(
         file: F,
         fs: Weak<dyn FileSystem>,
-        is_volatile: bool,
+        need_revalidation: bool,
         mode: InodeMode,
     ) -> Arc<Self> {
-        let common = new_file_common(fs, mode, is_volatile);
+        let common = {
+            let arc_fs = fs.upgrade().unwrap();
+            let procfs = arc_fs.downcast_ref::<ProcFs>().unwrap();
+            let metadata = Metadata::new_file(
+                procfs.alloc_id(),
+                mode,
+                BLOCK_SIZE,
+                procfs.sb().container_dev_id,
+            );
+            Common::new(metadata, fs, need_revalidation)
+        };
         Arc::new(Self {
             inner: file,
             common,
@@ -39,18 +50,6 @@ impl<F: FileOps> ProcFile<F> {
     pub fn inner(&self) -> &F {
         &self.inner
     }
-}
-
-fn new_file_common(fs: Weak<dyn FileSystem>, mode: InodeMode, is_volatile: bool) -> Common {
-    let fs_ref = fs.upgrade().unwrap();
-    let procfs = fs_ref.downcast_ref::<super::ProcFs>().unwrap();
-    let metadata = Metadata::new_file(
-        procfs.alloc_id(),
-        mode,
-        super::BLOCK_SIZE,
-        procfs.sb().container_dev_id,
-    );
-    Common::new(metadata, fs, is_volatile)
 }
 
 impl<F: FileOps + 'static> InodeIo for ProcFile<F> {
@@ -94,7 +93,6 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
     fn fs(&self) -> Arc<dyn FileSystem>;
 
     fn resize(&self, _new_size: usize) -> Result<()> {
-        // Resizing files under `/proc` will succeed, but will do nothing.
         Ok(())
     }
 
@@ -110,12 +108,19 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
         Err(Error::new(Errno::EINVAL))
     }
 
-    fn is_dentry_cacheable(&self) -> bool {
-        !self.common.is_volatile()
+    fn need_revalidation(&self) -> bool {
+        self.common.need_revalidation()
+    }
+
+    fn revalidate_pos_child(&self, _name: &str, _child: &Arc<dyn Inode>) -> bool {
+        false
+    }
+
+    fn revalidate_neg_child(&self, _name: &str) -> bool {
+        false
     }
 
     fn seek_end(&self) -> Option<usize> {
-        // Seeking regular files under `/proc` with `SEEK_END` will fail.
         None
     }
 

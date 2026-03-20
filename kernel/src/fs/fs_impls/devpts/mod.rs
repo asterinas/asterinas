@@ -363,7 +363,19 @@ impl Inode for RootInode {
         self.fs.upgrade().unwrap()
     }
 
-    fn is_dentry_cacheable(&self) -> bool {
+    fn need_revalidation(&self) -> bool {
+        true
+    }
+
+    fn need_neg_child_revalidation(&self) -> bool {
+        true
+    }
+
+    fn revalidate_pos_child(&self, _name: &str, _child: &Arc<dyn Inode>) -> bool {
+        false
+    }
+
+    fn revalidate_neg_child(&self, _name: &str) -> bool {
         false
     }
 }

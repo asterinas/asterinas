@@ -428,10 +428,14 @@ impl PathResolver {
         } else if super::is_dotdot(name) {
             self.resolve_parent(path).unwrap_or_else(|| path.this())
         } else {
-            let target_inner_opt = dir_dentry.lookup_via_cache(name)?;
-            match target_inner_opt {
-                Some(target_inner) => Path::new(path.mount.clone(), target_inner),
-                None => {
+            match dir_dentry.lookup_via_cache(name) {
+                super::dentry::CachedLookup::Positive(target_inner) => {
+                    Path::new(path.mount.clone(), target_inner)
+                }
+                super::dentry::CachedLookup::Negative => {
+                    return_errno_with_message!(Errno::ENOENT, "found a negative dentry");
+                }
+                super::dentry::CachedLookup::Miss => {
                     let target_inner = dir_dentry.lookup_via_fs(name)?;
                     Path::new(path.mount.clone(), target_inner)
                 }

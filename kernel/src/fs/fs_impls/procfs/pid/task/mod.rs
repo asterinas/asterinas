@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_util::slot_vec::SlotVec;
-use ostd::sync::RwMutexUpgradeableGuard;
-
 use super::PidDirOps;
 use crate::{
-    events::Observer,
     fs::{
         file::mkmod,
         procfs::{
@@ -17,15 +13,14 @@ use crate::{
                 stat::StatFileOps, status::StatusFileOps, uid_map::UidMapFileOps,
             },
             template::{
-                DirOps, ProcDir, ProcDirBuilder, lookup_child_from_table,
-                populate_children_from_table,
+                DirOps, ProcDir, ProcDirBuilder, ReaddirEntry, keyed_readdir_entries,
+                lookup_child_from_table, populate_children_from_table,
             },
         },
-        utils::DirEntryVecExt,
         vfs::inode::Inode,
     },
     prelude::*,
-    process::{Process, posix_thread::AsPosixThread, task_set::TidEvent},
+    process::{Process, posix_thread::AsPosixThread},
     thread::{AsThread, Thread, Tid},
 };
 
@@ -53,15 +48,39 @@ impl TaskDirOps {
     pub fn new_inode(dir: &PidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         let process_ref = dir.0.process_ref.clone();
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3316>
-        let task_dir_inode = ProcDirBuilder::new(Self(process_ref), mkmod!(a+rx))
+        ProcDirBuilder::new(Self(process_ref), mkmod!(a+rx))
             .parent(parent)
+            .need_neg_child_revalidation()
             .build()
-            .unwrap();
+            .unwrap()
+    }
 
-        let weak_ptr = Arc::downgrade(&task_dir_inode);
-        dir.0.process_ref.tasks().lock().register_observer(weak_ptr);
+    fn thread_entries(&self, dir: &ProcDir<Self>) -> Vec<(usize, String, Arc<dyn Inode>)> {
+        let mut threads: Vec<_> = {
+            let tasks = self.0.tasks().lock();
+            tasks
+                .as_slice()
+                .iter()
+                .map(|task| task.as_thread().unwrap().clone())
+                .collect()
+        };
+        threads.sort_unstable_by_key(|thread| thread.as_posix_thread().unwrap().tid());
 
-        task_dir_inode
+        threads
+            .into_iter()
+            .filter_map(|thread_ref| {
+                usize::try_from(thread_ref.as_posix_thread().unwrap().tid())
+                    .ok()
+                    .map(|tid| {
+                        let inode = TidDirOps::new_inode(
+                            self.0.clone(),
+                            thread_ref.clone(),
+                            dir.this_weak().clone(),
+                        );
+                        (tid, tid.to_string(), inode)
+                    })
+            })
+            .collect()
     }
 }
 
@@ -89,6 +108,7 @@ impl TidDirOps {
             mkmod!(a+rx),
         )
         .parent(parent)
+        .need_revalidation()
         .build()
         .unwrap()
     }
@@ -126,31 +146,28 @@ impl TidDirOps {
 
 impl DirOps for TidDirOps {
     fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
-        let mut cached_children = dir.cached_children().write();
-        self.lookup_child_locked(&mut cached_children, dir.this_weak().clone(), name)
+        self.lookup_child(dir.this_weak().clone(), name)
     }
 
-    fn populate_children<'a>(
-        &self,
-        dir: &'a ProcDir<Self>,
-    ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>> {
-        let mut cached_children = dir.cached_children().write();
-        self.populate_children_locked(&mut cached_children, dir.this_weak().clone());
-        cached_children.downgrade()
+    fn populate_children(&self, dir: &ProcDir<Self>) -> Vec<(String, Arc<dyn Inode>)> {
+        self.populate_children(dir.this_weak().clone())
+    }
+
+    fn revalidate_neg_child(&self, name: &str) -> bool {
+        !Self::STATIC_ENTRIES
+            .iter()
+            .any(|(entry_name, _)| *entry_name == name)
     }
 }
 
 impl TidDirOps {
-    pub(super) fn lookup_child_locked(
+    pub(super) fn lookup_child(
         &self,
-        cached_children: &mut SlotVec<(String, Arc<dyn Inode>)>,
         this_ptr: Weak<dyn Inode>,
         name: &str,
     ) -> Result<Arc<dyn Inode>> {
         if let Some(child) =
-            lookup_child_from_table(name, cached_children, Self::STATIC_ENTRIES, |f| {
-                (f)(self, this_ptr)
-            })
+            lookup_child_from_table(name, Self::STATIC_ENTRIES, |f| (f)(self, this_ptr))
         {
             return Ok(child);
         }
@@ -158,32 +175,19 @@ impl TidDirOps {
         return_errno_with_message!(Errno::ENOENT, "the file does not exist");
     }
 
-    pub(super) fn populate_children_locked(
+    pub(super) fn populate_children(
         &self,
-        cached_children: &mut SlotVec<(String, Arc<dyn Inode>)>,
         this_ptr: Weak<dyn Inode>,
-    ) {
-        populate_children_from_table(cached_children, Self::STATIC_ENTRIES, |f| {
+    ) -> Vec<(String, Arc<dyn Inode>)> {
+        let mut children = Vec::new();
+        populate_children_from_table(&mut children, Self::STATIC_ENTRIES, |f| {
             (f)(self, this_ptr.clone())
         });
-    }
-}
-
-impl Observer<TidEvent> for ProcDir<TaskDirOps> {
-    fn on_events(&self, events: &TidEvent) {
-        let TidEvent::Exit(tid) = events;
-
-        let mut cached_children = self.cached_children().write();
-        cached_children.remove_entry_by_name(&tid.to_string());
+        children
     }
 }
 
 impl DirOps for TaskDirOps {
-    // Lock order: task set -> cached entries
-    //
-    // Note that inverting the lock order is non-trivial because `Observer::on_events` will be
-    // called with the task set locked.
-
     fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
         let Ok(tid) = name.parse::<Tid>() else {
             return_errno_with_message!(Errno::ENOENT, "the name is not a valid TID");
@@ -195,42 +199,58 @@ impl DirOps for TaskDirOps {
                 continue;
             }
 
-            let mut cached_children = dir.cached_children().write();
-            return Ok(cached_children
-                .put_entry_if_not_found(name, || {
-                    TidDirOps::new_inode(
-                        self.0.clone(),
-                        thread_ref.clone(),
-                        dir.this_weak().clone(),
-                    )
-                })
-                .clone());
+            return Ok(TidDirOps::new_inode(
+                self.0.clone(),
+                thread_ref.clone(),
+                dir.this_weak().clone(),
+            ));
         }
 
         return_errno_with_message!(Errno::ENOENT, "the thread does not exist")
     }
 
-    fn populate_children<'a>(
-        &self,
-        dir: &'a ProcDir<Self>,
-    ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>> {
-        let tasks = self.0.tasks().lock();
-        let mut cached_dentries = dir.cached_children().write();
+    fn populate_children(&self, dir: &ProcDir<Self>) -> Vec<(String, Arc<dyn Inode>)> {
+        self.thread_entries(dir)
+            .into_iter()
+            .map(|(_, name, inode)| (name, inode))
+            .collect()
+    }
 
-        for task in tasks.as_slice() {
-            let thread_ref = task.as_thread().unwrap();
-            cached_dentries.put_entry_if_not_found(
-                &task.as_posix_thread().unwrap().tid().to_string(),
-                || {
-                    TidDirOps::new_inode(
-                        self.0.clone(),
-                        thread_ref.clone(),
-                        dir.this_weak().clone(),
-                    )
-                },
-            );
+    fn entries_from_offset(&self, dir: &ProcDir<Self>, offset: usize) -> Vec<ReaddirEntry> {
+        keyed_readdir_entries(offset, 2, self.thread_entries(dir))
+    }
+
+    fn revalidate_pos_child(&self, name: &str, child: &dyn Inode) -> bool {
+        let Ok(tid) = name.parse::<Tid>() else {
+            return false;
+        };
+        let Some(child) = child.downcast_ref::<ProcDir<TidDirOps>>() else {
+            return false;
+        };
+        let Some(thread_ref) = child.inner().thread_ref.as_ref() else {
+            return false;
+        };
+
+        for task in self.0.tasks().lock().as_slice() {
+            let current_thread = task.as_thread().unwrap();
+            if current_thread.as_posix_thread().unwrap().tid() == tid {
+                return Arc::ptr_eq(thread_ref, current_thread);
+            }
         }
 
-        cached_dentries.downgrade()
+        false
+    }
+
+    fn revalidate_neg_child(&self, name: &str) -> bool {
+        let Ok(tid) = name.parse::<Tid>() else {
+            return true;
+        };
+
+        self.0
+            .tasks()
+            .lock()
+            .as_slice()
+            .iter()
+            .all(|task| task.as_posix_thread().unwrap().tid() != tid)
     }
 }
